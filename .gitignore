@@ -1,0 +1,13 @@
+# Editors
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Futuro (ainda não há código nesta fase)
+node_modules/
+dist/
+*.sqlite
+.env
