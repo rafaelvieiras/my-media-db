@@ -55,25 +55,104 @@ Sustenta o "banco maior que a biblioteca" ([cenário D](01-visao-e-casos-de-uso.
 *(Lista inicial; refinar no MVP. Ter arquivo é um atributo de `media_file`, não o
 que define `status`.)*
 
-## As três camadas (o resolver)
+## O resolver (composição em camadas)
 
-Cada campo pode vir de três origens. A leitura compõe na ordem de precedência:
+O resolver compõe o valor final de cada entidade a partir de três camadas, na
+ordem de precedência abaixo. Ele é um **motor genérico**: não conhece nenhum
+campo pelo nome — nem do núcleo, nem de extensão. Guia-se por metadado (ver
+"Origem por campo").
 
 ```
         ┌─ media_override   (o dono editou → vence sempre)
-valor ──┼─ media_external   (puxado da fonte externa, cache local → base)
+valor ──┼─ media_external   (puxado da(s) fonte(s) externa(s) → base editorial)
         └─ media_file        (extraído do arquivo: mediainfo → fatos técnicos)
 ```
 
 - **Arquivo** (`media_file.mediainfo`): fatos técnicos detectados (codec, HDR,
-  faixas, duração real). Não editável — é o que o arquivo *é*.
+  faixas, duração real). É o que o arquivo *é* — mas **pode ser corrigido por
+  override** (o detectado original permanece preservado; ver "Override sobre o
+  técnico").
 - **Externo** (`media_external`): payload puxado de cada fonte, guardado **cru e
-  identificado pela fonte**, para poder re-compor ou re-puxar. É a base editorial.
-- **Override** (`media_override`): registro **esparso** — só os campos que o dono
-  mudou. É o que dá a ele a autoridade final.
+  identificado pela fonte**, para re-compor ou re-puxar. É a base editorial.
+- **Override** (`media_override`): patch **esparso** do dono — só os campos que
+  ele mudou. É o que dá a ele a autoridade final. **Override é universal**: alcança
+  qualquer campo, sem exceção (inclusive técnico e de extensão).
 
 Re-enriquecer atualiza apenas `media_external`; o `media_override` permanece
 intocado. É isso que satisfaz A3/B3/G2.
+
+### Origem por campo (particionamento)
+
+As três camadas **não** competem indiscriminadamente por todo campo: cada campo
+declara de quais **fontes-base** pode vir (`arquivo`, `externo`, ou `nenhuma` —
+esta última para itens que só existem se o dono os criar, como a série "caseira"
+do [cenário C](01-visao-e-casos-de-uso.md)). O **override não é declarado** —
+por ser universal, aplica-se a todos.
+
+Essa declaração é **metadado do campo**, não uma tabela fixa no código:
+
+- **Campos do núcleo** declaram a origem no schema do núcleo (conjunto pequeno e
+  estável).
+- **Campos de extensão** declaram a origem como anotação no **JSON Schema do
+  próprio namespace** (ver `extension_data`). Adicionar uma vertical/plugin não
+  toca o núcleo nem o resolver.
+
+Assim, `title`/`description` têm base `externo`; `video_codec`/`hdr` têm base
+`arquivo`; um `season_number` de `core.tv@1` declara a sua própria base no schema
+da vertical. O resolver apenas lê a etiqueta e compõe.
+
+Campos de **sistema** (`id`, `created_at`, `updated_at`, `content_hash`) ficam
+**fora** do resolver: são identidade/auditoria, não valor editorial.
+
+### Prioridade entre fontes externas
+
+Quando há mais de uma fonte externa (visão multi-provider) com valor para o mesmo
+campo, o resolver usa uma **lista de prioridade global e configurável** de fontes
+(ex.: `[tmdb, tvdb, musicbrainz]`). Para cada campo, vence a primeira fonte da
+lista que tiver valor; o resultado forma a base externa, sobre a qual o override
+entra. **Default do MVP:** `[tmdb]`. (Prioridade por campo ou fonte primária por
+entidade ficam como evolução pós-MVP, sem quebrar o modelo.)
+
+### Campos-lista: merge por operações
+
+Campos que são **listas de valores simples** (`tags`, `genres`) não são
+substituídos em bloco pelo override: este guarda **adições** e **remoções por
+valor**, e a base externa continua viva por baixo (um re-scrape que traga um
+gênero novo o inclui, sem desfazer as edições do dono). A ordem exibida segue a
+externa, com remoções aplicadas e adições ao final; itens duplicados são
+deduplicados na composição.
+
+> **Listas de relações** (elenco, equipe) **não** são campos-lista deste tipo:
+> vivem em tabelas próprias (`person`/`credit`) e o override delas é tratado à
+> parte (ver [00 — agenda, MD6](00-agenda-de-decisoes.md)).
+
+### Composição uniforme (núcleo e extensão)
+
+O resolver **não distingue** campo de núcleo de campo de `extension_data`: a mesma
+precedência `override ⟵ externo ⟵ arquivo` vale campo a campo, **inclusive dentro
+dos namespaces de extensão**. O patch de override espelha a entity inteira,
+extensão incluída.
+
+### "Sem override" vs. "override para vazio"
+
+Como o override é um patch esparso, a **presença da chave** é o sinal de autoridade:
+
+- **Chave presente** no patch (mesmo com valor `null`/vazio) → o dono decidiu;
+  vence a base externa, **inclusive para apagar** um valor que a fonte insiste em
+  trazer.
+- **Chave ausente** → não houve override; herda da base.
+
+A UI de edição deve distinguir **"limpar override"** (remover a chave, voltando a
+herdar) de **"definir vazio"** (chave presente com `null`). A **proveniência por
+campo** (de qual camada o valor veio) **não é exposta na API** por ora — a UI
+consulta o override separadamente quando precisa.
+
+### Override sobre o técnico
+
+Por o override ser universal, o dono pode **corrigir um fato técnico mal-detectado**
+(ex.: HDR falso-positivo do `ffprobe`) pelo mesmo mecanismo. O dado detectado
+original permanece em `media_file` (não-destrutivo); o override apenas entra por
+cima na composição. É uso de exceção, não de rotina.
 
 ## `extension_data` — extensão por vertical
 
@@ -117,7 +196,7 @@ entity            (id, type, title, original_title, description,
 
 entity_relation   (id, parent_id, child_id, kind)      -- série↔temporada↔episódio, coleção↔filme
 media_external    (id, entity_id, source, source_id, payload_json, fetched_at)
-media_override    (id, entity_id, field, value_json, updated_at)   -- esparso
+media_override    (entity_id, override_json, updated_at)   -- patch esparso (1 linha/entity), espelha a entity
 media_file        (id, entity_id, path, content_hash, mediainfo_json, size, mtime)
 person            (id, name, external_ids_json)
 credit            (id, entity_id, person_id, role, ord)
