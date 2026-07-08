@@ -6,8 +6,13 @@
 .DS_Store
 Thumbs.db
 
-# Futuro (ainda não há código nesta fase)
+# Frontend
 node_modules/
-dist/
+
+# Build do Vite embutido no binário Go: é gerado (ver briefings 0002/0003).
+# Só o placeholder index.html é versionado, para o //go:embed compilar sem o front.
+internal/webui/dist/*
+!internal/webui/dist/index.html
+
 *.sqlite
 .env
