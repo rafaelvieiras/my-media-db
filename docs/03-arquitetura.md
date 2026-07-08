@@ -42,11 +42,49 @@ cliente dele — inclusive podendo apontar para uma instância remota.
 |---|---|---|
 | Backend | **Go** | Binário único, RAM baixa, sem runtime pesado parado; cross-compile fácil para o servidor (incl. ARM). |
 | Frontend | **Vite + React** | React moderno, build estático leve. **Sem Next.js/SSR** — contradiz "memória mínima". |
-| Banco | **SQLite** | Local-first, zero-config, um arquivo. Volume de requests **não é gargalo** para o uso self-hosted (decisão revista — ver [11](11-decisoes-abertas.md)). |
+| Banco | **SQLite** | Local-first, zero-config, um arquivo. Volume de requests **não é gargalo** para o uso self-hosted (decisão revista — ver [11](11-decisoes-abertas.md)). Concorrência: **WAL + escritor único** (ver abaixo). |
 | Empacotamento | **Um container** | `//go:embed` do `dist/` do Vite; o Go serve tudo. |
 
 Escolhas de biblioteca (router Go, driver SQLite, camada de query) ficam em
 [11 — Decisões abertas](11-decisoes-abertas.md).
+
+## Concorrência e persistência (SQLite)
+
+A tensão "API sempre no ar × scan escrevendo pesado" ([acima](#princípio-de-forma))
+esbarra no limite do SQLite: **um escritor por vez**. Sem estratégia, o escritor
+bloqueia leitores e a UI trava com `database is locked` durante o scan. A solução é
+uma receita consagrada, em três camadas.
+
+**1. WAL + pragmas.** O banco abre em **WAL** (*Write-Ahead Logging*), que permite
+**vários leitores e um escritor simultâneos** sem bloqueio mútuo:
+
+```sql
+PRAGMA journal_mode = WAL;
+PRAGMA busy_timeout = 5000;   -- espera/re-tenta em vez de errar 'locked'
+PRAGMA synchronous = NORMAL;  -- durabilidade × velocidade, seguro sob WAL
+PRAGMA foreign_keys = ON;
+```
+
+**2. Dois pools de conexão.** Leituras usam um **pool de N conexões**; **todas as
+escritas** passam por **uma única conexão de escrita** (o "escritor único" cai
+naturalmente de um pool de escrita de tamanho 1). A API lê concorrente enquanto o
+scan escreve, e o SQLite nunca vê dois escritores disputando.
+
+```
+read pool  (N conns)  ← API GETs + leituras do scan
+write conn (1)        ← overrides, imports e escritas do scan
+```
+
+**3. Escritas curtas, dono na frente.** O scanner comita em **lotes curtos**
+(commit a cada N itens), não numa transação gigante, para não segurar o escritor
+nem adiar o *checkpoint* do WAL. Escritas **interativas** do dono (override, import)
+têm **prioridade** sobre as do scan em massa — uma edição não espera a varredura
+inteira.
+
+> **Evolução:** se a priorização precisar ser explícita/mais rica (backpressure,
+> ordenação), o escritor único pode virar uma **fila/goroutine escritora** dedicada
+> sem mudar o resto. E como os dados de scan são majoritariamente **re-deriváveis**
+> (mediainfo re-extraível), `synchronous=NORMAL` é um trade-off seguro.
 
 ## Modos de execução e a flag de API
 
