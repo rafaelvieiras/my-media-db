@@ -171,3 +171,12 @@ Estas são as decisões que fecham a spec dele.
 - **R7 — Fatos técnicos são overridáveis** (2026-07-06). Override universal alcança
   também mediainfo (corrigir detecção errada); o detectado original fica preservado
   em `media_file`. Sem exceção ao princípio de autoridade.
+- **QG1 — Quality gate: catraca unificada Go + TS** (2026-07-08). Uma catraca
+  (ratchet) única com um `baseline.json` cobrindo backend Go **e** frontend TS
+  (Opção A entre unificado / dois gates / estender o boatman). Runner em **Node
+  partindo do boatman** (gera a metade JS; estende-se o script para coletar métricas
+  Go: golangci-lint, `go test -cover`, govulncheck, gofmt, gocyclo). Hooks locais com
+  **lefthook** (poliglota) em vez de husky. Roda no `pre-push` local e no PR (bloqueia
+  regressão + comenta). Promover os coletores Go ao boatman upstream fica como
+  follow-up. Documentado em [ADR-0016](adr/0016-quality-gate-catraca-unificada.md) e
+  no briefing [0005](../briefings/0005-quality-gate-catraca-unificada.md).
