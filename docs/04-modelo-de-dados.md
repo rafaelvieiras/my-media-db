@@ -33,7 +33,7 @@ Campos do núcleo (comuns a qualquer mídia):
 | `original_title` | text? | |
 | `description` | text? | Sinopse/plot |
 | `release_date` | date? | ISO `YYYY-MM-DD` |
-| `status` | text | Estado no catálogo — ver abaixo |
+| `status` | text | **Intenção** do dono (`cataloged` default / `wanted` / `unreleased` / `draft`) — ver abaixo. Posse **não** é status |
 | `tags` | json[] | Lista livre |
 | `external_ids` | json | `{ "tmdb": "123", "imdb": "tt..." , … }` — **mapa de identidade autoritativo** (ver [Identidade externa](#identidade-externa-external_ids-autoritativo-vs-media_external-cache)) |
 | `extension_data` | json | Dados por vertical, *namespaced* — ver abaixo |
@@ -43,17 +43,35 @@ Relações e itens auxiliares (pessoas, empresas, assets, arquivos, relações
 entre entidades) são **tabelas próprias**, não campos soltos — ver
 [Persistência](#persistência-sqlite).
 
-### O campo `status`
+### Posse e `status`: dois eixos ortogonais
 
-Sustenta o "banco maior que a biblioteca" ([cenário D](01-visao-e-casos-de-uso.md)):
+*"Tenho o arquivo?"* e *"o que pretendo com o item?"* são perguntas **independentes**.
+Modelá-las em eixos separados é o que sustenta o "banco maior que a biblioteca"
+([cenário D](01-visao-e-casos-de-uso.md)):
 
-- `owned` — possuído (tem ao menos um arquivo, mas não obriga).
-- `wanted` — desejado / wishlist.
-- `draft` — rascunho / em curadoria.
-- `unreleased` — catalogado, ainda não lançado.
+- **Posse — fato derivado.** Não é campo editável: é computado da existência de ao
+  menos um `media_file` para a entidade (*"na biblioteca"* vs *"só no catálogo"*).
+  Por ser derivada, não mente nem diverge do disco. Pode ser materializada como
+  coluna gerada para filtrar rápido.
+- **`status` — intenção do dono.** Um estado por vez:
+  - `cataloged` — item normal e curado (**default**).
+  - `wanted` — desejado / wishlist.
+  - `unreleased` — catalogado, ainda não lançado.
+  - `draft` — rascunho / em curadoria.
 
-*(Lista inicial; refinar no MVP. Ter arquivo é um atributo de `media_file`, não o
-que define `status`.)*
+Os eixos combinam livremente:
+
+| `status` | posse | Significado |
+|---|---|---|
+| `cataloged` | sim | o item comum da estante |
+| `wanted` | não | wishlist pura |
+| `wanted` | sim | tenho uma cópia, mas quero upgrade (cam rip → Blu-ray) |
+| `unreleased` | não | catalogado, ainda vai lançar |
+
+> **Não existe coluna `owned`.** O antigo valor `owned` era posse disfarçada de
+> intenção — agora posse é derivada e `status` é só intenção. As **transições** de
+> `status` quando um arquivo aparece/some ficam no
+> [00 — agenda, MD5](00-agenda-de-decisoes.md).
 
 ## O resolver (composição em camadas)
 

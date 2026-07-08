@@ -37,7 +37,7 @@ Estas são as decisões que fecham a spec dele.
 | ID | Questão | Status | Decisão | Destino |
 |---|---|---|---|---|
 | **MD1** | Identidade e matching: como um arquivo vira/associa a uma `Entity` e a um id externo? Um filme com múltiplos arquivos (edições/qualidades) — relação 1:N normativa. | **documentado** | Adota a **convenção Kodi/Jellyfin** (padrão de-facto): **1:N plano** (1 obra = 1 `Entity`; qualidades/edições/partes = `media_file`), **edição = rótulo no arquivo**, **id externo embutido no nome = chave determinística**, *stacking* de partes. Match carrega **score de confiança**: alta casa sozinho, baixa **casa mesmo assim + alerta de revisão** (*"mapeado com 60% de certeza. Remover?"*), zero resultados vira `draft` não-identificado; correção do dono é autoritativa (override). Verticais fora do padrão (videoclipe→IMVDB, quadrinhos→ComicInfo) trazem identidade própria via `extension_data`, sem tocar no núcleo. | `06` (+ `04`) |
-| **MD2** | `status` (intenção do dono) vs posse (existe `media_file`?) estão conflados na doc 04. Separar em eixos ortogonais. | aberto | — | `04` |
+| **MD2** | `status` (intenção do dono) vs posse (existe `media_file`?) estão conflados na doc 04. Separar em eixos ortogonais. | **documentado** | **Dois eixos ortogonais.** **Posse = fato derivado** (existe `media_file`?), não editável, não mente. **`status` = intenção do dono**, um estado por vez: `cataloged` (default), `wanted`, `unreleased`, `draft`. Removido o `owned` (era posse disfarçada). Combinam livre (ex.: `wanted`+posse=sim = quero upgrade tendo cópia). Transições entre estados → MD5. | `04` |
 | **MD3** | Concorrência no SQLite: API sempre no ar enquanto o scan escreve pesado (single-writer). Estratégia (WAL + escritor único). | aberto | — | `03` |
 | **MD4** | Identidade externa duplicada em `entity.external_ids` e `media_external.(source, source_id)`. Qual é a autoritativa? | **documentado** | **`entity.external_ids` é o mapa de identidade autoritativo** (todos os ids conhecidos, buscados ou não; é onde o match do MD1 grava e o lookup lê). **`media_external` é cache de payload**, `source_id` subordinado (invariante: bate com `external_ids[source]`). **Conflito → identidade vence**: linha divergente é cache obsoleto → re-busca/descarta; o dono corrige a identidade, nunca edita `media_external` à mão. Identidade ≠ valor editorial (media_external segue base do resolver). Mesma lógica p/ `person`/`company`. | `04` |
 | **MD5** | Ciclo de vida / deleção: arquivo some do disco — a entity vira `wanted`? órfã? Comportamento não-destrutivo definido. | aberto | — | `04` |
@@ -60,6 +60,14 @@ Estas são as decisões que fecham a spec dele.
 
 <!-- Conforme cada item fecha, mover o resumo da decisão para cá com data. -->
 
+- **MD2 — Posse e `status` viram dois eixos ortogonais** (2026-07-07). Um campo só
+  conflava "tenho o arquivo" (fato) com "o que pretendo" (intenção). Separado:
+  **posse é derivada** da existência de `media_file` (não é campo editável, não
+  diverge do disco, pode virar coluna gerada); **`status` é só intenção**, um estado
+  por vez — `cataloged` (default), `wanted`, `unreleased`, `draft`. O valor `owned`
+  sai (era posse disfarçada). Os eixos combinam livremente (`wanted`+posse=sim =
+  tenho cópia mas quero upgrade), sustentando o "banco maior que a biblioteca". As
+  transições de estado (arquivo aparece/some) ficam para o MD5. Promovido à doc 04.
 - **MD4 — `external_ids` é a identidade autoritativa; `media_external` é cache**
   (2026-07-07). O id externo mora em dois lugares, então elege-se a autoridade:
   `entity.external_ids` é o **mapa de identidade** (todos os ids conhecidos, buscados
