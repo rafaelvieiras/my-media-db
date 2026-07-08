@@ -60,4 +60,10 @@ Cada briefing carrega um `status` no cabeçalho:
 
 <!-- Atualizar conforme briefings forem criados -->
 
-_Nenhum briefing ainda. O primeiro sairá da Fase 1 (scaffold) do [roadmap](../docs/12-roadmap.md)._
+### Fase 1 — Esqueleto do container único
+
+| ID | Briefing | Tipo | Status | Depende de |
+|---|---|---|---|---|
+| [0001](0001-backend-esqueleto-servidor.md) | Backend Go: esqueleto do servidor HTTP | feature | draft | — |
+| [0002](0002-frontend-scaffold-integracao-api.md) | Frontend Vite + React: scaffold e integração com a API | feature | draft | — |
+| [0003](0003-empacotamento-dockerfile-multistage.md) | Empacotamento: Dockerfile multi-stage (imagem única) | chore | draft | 0001, 0002 |
