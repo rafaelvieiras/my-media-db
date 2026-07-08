@@ -7,7 +7,7 @@
 
 **Status:** `Fase 0 — documentação em draft`.
 **Data:** 2026-07-06.
-**Licença pretendida:** open source (definir; ver [`docs/11-decisoes-abertas.md`](docs/11-decisoes-abertas.md)).
+**Licença:** [MIT](LICENSE). Como contribuir: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ---
 
@@ -85,6 +85,11 @@ O modelo de dados e a arquitetura já nascem preparados para a visão; o
 | [10 — Usuários e permissões](docs/10-usuarios-e-permissoes.md) | Multiusuário, tokens, escopos |
 | [11 — Decisões abertas](docs/11-decisoes-abertas.md) | O que ainda não foi decidido, riscos, plugins futuros |
 | [12 — Roadmap](docs/12-roadmap.md) | Fases (UI-first) e como cada fase vira briefings |
+| [ADRs](docs/adr/) | Decisões de arquitetura fechadas, uma por arquivo (R1–R7, MD1–MD6) |
+
+As decisões de fundação são registradas na
+[agenda de decisões](docs/00-agenda-de-decisoes.md) (backlog vivo) e, ao fechar,
+viram [ADRs](docs/adr/) e são promovidas às docs de spec.
 
 O desenvolvimento é dirigido por **briefings** — ordens de serviço autocontidas,
 uma por feature/fix. Ver [`briefings/README.md`](briefings/README.md).

@@ -49,10 +49,10 @@ Estas são as decisões que fecham a spec dele.
 
 | ID | Item | Status | Decisão | Destino |
 |---|---|---|---|---|
-| **ME1** | Adotar ADRs (um arquivo por decisão) em vez da lista achatada da doc 11. | aberto | — | novo `docs/adr/` |
-| **ME2** | Diagrama ER (mermaid) do modelo de dados. | aberto | — | `04` |
-| **ME3** | Criar `LICENSE` e `CONTRIBUTING.md` (inclinação MIT/Apache-2.0). | aberto | — | raiz |
-| **ME4** | Glossário: termos de precedência do resolver e "posse" vs "status". | aberto | — | `02` |
+| **ME1** | Adotar ADRs (um arquivo por decisão) em vez da lista achatada da doc 11. | **documentado** | **Sim, formato leve.** Criado `docs/adr/` com README (índice + prática), `template.md` (Contexto·Decisão·Consequências) e **13 ADRs** migrados das decisões fechadas (R1–R7 → 0001–0007; MD1–MD6 → 0008–0013). ADR é **imutável**: nova decisão que supera outra cria novo ADR marcando `Substituída por`. | `docs/adr/` |
+| **ME2** | Diagrama ER (mermaid) do modelo de dados. | **documentado** | Diagrama `erDiagram` (mermaid) na doc 04, após o esboço de tabelas: entity + as 3 camadas do resolver (`media_file`/`media_external`/`media_override`) + `credit`/`person`/`asset`/`entity_relation`/`library_source`. `company` sem aresta rígida (join deixado ao briefing de schema). | `04` |
+| **ME3** | Criar `LICENSE` e `CONTRIBUTING.md` (inclinação MIT/Apache-2.0). | **documentado** | **MIT.** `LICENSE` (MIT, © 2026 Rafael Vieiras e contribuidores) + `CONTRIBUTING.md` na raiz (princípios, fluxo decisão→ADR→spec, commits em pt-BR, segredos nunca no código). | raiz |
+| **ME4** | Glossário: termos de precedência do resolver e "posse" vs "status". | **documentado** | Doc 02 atualizada: `status` corrigido (intenção, sem `owned`), **Posse** adicionada (fato derivado), + termos Precedência do resolver, Override universal, Merge por operações, Proveniência, `missing`, Órfã, Purga, `external_ids`/`media_external`. | `02` |
 
 ---
 
@@ -60,6 +60,16 @@ Estas são as decisões que fecham a spec dele.
 
 <!-- Conforme cada item fecha, mover o resumo da decisão para cá com data. -->
 
+- **ME1–ME4 — Arrumação de base da documentação** (2026-07-08). Fecha o backlog de
+  fundação. **ME1:** adotados **ADRs em formato leve** — `docs/adr/` com README
+  (índice + prática), `template.md` e **13 ADRs** migrados das decisões já fechadas
+  (R1–R7 = ADR-0001…0007; MD1–MD6 = ADR-0008…0013); ADR é imutável e uma decisão que
+  supere outra vira novo ADR. **ME2:** **diagrama ER** (mermaid) na doc 04, com as
+  três camadas do resolver penduradas da `entity`. **ME3:** licença **MIT** —
+  `LICENSE` + `CONTRIBUTING.md` na raiz (fluxo decisão→ADR→spec, pt-BR, segredos via
+  env). **ME4:** **glossário** (doc 02) atualizado — `status` corrigido (intenção,
+  sem `owned`), **Posse** como fato derivado e os termos de precedência do resolver.
+  Com isto, toda a fundação (R1–R7, MD1–MD6, ME1–ME4) está fechada e documentada.
 - **MD3 — Concorrência SQLite: WAL + escritor único + escritas curtas** (2026-07-08).
   Resolve "API sempre no ar × scan escrevendo pesado" contra o limite de um escritor
   do SQLite. Receita em três camadas: **(1)** abrir em **WAL** com `busy_timeout=5000`,

@@ -273,6 +273,95 @@ library_source    (id, path, type, last_scan)
 -- fase posterior: user, token, permission, plugin_registry
 ```
 
+### Diagrama ER
+
+Visão de relacionamentos (nomes/colunas ainda a fechar no briefing de schema). As
+**três camadas do resolver** penduram da `entity`: `media_file` (arquivo),
+`media_external` (externo) e `media_override` (override).
+
+```mermaid
+erDiagram
+    entity {
+        text id PK
+        text type
+        text title
+        text status
+        json external_ids_json
+        json extension_data_json
+    }
+    media_file {
+        text id PK
+        text entity_id FK
+        text path
+        text content_hash
+        text edition
+        int  part_no
+        real match_confidence
+        json mediainfo_json
+    }
+    media_external {
+        text id PK
+        text entity_id FK
+        text source
+        text source_id
+        json payload_json
+    }
+    media_override {
+        text entity_id PK
+        json override_json
+    }
+    entity_relation {
+        text id PK
+        text parent_id FK
+        text child_id FK
+        text kind
+    }
+    person {
+        text id PK
+        text name
+        json external_ids_json
+    }
+    credit {
+        text id PK
+        text entity_id FK
+        text person_id FK
+        text role
+        int  ord
+    }
+    company {
+        text id PK
+        text name
+        text kind
+        json external_ids_json
+    }
+    asset {
+        text id PK
+        text entity_id FK
+        text kind
+        text origin
+        text path_or_uri
+    }
+    library_source {
+        text id PK
+        text path
+        text type
+    }
+
+    entity         ||--o{ media_file      : "1:N versões/qualidades"
+    entity         ||--o| media_override  : "1 patch esparso"
+    entity         ||--o{ media_external  : "cache por fonte"
+    entity         ||--o{ asset           : "poster/fanart"
+    entity         ||--o{ credit          : "elenco/equipe"
+    person         ||--o{ credit          : "atua/trabalha"
+    entity         ||--o{ entity_relation : "parent_id"
+    entity         ||--o{ entity_relation : "child_id"
+    library_source ||--o{ media_file      : "varre"
+```
+
+> **`company`** aparece sem aresta rígida porque a ligação `entity`↔`company`
+> (produtora/estúdio) é um join análogo ao `credit`, deixado para o briefing de
+> schema — assim como as tabelas de `user`/`token`/`permission` da fase posterior.
+
 ### Identidade externa: `external_ids` (autoritativo) vs `media_external` (cache)
 
 O mesmo id externo aparece nos dois lugares; a regra de autoridade evita divergência:
