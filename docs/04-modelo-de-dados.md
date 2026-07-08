@@ -141,8 +141,30 @@ externa, com remoções aplicadas e adições ao final; itens duplicados são
 deduplicados na composição.
 
 > **Listas de relações** (elenco, equipe) **não** são campos-lista deste tipo:
-> vivem em tabelas próprias (`person`/`credit`) e o override delas é tratado à
-> parte (ver [00 — agenda, MD6](00-agenda-de-decisoes.md)).
+> vivem em tabelas próprias (`person`/`credit`) e o override delas é tratado na
+> seção seguinte.
+
+### Override de relações (elenco/equipe)
+
+Elenco e equipe são **relações** (`person`/`credit`), não valores simples — mas
+seguem a **mesma filosofia do R3**: merge por operações, com a base externa viva por
+baixo (re-scrape evolui o resto). O override guarda **operações sobre créditos**:
+
+- **add** — inclui um crédito novo (ex.: ator local que o provider não trouxe). A
+  pessoa vira um `person`; se não tem id externo, nasce **local** (`external_ids`
+  vazio — permitido, ver [Identidade externa](#identidade-externa-external_ids-autoritativo-vs-media_external-cache)).
+- **remove** — tira um crédito errado.
+- **edit** — corrige papel/personagem ou `ord` (ordem de billing).
+
+A ordem exibida segue a externa, com as operações aplicadas; dedup por chave.
+
+**Chave do crédito:** `person_id` + **papel/departamento** (cast/crew + job). Isso
+distingue a mesma pessoa em dois papéis (diretor **e** roteirista = dois créditos,
+duas chaves). Quando o provider fornece um `credit_id`, ele serve de **desempate**.
+
+Fisicamente, os `credit` refletem a base externa; as operações do dono vivem no
+`media_override` (R4) e o resolver compõe **crédito a crédito** — igual a qualquer
+outro campo (R5).
 
 ### Composição uniforme (núcleo e extensão)
 

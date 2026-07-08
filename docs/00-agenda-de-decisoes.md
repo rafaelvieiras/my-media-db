@@ -41,7 +41,7 @@ Estas são as decisões que fecham a spec dele.
 | **MD3** | Concorrência no SQLite: API sempre no ar enquanto o scan escreve pesado (single-writer). Estratégia (WAL + escritor único). | aberto | — | `03` |
 | **MD4** | Identidade externa duplicada em `entity.external_ids` e `media_external.(source, source_id)`. Qual é a autoritativa? | **documentado** | **`entity.external_ids` é o mapa de identidade autoritativo** (todos os ids conhecidos, buscados ou não; é onde o match do MD1 grava e o lookup lê). **`media_external` é cache de payload**, `source_id` subordinado (invariante: bate com `external_ids[source]`). **Conflito → identidade vence**: linha divergente é cache obsoleto → re-busca/descarta; o dono corrige a identidade, nunca edita `media_external` à mão. Identidade ≠ valor editorial (media_external segue base do resolver). Mesma lógica p/ `person`/`company`. | `04` |
 | **MD5** | Ciclo de vida / deleção: arquivo some do disco — a entity vira `wanted`? órfã? Comportamento não-destrutivo definido. | **documentado** | **Evento de arquivo mexe só na posse; nunca no `status` nem no trabalho do dono.** Arquivo some (datasource acessível) → `media_file` vira **`missing`** (guarda `last_seen`), entity preservada, posse→não, status **intacto**. **Datasource inteiro offline** (HD desmontado) → nada vira `missing`, datasource sinalizado offline. Arquivo aparece p/ `wanted` → posse=sim, segue `wanted`. **Órfã** = entity auto-criada, arquivo sumiu, **zero investimento do dono** → fila de limpeza, **nunca apagada sozinha**. **Purga** é a única operação destrutiva, sempre explícita. | `04` (+ `06`) |
-| **MD6** | Override de **relações** (elenco/equipe): merge por `person_id`, edição de papel/ordem. Separado do R3 por ser bem mais complexo (tabelas `person`/`credit`). | aberto | — | `04` |
+| **MD6** | Override de **relações** (elenco/equipe): merge por `person_id`, edição de papel/ordem. Separado do R3 por ser bem mais complexo (tabelas `person`/`credit`). | **documentado** | **R3 generalizado para créditos estruturados.** Override guarda **operações** (add/remove/edit de papel/`ord`); base externa (`credit` do payload) segue viva e evolui em re-scrape. **Chave = `person_id` + papel/departamento** (distingue a mesma pessoa em 2 papéis), com `credit_id` do provider como desempate. Pessoa adicionada pelo dono vira `person` **local** (`external_ids` vazio, ok por MD4). Resolver compõe crédito a crédito (R5); ops vivem no `media_override` (R4). | `04` |
 
 ---
 
@@ -60,6 +60,15 @@ Estas são as decisões que fecham a spec dele.
 
 <!-- Conforme cada item fecha, mover o resumo da decisão para cá com data. -->
 
+- **MD6 — Override de relações (elenco/equipe) por merge de operações** (2026-07-08).
+  Fecha o que o R3 adiou: elenco/equipe seguem a mesma filosofia (merge de operações,
+  base externa viva por baixo), mas sobre **créditos estruturados**. O override guarda
+  **add/remove/edit** (papel, personagem, `ord` de billing); a **chave do crédito** é
+  `person_id` + papel/departamento (a mesma pessoa em dois papéis = dois créditos),
+  com o `credit_id` do provider como desempate. Pessoa adicionada pelo dono vira um
+  `person` **local** sem id externo (coerente com MD4). O resolver compõe crédito a
+  crédito (R5) e as operações vivem no `media_override` (R4). Promovido à doc 04
+  (Override de relações).
 - **MD5 — Ciclo de vida não-destrutivo; evento de arquivo só mexe a posse**
   (2026-07-08). Fecha a pergunta "arquivo some → vira wanted?": **não** — eventos de
   filesystem mexem apenas no eixo derivado da posse (MD2), nunca no `status`
