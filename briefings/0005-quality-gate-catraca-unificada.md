@@ -8,7 +8,7 @@
 | **ID** | 0005 |
 | **Tipo** | chore |
 | **Fase (roadmap)** | Fase 1 — Esqueleto do container único (infra transversal) |
-| **Status** | draft |
+| **Status** | ready |
 | **Docs relacionadas** | [ADR-0016](../docs/adr/0016-quality-gate-catraca-unificada.md), [ADR-0014](../docs/adr/0014-stack-de-implementacao.md), [CONTRIBUTING](../CONTRIBUTING.md) |
 | **Depende de** | [0001](0001-backend-esqueleto-servidor.md), [0002](0002-frontend-scaffold-integracao-api.md) (para haver código a medir) |
 
@@ -47,8 +47,10 @@ A "jornada" é do **dev/mantenedor**:
   `baseline.json` (ver Contrato).
 - **Coletores Go**: golangci-lint, `go test -coverprofile`, govulncheck, gofmt-check,
   gocyclo (complexidade, não-bloqueante).
-- **lefthook** para os hooks locais (`pre-push` roda o gate; `commit-msg` valida
-  Conventional Commits — o projeto usa commits em pt-BR com prefixo convencional).
+- **lefthook** para os hooks locais: `pre-commit` **auto-formata** (gofmt/prettier),
+  `pre-push` roda o gate, `commit-msg` valida Conventional Commits (commits em pt-BR
+  com prefixo convencional).
+- **Comando de formatação** explícito (`make fmt` / `npm run format`) para rodar à mão.
 - **Workflow de PR** (GitHub Actions) rodando o gate unificado + comentário no PR.
 - `baseline.json` inicial commitado, tirado sobre o scaffold (0001+0002).
 - Config das ferramentas: `.golangci.yml`, ajuste do `eslint.config` se preciso.
@@ -72,11 +74,15 @@ desambiguar), por exemplo:
 | `web_eslint_errors` | ESLint json | Aviso |
 | `web_duplicate_percent` | jscpd | Sim (aumento) |
 | `web_audit_critical` | npm audit | Zero-tolerância |
-| `go_coverage_lines` | `go test -coverprofile` → `go tool cover` | Sim (queda) |
-| `go_lint_issues` | golangci-lint (`--out-format json`) | Aviso (ou bloqueia — decidir) |
+| `go_coverage_lines` | `go test -coverprofile` → `go tool cover` | **Catraca pura** (queda bloqueia; sem piso absoluto no início) |
+| `go_lint_issues` | golangci-lint (`--out-format json`) | **Aviso** (catraca incremental; endurece depois) |
 | `go_vuln_high` | govulncheck | Zero-tolerância p/ críticas |
-| `go_gofmt_unformatted` | `gofmt -l` (contagem) | Sim (deve ser 0) |
+| `go_gofmt_unformatted` | `gofmt -l` (contagem) | **Sim, bloqueia** (deve ser 0) |
 | `go_cyclo_violations` | gocyclo | Aviso |
+
+> **Cobertura = catraca pura** (Go e TS): o baseline parte de onde o scaffold estiver e
+> só pode subir; **nenhum piso absoluto** definido agora (chutá-lo com o projeto vazio
+> travaria o começo) — adicionar piso é follow-up quando a base amadurecer.
 
 ### Coleta Go (feeds do gate)
 - `go test ./... -coverprofile=reports/go-coverage.out` → converter para % de linhas.
@@ -87,9 +93,20 @@ desambiguar), por exemplo:
 - O `quality-gate.mjs` estendido lê esses arquivos e mescla com as métricas JS.
 
 ### lefthook
-- `lefthook.yml`: `pre-push` → `npm run quality:gate:local` (ou script equivalente que
-  rode as duas metades); `commit-msg` → validação de Conventional Commits.
+- `lefthook.yml` com três ganchos:
+  - **`pre-commit` (auto-formatação, rápido):** `gofmt -w`/`gofumpt -w` nos `.go`
+    staged + `prettier --write` nos arquivos do `/web` staged, com **`stage_fixed: true`**
+    (re-adiciona os arquivos corrigidos). Resolve a formatação **automaticamente** —
+    ver §6, decisão do fluxo LLM.
+  - **`pre-push` (gate, pesado):** roda o gate unificado em modo local
+    (`--local`) — lint, cobertura, duplicação, gofmt-check dos dois lados; aborta o
+    push em regressão bloqueante.
+  - **`commit-msg`:** validação de Conventional Commits (mensagens em pt-BR com prefixo
+    convencional, ver [CONTRIBUTING](../CONTRIBUTING.md)).
 - Instalação via `lefthook install` documentada no CONTRIBUTING.
+- **Nota de ambiente:** o `pre-push` exige as ferramentas Go instaladas localmente
+  (`golangci-lint`, `govulncheck`, `gocyclo`); documentar no CONTRIBUTING. O `pre-commit`
+  só precisa de `gofmt` (vem com o Go) e `prettier` (já no `/web`).
 
 ### CI (GitHub Actions)
 - Job que: instala Node + Go, roda as ferramentas dos dois lados gerando os `reports/`,
@@ -109,6 +126,9 @@ desambiguar), por exemplo:
 - [ ] `git push` com regressão bloqueante (ex.: cobertura Go caindo) é **abortado** pelo `pre-push`.
 - [ ] O workflow de PR **falha** em regressão bloqueante e **comenta** a tabela de métricas.
 - [ ] `commit-msg` rejeita mensagem fora do padrão Conventional Commits.
+- [ ] `pre-commit` **auto-formata** arquivos staged (gofmt/prettier) e os re-adiciona,
+      sem depender de editor; um commit de código desformatado sai formatado.
+- [ ] `gofmt -l` no gate retorna 0 (formatação bloqueante como rede de segurança).
 - [ ] `quality:baseline` regenera e avança o `baseline.json` (Go + TS).
 - [ ] O gate **não** entra na imagem de produção ([0003](0003-empacotamento-dockerfile-multistage.md)).
 
@@ -118,9 +138,21 @@ desambiguar), por exemplo:
   catraca **unificada**, runner **Node partindo do boatman**, hooks com **lefthook**.
 - O script gerado pelo boatman é **standalone e "seu"** (não importa nada do boatman em
   runtime), então estendê-lo com coletores Go é o caminho previsto — não um hack.
-- **Bloqueante vs. aviso** para `go_lint_issues`: começar como **aviso** (catraca
-  incremental, à la complexidade do boatman) e endurecer depois, para não travar o
-  scaffold. Decidir o limiar na implementação.
+- **`go_lint_issues` = aviso no começo** (decisão de sessão, 2026-07-08): catraca
+  incremental (à la complexidade do boatman) que **avisa** quando aumenta sem travar,
+  para não brigar com o linter no scaffold; **endurece para bloqueante depois**, quando
+  a dívida estiver zerada.
+- **Formatação bloqueante + auto-fix no `pre-commit`** (decisão de sessão, 2026-07-08).
+  Contexto: o código é **~95% gerado por LLM** e **não passa por um editor** com
+  format-on-save, então não se pode depender do editor. Solução em camadas: (1) o
+  `pre-commit` do lefthook roda `gofmt -w`/`prettier --write` e re-adiciona os arquivos
+  (`stage_fixed`), formatando **automaticamente**; (2) o gate mantém `gofmt -l == 0`
+  como métrica **bloqueante**, de rede de segurança caso o hook seja pulado; (3) há
+  comando explícito (`make fmt` / `npm run format`) para rodar à mão. Assim a
+  formatação é rígida **sem** atrito para o fluxo com LLM.
+- **Cobertura = catraca pura** (decisão de sessão, 2026-07-08): sem piso absoluto no
+  início — só proibir queda a partir do baseline do scaffold. Piso absoluto vira
+  follow-up quando a base de testes amadurecer.
 - Baseline inicial tirado sobre o scaffold: cobertura provavelmente baixa no começo — a
   catraca garante que só suba dali pra frente.
 
@@ -129,4 +161,6 @@ desambiguar), por exemplo:
 - **Opção C** do ADR-0016: promover os coletores Go para o **boatman upstream**,
   tornando-o poliglota (beneficia a comunidade e outros projetos).
 - **Mutation testing** nos dois lados quando a base de testes amadurecer.
+- **Piso absoluto de cobertura** (além da catraca) quando a base de testes amadurecer.
+- **Endurecer `go_lint_issues` para bloqueante** quando a dívida de lint estiver zerada.
 - Gate de **bundle-size** do frontend e de **tamanho da imagem** Docker (Fase 2+).
