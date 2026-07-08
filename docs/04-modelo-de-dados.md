@@ -203,7 +203,30 @@ Regras:
 > cada vertical nova, e é o alicerce sobre o qual os plugins futuros se apoiam —
 > sem pagar o custo do maquinário de plugins agora.
 
-## Persistência (SQLite)
+## Ciclo de vida e deleção
+
+O princípio **não-destrutivo** governa o que acontece quando um arquivo some. Regra
+central: **eventos de arquivo mexem só na posse (derivada); nunca no `status`
+(intenção) nem no trabalho do dono.**
+
+- **Arquivo some.** O `media_file` vira `missing` no scan (ver
+  [06](06-biblioteca-e-scan.md)); a **entity é preservada**. Como posse deriva de
+  haver `media_file` **presente**, ela passa a *não* — mas o `status` fica
+  **intacto** (um `cataloged` sem arquivo segue `cataloged`; o dono decide se agora
+  "quer" de volta).
+- **Arquivo aparece** para um item `wanted` → posse=sim e o `status` **segue**
+  `wanted` (preserva o "tenho cópia, quero upgrade"). O sistema nunca reescreve
+  intenção.
+- **Datasource offline** (HD desmontado) não marca nada como `missing` — o disco
+  ausente não é deleção (ver [06](06-biblioteca-e-scan.md)).
+- **Órfãs.** Uma entity **auto-criada** cujo arquivo sumiu e que **não tem nenhum
+  investimento do dono** — sem `media_override`, sem asset custom, sem coleção
+  manual, `status` ainda no default `cataloged` — é marcada **órfã** e vai para uma
+  fila de limpeza. **Nunca é apagada sozinha.**
+- **Purga** é a única operação destrutiva, e é sempre **explícita** do dono
+  (individual ou em lote): remove a entity e seus derivados (`media_external`,
+  `media_override`, assets). Um `media_file` de arquivo que **ainda existe** no disco
+  jamais é purgado pelo sistema.
 
 Esboço de tabelas (nomes/colunas a fechar no briefing de schema):
 

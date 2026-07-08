@@ -82,6 +82,23 @@ schema nem no resolver**:
 - **Videoclipe** → provider **IMVDB** (ex.: namespace `core.musicvideo@1`).
 - **Quadrinhos** → `ComicInfo.xml` / ecossistema Komga-Kavita.
 
+## Ciclo de vida do arquivo: `missing` e datasource offline
+
+O scan é **não-destrutivo também na ausência**: sumiço nunca apaga registro.
+
+- **Arquivo não encontrado, datasource acessível** → o `media_file` passa a
+  **`missing`** (guarda `last_seen`), **não** é removido. Se reaparecer (mesmo
+  `content_hash`), volta a `present`.
+- **Datasource inteiro inacessível** (HD desmontado, share offline) → **nada** é
+  marcado `missing`; o datasource é sinalizado **offline** e seu scan é suspenso.
+  Evita um desmonte virar "sumiço" de milhares de itens.
+- **Apagar de vez** (`purge`) é sempre **ação explícita** do dono — nunca efeito
+  colateral do scan.
+
+Consequência no modelo: um `media_file` `missing` **não conta para a posse**; a
+entity segue viva e seu `status` fica intacto (ver
+[04 — Ciclo de vida e deleção](04-modelo-de-dados.md)).
+
 ## Referência reaproveitável (v1)
 
 Preservado em scratchpad da sessão de planejamento — reescrever em Go, não portar:

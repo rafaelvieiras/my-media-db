@@ -40,7 +40,7 @@ Estas são as decisões que fecham a spec dele.
 | **MD2** | `status` (intenção do dono) vs posse (existe `media_file`?) estão conflados na doc 04. Separar em eixos ortogonais. | **documentado** | **Dois eixos ortogonais.** **Posse = fato derivado** (existe `media_file`?), não editável, não mente. **`status` = intenção do dono**, um estado por vez: `cataloged` (default), `wanted`, `unreleased`, `draft`. Removido o `owned` (era posse disfarçada). Combinam livre (ex.: `wanted`+posse=sim = quero upgrade tendo cópia). Transições entre estados → MD5. | `04` |
 | **MD3** | Concorrência no SQLite: API sempre no ar enquanto o scan escreve pesado (single-writer). Estratégia (WAL + escritor único). | aberto | — | `03` |
 | **MD4** | Identidade externa duplicada em `entity.external_ids` e `media_external.(source, source_id)`. Qual é a autoritativa? | **documentado** | **`entity.external_ids` é o mapa de identidade autoritativo** (todos os ids conhecidos, buscados ou não; é onde o match do MD1 grava e o lookup lê). **`media_external` é cache de payload**, `source_id` subordinado (invariante: bate com `external_ids[source]`). **Conflito → identidade vence**: linha divergente é cache obsoleto → re-busca/descarta; o dono corrige a identidade, nunca edita `media_external` à mão. Identidade ≠ valor editorial (media_external segue base do resolver). Mesma lógica p/ `person`/`company`. | `04` |
-| **MD5** | Ciclo de vida / deleção: arquivo some do disco — a entity vira `wanted`? órfã? Comportamento não-destrutivo definido. | aberto | — | `04` |
+| **MD5** | Ciclo de vida / deleção: arquivo some do disco — a entity vira `wanted`? órfã? Comportamento não-destrutivo definido. | **documentado** | **Evento de arquivo mexe só na posse; nunca no `status` nem no trabalho do dono.** Arquivo some (datasource acessível) → `media_file` vira **`missing`** (guarda `last_seen`), entity preservada, posse→não, status **intacto**. **Datasource inteiro offline** (HD desmontado) → nada vira `missing`, datasource sinalizado offline. Arquivo aparece p/ `wanted` → posse=sim, segue `wanted`. **Órfã** = entity auto-criada, arquivo sumiu, **zero investimento do dono** → fila de limpeza, **nunca apagada sozinha**. **Purga** é a única operação destrutiva, sempre explícita. | `04` (+ `06`) |
 | **MD6** | Override de **relações** (elenco/equipe): merge por `person_id`, edição de papel/ordem. Separado do R3 por ser bem mais complexo (tabelas `person`/`credit`). | aberto | — | `04` |
 
 ---
@@ -60,6 +60,17 @@ Estas são as decisões que fecham a spec dele.
 
 <!-- Conforme cada item fecha, mover o resumo da decisão para cá com data. -->
 
+- **MD5 — Ciclo de vida não-destrutivo; evento de arquivo só mexe a posse**
+  (2026-07-08). Fecha a pergunta "arquivo some → vira wanted?": **não** — eventos de
+  filesystem mexem apenas no eixo derivado da posse (MD2), nunca no `status`
+  (intenção) nem no trabalho do dono. Arquivo sumido com datasource acessível vira
+  `media_file` **`missing`** (soft, com `last_seen`), reversível se reaparecer;
+  **datasource inteiro inacessível** não marca nada (evita falso sumiço em massa,
+  sinaliza o datasource offline). Entity **auto-criada sem nenhum investimento do
+  dono** cujo arquivo sumiu vira **órfã** numa fila de limpeza, nunca apagada
+  automaticamente. **Purga** é a única operação destrutiva e é sempre explícita
+  (remove entity + `media_external`/`media_override`/assets). Promovido à doc 04
+  (Ciclo de vida e deleção) e doc 06 (missing/offline).
 - **MD2 — Posse e `status` viram dois eixos ortogonais** (2026-07-07). Um campo só
   conflava "tenho o arquivo" (fato) com "o que pretendo" (intenção). Separado:
   **posse é derivada** da existência de `media_file` (não é campo editável, não
