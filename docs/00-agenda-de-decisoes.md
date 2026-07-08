@@ -36,10 +36,10 @@ Estas são as decisões que fecham a spec dele.
 
 | ID | Questão | Status | Decisão | Destino |
 |---|---|---|---|---|
-| **MD1** | Identidade e matching: como um arquivo vira/associa a uma `Entity` e a um id externo? Um filme com múltiplos arquivos (edições/qualidades) — relação 1:N normativa. | aberto | — | `06` / `04` |
+| **MD1** | Identidade e matching: como um arquivo vira/associa a uma `Entity` e a um id externo? Um filme com múltiplos arquivos (edições/qualidades) — relação 1:N normativa. | **documentado** | Adota a **convenção Kodi/Jellyfin** (padrão de-facto): **1:N plano** (1 obra = 1 `Entity`; qualidades/edições/partes = `media_file`), **edição = rótulo no arquivo**, **id externo embutido no nome = chave determinística**, *stacking* de partes. Match carrega **score de confiança**: alta casa sozinho, baixa **casa mesmo assim + alerta de revisão** (*"mapeado com 60% de certeza. Remover?"*), zero resultados vira `draft` não-identificado; correção do dono é autoritativa (override). Verticais fora do padrão (videoclipe→IMVDB, quadrinhos→ComicInfo) trazem identidade própria via `extension_data`, sem tocar no núcleo. | `06` (+ `04`) |
 | **MD2** | `status` (intenção do dono) vs posse (existe `media_file`?) estão conflados na doc 04. Separar em eixos ortogonais. | aberto | — | `04` |
 | **MD3** | Concorrência no SQLite: API sempre no ar enquanto o scan escreve pesado (single-writer). Estratégia (WAL + escritor único). | aberto | — | `03` |
-| **MD4** | Identidade externa duplicada em `entity.external_ids` e `media_external.(source, source_id)`. Qual é a autoritativa? | aberto | — | `04` |
+| **MD4** | Identidade externa duplicada em `entity.external_ids` e `media_external.(source, source_id)`. Qual é a autoritativa? | **documentado** | **`entity.external_ids` é o mapa de identidade autoritativo** (todos os ids conhecidos, buscados ou não; é onde o match do MD1 grava e o lookup lê). **`media_external` é cache de payload**, `source_id` subordinado (invariante: bate com `external_ids[source]`). **Conflito → identidade vence**: linha divergente é cache obsoleto → re-busca/descarta; o dono corrige a identidade, nunca edita `media_external` à mão. Identidade ≠ valor editorial (media_external segue base do resolver). Mesma lógica p/ `person`/`company`. | `04` |
 | **MD5** | Ciclo de vida / deleção: arquivo some do disco — a entity vira `wanted`? órfã? Comportamento não-destrutivo definido. | aberto | — | `04` |
 | **MD6** | Override de **relações** (elenco/equipe): merge por `person_id`, edição de papel/ordem. Separado do R3 por ser bem mais complexo (tabelas `person`/`credit`). | aberto | — | `04` |
 
@@ -60,6 +60,30 @@ Estas são as decisões que fecham a spec dele.
 
 <!-- Conforme cada item fecha, mover o resumo da decisão para cá com data. -->
 
+- **MD4 — `external_ids` é a identidade autoritativa; `media_external` é cache**
+  (2026-07-07). O id externo mora em dois lugares, então elege-se a autoridade:
+  `entity.external_ids` é o **mapa de identidade** (todos os ids conhecidos, buscados
+  ou não — é onde o match determinístico do MD1 grava e por onde o lookup busca).
+  `media_external` é **cache do payload** por fonte buscada; seu `source_id` é
+  subordinado, com o invariante `media_external.source_id == external_ids[source]`.
+  Em conflito, a **identidade vence**: a linha de cache divergente é obsoleta
+  (re-busca/descarta); o dono corrige a identidade e nunca edita o cache à mão.
+  Identidade e valor editorial são eixos distintos — `media_external` permanece a
+  camada base do resolver. Vale igual para `person`/`company`. Promovido à doc 04
+  (seção "Identidade externa").
+- **MD1 — Identidade e matching pela convenção Kodi/Jellyfin** (2026-07-07). Em vez
+  de inventar regra própria, adota-se o padrão de-facto do ecossistema (Kodi/Jellyfin;
+  Emby/Plex/\*arr na mesma família). Consequências: **grão 1:N plano** (1 obra = 1
+  `Entity`, com N `media_file` para qualidades/edições/partes); **edição vira rótulo**
+  no `media_file` (não duplica a obra); **partes** são empilhadas (*stacking*); a
+  **chave de match** é o **id externo embutido no nome** (`[tmdbid-…]`/`{tmdb-…}`) →
+  match determinístico, e sem id cai para título+ano. Todo match tem **score de
+  confiança**: alta casa sem alerta; baixa casa com o melhor palpite **+ alerta de
+  revisão** que o dono confirma/corrige; zero resultados → `draft` não-identificado.
+  Música usa o mesmo princípio via MusicBrainz+tags. Verticais não cobertas
+  (videoclipe→IMVDB, quadrinhos→ComicInfo) trazem identidade e provider próprios por
+  `extension_data`, sem tocar no núcleo — validando R1/R5. Promovido para a doc 06
+  (seção "Identidade e matching") e refletido no `media_file` da doc 04.
 - **R1 — Espaço de campos particionado por origem** (2026-07-06). O resolver é um
   motor genérico que compõe camadas guiado por metadado por campo, não por uma
   tabela fixa no código. Origem declarada no schema (núcleo) ou no JSON Schema do

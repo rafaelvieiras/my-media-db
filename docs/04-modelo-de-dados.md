@@ -35,7 +35,7 @@ Campos do núcleo (comuns a qualquer mídia):
 | `release_date` | date? | ISO `YYYY-MM-DD` |
 | `status` | text | Estado no catálogo — ver abaixo |
 | `tags` | json[] | Lista livre |
-| `external_ids` | json | `{ "tmdb": "123", "imdb": "tt..." , … }` |
+| `external_ids` | json | `{ "tmdb": "123", "imdb": "tt..." , … }` — **mapa de identidade autoritativo** (ver [Identidade externa](#identidade-externa-external_ids-autoritativo-vs-media_external-cache)) |
 | `extension_data` | json | Dados por vertical, *namespaced* — ver abaixo |
 | `created_at` / `updated_at` | timestamp | |
 
@@ -196,8 +196,12 @@ entity            (id, type, title, original_title, description,
 
 entity_relation   (id, parent_id, child_id, kind)      -- série↔temporada↔episódio, coleção↔filme
 media_external    (id, entity_id, source, source_id, payload_json, fetched_at)
+                   -- cache de payload; source_id subordinado ao external_ids (ver Identidade externa)
 media_override    (entity_id, override_json, updated_at)   -- patch esparso (1 linha/entity), espelha a entity
-media_file        (id, entity_id, path, content_hash, mediainfo_json, size, mtime)
+media_file        (id, entity_id, path, content_hash, edition, part_no,
+                   match_confidence, mediainfo_json, size, mtime)
+                   -- 1:N com entity (versões/qualidades/edições); edition=rótulo,
+                   -- part_no p/ stacking (cd1/cd2); ver 06 — Identidade e matching
 person            (id, name, external_ids_json)
 credit            (id, entity_id, person_id, role, ord)
 company           (id, name, kind, external_ids_json)
@@ -205,6 +209,27 @@ asset             (id, entity_id, kind, origin, path_or_uri, meta_json)  -- post
 library_source    (id, path, type, last_scan)
 -- fase posterior: user, token, permission, plugin_registry
 ```
+
+### Identidade externa: `external_ids` (autoritativo) vs `media_external` (cache)
+
+O mesmo id externo aparece nos dois lugares; a regra de autoridade evita divergência:
+
+- **`entity.external_ids` é o mapa de identidade autoritativo.** Guarda **todos os
+  ids conhecidos** da entidade (buscados ou não) — inclusive um `imdb` lido do nome
+  do arquivo (ver [06 — matching](06-biblioteca-e-scan.md)) mesmo sem a ficha do
+  IMDb ter sido baixada. É o que o **matching grava** e o que o **lookup lê** (coluna
+  gerada + índice; ver Estratégia de busca).
+- **`media_external` é cache de payload** — uma linha por fonte efetivamente buscada.
+  Seu `source_id` é **subordinado**: para uma fonte presente em `external_ids`, vale
+  o invariante `media_external.source_id == external_ids[source]`.
+- **Conflito → a identidade vence.** Uma linha de `media_external` cujo `source_id`
+  não bate com `external_ids` é **cache obsoleto**: re-busca sob o id correto e
+  descarta a antiga. O dono corrige **a identidade** (via correção de match) e
+  **nunca edita `media_external` à mão** — o cache o segue.
+- **Identidade ≠ valor editorial.** `external_ids` diz *qual* registro externo é a
+  entidade; `media_external` continua sendo a *camada base editorial* do resolver
+  (título, sinopse…). São eixos distintos. A mesma lógica de identidade vale para
+  `person`/`company` (têm `external_ids`, sem cache dedicado).
 
 ### Estratégia de busca (sem GIN)
 
