@@ -31,3 +31,5 @@ achatada de "decisões abertas" por um registro rastreável, um arquivo por deci
 | [0011](0011-external-ids-autoritativo-media-external-cache.md) | `external_ids` autoritativo, `media_external` cache | MD4 | Aceita |
 | [0012](0012-ciclo-de-vida-nao-destrutivo.md) | Ciclo de vida não-destrutivo | MD5 | Aceita |
 | [0013](0013-override-de-relacoes-por-operacoes.md) | Override de relações (elenco/equipe) por operações | MD6 | Aceita |
+| [0014](0014-stack-de-implementacao.md) | Stack de implementação (chi, modernc, sqlc, ffprobe, OpenAPI) | doc 11 (1–5) | Aceita |
+| [0015](0015-api-tmdb-passthrough.md) | `/api/tmdb`: passthrough com cache, nunca 404 | doc 11 (6) | Aceita |

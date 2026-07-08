@@ -45,8 +45,9 @@ cliente dele — inclusive podendo apontar para uma instância remota.
 | Banco | **SQLite** | Local-first, zero-config, um arquivo. Volume de requests **não é gargalo** para o uso self-hosted (decisão revista — ver [11](11-decisoes-abertas.md)). Concorrência: **WAL + escritor único** (ver abaixo). |
 | Empacotamento | **Um container** | `//go:embed` do `dist/` do Vite; o Go serve tudo. |
 
-Escolhas de biblioteca (router Go, driver SQLite, camada de query) ficam em
-[11 — Decisões abertas](11-decisoes-abertas.md).
+As escolhas de biblioteca do backend — router **chi**, driver
+**`modernc.org/sqlite`** (CGO-free), dados via **sqlc**, mediainfo via **ffprobe** —
+estão fechadas em [ADR-0014](adr/0014-stack-de-implementacao.md).
 
 ## Concorrência e persistência (SQLite)
 

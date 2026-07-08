@@ -60,6 +60,18 @@ Estas são as decisões que fecham a spec dele.
 
 <!-- Conforme cada item fecha, mover o resumo da decisão para cá com data. -->
 
+- **Doc 11 — Stack de implementação e passthrough do `/api/tmdb`** (2026-07-08).
+  Fecha as decisões maduras da doc 11. **Stack (ADR-0014):** ratificadas as
+  inclinações — router **chi**, driver **`modernc.org/sqlite`** (CGO-free), dados
+  via **sqlc**, mediainfo via **ffprobe**, contrato de tipos via **OpenAPI gerado**;
+  tudo coerente com "binário único, CGO-free, cross-compile trivial". **`/api/tmdb`
+  (ADR-0015):** o dono refinou o default — **passthrough + cache, nunca 404 por
+  indisponibilidade**; um *miss* de busca só cacheia, um *miss* de detalhe pode
+  virar `draft` em fila de revisão (`promote_draft`) ou ficar em cache oculto com
+  TTL (`hidden_cache`), à escolha; falha da fonte serve cache stale. Promovido à doc
+  05. **Licença MIT** confirmada (já em ME3). Os demais itens da doc 11 (plugins,
+  verticais, auth, layout de assets, scan incremental) foram reclassificados de
+  "abertos" para **adiados por fase** — não são indecisões de fundação.
 - **ME1–ME4 — Arrumação de base da documentação** (2026-07-08). Fecha o backlog de
   fundação. **ME1:** adotados **ADRs em formato leve** — `docs/adr/` com README
   (índice + prática), `template.md` e **13 ADRs** migrados das decisões já fechadas
