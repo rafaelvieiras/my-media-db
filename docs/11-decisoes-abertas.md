@@ -35,14 +35,14 @@ implementados. A base já foi desenhada para acomodá-los.
   install/enable/disable/purge, sandbox de execução, widgets de frontend dinâmicos)
   fica para depois da base estabilizar. Princípios firmes: **plugin nunca altera o
   schema do núcleo** e **código não-confiável roda isolado**.
-- **Autenticação/permissões** *(Fase 3)*: esquema de token e escopos
+- **Autenticação/permissões** *(Fase 4)*: esquema de token e escopos
   (ver [10](10-usuarios-e-permissoes.md)).
-- **Escopo exato das rotas TMDB a espelhar** *(Fase 3)*: movie, tv, search,
+- **Escopo exato das rotas TMDB a espelhar** *(Fase 4)*: movie, tv, search,
   images… (ver [05](05-api.md)).
-- **Layout de assets em disco** *(Fase 2)* e política de cache/derivadas
+- **Layout de assets em disco** *(Fase 3)* e política de cache/derivadas
   (ver [08](08-artwork-e-assets.md)).
 - **Scan: incremental (mtime/hash) vs full; watching de filesystem vs sob demanda**
-  *(Fase 1)*; e o **limiar de confiança** que dispara o alerta de revisão (tuning,
+  *(Fase 2)*; e o **limiar de confiança** que dispara o alerta de revisão (tuning,
   não modelo — ver [06](06-biblioteca-e-scan.md)).
 
 ## Riscos e notas

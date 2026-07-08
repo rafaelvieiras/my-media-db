@@ -1,7 +1,7 @@
 # 05 — API
 
 > **Status desta doc:** stub escopado. Decisões travadas listadas; detalhamento
-> (rotas, payloads, auth) a fechar em briefings da Fase 3.
+> (rotas, payloads, auth) a fechar em briefings da Fase 4.
 
 ## Princípios
 
@@ -59,12 +59,12 @@ TMDB real, cacheia e serve. Comportamento em três regras:
 - `/api/v1/entities/{id}/assets` — artes (upload/servir custom).
 - `/api/v1/search` — busca local-first.
 - `/api/v1/enrich` — disparar enriquecimento on-demand.
-- `/api/v1/users`, `/api/v1/tokens` — multiusuário (Fase 3).
+- `/api/v1/users`, `/api/v1/tokens` — multiusuário (Fase 4).
 
 ## Decisões abertas (ver [11](11-decisoes-abertas.md))
 
 - Escopo exato das rotas TMDB a espelhar (movie, tv, search, images…).
-- Cabeçalho de auth / esquema de token (Fase 3; ver [10](10-usuarios-e-permissoes.md)).
+- Cabeçalho de auth / esquema de token (Fase 4; ver [10](10-usuarios-e-permissoes.md)).
 
 > **Fechadas:** contrato **OpenAPI gerado** e política de `/api/tmdb`
 > (**passthrough + cache, nunca 404**) — ver acima e ADR-0014/0015.

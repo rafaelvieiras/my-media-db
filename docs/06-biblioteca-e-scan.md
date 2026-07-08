@@ -1,7 +1,7 @@
 # 06 — Biblioteca e scan
 
 > **Status desta doc:** stub escopado. Decisões travadas listadas; detalhamento
-> em briefings da Fase 1.
+> em briefings da Fase 2.
 
 ## Princípios
 

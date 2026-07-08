@@ -6,7 +6,7 @@
 |---|---|
 | **ID** | NNNN |
 | **Tipo** | feature \| fix \| chore \| spike |
-| **Fase (roadmap)** | ex.: Fase 1 — UI de biblioteca |
+| **Fase (roadmap)** | ex.: Fase 1 — Esqueleto do container único |
 | **Status** | draft \| ready \| in-progress \| done \| blocked \| dropped |
 | **Docs relacionadas** | ex.: [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [06-biblioteca-e-scan](../docs/06-biblioteca-e-scan.md) |
 | **Depende de** | ID(s) de outro(s) briefing(s), ou — |

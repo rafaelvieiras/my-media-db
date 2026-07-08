@@ -1,6 +1,6 @@
 # 09 — NFO e export
 
-> **Status desta doc:** stub escopado. Detalhamento em briefings da Fase 3.
+> **Status desta doc:** stub escopado. Detalhamento em briefings da Fase 4.
 
 ## Princípios
 

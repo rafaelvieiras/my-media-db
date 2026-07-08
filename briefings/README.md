@@ -60,4 +60,4 @@ Cada briefing carrega um `status` no cabeçalho:
 
 <!-- Atualizar conforme briefings forem criados -->
 
-_Nenhum briefing ainda. O primeiro sairá da Fase 0 do [roadmap](../docs/12-roadmap.md)._
+_Nenhum briefing ainda. O primeiro sairá da Fase 1 (scaffold) do [roadmap](../docs/12-roadmap.md)._

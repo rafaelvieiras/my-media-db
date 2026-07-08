@@ -21,5 +21,5 @@ API** por ora.
 ## Consequências
 
 - Semântica de deleção sem coluna extra; a UI consulta o override em separado.
-- Expor proveniência fica como evolução (Fase 3).
+- Expor proveniência fica como evolução (Fase 4).
 - Depende do blob esparso ([ADR-0004](0004-override-como-blob-json-esparso.md)).

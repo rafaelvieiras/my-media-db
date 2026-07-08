@@ -9,7 +9,16 @@ O modelo e a arquitetura já nascem preparados para a **visão universal**
 
 ---
 
-## Fase 0 — Esqueleto do container único
+## Fase 0 — Documentação de fundação ✅ concluída
+
+Objetivo: fechar modelo, arquitetura e decisões de fundação **antes** de codar.
+
+- **R1–R7** (resolver), **MD1–MD6** (modelo de dados) e **ME1–ME4** (base da doc),
+  registrados na [agenda](00-agenda-de-decisoes.md) e nos [ADRs](adr/).
+- Stack de implementação e passthrough do `/api/tmdb` ratificados
+  ([ADR-0014](adr/0014-stack-de-implementacao.md)/[ADR-0015](adr/0015-api-tmdb-passthrough.md)).
+
+## Fase 1 — Esqueleto do container único
 
 Objetivo: um binário que sobe, serve um SPA vazio e responde `/api/v1/health`.
 
@@ -18,7 +27,7 @@ Objetivo: um binário que sobe, serve um SPA vazio e responde `/api/v1/health`.
 - Flag **`VITE_API_BASE`** funcionando (dev: Vite 5173 + API 8080; prod: mesmo origin).
 - **Dockerfile multi-stage** (build Vite → build Go → imagem final enxuta).
 
-## Fase 1 — UI de biblioteca (validar o rumo)
+## Fase 2 — UI de biblioteca (validar o rumo)
 
 Objetivo: apontar pastas, escanear, ver a mídia detectada com seus fatos técnicos.
 
@@ -27,7 +36,7 @@ Objetivo: apontar pastas, escanear, ver a mídia detectada com seus fatos técni
 - **Grid de posters**, lista de itens detectados, **tela de detalhe** com mediainfo.
 - Ainda sem enriquecimento externo pesado.
 
-## Fase 2 — Enriquecimento + override
+## Fase 3 — Enriquecimento + override
 
 Objetivo: complementar itens de fontes externas e **dar autoridade ao dono**.
 
@@ -36,7 +45,7 @@ Objetivo: complementar itens de fontes externas e **dar autoridade ao dono**.
 - **Editor de override** (título, campos) + **upload de arte custom**.
 - O **resolver** compondo `override ⟵ externo ⟵ arquivo` em toda leitura.
 
-## Fase 3 — API TMDB-compat + multiusuário
+## Fase 4 — API TMDB-compat + multiusuário
 
 Objetivo: outros apps consomem o catálogo; acesso controlado.
 
@@ -44,7 +53,7 @@ Objetivo: outros apps consomem o catálogo; acesso controlado.
 - **Usuários, tokens, permissões** ([10](10-usuarios-e-permissoes.md)).
 - **Export NFO** opcional ([09](09-nfo-e-export.md)).
 
-## Fase 4+ — Verticais e plugins (visão)
+## Fase 5+ — Verticais e plugins (visão)
 
 Objetivo: cumprir o escopo universal.
 

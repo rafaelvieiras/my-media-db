@@ -5,7 +5,7 @@
 > Um banco para ser **consumido por aplicativos** (Jellyfin, Kodi, Plex, seus
 > scripts), não apenas um app de gestão.
 
-**Status:** `Fase 0 — documentação em draft`.
+**Status:** `Fase 1 — scaffold do container` (Fase 0 — documentação de fundação — concluída).
 **Data:** 2026-07-06.
 **Licença:** [MIT](LICENSE). Como contribuir: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 

@@ -1,6 +1,6 @@
 # 07 — Enriquecimento e providers
 
-> **Status desta doc:** stub escopado. Detalhamento em briefings da Fase 2.
+> **Status desta doc:** stub escopado. Detalhamento em briefings da Fase 3.
 
 ## Princípios
 
