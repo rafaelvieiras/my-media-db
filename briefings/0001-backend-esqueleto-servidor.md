@@ -7,7 +7,7 @@
 | **ID** | 0001 |
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 1 — Esqueleto do container único |
-| **Status** | draft |
+| **Status** | ready |
 | **Docs relacionadas** | [03-arquitetura](../docs/03-arquitetura.md), [ADR-0014](../docs/adr/0014-stack-de-implementacao.md) |
 | **Depende de** | — |
 

@@ -8,7 +8,7 @@
 | **ID** | 0003 |
 | **Tipo** | chore |
 | **Fase (roadmap)** | Fase 1 — Esqueleto do container único |
-| **Status** | draft |
+| **Status** | ready |
 | **Docs relacionadas** | [03-arquitetura](../docs/03-arquitetura.md), [ADR-0014](../docs/adr/0014-stack-de-implementacao.md) |
 | **Depende de** | [0001](0001-backend-esqueleto-servidor.md), [0002](0002-frontend-scaffold-integracao-api.md) |
 
@@ -49,9 +49,9 @@ juntos num container que qualquer um sobe com um `docker run`.
    **`CGO_ENABLED=0`** (binário estático — permitido pelo driver CGO-free do
    [ADR-0014](../docs/adr/0014-stack-de-implementacao.md)); injeta `version` via
    `-ldflags`.
-3. **Final:** base mínima (**`gcr.io/distroless/static`** ou `alpine`), copia só o
-   binário, `USER` não-root, `EXPOSE 8080`, `HEALTHCHECK` batendo em
-   `/api/v1/health`, `ENTRYPOINT` no binário.
+3. **Final:** base **`alpine`**, copia só o binário, `USER` não-root, `EXPOSE 8080`,
+   `HEALTHCHECK` batendo em `/api/v1/health` via o **`wget` do busybox** (já presente no
+   alpine — sem shell script extra nem subcomando no binário), `ENTRYPOINT` no binário.
 
 ### Arquivos afetados
 - Criar `Dockerfile`, `.dockerignore`.
@@ -67,14 +67,22 @@ juntos num container que qualquer um sobe com um `docker run`.
 
 ## 6. Notas de implementação / decisões
 
-- `CGO_ENABLED=0` casa com `modernc.org/sqlite` ([ADR-0014](../docs/adr/0014-stack-de-implementacao.md))
-  e habilita a imagem `distroless/static` (sem libc).
-- `HEALTHCHECK` numa imagem distroless (sem shell/curl) usa o próprio binário com um
-  subcomando `healthcheck`, ou um pequeno probe estático — decidir na implementação.
+- `CGO_ENABLED=0` casa com `modernc.org/sqlite` ([ADR-0014](../docs/adr/0014-stack-de-implementacao.md));
+  o binário é estático e roda no alpine (musl) sem depender de glibc.
+- **Base `alpine` escolhida** (decisão de sessão, 2026-07-08) em vez de
+  `distroless/static`. Motivo: o alpine traz shell e `apk`, o que (a) permite o
+  `HEALTHCHECK` usar o `wget` do busybox sem tocar no binário e (b) facilita adicionar
+  o **`ffprobe`** na Fase 2 (`apk add ffmpeg`) **sem trocar de base**. Trade-off aceito:
+  imagem um pouco maior e superfície maior que a distroless. Alternativa descartada:
+  distroless/static (menor/mais segura, mas exigiria subcomando `healthcheck` no
+  binário e troca de base quando o FFmpeg entrasse).
+- `HEALTHCHECK`: `wget -q --spider http://localhost:8080/api/v1/health` (busybox), com
+  `--start-period` folgado para o boot. Sem subcomando dedicado no binário — o 0001
+  permanece enxuto.
 
 ## 7. Fora deste briefing / follow-ups
 
-- Adicionar **`ffprobe`** à imagem final quando o scan entrar (Fase 2) — provavelmente
-  troca a base `static` por uma com o FFmpeg disponível.
+- Adicionar **`ffprobe`** à imagem final quando o scan entrar (Fase 2) — com o alpine é
+  só `apk add ffmpeg`, **sem trocar de base** (motivo da escolha do alpine, ver §6).
 - `docker-compose` de exemplo com volumes de mídia (Fase 2).
 - Pipeline de CI e publicação multi-arch (ARM incluso) da imagem.
