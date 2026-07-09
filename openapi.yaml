@@ -125,6 +125,39 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/v1/search:
+    get:
+      operationId: search
+      summary: Busca local-first no catálogo + fonte externa (briefing 0014).
+      description: >
+        Consulta SEMPRE o catálogo local (FTS5) e devolve cards no mesmo shape da
+        lista. Quando há provider externo configurado (ex.: TMDB), acrescenta
+        resultados "não salvos" (saved:false) — a busca nunca cria entidade.
+        `external_available:false` separa "fonte indisponível/não configurada" de
+        "zero resultados". Falha/timeout do externo degrada (external:[]) sem 5xx.
+      tags: [entities]
+      parameters:
+        - name: q
+          in: query
+          description: Termo de busca (obrigatório).
+          required: true
+          schema: { type: string }
+        - name: type
+          in: query
+          description: "Filtra por tipo (movie, tv). Ausente = todos."
+          required: false
+          schema:
+            type: string
+            enum: [movie, tv]
+      responses:
+        "200":
+          description: Resultados locais e externos.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchResult" }
+        "400":
+          $ref: "#/components/responses/Error"
+
   /api/v1/library:
     get:
       operationId: listLibrary
@@ -288,6 +321,47 @@ components:
         total: { type: integer, format: int64 }
         limit: { type: integer }
         offset: { type: integer }
+    ExternalResult:
+      type: object
+      description: >
+        Resultado de uma fonte EXTERNA (ex.: TMDB). saved é sempre false: nunca é
+        uma entidade do catálogo até o import explícito (briefing 0015).
+      required: [source, source_id, type, title, year, overview, poster_url, saved]
+      properties:
+        source:
+          type: string
+          description: "Nome da fonte (ex.: tmdb)."
+        source_id:
+          type: string
+          description: Id do item NA FONTE.
+        type: { type: string }
+        title: { type: string }
+        year: { type: [string, "null"] }
+        overview: { type: [string, "null"] }
+        poster_url:
+          type: [string, "null"]
+          description: URL direta da arte na fonte (o proxy/cache é do 0015).
+        saved:
+          type: boolean
+          description: Sempre false na busca (resultado externo não é entidade).
+    SearchResult:
+      type: object
+      required: [query, local, external, external_available]
+      properties:
+        query: { type: string }
+        local:
+          type: array
+          description: Cards do catálogo (mesmo shape da lista).
+          items: { $ref: "#/components/schemas/EntityCard" }
+        external:
+          type: array
+          description: Resultados "não salvos" da fonte externa (vazio quando indisponível).
+          items: { $ref: "#/components/schemas/ExternalResult" }
+        external_available:
+          type: boolean
+          description: >
+            false quando não há credencial/provider ou a fonte falhou — distingue
+            "fonte indisponível" de "zero resultados".
     ResolvedEntity:
       type: object
       description: >

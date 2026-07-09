@@ -95,6 +95,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/search': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Busca local-first no catálogo + fonte externa (briefing 0014).
+     * @description Consulta SEMPRE o catálogo local (FTS5) e devolve cards no mesmo shape da lista. Quando há provider externo configurado (ex.: TMDB), acrescenta resultados "não salvos" (saved:false) — a busca nunca cria entidade. `external_available:false` separa "fonte indisponível/não configurada" de "zero resultados". Falha/timeout do externo degrada (external:[]) sem 5xx.
+     */
+    get: operations['search']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/library': {
     parameters: {
       query?: never
@@ -185,6 +205,30 @@ export interface components {
       total: number
       limit: number
       offset: number
+    }
+    /** @description Resultado de uma fonte EXTERNA (ex.: TMDB). saved é sempre false: nunca é uma entidade do catálogo até o import explícito (briefing 0015). */
+    ExternalResult: {
+      /** @description Nome da fonte (ex.: tmdb). */
+      source: string
+      /** @description Id do item NA FONTE. */
+      source_id: string
+      type: string
+      title: string
+      year: string | null
+      overview: string | null
+      /** @description URL direta da arte na fonte (o proxy/cache é do 0015). */
+      poster_url: string | null
+      /** @description Sempre false na busca (resultado externo não é entidade). */
+      saved: boolean
+    }
+    SearchResult: {
+      query: string
+      /** @description Cards do catálogo (mesmo shape da lista). */
+      local: components['schemas']['EntityCard'][]
+      /** @description Resultados "não salvos" da fonte externa (vazio quando indisponível). */
+      external: components['schemas']['ExternalResult'][]
+      /** @description false quando não há credencial/provider ou a fonte falhou — distingue "fonte indisponível" de "zero resultados". */
+      external_available: boolean
     }
     /** @description Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a Fase 3 preenche os mesmos campos com override/externo sem mudar o shape. */
     ResolvedEntity: {
@@ -422,6 +466,32 @@ export interface operations {
       }
       403: components['responses']['Error']
       404: components['responses']['Error']
+    }
+  }
+  search: {
+    parameters: {
+      query: {
+        /** @description Termo de busca (obrigatório). */
+        q: string
+        /** @description Filtra por tipo (movie, tv). Ausente = todos. */
+        type?: 'movie' | 'tv'
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Resultados locais e externos. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SearchResult']
+        }
+      }
+      400: components['responses']['Error']
     }
   }
   listLibrary: {

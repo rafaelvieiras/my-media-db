@@ -10,7 +10,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
 | **Docs relacionadas** | [07-enriquecimento-providers](../docs/07-enriquecimento-providers.md), [05-api](../docs/05-api.md), [04-modelo-de-dados](../docs/04-modelo-de-dados.md) |
-| **Status** | draft |
+| **Status** | done |
 | **Depende de** | [0012](0012-schema-fase3-camadas-externo-override.md), [0013](0013-resolver-tres-camadas.md) |
 
 ---
@@ -51,20 +51,47 @@ Este briefing entrega a **abstração de provider** (para a visão multi-vertica
 ## 4. Contrato técnico
 
 ### API (`/api/v1`)
-- **GET `/api/v1/search?q=&type=`** → `200 { local: [...], external: [ { source, source_id, title, year, poster_url, saved:false } ] }` (shape a fechar na implementação; envelope de erro padrão do [0008](0008-datasources-cadastro-api-library.md)).
+- **GET `/api/v1/search?q=&type=`** (`type` opcional: `movie`|`tv`) →
+  `200 { "query": "...", "local": [ <card> ], "external": [ <ext> ], "external_available": bool }`.
+  - `<card>` = o mesmo card da lista do [0010](0010-api-leitura-resolver-minimo.md)
+    (`id, type, title, status, owned, file_count, match_confidence, poster_url?`).
+  - `<ext>` = `{ source:"tmdb", source_id, type, title, year?, overview?, poster_url?, saved:false }`.
+    `saved:false` **sempre** (resultado externo nunca é entidade até import).
+  - `external_available:false` quando não há credencial ou a fonte falhou → o front
+    sabe explicar "busca externa indisponível" sem confundir com "zero resultados".
+  - `q` vazio → `400 invalid_body`. Erro no envelope padrão do [0008](0008-datasources-cadastro-api-library.md).
 
 ### Backend (Go)
-- `internal/provider` (interface + registro) e `internal/provider/tmdb` (cliente).
-- **Chave** lida de config/env no boot; ausência → busca local funciona, externa
-  degrada com aviso (nunca quebra a rota).
-- Cache local do payload de busca (curto) para rate-limit; sem criar entidade.
+- **`internal/provider`**: interface `Provider` (`Nome() string`;
+  `Buscar(ctx, query, tipo) ([]ResultadoExterno, error)`) + `ResultadoExterno`
+  canônico. **`internal/provider/tmdb`**: cliente HTTP implementando a interface.
+- **Auth (decidido):** credencial lida no boot (main), **preferindo**
+  `MYMEDIADB_TMDB_TOKEN` (Read Access Token v4 → header `Authorization: Bearer`);
+  se vazio, `MYMEDIADB_TMDB_API_KEY` (v3 → query `api_key`). Nenhuma das duas →
+  provider **desligado** (não é erro): busca local funciona, `external_available:false`.
+  **Nada de segredo no código/repo.** Injetado no `server.New` via option (assinatura
+  atual `New(version, database)` preservada; provider é opcional).
+- **Endpoints TMDB:** base `https://api.themoviedb.org/3`; busca via `/search/multi`
+  filtrando `media_type ∈ {movie, tv}` (mapeado para o nosso `type`). `poster_url`
+  externo = URL direta do TMDB (`https://image.tmdb.org/t/p/w342` + `poster_path`);
+  o **proxy/cache** de imagem é do [0015](0015-enriquecimento-import-proxy-imagem.md).
+- **Local-first:** busca no `entity_fts` (MATCH **sanitizado** — input do usuário não
+  pode quebrar a sintaxe FTS5), junta aos cards; roda **sempre**, independente do
+  externo. Cache TTL curto em memória do resultado externo por `(query,tipo)` para
+  poupar a fonte; volume é baixo (self-hosted), sem limiter elaborado.
+- Timeout no cliente HTTP; falha/timeout do TMDB → `external:[]`,
+  `external_available:false`, **nunca 5xx** por causa do externo.
 
 ### Frontend (Vite/React)
 - Nada aqui além dos tipos gerados; a **UI de busca** vive com o import no [0015](0015-enriquecimento-import-proxy-imagem.md).
 
 ### Arquivos afetados
-- Criar: `internal/provider/*`, handler de `/search`, config da chave, testes.
-- Alterar: montagem de rotas; `openapi.yaml` (+ regen dos tipos TS).
+- Criar: `internal/provider/provider.go` (interface + tipos), `internal/provider/tmdb/*`,
+  handler `/search` + query FTS local (sqlc, ASCII), testes.
+- Alterar: `internal/server/server.go` (rota `/search` + option de provider), `main.go`
+  (ler credencial do env e injetar), `openapi.yaml` (+ regen tipos), **`compose.dev.yaml`**
+  (adicionar `env_file: [.env]` ao serviço `api` para o container enxergar a credencial —
+  seguro: `.env` é gitignored).
 
 ## 5. Critérios de aceite
 
@@ -81,6 +108,15 @@ Este briefing entrega a **abstração de provider** (para a visão multi-vertica
 - **`/api/tmdb` é outra coisa**: aquele é passthrough compat (Fase 4, [ADR-0015](../docs/adr/0015-api-tmdb-passthrough.md));
   este é a busca nativa do dono. Não confundir os namespaces.
 - Gestão de chave/rate-limit por provider é decisão aberta da [07](../docs/07-enriquecimento-providers.md) — fechar o mínimo aqui (env + backoff simples).
+- **Token v4 preferido à key v3** (decidido): o Read Access Token é o que o TMDB
+  destaca hoje e cobre todos os endpoints de leitura que usamos; a key v3 fica de
+  alternativa para quem só a tem. O código aceita as duas — o dono preenche a que tiver.
+- **`/search/multi` filtrado** (não `/search/movie`+`/search/tv` separados): uma
+  chamada, mapeando `media_type`; descarta `person` e outros. Simples e suficiente p/ MVP.
+- **`external_available` explícito** no shape: separar "fonte indisponível" de "zero
+  resultados" é o que deixa a UI do [0015](0015-enriquecimento-import-proxy-imagem.md) honesta.
+- **Config base hardcoded** (base da API e de imagem do TMDB são estáveis) — evita uma
+  chamada a `/configuration` no MVP; se mudar, vira config depois.
 
 ## 7. Fora deste briefing / follow-ups
 

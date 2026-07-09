@@ -34,6 +34,11 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     working_dir: /app
+    # Credenciais opcionais (ex.: MYMEDIADB_TMDB_TOKEN da busca externa, briefing
+    # 0014) vêm do .env — gitignored, seguro. Ausente/vazio: busca externa fica
+    # desligada, sem erro. NUNCA versionar o .env nem logar o valor.
+    env_file:
+      - .env
     ports:
       - "8080:8080"
     volumes:

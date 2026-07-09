@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
+	"github.com/rafaelvieiras/my-media-db/internal/provider/tmdb"
 	"github.com/rafaelvieiras/my-media-db/internal/server"
 )
 
@@ -53,7 +54,7 @@ func run() error {
 		}
 	}()
 
-	srv := server.New(version, database)
+	srv := server.New(version, database, opcoesBusca()...)
 	handler, err := srv.Handler()
 	if err != nil {
 		return err
@@ -116,6 +117,24 @@ func openAndMigrate() (*db.DB, error) {
 		log.Printf("mymediadb: banco aberto e migrado (schema=%d)", v)
 	}
 	return database, nil
+}
+
+// opcoesBusca monta as options do server ligadas à busca externa (briefing
+// 0014). Lê a credencial do TMDB do ambiente: MYMEDIADB_TMDB_TOKEN (Read Access
+// Token v4, preferido) e, se vazio, MYMEDIADB_TMDB_API_KEY (v3). Sem nenhuma das
+// duas, NÃO cria provider (busca externa desligada — não é erro). NUNCA loga o
+// valor da credencial, só se a busca externa está ligada ou desligada.
+func opcoesBusca() []server.Option {
+	cred := tmdb.Credencial{
+		Token:  os.Getenv("MYMEDIADB_TMDB_TOKEN"),
+		APIKey: os.Getenv("MYMEDIADB_TMDB_API_KEY"),
+	}
+	if !cred.Configurada() {
+		log.Printf("mymediadb: busca externa TMDB desabilitada (sem credencial)")
+		return nil
+	}
+	log.Printf("mymediadb: busca externa TMDB habilitada")
+	return []server.Option{server.WithSearchProvider(tmdb.New(cred, nil, ""))}
 }
 
 // resolvePort determina a porta de escuta: env PORT tem prioridade; caso

@@ -91,7 +91,7 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 |---|---|---|---|---|
 | [0012](0012-schema-fase3-camadas-externo-override.md) | Schema da Fase 3: materializar `media_external` e `media_override` | feature | done | 0007 |
 | [0013](0013-resolver-tres-camadas.md) | Resolver de 3 camadas (`override ⟵ externo ⟵ arquivo`) | feature | done | 0012 |
-| [0014](0014-provider-tmdb-busca-local-first.md) | Provider TMDB + busca local-first (`/api/v1/search`) | feature | draft | 0012, 0013 |
+| [0014](0014-provider-tmdb-busca-local-first.md) | Provider TMDB + busca local-first (`/api/v1/search`) | feature | done | 0012, 0013 |
 | [0015](0015-enriquecimento-import-proxy-imagem.md) | Enriquecimento (import explícito) + proxy/cache de imagem | feature | draft | 0014 |
 | [0016](0016-editor-override-ui.md) | Editor de override (`/api/v1/entities/{id}/override`) + UI | feature | draft | 0013 |
 | [0017](0017-arte-custom-upload-ui.md) | Arte custom: upload (`/api/v1/entities/{id}/assets`) + UI | feature | draft | 0015 |

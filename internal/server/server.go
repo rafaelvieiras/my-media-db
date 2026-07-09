@@ -11,6 +11,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
+	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 )
 
@@ -24,16 +25,44 @@ type Server struct {
 	// scanner é o gerenciador de jobs de scan (/api/v1/library/{id}/scan). Nil
 	// quando não há banco injetado.
 	scanner *scanner.Manager
+	// searchProvider é a fonte externa opcional da busca (/api/v1/search;
+	// briefing 0014). Nil = busca externa desligada: a busca local segue
+	// funcionando e external_available:false. Injetado via WithSearchProvider.
+	searchProvider provider.Provider
+	// cacheExterno guarda por TTL curto o resultado externo por (query,tipo),
+	// para poupar a fonte. Só existe quando há provider.
+	cacheExterno *cacheExterno
+}
+
+// Option configura opcionalmente o Server na construção, preservando a
+// assinatura base New(version, database). Ver WithSearchProvider.
+type Option func(*Server)
+
+// WithSearchProvider injeta a fonte externa da busca (ex.: TMDB) e liga o cache
+// externo. Chamado pelo main só quando há credencial; nil é ignorado.
+func WithSearchProvider(p provider.Provider) Option {
+	return func(s *Server) {
+		if p == nil {
+			return
+		}
+		s.searchProvider = p
+		s.cacheExterno = novoCacheExterno(ttlCacheExterno)
+	}
 }
 
 // New cria um Server com a versão do binário e os pools de banco (repassados
 // pelo main). O db pode ser nil em cenários sem persistência (ex.: alguns
-// testes de rota); o health degrada graciosamente nesse caso.
-func New(version string, database *db.DB) *Server {
+// testes de rota); o health degrada graciosamente nesse caso. Options são
+// extensões opcionais (ex.: WithSearchProvider) — a forma New(version, database)
+// segue válida.
+func New(version string, database *db.DB, opts ...Option) *Server {
 	s := &Server{version: version, db: database}
 	if database != nil {
 		s.library = library.New(database)
 		s.scanner = scanner.NewManager(database)
+	}
+	for _, opt := range opts {
+		opt(s)
 	}
 	return s
 }
@@ -54,6 +83,10 @@ func (s *Server) Handler() (http.Handler, error) {
 
 		api.Route("/v1", func(v1 chi.Router) {
 			v1.Get("/health", s.healthHandler)
+
+			// Busca local-first (briefing 0014): FTS5 no catálogo + passthrough
+			// opcional à fonte externa (resultados "não salvos").
+			v1.Get("/search", s.search)
 
 			// Datasources da biblioteca (briefing 0008). Escritas (POST/DELETE)
 			// pela conexão de escrita, leituras (GET) pelo pool — encapsulado no
