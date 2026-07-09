@@ -1,0 +1,38 @@
+# lefthook.yml — hooks de git do MyMediaDB (repo Go + TS).
+#
+# Instale uma vez com:  lefthook install   (ver CONTRIBUTING.md)
+#
+# Três ganchos:
+#   pre-commit  → auto-formata os arquivos staged (gofmt / prettier) e os re-adiciona.
+#   pre-push    → roda a catraca de qualidade unificada; aborta o push em regressão.
+#   commit-msg  → valida Conventional Commits (mensagens em pt-BR, `tipo: resumo`).
+
+# ─── pre-commit: auto-formatação rápida ──────────────────────────────────────
+# `stage_fixed: true` re-adiciona ao índice os arquivos que o formatter alterou,
+# então um commit de código desformatado sai formatado, sem depender de editor.
+pre-commit:
+  parallel: true
+  commands:
+    gofmt:
+      glob: "*.go"
+      run: gofmt -w {staged_files}
+      stage_fixed: true
+    prettier:
+      glob: "web/**/*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc,css,scss,md,html,yml,yaml}"
+      run: npx --yes prettier --write --ignore-unknown {staged_files}
+      stage_fixed: true
+
+# ─── pre-push: catraca de qualidade (pesado) ─────────────────────────────────
+# Exige as ferramentas Go no PATH (golangci-lint, govulncheck, gocyclo); as
+# ausentes são apenas puladas pelo gate (ver CONTRIBUTING.md).
+pre-push:
+  commands:
+    quality-gate:
+      run: node scripts/quality-gate.mjs --local
+
+# ─── commit-msg: Conventional Commits ────────────────────────────────────────
+# {1} = caminho do arquivo com a mensagem do commit, passado pelo git.
+commit-msg:
+  commands:
+    conventional:
+      run: node scripts/check-commit-msg.mjs {1}

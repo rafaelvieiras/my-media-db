@@ -28,6 +28,17 @@ dist-ssr/
 Dockerfile
 .dockerignore
 
+# Quality gate (ferramenta de dev/CI): não vai para a imagem de produção.
+scripts/
+baseline.json
+lefthook.yml
+.golangci.yml
+Makefile
+.github/
+CONTRIBUTING.md
+briefings/
+docs/
+
 # Editores / OS
 .vscode/
 .idea/

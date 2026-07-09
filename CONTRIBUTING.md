@@ -53,6 +53,52 @@ anterior**, não editar a spec direto.
    `fix:`, `refactor:`), no imperativo.
 6. **Abra o PR** referenciando a issue e, quando aplicável, o ADR/briefing.
 
+## Quality gate e hooks de git
+
+O projeto tem uma **catraca de qualidade unificada** (Go + TS) — um único
+`baseline.json` na raiz que só permite as métricas **melhorarem**. Ela roda no
+`pre-push` local e no PR (ver [briefing 0005](briefings/0005-quality-gate-catraca-unificada.md)
+e [ADR-0016](docs/adr/0016-quality-gate-catraca-unificada.md)).
+
+**Instale os hooks uma vez** (usa [lefthook](https://github.com/evilmartians/lefthook)):
+
+```sh
+lefthook install
+# lefthook via: go install github.com/evilmartians/lefthook@latest
+#          ou:  npm install -g lefthook   (ou npx lefthook install)
+```
+
+Isso ativa três ganchos:
+
+- **`pre-commit`** — auto-formata os arquivos staged (`gofmt -w` / `prettier --write`)
+  e os re-adiciona. Precisa só de `gofmt` (vem com o Go) e do `prettier` (no `web/`).
+- **`pre-push`** — roda a catraca (`node scripts/quality-gate.mjs --local`) e
+  **aborta o push** em regressão bloqueante.
+- **`commit-msg`** — valida Conventional Commits (`tipo: resumo`, em pt-BR).
+
+**Ferramentas do `pre-push`.** A catraca mede o Go com ferramentas que precisam
+estar no `PATH`. Se faltar alguma, a métrica é **pulada com aviso** (não quebra),
+mas o ideal é tê-las todas:
+
+```sh
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+go install golang.org/x/vuln/cmd/govulncheck@latest
+go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+# garanta que "$(go env GOPATH)/bin" está no seu PATH
+```
+
+> **Nota:** `govulncheck` é zero-tolerância. Mantenha o toolchain Go atualizado
+> (o `go.mod` fixa `toolchain go1.26.5`, que já corrige as vulns de stdlib conhecidas).
+
+**Comandos à mão** (Makefile na raiz):
+
+| Comando | O que faz |
+|---|---|
+| `make fmt` | Formata Go (`gofmt`) e web (`prettier`) |
+| `make gate-local` | Roda a catraca com saída humana |
+| `make gate` | Roda a catraca em modo CI (Markdown) |
+| `make baseline` | Regenera e **avança** o `baseline.json` (só quando você genuinamente melhorou as métricas) |
+
 ## Segurança
 
 **Segredos nunca no código.** Chaves de API e credenciais entram por

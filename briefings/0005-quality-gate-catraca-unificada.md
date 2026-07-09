@@ -8,7 +8,7 @@
 | **ID** | 0005 |
 | **Tipo** | chore |
 | **Fase (roadmap)** | Fase 1 — Esqueleto do container único (infra transversal) |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [ADR-0016](../docs/adr/0016-quality-gate-catraca-unificada.md), [ADR-0014](../docs/adr/0014-stack-de-implementacao.md), [CONTRIBUTING](../CONTRIBUTING.md) |
 | **Depende de** | [0001](0001-backend-esqueleto-servidor.md), [0002](0002-frontend-scaffold-integracao-api.md) (para haver código a medir) |
 
@@ -155,6 +155,24 @@ desambiguar), por exemplo:
   follow-up quando a base de testes amadurecer.
 - Baseline inicial tirado sobre o scaffold: cobertura provavelmente baixa no começo — a
   catraca garante que só suba dali pra frente.
+- **Escopo do lado TS enxuto** (decisão de sessão, 2026-07-08): o scaffold não tem
+  vitest nem ESLint (o `create-vite` trouxe **oxlint**, considerado imaturo). Decisão:
+  **remover o oxlint** do `web/` e não construir coletores customizados em cima dele;
+  o lado TS entra na catraca só com **duplicação (jscpd)** e **`npm audit` crítico**.
+  Cobertura e lint do front ficam como follow-up (entram com ESLint + vitest quando as
+  telas da Fase 2 amadurecerem). O lado Go entra completo.
+- **Gate na raiz, sem `package.json` de raiz.** A catraca é `scripts/quality-gate.mjs`
+  (na raiz), chamada direto por `node ...` no lefthook e no CI; os atalhos humanos ficam
+  num **`Makefile`** (`make fmt|gate|gate-local|baseline|hooks`), que encaixa melhor num
+  repo poliglota que um `package.json` de raiz.
+- **`toolchain go1.26.5` no `go.mod`** (decisão de implementação): com o Go 1.26.4 o
+  `govulncheck` reportava `GO-2026-5856` (vuln alcançável de `crypto/tls` via
+  `ListenAndServe`), corrigida em `crypto/tls@go1.26.5`. Como `go_vuln_high` é
+  zero-tolerância, o baseline nasceria vermelho; a remediação prescrita é subir o
+  toolchain. O workflow usa `go-version: 1.26.x` (≥ 1.26.5) pelo mesmo motivo.
+- **`web/package-lock.json` deve ser gerado com npm ≥ 11.16** (node:lts). Um lock gerado
+  por npm mais antigo (ou via `--package-lock-only`) fica dessincronizado (faltam peers
+  `@emnapi/*`) e o `npm ci` do CI **falha**. Regenerar com `npm install` sob node:lts.
 
 ## 7. Fora deste briefing / follow-ups
 

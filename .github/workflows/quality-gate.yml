@@ -1,0 +1,82 @@
+# quality-gate.yml — catraca de qualidade unificada (Go + TS) do MyMediaDB.
+#
+# Roda o mesmo `scripts/quality-gate.mjs` do pre-push local, agora em modo CI
+# (saída Markdown). Bloqueia o merge em regressão bloqueante e comenta a tabela
+# de métricas no PR (comentário sticky). O gate é ferramenta de dev/CI e não
+# entra na imagem de produção.
+
+name: Quality Gate
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  quality-gate:
+    name: Quality Gate (Go + TS)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          # Última versão de patch da 1.26 (>= 1.26.5, corrige a vuln de stdlib
+          # que o govulncheck reporta como bloqueante — ver go.mod/toolchain).
+          go-version: '1.26.x'
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Go quality tools
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Run quality gate (CI / Markdown)
+        id: gate
+        run: node scripts/quality-gate.mjs
+        continue-on-error: true
+
+      - name: Comment metrics table on PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: quality-gate
+          recreate: true
+          path: reports/quality-gate-report.md
+
+      - name: Upload quality reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-reports
+          path: reports/
+          retention-days: 30
+
+      - name: Fail on blocking regression
+        if: steps.gate.outcome == 'failure'
+        run: |
+          echo "Quality gate falhou: regressão bloqueante. Veja a tabela no comentário do PR / no relatório."
+          exit 1

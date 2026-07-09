@@ -16,3 +16,8 @@ internal/webui/dist/*
 
 *.sqlite
 .env
+
+# Quality gate: relatórios efêmeros dos coletores (cobertura, jscpd, golangci…)
+# e diretório temporário. O baseline.json É versionado (a catraca depende dele).
+reports/
+tmp/

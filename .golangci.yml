@@ -1,0 +1,28 @@
+# Configuração do golangci-lint (v2) para o MyMediaDB.
+#
+# Enxuta e sensata: o conjunto default do golangci-lint (errcheck, govet,
+# ineffassign, staticcheck, unused) mais nada de exótico. golangci-lint v2 já
+# traz staticcheck com gosimple/stylecheck embutidos. A métrica `go_lint_issues`
+# no quality gate é AVISO (catraca incremental) por ora; endurece depois.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # `default: standard` = o conjunto recomendado pelo golangci-lint
+  # (errcheck, govet, ineffassign, staticcheck, unused). Explicitamos os
+  # principais em `enable` para deixar a intenção clara e à prova de mudança
+  # de default entre versões.
+  default: standard
+  enable:
+    - errcheck      # erros retornados não verificados
+    - govet         # análise estática do toolchain
+    - ineffassign   # atribuições sem efeito
+    - staticcheck   # meta-linter (inclui gosimple/stylecheck no v2)
+    - unused        # símbolos não usados
+
+  exclusions:
+    generated: lax
+    paths:
+      - internal/webui/dist   # assets embutidos (build do Vite), não é código nosso

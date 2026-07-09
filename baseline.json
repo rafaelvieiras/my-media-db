@@ -1,0 +1,14 @@
+{
+  "generatedAt": "2026-07-09T01:09:08.162Z",
+  "commit": "d2f2aa5",
+  "project": "my-media-db",
+  "metrics": {
+    "go_coverage_lines": 0,
+    "go_gofmt_unformatted": 0,
+    "go_lint_issues": 0,
+    "go_vuln_high": 0,
+    "go_cyclo_violations": 0,
+    "web_duplicate_percent": 1.22,
+    "web_audit_critical": 0
+  }
+}
