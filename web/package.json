@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "gen:types": "npx --yes openapi-typescript ../openapi.yaml -o src/lib/api-types.ts",
+    "gen:types": "npx --yes openapi-typescript ../openapi.yaml -o src/lib/api-types.ts && npx --yes prettier --write src/lib/api-types.ts",
     "format": "prettier --write .",
     "duplication": "jscpd src --reporters json --output ../reports/jscpd --silent",
     "preview": "vite preview"
