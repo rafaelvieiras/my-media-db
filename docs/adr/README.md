@@ -35,3 +35,6 @@ achatada de "decisões abertas" por um registro rastreável, um arquivo por deci
 | [0015](0015-api-tmdb-passthrough.md) | `/api/tmdb`: passthrough com cache, nunca 404 | doc 11 (6) | Aceita |
 | [0016](0016-quality-gate-catraca-unificada.md) | Quality gate: catraca unificada (ratchet) Go + TS | QG1 | Aceita |
 | [0017](0017-migrations-goose-embedado.md) | Migrations do SQLite: goose embedado | Fase 2 | Aceita |
+| [0018](0018-modelo-multi-idioma-dimensao-nas-camadas.md) | Modelo multi-idioma: dimensão de idioma nas camadas | L1 | Aceita |
+| [0019](0019-resolucao-por-idioma-fallback-proveniencia.md) | Resolução por idioma: cadeia de fallback + proveniência | L2 | Aceita |
+| [0020](0020-traducao-de-tags-genres-keywords.md) | Tradução de tags (genres localizados + keywords) | L3 | Aceita |

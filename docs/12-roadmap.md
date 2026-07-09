@@ -42,7 +42,9 @@ Objetivo: complementar itens de fontes externas e **dar autoridade ao dono**.
 
 - Busca **local-first → TMDB** on-demand (resultados "não salvos").
 - **Import explícito** + proxy/cache de imagem.
-- **Editor de override** (título, campos) + **upload de arte custom**.
+- **Multi-idioma** (L1–L3): config principal/fallback/permitidos, resolução por
+  idioma com fallback + proveniência, tradução de campos e tags.
+- **Editor de override** (título, campos, **por idioma**) + **upload de arte custom**.
 - O **resolver** compondo `override ⟵ externo ⟵ arquivo` em toda leitura.
 
 **Breakdown em briefings** (ver [`briefings/`](../briefings/README.md#fase-3--enriquecimento--override)):
@@ -53,7 +55,10 @@ Objetivo: complementar itens de fontes externas e **dar autoridade ao dono**.
 | [0013](../briefings/0013-resolver-tres-camadas.md) | Resolver `override ⟵ externo ⟵ arquivo` | R1–R7 |
 | [0014](../briefings/0014-provider-tmdb-busca-local-first.md) | Provider TMDB + busca `/api/v1/search` local-first | doc 07 |
 | [0015](../briefings/0015-enriquecimento-import-proxy-imagem.md) | Import explícito + proxy/cache de imagem | doc 07/08 |
-| [0016](../briefings/0016-editor-override-ui.md) | Editor de override + UI | R3/R6 |
+| [0019](../briefings/0019-fundacao-multi-idioma-settings-resolver.md) | Fundação multi-idioma: settings + resolução por idioma | L1/L2 |
+| [0020](../briefings/0020-provider-multi-idioma-traducao-tags.md) | Provider multi-idioma + tradução de tags | L3 |
+| [0021](../briefings/0021-ui-idiomas-admin-seletor.md) | UI de idiomas: admin + seletor de leitura | L1/L2 |
+| [0016](../briefings/0016-editor-override-ui.md) | Editor de override + UI (por idioma) | R3/R6 |
 | [0017](../briefings/0017-arte-custom-upload-ui.md) | Arte custom (upload) + UI | doc 08 |
 | [0018](../briefings/0018-fila-revisao-orfas-correcao-match.md) | Fila de revisão + órfãs + correção de match | MD1/MD5 |
 

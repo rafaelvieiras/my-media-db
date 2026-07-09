@@ -45,6 +45,20 @@ Estas são as decisões que fecham a spec dele.
 
 ---
 
+## Idiomas (multi-idioma) — fundacional, levantado na Fase 3
+
+O acervo é multi-idioma: o gestor define principal + fallback + permitidos, todo
+valor carrega a flag do idioma, e o dono acrescenta traduções. Reformula o modelo
+das três camadas antes de o override (0016) aterrissar.
+
+| ID | Questão | Status | Decisão | Destino |
+|---|---|---|---|---|
+| **L1** | Como o idioma entra no modelo das três camadas? Onde vive a config (principal/fallback/permitidos)? | **documentado** | **Dimensão de idioma = CHAVE dentro de cada camada** (externo tagueia por idioma no payload `/translations`; override fica `campo→idioma→valor`; núcleo é o fallback neutro), sem tabela nova. Campos traduzíveis (`title`/`description`/`tags`) vs neutros (`original_title`/`original_language`/`release_date`/`external_ids`/técnicos). Nova coluna `entity.original_language`. **Config em settings no banco** (`app_settings`, chave `languages`) com UI de admin — não em env. | [ADR-0018](adr/0018-modelo-multi-idioma-dimensao-nas-camadas.md) |
+| **L2** | Qual idioma a API serve e o que expõe sobre isso? | **documentado** | **Resolve para UM idioma** por requisição (`?lang=`, default = principal), shape **plano** preservado; **cadeia de fallback** `pedido → fallback → original → arquivo`; **autoridade do dono por idioma** (R6 por idioma; `null` no pedido interrompe o fallback); **proveniência de idioma** exposta (`resolved_languages`). | [ADR-0019](adr/0019-resolucao-por-idioma-fallback-proveniencia.md) |
+| **L3** | Como traduzir tags (o TMDB não traduz keywords)? | **documentado** | **Tags viram lista por idioma**, merge de operações (R3) **dentro de cada idioma**; **gêneros** pela lista localizada do TMDB por idioma (cacheável); **keywords** guardadas no idioma obtido, tradução **manual** pelo dono (sem tradução automática). | [ADR-0020](adr/0020-traducao-de-tags-genres-keywords.md) |
+
+---
+
 ## Melhorias de base (estrutura da documentação)
 
 | ID | Item | Status | Decisão | Destino |
@@ -60,6 +74,21 @@ Estas são as decisões que fecham a spec dele.
 
 <!-- Conforme cada item fecha, mover o resumo da decisão para cá com data. -->
 
+- **L1–L3 — Fundação multi-idioma** (2026-07-09). Requisito fundacional levantado na
+  Fase 3 e ausente do design inicial: o acervo é multi-idioma. **L1 (ADR-0018):** a
+  dimensão de idioma é a **chave dentro de cada camada** (payload externo tagueado
+  por idioma via TMDB `/translations`; override `campo→idioma→valor`; núcleo como
+  fallback neutro), sem tabela nova; campos traduzíveis (`title`/`description`/`tags`)
+  vs neutros; nova coluna `entity.original_language`; **config em settings no banco**
+  (`app_settings`) com UI de admin. **L2 (ADR-0019):** a leitura **resolve para um
+  idioma** (`?lang=`, default principal) mantendo o shape plano, com **cadeia de
+  fallback** (`pedido → fallback → original → arquivo`), autoridade do dono **por
+  idioma** (R6 por idioma; `null` no pedido não cai para o fallback) e
+  **proveniência de idioma** exposta. **L3 (ADR-0020):** **tags por idioma** com
+  merge de operações dentro de cada idioma — gêneros pela lista localizada do TMDB,
+  keywords no idioma obtido com tradução manual. Implementação em briefings
+  0019–0021 (fundação → provider → UI), reformando 0012/0013/0015 e antecedendo o
+  0016 (override por idioma).
 - **Doc 11 — Stack de implementação e passthrough do `/api/tmdb`** (2026-07-08).
   Fecha as decisões maduras da doc 11. **Stack (ADR-0014):** ratificadas as
   inclinações — router **chi**, driver **`modernc.org/sqlite`** (CGO-free), dados
