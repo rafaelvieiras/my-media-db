@@ -73,6 +73,7 @@ const METRIC_DEFS = {
   go_cyclo_violations:   { label: 'Go: funções > gocyclo 10',unit: 'funcs', side: 'go',  lowerIsBetter: true,  blocking: false  },
   // --- TypeScript / web (rodado em web/) ---
   web_coverage_lines:    { label: 'Web: cobertura de linhas',unit: '%',     side: 'web', lowerIsBetter: false, blocking: true   },
+  web_typecheck_errors:  { label: 'Web: erros de type-check',unit: 'erros', side: 'web', lowerIsBetter: true,  blocking: 'zero' },
   web_duplicate_percent: { label: 'Web: duplicação',         unit: '%',     side: 'web', lowerIsBetter: true,  blocking: true   },
   web_lint_issues:       { label: 'Web: issues ESLint',      unit: 'issues',side: 'web', lowerIsBetter: true,  blocking: false  },
   web_audit_critical:    { label: 'Web: vulns critical',     unit: 'vulns', side: 'web', lowerIsBetter: true,  blocking: 'zero' },
@@ -292,6 +293,28 @@ function collectWebAuditCritical() {
   }
 }
 
+// Type-check web (tsc -b): compila o projeto (com project references) e conta os
+// erros de tipo. `--force` ignora o cache incremental para SEMPRE re-checar (o
+// gate não pode passar só porque o .tsbuildinfo diz "up to date"). exit 0 = zero
+// erros; caso contrário, conta as ocorrências de "error TSxxxx" na saída. Guarda
+// contra regressão do shape gerado (ex.: fixture do guard-test desatualizado),
+// que o vitest (esbuild, sem type-check) e o eslint não pegam.
+function collectWebTypecheck() {
+  if (!existsSync(WEB)) { warn('web/ não encontrado — type-check pulado'); return null; }
+  const r = run('npx --yes tsc -b --force', { cwd: WEB });
+  if (r.code === 0) return 0;
+  const saida = `${r.stdout}\n${r.stderr}`;
+  const m = saida.match(/error TS\d+/g);
+  if (!m) {
+    // saiu !=0 mas sem "error TS" reconhecível (ex.: tsc ausente/falha de setup):
+    // pula em vez de bloquear indevidamente.
+    warn('tsc -b falhou sem erros TS reconhecíveis — métrica "web_typecheck_errors" pulada. stderr:');
+    if (r.stderr.trim()) warn(r.stderr.trim().split('\n').slice(0, 8).join('\n'));
+    return null;
+  }
+  return m.length;
+}
+
 // ESLint (flat config em web/): roda `eslint . -f json`, soma erros + avisos de
 // todos os arquivos. O eslint sai 1 quando acha problema — isso é esperado; só
 // falha real se o JSON não puder ser lido/parseado.
@@ -357,6 +380,7 @@ function collectMetrics() {
 
   log(`${c.dim}Coletando métricas Web (web/)...${c.reset}`);
   metrics.web_coverage_lines    = collectWebCoverage();
+  metrics.web_typecheck_errors  = collectWebTypecheck();
   metrics.web_duplicate_percent = collectWebDuplication();
   metrics.web_lint_issues       = collectWebLint();
   metrics.web_audit_critical    = collectWebAuditCritical();
