@@ -9,16 +9,21 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+
+	"github.com/rafaelvieiras/my-media-db/internal/db"
 )
 
 // Server agrega as dependências necessárias para construir o handler HTTP.
 type Server struct {
 	version string
+	db      *db.DB
 }
 
-// New cria um Server com a versão do binário (repassada pelo main).
-func New(version string) *Server {
-	return &Server{version: version}
+// New cria um Server com a versão do binário e os pools de banco (repassados
+// pelo main). O db pode ser nil em cenários sem persistência (ex.: alguns
+// testes de rota); o health degrada graciosamente nesse caso.
+func New(version string, database *db.DB) *Server {
+	return &Server{version: version, db: database}
 }
 
 // Handler constrói e devolve o http.Handler raiz da aplicação.
