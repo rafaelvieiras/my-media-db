@@ -1,0 +1,5 @@
+# Gerados / não versionados como fonte — não formatar.
+node_modules
+dist
+# Lockfile é gerenciado pelo npm; não reformatar (evita churn e dessincronia).
+package-lock.json

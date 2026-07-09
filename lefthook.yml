@@ -17,8 +17,16 @@ pre-commit:
       glob: "*.go"
       run: gofmt -w {staged_files}
       stage_fixed: true
+    # Dois jobs por causa da semântica de glob do lefthook: `web/**/*.EXT` casa
+    # arquivos em SUBpastas, mas NÃO os que ficam direto em `web/` (ex.:
+    # vite.config.ts, index.html, tsconfig*.json). `web/*.EXT` cobre a raiz.
+    # O package-lock.json é protegido por web/.prettierignore.
     prettier:
       glob: "web/**/*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc,css,scss,md,html,yml,yaml}"
+      run: npx --yes prettier --write --ignore-unknown {staged_files}
+      stage_fixed: true
+    prettier-root:
+      glob: "web/*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc,css,scss,md,html,yml,yaml}"
       run: npx --yes prettier --write --ignore-unknown {staged_files}
       stage_fixed: true
 
