@@ -10,7 +10,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 2 — UI de biblioteca |
 | **Docs relacionadas** | [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [ADR-0009](../docs/adr/0009-posse-e-status-eixos-ortogonais.md), [ADR-0011](../docs/adr/0011-external-ids-autoritativo-media-external-cache.md), [ADR-0012](../docs/adr/0012-ciclo-de-vida-nao-destrutivo.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Depende de** | [0006](0006-fundacao-persistencia-sqlite.md) |
 
 ---
