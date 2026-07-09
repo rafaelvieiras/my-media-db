@@ -10,7 +10,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
 | **Docs relacionadas** | [07-enriquecimento-providers](../docs/07-enriquecimento-providers.md), [08-artwork-e-assets](../docs/08-artwork-e-assets.md), [ADR-0011](../docs/adr/0011-external-ids-autoritativo-media-external-cache.md), [ADR-0012](../docs/adr/0012-ciclo-de-vida-nao-destrutivo.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Depende de** | [0014](0014-provider-tmdb-busca-local-first.md) |
 
 ---
@@ -118,10 +118,10 @@ não-identificado ou um item pobre ganha título, sinopse e poster.
 
 ## 5. Critérios de aceite
 
-- [ ] Importar um resultado grava `media_external` e atualiza `external_ids`; o resolver passa a servir os dados ricos.
-- [ ] Poster/fanart são baixados **uma vez**, cacheados em disco como `asset` `origin=external`, e servidos do cache depois.
-- [ ] Re-enriquecer atualiza a base externa e **não** apaga `media_override` nem artes `origin=user`.
-- [ ] Falha da fonte/imagem degrada (import parcial claro), sem quebrar. Catraca verde.
+- [x] Importar um resultado grava `media_external` e atualiza `external_ids`; o resolver passa a servir os dados ricos.
+- [x] Poster/fanart são baixados **uma vez**, cacheados em disco como `asset` `origin=external`, e servidos do cache depois.
+- [x] Re-enriquecer atualiza a base externa e **não** apaga `media_override` nem artes `origin=user`.
+- [x] Falha da fonte/imagem degrada (import parcial claro), sem quebrar. Catraca verde.
 
 ## 6. Notas de implementação / decisões
 

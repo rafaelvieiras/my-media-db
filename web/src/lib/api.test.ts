@@ -4,8 +4,10 @@ import {
   createLibrary,
   deleteLibrary,
   getEntityFiles,
+  importExternal,
   listEntities,
   posterSrc,
+  searchMedia,
   startScan,
   getHealth,
 } from '@/lib/api'
@@ -168,6 +170,88 @@ describe('startScan / deleteLibrary / getEntityFiles', () => {
 
     expect(out.items).toEqual([])
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/entities/9/files')
+  })
+})
+
+describe('searchMedia', () => {
+  it('monta a querystring com q (e type quando presente)', async () => {
+    const body = {
+      query: 'matrix',
+      local: [],
+      external: [],
+      external_available: true,
+    }
+    const fetchMock = vi.fn().mockResolvedValue(okJson(body))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const out = await searchMedia('matrix', 'movie')
+
+    expect(out).toEqual(body)
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/search?q=matrix&type=movie')
+  })
+
+  it('sem type consulta só com q', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okJson({
+        query: 'a b',
+        local: [],
+        external: [],
+        external_available: false,
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await searchMedia('a b')
+
+    // Espaço é codificado como + pela URLSearchParams.
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/search?q=a+b')
+  })
+
+  it('lança ApiError do envelope quando o backend rejeita', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: { code: 'invalid_query', message: 'q obrigatório' },
+      }),
+    } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(searchMedia('x')).rejects.toThrow('q obrigatório')
+  })
+})
+
+describe('importExternal', () => {
+  it('faz POST com o corpo e devolve a entity resolvida', async () => {
+    const entity = { id: 'ent-1', type: 'movie', title: 'Matrix' }
+    const fetchMock = vi.fn().mockResolvedValue(okJson(entity, 201))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const out = await importExternal({
+      source: 'tmdb',
+      source_id: '603',
+      type: 'movie',
+    })
+
+    expect(out).toEqual(entity)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/v1/import')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({
+      source: 'tmdb',
+      source_id: '603',
+      type: 'movie',
+    })
+  })
+
+  it('resolve tanto no 201 (criado) quanto no 200 (já existia)', async () => {
+    const entity = { id: 'ent-2', type: 'tv', title: 'Existente' }
+    const fetchMock = vi.fn().mockResolvedValue(okJson(entity, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const out = await importExternal({ source_id: '9', type: 'tv' })
+
+    expect(out.id).toBe('ent-2')
   })
 })
 

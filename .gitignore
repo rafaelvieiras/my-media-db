@@ -27,3 +27,6 @@ internal/webui/dist/*
 # e diretório temporário. O baseline.json É versionado (a catraca depende dele).
 reports/
 tmp/
+
+# Artefatos do Playwright MCP (snapshots de validação)
+.playwright-mcp/

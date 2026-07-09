@@ -23,6 +23,7 @@ describe('api-types gerado', () => {
       owned: true,
       file_count: 1,
       poster_url: '/api/v1/entities/x/assets/poster',
+      extension_data: {},
     }
     expect(ent.owned).toBe(true)
     expect(ent.external_ids.tmdb).toBe('603')

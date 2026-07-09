@@ -6,11 +6,15 @@ import { Select } from '@/components/ui/select'
 import { entitiesQueryOptions } from '@/lib/queries'
 import type { EntityListParams } from '@/lib/api'
 import { PosterCard } from '@/components/poster-card'
+import {
+  MediaTypeFilter,
+  type MediaTypeFilterValue,
+} from '@/components/media-type-filter'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
 
 const POR_PAGINA = 24
 
-type FiltroTipo = 'all' | 'movie' | 'tv'
+type FiltroTipo = MediaTypeFilterValue
 type FiltroPosse = 'all' | 'owned' | 'not'
 
 // Traduz os filtros da UI para os params da API (undefined = sem filtro).
@@ -51,21 +55,7 @@ export function PosterGrid() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Tipo</span>
-          <Select
-            aria-label="Filtrar por tipo"
-            value={tipo}
-            onChange={(e) =>
-              reiniciarPagina(setTipo)(e.target.value as FiltroTipo)
-            }
-            className="w-36"
-          >
-            <option value="all">Todos</option>
-            <option value="movie">Filmes</option>
-            <option value="tv">Séries</option>
-          </Select>
-        </label>
+        <MediaTypeFilter value={tipo} onChange={reiniciarPagina(setTipo)} />
         <label className="flex items-center gap-2 text-sm">
           <span className="text-muted-foreground">Posse</span>
           <Select

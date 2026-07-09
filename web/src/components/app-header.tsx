@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Library } from 'lucide-react'
+import { Library, Search } from 'lucide-react'
 
 // Cabeçalho com navegação entre as telas da Fase 2. `activeProps` destaca a rota
 // atual (type-safe pelo router code-based).
@@ -25,6 +25,14 @@ export function AppHeader() {
           activeProps={{ className: linkAtivo }}
         >
           Biblioteca
+        </Link>
+        <Link
+          to="/search"
+          className={`${linkBase} flex items-center gap-1.5`}
+          activeProps={{ className: linkAtivo }}
+        >
+          <Search className="size-4" aria-hidden />
+          Buscar
         </Link>
         <Link
           to="/library"

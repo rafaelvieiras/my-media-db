@@ -19,6 +19,9 @@ export type EntityList = components['schemas']['EntityList']
 export type ResolvedEntity = components['schemas']['ResolvedEntity']
 export type MediaFile = components['schemas']['MediaFile']
 export type FileList = components['schemas']['FileList']
+export type SearchResult = components['schemas']['SearchResult']
+export type ExternalResult = components['schemas']['ExternalResult']
+export type ImportRequest = components['schemas']['ImportRequest']
 
 // Forma do corpo de `GET /api/v1/health` (contrato do briefing 0001).
 export interface Health {
@@ -153,6 +156,37 @@ export async function getEntityFiles(id: string): Promise<FileList> {
   return lerJson<FileList>(
     await fetch(`${base}/api/v1/entities/${encodeURIComponent(id)}/files`),
   )
+}
+
+// ── Busca + import (0015) ────────────────────────────────────────────────────
+
+// Busca unificada: `local` (catálogo) + `external` (fonte externa, "não salvos").
+// `q` vazio é rejeitado pelo backend (400) — a UI só chama com termo preenchido.
+// `type` opcional filtra por `movie`|`tv`.
+export async function searchMedia(
+  q: string,
+  type?: string,
+): Promise<SearchResult> {
+  const qs = new URLSearchParams({ q })
+  if (type) {
+    qs.set('type', type)
+  }
+  return lerJson<SearchResult>(
+    await fetch(`${base}/api/v1/search?${qs.toString()}`),
+  )
+}
+
+// Importa um resultado externo para o catálogo. Devolve o `ResolvedEntity`
+// (tem `.id`) tanto no 201 (criado) quanto no 200 (já existia).
+export async function importExternal(
+  body: ImportRequest,
+): Promise<ResolvedEntity> {
+  const res = await fetch(`${base}/api/v1/import`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return lerJson<ResolvedEntity>(res)
 }
 
 // URL absoluta (respeitando a base) do binário do pôster local, ou `null` quando

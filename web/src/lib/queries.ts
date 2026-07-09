@@ -6,6 +6,7 @@ import {
   getScanStatus,
   listEntities,
   listLibrary,
+  searchMedia,
   type EntityListParams,
 } from '@/lib/api'
 
@@ -41,6 +42,17 @@ export function entityFilesQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['entity', id, 'files'],
     queryFn: () => getEntityFiles(id),
+  })
+}
+
+// Busca unificada (0015). A chave carrega termo+tipo para cachear por consulta.
+// `enabled: q !== ''` impede o disparo enquanto o input está vazio (estado
+// inicial/instrução) — o componente já debounce o termo antes de chegar aqui.
+export function searchQueryOptions(q: string, type?: string) {
+  return queryOptions({
+    queryKey: ['search', q, type ?? null],
+    queryFn: () => searchMedia(q, type),
+    enabled: q !== '',
   })
 }
 

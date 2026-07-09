@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppHeader } from '@/components/app-header'
 import { LibraryItemsScreen } from '@/routes/index'
 import { LibraryScreen } from '@/routes/library'
+import { SearchScreen } from '@/routes/search'
 import { EntityDetailScreen } from '@/routes/entity-detail'
 import { HealthScreen } from '@/routes/health'
 
@@ -42,6 +43,12 @@ const libraryRoute = createRoute({
   component: LibraryScreen,
 })
 
+const searchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/search',
+  component: SearchScreen,
+})
+
 const entityDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/entities/$id',
@@ -57,6 +64,7 @@ const healthRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   libraryRoute,
+  searchRoute,
   entityDetailRoute,
   healthRoute,
 ])
