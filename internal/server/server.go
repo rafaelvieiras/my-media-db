@@ -153,6 +153,15 @@ func (s *Server) Handler() (http.Handler, error) {
 				// Enriquecimento de uma entity existente (briefing 0015): puxa o
 				// detalhe do provider e grava a base externa + pôster cacheado.
 				ent.Post("/{id}/enrich", s.enrichEntity)
+
+				// Editor de override POR IDIOMA (briefing 0016): o dono escreve o
+				// patch esparso que vence tudo. PATCH funde por idioma (?lang=), os
+				// DELETE limpam (campo/idioma ou reset), o GET devolve o blob cru.
+				// Escritas pelo pool de escrita (ADR-0010).
+				ent.Patch("/{id}/override", s.patchOverride)
+				ent.Get("/{id}/override", s.getOverride)
+				ent.Delete("/{id}/override", s.deleteOverride)
+				ent.Delete("/{id}/override/{campo}", s.deleteOverrideCampo)
 			})
 		})
 	})

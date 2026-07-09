@@ -172,6 +172,118 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/override:
+    get:
+      operationId: getOverride
+      summary: Blob CRU do override do dono (briefing 0016).
+      description: >
+        Devolve o `override_json` tal como GUARDADO (`{}` quando não há override),
+        para a UI distinguir "overridado" de "herdado" POR CAMPO e POR IDIOMA. Não
+        reinterpreta os valores — o resolver interpreta na leitura da entity. Campos
+        traduzíveis (title/description/tags) aparecem como MAPA por idioma
+        (`{"pt-BR":…, "en":…}`); campos neutros (original_title/release_date/
+        extension_data) como o escalar/objeto direto. 404 se a entity não existe.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Blob cru de override (objeto esparso).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OverrideBlob" }
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      operationId: patchOverride
+      summary: Funde um patch esparso de override, POR IDIOMA (briefing 0016).
+      description: >
+        MERGE ESPARSO de 2 níveis sobre o `override_json`. O `?lang=` é o PINCEL dos
+        campos traduzíveis: cada chave traduzível do corpo é fundida em
+        `override[campo][lang]` (deep-merge preservando os outros idiomas do campo; um
+        override escalar LEGADO migra para `{principal: <legado>}` antes). Campos
+        NEUTROS fundem o escalar em `override[campo]` (o `lang` é ignorado para eles).
+        `null` no idioma é valor VÁLIDO = "definir vazio" (apaga a base e interrompe o
+        fallback naquele idioma — distinto de LIMPAR via DELETE). `lang` default =
+        principal; fora dos permitidos → 400. Responde a entity RESOLVIDA no `lang`.
+        Chave não-editorial ou forma inválida → 422.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - $ref: "#/components/parameters/LangQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OverridePatch" }
+      responses:
+        "200":
+          description: Entidade resolvida no idioma pedido após o merge.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResolvedEntity" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: resetOverride
+      summary: Reset — apaga o override inteiro (briefing 0016).
+      description: >
+        Remove a linha de override da entity: todos os campos voltam a HERDAR a base
+        (externo/arquivo). Responde a entity RESOLVIDA. 404 se a entity não existe.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - $ref: "#/components/parameters/LangQuery"
+      responses:
+        "200":
+          description: Entidade resolvida (na base, sem override).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResolvedEntity" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/override/{campo}:
+    delete:
+      operationId: clearOverrideField
+      summary: Limpar override de um campo (por idioma ou inteiro, briefing 0016).
+      description: >
+        LIMPAR override (≠ definir vazio). Campo TRADUZÍVEL COM `?lang=` remove só
+        `override[campo][lang]` (e a chave campo se o mapa esvaziar). Campo traduzível
+        SEM `?lang=`, ou campo NEUTRO, remove a chave campo INTEIRA (todos os idiomas).
+        Remover chave ausente é idempotente (200). Se o blob esvaziar, a linha de
+        override é removida. Responde a entity RESOLVIDA. `{campo}` não editorial →
+        422; `lang` presente fora dos permitidos → 400; entity inexistente → 404.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - name: campo
+          in: path
+          required: true
+          description: >
+            Campo editorial a limpar (title, original_title, description,
+            release_date, tags, extension_data).
+          schema: { type: string }
+        - $ref: "#/components/parameters/LangQuery"
+      responses:
+        "200":
+          description: Entidade resolvida após limpar o campo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResolvedEntity" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/{id}/files:
     get:
       operationId: getEntityFiles
@@ -587,6 +699,35 @@ components:
           type: array
           description: Idiomas permitidos (governam o que pode ser escrito/scraped).
           items: { type: string }
+    OverrideBlob:
+      type: object
+      description: >
+        Blob CRU de override (briefing 0016), tal como guardado — o patch esparso que
+        o resolver interpreta na leitura. Só campos EDITORIAIS. Traduzíveis
+        (title/description/tags) são um MAPA por idioma (`{"pt-BR":…}`), com `null`
+        num idioma = "definir vazio". Neutros (original_title/release_date/
+        extension_data) são o escalar/objeto direto. Chaves ausentes = herdado. `{}`
+        quando não há override. Forma livre (additionalProperties): a semântica por
+        campo é a do resolver, não do schema.
+      additionalProperties: true
+    OverridePatch:
+      type: object
+      description: >
+        Patch esparso de PATCH /override (briefing 0016). Cada chave é um campo
+        editorial; só as chaves presentes são tocadas (merge esparso). A FORMA do
+        VALOR depende do campo: escalares (title/original_title/description/
+        release_date) aceitam `string` ou `null`; `tags` aceita um array de strings
+        (substituição), um objeto `{add?:[],remove?:[]}` (merge de operações) ou
+        `null`; `extension_data` aceita um objeto ou `null`. Para campos TRADUZÍVEIS o
+        valor é o do idioma `?lang=` (o handler monta o mapa por idioma); campos
+        NEUTROS ignoram o `lang`. `null` = definir vazio (não confundir com LIMPAR, que
+        é o DELETE). Chave não-editorial ou forma inválida → 422.
+      additionalProperties: true
+      example:
+        title: "Duna"
+        description: null
+        tags: { add: ["Clássico"], remove: ["Guerra"] }
+        original_title: "Dune"
     MediaInfo:
       type: object
       description: Fatos técnicos extraídos do arquivo (ffprobe).

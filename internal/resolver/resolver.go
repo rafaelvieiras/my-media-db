@@ -150,6 +150,82 @@ var registroOrigem = map[string]origemCampo{
 	"extension_data": {base: baseExterno, kind: kindExtensao},
 }
 
+// ── Superfície pública do registro (R1, briefing 0016) ───────────────────────
+//
+// O editor de override (0016) precisa saber quais campos são EDITÁVEIS e quais
+// compõem POR IDIOMA para montar/validar o patch — SEM redigitar a lista (que
+// viraria uma segunda fonte de verdade). Estes helpers só LEEM o registroOrigem;
+// não mudam a composição nem a assinatura de Resolver.
+
+// Kind é a CLASSE de composição de um campo editorial, exposta para o editor de
+// override validar a FORMA do patch (escalar aceita string|null; lista aceita
+// array|{add,remove}|null; extensão aceita objeto|null).
+type Kind string
+
+const (
+	// KindEscalar é um campo de valor único (title/original_title/description/
+	// release_date).
+	KindEscalar Kind = "escalar"
+	// KindLista é um campo-lista por operações (tags).
+	KindLista Kind = "lista"
+	// KindExtensao é o mapa de verticais por namespace/chave (extension_data).
+	KindExtensao Kind = "extensao"
+)
+
+// CampoInfo é a etiqueta PÚBLICA de um campo editorial, derivada do registroOrigem:
+// se compõe por idioma (Traduzivel) e sua classe de composição (Kind).
+type CampoInfo struct {
+	Traduzivel bool
+	Kind       Kind
+}
+
+// kindPublico traduz a etiqueta interna de kind na pública.
+func kindPublico(k kindCampo) Kind {
+	switch k {
+	case kindLista:
+		return KindLista
+	case kindExtensao:
+		return KindExtensao
+	default:
+		return KindEscalar
+	}
+}
+
+// CamposEditaveis devolve o mapa campo→CampoInfo dos campos EDITORIAIS (os que
+// passam pela composição de camadas), derivado do registroOrigem. Uma cópia nova a
+// cada chamada — o registro interno permanece imutável de fora. É a fonte única que
+// o server consulta para saber quais chaves de override são válidas (R1/ADR-0001).
+func CamposEditaveis() map[string]CampoInfo {
+	out := make(map[string]CampoInfo, len(registroOrigem))
+	for campo, orig := range registroOrigem {
+		out[campo] = CampoInfo{Traduzivel: orig.traduzivel, Kind: kindPublico(orig.kind)}
+	}
+	return out
+}
+
+// MapaIdiomaDoOverride normaliza o override CRU de um campo TRADUZÍVEL num mapa
+// idioma→valor pronto para o MERGE DE 2 NÍVEIS do editor (0016). Se o valor já está
+// no formato POR IDIOMA, devolve uma cópia; se está no formato LEGADO (0015, sem
+// chave de idioma), embrulha-o sob `principal` (mesma tolerância da leitura). Usa a
+// MESMA classificação que a composição (parseIdiomaMap), preservando a fonte única.
+// Para um campo não traduzível ou inexistente devolve nil.
+func MapaIdiomaDoOverride(campo string, raw json.RawMessage, principal string) map[string]json.RawMessage {
+	orig, ok := registroOrigem[campo]
+	if !ok || !orig.traduzivel {
+		return nil
+	}
+	m, ehMap := parseIdiomaMap(raw, true, orig.kind)
+	out := make(map[string]json.RawMessage, len(m)+1)
+	if ehMap {
+		for idioma, v := range m {
+			out[idioma] = v
+		}
+		return out
+	}
+	out[principal] = raw
+	return out
+}
+
 // Resolver compõe a Entidade resolvida a partir das camadas. É o PONTO ÚNICO onde
 // a precedência `override ⟵ externo ⟵ arquivo` é aplicada. O motor monta a base
 // ARQUIVO como valores canônicos, itera o registro compondo campo a campo, e

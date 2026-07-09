@@ -105,6 +105,54 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/override': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Blob CRU do override do dono (briefing 0016).
+     * @description Devolve o `override_json` tal como GUARDADO (`{}` quando não há override), para a UI distinguir "overridado" de "herdado" POR CAMPO e POR IDIOMA. Não reinterpreta os valores — o resolver interpreta na leitura da entity. Campos traduzíveis (title/description/tags) aparecem como MAPA por idioma (`{"pt-BR":…, "en":…}`); campos neutros (original_title/release_date/ extension_data) como o escalar/objeto direto. 404 se a entity não existe.
+     */
+    get: operations['getOverride']
+    put?: never
+    post?: never
+    /**
+     * Reset — apaga o override inteiro (briefing 0016).
+     * @description Remove a linha de override da entity: todos os campos voltam a HERDAR a base (externo/arquivo). Responde a entity RESOLVIDA. 404 se a entity não existe.
+     */
+    delete: operations['resetOverride']
+    options?: never
+    head?: never
+    /**
+     * Funde um patch esparso de override, POR IDIOMA (briefing 0016).
+     * @description MERGE ESPARSO de 2 níveis sobre o `override_json`. O `?lang=` é o PINCEL dos campos traduzíveis: cada chave traduzível do corpo é fundida em `override[campo][lang]` (deep-merge preservando os outros idiomas do campo; um override escalar LEGADO migra para `{principal: <legado>}` antes). Campos NEUTROS fundem o escalar em `override[campo]` (o `lang` é ignorado para eles). `null` no idioma é valor VÁLIDO = "definir vazio" (apaga a base e interrompe o fallback naquele idioma — distinto de LIMPAR via DELETE). `lang` default = principal; fora dos permitidos → 400. Responde a entity RESOLVIDA no `lang`. Chave não-editorial ou forma inválida → 422.
+     */
+    patch: operations['patchOverride']
+    trace?: never
+  }
+  '/api/v1/entities/{id}/override/{campo}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Limpar override de um campo (por idioma ou inteiro, briefing 0016).
+     * @description LIMPAR override (≠ definir vazio). Campo TRADUZÍVEL COM `?lang=` remove só `override[campo][lang]` (e a chave campo se o mapa esvaziar). Campo traduzível SEM `?lang=`, ou campo NEUTRO, remove a chave campo INTEIRA (todos os idiomas). Remover chave ausente é idempotente (200). Se o blob esvaziar, a linha de override é removida. Responde a entity RESOLVIDA. `{campo}` não editorial → 422; `lang` presente fora dos permitidos → 400; entity inexistente → 404.
+     */
+    delete: operations['clearOverrideField']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/{id}/files': {
     parameters: {
       query?: never
@@ -353,6 +401,29 @@ export interface components {
       fallback: string
       /** @description Idiomas permitidos (governam o que pode ser escrito/scraped). */
       allowed: string[]
+    }
+    /** @description Blob CRU de override (briefing 0016), tal como guardado — o patch esparso que o resolver interpreta na leitura. Só campos EDITORIAIS. Traduzíveis (title/description/tags) são um MAPA por idioma (`{"pt-BR":…}`), com `null` num idioma = "definir vazio". Neutros (original_title/release_date/ extension_data) são o escalar/objeto direto. Chaves ausentes = herdado. `{}` quando não há override. Forma livre (additionalProperties): a semântica por campo é a do resolver, não do schema. */
+    OverrideBlob: {
+      [key: string]: unknown
+    }
+    /**
+     * @description Patch esparso de PATCH /override (briefing 0016). Cada chave é um campo editorial; só as chaves presentes são tocadas (merge esparso). A FORMA do VALOR depende do campo: escalares (title/original_title/description/ release_date) aceitam `string` ou `null`; `tags` aceita um array de strings (substituição), um objeto `{add?:[],remove?:[]}` (merge de operações) ou `null`; `extension_data` aceita um objeto ou `null`. Para campos TRADUZÍVEIS o valor é o do idioma `?lang=` (o handler monta o mapa por idioma); campos NEUTROS ignoram o `lang`. `null` = definir vazio (não confundir com LIMPAR, que é o DELETE). Chave não-editorial ou forma inválida → 422.
+     * @example {
+     *       "title": "Duna",
+     *       "description": null,
+     *       "tags": {
+     *         "add": [
+     *           "Clássico"
+     *         ],
+     *         "remove": [
+     *           "Guerra"
+     *         ]
+     *       },
+     *       "original_title": "Dune"
+     *     }
+     */
+    OverridePatch: {
+      [key: string]: unknown
     }
     /** @description Fatos técnicos extraídos do arquivo (ffprobe). */
     MediaInfo: {
@@ -605,6 +676,122 @@ export interface operations {
       422: components['responses']['Error']
       502: components['responses']['Error']
       503: components['responses']['Error']
+    }
+  }
+  getOverride: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Blob cru de override (objeto esparso). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['OverrideBlob']
+        }
+      }
+      404: components['responses']['Error']
+    }
+  }
+  resetOverride: {
+    parameters: {
+      query?: {
+        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        lang?: components['parameters']['LangQuery']
+      }
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Entidade resolvida (na base, sem override). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ResolvedEntity']
+        }
+      }
+      400: components['responses']['Error']
+      404: components['responses']['Error']
+    }
+  }
+  patchOverride: {
+    parameters: {
+      query?: {
+        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        lang?: components['parameters']['LangQuery']
+      }
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['OverridePatch']
+      }
+    }
+    responses: {
+      /** @description Entidade resolvida no idioma pedido após o merge. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ResolvedEntity']
+        }
+      }
+      400: components['responses']['Error']
+      404: components['responses']['Error']
+      422: components['responses']['Error']
+    }
+  }
+  clearOverrideField: {
+    parameters: {
+      query?: {
+        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        lang?: components['parameters']['LangQuery']
+      }
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+        /** @description Campo editorial a limpar (title, original_title, description, release_date, tags, extension_data). */
+        campo: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Entidade resolvida após limpar o campo. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ResolvedEntity']
+        }
+      }
+      400: components['responses']['Error']
+      404: components['responses']['Error']
+      422: components['responses']['Error']
     }
   }
   getEntityFiles: {
