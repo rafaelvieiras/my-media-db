@@ -1,0 +1,48 @@
+# Ambiente de DESENVOLVIMENTO com hot reload (briefing 0004).
+# Sobe front e back lado a lado, cada um com recarga em tempo real:
+#   - web: Vite dev server (HMR) na 5173
+#   - api: binário Go sob o air (rebuild+restart automático) na 8080
+# O front chama /api relativo; o proxy do Vite resolve para o serviço `api`
+# (mesmo contrato de produção, SEM CORS).
+#
+#   docker compose -f compose.dev.yaml up --build
+#
+# NÃO é produção — a imagem imutável é o Dockerfile da raiz (briefing 0003).
+
+services:
+  web:
+    image: node:lts
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host --port 5173"
+    ports:
+      - "5173:5173"
+    environment:
+      # Alvo do proxy do Vite dentro da rede do compose: `localhost` NÃO é o
+      # serviço `api`; o DNS do compose resolve `api` para o container do back.
+      VITE_PROXY_TARGET: http://api:8080
+    volumes:
+      # Código do front bind-mounted para o HMR enxergar as edições do host.
+      - ./web:/app
+      # Volume ANÔNIMO: impede o node_modules do host (possivelmente root-owned
+      # e/ou de outra arquitetura) de mascarar o instalado dentro do container.
+      - /app/node_modules
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /app
+    ports:
+      - "8080:8080"
+    volumes:
+      # Todo o repositório montado: o air observa os *.go e recompila.
+      - .:/app
+      # Caches do Go em volumes nomeados para rebuilds rápidos entre `up`s.
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+
+volumes:
+  go-mod-cache:
+  go-build-cache:

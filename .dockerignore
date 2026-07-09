@@ -28,6 +28,12 @@ dist-ssr/
 Dockerfile
 .dockerignore
 
+# Ambiente de desenvolvimento com hot reload (briefing 0004): só de dev, nunca
+# entra na imagem de produção.
+compose.dev.yaml
+Dockerfile.dev
+.air.toml
+
 # Quality gate (ferramenta de dev/CI): não vai para a imagem de produção.
 scripts/
 baseline.json

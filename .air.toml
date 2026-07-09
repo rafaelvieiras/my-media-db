@@ -1,0 +1,28 @@
+# Configuração do air (github.com/air-verse/air) — watcher de dev do backend Go.
+# Recompila e reinicia o binário a cada mudança em *.go. É dependência SÓ de dev:
+# não entra na imagem de produção (Dockerfile, briefing 0003).
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Mesmo entrypoint da produção; CGO desligado para binário estático e rápido.
+  # -buildvcs=false: o repo é bind-mounted e o git dentro do container acusa
+  # "dubious ownership", quebrando o stamping de VCS. Em dev não precisamos dele.
+  cmd = "CGO_ENABLED=0 go build -buildvcs=false -o ./tmp/main ./cmd/mymediadb"
+  bin = "./tmp/main"
+  # Observa apenas Go; o front tem seu próprio HMR (Vite) e não passa pelo air.
+  include_ext = ["go"]
+  # Diretórios que não disparam rebuild do back.
+  exclude_dir = ["web", "internal/webui/dist", "tmp", "reports", "scripts"]
+  # Erros de compilação vão para este log dentro de tmp/ (ignorado pelo git).
+  log = "build-errors.log"
+  # Pequeno atraso para agrupar salvamentos em rajada num único rebuild.
+  delay = 300
+  stop_on_error = true
+
+[log]
+  time = true
+
+[misc]
+  # Remove tmp/ ao encerrar o air.
+  clean_on_exit = true

@@ -53,6 +53,37 @@ anterior**, não editar a spec direto.
    `fix:`, `refactor:`), no imperativo.
 6. **Abra o PR** referenciando a issue e, quando aplicável, o ADR/briefing.
 
+## Desenvolvimento com hot reload
+
+A "bancada de trabalho" (briefing [0004](briefings/0004-ambiente-de-desenvolvimento-hot-reload.md))
+sobe front e back lado a lado, cada um com recarga em tempo real. Só precisa de
+Docker + Compose v2:
+
+```sh
+docker compose -f compose.dev.yaml up --build
+```
+
+Sobem dois serviços:
+
+| Serviço | Porta | O que roda | O que recarrega |
+|---|---|---|---|
+| **web** | http://localhost:5173 | Vite dev server (`npm run dev --host`) | edite um `.tsx`/`.css` → **HMR** troca o módulo na tela, sem recarregar a página |
+| **api** | http://localhost:8080 | binário Go sob o [air](https://github.com/air-verse/air) | edite um `.go` → **rebuild + restart** automático em segundos |
+
+Abra **http://localhost:5173**: o front chama `/api` relativo e o **proxy do
+Vite** encaminha para o serviço `api` (mesmo contrato de produção, **sem CORS**).
+O alvo do proxy vem de `VITE_PROXY_TARGET=http://api:8080` (definido no compose,
+porque dentro do container `localhost` não é o serviço `api`); rodando
+`npm run dev` fora do Docker, o default `http://localhost:8080` continua valendo.
+
+`Ctrl+C` (ou `docker compose -f compose.dev.yaml down`) derruba os dois de forma
+limpa. O `air` e o `Dockerfile.dev` são dependências **só de dev** — não entram
+na imagem de produção (briefing [0003](briefings/0003-empacotamento-dockerfile-multistage.md)).
+
+> **File watching:** se ao salvar um arquivo o HMR (front) ou o rebuild (back)
+> não disparar — comum em bind mounts de alguns sistemas de arquivos —, ligue
+> polling: no front, `server.watch.usePolling = true` em `web/vite.config.ts`.
+
 ## Quality gate e hooks de git
 
 O projeto tem uma **catraca de qualidade unificada** (Go + TS) — um único

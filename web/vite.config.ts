@@ -23,7 +23,10 @@ export default defineConfig({
       // Em dev o front chama caminho relativo (/api/...) e o Vite encaminha
       // para o backend Go — mesmo contrato de produção, sem CORS.
       '/api': {
-        target: 'http://localhost:8080',
+        // Alvo configurável: `npm run dev` local usa localhost:8080; no compose
+        // de dev (0004) o serviço `web` define VITE_PROXY_TARGET=http://api:8080
+        // porque `localhost` dentro do container não é o serviço `api`.
+        target: process.env.VITE_PROXY_TARGET || 'http://localhost:8080',
         changeOrigin: true,
       },
     },

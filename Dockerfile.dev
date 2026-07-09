@@ -1,0 +1,15 @@
+# Imagem de DEV do backend (briefing 0004). Só para o loop de desenvolvimento:
+# instala o air (watcher) uma vez, na build, para os `up` seguintes serem rápidos.
+# NÃO é a imagem de produção — essa é o Dockerfile multi-stage da raiz (0003).
+FROM golang:1.26
+
+WORKDIR /app
+
+# air é dependência exclusiva de dev. Módulo ATUAL: github.com/air-verse/air
+# (o antigo cosmtrek/air está descontinuado). Instalado em $GOPATH/bin, que já
+# está no PATH da imagem oficial do Go.
+RUN go install github.com/air-verse/air@latest
+
+# O código é montado como volume no compose; o build real acontece via air em
+# runtime. Cache de módulos/build vive em volumes nomeados (ver compose.dev.yaml).
+CMD ["air", "-c", ".air.toml"]

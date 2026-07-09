@@ -8,7 +8,7 @@
 | **ID** | 0004 |
 | **Tipo** | chore |
 | **Fase (roadmap)** | Fase 1 — Esqueleto do container único |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [03-arquitetura](../docs/03-arquitetura.md), [ADR-0014](../docs/adr/0014-stack-de-implementacao.md) |
 | **Depende de** | [0001](0001-backend-esqueleto-servidor.md), [0002](0002-frontend-scaffold-integracao-api.md) |
 
@@ -103,7 +103,17 @@ A "jornada" é do **dev**:
 - Volume anônimo em `/app/node_modules` é o padrão para não sobrepor as deps do container
   com as do host (que podem ser de outra arquitetura).
 - `usePolling` pode ser necessário conforme o sistema de arquivos do host — deixar
-  documentado e ligar se o watch não disparar.
+  documentado e ligar se o watch não disparar. Na implementação **não foi necessário**
+  (ext4 local dispara HMR e air nativamente); fica documentado como fallback no CONTRIBUTING.
+- **Alvo do proxy configurável** (decisão de implementação): dentro do container `web`,
+  `localhost:8080` não é o serviço `api`. O `vite.config.ts` passou a usar
+  `process.env.VITE_PROXY_TARGET || 'http://localhost:8080'`; o compose define
+  `VITE_PROXY_TARGET=http://api:8080`. Assim o `npm run dev` local segue idêntico e o
+  compose resolve pelo DNS do compose — sem divergir dev de prod.
+- **`-buildvcs=false` no `.air.toml`** (necessário): com o repo bind-mounted, o git
+  dentro do container acusa "dubious ownership" e o `go build` falha no VCS stamping;
+  em dev não se precisa do stamp. O `api` usa um `Dockerfile.dev` que só instala o
+  **air** (módulo atual `github.com/air-verse/air`), com caches Go em volumes nomeados.
 
 ## 7. Fora deste briefing / follow-ups
 
