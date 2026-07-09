@@ -80,3 +80,19 @@ Cada briefing carrega um `status` no cabeçalho:
 | [0009](0009-scanner-fswalk-ffprobe-matching.md) | Scanner: fs walk + ffprobe + matching Kodi/Jellyfin | feature | done | 0007, 0008 |
 | [0010](0010-api-leitura-resolver-minimo.md) | API de leitura + resolver mínimo (camada arquivo) | feature | done | 0007, 0009 |
 | [0011](0011-frontend-grid-lista-detalhe.md) | Frontend: grid de posters, lista e detalhe com mediainfo | feature | done | 0008, 0009, 0010 |
+
+### Fase 3 — Enriquecimento + override
+
+Compõe `override ⟵ externo ⟵ arquivo` em toda leitura e dá **autoridade ao dono**.
+Breakdown definido no [roadmap](../docs/12-roadmap.md#fase-3--enriquecimento--override).
+Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na Fase 2).
+
+| ID | Briefing | Tipo | Status | Depende de |
+|---|---|---|---|---|
+| [0012](0012-schema-fase3-camadas-externo-override.md) | Schema da Fase 3: materializar `media_external` e `media_override` | feature | ready | 0007 |
+| [0013](0013-resolver-tres-camadas.md) | Resolver de 3 camadas (`override ⟵ externo ⟵ arquivo`) | feature | draft | 0012 |
+| [0014](0014-provider-tmdb-busca-local-first.md) | Provider TMDB + busca local-first (`/api/v1/search`) | feature | draft | 0012, 0013 |
+| [0015](0015-enriquecimento-import-proxy-imagem.md) | Enriquecimento (import explícito) + proxy/cache de imagem | feature | draft | 0014 |
+| [0016](0016-editor-override-ui.md) | Editor de override (`/api/v1/entities/{id}/override`) + UI | feature | draft | 0013 |
+| [0017](0017-arte-custom-upload-ui.md) | Arte custom: upload (`/api/v1/entities/{id}/assets`) + UI | feature | draft | 0015 |
+| [0018](0018-fila-revisao-orfas-correcao-match.md) | Fila de revisão + órfãs + correção de match | feature | draft | 0013, 0016 |

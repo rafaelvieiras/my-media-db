@@ -45,6 +45,21 @@ Objetivo: complementar itens de fontes externas e **dar autoridade ao dono**.
 - **Editor de override** (título, campos) + **upload de arte custom**.
 - O **resolver** compondo `override ⟵ externo ⟵ arquivo` em toda leitura.
 
+**Breakdown em briefings** (ver [`briefings/`](../briefings/README.md#fase-3--enriquecimento--override)):
+
+| ID | Entrega | Fecha |
+|---|---|---|
+| [0012](../briefings/0012-schema-fase3-camadas-externo-override.md) | Materializar `media_external` + `media_override` | fundação (R4/MD4) |
+| [0013](../briefings/0013-resolver-tres-camadas.md) | Resolver `override ⟵ externo ⟵ arquivo` | R1–R7 |
+| [0014](../briefings/0014-provider-tmdb-busca-local-first.md) | Provider TMDB + busca `/api/v1/search` local-first | doc 07 |
+| [0015](../briefings/0015-enriquecimento-import-proxy-imagem.md) | Import explícito + proxy/cache de imagem | doc 07/08 |
+| [0016](../briefings/0016-editor-override-ui.md) | Editor de override + UI | R3/R6 |
+| [0017](../briefings/0017-arte-custom-upload-ui.md) | Arte custom (upload) + UI | doc 08 |
+| [0018](../briefings/0018-fila-revisao-orfas-correcao-match.md) | Fila de revisão + órfãs + correção de match | MD1/MD5 |
+
+**Adiado para o fim da fase / Fase 4:** elenco/equipe (MD6 — `person`/`credit`/
+`company` e override de créditos), separado por ser bem mais complexo.
+
 ## Fase 4 — API TMDB-compat + multiusuário
 
 Objetivo: outros apps consomem o catálogo; acesso controlado.
