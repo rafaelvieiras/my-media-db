@@ -11,6 +11,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
+	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 )
 
 // Server agrega as dependências necessárias para construir o handler HTTP.
@@ -20,6 +21,9 @@ type Server struct {
 	// library é o serviço de datasources (/api/v1/library). Nil quando não há
 	// banco injetado (ex.: alguns testes de rota); os handlers degradam com 503.
 	library *library.Service
+	// scanner é o gerenciador de jobs de scan (/api/v1/library/{id}/scan). Nil
+	// quando não há banco injetado.
+	scanner *scanner.Manager
 }
 
 // New cria um Server com a versão do binário e os pools de banco (repassados
@@ -29,6 +33,7 @@ func New(version string, database *db.DB) *Server {
 	s := &Server{version: version, db: database}
 	if database != nil {
 		s.library = library.New(database)
+		s.scanner = scanner.NewManager(database)
 	}
 	return s
 }
@@ -58,6 +63,11 @@ func (s *Server) Handler() (http.Handler, error) {
 				lib.Get("/", s.listLibrary)
 				lib.Get("/{id}", s.getLibrary)
 				lib.Delete("/{id}", s.deleteLibrary)
+
+				// Scan em background por datasource (briefing 0009): dispara
+				// (202) e consulta o progresso.
+				lib.Post("/{id}/scan", s.startScan)
+				lib.Get("/{id}/scan", s.getScanStatus)
 			})
 		})
 	})

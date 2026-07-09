@@ -22,6 +22,11 @@ type Querier interface {
 	AtualizarLibrarySource(ctx context.Context, arg AtualizarLibrarySourceParams) (LibrarySource, error)
 	// Transicao de ciclo de vida: marca present/missing e carimba last_seen.
 	AtualizarMediaFileState(ctx context.Context, arg AtualizarMediaFileStateParams) (MediaFile, error)
+	// Reencontro num scan: o arquivo foi achado pelo content_hash. Atualiza o path
+	// (cobre rename/move -- idempotente, nao cria outra linha), o size/mtime, volta
+	// para present e carimba last_seen com o timestamp do scan (usado depois para
+	// decidir quem virou missing). Fixa tambem a fonte de origem.
+	AtualizarMediaFileVisto(ctx context.Context, arg AtualizarMediaFileVistoParams) (MediaFile, error)
 	// CRUD de asset (poster/fanart/... referenciados por uma entity).
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
 	CriarAsset(ctx context.Context, arg CriarAssetParams) (Asset, error)
@@ -50,7 +55,9 @@ type Querier interface {
 	// state e last_scan ficam de fora do INSERT: uma fonte nova nasce 'online'
 	// (DEFAULT) e sem last_scan; o scan preenche depois via AtualizarLibrarySource.
 	CriarLibrarySource(ctx context.Context, arg CriarLibrarySourceParams) (LibrarySource, error)
-	// CRUD de media_file + a query de POSSE DERIVADA (ADR-0009).
+	// CRUD de media_file + a query de POSSE DERIVADA (ADR-0009) + as queries do
+	// scanner (briefing 0009): dedup por content_hash, reencontro (rename/move) e
+	// marcacao de missing por datasource.
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
 	CriarMediaFile(ctx context.Context, arg CriarMediaFileParams) (MediaFile, error)
 	// POSSE DERIVADA (ADR-0009): verdadeiro se, e so se, existe ao menos um
@@ -65,9 +72,20 @@ type Querier interface {
 	ListarRelacoesFilhas(ctx context.Context, parentID string) ([]EntityRelation, error)
 	// Relacoes onde a entity e o filho (ex.: a serie de uma temporada).
 	ListarRelacoesPais(ctx context.Context, childID string) ([]EntityRelation, error)
+	// Fecho do ciclo de vida (ADR-0012): ao concluir um scan COMPLETO com a fonte
+	// acessivel, todo media_file 'present' daquela fonte cujo last_seen NAO e o
+	// carimbo deste scan (ou seja, nao foi revisto) passa a 'missing'. A entity e
+	// preservada; a posse cai. Escopo por library_source_id garante que um datasource
+	// offline (que nem chega aqui) nao afete arquivos de outras fontes.
+	MarcarMediaFilesNaoVistosMissing(ctx context.Context, arg MarcarMediaFilesNaoVistosMissingParams) (int64, error)
 	ObterAsset(ctx context.Context, id string) (Asset, error)
 	ObterEntity(ctx context.Context, id string) (Entity, error)
 	ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.NullString) (Entity, error)
+	// Dedup do scanner sem id externo (briefing 0009): reusa a MESMA entity para o
+	// mesmo (type, title, release_date). Usa `IS` (nao `=`) para casar release_date
+	// NULO quando o nome nao traz ano. Mantem o re-scan idempotente para obras sem
+	// id embutido no nome (nao duplica a entity).
+	ObterEntityPorTituloAno(ctx context.Context, arg ObterEntityPorTituloAnoParams) (Entity, error)
 	// Lookup por id externo tmdb via coluna gerada + indice (doc 04, busca sem GIN).
 	ObterEntityPorTmdb(ctx context.Context, externalIDTmdb sql.NullString) (Entity, error)
 	ObterEntityRelation(ctx context.Context, id string) (EntityRelation, error)
@@ -76,6 +94,10 @@ type Querier interface {
 	// do INSERT e responder 409 com mensagem clara em vez de estourar o UNIQUE.
 	ObterLibrarySourcePorPath(ctx context.Context, path string) (LibrarySource, error)
 	ObterMediaFile(ctx context.Context, id string) (MediaFile, error)
+	// Dedup do scanner: acha o arquivo pelo hash de conteudo (estavel a rename/move).
+	// content_hash NAO e UNIQUE (colisao real e astronomica com o hash parcial), por
+	// isso LIMIT 1. Se achar, o scanner atualiza o path em vez de criar outra linha.
+	ObterMediaFilePorContentHash(ctx context.Context, contentHash sql.NullString) (MediaFile, error)
 	// Le um valor da tabela de metadados pela chave. Serve de query-semente para
 	// provar o wiring do sqlc de ponta a ponta; queries de dominio chegam no 0007.
 	// (Comentario em ASCII: o sqlc corrompe o SQL gerado com acentos no .sql de

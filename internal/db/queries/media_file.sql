@@ -1,25 +1,37 @@
--- CRUD de media_file + a query de POSSE DERIVADA (ADR-0009).
+-- CRUD de media_file + a query de POSSE DERIVADA (ADR-0009) + as queries do
+-- scanner (briefing 0009): dedup por content_hash, reencontro (rename/move) e
+-- marcacao de missing por datasource.
 -- Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
 
 -- name: CriarMediaFile :one
 INSERT INTO media_file (
     id, entity_id, path, content_hash, size, mtime, edition, part_no,
-    match_confidence, mediainfo_json, state, last_seen
+    match_confidence, mediainfo_json, state, last_seen, library_source_id
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 RETURNING id, entity_id, path, content_hash, size, mtime, edition, part_no,
-    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at;
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id;
 
 -- name: ObterMediaFile :one
 SELECT id, entity_id, path, content_hash, size, mtime, edition, part_no,
-    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id
 FROM media_file
 WHERE id = ?;
 
+-- name: ObterMediaFilePorContentHash :one
+-- Dedup do scanner: acha o arquivo pelo hash de conteudo (estavel a rename/move).
+-- content_hash NAO e UNIQUE (colisao real e astronomica com o hash parcial), por
+-- isso LIMIT 1. Se achar, o scanner atualiza o path em vez de criar outra linha.
+SELECT id, entity_id, path, content_hash, size, mtime, edition, part_no,
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id
+FROM media_file
+WHERE content_hash = ?
+LIMIT 1;
+
 -- name: ListarMediaFilesPorEntity :many
 SELECT id, entity_id, path, content_hash, size, mtime, edition, part_no,
-    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id
 FROM media_file
 WHERE entity_id = ?
 ORDER BY created_at, id;
@@ -32,7 +44,37 @@ SET state = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
 RETURNING id, entity_id, path, content_hash, size, mtime, edition, part_no,
-    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at;
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id;
+
+-- name: AtualizarMediaFileVisto :one
+-- Reencontro num scan: o arquivo foi achado pelo content_hash. Atualiza o path
+-- (cobre rename/move -- idempotente, nao cria outra linha), o size/mtime, volta
+-- para present e carimba last_seen com o timestamp do scan (usado depois para
+-- decidir quem virou missing). Fixa tambem a fonte de origem.
+UPDATE media_file
+SET path = ?,
+    size = ?,
+    mtime = ?,
+    state = 'present',
+    last_seen = ?,
+    library_source_id = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+RETURNING id, entity_id, path, content_hash, size, mtime, edition, part_no,
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id;
+
+-- name: MarcarMediaFilesNaoVistosMissing :execrows
+-- Fecho do ciclo de vida (ADR-0012): ao concluir um scan COMPLETO com a fonte
+-- acessivel, todo media_file 'present' daquela fonte cujo last_seen NAO e o
+-- carimbo deste scan (ou seja, nao foi revisto) passa a 'missing'. A entity e
+-- preservada; a posse cai. Escopo por library_source_id garante que um datasource
+-- offline (que nem chega aqui) nao afete arquivos de outras fontes.
+UPDATE media_file
+SET state = 'missing',
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE library_source_id = ?
+  AND state = 'present'
+  AND last_seen IS NOT ?;
 
 -- name: ApagarMediaFile :exec
 DELETE FROM media_file

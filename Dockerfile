@@ -52,6 +52,11 @@ RUN CGO_ENABLED=0 go build \
 # ---------------------------------------------------------------------------
 FROM alpine:3.22 AS final
 
+# ffprobe/ffmpeg são dependência de RUNTIME do scanner (ADR-0014, briefing 0009):
+# o pacote `ffmpeg` do Alpine já traz o binário `ffprobe`. Sem ele o scan ainda
+# roda, mas degrada (mediainfo vazio). Mantém a imagem enxuta (--no-cache).
+RUN apk add --no-cache ffmpeg
+
 # Usuário não-root dedicado.
 RUN addgroup -S mymediadb && adduser -S -G mymediadb -H -h /nonexistent mymediadb
 

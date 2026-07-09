@@ -266,11 +266,17 @@ entity            (id, type, title, original_title, description,
                    --   (json_extract $.tmdb / $.imdb) + índice → lookup por id externo
 media_file        (id, entity_id→entity, path UNIQUE, content_hash (indexado),
                    size, mtime, edition, part_no, match_confidence,
-                   mediainfo_json, state, last_seen, created_at, updated_at)
+                   mediainfo_json, state, last_seen, library_source_id→library_source
+                   (indexado), created_at, updated_at)
                    -- 1:N com entity (versões/qualidades/edições); edition=rótulo,
                    -- part_no p/ stacking (cd1/cd2); ver 06 — Identidade e matching.
                    -- state: DEFAULT 'present', CHECK IN ('present','missing');
                    --   last_seen carimba o último scan que viu o arquivo (ADR-0012)
+                   -- library_source_id: fonte de origem (migration 0003, briefing
+                   --   0009). É o escopo do ciclo de vida: um scan completo marca
+                   --   'missing' só os arquivos daquela fonte não revistos. FK SEM
+                   --   cascata (descadastrar fonte não apaga arquivos); NULO para
+                   --   registros anteriores ao 0003 até o próximo scan reencontrá-los.
 library_source    (id, path UNIQUE, type, last_scan, state,
                    created_at, updated_at)
                    -- state: DEFAULT 'online', CHECK IN ('online','offline');

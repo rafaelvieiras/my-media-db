@@ -47,6 +47,18 @@ SELECT id, type, title, original_title, description, release_date,
 FROM entity
 WHERE external_id_imdb = ?;
 
+-- name: ObterEntityPorTituloAno :one
+-- Dedup do scanner sem id externo (briefing 0009): reusa a MESMA entity para o
+-- mesmo (type, title, release_date). Usa `IS` (nao `=`) para casar release_date
+-- NULO quando o nome nao traz ano. Mantem o re-scan idempotente para obras sem
+-- id embutido no nome (nao duplica a entity).
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb
+FROM entity
+WHERE type = ? AND title = ? AND release_date IS ?
+LIMIT 1;
+
 -- name: ListarEntities :many
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,

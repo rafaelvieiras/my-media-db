@@ -270,6 +270,47 @@ func (q *Queries) ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.Nul
 	return i, err
 }
 
+const obterEntityPorTituloAno = `-- name: ObterEntityPorTituloAno :one
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb
+FROM entity
+WHERE type = ? AND title = ? AND release_date IS ?
+LIMIT 1
+`
+
+type ObterEntityPorTituloAnoParams struct {
+	Type        string
+	Title       string
+	ReleaseDate sql.NullString
+}
+
+// Dedup do scanner sem id externo (briefing 0009): reusa a MESMA entity para o
+// mesmo (type, title, release_date). Usa `IS` (nao `=`) para casar release_date
+// NULO quando o nome nao traz ano. Mantem o re-scan idempotente para obras sem
+// id embutido no nome (nao duplica a entity).
+func (q *Queries) ObterEntityPorTituloAno(ctx context.Context, arg ObterEntityPorTituloAnoParams) (Entity, error) {
+	row := q.db.QueryRowContext(ctx, obterEntityPorTituloAno, arg.Type, arg.Title, arg.ReleaseDate)
+	var i Entity
+	err := row.Scan(
+		&i.ID,
+		&i.Type,
+		&i.Title,
+		&i.OriginalTitle,
+		&i.Description,
+		&i.ReleaseDate,
+		&i.Status,
+		&i.TagsJson,
+		&i.ExternalIdsJson,
+		&i.ExtensionDataJson,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ExternalIDTmdb,
+		&i.ExternalIDImdb,
+	)
+	return i, err
+}
+
 const obterEntityPorTmdb = `-- name: ObterEntityPorTmdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,

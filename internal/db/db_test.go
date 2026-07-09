@@ -105,9 +105,10 @@ func TestMigrateUp(t *testing.T) {
 	if err := d.Migrate(ctx); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	// Após o 0007 há duas migrations (0001 semente + 0002 schema do núcleo).
-	if v := mustSchemaVersion(t, d); v != 2 {
-		t.Errorf("versão após up = %d, quero 2", v)
+	// Após o 0009 há três migrations (0001 semente + 0002 schema do núcleo +
+	// 0003 media_file.library_source_id).
+	if v := mustSchemaVersion(t, d); v != 3 {
+		t.Errorf("versão após up = %d, quero 3", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -126,35 +127,41 @@ func TestMigrateUp(t *testing.T) {
 	}
 }
 
+// downPara reverte uma migration e confere a versão resultante.
+func downPara(t *testing.T, d *DB, querVersao int64) {
+	t.Helper()
+	if err := d.MigrateDown(context.Background()); err != nil {
+		t.Fatalf("MigrateDown para %d: %v", querVersao, err)
+	}
+	if v := mustSchemaVersion(t, d); v != querVersao {
+		t.Errorf("versão após down = %d, quero %d", v, querVersao)
+	}
+}
+
+// querFalha confere que uma query FALHA (o objeto que ela toca sumiu no down).
+func querFalha(t *testing.T, d *DB, query, msg string) {
+	t.Helper()
+	if _, err := d.Read.QueryContext(context.Background(), query); err == nil {
+		t.Error(msg)
+	}
+}
+
 func TestMigrateDown(t *testing.T) {
 	d := openTest(t)
-	ctx := context.Background()
-	if err := d.Migrate(ctx); err != nil {
+	if err := d.Migrate(context.Background()); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
 
-	// Down reverte uma migration por vez. Primeiro reverte o 0002 (schema do
-	// núcleo): volta à versão 1 e some com a tabela entity.
-	if err := d.MigrateDown(ctx); err != nil {
-		t.Fatalf("MigrateDown 0002: %v", err)
-	}
-	if v := mustSchemaVersion(t, d); v != 1 {
-		t.Errorf("versão após down do 0002 = %d, quero 1", v)
-	}
-	if _, err := d.Read.QueryContext(ctx, "SELECT 1 FROM entity"); err == nil {
-		t.Error("tabela entity ainda existe após o down do 0002")
-	}
+	// Down reverte uma migration por vez, do topo para a base.
+	downPara(t, d, 2) // 0003: remove a coluna library_source_id de media_file.
+	querFalha(t, d, "SELECT library_source_id FROM media_file",
+		"coluna library_source_id ainda existe após o down do 0003")
 
-	// Reverte também o 0001 (semente): volta à versão 0 e some com a tabela meta.
-	if err := d.MigrateDown(ctx); err != nil {
-		t.Fatalf("MigrateDown 0001: %v", err)
-	}
-	if v := mustSchemaVersion(t, d); v != 0 {
-		t.Errorf("versão após down = %d, quero 0", v)
-	}
-	if _, err := d.Read.QueryContext(ctx, "SELECT 1 FROM mymediadb_meta"); err == nil {
-		t.Error("tabela mymediadb_meta ainda existe após o down")
-	}
+	downPara(t, d, 1) // 0002: remove o schema do núcleo (tabela entity).
+	querFalha(t, d, "SELECT 1 FROM entity", "tabela entity ainda existe após o down do 0002")
+
+	downPara(t, d, 0) // 0001: remove a semente (tabela mymediadb_meta).
+	querFalha(t, d, "SELECT 1 FROM mymediadb_meta", "tabela mymediadb_meta ainda existe após o down")
 }
 
 // TestLeituraConcorrenteDuranteEscrita garante que leituras não recebem

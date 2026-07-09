@@ -16,7 +16,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// setup abre um banco temporário migrado (schema 2) e devolve os Queries no pool
+// setup abre um banco temporário migrado (schema 3) e devolve os Queries no pool
 // de escrita.
 func setup(t *testing.T) *sqlcgen.Queries {
 	t.Helper()

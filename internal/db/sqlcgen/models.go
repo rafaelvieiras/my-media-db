@@ -74,6 +74,7 @@ type MediaFile struct {
 	LastSeen        sql.NullString
 	CreatedAt       string
 	UpdatedAt       string
+	LibrarySourceID sql.NullString
 }
 
 type MymediadbMetum struct {

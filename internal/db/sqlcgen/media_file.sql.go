@@ -27,7 +27,7 @@ SET state = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
 RETURNING id, entity_id, path, content_hash, size, mtime, edition, part_no,
-    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id
 `
 
 type AtualizarMediaFileStateParams struct {
@@ -55,53 +55,46 @@ func (q *Queries) AtualizarMediaFileState(ctx context.Context, arg AtualizarMedi
 		&i.LastSeen,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LibrarySourceID,
 	)
 	return i, err
 }
 
-const criarMediaFile = `-- name: CriarMediaFile :one
-
-INSERT INTO media_file (
-    id, entity_id, path, content_hash, size, mtime, edition, part_no,
-    match_confidence, mediainfo_json, state, last_seen
-) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-)
+const atualizarMediaFileVisto = `-- name: AtualizarMediaFileVisto :one
+UPDATE media_file
+SET path = ?,
+    size = ?,
+    mtime = ?,
+    state = 'present',
+    last_seen = ?,
+    library_source_id = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
 RETURNING id, entity_id, path, content_hash, size, mtime, edition, part_no,
-    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id
 `
 
-type CriarMediaFileParams struct {
-	ID              string
-	EntityID        string
+type AtualizarMediaFileVistoParams struct {
 	Path            string
-	ContentHash     sql.NullString
 	Size            sql.NullInt64
 	Mtime           sql.NullString
-	Edition         sql.NullString
-	PartNo          sql.NullInt64
-	MatchConfidence sql.NullFloat64
-	MediainfoJson   sql.NullString
-	State           string
 	LastSeen        sql.NullString
+	LibrarySourceID sql.NullString
+	ID              string
 }
 
-// CRUD de media_file + a query de POSSE DERIVADA (ADR-0009).
-// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
-func (q *Queries) CriarMediaFile(ctx context.Context, arg CriarMediaFileParams) (MediaFile, error) {
-	row := q.db.QueryRowContext(ctx, criarMediaFile,
-		arg.ID,
-		arg.EntityID,
+// Reencontro num scan: o arquivo foi achado pelo content_hash. Atualiza o path
+// (cobre rename/move -- idempotente, nao cria outra linha), o size/mtime, volta
+// para present e carimba last_seen com o timestamp do scan (usado depois para
+// decidir quem virou missing). Fixa tambem a fonte de origem.
+func (q *Queries) AtualizarMediaFileVisto(ctx context.Context, arg AtualizarMediaFileVistoParams) (MediaFile, error) {
+	row := q.db.QueryRowContext(ctx, atualizarMediaFileVisto,
 		arg.Path,
-		arg.ContentHash,
 		arg.Size,
 		arg.Mtime,
-		arg.Edition,
-		arg.PartNo,
-		arg.MatchConfidence,
-		arg.MediainfoJson,
-		arg.State,
 		arg.LastSeen,
+		arg.LibrarySourceID,
+		arg.ID,
 	)
 	var i MediaFile
 	err := row.Scan(
@@ -119,6 +112,76 @@ func (q *Queries) CriarMediaFile(ctx context.Context, arg CriarMediaFileParams) 
 		&i.LastSeen,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LibrarySourceID,
+	)
+	return i, err
+}
+
+const criarMediaFile = `-- name: CriarMediaFile :one
+
+INSERT INTO media_file (
+    id, entity_id, path, content_hash, size, mtime, edition, part_no,
+    match_confidence, mediainfo_json, state, last_seen, library_source_id
+) VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+)
+RETURNING id, entity_id, path, content_hash, size, mtime, edition, part_no,
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id
+`
+
+type CriarMediaFileParams struct {
+	ID              string
+	EntityID        string
+	Path            string
+	ContentHash     sql.NullString
+	Size            sql.NullInt64
+	Mtime           sql.NullString
+	Edition         sql.NullString
+	PartNo          sql.NullInt64
+	MatchConfidence sql.NullFloat64
+	MediainfoJson   sql.NullString
+	State           string
+	LastSeen        sql.NullString
+	LibrarySourceID sql.NullString
+}
+
+// CRUD de media_file + a query de POSSE DERIVADA (ADR-0009) + as queries do
+// scanner (briefing 0009): dedup por content_hash, reencontro (rename/move) e
+// marcacao de missing por datasource.
+// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+func (q *Queries) CriarMediaFile(ctx context.Context, arg CriarMediaFileParams) (MediaFile, error) {
+	row := q.db.QueryRowContext(ctx, criarMediaFile,
+		arg.ID,
+		arg.EntityID,
+		arg.Path,
+		arg.ContentHash,
+		arg.Size,
+		arg.Mtime,
+		arg.Edition,
+		arg.PartNo,
+		arg.MatchConfidence,
+		arg.MediainfoJson,
+		arg.State,
+		arg.LastSeen,
+		arg.LibrarySourceID,
+	)
+	var i MediaFile
+	err := row.Scan(
+		&i.ID,
+		&i.EntityID,
+		&i.Path,
+		&i.ContentHash,
+		&i.Size,
+		&i.Mtime,
+		&i.Edition,
+		&i.PartNo,
+		&i.MatchConfidence,
+		&i.MediainfoJson,
+		&i.State,
+		&i.LastSeen,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LibrarySourceID,
 	)
 	return i, err
 }
@@ -142,7 +205,7 @@ func (q *Queries) EntityTemPosse(ctx context.Context, entityID string) (bool, er
 
 const listarMediaFilesPorEntity = `-- name: ListarMediaFilesPorEntity :many
 SELECT id, entity_id, path, content_hash, size, mtime, edition, part_no,
-    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id
 FROM media_file
 WHERE entity_id = ?
 ORDER BY created_at, id
@@ -172,6 +235,7 @@ func (q *Queries) ListarMediaFilesPorEntity(ctx context.Context, entityID string
 			&i.LastSeen,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.LibrarySourceID,
 		); err != nil {
 			return nil, err
 		}
@@ -186,9 +250,36 @@ func (q *Queries) ListarMediaFilesPorEntity(ctx context.Context, entityID string
 	return items, nil
 }
 
+const marcarMediaFilesNaoVistosMissing = `-- name: MarcarMediaFilesNaoVistosMissing :execrows
+UPDATE media_file
+SET state = 'missing',
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE library_source_id = ?
+  AND state = 'present'
+  AND last_seen IS NOT ?
+`
+
+type MarcarMediaFilesNaoVistosMissingParams struct {
+	LibrarySourceID sql.NullString
+	LastSeen        sql.NullString
+}
+
+// Fecho do ciclo de vida (ADR-0012): ao concluir um scan COMPLETO com a fonte
+// acessivel, todo media_file 'present' daquela fonte cujo last_seen NAO e o
+// carimbo deste scan (ou seja, nao foi revisto) passa a 'missing'. A entity e
+// preservada; a posse cai. Escopo por library_source_id garante que um datasource
+// offline (que nem chega aqui) nao afete arquivos de outras fontes.
+func (q *Queries) MarcarMediaFilesNaoVistosMissing(ctx context.Context, arg MarcarMediaFilesNaoVistosMissingParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, marcarMediaFilesNaoVistosMissing, arg.LibrarySourceID, arg.LastSeen)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const obterMediaFile = `-- name: ObterMediaFile :one
 SELECT id, entity_id, path, content_hash, size, mtime, edition, part_no,
-    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id
 FROM media_file
 WHERE id = ?
 `
@@ -211,6 +302,41 @@ func (q *Queries) ObterMediaFile(ctx context.Context, id string) (MediaFile, err
 		&i.LastSeen,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LibrarySourceID,
+	)
+	return i, err
+}
+
+const obterMediaFilePorContentHash = `-- name: ObterMediaFilePorContentHash :one
+SELECT id, entity_id, path, content_hash, size, mtime, edition, part_no,
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id
+FROM media_file
+WHERE content_hash = ?
+LIMIT 1
+`
+
+// Dedup do scanner: acha o arquivo pelo hash de conteudo (estavel a rename/move).
+// content_hash NAO e UNIQUE (colisao real e astronomica com o hash parcial), por
+// isso LIMIT 1. Se achar, o scanner atualiza o path em vez de criar outra linha.
+func (q *Queries) ObterMediaFilePorContentHash(ctx context.Context, contentHash sql.NullString) (MediaFile, error) {
+	row := q.db.QueryRowContext(ctx, obterMediaFilePorContentHash, contentHash)
+	var i MediaFile
+	err := row.Scan(
+		&i.ID,
+		&i.EntityID,
+		&i.Path,
+		&i.ContentHash,
+		&i.Size,
+		&i.Mtime,
+		&i.Edition,
+		&i.PartNo,
+		&i.MatchConfidence,
+		&i.MediainfoJson,
+		&i.State,
+		&i.LastSeen,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LibrarySourceID,
 	)
 	return i, err
 }
