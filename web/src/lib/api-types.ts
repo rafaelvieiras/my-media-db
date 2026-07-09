@@ -202,6 +202,10 @@ export interface components {
       owned: boolean
       file_count: number
       poster_url: string | null
+      /** @description Dados de verticais (namespace → objeto de campos), compostos pela mesma precedência override ⟵ externo ⟵ arquivo. Objeto vazio quando não há extensões; nunca null. */
+      extension_data: {
+        [key: string]: Record<string, never>
+      }
     }
     /** @description Fatos técnicos extraídos do arquivo (ffprobe). */
     MediaInfo: {

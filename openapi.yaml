@@ -295,7 +295,7 @@ components:
         Fase 3 preenche os mesmos campos com override/externo sem mudar o shape.
       required:
         [id, type, title, original_title, description, release_date, status,
-         tags, external_ids, owned, file_count, poster_url]
+         tags, external_ids, owned, file_count, poster_url, extension_data]
       properties:
         id: { type: string }
         type: { type: string }
@@ -313,6 +313,13 @@ components:
         owned: { type: boolean }
         file_count: { type: integer }
         poster_url: { type: [string, "null"] }
+        extension_data:
+          type: object
+          description: >
+            Dados de verticais (namespace → objeto de campos), compostos pela
+            mesma precedência override ⟵ externo ⟵ arquivo. Objeto vazio quando
+            não há extensões; nunca null.
+          additionalProperties: { type: object }
     MediaInfo:
       type: object
       description: Fatos técnicos extraídos do arquivo (ffprobe).

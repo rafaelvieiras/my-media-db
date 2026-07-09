@@ -213,12 +213,47 @@ func (s *Server) getEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Camada OVERRIDE: o patch cru do dono (media_override). Ausência de linha
+	// (sql.ErrNoRows) não é erro — só significa "sem override". A camada EXTERNA
+	// NÃO é ligada aqui: sem provider/mapper raw→canônico (0015) seria código
+	// morto; ela é exercitada nos testes de unidade do motor.
+	override, err := s.carregarOverride(ctx, id)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+
 	resolvida := resolver.Resolver(resolver.Camadas{
 		Entity:    ent,
 		Files:     files,
 		PosterURL: posterURL,
+		Override:  override,
 	})
 	writeJSON(w, http.StatusOK, resolvida)
+}
+
+// carregarOverride lê o patch de override da entity (media_override) e o decodifica
+// para o mapa esparso cru que o resolver espera. Sem linha (sql.ErrNoRows) ou com
+// override_json vazio/inválido devolve nil (sem override, herda a base) — apenas um
+// erro real de banco é propagado.
+func (s *Server) carregarOverride(ctx context.Context, id string) (map[string]json.RawMessage, error) {
+	ov, err := s.leitura().ObterMediaOverride(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if !ov.OverrideJson.Valid || ov.OverrideJson.String == "" {
+		return nil, nil
+	}
+	var patch map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(ov.OverrideJson.String), &patch); err != nil {
+		// Override malformado degrada para "sem override" em vez de derrubar a
+		// leitura (a base editorial/arquivo segue servível).
+		return nil, nil
+	}
+	return patch, nil
 }
 
 // getEntityFiles trata GET /api/v1/entities/{id}/files: lista os media_file com

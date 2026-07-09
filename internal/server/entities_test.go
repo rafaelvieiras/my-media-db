@@ -290,6 +290,72 @@ func TestGetEntityResolvido(t *testing.T) {
 	eqPtr(t, "poster_url", ent.PosterURL, "/api/v1/entities/x/assets/poster")
 }
 
+// TestGetEntityOverrideComposto cobre a fiação ponta a ponta do override no
+// handler: grava uma linha em media_override (via UPSERT do 0012) e confere que
+// GET /{id} reflete o valor composto — título sobreposto — e que extension_data
+// aparece como objeto composto.
+func TestGetEntityOverrideComposto(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	_, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
+		ID:                "x",
+		Type:              "movie",
+		Title:             "Título Original",
+		TagsJson:          nsOf(`["a","b"]`),
+		ExtensionDataJson: nsOf(`{"music_video":{"bpm":120}}`),
+	})
+	if err != nil {
+		t.Fatalf("CriarEntity: %v", err)
+	}
+	// Patch do dono: sobrepõe o título, remove a tag "a" e ajusta o bpm.
+	_, err = escrita(t, d).UpsertMediaOverride(context.Background(), sqlcgen.UpsertMediaOverrideParams{
+		EntityID:     "x",
+		OverrideJson: nsOf(`{"title":"Título do Dono","tags":{"remove":["a"]},"extension_data":{"music_video":{"bpm":128}}}`),
+	})
+	if err != nil {
+		t.Fatalf("UpsertMediaOverride: %v", err)
+	}
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/x", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	var ent resolver.Entidade
+	if err := json.Unmarshal(rec.Body.Bytes(), &ent); err != nil {
+		t.Fatalf("decodificar Entidade: %v (corpo=%s)", err, rec.Body.String())
+	}
+	eq(t, "title", ent.Title, "Título do Dono")
+	// tags: base [a,b], remove a → [b].
+	if len(ent.Tags) != 1 || ent.Tags[0] != "b" {
+		t.Errorf("tags = %v, quero [b]", ent.Tags)
+	}
+	mv, ok := ent.ExtensionData["music_video"].(map[string]any)
+	if !ok {
+		t.Fatalf("extension_data.music_video ausente: %#v", ent.ExtensionData)
+	}
+	if bpm, _ := mv["bpm"].(float64); bpm != 128 {
+		t.Errorf("bpm = %v, quero 128 (override)", mv["bpm"])
+	}
+}
+
+// TestGetEntitySemOverrideExtensionDataVazio garante que, sem override, o shape
+// resolvido traz extension_data como objeto (nunca null).
+func TestGetEntitySemOverrideExtensionDataVazio(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "e", "movie", "Filme")
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/e", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200", rec.Code)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decodificar: %v", err)
+	}
+	ed, ok := raw["extension_data"]
+	if !ok || string(ed) != "{}" {
+		t.Errorf("extension_data = %s, quero {} (presente e não-null)", ed)
+	}
+}
+
 func TestGetEntityNaoEncontrado(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/entities/nao-existe", nil)
