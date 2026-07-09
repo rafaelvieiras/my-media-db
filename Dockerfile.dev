@@ -5,6 +5,14 @@ FROM golang:1.26
 
 WORKDIR /app
 
+# ffprobe (pacote ffmpeg) é dependência de RUNTIME do scanner (briefing 0009): sem
+# ele o mediainfo é gravado vazio (degrada, não quebra). A imagem de produção já o
+# instala (Dockerfile da raiz, `apk add ffmpeg`); replicar aqui dá PARIDADE dev/prod,
+# senão o mediainfo nunca aparece no loop de desenvolvimento.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 # air é dependência exclusiva de dev. Módulo ATUAL: github.com/air-verse/air
 # (o antigo cosmtrek/air está descontinuado). Instalado em $GOPATH/bin, que já
 # está no PATH da imagem oficial do Go.
