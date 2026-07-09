@@ -11,6 +11,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
+	"github.com/rafaelvieiras/my-media-db/internal/provider/tmdb"
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 )
 
@@ -29,7 +30,7 @@ func (p *detProvider) Buscar(context.Context, string, string) ([]provider.Result
 	return nil, nil
 }
 
-func (p *detProvider) BuscarDetalhe(context.Context, string, string) (json.RawMessage, error) {
+func (p *detProvider) BuscarDetalhe(context.Context, string, string, []string) (json.RawMessage, error) {
 	return p.raw, nil
 }
 
@@ -100,6 +101,72 @@ func TestImportCriaEReusaSemDuplicar(t *testing.T) {
 	todas, _ := escrita(t, d).ListarEntities(context.Background(), sqlcgen.ListarEntitiesParams{Limit: 100, Offset: 0})
 	if len(todas) != 1 {
 		t.Errorf("total de entities = %d, quero 1 (dedup por external_id)", len(todas))
+	}
+}
+
+// TestImportMultiIdiomaResolvePorLang e o end-to-end do 0020 SEM REDE: liga o
+// provider TMDB REAL a um httptest servindo o detalhe (com translations) e as
+// listas de genero localizadas; importa e le a entity por ?lang=. Prova o criterio
+// 1 (?lang=pt-BR serve pt-BR, ?lang=en serve en; generos traduzidos) e que
+// original_language e gravado. Sem poster_path no detalhe -> sem download de imagem.
+func TestImportMultiIdiomaResolvePorLang(t *testing.T) {
+	const detalhe = `{
+      "id": 900,
+      "original_language": "en",
+      "title": "The Matrix",
+      "original_title": "The Matrix",
+      "overview": "Neo learns the truth.",
+      "release_date": "1999-03-31",
+      "genres": [{"id": 878, "name": "Science Fiction"}],
+      "translations": {"translations": [
+        {"iso_3166_1": "US", "iso_639_1": "en", "data": {"title": "The Matrix", "overview": "Neo learns the truth."}},
+        {"iso_3166_1": "BR", "iso_639_1": "pt", "data": {"title": "Matrix", "overview": "Neo descobre a verdade."}}
+      ]}
+    }`
+	generos := map[string]string{
+		"pt-BR": `{"genres":[{"id":878,"name":"Ficcao cientifica"}]}`,
+		"en":    `{"genres":[{"id":878,"name":"Science Fiction"}]}`,
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/movie/900":
+			_, _ = w.Write([]byte(detalhe))
+		case "/genre/movie/list":
+			_, _ = w.Write([]byte(generos[r.URL.Query().Get("language")]))
+		default:
+			http.Error(w, "path inesperado", http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	prov := tmdb.New(tmdb.Credencial{Token: "tok"}, srv.Client(), srv.URL)
+	h, _ := setupSearchServer(t, WithSearchProvider(prov), WithAssetsDir(t.TempDir()))
+
+	rec := do(t, h, http.MethodPost, "/api/v1/import", map[string]string{"source_id": "900", "type": "movie"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("import status = %d, quero 201 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	id := decodeEntidade(t, rec).ID
+
+	// ?lang=pt-BR serve o portugues (titulo/sinopse/generos traduzidos).
+	pt := decodeEntidade(t, do(t, h, http.MethodGet, "/api/v1/entities/"+id+"?lang=pt-BR", nil))
+	eq(t, "pt.title", pt.Title, "Matrix")
+	if pt.Description == nil || *pt.Description != "Neo descobre a verdade." {
+		t.Errorf("pt.description = %v, quero 'Neo descobre a verdade.'", pt.Description)
+	}
+	if len(pt.Tags) != 1 || pt.Tags[0] != "Ficcao cientifica" {
+		t.Errorf("pt.tags = %v, quero [Ficcao cientifica]", pt.Tags)
+	}
+	if pt.OriginalLanguage == nil || *pt.OriginalLanguage != "en" {
+		t.Errorf("original_language = %v, quero 'en' (ancora gravada)", pt.OriginalLanguage)
+	}
+
+	// ?lang=en serve o ingles.
+	en := decodeEntidade(t, do(t, h, http.MethodGet, "/api/v1/entities/"+id+"?lang=en", nil))
+	eq(t, "en.title", en.Title, "The Matrix")
+	if len(en.Tags) != 1 || en.Tags[0] != "Science Fiction" {
+		t.Errorf("en.tags = %v, quero [Science Fiction]", en.Tags)
 	}
 }
 

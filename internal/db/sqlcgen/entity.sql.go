@@ -108,6 +108,27 @@ func (q *Queries) AtualizarExternalIds(ctx context.Context, arg AtualizarExterna
 	return err
 }
 
+const atualizarOriginalLanguage = `-- name: AtualizarOriginalLanguage :exec
+UPDATE entity
+SET original_language = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+`
+
+type AtualizarOriginalLanguageParams struct {
+	OriginalLanguage sql.NullString
+	ID               string
+}
+
+// Grava a ANCORA do fallback por idioma (briefing 0020): o codigo NEUTRO do idioma
+// original da obra, obtido do detalhe da fonte no enrich/import. Nao-destrutivo: e
+// um fato da fonte, nao dado do dono; re-enriquecer apenas o reafirma. So esta
+// coluna e o updated_at mudam.
+func (q *Queries) AtualizarOriginalLanguage(ctx context.Context, arg AtualizarOriginalLanguageParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarOriginalLanguage, arg.OriginalLanguage, arg.ID)
+	return err
+}
+
 const contarEntityCards = `-- name: ContarEntityCards :one
 SELECT COUNT(*) AS total
 FROM entity e

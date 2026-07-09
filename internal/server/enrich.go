@@ -74,7 +74,11 @@ func (s *Server) enrichEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.enrich.Enriquecer(ctx, id, source, sourceID, ent.Type); err != nil {
+	langs, err := s.idiomasPermitidos(ctx, w)
+	if err != nil {
+		return
+	}
+	if err := s.enrich.Enriquecer(ctx, id, source, sourceID, ent.Type, langs); err != nil {
 		respondFonteIndisponivel(w)
 		return
 	}
@@ -112,7 +116,11 @@ func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, criada, err := s.enrich.Importar(ctx, source, body.SourceID, body.Type)
+	langs, err := s.idiomasPermitidos(ctx, w)
+	if err != nil {
+		return
+	}
+	id, criada, err := s.enrich.Importar(ctx, source, body.SourceID, body.Type, langs)
 	if err != nil {
 		respondFonteIndisponivel(w)
 		return
@@ -140,6 +148,19 @@ func (s *Server) responderResolvida(w http.ResponseWriter, ctx context.Context, 
 		return
 	}
 	writeJSON(w, status, resolvida)
+}
+
+// idiomasPermitidos devolve os idiomas PERMITIDOS das settings (0019) para o
+// enrich/import puxar TODAS as traduções permitidas numa só ida (0020). Um erro
+// real de banco vira 500 (err != nil); o chamador aborta. O default seguro cobre a
+// linha ausente, então em operação normal isto nunca falha.
+func (s *Server) idiomasPermitidos(ctx context.Context, w http.ResponseWriter) ([]string, error) {
+	cfg, err := s.obterLanguageSettings(ctx)
+	if err != nil {
+		respondErroInterno(w)
+		return nil, err
+	}
+	return cfg.Allowed, nil
 }
 
 // enrichIndisponivel responde 503 quando o serviço de enrich não está ligado

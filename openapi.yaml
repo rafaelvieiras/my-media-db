@@ -144,6 +144,11 @@ paths:
         nem arte do dono (não-destrutivo). Corpo opcional: sem source usa "tmdb";
         sem source_id usa external_ids[source] da entity (422 se não houver id).
         Responde a entity RESOLVIDA (com os dados externos compostos).
+        MULTI-IDIOMA (briefing 0020): a fonte puxa TODAS as traduções permitidas
+        (settings.allowed) numa só ida e grava um payload AUMENTADO tagueado por
+        idioma, além de gravar entity.original_language (âncora do fallback). O shape
+        RESOLVIDO desta resposta não muda — só passa a ter mais idiomas para o
+        `?lang=` do GET /entities/{id} servir.
       tags: [entities]
       parameters:
         - $ref: "#/components/parameters/EntityId"
@@ -247,7 +252,8 @@ paths:
         external_id, reusa (200); senão cria (201, status cataloged, título inicial
         do detalhe). Em ambos os casos enriquece pelo mesmo caminho (grava external
         + external_ids + pôster cacheado, nunca override). Responde a entity
-        RESOLVIDA.
+        RESOLVIDA. MULTI-IDIOMA (briefing 0020): puxa todas as traduções permitidas
+        e grava entity.original_language — ver POST /entities/{id}/enrich.
       tags: [entities]
       requestBody:
         required: true

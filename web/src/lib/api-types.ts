@@ -96,7 +96,7 @@ export interface paths {
     put?: never
     /**
      * Enriquece uma entity existente a partir do provider (briefing 0015).
-     * @description Puxa o detalhe da fonte e grava a camada externa (media_external, payload cru) + a identidade (external_ids) + o pôster cacheado; NÃO toca override nem arte do dono (não-destrutivo). Corpo opcional: sem source usa "tmdb"; sem source_id usa external_ids[source] da entity (422 se não houver id). Responde a entity RESOLVIDA (com os dados externos compostos).
+     * @description Puxa o detalhe da fonte e grava a camada externa (media_external, payload cru) + a identidade (external_ids) + o pôster cacheado; NÃO toca override nem arte do dono (não-destrutivo). Corpo opcional: sem source usa "tmdb"; sem source_id usa external_ids[source] da entity (422 se não houver id). Responde a entity RESOLVIDA (com os dados externos compostos). MULTI-IDIOMA (briefing 0020): a fonte puxa TODAS as traduções permitidas (settings.allowed) numa só ida e grava um payload AUMENTADO tagueado por idioma, além de gravar entity.original_language (âncora do fallback). O shape RESOLVIDO desta resposta não muda — só passa a ter mais idiomas para o `?lang=` do GET /entities/{id} servir.
      */
     post: operations['enrichEntity']
     delete?: never
@@ -173,7 +173,7 @@ export interface paths {
     put?: never
     /**
      * Import explícito de um resultado externo (find-or-create, briefing 0015).
-     * @description Find-or-create por id externo (dedup MD4): se já existe entity com aquele external_id, reusa (200); senão cria (201, status cataloged, título inicial do detalhe). Em ambos os casos enriquece pelo mesmo caminho (grava external + external_ids + pôster cacheado, nunca override). Responde a entity RESOLVIDA.
+     * @description Find-or-create por id externo (dedup MD4): se já existe entity com aquele external_id, reusa (200); senão cria (201, status cataloged, título inicial do detalhe). Em ambos os casos enriquece pelo mesmo caminho (grava external + external_ids + pôster cacheado, nunca override). Responde a entity RESOLVIDA. MULTI-IDIOMA (briefing 0020): puxa todas as traduções permitidas e grava entity.original_language — ver POST /entities/{id}/enrich.
      */
     post: operations['importEntity']
     delete?: never

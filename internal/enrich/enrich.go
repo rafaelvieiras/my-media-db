@@ -63,11 +63,12 @@ func New(database *db.DB, prov provider.Provider, assetsDir string) *Servico {
 	}
 }
 
-// Enriquecer enriquece uma entity JÁ EXISTENTE: puxa o detalhe, mescla a
-// identidade externa e persiste a base externa + pôster. A falha da fonte é
-// propagada; a da imagem degrada. Fluxo do POST /entities/{id}/enrich.
-func (s *Servico) Enriquecer(ctx context.Context, entityID, source, sourceID, tipo string) error {
-	raw, err := s.provider.BuscarDetalhe(ctx, sourceID, tipo)
+// Enriquecer enriquece uma entity JÁ EXISTENTE: puxa o detalhe (nos idiomas
+// permitidos `langs`, briefing 0020), mescla a identidade externa e persiste a base
+// externa + pôster + original_language. A falha da fonte é propagada; a da imagem
+// degrada. Fluxo do POST /entities/{id}/enrich.
+func (s *Servico) Enriquecer(ctx context.Context, entityID, source, sourceID, tipo string, langs []string) error {
+	raw, err := s.provider.BuscarDetalhe(ctx, sourceID, tipo, langs)
 	if err != nil {
 		return fmt.Errorf("enrich: buscar detalhe: %w", err)
 	}
@@ -81,16 +82,16 @@ func (s *Servico) Enriquecer(ctx context.Context, entityID, source, sourceID, ti
 // uma entity com aquele id na fonte, reusa e re-enriquece (criada=false); senão
 // cria (status DEFAULT 'cataloged', título inicial do detalhe) e enriquece
 // (criada=true). Devolve o id da entity resolvível pelo chamador.
-func (s *Servico) Importar(ctx context.Context, source, sourceID, tipo string) (id string, criada bool, err error) {
+func (s *Servico) Importar(ctx context.Context, source, sourceID, tipo string, langs []string) (id string, criada bool, err error) {
 	if existente, ok, err := s.acharPorIDExterno(ctx, source, sourceID); err != nil {
 		return "", false, err
 	} else if ok {
-		return existente, false, s.Enriquecer(ctx, existente, source, sourceID, tipo)
+		return existente, false, s.Enriquecer(ctx, existente, source, sourceID, tipo, langs)
 	}
 
 	// Não existe: puxa o detalhe uma vez (para o título inicial) e cria a entity
 	// já com a identidade externa; em seguida persiste a base externa e o pôster.
-	raw, err := s.provider.BuscarDetalhe(ctx, sourceID, tipo)
+	raw, err := s.provider.BuscarDetalhe(ctx, sourceID, tipo, langs)
 	if err != nil {
 		return "", false, fmt.Errorf("enrich: buscar detalhe: %w", err)
 	}
@@ -150,6 +151,16 @@ func (s *Servico) persistir(ctx context.Context, entityID, source, sourceID stri
 	if err != nil {
 		log.Printf("enrich: mapear detalhe de %s falhou (segue sem poster): %v", entityID, err)
 		return nil
+	}
+	// Grava a âncora do fallback (briefing 0020): original_language do detalhe. É um
+	// fato da fonte (não dado do dono), então re-enriquecer apenas o reafirma.
+	if ol, ok := campos["original_language"].(string); ok && ol != "" {
+		if err := s.escrita().AtualizarOriginalLanguage(ctx, sqlcgen.AtualizarOriginalLanguageParams{
+			OriginalLanguage: nsValid(ol),
+			ID:               entityID,
+		}); err != nil {
+			return err
+		}
 	}
 	if u, ok := campos["poster_url"].(string); ok && u != "" {
 		if err := s.cachearPoster(ctx, entityID, u); err != nil {

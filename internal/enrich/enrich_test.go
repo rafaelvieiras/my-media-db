@@ -25,6 +25,7 @@ type fakeProvider struct {
 	campos   map[string]any
 	erro     error
 	chamadas int
+	langs    []string // últimos idiomas recebidos por BuscarDetalhe (0020)
 }
 
 func (f *fakeProvider) Nome() string { return "tmdb" }
@@ -33,8 +34,9 @@ func (f *fakeProvider) Buscar(context.Context, string, string) ([]provider.Resul
 	return nil, nil
 }
 
-func (f *fakeProvider) BuscarDetalhe(context.Context, string, string) (json.RawMessage, error) {
+func (f *fakeProvider) BuscarDetalhe(_ context.Context, _, _ string, langs []string) (json.RawMessage, error) {
 	f.chamadas++
+	f.langs = langs
 	if f.erro != nil {
 		return nil, f.erro
 	}
@@ -93,7 +95,7 @@ func TestEnriquecerGravaExternalIDsEPoster(t *testing.T) {
 	fake := &fakeProvider{raw: raw, campos: map[string]any{"title": "Filme X", "poster_url": img.URL + "/p.jpg"}}
 	svc, dir := novoServico(t, database, fake)
 
-	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie"); err != nil {
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"pt-BR", "en"}); err != nil {
 		t.Fatalf("Enriquecer: %v", err)
 	}
 
@@ -159,7 +161,7 @@ func TestReEnriquecerNaoDestruvivo(t *testing.T) {
 	svc, _ := novoServico(t, database, fake)
 
 	for i := 0; i < 2; i++ {
-		if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie"); err != nil {
+		if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"pt-BR", "en"}); err != nil {
 			t.Fatalf("Enriquecer #%d: %v", i, err)
 		}
 	}
@@ -200,6 +202,66 @@ func contarAssetsExternos(t *testing.T, r *sqlcgen.Queries, entityID string) int
 	return n
 }
 
+// TestEnriquecerGravaOriginalLanguage prova que o enrich grava a ancora do fallback
+// (entity.original_language) a partir do campo do detalhe (0020), passa os idiomas
+// permitidos ao provider, e que re-enriquecer NAO destroi o override do dono.
+func TestEnriquecerGravaOriginalLanguage(t *testing.T) {
+	database := setupDB(t)
+	ctx := context.Background()
+	img := servidorImagem(t, "image/jpeg", []byte("img"))
+	w := sqlcgen.New(database.Write)
+	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "e1", Type: "movie", Title: "t"}); err != nil {
+		t.Fatalf("CriarEntity: %v", err)
+	}
+	// Override do dono pre-existente: re-enrich nao pode toca-lo.
+	if _, err := w.UpsertMediaOverride(ctx, sqlcgen.UpsertMediaOverrideParams{EntityID: "e1", OverrideJson: nsValid(`{"title":"Dono"}`)}); err != nil {
+		t.Fatalf("UpsertMediaOverride: %v", err)
+	}
+
+	fake := &fakeProvider{
+		raw:    json.RawMessage(`{"detail":{},"tags_by_lang":{}}`),
+		campos: map[string]any{"title": "X", "original_language": "ja", "poster_url": img.URL + "/p.jpg"},
+	}
+	svc, _ := novoServico(t, database, fake)
+
+	permitidos := []string{"pt-BR", "en", "ja"}
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", permitidos); err != nil {
+		t.Fatalf("Enriquecer: %v", err)
+	}
+
+	r := sqlcgen.New(database.Read)
+	ent, _ := r.ObterEntity(ctx, "e1")
+	if ent.OriginalLanguage.String != "ja" {
+		t.Errorf("original_language = %q, quero 'ja' (ancora do fallback)", ent.OriginalLanguage.String)
+	}
+	// Os idiomas permitidos foram repassados ao provider.
+	eqLista(t, "langs repassados", fake.langs, permitidos)
+
+	// Re-enrich: override do dono intacto.
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", permitidos); err != nil {
+		t.Fatalf("re-Enriquecer: %v", err)
+	}
+	ov, err := r.ObterMediaOverride(ctx, "e1")
+	if err != nil || ov.OverrideJson.String != `{"title":"Dono"}` {
+		t.Errorf("override do dono alterado/perdido: %q (err=%v)", ov.OverrideJson.String, err)
+	}
+}
+
+// eqLista compara duas listas de string em ordem (helper de teste).
+func eqLista(t *testing.T, name string, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Errorf("%s = %v, quero %v", name, got, want)
+		return
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("%s = %v, quero %v", name, got, want)
+			return
+		}
+	}
+}
+
 func TestEnriquecerFalhaImagemDegrada(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -217,7 +279,7 @@ func TestEnriquecerFalhaImagemDegrada(t *testing.T) {
 	svc, _ := novoServico(t, database, fake)
 
 	// Enrich NAO quebra por causa da imagem.
-	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie"); err != nil {
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"pt-BR", "en"}); err != nil {
 		t.Fatalf("Enriquecer nao deveria falhar por imagem: %v", err)
 	}
 	r := sqlcgen.New(database.Read)
@@ -237,7 +299,7 @@ func TestImportarCriaDepoisReusa(t *testing.T) {
 	fake := &fakeProvider{raw: json.RawMessage(`{"title":"Filme Novo"}`), campos: map[string]any{"title": "Filme Novo", "poster_url": img.URL + "/p.png"}}
 	svc, _ := novoServico(t, database, fake)
 
-	id1, criada1, err := svc.Importar(ctx, "tmdb", "777", "movie")
+	id1, criada1, err := svc.Importar(ctx, "tmdb", "777", "movie", []string{"pt-BR", "en"})
 	if err != nil {
 		t.Fatalf("Importar #1: %v", err)
 	}
@@ -255,7 +317,7 @@ func TestImportarCriaDepoisReusa(t *testing.T) {
 	}
 
 	// Segundo import com o mesmo id externo: reusa (dedup MD4), nao cria outra.
-	id2, criada2, err := svc.Importar(ctx, "tmdb", "777", "movie")
+	id2, criada2, err := svc.Importar(ctx, "tmdb", "777", "movie", []string{"pt-BR", "en"})
 	if err != nil {
 		t.Fatalf("Importar #2: %v", err)
 	}

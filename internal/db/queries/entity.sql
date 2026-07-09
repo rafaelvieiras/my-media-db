@@ -143,6 +143,16 @@ SET external_ids_json = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?;
 
+-- name: AtualizarOriginalLanguage :exec
+-- Grava a ANCORA do fallback por idioma (briefing 0020): o codigo NEUTRO do idioma
+-- original da obra, obtido do detalhe da fonte no enrich/import. Nao-destrutivo: e
+-- um fato da fonte, nao dado do dono; re-enriquecer apenas o reafirma. So esta
+-- coluna e o updated_at mudam.
+UPDATE entity
+SET original_language = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?;
+
 -- name: ApagarEntity :exec
 -- Purga explicita: remove a entity e, por ON DELETE CASCADE, seus media_file,
 -- asset e entity_relation.

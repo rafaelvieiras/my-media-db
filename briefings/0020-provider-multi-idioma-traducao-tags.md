@@ -11,7 +11,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
 | **Docs relacionadas** | [ADR-0020](../docs/adr/0020-traducao-de-tags-genres-keywords.md), [ADR-0018](../docs/adr/0018-modelo-multi-idioma-dimensao-nas-camadas.md), [ADR-0011](../docs/adr/0011-external-ids-autoritativo-media-external-cache.md), [07-enriquecimento-providers](../docs/07-enriquecimento-providers.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Depende de** | [0019](0019-fundacao-multi-idioma-settings-resolver.md), [0015](0015-enriquecimento-import-proxy-imagem.md) |
 
 ---
@@ -99,11 +99,11 @@ aumentado** (ainda um cache re-componível, coerente com [ADR-0011](../docs/adr/
 
 ## 5. Critérios de aceite
 
-- [ ] Importar um item puxa as traduções numa só chamada de detalhe (`append_to_response=translations`) e grava o payload aumentado; `?lang=pt-BR` serve pt-BR, `?lang=en` serve en.
-- [ ] Faltando o idioma pedido, a leitura cai no fallback (comportamento do 0019 vivo com dados reais).
-- [ ] **Gêneros traduzidos** por idioma (via listas localizadas, cacheadas); keywords no idioma obtido.
-- [ ] `entity.original_language` é gravado no import/enrich (âncora do fallback).
-- [ ] Payload antigo (0015) segue resolvendo sob o principal (compat). Testes sem rede (httptest + fixtures). Catraca verde.
+- [x] Importar um item puxa as traduções numa só chamada de detalhe (`append_to_response=translations`) e grava o payload aumentado; `?lang=pt-BR` serve pt-BR, `?lang=en` serve en.
+- [x] Faltando o idioma pedido, a leitura cai no fallback (comportamento do 0019 vivo com dados reais).
+- [x] **Gêneros traduzidos** por idioma (via listas localizadas, cacheadas); keywords no idioma obtido.
+- [x] `entity.original_language` é gravado no import/enrich (âncora do fallback).
+- [x] Payload antigo (0015) segue resolvendo sob o principal (compat). Testes sem rede (httptest + fixtures). Catraca verde.
 
 ## 6. Notas de implementação / decisões
 

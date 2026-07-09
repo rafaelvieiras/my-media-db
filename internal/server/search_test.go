@@ -26,7 +26,7 @@ func (f *fakeProvider) Nome() string { return "fake" }
 
 // BuscarDetalhe/MapearDetalhe não são exercitados nos testes de busca (0014);
 // stubs só para satisfazer a interface Provider estendida no 0015.
-func (f *fakeProvider) BuscarDetalhe(_ context.Context, _, _ string) (json.RawMessage, error) {
+func (f *fakeProvider) BuscarDetalhe(_ context.Context, _, _ string, _ []string) (json.RawMessage, error) {
 	return nil, errors.New("não implementado")
 }
 

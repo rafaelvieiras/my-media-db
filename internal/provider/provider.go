@@ -22,16 +22,22 @@ type Provider interface {
 	// (""|"movie"|"tv"). Erro/timeout é responsabilidade do chamador degradar —
 	// o provider apenas o propaga.
 	Buscar(ctx context.Context, query, tipo string) ([]ResultadoExterno, error)
-	// BuscarDetalhe puxa o DETALHE cru (payload da fonte) de um item pelo seu
-	// `sourceID` e `tipo` ("movie"|"tv"), para o import/enrich (briefing 0015).
-	// Devolve o JSON CRU como veio da fonte (o cache media_external guarda o cru,
-	// ADR-0011); o mapeamento canônico é de MapearDetalhe. Erro/timeout propaga.
-	BuscarDetalhe(ctx context.Context, sourceID, tipo string) (json.RawMessage, error)
-	// MapearDetalhe traduz o payload CRU de BuscarDetalhe para o mapa CANÔNICO com
-	// OS NOSSOS nomes de campo (title, original_title, description, release_date,
-	// tags, poster_url), consumido pelo resolver (raw→canônico é do provider; o
-	// resolver não conhece o TMDB). Só inclui as chaves que a fonte trouxe. SEM
-	// elenco/equipe (MD6 adiado).
+	// BuscarDetalhe puxa o DETALHE (payload da fonte) de um item pelo seu
+	// `sourceID` e `tipo` ("movie"|"tv"), para o import/enrich (briefing 0015). Os
+	// `langs` são os idiomas PERMITIDOS das settings (0019): a fonte multi-idioma
+	// (0020) puxa TODAS as traduções permitidas numa só ida e devolve um PAYLOAD
+	// AUMENTADO ({detail, tags_by_lang}) — ainda um cache re-componível (ADR-0011).
+	// Sem `langs` degrada ao comportamento mono-idioma. O mapeamento canônico é de
+	// MapearDetalhe (PURO, sem rede). Erro/timeout propaga.
+	BuscarDetalhe(ctx context.Context, sourceID, tipo string, langs []string) (json.RawMessage, error)
+	// MapearDetalhe traduz o payload de BuscarDetalhe para o mapa CANÔNICO com OS
+	// NOSSOS nomes de campo, consumido pelo resolver (raw→canônico é do provider; o
+	// resolver não conhece o TMDB). É PURO (roda em tempo de leitura, sem rede). Os
+	// campos TRADUZÍVEIS (title, description, tags) saem como `map[idioma]valor`; os
+	// NEUTROS (original_title, release_date, poster_url) como escalares. Expõe também
+	// `original_language` (o enrich o grava em entity.original_language). Um payload
+	// LEGADO (detalhe cru do 0015, sem envelope) degrada para escalares sob o idioma
+	// principal. Só inclui as chaves que a fonte trouxe. SEM elenco/equipe (MD6).
 	MapearDetalhe(raw json.RawMessage) (map[string]any, error)
 }
 

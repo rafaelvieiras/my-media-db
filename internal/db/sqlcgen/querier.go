@@ -39,6 +39,11 @@ type Querier interface {
 	// para present e carimba last_seen com o timestamp do scan (usado depois para
 	// decidir quem virou missing). Fixa tambem a fonte de origem.
 	AtualizarMediaFileVisto(ctx context.Context, arg AtualizarMediaFileVistoParams) (MediaFile, error)
+	// Grava a ANCORA do fallback por idioma (briefing 0020): o codigo NEUTRO do idioma
+	// original da obra, obtido do detalhe da fonte no enrich/import. Nao-destrutivo: e
+	// um fato da fonte, nao dado do dono; re-enriquecer apenas o reafirma. So esta
+	// coluna e o updated_at mudam.
+	AtualizarOriginalLanguage(ctx context.Context, arg AtualizarOriginalLanguageParams) error
 	// Total de itens que casam os filtros (para o campo `total` da paginacao). Mesma
 	// clausula WHERE da ListarEntityCards -- sem LIMIT/OFFSET/ORDER BY.
 	ContarEntityCards(ctx context.Context, arg ContarEntityCardsParams) (int64, error)
