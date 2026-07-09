@@ -26,3 +26,5 @@ linters:
     generated: lax
     paths:
       - internal/webui/dist   # assets embutidos (build do Vite), não é código nosso
+      - node_modules          # pacotes npm em web/ (ex.: flatted embute um .go); não é código nosso.
+                              # Substring casa web/node_modules e web/node_modules_rootbak.

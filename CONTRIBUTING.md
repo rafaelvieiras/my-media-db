@@ -121,6 +121,20 @@ go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
 > **Nota:** `govulncheck` é zero-tolerância. Mantenha o toolchain Go atualizado
 > (o `go.mod` fixa `toolchain go1.26.5`, que já corrige as vulns de stdlib conhecidas).
 
+**Ferramentas do lado web.** O front tem **ESLint** (`npm run lint`) e **vitest** com
+cobertura v8 (`npm run test:coverage`, que gera `web/coverage/coverage-summary.json`).
+A catraca lê a **cobertura de linhas** (`web_coverage_lines`, bloqueante — só sobe) e as
+**issues de ESLint** (`web_lint_issues`, aviso). Por isso o `pre-push` e o CI exigem um
+`npm install` em `web/` **antes** de rodar o gate — sem `node_modules` no `web/`, o
+vitest e o ESLint não rodam e essas métricas são **puladas** (nunca quebram o gate, mas
+deixam de proteger o front):
+
+```sh
+cd web && npm install    # instala eslint + vitest (devDeps) uma vez
+npm run lint             # lint do front (0 = limpo)
+npm run test:coverage    # testes + cobertura → web/coverage/coverage-summary.json
+```
+
 **Comandos à mão** (Makefile na raiz):
 
 | Comando | O que faz |

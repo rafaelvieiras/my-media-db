@@ -9,6 +9,9 @@ Thumbs.db
 # Frontend
 node_modules/
 
+# Cobertura de testes do web (vitest/v8): relatórios efêmeros, não versionar.
+web/coverage/
+
 # Build do Vite embutido no binário Go: é gerado (ver briefings 0002/0003).
 # Só o placeholder index.html é versionado, para o //go:embed compilar sem o front.
 internal/webui/dist/*

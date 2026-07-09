@@ -72,7 +72,9 @@ const METRIC_DEFS = {
   go_vuln_high:          { label: 'Go: vulnerabilidades',    unit: 'vulns', side: 'go',  lowerIsBetter: true,  blocking: 'zero' },
   go_cyclo_violations:   { label: 'Go: funções > gocyclo 10',unit: 'funcs', side: 'go',  lowerIsBetter: true,  blocking: false  },
   // --- TypeScript / web (rodado em web/) ---
+  web_coverage_lines:    { label: 'Web: cobertura de linhas',unit: '%',     side: 'web', lowerIsBetter: false, blocking: true   },
   web_duplicate_percent: { label: 'Web: duplicação',         unit: '%',     side: 'web', lowerIsBetter: true,  blocking: true   },
+  web_lint_issues:       { label: 'Web: issues ESLint',      unit: 'issues',side: 'web', lowerIsBetter: true,  blocking: false  },
   web_audit_critical:    { label: 'Web: vulns critical',     unit: 'vulns', side: 'web', lowerIsBetter: true,  blocking: 'zero' },
 };
 
@@ -290,6 +292,57 @@ function collectWebAuditCritical() {
   }
 }
 
+// ESLint (flat config em web/): roda `eslint . -f json`, soma erros + avisos de
+// todos os arquivos. O eslint sai 1 quando acha problema — isso é esperado; só
+// falha real se o JSON não puder ser lido/parseado.
+function collectWebLint() {
+  if (!existsSync(WEB)) { warn('web/ não encontrado — lint pulado'); return null; }
+  const r = run('npx --yes eslint . -f json', { cwd: WEB });
+  const raw = r.stdout.trim();
+  if (!raw) {
+    warn('eslint não produziu saída JSON — métrica "web_lint_issues" pulada. stderr:');
+    if (r.stderr.trim()) warn(r.stderr.trim().split('\n').slice(0, 8).join('\n'));
+    return null;
+  }
+  try {
+    const files = JSON.parse(raw);
+    if (!Array.isArray(files)) {
+      warn('saída do eslint não é um array — métrica pulada');
+      return null;
+    }
+    let total = 0;
+    for (const f of files) {
+      total += (f.errorCount ?? 0) + (f.warningCount ?? 0);
+    }
+    return total;
+  } catch (e) {
+    warn('não foi possível parsear o JSON do eslint: ' + e.message);
+    return null;
+  }
+}
+
+// Cobertura web (vitest + v8): roda `npm run test:coverage` em web/, lê
+// coverage/coverage-summary.json → total.lines.pct. Se o arquivo não for gerado
+// (ou os testes falharem em produzir o summary), a métrica é pulada.
+function collectWebCoverage() {
+  if (!existsSync(WEB)) { warn('web/ não encontrado — cobertura pulada'); return null; }
+  const r = run('npm run test:coverage', { cwd: WEB });
+  const summary = join(WEB, 'coverage', 'coverage-summary.json');
+  if (!existsSync(summary)) {
+    warn('coverage-summary.json não gerado — métrica "web_coverage_lines" pulada. stderr:');
+    if (r.stderr.trim()) warn(r.stderr.trim().split('\n').slice(0, 8).join('\n'));
+    return null;
+  }
+  try {
+    const data = JSON.parse(readFileSync(summary, 'utf8'));
+    const pct = data?.total?.lines?.pct;
+    return typeof pct === 'number' ? pct : null;
+  } catch (e) {
+    warn('não foi possível parsear o coverage-summary.json: ' + e.message);
+    return null;
+  }
+}
+
 // ─── Coleta unificada ────────────────────────────────────────────────────────
 function collectMetrics() {
   mkdirSync(REPORTS, { recursive: true });
@@ -303,7 +356,9 @@ function collectMetrics() {
   metrics.go_cyclo_violations  = collectGocyclo();
 
   log(`${c.dim}Coletando métricas Web (web/)...${c.reset}`);
+  metrics.web_coverage_lines    = collectWebCoverage();
   metrics.web_duplicate_percent = collectWebDuplication();
+  metrics.web_lint_issues       = collectWebLint();
   metrics.web_audit_critical    = collectWebAuditCritical();
 
   return metrics;

@@ -68,12 +68,12 @@ A "jornada" é do **dev/mantenedor**:
 Mantém as chaves do boatman e **acrescenta** as de Go (prefixo `go_` / `web_` para
 desambiguar), por exemplo:
 
-| Métrica | Fonte | Bloqueia? |
-|---|---|---|
-| `web_coverage_lines` | vitest coverage-summary.json | Sim (queda) |
-| `web_eslint_errors` | ESLint json | Aviso |
-| `web_duplicate_percent` | jscpd | Sim (aumento) |
-| `web_audit_critical` | npm audit | Zero-tolerância |
+| Métrica | Fonte | Bloqueia? | Status |
+|---|---|---|---|
+| `web_coverage_lines` | vitest coverage-summary.json (`total.lines.pct`) | Sim (queda) — catraca pura | **ativo** |
+| `web_lint_issues` | ESLint json (soma `errorCount`+`warningCount`) | Aviso | **ativo** |
+| `web_duplicate_percent` | jscpd | Sim (aumento) | **ativo** |
+| `web_audit_critical` | npm audit | Zero-tolerância | **ativo** |
 | `go_coverage_lines` | `go test -coverprofile` → `go tool cover` | **Catraca pura** (queda bloqueia; sem piso absoluto no início) |
 | `go_lint_issues` | golangci-lint (`--out-format json`) | **Aviso** (catraca incremental; endurece depois) |
 | `go_vuln_high` | govulncheck | Zero-tolerância p/ críticas |
@@ -155,12 +155,22 @@ desambiguar), por exemplo:
   follow-up quando a base de testes amadurecer.
 - Baseline inicial tirado sobre o scaffold: cobertura provavelmente baixa no começo — a
   catraca garante que só suba dali pra frente.
-- **Escopo do lado TS enxuto** (decisão de sessão, 2026-07-08): o scaffold não tem
+- **Escopo do lado TS enxuto** (decisão de sessão, 2026-07-08): o scaffold não tinha
   vitest nem ESLint (o `create-vite` trouxe **oxlint**, considerado imaturo). Decisão:
   **remover o oxlint** do `web/` e não construir coletores customizados em cima dele;
-  o lado TS entra na catraca só com **duplicação (jscpd)** e **`npm audit` crítico**.
-  Cobertura e lint do front ficam como follow-up (entram com ESLint + vitest quando as
-  telas da Fase 2 amadurecerem). O lado Go entra completo.
+  na primeira entrega o lado TS entrou na catraca só com **duplicação (jscpd)** e
+  **`npm audit` crítico**. O lado Go entrou completo.
+- **Adoção de cobertura e lint do front** (follow-up executado, 2026-07-08): o lado TS
+  ganhou **ESLint** (flat config, template moderno Vite React+TS: `@eslint/js` +
+  `typescript-eslint` + `react-hooks` + `react-refresh`) e **vitest** com cobertura
+  **v8** (`json-summary` → `coverage/coverage-summary.json`). Duas métricas novas
+  entraram na catraca: `web_coverage_lines` (**catraca pura**, bloqueante — simétrica a
+  `go_coverage_lines`, sem piso absoluto) e `web_lint_issues` (**aviso** — simétrica a
+  `go_lint_issues`, endurece depois). Excludes de cobertura: `main.tsx` (entrada), os
+  componentes **shadcn/ui gerados**, infra/arquivos de teste, `*.d.ts` e `*.css`; o
+  wiring `router.tsx` fica **incluído** (conta como não coberto) para um baseline
+  honesto. A regra `react-refresh/only-export-components` é desligada **só** em
+  `src/components/ui/**` (gerado), sem relaxar nada no nosso código.
 - **Gate na raiz, sem `package.json` de raiz.** A catraca é `scripts/quality-gate.mjs`
   (na raiz), chamada direto por `node ...` no lefthook e no CI; os atalhos humanos ficam
   num **`Makefile`** (`make fmt|gate|gate-local|baseline|hooks`), que encaixa melhor num
