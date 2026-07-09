@@ -72,6 +72,9 @@ type Querier interface {
 	ObterEntityPorTmdb(ctx context.Context, externalIDTmdb sql.NullString) (Entity, error)
 	ObterEntityRelation(ctx context.Context, id string) (EntityRelation, error)
 	ObterLibrarySource(ctx context.Context, id string) (LibrarySource, error)
+	// Usada pelo handler POST para detectar path duplicado (ja normalizado) antes
+	// do INSERT e responder 409 com mensagem clara em vez de estourar o UNIQUE.
+	ObterLibrarySourcePorPath(ctx context.Context, path string) (LibrarySource, error)
 	ObterMediaFile(ctx context.Context, id string) (MediaFile, error)
 	// Le um valor da tabela de metadados pela chave. Serve de query-semente para
 	// provar o wiring do sqlc de ponta a ponta; queries de dominio chegam no 0007.

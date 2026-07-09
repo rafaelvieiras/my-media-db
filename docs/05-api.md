@@ -61,6 +61,38 @@ TMDB real, cacheia e serve. Comportamento em três regras:
 - `/api/v1/enrich` — disparar enriquecimento on-demand.
 - `/api/v1/users`, `/api/v1/tokens` — multiusuário (Fase 4).
 
+## Shape de erro padrão do `/api/v1`
+
+Definido no [briefing 0008](../briefings/0008-datasources-cadastro-api-library.md) e
+**referência para toda a superfície `/api/v1`** (base para o gerador OpenAPI do
+[0010](../briefings/0010-api-leitura-resolver-minimo.md)). Toda resposta de erro
+usa o mesmo envelope:
+
+```json
+{ "error": { "code": "<slug estável>", "message": "<texto humano em pt-BR>" } }
+```
+
+- `code` é um **slug estável** (não localizado) para o cliente ramificar; `message`
+  é o texto legível. Content-Type `application/json`.
+- Sucesso serializa o recurso direto (sem envelope); listas usam `{ "items": [...] }`.
+- Codes já em uso: `invalid_body` (400), `invalid_type`, `invalid_path`,
+  `not_a_directory`, `path_unreadable` (422), `duplicate_path` (409), `not_found`
+  (404), `internal_error` (500). O 404 genérico de `/api` (rota inexistente) também
+  responde neste shape (`not_found`).
+
+## `/api/v1/library`: datasources (implementado no 0008)
+
+- **POST `/api/v1/library`** — body `{ "path": "...", "type": "movie"|"tv" }`.
+  Normaliza o path (absoluto + limpo), valida existência/diretório/legibilidade e
+  cria a fonte (`state=online`, `last_scan` nulo). `201` com o registro;
+  `422` (path inválido/ilegível/não-diretório ou tipo inválido); `409` (path
+  duplicado após normalização); `400` (corpo inválido).
+- **GET `/api/v1/library`** — `200 { "items": [ { id, path, type, state, last_scan } ] }`.
+  O `state` é **reavaliado na leitura** por um stat barato (não persistido aqui).
+- **GET `/api/v1/library/{id}`** — `200` (com `state` reavaliado) | `404`.
+- **DELETE `/api/v1/library/{id}`** — remove só o registro da fonte → `204` | `404`
+  (não purga entities — ver §6 do briefing 0008).
+
 ## Decisões abertas (ver [11](11-decisoes-abertas.md))
 
 - Escopo exato das rotas TMDB a espelhar (movie, tv, search, images…).

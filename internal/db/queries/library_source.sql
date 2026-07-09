@@ -16,6 +16,13 @@ SELECT id, path, type, last_scan, state, created_at, updated_at
 FROM library_source
 WHERE id = ?;
 
+-- name: ObterLibrarySourcePorPath :one
+-- Usada pelo handler POST para detectar path duplicado (ja normalizado) antes
+-- do INSERT e responder 409 com mensagem clara em vez de estourar o UNIQUE.
+SELECT id, path, type, last_scan, state, created_at, updated_at
+FROM library_source
+WHERE path = ?;
+
 -- name: ListarLibrarySources :many
 SELECT id, path, type, last_scan, state, created_at, updated_at
 FROM library_source

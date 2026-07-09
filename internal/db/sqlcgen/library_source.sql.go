@@ -150,3 +150,26 @@ func (q *Queries) ObterLibrarySource(ctx context.Context, id string) (LibrarySou
 	)
 	return i, err
 }
+
+const obterLibrarySourcePorPath = `-- name: ObterLibrarySourcePorPath :one
+SELECT id, path, type, last_scan, state, created_at, updated_at
+FROM library_source
+WHERE path = ?
+`
+
+// Usada pelo handler POST para detectar path duplicado (ja normalizado) antes
+// do INSERT e responder 409 com mensagem clara em vez de estourar o UNIQUE.
+func (q *Queries) ObterLibrarySourcePorPath(ctx context.Context, path string) (LibrarySource, error) {
+	row := q.db.QueryRowContext(ctx, obterLibrarySourcePorPath, path)
+	var i LibrarySource
+	err := row.Scan(
+		&i.ID,
+		&i.Path,
+		&i.Type,
+		&i.LastScan,
+		&i.State,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
