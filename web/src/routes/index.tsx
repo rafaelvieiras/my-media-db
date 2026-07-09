@@ -1,62 +1,18 @@
-import { useQuery } from '@tanstack/react-query'
-import { healthQueryOptions } from '@/lib/queries'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { PosterGrid } from '@/components/poster-grid'
 
-// Tela inicial (rota `/`): consome `health` via TanStack Query e deriva três
-// estados visíveis — carregando / erro / ok. Um erro de rede é ESTADO da UI,
-// nunca uma exceção não-capturada: o Card sempre renderiza.
-export function HealthScreen() {
-  const { data, isPending, isError } = useQuery(healthQueryOptions)
-
+// Home (rota `/`): o grid de pôsteres é a tela principal do dono — o catálogo
+// detectado. Decisão do 0011: a home vira o grid (a antiga tela de saúde foi
+// para `/health`).
+export function LibraryItemsScreen() {
   return (
-    <main className="flex min-h-svh items-center justify-center bg-background p-6">
-      <Card className="w-full max-w-md" size="default">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between gap-3">
-            MyMediaDB
-            <StatusBadge isPending={isPending} isError={isError} />
-          </CardTitle>
-          <CardDescription>Estado da API</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isPending ? (
-            <p className="text-muted-foreground">Conectando…</p>
-          ) : isError ? (
-            <p className="font-medium text-destructive">API indisponível</p>
-          ) : (
-            <p className="font-medium text-emerald-600 dark:text-emerald-400">
-              API online — v{data.version}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+    <main className="mx-auto max-w-6xl px-4 py-6">
+      <div className="mb-4 flex flex-col gap-1">
+        <h1 className="font-heading text-xl font-semibold">Biblioteca</h1>
+        <p className="text-sm text-muted-foreground">
+          Catálogo detectado a partir dos seus datasources.
+        </p>
+      </div>
+      <PosterGrid />
     </main>
-  )
-}
-
-function StatusBadge({
-  isPending,
-  isError,
-}: {
-  isPending: boolean
-  isError: boolean
-}) {
-  if (isPending) {
-    return <Badge variant="secondary">conectando</Badge>
-  }
-  if (isError) {
-    return <Badge variant="destructive">offline</Badge>
-  }
-  return (
-    <Badge className="border-transparent bg-emerald-600 text-white">
-      online
-    </Badge>
   )
 }

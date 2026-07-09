@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getHealth } from '@/lib/api'
+import {
+  ApiError,
+  createLibrary,
+  deleteLibrary,
+  getEntityFiles,
+  listEntities,
+  posterSrc,
+  startScan,
+  getHealth,
+} from '@/lib/api'
 
 // Mocka `fetch` por teste; restaura depois para não vazar entre casos.
 afterEach(() => {
@@ -32,5 +41,145 @@ describe('getHealth', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(getHealth()).rejects.toThrow('health respondeu HTTP 503')
+  })
+})
+
+function okJson<T>(body: T, status = 200) {
+  return { ok: true, status, json: async () => body } as Response
+}
+
+describe('createLibrary', () => {
+  it('envia POST com o corpo e devolve a fonte criada', async () => {
+    const source = {
+      id: '1',
+      path: '/m',
+      type: 'movie',
+      state: 'online',
+      last_scan: null,
+    }
+    const fetchMock = vi.fn().mockResolvedValue(okJson(source, 201))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const out = await createLibrary({ path: '/m', type: 'movie' })
+
+    expect(out).toEqual(source)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/v1/library')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ path: '/m', type: 'movie' })
+  })
+
+  it('lança ApiError com code/message do envelope em erro', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      json: async () => ({
+        error: { code: 'invalid_path', message: 'caminho inválido' },
+      }),
+    } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createLibrary({ path: '/x', type: 'movie' })).rejects.toThrow(
+      'caminho inválido',
+    )
+    try {
+      await createLibrary({ path: '/x', type: 'movie' })
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiError)
+      expect((e as ApiError).code).toBe('invalid_path')
+      expect((e as ApiError).status).toBe(422)
+    }
+  })
+
+  it('cai em ApiError genérico quando o corpo não é o envelope', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => {
+        throw new Error('sem corpo')
+      },
+    } as unknown as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createLibrary({ path: '/x', type: 'movie' })).rejects.toThrow(
+      'HTTP 500',
+    )
+  })
+})
+
+describe('listEntities', () => {
+  it('monta a querystring só com os params presentes', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okJson({ items: [], total: 0, limit: 24, offset: 0 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await listEntities({ type: 'movie', owned: true, limit: 24, offset: 48 })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/entities?type=movie&owned=true&limit=24&offset=48',
+    )
+  })
+
+  it('sem params consulta a rota nua', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okJson({ items: [], total: 0, limit: 50, offset: 0 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await listEntities()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/entities')
+  })
+})
+
+describe('startScan / deleteLibrary / getEntityFiles', () => {
+  it('startScan faz POST no endpoint de scan', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okJson({ job_id: 'j1', status: 'accepted' }, 202))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const out = await startScan('7')
+
+    expect(out.job_id).toBe('j1')
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/library/7/scan', {
+      method: 'POST',
+    })
+  })
+
+  it('deleteLibrary usa DELETE e resolve no 204', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 204 } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(deleteLibrary('7')).resolves.toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/library/7', {
+      method: 'DELETE',
+    })
+  })
+
+  it('getEntityFiles lê a lista de arquivos', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okJson({ items: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const out = await getEntityFiles('9')
+
+    expect(out.items).toEqual([])
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/entities/9/files')
+  })
+})
+
+describe('posterSrc', () => {
+  it('respeita a base (vazia) e devolve a rota do pôster', () => {
+    expect(posterSrc('/api/v1/entities/9/assets/poster')).toBe(
+      '/api/v1/entities/9/assets/poster',
+    )
+  })
+
+  it('devolve null sem arte', () => {
+    expect(posterSrc(null)).toBeNull()
+    expect(posterSrc(undefined)).toBeNull()
   })
 })

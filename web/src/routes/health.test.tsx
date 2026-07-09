@@ -1,19 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { ReactNode } from 'react'
-import { HealthScreen } from '@/routes/index'
-
-// Cada teste usa um QueryClient próprio com retry desligado, para o estado de
-// erro aparecer imediatamente (sem os retries com backoff do padrão).
-function renderWithClient(ui: ReactNode) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return render(
-    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
-  )
-}
+import { screen, waitFor } from '@testing-library/react'
+import { HealthScreen } from '@/routes/health'
+import { renderWithClient } from '@/test/render'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -21,7 +9,6 @@ afterEach(() => {
 
 describe('HealthScreen', () => {
   it('mostra o estado de carregamento antes da resposta', () => {
-    // fetch que nunca resolve → a query fica pendente.
     vi.stubGlobal(
       'fetch',
       vi.fn(() => new Promise<Response>(() => {})),

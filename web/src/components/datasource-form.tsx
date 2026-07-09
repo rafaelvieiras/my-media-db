@@ -1,0 +1,81 @@
+import { useState, type FormEvent } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { FolderPlus } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { ApiError, createLibrary, type CreateSource } from '@/lib/api'
+
+// Formulário de adição de datasource: caminho + tipo (movie/tv). Erro de path
+// inválido vindo da API aparece INLINE (a `message` pt-BR do envelope). Ao criar
+// com sucesso, invalida a lista de datasources e limpa o caminho.
+export function DatasourceForm() {
+  const queryClient = useQueryClient()
+  const [path, setPath] = useState('')
+  const [type, setType] = useState<CreateSource['type']>('movie')
+
+  const mutation = useMutation({
+    mutationFn: (body: CreateSource) => createLibrary(body),
+    onSuccess: () => {
+      setPath('')
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+    },
+  })
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    const limpo = path.trim()
+    if (!limpo) {
+      return
+    }
+    mutation.mutate({ path: limpo, type })
+  }
+
+  const mensagemErro =
+    mutation.error instanceof ApiError
+      ? mutation.error.message
+      : mutation.isError
+        ? 'Não foi possível adicionar o datasource.'
+        : null
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="flex flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <label className="flex flex-1 flex-col gap-1 text-sm">
+          <span className="text-muted-foreground">Caminho</span>
+          <Input
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+            placeholder="/mnt/midia/filmes"
+            aria-label="Caminho do datasource"
+            aria-invalid={mensagemErro !== null || undefined}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-muted-foreground">Tipo</span>
+          <Select
+            value={type}
+            onChange={(e) => setType(e.target.value as CreateSource['type'])}
+            aria-label="Tipo do datasource"
+            className="w-full sm:w-36"
+          >
+            <option value="movie">Filmes</option>
+            <option value="tv">Séries</option>
+          </Select>
+        </label>
+        <Button type="submit" disabled={mutation.isPending}>
+          <FolderPlus aria-hidden />
+          {mutation.isPending ? 'Adicionando…' : 'Adicionar'}
+        </Button>
+      </div>
+      {mensagemErro ? (
+        <p role="alert" className="text-sm font-medium text-destructive">
+          {mensagemErro}
+        </p>
+      ) : null}
+    </form>
+  )
+}

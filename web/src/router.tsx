@@ -5,10 +5,14 @@ import {
   createRouter,
 } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { HealthScreen } from '@/routes/index'
+import { AppHeader } from '@/components/app-header'
+import { LibraryItemsScreen } from '@/routes/index'
+import { LibraryScreen } from '@/routes/library'
+import { EntityDetailScreen } from '@/routes/entity-detail'
+import { HealthScreen } from '@/routes/health'
 
 // Contexto do router: carrega o QueryClient compartilhado, de modo que loaders
-// de rota (Fase 2) possam pré-carregar/hidratar o cache do TanStack Query.
+// de rota possam pré-carregar/hidratar o cache do TanStack Query.
 export interface RouterContext {
   queryClient: QueryClient
 }
@@ -16,19 +20,46 @@ export interface RouterContext {
 // QueryClient único, compartilhado entre o contexto do router e o provider.
 export const queryClient = new QueryClient()
 
-// Roteamento CODE-BASED (uma rota só nesta fase; o routeTree.gen file-based
-// entra na Fase 2, quando houver várias telas).
+// Roteamento CODE-BASED. A raiz é o layout: cabeçalho de navegação + <Outlet>.
 const rootRoute = createRootRouteWithContext<RouterContext>()({
-  component: () => <Outlet />,
+  component: () => (
+    <div className="min-h-svh bg-background text-foreground">
+      <AppHeader />
+      <Outlet />
+    </div>
+  ),
 })
 
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
+  component: LibraryItemsScreen,
+})
+
+const libraryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library',
+  component: LibraryScreen,
+})
+
+const entityDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/entities/$id',
+  component: EntityDetailScreen,
+})
+
+const healthRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/health',
   component: HealthScreen,
 })
 
-const routeTree = rootRoute.addChildren([indexRoute])
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  libraryRoute,
+  entityDetailRoute,
+  healthRoute,
+])
 
 export const router = createRouter({
   routeTree,
