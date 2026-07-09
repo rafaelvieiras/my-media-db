@@ -11,11 +11,13 @@ import (
 
 const valorMeta = `-- name: ValorMeta :one
 SELECT valor FROM mymediadb_meta
-WHERE chave =
+WHERE chave = ?
 `
 
-// Lê um valor da tabela de metadados pela chave. Serve de query-semente para
-// provar o wiring do sqlc de ponta a ponta; queries de domínio chegam no 0007.
+// Le um valor da tabela de metadados pela chave. Serve de query-semente para
+// provar o wiring do sqlc de ponta a ponta; queries de dominio chegam no 0007.
+// (Comentario em ASCII: o sqlc corrompe o SQL gerado com acentos no .sql de
+// query -- ver a nota em entity.sql.)
 func (q *Queries) ValorMeta(ctx context.Context, chave string) (string, error) {
 	row := q.db.QueryRowContext(ctx, valorMeta, chave)
 	var valor string

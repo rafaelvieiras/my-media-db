@@ -6,11 +6,77 @@ package sqlcgen
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
-	// Lê um valor da tabela de metadados pela chave. Serve de query-semente para
-	// provar o wiring do sqlc de ponta a ponta; queries de domínio chegam no 0007.
+	ApagarAsset(ctx context.Context, id string) error
+	// Purga explicita: remove a entity e, por ON DELETE CASCADE, seus media_file,
+	// asset e entity_relation.
+	ApagarEntity(ctx context.Context, id string) error
+	ApagarEntityRelation(ctx context.Context, id string) error
+	ApagarLibrarySource(ctx context.Context, id string) error
+	ApagarMediaFile(ctx context.Context, id string) error
+	AtualizarEntity(ctx context.Context, arg AtualizarEntityParams) (Entity, error)
+	// Atualiza o estado da varredura: carimbo do ultimo scan e online/offline.
+	AtualizarLibrarySource(ctx context.Context, arg AtualizarLibrarySourceParams) (LibrarySource, error)
+	// Transicao de ciclo de vida: marca present/missing e carimba last_seen.
+	AtualizarMediaFileState(ctx context.Context, arg AtualizarMediaFileStateParams) (MediaFile, error)
+	// CRUD de asset (poster/fanart/... referenciados por uma entity).
+	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+	CriarAsset(ctx context.Context, arg CriarAssetParams) (Asset, error)
+	// CRUD minimo da entity base.
+	//
+	// IMPORTANTE (sqlc + ASCII): os comentarios deste arquivo .sql sao ASCII (sem
+	// acentos) DE PROPOSITO. O sqlc v1.31 fatia o texto de cada query por offset de
+	// BYTE, mas as posicoes dos tokens vem em offset de RUNE; qualquer caractere
+	// multi-byte (acento pt-BR) num arquivo de query desloca o corte e CORROMPE o
+	// SQL gerado (some o '?' final, troca 'AS x' por 'A', etc.). As migrations NAO
+	// sofrem disso (sao parseadas por estrutura, nao guardadas como texto), entao la
+	// os comentarios seguem em pt-BR acentuado. Aqui, ASCII. Regra geral: colunas
+	// sempre EXPLICITAS, nunca '*'/'RETURNING *' (a expansao de '*' tem o mesmo bug
+	// de offset). As colunas geradas (external_id_tmdb/imdb) derivam de
+	// external_ids_json e NAO entram no INSERT/UPDATE, mas aparecem no
+	// RETURNING/SELECT para espelhar o modelo.
+	// status NAO entra no INSERT: usa o DEFAULT 'cataloged' (item auto-criado nasce
+	// catalogado; a curadoria muda depois via AtualizarEntity). ADR-0009.
+	CriarEntity(ctx context.Context, arg CriarEntityParams) (Entity, error)
+	// CRUD de entity_relation (serie<->temporada<->episodio, colecao<->filme).
+	// Criada agora; populada so pelos tipos que o scanner tratar (fase posterior).
+	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+	CriarEntityRelation(ctx context.Context, arg CriarEntityRelationParams) (EntityRelation, error)
+	// CRUD de library_source (raizes de varredura).
+	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+	// state e last_scan ficam de fora do INSERT: uma fonte nova nasce 'online'
+	// (DEFAULT) e sem last_scan; o scan preenche depois via AtualizarLibrarySource.
+	CriarLibrarySource(ctx context.Context, arg CriarLibrarySourceParams) (LibrarySource, error)
+	// CRUD de media_file + a query de POSSE DERIVADA (ADR-0009).
+	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+	CriarMediaFile(ctx context.Context, arg CriarMediaFileParams) (MediaFile, error)
+	// POSSE DERIVADA (ADR-0009): verdadeiro se, e so se, existe ao menos um
+	// media_file 'present' para a entity. Posse NAO e coluna (uma coluna gerada nao
+	// enxerga outra tabela) -- e computada aqui.
+	EntityTemPosse(ctx context.Context, entityID string) (bool, error)
+	ListarAssetsPorEntity(ctx context.Context, entityID string) ([]Asset, error)
+	ListarEntities(ctx context.Context, arg ListarEntitiesParams) ([]Entity, error)
+	ListarLibrarySources(ctx context.Context) ([]LibrarySource, error)
+	ListarMediaFilesPorEntity(ctx context.Context, entityID string) ([]MediaFile, error)
+	// Relacoes onde a entity e o pai (ex.: as temporadas de uma serie).
+	ListarRelacoesFilhas(ctx context.Context, parentID string) ([]EntityRelation, error)
+	// Relacoes onde a entity e o filho (ex.: a serie de uma temporada).
+	ListarRelacoesPais(ctx context.Context, childID string) ([]EntityRelation, error)
+	ObterAsset(ctx context.Context, id string) (Asset, error)
+	ObterEntity(ctx context.Context, id string) (Entity, error)
+	ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.NullString) (Entity, error)
+	// Lookup por id externo tmdb via coluna gerada + indice (doc 04, busca sem GIN).
+	ObterEntityPorTmdb(ctx context.Context, externalIDTmdb sql.NullString) (Entity, error)
+	ObterEntityRelation(ctx context.Context, id string) (EntityRelation, error)
+	ObterLibrarySource(ctx context.Context, id string) (LibrarySource, error)
+	ObterMediaFile(ctx context.Context, id string) (MediaFile, error)
+	// Le um valor da tabela de metadados pela chave. Serve de query-semente para
+	// provar o wiring do sqlc de ponta a ponta; queries de dominio chegam no 0007.
+	// (Comentario em ASCII: o sqlc corrompe o SQL gerado com acentos no .sql de
+	// query -- ver a nota em entity.sql.)
 	ValorMeta(ctx context.Context, chave string) (string, error)
 }
 

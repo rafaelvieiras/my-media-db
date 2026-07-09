@@ -250,33 +250,67 @@ central: **eventos de arquivo mexem só na posse (derivada); nunca no `status`
   `media_override`, assets). Um `media_file` de arquivo que **ainda existe** no disco
   jamais é purgado pelo sistema.
 
-Esboço de tabelas (nomes/colunas a fechar no briefing de schema):
+### Schema do núcleo (Fase 2 — fechado no [briefing 0007](../briefings/0007-schema-nucleo-minimo.md))
+
+As tabelas abaixo já são **schema real** (migration `0002_schema_nucleo.sql`), não
+mais esboço. `*_json` são `TEXT` com JSON validado pela app antes de gravar.
 
 ```
 entity            (id, type, title, original_title, description,
                    release_date, status, tags_json, external_ids_json,
-                   extension_data_json, created_at, updated_at)
+                   extension_data_json, created_at, updated_at,
+                   external_id_tmdb, external_id_imdb)
+                   -- status: DEFAULT 'cataloged', CHECK IN
+                   --   ('cataloged','wanted','unreleased','draft')
+                   -- external_id_tmdb/imdb: COLUNAS GERADAS de external_ids_json
+                   --   (json_extract $.tmdb / $.imdb) + índice → lookup por id externo
+media_file        (id, entity_id→entity, path UNIQUE, content_hash (indexado),
+                   size, mtime, edition, part_no, match_confidence,
+                   mediainfo_json, state, last_seen, created_at, updated_at)
+                   -- 1:N com entity (versões/qualidades/edições); edition=rótulo,
+                   -- part_no p/ stacking (cd1/cd2); ver 06 — Identidade e matching.
+                   -- state: DEFAULT 'present', CHECK IN ('present','missing');
+                   --   last_seen carimba o último scan que viu o arquivo (ADR-0012)
+library_source    (id, path UNIQUE, type, last_scan, state,
+                   created_at, updated_at)
+                   -- state: DEFAULT 'online', CHECK IN ('online','offline');
+                   --   disco desmontado = offline, não marca arquivos missing (ADR-0012)
+asset             (id, entity_id→entity, kind, origin, path_or_uri,
+                   meta_json, created_at)  -- poster/fanart/...
+entity_relation   (id, parent_id→entity, child_id→entity, kind,
+                   UNIQUE(parent_id,child_id,kind))
+                   -- série↔temporada↔episódio, coleção↔filme.
+                   -- Criada agora; populada pelo scanner em fase posterior.
+entity_fts        VIRTUAL TABLE fts5(title, original_title, tags, entity_id UNINDEXED)
+                   -- busca textual; sincronizada por triggers AFTER INS/UPD/DEL em
+                   -- entity. FTS5 STANDALONE (não external-content) porque a PK da
+                   -- entity é TEXT/uuid e o padrão externo exige content_rowid
+                   -- INTEGER; entity_id UNINDEXED remapeia o hit para a entity.
+```
 
-entity_relation   (id, parent_id, child_id, kind)      -- série↔temporada↔episódio, coleção↔filme
+As FKs de `media_file`/`asset`/`entity_relation` para `entity` são
+`ON DELETE CASCADE`: só uma **purga** explícita da entity remove os filhos — o
+sumiço de um arquivo apenas o marca `missing` (não deleta). A **posse** é
+derivada por query (`EXISTS media_file present`), nunca uma coluna.
+
+Esboço de tabelas ainda **não materializadas** (entram na Fase 3/4):
+
+```
 media_external    (id, entity_id, source, source_id, payload_json, fetched_at)
                    -- cache de payload; source_id subordinado ao external_ids (ver Identidade externa)
 media_override    (entity_id, override_json, updated_at)   -- patch esparso (1 linha/entity), espelha a entity
-media_file        (id, entity_id, path, content_hash, edition, part_no,
-                   match_confidence, mediainfo_json, size, mtime)
-                   -- 1:N com entity (versões/qualidades/edições); edition=rótulo,
-                   -- part_no p/ stacking (cd1/cd2); ver 06 — Identidade e matching
 person            (id, name, external_ids_json)
 credit            (id, entity_id, person_id, role, ord)
 company           (id, name, kind, external_ids_json)
-asset             (id, entity_id, kind, origin, path_or_uri, meta_json)  -- poster/fanart/...
-library_source    (id, path, type, last_scan)
 -- fase posterior: user, token, permission, plugin_registry
 ```
 
 ### Diagrama ER
 
-Visão de relacionamentos (nomes/colunas ainda a fechar no briefing de schema). As
-**três camadas do resolver** penduram da `entity`: `media_file` (arquivo),
+Visão de relacionamentos. O núcleo (`entity`, `media_file`, `library_source`,
+`asset`, `entity_relation`) já é schema real (Fase 2); `media_external`,
+`media_override`, `person`, `credit` e `company` seguem como esboço até a Fase 3/4.
+As **três camadas do resolver** penduram da `entity`: `media_file` (arquivo),
 `media_external` (externo) e `media_override` (override).
 
 ```mermaid
@@ -288,6 +322,8 @@ erDiagram
         text status
         json external_ids_json
         json extension_data_json
+        text external_id_tmdb
+        text external_id_imdb
     }
     media_file {
         text id PK
@@ -298,6 +334,8 @@ erDiagram
         int  part_no
         real match_confidence
         json mediainfo_json
+        text state
+        text last_seen
     }
     media_external {
         text id PK
@@ -345,6 +383,8 @@ erDiagram
         text id PK
         text path
         text type
+        text last_scan
+        text state
     }
 
     entity         ||--o{ media_file      : "1:N versões/qualidades"

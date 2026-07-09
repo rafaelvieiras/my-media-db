@@ -105,8 +105,9 @@ func TestMigrateUp(t *testing.T) {
 	if err := d.Migrate(ctx); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	if v := mustSchemaVersion(t, d); v != 1 {
-		t.Errorf("versão após up = %d, quero 1", v)
+	// Após o 0007 há duas migrations (0001 semente + 0002 schema do núcleo).
+	if v := mustSchemaVersion(t, d); v != 2 {
+		t.Errorf("versão após up = %d, quero 2", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -132,9 +133,21 @@ func TestMigrateDown(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 
-	// Down reverte para a versão 0 e some com a tabela.
+	// Down reverte uma migration por vez. Primeiro reverte o 0002 (schema do
+	// núcleo): volta à versão 1 e some com a tabela entity.
 	if err := d.MigrateDown(ctx); err != nil {
-		t.Fatalf("MigrateDown: %v", err)
+		t.Fatalf("MigrateDown 0002: %v", err)
+	}
+	if v := mustSchemaVersion(t, d); v != 1 {
+		t.Errorf("versão após down do 0002 = %d, quero 1", v)
+	}
+	if _, err := d.Read.QueryContext(ctx, "SELECT 1 FROM entity"); err == nil {
+		t.Error("tabela entity ainda existe após o down do 0002")
+	}
+
+	// Reverte também o 0001 (semente): volta à versão 0 e some com a tabela meta.
+	if err := d.MigrateDown(ctx); err != nil {
+		t.Fatalf("MigrateDown 0001: %v", err)
 	}
 	if v := mustSchemaVersion(t, d); v != 0 {
 		t.Errorf("versão após down = %d, quero 0", v)

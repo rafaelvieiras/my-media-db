@@ -4,6 +4,78 @@
 
 package sqlcgen
 
+import (
+	"database/sql"
+)
+
+type Asset struct {
+	ID        string
+	EntityID  string
+	Kind      string
+	Origin    string
+	PathOrUri string
+	MetaJson  sql.NullString
+	CreatedAt string
+}
+
+type Entity struct {
+	ID                string
+	Type              string
+	Title             string
+	OriginalTitle     sql.NullString
+	Description       sql.NullString
+	ReleaseDate       sql.NullString
+	Status            string
+	TagsJson          sql.NullString
+	ExternalIdsJson   sql.NullString
+	ExtensionDataJson sql.NullString
+	CreatedAt         string
+	UpdatedAt         string
+	ExternalIDTmdb    sql.NullString
+	ExternalIDImdb    sql.NullString
+}
+
+type EntityFt struct {
+	Title         string
+	OriginalTitle string
+	Tags          string
+	EntityID      string
+}
+
+type EntityRelation struct {
+	ID       string
+	ParentID string
+	ChildID  string
+	Kind     string
+}
+
+type LibrarySource struct {
+	ID        string
+	Path      string
+	Type      string
+	LastScan  sql.NullString
+	State     string
+	CreatedAt string
+	UpdatedAt string
+}
+
+type MediaFile struct {
+	ID              string
+	EntityID        string
+	Path            string
+	ContentHash     sql.NullString
+	Size            sql.NullInt64
+	Mtime           sql.NullString
+	Edition         sql.NullString
+	PartNo          sql.NullInt64
+	MatchConfidence sql.NullFloat64
+	MediainfoJson   sql.NullString
+	State           string
+	LastSeen        sql.NullString
+	CreatedAt       string
+	UpdatedAt       string
+}
+
 type MymediadbMetum struct {
 	Chave string
 	Valor string
