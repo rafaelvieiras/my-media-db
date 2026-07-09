@@ -8,7 +8,7 @@
 | **ID** | 0003 |
 | **Tipo** | chore |
 | **Fase (roadmap)** | Fase 1 — Esqueleto do container único |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [03-arquitetura](../docs/03-arquitetura.md), [ADR-0014](../docs/adr/0014-stack-de-implementacao.md) |
 | **Depende de** | [0001](0001-backend-esqueleto-servidor.md), [0002](0002-frontend-scaffold-integracao-api.md) |
 
@@ -79,6 +79,14 @@ juntos num container que qualquer um sobe com um `docker run`.
 - `HEALTHCHECK`: `wget -q --spider http://localhost:8080/api/v1/health` (busybox), com
   `--start-period` folgado para o boot. Sem subcomando dedicado no binário — o 0001
   permanece enxuto.
+- **Builder web = `node:lts-slim`** (decisão de implementação, 2026-07-08). O
+  `package-lock.json` gerado no scaffold do 0002 estava num estado não-normalizado que
+  o `npm ci` do npm ≥ 11.16 (empacotado no `node:lts`) rejeitava (`Missing:
+  @emnapi/core … from lock file`). Correção de raiz: **regenerar o lock** (`npm install`
+  limpo o normaliza) — com ele o `npm ci` passa em `node:lts` sem pin. Preferido a pinar
+  um patch exato do Node (que fixaria o npm antigo e mascararia o lock quebrado). O
+  builder é estágio descartado, então usar a base LTS cheia/slim não afeta a imagem final.
+- Imagem final medida: **~16 MB** (alpine + binário estático ~7,6 MB).
 
 ## 7. Fora deste briefing / follow-ups
 

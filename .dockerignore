@@ -1,0 +1,35 @@
+# Dependências e artefatos que NÃO devem entrar no contexto de build.
+# O build precisa funcionar mesmo sem nada pré-buildado localmente: o dist real
+# do SPA é gerado no estágio builder-web, não copiado do host.
+
+# Node
+node_modules/
+**/node_modules/
+
+# Build local do SPA embutido: o placeholder e qualquer build local NÃO devem
+# vazar para o contexto — o dist real vem do estágio 1 do Dockerfile.
+internal/webui/dist/
+
+# Git
+.git/
+.gitignore
+
+# Artefatos e temporários locais
+*.sqlite
+.env
+*.log
+reports/
+tmp/
+dist/
+dist-ssr/
+*.local
+
+# O próprio empacotamento
+Dockerfile
+.dockerignore
+
+# Editores / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
