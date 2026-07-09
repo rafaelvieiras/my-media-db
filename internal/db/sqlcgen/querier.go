@@ -16,7 +16,11 @@ type Querier interface {
 	ApagarEntity(ctx context.Context, id string) error
 	ApagarEntityRelation(ctx context.Context, id string) error
 	ApagarLibrarySource(ctx context.Context, id string) error
+	// Remove uma linha de cache pelo seu id (ex.: invalidar uma fonte).
+	ApagarMediaExternal(ctx context.Context, id string) error
 	ApagarMediaFile(ctx context.Context, id string) error
+	// Remove o override da entity (volta ao valor da base editorial/arquivo).
+	ApagarMediaOverride(ctx context.Context, entityID string) error
 	AtualizarEntity(ctx context.Context, arg AtualizarEntityParams) (Entity, error)
 	// Atualiza o estado da varredura: carimbo do ultimo scan e online/offline.
 	AtualizarLibrarySource(ctx context.Context, arg AtualizarLibrarySourceParams) (LibrarySource, error)
@@ -84,6 +88,8 @@ type Querier interface {
 	// Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title).
 	ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCardsDescParams) ([]ListarEntityCardsDescRow, error)
 	ListarLibrarySources(ctx context.Context) ([]LibrarySource, error)
+	// Todas as camadas externas cacheadas de uma entity (uma por fonte buscada).
+	ListarMediaExternalPorEntity(ctx context.Context, entityID string) ([]MediaExternal, error)
 	ListarMediaFilesPorEntity(ctx context.Context, entityID string) ([]MediaFile, error)
 	// Relacoes onde a entity e o pai (ex.: as temporadas de uma serie).
 	ListarRelacoesFilhas(ctx context.Context, parentID string) ([]EntityRelation, error)
@@ -113,11 +119,28 @@ type Querier interface {
 	// Usada pelo handler POST para detectar path duplicado (ja normalizado) antes
 	// do INSERT e responder 409 com mensagem clara em vez de estourar o UNIQUE.
 	ObterLibrarySourcePorPath(ctx context.Context, path string) (LibrarySource, error)
+	// Le o cache de UMA fonte especifica da entity (a chave logica do cache).
+	ObterMediaExternalPorFonte(ctx context.Context, arg ObterMediaExternalPorFonteParams) (MediaExternal, error)
 	ObterMediaFile(ctx context.Context, id string) (MediaFile, error)
 	// Dedup do scanner: acha o arquivo pelo hash de conteudo (estavel a rename/move).
 	// content_hash NAO e UNIQUE (colisao real e astronomica com o hash parcial), por
 	// isso LIMIT 1. Se achar, o scanner atualiza o path em vez de criar outra linha.
 	ObterMediaFilePorContentHash(ctx context.Context, contentHash sql.NullString) (MediaFile, error)
+	// Le o override da entity (sql.ErrNoRows quando nao ha override ativo).
+	ObterMediaOverride(ctx context.Context, entityID string) (MediaOverride, error)
+	// Acesso ao cache da camada EXTERNA (media_external): uma linha de payload cru por
+	// (entity_id, source). O re-enriquecimento faz UPSERT por essa chave (ADR-0011).
+	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+	// Grava (ou atualiza) o cache de UMA fonte para a entity. Conflito na UNIQUE
+	// (entity_id, source) atualiza source_id/payload_json e recarimba fetched_at, sem
+	// duplicar a linha. `id` so e usado na primeira insercao (fica estavel no update).
+	UpsertMediaExternal(ctx context.Context, arg UpsertMediaExternalParams) (MediaExternal, error)
+	// Acesso a camada de OVERRIDE (media_override): patch esparso do dono, 1:1 com a
+	// entity (PK = entity_id). O editor de override (0016) grava aqui via UPSERT.
+	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+	// Grava (ou substitui) o override da entity. Conflito na PK (entity_id) atualiza
+	// override_json e recarimba updated_at -- 1:1, nunca cria uma segunda linha.
+	UpsertMediaOverride(ctx context.Context, arg UpsertMediaOverrideParams) (MediaOverride, error)
 	// Le um valor da tabela de metadados pela chave. Serve de query-semente para
 	// provar o wiring do sqlc de ponta a ponta; queries de dominio chegam no 0007.
 	// (Comentario em ASCII: o sqlc corrompe o SQL gerado com acentos no .sql de

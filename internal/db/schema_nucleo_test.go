@@ -9,8 +9,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// setupNucleo abre um banco temporário, aplica as migrations (schema 3 após o
-// 0003) e devolve o DB junto de um *Queries no pool de ESCRITA.
+// setupNucleo abre um banco temporário, aplica as migrations (schema 4 após o
+// 0004) e devolve o DB junto de um *Queries no pool de ESCRITA.
 func setupNucleo(t *testing.T) (*DB, *sqlcgen.Queries) {
 	t.Helper()
 	d := openTest(t)
@@ -90,11 +90,12 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 	d, q := setupNucleo(t)
 	ctx := context.Background()
 
-	if v := mustSchemaVersion(t, d); v != 3 {
-		t.Fatalf("versão de schema = %d, quero 3", v)
+	if v := mustSchemaVersion(t, d); v != 4 {
+		t.Fatalf("versão de schema = %d, quero 4", v)
 	}
 	assertTabelasExistem(t, d,
-		"entity", "media_file", "library_source", "asset", "entity_relation", "entity_fts")
+		"entity", "media_file", "library_source", "asset", "entity_relation", "entity_fts",
+		"media_external", "media_override")
 
 	populaGrafoMinimo(t, q)
 
@@ -107,8 +108,12 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 		t.Error("foreign_key_check retornou violações, quero nenhuma")
 	}
 
-	// Down reverte o 0003 (coluna library_source_id) e depois o 0002 (schema do
-	// núcleo, volta ao 0001).
+	// Down reverte o 0004 (camadas externo/override), o 0003 (coluna
+	// library_source_id) e depois o 0002 (schema do núcleo, volta ao 0001).
+	check(t, d.MigrateDown(ctx), "MigrateDown 0004")
+	if v := mustSchemaVersion(t, d); v != 3 {
+		t.Fatalf("versão após down do 0004 = %d, quero 3", v)
+	}
 	check(t, d.MigrateDown(ctx), "MigrateDown 0003")
 	if v := mustSchemaVersion(t, d); v != 2 {
 		t.Fatalf("versão após down do 0003 = %d, quero 2", v)

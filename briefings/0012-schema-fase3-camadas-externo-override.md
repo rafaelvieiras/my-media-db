@@ -11,7 +11,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
 | **Docs relacionadas** | [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [ADR-0004](../docs/adr/0004-override-como-blob-json-esparso.md), [ADR-0011](../docs/adr/0011-external-ids-autoritativo-media-external-cache.md), [ADR-0017](../docs/adr/0017-migrations-goose-embedado.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Depende de** | [0007](0007-schema-nucleo-minimo.md) |
 
 ---

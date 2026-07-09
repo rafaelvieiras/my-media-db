@@ -16,7 +16,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// setup abre um banco temporário migrado (schema 3) e devolve os Queries no pool
+// setup abre um banco temporário migrado (schema 4) e devolve os Queries no pool
 // de escrita.
 func setup(t *testing.T) *sqlcgen.Queries {
 	t.Helper()
@@ -180,6 +180,58 @@ func TestCRUDAssetRelation(t *testing.T) {
 		t.Errorf("ListarRelacoesPais = %d, quero 1", len(pais))
 	}
 	check(t, q.ApagarEntityRelation(ctx, rel.ID), "ApagarEntityRelation")
+}
+
+// TestCRUDMediaExternalOverride cobre o CRUD das camadas externo/override e prova
+// o round-trip: payload_json/override_json voltam intactos, inclusive um JSON com
+// acento no VALOR (o valor e dado, nao SQL -- passa byte a byte).
+func TestCRUDMediaExternalOverride(t *testing.T) {
+	q := setup(t)
+	ctx := context.Background()
+	e, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "e", Type: "movie", Title: "T"})
+	check(t, err, "CriarEntity")
+
+	// media_external: upsert com payload contendo acento no valor.
+	const payload = `{"titulo":"Coração Selvagem","tagline":"Amor à primeira vista"}`
+	ext, err := q.UpsertMediaExternal(ctx, sqlcgen.UpsertMediaExternalParams{
+		ID: "ext-1", EntityID: e.ID, Source: "tmdb",
+		SourceID: ns("603"), PayloadJson: ns(payload),
+	})
+	check(t, err, "UpsertMediaExternal")
+	if ext.PayloadJson.String != payload {
+		t.Errorf("payload_json apos upsert = %q, quero %q", ext.PayloadJson.String, payload)
+	}
+
+	got, err := q.ObterMediaExternalPorFonte(ctx, sqlcgen.ObterMediaExternalPorFonteParams{
+		EntityID: e.ID, Source: "tmdb",
+	})
+	check(t, err, "ObterMediaExternalPorFonte")
+	if got.PayloadJson.String != payload {
+		t.Errorf("payload_json apos leitura = %q, quero %q (round-trip)", got.PayloadJson.String, payload)
+	}
+
+	lista, err := q.ListarMediaExternalPorEntity(ctx, e.ID)
+	check(t, err, "ListarMediaExternalPorEntity")
+	if len(lista) != 1 {
+		t.Errorf("ListarMediaExternalPorEntity = %d, quero 1", len(lista))
+	}
+	check(t, q.ApagarMediaExternal(ctx, ext.ID), "ApagarMediaExternal")
+
+	// media_override: upsert com override contendo acento no valor.
+	const override = `{"title":"Coração","description":"Sinopse com acentuação"}`
+	ov, err := q.UpsertMediaOverride(ctx, sqlcgen.UpsertMediaOverrideParams{
+		EntityID: e.ID, OverrideJson: ns(override),
+	})
+	check(t, err, "UpsertMediaOverride")
+	if ov.OverrideJson.String != override {
+		t.Errorf("override_json apos upsert = %q, quero %q", ov.OverrideJson.String, override)
+	}
+	gotOv, err := q.ObterMediaOverride(ctx, e.ID)
+	check(t, err, "ObterMediaOverride")
+	if gotOv.OverrideJson.String != override {
+		t.Errorf("override_json apos leitura = %q, quero %q (round-trip)", gotOv.OverrideJson.String, override)
+	}
+	check(t, q.ApagarMediaOverride(ctx, e.ID), "ApagarMediaOverride")
 }
 
 // TestCRUDLibrarySourceEMeta cobre library_source e a query-semente ValorMeta.

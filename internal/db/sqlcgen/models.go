@@ -59,6 +59,15 @@ type LibrarySource struct {
 	UpdatedAt string
 }
 
+type MediaExternal struct {
+	ID          string
+	EntityID    string
+	Source      string
+	SourceID    sql.NullString
+	PayloadJson sql.NullString
+	FetchedAt   string
+}
+
 type MediaFile struct {
 	ID              string
 	EntityID        string
@@ -75,6 +84,12 @@ type MediaFile struct {
 	CreatedAt       string
 	UpdatedAt       string
 	LibrarySourceID sql.NullString
+}
+
+type MediaOverride struct {
+	EntityID     string
+	OverrideJson sql.NullString
+	UpdatedAt    string
 }
 
 type MymediadbMetum struct {

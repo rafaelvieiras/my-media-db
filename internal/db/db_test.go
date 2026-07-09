@@ -105,10 +105,10 @@ func TestMigrateUp(t *testing.T) {
 	if err := d.Migrate(ctx); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	// Após o 0009 há três migrations (0001 semente + 0002 schema do núcleo +
-	// 0003 media_file.library_source_id).
-	if v := mustSchemaVersion(t, d); v != 3 {
-		t.Errorf("versão após up = %d, quero 3", v)
+	// Após o 0012 há quatro migrations (0001 semente + 0002 schema do núcleo +
+	// 0003 media_file.library_source_id + 0004 media_external/media_override).
+	if v := mustSchemaVersion(t, d); v != 4 {
+		t.Errorf("versão após up = %d, quero 4", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -153,6 +153,12 @@ func TestMigrateDown(t *testing.T) {
 	}
 
 	// Down reverte uma migration por vez, do topo para a base.
+	downPara(t, d, 3) // 0004: remove media_external e media_override.
+	querFalha(t, d, "SELECT 1 FROM media_external",
+		"tabela media_external ainda existe após o down do 0004")
+	querFalha(t, d, "SELECT 1 FROM media_override",
+		"tabela media_override ainda existe após o down do 0004")
+
 	downPara(t, d, 2) // 0003: remove a coluna library_source_id de media_file.
 	querFalha(t, d, "SELECT library_source_id FROM media_file",
 		"coluna library_source_id ainda existe após o down do 0003")
