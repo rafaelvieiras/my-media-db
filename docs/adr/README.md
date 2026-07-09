@@ -34,3 +34,4 @@ achatada de "decisões abertas" por um registro rastreável, um arquivo por deci
 | [0014](0014-stack-de-implementacao.md) | Stack de implementação (chi, modernc, sqlc, ffprobe, OpenAPI) | doc 11 (1–5) | Aceita |
 | [0015](0015-api-tmdb-passthrough.md) | `/api/tmdb`: passthrough com cache, nunca 404 | doc 11 (6) | Aceita |
 | [0016](0016-quality-gate-catraca-unificada.md) | Quality gate: catraca unificada (ratchet) Go + TS | QG1 | Aceita |
+| [0017](0017-migrations-goose-embedado.md) | Migrations do SQLite: goose embedado | Fase 2 | Aceita |
