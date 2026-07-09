@@ -23,6 +23,8 @@ export type SearchResult = components['schemas']['SearchResult']
 export type ExternalResult = components['schemas']['ExternalResult']
 export type ImportRequest = components['schemas']['ImportRequest']
 export type LanguageSettings = components['schemas']['LanguageSettings']
+export type OverrideBlob = components['schemas']['OverrideBlob']
+export type OverridePatch = components['schemas']['OverridePatch']
 
 // Forma do corpo de `GET /api/v1/health` (contrato do briefing 0001).
 export interface Health {
@@ -194,6 +196,69 @@ export async function getEntityFiles(id: string): Promise<FileList> {
   return lerJson<FileList>(
     await fetch(`${base}/api/v1/entities/${encodeURIComponent(id)}/files`),
   )
+}
+
+// ── Override do dono (0016) — edição por idioma ──────────────────────────────
+
+// Blob CRU do override guardado (`{}` quando não há). A UI o usa para distinguir
+// "overridado" de "herdado" POR CAMPO e POR IDIOMA: campos traduzíveis vêm como
+// mapa por idioma (`{"pt-BR":…}`), neutros como o escalar direto. Não é a entity
+// resolvida — é o patch como está no banco (o resolver interpreta na leitura).
+export async function getOverrideBlob(id: string): Promise<OverrideBlob> {
+  return lerJson<OverrideBlob>(
+    await fetch(`${base}/api/v1/entities/${encodeURIComponent(id)}/override`),
+  )
+}
+
+// Funde um patch esparso no override, POR IDIOMA. O `?lang=` é o "pincel" dos
+// campos traduzíveis (title/description/tags): o handler grava `override[campo][lang]`,
+// preservando os outros idiomas. Campos neutros (original_title/release_date)
+// ignoram o `lang`. `null` num campo = "definir vazio" (distinto de LIMPAR).
+// Devolve a entity RESOLVIDA no `lang` (a UI reflete na hora). 422 = patch inválido.
+export async function patchOverride(
+  id: string,
+  lang: string,
+  patch: OverridePatch,
+): Promise<ResolvedEntity> {
+  const suffix = lang ? `?lang=${encodeURIComponent(lang)}` : ''
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/override${suffix}`,
+    {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(patch),
+    },
+  )
+  return lerJson<ResolvedEntity>(res)
+}
+
+// LIMPAR override de um campo (≠ definir vazio). Com `lang` presente e campo
+// traduzível, remove só `override[campo][lang]` (volta a HERDAR naquele idioma);
+// sem `lang`, ou campo neutro, remove a chave inteira. Idempotente. Devolve a
+// entity RESOLVIDA.
+export async function clearOverrideField(
+  id: string,
+  campo: string,
+  lang?: string,
+): Promise<ResolvedEntity> {
+  const suffix = lang ? `?lang=${encodeURIComponent(lang)}` : ''
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/override/${encodeURIComponent(
+      campo,
+    )}${suffix}`,
+    { method: 'DELETE' },
+  )
+  return lerJson<ResolvedEntity>(res)
+}
+
+// RESET — apaga o override inteiro: todos os campos voltam a herdar a base.
+// Devolve a entity RESOLVIDA (na base, sem override).
+export async function resetOverride(id: string): Promise<ResolvedEntity> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/override`,
+    { method: 'DELETE' },
+  )
+  return lerJson<ResolvedEntity>(res)
 }
 
 // ── Busca + import (0015) ────────────────────────────────────────────────────

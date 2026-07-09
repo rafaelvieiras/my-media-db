@@ -11,7 +11,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
 | **Docs relacionadas** | [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [ADR-0018](../docs/adr/0018-modelo-multi-idioma-dimensao-nas-camadas.md), [ADR-0019](../docs/adr/0019-resolucao-por-idioma-fallback-proveniencia.md), [ADR-0004](../docs/adr/0004-override-como-blob-json-esparso.md), [ADR-0003](../docs/adr/0003-override-de-listas-por-operacoes.md), [ADR-0006](../docs/adr/0006-presenca-da-chave-sinaliza-override.md), [ADR-0007](../docs/adr/0007-fatos-tecnicos-sao-overridaveis.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Depende de** | [0013](0013-resolver-tres-camadas.md), [0015](0015-enriquecimento-import-proxy-imagem.md), [0019](0019-fundacao-multi-idioma-settings-resolver.md), [0021](0021-ui-idiomas-admin-seletor.md) |
 
 ---
@@ -154,20 +154,28 @@ handler o faz, guiado pela **etiqueta `traduzivel` do resolver** (fonte única, 
 
 ## 5. Critérios de aceite
 
-- [ ] Editar o título **em pt-BR** grava `override.title["pt-BR"]` e o resolver passa a
+- [x] Editar o título **em pt-BR** grava `override.title["pt-BR"]` e o resolver passa a
   servi-lo por cima da base **só em pt-BR**; ler em `en` não é afetado.
-- [ ] **Limpar override** (`DELETE …/{campo}?lang=`) remove a chave do idioma (volta a
+- [x] **Limpar override** (`DELETE …/{campo}?lang=`) remove a chave do idioma (volta a
   herdar/fazer fallback); **definir vazio** (`null` no idioma) apaga a base e interrompe
   o fallback — distintos e testados (R6 por idioma).
-- [ ] `tags` editam por `{add, remove}` **dentro do idioma**, com a base externa daquele
+- [x] `tags` editam por `{add, remove}` **dentro do idioma**, com a base externa daquele
   idioma viva por baixo (R3 por idioma).
-- [ ] Campo **neutro** (`original_title`/`release_date`) grava escalar único (sem
+- [x] Campo **neutro** (`original_title`/`release_date`) grava escalar único (sem
   idioma) e vale em qualquer `?lang=`.
-- [ ] Patch malformado / chave não-editorial / `lang` não permitido são rejeitados
+- [x] Patch malformado / chave não-editorial / `lang` não permitido são rejeitados
   (`422`/`400`, envelope de erro). Merge preserva os outros idiomas do mesmo campo.
-- [ ] A UI edita no idioma corrente, mostra o que está overridado e reflete o valor
+- [x] A UI edita no idioma corrente, mostra o que está overridado e reflete o valor
   resolvido na hora. Catraca verde (Go + type-check web). Validação Playwright ao vivo
   (adicionar a sinopse pt-BR faltante e ver o selo de fallback sumir).
+
+**Validação ao vivo (backend por curl + UI por Playwright, item Dune):** override
+`title` pt-BR não afetou o `en` (título "Duna — Edição do Dono" em pt-BR × "Dune" em
+en); add de tags `es` com a base `es` viva por baixo (R3); `description es=null` apagou
+e não caiu no fallback (R6); "Limpar" voltou a herdar; blob cru em 2 níveis. Na UI: o
+botão **Editar** abre o editor "Editando em Português (BR)"; salvar o título fez surgir
+o selo **"editado"** e trocar para `en` mostrou "Dune" sem selo — isolamento por idioma
+provado end-to-end.
 
 ## 6. Notas de implementação / decisões
 

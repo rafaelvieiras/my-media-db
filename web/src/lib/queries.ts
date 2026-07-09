@@ -4,6 +4,7 @@ import {
   getEntityFiles,
   getHealth,
   getLanguageSettings,
+  getOverrideBlob,
   getScanStatus,
   listEntities,
   listLibrary,
@@ -53,6 +54,18 @@ export function entityFilesQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['entity', id, 'files'],
     queryFn: () => getEntityFiles(id),
+  })
+}
+
+// Blob CRU do override (0016). A chave `['entity', id, 'override']` fica SOB o
+// prefixo `['entity', id]` — assim uma invalidação por `['entity', id]` após a
+// edição derruba de uma vez a entity (todas as variações de `lang`), os arquivos
+// e este blob, sem enumerar idiomas. Não carrega `lang`: o blob é o mesmo para
+// todos (a UI lê a fatia do idioma corrente dele).
+export function overrideBlobQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: ['entity', id, 'override'],
+    queryFn: () => getOverrideBlob(id),
   })
 }
 
