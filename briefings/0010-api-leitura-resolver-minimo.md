@@ -10,7 +10,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 2 — UI de biblioteca |
 | **Docs relacionadas** | [05-api](../docs/05-api.md), [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [ADR-0014](../docs/adr/0014-stack-de-implementacao.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Depende de** | [0007](0007-schema-nucleo-minimo.md), [0009](0009-scanner-fswalk-ffprobe-matching.md) |
 
 ---
