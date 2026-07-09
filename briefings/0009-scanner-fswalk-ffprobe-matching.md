@@ -10,7 +10,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 2 — UI de biblioteca |
 | **Docs relacionadas** | [06-biblioteca-e-scan](../docs/06-biblioteca-e-scan.md), [ADR-0008](../docs/adr/0008-identidade-e-matching-kodi-jellyfin.md), [ADR-0010](../docs/adr/0010-concorrencia-sqlite-wal-escritor-unico.md), [ADR-0012](../docs/adr/0012-ciclo-de-vida-nao-destrutivo.md), [ADR-0014](../docs/adr/0014-stack-de-implementacao.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Depende de** | [0007](0007-schema-nucleo-minimo.md), [0008](0008-datasources-cadastro-api-library.md) |
 
 ---
