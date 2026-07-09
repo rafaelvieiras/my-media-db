@@ -9,7 +9,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 2 — UI de biblioteca |
 | **Docs relacionadas** | [03-arquitetura](../docs/03-arquitetura.md), [ADR-0010](../docs/adr/0010-concorrencia-sqlite-wal-escritor-unico.md), [ADR-0014](../docs/adr/0014-stack-de-implementacao.md), [ADR-0017](../docs/adr/0017-migrations-goose-embedado.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Depende de** | [0001](0001-backend-esqueleto-servidor.md) |
 
 ---
