@@ -10,7 +10,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 2 — UI de biblioteca |
 | **Docs relacionadas** | [05-api](../docs/05-api.md), [06-biblioteca-e-scan](../docs/06-biblioteca-e-scan.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Depende de** | [0007](0007-schema-nucleo-minimo.md) |
 
 ---
