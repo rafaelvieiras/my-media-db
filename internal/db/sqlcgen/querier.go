@@ -27,6 +27,9 @@ type Querier interface {
 	// para present e carimba last_seen com o timestamp do scan (usado depois para
 	// decidir quem virou missing). Fixa tambem a fonte de origem.
 	AtualizarMediaFileVisto(ctx context.Context, arg AtualizarMediaFileVistoParams) (MediaFile, error)
+	// Total de itens que casam os filtros (para o campo `total` da paginacao). Mesma
+	// clausula WHERE da ListarEntityCards -- sem LIMIT/OFFSET/ORDER BY.
+	ContarEntityCards(ctx context.Context, arg ContarEntityCardsParams) (int64, error)
 	// CRUD de asset (poster/fanart/... referenciados por uma entity).
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
 	CriarAsset(ctx context.Context, arg CriarAssetParams) (Asset, error)
@@ -66,6 +69,20 @@ type Querier interface {
 	EntityTemPosse(ctx context.Context, entityID string) (bool, error)
 	ListarAssetsPorEntity(ctx context.Context, entityID string) ([]Asset, error)
 	ListarEntities(ctx context.Context, arg ListarEntitiesParams) ([]Entity, error)
+	// Lista de CARDS para a UI (briefing 0010), ordenada por titulo ASCENDENTE. Uma
+	// unica query com agregacao por subselect correlacionado -- evita o N+1 (nada de
+	// uma query de posse/contagem por item). Colunas derivadas:
+	//   owned            POSSE DERIVADA (ADR-0009): EXISTS media_file present.
+	//   file_count       total de media_file da entity (present + missing).
+	//   match_confidence maior confianca de match entre os arquivos (badge de revisao).
+	//   has_poster       EXISTS de um asset kind='poster' (a UI decide o poster_url).
+	// Filtros opcionais (NULL = sem filtro) via sqlc.narg: type e owned. A ordenacao
+	// por titulo em ordem DESC vive numa query irma (ListarEntityCardsDesc) porque o
+	// sqlc nao liga parametros dentro de expressoes de ORDER BY -- direcao dinamica
+	// num unico statement nao e suportada; o handler escolhe qual query rodar.
+	ListarEntityCards(ctx context.Context, arg ListarEntityCardsParams) ([]ListarEntityCardsRow, error)
+	// Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title).
+	ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCardsDescParams) ([]ListarEntityCardsDescRow, error)
 	ListarLibrarySources(ctx context.Context) ([]LibrarySource, error)
 	ListarMediaFilesPorEntity(ctx context.Context, entityID string) ([]MediaFile, error)
 	// Relacoes onde a entity e o pai (ex.: as temporadas de uma serie).
@@ -79,6 +96,9 @@ type Querier interface {
 	// offline (que nem chega aqui) nao afete arquivos de outras fontes.
 	MarcarMediaFilesNaoVistosMissing(ctx context.Context, arg MarcarMediaFilesNaoVistosMissingParams) (int64, error)
 	ObterAsset(ctx context.Context, id string) (Asset, error)
+	// Poster local da entity (briefing 0010): o primeiro asset kind='poster'. Usado
+	// pelo endpoint que serve o binario. Sem poster -> sql.ErrNoRows -> 404 na API.
+	ObterAssetPosterPorEntity(ctx context.Context, entityID string) (Asset, error)
 	ObterEntity(ctx context.Context, id string) (Entity, error)
 	ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.NullString) (Entity, error)
 	// Dedup do scanner sem id externo (briefing 0009): reusa a MESMA entity para o

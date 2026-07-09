@@ -86,6 +86,28 @@ func (q *Queries) AtualizarEntity(ctx context.Context, arg AtualizarEntityParams
 	return i, err
 }
 
+const contarEntityCards = `-- name: ContarEntityCards :one
+SELECT COUNT(*) AS total
+FROM entity e
+WHERE (?1 IS NULL OR e.type = ?1)
+  AND (?2 IS NULL
+       OR EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') = ?2)
+`
+
+type ContarEntityCardsParams struct {
+	Type  interface{}
+	Owned interface{}
+}
+
+// Total de itens que casam os filtros (para o campo `total` da paginacao). Mesma
+// clausula WHERE da ListarEntityCards -- sem LIMIT/OFFSET/ORDER BY.
+func (q *Queries) ContarEntityCards(ctx context.Context, arg ContarEntityCardsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, contarEntityCards, arg.Type, arg.Owned)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const criarEntity = `-- name: CriarEntity :one
 
 INSERT INTO entity (
@@ -196,6 +218,160 @@ func (q *Queries) ListarEntities(ctx context.Context, arg ListarEntitiesParams) 
 			&i.UpdatedAt,
 			&i.ExternalIDTmdb,
 			&i.ExternalIDImdb,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listarEntityCards = `-- name: ListarEntityCards :many
+SELECT
+    e.id, e.type, e.title, e.status,
+    EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
+    (SELECT COUNT(*) FROM media_file m WHERE m.entity_id = e.id) AS file_count,
+    (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+FROM entity e
+WHERE (?1 IS NULL OR e.type = ?1)
+  AND (?2 IS NULL
+       OR EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') = ?2)
+ORDER BY e.title COLLATE NOCASE ASC, e.id
+LIMIT ?4 OFFSET ?3
+`
+
+type ListarEntityCardsParams struct {
+	Type   interface{}
+	Owned  interface{}
+	Offset int64
+	Limit  int64
+}
+
+type ListarEntityCardsRow struct {
+	ID              string
+	Type            string
+	Title           string
+	Status          string
+	Owned           bool
+	FileCount       int64
+	MatchConfidence interface{}
+	HasPoster       bool
+}
+
+// Lista de CARDS para a UI (briefing 0010), ordenada por titulo ASCENDENTE. Uma
+// unica query com agregacao por subselect correlacionado -- evita o N+1 (nada de
+// uma query de posse/contagem por item). Colunas derivadas:
+//
+//	owned            POSSE DERIVADA (ADR-0009): EXISTS media_file present.
+//	file_count       total de media_file da entity (present + missing).
+//	match_confidence maior confianca de match entre os arquivos (badge de revisao).
+//	has_poster       EXISTS de um asset kind='poster' (a UI decide o poster_url).
+//
+// Filtros opcionais (NULL = sem filtro) via sqlc.narg: type e owned. A ordenacao
+// por titulo em ordem DESC vive numa query irma (ListarEntityCardsDesc) porque o
+// sqlc nao liga parametros dentro de expressoes de ORDER BY -- direcao dinamica
+// num unico statement nao e suportada; o handler escolhe qual query rodar.
+func (q *Queries) ListarEntityCards(ctx context.Context, arg ListarEntityCardsParams) ([]ListarEntityCardsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarEntityCards,
+		arg.Type,
+		arg.Owned,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarEntityCardsRow{}
+	for rows.Next() {
+		var i ListarEntityCardsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Title,
+			&i.Status,
+			&i.Owned,
+			&i.FileCount,
+			&i.MatchConfidence,
+			&i.HasPoster,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listarEntityCardsDesc = `-- name: ListarEntityCardsDesc :many
+SELECT
+    e.id, e.type, e.title, e.status,
+    EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
+    (SELECT COUNT(*) FROM media_file m WHERE m.entity_id = e.id) AS file_count,
+    (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+FROM entity e
+WHERE (?1 IS NULL OR e.type = ?1)
+  AND (?2 IS NULL
+       OR EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') = ?2)
+ORDER BY e.title COLLATE NOCASE DESC, e.id
+LIMIT ?4 OFFSET ?3
+`
+
+type ListarEntityCardsDescParams struct {
+	Type   interface{}
+	Owned  interface{}
+	Offset int64
+	Limit  int64
+}
+
+type ListarEntityCardsDescRow struct {
+	ID              string
+	Type            string
+	Title           string
+	Status          string
+	Owned           bool
+	FileCount       int64
+	MatchConfidence interface{}
+	HasPoster       bool
+}
+
+// Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title).
+func (q *Queries) ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCardsDescParams) ([]ListarEntityCardsDescRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarEntityCardsDesc,
+		arg.Type,
+		arg.Owned,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarEntityCardsDescRow{}
+	for rows.Next() {
+		var i ListarEntityCardsDescRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Title,
+			&i.Status,
+			&i.Owned,
+			&i.FileCount,
+			&i.MatchConfidence,
+			&i.HasPoster,
 		); err != nil {
 			return nil, err
 		}

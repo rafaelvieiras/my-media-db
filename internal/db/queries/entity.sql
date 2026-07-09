@@ -67,6 +67,55 @@ FROM entity
 ORDER BY created_at DESC, id
 LIMIT ? OFFSET ?;
 
+-- name: ListarEntityCards :many
+-- Lista de CARDS para a UI (briefing 0010), ordenada por titulo ASCENDENTE. Uma
+-- unica query com agregacao por subselect correlacionado -- evita o N+1 (nada de
+-- uma query de posse/contagem por item). Colunas derivadas:
+--   owned            POSSE DERIVADA (ADR-0009): EXISTS media_file present.
+--   file_count       total de media_file da entity (present + missing).
+--   match_confidence maior confianca de match entre os arquivos (badge de revisao).
+--   has_poster       EXISTS de um asset kind='poster' (a UI decide o poster_url).
+-- Filtros opcionais (NULL = sem filtro) via sqlc.narg: type e owned. A ordenacao
+-- por titulo em ordem DESC vive numa query irma (ListarEntityCardsDesc) porque o
+-- sqlc nao liga parametros dentro de expressoes de ORDER BY -- direcao dinamica
+-- num unico statement nao e suportada; o handler escolhe qual query rodar.
+SELECT
+    e.id, e.type, e.title, e.status,
+    EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
+    (SELECT COUNT(*) FROM media_file m WHERE m.entity_id = e.id) AS file_count,
+    (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+FROM entity e
+WHERE (sqlc.narg('type') IS NULL OR e.type = sqlc.narg('type'))
+  AND (sqlc.narg('owned') IS NULL
+       OR EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') = sqlc.narg('owned'))
+ORDER BY e.title COLLATE NOCASE ASC, e.id
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: ListarEntityCardsDesc :many
+-- Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title).
+SELECT
+    e.id, e.type, e.title, e.status,
+    EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
+    (SELECT COUNT(*) FROM media_file m WHERE m.entity_id = e.id) AS file_count,
+    (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+FROM entity e
+WHERE (sqlc.narg('type') IS NULL OR e.type = sqlc.narg('type'))
+  AND (sqlc.narg('owned') IS NULL
+       OR EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') = sqlc.narg('owned'))
+ORDER BY e.title COLLATE NOCASE DESC, e.id
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: ContarEntityCards :one
+-- Total de itens que casam os filtros (para o campo `total` da paginacao). Mesma
+-- clausula WHERE da ListarEntityCards -- sem LIMIT/OFFSET/ORDER BY.
+SELECT COUNT(*) AS total
+FROM entity e
+WHERE (sqlc.narg('type') IS NULL OR e.type = sqlc.narg('type'))
+  AND (sqlc.narg('owned') IS NULL
+       OR EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') = sqlc.narg('owned'));
+
 -- name: AtualizarEntity :one
 UPDATE entity
 SET type = ?,

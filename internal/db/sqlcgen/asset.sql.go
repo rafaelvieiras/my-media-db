@@ -121,3 +121,28 @@ func (q *Queries) ObterAsset(ctx context.Context, id string) (Asset, error) {
 	)
 	return i, err
 }
+
+const obterAssetPosterPorEntity = `-- name: ObterAssetPosterPorEntity :one
+SELECT id, entity_id, kind, origin, path_or_uri, meta_json, created_at
+FROM asset
+WHERE entity_id = ? AND kind = 'poster'
+ORDER BY created_at, id
+LIMIT 1
+`
+
+// Poster local da entity (briefing 0010): o primeiro asset kind='poster'. Usado
+// pelo endpoint que serve o binario. Sem poster -> sql.ErrNoRows -> 404 na API.
+func (q *Queries) ObterAssetPosterPorEntity(ctx context.Context, entityID string) (Asset, error) {
+	row := q.db.QueryRowContext(ctx, obterAssetPosterPorEntity, entityID)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.EntityID,
+		&i.Kind,
+		&i.Origin,
+		&i.PathOrUri,
+		&i.MetaJson,
+		&i.CreatedAt,
+	)
+	return i, err
+}

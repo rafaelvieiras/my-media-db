@@ -9,8 +9,16 @@ import { globalIgnores } from 'eslint/config'
 // @eslint/js recommended + typescript-eslint recommended + react-hooks + a
 // regra react-refresh do Vite. Aplica só ao nosso código (`**/*.{ts,tsx}`).
 export default tseslint.config([
-  // Artefatos gerados / não versionados como fonte — nunca linta.
-  globalIgnores(['dist', 'coverage', 'node_modules', 'node_modules_rootbak']),
+  // Artefatos gerados / não versionados como fonte — nunca linta. api-types.ts é
+  // GERADO do openapi.yaml (npm run gen:types), como o sqlcgen no back: versionado
+  // mas fora do lint (segue o padrão de components/ui).
+  globalIgnores([
+    'dist',
+    'coverage',
+    'node_modules',
+    'node_modules_rootbak',
+    'src/lib/api-types.ts',
+  ]),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

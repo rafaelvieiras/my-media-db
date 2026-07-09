@@ -1,0 +1,414 @@
+openapi: 3.1.0
+info:
+  title: MyMediaDB — API nativa (v1)
+  version: "0.1.0"
+  description: >
+    Contrato OpenAPI da superfície nativa /api/v1 do MyMediaDB. É a FONTE DE
+    VERDADE dos tipos TS do front (gerados por `npm run gen:types` em
+    web/src/lib/api-types.ts — ADR-0014), nunca mantidos à mão. Cobre a leitura
+    do catálogo (/entities, briefing 0010) e os datasources (/library, 0008).
+    Toda resposta de erro usa o envelope { error: { code, message } }.
+servers:
+  - url: /
+    description: Mesmo origin do servidor (o binário serve API + SPA).
+paths:
+  /api/v1/health:
+    get:
+      operationId: getHealth
+      summary: Saúde do serviço.
+      tags: [meta]
+      responses:
+        "200":
+          description: Serviço no ar.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /api/v1/entities:
+    get:
+      operationId: listEntities
+      summary: Lista paginada de entities (cards do catálogo).
+      description: >
+        Cada item traz a posse DERIVADA (EXISTS media_file present), a contagem
+        de arquivos, a confiança de match (badge de revisão) e o link do pôster
+        quando há arte local. Filtros opcionais e ordenação por título.
+      tags: [entities]
+      parameters:
+        - name: type
+          in: query
+          description: "Filtra por tipo (ex.: movie, tv). Ausente = todos."
+          required: false
+          schema: { type: string }
+        - name: owned
+          in: query
+          description: Filtra por posse (true = na biblioteca). Ausente = todos.
+          required: false
+          schema: { type: boolean }
+        - name: limit
+          in: query
+          description: Tamanho da página (default 50, máximo 200).
+          required: false
+          schema: { type: integer, minimum: 0, default: 50 }
+        - name: offset
+          in: query
+          description: Deslocamento da página (default 0).
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: sort
+          in: query
+          description: Ordenação por título — `title` (asc, default) ou `-title` (desc).
+          required: false
+          schema:
+            type: string
+            enum: [title, -title]
+            default: title
+      responses:
+        "200":
+          description: Página de cards.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntityList" }
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}:
+    get:
+      operationId: getEntity
+      summary: Entidade resolvida (camada arquivo; Fase 3 adiciona camadas).
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Entidade resolvida.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResolvedEntity" }
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/files:
+    get:
+      operationId: getEntityFiles
+      summary: Arquivos (media_file) da entity com mediainfo.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Lista de arquivos.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileList" }
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/assets/poster:
+    get:
+      operationId: getEntityPoster
+      summary: Serve o binário do pôster local (image/*).
+      description: >
+        Devolve o arquivo de pôster com o content-type correto. 404 quando não há
+        arte (a UI cai no placeholder); 403 quando o caminho gravado não está sob
+        um datasource conhecido (guarda de path-traversal).
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Binário da imagem.
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/library:
+    get:
+      operationId: listLibrary
+      summary: Lista os datasources (com state reavaliado na leitura).
+      tags: [library]
+      responses:
+        "200":
+          description: Lista de fontes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SourceList" }
+    post:
+      operationId: createLibrary
+      summary: Cadastra um datasource.
+      tags: [library]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSource" }
+      responses:
+        "201":
+          description: Fonte criada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Source" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/library/{id}:
+    get:
+      operationId: getLibrary
+      summary: Obtém um datasource.
+      tags: [library]
+      parameters:
+        - $ref: "#/components/parameters/SourceId"
+      responses:
+        "200":
+          description: Fonte.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Source" }
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteLibrary
+      summary: Remove um datasource (não purga entities).
+      tags: [library]
+      parameters:
+        - $ref: "#/components/parameters/SourceId"
+      responses:
+        "204":
+          description: Removido.
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/library/{id}/scan:
+    get:
+      operationId: getScanStatus
+      summary: Progresso do scan de um datasource.
+      tags: [library]
+      parameters:
+        - $ref: "#/components/parameters/SourceId"
+      responses:
+        "200":
+          description: Status do job.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanStatus" }
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: startScan
+      summary: Dispara um scan em background.
+      tags: [library]
+      parameters:
+        - $ref: "#/components/parameters/SourceId"
+      responses:
+        "202":
+          description: Scan aceito.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StartScan" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+components:
+  parameters:
+    EntityId:
+      name: id
+      in: path
+      required: true
+      description: Id da entity.
+      schema: { type: string }
+    SourceId:
+      name: id
+      in: path
+      required: true
+      description: Id do datasource.
+      schema: { type: string }
+  responses:
+    Error:
+      description: "Erro no envelope padrão { error: { code, message } }."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Slug estável (não localizado) para o cliente ramificar.
+            message:
+              type: string
+              description: Texto humano (pt-BR).
+    Health:
+      type: object
+      required: [status, version]
+      properties:
+        status: { type: string }
+        version: { type: string }
+    EntityCard:
+      type: object
+      required: [id, type, title, status, owned, file_count, match_confidence, poster_url]
+      properties:
+        id: { type: string }
+        type: { type: string }
+        title: { type: string }
+        status: { type: string }
+        owned:
+          type: boolean
+          description: Posse derivada (EXISTS media_file present).
+        file_count:
+          type: integer
+          format: int64
+        match_confidence:
+          type: [number, "null"]
+          description: Maior confiança de match entre os arquivos (badge de revisão).
+        poster_url:
+          type: [string, "null"]
+          description: Rota do pôster local, ou null quando não há arte.
+    EntityList:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/EntityCard" }
+        total: { type: integer, format: int64 }
+        limit: { type: integer }
+        offset: { type: integer }
+    ResolvedEntity:
+      type: object
+      description: >
+        Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a
+        Fase 3 preenche os mesmos campos com override/externo sem mudar o shape.
+      required:
+        [id, type, title, original_title, description, release_date, status,
+         tags, external_ids, owned, file_count, poster_url]
+      properties:
+        id: { type: string }
+        type: { type: string }
+        title: { type: string }
+        original_title: { type: [string, "null"] }
+        description: { type: [string, "null"] }
+        release_date: { type: [string, "null"] }
+        status: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        external_ids:
+          type: object
+          additionalProperties: { type: string }
+        owned: { type: boolean }
+        file_count: { type: integer }
+        poster_url: { type: [string, "null"] }
+    MediaInfo:
+      type: object
+      description: Fatos técnicos extraídos do arquivo (ffprobe).
+      properties:
+        general:
+          type: object
+          properties:
+            format: { type: string }
+            duration_seconds: { type: number }
+            size_bytes: { type: integer, format: int64 }
+            bitrate: { type: integer, format: int64 }
+        video:
+          type: array
+          items:
+            type: object
+            properties:
+              codec: { type: string }
+              width: { type: integer }
+              height: { type: integer }
+              hdr: { type: string }
+        audio:
+          type: array
+          items:
+            type: object
+            properties:
+              codec: { type: string }
+              channels: { type: integer }
+              language: { type: string }
+        subtitle:
+          type: array
+          items:
+            type: object
+            properties:
+              codec: { type: string }
+              language: { type: string }
+    MediaFile:
+      type: object
+      required: [id, path, size, edition, part_no, state, mediainfo]
+      properties:
+        id: { type: string }
+        path: { type: string }
+        size: { type: [integer, "null"], format: int64 }
+        edition: { type: [string, "null"] }
+        part_no: { type: [integer, "null"], format: int64 }
+        state:
+          type: string
+          enum: [present, missing]
+        mediainfo:
+          oneOf:
+            - $ref: "#/components/schemas/MediaInfo"
+            - type: "null"
+    FileList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/MediaFile" }
+    Source:
+      type: object
+      required: [id, path, type, state, last_scan]
+      properties:
+        id: { type: string }
+        path: { type: string }
+        type: { type: string }
+        state:
+          type: string
+          enum: [online, offline]
+        last_scan: { type: [string, "null"] }
+    SourceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Source" }
+    CreateSource:
+      type: object
+      required: [path, type]
+      properties:
+        path: { type: string }
+        type:
+          type: string
+          enum: [movie, tv]
+    ScanStatus:
+      type: object
+      required: [running, files_seen, files_total]
+      properties:
+        running: { type: boolean }
+        files_seen: { type: integer }
+        files_total: { type: integer }
+        started_at: { type: [string, "null"] }
+        last_error: { type: string }
+    StartScan:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id: { type: string }
+        status: { type: string }

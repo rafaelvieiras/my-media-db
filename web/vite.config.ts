@@ -36,6 +36,9 @@ export default defineConfig({
         'src/main.tsx',
         // Componentes shadcn/ui são GERADOS — não são lógica nossa.
         'src/components/ui/**',
+        // api-types.ts é GERADO do openapi.yaml (npm run gen:types) — só tipos,
+        // sem código executável; fora da cobertura como os componentes gerados.
+        'src/lib/api-types.ts',
         // Infra de teste e os próprios testes.
         'src/test/**',
         'src/**/*.test.{ts,tsx}',

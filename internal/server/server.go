@@ -69,6 +69,16 @@ func (s *Server) Handler() (http.Handler, error) {
 				lib.Post("/{id}/scan", s.startScan)
 				lib.Get("/{id}/scan", s.getScanStatus)
 			})
+
+			// Superfície de LEITURA do catálogo (briefing 0010). Só GETs, todos
+			// pelo pool de leitura (ADR-0010): lista paginada, detalhe resolvido,
+			// arquivos+mediainfo e o binário do pôster.
+			v1.Route("/entities", func(ent chi.Router) {
+				ent.Get("/", s.listEntities)
+				ent.Get("/{id}", s.getEntity)
+				ent.Get("/{id}/files", s.getEntityFiles)
+				ent.Get("/{id}/assets/poster", s.getEntityPoster)
+			})
 		})
 	})
 
