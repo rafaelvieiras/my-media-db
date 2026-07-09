@@ -51,6 +51,22 @@ type Camadas struct {
 	// chave = override ativo, mesmo com valor `null` (R6/ADR-0006). Nil = sem
 	// override.
 	Override map[string]json.RawMessage
+
+	// LangPedido é o idioma resolvido do pedido (default = principal das settings).
+	// Ecoado no shape resolvido; vazio quando não há contexto de idioma (o motor
+	// então preserva o comportamento pré-multi-idioma do 0013).
+	LangPedido string
+	// Cadeia é a ordem de fallback já derivada das settings (ADR-0019):
+	// `[pedido, fallback, original_language?]` deduplicada, terminando
+	// IMPLICITAMENTE na base neutra (arquivo) — o motor cai no arquivo quando
+	// nenhum idioma da cadeia tem valor. VAZIA = sem contexto de idioma: campos
+	// traduzíveis compõem como no 0013 (sem consultar a cadeia).
+	Cadeia []string
+	// IdiomaPrincipal é o idioma PRINCIPAL das settings. Serve para interpretar o
+	// externo/override LEGADO (formato do 0015, um valor escalar/lista sem chave de
+	// idioma): esse valor é tratado como pertencente ao principal (ADR-0018, nota
+	// de tolerância do 0019). Vazio ⇒ usa o primeiro idioma da cadeia.
+	IdiomaPrincipal string
 }
 
 // Entidade é a visão RESOLVIDA — o shape final servido em
@@ -71,6 +87,18 @@ type Entidade struct {
 	FileCount     int               `json:"file_count"`
 	PosterURL     *string           `json:"poster_url"`
 	ExtensionData map[string]any    `json:"extension_data"`
+
+	// Lang é o eco do idioma pedido (ADR-0019). Vazio quando não há contexto de
+	// idioma (comportamento do 0013).
+	Lang string `json:"lang"`
+	// OriginalLanguage é o código NEUTRO do idioma original da obra (âncora do
+	// fallback), ou null quando a fonte não o informou.
+	OriginalLanguage *string `json:"original_language"`
+	// ResolvedLanguages é a PROVENIÊNCIA DE IDIOMA (ADR-0019): campo traduzível →
+	// idioma efetivo que serviu o valor (`""` = base neutra/arquivo). Mapa lateral
+	// que NÃO muda os campos (o shape segue plano). Sempre não-nil (vazio quando
+	// não há contexto de idioma).
+	ResolvedLanguages map[string]string `json:"resolved_languages"`
 }
 
 // baseOrigem diz de onde vem a BASE de um campo antes do override: `externo`
@@ -96,10 +124,15 @@ const (
 	kindExtensao
 )
 
-// origemCampo é a etiqueta declarativa de um campo editorial.
+// origemCampo é a etiqueta declarativa de um campo editorial. `traduzivel` marca
+// os campos que compõem POR IDIOMA (ADR-0018): quando há contexto de idioma
+// (cadeia não-vazia), o motor os resolve na dimensão idioma × camada; os NEUTROS
+// (traduzivel=false) nunca consultam a cadeia. É etiqueta no registro, não `switch`
+// por nome de campo (R1/ADR-0001).
 type origemCampo struct {
-	base baseOrigem
-	kind kindCampo
+	base       baseOrigem
+	kind       kindCampo
+	traduzivel bool
 }
 
 // registroOrigem é o METADADO de origem por campo (ADR-0001): o motor itera este
@@ -109,11 +142,11 @@ type origemCampo struct {
 // external_ids (identidade autoritativa, MD4 — segue do núcleo). Trocar este mapa
 // (dado) adiciona/muda campos sem tocar o motor.
 var registroOrigem = map[string]origemCampo{
-	"title":          {base: baseExterno, kind: kindEscalar},
+	"title":          {base: baseExterno, kind: kindEscalar, traduzivel: true},
 	"original_title": {base: baseExterno, kind: kindEscalar},
-	"description":    {base: baseExterno, kind: kindEscalar},
+	"description":    {base: baseExterno, kind: kindEscalar, traduzivel: true},
 	"release_date":   {base: baseExterno, kind: kindEscalar},
-	"tags":           {base: baseExterno, kind: kindLista},
+	"tags":           {base: baseExterno, kind: kindLista, traduzivel: true},
 	"extension_data": {base: baseExterno, kind: kindExtensao},
 }
 
@@ -132,26 +165,46 @@ func Resolver(c Camadas) Entidade {
 		"extension_data": parseExtensionData(c.Entity.ExtensionDataJson),
 	}
 
-	// Composição genérica: itera o registro, despacha por kind, compõe.
+	// Modo IDIOMA: só quando há cadeia derivada das settings. Sem cadeia, o motor
+	// preserva integralmente o comportamento do 0013 (composição sem idioma).
+	langMode := len(c.Cadeia) > 0
+	principal := c.IdiomaPrincipal
+	if principal == "" && langMode {
+		principal = c.Cadeia[0]
+	}
+
+	// Composição genérica: itera o registro, despacha por kind, compõe. Para campos
+	// TRADUZÍVEIS em modo idioma, compõe na dimensão idioma × camada e registra a
+	// proveniência de idioma; os demais seguem a composição neutra.
 	resolvido := make(map[string]any, len(registroOrigem))
+	resolvedLangs := map[string]string{}
 	for campo, orig := range registroOrigem {
+		if langMode && orig.traduzivel {
+			val, prov := comporTraduzivel(campo, orig, baseArquivoVals[campo], c.Cadeia, principal, c.Externo, c.Override)
+			resolvido[campo] = val
+			resolvedLangs[campo] = prov
+			continue
+		}
 		resolvido[campo] = comporCampo(campo, orig, baseArquivoVals[campo], c.Externo, c.Override)
 	}
 
 	return Entidade{
-		ID:            c.Entity.ID,
-		Type:          c.Entity.Type,
-		Title:         derefStr(resolvido["title"]),
-		OriginalTitle: asStrPtr(resolvido["original_title"]),
-		Description:   asStrPtr(resolvido["description"]),
-		ReleaseDate:   asStrPtr(resolvido["release_date"]),
-		Status:        c.Entity.Status,
-		Tags:          asStrSlice(resolvido["tags"]),
-		ExternalIDs:   parseExternalIDs(c.Entity.ExternalIdsJson),
-		Owned:         temPosse(c.Files),
-		FileCount:     len(c.Files),
-		PosterURL:     c.PosterURL,
-		ExtensionData: asObjMap(resolvido["extension_data"]),
+		ID:                c.Entity.ID,
+		Type:              c.Entity.Type,
+		Title:             derefStr(resolvido["title"]),
+		OriginalTitle:     asStrPtr(resolvido["original_title"]),
+		Description:       asStrPtr(resolvido["description"]),
+		ReleaseDate:       asStrPtr(resolvido["release_date"]),
+		Status:            c.Entity.Status,
+		Tags:              asStrSlice(resolvido["tags"]),
+		ExternalIDs:       parseExternalIDs(c.Entity.ExternalIdsJson),
+		Owned:             temPosse(c.Files),
+		FileCount:         len(c.Files),
+		PosterURL:         c.PosterURL,
+		ExtensionData:     asObjMap(resolvido["extension_data"]),
+		Lang:              c.LangPedido,
+		OriginalLanguage:  nsPtr(c.Entity.OriginalLanguage),
+		ResolvedLanguages: resolvedLangs,
 	}
 }
 
@@ -167,6 +220,168 @@ func comporCampo(campo string, orig origemCampo, arquivo any, externo []CamadaEx
 	default: // kindEscalar
 		return comporEscalar(campo, orig, arquivo, externo, override)
 	}
+}
+
+// ── Composição por idioma (traduzíveis) ─────────────────────────────────────
+
+// comporTraduzivel compõe um campo TRADUZÍVEL na dimensão idioma × camada
+// (ADR-0019). Percorre a `cadeia` (`pedido → fallback → original → …`); para cada
+// idioma tenta `override[campo][idioma]` (presença decide; `null` apaga E
+// INTERROMPE o fallback — R6 por idioma) e senão `externo[campo][idioma]` (primeira
+// fonte com valor); a PRIMEIRA etapa com presença define o valor e a PROVENIÊNCIA
+// (idioma efetivo). Nenhum idioma da cadeia com valor cai na base ARQUIVO (neutra),
+// proveniência `""`. Devolve (valor, idioma efetivo).
+func comporTraduzivel(campo string, orig origemCampo, arquivo any, cadeia []string, principal string, externo []CamadaExterna, override map[string]json.RawMessage) (any, string) {
+	if orig.kind == kindLista {
+		return comporListaIdioma(campo, arquivo, cadeia, principal, externo, override)
+	}
+	return comporEscalarIdioma(campo, arquivo, cadeia, principal, externo, override)
+}
+
+// comporEscalarIdioma resolve title/description por idioma. Ver comporTraduzivel.
+func comporEscalarIdioma(campo string, arquivo any, cadeia []string, principal string, externo []CamadaExterna, override map[string]json.RawMessage) (*string, string) {
+	rawOv, temOv := override[campo]
+	idiomaMap, ehMap := parseIdiomaMap(rawOv, temOv, kindEscalar)
+	for _, idioma := range cadeia {
+		// OVERRIDE do idioma: presença decide (null apaga e interrompe).
+		if temOv {
+			if ehMap {
+				if r, ok := idiomaMap[idioma]; ok {
+					return escalarDeRaw(r), idioma
+				}
+			} else if idioma == principal {
+				// Legado (0015): override sem chave de idioma vale sob o principal.
+				return escalarDeRaw(rawOv), idioma
+			}
+		}
+		// EXTERNO do idioma: primeira fonte com valor.
+		if v, ok := externoEscalarIdioma(externo, campo, idioma, principal); ok {
+			return v, idioma
+		}
+	}
+	// Base ARQUIVO (neutra): último recurso da cadeia.
+	return asStrPtr(arquivo), ""
+}
+
+// comporListaIdioma resolve tags por idioma: dentro do idioma escolhido, o override
+// `{add,remove}`/array/null faz o MERGE sobre a base externa daquele idioma (ou a
+// base arquivo quando a fonte não tem valor para ele) — R3 por idioma.
+func comporListaIdioma(campo string, arquivo any, cadeia []string, principal string, externo []CamadaExterna, override map[string]json.RawMessage) ([]string, string) {
+	arquivoTags := asStrSlice(arquivo)
+	rawOv, temOv := override[campo]
+	idiomaMap, ehMap := parseIdiomaMap(rawOv, temOv, kindLista)
+	for _, idioma := range cadeia {
+		base := arquivoTags
+		extList, extOk := externoListaIdioma(externo, campo, idioma, principal)
+		if extOk {
+			base = extList
+		}
+		if temOv {
+			if ehMap {
+				if r, ok := idiomaMap[idioma]; ok {
+					return aplicarOverrideLista(base, r), idioma
+				}
+			} else if idioma == principal {
+				return aplicarOverrideLista(base, rawOv), idioma
+			}
+		}
+		if extOk {
+			return dedup(base), idioma
+		}
+	}
+	return dedup(arquivoTags), ""
+}
+
+// parseIdiomaMap decide se o override CRU de um campo traduzível está no formato
+// POR IDIOMA (`{"pt-BR": …, "en": …}`) ou no formato LEGADO (escalar/array/objeto de
+// operações do 0015, sem chave de idioma). Só um OBJETO JSON pode ser mapa por
+// idioma; para listas, um objeto de operações `{add,remove}` é legado, não idioma.
+// Devolve (mapa idioma→raw, ehMap). Quando ehMap=false, o chamador trata o override
+// inteiro como valor do idioma principal.
+func parseIdiomaMap(raw json.RawMessage, temOv bool, kind kindCampo) (map[string]json.RawMessage, bool) {
+	if !temOv {
+		return nil, false
+	}
+	t := bytes.TrimSpace(raw)
+	if len(t) == 0 || t[0] != '{' {
+		return nil, false // escalar, array ou null → legado
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) != nil {
+		return nil, false
+	}
+	if kind == kindLista && apenasChavesDeOperacao(m) {
+		return nil, false // {add,remove} → operação legada, não mapa por idioma
+	}
+	return m, true
+}
+
+// apenasChavesDeOperacao diz se todas as chaves do objeto são de OPERAÇÃO de lista
+// (`add`/`remove`) — o que caracteriza o override-lista legado (não um mapa por
+// idioma). Objeto vazio conta como operação (merge vazio sobre a base).
+func apenasChavesDeOperacao(m map[string]json.RawMessage) bool {
+	for k := range m {
+		if k != "add" && k != "remove" {
+			return false
+		}
+	}
+	return true
+}
+
+// escalarDeRaw decodifica um valor escalar de override cru num *string: `null` → nil
+// (apaga), `"s"` → &s, outra forma degrada a nil. Espelha comporEscalar.
+func escalarDeRaw(raw json.RawMessage) *string {
+	var v *string
+	_ = json.Unmarshal(raw, &v)
+	return v
+}
+
+// externoEscalarIdioma busca, na ordem de prioridade das fontes, o primeiro valor
+// escalar do campo para o idioma pedido. O externo do campo pode vir como
+// `map[idioma]valor` (formato do 0020) OU como escalar simples (formato LEGADO do
+// 0015) — o legado só casa quando o idioma pedido é o principal (ADR-0018).
+func externoEscalarIdioma(externo []CamadaExterna, campo, idioma, principal string) (*string, bool) {
+	for _, cam := range externo {
+		v, ok := cam.Campos[campo]
+		if !ok || v == nil {
+			continue
+		}
+		if m, isMap := v.(map[string]any); isMap {
+			if val, has := m[idioma]; has {
+				if s, ok := val.(string); ok {
+					return &s, true
+				}
+			}
+			continue
+		}
+		if idioma == principal {
+			if s, ok := v.(string); ok {
+				return &s, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// externoListaIdioma busca a lista do campo para o idioma pedido, com a mesma
+// tolerância ao legado de externoEscalarIdioma (lista simples = principal).
+func externoListaIdioma(externo []CamadaExterna, campo, idioma, principal string) ([]string, bool) {
+	for _, cam := range externo {
+		v, ok := cam.Campos[campo]
+		if !ok || v == nil {
+			continue
+		}
+		if m, isMap := v.(map[string]any); isMap {
+			if val, has := m[idioma]; has && val != nil {
+				return asStrSlice(val), true
+			}
+			continue
+		}
+		if idioma == principal {
+			return asStrSlice(v), true
+		}
+	}
+	return nil, false
 }
 
 // comporEscalar aplica a precedência a um campo escalar: override (chave presente,

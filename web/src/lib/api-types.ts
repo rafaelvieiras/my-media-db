@@ -48,9 +48,36 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Entidade resolvida (camada arquivo; Fase 3 adiciona camadas). */
+    /**
+     * Entidade resolvida por idioma (camadas + cadeia de fallback).
+     * @description Resolve a entity no idioma pedido (?lang=, default = principal das settings), com a cadeia de fallback `pedido → fallback → original_language → arquivo` (ADR-0019). A resposta é PLANA e traz `resolved_languages` (mapa campo → idioma efetivo) e `lang` (eco do pedido). `lang` fora dos permitidos → 400.
+     */
     get: operations['getEntity']
     put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/settings/languages': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Config de idioma (principal, fallback, permitidos).
+     * @description Devolve a config de idioma vigente (ADR-0018). Quando ainda não há linha gravada, responde o default seguro (`pt-BR` / `en` / `[pt-BR, en]`).
+     */
+    get: operations['getLanguageSettings']
+    /**
+     * Grava a config de idioma (com validação).
+     * @description Valida que `primary` e `fallback` ∈ `allowed` e que os códigos não são vazios, então persiste (upsert) e invalida o cache. 422 quando inválida.
+     */
+    put: operations['putLanguageSettings']
     post?: never
     delete?: never
     options?: never
@@ -309,6 +336,23 @@ export interface components {
       extension_data: {
         [key: string]: Record<string, never>
       }
+      /** @description Eco do idioma pedido (ADR-0019). Vazio quando não há contexto de idioma (compatível com o comportamento pré-multi-idioma). */
+      lang: string
+      /** @description Código NEUTRO do idioma original da obra (âncora do fallback), ou null. */
+      original_language: string | null
+      /** @description Proveniência de IDIOMA (ADR-0019): campo traduzível → idioma efetivo que serviu o valor (`""` = base neutra/arquivo). Mapa lateral; não muda os campos (o shape segue plano). */
+      resolved_languages: {
+        [key: string]: string
+      }
+    }
+    /** @description Config de idioma (ADR-0018): idioma principal, fallback e o conjunto de permitidos (códigos BCP-47/TMDB). É o corpo do PUT e a resposta do GET/PUT /settings/languages. */
+    LanguageSettings: {
+      /** @description Idioma principal (base de leitura, ∈ allowed). */
+      primary: string
+      /** @description Idioma de fallback (∈ allowed). */
+      fallback: string
+      /** @description Idiomas permitidos (governam o que pode ser escrito/scraped). */
+      allowed: string[]
     }
     /** @description Fatos técnicos extraídos do arquivo (ffprobe). */
     MediaInfo: {
@@ -395,6 +439,8 @@ export interface components {
     EntityId: string
     /** @description Id do datasource. */
     SourceId: string
+    /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+    LangQuery: string
   }
   requestBodies: never
   headers: never
@@ -435,6 +481,8 @@ export interface operations {
         offset?: number
         /** @description Ordenação por título — `title` (asc, default) ou `-title` (desc). */
         sort?: 'title' | '-title'
+        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        lang?: components['parameters']['LangQuery']
       }
       header?: never
       path?: never
@@ -456,7 +504,10 @@ export interface operations {
   }
   getEntity: {
     parameters: {
-      query?: never
+      query?: {
+        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        lang?: components['parameters']['LangQuery']
+      }
       header?: never
       path: {
         /** @description Id da entity. */
@@ -475,7 +526,54 @@ export interface operations {
           'application/json': components['schemas']['ResolvedEntity']
         }
       }
+      400: components['responses']['Error']
       404: components['responses']['Error']
+    }
+  }
+  getLanguageSettings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Config de idioma. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['LanguageSettings']
+        }
+      }
+    }
+  }
+  putLanguageSettings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['LanguageSettings']
+      }
+    }
+    responses: {
+      /** @description Config gravada. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['LanguageSettings']
+        }
+      }
+      400: components['responses']['Error']
+      422: components['responses']['Error']
     }
   }
   enrichEntity: {

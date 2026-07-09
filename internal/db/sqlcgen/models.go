@@ -8,6 +8,12 @@ import (
 	"database/sql"
 )
 
+type AppSetting struct {
+	Key       string
+	ValueJson sql.NullString
+	UpdatedAt string
+}
+
 type Asset struct {
 	ID        string
 	EntityID  string
@@ -33,6 +39,7 @@ type Entity struct {
 	UpdatedAt         string
 	ExternalIDTmdb    sql.NullString
 	ExternalIDImdb    sql.NullString
+	OriginalLanguage  sql.NullString
 }
 
 type EntityFt struct {

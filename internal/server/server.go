@@ -41,6 +41,9 @@ type Server struct {
 	// existe quando há provider E assetsDir E banco — senão os handlers degradam
 	// com 503. Construído em New após aplicar as options.
 	enrich *enrich.Servico
+	// settings é o cache leve (mutex) da config de idioma de app_settings (briefing
+	// 0019), invalidado no PUT /settings/languages. Sempre presente.
+	settings *settingsCache
 }
 
 // Option configura opcionalmente o Server na construção, preservando a
@@ -74,7 +77,7 @@ func WithAssetsDir(dir string) Option {
 // extensões opcionais (ex.: WithSearchProvider) — a forma New(version, database)
 // segue válida.
 func New(version string, database *db.DB, opts ...Option) *Server {
-	s := &Server{version: version, db: database}
+	s := &Server{version: version, db: database, settings: &settingsCache{}}
 	if database != nil {
 		s.library = library.New(database)
 		s.scanner = scanner.NewManager(database)
@@ -115,6 +118,13 @@ func (s *Server) Handler() (http.Handler, error) {
 			// Import explícito (briefing 0015): find-or-create por id externo,
 			// depois enriquece. Escreve external, nunca override.
 			v1.Post("/import", s.importar)
+
+			// Configurações da aplicação (briefing 0019). Hoje só a config de
+			// idioma (principal/fallback/permitidos), base da resolução por idioma.
+			v1.Route("/settings", func(cfg chi.Router) {
+				cfg.Get("/languages", s.getLanguageSettings)
+				cfg.Put("/languages", s.putLanguageSettings)
+			})
 
 			// Datasources da biblioteca (briefing 0008). Escritas (POST/DELETE)
 			// pela conexão de escrita, leituras (GET) pelo pool — encapsulado no

@@ -24,9 +24,13 @@ describe('api-types gerado', () => {
       file_count: 1,
       poster_url: '/api/v1/entities/x/assets/poster',
       extension_data: {},
+      lang: 'pt-BR',
+      original_language: 'en',
+      resolved_languages: { title: 'pt-BR', description: 'en' },
     }
     expect(ent.owned).toBe(true)
     expect(ent.external_ids.tmdb).toBe('603')
+    expect(ent.resolved_languages.title).toBe('pt-BR')
   })
 
   it('modela a lista paginada de cards', () => {

@@ -37,7 +37,7 @@ SET type = ?,
 WHERE id = ?
 RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
 `
 
 type AtualizarEntityParams struct {
@@ -82,6 +82,7 @@ func (q *Queries) AtualizarEntity(ctx context.Context, arg AtualizarEntityParams
 		&i.UpdatedAt,
 		&i.ExternalIDTmdb,
 		&i.ExternalIDImdb,
+		&i.OriginalLanguage,
 	)
 	return i, err
 }
@@ -139,7 +140,7 @@ INSERT INTO entity (
 )
 RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
 `
 
 type CriarEntityParams struct {
@@ -197,6 +198,7 @@ func (q *Queries) CriarEntity(ctx context.Context, arg CriarEntityParams) (Entit
 		&i.UpdatedAt,
 		&i.ExternalIDTmdb,
 		&i.ExternalIDImdb,
+		&i.OriginalLanguage,
 	)
 	return i, err
 }
@@ -204,7 +206,7 @@ func (q *Queries) CriarEntity(ctx context.Context, arg CriarEntityParams) (Entit
 const listarEntities = `-- name: ListarEntities :many
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
 FROM entity
 ORDER BY created_at DESC, id
 LIMIT ? OFFSET ?
@@ -239,6 +241,7 @@ func (q *Queries) ListarEntities(ctx context.Context, arg ListarEntitiesParams) 
 			&i.UpdatedAt,
 			&i.ExternalIDTmdb,
 			&i.ExternalIDImdb,
+			&i.OriginalLanguage,
 		); err != nil {
 			return nil, err
 		}
@@ -410,7 +413,7 @@ func (q *Queries) ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCar
 const obterEntity = `-- name: ObterEntity :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
 FROM entity
 WHERE id = ?
 `
@@ -433,6 +436,7 @@ func (q *Queries) ObterEntity(ctx context.Context, id string) (Entity, error) {
 		&i.UpdatedAt,
 		&i.ExternalIDTmdb,
 		&i.ExternalIDImdb,
+		&i.OriginalLanguage,
 	)
 	return i, err
 }
@@ -440,7 +444,7 @@ func (q *Queries) ObterEntity(ctx context.Context, id string) (Entity, error) {
 const obterEntityPorImdb = `-- name: ObterEntityPorImdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
 FROM entity
 WHERE external_id_imdb = ?
 `
@@ -463,6 +467,7 @@ func (q *Queries) ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.Nul
 		&i.UpdatedAt,
 		&i.ExternalIDTmdb,
 		&i.ExternalIDImdb,
+		&i.OriginalLanguage,
 	)
 	return i, err
 }
@@ -470,7 +475,7 @@ func (q *Queries) ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.Nul
 const obterEntityPorTituloAno = `-- name: ObterEntityPorTituloAno :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
 FROM entity
 WHERE type = ? AND title = ? AND release_date IS ?
 LIMIT 1
@@ -504,6 +509,7 @@ func (q *Queries) ObterEntityPorTituloAno(ctx context.Context, arg ObterEntityPo
 		&i.UpdatedAt,
 		&i.ExternalIDTmdb,
 		&i.ExternalIDImdb,
+		&i.OriginalLanguage,
 	)
 	return i, err
 }
@@ -511,7 +517,7 @@ func (q *Queries) ObterEntityPorTituloAno(ctx context.Context, arg ObterEntityPo
 const obterEntityPorTmdb = `-- name: ObterEntityPorTmdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
 FROM entity
 WHERE external_id_tmdb = ?
 `
@@ -535,6 +541,7 @@ func (q *Queries) ObterEntityPorTmdb(ctx context.Context, externalIDTmdb sql.Nul
 		&i.UpdatedAt,
 		&i.ExternalIDTmdb,
 		&i.ExternalIDImdb,
+		&i.OriginalLanguage,
 	)
 	return i, err
 }

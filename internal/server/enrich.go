@@ -128,7 +128,9 @@ func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 // responderResolvida monta e escreve a entity resolvida (caminho comum de
 // enrich/import). 404 se a entity sumiu no meio; 500 em erro de banco.
 func (s *Server) responderResolvida(w http.ResponseWriter, ctx context.Context, id string, status int) {
-	resolvida, encontrada, err := s.resolverEntity(ctx, id)
+	// Idioma default (principal das settings): o enrich/import ainda não recebe
+	// ?lang= — resolverEntity com "" cai no principal.
+	resolvida, encontrada, err := s.resolverEntity(ctx, id, "")
 	if err != nil {
 		respondErroInterno(w)
 		return

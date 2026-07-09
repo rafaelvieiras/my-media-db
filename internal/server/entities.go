@@ -116,6 +116,17 @@ func (s *Server) listEntities(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	// Valida o ?lang= contra os permitidos (400 quando fora). Os cards da lista
+	// servem o título NEUTRO (arquivo) — a resolução por idioma é do detalhe
+	// (/entities/{id}); aqui o lang só é validado para um contrato coerente.
+	cfg, err := s.obterLanguageSettings(ctx)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	if _, ok := s.parseLang(w, cfg, q.Get("lang")); !ok {
+		return
+	}
 	total, err := s.leitura().ContarEntityCards(ctx, sqlcgen.ContarEntityCardsParams{
 		Type:  tipoFiltro,
 		Owned: ownedFiltro,
@@ -186,8 +197,19 @@ func (s *Server) getEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
+	ctx := r.Context()
 
-	resolvida, encontrada, err := s.resolverEntity(r.Context(), id)
+	cfg, err := s.obterLanguageSettings(ctx)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	lang, ok := s.parseLang(w, cfg, r.URL.Query().Get("lang"))
+	if !ok {
+		return
+	}
+
+	resolvida, encontrada, err := s.resolverEntity(ctx, id, lang)
 	if err != nil {
 		respondErroInterno(w)
 		return
@@ -203,7 +225,7 @@ func (s *Server) getEntity(w http.ResponseWriter, r *http.Request) {
 // camadas (arquivo ⟵ externo ⟵ override) — o caminho único reusado por getEntity,
 // enrich e import. Devolve encontrada=false (sem erro) quando a entity não existe.
 // É AQUI que a camada externa fica viva de ponta a ponta (a fiação adiada do 0013).
-func (s *Server) resolverEntity(ctx context.Context, id string) (resolver.Entidade, bool, error) {
+func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.Entidade, bool, error) {
 	ent, err := s.leitura().ObterEntity(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -211,6 +233,18 @@ func (s *Server) resolverEntity(ctx context.Context, id string) (resolver.Entida
 		}
 		return resolver.Entidade{}, false, err
 	}
+
+	// Contexto de IDIOMA (briefing 0019): resolve o lang efetivo (default =
+	// principal) e deriva a cadeia de fallback a partir das settings + a âncora
+	// original_language da entity.
+	cfg, err := s.obterLanguageSettings(ctx)
+	if err != nil {
+		return resolver.Entidade{}, false, err
+	}
+	if lang == "" {
+		lang = cfg.Primary
+	}
+	cadeia := cfg.cadeiaDeIdiomas(lang, ent.OriginalLanguage)
 
 	files, err := s.leitura().ListarMediaFilesPorEntity(ctx, id)
 	if err != nil {
@@ -240,11 +274,14 @@ func (s *Server) resolverEntity(ctx context.Context, id string) (resolver.Entida
 	}
 
 	resolvida := resolver.Resolver(resolver.Camadas{
-		Entity:    ent,
-		Files:     files,
-		PosterURL: posterURL,
-		Override:  override,
-		Externo:   externo,
+		Entity:          ent,
+		Files:           files,
+		PosterURL:       posterURL,
+		Override:        override,
+		Externo:         externo,
+		LangPedido:      lang,
+		Cadeia:          cadeia,
+		IdiomaPrincipal: cfg.Primary,
 	})
 	return resolvida, true, nil
 }

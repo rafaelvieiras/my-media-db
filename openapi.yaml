@@ -62,6 +62,7 @@ paths:
             type: string
             enum: [title, -title]
             default: title
+        - $ref: "#/components/parameters/LangQuery"
       responses:
         "200":
           description: Página de cards.
@@ -74,17 +75,63 @@ paths:
   /api/v1/entities/{id}:
     get:
       operationId: getEntity
-      summary: Entidade resolvida (camada arquivo; Fase 3 adiciona camadas).
+      summary: Entidade resolvida por idioma (camadas + cadeia de fallback).
+      description: >
+        Resolve a entity no idioma pedido (?lang=, default = principal das
+        settings), com a cadeia de fallback `pedido → fallback → original_language
+        → arquivo` (ADR-0019). A resposta é PLANA e traz `resolved_languages` (mapa
+        campo → idioma efetivo) e `lang` (eco do pedido). `lang` fora dos permitidos
+        → 400.
       tags: [entities]
       parameters:
         - $ref: "#/components/parameters/EntityId"
+        - $ref: "#/components/parameters/LangQuery"
       responses:
         "200":
           description: Entidade resolvida.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ResolvedEntity" }
+        "400":
+          $ref: "#/components/responses/Error"
         "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/settings/languages:
+    get:
+      operationId: getLanguageSettings
+      summary: Config de idioma (principal, fallback, permitidos).
+      description: >
+        Devolve a config de idioma vigente (ADR-0018). Quando ainda não há linha
+        gravada, responde o default seguro (`pt-BR` / `en` / `[pt-BR, en]`).
+      tags: [settings]
+      responses:
+        "200":
+          description: Config de idioma.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LanguageSettings" }
+    put:
+      operationId: putLanguageSettings
+      summary: Grava a config de idioma (com validação).
+      description: >
+        Valida que `primary` e `fallback` ∈ `allowed` e que os códigos não são
+        vazios, então persiste (upsert) e invalida o cache. 422 quando inválida.
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LanguageSettings" }
+      responses:
+        "200":
+          description: Config gravada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LanguageSettings" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "422":
           $ref: "#/components/responses/Error"
 
   /api/v1/entities/{id}/enrich:
@@ -333,6 +380,16 @@ components:
       required: true
       description: Id do datasource.
       schema: { type: string }
+    LangQuery:
+      name: lang
+      in: query
+      required: false
+      description: >
+        Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma
+        principal das settings. Fora dos permitidos → 400. Na lista, valida o
+        contrato; os cards servem o título neutro (a resolução por idioma é do
+        detalhe).
+      schema: { type: string }
   responses:
     Error:
       description: "Erro no envelope padrão { error: { code, message } }."
@@ -465,7 +522,8 @@ components:
         Fase 3 preenche os mesmos campos com override/externo sem mudar o shape.
       required:
         [id, type, title, original_title, description, release_date, status,
-         tags, external_ids, owned, file_count, poster_url, extension_data]
+         tags, external_ids, owned, file_count, poster_url, extension_data,
+         lang, original_language, resolved_languages]
       properties:
         id: { type: string }
         type: { type: string }
@@ -490,6 +548,39 @@ components:
             mesma precedência override ⟵ externo ⟵ arquivo. Objeto vazio quando
             não há extensões; nunca null.
           additionalProperties: { type: object }
+        lang:
+          type: string
+          description: >
+            Eco do idioma pedido (ADR-0019). Vazio quando não há contexto de
+            idioma (compatível com o comportamento pré-multi-idioma).
+        original_language:
+          type: [string, "null"]
+          description: Código NEUTRO do idioma original da obra (âncora do fallback), ou null.
+        resolved_languages:
+          type: object
+          description: >
+            Proveniência de IDIOMA (ADR-0019): campo traduzível → idioma efetivo
+            que serviu o valor (`""` = base neutra/arquivo). Mapa lateral; não muda
+            os campos (o shape segue plano).
+          additionalProperties: { type: string }
+    LanguageSettings:
+      type: object
+      description: >
+        Config de idioma (ADR-0018): idioma principal, fallback e o conjunto de
+        permitidos (códigos BCP-47/TMDB). É o corpo do PUT e a resposta do
+        GET/PUT /settings/languages.
+      required: [primary, fallback, allowed]
+      properties:
+        primary:
+          type: string
+          description: "Idioma principal (base de leitura, ∈ allowed)."
+        fallback:
+          type: string
+          description: "Idioma de fallback (∈ allowed)."
+        allowed:
+          type: array
+          description: Idiomas permitidos (governam o que pode ser escrito/scraped).
+          items: { type: string }
     MediaInfo:
       type: object
       description: Fatos técnicos extraídos do arquivo (ffprobe).

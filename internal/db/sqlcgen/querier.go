@@ -109,6 +109,13 @@ type Querier interface {
 	// preservada; a posse cai. Escopo por library_source_id garante que um datasource
 	// offline (que nem chega aqui) nao afete arquivos de outras fontes.
 	MarcarMediaFilesNaoVistosMissing(ctx context.Context, arg MarcarMediaFilesNaoVistosMissingParams) (int64, error)
+	// Acesso a app_settings (briefing 0019): configs da aplicacao em pares key->JSON.
+	// A primeira chave e "languages" = {primary, fallback, allowed[]}. Comentarios em
+	// ASCII e colunas explicitas -- ver a nota em entity.sql (bug de offset do sqlc
+	// v1.31 com acentos/'*' em .sql de query).
+	// Le uma config pela chave (sql.ErrNoRows quando a chave nao existe -- o helper
+	// cai no default seguro).
+	ObterAppSetting(ctx context.Context, key string) (AppSetting, error)
 	ObterAsset(ctx context.Context, id string) (Asset, error)
 	// Asset de UMA origem especifica (ex.: kind='poster', origin='external'), para o
 	// dedup do cache de imagem (briefing 0015): reusa/atualiza o asset em vez de
@@ -141,6 +148,9 @@ type Querier interface {
 	ObterMediaFilePorContentHash(ctx context.Context, contentHash sql.NullString) (MediaFile, error)
 	// Le o override da entity (sql.ErrNoRows quando nao ha override ativo).
 	ObterMediaOverride(ctx context.Context, entityID string) (MediaOverride, error)
+	// Grava (ou substitui) uma config. Conflito na PK (key) atualiza value_json e
+	// recarimba updated_at -- nunca cria uma segunda linha para a mesma chave.
+	UpsertAppSetting(ctx context.Context, arg UpsertAppSettingParams) (AppSetting, error)
 	// Acesso ao cache da camada EXTERNA (media_external): uma linha de payload cru por
 	// (entity_id, source). O re-enriquecimento faz UPSERT por essa chave (ADR-0011).
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.

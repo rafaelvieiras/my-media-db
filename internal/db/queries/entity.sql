@@ -23,12 +23,12 @@ INSERT INTO entity (
 )
 RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb;
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language;
 
 -- name: ObterEntity :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
 FROM entity
 WHERE id = ?;
 
@@ -36,14 +36,14 @@ WHERE id = ?;
 -- Lookup por id externo tmdb via coluna gerada + indice (doc 04, busca sem GIN).
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
 FROM entity
 WHERE external_id_tmdb = ?;
 
 -- name: ObterEntityPorImdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
 FROM entity
 WHERE external_id_imdb = ?;
 
@@ -54,7 +54,7 @@ WHERE external_id_imdb = ?;
 -- id embutido no nome (nao duplica a entity).
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
 FROM entity
 WHERE type = ? AND title = ? AND release_date IS ?
 LIMIT 1;
@@ -62,7 +62,7 @@ LIMIT 1;
 -- name: ListarEntities :many
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
 FROM entity
 ORDER BY created_at DESC, id
 LIMIT ? OFFSET ?;
@@ -131,7 +131,7 @@ SET type = ?,
 WHERE id = ?
 RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb;
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language;
 
 -- name: AtualizarExternalIds :exec
 -- Mescla a identidade externa (MD4): a app le external_ids_json, junta

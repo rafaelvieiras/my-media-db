@@ -10,7 +10,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
 | **Docs relacionadas** | [ADR-0018](../docs/adr/0018-modelo-multi-idioma-dimensao-nas-camadas.md), [ADR-0019](../docs/adr/0019-resolucao-por-idioma-fallback-proveniencia.md), [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [05-api](../docs/05-api.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Depende de** | [0013](0013-resolver-tres-camadas.md) |
 
 ---
@@ -108,11 +108,11 @@ principal é `pt-BR` com fallback `en` (e permite `es`); a partir daí toda leit
 
 ## 5. Critérios de aceite
 
-- [ ] `GET/PUT /settings/languages` grava e valida (principal/fallback ⊆ permitidos); default seguro quando ausente.
-- [ ] `GET /entities/{id}?lang=pt-BR` resolve no idioma pedido; faltando, cai em `fallback`, depois `original_language`, depois arquivo — na ordem.
-- [ ] `override[campo]["pt-BR"] = null` **apaga** o campo em pt-BR e **não** cai no fallback (R6 por idioma); ausência da chave segue a cadeia.
-- [ ] A resposta traz `resolved_languages` com o idioma efetivo por campo e o shape segue **plano**.
-- [ ] `lang` fora dos permitidos → `400`. Sem settings/sem camadas, comportamento do 0013 preservado. Catraca verde (inclui type-check web).
+- [x] `GET/PUT /settings/languages` grava e valida (principal/fallback ⊆ permitidos); default seguro quando ausente.
+- [x] `GET /entities/{id}?lang=pt-BR` resolve no idioma pedido; faltando, cai em `fallback`, depois `original_language`, depois arquivo — na ordem.
+- [x] `override[campo]["pt-BR"] = null` **apaga** o campo em pt-BR e **não** cai no fallback (R6 por idioma); ausência da chave segue a cadeia.
+- [x] A resposta traz `resolved_languages` com o idioma efetivo por campo e o shape segue **plano**.
+- [x] `lang` fora dos permitidos → `400`. Sem settings/sem camadas, comportamento do 0013 preservado. Catraca verde (inclui type-check web).
 
 ## 6. Notas de implementação / decisões
 
