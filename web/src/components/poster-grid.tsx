@@ -35,14 +35,14 @@ function montarParams(
 // Grid de pôsteres do catálogo: filtros (tipo/posse), paginação e os três
 // estados claros (carregando / erro / vazio). É o componente "esperto": possui
 // o estado de filtro/página e consome o TanStack Query.
-export function PosterGrid() {
+export function PosterGrid({ lang }: { lang?: string } = {}) {
   const [tipo, setTipo] = useState<FiltroTipo>('all')
   const [posse, setPosse] = useState<FiltroPosse>('all')
   const [pagina, setPagina] = useState(0)
 
   const params = montarParams(tipo, posse, pagina)
   const { data, isPending, isError, error } = useQuery(
-    entitiesQueryOptions(params),
+    entitiesQueryOptions(params, lang),
   )
 
   function reiniciarPagina<T>(setter: (v: T) => void) {

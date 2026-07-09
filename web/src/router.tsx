@@ -6,10 +6,12 @@ import {
 } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppHeader } from '@/components/app-header'
+import { LanguageProvider } from '@/lib/language-context'
 import { LibraryItemsScreen } from '@/routes/index'
 import { LibraryScreen } from '@/routes/library'
 import { SearchScreen } from '@/routes/search'
 import { EntityDetailScreen } from '@/routes/entity-detail'
+import { SettingsScreen } from '@/routes/settings'
 import { HealthScreen } from '@/routes/health'
 
 // Contexto do router: carrega o QueryClient compartilhado, de modo que loaders
@@ -55,6 +57,12 @@ const entityDetailRoute = createRoute({
   component: EntityDetailScreen,
 })
 
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings',
+  component: SettingsScreen,
+})
+
 const healthRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/health',
@@ -66,6 +74,7 @@ const routeTree = rootRoute.addChildren([
   libraryRoute,
   searchRoute,
   entityDetailRoute,
+  settingsRoute,
   healthRoute,
 ])
 
@@ -75,7 +84,9 @@ export const router = createRouter({
   // Wrap envolve toda a árvore do router com o provider do TanStack Query,
   // usando o mesmo client que está no contexto.
   Wrap: ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <LanguageProvider>{children}</LanguageProvider>
+    </QueryClientProvider>
   ),
 })
 

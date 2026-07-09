@@ -3,6 +3,7 @@ import {
   getEntity,
   getEntityFiles,
   getHealth,
+  getLanguageSettings,
   getScanStatus,
   listEntities,
   listLibrary,
@@ -24,19 +25,29 @@ export const libraryQueryOptions = queryOptions({
   queryFn: listLibrary,
 })
 
-export function entitiesQueryOptions(params: EntityListParams) {
+// `lang` entra na queryKey: trocar o idioma de leitura é cache-miss = re-busca
+// por `?lang=`, sem recarregar a página. `lang` omitido usa `null` na chave
+// (chave estável; equivale a "sem idioma" = principal do backend).
+export function entitiesQueryOptions(params: EntityListParams, lang?: string) {
   return queryOptions({
-    queryKey: ['entities', params],
-    queryFn: () => listEntities(params),
+    queryKey: ['entities', params, lang ?? null],
+    queryFn: () => listEntities(params, lang),
   })
 }
 
-export function entityQueryOptions(id: string) {
+export function entityQueryOptions(id: string, lang?: string) {
   return queryOptions({
-    queryKey: ['entity', id],
-    queryFn: () => getEntity(id),
+    queryKey: ['entity', id, lang ?? null],
+    queryFn: () => getEntity(id, lang),
   })
 }
+
+// Config de idioma (0019): fonte única para o seletor e o admin. Chave
+// `['settings', 'languages']` — invalidada pelo PUT da tela de configurações.
+export const languageSettingsQueryOptions = queryOptions({
+  queryKey: ['settings', 'languages'],
+  queryFn: getLanguageSettings,
+})
 
 export function entityFilesQueryOptions(id: string) {
   return queryOptions({

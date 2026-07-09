@@ -10,7 +10,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
 | **Docs relacionadas** | [ADR-0018](../docs/adr/0018-modelo-multi-idioma-dimensao-nas-camadas.md), [ADR-0019](../docs/adr/0019-resolucao-por-idioma-fallback-proveniencia.md), [05-api](../docs/05-api.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Depende de** | [0019](0019-fundacao-multi-idioma-settings-resolver.md), [0020](0020-provider-multi-idioma-traducao-tags.md) |
 
 ---
@@ -110,19 +110,26 @@ para o selo de fallback.
 
 ## 5. Critérios de aceite
 
-- [ ] **Configurações → Idiomas** lê e grava principal/fallback/permitidos; valida
+- [x] **Configurações → Idiomas** lê e grava principal/fallback/permitidos; valida
   (principal e fallback ∈ permitidos) e exibe o erro do 422 inline; o multi-select de
   permitidos funciona.
-- [ ] O **seletor** no cabeçalho lista os permitidos e troca o idioma de leitura;
+- [x] O **seletor** no cabeçalho lista os permitidos e troca o idioma de leitura;
   persiste entre reloads (localStorage) e cai no principal quando o salvo não é mais
   permitido.
-- [ ] Trocar o idioma no detalhe recompõe título/sinopse/tags (re-busca por `?lang=`)
+- [x] Trocar o idioma no detalhe recompõe título/sinopse/tags (re-busca por `?lang=`)
   **sem recarregar a página**.
-- [ ] Quando um campo cai no fallback (`resolved_languages[campo] !== lang`), aparece o
+- [x] Quando um campo cai no fallback (`resolved_languages[campo] !== lang`), aparece o
   **selo discreto** com o idioma efetivo.
-- [ ] `tsc -b` verde; vitest cobrindo o form de settings, o seletor e o selo; ESLint
+- [x] `tsc -b` verde; vitest cobrindo o form de settings, o seletor e o selo; ESLint
   limpo; catraca verde (cobertura web não abaixo do baseline). Validação Playwright ao
   vivo (configurar `es`, importar, alternar pt-BR/en, ver o selo de fallback).
+
+**Validação ao vivo (Playwright, item Dune tmdb 438631):** a tela de Configurações
+gravou `allowed=[pt-BR,en,es]` (persistido no banco); o seletor do header passou a
+listar 3 idiomas; no detalhe, `?lang=es` serviu a **descrição em espanhol** (o TMDB
+tinha `es`) e as **tags em inglês com o selo "em Inglês"** (as listas de gênero `es`
+não foram buscadas no import, então caíram no fallback) — provando a resolução **por
+campo** com proveniência. `pt-BR`/`en` recompuseram tudo sem selo.
 
 ## 6. Notas de implementação / decisões
 

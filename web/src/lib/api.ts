@@ -22,6 +22,7 @@ export type FileList = components['schemas']['FileList']
 export type SearchResult = components['schemas']['SearchResult']
 export type ExternalResult = components['schemas']['ExternalResult']
 export type ImportRequest = components['schemas']['ImportRequest']
+export type LanguageSettings = components['schemas']['LanguageSettings']
 
 // Forma do corpo de `GET /api/v1/health` (contrato do briefing 0001).
 export interface Health {
@@ -125,6 +126,7 @@ export interface EntityListParams {
 
 export async function listEntities(
   params: EntityListParams = {},
+  lang?: string,
 ): Promise<EntityList> {
   const qs = new URLSearchParams()
   if (params.type) {
@@ -142,14 +144,50 @@ export async function listEntities(
   if (params.sort) {
     qs.set('sort', params.sort)
   }
+  // `lang` vazio/omitido = sem o parâmetro (backend cai no principal — compat).
+  if (lang) {
+    qs.set('lang', lang)
+  }
   const suffix = qs.toString() ? `?${qs.toString()}` : ''
   return lerJson<EntityList>(await fetch(`${base}/api/v1/entities${suffix}`))
 }
 
-export async function getEntity(id: string): Promise<ResolvedEntity> {
+export async function getEntity(
+  id: string,
+  lang?: string,
+): Promise<ResolvedEntity> {
+  const qs = new URLSearchParams()
+  if (lang) {
+    qs.set('lang', lang)
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
   return lerJson<ResolvedEntity>(
-    await fetch(`${base}/api/v1/entities/${encodeURIComponent(id)}`),
+    await fetch(`${base}/api/v1/entities/${encodeURIComponent(id)}${suffix}`),
   )
+}
+
+// ── Settings de idioma (0019) ────────────────────────────────────────────────
+
+// Config de idioma vigente (principal, fallback, permitidos). Quando não há
+// linha gravada, o backend responde o default seguro (pt-BR / en / [pt-BR, en]).
+export async function getLanguageSettings(): Promise<LanguageSettings> {
+  return lerJson<LanguageSettings>(
+    await fetch(`${base}/api/v1/settings/languages`),
+  )
+}
+
+// Grava (upsert) a config de idioma. O 422 do backend (principal/fallback fora
+// dos permitidos, ou permitidos vazio) vira `ApiError` com a mensagem pt-BR —
+// exibida inline pela tela de configurações.
+export async function putLanguageSettings(
+  body: LanguageSettings,
+): Promise<LanguageSettings> {
+  const res = await fetch(`${base}/api/v1/settings/languages`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return lerJson<LanguageSettings>(res)
 }
 
 export async function getEntityFiles(id: string): Promise<FileList> {
