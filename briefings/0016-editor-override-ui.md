@@ -10,8 +10,8 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
 | **Docs relacionadas** | [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [ADR-0004](../docs/adr/0004-override-como-blob-json-esparso.md), [ADR-0003](../docs/adr/0003-override-de-listas-por-operacoes.md), [ADR-0006](../docs/adr/0006-presenca-da-chave-sinaliza-override.md), [ADR-0007](../docs/adr/0007-fatos-tecnicos-sao-overridaveis.md) |
-| **Status** | draft |
-| **Depende de** | [0013](0013-resolver-tres-camadas.md) |
+| **Status** | ready |
+| **Depende de** | [0013](0013-resolver-tres-camadas.md), [0015](0015-enriquecimento-import-proxy-imagem.md) |
 
 ---
 
@@ -53,26 +53,65 @@ que transforma "o TMDB disse X" em "eu, dono, digo Y".
 - **Proveniência por campo** exposta como recurso próprio (R6: UI consulta o override
   separadamente; sem endpoint de proveniência agora).
 
-## 4. Contrato técnico
+> **A chave do design:** o `override_json` gravado **É** o patch que o resolver
+> ([0013](0013-resolver-tres-camadas.md)) já sabe interpretar — escalar (`null`
+> apaga), lista (`{add,remove}` / array = substitui / `null` = vazia),
+> `extension_data` (namespace/chave, `null` apaga). O endpoint **não traduz** nada:
+> mescla o patch no blob e devolve a entity resolvida. Zero query sqlc nova (reusa
+> `UpsertMediaOverride`/`ObterMediaOverride`/`ApagarMediaOverride` do [0012](0012-schema-fase3-camadas-externo-override.md)).
 
-### API (`/api/v1`)
-- **PUT/PATCH `/entities/{id}/override`** body = patch esparso espelhando a entity;
-  `200` com a entity **resolvida** (para a UI refletir na hora). Envelope de erro padrão.
-- Semântica de chave: presente (mesmo `null`) = override; ausente = herda; endpoint
-  de remoção para limpar.
+### API (`/api/v1`) — três verbos, um por intenção
+- **PATCH `/entities/{id}/override`** — **merge esparso**: as chaves do corpo são
+  fundidas no `override_json` guardado (só o que veio muda; o resto do override
+  permanece). Corpo = patch espelhando os campos editoriais. `200` com a entity
+  **resolvida** (a UI reflete na hora). `404` se a entity não existe; `422` patch
+  malformado.
+  - **Definir vazio** (apagar o valor que a fonte insiste em trazer): mande a chave
+    com `null` — vira `null` no blob (R6/[ADR-0006](../docs/adr/0006-presenca-da-chave-sinaliza-override.md)), o resolver apaga a base.
+  - **Definir valor**: `{"title":"Y"}` (escalar) ou `{"tags":{"add":["x"],"remove":["y"]}}` (lista).
+- **DELETE `/entities/{id}/override/{campo}`** — **limpar override** de um campo:
+  remove a chave do blob → o campo volta a **herdar** a base. Distinto de `null`.
+  `200` resolvida; remover chave ausente é idempotente (`200`); `422` se `{campo}`
+  não é editorial.
+- **DELETE `/entities/{id}/override`** — **reset**: apaga o override inteiro (remove
+  a linha). `200` resolvida.
+- Se, após um DELETE de campo, o blob ficar `{}`, a linha é removida (sem override).
 
 ### Dados / modelo
 - Upsert em `media_override(entity_id, override_json, updated_at)` ([0012](0012-schema-fase3-camadas-externo-override.md)).
-  Validação por schema na **app** (a coluna é `TEXT`).
+  A coluna é `TEXT`; a **validação é da app**.
+- **Merge no Go:** decodifica o blob atual e o patch como `map[string]json.RawMessage`,
+  aplica as chaves do patch (sobrescreve/insere), re-serializa. Preserva o `RawMessage`
+  — não reinterpreta o valor (o resolver é quem interpreta na leitura).
+
+### Validação do patch (app)
+- **Chaves permitidas** = os campos editoriais do registro do resolver:
+  `title`, `original_title`, `description`, `release_date`, `tags`, `extension_data`.
+  Chave fora disso → `422` (não gravar `status`/`id`/`external_ids`/derivados).
+- **Forma por kind:** escalares aceitam `string` ou `null`; `tags` aceita array de
+  strings, objeto `{add?:[],remove?:[]}` ou `null`; `extension_data` aceita objeto
+  ou `null`. Forma inválida → `422`, envelope padrão.
 
 ### Frontend (Vite/React)
-- Modo de edição no `EntityDetail`; formulário derivado dos campos do núcleo; editor
-  de listas com add/remove; distinção visual "limpar" vs "vazio"; estados de erro
-  (validação) inline.
+- **Modo de edição no `EntityDetail`** ([0011](0011-frontend-grid-lista-detalhe.md)):
+  botão **Editar** → formulário dos campos editoriais (inputs para title/original_title/
+  description/release_date; editor de `tags` com chips add/remove).
+- **Overridado é visível:** um campo com override ativo ganha um selo ("editado");
+  cada campo tem ação **Limpar** (→ `DELETE .../{campo}`, volta a herdar) — distinta de
+  esvaziar o input (que, ao salvar, manda `null` = **definir vazio**).
+- **Salvar** → `PATCH` com só os campos alterados; sucesso invalida `['entity', id]`
+  (e `['entities']` para o grid) e sai do modo de edição; erro de validação inline.
+- A UI sabe o que está overridado consultando `GET .../override` (o blob cru), abaixo.
+- **GET `/entities/{id}/override`** — devolve o blob cru guardado (`{}` se nenhum) para
+  a UI distinguir "overridado" de "herdado" por campo. `200` sempre (entity existente),
+  `404` se a entity não existe.
 
 ### Arquivos afetados
-- Criar: handler de override, validação de patch, componentes de edição, testes.
-- Alterar: `openapi.yaml` (+ regen tipos), `EntityDetail` do [0011](0011-frontend-grid-lista-detalhe.md), cliente de API.
+- Criar (backend): `internal/server/override.go` (handlers PATCH/DELETE/GET + merge +
+  validação), testes. Sem pkg nova nem query sqlc nova.
+- Criar (frontend): componentes de edição (form + editor de listas) em `web/src/`.
+- Alterar: `openapi.yaml` (+ regen tipos), `internal/server/server.go` (rotas),
+  `web/src/routes/entity-detail.tsx`, `web/src/lib/api.ts` + `queries.ts`.
 
 ## 5. Critérios de aceite
 
