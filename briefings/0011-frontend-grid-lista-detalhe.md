@@ -10,7 +10,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 2 — UI de biblioteca |
 | **Docs relacionadas** | [03-arquitetura](../docs/03-arquitetura.md), [05-api](../docs/05-api.md), [ADR-0008](../docs/adr/0008-identidade-e-matching-kodi-jellyfin.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Depende de** | [0008](0008-datasources-cadastro-api-library.md), [0009](0009-scanner-fswalk-ffprobe-matching.md), [0010](0010-api-leitura-resolver-minimo.md) |
 
 ---
