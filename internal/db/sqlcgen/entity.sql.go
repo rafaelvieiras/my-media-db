@@ -86,6 +86,27 @@ func (q *Queries) AtualizarEntity(ctx context.Context, arg AtualizarEntityParams
 	return i, err
 }
 
+const atualizarExternalIds = `-- name: AtualizarExternalIds :exec
+UPDATE entity
+SET external_ids_json = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+`
+
+type AtualizarExternalIdsParams struct {
+	ExternalIdsJson sql.NullString
+	ID              string
+}
+
+// Mescla a identidade externa (MD4): a app le external_ids_json, junta
+// {source: source_id} e grava aqui, sem tocar o resto da entity. As colunas
+// geradas external_id_tmdb/imdb re-derivam sozinhas do novo JSON. Usado pelo
+// enrich/import (briefing 0015) -- media_external e cache subordinado a isto.
+func (q *Queries) AtualizarExternalIds(ctx context.Context, arg AtualizarExternalIdsParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarExternalIds, arg.ExternalIdsJson, arg.ID)
+	return err
+}
+
 const contarEntityCards = `-- name: ContarEntityCards :one
 SELECT COUNT(*) AS total
 FROM entity e

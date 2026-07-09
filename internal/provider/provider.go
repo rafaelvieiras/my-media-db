@@ -7,7 +7,10 @@
 // provider não toca o handler de busca, que fala só com esta abstração.
 package provider
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+)
 
 // Provider é uma fonte externa de metadados. Implementações são injetadas no
 // server via option; nil significa "busca externa desligada" (degrada para só
@@ -19,6 +22,17 @@ type Provider interface {
 	// (""|"movie"|"tv"). Erro/timeout é responsabilidade do chamador degradar —
 	// o provider apenas o propaga.
 	Buscar(ctx context.Context, query, tipo string) ([]ResultadoExterno, error)
+	// BuscarDetalhe puxa o DETALHE cru (payload da fonte) de um item pelo seu
+	// `sourceID` e `tipo` ("movie"|"tv"), para o import/enrich (briefing 0015).
+	// Devolve o JSON CRU como veio da fonte (o cache media_external guarda o cru,
+	// ADR-0011); o mapeamento canônico é de MapearDetalhe. Erro/timeout propaga.
+	BuscarDetalhe(ctx context.Context, sourceID, tipo string) (json.RawMessage, error)
+	// MapearDetalhe traduz o payload CRU de BuscarDetalhe para o mapa CANÔNICO com
+	// OS NOSSOS nomes de campo (title, original_title, description, release_date,
+	// tags, poster_url), consumido pelo resolver (raw→canônico é do provider; o
+	// resolver não conhece o TMDB). Só inclui as chaves que a fonte trouxe. SEM
+	// elenco/equipe (MD6 adiado).
+	MapearDetalhe(raw json.RawMessage) (map[string]any, error)
 }
 
 // ResultadoExterno é o resultado canônico de uma busca externa, independente da

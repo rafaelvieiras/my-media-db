@@ -133,6 +133,16 @@ RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb;
 
+-- name: AtualizarExternalIds :exec
+-- Mescla a identidade externa (MD4): a app le external_ids_json, junta
+-- {source: source_id} e grava aqui, sem tocar o resto da entity. As colunas
+-- geradas external_id_tmdb/imdb re-derivam sozinhas do novo JSON. Usado pelo
+-- enrich/import (briefing 0015) -- media_external e cache subordinado a isto.
+UPDATE entity
+SET external_ids_json = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?;
+
 -- name: ApagarEntity :exec
 -- Purga explicita: remove a entity e, por ON DELETE CASCADE, seus media_file,
 -- asset e entity_relation.

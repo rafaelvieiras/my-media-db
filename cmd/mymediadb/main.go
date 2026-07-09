@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -54,7 +55,11 @@ func run() error {
 		}
 	}()
 
-	srv := server.New(version, database, opcoesBusca()...)
+	opts, err := opcoesServer()
+	if err != nil {
+		return err
+	}
+	srv := server.New(version, database, opts...)
 	handler, err := srv.Handler()
 	if err != nil {
 		return err
@@ -119,11 +124,25 @@ func openAndMigrate() (*db.DB, error) {
 	return database, nil
 }
 
-// opcoesBusca monta as options do server ligadas à busca externa (briefing
-// 0014). Lê a credencial do TMDB do ambiente: MYMEDIADB_TMDB_TOKEN (Read Access
-// Token v4, preferido) e, se vazio, MYMEDIADB_TMDB_API_KEY (v3). Sem nenhuma das
-// duas, NÃO cria provider (busca externa desligada — não é erro). NUNCA loga o
-// valor da credencial, só se a busca externa está ligada ou desligada.
+// opcoesServer monta as options do server: a busca/enrich externa (briefing
+// 0014/0015) e o diretório de assets. Erro só na criação do diretório de assets.
+func opcoesServer() ([]server.Option, error) {
+	opts := opcoesBusca()
+
+	dir, err := resolveAssetsDir()
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("mymediadb: diretório de assets em %q", dir)
+	opts = append(opts, server.WithAssetsDir(dir))
+	return opts, nil
+}
+
+// opcoesBusca monta a option da busca externa (briefing 0014). Lê a credencial do
+// TMDB do ambiente: MYMEDIADB_TMDB_TOKEN (Read Access Token v4, preferido) e, se
+// vazio, MYMEDIADB_TMDB_API_KEY (v3). Sem nenhuma das duas, NÃO cria provider
+// (busca externa desligada — não é erro; o enrich/import também ficam off). NUNCA
+// loga o valor da credencial, só se a busca externa está ligada ou desligada.
 func opcoesBusca() []server.Option {
 	cred := tmdb.Credencial{
 		Token:  os.Getenv("MYMEDIADB_TMDB_TOKEN"),
@@ -135,6 +154,21 @@ func opcoesBusca() []server.Option {
 	}
 	log.Printf("mymediadb: busca externa TMDB habilitada")
 	return []server.Option{server.WithSearchProvider(tmdb.New(cred, nil, ""))}
+}
+
+// resolveAssetsDir determina o diretório do cache de imagem (briefing 0015): env
+// MYMEDIADB_ASSETS_DIR tem prioridade; caso ausente, usa dirname(DB)/assets. Cria
+// o diretório se faltar (o cache grava binários lá; a guarda de path do pôster o
+// aceita como raiz confiável).
+func resolveAssetsDir() (string, error) {
+	dir := os.Getenv("MYMEDIADB_ASSETS_DIR")
+	if dir == "" {
+		dir = filepath.Join(filepath.Dir(resolveDBPath()), "assets")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 // resolvePort determina a porta de escuta: env PORT tem prioridade; caso

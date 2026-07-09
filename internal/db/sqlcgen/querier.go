@@ -21,7 +21,15 @@ type Querier interface {
 	ApagarMediaFile(ctx context.Context, id string) error
 	// Remove o override da entity (volta ao valor da base editorial/arquivo).
 	ApagarMediaOverride(ctx context.Context, entityID string) error
+	// Atualiza o caminho/binario de um asset ja existente (dedup do cache externo:
+	// re-baixar o poster reaproveita a mesma linha). Nao muda entity_id/kind/origin.
+	AtualizarAssetPath(ctx context.Context, arg AtualizarAssetPathParams) error
 	AtualizarEntity(ctx context.Context, arg AtualizarEntityParams) (Entity, error)
+	// Mescla a identidade externa (MD4): a app le external_ids_json, junta
+	// {source: source_id} e grava aqui, sem tocar o resto da entity. As colunas
+	// geradas external_id_tmdb/imdb re-derivam sozinhas do novo JSON. Usado pelo
+	// enrich/import (briefing 0015) -- media_external e cache subordinado a isto.
+	AtualizarExternalIds(ctx context.Context, arg AtualizarExternalIdsParams) error
 	// Atualiza o estado da varredura: carimbo do ultimo scan e online/offline.
 	AtualizarLibrarySource(ctx context.Context, arg AtualizarLibrarySourceParams) (LibrarySource, error)
 	// Transicao de ciclo de vida: marca present/missing e carimba last_seen.
@@ -102,6 +110,11 @@ type Querier interface {
 	// offline (que nem chega aqui) nao afete arquivos de outras fontes.
 	MarcarMediaFilesNaoVistosMissing(ctx context.Context, arg MarcarMediaFilesNaoVistosMissingParams) (int64, error)
 	ObterAsset(ctx context.Context, id string) (Asset, error)
+	// Asset de UMA origem especifica (ex.: kind='poster', origin='external'), para o
+	// dedup do cache de imagem (briefing 0015): reusa/atualiza o asset em vez de
+	// duplicar. Filtrar por origin garante que o cache externo NUNCA case um asset
+	// origin='user' (arte do dono, intocavel). Sem linha -> sql.ErrNoRows.
+	ObterAssetPorEntityKindOrigin(ctx context.Context, arg ObterAssetPorEntityKindOriginParams) (Asset, error)
 	// Poster local da entity (briefing 0010): o primeiro asset kind='poster'. Usado
 	// pelo endpoint que serve o binario. Sem poster -> sql.ErrNoRows -> 404 na API.
 	ObterAssetPosterPorEntity(ctx context.Context, entityID string) (Asset, error)

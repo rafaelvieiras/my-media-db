@@ -58,6 +58,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/enrich': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Enriquece uma entity existente a partir do provider (briefing 0015).
+     * @description Puxa o detalhe da fonte e grava a camada externa (media_external, payload cru) + a identidade (external_ids) + o pôster cacheado; NÃO toca override nem arte do dono (não-destrutivo). Corpo opcional: sem source usa "tmdb"; sem source_id usa external_ids[source] da entity (422 se não houver id). Responde a entity RESOLVIDA (com os dados externos compostos).
+     */
+    post: operations['enrichEntity']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/{id}/files': {
     parameters: {
       query?: never
@@ -109,6 +129,26 @@ export interface paths {
     get: operations['search']
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/import': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Import explícito de um resultado externo (find-or-create, briefing 0015).
+     * @description Find-or-create por id externo (dedup MD4): se já existe entity com aquele external_id, reusa (200); senão cria (201, status cataloged, título inicial do detalhe). Em ambos os casos enriquece pelo mesmo caminho (grava external + external_ids + pôster cacheado, nunca override). Responde a entity RESOLVIDA.
+     */
+    post: operations['importEntity']
     delete?: never
     options?: never
     head?: never
@@ -229,6 +269,25 @@ export interface components {
       external: components['schemas']['ExternalResult'][]
       /** @description false quando não há credencial/provider ou a fonte falhou — distingue "fonte indisponível" de "zero resultados". */
       external_available: boolean
+    }
+    /** @description Corpo OPCIONAL de POST /entities/{id}/enrich. Sem source usa "tmdb"; sem source_id usa external_ids[source] da entity. */
+    EnrichRequest: {
+      /** @description Fonte a consultar (default tmdb). */
+      source?: string
+      /** @description Id do item NA FONTE; se ausente, usa external_ids[source]. */
+      source_id?: string
+    }
+    /** @description Corpo de POST /import — o item externo a importar. */
+    ImportRequest: {
+      /** @description Fonte (default tmdb). */
+      source?: string
+      /** @description Id do item NA FONTE (obrigatório). */
+      source_id: string
+      /**
+       * @description Tipo canônico do item (obrigatório).
+       * @enum {string}
+       */
+      type: 'movie' | 'tv'
     }
     /** @description Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a Fase 3 preenche os mesmos campos com override/externo sem mudar o shape. */
     ResolvedEntity: {
@@ -419,6 +478,37 @@ export interface operations {
       404: components['responses']['Error']
     }
   }
+  enrichEntity: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['EnrichRequest']
+      }
+    }
+    responses: {
+      /** @description Entidade resolvida após o enriquecimento. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ResolvedEntity']
+        }
+      }
+      404: components['responses']['Error']
+      422: components['responses']['Error']
+      502: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
   getEntityFiles: {
     parameters: {
       query?: never
@@ -492,6 +582,43 @@ export interface operations {
         }
       }
       400: components['responses']['Error']
+    }
+  }
+  importEntity: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ImportRequest']
+      }
+    }
+    responses: {
+      /** @description Entity já existente (reuso), resolvida. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ResolvedEntity']
+        }
+      }
+      /** @description Entity criada e enriquecida, resolvida. */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ResolvedEntity']
+        }
+      }
+      400: components['responses']['Error']
+      422: components['responses']['Error']
+      502: components['responses']['Error']
+      503: components['responses']['Error']
     }
   }
   listLibrary: {

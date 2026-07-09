@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -125,15 +126,27 @@ func (c *Client) Buscar(ctx context.Context, query, tipo string) ([]provider.Res
 	return out, nil
 }
 
-// montarRequisicao constrói o GET /search/multi com a autenticação escolhida:
-// Token v4 → header Authorization: Bearer; senão APIKey v3 → query api_key.
+// montarRequisicao constrói o GET /search/multi com o termo de busca. A
+// autenticação é aplicada por novoGet (comum a todas as chamadas).
 func (c *Client) montarRequisicao(ctx context.Context, query string) (*http.Request, error) {
-	u, err := url.Parse(c.baseURL + "/search/multi")
+	return c.novoGet(ctx, "/search/multi", url.Values{"query": {query}})
+}
+
+// novoGet monta um GET para `path` (relativo à base) com os `params` de query e a
+// autenticação escolhida no boot: Token v4 → header Authorization: Bearer; senão
+// APIKey v3 → query api_key. Ponto ÚNICO de auth — busca e detalhe passam por aqui
+// (a credencial nunca é logada).
+func (c *Client) novoGet(ctx context.Context, path string, params url.Values) (*http.Request, error) {
+	u, err := url.Parse(c.baseURL + path)
 	if err != nil {
 		return nil, err
 	}
 	q := u.Query()
-	q.Set("query", query)
+	for k, vs := range params {
+		for _, v := range vs {
+			q.Set(k, v)
+		}
+	}
 	if c.cred.Token == "" && c.cred.APIKey != "" {
 		q.Set("api_key", c.cred.APIKey)
 	}
@@ -148,6 +161,112 @@ func (c *Client) montarRequisicao(ctx context.Context, query string) (*http.Requ
 		req.Header.Set("Authorization", "Bearer "+c.cred.Token)
 	}
 	return req, nil
+}
+
+// BuscarDetalhe puxa o detalhe cru de um item pelo id na fonte (briefing 0015):
+// GET {base}/{movie|tv}/{id}. Devolve o corpo CRU (o cache media_external guarda o
+// payload como veio — ADR-0011). Erro/timeout é propagado (o handler decide).
+func (c *Client) BuscarDetalhe(ctx context.Context, sourceID, tipo string) (json.RawMessage, error) {
+	if sourceID == "" {
+		return nil, fmt.Errorf("tmdb: sourceID vazio")
+	}
+	if tipo != "movie" && tipo != "tv" {
+		return nil, fmt.Errorf("tmdb: tipo inválido %q (use movie|tv)", tipo)
+	}
+
+	req, err := c.novoGet(ctx, "/"+tipo+"/"+url.PathEscape(sourceID), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("tmdb: status inesperado %d ao buscar detalhe", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("tmdb: ler detalhe: %w", err)
+	}
+	return json.RawMessage(body), nil
+}
+
+// detalheTMDB espelha o payload de /movie/{id} e /tv/{id} (só os campos usados).
+// title/release_date são de filme; name/first_air_date de série — mapeamos ambos.
+type detalheTMDB struct {
+	Title         string       `json:"title"`
+	Name          string       `json:"name"`
+	OriginalTitle string       `json:"original_title"`
+	OriginalName  string       `json:"original_name"`
+	Overview      string       `json:"overview"`
+	ReleaseDate   string       `json:"release_date"`
+	FirstAirDate  string       `json:"first_air_date"`
+	PosterPath    string       `json:"poster_path"`
+	Genres        []generoTMDB `json:"genres"`
+}
+
+// generoTMDB é um item de `genres` do detalhe (só o nome nos interessa como tag).
+type generoTMDB struct {
+	Name string `json:"name"`
+}
+
+// MapearDetalhe traduz o payload cru do TMDB para o mapa CANÔNICO (nossos nomes).
+// Só inclui as chaves que a fonte de fato trouxe — assim o resolver distingue
+// "campo ausente" de "campo vazio" (a primeira fonte COM valor forma a base). SEM
+// elenco/equipe (MD6 adiado).
+func (c *Client) MapearDetalhe(raw json.RawMessage) (map[string]any, error) {
+	var d detalheTMDB
+	if err := json.Unmarshal(raw, &d); err != nil {
+		return nil, fmt.Errorf("tmdb: detalhe inválido: %w", err)
+	}
+
+	out := map[string]any{}
+	if titulo := primeiroNaoVazio(d.Title, d.Name); titulo != "" {
+		out["title"] = titulo
+	}
+	if orig := primeiroNaoVazio(d.OriginalTitle, d.OriginalName); orig != "" {
+		out["original_title"] = orig
+	}
+	if d.Overview != "" {
+		out["description"] = d.Overview
+	}
+	if data := primeiroNaoVazio(d.ReleaseDate, d.FirstAirDate); data != "" {
+		out["release_date"] = data
+	}
+	if tags := nomesDosGeneros(d.Genres); len(tags) > 0 {
+		out["tags"] = tags
+	}
+	if d.PosterPath != "" {
+		out["poster_url"] = imagemBaseURL + d.PosterPath
+	}
+	return out, nil
+}
+
+// primeiroNaoVazio devolve o primeiro argumento não-vazio (o TMDB usa campos
+// distintos para filme e série).
+func primeiroNaoVazio(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// nomesDosGeneros extrai os nomes de `genres` como lista de tags canônica.
+func nomesDosGeneros(gs []generoTMDB) []string {
+	out := make([]string, 0, len(gs))
+	for _, g := range gs {
+		if g.Name != "" {
+			out = append(out, g.Name)
+		}
+	}
+	return out
 }
 
 // mapearItem converte um item cru no ResultadoExterno canônico. Devolve ok=false

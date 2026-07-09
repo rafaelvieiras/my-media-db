@@ -29,6 +29,25 @@ WHERE entity_id = ? AND kind = 'poster'
 ORDER BY created_at, id
 LIMIT 1;
 
+-- name: ObterAssetPorEntityKindOrigin :one
+-- Asset de UMA origem especifica (ex.: kind='poster', origin='external'), para o
+-- dedup do cache de imagem (briefing 0015): reusa/atualiza o asset em vez de
+-- duplicar. Filtrar por origin garante que o cache externo NUNCA case um asset
+-- origin='user' (arte do dono, intocavel). Sem linha -> sql.ErrNoRows.
+SELECT id, entity_id, kind, origin, path_or_uri, meta_json, created_at
+FROM asset
+WHERE entity_id = ? AND kind = ? AND origin = ?
+ORDER BY created_at, id
+LIMIT 1;
+
+-- name: AtualizarAssetPath :exec
+-- Atualiza o caminho/binario de um asset ja existente (dedup do cache externo:
+-- re-baixar o poster reaproveita a mesma linha). Nao muda entity_id/kind/origin.
+UPDATE asset
+SET path_or_uri = ?,
+    meta_json = ?
+WHERE id = ?;
+
 -- name: ApagarAsset :exec
 DELETE FROM asset
 WHERE id = ?;

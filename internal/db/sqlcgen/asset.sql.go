@@ -20,6 +20,26 @@ func (q *Queries) ApagarAsset(ctx context.Context, id string) error {
 	return err
 }
 
+const atualizarAssetPath = `-- name: AtualizarAssetPath :exec
+UPDATE asset
+SET path_or_uri = ?,
+    meta_json = ?
+WHERE id = ?
+`
+
+type AtualizarAssetPathParams struct {
+	PathOrUri string
+	MetaJson  sql.NullString
+	ID        string
+}
+
+// Atualiza o caminho/binario de um asset ja existente (dedup do cache externo:
+// re-baixar o poster reaproveita a mesma linha). Nao muda entity_id/kind/origin.
+func (q *Queries) AtualizarAssetPath(ctx context.Context, arg AtualizarAssetPathParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarAssetPath, arg.PathOrUri, arg.MetaJson, arg.ID)
+	return err
+}
+
 const criarAsset = `-- name: CriarAsset :one
 
 INSERT INTO asset (
@@ -109,6 +129,39 @@ WHERE id = ?
 
 func (q *Queries) ObterAsset(ctx context.Context, id string) (Asset, error) {
 	row := q.db.QueryRowContext(ctx, obterAsset, id)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.EntityID,
+		&i.Kind,
+		&i.Origin,
+		&i.PathOrUri,
+		&i.MetaJson,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const obterAssetPorEntityKindOrigin = `-- name: ObterAssetPorEntityKindOrigin :one
+SELECT id, entity_id, kind, origin, path_or_uri, meta_json, created_at
+FROM asset
+WHERE entity_id = ? AND kind = ? AND origin = ?
+ORDER BY created_at, id
+LIMIT 1
+`
+
+type ObterAssetPorEntityKindOriginParams struct {
+	EntityID string
+	Kind     string
+	Origin   string
+}
+
+// Asset de UMA origem especifica (ex.: kind='poster', origin='external'), para o
+// dedup do cache de imagem (briefing 0015): reusa/atualiza o asset em vez de
+// duplicar. Filtrar por origin garante que o cache externo NUNCA case um asset
+// origin='user' (arte do dono, intocavel). Sem linha -> sql.ErrNoRows.
+func (q *Queries) ObterAssetPorEntityKindOrigin(ctx context.Context, arg ObterAssetPorEntityKindOriginParams) (Asset, error) {
+	row := q.db.QueryRowContext(ctx, obterAssetPorEntityKindOrigin, arg.EntityID, arg.Kind, arg.Origin)
 	var i Asset
 	err := row.Scan(
 		&i.ID,

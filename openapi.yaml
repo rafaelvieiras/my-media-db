@@ -87,6 +87,39 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/enrich:
+    post:
+      operationId: enrichEntity
+      summary: Enriquece uma entity existente a partir do provider (briefing 0015).
+      description: >
+        Puxa o detalhe da fonte e grava a camada externa (media_external, payload
+        cru) + a identidade (external_ids) + o pôster cacheado; NÃO toca override
+        nem arte do dono (não-destrutivo). Corpo opcional: sem source usa "tmdb";
+        sem source_id usa external_ids[source] da entity (422 se não houver id).
+        Responde a entity RESOLVIDA (com os dados externos compostos).
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EnrichRequest" }
+      responses:
+        "200":
+          description: Entidade resolvida após o enriquecimento.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResolvedEntity" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/{id}/files:
     get:
       operationId: getEntityFiles
@@ -156,6 +189,42 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SearchResult" }
         "400":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/import:
+    post:
+      operationId: importEntity
+      summary: Import explícito de um resultado externo (find-or-create, briefing 0015).
+      description: >
+        Find-or-create por id externo (dedup MD4): se já existe entity com aquele
+        external_id, reusa (200); senão cria (201, status cataloged, título inicial
+        do detalhe). Em ambos os casos enriquece pelo mesmo caminho (grava external
+        + external_ids + pôster cacheado, nunca override). Responde a entity
+        RESOLVIDA.
+      tags: [entities]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImportRequest" }
+      responses:
+        "200":
+          description: Entity já existente (reuso), resolvida.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResolvedEntity" }
+        "201":
+          description: Entity criada e enriquecida, resolvida.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResolvedEntity" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+        "503":
           $ref: "#/components/responses/Error"
 
   /api/v1/library:
@@ -362,6 +431,33 @@ components:
           description: >
             false quando não há credencial/provider ou a fonte falhou — distingue
             "fonte indisponível" de "zero resultados".
+    EnrichRequest:
+      type: object
+      description: >
+        Corpo OPCIONAL de POST /entities/{id}/enrich. Sem source usa "tmdb"; sem
+        source_id usa external_ids[source] da entity.
+      properties:
+        source:
+          type: string
+          description: "Fonte a consultar (default tmdb)."
+        source_id:
+          type: string
+          description: Id do item NA FONTE; se ausente, usa external_ids[source].
+    ImportRequest:
+      type: object
+      description: Corpo de POST /import — o item externo a importar.
+      required: [source_id, type]
+      properties:
+        source:
+          type: string
+          description: "Fonte (default tmdb)."
+        source_id:
+          type: string
+          description: Id do item NA FONTE (obrigatório).
+        type:
+          type: string
+          enum: [movie, tv]
+          description: Tipo canônico do item (obrigatório).
     ResolvedEntity:
       type: object
       description: >

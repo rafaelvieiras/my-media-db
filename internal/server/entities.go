@@ -179,29 +179,42 @@ func cardDTO(row sqlcgen.ListarEntityCardsRow) entityCardDTO {
 	return dto
 }
 
-// getEntity trata GET /api/v1/entities/{id}: devolve a entity RESOLVIDA (camada
-// arquivo) ou 404. O shape é o final — a Fase 3 preenche as demais camadas.
+// getEntity trata GET /api/v1/entities/{id}: devolve a entity RESOLVIDA (todas as
+// camadas: arquivo ⟵ externo ⟵ override) ou 404.
 func (s *Server) getEntity(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
 	}
 	id := chi.URLParam(r, "id")
-	ctx := r.Context()
 
+	resolvida, encontrada, err := s.resolverEntity(r.Context(), id)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	if !encontrada {
+		writeError(w, http.StatusNotFound, "not_found", "entidade não encontrada")
+		return
+	}
+	writeJSON(w, http.StatusOK, resolvida)
+}
+
+// resolverEntity monta a resposta RESOLVIDA de uma entity a partir de TODAS as
+// camadas (arquivo ⟵ externo ⟵ override) — o caminho único reusado por getEntity,
+// enrich e import. Devolve encontrada=false (sem erro) quando a entity não existe.
+// É AQUI que a camada externa fica viva de ponta a ponta (a fiação adiada do 0013).
+func (s *Server) resolverEntity(ctx context.Context, id string) (resolver.Entidade, bool, error) {
 	ent, err := s.leitura().ObterEntity(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "entidade não encontrada")
-			return
+			return resolver.Entidade{}, false, nil
 		}
-		respondErroInterno(w)
-		return
+		return resolver.Entidade{}, false, err
 	}
 
 	files, err := s.leitura().ListarMediaFilesPorEntity(ctx, id)
 	if err != nil {
-		respondErroInterno(w)
-		return
+		return resolver.Entidade{}, false, err
 	}
 
 	var posterURL *string
@@ -209,18 +222,21 @@ func (s *Server) getEntity(w http.ResponseWriter, r *http.Request) {
 		u := posterPath(id)
 		posterURL = &u
 	} else if !errors.Is(err, sql.ErrNoRows) {
-		respondErroInterno(w)
-		return
+		return resolver.Entidade{}, false, err
 	}
 
-	// Camada OVERRIDE: o patch cru do dono (media_override). Ausência de linha
-	// (sql.ErrNoRows) não é erro — só significa "sem override". A camada EXTERNA
-	// NÃO é ligada aqui: sem provider/mapper raw→canônico (0015) seria código
-	// morto; ela é exercitada nos testes de unidade do motor.
+	// Camada OVERRIDE: o patch cru do dono (media_override). Ausência de linha não
+	// é erro (sem override, herda a base).
 	override, err := s.carregarOverride(ctx, id)
 	if err != nil {
-		respondErroInterno(w)
-		return
+		return resolver.Entidade{}, false, err
+	}
+
+	// Camada EXTERNA (fiação do 0015): mapeia cada media_external raw→canônico via
+	// o provider, ordenada pela prioridade das fontes.
+	externo, err := s.montarExterno(ctx, id)
+	if err != nil {
+		return resolver.Entidade{}, false, err
 	}
 
 	resolvida := resolver.Resolver(resolver.Camadas{
@@ -228,8 +244,58 @@ func (s *Server) getEntity(w http.ResponseWriter, r *http.Request) {
 		Files:     files,
 		PosterURL: posterURL,
 		Override:  override,
+		Externo:   externo,
 	})
-	writeJSON(w, http.StatusOK, resolvida)
+	return resolvida, true, nil
+}
+
+// prioridadeFontes é a ordem de precedência das fontes externas (R2): a primeira
+// com valor para um campo forma a base externa dele. Hoje só o TMDB.
+var prioridadeFontes = []string{"tmdb"}
+
+// montarExterno carrega as linhas de media_external da entity e as converte em
+// camadas canônicas via o provider (raw→canônico é do provider; o resolver não
+// conhece o TMDB). Sem provider configurado devolve nil (comportamento do 0010
+// preservado). Uma linha cujo mapeamento falha é PULADA (degrada aquela fonte),
+// não derruba a leitura. Ordena pela prioridade das fontes.
+func (s *Server) montarExterno(ctx context.Context, id string) ([]resolver.CamadaExterna, error) {
+	if s.searchProvider == nil {
+		return nil, nil
+	}
+	rows, err := s.leitura().ListarMediaExternalPorEntity(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+
+	var camadas []resolver.CamadaExterna
+	for _, fonte := range prioridadeFontes {
+		camadas = append(camadas, s.camadasDaFonte(rows, fonte)...)
+	}
+	return camadas, nil
+}
+
+// camadasDaFonte converte as linhas de UMA fonte em camadas canônicas via o
+// provider. Devolve nil quando não há mapeador para a fonte (provider de outra
+// fonte). Uma linha com payload ausente/inválido é pulada (degrada aquela linha).
+func (s *Server) camadasDaFonte(rows []sqlcgen.MediaExternal, fonte string) []resolver.CamadaExterna {
+	if s.searchProvider.Nome() != fonte {
+		return nil
+	}
+	var out []resolver.CamadaExterna
+	for _, row := range rows {
+		if row.Source != fonte || !row.PayloadJson.Valid || row.PayloadJson.String == "" {
+			continue
+		}
+		campos, err := s.searchProvider.MapearDetalhe(json.RawMessage(row.PayloadJson.String))
+		if err != nil {
+			continue // payload cru inválido: degrada esta fonte
+		}
+		out = append(out, resolver.CamadaExterna{Fonte: row.Source, Campos: campos})
+	}
+	return out
 }
 
 // carregarOverride lê o patch de override da entity (media_override) e o decodifica
@@ -324,18 +390,15 @@ func (s *Server) getEntityPoster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GUARDA DE SEGURANÇA: o caminho do asset (populado pelo scanner) só pode ser
-	// servido se estiver sob a raiz de algum library_source. Isso barra qualquer
-	// caminho que tenha escapado por '..'/symlink e impede servir arquivo
+	// GUARDA DE SEGURANÇA: o caminho do asset só pode ser servido se estiver sob a
+	// raiz de algum library_source (arte local do scanner) OU sob o nosso diretório
+	// confiável de assets (cache de imagem externo, briefing 0015). Isso barra
+	// qualquer caminho que tenha escapado por '..'/symlink e impede servir arquivo
 	// arbitrário do host.
-	fontes, err := s.leitura().ListarLibrarySources(ctx)
+	raizes, err := s.raizesConfiaveis(ctx)
 	if err != nil {
 		respondErroInterno(w)
 		return
-	}
-	raizes := make([]string, 0, len(fontes))
-	for _, f := range fontes {
-		raizes = append(raizes, f.Path)
 	}
 	if !caminhoSobRaizes(asset.PathOrUri, raizes) {
 		writeError(w, http.StatusForbidden, "forbidden",
@@ -360,6 +423,25 @@ func (s *Server) getEntityPoster(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", contentTypeImagem(limpo, f))
 	http.ServeContent(w, r, filepath.Base(limpo), info.ModTime(), f)
+}
+
+// raizesConfiaveis é a lista de diretórios sob os quais um pôster PODE ser
+// servido: as raízes dos datasources (arte local do scanner) mais o diretório de
+// assets (cache de imagem externo, briefing 0015), quando configurado. É a base da
+// guarda de path-traversal do endpoint de pôster.
+func (s *Server) raizesConfiaveis(ctx context.Context) ([]string, error) {
+	fontes, err := s.leitura().ListarLibrarySources(ctx)
+	if err != nil {
+		return nil, err
+	}
+	raizes := make([]string, 0, len(fontes)+1)
+	for _, f := range fontes {
+		raizes = append(raizes, f.Path)
+	}
+	if s.assetsDir != "" {
+		raizes = append(raizes, s.assetsDir)
+	}
+	return raizes, nil
 }
 
 // contentTypeImagem determina o content-type do pôster: primeiro pela extensão

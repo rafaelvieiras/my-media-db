@@ -161,6 +161,130 @@ func TestBuscarStatusErroPropaga(t *testing.T) {
 	}
 }
 
+// detalheFilme e detalheSerie sao payloads crus de /movie/{id} e /tv/{id} (os
+// campos que o mapeamento canonico usa). Filme usa title/release_date; serie usa
+// name/first_air_date.
+const detalheFilme = `{
+  "id": 603,
+  "title": "The Matrix",
+  "original_title": "The Matrix",
+  "overview": "Neo descobre a verdade.",
+  "release_date": "1999-03-31",
+  "poster_path": "/matrix.jpg",
+  "genres": [{"id": 28, "name": "Acao"}, {"id": 878, "name": "Ficcao"}]
+}`
+
+const detalheSerie = `{
+  "id": 1396,
+  "name": "Breaking Bad",
+  "original_name": "Breaking Bad",
+  "overview": "Um professor vira quimico do crime.",
+  "first_air_date": "2008-01-20",
+  "poster_path": "/bb.jpg",
+  "genres": [{"id": 18, "name": "Drama"}]
+}`
+
+// servidorDetalhe sobe um httptest.Server que responde /movie/{id} e /tv/{id} com
+// os payloads fixos.
+func servidorDetalhe(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/movie/603":
+			_, _ = w.Write([]byte(detalheFilme))
+		case "/tv/1396":
+			_, _ = w.Write([]byte(detalheSerie))
+		default:
+			http.Error(w, "path inesperado", http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestBuscarDetalheEMapearFilme(t *testing.T) {
+	srv := servidorDetalhe(t)
+	c := New(Credencial{Token: "tok"}, srv.Client(), srv.URL)
+
+	raw, err := c.BuscarDetalhe(context.Background(), "603", "movie")
+	if err != nil {
+		t.Fatalf("BuscarDetalhe: %v", err)
+	}
+	campos, err := c.MapearDetalhe(raw)
+	if err != nil {
+		t.Fatalf("MapearDetalhe: %v", err)
+	}
+	eqCampo(t, campos, "title", "The Matrix")
+	eqCampo(t, campos, "original_title", "The Matrix")
+	eqCampo(t, campos, "description", "Neo descobre a verdade.")
+	eqCampo(t, campos, "release_date", "1999-03-31")
+	eqCampo(t, campos, "poster_url", "https://image.tmdb.org/t/p/w342/matrix.jpg")
+	tags, _ := campos["tags"].([]string)
+	if len(tags) != 2 || tags[0] != "Acao" || tags[1] != "Ficcao" {
+		t.Errorf("tags = %v, quero [Acao Ficcao]", campos["tags"])
+	}
+}
+
+func TestBuscarDetalheEMapearSerie(t *testing.T) {
+	srv := servidorDetalhe(t)
+	c := New(Credencial{Token: "tok"}, srv.Client(), srv.URL)
+
+	raw, err := c.BuscarDetalhe(context.Background(), "1396", "tv")
+	if err != nil {
+		t.Fatalf("BuscarDetalhe: %v", err)
+	}
+	campos, err := c.MapearDetalhe(raw)
+	if err != nil {
+		t.Fatalf("MapearDetalhe: %v", err)
+	}
+	// Serie: name -> title; first_air_date -> release_date.
+	eqCampo(t, campos, "title", "Breaking Bad")
+	eqCampo(t, campos, "original_title", "Breaking Bad")
+	eqCampo(t, campos, "release_date", "2008-01-20")
+	eqCampo(t, campos, "poster_url", "https://image.tmdb.org/t/p/w342/bb.jpg")
+}
+
+func TestBuscarDetalheTipoInvalido(t *testing.T) {
+	c := New(Credencial{Token: "tok"}, nil, "http://exemplo")
+	if _, err := c.BuscarDetalhe(context.Background(), "1", "person"); err == nil {
+		t.Fatal("quero erro para tipo != movie|tv")
+	}
+	if _, err := c.BuscarDetalhe(context.Background(), "", "movie"); err == nil {
+		t.Fatal("quero erro para sourceID vazio")
+	}
+}
+
+// MapearDetalhe so inclui chaves que a fonte trouxe: um payload minimo nao deve
+// gerar poster_url/tags.
+func TestMapearDetalheOmiteAusentes(t *testing.T) {
+	c := New(Credencial{Token: "tok"}, nil, "")
+	campos, err := c.MapearDetalhe([]byte(`{"title":"So Titulo"}`))
+	if err != nil {
+		t.Fatalf("MapearDetalhe: %v", err)
+	}
+	eqCampo(t, campos, "title", "So Titulo")
+	if _, ok := campos["poster_url"]; ok {
+		t.Error("poster_url nao deveria existir sem poster_path")
+	}
+	if _, ok := campos["tags"]; ok {
+		t.Error("tags nao deveria existir sem genres")
+	}
+}
+
+// eqCampo confere um campo string do mapa canonico.
+func eqCampo(t *testing.T, m map[string]any, chave, want string) {
+	t.Helper()
+	got, ok := m[chave].(string)
+	if !ok {
+		t.Errorf("%s ausente ou nao-string (m=%v)", chave, m)
+		return
+	}
+	if got != want {
+		t.Errorf("%s = %q, quero %q", chave, got, want)
+	}
+}
+
 func TestConfigurada(t *testing.T) {
 	if (Credencial{}).Configurada() {
 		t.Error("credencial vazia nao deveria estar configurada")

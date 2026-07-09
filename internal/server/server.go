@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
+	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
@@ -32,6 +33,14 @@ type Server struct {
 	// cacheExterno guarda por TTL curto o resultado externo por (query,tipo),
 	// para poupar a fonte. Só existe quando há provider.
 	cacheExterno *cacheExterno
+	// assetsDir é o diretório confiável onde o cache de imagem grava os binários
+	// (briefing 0015). Injetado via WithAssetsDir; também entra na guarda de path
+	// do endpoint de pôster (além dos datasources).
+	assetsDir string
+	// enrich é o serviço de enriquecimento (import/enrich; briefing 0015). Só
+	// existe quando há provider E assetsDir E banco — senão os handlers degradam
+	// com 503. Construído em New após aplicar as options.
+	enrich *enrich.Servico
 }
 
 // Option configura opcionalmente o Server na construção, preservando a
@@ -50,6 +59,15 @@ func WithSearchProvider(p provider.Provider) Option {
 	}
 }
 
+// WithAssetsDir injeta o diretório confiável de assets (cache de imagem do
+// briefing 0015). O main o resolve (env MYMEDIADB_ASSETS_DIR ou dirname(DB)/assets)
+// e cria o diretório antes de injetar.
+func WithAssetsDir(dir string) Option {
+	return func(s *Server) {
+		s.assetsDir = dir
+	}
+}
+
 // New cria um Server com a versão do binário e os pools de banco (repassados
 // pelo main). O db pode ser nil em cenários sem persistência (ex.: alguns
 // testes de rota); o health degrada graciosamente nesse caso. Options são
@@ -63,6 +81,12 @@ func New(version string, database *db.DB, opts ...Option) *Server {
 	}
 	for _, opt := range opts {
 		opt(s)
+	}
+	// O enriquecimento (briefing 0015) exige banco + fonte externa + diretório de
+	// assets. Sem qualquer um deles fica nil e os handlers /enrich e /import
+	// degradam com 503 (busca externa desligada => não há o que importar).
+	if database != nil && s.searchProvider != nil && s.assetsDir != "" {
+		s.enrich = enrich.New(database, s.searchProvider, s.assetsDir)
 	}
 	return s
 }
@@ -88,6 +112,10 @@ func (s *Server) Handler() (http.Handler, error) {
 			// opcional à fonte externa (resultados "não salvos").
 			v1.Get("/search", s.search)
 
+			// Import explícito (briefing 0015): find-or-create por id externo,
+			// depois enriquece. Escreve external, nunca override.
+			v1.Post("/import", s.importar)
+
 			// Datasources da biblioteca (briefing 0008). Escritas (POST/DELETE)
 			// pela conexão de escrita, leituras (GET) pelo pool — encapsulado no
 			// serviço internal/library (ADR-0010).
@@ -111,6 +139,10 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Get("/{id}", s.getEntity)
 				ent.Get("/{id}/files", s.getEntityFiles)
 				ent.Get("/{id}/assets/poster", s.getEntityPoster)
+
+				// Enriquecimento de uma entity existente (briefing 0015): puxa o
+				// detalhe do provider e grava a base externa + pôster cacheado.
+				ent.Post("/{id}/enrich", s.enrichEntity)
 			})
 		})
 	})
