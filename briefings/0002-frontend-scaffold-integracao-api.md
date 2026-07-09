@@ -8,7 +8,7 @@
 | **ID** | 0002 |
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 1 — Esqueleto do container único |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [03-arquitetura](../docs/03-arquitetura.md), [ADR-0014](../docs/adr/0014-stack-de-implementacao.md) |
 | **Depende de** | — (mas o `outDir` deve casar com [0001](0001-backend-esqueleto-servidor.md); ver Contrato) |
 
