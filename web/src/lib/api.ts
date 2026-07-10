@@ -27,6 +27,9 @@ export type OverrideBlob = components['schemas']['OverrideBlob']
 export type OverridePatch = components['schemas']['OverridePatch']
 export type Asset = components['schemas']['Asset']
 export type AssetList = components['schemas']['AssetList']
+export type CorrectRequest = components['schemas']['CorrectRequest']
+export type PurgeResult = components['schemas']['PurgeResult']
+export type PurgeBatchResult = components['schemas']['PurgeBatchResult']
 
 // Forma do corpo de `GET /api/v1/health` (contrato do briefing 0001).
 export interface Health {
@@ -369,4 +372,73 @@ export async function deleteAsset(id: string, assetId: string): Promise<Asset> {
     { method: 'DELETE' },
   )
   return lerJson<Asset>(res)
+}
+
+// ── Curadoria: revisão + órfãs + correção de match (0018) ────────────────────
+
+// Fila de REVISÃO: cards `draft` (não-identificados) OU com baixa confiança
+// (`0 < match_confidence < 70`). Devolve o array direto (não é EntityList — a
+// fila é uma query enxuta). `[]` quando não há nada a revisar.
+export async function getReviewQueue(): Promise<EntityCard[]> {
+  return lerJson<EntityCard[]>(await fetch(`${base}/api/v1/review`))
+}
+
+// Fila de ÓRFÃS: entidades auto-criadas (`cataloged`) com arquivo(s) todos
+// `missing` e SEM investimento do dono (sem override, sem asset custom). Array
+// direto; `[]` quando não há órfãs.
+export async function getOrphans(): Promise<EntityCard[]> {
+  return lerJson<EntityCard[]>(await fetch(`${base}/api/v1/orphans`))
+}
+
+// CONFIRMAR o match: o dono aceita o palpite. O backend sobe o `match_confidence`
+// dos arquivos da entity para 100 (autoridade do dono — some o alerta). Devolve a
+// entity re-resolvida.
+export async function confirmMatch(id: string): Promise<ResolvedEntity> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/confirm`,
+    { method: 'POST' },
+  )
+  return lerJson<ResolvedEntity>(res)
+}
+
+// CORRIGIR o match: o dono informa a identidade certa (`source`/`source_id`). O
+// backend grava `external_ids[source]`, re-enriquece pela fonte e sobe a
+// confiança (identidade vence). `source` default "tmdb". Devolve a entity
+// re-resolvida. Erros da fonte (422/404/502/503) viram `ApiError` com a
+// mensagem pt-BR do envelope.
+export async function correctMatch(
+  id: string,
+  source: string,
+  sourceId: string,
+): Promise<ResolvedEntity> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/correct`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source, source_id: sourceId }),
+    },
+  )
+  return lerJson<ResolvedEntity>(res)
+}
+
+// PURGA individual (DELETE): remove a entity e seus derivados (media_file /
+// external / override / assets via CASCADE). Única ação destrutiva — a UI só a
+// dispara após confirmação explícita do dono. Devolve o resumo `{purged}`.
+export async function purgeEntity(id: string): Promise<PurgeResult> {
+  const res = await fetch(`${base}/api/v1/entities/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  return lerJson<PurgeResult>(res)
+}
+
+// PURGA em lote: manda os ids selecionados; o backend purga cada um (idempotente
+// por id ausente) e devolve quantos foram de fato removidos.
+export async function purgeBatch(ids: string[]): Promise<PurgeBatchResult> {
+  const res = await fetch(`${base}/api/v1/entities/purge`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  })
+  return lerJson<PurgeBatchResult>(res)
 }

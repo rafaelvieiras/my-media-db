@@ -11,7 +11,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
 | **Docs relacionadas** | [06-biblioteca-e-scan](../docs/06-biblioteca-e-scan.md), [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [ADR-0008](../docs/adr/0008-identidade-e-matching-kodi-jellyfin.md), [ADR-0012](../docs/adr/0012-ciclo-de-vida-nao-destrutivo.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Depende de** | [0013](0013-resolver-tres-camadas.md), [0015](0015-enriquecimento-import-proxy-imagem.md), [0016](0016-editor-override-ui.md) |
 
 ---
@@ -118,17 +118,34 @@ não-identificados e gerenciar **órfãs** — sempre não-destrutivo, com **pur
 
 ## 5. Critérios de aceite
 
-- [ ] A fila de revisão lista baixa confiança (`0 < conf < 70`, arquivo `present`) +
+- [x] A fila de revisão lista baixa confiança (`0 < conf < 70`, arquivo `present`) +
   drafts; **confirmar** sobe a confiança (some o alerta); **corrigir** grava
   `external_ids` + re-enriquece e re-resolve.
-- [ ] A fila de órfãs lista só entidades auto-criadas (`cataloged`), com arquivo(s) e
+- [x] A fila de órfãs lista só entidades auto-criadas (`cataloged`), com arquivo(s) e
   **todos** `missing`, e **sem investimento do dono**; um item com override/asset custom
   **nunca** aparece como órfã (testado).
-- [ ] **Purga** (individual e lote) é sempre explícita e remove os derivados
+- [x] **Purga** (individual e lote) é sempre explícita e remove os derivados
   (`media_file`/external/override/assets via CASCADE); nada é apagado como efeito
   colateral de outra ação.
-- [ ] A correção do dono é autoritativa (identidade vence, MD4) e reflete no resolver;
+- [x] A correção do dono é autoritativa (identidade vence, MD4) e reflete no resolver;
   não toca override/arte do dono. Catraca verde (Go + type-check web).
+
+**Validação ao vivo (backend por curl/SQL + UI por Playwright, cenários semeados):**
+Revisão listou "baixa confiança (40%)" (à frente) e "não identificado" (draft, ao
+fim); **confirmar** subiu a confiança para 100 e tirou o item da fila; **corrigir**
+buscou "Dune" no TMDB inline, escolher "Dune (2021)" gravou `external_ids.tmdb=438631`,
+populou `media_external` e re-resolveu. Órfãs: **purga individual** — o 1º clique só
+revelou a confirmação (`alertdialog`, item intacto no banco), o 2º removeu a entity +
+`media_file` via CASCADE; **purga em lote** — "selecionar todas" → "Purgar
+selecionadas" abriu "Tem certeza? Isso remove 2 itens…", confirmar apagou as duas.
+
+**Bug pego ao vivo e corrigido (draft preso na fila):** `confirmar`/`corrigir` subiam a
+confiança mas **não** promoviam o `status`, então um `draft` identificado voltava para
+`draft` na fila para sempre (a query casa `status='draft'`). Correção: query
+`PromoverDeDraft` (guardada por `status='draft'`, idempotente, no-op em `wanted`/
+`unreleased`/`cataloged`) e o passo compartilhado `finalizarRevisao` — os dois ramos do
+predicado (confiança **e** status) fecham juntos. Coberto por `TestConfirmarPromoveDraft`
+e `TestCorrigirPromoveDraft`, e reconfirmado ao vivo (draft → `cataloged`, saiu da fila).
 
 ## 6. Notas de implementação / decisões
 

@@ -147,6 +147,41 @@ func TestConfirmarSobeConfianca(t *testing.T) {
 	}
 }
 
+// statusDe le o status atual da entity direto do banco (para asserts de promocao).
+func statusDe(t *testing.T, d *db.DB, id string) string {
+	t.Helper()
+	ent, err := escrita(t, d).ObterEntity(context.Background(), id)
+	if err != nil {
+		t.Fatalf("ObterEntity(%s): %v", id, err)
+	}
+	return ent.Status
+}
+
+// TestConfirmarPromoveDraft cobre o ramo do STATUS: confirmar um draft
+// (nao-identificado) tem de promove-lo a 'cataloged' e tira-lo da fila — senao a
+// confianca sobe a 100 mas o item fica preso como draft (regressao pega ao vivo).
+func TestConfirmarPromoveDraft(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "e-draft", "movie", "Sem Identidade")
+	definirStatus(t, d, "e-draft", "draft")
+	semearFile(t, d, "f-draft", "e-draft", "/lib/x.mkv", "present", 0, "")
+
+	if !idsDe(decodeCards(t, do(t, h, http.MethodGet, "/api/v1/review", nil)))["e-draft"] {
+		t.Fatal("pré-condição: e-draft deveria estar na fila de revisão")
+	}
+
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e-draft/confirm", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("confirm status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if s := statusDe(t, d, "e-draft"); s != "cataloged" {
+		t.Errorf("status = %q após confirmar, quero cataloged", s)
+	}
+	if idsDe(decodeCards(t, do(t, h, http.MethodGet, "/api/v1/review", nil)))["e-draft"] {
+		t.Error("e-draft ainda na fila de revisão após confirmar (draft não promovido)")
+	}
+}
+
 func TestConfirmarInexistente404(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/entities/naoexiste/confirm", nil)
@@ -185,6 +220,28 @@ func TestCorrigirGravaExternalIdsEReResolve(t *testing.T) {
 	}
 	if !got.MatchConfidence.Valid || got.MatchConfidence.Float64 != 100 {
 		t.Errorf("match_confidence = %v, quero 100", got.MatchConfidence)
+	}
+}
+
+// TestCorrigirPromoveDraft cobre o ramo do STATUS na correcao: corrigir um draft
+// (o caminho natural de identificar um nao-identificado) grava a identidade,
+// re-enriquece E promove a 'cataloged', tirando-o da fila. Regressao pega ao vivo.
+func TestCorrigirPromoveDraft(t *testing.T) {
+	h, d, _, _, _ := setupEnrichServer(t)
+	semearEntity(t, d, "e-draft", "movie", "Sem Identidade")
+	definirStatus(t, d, "e-draft", "draft")
+	semearFile(t, d, "f-draft", "e-draft", "/lib/x.mkv", "present", 0, "")
+
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e-draft/correct",
+		map[string]string{"source_id": "555"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("correct status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if s := statusDe(t, d, "e-draft"); s != "cataloged" {
+		t.Errorf("status = %q após corrigir, quero cataloged", s)
+	}
+	if idsDe(decodeCards(t, do(t, h, http.MethodGet, "/api/v1/review", nil)))["e-draft"] {
+		t.Error("e-draft ainda na fila de revisão após corrigir (draft não promovido)")
 	}
 }
 

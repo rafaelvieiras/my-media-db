@@ -10,6 +10,8 @@ import { LanguageProvider } from '@/lib/language-context'
 import { LibraryItemsScreen } from '@/routes/index'
 import { LibraryScreen } from '@/routes/library'
 import { SearchScreen } from '@/routes/search'
+import { ReviewScreen } from '@/routes/review'
+import { OrphansScreen } from '@/routes/orphans'
 import { EntityDetailScreen } from '@/routes/entity-detail'
 import { SettingsScreen } from '@/routes/settings'
 import { HealthScreen } from '@/routes/health'
@@ -51,6 +53,18 @@ const searchRoute = createRoute({
   component: SearchScreen,
 })
 
+const reviewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/review',
+  component: ReviewScreen,
+})
+
+const orphansRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/orphans',
+  component: OrphansScreen,
+})
+
 const entityDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/entities/$id',
@@ -73,6 +87,8 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   libraryRoute,
   searchRoute,
+  reviewRoute,
+  orphansRoute,
   entityDetailRoute,
   settingsRoute,
   healthRoute,

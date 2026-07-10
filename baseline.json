@@ -1,16 +1,16 @@
 {
-  "generatedAt": "2026-07-10T00:32:54.358Z",
-  "commit": "100f392",
+  "generatedAt": "2026-07-10T01:24:09.582Z",
+  "commit": "7c886bb",
   "project": "my-media-db",
   "metrics": {
-    "go_coverage_lines": 71.2,
+    "go_coverage_lines": 71.1,
     "go_gofmt_unformatted": 0,
     "go_lint_issues": 0,
     "go_vuln_high": 0,
     "go_cyclo_violations": 3,
-    "web_coverage_lines": 87.78,
+    "web_coverage_lines": 88.2,
     "web_typecheck_errors": 0,
-    "web_duplicate_percent": 0.07,
+    "web_duplicate_percent": 0.06,
     "web_lint_issues": 0,
     "web_audit_critical": 0
   }

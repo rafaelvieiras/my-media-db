@@ -5,16 +5,19 @@ import { PosterCard } from '@/components/poster-card'
 import type { EntityCard } from '@/lib/api'
 
 // O <Link> do TanStack Router exige contexto de router; para um teste de unidade
-// do card, mockamos por um <a> simples (só o children/className importam aqui).
+// do card, mockamos por um <a> simples. O `to` vira `href` para afirmar o destino
+// do badge de revisão (link para `/review`).
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
     children,
     className,
+    to,
   }: {
     children: ReactNode
     className?: string
+    to?: string
   }) => (
-    <a href="#" className={className}>
+    <a href={to ?? '#'} className={className}>
       {children}
     </a>
   ),
@@ -74,14 +77,18 @@ describe('PosterCard', () => {
     expect(screen.getByTestId('poster-placeholder')).toBeInTheDocument()
   })
 
-  it('mostra badge de revisão em baixa confiança', () => {
+  it('mostra badge de revisão em baixa confiança e ele linka para /review', () => {
     render(<PosterCard card={card({ match_confidence: 40 })} />)
-    expect(screen.getByText('revisar')).toBeInTheDocument()
+    const badge = screen.getByText('revisar')
+    expect(badge).toBeInTheDocument()
+    expect(badge.closest('a')).toHaveAttribute('href', '/review')
   })
 
-  it('mostra badge de não identificado para draft', () => {
+  it('mostra badge de não identificado para draft e ele linka para /review', () => {
     render(<PosterCard card={card({ status: 'draft' })} />)
-    expect(screen.getByText('não identificado')).toBeInTheDocument()
+    const badge = screen.getByText('não identificado')
+    expect(badge).toBeInTheDocument()
+    expect(badge.closest('a')).toHaveAttribute('href', '/review')
     expect(screen.queryByText('revisar')).not.toBeInTheDocument()
   })
 })

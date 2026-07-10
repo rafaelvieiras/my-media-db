@@ -4,7 +4,9 @@ import {
   getEntityFiles,
   getHealth,
   getLanguageSettings,
+  getOrphans,
   getOverrideBlob,
+  getReviewQueue,
   getScanStatus,
   listAssets,
   listEntities,
@@ -91,6 +93,21 @@ export function searchQueryOptions(q: string, type?: string) {
     enabled: q !== '',
   })
 }
+
+// Fila de revisão (0018). Chave própria `['review']` — invalidada após confirmar
+// ou corrigir um match (junto de `['entities']` e `['entity', id]`, que também
+// mudam de estado). Query enxuta (array de cards), sem params.
+export const reviewQueueQueryOptions = queryOptions({
+  queryKey: ['review'],
+  queryFn: getReviewQueue,
+})
+
+// Fila de órfãs (0018). Chave `['orphans']` — invalidada após purgar (individual
+// ou lote), junto de `['entities']` (o card some do grid também).
+export const orphansQueryOptions = queryOptions({
+  queryKey: ['orphans'],
+  queryFn: getOrphans,
+})
 
 // Status do scan com POLLING: enquanto `running`, o TanStack Query re-busca a
 // cada 1,5s; ao concluir, `refetchInterval` devolve `false` e o polling para

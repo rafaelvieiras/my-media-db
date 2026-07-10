@@ -57,3 +57,14 @@ UPDATE media_file
 SET match_confidence = sqlc.arg('match_confidence'),
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE entity_id = sqlc.arg('entity_id');
+
+-- name: PromoverDeDraft :exec
+-- Curadoria (briefing 0018): um draft (nao-identificado) que o dono CONFIRMA ou
+-- CORRIGE deixa de ser rascunho -- vira 'cataloged' e sai da fila de revisao pelo
+-- ramo do status (senao a confianca sobe a 100 mas o item fica preso como draft).
+-- Guardada por status='draft': no-op idempotente em qualquer outro estado (nao
+-- rebaixa 'wanted'/'unreleased' nem mexe em item ja catalogado).
+UPDATE entity
+SET status = 'cataloged',
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = sqlc.arg('id') AND status = 'draft';

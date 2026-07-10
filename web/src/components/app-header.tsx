@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Library, Search, Settings } from 'lucide-react'
+import { ListChecks, Library, Search, Settings, Trash2 } from 'lucide-react'
 import { LanguageSelector } from '@/components/language-selector'
 
 // Cabeçalho com navegação entre as telas da Fase 2. `activeProps` destaca a rota
@@ -41,6 +41,22 @@ export function AppHeader() {
           activeProps={{ className: linkAtivo }}
         >
           Bibliotecas
+        </Link>
+        <Link
+          to="/review"
+          className={`${linkBase} flex items-center gap-1.5`}
+          activeProps={{ className: linkAtivo }}
+        >
+          <ListChecks className="size-4" aria-hidden />
+          Revisão
+        </Link>
+        <Link
+          to="/orphans"
+          className={`${linkBase} flex items-center gap-1.5`}
+          activeProps={{ className: linkAtivo }}
+        >
+          <Trash2 className="size-4" aria-hidden />
+          Órfãs
         </Link>
         <Link
           to="/settings"

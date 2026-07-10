@@ -98,4 +98,4 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0021](0021-ui-idiomas-admin-seletor.md) | UI de idiomas: admin de config + seletor de leitura | feature | done | 0019, 0020 |
 | [0016](0016-editor-override-ui.md) | Editor de override (`/api/v1/entities/{id}/override`) + UI (por idioma) | feature | done | 0013, 0015, 0019, 0021 |
 | [0017](0017-arte-custom-upload-ui.md) | Arte custom: upload (`/api/v1/entities/{id}/assets`) + UI | feature | done | 0015 |
-| [0018](0018-fila-revisao-orfas-correcao-match.md) | Fila de revisão + órfãs + correção de match | feature | ready | 0013, 0015, 0016 |
+| [0018](0018-fila-revisao-orfas-correcao-match.md) | Fila de revisão + órfãs + correção de match | feature | done | 0013, 0015, 0016 |

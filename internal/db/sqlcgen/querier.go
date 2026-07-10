@@ -180,6 +180,12 @@ type Querier interface {
 	ObterMediaFilePorContentHash(ctx context.Context, contentHash sql.NullString) (MediaFile, error)
 	// Le o override da entity (sql.ErrNoRows quando nao ha override ativo).
 	ObterMediaOverride(ctx context.Context, entityID string) (MediaOverride, error)
+	// Curadoria (briefing 0018): um draft (nao-identificado) que o dono CONFIRMA ou
+	// CORRIGE deixa de ser rascunho -- vira 'cataloged' e sai da fila de revisao pelo
+	// ramo do status (senao a confianca sobe a 100 mas o item fica preso como draft).
+	// Guardada por status='draft': no-op idempotente em qualquer outro estado (nao
+	// rebaixa 'wanted'/'unreleased' nem mexe em item ja catalogado).
+	PromoverDeDraft(ctx context.Context, id string) error
 	// Grava (ou substitui) uma config. Conflito na PK (key) atualiza value_json e
 	// recarimba updated_at -- nunca cria uma segunda linha para a mesma chave.
 	UpsertAppSetting(ctx context.Context, arg UpsertAppSettingParams) (AppSetting, error)

@@ -105,7 +105,7 @@ func (s *Server) confirmEntity(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.exigirEntity(w, ctx, id); !ok {
 		return
 	}
-	if err := s.subirConfianca(ctx, id); err != nil {
+	if err := s.finalizarRevisao(ctx, id); err != nil {
 		respondErroInterno(w)
 		return
 	}
@@ -154,7 +154,7 @@ func (s *Server) correctEntity(w http.ResponseWriter, r *http.Request) {
 		respondFonteIndisponivel(w)
 		return
 	}
-	if err := s.subirConfianca(ctx, id); err != nil {
+	if err := s.finalizarRevisao(ctx, id); err != nil {
 		respondErroInterno(w)
 		return
 	}
@@ -214,14 +214,21 @@ func (s *Server) purgeBatch(w http.ResponseWriter, r *http.Request) {
 
 // ── Helpers da curadoria ─────────────────────────────────────────────────────
 
-// subirConfianca sobe a confianca dos media_file da entity para o valor de
-// confirmacao (100) pelo pool de escrita — a acao de confirmar e o passo final da
-// correcao.
-func (s *Server) subirConfianca(ctx context.Context, id string) error {
-	return sqlcgen.New(s.db.Write).AtualizarConfidencePorEntity(ctx, sqlcgen.AtualizarConfidencePorEntityParams{
+// finalizarRevisao e o passo final compartilhado por confirmar e corrigir: tira o
+// item da fila de revisao pelos DOIS ramos do predicado. (1) sobe a confianca dos
+// media_file para 100 (mata o ramo "baixa confianca"); (2) promove um draft a
+// 'cataloged' (mata o ramo "status='draft'"). Sem o (2), um draft confirmado/
+// corrigido subia a confianca mas ficava preso na fila como nao-identificado. As
+// duas escritas vao pelo pool de escrita; PromoverDeDraft e no-op fora de draft.
+func (s *Server) finalizarRevisao(ctx context.Context, id string) error {
+	q := sqlcgen.New(s.db.Write)
+	if err := q.AtualizarConfidencePorEntity(ctx, sqlcgen.AtualizarConfidencePorEntityParams{
 		MatchConfidence: sql.NullFloat64{Float64: confiancaConfirmada, Valid: true},
 		EntityID:        id,
-	})
+	}); err != nil {
+		return err
+	}
+	return q.PromoverDeDraft(ctx, id)
 }
 
 // purgarSeExiste apaga a entity e limpa seus binarios SE ela existir; devolve

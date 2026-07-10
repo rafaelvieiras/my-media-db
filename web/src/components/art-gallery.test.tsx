@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ArtGallery } from '@/components/art-gallery'
 import type { Asset } from '@/lib/api'
 import { baseAsset, okJson } from '@/test/entity-fixtures'
+import { chavesInvalidadas } from '@/test/harness'
 
 // Espiões dos verbos de escrita da galeria — cada teste lê com que argumentos a
 // UI bateu na API (kind do upload, id do prefer/delete).
@@ -90,14 +91,6 @@ function renderGallery(opts: Opcoes = {}) {
     </QueryClientProvider>,
   )
   return { espioes, invalidateSpy }
-}
-
-// Chaves invalidadas (achatadas a string) — para afirmar as três invalidações.
-function chavesInvalidadas(calls: unknown[][]): string[] {
-  return calls.map((c) => {
-    const filtro = c[0] as { queryKey?: unknown } | undefined
-    return JSON.stringify(filtro?.queryKey)
-  })
 }
 
 describe('ArtGallery — galeria + upload (0017)', () => {
