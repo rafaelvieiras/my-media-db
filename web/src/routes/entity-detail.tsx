@@ -9,6 +9,7 @@ import { ehDraft, rotuloTipo } from '@/lib/entity-badges'
 import { useLanguage } from '@/lib/language-context'
 import { rotuloIdioma } from '@/lib/languages'
 import { temOverrideEditado } from '@/lib/override-fields'
+import { ArtGallery } from '@/components/art-gallery'
 import { MediaInfoTable } from '@/components/media-info-table'
 import { OverrideEditor } from '@/components/override-editor'
 import { ErrorState, LoadingState } from '@/components/query-states'
@@ -158,6 +159,8 @@ export function EntityDetailScreen() {
               onDone={() => setEditando(false)}
             />
           ) : null}
+
+          <ArtGallery entityId={id} />
 
           <section className="mt-6 flex flex-col gap-3">
             <h2 className="font-heading text-lg font-medium">Arquivos</h2>

@@ -25,6 +25,8 @@ export type ImportRequest = components['schemas']['ImportRequest']
 export type LanguageSettings = components['schemas']['LanguageSettings']
 export type OverrideBlob = components['schemas']['OverrideBlob']
 export type OverridePatch = components['schemas']['OverridePatch']
+export type Asset = components['schemas']['Asset']
+export type AssetList = components['schemas']['AssetList']
 
 // Forma do corpo de `GET /api/v1/health` (contrato do briefing 0001).
 export interface Health {
@@ -300,4 +302,71 @@ export function posterSrc(posterUrl: string | null | undefined): string | null {
     return null
   }
   return `${base}${posterUrl}`
+}
+
+// ── Arte custom: galeria + upload (0017) ─────────────────────────────────────
+
+// Tipos de imagem aceitos pelo upload (mesmo conjunto que o backend valida pelos
+// magic bytes). A UI reusa isto para o `accept` do <input> e para a validação
+// no cliente ANTES de enviar (rejeita cedo, sem gastar uma ida ao servidor).
+export const KINDS_ARTE = ['poster', 'fanart'] as const
+export type KindArte = (typeof KINDS_ARTE)[number]
+export const MIMES_ARTE = ['image/png', 'image/jpeg', 'image/webp'] as const
+
+// URL absoluta (respeitando a base) do binário de um asset para as miniaturas.
+// O `Asset.url` já vem como rota pronta do backend (rota do /file) — só aplica a
+// base, como `posterSrc`.
+export function assetFileSrc(url: string): string {
+  return `${base}${url}`
+}
+
+// Galeria: todos os assets da entity (poster/fanart, user/external/local). `[]`
+// quando não há arte.
+export async function listAssets(id: string): Promise<AssetList> {
+  return lerJson<AssetList>(
+    await fetch(`${base}/api/v1/entities/${encodeURIComponent(id)}/assets`),
+  )
+}
+
+// Upload multipart do binário do dono (`origin=user`). Monta um FormData com os
+// campos `file` e `kind` — NÃO seta `content-type` à mão: o browser preenche o
+// header com o boundary do multipart. Os limites do backend (415 tipo, 413
+// tamanho, 422 corpo) viram `ApiError` com a `message` pt-BR do envelope.
+export async function uploadAsset(
+  id: string,
+  file: File,
+  kind: KindArte,
+): Promise<Asset> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('kind', kind)
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/assets`,
+    { method: 'POST', body: form },
+  )
+  return lerJson<Asset>(res)
+}
+
+// Marca um asset como preferido do seu kind (desempata entre várias do dono). O
+// backend limpa a flag dos outros do mesmo `(entity, kind)`.
+export async function preferAsset(id: string, assetId: string): Promise<Asset> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/assets/${encodeURIComponent(
+      assetId,
+    )}/prefer`,
+    { method: 'PUT' },
+  )
+  return lerJson<Asset>(res)
+}
+
+// Remove uma arte do dono (`origin=user`). O backend recusa apagar `external`
+// (409/422) — a UI só oferece o botão nas do dono.
+export async function deleteAsset(id: string, assetId: string): Promise<Asset> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/assets/${encodeURIComponent(
+      assetId,
+    )}`,
+    { method: 'DELETE' },
+  )
+  return lerJson<Asset>(res)
 }

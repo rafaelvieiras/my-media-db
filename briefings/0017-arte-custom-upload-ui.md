@@ -10,7 +10,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
 | **Docs relacionadas** | [08-artwork-e-assets](../docs/08-artwork-e-assets.md), [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [ADR-0012](../docs/adr/0012-ciclo-de-vida-nao-destrutivo.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Depende de** | [0015](0015-enriquecimento-import-proxy-imagem.md) |
 
 ---
@@ -121,16 +121,23 @@ já o cobre**.
 
 ## 5. Critérios de aceite
 
-- [ ] Upload cria `asset` `origin=user` com binário em disco; content-type (magic bytes)
+- [x] Upload cria `asset` `origin=user` com binário em disco; content-type (magic bytes)
   e tamanho validados (`415`/`413` nos limites).
-- [ ] Subir arte já a faz o pôster ser servido (vence a externa); marcar **preferida**
+- [x] Subir arte já a faz o pôster ser servido (vence a externa); marcar **preferida**
   desempata entre várias do dono; sem arte do dono, cai na `external` e depois no 404.
-- [ ] Re-enriquecer ([0015](0015-enriquecimento-import-proxy-imagem.md)) **não** remove
+- [x] Re-enriquecer ([0015](0015-enriquecimento-import-proxy-imagem.md)) **não** remove
   arte `origin=user` (teste de regressão).
-- [ ] DELETE remove arte do dono (linha + binário); recusa apagar `origin=external`.
-- [ ] O serviço de imagem mantém a guarda de path-traversal do [0010](0010-api-leitura-resolver-minimo.md).
+- [x] DELETE remove arte do dono (linha + binário); recusa apagar `origin=external`.
+- [x] O serviço de imagem mantém a guarda de path-traversal do [0010](0010-api-leitura-resolver-minimo.md).
   UI: galeria mostra origem/preferida, faz upload e troca a preferida refletindo na
   hora. Catraca verde (Go + type-check web).
+
+**Validação ao vivo (backend por curl + UI por Playwright, item Dune):** upload trocou
+o pôster servido do JPEG externo (43 KB) para o PNG do dono automaticamente (precedência
+user › external); `DELETE` de `external` recusado (`422`); upload de texto rejeitado por
+magic bytes (`415`); `DELETE` de `user` voltou o pôster ao externo. Na UI: a seção
+**Arte** listou a arte externa (selo "externa", só "Preferir"); enviar um PNG criou a
+arte "sua" (com "Preferir" **e** "Remover"); "Remover" a apagou, voltando à externa.
 
 ## 6. Notas de implementação / decisões
 

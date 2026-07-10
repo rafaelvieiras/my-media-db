@@ -1,4 +1,4 @@
-import type { LanguageSettings, ResolvedEntity } from '@/lib/api'
+import type { Asset, LanguageSettings, ResolvedEntity } from '@/lib/api'
 
 // Fixtures compartilhadas pelos testes do detalhe da entity (leitura por idioma
 // e editor de override). Centralizar aqui evita duplicar o factory e os helpers
@@ -14,6 +14,18 @@ export const settingsPadrao: LanguageSettings = {
 // Envelope de uma resposta 200 com corpo JSON (o shape mínimo que o cliente lê).
 export function okJson<T>(body: T) {
   return { ok: true, status: 200, json: async () => body } as Response
+}
+
+// Asset de teste (arte da galeria, 0017), com sobrescritas pontuais por campo.
+export function baseAsset(over: Partial<Asset> = {}): Asset {
+  return {
+    id: 'a1',
+    kind: 'poster',
+    origin: 'user',
+    preferred: false,
+    url: '/api/v1/entities/e1/assets/a1/file',
+    ...over,
+  }
 }
 
 // Entity resolvida de teste (Dune), com sobrescritas pontuais por campo.

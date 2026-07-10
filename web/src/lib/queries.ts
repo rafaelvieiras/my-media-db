@@ -6,6 +6,7 @@ import {
   getLanguageSettings,
   getOverrideBlob,
   getScanStatus,
+  listAssets,
   listEntities,
   listLibrary,
   searchMedia,
@@ -66,6 +67,17 @@ export function overrideBlobQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['entity', id, 'override'],
     queryFn: () => getOverrideBlob(id),
+  })
+}
+
+// Galeria de arte (0017). Chave própria `['assets', id]` (não sob `['entity',
+// id]`): mudar a arte invalida ESTA chave E `['entity', id]` (o pôster do
+// detalhe/grid reflete a nova precedência) E `['entities']` (o grid) —
+// invalidações independentes, sem derrubar uma pela outra.
+export function assetsQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: ['assets', id],
+    queryFn: () => listAssets(id),
   })
 }
 

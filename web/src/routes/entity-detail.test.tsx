@@ -27,6 +27,9 @@ function fetchRouter(entity: ResolvedEntity) {
     if (u.startsWith('/api/v1/entities/e1/files')) {
       return okJson({ items: [] })
     }
+    if (u.startsWith('/api/v1/entities/e1/assets')) {
+      return okJson([])
+    }
     if (u.startsWith('/api/v1/entities/e1')) {
       return okJson(entity)
     }

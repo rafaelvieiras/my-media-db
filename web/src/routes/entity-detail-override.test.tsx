@@ -78,6 +78,9 @@ function fetchRouter(opts: Opcoes, espioes: Espioes) {
     if (path.startsWith('/api/v1/entities/e1/files')) {
       return okJson({ items: [] })
     }
+    if (path.startsWith('/api/v1/entities/e1/assets')) {
+      return okJson([])
+    }
     if (path.startsWith('/api/v1/entities/e1')) {
       return okJson(entity)
     }
