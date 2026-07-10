@@ -1,0 +1,95 @@
+import {
+  posterSrc,
+  type ExternalCollection,
+  type ExternalDetail,
+  type ExternalSimilar,
+  type ExternalVideo,
+  type ResolvedEntity,
+} from '@/lib/api'
+
+// Modelo NORMALIZADO da tela rica compartilhada (RichDetailView) e os adapters das
+// duas fontes. Fica fora do arquivo de componente para não disparar
+// `react-refresh/only-export-components` (o módulo de componente só exporta
+// componentes). O detalhe do externo (0022) e a entity resolvida (paridade
+// 0022/0023) servem o MESMO shape rico no backend; aqui cada DTO vira `RichDetail`.
+
+// RichDetail é o shape que a RichDetailView consome. Os campos traduzíveis já vêm
+// resolvidos no idioma ativo (o backend resolve). URLs de imagem já saem PRONTAS
+// para o `<img>` (o adapter aplica o proxy local no pôster da entity; o externo usa
+// a URL direta da fonte).
+export interface RichDetail {
+  type: string
+  title: string
+  originalTitle: string | null
+  description: string | null
+  tagline: string | null
+  year: string | null
+  runtime: number | null
+  certification: string | null
+  voteAverage: number | null
+  originalLanguage: string | null
+  posterUrl: string | null
+  backdropUrl: string | null
+  genres: string[]
+  keywords: string[]
+  videos: ExternalVideo[]
+  collection: ExternalCollection | null
+  similar: ExternalSimilar[]
+  externalLinks: Record<string, string>
+}
+
+// deExternalDetail normaliza o DTO do detalhe EXTERNO. Pôster/backdrop são URLs
+// DIRETAS da fonte (TMDB) — renderizam direto, sem `posterSrc`.
+export function deExternalDetail(d: ExternalDetail): RichDetail {
+  return {
+    type: d.type,
+    title: d.title,
+    originalTitle: d.original_title,
+    description: d.description,
+    tagline: d.tagline,
+    year: d.year,
+    runtime: d.runtime,
+    certification: d.certification,
+    voteAverage: d.vote_average,
+    originalLanguage: d.original_language,
+    posterUrl: d.poster_url,
+    backdropUrl: d.backdrop_url,
+    genres: d.genres,
+    keywords: d.keywords,
+    videos: d.videos,
+    collection: d.collection,
+    similar: d.similar,
+    externalLinks: d.external_links,
+  }
+}
+
+// deResolvedEntity normaliza a ENTITY resolvida. Os GÊNEROS são as `tags` (que já os
+// carregam). O PÔSTER é a rota LOCAL cacheada (via `posterSrc`); o BACKDROP vem da
+// camada externa como URL direta (não é cacheado localmente nesta fase).
+export function deResolvedEntity(e: ResolvedEntity): RichDetail {
+  return {
+    type: e.type,
+    title: e.title,
+    originalTitle: e.original_title,
+    description: e.description,
+    tagline: e.tagline,
+    year: anoDeData(e.release_date),
+    runtime: e.runtime,
+    certification: e.certification,
+    voteAverage: e.vote_average,
+    originalLanguage: e.original_language,
+    posterUrl: posterSrc(e.poster_url),
+    backdropUrl: e.backdrop_url,
+    genres: e.tags,
+    keywords: e.keywords,
+    videos: e.videos,
+    collection: e.collection,
+    similar: e.similar,
+    externalLinks: e.external_links,
+  }
+}
+
+// anoDeData extrai o ano (4 primeiros dígitos) de uma data ISO, ou null.
+function anoDeData(data: string | null): string | null {
+  return data && data.length >= 4 ? data.slice(0, 4) : null
+}

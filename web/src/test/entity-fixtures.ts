@@ -47,6 +47,17 @@ export function baseEntity(over: Partial<ResolvedEntity> = {}): ResolvedEntity {
     lang: 'pt-BR',
     original_language: 'en',
     resolved_languages: {},
+    // Campos ricos (paridade com o externo, 0022/0023): default vazio/nulo.
+    tagline: null,
+    keywords: [],
+    runtime: null,
+    certification: null,
+    vote_average: null,
+    backdrop_url: null,
+    videos: [],
+    collection: null,
+    similar: [],
+    external_links: {},
     ...over,
   }
 }

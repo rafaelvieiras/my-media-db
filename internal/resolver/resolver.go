@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
 
 // CamadaExterna é UMA fonte externa já na forma CANÔNICA: `Campos` usa OS NOSSOS
@@ -88,6 +89,23 @@ type Entidade struct {
 	PosterURL     *string           `json:"poster_url"`
 	ExtensionData map[string]any    `json:"extension_data"`
 
+	// ── Campos RICOS (paridade com o detalhe do externo, briefings 0022/0023) ──
+	// São READ-ONLY: vêm só da camada EXTERNA (o dono não os edita por override
+	// nesta fase). Os traduzíveis (Tagline/Keywords) compõem por idioma como
+	// title/description; os neutros/estruturados são extraídos direto do canônico
+	// externo via internal/richfields (o MESMO shape do detalhe do externo).
+	// Genres NÃO tem campo próprio: são os `tags` (que já carregam os gêneros).
+	Tagline       *string                `json:"tagline"`
+	Keywords      []string               `json:"keywords"`
+	Runtime       *int                   `json:"runtime"`
+	Certification *string                `json:"certification"`
+	VoteAverage   *float64               `json:"vote_average"`
+	BackdropURL   *string                `json:"backdrop_url"`
+	Videos        []richfields.Video     `json:"videos"`
+	Collection    *richfields.Collection `json:"collection"`
+	Similar       []richfields.Similar   `json:"similar"`
+	ExternalLinks map[string]string      `json:"external_links"`
+
 	// Lang é o eco do idioma pedido (ADR-0019). Vazio quando não há contexto de
 	// idioma (comportamento do 0013).
 	Lang string `json:"lang"`
@@ -133,6 +151,12 @@ type origemCampo struct {
 	base       baseOrigem
 	kind       kindCampo
 	traduzivel bool
+	// soLeitura marca campos que o motor RESOLVE (compõe da camada externa) mas que
+	// NÃO são editáveis pelo dono via override (0016): ficam de fora de
+	// CamposEditaveis. São os campos RICOS de paridade com o externo (tagline,
+	// keywords) — display, não edição. A composição os trata como qualquer campo;
+	// a etiqueta só governa a superfície de EDIÇÃO.
+	soLeitura bool
 }
 
 // registroOrigem é o METADADO de origem por campo (ADR-0001): o motor itera este
@@ -148,6 +172,13 @@ var registroOrigem = map[string]origemCampo{
 	"release_date":   {base: baseExterno, kind: kindEscalar},
 	"tags":           {base: baseExterno, kind: kindLista, traduzivel: true},
 	"extension_data": {base: baseExterno, kind: kindExtensao},
+	// Campos RICOS traduzíveis, READ-ONLY (paridade com o externo, 0022/0023): o
+	// motor compõe por idioma (como title/tags), mas ficam FORA da edição por
+	// override — soLeitura os exclui de CamposEditaveis. Os neutros ricos (runtime,
+	// vote_average, backdrop_url, certification, videos, collection, similar) não
+	// entram no registro: são extraídos direto do externo em Resolver (via richfields).
+	"tagline":  {base: baseExterno, kind: kindEscalar, traduzivel: true, soLeitura: true},
+	"keywords": {base: baseExterno, kind: kindLista, traduzivel: true, soLeitura: true},
 }
 
 // ── Superfície pública do registro (R1, briefing 0016) ───────────────────────
@@ -198,6 +229,9 @@ func kindPublico(k kindCampo) Kind {
 func CamposEditaveis() map[string]CampoInfo {
 	out := make(map[string]CampoInfo, len(registroOrigem))
 	for campo, orig := range registroOrigem {
+		if orig.soLeitura {
+			continue // campo rico read-only: resolve, mas não é editável (0016).
+		}
 		out[campo] = CampoInfo{Traduzivel: orig.traduzivel, Kind: kindPublico(orig.kind)}
 	}
 	return out
@@ -264,6 +298,13 @@ func Resolver(c Camadas) Entidade {
 		resolvido[campo] = comporCampo(campo, orig, baseArquivoVals[campo], c.Externo, c.Override)
 	}
 
+	// Campos RICOS neutros/estruturados: NÃO passam pela composição de camadas (não
+	// têm base arquivo nem override) — vêm direto do canônico externo, na prioridade
+	// R2 (primeira fonte com valor). Reusa richfields (compartilhado com o /external),
+	// garantindo o MESMO shape do detalhe do externo.
+	rico := camposExternosMesclados(c.Externo)
+	externalIDs := parseExternalIDs(c.Entity.ExternalIdsJson)
+
 	return Entidade{
 		ID:                c.Entity.ID,
 		Type:              c.Entity.Type,
@@ -273,15 +314,41 @@ func Resolver(c Camadas) Entidade {
 		ReleaseDate:       asStrPtr(resolvido["release_date"]),
 		Status:            c.Entity.Status,
 		Tags:              asStrSlice(resolvido["tags"]),
-		ExternalIDs:       parseExternalIDs(c.Entity.ExternalIdsJson),
+		ExternalIDs:       externalIDs,
 		Owned:             temPosse(c.Files),
 		FileCount:         len(c.Files),
 		PosterURL:         c.PosterURL,
 		ExtensionData:     asObjMap(resolvido["extension_data"]),
+		Tagline:           asStrPtr(resolvido["tagline"]),
+		Keywords:          asStrSlice(resolvido["keywords"]),
+		Runtime:           richfields.IntPtrDe(rico, "runtime"),
+		Certification:     richfields.CertificacaoDaRegiao(rico, c.LangPedido),
+		VoteAverage:       richfields.FloatPtrDe(rico, "vote_average"),
+		BackdropURL:       richfields.StrPtrDe(rico, "backdrop_url"),
+		Videos:            richfields.VideosDe(rico),
+		Collection:        richfields.ColecaoDe(rico),
+		Similar:           richfields.SimilaresDe(rico),
+		ExternalLinks:     richfields.LinksExternos(rico, c.Entity.Type, externalIDs["tmdb"]),
 		Lang:              c.LangPedido,
 		OriginalLanguage:  nsPtr(c.Entity.OriginalLanguage),
 		ResolvedLanguages: resolvedLangs,
 	}
+}
+
+// camposExternosMesclados achata as camadas externas numa visão canônica única
+// para os campos ricos NEUTROS: para cada chave, o valor da fonte de MAIOR
+// prioridade que a tem (índice 0 = mais alta, R2). Itera do fim para o começo para
+// a de índice 0 prevalecer. Só valores não-nil entram.
+func camposExternosMesclados(externo []CamadaExterna) map[string]any {
+	out := map[string]any{}
+	for i := len(externo) - 1; i >= 0; i-- {
+		for k, v := range externo[i].Campos {
+			if v != nil {
+				out[k] = v
+			}
+		}
+	}
+	return out
 }
 
 // comporCampo despacha a composição de um campo pela sua CLASSE (kind) — nunca

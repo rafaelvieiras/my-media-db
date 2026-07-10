@@ -21,6 +21,10 @@ export type MediaFile = components['schemas']['MediaFile']
 export type FileList = components['schemas']['FileList']
 export type SearchResult = components['schemas']['SearchResult']
 export type ExternalResult = components['schemas']['ExternalResult']
+export type ExternalDetail = components['schemas']['ExternalDetail']
+export type ExternalVideo = components['schemas']['ExternalVideo']
+export type ExternalCollection = components['schemas']['ExternalCollection']
+export type ExternalSimilar = components['schemas']['ExternalSimilar']
 export type ImportRequest = components['schemas']['ImportRequest']
 export type LanguageSettings = components['schemas']['LanguageSettings']
 export type OverrideBlob = components['schemas']['OverrideBlob']
@@ -301,6 +305,35 @@ export async function importExternal(
     body: JSON.stringify(body),
   })
   return lerJson<ResolvedEntity>(res)
+}
+
+// ── Detalhe externo rico (0022/0023) ─────────────────────────────────────────
+
+// Detalhe rico de um item NA FONTE, ANTES de importar (briefing 0022): o que o
+// TMDB mostra (sinopse, gêneros, keywords, duração, classificação, slogan,
+// vídeos, coleção, similares, links). Os campos traduzíveis já vêm resolvidos no
+// `lang` pedido; `lang` omitido cai no principal do backend. O backend persiste
+// na 1ª ida e serve do cache depois. `type` é `movie|tv`. Erros mapeados a
+// `ApiError`: 404 (inexistente na fonte), 502 (fonte falhou), 503 (sem provider),
+// 400 (idioma fora dos permitidos), 422 (tipo inválido).
+export async function getExternalDetail(
+  source: string,
+  type: string,
+  id: string,
+  lang?: string,
+): Promise<ExternalDetail> {
+  const qs = new URLSearchParams()
+  if (lang) {
+    qs.set('lang', lang)
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return lerJson<ExternalDetail>(
+    await fetch(
+      `${base}/api/v1/external/${encodeURIComponent(source)}/${encodeURIComponent(
+        type,
+      )}/${encodeURIComponent(id)}${suffix}`,
+    ),
+  )
 }
 
 // URL absoluta (respeitando a base) do binário do pôster local, ou `null` quando

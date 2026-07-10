@@ -100,4 +100,5 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0017](0017-arte-custom-upload-ui.md) | Arte custom: upload (`/api/v1/entities/{id}/assets`) + UI | feature | done | 0015 |
 | [0018](0018-fila-revisao-orfas-correcao-match.md) | Fila de revisão + órfãs + correção de match | feature | done | 0013, 0015, 0016 |
 | [0022](0022-detalhe-externo-rico-persistente.md) | Detalhe externo rico + cache persistente (provider) | feature | done | 0014, 0015, 0020 |
-| [0023](0023-tela-detalhe-externo-ui.md) | Tela rica de detalhe do item externo (UI) | feature | ready | 0022, 0021 |
+| [0023](0023-tela-detalhe-externo-ui.md) | Tela rica de detalhe do item externo (UI) | feature | done | 0022, 0021 |
+| [0024](0024-paridade-detalhe-entity-rico.md) | Paridade rica entity↔externo: `ResolvedEntity` rico + `RichDetailView` compartilhada | feature | done | 0022, 0023 |

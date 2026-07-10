@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query'
 import {
   getEntity,
   getEntityFiles,
+  getExternalDetail,
   getHealth,
   getLanguageSettings,
   getOrphans,
@@ -92,6 +93,23 @@ export function searchQueryOptions(q: string, type?: string, lang?: string) {
     queryKey: ['search', q, type ?? null, lang ?? null],
     queryFn: () => searchMedia(q, type, lang),
     enabled: q !== '',
+  })
+}
+
+// Detalhe externo rico (0022/0023). A chave carrega `(source, type, id, lang)`:
+// o idioma entra na chave porque a MESMA tela em idiomas diferentes é conteúdo
+// diferente (mesma lição da busca) — trocar o idioma é cache-miss = re-busca por
+// `?lang=`. Cada item externo visitado (inclusive similares/coleção navegados)
+// cacheia sob sua própria chave. `lang ?? null` mantém a chave estável.
+export function externalDetailQueryOptions(
+  source: string,
+  type: string,
+  id: string,
+  lang?: string,
+) {
+  return queryOptions({
+    queryKey: ['external', source, type, id, lang ?? null],
+    queryFn: () => getExternalDetail(source, type, id, lang),
   })
 }
 

@@ -13,6 +13,7 @@ import { SearchScreen } from '@/routes/search'
 import { ReviewScreen } from '@/routes/review'
 import { OrphansScreen } from '@/routes/orphans'
 import { EntityDetailScreen } from '@/routes/entity-detail'
+import { ExternalDetailScreen } from '@/routes/external-detail'
 import { SettingsScreen } from '@/routes/settings'
 import { HealthScreen } from '@/routes/health'
 
@@ -71,6 +72,14 @@ const entityDetailRoute = createRoute({
   component: EntityDetailScreen,
 })
 
+// Detalhe rico do item externo ANTES de importar (0023). Params: fonte, tipo
+// (`movie|tv`) e id NA FONTE. Similares/coleção navegam recursivamente aqui.
+const externalDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/external/$source/$type/$id',
+  component: ExternalDetailScreen,
+})
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
@@ -90,6 +99,7 @@ const routeTree = rootRoute.addChildren([
   reviewRoute,
   orphansRoute,
   entityDetailRoute,
+  externalDetailRoute,
   settingsRoute,
   healthRoute,
 ])

@@ -1030,10 +1030,17 @@ components:
       description: >
         Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a
         Fase 3 preenche os mesmos campos com override/externo sem mudar o shape.
+        Os campos RICOS (tagline, keywords, runtime, certification, vote_average,
+        backdrop_url, videos, collection, similar, external_links) dão PARIDADE
+        com o detalhe do externo (0022/0023): vêm da camada externa já enriquecida
+        e usam o MESMO shape (componentes ExternalVideo/Collection/Similar). Os
+        gêneros NÃO têm campo próprio — são as `tags` (que já os carregam).
       required:
         [id, type, title, original_title, description, release_date, status,
          tags, external_ids, owned, file_count, poster_url, extension_data,
-         lang, original_language, resolved_languages]
+         lang, original_language, resolved_languages,
+         tagline, keywords, runtime, certification, vote_average, backdrop_url,
+         videos, collection, similar, external_links]
       properties:
         id: { type: string }
         type: { type: string }
@@ -1072,6 +1079,42 @@ components:
             Proveniência de IDIOMA (ADR-0019): campo traduzível → idioma efetivo
             que serviu o valor (`""` = base neutra/arquivo). Mapa lateral; não muda
             os campos (o shape segue plano).
+          additionalProperties: { type: string }
+        tagline:
+          type: [string, "null"]
+          description: Slogan traduzível resolvido no idioma ativo (paridade com o externo).
+        keywords:
+          type: array
+          description: Palavras-chave traduzíveis (distintas dos gêneros/tags). `[]` quando ausentes.
+          items: { type: string }
+        runtime:
+          type: [integer, "null"]
+          description: Duração em minutos, ou null.
+        certification:
+          type: [string, "null"]
+          description: Classificação indicativa da região do idioma ativo (fallback US), ou null.
+        vote_average:
+          type: [number, "null"]
+          description: Nota média externa (0–10), ou null.
+        backdrop_url:
+          type: [string, "null"]
+          description: URL do fundo (backdrop) da fonte, ou null.
+        videos:
+          type: array
+          description: Vídeos (trailer/clip) da fonte. `[]` quando ausentes.
+          items: { $ref: '#/components/schemas/ExternalVideo' }
+        collection:
+          oneOf:
+            - $ref: '#/components/schemas/ExternalCollection'
+            - type: "null"
+          description: Coleção a que o item pertence, ou null.
+        similar:
+          type: array
+          description: Itens similares. `[]` quando ausentes.
+          items: { $ref: '#/components/schemas/ExternalSimilar' }
+        external_links:
+          type: object
+          description: "Mapa link→URL (imdb, tmdb…). `{}` quando ausentes."
           additionalProperties: { type: string }
     LanguageSettings:
       type: object

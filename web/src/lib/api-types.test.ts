@@ -27,6 +27,17 @@ describe('api-types gerado', () => {
       lang: 'pt-BR',
       original_language: 'en',
       resolved_languages: { title: 'pt-BR', description: 'en' },
+      // Campos ricos (paridade com o externo, 0022/0023).
+      tagline: 'Bem-vindo ao mundo real.',
+      keywords: ['simulação'],
+      runtime: 136,
+      certification: '14',
+      vote_average: 8.2,
+      backdrop_url: null,
+      videos: [],
+      collection: null,
+      similar: [],
+      external_links: { tmdb: 'https://www.themoviedb.org/movie/603' },
     }
     expect(ent.owned).toBe(true)
     expect(ent.external_ids.tmdb).toBe('603')

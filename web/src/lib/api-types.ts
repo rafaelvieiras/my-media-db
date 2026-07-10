@@ -608,7 +608,7 @@ export interface components {
       /** @description Quantas entities foram de fato removidas (idempotente por ausente). */
       removed: number
     }
-    /** @description Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a Fase 3 preenche os mesmos campos com override/externo sem mudar o shape. */
+    /** @description Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a Fase 3 preenche os mesmos campos com override/externo sem mudar o shape. Os campos RICOS (tagline, keywords, runtime, certification, vote_average, backdrop_url, videos, collection, similar, external_links) dão PARIDADE com o detalhe do externo (0022/0023): vêm da camada externa já enriquecida e usam o MESMO shape (componentes ExternalVideo/Collection/Similar). Os gêneros NÃO têm campo próprio — são as `tags` (que já os carregam). */
     ResolvedEntity: {
       id: string
       type: string
@@ -634,6 +634,28 @@ export interface components {
       original_language: string | null
       /** @description Proveniência de IDIOMA (ADR-0019): campo traduzível → idioma efetivo que serviu o valor (`""` = base neutra/arquivo). Mapa lateral; não muda os campos (o shape segue plano). */
       resolved_languages: {
+        [key: string]: string
+      }
+      /** @description Slogan traduzível resolvido no idioma ativo (paridade com o externo). */
+      tagline: string | null
+      /** @description Palavras-chave traduzíveis (distintas dos gêneros/tags). `[]` quando ausentes. */
+      keywords: string[]
+      /** @description Duração em minutos, ou null. */
+      runtime: number | null
+      /** @description Classificação indicativa da região do idioma ativo (fallback US), ou null. */
+      certification: string | null
+      /** @description Nota média externa (0–10), ou null. */
+      vote_average: number | null
+      /** @description URL do fundo (backdrop) da fonte, ou null. */
+      backdrop_url: string | null
+      /** @description Vídeos (trailer/clip) da fonte. `[]` quando ausentes. */
+      videos: components['schemas']['ExternalVideo'][]
+      /** @description Coleção a que o item pertence, ou null. */
+      collection: components['schemas']['ExternalCollection'] | null
+      /** @description Itens similares. `[]` quando ausentes. */
+      similar: components['schemas']['ExternalSimilar'][]
+      /** @description Mapa link→URL (imdb, tmdb…). `{}` quando ausentes. */
+      external_links: {
         [key: string]: string
       }
     }
