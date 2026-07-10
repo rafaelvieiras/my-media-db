@@ -33,11 +33,15 @@ type Video struct {
 }
 
 // Collection é a coleção (≠ playlist) a que o item pertence. SourceID permite
-// NAVEGAR à coleção; PosterURL é opcional.
+// NAVEGAR à coleção; PosterURL é opcional. InternalID é o id da entity coleção
+// interna quando ela JÁ foi importada (briefing 0026) — a UI então linka para o
+// destino interno em vez da página externa. ColecaoDe segue PURA e o deixa nil;
+// quem tem acesso a banco (o handler / o resolverEntity no server) o preenche.
 type Collection struct {
-	SourceID  string  `json:"source_id"`
-	Name      string  `json:"name"`
-	PosterURL *string `json:"poster_url"`
+	SourceID   string  `json:"source_id"`
+	Name       string  `json:"name"`
+	PosterURL  *string `json:"poster_url"`
+	InternalID *string `json:"internal_id"`
 }
 
 // Similar é um item similar, com o Type para NAVEGAR ao seu detalhe externo — o

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -111,7 +112,7 @@ func (s *Server) getExternalDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dto := s.montarDetalheExterno(source, id, tipo, lang, cfg, campos)
+	dto := s.montarDetalheExterno(ctx, source, id, tipo, lang, cfg, campos)
 	writeJSON(w, http.StatusOK, dto)
 }
 
@@ -119,7 +120,7 @@ func (s *Server) getExternalDetail(w http.ResponseWriter, r *http.Request) {
 // traduzíveis pela cadeia de fallback (ancorada no original_language do item) e extrai
 // os neutros via richfields (compartilhado com o resolver da entity). A certificação
 // usa a região do idioma ativo com fallback US.
-func (s *Server) montarDetalheExterno(source, id, tipo, lang string, cfg languageSettings, campos map[string]any) detalheExternoDTO {
+func (s *Server) montarDetalheExterno(ctx context.Context, source, id, tipo, lang string, cfg languageSettings, campos map[string]any) detalheExternoDTO {
 	original := richfields.ComoStringMapa(campos, "original_language")
 	cadeia := cfg.cadeiaDeIdiomas(lang, nsDe(original))
 
@@ -130,6 +131,14 @@ func (s *Server) montarDetalheExterno(source, id, tipo, lang string, cfg languag
 	keywords, provKeywords := richfields.ResolverListaTraduzivel(campos, "keywords", cadeia)
 
 	releaseDate := richfields.StrPtrDe(campos, "release_date")
+
+	// Coleção da banda: quando existe e já foi importada, anota o id interno (0026)
+	// para a UI linkar ao destino interno em vez da página externa. ColecaoDe é pura
+	// (deixa InternalID nil); o preenchimento com DB é aqui.
+	colecao := richfields.ColecaoDe(campos)
+	if colecao != nil {
+		colecao.InternalID = s.idInternoColecao(ctx, source, colecao.SourceID)
+	}
 
 	// Link do TMDB só quando a fonte é o próprio TMDB (o handler tem tipo+id da rota).
 	tmdbTipo, tmdbID := "", ""
@@ -161,7 +170,7 @@ func (s *Server) montarDetalheExterno(source, id, tipo, lang string, cfg languag
 		PosterURL:     s.urlImagemServida(richfields.StrPtrDe(campos, "poster_url")),
 		BackdropURL:   s.urlImagemServida(richfields.StrPtrDe(campos, "backdrop_url")),
 		Videos:        richfields.VideosDe(campos),
-		Collection:    richfields.ColecaoDe(campos),
+		Collection:    colecao,
 		Similar:       richfields.SimilaresDe(campos),
 		ExternalLinks: richfields.LinksExternos(campos, tmdbTipo, tmdbID),
 		ResolvedLanguages: map[string]string{

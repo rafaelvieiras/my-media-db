@@ -888,6 +888,8 @@ export interface components {
       source_id: string
       name: string
       poster_url: string | null
+      /** @description id da entity coleção interna quando ja importada (0026); null caso contrario. */
+      internal_id?: string | null
     }
     /** @description Item (parte) de uma coleção; mesmo shape enxuto de um resultado de busca. */
     ExternalCollectionPart: {
@@ -897,6 +899,8 @@ export interface components {
       year: string | null
       overview: string | null
       poster_url: string | null
+      /** @description id da entity interna desta parte quando ja importada (0026); null caso contrario. */
+      internal_id?: string | null
     }
     /** @description Coleção externa como página (briefing 0024): metadados do conjunto e as partes. `parts` sai sempre como `[]` (nunca null). Artes do hero (poster_url/backdrop_url) podem vir como rota do proxy local (0024); as miniaturas das partes seguem diretas da fonte. */
     ExternalCollectionDetail: {
@@ -906,6 +910,8 @@ export interface components {
       overview: string | null
       poster_url: string | null
       backdrop_url: string | null
+      /** @description id da entity coleção interna quando esta coleção ja foi importada (0025/0026); null caso contrario. */
+      internal_id?: string | null
       parts: components['schemas']['ExternalCollectionPart'][]
     }
     ExternalSimilar: {

@@ -8,6 +8,7 @@ package server
 // re-componível — o multi-idioma pleno da coleção fica como follow-up.
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -21,13 +22,17 @@ import (
 // proxy local (0024); as miniaturas das partes seguem DIRETAS (consistente com
 // similares/coleção do detalhe externo). `parts` sai sempre como `[]` (nunca null).
 type colecaoExternaDTO struct {
-	Source      string            `json:"source"`
-	SourceID    string            `json:"source_id"`
-	Name        string            `json:"name"`
-	Overview    *string           `json:"overview"`
-	PosterURL   *string           `json:"poster_url"`
-	BackdropURL *string           `json:"backdrop_url"`
-	Parts       []parteColecaoDTO `json:"parts"`
+	Source      string  `json:"source"`
+	SourceID    string  `json:"source_id"`
+	Name        string  `json:"name"`
+	Overview    *string `json:"overview"`
+	PosterURL   *string `json:"poster_url"`
+	BackdropURL *string `json:"backdrop_url"`
+	// InternalID é o id da entity coleção interna quando esta coleção JÁ foi
+	// importada (0025/0026); nil caso contrário. A UI então troca "Importar coleção"
+	// por "Ver coleção" (link ao destino interno).
+	InternalID *string           `json:"internal_id"`
+	Parts      []parteColecaoDTO `json:"parts"`
 }
 
 // parteColecaoDTO é um item da coleção (mesmo shape enxuto de um resultado de busca):
@@ -39,6 +44,10 @@ type parteColecaoDTO struct {
 	Year      *string `json:"year"`
 	Overview  *string `json:"overview"`
 	PosterURL *string `json:"poster_url"`
+	// InternalID é o id da entity interna desta parte quando ela JÁ foi importada
+	// (0026); nil caso contrário. A UI então mostra "na biblioteca" e linka ao
+	// destino interno em vez de oferecer Importar.
+	InternalID *string `json:"internal_id"`
 }
 
 // getExternalCollection trata GET /api/v1/external/{source}/collection/{id}?lang=. 503
@@ -79,21 +88,23 @@ func (s *Server) getExternalCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, s.montarColecaoExterna(source, col))
+	writeJSON(w, http.StatusOK, s.montarColecaoExterna(ctx, source, col))
 }
 
 // montarColecaoExterna compõe o DTO da coleção: reescreve as artes do hero pelo proxy
-// local (urlImagemServida) e copia as partes com a miniatura direta.
-func (s *Server) montarColecaoExterna(source string, col provider.Colecao) colecaoExternaDTO {
+// local (urlImagemServida), anota o id interno da coleção e de cada parte já
+// importada (interno-first, 0026) e copia as partes com a miniatura direta.
+func (s *Server) montarColecaoExterna(ctx context.Context, source string, col provider.Colecao) colecaoExternaDTO {
 	partes := make([]parteColecaoDTO, 0, len(col.Parts))
 	for _, p := range col.Parts {
 		partes = append(partes, parteColecaoDTO{
-			SourceID:  p.SourceID,
-			Type:      p.Type,
-			Title:     p.Title,
-			Year:      p.Year,
-			Overview:  p.Overview,
-			PosterURL: p.PosterURL,
+			SourceID:   p.SourceID,
+			Type:       p.Type,
+			Title:      p.Title,
+			Year:       p.Year,
+			Overview:   p.Overview,
+			PosterURL:  p.PosterURL,
+			InternalID: s.idInternoItem(ctx, source, p.SourceID),
 		})
 	}
 	return colecaoExternaDTO{
@@ -103,6 +114,7 @@ func (s *Server) montarColecaoExterna(source string, col provider.Colecao) colec
 		Overview:    col.Overview,
 		PosterURL:   s.urlImagemServida(col.PosterURL),
 		BackdropURL: s.urlImagemServida(col.BackdropURL),
+		InternalID:  s.idInternoColecao(ctx, source, col.SourceID),
 		Parts:       partes,
 	}
 }
