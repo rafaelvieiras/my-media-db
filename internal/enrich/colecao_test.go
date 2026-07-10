@@ -170,6 +170,29 @@ func TestImportarColecaoParteFalhaDegrada(t *testing.T) {
 	}
 }
 
+// TestEnrichPersisteReleaseDate: o import de um filme DENORMALIZA a release_date da
+// fonte na coluna base -- o que faz a ordenacao por ano dos membros de colecao (0025)
+// funcionar para itens so-importados (sem arquivo).
+func TestEnrichPersisteReleaseDate(t *testing.T) {
+	database := setupDB(t)
+	fake := &fakeProvider{
+		raw:    json.RawMessage(`{"x":1}`),
+		campos: map[string]any{"title": "Matrix", "release_date": "1999-03-31"},
+	}
+	svc, _ := novoServico(t, database, fake)
+	id, _, err := svc.Importar(context.Background(), "tmdb", "603", "movie", []string{"pt-BR"})
+	if err != nil {
+		t.Fatalf("Importar: %v", err)
+	}
+	ent, err := sqlcgen.New(database.Read).ObterEntity(context.Background(), id)
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	if ent.ReleaseDate.String != "1999-03-31" {
+		t.Errorf("release_date = %q, quero 1999-03-31", ent.ReleaseDate.String)
+	}
+}
+
 // TestLangPrincipal: o idioma principal e o primeiro da lista; vazio quando nao ha.
 func TestLangPrincipal(t *testing.T) {
 	if got := langPrincipal(nil); got != "" {

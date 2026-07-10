@@ -129,6 +129,28 @@ func (q *Queries) AtualizarOriginalLanguage(ctx context.Context, arg AtualizarOr
 	return err
 }
 
+const atualizarReleaseDate = `-- name: AtualizarReleaseDate :exec
+UPDATE entity
+SET release_date = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+`
+
+type AtualizarReleaseDateParams struct {
+	ReleaseDate sql.NullString
+	ID          string
+}
+
+// Grava a DATA DE LANCAMENTO neutra da obra, obtida do detalhe da fonte no enrich/
+// import (mesmo tratamento de AtualizarOriginalLanguage: fato da fonte, nao dado do
+// dono; re-enriquecer reafirma). Denormaliza a coluna base para ordenacao/listagem
+// baratas (ex.: ordenar os membros de uma colecao por ano) sem precisar resolver cada
+// item. So esta coluna e o updated_at mudam; a resolucao segue com base=externo.
+func (q *Queries) AtualizarReleaseDate(ctx context.Context, arg AtualizarReleaseDateParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarReleaseDate, arg.ReleaseDate, arg.ID)
+	return err
+}
+
 const atualizarTitulo = `-- name: AtualizarTitulo :exec
 UPDATE entity
 SET title = ?1,

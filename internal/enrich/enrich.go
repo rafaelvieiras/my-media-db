@@ -286,6 +286,17 @@ func (s *Servico) persistir(ctx context.Context, entityID, source, sourceID stri
 			return err
 		}
 	}
+	// Denormaliza a release_date neutra na coluna base (mesmo tratamento de
+	// original_language): fato da fonte, deixa a ordenacao/listagem por ano barata (ex.:
+	// membros de colecao, 0025) sem resolver cada item. Nao muda a resolucao (base=externo).
+	if rd, ok := campos["release_date"].(string); ok && rd != "" {
+		if err := s.escrita().AtualizarReleaseDate(ctx, sqlcgen.AtualizarReleaseDateParams{
+			ReleaseDate: nsValid(rd),
+			ID:          entityID,
+		}); err != nil {
+			return err
+		}
+	}
 	s.cachearArtes(ctx, entityID, campos)
 	return nil
 }

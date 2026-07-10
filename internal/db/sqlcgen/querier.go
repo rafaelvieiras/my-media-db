@@ -52,6 +52,12 @@ type Querier interface {
 	// um fato da fonte, nao dado do dono; re-enriquecer apenas o reafirma. So esta
 	// coluna e o updated_at mudam.
 	AtualizarOriginalLanguage(ctx context.Context, arg AtualizarOriginalLanguageParams) error
+	// Grava a DATA DE LANCAMENTO neutra da obra, obtida do detalhe da fonte no enrich/
+	// import (mesmo tratamento de AtualizarOriginalLanguage: fato da fonte, nao dado do
+	// dono; re-enriquecer reafirma). Denormaliza a coluna base para ordenacao/listagem
+	// baratas (ex.: ordenar os membros de uma colecao por ano) sem precisar resolver cada
+	// item. So esta coluna e o updated_at mudam; a resolucao segue com base=externo.
+	AtualizarReleaseDate(ctx context.Context, arg AtualizarReleaseDateParams) error
 	// Repara o titulo base de um item auto-criado/importado quando ele ficou como o
 	// fallback numerico (id da fonte) -- a regressao do "numero no lugar do nome". So o
 	// titulo e o updated_at mudam; nao toca override/externo (a autoridade do dono
