@@ -201,6 +201,60 @@ export async function getEntityMembers(
   )
 }
 
+// ── Coleção: criação manual + membros (0025 Fase B) ──────────────────────────
+
+// Cria uma coleção LOCAL (sem source): o dono monta um agrupamento do zero. Só o
+// título é obrigatório (o backend responde 422 se vier vazio); a descrição é
+// opcional. Devolve a `ResolvedEntity` recém-criada (tem `.id`) — a UI navega para
+// `/entities/{id}`. Usa um corpo INLINE (não há schema gerado dedicado): o contrato
+// é `{ title, description? }`.
+export async function createCollection(body: {
+  title: string
+  description?: string
+}): Promise<ResolvedEntity> {
+  const res = await fetch(`${base}/api/v1/collections`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return lerJson<ResolvedEntity>(res)
+}
+
+// Liga um item (`childId`) a uma coleção (`id`) como membro. Devolve a lista de
+// membros ATUALIZADA (o mesmo `EntityCard[]` de `getEntityMembers`, ordenada por
+// ano) — a UI reflete sem uma 2ª ida. Idempotente no backend (o UNIQUE protege).
+// Erros a `ApiError` com a `message` pt-BR: 422 (parent não é coleção / item
+// inexistente / self / aninhar coleção), 404 (coleção inexistente).
+export async function addCollectionMember(
+  id: string,
+  childId: string,
+): Promise<EntityCard[]> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/members`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ child_id: childId }),
+    },
+  )
+  return lerJson<EntityCard[]>(res)
+}
+
+// Desliga um membro (`childId`) de uma coleção (`id`). Idempotente (remover um item
+// não-ligado responde 200 mesmo assim). Devolve a lista de membros ATUALIZADA.
+export async function removeCollectionMember(
+  id: string,
+  childId: string,
+): Promise<EntityCard[]> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/members/${encodeURIComponent(
+      childId,
+    )}`,
+    { method: 'DELETE' },
+  )
+  return lerJson<EntityCard[]>(res)
+}
+
 // ── Settings de idioma (0019) ────────────────────────────────────────────────
 
 // Config de idioma vigente (principal, fallback, permitidos). Quando não há
