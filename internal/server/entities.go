@@ -412,6 +412,11 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 	if resolvida.Collection != nil {
 		resolvida.Collection.InternalID = s.idInternoColecao(ctx, "tmdb", resolvida.Collection.SourceID)
 	}
+	// Similares interno-aware (0027): mesma anotação pós-resolução para cada similar já
+	// importado, mantendo o resolver puro. Os similares da entity também são do TMDB.
+	for i := range resolvida.Similar {
+		resolvida.Similar[i].InternalID = s.idInternoItem(ctx, "tmdb", resolvida.Similar[i].SourceID)
+	}
 	return resolvida, true, nil
 }
 

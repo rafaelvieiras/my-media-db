@@ -140,6 +140,15 @@ func (s *Server) montarDetalheExterno(ctx context.Context, source, id, tipo, lan
 		colecao.InternalID = s.idInternoColecao(ctx, source, colecao.SourceID)
 	}
 
+	// Similares interno-aware (0027): cada similar já importado ganha o id interno,
+	// para a UI linkar ao destino interno (/entities/{id}) em vez de reabrir o externo.
+	// SimilaresDe é pura (InternalID nil); o preenchimento com DB é aqui. N é pequeno
+	// (a fonte limita os similares) e o lookup é indexado — ok para self-hosted.
+	similares := richfields.SimilaresDe(campos)
+	for i := range similares {
+		similares[i].InternalID = s.idInternoItem(ctx, source, similares[i].SourceID)
+	}
+
 	// Link do TMDB só quando a fonte é o próprio TMDB (o handler tem tipo+id da rota).
 	tmdbTipo, tmdbID := "", ""
 	if source == "tmdb" {
@@ -171,7 +180,7 @@ func (s *Server) montarDetalheExterno(ctx context.Context, source, id, tipo, lan
 		BackdropURL:   s.urlImagemServida(richfields.StrPtrDe(campos, "backdrop_url")),
 		Videos:        richfields.VideosDe(campos),
 		Collection:    colecao,
-		Similar:       richfields.SimilaresDe(campos),
+		Similar:       similares,
 		ExternalLinks: richfields.LinksExternos(campos, tmdbTipo, tmdbID),
 		ResolvedLanguages: map[string]string{
 			"title":       provTitulo,

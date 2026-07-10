@@ -221,11 +221,8 @@ func (s *Server) responderMembros(w http.ResponseWriter, ctx context.Context, id
 }
 
 // descricaoOpcional embrulha a descrição num sql.NullString VÁLIDO só quando ela não é
-// vazia (após trim); vazia vira NULL (herda a base, sem gravar string vazia).
+// vazia (após trim); vazia vira NULL. Alias de nsOpcional (items.go), mantido pelo nome
+// no ponto de chamada do createCollection.
 func descricaoOpcional(desc string) sql.NullString {
-	limpa := strings.TrimSpace(desc)
-	if limpa == "" {
-		return sql.NullString{}
-	}
-	return sql.NullString{String: limpa, Valid: true}
+	return nsOpcional(desc)
 }

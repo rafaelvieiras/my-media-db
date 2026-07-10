@@ -49,15 +49,18 @@ LIMIT ?;`
 
 // externalResultDTO é um resultado da fonte EXTERNA (briefing 0014). saved é
 // sempre false: resultado externo nunca é entidade do catálogo até o import (0015).
+// InternalID (0027) é o id da entity interna quando o item externo JÁ foi importado —
+// nil caso contrário: a UI mostra "na biblioteca" e linka ao interno em vez de reimportar.
 type externalResultDTO struct {
-	Source    string  `json:"source"`
-	SourceID  string  `json:"source_id"`
-	Type      string  `json:"type"`
-	Title     string  `json:"title"`
-	Year      *string `json:"year"`
-	Overview  *string `json:"overview"`
-	PosterURL *string `json:"poster_url"`
-	Saved     bool    `json:"saved"`
+	Source     string  `json:"source"`
+	SourceID   string  `json:"source_id"`
+	Type       string  `json:"type"`
+	Title      string  `json:"title"`
+	Year       *string `json:"year"`
+	Overview   *string `json:"overview"`
+	PosterURL  *string `json:"poster_url"`
+	Saved      bool    `json:"saved"`
+	InternalID *string `json:"internal_id"`
 }
 
 // searchResponseDTO é a resposta de GET /api/v1/search. local são cards do
@@ -110,7 +113,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, searchResponseDTO{
 		Query:             termo,
 		Local:             locais,
-		External:          mapearExternos(externos),
+		External:          s.mapearExternos(ctx, externos),
 		ExternalAvailable: disponivel,
 	})
 }
@@ -169,19 +172,23 @@ func (s *Server) buscarExterno(ctx context.Context, termo, tipo, lang string) ([
 }
 
 // mapearExternos converte os resultados canônicos do provider no DTO externo,
-// forçando saved:false (nunca é entidade até o import).
-func mapearExternos(res []provider.ResultadoExterno) []externalResultDTO {
+// forçando saved:false (nunca é entidade até o import) e anotando o internal_id
+// interno-first (0027): cada resultado externo que já foi importado ganha o id da
+// entity correspondente (via idInternoItem), para a UI mostrar "na biblioteca" e
+// linkar ao interno. O lookup é por id tmdb indexado — só a fonte tmdb resolve.
+func (s *Server) mapearExternos(ctx context.Context, res []provider.ResultadoExterno) []externalResultDTO {
 	out := make([]externalResultDTO, 0, len(res))
 	for _, r := range res {
 		out = append(out, externalResultDTO{
-			Source:    r.Source,
-			SourceID:  r.SourceID,
-			Type:      r.Type,
-			Title:     r.Title,
-			Year:      r.Year,
-			Overview:  r.Overview,
-			PosterURL: r.PosterURL,
-			Saved:     false,
+			Source:     r.Source,
+			SourceID:   r.SourceID,
+			Type:       r.Type,
+			Title:      r.Title,
+			Year:       r.Year,
+			Overview:   r.Overview,
+			PosterURL:  r.PosterURL,
+			Saved:      false,
+			InternalID: s.idInternoItem(ctx, r.Source, r.SourceID),
 		})
 	}
 	return out
