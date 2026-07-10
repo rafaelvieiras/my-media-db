@@ -41,6 +41,10 @@ const (
 	kindPoster     = "poster"
 	kindFanart     = "fanart"
 	originExternal = "external"
+	// tipoColecao/relacaoColecao: a coleção é uma entity `type='collection'` (briefing
+	// 0025) e seus filmes ligam-se por entity_relation com kind='collection'.
+	tipoColecao    = "collection"
+	relacaoColecao = "collection"
 )
 
 // Servico executa o enriquecimento. Recebe os pools de banco, o provider (fonte) e
@@ -97,6 +101,9 @@ func (s *Servico) Enriquecer(ctx context.Context, entityID, source, sourceID, ti
 // cria (status DEFAULT 'cataloged', título inicial do detalhe) e enriquece
 // (criada=true). Devolve o id da entity resolvível pelo chamador.
 func (s *Servico) Importar(ctx context.Context, source, sourceID, tipo string, langs []string) (id string, criada bool, err error) {
+	if tipo == "collection" {
+		return s.importarColecao(ctx, source, sourceID, langs)
+	}
 	if existente, ok, err := s.acharPorIDExterno(ctx, source, sourceID); err != nil {
 		return "", false, err
 	} else if ok {
@@ -127,6 +134,108 @@ func (s *Servico) Importar(ctx context.Context, source, sourceID, tipo string, l
 	}
 	if err := s.persistir(ctx, novo, source, sourceID, raw); err != nil {
 		return novo, true, err
+	}
+	return novo, true, nil
+}
+
+// importarColecao importa uma COLEÇÃO (briefing 0025) como entity `type='collection'`:
+// find-or-create da coleção (dedup por id tmdb, restrito a type='collection'), cacheia
+// as artes do conjunto (pôster/fundo) e importa CADA filme membro (reusando o Importar
+// de movie, que faz find-or-create + enrich), ligando-o via entity_relation
+// (kind='collection'). É idempotente: re-importar reusa a coleção e só liga membros
+// ainda não ligados. A falha de UMA parte degrada (loga e segue) — a coleção parcial é
+// válida. Requer a capacidade opcional provider.ColecaoProvider (senão erro → 502).
+func (s *Servico) importarColecao(ctx context.Context, source, sourceID string, langs []string) (string, bool, error) {
+	cp, ok := s.provider.(provider.ColecaoProvider)
+	if !ok {
+		return "", false, fmt.Errorf("enrich: fonte %q nao suporta colecao", source)
+	}
+	col, err := cp.BuscarColecao(ctx, sourceID, langPrincipal(langs))
+	if err != nil {
+		return "", false, fmt.Errorf("enrich: buscar colecao: %w", err)
+	}
+	colID, criada, err := s.acharOuCriarColecao(ctx, source, sourceID, col.Name)
+	if err != nil {
+		return "", false, err
+	}
+	s.cachearArtes(ctx, colID, map[string]any{
+		"poster_url":   derefStr(col.PosterURL),
+		"backdrop_url": derefStr(col.BackdropURL),
+	})
+	s.ligarMembros(ctx, colID, source, col.Parts, langs)
+	return colID, criada, nil
+}
+
+// ligarMembros importa cada filme membro (find-or-create + enrich) e o liga à coleção
+// por entity_relation(kind='collection'). É idempotente: carrega os já-ligados e pula
+// os que já existem (o UNIQUE ainda protege de corrida). Falha de UMA parte degrada
+// (loga e segue) — a coleção parcial é válida.
+func (s *Servico) ligarMembros(ctx context.Context, colID, source string, parts []provider.ResultadoExterno, langs []string) {
+	ligados := map[string]bool{}
+	if rels, err := s.leitura().ListarRelacoesFilhas(ctx, colID); err == nil {
+		for _, r := range rels {
+			if r.Kind == relacaoColecao {
+				ligados[r.ChildID] = true
+			}
+		}
+	}
+	for _, p := range parts {
+		filmeID, _, err := s.Importar(ctx, source, p.SourceID, p.Type, langs)
+		if err != nil {
+			log.Printf("enrich: importar parte %s da colecao falhou (segue): %v", p.SourceID, err)
+			continue
+		}
+		if ligados[filmeID] {
+			continue
+		}
+		if _, err := s.escrita().CriarEntityRelation(ctx, sqlcgen.CriarEntityRelationParams{
+			ID: s.novoID(), ParentID: colID, ChildID: filmeID, Kind: relacaoColecao,
+		}); err != nil {
+			log.Printf("enrich: ligar parte %s a colecao %s falhou (segue): %v", filmeID, colID, err)
+			continue
+		}
+		ligados[filmeID] = true
+	}
+}
+
+// langPrincipal devolve o primeiro idioma (principal) da lista, ou "" quando vazia —
+// a coleção é mono-idioma pragmático (0025), busca só no idioma principal.
+func langPrincipal(langs []string) string {
+	if len(langs) > 0 {
+		return langs[0]
+	}
+	return ""
+}
+
+// acharOuCriarColecao devolve o id da entity coleção: reusa a existente (dedup por id
+// tmdb + type='collection') ou cria uma nova `type='collection'` com o nome do conjunto
+// e a identidade externa {source: sourceID}. `criada` diz se nasceu agora (para o 201).
+func (s *Servico) acharOuCriarColecao(ctx context.Context, source, sourceID, nome string) (string, bool, error) {
+	if source == "tmdb" {
+		existente, err := s.leitura().ObterColecaoPorTmdb(ctx, nsValid(sourceID))
+		if err == nil {
+			return existente.ID, false, nil
+		}
+		if !isNoRows(err) {
+			return "", false, err
+		}
+	}
+	titulo := nome
+	if titulo == "" {
+		titulo = sourceID
+	}
+	extIDs, err := json.Marshal(map[string]string{source: sourceID})
+	if err != nil {
+		return "", false, err
+	}
+	novo := s.novoID()
+	if _, err := s.escrita().CriarEntity(ctx, sqlcgen.CriarEntityParams{
+		ID:              novo,
+		Type:            tipoColecao,
+		Title:           titulo,
+		ExternalIdsJson: nsValid(string(extIDs)),
+	}); err != nil {
+		return "", false, err
 	}
 	return novo, true, nil
 }
@@ -418,6 +527,15 @@ func extensaoImagem(contentType, u string) string {
 
 // nsValid embrulha uma string num sql.NullString válido (não-NULL).
 func nsValid(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }
+
+// derefStr desreferencia um *string, devolvendo "" quando nil — para montar o mapa
+// canônico que cachearArtes consome (ele ignora chave vazia).
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
 
 // isNoRows diz se o erro é o sql.ErrNoRows (linha ausente — não é falha real).
 func isNoRows(err error) bool { return errors.Is(err, sql.ErrNoRows) }

@@ -319,6 +319,31 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/members:
+    get:
+      operationId: getEntityMembers
+      summary: Membros de uma coleção (briefing 0025).
+      description: >
+        Os filmes ligados a uma entity `type='collection'` por
+        `entity_relation(kind='collection')`, como CARDS (o mesmo shape de
+        GET /entities), ordenados por ANO ascendente (sem ano ao fim). `[]` quando a
+        entity não é coleção ou não tem membros; 404 quando a entity não existe. O
+        `?lang=` é aceito para paridade, mas o card usa o título base (como a lista).
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - $ref: "#/components/parameters/LangQuery"
+      responses:
+        "200":
+          description: Cards dos membros (array, possivelmente vazio).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EntityCard" }
+        "404":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/{id}/assets/poster:
     get:
       operationId: getEntityPoster
@@ -521,6 +546,8 @@ paths:
         + external_ids + pôster cacheado, nunca override). Responde a entity
         RESOLVIDA. MULTI-IDIOMA (briefing 0020): puxa todas as traduções permitidas
         e grava entity.original_language — ver POST /entities/{id}/enrich.
+        `type=collection` (0025) importa a coleção inteira: cria a entity da coleção,
+        importa cada filme membro (find-or-create) e os liga por entity_relation.
       tags: [entities]
       requestBody:
         required: true
@@ -1057,8 +1084,10 @@ components:
           description: Id do item NA FONTE (obrigatório).
         type:
           type: string
-          enum: [movie, tv]
-          description: Tipo canônico do item (obrigatório).
+          enum: [movie, tv, collection]
+          description: >
+            Tipo canônico do item (obrigatório). `collection` (0025) importa a coleção
+            inteira: cria a entity `type='collection'` e importa/liga os filmes membros.
     CorrectRequest:
       type: object
       description: >

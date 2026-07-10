@@ -174,6 +174,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/members': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Membros de uma coleção (briefing 0025).
+     * @description Os filmes ligados a uma entity `type='collection'` por `entity_relation(kind='collection')`, como CARDS (o mesmo shape de GET /entities), ordenados por ANO ascendente (sem ano ao fim). `[]` quando a entity não é coleção ou não tem membros; 404 quando a entity não existe. O `?lang=` é aceito para paridade, mas o card usa o título base (como a lista).
+     */
+    get: operations['getEntityMembers']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/{id}/assets/poster': {
     parameters: {
       query?: never
@@ -309,7 +329,7 @@ export interface paths {
     put?: never
     /**
      * Import explícito de um resultado externo (find-or-create, briefing 0015).
-     * @description Find-or-create por id externo (dedup MD4): se já existe entity com aquele external_id, reusa (200); senão cria (201, status cataloged, título inicial do detalhe). Em ambos os casos enriquece pelo mesmo caminho (grava external + external_ids + pôster cacheado, nunca override). Responde a entity RESOLVIDA. MULTI-IDIOMA (briefing 0020): puxa todas as traduções permitidas e grava entity.original_language — ver POST /entities/{id}/enrich.
+     * @description Find-or-create por id externo (dedup MD4): se já existe entity com aquele external_id, reusa (200); senão cria (201, status cataloged, título inicial do detalhe). Em ambos os casos enriquece pelo mesmo caminho (grava external + external_ids + pôster cacheado, nunca override). Responde a entity RESOLVIDA. MULTI-IDIOMA (briefing 0020): puxa todas as traduções permitidas e grava entity.original_language — ver POST /entities/{id}/enrich. `type=collection` (0025) importa a coleção inteira: cria a entity da coleção, importa cada filme membro (find-or-create) e os liga por entity_relation.
      */
     post: operations['importEntity']
     delete?: never
@@ -621,10 +641,10 @@ export interface components {
       /** @description Id do item NA FONTE (obrigatório). */
       source_id: string
       /**
-       * @description Tipo canônico do item (obrigatório).
+       * @description Tipo canônico do item (obrigatório). `collection` (0025) importa a coleção inteira: cria a entity `type='collection'` e importa/liga os filmes membros.
        * @enum {string}
        */
-      type: 'movie' | 'tv'
+      type: 'movie' | 'tv' | 'collection'
     }
     /** @description Corpo de POST /entities/{id}/correct — a identidade correta que o dono informa. source default "tmdb"; source_id obrigatório. */
     CorrectRequest: {
@@ -1217,6 +1237,33 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['FileList']
+        }
+      }
+      404: components['responses']['Error']
+    }
+  }
+  getEntityMembers: {
+    parameters: {
+      query?: {
+        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        lang?: components['parameters']['LangQuery']
+      }
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Cards dos membros (array, possivelmente vazio). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['EntityCard'][]
         }
       }
       404: components['responses']['Error']

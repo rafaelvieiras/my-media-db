@@ -163,7 +163,18 @@ type Querier interface {
 	// Poster local da entity (briefing 0010): o primeiro asset kind='poster'. Usado
 	// pelo endpoint que serve o binario. Sem poster -> sql.ErrNoRows -> 404 na API.
 	ObterAssetPosterPorEntity(ctx context.Context, entityID string) (Asset, error)
+	// Dedup da entity COLECAO por id tmdb (briefing 0025): reusa a coluna gerada
+	// external_id_tmdb, mas RESTRITA a type='collection'. O namespace de id de colecao
+	// e distinto do de filme, porem a coluna gerada e compartilhada; o filtro por type
+	// evita casar um filme homonimo de mesmo id numerico. Mantem o re-import idempotente.
+	ObterColecaoPorTmdb(ctx context.Context, externalIDTmdb sql.NullString) (Entity, error)
 	ObterEntity(ctx context.Context, id string) (Entity, error)
+	// CARD de UMA entity (mesmas colunas derivadas de ListarEntityCards) + release_date
+	// para ordenar. Usado pelos MEMBROS de uma colecao (briefing 0025): a lista de filhos
+	// vem de entity_relation e cada filho vira card por aqui (N pequeno -- colecao). As
+	// colunas derivadas espelham ListarEntityCards (owned/file_count/match_confidence/
+	// has_poster), entao o mapeamento reusa o mesmo cardDTO.
+	ObterEntityCard(ctx context.Context, id string) (ObterEntityCardRow, error)
 	ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.NullString) (Entity, error)
 	// Dedup do scanner sem id externo (briefing 0009): reusa a MESMA entity para o
 	// mesmo (type, title, release_date). Usa `IS` (nao `=`) para casar release_date

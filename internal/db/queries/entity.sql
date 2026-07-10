@@ -40,6 +40,33 @@ SELECT id, type, title, original_title, description, release_date,
 FROM entity
 WHERE external_id_tmdb = ?;
 
+-- name: ObterColecaoPorTmdb :one
+-- Dedup da entity COLECAO por id tmdb (briefing 0025): reusa a coluna gerada
+-- external_id_tmdb, mas RESTRITA a type='collection'. O namespace de id de colecao
+-- e distinto do de filme, porem a coluna gerada e compartilhada; o filtro por type
+-- evita casar um filme homonimo de mesmo id numerico. Mantem o re-import idempotente.
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+FROM entity
+WHERE type = 'collection' AND external_id_tmdb = ?
+LIMIT 1;
+
+-- name: ObterEntityCard :one
+-- CARD de UMA entity (mesmas colunas derivadas de ListarEntityCards) + release_date
+-- para ordenar. Usado pelos MEMBROS de uma colecao (briefing 0025): a lista de filhos
+-- vem de entity_relation e cada filho vira card por aqui (N pequeno -- colecao). As
+-- colunas derivadas espelham ListarEntityCards (owned/file_count/match_confidence/
+-- has_poster), entao o mapeamento reusa o mesmo cardDTO.
+SELECT
+    e.id, e.type, e.title, e.status, e.release_date,
+    EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
+    (SELECT COUNT(*) FROM media_file m WHERE m.entity_id = e.id) AS file_count,
+    (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+FROM entity e
+WHERE e.id = ?;
+
 -- name: ObterEntityPorImdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
