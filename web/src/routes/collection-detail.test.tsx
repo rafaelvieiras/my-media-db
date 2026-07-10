@@ -94,8 +94,33 @@ describe('CollectionDetailScreen', () => {
 
     const link = await screen.findByRole('link', { name: /Duna: Parte 2/ })
     expect(link.getAttribute('href')).toBe('/external/tmdb/movie/693134')
-    // Reuso do ExternalResultCard: cada parte tem o botão Importar.
-    expect(screen.getAllByRole('button', { name: /Importar/ }).length).toBe(2)
+    // Reuso do ExternalResultCard: cada parte tem o botão Importar (match EXATO —
+    // o header tem "Importar coleção", que não deve contar aqui).
+    expect(screen.getAllByRole('button', { name: 'Importar' }).length).toBe(2)
+  })
+
+  it('Importar coleção importa com type=collection e navega para a entity', async () => {
+    const fetchMock = stubExternalFetch(() => okJson(colecao()))
+    renderWithClient(<CollectionDetailScreen />)
+
+    const botao = await screen.findByRole('button', {
+      name: 'Importar coleção',
+    })
+    await userEvent.setup().click(botao)
+
+    await vi.waitFor(() =>
+      expect(spies.navigate).toHaveBeenCalledWith({
+        to: '/entities/$id',
+        params: { id: 'ent-1' },
+      }),
+    )
+    const chamada = fetchMock.mock.calls.find(
+      (c) =>
+        new URL(String(c[0]), 'http://localhost').pathname === '/api/v1/import',
+    )
+    expect(
+      JSON.parse(String((chamada?.[1] as RequestInit).body)),
+    ).toMatchObject({ source: 'tmdb', source_id: '726871', type: 'collection' })
   })
 
   it('coleção sem itens mostra o aviso', async () => {

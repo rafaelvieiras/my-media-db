@@ -100,11 +100,13 @@ export function ImportarButton({
   sourceId,
   type,
   size = 'default',
+  label = 'Importar',
 }: {
   source: string
   sourceId: string
   type: string
   size?: 'sm' | 'default' | 'lg'
+  label?: string
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -137,7 +139,7 @@ export function ImportarButton({
         ) : (
           <Download aria-hidden />
         )}
-        {importMutation.isPending ? 'Importando…' : 'Importar'}
+        {importMutation.isPending ? 'Importando…' : label}
       </Button>
       {mensagemErro ? (
         <span role="alert" className="text-sm font-medium text-destructive">

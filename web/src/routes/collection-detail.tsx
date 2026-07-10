@@ -11,6 +11,7 @@ import { useLanguage } from '@/lib/language-context'
 import { srcDeImagem } from '@/lib/rich-detail'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import { ExternalResultCard } from '@/components/external-result-card'
+import { ImportarButton } from '@/components/rich-detail-view'
 
 // Rota `/collection/$source/$id`: a COLEÇÃO externa como página própria (0024,
 // follow-up do 0023). Header com nome + backdrop do conjunto e um grid das partes;
@@ -67,9 +68,20 @@ export function CollectionDetailScreen() {
               </div>
             ) : null}
             <div className="flex flex-col gap-2 p-4 sm:p-6">
-              <h1 className="font-heading text-2xl font-semibold">
-                {data.name}
-              </h1>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <h1 className="font-heading text-2xl font-semibold">
+                  {data.name}
+                </h1>
+                {/* Importa a COLEÇÃO inteira (0025): vira entity type='collection'
+                    com os filmes membros ligados; navega para /entities/{novoId}.
+                    Rótulo distinto dos "Importar" das partes (filmes). */}
+                <ImportarButton
+                  source={source}
+                  sourceId={id}
+                  type="collection"
+                  label="Importar coleção"
+                />
+              </div>
               {data.overview ? (
                 <p className="text-sm text-muted-foreground">{data.overview}</p>
               ) : null}
