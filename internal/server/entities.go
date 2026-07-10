@@ -406,6 +406,12 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 		Cadeia:          cadeia,
 		IdiomaPrincipal: cfg.Primary,
 	})
+	// Banda de coleção interno-aware (0026): o resolver é PURO (não acessa banco),
+	// então o id da coleção interna é anotado aqui. A coleção da entity vem do TMDB
+	// (o link externo já assume isso), então a resolução é por id tmdb.
+	if resolvida.Collection != nil {
+		resolvida.Collection.InternalID = s.idInternoColecao(ctx, "tmdb", resolvida.Collection.SourceID)
+	}
 	return resolvida, true, nil
 }
 

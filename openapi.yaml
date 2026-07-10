@@ -1493,6 +1493,9 @@ components:
         source_id: { type: string }
         name: { type: string }
         poster_url: { type: [string, "null"] }
+        internal_id:
+          type: [string, "null"]
+          description: "id da entity coleção interna quando ja importada (0026); null caso contrario."
     ExternalCollectionPart:
       type: object
       description: Item (parte) de uma coleção; mesmo shape enxuto de um resultado de busca.
@@ -1504,6 +1507,9 @@ components:
         year: { type: [string, "null"] }
         overview: { type: [string, "null"] }
         poster_url: { type: [string, "null"] }
+        internal_id:
+          type: [string, "null"]
+          description: "id da entity interna desta parte quando ja importada (0026); null caso contrario."
     ExternalCollectionDetail:
       type: object
       description: >
@@ -1520,6 +1526,9 @@ components:
         overview: { type: [string, "null"] }
         poster_url: { type: [string, "null"] }
         backdrop_url: { type: [string, "null"] }
+        internal_id:
+          type: [string, "null"]
+          description: "id da entity coleção interna quando esta coleção ja foi importada (0025/0026); null caso contrario."
         parts:
           type: array
           items: { $ref: "#/components/schemas/ExternalCollectionPart" }
