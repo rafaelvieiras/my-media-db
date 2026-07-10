@@ -119,6 +119,13 @@ func (s *Server) Handler() (http.Handler, error) {
 			// depois enriquece. Escreve external, nunca override.
 			v1.Post("/import", s.importar)
 
+			// Filas de CURADORIA (briefing 0018): revisão (draft ou baixa
+			// confiança) e órfãs (auto-criadas, todas missing, sem investimento
+			// do dono). Só leitura; mesmo shape de card da lista. As ações
+			// (confirmar/corrigir/purgar) vivem sob /entities.
+			v1.Get("/review", s.listReview)
+			v1.Get("/orphans", s.listOrphans)
+
 			// Configurações da aplicação (briefing 0019). Hoje só a config de
 			// idioma (principal/fallback/permitidos), base da resolução por idioma.
 			v1.Route("/settings", func(cfg chi.Router) {
@@ -164,6 +171,15 @@ func (s *Server) Handler() (http.Handler, error) {
 				// Enriquecimento de uma entity existente (briefing 0015): puxa o
 				// detalhe do provider e grava a base externa + pôster cacheado.
 				ent.Post("/{id}/enrich", s.enrichEntity)
+
+				// Curadoria da Fase 3 (briefing 0018): confirmar sobe a confiança
+				// para 100; corrigir grava a identidade correta + re-enriquece;
+				// DELETE purga a entity (CASCADE + limpeza de binários); /purge
+				// purga em lote. A purga é a única porta destrutiva (ADR-0012).
+				ent.Post("/{id}/confirm", s.confirmEntity)
+				ent.Post("/{id}/correct", s.correctEntity)
+				ent.Delete("/{id}", s.deleteEntity)
+				ent.Post("/purge", s.purgeBatch)
 
 				// Editor de override POR IDIOMA (briefing 0016): o dono escreve o
 				// patch esparso que vence tudo. PATCH funde por idioma (?lang=), os

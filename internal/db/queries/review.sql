@@ -1,0 +1,59 @@
+-- Queries das FILAS DE CURADORIA (briefing 0018): revisao, orfas e as escritas de
+-- confirmar/purgar. Sem tabela nova -- as filas sao QUERY sobre entity/media_file/
+-- media_override/asset (ADR-0012). Comentarios em ASCII e colunas explicitas -- ver
+-- a nota em entity.sql.
+--
+-- As duas listas devolvem o MESMO shape de card que ListarEntityCards (id, type,
+-- title, status, owned, file_count, match_confidence, has_poster): o handler
+-- converte a linha para o tipo de card comum e reusa o mesmo DTO da lista.
+
+-- name: ListarRevisao :many
+-- Fila de REVISAO: entities status='draft' (nao-identificado) OU que tem um
+-- media_file 'present' cuja match_confidence esta em (0, LIMIAR) -- baixa confianca.
+-- O LIMIAR entra como parametro (sqlc.arg('limiar')): fonte unica no backend
+-- (espelha o LIMIAR_BAIXA_CONFIANCA=70 do front). Ordena por confianca ASCENDENTE
+-- (pior primeiro); drafts/sem confianca vao ao fim (match_confidence IS NULL = 1).
+SELECT
+    e.id, e.type, e.title, e.status,
+    EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
+    (SELECT COUNT(*) FROM media_file m WHERE m.entity_id = e.id) AS file_count,
+    (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+FROM entity e
+WHERE e.status = 'draft'
+   OR EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id
+          AND m.state = 'present'
+          AND m.match_confidence > 0
+          AND m.match_confidence < sqlc.arg('limiar')
+   )
+ORDER BY (match_confidence IS NULL), match_confidence ASC, e.title COLLATE NOCASE ASC, e.id;
+
+-- name: ListarOrfas :many
+-- Fila de ORFAS: entities auto-criadas pelo scanner (status='cataloged') que TEM ao
+-- menos um media_file, com NENHUM 'present' (todos 'missing'), e SEM investimento do
+-- dono -- sem linha em media_override e sem asset origin='user'. Uma entity SO
+-- importada (sem media_file) NAO e orfa. owned e sempre falso aqui (nenhum present).
+SELECT
+    e.id, e.type, e.title, e.status,
+    EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
+    (SELECT COUNT(*) FROM media_file m WHERE m.entity_id = e.id) AS file_count,
+    (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+FROM entity e
+WHERE e.status = 'cataloged'
+  AND EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id)
+  AND NOT EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present')
+  AND NOT EXISTS (SELECT 1 FROM media_override o WHERE o.entity_id = e.id)
+  AND NOT EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.origin = 'user')
+ORDER BY e.title COLLATE NOCASE ASC, e.id;
+
+-- name: AtualizarConfidencePorEntity :exec
+-- Confirmar (briefing 0018): o dono diz que o palpite esta certo. Sobe a confianca
+-- de TODOS os media_file da entity para o valor dado (100 = autoridade do dono),
+-- fazendo o item sair da fila de revisao. Nao toca override/arte.
+UPDATE media_file
+SET match_confidence = sqlc.arg('match_confidence'),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE entity_id = sqlc.arg('entity_id');

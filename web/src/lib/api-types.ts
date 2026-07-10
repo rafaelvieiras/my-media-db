@@ -55,7 +55,11 @@ export interface paths {
     get: operations['getEntity']
     put?: never
     post?: never
-    delete?: never
+    /**
+     * Purga individual de uma entity (briefing 0018).
+     * @description PURGA explícita (a única porta destrutiva, ADR-0012): apaga a entity; o ON DELETE CASCADE leva media_file/media_external/media_override/asset junto, e o diretório de binários de assets em disco é limpo best-effort. Nunca é efeito colateral de outra ação — sempre do dono, sempre explícita.
+     */
+    delete: operations['purgeEntity']
     options?: never
     head?: never
     patch?: never
@@ -314,6 +318,106 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/review': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Fila de revisão (draft ou baixa confiança, briefing 0018).
+     * @description Cards (mesmo shape EntityCard da lista) dos itens que pedem curadoria: `status='draft'` (não-identificado) OU com um media_file `present` cuja `match_confidence` está em (0, 70) — o limiar espelha o LIMIAR_BAIXA_CONFIANCA=70 do front. Ordenado por confiança ascendente (pior primeiro), drafts ao fim. `[]` quando vazia.
+     */
+    get: operations['listReview']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/orphans': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Fila de órfãs (auto-criadas, sumidas, sem investimento, briefing 0018).
+     * @description Cards das entities órfãs: `status='cataloged'` (auto-criada pelo scanner), com ao menos um media_file e TODOS `missing`, e SEM investimento do dono (sem media_override e sem asset origin='user'). Uma entity só importada (sem media_file) não é órfã. Nada é apagado sozinho — a purga é sempre explícita.
+     */
+    get: operations['listOrphans']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/confirm': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Confirma o match de baixa confiança (briefing 0018).
+     * @description O dono aceita o palpite: sobe a `match_confidence` de todos os media_file da entity para 100 (autoridade do dono), tirando o item da fila de revisão. Responde a entity RESOLVIDA. Não toca override/arte. 404 se a entity não existe.
+     */
+    post: operations['confirmEntity']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/correct': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Corrige o match informando a identidade correta (briefing 0018).
+     * @description O dono informa o id correto da fonte: grava external_ids[source]=source_id (identidade vence, MD4) e RE-ENRIQUECE pelo serviço do 0015 (multi-idioma de graça), depois sobe a confiança para 100. Não toca override/arte (o enrich é não-destrutivo). Responde a entity RESOLVIDA. source default "tmdb"; source_id obrigatório (422). 404 inexistente; 502 se a fonte falhar; 503 se o enrich está desligado.
+     */
+    post: operations['correctEntity']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/purge': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Purga em lote de entities (briefing 0018).
+     * @description PURGA explícita em lote: purga cada id do corpo (ApagarEntity + CASCADE + limpeza best-effort dos binários), ignorando ids ausentes (idempotente). Responde quantas entities foram de fato removidas. 422 corpo inválido.
+     */
+    post: operations['purgeEntities']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/library': {
     parameters: {
       query?: never
@@ -461,6 +565,28 @@ export interface components {
        * @enum {string}
        */
       type: 'movie' | 'tv'
+    }
+    /** @description Corpo de POST /entities/{id}/correct — a identidade correta que o dono informa. source default "tmdb"; source_id obrigatório. */
+    CorrectRequest: {
+      /** @description Fonte (default tmdb). */
+      source?: string
+      /** @description Id correto do item NA FONTE (obrigatório). */
+      source_id: string
+    }
+    /** @description Corpo de POST /entities/purge — os ids a purgar em lote. */
+    PurgeBatchRequest: {
+      /** @description Ids das entities a purgar (ids ausentes são ignorados). */
+      ids: string[]
+    }
+    /** @description Resultado da purga individual (DELETE /entities/{id}). */
+    PurgeResult: {
+      /** @description Sempre true quando a entity existia e foi purgada. */
+      purged: boolean
+    }
+    /** @description Resultado da purga em lote (POST /entities/purge). */
+    PurgeBatchResult: {
+      /** @description Quantas entities foram de fato removidas (idempotente por ausente). */
+      removed: number
     }
     /** @description Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a Fase 3 preenche os mesmos campos com override/externo sem mudar o shape. */
     ResolvedEntity: {
@@ -698,6 +824,30 @@ export interface operations {
         }
       }
       400: components['responses']['Error']
+      404: components['responses']['Error']
+    }
+  }
+  purgeEntity: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Entity purgada. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PurgeResult']
+        }
+      }
       404: components['responses']['Error']
     }
   }
@@ -1151,6 +1301,126 @@ export interface operations {
       422: components['responses']['Error']
       502: components['responses']['Error']
       503: components['responses']['Error']
+    }
+  }
+  listReview: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Cards da fila de revisão (array, possivelmente vazio). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['EntityCard'][]
+        }
+      }
+    }
+  }
+  listOrphans: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Cards da fila de órfãs (array, possivelmente vazio). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['EntityCard'][]
+        }
+      }
+    }
+  }
+  confirmEntity: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Entidade resolvida após confirmar. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ResolvedEntity']
+        }
+      }
+      404: components['responses']['Error']
+    }
+  }
+  correctEntity: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CorrectRequest']
+      }
+    }
+    responses: {
+      /** @description Entidade resolvida após corrigir. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ResolvedEntity']
+        }
+      }
+      404: components['responses']['Error']
+      422: components['responses']['Error']
+      502: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  purgeEntities: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PurgeBatchRequest']
+      }
+    }
+    responses: {
+      /** @description Resumo da purga em lote. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PurgeBatchResult']
+        }
+      }
+      422: components['responses']['Error']
     }
   }
   listLibrary: {

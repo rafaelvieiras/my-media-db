@@ -28,6 +28,10 @@ type Querier interface {
 	// Atualiza o caminho/binario de um asset ja existente (dedup do cache externo:
 	// re-baixar o poster reaproveita a mesma linha). Nao muda entity_id/kind/origin.
 	AtualizarAssetPath(ctx context.Context, arg AtualizarAssetPathParams) error
+	// Confirmar (briefing 0018): o dono diz que o palpite esta certo. Sobe a confianca
+	// de TODOS os media_file da entity para o valor dado (100 = autoridade do dono),
+	// fazendo o item sair da fila de revisao. Nao toca override/arte.
+	AtualizarConfidencePorEntity(ctx context.Context, arg AtualizarConfidencePorEntityParams) error
 	AtualizarEntity(ctx context.Context, arg AtualizarEntityParams) (Entity, error)
 	// Mescla a identidade externa (MD4): a app le external_ids_json, junta
 	// {source: source_id} e grava aqui, sem tocar o resto da entity. As colunas
@@ -108,10 +112,29 @@ type Querier interface {
 	// Todas as camadas externas cacheadas de uma entity (uma por fonte buscada).
 	ListarMediaExternalPorEntity(ctx context.Context, entityID string) ([]MediaExternal, error)
 	ListarMediaFilesPorEntity(ctx context.Context, entityID string) ([]MediaFile, error)
+	// Fila de ORFAS: entities auto-criadas pelo scanner (status='cataloged') que TEM ao
+	// menos um media_file, com NENHUM 'present' (todos 'missing'), e SEM investimento do
+	// dono -- sem linha em media_override e sem asset origin='user'. Uma entity SO
+	// importada (sem media_file) NAO e orfa. owned e sempre falso aqui (nenhum present).
+	ListarOrfas(ctx context.Context) ([]ListarOrfasRow, error)
 	// Relacoes onde a entity e o pai (ex.: as temporadas de uma serie).
 	ListarRelacoesFilhas(ctx context.Context, parentID string) ([]EntityRelation, error)
 	// Relacoes onde a entity e o filho (ex.: a serie de uma temporada).
 	ListarRelacoesPais(ctx context.Context, childID string) ([]EntityRelation, error)
+	// Queries das FILAS DE CURADORIA (briefing 0018): revisao, orfas e as escritas de
+	// confirmar/purgar. Sem tabela nova -- as filas sao QUERY sobre entity/media_file/
+	// media_override/asset (ADR-0012). Comentarios em ASCII e colunas explicitas -- ver
+	// a nota em entity.sql.
+	//
+	// As duas listas devolvem o MESMO shape de card que ListarEntityCards (id, type,
+	// title, status, owned, file_count, match_confidence, has_poster): o handler
+	// converte a linha para o tipo de card comum e reusa o mesmo DTO da lista.
+	// Fila de REVISAO: entities status='draft' (nao-identificado) OU que tem um
+	// media_file 'present' cuja match_confidence esta em (0, LIMIAR) -- baixa confianca.
+	// O LIMIAR entra como parametro (sqlc.arg('limiar')): fonte unica no backend
+	// (espelha o LIMIAR_BAIXA_CONFIANCA=70 do front). Ordena por confianca ASCENDENTE
+	// (pior primeiro); drafts/sem confianca vao ao fim (match_confidence IS NULL = 1).
+	ListarRevisao(ctx context.Context, limiar sql.NullFloat64) ([]ListarRevisaoRow, error)
 	// Fecho do ciclo de vida (ADR-0012): ao concluir um scan COMPLETO com a fonte
 	// acessivel, todo media_file 'present' daquela fonte cujo last_seen NAO e o
 	// carimbo deste scan (ou seja, nao foi revisto) passa a 'missing'. A entity e

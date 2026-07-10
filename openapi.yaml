@@ -96,6 +96,25 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+    delete:
+      operationId: purgeEntity
+      summary: Purga individual de uma entity (briefing 0018).
+      description: >
+        PURGA explícita (a única porta destrutiva, ADR-0012): apaga a entity; o
+        ON DELETE CASCADE leva media_file/media_external/media_override/asset junto,
+        e o diretório de binários de assets em disco é limpo best-effort. Nunca é
+        efeito colateral de outra ação — sempre do dono, sempre explícita.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Entity purgada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PurgeResult" }
+        "404":
+          $ref: "#/components/responses/Error"
 
   /api/v1/settings/languages:
     get:
@@ -527,6 +546,123 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/v1/review:
+    get:
+      operationId: listReview
+      summary: Fila de revisão (draft ou baixa confiança, briefing 0018).
+      description: >
+        Cards (mesmo shape EntityCard da lista) dos itens que pedem curadoria:
+        `status='draft'` (não-identificado) OU com um media_file `present` cuja
+        `match_confidence` está em (0, 70) — o limiar espelha o
+        LIMIAR_BAIXA_CONFIANCA=70 do front. Ordenado por confiança ascendente (pior
+        primeiro), drafts ao fim. `[]` quando vazia.
+      tags: [entities]
+      responses:
+        "200":
+          description: Cards da fila de revisão (array, possivelmente vazio).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EntityCard" }
+
+  /api/v1/orphans:
+    get:
+      operationId: listOrphans
+      summary: Fila de órfãs (auto-criadas, sumidas, sem investimento, briefing 0018).
+      description: >
+        Cards das entities órfãs: `status='cataloged'` (auto-criada pelo scanner),
+        com ao menos um media_file e TODOS `missing`, e SEM investimento do dono
+        (sem media_override e sem asset origin='user'). Uma entity só importada (sem
+        media_file) não é órfã. Nada é apagado sozinho — a purga é sempre explícita.
+      tags: [entities]
+      responses:
+        "200":
+          description: Cards da fila de órfãs (array, possivelmente vazio).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EntityCard" }
+
+  /api/v1/entities/{id}/confirm:
+    post:
+      operationId: confirmEntity
+      summary: Confirma o match de baixa confiança (briefing 0018).
+      description: >
+        O dono aceita o palpite: sobe a `match_confidence` de todos os media_file da
+        entity para 100 (autoridade do dono), tirando o item da fila de revisão.
+        Responde a entity RESOLVIDA. Não toca override/arte. 404 se a entity não
+        existe.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Entidade resolvida após confirmar.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResolvedEntity" }
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/correct:
+    post:
+      operationId: correctEntity
+      summary: Corrige o match informando a identidade correta (briefing 0018).
+      description: >
+        O dono informa o id correto da fonte: grava external_ids[source]=source_id
+        (identidade vence, MD4) e RE-ENRIQUECE pelo serviço do 0015 (multi-idioma de
+        graça), depois sobe a confiança para 100. Não toca override/arte (o enrich é
+        não-destrutivo). Responde a entity RESOLVIDA. source default "tmdb";
+        source_id obrigatório (422). 404 inexistente; 502 se a fonte falhar; 503 se o
+        enrich está desligado.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CorrectRequest" }
+      responses:
+        "200":
+          description: Entidade resolvida após corrigir.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResolvedEntity" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/purge:
+    post:
+      operationId: purgeEntities
+      summary: Purga em lote de entities (briefing 0018).
+      description: >
+        PURGA explícita em lote: purga cada id do corpo (ApagarEntity + CASCADE +
+        limpeza best-effort dos binários), ignorando ids ausentes (idempotente).
+        Responde quantas entities foram de fato removidas. 422 corpo inválido.
+      tags: [entities]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PurgeBatchRequest" }
+      responses:
+        "200":
+          description: Resumo da purga em lote.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PurgeBatchResult" }
+        "422":
+          $ref: "#/components/responses/Error"
+
   /api/v1/library:
     get:
       operationId: listLibrary
@@ -800,6 +936,44 @@ components:
           type: string
           enum: [movie, tv]
           description: Tipo canônico do item (obrigatório).
+    CorrectRequest:
+      type: object
+      description: >
+        Corpo de POST /entities/{id}/correct — a identidade correta que o dono
+        informa. source default "tmdb"; source_id obrigatório.
+      required: [source_id]
+      properties:
+        source:
+          type: string
+          description: "Fonte (default tmdb)."
+        source_id:
+          type: string
+          description: Id correto do item NA FONTE (obrigatório).
+    PurgeBatchRequest:
+      type: object
+      description: Corpo de POST /entities/purge — os ids a purgar em lote.
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          items: { type: string }
+          description: Ids das entities a purgar (ids ausentes são ignorados).
+    PurgeResult:
+      type: object
+      description: Resultado da purga individual (DELETE /entities/{id}).
+      required: [purged]
+      properties:
+        purged:
+          type: boolean
+          description: Sempre true quando a entity existia e foi purgada.
+    PurgeBatchResult:
+      type: object
+      description: Resultado da purga em lote (POST /entities/purge).
+      required: [removed]
+      properties:
+        removed:
+          type: integer
+          description: Quantas entities foram de fato removidas (idempotente por ausente).
     ResolvedEntity:
       type: object
       description: >
