@@ -3,6 +3,7 @@ import {
   getCollectionDetail,
   getEntity,
   getEntityFiles,
+  getEntityMembers,
   getExternalDetail,
   getHealth,
   getLanguageSettings,
@@ -45,6 +46,16 @@ export function entityQueryOptions(id: string, lang?: string) {
   return queryOptions({
     queryKey: ['entity', id, lang ?? null],
     queryFn: () => getEntity(id, lang),
+  })
+}
+
+// Membros de uma coleção (0025). `lang` entra na chave: trocar o idioma re-busca os
+// títulos dos membros. Chave sob `['entity', id, 'members', ...]` para a invalidação
+// por entity alcançá-la.
+export function entityMembersQueryOptions(id: string, lang?: string) {
+  return queryOptions({
+    queryKey: ['entity', id, 'members', lang ?? null],
+    queryFn: () => getEntityMembers(id, lang),
   })
 }
 

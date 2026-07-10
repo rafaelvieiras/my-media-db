@@ -10,6 +10,7 @@ import { useLanguage } from '@/lib/language-context'
 import { rotuloIdioma } from '@/lib/languages'
 import { temOverrideEditado } from '@/lib/override-fields'
 import { ArtGallery } from '@/components/art-gallery'
+import { CollectionMembers } from '@/components/collection-members'
 import { MediaInfoTable } from '@/components/media-info-table'
 import { OverrideEditor } from '@/components/override-editor'
 import { ErrorState, LoadingState } from '@/components/query-states'
@@ -165,12 +166,18 @@ export function EntityDetailScreen() {
           />
         ) : null}
 
+        {/* Coleção (0025): mostra os MEMBROS no lugar dos Arquivos (coleção não tem
+            media_file). A galeria de arte segue valendo (arte própria da coleção). */}
+        {data.type === 'collection' ? <CollectionMembers id={id} /> : null}
+
         <ArtGallery entityId={id} />
 
-        <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-lg font-medium">Arquivos</h2>
-          <MediaInfoTable entityId={id} />
-        </section>
+        {data.type !== 'collection' ? (
+          <section className="flex flex-col gap-3">
+            <h2 className="font-heading text-lg font-medium">Arquivos</h2>
+            <MediaInfoTable entityId={id} />
+          </section>
+        ) : null}
       </RichDetailView>
     </main>
   )

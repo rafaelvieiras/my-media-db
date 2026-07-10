@@ -181,6 +181,26 @@ export async function getEntity(
   )
 }
 
+// Membros de uma COLEÇÃO (0025): os itens ligados por entity_relation
+// (kind='collection') como cards internos (o mesmo EntityCard da lista), ordenados
+// por ano pelo backend. `[]` quando a entity não é coleção ou não tem membros. `lang`
+// resolve os títulos dos membros no idioma ativo.
+export async function getEntityMembers(
+  id: string,
+  lang?: string,
+): Promise<EntityCard[]> {
+  const qs = new URLSearchParams()
+  if (lang) {
+    qs.set('lang', lang)
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return lerJson<EntityCard[]>(
+    await fetch(
+      `${base}/api/v1/entities/${encodeURIComponent(id)}/members${suffix}`,
+    ),
+  )
+}
+
 // ── Settings de idioma (0019) ────────────────────────────────────────────────
 
 // Config de idioma vigente (principal, fallback, permitidos). Quando não há
