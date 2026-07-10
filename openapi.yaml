@@ -343,6 +343,64 @@ paths:
                 items: { $ref: "#/components/schemas/EntityCard" }
         "404":
           $ref: "#/components/responses/Error"
+    post:
+      operationId: addCollectionMember
+      summary: "Liga um item à coleção como membro (briefing 0025, Fase B)."
+      description: >
+        Liga o item `child_id` à coleção `id` por `entity_relation(kind='collection')`.
+        Valida que o pai existe e é uma coleção (senão 404/422), e que o filho existe,
+        não é ele mesmo e não é outra coleção (sem aninhamento). Idempotente (religar
+        não duplica). Devolve a lista de membros ATUALIZADA (mesmo shape e ordenação por
+        ano de GET).
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddMember" }
+      responses:
+        "200":
+          description: Cards dos membros após ligar (array, ordenado por ano).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EntityCard" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/members/{childId}:
+    delete:
+      operationId: removeCollectionMember
+      summary: "Desliga um membro da coleção (briefing 0025, Fase B)."
+      description: >
+        Remove a ligação `entity_relation(kind='collection')` entre a coleção `id` e o
+        item `childId`. Idempotente (desligar o que não está ligado é no-op). 404 quando
+        a coleção não existe. Devolve a lista de membros ATUALIZADA.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - name: childId
+          in: path
+          required: true
+          description: Id do item membro a desligar.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Cards dos membros após desligar (array).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EntityCard" }
+        "404":
+          $ref: "#/components/responses/Error"
 
   /api/v1/entities/{id}/assets/poster:
     get:
@@ -570,6 +628,35 @@ paths:
         "422":
           $ref: "#/components/responses/Error"
         "502":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/collections:
+    post:
+      operationId: createCollection
+      summary: "Cria uma coleção local manual (briefing 0025, Fase B)."
+      description: >
+        Cria uma entity `type='collection'` LOCAL (sem fonte externa) com o título e a
+        descrição dados pelo dono. Ao contrário do import de coleção (0025 Fase A), não
+        há fonte: a coleção nasce vazia e os membros entram depois por
+        POST /entities/{id}/members. Responde 201 com a entity RESOLVIDA. 400 corpo
+        inválido; 422 título vazio.
+      tags: [entities]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCollection" }
+      responses:
+        "201":
+          description: Coleção criada, resolvida.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResolvedEntity" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "422":
           $ref: "#/components/responses/Error"
         "503":
           $ref: "#/components/responses/Error"
@@ -1088,6 +1175,28 @@ components:
           description: >
             Tipo canônico do item (obrigatório). `collection` (0025) importa a coleção
             inteira: cria a entity `type='collection'` e importa/liga os filmes membros.
+    CreateCollection:
+      type: object
+      description: >
+        Corpo de POST /collections (0025 Fase B) — cria uma coleção LOCAL manual.
+        Só o título é obrigatório; a descrição é opcional.
+      required: [title]
+      properties:
+        title:
+          type: string
+          description: Nome da coleção (obrigatório, não pode ser vazio).
+        description:
+          type: string
+          description: "Descrição livre da coleção (opcional)."
+    AddMember:
+      type: object
+      description: >
+        Corpo de POST /entities/{id}/members (0025 Fase B) — o item a ligar à coleção.
+      required: [child_id]
+      properties:
+        child_id:
+          type: string
+          description: Id da entity (filme/série) a incluir como membro.
     CorrectRequest:
       type: object
       description: >

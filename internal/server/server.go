@@ -137,6 +137,12 @@ func (s *Server) Handler() (http.Handler, error) {
 			// depois enriquece. Escreve external, nunca override.
 			v1.Post("/import", s.importar)
 
+			// Criação de coleção LOCAL manual (briefing 0025, Fase B): o dono
+			// monta uma coleção do zero (sem fonte externa) e recebe a entity
+			// `type='collection'` resolvida. Os membros entram/saem depois pelas
+			// rotas /entities/{id}/members abaixo.
+			v1.Post("/collections", s.createCollection)
+
 			// Detalhe externo RICO antes de importar (briefing 0022): puxa o item
 			// completo da fonte, PERSISTE na 1ª chamada (cache external_detail) e
 			// serve do cache nas seguintes, resolvido no idioma ativo. Ver != catalogar
@@ -196,8 +202,12 @@ func (s *Server) Handler() (http.Handler, error) {
 
 				// Membros de uma COLEÇÃO (briefing 0025): os filmes ligados por
 				// entity_relation(kind='collection'), como cards (mesmo shape da
-				// lista), ordenados por ano. `[]` para não-coleção.
+				// lista), ordenados por ano. `[]` para não-coleção. O POST liga um
+				// item e o DELETE o desliga (Fase B, edição manual dos membros):
+				// ambos validam que o pai é coleção e devolvem a lista atualizada.
 				ent.Get("/{id}/members", s.getEntityMembers)
+				ent.Post("/{id}/members", s.addMember)
+				ent.Delete("/{id}/members/{childId}", s.removeMember)
 				ent.Get("/{id}/assets/poster", s.getEntityPoster)
 				ent.Get("/{id}/assets/fanart", s.getEntityFanart)
 
