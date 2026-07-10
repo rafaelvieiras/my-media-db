@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { useParams, useRouter } from '@tanstack/react-router'
-import { ArrowLeft } from 'lucide-react'
+import { Link, useParams, useRouter } from '@tanstack/react-router'
+import { ArrowLeft, Library } from 'lucide-react'
 import {
   ApiError,
   type ExternalCollectionPart,
@@ -8,7 +8,9 @@ import {
 } from '@/lib/api'
 import { collectionDetailQueryOptions } from '@/lib/queries'
 import { useLanguage } from '@/lib/language-context'
+import { internalIdDe } from '@/lib/internal-id'
 import { srcDeImagem } from '@/lib/rich-detail'
+import { Button } from '@/components/ui/button'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import { ExternalResultCard } from '@/components/external-result-card'
 import { ImportarButton } from '@/components/rich-detail-view'
@@ -72,15 +74,29 @@ export function CollectionDetailScreen() {
                 <h1 className="font-heading text-2xl font-semibold">
                   {data.name}
                 </h1>
-                {/* Importa a COLEÇÃO inteira (0025): vira entity type='collection'
-                    com os filmes membros ligados; navega para /entities/{novoId}.
-                    Rótulo distinto dos "Importar" das partes (filmes). */}
-                <ImportarButton
-                  source={source}
-                  sourceId={id}
-                  type="collection"
-                  label="Importar coleção"
-                />
+                {/* Interno-first (0026): se a coleção JÁ foi importada, o header leva
+                    à entity interna ("Ver coleção") em vez de reoferecer importar.
+                    Senão, o botão importa a COLEÇÃO inteira (0025) — vira entity
+                    type='collection' com os filmes membros ligados; navega para
+                    /entities/{novoId}. Rótulo distinto dos "Importar" das partes. */}
+                {internalIdDe(data) != null ? (
+                  <Button asChild>
+                    <Link
+                      to="/entities/$id"
+                      params={{ id: internalIdDe(data) as string }}
+                    >
+                      <Library aria-hidden />
+                      Ver coleção
+                    </Link>
+                  </Button>
+                ) : (
+                  <ImportarButton
+                    source={source}
+                    sourceId={id}
+                    type="collection"
+                    label="Importar coleção"
+                  />
+                )}
               </div>
               {data.overview ? (
                 <p className="text-sm text-muted-foreground">{data.overview}</p>
@@ -98,6 +114,7 @@ export function CollectionDetailScreen() {
                   <ExternalResultCard
                     key={`${parte.type}:${parte.source_id}`}
                     result={comoResultado(source, parte)}
+                    internalId={internalIdDe(parte)}
                   />
                 ))}
               </ul>

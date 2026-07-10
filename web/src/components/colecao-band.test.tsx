@@ -43,4 +43,19 @@ describe('ColecaoBand (na RichDetailView)', () => {
     const link = screen.getByRole('link', { name: /Coleção Duna/ })
     expect(link.getAttribute('href')).toBe('/collection/tmdb/726871')
   })
+
+  it('linka para a entity INTERNA quando a coleção já foi importada (0026)', () => {
+    const detalhe = detalheComColecao()
+    // internal_id é campo aditivo (0026): o cast evita depender do tipo regenerado.
+    detalhe.collection = {
+      source_id: '726871',
+      name: 'Coleção Duna',
+      poster_url: null,
+      internal_id: 'ent-col',
+    } as RichDetail['collection']
+    renderWithClient(<RichDetailView detail={detalhe} source="tmdb" />)
+
+    const link = screen.getByRole('link', { name: /Coleção Duna/ })
+    expect(link.getAttribute('href')).toBe('/entities/ent-col')
+  })
 })

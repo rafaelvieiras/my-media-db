@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Link, useParams } from '@tanstack/react-router'
-import { ArrowLeft, Pencil } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
+import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ApiError, purgeEntity } from '@/lib/api'
 import { entityQueryOptions, overrideBlobQueryOptions } from '@/lib/queries'
 import { ehDraft } from '@/lib/entity-badges'
 import { useLanguage } from '@/lib/language-context'
@@ -61,6 +62,65 @@ function SeloFallback({
 // SeloEditado marca override do dono NO IDIOMA ATUAL para o campo (lido do blob cru).
 function SeloEditado({ ativo }: { ativo: boolean }) {
   return ativo ? <Badge variant="default">editado</Badge> : null
+}
+
+// ExcluirColecao apaga a entity COLEÇÃO (briefing 0026) via DELETE /entities/{id}
+// (purga com CASCADE das relações — os filmes membros NÃO são apagados). Ação
+// DESTRUTIVA, então confirma em DUAS etapas (mesmo padrão da remoção de membro) e
+// fica discreta. No sucesso, invalida a lista e volta para a biblioteca.
+function ExcluirColecao({ id }: { id: string }) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [confirmando, setConfirmando] = useState(false)
+  const mutation = useMutation({
+    mutationFn: () => purgeEntity(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['entities'] })
+      navigate({ to: '/' })
+    },
+  })
+  const mensagemErro =
+    mutation.error instanceof ApiError ? mutation.error.message : null
+
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {mensagemErro ? (
+        <span role="alert" className="text-sm font-medium text-destructive">
+          {mensagemErro}
+        </span>
+      ) : null}
+      {confirmando ? (
+        <>
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={mutation.isPending}
+            onClick={() => mutation.mutate()}
+          >
+            {mutation.isPending ? 'Excluindo…' : 'Excluir coleção?'}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={mutation.isPending}
+            onClick={() => setConfirmando(false)}
+          >
+            Cancelar
+          </Button>
+        </>
+      ) : (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-destructive"
+          onClick={() => setConfirmando(true)}
+        >
+          <Trash2 aria-hidden />
+          Excluir coleção
+        </Button>
+      )}
+    </div>
+  )
 }
 
 export function EntityDetailScreen() {
@@ -167,9 +227,13 @@ export function EntityDetailScreen() {
         ) : null}
 
         {/* Coleção (0025): mostra os MEMBROS no lugar dos Arquivos (coleção não tem
-            media_file). A galeria de arte segue valendo (arte própria da coleção). */}
+            media_file). A galeria de arte segue valendo (arte própria da coleção). O
+            "Excluir coleção" (0026) fica ao fim, discreto (ação destrutiva). */}
         {data.type === 'collection' ? (
-          <CollectionMembers id={id} editable />
+          <>
+            <CollectionMembers id={id} editable />
+            <ExcluirColecao id={id} />
+          </>
         ) : null}
 
         <ArtGallery entityId={id} />

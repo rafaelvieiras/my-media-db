@@ -99,6 +99,60 @@ describe('CollectionDetailScreen', () => {
     expect(screen.getAllByRole('button', { name: 'Importar' }).length).toBe(2)
   })
 
+  it('parte JÁ na biblioteca vira card interno (link /entities, sem Importar) — 0026', async () => {
+    const comInterno = colecao({
+      parts: [
+        {
+          source_id: '438631',
+          type: 'movie',
+          title: 'Duna',
+          year: '2021',
+          overview: null,
+          poster_url: null,
+          // internal_id é aditivo (0026): cast evita depender do tipo regenerado.
+          internal_id: 'ent-duna',
+        },
+        {
+          source_id: '693134',
+          type: 'movie',
+          title: 'Duna: Parte 2',
+          year: '2024',
+          overview: null,
+          poster_url: null,
+        },
+      ] as ExternalCollectionDetail['parts'],
+    })
+    stubExternalFetch(() => okJson(comInterno))
+    renderWithClient(<CollectionDetailScreen />)
+    await screen.findByRole('heading', { name: 'Coleção Duna' })
+
+    // A parte importada linka para o interno e ganha o selo; a outra segue externa.
+    const interno = screen
+      .getAllByRole('link')
+      .find((l) => l.getAttribute('href') === '/entities/ent-duna')
+    expect(interno).toBeTruthy()
+    expect(screen.getByText('Na biblioteca')).toBeTruthy()
+    // Sobra 1 "Importar" de parte (a não-importada); o header ainda é "Importar coleção".
+    expect(screen.getAllByRole('button', { name: 'Importar' }).length).toBe(1)
+  })
+
+  it('coleção JÁ importada troca "Importar coleção" por "Ver coleção" interno — 0026', async () => {
+    stubExternalFetch(() =>
+      okJson(
+        colecao({
+          internal_id: 'ent-col',
+        } as Partial<ExternalCollectionDetail>),
+      ),
+    )
+    renderWithClient(<CollectionDetailScreen />)
+
+    const ver = await screen.findByRole('link', { name: /Ver coleção/ })
+    expect(ver.getAttribute('href')).toBe('/entities/ent-col')
+    expect(
+      screen.queryByRole('button', { name: 'Importar coleção' }),
+    ).toBeNull()
+  })
+
   it('Importar coleção importa com type=collection e navega para a entity', async () => {
     const fetchMock = stubExternalFetch(() => okJson(colecao()))
     renderWithClient(<CollectionDetailScreen />)

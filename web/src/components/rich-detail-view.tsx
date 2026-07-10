@@ -21,6 +21,7 @@ import {
   type ImportRequest,
 } from '@/lib/api'
 import { rotuloTipo } from '@/lib/entity-badges'
+import { internalIdDe } from '@/lib/internal-id'
 import { rotuloIdioma } from '@/lib/languages'
 import type { RichDetail } from '@/lib/rich-detail'
 import { cn } from '@/lib/utils'
@@ -249,8 +250,10 @@ function VideosRail({ videos }: { videos: ExternalVideo[] }) {
   )
 }
 
-// ColecaoBand mostra a coleção a que o item pertence e LINKA para a página própria
-// da coleção (`/collection/$source/$id`, 0024) — o card inteiro é o destino.
+// ColecaoBand mostra a coleção a que o item pertence. Interno-first (0026): quando a
+// coleção JÁ é entity (`internal_id`), o card linka para `/entities/{id}` (o destino
+// INTERNO, centralizado); senão, para a página externa da coleção (`/collection/
+// $source/$id`, 0024). O card inteiro é o destino, com o mesmo visual nos dois casos.
 function ColecaoBand({
   source,
   colecao,
@@ -258,23 +261,39 @@ function ColecaoBand({
   source: string
   colecao: ExternalCollection
 }) {
+  const internalId = internalIdDe(colecao)
+  const classeCard =
+    'group flex items-center gap-3 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition hover:ring-foreground/30'
+  const conteudo = (
+    <>
+      <PosterImg
+        src={colecao.poster_url}
+        alt={`Pôster da coleção ${colecao.name}`}
+        className="w-16 shrink-0"
+      />
+      <span className="font-medium group-hover:underline">{colecao.name}</span>
+    </>
+  )
   return (
     <section className="flex flex-col gap-3">
       <h2 className="font-heading text-lg font-medium">Coleção</h2>
-      <Link
-        to="/collection/$source/$id"
-        params={{ source, id: colecao.source_id }}
-        className="group flex items-center gap-3 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition hover:ring-foreground/30"
-      >
-        <PosterImg
-          src={colecao.poster_url}
-          alt={`Pôster da coleção ${colecao.name}`}
-          className="w-16 shrink-0"
-        />
-        <span className="font-medium group-hover:underline">
-          {colecao.name}
-        </span>
-      </Link>
+      {internalId != null ? (
+        <Link
+          to="/entities/$id"
+          params={{ id: internalId }}
+          className={classeCard}
+        >
+          {conteudo}
+        </Link>
+      ) : (
+        <Link
+          to="/collection/$source/$id"
+          params={{ source, id: colecao.source_id }}
+          className={classeCard}
+        >
+          {conteudo}
+        </Link>
+      )}
     </section>
   )
 }
