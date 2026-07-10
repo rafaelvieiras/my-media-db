@@ -20,6 +20,25 @@ func (q *Queries) ApagarAsset(ctx context.Context, id string) error {
 	return err
 }
 
+const atualizarAssetMeta = `-- name: AtualizarAssetMeta :exec
+UPDATE asset
+SET meta_json = ?
+WHERE id = ?
+`
+
+type AtualizarAssetMetaParams struct {
+	MetaJson sql.NullString
+	ID       string
+}
+
+// Atualiza SO o meta_json de um asset (marca/desmarca a preferida do dono,
+// briefing 0017). Nao toca entity_id/kind/origin/path_or_uri. Usada ao (des)marcar
+// preferida: o merge preservando as demais chaves do meta_json e feito em Go.
+func (q *Queries) AtualizarAssetMeta(ctx context.Context, arg AtualizarAssetMetaParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarAssetMeta, arg.MetaJson, arg.ID)
+	return err
+}
+
 const atualizarAssetPath = `-- name: AtualizarAssetPath :exec
 UPDATE asset
 SET path_or_uri = ?,

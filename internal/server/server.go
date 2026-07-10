@@ -150,6 +150,17 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Get("/{id}/files", s.getEntityFiles)
 				ent.Get("/{id}/assets/poster", s.getEntityPoster)
 
+				// Arte custom do dono (briefing 0017): upload (origin='user'),
+				// galeria, servico do binario de um asset, preferencia (flag em
+				// meta_json) e remocao. A precedencia de servico (preferida → user →
+				// external → 404) e aplicada no /assets/poster acima. Escritas pelo
+				// pool de escrita (ADR-0010).
+				ent.Post("/{id}/assets", s.uploadAsset)
+				ent.Get("/{id}/assets", s.listAssets)
+				ent.Get("/{id}/assets/{assetId}/file", s.getAssetFile)
+				ent.Put("/{id}/assets/{assetId}/prefer", s.preferAsset)
+				ent.Delete("/{id}/assets/{assetId}", s.deleteAsset)
+
 				// Enriquecimento de uma entity existente (briefing 0015): puxa o
 				// detalhe do provider e grava a base externa + pôster cacheado.
 				ent.Post("/{id}/enrich", s.enrichEntity)

@@ -322,6 +322,141 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/assets:
+    get:
+      operationId: listAssets
+      summary: Galeria de arte da entity (briefing 0017).
+      description: >
+        Lista os assets da entity (poster/fanart), cada um com origem (`user` do
+        dono × `external` cacheado × `local` do scanner), a flag `preferred` (lida
+        do `meta_json`) e a `url` do binário (rota do /file). `[]` quando não há
+        arte; 404 se a entity não existe.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Lista de assets (vazia quando não há arte).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssetList" }
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: uploadAsset
+      summary: Upload de arte custom do dono (origin=user, briefing 0017).
+      description: >
+        Recebe multipart/form-data — campo `file` (o binário) + campo `kind`
+        (`poster`|`fanart`, default `poster`). O tipo é validado pelos MAGIC BYTES
+        (não pela extensão nem pelo header do cliente): só `image/jpeg|png|webp`.
+        Tamanho ≤ 20 MiB. Grava o binário atomicamente sob o diretório de assets e
+        cria o asset `origin='user'`. Subir arte já a faz o pôster ser servido
+        (vence a externa). 201 com o asset criado.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Binário da imagem (JPEG, PNG ou WebP).
+                kind:
+                  type: string
+                  enum: [poster, fanart]
+                  description: "Tipo de arte (default: poster)."
+      responses:
+        "201":
+          description: Asset criado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Asset" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+        "415":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/assets/{assetId}/file:
+    get:
+      operationId: getAssetFile
+      summary: Serve o binário de um asset específico (image/*).
+      description: >
+        Miniaturas da galeria: devolve o arquivo do asset com o content-type
+        correto e a MESMA guarda de path-traversal do pôster. O `assetId` precisa
+        pertencer à entity. 404 quando não existe/binário sumiu; 403 fora das raízes
+        confiáveis.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - $ref: "#/components/parameters/AssetId"
+      responses:
+        "200":
+          description: Binário da imagem.
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/assets/{assetId}/prefer:
+    put:
+      operationId: preferAsset
+      summary: Marca o asset como preferido do seu kind (briefing 0017).
+      description: >
+        Seta `meta.preferred=true` no asset e LIMPA a flag dos outros do mesmo
+        `(entity, kind)` — uma preferida por kind. Preserva as demais chaves do
+        `meta_json`. 200 com o asset; 404 asset/entity inexistente.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - $ref: "#/components/parameters/AssetId"
+      responses:
+        "200":
+          description: Asset marcado como preferido.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Asset" }
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/assets/{assetId}:
+    delete:
+      operationId: deleteAsset
+      summary: Remove uma arte do dono (origin=user, briefing 0017).
+      description: >
+        Apaga a linha do asset + o binário (best-effort). Recusa (422) apagar arte
+        `origin='external'`: é cache re-puxável que some sozinho no re-enrich
+        (não-destrutivo). 200 com o asset removido; 404 se não existe/não é da
+        entity.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - $ref: "#/components/parameters/AssetId"
+      responses:
+        "200":
+          description: Asset removido.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Asset" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+
   /api/v1/search:
     get:
       operationId: search
@@ -498,6 +633,12 @@ components:
       required: true
       description: Id do datasource.
       schema: { type: string }
+    AssetId:
+      name: assetId
+      in: path
+      required: true
+      description: Id do asset (arte).
+      schema: { type: string }
     LangQuery:
       name: lang
       in: query
@@ -606,6 +747,32 @@ components:
           description: >
             false quando não há credencial/provider ou a fonte falhou — distingue
             "fonte indisponível" de "zero resultados".
+    Asset:
+      type: object
+      description: >
+        Uma arte da entity (briefing 0017). origin distingue a proveniência: `user`
+        (upload do dono), `external` (cache re-puxável do enriquecimento) ou `local`
+        (arte do scanner). preferred é a flag do dono (uma por (entity, kind)); url é
+        a rota que serve o binário.
+      required: [id, kind, origin, preferred, url]
+      properties:
+        id: { type: string }
+        kind:
+          type: string
+          description: "Tipo de arte (ex.: poster, fanart)."
+        origin:
+          type: string
+          description: "Proveniência (user, external, local)."
+        preferred:
+          type: boolean
+          description: Marcada como preferida do seu kind (lida do meta_json).
+        url:
+          type: string
+          description: Rota que serve o binário deste asset.
+    AssetList:
+      type: array
+      description: Galeria de arte da entity (vazia quando não há arte).
+      items: { $ref: "#/components/schemas/Asset" }
     EnrichRequest:
       type: object
       description: >

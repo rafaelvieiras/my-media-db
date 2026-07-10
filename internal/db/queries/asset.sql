@@ -48,6 +48,14 @@ SET path_or_uri = ?,
     meta_json = ?
 WHERE id = ?;
 
+-- name: AtualizarAssetMeta :exec
+-- Atualiza SO o meta_json de um asset (marca/desmarca a preferida do dono,
+-- briefing 0017). Nao toca entity_id/kind/origin/path_or_uri. Usada ao (des)marcar
+-- preferida: o merge preservando as demais chaves do meta_json e feito em Go.
+UPDATE asset
+SET meta_json = ?
+WHERE id = ?;
+
 -- name: ApagarAsset :exec
 DELETE FROM asset
 WHERE id = ?;

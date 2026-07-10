@@ -190,6 +190,90 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/assets': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Galeria de arte da entity (briefing 0017).
+     * @description Lista os assets da entity (poster/fanart), cada um com origem (`user` do dono × `external` cacheado × `local` do scanner), a flag `preferred` (lida do `meta_json`) e a `url` do binário (rota do /file). `[]` quando não há arte; 404 se a entity não existe.
+     */
+    get: operations['listAssets']
+    put?: never
+    /**
+     * Upload de arte custom do dono (origin=user, briefing 0017).
+     * @description Recebe multipart/form-data — campo `file` (o binário) + campo `kind` (`poster`|`fanart`, default `poster`). O tipo é validado pelos MAGIC BYTES (não pela extensão nem pelo header do cliente): só `image/jpeg|png|webp`. Tamanho ≤ 20 MiB. Grava o binário atomicamente sob o diretório de assets e cria o asset `origin='user'`. Subir arte já a faz o pôster ser servido (vence a externa). 201 com o asset criado.
+     */
+    post: operations['uploadAsset']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/assets/{assetId}/file': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Serve o binário de um asset específico (image/*).
+     * @description Miniaturas da galeria: devolve o arquivo do asset com o content-type correto e a MESMA guarda de path-traversal do pôster. O `assetId` precisa pertencer à entity. 404 quando não existe/binário sumiu; 403 fora das raízes confiáveis.
+     */
+    get: operations['getAssetFile']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/assets/{assetId}/prefer': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    /**
+     * Marca o asset como preferido do seu kind (briefing 0017).
+     * @description Seta `meta.preferred=true` no asset e LIMPA a flag dos outros do mesmo `(entity, kind)` — uma preferida por kind. Preserva as demais chaves do `meta_json`. 200 com o asset; 404 asset/entity inexistente.
+     */
+    put: operations['preferAsset']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/assets/{assetId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Remove uma arte do dono (origin=user, briefing 0017).
+     * @description Apaga a linha do asset + o binário (best-effort). Recusa (422) apagar arte `origin='external'`: é cache re-puxável que some sozinho no re-enrich (não-destrutivo). 200 com o asset removido; 404 se não existe/não é da entity.
+     */
+    delete: operations['deleteAsset']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/search': {
     parameters: {
       query?: never
@@ -345,6 +429,20 @@ export interface components {
       /** @description false quando não há credencial/provider ou a fonte falhou — distingue "fonte indisponível" de "zero resultados". */
       external_available: boolean
     }
+    /** @description Uma arte da entity (briefing 0017). origin distingue a proveniência: `user` (upload do dono), `external` (cache re-puxável do enriquecimento) ou `local` (arte do scanner). preferred é a flag do dono (uma por (entity, kind)); url é a rota que serve o binário. */
+    Asset: {
+      id: string
+      /** @description Tipo de arte (ex.: poster, fanart). */
+      kind: string
+      /** @description Proveniência (user, external, local). */
+      origin: string
+      /** @description Marcada como preferida do seu kind (lida do meta_json). */
+      preferred: boolean
+      /** @description Rota que serve o binário deste asset. */
+      url: string
+    }
+    /** @description Galeria de arte da entity (vazia quando não há arte). */
+    AssetList: components['schemas']['Asset'][]
     /** @description Corpo OPCIONAL de POST /entities/{id}/enrich. Sem source usa "tmdb"; sem source_id usa external_ids[source] da entity. */
     EnrichRequest: {
       /** @description Fonte a consultar (default tmdb). */
@@ -510,6 +608,8 @@ export interface components {
     EntityId: string
     /** @description Id do datasource. */
     SourceId: string
+    /** @description Id do asset (arte). */
+    AssetId: string
     /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
     LangQuery: string
   }
@@ -841,6 +941,153 @@ export interface operations {
       }
       403: components['responses']['Error']
       404: components['responses']['Error']
+    }
+  }
+  listAssets: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Lista de assets (vazia quando não há arte). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AssetList']
+        }
+      }
+      404: components['responses']['Error']
+    }
+  }
+  uploadAsset: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /**
+           * Format: binary
+           * @description Binário da imagem (JPEG, PNG ou WebP).
+           */
+          file: string
+          /**
+           * @description Tipo de arte (default: poster).
+           * @enum {string}
+           */
+          kind?: 'poster' | 'fanart'
+        }
+      }
+    }
+    responses: {
+      /** @description Asset criado. */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Asset']
+        }
+      }
+      404: components['responses']['Error']
+      413: components['responses']['Error']
+      415: components['responses']['Error']
+      422: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  getAssetFile: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+        /** @description Id do asset (arte). */
+        assetId: components['parameters']['AssetId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Binário da imagem. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'image/*': string
+        }
+      }
+      403: components['responses']['Error']
+      404: components['responses']['Error']
+    }
+  }
+  preferAsset: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+        /** @description Id do asset (arte). */
+        assetId: components['parameters']['AssetId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Asset marcado como preferido. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Asset']
+        }
+      }
+      404: components['responses']['Error']
+    }
+  }
+  deleteAsset: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+        /** @description Id do asset (arte). */
+        assetId: components['parameters']['AssetId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Asset removido. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Asset']
+        }
+      }
+      404: components['responses']['Error']
+      422: components['responses']['Error']
     }
   }
   search: {

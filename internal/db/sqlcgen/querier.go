@@ -21,6 +21,10 @@ type Querier interface {
 	ApagarMediaFile(ctx context.Context, id string) error
 	// Remove o override da entity (volta ao valor da base editorial/arquivo).
 	ApagarMediaOverride(ctx context.Context, entityID string) error
+	// Atualiza SO o meta_json de um asset (marca/desmarca a preferida do dono,
+	// briefing 0017). Nao toca entity_id/kind/origin/path_or_uri. Usada ao (des)marcar
+	// preferida: o merge preservando as demais chaves do meta_json e feito em Go.
+	AtualizarAssetMeta(ctx context.Context, arg AtualizarAssetMetaParams) error
 	// Atualiza o caminho/binario de um asset ja existente (dedup do cache externo:
 	// re-baixar o poster reaproveita a mesma linha). Nao muda entity_id/kind/origin.
 	AtualizarAssetPath(ctx context.Context, arg AtualizarAssetPathParams) error

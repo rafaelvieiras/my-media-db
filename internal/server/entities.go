@@ -406,10 +406,13 @@ func fileDTO(f sqlcgen.MediaFile) mediaFileDTO {
 	return dto
 }
 
-// getEntityPoster trata GET /api/v1/entities/{id}/assets/poster: serve o binário
-// do pôster local com o content-type correto. 404 quando não há pôster (a UI cai
-// no placeholder); 403 quando o caminho gravado NÃO está sob um datasource
-// conhecido (guarda de PATH-TRAVERSAL: jamais servimos caminho arbitrário).
+// getEntityPoster trata GET /api/v1/entities/{id}/assets/poster: serve o binário do
+// pôster local com o content-type correto, aplicando a PRECEDÊNCIA de serviço do
+// briefing 0017 (preferida → user → external → 404) sobre a lista de assets do kind
+// 'poster'. 404 quando não há pôster (a UI cai no placeholder); 403 quando o caminho
+// gravado NÃO está sob um datasource conhecido (guarda de PATH-TRAVERSAL: jamais
+// servimos caminho arbitrário). A escolha do dono vence — vale inclusive para o que
+// o Jellyfin consome deste endpoint.
 func (s *Server) getEntityPoster(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -417,49 +420,17 @@ func (s *Server) getEntityPoster(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	ctx := r.Context()
 
-	asset, err := s.leitura().ObterAssetPosterPorEntity(ctx, id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "pôster não encontrado")
-			return
-		}
-		respondErroInterno(w)
-		return
-	}
-
-	// GUARDA DE SEGURANÇA: o caminho do asset só pode ser servido se estiver sob a
-	// raiz de algum library_source (arte local do scanner) OU sob o nosso diretório
-	// confiável de assets (cache de imagem externo, briefing 0015). Isso barra
-	// qualquer caminho que tenha escapado por '..'/symlink e impede servir arquivo
-	// arbitrário do host.
-	raizes, err := s.raizesConfiaveis(ctx)
+	assets, err := s.leitura().ListarAssetsPorEntity(ctx, id)
 	if err != nil {
 		respondErroInterno(w)
 		return
 	}
-	if !caminhoSobRaizes(asset.PathOrUri, raizes) {
-		writeError(w, http.StatusForbidden, "forbidden",
-			"o caminho do pôster está fora dos datasources conhecidos")
+	asset, ok := escolherAssetServido(assets, kindPoster)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "pôster não encontrado")
 		return
 	}
-
-	limpo := filepath.Clean(asset.PathOrUri)
-	f, err := os.Open(limpo) //nolint:gosec // caminho validado por caminhoSobRaizes acima
-	if err != nil {
-		// O registro existe mas o binário sumiu do disco: trata como ausência.
-		writeError(w, http.StatusNotFound, "not_found", "arquivo do pôster indisponível")
-		return
-	}
-	defer func() { _ = f.Close() }()
-
-	info, err := f.Stat()
-	if err != nil || info.IsDir() {
-		writeError(w, http.StatusNotFound, "not_found", "arquivo do pôster indisponível")
-		return
-	}
-
-	w.Header().Set("Content-Type", contentTypeImagem(limpo, f))
-	http.ServeContent(w, r, filepath.Base(limpo), info.ModTime(), f)
+	s.servirBinarioAsset(w, r, ctx, asset)
 }
 
 // raizesConfiaveis é a lista de diretórios sob os quais um pôster PODE ser
