@@ -70,21 +70,31 @@ equipe (créditos, MD6)** e **avaliação local** — cada um vira briefing pró
   source_id)` — **não** por `entity`: ver o externo **não** cataloga (viewing ≠
   cataloging). Colunas mínimas: `source`, `source_id`, `type`, `payload_json` (o
   envelope aumentado do provider, como em [0020](0020-provider-multi-idioma-traducao-tags.md)),
-  `fetched_at`. PK `(source, source_id)`. É cache re-componível
+  `langs_json` (os idiomas contidos no payload — ver refresh), `fetched_at`. PK
+  `(source, source_id)`. É cache re-componível
   ([ADR-0011](../docs/adr/0011-external-ids-autoritativo-media-external-cache.md)):
-  pode ser apagado/re-puxado sem perda de dado do dono.
-  - *Decisão a ratificar:* cache próprio (recomendado, mantém `media_external` só
-    para itens catalogados) **vs.** `media_external` com `entity_id` nulo. O cache
-    próprio evita linhas órfãs e o acoplamento do FK.
+  pode ser apagado/re-puxado sem perda de dado do dono. **Decidido** (revisão): cache
+  próprio, não `media_external` com `entity_id` nulo — evita linhas órfãs e mantém o
+  FK de `media_external` só para itens catalogados.
+- **Política de refresh** (decidida): serve do cache dentro de um **TTL**; re-puxa da
+  fonte quando (a) o TTL expirou **ou** (b) o conjunto de idiomas **permitidos** mudou
+  desde o `fetched_at` (o payload guarda TODAS as traduções permitidas, como o
+  `media_external` do [0020](0020-provider-multi-idioma-traducao-tags.md); um idioma
+  recém-permitido exige re-puxar). O `langs_json` guardado permite detectar (b).
 - No **import**, o payload do `external_detail` **semeia** o `media_external` da
   entity criada (find-or-create do [0015](0015-enriquecimento-import-proxy-imagem.md)),
   evitando a segunda ida à fonte quando o cache está fresco.
 - Campos novos do canônico (do provider) — traduzíveis vs neutros seguindo
   [ADR-0018](../docs/adr/0018-modelo-multi-idioma-dimensao-nas-camadas.md):
-  - **Traduzíveis** (map por idioma): `tagline`, `keywords`.
+  - **Traduzíveis** (map por idioma): `tagline`, `keywords`. **`keywords` é campo
+    PRÓPRIO, distinto de `tags`/gêneros** (decidido na revisão): TMDB entrega gêneros e
+    keywords como listas separadas, e o dono quer exibi-las/filtrá-las distintas — o
+    eixo `tags` do [0020](0020-provider-multi-idioma-traducao-tags.md) segue só para
+    gêneros; `keywords` resolve por idioma na mesma dimensão, em campo à parte.
   - **Neutros** (escalares/listas): `runtime`, `certification` (por região),
     `backdrop_url`, `videos[]`, `collection` (`{id,name,poster}`), `similar[]`
-    (`{source_id,title,year,poster}`), `vote_average`, `external_links` (`{imdb,…}`).
+    (`{source_id,type,title,year,poster}` — o `type` para navegar, ver [0023](0023-tela-detalhe-externo-ui.md)),
+    `vote_average`, `external_links` (`{imdb,…}`).
 
 ### API (`/api/v1`)
 - **GET `/external/{source}/{type}/{id}`** — detalhe externo rico. `type`
@@ -121,7 +131,11 @@ equipe (créditos, MD6)** e **avaliação local** — cada um vira briefing pró
   (duração, tagline, keywords, classificação, backdrop, vídeos, coleção, similares,
   nota, links) resolvido no `?lang=`; `404`/`502`/`503` nas bordas.
 - [ ] A **1ª chamada persiste** no `external_detail`; a 2ª (fresca) **não** bate na
-  fonte (testado por contagem de idas ao provider).
+  fonte (testado por contagem de idas ao provider). Se a gravação falhar, a leitura
+  ainda responde (best-effort — testado).
+- [ ] **Refresh**: expirado o TTL **ou** mudado o conjunto de permitidos, a próxima
+  leitura re-puxa (testado o gatilho por idioma).
+- [ ] `keywords` vem como **campo próprio traduzível**, distinto de gêneros (`tags`).
 - [ ] Ver o externo **não cria `entity`** (viewing ≠ cataloging) — testado.
 - [ ] O **import reusa** o detalhe cacheado quando fresco (sem 2ª ida) e produz a
   mesma entity resolvida de hoje.
@@ -133,6 +147,10 @@ equipe (créditos, MD6)** e **avaliação local** — cada um vira briefing pró
 - **Persistir na 1ª chamada** ([ADR-0011](../docs/adr/0011-external-ids-autoritativo-media-external-cache.md)):
   o detalhe externo é cache re-componível, então guardá-lo cedo é barato e evita
   martelar a fonte — decisão do dono na revisão da Fase 3.
+- **O GET escreve, mas a leitura vence**: a persistência na 1ª chamada é um upsert
+  idempotente e **best-effort** — se a gravação do cache tropeçar, o handler **ainda
+  responde** o detalhe puxado (a próxima visita re-tenta). Um GET com efeito colateral
+  de escrita é deliberado aqui (aquecer cache), nunca uma barreira para a leitura.
 - **Cache desacoplado de `entity`**: ver o externo não deve poluir o catálogo. Um
   `external_detail` por `(source,source_id)` mantém "ver ≠ catalogar" e alimenta o
   import quando ele acontece.
