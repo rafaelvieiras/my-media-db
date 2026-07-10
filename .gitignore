@@ -30,3 +30,7 @@ tmp/
 
 # Artefatos do Playwright MCP (snapshots de validação)
 .playwright-mcp/
+
+# Binário do servidor quando buildado na raiz (ex.: `go build ./cmd/...`). O
+# binário de release é gerado no CI/Docker, nunca versionado.
+/mymediadb

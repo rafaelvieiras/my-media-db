@@ -3,7 +3,8 @@
   "commit": "7fd639b",
   "project": "my-media-db",
   "metrics": {
-    "go_coverage_lines": 73.9,
+    "go_coverage_lines": 74.2,
+    "e2e_coverage_lines": 31.1,
     "go_gofmt_unformatted": 0,
     "go_lint_issues": 0,
     "go_vuln_high": 0,

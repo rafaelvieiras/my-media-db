@@ -13,7 +13,7 @@
 | **Tipo** | infra/qualidade |
 | **Fase (roadmap)** | Fase 3 — extensão pós-revisão |
 | **Docs relacionadas** | [05-api](../docs/05-api.md), [ADR-0010](../docs/adr), [ADR-0012](../docs/adr) |
-| **Status** | planejado (este briefing é o plano; implementação por fases) |
+| **Status** | Fase 1 em implementação (fake provider + Camada 1 + métrica de cobertura); Fases 2–3 planejadas |
 | **Depende de** | 0015 (enrich), 0025/0026/0027 (features a cobrir) |
 
 ---
@@ -66,6 +66,42 @@ testar visual/pixel (fora de escopo); cobrir toda combinação (só as jornadas 
 **O fake provider é a PEÇA-CHAVE**: construído uma vez, alimenta as três camadas abaixo.
 Começar por (1); (2) entra depois como camada de contrato do provider, se necessário.
 
+## 3.1. Medir a COBERTURA do E2E (existe solução de mercado?)
+
+Pergunta do dono: dá para ter um "% coberto pelo E2E", como a catraca tem no unitário?
+**Sim** — e o nosso stack é particularmente favorável. Pesquisa (jul/2026):
+
+- **Backend Go — cobertura do BINÁRIO real (Go 1.20+; temos 1.26)**: compilar com
+  `go build -cover` gera um binário instrumentado; rodá-lo com `GOCOVERDIR=<dir>` faz
+  cada execução gravar arquivos `covcounter`/`covmeta` naquele diretório; depois
+  `go tool covdata textfmt -i=<dir> -o=perfil.txt` (ou `percent -i=<dir>`) extrai o
+  perfil/percentual. Ou seja, a **Camada 2 (Playwright contra o binário) pode emitir a
+  cobertura do backend** exercida pelas jornadas de navegador — a mesma métrica do
+  unitário, só que da jornada real. `go tool covdata merge` funde vários diretórios
+  (várias execuções/jornadas) num só. Ref.: [go.dev/blog/integration-test-coverage].
+- **Camada 1 — cobertura como métrica dedicada na catraca (fazer agora)**: o
+  `go test ./... -coverprofile` da catraca mede cobertura POR-PACOTE (cada pacote pelos
+  SEUS testes), então um harness E2E num pacote à parte NÃO creditaria os pacotes que
+  ele exercita. A forma correta de ter o "% do app coberto pelas JORNADAS" é uma métrica
+  SEPARADA: `go test ./internal/e2e/... -coverpkg=./internal/... -coverprofile=e2e.out`
+  → `go tool cover -func` → total %. Isso responde direto "quanto das linhas do app as
+  jornadas tocam", sem misturar com o ratchet unitário (semânticas distintas). Entra na
+  catraca como `e2e_coverage_lines` (ratchet próprio, só sobe).
+- **Frontend — cobertura do navegador**: duas vias maduras — (a) instrumentar o build
+  com `vite-plugin-istanbul`/`babel-plugin-istanbul` (o app expõe `window.__coverage__`,
+  o Playwright lê após cada teste e o `nyc` reporta linha/branch do TSX real); (b)
+  cobertura V8 nativa do Chromium (`page.coverage.start/stopJSCoverage`) convertida por
+  `v8-to-istanbul`. A ferramenta de referência hoje é **`monocart-coverage-reports`**
+  (gera V8 ou Istanbul, LCOV/HTML, aplica source maps e **funde** unit+E2E num relatório
+  só). Refs.: [playwright.dev/docs/api/class-coverage], [npm monocart-coverage-reports].
+- **Fusão unit+E2E**: dá para somar num número só (`go tool covdata merge` no backend;
+  `nyc merge`/monocart no frontend). Mas a recomendação aqui é **NÃO fundir com o ratchet
+  unitário**: manter `e2e_coverage_lines` como métrica própria (o E2E cobre JORNADAS, o
+  unit cobre RAMOS — fundir esconde buraco de ramo atrás de jornada e vice-versa).
+
+Ordem pragmática: começar pela métrica da Camada 1 (só `-coverpkg`, sem infra nova);
+a cobertura do binário (GOCOVERDIR) e a do navegador (monocart) entram com a Camada 2.
+
 ## 4. As camadas (troféu de testes)
 
 ### Camada 1 — E2E black-box do BACKEND (fazer primeiro; custo baixo)
@@ -91,7 +127,7 @@ Trocar os stubs de fetch manuais (hoje `stub-fetch.ts`) por **MSW** e montar ár
 rota inteiras no Vitest/jsdom. Rápido (ms), sem browser, pega regressão de UI cedo e
 reduz a deriva de contrato dos mocks à mão. Roda junto do `npm test` atual.
 
-## 5. Determinismo e pegadinhas (específicas deste repo)
+## 6. Determinismo e pegadinhas (específicas deste repo)
 
 - **Relógio**: testes ancoram no relógio REAL, nunca em data fixa (o `strftime('now')` do
   banco anda; ver o débito histórico de TTL). Fake determinístico + `-count=1`.
@@ -105,7 +141,7 @@ reduz a deriva de contrato dos mocks à mão. Roda junto do `npm test` atual.
 - **Flakiness do browser**: manter a Camada 2 enxuta; assertions que esperam estado, não
   tempo.
 
-## 6. Jornadas iniciais a codificar (o que já valido à mão)
+## 7. Jornadas iniciais a codificar (o que já valido à mão)
 
 Camada 1 (API) e as principais também na Camada 2 (UI):
 1. Importar filme (tmdb) → entity resolvida com título/ano/pôster.
@@ -121,25 +157,32 @@ Camada 1 (API) e as principais também na Camada 2 (UI):
    não volta, tag nova da fonte aparece. (Codifica a garantia do resolver de 3 camadas.)
 7. Erros-chave: enrich sem id da fonte → 422 inline; fonte indisponível → 502/503.
 
-## 7. Integração com CI / catraca / lefthook
+## 8. Integração com CI / catraca / lefthook
 
 - Camada 1 roda no `go test ./... -count=1` que a catraca já executa (sem infra nova).
 - Camada 2 (Playwright) vira um job separado (mais lento) — pre-push e/ou CI noturno; não
   bloqueia cada commit. Um alvo `npm run e2e` que builda+sobe+roda.
 - Camada 3 roda dentro do `npm test` atual.
-- Métricas: manter a cobertura como está (E2E não substitui a ratchet de unit); opcional
-  registrar contagem de jornadas verdes.
+- Métricas: o ratchet unitário (`go_coverage_lines`/`web_coverage_lines`) fica como está —
+  o E2E NÃO o substitui. Além dele, a catraca ganha `e2e_coverage_lines`: `go test
+  ./internal/e2e/... -coverpkg=./internal/... -coverprofile` → total % (quanto do app as
+  JORNADAS tocam), ratchet próprio (só sobe), blocking. Semânticas distintas de propósito
+  (jornada × ramo). A cobertura do binário (Camada 2, via GOCOVERDIR) e a do navegador
+  (monocart) entram como métricas próprias quando a Camada 2 existir.
 
-## 8. Plano faseado
+## 9. Plano faseado
 
-- **Fase 1** — fake provider de fixtures (env flag no `main`) + Camada 1 (harness de
-  jornadas de API em Go) migrando os smoke tests manuais. Entrega valor imediato, baixo
-  risco, já na catraca.
-- **Fase 2** — esqueleto Playwright (global-setup builda+sobe o binário com o fake) + 2–3
-  jornadas; depois crescer até ~8.
+- **Fase 1** (EM ENTREGA) — fake provider de fixtures (`internal/provider/fake`, ligado
+  por `MYMEDIADB_FAKE_PROVIDER=1` no `main`) + Camada 1 (harness `internal/e2e` de
+  jornadas de API em Go sobre `httptest.NewServer`) migrando os smoke tests manuais +
+  métrica `e2e_coverage_lines` na catraca (`-coverpkg`). Valor imediato, baixo risco.
+- **Fase 2** — esqueleto Playwright (global-setup builda+sobe o binário com o fake, agora
+  com `MYMEDIADB_FAKE_IMAGE_BASE` para imagens determinísticas) + 2–3 jornadas; depois
+  crescer até ~8. Cobertura do binário via `go build -cover` + `GOCOVERDIR` (backend) e
+  `monocart-coverage-reports`/`vite-plugin-istanbul` (frontend).
 - **Fase 3** (opcional) — MSW + montagem de rotas no Vitest para UI rápida por commit.
 
-## 9. Decisões em aberto / follow-ups
+## 10. Decisões em aberto / follow-ups
 
 - Fake provider por fixtures (1) x mock TMDB HTTP (2): começar por (1); avaliar (2) como
   camada de contrato do provider TMDB.
@@ -147,3 +190,8 @@ Camada 1 (API) e as principais também na Camada 2 (UI):
 - Onde guardar fixtures (`internal/provider/fake/testdata/` + imagens mínimas).
 - Estratégia de dados para jornadas que dependem de estado prévio (seed via API no início
   de cada jornada, mantendo isolamento).
+- `e2e_coverage_lines` blocking já na Fase 1 x começar reportando (não-blocking) e travar
+  depois: escolhido BLOCKING com baseline capturado no 1º verde (ratchet só sobe), igual
+  ao unit — cresce a cada jornada nova.
+- Cobertura do binário (GOCOVERDIR) exige o binário `-cover`; decidir na Fase 2 se o alvo
+  `npm run e2e` já emite o perfil e se ele vira métrica na catraca ou só relatório.

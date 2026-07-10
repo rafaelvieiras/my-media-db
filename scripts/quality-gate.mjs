@@ -67,6 +67,7 @@ function warn(msg) { console.warn(`${c.yellow}⚠  ${msg}${c.reset}`); }
 const METRIC_DEFS = {
   // --- Go (rodado na raiz) ---
   go_coverage_lines:     { label: 'Go: cobertura de linhas', unit: '%',     side: 'go',  lowerIsBetter: false, blocking: true   },
+  e2e_coverage_lines:    { label: 'Go: cobertura E2E (jornadas)', unit: '%',side: 'go',  lowerIsBetter: false, blocking: true   },
   go_gofmt_unformatted:  { label: 'Go: arquivos não-gofmt',  unit: 'arqs',  side: 'go',  lowerIsBetter: true,  blocking: 'zero' },
   go_lint_issues:        { label: 'Go: issues golangci-lint',unit: 'issues',side: 'go',  lowerIsBetter: true,  blocking: false  },
   go_vuln_high:          { label: 'Go: vulnerabilidades',    unit: 'vulns', side: 'go',  lowerIsBetter: true,  blocking: 'zero' },
@@ -136,6 +137,48 @@ function collectGoCoverage() {
   const f = run(`go tool cover -func="${profile}"`);
   if (f.code !== 0) {
     warn('go tool cover falhou — cobertura pulada');
+    return null;
+  }
+  const line = f.stdout.trim().split('\n').filter((l) => l.startsWith('total:')).pop();
+  const m = line && line.match(/(\d+(?:\.\d+)?)%/);
+  return m ? parseFloat(m[1]) : 0;
+}
+
+// Cobertura E2E (briefing 0028): quanto do código do APP as JORNADAS da Camada 1
+// (internal/e2e) tocam, medido com -coverpkg sobre o resto de internal/ MENOS a infra
+// de teste (o próprio e2e e o provider fake, que inflariam o número). Métrica SEPARADA
+// do unitário de propósito (jornada × ramo). Roda com -count=1 (o cache do go test já
+// mascarou falha antes). null quando pula (nunca crasha).
+function collectE2ECoverage() {
+  const listed = run('go list ./internal/...');
+  if (listed.code !== 0) {
+    warn('go list falhou — cobertura E2E pulada');
+    return null;
+  }
+  const pkgs = listed.stdout
+    .trim()
+    .split('\n')
+    .filter((p) => p && !p.endsWith('/internal/e2e') && !p.endsWith('/internal/provider/fake'));
+  if (pkgs.length === 0) {
+    warn('nenhum pacote para -coverpkg — cobertura E2E pulada');
+    return null;
+  }
+  const profile = join(REPORTS, 'e2e-coverage.out');
+  const t = run(
+    `go test ./internal/e2e/... -coverpkg="${pkgs.join(',')}" -covermode=set -coverprofile="${profile}" -count=1`,
+  );
+  if (t.code !== 0) {
+    warn('go test e2e falhou — cobertura E2E não medida (métrica pulada):');
+    if (t.stderr.trim()) warn(t.stderr.trim().split('\n').slice(0, 8).join('\n'));
+    return null;
+  }
+  if (!existsSync(profile)) {
+    warn('perfil E2E não gerado — métrica pulada');
+    return null;
+  }
+  const f = run(`go tool cover -func="${profile}"`);
+  if (f.code !== 0) {
+    warn('go tool cover (e2e) falhou — cobertura E2E pulada');
     return null;
   }
   const line = f.stdout.trim().split('\n').filter((l) => l.startsWith('total:')).pop();
@@ -373,6 +416,7 @@ function collectMetrics() {
 
   log(`${c.dim}Coletando métricas Go (raiz)...${c.reset}`);
   metrics.go_coverage_lines    = collectGoCoverage();
+  metrics.e2e_coverage_lines   = collectE2ECoverage();
   metrics.go_gofmt_unformatted = collectGofmt();
   metrics.go_lint_issues       = collectGolangciLint();
   metrics.go_vuln_high         = collectGovulncheck();

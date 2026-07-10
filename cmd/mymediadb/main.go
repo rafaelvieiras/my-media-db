@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
+	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/tmdb"
 	"github.com/rafaelvieiras/my-media-db/internal/server"
 )
@@ -143,7 +144,16 @@ func opcoesServer() ([]server.Option, error) {
 // vazio, MYMEDIADB_TMDB_API_KEY (v3). Sem nenhuma das duas, NÃO cria provider
 // (busca externa desligada — não é erro; o enrich/import também ficam off). NUNCA
 // loga o valor da credencial, só se a busca externa está ligada ou desligada.
+//
+// MYMEDIADB_FAKE_PROVIDER=1 tem PRECEDÊNCIA e injeta o provider de fixtures
+// determinístico (briefing 0028): o binário roda o fluxo inteiro sem TMDB real nem
+// segredo, para os testes E2E de navegador (Camada 2) e inspeção manual. As imagens
+// vêm de MYMEDIADB_FAKE_IMAGE_BASE (um servidor de fixtures); vazio => sem pôster.
 func opcoesBusca() []server.Option {
+	if os.Getenv("MYMEDIADB_FAKE_PROVIDER") == "1" {
+		log.Printf("mymediadb: PROVIDER FAKE de fixtures habilitado (E2E; sem TMDB real)")
+		return []server.Option{server.WithSearchProvider(fake.New(os.Getenv("MYMEDIADB_FAKE_IMAGE_BASE")))}
+	}
 	cred := tmdb.Credencial{
 		Token:  os.Getenv("MYMEDIADB_TMDB_TOKEN"),
 		APIKey: os.Getenv("MYMEDIADB_TMDB_API_KEY"),
