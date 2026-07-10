@@ -3,6 +3,7 @@ package enrich
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -137,5 +138,44 @@ func TestReimportarColecaoIdempotente(t *testing.T) {
 	}
 	if n := relacoesColecao(t, database, colID1); n != 2 {
 		t.Errorf("relacoes apos reimport = %d, quero 2 (sem duplicar)", n)
+	}
+}
+
+// TestImportarColecaoSemSuporte: uma fonte que NAO implementa provider.ColecaoProvider
+// devolve erro (o handler traduz para 502) -- ver o externo != importar a colecao.
+func TestImportarColecaoSemSuporte(t *testing.T) {
+	database := setupDB(t)
+	fake := &fakeProvider{raw: json.RawMessage(`{}`), campos: map[string]any{}}
+	svc, _ := novoServico(t, database, fake)
+	if _, _, err := svc.Importar(context.Background(), "tmdb", "2344", "collection", []string{"pt-BR"}); err == nil {
+		t.Fatal("quero erro: provider sem suporte a colecao")
+	}
+}
+
+// TestImportarColecaoParteFalhaDegrada: se o import de UMA parte falha, a colecao ainda
+// e criada (parcial e valida) -- a falha da parte so loga e segue, nao liga a relacao.
+func TestImportarColecaoParteFalhaDegrada(t *testing.T) {
+	database := setupDB(t)
+	fake := &fakeColProvider{
+		fakeProvider: &fakeProvider{erro: errors.New("detalhe falhou")},
+		col:          colDeTeste(nil),
+	}
+	svc, _ := novoServico(t, database, fake)
+	colID, criada, err := svc.Importar(context.Background(), "tmdb", "2344", "collection", []string{"pt-BR"})
+	if err != nil || !criada {
+		t.Fatalf("colecao deveria nascer mesmo com partes falhando: id=%s criada=%v err=%v", colID, criada, err)
+	}
+	if n := relacoesColecao(t, database, colID); n != 0 {
+		t.Errorf("relacoes = %d, quero 0 (todas as partes falharam)", n)
+	}
+}
+
+// TestLangPrincipal: o idioma principal e o primeiro da lista; vazio quando nao ha.
+func TestLangPrincipal(t *testing.T) {
+	if got := langPrincipal(nil); got != "" {
+		t.Errorf("langPrincipal(nil) = %q, quero vazio", got)
+	}
+	if got := langPrincipal([]string{"pt-BR", "en"}); got != "pt-BR" {
+		t.Errorf("langPrincipal = %q, quero pt-BR", got)
 	}
 }

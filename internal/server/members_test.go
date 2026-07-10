@@ -70,6 +70,29 @@ func TestMembersNaoColecaoVazio(t *testing.T) {
 	}
 }
 
+// TestMembersFiltraKindDiferente: so relacoes kind='collection' viram membros; um filho
+// ligado por OUTRO kind (ex.: 'season') fica de fora.
+func TestMembersFiltraKindDiferente(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "col", "collection", "Colecao")
+	semearMembro(t, d, "m1", "Membro", "2001-01-01")
+	semearMembro(t, d, "m2", "Nao-membro", "2002-01-01")
+	ligarMembro(t, d, "r1", "col", "m1") // kind='collection'
+	if _, err := escrita(t, d).CriarEntityRelation(context.Background(), sqlcgen.CriarEntityRelationParams{
+		ID: "r2", ParentID: "col", ChildID: "m2", Kind: "season", // kind diferente -> ignorado
+	}); err != nil {
+		t.Fatalf("CriarEntityRelation season: %v", err)
+	}
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/col/members", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	cards := decodeCards(t, rec)
+	if len(cards) != 1 || cards[0].ID != "m1" {
+		t.Fatalf("membros = %v, quero so [m1] (kind 'season' ignorado)", cards)
+	}
+}
+
 // TestMembers404: /members de uma entity inexistente e 404.
 func TestMembers404(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
