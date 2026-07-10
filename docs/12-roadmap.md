@@ -62,8 +62,16 @@ Objetivo: complementar itens de fontes externas e **dar autoridade ao dono**.
 | [0017](../briefings/0017-arte-custom-upload-ui.md) | Arte custom (upload) + UI | doc 08 |
 | [0018](../briefings/0018-fila-revisao-orfas-correcao-match.md) | Fila de revisão + órfãs + correção de match | MD1/MD5 |
 
+| [0022](../briefings/0022-detalhe-externo-rico-persistente.md) | Detalhe externo rico + cache persistente (provider) | doc 07 |
+| [0023](../briefings/0023-tela-detalhe-externo-ui.md) | Tela rica de detalhe do item externo (UI) | doc 07/08 |
+
+Os briefings **0022/0023** nasceram na **revisão da Fase 3**: uma tela rica de
+detalhe do item externo (como o TMDB) **antes** de importar, persistindo o detalhe na
+1ª consulta. A 1ª versão é **sem créditos** e **sem nota local** — ver abaixo.
+
 **Adiado para o fim da fase / Fase 4:** elenco/equipe (MD6 — `person`/`credit`/
-`company` e override de créditos), separado por ser bem mais complexo.
+`company` e override de créditos), separado por ser bem mais complexo; e a
+**avaliação/nota local** do dono (modelo novo), levantada na revisão da Fase 3.
 
 ## Fase 4 — API TMDB-compat + multiusuário
 
