@@ -10,7 +10,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
 | **Docs relacionadas** | [08-artwork-e-assets](../docs/08-artwork-e-assets.md), [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [ADR-0012](../docs/adr/0012-ciclo-de-vida-nao-destrutivo.md) |
-| **Status** | draft |
+| **Status** | ready |
 | **Depende de** | [0015](0015-enriquecimento-import-proxy-imagem.md) |
 
 ---
@@ -27,67 +27,124 @@ puxada coexistem; a marcada como preferida é a que a API serve por padrão.
 1. No detalhe, o dono abre **Arte** e faz **upload** de um poster.
 2. A nova arte entra na galeria ao lado da externa; o dono a marca **preferida**.
 3. O grid e a API passam a servir a arte do dono; re-enriquecer **não** a remove.
+4. O dono pode **remover** uma arte que subiu (a externa, não — ela é cache re-puxável).
 
-## 3. Escopo
+## 3. A decisão de design que sustenta tudo
 
-**Dentro:**
-- **`POST /api/v1/entities/{id}/assets`** — upload de imagem (`origin=user`), gravando
-  binário em disco + `asset` (kind `poster`/`fanart`/…). **Upload sem aprovação** ([08](../docs/08-artwork-e-assets.md)).
-- **Escolha de preferida** (`PUT .../assets/{id}/prefer` ou flag) — a API serve a
-  preferida por padrão; sem escolha, cai na `external`, depois no placeholder.
-- **Servir** a preferida no endpoint de poster do [0010](0010-api-leitura-resolver-minimo.md)
-  (mantendo a guarda de path traversal).
-- **Não-destrutivo** ([ADR-0012](../docs/adr/0012-ciclo-de-vida-nao-destrutivo.md)):
-  re-enriquecer nunca apaga arte `origin=user`.
-- **UI** de galeria/upload/preferência no detalhe. Testes de upload, preferência e
-  precedência de serviço.
+**A escolha do dono vence** ([08](../docs/08-artwork-e-assets.md)). Sem precisar de nova
+tabela: a preferência é uma **flag em `meta_json`** (`{"preferred": true}`), **uma
+preferida por `(entity, kind)`**. A **precedência de serviço** do pôster passa de "o
+primeiro asset" para:
 
-**Fora (explicitamente):**
-- Geração de **thumbnails/derivadas** e formatos — decisão aberta da [08](../docs/08-artwork-e-assets.md), follow-up.
-- Edição de imagem (crop/resize) no cliente.
-- Tipos de asset além de `poster`/`fanart` (ampliar por vertical depois).
+```
+preferida (meta.preferred) → qualquer origin=user (mais recente) → origin=external → 404 (placeholder)
+```
+
+Ou seja: **subir arte já a faz vencer a externa** (o upload é a intenção); marcar
+preferida só desempata entre várias do dono. A precedência é calculada **em Go** sobre
+`ListarAssetsPorEntity` filtrado por `kind` — testável e sem SQL exótico. O binário do
+dono mora no mesmo diretório confiável de assets do [0015](0015-enriquecimento-import-proxy-imagem.md)
+(`{assetsDir}/{entityID}/…`), então a **guarda de path-traversal do [0010](0010-api-leitura-resolver-minimo.md)
+já o cobre**.
 
 ## 4. Contrato técnico
 
 ### API (`/api/v1`)
-- **POST** multipart → `201` com o `asset` criado; valida content-type/tamanho.
-- **PUT** de preferência → `200`. **GET** de poster ([0010](0010-api-leitura-resolver-minimo.md))
-  passa a resolver: preferida `user` → `external` → 404 (placeholder na UI).
+- **POST `/entities/{id}/assets`** — upload **multipart/form-data**: campo `file` (o
+  binário) + campo `kind` (`poster`|`fanart`, default `poster`). Valida content-type
+  (`image/jpeg|png|webp`) e tamanho (teto como o [0015](0015-enriquecimento-import-proxy-imagem.md),
+  20 MiB); grava o binário em disco (escrita atômica: tmp + rename) e cria o `asset`
+  `origin='user'`. `201` com o asset criado. `404` entity inexistente; `415` tipo não
+  suportado; `413` grande demais; `422` corpo malformado/sem arquivo.
+- **GET `/entities/{id}/assets`** — **galeria**: lista JSON dos assets da entity
+  (id, kind, origin, preferred, url do binário). `200` (`[]` se nenhum); `404` entity
+  inexistente.
+- **GET `/entities/{id}/assets/{assetId}/file`** — serve o **binário** de um asset
+  específico (content-type correto + guarda de path-traversal), para as miniaturas da
+  galeria. `404`/`403` como o pôster.
+- **PUT `/entities/{id}/assets/{assetId}/prefer`** — marca o asset como **preferido**
+  do seu `kind`: seta `meta.preferred=true` nele e **limpa** a flag dos outros do mesmo
+  `(entity, kind)`. `200` com o asset. `404` asset/entity inexistente.
+- **DELETE `/entities/{id}/assets/{assetId}`** — remove uma arte **`origin='user'`**
+  (apaga a linha + o binário, best-effort). `409`/`422` se o asset é `origin='external'`
+  (cache, não se apaga aqui — some no re-enrich). `200`; idempotente-ish (`404` se já
+  não existe).
+- **GET `/entities/{id}/assets/poster`** ([0010](0010-api-leitura-resolver-minimo.md)) —
+  passa a aplicar a **nova precedência** (preferida `user` → `user` → `external` → 404),
+  mantendo a guarda de path-traversal. `poster_url` dos cards/detalhe não muda de forma
+  (segue apontando para este endpoint).
 
 ### Dados / modelo
-- `asset(entity_id, kind, origin='user', path_or_uri, meta_json)` ([0007](0007-schema-nucleo-minimo.md));
-  binário no layout de cache/assets em disco ([0015](0015-enriquecimento-import-proxy-imagem.md)/[08](../docs/08-artwork-e-assets.md)).
-- Preferência: flag em `meta_json` ou coluna — decidir na implementação (uma preferida por `kind`).
+- `asset(entity_id, kind, origin, path_or_uri, meta_json)` ([0007](0007-schema-nucleo-minimo.md));
+  binário no layout de assets em disco ([0015](0015-enriquecimento-import-proxy-imagem.md)/[08](../docs/08-artwork-e-assets.md)).
+- **Preferência = `meta_json.preferred` (bool)**, uma por `(entity, kind)`. Sem coluna
+  nova, sem migração.
+- **Queries:** reusa `CriarAsset`, `ListarAssetsPorEntity`, `ObterAsset`, `ApagarAsset`.
+  Adiciona uma query sqlc (ASCII, colunas explícitas) para **atualizar só o `meta_json`**
+  de um asset (ex.: `AtualizarAssetMeta(meta_json, id)`) — usada ao (des)marcar preferida.
 
 ### Backend (Go)
-- Upload validado (mime/tamanho), escrita atômica em disco, registro do `asset` pelo
-  pool de escrita; servir com content-type correto e **guarda de path traversal**.
+- **Upload:** parse `multipart` com `r.ParseMultipartForm(teto)`; valida mime (pelos
+  magic bytes/`http.DetectContentType`, não só a extensão) e tamanho; escreve em
+  `{assetsDir}/{entityID}/user-{assetId}.{ext}` de forma atômica (tmp no mesmo dir +
+  `os.Rename`); registra o `asset` pelo pool de escrita. Diretório criado com `MkdirAll`.
+- **Precedência de serviço:** um helper puro `escolherAssetServido(assets, kind)
+  (asset, ok)` aplica preferida→user→external; o `getEntityPoster` passa a usá-lo (em
+  vez de `ObterAssetPosterPorEntity`). Manter a guarda `caminhoSobRaizes`.
+- **Preferir:** transação lógica — carrega os assets do `(entity, kind)`, seta
+  `preferred=true` no alvo e remove a flag dos demais (merge no `meta_json` de cada,
+  preservando outras chaves), grava pelo pool de escrita.
+- **Não-destrutivo** ([ADR-0012](../docs/adr/0012-ciclo-de-vida-nao-destrutivo.md)): o
+  cache externo do [0015](0015-enriquecimento-import-proxy-imagem.md) já casa só
+  `origin='external'` (via `ObterAssetPorEntityKindOrigin`), então re-enriquecer nunca
+  toca arte `origin='user'`. Cobrir com teste de regressão.
+
+### API / tipos
+- `openapi.yaml`: os endpoints acima + schemas `Asset`/`AssetList` (id, kind, origin,
+  preferred, url). Regenerar tipos; `tsc -b` verde.
 
 ### Frontend (Vite/React)
-- Galeria no `EntityDetail`: miniaturas, botão de upload, marcar preferida, estados
-  de erro (tipo/tamanho) e vazio.
+- **Galeria no `EntityDetail`** (seção "Arte", junto do editor de override [0016](0016-editor-override-ui.md)):
+  miniaturas dos assets (`GET /assets`), com selo **origin** (`sua` × `externa`) e
+  **preferida**; botão **Upload** (input file, valida tipo no cliente antes de enviar,
+  mostra erro 415/413 inline); ação **Preferir** (PUT) e **Remover** (DELETE, só nas do
+  dono). Estados vazio/erro/carregando. Ao mudar a arte, invalida `['entity', id]`
+  (o pôster do detalhe/grid reflete) e `['assets', id]`.
 
 ### Arquivos afetados
-- Criar: handlers de upload/preferência, serviço de storage de asset, componentes de
-  galeria, testes.
-- Alterar: endpoint de poster ([0010](0010-api-leitura-resolver-minimo.md)) para a precedência; `openapi.yaml` (+ regen tipos); `EntityDetail`.
+- Criar (backend): `internal/server/assets.go` (handlers upload/galeria/file/prefer/
+  delete + precedência + validação), testes; query `AtualizarAssetMeta` em
+  `asset.sql` (+ regen sqlc). Alterar `getEntityPoster` (precedência), `server.go`
+  (rotas), `openapi.yaml` (+ tipos).
+- Criar (frontend): componente de galeria + upload; `web/src/lib/api.ts`/`queries.ts`.
+  Alterar `web/src/routes/entity-detail.tsx`.
 
 ## 5. Critérios de aceite
 
-- [ ] Upload cria `asset` `origin=user` com binário em disco; content-type/tamanho validados.
-- [ ] Marcar preferida faz a API (e o grid) servirem a arte do dono; sem preferida, cai na `external` e depois no placeholder.
-- [ ] Re-enriquecer ([0015](0015-enriquecimento-import-proxy-imagem.md)) **não** remove arte `origin=user`.
-- [ ] O serviço de imagem mantém a guarda de path traversal do [0010](0010-api-leitura-resolver-minimo.md). Catraca verde.
+- [ ] Upload cria `asset` `origin=user` com binário em disco; content-type (magic bytes)
+  e tamanho validados (`415`/`413` nos limites).
+- [ ] Subir arte já a faz o pôster ser servido (vence a externa); marcar **preferida**
+  desempata entre várias do dono; sem arte do dono, cai na `external` e depois no 404.
+- [ ] Re-enriquecer ([0015](0015-enriquecimento-import-proxy-imagem.md)) **não** remove
+  arte `origin=user` (teste de regressão).
+- [ ] DELETE remove arte do dono (linha + binário); recusa apagar `origin=external`.
+- [ ] O serviço de imagem mantém a guarda de path-traversal do [0010](0010-api-leitura-resolver-minimo.md).
+  UI: galeria mostra origem/preferida, faz upload e troca a preferida refletindo na
+  hora. Catraca verde (Go + type-check web).
 
 ## 6. Notas de implementação / decisões
 
-- **A escolha do dono vence** ([08](../docs/08-artwork-e-assets.md)) é a regra que
-  guia a precedência de serviço — vale inclusive para o que o Jellyfin consome.
-- **Upload sem moderação** (é servidor pessoal); validar só o técnico (mime/tamanho),
-  não conteúdo.
+- **A escolha do dono vence** ([08](../docs/08-artwork-e-assets.md)) guia a precedência
+  — vale inclusive para o que o Jellyfin consome do endpoint de pôster.
+- **Upload sem moderação** (servidor pessoal): validar só o técnico (mime/tamanho), não
+  conteúdo. Detectar o mime pelos **magic bytes**, não confiar na extensão/no header do
+  cliente.
 - **Uma preferida por `kind`**: escolher `poster` não afeta a preferência de `fanart`.
+- **Preferência em `meta_json`** (não coluna) evita migração e comporta futuros flags de
+  asset; o custo é o merge no Go ao (des)marcar — trivial.
 
 ## 7. Fora deste briefing / follow-ups
 
-- Thumbnails/derivadas e formatos; mais tipos de asset por vertical; edição de
-  imagem no cliente.
+- Thumbnails/derivadas e formatos ([08](../docs/08-artwork-e-assets.md)); mais tipos de
+  asset por vertical; edição de imagem (crop/resize) no cliente; arte por idioma
+  (fanart localizado) — follow-up do multi-idioma.

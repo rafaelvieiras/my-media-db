@@ -97,5 +97,5 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0020](0020-provider-multi-idioma-traducao-tags.md) | Provider multi-idioma + tradução de tags | feature | done | 0019, 0015 |
 | [0021](0021-ui-idiomas-admin-seletor.md) | UI de idiomas: admin de config + seletor de leitura | feature | done | 0019, 0020 |
 | [0016](0016-editor-override-ui.md) | Editor de override (`/api/v1/entities/{id}/override`) + UI (por idioma) | feature | done | 0013, 0015, 0019, 0021 |
-| [0017](0017-arte-custom-upload-ui.md) | Arte custom: upload (`/api/v1/entities/{id}/assets`) + UI | feature | draft | 0015 |
+| [0017](0017-arte-custom-upload-ui.md) | Arte custom: upload (`/api/v1/entities/{id}/assets`) + UI | feature | ready | 0015 |
 | [0018](0018-fila-revisao-orfas-correcao-match.md) | Fila de revisão + órfãs + correção de match | feature | draft | 0013, 0016 |
