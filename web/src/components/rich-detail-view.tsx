@@ -298,9 +298,11 @@ function ColecaoBand({
   )
 }
 
-// SimilaresRail: cada card é um Link para a MESMA rota do detalhe externo do alvo
-// (`/external/$source/$type/$id`), navegável e sem catalogar (o 0022 persiste na
-// 1ª visita). Vale para as duas telas: os similares são sempre itens EXTERNOS.
+// SimilaresRail: cada card navega ao similar. Interno-first (0026, estendido no 0027):
+// quando o similar JÁ é entity (`internal_id`), o card linka para `/entities/{id}` (o
+// destino INTERNO, centralizado) e ganha o selo "Na biblioteca"; senão, para o detalhe
+// externo do alvo (`/external/$source/$type/$id`), navegável e sem catalogar (o 0022
+// persiste na 1ª visita). Vale para as duas telas (externo e entity).
 function SimilaresRail({
   source,
   similares,
@@ -317,29 +319,63 @@ function SimilaresRail({
       <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
         {similares.map((item) => (
           <li key={`${item.type}:${item.source_id}`}>
-            <Link
-              to="/external/$source/$type/$id"
-              params={{ source, type: item.type, id: item.source_id }}
-              className="group flex flex-col gap-1"
-            >
-              <PosterImg
-                src={item.poster_url}
-                alt={`Pôster de ${item.title}`}
-                className="transition group-hover:ring-2 group-hover:ring-foreground/30"
-              />
-              <span className="line-clamp-2 text-xs font-medium group-hover:text-foreground">
-                {item.title}
-              </span>
-              {item.year ? (
-                <span className="text-xs text-muted-foreground">
-                  {item.year}
-                </span>
-              ) : null}
-            </Link>
+            <SimilarCard source={source} item={item} />
           </li>
         ))}
       </ul>
     </section>
+  )
+}
+
+// SimilarCard renderiza UM similar. O conteúdo (pôster + título + ano) é idêntico nos
+// dois destinos — só a rota muda (interno × externo) e o item interno exibe o selo
+// "Na biblioteca". Extraído para não duplicar o markup entre os dois ramos do Link.
+function SimilarCard({
+  source,
+  item,
+}: {
+  source: string
+  item: ExternalSimilar
+}) {
+  const internalId = internalIdDe(item)
+  const conteudo = (
+    <>
+      <PosterImg
+        src={item.poster_url}
+        alt={`Pôster de ${item.title}`}
+        className="transition group-hover:ring-2 group-hover:ring-foreground/30"
+      />
+      <span className="line-clamp-2 text-xs font-medium group-hover:text-foreground">
+        {item.title}
+      </span>
+      {internalId != null ? (
+        <Badge variant="secondary" className="w-fit">
+          Na biblioteca
+        </Badge>
+      ) : item.year ? (
+        <span className="text-xs text-muted-foreground">{item.year}</span>
+      ) : null}
+    </>
+  )
+  if (internalId != null) {
+    return (
+      <Link
+        to="/entities/$id"
+        params={{ id: internalId }}
+        className="group flex flex-col gap-1"
+      >
+        {conteudo}
+      </Link>
+    )
+  }
+  return (
+    <Link
+      to="/external/$source/$type/$id"
+      params={{ source, type: item.type, id: item.source_id }}
+      className="group flex flex-col gap-1"
+    >
+      {conteudo}
+    </Link>
   )
 }
 

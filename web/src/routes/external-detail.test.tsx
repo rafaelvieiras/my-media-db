@@ -266,6 +266,30 @@ describe('ExternalDetailScreen', () => {
     expect(link.getAttribute('href')).toBe('/external/tmdb/movie/604')
   })
 
+  it('similar JÁ na biblioteca linka para o interno e mostra o selo', async () => {
+    // Interno-first (0027): a parte já importada (internal_id) navega para
+    // /entities/{id} — não para o detalhe externo — e ganha o selo "Na biblioteca".
+    const comInterno = {
+      ...detalhe('pt-BR'),
+      similar: [
+        {
+          source_id: '604',
+          type: 'movie',
+          title: 'Duna: Parte 2',
+          year: '2024',
+          poster_url: null,
+          internal_id: 'ent-604',
+        },
+      ],
+    }
+    stubFetch(() => okJson(comInterno))
+    renderWithClient(<ExternalDetailScreen />)
+
+    const link = await screen.findByRole('link', { name: /Duna: Parte 2/ })
+    expect(link.getAttribute('href')).toBe('/entities/ent-604')
+    expect(screen.getByText('Na biblioteca')).toBeTruthy()
+  })
+
   it('Voltar retorna no histórico', async () => {
     stubFetch()
     renderWithClient(<ExternalDetailScreen />)
