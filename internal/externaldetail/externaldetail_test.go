@@ -106,7 +106,12 @@ func TestRefreshQuandoTTLExpira(t *testing.T) {
 	ctx := context.Background()
 	fake := &fakeProv{nome: "tmdb", raw: json.RawMessage(`{"detail":{"id":603}}`)}
 	svc := New(database, fake, time.Hour)
-	base := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	// Ancora no relogio REAL: o fetched_at do cache e carimbado pelo banco (strftime
+	// 'now'), entao uma data ABSOLUTA fixa fica no passado com o tempo e o carimbo real
+	// passa a parecer "no futuro" -> cache falso-fresco -> teste quebra (o que ocorreu
+	// ao real-now cruzar a data antiga). base = agora real, congelado; depois avancamos
+	// alem do TTL para forcar o refresh.
+	base := svc.agora()
 	svc.agora = func() time.Time { return base }
 
 	langs := []string{"pt-BR"}
