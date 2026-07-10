@@ -107,10 +107,34 @@ itens/visitas (não por entity).
 - **Front**: `deExternalDetail` resolve pôster/fundo por `srcDeImagem` (rota relativa
   recebe a base; URL absoluta passa direto), o mesmo helper do backdrop da entity.
 
-## 6. Fora deste briefing / follow-ups
+## 6. Coleção como página própria (feito)
+
+A faixa de coleção (`ColecaoBand`) virou um DESTINO navegável. Endpoint novo
+`GET /api/v1/external/{source}/collection/{id}?lang=` (`internal/server/external_colecao.go`)
+devolve `{ source, source_id, name, overview, poster_url, backdrop_url, parts:[...] }`;
+o provider ganhou `BuscarColecao` via **capacidade opcional** `provider.ColecaoProvider`
+(type-assert, sem poluir a interface base — fonte sem coleção → 503). As artes do HERO
+da coleção passam pelo proxy local (§5); as miniaturas das parts seguem diretas. A rota
+estática `collection` tem precedência sobre `{type}` no chi. No front: rota
+`/collection/$source/$id` (`web/src/routes/collection-detail.tsx`) que lista as parts
+(cada uma linka para `/external/$source/movie/$id`), e a `ColecaoBand` inteira virou um
+`Link` para a página. **Mono-idioma pragmático** (busca no `?lang=` ativo) e
+**fetch-through sem cache** — o multi-idioma pleno (all-translations do 0022) e o cache
+por TTL ficam como follow-ups anotados.
+
+## 7. Player de vídeo embutido (feito)
+
+Os vídeos (`VideosRail`) deixaram de ser só links: um `VideoCard` mostra o thumbnail do
+YouTube (`img.youtube.com/vi/{key}/hqdefault.jpg`) com botão de play e, ao clicar, troca
+por um `<iframe>` de `www.youtube-nocookie.com/embed/{key}?autoplay=1` (domínio nocookie,
+sem rastreio até o play), em 16:9. Vídeos não-YouTube seguem como link externo. Não há
+CSP no projeto, então nada a ajustar em `frame-src`/`img-src`.
+
+## 8. Fora deste briefing / follow-ups
 
 - **Elenco/equipe (MD6)** e **nota/avaliação local** — seguem como briefings próprios.
 - **Evicção do cache do proxy** (`_proxy` cresce sem limite; dedup por URL torna
   re-visitas grátis, mas não há expurgo) e **proxy das miniaturas** de similares/coleção
   — follow-ups, se o volume justificar.
-- **Coleção como página própria** e **player embutido** — como no §7 do [0023](0023-tela-detalhe-externo-ui.md).
+- **Coleção multi-idioma pleno + cache por TTL** (hoje mono-idioma fetch-through) — o
+  cache re-componível all-translations do 0022 aplicado também à coleção.
