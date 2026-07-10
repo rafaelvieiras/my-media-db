@@ -406,18 +406,22 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 		Cadeia:          cadeia,
 		IdiomaPrincipal: cfg.Primary,
 	})
-	// Banda de coleção interno-aware (0026): o resolver é PURO (não acessa banco),
-	// então o id da coleção interna é anotado aqui. A coleção da entity vem do TMDB
-	// (o link externo já assume isso), então a resolução é por id tmdb.
-	if resolvida.Collection != nil {
-		resolvida.Collection.InternalID = s.idInternoColecao(ctx, "tmdb", resolvida.Collection.SourceID)
-	}
-	// Similares interno-aware (0027): mesma anotação pós-resolução para cada similar já
-	// importado, mantendo o resolver puro. Os similares da entity também são do TMDB.
-	for i := range resolvida.Similar {
-		resolvida.Similar[i].InternalID = s.idInternoItem(ctx, "tmdb", resolvida.Similar[i].SourceID)
-	}
+	s.anotarInternos(ctx, &resolvida)
 	return resolvida, true, nil
+}
+
+// anotarInternos preenche os `internal_id` da coleção e dos similares (0026/0027): o
+// resolver é PURO (não acessa banco), então a resolução externo→interno é anotada
+// aqui, pós-resolução. Coleção e similares da entity vêm do TMDB (o link externo já
+// assume isso), então a resolução é por id tmdb. Isolado para não inflar o
+// resolverEntity (gocyclo).
+func (s *Server) anotarInternos(ctx context.Context, e *resolver.Entidade) {
+	if e.Collection != nil {
+		e.Collection.InternalID = s.idInternoColecao(ctx, "tmdb", e.Collection.SourceID)
+	}
+	for i := range e.Similar {
+		e.Similar[i].InternalID = s.idInternoItem(ctx, "tmdb", e.Similar[i].SourceID)
+	}
 }
 
 // prioridadeFontes é a ordem de precedência das fontes externas (R2): a primeira
