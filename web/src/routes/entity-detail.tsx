@@ -12,6 +12,7 @@ import { rotuloIdioma } from '@/lib/languages'
 import { temOverrideEditado } from '@/lib/override-fields'
 import { ArtGallery } from '@/components/art-gallery'
 import { CollectionMembers } from '@/components/collection-members'
+import { ExternalIdsEditor } from '@/components/external-ids-editor'
 import { MediaInfoTable } from '@/components/media-info-table'
 import { OverrideEditor } from '@/components/override-editor'
 import { ErrorState, LoadingState } from '@/components/query-states'
@@ -217,13 +218,19 @@ export function EntityDetailScreen() {
         }
       >
         {editando && blob !== undefined ? (
-          <OverrideEditor
-            key={`${lang}:${overrideQuery.dataUpdatedAt}`}
-            entity={data}
-            blob={blob}
-            lang={lang}
-            onDone={() => setEditando(false)}
-          />
+          <>
+            <OverrideEditor
+              key={`${lang}:${overrideQuery.dataUpdatedAt}`}
+              entity={data}
+              blob={blob}
+              lang={lang}
+              onDone={() => setEditando(false)}
+            />
+            {/* Identidade externa (0027): fixar os ids da fonte é EDIÇÃO avançada, então
+                fica junto do editor de override (modo editar). Não é override — grava a
+                identidade autoritativa (MD4) e re-resolve. */}
+            <ExternalIdsEditor id={id} externalIds={data.external_ids} />
+          </>
         ) : null}
 
         {/* Coleção (0025): mostra os MEMBROS no lugar dos Arquivos (coleção não tem
