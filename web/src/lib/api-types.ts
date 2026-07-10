@@ -34,7 +34,11 @@ export interface paths {
      */
     get: operations['listEntities']
     put?: never
-    post?: never
+    /**
+     * Cria um item local manual sem fonte externa (briefing 0027).
+     * @description Cria uma entity de mídia (type=movie|tv) LOCAL, sem external_ids, com os campos base dados pelo dono — para catalogar algo que a fonte não tem ou ainda não casou. Combina com PUT /entities/{id}/external-ids (fixar o id da fonte depois, para sincronizar). Responde 201 com a entity RESOLVIDA. 400 corpo inválido; 422 type fora de movie|tv ou título vazio.
+     */
+    post: operations['createItem']
     delete?: never
     options?: never
     head?: never
@@ -103,6 +107,26 @@ export interface paths {
      * @description Puxa o detalhe da fonte e grava a camada externa (media_external, payload cru) + a identidade (external_ids) + o pôster cacheado; NÃO toca override nem arte do dono (não-destrutivo). Corpo opcional: sem source usa "tmdb"; sem source_id usa external_ids[source] da entity (422 se não houver id). Responde a entity RESOLVIDA (com os dados externos compostos). MULTI-IDIOMA (briefing 0020): a fonte puxa TODAS as traduções permitidas (settings.allowed) numa só ida e grava um payload AUMENTADO tagueado por idioma, além de gravar entity.original_language (âncora do fallback). O shape RESOLVIDO desta resposta não muda — só passa a ter mais idiomas para o `?lang=` do GET /entities/{id} servir.
      */
     post: operations['enrichEntity']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/external-ids': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    /**
+     * Edita a identidade externa da entity (briefing 0027).
+     * @description Grava o mapa COMPLETO de external_ids (source -> id na fonte). As colunas geradas external_id_tmdb/imdb re-derivam do JSON, então fixar o id prepara uma sincronização futura (o dono corrige o id quando a fonte muda/apaga/funde). Um valor vazio remove aquela fonte. NÃO re-enriquece (o dono chama /enrich depois). Responde 200 com a entity RESOLVIDA. 404 entity inexistente; 400 corpo inválido; 422 chave (source) vazia.
+     */
+    put: operations['updateExternalIds']
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -647,6 +671,8 @@ export interface components {
       poster_url: string | null
       /** @description Sempre false na busca (resultado externo não é entidade). */
       saved: boolean
+      /** @description Id da entity interna quando este resultado externo JÁ foi importado (interno-first, 0027); null caso contrário. A UI mostra "na biblioteca" e linka ao interno em vez de reimportar. */
+      internal_id?: string | null
     }
     SearchResult: {
       query: string
@@ -701,6 +727,29 @@ export interface components {
     AddMember: {
       /** @description Id da entity (filme/série) a incluir como membro. */
       child_id: string
+    }
+    /** @description Corpo de POST /entities (0027) — cria um ITEM LOCAL manual (movie|tv) SEM fonte externa. type e title são obrigatórios; os demais campos base são opcionais. */
+    CreateItem: {
+      /**
+       * @description Tipo do item (movie ou tv; coleção usa POST /collections).
+       * @enum {string}
+       */
+      type: 'movie' | 'tv'
+      /** @description Título do item (obrigatório, não pode ser vazio). */
+      title: string
+      /** @description Título original (opcional). */
+      original_title?: string
+      /** @description Sinopse (opcional). */
+      description?: string
+      /** @description Data de lançamento ISO, ex.: 1999-03-31 (opcional). */
+      release_date?: string
+    }
+    /** @description Corpo de PUT /entities/{id}/external-ids (0027) — o mapa COMPLETO de identidades externas (source -> id na fonte). Substitui o mapa inteiro; um valor vazio remove aquela fonte. NÃO re-enriquece (fixa só a identidade, para sincronização futura). */
+    UpdateExternalIds: {
+      /** @description Mapa source->id, ex.: {"tmdb": "603", "imdb": "tt0133093"}. */
+      external_ids: {
+        [key: string]: string
+      }
     }
     /** @description Corpo de POST /entities/{id}/correct — a identidade correta que o dono informa. source default "tmdb"; source_id obrigatório. */
     CorrectRequest: {
@@ -920,6 +969,8 @@ export interface components {
       title: string
       year: string | null
       poster_url: string | null
+      /** @description id da entity interna deste similar quando ja importado (interno-first, 0027); null caso contrario. */
+      internal_id?: string | null
     }
     /** @description Detalhe externo rico (briefing 0022). Campos traduzíveis já resolvidos no idioma ativo; neutros vêm uma vez. Listas saem sempre como `[]` (nunca null). */
     ExternalDetail: {
@@ -1033,6 +1084,33 @@ export interface operations {
         }
       }
       400: components['responses']['Error']
+    }
+  }
+  createItem: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateItem']
+      }
+    }
+    responses: {
+      /** @description Item criado, resolvido. */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ResolvedEntity']
+        }
+      }
+      400: components['responses']['Error']
+      422: components['responses']['Error']
+      503: components['responses']['Error']
     }
   }
   getEntity: {
@@ -1161,6 +1239,37 @@ export interface operations {
       404: components['responses']['Error']
       422: components['responses']['Error']
       502: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  updateExternalIds: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateExternalIds']
+      }
+    }
+    responses: {
+      /** @description Entity resolvida com a nova identidade. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ResolvedEntity']
+        }
+      }
+      400: components['responses']['Error']
+      404: components['responses']['Error']
+      422: components['responses']['Error']
       503: components['responses']['Error']
     }
   }

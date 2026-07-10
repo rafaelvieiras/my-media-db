@@ -197,6 +197,13 @@ func (s *Server) Handler() (http.Handler, error) {
 			// arquivos+mediainfo e o binário do pôster.
 			v1.Route("/entities", func(ent chi.Router) {
 				ent.Get("/", s.listEntities)
+
+				// Criação de ITEM LOCAL manual (briefing 0027): o dono cataloga um
+				// filme/série (type=movie|tv) SEM fonte externa e recebe a entity
+				// resolvida. Combina com o PUT .../external-ids abaixo (fixar o id da
+				// fonte depois, para sincronizar). Coleção manual tem o /collections.
+				ent.Post("/", s.createItem)
+
 				ent.Get("/{id}", s.getEntity)
 				ent.Get("/{id}/files", s.getEntityFiles)
 
@@ -234,6 +241,12 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Post("/{id}/correct", s.correctEntity)
 				ent.Delete("/{id}", s.deleteEntity)
 				ent.Post("/purge", s.purgeBatch)
+
+				// Edição da IDENTIDADE externa (briefing 0027): grava o mapa
+				// external_ids (source -> id na fonte). As colunas geradas re-derivam;
+				// fixar o id prepara sincronização futura. NÃO re-enriquece (o dono
+				// chama /enrich depois). Escrita pelo pool de escrita (ADR-0010).
+				ent.Put("/{id}/external-ids", s.updateExternalIds)
 
 				// Editor de override POR IDIOMA (briefing 0016): o dono escreve o
 				// patch esparso que vence tudo. PATCH funde por idioma (?lang=), os

@@ -52,6 +52,10 @@ type Similar struct {
 	Title     string  `json:"title"`
 	Year      *string `json:"year"`
 	PosterURL *string `json:"poster_url"`
+	// InternalID é o id da entity interna quando o similar já foi importado (0027,
+	// estende o interno-first do 0026). SimilaresDe é PURA e o deixa nil; quem tem DB
+	// (o handler do detalhe externo e o resolver da entity, via server) o preenche.
+	InternalID *string `json:"internal_id"`
 }
 
 // ── Resolução de campos traduzíveis ──────────────────────────────────────────

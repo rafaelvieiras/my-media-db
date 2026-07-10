@@ -71,6 +71,33 @@ paths:
               schema: { $ref: "#/components/schemas/EntityList" }
         "400":
           $ref: "#/components/responses/Error"
+    post:
+      operationId: createItem
+      summary: "Cria um item local manual sem fonte externa (briefing 0027)."
+      description: >
+        Cria uma entity de mídia (type=movie|tv) LOCAL, sem external_ids, com os campos
+        base dados pelo dono — para catalogar algo que a fonte não tem ou ainda não
+        casou. Combina com PUT /entities/{id}/external-ids (fixar o id da fonte depois,
+        para sincronizar). Responde 201 com a entity RESOLVIDA. 400 corpo inválido; 422
+        type fora de movie|tv ou título vazio.
+      tags: [entities]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateItem" }
+      responses:
+        "201":
+          description: Item criado, resolvido.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResolvedEntity" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
 
   /api/v1/entities/{id}:
     get:
@@ -187,6 +214,40 @@ paths:
         "422":
           $ref: "#/components/responses/Error"
         "502":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/external-ids:
+    put:
+      operationId: updateExternalIds
+      summary: "Edita a identidade externa da entity (briefing 0027)."
+      description: >
+        Grava o mapa COMPLETO de external_ids (source -> id na fonte). As colunas
+        geradas external_id_tmdb/imdb re-derivam do JSON, então fixar o id prepara uma
+        sincronização futura (o dono corrige o id quando a fonte muda/apaga/funde). Um
+        valor vazio remove aquela fonte. NÃO re-enriquece (o dono chama /enrich depois).
+        Responde 200 com a entity RESOLVIDA. 404 entity inexistente; 400 corpo inválido;
+        422 chave (source) vazia.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateExternalIds" }
+      responses:
+        "200":
+          description: Entity resolvida com a nova identidade.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResolvedEntity" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
           $ref: "#/components/responses/Error"
         "503":
           $ref: "#/components/responses/Error"
@@ -1102,6 +1163,12 @@ components:
         saved:
           type: boolean
           description: Sempre false na busca (resultado externo não é entidade).
+        internal_id:
+          type: [string, "null"]
+          description: >
+            Id da entity interna quando este resultado externo JÁ foi importado
+            (interno-first, 0027); null caso contrário. A UI mostra "na biblioteca"
+            e linka ao interno em vez de reimportar.
     SearchResult:
       type: object
       required: [query, local, external, external_available]
@@ -1197,6 +1264,41 @@ components:
         child_id:
           type: string
           description: Id da entity (filme/série) a incluir como membro.
+    CreateItem:
+      type: object
+      description: >
+        Corpo de POST /entities (0027) — cria um ITEM LOCAL manual (movie|tv) SEM fonte
+        externa. type e title são obrigatórios; os demais campos base são opcionais.
+      required: [type, title]
+      properties:
+        type:
+          type: string
+          enum: [movie, tv]
+          description: "Tipo do item (movie ou tv; coleção usa POST /collections)."
+        title:
+          type: string
+          description: Título do item (obrigatório, não pode ser vazio).
+        original_title:
+          type: string
+          description: "Título original (opcional)."
+        description:
+          type: string
+          description: "Sinopse (opcional)."
+        release_date:
+          type: string
+          description: "Data de lançamento ISO, ex.: 1999-03-31 (opcional)."
+    UpdateExternalIds:
+      type: object
+      description: >
+        Corpo de PUT /entities/{id}/external-ids (0027) — o mapa COMPLETO de identidades
+        externas (source -> id na fonte). Substitui o mapa inteiro; um valor vazio remove
+        aquela fonte. NÃO re-enriquece (fixa só a identidade, para sincronização futura).
+      required: [external_ids]
+      properties:
+        external_ids:
+          type: object
+          additionalProperties: { type: string }
+          description: "Mapa source->id, ex.: {\"tmdb\": \"603\", \"imdb\": \"tt0133093\"}."
     CorrectRequest:
       type: object
       description: >
@@ -1541,6 +1643,9 @@ components:
         title: { type: string }
         year: { type: [string, "null"] }
         poster_url: { type: [string, "null"] }
+        internal_id:
+          type: [string, "null"]
+          description: "id da entity interna deste similar quando ja importado (interno-first, 0027); null caso contrario."
     ExternalDetail:
       type: object
       description: >
