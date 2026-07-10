@@ -25,8 +25,9 @@ type enrichBody struct {
 	SourceID string `json:"source_id"`
 }
 
-// importBody é o corpo de POST /import. type deve ser movie|tv e source_id
-// não-vazio (senão 422); source default "tmdb".
+// importBody é o corpo de POST /import. type deve ser movie|tv|collection e
+// source_id não-vazio (senão 422); source default "tmdb". type='collection' (0025)
+// importa a coleção inteira: cria a entity da coleção e importa/liga os filmes membros.
 type importBody struct {
 	Source   string `json:"source"`
 	SourceID string `json:"source_id"`
@@ -107,8 +108,8 @@ func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 	if source == "" {
 		source = "tmdb"
 	}
-	if body.Type != "movie" && body.Type != "tv" {
-		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "type inválido (use movie ou tv)")
+	if body.Type != "movie" && body.Type != "tv" && body.Type != "collection" {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "type inválido (use movie, tv ou collection)")
 		return
 	}
 	if body.SourceID == "" {

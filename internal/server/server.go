@@ -193,6 +193,11 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Get("/", s.listEntities)
 				ent.Get("/{id}", s.getEntity)
 				ent.Get("/{id}/files", s.getEntityFiles)
+
+				// Membros de uma COLEÇÃO (briefing 0025): os filmes ligados por
+				// entity_relation(kind='collection'), como cards (mesmo shape da
+				// lista), ordenados por ano. `[]` para não-coleção.
+				ent.Get("/{id}/members", s.getEntityMembers)
 				ent.Get("/{id}/assets/poster", s.getEntityPoster)
 				ent.Get("/{id}/assets/fanart", s.getEntityFanart)
 

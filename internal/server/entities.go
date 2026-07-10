@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -209,6 +210,94 @@ func cardDTO(row sqlcgen.ListarEntityCardsRow) entityCardDTO {
 		dto.PosterURL = &u
 	}
 	return dto
+}
+
+// kindColecao é o `kind` da entity_relation que liga uma coleção aos seus filmes
+// (briefing 0025). Espelha o relacaoColecao do serviço enrich (fontes distintas, mesmo
+// valor — a ligação nasce lá e é lida aqui).
+const kindColecao = "collection"
+
+// membroCard carrega o card já montado + o release_date do membro, só para ordenar por
+// ano sem vazar o campo no DTO (o card de membro tem o MESMO shape do card da lista).
+type membroCard struct {
+	dto entityCardDTO
+	ano sql.NullString
+}
+
+// getEntityMembers trata GET /api/v1/entities/{id}/members: os MEMBROS de uma coleção
+// (briefing 0025) como cards (o MESMO shape de GET /entities), ordenados por ANO
+// ascendente (sem ano ao fim). `[]` quando a entity não é coleção ou não tem membros;
+// 404 quando a entity não existe. O `?lang=` é aceito para paridade, mas o card usa o
+// título BASE (como a lista) — a localização por idioma do card é follow-up.
+func (s *Server) getEntityMembers(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	ctx := r.Context()
+
+	if _, err := s.leitura().ObterEntity(ctx, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "entidade não encontrada")
+			return
+		}
+		respondErroInterno(w)
+		return
+	}
+
+	rels, err := s.leitura().ListarRelacoesFilhas(ctx, id)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	membros := make([]membroCard, 0, len(rels))
+	for _, rel := range rels {
+		if rel.Kind != kindColecao {
+			continue
+		}
+		row, err := s.leitura().ObterEntityCard(ctx, rel.ChildID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue // membro purgado no meio: ignora
+			}
+			respondErroInterno(w)
+			return
+		}
+		membros = append(membros, membroCard{dto: cardDTODeMembro(row), ano: row.ReleaseDate})
+	}
+	sort.SliceStable(membros, func(i, j int) bool { return anoAntes(membros[i].ano, membros[j].ano) })
+
+	out := make([]entityCardDTO, len(membros))
+	for i, m := range membros {
+		out[i] = m.dto
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// cardDTODeMembro reusa o cardDTO da lista a partir do row de ObterEntityCard (mesmas
+// colunas derivadas + release_date), descartando o release_date (usado só p/ ordenar).
+func cardDTODeMembro(row sqlcgen.ObterEntityCardRow) entityCardDTO {
+	return cardDTO(sqlcgen.ListarEntityCardsRow{
+		ID:              row.ID,
+		Type:            row.Type,
+		Title:           row.Title,
+		Status:          row.Status,
+		Owned:           row.Owned,
+		FileCount:       row.FileCount,
+		MatchConfidence: row.MatchConfidence,
+		HasPoster:       row.HasPoster,
+	})
+}
+
+// anoAntes ordena por release_date ISO ascendente (a string ISO ordena
+// cronologicamente); datas ausentes/vazias vão para o FIM.
+func anoAntes(a, b sql.NullString) bool {
+	av := a.Valid && a.String != ""
+	bv := b.Valid && b.String != ""
+	if av != bv {
+		return av
+	}
+	return a.String < b.String
 }
 
 // getEntity trata GET /api/v1/entities/{id}: devolve a entity RESOLVIDA (todas as
