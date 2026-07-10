@@ -106,7 +106,10 @@ func TestRefreshQuandoTTLExpira(t *testing.T) {
 	ctx := context.Background()
 	fake := &fakeProv{nome: "tmdb", raw: json.RawMessage(`{"detail":{"id":603}}`)}
 	svc := New(database, fake, time.Hour)
-	base := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	// Ancora no relogio REAL (nao numa data absoluta): o carimbo de fetched_at e
+	// gravado com time.Now() real, entao o relogio fake precisa partir de ~agora,
+	// senao o teste falha quando o relogio de parede se distancia da data fixa.
+	base := time.Now().UTC()
 	svc.agora = func() time.Time { return base }
 
 	langs := []string{"pt-BR"}

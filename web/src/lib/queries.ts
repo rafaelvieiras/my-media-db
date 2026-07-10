@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import {
+  getCollectionDetail,
   getEntity,
   getEntityFiles,
   getExternalDetail,
@@ -110,6 +111,20 @@ export function externalDetailQueryOptions(
   return queryOptions({
     queryKey: ['external', source, type, id, lang ?? null],
     queryFn: () => getExternalDetail(source, type, id, lang),
+  })
+}
+
+// Coleção externa como página (0024). A chave carrega `(source, id, lang)` — o
+// idioma entra na chave (mesma lição do detalhe externo): a mesma coleção em idiomas
+// diferentes é conteúdo diferente. `lang ?? null` mantém a chave estável.
+export function collectionDetailQueryOptions(
+  source: string,
+  id: string,
+  lang?: string,
+) {
+  return queryOptions({
+    queryKey: ['collection', source, id, lang ?? null],
+    queryFn: () => getCollectionDetail(source, id, lang),
   })
 }
 

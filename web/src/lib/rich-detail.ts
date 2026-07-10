@@ -98,10 +98,11 @@ function anoDeData(data: string | null): string | null {
 }
 
 // srcDeImagem resolve uma URL de imagem que pode ser ABSOLUTA (URL direta da
-// fonte, ex.: TMDB) ou uma ROTA LOCAL relativa (cache de imagem, 0015): a
-// absoluta passa direto; a relativa recebe a base via `posterSrc` (respeita
-// `VITE_API_BASE`). `null`/vazia → null.
-function srcDeImagem(url: string | null): string | null {
+// fonte, ex.: TMDB) ou uma ROTA LOCAL relativa (cache de imagem 0015 / proxy 0024):
+// a absoluta passa direto; a relativa recebe a base via `posterSrc` (respeita
+// `VITE_API_BASE`). `null`/vazia → null. Exportado para o backdrop de outras telas
+// (ex.: a página de coleção) resolverem a arte do mesmo jeito.
+export function srcDeImagem(url: string | null): string | null {
   if (!url) {
     return null
   }

@@ -180,20 +180,32 @@ function VideosRail({ videos }: { videos: ExternalVideo[] }) {
   )
 }
 
-// ColecaoBand mostra a coleção a que o item pertence. É informativa nesta versão
-// (abrir a coleção inteira como página é follow-up, §7 do 0023).
-function ColecaoBand({ colecao }: { colecao: ExternalCollection }) {
+// ColecaoBand mostra a coleção a que o item pertence e LINKA para a página própria
+// da coleção (`/collection/$source/$id`, 0024) — o card inteiro é o destino.
+function ColecaoBand({
+  source,
+  colecao,
+}: {
+  source: string
+  colecao: ExternalCollection
+}) {
   return (
     <section className="flex flex-col gap-3">
       <h2 className="font-heading text-lg font-medium">Coleção</h2>
-      <div className="flex items-center gap-3 rounded-xl bg-card p-3 ring-1 ring-foreground/10">
+      <Link
+        to="/collection/$source/$id"
+        params={{ source, id: colecao.source_id }}
+        className="group flex items-center gap-3 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition hover:ring-foreground/30"
+      >
         <PosterImg
           src={colecao.poster_url}
           alt={`Pôster da coleção ${colecao.name}`}
           className="w-16 shrink-0"
         />
-        <span className="font-medium">{colecao.name}</span>
-      </div>
+        <span className="font-medium group-hover:underline">
+          {colecao.name}
+        </span>
+      </Link>
     </section>
   )
 }
@@ -407,7 +419,9 @@ export function RichDetailView({
       ) : null}
 
       <VideosRail videos={detail.videos} />
-      {detail.collection ? <ColecaoBand colecao={detail.collection} /> : null}
+      {detail.collection ? (
+        <ColecaoBand source={source} colecao={detail.collection} />
+      ) : null}
       <SimilaresRail source={source} similares={detail.similar} />
       <LinksExternos links={detail.externalLinks} />
 

@@ -24,6 +24,10 @@ export type ExternalResult = components['schemas']['ExternalResult']
 export type ExternalDetail = components['schemas']['ExternalDetail']
 export type ExternalVideo = components['schemas']['ExternalVideo']
 export type ExternalCollection = components['schemas']['ExternalCollection']
+export type ExternalCollectionDetail =
+  components['schemas']['ExternalCollectionDetail']
+export type ExternalCollectionPart =
+  components['schemas']['ExternalCollectionPart']
 export type ExternalSimilar = components['schemas']['ExternalSimilar']
 export type ImportRequest = components['schemas']['ImportRequest']
 export type LanguageSettings = components['schemas']['LanguageSettings']
@@ -332,6 +336,30 @@ export async function getExternalDetail(
       `${base}/api/v1/external/${encodeURIComponent(source)}/${encodeURIComponent(
         type,
       )}/${encodeURIComponent(id)}${suffix}`,
+    ),
+  )
+}
+
+// Coleção externa como página (briefing 0024, follow-up do 0023): os metadados do
+// conjunto e as partes (filmes) navegáveis ao detalhe externo. Localizada no `lang`
+// pedido (mono-idioma); `lang` omitido cai no principal. Erros a `ApiError`: 404
+// (inexistente na fonte), 502 (fonte falhou), 503 (fonte sem coleção), 400 (idioma
+// fora dos permitidos).
+export async function getCollectionDetail(
+  source: string,
+  id: string,
+  lang?: string,
+): Promise<ExternalCollectionDetail> {
+  const qs = new URLSearchParams()
+  if (lang) {
+    qs.set('lang', lang)
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return lerJson<ExternalCollectionDetail>(
+    await fetch(
+      `${base}/api/v1/external/${encodeURIComponent(
+        source,
+      )}/collection/${encodeURIComponent(id)}${suffix}`,
     ),
   )
 }

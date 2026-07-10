@@ -597,6 +597,46 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/v1/external/{source}/collection/{id}:
+    get:
+      operationId: getExternalCollection
+      summary: Coleção externa como página própria (briefing 0024, follow-up do 0023).
+      description: >
+        Coleção de filmes (belongs_to_collection do TMDB) como destino navegável:
+        nome/sinopse/artes do conjunto e a lista das PARTES (filmes), cada uma
+        navegável ao detalhe externo. Localizada no idioma ativo (mono-idioma
+        pragmático — sem o cache re-componível multi-idioma do 0022, que fica como
+        follow-up). As artes do hero (pôster/fundo) podem sair como rota do proxy
+        local (0024); as miniaturas das partes seguem diretas. Ver a coleção NUNCA
+        cria entity. Requer uma fonte com a capacidade de coleção (senão 503).
+      tags: [entities]
+      parameters:
+        - name: source
+          in: path
+          required: true
+          description: "Fonte externa (ex.: tmdb)."
+          schema: { type: string }
+        - name: id
+          in: path
+          required: true
+          description: Id da coleção NA FONTE (source_id).
+          schema: { type: string }
+        - $ref: "#/components/parameters/LangQuery"
+      responses:
+        "200":
+          description: Coleção externa, resolvida no idioma ativo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExternalCollectionDetail" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/images:
     get:
       operationId: getImageProxy
@@ -1315,6 +1355,36 @@ components:
         source_id: { type: string }
         name: { type: string }
         poster_url: { type: [string, "null"] }
+    ExternalCollectionPart:
+      type: object
+      description: Item (parte) de uma coleção; mesmo shape enxuto de um resultado de busca.
+      required: [source_id, type, title, year, overview, poster_url]
+      properties:
+        source_id: { type: string }
+        type: { type: string }
+        title: { type: string }
+        year: { type: [string, "null"] }
+        overview: { type: [string, "null"] }
+        poster_url: { type: [string, "null"] }
+    ExternalCollectionDetail:
+      type: object
+      description: >
+        Coleção externa como página (briefing 0024): metadados do conjunto e as
+        partes. `parts` sai sempre como `[]` (nunca null). Artes do hero
+        (poster_url/backdrop_url) podem vir como rota do proxy local (0024); as
+        miniaturas das partes seguem diretas da fonte.
+      required:
+        [source, source_id, name, overview, poster_url, backdrop_url, parts]
+      properties:
+        source: { type: string }
+        source_id: { type: string }
+        name: { type: string }
+        overview: { type: [string, "null"] }
+        poster_url: { type: [string, "null"] }
+        backdrop_url: { type: [string, "null"] }
+        parts:
+          type: array
+          items: { $ref: "#/components/schemas/ExternalCollectionPart" }
     ExternalSimilar:
       type: object
       required: [source_id, type, title, year, poster_url]
