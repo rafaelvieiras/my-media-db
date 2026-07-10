@@ -11,8 +11,8 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
 | **Docs relacionadas** | [06-biblioteca-e-scan](../docs/06-biblioteca-e-scan.md), [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [ADR-0008](../docs/adr/0008-identidade-e-matching-kodi-jellyfin.md), [ADR-0012](../docs/adr/0012-ciclo-de-vida-nao-destrutivo.md) |
-| **Status** | draft |
-| **Depende de** | [0013](0013-resolver-tres-camadas.md), [0016](0016-editor-override-ui.md) |
+| **Status** | ready |
+| **Depende de** | [0013](0013-resolver-tres-camadas.md), [0015](0015-enriquecimento-import-proxy-imagem.md), [0016](0016-editor-override-ui.md) |
 
 ---
 
@@ -28,68 +28,107 @@ não-identificados e gerenciar **órfãs** — sempre não-destrutivo, com **pur
 ## 2. Jornada do usuário
 
 1. O dono abre **Revisão**: itens casados com baixa confiança (*"mapeado com 60% —
-   remover?"*) e `draft` não-identificados.
-2. Num item, **confirma** (remove o alerta), **corrige** (re-associa ao item certo)
-   ou resolve na origem (adiciona o id no nome e re-escaneia).
+   confirmar ou corrigir?"*) e `draft` não-identificados.
+2. Num item, **confirma** (aceita o palpite, some o alerta), **corrige** (informa o id
+   correto da fonte → re-enriquece e passa a valer) ou deixa para depois.
 3. Abre **Órfãs**: entidades auto-criadas cujo arquivo sumiu e sem investimento do
    dono. Pode **purgar** em lote (explícito) ou ignorar; nada some sozinho.
 
-## 3. Escopo
+## 3. A decisão de design que sustenta tudo
 
-**Dentro:**
-- **Fila de revisão**: listar itens com `match_confidence` baixo (limiar
-  `LIMIAR_BAIXA_CONFIANCA`, do [0011](0011-frontend-grid-lista-detalhe.md)) e `draft`
-  não-identificados ([ADR-0008](../docs/adr/0008-identidade-e-matching-kodi-jellyfin.md)).
-- **Confirmar match** — aceita o palpite (limpa o alerta); a correção do dono é
-  **autoritativa** (entra pelo mecanismo de override do resolver, [06](../docs/06-biblioteca-e-scan.md)).
-- **Corrigir match** — re-associa o `media_file` à entity certa / grava o id externo
-  em `external_ids` (identidade vence, MD4); dispara re-resolução.
-- **Fila de órfãs** (MD5/[ADR-0012](../docs/adr/0012-ciclo-de-vida-nao-destrutivo.md)):
-  entity auto-criada, arquivo `missing`, **sem** override/asset custom/coleção manual,
-  `status` ainda `cataloged`.
-- **Purga** explícita (individual/lote): remove entity + `media_external`/`media_override`/
-  assets (FKs CASCADE do [0012](0012-schema-fase3-camadas-externo-override.md)/[0007](0007-schema-nucleo-minimo.md)).
-- **UI** de revisão e de órfãs; ligar o badge do [0011](0011-frontend-grid-lista-detalhe.md) à fila.
-- Testes: classificação da fila; confirmar/corrigir; órfã só quando sem investimento;
-  purga remove derivados; nada apaga sem ação explícita.
+**Sem tabela nova — as filas são QUERY, a correção reusa o que já existe, a purga é a
+única porta destrutiva** ([ADR-0012](../docs/adr/0012-ciclo-de-vida-nao-destrutivo.md)):
 
-**Fora (explicitamente):**
-- **Marcação de `missing`/offline** em si — já é do scanner ([0009](0009-scanner-fswalk-ffprobe-matching.md)/[ADR-0012](../docs/adr/0012-ciclo-de-vida-nao-destrutivo.md)); aqui só se **consome** o estado.
-- Correção de **créditos** (MD6) — briefing próprio.
-- Merge/split de entidades além do re-associar simples.
+- **Revisão** = `entity.status='draft'` (não-identificado) **OU** existe `media_file`
+  `present` com `match_confidence > 0 AND < LIMIAR` (baixa confiança). O `LIMIAR` é o
+  mesmo `LIMIAR_BAIXA_CONFIANCA=70` da UI ([0011](0011-frontend-grid-lista-detalhe.md)/
+  `entity-badges.ts`), agora **fonte única no backend** (a query o recebe/embute).
+- **Órfã** = predicado: a entity **tem** `media_file`, **todos** `missing` (nenhum
+  `present`), `status='cataloged'` (auto-criada pelo scanner, não `wanted`/`unreleased`
+  = intenção do dono, nem `draft` = revisão), **e sem investimento do dono** (sem linha
+  em `media_override`, sem `asset` `origin='user'`). Uma entity SÓ importada (sem
+  `media_file`) **não** é órfã.
+- **Confirmar** = o dono diz "o palpite está certo": sobe o `match_confidence` dos
+  `media_file` da entity para `100` (autoridade do dono, some o alerta). Reusa uma query
+  curta.
+- **Corrigir** = "o palpite está errado, o certo é este": grava `external_ids[source]`
+  com o id correto (**identidade vence**, MD4) e **re-enriquece** pelo serviço do
+  [0015](0015-enriquecimento-import-proxy-imagem.md) (`enrich.Enriquecer`, multi-idioma
+  do [0020](0020-provider-multi-idioma-traducao-tags.md)); sobe a confiança. Não toca
+  override/arte do dono (não-destrutivo).
+- **Purga** = `ApagarEntity` (a linha da entity); as FKs `ON DELETE CASCADE`
+  ([0012](0012-schema-fase3-camadas-externo-override.md)/[0007](0007-schema-nucleo-minimo.md))
+  levam `media_file`/`media_external`/`media_override`/`asset` junto. Única ação
+  destrutiva, sempre explícita, nunca do sistema.
 
 ## 4. Contrato técnico
 
 ### API (`/api/v1`)
-- **GET** fila de revisão (baixa confiança + drafts) e **GET** fila de órfãs.
-- **POST** confirmar match; **POST/PUT** corrigir match (re-associar / gravar
-  `external_ids`); **POST** purgar (individual/lote). Envelope de erro padrão.
+- **GET `/review`** — fila de revisão: cards (mesmo shape `EntityCard` do [0011](0011-frontend-grid-lista-detalhe.md),
+  com `match_confidence`) dos itens `draft` **ou** baixa confiança. `200` (`[]` vazio).
+  Ordenar por confiança asc (pior primeiro), drafts ao fim ou por título.
+- **GET `/orphans`** — fila de órfãs (cards das entidades pelo predicado acima). `200`.
+- **POST `/entities/{id}/confirm`** — confirma o match: sobe `match_confidence` dos
+  `media_file` da entity para `100`. `200` com a entity **resolvida**; `404` inexistente.
+- **POST `/entities/{id}/correct`** — corrige: corpo `{source, source_id}` (default
+  `source="tmdb"`). Grava `external_ids[source]=source_id`, **re-enriquece** e sobe a
+  confiança. `200` com a entity resolvida; `422` corpo inválido; `404` inexistente;
+  `502` se a fonte falhar (como o import). Requer o serviço de enrich ligado (`503`
+  senão, como [0015](0015-enriquecimento-import-proxy-imagem.md)).
+- **DELETE `/entities/{id}`** — **purga** individual (`ApagarEntity` + CASCADE; o binário
+  de assets em disco é limpo best-effort). `200`/`204`; `404` inexistente.
+- **POST `/entities/purge`** — **purga em lote**: corpo `{ids: [...]}`; purga cada uma
+  (idempotente por id ausente). `200` com o resumo (quantas removidas). Envelope de erro
+  padrão em tudo.
 
 ### Dados / modelo
-- Sem tabela nova: a fila é **query** (`match_confidence` < limiar; `status='draft'`;
-  órfã = derivada por MD5). Correção grava `external_ids`/re-associa `media_file`;
-  purga usa CASCADE. Definir "investimento do dono" como predicado (sem override, sem
-  asset `origin=user`, sem coleção manual).
+- **Sem tabela/migração nova.** Filas são queries sqlc novas (ASCII, colunas explícitas):
+  `ListarRevisao` (com o limiar como parâmetro), `ListarOrfas` (o predicado com
+  `NOT EXISTS media_override`/`asset origin='user'` e agregação de `media_file.state`).
+  Correção reusa `AtualizarExternalIds` + o serviço `enrich`. Confirmar usa uma query
+  nova `AtualizarConfidencePorEntity(entity_id, valor)`. Purga usa `ApagarEntity`.
+- **"Investimento do dono"** como predicado explícito e testável: `NOT EXISTS` de
+  `media_override(entity_id)` **e** `NOT EXISTS` de `asset(entity_id, origin='user')`.
+  (Coleção manual ainda não existe no schema — quando existir, entra no predicado.)
 
 ### Backend (Go)
-- Queries de classificação; operação de re-associação (escrita curta, pool de escrita);
-  purga transacional. Reusa o resolver ([0013](0013-resolver-tres-camadas.md)) para
-  devolver o item re-resolvido.
+- `internal/server/review.go` (ou similar): handlers das filas + confirmar/corrigir/
+  purgar. Reusa `resolverEntity` para devolver o item re-resolvido; o pool de escrita
+  para confirm/correct/purge; o `exigirEntity` do [0016](0016-editor-override-ui.md).
+  Correção chama `s.enrich.Enriquecer(ctx, id, source, sourceID, tipo, langs)` (langs das
+  settings, como enrich/import). Purga em lote itera pelos ids.
+- `LIMIAR_BAIXA_CONFIANCA` no backend como const única (espelha o front; documentar que
+  os dois devem casar — ou expor via um endpoint de config no futuro).
 
 ### Frontend (Vite/React)
-- Telas **Revisão** e **Órfãs**; ações confirmar/corrigir/purgar com confirmação
-  explícita na purga; o badge de revisão vira link para a fila.
+- **Rota `/review`** e **rota `/orphans`** (links no `AppHeader`). Cada card com ações:
+  - Revisão: **Confirmar** (POST confirm), **Corrigir** (abre busca/entrada do id
+    correto — pode reusar o `SearchPanel`/fluxo de import do [0015](0015-enriquecimento-import-proxy-imagem.md)
+    para escolher o título certo → POST correct), e link ao detalhe.
+  - Órfãs: **Purgar** (com **confirmação explícita** — modal/confirm), seleção em lote.
+- O **badge de revisão** do [0011](0011-frontend-grid-lista-detalhe.md)/`entity-badges.ts`
+  vira **link** para `/review`. Invalidar `['entities']`/`['entity', id]`/`['review']`/
+  `['orphans']` após cada ação.
 
 ### Arquivos afetados
-- Criar: queries de fila, handlers (revisão/órfãs/confirmar/corrigir/purgar), telas, testes.
-- Alterar: `openapi.yaml` (+ regen tipos); badge/rotas do [0011](0011-frontend-grid-lista-detalhe.md).
+- Criar (backend): queries de fila + `AtualizarConfidencePorEntity` (+ regen sqlc),
+  `internal/server/review.go` + testes, rotas em `server.go`.
+- Criar (frontend): rotas `/review` e `/orphans` + componentes, `api.ts`/`queries.ts`.
+- Alterar: `openapi.yaml` (+ regen tipos), `AppHeader`, o badge do [0011](0011-frontend-grid-lista-detalhe.md).
 
 ## 5. Critérios de aceite
 
-- [ ] A fila de revisão lista baixa confiança + drafts; **confirmar** limpa o alerta; **corrigir** re-associa/grava `external_ids` e re-resolve.
-- [ ] A fila de órfãs lista só entidades auto-criadas, `missing` e **sem investimento do dono**; um item com override/asset custom **nunca** aparece como órfã.
-- [ ] **Purga** é sempre explícita e remove os derivados (external/override/assets via CASCADE); nada é apagado como efeito colateral.
-- [ ] A correção do dono é autoritativa (identidade vence, MD4) e reflete no resolver. Catraca verde.
+- [ ] A fila de revisão lista baixa confiança (`0 < conf < 70`, arquivo `present`) +
+  drafts; **confirmar** sobe a confiança (some o alerta); **corrigir** grava
+  `external_ids` + re-enriquece e re-resolve.
+- [ ] A fila de órfãs lista só entidades auto-criadas (`cataloged`), com arquivo(s) e
+  **todos** `missing`, e **sem investimento do dono**; um item com override/asset custom
+  **nunca** aparece como órfã (testado).
+- [ ] **Purga** (individual e lote) é sempre explícita e remove os derivados
+  (`media_file`/external/override/assets via CASCADE); nada é apagado como efeito
+  colateral de outra ação.
+- [ ] A correção do dono é autoritativa (identidade vence, MD4) e reflete no resolver;
+  não toca override/arte do dono. Catraca verde (Go + type-check web).
 
 ## 6. Notas de implementação / decisões
 
@@ -97,10 +136,15 @@ não-identificados e gerenciar **órfãs** — sempre não-destrutivo, com **pur
   a única porta destrutiva é a **purga**, e ela é sempre do dono, nunca do sistema.
 - **Órfã ≠ missing**: `missing` é fato de arquivo; órfã é o predicado "auto-criada +
   sumida + sem investimento". Só a segunda entra na fila de limpeza.
-- **Correção = override**: re-associar/gravar identidade passa pelo mesmo mecanismo
-  autoritativo ([06](../docs/06-biblioteca-e-scan.md)/[04](../docs/04-modelo-de-dados.md)) — coerência com o resto da fase.
+- **Correção = re-enrich por identidade**: reusa o serviço do [0015](0015-enriquecimento-import-proxy-imagem.md)
+  (coerência com a fase; multi-idioma de graça) em vez de um caminho de escrita novo.
+- **Confirmar sobe a confiança para 100**: pragmático e autoritativo (o dono é a fonte
+  final), sem coluna de "revisado" nova. Documentar a semântica.
+- **Limiar espelhado front/back**: o `70` vive nos dois; anotar o acoplamento (candidato
+  a virar config/endpoint depois, fora deste briefing).
 
 ## 7. Fora deste briefing / follow-ups
 
-- Correção de créditos (MD6); merge/split de entidades; tuning do limiar de confiança
-  ([06](../docs/06-biblioteca-e-scan.md), decisão aberta de tuning, não de modelo).
+- Correção de créditos (MD6); merge/split de entidades além do corrigir por identidade;
+  tuning do limiar de confiança ([06](../docs/06-biblioteca-e-scan.md), decisão de tuning,
+  não de modelo); "coleção manual" no predicado de investimento quando o schema a tiver.
