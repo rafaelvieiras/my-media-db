@@ -41,4 +41,15 @@ describe('ExternalResultCard', () => {
     const link = screen.getByRole('link', { name: /The Matrix/ })
     expect(link.contains(botao)).toBe(false)
   })
+
+  it('com internalId linka para o interno, marca "Na biblioteca" e some o Importar', () => {
+    // Interno-first (0026): o item já é entity — link para /entities/{id}, selo e
+    // SEM Importar (não reimporta o que já está catalogado).
+    renderWithClient(<ExternalResultCard result={externo} internalId="ent-9" />)
+
+    const link = screen.getByRole('link', { name: /The Matrix/ })
+    expect(link.getAttribute('href')).toBe('/entities/ent-9')
+    expect(screen.getByText('Na biblioteca')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Importar/ })).toBeNull()
+  })
 })
