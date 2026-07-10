@@ -274,10 +274,16 @@ export async function resetOverride(id: string): Promise<ResolvedEntity> {
 export async function searchMedia(
   q: string,
   type?: string,
+  lang?: string,
 ): Promise<SearchResult> {
   const qs = new URLSearchParams({ q })
   if (type) {
     qs.set('type', type)
+  }
+  // `lang` = idioma de leitura ativo: a busca externa devolve títulos/sinopses
+  // nele. Vazio/omitido = o backend cai no principal.
+  if (lang) {
+    qs.set('lang', lang)
   }
   return lerJson<SearchResult>(
     await fetch(`${base}/api/v1/search?${qs.toString()}`),

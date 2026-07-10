@@ -500,6 +500,7 @@ paths:
           schema:
             type: string
             enum: [movie, tv]
+        - $ref: "#/components/parameters/LangQuery"
       responses:
         "200":
           description: Resultados locais e externos.

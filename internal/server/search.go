@@ -85,6 +85,19 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	tipo := parseTipoFiltro(q) // string | nil
 
 	ctx := r.Context()
+	// Idioma de leitura ATIVO (0021): valida o ?lang= contra os permitidos (400 se
+	// fora) e resolve o efetivo (default = principal). A busca EXTERNA o repassa à
+	// fonte; a busca local serve o card neutro (mesmo contrato de /entities).
+	cfg, err := s.obterLanguageSettings(ctx)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	lang, ok := s.parseLang(w, cfg, q.Get("lang"))
+	if !ok {
+		return
+	}
+
 	locais, err := s.buscarLocal(ctx, termo, tipo)
 	if err != nil {
 		respondErroInterno(w)
@@ -92,7 +105,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tipoStr, _ := tipo.(string)
-	externos, disponivel := s.buscarExterno(ctx, termo, tipoStr)
+	externos, disponivel := s.buscarExterno(ctx, termo, tipoStr, lang)
 
 	writeJSON(w, http.StatusOK, searchResponseDTO{
 		Query:             termo,
@@ -137,15 +150,17 @@ func (s *Server) buscarLocal(ctx context.Context, termo string, tipo any) ([]ent
 // (resultados, disponivel). Sem provider OU erro/timeout => (nil, false): o
 // handler degrada para external:[], external_available:false. Só resultados de
 // sucesso entram no cache.
-func (s *Server) buscarExterno(ctx context.Context, termo, tipo string) ([]provider.ResultadoExterno, bool) {
+func (s *Server) buscarExterno(ctx context.Context, termo, tipo, lang string) ([]provider.ResultadoExterno, bool) {
 	if s.searchProvider == nil {
 		return nil, false
 	}
-	chave := termo + "\x00" + tipo
+	// A chave inclui o idioma: a mesma busca em pt-BR e es tem resultados distintos
+	// e não pode compartilhar entrada de cache.
+	chave := termo + "\x00" + tipo + "\x00" + lang
 	if res, ok := s.cacheExterno.obter(chave); ok {
 		return res, true
 	}
-	res, err := s.searchProvider.Buscar(ctx, termo, tipo)
+	res, err := s.searchProvider.Buscar(ctx, termo, tipo, lang)
 	if err != nil {
 		return nil, false
 	}

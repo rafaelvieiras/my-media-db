@@ -95,7 +95,7 @@ func (s *Servico) Importar(ctx context.Context, source, sourceID, tipo string, l
 	if err != nil {
 		return "", false, fmt.Errorf("enrich: buscar detalhe: %w", err)
 	}
-	titulo := s.tituloInicial(raw, sourceID)
+	titulo := s.tituloInicial(raw, sourceID, langs)
 
 	extIDs, err := json.Marshal(map[string]string{source: sourceID})
 	if err != nil {
@@ -279,13 +279,60 @@ func (s *Servico) baixar(ctx context.Context, posterURL string) ([]byte, string,
 // tituloInicial extrai o título do detalhe cru para o item recém-criado; cai para
 // o sourceID quando o detalhe não traz título (item pobre) — nunca vazio (title é
 // NOT NULL no schema).
-func (s *Servico) tituloInicial(raw json.RawMessage, sourceID string) string {
+func (s *Servico) tituloInicial(raw json.RawMessage, sourceID string, langs []string) string {
 	if campos, err := s.provider.MapearDetalhe(raw); err == nil {
-		if t, ok := campos["title"].(string); ok && t != "" {
+		if t := tituloLegivel(campos, langs); t != "" {
 			return t
 		}
 	}
 	return sourceID
+}
+
+// tituloLegivel extrai um titulo exibivel do mapa canonico do provider, tolerando
+// o campo "title" tanto como ESCALAR (payload legado, mono-idioma) quanto como
+// map[idioma]valor (envelope multi-idioma do 0020). Prefere o titulo num dos
+// idiomas permitidos (na ordem -- langs[0] e o principal), cai para o
+// original_title e, por fim, para qualquer titulo presente. Devolve "" so quando
+// nao ha nenhum titulo -- e o chamador entao usa o sourceID.
+//
+// Sem esta tolerancia, a assercao antiga `campos["title"].(string)` falhava para
+// TODO item importado pos-0020 (o title virou map), gravando o id numerico da
+// fonte como entity.title -- o "numero no lugar do nome" na lista.
+func tituloLegivel(campos map[string]any, langs []string) string {
+	switch t := campos["title"].(type) {
+	case string:
+		return t
+	case map[string]any:
+		return tituloDoMapa(t, comoString(campos["original_title"]), langs)
+	}
+	return ""
+}
+
+// tituloDoMapa escolhe um titulo do mapa idioma->valor: o primeiro idioma pedido
+// (na ordem) com valor, senao o original_title, senao qualquer titulo presente. ""
+// se o mapa nao tem nenhum.
+func tituloDoMapa(porIdioma map[string]any, original string, langs []string) string {
+	for _, l := range langs {
+		if v := comoString(porIdioma[l]); v != "" {
+			return v
+		}
+	}
+	if original != "" {
+		return original
+	}
+	for _, v := range porIdioma {
+		if s := comoString(v); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// comoString devolve o valor como string quando ele e uma string; "" caso
+// contrario (inclui nil). Enxuga as assercoes de tipo dos titulos canonicos.
+func comoString(v any) string {
+	s, _ := v.(string)
+	return s
 }
 
 // escrita/leitura devolvem os Queries ligados aos pools de escrita/leitura (ADR-0010).

@@ -77,7 +77,7 @@ func TestBuscarMapeiaEFiltra(t *testing.T) {
 	srv := servidorFixo(t, nil)
 	c := New(Credencial{Token: "tok"}, srv.Client(), srv.URL)
 
-	res, err := c.Buscar(context.Background(), "matrix", "")
+	res, err := c.Buscar(context.Background(), "matrix", "", "")
 	if err != nil {
 		t.Fatalf("Buscar: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestBuscarFiltraPorTipo(t *testing.T) {
 	srv := servidorFixo(t, nil)
 	c := New(Credencial{Token: "tok"}, srv.Client(), srv.URL)
 
-	res, err := c.Buscar(context.Background(), "matrix", "movie")
+	res, err := c.Buscar(context.Background(), "matrix", "movie", "")
 	if err != nil {
 		t.Fatalf("Buscar: %v", err)
 	}
@@ -118,12 +118,36 @@ func TestBuscarFiltraPorTipo(t *testing.T) {
 	}
 }
 
+// TestBuscarEnviaLanguage cobre o idioma na busca (regressao): com lang, a
+// requisicao ao /search/multi leva language=<lang>; sem lang, o parametro nao vai
+// (a fonte cai no default). Antes, a busca ignorava o idioma ativo da UI.
+func TestBuscarEnviaLanguage(t *testing.T) {
+	var comLang, semLang http.Request
+	srv1 := servidorFixo(t, &comLang)
+	if _, err := New(Credencial{Token: "t"}, srv1.Client(), srv1.URL).
+		Buscar(context.Background(), "x", "", "pt-BR"); err != nil {
+		t.Fatalf("Buscar(pt-BR): %v", err)
+	}
+	if got := comLang.URL.Query().Get("language"); got != "pt-BR" {
+		t.Errorf("language = %q, quero pt-BR", got)
+	}
+
+	srv2 := servidorFixo(t, &semLang)
+	if _, err := New(Credencial{Token: "t"}, srv2.Client(), srv2.URL).
+		Buscar(context.Background(), "x", "", ""); err != nil {
+		t.Fatalf("Buscar(sem lang): %v", err)
+	}
+	if _, tem := semLang.URL.Query()["language"]; tem {
+		t.Error("language presente sem lang pedido, quero ausente")
+	}
+}
+
 func TestAuthTokenUsaBearer(t *testing.T) {
 	var capturada http.Request
 	srv := servidorFixo(t, &capturada)
 	c := New(Credencial{Token: "tok-v4"}, srv.Client(), srv.URL)
 
-	if _, err := c.Buscar(context.Background(), "x", ""); err != nil {
+	if _, err := c.Buscar(context.Background(), "x", "", ""); err != nil {
 		t.Fatalf("Buscar: %v", err)
 	}
 	if got := capturada.Header.Get("Authorization"); got != "Bearer tok-v4" {
@@ -139,7 +163,7 @@ func TestAuthApiKeyUsaQuery(t *testing.T) {
 	srv := servidorFixo(t, &capturada)
 	c := New(Credencial{APIKey: "key-v3"}, srv.Client(), srv.URL)
 
-	if _, err := c.Buscar(context.Background(), "x", ""); err != nil {
+	if _, err := c.Buscar(context.Background(), "x", "", ""); err != nil {
 		t.Fatalf("Buscar: %v", err)
 	}
 	if got := capturada.Header.Get("Authorization"); got != "" {
@@ -157,7 +181,7 @@ func TestBuscarStatusErroPropaga(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(Credencial{Token: "tok"}, srv.Client(), srv.URL)
 
-	if _, err := c.Buscar(context.Background(), "x", ""); err == nil {
+	if _, err := c.Buscar(context.Background(), "x", "", ""); err == nil {
 		t.Fatal("quero erro em status != 200")
 	}
 }

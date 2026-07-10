@@ -30,7 +30,7 @@ type fakeProvider struct {
 
 func (f *fakeProvider) Nome() string { return "tmdb" }
 
-func (f *fakeProvider) Buscar(context.Context, string, string) ([]provider.ResultadoExterno, error) {
+func (f *fakeProvider) Buscar(context.Context, string, string, string) ([]provider.ResultadoExterno, error) {
 	return nil, nil
 }
 
@@ -330,5 +330,50 @@ func TestImportarCriaDepoisReusa(t *testing.T) {
 	todas, _ := r.ListarEntities(ctx, sqlcgen.ListarEntitiesParams{Limit: 100, Offset: 0})
 	if len(todas) != 1 {
 		t.Errorf("total de entities = %d, quero 1 (sem duplicar)", len(todas))
+	}
+}
+
+// TestImportarTituloDeMapaPorIdioma cobre a REGRESSAO do 0020: quando o provider
+// devolve "title" como map[idioma]valor (envelope multi-idioma), o titulo inicial
+// gravado na entity tem de ser o do idioma PRINCIPAL (langs[0]) -- nao o sourceID.
+// Antes, a assercao `.(string)` falhava no map e a entity nascia com o id numerico
+// como titulo (o "numero no lugar do nome" na lista).
+func TestImportarTituloDeMapaPorIdioma(t *testing.T) {
+	database := setupDB(t)
+	ctx := context.Background()
+	fake := &fakeProvider{
+		raw: json.RawMessage(`{}`),
+		campos: map[string]any{
+			"title":          map[string]any{"pt-BR": "Duna", "en": "Dune"},
+			"original_title": "Dune",
+		},
+	}
+	svc, _ := novoServico(t, database, fake)
+
+	id, _, err := svc.Importar(ctx, "tmdb", "438631", "movie", []string{"pt-BR", "en"})
+	if err != nil {
+		t.Fatalf("Importar: %v", err)
+	}
+	ent, _ := sqlcgen.New(database.Read).ObterEntity(ctx, id)
+	if ent.Title != "Duna" {
+		t.Errorf("titulo = %q, quero 'Duna' (principal do mapa, nao o sourceID)", ent.Title)
+	}
+}
+
+// TestImportarTituloCaiNoSourceID garante o fallback final: sem nenhum titulo no
+// mapa canonico, a entity usa o sourceID (comportamento defensivo preservado).
+func TestImportarTituloCaiNoSourceID(t *testing.T) {
+	database := setupDB(t)
+	ctx := context.Background()
+	fake := &fakeProvider{raw: json.RawMessage(`{}`), campos: map[string]any{}}
+	svc, _ := novoServico(t, database, fake)
+
+	id, _, err := svc.Importar(ctx, "tmdb", "999", "movie", []string{"pt-BR"})
+	if err != nil {
+		t.Fatalf("Importar: %v", err)
+	}
+	ent, _ := sqlcgen.New(database.Read).ObterEntity(ctx, id)
+	if ent.Title != "999" {
+		t.Errorf("titulo = %q, quero '999' (fallback sourceID)", ent.Title)
 	}
 }

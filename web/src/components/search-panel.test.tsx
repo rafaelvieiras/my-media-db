@@ -6,6 +6,17 @@ import { SearchPanel } from '@/components/search-panel'
 import type { EntityCard, ExternalResult, SearchResult } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 
+// Idioma fixo (pt-BR): isola o SearchPanel do LanguageProvider real — sem tocar o
+// endpoint de settings e sem afetar as asserções de fetch da busca.
+vi.mock('@/lib/language-context', () => ({
+  useLanguage: () => ({
+    lang: 'pt-BR',
+    allowed: ['pt-BR'],
+    primary: 'pt-BR',
+    setLang: () => {},
+  }),
+}))
+
 // Spy de navegação: o import bem-sucedido deve levar ao detalhe da entity.
 const navigate = vi.fn()
 

@@ -26,7 +26,7 @@ type detProvider struct {
 
 func (p *detProvider) Nome() string { return "tmdb" }
 
-func (p *detProvider) Buscar(context.Context, string, string) ([]provider.ResultadoExterno, error) {
+func (p *detProvider) Buscar(context.Context, string, string, string) ([]provider.ResultadoExterno, error) {
 	return nil, nil
 }
 

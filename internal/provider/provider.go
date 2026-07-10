@@ -19,9 +19,12 @@ type Provider interface {
 	// Nome identifica a fonte (ex.: "tmdb"). Usado em logs/diagnóstico.
 	Nome() string
 	// Buscar consulta a fonte por `query`, filtrando opcionalmente por `tipo`
-	// (""|"movie"|"tv"). Erro/timeout é responsabilidade do chamador degradar —
+	// (""|"movie"|"tv"). `lang` é o idioma de leitura ATIVO (0019/0021): a fonte
+	// devolve títulos/sinopses nele quando houver (sem `lang`, cai no default da
+	// fonte). É um único idioma (a busca mostra resultados diretos, sem a cadeia de
+	// fallback do resolver). Erro/timeout é responsabilidade do chamador degradar —
 	// o provider apenas o propaga.
-	Buscar(ctx context.Context, query, tipo string) ([]ResultadoExterno, error)
+	Buscar(ctx context.Context, query, tipo, lang string) ([]ResultadoExterno, error)
 	// BuscarDetalhe puxa o DETALHE (payload da fonte) de um item pelo seu
 	// `sourceID` e `tipo` ("movie"|"tv"), para o import/enrich (briefing 0015). Os
 	// `langs` são os idiomas PERMITIDOS das settings (0019): a fonte multi-idioma

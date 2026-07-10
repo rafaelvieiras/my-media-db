@@ -83,13 +83,14 @@ export function assetsQueryOptions(id: string) {
   })
 }
 
-// Busca unificada (0015). A chave carrega termo+tipo para cachear por consulta.
+// Busca unificada (0015). A chave carrega termo+tipo+idioma para cachear por
+// consulta: a mesma busca em idiomas diferentes tem resultados externos distintos.
 // `enabled: q !== ''` impede o disparo enquanto o input está vazio (estado
 // inicial/instrução) — o componente já debounce o termo antes de chegar aqui.
-export function searchQueryOptions(q: string, type?: string) {
+export function searchQueryOptions(q: string, type?: string, lang?: string) {
   return queryOptions({
-    queryKey: ['search', q, type ?? null],
-    queryFn: () => searchMedia(q, type),
+    queryKey: ['search', q, type ?? null, lang ?? null],
+    queryFn: () => searchMedia(q, type, lang),
     enabled: q !== '',
   })
 }

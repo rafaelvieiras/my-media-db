@@ -34,7 +34,7 @@ func (f *fakeProvider) MapearDetalhe(_ json.RawMessage) (map[string]any, error) 
 	return map[string]any{}, nil
 }
 
-func (f *fakeProvider) Buscar(_ context.Context, _, tipo string) ([]provider.ResultadoExterno, error) {
+func (f *fakeProvider) Buscar(_ context.Context, _, tipo, _ string) ([]provider.ResultadoExterno, error) {
 	f.chamadas++
 	if f.err != nil {
 		return nil, f.err

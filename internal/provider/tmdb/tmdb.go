@@ -99,12 +99,12 @@ type itemMulti struct {
 // Buscar consulta /search/multi e mapeia os resultados para ResultadoExterno,
 // descartando media_type fora de {movie, tv}. Se `tipo` for movie/tv, filtra
 // ainda por ele. Erro/timeout é propagado (o handler degrada).
-func (c *Client) Buscar(ctx context.Context, query, tipo string) ([]provider.ResultadoExterno, error) {
+func (c *Client) Buscar(ctx context.Context, query, tipo, lang string) ([]provider.ResultadoExterno, error) {
 	if query == "" {
 		return nil, nil
 	}
 
-	req, err := c.montarRequisicao(ctx, query)
+	req, err := c.montarRequisicao(ctx, query, lang)
 	if err != nil {
 		return nil, err
 	}
@@ -138,10 +138,16 @@ func (c *Client) Buscar(ctx context.Context, query, tipo string) ([]provider.Res
 	return out, nil
 }
 
-// montarRequisicao constrói o GET /search/multi com o termo de busca. A
-// autenticação é aplicada por novoGet (comum a todas as chamadas).
-func (c *Client) montarRequisicao(ctx context.Context, query string) (*http.Request, error) {
-	return c.novoGet(ctx, "/search/multi", url.Values{"query": {query}})
+// montarRequisicao constrói o GET /search/multi com o termo de busca e, quando
+// informado, o idioma de leitura (`language=`, ex. pt-BR) — assim os títulos/
+// sinopses da busca vêm no idioma ativo. A autenticação é aplicada por novoGet
+// (comum a todas as chamadas).
+func (c *Client) montarRequisicao(ctx context.Context, query, lang string) (*http.Request, error) {
+	params := url.Values{"query": {query}}
+	if lang != "" {
+		params.Set("language", lang)
+	}
+	return c.novoGet(ctx, "/search/multi", params)
 }
 
 // novoGet monta um GET para `path` (relativo à base) com os `params` de query e a

@@ -18,6 +18,17 @@ vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock as typeof LinkMock,
 }))
 
+// Idioma fixo (pt-BR): o painel de correção usa useLanguage para passar o idioma
+// ativo à busca; isola do LanguageProvider real (sem tocar o endpoint de settings).
+vi.mock('@/lib/language-context', () => ({
+  useLanguage: () => ({
+    lang: 'pt-BR',
+    allowed: ['pt-BR'],
+    primary: 'pt-BR',
+    setLang: () => {},
+  }),
+}))
+
 const draftCard: EntityCard = {
   id: 'e-draft',
   type: 'movie',

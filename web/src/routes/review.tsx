@@ -21,6 +21,7 @@ import {
   type ExternalResult,
 } from '@/lib/api'
 import { ehDraft, rotuloTipo } from '@/lib/entity-badges'
+import { useLanguage } from '@/lib/language-context'
 
 const DEBOUNCE_MS = 350
 
@@ -197,6 +198,7 @@ function CorrigirPainel({
   onCorrigido: () => void
 }) {
   const qc = useQueryClient()
+  const { lang } = useLanguage()
   const [termo, setTermo] = useState('')
   const [debounced, setDebounced] = useState('')
 
@@ -205,7 +207,7 @@ function CorrigirPainel({
     return () => clearTimeout(t)
   }, [termo])
 
-  const busca = useQuery(searchQueryOptions(debounced))
+  const busca = useQuery(searchQueryOptions(debounced, undefined, lang))
 
   const corrigir = useMutation({
     mutationFn: (escolhido: ExternalResult) =>

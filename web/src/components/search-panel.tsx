@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { searchQueryOptions } from '@/lib/queries'
+import { useLanguage } from '@/lib/language-context'
 import type { SearchResult } from '@/lib/api'
 import { PosterCard } from '@/components/poster-card'
 import { ExternalResultCard } from '@/components/external-result-card'
@@ -24,6 +25,7 @@ export function SearchPanel() {
   const [termo, setTermo] = useState('')
   const [tipo, setTipo] = useState<FiltroTipo>('all')
   const [debounced, setDebounced] = useState('')
+  const { lang } = useLanguage()
 
   // Debounce: só propaga o termo (trim) para a query após a pausa de digitação.
   useEffect(() => {
@@ -32,7 +34,7 @@ export function SearchPanel() {
   }, [termo])
 
   const busca = useQuery(
-    searchQueryOptions(debounced, tipo === 'all' ? undefined : tipo),
+    searchQueryOptions(debounced, tipo === 'all' ? undefined : tipo, lang),
   )
 
   return (

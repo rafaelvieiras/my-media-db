@@ -452,7 +452,7 @@ type provFalha struct{}
 
 func (*provFalha) Nome() string { return "tmdb" }
 
-func (*provFalha) Buscar(context.Context, string, string) ([]provider.ResultadoExterno, error) {
+func (*provFalha) Buscar(context.Context, string, string, string) ([]provider.ResultadoExterno, error) {
 	return nil, nil
 }
 
