@@ -120,6 +120,50 @@ func TestEnriquecerGravaExternalIDsEPoster(t *testing.T) {
 	verificarPosterExterno(t, r, "e1", dir, imgBytes)
 }
 
+// TestEnriquecerCacheiaBackdrop confere que o enrich cacheia o FUNDO (backdrop)
+// como asset fanart origin=external, como o poster (paridade da tela rica).
+func TestEnriquecerCacheiaBackdrop(t *testing.T) {
+	database := setupDB(t)
+	ctx := context.Background()
+	poster := servidorImagem(t, "image/jpeg", []byte("POSTER-BYTES"))
+	backdrop := servidorImagem(t, "image/jpeg", []byte("BACKDROP-BYTES"))
+
+	w := sqlcgen.New(database.Write)
+	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "e1", Type: "movie", Title: "arquivo.mkv"}); err != nil {
+		t.Fatalf("CriarEntity: %v", err)
+	}
+	fake := &fakeProvider{raw: json.RawMessage(`{"title":"X"}`), campos: map[string]any{
+		"title":        "X",
+		"poster_url":   poster.URL + "/p.jpg",
+		"backdrop_url": backdrop.URL + "/b.jpg",
+	}}
+	svc, dir := novoServico(t, database, fake)
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"pt-BR"}); err != nil {
+		t.Fatalf("Enriquecer: %v", err)
+	}
+
+	r := sqlcgen.New(database.Read)
+	// asset fanart origin=external com o binario do backdrop em disco, sob assetsDir.
+	asset, err := r.ObterAssetPorEntityKindOrigin(ctx, sqlcgen.ObterAssetPorEntityKindOriginParams{EntityID: "e1", Kind: "fanart", Origin: "external"})
+	if err != nil {
+		t.Fatalf("asset fanart ausente: %v", err)
+	}
+	if filepath.Dir(filepath.Dir(asset.PathOrUri)) != dir {
+		t.Errorf("path do fanart = %q, quero sob assetsDir %q", asset.PathOrUri, dir)
+	}
+	gravado, err := os.ReadFile(asset.PathOrUri)
+	if err != nil {
+		t.Fatalf("ler binario do fanart: %v", err)
+	}
+	if string(gravado) != "BACKDROP-BYTES" {
+		t.Errorf("binario do fanart diverge do baixado")
+	}
+	// Poster e fanart convivem (os dois kinds cacheados).
+	if _, err := r.ObterAssetPorEntityKindOrigin(ctx, sqlcgen.ObterAssetPorEntityKindOriginParams{EntityID: "e1", Kind: "poster", Origin: "external"}); err != nil {
+		t.Errorf("poster deveria coexistir com o fanart: %v", err)
+	}
+}
+
 // verificarPosterExterno confere que existe um asset poster origin=external, sob o
 // assetsDir, e que seu binario em disco bate com o esperado.
 func verificarPosterExterno(t *testing.T, r *sqlcgen.Queries, entityID, dir string, want []byte) {

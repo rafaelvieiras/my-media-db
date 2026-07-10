@@ -446,6 +446,55 @@ func TestGetPosterServeComContentType(t *testing.T) {
 	}
 }
 
+func TestGetEntityFanartServe(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	root := t.TempDir()
+	fanartArq := filepath.Join(root, "fanart.png")
+	conteudo := append([]byte("\x89PNG\r\n\x1a\n"), []byte("dados-do-fundo")...)
+	if err := os.WriteFile(fanartArq, conteudo, 0o644); err != nil {
+		t.Fatalf("WriteFile fanart: %v", err)
+	}
+	semearSource(t, d, "src", root)
+	semearEntity(t, d, "e", "movie", "Filme")
+	semearAsset(t, d, "fa", "e", "fanart", fanartArq)
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/e/assets/fanart", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if !bytesEqual(rec.Body.Bytes(), conteudo) {
+		t.Errorf("corpo do fundo diverge do arquivo (len=%d)", rec.Body.Len())
+	}
+}
+
+func TestGetEntityFanartAusente404(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "e", "movie", "SemFundo")
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/e/assets/fanart", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, quero 404", rec.Code)
+	}
+	checkErrorShape(t, rec, "not_found")
+}
+
+// TestResolveBackdropLocalQuandoHaFanart: com asset fanart, GET /{id} serve o
+// backdrop_url como a rota LOCAL (não a URL direta da fonte).
+func TestResolveBackdropLocalQuandoHaFanart(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "e", "movie", "ComFundo")
+	semearAsset(t, d, "fa", "e", "fanart", "/lib/fundo.jpg")
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/e", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	var ent resolver.Entidade
+	if err := json.Unmarshal(rec.Body.Bytes(), &ent); err != nil {
+		t.Fatalf("decodificar Entidade: %v", err)
+	}
+	eqPtr(t, "backdrop_url", ent.BackdropURL, "/api/v1/entities/e/assets/fanart")
+}
+
 func TestGetPosterBloqueiaPathTraversal(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	// Datasource registrado.

@@ -92,6 +92,27 @@ func posterPath(id string) string {
 	return "/api/v1/entities/" + id + "/assets/poster"
 }
 
+// fanartPath monta a referência do endpoint que serve o FUNDO (fanart/backdrop)
+// local de uma entity — o análogo do pôster para o hero do detalhe rico.
+func fanartPath(id string) string {
+	return "/api/v1/entities/" + id + "/assets/fanart"
+}
+
+// artesLocais devolve as rotas locais do pôster e do FUNDO quando há asset servível
+// daquele kind (precedência preferida→user→external, 0017); nil quando não há. Fonte
+// única para o resolver saber que a entity tem arte local a servir.
+func artesLocais(assets []sqlcgen.Asset, id string) (poster, backdrop *string) {
+	if _, ok := escolherAssetServido(assets, kindPoster); ok {
+		u := posterPath(id)
+		poster = &u
+	}
+	if _, ok := escolherAssetServido(assets, kindFanart); ok {
+		u := fanartPath(id)
+		backdrop = &u
+	}
+	return poster, backdrop
+}
+
 // listEntities trata GET /api/v1/entities: lista paginada com filtros opcionais
 // (type, owned), ordenação por título (sort=title|-title) e a posse/contagem/
 // confiança derivadas numa ÚNICA query (sem N+1).
@@ -251,13 +272,13 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 		return resolver.Entidade{}, false, err
 	}
 
-	var posterURL *string
-	if _, err := s.leitura().ObterAssetPosterPorEntity(ctx, id); err == nil {
-		u := posterPath(id)
-		posterURL = &u
-	} else if !errors.Is(err, sql.ErrNoRows) {
+	// Arte local: pôster e FUNDO (fanart/backdrop) são servidos por rotas locais
+	// quando existe asset (a mesma precedência preferida→user→external do serviço).
+	assets, err := s.leitura().ListarAssetsPorEntity(ctx, id)
+	if err != nil {
 		return resolver.Entidade{}, false, err
 	}
+	posterURL, backdropURL := artesLocais(assets, id)
 
 	// Camada OVERRIDE: o patch cru do dono (media_override). Ausência de linha não
 	// é erro (sem override, herda a base).
@@ -277,6 +298,7 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 		Entity:          ent,
 		Files:           files,
 		PosterURL:       posterURL,
+		BackdropURL:     backdropURL,
 		Override:        override,
 		Externo:         externo,
 		LangPedido:      lang,
@@ -428,6 +450,30 @@ func (s *Server) getEntityPoster(w http.ResponseWriter, r *http.Request) {
 	asset, ok := escolherAssetServido(assets, kindPoster)
 	if !ok {
 		writeError(w, http.StatusNotFound, "not_found", "pôster não encontrado")
+		return
+	}
+	s.servirBinarioAsset(w, r, ctx, asset)
+}
+
+// getEntityFanart trata GET /api/v1/entities/{id}/assets/fanart: serve o binário do
+// FUNDO (backdrop) local — o análogo de getEntityPoster para o kind 'fanart', com a
+// MESMA precedência de serviço (preferida → user → external → 404) e a mesma guarda
+// de path-traversal. 404 quando não há fundo (a UI cai na URL direta/placeholder).
+func (s *Server) getEntityFanart(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	ctx := r.Context()
+
+	assets, err := s.leitura().ListarAssetsPorEntity(ctx, id)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	asset, ok := escolherAssetServido(assets, kindFanart)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "fundo não encontrado")
 		return
 	}
 	s.servirBinarioAsset(w, r, ctx, asset)

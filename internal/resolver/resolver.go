@@ -44,6 +44,11 @@ type Camadas struct {
 	// ou nil quando a entity não tem pôster. O chamador a monta (é um link de
 	// API, não um dado de domínio), o resolver apenas a coloca no shape final.
 	PosterURL *string
+	// BackdropURL é a referência do endpoint que serve o FUNDO (fanart/backdrop)
+	// local, quando cacheado (0015). Quando nil, o resolver cai na URL direta da
+	// fonte (backdrop_url do canônico externo) — o mesmo campo, servido do disco
+	// quando disponível.
+	BackdropURL *string
 
 	// Externo são as camadas EXTERNAS canônicas, ordenadas por prioridade (R2).
 	// Vazio = sem enriquecimento (comportamento do 0010 preservado).
@@ -305,6 +310,13 @@ func Resolver(c Camadas) Entidade {
 	rico := camposExternosMesclados(c.Externo)
 	externalIDs := parseExternalIDs(c.Entity.ExternalIdsJson)
 
+	// Backdrop: prefere o FUNDO cacheado localmente (rota do chamador); sem cache,
+	// cai na URL direta da fonte (canônico externo). Mesmo campo, origem diferente.
+	backdrop := c.BackdropURL
+	if backdrop == nil {
+		backdrop = richfields.StrPtrDe(rico, "backdrop_url")
+	}
+
 	return Entidade{
 		ID:                c.Entity.ID,
 		Type:              c.Entity.Type,
@@ -324,7 +336,7 @@ func Resolver(c Camadas) Entidade {
 		Runtime:           richfields.IntPtrDe(rico, "runtime"),
 		Certification:     richfields.CertificacaoDaRegiao(rico, c.LangPedido),
 		VoteAverage:       richfields.FloatPtrDe(rico, "vote_average"),
-		BackdropURL:       richfields.StrPtrDe(rico, "backdrop_url"),
+		BackdropURL:       backdrop,
 		Videos:            richfields.VideosDe(rico),
 		Collection:        richfields.ColecaoDe(rico),
 		Similar:           richfields.SimilaresDe(rico),

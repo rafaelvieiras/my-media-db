@@ -95,6 +95,29 @@ func TestResolverCamposRicosNeutros(t *testing.T) {
 	eq(t, "link tmdb", got.ExternalLinks["tmdb"], "https://www.themoviedb.org/movie/603")
 }
 
+// TestResolverBackdropLocalVenceCanonico: quando o chamador passa BackdropURL
+// (fundo cacheado localmente), o resolver a serve no lugar da URL direta da fonte;
+// sem ela, cai na `backdrop_url` do canônico externo.
+func TestResolverBackdropLocalVenceCanonico(t *testing.T) {
+	local := "/api/v1/entities/x/assets/fanart"
+	comLocal := Resolver(Camadas{
+		Entity:      entRica(),
+		Cadeia:      []string{"pt-BR"},
+		LangPedido:  "pt-BR",
+		Externo:     camadaRica(),
+		BackdropURL: &local,
+	})
+	eqPtr(t, "backdrop local", comLocal.BackdropURL, local)
+
+	semLocal := Resolver(Camadas{
+		Entity:     entRica(),
+		Cadeia:     []string{"pt-BR"},
+		LangPedido: "pt-BR",
+		Externo:    camadaRica(),
+	})
+	eqPtr(t, "backdrop canonico", semLocal.BackdropURL, "https://img/backdrop.jpg")
+}
+
 // TestResolverCertificacaoFallbackUS: idioma sem região (en) cai na região US.
 func TestResolverCertificacaoFallbackUS(t *testing.T) {
 	got := Resolver(Camadas{

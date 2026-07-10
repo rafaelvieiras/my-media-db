@@ -35,8 +35,11 @@ const (
 	// tamanhoMaxImagem é o teto de bytes de um pôster baixado (guarda contra uma
 	// fonte hostil/gigante). 20 MiB cobre com folga um w342.
 	tamanhoMaxImagem = 20 << 20
-	// kindPoster/originExternal são as etiquetas do asset cacheado.
+	// kindPoster/kindFanart/originExternal são as etiquetas dos assets cacheados.
+	// fanart = imagem de fundo (backdrop); cacheada localmente como o pôster para
+	// não depender da fonte externa em runtime (mesmo motivo do pôster, 0015).
 	kindPoster     = "poster"
+	kindFanart     = "fanart"
 	originExternal = "external"
 )
 
@@ -174,12 +177,25 @@ func (s *Servico) persistir(ctx context.Context, entityID, source, sourceID stri
 			return err
 		}
 	}
+	s.cachearArtes(ctx, entityID, campos)
+	return nil
+}
+
+// cachearArtes cacheia localmente o pôster e o FUNDO (fanart/backdrop) do canônico,
+// cada um best-effort (0015): a tela de detalhe rica serve as duas do disco, sem
+// depender da fonte em runtime. Falha em uma só degrada (sem aquela arte), nunca
+// aborta o enrich.
+func (s *Servico) cachearArtes(ctx context.Context, entityID string, campos map[string]any) {
 	if u, ok := campos["poster_url"].(string); ok && u != "" {
-		if err := s.cachearPoster(ctx, entityID, u); err != nil {
+		if err := s.cachearArte(ctx, entityID, u, kindPoster, "poster"); err != nil {
 			log.Printf("enrich: cache do poster de %s falhou (segue sem poster): %v", entityID, err)
 		}
 	}
-	return nil
+	if u, ok := campos["backdrop_url"].(string); ok && u != "" {
+		if err := s.cachearArte(ctx, entityID, u, kindFanart, "fanart"); err != nil {
+			log.Printf("enrich: cache do backdrop de %s falhou (segue sem fundo): %v", entityID, err)
+		}
+	}
 }
 
 // mesclarExternalIds lê o external_ids atual, junta {source: sourceID} e grava — a
@@ -213,12 +229,13 @@ func (s *Servico) mesclarExternalIds(ctx context.Context, entityID, source, sour
 	})
 }
 
-// cachearPoster baixa o binário do pôster, grava em {assetsDir}/{entityID}/poster.<ext>
-// e cria (ou reusa, dedup) o asset origin='external'. Nunca casa/apaga arte
-// origin='user': o lookup filtra por origin. Erro é devolvido para o chamador
-// apenas LOGAR (degrada), nunca abortar o enrich.
-func (s *Servico) cachearPoster(ctx context.Context, entityID, posterURL string) error {
-	dados, contentType, err := s.baixar(ctx, posterURL)
+// cachearArte baixa o binário de uma arte (pôster ou fanart/backdrop), grava em
+// {assetsDir}/{entityID}/{nomeBase}.<ext> e cria (ou reusa, dedup) o asset
+// origin='external' do `kind`. Nunca casa/apaga arte origin='user' (o lookup
+// filtra por origin). Erro é devolvido ao chamador apenas para LOGAR (degrada),
+// nunca abortar o enrich.
+func (s *Servico) cachearArte(ctx context.Context, entityID, url, kind, nomeBase string) error {
+	dados, contentType, err := s.baixar(ctx, url)
 	if err != nil {
 		return err
 	}
@@ -227,20 +244,20 @@ func (s *Servico) cachearPoster(ctx context.Context, entityID, posterURL string)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	destino := filepath.Join(dir, "poster"+extensaoImagem(contentType, posterURL))
+	destino := filepath.Join(dir, nomeBase+extensaoImagem(contentType, url))
 	if err := os.WriteFile(destino, dados, 0o644); err != nil {
 		return err
 	}
-	return s.registrarAsset(ctx, entityID, destino)
+	return s.registrarAsset(ctx, entityID, destino, kind)
 }
 
-// registrarAsset faz o DEDUP do asset de pôster externo: se já existe um (mesma
-// entity, kind='poster', origin='external'), atualiza seu caminho (removendo o
+// registrarAsset faz o DEDUP do asset externo daquele `kind`: se já existe um
+// (mesma entity, kind, origin='external'), atualiza seu caminho (removendo o
 // binário antigo se a extensão mudou) em vez de duplicar; senão cria um novo.
-func (s *Servico) registrarAsset(ctx context.Context, entityID, destino string) error {
+func (s *Servico) registrarAsset(ctx context.Context, entityID, destino, kind string) error {
 	existente, err := s.leitura().ObterAssetPorEntityKindOrigin(ctx, sqlcgen.ObterAssetPorEntityKindOriginParams{
 		EntityID: entityID,
-		Kind:     kindPoster,
+		Kind:     kind,
 		Origin:   originExternal,
 	})
 	if err != nil {
@@ -248,7 +265,7 @@ func (s *Servico) registrarAsset(ctx context.Context, entityID, destino string) 
 			_, cerr := s.escrita().CriarAsset(ctx, sqlcgen.CriarAssetParams{
 				ID:        s.novoID(),
 				EntityID:  entityID,
-				Kind:      kindPoster,
+				Kind:      kind,
 				Origin:    originExternal,
 				PathOrUri: destino,
 			})

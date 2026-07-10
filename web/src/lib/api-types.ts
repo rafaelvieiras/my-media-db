@@ -646,7 +646,7 @@ export interface components {
       certification: string | null
       /** @description Nota média externa (0–10), ou null. */
       vote_average: number | null
-      /** @description URL do fundo (backdrop) da fonte, ou null. */
+      /** @description Fundo (backdrop) da entity: rota LOCAL do fanart cacheado (0015) quando existe, senão a URL direta da fonte; null quando não há. */
       backdrop_url: string | null
       /** @description Vídeos (trailer/clip) da fonte. `[]` quando ausentes. */
       videos: components['schemas']['ExternalVideo'][]

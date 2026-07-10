@@ -79,7 +79,9 @@ export function deResolvedEntity(e: ResolvedEntity): RichDetail {
     voteAverage: e.vote_average,
     originalLanguage: e.original_language,
     posterUrl: posterSrc(e.poster_url),
-    backdropUrl: e.backdrop_url,
+    // O backdrop da entity é uma ROTA LOCAL quando cacheado (fanart, 0015) ou uma
+    // URL DIRETA da fonte no fallback: prefixa a base só quando relativa.
+    backdropUrl: srcDeImagem(e.backdrop_url),
     genres: e.tags,
     keywords: e.keywords,
     videos: e.videos,
@@ -92,4 +94,15 @@ export function deResolvedEntity(e: ResolvedEntity): RichDetail {
 // anoDeData extrai o ano (4 primeiros dígitos) de uma data ISO, ou null.
 function anoDeData(data: string | null): string | null {
   return data && data.length >= 4 ? data.slice(0, 4) : null
+}
+
+// srcDeImagem resolve uma URL de imagem que pode ser ABSOLUTA (URL direta da
+// fonte, ex.: TMDB) ou uma ROTA LOCAL relativa (cache de imagem, 0015): a
+// absoluta passa direto; a relativa recebe a base via `posterSrc` (respeita
+// `VITE_API_BASE`). `null`/vazia → null.
+function srcDeImagem(url: string | null): string | null {
+  if (!url) {
+    return null
+  }
+  return /^https?:\/\//.test(url) ? url : posterSrc(url)
 }
