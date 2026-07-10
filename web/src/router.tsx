@@ -14,6 +14,7 @@ import { ReviewScreen } from '@/routes/review'
 import { OrphansScreen } from '@/routes/orphans'
 import { EntityDetailScreen } from '@/routes/entity-detail'
 import { ExternalDetailScreen } from '@/routes/external-detail'
+import { CollectionDetailScreen } from '@/routes/collection-detail'
 import { SettingsScreen } from '@/routes/settings'
 import { HealthScreen } from '@/routes/health'
 
@@ -80,6 +81,14 @@ const externalDetailRoute = createRoute({
   component: ExternalDetailScreen,
 })
 
+// Coleção externa como página própria (0024, follow-up do 0023). Params: fonte e id
+// da coleção NA FONTE. Alcançada pela faixa de coleção do detalhe rico.
+const collectionDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/collection/$source/$id',
+  component: CollectionDetailScreen,
+})
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
@@ -100,6 +109,7 @@ const routeTree = rootRoute.addChildren([
   orphansRoute,
   entityDetailRoute,
   externalDetailRoute,
+  collectionDetailRoute,
   settingsRoute,
   healthRoute,
 ])

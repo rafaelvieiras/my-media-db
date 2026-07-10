@@ -52,6 +52,41 @@ type Provider interface {
 	MapearDetalhe(raw json.RawMessage) (map[string]any, error)
 }
 
+// ColecaoProvider é uma CAPACIDADE OPCIONAL de um Provider: buscar uma coleção
+// (belongs_to_collection do TMDB — um conjunto de filmes, ≠ playlist) com suas
+// partes, para a PÁGINA de coleção (0024, follow-up do 0023). É opcional porque nem
+// toda fonte tem coleções; o handler faz type-assert do Provider para esta interface
+// e degrada com 503 quando a fonte não a implementa. Diferente do detalhe (0022),
+// NÃO há cache re-componível multi-idioma aqui: a coleção é buscada no idioma ATIVO
+// (mono-idioma pragmático); o multi-idioma pleno fica como follow-up.
+type ColecaoProvider interface {
+	// BuscarColecao puxa a coleção pelo seu `colecaoID` na fonte, localizada em
+	// `lang` (idioma de leitura ativo; vazio cai no default da fonte). ErrNaoEncontrado
+	// quando a coleção não existe (→ 404); demais erros propagam (→ 502).
+	BuscarColecao(ctx context.Context, colecaoID, lang string) (Colecao, error)
+}
+
+// Colecao é uma coleção canônica: os metadados do conjunto (nome/sinopse/artes) e
+// suas PARTES, cada uma um ResultadoExterno (o mesmo shape de um item de busca —
+// reuso proposital, a parte é um filme navegável ao detalhe externo). Os ponteiros
+// são opcionais (nil quando a fonte não trouxe o campo).
+type Colecao struct {
+	// Source é o nome da fonte (ex.: "tmdb").
+	Source string
+	// SourceID é o id da coleção NA FONTE (como string).
+	SourceID string
+	// Name é o nome exibível da coleção.
+	Name string
+	// Overview é a sinopse da coleção, quando houver.
+	Overview *string
+	// PosterURL/BackdropURL são as artes DIRETAS da coleção na fonte, quando houver
+	// (o handler pode reescrevê-las para o proxy local — 0024).
+	PosterURL   *string
+	BackdropURL *string
+	// Parts são os itens da coleção, em ordem da fonte.
+	Parts []ResultadoExterno
+}
+
 // ResultadoExterno é o resultado canônico de uma busca externa, independente da
 // fonte. Os ponteiros são opcionais (nil quando a fonte não trouxe o campo).
 // Saved é SEMPRE false na busca: um resultado externo nunca é uma entidade do

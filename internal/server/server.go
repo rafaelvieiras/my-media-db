@@ -143,6 +143,13 @@ func (s *Server) Handler() (http.Handler, error) {
 			// (nunca cria entity).
 			v1.Get("/external/{source}/{type}/{id}", s.getExternalDetail)
 
+			// Colecao externa como PAGINA propria (briefing 0024, follow-up do
+			// 0023): nome/artes do conjunto + as partes (filmes) navegaveis ao
+			// detalhe externo. O segmento estatico "collection" tem precedencia
+			// sobre o {type} da rota acima no chi. Via a capacidade opcional
+			// provider.ColecaoProvider; fontes sem colecao degradam com 503.
+			v1.Get("/external/{source}/collection/{id}", s.getExternalCollection)
+
 			// Proxy READ-THROUGH de imagem (briefing 0024): baixa e cacheia em
 			// disco a imagem de um host permitido (allowlist anti-SSRF) para a
 			// tela de detalhe do EXTERNO (pré-import) não depender do CDN da fonte

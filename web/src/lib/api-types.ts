@@ -338,6 +338,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/external/{source}/collection/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Coleção externa como página própria (briefing 0024, follow-up do 0023).
+     * @description Coleção de filmes (belongs_to_collection do TMDB) como destino navegável: nome/sinopse/artes do conjunto e a lista das PARTES (filmes), cada uma navegável ao detalhe externo. Localizada no idioma ativo (mono-idioma pragmático — sem o cache re-componível multi-idioma do 0022, que fica como follow-up). As artes do hero (pôster/fundo) podem sair como rota do proxy local (0024); as miniaturas das partes seguem diretas. Ver a coleção NUNCA cria entity. Requer uma fonte com a capacidade de coleção (senão 503).
+     */
+    get: operations['getExternalCollection']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/images': {
     parameters: {
       query?: never
@@ -792,6 +812,25 @@ export interface components {
       source_id: string
       name: string
       poster_url: string | null
+    }
+    /** @description Item (parte) de uma coleção; mesmo shape enxuto de um resultado de busca. */
+    ExternalCollectionPart: {
+      source_id: string
+      type: string
+      title: string
+      year: string | null
+      overview: string | null
+      poster_url: string | null
+    }
+    /** @description Coleção externa como página (briefing 0024): metadados do conjunto e as partes. `parts` sai sempre como `[]` (nunca null). Artes do hero (poster_url/backdrop_url) podem vir como rota do proxy local (0024); as miniaturas das partes seguem diretas da fonte. */
+    ExternalCollectionDetail: {
+      source: string
+      source_id: string
+      name: string
+      overview: string | null
+      poster_url: string | null
+      backdrop_url: string | null
+      parts: components['schemas']['ExternalCollectionPart'][]
     }
     ExternalSimilar: {
       source_id: string
@@ -1451,6 +1490,38 @@ export interface operations {
       400: components['responses']['Error']
       404: components['responses']['Error']
       422: components['responses']['Error']
+      502: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  getExternalCollection: {
+    parameters: {
+      query?: {
+        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        lang?: components['parameters']['LangQuery']
+      }
+      header?: never
+      path: {
+        /** @description Fonte externa (ex.: tmdb). */
+        source: string
+        /** @description Id da coleção NA FONTE (source_id). */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Coleção externa, resolvida no idioma ativo. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ExternalCollectionDetail']
+        }
+      }
+      400: components['responses']['Error']
+      404: components['responses']['Error']
       502: components['responses']['Error']
       503: components['responses']['Error']
     }
