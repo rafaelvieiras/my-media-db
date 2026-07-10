@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { KeyRound, Plus, X } from 'lucide-react'
+import { KeyRound, Plus, RefreshCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ApiError, updateExternalIds } from '@/lib/api'
+import { ApiError, enrichEntity, updateExternalIds } from '@/lib/api'
 
 // Uma linha editável da identidade externa: fonte (ex.: tmdb) + id NA FONTE. `key` é
 // só para o React reconciliar as linhas ao adicionar/remover (não vai para a API).
@@ -52,13 +52,30 @@ export function ExternalIdsEditor({
   const [linhas, setLinhas] = useState<Linha[]>(() => linhasDe(externalIds))
   const [proximaKey, setProximaKey] = useState(() => linhas.length)
 
+  function invalidar() {
+    queryClient.invalidateQueries({ queryKey: ['entity', id] })
+    queryClient.invalidateQueries({ queryKey: ['entities'] })
+  }
+
   const mutation = useMutation({
     mutationFn: () => updateExternalIds(id, mapaDe(linhas)),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['entity', id] })
-      queryClient.invalidateQueries({ queryKey: ['entities'] })
-    },
+    onSuccess: invalidar,
   })
+
+  // Salva os ids E, em sucesso, re-enriquece pela fonte (0027): fecha o ciclo de
+  // sincronização num clique — grava a identidade e já puxa os dados da fonte pelo id
+  // recém-fixado (o enrich sem corpo lê `external_ids[tmdb]` da entity, por isso salva
+  // ANTES). Uma falha do enrich (ex.: id não é da fonte) aparece inline, mas os ids já
+  // ficaram salvos.
+  const sincronizar = useMutation({
+    mutationFn: async () => {
+      await updateExternalIds(id, mapaDe(linhas))
+      return enrichEntity(id)
+    },
+    onSuccess: invalidar,
+  })
+
+  const salvando = mutation.isPending || sincronizar.isPending
 
   function alterar(key: number, campo: 'source' | 'value', valor: string) {
     setLinhas((atual) =>
@@ -75,10 +92,11 @@ export function ExternalIdsEditor({
     setProximaKey((k) => k + 1)
   }
 
+  const erroAtivo = sincronizar.error ?? mutation.error
   const mensagemErro =
-    mutation.error instanceof ApiError
-      ? mutation.error.message
-      : mutation.isError
+    erroAtivo instanceof ApiError
+      ? erroAtivo.message
+      : mutation.isError || sincronizar.isError
         ? 'Não foi possível salvar os IDs externos.'
         : null
 
@@ -144,11 +162,24 @@ export function ExternalIdsEditor({
         </Button>
         <Button
           type="button"
+          variant="outline"
           size="sm"
-          disabled={mutation.isPending}
+          disabled={salvando}
           onClick={() => mutation.mutate()}
         >
           {mutation.isPending ? 'Salvando…' : 'Salvar IDs'}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={salvando}
+          onClick={() => sincronizar.mutate()}
+        >
+          <RefreshCw
+            className={sincronizar.isPending ? 'animate-spin' : undefined}
+            aria-hidden
+          />
+          {sincronizar.isPending ? 'Sincronizando…' : 'Salvar e re-enriquecer'}
         </Button>
       </div>
     </section>

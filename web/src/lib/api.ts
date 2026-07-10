@@ -430,6 +430,26 @@ export async function importExternal(
   return lerJson<ResolvedEntity>(res)
 }
 
+// Re-enriquece uma entity EXISTENTE pela fonte (0015): puxa o detalhe e regrava a
+// base externa + pôster. Sem corpo, usa `source=tmdb` e o `source_id` de
+// `external_ids[tmdb]` da própria entity — o passo de sincronização após fixar o id
+// (0027). Devolve a entity re-resolvida. Erros da fonte/identidade (422 sem id, 502
+// fonte, 503 sem provider) viram `ApiError` com a mensagem pt-BR do envelope.
+export async function enrichEntity(
+  id: string,
+  body?: { source?: string; source_id?: string },
+): Promise<ResolvedEntity> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/enrich`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+    },
+  )
+  return lerJson<ResolvedEntity>(res)
+}
+
 // ── Detalhe externo rico (0022/0023) ─────────────────────────────────────────
 
 // Detalhe rico de um item NA FONTE, ANTES de importar (briefing 0022): o que o
