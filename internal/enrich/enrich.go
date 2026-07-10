@@ -75,7 +75,10 @@ func (s *Servico) Enriquecer(ctx context.Context, entityID, source, sourceID, ti
 	if err := s.mesclarExternalIds(ctx, entityID, source, sourceID); err != nil {
 		return err
 	}
-	return s.persistir(ctx, entityID, source, sourceID, raw)
+	if err := s.persistir(ctx, entityID, source, sourceID, raw); err != nil {
+		return err
+	}
+	return s.curarTitulo(ctx, entityID, sourceID, raw, langs)
 }
 
 // Importar é o find-or-create por id externo (MD4) do POST /import: se já existe
@@ -286,6 +289,32 @@ func (s *Servico) tituloInicial(raw json.RawMessage, sourceID string, langs []st
 		}
 	}
 	return sourceID
+}
+
+// curarTitulo AUTO-CURA o "numero no lugar do nome" nos itens importados ANTES do
+// conserto do tituloInicial: se o titulo base ainda e exatamente o fallback numerico
+// (== sourceID gravado na criacao), recomputa do detalhe (idioma principal). A
+// condicao e ESTRITA (== sourceID) de proposito -- um titulo legivel, mesmo que
+// numerico de verdade ("1917"), nunca casa o id da fonte, entao jamais e sobrescrito.
+// Nao toca override/externo (a resolucao segue dando autoridade ao dono). Degrada em
+// silencio: qualquer tropeco aqui mantem o titulo atual (a cura e best-effort).
+func (s *Servico) curarTitulo(ctx context.Context, entityID, sourceID string, raw json.RawMessage, langs []string) error {
+	ent, err := s.leitura().ObterEntity(ctx, entityID)
+	if err != nil {
+		return err
+	}
+	if ent.Title != sourceID {
+		return nil // titulo ja e legivel -- nada a curar
+	}
+	campos, err := s.provider.MapearDetalhe(raw)
+	if err != nil {
+		return nil
+	}
+	novo := tituloLegivel(campos, langs)
+	if novo == "" || novo == ent.Title {
+		return nil
+	}
+	return s.escrita().AtualizarTitulo(ctx, sqlcgen.AtualizarTituloParams{Title: novo, ID: entityID})
 }
 
 // tituloLegivel extrai um titulo exibivel do mapa canonico do provider, tolerando

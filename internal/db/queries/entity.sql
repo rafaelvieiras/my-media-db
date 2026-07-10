@@ -143,6 +143,17 @@ SET external_ids_json = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?;
 
+-- name: AtualizarTitulo :exec
+-- Repara o titulo base de um item auto-criado/importado quando ele ficou como o
+-- fallback numerico (id da fonte) -- a regressao do "numero no lugar do nome". So o
+-- titulo e o updated_at mudam; nao toca override/externo (a autoridade do dono
+-- segue vencendo na resolucao). Chamada pelo enrich (auto-cura) sob condicao
+-- estrita (titulo == sourceID), nunca sobre um titulo ja legivel.
+UPDATE entity
+SET title = sqlc.arg('title'),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = sqlc.arg('id');
+
 -- name: AtualizarOriginalLanguage :exec
 -- Grava a ANCORA do fallback por idioma (briefing 0020): o codigo NEUTRO do idioma
 -- original da obra, obtido do detalhe da fonte no enrich/import. Nao-destrutivo: e

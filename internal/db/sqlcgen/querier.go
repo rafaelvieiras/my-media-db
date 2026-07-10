@@ -52,6 +52,12 @@ type Querier interface {
 	// um fato da fonte, nao dado do dono; re-enriquecer apenas o reafirma. So esta
 	// coluna e o updated_at mudam.
 	AtualizarOriginalLanguage(ctx context.Context, arg AtualizarOriginalLanguageParams) error
+	// Repara o titulo base de um item auto-criado/importado quando ele ficou como o
+	// fallback numerico (id da fonte) -- a regressao do "numero no lugar do nome". So o
+	// titulo e o updated_at mudam; nao toca override/externo (a autoridade do dono
+	// segue vencendo na resolucao). Chamada pelo enrich (auto-cura) sob condicao
+	// estrita (titulo == sourceID), nunca sobre um titulo ja legivel.
+	AtualizarTitulo(ctx context.Context, arg AtualizarTituloParams) error
 	// Total de itens que casam os filtros (para o campo `total` da paginacao). Mesma
 	// clausula WHERE da ListarEntityCards -- sem LIMIT/OFFSET/ORDER BY.
 	ContarEntityCards(ctx context.Context, arg ContarEntityCardsParams) (int64, error)

@@ -360,6 +360,56 @@ func TestImportarTituloDeMapaPorIdioma(t *testing.T) {
 	}
 }
 
+// TestEnriquecerCuraTituloNumerico cobre a AUTO-CURA: uma entity que ficou com o
+// titulo == sourceID (item importado ANTES do conserto) tem o titulo recomputado do
+// detalhe ao ser re-enriquecida. Um titulo ja legivel NAO e tocado.
+func TestEnriquecerCuraTituloNumerico(t *testing.T) {
+	database := setupDB(t)
+	ctx := context.Background()
+	w := sqlcgen.New(database.Write)
+	// Entity "quebrada": titulo == id da fonte (o fallback numerico pre-fix).
+	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "e1", Type: "movie", Title: "438631"}); err != nil {
+		t.Fatalf("CriarEntity: %v", err)
+	}
+	fake := &fakeProvider{
+		raw:    json.RawMessage(`{}`),
+		campos: map[string]any{"title": map[string]any{"pt-BR": "Duna", "en": "Dune"}},
+	}
+	svc, _ := novoServico(t, database, fake)
+
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "438631", "movie", []string{"pt-BR", "en"}); err != nil {
+		t.Fatalf("Enriquecer: %v", err)
+	}
+	ent, _ := sqlcgen.New(database.Read).ObterEntity(ctx, "e1")
+	if ent.Title != "Duna" {
+		t.Errorf("titulo apos cura = %q, quero 'Duna'", ent.Title)
+	}
+}
+
+// TestEnriquecerNaoTocaTituloLegivel garante que a cura e ESTRITA: um titulo que ja
+// e legivel (diferente do sourceID) permanece intacto no re-enriquecimento.
+func TestEnriquecerNaoTocaTituloLegivel(t *testing.T) {
+	database := setupDB(t)
+	ctx := context.Background()
+	w := sqlcgen.New(database.Write)
+	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "e1", Type: "movie", Title: "Meu Titulo Editado"}); err != nil {
+		t.Fatalf("CriarEntity: %v", err)
+	}
+	fake := &fakeProvider{
+		raw:    json.RawMessage(`{}`),
+		campos: map[string]any{"title": map[string]any{"pt-BR": "Duna"}},
+	}
+	svc, _ := novoServico(t, database, fake)
+
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "438631", "movie", []string{"pt-BR"}); err != nil {
+		t.Fatalf("Enriquecer: %v", err)
+	}
+	ent, _ := sqlcgen.New(database.Read).ObterEntity(ctx, "e1")
+	if ent.Title != "Meu Titulo Editado" {
+		t.Errorf("titulo = %q, quero intacto 'Meu Titulo Editado'", ent.Title)
+	}
+}
+
 // TestImportarTituloCaiNoSourceID garante o fallback final: sem nenhum titulo no
 // mapa canonico, a entity usa o sourceID (comportamento defensivo preservado).
 func TestImportarTituloCaiNoSourceID(t *testing.T) {

@@ -129,6 +129,28 @@ func (q *Queries) AtualizarOriginalLanguage(ctx context.Context, arg AtualizarOr
 	return err
 }
 
+const atualizarTitulo = `-- name: AtualizarTitulo :exec
+UPDATE entity
+SET title = ?1,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?2
+`
+
+type AtualizarTituloParams struct {
+	Title string
+	ID    string
+}
+
+// Repara o titulo base de um item auto-criado/importado quando ele ficou como o
+// fallback numerico (id da fonte) -- a regressao do "numero no lugar do nome". So o
+// titulo e o updated_at mudam; nao toca override/externo (a autoridade do dono
+// segue vencendo na resolucao). Chamada pelo enrich (auto-cura) sob condicao
+// estrita (titulo == sourceID), nunca sobre um titulo ja legivel.
+func (q *Queries) AtualizarTitulo(ctx context.Context, arg AtualizarTituloParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarTitulo, arg.Title, arg.ID)
+	return err
+}
+
 const contarEntityCards = `-- name: ContarEntityCards :one
 SELECT COUNT(*) AS total
 FROM entity e
