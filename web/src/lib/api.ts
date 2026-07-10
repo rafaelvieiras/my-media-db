@@ -255,6 +255,51 @@ export async function removeCollectionMember(
   return lerJson<EntityCard[]>(res)
 }
 
+// ── Item local + identidade externa (0027) ───────────────────────────────────
+
+// Cria um item LOCAL (sem fonte externa): filme ou série do zero, para o dono
+// catalogar algo que não veio de um scan nem de um import. Só `type` e `title` são
+// obrigatórios (o backend responde 422 se faltarem/forem inválidos); os demais são
+// opcionais. Devolve a `ResolvedEntity` recém-criada (tem `.id`) — a UI navega para
+// `/entities/{id}`. Corpo INLINE (contrato `{ type, title, ... }`, sem schema gerado
+// dedicado). Depois o dono pode fixar os `external_ids` (updateExternalIds) e
+// re-enriquecer para sincronizar com a fonte.
+export async function createItem(body: {
+  type: 'movie' | 'tv'
+  title: string
+  original_title?: string
+  description?: string
+  release_date?: string
+}): Promise<ResolvedEntity> {
+  const res = await fetch(`${base}/api/v1/entities`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return lerJson<ResolvedEntity>(res)
+}
+
+// Grava (FULL REPLACE) a identidade externa da entity (`external_ids`, MD4): o dono
+// fixa qual id de cada fonte a entity usa (ex.: tmdb=603), base para uma sincronização
+// futura — os ids da fonte podem mudar ou o item ser substituído por outro. O backend
+// descarta valores vazios (remover uma fonte = deixar o id em branco). As colunas
+// geradas (external_id_tmdb/imdb) re-derivam sozinhas. Devolve a entity RESOLVIDA.
+// Corpo INLINE `{ external_ids: {source: id} }`.
+export async function updateExternalIds(
+  id: string,
+  externalIds: Record<string, string>,
+): Promise<ResolvedEntity> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/external-ids`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ external_ids: externalIds }),
+    },
+  )
+  return lerJson<ResolvedEntity>(res)
+}
+
 // ── Settings de idioma (0019) ────────────────────────────────────────────────
 
 // Config de idioma vigente (principal, fallback, permitidos). Quando não há

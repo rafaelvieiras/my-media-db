@@ -1,48 +1,33 @@
-import { useState, type FormEvent } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
-import { FolderPlus, X } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { useState } from 'react'
+import { FolderPlus } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import { ApiError, createCollection, type ResolvedEntity } from '@/lib/api'
+import { createCollection } from '@/lib/api'
+import { CreateFormShell, CreateToggle } from '@/components/inline-create-form'
+import { useCriarEntidade } from '@/lib/use-criar-entidade'
 
-// CollectionCreate: cria uma coleção LOCAL (sem source) do zero (0025 Fase B). Um
-// botão "Nova coleção" abre um formulário inline (título obrigatório + descrição
-// opcional) — não há primitivo de Dialog no projeto, então o form expande no lugar.
-// Ao criar: invalida `['entities']` (a coleção nova é uma entity e entra no grid) e
-// NAVEGA para `/entities/{id}` (a página da coleção, onde o dono adiciona membros).
-// Erro da API (ex.: 422 título vazio) aparece INLINE com a `message` pt-BR.
+// CollectionCreate: cria uma coleção LOCAL (sem source) do zero (0025 Fase B). Reusa o
+// scaffold de criação inline (CreateToggle/CreateFormShell, 0027) — só injeta os campos
+// (título obrigatório + descrição opcional) e o corpo. Ao criar, o hook invalida o grid
+// e navega para `/entities/{id}` (a página da coleção, onde o dono adiciona membros). O
+// 422 (título vazio) aparece inline com a `message` pt-BR.
 export function CollectionCreate() {
-  const [aberto, setAberto] = useState(false)
-
-  if (!aberto) {
-    return (
-      <Button variant="outline" size="sm" onClick={() => setAberto(true)}>
-        <FolderPlus aria-hidden />
-        Nova coleção
-      </Button>
-    )
-  }
-  return <CollectionCreateForm onClose={() => setAberto(false)} />
+  return (
+    <CreateToggle label="Nova coleção" icon={<FolderPlus aria-hidden />}>
+      {(onClose) => <CollectionCreateForm onClose={onClose} />}
+    </CreateToggle>
+  )
 }
 
 function CollectionCreateForm({ onClose }: { onClose: () => void }) {
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
 
-  const mutation = useMutation({
-    mutationFn: (body: { title: string; description?: string }) =>
-      createCollection(body),
-    onSuccess: (entity: ResolvedEntity) => {
-      queryClient.invalidateQueries({ queryKey: ['entities'] })
-      navigate({ to: '/entities/$id', params: { id: entity.id } })
-    },
-  })
+  const { mutation, mensagemErro } = useCriarEntidade(
+    createCollection,
+    'Não foi possível criar a coleção.',
+  )
 
-  function onSubmit(e: FormEvent) {
-    e.preventDefault()
+  function onSubmit() {
     const limpo = title.trim()
     if (!limpo) {
       return
@@ -51,30 +36,18 @@ function CollectionCreateForm({ onClose }: { onClose: () => void }) {
     mutation.mutate({ title: limpo, description: desc || undefined })
   }
 
-  const mensagemErro =
-    mutation.error instanceof ApiError
-      ? mutation.error.message
-      : mutation.isError
-        ? 'Não foi possível criar a coleção.'
-        : null
-
   return (
-    <form
+    <CreateFormShell
+      title="Nova coleção"
+      submitLabel="Criar coleção"
+      submitPendingLabel="Criando…"
+      submitIcon={<FolderPlus aria-hidden />}
+      isPending={mutation.isPending}
+      canSubmit={!!title.trim()}
+      mensagemErro={mensagemErro}
       onSubmit={onSubmit}
-      className="flex w-full max-w-md flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10"
+      onClose={onClose}
     >
-      <div className="flex items-center justify-between">
-        <span className="font-medium">Nova coleção</span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="Cancelar"
-          onClick={onClose}
-        >
-          <X aria-hidden />
-        </Button>
-      </div>
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-muted-foreground">Título</span>
         <Input
@@ -95,17 +68,6 @@ function CollectionCreateForm({ onClose }: { onClose: () => void }) {
           aria-label="Descrição da coleção"
         />
       </label>
-      {mensagemErro ? (
-        <p role="alert" className="text-sm font-medium text-destructive">
-          {mensagemErro}
-        </p>
-      ) : null}
-      <div className="flex justify-end">
-        <Button type="submit" disabled={mutation.isPending || !title.trim()}>
-          <FolderPlus aria-hidden />
-          {mutation.isPending ? 'Criando…' : 'Criar coleção'}
-        </Button>
-      </div>
-    </form>
+    </CreateFormShell>
   )
 }

@@ -1,4 +1,5 @@
 import { CollectionCreate } from '@/components/collection-create'
+import { ItemCreate } from '@/components/item-create'
 import { PosterGrid } from '@/components/poster-grid'
 import { useLanguage } from '@/lib/language-context'
 
@@ -18,7 +19,10 @@ export function LibraryItemsScreen() {
             Catálogo detectado a partir dos seus datasources.
           </p>
         </div>
-        <CollectionCreate />
+        <div className="flex flex-wrap items-start gap-2">
+          <ItemCreate />
+          <CollectionCreate />
+        </div>
       </div>
       <PosterGrid lang={lang} />
     </main>
