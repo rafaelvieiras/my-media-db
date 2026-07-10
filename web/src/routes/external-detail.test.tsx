@@ -182,7 +182,11 @@ describe('ExternalDetailScreen', () => {
       vote_average: null,
       genres: [],
       keywords: [],
-      videos: [{ ...detalhe('pt-BR').videos[0], url: null }],
+      // Vídeo não-renderável: não-YouTube e sem url -> a seção some. (Um YouTube
+      // com key é embutível mesmo sem url, então não serviria para esconder.)
+      videos: [
+        { ...detalhe('pt-BR').videos[0], site: 'DailyMotion', url: null },
+      ],
       collection: null,
       similar: [],
       external_links: {},
@@ -206,6 +210,52 @@ describe('ExternalDetailScreen', () => {
     expect(
       await screen.findByText('Não foi possível carregar o detalhe'),
     ).toBeTruthy()
+  })
+
+  it('vídeo do YouTube toca embutido (nocookie) só após clicar no play', async () => {
+    stubFetch()
+    renderWithClient(<ExternalDetailScreen />)
+    await screen.findByRole('heading', { name: 'Duna' })
+
+    // Antes do clique: thumbnail com botão de play, nenhum iframe carregado.
+    expect(document.querySelector('iframe')).toBeNull()
+    const play = screen.getByRole('button', {
+      name: /Reproduzir Trailer oficial/,
+    })
+
+    await userEvent.setup().click(play)
+
+    const iframe = document.querySelector('iframe')
+    expect(iframe).not.toBeNull()
+    expect(iframe?.getAttribute('src')).toBe(
+      'https://www.youtube-nocookie.com/embed/abc?autoplay=1',
+    )
+    // O título do trailer segue visível na legenda.
+    expect(screen.getByText('Trailer oficial')).toBeTruthy()
+  })
+
+  it('vídeo não-YouTube com url vira link externo (sem player)', async () => {
+    stubFetch(() =>
+      okJson({
+        ...detalhe('pt-BR'),
+        videos: [
+          {
+            name: 'Clipe no Vimeo',
+            key: 'v1',
+            site: 'Vimeo',
+            type: 'Clip',
+            official: false,
+            url: 'https://vimeo.com/v1',
+          },
+        ],
+      }),
+    )
+    renderWithClient(<ExternalDetailScreen />)
+    await screen.findByRole('heading', { name: 'Duna' })
+
+    const link = screen.getByRole('link', { name: /Clipe no Vimeo/ })
+    expect(link.getAttribute('href')).toBe('https://vimeo.com/v1')
+    expect(screen.queryByRole('button', { name: /Reproduzir/ })).toBeNull()
   })
 
   it('similar é navegável para o detalhe externo do alvo', async () => {
