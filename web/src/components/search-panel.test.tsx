@@ -127,6 +127,29 @@ describe('SearchPanel', () => {
     ).toBe(true)
   })
 
+  it('resultado externo já na biblioteca vira "Na biblioteca" sem Importar', async () => {
+    // Interno-first (0027): quando o item externo já é entity (internal_id), o card
+    // some com o Importar e mostra o selo — evita reimportar o que já está no catálogo.
+    // O internal_id vai defensivamente (cast) porque o tipo gerado só o ganha após a
+    // regeneração do backend (feita em paralelo); o runtime carrega o campo.
+    const externalSalvo = {
+      ...externalItem,
+      internal_id: 'ent-603',
+    } as ExternalResult
+    await buscar({
+      query: 'matrix',
+      local: [],
+      external: [externalSalvo],
+      external_available: true,
+    })
+
+    await waitFor(() =>
+      expect(screen.getByText('The Matrix')).toBeInTheDocument(),
+    )
+    expect(screen.getByText('Na biblioteca')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Importar/ })).toBeNull()
+  })
+
   it('avisa quando a busca externa está indisponível (não é zero resultados)', async () => {
     await buscar({
       query: 'matrix',

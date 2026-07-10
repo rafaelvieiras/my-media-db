@@ -7,6 +7,7 @@ import { useLanguage } from '@/lib/language-context'
 import type { SearchResult } from '@/lib/api'
 import { PosterCard } from '@/components/poster-card'
 import { ExternalResultCard } from '@/components/external-result-card'
+import { internalIdDe } from '@/lib/internal-id'
 import {
   MediaTypeFilter,
   type MediaTypeFilterValue,
@@ -158,6 +159,7 @@ function ExternalSection({
             <ExternalResultCard
               key={`${result.source}:${result.source_id}`}
               result={result}
+              internalId={internalIdDe(result)}
             />
           ))}
         </ul>
