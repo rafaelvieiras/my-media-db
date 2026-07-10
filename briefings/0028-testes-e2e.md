@@ -214,8 +214,11 @@ provider `tmdb` fica em 0% de propósito (o fake o substitui nas jornadas).
 ## 8. Integração com CI / catraca / lefthook
 
 - Camada 1 roda no `go test ./... -count=1` que a catraca já executa (sem infra nova).
-- Camada 2 (Playwright) vira um job separado (mais lento) — pre-push e/ou CI noturno; não
-  bloqueia cada commit. Um alvo `npm run e2e` que builda+sobe+roda.
+- Camada 2 (Playwright) roda num **job separado** (`.github/workflows/e2e.yml`, mais
+  lento) — builda front+binário, sobe com o fake e dirige o Chromium (`make e2e-cov`),
+  subindo as coberturas de navegador como artefato (termômetro, não ratcheado). Separado
+  da catraca de propósito; para não bloquear o merge, basta marcar o check como
+  não-obrigatório na proteção de branch.
 - Camada 3 roda dentro do `npm test` atual.
 - Métricas: o ratchet unitário (`go_coverage_lines`/`web_coverage_lines`) fica como está —
   o E2E NÃO o substitui. Além dele, a catraca ganha `e2e_coverage_lines`: `go test
@@ -244,7 +247,8 @@ provider `tmdb` fica em 0% de propósito (o fake o substitui nas jornadas).
   camada de contrato do provider TMDB.
 - ~~Runner do Playwright no ambiente/CI (browser disponível?)~~ RESOLVIDO: Chromium
   disponível; `@playwright/test` + `monocart` num projeto `e2e/` isolado (`npm install`,
-  sem tocar o lockfile do web). Falta rodar no CI (job separado, não-bloqueante).
+  sem tocar o lockfile do web). RESOLVIDO no CI: `.github/workflows/e2e.yml` (job
+  separado; torne o check não-obrigatório na proteção de branch se não quiser bloquear).
 - Fixtures ficam em código (`internal/provider/fake/catalogo.go`), não em `testdata/` —
   simples e tipado; migrar para arquivos se crescerem muito.
 - Cobertura do binário/front (Camada 2): hoje SÓ reportadas (console), não ratcheadas na

@@ -1,0 +1,88 @@
+# e2e.yml — E2E de navegador (Camada 2, briefing 0028) no CI.
+#
+# Job SEPARADO da catraca (mais lento): builda o front + o binario com -cover,
+# sobe o binario com o provider fake (MYMEDIADB_FAKE_PROVIDER=1) e dirige um
+# Chromium real via Playwright pelo inventario de fluxos do usuario (briefing
+# 0028 secao 7.1). Coleta a cobertura de navegador (binario via GOCOVERDIR + go
+# tool covdata; front via monocart V8) como TERMOMETRO — reportada no log e
+# subida como artefato, NAO ratcheada. A catraca unitaria continua no
+# quality-gate.yml. Se quiser que a falha aqui nao bloqueie o merge, marque este
+# check como nao-obrigatorio na protecao de branch (o workflow em si sempre
+# reporta pass/fail honesto).
+
+name: E2E (Playwright)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E de navegador (Camada 2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          # Mesma toolchain da catraca (>= 1.26.5, ver go.mod/toolchain).
+          go-version: '1.26.x'
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          # So o web/ tem lockfile versionado; o do e2e/ e gitignored de proposito.
+          cache-dependency-path: web/package-lock.json
+
+      # O global-setup do e2e roda `npm run build` no web/, entao as deps do web
+      # precisam existir. `npm ci` respeita o lockfile estrito (igual ao Docker).
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      # Projeto e2e/ ISOLADO: `npm install` (NUNCA `npm ci`) para nao tocar o
+      # lockfile estrito do web/ (regra da versao do npm; ver briefing 0028).
+      - name: Install e2e dependencies
+        working-directory: e2e
+        run: npm install
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('e2e/package.json') }}
+
+      - name: Install Playwright Chromium
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      # make e2e-cov = cd e2e && E2E_COVERAGE=1 npm run e2e: builda front+binario,
+      # sobe com o fake, roda as jornadas e extrai as coberturas de navegador.
+      - name: Run E2E (com cobertura)
+        run: make e2e-cov
+
+      - name: Upload E2E artifacts (cobertura + logs)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          if-no-files-found: ignore
+          retention-days: 30
+          path: |
+            e2e/.artifacts/e2e-binary-coverage.txt
+            e2e/.artifacts/web-coverage
+            e2e/.artifacts/server.log
+            e2e/test-results
