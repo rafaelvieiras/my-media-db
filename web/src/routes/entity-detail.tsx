@@ -168,7 +168,9 @@ export function EntityDetailScreen() {
 
         {/* Coleção (0025): mostra os MEMBROS no lugar dos Arquivos (coleção não tem
             media_file). A galeria de arte segue valendo (arte própria da coleção). */}
-        {data.type === 'collection' ? <CollectionMembers id={id} /> : null}
+        {data.type === 'collection' ? (
+          <CollectionMembers id={id} editable />
+        ) : null}
 
         <ArtGallery entityId={id} />
 

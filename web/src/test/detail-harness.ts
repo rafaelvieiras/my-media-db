@@ -1,8 +1,26 @@
 import { vi } from 'vitest'
+import type { EntityCard } from '@/lib/api'
 
 // Scaffolding COMPARTILHADO dos testes das telas de detalhe/coleção externa: respostas
 // fetch canônicas, o mock do idioma ativo e o mock do router. Centralizar aqui evita a
 // duplicação (jscpd) entre os arquivos de teste que exercitam a mesma superfície.
+
+// entityCardBase é o EntityCard canônico dos testes de coleção (membros/picker): um
+// filme possuído, sem arte. `over` sobrescreve campos. Compartilhado para os arquivos
+// de teste não repetirem a mesma fábrica (jscpd).
+export function entityCardBase(over: Partial<EntityCard> = {}): EntityCard {
+  return {
+    id: 'e1',
+    type: 'movie',
+    title: 'Duna',
+    status: 'cataloged',
+    owned: true,
+    file_count: 1,
+    match_confidence: 100,
+    poster_url: null,
+    ...over,
+  }
+}
 
 // okJson/erroJson montam Responses no shape que o cliente HTTP (api.ts) espera.
 export function okJson<T>(body: T, status = 200): Response {
