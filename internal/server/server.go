@@ -50,6 +50,11 @@ type Server struct {
 	// settings é o cache leve (mutex) da config de idioma de app_settings (briefing
 	// 0019), invalidado no PUT /settings/languages. Sempre presente.
 	settings *settingsCache
+	// hostsImagem é a allowlist do proxy de imagem (GET /images; anti-SSRF). Default
+	// = hostsImagemPadrao; injetável em teste. httpImagem baixa a imagem (timeout
+	// curto). O proxy só opera com assetsDir configurado.
+	hostsImagem map[string]bool
+	httpImagem  *http.Client
 }
 
 // Option configura opcionalmente o Server na construção, preservando a
@@ -83,7 +88,8 @@ func WithAssetsDir(dir string) Option {
 // extensões opcionais (ex.: WithSearchProvider) — a forma New(version, database)
 // segue válida.
 func New(version string, database *db.DB, opts ...Option) *Server {
-	s := &Server{version: version, db: database, settings: &settingsCache{}}
+	s := &Server{version: version, db: database, settings: &settingsCache{},
+		hostsImagem: hostsImagemPadrao, httpImagem: clienteImagemPadrao()}
 	if database != nil {
 		s.library = library.New(database)
 		s.scanner = scanner.NewManager(database)
@@ -136,6 +142,13 @@ func (s *Server) Handler() (http.Handler, error) {
 			// serve do cache nas seguintes, resolvido no idioma ativo. Ver != catalogar
 			// (nunca cria entity).
 			v1.Get("/external/{source}/{type}/{id}", s.getExternalDetail)
+
+			// Proxy READ-THROUGH de imagem (briefing 0024): baixa e cacheia em
+			// disco a imagem de um host permitido (allowlist anti-SSRF) para a
+			// tela de detalhe do EXTERNO (pré-import) não depender do CDN da fonte
+			// em runtime — como o pôster/fanart cacheados da entity (0015). 503 sem
+			// assetsDir; a resolução vive em image_proxy.go.
+			v1.Get("/images", s.getImageProxy)
 
 			// Filas de CURADORIA (briefing 0018): revisão (draft ou baixa
 			// confiança) e órfãs (auto-criadas, todas missing, sem investimento

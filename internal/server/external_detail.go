@@ -154,12 +154,16 @@ func (s *Server) montarDetalheExterno(source, id, tipo, lang string, cfg languag
 		VoteAverage:      richfields.FloatPtrDe(campos, "vote_average"),
 		Genres:           richfields.OuListaVazia(generos),
 		Keywords:         richfields.OuListaVazia(keywords),
-		PosterURL:        richfields.StrPtrDe(campos, "poster_url"),
-		BackdropURL:      richfields.StrPtrDe(campos, "backdrop_url"),
-		Videos:           richfields.VideosDe(campos),
-		Collection:       richfields.ColecaoDe(campos),
-		Similar:          richfields.SimilaresDe(campos),
-		ExternalLinks:    richfields.LinksExternos(campos, tmdbTipo, tmdbID),
+		// As artes do HERO (pôster/fundo) passam pelo proxy local quando há assetsDir
+		// e o host é proxyável (0024): a UI as serve do cache, sem bater no CDN da
+		// fonte. Sem isso, saem como a URL direta (degradação). Similares/coleção
+		// (muitas miniaturas) seguem diretas de propósito — evita rajada de proxy.
+		PosterURL:     s.urlImagemServida(richfields.StrPtrDe(campos, "poster_url")),
+		BackdropURL:   s.urlImagemServida(richfields.StrPtrDe(campos, "backdrop_url")),
+		Videos:        richfields.VideosDe(campos),
+		Collection:    richfields.ColecaoDe(campos),
+		Similar:       richfields.SimilaresDe(campos),
+		ExternalLinks: richfields.LinksExternos(campos, tmdbTipo, tmdbID),
 		ResolvedLanguages: map[string]string{
 			"title":       provTitulo,
 			"description": provDesc,

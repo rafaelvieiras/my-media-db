@@ -38,8 +38,9 @@ export interface RichDetail {
   externalLinks: Record<string, string>
 }
 
-// deExternalDetail normaliza o DTO do detalhe EXTERNO. Pôster/backdrop são URLs
-// DIRETAS da fonte (TMDB) — renderizam direto, sem `posterSrc`.
+// deExternalDetail normaliza o DTO do detalhe EXTERNO. Pôster/backdrop do hero podem
+// vir como ROTA DO PROXY LOCAL (relativa, cacheada — 0024) ou como URL DIRETA da fonte
+// (degradação): `srcDeImagem` resolve os dois (relativa recebe a base, absoluta passa).
 export function deExternalDetail(d: ExternalDetail): RichDetail {
   return {
     type: d.type,
@@ -52,8 +53,8 @@ export function deExternalDetail(d: ExternalDetail): RichDetail {
     certification: d.certification,
     voteAverage: d.vote_average,
     originalLanguage: d.original_language,
-    posterUrl: d.poster_url,
-    backdropUrl: d.backdrop_url,
+    posterUrl: srcDeImagem(d.poster_url),
+    backdropUrl: srcDeImagem(d.backdrop_url),
     genres: d.genres,
     keywords: d.keywords,
     videos: d.videos,

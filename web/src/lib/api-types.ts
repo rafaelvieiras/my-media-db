@@ -338,6 +338,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/images': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Proxy read-through de imagem externa (briefing 0024).
+     * @description Baixa e CACHEIA em disco a imagem apontada por `src` (pôster/fundo do detalhe do EXTERNO, pré-import) e a serve do cache nas próximas — a UI deixa de bater no CDN da fonte em runtime, como o pôster/fanart cacheados da entity (0015). `src` DEVE apontar a um host da allowlist (defesa contra SSRF); o cache é por URL (sha256), compartilhado. Responde o BINÁRIO da imagem (não JSON). 503 sem diretório de assets; 400 se `src` faltar ou o host não for permitido; 502 se a fonte falhar ou não devolver uma imagem.
+     */
+    get: operations['getImageProxy']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/review': {
     parameters: {
       query?: never
@@ -1431,6 +1451,32 @@ export interface operations {
       400: components['responses']['Error']
       404: components['responses']['Error']
       422: components['responses']['Error']
+      502: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  getImageProxy: {
+    parameters: {
+      query: {
+        /** @description URL absoluta da imagem, em host permitido (ex.: image.tmdb.org). */
+        src: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Binário da imagem cacheada. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'image/*': string
+        }
+      }
+      400: components['responses']['Error']
       502: components['responses']['Error']
       503: components['responses']['Error']
     }

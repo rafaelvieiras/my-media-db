@@ -597,6 +597,38 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/v1/images:
+    get:
+      operationId: getImageProxy
+      summary: Proxy read-through de imagem externa (briefing 0024).
+      description: >
+        Baixa e CACHEIA em disco a imagem apontada por `src` (pôster/fundo do detalhe
+        do EXTERNO, pré-import) e a serve do cache nas próximas — a UI deixa de bater
+        no CDN da fonte em runtime, como o pôster/fanart cacheados da entity (0015).
+        `src` DEVE apontar a um host da allowlist (defesa contra SSRF); o cache é por
+        URL (sha256), compartilhado. Responde o BINÁRIO da imagem (não JSON). 503 sem
+        diretório de assets; 400 se `src` faltar ou o host não for permitido; 502 se a
+        fonte falhar ou não devolver uma imagem.
+      tags: [entities]
+      parameters:
+        - name: src
+          in: query
+          required: true
+          description: "URL absoluta da imagem, em host permitido (ex.: image.tmdb.org)."
+          schema: { type: string, format: uri }
+      responses:
+        "200":
+          description: Binário da imagem cacheada.
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        "400":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/review:
     get:
       operationId: listReview
@@ -1344,6 +1376,9 @@ components:
         keywords:
           type: array
           items: { type: string }
+        # Artes do HERO: rota LOCAL do proxy (/api/v1/images?src=..., cacheada — 0024)
+        # quando há diretório de assets e o host e proxyavel; senao a URL DIRETA da
+        # fonte (degradacao). Similares/colecao seguem com a URL direta da fonte.
         poster_url: { type: [string, "null"] }
         backdrop_url: { type: [string, "null"] }
         videos:

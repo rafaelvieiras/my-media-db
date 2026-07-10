@@ -83,9 +83,34 @@ front resolve absoluta×relativa (`srcDeImagem`). Entities enriquecidas ANTES do
 têm payload parcial (sem keywords/vídeos/similares/certificação e sem fanart cacheado):
 um **re-enriquecimento** re-puxa o payload rico e cacheia o fundo.
 
-## 5. Fora deste briefing / follow-ups
+## 5. Proxy de imagem do EXTERNO pré-import (feito)
+
+A tela de detalhe do EXTERNO (pré-import) servia o pôster/fundo direto do CDN da fonte
+(TMDB). Como NÃO há entity para anexar um asset (0015 não se aplica), foi criado um
+**proxy READ-THROUGH genérico** `GET /api/v1/images?src=<url>` (`internal/server/
+image_proxy.go`): baixa a imagem UMA vez, cacheia em disco sob
+`{assetsDir}/_proxy/<sha256(src)>` e serve do cache nas próximas — a UI deixa de bater
+no CDN em runtime. Diferença do cache da entity: o cache é POR URL, compartilhado entre
+itens/visitas (não por entity).
+
+- **Segurança**: `src` é validado contra uma **allowlist de hosts** (`hostsImagem`,
+  default `image.tmdb.org`) — a defesa central contra SSRF (jamais buscamos host
+  arbitrário). A resposta só é cacheada/servida se for `200 image/*`. O nome do arquivo
+  é o sha256 hex da URL: determinístico e imune a path-traversal, então dispensa a
+  guarda de raízes do `servirBinarioAsset`. Escrita ATÔMICA (temp + rename) evita servir
+  binário parcial sob concorrência.
+- **Reescrita**: o DTO do detalhe externo (`urlImagemServida`) troca as artes do HERO
+  (pôster/fundo) pela rota do proxy quando há `assetsDir` E o host é proxyável; senão
+  devolve a URL direta (degradação: sem `assetsDir` os testes/handlers seguem com a URL
+  da fonte). As miniaturas de **similares/coleção** seguem DIRETAS de propósito — evita
+  uma rajada de proxy a cada abertura da página.
+- **Front**: `deExternalDetail` resolve pôster/fundo por `srcDeImagem` (rota relativa
+  recebe a base; URL absoluta passa direto), o mesmo helper do backdrop da entity.
+
+## 6. Fora deste briefing / follow-ups
 
 - **Elenco/equipe (MD6)** e **nota/avaliação local** — seguem como briefings próprios.
-- **Backdrop do detalhe do EXTERNO (pré-import)** ainda usa a URL direta (não há entity
-  para anexar o asset; caching pré-import exigiria um proxy genérico) — follow-up.
+- **Evicção do cache do proxy** (`_proxy` cresce sem limite; dedup por URL torna
+  re-visitas grátis, mas não há expurgo) e **proxy das miniaturas** de similares/coleção
+  — follow-ups, se o volume justificar.
 - **Coleção como página própria** e **player embutido** — como no §7 do [0023](0023-tela-detalhe-externo-ui.md).

@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-07-10T05:59:38.310Z",
-  "commit": "da7d882",
+  "generatedAt": "2026-07-10T14:18:56.793Z",
+  "commit": "713c3f8",
   "project": "my-media-db",
   "metrics": {
-    "go_coverage_lines": 73,
+    "go_coverage_lines": 73.3,
     "go_gofmt_unformatted": 0,
     "go_lint_issues": 0,
     "go_vuln_high": 0,
