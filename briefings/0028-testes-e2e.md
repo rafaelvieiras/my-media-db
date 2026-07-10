@@ -125,14 +125,16 @@ reais). Roda sob demanda (`make e2e`), não a cada commit.
   `MYMEDIADB_FAKE_PROVIDER=1` + DB/assets temporários + `GOCOVERDIR`, com health check;
   `global-teardown` manda SIGTERM (o binário grava os contadores ao sair) e extrai a
   cobertura. `E2E_BASE_URL` reusa um servidor externo; `E2E_SKIP_BUILD=1` pula os builds.
-- Jornadas atuais (3, crescer até ~8): importar filme pela busca → detalhe interno;
-  interno-first (importado = "Na biblioteca" + link interno, não-importado = "Importar");
-  biblioteca lista o importado. web-first assertions, seletores por papel/aria/texto.
-- **Cobertura do binário** (backend, via `GOCOVERDIR` + `go tool covdata`): ~24% do
-  binário exercido por 3 jornadas (por-pacote + total). **Cobertura do front** (via
+- Jornadas atuais: **15 testes em 7 specs** cobrindo o inventário completo de fluxos do
+  usuário (ver 7.1). web-first assertions, seletores por papel/aria/texto, chrome sempre
+  em pt-BR. Isolamento por `resetBiblioteca` no `beforeEach` (zera entities via API);
+  workers=1, um banco compartilhado.
+- **Cobertura do binário** (backend, via `GOCOVERDIR` + `go tool covdata`): **52,4%** do
+  binário exercido pelas jornadas (por-pacote + total). **Cobertura do front** (via
   `monocart-coverage-reports` lendo a cobertura V8 do Chromium, mapeada ao TSX por
-  sourcemap INLINE que o vite emite só quando `E2E_COVERAGE=1`): ~37% das linhas. Rode
-  ambas com `make e2e-cov`.
+  sourcemap INLINE que o vite emite só quando `E2E_COVERAGE=1`): **78,2%** das linhas.
+  Rode ambas com `make e2e-cov`. São **termômetro** (reportadas no console, observadas ao
+  crescer a suíte), NÃO ratcheadas na catraca — o contrato de completude é o checklist 7.1.
 
 ### Camada 3 — integração jsdom + MSW (opcional; UI rápida por commit)
 Trocar os stubs de fetch manuais (hoje `stub-fetch.ts`) por **MSW** e montar árvores de
@@ -169,6 +171,46 @@ Camada 1 (API) e as principais também na Camada 2 (UI):
    não volta, tag nova da fonte aparece. (Codifica a garantia do resolver de 3 camadas.)
 7. Erros-chave: enrich sem id da fonte → 422 inline; fonte indisponível → 502/503.
 
+## 7.1. Inventário de fluxos do usuário (checklist — o termômetro)
+
+A intenção do dono: **garantir que todo fluxo que o usuário já vê/usa esteja preso por um
+teste de ponta a ponta**, para que uma implementação nova não quebre em silêncio o que
+funcionava. A cobertura E2E (52,4% binário, 78,2% front) é o **termômetro** — sobe quando
+a suíte cresce, sinaliza regressão quando cai — mas o **contrato de completude é este
+checklist**: cada linha é uma tela/ação que o usuário exercita, mapeada ao spec que a
+prende. Os números de cobertura NÃO são ratcheados (jornadas de navegador são mais
+lentas/variáveis); o checklist é revisado a cada feature nova.
+
+**Regra de governança (a garantia que o dono pediu):** toda feature nova voltada ao
+usuário precisa **adicionar ou estender uma jornada** neste inventário antes de fechar.
+Se um fluxo passa a existir sem linha aqui, ele está desprotegido — a revisão de PR deve
+cobrar a jornada. É isto que impede "novas implementações quebrarem fluxos de outras
+partes" sem ninguém perceber.
+
+| # | Fluxo do usuário | Tela/ação | Spec (`e2e/tests/`) |
+|---|---|---|---|
+| 1 | Buscar e importar filme | `/search` → "Importar" → detalhe interno resolvido (pt-BR) | `journeys.spec.ts` |
+| 2 | Interno-first na busca | importado = "Na biblioteca" + link interno; não-importado = "Importar" + link externo | `journeys.spec.ts` |
+| 3 | Biblioteca lista o importado | `/` grid com card linkando ao interno | `journeys.spec.ts` |
+| 4 | Detalhe externo → importar | `/external/tmdb/movie/604` → "Importar" leva ao interno | `external.spec.ts` |
+| 5 | Coleção externa → importar coleção | `/collection/tmdb/2344` → entity `collection` + membros | `external.spec.ts` |
+| 6 | Enrich não-destrutivo (ADR-0012) | editar título (override) + tag (delta) → re-enriquecer → edições sobrevivem | `editing.spec.ts` |
+| 7 | Item manual → fixar external-ids → re-enriquecer | dados vêm da fonte pelo id fixado | `editing.spec.ts` |
+| 8 | Criar item manual | "Novo item" → "Título do item" → "Criar item" → aparece na biblioteca | `manual.spec.ts` |
+| 9 | Coleção manual (ciclo) | criar → adicionar/remover membro (picker) → excluir (membros sobrevivem) | `manual.spec.ts` |
+| 10 | Galeria de arte (ciclo) | enviar pôster → preferir → remover, na seção "Arte" da entity | `art.spec.ts` |
+| 11 | Trocar idioma de leitura | combobox re-resolve o título exibido (en ↔ pt-BR) | `settings.spec.ts` |
+| 12 | Configurações de idioma | `/settings`: principal/fallback, permitidos, salvar | `settings.spec.ts` |
+| 13 | Datasource (CRUD) | `/library`: adicionar path → aparece; remover → some | `library.spec.ts` |
+| 14 | Revisão de draft (curadoria) | scan de nome não-identificado → `/review` → "Corrigir" (busca) → sai da fila | `library.spec.ts` |
+| 15 | Órfã (curadoria) | arquivo catalogado some → rescan → `/orphans` → "Purgar" (confirmação 2 passos) | `library.spec.ts` |
+
+**Snapshot da cobertura no fechamento do inventário** (referência, não trava): binário
+52,4% (por `go tool covdata`), front 78,2% linhas / 55,1% branches / 71,8% funções (por
+monocart V8). Pacotes de menor cobertura de navegador — candidatos naturais a próximas
+jornadas: `mediainfo` (21%), `richfields` (46%), `enrich` (50%), `server` (55%). O
+provider `tmdb` fica em 0% de propósito (o fake o substitui nas jornadas).
+
 ## 8. Integração com CI / catraca / lefthook
 
 - Camada 1 roda no `go test ./... -count=1` que a catraca já executa (sem infra nova).
@@ -189,10 +231,10 @@ Camada 1 (API) e as principais também na Camada 2 (UI):
   jornadas de API em Go sobre `httptest.NewServer`) migrando os smoke tests manuais +
   métrica `e2e_coverage_lines` na catraca (`-coverpkg`). Valor imediato, baixo risco.
 - **Fase 2** (FEITA) — projeto `e2e/` com Playwright: global-setup builda o front + o
-  binário `-cover` e o sobe com o fake; 3 jornadas de navegador; cobertura do binário via
-  `GOCOVERDIR` + `go tool covdata` (~24%) e do front via `monocart-coverage-reports`
-  lendo a cobertura V8 do Chromium com sourcemap inline (~37% linhas). `make e2e` /
-  `make e2e-cov`. Imagens: `MYMEDIADB_FAKE_IMAGE_BASE` (hoje sem pôster nas jornadas de
+  binário `-cover` e o sobe com o fake; **inventário completo de jornadas** (15 testes /
+  7 specs, ver 7.1); cobertura do binário via `GOCOVERDIR` + `go tool covdata` (52,4%) e
+  do front via `monocart-coverage-reports` lendo a cobertura V8 do Chromium com sourcemap
+  inline (78,2% linhas). `make e2e` / `make e2e-cov`. Imagens: `MYMEDIADB_FAKE_IMAGE_BASE` (hoje sem pôster nas jornadas de
   navegador — placeholders; ligar quando uma jornada precisar de imagem determinística).
 - **Fase 3** (opcional) — MSW + montagem de rotas no Vitest para UI rápida por commit.
 
