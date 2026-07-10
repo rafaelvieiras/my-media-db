@@ -150,29 +150,96 @@ export function ImportarButton({
 
 // ── Seções ricas ─────────────────────────────────────────────────────────────
 
+// ehYouTube diz se o vídeo pode ser EMBUTIDO: precisa ser do YouTube e ter `key`
+// (a `url` é dispensável — o embed é montado da key). Só esses viram player local;
+// os demais caem no link externo (quando têm url).
+function ehYouTube(video: ExternalVideo): boolean {
+  return video.site === 'YouTube' && !!video.key
+}
+
+// VideoCard renderiza um vídeo. Para o YouTube, é um player CLICK-TO-PLAY: mostra o
+// thumbnail com botão de play e, ao clicar, troca por um <iframe> embutido do domínio
+// `youtube-nocookie` (sem cookies de rastreio até o play). Vídeos não-YouTube (raros
+// no TMDB) mantêm o link externo. Não pré-carregamos o iframe: evita N players e o
+// tráfego/rastreio do YouTube antes de o dono querer assistir.
+function VideoCard({ video }: { video: ExternalVideo }) {
+  const [tocando, setTocando] = useState(false)
+
+  if (!ehYouTube(video)) {
+    // Não-embutível: link externo. A `VideosRail` só encaminha para cá vídeos com
+    // `url` (o filtro é a fonte única da verdade), então aqui a url está presente.
+    return (
+      <a
+        href={video.url ?? undefined}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <Play className="size-4 shrink-0" aria-hidden />
+        <span className="line-clamp-1">{video.name}</span>
+        <Badge variant="outline" className="shrink-0">
+          {video.type}
+        </Badge>
+      </a>
+    )
+  }
+
+  return (
+    <figure className="flex flex-col gap-1.5">
+      <div className="relative aspect-video overflow-hidden rounded-xl bg-muted ring-1 ring-foreground/10">
+        {tocando ? (
+          <iframe
+            src={`https://www.youtube-nocookie.com/embed/${video.key}?autoplay=1`}
+            title={video.name}
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowFullScreen
+            className="absolute inset-0 h-full w-full border-0"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setTocando(true)}
+            aria-label={`Reproduzir ${video.name}`}
+            className="group absolute inset-0 h-full w-full cursor-pointer"
+          >
+            <img
+              src={`https://img.youtube.com/vi/${video.key}/hqdefault.jpg`}
+              alt=""
+              aria-hidden
+              loading="lazy"
+              className="h-full w-full object-cover"
+            />
+            <span className="absolute inset-0 flex items-center justify-center bg-black/30 transition group-hover:bg-black/40">
+              <span className="flex size-14 items-center justify-center rounded-full bg-background/90 text-foreground shadow-lg transition group-hover:scale-105">
+                <Play className="size-6 fill-current" aria-hidden />
+              </span>
+            </span>
+          </button>
+        )}
+      </div>
+      <figcaption className="flex items-center gap-2 text-sm">
+        <span className="line-clamp-1 font-medium">{video.name}</span>
+        <Badge variant="outline" className="shrink-0">
+          {video.type}
+        </Badge>
+      </figcaption>
+    </figure>
+  )
+}
+
 function VideosRail({ videos }: { videos: ExternalVideo[] }) {
-  const comLink = videos.filter((v) => v.url)
-  if (comLink.length === 0) {
+  // Renderável = embutível (YouTube+key) OU com link externo. Os demais somem.
+  const renderaveis = videos.filter((v) => ehYouTube(v) || v.url)
+  if (renderaveis.length === 0) {
     return null
   }
   return (
     <section className="flex flex-col gap-3">
       <h2 className="font-heading text-lg font-medium">Vídeos</h2>
-      <ul className="flex flex-col gap-2">
-        {comLink.map((video) => (
+      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {renderaveis.map((video) => (
           <li key={`${video.site}:${video.key}`}>
-            <a
-              href={video.url ?? undefined}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-            >
-              <Play className="size-4 shrink-0" aria-hidden />
-              <span className="line-clamp-1">{video.name}</span>
-              <Badge variant="outline" className="shrink-0">
-                {video.type}
-              </Badge>
-            </a>
+            <VideoCard video={video} />
           </li>
         ))}
       </ul>
