@@ -13,7 +13,7 @@
 | **Tipo** | infra/qualidade |
 | **Fase (roadmap)** | Fase 3 — extensão pós-revisão |
 | **Docs relacionadas** | [05-api](../docs/05-api.md), [ADR-0010](../docs/adr), [ADR-0012](../docs/adr) |
-| **Status** | Fase 1 em implementação (fake provider + Camada 1 + métrica de cobertura); Fases 2–3 planejadas |
+| **Status** | Fases 1 e 2 IMPLEMENTADAS (Camada 1 Go + Camada 2 Playwright, com cobertura de binário e front); Fase 3 planejada |
 | **Depende de** | 0015 (enrich), 0025/0026/0027 (features a cobrir) |
 
 ---
@@ -113,14 +113,26 @@ estender (uma função por feature), e entra na catraca existente.
   external_ids, criar item, ciclo "setar id → enrich".
 - NÃO cobre: renderização/roteamento reais da UI (é o papel da Camada 2).
 
-### Camada 2 — E2E de NAVEGADOR (Playwright) contra o binário (o "interface")
-Build do web → binário com o fake provider → sobe → Playwright dirige um Chromium real
-por **5–8 jornadas críticas**. É o que garante que front e back concordam de verdade
-(DOM, roteamento TanStack, fetch reais). Roda no CI/pre-push (não a cada save).
-- Orquestração: `global-setup` builda+sobe o binário (health check), `global-teardown`
-  derruba; DB temporário por execução; fake provider via flag.
-- Boas práticas: web-first assertions (sem `sleep`), seletores por `aria-label`/`testid`,
-  suíte pequena e estável.
+### Camada 2 — E2E de NAVEGADOR (Playwright) contra o binário (FEITA)
+Build do web → binário com o fake provider → sobe → Playwright dirige um Chromium real.
+É o que garante que front e back concordam de verdade (DOM, roteamento TanStack, fetch
+reais). Roda sob demanda (`make e2e`), não a cada commit.
+- **Projeto ISOLADO em `e2e/`** (não sob `web/`): tem seu próprio `package.json` e usa
+  `npm install` (nunca `npm ci`), para NÃO tocar o `web/package-lock.json` estrito (o
+  Docker faz `npm ci` lá; a versão do npm local é < 11.16). O lockfile do `e2e/` é
+  gitignored de propósito.
+- Orquestração: `global-setup` builda o front + `go build -cover` o binário e o sobe com
+  `MYMEDIADB_FAKE_PROVIDER=1` + DB/assets temporários + `GOCOVERDIR`, com health check;
+  `global-teardown` manda SIGTERM (o binário grava os contadores ao sair) e extrai a
+  cobertura. `E2E_BASE_URL` reusa um servidor externo; `E2E_SKIP_BUILD=1` pula os builds.
+- Jornadas atuais (3, crescer até ~8): importar filme pela busca → detalhe interno;
+  interno-first (importado = "Na biblioteca" + link interno, não-importado = "Importar");
+  biblioteca lista o importado. web-first assertions, seletores por papel/aria/texto.
+- **Cobertura do binário** (backend, via `GOCOVERDIR` + `go tool covdata`): ~24% do
+  binário exercido por 3 jornadas (por-pacote + total). **Cobertura do front** (via
+  `monocart-coverage-reports` lendo a cobertura V8 do Chromium, mapeada ao TSX por
+  sourcemap INLINE que o vite emite só quando `E2E_COVERAGE=1`): ~37% das linhas. Rode
+  ambas com `make e2e-cov`.
 
 ### Camada 3 — integração jsdom + MSW (opcional; UI rápida por commit)
 Trocar os stubs de fetch manuais (hoje `stub-fetch.ts`) por **MSW** e montar árvores de
@@ -176,18 +188,26 @@ Camada 1 (API) e as principais também na Camada 2 (UI):
   por `MYMEDIADB_FAKE_PROVIDER=1` no `main`) + Camada 1 (harness `internal/e2e` de
   jornadas de API em Go sobre `httptest.NewServer`) migrando os smoke tests manuais +
   métrica `e2e_coverage_lines` na catraca (`-coverpkg`). Valor imediato, baixo risco.
-- **Fase 2** — esqueleto Playwright (global-setup builda+sobe o binário com o fake, agora
-  com `MYMEDIADB_FAKE_IMAGE_BASE` para imagens determinísticas) + 2–3 jornadas; depois
-  crescer até ~8. Cobertura do binário via `go build -cover` + `GOCOVERDIR` (backend) e
-  `monocart-coverage-reports`/`vite-plugin-istanbul` (frontend).
+- **Fase 2** (FEITA) — projeto `e2e/` com Playwright: global-setup builda o front + o
+  binário `-cover` e o sobe com o fake; 3 jornadas de navegador; cobertura do binário via
+  `GOCOVERDIR` + `go tool covdata` (~24%) e do front via `monocart-coverage-reports`
+  lendo a cobertura V8 do Chromium com sourcemap inline (~37% linhas). `make e2e` /
+  `make e2e-cov`. Imagens: `MYMEDIADB_FAKE_IMAGE_BASE` (hoje sem pôster nas jornadas de
+  navegador — placeholders; ligar quando uma jornada precisar de imagem determinística).
 - **Fase 3** (opcional) — MSW + montagem de rotas no Vitest para UI rápida por commit.
 
 ## 10. Decisões em aberto / follow-ups
 
 - Fake provider por fixtures (1) x mock TMDB HTTP (2): começar por (1); avaliar (2) como
   camada de contrato do provider TMDB.
-- Runner do Playwright no ambiente/CI (browser disponível?) — validar cedo na Fase 2.
-- Onde guardar fixtures (`internal/provider/fake/testdata/` + imagens mínimas).
+- ~~Runner do Playwright no ambiente/CI (browser disponível?)~~ RESOLVIDO: Chromium
+  disponível; `@playwright/test` + `monocart` num projeto `e2e/` isolado (`npm install`,
+  sem tocar o lockfile do web). Falta rodar no CI (job separado, não-bloqueante).
+- Fixtures ficam em código (`internal/provider/fake/catalogo.go`), não em `testdata/` —
+  simples e tipado; migrar para arquivos se crescerem muito.
+- Cobertura do binário/front (Camada 2): hoje SÓ reportadas (console), não ratcheadas na
+  catraca (jornadas de navegador são mais lentas/variáveis). Avaliar travar como métricas
+  próprias quando a suíte crescer e rodar no CI.
 - Estratégia de dados para jornadas que dependem de estado prévio (seed via API no início
   de cada jornada, mantendo isolamento).
 - `e2e_coverage_lines` blocking já na Fase 1 x começar reportando (não-blocking) e travar

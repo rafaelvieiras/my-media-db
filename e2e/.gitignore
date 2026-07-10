@@ -1,0 +1,11 @@
+# Projeto e2e ISOLADO: nunca commitar deps nem lockfile (gerado com npm < 11.16,
+# quebraria `npm ci`; aqui usamos `npm install`). Ver briefing 0028.
+node_modules/
+package-lock.json
+
+# Artefatos efemeros da orquestracao (binario -cover, banco, assets, GOCOVERDIR,
+# estado, relatorios) e saidas do Playwright.
+.artifacts/
+playwright-report/
+test-results/
+coverage/

@@ -52,6 +52,10 @@ export default defineConfig({
     // Gera exatamente onde o backend Go embute o SPA via //go:embed.
     outDir: '../internal/webui/dist',
     emptyOutDir: true,
+    // Sourcemaps INLINE só no build de cobertura E2E (E2E_COVERAGE=1): o monocart lê
+    // o mapa embutido no próprio bundle e mapeia a cobertura V8 do Chromium de volta
+    // ao TSX de origem (Camada 2, briefing 0028). Em produção fica false (sem mapa).
+    sourcemap: process.env.E2E_COVERAGE === '1' ? 'inline' : false,
   },
   server: {
     strictPort: true,

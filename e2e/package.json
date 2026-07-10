@@ -1,0 +1,15 @@
+{
+  "name": "mymediadb-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "E2E de navegador (Camada 2, briefing 0028): Playwright dirige o binario real com o provider fake. Projeto ISOLADO do web/ para nao tocar o package-lock estrito (npm ci do Docker). Use `npm install` aqui, nunca `npm ci`.",
+  "scripts": {
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "install:browser": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "monocart-coverage-reports": "2.12.6"
+  }
+}
