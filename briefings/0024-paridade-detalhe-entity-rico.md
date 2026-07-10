@@ -72,9 +72,20 @@ texto a `opacity-30`, com contraste baixo e irregular em tema claro. Trocado por
 BANNER com scrim degradê para o `bg-card`; o texto fica sobre o card sólido — contraste
 = baseline do tema (AA), em claro e escuro.
 
-## 4. Fora deste briefing / follow-ups
+## 4. Backdrop cacheado localmente (feito)
+
+O FUNDO (backdrop) da entity passou a ser cacheado em disco no enriquecimento, como o
+pôster (0015): `enrich.cachearArtes` grava poster+fanart (origin='external'), a rota
+`GET /entities/{id}/assets/fanart` serve o binário (precedência preferida→user→external
++ guarda de path-traversal), e o resolver expõe `backdrop_url` como a rota LOCAL quando
+há cache (via `Camadas.BackdropURL`), caindo na URL direta da fonte quando não há. O
+front resolve absoluta×relativa (`srcDeImagem`). Entities enriquecidas ANTES do 0022
+têm payload parcial (sem keywords/vídeos/similares/certificação e sem fanart cacheado):
+um **re-enriquecimento** re-puxa o payload rico e cacheia o fundo.
+
+## 5. Fora deste briefing / follow-ups
 
 - **Elenco/equipe (MD6)** e **nota/avaliação local** — seguem como briefings próprios.
-- **Backdrop da entity cacheado localmente**: hoje o backdrop da entity usa a URL
-  direta da fonte (o pôster é cacheado; o backdrop não). Cachear via proxy é follow-up.
+- **Backdrop do detalhe do EXTERNO (pré-import)** ainda usa a URL direta (não há entity
+  para anexar o asset; caching pré-import exigiria um proxy genérico) — follow-up.
 - **Coleção como página própria** e **player embutido** — como no §7 do [0023](0023-tela-detalhe-externo-ui.md).
