@@ -12,7 +12,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — extensão pós-revisão |
 | **Docs relacionadas** | [03-modelo-dados](../docs/03-modelo-dados.md), [04-resolver](../docs/04-resolver.md), [05-api](../docs/05-api.md) |
-| **Status** | fase A feita (importável); fase B pendente |
+| **Status** | fase A feita (importável); fase B backend feito (criar + membros); front pendente |
 | **Depende de** | [0024](0024-paridade-detalhe-entity-rico.md) |
 
 ---
@@ -64,16 +64,28 @@ ANTES de importar.
 
 ## 4. Escopo — Fase B (criação manual + edição de membros)
 
-**Backend**
-- `POST /collections` (ou `POST /entities` com `type=collection`): cria coleção LOCAL
-  (nome do dono, sem source, `status` apropriado).
-- `POST /entities/{id}/members` `{child_id}` liga; `DELETE /entities/{id}/members/{childId}`
-  desliga (valida que o parent é coleção e o child existe).
-- Override de nome + arte já funcionam (é entity) — edição "de graça".
+**Backend — FEITO** (sem migração nem sqlc novo: o schema já suportava; o CRUD de
+`entity`/`entity_relation` já existia). Endpoints em `internal/server/collections.go`,
+escritas diretas pelo pool de escrita (não passam pelo enrich — não há fonte):
+- `POST /api/v1/collections` `{title, description?}` → cria entity `type='collection'`
+  LOCAL (sem `external_ids`, `status` DEFAULT `cataloged`) e responde **201** com a
+  entity RESOLVIDA. **400** corpo inválido; **422** título vazio (trim).
+- `POST /api/v1/entities/{id}/members` `{child_id}` → liga o item por
+  `entity_relation(kind='collection')`. Valida: pai existe (**404**) e é coleção
+  (**422**), filho não-vazio/existe/≠ pai/não é coleção — sem aninhamento (**422**).
+  **Idempotente** (religar não duplica; UNIQUE protege corrida). Responde **200** com a
+  lista de membros ATUALIZADA (mesmo shape/ordenação por ano de `GET .../members`).
+- `DELETE /api/v1/entities/{id}/members/{childId}` → desliga. **Idempotente** (desligar
+  o não-ligado é no-op). **404** se a coleção não existe. Responde **200** com a lista
+  atualizada.
+- A leitura de membros (`getEntityMembers`) e essas mutações compartilham o helper
+  `montarMembros` (montagem+ordenação num só lugar). Override de nome + arte já
+  funcionam (é entity) — edição "de graça".
 
-**Frontend**
-- Criar coleção manual (form simples).
-- Adicionar/remover itens: um PICKER da biblioteca (busca local) na página da coleção.
+**Frontend — pendente**
+- Criar coleção manual (form simples) → `createCollection` → navega ao detalhe.
+- Adicionar/remover itens: um PICKER da biblioteca (busca local) na página da coleção,
+  consumindo os endpoints de membros acima (ambos devolvem a lista já atualizada).
 - Membros misturam origem externa (importados) e local — indistintos no grid (são todos
   entities).
 

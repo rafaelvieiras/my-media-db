@@ -245,10 +245,23 @@ func (s *Server) getEntityMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rels, err := s.leitura().ListarRelacoesFilhas(ctx, id)
+	out, err := s.montarMembros(ctx, id)
 	if err != nil {
 		respondErroInterno(w)
 		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// montarMembros carrega os MEMBROS de uma coleção (entity_relation kind='collection')
+// como cards (o MESMO shape de GET /entities), ordenados por ANO ascendente (sem ano ao
+// fim). `[]` quando a entity não tem filhos dessa relação. É o caminho único reusado
+// pela leitura (getEntityMembers) e pelas mutações da Fase B (add/removeMember), que
+// devolvem a lista já atualizada. Pula um membro purgado no meio (NoRows).
+func (s *Server) montarMembros(ctx context.Context, id string) ([]entityCardDTO, error) {
+	rels, err := s.leitura().ListarRelacoesFilhas(ctx, id)
+	if err != nil {
+		return nil, err
 	}
 	membros := make([]membroCard, 0, len(rels))
 	for _, rel := range rels {
@@ -260,8 +273,7 @@ func (s *Server) getEntityMembers(w http.ResponseWriter, r *http.Request) {
 			if errors.Is(err, sql.ErrNoRows) {
 				continue // membro purgado no meio: ignora
 			}
-			respondErroInterno(w)
-			return
+			return nil, err
 		}
 		membros = append(membros, membroCard{dto: cardDTODeMembro(row), ano: row.ReleaseDate})
 	}
@@ -271,7 +283,7 @@ func (s *Server) getEntityMembers(w http.ResponseWriter, r *http.Request) {
 	for i, m := range membros {
 		out[i] = m.dto
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out, nil
 }
 
 // cardDTODeMembro reusa o cardDTO da lista a partir do row de ObterEntityCard (mesmas

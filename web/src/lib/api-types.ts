@@ -187,8 +187,32 @@ export interface paths {
      */
     get: operations['getEntityMembers']
     put?: never
-    post?: never
+    /**
+     * Liga um item à coleção como membro (briefing 0025, Fase B).
+     * @description Liga o item `child_id` à coleção `id` por `entity_relation(kind='collection')`. Valida que o pai existe e é uma coleção (senão 404/422), e que o filho existe, não é ele mesmo e não é outra coleção (sem aninhamento). Idempotente (religar não duplica). Devolve a lista de membros ATUALIZADA (mesmo shape e ordenação por ano de GET).
+     */
+    post: operations['addCollectionMember']
     delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/members/{childId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Desliga um membro da coleção (briefing 0025, Fase B).
+     * @description Remove a ligação `entity_relation(kind='collection')` entre a coleção `id` e o item `childId`. Idempotente (desligar o que não está ligado é no-op). 404 quando a coleção não existe. Devolve a lista de membros ATUALIZADA.
+     */
+    delete: operations['removeCollectionMember']
     options?: never
     head?: never
     patch?: never
@@ -332,6 +356,26 @@ export interface paths {
      * @description Find-or-create por id externo (dedup MD4): se já existe entity com aquele external_id, reusa (200); senão cria (201, status cataloged, título inicial do detalhe). Em ambos os casos enriquece pelo mesmo caminho (grava external + external_ids + pôster cacheado, nunca override). Responde a entity RESOLVIDA. MULTI-IDIOMA (briefing 0020): puxa todas as traduções permitidas e grava entity.original_language — ver POST /entities/{id}/enrich. `type=collection` (0025) importa a coleção inteira: cria a entity da coleção, importa cada filme membro (find-or-create) e os liga por entity_relation.
      */
     post: operations['importEntity']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/collections': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Cria uma coleção local manual (briefing 0025, Fase B).
+     * @description Cria uma entity `type='collection'` LOCAL (sem fonte externa) com o título e a descrição dados pelo dono. Ao contrário do import de coleção (0025 Fase A), não há fonte: a coleção nasce vazia e os membros entram depois por POST /entities/{id}/members. Responde 201 com a entity RESOLVIDA. 400 corpo inválido; 422 título vazio.
+     */
+    post: operations['createCollection']
     delete?: never
     options?: never
     head?: never
@@ -645,6 +689,18 @@ export interface components {
        * @enum {string}
        */
       type: 'movie' | 'tv' | 'collection'
+    }
+    /** @description Corpo de POST /collections (0025 Fase B) — cria uma coleção LOCAL manual. Só o título é obrigatório; a descrição é opcional. */
+    CreateCollection: {
+      /** @description Nome da coleção (obrigatório, não pode ser vazio). */
+      title: string
+      /** @description Descrição livre da coleção (opcional). */
+      description?: string
+    }
+    /** @description Corpo de POST /entities/{id}/members (0025 Fase B) — o item a ligar à coleção. */
+    AddMember: {
+      /** @description Id da entity (filme/série) a incluir como membro. */
+      child_id: string
     }
     /** @description Corpo de POST /entities/{id}/correct — a identidade correta que o dono informa. source default "tmdb"; source_id obrigatório. */
     CorrectRequest: {
@@ -1269,6 +1325,62 @@ export interface operations {
       404: components['responses']['Error']
     }
   }
+  addCollectionMember: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AddMember']
+      }
+    }
+    responses: {
+      /** @description Cards dos membros após ligar (array, ordenado por ano). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['EntityCard'][]
+        }
+      }
+      400: components['responses']['Error']
+      404: components['responses']['Error']
+      422: components['responses']['Error']
+    }
+  }
+  removeCollectionMember: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+        /** @description Id do item membro a desligar. */
+        childId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Cards dos membros após desligar (array). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['EntityCard'][]
+        }
+      }
+      404: components['responses']['Error']
+    }
+  }
   getEntityPoster: {
     parameters: {
       query?: never
@@ -1503,6 +1615,33 @@ export interface operations {
       400: components['responses']['Error']
       422: components['responses']['Error']
       502: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  createCollection: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateCollection']
+      }
+    }
+    responses: {
+      /** @description Coleção criada, resolvida. */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ResolvedEntity']
+        }
+      }
+      400: components['responses']['Error']
+      422: components['responses']['Error']
       503: components['responses']['Error']
     }
   }
