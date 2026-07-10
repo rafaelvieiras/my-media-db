@@ -56,6 +56,15 @@ type EntityRelation struct {
 	Kind     string
 }
 
+type ExternalDetail struct {
+	Source      string
+	SourceID    string
+	Type        string
+	PayloadJson sql.NullString
+	LangsJson   sql.NullString
+	FetchedAt   string
+}
+
 type LibrarySource struct {
 	ID        string
 	Path      string

@@ -12,7 +12,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override (extensão pós-revisão) |
 | **Docs relacionadas** | [07-enriquecimento-providers](../docs/07-enriquecimento-providers.md), [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [08-artwork-e-assets](../docs/08-artwork-e-assets.md), [ADR-0011](../docs/adr/0011-external-ids-autoritativo-media-external-cache.md), [ADR-0018](../docs/adr/0018-modelo-multi-idioma-dimensao-nas-camadas.md), [ADR-0020](../docs/adr/0020-traducao-de-tags-genres-keywords.md) |
-| **Status** | draft |
+| **Status** | done |
 | **Depende de** | [0014](0014-provider-tmdb-busca-local-first.md), [0015](0015-enriquecimento-import-proxy-imagem.md), [0020](0020-provider-multi-idioma-traducao-tags.md) |
 
 ---
@@ -157,12 +157,14 @@ equipe (créditos, MD6)** e **avaliação local** — cada um vira briefing pró
 - **Sem créditos (MD6) nem nota local**: decisão explícita para manter a 1ª versão
   entregável; ambos viram briefings próprios (ver §7).
 - **Vídeos "locais em destaque"**: no **externo** não há arquivo local, então os
-  vídeos são os da fonte (YT/TMDB). A regra "locais primeiro, depois YT/outros" do
-  dono se aplica ao **detalhe da entity já importada** (que tem `media_file`) — a ser
-  tratado no [0023](0023-tela-detalhe-externo-ui.md)/follow-up. *Ponto aberto a
-  confirmar.*
+  vídeos são os da fonte (YT/TMDB). **Decidido** (revisão): a regra "locais primeiro,
+  depois YT/outros" do dono se aplica **só ao detalhe da entity já importada** (que tem
+  `media_file`) — fora deste briefing e do [0023](0023-tela-detalhe-externo-ui.md); vira
+  follow-up quando o detalhe da entity ganhar a seção de vídeos.
 - **Classificação indicativa** vem de `release_dates` (movie)/`content_ratings` (tv),
-  por região — escolher a região do idioma ativo, com fallback. *Detalhe de mapeamento.*
+  por região. **Decidido** (revisão): escolher a região do idioma ativo (`pt-BR`→`BR`);
+  quando o idioma não carrega região (ex.: `en`) ou a fonte não traz aquela região,
+  **fallback para `US`**.
 
 ## 7. Fora deste briefing / follow-ups
 

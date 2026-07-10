@@ -318,6 +318,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/external/{source}/{type}/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Detalhe externo rico antes de importar (briefing 0022).
+     * @description Detalhe COMPLETO de um item externo (como o TMDB), para o dono decidir importar: título/título original, sinopse, slogan, gêneros e palavras-chave, duração, classificação indicativa (por região do idioma ativo, fallback US), pôster e fundo, vídeos, coleção, similares (navegáveis), nota externa e links. PERSISTE na 1ª chamada (cache re-componível) e serve do cache nas seguintes (refresh por TTL ou quando o conjunto de idiomas permitidos muda). Resolve os campos traduzíveis no idioma ativo. Ver o externo NUNCA cria entity. SEM elenco/equipe (MD6) nem nota local — briefings próprios.
+     */
+    get: operations['getExternalDetail']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/review': {
     parameters: {
       query?: never
@@ -716,6 +736,59 @@ export interface components {
     StartScan: {
       job_id: string
       status: string
+    }
+    ExternalVideo: {
+      name: string
+      key: string
+      site: string
+      type: string
+      official: boolean
+      /** @description URL pública do vídeo; null quando o provedor é desconhecido. */
+      url: string | null
+    }
+    ExternalCollection: {
+      source_id: string
+      name: string
+      poster_url: string | null
+    }
+    ExternalSimilar: {
+      source_id: string
+      type: string
+      title: string
+      year: string | null
+      poster_url: string | null
+    }
+    /** @description Detalhe externo rico (briefing 0022). Campos traduzíveis já resolvidos no idioma ativo; neutros vêm uma vez. Listas saem sempre como `[]` (nunca null). */
+    ExternalDetail: {
+      source: string
+      source_id: string
+      type: string
+      lang: string
+      title: string
+      original_title: string | null
+      description: string | null
+      tagline: string | null
+      release_date: string | null
+      year: string | null
+      runtime: number | null
+      certification: string | null
+      original_language: string | null
+      vote_average: number | null
+      genres: string[]
+      keywords: string[]
+      poster_url: string | null
+      backdrop_url: string | null
+      videos: components['schemas']['ExternalVideo'][]
+      collection: components['schemas']['ExternalCollection'] | null
+      similar: components['schemas']['ExternalSimilar'][]
+      /** @description Mapa link→URL (ex.: imdb, tmdb). */
+      external_links: {
+        [key: string]: string
+      }
+      /** @description Proveniência de idioma dos campos traduzíveis (ADR-0019). */
+      resolved_languages: {
+        [key: string]: string
+      }
     }
   }
   responses: {
@@ -1300,6 +1373,41 @@ export interface operations {
         }
       }
       400: components['responses']['Error']
+      422: components['responses']['Error']
+      502: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  getExternalDetail: {
+    parameters: {
+      query?: {
+        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        lang?: components['parameters']['LangQuery']
+      }
+      header?: never
+      path: {
+        /** @description Fonte externa (ex.: tmdb). */
+        source: string
+        /** @description Tipo do item na fonte (movie|tv). */
+        type: 'movie' | 'tv'
+        /** @description Id do item NA FONTE (source_id). */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Detalhe externo rico, resolvido no idioma ativo. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ExternalDetail']
+        }
+      }
+      400: components['responses']['Error']
+      404: components['responses']['Error']
       422: components['responses']['Error']
       502: components['responses']['Error']
       503: components['responses']['Error']

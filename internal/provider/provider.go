@@ -10,7 +10,15 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 )
+
+// ErrNaoEncontrado é o erro SENTINELA que um provider devolve quando o item NÃO
+// EXISTE na fonte (ex.: 404 do TMDB), distinto de uma falha de comunicação. O
+// handler do detalhe externo (briefing 0022) o traduz em 404 (id inexistente),
+// reservando o 502 para falhas reais da fonte (timeout/5xx). Compare com
+// errors.Is(err, provider.ErrNaoEncontrado).
+var ErrNaoEncontrado = errors.New("provider: item nao encontrado na fonte")
 
 // Provider é uma fonte externa de metadados. Implementações são injetadas no
 // server via option; nil significa "busca externa desligada" (degrada para só

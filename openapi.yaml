@@ -547,6 +547,56 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/v1/external/{source}/{type}/{id}:
+    get:
+      operationId: getExternalDetail
+      summary: Detalhe externo rico antes de importar (briefing 0022).
+      description: >
+        Detalhe COMPLETO de um item externo (como o TMDB), para o dono decidir
+        importar: título/título original, sinopse, slogan, gêneros e palavras-chave,
+        duração, classificação indicativa (por região do idioma ativo, fallback US),
+        pôster e fundo, vídeos, coleção, similares (navegáveis), nota externa e links.
+        PERSISTE na 1ª chamada (cache re-componível) e serve do cache nas seguintes
+        (refresh por TTL ou quando o conjunto de idiomas permitidos muda). Resolve os
+        campos traduzíveis no idioma ativo. Ver o externo NUNCA cria entity. SEM
+        elenco/equipe (MD6) nem nota local — briefings próprios.
+      tags: [entities]
+      parameters:
+        - name: source
+          in: path
+          required: true
+          description: "Fonte externa (ex.: tmdb)."
+          schema: { type: string }
+        - name: type
+          in: path
+          required: true
+          description: "Tipo do item na fonte (movie|tv)."
+          schema:
+            type: string
+            enum: [movie, tv]
+        - name: id
+          in: path
+          required: true
+          description: Id do item NA FONTE (source_id).
+          schema: { type: string }
+        - $ref: "#/components/parameters/LangQuery"
+      responses:
+        "200":
+          description: Detalhe externo rico, resolvido no idioma ativo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExternalDetail" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/review:
     get:
       operationId: listReview
@@ -1169,3 +1219,103 @@ components:
       properties:
         job_id: { type: string }
         status: { type: string }
+    ExternalVideo:
+      type: object
+      required: [name, key, site, type, official, url]
+      properties:
+        name: { type: string }
+        key: { type: string }
+        site: { type: string }
+        type: { type: string }
+        official: { type: boolean }
+        url:
+          type: [string, "null"]
+          description: URL pública do vídeo; null quando o provedor é desconhecido.
+    ExternalCollection:
+      type: object
+      required: [source_id, name, poster_url]
+      properties:
+        source_id: { type: string }
+        name: { type: string }
+        poster_url: { type: [string, "null"] }
+    ExternalSimilar:
+      type: object
+      required: [source_id, type, title, year, poster_url]
+      properties:
+        source_id: { type: string }
+        type: { type: string }
+        title: { type: string }
+        year: { type: [string, "null"] }
+        poster_url: { type: [string, "null"] }
+    ExternalDetail:
+      type: object
+      description: >
+        Detalhe externo rico (briefing 0022). Campos traduzíveis já resolvidos no
+        idioma ativo; neutros vêm uma vez. Listas saem sempre como `[]` (nunca null).
+      required:
+        [
+          source,
+          source_id,
+          type,
+          lang,
+          title,
+          original_title,
+          description,
+          tagline,
+          release_date,
+          year,
+          runtime,
+          certification,
+          original_language,
+          vote_average,
+          genres,
+          keywords,
+          poster_url,
+          backdrop_url,
+          videos,
+          collection,
+          similar,
+          external_links,
+          resolved_languages,
+        ]
+      properties:
+        source: { type: string }
+        source_id: { type: string }
+        type: { type: string }
+        lang: { type: string }
+        title: { type: string }
+        original_title: { type: [string, "null"] }
+        description: { type: [string, "null"] }
+        tagline: { type: [string, "null"] }
+        release_date: { type: [string, "null"] }
+        year: { type: [string, "null"] }
+        runtime: { type: [integer, "null"] }
+        certification: { type: [string, "null"] }
+        original_language: { type: [string, "null"] }
+        vote_average: { type: [number, "null"] }
+        genres:
+          type: array
+          items: { type: string }
+        keywords:
+          type: array
+          items: { type: string }
+        poster_url: { type: [string, "null"] }
+        backdrop_url: { type: [string, "null"] }
+        videos:
+          type: array
+          items: { $ref: "#/components/schemas/ExternalVideo" }
+        collection:
+          oneOf:
+            - $ref: "#/components/schemas/ExternalCollection"
+            - type: "null"
+        similar:
+          type: array
+          items: { $ref: "#/components/schemas/ExternalSimilar" }
+        external_links:
+          type: object
+          additionalProperties: { type: string }
+          description: "Mapa link→URL (ex.: imdb, tmdb)."
+        resolved_languages:
+          type: object
+          additionalProperties: { type: string }
+          description: Proveniência de idioma dos campos traduzíveis (ADR-0019).

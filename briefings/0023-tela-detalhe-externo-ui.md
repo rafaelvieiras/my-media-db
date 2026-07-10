@@ -11,7 +11,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override (extensão pós-revisão) |
 | **Docs relacionadas** | [07-enriquecimento-providers](../docs/07-enriquecimento-providers.md), [08-artwork-e-assets](../docs/08-artwork-e-assets.md), [05-api](../docs/05-api.md) |
-| **Status** | draft |
+| **Status** | ready |
 | **Depende de** | [0022](0022-detalhe-externo-rico-persistente.md), [0021](0021-ui-idiomas-admin-seletor.md) |
 
 ---

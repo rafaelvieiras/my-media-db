@@ -25,6 +25,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/externaldetail"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
@@ -45,6 +46,10 @@ type Servico struct {
 	database  *db.DB
 	provider  provider.Provider
 	assetsDir string
+	// detalhe resolve o detalhe externo com CACHE-FIRST (external_detail, 0022): o
+	// import/enrich passa a puxar por aqui, reusando o cache do detalhe rico quando
+	// fresco (sem 2ª ida à fonte) e semeando media_external a partir dele.
+	detalhe *externaldetail.Servico
 	// httpImagem baixa o binário do pôster (timeout curto). Injetável em teste.
 	httpImagem *http.Client
 	// novoID gera ids de linhas novas (media_external/asset). Injetável em teste.
@@ -52,12 +57,15 @@ type Servico struct {
 }
 
 // New cria o serviço. provider e assetsDir são obrigatórios para operar; o main só
-// constrói o serviço quando ambos existem (sem credencial, enrich fica desligado).
+// constrói o serviço quando ambos existem (sem credencial, enrich fica desligado). O
+// cache do detalhe externo (external_detail, 0022) é construído aqui e compartilha a
+// tabela com o handler GET do detalhe externo (o estado é o banco, não a instância).
 func New(database *db.DB, prov provider.Provider, assetsDir string) *Servico {
 	return &Servico{
 		database:   database,
 		provider:   prov,
 		assetsDir:  assetsDir,
+		detalhe:    externaldetail.New(database, prov, 0),
 		httpImagem: &http.Client{Timeout: timeoutImagem},
 		novoID:     func() string { return uuid.NewString() },
 	}
@@ -68,7 +76,7 @@ func New(database *db.DB, prov provider.Provider, assetsDir string) *Servico {
 // externa + pôster + original_language. A falha da fonte é propagada; a da imagem
 // degrada. Fluxo do POST /entities/{id}/enrich.
 func (s *Servico) Enriquecer(ctx context.Context, entityID, source, sourceID, tipo string, langs []string) error {
-	raw, err := s.provider.BuscarDetalhe(ctx, sourceID, tipo, langs)
+	raw, err := s.detalhe.PayloadFresco(ctx, source, sourceID, tipo, langs)
 	if err != nil {
 		return fmt.Errorf("enrich: buscar detalhe: %w", err)
 	}
@@ -93,8 +101,9 @@ func (s *Servico) Importar(ctx context.Context, source, sourceID, tipo string, l
 	}
 
 	// Não existe: puxa o detalhe uma vez (para o título inicial) e cria a entity
-	// já com a identidade externa; em seguida persiste a base externa e o pôster.
-	raw, err := s.provider.BuscarDetalhe(ctx, sourceID, tipo, langs)
+	// já com a identidade externa; em seguida persiste a base externa e o pôster. O
+	// detalhe vem do cache-first (external_detail): a 1ª ida grava, próximas reusam.
+	raw, err := s.detalhe.PayloadFresco(ctx, source, sourceID, tipo, langs)
 	if err != nil {
 		return "", false, fmt.Errorf("enrich: buscar detalhe: %w", err)
 	}

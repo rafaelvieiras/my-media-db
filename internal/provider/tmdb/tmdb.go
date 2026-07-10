@@ -23,6 +23,9 @@ const (
 	baseURLPadrao = "https://api.themoviedb.org/3"
 	// imagemBaseURL é a base das imagens do TMDB, tamanho w342 para pôster de card.
 	imagemBaseURL = "https://image.tmdb.org/t/p/w342"
+	// backdropBaseURL é a base do fundo (backdrop) do detalhe rico (0022), num
+	// tamanho maior (w780) por ser arte de destaque, não miniatura de card.
+	backdropBaseURL = "https://image.tmdb.org/t/p/w780"
 	// timeoutPadrao limita cada requisição ao TMDB; estouro vira erro (o handler
 	// degrada para só resultados locais).
 	timeoutPadrao = 8 * time.Second
@@ -197,7 +200,12 @@ func (c *Client) BuscarDetalhe(ctx context.Context, sourceID, tipo string, langs
 		return nil, fmt.Errorf("tmdb: tipo inválido %q (use movie|tv)", tipo)
 	}
 
-	params := url.Values{"append_to_response": {"translations"}}
+	// append_to_response numa só ida (0022): translations (traduções de título/
+	// sinopse/slogan), videos, keywords, release_dates (classificação de filme),
+	// content_ratings (classificação de série), external_ids (imdb…) e similar. O
+	// TMDB ignora os appends que não se aplicam ao tipo (ex.: content_ratings em
+	// filme). belongs_to_collection já vem no detalhe de filme, sem append.
+	params := url.Values{"append_to_response": {"translations,videos,keywords,release_dates,content_ratings,external_ids,similar"}}
 	if len(langs) > 0 && langs[0] != "" {
 		params.Set("language", langs[0])
 	}
@@ -234,6 +242,10 @@ func (c *Client) getBytes(ctx context.Context, path string, params url.Values) (
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		// Item inexistente na fonte: sentinela para o handler responder 404 (não 502).
+		return nil, fmt.Errorf("tmdb: %s: %w", path, provider.ErrNaoEncontrado)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("tmdb: status inesperado %d em %s", resp.StatusCode, path)
 	}
@@ -347,6 +359,20 @@ type detalheTMDB struct {
 	PosterPath       string        `json:"poster_path"`
 	Genres           []generoTMDB  `json:"genres"`
 	Translations     traducoesTMDB `json:"translations"`
+
+	// Campos do DETALHE RICO (0022), preenchidos pelo append_to_response ampliado.
+	Tagline             string             `json:"tagline"`
+	BackdropPath        string             `json:"backdrop_path"`
+	VoteAverage         float64            `json:"vote_average"`
+	Runtime             int                `json:"runtime"`          // filme (minutos)
+	EpisodeRunTime      []int              `json:"episode_run_time"` // série (minutos/ep)
+	BelongsToCollection *colecaoTMDB       `json:"belongs_to_collection"`
+	Videos              videosTMDB         `json:"videos"`
+	Keywords            keywordsTMDB       `json:"keywords"`
+	ReleaseDates        listaPaisTMDB      `json:"release_dates"`   // classificação de filme
+	ContentRatings      contentRatingsTMDB `json:"content_ratings"` // classificação de série
+	ExternalIds         externalIdsTMDB    `json:"external_ids"`
+	Similar             similarTMDB        `json:"similar"`
 }
 
 // generoTMDB é um item de `genres` (do detalhe ou da lista localizada). O id casa o
@@ -370,11 +396,13 @@ type traducaoTMDB struct {
 	Data    dadosTraducao `json:"data"`
 }
 
-// dadosTraducao são os campos traduzíveis de uma tradução (só title/name/overview).
+// dadosTraducao são os campos traduzíveis de uma tradução (title/name/overview e,
+// para o detalhe rico do 0022, o tagline/slogan por idioma).
 type dadosTraducao struct {
 	Title    string `json:"title"`
 	Name     string `json:"name"`
 	Overview string `json:"overview"`
+	Tagline  string `json:"tagline"`
 }
 
 // MapearDetalhe traduz o payload do TMDB para o mapa CANÔNICO (nossos nomes). É
@@ -425,6 +453,12 @@ func mapearEnvelope(env envelopeTMDB) (map[string]any, error) {
 	if d.OriginalLanguage != "" {
 		out["original_language"] = d.OriginalLanguage
 	}
+	// Campos do DETALHE RICO (0022): tagline/keywords traduzíveis (map por idioma) e
+	// os neutros (runtime, classificação, backdrop, vídeos, coleção, similares, nota,
+	// links). O resolver de entity IGNORA as chaves que não conhece (o registro só
+	// itera title/description/tags/…), então enriquecer o canônico aqui é seguro para
+	// o import; quem consome os campos ricos é o handler do detalhe externo.
+	enriquecerCanonicoRico(out, d)
 	return out, nil
 }
 

@@ -173,6 +173,9 @@ type Querier interface {
 	// Lookup por id externo tmdb via coluna gerada + indice (doc 04, busca sem GIN).
 	ObterEntityPorTmdb(ctx context.Context, externalIDTmdb sql.NullString) (Entity, error)
 	ObterEntityRelation(ctx context.Context, id string) (EntityRelation, error)
+	// Le o cache de UM item externo pela chave logica (source, source_id). fetched_at e
+	// langs_json alimentam a decisao de refresh (TTL + conjunto de idiomas) na app.
+	ObterExternalDetail(ctx context.Context, arg ObterExternalDetailParams) (ExternalDetail, error)
 	ObterLibrarySource(ctx context.Context, id string) (LibrarySource, error)
 	// Usada pelo handler POST para detectar path duplicado (ja normalizado) antes
 	// do INSERT e responder 409 com mensagem clara em vez de estourar o UNIQUE.
@@ -195,6 +198,14 @@ type Querier interface {
 	// Grava (ou substitui) uma config. Conflito na PK (key) atualiza value_json e
 	// recarimba updated_at -- nunca cria uma segunda linha para a mesma chave.
 	UpsertAppSetting(ctx context.Context, arg UpsertAppSettingParams) (AppSetting, error)
+	// Acesso ao CACHE do detalhe externo rico (external_detail, briefing 0022): uma linha
+	// por (source, source_id). A primeira consulta faz UPSERT; as proximas LEEM daqui,
+	// com a app decidindo servir do cache ou re-puxar (TTL + gatilho por idiomas).
+	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+	// Grava (ou atualiza) o cache de UM item externo. Conflito na PK (source, source_id)
+	// atualiza o payload/langs/type e recarimba fetched_at, sem duplicar a linha. E
+	// best-effort na app: uma falha aqui nao impede a leitura (a proxima visita re-tenta).
+	UpsertExternalDetail(ctx context.Context, arg UpsertExternalDetailParams) error
 	// Acesso ao cache da camada EXTERNA (media_external): uma linha de payload cru por
 	// (entity_id, source). O re-enriquecimento faz UPSERT por essa chave (ADR-0011).
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.

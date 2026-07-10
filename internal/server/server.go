@@ -11,6 +11,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
+	"github.com/rafaelvieiras/my-media-db/internal/externaldetail"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
@@ -41,6 +42,11 @@ type Server struct {
 	// existe quando há provider E assetsDir E banco — senão os handlers degradam
 	// com 503. Construído em New após aplicar as options.
 	enrich *enrich.Servico
+	// externalDetail resolve o DETALHE EXTERNO RICO com cache-first (external_detail,
+	// briefing 0022). Só existe quando há banco + provider (não precisa de assetsDir);
+	// sem ele o handler GET /external degrada com 503. Compartilha a tabela de cache
+	// com o enrich (o estado é o banco).
+	externalDetail *externaldetail.Servico
 	// settings é o cache leve (mutex) da config de idioma de app_settings (briefing
 	// 0019), invalidado no PUT /settings/languages. Sempre presente.
 	settings *settingsCache
@@ -91,6 +97,12 @@ func New(version string, database *db.DB, opts ...Option) *Server {
 	if database != nil && s.searchProvider != nil && s.assetsDir != "" {
 		s.enrich = enrich.New(database, s.searchProvider, s.assetsDir)
 	}
+	// O detalhe externo rico (briefing 0022) precisa só de banco + fonte externa
+	// (não escreve binários, então dispensa assetsDir). Sem qualquer um deles fica
+	// nil e o handler GET /external degrada com 503.
+	if database != nil && s.searchProvider != nil {
+		s.externalDetail = externaldetail.New(database, s.searchProvider, 0)
+	}
 	return s
 }
 
@@ -118,6 +130,12 @@ func (s *Server) Handler() (http.Handler, error) {
 			// Import explícito (briefing 0015): find-or-create por id externo,
 			// depois enriquece. Escreve external, nunca override.
 			v1.Post("/import", s.importar)
+
+			// Detalhe externo RICO antes de importar (briefing 0022): puxa o item
+			// completo da fonte, PERSISTE na 1ª chamada (cache external_detail) e
+			// serve do cache nas seguintes, resolvido no idioma ativo. Ver != catalogar
+			// (nunca cria entity).
+			v1.Get("/external/{source}/{type}/{id}", s.getExternalDetail)
 
 			// Filas de CURADORIA (briefing 0018): revisão (draft ou baixa
 			// confiança) e órfãs (auto-criadas, todas missing, sem investimento

@@ -105,11 +105,11 @@ func TestMigrateUp(t *testing.T) {
 	if err := d.Migrate(ctx); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	// Após o 0019 há cinco migrations (0001 semente + 0002 schema do núcleo +
-	// 0003 media_file.library_source_id + 0004 media_external/media_override +
-	// 0005 app_settings/entity.original_language).
-	if v := mustSchemaVersion(t, d); v != 5 {
-		t.Errorf("versão após up = %d, quero 5", v)
+	// Há seis migrations (0001 semente + 0002 schema do núcleo + 0003
+	// media_file.library_source_id + 0004 media_external/media_override + 0005
+	// app_settings/entity.original_language + 0006 external_detail).
+	if v := mustSchemaVersion(t, d); v != 6 {
+		t.Errorf("versão após up = %d, quero 6", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -154,6 +154,10 @@ func TestMigrateDown(t *testing.T) {
 	}
 
 	// Down reverte uma migration por vez, do topo para a base.
+	downPara(t, d, 5) // 0006: remove external_detail.
+	querFalha(t, d, "SELECT 1 FROM external_detail",
+		"tabela external_detail ainda existe após o down do 0006")
+
 	downPara(t, d, 4) // 0005: remove app_settings e entity.original_language.
 	querFalha(t, d, "SELECT 1 FROM app_settings",
 		"tabela app_settings ainda existe após o down do 0005")

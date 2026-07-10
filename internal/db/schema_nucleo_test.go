@@ -90,12 +90,12 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 	d, q := setupNucleo(t)
 	ctx := context.Background()
 
-	if v := mustSchemaVersion(t, d); v != 5 {
-		t.Fatalf("versão de schema = %d, quero 5", v)
+	if v := mustSchemaVersion(t, d); v != 6 {
+		t.Fatalf("versão de schema = %d, quero 6", v)
 	}
 	assertTabelasExistem(t, d,
 		"entity", "media_file", "library_source", "asset", "entity_relation", "entity_fts",
-		"media_external", "media_override", "app_settings")
+		"media_external", "media_override", "app_settings", "external_detail")
 
 	populaGrafoMinimo(t, q)
 
@@ -108,9 +108,13 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 		t.Error("foreign_key_check retornou violações, quero nenhuma")
 	}
 
-	// Down reverte o 0005 (settings + coluna original_language), o 0004 (camadas
-	// externo/override), o 0003 (coluna library_source_id) e depois o 0002 (schema
-	// do núcleo, volta ao 0001).
+	// Down reverte o 0006 (external_detail), o 0005 (settings + coluna
+	// original_language), o 0004 (camadas externo/override), o 0003 (coluna
+	// library_source_id) e depois o 0002 (schema do núcleo, volta ao 0001).
+	check(t, d.MigrateDown(ctx), "MigrateDown 0006")
+	if v := mustSchemaVersion(t, d); v != 5 {
+		t.Fatalf("versão após down do 0006 = %d, quero 5", v)
+	}
 	check(t, d.MigrateDown(ctx), "MigrateDown 0005")
 	if v := mustSchemaVersion(t, d); v != 4 {
 		t.Fatalf("versão após down do 0005 = %d, quero 4", v)
