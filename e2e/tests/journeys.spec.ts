@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures'
+import { resetBiblioteca } from '../lib/reset'
 
 // Jornadas de NAVEGADOR (Camada 2, briefing 0028): um Chromium real dirige a SPA
 // servida pelo binario com o provider fake. Poucas jornadas de valor, web-first
@@ -12,6 +13,11 @@ import { expect, test } from '../fixtures'
 const seletores = {
   busca: { name: 'Buscar título' as const },
 }
+
+// Cada jornada comeca com a biblioteca zerada (independencia de ordem).
+test.beforeEach(async ({ request }) => {
+  await resetBiblioteca(request)
+})
 
 test('importa um filme pela busca e abre o detalhe interno resolvido', async ({ page }) => {
   await page.goto('/search')
