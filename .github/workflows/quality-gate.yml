@@ -47,10 +47,15 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install Go quality tools
+        # Versoes PINADAS (nao usar @latest): um release novo de linter pode
+        # introduzir checagens que acham issues novas, ou o gocyclo pode contar
+        # diferente, quebrando a catraca sem mudanca de codigo. Pinar garante
+        # determinismo; bumpar conscientemente apos revalidar o baseline
+        # (0 issues / 0 vulns / 4 funcs > gocyclo 10).
         run: |
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          go install github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       # O pacote internal/mediainfo tem um teste de integracao que roda o ffprobe
