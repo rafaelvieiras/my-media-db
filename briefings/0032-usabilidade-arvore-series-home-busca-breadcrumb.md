@@ -8,7 +8,7 @@
 | **ID** | 0032 |
 | **Tipo** | fix/feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override (vertical séries) |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [ADR-0021](../docs/adr/0021-modelo-de-series-hierarquia-ordenacoes-vinculo-arquivo.md), [0031](0031-series-fundacao-modelo-enriquecimento.md) |
 | **Depende de** | 0031 |
 
