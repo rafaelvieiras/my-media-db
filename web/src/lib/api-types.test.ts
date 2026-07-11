@@ -39,6 +39,7 @@ describe('api-types gerado', () => {
       collection: null,
       similar: [],
       external_links: { tmdb: 'https://www.themoviedb.org/movie/603' },
+      ancestors: [],
     }
     expect(ent.owned).toBe(true)
     expect(ent.external_ids.tmdb).toBe('603')

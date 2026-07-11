@@ -19,6 +19,7 @@ import { CollectionMembers } from '@/components/collection-members'
 import { MembrosSomenteLeitura } from '@/components/entity-members'
 import { MediaInfoTable } from '@/components/media-info-table'
 import { ErrorState, LoadingState } from '@/components/query-states'
+import { Migalhas } from '@/components/migalhas'
 import { RichDetailView } from '@/components/rich-detail-view'
 import { deResolvedEntity } from '@/lib/rich-detail'
 
@@ -169,12 +170,25 @@ export function EntityDetailScreen() {
     )
   }
 
+  // Topo da tela: o "Voltar à biblioteca" e, para os nós da árvore de séries
+  // (temporada/episódio), o breadcrumb ascendente logo abaixo (0032). Obra de topo
+  // tem `ancestors` vazio → `Migalhas` não renderiza e o topo fica só com o voltar.
+  const topo = (
+    <div className="flex flex-col gap-2">
+      {voltar}
+      <Migalhas
+        ancestors={data.ancestors}
+        atual={{ title: data.title, type: data.type }}
+      />
+    </div>
+  )
+
   return (
     <main className="mx-auto max-w-4xl px-4 py-6">
       <RichDetailView
         detail={deResolvedEntity(data)}
         source="tmdb"
-        back={voltar}
+        back={topo}
         titleBadges={
           <>
             {ehDraft(data.status) ? (

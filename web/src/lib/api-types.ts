@@ -893,6 +893,15 @@ export interface components {
       external_links: {
         [key: string]: string
       }
+      /** @description Trilha RAIZ→PAI (breadcrumb, 0032) na árvore de séries: episódio → [série, temporada]; temporada → [série]; obra de topo (movie/tv/collection) → `[]`. Nunca null. */
+      ancestors: components['schemas']['AncestorRef'][]
+    }
+    /** @description Nó ancestral do breadcrumb (0032): o mínimo para renderizar e navegar a um nível-pai da árvore de séries. */
+    AncestorRef: {
+      id: string
+      /** @enum {string} */
+      type: 'movie' | 'tv' | 'collection' | 'season' | 'episode'
+      title: string
     }
     /** @description Config de idioma (ADR-0018): idioma principal, fallback e o conjunto de permitidos (códigos BCP-47/TMDB). É o corpo do PUT e a resposta do GET/PUT /settings/languages. */
     LanguageSettings: {
