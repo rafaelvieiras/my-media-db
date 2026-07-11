@@ -37,6 +37,29 @@ function renderCriacao(
   return { onSubmit }
 }
 
+// renderEdicao monta o form no modo EDIÇÃO (idioma corrente, sementes resolvidas
+// da entity) — o mesmo scaffold dos testes de tags e do botão "Limpar", que só
+// diferem em props extras (`over`, ex.: `onClear`).
+function renderEdicao(over: Partial<Parameters<typeof SchemaForm>[0]> = {}) {
+  const entity = baseEntity()
+  const fields = descritoresPadrao
+  render(
+    <SchemaForm
+      fields={fields}
+      defaultValues={valoresDeEdicao(fields, {}, 'pt-BR', entity)}
+      schema={schemaZod(fields, 'edicao')}
+      onSubmit={() => {}}
+      onCancel={() => {}}
+      submitLabel="Salvar"
+      submitPendingLabel="Salvando…"
+      isPending={false}
+      mensagemErro={null}
+      lang="pt-BR"
+      {...over}
+    />,
+  )
+}
+
 describe('SchemaForm — render por widget', () => {
   it('renderiza um input por widget a partir dos descritores', () => {
     renderCriacao(descritoresPadrao.filter((d) => d.creatable))
@@ -98,22 +121,7 @@ describe('SchemaForm — interações', () => {
 
   it('o widget de tags adiciona chips (edição)', async () => {
     const user = userEvent.setup()
-    const entity = baseEntity()
-    const fields = descritoresPadrao
-    render(
-      <SchemaForm
-        fields={fields}
-        defaultValues={valoresDeEdicao(fields, {}, 'pt-BR', entity)}
-        schema={schemaZod(fields, 'edicao')}
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        submitLabel="Salvar"
-        submitPendingLabel="Salvando…"
-        isPending={false}
-        mensagemErro={null}
-        lang="pt-BR"
-      />,
-    )
+    renderEdicao()
     await user.type(screen.getByLabelText('Adicionar tag'), 'Clássico')
     await user.click(screen.getByRole('button', { name: 'Adicionar' }))
     expect(screen.getByText('Clássico')).toBeInTheDocument()
@@ -122,23 +130,7 @@ describe('SchemaForm — interações', () => {
   it('o botão "Limpar" aparece na edição e reporta campo + translatable', async () => {
     const user = userEvent.setup()
     const onClear = vi.fn()
-    const entity = baseEntity()
-    const fields = descritoresPadrao
-    render(
-      <SchemaForm
-        fields={fields}
-        defaultValues={valoresDeEdicao(fields, {}, 'pt-BR', entity)}
-        schema={schemaZod(fields, 'edicao')}
-        onSubmit={() => {}}
-        onCancel={() => {}}
-        submitLabel="Salvar"
-        submitPendingLabel="Salvando…"
-        isPending={false}
-        mensagemErro={null}
-        lang="pt-BR"
-        onClear={onClear}
-      />,
-    )
+    renderEdicao({ onClear })
     await user.click(screen.getByRole('button', { name: 'Limpar título' }))
     expect(onClear).toHaveBeenCalledWith('title', true)
     await user.click(

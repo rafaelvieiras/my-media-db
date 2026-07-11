@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { ItemNewScreen } from '@/routes/item-new'
 import { renderWithClient } from '@/test/render'
-import { okFields, okJson } from '@/test/entity-fixtures'
+import { okJson } from '@/test/entity-fixtures'
+import { stubCriacao } from '@/test/criacao-harness'
 import { erroJson } from '@/test/detail-harness'
 
 // Rota `/new/item` (0030): o formulário dirigido por schema cria um item LOCAL e
@@ -18,21 +19,8 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 // fetchRouter serve os descritores (GET) e roteia o POST /entities para `resp`.
-function fetchRouter(resp: () => Response) {
-  const m = vi.fn(async (url: string, init?: RequestInit) => {
-    const u = new URL(String(url), 'http://localhost')
-    const method = init?.method ?? 'GET'
-    if (u.pathname === '/api/v1/schema/entity-fields') {
-      return okFields()
-    }
-    if (u.pathname === '/api/v1/entities' && method === 'POST') {
-      return resp()
-    }
-    throw new Error(`rota nao mockada: ${method} ${u.pathname}`)
-  })
-  vi.stubGlobal('fetch', m)
-  return m
-}
+const fetchRouter = (resp: () => Response) =>
+  stubCriacao('/api/v1/entities', resp)
 
 afterEach(() => {
   vi.restoreAllMocks()

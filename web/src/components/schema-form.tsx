@@ -1,4 +1,9 @@
-import { useState, type KeyboardEvent, type ReactNode } from 'react'
+import {
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 import {
   useForm,
   type AnyFieldApi,
@@ -216,29 +221,30 @@ function LinhaCampo({
     return <CampoTags d={d} field={field} limpar={limpar} erro={erro} />
   }
 
+  // Atributos comuns aos dois ramos de widget (textarea × input text/number):
+  // valor controlado, handlers e a acessibilidade. Extraídos para não repetir a
+  // mesma lista em cada ramo (o específico — tipo, min/max/step, classe — fica
+  // por ramo).
+  const comum = {
+    value: field.state.value as string,
+    onChange: (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      field.handleChange(e.target.value),
+    onBlur: field.handleBlur,
+    placeholder,
+    'aria-label': d.label,
+    'aria-invalid': erro !== null || undefined,
+  }
+
   const controle =
     d.widget === 'textarea' ? (
-      <textarea
-        value={field.state.value as string}
-        onChange={(e) => field.handleChange(e.target.value)}
-        onBlur={field.handleBlur}
-        placeholder={placeholder}
-        aria-label={d.label}
-        aria-invalid={erro !== null || undefined}
-        className={CLASSE_TEXTAREA}
-      />
+      <textarea {...comum} className={CLASSE_TEXTAREA} />
     ) : (
       <Input
+        {...comum}
         type={d.widget === 'number' ? 'number' : 'text'}
         min={d.widget === 'number' ? d.min : undefined}
         max={d.widget === 'number' ? d.max : undefined}
         step={d.widget === 'number' ? d.step : undefined}
-        value={field.state.value as string}
-        onChange={(e) => field.handleChange(e.target.value)}
-        onBlur={field.handleBlur}
-        placeholder={placeholder}
-        aria-label={d.label}
-        aria-invalid={erro !== null || undefined}
         className={d.widget === 'number' ? 'max-w-32' : undefined}
       />
     )

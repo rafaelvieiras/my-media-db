@@ -1,10 +1,8 @@
-import { Link, useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, FolderPlus } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
+import { FolderPlus } from 'lucide-react'
 import { SchemaForm } from '@/components/schema-form'
-import { ErrorState, LoadingState } from '@/components/query-states'
+import { NewEntityPage } from '@/components/new-entity-page'
 import { createCollection, type FieldDescriptor } from '@/lib/api'
-import { entityFieldsQueryOptions } from '@/lib/queries'
 import { useCriarEntidade } from '@/lib/use-criar-entidade'
 import {
   schemaZod,
@@ -20,32 +18,10 @@ import {
 const CAMPOS_COLECAO = ['title', 'description']
 
 export function CollectionNewScreen() {
-  const fieldsQuery = useQuery(entityFieldsQueryOptions)
-
-  const voltar = (
-    <Link
-      to="/"
-      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-    >
-      <ArrowLeft className="size-4" aria-hidden />
-      Voltar à biblioteca
-    </Link>
-  )
-
   return (
-    <main className="mx-auto max-w-2xl px-4 py-6">
-      {voltar}
-      <h1 className="mt-4 mb-4 font-heading text-xl font-semibold">
-        Nova coleção
-      </h1>
-      {fieldsQuery.isPending ? (
-        <LoadingState label="Carregando formulário…" />
-      ) : fieldsQuery.isError ? (
-        <ErrorState title="Não foi possível carregar o formulário" />
-      ) : (
-        <CollectionNewForm fields={fieldsQuery.data} />
-      )}
-    </main>
+    <NewEntityPage title="Nova coleção">
+      {(fields) => <CollectionNewForm fields={fields} />}
+    </NewEntityPage>
   )
 }
 

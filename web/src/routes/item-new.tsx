@@ -1,12 +1,10 @@
 import { useState } from 'react'
-import { Link, useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, FilmIcon } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
+import { FilmIcon } from 'lucide-react'
 import { Select } from '@/components/ui/select'
 import { SchemaForm } from '@/components/schema-form'
-import { ErrorState, LoadingState } from '@/components/query-states'
+import { NewEntityPage } from '@/components/new-entity-page'
 import { createItem } from '@/lib/api'
-import { entityFieldsQueryOptions } from '@/lib/queries'
 import { useCriarEntidade } from '@/lib/use-criar-entidade'
 import {
   criaveis,
@@ -21,32 +19,10 @@ import {
 // editorial, então a rota o injeta no topo do form. Ao criar, navega para
 // `/entities/{id}`, onde o dono fixa os IDs externos e re-enriquece.
 export function ItemNewScreen() {
-  const fieldsQuery = useQuery(entityFieldsQueryOptions)
-
-  const voltar = (
-    <Link
-      to="/"
-      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-    >
-      <ArrowLeft className="size-4" aria-hidden />
-      Voltar à biblioteca
-    </Link>
-  )
-
   return (
-    <main className="mx-auto max-w-2xl px-4 py-6">
-      {voltar}
-      <h1 className="mt-4 mb-4 font-heading text-xl font-semibold">
-        Novo item
-      </h1>
-      {fieldsQuery.isPending ? (
-        <LoadingState label="Carregando formulário…" />
-      ) : fieldsQuery.isError ? (
-        <ErrorState title="Não foi possível carregar o formulário" />
-      ) : (
-        <ItemNewForm fields={fieldsQuery.data} />
-      )}
-    </main>
+    <NewEntityPage title="Novo item">
+      {(fields) => <ItemNewForm fields={fields} />}
+    </NewEntityPage>
   )
 }
 

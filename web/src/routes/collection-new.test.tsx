@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { CollectionNewScreen } from '@/routes/collection-new'
 import { renderWithClient } from '@/test/render'
-import { okFields, okJson } from '@/test/entity-fixtures'
+import { okJson } from '@/test/entity-fixtures'
+import { stubCriacao } from '@/test/criacao-harness'
 import { erroJson } from '@/test/detail-harness'
 
 // Rota `/new/collection` (0030): cria uma coleção LOCAL (título + descrição) e
@@ -16,21 +17,8 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
 }))
 
-function fetchRouter(resp: () => Response) {
-  const m = vi.fn(async (url: string, init?: RequestInit) => {
-    const u = new URL(String(url), 'http://localhost')
-    const method = init?.method ?? 'GET'
-    if (u.pathname === '/api/v1/schema/entity-fields') {
-      return okFields()
-    }
-    if (u.pathname === '/api/v1/collections' && method === 'POST') {
-      return resp()
-    }
-    throw new Error(`rota nao mockada: ${method} ${u.pathname}`)
-  })
-  vi.stubGlobal('fetch', m)
-  return m
-}
+const fetchRouter = (resp: () => Response) =>
+  stubCriacao('/api/v1/collections', resp)
 
 afterEach(() => {
   vi.restoreAllMocks()
