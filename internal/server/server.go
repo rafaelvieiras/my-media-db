@@ -27,10 +27,12 @@ type Server struct {
 	// scanner é o gerenciador de jobs de scan (/api/v1/library/{id}/scan). Nil
 	// quando não há banco injetado.
 	scanner *scanner.Manager
-	// searchProvider é a fonte externa opcional da busca (/api/v1/search;
-	// briefing 0014). Nil = busca externa desligada: a busca local segue
-	// funcionando e external_available:false. Injetado via WithSearchProvider.
-	searchProvider provider.Provider
+	// providers é o REGISTRO multi-provider das fontes externas (briefing 0031 /
+	// ADR-0002, R2): nome→Provider. Vazio = busca externa desligada: a busca local
+	// segue funcionando e external_available:false. Cada fonte (tmdb/tvdb) é
+	// escolhida PELO nome do dado (camada externa, detalhe, coleção); a busca
+	// consulta TODAS e mescla. Alimentado via WithSearchProvider (variádico/acumula).
+	providers provider.Registry
 	// cacheExterno guarda por TTL curto o resultado externo por (query,tipo),
 	// para poupar a fonte. Só existe quando há provider.
 	cacheExterno *cacheExterno
@@ -61,15 +63,24 @@ type Server struct {
 // assinatura base New(version, database). Ver WithSearchProvider.
 type Option func(*Server)
 
-// WithSearchProvider injeta a fonte externa da busca (ex.: TMDB) e liga o cache
-// externo. Chamado pelo main só quando há credencial; nil é ignorado.
-func WithSearchProvider(p provider.Provider) Option {
+// WithSearchProvider REGISTRA uma ou mais fontes externas (ex.: TMDB, TheTVDB) no
+// registro multi-provider e liga o cache externo. Variádico e ACUMULATIVO: cada
+// provider entra sob o seu Nome() (chamadas múltiplas somam); nil é ignorado. Sem
+// nenhum provider o registro fica vazio (busca externa desligada). O nome preserva
+// a compatibilidade dos chamadores singulares (main e testes passam 1 provider).
+func WithSearchProvider(provs ...provider.Provider) Option {
 	return func(s *Server) {
-		if p == nil {
-			return
+		registrou := false
+		for _, p := range provs {
+			if p == nil {
+				continue
+			}
+			s.providers.Registrar(p)
+			registrou = true
 		}
-		s.searchProvider = p
-		s.cacheExterno = novoCacheExterno(ttlCacheExterno)
+		if registrou && s.cacheExterno == nil {
+			s.cacheExterno = novoCacheExterno(ttlCacheExterno)
+		}
 	}
 }
 
@@ -100,14 +111,14 @@ func New(version string, database *db.DB, opts ...Option) *Server {
 	// O enriquecimento (briefing 0015) exige banco + fonte externa + diretório de
 	// assets. Sem qualquer um deles fica nil e os handlers /enrich e /import
 	// degradam com 503 (busca externa desligada => não há o que importar).
-	if database != nil && s.searchProvider != nil && s.assetsDir != "" {
-		s.enrich = enrich.New(database, s.searchProvider, s.assetsDir)
+	if database != nil && !s.providers.Vazio() && s.assetsDir != "" {
+		s.enrich = enrich.New(database, s.providers, s.assetsDir)
 	}
 	// O detalhe externo rico (briefing 0022) precisa só de banco + fonte externa
 	// (não escreve binários, então dispensa assetsDir). Sem qualquer um deles fica
 	// nil e o handler GET /external degrada com 503.
-	if database != nil && s.searchProvider != nil {
-		s.externalDetail = externaldetail.New(database, s.searchProvider, 0)
+	if database != nil && !s.providers.Vazio() {
+		s.externalDetail = externaldetail.New(database, s.providers, 0)
 	}
 	return s
 }

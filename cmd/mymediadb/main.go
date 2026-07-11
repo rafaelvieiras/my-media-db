@@ -15,8 +15,10 @@ import (
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
+	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/tmdb"
+	"github.com/rafaelvieiras/my-media-db/internal/provider/tvdb"
 	"github.com/rafaelvieiras/my-media-db/internal/server"
 )
 
@@ -139,31 +141,54 @@ func opcoesServer() ([]server.Option, error) {
 	return opts, nil
 }
 
-// opcoesBusca monta a option da busca externa (briefing 0014). Lê a credencial do
-// TMDB do ambiente: MYMEDIADB_TMDB_TOKEN (Read Access Token v4, preferido) e, se
-// vazio, MYMEDIADB_TMDB_API_KEY (v3). Sem nenhuma das duas, NÃO cria provider
-// (busca externa desligada — não é erro; o enrich/import também ficam off). NUNCA
-// loga o valor da credencial, só se a busca externa está ligada ou desligada.
+// opcoesBusca monta a option das fontes externas (briefing 0014/0031): REGISTRA cada
+// provider configurado no registro multi-provider. TMDB e TheTVDB podem COEXISTIR (a
+// busca consulta ambos e mescla; o resto escolhe a fonte por nome).
+//
+// - TMDB: MYMEDIADB_TMDB_TOKEN (Read Access Token v4, preferido) ou MYMEDIADB_TMDB_API_KEY (v3).
+// - TheTVDB: MYMEDIADB_TTDB_API_KEY (apikey do projeto, login v4).
+//
+// Sem NENHUMA credencial, não registra provider (busca externa desligada — não é erro;
+// enrich/import também ficam off). NUNCA loga o valor da credencial, só ligado/desligado.
 //
 // MYMEDIADB_FAKE_PROVIDER=1 tem PRECEDÊNCIA e injeta o provider de fixtures
-// determinístico (briefing 0028): o binário roda o fluxo inteiro sem TMDB real nem
-// segredo, para os testes E2E de navegador (Camada 2) e inspeção manual. As imagens
-// vêm de MYMEDIADB_FAKE_IMAGE_BASE (um servidor de fixtures); vazio => sem pôster.
+// determinístico (briefing 0028), EXCLUSIVO: o binário roda o fluxo inteiro sem fonte
+// real nem segredo, para os testes E2E (Camada 2) e inspeção manual. As imagens vêm de
+// MYMEDIADB_FAKE_IMAGE_BASE (um servidor de fixtures); vazio => sem pôster.
 func opcoesBusca() []server.Option {
 	if os.Getenv("MYMEDIADB_FAKE_PROVIDER") == "1" {
-		log.Printf("mymediadb: PROVIDER FAKE de fixtures habilitado (E2E; sem TMDB real)")
+		log.Printf("mymediadb: PROVIDER FAKE de fixtures habilitado (E2E; sem fonte real)")
 		return []server.Option{server.WithSearchProvider(fake.New(os.Getenv("MYMEDIADB_FAKE_IMAGE_BASE")))}
 	}
-	cred := tmdb.Credencial{
+	provs := provedoresReais()
+	if len(provs) == 0 {
+		log.Printf("mymediadb: busca externa desabilitada (sem credencial)")
+		return nil
+	}
+	return []server.Option{server.WithSearchProvider(provs...)}
+}
+
+// provedoresReais constrói os providers reais cujas credenciais estão no ambiente
+// (TMDB e/ou TheTVDB), na ordem de prioridade padrão. Vazio quando nenhuma existe.
+func provedoresReais() []provider.Provider {
+	var provs []provider.Provider
+
+	credTmdb := tmdb.Credencial{
 		Token:  os.Getenv("MYMEDIADB_TMDB_TOKEN"),
 		APIKey: os.Getenv("MYMEDIADB_TMDB_API_KEY"),
 	}
-	if !cred.Configurada() {
-		log.Printf("mymediadb: busca externa TMDB desabilitada (sem credencial)")
-		return nil
+	if credTmdb.Configurada() {
+		log.Printf("mymediadb: busca externa TMDB habilitada")
+		provs = append(provs, tmdb.New(credTmdb, nil, ""))
 	}
-	log.Printf("mymediadb: busca externa TMDB habilitada")
-	return []server.Option{server.WithSearchProvider(tmdb.New(cred, nil, ""))}
+
+	credTvdb := tvdb.Credencial{APIKey: os.Getenv("MYMEDIADB_TTDB_API_KEY")}
+	if credTvdb.Configurada() {
+		log.Printf("mymediadb: busca externa TheTVDB habilitada")
+		provs = append(provs, tvdb.New(credTvdb, nil, ""))
+	}
+
+	return provs
 }
 
 // resolveAssetsDir determina o diretório do cache de imagem (briefing 0015): env

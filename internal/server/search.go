@@ -149,12 +149,14 @@ func (s *Server) buscarLocal(ctx context.Context, termo string, tipo any) ([]ent
 	return items, nil
 }
 
-// buscarExterno consulta a fonte externa com cache TTL curto. Devolve
-// (resultados, disponivel). Sem provider OU erro/timeout => (nil, false): o
-// handler degrada para external:[], external_available:false. Só resultados de
-// sucesso entram no cache.
+// buscarExterno consulta TODAS as fontes do registro com cache TTL curto e MESCLA os
+// resultados (dedup por (source, source_id); ordem determinística por prioridadeFontes,
+// briefing 0031). Devolve (resultados, disponivel). Registro vazio => (nil, false).
+// disponivel é true quando AO MENOS UMA fonte respondeu (erro/timeout de todas =>
+// false): o handler então degrada para external:[], external_available:false. Só o
+// resultado mesclado de sucesso entra no cache.
 func (s *Server) buscarExterno(ctx context.Context, termo, tipo, lang string) ([]provider.ResultadoExterno, bool) {
-	if s.searchProvider == nil {
+	if s.providers.Vazio() {
 		return nil, false
 	}
 	// A chave inclui o idioma: a mesma busca em pt-BR e es tem resultados distintos
@@ -163,12 +165,61 @@ func (s *Server) buscarExterno(ctx context.Context, termo, tipo, lang string) ([
 	if res, ok := s.cacheExterno.obter(chave); ok {
 		return res, true
 	}
-	res, err := s.searchProvider.Buscar(ctx, termo, tipo, lang)
-	if err != nil {
+	res, algum := s.mesclarBuscas(ctx, termo, tipo, lang)
+	if !algum {
 		return nil, false
 	}
 	s.cacheExterno.guardar(chave, res)
 	return res, true
+}
+
+// mesclarBuscas consulta cada provider (na ordem de prioridade) e funde os resultados,
+// deduplicando por (source, source_id) — o primeiro a trazer um par vence. `algum` diz
+// se ALGUMA fonte respondeu (sucesso), separando "todas falharam" de "zero resultados".
+// A falha de UMA fonte degrada aquela fonte (pula), não a busca inteira.
+func (s *Server) mesclarBuscas(ctx context.Context, termo, tipo, lang string) ([]provider.ResultadoExterno, bool) {
+	var out []provider.ResultadoExterno
+	vistos := make(map[string]bool)
+	algum := false
+	for _, p := range s.providersOrdenados() {
+		res, err := p.Buscar(ctx, termo, tipo, lang)
+		if err != nil {
+			continue // degrada esta fonte
+		}
+		algum = true
+		for _, r := range res {
+			chave := r.Source + "\x00" + r.SourceID
+			if vistos[chave] {
+				continue
+			}
+			vistos[chave] = true
+			out = append(out, r)
+		}
+	}
+	return out, algum
+}
+
+// providersOrdenados devolve os providers do registro em ordem DETERMINÍSTICA: primeiro
+// os de prioridadeFontes (R2), na ordem da lista; depois quaisquer fontes registradas
+// fora da lista (na ordem de registro), para nunca sumir com uma fonte configurada.
+func (s *Server) providersOrdenados() []provider.Provider {
+	out := make([]provider.Provider, 0, len(s.providers.Nomes()))
+	vistos := make(map[string]bool)
+	for _, nome := range prioridadeFontes {
+		if p, ok := s.providers.Get(nome); ok {
+			out = append(out, p)
+			vistos[nome] = true
+		}
+	}
+	for _, nome := range s.providers.Nomes() {
+		if vistos[nome] {
+			continue
+		}
+		if p, ok := s.providers.Get(nome); ok {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // mapearExternos converte os resultados canônicos do provider no DTO externo,

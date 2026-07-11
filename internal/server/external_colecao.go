@@ -57,15 +57,21 @@ func (s *Server) getExternalCollection(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
 	}
-	cp, ok := s.searchProvider.(provider.ColecaoProvider)
+	source := chi.URLParam(r, "source")
+	id := chi.URLParam(r, "id")
+
+	prov, ok := s.providers.Get(source)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "external_source_unavailable",
 			"colecao externa indisponivel (fonte externa nao configurada)")
 		return
 	}
-
-	source := chi.URLParam(r, "source")
-	id := chi.URLParam(r, "id")
+	cp, ok := prov.(provider.ColecaoProvider)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "external_source_unavailable",
+			"colecao externa indisponivel (fonte externa nao configurada)")
+		return
+	}
 
 	ctx := r.Context()
 	cfg, err := s.obterLanguageSettings(ctx)

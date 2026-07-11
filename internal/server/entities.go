@@ -424,9 +424,11 @@ func (s *Server) anotarInternos(ctx context.Context, e *resolver.Entidade) {
 	}
 }
 
-// prioridadeFontes é a ordem de precedência das fontes externas (R2): a primeira
-// com valor para um campo forma a base externa dele. Hoje só o TMDB.
-var prioridadeFontes = []string{"tmdb"}
+// prioridadeFontes é a ordem de precedência global das fontes externas (R2 / ADR-0002):
+// por campo, a PRIMEIRA fonte da lista com valor forma a base externa dele; também dita
+// a ordem determinística da busca-mescla (search.go). É o PONTO ÚNICO da política —
+// tornar configurável (via settings) é follow-up; por ora é o default do briefing 0031.
+var prioridadeFontes = []string{"tmdb", "tvdb"}
 
 // montarExterno carrega as linhas de media_external da entity e as converte em
 // camadas canônicas via o provider (raw→canônico é do provider; o resolver não
@@ -434,7 +436,7 @@ var prioridadeFontes = []string{"tmdb"}
 // preservado). Uma linha cujo mapeamento falha é PULADA (degrada aquela fonte),
 // não derruba a leitura. Ordena pela prioridade das fontes.
 func (s *Server) montarExterno(ctx context.Context, id string) ([]resolver.CamadaExterna, error) {
-	if s.searchProvider == nil {
+	if s.providers.Vazio() {
 		return nil, nil
 	}
 	rows, err := s.leitura().ListarMediaExternalPorEntity(ctx, id)
@@ -452,11 +454,13 @@ func (s *Server) montarExterno(ctx context.Context, id string) ([]resolver.Camad
 	return camadas, nil
 }
 
-// camadasDaFonte converte as linhas de UMA fonte em camadas canônicas via o
-// provider. Devolve nil quando não há mapeador para a fonte (provider de outra
-// fonte). Uma linha com payload ausente/inválido é pulada (degrada aquela linha).
+// camadasDaFonte converte as linhas de UMA fonte em camadas canônicas via o provider
+// DAQUELA fonte (escolhido no registro pelo nome). Devolve nil quando a fonte não tem
+// provider registrado (degrada: camada vazia). Uma linha com payload ausente/inválido
+// é pulada (degrada aquela linha).
 func (s *Server) camadasDaFonte(rows []sqlcgen.MediaExternal, fonte string) []resolver.CamadaExterna {
-	if s.searchProvider.Nome() != fonte {
+	prov, ok := s.providers.Get(fonte)
+	if !ok {
 		return nil
 	}
 	var out []resolver.CamadaExterna
@@ -464,7 +468,7 @@ func (s *Server) camadasDaFonte(rows []sqlcgen.MediaExternal, fonte string) []re
 		if row.Source != fonte || !row.PayloadJson.Valid || row.PayloadJson.String == "" {
 			continue
 		}
-		campos, err := s.searchProvider.MapearDetalhe(json.RawMessage(row.PayloadJson.String))
+		campos, err := prov.MapearDetalhe(json.RawMessage(row.PayloadJson.String))
 		if err != nil {
 			continue // payload cru inválido: degrada esta fonte
 		}

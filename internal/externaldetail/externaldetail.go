@@ -29,21 +29,22 @@ import (
 const TTLPadrao = 24 * time.Hour
 
 // Servico resolve o detalhe externo com cache-first. Recebe os pools de banco, o
-// provider (fonte) e o TTL. `agora` é injetável em teste (relógio determinístico).
+// REGISTRO multi-provider (a fonte é escolhida por nome, briefing 0031) e o TTL.
+// `agora` é injetável em teste (relógio determinístico).
 type Servico struct {
-	database *db.DB
-	provider provider.Provider
-	ttl      time.Duration
-	agora    func() time.Time
+	database  *db.DB
+	providers provider.Registry
+	ttl       time.Duration
+	agora     func() time.Time
 }
 
-// New cria o serviço. provider é obrigatório para operar (o main só o constrói quando
+// New cria o serviço. providers é o registro de fontes (o main só o alimenta quando
 // há credencial); ttl<=0 cai no TTLPadrao.
-func New(database *db.DB, prov provider.Provider, ttl time.Duration) *Servico {
+func New(database *db.DB, provs provider.Registry, ttl time.Duration) *Servico {
 	if ttl <= 0 {
 		ttl = TTLPadrao
 	}
-	return &Servico{database: database, provider: prov, ttl: ttl, agora: time.Now}
+	return &Servico{database: database, providers: provs, ttl: ttl, agora: time.Now}
 }
 
 // PayloadFresco devolve o ENVELOPE AUMENTADO do detalhe externo (o mesmo formato de
@@ -53,7 +54,8 @@ func New(database *db.DB, prov provider.Provider, ttl time.Duration) *Servico {
 // fonte, e o erro cru quando a fonte falha (o chamador traduz em 404/502). Fonte
 // desconhecida (sem provider correspondente) devolve ErrNaoEncontrado.
 func (s *Servico) PayloadFresco(ctx context.Context, source, sourceID, tipo string, langs []string) (json.RawMessage, error) {
-	if s.provider == nil || s.provider.Nome() != source {
+	prov, ok := s.providers.Get(source)
+	if !ok {
 		return nil, provider.ErrNaoEncontrado
 	}
 
@@ -61,7 +63,7 @@ func (s *Servico) PayloadFresco(ctx context.Context, source, sourceID, tipo stri
 		return cached, nil
 	}
 
-	raw, err := s.provider.BuscarDetalhe(ctx, sourceID, tipo, langs)
+	raw, err := prov.BuscarDetalhe(ctx, sourceID, tipo, langs)
 	if err != nil {
 		return nil, err
 	}

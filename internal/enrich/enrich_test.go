@@ -76,7 +76,7 @@ func servidorImagem(t *testing.T, contentType string, corpo []byte) *httptest.Se
 func novoServico(t *testing.T, database *db.DB, prov provider.Provider) (*Servico, string) {
 	t.Helper()
 	dir := t.TempDir()
-	return New(database, prov, dir), dir
+	return New(database, provider.NovaRegistry(prov), dir), dir
 }
 
 func TestEnriquecerGravaExternalIDsEPoster(t *testing.T) {

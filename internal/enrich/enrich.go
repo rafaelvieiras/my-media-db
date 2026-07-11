@@ -47,11 +47,12 @@ const (
 	relacaoColecao = "collection"
 )
 
-// Servico executa o enriquecimento. Recebe os pools de banco, o provider (fonte) e
-// o diretório confiável de assets (onde o binário do pôster é gravado).
+// Servico executa o enriquecimento. Recebe os pools de banco, o REGISTRO multi-
+// provider (a fonte é escolhida por nome, briefing 0031) e o diretório confiável de
+// assets (onde o binário do pôster é gravado).
 type Servico struct {
 	database  *db.DB
-	provider  provider.Provider
+	providers provider.Registry
 	assetsDir string
 	// detalhe resolve o detalhe externo com CACHE-FIRST (external_detail, 0022): o
 	// import/enrich passa a puxar por aqui, reusando o cache do detalhe rico quando
@@ -67,15 +68,22 @@ type Servico struct {
 // constrói o serviço quando ambos existem (sem credencial, enrich fica desligado). O
 // cache do detalhe externo (external_detail, 0022) é construído aqui e compartilha a
 // tabela com o handler GET do detalhe externo (o estado é o banco, não a instância).
-func New(database *db.DB, prov provider.Provider, assetsDir string) *Servico {
+func New(database *db.DB, provs provider.Registry, assetsDir string) *Servico {
 	return &Servico{
 		database:   database,
-		provider:   prov,
+		providers:  provs,
 		assetsDir:  assetsDir,
-		detalhe:    externaldetail.New(database, prov, 0),
+		detalhe:    externaldetail.New(database, provs, 0),
 		httpImagem: &http.Client{Timeout: timeoutImagem},
 		novoID:     func() string { return uuid.NewString() },
 	}
+}
+
+// provFonte devolve o provider da fonte `source` do registro. Ausente => (nil,false):
+// o chamador degrada (o fluxo normal já garante o provider, pois PayloadFresco falha
+// antes se a fonte não existe).
+func (s *Servico) provFonte(source string) (provider.Provider, bool) {
+	return s.providers.Get(source)
 }
 
 // Enriquecer enriquece uma entity JÁ EXISTENTE: puxa o detalhe (nos idiomas
@@ -93,7 +101,7 @@ func (s *Servico) Enriquecer(ctx context.Context, entityID, source, sourceID, ti
 	if err := s.persistir(ctx, entityID, source, sourceID, raw); err != nil {
 		return err
 	}
-	return s.curarTitulo(ctx, entityID, sourceID, raw, langs)
+	return s.curarTitulo(ctx, entityID, source, sourceID, raw, langs)
 }
 
 // Importar é o find-or-create por id externo (MD4) do POST /import: se já existe
@@ -117,7 +125,7 @@ func (s *Servico) Importar(ctx context.Context, source, sourceID, tipo string, l
 	if err != nil {
 		return "", false, fmt.Errorf("enrich: buscar detalhe: %w", err)
 	}
-	titulo := s.tituloInicial(raw, sourceID, langs)
+	titulo := s.tituloInicial(source, raw, sourceID, langs)
 
 	extIDs, err := json.Marshal(map[string]string{source: sourceID})
 	if err != nil {
@@ -146,7 +154,11 @@ func (s *Servico) Importar(ctx context.Context, source, sourceID, tipo string, l
 // ainda não ligados. A falha de UMA parte degrada (loga e segue) — a coleção parcial é
 // válida. Requer a capacidade opcional provider.ColecaoProvider (senão erro → 502).
 func (s *Servico) importarColecao(ctx context.Context, source, sourceID string, langs []string) (string, bool, error) {
-	cp, ok := s.provider.(provider.ColecaoProvider)
+	prov, ok := s.provFonte(source)
+	if !ok {
+		return "", false, fmt.Errorf("enrich: fonte %q sem provider", source)
+	}
+	cp, ok := prov.(provider.ColecaoProvider)
 	if !ok {
 		return "", false, fmt.Errorf("enrich: fonte %q nao suporta colecao", source)
 	}
@@ -240,14 +252,21 @@ func (s *Servico) acharOuCriarColecao(ctx context.Context, source, sourceID, nom
 	return novo, true, nil
 }
 
-// acharPorIDExterno procura uma entity pelo id na fonte (dedup MD4). Hoje só a
-// fonte "tmdb" tem coluna gerada indexada; outras fontes ainda não deduplicam
-// (find-or-create sempre cria) — segue o escopo do MVP.
+// acharPorIDExterno procura uma entity pelo id na fonte (dedup MD4), escolhendo a
+// query pela FONTE: "tmdb"→external_id_tmdb, "tvdb"→external_id_tvdb (colunas geradas
+// indexadas). Fontes sem coluna própria ainda não deduplicam (find-or-create sempre
+// cria) — segue o escopo. NoRows não é erro (não existe ainda).
 func (s *Servico) acharPorIDExterno(ctx context.Context, source, sourceID string) (string, bool, error) {
-	if source != "tmdb" {
+	var ent sqlcgen.Entity
+	var err error
+	switch source {
+	case "tmdb":
+		ent, err = s.leitura().ObterEntityPorTmdb(ctx, nsValid(sourceID))
+	case "tvdb":
+		ent, err = s.leitura().ObterEntityPorTvdb(ctx, nsValid(sourceID))
+	default:
 		return "", false, nil
 	}
-	ent, err := s.leitura().ObterEntityPorTmdb(ctx, nsValid(sourceID))
 	if err != nil {
 		if isNoRows(err) {
 			return "", false, nil
@@ -271,7 +290,12 @@ func (s *Servico) persistir(ctx context.Context, entityID, source, sourceID stri
 		return err
 	}
 
-	campos, err := s.provider.MapearDetalhe(raw)
+	prov, ok := s.provFonte(source)
+	if !ok {
+		log.Printf("enrich: fonte %q sem provider ao persistir %s (segue sem poster)", source, entityID)
+		return nil
+	}
+	campos, err := prov.MapearDetalhe(raw)
 	if err != nil {
 		log.Printf("enrich: mapear detalhe de %s falhou (segue sem poster): %v", entityID, err)
 		return nil
@@ -425,13 +449,15 @@ func (s *Servico) baixar(ctx context.Context, posterURL string) ([]byte, string,
 	return dados, resp.Header.Get("Content-Type"), nil
 }
 
-// tituloInicial extrai o título do detalhe cru para o item recém-criado; cai para
-// o sourceID quando o detalhe não traz título (item pobre) — nunca vazio (title é
-// NOT NULL no schema).
-func (s *Servico) tituloInicial(raw json.RawMessage, sourceID string, langs []string) string {
-	if campos, err := s.provider.MapearDetalhe(raw); err == nil {
-		if t := tituloLegivel(campos, langs); t != "" {
-			return t
+// tituloInicial extrai o título do detalhe cru para o item recém-criado (mapeado
+// pelo provider da FONTE); cai para o sourceID quando o detalhe não traz título
+// (item pobre) ou a fonte não tem provider — nunca vazio (title é NOT NULL).
+func (s *Servico) tituloInicial(source string, raw json.RawMessage, sourceID string, langs []string) string {
+	if prov, ok := s.provFonte(source); ok {
+		if campos, err := prov.MapearDetalhe(raw); err == nil {
+			if t := tituloLegivel(campos, langs); t != "" {
+				return t
+			}
 		}
 	}
 	return sourceID
@@ -444,7 +470,7 @@ func (s *Servico) tituloInicial(raw json.RawMessage, sourceID string, langs []st
 // numerico de verdade ("1917"), nunca casa o id da fonte, entao jamais e sobrescrito.
 // Nao toca override/externo (a resolucao segue dando autoridade ao dono). Degrada em
 // silencio: qualquer tropeco aqui mantem o titulo atual (a cura e best-effort).
-func (s *Servico) curarTitulo(ctx context.Context, entityID, sourceID string, raw json.RawMessage, langs []string) error {
+func (s *Servico) curarTitulo(ctx context.Context, entityID, source, sourceID string, raw json.RawMessage, langs []string) error {
 	ent, err := s.leitura().ObterEntity(ctx, entityID)
 	if err != nil {
 		return err
@@ -452,7 +478,11 @@ func (s *Servico) curarTitulo(ctx context.Context, entityID, sourceID string, ra
 	if ent.Title != sourceID {
 		return nil // titulo ja e legivel -- nada a curar
 	}
-	campos, err := s.provider.MapearDetalhe(raw)
+	prov, ok := s.provFonte(source)
+	if !ok {
+		return nil
+	}
+	campos, err := prov.MapearDetalhe(raw)
 	if err != nil {
 		return nil
 	}

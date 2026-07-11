@@ -54,7 +54,7 @@ func TestPersisteNaPrimeiraServeDoCache(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
 	fake := &fakeProv{nome: "tmdb", raw: json.RawMessage(`{"detail":{"id":603},"tags_by_lang":{}}`)}
-	svc := New(database, fake, time.Hour)
+	svc := New(database, provider.NovaRegistry(fake), time.Hour)
 
 	langs := []string{"pt-BR", "en"}
 	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", langs); err != nil {
@@ -86,7 +86,7 @@ func TestRefreshQuandoIdiomaNovo(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
 	fake := &fakeProv{nome: "tmdb", raw: json.RawMessage(`{"detail":{"id":603}}`)}
-	svc := New(database, fake, time.Hour)
+	svc := New(database, provider.NovaRegistry(fake), time.Hour)
 
 	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", []string{"pt-BR"}); err != nil {
 		t.Fatalf("PayloadFresco #1: %v", err)
@@ -105,7 +105,7 @@ func TestRefreshQuandoTTLExpira(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
 	fake := &fakeProv{nome: "tmdb", raw: json.RawMessage(`{"detail":{"id":603}}`)}
-	svc := New(database, fake, time.Hour)
+	svc := New(database, provider.NovaRegistry(fake), time.Hour)
 	// Ancora no relogio REAL: o fetched_at do cache e carimbado pelo banco (strftime
 	// 'now'), entao uma data ABSOLUTA fixa fica no passado com o tempo e o carimbo real
 	// passa a parecer "no futuro" -> cache falso-fresco -> teste quebra (o que ocorreu
@@ -132,7 +132,7 @@ func TestRefreshQuandoTTLExpira(t *testing.T) {
 func TestFonteDesconhecida(t *testing.T) {
 	database := setupDB(t)
 	fake := &fakeProv{nome: "tmdb", raw: json.RawMessage(`{}`)}
-	svc := New(database, fake, time.Hour)
+	svc := New(database, provider.NovaRegistry(fake), time.Hour)
 
 	_, err := svc.PayloadFresco(context.Background(), "tvdb", "1", "movie", []string{"pt-BR"})
 	if !errors.Is(err, provider.ErrNaoEncontrado) {
@@ -145,7 +145,7 @@ func TestErroDaFontePropaga(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
 	fake := &fakeProv{nome: "tmdb", erro: errors.New("timeout")}
-	svc := New(database, fake, time.Hour)
+	svc := New(database, provider.NovaRegistry(fake), time.Hour)
 
 	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", []string{"pt-BR"}); err == nil {
 		t.Fatal("quero erro da fonte propagado")

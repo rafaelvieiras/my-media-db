@@ -61,6 +61,21 @@ type detalheExternoDTO struct {
 	ResolvedLanguages map[string]string `json:"resolved_languages"`
 }
 
+// provedorDetalhe resolve o provider da FONTE da rota para o detalhe externo. Escreve
+// 503 e devolve ok=false quando o detalhe está desligado (sem cache) OU a fonte não tem
+// provider registrado — a mesma porta de "fonte externa não configurada". Get(source)
+// já cobre o registro vazio (nenhum provider => sempre !ok).
+func (s *Server) provedorDetalhe(w http.ResponseWriter, source string) (provider.Provider, bool) {
+	if s.externalDetail != nil {
+		if prov, ok := s.providers.Get(source); ok {
+			return prov, true
+		}
+	}
+	writeError(w, http.StatusServiceUnavailable, "external_source_unavailable",
+		"detalhe externo indisponível (fonte externa não configurada)")
+	return nil, false
+}
+
 // getExternalDetail trata GET /api/v1/external/{source}/{type}/{id}?lang=. 503 sem
 // fonte externa; 422 type fora de movie|tv; 400 lang fora dos permitidos; 404 item
 // inexistente na fonte; 502 fonte falhou; 200 com o detalhe rico resolvido.
@@ -68,17 +83,15 @@ func (s *Server) getExternalDetail(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
 	}
-	if s.externalDetail == nil || s.searchProvider == nil {
-		writeError(w, http.StatusServiceUnavailable, "external_source_unavailable",
-			"detalhe externo indisponível (fonte externa não configurada)")
-		return
-	}
-
 	source := chi.URLParam(r, "source")
 	tipo := chi.URLParam(r, "type")
 	id := chi.URLParam(r, "id")
 	if tipo != "movie" && tipo != "tv" {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "type inválido (use movie ou tv)")
+		return
+	}
+	prov, ok := s.provedorDetalhe(w, source)
+	if !ok {
 		return
 	}
 
@@ -105,7 +118,7 @@ func (s *Server) getExternalDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campos, err := s.searchProvider.MapearDetalhe(raw)
+	campos, err := prov.MapearDetalhe(raw)
 	if err != nil {
 		// Payload cru inválido: trata como falha da fonte (o cache re-tenta na próxima).
 		respondFonteIndisponivel(w)
