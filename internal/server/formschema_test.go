@@ -83,10 +83,11 @@ func TestDescritorWidgetCoerente(t *testing.T) {
 	}
 }
 
-// TestGetEntityFieldsSchemaHTTP cobre o handler: 200 + JSON com os 6 campos na
-// ordem certa, e o local_rating carregando min/max/step. Não precisa de banco (o
-// metadado é estático).
-func TestGetEntityFieldsSchemaHTTP(t *testing.T) {
+// buscarDescritoresHTTP sobe o handler e faz o GET do endpoint, devolvendo a
+// resposta já decodificada. Compartilhado pelos testes de HTTP abaixo (não precisa
+// de banco: o metadado é estático).
+func buscarDescritoresHTTP(t *testing.T) fieldSchemaResponse {
+	t.Helper()
 	h, err := New("v-teste", nil).Handler()
 	if err != nil {
 		t.Fatalf("Handler: %v", err)
@@ -95,12 +96,28 @@ func TestGetEntityFieldsSchemaHTTP(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
 	}
-
 	var resp fieldSchemaResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decodificar resposta: %v (corpo=%s)", err, rec.Body.String())
 	}
+	return resp
+}
 
+// exigeFloat confere que um *float64 opcional está presente e vale o esperado.
+func exigeFloat(t *testing.T, got *float64, want float64, rotulo string) {
+	t.Helper()
+	if got == nil {
+		t.Fatalf("%s ausente, quero %v", rotulo, want)
+	}
+	if *got != want {
+		t.Errorf("%s = %v, quero %v", rotulo, *got, want)
+	}
+}
+
+// TestGetEntityFieldsSchemaHTTP cobre o handler: 200 + JSON com os 6 campos na
+// ordem certa.
+func TestGetEntityFieldsSchemaHTTP(t *testing.T) {
+	resp := buscarDescritoresHTTP(t)
 	quero := []string{"title", "description", "tags", "original_title", "release_date", "local_rating"}
 	if len(resp.Fields) != len(quero) {
 		t.Fatalf("quero %d campos, obtive %d (%+v)", len(quero), len(resp.Fields), resp.Fields)
@@ -110,18 +127,21 @@ func TestGetEntityFieldsSchemaHTTP(t *testing.T) {
 			t.Errorf("posição %d: name = %q, quero %q", i, resp.Fields[i].Name, nome)
 		}
 	}
+}
 
-	// local_rating (último) carrega a faixa numérica espelhada do backend.
+// TestGetEntityFieldsSchemaFaixaNumerica confere que o local_rating (number)
+// carrega a faixa min/max/step espelhada do backend, e que um escalar (title) NÃO
+// carrega faixa (omitida).
+func TestGetEntityFieldsSchemaFaixaNumerica(t *testing.T) {
+	resp := buscarDescritoresHTTP(t)
+
 	lr := resp.Fields[len(resp.Fields)-1]
 	if lr.Name != "local_rating" || lr.Widget != "number" {
 		t.Fatalf("último campo = %+v, quero local_rating/number", lr)
 	}
-	if lr.Min == nil || lr.Max == nil || lr.Step == nil {
-		t.Fatalf("local_rating sem min/max/step: %+v", lr)
-	}
-	if *lr.Min != 0 || *lr.Max != 10 || *lr.Step != 0.1 {
-		t.Errorf("local_rating faixa = min %v max %v step %v, quero 0/10/0.1", *lr.Min, *lr.Max, *lr.Step)
-	}
+	exigeFloat(t, lr.Min, 0, "local_rating.min")
+	exigeFloat(t, lr.Max, 10, "local_rating.max")
+	exigeFloat(t, lr.Step, 0.1, "local_rating.step")
 
 	// Um campo escalar (title) NÃO carrega min/max/step (omitidos).
 	title := resp.Fields[0]
