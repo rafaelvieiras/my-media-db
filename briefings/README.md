@@ -111,4 +111,4 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0031](0031-series-fundacao-modelo-enriquecimento.md) | Séries: fundação do modelo + enriquecimento (TheTVDB + registry multi-provider) | feature | done | 0022, 0024, 0025, 0026 |
 | [0032](0032-usabilidade-arvore-series-home-busca-breadcrumb.md) | Usabilidade da árvore de séries: home/busca só de topo + breadcrumb | fix/feature | done | 0031 |
 | [0033](0033-busca-filtro-subnos-secoes-separadas.md) | Busca: filtro de sub-nós (temporadas/episódios) default-off em seções separadas | fix/feature | done | 0032 |
-| [0034](0034-scanner-de-series-arquivo-episodio.md) | Scanner de séries: naming TV + auto-import + N:M `media_file_episode` | feature | draft | 0031, 0009 |
+| [0034](0034-scanner-de-series-arquivo-episodio.md) | Scanner de séries: naming TV + auto-import + N:M `media_file_entity` | feature | done | 0031, 0009 |

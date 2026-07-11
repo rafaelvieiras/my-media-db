@@ -9,7 +9,7 @@
 | **ID** | 0034 |
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override (vertical séries, Fase 2 do épico) |
-| **Status** | draft |
+| **Status** | done |
 | **Docs relacionadas** | [ADR-0021](../docs/adr/0021-modelo-de-series-hierarquia-ordenacoes-vinculo-arquivo.md), [0009](0009-scanner-fswalk-ffprobe-matching.md), [0031](0031-series-fundacao-modelo-enriquecimento.md), [0018](0018-fila-revisao-orfas-correcao-match.md) |
 | **Depende de** | 0031, 0009 |
 
@@ -234,12 +234,35 @@ vínculos — a vantagem estrutural do MyMediaDB sobre Kodi/Jellyfin/Plex.
   como 1 episódio que na verdade contém N (mapeamento manual) usa a **mesma** tabela,
   mas via UI de edição — follow-up.
 
+## 6.1 Validação (2026-07-11) — done
+
+Entregue em 5 passos (parser TV + junção genérica + `content_type`; scanner com
+auto-import e match em memória; API + leitura + frontend; jornada e2e + catraca;
+correção de posse no card). Catraca completa **verde** (Go linhas 74.5%, **e2e
+46.1% +9.4**, web 90.67%, tsc 0, jscpd 0.19%). Smoke ao vivo contra o dev: uma
+pasta `Os Simpsons/Season 01/{S01E01,S01E02}.mkv` marcada `content_type=series`
+casou os arquivos aos episódios "Simpsons Roasting On an Open Fire" (S1E1) e "Bart
+the Genius" (S1E2); detalhe do episódio, posse agregada (T1 2/13, série 2/875) e os
+**cards** de episódio passaram a mostrar `owned=true` (correção da junção).
+
+**Achados registrados como follow-up (não-bloqueantes):**
+- **DELETE de datasource com arquivos → 500** (pré-existente da migração 0003):
+  `media_file.library_source_id` referencia `library_source(id)` **sem `ON DELETE`**;
+  com `foreign_keys=ON`, apagar a fonte viola a FK. Afeta filme e série. Exige
+  decisão de produto (arquivos viram missing? `SET NULL`? cascade?) + migração de
+  rebuild da FK. Ver §7.
+- **gocyclo**: `carregarIndex` (12) e `parseEpisodeAbsolute` (12) acima de 10
+  (não-bloqueante). Refatoração opcional.
+
 ## 7. Fora deste briefing / follow-ups
 
 - **UI de remapeamento manual** arquivo↔episódio (streaming empacotado, correção de
   match) — reusa `media_file_entity`.
 - **Seletor de ordenação** na UI (projeta os números da ordem escolhida a partir do
   `numbering`), artwork/still e i18n de episódio — Fase 3 do 0031.
+- **DELETE de datasource com arquivos** (bug pré-existente 0003): definir o
+  comportamento de apagar uma fonte que já escaneou (arquivos → missing/`SET NULL`/
+  cascade) e corrigir a FK `media_file.library_source_id` (migração de rebuild).
 - **Heurística de detecção** como fallback ao tipo de biblioteca (o dono escolheu
   tipo explícito; heurística fica como conveniência futura).
 - **Specials/temporada 0** e numerações atípicas: cobrir no parser/matcher; casos
