@@ -110,3 +110,4 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0030](0030-crud-por-rota-formulario-dirigido-por-schema.md) | CRUD por rota + formulário dirigido por schema (TanStack Form + Zod) | refactor/feature | done | 0016, 0025, 0027 |
 | [0031](0031-series-fundacao-modelo-enriquecimento.md) | Séries: fundação do modelo + enriquecimento (TheTVDB + registry multi-provider) | feature | done | 0022, 0024, 0025, 0026 |
 | [0032](0032-usabilidade-arvore-series-home-busca-breadcrumb.md) | Usabilidade da árvore de séries: home/busca só de topo + breadcrumb | fix/feature | done | 0031 |
+| [0033](0033-busca-filtro-subnos-secoes-separadas.md) | Busca: filtro de sub-nós (temporadas/episódios) default-off em seções separadas | fix/feature | done | 0032 |

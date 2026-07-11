@@ -99,6 +99,12 @@ dono:
 - **Coleção fica na home** (é obra de topo, briefing 0025) — "só de topo" exclui os
   sub-nós de série, não a coleção.
 - Ancestrais no server (não no resolver puro) — mesma fronteira do 0031/0026.
+- **SUPERSEDIDO (BUSCA) pelo [0033](0033-busca-filtro-subnos-secoes-separadas.md):** a
+  exclusão dura de `season`/`episode` da **busca local** (o `AND e.type NOT IN
+  ('season','episode')` fixo em `search.go`) deixou de ser uma exclusão hard-coded e
+  virou **filtro default-off**: por padrão a busca continua só-topo, mas o usuário pode
+  religar temporadas/episódios via `?include=season,episode`, em seções separadas. O
+  filtro da HOME (`ListarEntityCards`) **não** mudou — segue excluindo os sub-nós.
 
 ## 7. Fora deste briefing / follow-ups
 
