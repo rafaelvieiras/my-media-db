@@ -33,6 +33,10 @@ type scanRun struct {
 	scanTS     string
 	probeAtivo bool
 	cache      map[string]string
+	// serieCache guarda a resolução de cada série do scan (chave = pasta da série),
+	// para não re-buscar/re-importar a mesma série a cada arquivo. Análogo ao cache de
+	// folderKey do filme, mas keyed pela pasta da série (0034).
+	serieCache map[string]serieResolvida
 }
 
 // fileFacts são os fatos pré-computados de um arquivo (fora da transação de
@@ -49,6 +53,12 @@ type fileFacts struct {
 	hash      string
 	mediainfo []byte
 	poster    string // caminho da arte local; "" se nenhuma
+
+	// Campos do caminho de SÉRIE (0034), preenchidos só quando content_type='series'.
+	isSerie    bool     // marca o fluxo de série (ramifica gravarArquivo)
+	serieID    string   // entity da SÉRIE (a "obra"); o media_file aponta para ela
+	serieConf  float64  // confiança da resolução da série (100 por id externo, 90 por título/import)
+	episodeIDs []string // episódios casados, em ordem (define o ordinal do vínculo)
 }
 
 // executarScan roda o pipeline completo de um datasource.
@@ -59,6 +69,7 @@ func (m *Manager) executarScan(ctx context.Context, source library.Source, j *jo
 		scanTS:     m.agora().Format(carimboFormato),
 		probeAtivo: m.prober.Disponivel(),
 		cache:      make(map[string]string),
+		serieCache: make(map[string]serieResolvida),
 	}
 	if !r.probeAtivo {
 		log.Printf("scanner: ffprobe indisponível; mediainfo ficará vazio no scan de %q", source.ID)
@@ -131,7 +142,16 @@ func (r *scanRun) computarFacts(ctx context.Context, path string) (fileFacts, er
 		}
 	}
 
-	f := montarFacts(r.source.Path, path)
+	// Ramifica pelo tipo de biblioteca: séries seguem o novo fluxo (0034); filme
+	// (ou default) mantém o caminho de agrupamento por pasta, intacto. A resolução
+	// da série (e o auto-import) acontece AQUI, fora da transação de escrita — o
+	// import do enrich escreve pela própria conexão, então nada de tx aninhada.
+	var f fileFacts
+	if r.source.ContentType == contentTypeSeries {
+		f = r.factsSerie(ctx, path)
+	} else {
+		f = montarFacts(r.source.Path, path)
+	}
 	f.size = info.Size()
 	f.mtime = info.ModTime().UTC().Format(time.RFC3339Nano)
 	f.hash = hash

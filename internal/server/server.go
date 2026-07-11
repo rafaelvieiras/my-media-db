@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -119,6 +120,18 @@ func New(version string, database *db.DB, opts ...Option) *Server {
 	// nil e o handler GET /external degrada com 503.
 	if database != nil && !s.providers.Vazio() {
 		s.externalDetail = externaldetail.New(database, s.providers, 0)
+	}
+	// Liga o AUTO-IMPORT de séries no scanner (0034): o importador por nome (enrich) e
+	// os idiomas permitidos das settings. Só quando o enrich existe; sem ele o scanner
+	// de séries degrada (casa o que já está no catálogo, o resto vai para revisão).
+	if s.scanner != nil && s.enrich != nil {
+		s.scanner.ConfigurarSeries(s.enrich, func(ctx context.Context) []string {
+			cfg, err := s.obterLanguageSettings(ctx)
+			if err != nil {
+				return nil
+			}
+			return cfg.Allowed
+		})
 	}
 	return s
 }

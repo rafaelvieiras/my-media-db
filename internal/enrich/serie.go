@@ -12,12 +12,25 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
+)
+
+// Erros sentinela de ImportarSeriePorNome: o scanner de series (0034) os distingue
+// para rotear o arquivo para a fila de revisao SEM adivinhar (nunca importa a serie
+// errada nem fabrica episodio).
+var (
+	// ErrSerieNaoEncontrada: nenhum provider retornou candidato para o nome. -> revisao.
+	ErrSerieNaoEncontrada = errors.New("enrich: serie nao encontrada no provider")
+	// ErrSerieAmbigua: havia candidatos, mas nenhum match de titulo EXATO e UNICO
+	// (0 exatos com candidatos presentes, ou 2+ exatos). -> revisao.
+	ErrSerieAmbigua = errors.New("enrich: serie ambigua (sem match de titulo exato e unico)")
 )
 
 const (
@@ -65,6 +78,77 @@ func (s *Servico) importarSerie(ctx context.Context, source, sourceID string, la
 		s.importarTemporada(ctx, serieID, source, arvore.DefaultSeasonType, t, langs)
 	}
 	return serieID, criada, nil
+}
+
+// ImportarSeriePorNome busca a serie pelo NOME nos providers que suportam series,
+// escolhe o candidato de TITULO EXATO e UNICO (case-insensitive) e importa a arvore
+// dele (reusando importarSerie, idempotente). E o ponto reusavel que o scanner de
+// series (0034) chama quando a serie ainda nao esta no catalogo.
+//
+// Escolha (respeita a prioridade de fontes = ordem do Registry, ex.: [tmdb, tvdb]):
+// percorre os providers na ordem; o PRIMEIRO que devolver exatamente UM match de
+// titulo exato vence e e importado. Um provider que devolva 2+ exatos e ambiguo. Se
+// nenhum provider deu exato-unico mas houve candidatos, e ErrSerieAmbigua; se nao
+// houve candidato algum, e ErrSerieNaoEncontrada. NUNCA adivinha por titulo parcial.
+func (s *Servico) ImportarSeriePorNome(ctx context.Context, nome string, langs []string) (string, error) {
+	alvo := strings.TrimSpace(nome)
+	if alvo == "" {
+		return "", ErrSerieNaoEncontrada
+	}
+	lang := langPrincipal(langs)
+	houveCandidato := false
+	for _, prov := range s.providers.All() {
+		if _, ok := prov.(provider.SerieProvider); !ok {
+			continue
+		}
+		res, err := prov.Buscar(ctx, alvo, tipoSerie, lang)
+		if err != nil {
+			log.Printf("enrich: busca de serie %q na fonte %q falhou (segue): %v", alvo, prov.Nome(), err)
+			continue
+		}
+		if len(res) > 0 {
+			houveCandidato = true
+		}
+		exatos := exatosPorTitulo(res, alvo)
+		switch len(exatos) {
+		case 0:
+			continue // esta fonte nao tem exato; tenta a proxima (prioridade)
+		case 1:
+			return s.importarSeriePorFonte(ctx, prov.Nome(), exatos[0].SourceID, langs)
+		default:
+			return "", ErrSerieAmbigua // 2+ exatos na mesma fonte: nao adivinha
+		}
+	}
+	if houveCandidato {
+		return "", ErrSerieAmbigua // candidatos existiam, nenhum exato-unico
+	}
+	return "", ErrSerieNaoEncontrada
+}
+
+// importarSeriePorFonte importa a arvore da serie escolhida (source, sourceID),
+// reusando o importarSerie da Fase 1. Devolve so o id (o `criada` nao interessa ao
+// scanner: idempotente reusa a serie existente).
+func (s *Servico) importarSeriePorFonte(ctx context.Context, source, sourceID string, langs []string) (string, error) {
+	id, _, err := s.importarSerie(ctx, source, sourceID, langs)
+	return id, err
+}
+
+// exatosPorTitulo filtra os resultados cujo titulo casa EXATAMENTE (case-insensitive)
+// o nome alvo, dedup por SourceID (a mesma serie repetida na fonte conta uma vez).
+func exatosPorTitulo(res []provider.ResultadoExterno, alvo string) []provider.ResultadoExterno {
+	vistos := map[string]bool{}
+	var out []provider.ResultadoExterno
+	for _, r := range res {
+		if !strings.EqualFold(strings.TrimSpace(r.Title), alvo) {
+			continue
+		}
+		if vistos[r.SourceID] {
+			continue
+		}
+		vistos[r.SourceID] = true
+		out = append(out, r)
+	}
+	return out
 }
 
 // importarTemporada cria (ou reusa) a temporada, cacheia seu pôster, liga-a à série e

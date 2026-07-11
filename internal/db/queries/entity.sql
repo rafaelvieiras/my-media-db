@@ -96,6 +96,19 @@ FROM entity
 WHERE type = ? AND title = ? AND release_date IS ?
 LIMIT 1;
 
+-- name: ObterEntityPorTituloTipo :one
+-- Lookup do scanner de series (briefing 0034): a serie ja no catalogo pelo par
+-- (type, title), ignorando release_date. Usada quando a pasta da serie nao traz id
+-- externo embutido, para reusar a serie ja importada e evitar um novo round-trip ao
+-- provider a cada scan. Primeira por created_at (estavel).
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+FROM entity
+WHERE type = ? AND title = ?
+ORDER BY created_at, id
+LIMIT 1;
+
 -- name: ListarEntities :many
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,

@@ -236,6 +236,11 @@ type Querier interface {
 	// NULO quando o nome nao traz ano. Mantem o re-scan idempotente para obras sem
 	// id embutido no nome (nao duplica a entity).
 	ObterEntityPorTituloAno(ctx context.Context, arg ObterEntityPorTituloAnoParams) (Entity, error)
+	// Lookup do scanner de series (briefing 0034): a serie ja no catalogo pelo par
+	// (type, title), ignorando release_date. Usada quando a pasta da serie nao traz id
+	// externo embutido, para reusar a serie ja importada e evitar um novo round-trip ao
+	// provider a cada scan. Primeira por created_at (estavel).
+	ObterEntityPorTituloTipo(ctx context.Context, arg ObterEntityPorTituloTipoParams) (Entity, error)
 	// Lookup por id externo tmdb via coluna gerada + indice (doc 04, busca sem GIN).
 	ObterEntityPorTmdb(ctx context.Context, externalIDTmdb sql.NullString) (Entity, error)
 	// Lookup por id externo tvdb via coluna gerada + indice (migration 0007, ADR-0021).

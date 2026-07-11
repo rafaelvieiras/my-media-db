@@ -3,6 +3,7 @@ package enrich
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
@@ -176,6 +177,75 @@ func TestImportarSerieSemSuporte(t *testing.T) {
 	if _, _, err := svc.Importar(context.Background(), "tmdb", fake.SerieFixtureID, "tv", []string{"en"}); err == nil {
 		t.Fatal("quero erro: provider sem suporte a serie")
 	}
+}
+
+// TestImportarSeriePorNomeCasaExato: o nome exato de uma série no fake resolve para o
+// candidato tv único e importa a árvore (o wiring que o scanner de 0034 consome).
+func TestImportarSeriePorNomeCasaExato(t *testing.T) {
+	svc, database := svcSerieFake(t)
+	ctx := context.Background()
+
+	id, err := svc.ImportarSeriePorNome(ctx, "Springfield Tales", []string{"en"})
+	if err != nil {
+		t.Fatalf("ImportarSeriePorNome: %v", err)
+	}
+	r := sqlcgen.New(database.Read)
+	serie, err := r.ObterEntity(ctx, id)
+	if err != nil || serie.Type != tipoSerie {
+		t.Fatalf("serie importada invalida: %+v err=%v", serie, err)
+	}
+	if serie.ExternalIDTmdb.String != fake.SerieFixtureID {
+		t.Errorf("serie external_id_tmdb = %q, quero %s", serie.ExternalIDTmdb.String, fake.SerieFixtureID)
+	}
+	// A árvore veio junto (2 temporadas).
+	if temps := filhosPorKind(t, database, id, relacaoTemporada); len(temps) != 2 {
+		t.Errorf("temporadas = %d, quero 2 (árvore importada)", len(temps))
+	}
+}
+
+// TestImportarSeriePorNomeNaoEncontrada: um nome sem candidato nenhum devolve o
+// sentinela ErrSerieNaoEncontrada (o scanner roteia para revisão).
+func TestImportarSeriePorNomeNaoEncontrada(t *testing.T) {
+	svc, _ := svcSerieFake(t)
+	_, err := svc.ImportarSeriePorNome(context.Background(), "Serie Inexistente XYZ", []string{"en"})
+	if !errors.Is(err, ErrSerieNaoEncontrada) {
+		t.Fatalf("err = %v, quero ErrSerieNaoEncontrada", err)
+	}
+}
+
+// TestImportarSeriePorNomeAmbigua: dois candidatos de título exato na mesma fonte
+// devolvem ErrSerieAmbigua — o scanner NÃO adivinha.
+func TestImportarSeriePorNomeAmbigua(t *testing.T) {
+	database := setupDB(t)
+	svc := New(database, provider.NovaRegistry(serieDupla{}), t.TempDir())
+	_, err := svc.ImportarSeriePorNome(context.Background(), "Dup Show", []string{"en"})
+	if !errors.Is(err, ErrSerieAmbigua) {
+		t.Fatalf("err = %v, quero ErrSerieAmbigua", err)
+	}
+}
+
+// serieDupla é um provider de teste que devolve DOIS resultados tv de título idêntico
+// para "Dup Show" — o caso ambíguo. Implementa SerieProvider para não ser pulado.
+type serieDupla struct{}
+
+func (serieDupla) Nome() string { return "dup" }
+func (serieDupla) Buscar(_ context.Context, q, tipo, _ string) ([]provider.ResultadoExterno, error) {
+	if tipo == tipoSerie && q == "Dup Show" {
+		return []provider.ResultadoExterno{
+			{Source: "dup", SourceID: "1", Type: "tv", Title: "Dup Show"},
+			{Source: "dup", SourceID: "2", Type: "tv", Title: "Dup Show"},
+		}, nil
+	}
+	return nil, nil
+}
+func (serieDupla) BuscarDetalhe(context.Context, string, string, []string) (json.RawMessage, error) {
+	return json.RawMessage(`{}`), nil
+}
+func (serieDupla) MapearDetalhe(json.RawMessage) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (serieDupla) BuscarSerieArvore(context.Context, string, []string) (provider.SerieArvore, error) {
+	return provider.SerieArvore{}, nil
 }
 
 // --- helpers de teste ---

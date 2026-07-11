@@ -697,6 +697,49 @@ func (q *Queries) ObterEntityPorTituloAno(ctx context.Context, arg ObterEntityPo
 	return i, err
 }
 
+const obterEntityPorTituloTipo = `-- name: ObterEntityPorTituloTipo :one
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+FROM entity
+WHERE type = ? AND title = ?
+ORDER BY created_at, id
+LIMIT 1
+`
+
+type ObterEntityPorTituloTipoParams struct {
+	Type  string
+	Title string
+}
+
+// Lookup do scanner de series (briefing 0034): a serie ja no catalogo pelo par
+// (type, title), ignorando release_date. Usada quando a pasta da serie nao traz id
+// externo embutido, para reusar a serie ja importada e evitar um novo round-trip ao
+// provider a cada scan. Primeira por created_at (estavel).
+func (q *Queries) ObterEntityPorTituloTipo(ctx context.Context, arg ObterEntityPorTituloTipoParams) (Entity, error) {
+	row := q.db.QueryRowContext(ctx, obterEntityPorTituloTipo, arg.Type, arg.Title)
+	var i Entity
+	err := row.Scan(
+		&i.ID,
+		&i.Type,
+		&i.Title,
+		&i.OriginalTitle,
+		&i.Description,
+		&i.ReleaseDate,
+		&i.Status,
+		&i.TagsJson,
+		&i.ExternalIdsJson,
+		&i.ExtensionDataJson,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ExternalIDTmdb,
+		&i.ExternalIDImdb,
+		&i.OriginalLanguage,
+		&i.ExternalIDTvdb,
+	)
+	return i, err
+}
+
 const obterEntityPorTmdb = `-- name: ObterEntityPorTmdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,

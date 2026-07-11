@@ -57,6 +57,9 @@ type Source struct {
 	Type     string
 	State    string
 	LastScan *string
+	// ContentType diz se a biblioteca e de filmes ("movie") ou de series ("series")
+	// — o scanner (0034) ramifica o fluxo de match por este valor. Default "movie".
+	ContentType string
 }
 
 // Service concentra as operações de domínio sobre library_source. Segue a
@@ -172,10 +175,11 @@ func toSource(row sqlcgen.LibrarySource, state string) Source {
 		lastScan = &v
 	}
 	return Source{
-		ID:       row.ID,
-		Path:     row.Path,
-		Type:     row.Type,
-		State:    state,
-		LastScan: lastScan,
+		ID:          row.ID,
+		Path:        row.Path,
+		Type:        row.Type,
+		State:       state,
+		LastScan:    lastScan,
+		ContentType: row.ContentType,
 	}
 }

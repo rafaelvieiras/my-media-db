@@ -24,6 +24,9 @@ const (
 // content_hash: se o mesmo conteúdo já existe, ATUALIZA o path (cobre
 // rename/move — idempotente) em vez de criar outra linha.
 func (r *scanRun) gravarArquivo(ctx context.Context, q *sqlcgen.Queries, f fileFacts) error {
+	if f.isSerie {
+		return r.gravarArquivoSerie(ctx, q, f)
+	}
 	existente, err := q.ObterMediaFilePorContentHash(ctx, nsOpt(f.hash))
 	if err == nil {
 		return r.reencontrar(ctx, q, existente, f)

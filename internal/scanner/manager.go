@@ -50,6 +50,15 @@ type Prober interface {
 	Probe(ctx context.Context, path string) ([]byte, error)
 }
 
+// SerieImporter é o ponto de AUTO-IMPORT que o scanner de séries (0034) consome
+// quando a série de uma pasta ainda não está no catálogo: busca pelo nome no
+// provider, escolhe o match exato e único e importa a árvore (reusa o enrich da Fase
+// 1). Interface para injetar sem acoplar o scanner ao enrich e para testar com um
+// stub. Implementado por *enrich.Servico.
+type SerieImporter interface {
+	ImportarSeriePorNome(ctx context.Context, nome string, langs []string) (string, error)
+}
+
 // job é o estado em memória de um scan de um datasource.
 type job struct {
 	id         string
@@ -80,8 +89,24 @@ type Manager struct {
 	novoID func() string
 	agora  func() time.Time
 
+	// serieImporter e idiomas alimentam o caminho de SÉRIE (0034): auto-import da
+	// árvore pelo nome e os idiomas permitidos das settings. Ambos nil quando o
+	// enrich está desligado — sem eles, uma série ausente do catálogo cai na fila de
+	// revisão (rascunho) em vez de ser importada. Configurados via ConfigurarSeries.
+	serieImporter SerieImporter
+	idiomas       func(ctx context.Context) []string
+
 	mu   sync.Mutex
 	jobs map[string]*job
+}
+
+// ConfigurarSeries injeta o auto-import de séries (0034): o importador por nome e a
+// fonte dos idiomas permitidos. Chamado pelo server após montar o enrich; sem isso o
+// scanner de séries opera em modo degradado (não importa, só casa o que já existe e
+// manda o resto para revisão).
+func (m *Manager) ConfigurarSeries(imp SerieImporter, idiomas func(ctx context.Context) []string) {
+	m.serieImporter = imp
+	m.idiomas = idiomas
 }
 
 // NewManager cria um Manager com o ffprobe real do PATH.
