@@ -28,8 +28,6 @@ const (
 	// relacaoTemporada/relacaoEpisodio são os entity_relation.kind da árvore.
 	relacaoTemporada = "tv_season"
 	relacaoEpisodio  = "tv_episode"
-	// kindStill é o asset do frame/screencap do episódio (análogo ao pôster).
-	kindStill = "still"
 	// nsTV é o namespace do extension_data da vertical de séries (core.tv@1).
 	nsTV = "core.tv@1"
 )
@@ -115,18 +113,19 @@ func (s *Servico) acharOuCriarTemporada(ctx context.Context, serieID string, t p
 	return novo, nil
 }
 
-// importarEpisodio cria (ou reusa) o episódio, cacheia seu still e liga-o à temporada
-// com sort_index = número do episódio NA ORDENAÇÃO DEFAULT. Isolada para o gocyclo.
+// importarEpisodio cria (ou reusa) o episódio e liga-o à temporada com sort_index =
+// número do episódio NA ORDENAÇÃO DEFAULT. Isolada para o gocyclo.
+//
+// O still do episódio NÃO é baixado no import: uma série tem centenas/milhares de
+// episódios (Looney Tunes ~1195), e baixar um still por episódio síncrono no
+// POST /import é lento e hostil ao CDN. O artwork de episódio (still) fica para a
+// Fase 3 (proxy/cache sob demanda), junto com o artwork de temporada — ver briefing
+// 0031 §7. Aqui só persistimos o episódio e a relação ordenada.
 func (s *Servico) importarEpisodio(ctx context.Context, tempID, source, defaultType string, ep provider.EpisodioExterno, langs []string) {
 	epID, err := s.acharOuCriarEpisodio(ctx, source, ep, langs)
 	if err != nil {
 		log.Printf("enrich: episodio %s falhou (segue): %v", ep.SourceID, err)
 		return
-	}
-	if ep.StillURL != "" {
-		if err := s.cachearArte(ctx, epID, ep.StillURL, kindStill, "still"); err != nil {
-			log.Printf("enrich: still do episodio %s falhou (segue): %v", epID, err)
-		}
 	}
 	s.ligarFilho(ctx, tempID, epID, relacaoEpisodio, ep.Numbering[defaultType].Number)
 }
