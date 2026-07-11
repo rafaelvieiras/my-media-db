@@ -52,6 +52,7 @@ describe('DatasourceList', () => {
       id: '1',
       path: '/mnt/filmes',
       type: 'movie',
+      content_type: 'movie',
       state: 'online',
       last_scan: null,
     }
@@ -82,6 +83,7 @@ describe('DatasourceList', () => {
       id: '7',
       path: '/tv',
       type: 'tv',
+      content_type: 'series',
       state: 'online',
       last_scan: null,
     }

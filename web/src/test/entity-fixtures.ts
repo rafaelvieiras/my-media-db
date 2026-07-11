@@ -139,6 +139,7 @@ export function baseEntity(over: Partial<ResolvedEntity> = {}): ResolvedEntity {
     similar: [],
     external_links: {},
     ancestors: [],
+    ownership: null,
     ...over,
   }
 }

@@ -895,6 +895,13 @@ export interface components {
       }
       /** @description Trilha RAIZ→PAI (breadcrumb, 0032) na árvore de séries: episódio → [série, temporada]; temporada → [série]; obra de topo (movie/tv/collection) → `[]`. Nunca null. */
       ancestors: components['schemas']['AncestorRef'][]
+      /** @description Posse AGREGADA de uma entity-pai da árvore de séries (0034): episódios possuídos sobre o total. Presente só para `tv` (soma across temporadas) e `season` (episódios diretos); `null` para movie/episódio/coleção (que usam a posse simples de `owned`). */
+      ownership: components['schemas']['OwnershipInfo'] | null
+    }
+    /** @description Posse agregada de uma temporada/série (0034): episódios possuídos (`owned_count`) sobre o total de episódios (`total_count`). Alimenta o badge "possui 12/13". Derivada dos vínculos media_file_entity (kind='tv_episode'). */
+    OwnershipInfo: {
+      owned_count: number
+      total_count: number
     }
     /** @description Nó ancestral do breadcrumb (0032): o mínimo para renderizar e navegar a um nível-pai da árvore de séries. */
     AncestorRef: {
@@ -980,6 +987,8 @@ export interface components {
       id: string
       path: string
       type: string
+      /** @description Natureza da biblioteca (0034): `movie` (default) | `series`. O scanner ramifica o fluxo de match por este valor. Campo livre (sem CHECK); a UI oferece só movie/series. */
+      content_type: string
       /** @enum {string} */
       state: 'online' | 'offline'
       last_scan: string | null
@@ -991,6 +1000,11 @@ export interface components {
       path: string
       /** @enum {string} */
       type: 'movie' | 'tv'
+      /**
+       * @description Natureza da biblioteca (0034). Opcional; omitido => `movie` (compat). `series` liga o fluxo de scan de séries (arquivo→episódio).
+       * @enum {string}
+       */
+      content_type?: 'movie' | 'series'
     }
     ScanStatus: {
       running: boolean

@@ -6,9 +6,11 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { ApiError, createLibrary, type CreateSource } from '@/lib/api'
 
-// Formulário de adição de datasource: caminho + tipo (movie/tv). Erro de path
+// Formulário de adição de datasource: caminho + tipo (Filmes/Séries). Erro de path
 // inválido vindo da API aparece INLINE (a `message` pt-BR do envelope). Ao criar
-// com sucesso, invalida a lista de datasources e limpa o caminho.
+// com sucesso, invalida a lista de datasources e limpa o caminho. O seletor define
+// tanto `type` (movie/tv, contrato legado) quanto `content_type` (movie/series,
+// 0034) — este último liga o fluxo de scan de séries (arquivo→episódio).
 export function DatasourceForm() {
   const queryClient = useQueryClient()
   const [path, setPath] = useState('')
@@ -28,7 +30,10 @@ export function DatasourceForm() {
     if (!limpo) {
       return
     }
-    mutation.mutate({ path: limpo, type })
+    // Séries (type=tv) marca a biblioteca como content_type='series'; Filmes fica
+    // 'movie'. É o valor por que o scanner ramifica o fluxo de match (0034).
+    const content_type = type === 'tv' ? 'series' : 'movie'
+    mutation.mutate({ path: limpo, type, content_type })
   }
 
   const mensagemErro =

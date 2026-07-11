@@ -37,9 +37,44 @@ describe('DatasourceForm', () => {
     expect(JSON.parse(init.body)).toEqual({
       path: '/mnt/filmes',
       type: 'movie',
+      content_type: 'movie',
     })
     // Ao concluir com sucesso, o campo de caminho é limpo.
     await waitFor(() => expect(caminho).toHaveValue(''))
+  })
+
+  it('marca a biblioteca como séries (content_type) ao escolher Séries', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        id: '2',
+        path: '/mnt/series',
+        type: 'tv',
+        content_type: 'series',
+        state: 'online',
+        last_scan: null,
+      }),
+    } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderWithClient(<DatasourceForm />)
+
+    await user.type(
+      screen.getByLabelText('Caminho do datasource'),
+      '/mnt/series',
+    )
+    await user.selectOptions(screen.getByLabelText('Tipo do datasource'), 'tv')
+    await user.click(screen.getByRole('button', { name: /Adicionar/ }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse(init.body)).toEqual({
+      path: '/mnt/series',
+      type: 'tv',
+      content_type: 'series',
+    })
   })
 
   it('exibe o erro da API inline (path inválido)', async () => {

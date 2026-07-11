@@ -69,6 +69,24 @@ function SeloEditado({ ativo }: { ativo: boolean }) {
   return ativo ? <Badge variant="default">editado</Badge> : null
 }
 
+// SeloPosse mostra a posse AGREGADA de uma temporada/série (0034): "possui 12/13
+// episódios". Discreto (secondary). Null quando não há agregação (a API só envia
+// `ownership` para tv/season; movie/episódio/coleção usam a posse simples).
+function SeloPosse({
+  ownership,
+}: {
+  ownership: { owned_count: number; total_count: number } | null
+}) {
+  if (!ownership) {
+    return null
+  }
+  return (
+    <Badge variant="secondary" className="w-fit">
+      possui {ownership.owned_count}/{ownership.total_count} episódios
+    </Badge>
+  )
+}
+
 // ExcluirColecao apaga a entity COLEÇÃO (briefing 0026) via DELETE /entities/{id}
 // (purga com CASCADE das relações — os filmes membros NÃO são apagados). Ação
 // DESTRUTIVA, então confirma em DUAS etapas (mesmo padrão da remoção de membro) e
@@ -199,6 +217,7 @@ export function EntityDetailScreen() {
             <SeloEditado
               ativo={temOverrideEditado(blob, 'title', lang, fields)}
             />
+            <SeloPosse ownership={data.ownership} />
             <Button asChild variant="outline" size="sm" className="ml-auto">
               <Link to="/entities/$id/edit" params={{ id }}>
                 <Pencil aria-hidden />
