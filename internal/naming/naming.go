@@ -158,3 +158,202 @@ func descartarTokensTecnicos(s string) string {
 func normalizarEspacos(s string) string {
 	return strings.TrimSpace(reSpaces.ReplaceAllString(s, " "))
 }
+
+// ─── Parser de TV (episódios) ────────────────────────────────────────────────
+//
+// ParseEpisode reconhece os padrões de nome de EPISÓDIO das convenções
+// Kodi/Jellyfin/Plex/Sonarr e do fansub de anime (absoluto). É um leitor puro,
+// independente do Parse de filme (que fica intacto): o scanner de séries decide
+// qual chamar pelo content_type da biblioteca. Conservador de propósito — na
+// dúvida devolve (zero, false) e o item vai para a fila de revisão, em vez de
+// inventar um número errado (briefing 0034 §2.4).
+
+// maxEpisodiosNoRange é o teto de episódios que um range/combinado num único
+// arquivo pode expandir. Ranges maiores que isto (ex.: "S01E01-E99") são quase
+// sempre erro de parse (um "99" que era outra coisa) — melhor mandar para
+// revisão do que criar dezenas de vínculos espúrios.
+const maxEpisodiosNoRange = 24
+
+// EpisodeInfo é o resultado de ler um nome de episódio. Zero-value + false
+// significa "não reconhecido".
+type EpisodeInfo struct {
+	// Season é o número da temporada. Pode ser 0 (specials) e NÃO é
+	// necessariamente 1..N (box-set, ano). Fica 0 no caminho absoluto.
+	Season int
+	// Episodes são os episódios daquela temporada, já expandidos (um range
+	// "E01-E03" vira [1,2,3]; "E01E02" vira [1,2]). Vazio no caminho absoluto.
+	Episodes []int
+	// Absolute são os números absolutos (anime), já expandidos. Vazio fora do
+	// caminho absoluto.
+	Absolute []int
+	// IsAbsolute marca que o reconhecimento veio do padrão absoluto (sem SxxEyy):
+	// o scanner casa contra o absolute_number, não contra (season, number).
+	IsAbsolute bool
+}
+
+var (
+	// SxxEyy com temporada explícita, capturando o restante da string a partir
+	// do primeiro Eyy para as extensões (ranges com hífen e episódios colados).
+	// Ex.: "S01E05", "s1e5", "S01E01-E03", "S01E01E02". O grupo 1 é a temporada,
+	// o grupo 2 o primeiro episódio, o grupo 3 a "cauda" (extensões).
+	//
+	// A cauda só aceita tokens de episódio ESTREITAMENTE colados ao Eyy: "Edd"
+	// (colado, Kodi "E01E02"), "-Edd" ou "-dd" (range com hífen). NÃO aceita
+	// separador de espaço/ponto/underscore — senão um "S01E05 1080p" arrastaria
+	// "1080" como se fosse outro episódio (bug clássico). Tokens de qualidade
+	// vêm separados por espaço/ponto e por isso ficam de fora.
+	reEpSeason = regexp.MustCompile(`(?i)\bs(\d{1,4})[ ._-]?e(\d{1,4})((?:-?e\d{1,4}|-\d{1,4})*)`)
+	// Cauda de range/combinado: cada ocorrência é um número de episódio (com ou
+	// sem "E", com ou sem hífen). Usada para expandir "-E03"/"E02"/"-03".
+	reEpTailNum = regexp.MustCompile(`(?i)e?(\d{1,4})`)
+	// Absoluto de anime: separador " - " (espaço-hífen-espaço) seguido de 1..4
+	// dígitos e, opcionalmente, um range "-NNN". Conservador: EXIGE o separador
+	// " - " para não confundir com título; o filtro reAbsoluteVeto rejeita ano,
+	// resolução, codec etc. logo depois. Ex.: "Show - 013", "Show - 013-015".
+	reAbsolute = regexp.MustCompile(`(?i)(?:^|\s)-\s+(\d{1,4})(?:-(\d{1,4}))?(?:\s|$|[._\[(])`)
+	// Veto do absoluto: se logo após o número vier um token que o desqualifica
+	// (p de "1080p", "x264" já é filtrado por não casar dígitos puros), tratamos
+	// como não-episódio. Aqui pegamos o sufixo "p"/"i" colado (resolução) e "x"
+	// (codec) que sobreviveriam ao \d{1,4}. Simples e conservador.
+	reAbsoluteVetoSuffix = regexp.MustCompile(`(?i)^\s*-\s+\d{1,4}[pikx]`)
+)
+
+// ParseEpisode lê um nome de arquivo (SEM extensão) e devolve os episódios que
+// ele expressa. Retorna (EpisodeInfo, true) quando reconhece um padrão de
+// episódio; (zero, false) caso contrário. É idempotente e sem efeitos colaterais.
+//
+// Ordem de tentativa: primeiro o padrão com temporada (SxxEyy e suas extensões,
+// que é o mais específico e menos ambíguo); só se ele não casar tentamos o
+// absoluto (anime), que é mais arriscado e por isso mais restrito.
+//
+// Limites conhecidos (documentados de propósito — casos duvidosos → false, o
+// scanner manda para revisão em vez de errar):
+//   - Não trata o padrão "1x05" (Kodi antigo) — pode colidir com resolução/relação
+//     de aspecto; fica de fora até haver demanda.
+//   - Absoluto EXIGE o separador " - " (espaço-hífen-espaço). "Show 013" (sem
+//     hífen) NÃO é reconhecido: "013" solto é ambíguo demais (parte, faixa, ano
+//     curto). Preferimos revisão a um palpite.
+//   - Ranges são expandidos só quando crescentes e dentro de maxEpisodiosNoRange;
+//     range invertido (E05-E03) ou gigante → false.
+func ParseEpisode(name string) (EpisodeInfo, bool) {
+	if info, ok := parseEpisodeSeason(name); ok {
+		return info, true
+	}
+	return parseEpisodeAbsolute(name)
+}
+
+// parseEpisodeSeason cobre SxxEyy e as extensões de múltiplos episódios num
+// arquivo: range com hífen ("S01E01-E03", "S01E01-03") e episódios colados
+// estilo Kodi ("S01E01E02E03").
+func parseEpisodeSeason(name string) (EpisodeInfo, bool) {
+	m := reEpSeason.FindStringSubmatch(name)
+	if m == nil {
+		return EpisodeInfo{}, false
+	}
+	season, err := strconv.Atoi(m[1])
+	if err != nil {
+		return EpisodeInfo{}, false
+	}
+	primeiro, err := strconv.Atoi(m[2])
+	if err != nil {
+		return EpisodeInfo{}, false
+	}
+
+	// A cauda (m[3]) traz os episódios adicionais (range ou colados). Coletamos
+	// todos os números — o primeiro deles, quando existe, define se é range
+	// (dois números = extremos) ou lista colada (>=2 já explícitos).
+	var cauda []int
+	for _, t := range reEpTailNum.FindAllStringSubmatch(m[3], -1) {
+		n, err := strconv.Atoi(t[1])
+		if err != nil {
+			return EpisodeInfo{}, false
+		}
+		cauda = append(cauda, n)
+	}
+
+	episodios, ok := montarEpisodios(m[3], primeiro, cauda)
+	if !ok {
+		return EpisodeInfo{}, false
+	}
+	return EpisodeInfo{Season: season, Episodes: episodios}, true
+}
+
+// montarEpisodios decide, a partir da forma da cauda, se ela é um RANGE (um
+// único número após um hífen → expandir do primeiro até ele) ou uma LISTA colada
+// (episódios já explícitos, estilo "E01E02E03"). Devolve a lista final expandida
+// e ordenada por ocorrência, ou false se algo for incoerente (range invertido,
+// grande demais, duplicado fora de ordem).
+func montarEpisodios(caudaRaw string, primeiro int, cauda []int) ([]int, bool) {
+	if len(cauda) == 0 {
+		return []int{primeiro}, true
+	}
+
+	// Range com hífen e um único número na cauda: "E01-E03" / "E01-03".
+	if strings.Contains(caudaRaw, "-") && len(cauda) == 1 {
+		fim := cauda[0]
+		if fim <= primeiro || fim-primeiro+1 > maxEpisodiosNoRange {
+			return nil, false // invertido, degenerado ou grande demais → revisão.
+		}
+		out := make([]int, 0, fim-primeiro+1)
+		for n := primeiro; n <= fim; n++ {
+			out = append(out, n)
+		}
+		return out, true
+	}
+
+	// Lista colada estilo Kodi: "E01E02E03" (ou com hífens entre pares). Cada
+	// número é um episódio explícito; exigimos estritamente crescente para não
+	// aceitar sequências absurdas, e respeitamos o teto.
+	out := make([]int, 0, len(cauda)+1)
+	out = append(out, primeiro)
+	anterior := primeiro
+	for _, n := range cauda {
+		if n <= anterior {
+			return nil, false // não-crescente/duplicado → revisão.
+		}
+		out = append(out, n)
+		anterior = n
+	}
+	if len(out) > maxEpisodiosNoRange {
+		return nil, false
+	}
+	return out, true
+}
+
+// parseEpisodeAbsolute cobre o padrão absoluto de anime ("Show - 013",
+// "[Group] Show - 013", "Show - 013-015"). É o caminho mais arriscado: exige o
+// separador " - " e veta sufixos técnicos (resolução/codec) que sobreviveriam ao
+// casamento de dígitos.
+func parseEpisodeAbsolute(name string) (EpisodeInfo, bool) {
+	loc := reAbsolute.FindStringSubmatchIndex(name)
+	if loc == nil {
+		return EpisodeInfo{}, false
+	}
+	// Veto: o trecho a partir do hífen parece "- 1080p"/"- 720p"/"- 264x"? Então
+	// não é episódio absoluto, é qualidade/codec.
+	if reAbsoluteVetoSuffix.MatchString(name[loc[0]:]) {
+		return EpisodeInfo{}, false
+	}
+	m := reAbsolute.FindStringSubmatch(name)
+	ini, err := strconv.Atoi(m[1])
+	if err != nil || ini == 0 {
+		return EpisodeInfo{}, false
+	}
+	// Ano entre 1900 e 2099 solto após " - " é quase sempre ano, não episódio
+	// absoluto — conservador, mandamos para revisão.
+	if ini >= 1900 && ini <= 2099 {
+		return EpisodeInfo{}, false
+	}
+	if m[2] == "" {
+		return EpisodeInfo{Absolute: []int{ini}, IsAbsolute: true}, true
+	}
+	fim, err := strconv.Atoi(m[2])
+	if err != nil || fim <= ini || fim-ini+1 > maxEpisodiosNoRange {
+		return EpisodeInfo{}, false
+	}
+	out := make([]int, 0, fim-ini+1)
+	for n := ini; n <= fim; n++ {
+		out = append(out, n)
+	}
+	return EpisodeInfo{Absolute: out, IsAbsolute: true}, true
+}
