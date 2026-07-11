@@ -31,11 +31,16 @@ export function precisaRevisao(card: {
   return c !== null && c > 0 && c < LIMIAR_BAIXA_CONFIANCA
 }
 
-// Rótulo pt-BR do tipo de mídia para exibição.
+// Rótulo pt-BR do tipo de mídia para exibição. Cobre os tipos canônicos: os de
+// topo (filme/série/coleção) e os nós da árvore de séries (temporada/episódio,
+// 0031). Tipo desconhecido ecoa cru (nunca quebra a UI).
 export function rotuloTipo(type: string): string {
   const mapa: Record<string, string> = {
     movie: 'Filme',
     tv: 'Série',
+    collection: 'Coleção',
+    season: 'Temporada',
+    episode: 'Episódio',
   }
   return mapa[type] ?? type
 }

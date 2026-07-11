@@ -1191,7 +1191,13 @@ components:
       required: [id, type, title, status, owned, file_count, match_confidence, poster_url]
       properties:
         id: { type: string }
-        type: { type: string }
+        type:
+          type: string
+          enum: [movie, tv, collection, season, episode]
+          description: >
+            Tipo canonico da entity. `season`/`episode` (0031) compoem a arvore de
+            series: GET /members de uma `tv` traz as `season`s; de uma `season`, os
+            `episode`s (ordenados por sort_index).
         title: { type: string }
         status: { type: string }
         owned:
@@ -1431,7 +1437,12 @@ components:
          backdrop_url, videos, collection, similar, external_links]
       properties:
         id: { type: string }
-        type: { type: string }
+        type:
+          type: string
+          enum: [movie, tv, collection, season, episode]
+          description: >
+            Tipo canonico da entity. `season`/`episode` (0031) sao os nos internos da
+            arvore de series (mesmo shape resolvido; navegados por GET /members).
         title: { type: string }
         original_title: { type: [string, "null"] }
         description: { type: [string, "null"] }

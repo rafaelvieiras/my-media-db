@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -80,6 +81,58 @@ func TestJornadaImportarColecao(t *testing.T) {
 	}
 	if t1, _ := segundo["title"].(string); t1 != "Matrix Reloaded" {
 		t.Errorf("2o membro = %q, quero \"Matrix Reloaded\" (2003 depois)", segundo["title"])
+	}
+}
+
+// TestJornadaImportarSerie: importar uma serie (type=tv) cria a arvore
+// serie->temporada->episodio (entities tv/season/episode, briefing 0031/ADR-0021) e
+// GET /members devolve os filhos ordenados por sort_index — as temporadas na serie e
+// os episodios na temporada. Exercita o provider fake como SerieProvider (arvore
+// canned), o import da arvore no enrich e a ramificacao de montarMembros por tipo.
+func TestJornadaImportarSerie(t *testing.T) {
+	c := novoHarness(t)
+
+	// A serie fixture do fake tem id 71663 (2 temporadas de 3 episodios).
+	serie := c.obj(http.MethodPost, "/api/v1/import",
+		map[string]string{"source": "tmdb", "source_id": "71663", "type": "tv"}, http.StatusCreated)
+	if got := str(t, serie, "type"); got != "tv" {
+		t.Fatalf("type = %q, quero \"tv\"", got)
+	}
+	serieID := str(t, serie, "id")
+
+	// Temporadas: 2, ordenadas por sort_index (season_number 1 antes de 2).
+	temporadas := c.arr(http.MethodGet, "/api/v1/entities/"+serieID+"/members", nil, http.StatusOK)
+	if len(temporadas) != 2 {
+		t.Fatalf("temporadas = %d, quero 2", len(temporadas))
+	}
+	t1, _ := temporadas[0].(map[string]any)
+	t2, _ := temporadas[1].(map[string]any)
+	if tp := str(t, t1, "type"); tp != "season" {
+		t.Errorf("1a temporada type = %q, quero \"season\"", tp)
+	}
+	// Temporada 1 sem Name na fonte -> titulo gerado "Temporada 1" (independe de idioma).
+	if got := str(t, t1, "title"); got != "Temporada 1" {
+		t.Errorf("1a temporada title = %q, quero \"Temporada 1\"", got)
+	}
+	if tp := str(t, t2, "type"); tp != "season" {
+		t.Errorf("2a temporada type = %q, quero \"season\"", tp)
+	}
+
+	// Episodios da 1a temporada: 3, ordenados por numero (official 101,102,103).
+	seasonID := str(t, t1, "id")
+	eps := c.arr(http.MethodGet, "/api/v1/entities/"+seasonID+"/members", nil, http.StatusOK)
+	if len(eps) != 3 {
+		t.Fatalf("episodios = %d, quero 3", len(eps))
+	}
+	for i, numero := range []string{"101", "102", "103"} {
+		m, _ := eps[i].(map[string]any)
+		if tp := str(t, m, "type"); tp != "episode" {
+			t.Errorf("episodio[%d] type = %q, quero \"episode\"", i, tp)
+		}
+		// Titulo depende do idioma (pt-BR "Episodio NNN"); asserta o numero, robusto a idioma.
+		if got := str(t, m, "title"); !strings.Contains(got, numero) {
+			t.Errorf("episodio[%d] title = %q, quero conter %q (ordem por numero)", i, got, numero)
+		}
 	}
 }
 

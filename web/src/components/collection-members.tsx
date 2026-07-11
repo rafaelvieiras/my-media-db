@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CollectionMemberPicker } from '@/components/collection-member-picker'
+import { GradeMembros } from '@/components/entity-members'
 import { PosterCard } from '@/components/poster-card'
-import { ErrorState, LoadingState } from '@/components/query-states'
 import { useLanguage } from '@/lib/language-context'
 import { entityMembersQueryOptions } from '@/lib/queries'
 import { removeCollectionMember, type EntityCard } from '@/lib/api'
@@ -67,31 +67,25 @@ export function CollectionMembers({
         />
       ) : null}
 
-      {isPending ? (
-        <LoadingState label="Carregando itens da coleção…" />
-      ) : isError ? (
-        <ErrorState title="Não foi possível carregar os itens da coleção" />
-      ) : data.length > 0 ? (
-        <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {data.map((card) => (
-            <li key={card.id}>
-              {editable ? (
-                <MembroEditavel
-                  colecaoId={id}
-                  card={card}
-                  onAtualizar={atualizar}
-                />
-              ) : (
-                <PosterCard card={card} />
-              )}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Esta coleção ainda não tem itens.
-        </p>
-      )}
+      <GradeMembros
+        itens={data}
+        isPending={isPending}
+        isError={isError}
+        carregando="Carregando itens da coleção…"
+        erro="Não foi possível carregar os itens da coleção"
+        vazio="Esta coleção ainda não tem itens."
+        render={(card) =>
+          editable ? (
+            <MembroEditavel
+              colecaoId={id}
+              card={card}
+              onAtualizar={atualizar}
+            />
+          ) : (
+            <PosterCard card={card} />
+          )
+        }
+      />
     </section>
   )
 }

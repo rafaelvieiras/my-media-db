@@ -16,6 +16,7 @@ import { rotuloIdioma } from '@/lib/languages'
 import { temOverrideEditado } from '@/lib/override-fields'
 import { ArtGallery } from '@/components/art-gallery'
 import { CollectionMembers } from '@/components/collection-members'
+import { MembrosSomenteLeitura } from '@/components/entity-members'
 import { MediaInfoTable } from '@/components/media-info-table'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import { RichDetailView } from '@/components/rich-detail-view'
@@ -227,9 +228,34 @@ export function EntityDetailScreen() {
           </>
         ) : null}
 
+        {/* Árvore de séries (0031), somente leitura: a série lista as TEMPORADAS; a
+            temporada lista os EPISÓDIOS numerados. Reusa o molde pai-com-filhos
+            (/members) sem o add/remove — a Fase 1 não edita a árvore à mão. */}
+        {data.type === 'tv' ? (
+          <MembrosSomenteLeitura
+            id={id}
+            titulo="Temporadas"
+            carregando="Carregando temporadas…"
+            erro="Não foi possível carregar as temporadas"
+            vazio="Esta série ainda não tem temporadas."
+          />
+        ) : null}
+        {data.type === 'season' ? (
+          <MembrosSomenteLeitura
+            id={id}
+            titulo="Episódios"
+            carregando="Carregando episódios…"
+            erro="Não foi possível carregar os episódios"
+            vazio="Esta temporada ainda não tem episódios."
+            numerar
+          />
+        ) : null}
+
         <ArtGallery entityId={id} />
 
-        {data.type !== 'collection' ? (
+        {/* Arquivos só nos nós-folha que têm media_file: filme e episódio. Coleção,
+            série e temporada agrupam filhos (sem arquivo próprio) — sem a seção. */}
+        {data.type === 'movie' || data.type === 'episode' ? (
           <section className="flex flex-col gap-3">
             <h2 className="font-heading text-lg font-medium">Arquivos</h2>
             <MediaInfoTable entityId={id} />

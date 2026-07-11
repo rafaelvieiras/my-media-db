@@ -5,7 +5,8 @@ import { EntityDetailScreen } from '@/routes/entity-detail'
 import { LanguageProvider } from '@/lib/language-context'
 import type { ResolvedEntity } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
-import type { OverrideBlob } from '@/lib/api'
+import type { EntityCard, OverrideBlob } from '@/lib/api'
+import { entityCardBase as card } from '@/test/detail-harness'
 import {
   baseEntity,
   okFields,
@@ -22,7 +23,11 @@ vi.mock('@tanstack/react-router', () => ({
 // Roteia o fetch: settings, descritores (para o selo "editado" saber o que é
 // traduzível, 0030), a entity resolvida (`?lang=`), os arquivos e o blob de
 // override (vazio por padrão; alguns testes passam um blob para o selo "editado").
-function fetchRouter(entity: ResolvedEntity, blob: OverrideBlob = {}) {
+function fetchRouter(
+  entity: ResolvedEntity,
+  blob: OverrideBlob = {},
+  membros: EntityCard[] = [],
+) {
   return vi.fn(async (url: string) => {
     const u = String(url)
     if (u === '/api/v1/settings/languages') {
@@ -40,6 +45,9 @@ function fetchRouter(entity: ResolvedEntity, blob: OverrideBlob = {}) {
     if (u.startsWith('/api/v1/entities/e1/assets')) {
       return okJson([])
     }
+    if (u.startsWith('/api/v1/entities/e1/members')) {
+      return okJson(membros)
+    }
     if (u.startsWith('/api/v1/entities/e1')) {
       return okJson(entity)
     }
@@ -55,8 +63,12 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function renderDetail(entity: ResolvedEntity, blob?: OverrideBlob) {
-  vi.stubGlobal('fetch', fetchRouter(entity, blob))
+function renderDetail(
+  entity: ResolvedEntity,
+  blob?: OverrideBlob,
+  membros?: EntityCard[],
+) {
+  vi.stubGlobal('fetch', fetchRouter(entity, blob, membros))
   return renderWithClient(
     <LanguageProvider>
       <EntityDetailScreen />
@@ -139,5 +151,55 @@ describe('EntityDetailScreen — selo "editado" e nota local', () => {
     // No mock do Link, `to` vira o href; o botão usa asChild sobre o <Link>.
     const editar = screen.getByRole('link', { name: 'Editar' })
     expect(editar).toBeInTheDocument()
+  })
+})
+
+describe('EntityDetailScreen — árvore de séries (0031)', () => {
+  it('série (tv) lista as Temporadas e não mostra Arquivos', async () => {
+    renderDetail(baseEntity({ type: 'tv', title: 'Os Simpsons' }), {}, [
+      card({ id: 's1', title: 'Temporada 1', type: 'season' }),
+      card({ id: 's2', title: 'Temporada 2', type: 'season' }),
+    ])
+
+    await waitFor(() =>
+      expect(screen.getByText('Os Simpsons')).toBeInTheDocument(),
+    )
+    expect(
+      screen.getByRole('heading', { name: 'Temporadas' }),
+    ).toBeInTheDocument()
+    expect(await screen.findByText('Temporada 1')).toBeInTheDocument()
+    expect(screen.getByText('Temporada 2')).toBeInTheDocument()
+    // Read-only (Fase 1): sem o add/remove editável da coleção.
+    expect(screen.queryByText('Adicionar item')).toBeNull()
+    // Série agrupa temporadas — sem arquivo próprio.
+    expect(screen.queryByRole('heading', { name: 'Arquivos' })).toBeNull()
+  })
+
+  it('temporada (season) lista os Episódios numerados, sem Arquivos', async () => {
+    renderDetail(baseEntity({ type: 'season', title: 'Temporada 1' }), {}, [
+      card({ id: 'e1', title: 'Piloto', type: 'episode' }),
+      card({ id: 'e2', title: 'Segundo', type: 'episode' }),
+    ])
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Episódios' }),
+      ).toBeInTheDocument(),
+    )
+    expect(await screen.findByText('Piloto')).toBeInTheDocument()
+    expect(screen.getByText('Episódio 1')).toBeInTheDocument()
+    expect(screen.getByText('Episódio 2')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Arquivos' })).toBeNull()
+  })
+
+  it('episódio (episode) mostra Arquivos e não é um nó pai', async () => {
+    renderDetail(baseEntity({ type: 'episode', title: 'Piloto' }))
+
+    await waitFor(() => expect(screen.getByText('Piloto')).toBeInTheDocument())
+    expect(
+      screen.getByRole('heading', { name: 'Arquivos' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Temporadas' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Episódios' })).toBeNull()
   })
 })

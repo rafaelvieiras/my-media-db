@@ -54,4 +54,10 @@ describe('rotuloTipo', () => {
     expect(rotuloTipo('tv')).toBe('Série')
     expect(rotuloTipo('other')).toBe('other')
   })
+
+  it('traduz os tipos da árvore de séries (0031)', () => {
+    expect(rotuloTipo('collection')).toBe('Coleção')
+    expect(rotuloTipo('season')).toBe('Temporada')
+    expect(rotuloTipo('episode')).toBe('Episódio')
+  })
 })

@@ -698,7 +698,11 @@ export interface components {
     }
     EntityCard: {
       id: string
-      type: string
+      /**
+       * @description Tipo canonico da entity. `season`/`episode` (0031) compoem a arvore de series: GET /members de uma `tv` traz as `season`s; de uma `season`, os `episode`s (ordenados por sort_index).
+       * @enum {string}
+       */
+      type: 'movie' | 'tv' | 'collection' | 'season' | 'episode'
       title: string
       status: string
       /** @description Posse derivada (EXISTS media_file present). */
@@ -836,7 +840,11 @@ export interface components {
     /** @description Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a Fase 3 preenche os mesmos campos com override/externo sem mudar o shape. Os campos RICOS (tagline, keywords, runtime, certification, vote_average, backdrop_url, videos, collection, similar, external_links) dão PARIDADE com o detalhe do externo (0022/0023): vêm da camada externa já enriquecida e usam o MESMO shape (componentes ExternalVideo/Collection/Similar). Os gêneros NÃO têm campo próprio — são as `tags` (que já os carregam). */
     ResolvedEntity: {
       id: string
-      type: string
+      /**
+       * @description Tipo canonico da entity. `season`/`episode` (0031) sao os nos internos da arvore de series (mesmo shape resolvido; navegados por GET /members).
+       * @enum {string}
+       */
+      type: 'movie' | 'tv' | 'collection' | 'season' | 'episode'
       title: string
       original_title: string | null
       description: string | null

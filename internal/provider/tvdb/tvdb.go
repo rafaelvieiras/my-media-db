@@ -26,8 +26,6 @@ const (
 	baseURLPadrao = "https://api4.thetvdb.com/v4"
 	// timeoutPadrao limita cada requisição; estouro vira erro (o handler degrada).
 	timeoutPadrao = 12 * time.Second
-	// pageSize é o tamanho de página dos episódios (o TheTVDB usa 500/pág via links.next).
-	pageSize = 500
 )
 
 // Credencial é a credencial resolvida do TheTVDB: a project-supported apikey basta
