@@ -53,6 +53,14 @@ jobs:
           go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      # O pacote internal/mediainfo tem um teste de integracao que roda o ffprobe
+      # DE VERDADE (gera um clipe com ffmpeg); ele se auto-pula se os binarios
+      # faltam. Sem ffmpeg no runner esse caminho fica sem cobertura e o total Go
+      # cai ~0,3% (73,9% vs 74,2% do baseline, capturado com ffmpeg presente).
+      # Instalar ffmpeg faz o CI reproduzir o baseline e exercitar a integracao.
+      - name: Install ffmpeg (teste real do ffprobe)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Install web dependencies
         working-directory: web
         run: npm ci
