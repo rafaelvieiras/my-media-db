@@ -59,6 +59,22 @@ das três camadas antes de o override (0016) aterrissar.
 
 ---
 
+## Séries (TV) — hierarquia, ordenações e providers — fundacional, levantado pós-0030
+
+Séries são o salto além de filmes (item único): hierarquia série→temporada→episódio
+e as múltiplas ordenações de temporada (aired/DVD/absolute). Fundadas por **pesquisa
+empírica** dos dois providers (TMDB + TheTVDB) e das convenções de media servers.
+
+| ID | Questão | Status | Decisão | Destino |
+|---|---|---|---|---|
+| **TV1** | Como representar as múltiplas ordenações de temporada sem duplicar episódios? | **documentado** | **Episódio = grão fino, entity canônica única** (ancorada no `episode.id`); **ordenação (season type) = projeção de numeração, nunca muda granularidade** (confirmado: união de todas as ordens = superconjunto `official`, zero ids próprios nas alternativas; nenhum provider tem "episódio combinado"). Numeração multi-ordem no `extension_data core.tv@1`. | [ADR-0021](adr/0021-modelo-de-series-hierarquia-ordenacoes-vinculo-arquivo.md) |
+| **TV2** | Temporada é entity (com artwork/override próprios) para toda ordenação ou só a default? | **documentado** | **Enxuto: temporada-entity só para a ordenação _default_ da série** (configurável). Ordens alternativas = numeração derivada, agrupada na leitura, sem entity. (Uniforme — ~103 entities p/ Looney Tunes — descartado.) | [ADR-0021](adr/0021-modelo-de-series-hierarquia-ordenacoes-vinculo-arquivo.md) |
+| **TV3** | Como ligar um arquivo que empacota vários episódios (rip de streaming) ao catálogo? | **documentado** | **Vínculo arquivo↔episódio N:M, ancorado no id** (junção `media_file_episode(…, ordinal)`). O "combinado" é propriedade do **arquivo/release**, não do catálogo: 1 arquivo→N episódios; 1 episódio→N arquivos (multi-part, herdado de filmes). Ancorar no id (não no número) imuniza contra re-scrape. | [ADR-0021](adr/0021-modelo-de-series-hierarquia-ordenacoes-vinculo-arquivo.md) |
+| **TV4** | Duas fontes externas (TMDB+TheTVDB) para séries — como convivem? | **documentado** | **Executa R2**: registry `nome→Provider` + lista global `[tmdb, tvdb]` (substitui o singular e o `["tmdb"]` hardcoded). TheTVDB fornece ordenações + artwork exclusivo; séries só-TheTVDB (ex. Looney Tunes, sem `remoteId` TMDB) usam identidade primária do TheTVDB. Interface opcional `SerieProvider` (análoga a `ColecaoProvider`). | [ADR-0021](adr/0021-modelo-de-series-hierarquia-ordenacoes-vinculo-arquivo.md) · [ADR-0002](adr/0002-prioridade-entre-fontes-externas.md) |
+| **TV5** | Como fatiar o épico? | **documentado** | **Enriquecimento primeiro** (Fase 1, briefing [0031](../briefings/0031-series-fundacao-modelo-enriquecimento.md)): schema + provider TheTVDB + registry + buscar/importar/exibir a árvore dos providers. Fase 2 = scanner + naming de TV + ligação N:M do disco (conferir convenção Kodi/Jellyfin). Fase 3 = seletor de ordenação, artwork de temporada, i18n. | briefings 0031+ |
+
+---
+
 ## Melhorias de base (estrutura da documentação)
 
 | ID | Item | Status | Decisão | Destino |
@@ -74,6 +90,23 @@ das três camadas antes de o override (0016) aterrissar.
 
 <!-- Conforme cada item fecha, mover o resumo da decisão para cá com data. -->
 
+- **TV1–TV5 — Fundação de séries (hierarquia, ordenações, providers)** (2026-07-11).
+  Fecha o modelo de séries antes de qualquer código, fundado em **pesquisa empírica**
+  das duas APIs (Simpsons, Looney Tunes 72514, One Piece) e das convenções de media
+  servers (Jellyfin/Kodi/Plex/Sonarr). Achado decisivo: **os dois providers
+  convergem** — o **episódio é a entidade canônica de grão fino** e trocar de
+  ordenação (season type / episode group) é **pura renumeração, nunca muda a
+  granularidade** (união de todas as ordens = superconjunto do `official`, zero ids
+  próprios nas alternativas; não existe "episódio combinado" em nenhum provider).
+  **TV1:** numeração multi-ordem no `extension_data core.tv@1` sobre o episódio fino.
+  **TV2:** temporada-entity só para a ordenação _default_ (enxuto); alternativas são
+  numeração derivada. **TV3:** o "combinado" (streaming empacota curtas) é do
+  **arquivo**, não do catálogo → vínculo **arquivo↔episódio N:M ancorado no id**
+  (`media_file_episode`), que ancorar no número quebraria no re-scrape (bug do
+  Sonarr). **TV4:** duas fontes executam o **R2** (registry + lista `[tmdb, tvdb]`),
+  com séries exclusivas do TheTVDB usando identidade primária dele. **TV5:**
+  **enriquecimento primeiro** (briefing 0031), scanner e ligação de arquivos na fase
+  seguinte. Registrado no [ADR-0021](adr/0021-modelo-de-series-hierarquia-ordenacoes-vinculo-arquivo.md).
 - **L1–L3 — Fundação multi-idioma** (2026-07-09). Requisito fundacional levantado na
   Fase 3 e ausente do design inicial: o acervo é multi-idioma. **L1 (ADR-0018):** a
   dimensão de idioma é a **chave dentro de cada camada** (payload externo tagueado

@@ -38,3 +38,4 @@ achatada de "decisões abertas" por um registro rastreável, um arquivo por deci
 | [0018](0018-modelo-multi-idioma-dimensao-nas-camadas.md) | Modelo multi-idioma: dimensão de idioma nas camadas | L1 | Aceita |
 | [0019](0019-resolucao-por-idioma-fallback-proveniencia.md) | Resolução por idioma: cadeia de fallback + proveniência | L2 | Aceita |
 | [0020](0020-traducao-de-tags-genres-keywords.md) | Tradução de tags (genres localizados + keywords) | L3 | Aceita |
+| [0021](0021-modelo-de-series-hierarquia-ordenacoes-vinculo-arquivo.md) | Séries: hierarquia, ordenações como projeção, vínculo N:M arquivo↔episódio | TV1–TV5 | Aceita |
