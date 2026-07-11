@@ -105,12 +105,13 @@ func TestMigrateUp(t *testing.T) {
 	if err := d.Migrate(ctx); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	// Há sete migrations (0001 semente + 0002 schema do núcleo + 0003
+	// Há nove migrations (0001 semente + 0002 schema do núcleo + 0003
 	// media_file.library_source_id + 0004 media_external/media_override + 0005
 	// app_settings/entity.original_language + 0006 external_detail + 0007
-	// series: entity_relation.sort_index + entity.external_id_tvdb).
-	if v := mustSchemaVersion(t, d); v != 7 {
-		t.Errorf("versão após up = %d, quero 7", v)
+	// series: entity_relation.sort_index + entity.external_id_tvdb + 0008
+	// library_source.content_type + 0009 media_file_entity).
+	if v := mustSchemaVersion(t, d); v != 9 {
+		t.Errorf("versão após up = %d, quero 9", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -155,6 +156,14 @@ func TestMigrateDown(t *testing.T) {
 	}
 
 	// Down reverte uma migration por vez, do topo para a base.
+	downPara(t, d, 8) // 0009: remove a juncao generica media_file_entity.
+	querFalha(t, d, "SELECT 1 FROM media_file_entity",
+		"tabela media_file_entity ainda existe após o down do 0009")
+
+	downPara(t, d, 7) // 0008: remove library_source.content_type.
+	querFalha(t, d, "SELECT content_type FROM library_source",
+		"coluna content_type ainda existe após o down do 0008")
+
 	downPara(t, d, 6) // 0007: remove entity_relation.sort_index e entity.external_id_tvdb.
 	querFalha(t, d, "SELECT sort_index FROM entity_relation",
 		"coluna sort_index ainda existe após o down do 0007")

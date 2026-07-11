@@ -68,13 +68,14 @@ type ExternalDetail struct {
 }
 
 type LibrarySource struct {
-	ID        string
-	Path      string
-	Type      string
-	LastScan  sql.NullString
-	State     string
-	CreatedAt string
-	UpdatedAt string
+	ID          string
+	Path        string
+	Type        string
+	LastScan    sql.NullString
+	State       string
+	CreatedAt   string
+	UpdatedAt   string
+	ContentType string
 }
 
 type MediaExternal struct {
@@ -102,6 +103,13 @@ type MediaFile struct {
 	CreatedAt       string
 	UpdatedAt       string
 	LibrarySourceID sql.NullString
+}
+
+type MediaFileEntity struct {
+	MediaFileID string
+	EntityID    string
+	Kind        string
+	Ordinal     int64
 }
 
 type MediaOverride struct {

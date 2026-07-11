@@ -27,7 +27,7 @@ SET type = ?,
     state = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
-RETURNING id, path, type, last_scan, state, created_at, updated_at
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type
 `
 
 type AtualizarLibrarySourceParams struct {
@@ -54,6 +54,7 @@ func (q *Queries) AtualizarLibrarySource(ctx context.Context, arg AtualizarLibra
 		&i.State,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ContentType,
 	)
 	return i, err
 }
@@ -65,7 +66,7 @@ INSERT INTO library_source (
 ) VALUES (
     ?, ?, ?
 )
-RETURNING id, path, type, last_scan, state, created_at, updated_at
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type
 `
 
 type CriarLibrarySourceParams struct {
@@ -89,12 +90,13 @@ func (q *Queries) CriarLibrarySource(ctx context.Context, arg CriarLibrarySource
 		&i.State,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ContentType,
 	)
 	return i, err
 }
 
 const listarLibrarySources = `-- name: ListarLibrarySources :many
-SELECT id, path, type, last_scan, state, created_at, updated_at
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type
 FROM library_source
 ORDER BY created_at, id
 `
@@ -116,6 +118,7 @@ func (q *Queries) ListarLibrarySources(ctx context.Context) ([]LibrarySource, er
 			&i.State,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ContentType,
 		); err != nil {
 			return nil, err
 		}
@@ -131,7 +134,7 @@ func (q *Queries) ListarLibrarySources(ctx context.Context) ([]LibrarySource, er
 }
 
 const obterLibrarySource = `-- name: ObterLibrarySource :one
-SELECT id, path, type, last_scan, state, created_at, updated_at
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type
 FROM library_source
 WHERE id = ?
 `
@@ -147,12 +150,13 @@ func (q *Queries) ObterLibrarySource(ctx context.Context, id string) (LibrarySou
 		&i.State,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ContentType,
 	)
 	return i, err
 }
 
 const obterLibrarySourcePorPath = `-- name: ObterLibrarySourcePorPath :one
-SELECT id, path, type, last_scan, state, created_at, updated_at
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type
 FROM library_source
 WHERE path = ?
 `
@@ -170,6 +174,7 @@ func (q *Queries) ObterLibrarySourcePorPath(ctx context.Context, path string) (L
 		&i.State,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ContentType,
 	)
 	return i, err
 }

@@ -90,8 +90,8 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 	d, q := setupNucleo(t)
 	ctx := context.Background()
 
-	if v := mustSchemaVersion(t, d); v != 7 {
-		t.Fatalf("versão de schema = %d, quero 7", v)
+	if v := mustSchemaVersion(t, d); v != 9 {
+		t.Fatalf("versão de schema = %d, quero 9", v)
 	}
 	assertTabelasExistem(t, d,
 		"entity", "media_file", "library_source", "asset", "entity_relation", "entity_fts",
@@ -108,10 +108,19 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 		t.Error("foreign_key_check retornou violações, quero nenhuma")
 	}
 
-	// Down reverte o 0007 (sort_index + external_id_tvdb), o 0006
-	// (external_detail), o 0005 (settings + coluna original_language), o 0004
-	// (camadas externo/override), o 0003 (coluna library_source_id) e depois o
-	// 0002 (schema do núcleo, volta ao 0001).
+	// Down reverte o 0009 (juncao media_file_entity), o 0008
+	// (library_source.content_type), o 0007 (sort_index + external_id_tvdb), o
+	// 0006 (external_detail), o 0005 (settings + coluna original_language), o
+	// 0004 (camadas externo/override), o 0003 (coluna library_source_id) e depois
+	// o 0002 (schema do núcleo, volta ao 0001).
+	check(t, d.MigrateDown(ctx), "MigrateDown 0009")
+	if v := mustSchemaVersion(t, d); v != 8 {
+		t.Fatalf("versão após down do 0009 = %d, quero 8", v)
+	}
+	check(t, d.MigrateDown(ctx), "MigrateDown 0008")
+	if v := mustSchemaVersion(t, d); v != 7 {
+		t.Fatalf("versão após down do 0008 = %d, quero 7", v)
+	}
 	check(t, d.MigrateDown(ctx), "MigrateDown 0007")
 	if v := mustSchemaVersion(t, d); v != 6 {
 		t.Fatalf("versão após down do 0007 = %d, quero 6", v)

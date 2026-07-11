@@ -71,6 +71,15 @@ type Querier interface {
 	// segue vencendo na resolucao). Chamada pelo enrich (auto-cura) sob condicao
 	// estrita (titulo == sourceID), nunca sobre um titulo ja legivel.
 	AtualizarTitulo(ctx context.Context, arg AtualizarTituloParams) error
+	// Posse agregada BASICA: quantos FILHOS DIRETOS de parent_id (via entity_relation)
+	// tem, no kind dado, ao menos um arquivo 'present' vinculado. Serve direto para a
+	// TEMPORADA (cujos filhos diretos sao episodios: "possui 12 de 13"). Para a SERIE
+	// (dois niveis: serie->temporada->episodio) isto conta zero, porque os filhos
+	// diretos sao temporadas, sem vinculo proprio -- a agregacao recursiva por serie
+	// fica pro Passo 3 (leitura), que refina a posse agregada. NAO recebe o total
+	// aqui (o total = numero de filhos, calculado por quem chama a partir das
+	// relacoes).
+	ContarEntidadesComPosse(ctx context.Context, arg ContarEntidadesComPosseParams) (int64, error)
 	// Total de itens que casam os filtros (para o campo `total` da paginacao). Mesma
 	// clausula WHERE da ListarEntityCards -- sem LIMIT/OFFSET/ORDER BY. Inclui a mesma
 	// exclusao de sub-nos (season/episode) para o total bater com a pagina (0032).
@@ -111,10 +120,28 @@ type Querier interface {
 	// marcacao de missing por datasource.
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
 	CriarMediaFile(ctx context.Context, arg CriarMediaFileParams) (MediaFile, error)
+	// Queries da juncao N:M GENERICA arquivo<->entidade (briefing 0034, migration
+	// 0009). Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql (o
+	// sqlc v1.31 corrompe SQL de query com acento). O vinculo e ancorado no entity_id
+	// (ADR-0021): renumerar a serie nao mexe em nenhuma linha daqui. O `kind`
+	// discrimina o papel do vinculo (ex.: 'tv_episode'), deixando a tabela reusavel
+	// por outros tipos de midia sem migration nova.
+	// Upsert idempotente por PK (media_file_id, entity_id, kind): re-scan do mesmo
+	// arquivo so atualiza o ordinal, nunca duplica o vinculo. Mesmo padrao de
+	// ON CONFLICT ... DO UPDATE SET usado em app_settings/media_external.
+	CriarVinculoEntidade(ctx context.Context, arg CriarVinculoEntidadeParams) error
+	// POSSE DERIVADA da entidade num papel (analogo ao EntityTemPosse de filme):
+	// verdadeiro se, e so se, existe ao menos um arquivo 'present' vinculado aquela
+	// entity naquele kind.
+	EntidadeTemPosse(ctx context.Context, arg EntidadeTemPosseParams) (bool, error)
 	// POSSE DERIVADA (ADR-0009): verdadeiro se, e so se, existe ao menos um
 	// media_file 'present' para a entity. Posse NAO e coluna (uma coluna gerada nao
 	// enxerga outra tabela) -- e computada aqui.
 	EntityTemPosse(ctx context.Context, entityID string) (bool, error)
+	// Os arquivos de UMA entidade num dado papel (detalhe do episodio: mediainfo,
+	// caminho, estado). Filtra por entity_id + kind e faz join com media_file para
+	// trazer a linha do arquivo. Ordena por ordinal e depois pela criacao, estavel.
+	ListarArquivosDaEntidade(ctx context.Context, arg ListarArquivosDaEntidadeParams) ([]ListarArquivosDaEntidadeRow, error)
 	ListarAssetsPorEntity(ctx context.Context, entityID string) ([]Asset, error)
 	ListarEntities(ctx context.Context, arg ListarEntitiesParams) ([]Entity, error)
 	// Lista de CARDS para a UI (briefing 0010), ordenada por titulo ASCENDENTE. Uma
@@ -165,6 +192,10 @@ type Querier interface {
 	// (espelha o LIMIAR_BAIXA_CONFIANCA=70 do front). Ordena por confianca ASCENDENTE
 	// (pior primeiro); drafts/sem confianca vao ao fim (match_confidence IS NULL = 1).
 	ListarRevisao(ctx context.Context, limiar sql.NullFloat64) ([]ListarRevisaoRow, error)
+	// As entidades vinculadas a UM arquivo, na ordem local (ordinal) -- cobre o range
+	// (E01-E03 vira 3 linhas com ordinal 0/1/2 sob o mesmo media_file). Sem filtro de
+	// kind: o detalhe do arquivo mostra todos os papeis.
+	ListarVinculosPorArquivo(ctx context.Context, mediaFileID string) ([]MediaFileEntity, error)
 	// Fecho do ciclo de vida (ADR-0012): ao concluir um scan COMPLETO com a fonte
 	// acessivel, todo media_file 'present' daquela fonte cujo last_seen NAO e o
 	// carimbo deste scan (ou seja, nao foi revisto) passa a 'missing'. A entity e
@@ -234,6 +265,14 @@ type Querier interface {
 	// Guardada por status='draft': no-op idempotente em qualquer outro estado (nao
 	// rebaixa 'wanted'/'unreleased' nem mexe em item ja catalogado).
 	PromoverDeDraft(ctx context.Context, id string) error
+	// Re-scan limpo TOTAL: apaga todos os vinculos de um arquivo, de qualquer kind.
+	// Use com cuidado: se o arquivo tem papeis de tipos diferentes, prefira a
+	// variante por kind abaixo para nao apagar vinculo de outro plugin.
+	RemoverVinculosDoArquivo(ctx context.Context, mediaFileID string) error
+	// Re-scan limpo POR KIND: apaga so os vinculos de um kind daquele arquivo, antes
+	// de recria-los. Preferida no re-scan de um tipo especifico (ex.: o scanner de TV
+	// so mexe nos 'tv_episode', sem tocar vinculos de outros tipos).
+	RemoverVinculosDoArquivoPorKind(ctx context.Context, arg RemoverVinculosDoArquivoPorKindParams) error
 	// Grava (ou substitui) uma config. Conflito na PK (key) atualiza value_json e
 	// recarimba updated_at -- nunca cria uma segunda linha para a mesma chave.
 	UpsertAppSetting(ctx context.Context, arg UpsertAppSettingParams) (AppSetting, error)

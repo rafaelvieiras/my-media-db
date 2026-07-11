@@ -9,22 +9,22 @@ INSERT INTO library_source (
 ) VALUES (
     ?, ?, ?
 )
-RETURNING id, path, type, last_scan, state, created_at, updated_at;
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type;
 
 -- name: ObterLibrarySource :one
-SELECT id, path, type, last_scan, state, created_at, updated_at
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type
 FROM library_source
 WHERE id = ?;
 
 -- name: ObterLibrarySourcePorPath :one
 -- Usada pelo handler POST para detectar path duplicado (ja normalizado) antes
 -- do INSERT e responder 409 com mensagem clara em vez de estourar o UNIQUE.
-SELECT id, path, type, last_scan, state, created_at, updated_at
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type
 FROM library_source
 WHERE path = ?;
 
 -- name: ListarLibrarySources :many
-SELECT id, path, type, last_scan, state, created_at, updated_at
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type
 FROM library_source
 ORDER BY created_at, id;
 
@@ -36,7 +36,7 @@ SET type = ?,
     state = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
-RETURNING id, path, type, last_scan, state, created_at, updated_at;
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type;
 
 -- name: ApagarLibrarySource :exec
 DELETE FROM library_source
