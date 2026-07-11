@@ -2,7 +2,7 @@
 
 > Ensinar o scanner a reconhecer arquivos de série, casá-los aos episódios do
 > catálogo (auto-importando a árvore do provider quando preciso) e vinculá-los
-> pela junção N:M `media_file_episode` — ancorada no id, nunca no número.
+> pela junção N:M genérica `media_file_entity` — ancorada no id, nunca no número.
 
 | | |
 |---|---|
@@ -25,8 +25,8 @@ série, não parseia `SxxEyy`, e não há como um arquivo apontar para um episó
 Este briefing fecha a lacuna **disco → episódio**: o usuário aponta uma
 biblioteca de séries, o scanner varre, identifica cada arquivo como episódio(s),
 **auto-importa a árvore da série** do provider quando ela ainda não está no
-catálogo, e liga o arquivo aos episódios certos pela junção **N:M
-`media_file_episode`**. O vínculo é sempre pelo **id do episódio** (lição do bug
+catálogo, e liga o arquivo aos episódios certos pela junção **N:M genérica
+`media_file_entity`** (`kind='tv_episode'`). O vínculo é sempre pelo **id do episódio** (lição do bug
 do Sonarr, ADR-0021 §3/§4): trocar a ordenação re-projeta números **sem** tocar
 vínculos — a vantagem estrutural do MyMediaDB sobre Kodi/Jellyfin/Plex.
 
@@ -61,8 +61,11 @@ vínculos — a vantagem estrutural do MyMediaDB sobre Kodi/Jellyfin/Plex.
   colado), e **absoluto** (anime, ex.: `Show - 013`, `Show 013`). Retorna **lista**
   de episódios (para ranges) + flag de absoluto. Separação de temporada 0 (specials)
   e de número de temporada que **não é 1..N** (pode ser 0, ano, box-set).
-- **Junção N:M** `media_file_episode(media_file_id, episode_id, ordinal)` (migration
-  nova) + queries sqlc (ASCII). Ancorada no `episode_id`.
+- **Junção N:M genérica** `media_file_entity(media_file_id, entity_id, kind, ordinal)`
+  (migration nova) + queries sqlc (ASCII). Ancorada no `entity_id`. O `kind` é o
+  discriminador (TV grava `tv_episode`; um plugin de música gravaria `track`) —
+  espelha o `entity_relation` genérico, **plugin-extensível sem migration do core**
+  (ver §6).
 - **Scanner de séries**: quando a biblioteca é `series`, o fluxo de match é o novo
   caminho (não o de filme). Detecção da série (nome da pasta), **auto-import** da
   árvore do provider quando ausente, **match em memória** número→`episode_id`
@@ -73,7 +76,7 @@ vínculos — a vantagem estrutural do MyMediaDB sobre Kodi/Jellyfin/Plex.
   série/temporada expõem posse agregada.
 - **Modelo de posse**: `media_file.entity_id` do arquivo de série aponta para a
   **entity da série** (a "obra"); os vínculos por episódio vivem **só** em
-  `media_file_episode`. (Ver §6 — decisão.)
+  `media_file_entity` (`kind='tv_episode'`). (Ver §6 — decisão.)
 
 **Fora (explicitamente):**
 - **Remapeamento manual** de arquivo↔episódio (o caso do streaming que empacota N
@@ -93,23 +96,25 @@ vínculos — a vantagem estrutural do MyMediaDB sobre Kodi/Jellyfin/Plex.
 - **Migration `0008_library_source_content_type.sql`**: `ALTER TABLE library_source
   ADD COLUMN content_type TEXT NOT NULL DEFAULT 'movie';` (valores `movie`|`series`;
   sem CHECK, coerente com o resto do schema). Down: drop da coluna.
-- **Migration `0009_media_file_episode.sql`**:
+- **Migration `0009_media_file_entity.sql`** (junção GENÉRICA, não específica de TV):
   ```sql
-  CREATE TABLE media_file_episode (
+  CREATE TABLE media_file_entity (
       media_file_id INTEGER NOT NULL REFERENCES media_file(id) ON DELETE CASCADE,
-      episode_id    TEXT    NOT NULL REFERENCES entity(id)     ON DELETE CASCADE,
+      entity_id     TEXT    NOT NULL REFERENCES entity(id)     ON DELETE CASCADE,
+      kind          TEXT    NOT NULL,
       ordinal       INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (media_file_id, episode_id)
+      PRIMARY KEY (media_file_id, entity_id, kind)
   );
-  CREATE INDEX idx_mfe_episode ON media_file_episode(episode_id);
+  CREATE INDEX idx_mfe_entity ON media_file_entity(entity_id, kind);
   ```
-  `ordinal` ordena os episódios **dentro de um mesmo arquivo** (ranges). Down: drop
-  do índice e da tabela.
-- **Queries sqlc** (ASCII, `internal/db/queries/media_file_episode.sql`):
-  `CriarVinculoEpisodio` (upsert idempotente por PK), `ListarVinculosPorArquivo`,
-  `ListarArquivosDoEpisodio`, `RemoverVinculosDoArquivo` (para re-scan limpo),
-  `EpisodioTemPosse`/`ContarEpisodiosComPosse` (para posse agregada). Regenerar
-  `sqlcgen`.
+  `kind` discrimina o tipo de vínculo (`tv_episode` para TV; `track` p/ música no
+  futuro). `ordinal` ordena as entidades **dentro de um mesmo arquivo** (ranges).
+  Down: drop do índice e da tabela.
+- **Queries sqlc** (ASCII, `internal/db/queries/media_file_entity.sql`):
+  `CriarVinculoEntidade` (upsert idempotente por PK), `ListarVinculosPorArquivo`,
+  `ListarArquivosDaEntidade` (por `entity_id`+`kind`), `RemoverVinculosDoArquivoPorKind`
+  (para re-scan limpo sem apagar vínculos de outros kinds), `EntidadeTemPosse` +
+  agregado de posse. Regenerar `sqlcgen`.
 - **Nenhuma** coluna gerada nova para numeração: o match é **em memória** (ver
   Backend). O `numbering`/`absolute_number` seguem no `extension_data core.tv@1`.
 
@@ -118,7 +123,7 @@ vínculos — a vantagem estrutural do MyMediaDB sobre Kodi/Jellyfin/Plex.
   handler de `library` (0008): request aceita o campo; response o expõe. Default
   `movie` quando omitido (compat).
 - **Detalhe da entity** (`GET /entities/{id}`): para `episode`, incluir os arquivos
-  vinculados (via `media_file_episode`) na área de arquivos/mediainfo — hoje a
+  vinculados (via `media_file_entity`, `kind='tv_episode'`) na área de arquivos/mediainfo — hoje a
   anotação de arquivos olha `media_file.entity_id`, que para episódio não aponta o
   episódio. Para `tv`/`season`, expor posse agregada (nº de episódios possuídos /
   total). Atualizar `openapi.yaml` + `gen:types`.
@@ -147,10 +152,10 @@ vínculos — a vantagem estrutural do MyMediaDB sobre Kodi/Jellyfin/Plex.
     `EpisodeInfo` do arquivo: (1) tentar a **ordenação default** da série; (2) fallback
     às demais `season_types`; (3) se `IsAbsolute`, casar por `absolute_number`.
     **Ambíguo** (bate em ordens diferentes com episódios distintos) ou **sem match**
-    → revisão. Vínculos criados via `CriarVinculoEpisodio` com `ordinal`.
+    → revisão. Vínculos criados via `CriarVinculoEntidade` (`kind='tv_episode'`) com `ordinal`.
   - **`media_file`**: para série, `entity_id` = **id da série** (a obra). `type` da
     entity nunca mais é cravado `movie` no caminho de série. Re-scan de um arquivo
-    já visto: `RemoverVinculosDoArquivo` + recriar (idempotente), sobrevive a
+    já visto: `RemoverVinculosDoArquivoPorKind('tv_episode')` + recriar (idempotente), sobrevive a
     rename via `content_hash` (reencontrar, 0009).
   - **`match_confidence`**: arquivo de série casado por número sem ambiguidade =
     alta (reusar a escala do `confianca()`; número determinístico ≈ 90). Série
@@ -168,8 +173,8 @@ vínculos — a vantagem estrutural do MyMediaDB sobre Kodi/Jellyfin/Plex.
 
 ### Arquivos afetados (previsão)
 - `internal/db/migrations/0008_library_source_content_type.sql` (novo),
-  `internal/db/migrations/0009_media_file_episode.sql` (novo).
-- `internal/db/queries/media_file_episode.sql` (novo), `library_source.sql`,
+  `internal/db/migrations/0009_media_file_entity.sql` (novo).
+- `internal/db/queries/media_file_entity.sql` (novo), `library_source.sql`,
   `entity.sql` (posse) — regen `sqlcgen`.
 - `internal/naming/naming.go` (+ `naming_test.go`).
 - `internal/scanner/scan.go`, `match.go`, `manager.go` (passar `content_type`).
@@ -185,10 +190,10 @@ vínculos — a vantagem estrutural do MyMediaDB sobre Kodi/Jellyfin/Plex.
       absoluto (`Show - 013`) — coberto por testes de tabela; range vira lista.
 - [ ] Scan de uma pasta de série **não importada** auto-importa a árvore do provider
       e vincula os arquivos aos episódios corretos.
-- [ ] `Show S01E01-E03.mkv` cria **3** vínculos ao **mesmo** `media_file`, com
-      `ordinal` 0/1/2.
-- [ ] Vínculo é pelo `episode_id`; trocar a ordenação default da série **não** altera
-      nenhum vínculo (teste: re-projeção não mexe em `media_file_episode`).
+- [ ] `Show S01E01-E03.mkv` cria **3** linhas em `media_file_entity` para o **mesmo**
+      `media_file` (`kind='tv_episode'`), com `ordinal` 0/1/2.
+- [ ] Vínculo é pelo `entity_id`; trocar a ordenação default da série **não** altera
+      nenhum vínculo (teste: re-projeção não mexe em `media_file_entity`).
 - [ ] Nome de série ambíguo (2+ candidatos) ou episódio inexistente → item na fila de
       revisão/órfãs, **sem** criar episódio/série fantasma.
 - [ ] Detalhe de episódio lista seus arquivos; temporada/série mostram posse agregada.
@@ -200,11 +205,21 @@ vínculos — a vantagem estrutural do MyMediaDB sobre Kodi/Jellyfin/Plex.
 - **Decisões do dono (AskUserQuestion, 2026-07-11):** (1) **auto-import** do provider
   no scan; (2) **tipo de biblioteca** explícito (não heurística); (3) match **na
   ordenação default com fallback** às demais + absoluto contra `absolute_number`.
+- **Junção arquivo↔entity é GENÉRICA (`media_file_entity` com `kind`), não específica
+  de TV.** Espelha o `entity_relation(parent, child, kind, sort_index)`: o core ganha
+  UMA tabela de vínculo arquivo↔entity reusável por qualquer tipo/plugin, em vez de
+  uma tabela por tipo (`media_file_episode`, `media_file_track`, …) que exigiria
+  migration do core a cada plugin. O scanner de TV grava `kind='tv_episode'`; um
+  plugin de música gravaria `kind='track'`. Custo idêntico ao da versão específica
+  (uma coluna `kind` a mais), alinhado ao **princípio de esquema extensível para
+  plugins** (tipos livres em `entity.type`, relações genéricas em `entity_relation`,
+  campos em `extension_data` namespaced). Descartado: junção por tipo (não
+  plugin-extensível).
 - **`media_file.entity_id` aponta para a SÉRIE, não para o episódio.** Um arquivo
   pode mapear N episódios (range/combinado); um `entity_id` escalar não representaria
   isso. Apontar para a série (o ancestral comum) mantém `entity_id NOT NULL` e o
   caminho de filme intacto. **Posse do episódio = existe linha em
-  `media_file_episode`**; posse de temporada/série = derivada (agregação). Descartado:
+  `media_file_entity`**; posse de temporada/série = derivada (agregação). Descartado:
   `entity_id`→episódio (assimétrico p/ ranges) e `entity_id` nullable (mexe no
   contrato de filme). *Esta é a decisão estrutural do briefing; se provar-se
   fundacional, promover a nota no ADR-0021.*
@@ -222,7 +237,7 @@ vínculos — a vantagem estrutural do MyMediaDB sobre Kodi/Jellyfin/Plex.
 ## 7. Fora deste briefing / follow-ups
 
 - **UI de remapeamento manual** arquivo↔episódio (streaming empacotado, correção de
-  match) — reusa `media_file_episode`.
+  match) — reusa `media_file_entity`.
 - **Seletor de ordenação** na UI (projeta os números da ordem escolhida a partir do
   `numbering`), artwork/still e i18n de episódio — Fase 3 do 0031.
 - **Heurística de detecção** como fallback ao tipo de biblioteca (o dono escolheu
