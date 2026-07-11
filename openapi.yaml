@@ -1434,7 +1434,7 @@ components:
          tags, external_ids, owned, file_count, poster_url, extension_data,
          lang, original_language, resolved_languages,
          tagline, keywords, runtime, certification, vote_average, local_rating,
-         backdrop_url, videos, collection, similar, external_links]
+         backdrop_url, videos, collection, similar, external_links, ancestors]
       properties:
         id: { type: string }
         type:
@@ -1523,6 +1523,25 @@ components:
           type: object
           description: "Mapa link→URL (imdb, tmdb…). `{}` quando ausentes."
           additionalProperties: { type: string }
+        ancestors:
+          type: array
+          description: >
+            Trilha RAIZ→PAI (breadcrumb, 0032) na árvore de séries: episódio →
+            [série, temporada]; temporada → [série]; obra de topo
+            (movie/tv/collection) → `[]`. Nunca null.
+          items: { $ref: '#/components/schemas/AncestorRef' }
+    AncestorRef:
+      type: object
+      description: >
+        Nó ancestral do breadcrumb (0032): o mínimo para renderizar e navegar a um
+        nível-pai da árvore de séries.
+      required: [id, type, title]
+      properties:
+        id: { type: string }
+        type:
+          type: string
+          enum: [movie, tv, collection, season, episode]
+        title: { type: string }
     LanguageSettings:
       type: object
       description: >

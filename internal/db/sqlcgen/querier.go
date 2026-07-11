@@ -72,7 +72,8 @@ type Querier interface {
 	// estrita (titulo == sourceID), nunca sobre um titulo ja legivel.
 	AtualizarTitulo(ctx context.Context, arg AtualizarTituloParams) error
 	// Total de itens que casam os filtros (para o campo `total` da paginacao). Mesma
-	// clausula WHERE da ListarEntityCards -- sem LIMIT/OFFSET/ORDER BY.
+	// clausula WHERE da ListarEntityCards -- sem LIMIT/OFFSET/ORDER BY. Inclui a mesma
+	// exclusao de sub-nos (season/episode) para o total bater com a pagina (0032).
 	ContarEntityCards(ctx context.Context, arg ContarEntityCardsParams) (int64, error)
 	// CRUD de asset (poster/fanart/... referenciados por uma entity).
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
@@ -123,6 +124,9 @@ type Querier interface {
 	//   file_count       total de media_file da entity (present + missing).
 	//   match_confidence maior confianca de match entre os arquivos (badge de revisao).
 	//   has_poster       EXISTS de um asset kind='poster' (a UI decide o poster_url).
+	// So OBRAS DE TOPO entram: season/episode sao nos internos da arvore de series
+	// (0032), alcancados so pela arvore do pai (GET /members); ficam FORA da home e
+	// da busca via `type NOT IN ('season','episode')`. movie/tv/collection seguem.
 	// Filtros opcionais (NULL = sem filtro) via sqlc.narg: type e owned. A ordenacao
 	// por titulo em ordem DESC vive numa query irma (ListarEntityCardsDesc) porque o
 	// sqlc nao liga parametros dentro de expressoes de ORDER BY -- direcao dinamica

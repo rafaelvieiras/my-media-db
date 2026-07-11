@@ -200,7 +200,8 @@ func (q *Queries) AtualizarTitulo(ctx context.Context, arg AtualizarTituloParams
 const contarEntityCards = `-- name: ContarEntityCards :one
 SELECT COUNT(*) AS total
 FROM entity e
-WHERE (?1 IS NULL OR e.type = ?1)
+WHERE e.type NOT IN ('season', 'episode')
+  AND (?1 IS NULL OR e.type = ?1)
   AND (?2 IS NULL
        OR EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') = ?2)
 `
@@ -211,7 +212,8 @@ type ContarEntityCardsParams struct {
 }
 
 // Total de itens que casam os filtros (para o campo `total` da paginacao). Mesma
-// clausula WHERE da ListarEntityCards -- sem LIMIT/OFFSET/ORDER BY.
+// clausula WHERE da ListarEntityCards -- sem LIMIT/OFFSET/ORDER BY. Inclui a mesma
+// exclusao de sub-nos (season/episode) para o total bater com a pagina (0032).
 func (q *Queries) ContarEntityCards(ctx context.Context, arg ContarEntityCardsParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, contarEntityCards, arg.Type, arg.Owned)
 	var total int64
@@ -355,7 +357,8 @@ SELECT
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
     EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
 FROM entity e
-WHERE (?1 IS NULL OR e.type = ?1)
+WHERE e.type NOT IN ('season', 'episode')
+  AND (?1 IS NULL OR e.type = ?1)
   AND (?2 IS NULL
        OR EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') = ?2)
 ORDER BY e.title COLLATE NOCASE ASC, e.id
@@ -389,6 +392,9 @@ type ListarEntityCardsRow struct {
 //	match_confidence maior confianca de match entre os arquivos (badge de revisao).
 //	has_poster       EXISTS de um asset kind='poster' (a UI decide o poster_url).
 //
+// So OBRAS DE TOPO entram: season/episode sao nos internos da arvore de series
+// (0032), alcancados so pela arvore do pai (GET /members); ficam FORA da home e
+// da busca via `type NOT IN ('season','episode')`. movie/tv/collection seguem.
 // Filtros opcionais (NULL = sem filtro) via sqlc.narg: type e owned. A ordenacao
 // por titulo em ordem DESC vive numa query irma (ListarEntityCardsDesc) porque o
 // sqlc nao liga parametros dentro de expressoes de ORDER BY -- direcao dinamica
@@ -438,7 +444,8 @@ SELECT
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
     EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
 FROM entity e
-WHERE (?1 IS NULL OR e.type = ?1)
+WHERE e.type NOT IN ('season', 'episode')
+  AND (?1 IS NULL OR e.type = ?1)
   AND (?2 IS NULL
        OR EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') = ?2)
 ORDER BY e.title COLLATE NOCASE DESC, e.id

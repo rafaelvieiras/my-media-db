@@ -441,7 +441,42 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 		IdiomaPrincipal: cfg.Primary,
 	})
 	s.anotarInternos(ctx, &resolvida)
+	resolvida.Ancestors = s.montarAncestrais(ctx, id)
 	return resolvida, true, nil
+}
+
+// maxProfundidadeAncestrais limita o walk-up do breadcrumb (0032) para NUNCA laçar
+// num ciclo de entity_relation defeituoso. 8 é folgado: a árvore real tem no máximo
+// 2 níveis (episódio→temporada→série).
+const maxProfundidadeAncestrais = 8
+
+// montarAncestrais sobe a árvore de séries a partir de `id`, pegando o PRIMEIRO pai
+// de cada nível (ListarRelacoesPais) até a raiz, e devolve a trilha invertida para
+// RAIZ→PAI — o breadcrumb do 0032. Cada nó traz {id, title, type} com o título BASE
+// da linha (barato; resolver o título por idioma de cada ancestral é follow-up).
+// Sempre não-nil (`[]` para movie/tv/collection, que não têm pai). Defensivo: para na
+// primeira falha/ausência de pai e limita a profundidade (maxProfundidadeAncestrais)
+// para jamais laçar. Montado aqui (server), não no resolver puro (fronteira do 0026/0031).
+func (s *Server) montarAncestrais(ctx context.Context, id string) []resolver.AncestorRef {
+	trilha := make([]resolver.AncestorRef, 0)
+	atual := id
+	for i := 0; i < maxProfundidadeAncestrais; i++ {
+		pais, err := s.leitura().ListarRelacoesPais(ctx, atual)
+		if err != nil || len(pais) == 0 {
+			break
+		}
+		pai, err := s.leitura().ObterEntity(ctx, pais[0].ParentID)
+		if err != nil {
+			break // pai purgado no meio: para a trilha aqui
+		}
+		trilha = append(trilha, resolver.AncestorRef{ID: pai.ID, Title: pai.Title, Type: pai.Type})
+		atual = pai.ID
+	}
+	// Coletamos de baixo para cima (pai, avô, …); inverte para RAIZ→PAI.
+	for i, j := 0, len(trilha)-1; i < j; i, j = i+1, j-1 {
+		trilha[i], trilha[j] = trilha[j], trilha[i]
+	}
+	return trilha
 }
 
 // anotarInternos preenche os `internal_id` da coleção e dos similares (0026/0027): o

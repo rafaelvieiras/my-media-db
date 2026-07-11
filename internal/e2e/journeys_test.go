@@ -294,3 +294,125 @@ func TestJornadaInternoFirstNaBusca(t *testing.T) {
 		t.Errorf("busca deveria trazer 603 e 604 (achou603=%v achou604=%v)", achou603, achou604)
 	}
 }
+
+// tipos coleta o campo `type` de cada item de uma lista de objetos JSON.
+func tipos(itens []any) []string {
+	out := make([]string, 0, len(itens))
+	for _, it := range itens {
+		m, _ := it.(map[string]any)
+		if tp, ok := m["type"].(string); ok {
+			out = append(out, tp)
+		}
+	}
+	return out
+}
+
+// TestJornadaArvoreSeriesTopoBreadcrumb: o briefing 0032. Depois de importar a arvore
+// da serie (tv + 2 temporadas + 6 episodios), a HOME e a BUSCA local so mostram OBRAS
+// DE TOPO (a serie tv), nunca season/episode; e GET /entities/{id} traz os ANCESTRAIS
+// (breadcrumb raiz->pai): episodio -> [serie, temporada]; temporada -> [serie]; serie
+// -> [] (sem pai).
+func TestJornadaArvoreSeriesTopoBreadcrumb(t *testing.T) {
+	c := novoHarness(t)
+
+	serie := c.obj(http.MethodPost, "/api/v1/import",
+		map[string]string{"source": "tmdb", "source_id": "71663", "type": "tv"}, http.StatusCreated)
+	serieID := str(t, serie, "id")
+
+	// (a) HOME/biblioteca: so a serie tv aparece; nada de season/episode.
+	home := c.obj(http.MethodGet, "/api/v1/entities", nil, http.StatusOK)
+	assertHomeSoSerie(t, home, serieID)
+
+	// (b) BUSCA local: "Episodio" casaria os 6 episodios se indexados; excluidos -> 0.
+	resp := c.obj(http.MethodGet, "/api/v1/search?q=Episodio", nil, http.StatusOK)
+	locais, _ := resp["local"].([]any)
+	if len(locais) != 0 {
+		t.Errorf("busca por \"Episodio\" trouxe %d locais, quero 0 (sub-nos fora da busca). tipos=%v",
+			len(locais), tipos(locais))
+	}
+	// A serie de topo segue encontravel pela busca.
+	respSerie := c.obj(http.MethodGet, "/api/v1/search?q=Contos", nil, http.StatusOK)
+	locaisSerie, _ := respSerie["local"].([]any)
+	semSubNos(t, locaisSerie)
+	if len(locaisSerie) != 1 {
+		t.Errorf("busca por \"Contos\" = %v, quero 1 resultado (a serie)", tipos(locaisSerie))
+	}
+
+	// (c) ANCESTRAIS (breadcrumb raiz->pai).
+	// Serie (topo): ancestors vazio (mas presente, nunca null).
+	if anc := ancestrais(t, serie); len(anc) != 0 {
+		t.Errorf("serie ancestors = %v, quero [] (obra de topo)", anc)
+	}
+
+	// Temporada 1: ancestors = [serie].
+	temporadas := c.arr(http.MethodGet, "/api/v1/entities/"+serieID+"/members", nil, http.StatusOK)
+	tempID := str(t, temporadas[0].(map[string]any), "id")
+	tempResolvida := c.obj(http.MethodGet, "/api/v1/entities/"+tempID, nil, http.StatusOK)
+	ancTemp := ancestrais(t, tempResolvida)
+	if len(ancTemp) != 1 {
+		t.Fatalf("temporada ancestors = %d, quero 1 (a serie). %v", len(ancTemp), ancTemp)
+	}
+	assertAncestor(t, ancTemp[0], serieID, "tv", "temporada->raiz")
+
+	// Episodio 1 da temporada 1: ancestors = [serie, temporada] (raiz->pai).
+	eps := c.arr(http.MethodGet, "/api/v1/entities/"+tempID+"/members", nil, http.StatusOK)
+	epID := str(t, eps[0].(map[string]any), "id")
+	epResolvido := c.obj(http.MethodGet, "/api/v1/entities/"+epID, nil, http.StatusOK)
+	ancEp := ancestrais(t, epResolvido)
+	if len(ancEp) != 2 {
+		t.Fatalf("episodio ancestors = %d, quero 2 [serie, temporada]. %v", len(ancEp), ancEp)
+	}
+	assertAncestor(t, ancEp[0], serieID, "tv", "episodio->raiz")
+	assertAncestor(t, ancEp[1], tempID, "season", "episodio->pai")
+}
+
+// assertHomeSoSerie afirma que a home lista SO a serie de topo (`serieID`), sem
+// nenhum sub-no (season/episode), e que o total da paginacao bate com a pagina.
+func assertHomeSoSerie(t *testing.T, home map[string]any, serieID string) {
+	t.Helper()
+	itens, _ := home["items"].([]any)
+	semSubNos(t, itens)
+	if len(itens) != 1 || str(t, itens[0].(map[string]any), "id") != serieID {
+		t.Fatalf("home = %v, quero so a serie %q (sub-nos excluidos)", tipos(itens), serieID)
+	}
+	if total, _ := home["total"].(float64); total != 1 {
+		t.Errorf("home total = %v, quero 1 (bate com a pagina, sub-nos excluidos)", home["total"])
+	}
+}
+
+// semSubNos afirma que nenhum item da lista e season/episode (so obras de topo).
+func semSubNos(t *testing.T, itens []any) {
+	t.Helper()
+	for _, tp := range tipos(itens) {
+		if tp == "season" || tp == "episode" {
+			t.Errorf("listou sub-no %q: so obras de topo (movie/tv/collection) sao permitidas", tp)
+		}
+	}
+}
+
+// assertAncestor afirma o id e o type de um no ancestral do breadcrumb.
+func assertAncestor(t *testing.T, node map[string]any, wantID, wantType, rotulo string) {
+	t.Helper()
+	if id := str(t, node, "id"); id != wantID {
+		t.Errorf("%s: ancestor id = %q, quero %q", rotulo, id, wantID)
+	}
+	if tp := str(t, node, "type"); tp != wantType {
+		t.Errorf("%s: ancestor type = %q, quero %q", rotulo, tp, wantType)
+	}
+}
+
+// ancestrais extrai o array `ancestors` de uma entity resolvida como []map (exige
+// presenca do campo — nunca null, por contrato do 0032).
+func ancestrais(t *testing.T, ent map[string]any) []map[string]any {
+	t.Helper()
+	bruto, ok := ent["ancestors"].([]any)
+	if !ok {
+		t.Fatalf("campo ancestors ausente ou nao-array em %v", ent["ancestors"])
+	}
+	out := make([]map[string]any, 0, len(bruto))
+	for _, e := range bruto {
+		m, _ := e.(map[string]any)
+		out = append(out, m)
+	}
+	return out
+}

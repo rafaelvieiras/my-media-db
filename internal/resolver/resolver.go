@@ -128,6 +128,21 @@ type Entidade struct {
 	// que NÃO muda os campos (o shape segue plano). Sempre não-nil (vazio quando
 	// não há contexto de idioma).
 	ResolvedLanguages map[string]string `json:"resolved_languages"`
+
+	// Ancestors é a trilha RAIZ→PAI (breadcrumb, 0032) da entity na árvore de
+	// séries: episódio → [série, temporada]; temporada → [série]; obra de topo
+	// (movie/tv/collection) → []. Sempre não-nil (`[]`, nunca null). NÃO vem do
+	// resolver puro — é anotada no server pós-resolução (subindo por
+	// ListarRelacoesPais), mesma fronteira dos internal_id (0026/0031).
+	Ancestors []AncestorRef `json:"ancestors"`
+}
+
+// AncestorRef é um nó ancestral na trilha do breadcrumb (0032): o mínimo para
+// renderizar e NAVEGAR a um nível-pai (id + título + type). Montado no server.
+type AncestorRef struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Type  string `json:"type"`
 }
 
 // baseOrigem diz de onde vem a BASE de um campo antes do override: `externo`

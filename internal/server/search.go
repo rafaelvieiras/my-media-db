@@ -34,6 +34,10 @@ const ttlCacheExterno = 60 * time.Second
 // O placeholder `?1` (match) chega SANITIZADO (ver sanitizarMatchFTS): cada termo
 // do usuário vira uma frase entre aspas com prefixo, de modo que aspas, parênteses
 // e operadores do FTS5 no input não quebrem a sintaxe da consulta.
+//
+// A busca só retorna OBRAS DE TOPO: `e.type NOT IN ('season','episode')` exclui os
+// sub-nós da árvore de séries (0032, espelha o filtro fixo de ListarEntityCards) —
+// literal, sem placeholder, os parâmetros posicionais seguem (match, tipo, tipo, limit).
 const buscarCardsFTSSQL = `SELECT
     e.id, e.type, e.title, e.status,
     EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
@@ -43,6 +47,7 @@ const buscarCardsFTSSQL = `SELECT
 FROM entity_fts
 JOIN entity e ON e.id = entity_fts.entity_id
 WHERE entity_fts MATCH ?
+  AND e.type NOT IN ('season', 'episode')
   AND (? IS NULL OR e.type = ?)
 ORDER BY entity_fts.rank
 LIMIT ?;`
