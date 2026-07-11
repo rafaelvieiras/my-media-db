@@ -5,16 +5,18 @@ import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ApiError, purgeEntity } from '@/lib/api'
-import { entityQueryOptions, overrideBlobQueryOptions } from '@/lib/queries'
+import {
+  entityFieldsQueryOptions,
+  entityQueryOptions,
+  overrideBlobQueryOptions,
+} from '@/lib/queries'
 import { ehDraft } from '@/lib/entity-badges'
 import { useLanguage } from '@/lib/language-context'
 import { rotuloIdioma } from '@/lib/languages'
 import { temOverrideEditado } from '@/lib/override-fields'
 import { ArtGallery } from '@/components/art-gallery'
 import { CollectionMembers } from '@/components/collection-members'
-import { ExternalIdsEditor } from '@/components/external-ids-editor'
 import { MediaInfoTable } from '@/components/media-info-table'
-import { OverrideEditor } from '@/components/override-editor'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import { RichDetailView } from '@/components/rich-detail-view'
 import { deResolvedEntity } from '@/lib/rich-detail'
@@ -130,10 +132,11 @@ export function EntityDetailScreen() {
   const { data, isPending, isError, error } = useQuery(
     entityQueryOptions(id, lang),
   )
-  // Blob CRU do override: alimenta os selos "editado" e semeia o editor.
+  // Blob CRU do override + descritores: alimentam os selos "editado" (o selo lê o
+  // blob e descobre se o campo é traduzível pelos descritores, briefing 0030).
   const overrideQuery = useQuery(overrideBlobQueryOptions(id))
   const blob = overrideQuery.data
-  const [editando, setEditando] = useState(false)
+  const fields = useQuery(entityFieldsQueryOptions).data
 
   const voltar = (
     <Link
@@ -179,19 +182,14 @@ export function EntityDetailScreen() {
               <Badge variant="outline">{data.status}</Badge>
             )}
             <SeloEditado
-              ativo={temOverrideEditado(blob, 'title', lang, true)}
+              ativo={temOverrideEditado(blob, 'title', lang, fields)}
             />
-            {!editando ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="ml-auto"
-                onClick={() => setEditando(true)}
-              >
+            <Button asChild variant="outline" size="sm" className="ml-auto">
+              <Link to="/entities/$id/edit" params={{ id }}>
                 <Pencil aria-hidden />
                 Editar
-              </Button>
-            ) : null}
+              </Link>
+            </Button>
           </>
         }
         descriptionExtra={
@@ -202,7 +200,7 @@ export function EntityDetailScreen() {
               lang={lang}
             />
             <SeloEditado
-              ativo={temOverrideEditado(blob, 'description', lang, true)}
+              ativo={temOverrideEditado(blob, 'description', lang, fields)}
             />
           </div>
         }
@@ -213,26 +211,12 @@ export function EntityDetailScreen() {
               campo="tags"
               lang={lang}
             />
-            <SeloEditado ativo={temOverrideEditado(blob, 'tags', lang, true)} />
+            <SeloEditado
+              ativo={temOverrideEditado(blob, 'tags', lang, fields)}
+            />
           </>
         }
       >
-        {editando && blob !== undefined ? (
-          <>
-            <OverrideEditor
-              key={`${lang}:${overrideQuery.dataUpdatedAt}`}
-              entity={data}
-              blob={blob}
-              lang={lang}
-              onDone={() => setEditando(false)}
-            />
-            {/* Identidade externa (0027): fixar os ids da fonte é EDIÇÃO avançada, então
-                fica junto do editor de override (modo editar). Não é override — grava a
-                identidade autoritativa (MD4) e re-resolve. */}
-            <ExternalIdsEditor id={id} externalIds={data.external_ids} />
-          </>
-        ) : null}
-
         {/* Coleção (0025): mostra os MEMBROS no lugar dos Arquivos (coleção não tem
             media_file). A galeria de arte segue valendo (arte própria da coleção). O
             "Excluir coleção" (0026) fica ao fim, discreto (ação destrutiva). */}

@@ -1,4 +1,9 @@
-import type { Asset, LanguageSettings, ResolvedEntity } from '@/lib/api'
+import type {
+  Asset,
+  FieldDescriptor,
+  LanguageSettings,
+  ResolvedEntity,
+} from '@/lib/api'
 
 // Fixtures compartilhadas pelos testes do detalhe da entity (leitura por idioma
 // e editor de override). Centralizar aqui evita duplicar o factory e os helpers
@@ -14,6 +19,80 @@ export const settingsPadrao: LanguageSettings = {
 // Envelope de uma resposta 200 com corpo JSON (o shape mínimo que o cliente lê).
 export function okJson<T>(body: T) {
   return { ok: true, status: 200, json: async () => body } as Response
+}
+
+// Descritores canônicos do formulário editorial (briefing 0030), espelhando o que
+// o backend serve em GET /api/v1/schema/entity-fields. Compartilhado pelos testes
+// das rotas de CRUD e do detalhe (selo "editado" lê `translatable` daqui).
+export const descritoresPadrao: FieldDescriptor[] = [
+  {
+    name: 'title',
+    label: 'Título',
+    group: 'traduzivel',
+    widget: 'text',
+    translatable: true,
+    kind: 'escalar',
+    order: 10,
+    creatable: true,
+  },
+  {
+    name: 'description',
+    label: 'Sinopse',
+    group: 'traduzivel',
+    widget: 'textarea',
+    translatable: true,
+    kind: 'escalar',
+    order: 20,
+    creatable: true,
+  },
+  {
+    name: 'tags',
+    label: 'Tags',
+    group: 'traduzivel',
+    widget: 'tags',
+    translatable: true,
+    kind: 'lista',
+    order: 30,
+    creatable: false,
+  },
+  {
+    name: 'original_title',
+    label: 'Título original',
+    group: 'neutro',
+    widget: 'text',
+    translatable: false,
+    kind: 'escalar',
+    order: 40,
+    creatable: true,
+  },
+  {
+    name: 'release_date',
+    label: 'Data de lançamento',
+    group: 'neutro',
+    widget: 'date',
+    translatable: false,
+    kind: 'escalar',
+    order: 50,
+    creatable: true,
+  },
+  {
+    name: 'local_rating',
+    label: 'Sua nota',
+    group: 'neutro',
+    widget: 'number',
+    translatable: false,
+    kind: 'numero',
+    order: 60,
+    creatable: false,
+    min: 0,
+    max: 10,
+    step: 0.1,
+  },
+]
+
+// Envelope de resposta do endpoint de descritores (`{ fields }`).
+export function okFields() {
+  return okJson({ fields: descritoresPadrao })
 }
 
 // Asset de teste (arte da galeria, 0017), com sobrescritas pontuais por campo.

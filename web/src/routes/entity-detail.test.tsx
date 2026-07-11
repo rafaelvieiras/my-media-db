@@ -5,7 +5,13 @@ import { EntityDetailScreen } from '@/routes/entity-detail'
 import { LanguageProvider } from '@/lib/language-context'
 import type { ResolvedEntity } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
-import { baseEntity, okJson, settingsPadrao } from '@/test/entity-fixtures'
+import type { OverrideBlob } from '@/lib/api'
+import {
+  baseEntity,
+  okFields,
+  okJson,
+  settingsPadrao,
+} from '@/test/entity-fixtures'
 
 // Mocka o router: `useParams` fixa o id da rota; `Link` vira um <a>.
 vi.mock('@tanstack/react-router', () => ({
@@ -13,16 +19,20 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
 }))
 
-// Roteia o fetch: settings, a entity resolvida (`?lang=`), os arquivos e o blob
-// de override (vazio — estes testes cobrem só o selo de fallback de leitura).
-function fetchRouter(entity: ResolvedEntity) {
+// Roteia o fetch: settings, descritores (para o selo "editado" saber o que é
+// traduzível, 0030), a entity resolvida (`?lang=`), os arquivos e o blob de
+// override (vazio por padrão; alguns testes passam um blob para o selo "editado").
+function fetchRouter(entity: ResolvedEntity, blob: OverrideBlob = {}) {
   return vi.fn(async (url: string) => {
     const u = String(url)
     if (u === '/api/v1/settings/languages') {
       return okJson(settingsPadrao)
     }
+    if (u === '/api/v1/schema/entity-fields') {
+      return okFields()
+    }
     if (u.startsWith('/api/v1/entities/e1/override')) {
-      return okJson({})
+      return okJson(blob)
     }
     if (u.startsWith('/api/v1/entities/e1/files')) {
       return okJson({ items: [] })
@@ -45,8 +55,8 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function renderDetail(entity: ResolvedEntity) {
-  vi.stubGlobal('fetch', fetchRouter(entity))
+function renderDetail(entity: ResolvedEntity, blob?: OverrideBlob) {
+  vi.stubGlobal('fetch', fetchRouter(entity, blob))
   return renderWithClient(
     <LanguageProvider>
       <EntityDetailScreen />
@@ -94,5 +104,40 @@ describe('EntityDetailScreen — selo de fallback', () => {
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
     expect(screen.getByText('Science Fiction')).toBeInTheDocument()
     expect(screen.getByText('em Inglês')).toBeInTheDocument()
+  })
+})
+
+describe('EntityDetailScreen — selo "editado" e nota local', () => {
+  it('mostra o selo quando o blob tem override no idioma atual', async () => {
+    // title overridado em pt-BR (idioma corrente) → selo; en não contaria.
+    renderDetail(baseEntity(), { title: { 'pt-BR': 'Duna' } })
+
+    await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
+    expect(screen.getByText('editado')).toBeInTheDocument()
+  })
+
+  it('sem override no idioma atual não há selo "editado"', async () => {
+    // Override só em en; lendo em pt-BR → nenhum selo.
+    renderDetail(baseEntity(), { title: { en: 'Dune (EN)' } })
+
+    await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
+    expect(screen.queryByText('editado')).not.toBeInTheDocument()
+  })
+
+  it('a nota local resolvida aparece no hero (distinta da nota da fonte)', async () => {
+    renderDetail(baseEntity({ local_rating: 9.5, vote_average: 8.2 }))
+
+    await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
+    expect(screen.getByLabelText('Sua nota: 9.5')).toBeInTheDocument()
+    expect(screen.getByText('8.2')).toBeInTheDocument()
+  })
+
+  it('"Editar" é um link para a rota de edição da entity', async () => {
+    renderDetail(baseEntity())
+
+    await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
+    // No mock do Link, `to` vira o href; o botão usa asChild sobre o <Link>.
+    const editar = screen.getByRole('link', { name: 'Editar' })
+    expect(editar).toBeInTheDocument()
   })
 })

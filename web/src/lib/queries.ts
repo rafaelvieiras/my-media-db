@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query'
 import {
   getCollectionDetail,
   getEntity,
+  getEntityFields,
   getEntityFiles,
   getEntityMembers,
   getExternalDetail,
@@ -58,6 +59,16 @@ export function entityMembersQueryOptions(id: string, lang?: string) {
     queryFn: () => getEntityMembers(id, lang),
   })
 }
+
+// Descritores do formulário editorial (0030). Metadado IMUTÁVEL entre deploys
+// (deriva de um registro estático do backend), então `staleTime: Infinity`
+// evita re-buscas — as três rotas de CRUD compartilham este cache. Chave própria
+// `['schema', 'entity-fields']`, fora do prefixo por-entity (não depende de id).
+export const entityFieldsQueryOptions = queryOptions({
+  queryKey: ['schema', 'entity-fields'],
+  queryFn: getEntityFields,
+  staleTime: Infinity,
+})
 
 // Config de idioma (0019): fonte única para o seletor e o admin. Chave
 // `['settings', 'languages']` — invalidada pelo PUT da tela de configurações.

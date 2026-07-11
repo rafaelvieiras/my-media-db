@@ -33,6 +33,8 @@ export type ImportRequest = components['schemas']['ImportRequest']
 export type LanguageSettings = components['schemas']['LanguageSettings']
 export type OverrideBlob = components['schemas']['OverrideBlob']
 export type OverridePatch = components['schemas']['OverridePatch']
+export type FieldDescriptor = components['schemas']['FieldDescriptor']
+export type FieldSchema = components['schemas']['FieldSchema']
 export type Asset = components['schemas']['Asset']
 export type AssetList = components['schemas']['AssetList']
 export type CorrectRequest = components['schemas']['CorrectRequest']
@@ -127,6 +129,20 @@ export async function getScanStatus(id: string): Promise<ScanStatus> {
     `${base}/api/v1/library/${encodeURIComponent(id)}/scan`,
   )
   return lerJson<ScanStatus>(res)
+}
+
+// ── Descritor de formulário editorial (0030) ─────────────────────────────────
+
+// Descritores dos campos editáveis (briefing 0030), servidos pelo backend a
+// partir de `resolver.CamposEditaveis()` + metadados de apresentação. É metadado
+// de UI IMUTÁVEL entre deploys — a UI monta o formulário e o schema Zod a partir
+// dele, de modo que um campo novo no backend faça o input aparecer sem tocar JSX.
+// Devolve a lista já ordenada por `order`.
+export async function getEntityFields(): Promise<FieldDescriptor[]> {
+  const schema = await lerJson<FieldSchema>(
+    await fetch(`${base}/api/v1/schema/entity-fields`),
+  )
+  return schema.fields
 }
 
 // ── Entities (catálogo) ──────────────────────────────────────────────────────

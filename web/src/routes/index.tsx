@@ -1,13 +1,15 @@
-import { CollectionCreate } from '@/components/collection-create'
-import { ItemCreate } from '@/components/item-create'
+import { Link } from '@tanstack/react-router'
+import { FilmIcon, FolderPlus } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { PosterGrid } from '@/components/poster-grid'
 import { useLanguage } from '@/lib/language-context'
 
 // Home (rota `/`): o grid de pôsteres é a tela principal do dono — o catálogo
 // detectado. Decisão do 0011: a home vira o grid (a antiga tela de saúde foi
 // para `/health`). O idioma de leitura (global) é repassado ao grid para o
-// `?lang=` — coerência com o detalhe e base para a resolução de card futura. O
-// botão "Nova coleção" (0025 Fase B) cria uma coleção local do zero.
+// `?lang=` — coerência com o detalhe e base para a resolução de card futura. As
+// ações "Novo item"/"Nova coleção" (0030) navegam para as rotas de criação
+// dedicadas (antes eram formulários inline).
 export function LibraryItemsScreen() {
   const { lang } = useLanguage()
   return (
@@ -20,8 +22,18 @@ export function LibraryItemsScreen() {
           </p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          <ItemCreate />
-          <CollectionCreate />
+          <Button asChild variant="outline" size="sm">
+            <Link to="/new/item">
+              <FilmIcon aria-hidden />
+              Novo item
+            </Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link to="/new/collection">
+              <FolderPlus aria-hidden />
+              Nova coleção
+            </Link>
+          </Button>
         </div>
       </div>
       <PosterGrid lang={lang} />

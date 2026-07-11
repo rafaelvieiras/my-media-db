@@ -13,6 +13,9 @@ import { SearchScreen } from '@/routes/search'
 import { ReviewScreen } from '@/routes/review'
 import { OrphansScreen } from '@/routes/orphans'
 import { EntityDetailScreen } from '@/routes/entity-detail'
+import { EntityEditScreen } from '@/routes/entity-edit'
+import { ItemNewScreen } from '@/routes/item-new'
+import { CollectionNewScreen } from '@/routes/collection-new'
 import { ExternalDetailScreen } from '@/routes/external-detail'
 import { CollectionDetailScreen } from '@/routes/collection-detail'
 import { SettingsScreen } from '@/routes/settings'
@@ -67,10 +70,30 @@ const orphansRoute = createRoute({
   component: OrphansScreen,
 })
 
+// Rotas de CRUD dedicadas (briefing 0030): criar item/coleção e editar item saem
+// dos formulários inline para páginas próprias (deep-link + testabilidade).
+const itemNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/new/item',
+  component: ItemNewScreen,
+})
+
+const collectionNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/new/collection',
+  component: CollectionNewScreen,
+})
+
 const entityDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/entities/$id',
   component: EntityDetailScreen,
+})
+
+const entityEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/entities/$id/edit',
+  component: EntityEditScreen,
 })
 
 // Detalhe rico do item externo ANTES de importar (0023). Params: fonte, tipo
@@ -107,7 +130,10 @@ const routeTree = rootRoute.addChildren([
   searchRoute,
   reviewRoute,
   orphansRoute,
+  itemNewRoute,
+  collectionNewRoute,
   entityDetailRoute,
+  entityEditRoute,
   externalDetailRoute,
   collectionDetailRoute,
   settingsRoute,

@@ -6,7 +6,12 @@ import { EntityDetailScreen } from '@/routes/entity-detail'
 import { LanguageProvider } from '@/lib/language-context'
 import type { ResolvedEntity } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
-import { baseEntity, okJson, settingsPadrao } from '@/test/entity-fixtures'
+import {
+  baseEntity,
+  okFields,
+  okJson,
+  settingsPadrao,
+} from '@/test/entity-fixtures'
 
 // Cobre a tela da entity quando é COLEÇÃO (0026): a ação "Excluir coleção" (duas
 // etapas → purga → volta à biblioteca) e a ausência da seção Arquivos. `useNavigate`
@@ -26,6 +31,9 @@ function fetchRouter(entity: ResolvedEntity, onDelete: () => void) {
     const u = String(url)
     if (u === '/api/v1/settings/languages') {
       return okJson(settingsPadrao)
+    }
+    if (u === '/api/v1/schema/entity-fields') {
+      return okFields()
     }
     if (u.startsWith('/api/v1/entities/e1/override')) {
       return okJson({})
