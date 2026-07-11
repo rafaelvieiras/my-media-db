@@ -811,6 +811,8 @@ export interface components {
       certification: string | null
       /** @description Nota média externa (0–10), ou null. */
       vote_average: number | null
+      /** @description Nota LOCAL do dono (0–10), gravada na camada de override (ADR-0012): complementa/sobrepõe a nota da fonte (vote_average). null quando o dono não avaliou — a UI então mostra a nota da fonte (limpar é não-destrutivo). */
+      local_rating: number | null
       /** @description Fundo (backdrop) da entity: rota LOCAL do fanart cacheado (0015) quando existe, senão a URL direta da fonte; null quando não há. */
       backdrop_url: string | null
       /** @description Vídeos (trailer/clip) da fonte. `[]` quando ausentes. */
@@ -833,12 +835,12 @@ export interface components {
       /** @description Idiomas permitidos (governam o que pode ser escrito/scraped). */
       allowed: string[]
     }
-    /** @description Blob CRU de override (briefing 0016), tal como guardado — o patch esparso que o resolver interpreta na leitura. Só campos EDITORIAIS. Traduzíveis (title/description/tags) são um MAPA por idioma (`{"pt-BR":…}`), com `null` num idioma = "definir vazio". Neutros (original_title/release_date/ extension_data) são o escalar/objeto direto. Chaves ausentes = herdado. `{}` quando não há override. Forma livre (additionalProperties): a semântica por campo é a do resolver, não do schema. */
+    /** @description Blob CRU de override (briefing 0016), tal como guardado — o patch esparso que o resolver interpreta na leitura. Só campos EDITORIAIS. Traduzíveis (title/description/tags) são um MAPA por idioma (`{"pt-BR":…}`), com `null` num idioma = "definir vazio". Neutros (original_title/release_date/ extension_data) são o escalar/objeto direto; `local_rating` (nota local do dono) é um NÚMERO 0–10 ou `null`. Chaves ausentes = herdado. `{}` quando não há override. Forma livre (additionalProperties): a semântica por campo é a do resolver, não do schema. */
     OverrideBlob: {
       [key: string]: unknown
     }
     /**
-     * @description Patch esparso de PATCH /override (briefing 0016). Cada chave é um campo editorial; só as chaves presentes são tocadas (merge esparso). A FORMA do VALOR depende do campo: escalares (title/original_title/description/ release_date) aceitam `string` ou `null`; `tags` aceita um array de strings (substituição), um objeto `{add?:[],remove?:[]}` (merge de operações) ou `null`; `extension_data` aceita um objeto ou `null`. Para campos TRADUZÍVEIS o valor é o do idioma `?lang=` (o handler monta o mapa por idioma); campos NEUTROS ignoram o `lang`. `null` = definir vazio (não confundir com LIMPAR, que é o DELETE). Chave não-editorial ou forma inválida → 422.
+     * @description Patch esparso de PATCH /override (briefing 0016). Cada chave é um campo editorial; só as chaves presentes são tocadas (merge esparso). A FORMA do VALOR depende do campo: escalares (title/original_title/description/ release_date) aceitam `string` ou `null`; `tags` aceita um array de strings (substituição), um objeto `{add?:[],remove?:[]}` (merge de operações) ou `null`; `extension_data` aceita um objeto ou `null`; `local_rating` (nota local) aceita um número 0–10 ou `null`. Para campos TRADUZÍVEIS o valor é o do idioma `?lang=` (o handler monta o mapa por idioma); campos NEUTROS ignoram o `lang`. `null` = definir vazio (não confundir com LIMPAR, que é o DELETE). Chave não-editorial ou forma inválida → 422.
      * @example {
      *       "title": "Duna",
      *       "description": null,

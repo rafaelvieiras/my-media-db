@@ -23,6 +23,7 @@ function detalheComColecao(): RichDetail {
     runtime: null,
     certification: null,
     voteAverage: null,
+    localRating: null,
     originalLanguage: null,
     posterUrl: null,
     backdropUrl: null,

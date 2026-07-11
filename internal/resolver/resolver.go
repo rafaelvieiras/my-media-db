@@ -100,11 +100,17 @@ type Entidade struct {
 	// title/description; os neutros/estruturados são extraídos direto do canônico
 	// externo via internal/richfields (o MESMO shape do detalhe do externo).
 	// Genres NÃO tem campo próprio: são os `tags` (que já carregam os gêneros).
-	Tagline       *string                `json:"tagline"`
-	Keywords      []string               `json:"keywords"`
-	Runtime       *int                   `json:"runtime"`
-	Certification *string                `json:"certification"`
-	VoteAverage   *float64               `json:"vote_average"`
+	Tagline       *string  `json:"tagline"`
+	Keywords      []string `json:"keywords"`
+	Runtime       *int     `json:"runtime"`
+	Certification *string  `json:"certification"`
+	VoteAverage   *float64 `json:"vote_average"`
+	// LocalRating é a NOTA LOCAL do dono (0–10, ADR-0012): a avaliação PRÓPRIA,
+	// gravada na camada de OVERRIDE, que COMPLEMENTA/SOBREPÕE a nota da fonte
+	// (VoteAverage). null quando o dono não avaliou — a UI então mostra a nota da
+	// fonte (limpar a nota local é NÃO-DESTRUTIVO). Diferente dos demais campos ricos
+	// (read-only), esta é EDITÁVEL por override: entra no registro como kindNumero.
+	LocalRating   *float64               `json:"local_rating"`
 	BackdropURL   *string                `json:"backdrop_url"`
 	Videos        []richfields.Video     `json:"videos"`
 	Collection    *richfields.Collection `json:"collection"`
@@ -145,6 +151,10 @@ const (
 	kindEscalar kindCampo = iota
 	kindLista
 	kindExtensao
+	// kindNumero é um escalar NUMÉRICO (*float64) — ex.: a nota local do dono. Compõe
+	// como o escalar (override vence; `null` apaga), mas o valor é um número, não uma
+	// string. É uma classe própria para o motor despachar sem `switch` por nome.
+	kindNumero
 )
 
 // origemCampo é a etiqueta declarativa de um campo editorial. `traduzivel` marca
@@ -184,6 +194,10 @@ var registroOrigem = map[string]origemCampo{
 	// entram no registro: são extraídos direto do externo em Resolver (via richfields).
 	"tagline":  {base: baseExterno, kind: kindEscalar, traduzivel: true, soLeitura: true},
 	"keywords": {base: baseExterno, kind: kindLista, traduzivel: true, soLeitura: true},
+	// Nota LOCAL do dono (ADR-0012): número NEUTRO, base NENHUMA (só o override fala —
+	// arquivo e externo não a têm; a nota da fonte é o vote_average, campo distinto).
+	// EDITÁVEL (não soLeitura): entra em CamposEditaveis para o editor de override.
+	"local_rating": {base: baseNenhuma, kind: kindNumero},
 }
 
 // ── Superfície pública do registro (R1, briefing 0016) ───────────────────────
@@ -206,6 +220,8 @@ const (
 	KindLista Kind = "lista"
 	// KindExtensao é o mapa de verticais por namespace/chave (extension_data).
 	KindExtensao Kind = "extensao"
+	// KindNumero é um campo escalar NUMÉRICO (nota local): aceita número|null.
+	KindNumero Kind = "numero"
 )
 
 // CampoInfo é a etiqueta PÚBLICA de um campo editorial, derivada do registroOrigem:
@@ -222,6 +238,8 @@ func kindPublico(k kindCampo) Kind {
 		return KindLista
 	case kindExtensao:
 		return KindExtensao
+	case kindNumero:
+		return KindNumero
 	default:
 		return KindEscalar
 	}
@@ -278,6 +296,8 @@ func Resolver(c Camadas) Entidade {
 		"release_date":   nsPtr(c.Entity.ReleaseDate),
 		"tags":           parseTags(c.Entity.TagsJson),
 		"extension_data": parseExtensionData(c.Entity.ExtensionDataJson),
+		// Nota local não tem base de arquivo (só o override a define): a base é nil.
+		"local_rating": (*float64)(nil),
 	}
 
 	// Modo IDIOMA: só quando há cadeia derivada das settings. Sem cadeia, o motor
@@ -336,6 +356,7 @@ func Resolver(c Camadas) Entidade {
 		Runtime:           richfields.IntPtrDe(rico, "runtime"),
 		Certification:     richfields.CertificacaoDaRegiao(rico, c.LangPedido),
 		VoteAverage:       richfields.FloatPtrDe(rico, "vote_average"),
+		LocalRating:       asFloatPtr(resolvido["local_rating"]),
 		BackdropURL:       backdrop,
 		Videos:            richfields.VideosDe(rico),
 		Collection:        richfields.ColecaoDe(rico),
@@ -372,9 +393,33 @@ func comporCampo(campo string, orig origemCampo, arquivo any, externo []CamadaEx
 		return comporLista(campo, orig, arquivo, externo, override)
 	case kindExtensao:
 		return comporExtensao(campo, arquivo, externo, override)
+	case kindNumero:
+		return comporNumero(campo, orig, arquivo, externo, override)
 	default: // kindEscalar
 		return comporEscalar(campo, orig, arquivo, externo, override)
 	}
+}
+
+// comporNumero aplica a precedência a um campo escalar NUMÉRICO (nota local): o
+// override vence (chave presente, mesmo `null` → apaga com nil); senão, se a base é
+// externa, o primeiro valor numérico das fontes; senão a base arquivo. Devolve
+// sempre um *float64. Espelha comporEscalar, trocando string por número.
+func comporNumero(campo string, orig origemCampo, arquivo any, externo []CamadaExterna, override map[string]json.RawMessage) *float64 {
+	if raw, ok := override[campo]; ok {
+		// Presença da chave decide o override; `null` → nil (apaga); número → &n;
+		// qualquer outra forma degrada a nil.
+		var v *float64
+		_ = json.Unmarshal(raw, &v)
+		return v
+	}
+	if orig.base == baseExterno {
+		for _, cam := range externo {
+			if v := richfields.FloatPtrDe(cam.Campos, campo); v != nil {
+				return v
+			}
+		}
+	}
+	return asFloatPtr(arquivo)
 }
 
 // ── Composição por idioma (traduzíveis) ─────────────────────────────────────
@@ -790,6 +835,15 @@ func strPtr(s string) *string { return &s }
 // valor não é *string).
 func asStrPtr(v any) *string {
 	if p, ok := v.(*string); ok {
+		return p
+	}
+	return nil
+}
+
+// asFloatPtr extrai um *float64 de um valor dinâmico da composição (nil quando o
+// valor não é *float64) — usado pelo campo numérico (nota local).
+func asFloatPtr(v any) *float64 {
+	if p, ok := v.(*float64); ok {
 		return p
 	}
 	return nil

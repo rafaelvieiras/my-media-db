@@ -53,6 +53,7 @@ export function baseEntity(over: Partial<ResolvedEntity> = {}): ResolvedEntity {
     runtime: null,
     certification: null,
     vote_average: null,
+    local_rating: null,
     backdrop_url: null,
     videos: [],
     collection: null,

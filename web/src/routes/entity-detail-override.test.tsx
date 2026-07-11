@@ -271,6 +271,40 @@ describe('OverrideEditor — edição por idioma', () => {
     ).toBeInTheDocument()
   })
 
+  it('(k) definir a nota local grava o número neutro no PATCH', async () => {
+    const { user, espioes } = await editar()
+
+    await user.type(screen.getByLabelText('Sua nota'), '9.5')
+    // Neutra e numérica: escalar direto (sem dimensão de idioma).
+    await salvarEEsperarPatch(user, espioes, { local_rating: 9.5 })
+  })
+
+  it('(k2) "Limpar sua nota" chama clearOverrideField SEM lang (campo neutro)', async () => {
+    const { user, espioes } = await editar({ blob: { local_rating: 8 } })
+
+    await user.click(screen.getByRole('button', { name: 'Limpar sua nota' }))
+
+    await waitFor(() => expect(espioes.onDelete).toHaveBeenCalledTimes(1))
+    expect(espioes.onDelete).toHaveBeenCalledWith('local_rating', null)
+  })
+
+  it('(k3) esvaziar a nota semeada e salvar manda null (definir vazio)', async () => {
+    const { user, espioes } = await editar({ blob: { local_rating: 7 } })
+
+    await user.clear(screen.getByLabelText('Sua nota'))
+    await salvarEEsperarPatch(user, espioes, { local_rating: null })
+    expect(espioes.onDelete).not.toHaveBeenCalled()
+  })
+
+  it('(l) a nota local resolvida aparece no hero (distinta da nota da fonte)', async () => {
+    renderDetail({ entityOver: { local_rating: 9.5, vote_average: 8.2 } })
+
+    await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
+    // A nota do dono (acessível por "Sua nota") e a da fonte convivem.
+    expect(screen.getByLabelText('Sua nota: 9.5')).toBeInTheDocument()
+    expect(screen.getByText('8.2')).toBeInTheDocument()
+  })
+
   it('(j) "Cancelar" fecha o editor sem tocar a API', async () => {
     const { user, espioes } = await editar()
 

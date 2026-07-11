@@ -371,9 +371,24 @@ func formaValida(info resolver.CampoInfo, raw json.RawMessage) bool {
 		return formaLista(raw)
 	case resolver.KindExtensao:
 		return ehNullRaw(raw) || ehObjeto(raw)
+	case resolver.KindNumero:
+		return formaNumero(raw)
 	default: // KindEscalar
 		return ehNullRaw(raw) || ehString(raw)
 	}
+}
+
+// formaNumero aceita `null` (definir/limpar a nota) ou um número na escala 0–10 (a
+// nota local casa com o vote_average da fonte). Fora da faixa ou não-número: inválido.
+func formaNumero(raw json.RawMessage) bool {
+	if ehNullRaw(raw) {
+		return true
+	}
+	var n float64
+	if json.Unmarshal(raw, &n) != nil {
+		return false
+	}
+	return n >= 0 && n <= 10
 }
 
 // formaLista aceita `null`, um array de strings (substituição), ou um objeto de

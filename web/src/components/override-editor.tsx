@@ -55,6 +55,13 @@ function semearNeutro(blob: OverrideBlob, campo: string): string {
   return typeof valor === 'string' ? valor : ''
 }
 
+// Valor semente da NOTA LOCAL (campo neutro NUMÉRICO): o número guardado como texto
+// para o input; senão vazio (o placeholder mostra a nota da fonte quando houver).
+function semearNota(blob: OverrideBlob): string {
+  const valor = blob['local_rating']
+  return typeof valor === 'number' ? String(valor) : ''
+}
+
 // Invalidação pós-edição: `['entity', id]` é PREFIXO — derruba a entity em todas
 // as variações de `lang`, os arquivos e o blob de override de uma vez; `['entities']`
 // atualiza os cards da lista.
@@ -90,6 +97,7 @@ export function OverrideEditor({
       description: semearTraduzivel(blob, 'description', lang),
       original_title: semearNeutro(blob, 'original_title'),
       release_date: semearNeutro(blob, 'release_date'),
+      local_rating: semearNota(blob),
       tags: entity.tags,
     }),
     [blob, lang, entity.tags],
@@ -99,6 +107,7 @@ export function OverrideEditor({
   const [description, setDescription] = useState(sementes.description)
   const [originalTitle, setOriginalTitle] = useState(sementes.original_title)
   const [releaseDate, setReleaseDate] = useState(sementes.release_date)
+  const [localRating, setLocalRating] = useState(sementes.local_rating)
   const [tags, setTags] = useState<string[]>(sementes.tags)
   const [tagInput, setTagInput] = useState('')
 
@@ -134,6 +143,12 @@ export function OverrideEditor({
     }
     if (releaseDate !== sementes.release_date) {
       patch.release_date = releaseDate.trim() === '' ? null : releaseDate
+    }
+    // Nota local (neutra, numérica): vazio → null (limpa); senão o número. O input
+    // type=number restringe a entrada; o backend valida a faixa 0–10.
+    if (localRating !== sementes.local_rating) {
+      const t = localRating.trim()
+      patch.local_rating = t === '' ? null : Number(t)
     }
     // tags como operações `{add, remove}` relativas ao que estava resolvido ao
     // abrir o editor: o que o dono acrescentou vai em `add`, o que removeu vai em
@@ -316,6 +331,34 @@ export function OverrideEditor({
               rotulo="Limpar data de lançamento"
               onClick={() =>
                 limpar.mutate({ campo: 'release_date', comLang: false })
+              }
+              disabled={ocupado}
+            />
+          </div>
+        </label>
+
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">Sua nota (0–10)</span>
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={0}
+              max={10}
+              step={0.1}
+              value={localRating}
+              onChange={(e) => setLocalRating(e.target.value)}
+              placeholder={
+                entity.vote_average != null
+                  ? `Fonte: ${entity.vote_average.toFixed(1)}`
+                  : 'Sem nota'
+              }
+              aria-label="Sua nota"
+              className="max-w-32"
+            />
+            <BotaoLimpar
+              rotulo="Limpar sua nota"
+              onClick={() =>
+                limpar.mutate({ campo: 'local_rating', comLang: false })
               }
               disabled={ocupado}
             />

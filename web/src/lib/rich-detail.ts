@@ -27,6 +27,10 @@ export interface RichDetail {
   runtime: number | null
   certification: string | null
   voteAverage: number | null
+  // Nota LOCAL do dono (ADR-0012): a avaliação própria, gravada no override, que
+  // complementa/sobrepõe a nota da fonte. null quando não avaliada (ou na tela do
+  // externo, que não tem nota local — a UI então mostra só a nota da fonte).
+  localRating: number | null
   originalLanguage: string | null
   posterUrl: string | null
   backdropUrl: string | null
@@ -52,6 +56,8 @@ export function deExternalDetail(d: ExternalDetail): RichDetail {
     runtime: d.runtime,
     certification: d.certification,
     voteAverage: d.vote_average,
+    // O detalhe do externo não tem nota local (não é um item do dono ainda).
+    localRating: null,
     originalLanguage: d.original_language,
     posterUrl: srcDeImagem(d.poster_url),
     backdropUrl: srcDeImagem(d.backdrop_url),
@@ -78,6 +84,7 @@ export function deResolvedEntity(e: ResolvedEntity): RichDetail {
     runtime: e.runtime,
     certification: e.certification,
     voteAverage: e.vote_average,
+    localRating: e.local_rating,
     originalLanguage: e.original_language,
     posterUrl: posterSrc(e.poster_url),
     // O backdrop da entity é uma ROTA LOCAL quando cacheado (fanart, 0015) ou uma

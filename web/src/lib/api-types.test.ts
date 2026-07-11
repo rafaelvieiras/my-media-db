@@ -33,6 +33,7 @@ describe('api-types gerado', () => {
       runtime: 136,
       certification: '14',
       vote_average: 8.2,
+      local_rating: 9,
       backdrop_url: null,
       videos: [],
       collection: null,

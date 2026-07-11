@@ -152,6 +152,59 @@ func TestJornadaEnrichNaoDestrutivo(t *testing.T) {
 	}
 }
 
+// TestJornadaNotaLocal: a NOTA LOCAL do dono (ADR-0012). Importar um filme traz a
+// nota da FONTE (vote_average); gravar a nota local via override a expõe em
+// local_rating SEM tocar a da fonte; re-enriquecer não a apaga (override congela);
+// LIMPAR a nota (DELETE do campo) volta local_rating a null, e a da fonte segue lá.
+func TestJornadaNotaLocal(t *testing.T) {
+	c := novoHarness(t)
+
+	ent := c.obj(http.MethodPost, "/api/v1/import",
+		map[string]string{"source": "tmdb", "source_id": "603", "type": "movie"}, http.StatusCreated)
+	id := str(t, ent, "id")
+
+	// A nota local ainda não existe (o dono não avaliou). O DTO carrega o campo
+	// `vote_average` (nota da FONTE), distinto — capturamos seu valor para provar que
+	// a nota local não o toca (a nota local é NÃO-DESTRUTIVA, ADR-0012).
+	if ent["local_rating"] != nil {
+		t.Errorf("local_rating = %v, quero null antes de o dono avaliar", ent["local_rating"])
+	}
+	if _, temCampo := ent["vote_average"]; !temCampo {
+		t.Fatalf("DTO sem o campo vote_average (nota da fonte): %v", ent)
+	}
+	fonte := ent["vote_average"] // valor da fonte, seja ele qual for (pode ser null)
+
+	// O dono grava a nota local (campo neutro do override).
+	c.obj(http.MethodPatch, "/api/v1/entities/"+id+"/override?lang=pt-BR",
+		map[string]any{"local_rating": 9.5}, http.StatusOK)
+
+	comNota := c.obj(http.MethodGet, "/api/v1/entities/"+id+"?lang=pt-BR", nil, http.StatusOK)
+	if nl, _ := comNota["local_rating"].(float64); nl != 9.5 {
+		t.Errorf("local_rating = %v, quero 9.5 (nota do dono)", comNota["local_rating"])
+	}
+	// A nota da FONTE não muda ao definir a nota local (campos distintos).
+	if comNota["vote_average"] != fonte {
+		t.Errorf("vote_average = %v, quero %v (a nota da fonte segue intacta)", comNota["vote_average"], fonte)
+	}
+
+	// Re-enriquecer nao apaga a nota do dono (override congela, ADR-0012).
+	c.obj(http.MethodPost, "/api/v1/entities/"+id+"/enrich", map[string]any{}, http.StatusOK)
+	posEnrich := c.obj(http.MethodGet, "/api/v1/entities/"+id+"?lang=pt-BR", nil, http.StatusOK)
+	if nl, _ := posEnrich["local_rating"].(float64); nl != 9.5 {
+		t.Errorf("local_rating pos-enrich = %v, quero 9.5 (override congela)", posEnrich["local_rating"])
+	}
+
+	// LIMPAR a nota local (DELETE do campo): volta a null; a da fonte permanece.
+	c.obj(http.MethodDelete, "/api/v1/entities/"+id+"/override/local_rating", nil, http.StatusOK)
+	limpa := c.obj(http.MethodGet, "/api/v1/entities/"+id+"?lang=pt-BR", nil, http.StatusOK)
+	if limpa["local_rating"] != nil {
+		t.Errorf("local_rating apos limpar = %v, quero null (volta a mostrar a da fonte)", limpa["local_rating"])
+	}
+	if limpa["vote_average"] != fonte {
+		t.Errorf("vote_average apos limpar = %v, quero %v", limpa["vote_average"], fonte)
+	}
+}
+
 // TestJornadaInternoFirstNaBusca: um item já importado aparece na busca externa com
 // internal_id apontando ao interno; um não-importado vem com internal_id nulo. É a
 // base do interno-first (0026/0027): a UI mostra "na biblioteca" e linka ao interno.

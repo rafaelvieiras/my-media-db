@@ -1351,8 +1351,8 @@ components:
         [id, type, title, original_title, description, release_date, status,
          tags, external_ids, owned, file_count, poster_url, extension_data,
          lang, original_language, resolved_languages,
-         tagline, keywords, runtime, certification, vote_average, backdrop_url,
-         videos, collection, similar, external_links]
+         tagline, keywords, runtime, certification, vote_average, local_rating,
+         backdrop_url, videos, collection, similar, external_links]
       properties:
         id: { type: string }
         type: { type: string }
@@ -1408,6 +1408,12 @@ components:
         vote_average:
           type: [number, "null"]
           description: Nota média externa (0–10), ou null.
+        local_rating:
+          type: [number, "null"]
+          description: >
+            Nota LOCAL do dono (0–10), gravada na camada de override (ADR-0012):
+            complementa/sobrepõe a nota da fonte (vote_average). null quando o dono
+            não avaliou — a UI então mostra a nota da fonte (limpar é não-destrutivo).
         backdrop_url:
           type: [string, "null"]
           description: >
@@ -1455,9 +1461,10 @@ components:
         o resolver interpreta na leitura. Só campos EDITORIAIS. Traduzíveis
         (title/description/tags) são um MAPA por idioma (`{"pt-BR":…}`), com `null`
         num idioma = "definir vazio". Neutros (original_title/release_date/
-        extension_data) são o escalar/objeto direto. Chaves ausentes = herdado. `{}`
-        quando não há override. Forma livre (additionalProperties): a semântica por
-        campo é a do resolver, não do schema.
+        extension_data) são o escalar/objeto direto; `local_rating` (nota local do
+        dono) é um NÚMERO 0–10 ou `null`. Chaves ausentes = herdado. `{}` quando não
+        há override. Forma livre (additionalProperties): a semântica por campo é a do
+        resolver, não do schema.
       additionalProperties: true
     OverridePatch:
       type: object
@@ -1467,10 +1474,11 @@ components:
         VALOR depende do campo: escalares (title/original_title/description/
         release_date) aceitam `string` ou `null`; `tags` aceita um array de strings
         (substituição), um objeto `{add?:[],remove?:[]}` (merge de operações) ou
-        `null`; `extension_data` aceita um objeto ou `null`. Para campos TRADUZÍVEIS o
-        valor é o do idioma `?lang=` (o handler monta o mapa por idioma); campos
-        NEUTROS ignoram o `lang`. `null` = definir vazio (não confundir com LIMPAR, que
-        é o DELETE). Chave não-editorial ou forma inválida → 422.
+        `null`; `extension_data` aceita um objeto ou `null`; `local_rating` (nota
+        local) aceita um número 0–10 ou `null`. Para campos TRADUZÍVEIS o valor é o do
+        idioma `?lang=` (o handler monta o mapa por idioma); campos NEUTROS ignoram o
+        `lang`. `null` = definir vazio (não confundir com LIMPAR, que é o DELETE). Chave
+        não-editorial ou forma inválida → 422.
       additionalProperties: true
       example:
         title: "Duna"

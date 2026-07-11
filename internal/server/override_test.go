@@ -216,6 +216,8 @@ func TestPatchValidacoes(t *testing.T) {
 		{"escalar numero", "pt-BR", `{"title":123}`, http.StatusUnprocessableEntity, "invalid_body"},
 		{"tags forma invalida", "pt-BR", `{"tags":{"foo":["x"]}}`, http.StatusUnprocessableEntity, "invalid_body"},
 		{"extension_data array", "pt-BR", `{"extension_data":[1,2]}`, http.StatusUnprocessableEntity, "invalid_body"},
+		{"nota local string", "pt-BR", `{"local_rating":"9"}`, http.StatusUnprocessableEntity, "invalid_body"},
+		{"nota local fora da faixa", "pt-BR", `{"local_rating":11}`, http.StatusUnprocessableEntity, "invalid_body"},
 		{"corpo malformado", "pt-BR", `{nao-json`, http.StatusUnprocessableEntity, "invalid_body"},
 		{"lang nao permitido", "xx", `{"title":"y"}`, http.StatusBadRequest, "invalid_query"},
 	}
@@ -231,6 +233,39 @@ func TestPatchValidacoes(t *testing.T) {
 	// Uma chave inválida no meio de válidas NÃO grava nada (validação antes do merge).
 	if b := getBlob(t, h, "e1"); len(b) != 0 {
 		t.Errorf("blob após rejeições = %v, quero {} (nada gravado)", b)
+	}
+}
+
+// TestPatchNotaLocalDefinirELimpar cobre a NOTA LOCAL do dono (ADR-0012): definir a
+// nota grava o número neutro (sem idioma) e o resolvido a expõe em local_rating;
+// LIMPAR (DELETE sem lang) remove a chave e a nota volta a null (não-destrutivo).
+func TestPatchNotaLocalDefinirELimpar(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "e1", "movie", "Base")
+
+	// Definir a nota (aceita 1 casa; o lang é IGNORADO — campo neutro).
+	rec := patchOv(t, h, "e1", "pt-BR", `{"local_rating":8.5}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH nota status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	got := decodeEntidade(t, rec)
+	if got.LocalRating == nil || *got.LocalRating != 8.5 {
+		t.Fatalf("local_rating = %v, quero 8.5", got.LocalRating)
+	}
+	// Guardada como escalar numérico direto (sem mapa por idioma).
+	eq(t, "blob.local_rating", string(getBlob(t, h, "e1")["local_rating"]), `8.5`)
+
+	// LIMPAR (DELETE sem lang): remove a chave; a nota volta a null.
+	del := do(t, h, http.MethodDelete, "/api/v1/entities/e1/override/local_rating", nil)
+	if del.Code != http.StatusOK {
+		t.Fatalf("DELETE nota status = %d, quero 200 (corpo=%s)", del.Code, del.Body.String())
+	}
+	limpa := decodeEntidade(t, do(t, h, http.MethodGet, "/api/v1/entities/e1?lang=pt-BR", nil))
+	if limpa.LocalRating != nil {
+		t.Errorf("local_rating apos limpar = %v, quero null", limpa.LocalRating)
+	}
+	if b := getBlob(t, h, "e1"); len(b) != 0 {
+		t.Errorf("blob apos limpar = %v, quero {}", b)
 	}
 }
 

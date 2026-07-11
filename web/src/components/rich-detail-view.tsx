@@ -490,8 +490,29 @@ export function RichDetailView({
                   {formatarDuracao(detail.runtime)}
                 </span>
               ) : null}
+              {/* Nota LOCAL do dono (ADR-0012): estrela CHEIA âmbar, destacada do
+                  texto. Complementa a nota da fonte (que segue exibida ao lado). Usa
+                  `!= null` para admitir a nota 0. */}
+              {detail.localRating != null ? (
+                <span
+                  className="inline-flex items-center gap-1 text-sm font-medium text-foreground"
+                  aria-label={`Sua nota: ${detail.localRating.toFixed(1)}`}
+                  title="Sua nota"
+                >
+                  <Star
+                    className="size-4 fill-amber-500 text-amber-500"
+                    aria-hidden
+                  />
+                  {detail.localRating.toFixed(1)}
+                </span>
+              ) : null}
               {detail.voteAverage ? (
-                <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                <span
+                  className="inline-flex items-center gap-1 text-sm text-muted-foreground"
+                  title={
+                    detail.localRating != null ? 'Nota da fonte' : undefined
+                  }
+                >
                   <Star className="size-4" aria-hidden />
                   {detail.voteAverage.toFixed(1)}
                 </span>
