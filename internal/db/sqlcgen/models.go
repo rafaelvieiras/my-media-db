@@ -40,6 +40,7 @@ type Entity struct {
 	ExternalIDTmdb    sql.NullString
 	ExternalIDImdb    sql.NullString
 	OriginalLanguage  sql.NullString
+	ExternalIDTvdb    sql.NullString
 }
 
 type EntityFt struct {
@@ -50,10 +51,11 @@ type EntityFt struct {
 }
 
 type EntityRelation struct {
-	ID       string
-	ParentID string
-	ChildID  string
-	Kind     string
+	ID        string
+	ParentID  string
+	ChildID   string
+	Kind      string
+	SortIndex sql.NullInt64
 }
 
 type ExternalDetail struct {

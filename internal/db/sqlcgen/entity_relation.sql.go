@@ -7,6 +7,7 @@ package sqlcgen
 
 import (
 	"context"
+	"database/sql"
 )
 
 const apagarEntityRelation = `-- name: ApagarEntityRelation :exec
@@ -22,29 +23,34 @@ func (q *Queries) ApagarEntityRelation(ctx context.Context, id string) error {
 const criarEntityRelation = `-- name: CriarEntityRelation :one
 
 INSERT INTO entity_relation (
-    id, parent_id, child_id, kind
+    id, parent_id, child_id, kind, sort_index
 ) VALUES (
-    ?, ?, ?, ?
+    ?, ?, ?, ?, ?
 )
-RETURNING id, parent_id, child_id, kind
+RETURNING id, parent_id, child_id, kind, sort_index
 `
 
 type CriarEntityRelationParams struct {
-	ID       string
-	ParentID string
-	ChildID  string
-	Kind     string
+	ID        string
+	ParentID  string
+	ChildID   string
+	Kind      string
+	SortIndex sql.NullInt64
 }
 
 // CRUD de entity_relation (serie<->temporada<->episodio, colecao<->filme).
 // Criada agora; populada so pelos tipos que o scanner tratar (fase posterior).
 // Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+// sort_index e NULLABLE: colecao passa NULL (ordena por id, como antes); serie/
+// temporada passam o numero (temporada dentro da serie, episodio dentro da
+// temporada) para a ordenacao estavel de ListarRelacoesFilhas.
 func (q *Queries) CriarEntityRelation(ctx context.Context, arg CriarEntityRelationParams) (EntityRelation, error) {
 	row := q.db.QueryRowContext(ctx, criarEntityRelation,
 		arg.ID,
 		arg.ParentID,
 		arg.ChildID,
 		arg.Kind,
+		arg.SortIndex,
 	)
 	var i EntityRelation
 	err := row.Scan(
@@ -52,18 +58,23 @@ func (q *Queries) CriarEntityRelation(ctx context.Context, arg CriarEntityRelati
 		&i.ParentID,
 		&i.ChildID,
 		&i.Kind,
+		&i.SortIndex,
 	)
 	return i, err
 }
 
 const listarRelacoesFilhas = `-- name: ListarRelacoesFilhas :many
-SELECT id, parent_id, child_id, kind
+SELECT id, parent_id, child_id, kind, sort_index
 FROM entity_relation
 WHERE parent_id = ?
-ORDER BY id
+ORDER BY sort_index IS NULL, sort_index, id
 `
 
-// Relacoes onde a entity e o pai (ex.: as temporadas de uma serie).
+// Relacoes onde a entity e o pai (ex.: as temporadas de uma serie). Ordena por
+// sort_index (numero estavel do filho) e cai para id quando ele e NULL. A forma
+// `sort_index IS NULL, sort_index, id` empurra os NULL para o fim sem depender de
+// NULLS LAST (portavel entre SQLite/modernc); colecao (sort_index todo NULL)
+// mantem a ordenacao por id de antes.
 func (q *Queries) ListarRelacoesFilhas(ctx context.Context, parentID string) ([]EntityRelation, error) {
 	rows, err := q.db.QueryContext(ctx, listarRelacoesFilhas, parentID)
 	if err != nil {
@@ -78,6 +89,7 @@ func (q *Queries) ListarRelacoesFilhas(ctx context.Context, parentID string) ([]
 			&i.ParentID,
 			&i.ChildID,
 			&i.Kind,
+			&i.SortIndex,
 		); err != nil {
 			return nil, err
 		}
@@ -93,7 +105,7 @@ func (q *Queries) ListarRelacoesFilhas(ctx context.Context, parentID string) ([]
 }
 
 const listarRelacoesPais = `-- name: ListarRelacoesPais :many
-SELECT id, parent_id, child_id, kind
+SELECT id, parent_id, child_id, kind, sort_index
 FROM entity_relation
 WHERE child_id = ?
 ORDER BY id
@@ -114,6 +126,7 @@ func (q *Queries) ListarRelacoesPais(ctx context.Context, childID string) ([]Ent
 			&i.ParentID,
 			&i.ChildID,
 			&i.Kind,
+			&i.SortIndex,
 		); err != nil {
 			return nil, err
 		}
@@ -129,7 +142,7 @@ func (q *Queries) ListarRelacoesPais(ctx context.Context, childID string) ([]Ent
 }
 
 const obterEntityRelation = `-- name: ObterEntityRelation :one
-SELECT id, parent_id, child_id, kind
+SELECT id, parent_id, child_id, kind, sort_index
 FROM entity_relation
 WHERE id = ?
 `
@@ -142,6 +155,7 @@ func (q *Queries) ObterEntityRelation(ctx context.Context, id string) (EntityRel
 		&i.ParentID,
 		&i.ChildID,
 		&i.Kind,
+		&i.SortIndex,
 	)
 	return i, err
 }

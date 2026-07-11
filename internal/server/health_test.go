@@ -59,8 +59,8 @@ func TestHealthComBanco(t *testing.T) {
 	if !got.DB.OK {
 		t.Error("db.ok = false, quero true")
 	}
-	if got.DB.Schema != 6 {
-		t.Errorf("db.schema = %d, quero 6", got.DB.Schema)
+	if got.DB.Schema != 7 {
+		t.Errorf("db.schema = %d, quero 7", got.DB.Schema)
 	}
 }
 

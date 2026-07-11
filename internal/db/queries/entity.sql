@@ -8,9 +8,9 @@
 -- sofrem disso (sao parseadas por estrutura, nao guardadas como texto), entao la
 -- os comentarios seguem em pt-BR acentuado. Aqui, ASCII. Regra geral: colunas
 -- sempre EXPLICITAS, nunca '*'/'RETURNING *' (a expansao de '*' tem o mesmo bug
--- de offset). As colunas geradas (external_id_tmdb/imdb) derivam de
+-- de offset). As colunas geradas (external_id_tmdb/imdb/tvdb) derivam de
 -- external_ids_json e NAO entram no INSERT/UPDATE, mas aparecem no
--- RETURNING/SELECT para espelhar o modelo.
+-- RETURNING/SELECT para espelhar o modelo (migration 0007 somou tvdb).
 
 -- name: CriarEntity :one
 -- status NAO entra no INSERT: usa o DEFAULT 'cataloged' (item auto-criado nasce
@@ -23,12 +23,12 @@ INSERT INTO entity (
 )
 RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language;
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb;
 
 -- name: ObterEntity :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
 FROM entity
 WHERE id = ?;
 
@@ -36,9 +36,19 @@ WHERE id = ?;
 -- Lookup por id externo tmdb via coluna gerada + indice (doc 04, busca sem GIN).
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
 FROM entity
 WHERE external_id_tmdb = ?;
+
+-- name: ObterEntityPorTvdb :one
+-- Lookup por id externo tvdb via coluna gerada + indice (migration 0007, ADR-0021).
+-- Espelha ObterEntityPorTmdb: series exclusivas do TheTVDB (sem contraparte tmdb/
+-- imdb, ex.: Looney Tunes) deduplicam por este caminho no import.
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+FROM entity
+WHERE external_id_tvdb = ?;
 
 -- name: ObterColecaoPorTmdb :one
 -- Dedup da entity COLECAO por id tmdb (briefing 0025): reusa a coluna gerada
@@ -47,7 +57,7 @@ WHERE external_id_tmdb = ?;
 -- evita casar um filme homonimo de mesmo id numerico. Mantem o re-import idempotente.
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
 FROM entity
 WHERE type = 'collection' AND external_id_tmdb = ?
 LIMIT 1;
@@ -70,7 +80,7 @@ WHERE e.id = ?;
 -- name: ObterEntityPorImdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
 FROM entity
 WHERE external_id_imdb = ?;
 
@@ -81,7 +91,7 @@ WHERE external_id_imdb = ?;
 -- id embutido no nome (nao duplica a entity).
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
 FROM entity
 WHERE type = ? AND title = ? AND release_date IS ?
 LIMIT 1;
@@ -89,7 +99,7 @@ LIMIT 1;
 -- name: ListarEntities :many
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
 FROM entity
 ORDER BY created_at DESC, id
 LIMIT ? OFFSET ?;
@@ -158,7 +168,7 @@ SET type = ?,
 WHERE id = ?
 RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language;
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb;
 
 -- name: AtualizarExternalIds :exec
 -- Mescla a identidade externa (MD4): a app le external_ids_json, junta

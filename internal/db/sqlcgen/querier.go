@@ -80,15 +80,18 @@ type Querier interface {
 	// sofrem disso (sao parseadas por estrutura, nao guardadas como texto), entao la
 	// os comentarios seguem em pt-BR acentuado. Aqui, ASCII. Regra geral: colunas
 	// sempre EXPLICITAS, nunca '*'/'RETURNING *' (a expansao de '*' tem o mesmo bug
-	// de offset). As colunas geradas (external_id_tmdb/imdb) derivam de
+	// de offset). As colunas geradas (external_id_tmdb/imdb/tvdb) derivam de
 	// external_ids_json e NAO entram no INSERT/UPDATE, mas aparecem no
-	// RETURNING/SELECT para espelhar o modelo.
+	// RETURNING/SELECT para espelhar o modelo (migration 0007 somou tvdb).
 	// status NAO entra no INSERT: usa o DEFAULT 'cataloged' (item auto-criado nasce
 	// catalogado; a curadoria muda depois via AtualizarEntity). ADR-0009.
 	CriarEntity(ctx context.Context, arg CriarEntityParams) (Entity, error)
 	// CRUD de entity_relation (serie<->temporada<->episodio, colecao<->filme).
 	// Criada agora; populada so pelos tipos que o scanner tratar (fase posterior).
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+	// sort_index e NULLABLE: colecao passa NULL (ordena por id, como antes); serie/
+	// temporada passam o numero (temporada dentro da serie, episodio dentro da
+	// temporada) para a ordenacao estavel de ListarRelacoesFilhas.
 	CriarEntityRelation(ctx context.Context, arg CriarEntityRelationParams) (EntityRelation, error)
 	// CRUD de library_source (raizes de varredura).
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
@@ -129,7 +132,11 @@ type Querier interface {
 	// dono -- sem linha em media_override e sem asset origin='user'. Uma entity SO
 	// importada (sem media_file) NAO e orfa. owned e sempre falso aqui (nenhum present).
 	ListarOrfas(ctx context.Context) ([]ListarOrfasRow, error)
-	// Relacoes onde a entity e o pai (ex.: as temporadas de uma serie).
+	// Relacoes onde a entity e o pai (ex.: as temporadas de uma serie). Ordena por
+	// sort_index (numero estavel do filho) e cai para id quando ele e NULL. A forma
+	// `sort_index IS NULL, sort_index, id` empurra os NULL para o fim sem depender de
+	// NULLS LAST (portavel entre SQLite/modernc); colecao (sort_index todo NULL)
+	// mantem a ordenacao por id de antes.
 	ListarRelacoesFilhas(ctx context.Context, parentID string) ([]EntityRelation, error)
 	// Relacoes onde a entity e o filho (ex.: a serie de uma temporada).
 	ListarRelacoesPais(ctx context.Context, childID string) ([]EntityRelation, error)
@@ -189,6 +196,10 @@ type Querier interface {
 	ObterEntityPorTituloAno(ctx context.Context, arg ObterEntityPorTituloAnoParams) (Entity, error)
 	// Lookup por id externo tmdb via coluna gerada + indice (doc 04, busca sem GIN).
 	ObterEntityPorTmdb(ctx context.Context, externalIDTmdb sql.NullString) (Entity, error)
+	// Lookup por id externo tvdb via coluna gerada + indice (migration 0007, ADR-0021).
+	// Espelha ObterEntityPorTmdb: series exclusivas do TheTVDB (sem contraparte tmdb/
+	// imdb, ex.: Looney Tunes) deduplicam por este caminho no import.
+	ObterEntityPorTvdb(ctx context.Context, externalIDTvdb sql.NullString) (Entity, error)
 	ObterEntityRelation(ctx context.Context, id string) (EntityRelation, error)
 	// Le o cache de UM item externo pela chave logica (source, source_id). fetched_at e
 	// langs_json alimentam a decisao de refresh (TTL + conjunto de idiomas) na app.

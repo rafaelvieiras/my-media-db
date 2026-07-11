@@ -37,7 +37,7 @@ SET type = ?,
 WHERE id = ?
 RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
 `
 
 type AtualizarEntityParams struct {
@@ -83,6 +83,7 @@ func (q *Queries) AtualizarEntity(ctx context.Context, arg AtualizarEntityParams
 		&i.ExternalIDTmdb,
 		&i.ExternalIDImdb,
 		&i.OriginalLanguage,
+		&i.ExternalIDTvdb,
 	)
 	return i, err
 }
@@ -205,7 +206,7 @@ INSERT INTO entity (
 )
 RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
 `
 
 type CriarEntityParams struct {
@@ -230,9 +231,9 @@ type CriarEntityParams struct {
 // sofrem disso (sao parseadas por estrutura, nao guardadas como texto), entao la
 // os comentarios seguem em pt-BR acentuado. Aqui, ASCII. Regra geral: colunas
 // sempre EXPLICITAS, nunca '*'/'RETURNING *' (a expansao de '*' tem o mesmo bug
-// de offset). As colunas geradas (external_id_tmdb/imdb) derivam de
+// de offset). As colunas geradas (external_id_tmdb/imdb/tvdb) derivam de
 // external_ids_json e NAO entram no INSERT/UPDATE, mas aparecem no
-// RETURNING/SELECT para espelhar o modelo.
+// RETURNING/SELECT para espelhar o modelo (migration 0007 somou tvdb).
 // status NAO entra no INSERT: usa o DEFAULT 'cataloged' (item auto-criado nasce
 // catalogado; a curadoria muda depois via AtualizarEntity). ADR-0009.
 func (q *Queries) CriarEntity(ctx context.Context, arg CriarEntityParams) (Entity, error) {
@@ -264,6 +265,7 @@ func (q *Queries) CriarEntity(ctx context.Context, arg CriarEntityParams) (Entit
 		&i.ExternalIDTmdb,
 		&i.ExternalIDImdb,
 		&i.OriginalLanguage,
+		&i.ExternalIDTvdb,
 	)
 	return i, err
 }
@@ -271,7 +273,7 @@ func (q *Queries) CriarEntity(ctx context.Context, arg CriarEntityParams) (Entit
 const listarEntities = `-- name: ListarEntities :many
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
 FROM entity
 ORDER BY created_at DESC, id
 LIMIT ? OFFSET ?
@@ -307,6 +309,7 @@ func (q *Queries) ListarEntities(ctx context.Context, arg ListarEntitiesParams) 
 			&i.ExternalIDTmdb,
 			&i.ExternalIDImdb,
 			&i.OriginalLanguage,
+			&i.ExternalIDTvdb,
 		); err != nil {
 			return nil, err
 		}
@@ -478,7 +481,7 @@ func (q *Queries) ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCar
 const obterColecaoPorTmdb = `-- name: ObterColecaoPorTmdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
 FROM entity
 WHERE type = 'collection' AND external_id_tmdb = ?
 LIMIT 1
@@ -507,6 +510,7 @@ func (q *Queries) ObterColecaoPorTmdb(ctx context.Context, externalIDTmdb sql.Nu
 		&i.ExternalIDTmdb,
 		&i.ExternalIDImdb,
 		&i.OriginalLanguage,
+		&i.ExternalIDTvdb,
 	)
 	return i, err
 }
@@ -514,7 +518,7 @@ func (q *Queries) ObterColecaoPorTmdb(ctx context.Context, externalIDTmdb sql.Nu
 const obterEntity = `-- name: ObterEntity :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
 FROM entity
 WHERE id = ?
 `
@@ -538,6 +542,7 @@ func (q *Queries) ObterEntity(ctx context.Context, id string) (Entity, error) {
 		&i.ExternalIDTmdb,
 		&i.ExternalIDImdb,
 		&i.OriginalLanguage,
+		&i.ExternalIDTvdb,
 	)
 	return i, err
 }
@@ -590,7 +595,7 @@ func (q *Queries) ObterEntityCard(ctx context.Context, id string) (ObterEntityCa
 const obterEntityPorImdb = `-- name: ObterEntityPorImdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
 FROM entity
 WHERE external_id_imdb = ?
 `
@@ -614,6 +619,7 @@ func (q *Queries) ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.Nul
 		&i.ExternalIDTmdb,
 		&i.ExternalIDImdb,
 		&i.OriginalLanguage,
+		&i.ExternalIDTvdb,
 	)
 	return i, err
 }
@@ -621,7 +627,7 @@ func (q *Queries) ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.Nul
 const obterEntityPorTituloAno = `-- name: ObterEntityPorTituloAno :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
 FROM entity
 WHERE type = ? AND title = ? AND release_date IS ?
 LIMIT 1
@@ -656,6 +662,7 @@ func (q *Queries) ObterEntityPorTituloAno(ctx context.Context, arg ObterEntityPo
 		&i.ExternalIDTmdb,
 		&i.ExternalIDImdb,
 		&i.OriginalLanguage,
+		&i.ExternalIDTvdb,
 	)
 	return i, err
 }
@@ -663,7 +670,7 @@ func (q *Queries) ObterEntityPorTituloAno(ctx context.Context, arg ObterEntityPo
 const obterEntityPorTmdb = `-- name: ObterEntityPorTmdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
 FROM entity
 WHERE external_id_tmdb = ?
 `
@@ -688,6 +695,42 @@ func (q *Queries) ObterEntityPorTmdb(ctx context.Context, externalIDTmdb sql.Nul
 		&i.ExternalIDTmdb,
 		&i.ExternalIDImdb,
 		&i.OriginalLanguage,
+		&i.ExternalIDTvdb,
+	)
+	return i, err
+}
+
+const obterEntityPorTvdb = `-- name: ObterEntityPorTvdb :one
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+FROM entity
+WHERE external_id_tvdb = ?
+`
+
+// Lookup por id externo tvdb via coluna gerada + indice (migration 0007, ADR-0021).
+// Espelha ObterEntityPorTmdb: series exclusivas do TheTVDB (sem contraparte tmdb/
+// imdb, ex.: Looney Tunes) deduplicam por este caminho no import.
+func (q *Queries) ObterEntityPorTvdb(ctx context.Context, externalIDTvdb sql.NullString) (Entity, error) {
+	row := q.db.QueryRowContext(ctx, obterEntityPorTvdb, externalIDTvdb)
+	var i Entity
+	err := row.Scan(
+		&i.ID,
+		&i.Type,
+		&i.Title,
+		&i.OriginalTitle,
+		&i.Description,
+		&i.ReleaseDate,
+		&i.Status,
+		&i.TagsJson,
+		&i.ExternalIdsJson,
+		&i.ExtensionDataJson,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ExternalIDTmdb,
+		&i.ExternalIDImdb,
+		&i.OriginalLanguage,
+		&i.ExternalIDTvdb,
 	)
 	return i, err
 }
