@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -35,9 +36,13 @@ const ttlCacheExterno = 60 * time.Second
 // do usuário vira uma frase entre aspas com prefixo, de modo que aspas, parênteses
 // e operadores do FTS5 no input não quebrem a sintaxe da consulta.
 //
-// A busca só retorna OBRAS DE TOPO: `e.type NOT IN ('season','episode')` exclui os
-// sub-nós da árvore de séries (0032, espelha o filtro fixo de ListarEntityCards) —
-// literal, sem placeholder, os parâmetros posicionais seguem (match, tipo, tipo, limit).
+// Por PADRÃO a busca só retorna OBRAS DE TOPO: os sub-nós da árvore de séries
+// (season/episode) ficam de fora, senão uma busca por "Simpsons" afogaria a série
+// numa enxurrada de episódios/temporadas de várias séries (0033, SUPERSEDE a exclusão
+// dura do 0032). A cláusula `e.type NOT IN ('season','episode') OR e.type IN (?, ?)`
+// deixa os dois placeholders serem os sub-nós a INCLUIR: a string vazia não casa
+// nenhum type, então o default preserva o só-topo; 'season'/'episode' religa o sub-nó
+// correspondente. Os parâmetros posicionais seguem (match, incl1, incl2, tipo, tipo, limit).
 const buscarCardsFTSSQL = `SELECT
     e.id, e.type, e.title, e.status,
     EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
@@ -47,7 +52,7 @@ const buscarCardsFTSSQL = `SELECT
 FROM entity_fts
 JOIN entity e ON e.id = entity_fts.entity_id
 WHERE entity_fts MATCH ?
-  AND e.type NOT IN ('season', 'episode')
+  AND (e.type NOT IN ('season', 'episode') OR e.type IN (?, ?))
   AND (? IS NULL OR e.type = ?)
 ORDER BY entity_fts.rank
 LIMIT ?;`
@@ -90,7 +95,8 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "o parâmetro q é obrigatório")
 		return
 	}
-	tipo := parseTipoFiltro(q) // string | nil
+	tipo := parseTipoFiltro(q)                 // string | nil
+	inclSeason, inclEpisode := parseInclude(q) // sub-nós a religar na busca local
 
 	ctx := r.Context()
 	// Idioma de leitura ATIVO (0021): valida o ?lang= contra os permitidos (400 se
@@ -106,7 +112,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	locais, err := s.buscarLocal(ctx, termo, tipo)
+	locais, err := s.buscarLocal(ctx, termo, tipo, inclSeason, inclEpisode)
 	if err != nil {
 		respondErroInterno(w)
 		return
@@ -123,15 +129,35 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// parseInclude lê o parâmetro `include` (CSV, ex.: "season,episode") e devolve os
+// dois slots de inclusão da busca local: um "season"/"" e um "episode"/"", cada um
+// preenchido só quando o respectivo sub-nó foi pedido. Aceita repetição (idempotente)
+// e ignora silenciosamente qualquer valor fora de {season, episode}. Por padrão (sem
+// include) ambos ficam "" — os sub-nós continuam de fora (0033).
+func parseInclude(q url.Values) (season, episode string) {
+	for _, raw := range q["include"] {
+		for _, v := range strings.Split(raw, ",") {
+			switch strings.TrimSpace(v) {
+			case "season":
+				season = "season"
+			case "episode":
+				episode = "episode"
+			}
+		}
+	}
+	return season, episode
+}
+
 // buscarLocal roda o MATCH FTS5 sanitizado no pool de LEITURA e devolve os cards.
-// Input sem nenhum termo pesquisável (só pontuação/operadores) devolve lista
-// vazia sem tocar o banco — nunca erro.
-func (s *Server) buscarLocal(ctx context.Context, termo string, tipo any) ([]entityCardDTO, error) {
+// inclSeason/inclEpisode são os sub-nós a RELIGAR na busca ("season"/"episode" ou "");
+// por padrão ("") os sub-nós ficam de fora (0033). Input sem nenhum termo pesquisável
+// (só pontuação/operadores) devolve lista vazia sem tocar o banco — nunca erro.
+func (s *Server) buscarLocal(ctx context.Context, termo string, tipo any, inclSeason, inclEpisode string) ([]entityCardDTO, error) {
 	match, ok := sanitizarMatchFTS(termo)
 	if !ok {
 		return []entityCardDTO{}, nil
 	}
-	rows, err := s.db.Read.QueryContext(ctx, buscarCardsFTSSQL, match, tipo, tipo, int64(limitPadrao))
+	rows, err := s.db.Read.QueryContext(ctx, buscarCardsFTSSQL, match, inclSeason, inclEpisode, tipo, tipo, int64(limitPadrao))
 	if err != nil {
 		return nil, err
 	}

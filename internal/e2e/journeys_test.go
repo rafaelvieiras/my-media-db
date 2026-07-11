@@ -323,11 +323,12 @@ func TestJornadaArvoreSeriesTopoBreadcrumb(t *testing.T) {
 	home := c.obj(http.MethodGet, "/api/v1/entities", nil, http.StatusOK)
 	assertHomeSoSerie(t, home, serieID)
 
-	// (b) BUSCA local: "Episodio" casaria os 6 episodios se indexados; excluidos -> 0.
+	// (b) BUSCA local DEFAULT: "Episodio" casaria os 6 episodios se indexados; sub-nos
+	// ficam de fora por padrao -> 0 (0033 preserva o so-topo do 0032 no default).
 	resp := c.obj(http.MethodGet, "/api/v1/search?q=Episodio", nil, http.StatusOK)
 	locais, _ := resp["local"].([]any)
 	if len(locais) != 0 {
-		t.Errorf("busca por \"Episodio\" trouxe %d locais, quero 0 (sub-nos fora da busca). tipos=%v",
+		t.Errorf("busca default por \"Episodio\" trouxe %d locais, quero 0 (sub-nos fora). tipos=%v",
 			len(locais), tipos(locais))
 	}
 	// A serie de topo segue encontravel pela busca.
@@ -337,6 +338,25 @@ func TestJornadaArvoreSeriesTopoBreadcrumb(t *testing.T) {
 	if len(locaisSerie) != 1 {
 		t.Errorf("busca por \"Contos\" = %v, quero 1 resultado (a serie)", tipos(locaisSerie))
 	}
+
+	// (b2) include=episode RELIGA os 6 episodios numa secao propria (0033), todos type
+	// episode — sem misturar com a serie (a busca por "Episodio" nao casa "Contos").
+	respEp := c.obj(http.MethodGet, "/api/v1/search?q=Episodio&include=episode", nil, http.StatusOK)
+	locaisEp, _ := respEp["local"].([]any)
+	if len(locaisEp) != 6 {
+		t.Errorf("include=episode por \"Episodio\" trouxe %d, quero 6 episodios. tipos=%v",
+			len(locaisEp), tipos(locaisEp))
+	}
+	assertTodosTipo(t, locaisEp, "episode")
+
+	// (b3) include=season religa as temporadas: a temporada 1 ("Temporada 1") casa e
+	// vem como sub-no season; tudo que retorna e season (nunca serie/episodio).
+	respTemp := c.obj(http.MethodGet, "/api/v1/search?q=Temporada&include=season", nil, http.StatusOK)
+	locaisTemp, _ := respTemp["local"].([]any)
+	if len(locaisTemp) == 0 {
+		t.Errorf("include=season por \"Temporada\" trouxe 0, quero ao menos a temporada 1")
+	}
+	assertTodosTipo(t, locaisTemp, "season")
 
 	// (c) ANCESTRAIS (breadcrumb raiz->pai).
 	// Serie (topo): ancestors vazio (mas presente, nunca null).
@@ -377,6 +397,17 @@ func assertHomeSoSerie(t *testing.T, home map[string]any, serieID string) {
 	}
 	if total, _ := home["total"].(float64); total != 1 {
 		t.Errorf("home total = %v, quero 1 (bate com a pagina, sub-nos excluidos)", home["total"])
+	}
+}
+
+// assertTodosTipo afirma que TODOS os itens da lista tem o type esperado (usado para
+// provar que uma secao de sub-no religado por include= nao mistura outros tipos).
+func assertTodosTipo(t *testing.T, itens []any, want string) {
+	t.Helper()
+	for _, tp := range tipos(itens) {
+		if tp != want {
+			t.Errorf("resultado com type %q, quero so %q", tp, want)
+		}
 	}
 }
 

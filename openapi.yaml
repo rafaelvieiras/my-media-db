@@ -664,6 +664,17 @@ paths:
           schema:
             type: string
             enum: [movie, tv]
+        - name: include
+          in: query
+          description: >
+            Religa sub-nós da árvore de séries nos resultados locais, que por
+            padrão ficam de fora (a busca é de topo: movie/tv/collection). CSV,
+            aceita `season` e/ou `episode` (ex.: `include=season,episode`);
+            valores fora desse conjunto são ignorados. Os sub-nós vêm no mesmo
+            `local[]`, distinguíveis pelo campo `type` — a UI os separa em seções.
+          required: false
+          schema:
+            type: string
         - $ref: "#/components/parameters/LangQuery"
       responses:
         "200":

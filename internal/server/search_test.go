@@ -159,6 +159,93 @@ func TestSearchFiltroType(t *testing.T) {
 	}
 }
 
+// TestSearchSubNosDefaultForaEIncluidos: por padrao a busca so traz obras de topo
+// (0033) — season/episode ficam de fora; o parametro include=season/episode religa
+// cada sub-no numa consulta so, sem misturar (a UI separa por type).
+func TestSearchSubNosDefaultForaEIncluidos(t *testing.T) {
+	h, d := setupSearchServer(t)
+	semearEntity(t, d, "serie", "tv", "Simpsons Serie")
+	semearEntity(t, d, "temp", "season", "Simpsons Temporada 1")
+	semearEntity(t, d, "ep", "episode", "Simpsons Episodio 1")
+
+	// (a) Default: so a serie de topo; nada de season/episode.
+	out := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Simpsons", nil).Body.Bytes())
+	if ids := idsLocais(out); len(ids) != 1 || ids[0] != "serie" {
+		t.Fatalf("default: local = %v, quero so [serie] (sub-nos fora)", ids)
+	}
+
+	// (b) include=season: serie + temporada, sem episodio.
+	outS := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Simpsons&include=season", nil).Body.Bytes())
+	if ids := idsLocais(outS); !contemTodos(ids, "serie", "temp") || contem(ids, "ep") {
+		t.Fatalf("include=season: local = %v, quero [serie, temp] sem ep", ids)
+	}
+
+	// (c) include=episode: serie + episodio, sem temporada.
+	outE := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Simpsons&include=episode", nil).Body.Bytes())
+	if ids := idsLocais(outE); !contemTodos(ids, "serie", "ep") || contem(ids, "temp") {
+		t.Fatalf("include=episode: local = %v, quero [serie, ep] sem temp", ids)
+	}
+
+	// (d) include=season,episode (CSV): traz os tres.
+	outAll := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Simpsons&include=season,episode", nil).Body.Bytes())
+	if ids := idsLocais(outAll); !contemTodos(ids, "serie", "temp", "ep") {
+		t.Fatalf("include=season,episode: local = %v, quero os tres", ids)
+	}
+
+	// (e) Valor invalido no include e ignorado (comportamento = default).
+	outInv := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Simpsons&include=movie,lixo", nil).Body.Bytes())
+	if ids := idsLocais(outInv); len(ids) != 1 || ids[0] != "serie" {
+		t.Fatalf("include invalido: local = %v, quero so [serie]", ids)
+	}
+}
+
+// TestSearchTypeSubNoComInclude: type=season combinado com include=season traz a
+// temporada (antes o NOT IN dura a mataria); type=season sozinho continua vazio.
+func TestSearchTypeSubNoComInclude(t *testing.T) {
+	h, d := setupSearchServer(t)
+	semearEntity(t, d, "serie", "tv", "Simpsons Serie")
+	semearEntity(t, d, "temp", "season", "Simpsons Temporada 1")
+
+	comInclude := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Simpsons&type=season&include=season", nil).Body.Bytes())
+	if ids := idsLocais(comInclude); len(ids) != 1 || ids[0] != "temp" {
+		t.Fatalf("type=season&include=season: local = %v, quero so [temp]", ids)
+	}
+
+	semInclude := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Simpsons&type=season", nil).Body.Bytes())
+	if ids := idsLocais(semInclude); len(ids) != 0 {
+		t.Fatalf("type=season sem include: local = %v, quero [] (sub-no nao religado)", ids)
+	}
+}
+
+// idsLocais coleta os ids dos cards locais da resposta de busca.
+func idsLocais(out searchResponseDTO) []string {
+	ids := make([]string, 0, len(out.Local))
+	for _, c := range out.Local {
+		ids = append(ids, c.ID)
+	}
+	return ids
+}
+
+// contem diz se a fatia tem o valor.
+func contem(xs []string, v string) bool {
+	for _, x := range xs {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// contemTodos diz se a fatia tem TODOS os valores dados.
+func contemTodos(xs []string, vs ...string) bool {
+	for _, v := range vs {
+		if !contem(xs, v) {
+			return false
+		}
+	}
+	return true
+}
+
 // TestSearchInputMalicioso garante que aspas/parenteses/operadores do FTS5 no
 // input NAO quebram a rota (nada de 5xx) — a sanitizacao os neutraliza.
 func TestSearchInputMalicioso(t *testing.T) {
