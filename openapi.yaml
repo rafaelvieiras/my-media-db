@@ -180,6 +180,26 @@ paths:
         "422":
           $ref: "#/components/responses/Error"
 
+  /api/v1/schema/entity-fields:
+    get:
+      operationId: getEntityFieldsSchema
+      summary: Descritor do formulário editorial dirigido por schema (briefing 0030).
+      description: >
+        Devolve os DESCRITORES de campo do formulário editorial, derivados da fonte
+        única `resolver.CamposEditaveis()` combinada com o registro de apresentação
+        (label/grupo/widget/ordem/faixa). O front monta os inputs e a validação de
+        cliente a partir daqui — sem redigitar a lista de campos. Metadado estático
+        (imutável entre deploys), sem autenticação e cacheável. A lista sai ORDENADA
+        por `order` crescente. O `extension_data` fica de fora (não é campo de
+        formulário simples).
+      tags: [schema]
+      responses:
+        "200":
+          description: Descritores de campo do formulário editorial.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FieldSchema" }
+
   /api/v1/entities/{id}/enrich:
     post:
       operationId: enrichEntity
@@ -1110,6 +1130,62 @@ components:
       properties:
         status: { type: string }
         version: { type: string }
+    FieldSchema:
+      type: object
+      description: >
+        Descritores de campo do formulário editorial (briefing 0030), ordenados por
+        `order` crescente.
+      required: [fields]
+      properties:
+        fields:
+          type: array
+          items: { $ref: "#/components/schemas/FieldDescriptor" }
+    FieldDescriptor:
+      type: object
+      description: >
+        Descritor de UM campo editável: combina a apresentação (label/grupo/widget/
+        ordem/faixa, no server) com a etiqueta pública do resolver (translatable/kind).
+      required: [name, label, group, widget, translatable, kind, order, creatable]
+      properties:
+        name:
+          type: string
+          description: Chave do campo (= chave do override/registro).
+        label:
+          type: string
+          description: Rótulo pt-BR (UI mono-idioma hoje).
+        group:
+          type: string
+          enum: [traduzivel, neutro]
+          description: Seção do formulário.
+        widget:
+          type: string
+          enum: [text, textarea, number, date, tags]
+          description: Widget de renderização do input.
+        translatable:
+          type: boolean
+          description: Se o campo compõe por idioma (= registroOrigem[campo].traduzivel).
+        kind:
+          type: string
+          enum: [escalar, lista, numero]
+          description: Classe de composição pública do resolver (extensao fica de fora do formulário).
+        order:
+          type: integer
+          description: Ordem estável de renderização.
+        creatable:
+          type: boolean
+          description: Aparece no formulário de CRIAR item (subconjunto plano).
+        min:
+          type: number
+          description: Mínimo (só para widget number).
+        max:
+          type: number
+          description: Máximo (só para widget number).
+        step:
+          type: number
+          description: Passo (só para widget number).
+        placeholder:
+          type: [string, "null"]
+          description: Placeholder opcional do input.
     EntityCard:
       type: object
       required: [id, type, title, status, owned, file_count, match_confidence, poster_url]

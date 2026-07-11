@@ -170,6 +170,12 @@ func (s *Server) Handler() (http.Handler, error) {
 			v1.Get("/review", s.listReview)
 			v1.Get("/orphans", s.listOrphans)
 
+			// Descritor de FORMULÁRIO editorial (briefing 0030): metadado estático
+			// que diz ao front COMO renderizar cada campo editável, derivado da fonte
+			// única resolver.CamposEditaveis() + o registro de apresentação. Só
+			// leitura, sem banco; cacheável (imutável entre deploys).
+			v1.Get("/schema/entity-fields", s.getEntityFieldsSchema)
+
 			// Configurações da aplicação (briefing 0019). Hoje só a config de
 			// idioma (principal/fallback/permitidos), base da resolução por idioma.
 			v1.Route("/settings", func(cfg chi.Router) {

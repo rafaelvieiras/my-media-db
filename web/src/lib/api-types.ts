@@ -93,6 +93,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/schema/entity-fields': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Descritor do formulário editorial dirigido por schema (briefing 0030).
+     * @description Devolve os DESCRITORES de campo do formulário editorial, derivados da fonte única `resolver.CamposEditaveis()` combinada com o registro de apresentação (label/grupo/widget/ordem/faixa). O front monta os inputs e a validação de cliente a partir daqui — sem redigitar a lista de campos. Metadado estático (imutável entre deploys), sem autenticação e cacheável. A lista sai ORDENADA por `order` crescente. O `extension_data` fica de fora (não é campo de formulário simples).
+     */
+    get: operations['getEntityFieldsSchema']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/{id}/enrich': {
     parameters: {
       query?: never
@@ -635,6 +655,46 @@ export interface components {
     Health: {
       status: string
       version: string
+    }
+    /** @description Descritores de campo do formulário editorial (briefing 0030), ordenados por `order` crescente. */
+    FieldSchema: {
+      fields: components['schemas']['FieldDescriptor'][]
+    }
+    /** @description Descritor de UM campo editável: combina a apresentação (label/grupo/widget/ ordem/faixa, no server) com a etiqueta pública do resolver (translatable/kind). */
+    FieldDescriptor: {
+      /** @description Chave do campo (= chave do override/registro). */
+      name: string
+      /** @description Rótulo pt-BR (UI mono-idioma hoje). */
+      label: string
+      /**
+       * @description Seção do formulário.
+       * @enum {string}
+       */
+      group: 'traduzivel' | 'neutro'
+      /**
+       * @description Widget de renderização do input.
+       * @enum {string}
+       */
+      widget: 'text' | 'textarea' | 'number' | 'date' | 'tags'
+      /** @description Se o campo compõe por idioma (= registroOrigem[campo].traduzivel). */
+      translatable: boolean
+      /**
+       * @description Classe de composição pública do resolver (extensao fica de fora do formulário).
+       * @enum {string}
+       */
+      kind: 'escalar' | 'lista' | 'numero'
+      /** @description Ordem estável de renderização. */
+      order: number
+      /** @description Aparece no formulário de CRIAR item (subconjunto plano). */
+      creatable: boolean
+      /** @description Mínimo (só para widget number). */
+      min?: number
+      /** @description Máximo (só para widget number). */
+      max?: number
+      /** @description Passo (só para widget number). */
+      step?: number
+      /** @description Placeholder opcional do input. */
+      placeholder?: string | null
     }
     EntityCard: {
       id: string
@@ -1211,6 +1271,26 @@ export interface operations {
       }
       400: components['responses']['Error']
       422: components['responses']['Error']
+    }
+  }
+  getEntityFieldsSchema: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Descritores de campo do formulário editorial. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FieldSchema']
+        }
+      }
     }
   }
   enrichEntity: {
