@@ -31,9 +31,12 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          # Última versão de patch da 1.26 (>= 1.26.5, corrige a vuln de stdlib
-          # que o govulncheck reporta como bloqueante — ver go.mod/toolchain).
-          go-version: '1.26.x'
+          # Patch EXATO (= toolchain do go.mod). Nao usar '1.26.x': o runner
+          # resolve pelo cache e pode cair na 1.26.4, que tem a vuln de stdlib
+          # (corrigida na 1.26.5) e o govulncheck marca como bloqueante. Pin
+          # tambem garante cobertura deterministica no ratchet. Bumpar junto com
+          # o toolchain do go.mod.
+          go-version: '1.26.5'
           cache: true
 
       - name: Setup Node.js
