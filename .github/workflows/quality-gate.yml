@@ -67,8 +67,12 @@ jobs:
           recreate: true
           path: reports/quality-gate-report.md
 
+      # Best-effort: a tabela de metricas ja e comentada no PR e a regressao
+      # bloqueante e decidida pelo passo abaixo. Uma falha de upload (p.ex. cota
+      # de storage de artefatos cheia) NAO deve pintar a catraca de vermelho.
       - name: Upload quality reports
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: quality-reports
