@@ -9,7 +9,7 @@
 | **ID** | 0031 |
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override (vertical séries) |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [ADR-0021](../docs/adr/0021-modelo-de-series-hierarquia-ordenacoes-vinculo-arquivo.md), [00-agenda TV1–TV5](../docs/00-agenda-de-decisoes.md), [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [07-enriquecimento-providers](../docs/07-enriquecimento-providers.md) |
 | **Depende de** | 0022, 0024 (detalhe externo rico + paridade), 0025 (molde pai-com-filhos), 0026 (interno-first) |
 
@@ -178,6 +178,29 @@ próximas verticais vão reusar.
   (filtrar por `recordType`); tipos exclusivos (`clearart`/`clearlogo`) são bônus.
 - Usar **agentes** para pesquisa/implementação/documentação, respeitando a árvore
   compartilhada do `web/` (sequencial), validando entre etapas.
+
+## 6.1 Validação (Fase 1 concluída — 2026-07-11)
+
+Implementada em 5 passos sequenciais (schema → provider TheTVDB → registry →
+import da árvore → frontend), cada um validado e commitado. Catraca completa
+verde (Go 74.4% / e2e 34.7% / web 90.45% / tsc 0 / jscpd 0.13% / eslint 0).
+
+**Smoke ao vivo contra o TheTVDB real** (ambiente de dev), com as duas séries que
+o dono escolheu:
+- **The Simpsons** (tvdb 71663, import 18,8s): 38 temporadas (com "Temporada 0" =
+  especiais) → episódios numerados em ordem de exibição; sinopse pt-BR; links
+  cruzados IMDb/TMDB (via `remoteIds`). 0 erros de console na UI.
+- **Looney Tunes** (tvdb 72514, import 50s): 73 temporadas **numeradas por ano**
+  ("Temporada 1929"…); `external_ids = {tvdb}` **sem** contraparte TMDB/IMDb — o
+  caso exclusivo do TheTVDB com identidade primária dele, renderizado na UI.
+
+Dois ajustes descobertos na validação:
+- **Still de episódio não é baixado no import** (defere p/ Fase 3): baixar um por
+  episódio (Looney Tunes ~1195) é lento e hostil ao CDN. Episódios aparecem "Sem
+  arte" na Fase 1.
+- **Número do episódio na UI usa a posição ordinal** (o card `/members` ainda não
+  expõe o `numbering`): correto para a ordem default contígua; expor o `numbering`
+  multi-ordem no card fica p/ quando houver seletor de ordenação (Fase 3).
 
 ## 7. Fora deste briefing / follow-ups
 
