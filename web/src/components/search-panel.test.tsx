@@ -42,6 +42,28 @@ const localCard: EntityCard = {
   poster_url: null,
 }
 
+const seasonCard: EntityCard = {
+  id: 'season-1',
+  type: 'season',
+  title: 'Temporada 1 Local',
+  status: 'cataloged',
+  owned: false,
+  file_count: 0,
+  match_confidence: null,
+  poster_url: null,
+}
+
+const episodeCard: EntityCard = {
+  id: 'episode-1',
+  type: 'episode',
+  title: 'Episodio 1 Local',
+  status: 'cataloged',
+  owned: false,
+  file_count: 0,
+  match_confidence: null,
+  poster_url: null,
+}
+
 const externalItem: ExternalResult = {
   source: 'tmdb',
   source_id: '603',
@@ -116,7 +138,7 @@ describe('SearchPanel', () => {
     await waitFor(() =>
       expect(screen.getByText('Matrix Local')).toBeInTheDocument(),
     )
-    expect(screen.getByText('No seu catálogo')).toBeInTheDocument()
+    expect(screen.getByText('Filmes e séries')).toBeInTheDocument()
     expect(screen.getByText('Resultados externos')).toBeInTheDocument()
     expect(screen.getByText('The Matrix')).toBeInTheDocument()
     // Só chamou /search (com o termo debounced), não por caractere.
@@ -126,6 +148,74 @@ describe('SearchPanel', () => {
       ),
     ).toBe(true)
   })
+
+  it('mantém sub-nós ocultos por padrão, mesmo vindo no payload (0033)', async () => {
+    await buscar({
+      query: 'simpsons',
+      local: [localCard, seasonCard, episodeCard],
+      external: [],
+      external_available: true,
+    })
+    await waitFor(() =>
+      expect(screen.getByText('Matrix Local')).toBeInTheDocument(),
+    )
+    // Sem toggle ligado: nem seção nem cards de temporada/episódio.
+    expect(screen.queryByRole('heading', { name: 'Temporadas' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Episódios' })).toBeNull()
+    expect(screen.queryByText('Temporada 1 Local')).toBeNull()
+    expect(screen.queryByText('Episodio 1 Local')).toBeNull()
+  })
+
+  // Um único caminho, exercitado para cada sub-nó: ligar o toggle abre a seção
+  // própria com o card daquele tipo, mantém o outro sub-nó oculto e refaz a busca
+  // com o `include=` correspondente. Parametrizado para os dois toggles não
+  // duplicarem o mesmo corpo de teste (medido pelo jscpd).
+  const casosSubNo = [
+    {
+      toggle: 'Temporadas',
+      visivel: 'Temporada 1 Local',
+      oculto: 'Episodio 1 Local',
+      include: 'include=season',
+    },
+    {
+      toggle: 'Episódios',
+      visivel: 'Episodio 1 Local',
+      oculto: 'Temporada 1 Local',
+      include: 'include=episode',
+    },
+  ] as const
+
+  it.each(casosSubNo)(
+    'liga "$toggle": abre a seção com o card e envia $include',
+    async ({ toggle, visivel, oculto, include }) => {
+      const { user, fetchMock } = await buscar({
+        query: 'simpsons',
+        local: [localCard, seasonCard, episodeCard],
+        external: [],
+        external_available: true,
+      })
+      await waitFor(() =>
+        expect(screen.getByText('Matrix Local')).toBeInTheDocument(),
+      )
+
+      await user.click(screen.getByRole('button', { name: toggle }))
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole('heading', { name: toggle }),
+        ).toBeInTheDocument(),
+      )
+      // O sub-nó ligado aparece na seção própria; o outro segue oculto.
+      expect(screen.getByText(visivel)).toBeInTheDocument()
+      expect(screen.queryByText(oculto)).toBeNull()
+      // O refetch carregou o include= correspondente.
+      await waitFor(() =>
+        expect(
+          fetchMock.mock.calls.some(([u]) => String(u).includes(include)),
+        ).toBe(true),
+      )
+    },
+  )
 
   it('resultado externo já na biblioteca vira "Na biblioteca" sem Importar', async () => {
     // Interno-first (0027): quando o item externo já é entity (internal_id), o card

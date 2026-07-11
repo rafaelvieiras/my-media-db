@@ -414,11 +414,14 @@ export async function resetOverride(id: string): Promise<ResolvedEntity> {
 
 // Busca unificada: `local` (catálogo) + `external` (fonte externa, "não salvos").
 // `q` vazio é rejeitado pelo backend (400) — a UI só chama com termo preenchido.
-// `type` opcional filtra por `movie`|`tv`.
+// `type` opcional filtra por `movie`|`tv`. `include` (0033) religa sub-nós da árvore
+// de séries (`season`/`episode`), que por padrão ficam fora da busca; vêm no mesmo
+// `local[]`, e a UI os separa por `type` em seções próprias.
 export async function searchMedia(
   q: string,
   type?: string,
   lang?: string,
+  include?: string[],
 ): Promise<SearchResult> {
   const qs = new URLSearchParams({ q })
   if (type) {
@@ -428,6 +431,9 @@ export async function searchMedia(
   // nele. Vazio/omitido = o backend cai no principal.
   if (lang) {
     qs.set('lang', lang)
+  }
+  if (include && include.length > 0) {
+    qs.set('include', include.join(','))
   }
   return lerJson<SearchResult>(
     await fetch(`${base}/api/v1/search?${qs.toString()}`),

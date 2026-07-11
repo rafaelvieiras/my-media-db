@@ -1774,6 +1774,8 @@ export interface operations {
         q: string
         /** @description Filtra por tipo (movie, tv). Ausente = todos. */
         type?: 'movie' | 'tv'
+        /** @description Religa sub-nós da árvore de séries nos resultados locais, que por padrão ficam de fora (a busca é de topo: movie/tv/collection). CSV, aceita `season` e/ou `episode` (ex.: `include=season,episode`); valores fora desse conjunto são ignorados. Os sub-nós vêm no mesmo `local[]`, distinguíveis pelo campo `type` — a UI os separa em seções. */
+        include?: string
         /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
         lang?: components['parameters']['LangQuery']
       }

@@ -111,10 +111,18 @@ export function assetsQueryOptions(id: string) {
 // consulta: a mesma busca em idiomas diferentes tem resultados externos distintos.
 // `enabled: q !== ''` impede o disparo enquanto o input está vazio (estado
 // inicial/instrução) — o componente já debounce o termo antes de chegar aqui.
-export function searchQueryOptions(q: string, type?: string, lang?: string) {
+export function searchQueryOptions(
+  q: string,
+  type?: string,
+  lang?: string,
+  include?: string[],
+) {
+  // `include` entra ORDENADO na chave para o cache ser estável (mesma seleção de
+  // sub-nós = mesma chave, independente da ordem em que os toggles foram ligados).
+  const inc = include && include.length > 0 ? [...include].sort() : null
   return queryOptions({
-    queryKey: ['search', q, type ?? null, lang ?? null],
-    queryFn: () => searchMedia(q, type, lang),
+    queryKey: ['search', q, type ?? null, lang ?? null, inc],
+    queryFn: () => searchMedia(q, type, lang, include),
     enabled: q !== '',
   })
 }
