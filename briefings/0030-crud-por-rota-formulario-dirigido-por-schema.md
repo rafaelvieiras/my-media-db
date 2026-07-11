@@ -9,7 +9,7 @@
 | **ID** | 0030 |
 | **Tipo** | refactor/feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override (dívida de manutenção; prepara plugins) |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [05-api](../docs/05-api.md), [11-decisoes-abertas](../docs/11-decisoes-abertas.md) (plugins), [ADR-0001](../docs/adr/0001-resolver-guiado-por-registro.md) |
 | **Depende de** | [0016](0016-editor-override-ui.md) (editor de override), [0025](0025-colecao-entity-interna.md)/[0027](0027-similar-search-ids-item-manual.md) (criar coleção/item manual), [0024](0024-paridade-detalhe-entity-rico.md) (RichDetailView) |
 
@@ -253,6 +253,19 @@ Cada campo editável ganha um **descritor** servido pelo backend:
 - **Criar × editar.** Mesma renderização de inputs, **submits distintos**: criação é `POST`
   de corpo plano (idioma principal, sem ops); edição é `PATCH` por idioma + `{add,remove}`
   de tags + `local_rating` + "Limpar". O flag `creatable` recorta o subconjunto da criação.
+- **Assimetria criar/editar é PROPOSITAL** (alinhada com o dono, validada ao vivo). O
+  formulário de **criação é mínimo** — só a identidade que dá para semear sem uma base:
+  tipo, título, e alguns escalares neutros (`creatable`). O de **edição é a superfície
+  cheia de autoria**: os campos do override compõem SOBRE uma base (externo/arquivo), então
+  só fazem sentido num item que já existe — por-idioma, tags (op `{add,remove}` relativa ao
+  resolvido), nota local; mais a **identidade externa** (`external_ids` → re-enriquecer). O
+  fluxo intencional é **criar mínimo → enriquecer na edição**: (a) o caminho primário é
+  fixar o id da fonte (ex. `tmdb`) e re-enriquecer, que puxa tudo da fonte; (b) o secundário
+  é o override manual. Não é erro de design: espelha o resolver de 3 camadas (o override é
+  autorado por cima de um item existente). Para itens que JÁ existem na fonte, o caminho é
+  **Buscar → Importar** (cria + enriquece de uma vez); a criação manual é para itens
+  obscuros/hand-curados. *Follow-up possível (não neste briefing): campo de id externo
+  OPCIONAL já na criação, para criar+enriquecer num passo.*
 - **Labels pt-BR no descritor.** A UI é mono-idioma (pt-BR) hoje; label literal é aceitável.
   Quando a UI ganhar multi-idioma, o `label` vira **chave** de i18n — mudança localizada no
   descritor. Relaciona-se com [[multi-idioma-requisito-fundacional]].
