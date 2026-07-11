@@ -1,0 +1,12 @@
+{
+  "status": "success",
+  "data": {
+    "series": { "id": 72514, "name": "Looney Tunes" },
+    "episodes": [
+      { "id": 4113194, "seriesId": 72514, "name": "Bosko's Picture Show", "overview": "Bosko presents a picture show.", "seasonNumber": 1933, "number": 16, "absoluteNumber": 373, "aired": "1933-08-26", "runtime": 9, "image": "https://artworks.thetvdb.com/banners/episodes/72514/4113194.jpg", "seasons": [] },
+      { "id": 4113285, "seriesId": 72514, "name": "Porky's Hare Hunt", "overview": "Porky goes hunting.", "seasonNumber": 1938, "number": 12, "absoluteNumber": 90, "aired": "1938-04-30", "runtime": 8, "image": "https://artworks.thetvdb.com/banners/episodes/72514/4113285.jpg", "seasons": [] },
+      { "id": 4264209, "seriesId": 72514, "name": "A Hitch in Time", "overview": "", "seasonNumber": 0, "number": 39, "absoluteNumber": 52, "aired": "1955-01-01", "runtime": 7, "image": "", "seasons": [] }
+    ]
+  },
+  "links": { "prev": null, "self": "https://api4.thetvdb.com/v4/series/72514/episodes/official?page=0", "next": null, "total_items": 3, "page_size": 500 }
+}

@@ -1,0 +1,32 @@
+{
+  "status": "success",
+  "data": {
+    "id": 71663,
+    "name": "The Simpsons",
+    "slug": "the-simpsons",
+    "image": "https://artworks.thetvdb.com/banners/posters/71663-15.jpg",
+    "overview": "Set in Springfield, the average American town, the show focuses on the antics of the Simpson family.",
+    "firstAired": "1989-12-17",
+    "year": "1989",
+    "originalCountry": "usa",
+    "originalLanguage": "eng",
+    "averageRuntime": 25,
+    "defaultSeasonType": 1,
+    "nameTranslations": ["eng", "por", "pt", "spa"],
+    "overviewTranslations": ["eng", "por", "spa"],
+    "remoteIds": [
+      { "id": "tt0096697", "type": 2, "sourceName": "IMDB" },
+      { "id": "456", "type": 12, "sourceName": "TheMovieDB.com" },
+      { "id": "EP00018693", "type": 3, "sourceName": "TMS (Zap2It)" },
+      { "id": "Q886", "type": 18, "sourceName": "Wikidata" }
+    ],
+    "seasonTypes": [
+      { "id": 1, "name": "Aired Order", "type": "official", "alternateName": null },
+      { "id": 2, "name": "DVD Order", "type": "dvd", "alternateName": null },
+      { "id": 3, "name": "Absolute Order", "type": "absolute", "alternateName": null }
+    ],
+    "seasons": [
+      { "id": 200001, "number": 1, "year": "1989", "image": "https://artworks.thetvdb.com/banners/seasons/71663-1-7.jpg", "name": null, "type": { "id": 1, "name": "Aired Order", "type": "official" } }
+    ]
+  }
+}

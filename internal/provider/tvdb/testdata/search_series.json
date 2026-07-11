@@ -1,0 +1,34 @@
+{
+  "status": "success",
+  "data": [
+    {
+      "objectID": "series-71663",
+      "tvdb_id": "71663",
+      "id": "series-71663",
+      "name": "The Simpsons",
+      "type": "series",
+      "year": "1989",
+      "overview": "Set in Springfield, the average American town.",
+      "image_url": "https://artworks.thetvdb.com/banners/posters/71663-15.jpg",
+      "primary_language": "eng"
+    },
+    {
+      "objectID": "series-72514",
+      "tvdb_id": "72514",
+      "id": "series-72514",
+      "name": "Looney Tunes",
+      "type": "series",
+      "year": "1929",
+      "overview": "Series of comedy short films.",
+      "image_url": "https://artworks.thetvdb.com/banners/posters/72514-7.jpg",
+      "primary_language": "eng"
+    },
+    {
+      "objectID": "person-294254",
+      "tvdb_id": "294254",
+      "name": "Matt Groening",
+      "type": "person"
+    }
+  ],
+  "links": { "prev": null, "next": null, "total_items": 2, "page_size": 25 }
+}

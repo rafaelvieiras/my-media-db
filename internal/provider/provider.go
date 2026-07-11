@@ -87,6 +87,88 @@ type Colecao struct {
 	Parts []ResultadoExterno
 }
 
+// SerieProvider é uma CAPACIDADE OPCIONAL de um Provider (análoga a ColecaoProvider,
+// briefing 0031 / ADR-0021): trazer a HIERARQUIA de uma série — temporadas +
+// episódios + as ordenações (season types) que ela usa. É opcional porque nem toda
+// fonte modela séries com ordens (o TMDB não expõe season types); o handler faz
+// type-assert do Provider para esta interface e DEGRADA (503) quando a fonte não a
+// implementa. Como o detalhe (0022), os idiomas são resolvidos com FALLBACK e os
+// campos traduzíveis saem por idioma; os neutros como escalares.
+type SerieProvider interface {
+	// BuscarSerieArvore puxa a árvore da série `sourceID` na fonte, localizada nos
+	// idiomas PERMITIDOS `langs` (0019; vazio cai no idioma da fonte). Devolve SÓ as
+	// temporadas da ordenação DEFAULT (TV2 — enxuto); as demais ordens existem apenas
+	// como numeração nos episódios (Numbering). ErrNaoEncontrado quando a série não
+	// existe (→ 404); demais erros propagam (→ 502).
+	BuscarSerieArvore(ctx context.Context, sourceID string, langs []string) (SerieArvore, error)
+}
+
+// SerieArvore é a hierarquia canônica de uma série: a ordenação default, a lista de
+// ordenações que a série usa, e as temporadas SÓ da ordenação default. Cada episódio
+// (grão fino, ancorado no id da fonte) carrega a numeração de TODAS as ordens.
+type SerieArvore struct {
+	// DefaultSeasonType é a ordenação default da série (ex.: "official"); é a única
+	// materializada em Temporadas.
+	DefaultSeasonType string
+	// SeasonTypes são as ordenações que a série usa (ex.: ["official","dvd","absolute"]).
+	SeasonTypes []string
+	// Temporadas são as temporadas SÓ da ordenação default (ADR-0021: as alternativas
+	// não viram temporada — só numeração nos episódios).
+	Temporadas []TemporadaExterna
+}
+
+// TemporadaExterna é uma temporada canônica da ordenação default, com seus episódios.
+type TemporadaExterna struct {
+	// Ordering é a ordenação a que a temporada pertence (sempre a default aqui).
+	Ordering string
+	// SeasonNumber é o número da temporada NAQUELA ordem (pode ser ano civil, 0 para
+	// specials, índice de box-set — não assumir 1..N; ADR-0021).
+	SeasonNumber int
+	// Name é o nome exibível por idioma (pode ser vazio: temporadas raramente têm nome).
+	Name map[string]string
+	// Year é o ano da temporada, quando a fonte informou.
+	Year string
+	// PosterURL é a arte DIRETA da temporada na fonte, quando houver.
+	PosterURL string
+	// Episodios são os episódios desta temporada (na ordenação default), em ordem.
+	Episodios []EpisodioExterno
+}
+
+// EpisodioExterno é um episódio canônico de grão fino, ancorado no id da fonte. A
+// numeração de TODAS as ordens vive em Numbering; a identidade NUNCA é o (season,
+// number), que muda por ordem (ADR-0021).
+type EpisodioExterno struct {
+	// SourceID é o episode.id na fonte — a ÂNCORA canônica (nunca o número).
+	SourceID string
+	// ExternalIDs são os ids do episódio em outras fontes ({tvdb, imdb, tmdb} quando
+	// houver). Do tree só vem {tvdb} (o cruzamento por episódio exige o extended, N
+	// chamadas — deferido); o cruzamento forte é no nível da SÉRIE.
+	ExternalIDs map[string]string
+	// Title é o título por idioma, COM FALLBACK (o idioma sem tradução simplesmente não
+	// aparece no mapa — o resolver cai na cadeia). Pode conter só o idioma original.
+	Title map[string]string
+	// Overview é a sinopse por idioma (mesma semântica de Title).
+	Overview map[string]string
+	// AbsoluteNumber é a numeração linear canônica (estável entre ordens), quando houver.
+	AbsoluteNumber *int
+	// Numbering traz a numeração do MESMO episódio em TODAS as ordens que a série usa
+	// (ex.: {"official":{1933,16}, "dvd":{23,5}, "absolute":{1,373}}).
+	Numbering map[string]Numero
+	// AirDate é a data de exibição (YYYY-MM-DD), quando houver.
+	AirDate string
+	// Runtime é a duração em minutos, quando a fonte informou.
+	Runtime *int
+	// StillURL é o frame/screencap do episódio, quando houver.
+	StillURL string
+}
+
+// Numero é o par (temporada, número) de um episódio NUMA ordenação. Não é chave: o
+// mesmo episódio tem Numero diferente por ordem (ADR-0021).
+type Numero struct {
+	Season int
+	Number int
+}
+
 // ResultadoExterno é o resultado canônico de uma busca externa, independente da
 // fonte. Os ponteiros são opcionais (nil quando a fonte não trouxe o campo).
 // Saved é SEMPRE false na busca: um resultado externo nunca é uma entidade do

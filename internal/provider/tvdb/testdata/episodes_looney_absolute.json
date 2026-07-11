@@ -1,0 +1,12 @@
+{
+  "status": "success",
+  "data": {
+    "series": { "id": 72514, "name": "Looney Tunes" },
+    "episodes": [
+      { "id": 4113194, "seriesId": 72514, "name": "Bosko's Picture Show", "seasonNumber": 1, "number": 373, "absoluteNumber": 373, "aired": "1933-08-26", "runtime": 9, "seasons": [] },
+      { "id": 4113285, "seriesId": 72514, "name": "Porky's Hare Hunt", "seasonNumber": 1, "number": 90, "absoluteNumber": 90, "aired": "1938-04-30", "runtime": 8, "seasons": [] },
+      { "id": 4264209, "seriesId": 72514, "name": "A Hitch in Time", "seasonNumber": 1, "number": 52, "absoluteNumber": 52, "aired": "1955-01-01", "runtime": 7, "seasons": [] }
+    ]
+  },
+  "links": { "prev": null, "next": null, "total_items": 3, "page_size": 500 }
+}

@@ -1,0 +1,33 @@
+{
+  "status": "success",
+  "data": {
+    "id": 72514,
+    "name": "Looney Tunes",
+    "slug": "looney-tunes",
+    "image": "https://artworks.thetvdb.com/banners/posters/72514-7.jpg",
+    "overview": "Series of comedy short films from 1929 to 1969.",
+    "firstAired": "1929-05-01",
+    "lastAired": "2014-06-10",
+    "year": "1929",
+    "originalCountry": "usa",
+    "originalLanguage": "eng",
+    "averageRuntime": 11,
+    "defaultSeasonType": 1,
+    "nameTranslations": ["eng", "por", "spa", "deu"],
+    "overviewTranslations": ["eng", "spa", "deu"],
+    "remoteIds": [
+      { "id": "EP00019787", "type": 3, "sourceName": "TMS (Zap2It)" }
+    ],
+    "seasonTypes": [
+      { "id": 1, "name": "Aired Order", "type": "official", "alternateName": null },
+      { "id": 2, "name": "DVD Order", "type": "dvd", "alternateName": null },
+      { "id": 3, "name": "Absolute Order", "type": "absolute", "alternateName": null }
+    ],
+    "seasons": [
+      { "id": 19980, "number": 0, "year": null, "image": "https://artworks.thetvdb.com/banners/seasons/72514-0-2.jpg", "name": null, "type": { "id": 1, "name": "Aired Order", "type": "official" } },
+      { "id": 464033, "number": 1933, "year": "1933", "image": "https://artworks.thetvdb.com/banners/seasons/72514-1933-7.jpg", "name": null, "type": { "id": 1, "name": "Aired Order", "type": "official" } },
+      { "id": 464038, "number": 1938, "year": "1938", "image": "https://artworks.thetvdb.com/banners/seasons/72514-1938-7.jpg", "name": null, "type": { "id": 1, "name": "Aired Order", "type": "official" } },
+      { "id": 700001, "number": 23, "year": null, "image": "https://artworks.thetvdb.com/banners/seasons/72514-dvd23.jpg", "name": null, "type": { "id": 2, "name": "DVD Order", "type": "dvd" } }
+    ]
+  }
+}

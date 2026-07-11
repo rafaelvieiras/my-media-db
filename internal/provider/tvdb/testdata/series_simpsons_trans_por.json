@@ -1,0 +1,11 @@
+{
+  "status": "success",
+  "data": {
+    "name": "Os Simpsons",
+    "overview": "A familia Simpson: Homer, Marge, Bart, Lisa e Maggie, em Springfield.",
+    "language": "por",
+    "isAlias": false,
+    "isPrimary": true,
+    "aliases": []
+  }
+}

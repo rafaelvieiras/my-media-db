@@ -1,0 +1,12 @@
+{
+  "status": "success",
+  "data": {
+    "series": { "id": 72514, "name": "Looney Tunes" },
+    "episodes": [
+      { "id": 4113194, "seriesId": 72514, "name": "O Show do Bosko", "overview": "Bosko apresenta um espetaculo.", "seasonNumber": 1933, "number": 16, "absoluteNumber": 373, "aired": "1933-08-26", "runtime": 9, "seasons": [] },
+      { "id": 4113285, "seriesId": 72514, "name": null, "overview": null, "seasonNumber": 1938, "number": 12, "absoluteNumber": 90, "aired": "1938-04-30", "runtime": 8, "seasons": [] },
+      { "id": 4264209, "seriesId": 72514, "name": null, "overview": null, "seasonNumber": 0, "number": 39, "absoluteNumber": 52, "aired": "1955-01-01", "runtime": 7, "seasons": [] }
+    ]
+  },
+  "links": { "prev": null, "next": null, "total_items": 3, "page_size": 500 }
+}
