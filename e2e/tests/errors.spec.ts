@@ -37,10 +37,12 @@ test('re-enriquecer sem id da fonte mostra 422 inline e nao corrompe a entity', 
     page.getByRole('heading', { level: 1, name: 'Item Sem Fonte' }),
   ).toBeVisible()
 
-  // Abre a edicao e dispara "Salvar e re-enriquecer" SEM fixar nenhum id externo.
-  // O editor salva external_ids (vazio) e tenta enriquecer; sem source_id o backend
-  // responde 422 (invalid_body) e a UI mostra a mensagem do envelope inline.
-  await page.getByRole('button', { name: 'Editar' }).click()
+  // "Editar" e um LINK para `/entities/$id/edit` (0030); o editor de IDs externos
+  // vive nela. Dispara "Salvar e re-enriquecer" SEM fixar nenhum id externo: salva
+  // external_ids (vazio) e tenta enriquecer; sem source_id o backend responde 422
+  // (invalid_body) e a UI mostra a mensagem do envelope inline.
+  await page.getByRole('link', { name: 'Editar' }).click()
+  await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
   await expect(page.getByText('Nenhum id externo definido.')).toBeVisible()
   await page.getByRole('button', { name: 'Salvar e re-enriquecer' }).click()
 
@@ -50,8 +52,8 @@ test('re-enriquecer sem id da fonte mostra 422 inline e nao corrompe a entity', 
   )
 
   // A entity NAO foi corrompida: o titulo manual permanece e nenhum dado de fonte
-  // vazou. Recarrega para provar que ela segue existindo (o 422 nao a apagou).
-  await page.reload()
+  // vazou. Volta ao detalhe para provar que ela segue existindo (o 422 nao a apagou).
+  await page.goto(`/entities/${id}`)
   await expect(
     page.getByRole('heading', { level: 1, name: 'Item Sem Fonte' }),
   ).toBeVisible()
@@ -82,7 +84,10 @@ test('re-enriquecer com id que a fonte nao entrega mostra 502 inline e preserva 
     page.getByRole('heading', { level: 1, name: 'Item Fonte Indisponivel' }),
   ).toBeVisible()
 
-  await page.getByRole('button', { name: 'Editar' }).click()
+  // "Editar" e um LINK para `/entities/$id/edit` (0030); o editor de IDs externos
+  // vive nela.
+  await page.getByRole('link', { name: 'Editar' }).click()
+  await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
   await page.getByRole('button', { name: 'Adicionar fonte' }).click()
   await page.getByRole('textbox', { name: 'Fonte do id externo' }).fill('tmdb')
   // O aria-label do id passa a "Id na fonte tmdb" depois que a fonte e digitada.
@@ -95,8 +100,8 @@ test('re-enriquecer com id que a fonte nao entrega mostra 502 inline e preserva 
   )
 
   // A entity NAO foi corrompida: o titulo manual permanece (a fonte nao entregou
-  // nada para sobrescrever). Recarrega para provar que ela segue existindo.
-  await page.reload()
+  // nada para sobrescrever). Volta ao detalhe para provar que ela segue existindo.
+  await page.goto(`/entities/${id}`)
   await expect(
     page.getByRole('heading', { level: 1, name: 'Item Fonte Indisponivel' }),
   ).toBeVisible()

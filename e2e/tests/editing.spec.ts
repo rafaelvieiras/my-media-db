@@ -24,9 +24,11 @@ test('editar override nao e destrutivo apos re-enriquecer', async ({
   await page.goto(`/entities/${id}`)
   await expect(page.getByRole('heading', { level: 1, name: 'Matrix' })).toBeVisible()
 
-  // Abre o editor de override e edita em pt-BR: novo titulo, remove "Acao" e
-  // adiciona "Favorito".
-  await page.getByRole('button', { name: 'Editar' }).click()
+  // "Editar" agora e um LINK para a rota `/entities/$id/edit` (0030), nao mais um
+  // editor inline. Na pagina de edicao, edita em pt-BR: novo titulo, remove "Acao"
+  // e adiciona "Favorito".
+  await page.getByRole('link', { name: 'Editar' }).click()
+  await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
   await page.getByRole('textbox', { name: 'Título', exact: true }).fill('Matrix EDITADO')
   await page.getByRole('button', { name: 'Remover tag Acao' }).click()
   const campoTag = page.getByRole('textbox', { name: 'Adicionar tag' })
@@ -71,19 +73,23 @@ test('item manual: fixar external-ids e re-enriquecer puxa dados da fonte', asyn
     page.getByRole('heading', { level: 1, name: 'Meu Filme Local' }),
   ).toBeVisible()
 
-  // Abre a edicao e o editor de IDs externos: fixa a fonte tmdb=603.
-  await page.getByRole('button', { name: 'Editar' }).click()
+  // "Editar" e um LINK para a rota `/entities/$id/edit` (0030); o editor de IDs
+  // externos foi realocado para dentro dela. Fixa a fonte tmdb=603.
+  await page.getByRole('link', { name: 'Editar' }).click()
+  await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
   await page.getByRole('button', { name: 'Adicionar fonte' }).click()
   await page.getByRole('textbox', { name: 'Fonte do id externo' }).fill('tmdb')
   // O aria-label do id passa a "Id na fonte tmdb" depois que a fonte e digitada.
   await page.getByRole('textbox', { name: /^Id na fonte/ }).fill('603')
   await page.getByRole('button', { name: 'Salvar e re-enriquecer' }).click()
 
-  // Espera o enrich round-tripar (o heading ja reflete a fonte) e recarrega para
-  // a view limpa de leitura — fora do modo de edicao o genero aparece so em
-  // "Gêneros" (o editor aberto tambem o mostraria como chip de tag).
-  await expect(page.getByRole('heading', { level: 1, name: 'Matrix' })).toBeVisible()
-  await page.reload()
+  // Espera o enrich round-tripar: o form da edicao reflete o novo titulo resolvido
+  // da fonte no placeholder do campo Titulo (prova de que os dados da fonte 603
+  // foram puxados). Depois navega para o detalhe (view limpa de leitura).
+  await expect(
+    page.getByRole('textbox', { name: 'Título', exact: true }),
+  ).toHaveAttribute('placeholder', 'Matrix')
+  await page.goto(`/entities/${id}`)
 
   // O enrich pelo id recem-fixado puxa os dados da fonte 603 (Matrix): o titulo
   // e o genero passam a refletir o filme da fonte.

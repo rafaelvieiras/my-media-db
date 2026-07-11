@@ -13,9 +13,14 @@ test.beforeEach(async ({ request }) => {
 test('criar item manual aparece na biblioteca', async ({ page }) => {
   await page.goto('/')
 
-  // "Novo item" expande o formulario inline; type ja vem = movie (Filme).
-  await page.getByRole('button', { name: 'Novo item' }).click()
-  await page.getByRole('textbox', { name: 'Título do item' }).fill('Meu Filme Manual')
+  // "Novo item" agora e um LINK para a rota dedicada `/new/item` (0030); type ja
+  // vem = movie (Filme). O rotulo do titulo perdeu o sufixo "do item" (vem do
+  // descritor: so "Título").
+  await page.getByRole('link', { name: 'Novo item' }).click()
+  await expect(page).toHaveURL(/\/new\/item$/)
+  await page
+    .getByRole('textbox', { name: 'Título', exact: true })
+    .fill('Meu Filme Manual')
   await page.getByRole('button', { name: 'Criar item' }).click()
 
   // Criar do zero navega ao detalhe INTERNO da entity recem-criada.
@@ -36,11 +41,13 @@ test('nova colecao: criar, adicionar/remover membro e excluir', async ({
   })
   expect(imp.ok()).toBeTruthy()
 
-  // Cria a colecao local pela home e cai no detalhe da colecao.
+  // Cria a colecao local pela home: "Nova coleção" e um LINK para `/new/collection`
+  // (0030). O rotulo do titulo vem do descritor (so "Título", sem sufixo).
   await page.goto('/')
-  await page.getByRole('button', { name: 'Nova coleção' }).click()
+  await page.getByRole('link', { name: 'Nova coleção' }).click()
+  await expect(page).toHaveURL(/\/new\/collection$/)
   await page
-    .getByRole('textbox', { name: 'Título da coleção' })
+    .getByRole('textbox', { name: 'Título', exact: true })
     .fill('Minha Coleção')
   await page.getByRole('button', { name: 'Criar coleção' }).click()
 
