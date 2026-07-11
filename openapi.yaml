@@ -1445,7 +1445,8 @@ components:
          tags, external_ids, owned, file_count, poster_url, extension_data,
          lang, original_language, resolved_languages,
          tagline, keywords, runtime, certification, vote_average, local_rating,
-         backdrop_url, videos, collection, similar, external_links, ancestors]
+         backdrop_url, videos, collection, similar, external_links, ancestors,
+         ownership]
       properties:
         id: { type: string }
         type:
@@ -1541,6 +1542,25 @@ components:
             [série, temporada]; temporada → [série]; obra de topo
             (movie/tv/collection) → `[]`. Nunca null.
           items: { $ref: '#/components/schemas/AncestorRef' }
+        ownership:
+          description: >
+            Posse AGREGADA de uma entity-pai da árvore de séries (0034): episódios
+            possuídos sobre o total. Presente só para `tv` (soma across temporadas)
+            e `season` (episódios diretos); `null` para movie/episódio/coleção (que
+            usam a posse simples de `owned`).
+          oneOf:
+            - $ref: '#/components/schemas/OwnershipInfo'
+            - type: "null"
+    OwnershipInfo:
+      type: object
+      description: >
+        Posse agregada de uma temporada/série (0034): episódios possuídos
+        (`owned_count`) sobre o total de episódios (`total_count`). Alimenta o badge
+        "possui 12/13". Derivada dos vínculos media_file_entity (kind='tv_episode').
+      required: [owned_count, total_count]
+      properties:
+        owned_count: { type: integer }
+        total_count: { type: integer }
     AncestorRef:
       type: object
       description: >
@@ -1662,11 +1682,17 @@ components:
           items: { $ref: "#/components/schemas/MediaFile" }
     Source:
       type: object
-      required: [id, path, type, state, last_scan]
+      required: [id, path, type, content_type, state, last_scan]
       properties:
         id: { type: string }
         path: { type: string }
         type: { type: string }
+        content_type:
+          type: string
+          description: >
+            Natureza da biblioteca (0034): `movie` (default) | `series`. O scanner
+            ramifica o fluxo de match por este valor. Campo livre (sem CHECK); a UI
+            oferece só movie/series.
         state:
           type: string
           enum: [online, offline]
@@ -1686,6 +1712,12 @@ components:
         type:
           type: string
           enum: [movie, tv]
+        content_type:
+          type: string
+          enum: [movie, series]
+          description: >
+            Natureza da biblioteca (0034). Opcional; omitido => `movie` (compat).
+            `series` liga o fluxo de scan de séries (arquivo→episódio).
     ScanStatus:
       type: object
       required: [running, files_seen, files_total]

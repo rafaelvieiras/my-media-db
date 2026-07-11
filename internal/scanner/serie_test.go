@@ -94,7 +94,7 @@ func TestCasarEpisodiosAmbiguo(t *testing.T) {
 // de library ainda não expõe o campo — a API é de outro passo; aqui gravamos direto).
 func criarSourceSerie(t *testing.T, d *db.DB, dir string) library.Source {
 	t.Helper()
-	src, err := library.New(d).Criar(context.Background(), dir, "tv")
+	src, err := library.New(d).Criar(context.Background(), dir, "tv", "")
 	if err != nil {
 		t.Fatalf("criar source: %v", err)
 	}

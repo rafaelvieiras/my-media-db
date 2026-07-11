@@ -114,6 +114,8 @@ type Querier interface {
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
 	// state e last_scan ficam de fora do INSERT: uma fonte nova nasce 'online'
 	// (DEFAULT) e sem last_scan; o scan preenche depois via AtualizarLibrarySource.
+	// content_type entra explicito (0034): 'movie' | 'series' -- o scanner ramifica
+	// por este valor; o servico normaliza vazio para 'movie' (compat).
 	CriarLibrarySource(ctx context.Context, arg CriarLibrarySourceParams) (LibrarySource, error)
 	// CRUD de media_file + a query de POSSE DERIVADA (ADR-0009) + as queries do
 	// scanner (briefing 0009): dedup por content_hash, reencontro (rename/move) e

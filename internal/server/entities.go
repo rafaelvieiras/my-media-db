@@ -402,7 +402,7 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 	}
 	cadeia := cfg.cadeiaDeIdiomas(lang, ent.OriginalLanguage)
 
-	files, err := s.leitura().ListarMediaFilesPorEntity(ctx, id)
+	files, err := s.listarFilesDaEntity(ctx, ent)
 	if err != nil {
 		return resolver.Entidade{}, false, err
 	}
@@ -442,7 +442,125 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 	})
 	s.anotarInternos(ctx, &resolvida)
 	resolvida.Ancestors = s.montarAncestrais(ctx, id)
+	resolvida.Ownership = s.montarPosseAgregada(ctx, ent)
 	return resolvida, true, nil
+}
+
+// tipoEntEpisodio é o `type` da entity de episódio (grão fino da árvore de séries,
+// 0031/ADR-0021). Um arquivo de série tem `media_file.entity_id` = série, e os
+// vínculos por episódio vivem em media_file_entity (kind='tv_episode'); por isso a
+// área de arquivos do EPISÓDIO vem da junção, não de media_file.entity_id.
+const tipoEntEpisodio = "episode"
+
+// listarFilesDaEntity carrega os media_file que compõem a POSSE e a lista de
+// arquivos de uma entity. Para EPISÓDIO, os arquivos vêm dos vínculos N:M
+// (media_file_entity, kind='tv_episode') via ListarArquivosDaEntidade — porque o
+// arquivo de série aponta `entity_id` para a SÉRIE, não para o episódio (0034).
+// Para os demais tipos (filme etc.), o caminho clássico media_file.entity_id.
+func (s *Server) listarFilesDaEntity(ctx context.Context, ent sqlcgen.Entity) ([]sqlcgen.MediaFile, error) {
+	if ent.Type == tipoEntEpisodio {
+		rows, err := s.leitura().ListarArquivosDaEntidade(ctx, sqlcgen.ListarArquivosDaEntidadeParams{
+			EntityID: ent.ID,
+			Kind:     kindEpisodio,
+		})
+		if err != nil {
+			return nil, err
+		}
+		files := make([]sqlcgen.MediaFile, len(rows))
+		for i, r := range rows {
+			files[i] = arquivoDaEntidadeParaMediaFile(r)
+		}
+		return files, nil
+	}
+	return s.leitura().ListarMediaFilesPorEntity(ctx, ent.ID)
+}
+
+// arquivoDaEntidadeParaMediaFile reprojeta a linha do JOIN (ListarArquivosDaEntidade)
+// no shape sqlcgen.MediaFile, para reusar o MESMO fileDTO/posse do filme. O `ordinal`
+// (ordem do episódio dentro do arquivo, em ranges) não entra no DTO de arquivo.
+func arquivoDaEntidadeParaMediaFile(r sqlcgen.ListarArquivosDaEntidadeRow) sqlcgen.MediaFile {
+	return sqlcgen.MediaFile{
+		ID:              r.ID,
+		EntityID:        r.EntityID,
+		Path:            r.Path,
+		ContentHash:     r.ContentHash,
+		Size:            r.Size,
+		Mtime:           r.Mtime,
+		Edition:         r.Edition,
+		PartNo:          r.PartNo,
+		MatchConfidence: r.MatchConfidence,
+		MediainfoJson:   r.MediainfoJson,
+		State:           r.State,
+		LastSeen:        r.LastSeen,
+		CreatedAt:       r.CreatedAt,
+		UpdatedAt:       r.UpdatedAt,
+		LibrarySourceID: r.LibrarySourceID,
+	}
+}
+
+// montarPosseAgregada calcula a posse agregada de uma entity-pai da árvore de
+// séries (0034): retorna nil para tipos sem agregação (filme, episódio, coleção).
+//   - TEMPORADA: total = nº de episódios filhos (kind='tv_episode'); owned = quantos
+//     desses têm ao menos um arquivo 'present' vinculado (ContarEntidadesComPosse).
+//   - SÉRIE: soma across temporadas — a query direta só conta filhos DIRETOS (que na
+//     série são temporadas, sem vínculo próprio), então iteramos as temporadas e
+//     somamos total/owned de cada uma. Volume pequeno (self-hosted); N+1 tolerável.
+//
+// Defensivo: qualquer falha de leitura degrada para nil (a UI só omite o badge), sem
+// derrubar o detalhe — coerente com a montagem pós-resolução de Ancestors.
+func (s *Server) montarPosseAgregada(ctx context.Context, ent sqlcgen.Entity) *resolver.OwnershipInfo {
+	switch ent.Type {
+	case tipoEntTemporada:
+		info, err := s.posseDaTemporada(ctx, ent.ID)
+		if err != nil {
+			return nil
+		}
+		return info
+	case tipoEntSerie:
+		total, owned := 0, 0
+		rels, err := s.leitura().ListarRelacoesFilhas(ctx, ent.ID)
+		if err != nil {
+			return nil
+		}
+		for _, rel := range rels {
+			if rel.Kind != kindTemporada {
+				continue
+			}
+			info, err := s.posseDaTemporada(ctx, rel.ChildID)
+			if err != nil {
+				return nil
+			}
+			total += info.TotalCount
+			owned += info.OwnedCount
+		}
+		return &resolver.OwnershipInfo{OwnedCount: owned, TotalCount: total}
+	default:
+		return nil
+	}
+}
+
+// posseDaTemporada devolve (episódios possuídos / total) de UMA temporada: total é o
+// nº de filhos kind='tv_episode'; owned vem de ContarEntidadesComPosse (filhos com
+// arquivo 'present' vinculado). Reusado pela série (soma por temporada).
+func (s *Server) posseDaTemporada(ctx context.Context, seasonID string) (*resolver.OwnershipInfo, error) {
+	rels, err := s.leitura().ListarRelacoesFilhas(ctx, seasonID)
+	if err != nil {
+		return nil, err
+	}
+	total := 0
+	for _, rel := range rels {
+		if rel.Kind == kindEpisodio {
+			total++
+		}
+	}
+	owned, err := s.leitura().ContarEntidadesComPosse(ctx, sqlcgen.ContarEntidadesComPosseParams{
+		ParentID: seasonID,
+		Kind:     kindEpisodio,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &resolver.OwnershipInfo{OwnedCount: int(owned), TotalCount: total}, nil
 }
 
 // maxProfundidadeAncestrais limita o walk-up do breadcrumb (0032) para NUNCA laçar
@@ -579,7 +697,8 @@ func (s *Server) getEntityFiles(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	ctx := r.Context()
 
-	if _, err := s.leitura().ObterEntity(ctx, id); err != nil {
+	ent, err := s.leitura().ObterEntity(ctx, id)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "entidade não encontrada")
 			return
@@ -588,7 +707,10 @@ func (s *Server) getEntityFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	files, err := s.leitura().ListarMediaFilesPorEntity(ctx, id)
+	// Episódio: arquivos vêm dos vínculos N:M (o arquivo aponta entity_id para a
+	// série); demais tipos: o caminho clássico media_file.entity_id (mesmo helper
+	// usado na resolução, fonte única).
+	files, err := s.listarFilesDaEntity(ctx, ent)
 	if err != nil {
 		respondErroInterno(w)
 		return

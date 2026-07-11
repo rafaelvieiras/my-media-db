@@ -36,7 +36,7 @@ func TestCriarDiretorioValido(t *testing.T) {
 	s := novoServico(t)
 	dir := t.TempDir()
 
-	src, err := s.Criar(context.Background(), dir, "movie")
+	src, err := s.Criar(context.Background(), dir, "movie", "")
 	if err != nil {
 		t.Fatalf("Criar: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestCriarNormalizaPathNaoLimpo(t *testing.T) {
 	dir := t.TempDir()
 	naoLimpo := filepath.Join(dir, "..", filepath.Base(dir))
 
-	src, err := s.Criar(context.Background(), naoLimpo, "tv")
+	src, err := s.Criar(context.Background(), naoLimpo, "tv", "")
 	if err != nil {
 		t.Fatalf("Criar path não-limpo: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestCriarErrosDeValidacao(t *testing.T) {
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
-			_, err := s.Criar(ctx, c.path, c.tipo)
+			_, err := s.Criar(ctx, c.path, c.tipo, "")
 			if !errors.Is(err, c.querErr) {
 				t.Errorf("erro = %v, quero %v", err, c.querErr)
 			}
@@ -113,7 +113,7 @@ func TestCriarSemPermissao(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
 
-	_, err := s.Criar(context.Background(), dir, "movie")
+	_, err := s.Criar(context.Background(), dir, "movie", "")
 	if !errors.Is(err, library.ErrPathIlegivel) {
 		t.Errorf("erro = %v, quero ErrPathIlegivel", err)
 	}
@@ -124,10 +124,10 @@ func TestCriarDuplicado(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	if _, err := s.Criar(ctx, dir, "movie"); err != nil {
+	if _, err := s.Criar(ctx, dir, "movie", ""); err != nil {
 		t.Fatalf("primeiro Criar: %v", err)
 	}
-	_, err := s.Criar(ctx, dir, "movie")
+	_, err := s.Criar(ctx, dir, "movie", "")
 	if !errors.Is(err, library.ErrPathDuplicado) {
 		t.Errorf("erro = %v, quero ErrPathDuplicado", err)
 	}
@@ -141,11 +141,11 @@ func TestListarEObterComStateReavaliado(t *testing.T) {
 	if err := os.Mkdir(dirRemovido, 0o755); err != nil {
 		t.Fatalf("Mkdir: %v", err)
 	}
-	removido, err := s.Criar(ctx, dirRemovido, "movie")
+	removido, err := s.Criar(ctx, dirRemovido, "movie", "")
 	if err != nil {
 		t.Fatalf("Criar removido: %v", err)
 	}
-	if _, err := s.Criar(ctx, t.TempDir(), "tv"); err != nil {
+	if _, err := s.Criar(ctx, t.TempDir(), "tv", ""); err != nil {
 		t.Fatalf("Criar vivo: %v", err)
 	}
 
@@ -179,12 +179,44 @@ func TestObterInexistente(t *testing.T) {
 	}
 }
 
+// TestContentType cobre o campo content_type (0034): vazio normaliza para "movie"
+// (compat), e "series" persiste e volta na leitura.
+func TestContentType(t *testing.T) {
+	s := novoServico(t)
+	ctx := context.Background()
+
+	// Omitido => "movie".
+	filme, err := s.Criar(ctx, t.TempDir(), "movie", "")
+	if err != nil {
+		t.Fatalf("Criar filme: %v", err)
+	}
+	if filme.ContentType != "movie" {
+		t.Errorf("content_type (omitido) = %q, quero movie", filme.ContentType)
+	}
+
+	// "series" persiste e volta no Obter.
+	serie, err := s.Criar(ctx, t.TempDir(), "tv", "series")
+	if err != nil {
+		t.Fatalf("Criar serie: %v", err)
+	}
+	if serie.ContentType != "series" {
+		t.Errorf("content_type = %q, quero series", serie.ContentType)
+	}
+	lido, err := s.Obter(ctx, serie.ID)
+	if err != nil {
+		t.Fatalf("Obter: %v", err)
+	}
+	if lido.ContentType != "series" {
+		t.Errorf("content_type relido = %q, quero series", lido.ContentType)
+	}
+}
+
 func TestApagar(t *testing.T) {
 	s := novoServico(t)
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	src, err := s.Criar(ctx, dir, "movie")
+	src, err := s.Criar(ctx, dir, "movie", "")
 	if err != nil {
 		t.Fatalf("Criar: %v", err)
 	}

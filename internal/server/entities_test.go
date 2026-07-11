@@ -411,6 +411,92 @@ func TestGetEntityFiles(t *testing.T) {
 	}
 }
 
+// obterResolvida faz GET /entities/{id} e decodifica o ResolvedEntity (helper local
+// para os testes de leitura da arvore de series).
+func obterResolvida(t *testing.T, h http.Handler, id string) resolver.Entidade {
+	t.Helper()
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/"+id, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET %s status = %d, quero 200 (corpo=%s)", id, rec.Code, rec.Body.String())
+	}
+	var ent resolver.Entidade
+	if err := json.Unmarshal(rec.Body.Bytes(), &ent); err != nil {
+		t.Fatalf("decodificar Entidade(%s): %v", id, err)
+	}
+	return ent
+}
+
+// TestSerieLeituraPosseEArquivosDeEpisodio cobre a LEITURA do 0034 (Passo 3):
+//   - o arquivo de serie tem media_file.entity_id = SERIE, e o vinculo por episodio
+//     vive em media_file_entity (kind='tv_episode'); o detalhe/arquivos do EPISODIO
+//     vem da juncao, nao de media_file.entity_id;
+//   - temporada expoe posse agregada (episodios possuidos / total dos filhos diretos);
+//   - serie soma across temporadas (a query direta contaria zero);
+//   - filme nao tem ownership (null).
+func TestSerieLeituraPosseEArquivosDeEpisodio(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "s1", "tv", "Serie")
+	semearEntity(t, d, "se1", "season", "Temporada 1")
+	semearEntity(t, d, "ep1", "episode", "Ep 1")
+	semearEntity(t, d, "ep2", "episode", "Ep 2")
+	semearEntity(t, d, "ep3", "episode", "Ep 3")
+	ligarFilhoOrdenado(t, d, "r-se1", "s1", "se1", "tv_season", 1)
+	ligarFilhoOrdenado(t, d, "r-ep1", "se1", "ep1", "tv_episode", 1)
+	ligarFilhoOrdenado(t, d, "r-ep2", "se1", "ep2", "tv_episode", 2)
+	ligarFilhoOrdenado(t, d, "r-ep3", "se1", "ep3", "tv_episode", 3)
+	// Arquivo de serie: entity_id = SERIE (a obra), vinculado ao episodio 1 pela juncao.
+	semearFile(t, d, "mf1", "s1", "/lib/serie/s01e01.mkv", "present", 0.9, "")
+	if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: "mf1", EntityID: "ep1", Kind: "tv_episode", Ordinal: 0,
+	}); err != nil {
+		t.Fatalf("CriarVinculoEntidade: %v", err)
+	}
+
+	// Episodio 1: /files traz o arquivo via juncao, mesmo com entity_id apontando a serie.
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/ep1/files", nil)
+	var files filesListDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &files); err != nil {
+		t.Fatalf("decodificar filesListDTO: %v", err)
+	}
+	if len(files.Items) != 1 || files.Items[0].Path != "/lib/serie/s01e01.mkv" {
+		t.Fatalf("arquivos do ep1 = %+v, quero 1 arquivo s01e01", files.Items)
+	}
+	ep1 := obterResolvida(t, h, "ep1")
+	eq(t, "ep1 owned", ep1.Owned, true)
+	eq(t, "ep1 file_count", ep1.FileCount, 1)
+	if ep1.Ownership != nil {
+		t.Errorf("ep1 ownership = %+v, quero nil (episodio nao agrega)", ep1.Ownership)
+	}
+
+	// Episodio 2: sem arquivo vinculado.
+	ep2 := obterResolvida(t, h, "ep2")
+	eq(t, "ep2 owned", ep2.Owned, false)
+	eq(t, "ep2 file_count", ep2.FileCount, 0)
+
+	// Temporada: 1 de 3 episodios possuidos.
+	se1 := obterResolvida(t, h, "se1")
+	if se1.Ownership == nil {
+		t.Fatalf("se1 ownership = nil, quero {1,3}")
+	}
+	eq(t, "se1 owned_count", se1.Ownership.OwnedCount, 1)
+	eq(t, "se1 total_count", se1.Ownership.TotalCount, 3)
+
+	// Serie: soma across temporadas (a query direta contaria zero) -> 1 de 3.
+	s1 := obterResolvida(t, h, "s1")
+	if s1.Ownership == nil {
+		t.Fatalf("s1 ownership = nil, quero {1,3}")
+	}
+	eq(t, "s1 owned_count", s1.Ownership.OwnedCount, 1)
+	eq(t, "s1 total_count", s1.Ownership.TotalCount, 3)
+
+	// Filme: sem agregacao de posse (ownership null).
+	semearEntity(t, d, "m1", "movie", "Filme")
+	m1 := obterResolvida(t, h, "m1")
+	if m1.Ownership != nil {
+		t.Errorf("m1 ownership = %+v, quero nil (filme)", m1.Ownership)
+	}
+}
+
 func TestGetEntityFilesEntityNaoEncontrada(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/entities/nada/files", nil)

@@ -29,6 +29,14 @@ var tiposValidos = map[string]bool{
 	"tv":    true,
 }
 
+// Valores de content_type conhecidos pela UI (0034). NAO ha CHECK no schema nem
+// rejeicao no servico: o campo e livre/extensivel (ex.: 'music' no futuro). Este
+// mapa serve so de referencia; a normalizacao abaixo apenas preenche o default.
+const (
+	contentTypeMovie  = "movie"
+	contentTypeSeries = "series"
+)
+
 // Erros de domínio. O handler HTTP os mapeia para status + code do shape de
 // erro padrão ({error:{code,message}}). São sentinelas para permitir
 // errors.Is no chamador.
@@ -89,12 +97,18 @@ func (s *Service) leitura() *sqlcgen.Queries { return sqlcgen.New(s.database.Rea
 // path (absoluto+limpo) ANTES de tudo; valida existência/diretório/legibilidade;
 // checa duplicata pelo path normalizado; insere pela conexão de escrita. A fonte
 // nasce online (acabou de ser validada como legível) e sem last_scan.
-func (s *Service) Criar(ctx context.Context, rawPath, tipo string) (Source, error) {
+// contentType é a natureza da biblioteca (movie|series, 0034), que o scanner usa
+// para ramificar o fluxo de match. Valor livre (sem CHECK); vazio normaliza para
+// "movie" (compat com o cadastro pré-0034).
+func (s *Service) Criar(ctx context.Context, rawPath, tipo, contentType string) (Source, error) {
 	if !tiposValidos[tipo] {
 		return Source{}, ErrTipoInvalido
 	}
 	if rawPath == "" {
 		return Source{}, ErrPathVazio
+	}
+	if contentType == "" {
+		contentType = contentTypeMovie
 	}
 
 	abs, err := normalizarPath(rawPath)
@@ -114,9 +128,10 @@ func (s *Service) Criar(ctx context.Context, rawPath, tipo string) (Source, erro
 	}
 
 	row, err := s.escrita().CriarLibrarySource(ctx, sqlcgen.CriarLibrarySourceParams{
-		ID:   s.novoID(),
-		Path: abs,
-		Type: tipo,
+		ID:          s.novoID(),
+		Path:        abs,
+		Type:        tipo,
+		ContentType: contentType,
 	})
 	if err != nil {
 		return Source{}, err

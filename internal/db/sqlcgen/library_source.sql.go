@@ -62,25 +62,33 @@ func (q *Queries) AtualizarLibrarySource(ctx context.Context, arg AtualizarLibra
 const criarLibrarySource = `-- name: CriarLibrarySource :one
 
 INSERT INTO library_source (
-    id, path, type
+    id, path, type, content_type
 ) VALUES (
-    ?, ?, ?
+    ?, ?, ?, ?
 )
 RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type
 `
 
 type CriarLibrarySourceParams struct {
-	ID   string
-	Path string
-	Type string
+	ID          string
+	Path        string
+	Type        string
+	ContentType string
 }
 
 // CRUD de library_source (raizes de varredura).
 // Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
 // state e last_scan ficam de fora do INSERT: uma fonte nova nasce 'online'
 // (DEFAULT) e sem last_scan; o scan preenche depois via AtualizarLibrarySource.
+// content_type entra explicito (0034): 'movie' | 'series' -- o scanner ramifica
+// por este valor; o servico normaliza vazio para 'movie' (compat).
 func (q *Queries) CriarLibrarySource(ctx context.Context, arg CriarLibrarySourceParams) (LibrarySource, error) {
-	row := q.db.QueryRowContext(ctx, criarLibrarySource, arg.ID, arg.Path, arg.Type)
+	row := q.db.QueryRowContext(ctx, criarLibrarySource,
+		arg.ID,
+		arg.Path,
+		arg.Type,
+		arg.ContentType,
+	)
 	var i LibrarySource
 	err := row.Scan(
 		&i.ID,

@@ -14,11 +14,14 @@ import (
 // { id, path, type, state, last_scan }. last_scan é null enquanto o scanner
 // (0009) não rodar.
 type sourceDTO struct {
-	ID       string  `json:"id"`
-	Path     string  `json:"path"`
-	Type     string  `json:"type"`
-	State    string  `json:"state"`
-	LastScan *string `json:"last_scan"`
+	ID   string `json:"id"`
+	Path string `json:"path"`
+	Type string `json:"type"`
+	// ContentType e a natureza da biblioteca (0034): "movie" | "series". O scanner
+	// ramifica o fluxo de match por este valor. Default "movie".
+	ContentType string  `json:"content_type"`
+	State       string  `json:"state"`
+	LastScan    *string `json:"last_scan"`
 }
 
 // listDTO é a resposta de GET /api/v1/library.
@@ -30,16 +33,19 @@ type listDTO struct {
 type createRequest struct {
 	Path string `json:"path"`
 	Type string `json:"type"`
+	// ContentType e opcional (0034): "movie" | "series". Omitido => "movie" (compat).
+	ContentType string `json:"content_type"`
 }
 
 // toDTO converte a Source de domínio para a forma serializável.
 func toDTO(s library.Source) sourceDTO {
 	return sourceDTO{
-		ID:       s.ID,
-		Path:     s.Path,
-		Type:     s.Type,
-		State:    s.State,
-		LastScan: s.LastScan,
+		ID:          s.ID,
+		Path:        s.Path,
+		Type:        s.Type,
+		ContentType: s.ContentType,
+		State:       s.State,
+		LastScan:    s.LastScan,
 	}
 }
 
@@ -103,7 +109,7 @@ func (s *Server) createLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	src, err := s.library.Criar(r.Context(), req.Path, req.Type)
+	src, err := s.library.Criar(r.Context(), req.Path, req.Type, req.ContentType)
 	if err != nil {
 		respondLibraryError(w, err)
 		return

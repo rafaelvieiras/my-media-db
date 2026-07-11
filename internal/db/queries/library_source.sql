@@ -4,10 +4,12 @@
 -- name: CriarLibrarySource :one
 -- state e last_scan ficam de fora do INSERT: uma fonte nova nasce 'online'
 -- (DEFAULT) e sem last_scan; o scan preenche depois via AtualizarLibrarySource.
+-- content_type entra explicito (0034): 'movie' | 'series' -- o scanner ramifica
+-- por este valor; o servico normaliza vazio para 'movie' (compat).
 INSERT INTO library_source (
-    id, path, type
+    id, path, type, content_type
 ) VALUES (
-    ?, ?, ?
+    ?, ?, ?, ?
 )
 RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type;
 

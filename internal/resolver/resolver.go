@@ -135,6 +135,23 @@ type Entidade struct {
 	// resolver puro — é anotada no server pós-resolução (subindo por
 	// ListarRelacoesPais), mesma fronteira dos internal_id (0026/0031).
 	Ancestors []AncestorRef `json:"ancestors"`
+
+	// Ownership é a POSSE AGREGADA de uma entity-pai da árvore de séries (0034):
+	// quantos episódios são possuídos de quantos no total. Presente (não-null) só
+	// para `tv` (soma across temporadas) e `season` (episódios diretos); null para
+	// movie/episódio/coleção (posse simples via `owned`). NÃO vem do resolver puro —
+	// é anotada no server pós-resolução (mesma fronteira de Ancestors), porque a
+	// agregação percorre entity_relation.
+	Ownership *OwnershipInfo `json:"ownership"`
+}
+
+// OwnershipInfo é a posse agregada de uma temporada/série (0034): episódios
+// possuídos (`owned_count`) sobre o total de episódios (`total_count`). A UI
+// renderiza o badge "possui 12/13". Contagens derivadas dos vínculos
+// media_file_entity (kind='tv_episode') + a árvore entity_relation.
+type OwnershipInfo struct {
+	OwnedCount int `json:"owned_count"`
+	TotalCount int `json:"total_count"`
 }
 
 // AncestorRef é um nó ancestral na trilha do breadcrumb (0032): o mínimo para
