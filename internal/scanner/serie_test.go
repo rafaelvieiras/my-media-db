@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -85,6 +86,78 @@ func TestCasarEpisodiosAmbiguo(t *testing.T) {
 	}
 	if ids, ok := casarEpisodios(idx, naming.EpisodeInfo{Season: 1, Episodes: []int{7}}); ok {
 		t.Fatalf("ordens divergentes deveriam ser ambíguas (revisão), got %v", ids)
+	}
+}
+
+// ── testes de unidade dos helpers puros ──────────────────────────────────────
+
+// TestComoIntTipos cobre a coacao de JSON->int nos tipos numericos e a rejeicao dos
+// nao-numericos (o extension_data desserializa numeros como float64, mas o helper
+// aceita int/int64 por robustez).
+func TestComoIntTipos(t *testing.T) {
+	casos := []struct {
+		in   any
+		want int
+		ok   bool
+	}{
+		{float64(3), 3, true},
+		{int(4), 4, true},
+		{int64(5), 5, true},
+		{"x", 0, false},
+		{nil, 0, false},
+	}
+	for _, c := range casos {
+		if got, ok := comoInt(c.in); got != c.want || ok != c.ok {
+			t.Errorf("comoInt(%v) = %d,%v quero %d,%v", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+// TestMesmaSequencia cobre os 3 ramos: iguais, tamanhos distintos, conteudo distinto.
+func TestMesmaSequencia(t *testing.T) {
+	if !mesmaSequencia([]string{"a", "b"}, []string{"a", "b"}) {
+		t.Error("sequencias iguais deveriam casar")
+	}
+	if mesmaSequencia([]string{"a"}, []string{"a", "b"}) {
+		t.Error("tamanhos diferentes NAO deveriam casar")
+	}
+	if mesmaSequencia([]string{"a", "b"}, []string{"a", "c"}) {
+		t.Error("conteudo diferente NAO deveria casar")
+	}
+}
+
+// TestExtrairTVNS cobre a extracao do namespace core.tv@1 e os ramos de degradacao
+// (null, vazio, json invalido, ns ausente) que devolvem nil.
+func TestExtrairTVNS(t *testing.T) {
+	nulos := []sql.NullString{
+		{},
+		{Valid: true, String: ""},
+		{Valid: true, String: "nao-e-json"},
+		{Valid: true, String: `{"outro.ns@1":{}}`},
+	}
+	for i, n := range nulos {
+		if got := extrairTVNS(n); got != nil {
+			t.Errorf("caso %d: extrairTVNS deveria degradar para nil, got %v", i, got)
+		}
+	}
+	got := extrairTVNS(sql.NullString{Valid: true, String: `{"core.tv@1":{"default_season_type":"official"}}`})
+	if got == nil || got["default_season_type"] != "official" {
+		t.Errorf("extrairTVNS = %v, quero o objeto do namespace", got)
+	}
+}
+
+// TestEhPastaTemporada cobre os reconhecimentos de pasta de temporada (incluindo os
+// specials/temporada 0) e a rejeicao de nomes que sao a propria serie.
+func TestEhPastaTemporada(t *testing.T) {
+	for _, s := range []string{"Season 01", "Temporada 1", "S01", "specials", "Especiais"} {
+		if !ehPastaTemporada(s) {
+			t.Errorf("%q deveria ser pasta de temporada", s)
+		}
+	}
+	for _, s := range []string{"Springfield Tales", "extras", ""} {
+		if ehPastaTemporada(s) {
+			t.Errorf("%q NAO deveria ser pasta de temporada", s)
+		}
 	}
 }
 

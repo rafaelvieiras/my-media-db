@@ -2,8 +2,11 @@ package e2e
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Jornadas E2E da Camada 1 (briefing 0028 §7). Cada teste sobe um harness próprio
@@ -446,4 +449,190 @@ func ancestrais(t *testing.T, ent map[string]any) []map[string]any {
 		out = append(out, m)
 	}
 	return out
+}
+
+// escreverVideo cria um arquivo de video de conteudo unico (o proprio caminho), como
+// o escrever() do pacote scanner: extensao de video reconhecida (.mkv) e content_hash
+// distinto por arquivo. O conteudo nao e um video real; o ffprobe (se presente) falha
+// de forma graciosa e o mediainfo fica vazio — o caminho de match nao depende dele.
+func escreverVideo(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %q: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte("video-"+path), 0o644); err != nil {
+		t.Fatalf("escrever %q: %v", path, err)
+	}
+}
+
+// esperarScan dispara o scan de um datasource (POST .../scan, 202) e aguarda concluir.
+// O scan roda em background (goroutine): o sinal DEFINITIVO de conclusao com sucesso e
+// o `last_scan` do datasource, carimbado so em finalizarCicloVida. Faz polling curto.
+func (c *cliente) esperarScan(id string) {
+	c.t.Helper()
+	c.obj(http.MethodPost, "/api/v1/library/"+id+"/scan", nil, http.StatusAccepted)
+	prazo := time.Now().Add(30 * time.Second)
+	for time.Now().Before(prazo) {
+		src := c.obj(http.MethodGet, "/api/v1/library/"+id, nil, http.StatusOK)
+		if src["last_scan"] != nil {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	c.t.Fatalf("scan de %s nao concluiu no prazo", id)
+}
+
+// arquivosDaEntity lista os arquivos de uma entity (GET .../files) como []map. Para
+// EPISODIO, vem dos vinculos N:M (media_file_entity, kind='tv_episode') — a prova de
+// que o scanner ligou arquivo->episodio pelo id (0034).
+func (c *cliente) arquivosDaEntity(id string) []map[string]any {
+	c.t.Helper()
+	resp := c.obj(http.MethodGet, "/api/v1/entities/"+id+"/files", nil, http.StatusOK)
+	bruto, _ := resp["items"].([]any)
+	out := make([]map[string]any, 0, len(bruto))
+	for _, e := range bruto {
+		m, _ := e.(map[string]any)
+		out = append(out, m)
+	}
+	return out
+}
+
+// posse extrai o objeto `ownership` {owned_count, total_count} de uma entity resolvida
+// (temporada/serie, 0034). Exige presenca do campo (nunca ausente para tv/season).
+func posse(t *testing.T, ent map[string]any) (owned, total int) {
+	t.Helper()
+	o, ok := ent["ownership"].(map[string]any)
+	if !ok {
+		t.Fatalf("campo ownership ausente ou nao-objeto em %v", ent["ownership"])
+	}
+	oc, _ := o["owned_count"].(float64)
+	tc, _ := o["total_count"].(float64)
+	return int(oc), int(tc)
+}
+
+// idsDosMembros devolve os ids dos filhos (GET .../members) de uma entity, em ordem.
+func (c *cliente) idsDosMembros(id string) []string {
+	c.t.Helper()
+	membros := c.arr(http.MethodGet, "/api/v1/entities/"+id+"/members", nil, http.StatusOK)
+	out := make([]string, 0, len(membros))
+	for _, m := range membros {
+		mm, _ := m.(map[string]any)
+		out = append(out, str(c.t, mm, "id"))
+	}
+	return out
+}
+
+// TestJornadaScanSerie: a jornada ponta-a-ponta do SCANNER DE SERIES (briefing 0034,
+// Fase 2). Uma pasta de serie NAO importada, marcada content_type='series', e varrida:
+// o scanner auto-importa a arvore do provider (fake, "Springfield Tales"/71663), casa
+// cada arquivo ao(s) episodio(s) pelo numero e grava os vinculos N:M ancorados no id.
+// Cobre: (a) auto-import; (b) arquivo unico -> 1 vinculo; (c) RANGE S02E01-E03 -> 3
+// episodios ligados ao MESMO arquivo; (d) arquivos por episodio via a juncao; (e)
+// posse agregada coerente (owned<=total) na temporada e na serie.
+func TestJornadaScanSerie(t *testing.T) {
+	c := novoHarness(t)
+
+	// Estrutura de disco: pasta da serie, temporada, 2 episodios avulsos na T1 e um
+	// arquivo de RANGE cobrindo os 3 episodios da T2 (official S02E01..E03).
+	root := t.TempDir()
+	base := filepath.Join(root, "Springfield Tales")
+	escreverVideo(t, filepath.Join(base, "Season 01", "Springfield Tales S01E01.mkv"))
+	escreverVideo(t, filepath.Join(base, "Season 01", "Springfield Tales S01E02.mkv"))
+	escreverVideo(t, filepath.Join(base, "Season 02", "Springfield Tales S02E01-E03.mkv"))
+
+	// (2) Cadastra o datasource marcado como serie e (3) dispara+aguarda o scan.
+	src := c.obj(http.MethodPost, "/api/v1/library",
+		map[string]string{"path": root, "type": "tv", "content_type": "series"}, http.StatusCreated)
+	if got := str(t, src, "content_type"); got != "series" {
+		t.Fatalf("content_type = %q, quero \"series\" (persistido no cadastro)", got)
+	}
+	srcID := str(t, src, "id")
+	c.esperarScan(srcID)
+
+	// (4a) A serie foi AUTO-IMPORTADA: a home lista exatamente 1 obra de topo, a tv.
+	home := c.obj(http.MethodGet, "/api/v1/entities", nil, http.StatusOK)
+	itens, _ := home["items"].([]any)
+	if len(itens) != 1 {
+		t.Fatalf("home = %d itens, quero 1 (so a serie auto-importada). tipos=%v", len(itens), tipos(itens))
+	}
+	serie := itens[0].(map[string]any)
+	if tp := str(t, serie, "type"); tp != "tv" {
+		t.Fatalf("obra de topo type = %q, quero \"tv\"", tp)
+	}
+	serieID := str(t, serie, "id")
+
+	// Estrutura importada: 2 temporadas; T1 com eps [101,102,103], T2 com [201,202,203].
+	temporadas := c.idsDosMembros(serieID)
+	if len(temporadas) != 2 {
+		t.Fatalf("temporadas = %d, quero 2", len(temporadas))
+	}
+	epsT1 := c.idsDosMembros(temporadas[0])
+	epsT2 := c.idsDosMembros(temporadas[1])
+	if len(epsT1) != 3 || len(epsT2) != 3 {
+		t.Fatalf("episodios = T1:%d T2:%d, quero 3 e 3", len(epsT1), len(epsT2))
+	}
+
+	// (4b) Arquivos avulsos viraram vinculos: ep 101 e 102 possuidos (1 arquivo cada),
+	// ep 103 NAO possuido (nenhum arquivo cobriu S01E03).
+	assertFileCount(t, c, epsT1[0], 1) // S01E01 -> ep 101
+	assertFileCount(t, c, epsT1[1], 1) // S01E02 -> ep 102
+	assertFileCount(t, c, epsT1[2], 0) // S01E03 sem arquivo
+
+	// (4c) RANGE: o unico arquivo S02E01-E03 gerou 3 vinculos, um por episodio da T2,
+	// TODOS apontando para o MESMO media_file (1 arquivo -> N episodios, ancorado no id).
+	assertRangeUmArquivoTresEps(t, c, epsT2, "S02E01-E03")
+
+	// (4d/4e) Posse agregada coerente (owned<=total): T1 possui 2/3; T2 possui 3/3; a
+	// serie agrega 5/6 (nunca owned>total).
+	assertPosse(t, c, temporadas[0], 2, 3)
+	assertPosse(t, c, temporadas[1], 3, 3)
+	assertPosse(t, c, serieID, 5, 6)
+}
+
+// assertFileCount afirma o file_count de um episodio resolvido (GET /entities/{id}) —
+// os arquivos do episodio vem dos vinculos N:M (0034), nao de media_file.entity_id.
+func assertFileCount(t *testing.T, c *cliente, epID string, quero int) {
+	t.Helper()
+	ent := c.obj(http.MethodGet, "/api/v1/entities/"+epID, nil, http.StatusOK)
+	fc, _ := ent["file_count"].(float64)
+	if int(fc) != quero {
+		t.Errorf("ep %s file_count = %v, quero %d", epID, ent["file_count"], quero)
+	}
+}
+
+// assertRangeUmArquivoTresEps afirma que TODOS os episodios recebem exatamente 1
+// arquivo, que seu path contem o marcador do range, e que e o MESMO media_file (id)
+// para todos — a prova ponta-a-ponta de 1 arquivo -> N episodios (vinculos N:M).
+func assertRangeUmArquivoTresEps(t *testing.T, c *cliente, eps []string, marcador string) {
+	t.Helper()
+	var idRange string
+	for i, epID := range eps {
+		arqs := c.arquivosDaEntity(epID)
+		if len(arqs) != 1 {
+			t.Fatalf("ep[%d]: arquivos = %d, quero 1 (o arquivo de range)", i, len(arqs))
+		}
+		if p := str(t, arqs[0], "path"); !strings.Contains(p, marcador) {
+			t.Errorf("ep[%d]: arquivo = %q, quero o arquivo de range %q", i, p, marcador)
+		}
+		id := str(t, arqs[0], "id")
+		if i == 0 {
+			idRange = id
+		} else if id != idRange {
+			t.Errorf("ep[%d]: media_file id = %q, quero o MESMO do range (%q)", i, id, idRange)
+		}
+	}
+}
+
+// assertPosse afirma a posse agregada (owned/total) de uma entity-pai (temporada/serie)
+// e a coerencia owned<=total (0034).
+func assertPosse(t *testing.T, c *cliente, id string, owned, total int) {
+	t.Helper()
+	ent := c.obj(http.MethodGet, "/api/v1/entities/"+id, nil, http.StatusOK)
+	o, tt := posse(t, ent)
+	if o != owned || tt != total {
+		t.Errorf("posse de %s = %d/%d, quero %d/%d", id, o, tt, owned, total)
+	}
+	if o > tt {
+		t.Errorf("posse incoerente em %s: owned (%d) > total (%d)", id, o, tt)
+	}
 }
