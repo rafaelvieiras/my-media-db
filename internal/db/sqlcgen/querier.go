@@ -33,6 +33,13 @@ type Querier interface {
 	// fazendo o item sair da fila de revisao. Nao toca override/arte.
 	AtualizarConfidencePorEntity(ctx context.Context, arg AtualizarConfidencePorEntityParams) error
 	AtualizarEntity(ctx context.Context, arg AtualizarEntityParams) (Entity, error)
+	// Grava o extension_data_json (mapa namespace->objeto) de uma entity, sem tocar o
+	// resto. Usado pelo import de series (briefing 0031): a serie e criada/enriquecida
+	// como um item comum (importarItem) e recebe aqui o namespace core.tv@1 (season
+	// types). Temporada/episodio ja nascem com o extension_data no proprio CriarEntity;
+	// a serie precisa deste UPDATE porque nasce pelo caminho de item. So esta coluna e o
+	// updated_at mudam; nao toca override/externo.
+	AtualizarExtensionData(ctx context.Context, arg AtualizarExtensionDataParams) error
 	// Mescla a identidade externa (MD4): a app le external_ids_json, junta
 	// {source: source_id} e grava aqui, sem tocar o resto da entity. As colunas
 	// geradas external_id_tmdb/imdb re-derivam sozinhas do novo JSON. Usado pelo

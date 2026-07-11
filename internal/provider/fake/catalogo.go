@@ -55,6 +55,28 @@ func catalogoFilmes() map[string]filme {
 			posterPath:       "/matrix-reloaded.png",
 			colecaoID:        "2344",
 		},
+		// SÉRIE (tipo "tv"): a linha-base do import da árvore (BuscarSerieArvore serve as
+		// temporadas/episódios; este detalhe dá título/pôster/original_language à série,
+		// como um filme). O id casa fake.SerieFixtureID.
+		"71663": {
+			sourceID: "71663",
+			tipo:     "tv",
+			title: map[string]string{
+				"en": "Springfield Tales", "pt-BR": "Contos de Springfield", "pt": "Contos de Springfield",
+			},
+			description: map[string]string{
+				"en":    "A canned series fixture for offline series-import tests.",
+				"pt-BR": "Uma serie de fixture para testes offline de import de series.",
+				"pt":    "Uma serie de fixture para testes offline de import de series.",
+			},
+			tags: map[string][]string{
+				"en": {"Animation", "Comedy"}, "pt-BR": {"Animacao", "Comedia"}, "pt": {"Animacao", "Comedia"},
+			},
+			originalTitle:    "Springfield Tales",
+			originalLanguage: "en",
+			releaseDate:      "1989-12-17",
+			posterPath:       "/springfield.png",
+		},
 	}
 }
 

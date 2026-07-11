@@ -12,6 +12,7 @@ package fake
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -42,11 +43,17 @@ type colecaoFix struct {
 	parts      []string // sourceIDs dos membros, em ordem
 }
 
-// Asserções de interface: o fake é um Provider completo E um ColecaoProvider.
+// Asserções de interface: o fake é um Provider completo, um ColecaoProvider E um
+// SerieProvider (a árvore canned de séries do briefing 0031).
 var (
 	_ provider.Provider        = (*Provider)(nil)
 	_ provider.ColecaoProvider = (*Provider)(nil)
+	_ provider.SerieProvider   = (*Provider)(nil)
 )
+
+// SerieFixtureID é o id da série canned servida por BuscarSerieArvore (exposto para os
+// testes montarem o import da árvore sem adivinhar o id).
+const SerieFixtureID = "71663"
 
 // Provider serve o catálogo de fixtures. É imutável após New (o catálogo é dado de
 // compilação), então os métodos são seguros para concorrência.
@@ -150,6 +157,79 @@ func (p *Provider) BuscarColecao(_ context.Context, colecaoID, _ string) (provid
 		}
 	}
 	return col, nil
+}
+
+// BuscarSerieArvore devolve a ÁRVORE canned da série fixture (1 série, 2 temporadas de
+// 3 episódios, ordens "official"/"dvd"/"absolute" com um episódio de número divergente
+// entre elas). Determinística e sem rede — exercita o import de séries offline.
+// ErrNaoEncontrado para qualquer outro id.
+func (p *Provider) BuscarSerieArvore(_ context.Context, sourceID string, _ []string) (provider.SerieArvore, error) {
+	if sourceID != SerieFixtureID {
+		return provider.SerieArvore{}, provider.ErrNaoEncontrado
+	}
+	return provider.SerieArvore{
+		DefaultSeasonType: "official",
+		SeasonTypes:       []string{"official", "dvd", "absolute"},
+		Temporadas: []provider.TemporadaExterna{
+			p.temporadaFake(1, "1989", nil, []provider.EpisodioExterno{
+				// Ordens coincidentes: official/dvd iguais.
+				p.episodioFake("101", "9101", 1, num(1, 1, 1, 1, 1, 1), "1989-12-17"),
+				p.episodioFake("102", "9102", 2, num(1, 2, 1, 2, 1, 2), "1990-01-14"),
+				// Numero DIVERGENTE: official S1E3, mas dvd S1E5.
+				p.episodioFake("103", "9103", 3, num(1, 3, 1, 5, 1, 3), "1990-01-21"),
+			}),
+			// Temporada sem Name -> titulo cai em "Temporada N".
+			p.temporadaFake(2, "1990", map[string]string{"en": "Second Season"}, []provider.EpisodioExterno{
+				p.episodioFake("201", "9201", 4, num(2, 1, 2, 1, 1, 4), "1990-10-11"),
+				p.episodioFake("202", "9202", 5, num(2, 2, 2, 2, 1, 5), "1990-10-18"),
+				p.episodioFake("203", "9203", 6, num(2, 3, 2, 3, 1, 6), "1990-11-01"),
+			}),
+		},
+	}, nil
+}
+
+// temporadaFake monta uma TemporadaExterna da ordenação default ("official"). name nil
+// deixa a temporada sem nome (o import cai em "Temporada N").
+func (p *Provider) temporadaFake(n int, ano string, name map[string]string, eps []provider.EpisodioExterno) provider.TemporadaExterna {
+	return provider.TemporadaExterna{
+		Ordering:     "official",
+		SeasonNumber: n,
+		Name:         name,
+		Year:         ano,
+		PosterURL:    p.posterURL(fmt.Sprintf("/season-%d.png", n)),
+		Episodios:    eps,
+	}
+}
+
+// episodioFake monta um EpisodioExterno ancorado no id (sourceID), com {tvdb} nos
+// ExternalIDs, título/sinopse en+pt-BR+pt, runtime fixo e still opcional.
+func (p *Provider) episodioFake(id, tvdb string, abs int, numbering map[string]provider.Numero, air string) provider.EpisodioExterno {
+	absN, runtime := abs, 22
+	return provider.EpisodioExterno{
+		SourceID:    id,
+		ExternalIDs: map[string]string{"tvdb": tvdb},
+		Title: map[string]string{
+			"en": fmt.Sprintf("Episode %s", id), "pt-BR": fmt.Sprintf("Episodio %s", id), "pt": fmt.Sprintf("Episodio %s", id),
+		},
+		Overview: map[string]string{
+			"en": fmt.Sprintf("Overview of episode %s", id), "pt-BR": fmt.Sprintf("Sinopse do episodio %s", id),
+		},
+		AbsoluteNumber: &absN,
+		Numbering:      numbering,
+		AirDate:        air,
+		Runtime:        &runtime,
+		StillURL:       p.posterURL(fmt.Sprintf("/still-%s.png", id)),
+	}
+}
+
+// num é um atalho para o Numbering das 3 ordens: (official S,N), (dvd S,N),
+// (absolute S,N).
+func num(oS, oN, dS, dN, aS, aN int) map[string]provider.Numero {
+	return map[string]provider.Numero{
+		"official": {Season: oS, Number: oN},
+		"dvd":      {Season: dS, Number: dN},
+		"absolute": {Season: aS, Number: aN},
+	}
 }
 
 // rawFixture é o payload persistido/re-componível: canônico e auto-suficiente (o

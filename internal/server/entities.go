@@ -217,6 +217,17 @@ func cardDTO(row sqlcgen.ListarEntityCardsRow) entityCardDTO {
 // valor — a ligação nasce lá e é lida aqui).
 const kindColecao = "collection"
 
+// Tipos de entity-pai e os kinds de relação dos seus filhos na árvore de séries
+// (briefing 0031 / ADR-0021). A leitura de membros escolhe o kind e a ORDENAÇÃO pelo
+// tipo do pai: coleção ordena por ANO; série/temporada seguem o sort_index (número da
+// temporada/episódio), a ordem que ListarRelacoesFilhas já devolve.
+const (
+	tipoEntSerie     = "tv"
+	tipoEntTemporada = "season"
+	kindTemporada    = "tv_season"
+	kindEpisodio     = "tv_episode"
+)
+
 // membroCard carrega o card já montado + o release_date do membro, só para ordenar por
 // ano sem vazar o campo no DTO (o card de membro tem o MESMO shape do card da lista).
 type membroCard struct {
@@ -236,7 +247,8 @@ func (s *Server) getEntityMembers(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	ctx := r.Context()
 
-	if _, err := s.leitura().ObterEntity(ctx, id); err != nil {
+	ent, err := s.leitura().ObterEntity(ctx, id)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "entidade não encontrada")
 			return
@@ -245,7 +257,7 @@ func (s *Server) getEntityMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := s.montarMembros(ctx, id)
+	out, err := s.montarMembros(ctx, id, ent.Type)
 	if err != nil {
 		respondErroInterno(w)
 		return
@@ -253,37 +265,59 @@ func (s *Server) getEntityMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// montarMembros carrega os MEMBROS de uma coleção (entity_relation kind='collection')
-// como cards (o MESMO shape de GET /entities), ordenados por ANO ascendente (sem ano ao
-// fim). `[]` quando a entity não tem filhos dessa relação. É o caminho único reusado
-// pela leitura (getEntityMembers) e pelas mutações da Fase B (add/removeMember), que
-// devolvem a lista já atualizada. Pula um membro purgado no meio (NoRows).
-func (s *Server) montarMembros(ctx context.Context, id string) ([]entityCardDTO, error) {
+// montarMembros carrega os FILHOS de uma entity-pai como cards (o MESMO shape de GET
+// /entities). O kind da relação e a ORDENAÇÃO dependem do tipo do pai (kindEOrdemMembros):
+// coleção → membros por ANO; série → temporadas na ordem de sort_index; temporada →
+// episódios numerados na ordem de sort_index (a ordem que ListarRelacoesFilhas já
+// devolve). `[]` quando a entity não tem filhos dessa relação. É o caminho único reusado
+// pela leitura (getEntityMembers) e pelas mutações da Fase B (add/removeMember). Pula um
+// filho purgado no meio (NoRows).
+func (s *Server) montarMembros(ctx context.Context, id, tipoPai string) ([]entityCardDTO, error) {
 	rels, err := s.leitura().ListarRelacoesFilhas(ctx, id)
 	if err != nil {
 		return nil, err
 	}
+	kind, ordenarPorAno := kindEOrdemMembros(tipoPai)
 	membros := make([]membroCard, 0, len(rels))
 	for _, rel := range rels {
-		if rel.Kind != kindColecao {
+		if rel.Kind != kind {
 			continue
 		}
 		row, err := s.leitura().ObterEntityCard(ctx, rel.ChildID)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				continue // membro purgado no meio: ignora
+				continue // filho purgado no meio: ignora
 			}
 			return nil, err
 		}
 		membros = append(membros, membroCard{dto: cardDTODeMembro(row), ano: row.ReleaseDate})
 	}
-	sort.SliceStable(membros, func(i, j int) bool { return anoAntes(membros[i].ano, membros[j].ano) })
+	// Série/temporada preservam a ordem de sort_index (número); só a coleção reordena por
+	// ano — os episódios devem ficar 1,2,3 e não por data de exibição.
+	if ordenarPorAno {
+		sort.SliceStable(membros, func(i, j int) bool { return anoAntes(membros[i].ano, membros[j].ano) })
+	}
 
 	out := make([]entityCardDTO, len(membros))
 	for i, m := range membros {
 		out[i] = m.dto
 	}
 	return out, nil
+}
+
+// kindEOrdemMembros escolhe o kind de relação dos filhos e se eles são reordenados por
+// ANO, conforme o tipo do pai: série → temporadas (sort_index); temporada → episódios
+// (sort_index); qualquer outro (coleção) → membros por ano. O default preserva o
+// comportamento de coleção para os callers que não são da árvore de séries.
+func kindEOrdemMembros(tipoPai string) (kind string, ordenarPorAno bool) {
+	switch tipoPai {
+	case tipoEntSerie:
+		return kindTemporada, false
+	case tipoEntTemporada:
+		return kindEpisodio, false
+	default:
+		return kindColecao, true
+	}
 }
 
 // cardDTODeMembro reusa o cardDTO da lista a partir do row de ObterEntityCard (mesmas

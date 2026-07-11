@@ -109,9 +109,22 @@ func (s *Servico) Enriquecer(ctx context.Context, entityID, source, sourceID, ti
 // cria (status DEFAULT 'cataloged', título inicial do detalhe) e enriquece
 // (criada=true). Devolve o id da entity resolvível pelo chamador.
 func (s *Servico) Importar(ctx context.Context, source, sourceID, tipo string, langs []string) (id string, criada bool, err error) {
-	if tipo == "collection" {
+	switch tipo {
+	case tipoColecao:
 		return s.importarColecao(ctx, source, sourceID, langs)
+	case tipoSerie:
+		return s.importarSerie(ctx, source, sourceID, langs)
+	default:
+		return s.importarItem(ctx, source, sourceID, tipo, langs)
 	}
+}
+
+// importarItem é o find-or-create de um ITEM único (filme, ou a linha-base de uma
+// série/temporada/episódio): reusa a entity existente (dedup por id externo) e a
+// re-enriquece, ou cria uma nova (título inicial do detalhe) e persiste a base
+// externa + pôster. É o caminho compartilhado por Importar (filme) e importarSerie (a
+// própria série usa este molde para detalhe/pôster/curarTitulo antes da árvore).
+func (s *Servico) importarItem(ctx context.Context, source, sourceID, tipo string, langs []string) (string, bool, error) {
 	if existente, ok, err := s.acharPorIDExterno(ctx, source, sourceID); err != nil {
 		return "", false, err
 	} else if ok {

@@ -191,6 +191,18 @@ SET title = sqlc.arg('title'),
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = sqlc.arg('id');
 
+-- name: AtualizarExtensionData :exec
+-- Grava o extension_data_json (mapa namespace->objeto) de uma entity, sem tocar o
+-- resto. Usado pelo import de series (briefing 0031): a serie e criada/enriquecida
+-- como um item comum (importarItem) e recebe aqui o namespace core.tv@1 (season
+-- types). Temporada/episodio ja nascem com o extension_data no proprio CriarEntity;
+-- a serie precisa deste UPDATE porque nasce pelo caminho de item. So esta coluna e o
+-- updated_at mudam; nao toca override/externo.
+UPDATE entity
+SET extension_data_json = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?;
+
 -- name: AtualizarOriginalLanguage :exec
 -- Grava a ANCORA do fallback por idioma (briefing 0020): o codigo NEUTRO do idioma
 -- original da obra, obtido do detalhe da fonte no enrich/import. Nao-destrutivo: e

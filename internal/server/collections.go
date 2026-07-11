@@ -212,7 +212,9 @@ func (s *Server) ligarMembroColecao(ctx context.Context, id, childID string) err
 // responderMembros monta e escreve a lista de membros atualizada (200) — a resposta
 // comum de add/removeMember. 500 em erro de banco.
 func (s *Server) responderMembros(w http.ResponseWriter, ctx context.Context, id string) {
-	out, err := s.montarMembros(ctx, id)
+	// add/removeMember são operações de COLEÇÃO; a lista devolvida é sempre de membros
+	// por ano (kindColecao), independente de outros tipos de pai.
+	out, err := s.montarMembros(ctx, id, "collection")
 	if err != nil {
 		respondErroInterno(w)
 		return

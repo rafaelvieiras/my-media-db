@@ -88,6 +88,29 @@ func (q *Queries) AtualizarEntity(ctx context.Context, arg AtualizarEntityParams
 	return i, err
 }
 
+const atualizarExtensionData = `-- name: AtualizarExtensionData :exec
+UPDATE entity
+SET extension_data_json = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+`
+
+type AtualizarExtensionDataParams struct {
+	ExtensionDataJson sql.NullString
+	ID                string
+}
+
+// Grava o extension_data_json (mapa namespace->objeto) de uma entity, sem tocar o
+// resto. Usado pelo import de series (briefing 0031): a serie e criada/enriquecida
+// como um item comum (importarItem) e recebe aqui o namespace core.tv@1 (season
+// types). Temporada/episodio ja nascem com o extension_data no proprio CriarEntity;
+// a serie precisa deste UPDATE porque nasce pelo caminho de item. So esta coluna e o
+// updated_at mudam; nao toca override/externo.
+func (q *Queries) AtualizarExtensionData(ctx context.Context, arg AtualizarExtensionDataParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarExtensionData, arg.ExtensionDataJson, arg.ID)
+	return err
+}
+
 const atualizarExternalIds = `-- name: AtualizarExternalIds :exec
 UPDATE entity
 SET external_ids_json = ?,
