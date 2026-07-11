@@ -66,6 +66,69 @@ func TestMembersTemporadaOrdenaEpisodiosPorSortIndex(t *testing.T) {
 	eq(t, "type do card", cards[0].Type, "episode")
 }
 
+// TestMembersCardEpisodioPossuidoPelaJuncao cobre o bug de consistencia do card (0034):
+// um arquivo de episodio tem media_file.entity_id = SERIE e liga ao EPISODIO so pela
+// juncao media_file_entity. O CARD do episodio (via /members -> ObterEntityCard) precisa
+// contar essa posse pela juncao -- antes vinha owned=false/file_count=0, divergindo do
+// detalhe e da posse agregada da temporada. Tambem prova que NAO duplica a contagem: o
+// card da SERIE (via a lista) conta o mesmo arquivo uma unica vez (pelo entity_id direto).
+func TestMembersCardEpisodioPossuidoPelaJuncao(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "s1", "tv", "Serie")
+	semearEntity(t, d, "se1", "season", "Temporada 1")
+	semearEntity(t, d, "ep1", "episode", "Ep 1")
+	semearEntity(t, d, "ep2", "episode", "Ep 2")
+	ligarFilhoOrdenado(t, d, "r-se1", "s1", "se1", "tv_season", 1)
+	ligarFilhoOrdenado(t, d, "r-ep1", "se1", "ep1", "tv_episode", 1)
+	ligarFilhoOrdenado(t, d, "r-ep2", "se1", "ep2", "tv_episode", 2)
+	// Arquivo com entity_id = SERIE, vinculado ao episodio 1 SO pela juncao.
+	semearFile(t, d, "mf1", "s1", "/lib/serie/s01e01.mkv", "present", 0.9, "")
+	if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: "mf1", EntityID: "ep1", Kind: "tv_episode", Ordinal: 0,
+	}); err != nil {
+		t.Fatalf("CriarVinculoEntidade: %v", err)
+	}
+
+	// CARD do episodio via /members: ep1 possuido pela juncao, ep2 nao.
+	cards := membrosDe(t, h, "se1")
+	byID := map[string]entityCardDTO{}
+	for _, c := range cards {
+		byID[c.ID] = c
+	}
+	eq(t, "ep1 card owned", byID["ep1"].Owned, true)
+	eq(t, "ep1 card file_count", byID["ep1"].FileCount, 1)
+	eq(t, "ep2 card owned", byID["ep2"].Owned, false)
+	eq(t, "ep2 card file_count", byID["ep2"].FileCount, 0)
+
+	// CARD da SERIE via a lista de topo: o MESMO arquivo (entity_id=s1) conta UMA vez.
+	// A juncao liga o arquivo ao episodio (id != s1), entao nao ha dupla contagem no card
+	// da serie. Prova a nota de "nao duplica" da query.
+	rec := do(t, h, http.MethodGet, "/api/v1/entities?type=tv", nil)
+	out := decodeList(t, rec.Body.Bytes())
+	if len(out.Items) != 1 || out.Items[0].ID != "s1" {
+		t.Fatalf("lista type=tv = %+v, quero so a serie s1", out.Items)
+	}
+	eq(t, "serie card owned", out.Items[0].Owned, true)
+	eq(t, "serie card file_count (sem duplicar)", out.Items[0].FileCount, 1)
+}
+
+// TestCardFilmeInalteradoSemJuncao garante que a extensao pela juncao NAO muda o card do
+// filme comum: sem linhas em media_file_entity, owned/file_count vem so do entity_id direto.
+func TestCardFilmeInalteradoSemJuncao(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "m1", "movie", "Filme")
+	semearFile(t, d, "f1", "m1", "/lib/m1.mkv", "present", 0.9, "")
+	semearFile(t, d, "f2", "m1", "/lib/m1-extra.mkv", "missing", 0.5, "")
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities?type=movie", nil)
+	out := decodeList(t, rec.Body.Bytes())
+	if len(out.Items) != 1 || out.Items[0].ID != "m1" {
+		t.Fatalf("lista type=movie = %+v, quero so o filme m1", out.Items)
+	}
+	eq(t, "filme card owned", out.Items[0].Owned, true)
+	eq(t, "filme card file_count", out.Items[0].FileCount, 2)
+}
+
 // semearTemporada cria uma entity type='season' com release_date (ano) para provar que
 // a ordenacao de temporadas NAO cai no caminho por-ano.
 func semearTemporada(t *testing.T, d *db.DB, id, titulo, ano string) {

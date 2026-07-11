@@ -352,8 +352,17 @@ func (q *Queries) ListarEntities(ctx context.Context, arg ListarEntitiesParams) 
 const listarEntityCards = `-- name: ListarEntityCards :many
 SELECT
     e.id, e.type, e.title, e.status,
-    EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
-    (SELECT COUNT(*) FROM media_file m WHERE m.entity_id = e.id) AS file_count,
+    EXISTS (
+        SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present'
+        UNION ALL
+        SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
+            WHERE mfe.entity_id = e.id AND mf.state = 'present'
+    ) AS owned,
+    (SELECT COUNT(*) FROM (
+        SELECT m.id FROM media_file m WHERE m.entity_id = e.id
+        UNION ALL
+        SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
+    )) AS file_count,
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
     EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
 FROM entity e
@@ -387,11 +396,25 @@ type ListarEntityCardsRow struct {
 // unica query com agregacao por subselect correlacionado -- evita o N+1 (nada de
 // uma query de posse/contagem por item). Colunas derivadas:
 //
-//	owned            POSSE DERIVADA (ADR-0009): EXISTS media_file present.
-//	file_count       total de media_file da entity (present + missing).
+//	owned            POSSE DERIVADA (ADR-0009): EXISTS media_file present
+//	                 DIRETO (media_file.entity_id = e.id) OU via a juncao
+//	                 media_file_entity (ver abaixo).
+//	file_count       total de media_file da entity: os DIRETOS (present + missing)
+//	                 MAIS os ligados pela juncao media_file_entity.
 //	match_confidence maior confianca de match entre os arquivos (badge de revisao).
 //	has_poster       EXISTS de um asset kind='poster' (a UI decide o poster_url).
 //
+// Posse GENERICA pela juncao (0034): um arquivo de episodio tem media_file.entity_id
+// apontando a SERIE (a obra) e liga ao EPISODIO so por media_file_entity. Se a posse
+// do card olhasse so o entity_id direto, o episodio apareceria owned=false/file_count=0
+// enquanto o detalhe e a posse agregada (que ja leem a juncao) mostram possuido --
+// inconsistente. Por isso owned/file_count somam TAMBEM a juncao. E agnostico ao kind
+// (qualquer entity ligada por media_file_entity conta; futuro 'track' de musica idem).
+// NAO duplica: o vinculo direto e o da juncao apontam entities e.id DIFERENTES (a
+// serie leva o arquivo pelo entity_id; o episodio leva pela juncao) -- num mesmo card
+// so um dos dois caminhos casa e.id. Para o filme, sem linhas na juncao, o comportamento
+// fica inalterado. COUNT(DISTINCT media_file_id) na juncao evita contar duas vezes um
+// arquivo ligado a mesma entity em kinds diferentes.
 // So OBRAS DE TOPO entram: season/episode sao nos internos da arvore de series
 // (0032), alcancados so pela arvore do pai (GET /members); ficam FORA da home e
 // da busca via `type NOT IN ('season','episode')`. movie/tv/collection seguem.
@@ -439,8 +462,17 @@ func (q *Queries) ListarEntityCards(ctx context.Context, arg ListarEntityCardsPa
 const listarEntityCardsDesc = `-- name: ListarEntityCardsDesc :many
 SELECT
     e.id, e.type, e.title, e.status,
-    EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
-    (SELECT COUNT(*) FROM media_file m WHERE m.entity_id = e.id) AS file_count,
+    EXISTS (
+        SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present'
+        UNION ALL
+        SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
+            WHERE mfe.entity_id = e.id AND mf.state = 'present'
+    ) AS owned,
+    (SELECT COUNT(*) FROM (
+        SELECT m.id FROM media_file m WHERE m.entity_id = e.id
+        UNION ALL
+        SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
+    )) AS file_count,
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
     EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
 FROM entity e
@@ -470,7 +502,8 @@ type ListarEntityCardsDescRow struct {
 	HasPoster       bool
 }
 
-// Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title).
+// Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title). owned/
+// file_count somam a juncao media_file_entity do mesmo jeito -- ver a nota longa acima.
 func (q *Queries) ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCardsDescParams) ([]ListarEntityCardsDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarEntityCardsDesc,
 		arg.Type,
@@ -580,8 +613,17 @@ func (q *Queries) ObterEntity(ctx context.Context, id string) (Entity, error) {
 const obterEntityCard = `-- name: ObterEntityCard :one
 SELECT
     e.id, e.type, e.title, e.status, e.release_date,
-    EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
-    (SELECT COUNT(*) FROM media_file m WHERE m.entity_id = e.id) AS file_count,
+    EXISTS (
+        SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present'
+        UNION ALL
+        SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
+            WHERE mfe.entity_id = e.id AND mf.state = 'present'
+    ) AS owned,
+    (SELECT COUNT(*) FROM (
+        SELECT m.id FROM media_file m WHERE m.entity_id = e.id
+        UNION ALL
+        SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
+    )) AS file_count,
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
     EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
 FROM entity e
@@ -601,10 +643,12 @@ type ObterEntityCardRow struct {
 }
 
 // CARD de UMA entity (mesmas colunas derivadas de ListarEntityCards) + release_date
-// para ordenar. Usado pelos MEMBROS de uma colecao (briefing 0025): a lista de filhos
-// vem de entity_relation e cada filho vira card por aqui (N pequeno -- colecao). As
-// colunas derivadas espelham ListarEntityCards (owned/file_count/match_confidence/
-// has_poster), entao o mapeamento reusa o mesmo cardDTO.
+// para ordenar. Usado pelos MEMBROS de uma colecao (briefing 0025) e pelos episodios
+// de uma temporada (0034): a lista de filhos vem de entity_relation e cada filho vira
+// card por aqui (N pequeno). As colunas derivadas espelham ListarEntityCards
+// (owned/file_count/match_confidence/has_poster), entao o mapeamento reusa o cardDTO.
+// owned/file_count contam TAMBEM a juncao media_file_entity -- ver a nota longa em
+// ListarEntityCards (o card do episodio possui arquivo so pela juncao).
 func (q *Queries) ObterEntityCard(ctx context.Context, id string) (ObterEntityCardRow, error) {
 	row := q.db.QueryRowContext(ctx, obterEntityCard, id)
 	var i ObterEntityCardRow

@@ -43,10 +43,24 @@ const ttlCacheExterno = 60 * time.Second
 // deixa os dois placeholders serem os sub-nós a INCLUIR: a string vazia não casa
 // nenhum type, então o default preserva o só-topo; 'season'/'episode' religa o sub-nó
 // correspondente. Os parâmetros posicionais seguem (match, incl1, incl2, tipo, tipo, limit).
+//
+// owned/file_count contam TAMBEM a juncao media_file_entity (0034): com `?include=
+// episode` a busca traz episodios, cujo arquivo tem entity_id=SERIE e liga ao episodio
+// so pela juncao -- sem isto o card do episodio viria owned=false/file_count=0. Mesma
+// extensao (e mesmas formas UNION que preservam bool/int64 no scan) de ListarEntityCards.
 const buscarCardsFTSSQL = `SELECT
     e.id, e.type, e.title, e.status,
-    EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
-    (SELECT COUNT(*) FROM media_file m WHERE m.entity_id = e.id) AS file_count,
+    EXISTS (
+        SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present'
+        UNION ALL
+        SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
+            WHERE mfe.entity_id = e.id AND mf.state = 'present'
+    ) AS owned,
+    (SELECT COUNT(*) FROM (
+        SELECT m.id FROM media_file m WHERE m.entity_id = e.id
+        UNION ALL
+        SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
+    )) AS file_count,
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
     EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
 FROM entity_fts

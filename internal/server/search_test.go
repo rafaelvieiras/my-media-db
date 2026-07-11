@@ -199,6 +199,35 @@ func TestSearchSubNosDefaultForaEIncluidos(t *testing.T) {
 	}
 }
 
+// TestSearchEpisodioPossuidoPelaJuncao: com include=episode, o card do episodio na
+// busca marca a posse vinda da juncao media_file_entity (0034) -- o arquivo tem
+// entity_id=SERIE e liga ao episodio so pela juncao. Sem a extensao, viria
+// owned=false/file_count=0, divergindo do detalhe. Consistente com ListarEntityCards.
+func TestSearchEpisodioPossuidoPelaJuncao(t *testing.T) {
+	h, d := setupSearchServer(t)
+	semearEntity(t, d, "serie", "tv", "Simpsons Serie")
+	semearEntity(t, d, "ep", "episode", "Simpsons Episodio 1")
+	semearFile(t, d, "mf1", "serie", "/lib/simpsons/s01e01.mkv", "present", 0.9, "")
+	if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: "mf1", EntityID: "ep", Kind: "tv_episode", Ordinal: 0,
+	}); err != nil {
+		t.Fatalf("CriarVinculoEntidade: %v", err)
+	}
+
+	out := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Simpsons&include=episode", nil).Body.Bytes())
+	var epCard *entityCardDTO
+	for i := range out.Local {
+		if out.Local[i].ID == "ep" {
+			epCard = &out.Local[i]
+		}
+	}
+	if epCard == nil {
+		t.Fatalf("busca include=episode nao trouxe o episodio: local = %v", idsLocais(out))
+	}
+	eq(t, "ep busca owned", epCard.Owned, true)
+	eq(t, "ep busca file_count", epCard.FileCount, 1)
+}
+
 // TestSearchTypeSubNoComInclude: type=season combinado com include=season traz a
 // temporada (antes o NOT IN dura a mataria); type=season sozinho continua vazio.
 func TestSearchTypeSubNoComInclude(t *testing.T) {
