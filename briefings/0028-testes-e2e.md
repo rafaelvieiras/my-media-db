@@ -125,14 +125,14 @@ reais). Roda sob demanda (`make e2e`), não a cada commit.
   `MYMEDIADB_FAKE_PROVIDER=1` + DB/assets temporários + `GOCOVERDIR`, com health check;
   `global-teardown` manda SIGTERM (o binário grava os contadores ao sair) e extrai a
   cobertura. `E2E_BASE_URL` reusa um servidor externo; `E2E_SKIP_BUILD=1` pula os builds.
-- Jornadas atuais: **15 testes em 7 specs** cobrindo o inventário completo de fluxos do
+- Jornadas atuais: **22 testes em 9 specs** cobrindo o inventário completo de fluxos do
   usuário (ver 7.1). web-first assertions, seletores por papel/aria/texto, chrome sempre
   em pt-BR. Isolamento por `resetBiblioteca` no `beforeEach` (zera entities via API);
   workers=1, um banco compartilhado.
-- **Cobertura do binário** (backend, via `GOCOVERDIR` + `go tool covdata`): **52,4%** do
+- **Cobertura do binário** (backend, via `GOCOVERDIR` + `go tool covdata`): **52,8%** do
   binário exercido pelas jornadas (por-pacote + total). **Cobertura do front** (via
   `monocart-coverage-reports` lendo a cobertura V8 do Chromium, mapeada ao TSX por
-  sourcemap INLINE que o vite emite só quando `E2E_COVERAGE=1`): **78,2%** das linhas.
+  sourcemap INLINE que o vite emite só quando `E2E_COVERAGE=1`): **78,93%** das linhas.
   Rode ambas com `make e2e-cov`. São **termômetro** (reportadas no console, observadas ao
   crescer a suíte), NÃO ratcheadas na catraca — o contrato de completude é o checklist 7.1.
 
@@ -175,7 +175,7 @@ Camada 1 (API) e as principais também na Camada 2 (UI):
 
 A intenção do dono: **garantir que todo fluxo que o usuário já vê/usa esteja preso por um
 teste de ponta a ponta**, para que uma implementação nova não quebre em silêncio o que
-funcionava. A cobertura E2E (52,4% binário, 78,2% front) é o **termômetro** — sobe quando
+funcionava. A cobertura E2E (52,8% binário, 78,93% front) é o **termômetro** — sobe quando
 a suíte cresce, sinaliza regressão quando cai — mas o **contrato de completude é este
 checklist**: cada linha é uma tela/ação que o usuário exercita, mapeada ao spec que a
 prende. Os números de cobertura NÃO são ratcheados (jornadas de navegador são mais
@@ -204,9 +204,15 @@ partes" sem ninguém perceber.
 | 13 | Datasource (CRUD) | `/library`: adicionar path → aparece; remover → some | `library.spec.ts` |
 | 14 | Revisão de draft (curadoria) | scan de nome não-identificado → `/review` → "Corrigir" (busca) → sai da fila | `library.spec.ts` |
 | 15 | Órfã (curadoria) | arquivo catalogado some → rescan → `/orphans` → "Purgar" (confirmação 2 passos) | `library.spec.ts` |
+| 16 | Erro: re-enrich sem id da fonte | 422 inline (envelope pt-BR, entity preservada) | `errors.spec.ts` |
+| 17 | Erro: fonte falha no detalhe | id inexistente fixado → re-enrich → 502 inline | `errors.spec.ts` |
+| 18 | Erro: detalhe inexistente / type inválido | 404 no detalhe de UUID inexistente; 422 de validação no import | `errors.spec.ts` |
+| 19 | Detalhe rico: título original + idioma + link | título original ≠ traduzido, `en`→"Inglês", link à fonte (href real) | `rich-detail.spec.ts` |
+| 20 | Detalhe rico: degradação graciosa | vídeos/similares/coleção/palavras-chave vazios (ramo vazio de richfields) | `rich-detail.spec.ts` |
+| 21 | Detalhe rico: paridade externo↔interno | importa e reasserere os campos ricos na entity (adapter `deResolvedEntity`) | `rich-detail.spec.ts` |
 
 **Snapshot da cobertura no fechamento do inventário** (referência, não trava): binário
-52,4% (por `go tool covdata`), front 78,2% linhas / 55,1% branches / 71,8% funções (por
+52,8% (por `go tool covdata`), front 78,93% linhas / 55,40% branches / 72,24% funções (por
 monocart V8). Pacotes de menor cobertura de navegador — candidatos naturais a próximas
 jornadas: `mediainfo` (21%), `richfields` (46%), `enrich` (50%), `server` (55%). O
 provider `tmdb` fica em 0% de propósito (o fake o substitui nas jornadas).
@@ -234,10 +240,10 @@ provider `tmdb` fica em 0% de propósito (o fake o substitui nas jornadas).
   jornadas de API em Go sobre `httptest.NewServer`) migrando os smoke tests manuais +
   métrica `e2e_coverage_lines` na catraca (`-coverpkg`). Valor imediato, baixo risco.
 - **Fase 2** (FEITA) — projeto `e2e/` com Playwright: global-setup builda o front + o
-  binário `-cover` e o sobe com o fake; **inventário completo de jornadas** (15 testes /
-  7 specs, ver 7.1); cobertura do binário via `GOCOVERDIR` + `go tool covdata` (52,4%) e
+  binário `-cover` e o sobe com o fake; **inventário completo de jornadas** (22 testes /
+  9 specs, ver 7.1); cobertura do binário via `GOCOVERDIR` + `go tool covdata` (52,8%) e
   do front via `monocart-coverage-reports` lendo a cobertura V8 do Chromium com sourcemap
-  inline (78,2% linhas). `make e2e` / `make e2e-cov`. Imagens: `MYMEDIADB_FAKE_IMAGE_BASE` (hoje sem pôster nas jornadas de
+  inline (78,93% linhas). `make e2e` / `make e2e-cov`. Imagens: `MYMEDIADB_FAKE_IMAGE_BASE` (hoje sem pôster nas jornadas de
   navegador — placeholders; ligar quando uma jornada precisar de imagem determinística).
 - **Fase 3** (opcional) — MSW + montagem de rotas no Vitest para UI rápida por commit.
 
