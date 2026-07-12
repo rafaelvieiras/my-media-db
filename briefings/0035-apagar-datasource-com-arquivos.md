@@ -8,7 +8,7 @@
 | **ID** | 0035 |
 | **Tipo** | fix |
 | **Fase (roadmap)** | Fase 2 — UI de biblioteca (correção) |
-| **Status** | draft |
+| **Status** | done |
 | **Docs relacionadas** | [0008](0008-datasources-cadastro-api-library.md), [0034](0034-scanner-de-series-arquivo-episodio.md), [ADR-0010](../docs/adr/0010-escritor-unico-sqlite.md) |
 | **Depende de** | — |
 
