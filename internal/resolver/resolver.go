@@ -124,6 +124,16 @@ type Entidade struct {
 	Similar       []richfields.Similar   `json:"similar"`
 	ExternalLinks map[string]string      `json:"external_links"`
 
+	// Cast/Crew/Companies são os CRÉDITOS (elenco, equipe, produtoras — briefing
+	// 0029 Fase B): paridade com o detalhe do externo, mesmo shape (via richfields,
+	// fonte única). READ-ONLY nesta rodada (sem editor — Fase C). Sempre `[]` (nunca
+	// null) quando ausentes. ProfileURL/LogoURL saem com a URL DIRETA do provider
+	// (richfields é puro); o server os reescreve para o proxy local pós-resolução
+	// (mesma fronteira de Ancestors/Ownership).
+	Cast      []richfields.Cast    `json:"cast"`
+	Crew      []richfields.Crew    `json:"crew"`
+	Companies []richfields.Company `json:"companies"`
+
 	// Lang é o eco do idioma pedido (ADR-0019). Vazio quando não há contexto de
 	// idioma (comportamento do 0013).
 	Lang string `json:"lang"`
@@ -431,6 +441,9 @@ func Resolver(c Camadas) Entidade {
 		Videos:            richfields.VideosDe(rico),
 		Collection:        richfields.ColecaoDe(rico),
 		Similar:           richfields.SimilaresDe(rico),
+		Cast:              richfields.CastDe(rico),
+		Crew:              richfields.CrewDe(rico),
+		Companies:         richfields.CompaniesDe(rico),
 		ExternalLinks:     richfields.LinksExternos(rico, c.Entity.Type, externalIDs["tmdb"]),
 		Lang:              c.LangPedido,
 		OriginalLanguage:  nsPtr(c.Entity.OriginalLanguage),

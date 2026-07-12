@@ -11,6 +11,10 @@ import (
 
 type Querier interface {
 	ApagarAsset(ctx context.Context, id string) error
+	// Apaga todos os creditos de uma entity vindos de UMA fonte, antes de repopular no
+	// re-enriquecimento. Por fonte (nao total) para nao apagar creditos de outra source
+	// que enriqueceu a mesma obra (ex.: serie com arvore TVDB + elenco TMDB).
+	ApagarCreditosDaEntityFonte(ctx context.Context, arg ApagarCreditosDaEntityFonteParams) error
 	// Purga explicita: remove a entity e, por ON DELETE CASCADE, seus media_file,
 	// asset e entity_relation.
 	ApagarEntity(ctx context.Context, id string) error
@@ -104,6 +108,15 @@ type Querier interface {
 	// CRUD de asset (poster/fanart/... referenciados por uma entity).
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
 	CriarAsset(ctx context.Context, arg CriarAssetParams) (Asset, error)
+	// Acesso a tabela credit (briefing 0029, migration 0010): a aresta obra<->pessoa/
+	// empresa, cache re-componivel do payload externo. O re-enriquecimento apaga os
+	// creditos de (entity_id, source) e os repopula (idempotente, sem duplicar). O dado do
+	// dono nunca vive aqui. Comentarios em ASCII e colunas explicitas -- ver a nota em
+	// entity.sql (o sqlc v1.31 corrompe SQL de query com acento).
+	// Insere um credito ligado a entity. person_id (cast/crew) OU company_id (company) e
+	// preenchido, o outro fica NULL. ordering carrega a ordem de bilhagem do elenco;
+	// character/department/job/episode_count sao os atributos da aresta.
+	CriarCredito(ctx context.Context, arg CriarCreditoParams) error
 	// CRUD minimo da entity base.
 	//
 	// IMPORTANTE (sqlc + ASCII): os comentarios deste arquivo .sql sao ASCII (sem
@@ -162,6 +175,9 @@ type Querier interface {
 	// trazer a linha do arquivo. Ordena por ordinal e depois pela criacao, estavel.
 	ListarArquivosDaEntidade(ctx context.Context, arg ListarArquivosDaEntidadeParams) ([]ListarArquivosDaEntidadeRow, error)
 	ListarAssetsPorEntity(ctx context.Context, entityID string) ([]Asset, error)
+	// Todos os creditos de uma obra, para o detalhe. Ordena por kind, ordem de bilhagem e
+	// id (estavel).
+	ListarCreditosDaEntity(ctx context.Context, entityID string) ([]Credit, error)
 	ListarEntities(ctx context.Context, arg ListarEntitiesParams) ([]Entity, error)
 	// Lista de CARDS para a UI (briefing 0010), ordenada por titulo ASCENDENTE. Uma
 	// unica query com agregacao por subselect correlacionado -- evita o N+1 (nada de
@@ -257,6 +273,8 @@ type Querier interface {
 	// e distinto do de filme, porem a coluna gerada e compartilhada; o filtro por type
 	// evita casar um filme homonimo de mesmo id numerico. Mantem o re-import idempotente.
 	ObterColecaoPorTmdb(ctx context.Context, externalIDTmdb sql.NullString) (Entity, error)
+	// Le a produtora por (source, source_id) -- a chave logica de dedup.
+	ObterCompanyPorFonte(ctx context.Context, arg ObterCompanyPorFonteParams) (Company, error)
 	ObterEntity(ctx context.Context, id string) (Entity, error)
 	// CARD de UMA entity (mesmas colunas derivadas de ListarEntityCards) + release_date
 	// para ordenar. Usado pelos MEMBROS de uma colecao (briefing 0025) e pelos episodios
@@ -300,6 +318,8 @@ type Querier interface {
 	ObterMediaFilePorContentHash(ctx context.Context, contentHash sql.NullString) (MediaFile, error)
 	// Le o override da entity (sql.ErrNoRows quando nao ha override ativo).
 	ObterMediaOverride(ctx context.Context, entityID string) (MediaOverride, error)
+	// Le a pessoa por (source, source_id) -- a chave logica de dedup.
+	ObterPersonPorFonte(ctx context.Context, arg ObterPersonPorFonteParams) (Person, error)
 	// Curadoria (briefing 0018): um draft (nao-identificado) que o dono CONFIRMA ou
 	// CORRIGE deixa de ser rascunho -- vira 'cataloged' e sai da fila de revisao pelo
 	// ramo do status (senao a confianca sobe a 100 mas o item fica preso como draft).
@@ -317,6 +337,13 @@ type Querier interface {
 	// Grava (ou substitui) uma config. Conflito na PK (key) atualiza value_json e
 	// recarimba updated_at -- nunca cria uma segunda linha para a mesma chave.
 	UpsertAppSetting(ctx context.Context, arg UpsertAppSettingParams) (AppSetting, error)
+	// Acesso a tabela company (briefing 0029, migration 0010): a produtora/estudio
+	// deduplicada por (source, source_id). Cache re-componivel. Comentarios em ASCII e
+	// colunas explicitas -- ver a nota em entity.sql.
+	// Grava (ou atualiza) a produtora deduplicada por (source, source_id). Conflito na
+	// UNIQUE reusa a linha e atualiza name/logo_path/payload_json, devolvendo o id
+	// existente. `id` so e usado na primeira insercao.
+	UpsertCompany(ctx context.Context, arg UpsertCompanyParams) (string, error)
 	// Acesso ao CACHE do detalhe externo rico (external_detail, briefing 0022): uma linha
 	// por (source, source_id). A primeira consulta faz UPSERT; as proximas LEEM daqui,
 	// com a app decidindo servir do cache ou re-puxar (TTL + gatilho por idiomas).
@@ -338,6 +365,15 @@ type Querier interface {
 	// Grava (ou substitui) o override da entity. Conflito na PK (entity_id) atualiza
 	// override_json e recarimba updated_at -- 1:1, nunca cria uma segunda linha.
 	UpsertMediaOverride(ctx context.Context, arg UpsertMediaOverrideParams) (MediaOverride, error)
+	// Acesso a tabela person (briefing 0029, migration 0010): a pessoa deduplicada por
+	// (source, source_id). Cache re-componivel do payload externo -- o dado do dono nunca
+	// vive aqui. Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql (o
+	// sqlc v1.31 corrompe SQL de query com acento).
+	// Grava (ou atualiza) a pessoa deduplicada por (source, source_id). Conflito na UNIQUE
+	// reusa a linha e atualiza name/profile_path/payload_json, devolvendo o id existente --
+	// assim dois creditos da mesma pessoa apontam para UMA linha. `id` so e usado na
+	// primeira insercao (fica estavel no update).
+	UpsertPerson(ctx context.Context, arg UpsertPersonParams) (string, error)
 	// Le um valor da tabela de metadados pela chave. Serve de query-semente para
 	// provar o wiring do sqlc de ponta a ponta; queries de dominio chegam no 0007.
 	// (Comentario em ASCII: o sqlc corrompe o SQL gerado com acentos no .sql de

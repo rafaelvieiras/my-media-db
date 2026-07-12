@@ -205,7 +205,11 @@ func (c *Client) BuscarDetalhe(ctx context.Context, sourceID, tipo string, langs
 	// content_ratings (classificação de série), external_ids (imdb…) e similar. O
 	// TMDB ignora os appends que não se aplicam ao tipo (ex.: content_ratings em
 	// filme). belongs_to_collection já vem no detalhe de filme, sem append.
-	params := url.Values{"append_to_response": {"translations,videos,keywords,release_dates,content_ratings,external_ids,similar"}}
+	//
+	// CREDITOS (MD6, 0029): `credits` traz o elenco/equipe do FILME; `aggregate_credits`
+	// o da SERIE (agregado por episodio). Pedimos os dois — a fonte ignora o que não se
+	// aplica ao tipo; o mapeamento prefere o agregado quando presente (série).
+	params := url.Values{"append_to_response": {"translations,videos,keywords,release_dates,content_ratings,external_ids,similar,credits,aggregate_credits"}}
 	if len(langs) > 0 && langs[0] != "" {
 		params.Set("language", langs[0])
 	}
@@ -373,6 +377,14 @@ type detalheTMDB struct {
 	ContentRatings      contentRatingsTMDB `json:"content_ratings"` // classificação de série
 	ExternalIds         externalIdsTMDB    `json:"external_ids"`
 	Similar             similarTMDB        `json:"similar"`
+
+	// Blocos de CREDITOS (MD6, briefing 0029): `credits` (filme, cast/crew planos),
+	// `aggregate_credits` (serie, cast com roles/crew com jobs agregados por episodio) e
+	// `production_companies` (produtoras, ja vem no detalhe sem append). Mapeados para o
+	// canonico cast/crew/companies por tmdb_creditos.go.
+	Credits             creditsTMDB          `json:"credits"`
+	AggregateCredits    aggregateCreditsTMDB `json:"aggregate_credits"`
+	ProductionCompanies []companyTMDB        `json:"production_companies"`
 
 	// Status é a SITUAÇÃO da série (só o /tv o traz: "Returning Series"|"Ended"|
 	// "Canceled"|"In Production"|"Planned"). Vazio para filme. Valor CRU/neutro — a UI

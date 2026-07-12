@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
@@ -142,6 +143,76 @@ func TestImportMultiIdiomaResolvePorLang(t *testing.T) {
 	assertEntidadePTBR(t, decodeEntidade(t, do(t, h, http.MethodGet, "/api/v1/entities/"+id+"?lang=pt-BR", nil)))
 	// ?lang=en serve o ingles.
 	assertEntidadeEN(t, decodeEntidade(t, do(t, h, http.MethodGet, "/api/v1/entities/"+id+"?lang=en", nil)))
+}
+
+// TestImportEntityCreditosParidadeComExterno prova a PARIDADE (0029) entre o detalhe
+// EXTERNO (GET /external/...) e a entity IMPORTADA (GET /entities/{id}): os mesmos
+// créditos (elenco/equipe/produtoras), no MESMO shape, com profile_url/logo_url JÁ
+// PROXYADOS nos dois lados (assetsDir configurado). Dividido em helpers (um assert
+// por bloco) para manter a gocyclo baixa.
+func TestImportEntityCreditosParidadeComExterno(t *testing.T) {
+	srv := servidorTMDBRico(t, nil)
+	prov := tmdb.New(tmdb.Credencial{Token: "tok"}, srv.Client(), srv.URL)
+	h, _ := setupSearchServer(t, WithSearchProvider(prov), WithAssetsDir(t.TempDir()))
+
+	rec := do(t, h, http.MethodPost, "/api/v1/import", map[string]string{"source": "tmdb", "source_id": "603", "type": "movie"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("import status = %d, quero 201 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	id := decodeEntidade(t, rec).ID
+
+	ent := decodeEntidade(t, do(t, h, http.MethodGet, "/api/v1/entities/"+id+"?lang=pt-BR", nil))
+	ext := decodeDetalheExterno(t, do(t, h, http.MethodGet, "/api/v1/external/tmdb/movie/603?lang=pt-BR", nil).Body.Bytes())
+
+	assertParidadeCast(t, ent, ext)
+	assertParidadeCrew(t, ent, ext)
+	assertParidadeCompanies(t, ent, ext)
+}
+
+// assertParidadeCast confere o elenco: mesmo shape e profile_url proxyado nos dois
+// lados (entity e externo).
+func assertParidadeCast(t *testing.T, ent resolver.Entidade, ext detalheExternoDTO) {
+	t.Helper()
+	if len(ent.Cast) != 1 || len(ext.Cast) != 1 {
+		t.Fatalf("cast: entity=%d externo=%d, quero 1 nos dois", len(ent.Cast), len(ext.Cast))
+	}
+	e, x := ent.Cast[0], ext.Cast[0]
+	if e.SourceID != x.SourceID || e.Name != x.Name || e.Character != x.Character || e.Order != x.Order {
+		t.Errorf("cast diverge: entity=%+v externo=%+v", e, x)
+	}
+	assertProfileURLParidadeEProxy(t, "cast", e.ProfileURL, x.ProfileURL)
+}
+
+// assertProfileURLParidadeEProxy confere que as URLs de foto/logo do lado entity e do
+// lado externo são IGUAIS e que a do lado entity já é a rota do proxy local — extraído
+// dos asserts de créditos só para manter a gocyclo baixa.
+func assertProfileURLParidadeEProxy(t *testing.T, rotulo string, deEntity, deExterno *string) {
+	t.Helper()
+	if deEntity == nil || deExterno == nil || *deEntity != *deExterno {
+		t.Errorf("%s: url diverge entre entity=%v e externo=%v", rotulo, deEntity, deExterno)
+		return
+	}
+	if !strings.HasPrefix(*deEntity, rotaProxyImagem+"?src=") {
+		t.Errorf("%s: entity url = %q, quero rota do proxy local", rotulo, *deEntity)
+	}
+}
+
+// assertParidadeCrew confere a equipe: mesmo shape nos dois lados.
+func assertParidadeCrew(t *testing.T, ent resolver.Entidade, ext detalheExternoDTO) {
+	t.Helper()
+	if len(ent.Crew) != 1 || len(ext.Crew) != 1 || ent.Crew[0].Job != ext.Crew[0].Job {
+		t.Errorf("crew diverge: entity=%+v externo=%+v", ent.Crew, ext.Crew)
+	}
+}
+
+// assertParidadeCompanies confere as produtoras: mesmo shape e logo_url proxyado.
+func assertParidadeCompanies(t *testing.T, ent resolver.Entidade, ext detalheExternoDTO) {
+	t.Helper()
+	if len(ent.Companies) != 1 || len(ext.Companies) != 1 {
+		t.Fatalf("companies: entity=%d externo=%d, quero 1 nos dois", len(ent.Companies), len(ext.Companies))
+	}
+	e, x := ent.Companies[0], ext.Companies[0]
+	assertProfileURLParidadeEProxy(t, "company.logo_url", e.LogoURL, x.LogoURL)
 }
 
 // servidorTMDBMultiIdioma sobe um httptest que serve o detalhe do filme e as listas de

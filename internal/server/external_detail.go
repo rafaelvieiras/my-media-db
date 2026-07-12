@@ -58,6 +58,9 @@ type detalheExternoDTO struct {
 	Videos        []richfields.Video     `json:"videos"`
 	Collection    *richfields.Collection `json:"collection"`
 	Similar       []richfields.Similar   `json:"similar"`
+	Cast          []richfields.Cast      `json:"cast"`
+	Crew          []richfields.Crew      `json:"crew"`
+	Companies     []richfields.Company   `json:"companies"`
 	ExternalLinks map[string]string      `json:"external_links"`
 
 	// ResolvedLanguages é a proveniência de idioma dos campos traduzíveis (ADR-0019),
@@ -166,6 +169,14 @@ func (s *Server) montarDetalheExterno(ctx context.Context, source, id, tipo, lan
 		similares[i].InternalID = s.idInternoItem(ctx, source, similares[i].SourceID)
 	}
 
+	// Créditos (elenco/equipe/produtoras, 0029): extraídos puros via richfields (mesmo
+	// shape do resolver da entity) e então proxyados (profile_url/logo_url), como o
+	// pôster/backdrop — richfields não tem acesso ao proxy.
+	cast := richfields.CastDe(campos)
+	crew := richfields.CrewDe(campos)
+	companies := richfields.CompaniesDe(campos)
+	s.proxyarCreditos(cast, crew, companies)
+
 	// Link do TMDB só quando a fonte é o próprio TMDB (o handler tem tipo+id da rota).
 	tmdbTipo, tmdbID := "", ""
 	if source == "tmdb" {
@@ -199,6 +210,9 @@ func (s *Server) montarDetalheExterno(ctx context.Context, source, id, tipo, lan
 		Videos:        richfields.VideosDe(campos),
 		Collection:    colecao,
 		Similar:       similares,
+		Cast:          cast,
+		Crew:          crew,
+		Companies:     companies,
 		ExternalLinks: richfields.LinksExternos(campos, tmdbTipo, tmdbID),
 		ResolvedLanguages: map[string]string{
 			"title":       provTitulo,

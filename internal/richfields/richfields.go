@@ -223,6 +223,137 @@ func LinksExternos(campos map[string]any, tmdbTipo, tmdbID string) map[string]st
 	return out
 }
 
+// ── Créditos: elenco, equipe e produtoras (briefing 0029, MD6 Fase B) ───────
+
+// creditoImagemBaseURL é a base das fotos de pessoa/logo de produtora do TMDB. O
+// canônico dos créditos (chaves `profile_path`/`logo_path`, briefing 0029 Fase A)
+// grava o FRAGMENTO CRU da fonte — diferente de `poster_url`/`backdrop_url`, que já
+// chegam prontos do provider — porque hoje só o TMDB alimenta créditos. Montar a URL
+// aqui é o único ponto de acoplamento; se outra fonte de créditos entrar, este helper
+// vira uma função por fonte. Tamanho w185 cobre bem miniatura de elenco/logo.
+const creditoImagemBaseURL = "https://image.tmdb.org/t/p/w185"
+
+// Cast é um crédito de ELENCO (0029): Name é neutro (nome próprio não se traduz);
+// Character é a exibição atual (edição por idioma fica para a Fase C). EpisodeCount
+// só existe em série (papel agregado por episódios); nil em filme. ProfileURL é a URL
+// DIRETA (não-proxyada) da foto — o chamador com acesso ao proxy (server) decide se
+// reescreve para a rota local, espelhando poster/backdrop (StrPtrDe + urlImagemServida).
+type Cast struct {
+	SourceID     string  `json:"source_id"`
+	Name         string  `json:"name"`
+	Character    string  `json:"character"`
+	Order        int     `json:"order"`
+	ProfileURL   *string `json:"profile_url"`
+	EpisodeCount *int    `json:"episode_count"`
+}
+
+// Crew é um crédito de EQUIPE (0029): Department/Job vêm do canônico; EpisodeCount só
+// em série (cargo agregado). Ver Cast para ProfileURL.
+type Crew struct {
+	SourceID     string  `json:"source_id"`
+	Name         string  `json:"name"`
+	Department   string  `json:"department"`
+	Job          string  `json:"job"`
+	ProfileURL   *string `json:"profile_url"`
+	EpisodeCount *int    `json:"episode_count"`
+}
+
+// Company é uma produtora/estúdio (0029). Ver Cast para LogoURL.
+type Company struct {
+	SourceID string  `json:"source_id"`
+	Name     string  `json:"name"`
+	LogoURL  *string `json:"logo_url"`
+}
+
+// CastDe converte a lista canônica de elenco (top ~50 por bilhagem, já cortada pelo
+// provider). Sempre devolve uma fatia não-nil (`[]` quando ausente).
+func CastDe(campos map[string]any) []Cast {
+	itens := comoListaAny(campos["cast"])
+	out := make([]Cast, 0, len(itens))
+	for _, it := range itens {
+		m, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		out = append(out, Cast{
+			SourceID:     ComoStringMapa(m, "source_id"),
+			Name:         ComoStringMapa(m, "name"),
+			Character:    ComoStringMapa(m, "character"),
+			Order:        intDeMapa(m, "order"),
+			ProfileURL:   urlCreditoDe(m, "profile_path"),
+			EpisodeCount: IntPtrDe(m, "episode_count"),
+		})
+	}
+	return out
+}
+
+// CrewDe converte a lista canônica de equipe (sem teto — dedup já feito pelo provider).
+// Sempre devolve uma fatia não-nil (`[]` quando ausente).
+func CrewDe(campos map[string]any) []Crew {
+	itens := comoListaAny(campos["crew"])
+	out := make([]Crew, 0, len(itens))
+	for _, it := range itens {
+		m, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		out = append(out, Crew{
+			SourceID:     ComoStringMapa(m, "source_id"),
+			Name:         ComoStringMapa(m, "name"),
+			Department:   ComoStringMapa(m, "department"),
+			Job:          ComoStringMapa(m, "job"),
+			ProfileURL:   urlCreditoDe(m, "profile_path"),
+			EpisodeCount: IntPtrDe(m, "episode_count"),
+		})
+	}
+	return out
+}
+
+// CompaniesDe converte a lista canônica de produtoras/estúdios. Sempre devolve uma
+// fatia não-nil (`[]` quando ausente).
+func CompaniesDe(campos map[string]any) []Company {
+	itens := comoListaAny(campos["companies"])
+	out := make([]Company, 0, len(itens))
+	for _, it := range itens {
+		m, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		out = append(out, Company{
+			SourceID: ComoStringMapa(m, "source_id"),
+			Name:     ComoStringMapa(m, "name"),
+			LogoURL:  urlCreditoDe(m, "logo_path"),
+		})
+	}
+	return out
+}
+
+// urlCreditoDe monta a URL DIRETA (não-proxyada) de uma foto/logo de crédito a partir
+// do fragmento cru do canônico (chave `profile_path`/`logo_path`), ou nil quando
+// ausente/vazia.
+func urlCreditoDe(m map[string]any, chave string) *string {
+	frag := ComoStringMapa(m, chave)
+	if frag == "" {
+		return nil
+	}
+	u := creditoImagemBaseURL + frag
+	return &u
+}
+
+// intDeMapa lê uma chave inteira do mapa (0 quando ausente/tipo errado) — para `order`,
+// sempre presente e não-ponteiro no shape (diferente de `episode_count`, opcional via
+// IntPtrDe).
+func intDeMapa(m map[string]any, chave string) int {
+	switch n := m[chave].(type) {
+	case int:
+		return n
+	case float64:
+		return int(n)
+	default:
+		return 0
+	}
+}
+
 // ── Helpers de conversão (puros sobre o canônico) ────────────────────────────
 
 // ComoStringMapa lê uma chave string do mapa ("" quando ausente/tipo errado).

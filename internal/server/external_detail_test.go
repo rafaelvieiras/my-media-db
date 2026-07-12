@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -40,7 +41,12 @@ const filmeRicoJSON = `{
     {"iso_3166_1": "US", "release_dates": [{"certification": "R"}]}
   ]},
   "external_ids": {"imdb_id": "tt0133093"},
-  "similar": {"results": [{"id": 604, "title": "The Matrix Reloaded", "release_date": "2003-05-15", "poster_path": "/rel.jpg"}]}
+  "similar": {"results": [{"id": 604, "title": "The Matrix Reloaded", "release_date": "2003-05-15", "poster_path": "/rel.jpg"}]},
+  "credits": {
+    "cast": [{"id": 6384, "name": "Keanu Reeves", "character": "Neo", "order": 0, "profile_path": "/keanu.jpg"}],
+    "crew": [{"id": 9339, "name": "Lana Wachowski", "department": "Directing", "job": "Director", "profile_path": "/lw.jpg"}]
+  },
+  "production_companies": [{"id": 174, "name": "Warner Bros.", "logo_path": "/wb.png"}]
 }`
 
 var generosFilmeSrv = map[string]string{
@@ -81,6 +87,18 @@ func setupExternalServer(t *testing.T, hits *int32) (http.Handler, *db.DB) {
 	srv := servidorTMDBRico(t, hits)
 	prov := tmdb.New(tmdb.Credencial{Token: "tok"}, srv.Client(), srv.URL)
 	return setupSearchServer(t, WithSearchProvider(prov))
+}
+
+// setupExternalServerComProxy é setupExternalServer com assetsDir configurado — para
+// provar que profile_url/logo_url dos créditos (0029) saem JÁ REESCRITOS para a rota
+// do proxy local (mesma conversão do pôster/backdrop, que só é observável com
+// assetsDir presente).
+func setupExternalServerComProxy(t *testing.T) http.Handler {
+	t.Helper()
+	srv := servidorTMDBRico(t, nil)
+	prov := tmdb.New(tmdb.Credencial{Token: "tok"}, srv.Client(), srv.URL)
+	h, _ := setupSearchServer(t, WithSearchProvider(prov), WithAssetsDir(t.TempDir()))
+	return h
 }
 
 // decodeDetalheExterno decodifica a resposta do detalhe externo.
@@ -144,6 +162,52 @@ func TestExternalDetailBlocosPtBR(t *testing.T) {
 	eq(t, "similar.type", sim.Type, "movie")
 	eq(t, "imdb link", d.ExternalLinks["imdb"], "https://www.imdb.com/title/tt0133093")
 	eq(t, "tmdb link", d.ExternalLinks["tmdb"], "https://www.themoviedb.org/movie/603")
+}
+
+// TestExternalDetailCreditos cobre o ELENCO/EQUIPE/PRODUTORAS (0029, Fase B): shape
+// do canônico do provider até o DTO, sem proxy (assetsDir ausente → URL direta).
+func TestExternalDetailCreditos(t *testing.T) {
+	h, _ := setupExternalServer(t, nil)
+	d := obterDetalheExterno(t, h, "/api/v1/external/tmdb/movie/603?lang=pt-BR")
+
+	c := umItem(t, "cast", d.Cast)
+	eq(t, "cast.source_id", c.SourceID, "6384")
+	eq(t, "cast.name", c.Name, "Keanu Reeves")
+	eq(t, "cast.character", c.Character, "Neo")
+	if c.Order != 0 {
+		t.Errorf("cast.order = %d, quero 0", c.Order)
+	}
+	eqPtr(t, "cast.profile_url", c.ProfileURL, "https://image.tmdb.org/t/p/w185/keanu.jpg")
+	if c.EpisodeCount != nil {
+		t.Errorf("cast.episode_count = %v, quero nil (filme)", *c.EpisodeCount)
+	}
+
+	cr := umItem(t, "crew", d.Crew)
+	eq(t, "crew.source_id", cr.SourceID, "9339")
+	eq(t, "crew.department", cr.Department, "Directing")
+	eq(t, "crew.job", cr.Job, "Director")
+
+	comp := umItem(t, "companies", d.Companies)
+	eq(t, "company.source_id", comp.SourceID, "174")
+	eq(t, "company.name", comp.Name, "Warner Bros.")
+	eqPtr(t, "company.logo_url", comp.LogoURL, "https://image.tmdb.org/t/p/w185/wb.png")
+}
+
+// TestExternalDetailCreditosProxyados prova que, com assetsDir configurado, o
+// profile_url/logo_url dos créditos saem JÁ REESCRITOS para a rota do proxy local
+// (/api/v1/images?src=...) — a mesma conversão do pôster/backdrop.
+func TestExternalDetailCreditosProxyados(t *testing.T) {
+	h := setupExternalServerComProxy(t)
+	d := obterDetalheExterno(t, h, "/api/v1/external/tmdb/movie/603?lang=pt-BR")
+
+	c := umItem(t, "cast", d.Cast)
+	if c.ProfileURL == nil || !strings.HasPrefix(*c.ProfileURL, rotaProxyImagem+"?src=") {
+		t.Errorf("cast.profile_url = %v, quero rota do proxy local", c.ProfileURL)
+	}
+	comp := umItem(t, "companies", d.Companies)
+	if comp.LogoURL == nil || !strings.HasPrefix(*comp.LogoURL, rotaProxyImagem+"?src=") {
+		t.Errorf("company.logo_url = %v, quero rota do proxy local", comp.LogoURL)
+	}
 }
 
 // umItem exige que a lista tenha exatamente um item e o devolve (enxuga os asserts

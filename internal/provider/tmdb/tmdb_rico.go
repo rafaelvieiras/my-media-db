@@ -110,6 +110,7 @@ type itemSimilarTMDB struct {
 func enriquecerCanonicoRico(out map[string]any, d detalheTMDB) {
 	enriquecerTraduziveisRico(out, d)
 	enriquecerNeutrosRico(out, d)
+	enriquecerCreditos(out, d)
 }
 
 // enriquecerTraduziveisRico grava os campos ricos TRADUZÍVEIS (map por idioma):

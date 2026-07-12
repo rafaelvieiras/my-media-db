@@ -124,6 +124,11 @@ func (s *Servico) enriquecerSerieRico(ctx context.Context, serieID, source, sour
 	// backdrop_url agora existe no canônico da série: baixa a fanart (poster_url não vem
 	// no canônico rico — o pôster segue da fonte-base, já cacheado em importarItem).
 	s.cachearArtes(ctx, serieID, campos)
+	// Elenco/equipe/produtoras (MD6, 0029) do no serie vem da FONTE RICA (o aggregate do
+	// TMDB), sob a source rica -- idempotente por (serie, ricoSource). No caso TMDB-base
+	// (sem outro provider) este ramo nao roda; os creditos entao vem do persistir do no
+	// serie (source-base), que ja mapeou o aggregate_credits do /tv.
+	s.persistirCreditos(ctx, serieID, ricoSource, campos)
 }
 
 // enriquecedorRico escolhe o provider de ENRIQUECIMENTO rico do nó série: o PRIMEIRO

@@ -1026,6 +1026,12 @@ export interface components {
       collection: components['schemas']['ExternalCollection'] | null
       /** @description Itens similares. `[]` quando ausentes. */
       similar: components['schemas']['ExternalSimilar'][]
+      /** @description Elenco (0029), top ~50 por ordem de bilhagem. `[]` quando ausente. Filme: personagem simples. Série: papéis unidos + `episode_count`. */
+      cast?: components['schemas']['CreditCast'][]
+      /** @description Equipe (0029) agrupável por `department`. `[]` quando ausente. */
+      crew?: components['schemas']['CreditCrew'][]
+      /** @description Produtoras/estúdios (0029). `[]` quando ausentes. */
+      companies?: components['schemas']['CreditCompany'][]
       /** @description Mapa link→URL (imdb, tmdb…). `{}` quando ausentes. */
       external_links: {
         [key: string]: string
@@ -1227,6 +1233,36 @@ export interface components {
       /** @description id da entity interna deste similar quando ja importado (interno-first, 0027); null caso contrario. */
       internal_id?: string | null
     }
+    /** @description Um crédito de ELENCO (0029). `name` é neutro (não se traduz nome próprio); `character` respeita o idioma ativo. `episode_count` só em série (papel agregado por episódios). `profile_url` já vem proxyada. */
+    CreditCast: {
+      source_id: string
+      name: string
+      character: string
+      /** @description Ordem de bilhagem (menor = mais alto). */
+      order: number
+      /** @description Foto (proxyada) ou null. */
+      profile_url?: string | null
+      /** @description Nº de episódios do papel (só série); null em filme. */
+      episode_count?: number | null
+    }
+    /** @description Um crédito de EQUIPE (0029), agrupável por `department`. */
+    CreditCrew: {
+      source_id: string
+      name: string
+      /** @description Direção/Roteiro/Fotografia… */
+      department: string
+      job: string
+      profile_url?: string | null
+      /** @description Só série; null em filme. */
+      episode_count?: number | null
+    }
+    /** @description Uma produtora/estúdio (0029). */
+    CreditCompany: {
+      source_id: string
+      name: string
+      /** @description Logo (proxyada) ou null. */
+      logo_url?: string | null
+    }
     /** @description Detalhe externo rico (briefing 0022). Campos traduzíveis já resolvidos no idioma ativo; neutros vêm uma vez. Listas saem sempre como `[]` (nunca null). */
     ExternalDetail: {
       source: string
@@ -1251,6 +1287,12 @@ export interface components {
       videos: components['schemas']['ExternalVideo'][]
       collection: components['schemas']['ExternalCollection'] | null
       similar: components['schemas']['ExternalSimilar'][]
+      /** @description Elenco (0029), mesmo shape do ResolvedEntity (paridade). */
+      cast?: components['schemas']['CreditCast'][]
+      /** @description Equipe (0029), mesmo shape do ResolvedEntity. */
+      crew?: components['schemas']['CreditCrew'][]
+      /** @description Produtoras/estúdios (0029). */
+      companies?: components['schemas']['CreditCompany'][]
       /** @description Mapa link→URL (ex.: imdb, tmdb). */
       external_links: {
         [key: string]: string

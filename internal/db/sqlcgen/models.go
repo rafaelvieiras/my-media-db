@@ -24,6 +24,30 @@ type Asset struct {
 	CreatedAt string
 }
 
+type Company struct {
+	ID          string
+	Source      string
+	SourceID    string
+	Name        string
+	LogoPath    sql.NullString
+	PayloadJson sql.NullString
+}
+
+type Credit struct {
+	ID           string
+	EntityID     string
+	PersonID     sql.NullString
+	CompanyID    sql.NullString
+	Kind         string
+	Department   sql.NullString
+	Job          sql.NullString
+	Character    sql.NullString
+	Ordering     int64
+	EpisodeCount sql.NullInt64
+	Source       string
+	SourceID     sql.NullString
+}
+
 type Entity struct {
 	ID                string
 	Type              string
@@ -121,4 +145,13 @@ type MediaOverride struct {
 type MymediadbMetum struct {
 	Chave string
 	Valor string
+}
+
+type Person struct {
+	ID          string
+	Source      string
+	SourceID    string
+	Name        string
+	ProfilePath sql.NullString
+	PayloadJson sql.NullString
 }

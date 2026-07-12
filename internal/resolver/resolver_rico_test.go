@@ -44,6 +44,15 @@ func camadaRica() []CamadaExterna {
 			map[string]any{"source_id": "604", "type": "movie", "title": "Matrix Reloaded", "year": "2003", "poster_url": "https://img/604.jpg"},
 		},
 		"external_links": map[string]any{"imdb": "https://www.imdb.com/title/tt0133093"},
+		"cast": []any{
+			map[string]any{"source_id": "6384", "name": "Keanu Reeves", "character": "Neo", "order": 0, "profile_path": "/keanu.jpg"},
+		},
+		"crew": []any{
+			map[string]any{"source_id": "9339", "name": "Lana Wachowski", "department": "Directing", "job": "Director"},
+		},
+		"companies": []any{
+			map[string]any{"source_id": "174", "name": "Warner Bros.", "logo_path": "/wb.png"},
+		},
 	}}}
 }
 
@@ -93,6 +102,31 @@ func TestResolverCamposRicosNeutros(t *testing.T) {
 	// external_links: imdb do canônico + tmdb montado do external_ids[tmdb]+type.
 	eq(t, "link imdb", got.ExternalLinks["imdb"], "https://www.imdb.com/title/tt0133093")
 	eq(t, "link tmdb", got.ExternalLinks["tmdb"], "https://www.themoviedb.org/movie/603")
+}
+
+// TestResolverCamposRicosCreditos cobre os CRÉDITOS (0029): o resolver PURO extrai
+// via richfields com a URL DIRETA (não-proxyada) — o server proxya pós-resolução
+// (fora do resolver puro, mesma fronteira de Ancestors/Ownership).
+func TestResolverCamposRicosCreditos(t *testing.T) {
+	got := Resolver(Camadas{
+		Entity:          entRica(),
+		Cadeia:          []string{"pt-BR", "en"},
+		LangPedido:      "pt-BR",
+		IdiomaPrincipal: "pt-BR",
+		Externo:         camadaRica(),
+	})
+
+	if len(got.Cast) != 1 || got.Cast[0].SourceID != "6384" || got.Cast[0].Character != "Neo" {
+		t.Fatalf("cast = %+v, quero 1 credito (6384/Neo)", got.Cast)
+	}
+	eqPtr(t, "cast[0].ProfileURL", got.Cast[0].ProfileURL, "https://image.tmdb.org/t/p/w185/keanu.jpg")
+	if len(got.Crew) != 1 || got.Crew[0].SourceID != "9339" || got.Crew[0].Job != "Director" {
+		t.Fatalf("crew = %+v, quero 1 credito (9339/Director)", got.Crew)
+	}
+	if len(got.Companies) != 1 || got.Companies[0].Name != "Warner Bros." {
+		t.Fatalf("companies = %+v, quero 1 produtora (Warner Bros.)", got.Companies)
+	}
+	eqPtr(t, "companies[0].LogoURL", got.Companies[0].LogoURL, "https://image.tmdb.org/t/p/w185/wb.png")
 }
 
 // TestResolverBackdropLocalVenceCanonico: quando o chamador passa BackdropURL
@@ -146,6 +180,22 @@ func TestResolverSemExternoCamposRicosVazios(t *testing.T) {
 	if got.Videos == nil || got.Similar == nil || got.Keywords == nil {
 		t.Errorf("listas ricas devem ser [] (nao nil): videos=%v similar=%v keywords=%v",
 			got.Videos, got.Similar, got.Keywords)
+	}
+}
+
+// TestResolverSemExternoCreditosVazios: sem camada externa, os créditos (0029) saem
+// como `[]` (nunca null) — o front não quebra. Isolado de
+// TestResolverSemExternoCamposRicosVazios só para manter a gocyclo baixa.
+func TestResolverSemExternoCreditosVazios(t *testing.T) {
+	got := Resolver(Camadas{
+		Entity:          entRica(),
+		Cadeia:          []string{"pt-BR", "en"},
+		LangPedido:      "pt-BR",
+		IdiomaPrincipal: "pt-BR",
+	})
+	if got.Cast == nil || got.Crew == nil || got.Companies == nil {
+		t.Errorf("creditos devem ser [] (nao nil): cast=%v crew=%v companies=%v",
+			got.Cast, got.Crew, got.Companies)
 	}
 }
 

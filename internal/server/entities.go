@@ -679,6 +679,7 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 		IdiomaPrincipal: cfg.Primary,
 	})
 	s.anotarInternos(ctx, &resolvida)
+	s.proxyarCreditos(resolvida.Cast, resolvida.Crew, resolvida.Companies)
 	resolvida.Ancestors = s.montarAncestrais(ctx, id)
 	resolvida.Ownership = s.montarPosseAgregada(ctx, ent)
 	resolvida.Orderings = s.montarOrderings(ctx, ent)

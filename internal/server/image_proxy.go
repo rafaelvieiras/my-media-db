@@ -25,6 +25,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
 
 const (
@@ -121,6 +123,24 @@ func (s *Server) urlImagemServida(direta *string) *string {
 	}
 	rota := rotaProxyImagem + "?src=" + url.QueryEscape(*direta)
 	return &rota
+}
+
+// proxyarCreditos reescreve profile_url/logo_url dos CRÉDITOS (elenco/equipe/
+// produtoras, briefing 0029) para a rota do proxy local, quando aplicável — a MESMA
+// conversão que o pôster/backdrop já fazem (urlImagemServida). richfields.CastDe/
+// CrewDe/CompaniesDe montam a URL DIRETA (puras, sem acesso ao proxy); este é o único
+// lugar com o host/base para decidir, reusado pelo detalhe externo e pelo resolver da
+// entity (mesmo shape, paridade). Muta as fatias em memória (in place).
+func (s *Server) proxyarCreditos(cast []richfields.Cast, crew []richfields.Crew, comps []richfields.Company) {
+	for i := range cast {
+		cast[i].ProfileURL = s.urlImagemServida(cast[i].ProfileURL)
+	}
+	for i := range crew {
+		crew[i].ProfileURL = s.urlImagemServida(crew[i].ProfileURL)
+	}
+	for i := range comps {
+		comps[i].LogoURL = s.urlImagemServida(comps[i].LogoURL)
+	}
 }
 
 // caminhoCacheProxy devolve o caminho do binário cacheado de `alvo`: sob

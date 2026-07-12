@@ -1766,6 +1766,20 @@ components:
           type: array
           description: Itens similares. `[]` quando ausentes.
           items: { $ref: '#/components/schemas/ExternalSimilar' }
+        cast:
+          type: array
+          description: >
+            Elenco (0029), top ~50 por ordem de bilhagem. `[]` quando ausente.
+            Filme: personagem simples. Série: papéis unidos + `episode_count`.
+          items: { $ref: '#/components/schemas/CreditCast' }
+        crew:
+          type: array
+          description: Equipe (0029) agrupável por `department`. `[]` quando ausente.
+          items: { $ref: '#/components/schemas/CreditCrew' }
+        companies:
+          type: array
+          description: Produtoras/estúdios (0029). `[]` quando ausentes.
+          items: { $ref: '#/components/schemas/CreditCompany' }
         external_links:
           type: object
           description: "Mapa link→URL (imdb, tmdb…). `{}` quando ausentes."
@@ -2102,6 +2116,41 @@ components:
         internal_id:
           type: [string, "null"]
           description: "id da entity interna deste similar quando ja importado (interno-first, 0027); null caso contrario."
+    CreditCast:
+      type: object
+      description: >
+        Um crédito de ELENCO (0029). `name` é neutro (não se traduz nome próprio);
+        `character` respeita o idioma ativo. `episode_count` só em série (papel
+        agregado por episódios). `profile_url` já vem proxyada.
+      required: [source_id, name, character, order]
+      properties:
+        source_id: { type: string }
+        name: { type: string }
+        character: { type: string }
+        order: { type: integer, description: "Ordem de bilhagem (menor = mais alto)." }
+        profile_url: { type: [string, "null"], description: "Foto (proxyada) ou null." }
+        episode_count:
+          type: [integer, "null"]
+          description: "Nº de episódios do papel (só série); null em filme."
+    CreditCrew:
+      type: object
+      description: "Um crédito de EQUIPE (0029), agrupável por `department`."
+      required: [source_id, name, department, job]
+      properties:
+        source_id: { type: string }
+        name: { type: string }
+        department: { type: string, description: "Direção/Roteiro/Fotografia…" }
+        job: { type: string }
+        profile_url: { type: [string, "null"] }
+        episode_count: { type: [integer, "null"], description: "Só série; null em filme." }
+    CreditCompany:
+      type: object
+      description: "Uma produtora/estúdio (0029)."
+      required: [source_id, name]
+      properties:
+        source_id: { type: string }
+        name: { type: string }
+        logo_url: { type: [string, "null"], description: "Logo (proxyada) ou null." }
     ExternalDetail:
       type: object
       description: >
@@ -2172,6 +2221,18 @@ components:
         similar:
           type: array
           items: { $ref: "#/components/schemas/ExternalSimilar" }
+        cast:
+          type: array
+          description: Elenco (0029), mesmo shape do ResolvedEntity (paridade).
+          items: { $ref: "#/components/schemas/CreditCast" }
+        crew:
+          type: array
+          description: Equipe (0029), mesmo shape do ResolvedEntity.
+          items: { $ref: "#/components/schemas/CreditCrew" }
+        companies:
+          type: array
+          description: Produtoras/estúdios (0029).
+          items: { $ref: "#/components/schemas/CreditCompany" }
         external_links:
           type: object
           additionalProperties: { type: string }

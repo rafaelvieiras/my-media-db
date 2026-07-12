@@ -213,3 +213,90 @@ func TestConversoresStringELista(t *testing.T) {
 	curto := "abc"
 	nilStr(t, "AnoDePtr curto", AnoDePtr(&curto))
 }
+
+// ── Créditos (0029) ──────────────────────────────────────────────────────────
+
+// TestCastDeFilme cobre o shape de FILME: sem episode_count, foto quando presente,
+// nil quando ausente, e o não-mapa (lixo) ignorado.
+func TestCastDeFilme(t *testing.T) {
+	campos := map[string]any{"cast": []any{
+		map[string]any{"source_id": "6384", "name": "Keanu Reeves", "character": "Neo", "order": 0, "profile_path": "/keanu.jpg"},
+		map[string]any{"source_id": "2975", "name": "Laurence Fishburne", "character": "Morpheus", "order": 1},
+		"lixo-nao-mapa",
+	}}
+	cast := CastDe(campos)
+	if len(cast) != 2 {
+		t.Fatalf("cast = %d itens, quero 2 (ignora o não-mapa)", len(cast))
+	}
+	if cast[0].SourceID != "6384" || cast[0].Name != "Keanu Reeves" || cast[0].Character != "Neo" || cast[0].Order != 0 {
+		t.Errorf("cast[0] = %+v", cast[0])
+	}
+	eqStr(t, "cast[0].ProfileURL", cast[0].ProfileURL, "https://image.tmdb.org/t/p/w185/keanu.jpg")
+	if cast[0].EpisodeCount != nil {
+		t.Errorf("cast[0].EpisodeCount = %v, quero nil (filme)", *cast[0].EpisodeCount)
+	}
+	if cast[1].ProfileURL != nil {
+		t.Errorf("cast[1].ProfileURL = %v, quero nil (sem profile_path)", *cast[1].ProfileURL)
+	}
+}
+
+// TestCastDeSerieEAusente cobre o shape de SÉRIE (episode_count do papel agregado) e
+// a fatia vazia (não-nil) quando a chave `cast` está ausente do canônico.
+func TestCastDeSerieEAusente(t *testing.T) {
+	campos := map[string]any{"cast": []any{
+		map[string]any{"source_id": "1", "name": "Ator Serie", "character": "Peter / Brian", "order": 0, "episode_count": 42, "profile_path": "/a.jpg"},
+	}}
+	cast := CastDe(campos)
+	if len(cast) != 1 {
+		t.Fatalf("cast serie = %d itens, quero 1", len(cast))
+	}
+	intPtr(t, "cast[0].EpisodeCount", cast[0].EpisodeCount, 42)
+	// Ausente → fatia vazia não-nil.
+	if v := CastDe(map[string]any{}); v == nil || len(v) != 0 {
+		t.Errorf("cast ausente = %v, quero []", v)
+	}
+}
+
+func TestCrewDe(t *testing.T) {
+	campos := map[string]any{"crew": []any{
+		map[string]any{"source_id": "9339", "name": "Lana Wachowski", "department": "Directing", "job": "Director", "profile_path": "/lw.jpg"},
+	}}
+	crew := CrewDe(campos)
+	if len(crew) != 1 {
+		t.Fatalf("crew = %d itens, quero 1", len(crew))
+	}
+	if crew[0].SourceID != "9339" || crew[0].Department != "Directing" || crew[0].Job != "Director" {
+		t.Errorf("crew[0] = %+v", crew[0])
+	}
+	eqStr(t, "crew[0].ProfileURL", crew[0].ProfileURL, "https://image.tmdb.org/t/p/w185/lw.jpg")
+	if crew[0].EpisodeCount != nil {
+		t.Errorf("crew[0].EpisodeCount = %v, quero nil (filme)", *crew[0].EpisodeCount)
+	}
+	// Série: com episode_count (cargo agregado por episódios).
+	campos = map[string]any{"crew": []any{
+		map[string]any{"source_id": "2", "name": "Roteirista Serie", "department": "Writing", "job": "Writer", "episode_count": 10},
+	}}
+	crew = CrewDe(campos)
+	intPtr(t, "crew[0].EpisodeCount serie", crew[0].EpisodeCount, 10)
+	if v := CrewDe(map[string]any{}); v == nil || len(v) != 0 {
+		t.Errorf("crew ausente = %v, quero []", v)
+	}
+}
+
+func TestCompaniesDe(t *testing.T) {
+	campos := map[string]any{"companies": []any{
+		map[string]any{"source_id": "174", "name": "Warner Bros.", "logo_path": "/wb.png"},
+		map[string]any{"source_id": "175", "name": "Sem Logo"},
+	}}
+	comps := CompaniesDe(campos)
+	if len(comps) != 2 {
+		t.Fatalf("companies = %d itens, quero 2", len(comps))
+	}
+	eqStr(t, "companies[0].LogoURL", comps[0].LogoURL, "https://image.tmdb.org/t/p/w185/wb.png")
+	if comps[1].LogoURL != nil {
+		t.Errorf("companies[1].LogoURL = %v, quero nil", *comps[1].LogoURL)
+	}
+	if v := CompaniesDe(map[string]any{}); v == nil || len(v) != 0 {
+		t.Errorf("companies ausente = %v, quero []", v)
+	}
+}

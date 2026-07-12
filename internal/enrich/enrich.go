@@ -355,6 +355,10 @@ func (s *Servico) persistir(ctx context.Context, entityID, source, sourceID stri
 		}
 	}
 	s.cachearArtes(ctx, entityID, campos)
+	// Elenco/equipe/produtoras (MD6, 0029): cache re-componivel populado do canonico,
+	// idempotente por (entity, source). So o FILME e o no SERIE chegam aqui (temporada/
+	// episodio nao passam por persistir); o elenco de serie e o agregado da serie inteira.
+	s.persistirCreditos(ctx, entityID, source, campos)
 	return nil
 }
 
