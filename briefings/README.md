@@ -115,3 +115,4 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0035](0035-apagar-datasource-com-arquivos.md) | Apagar datasource com arquivos (corrige 500 da FK) | fix | done | — |
 | [0036](0036-posse-completude-no-card-da-temporada.md) | Posse e completude no card da temporada | fix/feature | done | 0034 |
 | [0037](0037-completude-no-card-da-serie-home.md) | Completude no card da série (home): "X/Y temporadas" | fix/feature | done | 0036 |
+| [0038](0038-badge-de-posse-no-topo-direito-da-capa.md) | Badge de posse no topo-direito da capa (sem apagar ausentes) | fix | done | 0037 |
