@@ -106,7 +106,7 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0026](0026-centralizacao-interno-first.md) | Centralização interno-first: priorizar o que já está na biblioteca | feature/fix | in-progress | 0024, 0025 |
 | [0027](0027-similar-search-ids-item-manual.md) | Interno-first em similares/busca + editar `external_ids` + item manual | feature | in-progress | 0025, 0026 |
 | [0028](0028-testes-e2e.md) | Testes end-to-end: validar o fluxo inteiro (UI + API) | infra/qualidade | in-progress | 0015, 0025, 0026, 0027 |
-| [0029](0029-md6-elenco-equipe-person-credit-company.md) | MD6: elenco, equipe e produtoras (`person`/`credit`/`company`) | feature | in-progress (A+B) | 0012, 0013, 0022, 0023, 0024 |
+| [0029](0029-md6-elenco-equipe-person-credit-company.md) | MD6: elenco, equipe e produtoras (`person`/`credit`/`company`) | feature | in-progress (A+B done) | 0012, 0013, 0022, 0023, 0024 |
 | [0030](0030-crud-por-rota-formulario-dirigido-por-schema.md) | CRUD por rota + formulário dirigido por schema (TanStack Form + Zod) | refactor/feature | done | 0016, 0025, 0027 |
 | [0031](0031-series-fundacao-modelo-enriquecimento.md) | Séries: fundação do modelo + enriquecimento (TheTVDB + registry multi-provider) | feature | done | 0022, 0024, 0025, 0026 |
 | [0032](0032-usabilidade-arvore-series-home-busca-breadcrumb.md) | Usabilidade da árvore de séries: home/busca só de topo + breadcrumb | fix/feature | done | 0031 |

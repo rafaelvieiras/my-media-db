@@ -13,7 +13,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override (extensão pós-revisão) |
 | **Docs relacionadas** | [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [07-enriquecimento-providers](../docs/07-enriquecimento-providers.md), [05-api](../docs/05-api.md), [ADR-0012](../docs/adr/0012-camadas-externo-override.md) |
-| **Status** | in-progress (rodada A+B) |
+| **Status** | in-progress (A+B done; C edição e D interno-first pendentes) |
 | **Depende de** | [0012](0012-schema-fase3-camadas-externo-override.md), [0013](0013-resolver-tres-camadas.md), [0022](0022-detalhe-externo-rico-persistente.md), [0023](0023-tela-detalhe-externo-ui.md), [0024](0024-paridade-detalhe-entity-rico.md) |
 
 ---
