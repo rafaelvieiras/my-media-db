@@ -546,6 +546,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/person/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Página da pessoa com filmografia do catálogo (briefing 0029 Fase D).
+     * @description A pessoa (ator/membro de equipe) deduplicada no catálogo mais a sua FILMOGRAFIA = as obras já importadas que a creditam. É o destino interno-first do card de elenco/equipe (quando o crédito traz `person_id`). Read-only nesta fase (a pessoa não é catalogada como entity própria). 404 quando o id não existe no catálogo.
+     */
+    get: operations['getPerson']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/review': {
     parameters: {
       query?: never
@@ -1244,6 +1264,8 @@ export interface components {
       profile_url?: string | null
       /** @description Nº de episódios do papel (só série); null em filme. */
       episode_count?: number | null
+      /** @description Id da pessoa NO NOSSO catálogo (interno-first, 0029 Fase D), presente quando essa pessoa já foi persistida por algum import. Quando presente, a UI linka para a página da pessoa (GET /person/{id}); null = sem destino interno (degrada para não-clicável). */
+      person_id?: string | null
     }
     /** @description Um crédito de EQUIPE (0029), agrupável por `department`. */
     CreditCrew: {
@@ -1255,6 +1277,8 @@ export interface components {
       profile_url?: string | null
       /** @description Só série; null em filme. */
       episode_count?: number | null
+      /** @description Id da pessoa no catálogo (interno-first, 0029 Fase D); ver CreditCast.person_id. */
+      person_id?: string | null
     }
     /** @description Uma produtora/estúdio (0029). */
     CreditCompany: {
@@ -1262,6 +1286,39 @@ export interface components {
       name: string
       /** @description Logo (proxyada) ou null. */
       logo_url?: string | null
+    }
+    /** @description Página da pessoa (0029 Fase D, interno-first): a pessoa deduplicada no catálogo mais a sua FILMOGRAFIA = as obras já importadas que a creditam. Read-only nesta fase (sem catalogar a pessoa como entity). `source`/`source_id` permitem o link externo (TMDB) como complemento. */
+    Person: {
+      /** @description Id da pessoa no nosso catálogo (person.id). */
+      id: string
+      /** @description Nome (neutro, não se traduz). */
+      name: string
+      /** @description Foto (proxyada) ou null. */
+      profile_url?: string | null
+      /** @description Fonte da pessoa (ex.: tmdb). */
+      source?: string
+      /** @description Id da pessoa na fonte (para link externo). */
+      source_id?: string
+      /** @description Obras do catálogo que creditam a pessoa; `[]` quando nenhuma. */
+      filmography: components['schemas']['PersonCredit'][]
+    }
+    /** @description Uma obra da filmografia da pessoa: a entity do catálogo mais o papel/cargo dela naquela obra. Um card navegável (entity_id → /entities/{id}). */
+    PersonCredit: {
+      entity_id: string
+      /** @description movie | tv | collection. */
+      type: string
+      title: string
+      year?: string | null
+      /** @description Pôster do card (servido pela rota da entity) ou null. */
+      poster_url?: string | null
+      /** @description cast | crew. */
+      kind: string
+      /** @description Personagem (quando cast). */
+      character?: string | null
+      /** @description Cargo (quando crew). */
+      job?: string | null
+      /** @description Departamento (quando crew). */
+      department?: string | null
     }
     /** @description Detalhe externo rico (briefing 0022). Campos traduzíveis já resolvidos no idioma ativo; neutros vêm uma vez. Listas saem sempre como `[]` (nunca null). */
     ExternalDetail: {
@@ -2257,6 +2314,30 @@ export interface operations {
       400: components['responses']['Error']
       502: components['responses']['Error']
       503: components['responses']['Error']
+    }
+  }
+  getPerson: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da pessoa no nosso catálogo (person.id). */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description A pessoa e a sua filmografia. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Person']
+        }
+      }
+      404: components['responses']['Error']
     }
   }
   listReview: {

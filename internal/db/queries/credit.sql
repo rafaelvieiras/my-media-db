@@ -34,3 +34,18 @@ SELECT id, entity_id, person_id, company_id, kind,
 FROM credit
 WHERE entity_id = ?
 ORDER BY kind, ordering, id;
+
+-- name: ListarFilmografiaDaPessoa :many
+-- Filmografia da pessoa (briefing 0029 Fase D, interno-first): as obras do catalogo
+-- que a creditam, elenco OU equipe (credito de produtora nao tem person_id, sai
+-- naturalmente do WHERE). Junta credit com entity para trazer o papel (kind/
+-- character/job/department/ordering) daquele credito naquela obra; o handler busca
+-- titulo/poster/ano de cada entity via ObterEntityCard (mesmo card da lista, sem
+-- reinventar resolucao). Ordena por tipo, ordem de bilhagem e id (estavel).
+SELECT
+    e.id AS entity_id, e.type AS entity_type,
+    c.kind, c.character, c.job, c.department, c.ordering
+FROM credit c
+JOIN entity e ON e.id = c.entity_id
+WHERE c.person_id = ?
+ORDER BY e.type, c.ordering, e.id;

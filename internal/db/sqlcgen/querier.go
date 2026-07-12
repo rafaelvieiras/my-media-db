@@ -211,6 +211,13 @@ type Querier interface {
 	// Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title). owned/
 	// file_count somam a juncao media_file_entity do mesmo jeito -- ver a nota longa acima.
 	ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCardsDescParams) ([]ListarEntityCardsDescRow, error)
+	// Filmografia da pessoa (briefing 0029 Fase D, interno-first): as obras do catalogo
+	// que a creditam, elenco OU equipe (credito de produtora nao tem person_id, sai
+	// naturalmente do WHERE). Junta credit com entity para trazer o papel (kind/
+	// character/job/department/ordering) daquele credito naquela obra; o handler busca
+	// titulo/poster/ano de cada entity via ObterEntityCard (mesmo card da lista, sem
+	// reinventar resolucao). Ordena por tipo, ordem de bilhagem e id (estavel).
+	ListarFilmografiaDaPessoa(ctx context.Context, personID sql.NullString) ([]ListarFilmografiaDaPessoaRow, error)
 	ListarLibrarySources(ctx context.Context) ([]LibrarySource, error)
 	// Todas as camadas externas cacheadas de uma entity (uma por fonte buscada).
 	ListarMediaExternalPorEntity(ctx context.Context, entityID string) ([]MediaExternal, error)
@@ -320,6 +327,9 @@ type Querier interface {
 	ObterMediaOverride(ctx context.Context, entityID string) (MediaOverride, error)
 	// Le a pessoa por (source, source_id) -- a chave logica de dedup.
 	ObterPersonPorFonte(ctx context.Context, arg ObterPersonPorFonteParams) (Person, error)
+	// Le a pessoa pelo id local (person.id) -- para a pagina da pessoa (briefing 0029
+	// Fase D, GET /person/{id}).
+	ObterPersonPorID(ctx context.Context, id string) (Person, error)
 	// Curadoria (briefing 0018): um draft (nao-identificado) que o dono CONFIRMA ou
 	// CORRIGE deixa de ser rascunho -- vira 'cataloged' e sai da fila de revisao pelo
 	// ramo do status (senao a confianca sobe a 100 mas o item fica preso como draft).

@@ -36,6 +36,28 @@ func (q *Queries) ObterPersonPorFonte(ctx context.Context, arg ObterPersonPorFon
 	return i, err
 }
 
+const obterPersonPorID = `-- name: ObterPersonPorID :one
+SELECT id, source, source_id, name, profile_path, payload_json
+FROM person
+WHERE id = ?
+`
+
+// Le a pessoa pelo id local (person.id) -- para a pagina da pessoa (briefing 0029
+// Fase D, GET /person/{id}).
+func (q *Queries) ObterPersonPorID(ctx context.Context, id string) (Person, error) {
+	row := q.db.QueryRowContext(ctx, obterPersonPorID, id)
+	var i Person
+	err := row.Scan(
+		&i.ID,
+		&i.Source,
+		&i.SourceID,
+		&i.Name,
+		&i.ProfilePath,
+		&i.PayloadJson,
+	)
+	return i, err
+}
+
 const upsertPerson = `-- name: UpsertPerson :one
 
 INSERT INTO person (

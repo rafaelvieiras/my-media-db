@@ -973,6 +973,32 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/v1/person/{id}:
+    get:
+      operationId: getPerson
+      summary: Página da pessoa com filmografia do catálogo (briefing 0029 Fase D).
+      description: >
+        A pessoa (ator/membro de equipe) deduplicada no catálogo mais a sua
+        FILMOGRAFIA = as obras já importadas que a creditam. É o destino interno-first
+        do card de elenco/equipe (quando o crédito traz `person_id`). Read-only nesta
+        fase (a pessoa não é catalogada como entity própria). 404 quando o id não
+        existe no catálogo.
+      tags: [entities]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: "Id da pessoa no nosso catálogo (person.id)."
+          schema: { type: string }
+      responses:
+        "200":
+          description: A pessoa e a sua filmografia.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Person' }
+        "404":
+          $ref: "#/components/responses/Error"
+
   /api/v1/review:
     get:
       operationId: listReview
@@ -2132,6 +2158,13 @@ components:
         episode_count:
           type: [integer, "null"]
           description: "Nº de episódios do papel (só série); null em filme."
+        person_id:
+          type: [string, "null"]
+          description: >
+            Id da pessoa NO NOSSO catálogo (interno-first, 0029 Fase D), presente
+            quando essa pessoa já foi persistida por algum import. Quando presente, a
+            UI linka para a página da pessoa (GET /person/{id}); null = sem destino
+            interno (degrada para não-clicável).
     CreditCrew:
       type: object
       description: "Um crédito de EQUIPE (0029), agrupável por `department`."
@@ -2143,6 +2176,9 @@ components:
         job: { type: string }
         profile_url: { type: [string, "null"] }
         episode_count: { type: [integer, "null"], description: "Só série; null em filme." }
+        person_id:
+          type: [string, "null"]
+          description: "Id da pessoa no catálogo (interno-first, 0029 Fase D); ver CreditCast.person_id."
     CreditCompany:
       type: object
       description: "Uma produtora/estúdio (0029)."
@@ -2151,6 +2187,40 @@ components:
         source_id: { type: string }
         name: { type: string }
         logo_url: { type: [string, "null"], description: "Logo (proxyada) ou null." }
+    Person:
+      type: object
+      description: >
+        Página da pessoa (0029 Fase D, interno-first): a pessoa deduplicada no
+        catálogo mais a sua FILMOGRAFIA = as obras já importadas que a creditam.
+        Read-only nesta fase (sem catalogar a pessoa como entity). `source`/`source_id`
+        permitem o link externo (TMDB) como complemento.
+      required: [id, name, filmography]
+      properties:
+        id: { type: string, description: "Id da pessoa no nosso catálogo (person.id)." }
+        name: { type: string, description: "Nome (neutro, não se traduz)." }
+        profile_url: { type: [string, "null"], description: "Foto (proxyada) ou null." }
+        source: { type: string, description: "Fonte da pessoa (ex.: tmdb)." }
+        source_id: { type: string, description: "Id da pessoa na fonte (para link externo)." }
+        filmography:
+          type: array
+          description: "Obras do catálogo que creditam a pessoa; `[]` quando nenhuma."
+          items: { $ref: '#/components/schemas/PersonCredit' }
+    PersonCredit:
+      type: object
+      description: >
+        Uma obra da filmografia da pessoa: a entity do catálogo mais o papel/cargo
+        dela naquela obra. Um card navegável (entity_id → /entities/{id}).
+      required: [entity_id, type, title, kind]
+      properties:
+        entity_id: { type: string }
+        type: { type: string, description: "movie | tv | collection." }
+        title: { type: string }
+        year: { type: [string, "null"] }
+        poster_url: { type: [string, "null"], description: "Pôster do card (servido pela rota da entity) ou null." }
+        kind: { type: string, description: "cast | crew." }
+        character: { type: [string, "null"], description: "Personagem (quando cast)." }
+        job: { type: [string, "null"], description: "Cargo (quando crew)." }
+        department: { type: [string, "null"], description: "Departamento (quando crew)." }
     ExternalDetail:
       type: object
       description: >

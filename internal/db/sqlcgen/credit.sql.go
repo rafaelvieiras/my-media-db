@@ -128,3 +128,60 @@ func (q *Queries) ListarCreditosDaEntity(ctx context.Context, entityID string) (
 	}
 	return items, nil
 }
+
+const listarFilmografiaDaPessoa = `-- name: ListarFilmografiaDaPessoa :many
+SELECT
+    e.id AS entity_id, e.type AS entity_type,
+    c.kind, c.character, c.job, c.department, c.ordering
+FROM credit c
+JOIN entity e ON e.id = c.entity_id
+WHERE c.person_id = ?
+ORDER BY e.type, c.ordering, e.id
+`
+
+type ListarFilmografiaDaPessoaRow struct {
+	EntityID   string
+	EntityType string
+	Kind       string
+	Character  sql.NullString
+	Job        sql.NullString
+	Department sql.NullString
+	Ordering   int64
+}
+
+// Filmografia da pessoa (briefing 0029 Fase D, interno-first): as obras do catalogo
+// que a creditam, elenco OU equipe (credito de produtora nao tem person_id, sai
+// naturalmente do WHERE). Junta credit com entity para trazer o papel (kind/
+// character/job/department/ordering) daquele credito naquela obra; o handler busca
+// titulo/poster/ano de cada entity via ObterEntityCard (mesmo card da lista, sem
+// reinventar resolucao). Ordena por tipo, ordem de bilhagem e id (estavel).
+func (q *Queries) ListarFilmografiaDaPessoa(ctx context.Context, personID sql.NullString) ([]ListarFilmografiaDaPessoaRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarFilmografiaDaPessoa, personID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarFilmografiaDaPessoaRow{}
+	for rows.Next() {
+		var i ListarFilmografiaDaPessoaRow
+		if err := rows.Scan(
+			&i.EntityID,
+			&i.EntityType,
+			&i.Kind,
+			&i.Character,
+			&i.Job,
+			&i.Department,
+			&i.Ordering,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

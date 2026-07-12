@@ -170,11 +170,14 @@ func (s *Server) montarDetalheExterno(ctx context.Context, source, id, tipo, lan
 	}
 
 	// Créditos (elenco/equipe/produtoras, 0029): extraídos puros via richfields (mesmo
-	// shape do resolver da entity) e então proxyados (profile_url/logo_url), como o
-	// pôster/backdrop — richfields não tem acesso ao proxy.
+	// shape do resolver da entity). O interno-first (0029 Fase D) anota o person_id de
+	// cada crédito já catalogado por ALGUM import — a fonte é a da própria rota (o
+	// canônico veio de UMA chamada a esta fonte). Depois proxya profile_url/logo_url,
+	// como o pôster/backdrop — richfields não tem acesso ao proxy.
 	cast := richfields.CastDe(campos)
 	crew := richfields.CrewDe(campos)
 	companies := richfields.CompaniesDe(campos)
+	s.anotarCreditosInternos(ctx, source, cast, crew)
 	s.proxyarCreditos(cast, crew, companies)
 
 	// Link do TMDB só quando a fonte é o próprio TMDB (o handler tem tipo+id da rota).

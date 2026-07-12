@@ -238,6 +238,9 @@ const creditoImagemBaseURL = "https://image.tmdb.org/t/p/w185"
 // só existe em série (papel agregado por episódios); nil em filme. ProfileURL é a URL
 // DIRETA (não-proxyada) da foto — o chamador com acesso ao proxy (server) decide se
 // reescreve para a rota local, espelhando poster/backdrop (StrPtrDe + urlImagemServida).
+// PersonID é o id da pessoa NO NOSSO catálogo (interno-first, 0029 Fase D) quando ela já
+// foi persistida por algum import — CastDe a deixa nil (pura); quem tem acesso a banco
+// (o server) o preenche, espelhando Collection.InternalID/Similar.InternalID.
 type Cast struct {
 	SourceID     string  `json:"source_id"`
 	Name         string  `json:"name"`
@@ -245,10 +248,11 @@ type Cast struct {
 	Order        int     `json:"order"`
 	ProfileURL   *string `json:"profile_url"`
 	EpisodeCount *int    `json:"episode_count"`
+	PersonID     *string `json:"person_id"`
 }
 
 // Crew é um crédito de EQUIPE (0029): Department/Job vêm do canônico; EpisodeCount só
-// em série (cargo agregado). Ver Cast para ProfileURL.
+// em série (cargo agregado). Ver Cast para ProfileURL e PersonID.
 type Crew struct {
 	SourceID     string  `json:"source_id"`
 	Name         string  `json:"name"`
@@ -256,6 +260,7 @@ type Crew struct {
 	Job          string  `json:"job"`
 	ProfileURL   *string `json:"profile_url"`
 	EpisodeCount *int    `json:"episode_count"`
+	PersonID     *string `json:"person_id"`
 }
 
 // Company é uma produtora/estúdio (0029). Ver Cast para LogoURL.

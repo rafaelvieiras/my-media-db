@@ -207,6 +207,12 @@ func (s *Server) Handler() (http.Handler, error) {
 			v1.Get("/review", s.listReview)
 			v1.Get("/orphans", s.listOrphans)
 
+			// Página da PESSOA (briefing 0029 Fase D, interno-first): a pessoa
+			// deduplicada no catálogo + a filmografia (obras já importadas que a
+			// creditam). Destino do card de elenco/equipe quando o crédito traz
+			// `person_id`. Read-only; 404 quando a pessoa não existe no catálogo.
+			v1.Get("/person/{id}", s.getPerson)
+
 			// Descritor de FORMULÁRIO editorial (briefing 0030): metadado estático
 			// que diz ao front COMO renderizar cada campo editável, derivado da fonte
 			// única resolver.CamposEditaveis() + o registro de apresentação. Só

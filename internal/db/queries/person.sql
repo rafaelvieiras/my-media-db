@@ -24,3 +24,10 @@ RETURNING id;
 SELECT id, source, source_id, name, profile_path, payload_json
 FROM person
 WHERE source = ? AND source_id = ?;
+
+-- name: ObterPersonPorID :one
+-- Le a pessoa pelo id local (person.id) -- para a pagina da pessoa (briefing 0029
+-- Fase D, GET /person/{id}).
+SELECT id, source, source_id, name, profile_path, payload_json
+FROM person
+WHERE id = ?;

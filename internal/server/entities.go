@@ -679,6 +679,11 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 		IdiomaPrincipal: cfg.Primary,
 	})
 	s.anotarInternos(ctx, &resolvida)
+	// Interno-first dos créditos (0029 Fase D): a fonte que alimentou cast/crew não é
+	// necessariamente a mesma (cada campo vence na fusão por prioridade — R2), então
+	// descobre-se por campo em vez de assumir a fonte de maior prioridade da entity.
+	s.anotarCreditosInternos(ctx, fonteDoCampoExterno(externo, "cast"), resolvida.Cast, nil)
+	s.anotarCreditosInternos(ctx, fonteDoCampoExterno(externo, "crew"), nil, resolvida.Crew)
 	s.proxyarCreditos(resolvida.Cast, resolvida.Crew, resolvida.Companies)
 	resolvida.Ancestors = s.montarAncestrais(ctx, id)
 	resolvida.Ownership = s.montarPosseAgregada(ctx, ent)
