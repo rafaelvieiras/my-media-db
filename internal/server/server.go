@@ -262,6 +262,12 @@ func (s *Server) Handler() (http.Handler, error) {
 				// selos. So leitura; consumida pela galeria/selos do 0049.
 				ent.Get("/{id}/artwork", s.getEntityArtwork)
 
+				// AÇÃO "baixar só a selecionada" (briefing 0048): recebe a url de UMA
+				// arte do inventario (host validado contra a allowlist do proxy —
+				// anti-SSRF), baixa o binario e a materializa como asset origin='external'
+				// do kind (idempotente por url+kind), opcionalmente marcando-a preferida.
+				ent.Post("/{id}/artwork/select", s.selectArtwork)
+
 				// Arte custom do dono (briefing 0017): upload (origin='user'),
 				// galeria, servico do binario de um asset, preferencia (flag em
 				// meta_json) e remocao. A precedencia de servico (preferida → user →

@@ -675,6 +675,69 @@ paths:
         "422":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/artwork:
+    get:
+      operationId: getEntityArtwork
+      summary: Arte disponível agrupada por kind (briefing 0048).
+      description: >
+        Mescla três fontes por kind: os assets LOCAIS do dono (upload `origin='user'`
+        e cache `origin='external'`), o pôster/fundo das camadas externas com provider
+        (ex.: TMDB) e o INVENTÁRIO lazy da fanart.tv (`media_external source='fanarttv'`,
+        sem baixar binários). Toda `url` já sai passada pelo proxy de imagem, então a UI
+        não depende do CDN da fonte. Traz também `available: {kind: count}` para os selos
+        do card. Só leitura. 404 se a entity não existe; 503 sem persistência.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Arte agrupada por kind mais `available`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArtworkResponse" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/artwork/select:
+    post:
+      operationId: selectArtwork
+      summary: Baixa a arte selecionada do inventário (briefing 0048).
+      description: >
+        A AÇÃO da decisão "listar no import, baixar SÓ a selecionada": recebe a `url` de
+        UMA arte do inventário (fanart.tv/TMDB) e o `kind`, BAIXA o binário e o materializa
+        como asset `origin='external'`, guardando a url de origem no `meta_json`. Idempotente:
+        se já existe asset external com a mesma url+kind, reusa sem rebaixar. Com `prefer=true`,
+        marca-a como preferida (uma por kind). Segurança (anti-SSRF): o corpo é do usuário,
+        então o HOST da url é validado contra a MESMA allowlist do proxy de imagem — host fora
+        → 422. 200 com o asset; 404 entity inexistente; 422 kind fora do conjunto ou host não
+        permitido; 502 se o download falhar; 503 sem diretório de assets.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SelectArtworkRequest" }
+      responses:
+        "200":
+          description: Asset materializado (novo ou reusado).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Asset" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/search:
     get:
       operationId: search
@@ -1384,6 +1447,82 @@ components:
       type: array
       description: Galeria de arte da entity (vazia quando não há arte).
       items: { $ref: "#/components/schemas/Asset" }
+    ArtworkItem:
+      type: object
+      description: >
+        Uma arte no agrupamento por kind do /artwork (briefing 0048). `url` já vem
+        proxyada. `lang`/`likes` vêm do inventário (fanart.tv) e são vazios/zero para as
+        demais fontes. `source` é a proveniência (`user`|`external`|`tmdb`|`fanarttv`);
+        `is_local` marca o asset materializado (servido do disco), `is_preferred` a escolha
+        do dono. `disc_type`/`disc`/`season` só aparecem nas artes que os têm.
+      required: [url, source, is_preferred, is_local]
+      properties:
+        url:
+          type: string
+          description: URL já passada pelo proxy de imagem.
+        lang:
+          type: string
+          description: "Idioma da arte (2 letras ou vazio=textless); só no inventário."
+        likes:
+          type: integer
+          description: "Curtidas na fonte; só no inventário (fanart.tv)."
+        source:
+          type: string
+          description: "Proveniência: user, external, tmdb ou fanarttv."
+        disc_type:
+          type: string
+          description: "Tipo de disco (bluray/dvd/cd/3d); só no kind disc."
+        disc:
+          type: integer
+          description: "Número do disco; só no kind disc."
+        season:
+          type: string
+          description: "Temporada da arte (número, `all` ou `0`); só em artes de temporada."
+        is_preferred:
+          type: boolean
+          description: Escolha do dono (só para asset local).
+        is_local:
+          type: boolean
+          description: Asset materializado, servido do disco.
+    ArtworkResponse:
+      type: object
+      description: >
+        Arte DISPONÍVEL agrupada por kind (briefing 0048): uma array de ArtworkItem por
+        kind (poster/fanart/logo/clearart/disc/banner/thumb/characterart/still) mais
+        `available: {kind: count}` para os selos do card. As chaves de kind e a chave
+        `available` coexistem no topo (nenhum kind se chama `available`).
+      properties:
+        poster: { type: array, items: { $ref: "#/components/schemas/ArtworkItem" } }
+        fanart: { type: array, items: { $ref: "#/components/schemas/ArtworkItem" } }
+        logo: { type: array, items: { $ref: "#/components/schemas/ArtworkItem" } }
+        clearart: { type: array, items: { $ref: "#/components/schemas/ArtworkItem" } }
+        disc: { type: array, items: { $ref: "#/components/schemas/ArtworkItem" } }
+        banner: { type: array, items: { $ref: "#/components/schemas/ArtworkItem" } }
+        thumb: { type: array, items: { $ref: "#/components/schemas/ArtworkItem" } }
+        characterart: { type: array, items: { $ref: "#/components/schemas/ArtworkItem" } }
+        still: { type: array, items: { $ref: "#/components/schemas/ArtworkItem" } }
+        available:
+          type: object
+          description: "Contagem de artes por kind (para os selos)."
+          additionalProperties: { type: integer }
+    SelectArtworkRequest:
+      type: object
+      description: >
+        Corpo de POST /entities/{id}/artwork/select: qual arte do inventário (url num host
+        da allowlist do proxy) materializar como asset `origin='external'` do `kind`, e se
+        deve marcá-la como preferida.
+      required: [kind, url]
+      properties:
+        kind:
+          type: string
+          enum: [poster, fanart, still, logo, clearart, disc, banner, thumb, characterart]
+          description: Tipo de arte a materializar.
+        url:
+          type: string
+          description: URL da arte (host precisa estar na allowlist do proxy — anti-SSRF).
+        prefer:
+          type: boolean
+          description: "Marca a arte como preferida do seu kind (default: false)."
     EnrichRequest:
       type: object
       description: >
