@@ -329,13 +329,19 @@ func extensaoTemporada(t provider.TemporadaExterna) string {
 }
 
 // extensaoEpisodio monta o extension_data do episódio: numbering (TODAS as ordens que
-// a série usa) + absolute_number quando a fonte informou.
+// a série usa) + absolute_number quando a fonte informou + still_url (0042) quando o
+// provider trouxe um frame. O still é artwork NEUTRO de idioma (como o numbering): só
+// a URL crua é persistida — a imagem é buscada/cacheada SOB DEMANDA pelo image proxy na
+// 1ª visualização, jamais baixada no import (uma série tem centenas/milhares de eps).
 func extensaoEpisodio(ep provider.EpisodioExterno) string {
 	payload := map[string]any{
 		"numbering": numberingMap(ep.Numbering),
 	}
 	if ep.AbsoluteNumber != nil {
 		payload["absolute_number"] = *ep.AbsoluteNumber
+	}
+	if ep.StillURL != "" {
+		payload["still_url"] = ep.StillURL
 	}
 	return envelopeTV(payload)
 }

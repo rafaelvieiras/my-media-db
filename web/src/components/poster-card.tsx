@@ -22,9 +22,25 @@ import {
 // apagada (0038): a POSSE vira badge no topo-DIREITO (série/temporada → selo de
 // completude 0036/0037; demais → "na biblioteca"), e ausente/vazio = sem badge.
 // A REVISÃO (atenção) fica no topo-ESQUERDO.
-export function PosterCard({ card }: { card: EntityCard }) {
+// PosterCard aceita, opcionalmente, uma ARTE e um ASPECTO próprios (0042): o card de
+// EPISÓDIO passa o still 16:9 (via image proxy) e `aspect-video` em vez do pôster 2:3 —
+// o still é paisagem e cortá-lo no frame de pôster ficaria feio. `artSrc` ausente
+// (undefined) mantém o comportamento clássico: pôster local via `posterSrc(poster_url)`
+// no frame 2:3 (movie/tv/season/collection intactos). `artSrc` presente mas null (ex.:
+// episódio sem still) cai no placeholder "Sem arte" no aspecto pedido.
+export function PosterCard({
+  card,
+  artSrc,
+  aspectClass = 'aspect-[2/3]',
+  artAlt,
+}: {
+  card: EntityCard
+  artSrc?: string | null
+  aspectClass?: string
+  artAlt?: string
+}) {
   const [falhouArte, setFalhouArte] = useState(false)
-  const src = posterSrc(card.poster_url)
+  const src = artSrc !== undefined ? artSrc : posterSrc(card.poster_url)
   const mostrarPlaceholder = src === null || falhouArte
 
   return (
@@ -34,7 +50,12 @@ export function PosterCard({ card }: { card: EntityCard }) {
         params={{ id: card.id }}
         className="flex flex-col gap-2"
       >
-        <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-muted ring-1 ring-foreground/10">
+        <div
+          className={cn(
+            'relative overflow-hidden rounded-xl bg-muted ring-1 ring-foreground/10',
+            aspectClass,
+          )}
+        >
           {mostrarPlaceholder ? (
             <div
               data-testid="poster-placeholder"
@@ -46,7 +67,7 @@ export function PosterCard({ card }: { card: EntityCard }) {
           ) : (
             <img
               src={src}
-              alt={`Pôster de ${card.title}`}
+              alt={artAlt ?? `Pôster de ${card.title}`}
               loading="lazy"
               onError={() => setFalhouArte(true)}
               className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"

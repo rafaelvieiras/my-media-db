@@ -737,6 +737,8 @@ export interface components {
       ownership?: components['schemas']['OwnershipInfo'] | null
       /** @description Numeração REAL do episódio (0039): `season`/`number` projetados na ordenação da temporada-pai e o `absolute_number` quando houver. Reflete o número CATALOGADO (S02E05), não a posição na lista — biblioteca com E01+E05 mostra E01 e E05. OPCIONAL: presente só nos cards `episode` de GET /entities/{id}/members; ausente/`null` para os demais tipos e para episódio sem numbering (draft), que cai no rótulo neutro. Anotado no server pós-listagem, sem mudar a query do card. */
       numbering?: components['schemas']['EpisodeNumbering'] | null
+      /** @description URL CRUA do still (frame 16:9) do episódio (0042), como veio do provider — artwork NEUTRO de idioma, gravada no import SEM baixar a imagem. OPCIONAL: presente só nos cards `episode` com still; ausente/`null` para os demais tipos e para episódio sem still (cai no placeholder). O front a serve pelo image proxy (GET /images?src=), que busca+cacheia sob demanda na 1a exibição. */
+      still_url?: string | null
     }
     /** @description Numeração de um episódio na ordenação da temporada-pai (0039). `season`/`number` vêm do numbering multi-ordem gravado no import (core.tv@1); `absolute_number` é o número contínuo através das temporadas (anime), presente quando a fonte informou. */
     EpisodeNumbering: {
@@ -930,6 +932,8 @@ export interface components {
       ownership: components['schemas']['OwnershipInfo'] | null
       /** @description Ordens de exibição de episódios disponíveis de uma SÉRIE (0040): a `default` e a lista `available` (união das chaves de `numbering` dos episódios + `absolute` quando há absolute_number, com o default primeiro). OPCIONAL: presente só para `tv` com ao menos uma ordem; AUSENTE para os demais tipos e para série sem numbering. A UI só mostra o seletor quando `available` tem mais de um item. */
       orderings?: components['schemas']['OrderingsInfo']
+      /** @description URL CRUA do still (frame 16:9) do EPISÓDIO (0042), como veio do provider — artwork NEUTRO de idioma, do extension_data core.tv@1. OPCIONAL: presente só para `episode` com still; AUSENTE para os demais tipos e para episódio sem still (cai no placeholder). O front a serve pelo image proxy (busca+cacheia sob demanda); nunca é baixada no import. */
+      still_url?: string | null
     }
     /** @description Ordens de exibição de episódios de uma série (0040): `default` é a ordem inicial (o default_season_type gravado no import) e `available` a lista oferecida ao seletor (o default primeiro, `absolute` ao fim quando há número absoluto). O seletor só aparece com mais de uma ordem. */
     OrderingsInfo: {

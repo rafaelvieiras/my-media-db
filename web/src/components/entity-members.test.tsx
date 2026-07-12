@@ -102,3 +102,43 @@ describe('CardNumerado — numbering real do episódio (0039)', () => {
     expect(screen.queryByText(/^E\d/)).toBeNull()
   })
 })
+
+// episodioComStill monta um card de episodio com still_url cru do provider (0042).
+function episodioComStill(stillUrl: string | null) {
+  return card({
+    id: 'ep1',
+    title: 'Piloto',
+    type: 'episode',
+    numbering: { season: 1, number: 5 },
+    still_url: stillUrl,
+  })
+}
+
+describe('CardNumerado — still 16:9 do episódio (0042)', () => {
+  const still = 'https://artworks.thetvdb.com/banners/episodes/72514/5.jpg'
+
+  it('com still: thumbnail 16:9 servido pelo image proxy', () => {
+    const { container } = render(
+      <CardNumerado card={episodioComStill(still)} />,
+    )
+    const img = screen.getByAltText('Still de Piloto') as HTMLImageElement
+    // Roteia pela rota do proxy (GET /images?src=) com a URL crua encodada — nao a URL
+    // direta do CDN da fonte.
+    expect(img.getAttribute('src')).toBe(
+      `/api/v1/images?src=${encodeURIComponent(still)}`,
+    )
+    // Enquadramento proprio do episodio (16:9), nao o frame de poster 2:3.
+    expect(container.querySelector('.aspect-video')).toBeTruthy()
+    expect(container.querySelector('.aspect-\\[2\\/3\\]')).toBeNull()
+    // O numero E05 segue intacto (0039).
+    expect(screen.getByText('E05')).toBeTruthy()
+  })
+
+  it('sem still: placeholder "Sem arte" no frame 16:9 (sem imagem)', () => {
+    const { container } = render(<CardNumerado card={episodioComStill(null)} />)
+    expect(screen.getByTestId('poster-placeholder')).toBeTruthy()
+    expect(screen.queryByAltText('Still de Piloto')).toBeNull()
+    expect(container.querySelector('.aspect-video')).toBeTruthy()
+    expect(screen.getByText('E05')).toBeTruthy()
+  })
+})

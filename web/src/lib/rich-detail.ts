@@ -1,4 +1,5 @@
 import {
+  imagemProxySrc,
   posterSrc,
   type ExternalCollection,
   type ExternalDetail,
@@ -34,6 +35,10 @@ export interface RichDetail {
   originalLanguage: string | null
   posterUrl: string | null
   backdropUrl: string | null
+  // Still 16:9 do EPISÓDIO (0042), já pronto para o `<img>` (via image proxy). null
+  // para não-episódios e para o detalhe do externo (que não tem still) — a UI só
+  // renderiza o frame de still quando o tipo é `episode`.
+  stillUrl: string | null
   genres: string[]
   keywords: string[]
   videos: ExternalVideo[]
@@ -61,6 +66,8 @@ export function deExternalDetail(d: ExternalDetail): RichDetail {
     originalLanguage: d.original_language,
     posterUrl: srcDeImagem(d.poster_url),
     backdropUrl: srcDeImagem(d.backdrop_url),
+    // O detalhe do externo não tem still de episódio.
+    stillUrl: null,
     genres: d.genres,
     keywords: d.keywords,
     videos: d.videos,
@@ -90,6 +97,10 @@ export function deResolvedEntity(e: ResolvedEntity): RichDetail {
     // O backdrop da entity é uma ROTA LOCAL quando cacheado (fanart, 0015) ou uma
     // URL DIRETA da fonte no fallback: prefixa a base só quando relativa.
     backdropUrl: srcDeImagem(e.backdrop_url),
+    // Still 16:9 do episódio (0042): URL CRUA do provider servida pelo image proxy
+    // (busca+cacheia sob demanda). null para não-episódios — o front só o exibe no
+    // detalhe do episódio.
+    stillUrl: imagemProxySrc(e.still_url),
     genres: e.tags,
     keywords: e.keywords,
     videos: e.videos,

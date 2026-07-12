@@ -113,6 +113,23 @@ func TestProxyImagemHostNaoPermitido(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_query")
 }
 
+// TestProxyAllowlistTheTVDB (0042): a allowlist PADRAO aceita o host de artwork do
+// TheTVDB (artworks.thetvdb.com) -- necessario para o proxy servir o still de episodio
+// sob demanda. Um host arbitrario segue barrado (anti-SSRF).
+func TestProxyAllowlistTheTVDB(t *testing.T) {
+	if !hostsImagemPadrao["artworks.thetvdb.com"] {
+		t.Fatal("allowlist padrao nao inclui artworks.thetvdb.com")
+	}
+	s := New("test", nil)
+	still := "https://artworks.thetvdb.com/banners/episodes/72514/5.jpg"
+	if _, ok := s.urlImagemPermitida(still); !ok {
+		t.Errorf("urlImagemPermitida rejeitou o still do TheTVDB: %s", still)
+	}
+	if _, ok := s.urlImagemPermitida("https://evil.example.com/x.png"); ok {
+		t.Error("urlImagemPermitida aceitou host arbitrario; quero rejeitar")
+	}
+}
+
 func TestProxyImagemSrcAusente(t *testing.T) {
 	s, _ := serverProxy(t, "image.tmdb.org")
 	req := httptest.NewRequest(http.MethodGet, rotaProxyImagem, nil)

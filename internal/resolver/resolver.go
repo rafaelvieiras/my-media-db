@@ -152,6 +152,14 @@ type Entidade struct {
 	// sem numbering — a UI então esconde o seletor. Anotada no server pós-resolução
 	// (mesma fronteira de Ancestors/Ownership), porque varre a árvore de episódios.
 	Orderings *OrderingsInfo `json:"orderings,omitempty"`
+
+	// StillURL é a URL CRUA do still (frame 16:9) do EPISÓDIO (0042): artwork NEUTRO de
+	// idioma, lido do extension_data core.tv@1 (still_url). Presente (não-null) só para
+	// `episode` com still; `omitempty` (ausente) para os demais tipos e para episódio sem
+	// still — a UI cai no placeholder. Anotada no server pós-resolução (o resolver é puro,
+	// não conhece core.tv), e servida pelo image proxy (busca+cacheia sob demanda) no
+	// front. Não é baixada no import: só a URL é persistida.
+	StillURL *string `json:"still_url,omitempty"`
 }
 
 // OrderingsInfo descreve as ordens de exibição de episódios de uma série (0040):

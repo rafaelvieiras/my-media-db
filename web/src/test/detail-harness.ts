@@ -1,5 +1,35 @@
 import { vi } from 'vitest'
 import type { EntityCard, EpisodeGroup } from '@/lib/api'
+import type { RichDetail } from '@/lib/rich-detail'
+
+// richDetailBase é o RichDetail canônico (tudo vazio) que a RichDetailView consome:
+// `over` sobrescreve só o que o teste precisa. Compartilhado para os testes da view
+// não repetirem a fábrica de ~20 campos (jscpd).
+export function richDetailBase(over: Partial<RichDetail> = {}): RichDetail {
+  return {
+    type: 'movie',
+    title: 'Duna',
+    originalTitle: null,
+    description: null,
+    tagline: null,
+    year: null,
+    runtime: null,
+    certification: null,
+    voteAverage: null,
+    localRating: null,
+    originalLanguage: null,
+    posterUrl: null,
+    backdropUrl: null,
+    stillUrl: null,
+    genres: [],
+    keywords: [],
+    videos: [],
+    collection: null,
+    similar: [],
+    externalLinks: {},
+    ...over,
+  }
+}
 
 // Scaffolding COMPARTILHADO dos testes das telas de detalhe/coleção externa: respostas
 // fetch canônicas, o mock do idioma ativo e o mock do router. Centralizar aqui evita a

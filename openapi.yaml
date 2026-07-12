@@ -1280,6 +1280,14 @@ components:
           oneOf:
             - $ref: "#/components/schemas/EpisodeNumbering"
             - type: "null"
+        still_url:
+          type: [string, "null"]
+          description: >
+            URL CRUA do still (frame 16:9) do episódio (0042), como veio do provider —
+            artwork NEUTRO de idioma, gravada no import SEM baixar a imagem. OPCIONAL:
+            presente só nos cards `episode` com still; ausente/`null` para os demais
+            tipos e para episódio sem still (cai no placeholder). O front a serve pelo
+            image proxy (GET /images?src=), que busca+cacheia sob demanda na 1a exibição.
     EpisodeNumbering:
       type: object
       description: >
@@ -1630,6 +1638,14 @@ components:
             demais tipos e para série sem numbering. A UI só mostra o seletor quando
             `available` tem mais de um item.
           $ref: '#/components/schemas/OrderingsInfo'
+        still_url:
+          type: [string, "null"]
+          description: >
+            URL CRUA do still (frame 16:9) do EPISÓDIO (0042), como veio do provider —
+            artwork NEUTRO de idioma, do extension_data core.tv@1. OPCIONAL: presente só
+            para `episode` com still; AUSENTE para os demais tipos e para episódio sem
+            still (cai no placeholder). O front a serve pelo image proxy (busca+cacheia
+            sob demanda); nunca é baixada no import.
     OrderingsInfo:
       type: object
       description: >

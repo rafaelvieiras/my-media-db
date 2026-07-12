@@ -251,7 +251,11 @@ func (s *Server) agruparEpisodios(ctx context.Context, ent sqlcgen.Entity, order
 		if !ok {
 			continue // episódio purgado no meio
 		}
-		num := projetarParaOrdem(tvext.Namespace(ep.ExtensionDataJson, nsTVCore), ordering)
+		// Uma única leitura do namespace serve numbering (0040) E still (0042): o still
+		// ganha carona no walk já existente, sem multiplicar consultas ao extension_data.
+		ns := tvext.Namespace(ep.ExtensionDataJson, nsTVCore)
+		card.StillURL = stillDoNS(ns)
+		num := projetarParaOrdem(ns, ordering)
 		card.Numbering = num
 		if num == nil {
 			semNum = append(semNum, card)

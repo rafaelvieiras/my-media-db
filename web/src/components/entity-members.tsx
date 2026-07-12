@@ -4,7 +4,7 @@ import { PosterCard } from '@/components/poster-card'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import { useLanguage } from '@/lib/language-context'
 import { entityMembersQueryOptions } from '@/lib/queries'
-import type { EntityCard } from '@/lib/api'
+import { imagemProxySrc, type EntityCard } from '@/lib/api'
 
 // Núcleo compartilhado da árvore pai-com-filhos (GET /entities/{id}/members): a
 // COLEÇÃO (0025, editável) e a árvore de SÉRIES (0031, somente leitura) reusam o
@@ -120,13 +120,22 @@ export function CardTemporada({ card }: { card: EntityCard }) {
 // `absolute_number` distinto do número da ordem, anexa " · #{absolute}" (anime/
 // ordenação contínua). Sem `numbering` (episódio draft) → rótulo neutro "Episódio",
 // sem inventar posição — biblioteca com E01+E05 mostra E01 e E05, não E01/E02.
+//
+// A ARTE do episódio é o STILL 16:9 (0042), servido pelo image proxy (`imagemProxySrc`)
+// — enquadramento próprio, não o frame de pôster 2:3, para não cortar a paisagem. Sem
+// still (`still_url` ausente → null) o PosterCard cai no placeholder "Sem arte" 16:9.
 export function CardNumerado({ card }: { card: EntityCard }) {
   return (
     <div className="flex flex-col gap-1">
       <span className="text-xs font-medium text-muted-foreground">
         {rotuloEpisodio(card.numbering)}
       </span>
-      <PosterCard card={card} />
+      <PosterCard
+        card={card}
+        artSrc={imagemProxySrc(card.still_url)}
+        aspectClass="aspect-video"
+        artAlt={`Still de ${card.title}`}
+      />
     </div>
   )
 }

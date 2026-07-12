@@ -564,6 +564,22 @@ export function posterSrc(posterUrl: string | null | undefined): string | null {
   return `${base}${posterUrl}`
 }
 
+// imagemProxySrc monta a URL do IMAGE PROXY (GET /api/v1/images?src=) para uma URL
+// CRUA de imagem externa — hoje o still de episódio do provider (0042). O proxy busca e
+// cacheia a imagem SOB DEMANDA (por hash) na 1ª exibição (0015), decoplando a UI do CDN
+// da fonte em runtime. Difere de `posterSrc` (rota de asset LOCAL já pronta) e de
+// `srcDeImagem` (que só decide base × URL direta): aqui SEMPRE roteia pelo proxy, pois a
+// fonte externa não é servível direto em runtime. `null`/vazia → null (a UI cai no
+// placeholder). Respeita a base (VITE_API_BASE), como `posterSrc`.
+export function imagemProxySrc(
+  rawUrl: string | null | undefined,
+): string | null {
+  if (!rawUrl) {
+    return null
+  }
+  return `${base}/api/v1/images?src=${encodeURIComponent(rawUrl)}`
+}
+
 // ── Arte custom: galeria + upload (0017) ─────────────────────────────────────
 
 // Tipos de imagem aceitos pelo upload (mesmo conjunto que o backend valida pelos

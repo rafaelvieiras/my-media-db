@@ -59,6 +59,13 @@ type entityCardDTO struct {
 	// que não seja `episode` e para episódio sem numbering (draft) — a UI cai no rótulo
 	// neutro, sem inventar posição. Substitui a antiga posição ordinal do card.
 	Numbering *episodeNumberingDTO `json:"numbering,omitempty"`
+	// StillURL é a URL CRUA do still (frame 16:9) do episódio (0042), lida do
+	// extension_data core.tv@1 (still_url) — artwork NEUTRO de idioma, gravado no import
+	// sem baixar a imagem. O front a serve pelo image proxy (busca+cacheia sob demanda).
+	// Anotada no server junto do Numbering (mesma leitura do extension_data, sem
+	// multiplicar consultas). `omitempty`: ausente para não-`episode` e para episódio sem
+	// still — a UI cai no placeholder.
+	StillURL *string `json:"still_url,omitempty"`
 }
 
 // episodeNumberingDTO é a numeração real de um episódio no card (0039): `season` e
@@ -374,11 +381,12 @@ func (s *Server) ordenacaoDaTemporada(ctx context.Context, seasonID, tipoPai str
 	return ordering, seasonNumber
 }
 
-// anotarNumbering preenche card.Numbering com a numeração REAL do episódio (0039),
-// projetada na ordenação da temporada-pai. Só age em cards `episode`; lê o
-// extension_data do episódio (leitura extra por episódio — escala de dezenas por
-// temporada, aceitável; TODO: query agregada única se pesar, ver 0039 §7). Degrada
-// para nil em qualquer falha (a UI omite o número, nunca inventa posição).
+// anotarNumbering preenche card.Numbering (numeração REAL do episódio, 0039) e
+// card.StillURL (frame 16:9, 0042) a partir do MESMO extension_data do episódio: uma
+// única leitura serve os dois (o still ganhou carona no walk do numbering, sem
+// multiplicar consultas — 0042). Só age em cards `episode` (leitura extra por episódio,
+// escala de dezenas por temporada, aceitável; TODO: query agregada única se pesar, ver
+// 0039 §7). Degrada em qualquer falha (a UI omite número/still, nunca inventa).
 func (s *Server) anotarNumbering(ctx context.Context, card *entityCardDTO, ordering string, seasonNumber int) {
 	if card.Type != tipoEntEpisodio {
 		return
@@ -389,6 +397,20 @@ func (s *Server) anotarNumbering(ctx context.Context, card *entityCardDTO, order
 	}
 	ns := tvext.Namespace(ent.ExtensionDataJson, nsTVCore)
 	card.Numbering = projetarNumbering(ns, ordering, seasonNumber)
+	card.StillURL = stillDoNS(ns)
+}
+
+// stillDoNS extrai a URL CRUA do still (0042) do namespace core.tv@1 do episódio:
+// `still_url` quando é string não-vazia, senão nil (episódio sem still → placeholder na
+// UI). Ponto ÚNICO reusado pelo card (/members e /episodes) e pelo detalhe do episódio.
+func stillDoNS(ns map[string]any) *string {
+	if ns == nil {
+		return nil
+	}
+	if u, ok := ns["still_url"].(string); ok && u != "" {
+		return &u
+	}
+	return nil
 }
 
 // projetarNumbering é a projeção PURA do numbering do episódio na ordenação da
@@ -651,7 +673,19 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 	resolvida.Ancestors = s.montarAncestrais(ctx, id)
 	resolvida.Ownership = s.montarPosseAgregada(ctx, ent)
 	resolvida.Orderings = s.montarOrderings(ctx, ent)
+	resolvida.StillURL = stillDaEntity(ent)
 	return resolvida, true, nil
+}
+
+// stillDaEntity devolve a URL CRUA do still do episódio (0042) para o detalhe: lê o
+// extension_data core.tv@1 (still_url) da própria entity — só para `episode`, nil para
+// os demais tipos. O resolver é PURO (não conhece core.tv); a anotação vive aqui, na
+// mesma fronteira de Ancestors/Ownership/Orderings. O front serve pelo image proxy.
+func stillDaEntity(ent sqlcgen.Entity) *string {
+	if ent.Type != tipoEntEpisodio {
+		return nil
+	}
+	return stillDoNS(tvext.Namespace(ent.ExtensionDataJson, nsTVCore))
 }
 
 // tipoEntEpisodio é o `type` da entity de episódio (grão fino da árvore de séries,

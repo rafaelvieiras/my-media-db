@@ -91,6 +91,36 @@ export function PosterImg({
   )
 }
 
+// StillFrame renderiza o STILL 16:9 do EPISÓDIO (0042) no topo do detalhe: a imagem já
+// vem servida pelo image proxy (busca+cacheia sob demanda) e ocupa um frame `aspect-
+// video` próprio — não o pôster 2:3 —, porque o still é paisagem. `loading="lazy"` +
+// `onError` caem no placeholder (como o PosterImg). Sem still (src null) mostra o
+// placeholder no mesmo frame. Só o detalhe do episódio o renderiza.
+export function StillFrame({ src, alt }: { src: string | null; alt: string }) {
+  const [falhou, setFalhou] = useState(false)
+  const mostrarPlaceholder = !src || falhou
+  return (
+    <div className="relative aspect-video w-full overflow-hidden bg-muted">
+      {mostrarPlaceholder ? (
+        <div
+          data-testid="still-placeholder"
+          className="flex h-full w-full items-center justify-center text-muted-foreground"
+        >
+          <ImageOff className="size-8" aria-hidden />
+        </div>
+      ) : (
+        <img
+          src={src ?? undefined}
+          alt={alt}
+          loading="lazy"
+          onError={() => setFalhou(true)}
+          className="h-full w-full object-cover"
+        />
+      )}
+    </div>
+  )
+}
+
 // ── Botão Importar compartilhado ─────────────────────────────────────────────
 
 // ImportarButton importa um item externo (find-or-create, 0015) e leva ao detalhe
@@ -440,7 +470,12 @@ export function RichDetailView({
           claro e escuro — e o backdrop segue cinematográfico. Sem backdrop, é só o
           card com pôster + texto. */}
       <div className="overflow-hidden rounded-2xl bg-card ring-1 ring-foreground/10">
-        {detail.backdropUrl ? (
+        {/* Episódio (0042): o STILL 16:9 é o herói do topo (via proxy, com placeholder),
+            no lugar do backdrop — e o pôster 2:3 some (o episódio não tem pôster). Os
+            demais tipos mantêm o backdrop cinematográfico + pôster 2:3 de sempre. */}
+        {detail.type === 'episode' ? (
+          <StillFrame src={detail.stillUrl} alt={`Still de ${detail.title}`} />
+        ) : detail.backdropUrl ? (
           <div className="relative aspect-[16/6] w-full sm:aspect-[16/5]">
             <img
               src={detail.backdropUrl}
@@ -452,11 +487,13 @@ export function RichDetailView({
           </div>
         ) : null}
         <div className="flex flex-col gap-4 p-4 sm:flex-row sm:p-6">
-          <PosterImg
-            src={detail.posterUrl}
-            alt={`Pôster de ${detail.title}`}
-            className="w-32 shrink-0 sm:w-40"
-          />
+          {detail.type === 'episode' ? null : (
+            <PosterImg
+              src={detail.posterUrl}
+              alt={`Pôster de ${detail.title}`}
+              className="w-32 shrink-0 sm:w-40"
+            />
+          )}
           <div className="flex min-w-0 flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-heading text-2xl font-semibold">

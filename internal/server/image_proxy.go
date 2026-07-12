@@ -42,10 +42,12 @@ const (
 )
 
 // hostsImagemPadrao é a allowlist do proxy (anti-SSRF): só CDNs de imagem confiáveis.
-// Hoje o do TMDB (única fonte). Ampliar aqui ao entrar outra fonte. É a base do campo
-// Server.hostsImagem (injetável em teste).
+// O do TMDB (pôster/backdrop do detalhe externo, 0015/0024) e o do TheTVDB
+// (artworks.thetvdb.com — o still de episódio servido sob demanda, 0042). Ampliar aqui
+// ao entrar outra fonte. É a base do campo Server.hostsImagem (injetável em teste).
 var hostsImagemPadrao = map[string]bool{
-	"image.tmdb.org": true,
+	"image.tmdb.org":       true,
+	"artworks.thetvdb.com": true,
 }
 
 // clienteImagemPadrao é o http.Client do proxy (timeout curto). Fica aqui para manter
