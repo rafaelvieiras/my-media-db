@@ -18,27 +18,17 @@ import {
 // Clicar na arte/título abre o detalhe da entity; clicar no badge de revisão
 // leva à fila de curadoria (`/review`). Os badges ficam num overlay IRMÃO do
 // Link do card (não aninhado) para não gerar âncora dentro de âncora — o overlay
-// é `pointer-events-none` e só o badge-link reativa o clique. Para os tipos que
-// agregam posse (série→temporadas, temporada→episódios, 0036/0037) o card mostra o
-// selo de COMPLETUDE embaixo e recua (opacity) quando está VAZIO.
+// é `pointer-events-none` e só o badge-link reativa o clique. A capa NUNCA é
+// apagada (0038): a POSSE vira badge no topo-DIREITO (série/temporada → selo de
+// completude 0036/0037; demais → "na biblioteca"), e ausente/vazio = sem badge.
+// A REVISÃO (atenção) fica no topo-ESQUERDO.
 export function PosterCard({ card }: { card: EntityCard }) {
   const [falhouArte, setFalhouArte] = useState(false)
   const src = posterSrc(card.poster_url)
   const mostrarPlaceholder = src === null || falhouArte
-  // Só os tipos que agregam posse rasa (série/temporada) ganham selo e recuo por vazio;
-  // movie/episode/collection nunca (defensivo, mesmo que o backend não anote ownership).
-  const estado = temCompletude(card.type)
-    ? estadoCompletude(card.ownership)
-    : null
 
   return (
-    <div
-      className={cn(
-        'group relative flex flex-col gap-2',
-        estado === 'vazia' && 'opacity-60',
-      )}
-      data-slot="poster-card"
-    >
+    <div className="group relative flex flex-col gap-2" data-slot="poster-card">
       <Link
         to="/entities/$id"
         params={{ id: card.id }}
@@ -73,50 +63,61 @@ export function PosterCard({ card }: { card: EntityCard }) {
         </div>
       </Link>
       <div className="pointer-events-none absolute top-1.5 left-1.5 flex flex-wrap gap-1">
-        <PosseBadge owned={card.owned} />
         <EstadoMatchBadge card={card} />
       </div>
-      <SeloCompletude card={card} />
+      <div className="pointer-events-none absolute top-1.5 right-1.5 flex flex-wrap justify-end gap-1">
+        <IndicadorPosse card={card} />
+      </div>
     </div>
   )
 }
 
-// SeloCompletude renderiza o estado de posse RASA do card como selo TEXTUAL (nunca só
-// cor, acessível): COMPLETA (positivo, verde + check), PARCIAL ("possui X/Y <unidade>",
-// neutro) ou VAZIA ("0/Y <unidade>", discreto). A UNIDADE vem do tipo (0037): série →
-// "temporadas", temporada → "episódios". Sem selo quando não há ownership ou total==0
+// IndicadorPosse escolhe o badge de POSSE do canto superior direito conforme o
+// tipo (0038): série/temporada (posse agregada) mostram o selo de completude; os
+// demais (movie/episode/collection) mostram "na biblioteca" quando owned. Vazio ou
+// não-owned → sem badge (capa limpa). Nunca há os dois ao mesmo tempo.
+function IndicadorPosse({ card }: { card: EntityCard }) {
+  if (temCompletude(card.type)) {
+    return <SeloCompletude card={card} />
+  }
+  return <PosseBadge owned={card.owned} />
+}
+
+// SeloCompletude renderiza o estado de posse RASA do card como selo COMPACTO (cabe
+// sobre a capa, 0038) e TEXTUAL (nunca só cor, acessível): COMPLETA (verde, ✓ com
+// aria-label "completa") ou PARCIAL ("X/Y", com a unidade completa no title/aria-label).
+// A UNIDADE vem do tipo (0037): série → "temporadas", temporada → "episódios". VAZIO
+// (owned_count==0) → sem selo (capa limpa, 0038); idem sem ownership ou total==0
 // (movie/episode/collection nunca têm selo). Coerente com o SeloPosse do detalhe (0034).
 export function SeloCompletude({ card }: { card: EntityCard }) {
   const estado = temCompletude(card.type)
     ? estadoCompletude(card.ownership)
     : null
-  if (!estado || !card.ownership) {
+  if (!estado || estado === 'vazia' || !card.ownership) {
     return null
   }
   const { owned_count, total_count } = card.ownership
   const unidade = unidadeCompletude(card.type)
   if (estado === 'completa') {
     return (
-      <Badge className="w-fit gap-1 border-transparent bg-emerald-600 text-white">
-        <Check className="size-3" aria-hidden />
-        completa
+      <Badge
+        className="w-fit border-transparent bg-emerald-600 px-1.5 text-white"
+        aria-label="completa"
+        title="completa"
+      >
+        <Check className="size-3.5" aria-hidden />
       </Badge>
     )
   }
-  if (estado === 'parcial') {
-    return (
-      <Badge variant="secondary" className="w-fit">
-        possui {owned_count}/{total_count} {unidade}
-      </Badge>
-    )
-  }
+  const rotulo = `possui ${owned_count}/${total_count} ${unidade}`
   return (
     <Badge
-      variant="outline"
-      className="w-fit text-muted-foreground"
-      title={`Nenhuma unidade (${unidade}) na biblioteca`}
+      variant="secondary"
+      className="w-fit px-1.5 tabular-nums"
+      aria-label={rotulo}
+      title={rotulo}
     >
-      {owned_count}/{total_count} {unidade}
+      {owned_count}/{total_count}
     </Badge>
   )
 }

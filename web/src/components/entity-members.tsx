@@ -99,9 +99,10 @@ export function MembrosSomenteLeitura({
 }
 
 // CardTemporada é o card de uma TEMPORADA na lista de membros da série (0036): hoje é
-// só o PosterCard, que já renderiza o selo de completude ("possui X/Y episódios") e
-// recua as temporadas VAZIAS (opacity) — a MESMA lógica de card raso compartilhada com
-// a série na home (0037). Mantido como ponto de extensão nomeado da árvore de séries.
+// só o PosterCard, que já renderiza o selo de completude compacto ("X/Y", unidade no
+// aria-label) no topo-direito e deixa a temporada VAZIA sem badge, capa normal (0038)
+// — a MESMA lógica de card raso compartilhada com a série na home (0037). Mantido como
+// ponto de extensão nomeado da árvore de séries.
 export function CardTemporada({ card }: { card: EntityCard }) {
   return <PosterCard card={card} />
 }

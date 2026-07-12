@@ -45,9 +45,21 @@ describe('PosterCard', () => {
     expect(screen.getByText('na biblioteca')).toBeInTheDocument()
   })
 
+  it('filme owned mostra "na biblioteca" no topo-direito (0038)', () => {
+    const { container } = render(<PosterCard card={card({ owned: true })} />)
+    const overlayDireito = container.querySelector('.right-1\\.5')
+    expect(overlayDireito).toBeTruthy()
+    expect(overlayDireito?.textContent).toContain('na biblioteca')
+  })
+
   it('sem posse não mostra o badge de biblioteca', () => {
     render(<PosterCard card={card({ owned: false })} />)
     expect(screen.queryByText('na biblioteca')).not.toBeInTheDocument()
+  })
+
+  it('nenhum card fica apagado (sem opacity-60, 0038)', () => {
+    const { container } = render(<PosterCard card={card({ owned: false })} />)
+    expect(container.querySelector('.opacity-60')).toBeNull()
   })
 
   it('cai no placeholder quando não há arte', () => {
@@ -78,10 +90,15 @@ describe('PosterCard', () => {
   })
 
   it('mostra badge de revisão em baixa confiança e ele linka para /review', () => {
-    render(<PosterCard card={card({ match_confidence: 40 })} />)
+    const { container } = render(
+      <PosterCard card={card({ match_confidence: 40 })} />,
+    )
     const badge = screen.getByText('revisar')
     expect(badge).toBeInTheDocument()
     expect(badge.closest('a')).toHaveAttribute('href', '/review')
+    // Revisão (atenção) fica no topo-ESQUERDO, não no de posse (0038).
+    const overlayEsquerdo = container.querySelector('.left-1\\.5')
+    expect(overlayEsquerdo?.textContent).toContain('revisar')
   })
 
   it('mostra badge de não identificado para draft e ele linka para /review', () => {
@@ -96,9 +113,9 @@ describe('PosterCard', () => {
 // Selo de completude por tipo (0037): o card de SÉRIE conta TEMPORADAS, o de
 // TEMPORADA conta EPISÓDIOS. A mesma lógica de estado (completa/parcial/vazia) do
 // 0036, só com a unidade trocada pelo tipo. Movie/collection nunca têm selo.
-describe('PosterCard — selo de completude por tipo (0037)', () => {
-  it('SÉRIE parcial rotula "temporadas"', () => {
-    render(
+describe('PosterCard — selo de completude por tipo (0037/0038)', () => {
+  it('SÉRIE parcial mostra "X/Y" compacto no topo-direito, unidade no aria-label', () => {
+    const { container } = render(
       <PosterCard
         card={card({
           type: 'tv',
@@ -106,11 +123,20 @@ describe('PosterCard — selo de completude por tipo (0037)', () => {
         })}
       />,
     )
-    expect(screen.getByText('possui 3/38 temporadas')).toBeInTheDocument()
+    const badge = screen.getByText('3/38')
+    expect(badge).toBeInTheDocument()
+    // Unidade completa fica acessível no aria-label/title, não no texto visível.
+    expect(badge).toHaveAttribute('aria-label', 'possui 3/38 temporadas')
+    expect(screen.queryByText('possui 3/38 temporadas')).not.toBeInTheDocument()
+    // Selo de posse vai no overlay do topo-DIREITO (0038).
+    const overlayDireito = container.querySelector('.right-1\\.5')
+    expect(overlayDireito?.textContent).toContain('3/38')
+    // Série com conteúdo não mostra "na biblioteca" (sem redundância, 0038).
+    expect(screen.queryByText('na biblioteca')).not.toBeInTheDocument()
   })
 
-  it('SÉRIE completa mostra o selo "completa"', () => {
-    render(
+  it('SÉRIE completa mostra o selo "completa" (✓ com aria-label) no topo-direito', () => {
+    const { container } = render(
       <PosterCard
         card={card({
           type: 'tv',
@@ -118,10 +144,14 @@ describe('PosterCard — selo de completude por tipo (0037)', () => {
         })}
       />,
     )
-    expect(screen.getByText('completa')).toBeInTheDocument()
+    const badge = screen.getByLabelText('completa')
+    expect(badge).toBeInTheDocument()
+    const overlayDireito = container.querySelector('.right-1\\.5')
+    expect(overlayDireito?.contains(badge)).toBe(true)
+    expect(screen.queryByText('na biblioteca')).not.toBeInTheDocument()
   })
 
-  it('SÉRIE vazia recua (opacity) e rotula "0/Y temporadas"', () => {
+  it('SÉRIE vazia não mostra badge nem apaga a capa (0038)', () => {
     const { container } = render(
       <PosterCard
         card={card({
@@ -130,11 +160,14 @@ describe('PosterCard — selo de completude por tipo (0037)', () => {
         })}
       />,
     )
-    expect(screen.getByText('0/38 temporadas')).toBeInTheDocument()
-    expect(container.querySelector('.opacity-60')).toBeTruthy()
+    expect(screen.queryByText('0/38')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/temporadas/)).not.toBeInTheDocument()
+    expect(container.querySelector('.opacity-60')).toBeNull()
+    // Nenhum badge de posse (nem "na biblioteca").
+    expect(screen.queryByText('na biblioteca')).not.toBeInTheDocument()
   })
 
-  it('TEMPORADA parcial rotula "episódios" (0036 intacto)', () => {
+  it('TEMPORADA parcial mostra "X/Y" com unidade "episódios" no aria-label (0036 intacto)', () => {
     render(
       <PosterCard
         card={card({
@@ -143,7 +176,8 @@ describe('PosterCard — selo de completude por tipo (0037)', () => {
         })}
       />,
     )
-    expect(screen.getByText('possui 3/10 episódios')).toBeInTheDocument()
+    const badge = screen.getByText('3/10')
+    expect(badge).toHaveAttribute('aria-label', 'possui 3/10 episódios')
   })
 
   it('FILME não tem selo mesmo com ownership presente', () => {
