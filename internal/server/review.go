@@ -138,14 +138,9 @@ func (s *Server) correctEntity(w http.ResponseWriter, r *http.Request) {
 	if ok := decodeOpcional(w, r, &body); !ok {
 		return
 	}
-	source := body.Source
-	if source == "" {
-		src, ok := s.fonteDefault(ent.Type)
-		if !ok {
-			respondSemFonteParaTipo(w, ent.Type)
-			return
-		}
-		source = src
+	source, ok := s.resolverFonte(w, ent.Type, body.Source)
+	if !ok {
+		return
 	}
 	if body.SourceID == "" {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "source_id é obrigatório")

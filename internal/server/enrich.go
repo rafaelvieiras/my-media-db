@@ -65,22 +65,12 @@ func (s *Server) enrichEntity(w http.ResponseWriter, r *http.Request) {
 	if ok := decodeOpcional(w, r, &body); !ok {
 		return
 	}
-	source := body.Source
-	if source == "" {
-		src, ok := s.fonteDefault(ent.Type)
-		if !ok {
-			respondSemFonteParaTipo(w, ent.Type)
-			return
-		}
-		source = src
+	source, ok := s.resolverFonte(w, ent.Type, body.Source)
+	if !ok {
+		return
 	}
-	sourceID := body.SourceID
-	if sourceID == "" {
-		sourceID = externalIDDe(ent.ExternalIdsJson, source)
-	}
-	if sourceID == "" {
-		writeError(w, http.StatusUnprocessableEntity, "invalid_body",
-			"sem source_id: informe no corpo ou tenha external_ids["+source+"] na entity")
+	sourceID, ok := resolverSourceID(w, source, ent.ExternalIdsJson, body.SourceID)
+	if !ok {
 		return
 	}
 
@@ -113,7 +103,7 @@ func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "corpo JSON inválido")
 		return
 	}
-	if body.Type != "movie" && body.Type != "tv" && body.Type != "collection" {
+	if !tipoImportavel(body.Type) {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "type inválido (use movie, tv ou collection)")
 		return
 	}
@@ -123,14 +113,9 @@ func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 	}
 	// Sem source explícito: escolhe DINAMICAMENTE a fonte-default capaz do tipo (0047),
 	// nunca assume "tmdb". Nenhum provider capaz => 422 semântico (não 502).
-	source := body.Source
-	if source == "" {
-		src, ok := s.fonteDefault(body.Type)
-		if !ok {
-			respondSemFonteParaTipo(w, body.Type)
-			return
-		}
-		source = src
+	source, ok := s.resolverFonte(w, body.Type, body.Source)
+	if !ok {
+		return
 	}
 
 	langs, err := s.idiomasPermitidos(ctx, w)
@@ -220,6 +205,45 @@ func (s *Server) fonteDefault(tipo string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// resolverFonte devolve a fonte a usar para um `tipo`: a `sourceExplicito` quando o
+// request a informa, senão a fonte-default capaz (fonteDefault, 0047). Quando nenhuma
+// fonte é capaz, responde 422 semântico e devolve ok=false — o handler só precisa de
+// `if !ok { return }`. Centraliza o padrão antes copiado em enrich/import/correct.
+func (s *Server) resolverFonte(w http.ResponseWriter, tipo, sourceExplicito string) (string, bool) {
+	if sourceExplicito != "" {
+		return sourceExplicito, true
+	}
+	src, ok := s.fonteDefault(tipo)
+	if !ok {
+		respondSemFonteParaTipo(w, tipo)
+		return "", false
+	}
+	return src, true
+}
+
+// tipoImportavel diz se `tipo` pode ser importado via POST /import (find-or-create):
+// movie, tv ou collection. Grãos finos (season/episode) entram pela árvore de série,
+// não por import direto.
+func tipoImportavel(tipo string) bool {
+	return tipo == "movie" || tipo == "tv" || tipo == "collection"
+}
+
+// resolverSourceID devolve o source_id a usar: o do corpo (`sourceIDBody`), senão o
+// external_ids[source] da entity (`externalIdsJson`). Responde 422 e devolve ok=false
+// quando nenhum está disponível. Extraído de enrichEntity para manter o handler enxuto.
+func resolverSourceID(w http.ResponseWriter, source string, externalIdsJson sql.NullString, sourceIDBody string) (string, bool) {
+	sourceID := sourceIDBody
+	if sourceID == "" {
+		sourceID = externalIDDe(externalIdsJson, source)
+	}
+	if sourceID == "" {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_body",
+			"sem source_id: informe no corpo ou tenha external_ids["+source+"] na entity")
+		return "", false
+	}
+	return sourceID, true
 }
 
 // provedorCapaz diz se o provider `p` sabe importar o `tipo` pedido, via type-assert da
