@@ -125,5 +125,5 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0045](0045-metadados-de-serie-paridade-com-filme.md) | Metadados de série: paridade com filme (slogan, gênero, classificação, tags, situação, relacionados) | feature | done | 0044, 0031 |
 | [0046](0046-independencia-de-provider-serie-sem-tvdb.md) | Independência de provider: série sem TVDB (TMDB como provedor de árvore) | feature/fix | done | 0031, 0045 |
 | [0047](0047-robustez-de-fonte-default-filme-e-serie.md) | Robustez de fonte-default: não assumir "tmdb" quando ele não está registrado | fix | done | — |
-| [0048](0048-fundacao-providers-de-enriquecimento-arte-trailer-tema.md) | Provider fanart.tv (ArteProvider) + taxonomia de kinds + inventário lazy | feature | ready | 0044, 0045, 0046 |
-| [0049](0049-galeria-de-artes-linhas-lightbox-disponibilidade.md) | Galeria de artes: linhas por tipo + lightbox/zoom + selos de disponibilidade | feature | ready | 0048 |
+| [0048](0048-fundacao-providers-de-enriquecimento-arte-trailer-tema.md) | Provider fanart.tv (ArteProvider) + taxonomia de kinds + inventário lazy | feature | done | 0044, 0045, 0046 |
+| [0049](0049-galeria-de-artes-linhas-lightbox-disponibilidade.md) | Galeria de artes: linhas por tipo + lightbox/zoom + selos de disponibilidade | feature | done | 0048 |

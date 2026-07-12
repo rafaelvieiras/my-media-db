@@ -9,7 +9,7 @@
 | **ID** | 0049 |
 | **Tipo** | feature (frontend) |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [08-artwork](../docs/08-artwork-e-assets.md) |
 | **Depende de** | 0048 |
 

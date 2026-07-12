@@ -9,7 +9,7 @@
 | **ID** | 0048 |
 | **Tipo** | feature (backend) |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [09/07-providers](../docs/07-enriquecimento-providers.md), [08-artwork](../docs/08-artwork-e-assets.md), [AGENTS.md §6](../AGENTS.md) |
 | **Depende de** | 0044 (artes), 0045, 0046 |
 
