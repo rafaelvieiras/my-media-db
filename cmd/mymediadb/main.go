@@ -17,6 +17,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
+	"github.com/rafaelvieiras/my-media-db/internal/provider/fanarttv"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/tmdb"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/tvdb"
 	"github.com/rafaelvieiras/my-media-db/internal/server"
@@ -186,6 +187,15 @@ func provedoresReais() []provider.Provider {
 	if credTvdb.Configurada() {
 		log.Printf("mymediadb: busca externa TheTVDB habilitada")
 		provs = append(provs, tvdb.New(credTvdb, nil, ""))
+	}
+
+	// fanart.tv (briefing 0048): provider DEDICADO A ARTE (nunca fonte de busca). Entra no
+	// registry por capacidade (ArteProvider) quando a chave PESSOAL esta no ambiente; sem
+	// ela, e omitido em silencio (regressao zero). A chave so vem do env, nunca hardcoded.
+	credFanart := fanarttv.Credencial{APIKey: os.Getenv("MYMEDIADB_FANARTTV_API_KEY")}
+	if credFanart.Configurada() {
+		log.Printf("mymediadb: enriquecimento de arte fanart.tv habilitado")
+		provs = append(provs, fanarttv.New(credFanart, nil, ""))
 	}
 
 	return provs

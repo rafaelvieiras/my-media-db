@@ -128,6 +128,67 @@ type SerieRicoProvider interface {
 // filme, SEM clobbar título/idioma da árvore TVDB (o envelope não os carrega).
 const ChaveEnvelopeSerieRico = "tmdb_serie_rico"
 
+// ArteProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0048): buscar o
+// INVENTÁRIO de artes de um item por seu id externo — pôster, fanart, logo, clearart,
+// disc, banner, thumb, characterart e artes de temporada. É a capacidade da fanart.tv
+// (fonte DEDICADA a arte que o TMDB/TVDB não cobrem bem). É opcional porque nem toda
+// fonte tem arte extra; o enrich faz type-assert do Provider para esta interface e
+// DEGRADA em silêncio quando ausente (sem a chave configurada, regressão zero). O
+// resultado é um INVENTÁRIO (lista de URLs + metadados), NUNCA binários baixados — o
+// download real é lazy (só a arte selecionada, via cachearArte).
+type ArteProvider interface {
+	// BuscarArtes lista as artes do item pelos ids externos que ele tiver (`ids`),
+	// filtrando por `tipo` ("movie"|"tv"). `langs` são os idiomas permitidos (0020),
+	// para a escolha da arte servida por padrão; o inventário PRESERVA o `lang` de todas.
+	// Sem id utilizável para a fonte, ou sem match, devolve (nil, nil) — graça. Erro real
+	// (rede/status) propaga para o enrich logar e seguir.
+	BuscarArtes(ctx context.Context, ids ExternalIDs, tipo string, langs []string) ([]Arte, error)
+}
+
+// ExternalIDs carrega os ids externos que um item possui (o que a identidade MD4 tiver).
+// A fanart.tv usa Tmdb/Imdb para filme e Tvdb para série; cada ArteProvider escolhe o
+// que sabe consumir e degrada quando o id de que precisa está vazio.
+type ExternalIDs struct {
+	Tmdb string
+	Imdb string
+	Tvdb string
+}
+
+// Arte é uma arte canônica do inventário de um ArteProvider (briefing 0048). Kind é o
+// nosso kind normalizado (poster/fanart/logo/clearart/disc/banner/thumb/characterart);
+// URL é a arte DIRETA na fonte (servida via proxy de imagem). Lang é o idioma (2 letras
+// ou ""=textless). Likes é a popularidade (para ordenar). DiscType/Disc só valem para
+// disc; Season (nº, "all" ou "0") só para arte de temporada — roteia a arte à entity da
+// temporada correspondente.
+type Arte struct {
+	Kind     string
+	URL      string
+	Lang     string
+	Likes    int
+	DiscType string
+	Disc     int
+	Season   string
+}
+
+// ChaveEnvelopeInventarioArtes é a chave do envelope de media_external que carrega o
+// INVENTÁRIO de artes de uma fonte de arte (fanart.tv). O enrich grava
+// {ChaveEnvelopeInventarioArtes: {kind: [ArteInventario...]}} sob a fonte da arte
+// (source="fanarttv"), SEM baixar binários; o endpoint /artwork o lê para agrupar as
+// artes disponíveis por kind. É uma camada de inventário PURA: o MapearDetalhe da fonte
+// de arte é no-op (não polui a composição de camadas do resolver).
+const ChaveEnvelopeInventarioArtes = "fanarttv_inventory"
+
+// ArteInventario é uma arte serializada no envelope de inventário (media_external). É o
+// espelho persistível de Arte SEM o Kind (que vira a chave do mapa por kind no envelope).
+type ArteInventario struct {
+	URL      string `json:"url"`
+	Lang     string `json:"lang,omitempty"`
+	Likes    int    `json:"likes,omitempty"`
+	DiscType string `json:"disc_type,omitempty"`
+	Disc     int    `json:"disc,omitempty"`
+	Season   string `json:"season,omitempty"`
+}
+
 // SerieArvore é a hierarquia canônica de uma série: a ordenação default, a lista de
 // ordenações que a série usa, e as temporadas SÓ da ordenação default. Cada episódio
 // (grão fino, ancorado no id da fonte) carrega a numeração de TODAS as ordens.

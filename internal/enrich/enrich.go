@@ -45,6 +45,9 @@ const (
 	// 0025) e seus filmes ligam-se por entity_relation com kind='collection'.
 	tipoColecao    = "collection"
 	relacaoColecao = "collection"
+	// tipoFilme é o entity.type do filme — o gatilho do enriquecimento de artes (0048)
+	// no import de item (a série dispara o seu depois da árvore, em importarSerie).
+	tipoFilme = "movie"
 )
 
 // Servico executa o enriquecimento. Recebe os pools de banco, o REGISTRO multi-
@@ -125,6 +128,23 @@ func (s *Servico) Importar(ctx context.Context, source, sourceID, tipo string, l
 // externa + pôster. É o caminho compartilhado por Importar (filme) e importarSerie (a
 // própria série usa este molde para detalhe/pôster/curarTitulo antes da árvore).
 func (s *Servico) importarItem(ctx context.Context, source, sourceID, tipo string, langs []string) (string, bool, error) {
+	id, criada, err := s.importarItemBase(ctx, source, sourceID, tipo, langs)
+	if err != nil {
+		return id, criada, err
+	}
+	// Inventário de artes (0048): só o FILME dispara aqui — a série node também passa por
+	// importarItem (dentro de importarSerie), mas suas artes esperam a árvore (importarSerie
+	// chama enriquecerArtes depois, para rotear as artes de temporada). Best-effort.
+	if tipo == tipoFilme {
+		s.enriquecerArtes(ctx, id, tipo, langs)
+	}
+	return id, criada, nil
+}
+
+// importarItemBase é o find-or-create puro do item (sem o enriquecimento de artes, que
+// importarItem dispara por cima). Separá-lo mantém o gatilho de artes fora do caminho da
+// série node (que reusa este molde) e o gocyclo baixo.
+func (s *Servico) importarItemBase(ctx context.Context, source, sourceID, tipo string, langs []string) (string, bool, error) {
 	if existente, ok, err := s.acharPorIDExterno(ctx, source, sourceID); err != nil {
 		return "", false, err
 	} else if ok {

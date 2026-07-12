@@ -39,6 +39,16 @@ const (
 	kindStill      = "still"
 	originUser     = "user"
 	originExternal = "external"
+	// kindLogo/kindClearart/kindDisc/kindBanner/kindThumb/kindCharacterart sao os
+	// kinds de arte EXPANDIDOS (briefing 0048): a fanart.tv traz logo, clearart, disc,
+	// banner, thumb e characterart alem de poster/fanart/still. O kind e TEXT livre no
+	// banco; parseKind valida a ENTRADA de upload contra o conjunto abaixo.
+	kindLogo         = "logo"
+	kindClearart     = "clearart"
+	kindDisc         = "disc"
+	kindBanner       = "banner"
+	kindThumb        = "thumb"
+	kindCharacterart = "characterart"
 	// tamanhoMaxAsset e o teto de bytes de um upload (espelha enrich.tamanhoMaxImagem):
 	// 20 MiB cobre com folga um poster/fanart em alta resolucao.
 	tamanhoMaxAsset = 20 << 20
@@ -129,15 +139,31 @@ func (s *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, assetToDTO(asset))
 }
 
-// parseKind le o campo `kind` do multipart (default poster) e o valida contra os
-// kinds suportados (poster|fanart|still). 422 quando invalido.
+// kindsValidos e o REGISTRO de kinds de arte aceitos (briefing 0048): poster/fanart/
+// still (0017/0044) mais os da fanart.tv (logo/clearart/disc/banner/thumb/characterart).
+// O kind no banco continua TEXT livre; este conjunto so valida a ENTRADA de upload.
+var kindsValidos = map[string]bool{
+	kindPoster:       true,
+	kindFanart:       true,
+	kindStill:        true,
+	kindLogo:         true,
+	kindClearart:     true,
+	kindDisc:         true,
+	kindBanner:       true,
+	kindThumb:        true,
+	kindCharacterart: true,
+}
+
+// parseKind le o campo `kind` do multipart (default poster) e o valida contra o registro
+// kindsValidos. 422 quando fora do conjunto (comportamento preservado do 0017/0044).
 func parseKind(w http.ResponseWriter, r *http.Request) (string, bool) {
 	kind := r.FormValue("kind")
 	if kind == "" {
 		kind = kindPoster
 	}
-	if kind != kindPoster && kind != kindFanart && kind != kindStill {
-		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "kind invalido (use poster, fanart ou still)")
+	if !kindsValidos[kind] {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_body",
+			"kind invalido (use poster, fanart, still, logo, clearart, disc, banner, thumb ou characterart)")
 		return "", false
 	}
 	return kind, true

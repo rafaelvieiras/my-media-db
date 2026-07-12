@@ -235,15 +235,28 @@ func TestUploadEntityInexistente404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestUploadKindInvalido cobre o 422 de kind fora de poster|fanart.
+// TestUploadKindInvalido cobre o 422 de kind FORA do conjunto valido expandido (0048):
+// banner/logo/disc/... passaram a ser aceitos, entao usa um kind inexistente ('cdart').
 func TestUploadKindInvalido(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
-	rec := postAsset(t, h, "e1", "banner", pngPayload(64))
+	rec := postAsset(t, h, "e1", "cdart", pngPayload(64))
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, quero 422 (corpo=%s)", rec.Code, rec.Body.String())
 	}
 	checkErrorShape(t, rec, "invalid_body")
+}
+
+// TestUploadAceitaKindsExpandidos: os kinds da fanart.tv (0048) sao aceitos no upload.
+func TestUploadAceitaKindsExpandidos(t *testing.T) {
+	h, d, _ := setupAssetsServer(t)
+	semearEntity(t, d, "e1", "movie", "X")
+	for _, kind := range []string{"logo", "clearart", "disc", "banner", "thumb", "characterart"} {
+		rec := postAsset(t, h, "e1", kind, pngPayload(64))
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("upload kind=%s status = %d, quero 201 (corpo=%s)", kind, rec.Code, rec.Body.String())
+		}
+	}
 }
 
 // ── Precedencia: helper puro (criterio 5.2) ──────────────────────────────────

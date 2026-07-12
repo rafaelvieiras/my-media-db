@@ -82,6 +82,10 @@ func (s *Servico) importarSerie(ctx context.Context, source, sourceID string, la
 	for _, t := range arvore.Temporadas {
 		s.importarTemporada(ctx, serieID, source, arvore.DefaultSeasonType, t, langs)
 	}
+	// Inventário de artes (0048): DEPOIS da árvore, para que as artes de temporada (Season)
+	// encontrem a entity da temporada correspondente. Best-effort (sem ArteProvider ou id,
+	// degrada em silêncio).
+	s.enriquecerArtes(ctx, serieID, tipoSerie, langs)
 	return serieID, criada, nil
 }
 

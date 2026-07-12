@@ -48,6 +48,9 @@ const (
 var hostsImagemPadrao = map[string]bool{
 	"image.tmdb.org":       true,
 	"artworks.thetvdb.com": true,
+	// fanart.tv (briefing 0048): as URLs de arte do inventario (poster/logo/clearart/...)
+	// vem deste host; o /artwork as serve ja via proxy.
+	"assets.fanart.tv": true,
 }
 
 // clienteImagemPadrao é o http.Client do proxy (timeout curto). Fica aqui para manter

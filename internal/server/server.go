@@ -256,6 +256,12 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Get("/{id}/assets/fanart", s.getEntityFanart)
 				ent.Get("/{id}/assets/still", s.getEntityStill)
 
+				// Arte DISPONIVEL agrupada por kind (briefing 0048): mescla os assets
+				// locais + o poster/fundo das camadas externas (TMDB) + o inventario lazy
+				// da fanart.tv, com URLs ja proxyadas e `available:{kind:count}` para os
+				// selos. So leitura; consumida pela galeria/selos do 0049.
+				ent.Get("/{id}/artwork", s.getEntityArtwork)
+
 				// Arte custom do dono (briefing 0017): upload (origin='user'),
 				// galeria, servico do binario de um asset, preferencia (flag em
 				// meta_json) e remocao. A precedencia de servico (preferida → user →
