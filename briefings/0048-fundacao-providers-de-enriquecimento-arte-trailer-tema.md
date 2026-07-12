@@ -1,94 +1,170 @@
-# 0048 — Fundação de providers de enriquecimento por capacidade (arte, trailer, tema)
+# 0048 — Provider fanart.tv (ArteProvider) + taxonomia de kinds + inventário lazy
 
-> Preparar os poucos pontos de extensão que faltam para plugar providers
-> especializados — fanart.tv (arte), trailer e tema musical — no mesmo padrão
-> de capacidade que TVDB/TMDB já usam.
+> Adicionar a fanart.tv como provider **dedicado a arte** (poster, fanart, logo,
+> clearart, disc, banner, thumb, characterart + artes de temporada), enriquecendo
+> qualquer filme/série por id externo, sem baixar binários no import.
 
 | | |
 |---|---|
 | **ID** | 0048 |
-| **Tipo** | feature (fundação) |
+| **Tipo** | feature (backend) |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
-| **Status** | draft |
-| **Docs relacionadas** | [09-providers](../docs/09-providers.md), [04-modelo-de-dados](../docs/04-modelo-de-dados.md) |
-| **Depende de** | 0044 (artes), 0045 (enriquecimento híbrido) |
+| **Status** | ready |
+| **Docs relacionadas** | [09/07-providers](../docs/07-enriquecimento-providers.md), [08-artwork](../docs/08-artwork-e-assets.md), [AGENTS.md §6](../AGENTS.md) |
+| **Depende de** | 0044 (artes), 0045, 0046 |
 
 ---
 
 ## 1. Objetivo
 
-A auditoria de arquitetura confirmou que a fundação **já aguenta** múltiplos
-providers que se enriquecem, sem reforma:
+A fanart.tv é uma fonte **exclusiva de arte** de alta qualidade (logos, clearart,
+disc, character art) que o TMDB/TVDB não cobrem bem. A auditoria (briefing 0048
+original) confirmou que a fundação aguenta um provider por **capacidade** sem
+reforma. Este briefing entrega o backend: a interface `ArteProvider`, o provider
+`fanarttv`, a **taxonomia de kinds expandida** e a persistência do **inventário
+de artes disponíveis** de forma **lazy** (sem baixar binários no import).
 
-- Interface **orientada a capacidade** (`Provider` core +
-  `ColecaoProvider`/`SerieProvider`/`SerieRicoProvider` opcionais via
-  type-assert) — `internal/provider/provider.go:26-121`.
-- **Registry N-providers** com ordem = prioridade — `registry.go:12-69`.
-- **Camada de merge** (resolver) que compõe por classe de campo e por namespace
-  — `internal/resolver/resolver.go:445,457-470,759-774`.
-- **Precedente de camada cruzada**: `enriquecerSerieRico` grava uma linha
-  `media_external source="tmdb"` num nó que veio do TVDB (`serie.go:141-154`) —
-  é exatamente o shape que fanart.tv usaria (`source="fanarttv"`, só artes).
-- Tabela `asset` é **kind-agnóstica** no banco (`kind TEXT` sem enum,
-  `0002_schema_nucleo.sql:94-102`) → um provider de arte pode gravar
-  `clearlogo`, `cdart`, `banner`, etc. sem migration.
-- Chave de API de novo provider = env var + `Registrar` (`main.go:173-187`),
-  sem mudança estrutural.
+Decisões do dono (travadas nesta sessão):
+- **Listar no import, baixar só a selecionada.** No import/enrich faz **1 chamada**
+  (barata, `cache-control: max-age=600`) que devolve TODA a lista de artes do
+  item; povoa selos de disponibilidade e a galeria via **proxy de imagem** (0
+  download). Baixa pro disco só a arte definida como preferida ou num clique.
+- **Todos os tipos** de arte de uma vez.
+- **Chave pessoal como `api_key`** (autentica sozinha — validado, HTTP 200) via env
+  var; idioma: principal das settings → `en` → textless (`""`); fanart prefere
+  textless.
 
-Faltam só **preparos pontuais**. Este briefing os entrega para desbloquear os
-providers concretos (que virão em briefings próprios).
+## 2. Realidade da API (pesquisada, 2 chamadas reais)
 
-## 2. Escopo
+- **Endpoints** (base `https://webservice.fanart.tv/v3`): `/movies/{id}` (id =
+  **TMDB** ou **IMDB**, ex. `tt0137523`), `/tv/{id}` (id = **TheTVDB**). Ids que
+  **já temos** após enriquecimento (0045/0046).
+- **Resposta**: objeto com uma **array por tipo** (+ um `<tipo>_count`) e
+  `name`/`tmdb_id`/`imdb_id`/`thetvdb_id`. Cada imagem: `id`, `url`, `lang`
+  (2 letras ou `""`=textless), `likes`. Disc adiciona `disc` (nº) + `disc_type`
+  (`bluray`/`dvd`/`cd`/`3d`); arte de temporada adiciona `season` (nº, `all` ou `0`).
+- **Sem rate-limit prático** nas chamadas de metadados; `429`+`Retry-After` raro.
+  A chave pessoal *bypassa* o limite da chave de projeto e dá preview de 2 dias.
+- **Tipos** (JSON key → nosso `kind`):
+
+| filme | série | `kind` | notas |
+|---|---|---|---|
+| `movieposter` | `tvposter` | `poster` | 2:3 |
+| `moviebackground` | `showbackground` | `fanart` | 16:9, textless |
+| `hdmovielogo`,`movielogo` | `hdtvlogo`,`clearlogo` | `logo` | transparente |
+| `hdmovieclearart`,`movieart` | `hdclearart`,`clearart` | `clearart` | transparente |
+| `moviedisc` | — | `disc` | `disc_type`+`disc` no meta |
+| `moviebanner` | `tvbanner` | `banner` | ~1000×185 |
+| `moviethumb` | `tvthumb` | `thumb` | 16:9 promocional |
+| — | `characterart` | `characterart` | 512×512 transparente |
+| — | `seasonposter`/`seasonthumb`/`seasonbanner` | `poster`/`thumb`/`banner` **na temporada** | por `season` |
+
+## 3. Escopo
 
 **Dentro:**
-1. **Interface `ArteProvider`** em `provider.go` (análoga a `SerieRicoProvider`):
-   `BuscarArtes(ctx, ids externos, langs) → []Arte{kind, url, lang?, meta}`.
-   Enriquecimento cruzado por id externo, degradação silenciosa quando ausente.
-2. **`cachearArtes` generalizado**: `internal/enrich/enrich.go:345` hoje só lê
-   `poster_url`/`backdrop_url` fixos; passar a iterar sobre os kinds vindos de um
-   `ArteProvider` e baixar cada um via `cachearArte` (`enrich.go:394-430`, já
-   existe, `origin="external"`).
-3. **Abrir a validação de kind na entrada HTTP**: `internal/server/assets.go:37-39`
-   e `parseKind` (`:139`) rejeitam com 422 tudo fora de poster/fanart/still. Para
-   o dono **gerenciar** arte estendida (subir/deletar clearlogo, banner, cdart…),
-   transformar a lista fechada em um **registro de kinds** extensível.
-4. **Decisão de modelagem de binário de trailer/tema** (única lacuna estrutural):
-   trailer/tema hoje existem só como **metadado/link**
-   (`tmdb_rico.go:21-27`, `richfields.go:24`), não como arquivo baixado. Escolher:
-   - **Opção A** (sem migration): reusar `asset` com `kind="trailer"`/`"theme"`,
-     `path_or_uri` apontando o arquivo baixado.
-     - **Opção B**: tratar como `media_file` (arquivo de mídia de 1ª classe).
-   Registrar a decisão aqui e (se estrutural) subir para `docs/04`.
+- Interface `provider.ArteProvider` + const de kinds; provider `fanarttv`.
+- **Taxonomia de kinds expandida**: abrir `parseKind` (hoje 3 fixos) para um
+  **registro** de kinds válidos {poster, fanart, still, logo, clearart, disc,
+  banner, thumb, characterart}; kind desconhecido ainda → 422.
+- **Inventário lazy**: no import/enrich, se fanart.tv configurado e id externo
+  disponível, buscar a lista e **persistir o inventário** (sem baixar binários).
+- Endpoint que devolve a **arte disponível agrupada por kind** (inventário externo
+  + assets locais) para a galeria e para os selos do card do topo (consumido pelo
+  0049).
+- Mapear artes de temporada (`season`) para as entities de temporada.
+- Idioma: preferência principal→en→textless na escolha da arte servida por padrão;
+  o inventário guarda `lang` de todas para o filtro do 0049.
 
 **Fora (explicitamente):**
-- Os providers concretos em si (fanart.tv, provider de trailer, provider de
-  tema) — cada um vira um briefing próprio. Em especial, **fanart.tv exige
-  levantar antes a lista de tipos de arte** que ele expõe (poster, HD clearart,
-  cdart, background, banner, thumb…) para mapear aos kinds — o usuário conduzirá
-  esse levantamento.
-- UI de gestão dos novos kinds de arte (galeria já existe; estender depois).
+- UI da galeria/lightbox/selos → **briefing 0049**.
+- Download real pro disco em massa (só o selecionado; o pipeline de download já
+  existe em `cachearArte`, `origin=external`).
+- Trailer e tema musical (seguem como follow-up; a interface `ArteProvider` abre o
+  caminho, mas binário de vídeo/áudio é outra modelagem — ver §7).
+- Novos esquemas (videoclipe/música) via plugin.
 
-## 3. Critérios de aceite
+## 4. Contrato técnico
 
-- [ ] `provider.ArteProvider` definido; um provider fake que o implemente é
-      exercitado em teste, e `cachearArtes` baixa os kinds retornados.
-- [ ] `parseKind` aceita os kinds registrados (não mais 3 fixos) e ainda rejeita
-      kind desconhecido com 422.
-- [ ] Decisão trailer/tema documentada (A ou B) com justificativa.
-- [ ] `go build/vet/test -count=1` verdes; catraca local passa.
+### Provider (Go)
+- `internal/provider/provider.go`: nova interface opcional
+  `ArteProvider { BuscarArtes(ctx, ids ExternalIDs, tipo string, langs []string) ([]Arte, error) }`
+  onde `Arte{ Kind, URL, Lang, Likes int, DiscType string, Disc int, Season string }`.
+  `ExternalIDs` carrega tmdb/imdb/tvdb (o que o item tiver).
+- `internal/provider/fanarttv/` (novo): `Client` implementa o **core `Provider`**
+  com `Buscar`/`BuscarDetalhe` **no-op** (não é fonte de busca — nunca polui
+  resultados) **e** `ArteProvider`. `Nome()="fanarttv"`. `BuscarArtes` chama
+  `/movies/{id}` ou `/tv/{id}`, mapeia todos os tipos → `[]Arte` (normalizando os
+  kinds da tabela §2; disc/season no struct). Registrado em
+  `cmd/mymediadb/main.go` se `MYMEDIADB_FANARTTV_API_KEY` presente (env-only,
+  **nunca** commitar a chave).
 
-## 4. Notas / decisões
+### Enrich (Go)
+- `internal/enrich`: após o import/enrich primário, iterar providers que
+  implementem `ArteProvider` e chamar `BuscarArtes` com os ids externos do item
+  (best-effort: erro/sem-match degrada em silêncio). Persistir o **inventário**.
+- Arte de temporada (`season`) → resolver a entity de temporada correspondente e
+  anexar lá.
 
-- Nada aqui é reforma: são extensões dentro dos padrões existentes. O maior
-  ponto de decisão é a modelagem do **binário** de trailer/tema — o resto é
-  seguir o precedente de `SerieRicoProvider` + camada `media_external` cruzada.
+### Dados / persistência
+- **Inventário como camada externa**, não como centenas de assets baixados:
+  persistir a lista fanart.tv como `media_external source="fanarttv"` (envelope
+  com as arrays por kind, incluindo `lang`/`likes`/`disc_type`/`season`/`url`).
+  Idempotente (UNIQUE(entity_id, source)). **Nenhum binário baixado aqui.**
+- `asset` só é materializado quando o dono **define preferida** ou **baixa** uma
+  arte (reusa `cachearArte`, `origin=external`; e o mecanismo de "preferida" do
+  0017/0044). Precedência atual (preferida→user→external→base) já compõe.
+- `kind` no banco continua TEXT livre; a validação de entrada (`parseKind`) passa a
+  aceitar o conjunto expandido.
 
-## 5. Follow-ups (briefings próprios)
+### API
+- `GET /api/v1/entities/{id}/artwork` → `{ [kind]: [{ url(proxied), lang, likes,
+  source, disc_type?, disc?, season?, is_preferred, is_local }], ... }` +
+  `available: { [kind]: count }` (para os selos). Mescla inventário externo
+  fanart.tv + TMDB (poster/backdrop já existentes) + assets locais do dono.
+- Servir imagens **sempre via proxy** (`arteSrc`), inclusive as da fanart.tv
+  (host `assets.fanart.tv` na allowlist do proxy).
 
-- **fanart.tv** (provider de arte): levantar tipos de arte → mapear kinds →
-  implementar `ArteProvider`.
-- **Provider de trailer** (download para o disco).
-- **Provider de tema musical** (download para o disco).
-- **Novos esquemas via plugin** (videoclipe→artista, música→álbum): a fundação
-  genérica (`entity.type` livre, `entity_relation` com `kind`, `extension_data`
-  namespaced) já existe — cada esquema traz seus providers pelo mesmo Registry.
+### Arquivos afetados (previsão)
+- `internal/provider/provider.go`, `internal/provider/fanarttv/*.go` (novo)
+- `internal/enrich/*.go` (chamada do ArteProvider + persistência do inventário)
+- `internal/server/assets.go` (registro de kinds / `parseKind`)
+- `internal/server/artwork.go` (novo — endpoint agrupado) + rota em `server.go`
+- proxy allowlist (`assets.fanart.tv`)
+- migrations: nenhuma (asset.kind livre; inventário em media_external)
+- testes: provider (mapeamento dos tipos, disc/season/lang), enrich (inventário
+  persistido sem download), server (endpoint agrupado + parseKind expandido).
+
+## 5. Critérios de aceite
+
+- [ ] Com `MYMEDIADB_FANARTTV_API_KEY` setada, importar um filme (id TMDB) persiste
+      o inventário fanart.tv **sem baixar binários**; `GET .../artwork` devolve as
+      artes agrupadas por kind com `count` por kind.
+- [ ] Série: artes de show no nó série; artes de temporada anexadas à temporada
+      certa via `season`.
+- [ ] `parseKind` aceita {poster,fanart,still,logo,clearart,disc,banner,thumb,
+      characterart} e rejeita kind fora com 422.
+- [ ] Sem a chave configurada, tudo funciona como hoje (fanart.tv omitido em
+      silêncio) — regressão zero.
+- [ ] Idioma: a arte servida por padrão respeita principal→en→textless; o
+      inventário preserva `lang` de todas.
+- [ ] `go build/vet/test -count=1` verdes; catraca local passa; funções novas
+      gocyclo ≤10.
+
+## 6. Notas / decisões
+
+- fanart.tv **não é fonte de busca** — implementa o core `Provider` com Buscar
+  no-op só para entrar no Registry e ser descoberto por type-assert a
+  `ArteProvider` (mesmo padrão de `SerieRicoProvider`). Ver [[independencia-de-provider]].
+- **Inventário lazy** (camada externa) em vez de explodir assets: casa com a
+  decisão "baixar só o selecionado" e com o modelo lazy-proxy (0042/0044). Baixar
+  em massa fica fora.
+- Chave: só a pessoal como `api_key` (validado). Se um dia quiser o preview
+  "oficial" de 2 dias, dá para passar também como `client_key` — não é necessário.
+
+## 7. Follow-ups
+
+- **0049** — galeria em linhas por tipo + lightbox/zoom + selos de disponibilidade.
+- Download em massa opcional / prune de inventário ao re-enrich.
+- **Trailer** e **tema musical** (download pro disco): interface análoga, mas
+  binário de vídeo/áudio precisa de modelagem própria (asset `kind=trailer/theme`
+  vs `media_file`) — briefing dedicado.
