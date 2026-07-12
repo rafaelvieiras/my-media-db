@@ -112,6 +112,105 @@ func TestImportarSerieMesclaRicoTMDB(t *testing.T) {
 	_ = serieRicoPersistido(t, database, serieID) // ObterMediaExternalPorFonte e :one — erraria se duplicasse
 }
 
+// arvoreGenericaFake e uma fonte-base de arvore com Nome ARBITRARIO (nao "tvdb"): prova
+// que a selecao da fonte-base e da rica e agnostica de nome (briefing 0046). MapearDetalhe
+// da a identidade (nao clobbavel). Arvore minima (sem temporadas).
+type arvoreGenericaFake struct{ nome string }
+
+func (f arvoreGenericaFake) Nome() string { return f.nome }
+func (arvoreGenericaFake) Buscar(context.Context, string, string, string) ([]provider.ResultadoExterno, error) {
+	return nil, nil
+}
+func (arvoreGenericaFake) BuscarDetalhe(context.Context, string, string, []string) (json.RawMessage, error) {
+	return json.RawMessage(`{"base":true}`), nil
+}
+func (arvoreGenericaFake) MapearDetalhe(json.RawMessage) (map[string]any, error) {
+	return map[string]any{"title": "Base Show", "original_language": "en"}, nil
+}
+func (arvoreGenericaFake) BuscarSerieArvore(context.Context, string, []string) (provider.SerieArvore, error) {
+	return provider.SerieArvore{DefaultSeasonType: "official", SeasonTypes: []string{"official"}}, nil
+}
+
+// ricoGenericoFake e um enriquecedor rico com Nome ARBITRARIO (nao "tmdb"). Captura o id
+// externo que recebeu — deve ser o sourceID da fonte-base, provando idExternoDaSerie
+// generico. NAO devolve backdrop (sem download de arte no teste).
+type ricoGenericoFake struct {
+	nome     string
+	chamadas int
+	ultimoID string
+}
+
+func (f ricoGenericoFake) Nome() string { return f.nome }
+func (ricoGenericoFake) Buscar(context.Context, string, string, string) ([]provider.ResultadoExterno, error) {
+	return nil, nil
+}
+func (ricoGenericoFake) BuscarDetalhe(context.Context, string, string, []string) (json.RawMessage, error) {
+	return json.RawMessage(`{}`), nil
+}
+func (ricoGenericoFake) MapearDetalhe(json.RawMessage) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (f *ricoGenericoFake) BuscarSerieDetalheRico(_ context.Context, id string, _ []string) (map[string]any, bool, error) {
+	f.chamadas++
+	f.ultimoID = id
+	return map[string]any{"tagline": map[string]any{"en": "Slogan generico"}, "airing_status": "Ended"}, true, nil
+}
+
+// TestEnriquecerSerieRicoAgnostico (0046): com fontes de nomes ARBITRARIOS, a arvore vem
+// da fonte-base e o OUTRO provider (o rico) enriquece o no serie, cruzando o sourceID da
+// fonte-base. Prova que nao ha hardcode de "tmdb"/"tvdb": a camada rica e gravada sob o
+// nome da fonte rica e o rico recebeu o id da fonte-base.
+func TestEnriquecerSerieRicoAgnostico(t *testing.T) {
+	database := setupDB(t)
+	rico := &ricoGenericoFake{nome: "beta"}
+	svc := New(database, provider.NovaRegistry(arvoreGenericaFake{nome: "alfa"}, rico), t.TempDir())
+	ctx := context.Background()
+
+	serieID, _, err := svc.Importar(ctx, "alfa", "555", "tv", []string{"en"})
+	if err != nil {
+		t.Fatalf("Importar serie (fonte-base alfa): %v", err)
+	}
+	if rico.chamadas != 1 || rico.ultimoID != "555" {
+		t.Fatalf("rico chamadas=%d id=%q, quero 1 chamada com o sourceID da fonte-base (555)", rico.chamadas, rico.ultimoID)
+	}
+	// A camada rica foi gravada sob o NOME da fonte rica ("beta"), nao "tmdb".
+	row, err := sqlcgen.New(database.Read).ObterMediaExternalPorFonte(ctx, sqlcgen.ObterMediaExternalPorFonteParams{
+		EntityID: serieID,
+		Source:   "beta",
+	})
+	if err != nil {
+		t.Fatalf("camada media_external da fonte rica 'beta' ausente: %v", err)
+	}
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(row.PayloadJson.String), &env); err != nil {
+		t.Fatalf("payload rico invalido: %v", err)
+	}
+	if _, ok := env[provider.ChaveEnvelopeSerieRico]; !ok {
+		t.Errorf("payload da fonte rica sem envelope %q: %q", provider.ChaveEnvelopeSerieRico, row.PayloadJson.String)
+	}
+}
+
+// TestImportarSerieSoTMDBSemRico (0046): com SO a fonte-base registrada (sem outro provider
+// rico), a arvore importa normalmente e NENHUMA camada rica e gravada — sem panico, sem
+// erro (a serie fica so com a arvore). Cobre o caminho "so-um-provider".
+func TestImportarSerieSoTMDBSemRico(t *testing.T) {
+	database := setupDB(t)
+	svc := New(database, provider.NovaRegistry(arvoreGenericaFake{nome: "alfa"}), t.TempDir())
+	ctx := context.Background()
+
+	serieID, criada, err := svc.Importar(ctx, "alfa", "555", "tv", []string{"en"})
+	if err != nil || !criada {
+		t.Fatalf("Importar serie so-fonte-base: id=%s criada=%v err=%v", serieID, criada, err)
+	}
+	// Nao ha OUTRO provider rico: nenhuma camada media_external de enriquecimento cruzado.
+	if _, err := sqlcgen.New(database.Read).ObterMediaExternalPorFonte(ctx, sqlcgen.ObterMediaExternalPorFonteParams{
+		EntityID: serieID,
+		Source:   "beta",
+	}); err == nil {
+		t.Error("nao deveria haver camada rica sem um segundo provider")
+	}
+}
+
 // exigirCamadaRica confere que o canonico rico persistido carrega AS chaves do contrato
 // e a situacao crua, e NAO carrega title/description/original_language (clobbaria a arvore).
 func exigirCamadaRica(t *testing.T, rico map[string]any) {
