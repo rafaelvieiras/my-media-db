@@ -62,6 +62,21 @@ export async function routerMock(spies: EspioesRouter) {
   }
 }
 
+// stubMembros roteia SÓ GET /entities/{id}/members com a Response dada — o núcleo
+// compartilhado dos testes de lista de membros (coleção 0025 e árvore de séries
+// 0031/0036), que exercitam a mesma superfície com corpos diferentes.
+export function stubMembros(resp: () => Response) {
+  const m = vi.fn(async (url: string) => {
+    const u = new URL(String(url), 'http://localhost')
+    if (/^\/api\/v1\/entities\/[^/]+\/members$/.test(u.pathname)) {
+      return resp()
+    }
+    throw new Error(`rota nao mockada: ${u.pathname}`)
+  })
+  vi.stubGlobal('fetch', m)
+  return m
+}
+
 // stubExternalFetch instala um fetch que roteia o GET do detalhe/coleção externa para
 // `externoResp` e o POST /import para uma entity padrão. Devolve o mock para asserções.
 export function stubExternalFetch(externoResp: () => Response) {

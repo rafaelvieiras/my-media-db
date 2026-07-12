@@ -1,9 +1,13 @@
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Check } from 'lucide-react'
 import { PosterCard } from '@/components/poster-card'
 import { ErrorState, LoadingState } from '@/components/query-states'
+import { Badge } from '@/components/ui/badge'
 import { useLanguage } from '@/lib/language-context'
 import { entityMembersQueryOptions } from '@/lib/queries'
+import { estadoCompletude } from '@/lib/entity-badges'
+import { cn } from '@/lib/utils'
 import type { EntityCard } from '@/lib/api'
 
 // Núcleo compartilhado da árvore pai-com-filhos (GET /entities/{id}/members): a
@@ -84,15 +88,73 @@ export function MembrosSomenteLeitura({
         carregando={carregando}
         erro={erro}
         vazio={vazio}
-        render={(card, indice) =>
-          numerar ? (
-            <CardNumerado card={card} numero={indice + 1} />
-          ) : (
-            <PosterCard card={card} />
-          )
-        }
+        render={(card, indice) => {
+          if (numerar) {
+            return <CardNumerado card={card} numero={indice + 1} />
+          }
+          if (card.type === 'season') {
+            return <CardTemporada card={card} />
+          }
+          return <PosterCard card={card} />
+        }}
       />
     </section>
+  )
+}
+
+// CardTemporada é o card de uma TEMPORADA na lista de membros da série (0036): o
+// PosterCard mais o selo de completude (possui X/Y). Temporadas VAZIAS (sem episódio
+// na biblioteca) ficam apagadas (opacity) para o olho ir às que têm conteúdo — o
+// realce não é só cor: o selo carrega texto e o estado é acessível.
+export function CardTemporada({ card }: { card: EntityCard }) {
+  const estado = estadoCompletude(card.ownership)
+  return (
+    <div
+      className={cn(
+        'flex flex-col gap-1.5',
+        estado === 'vazia' && 'opacity-60',
+      )}
+    >
+      <PosterCard card={card} />
+      <SeloCompletude card={card} />
+    </div>
+  )
+}
+
+// SeloCompletude renderiza o estado de posse da temporada como um selo textual
+// (nunca só cor, acessível): COMPLETA (positivo, verde + check), PARCIAL ("possui
+// X/Y episódios", neutro visível) ou VAZIA ("0/Y episódios", discreto/apagado).
+// Sem selo quando total==0 (nada catalogado). Coerente com o SeloPosse do detalhe
+// (0034): a mesma frase "possui X/Y episódios".
+export function SeloCompletude({ card }: { card: EntityCard }) {
+  const estado = estadoCompletude(card.ownership)
+  if (!estado || !card.ownership) {
+    return null
+  }
+  const { owned_count, total_count } = card.ownership
+  if (estado === 'completa') {
+    return (
+      <Badge className="w-fit gap-1 border-transparent bg-emerald-600 text-white">
+        <Check className="size-3" aria-hidden />
+        completa
+      </Badge>
+    )
+  }
+  if (estado === 'parcial') {
+    return (
+      <Badge variant="secondary" className="w-fit">
+        possui {owned_count}/{total_count} episódios
+      </Badge>
+    )
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="w-fit text-muted-foreground"
+      title="Nenhum episódio na biblioteca"
+    >
+      {owned_count}/{total_count} episódios
+    </Badge>
   )
 }
 

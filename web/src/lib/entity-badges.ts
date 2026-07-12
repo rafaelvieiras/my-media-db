@@ -31,6 +31,31 @@ export function precisaRevisao(card: {
   return c !== null && c > 0 && c < LIMIAR_BAIXA_CONFIANCA
 }
 
+// Estado de COMPLETUDE de uma temporada/série a partir da posse agregada (0036):
+// `completa` (tem todos os episódios catalogados), `parcial` (tem alguns), `vazia`
+// (não tem nenhum na biblioteca, mas há catalogados) ou `null` (sem selo — total
+// desconhecido/zero). É a regra ÚNICA que a UI lê para escolher o selo e o realce.
+export type EstadoCompletude = 'completa' | 'parcial' | 'vazia' | null
+
+// estadoCompletude classifica a posse agregada do card. total==0 → null (nada a
+// dizer). owned>=total (total>0) → completa. 0<owned<total → parcial. owned==0 (com
+// total>0) → vazia. Ausência de `ownership` (movie/episode/collection) → null.
+export function estadoCompletude(
+  ownership: { owned_count: number; total_count: number } | null | undefined,
+): EstadoCompletude {
+  if (!ownership || ownership.total_count <= 0) {
+    return null
+  }
+  const { owned_count, total_count } = ownership
+  if (owned_count >= total_count) {
+    return 'completa'
+  }
+  if (owned_count > 0) {
+    return 'parcial'
+  }
+  return 'vazia'
+}
+
 // Rótulo pt-BR do tipo de mídia para exibição. Cobre os tipos canônicos: os de
 // topo (filme/série/coleção) e os nós da árvore de séries (temporada/episódio,
 // 0031). Tipo desconhecido ecoa cru (nunca quebra a UI).

@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import { CollectionMembers } from '@/components/collection-members'
 import { renderWithClient } from '@/test/render'
-import { entityCardBase as card, erroJson, okJson } from '@/test/detail-harness'
+import {
+  entityCardBase as card,
+  erroJson,
+  okJson,
+  stubMembros,
+} from '@/test/detail-harness'
 
 // Testa a lista de MEMBROS da coleção (0025): cards internos (PosterCard →
 // /entities/{id}), estados carregando/erro/vazio e o idioma na busca. Mocka o
@@ -20,19 +25,6 @@ vi.mock('@/lib/language-context', async () => {
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
 }))
-
-// stubMembros roteia só GET /api/v1/entities/{id}/members (o membro é o alvo do teste).
-function stubMembros(resp: () => Response) {
-  const m = vi.fn(async (url: string) => {
-    const u = new URL(String(url), 'http://localhost')
-    if (/^\/api\/v1\/entities\/[^/]+\/members$/.test(u.pathname)) {
-      return resp()
-    }
-    throw new Error(`rota nao mockada: ${u.pathname}`)
-  })
-  vi.stubGlobal('fetch', m)
-  return m
-}
 
 afterEach(() => {
   vi.restoreAllMocks()

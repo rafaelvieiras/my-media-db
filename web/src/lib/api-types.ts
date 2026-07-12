@@ -713,6 +713,8 @@ export interface components {
       match_confidence: number | null
       /** @description Rota do pôster local, ou null quando não há arte. */
       poster_url: string | null
+      /** @description Posse AGREGADA do card na árvore de séries (0036): episódios possuídos sobre o total. OPCIONAL — presente só nos cards `season` (e opcionalmente `tv`) de GET /entities/{id}/members; ausente/`null` para movie/episode/ collection (que usam a posse simples de `owned`). Anotado no server pós-listagem, sem mudar a query do card. */
+      ownership?: components['schemas']['OwnershipInfo'] | null
     }
     EntityList: {
       items: components['schemas']['EntityCard'][]
