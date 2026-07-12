@@ -1,6 +1,9 @@
 import {
   arteSrc,
   posterSrc,
+  type CreditCast,
+  type CreditCompany,
+  type CreditCrew,
   type ExternalCollection,
   type ExternalDetail,
   type ExternalSimilar,
@@ -49,6 +52,14 @@ export interface RichDetail {
   videos: ExternalVideo[]
   collection: ExternalCollection | null
   similar: ExternalSimilar[]
+  // Créditos (0029, fase B) — mesmo shape nas duas telas (paridade externo × entity).
+  // `cast`/`crew`/`companies` chegam com as fotos/logos JÁ proxyadas pelo backend
+  // (uso direto no `<img>`, sem reproxyar). Listas sempre `[]` quando ausentes — a
+  // seção respectiva só aparece quando não-vazia. Em série, `episode_count` vem
+  // preenchido; em filme é null (a UI omite o "· N eps").
+  cast: CreditCast[]
+  crew: CreditCrew[]
+  companies: CreditCompany[]
   externalLinks: Record<string, string>
 }
 
@@ -79,6 +90,10 @@ export function deExternalDetail(d: ExternalDetail): RichDetail {
     videos: d.videos,
     collection: d.collection,
     similar: d.similar,
+    // Créditos já vêm com as URLs proxyadas pelo backend — passam direto.
+    cast: d.cast ?? [],
+    crew: d.crew ?? [],
+    companies: d.companies ?? [],
     externalLinks: d.external_links,
   }
 }
@@ -115,6 +130,10 @@ export function deResolvedEntity(e: ResolvedEntity): RichDetail {
     videos: e.videos,
     collection: e.collection,
     similar: e.similar,
+    // Mesmo shape do externo (paridade): fotos/logos já proxyadas pelo backend.
+    cast: e.cast ?? [],
+    crew: e.crew ?? [],
+    companies: e.companies ?? [],
     externalLinks: e.external_links,
   }
 }

@@ -26,6 +26,9 @@ export function richDetailBase(over: Partial<RichDetail> = {}): RichDetail {
     videos: [],
     collection: null,
     similar: [],
+    cast: [],
+    crew: [],
+    companies: [],
     externalLinks: {},
     ...over,
   }

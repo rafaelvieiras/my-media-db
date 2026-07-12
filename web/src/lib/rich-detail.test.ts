@@ -87,6 +87,29 @@ describe('rich-detail adapters', () => {
     expect(deExternalDetail(externo).airingStatus).toBeNull()
   })
 
+  it('mapeia créditos (cast/crew/companies) nas duas fontes, com default vazio', () => {
+    const cast = [
+      { source_id: '1', name: 'Timothée', character: 'Paul', order: 0 },
+    ]
+    const crew = [
+      { source_id: '9', name: 'Denis', department: 'Direção', job: 'Diretor' },
+    ]
+    const companies = [{ source_id: 'w', name: 'Warner' }]
+    // Externo: passam direto (URLs já proxyadas pelo backend).
+    const ext = deExternalDetail({ ...externo, cast, crew, companies })
+    expect(ext.cast).toEqual(cast)
+    expect(ext.crew).toEqual(crew)
+    expect(ext.companies).toEqual(companies)
+    // Entity: paridade — mesmo mapeamento.
+    const ent = deResolvedEntity(baseEntity({ cast, crew, companies }))
+    expect(ent.cast).toEqual(cast)
+    expect(ent.crew).toEqual(crew)
+    expect(ent.companies).toEqual(companies)
+    // Ausente → listas vazias (a seção some na UI).
+    expect(deExternalDetail(externo).cast).toEqual([])
+    expect(deResolvedEntity(baseEntity({})).companies).toEqual([])
+  })
+
   it('still do episódio: custom (rota local) recebe a base; provider (cru) passa pelo proxy (0044)', () => {
     // Still CUSTOM do dono → rota local servível (recebe só a base).
     const custom = deResolvedEntity(

@@ -33,6 +33,11 @@ export type ExternalCollectionDetail =
 export type ExternalCollectionPart =
   components['schemas']['ExternalCollectionPart']
 export type ExternalSimilar = components['schemas']['ExternalSimilar']
+// Créditos (0029, fase B): elenco/equipe/produtoras. `profile_url`/`logo_url` já
+// vêm PROXYADOS do backend (uso direto no <img>). `episode_count` só em série.
+export type CreditCast = components['schemas']['CreditCast']
+export type CreditCrew = components['schemas']['CreditCrew']
+export type CreditCompany = components['schemas']['CreditCompany']
 export type ImportRequest = components['schemas']['ImportRequest']
 export type LanguageSettings = components['schemas']['LanguageSettings']
 export type OverrideBlob = components['schemas']['OverrideBlob']

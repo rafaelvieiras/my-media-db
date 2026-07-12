@@ -15,6 +15,9 @@ import { Button } from '@/components/ui/button'
 import {
   ApiError,
   importExternal,
+  type CreditCast,
+  type CreditCompany,
+  type CreditCrew,
   type ExternalCollection,
   type ExternalSimilar,
   type ExternalVideo,
@@ -492,6 +495,246 @@ function SelosArtes({
   )
 }
 
+// ── Créditos: elenco, equipe e produtoras (0029, fase B, read-only) ──────────
+
+// TETO_ELENCO: quantos atores o Elenco mostra ANTES do "Ver todos". O backend
+// persiste ~top 50 por bilhagem; a UI abre com os ~24 mais bilhados e expande sob
+// demanda (grades enormes — filme com 76, série com 781 — não valem o scroll inicial).
+const TETO_ELENCO = 24
+
+// Base da página da pessoa no TMDB. Nesta fase o card é, no máximo, um link para a
+// fonte (a página da pessoa própria é follow-up — briefing §7). Os `source_id` dos
+// créditos vêm do TMDB (credits/aggregate_credits), então o link é válido.
+const TMDB_PESSOA = 'https://www.themoviedb.org/person/'
+
+// sufixoEpisodios formata a contagem de episódios do crédito (só série): "12 eps"
+// (singular "1 ep"). Ausente/zero/filme → null (a UI não mostra o sufixo).
+function sufixoEpisodios(n: number | null | undefined): string | null {
+  if (!n || n <= 0) {
+    return null
+  }
+  return `${n} ${n === 1 ? 'ep' : 'eps'}`
+}
+
+// PessoaCard é o card reusável de pessoa (foto 2:3 + nome + papel), usado na grade do
+// Elenco. Reusa o `PosterImg` (lazy + placeholder). A foto já vem PROXYADA do backend
+// (uso direto, sem reproxyar). O card inteiro linka para a página da pessoa no TMDB em
+// nova aba. Em série, o papel ganha o sufixo "· N eps" (episódios do personagem).
+function PessoaCard({
+  sourceId,
+  name,
+  profileUrl,
+  papel,
+  eps,
+}: {
+  sourceId: string
+  name: string
+  profileUrl: string | null
+  papel: string | null
+  eps: number | null | undefined
+}) {
+  const sufEps = sufixoEpisodios(eps)
+  return (
+    <a
+      href={`${TMDB_PESSOA}${sourceId}`}
+      target="_blank"
+      rel="noreferrer"
+      className="group flex flex-col gap-1"
+    >
+      <PosterImg
+        src={profileUrl}
+        alt={`Foto de ${name}`}
+        className="transition group-hover:ring-2 group-hover:ring-foreground/30"
+      />
+      <span className="line-clamp-2 text-xs font-medium group-hover:text-foreground">
+        {name}
+      </span>
+      {papel ? (
+        <span className="line-clamp-2 text-xs text-muted-foreground">
+          {papel}
+          {sufEps ? ` · ${sufEps}` : null}
+        </span>
+      ) : sufEps ? (
+        <span className="text-xs text-muted-foreground">{sufEps}</span>
+      ) : null}
+    </a>
+  )
+}
+
+// ElencoGrid mostra o elenco em grade, na ordem de bilhagem (`order`). Abre com os
+// TETO_ELENCO mais bilhados; havendo mais, um botão "Ver todos (N)" expande a lista
+// inteira (e "Ver menos" recolhe). Vazio → a seção some.
+function ElencoGrid({ cast }: { cast: CreditCast[] }) {
+  const [expandido, setExpandido] = useState(false)
+  if (cast.length === 0) {
+    return null
+  }
+  // Ordena por bilhagem (menor `order` = mais alto). O backend já entrega ordenado,
+  // mas reforçamos aqui para a exibição não depender disso. `slice()` mantém a fonte
+  // intacta; o sort é estável no V8.
+  const ordenado = [...cast].sort((a, b) => a.order - b.order)
+  const temMais = ordenado.length > TETO_ELENCO
+  const visiveis = expandido ? ordenado : ordenado.slice(0, TETO_ELENCO)
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="font-heading text-lg font-medium">Elenco</h2>
+      <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+        {visiveis.map((p, i) => (
+          <li key={`${p.source_id}:${i}`}>
+            <PessoaCard
+              sourceId={p.source_id}
+              name={p.name}
+              profileUrl={p.profile_url ?? null}
+              papel={p.character || null}
+              eps={p.episode_count}
+            />
+          </li>
+        ))}
+      </ul>
+      {temMais ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="w-fit"
+          onClick={() => setExpandido((v) => !v)}
+        >
+          {expandido ? 'Ver menos' : `Ver todos (${ordenado.length})`}
+        </Button>
+      ) : null}
+    </section>
+  )
+}
+
+// Departamentos que aparecem PRIMEIRO na Equipe (Direção, depois Roteiro),
+// reconhecidos por chaves normalizadas em pt-BR e en (a fonte pode não traduzir o
+// rótulo). Os demais departamentos saem em ordem alfabética.
+const PRIORIDADE_DEPARTAMENTO: string[][] = [
+  ['direção', 'direcao', 'directing', 'direction'],
+  ['roteiro', 'escrita', 'writing'],
+]
+
+// rankDepartamento devolve a posição de prioridade do departamento (0 = primeiro).
+// Departamento fora da lista → rank alto (ordenado alfabeticamente entre si depois).
+function rankDepartamento(dep: string): number {
+  const norm = dep.trim().toLowerCase()
+  const i = PRIORIDADE_DEPARTAMENTO.findIndex((chaves) => chaves.includes(norm))
+  return i === -1 ? PRIORIDADE_DEPARTAMENTO.length : i
+}
+
+interface GrupoEquipe {
+  department: string
+  membros: CreditCrew[]
+}
+
+// agruparEquipe agrupa a equipe por `department` preservando a ordem de chegada dos
+// membros dentro do grupo, e ordena os grupos: Direção/Roteiro primeiro, demais em
+// ordem alfabética (pt-BR). Departamento vazio cai num grupo "Equipe".
+function agruparEquipe(crew: CreditCrew[]): GrupoEquipe[] {
+  const mapa = new Map<string, CreditCrew[]>()
+  for (const m of crew) {
+    const dep = m.department?.trim() || 'Equipe'
+    const lista = mapa.get(dep)
+    if (lista) {
+      lista.push(m)
+    } else {
+      mapa.set(dep, [m])
+    }
+  }
+  return [...mapa.entries()]
+    .map(([department, membros]) => ({ department, membros }))
+    .sort((a, b) => {
+      const ra = rankDepartamento(a.department)
+      const rb = rankDepartamento(b.department)
+      return ra !== rb
+        ? ra - rb
+        : a.department.localeCompare(b.department, 'pt-BR')
+    })
+}
+
+// EquipeGrupos mostra a equipe agrupada por departamento; cada grupo lista os membros
+// (nome + cargo, com "· N eps" na série). O nome linka para o TMDB em nova aba. Vazio
+// → a seção some.
+function EquipeGrupos({ crew }: { crew: CreditCrew[] }) {
+  if (crew.length === 0) {
+    return null
+  }
+  const grupos = agruparEquipe(crew)
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="font-heading text-lg font-medium">Equipe</h2>
+      {/* Lista compacta: a equipe é secundária ao elenco (0029). Departamento à
+          esquerda, membros fluindo inline à direita. */}
+      <div className="flex flex-col gap-2.5">
+        {grupos.map((grupo) => (
+          <div
+            key={grupo.department}
+            className="flex flex-col gap-1 sm:flex-row sm:gap-3"
+          >
+            <h3 className="shrink-0 text-sm font-medium text-foreground/70 sm:w-40">
+              {grupo.department}
+            </h3>
+            <ul className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm">
+              {grupo.membros.map((m, i) => {
+                const sufEps = sufixoEpisodios(m.episode_count)
+                return (
+                  <li key={`${m.source_id}:${m.job}:${i}`}>
+                    <a
+                      href={`${TMDB_PESSOA}${m.source_id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium hover:underline"
+                    >
+                      {m.name}
+                    </a>
+                    <span className="text-muted-foreground">
+                      {' '}
+                      — {m.job}
+                      {sufEps ? ` · ${sufEps}` : null}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// ProdutorasBand mostra as produtoras/estúdios numa faixa: logo (já proxyado) num
+// chip de fundo claro (para logos escuros aparecerem no tema escuro) ou o nome num
+// `<Badge>` quando não há logo. Vazio → a seção some.
+function ProdutorasBand({ companies }: { companies: CreditCompany[] }) {
+  if (companies.length === 0) {
+    return null
+  }
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="font-heading text-lg font-medium">Produtoras</h2>
+      <ul className="flex flex-wrap items-center gap-3">
+        {companies.map((c, i) => (
+          <li key={`${c.source_id}:${i}`}>
+            {c.logo_url ? (
+              <span className="flex h-10 items-center justify-center rounded-md bg-white px-3 ring-1 ring-foreground/10">
+                <img
+                  src={c.logo_url}
+                  alt={c.name}
+                  loading="lazy"
+                  className="max-h-8 w-auto object-contain"
+                />
+              </span>
+            ) : (
+              <Badge variant="outline">{c.name}</Badge>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 // ── Componente principal ─────────────────────────────────────────────────────
 
 export function RichDetailView({
@@ -669,6 +912,9 @@ export function RichDetailView({
         <ColecaoBand source={source} colecao={detail.collection} />
       ) : null}
       <SimilaresRail source={source} similares={detail.similar} />
+      <ElencoGrid cast={detail.cast} />
+      <EquipeGrupos crew={detail.crew} />
+      <ProdutorasBand companies={detail.companies} />
       <LinksExternos links={detail.externalLinks} />
 
       {children}
