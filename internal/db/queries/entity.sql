@@ -234,6 +234,35 @@ RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb;
 
+-- name: AtualizarEpisodioBase :exec
+-- Reescreve a BASE do episodio no re-import (briefing 0043): o find-or-create por id
+-- externo reusa a linha, mas antes so o create gravava estes campos, entao still_url/
+-- numbering novos (extension_data) e titulo/sinopse/data/ids atualizados do provider
+-- nunca chegavam a um episodio ja importado. Aqui reafirmamos os fatos da fonte na
+-- linha-base. NAO toca status/tags/original_title nem media_override: a resolucao
+-- aplica override por cima, entao refrescar a base e seguro (o override segue vencendo).
+UPDATE entity
+SET title = ?,
+    description = ?,
+    release_date = ?,
+    external_ids_json = ?,
+    extension_data_json = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?;
+
+-- name: AtualizarTemporadaBase :exec
+-- Reescreve a BASE da temporada no re-import (briefing 0043): titulo, data e o
+-- extension_data core.tv@1 (ordering + season_number + year). Simetrica a
+-- AtualizarEpisodioBase, sem description (temporada nao guarda sinopse na linha). NAO
+-- toca status/tags/original_title nem media_override -- a resolucao aplica override por
+-- cima; refrescar a base e seguro.
+UPDATE entity
+SET title = ?,
+    release_date = ?,
+    extension_data_json = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?;
+
 -- name: AtualizarExternalIds :exec
 -- Mescla a identidade externa (MD4): a app le external_ids_json, junta
 -- {source: source_id} e grava aqui, sem tocar o resto da entity. As colunas

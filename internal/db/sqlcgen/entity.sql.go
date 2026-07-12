@@ -88,6 +88,44 @@ func (q *Queries) AtualizarEntity(ctx context.Context, arg AtualizarEntityParams
 	return i, err
 }
 
+const atualizarEpisodioBase = `-- name: AtualizarEpisodioBase :exec
+UPDATE entity
+SET title = ?,
+    description = ?,
+    release_date = ?,
+    external_ids_json = ?,
+    extension_data_json = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+`
+
+type AtualizarEpisodioBaseParams struct {
+	Title             string
+	Description       sql.NullString
+	ReleaseDate       sql.NullString
+	ExternalIdsJson   sql.NullString
+	ExtensionDataJson sql.NullString
+	ID                string
+}
+
+// Reescreve a BASE do episodio no re-import (briefing 0043): o find-or-create por id
+// externo reusa a linha, mas antes so o create gravava estes campos, entao still_url/
+// numbering novos (extension_data) e titulo/sinopse/data/ids atualizados do provider
+// nunca chegavam a um episodio ja importado. Aqui reafirmamos os fatos da fonte na
+// linha-base. NAO toca status/tags/original_title nem media_override: a resolucao
+// aplica override por cima, entao refrescar a base e seguro (o override segue vencendo).
+func (q *Queries) AtualizarEpisodioBase(ctx context.Context, arg AtualizarEpisodioBaseParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarEpisodioBase,
+		arg.Title,
+		arg.Description,
+		arg.ReleaseDate,
+		arg.ExternalIdsJson,
+		arg.ExtensionDataJson,
+		arg.ID,
+	)
+	return err
+}
+
 const atualizarExtensionData = `-- name: AtualizarExtensionData :exec
 UPDATE entity
 SET extension_data_json = ?,
@@ -172,6 +210,37 @@ type AtualizarReleaseDateParams struct {
 // item. So esta coluna e o updated_at mudam; a resolucao segue com base=externo.
 func (q *Queries) AtualizarReleaseDate(ctx context.Context, arg AtualizarReleaseDateParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarReleaseDate, arg.ReleaseDate, arg.ID)
+	return err
+}
+
+const atualizarTemporadaBase = `-- name: AtualizarTemporadaBase :exec
+UPDATE entity
+SET title = ?,
+    release_date = ?,
+    extension_data_json = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+`
+
+type AtualizarTemporadaBaseParams struct {
+	Title             string
+	ReleaseDate       sql.NullString
+	ExtensionDataJson sql.NullString
+	ID                string
+}
+
+// Reescreve a BASE da temporada no re-import (briefing 0043): titulo, data e o
+// extension_data core.tv@1 (ordering + season_number + year). Simetrica a
+// AtualizarEpisodioBase, sem description (temporada nao guarda sinopse na linha). NAO
+// toca status/tags/original_title nem media_override -- a resolucao aplica override por
+// cima; refrescar a base e seguro.
+func (q *Queries) AtualizarTemporadaBase(ctx context.Context, arg AtualizarTemporadaBaseParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarTemporadaBase,
+		arg.Title,
+		arg.ReleaseDate,
+		arg.ExtensionDataJson,
+		arg.ID,
+	)
 	return err
 }
 

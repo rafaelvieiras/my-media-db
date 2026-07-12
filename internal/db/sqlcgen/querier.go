@@ -37,6 +37,13 @@ type Querier interface {
 	// fazendo o item sair da fila de revisao. Nao toca override/arte.
 	AtualizarConfidencePorEntity(ctx context.Context, arg AtualizarConfidencePorEntityParams) error
 	AtualizarEntity(ctx context.Context, arg AtualizarEntityParams) (Entity, error)
+	// Reescreve a BASE do episodio no re-import (briefing 0043): o find-or-create por id
+	// externo reusa a linha, mas antes so o create gravava estes campos, entao still_url/
+	// numbering novos (extension_data) e titulo/sinopse/data/ids atualizados do provider
+	// nunca chegavam a um episodio ja importado. Aqui reafirmamos os fatos da fonte na
+	// linha-base. NAO toca status/tags/original_title nem media_override: a resolucao
+	// aplica override por cima, entao refrescar a base e seguro (o override segue vencendo).
+	AtualizarEpisodioBase(ctx context.Context, arg AtualizarEpisodioBaseParams) error
 	// Grava o extension_data_json (mapa namespace->objeto) de uma entity, sem tocar o
 	// resto. Usado pelo import de series (briefing 0031): a serie e criada/enriquecida
 	// como um item comum (importarItem) e recebe aqui o namespace core.tv@1 (season
@@ -69,6 +76,12 @@ type Querier interface {
 	// baratas (ex.: ordenar os membros de uma colecao por ano) sem precisar resolver cada
 	// item. So esta coluna e o updated_at mudam; a resolucao segue com base=externo.
 	AtualizarReleaseDate(ctx context.Context, arg AtualizarReleaseDateParams) error
+	// Reescreve a BASE da temporada no re-import (briefing 0043): titulo, data e o
+	// extension_data core.tv@1 (ordering + season_number + year). Simetrica a
+	// AtualizarEpisodioBase, sem description (temporada nao guarda sinopse na linha). NAO
+	// toca status/tags/original_title nem media_override -- a resolucao aplica override por
+	// cima; refrescar a base e seguro.
+	AtualizarTemporadaBase(ctx context.Context, arg AtualizarTemporadaBaseParams) error
 	// Repara o titulo base de um item auto-criado/importado quando ele ficou como o
 	// fallback numerico (id da fonte) -- a regressao do "numero no lugar do nome". So o
 	// titulo e o updated_at mudam; nao toca override/externo (a autoridade do dono

@@ -160,26 +160,58 @@ func (s *Servico) importarTemporada(ctx context.Context, serieID, source, defaul
 		log.Printf("enrich: temporada %d da serie %s falhou (segue): %v", t.SeasonNumber, serieID, err)
 		return
 	}
-	if t.PosterURL != "" {
-		if err := s.cachearArte(ctx, tempID, t.PosterURL, kindPoster, "poster"); err != nil {
-			log.Printf("enrich: poster da temporada %s falhou (segue): %v", tempID, err)
-		}
-	}
+	s.cachearPosterTemporadaSeAusente(ctx, tempID, t.PosterURL)
 	s.ligarFilho(ctx, serieID, tempID, relacaoTemporada, t.SeasonNumber)
 	for _, ep := range t.Episodios {
 		s.importarEpisodio(ctx, tempID, source, defaultType, ep, langs)
 	}
 }
 
+// cachearPosterTemporadaSeAusente baixa o pôster da temporada APENAS quando ainda não
+// há asset externo (briefing 0043): no re-import a árvore inteira refresca, mas re-baixar
+// arte já presente a cada import martelaria o CDN sem ganho (o pôster raramente muda). Só-
+// se-ausente dá idempotência barata; refrescar arte que MUDOU é follow-up (hash/force).
+// Erro de leitura degrada (loga e segue); erro de download idem — a árvore parcial vale.
+func (s *Servico) cachearPosterTemporadaSeAusente(ctx context.Context, tempID, posterURL string) {
+	if posterURL == "" {
+		return
+	}
+	_, err := s.leitura().ObterAssetPorEntityKindOrigin(ctx, sqlcgen.ObterAssetPorEntityKindOriginParams{
+		EntityID: tempID,
+		Kind:     kindPoster,
+		Origin:   originExternal,
+	})
+	if err == nil {
+		return // ja existe: nao re-baixa (so-se-ausente)
+	}
+	if !isNoRows(err) {
+		log.Printf("enrich: checar poster da temporada %s falhou (segue): %v", tempID, err)
+		return
+	}
+	if err := s.cachearArte(ctx, tempID, posterURL, kindPoster, "poster"); err != nil {
+		log.Printf("enrich: poster da temporada %s falhou (segue): %v", tempID, err)
+	}
+}
+
 // acharOuCriarTemporada faz o find-or-create IDEMPOTENTE da temporada por
 // (série-pai, season_number): não há id de fonte no struct, então o dedup é pelo
-// número — reusa um filho tv_season já ligado com o mesmo sort_index. Senão cria uma
-// entity type='season' com título (Name[default] ou "Temporada N"), ano e o namespace
-// core.tv@1 (ordering + season_number + year).
+// número — reusa um filho tv_season já ligado com o mesmo sort_index. No reuse REESCREVE
+// a base (título/ano/extension_data) com os dados atuais do provider (briefing 0043 — o
+// override do dono continua vencendo na resolução); senão cria uma entity type='season'.
+// Os campos vêm de camposTemporada, compartilhado entre create e update (sem divergir).
 func (s *Servico) acharOuCriarTemporada(ctx context.Context, serieID string, t provider.TemporadaExterna, langs []string) (string, error) {
+	title, releaseDate, extData := camposTemporada(t, langs)
 	if rels, err := s.leitura().ListarRelacoesFilhas(ctx, serieID); err == nil {
 		for _, r := range rels {
 			if r.Kind == relacaoTemporada && r.SortIndex.Valid && int(r.SortIndex.Int64) == t.SeasonNumber {
+				if err := s.escrita().AtualizarTemporadaBase(ctx, sqlcgen.AtualizarTemporadaBaseParams{
+					Title:             title,
+					ReleaseDate:       releaseDate,
+					ExtensionDataJson: extData,
+					ID:                r.ChildID,
+				}); err != nil {
+					return "", err
+				}
 				return r.ChildID, nil
 			}
 		}
@@ -188,13 +220,20 @@ func (s *Servico) acharOuCriarTemporada(ctx context.Context, serieID string, t p
 	if _, err := s.escrita().CriarEntity(ctx, sqlcgen.CriarEntityParams{
 		ID:                novo,
 		Type:              tipoTemporada,
-		Title:             tituloTemporada(t, langs),
-		ReleaseDate:       nsOrNull(t.Year),
-		ExtensionDataJson: nsValid(extensaoTemporada(t)),
+		Title:             title,
+		ReleaseDate:       releaseDate,
+		ExtensionDataJson: extData,
 	}); err != nil {
 		return "", err
 	}
 	return novo, nil
+}
+
+// camposTemporada monta os campos-base da temporada compartilhados entre create e o
+// refresh de reuse (briefing 0043): título (Name[default] ou "Temporada N"), data (ano) e
+// o extension_data core.tv@1. Centralizar evita que o refresh esqueça um campo no futuro.
+func camposTemporada(t provider.TemporadaExterna, langs []string) (title string, releaseDate, extData sql.NullString) {
+	return tituloTemporada(t, langs), nsOrNull(t.Year), nsValid(extensaoTemporada(t))
 }
 
 // importarEpisodio cria (ou reusa) o episódio e liga-o à temporada com sort_index =
@@ -236,28 +275,69 @@ func (s *Servico) acharOuCriarEpisodio(ctx context.Context, source string, ep pr
 // de exibição, external_ids ({fonte: episode.id} + os que a fonte trouxe) e o namespace
 // core.tv@1 (absolute_number + numbering multi-ordem).
 func (s *Servico) idDoEpisodio(ctx context.Context, source string, ep provider.EpisodioExterno, langs []string) (string, error) {
+	campos, err := montarCamposEpisodio(source, ep, langs)
+	if err != nil {
+		return "", err
+	}
 	if existente, ok, err := s.acharPorIDExterno(ctx, source, ep.SourceID); err != nil {
 		return "", err
 	} else if ok {
+		// Reuse: REESCREVE a base com os dados atuais do provider (briefing 0043) — em
+		// especial still_url/numbering (extension_data), que so o create gravava. Nao toca
+		// status/tags/original_title/media_override: o override do dono segue vencendo.
+		if err := s.escrita().AtualizarEpisodioBase(ctx, sqlcgen.AtualizarEpisodioBaseParams{
+			Title:             campos.title,
+			Description:       campos.description,
+			ReleaseDate:       campos.releaseDate,
+			ExternalIdsJson:   campos.externalIDs,
+			ExtensionDataJson: campos.extensionData,
+			ID:                existente,
+		}); err != nil {
+			return "", err
+		}
 		return existente, nil
-	}
-	extIDs, err := json.Marshal(idsDoEpisodio(source, ep))
-	if err != nil {
-		return "", err
 	}
 	novo := s.novoID()
 	if _, err := s.escrita().CriarEntity(ctx, sqlcgen.CriarEntityParams{
 		ID:                novo,
 		Type:              tipoEpisodio,
-		Title:             tituloEpisodio(ep, langs),
-		Description:       nsOrNull(valorPorIdioma(ep.Overview, langs)),
-		ReleaseDate:       nsOrNull(ep.AirDate),
-		ExternalIdsJson:   nsValid(string(extIDs)),
-		ExtensionDataJson: nsValid(extensaoEpisodio(ep)),
+		Title:             campos.title,
+		Description:       campos.description,
+		ReleaseDate:       campos.releaseDate,
+		ExternalIdsJson:   campos.externalIDs,
+		ExtensionDataJson: campos.extensionData,
 	}); err != nil {
 		return "", err
 	}
 	return novo, nil
+}
+
+// camposEpisodio agrega os campos-base do episódio (escalares da linha) compartilhados
+// entre o create e o refresh de reuse (briefing 0043): título, sinopse (idioma default),
+// data de exibição, external_ids ({fonte: episode.id} + os da fonte) e o extension_data
+// core.tv@1 (numbering + absolute_number + still_url). Um só ponto de montagem evita que
+// o refresh divirja do create (esquecer um campo novo no futuro).
+type camposEpisodio struct {
+	title         string
+	description   sql.NullString
+	releaseDate   sql.NullString
+	externalIDs   sql.NullString
+	extensionData sql.NullString
+}
+
+// montarCamposEpisodio computa os camposEpisodio; erra só no marshal dos external_ids.
+func montarCamposEpisodio(source string, ep provider.EpisodioExterno, langs []string) (camposEpisodio, error) {
+	extIDs, err := json.Marshal(idsDoEpisodio(source, ep))
+	if err != nil {
+		return camposEpisodio{}, err
+	}
+	return camposEpisodio{
+		title:         tituloEpisodio(ep, langs),
+		description:   nsOrNull(valorPorIdioma(ep.Overview, langs)),
+		releaseDate:   nsOrNull(ep.AirDate),
+		externalIDs:   nsValid(string(extIDs)),
+		extensionData: nsValid(extensaoEpisodio(ep)),
+	}, nil
 }
 
 // persistirEpisodioExterno grava (ou reescreve) a base externa do episódio: um

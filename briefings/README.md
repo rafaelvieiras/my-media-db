@@ -120,3 +120,4 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0040](0040-seletor-de-ordenacao-de-episodios.md) | Seletor de ordenação de episódios (official/dvd/absoluto) reagrupado na leitura | feature | done | 0039 |
 | [0041](0041-i18n-de-episodio-media-external.md) | i18n de episódio (título/overview por idioma via `media_external`) | feature | done | 0031, 0020 |
 | [0042](0042-still-de-episodio-lazy-proxy.md) | Still de episódio (lazy via image proxy): URL no import, thumbnail 16:9 no card + detalhe | feature | done | 0031, 0039 |
+| [0043](0043-re-enrich-atualiza-arvore-serie.md) | Re-enrich atualiza a árvore de série (temporada+episódio) preservando override | fix/feature | done | 0042 |
