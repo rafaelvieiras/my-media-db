@@ -12,11 +12,12 @@ import { Select } from '@/components/ui/select'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
 import {
   ApiError,
+  arteSrc,
   assetFileSrc,
   deleteAsset,
+  kindsParaTipo,
   preferAsset,
   uploadAsset,
-  KINDS_ARTE,
   MIMES_ARTE,
   type Asset,
   type KindArte,
@@ -54,12 +55,40 @@ function invalidarAposArte(qc: QueryClient, id: string) {
 // backend valida pelos magic bytes.
 const ACCEPT = MIMES_ARTE.join(',')
 
-export function ArtGallery({ entityId }: { entityId: string }) {
+// Rótulo pt-BR de cada kind — exibido no seletor de upload e na miniatura (0044).
+const ROTULO_KIND: Record<string, string> = {
+  poster: 'Pôster',
+  fanart: 'Fanart',
+  still: 'Still',
+}
+
+// aspectoDoKind escolhe o enquadramento da miniatura pelo kind (0044): o pôster é
+// retrato (2:3); a fanart e o still são paisagem (16:9). Corrige o `aspect-[2/3]`
+// fixo que deformava a fanart. Kind desconhecido cai no 16:9 (paisagem é o mais seguro).
+function aspectoDoKind(kind: string): string {
+  return kind === 'poster' ? 'aspect-[2/3]' : 'aspect-video'
+}
+
+export function ArtGallery({
+  entityId,
+  type = 'movie',
+  stillUrl = null,
+}: {
+  entityId: string
+  // Tipo da entity: decide os kinds oferecidos (episódio → só `still`) e se há
+  // um still do provider a exibir. Default `movie` (kinds pôster/fanart) — compat.
+  type?: string
+  // Still do EPISÓDIO vindo do detalhe (0044): CRU do provider ou rota local do
+  // custom. Renderizado como card read-only "Provider" quando não há still do dono.
+  stillUrl?: string | null
+}) {
   const qc = useQueryClient()
   const { data, isPending, isError, error } = useQuery(
     assetsQueryOptions(entityId),
   )
-  const [kind, setKind] = useState<KindArte>('poster')
+  // Kinds oferecidos conforme o tipo (0044): episódio gere só o still; demais, pôster/fanart.
+  const kinds = kindsParaTipo(type)
+  const [kind, setKind] = useState<KindArte>(kinds[0])
   // Erro de validação no cliente (tipo não suportado) — distinto do erro da API.
   const [erroCliente, setErroCliente] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -114,6 +143,15 @@ export function ArtGallery({ entityId }: { entityId: string }) {
 
   const ocupado = enviar.isPending || preferir.isPending || remover.isPending
 
+  // Card do still do PROVIDER (0044): no episódio, o still do provider (vindo por prop
+  // do detalhe) aparece como card read-only "Provider" — não deletável, é a fonte —
+  // ENQUANTO não houver um still CUSTOM do dono (asset kind=still, origin=user). Subir
+  // um still do dono o esconde (o custom vira asset removível e vence na exibição).
+  const temStillDono = (data ?? []).some(
+    (a) => a.kind === 'still' && ehDoDono(a),
+  )
+  const mostrarProviderStill = type === 'episode' && !temStillDono && !!stillUrl
+
   return (
     <section className="mt-6 flex flex-col gap-3">
       <h2 className="font-heading text-lg font-medium">Arte</h2>
@@ -128,9 +166,9 @@ export function ArtGallery({ entityId }: { entityId: string }) {
             aria-label="Tipo de arte"
             className="w-full sm:w-36"
           >
-            {KINDS_ARTE.map((k) => (
+            {kinds.map((k) => (
               <option key={k} value={k}>
-                {k === 'poster' ? 'Poster' : 'Fanart'}
+                {ROTULO_KIND[k]}
               </option>
             ))}
           </Select>
@@ -166,13 +204,35 @@ export function ArtGallery({ entityId }: { entityId: string }) {
           title="Nao foi possivel carregar a arte"
           message={error instanceof Error ? error.message : undefined}
         />
-      ) : data.length === 0 ? (
+      ) : data.length === 0 && !mostrarProviderStill ? (
         <EmptyState
           title="Nenhuma arte ainda"
-          description="Envie um poster ou fanart para esta entity."
+          description={
+            type === 'episode'
+              ? 'Envie um still para este episódio.'
+              : 'Envie um poster ou fanart para esta entity.'
+          }
         />
       ) : (
         <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+          {/* Still do PROVIDER (episódio, 0044): card read-only — é a fonte, não
+              deletável nem preferível. Mostrado só enquanto não há still do dono. */}
+          {mostrarProviderStill ? (
+            <li className="flex flex-col gap-2 rounded-xl bg-card p-2 ring-1 ring-foreground/10">
+              <div className="overflow-hidden rounded-lg bg-muted">
+                <img
+                  src={arteSrc(stillUrl) ?? undefined}
+                  alt="Still do provider"
+                  loading="lazy"
+                  className="aspect-video w-full object-cover"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge variant="outline">{ROTULO_KIND.still}</Badge>
+                <Badge variant="secondary">provider</Badge>
+              </div>
+            </li>
+          ) : null}
           {data.map((asset) => (
             <li
               key={asset.id}
@@ -182,11 +242,14 @@ export function ArtGallery({ entityId }: { entityId: string }) {
                 <img
                   src={assetFileSrc(asset.url)}
                   alt={`${asset.kind} ${ehDoDono(asset) ? 'sua' : 'externa'}`}
-                  className="aspect-[2/3] w-full object-cover"
+                  loading="lazy"
+                  className={`${aspectoDoKind(asset.kind)} w-full object-cover`}
                 />
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
-                <Badge variant="outline">{asset.kind}</Badge>
+                <Badge variant="outline">
+                  {ROTULO_KIND[asset.kind] ?? asset.kind}
+                </Badge>
                 <Badge variant={ehDoDono(asset) ? 'default' : 'secondary'}>
                   {ehDoDono(asset) ? 'sua' : 'externa'}
                 </Badge>

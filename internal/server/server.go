@@ -254,6 +254,7 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Get("/{id}/episodes", s.getEntityEpisodes)
 				ent.Get("/{id}/assets/poster", s.getEntityPoster)
 				ent.Get("/{id}/assets/fanart", s.getEntityFanart)
+				ent.Get("/{id}/assets/still", s.getEntityStill)
 
 				// Arte custom do dono (briefing 0017): upload (origin='user'),
 				// galeria, servico do binario de um asset, preferencia (flag em

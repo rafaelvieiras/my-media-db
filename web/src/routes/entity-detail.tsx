@@ -344,7 +344,11 @@ export function EntityDetailScreen() {
           />
         ) : null}
 
-        <ArtGallery entityId={id} />
+        <ArtGallery
+          entityId={id}
+          type={data.type}
+          stillUrl={data.still_url ?? null}
+        />
 
         {/* Arquivos só nos nós-folha que têm media_file: filme e episódio. Coleção,
             série e temporada agrupam filhos (sem arquivo próprio) — sem a seção. */}

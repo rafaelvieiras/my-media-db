@@ -50,19 +50,40 @@ describe('rich-detail adapters', () => {
     expect(r.year).toBe('2021')
   })
 
-  it('backdrop local (rota relativa) passa pela base; direto (URL) fica igual', () => {
-    // Rota local do fanart cacheado → relativa (base vazia em teste = igual).
+  it('backdrop local (rota relativa) passa pela base; cru (URL) passa pelo proxy (0044)', () => {
+    // Rota local do fanart cacheado (própria ou herdada) → relativa (base vazia em
+    // teste = igual).
     const local = deResolvedEntity(
       baseEntity({ backdrop_url: '/api/v1/entities/e/assets/fanart' }),
     )
     expect(local.backdropUrl).toBe('/api/v1/entities/e/assets/fanart')
-    // Fallback: URL direta da fonte fica intacta.
-    const direto = deResolvedEntity(
-      baseEntity({ backdrop_url: 'https://img.tmdb.org/b.jpg' }),
+    // Fallback: URL CRUA da fonte agora passa pelo image proxy (0044) — não bate no CDN.
+    const cru = 'https://img.tmdb.org/b.jpg'
+    const direto = deResolvedEntity(baseEntity({ backdrop_url: cru }))
+    expect(direto.backdropUrl).toBe(
+      `/api/v1/images?src=${encodeURIComponent(cru)}`,
     )
-    expect(direto.backdropUrl).toBe('https://img.tmdb.org/b.jpg')
     // Sem backdrop → null.
     const vazio = deResolvedEntity(baseEntity({ backdrop_url: null }))
     expect(vazio.backdropUrl).toBeNull()
+  })
+
+  it('still do episódio: custom (rota local) recebe a base; provider (cru) passa pelo proxy (0044)', () => {
+    // Still CUSTOM do dono → rota local servível (recebe só a base).
+    const custom = deResolvedEntity(
+      baseEntity({
+        type: 'episode',
+        still_url: '/api/v1/entities/e/assets/still',
+      }),
+    )
+    expect(custom.stillUrl).toBe('/api/v1/entities/e/assets/still')
+    // Still do PROVIDER → URL crua, servida pelo image proxy.
+    const cru = 'https://artworks.thetvdb.com/s.jpg'
+    const provider = deResolvedEntity(
+      baseEntity({ type: 'episode', still_url: cru }),
+    )
+    expect(provider.stillUrl).toBe(
+      `/api/v1/images?src=${encodeURIComponent(cru)}`,
+    )
   })
 })

@@ -30,10 +30,13 @@ import (
 // escritas passam pelo pool de escrita (ADR-0010).
 
 const (
-	// kindPoster/kindFanart sao os kinds de arte que o dono pode subir; originUser/
-	// originExternal etiquetam a proveniencia (dono x cache externo).
+	// kindPoster/kindFanart/kindStill sao os kinds de arte que o dono pode subir;
+	// originUser/originExternal etiquetam a proveniencia (dono x cache externo). O
+	// still (frame 16:9 do episodio, 0044) e o unico still que vira asset: o still do
+	// provider segue lazy em extension_data (0042), so o custom do dono e arquivo.
 	kindPoster     = "poster"
 	kindFanart     = "fanart"
+	kindStill      = "still"
 	originUser     = "user"
 	originExternal = "external"
 	// tamanhoMaxAsset e o teto de bytes de um upload (espelha enrich.tamanhoMaxImagem):
@@ -127,14 +130,14 @@ func (s *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 // parseKind le o campo `kind` do multipart (default poster) e o valida contra os
-// kinds suportados (poster|fanart). 422 quando invalido.
+// kinds suportados (poster|fanart|still). 422 quando invalido.
 func parseKind(w http.ResponseWriter, r *http.Request) (string, bool) {
 	kind := r.FormValue("kind")
 	if kind == "" {
 		kind = kindPoster
 	}
-	if kind != kindPoster && kind != kindFanart {
-		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "kind invalido (use poster ou fanart)")
+	if kind != kindPoster && kind != kindFanart && kind != kindStill {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "kind invalido (use poster, fanart ou still)")
 		return "", false
 	}
 	return kind, true

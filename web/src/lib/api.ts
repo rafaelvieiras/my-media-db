@@ -580,13 +580,38 @@ export function imagemProxySrc(
   return `${base}/api/v1/images?src=${encodeURIComponent(rawUrl)}`
 }
 
+// arteSrc resolve QUALQUER URL de arte para o `<img>` (0044): URL ABSOLUTA (crua do
+// provider — ex.: still/backdrop do TMDB/TVDB) passa pelo IMAGE PROXY (`imagemProxySrc`,
+// que busca+cacheia sob demanda, decoplando do CDN em runtime); ROTA LOCAL relativa
+// (asset já servível — ex.: `/assets/still` custom, pôster/fanart do dono) recebe só a
+// base (`posterSrc`). Unifica os três tratamentos divergentes (pôster local, backdrop
+// cru/local, still cru/custom) num único helper. `null`/vazia → null (a UI cai no
+// placeholder), como os helpers que o compõem.
+export function arteSrc(url: string | null | undefined): string | null {
+  if (!url) {
+    return null
+  }
+  return /^https?:\/\//.test(url) ? imagemProxySrc(url) : posterSrc(url)
+}
+
 // ── Arte custom: galeria + upload (0017) ─────────────────────────────────────
 
 // Tipos de imagem aceitos pelo upload (mesmo conjunto que o backend valida pelos
 // magic bytes). A UI reusa isto para o `accept` do <input> e para a validação
-// no cliente ANTES de enviar (rejeita cedo, sem gastar uma ida ao servidor).
-export const KINDS_ARTE = ['poster', 'fanart'] as const
+// no cliente ANTES de enviar (rejeita cedo, sem gastar uma ida ao servidor). O
+// `still` (0044) é o kind da arte 16:9 do episódio; `kindsParaTipo` filtra o que
+// cada tipo oferece no upload.
+export const KINDS_ARTE = ['poster', 'fanart', 'still'] as const
 export type KindArte = (typeof KINDS_ARTE)[number]
+
+// kindsParaTipo devolve os kinds oferecidos no upload conforme o TIPO da entity
+// (0044): o EPISÓDIO gere só o `still` (a sua arte 16:9); os demais tipos gerem
+// `poster` (2:3) e `fanart` (16:9). Mantém o `still` fora do menu de filmes/séries
+// (onde não faz sentido) sem impedir o backend de aceitá-lo genericamente.
+export function kindsParaTipo(type: string): readonly KindArte[] {
+  return type === 'episode' ? ['still'] : ['poster', 'fanart']
+}
+
 export const MIMES_ARTE = ['image/png', 'image/jpeg', 'image/webp'] as const
 
 // URL absoluta (respeitando a base) do binário de um asset para as miniaturas.

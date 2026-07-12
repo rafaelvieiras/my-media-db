@@ -18,6 +18,10 @@ interface Espioes {
 interface Opcoes {
   assets?: Asset[]
   uploadErro?: { status: number; code: string; message: string }
+  // Tipo da entity (0044): default `movie`; `episode` habilita o still.
+  type?: string
+  // Still do provider (0044), passado como prop do detalhe.
+  stillUrl?: string | null
 }
 
 // Envelope de uma resposta de erro do padrão `{ error: { code, message } }`.
@@ -87,7 +91,11 @@ function renderGallery(opts: Opcoes = {}) {
   const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
   render(
     <QueryClientProvider client={queryClient}>
-      <ArtGallery entityId="e1" />
+      <ArtGallery
+        entityId="e1"
+        type={opts.type ?? 'movie'}
+        stillUrl={opts.stillUrl ?? null}
+      />
     </QueryClientProvider>,
   )
   return { espioes, invalidateSpy }
@@ -208,5 +216,75 @@ describe('ArtGallery — galeria + upload (0017)', () => {
         'Tipo de arquivo nao suportado pelo servidor.',
       ),
     )
+  })
+})
+
+describe('ArtGallery — enquadramento e still do episódio (0044)', () => {
+  it('(g) miniatura por kind: pôster 2:3, fanart 16:9, com rótulo pt-BR', async () => {
+    renderGallery({
+      assets: [
+        baseAsset({ id: 'p', kind: 'poster', origin: 'user' }),
+        baseAsset({ id: 'f', kind: 'fanart', origin: 'external' }),
+      ],
+    })
+
+    const poster = (await screen.findByAltText(
+      'poster sua',
+    )) as HTMLImageElement
+    const fanart = screen.getByAltText('fanart externa') as HTMLImageElement
+    // Pôster no frame retrato; fanart no frame paisagem (16:9) — sem deformar.
+    expect(poster.className).toContain('aspect-[2/3]')
+    expect(fanart.className).toContain('aspect-video')
+    // Rótulo do kind visível em cada miniatura (o rótulo também aparece no seletor
+    // de upload, daí `getAllByText`).
+    expect(screen.getAllByText('Pôster').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('Fanart').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('(h) episódio: o upload oferece só o kind still (sem pôster/fanart)', async () => {
+    renderGallery({ type: 'episode', assets: [] })
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Envie um still para este episódio.'),
+      ).toBeInTheDocument(),
+    )
+    // O seletor de tipo só tem "Still".
+    expect(screen.getByRole('option', { name: 'Still' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Pôster' })).toBeNull()
+    expect(screen.queryByRole('option', { name: 'Fanart' })).toBeNull()
+  })
+
+  it('(i) episódio sem still do dono: card "provider" read-only a partir do stillUrl', async () => {
+    const raw = 'https://artworks.thetvdb.com/s.jpg'
+    renderGallery({ type: 'episode', assets: [], stillUrl: raw })
+
+    const img = (await screen.findByAltText(
+      'Still do provider',
+    )) as HTMLImageElement
+    // Still cru do provider passa pelo image proxy (arteSrc).
+    expect(img.getAttribute('src')).toBe(
+      `/api/v1/images?src=${encodeURIComponent(raw)}`,
+    )
+    expect(img.className).toContain('aspect-video')
+    expect(screen.getByText('provider')).toBeInTheDocument()
+    // É a fonte: não deletável.
+    expect(screen.queryByRole('button', { name: /Remover arte/ })).toBeNull()
+  })
+
+  it('(j) episódio com still do dono: o custom vence e o card "provider" some', async () => {
+    renderGallery({
+      type: 'episode',
+      assets: [baseAsset({ id: 's1', kind: 'still', origin: 'user' })],
+      stillUrl: 'https://artworks.thetvdb.com/s.jpg',
+    })
+
+    // O still do dono aparece (removível); o card do provider não é renderizado.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /Remover arte/ }),
+      ).toBeInTheDocument(),
+    )
+    expect(screen.queryByAltText('Still do provider')).toBeNull()
   })
 })

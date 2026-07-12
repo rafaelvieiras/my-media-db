@@ -130,6 +130,12 @@ func fanartPath(id string) string {
 	return "/api/v1/entities/" + id + "/assets/fanart"
 }
 
+// stillPath monta a referência do endpoint que serve o STILL (frame 16:9) custom
+// do EPISÓDIO (0044) — o análogo do pôster/fanart para o still `user` do dono.
+func stillPath(id string) string {
+	return "/api/v1/entities/" + id + "/assets/still"
+}
+
 // artesLocais devolve as rotas locais do pôster e do FUNDO quando há asset servível
 // daquele kind (precedência preferida→user→external, 0017); nil quando não há. Fonte
 // única para o resolver saber que a entity tem arte local a servir.
@@ -397,7 +403,10 @@ func (s *Server) anotarNumbering(ctx context.Context, card *entityCardDTO, order
 	}
 	ns := tvext.Namespace(ent.ExtensionDataJson, nsTVCore)
 	card.Numbering = projetarNumbering(ns, ordering, seasonNumber)
-	card.StillURL = stillDoNS(ns)
+	// Precedência do still (0044): still custom (asset `user`) vence o cru do provider.
+	// Leitura extra por episódio (aceitável, mesma escala do numbering — 0042/0039 §7).
+	assets, _ := s.leitura().ListarAssetsPorEntity(ctx, card.ID)
+	card.StillURL = stillDoEpisodio(assets, card.ID, ns)
 }
 
 // stillDoNS extrai a URL CRUA do still (0042) do namespace core.tv@1 do episódio:
@@ -673,19 +682,72 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 	resolvida.Ancestors = s.montarAncestrais(ctx, id)
 	resolvida.Ownership = s.montarPosseAgregada(ctx, ent)
 	resolvida.Orderings = s.montarOrderings(ctx, ent)
-	resolvida.StillURL = stillDaEntity(ent)
+	resolvida.StillURL = stillDaEntity(assets, ent)
+	s.herdarFanartTemporada(ctx, &resolvida, assets, ent)
 	return resolvida, true, nil
 }
 
-// stillDaEntity devolve a URL CRUA do still do episódio (0042) para o detalhe: lê o
-// extension_data core.tv@1 (still_url) da própria entity — só para `episode`, nil para
-// os demais tipos. O resolver é PURO (não conhece core.tv); a anotação vive aqui, na
-// mesma fronteira de Ancestors/Ownership/Orderings. O front serve pelo image proxy.
-func stillDaEntity(ent sqlcgen.Entity) *string {
+// herdarFanartTemporada preenche o BackdropURL de uma TEMPORADA sem fanart própria
+// com a fanart da SÉRIE PAI (herança de DISPLAY do 0044, como o tinyMediaManager):
+// não inventa dado nem baixa nada — reusa o asset já baixado da série. No-op para
+// tipos != season e para a temporada que já tem asset `fanart` servível próprio (aí
+// o artesLocais já preencheu o BackdropURL com a dela). Anotação no server, fora do
+// resolver puro (mesma fronteira de Ancestors/Ownership/still).
+func (s *Server) herdarFanartTemporada(ctx context.Context, e *resolver.Entidade, assets []sqlcgen.Asset, ent sqlcgen.Entity) {
+	if ent.Type != tipoEntTemporada {
+		return
+	}
+	if _, ok := escolherAssetServido(assets, kindFanart); ok {
+		return // tem a sua fanart própria: nada a herdar
+	}
+	if serieID, ok := s.fanartDaSeriePai(ctx, ent.ID); ok {
+		u := fanartPath(serieID)
+		e.BackdropURL = &u
+	}
+}
+
+// fanartDaSeriePai sobe da temporada para a SÉRIE PAI (via ListarRelacoesPais — a
+// temporada é filha da série) e devolve o id da série quando ela tem asset `fanart`
+// SERVÍVEL. false quando não há pai, o pai não tem fanart servível, ou em falha de
+// leitura (degrada para "sem herança", nunca inventa). Não baixa nada.
+func (s *Server) fanartDaSeriePai(ctx context.Context, seasonID string) (string, bool) {
+	pais, err := s.leitura().ListarRelacoesPais(ctx, seasonID)
+	if err != nil || len(pais) == 0 {
+		return "", false
+	}
+	serieID := pais[0].ParentID
+	assets, err := s.leitura().ListarAssetsPorEntity(ctx, serieID)
+	if err != nil {
+		return "", false
+	}
+	if _, ok := escolherAssetServido(assets, kindFanart); !ok {
+		return "", false
+	}
+	return serieID, true
+}
+
+// stillDaEntity devolve a URL do still do episódio para o detalhe, com a PRECEDÊNCIA
+// do 0044: still `user` (rota local /assets/still) VENCE o still_url cru do provider
+// (extension_data core.tv@1, 0042). Só para `episode`, nil para os demais tipos. O
+// resolver é PURO (não conhece core.tv); a anotação vive aqui, na mesma fronteira de
+// Ancestors/Ownership/Orderings. Sem still custom, mantém o cru (front proxya).
+func stillDaEntity(assets []sqlcgen.Asset, ent sqlcgen.Entity) *string {
 	if ent.Type != tipoEntEpisodio {
 		return nil
 	}
-	return stillDoNS(tvext.Namespace(ent.ExtensionDataJson, nsTVCore))
+	return stillDoEpisodio(assets, ent.ID, tvext.Namespace(ent.ExtensionDataJson, nsTVCore))
+}
+
+// stillDoEpisodio aplica a precedência do still (0044): se há asset `still` SERVÍVEL
+// para o episódio, devolve a rota local (/assets/still); senão cai no still_url cru do
+// provider (ns). Ponto ÚNICO reusado pelo detalhe (stillDaEntity) e pelo card
+// (anotarNumbering) — a mesma regra custom→provider dos dois lados.
+func stillDoEpisodio(assets []sqlcgen.Asset, id string, ns map[string]any) *string {
+	if _, ok := escolherAssetServido(assets, kindStill); ok {
+		u := stillPath(id)
+		return &u
+	}
+	return stillDoNS(ns)
 }
 
 // tipoEntEpisodio é o `type` da entity de episódio (grão fino da árvore de séries,
@@ -1027,6 +1089,31 @@ func (s *Server) getEntityFanart(w http.ResponseWriter, r *http.Request) {
 	asset, ok := escolherAssetServido(assets, kindFanart)
 	if !ok {
 		writeError(w, http.StatusNotFound, "not_found", "fundo não encontrado")
+		return
+	}
+	s.servirBinarioAsset(w, r, ctx, asset)
+}
+
+// getEntityStill trata GET /api/v1/entities/{id}/assets/still: serve o binário do
+// STILL custom (frame 16:9) do episódio — o análogo de getEntityPoster/Fanart para o
+// kind 'still' (0044), com a MESMA precedência de serviço (preferida → user →
+// external → 404) e a mesma guarda de path-traversal. 404 quando não há still custom
+// (o detalhe cai no still_url cru do provider — 0042).
+func (s *Server) getEntityStill(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	ctx := r.Context()
+
+	assets, err := s.leitura().ListarAssetsPorEntity(ctx, id)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	asset, ok := escolherAssetServido(assets, kindStill)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "still não encontrado")
 		return
 	}
 	s.servirBinarioAsset(w, r, ctx, asset)

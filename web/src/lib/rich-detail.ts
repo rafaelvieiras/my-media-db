@@ -1,5 +1,5 @@
 import {
-  imagemProxySrc,
+  arteSrc,
   posterSrc,
   type ExternalCollection,
   type ExternalDetail,
@@ -93,14 +93,16 @@ export function deResolvedEntity(e: ResolvedEntity): RichDetail {
     voteAverage: e.vote_average,
     localRating: e.local_rating,
     originalLanguage: e.original_language,
-    posterUrl: posterSrc(e.poster_url),
-    // O backdrop da entity é uma ROTA LOCAL quando cacheado (fanart, 0015) ou uma
-    // URL DIRETA da fonte no fallback: prefixa a base só quando relativa.
-    backdropUrl: srcDeImagem(e.backdrop_url),
-    // Still 16:9 do episódio (0042): URL CRUA do provider servida pelo image proxy
-    // (busca+cacheia sob demanda). null para não-episódios — o front só o exibe no
-    // detalhe do episódio.
-    stillUrl: imagemProxySrc(e.still_url),
+    // `arteSrc` (0044) resolve os três num único caminho: rota local (asset servível)
+    // recebe a base; URL crua da fonte passa pelo image proxy.
+    posterUrl: arteSrc(e.poster_url),
+    // Backdrop: ROTA LOCAL quando cacheado (fanart própria/herdada, 0015/0044) ou
+    // URL CRUA da fonte no fallback — a crua agora passa pelo proxy (não bate no CDN).
+    backdropUrl: arteSrc(e.backdrop_url),
+    // Still 16:9 do episódio: ROTA LOCAL quando há still CUSTOM do dono (0044,
+    // /assets/still) ou URL CRUA do provider (0042, via proxy). null para
+    // não-episódios — o front só o exibe no detalhe do episódio.
+    stillUrl: arteSrc(e.still_url),
     genres: e.tags,
     keywords: e.keywords,
     videos: e.videos,

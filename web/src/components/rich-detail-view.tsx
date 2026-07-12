@@ -121,6 +121,41 @@ export function StillFrame({ src, alt }: { src: string | null; alt: string }) {
   )
 }
 
+// BackdropImg é o BANNER 16:9 largo do hero (fanart) com degradê para o `bg-card`.
+// Paridade com o `PosterImg` (0044): `loading="lazy"` + `onError` caem no placeholder
+// (ícone `ImageOff`) em vez de sumir silenciosamente se a URL falha. A `src` já vem
+// PRONTA (via `arteSrc` — proxy p/ crua, base p/ rota local). Só renderiza quando há
+// backdrop (o hero decide); por isso a `src` aqui é sempre uma string.
+function BackdropImg({ src }: { src: string }) {
+  const [falhou, setFalhou] = useState(false)
+  if (falhou) {
+    return (
+      <div className="relative aspect-[16/6] w-full sm:aspect-[16/5]">
+        <div
+          data-testid="backdrop-placeholder"
+          className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground"
+        >
+          <ImageOff className="size-8" aria-hidden />
+        </div>
+        <div className="absolute inset-0 bg-gradient-to-t from-card via-card/40 to-transparent" />
+      </div>
+    )
+  }
+  return (
+    <div className="relative aspect-[16/6] w-full sm:aspect-[16/5]">
+      <img
+        src={src}
+        alt=""
+        aria-hidden
+        loading="lazy"
+        onError={() => setFalhou(true)}
+        className="h-full w-full object-cover"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-card via-card/40 to-transparent" />
+    </div>
+  )
+}
+
 // ── Botão Importar compartilhado ─────────────────────────────────────────────
 
 // ImportarButton importa um item externo (find-or-create, 0015) e leva ao detalhe
@@ -476,15 +511,7 @@ export function RichDetailView({
         {detail.type === 'episode' ? (
           <StillFrame src={detail.stillUrl} alt={`Still de ${detail.title}`} />
         ) : detail.backdropUrl ? (
-          <div className="relative aspect-[16/6] w-full sm:aspect-[16/5]">
-            <img
-              src={detail.backdropUrl}
-              alt=""
-              aria-hidden
-              className="h-full w-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-card via-card/40 to-transparent" />
-          </div>
+          <BackdropImg src={detail.backdropUrl} />
         ) : null}
         <div className="flex flex-col gap-4 p-4 sm:flex-row sm:p-6">
           {detail.type === 'episode' ? null : (
