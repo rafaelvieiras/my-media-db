@@ -139,7 +139,9 @@ export function ArtLightbox({
       ref={containerRef}
       // Backdrop: click FORA da imagem/painel fecha. Os filhos param a propagação.
       onClick={onClose}
-      className="fixed inset-0 z-50 flex flex-col bg-background/95 outline-none backdrop-blur-sm"
+      // Backdrop SEMPRE escuro (valoriza a arte), mesmo no tema claro: a classe `dark`
+      // força os tokens shadcn (texto/botões) para claro-no-escuro no subtree do lightbox.
+      className="dark fixed inset-0 z-50 flex flex-col bg-black/85 text-foreground outline-none backdrop-blur-sm"
     >
       {/* Barra do topo: legenda + zoom + fechar. */}
       <div

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   infoKind,
+  larguraKind,
   linhasDeArtwork,
   rotuloKind,
   selosDisponibilidade,
@@ -34,6 +35,14 @@ describe('artwork — taxonomia de kinds (0049)', () => {
     expect(infoKind('disc')).toEqual({ aspect: 'aspect-square', contain: true })
     // Kind desconhecido cai no 16:9 cover (mais seguro).
     expect(infoKind('xpto')).toEqual({ aspect: 'aspect-video', contain: false })
+  })
+
+  it('larguraKind: retrato/quadrado menores, paisagem/banner maiores, fallback w-52', () => {
+    expect(larguraKind('poster')).toBe('w-52')
+    expect(larguraKind('disc')).toBe('w-52')
+    expect(larguraKind('fanart')).toBe('w-80')
+    expect(larguraKind('banner')).toBe('w-96')
+    expect(larguraKind('xpto')).toBe('w-52')
   })
 
   it('linhasDeArtwork extrai só os kinds presentes, na ordem canônica', () => {

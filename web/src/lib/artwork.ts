@@ -66,6 +66,26 @@ export function infoKind(kind: string): InfoKind {
   return INFO_KIND[kind] ?? { aspect: 'aspect-video', contain: false }
 }
 
+// Largura do card na galeria por kind (0049): "cards maiores" pedidos pelo dono —
+// retrato/quadrado ~208px, paisagem ~320px, logo ~288px, banner (faixa) ~384px. A
+// ALTURA sai do aspect (infoKind); aqui só a largura da coluna do carrossel.
+const LARGURA_KIND: Record<string, string> = {
+  poster: 'w-52',
+  disc: 'w-52',
+  characterart: 'w-52',
+  fanart: 'w-80',
+  thumb: 'w-80',
+  still: 'w-80',
+  clearart: 'w-80',
+  logo: 'w-72',
+  banner: 'w-96',
+}
+
+// larguraKind devolve a classe de largura do card (fallback w-52 ~208px).
+export function larguraKind(kind: string): string {
+  return LARGURA_KIND[kind] ?? 'w-52'
+}
+
 // LinhaArte é UMA linha (carrossel) da galeria: o kind e suas artes, já na ordem que
 // o backend serviu (preferida/idioma primeiro).
 export interface LinhaArte {

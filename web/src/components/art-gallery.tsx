@@ -26,6 +26,7 @@ import {
 } from '@/lib/api'
 import {
   infoKind,
+  larguraKind,
   linhasDeArtwork,
   rotuloKind,
   type LinhaArte,
@@ -92,7 +93,7 @@ function LinhaGaleria({
               aria-label={`Ver ${rotuloKind(linha.kind)} ${i + 1}${
                 item.is_preferred ? ' (preferida)' : ''
               }`}
-              className={`group relative block w-40 overflow-hidden rounded-lg ${fundo} ring-1 transition ${
+              className={`group relative block ${larguraKind(linha.kind)} overflow-hidden rounded-lg ${fundo} ring-1 transition ${
                 item.is_preferred
                   ? 'ring-2 ring-amber-500'
                   : 'ring-foreground/10 hover:ring-foreground/30'
@@ -290,7 +291,7 @@ export function ArtGallery({
             {[0, 1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="aspect-[2/3] w-40 shrink-0 animate-pulse rounded-lg bg-muted"
+                className="aspect-[2/3] w-52 shrink-0 animate-pulse rounded-lg bg-muted"
               />
             ))}
           </div>
@@ -315,7 +316,7 @@ export function ArtGallery({
                 <h3 className="text-sm font-medium">{rotuloKind('still')}</h3>
                 <Badge variant="outline">provider</Badge>
               </div>
-              <div className="w-40 overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/10">
+              <div className="w-80 overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/10">
                 <img
                   src={arteSrc(stillUrl) ?? undefined}
                   alt="Still do provider"
