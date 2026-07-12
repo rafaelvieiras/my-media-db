@@ -181,6 +181,70 @@ func TestMembersSerieCardTemporadaTraeOwnership(t *testing.T) {
 	}
 }
 
+// TestListEntitiesCardSerieOwnershipRaso (0037): o card de SERIE na LISTAGEM
+// (GET /api/v1/entities) carrega ownership RASO = temporadas COM conteudo / total de
+// temporadas, NAO a soma profunda de episodios. Cenario: serie com 2 temporadas; se1
+// tem ep1(possuido)+ep2, se2 tem ep3(vazio). Card raso -> {1,2} (so se1 tem conteudo);
+// o DETALHE da mesma serie segue PROFUNDO -> {1,3} episodios (obterResolvida), provando
+// a divergencia intencional card(raso) x detalhe(profundo). A listagem so traz OBRAS
+// DE TOPO (season/episode sao nos internos, fora do grid); o filme segue sem ownership.
+func TestListEntitiesCardSerieOwnershipRaso(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "s1", "tv", "Serie")
+	semearEntity(t, d, "se1", "season", "Temporada 1")
+	semearEntity(t, d, "se2", "season", "Temporada 2")
+	semearEntity(t, d, "e1", "episode", "Ep 1")
+	semearEntity(t, d, "e2", "episode", "Ep 2")
+	semearEntity(t, d, "e3", "episode", "Ep 3")
+	semearEntity(t, d, "m1", "movie", "Filme")
+	ligarFilhoOrdenado(t, d, "r-se1", "s1", "se1", "tv_season", 1)
+	ligarFilhoOrdenado(t, d, "r-se2", "s1", "se2", "tv_season", 2)
+	ligarFilhoOrdenado(t, d, "r-e1", "se1", "e1", "tv_episode", 1)
+	ligarFilhoOrdenado(t, d, "r-e2", "se1", "e2", "tv_episode", 2)
+	ligarFilhoOrdenado(t, d, "r-e3", "se2", "e3", "tv_episode", 1)
+	// Apenas ep1 possuido: so a temporada 1 tem conteudo.
+	semearFile(t, d, "mf1", "s1", "/lib/s01e01.mkv", "present", 0.9, "")
+	if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: "mf1", EntityID: "e1", Kind: "tv_episode", Ordinal: 0,
+	}); err != nil {
+		t.Fatalf("CriarVinculoEntidade: %v", err)
+	}
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	byID := map[string]entityCardDTO{}
+	for _, it := range decodeList(t, rec.Body.Bytes()).Items {
+		byID[it.ID] = it
+	}
+	// Card da SERIE: RASO -> 1 de 2 temporadas com conteudo (NAO 1/3 episodios).
+	if byID["s1"].Ownership == nil {
+		t.Fatalf("s1 (card) sem ownership; quero {1,2} temporadas")
+	}
+	eq(t, "s1 card owned (temporadas com conteudo)", byID["s1"].Ownership.OwnedCount, 1)
+	eq(t, "s1 card total (temporadas)", byID["s1"].Ownership.TotalCount, 2)
+	// A listagem so traz obras de topo: season/episode nunca aparecem no grid.
+	if _, ok := byID["se1"]; ok {
+		t.Errorf("se1 (season) nao deveria aparecer na listagem de topo")
+	}
+	if _, ok := byID["e1"]; ok {
+		t.Errorf("e1 (episode) nao deveria aparecer na listagem de topo")
+	}
+	// Filme na listagem segue SEM ownership.
+	if byID["m1"].Ownership != nil {
+		t.Errorf("m1 card ownership = %+v, quero nil (filme)", byID["m1"].Ownership)
+	}
+
+	// O DETALHE da MESMA serie permanece PROFUNDO (episodios): 1 de 3.
+	s1 := obterResolvida(t, h, "s1")
+	if s1.Ownership == nil {
+		t.Fatalf("s1 (detalhe) sem ownership; quero {1,3} episodios")
+	}
+	eq(t, "s1 detalhe owned (episodios profundos)", s1.Ownership.OwnedCount, 1)
+	eq(t, "s1 detalhe total (episodios profundos)", s1.Ownership.TotalCount, 3)
+}
+
 // semearTemporada cria uma entity type='season' com release_date (ano) para provar que
 // a ordenacao de temporadas NAO cai no caminho por-ano.
 func semearTemporada(t *testing.T, d *db.DB, id, titulo, ano string) {

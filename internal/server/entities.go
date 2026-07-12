@@ -172,7 +172,11 @@ func (s *Server) listEntities(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]entityCardDTO, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, cardDTO(row))
+		card := cardDTO(row)
+		// Posse RASA por tipo (0036/0037): season→episódios, tv→temporadas. Anotada
+		// pós-listagem (a query SQL do card não muda); degrada para null em falha.
+		s.anotarPosseCard(ctx, &card)
+		items = append(items, card)
 	}
 	writeJSON(w, http.StatusOK, entityListDTO{Items: items, Total: total, Limit: limit, Offset: offset})
 }
@@ -343,18 +347,53 @@ func cardDTODeMembro(row sqlcgen.ObterEntityCardRow) entityCardDTO {
 	})
 }
 
-// anotarPosseCard preenche o card membro com a POSSE AGREGADA (0036) quando o tipo
-// tem agregação na árvore de séries: `season` (episódios diretos) e `tv` (soma across
-// temporadas). Reusa montarPosseAgregada — a MESMA contagem do detalhe (0034), só
-// anotada no card pós-listagem (não muda a query SQL do card, mesma fronteira do
-// 0034/Ancestors). montarPosseAgregada já degrada para nil em qualquer falha de
-// leitura: a UI apenas omite o selo, NUNCA derruba a lista. Demais tipos (movie/
-// episode/collection) seguem sem ownership.
+// anotarPosseCard preenche o card com a posse RASA (1 nível) — "quanto do nível de
+// baixo eu tenho" — quando o tipo tem agregação na árvore de séries:
+//   - `season` (0036): episódios diretos com arquivo / total de episódios.
+//   - `tv` (0037): temporadas COM conteúdo / total de temporadas — NÃO a soma
+//     profunda de episódios. Isso torna o card sempre raso e consistente (glanceável),
+//     enquanto o DETALHE (ResolvedEntity/montarPosseAgregada) permanece PROFUNDO
+//     (episódios, ex. 2/875) e não muda.
+//
+// Cada leitura degrada para nil em qualquer falha: a UI apenas omite o selo, NUNCA
+// derruba a lista. Demais tipos (movie/episode/collection) seguem sem ownership.
 func (s *Server) anotarPosseCard(ctx context.Context, card *entityCardDTO) {
 	switch card.Type {
-	case tipoEntTemporada, tipoEntSerie:
-		card.Ownership = s.montarPosseAgregada(ctx, sqlcgen.Entity{ID: card.ID, Type: card.Type})
+	case tipoEntTemporada:
+		if info, err := s.posseDaTemporada(ctx, card.ID); err == nil {
+			card.Ownership = info
+		}
+	case tipoEntSerie:
+		card.Ownership = s.posseRasaDaSerie(ctx, card.ID)
 	}
+}
+
+// posseRasaDaSerie calcula a posse RASA do card de SÉRIE (0037): total = nº de filhos
+// tv_season; owned = quantas dessas temporadas têm ao menos um episódio na biblioteca
+// (posseDaTemporada().owned > 0). É a contagem GLANCEÁVEL do card ("X/Y temporadas"),
+// distinta da posse PROFUNDA do detalhe (episódios), que segue em montarPosseAgregada
+// e NÃO muda. Custo ~1 + nº de temporadas leituras (self-hosted; follow-up: query
+// agregada única se a biblioteca crescer). Degrada para nil em qualquer falha.
+func (s *Server) posseRasaDaSerie(ctx context.Context, serieID string) *resolver.OwnershipInfo {
+	rels, err := s.leitura().ListarRelacoesFilhas(ctx, serieID)
+	if err != nil {
+		return nil
+	}
+	total, owned := 0, 0
+	for _, rel := range rels {
+		if rel.Kind != kindTemporada {
+			continue
+		}
+		total++
+		info, err := s.posseDaTemporada(ctx, rel.ChildID)
+		if err != nil {
+			return nil
+		}
+		if info.OwnedCount > 0 {
+			owned++
+		}
+	}
+	return &resolver.OwnershipInfo{OwnedCount: owned, TotalCount: total}
 }
 
 // anoAntes ordena por release_date ISO ascendente (a string ISO ordena

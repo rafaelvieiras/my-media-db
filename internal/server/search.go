@@ -186,10 +186,17 @@ func (s *Server) buscarLocal(ctx context.Context, termo string, tipo any, inclSe
 		); err != nil {
 			return nil, err
 		}
-		items = append(items, cardDTO(row))
+		card := cardDTO(row)
+		items = append(items, card)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	// Posse RASA (0036/0037) nos cards tv/season da busca — mesma anotação da
+	// listagem, feita após fechar o cursor (evita consultas aninhadas no mesmo
+	// Read). Degrada para null em falha; nunca derruba a busca.
+	for i := range items {
+		s.anotarPosseCard(ctx, &items[i])
 	}
 	return items, nil
 }

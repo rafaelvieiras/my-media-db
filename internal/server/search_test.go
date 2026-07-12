@@ -159,6 +159,38 @@ func TestSearchFiltroType(t *testing.T) {
 	}
 }
 
+// TestSearchCardSerieOwnershipRaso (0037): o card de SERIE na BUSCA carrega o mesmo
+// ownership RASO da listagem (temporadas com conteudo / total de temporadas). Serie
+// com 2 temporadas, so a se1 com episodio possuido -> {1,2}. Reusa anotarPosseCard.
+func TestSearchCardSerieOwnershipRaso(t *testing.T) {
+	h, d := setupSearchServer(t)
+	semearEntity(t, d, "s", "tv", "Alfa Serie")
+	semearEntity(t, d, "se1", "season", "Temporada 1")
+	semearEntity(t, d, "se2", "season", "Temporada 2")
+	semearEntity(t, d, "e1", "episode", "Ep 1")
+	semearEntity(t, d, "e2", "episode", "Ep 2")
+	ligarFilhoOrdenado(t, d, "r-se1", "s", "se1", "tv_season", 1)
+	ligarFilhoOrdenado(t, d, "r-se2", "s", "se2", "tv_season", 2)
+	ligarFilhoOrdenado(t, d, "r-e1", "se1", "e1", "tv_episode", 1)
+	ligarFilhoOrdenado(t, d, "r-e2", "se2", "e2", "tv_episode", 1)
+	semearFile(t, d, "mf1", "s", "/lib/s01e01.mkv", "present", 0.9, "")
+	if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: "mf1", EntityID: "e1", Kind: "tv_episode", Ordinal: 0,
+	}); err != nil {
+		t.Fatalf("CriarVinculoEntidade: %v", err)
+	}
+
+	out := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=alfa", nil).Body.Bytes())
+	if len(out.Local) != 1 || out.Local[0].ID != "s" {
+		t.Fatalf("local = %+v, quero so a serie", out.Local)
+	}
+	if out.Local[0].Ownership == nil {
+		t.Fatalf("serie na busca sem ownership; quero {1,2} temporadas")
+	}
+	eq(t, "busca s owned (temporadas com conteudo)", out.Local[0].Ownership.OwnedCount, 1)
+	eq(t, "busca s total (temporadas)", out.Local[0].Ownership.TotalCount, 2)
+}
+
 // TestSearchSubNosDefaultForaEIncluidos: por padrao a busca so traz obras de topo
 // (0033) — season/episode ficam de fora; o parametro include=season/episode religa
 // cada sub-no numa consulta so, sem misturar (a UI separa por type).
