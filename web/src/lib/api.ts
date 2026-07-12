@@ -41,6 +41,9 @@ export type FieldDescriptor = components['schemas']['FieldDescriptor']
 export type FieldSchema = components['schemas']['FieldSchema']
 export type Asset = components['schemas']['Asset']
 export type AssetList = components['schemas']['AssetList']
+export type ArtworkResponse = components['schemas']['ArtworkResponse']
+export type ArtworkItem = components['schemas']['ArtworkItem']
+export type SelectArtworkRequest = components['schemas']['SelectArtworkRequest']
 export type CorrectRequest = components['schemas']['CorrectRequest']
 export type PurgeResult = components['schemas']['PurgeResult']
 export type PurgeBatchResult = components['schemas']['PurgeBatchResult']
@@ -668,6 +671,38 @@ export async function deleteAsset(id: string, assetId: string): Promise<Asset> {
       assetId,
     )}`,
     { method: 'DELETE' },
+  )
+  return lerJson<Asset>(res)
+}
+
+// ── Galeria agrupada por kind + seleção do inventário (0048/0049) ─────────────
+
+// Arte DISPONÍVEL agrupada por kind (0048): mescla assets locais do dono, camadas
+// externas com provider (TMDB) e o inventário lazy da fanart.tv. Toda `url` já sai
+// PROXYADA (pronta para o `<img src>` — NÃO reaplicar `arteSrc`). Traz também
+// `available: {kind: count}` para os selos do card do topo (0049).
+export async function getArtwork(id: string): Promise<ArtworkResponse> {
+  return lerJson<ArtworkResponse>(
+    await fetch(`${base}/api/v1/entities/${encodeURIComponent(id)}/artwork`),
+  )
+}
+
+// Materializa uma arte do INVENTÁRIO (fanart.tv/TMDB) como asset local `origin=
+// 'external'` (0048): baixa o binário da `url` CRUA (`src_url` do item) e, com
+// `prefer=true`, marca-a como preferida do seu kind. Idempotente no backend (reusa
+// asset external com a mesma url+kind). Os erros (422 kind/host, 502 download, 503
+// sem diretório) viram `ApiError` com a mensagem pt-BR do envelope.
+export async function selectArtwork(
+  id: string,
+  body: SelectArtworkRequest,
+): Promise<Asset> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/artwork/select`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    },
   )
   return lerJson<Asset>(res)
 }

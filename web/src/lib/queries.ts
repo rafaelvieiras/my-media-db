@@ -6,6 +6,7 @@ import {
   getEntityFields,
   getEntityFiles,
   getEntityMembers,
+  getArtwork,
   getExternalDetail,
   getHealth,
   getLanguageSettings,
@@ -120,6 +121,19 @@ export function assetsQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['assets', id],
     queryFn: () => listAssets(id),
+  })
+}
+
+// Galeria agrupada por kind + selos de disponibilidade (0048/0049). Chave própria
+// `['artwork', id]` — consumida DUAS vezes (a faixa de selos no card do topo e a
+// galeria em linhas), que o TanStack Query deduplica numa única ida. Mudar a arte
+// (preferir/baixar/remover) invalida ESTA chave (a galeria/selos refletem), E
+// `['entity', id]` + `['entities']` (o pôster do detalhe e do grid seguem a nova
+// precedência), como a galeria de assets do 0017.
+export function artworkQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: ['artwork', id],
+    queryFn: () => getArtwork(id),
   })
 }
 

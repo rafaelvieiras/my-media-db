@@ -24,6 +24,7 @@ import { rotuloTipo } from '@/lib/entity-badges'
 import { internalIdDe } from '@/lib/internal-id'
 import { rotuloIdioma } from '@/lib/languages'
 import { rotuloSituacao, type RichDetail } from '@/lib/rich-detail'
+import { selosDisponibilidade } from '@/lib/artwork'
 import { cn } from '@/lib/utils'
 
 // RichDetailView é a tela RICA COMPARTILHADA entre o detalhe do item EXTERNO (antes
@@ -467,6 +468,30 @@ function LinksExternos({ links }: { links: Record<string, string> }) {
   )
 }
 
+// SelosArtes é a FAIXA de disponibilidade do card do topo (0049): lê o
+// `available: {kind: count}` do endpoint `/artwork` (0048) e mostra um selo por kind
+// que EXISTE, com rótulo pt-BR + contagem (ex.: "Pôster 23 · Fanart 40 · Logo 17").
+// Vazio/ausente (filme sem inventário, tela do externo) → null: a faixa não aparece.
+function SelosArtes({
+  available,
+}: {
+  available: Record<string, number> | undefined
+}) {
+  const selos = selosDisponibilidade(available)
+  if (selos.length === 0) {
+    return null
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+      {selos.map((selo) => (
+        <Badge key={selo.kind} variant="outline">
+          {selo.label} {selo.count}
+        </Badge>
+      ))}
+    </div>
+  )
+}
+
 // ── Componente principal ─────────────────────────────────────────────────────
 
 export function RichDetailView({
@@ -477,6 +502,7 @@ export function RichDetailView({
   actions,
   descriptionExtra,
   genresExtra,
+  availableArtwork,
   children,
 }: {
   detail: RichDetail
@@ -492,6 +518,9 @@ export function RichDetailView({
   descriptionExtra?: ReactNode
   // Anotações após os gêneros — entity.
   genresExtra?: ReactNode
+  // Contagem de artes por kind (0049): a faixa de selos de disponibilidade no hero.
+  // Só a tela da ENTITY passa (lê `/artwork`); a do externo omite (sem a faixa).
+  availableArtwork?: Record<string, number>
   // Seções extras anexadas (editor de override, galeria, arquivos) — entity.
   children?: ReactNode
 }) {
@@ -594,6 +623,7 @@ export function RichDetailView({
                 </span>
               ) : null}
             </div>
+            <SelosArtes available={availableArtwork} />
             {actions ? <div className="pt-2">{actions}</div> : null}
           </div>
         </div>

@@ -5,68 +5,116 @@ import {
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query'
-import { Star, Trash2, Upload } from 'lucide-react'
+import { Star, Upload } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
-import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
+import { ErrorState } from '@/components/query-states'
+import { ArtLightbox, type AcoesLightbox } from '@/components/art-lightbox'
 import {
   ApiError,
   arteSrc,
-  assetFileSrc,
   deleteAsset,
   kindsParaTipo,
   preferAsset,
+  selectArtwork,
   uploadAsset,
   MIMES_ARTE,
-  type Asset,
+  type ArtworkItem,
   type KindArte,
+  type SelectArtworkRequest,
 } from '@/lib/api'
-import { assetsQueryOptions } from '@/lib/queries'
+import {
+  infoKind,
+  linhasDeArtwork,
+  rotuloKind,
+  type LinhaArte,
+} from '@/lib/artwork'
+import { artworkQueryOptions } from '@/lib/queries'
 
-// Galeria de arte da entity (briefing 0017): miniaturas com selo de origem (`sua`
-// para o dono × `externa` para o cache) e selo `preferida`; upload do dono
-// (`origin=user`), com validação de tipo NO CLIENTE antes de enviar; ações
-// "Preferir" (desempata entre as do dono) e "Remover" (só nas do dono).
+// Galeria de artes (0049, reescrita do 0017/0044): consome o endpoint AGRUPADO
+// `GET /artwork` (0048) e renderiza UMA LINHA (carrossel horizontal) por kind
+// presente, cada card no ASPECT correto do tipo (pôster 2:3, fanart/thumb/still
+// 16:9, logo/clearart wide transparente, disc/character quadrado, banner faixa).
+// É AGNÓSTICA DE FONTE: TMDB, fanart.tv e assets do dono entram nas mesmas linhas;
+// a origem vira só um selo. Clicar numa arte abre o lightbox (alta + zoom +
+// navegação + ações). O dono ainda pode ENVIAR uma arte custom (upload do 0017).
 //
-// Precedência de serviço do pôster (calculada no backend): preferida → user →
-// external → 404. Subir arte já a faz vencer a externa; marcar preferida só
-// desempata. Por isso, ao mudar a arte, invalidamos TAMBÉM `['entity', id]` e
-// `['entities']` — o pôster do detalhe e do grid refletem a nova escolha.
+// Ações e roteamento (contrato 0048):
+//   • Definir preferida → asset LOCAL: PUT .../assets/{asset_id}/prefer;
+//     INVENTÁRIO (não-local): POST .../artwork/select {url: src_url, prefer:true}.
+//   • Baixar (materializar sem preferir) → POST .../artwork/select {prefer:false}.
+//   • Remover (só do DONO, source==='user') → DELETE .../assets/{asset_id}.
 
-// Rótulo pt-BR da origem: só `user` (do dono) e o resto (externo/cache). O
-// backend também emite `local` (scanner); tratamos tudo que não é `user` como
-// "externa" para a UI (nenhuma dessas é removível pelo dono).
-function ehDoDono(asset: Asset): boolean {
-  return asset.origin === 'user'
-}
+// Aceite do <input file> e da validação no cliente (mesmo conjunto do backend).
+const ACCEPT = MIMES_ARTE.join(',')
 
-// Invalidação após mudar a arte: três chaves independentes. `['assets', id]`
-// recarrega a galeria; `['entity', id]` (PREFIXO) derruba o detalhe em todas as
-// variações de `lang`; `['entities']` atualiza os cards do grid — todos apontam
-// para o endpoint de pôster, que agora serve a nova precedência.
+// Invalidação após mudar a arte: a galeria/selos (`['artwork', id]`), o detalhe
+// (`['entity', id]`, prefixo — todas as variações de lang) e o grid (`['entities']`)
+// — todos leem o pôster servido, que segue a nova precedência.
 function invalidarAposArte(qc: QueryClient, id: string) {
-  qc.invalidateQueries({ queryKey: ['assets', id] })
+  qc.invalidateQueries({ queryKey: ['artwork', id] })
   qc.invalidateQueries({ queryKey: ['entity', id] })
   qc.invalidateQueries({ queryKey: ['entities'] })
 }
 
-// Aceite do <input file> e da validação no cliente — o mesmo conjunto que o
-// backend valida pelos magic bytes.
-const ACCEPT = MIMES_ARTE.join(',')
-
-// Rótulo pt-BR de cada kind — exibido no seletor de upload e na miniatura (0044).
-const ROTULO_KIND: Record<string, string> = {
-  poster: 'Pôster',
-  fanart: 'Fanart',
-  still: 'Still',
+// Estado do lightbox: o kind aberto e o índice dentro dele (ou null = fechado).
+interface Aberto {
+  kind: string
+  index: number
 }
 
-// aspectoDoKind escolhe o enquadramento da miniatura pelo kind (0044): o pôster é
-// retrato (2:3); a fanart e o still são paisagem (16:9). Corrige o `aspect-[2/3]`
-// fixo que deformava a fanart. Kind desconhecido cai no 16:9 (paisagem é o mais seguro).
-function aspectoDoKind(kind: string): string {
-  return kind === 'poster' ? 'aspect-[2/3]' : 'aspect-video'
+// LinhaGaleria renderiza UMA linha (kind): rótulo + scroll horizontal de cards no
+// aspect do tipo. Cada card é um botão que abre o lightbox naquele índice. A arte
+// preferida ganha anel + selo. Extraído para o markup do card não duplicar (jscpd).
+function LinhaGaleria({
+  linha,
+  onAbrir,
+}: {
+  linha: LinhaArte
+  onAbrir: (kind: string, index: number) => void
+}) {
+  const info = infoKind(linha.kind)
+  const ajuste = info.contain ? 'object-contain' : 'object-cover'
+  const fundo = info.contain ? 'bg-muted/40' : 'bg-muted'
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <h3 className="text-sm font-medium">{rotuloKind(linha.kind)}</h3>
+        <Badge variant="secondary">{linha.items.length}</Badge>
+      </div>
+      <ul className="flex gap-3 overflow-x-auto pb-2">
+        {linha.items.map((item, i) => (
+          <li key={`${item.url}:${i}`} className="shrink-0">
+            <button
+              type="button"
+              onClick={() => onAbrir(linha.kind, i)}
+              aria-label={`Ver ${rotuloKind(linha.kind)} ${i + 1}${
+                item.is_preferred ? ' (preferida)' : ''
+              }`}
+              className={`group relative block w-40 overflow-hidden rounded-lg ${fundo} ring-1 transition ${
+                item.is_preferred
+                  ? 'ring-2 ring-amber-500'
+                  : 'ring-foreground/10 hover:ring-foreground/30'
+              }`}
+            >
+              <img
+                src={item.url}
+                alt={`${rotuloKind(linha.kind)} ${i + 1}`}
+                loading="lazy"
+                className={`${info.aspect} w-full ${ajuste}`}
+              />
+              {item.is_preferred ? (
+                <span className="absolute left-1.5 top-1.5 flex size-6 items-center justify-center rounded-full bg-amber-500 text-white shadow">
+                  <Star className="size-3.5 fill-current" aria-hidden />
+                </span>
+              ) : null}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
 export function ArtGallery({
@@ -75,46 +123,66 @@ export function ArtGallery({
   stillUrl = null,
 }: {
   entityId: string
-  // Tipo da entity: decide os kinds oferecidos (episódio → só `still`) e se há
-  // um still do provider a exibir. Default `movie` (kinds pôster/fanart) — compat.
+  // Tipo da entity: decide os kinds oferecidos no UPLOAD (episódio → só `still`) e
+  // se há um still do provider a exibir. Default `movie` — compat.
   type?: string
   // Still do EPISÓDIO vindo do detalhe (0044): CRU do provider ou rota local do
-  // custom. Renderizado como card read-only "Provider" quando não há still do dono.
+  // custom. Card read-only "provider" quando o inventário ainda não tem still.
   stillUrl?: string | null
 }) {
   const qc = useQueryClient()
   const { data, isPending, isError, error } = useQuery(
-    assetsQueryOptions(entityId),
+    artworkQueryOptions(entityId),
   )
-  // Kinds oferecidos conforme o tipo (0044): episódio gere só o still; demais, pôster/fanart.
-  const kinds = kindsParaTipo(type)
-  const [kind, setKind] = useState<KindArte>(kinds[0])
-  // Erro de validação no cliente (tipo não suportado) — distinto do erro da API.
+
+  // Upload do dono (0017): kinds conforme o tipo; erro de validação no cliente.
+  const kindsUpload = kindsParaTipo(type)
+  const [kindUpload, setKindUpload] = useState<KindArte>(kindsUpload[0])
   const [erroCliente, setErroCliente] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // Lightbox aberto (kind + índice) ou null.
+  const [aberto, setAberto] = useState<Aberto | null>(null)
+
   const enviar = useMutation({
-    mutationFn: ({ file, kind: k }: { file: File; kind: KindArte }) =>
-      uploadAsset(entityId, file, k),
+    mutationFn: ({ file, kind }: { file: File; kind: KindArte }) =>
+      uploadAsset(entityId, file, kind),
     onSuccess: () => invalidarAposArte(qc, entityId),
   })
 
+  // Definir preferida: asset LOCAL desempata via prefer; inventário baixa+prefere.
   const preferir = useMutation({
-    mutationFn: (assetId: string) => preferAsset(entityId, assetId),
+    mutationFn: ({ kind, item }: { kind: string; item: ArtworkItem }) =>
+      item.is_local && item.asset_id
+        ? preferAsset(entityId, item.asset_id)
+        : selectArtwork(entityId, {
+            kind: kind as SelectArtworkRequest['kind'],
+            url: item.src_url ?? item.url,
+            prefer: true,
+          }),
     onSuccess: () => invalidarAposArte(qc, entityId),
   })
 
+  // Baixar (materializar sem preferir) — só arte de inventário tem `src_url`.
+  const baixar = useMutation({
+    mutationFn: ({ kind, item }: { kind: string; item: ArtworkItem }) =>
+      selectArtwork(entityId, {
+        kind: kind as SelectArtworkRequest['kind'],
+        url: item.src_url ?? item.url,
+        prefer: false,
+      }),
+    onSuccess: () => invalidarAposArte(qc, entityId),
+  })
+
+  // Remover (só do dono): DELETE do asset.
   const remover = useMutation({
-    mutationFn: (assetId: string) => deleteAsset(entityId, assetId),
+    mutationFn: ({ item }: { kind: string; item: ArtworkItem }) =>
+      deleteAsset(entityId, item.asset_id ?? ''),
     onSuccess: () => invalidarAposArte(qc, entityId),
   })
 
-  // Validação NO CLIENTE: rejeita o que não é imagem suportada ANTES de enviar
-  // (erro inline, sem bater na API). O `<input accept>` só filtra o diálogo; a
-  // checagem explícita cobre drag-and-drop e navegadores que ignoram o accept.
   function onEscolherArquivo(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    // Permite reescolher o mesmo arquivo depois (reseta o value do input).
     e.target.value = ''
     if (!file) {
       return
@@ -124,51 +192,68 @@ export function ArtGallery({
       return
     }
     setErroCliente(null)
-    enviar.mutate({ file, kind })
+    enviar.mutate({ file, kind: kindUpload })
   }
 
-  // Erro exibido inline: o do cliente tem prioridade; senão a `message` pt-BR do
-  // envelope (415/413/422); senão um genérico das mutações.
-  const mensagemErro =
+  const ocupado = preferir.isPending || baixar.isPending || remover.isPending
+
+  // Erro das AÇÕES do lightbox (pt-BR do envelope) — exibido no rodapé do lightbox.
+  const erroAcao =
+    preferir.error instanceof ApiError
+      ? preferir.error.message
+      : baixar.error instanceof ApiError
+        ? baixar.error.message
+        : remover.error instanceof ApiError
+          ? remover.error.message
+          : preferir.isError || baixar.isError || remover.isError
+            ? 'Nao foi possivel atualizar a arte.'
+            : null
+
+  // Erro do UPLOAD (cliente > envelope > genérico).
+  const erroUpload =
     erroCliente ??
     (enviar.error instanceof ApiError
       ? enviar.error.message
-      : preferir.error instanceof ApiError
-        ? preferir.error.message
-        : remover.error instanceof ApiError
-          ? remover.error.message
-          : enviar.isError || preferir.isError || remover.isError
-            ? 'Nao foi possivel atualizar a arte.'
-            : null)
+      : enviar.isError
+        ? 'Nao foi possivel enviar a arte.'
+        : null)
 
-  const ocupado = enviar.isPending || preferir.isPending || remover.isPending
+  const linhas = linhasDeArtwork(data)
+  // Still do PROVIDER (episódio, 0044): card read-only enquanto o inventário não
+  // tem still (nem do dono, nem baixado). Mostrado só no episódio, com stillUrl.
+  const temStill = linhas.some((l) => l.kind === 'still')
+  const mostrarProviderStill = type === 'episode' && !temStill && !!stillUrl
 
-  // Card do still do PROVIDER (0044): no episódio, o still do provider (vindo por prop
-  // do detalhe) aparece como card read-only "Provider" — não deletável, é a fonte —
-  // ENQUANTO não houver um still CUSTOM do dono (asset kind=still, origin=user). Subir
-  // um still do dono o esconde (o custom vira asset removível e vence na exibição).
-  const temStillDono = (data ?? []).some(
-    (a) => a.kind === 'still' && ehDoDono(a),
-  )
-  const mostrarProviderStill = type === 'episode' && !temStillDono && !!stillUrl
+  // Linha aberta no lightbox (recalculada a cada render — reflete o pós-mutação).
+  const linhaAberta = aberto
+    ? linhas.find((l) => l.kind === aberto.kind)
+    : undefined
+  const acoes: AcoesLightbox = {
+    onPreferir: (item) =>
+      aberto && preferir.mutate({ kind: aberto.kind, item }),
+    onBaixar: (item) => aberto && baixar.mutate({ kind: aberto.kind, item }),
+    onRemover: (item) => aberto && remover.mutate({ kind: aberto.kind, item }),
+    ocupado,
+    erro: erroAcao,
+  }
 
   return (
-    <section className="mt-6 flex flex-col gap-3">
-      <h2 className="font-heading text-lg font-medium">Arte</h2>
+    <section className="mt-6 flex flex-col gap-4">
+      <h2 className="font-heading text-lg font-medium">Artes</h2>
 
-      {/* Upload: seletor de kind + input de arquivo. */}
+      {/* Upload do dono: seletor de kind + input de arquivo (0017). */}
       <div className="flex flex-wrap items-end gap-2 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">Tipo</span>
           <Select
-            value={kind}
-            onChange={(e) => setKind(e.target.value as KindArte)}
+            value={kindUpload}
+            onChange={(e) => setKindUpload(e.target.value as KindArte)}
             aria-label="Tipo de arte"
             className="w-full sm:w-36"
           >
-            {kinds.map((k) => (
+            {kindsUpload.map((k) => (
               <option key={k} value={k}>
-                {ROTULO_KIND[k]}
+                {rotuloKind(k)}
               </option>
             ))}
           </Select>
@@ -184,42 +269,53 @@ export function ArtGallery({
         <Button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={ocupado}
+          disabled={enviar.isPending}
         >
           <Upload aria-hidden />
           {enviar.isPending ? 'Enviando…' : 'Enviar arte'}
         </Button>
       </div>
 
-      {mensagemErro ? (
+      {erroUpload ? (
         <p role="alert" className="text-sm font-medium text-destructive">
-          {mensagemErro}
+          {erroUpload}
         </p>
       ) : null}
 
       {isPending ? (
-        <LoadingState label="Carregando arte…" />
+        // Skeleton: uma linha de placeholders (a galeria carrega em bloco).
+        <div className="flex flex-col gap-2" aria-hidden>
+          <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+          <div className="flex gap-3">
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="aspect-[2/3] w-40 shrink-0 animate-pulse rounded-lg bg-muted"
+              />
+            ))}
+          </div>
+        </div>
       ) : isError ? (
         <ErrorState
-          title="Nao foi possivel carregar a arte"
+          title="Nao foi possivel carregar as artes"
           message={error instanceof Error ? error.message : undefined}
         />
-      ) : data.length === 0 && !mostrarProviderStill ? (
-        <EmptyState
-          title="Nenhuma arte ainda"
-          description={
-            type === 'episode'
-              ? 'Envie um still para este episódio.'
-              : 'Envie um poster ou fanart para esta entity.'
-          }
-        />
+      ) : linhas.length === 0 && !mostrarProviderStill ? (
+        <p className="text-sm text-muted-foreground">
+          {type === 'episode'
+            ? 'Nenhuma arte ainda. Envie um still para este episódio.'
+            : 'Nenhuma arte disponível ainda.'}
+        </p>
       ) : (
-        <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-          {/* Still do PROVIDER (episódio, 0044): card read-only — é a fonte, não
-              deletável nem preferível. Mostrado só enquanto não há still do dono. */}
+        <div className="flex flex-col gap-5">
+          {/* Still do provider (episódio): read-only, não abre lightbox nem tem ações. */}
           {mostrarProviderStill ? (
-            <li className="flex flex-col gap-2 rounded-xl bg-card p-2 ring-1 ring-foreground/10">
-              <div className="overflow-hidden rounded-lg bg-muted">
+            <section className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-medium">{rotuloKind('still')}</h3>
+                <Badge variant="outline">provider</Badge>
+              </div>
+              <div className="w-40 overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/10">
                 <img
                   src={arteSrc(stillUrl) ?? undefined}
                   alt="Still do provider"
@@ -227,67 +323,29 @@ export function ArtGallery({
                   className="aspect-video w-full object-cover"
                 />
               </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Badge variant="outline">{ROTULO_KIND.still}</Badge>
-                <Badge variant="secondary">provider</Badge>
-              </div>
-            </li>
+            </section>
           ) : null}
-          {data.map((asset) => (
-            <li
-              key={asset.id}
-              className="flex flex-col gap-2 rounded-xl bg-card p-2 ring-1 ring-foreground/10"
-            >
-              <div className="overflow-hidden rounded-lg bg-muted">
-                <img
-                  src={assetFileSrc(asset.url)}
-                  alt={`${asset.kind} ${ehDoDono(asset) ? 'sua' : 'externa'}`}
-                  loading="lazy"
-                  className={`${aspectoDoKind(asset.kind)} w-full object-cover`}
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Badge variant="outline">
-                  {ROTULO_KIND[asset.kind] ?? asset.kind}
-                </Badge>
-                <Badge variant={ehDoDono(asset) ? 'default' : 'secondary'}>
-                  {ehDoDono(asset) ? 'sua' : 'externa'}
-                </Badge>
-                {asset.preferred ? (
-                  <Badge variant="secondary">preferida</Badge>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {!asset.preferred ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => preferir.mutate(asset.id)}
-                    disabled={ocupado}
-                  >
-                    <Star aria-hidden />
-                    Preferir
-                  </Button>
-                ) : null}
-                {ehDoDono(asset) ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    aria-label={`Remover arte ${asset.kind}`}
-                    onClick={() => remover.mutate(asset.id)}
-                    disabled={ocupado}
-                  >
-                    <Trash2 aria-hidden />
-                    Remover
-                  </Button>
-                ) : null}
-              </div>
-            </li>
+          {linhas.map((linha) => (
+            <LinhaGaleria
+              key={linha.kind}
+              linha={linha}
+              onAbrir={(kind, index) => setAberto({ kind, index })}
+            />
           ))}
-        </ul>
+        </div>
       )}
+
+      {/* Lightbox: só quando há linha aberta (some sozinho se a linha esvaziar). */}
+      {aberto && linhaAberta ? (
+        <ArtLightbox
+          kind={aberto.kind}
+          items={linhaAberta.items}
+          index={Math.min(aberto.index, linhaAberta.items.length - 1)}
+          onIndex={(i) => setAberto({ kind: aberto.kind, index: i })}
+          onClose={() => setAberto(null)}
+          acoes={acoes}
+        />
+      ) : null}
     </section>
   )
 }

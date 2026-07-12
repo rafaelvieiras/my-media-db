@@ -386,6 +386,46 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/artwork': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Arte disponível agrupada por kind (briefing 0048).
+     * @description Mescla três fontes por kind: os assets LOCAIS do dono (upload `origin='user'` e cache `origin='external'`), o pôster/fundo das camadas externas com provider (ex.: TMDB) e o INVENTÁRIO lazy da fanart.tv (`media_external source='fanarttv'`, sem baixar binários). Toda `url` já sai passada pelo proxy de imagem, então a UI não depende do CDN da fonte. Traz também `available: {kind: count}` para os selos do card. Só leitura. 404 se a entity não existe; 503 sem persistência.
+     */
+    get: operations['getEntityArtwork']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/artwork/select': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Baixa a arte selecionada do inventário (briefing 0048).
+     * @description A AÇÃO da decisão "listar no import, baixar SÓ a selecionada": recebe a `url` de UMA arte do inventário (fanart.tv/TMDB) e o `kind`, BAIXA o binário e o materializa como asset `origin='external'`, guardando a url de origem no `meta_json`. Idempotente: se já existe asset external com a mesma url+kind, reusa sem rebaixar. Com `prefer=true`, marca-a como preferida (uma por kind). Segurança (anti-SSRF): o corpo é do usuário, então o HOST da url é validado contra a MESMA allowlist do proxy de imagem — host fora → 422. 200 com o asset; 404 entity inexistente; 422 kind fora do conjunto ou host não permitido; 502 se o download falhar; 503 sem diretório de assets.
+     */
+    post: operations['selectArtwork']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/search': {
     parameters: {
       query?: never
@@ -794,6 +834,68 @@ export interface components {
     }
     /** @description Galeria de arte da entity (vazia quando não há arte). */
     AssetList: components['schemas']['Asset'][]
+    /** @description Uma arte no agrupamento por kind do /artwork (briefing 0048). `url` já vem proxyada. `lang`/`likes` vêm do inventário (fanart.tv) e são vazios/zero para as demais fontes. `source` é a proveniência (`user`|`external`|`tmdb`|`fanarttv`); `is_local` marca o asset materializado (servido do disco), `is_preferred` a escolha do dono. `disc_type`/`disc`/`season` só aparecem nas artes que os têm. */
+    ArtworkItem: {
+      /** @description URL já passada pelo proxy de imagem. */
+      url: string
+      /** @description Idioma da arte (2 letras ou vazio=textless); só no inventário. */
+      lang?: string
+      /** @description Curtidas na fonte; só no inventário (fanart.tv). */
+      likes?: number
+      /** @description Proveniência: user, external, tmdb ou fanarttv. */
+      source: string
+      /** @description Tipo de disco (bluray/dvd/cd/3d); só no kind disc. */
+      disc_type?: string
+      /** @description Número do disco; só no kind disc. */
+      disc?: number
+      /** @description Temporada da arte (número, `all` ou `0`); só em artes de temporada. */
+      season?: string
+      /** @description Escolha do dono (só para asset local). */
+      is_preferred: boolean
+      /** @description Asset materializado, servido do disco. */
+      is_local: boolean
+      /** @description Id do asset materializado (só quando `is_local`): use em PUT /entities/{id}/assets/{assetId}/prefer e DELETE .../assets/{assetId}. */
+      asset_id?: string
+      /** @description URL CRUA na fonte (só para arte de inventário, `is_local=false`): envie no POST /entities/{id}/artwork/select para baixar/preferir. */
+      src_url?: string
+    }
+    /** @description Arte DISPONÍVEL agrupada por kind (briefing 0048): uma array de ArtworkItem por kind (poster/fanart/logo/clearart/disc/banner/thumb/characterart/still) mais `available: {kind: count}` para os selos do card. As chaves de kind e a chave `available` coexistem no topo (nenhum kind se chama `available`). */
+    ArtworkResponse: {
+      poster?: components['schemas']['ArtworkItem'][]
+      fanart?: components['schemas']['ArtworkItem'][]
+      logo?: components['schemas']['ArtworkItem'][]
+      clearart?: components['schemas']['ArtworkItem'][]
+      disc?: components['schemas']['ArtworkItem'][]
+      banner?: components['schemas']['ArtworkItem'][]
+      thumb?: components['schemas']['ArtworkItem'][]
+      characterart?: components['schemas']['ArtworkItem'][]
+      still?: components['schemas']['ArtworkItem'][]
+      /** @description Contagem de artes por kind (para os selos). */
+      available?: {
+        [key: string]: number
+      }
+    }
+    /** @description Corpo de POST /entities/{id}/artwork/select: qual arte do inventário (url num host da allowlist do proxy) materializar como asset `origin='external'` do `kind`, e se deve marcá-la como preferida. */
+    SelectArtworkRequest: {
+      /**
+       * @description Tipo de arte a materializar.
+       * @enum {string}
+       */
+      kind:
+        | 'poster'
+        | 'fanart'
+        | 'still'
+        | 'logo'
+        | 'clearart'
+        | 'disc'
+        | 'banner'
+        | 'thumb'
+        | 'characterart'
+      /** @description URL da arte (host precisa estar na allowlist do proxy — anti-SSRF). */
+      url: string
+      /** @description Marca a arte como preferida do seu kind (default: false). */
+      prefer?: boolean
+    }
     /** @description Corpo OPCIONAL de POST /entities/{id}/enrich. Sem source usa "tmdb"; sem source_id usa external_ids[source] da entity. */
     EnrichRequest: {
       /** @description Fonte a consultar (default tmdb). */
@@ -1869,6 +1971,63 @@ export interface operations {
       }
       404: components['responses']['Error']
       422: components['responses']['Error']
+    }
+  }
+  getEntityArtwork: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Arte agrupada por kind mais `available`. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ArtworkResponse']
+        }
+      }
+      404: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  selectArtwork: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SelectArtworkRequest']
+      }
+    }
+    responses: {
+      /** @description Asset materializado (novo ou reusado). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Asset']
+        }
+      }
+      400: components['responses']['Error']
+      404: components['responses']['Error']
+      422: components['responses']['Error']
+      502: components['responses']['Error']
+      503: components['responses']['Error']
     }
   }
   search: {

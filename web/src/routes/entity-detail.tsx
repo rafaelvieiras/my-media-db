@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ApiError, purgeEntity, type OrderingsInfo } from '@/lib/api'
 import {
+  artworkQueryOptions,
   entityFieldsQueryOptions,
   entityQueryOptions,
   overrideBlobQueryOptions,
@@ -217,6 +218,9 @@ export function EntityDetailScreen() {
   const overrideQuery = useQuery(overrideBlobQueryOptions(id))
   const blob = overrideQuery.data
   const fields = useQuery(entityFieldsQueryOptions).data
+  // Inventário de artes (0048/0049): alimenta a FAIXA de selos do card do topo. A
+  // MESMA query é lida pela ArtGallery (child) — o TanStack dedupe numa só ida.
+  const artwork = useQuery(artworkQueryOptions(id)).data
 
   const voltar = (
     <Link
@@ -267,6 +271,7 @@ export function EntityDetailScreen() {
         detail={deResolvedEntity(data)}
         source="tmdb"
         back={topo}
+        availableArtwork={artwork?.available}
         titleBadges={
           <>
             {ehDraft(data.status) ? (

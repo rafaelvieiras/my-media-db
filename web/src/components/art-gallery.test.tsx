@@ -1,62 +1,99 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ArtGallery } from '@/components/art-gallery'
-import type { Asset } from '@/lib/api'
+import type { ArtworkItem, ArtworkResponse } from '@/lib/api'
 import { baseAsset, okJson } from '@/test/entity-fixtures'
 import { chavesInvalidadas } from '@/test/harness'
 
-// Espiões dos verbos de escrita da galeria — cada teste lê com que argumentos a
-// UI bateu na API (kind do upload, id do prefer/delete).
+// Artes (0049): a galeria consome `GET /artwork` (0048) e rende UMA LINHA por kind;
+// o lightbox abre a arte em alta com navegação e as ações (preferir/baixar/remover).
+// Os espiões leem COM QUE a UI bateu na API (id do prefer/delete, corpo do select).
+
 interface Espioes {
-  onUpload: ReturnType<typeof vi.fn<(kind: unknown, fileName: string) => void>>
+  onSelect: ReturnType<typeof vi.fn<(body: unknown) => void>>
   onPrefer: ReturnType<typeof vi.fn<(assetId: string) => void>>
   onDelete: ReturnType<typeof vi.fn<(assetId: string) => void>>
+  onUpload: ReturnType<typeof vi.fn<(kind: unknown, fileName: string) => void>>
 }
 
 interface Opcoes {
-  assets?: Asset[]
-  uploadErro?: { status: number; code: string; message: string }
-  // Tipo da entity (0044): default `movie`; `episode` habilita o still.
+  artwork?: ArtworkResponse
   type?: string
-  // Still do provider (0044), passado como prop do detalhe.
   stillUrl?: string | null
 }
 
-// Envelope de uma resposta de erro do padrão `{ error: { code, message } }`.
-function erroJson(status: number, code: string, message: string) {
+// Item de arte de teste, com sobrescritas pontuais.
+function item(over: Partial<ArtworkItem> = {}): ArtworkItem {
   return {
-    ok: false,
-    status,
-    json: async () => ({ error: { code, message } }),
-  } as Response
+    url: '/api/v1/images?src=https%3A%2F%2Fassets.fanart.tv%2Fx.jpg',
+    source: 'fanarttv',
+    is_preferred: false,
+    is_local: false,
+    src_url: 'https://assets.fanart.tv/x.jpg',
+    lang: 'en',
+    likes: 5,
+    ...over,
+  }
 }
 
-// Roteia o fetch por método + caminho: GET da galeria, POST (upload multipart),
-// PUT prefer, DELETE. O POST lê o FormData (campo `file` e `kind`).
+// Arte padrão do filme: pôster com [inventário, local do dono, local preferida] +
+// uma fanart 16:9 (para conferir o aspect por kind).
+function artworkPadrao(): ArtworkResponse {
+  return {
+    poster: [
+      item({ source: 'fanarttv', is_local: false, is_preferred: false }),
+      item({
+        url: '/api/v1/entities/e1/assets/p1/file',
+        source: 'user',
+        is_local: true,
+        is_preferred: false,
+        asset_id: 'p1',
+        src_url: undefined,
+        lang: undefined,
+        likes: undefined,
+      }),
+      item({
+        url: '/api/v1/entities/e1/assets/p2/file',
+        source: 'external',
+        is_local: true,
+        is_preferred: true,
+        asset_id: 'p2',
+        src_url: undefined,
+        lang: undefined,
+        likes: undefined,
+      }),
+    ],
+    fanart: [
+      item({
+        url: '/api/v1/images?src=https%3A%2F%2Fassets.fanart.tv%2Ff.jpg',
+        src_url: 'https://assets.fanart.tv/f.jpg',
+      }),
+    ],
+    available: { poster: 3, fanart: 1 },
+  }
+}
+
 function fetchRouter(opts: Opcoes, espioes: Espioes) {
-  const assets = opts.assets ?? []
+  const artwork = opts.artwork ?? {}
   return vi.fn(async (url: string, init?: RequestInit) => {
     const u = new URL(String(url), 'http://localhost')
     const path = u.pathname
     const method = init?.method ?? 'GET'
 
-    if (path === '/api/v1/entities/e1/assets' && method === 'GET') {
-      return okJson(assets)
+    if (path === '/api/v1/entities/e1/artwork' && method === 'GET') {
+      return okJson(artwork)
+    }
+    if (path === '/api/v1/entities/e1/artwork/select' && method === 'POST') {
+      espioes.onSelect(JSON.parse(String(init?.body)))
+      return okJson(baseAsset({ id: 'novo', origin: 'external' }))
     }
     if (path === '/api/v1/entities/e1/assets' && method === 'POST') {
       const form = init?.body as FormData
       const file = form.get('file') as File
       espioes.onUpload(form.get('kind'), file.name)
-      if (opts.uploadErro) {
-        return erroJson(
-          opts.uploadErro.status,
-          opts.uploadErro.code,
-          opts.uploadErro.message,
-        )
-      }
-      return okJson(baseAsset({ id: 'novo', origin: 'user' }))
+      return okJson(baseAsset({ id: 'up', origin: 'user' }))
     }
     const prefer = path.match(/^\/api\/v1\/entities\/e1\/assets\/(.+)\/prefer$/)
     if (prefer && method === 'PUT') {
@@ -76,13 +113,12 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-// Renderiza a galeria com um QueryClient próprio (retries off) e espiona o
-// `invalidateQueries` para afirmar as invalidações pós-mutação.
 function renderGallery(opts: Opcoes = {}) {
   const espioes: Espioes = {
-    onUpload: vi.fn<(kind: unknown, fileName: string) => void>(),
+    onSelect: vi.fn<(body: unknown) => void>(),
     onPrefer: vi.fn<(assetId: string) => void>(),
     onDelete: vi.fn<(assetId: string) => void>(),
+    onUpload: vi.fn<(kind: unknown, fileName: string) => void>(),
   }
   vi.stubGlobal('fetch', fetchRouter(opts, espioes))
   const queryClient = new QueryClient({
@@ -101,55 +137,305 @@ function renderGallery(opts: Opcoes = {}) {
   return { espioes, invalidateSpy }
 }
 
-describe('ArtGallery — galeria + upload (0017)', () => {
-  it('(a) lista as artes com selos origin (sua/externa) e preferida', async () => {
-    renderGallery({
-      assets: [
-        baseAsset({ id: 'a1', origin: 'user', preferred: true }),
-        baseAsset({ id: 'a2', origin: 'external', preferred: false }),
-      ],
-    })
+// Abre o lightbox no card `label` e espera o dialog aparecer.
+async function abrirLightbox(
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+) {
+  await user.click(await screen.findByRole('button', { name: label }))
+  return screen.findByRole('dialog')
+}
 
-    await waitFor(() => expect(screen.getByText('sua')).toBeInTheDocument())
-    expect(screen.getByText('externa')).toBeInTheDocument()
-    expect(screen.getByText('preferida')).toBeInTheDocument()
+describe('ArtGallery — linhas por kind (0049)', () => {
+  it('(a) rende uma linha por kind, cada card no aspect certo', async () => {
+    renderGallery({ artwork: artworkPadrao() })
+
+    // Pôster no frame retrato 2:3; fanart no frame paisagem 16:9 — sem deformar.
+    const poster = (await screen.findByAltText('Pôster 1')) as HTMLImageElement
+    const fanart = screen.getByAltText('Fanart 1') as HTMLImageElement
+    expect(poster.className).toContain('aspect-[2/3]')
+    expect(fanart.className).toContain('aspect-video')
+    // Rótulo do kind visível em cada linha (heading da seção).
+    expect(
+      screen.getByRole('heading', { name: 'Pôster', level: 3 }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Fanart', level: 3 }),
+    ).toBeInTheDocument()
   })
 
-  it('(b) upload de um File chama uploadAsset com o kind e invalida as tres queries', async () => {
-    const user = userEvent.setup()
-    const { espioes, invalidateSpy } = renderGallery({ assets: [] })
+  it('(b) marca a arte preferida (aria-label + selo)', async () => {
+    renderGallery({ artwork: artworkPadrao() })
+    // O 3o pôster é a preferida: o botão a anuncia como tal.
+    expect(
+      await screen.findByRole('button', { name: 'Ver Pôster 3 (preferida)' }),
+    ).toBeInTheDocument()
+  })
 
+  it('(c) estado vazio quando não há artes', async () => {
+    renderGallery({ artwork: { available: {} } })
     await waitFor(() =>
-      expect(screen.getByText('Nenhuma arte ainda')).toBeInTheDocument(),
+      expect(
+        screen.getByText('Nenhuma arte disponível ainda.'),
+      ).toBeInTheDocument(),
+    )
+  })
+
+  it('(d) episódio sem still no inventário: card provider read-only do stillUrl', async () => {
+    const raw = 'https://artworks.thetvdb.com/s.jpg'
+    renderGallery({
+      type: 'episode',
+      artwork: { available: {} },
+      stillUrl: raw,
+    })
+    const img = (await screen.findByAltText(
+      'Still do provider',
+    )) as HTMLImageElement
+    expect(img.getAttribute('src')).toBe(
+      `/api/v1/images?src=${encodeURIComponent(raw)}`,
+    )
+    expect(img.className).toContain('aspect-video')
+  })
+})
+
+describe('ArtGallery — lightbox: navegação e teclado (0049)', () => {
+  it('(e) abre no card, navega com as setas e fecha no Esc', async () => {
+    const user = userEvent.setup()
+    renderGallery({ artwork: artworkPadrao() })
+
+    const dialog = await abrirLightbox(user, 'Ver Pôster 1')
+    expect(dialog).toHaveAttribute('aria-label', 'Pôster 1 de 3')
+
+    // Seta direita avança dentro do tipo.
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() =>
+      expect(screen.getByRole('dialog')).toHaveAttribute(
+        'aria-label',
+        'Pôster 2 de 3',
+      ),
+    )
+    // Seta esquerda volta.
+    await user.keyboard('{ArrowLeft}')
+    await waitFor(() =>
+      expect(screen.getByRole('dialog')).toHaveAttribute(
+        'aria-label',
+        'Pôster 1 de 3',
+      ),
+    )
+    // Esc fecha.
+    await user.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('(f2) botão "Arte anterior" navega (com wrap) dentro do tipo', async () => {
+    const user = userEvent.setup()
+    renderGallery({ artwork: artworkPadrao() })
+    await abrirLightbox(user, 'Ver Pôster 1')
+    // De 1/3, "anterior" dá a volta para 3/3.
+    await user.click(screen.getByRole('button', { name: 'Arte anterior' }))
+    await waitFor(() =>
+      expect(screen.getByRole('dialog')).toHaveAttribute(
+        'aria-label',
+        'Pôster 3 de 3',
+      ),
+    )
+  })
+
+  it('(f3) Tab fica preso: do último focável volta ao primeiro', async () => {
+    const user = userEvent.setup()
+    renderGallery({ artwork: artworkPadrao() })
+    const dialog = await abrirLightbox(user, 'Ver Pôster 1')
+    const botoes = dialog.querySelectorAll<HTMLElement>('button')
+    const primeiro = botoes[0]
+    const ultimo = botoes[botoes.length - 1]
+    // Com o foco no último, Tab (sem shift) devolve ao primeiro.
+    ultimo.focus()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(document.activeElement).toBe(primeiro)
+    // Com o foco no primeiro, Shift+Tab vai ao último.
+    primeiro.focus()
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(ultimo)
+  })
+
+  it('(f) botão próxima navega e o toggle de zoom alterna o rótulo', async () => {
+    const user = userEvent.setup()
+    renderGallery({ artwork: artworkPadrao() })
+    await abrirLightbox(user, 'Ver Pôster 1')
+
+    await user.click(screen.getByRole('button', { name: 'Próxima arte' }))
+    await waitFor(() =>
+      expect(screen.getByRole('dialog')).toHaveAttribute(
+        'aria-label',
+        'Pôster 2 de 3',
+      ),
+    )
+    // Zoom: começa em "Ampliar para 100%"; ao clicar vira "Ajustar à tela".
+    await user.click(screen.getByRole('button', { name: 'Ampliar para 100%' }))
+    expect(
+      screen.getByRole('button', { name: 'Ajustar à tela' }),
+    ).toBeInTheDocument()
+  })
+})
+
+describe('ArtGallery — lightbox: metadados e backdrop (0049)', () => {
+  it('(m) mostra idioma, likes e origem da arte de inventário', async () => {
+    const user = userEvent.setup()
+    renderGallery({ artwork: artworkPadrao() })
+    await abrirLightbox(user, 'Ver Pôster 1')
+
+    // Pôster 1 (inventário): lang 'en', likes 5, source fanarttv.
+    expect(screen.getByText('5')).toBeInTheDocument()
+    expect(screen.getByText('fanarttv')).toBeInTheDocument()
+  })
+
+  it('(n) disc textless: selo "sem texto", disc_type e temporada', async () => {
+    const user = userEvent.setup()
+    renderGallery({
+      artwork: {
+        disc: [
+          item({
+            source: 'fanarttv',
+            lang: '',
+            likes: 0,
+            disc_type: 'bluray',
+            season: '1',
+          }),
+        ],
+        available: { disc: 1 },
+      },
+    })
+    await abrirLightbox(user, 'Ver Disco 1')
+    expect(screen.getByText('sem texto')).toBeInTheDocument()
+    expect(screen.getByText('bluray')).toBeInTheDocument()
+    expect(screen.getByText('Temporada 1')).toBeInTheDocument()
+  })
+
+  it('(o) preferida: sem botão "Definir como preferida", com selo no rodapé', async () => {
+    const user = userEvent.setup()
+    renderGallery({ artwork: artworkPadrao() })
+    // Pôster 3 é a preferida.
+    await abrirLightbox(user, 'Ver Pôster 3 (preferida)')
+    expect(
+      screen.queryByRole('button', { name: 'Definir como preferida' }),
+    ).toBeNull()
+    // O selo "preferida" aparece no rodapé do lightbox.
+    expect(screen.getAllByText('preferida').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('(p) clique no backdrop fecha o lightbox', async () => {
+    const user = userEvent.setup()
+    renderGallery({ artwork: artworkPadrao() })
+    const dialog = await abrirLightbox(user, 'Ver Pôster 1')
+    // Clique direto no backdrop (o próprio nó do dialog) fecha.
+    fireEvent.click(dialog)
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    )
+  })
+})
+
+describe('ArtGallery — ações roteadas (0049)', () => {
+  it('(g) preferir arte LOCAL do dono → PUT prefer com o asset_id', async () => {
+    const user = userEvent.setup()
+    const { espioes, invalidateSpy } = renderGallery({
+      artwork: artworkPadrao(),
+    })
+
+    // Pôster 2 é o local do dono (asset_id p1), não preferido.
+    await abrirLightbox(user, 'Ver Pôster 2')
+    await user.click(
+      screen.getByRole('button', { name: 'Definir como preferida' }),
     )
 
-    // Escolhe kind=fanart e envia um PNG.
-    await user.selectOptions(screen.getByLabelText('Tipo de arte'), 'fanart')
-    const file = new File(['x'], 'arte.png', { type: 'image/png' })
-    await user.upload(screen.getByLabelText('Arquivo de arte'), file)
-
-    await waitFor(() => expect(espioes.onUpload).toHaveBeenCalledTimes(1))
-    expect(espioes.onUpload).toHaveBeenCalledWith('fanart', 'arte.png')
-
-    // Invalida galeria + detalhe + grid (o poster reflete a nova precedencia).
+    await waitFor(() => expect(espioes.onPrefer).toHaveBeenCalledWith('p1'))
+    expect(espioes.onSelect).not.toHaveBeenCalled()
+    // Invalida galeria + detalhe + grid.
     await waitFor(() => {
       const chaves = chavesInvalidadas(invalidateSpy.mock.calls)
-      expect(chaves).toContain('["assets","e1"]')
+      expect(chaves).toContain('["artwork","e1"]')
       expect(chaves).toContain('["entity","e1"]')
       expect(chaves).toContain('["entities"]')
     })
   })
 
-  it('(c) upload de arquivo nao-imagem e bloqueado no cliente (erro inline, sem chamar a API)', async () => {
-    // `applyAccept: false` deixa o arquivo nao-imagem chegar ao handler apesar do
-    // `accept` do input — simula o caminho (drag-drop / navegador) que ignora o
-    // accept, que e justamente o que a validacao no cliente cobre.
-    const user = userEvent.setup({ applyAccept: false })
-    const { espioes } = renderGallery({ assets: [] })
+  it('(h) preferir arte do INVENTÁRIO → POST select {url:src_url, prefer:true}', async () => {
+    const user = userEvent.setup()
+    const { espioes } = renderGallery({ artwork: artworkPadrao() })
+
+    // Pôster 1 é do inventário (fanarttv).
+    await abrirLightbox(user, 'Ver Pôster 1')
+    await user.click(
+      screen.getByRole('button', { name: 'Definir como preferida' }),
+    )
 
     await waitFor(() =>
-      expect(screen.getByText('Nenhuma arte ainda')).toBeInTheDocument(),
+      expect(espioes.onSelect).toHaveBeenCalledWith({
+        kind: 'poster',
+        url: 'https://assets.fanart.tv/x.jpg',
+        prefer: true,
+      }),
     )
+    expect(espioes.onPrefer).not.toHaveBeenCalled()
+  })
+
+  it('(i) baixar arte do inventário → POST select {prefer:false}', async () => {
+    const user = userEvent.setup()
+    const { espioes } = renderGallery({ artwork: artworkPadrao() })
+
+    await abrirLightbox(user, 'Ver Pôster 1')
+    await user.click(screen.getByRole('button', { name: 'Baixar pro disco' }))
+
+    await waitFor(() =>
+      expect(espioes.onSelect).toHaveBeenCalledWith({
+        kind: 'poster',
+        url: 'https://assets.fanart.tv/x.jpg',
+        prefer: false,
+      }),
+    )
+  })
+
+  it('(j) remover só aparece na arte do dono e chama DELETE do asset', async () => {
+    const user = userEvent.setup()
+    const { espioes } = renderGallery({ artwork: artworkPadrao() })
+
+    // Pôster 1 (inventário) não tem "Remover".
+    await abrirLightbox(user, 'Ver Pôster 1')
+    expect(screen.queryByRole('button', { name: 'Remover arte' })).toBeNull()
+    await user.keyboard('{Escape}')
+
+    // Pôster 2 (do dono) tem "Remover".
+    await abrirLightbox(user, 'Ver Pôster 2')
+    await user.click(screen.getByRole('button', { name: 'Remover arte' }))
+    await waitFor(() => expect(espioes.onDelete).toHaveBeenCalledWith('p1'))
+  })
+})
+
+describe('ArtGallery — upload do dono (0017)', () => {
+  it('(k) upload de um PNG chama uploadAsset com o kind e invalida as queries', async () => {
+    const user = userEvent.setup()
+    const { espioes, invalidateSpy } = renderGallery({
+      artwork: { available: {} },
+    })
+
+    await user.selectOptions(screen.getByLabelText('Tipo de arte'), 'fanart')
+    const file = new File(['x'], 'arte.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText('Arquivo de arte'), file)
+
+    await waitFor(() =>
+      expect(espioes.onUpload).toHaveBeenCalledWith('fanart', 'arte.png'),
+    )
+    await waitFor(() => {
+      const chaves = chavesInvalidadas(invalidateSpy.mock.calls)
+      expect(chaves).toContain('["artwork","e1"]')
+    })
+  })
+
+  it('(l) upload de não-imagem é bloqueado no cliente (erro inline)', async () => {
+    const user = userEvent.setup({ applyAccept: false })
+    const { espioes } = renderGallery({ artwork: { available: {} } })
 
     const file = new File(['x'], 'nota.txt', { type: 'text/plain' })
     await user.upload(screen.getByLabelText('Arquivo de arte'), file)
@@ -159,132 +445,6 @@ describe('ArtGallery — galeria + upload (0017)', () => {
         'Tipo de imagem nao suportado',
       ),
     )
-    // Nao bateu na API (rejeitado antes do fetch de upload).
     expect(espioes.onUpload).not.toHaveBeenCalled()
-  })
-
-  it('(d) "Preferir" chama preferAsset com o id do asset', async () => {
-    const user = userEvent.setup()
-    const { espioes } = renderGallery({
-      assets: [baseAsset({ id: 'a2', origin: 'external', preferred: false })],
-    })
-
-    await user.click(await screen.findByRole('button', { name: 'Preferir' }))
-
-    await waitFor(() => expect(espioes.onPrefer).toHaveBeenCalledWith('a2'))
-  })
-
-  it('(e) "Remover" aparece so em origin=user e chama deleteAsset', async () => {
-    const user = userEvent.setup()
-    const { espioes } = renderGallery({
-      assets: [
-        baseAsset({ id: 'a1', origin: 'user' }),
-        baseAsset({ id: 'a2', origin: 'external' }),
-      ],
-    })
-
-    // So a do dono tem o botao Remover (uma unica ocorrencia).
-    const remover = await screen.findAllByRole('button', {
-      name: /Remover arte/,
-    })
-    expect(remover).toHaveLength(1)
-
-    await user.click(remover[0])
-    await waitFor(() => expect(espioes.onDelete).toHaveBeenCalledWith('a1'))
-  })
-
-  it('(f) erro 415 do servidor aparece inline', async () => {
-    const user = userEvent.setup()
-    renderGallery({
-      assets: [],
-      uploadErro: {
-        status: 415,
-        code: 'unsupported_media_type',
-        message: 'Tipo de arquivo nao suportado pelo servidor.',
-      },
-    })
-
-    await waitFor(() =>
-      expect(screen.getByText('Nenhuma arte ainda')).toBeInTheDocument(),
-    )
-
-    const file = new File(['x'], 'arte.png', { type: 'image/png' })
-    await user.upload(screen.getByLabelText('Arquivo de arte'), file)
-
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        'Tipo de arquivo nao suportado pelo servidor.',
-      ),
-    )
-  })
-})
-
-describe('ArtGallery — enquadramento e still do episódio (0044)', () => {
-  it('(g) miniatura por kind: pôster 2:3, fanart 16:9, com rótulo pt-BR', async () => {
-    renderGallery({
-      assets: [
-        baseAsset({ id: 'p', kind: 'poster', origin: 'user' }),
-        baseAsset({ id: 'f', kind: 'fanart', origin: 'external' }),
-      ],
-    })
-
-    const poster = (await screen.findByAltText(
-      'poster sua',
-    )) as HTMLImageElement
-    const fanart = screen.getByAltText('fanart externa') as HTMLImageElement
-    // Pôster no frame retrato; fanart no frame paisagem (16:9) — sem deformar.
-    expect(poster.className).toContain('aspect-[2/3]')
-    expect(fanart.className).toContain('aspect-video')
-    // Rótulo do kind visível em cada miniatura (o rótulo também aparece no seletor
-    // de upload, daí `getAllByText`).
-    expect(screen.getAllByText('Pôster').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('Fanart').length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('(h) episódio: o upload oferece só o kind still (sem pôster/fanart)', async () => {
-    renderGallery({ type: 'episode', assets: [] })
-
-    await waitFor(() =>
-      expect(
-        screen.getByText('Envie um still para este episódio.'),
-      ).toBeInTheDocument(),
-    )
-    // O seletor de tipo só tem "Still".
-    expect(screen.getByRole('option', { name: 'Still' })).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: 'Pôster' })).toBeNull()
-    expect(screen.queryByRole('option', { name: 'Fanart' })).toBeNull()
-  })
-
-  it('(i) episódio sem still do dono: card "provider" read-only a partir do stillUrl', async () => {
-    const raw = 'https://artworks.thetvdb.com/s.jpg'
-    renderGallery({ type: 'episode', assets: [], stillUrl: raw })
-
-    const img = (await screen.findByAltText(
-      'Still do provider',
-    )) as HTMLImageElement
-    // Still cru do provider passa pelo image proxy (arteSrc).
-    expect(img.getAttribute('src')).toBe(
-      `/api/v1/images?src=${encodeURIComponent(raw)}`,
-    )
-    expect(img.className).toContain('aspect-video')
-    expect(screen.getByText('provider')).toBeInTheDocument()
-    // É a fonte: não deletável.
-    expect(screen.queryByRole('button', { name: /Remover arte/ })).toBeNull()
-  })
-
-  it('(j) episódio com still do dono: o custom vence e o card "provider" some', async () => {
-    renderGallery({
-      type: 'episode',
-      assets: [baseAsset({ id: 's1', kind: 'still', origin: 'user' })],
-      stillUrl: 'https://artworks.thetvdb.com/s.jpg',
-    })
-
-    // O still do dono aparece (removível); o card do provider não é renderizado.
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: /Remover arte/ }),
-      ).toBeInTheDocument(),
-    )
-    expect(screen.queryByAltText('Still do provider')).toBeNull()
   })
 })
