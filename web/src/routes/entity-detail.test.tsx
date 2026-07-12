@@ -175,10 +175,22 @@ describe('EntityDetailScreen — árvore de séries (0031)', () => {
     expect(screen.queryByRole('heading', { name: 'Arquivos' })).toBeNull()
   })
 
-  it('temporada (season) lista os Episódios numerados, sem Arquivos', async () => {
+  it('temporada (season) lista os Episódios com o número REAL (0039), sem Arquivos', async () => {
+    // Biblioteca esparsa: so o E01 e o E05 (buraco no meio). O card mostra o numero
+    // REAL do numbering (E01, E05), NAO a posicao na lista (que seria E01, E02).
     renderDetail(baseEntity({ type: 'season', title: 'Temporada 1' }), {}, [
-      card({ id: 'e1', title: 'Piloto', type: 'episode' }),
-      card({ id: 'e2', title: 'Segundo', type: 'episode' }),
+      card({
+        id: 'e1',
+        title: 'Piloto',
+        type: 'episode',
+        numbering: { season: 1, number: 1 },
+      }),
+      card({
+        id: 'e5',
+        title: 'Quinto',
+        type: 'episode',
+        numbering: { season: 1, number: 5 },
+      }),
     ])
 
     await waitFor(() =>
@@ -187,8 +199,9 @@ describe('EntityDetailScreen — árvore de séries (0031)', () => {
       ).toBeInTheDocument(),
     )
     expect(await screen.findByText('Piloto')).toBeInTheDocument()
-    expect(screen.getByText('Episódio 1')).toBeInTheDocument()
-    expect(screen.getByText('Episódio 2')).toBeInTheDocument()
+    expect(screen.getByText('E01')).toBeInTheDocument()
+    expect(screen.getByText('E05')).toBeInTheDocument()
+    expect(screen.queryByText('E02')).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Arquivos' })).toBeNull()
   })
 

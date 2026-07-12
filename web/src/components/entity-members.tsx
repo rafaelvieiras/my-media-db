@@ -52,9 +52,9 @@ export function GradeMembros({
 // MembrosSomenteLeitura lista os FILHOS de um nó da árvore de séries (0031) como
 // cards READ-ONLY: as temporadas de uma série, os episódios de uma temporada. A
 // Fase 1 não edita a árvore à mão (sem add/remove — diferente da coleção). O
-// backend já devolve /members ordenado por `sort_index`; `numerar` prefixa a
-// posição ordinal (1,2,3…) ao card do episódio — o número na ordenação default,
-// já que o DTO de card ainda não carrega o `numbering` multi-ordem.
+// backend já devolve /members ordenado por `sort_index`; `numerar` marca o card do
+// episódio para exibir seu número REAL (0039) — lido de `card.numbering` (projetado
+// na ordenação da temporada-pai), não a posição ordinal na lista.
 export function MembrosSomenteLeitura({
   id,
   titulo,
@@ -84,9 +84,9 @@ export function MembrosSomenteLeitura({
         carregando={carregando}
         erro={erro}
         vazio={vazio}
-        render={(card, indice) => {
+        render={(card) => {
           if (numerar) {
-            return <CardNumerado card={card} numero={indice + 1} />
+            return <CardNumerado card={card} />
           }
           if (card.type === 'season') {
             return <CardTemporada card={card} />
@@ -107,16 +107,36 @@ export function CardTemporada({ card }: { card: EntityCard }) {
   return <PosterCard card={card} />
 }
 
-// CardNumerado envolve o PosterCard com o número do episódio (posição ordinal na
-// ordenação default). Mínimo viável da Fase 1: número + título — o número vem da
-// posição em /members (ordenado por sort_index no backend), não do DTO do card.
-function CardNumerado({ card, numero }: { card: EntityCard; numero: number }) {
+// CardNumerado envolve o PosterCard com o número REAL do episódio (0039), lido de
+// `card.numbering` (projetado na ordenação da temporada-pai pelo backend), NÃO a
+// posição na lista. Rótulo: "E{number}" com 2 dígitos (ex.: E05); quando há
+// `absolute_number` distinto do número da ordem, anexa " · #{absolute}" (anime/
+// ordenação contínua). Sem `numbering` (episódio draft) → rótulo neutro "Episódio",
+// sem inventar posição — biblioteca com E01+E05 mostra E01 e E05, não E01/E02.
+export function CardNumerado({ card }: { card: EntityCard }) {
   return (
     <div className="flex flex-col gap-1">
       <span className="text-xs font-medium text-muted-foreground">
-        Episódio {numero}
+        {rotuloEpisodio(card.numbering)}
       </span>
       <PosterCard card={card} />
     </div>
   )
+}
+
+// rotuloEpisodio monta o rótulo do card de episódio a partir do numbering do card:
+// "E05" (número com 2 dígitos) e, quando o absoluto existe e difere do número da
+// ordem, "E05 · #128". Sem numbering (draft) → "Episódio" neutro.
+function rotuloEpisodio(numbering: EntityCard['numbering']): string {
+  if (!numbering) {
+    return 'Episódio'
+  }
+  const base = `E${String(numbering.number).padStart(2, '0')}`
+  if (
+    numbering.absolute_number != null &&
+    numbering.absolute_number !== numbering.number
+  ) {
+    return `${base} · #${numbering.absolute_number}`
+  }
+  return base
 }

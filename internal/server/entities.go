@@ -18,6 +18,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
+	"github.com/rafaelvieiras/my-media-db/internal/tvext"
 )
 
 // Este arquivo implementa a superfície de LEITURA de /api/v1/entities (briefing
@@ -51,6 +52,23 @@ type entityCardDTO struct {
 	// query SQL do card (mesma fronteira do 0034/Ancestors). `omitempty`: ausente
 	// (null na UI) para movie/episode/collection, que usam a posse simples de `owned`.
 	Ownership *resolver.OwnershipInfo `json:"ownership,omitempty"`
+	// Numbering é a numeração REAL do episódio (0039): `season`/`number` projetados na
+	// ordenação da temporada-pai (lidos do extension_data core.tv@1 do episódio) e o
+	// `absolute_number` quando houver. Anotado no server em montarMembros — como
+	// Ownership/Ancestors, fora da query do card. `omitempty`: ausente para todo tipo
+	// que não seja `episode` e para episódio sem numbering (draft) — a UI cai no rótulo
+	// neutro, sem inventar posição. Substitui a antiga posição ordinal do card.
+	Numbering *episodeNumberingDTO `json:"numbering,omitempty"`
+}
+
+// episodeNumberingDTO é a numeração real de um episódio no card (0039): `season` e
+// `number` na ordenação da temporada-pai; `absolute_number` (opcional) quando a fonte
+// informou o número absoluto (útil para anime/ordenação contínua). Distinto da POSIÇÃO
+// na lista — reflete o número catalogado, mesmo com buracos na biblioteca.
+type episodeNumberingDTO struct {
+	Season         int  `json:"season"`
+	Number         int  `json:"number"`
+	AbsoluteNumber *int `json:"absolute_number,omitempty"`
 }
 
 // entityListDTO é a resposta paginada de GET /api/v1/entities.
@@ -236,6 +254,11 @@ const (
 	tipoEntTemporada = "season"
 	kindTemporada    = "tv_season"
 	kindEpisodio     = "tv_episode"
+	// nsTVCore é o namespace do extension_data da vertical de séries (core.tv@1): a
+	// temporada guarda `ordering`/`season_number`, o episódio guarda `numbering`
+	// (ordem→{season,number}) + `absolute_number`. Lido aqui para o numbering do card
+	// (0039); a ESCRITA nasce no enrich (mesmo valor, fontes distintas).
+	nsTVCore = "core.tv@1"
 )
 
 // membroCard carrega o card já montado + o release_date do membro, só para ordenar por
@@ -288,6 +311,9 @@ func (s *Server) montarMembros(ctx context.Context, id, tipoPai string) ([]entit
 		return nil, err
 	}
 	kind, ordenarPorAno := kindEOrdemMembros(tipoPai)
+	// Quando o pai é uma temporada, os episódios ganham o numbering REAL (0039) projetado
+	// na ordenação da PRÓPRIA temporada — lida uma única vez do extension_data dela.
+	ordem, seasonNumber := s.ordenacaoDaTemporada(ctx, id, tipoPai)
 	membros := make([]membroCard, 0, len(rels))
 	for _, rel := range rels {
 		if rel.Kind != kind {
@@ -302,6 +328,7 @@ func (s *Server) montarMembros(ctx context.Context, id, tipoPai string) ([]entit
 		}
 		card := cardDTODeMembro(row)
 		s.anotarPosseCard(ctx, &card)
+		s.anotarNumbering(ctx, &card, ordem, seasonNumber)
 		membros = append(membros, membroCard{dto: card, ano: row.ReleaseDate})
 	}
 	// Série/temporada preservam a ordem de sort_index (número); só a coleção reordena por
@@ -315,6 +342,77 @@ func (s *Server) montarMembros(ctx context.Context, id, tipoPai string) ([]entit
 		out[i] = m.dto
 	}
 	return out, nil
+}
+
+// ordenacaoDaTemporada devolve a ordenação default (`ordering`) e o `season_number` da
+// temporada-pai, lidos do extension_data dela (core.tv@1, gravado no import por
+// extensaoTemporada). Só faz sentido quando o pai é `season`; para os demais tipos
+// devolve ("",0) e o numbering não é anotado. Degrada silenciosamente ("",0) se a
+// temporada não existir ou não tiver o namespace — o card cai no rótulo neutro.
+func (s *Server) ordenacaoDaTemporada(ctx context.Context, seasonID, tipoPai string) (ordering string, seasonNumber int) {
+	if tipoPai != tipoEntTemporada {
+		return "", 0
+	}
+	ent, err := s.leitura().ObterEntity(ctx, seasonID)
+	if err != nil {
+		return "", 0
+	}
+	ns := tvext.Namespace(ent.ExtensionDataJson, nsTVCore)
+	if ns == nil {
+		return "", 0
+	}
+	if o, ok := ns["ordering"].(string); ok {
+		ordering = o
+	}
+	if n, ok := tvext.AsInt(ns["season_number"]); ok {
+		seasonNumber = n
+	}
+	return ordering, seasonNumber
+}
+
+// anotarNumbering preenche card.Numbering com a numeração REAL do episódio (0039),
+// projetada na ordenação da temporada-pai. Só age em cards `episode`; lê o
+// extension_data do episódio (leitura extra por episódio — escala de dezenas por
+// temporada, aceitável; TODO: query agregada única se pesar, ver 0039 §7). Degrada
+// para nil em qualquer falha (a UI omite o número, nunca inventa posição).
+func (s *Server) anotarNumbering(ctx context.Context, card *entityCardDTO, ordering string, seasonNumber int) {
+	if card.Type != tipoEntEpisodio {
+		return
+	}
+	ent, err := s.leitura().ObterEntity(ctx, card.ID)
+	if err != nil {
+		return
+	}
+	ns := tvext.Namespace(ent.ExtensionDataJson, nsTVCore)
+	card.Numbering = projetarNumbering(ns, ordering, seasonNumber)
+}
+
+// projetarNumbering é a projeção PURA do numbering do episódio na ordenação da
+// temporada-pai. Preferência: a entrada `numbering[ordering]` → {season,number} (+ o
+// absoluto quando houver). Fallback (0039): sem entrada para a ordenação, mas com
+// `absolute_number`, usa o absoluto como número (Season = o da temporada-pai). Sem
+// nenhum dos dois (draft) → nil (rótulo neutro na UI).
+func projetarNumbering(ns map[string]any, ordering string, seasonNumber int) *episodeNumberingDTO {
+	if ns == nil {
+		return nil
+	}
+	var abs *int
+	if a, ok := tvext.AsInt(ns["absolute_number"]); ok {
+		abs = &a
+	}
+	if numbering, ok := ns["numbering"].(map[string]any); ok {
+		if par, ok := numbering[ordering].(map[string]any); ok {
+			season, sOK := tvext.AsInt(par["season"])
+			number, nOK := tvext.AsInt(par["number"])
+			if sOK && nOK {
+				return &episodeNumberingDTO{Season: season, Number: number, AbsoluteNumber: abs}
+			}
+		}
+	}
+	if abs != nil {
+		return &episodeNumberingDTO{Season: seasonNumber, Number: *abs}
+	}
+	return nil
 }
 
 // kindEOrdemMembros escolhe o kind de relação dos filhos e se eles são reordenados por

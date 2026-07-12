@@ -116,3 +116,4 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0036](0036-posse-completude-no-card-da-temporada.md) | Posse e completude no card da temporada | fix/feature | done | 0034 |
 | [0037](0037-completude-no-card-da-serie-home.md) | Completude no card da série (home): "X/Y temporadas" | fix/feature | done | 0036 |
 | [0038](0038-badge-de-posse-no-topo-direito-da-capa.md) | Badge de posse no topo-direito da capa (sem apagar ausentes) | fix | done | 0037 |
+| [0039](0039-numbering-real-no-card-do-episodio.md) | Numbering real no card do episódio (SxxEyy/absoluto, não posição ordinal) | fix/feature | done | 0031 |

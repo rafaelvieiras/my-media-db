@@ -715,6 +715,15 @@ export interface components {
       poster_url: string | null
       /** @description Posse AGREGADA do card na árvore de séries (0036): episódios possuídos sobre o total. OPCIONAL — presente só nos cards `season` (e opcionalmente `tv`) de GET /entities/{id}/members; ausente/`null` para movie/episode/ collection (que usam a posse simples de `owned`). Anotado no server pós-listagem, sem mudar a query do card. */
       ownership?: components['schemas']['OwnershipInfo'] | null
+      /** @description Numeração REAL do episódio (0039): `season`/`number` projetados na ordenação da temporada-pai e o `absolute_number` quando houver. Reflete o número CATALOGADO (S02E05), não a posição na lista — biblioteca com E01+E05 mostra E01 e E05. OPCIONAL: presente só nos cards `episode` de GET /entities/{id}/members; ausente/`null` para os demais tipos e para episódio sem numbering (draft), que cai no rótulo neutro. Anotado no server pós-listagem, sem mudar a query do card. */
+      numbering?: components['schemas']['EpisodeNumbering'] | null
+    }
+    /** @description Numeração de um episódio na ordenação da temporada-pai (0039). `season`/`number` vêm do numbering multi-ordem gravado no import (core.tv@1); `absolute_number` é o número contínuo através das temporadas (anime), presente quando a fonte informou. */
+    EpisodeNumbering: {
+      season: number
+      number: number
+      /** @description Número absoluto (contínuo), quando disponível. */
+      absolute_number?: number
     }
     EntityList: {
       items: components['schemas']['EntityCard'][]

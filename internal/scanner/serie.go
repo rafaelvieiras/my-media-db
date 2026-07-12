@@ -22,7 +22,6 @@ package scanner
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"log"
 	"path/filepath"
@@ -33,6 +32,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/naming"
+	"github.com/rafaelvieiras/my-media-db/internal/tvext"
 )
 
 const (
@@ -537,34 +537,13 @@ func (r *scanRun) upsertMediaFileSerie(ctx context.Context, q *sqlcgen.Queries, 
 
 // extrairTVNS extrai o objeto do namespace core.tv@1 do extension_data. nil quando
 // ausente/ilegível (o chamador degrada — série/episódio sem numeração não indexa).
+// Delega ao parser único de tvext (mesmo envelope namespace→objeto reusado pelo
+// server no 0039); mantido como nome local pela clareza dos chamadores do scanner.
 func extrairTVNS(raw sql.NullString) map[string]any {
-	if !raw.Valid || raw.String == "" {
-		return nil
-	}
-	var env map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(raw.String), &env); err != nil {
-		return nil
-	}
-	ns, ok := env[nsTV]
-	if !ok {
-		return nil
-	}
-	var m map[string]any
-	if err := json.Unmarshal(ns, &m); err != nil {
-		return nil
-	}
-	return m
+	return tvext.Namespace(raw, nsTV)
 }
 
 // comoInt coage um valor de JSON (float64) para int. (0,false) quando não é número.
 func comoInt(v any) (int, bool) {
-	switch n := v.(type) {
-	case float64:
-		return int(n), true
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	}
-	return 0, false
+	return tvext.AsInt(v)
 }
