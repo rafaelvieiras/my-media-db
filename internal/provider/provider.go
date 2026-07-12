@@ -145,6 +145,51 @@ type ArteProvider interface {
 	BuscarArtes(ctx context.Context, ids ExternalIDs, tipo string, langs []string) ([]Arte, error)
 }
 
+// PessoaProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0029 Fase D,
+// segunda seção): trazer a FILMOGRAFIA de uma PESSOA na fonte — os trabalhos dela
+// (cast/crew) que AINDA NÃO estão no catálogo, para a página da pessoa mostrar "ainda
+// não importados" ao lado da filmografia já importada (que vem só do banco, sem
+// depender de provider). É opcional porque nem toda fonte modela pessoa; o handler faz
+// type-assert do Provider para esta interface e DEGRADA para `[]` (sem erro) quando a
+// fonte não a implementa.
+type PessoaProvider interface {
+	// BuscarFilmografia puxa os trabalhos da pessoa `sourceID` na fonte, localizados em
+	// `lang` (idioma de leitura ativo; vazio cai no default da fonte). A implementação
+	// decide teto/ordenação/dedup (cada fonte tem sua própria noção de "filmografia
+	// grande demais"). ErrNaoEncontrado quando a pessoa não existe na fonte (o handler
+	// degrada do mesmo jeito de um erro real: loga e devolve `[]`, a página não cai).
+	// (nil, nil) é graça (pessoa existe, sem créditos).
+	BuscarFilmografia(ctx context.Context, sourceID, lang string) ([]CreditoFilmografia, error)
+}
+
+// CreditoFilmografia é um trabalho canônico da filmografia EXTERNA de uma pessoa (ainda
+// não importado): a identidade do item (source/source_id/type) mais o papel da pessoa
+// nele (kind/character/job — o par que não se aplica ao kind fica nil). Espelha
+// ResultadoExterno na identidade do item, mas carrega também o papel (que
+// ResultadoExterno não tem, por não ser sobre pessoa).
+type CreditoFilmografia struct {
+	// Source é o nome da fonte (ex.: "tmdb").
+	Source string
+	// SourceID é o id do item (obra) NA FONTE.
+	SourceID string
+	// Type é o nosso tipo canônico do item ("movie"|"tv").
+	Type string
+	// Title é o título exibível do item.
+	Title string
+	// Year são os 4 primeiros dígitos da data de lançamento/estreia, quando houver.
+	Year *string
+	// PosterURL é a URL DIRETA do pôster do item na fonte, quando houver (o handler
+	// proxya, como os demais campos de imagem externos).
+	PosterURL *string
+	// Kind é o papel da pessoa NESTE item: "cast" (atuação) ou "crew" (equipe).
+	Kind string
+	// Character é o personagem, só quando Kind="cast" (nil em Kind="crew").
+	Character *string
+	// Job é o(s) cargo(s) de equipe, só quando Kind="crew" (nil em Kind="cast"); pode
+	// juntar vários cargos distintos da MESMA obra (a fonte pode creditar mais de um).
+	Job *string
+}
+
 // ExternalIDs carrega os ids externos que um item possui (o que a identidade MD4 tiver).
 // A fanart.tv usa Tmdb/Imdb para filme e Tvdb para série; cada ArteProvider escolhe o
 // que sabe consumir e degrada quando o id de que precisa está vazio.

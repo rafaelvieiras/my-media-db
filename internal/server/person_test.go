@@ -3,13 +3,42 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/tmdb"
 )
+
+// pessoaProviderFake implementa provider.Provider + provider.PessoaProvider sem rede,
+// para exercitar filmography_external (segunda seção da página da pessoa) de forma
+// determinística. Os métodos de Provider fora de BuscarFilmografia não são exercitados
+// aqui — stubs só para satisfazer a interface.
+type pessoaProviderFake struct {
+	nome     string
+	creditos []provider.CreditoFilmografia
+	err      error
+}
+
+func (f *pessoaProviderFake) Nome() string { return f.nome }
+func (f *pessoaProviderFake) Buscar(_ context.Context, _, _, _ string) ([]provider.ResultadoExterno, error) {
+	return nil, nil
+}
+func (f *pessoaProviderFake) BuscarDetalhe(_ context.Context, _, _ string, _ []string) (json.RawMessage, error) {
+	return nil, errors.New("nao implementado")
+}
+func (f *pessoaProviderFake) MapearDetalhe(_ json.RawMessage) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (f *pessoaProviderFake) BuscarFilmografia(_ context.Context, _, _ string) ([]provider.CreditoFilmografia, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.creditos, nil
+}
 
 // Testes de GET /api/v1/person/{id} (briefing 0029 Fase D) e do interno-first dos
 // créditos (anotarCreditosInternos, creditos_interno.go).
@@ -261,5 +290,110 @@ func TestGetPersonHandlerSemDB(t *testing.T) {
 	rec := do(t, h, http.MethodGet, "/api/v1/person/qualquer", nil)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, quero 503", rec.Code)
+	}
+}
+
+// TestGetPersonFilmografiaExternaExcluiImportados prova a segunda seção (0029 Fase D):
+// dois créditos do provider, um cuja obra JÁ está importada (source_id "603", casando
+// uma entity semeada com external_id_tmdb=603) e outro ainda não. Só o segundo aparece
+// em filmography_external, com poster_url PROXYADO (assetsDir presente).
+func TestGetPersonFilmografiaExternaExcluiImportados(t *testing.T) {
+	fake := &pessoaProviderFake{nome: "tmdb", creditos: []provider.CreditoFilmografia{
+		{Source: "tmdb", SourceID: "603", Type: "movie", Title: "Já Importado", Kind: "cast", Character: ptr("X")},
+		{
+			Source: "tmdb", SourceID: "999", Type: "movie", Title: "Ainda Não Importado",
+			Year: ptr("2020"), PosterURL: ptr("https://image.tmdb.org/t/p/w185/x.jpg"),
+			Kind: "cast", Character: ptr("Y"),
+		},
+	}}
+	h, d := setupSearchServer(t, WithSearchProvider(fake), WithAssetsDir(t.TempDir()))
+
+	personID := semearPersonTmdb(t, d, "pf1", "6384", "Ator Externo")
+	if _, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
+		ID: "e-ja-importado", Type: "movie", Title: "Já Importado", ExternalIdsJson: nsOf(`{"tmdb":"603"}`),
+	}); err != nil {
+		t.Fatalf("CriarEntity(e-ja-importado): %v", err)
+	}
+
+	pessoa := decodePerson(t, do(t, h, http.MethodGet, "/api/v1/person/"+personID, nil).Body.Bytes())
+	if len(pessoa.FilmographyExternal) != 1 {
+		t.Fatalf("filmography_external = %d itens, quero 1 (603 excluido, ja importado) — %+v",
+			len(pessoa.FilmographyExternal), pessoa.FilmographyExternal)
+	}
+	ext := pessoa.FilmographyExternal[0]
+	eq(t, "ext.source", ext.Source, "tmdb")
+	eq(t, "ext.source_id", ext.SourceID, "999")
+	eq(t, "ext.type", ext.Type, "movie")
+	eq(t, "ext.title", ext.Title, "Ainda Não Importado")
+	eqPtr(t, "ext.year", ext.Year, "2020")
+	eq(t, "ext.kind", ext.Kind, "cast")
+	eqPtr(t, "ext.character", ext.Character, "Y")
+	if ext.Job != nil {
+		t.Errorf("ext.job = %v, quero nil (kind=cast)", *ext.Job)
+	}
+	if ext.PosterURL == nil || *ext.PosterURL == "https://image.tmdb.org/t/p/w185/x.jpg" {
+		t.Errorf("ext.poster_url = %v, quero reescrito pelo proxy local (assetsDir presente)", ext.PosterURL)
+	}
+}
+
+// TestGetPersonFilmografiaExternaSemProvider prova a DEGRADAÇÃO para `[]` (nunca null)
+// quando nenhum provider está registrado (busca externa desligada).
+func TestGetPersonFilmografiaExternaSemProvider(t *testing.T) {
+	h, d := setupSearchServer(t)
+	personID := semearPersonTmdb(t, d, "pf2", "1", "Sem Provider")
+
+	var raw map[string]json.RawMessage
+	body := do(t, h, http.MethodGet, "/api/v1/person/"+personID, nil).Body.Bytes()
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatalf("decodificar corpo bruto: %v", err)
+	}
+	if string(raw["filmography_external"]) != "[]" {
+		t.Errorf("filmography_external bruto = %s, quero []", raw["filmography_external"])
+	}
+}
+
+// TestGetPersonFilmografiaExternaProviderSemCapacidadeDegrada prova que um provider
+// registrado sob a fonte da pessoa mas SEM a capacidade PessoaProvider (o fakeProvider
+// de search_test.go, que só cumpre provider.Provider) também degrada para `[]` — o
+// handler faz type-assert e não assume a capacidade presente. Como fakeProvider.Nome()
+// é fixo "fake", a pessoa é semeada com source="fake" (não pelo helper
+// semearPersonTmdb, que fixa "tmdb").
+func TestGetPersonFilmografiaExternaProviderSemCapacidadeDegrada(t *testing.T) {
+	h, d := setupSearchServer(t, WithSearchProvider(&fakeProvider{}))
+
+	personID, err := escrita(t, d).UpsertPerson(context.Background(), sqlcgen.UpsertPersonParams{
+		ID: "pf3", Source: "fake", SourceID: "1", Name: "Sem Capacidade",
+	})
+	if err != nil {
+		t.Fatalf("UpsertPerson: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	body := do(t, h, http.MethodGet, "/api/v1/person/"+personID, nil).Body.Bytes()
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatalf("decodificar corpo bruto: %v", err)
+	}
+	if string(raw["filmography_external"]) != "[]" {
+		t.Errorf("filmography_external bruto = %s, quero []", raw["filmography_external"])
+	}
+}
+
+// TestGetPersonFilmografiaExternaErroDegrada prova que um erro do provider (rede/
+// status) na busca da filmografia degrada para `[]` — a página não cai por causa da
+// segunda seção (a filmografia importada, `filmography`, segue funcionando).
+func TestGetPersonFilmografiaExternaErroDegrada(t *testing.T) {
+	fake := &pessoaProviderFake{nome: "tmdb", err: errors.New("tmdb: fonte fora do ar")}
+	h, d := setupSearchServer(t, WithSearchProvider(fake))
+
+	personID := semearPersonTmdb(t, d, "pf4", "6384", "Fonte Fora Do Ar")
+	semearEntity(t, d, "e-fpf4", "movie", "Obra Importada")
+	semearCreditoCast(t, d, "cfpf4", "e-fpf4", personID, "Papel", 0)
+
+	pessoa := decodePerson(t, do(t, h, http.MethodGet, "/api/v1/person/"+personID, nil).Body.Bytes())
+	if len(pessoa.FilmographyExternal) != 0 {
+		t.Errorf("filmography_external = %+v, quero [] (provider falhou)", pessoa.FilmographyExternal)
+	}
+	if len(pessoa.Filmography) != 1 {
+		t.Errorf("filmography = %+v, quero 1 (nao afetada pela falha da secao externa)", pessoa.Filmography)
 	}
 }

@@ -4,21 +4,29 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
 
 // Este arquivo implementa GET /api/v1/person/{id} (briefing 0029 Fase D): a página da
-// PESSOA (ator/membro de equipe) deduplicada no catálogo mais a sua FILMOGRAFIA — as
-// obras JÁ IMPORTADAS que a creditam. É o destino interno-first do card de elenco/
-// equipe (quando o crédito traz `person_id`, ver creditos_interno.go). Read-only nesta
-// fase — a pessoa não é catalogada como entity própria (sem edição, sem enrich
-// dedicado). 404 quando o id não existe no catálogo.
+// PESSOA (ator/membro de equipe) deduplicada no catálogo mais DUAS seções de
+// filmografia. `filmography` são as obras JÁ IMPORTADAS que a creditam (só o banco,
+// funciona sem provider) — é o destino interno-first do card de elenco/equipe (quando o
+// crédito traz `person_id`, ver creditos_interno.go). `filmography_external` (segunda
+// seção, "ainda não importados") são os trabalhos da pessoa NO PROVIDER da sua fonte
+// que ainda NÃO estão no catálogo: pega o provider de `pessoa.Source`, faz type-assert
+// para provider.PessoaProvider (capacidade OPCIONAL) e DEGRADA para `[]` sem provider,
+// sem a capacidade, ou se a fonte falhar (loga, a página não cai) — mesmo padrão do
+// detalhe externo (external_detail.go). Read-only nesta fase — a pessoa não é
+// catalogada como entity própria (sem edição, sem enrich dedicado). 404 quando o id não
+// existe no catálogo.
 
 // personDTO é a resposta de GET /person/{id}.
 type personDTO struct {
@@ -28,6 +36,25 @@ type personDTO struct {
 	Source      string            `json:"source"`
 	SourceID    string            `json:"source_id"`
 	Filmography []personCreditDTO `json:"filmography"`
+	// FilmographyExternal é a segunda seção ("ainda não importados"), ver o cabeçalho
+	// do arquivo. Nunca nil (sempre `[]` quando vazia/indisponível).
+	FilmographyExternal []personExternalCreditDTO `json:"filmography_external"`
+}
+
+// personExternalCreditDTO é uma obra da filmografia EXTERNA (ainda não importada):
+// espelha personCreditDTO, mas com a identidade EXTERNA (source/source_id/type) em vez
+// de entity_id — a UI navega ao detalhe externo para ver/importar. Sem Department (o
+// contrato do provider já junta os cargos distintos em Job).
+type personExternalCreditDTO struct {
+	Source    string  `json:"source"`
+	SourceID  string  `json:"source_id"`
+	Type      string  `json:"type"`
+	Title     string  `json:"title"`
+	Year      *string `json:"year"`
+	PosterURL *string `json:"poster_url"`
+	Kind      string  `json:"kind"`
+	Character *string `json:"character"`
+	Job       *string `json:"job"`
 }
 
 // personCreditDTO é uma obra da filmografia: a entity do catálogo (card mínimo) mais o
@@ -76,13 +103,64 @@ func (s *Server) getPerson(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, personDTO{
-		ID:          pessoa.ID,
-		Name:        pessoa.Name,
-		ProfileURL:  s.urlPerfilPessoa(pessoa.ProfilePath),
-		Source:      pessoa.Source,
-		SourceID:    pessoa.SourceID,
-		Filmography: filmografia,
+		ID:                  pessoa.ID,
+		Name:                pessoa.Name,
+		ProfileURL:          s.urlPerfilPessoa(pessoa.ProfilePath),
+		Source:              pessoa.Source,
+		SourceID:            pessoa.SourceID,
+		Filmography:         filmografia,
+		FilmographyExternal: s.montarFilmografiaExternaDaPessoa(ctx, pessoa),
 	})
+}
+
+// montarFilmografiaExternaDaPessoa monta a segunda seção da página (0029 Fase D): a
+// filmografia da pessoa NO PROVIDER da sua fonte que AINDA NÃO está no catálogo. Pega o
+// provider de `pessoa.Source` (mesmo mecanismo do detalhe externo, ver
+// provedorDetalhe) e faz type-assert para a capacidade OPCIONAL provider.PessoaProvider
+// — sem provider, sem a capacidade, ou se a busca falhar (erro real ou
+// ErrNaoEncontrado), DEGRADA para `[]` (loga a falha; a filmografia importada, que já
+// rodou, segue de pé). O idioma é o PRINCIPAL das settings (a rota não tem `?lang=`).
+// Cada crédito cuja obra já está no catálogo é EXCLUÍDO (já aparece em `filmography`).
+func (s *Server) montarFilmografiaExternaDaPessoa(ctx context.Context, pessoa sqlcgen.Person) []personExternalCreditDTO {
+	prov, ok := s.providers.Get(pessoa.Source)
+	if !ok {
+		return []personExternalCreditDTO{}
+	}
+	pp, ok := prov.(provider.PessoaProvider)
+	if !ok {
+		return []personExternalCreditDTO{}
+	}
+
+	lang := defaultLanguageSettings().Primary
+	if cfg, err := s.obterLanguageSettings(ctx); err == nil {
+		lang = cfg.Primary
+	}
+
+	creditos, err := pp.BuscarFilmografia(ctx, pessoa.SourceID, lang)
+	if err != nil {
+		log.Printf("server: filmografia externa da pessoa (source=%s source_id=%s) falhou (degrada para []): %v",
+			pessoa.Source, pessoa.SourceID, err)
+		return []personExternalCreditDTO{}
+	}
+
+	out := make([]personExternalCreditDTO, 0, len(creditos))
+	for _, c := range creditos {
+		if s.idInternoItem(ctx, c.Source, c.SourceID) != nil {
+			continue // ja importado: aparece na secao 1 (filmography), nao repete aqui
+		}
+		out = append(out, personExternalCreditDTO{
+			Source:    c.Source,
+			SourceID:  c.SourceID,
+			Type:      c.Type,
+			Title:     c.Title,
+			Year:      c.Year,
+			PosterURL: s.urlImagemServida(c.PosterURL),
+			Kind:      c.Kind,
+			Character: c.Character,
+			Job:       c.Job,
+		})
+	}
+	return out
 }
 
 // urlPerfilPessoa monta a URL da foto de perfil (proxyada, quando aplicável) a partir

@@ -1299,8 +1299,29 @@ export interface components {
       source?: string
       /** @description Id da pessoa na fonte (para link externo). */
       source_id?: string
-      /** @description Obras do catálogo que creditam a pessoa; `[]` quando nenhuma. */
+      /** @description Obras JÁ IMPORTADAS que creditam a pessoa (seção "Na sua biblioteca"); `[]` quando nenhuma. Vem do catálogo (funciona sem o provider). */
       filmography: components['schemas']['PersonCredit'][]
+      /** @description Obras da filmografia da pessoa (do provider, ex.: TMDB) AINDA NÃO importadas (seção "Ainda não importados") — navegam ao detalhe externo para importar. `[]` quando o provider não trouxe nada ou está indisponível (degradação: a seção some, a de importados segue). Exclui o que já está no catálogo (esse aparece em `filmography`). */
+      filmography_external?: components['schemas']['PersonExternalCredit'][]
+    }
+    /** @description Uma obra da filmografia da pessoa que AINDA NÃO está no catálogo (0029 Fase D): um card que navega ao detalhe externo (`/external/{source}/{type}/{source_id}`) para ver/importar. Espelha PersonCredit, mas com a identidade EXTERNA (source/ source_id/type) em vez de `entity_id`. */
+    PersonExternalCredit: {
+      /** @description Fonte da obra (ex.: tmdb). */
+      source: string
+      /** @description Id da obra na fonte. */
+      source_id: string
+      /** @description movie | tv. */
+      type: string
+      title: string
+      year?: string | null
+      /** @description Pôster (proxyada) ou null. */
+      poster_url?: string | null
+      /** @description cast | crew. */
+      kind: string
+      /** @description Personagem (quando cast). */
+      character?: string | null
+      /** @description Cargo (quando crew). */
+      job?: string | null
     }
     /** @description Uma obra da filmografia da pessoa: a entity do catálogo mais o papel/cargo dela naquela obra. Um card navegável (entity_id → /entities/{id}). */
     PersonCredit: {
