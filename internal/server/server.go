@@ -109,6 +109,16 @@ func New(version string, database *db.DB, opts ...Option) *Server {
 	for _, opt := range opts {
 		opt(s)
 	}
+	s.montarServicos(database)
+	return s
+}
+
+// montarServicos constrói os serviços OPCIONAIS (enrich, detalhe externo rico e o
+// auto-import de séries do scanner) depois de aplicadas as options. Cada um exige
+// seu próprio conjunto de dependências (banco/provider/assetsDir); sem elas fica
+// nil e o handler correspondente degrada com 503. Extraído de New para manter a
+// construção legível (uma responsabilidade por método).
+func (s *Server) montarServicos(database *db.DB) {
 	// O enriquecimento (briefing 0015) exige banco + fonte externa + diretório de
 	// assets. Sem qualquer um deles fica nil e os handlers /enrich e /import
 	// degradam com 503 (busca externa desligada => não há o que importar).
@@ -125,15 +135,18 @@ func New(version string, database *db.DB, opts ...Option) *Server {
 	// os idiomas permitidos das settings. Só quando o enrich existe; sem ele o scanner
 	// de séries degrada (casa o que já está no catálogo, o resto vai para revisão).
 	if s.scanner != nil && s.enrich != nil {
-		s.scanner.ConfigurarSeries(s.enrich, func(ctx context.Context) []string {
-			cfg, err := s.obterLanguageSettings(ctx)
-			if err != nil {
-				return nil
-			}
-			return cfg.Allowed
-		})
+		s.scanner.ConfigurarSeries(s.enrich, s.idiomasScanner)
 	}
-	return s
+}
+
+// idiomasScanner devolve os idiomas permitidos das settings (nil em erro), usado como
+// fonte de idiomas do auto-import de séries do scanner.
+func (s *Server) idiomasScanner(ctx context.Context) []string {
+	cfg, err := s.obterLanguageSettings(ctx)
+	if err != nil {
+		return nil
+	}
+	return cfg.Allowed
 }
 
 // Handler constrói e devolve o http.Handler raiz da aplicação.

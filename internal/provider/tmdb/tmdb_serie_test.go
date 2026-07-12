@@ -88,14 +88,31 @@ func TestBuscarSerieArvoreTMDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuscarSerieArvore: %v", err)
 	}
-	if arvore.DefaultSeasonType != "official" || len(arvore.SeasonTypes) != 1 {
-		t.Errorf("ordens = default %q types %v, quero official/[official]", arvore.DefaultSeasonType, arvore.SeasonTypes)
-	}
 	if len(arvore.Temporadas) != 2 {
 		t.Fatalf("temporadas = %d, quero 2 (0 e 1)", len(arvore.Temporadas))
 	}
+	assertOrdensArvore(t, arvore)
 
 	t1 := temporadaPorNumero(t, arvore, 1)
+	if len(t1.Episodios) != 2 {
+		t.Fatalf("episodios da T1 = %d, quero 2", len(t1.Episodios))
+	}
+	assertTemporada1(t, t1)
+	assertEpisodio1Ident(t, t1.Episodios[0])
+	assertEpisodio1I18n(t, t1.Episodios[0])
+}
+
+// assertOrdensArvore confere a ordem default e o conjunto de ordens da árvore.
+func assertOrdensArvore(t *testing.T, arvore provider.SerieArvore) {
+	t.Helper()
+	if arvore.DefaultSeasonType != "official" || len(arvore.SeasonTypes) != 1 {
+		t.Errorf("ordens = default %q types %v, quero official/[official]", arvore.DefaultSeasonType, arvore.SeasonTypes)
+	}
+}
+
+// assertTemporada1 confere poster, ano e nomes localizados da temporada 1.
+func assertTemporada1(t *testing.T, t1 provider.TemporadaExterna) {
+	t.Helper()
 	if t1.PosterURL == "" || !strings.Contains(t1.PosterURL, "/s1.jpg") {
 		t.Errorf("poster da T1 = %q, quero conter /s1.jpg", t1.PosterURL)
 	}
@@ -105,11 +122,11 @@ func TestBuscarSerieArvoreTMDB(t *testing.T) {
 	if t1.Name["pt-BR"] != "Temporada 1" || t1.Name["en"] != "Season 1" {
 		t.Errorf("nome da T1 por idioma = %v, quero pt-BR/en localizados", t1.Name)
 	}
-	if len(t1.Episodios) != 2 {
-		t.Fatalf("episodios da T1 = %d, quero 2", len(t1.Episodios))
-	}
+}
 
-	ep := t1.Episodios[0]
+// assertEpisodio1Ident confere identidade (id/external), numbering e still do ep1.
+func assertEpisodio1Ident(t *testing.T, ep provider.EpisodioExterno) {
+	t.Helper()
 	if ep.SourceID != "1001" || ep.ExternalIDs["tmdb"] != "1001" {
 		t.Errorf("ep1 id = %q ext = %v, quero 1001", ep.SourceID, ep.ExternalIDs)
 	}
@@ -119,6 +136,11 @@ func TestBuscarSerieArvoreTMDB(t *testing.T) {
 	if !strings.Contains(ep.StillURL, "/e1.jpg") {
 		t.Errorf("still ep1 = %q, quero conter /e1.jpg", ep.StillURL)
 	}
+}
+
+// assertEpisodio1I18n confere runtime e os campos localizados (title/overview) do ep1.
+func assertEpisodio1I18n(t *testing.T, ep provider.EpisodioExterno) {
+	t.Helper()
 	if ep.Runtime == nil || *ep.Runtime != 23 {
 		t.Errorf("runtime ep1 = %v, quero 23", ep.Runtime)
 	}

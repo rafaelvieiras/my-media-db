@@ -102,18 +102,32 @@ func TestSelectArtworkBaixaCriaExternalEPrefere(t *testing.T) {
 	semearEntity(t, d, "e1", "movie", "Matrix")
 
 	urlArte := srv.URL + "/img"
-	rec := do(t, h, http.MethodPost, "/api/v1/entities/e1/artwork/select", map[string]any{
-		"kind": "poster", "url": urlArte, "prefer": true,
-	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
-	}
-	a := decodeAssetDTO(t, rec.Body.Bytes())
+	a := selecionarArte(t, h, urlArte, true)
 	if a.Origin != originExternal || a.Kind != "poster" || !a.Preferred {
 		t.Fatalf("asset = %+v, quero origin=external kind=poster preferred=true", a)
 	}
 
-	// O binario foi materializado no disco sob {assetsDir}/e1/external-*.png.
+	assertBinarioNoDisco(t, dir)
+	assertMetaSourceURL(t, d, a.ID, urlArte)
+	assertSelectIdempotente(t, h, d, urlArte, a.ID)
+}
+
+// selecionarArte faz o POST /artwork/select da url dada, exige 200 e devolve o assetDTO.
+func selecionarArte(t *testing.T, h http.Handler, urlArte string, prefer bool) assetDTO {
+	t.Helper()
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e1/artwork/select", map[string]any{
+		"kind": "poster", "url": urlArte, "prefer": prefer,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	return decodeAssetDTO(t, rec.Body.Bytes())
+}
+
+// assertBinarioNoDisco confere que o binario baixado foi materializado sob
+// {assetsDir}/e1/external-*.png (exatamente um arquivo).
+func assertBinarioNoDisco(t *testing.T, dir string) {
+	t.Helper()
 	entradas, err := os.ReadDir(filepath.Join(dir, "e1"))
 	if err != nil {
 		t.Fatalf("ler dir da entity: %v", err)
@@ -121,25 +135,26 @@ func TestSelectArtworkBaixaCriaExternalEPrefere(t *testing.T) {
 	if len(entradas) != 1 {
 		t.Fatalf("arquivos da entity = %d, quero 1 (o binario baixado)", len(entradas))
 	}
+}
 
-	// A url de origem ficou no meta_json (base da idempotencia).
-	asset, err := escrita(t, d).ObterAsset(context.Background(), a.ID)
+// assertMetaSourceURL confere que a url de origem ficou no meta_json (base da idempotencia).
+func assertMetaSourceURL(t *testing.T, d *db.DB, assetID, urlArte string) {
+	t.Helper()
+	asset, err := escrita(t, d).ObterAsset(context.Background(), assetID)
 	if err != nil {
 		t.Fatalf("ObterAsset: %v", err)
 	}
 	if metaSourceURL(asset.MetaJson) != urlArte {
 		t.Errorf("meta.source_url = %q, quero %q", metaSourceURL(asset.MetaJson), urlArte)
 	}
+}
 
-	// Idempotente: 2o select da mesma url reusa o MESMO asset (sem duplicar).
-	rec2 := do(t, h, http.MethodPost, "/api/v1/entities/e1/artwork/select", map[string]any{
-		"kind": "poster", "url": urlArte, "prefer": false,
-	})
-	if rec2.Code != http.StatusOK {
-		t.Fatalf("2o select status = %d, quero 200 (corpo=%s)", rec2.Code, rec2.Body.String())
-	}
-	if a2 := decodeAssetDTO(t, rec2.Body.Bytes()); a2.ID != a.ID {
-		t.Errorf("2o select criou asset novo %q, quero reusar %q (idempotente)", a2.ID, a.ID)
+// assertSelectIdempotente prova que um 2o select da MESMA url reusa o mesmo asset
+// (sem duplicar).
+func assertSelectIdempotente(t *testing.T, h http.Handler, d *db.DB, urlArte, assetID string) {
+	t.Helper()
+	if a2 := selecionarArte(t, h, urlArte, false); a2.ID != assetID {
+		t.Errorf("2o select criou asset novo %q, quero reusar %q (idempotente)", a2.ID, assetID)
 	}
 	assets, err := escrita(t, d).ListarAssetsPorEntity(context.Background(), "e1")
 	if err != nil {

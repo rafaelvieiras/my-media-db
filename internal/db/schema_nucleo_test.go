@@ -108,45 +108,27 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 		t.Error("foreign_key_check retornou violações, quero nenhuma")
 	}
 
-	// Down reverte o 0009 (juncao media_file_entity), o 0008
+	// Down reverte, um por um, o 0009 (juncao media_file_entity), o 0008
 	// (library_source.content_type), o 0007 (sort_index + external_id_tvdb), o
 	// 0006 (external_detail), o 0005 (settings + coluna original_language), o
 	// 0004 (camadas externo/override), o 0003 (coluna library_source_id) e depois
-	// o 0002 (schema do núcleo, volta ao 0001).
-	check(t, d.MigrateDown(ctx), "MigrateDown 0009")
-	if v := mustSchemaVersion(t, d); v != 8 {
-		t.Fatalf("versão após down do 0009 = %d, quero 8", v)
-	}
-	check(t, d.MigrateDown(ctx), "MigrateDown 0008")
-	if v := mustSchemaVersion(t, d); v != 7 {
-		t.Fatalf("versão após down do 0008 = %d, quero 7", v)
-	}
-	check(t, d.MigrateDown(ctx), "MigrateDown 0007")
-	if v := mustSchemaVersion(t, d); v != 6 {
-		t.Fatalf("versão após down do 0007 = %d, quero 6", v)
-	}
-	check(t, d.MigrateDown(ctx), "MigrateDown 0006")
-	if v := mustSchemaVersion(t, d); v != 5 {
-		t.Fatalf("versão após down do 0006 = %d, quero 5", v)
-	}
-	check(t, d.MigrateDown(ctx), "MigrateDown 0005")
-	if v := mustSchemaVersion(t, d); v != 4 {
-		t.Fatalf("versão após down do 0005 = %d, quero 4", v)
-	}
-	check(t, d.MigrateDown(ctx), "MigrateDown 0004")
-	if v := mustSchemaVersion(t, d); v != 3 {
-		t.Fatalf("versão após down do 0004 = %d, quero 3", v)
-	}
-	check(t, d.MigrateDown(ctx), "MigrateDown 0003")
-	if v := mustSchemaVersion(t, d); v != 2 {
-		t.Fatalf("versão após down do 0003 = %d, quero 2", v)
-	}
-	check(t, d.MigrateDown(ctx), "MigrateDown 0002")
-	if v := mustSchemaVersion(t, d); v != 1 {
-		t.Fatalf("versão após down = %d, quero 1", v)
+	// o 0002 (schema do núcleo, volta ao 0001). Cada passo deve deixar a versão no
+	// valor esperado.
+	for _, esperada := range []int64{8, 7, 6, 5, 4, 3, 2, 1} {
+		downEChecaVersao(t, d, esperada)
 	}
 	if _, err := d.Read.QueryContext(ctx, "SELECT 1 FROM entity"); err == nil {
 		t.Error("tabela entity ainda existe após o down")
+	}
+}
+
+// downEChecaVersao aplica um MigrateDown e confere que a versão de schema resultante
+// bate com a esperada (falha o teste caso contrário).
+func downEChecaVersao(t *testing.T, d *DB, esperada int64) {
+	t.Helper()
+	check(t, d.MigrateDown(context.Background()), "MigrateDown")
+	if v := mustSchemaVersion(t, d); v != esperada {
+		t.Fatalf("versão após down = %d, quero %d", v, esperada)
 	}
 }
 

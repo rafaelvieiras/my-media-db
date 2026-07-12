@@ -34,6 +34,61 @@ func novoServico(t *testing.T) *library.Service {
 	return library.New(d)
 }
 
+// abrirDBMigrado abre um banco temporário migrado e devolve o *db.DB cru (para os
+// testes que precisam semear pela conexão de escrita, além do serviço).
+func abrirDBMigrado(t *testing.T) *db.DB {
+	t.Helper()
+	d, err := db.Open(db.Config{Path: filepath.Join(t.TempDir(), "lib.sqlite")})
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := d.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+	if err := d.Migrate(context.Background()); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	return d
+}
+
+// semearFonteComArquivo cria entity + media_file (vinculado à fonte) + vínculo pela
+// conexão de escrita (mesmo caminho do scanner) e devolve a entity e o arquivo. A
+// entity precisa existir antes: o media_file referencia entity(id) NOT NULL.
+func semearFonteComArquivo(t *testing.T, d *db.DB, src library.Source) (sqlcgen.Entity, sqlcgen.MediaFile) {
+	t.Helper()
+	ctx := context.Background()
+	q := sqlcgen.New(d.Write)
+	ent, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{
+		ID:    "ent-ep-1",
+		Type:  "tv_episode",
+		Title: "Episódio 1",
+	})
+	if err != nil {
+		t.Fatalf("CriarEntity: %v", err)
+	}
+	mf, err := q.CriarMediaFile(ctx, sqlcgen.CriarMediaFileParams{
+		ID:              "mf-1",
+		EntityID:        ent.ID,
+		Path:            filepath.Join(src.Path, "S01E01.mkv"),
+		State:           "present",
+		LibrarySourceID: sql.NullString{String: src.ID, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("CriarMediaFile: %v", err)
+	}
+	if err := q.CriarVinculoEntidade(ctx, sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: mf.ID,
+		EntityID:    ent.ID,
+		Kind:        "tv_episode",
+		Ordinal:     0,
+	}); err != nil {
+		t.Fatalf("CriarVinculoEntidade: %v", err)
+	}
+	return ent, mf
+}
+
 func TestCriarDiretorioValido(t *testing.T) {
 	s := novoServico(t)
 	dir := t.TempDir()
@@ -240,18 +295,7 @@ func TestApagar(t *testing.T) {
 // somem (cascade da migration 0009), enquanto a entity do catálogo PERMANECE.
 func TestApagarComArquivos(t *testing.T) {
 	ctx := context.Background()
-	d, err := db.Open(db.Config{Path: filepath.Join(t.TempDir(), "lib.sqlite")})
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := d.Close(); err != nil {
-			t.Errorf("Close: %v", err)
-		}
-	})
-	if err := d.Migrate(ctx); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
+	d := abrirDBMigrado(t)
 	s := library.New(d)
 
 	// Fonte de séries com um episódio escaneado.
@@ -260,36 +304,7 @@ func TestApagarComArquivos(t *testing.T) {
 		t.Fatalf("Criar: %v", err)
 	}
 
-	// Semeia entity + media_file (vinculado à fonte) + vínculo pela conexão de
-	// escrita (mesmo caminho do scanner). Entity precisa existir antes: o
-	// media_file referencia entity(id) NOT NULL.
-	q := sqlcgen.New(d.Write)
-	ent, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{
-		ID:    "ent-ep-1",
-		Type:  "tv_episode",
-		Title: "Episódio 1",
-	})
-	if err != nil {
-		t.Fatalf("CriarEntity: %v", err)
-	}
-	mf, err := q.CriarMediaFile(ctx, sqlcgen.CriarMediaFileParams{
-		ID:              "mf-1",
-		EntityID:        ent.ID,
-		Path:            filepath.Join(src.Path, "S01E01.mkv"),
-		State:           "present",
-		LibrarySourceID: sql.NullString{String: src.ID, Valid: true},
-	})
-	if err != nil {
-		t.Fatalf("CriarMediaFile: %v", err)
-	}
-	if err := q.CriarVinculoEntidade(ctx, sqlcgen.CriarVinculoEntidadeParams{
-		MediaFileID: mf.ID,
-		EntityID:    ent.ID,
-		Kind:        "tv_episode",
-		Ordinal:     0,
-	}); err != nil {
-		t.Fatalf("CriarVinculoEntidade: %v", err)
-	}
+	ent, mf := semearFonteComArquivo(t, d, src)
 
 	// Apaga a fonte: não pode explodir mesmo com arquivos vinculados.
 	if err := s.Apagar(ctx, src.ID); err != nil {

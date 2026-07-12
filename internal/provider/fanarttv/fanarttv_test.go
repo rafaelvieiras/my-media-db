@@ -121,13 +121,21 @@ func TestBuscarArtesFilme(t *testing.T) {
 	}
 	porKind := indexarPorKind(artes)
 
+	assertContagemPorKindFilme(t, porKind)
+	assertDetalhesArteFilme(t, porKind)
+
+	// a api_key foi enviada.
+	if capturado == "" || !contemAPIKey(capturado) {
+		t.Errorf("URL sem api_key: %q", capturado)
+	}
+}
+
+// assertContagemPorKindFilme confere a quantidade de artes por kind da fixture de filme.
+func assertContagemPorKindFilme(t *testing.T, porKind map[string][]provider.Arte) {
+	t.Helper()
 	// poster: 2 (en + pt), preservando lang e likes.
 	if len(porKind["poster"]) != 2 {
 		t.Fatalf("poster = %d, quero 2", len(porKind["poster"]))
-	}
-	// fanart: textless (lang vazio).
-	if fa := porKind["fanart"]; len(fa) != 1 || fa[0].Lang != "" {
-		t.Errorf("fanart = %+v, quero 1 textless", fa)
 	}
 	// logo: hd + normal = 2.
 	if len(porKind["logo"]) != 2 {
@@ -137,24 +145,30 @@ func TestBuscarArtesFilme(t *testing.T) {
 	if len(porKind["clearart"]) != 2 {
 		t.Errorf("clearart = %d, quero 2", len(porKind["clearart"]))
 	}
+	// banner e thumb.
+	if len(porKind["banner"]) != 1 || len(porKind["thumb"]) != 1 {
+		t.Errorf("banner=%d thumb=%d, quero 1 cada", len(porKind["banner"]), len(porKind["thumb"]))
+	}
+}
+
+// assertDetalhesArteFilme confere os detalhes das artes (fanart textless, disc parseado,
+// likes convertidos de string) da fixture de filme.
+func assertDetalhesArteFilme(t *testing.T, porKind map[string][]provider.Arte) {
+	t.Helper()
+	// fanart: textless (lang vazio).
+	if fa := porKind["fanart"]; len(fa) != 1 || fa[0].Lang != "" {
+		t.Errorf("fanart = %+v, quero 1 textless", fa)
+	}
 	// disc: com disc/disc_type parseados.
 	disc := porKind["disc"]
 	if len(disc) != 1 || disc[0].Disc != 1 || disc[0].DiscType != "bluray" {
 		t.Errorf("disc = %+v, quero 1 com disc=1 disc_type=bluray", disc)
-	}
-	// banner e thumb.
-	if len(porKind["banner"]) != 1 || len(porKind["thumb"]) != 1 {
-		t.Errorf("banner=%d thumb=%d, quero 1 cada", len(porKind["banner"]), len(porKind["thumb"]))
 	}
 	// likes convertidos de string.
 	for _, a := range porKind["poster"] {
 		if a.Lang == "en" && a.Likes != 10 {
 			t.Errorf("poster en likes = %d, quero 10", a.Likes)
 		}
-	}
-	// a api_key foi enviada.
-	if capturado == "" || !contemAPIKey(capturado) {
-		t.Errorf("URL sem api_key: %q", capturado)
 	}
 }
 

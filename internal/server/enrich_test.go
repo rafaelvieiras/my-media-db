@@ -127,6 +127,27 @@ func TestImportMultiIdiomaResolvePorLang(t *testing.T) {
 		"pt-BR": `{"genres":[{"id":878,"name":"Ficcao cientifica"}]}`,
 		"en":    `{"genres":[{"id":878,"name":"Science Fiction"}]}`,
 	}
+	srv := servidorTMDBMultiIdioma(t, detalhe, generos)
+
+	prov := tmdb.New(tmdb.Credencial{Token: "tok"}, srv.Client(), srv.URL)
+	h, _ := setupSearchServer(t, WithSearchProvider(prov), WithAssetsDir(t.TempDir()))
+
+	rec := do(t, h, http.MethodPost, "/api/v1/import", map[string]string{"source_id": "900", "type": "movie"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("import status = %d, quero 201 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	id := decodeEntidade(t, rec).ID
+
+	// ?lang=pt-BR serve o portugues (titulo/sinopse/generos traduzidos).
+	assertEntidadePTBR(t, decodeEntidade(t, do(t, h, http.MethodGet, "/api/v1/entities/"+id+"?lang=pt-BR", nil)))
+	// ?lang=en serve o ingles.
+	assertEntidadeEN(t, decodeEntidade(t, do(t, h, http.MethodGet, "/api/v1/entities/"+id+"?lang=en", nil)))
+}
+
+// servidorTMDBMultiIdioma sobe um httptest que serve o detalhe do filme e as listas de
+// genero localizadas por ?language=, como a API do TMDB.
+func servidorTMDBMultiIdioma(t *testing.T, detalhe string, generos map[string]string) *httptest.Server {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -139,18 +160,12 @@ func TestImportMultiIdiomaResolvePorLang(t *testing.T) {
 		}
 	}))
 	t.Cleanup(srv.Close)
+	return srv
+}
 
-	prov := tmdb.New(tmdb.Credencial{Token: "tok"}, srv.Client(), srv.URL)
-	h, _ := setupSearchServer(t, WithSearchProvider(prov), WithAssetsDir(t.TempDir()))
-
-	rec := do(t, h, http.MethodPost, "/api/v1/import", map[string]string{"source_id": "900", "type": "movie"})
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("import status = %d, quero 201 (corpo=%s)", rec.Code, rec.Body.String())
-	}
-	id := decodeEntidade(t, rec).ID
-
-	// ?lang=pt-BR serve o portugues (titulo/sinopse/generos traduzidos).
-	pt := decodeEntidade(t, do(t, h, http.MethodGet, "/api/v1/entities/"+id+"?lang=pt-BR", nil))
+// assertEntidadePTBR confere titulo/sinopse/generos traduzidos e a ancora original_language.
+func assertEntidadePTBR(t *testing.T, pt resolver.Entidade) {
+	t.Helper()
 	eq(t, "pt.title", pt.Title, "Matrix")
 	if pt.Description == nil || *pt.Description != "Neo descobre a verdade." {
 		t.Errorf("pt.description = %v, quero 'Neo descobre a verdade.'", pt.Description)
@@ -161,9 +176,11 @@ func TestImportMultiIdiomaResolvePorLang(t *testing.T) {
 	if pt.OriginalLanguage == nil || *pt.OriginalLanguage != "en" {
 		t.Errorf("original_language = %v, quero 'en' (ancora gravada)", pt.OriginalLanguage)
 	}
+}
 
-	// ?lang=en serve o ingles.
-	en := decodeEntidade(t, do(t, h, http.MethodGet, "/api/v1/entities/"+id+"?lang=en", nil))
+// assertEntidadeEN confere titulo e generos servidos em ingles.
+func assertEntidadeEN(t *testing.T, en resolver.Entidade) {
+	t.Helper()
 	eq(t, "en.title", en.Title, "The Matrix")
 	if len(en.Tags) != 1 || en.Tags[0] != "Science Fiction" {
 		t.Errorf("en.tags = %v, quero [Science Fiction]", en.Tags)

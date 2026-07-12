@@ -93,6 +93,19 @@ func TestImportarFilmePersisteInventarioSemBaixar(t *testing.T) {
 
 	r := sqlcgen.New(database.Read)
 	inv := lerInventario(t, r, id)
+	assertInventarioFilme(t, inv)
+
+	// LAZY: nenhum asset de logo/disc baixado (so o poster do TMDB vira asset).
+	assets, err := r.ListarAssetsPorEntity(ctx, id)
+	if err != nil {
+		t.Fatalf("ListarAssetsPorEntity: %v", err)
+	}
+	assertNenhumAssetDeArteLazy(t, assets)
+}
+
+// assertInventarioFilme confere o envelope de inventario (poster/logo/disc) do filme.
+func assertInventarioFilme(t *testing.T, inv map[string][]provider.ArteInventario) {
+	t.Helper()
 	if len(inv["poster"]) != 1 || inv["poster"][0].Lang != "en" || inv["poster"][0].Likes != 10 {
 		t.Errorf("poster inventario = %+v, quero 1 en likes=10", inv["poster"])
 	}
@@ -102,12 +115,12 @@ func TestImportarFilmePersisteInventarioSemBaixar(t *testing.T) {
 	if d := inv["disc"]; len(d) != 1 || d[0].Disc != 1 || d[0].DiscType != "bluray" {
 		t.Errorf("disc inventario = %+v, quero 1 disc=1 bluray", d)
 	}
+}
 
-	// LAZY: nenhum asset de logo/disc baixado (so o poster do TMDB vira asset).
-	assets, err := r.ListarAssetsPorEntity(ctx, id)
-	if err != nil {
-		t.Fatalf("ListarAssetsPorEntity: %v", err)
-	}
+// assertNenhumAssetDeArteLazy prova que nenhuma arte lazy (logo/disc/clearart) virou
+// asset materializado — só o poster do fluxo primario (TMDB) baixa.
+func assertNenhumAssetDeArteLazy(t *testing.T, assets []sqlcgen.Asset) {
+	t.Helper()
 	for _, a := range assets {
 		if a.Kind == "logo" || a.Kind == "disc" || a.Kind == "clearart" {
 			t.Errorf("asset %q materializado, mas o inventario deve ser LAZY", a.Kind)
