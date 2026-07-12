@@ -129,6 +129,58 @@ func TestCardFilmeInalteradoSemJuncao(t *testing.T) {
 	eq(t, "filme card file_count", out.Items[0].FileCount, 2)
 }
 
+// TestMembersSerieCardTemporadaTraeOwnership (0036): o card de cada TEMPORADA na lista
+// de membros da serie carrega ownership {owned,total} — a posse agregada dos episodios,
+// anotada no server (posseDaTemporada) sem mudar a query do card. Uma temporada com 1 de
+// 2 episodios possuidos vem {1,2}; uma sem posse vem {0,1}; e os EPISODIOS (membros da
+// temporada) seguem SEM ownership (null), provando que so o card season e anotado.
+func TestMembersSerieCardTemporadaTraeOwnership(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "s1", "tv", "Serie")
+	semearEntity(t, d, "se1", "season", "Temporada 1")
+	semearEntity(t, d, "se2", "season", "Temporada 2")
+	semearEntity(t, d, "e1", "episode", "Ep 1")
+	semearEntity(t, d, "e2", "episode", "Ep 2")
+	semearEntity(t, d, "e3", "episode", "Ep 3")
+	ligarFilhoOrdenado(t, d, "r-se1", "s1", "se1", "tv_season", 1)
+	ligarFilhoOrdenado(t, d, "r-se2", "s1", "se2", "tv_season", 2)
+	ligarFilhoOrdenado(t, d, "r-e1", "se1", "e1", "tv_episode", 1)
+	ligarFilhoOrdenado(t, d, "r-e2", "se1", "e2", "tv_episode", 2)
+	ligarFilhoOrdenado(t, d, "r-e3", "se2", "e3", "tv_episode", 1)
+	// e1 possuido pela juncao: arquivo com entity_id=serie vinculado ao episodio.
+	semearFile(t, d, "mf1", "s1", "/lib/s01e01.mkv", "present", 0.9, "")
+	if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: "mf1", EntityID: "e1", Kind: "tv_episode", Ordinal: 0,
+	}); err != nil {
+		t.Fatalf("CriarVinculoEntidade: %v", err)
+	}
+
+	cards := membrosDe(t, h, "s1")
+	byID := map[string]entityCardDTO{}
+	for _, c := range cards {
+		byID[c.ID] = c
+	}
+	// Temporada 1: 1 de 2 possuidos (parcial).
+	if byID["se1"].Ownership == nil {
+		t.Fatalf("se1 sem ownership; quero {1,2}")
+	}
+	eq(t, "se1 owned", byID["se1"].Ownership.OwnedCount, 1)
+	eq(t, "se1 total", byID["se1"].Ownership.TotalCount, 2)
+	// Temporada 2: 0 de 1 (vazia, mas total>0).
+	if byID["se2"].Ownership == nil {
+		t.Fatalf("se2 sem ownership; quero {0,1}")
+	}
+	eq(t, "se2 owned", byID["se2"].Ownership.OwnedCount, 0)
+	eq(t, "se2 total", byID["se2"].Ownership.TotalCount, 1)
+
+	// Episodios (membros da TEMPORADA) NAO carregam ownership (null): so o card season.
+	for _, c := range membrosDe(t, h, "se1") {
+		if c.Ownership != nil {
+			t.Errorf("episodio %s com ownership %+v; quero nil", c.ID, c.Ownership)
+		}
+	}
+}
+
 // semearTemporada cria uma entity type='season' com release_date (ano) para provar que
 // a ordenacao de temporadas NAO cai no caminho por-ano.
 func semearTemporada(t *testing.T, d *db.DB, id, titulo, ano string) {

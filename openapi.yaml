@@ -1223,6 +1223,16 @@ components:
         poster_url:
           type: [string, "null"]
           description: Rota do pôster local, ou null quando não há arte.
+        ownership:
+          description: >
+            Posse AGREGADA do card na árvore de séries (0036): episódios possuídos
+            sobre o total. OPCIONAL — presente só nos cards `season` (e opcionalmente
+            `tv`) de GET /entities/{id}/members; ausente/`null` para movie/episode/
+            collection (que usam a posse simples de `owned`). Anotado no server
+            pós-listagem, sem mudar a query do card.
+          oneOf:
+            - $ref: "#/components/schemas/OwnershipInfo"
+            - type: "null"
     EntityList:
       type: object
       required: [items, total, limit, offset]

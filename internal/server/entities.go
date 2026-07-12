@@ -45,6 +45,12 @@ type entityCardDTO struct {
 	FileCount       int64    `json:"file_count"`
 	MatchConfidence *float64 `json:"match_confidence"`
 	PosterURL       *string  `json:"poster_url"`
+	// Ownership é a POSSE AGREGADA do card quando o tipo tem agregação na árvore de
+	// séries (0036): `season` (episódios diretos) e opcionalmente `tv` (soma across
+	// temporadas). Anotada no server pós-listagem em getEntityMembers — NÃO vem da
+	// query SQL do card (mesma fronteira do 0034/Ancestors). `omitempty`: ausente
+	// (null na UI) para movie/episode/collection, que usam a posse simples de `owned`.
+	Ownership *resolver.OwnershipInfo `json:"ownership,omitempty"`
 }
 
 // entityListDTO é a resposta paginada de GET /api/v1/entities.
@@ -290,7 +296,9 @@ func (s *Server) montarMembros(ctx context.Context, id, tipoPai string) ([]entit
 			}
 			return nil, err
 		}
-		membros = append(membros, membroCard{dto: cardDTODeMembro(row), ano: row.ReleaseDate})
+		card := cardDTODeMembro(row)
+		s.anotarPosseCard(ctx, &card)
+		membros = append(membros, membroCard{dto: card, ano: row.ReleaseDate})
 	}
 	// Série/temporada preservam a ordem de sort_index (número); só a coleção reordena por
 	// ano — os episódios devem ficar 1,2,3 e não por data de exibição.
@@ -333,6 +341,20 @@ func cardDTODeMembro(row sqlcgen.ObterEntityCardRow) entityCardDTO {
 		MatchConfidence: row.MatchConfidence,
 		HasPoster:       row.HasPoster,
 	})
+}
+
+// anotarPosseCard preenche o card membro com a POSSE AGREGADA (0036) quando o tipo
+// tem agregação na árvore de séries: `season` (episódios diretos) e `tv` (soma across
+// temporadas). Reusa montarPosseAgregada — a MESMA contagem do detalhe (0034), só
+// anotada no card pós-listagem (não muda a query SQL do card, mesma fronteira do
+// 0034/Ancestors). montarPosseAgregada já degrada para nil em qualquer falha de
+// leitura: a UI apenas omite o selo, NUNCA derruba a lista. Demais tipos (movie/
+// episode/collection) seguem sem ownership.
+func (s *Server) anotarPosseCard(ctx context.Context, card *entityCardDTO) {
+	switch card.Type {
+	case tipoEntTemporada, tipoEntSerie:
+		card.Ownership = s.montarPosseAgregada(ctx, sqlcgen.Entity{ID: card.ID, Type: card.Type})
+	}
 }
 
 // anoAntes ordena por release_date ISO ascendente (a string ISO ordena
