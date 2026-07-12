@@ -19,6 +19,10 @@ type Querier interface {
 	// Remove uma linha de cache pelo seu id (ex.: invalidar uma fonte).
 	ApagarMediaExternal(ctx context.Context, id string) error
 	ApagarMediaFile(ctx context.Context, id string) error
+	// Apaga todos os arquivos de uma fonte (usada ao remover o datasource, 0035).
+	// O cascade de media_file_entity (migration 0009, ON DELETE CASCADE em
+	// media_file_id) limpa os vinculos junto; a entity do catalogo e preservada.
+	ApagarMediaFilesPorFonte(ctx context.Context, librarySourceID sql.NullString) error
 	// Remove o override da entity (volta ao valor da base editorial/arquivo).
 	ApagarMediaOverride(ctx context.Context, entityID string) error
 	// Atualiza SO o meta_json de um asset (marca/desmarca a preferida do dono,

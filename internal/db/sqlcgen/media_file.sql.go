@@ -20,6 +20,19 @@ func (q *Queries) ApagarMediaFile(ctx context.Context, id string) error {
 	return err
 }
 
+const apagarMediaFilesPorFonte = `-- name: ApagarMediaFilesPorFonte :exec
+DELETE FROM media_file
+WHERE library_source_id = ?
+`
+
+// Apaga todos os arquivos de uma fonte (usada ao remover o datasource, 0035).
+// O cascade de media_file_entity (migration 0009, ON DELETE CASCADE em
+// media_file_id) limpa os vinculos junto; a entity do catalogo e preservada.
+func (q *Queries) ApagarMediaFilesPorFonte(ctx context.Context, librarySourceID sql.NullString) error {
+	_, err := q.db.ExecContext(ctx, apagarMediaFilesPorFonte, librarySourceID)
+	return err
+}
+
 const atualizarMediaFileState = `-- name: AtualizarMediaFileState :one
 UPDATE media_file
 SET state = ?,

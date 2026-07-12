@@ -5,12 +5,14 @@ package library_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
+	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 )
 
@@ -229,5 +231,90 @@ func TestApagar(t *testing.T) {
 	// Apagar inexistente -> ErrNaoEncontrado.
 	if err := s.Apagar(ctx, "nada"); !errors.Is(err, library.ErrNaoEncontrado) {
 		t.Errorf("Apagar inexistente erro = %v, quero ErrNaoEncontrado", err)
+	}
+}
+
+// TestApagarComArquivos cobre o fix 0035: apagar uma fonte que já escaneou
+// arquivos deve funcionar (antes dava 500 pela FK sem ON DELETE). Verifica que,
+// na mesma transação, os media_file da fonte e seus vínculos media_file_entity
+// somem (cascade da migration 0009), enquanto a entity do catálogo PERMANECE.
+func TestApagarComArquivos(t *testing.T) {
+	ctx := context.Background()
+	d, err := db.Open(db.Config{Path: filepath.Join(t.TempDir(), "lib.sqlite")})
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := d.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+	if err := d.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	s := library.New(d)
+
+	// Fonte de séries com um episódio escaneado.
+	src, err := s.Criar(ctx, t.TempDir(), "tv", "series")
+	if err != nil {
+		t.Fatalf("Criar: %v", err)
+	}
+
+	// Semeia entity + media_file (vinculado à fonte) + vínculo pela conexão de
+	// escrita (mesmo caminho do scanner). Entity precisa existir antes: o
+	// media_file referencia entity(id) NOT NULL.
+	q := sqlcgen.New(d.Write)
+	ent, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{
+		ID:    "ent-ep-1",
+		Type:  "tv_episode",
+		Title: "Episódio 1",
+	})
+	if err != nil {
+		t.Fatalf("CriarEntity: %v", err)
+	}
+	mf, err := q.CriarMediaFile(ctx, sqlcgen.CriarMediaFileParams{
+		ID:              "mf-1",
+		EntityID:        ent.ID,
+		Path:            filepath.Join(src.Path, "S01E01.mkv"),
+		State:           "present",
+		LibrarySourceID: sql.NullString{String: src.ID, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("CriarMediaFile: %v", err)
+	}
+	if err := q.CriarVinculoEntidade(ctx, sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: mf.ID,
+		EntityID:    ent.ID,
+		Kind:        "tv_episode",
+		Ordinal:     0,
+	}); err != nil {
+		t.Fatalf("CriarVinculoEntidade: %v", err)
+	}
+
+	// Apaga a fonte: não pode explodir mesmo com arquivos vinculados.
+	if err := s.Apagar(ctx, src.ID); err != nil {
+		t.Fatalf("Apagar com arquivos: %v", err)
+	}
+
+	// Fonte sumiu.
+	if _, err := s.Obter(ctx, src.ID); !errors.Is(err, library.ErrNaoEncontrado) {
+		t.Errorf("após Apagar, Obter erro = %v, quero ErrNaoEncontrado", err)
+	}
+	// media_file sumiu.
+	r := sqlcgen.New(d.Read)
+	if _, err := r.ObterMediaFile(ctx, mf.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("media_file ainda existe (erro = %v), quero sql.ErrNoRows", err)
+	}
+	// Vínculo media_file_entity cascateou.
+	vinculos, err := r.ListarVinculosPorArquivo(ctx, mf.ID)
+	if err != nil {
+		t.Fatalf("ListarVinculosPorArquivo: %v", err)
+	}
+	if len(vinculos) != 0 {
+		t.Errorf("vínculos = %d, quero 0 (cascade)", len(vinculos))
+	}
+	// Entity do catálogo PERMANECE (não purgamos entities -- 0008 §6).
+	if _, err := r.ObterEntity(ctx, ent.ID); err != nil {
+		t.Errorf("entity deveria permanecer, mas ObterEntity = %v", err)
 	}
 }

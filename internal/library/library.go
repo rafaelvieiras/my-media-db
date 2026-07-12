@@ -170,7 +170,14 @@ func (s *Service) Obter(ctx context.Context, id string) (Source, error) {
 
 // Apagar remove o registro da fonte (NÃO purga entities -- decisão 0008 sec.6).
 // Confirma a existência antes para poder responder 404; a remoção passa pela
-// conexão de escrita.
+// conexão de escrita, numa ÚNICA transação (escritor único, ADR-0010):
+//  1. apaga os media_file da fonte (WHERE library_source_id = ?), o que cascateia
+//     os vínculos media_file_entity (FK ON DELETE CASCADE, migration 0009) e
+//     preserva as entities do catálogo;
+//  2. apaga a library_source.
+//
+// Tudo ou nada: se qualquer passo falhar, o rollback deixa o banco intacto (sem
+// estado meio-apagado).
 func (s *Service) Apagar(ctx context.Context, id string) error {
 	if _, err := s.leitura().ObterLibrarySource(ctx, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -178,7 +185,23 @@ func (s *Service) Apagar(ctx context.Context, id string) error {
 		}
 		return err
 	}
-	return s.escrita().ApagarLibrarySource(ctx, id)
+
+	tx, err := s.database.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	q := sqlcgen.New(tx)
+	// library_source_id é NULLABLE no schema; a query tipa o parâmetro como
+	// sql.NullString. Aqui é sempre um id concreto (Valid: true).
+	if err := q.ApagarMediaFilesPorFonte(ctx, sql.NullString{String: id, Valid: true}); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := q.ApagarLibrarySource(ctx, id); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
 
 // toSource converte a linha gerada pelo sqlc na representação de domínio,

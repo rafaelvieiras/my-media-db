@@ -80,6 +80,13 @@ WHERE library_source_id = ?
 DELETE FROM media_file
 WHERE id = ?;
 
+-- name: ApagarMediaFilesPorFonte :exec
+-- Apaga todos os arquivos de uma fonte (usada ao remover o datasource, 0035).
+-- O cascade de media_file_entity (migration 0009, ON DELETE CASCADE em
+-- media_file_id) limpa os vinculos junto; a entity do catalogo e preservada.
+DELETE FROM media_file
+WHERE library_source_id = ?;
+
 -- name: EntityTemPosse :one
 -- POSSE DERIVADA (ADR-0009): verdadeiro se, e so se, existe ao menos um
 -- media_file 'present' para a entity. Posse NAO e coluna (uma coluna gerada nao
