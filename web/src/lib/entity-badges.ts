@@ -56,6 +56,28 @@ export function estadoCompletude(
   return 'vazia'
 }
 
+// temCompletude diz se o tipo do card tem selo de completude (posse rasa): só a série
+// (conta temporadas) e a temporada (conta episódios). movie/episode/collection nunca —
+// o gate único que a UI usa para NÃO exibir selo/recuo nesses tipos, mesmo que um
+// ownership vaze no DTO.
+export function temCompletude(type: string): boolean {
+  return type === 'tv' || type === 'season'
+}
+
+// Unidade contada pelo selo de completude conforme o tipo do card (0037): o card
+// `tv` conta TEMPORADAS (posse rasa), o card `season` conta EPISÓDIOS (0036). É o
+// que muda o rótulo do selo entre a home (série) e a lista de membros (temporada).
+// Qualquer outro tipo não tem selo de completude — cai no plural neutro "itens".
+export function unidadeCompletude(type: string): string {
+  if (type === 'tv') {
+    return 'temporadas'
+  }
+  if (type === 'season') {
+    return 'episódios'
+  }
+  return 'itens'
+}
+
 // Rótulo pt-BR do tipo de mídia para exibição. Cobre os tipos canônicos: os de
 // topo (filme/série/coleção) e os nós da árvore de séries (temporada/episódio,
 // 0031). Tipo desconhecido ecoa cru (nunca quebra a UI).

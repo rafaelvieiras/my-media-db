@@ -5,6 +5,8 @@ import {
   estadoCompletude,
   precisaRevisao,
   rotuloTipo,
+  temCompletude,
+  unidadeCompletude,
 } from '@/lib/entity-badges'
 
 describe('ehDraft', () => {
@@ -60,6 +62,31 @@ describe('rotuloTipo', () => {
     expect(rotuloTipo('collection')).toBe('Coleção')
     expect(rotuloTipo('season')).toBe('Temporada')
     expect(rotuloTipo('episode')).toBe('Episódio')
+  })
+})
+
+describe('temCompletude', () => {
+  it('só série e temporada agregam posse rasa (têm selo)', () => {
+    expect(temCompletude('tv')).toBe(true)
+    expect(temCompletude('season')).toBe(true)
+  })
+
+  it('movie/episode/collection não têm selo de completude', () => {
+    expect(temCompletude('movie')).toBe(false)
+    expect(temCompletude('episode')).toBe(false)
+    expect(temCompletude('collection')).toBe(false)
+    expect(temCompletude('outro')).toBe(false)
+  })
+})
+
+describe('unidadeCompletude', () => {
+  it('série conta temporadas e temporada conta episódios (0037)', () => {
+    expect(unidadeCompletude('tv')).toBe('temporadas')
+    expect(unidadeCompletude('season')).toBe('episódios')
+  })
+
+  it('tipos sem completude caem no plural neutro', () => {
+    expect(unidadeCompletude('movie')).toBe('itens')
   })
 })
 

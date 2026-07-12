@@ -92,3 +92,76 @@ describe('PosterCard', () => {
     expect(screen.queryByText('revisar')).not.toBeInTheDocument()
   })
 })
+
+// Selo de completude por tipo (0037): o card de SÉRIE conta TEMPORADAS, o de
+// TEMPORADA conta EPISÓDIOS. A mesma lógica de estado (completa/parcial/vazia) do
+// 0036, só com a unidade trocada pelo tipo. Movie/collection nunca têm selo.
+describe('PosterCard — selo de completude por tipo (0037)', () => {
+  it('SÉRIE parcial rotula "temporadas"', () => {
+    render(
+      <PosterCard
+        card={card({
+          type: 'tv',
+          ownership: { owned_count: 3, total_count: 38 },
+        })}
+      />,
+    )
+    expect(screen.getByText('possui 3/38 temporadas')).toBeInTheDocument()
+  })
+
+  it('SÉRIE completa mostra o selo "completa"', () => {
+    render(
+      <PosterCard
+        card={card({
+          type: 'tv',
+          ownership: { owned_count: 5, total_count: 5 },
+        })}
+      />,
+    )
+    expect(screen.getByText('completa')).toBeInTheDocument()
+  })
+
+  it('SÉRIE vazia recua (opacity) e rotula "0/Y temporadas"', () => {
+    const { container } = render(
+      <PosterCard
+        card={card({
+          type: 'tv',
+          ownership: { owned_count: 0, total_count: 38 },
+        })}
+      />,
+    )
+    expect(screen.getByText('0/38 temporadas')).toBeInTheDocument()
+    expect(container.querySelector('.opacity-60')).toBeTruthy()
+  })
+
+  it('TEMPORADA parcial rotula "episódios" (0036 intacto)', () => {
+    render(
+      <PosterCard
+        card={card({
+          type: 'season',
+          ownership: { owned_count: 3, total_count: 10 },
+        })}
+      />,
+    )
+    expect(screen.getByText('possui 3/10 episódios')).toBeInTheDocument()
+  })
+
+  it('FILME não tem selo mesmo com ownership presente', () => {
+    render(
+      <PosterCard
+        card={card({
+          type: 'movie',
+          ownership: { owned_count: 1, total_count: 2 },
+        })}
+      />,
+    )
+    // movie não conta unidade: sem "temporadas"/"episódios" e sem "completa".
+    expect(screen.queryByText(/temporadas|episódios/)).not.toBeInTheDocument()
+    expect(screen.queryByText('completa')).not.toBeInTheDocument()
+  })
+
+  it('sem ownership não mostra selo (movie/episode/collection)', () => {
+    render(<PosterCard card={card({ type: 'tv' })} />)
+    expect(screen.queryByText(/temporadas/)).not.toBeInTheDocument()
+  })
+})

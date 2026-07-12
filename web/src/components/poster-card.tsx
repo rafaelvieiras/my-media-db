@@ -1,24 +1,44 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ImageOff } from 'lucide-react'
+import { Check, ImageOff } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { posterSrc, type EntityCard } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { ehDraft, precisaRevisao, rotuloTipo } from '@/lib/entity-badges'
+import {
+  ehDraft,
+  estadoCompletude,
+  precisaRevisao,
+  rotuloTipo,
+  temCompletude,
+  unidadeCompletude,
+} from '@/lib/entity-badges'
 
 // Card de pôster do grid: arte (com fallback de placeholder), título e badges de
 // posse ("na biblioteca") e de revisão (baixa confiança / não identificado).
 // Clicar na arte/título abre o detalhe da entity; clicar no badge de revisão
 // leva à fila de curadoria (`/review`). Os badges ficam num overlay IRMÃO do
 // Link do card (não aninhado) para não gerar âncora dentro de âncora — o overlay
-// é `pointer-events-none` e só o badge-link reativa o clique.
+// é `pointer-events-none` e só o badge-link reativa o clique. Para os tipos que
+// agregam posse (série→temporadas, temporada→episódios, 0036/0037) o card mostra o
+// selo de COMPLETUDE embaixo e recua (opacity) quando está VAZIO.
 export function PosterCard({ card }: { card: EntityCard }) {
   const [falhouArte, setFalhouArte] = useState(false)
   const src = posterSrc(card.poster_url)
   const mostrarPlaceholder = src === null || falhouArte
+  // Só os tipos que agregam posse rasa (série/temporada) ganham selo e recuo por vazio;
+  // movie/episode/collection nunca (defensivo, mesmo que o backend não anote ownership).
+  const estado = temCompletude(card.type)
+    ? estadoCompletude(card.ownership)
+    : null
 
   return (
-    <div className="group relative flex flex-col gap-2" data-slot="poster-card">
+    <div
+      className={cn(
+        'group relative flex flex-col gap-2',
+        estado === 'vazia' && 'opacity-60',
+      )}
+      data-slot="poster-card"
+    >
       <Link
         to="/entities/$id"
         params={{ id: card.id }}
@@ -56,7 +76,48 @@ export function PosterCard({ card }: { card: EntityCard }) {
         <PosseBadge owned={card.owned} />
         <EstadoMatchBadge card={card} />
       </div>
+      <SeloCompletude card={card} />
     </div>
+  )
+}
+
+// SeloCompletude renderiza o estado de posse RASA do card como selo TEXTUAL (nunca só
+// cor, acessível): COMPLETA (positivo, verde + check), PARCIAL ("possui X/Y <unidade>",
+// neutro) ou VAZIA ("0/Y <unidade>", discreto). A UNIDADE vem do tipo (0037): série →
+// "temporadas", temporada → "episódios". Sem selo quando não há ownership ou total==0
+// (movie/episode/collection nunca têm selo). Coerente com o SeloPosse do detalhe (0034).
+export function SeloCompletude({ card }: { card: EntityCard }) {
+  const estado = temCompletude(card.type)
+    ? estadoCompletude(card.ownership)
+    : null
+  if (!estado || !card.ownership) {
+    return null
+  }
+  const { owned_count, total_count } = card.ownership
+  const unidade = unidadeCompletude(card.type)
+  if (estado === 'completa') {
+    return (
+      <Badge className="w-fit gap-1 border-transparent bg-emerald-600 text-white">
+        <Check className="size-3" aria-hidden />
+        completa
+      </Badge>
+    )
+  }
+  if (estado === 'parcial') {
+    return (
+      <Badge variant="secondary" className="w-fit">
+        possui {owned_count}/{total_count} {unidade}
+      </Badge>
+    )
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="w-fit text-muted-foreground"
+      title={`Nenhuma unidade (${unidade}) na biblioteca`}
+    >
+      {owned_count}/{total_count} {unidade}
+    </Badge>
   )
 }
 
