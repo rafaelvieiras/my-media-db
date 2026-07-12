@@ -5,6 +5,7 @@ import {
   createRouter,
 } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { z } from 'zod'
 import { AppHeader } from '@/components/app-header'
 import { LanguageProvider } from '@/lib/language-context'
 import { LibraryItemsScreen } from '@/routes/index'
@@ -84,10 +85,18 @@ const collectionNewRoute = createRoute({
   component: CollectionNewScreen,
 })
 
+// Search param `ordering` do detalhe da série (0040): a ordem de exibição de
+// episódios escolhida no seletor vive na URL (compartilhável, efêmera — sem
+// persistência). Opcional; ausente = ordem default da série (view de temporadas).
+const entityDetailSearchSchema = z.object({
+  ordering: z.string().optional(),
+})
+
 const entityDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/entities/$id',
   component: EntityDetailScreen,
+  validateSearch: entityDetailSearchSchema,
 })
 
 const entityEditRoute = createRoute({

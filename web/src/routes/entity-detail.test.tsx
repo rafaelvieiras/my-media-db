@@ -14,9 +14,12 @@ import {
   settingsPadrao,
 } from '@/test/entity-fixtures'
 
-// Mocka o router: `useParams` fixa o id da rota; `Link` vira um <a>.
+// Mocka o router: `useParams` fixa o id da rota; `useSearch` devolve sem ordem
+// (view default); `useNavigate` é um no-op; `Link` vira um <a>.
 vi.mock('@tanstack/react-router', () => ({
   useParams: () => ({ id: 'e1' }),
+  useSearch: () => ({ ordering: undefined }),
+  useNavigate: () => vi.fn(),
   Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
 }))
 

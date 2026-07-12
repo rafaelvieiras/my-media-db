@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query'
 import {
   getCollectionDetail,
   getEntity,
+  getEntityEpisodes,
   getEntityFields,
   getEntityFiles,
   getEntityMembers,
@@ -57,6 +58,21 @@ export function entityMembersQueryOptions(id: string, lang?: string) {
   return queryOptions({
     queryKey: ['entity', id, 'members', lang ?? null],
     queryFn: () => getEntityMembers(id, lang),
+  })
+}
+
+// Episódios da série agrupados por ordem de exibição (0040). A chave carrega
+// `(id, ordering, lang)` sob o prefixo `['entity', id]`: trocar a ordem (seletor) é
+// cache-miss = re-busca; o idioma re-resolve os títulos. Só é consultada quando a
+// ordem escolhida difere do default (a view default usa os cards de temporada).
+export function entityEpisodesQueryOptions(
+  id: string,
+  ordering: string,
+  lang?: string,
+) {
+  return queryOptions({
+    queryKey: ['entity', id, 'episodes', ordering, lang ?? null],
+    queryFn: () => getEntityEpisodes(id, ordering, lang),
   })
 }
 

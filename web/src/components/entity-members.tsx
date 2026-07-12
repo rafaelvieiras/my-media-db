@@ -62,6 +62,7 @@ export function MembrosSomenteLeitura({
   erro,
   vazio,
   numerar = false,
+  acao,
 }: {
   id: string
   titulo: string
@@ -69,6 +70,9 @@ export function MembrosSomenteLeitura({
   erro: string
   vazio: string
   numerar?: boolean
+  // acao é um slot OPCIONAL à direita do cabeçalho — hoje o seletor de ordenação da
+  // série (0040) fica ao lado de "Temporadas" sem duplicar a seção. null = sem ação.
+  acao?: ReactNode
 }) {
   const { lang } = useLanguage()
   const { data, isPending, isError } = useQuery(
@@ -76,7 +80,10 @@ export function MembrosSomenteLeitura({
   )
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-heading text-lg font-medium">{titulo}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-heading text-lg font-medium">{titulo}</h2>
+        {acao}
+      </div>
       <GradeMembros
         itens={data}
         isPending={isPending}

@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams } from '@tanstack/react-router'
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ApiError, purgeEntity } from '@/lib/api'
+import { ApiError, purgeEntity, type OrderingsInfo } from '@/lib/api'
 import {
   entityFieldsQueryOptions,
   entityQueryOptions,
@@ -17,6 +17,10 @@ import { temOverrideEditado } from '@/lib/override-fields'
 import { ArtGallery } from '@/components/art-gallery'
 import { CollectionMembers } from '@/components/collection-members'
 import { MembrosSomenteLeitura } from '@/components/entity-members'
+import {
+  EpisodiosAgrupados,
+  SeletorOrdenacao,
+} from '@/components/episode-ordering'
 import { MediaInfoTable } from '@/components/media-info-table'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import { Migalhas } from '@/components/migalhas'
@@ -146,8 +150,64 @@ function ExcluirColecao({ id }: { id: string }) {
   )
 }
 
+// SecaoSerie decide a view da árvore de uma SÉRIE conforme a ordem escolhida (0040):
+// o seletor aparece só quando há mais de uma ordem; a ordem default (ou ausente)
+// mostra os cards de temporada navegáveis (a view de sempre); uma ordem alternativa
+// mostra as seções de episódios reagrupados. Trocar de ordem navega no search param
+// (voltar ao default REMOVE o param — URL limpa, sem persistência).
+function SecaoSerie({
+  id,
+  orderings,
+  ordering,
+}: {
+  id: string
+  orderings: OrderingsInfo | null
+  ordering: string | undefined
+}) {
+  const navigate = useNavigate()
+  const def = orderings?.default
+  const mostrarSeletor = (orderings?.available.length ?? 0) > 1
+  // Ordem "alternativa" = escolhida e != default. Só ela dispara a view agrupada; o
+  // default (ou ausente) cai na view de temporadas.
+  const alternativa = ordering && ordering !== def ? ordering : null
+
+  const trocar = (novo: string) => {
+    navigate({
+      to: '/entities/$id',
+      params: { id },
+      search: def && novo === def ? {} : { ordering: novo },
+    })
+  }
+
+  const seletor =
+    mostrarSeletor && def && orderings ? (
+      <SeletorOrdenacao
+        value={ordering ?? def}
+        options={orderings.available}
+        onChange={trocar}
+      />
+    ) : null
+
+  if (alternativa) {
+    return (
+      <EpisodiosAgrupados id={id} ordering={alternativa} seletor={seletor} />
+    )
+  }
+  return (
+    <MembrosSomenteLeitura
+      id={id}
+      titulo="Temporadas"
+      carregando="Carregando temporadas…"
+      erro="Não foi possível carregar as temporadas"
+      vazio="Esta série ainda não tem temporadas."
+      acao={seletor}
+    />
+  )
+}
+
 export function EntityDetailScreen() {
   const { id } = useParams({ from: '/entities/$id' })
+  const { ordering } = useSearch({ from: '/entities/$id' })
   const { lang } = useLanguage()
   const { data, isPending, isError, error } = useQuery(
     entityQueryOptions(id, lang),
@@ -261,16 +321,16 @@ export function EntityDetailScreen() {
           </>
         ) : null}
 
-        {/* Árvore de séries (0031), somente leitura: a série lista as TEMPORADAS; a
-            temporada lista os EPISÓDIOS numerados. Reusa o molde pai-com-filhos
-            (/members) sem o add/remove — a Fase 1 não edita a árvore à mão. */}
+        {/* Árvore de séries (0031/0040), somente leitura: a série lista as TEMPORADAS
+            navegáveis na ordem default; um seletor (0040) troca para uma ordem
+            alternativa, que reagrupa os EPISÓDIOS em seções. A temporada lista os
+            EPISÓDIOS numerados (0039). Reusa o molde pai-com-filhos (/members) sem o
+            add/remove — a Fase 1 não edita a árvore à mão. */}
         {data.type === 'tv' ? (
-          <MembrosSomenteLeitura
+          <SecaoSerie
             id={id}
-            titulo="Temporadas"
-            carregando="Carregando temporadas…"
-            erro="Não foi possível carregar as temporadas"
-            vazio="Esta série ainda não tem temporadas."
+            orderings={data.orderings ?? null}
+            ordering={ordering}
           />
         ) : null}
         {data.type === 'season' ? (

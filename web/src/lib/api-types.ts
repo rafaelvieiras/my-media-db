@@ -262,6 +262,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/episodes': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Episódios da série agrupados por ordem de exibição (briefing 0040).
+     * @description Devolve TODOS os episódios da série (descendentes via a árvore série→temporada→episódio) AGRUPADOS e ordenados pela ordem `ordering` (official/dvd/absolute…), projetados na LEITURA a partir do `numbering` gravado no import (core.tv@1) — ADR-0021: ordens ALTERNATIVAS não viram entidade de temporada, são agrupadas aqui no server (cabeçalhos de temporada são rótulos, só o episódio é navegável). Cada card traz `numbering` já naquela ordem. `ordering` ausente ou inválido cai no default da série; `absolute` é uma ordem especial (grupo único corrido por `absolute_number`). Episódio sem numeração naquela ordem cai num grupo "Sem numeração" ao fim. Entity que não é série → grupos vazios; 404 quando a entity não existe.
+     */
+    get: operations['getEntityEpisodes']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/{id}/assets/poster': {
     parameters: {
       query?: never
@@ -908,6 +928,29 @@ export interface components {
       ancestors: components['schemas']['AncestorRef'][]
       /** @description Posse AGREGADA de uma entity-pai da árvore de séries (0034): episódios possuídos sobre o total. Presente só para `tv` (soma across temporadas) e `season` (episódios diretos); `null` para movie/episódio/coleção (que usam a posse simples de `owned`). */
       ownership: components['schemas']['OwnershipInfo'] | null
+      /** @description Ordens de exibição de episódios disponíveis de uma SÉRIE (0040): a `default` e a lista `available` (união das chaves de `numbering` dos episódios + `absolute` quando há absolute_number, com o default primeiro). OPCIONAL: presente só para `tv` com ao menos uma ordem; AUSENTE para os demais tipos e para série sem numbering. A UI só mostra o seletor quando `available` tem mais de um item. */
+      orderings?: components['schemas']['OrderingsInfo']
+    }
+    /** @description Ordens de exibição de episódios de uma série (0040): `default` é a ordem inicial (o default_season_type gravado no import) e `available` a lista oferecida ao seletor (o default primeiro, `absolute` ao fim quando há número absoluto). O seletor só aparece com mais de uma ordem. */
+    OrderingsInfo: {
+      /** @description Ordem inicial (default_season_type da série). */
+      default: string
+      /** @description Ordens oferecidas, o default primeiro. */
+      available: string[]
+    }
+    /** @description Resposta de GET /entities/{id}/episodes (0040): a ordem efetivamente aplicada (`ordering`, já resolvida contra as disponíveis) e os grupos de episódios. */
+    EpisodeGroups: {
+      /** @description Ordem aplicada (o default quando a pedida foi ausente/inválida). */
+      ordering: string
+      groups: components['schemas']['EpisodeGroup'][]
+    }
+    /** @description Um grupo de episódios (temporada da ORDEM pedida) com o rótulo NÃO-navegável do cabeçalho e os cards de episódio já com `numbering` projetado naquela ordem. No `absolute` há um grupo único corrido (`season` 0, label "Episódios"); episódios sem numeração naquela ordem caem num grupo "Sem numeração" (`season` 0) ao fim. */
+    EpisodeGroup: {
+      /** @description Número da temporada da ordem (0 no grupo absoluto / sem numeração). */
+      season: number
+      /** @description Rótulo do cabeçalho, não-navegável (ex.: Temporada 1, Episódios). */
+      label: string
+      episodes: components['schemas']['EntityCard'][]
     }
     /** @description Posse agregada de uma temporada/série (0034): episódios possuídos (`owned_count`) sobre o total de episódios (`total_count`). Alimenta o badge "possui 12/13". Derivada dos vínculos media_file_entity (kind='tv_episode'). */
     OwnershipInfo: {
@@ -1615,6 +1658,35 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['EntityCard'][]
+        }
+      }
+      404: components['responses']['Error']
+    }
+  }
+  getEntityEpisodes: {
+    parameters: {
+      query?: {
+        /** @description Ordem de exibição (uma das `orderings.available` do detalhe da série, ex.: `official`, `dvd`, `absolute`). Ausente/inválida cai no default da série. */
+        ordering?: string
+        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        lang?: components['parameters']['LangQuery']
+      }
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Episódios agrupados pela ordem aplicada. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['EpisodeGroups']
         }
       }
       404: components['responses']['Error']

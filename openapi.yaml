@@ -483,6 +483,41 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/episodes:
+    get:
+      operationId: getEntityEpisodes
+      summary: Episódios da série agrupados por ordem de exibição (briefing 0040).
+      description: >
+        Devolve TODOS os episódios da série (descendentes via a árvore
+        série→temporada→episódio) AGRUPADOS e ordenados pela ordem `ordering`
+        (official/dvd/absolute…), projetados na LEITURA a partir do `numbering`
+        gravado no import (core.tv@1) — ADR-0021: ordens ALTERNATIVAS não viram
+        entidade de temporada, são agrupadas aqui no server (cabeçalhos de temporada
+        são rótulos, só o episódio é navegável). Cada card traz `numbering` já naquela
+        ordem. `ordering` ausente ou inválido cai no default da série; `absolute` é uma
+        ordem especial (grupo único corrido por `absolute_number`). Episódio sem
+        numeração naquela ordem cai num grupo "Sem numeração" ao fim. Entity que não é
+        série → grupos vazios; 404 quando a entity não existe.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - name: ordering
+          in: query
+          required: false
+          description: >
+            Ordem de exibição (uma das `orderings.available` do detalhe da série, ex.:
+            `official`, `dvd`, `absolute`). Ausente/inválida cai no default da série.
+          schema: { type: string }
+        - $ref: "#/components/parameters/LangQuery"
+      responses:
+        "200":
+          description: Episódios agrupados pela ordem aplicada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EpisodeGroups" }
+        "404":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/{id}/assets/poster:
     get:
       operationId: getEntityPoster
@@ -1586,6 +1621,62 @@ components:
           oneOf:
             - $ref: '#/components/schemas/OwnershipInfo'
             - type: "null"
+        orderings:
+          description: >
+            Ordens de exibição de episódios disponíveis de uma SÉRIE (0040): a
+            `default` e a lista `available` (união das chaves de `numbering` dos
+            episódios + `absolute` quando há absolute_number, com o default primeiro).
+            OPCIONAL: presente só para `tv` com ao menos uma ordem; AUSENTE para os
+            demais tipos e para série sem numbering. A UI só mostra o seletor quando
+            `available` tem mais de um item.
+          $ref: '#/components/schemas/OrderingsInfo'
+    OrderingsInfo:
+      type: object
+      description: >
+        Ordens de exibição de episódios de uma série (0040): `default` é a ordem
+        inicial (o default_season_type gravado no import) e `available` a lista
+        oferecida ao seletor (o default primeiro, `absolute` ao fim quando há número
+        absoluto). O seletor só aparece com mais de uma ordem.
+      required: [default, available]
+      properties:
+        default:
+          type: string
+          description: Ordem inicial (default_season_type da série).
+        available:
+          type: array
+          description: Ordens oferecidas, o default primeiro.
+          items: { type: string }
+    EpisodeGroups:
+      type: object
+      description: >
+        Resposta de GET /entities/{id}/episodes (0040): a ordem efetivamente aplicada
+        (`ordering`, já resolvida contra as disponíveis) e os grupos de episódios.
+      required: [ordering, groups]
+      properties:
+        ordering:
+          type: string
+          description: Ordem aplicada (o default quando a pedida foi ausente/inválida).
+        groups:
+          type: array
+          items: { $ref: '#/components/schemas/EpisodeGroup' }
+    EpisodeGroup:
+      type: object
+      description: >
+        Um grupo de episódios (temporada da ORDEM pedida) com o rótulo NÃO-navegável do
+        cabeçalho e os cards de episódio já com `numbering` projetado naquela ordem. No
+        `absolute` há um grupo único corrido (`season` 0, label "Episódios"); episódios
+        sem numeração naquela ordem caem num grupo "Sem numeração" (`season` 0) ao fim.
+      required: [season, label, episodes]
+      properties:
+        season:
+          type: integer
+          description: Número da temporada da ordem (0 no grupo absoluto / sem numeração).
+        label:
+          type: string
+          description: 'Rótulo do cabeçalho, não-navegável (ex.: Temporada 1, Episódios).'
+        episodes:
+          type: array
+          items: { $ref: '#/components/schemas/EntityCard' }
     OwnershipInfo:
       type: object
       description: >

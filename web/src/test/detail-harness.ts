@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import type { EntityCard } from '@/lib/api'
+import type { EntityCard, EpisodeGroup } from '@/lib/api'
 
 // Scaffolding COMPARTILHADO dos testes das telas de detalhe/coleção externa: respostas
 // fetch canônicas, o mock do idioma ativo e o mock do router. Centralizar aqui evita a
@@ -20,6 +20,31 @@ export function entityCardBase(over: Partial<EntityCard> = {}): EntityCard {
     poster_url: null,
     ...over,
   }
+}
+
+// episodioCard é um card de EPISÓDIO com numbering (0040): compartilhado pelos testes
+// da view agrupada para não repetir o mesmo entityCardBase(episode + numbering) (jscpd).
+export function episodioCard(
+  id: string,
+  season: number,
+  number: number,
+  title = 'Ep',
+): EntityCard {
+  return entityCardBase({
+    id,
+    type: 'episode',
+    title,
+    numbering: { season, number },
+  })
+}
+
+// grupoEpisodios monta um EpisodeGroup (0040) a partir dos cards já prontos.
+export function grupoEpisodios(
+  season: number,
+  label: string,
+  episodes: EntityCard[],
+): EpisodeGroup {
+  return { season, label, episodes }
 }
 
 // okJson/erroJson montam Responses no shape que o cliente HTTP (api.ts) espera.

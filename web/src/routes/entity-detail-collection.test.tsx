@@ -20,6 +20,7 @@ const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
 
 vi.mock('@tanstack/react-router', () => ({
   useParams: () => ({ id: 'e1' }),
+  useSearch: () => ({ ordering: undefined }),
   useNavigate: () => spies.navigate,
   Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
 }))

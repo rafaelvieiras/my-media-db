@@ -143,6 +143,24 @@ type Entidade struct {
 	// é anotada no server pós-resolução (mesma fronteira de Ancestors), porque a
 	// agregação percorre entity_relation.
 	Ownership *OwnershipInfo `json:"ownership"`
+
+	// Orderings são as ordens de exibição de episódios disponíveis de uma SÉRIE
+	// (0040): a `default` (o default_season_type gravado no import) e a lista
+	// `available` (união das chaves de `numbering` dos episódios + `absolute` quando
+	// há absolute_number), com o default primeiro. Presente (não-null) só para `tv`
+	// com ao menos uma ordem; `omitempty` (ausente) para os demais tipos e para série
+	// sem numbering — a UI então esconde o seletor. Anotada no server pós-resolução
+	// (mesma fronteira de Ancestors/Ownership), porque varre a árvore de episódios.
+	Orderings *OrderingsInfo `json:"orderings,omitempty"`
+}
+
+// OrderingsInfo descreve as ordens de exibição de episódios de uma série (0040):
+// `Default` é a ordem inicial (o default_season_type da série) e `Available` a lista
+// de ordens oferecidas ao seletor (o default primeiro, `absolute` ao fim quando há
+// número absoluto). A UI só mostra o seletor quando `Available` tem mais de um item.
+type OrderingsInfo struct {
+	Default   string   `json:"default"`
+	Available []string `json:"available"`
 }
 
 // OwnershipInfo é a posse agregada de uma temporada/série (0034): episódios

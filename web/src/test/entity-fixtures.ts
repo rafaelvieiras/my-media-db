@@ -95,6 +95,31 @@ export function okFields() {
   return okJson({ fields: descritoresPadrao })
 }
 
+// respostaComum roteia as rotas AUXILIARES do detalhe da entity (settings, descritores,
+// override vazio, assets e files vazios) — o pano de fundo compartilhado por todos os
+// fetchRouter de EntityDetailScreen. Devolve null quando a URL não é auxiliar (o caller
+// trata as rotas específicas: a entity resolvida, membros, episódios). Centraliza o
+// bloco para os testes não o duplicarem (jscpd). Não cobre `/override` com blob custom
+// (o teste que precisa disso trata a rota antes).
+export function respostaComum(u: string): Response | null {
+  if (u === '/api/v1/settings/languages') {
+    return okJson(settingsPadrao)
+  }
+  if (u === '/api/v1/schema/entity-fields') {
+    return okFields()
+  }
+  if (u.includes('/override')) {
+    return okJson({})
+  }
+  if (u.includes('/assets')) {
+    return okJson([])
+  }
+  if (u.includes('/files')) {
+    return okJson({ items: [] })
+  }
+  return null
+}
+
 // Asset de teste (arte da galeria, 0017), com sobrescritas pontuais por campo.
 export function baseAsset(over: Partial<Asset> = {}): Asset {
   return {

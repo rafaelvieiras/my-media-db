@@ -16,6 +16,9 @@ export type ScanStatus = components['schemas']['ScanStatus']
 export type StartScan = components['schemas']['StartScan']
 export type EntityCard = components['schemas']['EntityCard']
 export type EntityList = components['schemas']['EntityList']
+export type OrderingsInfo = components['schemas']['OrderingsInfo']
+export type EpisodeGroups = components['schemas']['EpisodeGroups']
+export type EpisodeGroup = components['schemas']['EpisodeGroup']
 export type ResolvedEntity = components['schemas']['ResolvedEntity']
 export type AncestorRef = components['schemas']['AncestorRef']
 export type MediaFile = components['schemas']['MediaFile']
@@ -214,6 +217,31 @@ export async function getEntityMembers(
   return lerJson<EntityCard[]>(
     await fetch(
       `${base}/api/v1/entities/${encodeURIComponent(id)}/members${suffix}`,
+    ),
+  )
+}
+
+// Episódios da SÉRIE agrupados por ordem de exibição (0040): todos os episódios
+// descendentes, projetados na ordem `ordering` (official/dvd/absolute…) e agrupados
+// por temporada da ordem — reagrupados/renumerados na LEITURA a partir do numbering,
+// sem criar entidade de temporada (ADR-0021). `ordering` ausente/inválido cai no
+// default da série. `lang` resolve os títulos no idioma ativo (paridade com /members).
+export async function getEntityEpisodes(
+  id: string,
+  ordering?: string,
+  lang?: string,
+): Promise<EpisodeGroups> {
+  const qs = new URLSearchParams()
+  if (ordering) {
+    qs.set('ordering', ordering)
+  }
+  if (lang) {
+    qs.set('lang', lang)
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return lerJson<EpisodeGroups>(
+    await fetch(
+      `${base}/api/v1/entities/${encodeURIComponent(id)}/episodes${suffix}`,
     ),
   )
 }

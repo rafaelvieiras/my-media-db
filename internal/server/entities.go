@@ -259,6 +259,10 @@ const (
 	// (ordem→{season,number}) + `absolute_number`. Lido aqui para o numbering do card
 	// (0039); a ESCRITA nasce no enrich (mesmo valor, fontes distintas).
 	nsTVCore = "core.tv@1"
+	// orderingAbsoluto é a ordem VIRTUAL do seletor (0040) que numera os episódios
+	// pelo `absolute_number` (contínuo através das temporadas, anime), num grupo único
+	// — não é uma chave de `numbering`, é derivada da presença de absolute_number.
+	orderingAbsoluto = "absolute"
 )
 
 // membroCard carrega o card já montado + o release_date do membro, só para ordenar por
@@ -388,11 +392,30 @@ func (s *Server) anotarNumbering(ctx context.Context, card *entityCardDTO, order
 }
 
 // projetarNumbering é a projeção PURA do numbering do episódio na ordenação da
-// temporada-pai. Preferência: a entrada `numbering[ordering]` → {season,number} (+ o
-// absoluto quando houver). Fallback (0039): sem entrada para a ordenação, mas com
+// temporada-pai (0039). Preferência: a entrada ESTRITA `numbering[ordering]` (via
+// entradaNumbering). Fallback (0039): sem entrada para a ordenação, mas com
 // `absolute_number`, usa o absoluto como número (Season = o da temporada-pai). Sem
-// nenhum dos dois (draft) → nil (rótulo neutro na UI).
+// nenhum dos dois (draft) → nil (rótulo neutro na UI). O fallback ao absoluto é o
+// que distingue este da projeção do seletor (0040), que agrupa por ordem ESTRITA.
 func projetarNumbering(ns map[string]any, ordering string, seasonNumber int) *episodeNumberingDTO {
+	if dto := entradaNumbering(ns, ordering); dto != nil {
+		return dto
+	}
+	if ns == nil {
+		return nil
+	}
+	if a, ok := tvext.AsInt(ns["absolute_number"]); ok {
+		return &episodeNumberingDTO{Season: seasonNumber, Number: a}
+	}
+	return nil
+}
+
+// entradaNumbering extrai a numeração ESTRITA do episódio para uma ordenação: a
+// entrada `numbering[ordering]` → {season,number} (+ o absoluto quando houver). nil
+// quando NÃO há entrada para aquela ordem — sem fallback ao absoluto (o caller
+// decide o que fazer com o episódio "sem numeração naquela ordem"). É o núcleo
+// reusado pela projeção do 0039 (com fallback) e pelo seletor do 0040 (estrito).
+func entradaNumbering(ns map[string]any, ordering string) *episodeNumberingDTO {
 	if ns == nil {
 		return nil
 	}
@@ -400,19 +423,44 @@ func projetarNumbering(ns map[string]any, ordering string, seasonNumber int) *ep
 	if a, ok := tvext.AsInt(ns["absolute_number"]); ok {
 		abs = &a
 	}
-	if numbering, ok := ns["numbering"].(map[string]any); ok {
-		if par, ok := numbering[ordering].(map[string]any); ok {
-			season, sOK := tvext.AsInt(par["season"])
-			number, nOK := tvext.AsInt(par["number"])
-			if sOK && nOK {
-				return &episodeNumberingDTO{Season: season, Number: number, AbsoluteNumber: abs}
-			}
-		}
+	numbering, ok := ns["numbering"].(map[string]any)
+	if !ok {
+		return nil
 	}
-	if abs != nil {
-		return &episodeNumberingDTO{Season: seasonNumber, Number: *abs}
+	par, ok := numbering[ordering].(map[string]any)
+	if !ok {
+		return nil
 	}
-	return nil
+	season, sOK := tvext.AsInt(par["season"])
+	number, nOK := tvext.AsInt(par["number"])
+	if !sOK || !nOK {
+		return nil
+	}
+	return &episodeNumberingDTO{Season: season, Number: number, AbsoluteNumber: abs}
+}
+
+// numeracaoAbsoluta projeta o episódio na ordem ABSOLUTA (0040): number =
+// absolute_number, sem temporada (Season 0 → um grupo único corrido). nil quando o
+// episódio não tem absolute_number (cai no grupo "Sem numeração").
+func numeracaoAbsoluta(ns map[string]any) *episodeNumberingDTO {
+	if ns == nil {
+		return nil
+	}
+	a, ok := tvext.AsInt(ns["absolute_number"])
+	if !ok {
+		return nil
+	}
+	return &episodeNumberingDTO{Season: 0, Number: a, AbsoluteNumber: &a}
+}
+
+// projetarParaOrdem escolhe a projeção do episódio conforme a ordem pedida: a
+// ABSOLUTA usa numeracaoAbsoluta (grupo único); qualquer outra usa a entrada ESTRITA
+// `numbering[ordering]`. Em ambos os casos nil = episódio "sem numeração nesta ordem".
+func projetarParaOrdem(ns map[string]any, ordering string) *episodeNumberingDTO {
+	if ordering == orderingAbsoluto {
+		return numeracaoAbsoluta(ns)
+	}
+	return entradaNumbering(ns, ordering)
 }
 
 // kindEOrdemMembros escolhe o kind de relação dos filhos e se eles são reordenados por
@@ -602,6 +650,7 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 	s.anotarInternos(ctx, &resolvida)
 	resolvida.Ancestors = s.montarAncestrais(ctx, id)
 	resolvida.Ownership = s.montarPosseAgregada(ctx, ent)
+	resolvida.Orderings = s.montarOrderings(ctx, ent)
 	return resolvida, true, nil
 }
 

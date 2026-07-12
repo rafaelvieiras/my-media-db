@@ -245,6 +245,13 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Get("/{id}/members", s.getEntityMembers)
 				ent.Post("/{id}/members", s.addMember)
 				ent.Delete("/{id}/members/{childId}", s.removeMember)
+
+				// Episódios da série AGRUPADOS por ordem (briefing 0040): o seletor
+				// de ordenação (official/dvd/absolute) reprojeta a série na LEITURA a
+				// partir do `numbering` — cabeçalhos de temporada da ordem NÃO viram
+				// entidade (ADR-0021), só o episódio é navegável. `?ordering=` ausente
+				// ou inválido cai no default da série; `absolute` é ordem especial.
+				ent.Get("/{id}/episodes", s.getEntityEpisodes)
 				ent.Get("/{id}/assets/poster", s.getEntityPoster)
 				ent.Get("/{id}/assets/fanart", s.getEntityFanart)
 
