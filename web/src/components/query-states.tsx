@@ -1,9 +1,24 @@
 import type { ReactNode } from 'react'
-import { LoaderCircle, TriangleAlert } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { ArrowLeft, LoaderCircle, TriangleAlert } from 'lucide-react'
 
 // Estados de UI compartilhados (carregando / erro / vazio). Centralizados aqui
 // para o grid e a lista de datasources não duplicarem markup (a catraca do 0005
 // mede duplicação com jscpd).
+
+// VoltarBiblioteca é o link "voltar" comum às telas de detalhe (item, pessoa): navega à
+// home (a biblioteca). Extraído para as telas não duplicarem o mesmo markup (jscpd).
+export function VoltarBiblioteca() {
+  return (
+    <Link
+      to="/"
+      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+    >
+      <ArrowLeft className="size-4" aria-hidden />
+      Voltar à biblioteca
+    </Link>
+  )
+}
 
 export function LoadingState({ label = 'Carregando…' }: { label?: string }) {
   return (

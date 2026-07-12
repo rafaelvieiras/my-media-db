@@ -42,6 +42,9 @@ export type CreditCompany = components['schemas']['CreditCompany']
 // destino do card de elenco/equipe quando o crédito traz `person_id`.
 export type Person = components['schemas']['Person']
 export type PersonCredit = components['schemas']['PersonCredit']
+// Obra da filmografia AINDA NÃO importada (0029, fase D): identidade externa
+// (source/source_id/type) em vez de entity_id — o card navega ao detalhe externo.
+export type PersonExternalCredit = components['schemas']['PersonExternalCredit']
 export type ImportRequest = components['schemas']['ImportRequest']
 export type LanguageSettings = components['schemas']['LanguageSettings']
 export type OverrideBlob = components['schemas']['OverrideBlob']

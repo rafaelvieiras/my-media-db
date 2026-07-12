@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import { PersonDetailScreen } from '@/routes/person-detail'
-import type { Person } from '@/lib/api'
+import type { Person, PersonCredit } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 import { criarFetch } from '@/test/harness'
@@ -34,6 +34,21 @@ function pessoa(over: Partial<Person> = {}): Person {
   }
 }
 
+// creditoBB é o crédito de elenco reusado por vários testes (evita repetir o mesmo
+// literal — a catraca mede duplicação até nos testes). `over` ajusta o que variar.
+function creditoBB(over: Partial<PersonCredit> = {}): PersonCredit {
+  return {
+    entity_id: 'e1',
+    type: 'movie',
+    title: 'Breaking Bad: O Filme',
+    year: '2019',
+    poster_url: '/api/v1/entities/e1/assets/poster',
+    kind: 'cast',
+    character: 'Walter White',
+    ...over,
+  }
+}
+
 // stubPerson roteia SÓ GET /api/v1/person/{id} com a Response dada.
 function stubPerson(resp: () => Response) {
   vi.stubGlobal(
@@ -53,23 +68,7 @@ afterEach(() => {
 
 describe('PersonDetailScreen', () => {
   it('renderiza o nome e a filmografia, com o papel de cada obra', async () => {
-    stubPerson(() =>
-      okJson(
-        pessoa({
-          filmography: [
-            {
-              entity_id: 'e1',
-              type: 'movie',
-              title: 'Breaking Bad: O Filme',
-              year: '2019',
-              poster_url: '/api/v1/entities/e1/assets/poster',
-              kind: 'cast',
-              character: 'Walter White',
-            },
-          ],
-        }),
-      ),
-    )
+    stubPerson(() => okJson(pessoa({ filmography: [creditoBB()] })))
     renderWithClient(<PersonDetailScreen />)
 
     expect(
@@ -81,6 +80,96 @@ describe('PersonDetailScreen', () => {
     expect(
       screen.getByRole('link', { name: /Breaking Bad: O Filme/ }),
     ).toHaveAttribute('href', '/entities/e1')
+  })
+
+  it('renderiza as duas seções quando ambos os arrays têm itens', async () => {
+    stubPerson(() =>
+      okJson(
+        pessoa({
+          filmography: [creditoBB()],
+          filmography_external: [
+            {
+              source: 'tmdb',
+              source_id: '604',
+              type: 'movie',
+              title: 'Filme Ainda Não Importado',
+              year: '2021',
+              poster_url: 'https://proxy.local/poster.jpg',
+              kind: 'crew',
+              job: 'Diretor',
+            },
+          ],
+        }),
+      ),
+    )
+    renderWithClient(<PersonDetailScreen />)
+
+    expect(
+      await screen.findByRole('heading', { name: 'Na sua biblioteca' }),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('heading', { name: 'Ainda não importados' }),
+    ).toBeTruthy()
+
+    // Card importado navega ao detalhe INTERNO da entity.
+    expect(
+      screen.getByRole('link', { name: /Breaking Bad: O Filme/ }),
+    ).toHaveAttribute('href', '/entities/e1')
+
+    // Card não importado navega ao detalhe EXTERNO (mesma rota da busca/similares).
+    const linkExterno = screen.getByRole('link', {
+      name: /Filme Ainda Não Importado \(ainda não importado\)/,
+    })
+    expect(linkExterno).toHaveAttribute('href', '/external/tmdb/movie/604')
+    expect(screen.getByText('Diretor')).toBeTruthy()
+    expect(screen.getByText('Não importado')).toBeTruthy()
+  })
+
+  it('filmography_external vazio ou ausente não mostra a seção externa', async () => {
+    stubPerson(() =>
+      okJson(pessoa({ filmography: [creditoBB({ poster_url: null })] })),
+    )
+    renderWithClient(<PersonDetailScreen />)
+
+    expect(
+      await screen.findByRole('heading', { name: 'Na sua biblioteca' }),
+    ).toBeTruthy()
+    expect(
+      screen.queryByRole('heading', { name: 'Ainda não importados' }),
+    ).toBeNull()
+  })
+
+  it('filmography vazia mas filmography_external cheia mostra só a seção externa, sem a mensagem de vazio global', async () => {
+    stubPerson(() =>
+      okJson(
+        pessoa({
+          filmography: [],
+          filmography_external: [
+            {
+              source: 'tmdb',
+              source_id: '604',
+              type: 'movie',
+              title: 'Filme Ainda Não Importado',
+              year: '2021',
+              poster_url: null,
+              kind: 'cast',
+              character: 'Ela mesma',
+            },
+          ],
+        }),
+      ),
+    )
+    renderWithClient(<PersonDetailScreen />)
+
+    expect(
+      await screen.findByRole('heading', { name: 'Ainda não importados' }),
+    ).toBeTruthy()
+    expect(
+      screen.queryByRole('heading', { name: 'Na sua biblioteca' }),
+    ).toBeNull()
+    expect(
+      screen.queryByText('Nenhuma obra na sua biblioteca ainda.'),
+    ).toBeNull()
   })
 
   it('mostra o link externo para o TMDB quando a fonte é tmdb', async () => {

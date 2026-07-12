@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ApiError, purgeEntity, type OrderingsInfo } from '@/lib/api'
@@ -23,7 +23,11 @@ import {
   SeletorOrdenacao,
 } from '@/components/episode-ordering'
 import { MediaInfoTable } from '@/components/media-info-table'
-import { ErrorState, LoadingState } from '@/components/query-states'
+import {
+  ErrorState,
+  LoadingState,
+  VoltarBiblioteca,
+} from '@/components/query-states'
 import { Migalhas } from '@/components/migalhas'
 import { RichDetailView } from '@/components/rich-detail-view'
 import { deResolvedEntity } from '@/lib/rich-detail'
@@ -222,15 +226,7 @@ export function EntityDetailScreen() {
   // MESMA query é lida pela ArtGallery (child) — o TanStack dedupe numa só ida.
   const artwork = useQuery(artworkQueryOptions(id)).data
 
-  const voltar = (
-    <Link
-      to="/"
-      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-    >
-      <ArrowLeft className="size-4" aria-hidden />
-      Voltar à biblioteca
-    </Link>
-  )
+  const voltar = <VoltarBiblioteca />
 
   if (isPending) {
     return (
