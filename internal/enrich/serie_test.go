@@ -135,6 +135,75 @@ func exigirEpisodioDivergente(t *testing.T, r *sqlcgen.Queries) {
 	}
 }
 
+// TestImportarSerieGravaMediaExternalDoEpisodio (0041): cada episódio da árvore grava
+// UMA linha media_external per-fonte cujo payload carrega os mapas title/overview POR
+// IDIOMA (não só o escalar default) sob o discriminador entity_kind — o trilho i18n do
+// filme aplicado ao episódio. Sem isso o detalhe do episódio não traduziria por ?lang=.
+func TestImportarSerieGravaMediaExternalDoEpisodio(t *testing.T) {
+	svc, database := svcSerieFake(t)
+	ctx := context.Background()
+
+	if _, _, err := svc.Importar(ctx, "tmdb", fake.SerieFixtureID, "tv", []string{"en"}); err != nil {
+		t.Fatalf("Importar serie: %v", err)
+	}
+	env := envelopeEpisodioDe(t, database, "103")
+	if env.EntityKind != provider.KindEpisodio {
+		t.Errorf("entity_kind = %q, quero %q", env.EntityKind, provider.KindEpisodio)
+	}
+	// O fake serve title en+pt-BR+pt e overview en+pt-BR para o episódio (idiomas que a
+	// árvore trouxe) — o payload preserva TODOS, não só o idioma default.
+	if env.Title["en"] != "Episode 103" || env.Title["pt-BR"] != "Episodio 103" || env.Title["pt"] != "Episodio 103" {
+		t.Errorf("title por idioma = %v, quero en/pt-BR/pt preenchidos", env.Title)
+	}
+	if env.Overview["en"] != "Overview of episode 103" || env.Overview["pt-BR"] != "Sinopse do episodio 103" {
+		t.Errorf("overview por idioma = %v, quero en/pt-BR preenchidos", env.Overview)
+	}
+}
+
+// TestReimportarEpisodioReescreveMediaExternal (0041): re-importar a série REESCREVE o
+// media_external do episódio já existente (idempotente por (entity_id, source)) — não
+// duplica linha nem retorna cedo sem reescrever (o bug do caminho de reuse).
+func TestReimportarEpisodioReescreveMediaExternal(t *testing.T) {
+	svc, database := svcSerieFake(t)
+	ctx := context.Background()
+
+	if _, _, err := svc.Importar(ctx, "tmdb", fake.SerieFixtureID, "tv", []string{"en"}); err != nil {
+		t.Fatalf("1o import: %v", err)
+	}
+	if _, _, err := svc.Importar(ctx, "tmdb", fake.SerieFixtureID, "tv", []string{"en"}); err != nil {
+		t.Fatalf("2o import: %v", err)
+	}
+	// A UNIQUE(entity_id, source) garante uma linha só; ObterMediaExternalPorFonte é :one
+	// (erraria se houvesse duplicata) e o payload segue com os mapas per-idioma.
+	env := envelopeEpisodioDe(t, database, "103")
+	if env.EntityKind != provider.KindEpisodio || env.Title["pt-BR"] != "Episodio 103" {
+		t.Errorf("payload apos reimport = %+v, quero episodio traduzido intacto", env)
+	}
+}
+
+// envelopeEpisodioDe lê o media_external (fonte tmdb) do episódio de tmdbID e decodifica
+// o EnvelopeEpisodio do payload_json.
+func envelopeEpisodioDe(t *testing.T, database *db.DB, tmdbID string) provider.EnvelopeEpisodio {
+	t.Helper()
+	r := sqlcgen.New(database.Read)
+	ep, err := r.ObterEntityPorTmdb(context.Background(), nsValid(tmdbID))
+	if err != nil {
+		t.Fatalf("episodio %s nao encontrado: %v", tmdbID, err)
+	}
+	row, err := r.ObterMediaExternalPorFonte(context.Background(), sqlcgen.ObterMediaExternalPorFonteParams{
+		EntityID: ep.ID,
+		Source:   "tmdb",
+	})
+	if err != nil {
+		t.Fatalf("media_external do episodio %s: %v", tmdbID, err)
+	}
+	var env provider.EnvelopeEpisodio
+	if err := json.Unmarshal([]byte(row.PayloadJson.String), &env); err != nil {
+		t.Fatalf("payload_json invalido (%q): %v", row.PayloadJson.String, err)
+	}
+	return env
+}
+
 // TestReimportarSerieIdempotente: re-importar a mesma série reusa a série, as
 // temporadas (dedup por numero) e os episódios (dedup por id externo) — sem duplicar.
 func TestReimportarSerieIdempotente(t *testing.T) {

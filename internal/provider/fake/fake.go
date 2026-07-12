@@ -116,6 +116,12 @@ func (p *Provider) BuscarDetalhe(_ context.Context, sourceID, _ string, _ []stri
 // (só depende do raw). Os traduzíveis saem como map[string]any (o resolver exige
 // esse tipo); os neutros como escalares. Só inclui as chaves presentes.
 func (p *Provider) MapearDetalhe(raw json.RawMessage) (map[string]any, error) {
+	// EPISODIO (0041): a arvore fake grava media_external de episodio sob esta fonte
+	// (Nome="tmdb"); reconhece o discriminador entity_kind e mapeia title/description
+	// por idioma. Sem o discriminador cai no mapeamento de filme abaixo, sem regressao.
+	if campos, ok := provider.MapearEpisodio(raw); ok {
+		return campos, nil
+	}
 	var f rawFixture
 	if err := json.Unmarshal(raw, &f); err != nil {
 		return nil, err

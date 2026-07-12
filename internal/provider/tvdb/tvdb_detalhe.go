@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+
+	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
 // Este arquivo cobre o DETALHE canônico da SÉRIE (o análogo de BuscarDetalhe/
@@ -154,6 +156,12 @@ func (c *Client) traducaoSerie(ctx context.Context, sourceID, code string) (trad
 // (sem rede): detecta o ENVELOPE (0020) vs o LEGADO (extended cru) e mapeia conforme. Só
 // inclui as chaves que a fonte trouxe. SEM elenco/equipe (MD6).
 func (c *Client) MapearDetalhe(raw json.RawMessage) (map[string]any, error) {
+	// EPISODIO (0041): payload com discriminador entity_kind — title/description por
+	// idioma. Vem ANTES do ramo de serie (a mesma fonte "tvdb" serve os dois shapes);
+	// um payload sem o discriminador cai adiante, sem quebrar o mapeamento de serie.
+	if campos, ok := provider.MapearEpisodio(raw); ok {
+		return campos, nil
+	}
 	var env envelopeSerie
 	if err := json.Unmarshal(raw, &env); err == nil && len(env.Detail) > 0 {
 		return mapearEnvelopeSerie(env)

@@ -118,3 +118,4 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0038](0038-badge-de-posse-no-topo-direito-da-capa.md) | Badge de posse no topo-direito da capa (sem apagar ausentes) | fix | done | 0037 |
 | [0039](0039-numbering-real-no-card-do-episodio.md) | Numbering real no card do episódio (SxxEyy/absoluto, não posição ordinal) | fix/feature | done | 0031 |
 | [0040](0040-seletor-de-ordenacao-de-episodios.md) | Seletor de ordenação de episódios (official/dvd/absoluto) reagrupado na leitura | feature | done | 0039 |
+| [0041](0041-i18n-de-episodio-media-external.md) | i18n de episódio (título/overview por idioma via `media_external`) | feature | done | 0031, 0020 |

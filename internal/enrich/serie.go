@@ -215,11 +215,27 @@ func (s *Servico) importarEpisodio(ctx context.Context, tempID, source, defaultT
 }
 
 // acharOuCriarEpisodio faz o find-or-create do episódio por id externo (dedup por
-// external_id_<fonte>, a ÂNCORA do ADR-0021 — nunca o número). Campos-base na LINHA
-// (idioma default apenas; a i18n por-idioma de episódio é Fase 3): título, descrição,
-// data de exibição, external_ids ({fonte: episode.id} + os que a fonte trouxe) e o
-// namespace core.tv@1 (absolute_number + numbering multi-ordem).
+// external_id_<fonte>, a ÂNCORA do ADR-0021 — nunca o número) e, EM SEGUIDA, grava a
+// base externa (media_external) com os títulos/sinopses POR IDIOMA — a mesma i18n do
+// filme aplicada ao episódio (briefing 0041). É idempotente: no reuse a linha-base é
+// reaproveitada e o media_external é REESCRITO (upsert por (entity_id, source)).
 func (s *Servico) acharOuCriarEpisodio(ctx context.Context, source string, ep provider.EpisodioExterno, langs []string) (string, error) {
+	epID, err := s.idDoEpisodio(ctx, source, ep, langs)
+	if err != nil {
+		return "", err
+	}
+	if err := s.persistirEpisodioExterno(ctx, epID, source, ep); err != nil {
+		return "", err
+	}
+	return epID, nil
+}
+
+// idDoEpisodio devolve o id da entity do episódio: reusa a existente (dedup por id
+// externo) ou cria uma nova. Campos ESCALARES na LINHA (base/fallback curado, idioma
+// default apenas; o per-idioma vive no media_external — 0041): título, descrição, data
+// de exibição, external_ids ({fonte: episode.id} + os que a fonte trouxe) e o namespace
+// core.tv@1 (absolute_number + numbering multi-ordem).
+func (s *Servico) idDoEpisodio(ctx context.Context, source string, ep provider.EpisodioExterno, langs []string) (string, error) {
 	if existente, ok, err := s.acharPorIDExterno(ctx, source, ep.SourceID); err != nil {
 		return "", err
 	} else if ok {
@@ -242,6 +258,28 @@ func (s *Servico) acharOuCriarEpisodio(ctx context.Context, source string, ep pr
 		return "", err
 	}
 	return novo, nil
+}
+
+// persistirEpisodioExterno grava (ou reescreve) a base externa do episódio: um
+// media_external per-fonte cujo payload carrega os mapas title/overview POR IDIOMA crus
+// (sem descartar idiomas, ao contrário do escalar da linha). Espelha o import de filme
+// (enrich.persistir → UpsertMediaExternal), mas com o envelope de episódio (discriminador
+// entity_kind) — é o que faz o detalhe do episódio traduzir pelo resolver. Idempotente
+// por (entity_id, source): o reuse REESCREVE. original_language não é denormalizado (a
+// árvore não o propaga por episódio; a cadeia funciona como [lang, fallback] — 0041 §4).
+func (s *Servico) persistirEpisodioExterno(ctx context.Context, epID, source string, ep provider.EpisodioExterno) error {
+	payload, err := provider.MontarEnvelopeEpisodio(ep, "")
+	if err != nil {
+		return err
+	}
+	_, err = s.escrita().UpsertMediaExternal(ctx, sqlcgen.UpsertMediaExternalParams{
+		ID:          s.novoID(),
+		EntityID:    epID,
+		Source:      source,
+		SourceID:    nsValid(ep.SourceID),
+		PayloadJson: nsValid(string(payload)),
+	})
+	return err
 }
 
 // ligarFilho cria a relação pai→filho de forma IDEMPOTENTE: carrega os já-ligados e
