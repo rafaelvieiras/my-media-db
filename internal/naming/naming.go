@@ -325,35 +325,60 @@ func montarEpisodios(caudaRaw string, primeiro int, cauda []int) ([]int, bool) {
 // separador " - " e veta sufixos técnicos (resolução/codec) que sobreviveriam ao
 // casamento de dígitos.
 func parseEpisodeAbsolute(name string) (EpisodeInfo, bool) {
-	loc := reAbsolute.FindStringSubmatchIndex(name)
-	if loc == nil {
-		return EpisodeInfo{}, false
-	}
-	// Veto: o trecho a partir do hífen parece "- 1080p"/"- 720p"/"- 264x"? Então
-	// não é episódio absoluto, é qualidade/codec.
-	if reAbsoluteVetoSuffix.MatchString(name[loc[0]:]) {
-		return EpisodeInfo{}, false
-	}
-	m := reAbsolute.FindStringSubmatch(name)
-	ini, err := strconv.Atoi(m[1])
-	if err != nil || ini == 0 {
-		return EpisodeInfo{}, false
-	}
-	// Ano entre 1900 e 2099 solto após " - " é quase sempre ano, não episódio
-	// absoluto — conservador, mandamos para revisão.
-	if ini >= 1900 && ini <= 2099 {
+	ini, m, ok := absolutoInicial(name)
+	if !ok {
 		return EpisodeInfo{}, false
 	}
 	if m[2] == "" {
 		return EpisodeInfo{Absolute: []int{ini}, IsAbsolute: true}, true
 	}
 	fim, err := strconv.Atoi(m[2])
-	if err != nil || fim <= ini || fim-ini+1 > maxEpisodiosNoRange {
+	if err != nil {
 		return EpisodeInfo{}, false
+	}
+	out, ok := expandirAbsoluto(ini, fim)
+	if !ok {
+		return EpisodeInfo{}, false
+	}
+	return EpisodeInfo{Absolute: out, IsAbsolute: true}, true
+}
+
+// absolutoInicial reconhece o primeiro número absoluto e aplica os vetos
+// conservadores (sufixo técnico, número zero, ano solto). Devolve o número
+// inicial e o match completo (m[2] guarda o fim opcional do range); ok=false
+// quando o trecho não é um episódio absoluto legítimo.
+func absolutoInicial(name string) (int, []string, bool) {
+	loc := reAbsolute.FindStringSubmatchIndex(name)
+	if loc == nil {
+		return 0, nil, false
+	}
+	// Veto: o trecho a partir do hífen parece "- 1080p"/"- 720p"/"- 264x"? Então
+	// não é episódio absoluto, é qualidade/codec.
+	if reAbsoluteVetoSuffix.MatchString(name[loc[0]:]) {
+		return 0, nil, false
+	}
+	m := reAbsolute.FindStringSubmatch(name)
+	ini, err := strconv.Atoi(m[1])
+	if err != nil || ini == 0 {
+		return 0, nil, false
+	}
+	// Ano entre 1900 e 2099 solto após " - " é quase sempre ano, não episódio
+	// absoluto — conservador, mandamos para revisão.
+	if ini >= 1900 && ini <= 2099 {
+		return 0, nil, false
+	}
+	return ini, m, true
+}
+
+// expandirAbsoluto expande o range absoluto [ini..fim] (inclusive); (nil,false)
+// se o range for invertido/degenerado ou passar do teto maxEpisodiosNoRange.
+func expandirAbsoluto(ini, fim int) ([]int, bool) {
+	if fim <= ini || fim-ini+1 > maxEpisodiosNoRange {
+		return nil, false
 	}
 	out := make([]int, 0, fim-ini+1)
 	for n := ini; n <= fim; n++ {
 		out = append(out, n)
 	}
-	return EpisodeInfo{Absolute: out, IsAbsolute: true}, true
+	return out, true
 }

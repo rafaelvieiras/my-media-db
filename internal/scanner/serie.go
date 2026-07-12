@@ -271,22 +271,12 @@ func (r *scanRun) carregarIndex(ctx context.Context, serieID string) *episodeInd
 	q := sqlcgen.New(r.m.db.Read)
 	idx := &episodeIndex{byOrdering: map[string]map[[2]int]string{}, byAbsolute: map[int]string{}}
 
-	if serie, err := q.ObterEntity(ctx, serieID); err == nil {
-		ns := extrairTVNS(serie.ExtensionDataJson)
-		if s, ok := ns["default_season_type"].(string); ok {
-			idx.defaultType = s
-		}
-		if tipos, ok := ns["season_types"].([]any); ok {
-			for _, o := range tipos {
-				if s, ok := o.(string); ok {
-					idx.orderings = append(idx.orderings, s)
-				}
-			}
-		}
-	} else {
+	serie, err := q.ObterEntity(ctx, serieID)
+	if err != nil {
 		log.Printf("scanner: série %s ilegível ao montar índice: %v", serieID, err)
 		return idx
 	}
+	preencherOrdenacoes(idx, extrairTVNS(serie.ExtensionDataJson))
 
 	temps, err := q.ListarRelacoesFilhas(ctx, serieID)
 	if err != nil {
@@ -297,18 +287,40 @@ func (r *scanRun) carregarIndex(ctx context.Context, serieID string) *episodeInd
 		if t.Kind != kindRelTemporada {
 			continue
 		}
-		eps, err := q.ListarRelacoesFilhas(ctx, t.ChildID)
-		if err != nil {
-			continue
-		}
-		for _, e := range eps {
-			if e.Kind != kindVinculoEpisodio {
-				continue
-			}
-			r.indexarEpisodio(ctx, q, idx, e.ChildID)
-		}
+		r.indexarTemporada(ctx, q, idx, t.ChildID)
 	}
 	return idx
+}
+
+// preencherOrdenacoes lê a ordenação default e a lista de season_types do
+// namespace core.tv@1 da série e as escreve no índice. Ausência de qualquer
+// campo é degradação silenciosa (índice sem ordenação explícita).
+func preencherOrdenacoes(idx *episodeIndex, ns map[string]any) {
+	if s, ok := ns["default_season_type"].(string); ok {
+		idx.defaultType = s
+	}
+	if tipos, ok := ns["season_types"].([]any); ok {
+		for _, o := range tipos {
+			if s, ok := o.(string); ok {
+				idx.orderings = append(idx.orderings, s)
+			}
+		}
+	}
+}
+
+// indexarTemporada percorre os episódios de UMA temporada e os insere no índice.
+// Temporada ilegível é pulada (degrada sem derrubar o resto do índice).
+func (r *scanRun) indexarTemporada(ctx context.Context, q *sqlcgen.Queries, idx *episodeIndex, tempID string) {
+	eps, err := q.ListarRelacoesFilhas(ctx, tempID)
+	if err != nil {
+		return
+	}
+	for _, e := range eps {
+		if e.Kind != kindVinculoEpisodio {
+			continue
+		}
+		r.indexarEpisodio(ctx, q, idx, e.ChildID)
+	}
 }
 
 // indexarEpisodio lê o extension_data de um episódio e o insere no índice: cada
