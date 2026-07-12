@@ -373,6 +373,11 @@ type detalheTMDB struct {
 	ContentRatings      contentRatingsTMDB `json:"content_ratings"` // classificação de série
 	ExternalIds         externalIdsTMDB    `json:"external_ids"`
 	Similar             similarTMDB        `json:"similar"`
+
+	// Status é a SITUAÇÃO da série (só o /tv o traz: "Returning Series"|"Ended"|
+	// "Canceled"|"In Production"|"Planned"). Vazio para filme. Valor CRU/neutro — a UI
+	// traduz o rótulo (briefing 0045).
+	Status string `json:"status"`
 }
 
 // generoTMDB é um item de `genres` (do detalhe ou da lista localizada). O id casa o
@@ -410,11 +415,36 @@ type dadosTraducao struct {
 // do 0015) e mapeia conforme. Só inclui as chaves que a fonte trouxe — assim o
 // resolver distingue "campo ausente" de "campo vazio". SEM elenco/equipe (MD6).
 func (c *Client) MapearDetalhe(raw json.RawMessage) (map[string]any, error) {
+	// SÉRIE-RICO (0045, rota C): o enrich do nó série grava o canônico rico JÁ MAPEADO
+	// sob {ChaveEnvelopeSerieRico: ...}; aqui só o devolvemos como está (passthrough) —
+	// vem antes dos demais ramos (a chave é exclusiva, não colide com o envelope/legado).
+	if campos, ok := mapearSerieRico(raw); ok {
+		return campos, nil
+	}
 	var env envelopeTMDB
 	if err := json.Unmarshal(raw, &env); err == nil && len(env.Detail) > 0 {
 		return mapearEnvelope(env)
 	}
 	return mapearLegado(raw)
+}
+
+// mapearSerieRico detecta o envelope SÉRIE-RICO (0045) e devolve o canônico rico que
+// ele carrega. ok=false para qualquer outro payload (envelope normal do 0020, legado do
+// 0015): a chave ChaveEnvelopeSerieRico é exclusiva deste caminho.
+func mapearSerieRico(raw json.RawMessage) (map[string]any, bool) {
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return nil, false
+	}
+	blob, ok := env[provider.ChaveEnvelopeSerieRico]
+	if !ok || len(blob) == 0 {
+		return nil, false
+	}
+	var campos map[string]any
+	if err := json.Unmarshal(blob, &campos); err != nil {
+		return nil, false
+	}
+	return campos, true
 }
 
 // mapearEnvelope mapeia o PAYLOAD AUMENTADO (0020): title/description como

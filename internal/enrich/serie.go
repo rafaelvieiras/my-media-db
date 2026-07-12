@@ -74,10 +74,83 @@ func (s *Servico) importarSerie(ctx context.Context, source, sourceID string, la
 	}); err != nil {
 		return serieID, criada, err
 	}
+	// Enriquecimento RICO do nó série pelo TMDB (0045, rota C): reusa os campos ricos do
+	// filme (slogan/gêneros/classificação/keywords/similar/situação) + baixa a fanart.
+	// Best-effort: falha/ausência degrada para só-TVDB (nunca aborta a árvore).
+	s.enriquecerSerieRico(ctx, serieID, source, sourceID, langs)
 	for _, t := range arvore.Temporadas {
 		s.importarTemporada(ctx, serieID, source, arvore.DefaultSeasonType, t, langs)
 	}
 	return serieID, criada, nil
+}
+
+// enriquecerSerieRico ENRIQUECE o nó série com os campos ricos do TMDB (0045, rota C):
+// cruza o id TVDB da série (sourceID quando a fonte é o TVDB) para o TMDB, busca o
+// canônico rico (só as chaves ricas) e o PERSISTE como uma camada media_external
+// source="tmdb" do nó série — que a composição de camadas (montarExterno) já compõe de
+// graça sobre a base TVDB, reusando a maquinaria do filme SEM clobbar título/idioma. Em
+// seguida cacheia a FANART (backdrop_url), fechando o buraco do 0044 (o TVDB não dá
+// backdrop, então a série não tinha fanart). Idempotente (o reuse REESCREVE por
+// (entity_id, source), casando com o 0043). Tudo best-effort: sem provider tmdb, sem id
+// TVDB, sem match ou erro de rede degrada em silêncio para só-TVDB — nunca aborta.
+func (s *Servico) enriquecerSerieRico(ctx context.Context, serieID, source, sourceID string, langs []string) {
+	tvdbID := idTvdbDaSerie(source, sourceID)
+	if tvdbID == "" {
+		return // sem id TVDB (fonte não-TVDB): nada a cruzar
+	}
+	prov, ok := s.providers.Get("tmdb")
+	if !ok {
+		return // busca externa do TMDB desligada: só-TVDB
+	}
+	rico, ok := prov.(provider.SerieRicoProvider)
+	if !ok {
+		return // provider "tmdb" não expõe a capacidade rica de série
+	}
+	campos, ok, err := rico.BuscarSerieDetalheRico(ctx, tvdbID, langs)
+	if err != nil {
+		log.Printf("enrich: serie-rico tmdb da serie %s (tvdb %s) falhou (segue so-tvdb): %v", serieID, tvdbID, err)
+		return
+	}
+	if !ok || len(campos) == 0 {
+		return // sem match no TMDB: graca (so-TVDB)
+	}
+	if err := s.persistirSerieRico(ctx, serieID, campos); err != nil {
+		log.Printf("enrich: persistir serie-rico da serie %s falhou (segue): %v", serieID, err)
+		return
+	}
+	// backdrop_url agora existe no canônico da série: baixa a fanart (poster_url não vem
+	// no canônico rico — o pôster segue do TVDB, já cacheado em importarItem).
+	s.cachearArtes(ctx, serieID, campos)
+}
+
+// idTvdbDaSerie devolve o id TVDB da série: hoje a árvore vem EXCLUSIVAMENTE do TVDB
+// (ADR-0021), então o sourceID do import É o id TVDB. Fonte diferente => "" (o cruzamento
+// rico não se aplica).
+func idTvdbDaSerie(source, sourceID string) string {
+	if source == "tvdb" {
+		return sourceID
+	}
+	return ""
+}
+
+// persistirSerieRico grava (ou reescreve) o canônico RICO da série como uma camada
+// media_external source="tmdb", embrulhado no envelope ChaveEnvelopeSerieRico que o
+// MapearDetalhe do TMDB reconhece (passthrough). SourceID fica NULL: é uma camada de
+// ENRIQUECIMENTO cruzada, não um import primário do TMDB (o nó série não é deduplicado
+// por id TMDB — a âncora é o TVDB).
+func (s *Servico) persistirSerieRico(ctx context.Context, serieID string, campos map[string]any) error {
+	payload, err := json.Marshal(map[string]any{provider.ChaveEnvelopeSerieRico: campos})
+	if err != nil {
+		return err
+	}
+	_, err = s.escrita().UpsertMediaExternal(ctx, sqlcgen.UpsertMediaExternalParams{
+		ID:          s.novoID(),
+		EntityID:    serieID,
+		Source:      "tmdb",
+		SourceID:    sql.NullString{},
+		PayloadJson: nsValid(string(payload)),
+	})
+	return err
 }
 
 // ImportarSeriePorNome busca a serie pelo NOME nos providers que suportam series,

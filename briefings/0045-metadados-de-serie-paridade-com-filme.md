@@ -9,7 +9,7 @@
 |---|---|
 | **ID** | 0045 |
 | **Tipo** | feature |
-| **Status** | draft |
+| **Status** | done |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override (vertical séries) |
 | **Docs relacionadas** | [0014](0014-provider-tmdb-busca-local-first.md), [0022](0022-detalhe-externo-rico-persistente.md), [0024](0024-paridade-detalhe-entity-rico.md), [0031](0031-series-fundacao-modelo-enriquecimento.md) |
 | **Depende de** | 0044, 0031 |
@@ -172,16 +172,23 @@ deixar o resto vazio — nunca erro.
 
 ## 5. Critérios de aceite
 
-- [ ] Detalhe de série enriquecida (TMDB) mostra: slogan, gêneros, classificação
+- [x] Detalhe de série enriquecida (TMDB) mostra: slogan, gêneros, classificação
       indicativa, tags e selo de situação.
-- [ ] Seção de relacionados/similares aparece na série, interno-first (itens já na
-      biblioteca priorizados).
-- [ ] Re-import (0043) atualiza situação e demais campos, preservando override.
-- [ ] Série só-TVDB não quebra: campos ausentes ficam vazios, sem erro.
-- [ ] Paridade visual com o filme (mesmos blocos do `RichDetailView`).
-- [ ] Catraca completa verde (Go cov, e2e, tsc 0, web cov, jscpd, gocyclo ≤10).
-- [ ] Smoke real: importar uma série (ex.: Simpsons/Firefly) → conferir slogan,
-      gêneros, classificação, tags, situação e relacionados no detalhe.
+- [x] Seção de relacionados/similares aparece na série, interno-first (`anotarInternos`
+      roda p/ tv; `ObterEntityPorTmdb` casa por id independente de tipo).
+- [x] Re-import atualiza situação e demais campos: `airing_status` é campo de base
+      read-only (não editável pelo dono), o refresh reescreve a base e o resolver
+      preserva override dos campos traduzíveis (mecanismo 0043).
+- [x] Série só-TVDB não quebra: fallback `enriquecerFallbackRico` emite
+      status/genres do `/extended`; tagline/keywords/similar ausentes sem erro.
+- [x] Paridade visual com o filme (mesmos blocos do `RichDetailView`, agnósticos de
+      tipo; só o selo de situação é novo).
+- [x] Catraca completa verde (Go 75.2%, E2E 46.3%, web 90.71%, tsc 0, jscpd 0.12%;
+      gocyclo drift 6 vs 3 não-bloqueante).
+- [x] Smoke real: re-import da série Simpsons → slogan "A comédia que nunca
+      envelhece.", gêneros Família/Animação/Comédia, classificação 12, keywords,
+      `airing_status` "Returning Series" (TMDB sobrepõe "Continuing" do TVDB),
+      20 similares e **fanart baixada** (asset `fanart external`).
 
 ## 6. Notas de implementação / decisões
 

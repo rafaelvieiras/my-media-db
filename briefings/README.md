@@ -122,4 +122,4 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0042](0042-still-de-episodio-lazy-proxy.md) | Still de episódio (lazy via image proxy): URL no import, thumbnail 16:9 no card + detalhe | feature | done | 0031, 0039 |
 | [0043](0043-re-enrich-atualiza-arvore-serie.md) | Re-enrich atualiza a árvore de série (temporada+episódio) preservando override | fix/feature | done | 0042 |
 | [0044](0044-fluxo-de-artes-redondo.md) | Fluxo de artes redondo (pôster/fanart/still: exibição correta + gestão em todo tipo) | fix/feature | done | 0017, 0042 |
-| [0045](0045-metadados-de-serie-paridade-com-filme.md) | Metadados de série: paridade com filme (slogan, gênero, classificação, tags, situação, relacionados) | feature | draft | 0044, 0031 |
+| [0045](0045-metadados-de-serie-paridade-com-filme.md) | Metadados de série: paridade com filme (slogan, gênero, classificação, tags, situação, relacionados) | feature | done | 0044, 0031 |

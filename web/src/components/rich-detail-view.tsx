@@ -23,7 +23,7 @@ import {
 import { rotuloTipo } from '@/lib/entity-badges'
 import { internalIdDe } from '@/lib/internal-id'
 import { rotuloIdioma } from '@/lib/languages'
-import type { RichDetail } from '@/lib/rich-detail'
+import { rotuloSituacao, type RichDetail } from '@/lib/rich-detail'
 import { cn } from '@/lib/utils'
 
 // RichDetailView é a tela RICA COMPARTILHADA entre o detalhe do item EXTERNO (antes
@@ -495,6 +495,10 @@ export function RichDetailView({
   // Seções extras anexadas (editor de override, galeria, arquivos) — entity.
   children?: ReactNode
 }) {
+  // Selo de SITUAÇÃO da série (0045): só existe quando a fonte informou a situação
+  // (série enriquecida). Para filme/episódio o campo é ausente → `situacao` é null e
+  // o selo não aparece — sem gating por tipo, só por presença do dado.
+  const situacao = rotuloSituacao(detail.airingStatus)
   return (
     <div className="flex flex-col gap-6">
       {back}
@@ -547,6 +551,9 @@ export function RichDetailView({
             <div className="flex flex-wrap items-center gap-2 pt-1">
               {detail.certification ? (
                 <Badge variant="secondary">{detail.certification}</Badge>
+              ) : null}
+              {situacao ? (
+                <Badge variant={situacao.variant}>{situacao.label}</Badge>
               ) : null}
               {detail.runtime ? (
                 <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">

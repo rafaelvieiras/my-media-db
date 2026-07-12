@@ -27,6 +27,11 @@ export interface RichDetail {
   year: string | null
   runtime: number | null
   certification: string | null
+  // SITUACAO de exibição de uma SÉRIE (0045): string CRUA da fonte (TMDB "Returning
+  // Series"|"Ended"|… ou TVDB status.name), exposta verbatim — a UI traduz o rótulo
+  // p/ pt-BR via `rotuloSituacao`. Ausente/undefined para filme e série só-TVDB sem
+  // match; nesse caso o selo de situação não aparece.
+  airingStatus?: string | null
   voteAverage: number | null
   // Nota LOCAL do dono (ADR-0012): a avaliação própria, gravada no override, que
   // complementa/sobrepõe a nota da fonte. null quando não avaliada (ou na tela do
@@ -60,6 +65,7 @@ export function deExternalDetail(d: ExternalDetail): RichDetail {
     year: d.year,
     runtime: d.runtime,
     certification: d.certification,
+    airingStatus: d.airing_status ?? null,
     voteAverage: d.vote_average,
     // O detalhe do externo não tem nota local (não é um item do dono ainda).
     localRating: null,
@@ -90,6 +96,7 @@ export function deResolvedEntity(e: ResolvedEntity): RichDetail {
     year: anoDeData(e.release_date),
     runtime: e.runtime,
     certification: e.certification,
+    airingStatus: e.airing_status ?? null,
     voteAverage: e.vote_average,
     localRating: e.local_rating,
     originalLanguage: e.original_language,
@@ -127,4 +134,57 @@ export function srcDeImagem(url: string | null): string | null {
     return null
   }
   return /^https?:\/\//.test(url) ? url : posterSrc(url)
+}
+
+// ── Situação de série (airing_status) ────────────────────────────────────────
+
+// A situação chega CRUA da fonte (0045): o backend não traduz. O rótulo pt-BR e a
+// cor do selo são decisão de UI. `variant` reusa as variantes do design system do
+// `<Badge>`: `default` (destaque, primária) para os estados "vivos" (em exibição/
+// produção/estreia) e `secondary` (neutra) para os "fechados" (encerrada/cancelada/
+// planejada) — o mesmo tom que a classificação já usa.
+export type VarianteSituacao = 'default' | 'secondary'
+
+export interface RotuloSituacao {
+  label: string
+  variant: VarianteSituacao
+}
+
+// Cobre os DOIS vocabulários (o valor pode vir de qualquer fonte): TMDB ("Returning
+// Series"/"Ended"/"Canceled"/"In Production"/"Planned"/"Pilot") e TVDB ("Continuing"/
+// "Ended"/"Upcoming"/"Canceled"). Chaves normalizadas (minúsculas) para casar
+// variações de caixa e o "Cancelled" britânico.
+const SITUACAO_LABELS: Record<string, RotuloSituacao> = {
+  // TMDB
+  'returning series': { label: 'Em exibição', variant: 'default' },
+  ended: { label: 'Encerrada', variant: 'secondary' },
+  canceled: { label: 'Cancelada', variant: 'secondary' },
+  cancelled: { label: 'Cancelada', variant: 'secondary' },
+  'in production': { label: 'Em produção', variant: 'default' },
+  planned: { label: 'Planejada', variant: 'secondary' },
+  pilot: { label: 'Piloto', variant: 'secondary' },
+  // TVDB
+  continuing: { label: 'Em exibição', variant: 'default' },
+  upcoming: { label: 'Em breve', variant: 'default' },
+}
+
+// rotuloSituacao traduz a situação crua para o rótulo pt-BR + variante do selo. Valor
+// AUSENTE/vazio → null (a UI não renderiza o selo — é o caso de filme e série só-TVDB
+// sem match). Valor CRU DESCONHECIDO (fora dos vocabulários) → mostra o cru
+// capitalizado com cor neutra, nunca some silenciosamente.
+export function rotuloSituacao(
+  status: string | null | undefined,
+): RotuloSituacao | null {
+  if (!status || !status.trim()) {
+    return null
+  }
+  const conhecido = SITUACAO_LABELS[status.trim().toLowerCase()]
+  if (conhecido) {
+    return conhecido
+  }
+  const cru = status.trim()
+  return {
+    label: cru.charAt(0).toUpperCase() + cru.slice(1),
+    variant: 'secondary',
+  }
 }

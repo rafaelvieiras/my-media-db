@@ -1582,6 +1582,14 @@ components:
         certification:
           type: [string, "null"]
           description: Classificação indicativa da região do idioma ativo (fallback US), ou null.
+        airing_status:
+          type: [string, "null"]
+          description: >
+            SITUAÇÃO de exibição de uma SÉRIE (0045): string CRUA da fonte, exposta
+            VERBATIM (TMDB: "Returning Series"|"Ended"|"Canceled"|"In Production"|
+            "Planned"; TVDB: status.name) — a UI traduz o rótulo p/ pt-BR. Neutra e
+            read-only. OPCIONAL: presente só quando a fonte a informa; AUSENTE para
+            filme e série só-TVDB sem match.
         vote_average:
           type: [number, "null"]
           description: Nota média externa (0–10), ou null.
@@ -1989,6 +1997,9 @@ components:
         year: { type: [string, "null"] }
         runtime: { type: [integer, "null"] }
         certification: { type: [string, "null"] }
+        # Situação de exibição da série (0045), string CRUA verbatim; OPCIONAL
+        # (ausente p/ filme ou quando a fonte não informa). A UI traduz o rótulo.
+        airing_status: { type: [string, "null"] }
         original_language: { type: [string, "null"] }
         vote_average: { type: [number, "null"] }
         genres:

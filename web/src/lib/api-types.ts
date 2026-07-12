@@ -910,6 +910,8 @@ export interface components {
       runtime: number | null
       /** @description Classificação indicativa da região do idioma ativo (fallback US), ou null. */
       certification: string | null
+      /** @description SITUAÇÃO de exibição de uma SÉRIE (0045): string CRUA da fonte, exposta VERBATIM (TMDB: "Returning Series"|"Ended"|"Canceled"|"In Production"| "Planned"; TVDB: status.name) — a UI traduz o rótulo p/ pt-BR. Neutra e read-only. OPCIONAL: presente só quando a fonte a informa; AUSENTE para filme e série só-TVDB sem match. */
+      airing_status?: string | null
       /** @description Nota média externa (0–10), ou null. */
       vote_average: number | null
       /** @description Nota LOCAL do dono (0–10), gravada na camada de override (ADR-0012): complementa/sobrepõe a nota da fonte (vote_average). null quando o dono não avaliou — a UI então mostra a nota da fonte (limpar é não-destrutivo). */
@@ -1137,6 +1139,7 @@ export interface components {
       year: string | null
       runtime: number | null
       certification: string | null
+      airing_status?: string | null
       original_language: string | null
       vote_average: number | null
       genres: string[]

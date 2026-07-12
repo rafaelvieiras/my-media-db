@@ -103,6 +103,31 @@ type SerieProvider interface {
 	BuscarSerieArvore(ctx context.Context, sourceID string, langs []string) (SerieArvore, error)
 }
 
+// SerieRicoProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0045, rota C):
+// ENRIQUECER o NÓ SÉRIE com os campos ricos que a fonte da árvore (TVDB) não dá —
+// slogan, gêneros, classificação, palavras-chave, similares e SITUAÇÃO. É separada de
+// SerieProvider (a árvore) de propósito: quem tem a árvore (TVDB) não tem os ricos, e
+// quem tem os ricos (TMDB) não modela a árvore com ordens. O enrich faz o type-assert
+// do provider "tmdb" para esta interface e DEGRADA em silêncio quando ausente (série
+// só-TVDB fica com os campos vazios, nunca erro).
+type SerieRicoProvider interface {
+	// BuscarSerieDetalheRico cruza o `tvdbID` da série para o id da fonte rica e
+	// devolve o canônico RICO já mapeado (SÓ as chaves ricas — nunca title/overview/
+	// original_language, para não clobbar a identidade da árvore TVDB na composição de
+	// camadas). ok=false sem match (graça, sem erro); erro real (rede) propaga para o
+	// enrich logar e seguir só-TVDB. `langs` são os idiomas permitidos (0020): tagline e
+	// gêneros saem por idioma.
+	BuscarSerieDetalheRico(ctx context.Context, tvdbID string, langs []string) (map[string]any, bool, error)
+}
+
+// ChaveEnvelopeSerieRico é a chave do envelope de media_external que carrega o canônico
+// RICO de série JÁ MAPEADO (rota C do 0045). O enrich grava o payload
+// {ChaveEnvelopeSerieRico: <canônico rico>} sob a fonte "tmdb" do nó série, e o
+// MapearDetalhe do provider TMDB o reconhece e devolve o mapa como está — assim os
+// campos ricos entram na composição de camadas (montarExterno) reusando a maquinaria do
+// filme, SEM clobbar título/idioma da árvore TVDB (o envelope não os carrega).
+const ChaveEnvelopeSerieRico = "tmdb_serie_rico"
+
 // SerieArvore é a hierarquia canônica de uma série: a ordenação default, a lista de
 // ordenações que a série usa, e as temporadas SÓ da ordenação default. Cada episódio
 // (grão fino, ancorado no id da fonte) carrega a numeração de TODAS as ordens.

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { deExternalDetail, deResolvedEntity } from '@/lib/rich-detail'
+import {
+  deExternalDetail,
+  deResolvedEntity,
+  rotuloSituacao,
+} from '@/lib/rich-detail'
 import type { ExternalDetail } from '@/lib/api'
 import { baseEntity } from '@/test/entity-fixtures'
 
@@ -68,6 +72,21 @@ describe('rich-detail adapters', () => {
     expect(vazio.backdropUrl).toBeNull()
   })
 
+  it('mapeia airing_status (situação de série, 0045) nas duas fontes', () => {
+    // Entity resolvida: e.airing_status → airingStatus.
+    const ent = deResolvedEntity(baseEntity({ airing_status: 'Ended' }))
+    expect(ent.airingStatus).toBe('Ended')
+    // Detalhe externo: d.airing_status → airingStatus.
+    const ext = deExternalDetail({
+      ...externo,
+      airing_status: 'Returning Series',
+    })
+    expect(ext.airingStatus).toBe('Returning Series')
+    // Ausente (filme/só-TVDB sem match) → null (o selo não aparece).
+    expect(deResolvedEntity(baseEntity({})).airingStatus).toBeNull()
+    expect(deExternalDetail(externo).airingStatus).toBeNull()
+  })
+
   it('still do episódio: custom (rota local) recebe a base; provider (cru) passa pelo proxy (0044)', () => {
     // Still CUSTOM do dono → rota local servível (recebe só a base).
     const custom = deResolvedEntity(
@@ -85,5 +104,47 @@ describe('rich-detail adapters', () => {
     expect(provider.stillUrl).toBe(
       `/api/v1/images?src=${encodeURIComponent(cru)}`,
     )
+  })
+})
+
+// rotuloSituacao traduz a situação CRUA (TMDB ou TVDB) para o rótulo pt-BR + variante
+// do selo. O dado fica neutro no backend; a tradução é só de UI (0045).
+describe('rotuloSituacao', () => {
+  it('traduz o vocabulário TMDB', () => {
+    expect(rotuloSituacao('Returning Series')).toEqual({
+      label: 'Em exibição',
+      variant: 'default',
+    })
+    expect(rotuloSituacao('Ended')).toEqual({
+      label: 'Encerrada',
+      variant: 'secondary',
+    })
+    expect(rotuloSituacao('Canceled')?.label).toBe('Cancelada')
+    expect(rotuloSituacao('Cancelled')?.label).toBe('Cancelada')
+    expect(rotuloSituacao('In Production')?.label).toBe('Em produção')
+    expect(rotuloSituacao('Planned')?.label).toBe('Planejada')
+    expect(rotuloSituacao('Pilot')?.label).toBe('Piloto')
+  })
+
+  it('traduz o vocabulário TVDB', () => {
+    // "Continuing" (TVDB) equivale a "Returning Series" (TMDB) → mesmo rótulo.
+    expect(rotuloSituacao('Continuing')).toEqual({
+      label: 'Em exibição',
+      variant: 'default',
+    })
+    expect(rotuloSituacao('Upcoming')?.label).toBe('Em breve')
+  })
+
+  it('ausente/vazio → null (o selo não é renderizado)', () => {
+    expect(rotuloSituacao(null)).toBeNull()
+    expect(rotuloSituacao(undefined)).toBeNull()
+    expect(rotuloSituacao('   ')).toBeNull()
+  })
+
+  it('valor cru desconhecido → mostra o cru capitalizado (fallback gracioso)', () => {
+    expect(rotuloSituacao('rumored')).toEqual({
+      label: 'Rumored',
+      variant: 'secondary',
+    })
   })
 })

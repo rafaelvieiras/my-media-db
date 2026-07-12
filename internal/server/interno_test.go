@@ -6,6 +6,8 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/resolver"
+	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
 
 // Testes da resolução externo→interno (briefing 0026): os helpers idInternoItem/
@@ -38,6 +40,49 @@ func semearFilmeTmdb(t *testing.T, d *db.DB, id, tmdbID, titulo string) {
 	})
 	if err != nil {
 		t.Fatalf("CriarEntity(filme %s): %v", id, err)
+	}
+}
+
+// semearSerieTmdb cria uma entity type='tv' com o external_id tmdb dado, para o
+// interno-first dos similares de série (0045) casar por id tmdb (ObterEntityPorTmdb
+// não restringe por tipo — série casa como filme casa).
+func semearSerieTmdb(t *testing.T, d *db.DB, id, tmdbID, titulo string) {
+	t.Helper()
+	_, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
+		ID:              id,
+		Type:            "tv",
+		Title:           titulo,
+		ExternalIdsJson: nsOf(`{"tmdb":"` + tmdbID + `"}`),
+	})
+	if err != nil {
+		t.Fatalf("CriarEntity(serie %s): %v", id, err)
+	}
+}
+
+// TestSerieSimilarInternalId: os SIMILARES de uma SÉRIE (0045) ganham internal_id
+// quando o similar (id tmdb, vindo da rota C do TMDB) já está na biblioteca — o mesmo
+// pós-processo interno-first (anotarInternos) que já serve filme/coleção casa série,
+// pois idInternoItem resolve por id tmdb independentemente do tipo. Similar não
+// importado fica nil.
+func TestSerieSimilarInternalId(t *testing.T) {
+	_, d := setupEntitiesServer(t)
+	semearSerieTmdb(t, d, "serie-1399", "1399", "A Guerra dos Tronos")
+	s := New("v-teste", d)
+
+	e := resolver.Entidade{
+		Type: "tv",
+		Similar: []richfields.Similar{
+			{SourceID: "1399", Type: "tv", Title: "A Guerra dos Tronos"},
+			{SourceID: "9999", Type: "tv", Title: "Serie Ausente"},
+		},
+	}
+	s.anotarInternos(context.Background(), &e)
+
+	if e.Similar[0].InternalID == nil || *e.Similar[0].InternalID != "serie-1399" {
+		t.Errorf("similar[0].internal_id = %v, quero serie-1399", e.Similar[0].InternalID)
+	}
+	if e.Similar[1].InternalID != nil {
+		t.Errorf("similar[1].internal_id = %v, quero nil (nao importada)", e.Similar[1].InternalID)
 	}
 }
 

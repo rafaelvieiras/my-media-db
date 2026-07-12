@@ -149,8 +149,42 @@ func TestResolverSemExternoCamposRicosVazios(t *testing.T) {
 	}
 }
 
-// TestCamposEditaveisExcluiRicos: os campos ricos read-only (tagline/keywords) NÃO
-// aparecem na superfície de edição por override (0016), embora sejam resolvidos.
+// TestResolverAiringStatusSerie: a SITUAÇÃO de exibição da série (0045) é exposta
+// VERBATIM do canônico externo (neutra, read-only); ausente → nil. É distinta do
+// Status de CATÁLOGO (owned/cataloged) — não o contamina.
+func TestResolverAiringStatusSerie(t *testing.T) {
+	ent := entRica()
+	ent.Type = "tv"
+	ent.Status = "cataloged" // status de CATÁLOGO, distinto da situação de exibição
+
+	comStatus := Resolver(Camadas{
+		Entity:          ent,
+		Cadeia:          []string{"pt-BR", "en"},
+		LangPedido:      "pt-BR",
+		IdiomaPrincipal: "pt-BR",
+		Externo: []CamadaExterna{{Fonte: "tmdb", Campos: map[string]any{
+			"airing_status": "Ended",
+		}}},
+	})
+	eqPtr(t, "airing_status", comStatus.AiringStatus, "Ended")
+	eq(t, "status catalogo intacto", comStatus.Status, "cataloged")
+
+	// Canônico rico SEM airing_status → nil (série só-TVDB sem match / filme).
+	semStatus := Resolver(Camadas{
+		Entity:          ent,
+		Cadeia:          []string{"pt-BR", "en"},
+		LangPedido:      "pt-BR",
+		IdiomaPrincipal: "pt-BR",
+		Externo:         camadaRica(),
+	})
+	if semStatus.AiringStatus != nil {
+		t.Errorf("airing_status = %v, quero nil (ausente)", *semStatus.AiringStatus)
+	}
+}
+
+// TestCamposEditaveisExcluiRicos: os campos ricos read-only (tagline/keywords/
+// airing_status) NÃO aparecem na superfície de edição por override (0016), embora
+// sejam resolvidos.
 func TestCamposEditaveisExcluiRicos(t *testing.T) {
 	editaveis := CamposEditaveis()
 	if _, ok := editaveis["tagline"]; ok {
@@ -158,6 +192,9 @@ func TestCamposEditaveisExcluiRicos(t *testing.T) {
 	}
 	if _, ok := editaveis["keywords"]; ok {
 		t.Error("keywords não deveria ser editável (soLeitura)")
+	}
+	if _, ok := editaveis["airing_status"]; ok {
+		t.Error("airing_status não deveria ser editável (soLeitura)")
 	}
 	// Sanidade: os editoriais de sempre continuam lá.
 	if _, ok := editaveis["title"]; !ok {

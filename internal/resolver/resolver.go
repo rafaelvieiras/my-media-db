@@ -100,8 +100,15 @@ type Entidade struct {
 	// title/description; os neutros/estruturados são extraídos direto do canônico
 	// externo via internal/richfields (o MESMO shape do detalhe do externo).
 	// Genres NÃO tem campo próprio: são os `tags` (que já carregam os gêneros).
-	Tagline       *string  `json:"tagline"`
-	Keywords      []string `json:"keywords"`
+	Tagline  *string  `json:"tagline"`
+	Keywords []string `json:"keywords"`
+	// AiringStatus é a SITUAÇÃO de exibição de uma SÉRIE (0045): string CRUA da fonte,
+	// exposta VERBATIM (TMDB: "Returning Series"|"Ended"|"Canceled"|"In Production"|
+	// "Planned"; TVDB: status.name) — a tradução p/ pt-BR é na UI. É NEUTRA (não
+	// traduzível) e READ-ONLY (o dono não a edita). NÃO confundir com o `Status` de
+	// CATÁLOGO acima (owned/cataloged, intenção do dono): são campos distintos. Ausente
+	// (omitempty) quando a fonte não a informa (filme, ou série só-TVDB sem match).
+	AiringStatus  *string  `json:"airing_status,omitempty"`
 	Runtime       *int     `json:"runtime"`
 	Certification *string  `json:"certification"`
 	VoteAverage   *float64 `json:"vote_average"`
@@ -252,6 +259,10 @@ var registroOrigem = map[string]origemCampo{
 	// entram no registro: são extraídos direto do externo em Resolver (via richfields).
 	"tagline":  {base: baseExterno, kind: kindEscalar, traduzivel: true, soLeitura: true},
 	"keywords": {base: baseExterno, kind: kindLista, traduzivel: true, soLeitura: true},
+	// Situação de exibição da SÉRIE (0045): escalar NEUTRO (verbatim, não traduzível) e
+	// READ-ONLY. Base externa (vem do canônico do provider); soLeitura o exclui de
+	// CamposEditaveis (display, não edição), como tagline/keywords.
+	"airing_status": {base: baseExterno, kind: kindEscalar, soLeitura: true},
 	// Nota LOCAL do dono (ADR-0012): número NEUTRO, base NENHUMA (só o override fala —
 	// arquivo e externo não a têm; a nota da fonte é o vote_average, campo distinto).
 	// EDITÁVEL (não soLeitura): entra em CamposEditaveis para o editor de override.
@@ -411,6 +422,7 @@ func Resolver(c Camadas) Entidade {
 		ExtensionData:     asObjMap(resolvido["extension_data"]),
 		Tagline:           asStrPtr(resolvido["tagline"]),
 		Keywords:          asStrSlice(resolvido["keywords"]),
+		AiringStatus:      asStrPtr(resolvido["airing_status"]),
 		Runtime:           richfields.IntPtrDe(rico, "runtime"),
 		Certification:     richfields.CertificacaoDaRegiao(rico, c.LangPedido),
 		VoteAverage:       richfields.FloatPtrDe(rico, "vote_average"),

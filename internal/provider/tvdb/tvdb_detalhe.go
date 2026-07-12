@@ -37,6 +37,19 @@ type serieData struct {
 	RemoteIds         []remoteID      `json:"remoteIds"`
 	SeasonTypes       []seasonTypeRec `json:"seasonTypes"`
 	Seasons           []seasonRec     `json:"seasons"`
+
+	// Status/Genres do /series/{id}/extended: o FALLBACK do 0045 quando não há match
+	// no TMDB. status.name é a SITUAÇÃO crua (ex.: "Continuing"|"Ended"); genres[] são
+	// os gêneros (nome). O TVDB não tem tagline/keywords/similar — ausência graciosa.
+	Status struct {
+		Name string `json:"name"`
+	} `json:"status"`
+	Genres []generoSerie `json:"genres"`
+}
+
+// generoSerie é um gênero do /series/{id}/extended (só o nome nos interessa como tag).
+type generoSerie struct {
+	Name string `json:"name"`
 }
 
 // remoteID é um id do item em outra fonte (remoteIds[]): id + sourceName (o nome é
@@ -238,6 +251,35 @@ func enriquecerNeutrosSerie(out map[string]any, d serieData) {
 	if links := linksExternos(d); len(links) > 0 {
 		out["external_links"] = links
 	}
+	enriquecerFallbackRico(out, d)
+}
+
+// enriquecerFallbackRico emite os campos ricos que o TVDB tem e o 0045 antes descartava,
+// usados como FALLBACK quando não há match no TMDB para o nó série: a SITUAÇÃO crua
+// (airing_status, escalar neutro) e os gêneros do /extended como tags ancoradas no idioma
+// ORIGINAL (o TVDB não os localiza) — espelha keywordsPorIdioma do TMDB, mesma dimensão
+// idioma×camada que tags usa. Tagline/keywords/similar o TVDB não tem (ausência graciosa).
+func enriquecerFallbackRico(out map[string]any, d serieData) {
+	if d.Status.Name != "" {
+		out["airing_status"] = d.Status.Name
+	}
+	if orig := codigoApp(d.OriginalLanguage); orig != "" {
+		if nomes := nomesGeneros(d.Genres); len(nomes) > 0 {
+			out["tags"] = map[string]any{orig: nomes}
+		}
+	}
+}
+
+// nomesGeneros extrai os nomes dos gêneros do /extended como lista de tags (descarta
+// os vazios). Ordem estável = ordem da fonte.
+func nomesGeneros(gs []generoSerie) []string {
+	out := make([]string, 0, len(gs))
+	for _, g := range gs {
+		if g.Name != "" {
+			out = append(out, g.Name)
+		}
+	}
+	return out
 }
 
 // idsExternos monta o mapa fonte→id a partir dos remoteIds (sempre inclui tvdb=id da

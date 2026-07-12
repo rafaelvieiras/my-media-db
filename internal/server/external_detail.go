@@ -30,18 +30,22 @@ import (
 // para simplificar o front; ponteiros saem como null quando ausentes. SEM créditos
 // (MD6) nem nota local — decisão explícita, cada um vira briefing próprio.
 type detalheExternoDTO struct {
-	Source           string   `json:"source"`
-	SourceID         string   `json:"source_id"`
-	Type             string   `json:"type"`
-	Lang             string   `json:"lang"`
-	Title            string   `json:"title"`
-	OriginalTitle    *string  `json:"original_title"`
-	Description      *string  `json:"description"`
-	Tagline          *string  `json:"tagline"`
-	ReleaseDate      *string  `json:"release_date"`
-	Year             *string  `json:"year"`
-	Runtime          *int     `json:"runtime"`
-	Certification    *string  `json:"certification"`
+	Source        string  `json:"source"`
+	SourceID      string  `json:"source_id"`
+	Type          string  `json:"type"`
+	Lang          string  `json:"lang"`
+	Title         string  `json:"title"`
+	OriginalTitle *string `json:"original_title"`
+	Description   *string `json:"description"`
+	Tagline       *string `json:"tagline"`
+	ReleaseDate   *string `json:"release_date"`
+	Year          *string `json:"year"`
+	Runtime       *int    `json:"runtime"`
+	Certification *string `json:"certification"`
+	// AiringStatus é a SITUAÇÃO de exibição da série (0045): string CRUA da fonte,
+	// verbatim (paridade com o preview interno; a UI traduz p/ pt-BR). omitempty/ausente
+	// para filme ou quando a fonte não a informa.
+	AiringStatus     *string  `json:"airing_status,omitempty"`
 	OriginalLanguage *string  `json:"original_language"`
 	VoteAverage      *float64 `json:"vote_average"`
 
@@ -181,6 +185,7 @@ func (s *Server) montarDetalheExterno(ctx context.Context, source, id, tipo, lan
 		Year:             richfields.AnoDePtr(releaseDate),
 		Runtime:          richfields.IntPtrDe(campos, "runtime"),
 		Certification:    richfields.CertificacaoDaRegiao(campos, lang),
+		AiringStatus:     richfields.StrPtrDe(campos, "airing_status"),
 		OriginalLanguage: richfields.PtrSeNaoVazio(original),
 		VoteAverage:      richfields.FloatPtrDe(campos, "vote_average"),
 		Genres:           richfields.OuListaVazia(generos),
