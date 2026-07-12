@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+
+	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
 // Este arquivo resolve a identidade EXTERNA (source, source_id) para a entity
@@ -13,20 +15,32 @@ import (
 // deve linkar para o destino interno (/entities/{id}) e não oferecer reimportar —
 // para isso os DTOs externos ganham um `internal_id`, preenchido por estes helpers.
 //
-// Só a fonte "tmdb" deduplica hoje (colunas geradas external_id_tmdb / dedup de
-// coleção por type='collection'; ver 0015/0025). Para outras fontes o id interno sai
-// nil (degrada — sem lookup), consistente com o find-or-create que ainda não dedupa
-// fontes sem coluna gerada.
+// A resolução casa por (source, source_id) contra a identidade AUTORITATIVA da entity
+// (colunas geradas external_id_tmdb/tvdb; ver 0015/0025/0007). Generalizado no 0047: QUALQUER
+// fonte com coluna gerada (tmdb E tvdb hoje) resolve o interno-first, não só tmdb — assim um
+// item importado do TheTVDB também aparece "na biblioteca". Fontes sem coluna própria saem nil
+// (degradam — sem lookup), coerente com o find-or-create (acharPorIDExterno) de mesma cobertura.
 
 // idInternoItem devolve o id da entity interna de um item externo (filme/tv) já
-// importado, ou nil quando não existe, a fonte não é tmdb, ou o source_id é vazio.
-// Um erro real de banco degrada para nil (loga) — a leitura da tela nunca cai por
-// causa da resolução interno-first, que é um enriquecimento opcional.
+// importado, ou nil quando não existe, a fonte não tem lookup, ou o source_id é vazio.
+// Despacha pela FONTE (espelha enrich.acharPorIDExterno): "tmdb"→external_id_tmdb,
+// "tvdb"→external_id_tvdb (colunas geradas indexadas). Um erro real de banco degrada para
+// nil (loga) — a leitura da tela nunca cai por causa da resolução interno-first, que é um
+// enriquecimento opcional.
 func (s *Server) idInternoItem(ctx context.Context, source, sourceID string) *string {
-	if source != "tmdb" || sourceID == "" {
+	if sourceID == "" {
 		return nil
 	}
-	ent, err := s.leitura().ObterEntityPorTmdb(ctx, nsDe(sourceID))
+	var ent sqlcgen.Entity
+	var err error
+	switch source {
+	case "tmdb":
+		ent, err = s.leitura().ObterEntityPorTmdb(ctx, nsDe(sourceID))
+	case "tvdb":
+		ent, err = s.leitura().ObterEntityPorTvdb(ctx, nsDe(sourceID))
+	default:
+		return nil // fonte sem coluna gerada: sem lookup (degrada)
+	}
 	if err != nil {
 		logSeErroReal("id interno do item", sourceID, err)
 		return nil

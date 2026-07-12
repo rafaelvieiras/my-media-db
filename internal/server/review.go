@@ -33,7 +33,8 @@ const limiarBaixaConfianca = 70
 const confiancaConfirmada = 100
 
 // correctBody e o corpo de POST /entities/{id}/correct: a identidade correta que o
-// dono informa. source default "tmdb"; source_id obrigatorio (422 se vazio).
+// dono informa. Sem source, a fonte-default e resolvida por capacidade (fonteDefault,
+// 0047); source_id obrigatorio (422 se vazio).
 type correctBody struct {
 	Source   string `json:"source"`
 	SourceID string `json:"source_id"`
@@ -139,7 +140,12 @@ func (s *Server) correctEntity(w http.ResponseWriter, r *http.Request) {
 	}
 	source := body.Source
 	if source == "" {
-		source = "tmdb"
+		src, ok := s.fonteDefault(ent.Type)
+		if !ok {
+			respondSemFonteParaTipo(w, ent.Type)
+			return
+		}
+		source = src
 	}
 	if body.SourceID == "" {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "source_id é obrigatório")

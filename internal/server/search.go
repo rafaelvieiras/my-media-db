@@ -278,7 +278,8 @@ func (s *Server) providersOrdenados() []provider.Provider {
 // forçando saved:false (nunca é entidade até o import) e anotando o internal_id
 // interno-first (0027): cada resultado externo que já foi importado ganha o id da
 // entity correspondente (via idInternoItem), para a UI mostrar "na biblioteca" e
-// linkar ao interno. O lookup é por id tmdb indexado — só a fonte tmdb resolve.
+// linkar ao interno. O lookup casa por (r.Source, r.SourceID) contra a identidade
+// indexada — QUALQUER fonte com coluna gerada resolve (tmdb E tvdb; 0047), não só tmdb.
 func (s *Server) mapearExternos(ctx context.Context, res []provider.ResultadoExterno) []externalResultDTO {
 	out := make([]externalResultDTO, 0, len(res))
 	for _, r := range res {

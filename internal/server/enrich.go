@@ -9,6 +9,8 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
 // Este arquivo implementa as ESCRITAS de enriquecimento (briefing 0015):
@@ -19,14 +21,16 @@ import (
 // (resolverEntity), então a resposta já reflete os dados externos compostos.
 
 // enrichBody é o corpo OPCIONAL de POST /entities/{id}/enrich. Ambos os campos são
-// opcionais: sem source usa "tmdb"; sem source_id tenta entity.external_ids[source].
+// opcionais: sem source resolve a fonte-default DINAMICAMENTE (fonteDefault, 0047);
+// sem source_id tenta entity.external_ids[source].
 type enrichBody struct {
 	Source   string `json:"source"`
 	SourceID string `json:"source_id"`
 }
 
 // importBody é o corpo de POST /import. type deve ser movie|tv|collection e
-// source_id não-vazio (senão 422); source default "tmdb". type='collection' (0025)
+// source_id não-vazio (senão 422); sem source a fonte-default é resolvida
+// DINAMICAMENTE por capacidade (fonteDefault, 0047). type='collection' (0025)
 // importa a coleção inteira: cria a entity da coleção e importa/liga os filmes membros.
 type importBody struct {
 	Source   string `json:"source"`
@@ -63,7 +67,12 @@ func (s *Server) enrichEntity(w http.ResponseWriter, r *http.Request) {
 	}
 	source := body.Source
 	if source == "" {
-		source = "tmdb"
+		src, ok := s.fonteDefault(ent.Type)
+		if !ok {
+			respondSemFonteParaTipo(w, ent.Type)
+			return
+		}
+		source = src
 	}
 	sourceID := body.SourceID
 	if sourceID == "" {
@@ -104,10 +113,6 @@ func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "corpo JSON inválido")
 		return
 	}
-	source := body.Source
-	if source == "" {
-		source = "tmdb"
-	}
 	if body.Type != "movie" && body.Type != "tv" && body.Type != "collection" {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "type inválido (use movie, tv ou collection)")
 		return
@@ -115,6 +120,17 @@ func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 	if body.SourceID == "" {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "source_id é obrigatório")
 		return
+	}
+	// Sem source explícito: escolhe DINAMICAMENTE a fonte-default capaz do tipo (0047),
+	// nunca assume "tmdb". Nenhum provider capaz => 422 semântico (não 502).
+	source := body.Source
+	if source == "" {
+		src, ok := s.fonteDefault(body.Type)
+		if !ok {
+			respondSemFonteParaTipo(w, body.Type)
+			return
+		}
+		source = src
 	}
 
 	langs, err := s.idiomasPermitidos(ctx, w)
@@ -181,6 +197,46 @@ func (s *Server) enrichIndisponivel(w http.ResponseWriter) bool {
 func respondFonteIndisponivel(w http.ResponseWriter) {
 	writeError(w, http.StatusBadGateway, "external_source_error",
 		"a fonte externa falhou ao entregar o detalhe")
+}
+
+// respondSemFonteParaTipo responde 422 quando o request não informou `source` e NENHUM
+// provider registrado é capaz do `tipo` pedido (0047): erro SEMÂNTICO e claro, em vez do
+// antigo 502 que surgia ao assumir "tmdb" num ambiente que não o tem registrado.
+func respondSemFonteParaTipo(w http.ResponseWriter, tipo string) {
+	writeError(w, http.StatusUnprocessableEntity, "no_source_for_type",
+		"nenhuma fonte disponível para "+tipo)
+}
+
+// fonteDefault resolve DINAMICAMENTE a fonte-default de um `tipo` quando o request não
+// informa `source` (0047): devolve o Nome() do PRIMEIRO provider registrado — na ordem de
+// prioridade (providersOrdenados) — CAPAZ do tipo, substituindo o antigo hardcode "tmdb".
+// ok=false quando nenhum provider é capaz: o handler responde 422 semântico, jamais 502
+// por assumir uma fonte ausente. Assim um ambiente só-TVDB (ou qualquer conjunto) importa
+// pela fonte realmente registrada.
+func (s *Server) fonteDefault(tipo string) (string, bool) {
+	for _, p := range s.providersOrdenados() {
+		if provedorCapaz(p, tipo) {
+			return p.Nome(), true
+		}
+	}
+	return "", false
+}
+
+// provedorCapaz diz se o provider `p` sabe importar o `tipo` pedido, via type-assert da
+// capacidade opcional correspondente (0031/0046): 'tv' exige provider.SerieProvider (a
+// árvore), 'collection' exige provider.ColecaoProvider; para 'movie' (e demais grãos, como
+// season/episode) basta o core Provider — todo provider registrado o cumpre.
+func provedorCapaz(p provider.Provider, tipo string) bool {
+	switch tipo {
+	case "tv":
+		_, ok := p.(provider.SerieProvider)
+		return ok
+	case "collection":
+		_, ok := p.(provider.ColecaoProvider)
+		return ok
+	default:
+		return true
+	}
 }
 
 // decodeOpcional decodifica um corpo JSON OPCIONAL em v: corpo vazio (EOF) é ok
