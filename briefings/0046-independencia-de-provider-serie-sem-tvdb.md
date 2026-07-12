@@ -7,7 +7,7 @@
 | **ID** | 0046 |
 | **Tipo** | feature/fix |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override (séries) |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [ADR-0021 séries](../docs/adr/0021-modelo-de-series.md), [09-providers](../docs/09-providers.md) |
 | **Depende de** | 0031, 0045 |
 

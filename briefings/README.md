@@ -123,6 +123,6 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0043](0043-re-enrich-atualiza-arvore-serie.md) | Re-enrich atualiza a árvore de série (temporada+episódio) preservando override | fix/feature | done | 0042 |
 | [0044](0044-fluxo-de-artes-redondo.md) | Fluxo de artes redondo (pôster/fanart/still: exibição correta + gestão em todo tipo) | fix/feature | done | 0017, 0042 |
 | [0045](0045-metadados-de-serie-paridade-com-filme.md) | Metadados de série: paridade com filme (slogan, gênero, classificação, tags, situação, relacionados) | feature | done | 0044, 0031 |
-| [0046](0046-independencia-de-provider-serie-sem-tvdb.md) | Independência de provider: série sem TVDB (TMDB como provedor de árvore) | feature/fix | ready | 0031, 0045 |
-| [0047](0047-robustez-de-fonte-default-filme-e-serie.md) | Robustez de fonte-default: não assumir "tmdb" quando ele não está registrado | fix | ready | — |
+| [0046](0046-independencia-de-provider-serie-sem-tvdb.md) | Independência de provider: série sem TVDB (TMDB como provedor de árvore) | feature/fix | done | 0031, 0045 |
+| [0047](0047-robustez-de-fonte-default-filme-e-serie.md) | Robustez de fonte-default: não assumir "tmdb" quando ele não está registrado | fix | done | — |
 | [0048](0048-fundacao-providers-de-enriquecimento-arte-trailer-tema.md) | Fundação de providers de enriquecimento por capacidade (arte, trailer, tema) | feature | draft | 0044, 0045 |

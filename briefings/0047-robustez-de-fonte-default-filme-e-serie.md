@@ -9,7 +9,7 @@
 | **ID** | 0047 |
 | **Tipo** | fix |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [09-providers](../docs/09-providers.md) |
 | **Depende de** | — |
 
