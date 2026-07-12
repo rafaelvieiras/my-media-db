@@ -36,6 +36,12 @@ type artworkItem struct {
 	Season      string `json:"season,omitempty"`
 	IsPreferred bool   `json:"is_preferred"`
 	IsLocal     bool   `json:"is_local"`
+	// AssetID identifica o asset materializado (só quando IsLocal): a UI usa em
+	// PUT /assets/{id}/prefer e DELETE /assets/{id}. Vazio para arte de inventário.
+	AssetID string `json:"asset_id,omitempty"`
+	// SrcURL é a URL CRUA na fonte (só para arte de inventário, não materializada): a
+	// UI a envia no POST /artwork/select para baixar/preferir. Vazio quando IsLocal.
+	SrcURL string `json:"src_url,omitempty"`
 }
 
 // getEntityArtwork trata GET /api/v1/entities/{id}/artwork. 404 entity inexistente; 200
@@ -74,6 +80,7 @@ func (s *Server) coletarArtesLocais(ctx context.Context, id string, grupos map[s
 			Source:      a.Origin,
 			IsPreferred: metaPreferred(a.MetaJson),
 			IsLocal:     true,
+			AssetID:     a.ID,
 		})
 		if a.Origin == originExternal {
 			externos[a.Kind] = true
@@ -120,6 +127,7 @@ func (s *Server) adicionarArteDeCampo(campos map[string]any, campo, kind, source
 	grupos[kind] = append(grupos[kind], artworkItem{
 		URL:    arteSrc(s.urlImagemServida(&u)),
 		Source: source,
+		SrcURL: u,
 	})
 }
 
@@ -147,6 +155,7 @@ func (s *Server) coletarInventarioFanart(ctx context.Context, id string, grupos 
 				DiscType: a.DiscType,
 				Disc:     a.Disc,
 				Season:   a.Season,
+				SrcURL:   a.URL,
 			})
 		}
 	}

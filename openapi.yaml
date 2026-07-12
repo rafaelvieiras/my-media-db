@@ -1484,6 +1484,16 @@ components:
         is_local:
           type: boolean
           description: Asset materializado, servido do disco.
+        asset_id:
+          type: string
+          description: >
+            Id do asset materializado (só quando `is_local`): use em
+            PUT /entities/{id}/assets/{assetId}/prefer e DELETE .../assets/{assetId}.
+        src_url:
+          type: string
+          description: >
+            URL CRUA na fonte (só para arte de inventário, `is_local=false`): envie no
+            POST /entities/{id}/artwork/select para baixar/preferir.
     ArtworkResponse:
       type: object
       description: >
