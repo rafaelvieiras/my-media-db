@@ -113,4 +113,4 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0033](0033-busca-filtro-subnos-secoes-separadas.md) | Busca: filtro de sub-nós (temporadas/episódios) default-off em seções separadas | fix/feature | done | 0032 |
 | [0034](0034-scanner-de-series-arquivo-episodio.md) | Scanner de séries: naming TV + auto-import + N:M `media_file_entity` | feature | done | 0031, 0009 |
 | [0035](0035-apagar-datasource-com-arquivos.md) | Apagar datasource com arquivos (corrige 500 da FK) | fix | done | — |
-| [0036](0036-posse-completude-no-card-da-temporada.md) | Posse e completude no card da temporada | fix/feature | draft | 0034 |
+| [0036](0036-posse-completude-no-card-da-temporada.md) | Posse e completude no card da temporada | fix/feature | done | 0034 |

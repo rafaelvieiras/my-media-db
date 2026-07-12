@@ -8,7 +8,7 @@
 | **ID** | 0036 |
 | **Tipo** | fix/feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override (vertical séries) |
-| **Status** | draft |
+| **Status** | done |
 | **Docs relacionadas** | [0034](0034-scanner-de-series-arquivo-episodio.md), [0032](0032-usabilidade-arvore-series-home-busca-breadcrumb.md) |
 | **Depende de** | 0034 |
 
