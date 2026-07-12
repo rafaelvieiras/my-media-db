@@ -13,7 +13,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override (extensão pós-revisão) |
 | **Docs relacionadas** | [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [07-enriquecimento-providers](../docs/07-enriquecimento-providers.md), [05-api](../docs/05-api.md), [ADR-0012](../docs/adr/0012-camadas-externo-override.md) |
-| **Status** | draft |
+| **Status** | in-progress (rodada A+B) |
 | **Depende de** | [0012](0012-schema-fase3-camadas-externo-override.md), [0013](0013-resolver-tres-camadas.md), [0022](0022-detalhe-externo-rico-persistente.md), [0023](0023-tela-detalhe-externo-ui.md), [0024](0024-paridade-detalhe-entity-rico.md) |
 
 ---
@@ -58,6 +58,26 @@ A dor concreta do usuário: abrir o detalhe (de um item externo ou já catalogad
    do dono (mesma garantia do título/tags — ADR-0012).
 6. Estados: item sem créditos (fonte não trouxe) → a seção some; fonte indisponível →
    as demais seções seguem servíveis (o elenco degrada, não derruba a leitura).
+
+## 2.5. Rodada atual — Fases A+B (decisões travadas 2026-07-12)
+
+Esta rodada entrega **A (schema+persistência)** e **B (provider+exibição read-only)**;
+**C (edição de créditos)** e **D (interno-first/polimento)** ficam para depois.
+
+- **Formas reais do TMDB** (confirmadas ao vivo): filme `/movie/{id}?append_to_response=credits`
+  → `credits.cast[]{name,character,order,profile_path}` + `credits.crew[]{name,department,job,profile_path}`
+  + `production_companies[]{name,logo_path}`. Série `/tv/{id}?append_to_response=aggregate_credits`
+  → `aggregate_credits.cast[]{name,roles:[{character,episode_count}],total_episode_count,order}`
+  + `crew[]{name,jobs:[{job,episode_count}],department}`.
+- **Série agrega por episódio**: normalizar `roles`→personagem (unir múltiplos papéis do mesmo
+  ator: "Peter / Brian / Stewie (voz)") + `total_episode_count`; `jobs`→job + episode_count.
+  O canônico do crédito ganha um `episode_count` opcional (só série).
+- **Teto**: listas enormes (filme 76, série 781). **Persistir top ~50** do elenco por
+  `order` (bilhagem); a UI exibe **top ~24 + "ver todos"**. Equipe agrupada por
+  departamento. Companies: todas.
+- **Fotos/logos**: servidas pelo **proxy de imagem** (image.tmdb.org já na allowlist),
+  como pôster/arte — não a URL crua.
+- **Read-only nesta rodada**: sem editor de créditos (C) nem `internal_id` de pessoa (D).
 
 ## 3. Escopo
 
