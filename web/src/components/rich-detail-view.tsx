@@ -6,6 +6,7 @@ import {
   Download,
   ExternalLink,
   ImageOff,
+  Library,
   LoaderCircle,
   Play,
   Star,
@@ -516,31 +517,52 @@ function sufixoEpisodios(n: number | null | undefined): string | null {
   return `${n} ${n === 1 ? 'ep' : 'eps'}`
 }
 
+// SeloNaBiblioteca é o mesmo selo interno-first já usado em coleção/similares
+// (`Badge variant="secondary"`, texto "Na biblioteca") — aqui compacto (px/py/texto
+// menores) para caber no card apertado do elenco, com o ícone `Library` reforçando o
+// sentido sem repetir texto. Puramente decorativo (`aria-hidden`): o destino já é
+// anunciado pelo `aria-label` do Link que o envolve.
+function SeloNaBiblioteca() {
+  return (
+    <Badge
+      variant="secondary"
+      className="w-fit gap-1 px-1.5 py-0 text-[10px]"
+      aria-hidden
+    >
+      <Library className="size-3" aria-hidden />
+      Na biblioteca
+    </Badge>
+  )
+}
+
 // PessoaCard é o card reusável de pessoa (foto 2:3 + nome + papel), usado na grade do
 // Elenco. Reusa o `PosterImg` (lazy + placeholder). A foto já vem PROXYADA do backend
-// (uso direto, sem reproxyar). O card inteiro linka para a página da pessoa no TMDB em
-// nova aba. Em série, o papel ganha o sufixo "· N eps" (episódios do personagem).
+// (uso direto, sem reproxyar). Em série, o papel ganha o sufixo "· N eps" (episódios
+// do personagem).
+//
+// Interno-first (0029, fase D): quando o crédito traz `personId` (a pessoa já foi
+// persistida por algum import), o card linka para a página INTERNA da pessoa
+// (`/person/{id}`) e ganha o selo "Na biblioteca" (mesmo padrão do similar/coleção,
+// 0026/0027). Sem `personId`, o card degrada para o link externo de sempre (TMDB, nova
+// aba), sem selo — comportamento inalterado.
 function PessoaCard({
   sourceId,
   name,
   profileUrl,
   papel,
   eps,
+  personId,
 }: {
   sourceId: string
   name: string
   profileUrl: string | null
   papel: string | null
   eps: number | null | undefined
+  personId?: string | null
 }) {
   const sufEps = sufixoEpisodios(eps)
-  return (
-    <a
-      href={`${TMDB_PESSOA}${sourceId}`}
-      target="_blank"
-      rel="noreferrer"
-      className="group flex flex-col gap-1"
-    >
+  const conteudo = (
+    <>
       <PosterImg
         src={profileUrl}
         alt={`Foto de ${name}`}
@@ -557,6 +579,29 @@ function PessoaCard({
       ) : sufEps ? (
         <span className="text-xs text-muted-foreground">{sufEps}</span>
       ) : null}
+      {personId ? <SeloNaBiblioteca /> : null}
+    </>
+  )
+  if (personId) {
+    return (
+      <Link
+        to="/person/$personId"
+        params={{ personId }}
+        aria-label={`Ver ${name} na biblioteca`}
+        className="group flex flex-col gap-1"
+      >
+        {conteudo}
+      </Link>
+    )
+  }
+  return (
+    <a
+      href={`${TMDB_PESSOA}${sourceId}`}
+      target="_blank"
+      rel="noreferrer"
+      className="group flex flex-col gap-1"
+    >
+      {conteudo}
     </a>
   )
 }
@@ -587,6 +632,7 @@ function ElencoGrid({ cast }: { cast: CreditCast[] }) {
               profileUrl={p.profile_url ?? null}
               papel={p.character || null}
               eps={p.episode_count}
+              personId={p.person_id ?? null}
             />
           </li>
         ))}
@@ -652,9 +698,49 @@ function agruparEquipe(crew: CreditCrew[]): GrupoEquipe[] {
     })
 }
 
+// MembroNome é o nome do membro de equipe, linkado. Interno-first (0029, fase D):
+// com `personId`, linka para a página INTERNA da pessoa (com um ícone `Library`
+// discreto e `aria-label` descritivo); sem `personId`, degrada para o link externo de
+// sempre (TMDB, nova aba) — comportamento inalterado. Extraído do `EquipeGrupos` para
+// não inflar o JSX da lista.
+function MembroNome({
+  name,
+  sourceId,
+  personId,
+}: {
+  name: string
+  sourceId: string
+  personId?: string | null
+}) {
+  if (personId) {
+    return (
+      <Link
+        to="/person/$personId"
+        params={{ personId }}
+        aria-label={`Ver ${name} na biblioteca`}
+        className="inline-flex items-center gap-1 font-medium hover:underline"
+      >
+        <Library className="size-3 text-muted-foreground" aria-hidden />
+        {name}
+      </Link>
+    )
+  }
+  return (
+    <a
+      href={`${TMDB_PESSOA}${sourceId}`}
+      target="_blank"
+      rel="noreferrer"
+      className="font-medium hover:underline"
+    >
+      {name}
+    </a>
+  )
+}
+
 // EquipeGrupos mostra a equipe agrupada por departamento; cada grupo lista os membros
-// (nome + cargo, com "· N eps" na série). O nome linka para o TMDB em nova aba. Vazio
-// → a seção some.
+// (nome + cargo, com "· N eps" na série). O nome linka para a página interna da pessoa
+// quando já catalogada (interno-first, 0029 fase D), senão para o TMDB. Vazio → a
+// seção some.
 function EquipeGrupos({ crew }: { crew: CreditCrew[] }) {
   if (crew.length === 0) {
     return null
@@ -679,14 +765,11 @@ function EquipeGrupos({ crew }: { crew: CreditCrew[] }) {
                 const sufEps = sufixoEpisodios(m.episode_count)
                 return (
                   <li key={`${m.source_id}:${m.job}:${i}`}>
-                    <a
-                      href={`${TMDB_PESSOA}${m.source_id}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-medium hover:underline"
-                    >
-                      {m.name}
-                    </a>
+                    <MembroNome
+                      name={m.name}
+                      sourceId={m.source_id}
+                      personId={m.person_id}
+                    />
                     <span className="text-muted-foreground">
                       {' '}
                       — {m.job}

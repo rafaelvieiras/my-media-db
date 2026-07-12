@@ -146,6 +146,62 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
     expect(screen.getByText(/— Fotógrafo/)).toBeInTheDocument()
   })
 
+  it('elenco: card com person_id vira link para /person/{id} e ganha o selo "Na biblioteca"', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({
+          cast: [ator(0, { name: 'Bryan Cranston', person_id: 'p1' })],
+        })}
+      />,
+    )
+    const link = screen.getByRole('link', {
+      name: 'Ver Bryan Cranston na biblioteca',
+    })
+    expect(link).toHaveAttribute('href', '/person/p1')
+    expect(screen.getByText('Na biblioteca')).toBeInTheDocument()
+  })
+
+  it('elenco: card sem person_id não é link interno nem tem o selo', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({ cast: [ator(0, { name: 'Ator Externo' })] })}
+      />,
+    )
+    expect(
+      screen.queryByRole('link', { name: /Ver Ator Externo na biblioteca/ }),
+    ).toBeNull()
+    expect(screen.queryByText('Na biblioteca')).toBeNull()
+  })
+
+  it('equipe: membro com person_id vira link para /person/{id}; sem person_id segue linkando ao TMDB', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({
+          crew: [
+            membro('Denis Villeneuve', 'Direção', 'Diretor', {
+              person_id: 'p2',
+            }),
+            membro('Roger Deakins', 'Fotografia', 'Fotógrafo'),
+          ],
+        })}
+      />,
+    )
+    const link = screen.getByRole('link', {
+      name: 'Ver Denis Villeneuve na biblioteca',
+    })
+    expect(link).toHaveAttribute('href', '/person/p2')
+    // Sem person_id, o nome segue linkando à fonte (TMDB) — comportamento inalterado.
+    const externo = screen.getByRole('link', { name: 'Roger Deakins' })
+    expect(externo).toHaveAttribute(
+      'href',
+      'https://www.themoviedb.org/person/Roger Deakins',
+    )
+    expect(screen.getByText(/— Fotógrafo/)).toBeInTheDocument()
+  })
+
   it('produtora sem logo cai no nome; com logo renderiza a imagem já proxyada', () => {
     renderWithClient(
       <RichDetailView

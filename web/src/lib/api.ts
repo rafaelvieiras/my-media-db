@@ -38,6 +38,10 @@ export type ExternalSimilar = components['schemas']['ExternalSimilar']
 export type CreditCast = components['schemas']['CreditCast']
 export type CreditCrew = components['schemas']['CreditCrew']
 export type CreditCompany = components['schemas']['CreditCompany']
+// Pessoa deduplicada no catálogo + filmografia (0029, fase D, interno-first):
+// destino do card de elenco/equipe quando o crédito traz `person_id`.
+export type Person = components['schemas']['Person']
+export type PersonCredit = components['schemas']['PersonCredit']
 export type ImportRequest = components['schemas']['ImportRequest']
 export type LanguageSettings = components['schemas']['LanguageSettings']
 export type OverrideBlob = components['schemas']['OverrideBlob']
@@ -559,6 +563,17 @@ export async function getCollectionDetail(
         source,
       )}/collection/${encodeURIComponent(id)}${suffix}`,
     ),
+  )
+}
+
+// ── Pessoa (0029, fase D, interno-first) ─────────────────────────────────────
+
+// getPerson busca a pessoa deduplicada no catálogo + a sua FILMOGRAFIA (as obras já
+// importadas que a creditam). Read-only nesta fase. 404 (`ApiError`) quando o id não
+// existe no catálogo.
+export async function getPerson(id: string): Promise<Person> {
+  return lerJson<Person>(
+    await fetch(`${base}/api/v1/person/${encodeURIComponent(id)}`),
   )
 }
 

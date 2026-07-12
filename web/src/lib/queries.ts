@@ -12,6 +12,7 @@ import {
   getLanguageSettings,
   getOrphans,
   getOverrideBlob,
+  getPerson,
   getReviewQueue,
   getScanStatus,
   listAssets,
@@ -185,6 +186,15 @@ export function collectionDetailQueryOptions(
   return queryOptions({
     queryKey: ['collection', source, id, lang ?? null],
     queryFn: () => getCollectionDetail(source, id, lang),
+  })
+}
+
+// Pessoa deduplicada + filmografia (0029, fase D). Chave própria `['person', id]` —
+// read-only nesta fase, sem invalidação (a pessoa não é editável pela UI).
+export function personQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: ['person', id],
+    queryFn: () => getPerson(id),
   })
 }
 

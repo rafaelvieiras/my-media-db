@@ -19,6 +19,7 @@ import { ItemNewScreen } from '@/routes/item-new'
 import { CollectionNewScreen } from '@/routes/collection-new'
 import { ExternalDetailScreen } from '@/routes/external-detail'
 import { CollectionDetailScreen } from '@/routes/collection-detail'
+import { PersonDetailScreen } from '@/routes/person-detail'
 import { SettingsScreen } from '@/routes/settings'
 import { HealthScreen } from '@/routes/health'
 
@@ -121,6 +122,15 @@ const collectionDetailRoute = createRoute({
   component: CollectionDetailScreen,
 })
 
+// Página MÍNIMA da pessoa (0029, fase D, interno-first). Alcançada pelo card de
+// elenco/equipe da RichDetailView quando o crédito traz `person_id` (a pessoa já foi
+// persistida por algum import).
+const personDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/person/$personId',
+  component: PersonDetailScreen,
+})
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
@@ -145,6 +155,7 @@ const routeTree = rootRoute.addChildren([
   entityEditRoute,
   externalDetailRoute,
   collectionDetailRoute,
+  personDetailRoute,
   settingsRoute,
   healthRoute,
 ])

@@ -14,18 +14,19 @@ export function LinkMock({
   className,
   to,
   params,
+  ...rest
 }: {
   children: ReactNode
   className?: string
   to?: string
   params?: Record<string, string>
-}) {
+} & Record<string, unknown>) {
   let href = to ?? '#'
   for (const [k, v] of Object.entries(params ?? {})) {
     href = href.replaceAll(`$${k}`, v)
   }
   return (
-    <a href={href} className={className}>
+    <a href={href} className={className} {...rest}>
       {children}
     </a>
   )
