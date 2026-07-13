@@ -15,15 +15,21 @@
 #   docker compose -f compose.prod.yaml pull
 #   docker compose -f compose.prod.yaml up -d
 
+# Nome de projeto PRÓPRIO: isola prod do dev (compose.dev.yaml usa o nome
+# derivado da pasta, `my-media-db`). Sem isto os dois compartilhariam rede e o
+# prod veria os containers de dev como "órfãos" (e vice-versa).
+name: mymediadb-prod
+
 services:
   app:
     image: ghcr.io/rafaelvieiras/my-media-db:latest
     container_name: mymediadb
     restart: unless-stopped
     ports:
-      # HOST:CONTAINER — 8090 neste PC evita colidir com outros serviços na
-      # 8080. Ajuste o lado esquerdo se a porta já estiver em uso.
-      - "8090:8080"
+      # HOST:CONTAINER — o app escuta 8080 dentro do container; expõe em 8096 no
+      # host (8080 é o dev-api, 5173 o dev-web, 8090 já usada por outro serviço).
+      # Ajuste o lado esquerdo se a porta já estiver em uso no alvo.
+      - "8096:8080"
     # Credenciais opcionais (TMDB/fanart.tv/TVDB) — arquivo gitignored, nunca
     # versionado. O compose reclama se o arquivo não existir: crie a partir
     # de .env.prod.example mesmo que vazio.
@@ -61,6 +67,10 @@ services:
       # autenticar o pull. Sem isso o Watchtower recebe 401/403 do registry.
       - ${HOME}/.docker/config.json:/config.json:ro
     environment:
+      # O containrrr/watchtower fala uma versão antiga da API Docker (1.25) por
+      # padrão; daemons novos (Engine 26+, MinAPIVersion 1.40) a recusam com
+      # "client version is too old". Fixa a versão da API num valor aceito.
+      DOCKER_API_VERSION: "1.40"
       # Só atualiza containers com o label com.centurylinklabs.watchtower.enable
       # (aqui, só o serviço `app`).
       WATCHTOWER_LABEL_ENABLE: "true"

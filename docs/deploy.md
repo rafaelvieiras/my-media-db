@@ -59,7 +59,7 @@ docker compose -f compose.prod.yaml pull
 docker compose -f compose.prod.yaml up -d
 ```
 
-Acesse em `http://localhost:8090` (mapeamento `8090:8080` já definido no
+Acesse em `http://localhost:8096` (mapeamento `8096:8080` já definido no
 compose). Para acompanhar os logs do app:
 
 ```bash
@@ -108,5 +108,5 @@ Pi e suba com `docker compose -f compose.prod.yaml up -d`.
 |---|---|---|
 | `denied` / `unauthorized` no `pull` | Login no ghcr ausente ou expirado | Refazer `docker login ghcr.io -u rafaelvieiras --password-stdin` |
 | `exec format error` ao subir o container | Arch do manifesto não bate com o host | Não deveria ocorrer com os 3 alvos publicados (amd64/arm64/armv7); confira `docker version` → `Server.Arch` |
-| Porta 8090 já em uso | Outro serviço ocupando a porta no host | Trocar o mapeamento em `compose.prod.yaml` (ex.: `"8091:8080"`) |
+| Porta 8096 já em uso | Outro serviço ocupando a porta no host | Trocar o mapeamento em `compose.prod.yaml` (ex.: `"8091:8080"`) |
 | App sobe mas busca externa (TMDB/fanart.tv/TVDB) não funciona | `.env` vazio ou sem as chaves | Preencher `.env` a partir de `.env.prod.example` — é opcional, mas sem chave a busca fica desligada |
