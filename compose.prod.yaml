@@ -1,0 +1,78 @@
+# compose.prod.yaml — ambiente de PRODUÇÃO (contraste com compose.dev.yaml,
+# que builda localmente e tem hot reload). Este arquivo NÃO builda nada: só
+# puxa a imagem já publicada pelo GitHub Actions (.github/workflows/release.yml)
+# no GitHub Container Registry, e mantém ela atualizada sozinha via Watchtower.
+#
+# Pré-requisitos no host:
+#   1) `docker login ghcr.io` — a imagem é PRIVADA, tanto o `pull` deste
+#      compose quanto o Watchtower dependem da credencial salva em
+#      ~/.docker/config.json (ver docs/deploy.md).
+#   2) Um `.env` na raiz com as credenciais opcionais de enriquecimento —
+#      copie de `.env.prod.example` e preencha (ou deixe vazio: a busca
+#      externa fica desligada, sem erro).
+#
+# Subir:
+#   docker compose -f compose.prod.yaml pull
+#   docker compose -f compose.prod.yaml up -d
+
+services:
+  app:
+    image: ghcr.io/rafaelvieiras/my-media-db:latest
+    container_name: mymediadb
+    restart: unless-stopped
+    ports:
+      # HOST:CONTAINER — 8090 neste PC evita colidir com outros serviços na
+      # 8080. Ajuste o lado esquerdo se a porta já estiver em uso.
+      - "8090:8080"
+    # Credenciais opcionais (TMDB/fanart.tv/TVDB) — arquivo gitignored, nunca
+    # versionado. O compose reclama se o arquivo não existir: crie a partir
+    # de .env.prod.example mesmo que vazio.
+    env_file:
+      - .env
+    environment:
+      PORT: "8080"
+      # Dados persistidos em /data dentro do container (SQLite + arte
+      # baixada) — ver o volume nomeado abaixo.
+      MYMEDIADB_DB_PATH: /data/mymediadb.sqlite
+      MYMEDIADB_ASSETS_DIR: /data/assets
+    volumes:
+      # Volume nomeado (gerenciado pelo Docker). Se quiser os arquivos
+      # visíveis/acessíveis diretamente no host, troque pela linha comentada
+      # abaixo (bind-mount) e ajuste as permissões do diretório ./data:
+      #   - ./data:/data
+      - mymediadb-data:/data
+    labels:
+      # Só containers com este label são candidatos a auto-update do
+      # Watchtower (WATCHTOWER_LABEL_ENABLE=true no serviço abaixo).
+      - "com.centurylinklabs.watchtower.enable=true"
+    # SEM healthcheck aqui de propósito: herda o HEALTHCHECK já definido no
+    # Dockerfile (GET /api/v1/health via wget do busybox).
+
+  watchtower:
+    # Versão PINADA — evita que um bump automático do Watchtower mude
+    # comportamento de auto-update sem aviso.
+    image: containrrr/watchtower:1.7.1
+    container_name: mymediadb-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Credencial do ghcr (imagem PRIVADA): o Watchtower usa o mesmo
+      # ~/.docker/config.json criado pelo `docker login ghcr.io` no host para
+      # autenticar o pull. Sem isso o Watchtower recebe 401/403 do registry.
+      - ${HOME}/.docker/config.json:/config.json:ro
+    environment:
+      # Só atualiza containers com o label com.centurylinklabs.watchtower.enable
+      # (aqui, só o serviço `app`).
+      WATCHTOWER_LABEL_ENABLE: "true"
+      # Remove a imagem antiga após recriar o container — ESSENCIAL no
+      # Raspberry Pi de 1GB/cartão SD pequeno, senão o disco entope com
+      # versões velhas acumuladas a cada release.
+      WATCHTOWER_CLEANUP: "true"
+      # Intervalo de checagem do registry, em segundos (5 min).
+      WATCHTOWER_POLL_INTERVAL: "300"
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
+    # Sem `command:` — o Watchtower, sem argumentos de container específicos,
+    # vigia TODOS os containers do host e age só nos que têm o label acima.
+
+volumes:
+  mymediadb-data:
