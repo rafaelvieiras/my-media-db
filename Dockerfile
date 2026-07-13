@@ -4,14 +4,26 @@
 # Go com o SPA embutido via //go:embed e entrega uma imagem final enxuta.
 # O build NÃO depende de artefatos locais pré-buildados: o dist real é gerado
 # no estágio 1 e copiado para dentro do módulo Go antes da compilação.
+#
+# Estratégia multi-arquitetura (amd64 + arm64 + arm/v7, alvo Raspberry Pi):
+# CROSS-COMPILAÇÃO, não emulação QEMU. Os estágios builder-web e builder-go
+# rodam SEMPRE na arch nativa do runner (--platform=$BUILDPLATFORM): o dist
+# do Vite é arch-neutro (HTML/JS/CSS) e o binário Go (CGO_ENABLED=0, SQLite
+# puro-Go via modernc) cross-compila trivialmente para GOOS/GOARCH/GOARM
+# alvo. Isso evita emular `npm run build`/`go build` sob QEMU, o que seria
+# lento e arriscaria OOM no armv7. Só o estágio `final` (apk add ffmpeg) é
+# buildado para a plataforma ALVO de verdade, pois precisa do ffmpeg nativo.
 
 # Versão do binário, injetada via -ldflags. Sobrescreva com --build-arg VERSION=...
 ARG VERSION=docker
 
 # ---------------------------------------------------------------------------
 # Estágio 1 — builder-web: gera o SPA de produção com Vite.
+# --platform=$BUILDPLATFORM: força rodar na arch nativa do runner, nunca
+# emulada — o dist gerado é arch-neutro, então não há motivo pra buildar
+# via QEMU (mais lento à toa).
 # ---------------------------------------------------------------------------
-FROM node:lts-slim AS builder-web
+FROM --platform=$BUILDPLATFORM node:lts-slim AS builder-web
 WORKDIR /app/web
 
 # Camada de dependências: só o manifest muda raramente, aproveita cache.
@@ -25,8 +37,13 @@ RUN npm run build
 
 # ---------------------------------------------------------------------------
 # Estágio 2 — builder-go: compila o binário estático com o SPA embutido.
+# --platform=$BUILDPLATFORM: o toolchain Go também roda na arch nativa do
+# runner (evita QEMU pro `go build` em si); quem determina a arch do
+# BINÁRIO final é o cross-compile via GOOS/GOARCH/GOARM abaixo, não a
+# plataforma do estágio. Versão do Go pinada em 1.26.5 (patch exato, mesma
+# versão fixada no CI por vuln de stdlib/determinismo do build).
 # ---------------------------------------------------------------------------
-FROM golang:1.26-alpine AS builder-go
+FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine AS builder-go
 WORKDIR /app
 
 # Camada de dependências Go.
@@ -41,14 +58,28 @@ COPY internal/ ./internal/
 # que o //go:embed all:dist capture o SPA de produção.
 COPY --from=builder-web /app/internal/webui/dist/ ./internal/webui/dist/
 
-# Compilação estática (sem CGO) com versão injetada e binário enxuto (-s -w).
+# Compilação estática (sem CGO) com versão injetada e binário enxuto (-s -w),
+# CROSS-COMPILADA para a plataforma ALVO. TARGETOS/TARGETARCH/TARGETVARIANT
+# são preenchidos automaticamente pelo BuildKit conforme o --platform alvo
+# passado ao `docker build`/`buildx build` (ex.: linux/arm/v7 → TARGETOS=linux,
+# TARGETARCH=arm, TARGETVARIANT=v7). GOARM=${TARGETVARIANT#v} extrai o "7" de
+# "v7" para o armv7 do Raspberry Pi; em amd64/arm64 a variant vem vazia e
+# GOARM="" é simplesmente ignorado pelo toolchain Go.
 ARG VERSION
-RUN CGO_ENABLED=0 go build \
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v} \
+    go build \
     -ldflags "-X main.version=${VERSION} -s -w" \
     -o /mymediadb ./cmd/mymediadb
 
 # ---------------------------------------------------------------------------
 # Estágio 3 — final: imagem mínima, sem toolchain Node/Go.
+# SEM --platform=$BUILDPLATFORM aqui de propósito: este estágio é buildado
+# para a plataforma ALVO (comportamento padrão do Docker), pois o `apk add
+# ffmpeg` precisa trazer o pacote da arch certa (amd64/arm64/armv7) — só o
+# binário Go copiado de builder-go já vem cross-compilado para essa arch.
 # ---------------------------------------------------------------------------
 FROM alpine:3.22 AS final
 
@@ -62,6 +93,17 @@ RUN addgroup -S mymediadb && adduser -S -G mymediadb -H -h /nonexistent mymediad
 
 # Apenas o binário compilado.
 COPY --from=builder-go /mymediadb /mymediadb
+
+# Diretório de dados persistente (SQLite + arte baixada). Criado e com dono
+# ajustado para o usuário non-root ANTES do `USER`: quando um volume nomeado é
+# montado em /data na primeira vez, o Docker copia dono e permissões do
+# diretório da imagem para o volume novo. Sem este chown o volume nasceria
+# root:root e o processo non-root falharia ao criar o banco ("unable to open
+# database file"). O `VOLUME` declara o ponto de montagem (mesmo sem -v, um
+# volume anônimo garante que os dados não se percam no filesystem efêmero).
+# Em produção o compose aponta MYMEDIADB_DB_PATH/MYMEDIADB_ASSETS_DIR para /data.
+RUN mkdir -p /data && chown mymediadb:mymediadb /data
+VOLUME /data
 
 USER mymediadb
 
