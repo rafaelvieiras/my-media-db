@@ -38,15 +38,17 @@ services:
     environment:
       PORT: "8080"
       # Dados persistidos em /data dentro do container (SQLite + arte
-      # baixada) — ver o volume nomeado abaixo.
+      # baixada) — ver o bind-mount abaixo.
       MYMEDIADB_DB_PATH: /data/mymediadb.sqlite
       MYMEDIADB_ASSETS_DIR: /data/assets
     volumes:
-      # Volume nomeado (gerenciado pelo Docker). Se quiser os arquivos
-      # visíveis/acessíveis diretamente no host, troque pela linha comentada
-      # abaixo (bind-mount) e ajuste as permissões do diretório ./data:
-      #   - ./data:/data
-      - mymediadb-data:/data
+      # Bind-mount: os dados ficam em ./data no host (visíveis e triviais de
+      # fazer backup — um tar da pasta, ou o scripts/backup.sh com VACUUM INTO).
+      # O container roda como uid:gid 100:101 (non-root), então ./data precisa
+      # pertencer a esse usuário: `sudo chown -R 100:101 ./data`. Se preferir
+      # um volume nomeado gerenciado pelo Docker, troque por `- mymediadb-data:/data`
+      # e redeclare o volume no bloco `volumes:` no fim do arquivo.
+      - ./data:/data
     labels:
       # Só containers com este label são candidatos a auto-update do
       # Watchtower (WATCHTOWER_LABEL_ENABLE=true no serviço abaixo).
@@ -83,6 +85,3 @@ services:
       WATCHTOWER_INCLUDE_RESTARTING: "true"
     # Sem `command:` — o Watchtower, sem argumentos de container específicos,
     # vigia TODOS os containers do host e age só nos que têm o label acima.
-
-volumes:
-  mymediadb-data:

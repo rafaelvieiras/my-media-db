@@ -23,6 +23,10 @@ internal/webui/dist/*
 *.sqlite-shm
 .env
 
+# Dados de produção (bind-mount do compose.prod.yaml): SQLite + arte baixada +
+# backups. Nunca versionar a coleção do usuário.
+/data/
+
 # Quality gate: relatórios efêmeros dos coletores (cobertura, jscpd, golangci…)
 # e diretório temporário. O baseline.json É versionado (a catraca depende dele).
 reports/

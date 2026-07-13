@@ -83,10 +83,14 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v}
 # ---------------------------------------------------------------------------
 FROM alpine:3.22 AS final
 
-# ffprobe/ffmpeg são dependência de RUNTIME do scanner (ADR-0014, briefing 0009):
-# o pacote `ffmpeg` do Alpine já traz o binário `ffprobe`. Sem ele o scan ainda
-# roda, mas degrada (mediainfo vazio). Mantém a imagem enxuta (--no-cache).
-RUN apk add --no-cache ffmpeg
+# Dependências de RUNTIME:
+#   ffmpeg  → ffprobe do scanner (ADR-0014, briefing 0009). Sem ele o scan ainda
+#             roda, mas degrada (mediainfo vazio).
+#   sqlite  → CLI usado por scripts/backup.sh para `VACUUM INTO` (snapshot
+#             consistente do banco WAL sem downtime). O app em si usa o driver
+#             Go puro modernc e NÃO depende deste binário; é só para o backup.
+# --no-cache mantém a imagem enxuta.
+RUN apk add --no-cache ffmpeg sqlite
 
 # Usuário não-root dedicado.
 RUN addgroup -S mymediadb && adduser -S -G mymediadb -H -h /nonexistent mymediadb
