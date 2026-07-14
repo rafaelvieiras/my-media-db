@@ -821,3 +821,81 @@ export async function purgeBatch(ids: string[]): Promise<PurgeBatchResult> {
   })
   return lerJson<PurgeBatchResult>(res)
 }
+
+// ── Jobs (0052, fundação do sistema de jobs) ─────────────────────────────────
+//
+// Tipos gerados de `api-types.ts` (schema `Job`, não `JobDefinition` — nome do
+// schema no `openapi.yaml`), como todo outro tipo deste arquivo. Reexportados
+// com o nome `JobDefinition` aqui só para o nome ficar mais descritivo no
+// front; o shape é exatamente o de `components['schemas']['Job']` (sem
+// `config_json`/`created_at`/`updated_at` — esses ficam só no backend).
+export type JobDefinition = components['schemas']['Job']
+type JobList = components['schemas']['JobList']
+
+export type JobExecution = components['schemas']['JobExecution']
+type JobExecutionList = components['schemas']['JobExecutionList']
+
+export type PatchJobBody = components['schemas']['PatchJob']
+export type RunJobResponse = components['schemas']['RunJob']
+
+export interface JobExecutionsParams {
+  limit?: number
+  before?: string
+}
+
+// Lista todos os `job_definition` com o estado atual (inclusive `running`, do
+// Manager em memória). Nunca vazio após a fundação — sempre tem o seed
+// `backup_vacuum`.
+export async function listJobs(): Promise<JobDefinition[]> {
+  const data = await lerJson<JobList>(await fetch(`${base}/api/v1/jobs`))
+  return data.items
+}
+
+// Edita `enabled` e/ou `schedule_cron` (patch parcial — omitir um campo não o
+// altera; `schedule_cron: null` desliga o agendamento, deixando o job só-manual).
+// 404 (id desconhecido) e 422 (`schedule_cron` que não parseia) viram `ApiError`
+// com a mensagem pt-BR do envelope — a UI mostra o 422 inline junto do campo.
+export async function patchJob(
+  id: string,
+  body: PatchJobBody,
+): Promise<JobDefinition> {
+  const res = await fetch(`${base}/api/v1/jobs/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return lerJson<JobDefinition>(res)
+}
+
+// Dispara uma execução manual (`trigger=manual`), independente de `enabled`.
+// `202` com o id da execução recém-criada; 404 (id desconhecido), 409 (já em
+// execução) e 503 (sem `Handler` registrado) viram `ApiError`.
+export async function runJob(id: string): Promise<RunJobResponse> {
+  const res = await fetch(`${base}/api/v1/jobs/${encodeURIComponent(id)}/run`, {
+    method: 'POST',
+  })
+  return lerJson<RunJobResponse>(res)
+}
+
+// Histórico paginado de execuções, mais recente primeiro. `limit` default 20 no
+// backend (máx. 100); `before` (um `started_at`) pagina para trás. 404 (id
+// desconhecido) vira `ApiError`.
+export async function listJobExecutions(
+  id: string,
+  params: JobExecutionsParams = {},
+): Promise<JobExecution[]> {
+  const qs = new URLSearchParams()
+  if (params.limit !== undefined) {
+    qs.set('limit', String(params.limit))
+  }
+  if (params.before) {
+    qs.set('before', params.before)
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  const data = await lerJson<JobExecutionList>(
+    await fetch(
+      `${base}/api/v1/jobs/${encodeURIComponent(id)}/executions${suffix}`,
+    ),
+  )
+  return data.items
+}

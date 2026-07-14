@@ -105,14 +105,14 @@ func TestMigrateUp(t *testing.T) {
 	if err := d.Migrate(ctx); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	// Há dez migrations (0001 semente + 0002 schema do núcleo + 0003
+	// Há onze migrations (0001 semente + 0002 schema do núcleo + 0003
 	// media_file.library_source_id + 0004 media_external/media_override + 0005
 	// app_settings/entity.original_language + 0006 external_detail + 0007
 	// series: entity_relation.sort_index + entity.external_id_tvdb + 0008
 	// library_source.content_type + 0009 media_file_entity + 0010
-	// person/company/credit).
-	if v := mustSchemaVersion(t, d); v != 10 {
-		t.Errorf("versão após up = %d, quero 10", v)
+	// person/company/credit + 0011 job_definition/job_execution).
+	if v := mustSchemaVersion(t, d); v != 11 {
+		t.Errorf("versão após up = %d, quero 11", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -157,6 +157,12 @@ func TestMigrateDown(t *testing.T) {
 	}
 
 	// Down reverte uma migration por vez, do topo para a base.
+	downPara(t, d, 10) // 0011: remove job_definition/job_execution.
+	querFalha(t, d, "SELECT 1 FROM job_execution",
+		"tabela job_execution ainda existe após o down do 0011")
+	querFalha(t, d, "SELECT 1 FROM job_definition",
+		"tabela job_definition ainda existe após o down do 0011")
+
 	downPara(t, d, 9) // 0010: remove person/company/credit (elenco/equipe/produtoras).
 	querFalha(t, d, "SELECT 1 FROM credit",
 		"tabela credit ainda existe após o down do 0010")

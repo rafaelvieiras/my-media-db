@@ -91,6 +91,32 @@ type ExternalDetail struct {
 	FetchedAt   string
 }
 
+type JobDefinition struct {
+	ID           string
+	Nome         string
+	Descricao    sql.NullString
+	Enabled      int64
+	ScheduleCron sql.NullString
+	ConfigJson   sql.NullString
+	NextRunAt    sql.NullString
+	LastRunAt    sql.NullString
+	LastStatus   sql.NullString
+	LastMessage  sql.NullString
+	CreatedAt    string
+	UpdatedAt    string
+}
+
+type JobExecution struct {
+	ID         string
+	JobID      string
+	Trigger    string
+	Status     string
+	StartedAt  string
+	FinishedAt sql.NullString
+	Message    sql.NullString
+	CreatedAt  string
+}
+
 type LibrarySource struct {
 	ID          string
 	Path        string

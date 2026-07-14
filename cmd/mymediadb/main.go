@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
+	"github.com/rafaelvieiras/my-media-db/internal/job/backup"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fanarttv"
@@ -59,7 +60,7 @@ func run() error {
 		}
 	}()
 
-	opts, err := opcoesServer()
+	opts, err := opcoesServer(database)
 	if err != nil {
 		return err
 	}
@@ -74,6 +75,19 @@ func run() error {
 		Handler: handler,
 	}
 
+	// Sinal de término (SIGINT/SIGTERM) — o MESMO ctx encerra tanto o
+	// agendador de jobs (RunScheduler, abaixo) quanto o shutdown do HTTP.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// Agendador embutido de jobs (briefing 0052): dispara ANTES do
+	// ListenAndServe, para o boot do HTTP não atrasar o primeiro tick. Sai
+	// sozinho quando ctx é cancelado (mesmo sinal do shutdown do HTTP).
+	// srv.Jobs() nunca é nil aqui — database (acima) é sempre não-nil quando
+	// o boot chega a este ponto, e montarServicos constrói o Manager sempre
+	// que há banco.
+	go srv.Jobs().RunScheduler(ctx)
+
 	// Canal para propagar erro de ListenAndServe ao fluxo principal.
 	serverErr := make(chan error, 1)
 
@@ -85,10 +99,6 @@ func run() error {
 		}
 		serverErr <- nil
 	}()
-
-	// Aguarda sinal de término (SIGINT/SIGTERM) ou falha do servidor.
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	select {
 	case err := <-serverErr:
@@ -129,8 +139,9 @@ func openAndMigrate() (*db.DB, error) {
 }
 
 // opcoesServer monta as options do server: a busca/enrich externa (briefing
-// 0014/0015) e o diretório de assets. Erro só na criação do diretório de assets.
-func opcoesServer() ([]server.Option, error) {
+// 0014/0015), o diretório de assets e o job semente backup_vacuum (briefing
+// 0052). Erro só na criação dos diretórios (assets/backups).
+func opcoesServer(database *db.DB) ([]server.Option, error) {
 	opts := opcoesBusca()
 
 	dir, err := resolveAssetsDir()
@@ -139,6 +150,14 @@ func opcoesServer() ([]server.Option, error) {
 	}
 	log.Printf("mymediadb: diretório de assets em %q", dir)
 	opts = append(opts, server.WithAssetsDir(dir))
+
+	backupDir, err := resolveBackupDir()
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("mymediadb: diretório de backups em %q (job backup_vacuum)", backupDir)
+	opts = append(opts, server.WithJobHandlers(backup.New(database.Write, backupDir)))
+
 	return opts, nil
 }
 
@@ -209,6 +228,21 @@ func resolveAssetsDir() (string, error) {
 	dir := os.Getenv("MYMEDIADB_ASSETS_DIR")
 	if dir == "" {
 		dir = filepath.Join(filepath.Dir(resolveDBPath()), "assets")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+// resolveBackupDir determina o diretório dos snapshots do job backup_vacuum
+// (briefing 0052): env MYMEDIADB_BACKUP_DIR tem prioridade; caso ausente, usa
+// dirname(DB)/backups — mesma convenção de resolveAssetsDir. Cria o diretório
+// se faltar.
+func resolveBackupDir() (string, error) {
+	dir := os.Getenv("MYMEDIADB_BACKUP_DIR")
+	if dir == "" {
+		dir = filepath.Join(filepath.Dir(resolveDBPath()), "backups")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err

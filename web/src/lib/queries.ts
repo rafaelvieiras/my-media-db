@@ -10,6 +10,8 @@ import {
   getExternalDetail,
   getHealth,
   getLanguageSettings,
+  listJobExecutions,
+  listJobs,
   getOrphans,
   getOverrideBlob,
   getPerson,
@@ -20,6 +22,7 @@ import {
   listLibrary,
   searchMedia,
   type EntityListParams,
+  type JobExecutionsParams,
 } from '@/lib/api'
 
 // Opções compartilhadas por rota. Centralizar em `queryOptions` mantém a
@@ -221,5 +224,36 @@ export function scanStatusQueryOptions(id: string) {
     queryKey: ['scan', id],
     queryFn: () => getScanStatus(id),
     refetchInterval: (query) => (query.state.data?.running ? 1500 : false),
+  })
+}
+
+// Jobs (0052, fundação). Chave própria `['jobs']` — invalidada após PATCH
+// (habilitar/agendar) e após disparar `run`. POLLING leve enquanto ALGUM job da
+// lista está `running` (o card em "rodando…" sai sozinho sem o dono recarregar);
+// para quando nenhum estiver, evitando poll para sempre (mesmo espírito do scan).
+export const jobsQueryOptions = queryOptions({
+  queryKey: ['jobs'],
+  queryFn: listJobs,
+  refetchInterval: (query) =>
+    query.state.data?.some((job) => job.running) ? 4000 : false,
+})
+
+// Histórico paginado de execuções de UM job (0052). Chave sob `['job', id,
+// 'executions', ...]` — invalidada após disparar `run` daquele job (uma nova
+// linha `running` aparece no topo). `limit`/`before` entram na chave para cachear
+// por página.
+export function jobExecutionsQueryOptions(
+  id: string,
+  params: JobExecutionsParams = {},
+) {
+  return queryOptions({
+    queryKey: [
+      'job',
+      id,
+      'executions',
+      params.limit ?? null,
+      params.before ?? null,
+    ],
+    queryFn: () => listJobExecutions(id, params),
   })
 }

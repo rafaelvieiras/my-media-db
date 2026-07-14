@@ -13,6 +13,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/externaldetail"
+	"github.com/rafaelvieiras/my-media-db/internal/job"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
@@ -58,6 +59,12 @@ type Server struct {
 	// curto). O proxy só opera com assetsDir configurado.
 	hostsImagem map[string]bool
 	httpImagem  *http.Client
+	// jobs é o gerenciador do sistema de jobs (briefing 0052): registro dinâmico
+	// de tipos de job (Handler), config/histórico persistidos e o agendador
+	// embutido. Construído sempre que há banco (não depende de provider/
+	// assetsDir, diferente de enrich/externalDetail); os handlers concretos
+	// (ex.: backup_vacuum) entram via WithJobHandlers.
+	jobs *job.Manager
 }
 
 // Option configura opcionalmente o Server na construção, preservando a
@@ -92,6 +99,31 @@ func WithAssetsDir(dir string) Option {
 	return func(s *Server) {
 		s.assetsDir = dir
 	}
+}
+
+// WithJobHandlers REGISTRA um ou mais tipos de job (briefing 0052) no Registry
+// do Manager de jobs. Variádico e ACUMULATIVO (mesmo padrão de
+// WithSearchProvider): cada handler entra sob o seu Nome() (chamadas múltiplas
+// somam); nil é ignorado. O Manager em si é construído em montarServicos
+// (sempre que há banco); esta option só precisa que ele já exista quando
+// aplicada — New aplica as options depois de montar os serviços obrigatórios,
+// então o Registry pode ficar vazio até lá (Registrar no zero-value funciona).
+func WithJobHandlers(handlers ...job.Handler) Option {
+	return func(s *Server) {
+		if s.jobs == nil {
+			s.jobs = job.NewManager(s.db)
+		}
+		for _, h := range handlers {
+			s.jobs.Registry.Registrar(h)
+		}
+	}
+}
+
+// Jobs devolve o gerenciador de jobs (nil quando não há banco injetado) —
+// usado pelo main para disparar o agendador embutido (RunScheduler) antes do
+// ListenAndServe.
+func (s *Server) Jobs() *job.Manager {
+	return s.jobs
 }
 
 // New cria um Server com a versão do binário e os pools de banco (repassados
@@ -136,6 +168,15 @@ func (s *Server) montarServicos(database *db.DB) {
 	// de séries degrada (casa o que já está no catálogo, o resto vai para revisão).
 	if s.scanner != nil && s.enrich != nil {
 		s.scanner.ConfigurarSeries(s.enrich, s.idiomasScanner)
+	}
+	// O Manager de jobs (briefing 0052) só precisa de banco -- diferente de
+	// enrich/externalDetail, não depende de provider nem assetsDir (o job
+	// semente backup_vacuum não usa fonte externa). WithJobHandlers pode já
+	// tê-lo construído (para registrar os handlers antes deste ponto); aqui só
+	// cobre o caso de nenhuma option ter sido aplicada (a listagem GET /jobs
+	// ainda precisa funcionar, mesmo sem nenhum Handler registrado).
+	if database != nil && s.jobs == nil {
+		s.jobs = job.NewManager(database)
 	}
 }
 
@@ -325,6 +366,19 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Get("/{id}/override", s.getOverride)
 				ent.Delete("/{id}/override", s.deleteOverride)
 				ent.Delete("/{id}/override/{campo}", s.deleteOverrideCampo)
+			})
+
+			// Sistema de JOBS (briefing 0052): tipos de job registrados em código
+			// (Handler/Registry), configuração dinâmica (habilitado/agendamento) e
+			// histórico genérico no banco, com agendador embutido (goroutine +
+			// ticker, sem cron do SO). Lista/edita a config, dispara execução
+			// manual e lista o histórico paginado — mesmo envelope de erro padrão
+			// do resto da API.
+			v1.Route("/jobs", func(jobs chi.Router) {
+				jobs.Get("/", s.listJobs)
+				jobs.Patch("/{id}", s.patchJob)
+				jobs.Post("/{id}/run", s.runJob)
+				jobs.Get("/{id}/executions", s.listJobExecutions)
 			})
 		})
 	})

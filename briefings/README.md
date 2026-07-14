@@ -129,3 +129,14 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0049](0049-galeria-de-artes-linhas-lightbox-disponibilidade.md) | Galeria de artes: linhas por tipo + lightbox/zoom + selos de disponibilidade | feature | done | 0048 |
 | [0050](0050-auto-match-fila-de-revisao.md) | Auto-match: busca e sincronização automática da fila de revisão | feature | draft | 0009, 0014, 0015, 0018, 0026 |
 | [0051](0051-fundir-duplicata-conflito-external-id.md) | Fundir duplicata por conflito de external_id (import + corrigir) | fix | done | 0015, 0018, 0027 |
+
+### Transversal — Infraestrutura operacional
+
+Não pertence a nenhuma fase de UI do roadmap; é infraestrutura de execução que
+resolve uma dor operacional já existente (backup sem depender de cron do host)
+e serve, explicitamente, de base técnica para o futuro sistema de plugins
+(Fase 5+ — ver [12-roadmap](../docs/12-roadmap.md#fase-5--verticais-e-plugins-visão)).
+
+| ID | Briefing | Tipo | Status | Depende de |
+|---|---|---|---|---|
+| [0052](0052-fundacao-sistema-de-jobs.md) | Fundação do sistema de jobs: registro dinâmico + agendador embutido | feature | done | — |

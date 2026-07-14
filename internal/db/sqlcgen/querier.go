@@ -19,6 +19,7 @@ type Querier interface {
 	// asset e entity_relation.
 	ApagarEntity(ctx context.Context, id string) error
 	ApagarEntityRelation(ctx context.Context, id string) error
+	ApagarJobExecucao(ctx context.Context, id string) error
 	ApagarLibrarySource(ctx context.Context, id string) error
 	// Remove uma linha de cache pelo seu id (ex.: invalidar uma fonte).
 	ApagarMediaExternal(ctx context.Context, id string) error
@@ -60,6 +61,11 @@ type Querier interface {
 	// geradas external_id_tmdb/imdb re-derivam sozinhas do novo JSON. Usado pelo
 	// enrich/import (briefing 0015) -- media_external e cache subordinado a isto.
 	AtualizarExternalIds(ctx context.Context, arg AtualizarExternalIdsParams) error
+	// PATCH .../jobs/{id}: grava enabled/schedule_cron/next_run_at ja MESCLADOS
+	// pelo Go (o patch e parcial na API, mas esta query sempre grava as 3 colunas
+	// -- o chamador computa o valor final antes de chamar, mesmo padrao de
+	// AtualizarLibrarySource).
+	AtualizarJobConfig(ctx context.Context, arg AtualizarJobConfigParams) (JobDefinition, error)
 	// Atualiza o estado da varredura: carimbo do ultimo scan e online/offline.
 	AtualizarLibrarySource(ctx context.Context, arg AtualizarLibrarySourceParams) (LibrarySource, error)
 	// Transicao de ciclo de vida: marca present/missing e carimba last_seen.
@@ -140,6 +146,9 @@ type Querier interface {
 	// temporada passam o numero (temporada dentro da serie, episodio dentro da
 	// temporada) para a ordenacao estavel de ListarRelacoesFilhas.
 	CriarEntityRelation(ctx context.Context, arg CriarEntityRelationParams) (EntityRelation, error)
+	// Cria a linha de execucao em status 'running', no INICIO do disparo
+	// (Manager.Executar, antes de chamar o Handler).
+	CriarJobExecucao(ctx context.Context, arg CriarJobExecucaoParams) (JobExecution, error)
 	// CRUD de library_source (raizes de varredura).
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
 	// state e last_scan ficam de fora do INSERT: uma fonte nova nasce 'online'
@@ -190,6 +199,14 @@ type Querier interface {
 	// media_file 'present' para a entity. Posse NAO e coluna (uma coluna gerada nao
 	// enxerga outra tabela) -- e computada aqui.
 	EntityTemPosse(ctx context.Context, entityID string) (bool, error)
+	// Ao fim de uma execucao (Manager.Executar): espelha o resultado em
+	// job_definition (redundancia de leitura, evita JOIN na listagem) e recalcula
+	// next_run_at (nil quando desabilitado ou sem schedule_cron -- computado em
+	// Go via cron.ParseStandard(...).Next(agora)).
+	FinalizarJobDefinicao(ctx context.Context, arg FinalizarJobDefinicaoParams) (JobDefinition, error)
+	// Fecha a linha de execucao ao fim (sucesso ou erro), com a mensagem curta
+	// devolvida pelo Handler (ou o erro, sem stack trace).
+	FinalizarJobExecucao(ctx context.Context, arg FinalizarJobExecucaoParams) (JobExecution, error)
 	// Os arquivos de UMA entidade num dado papel (detalhe do episodio: mediainfo,
 	// caminho, estado). Filtra por entity_id + kind e faz join com media_file para
 	// trazer a linha do arquivo. Ordena por ordinal e depois pela criacao, estavel.
@@ -249,6 +266,32 @@ type Querier interface {
 	// titulo/poster/ano de cada entity via ObterEntityCard (mesmo card da lista, sem
 	// reinventar resolucao). Ordena por tipo, ordem de bilhagem e id (estavel).
 	ListarFilmografiaDaPessoa(ctx context.Context, personID sql.NullString) ([]ListarFilmografiaDaPessoaRow, error)
+	// Acesso a job_definition/job_execution (briefing 0052): fundacao do sistema
+	// de jobs (registro dinamico + agendador embutido). Comentarios em ASCII e
+	// colunas explicitas -- ver a nota em entity.sql (bug de offset do sqlc v1.31
+	// com acentos/'*' em .sql de query).
+	// Lista todos os jobs conhecidos (sempre tem ao menos o seed backup_vacuum),
+	// ordem estavel por created_at.
+	ListarJobDefinitions(ctx context.Context) ([]JobDefinition, error)
+	// Consulta do agendador (Manager.RunScheduler): jobs habilitados, com
+	// agendamento configurado, cujo proximo horario ja passou. O Go filtra os que
+	// ja estao "running" em memoria antes de disparar (nao ha essa informacao no
+	// banco).
+	ListarJobDefinitionsAgendaveis(ctx context.Context, nextRunAt sql.NullString) ([]JobDefinition, error)
+	// Retencao do historico (briefing 0052): ids do excedente mais antigo alem das
+	// N mais recentes DAQUELE job_id ("manter", constante Go, nao exposta na API).
+	// O parser SQL do sqlc (engine sqlite) acusa "column reference job_id
+	// ambiguous" para um DELETE ... NOT IN (SELECT ... mesma tabela) sem alias --
+	// mesma familia da limitacao documentada em duplicata.sql (self-reference na
+	// tabela alvo). Por isso a poda e DUAS queries simples: esta lista os ids
+	// excedentes (OFFSET "manter", mesmo criterio de ORDER BY do historico), e
+	// ApagarJobExecucao (abaixo) apaga cada um em Go -- mesmo espirito de
+	// duplicata.go (iterar ids em vez de SQL em massa).
+	ListarJobExecucaoIdsExcedentes(ctx context.Context, arg ListarJobExecucaoIdsExcedentesParams) ([]string, error)
+	// Historico paginado de UM job, mais recente primeiro. sqlc.narg('before') e
+	// opcional (NULL = sem cursor, primeira pagina); quando presente, pagina para
+	// tras (started_at estritamente menor que o cursor).
+	ListarJobExecucoes(ctx context.Context, arg ListarJobExecucoesParams) ([]JobExecution, error)
 	ListarLibrarySources(ctx context.Context) ([]LibrarySource, error)
 	// Todas as camadas externas cacheadas de uma entity (uma por fonte buscada).
 	ListarMediaExternalPorEntity(ctx context.Context, entityID string) ([]MediaExternal, error)
@@ -372,6 +415,7 @@ type Querier interface {
 	// Le o cache de UM item externo pela chave logica (source, source_id). fetched_at e
 	// langs_json alimentam a decisao de refresh (TTL + conjunto de idiomas) na app.
 	ObterExternalDetail(ctx context.Context, arg ObterExternalDetailParams) (ExternalDetail, error)
+	ObterJobDefinition(ctx context.Context, id string) (JobDefinition, error)
 	ObterLibrarySource(ctx context.Context, id string) (LibrarySource, error)
 	// Usada pelo handler POST para detectar path duplicado (ja normalizado) antes
 	// do INSERT e responder 409 com mensagem clara em vez de estourar o UNIQUE.

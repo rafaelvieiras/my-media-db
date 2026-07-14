@@ -269,3 +269,94 @@ func TestCRUDLibrarySourceEMeta(t *testing.T) {
 		t.Errorf("ValorMeta(fundacao) = %q, quero 0006", v)
 	}
 }
+
+// TestCRUDJob cobre o schema de jobs (briefing 0052): a definicao seed
+// (backup_vacuum, migration 0011), a consulta de agendaveis, o ciclo de uma
+// execucao e a poda do historico por contagem.
+func TestCRUDJob(t *testing.T) {
+	q := setup(t)
+	ctx := context.Background()
+
+	defs, err := q.ListarJobDefinitions(ctx)
+	check(t, err, "ListarJobDefinitions")
+	if len(defs) != 1 || defs[0].ID != "backup_vacuum" {
+		t.Fatalf("ListarJobDefinitions = %+v, quero 1 linha (backup_vacuum)", defs)
+	}
+	if defs[0].Enabled != 0 || !defs[0].ScheduleCron.Valid || defs[0].ScheduleCron.String != "0 3 * * *" {
+		t.Errorf("seed backup_vacuum = %+v, quero enabled=0 schedule='0 3 * * *'", defs[0])
+	}
+
+	obtido, err := q.ObterJobDefinition(ctx, "backup_vacuum")
+	check(t, err, "ObterJobDefinition")
+	if obtido.ID != "backup_vacuum" {
+		t.Errorf("ObterJobDefinition.ID = %q, quero backup_vacuum", obtido.ID)
+	}
+
+	atualizado, err := q.AtualizarJobConfig(ctx, sqlcgen.AtualizarJobConfigParams{
+		Enabled: 1, ScheduleCron: ns("0 4 * * *"), NextRunAt: ns("2026-07-14T04:00:00Z"), ID: "backup_vacuum",
+	})
+	check(t, err, "AtualizarJobConfig")
+	if atualizado.Enabled != 1 || atualizado.ScheduleCron.String != "0 4 * * *" {
+		t.Errorf("AtualizarJobConfig = %+v, quero enabled=1 schedule='0 4 * * *'", atualizado)
+	}
+
+	agendaveisCedo, err := q.ListarJobDefinitionsAgendaveis(ctx, ns("2026-07-14T03:00:00Z"))
+	check(t, err, "ListarJobDefinitionsAgendaveis (cedo)")
+	if len(agendaveisCedo) != 0 {
+		t.Errorf("agendaveis antes do next_run_at = %d, quero 0", len(agendaveisCedo))
+	}
+	agendaveisNaHora, err := q.ListarJobDefinitionsAgendaveis(ctx, ns("2026-07-14T05:00:00Z"))
+	check(t, err, "ListarJobDefinitionsAgendaveis (na hora)")
+	if len(agendaveisNaHora) != 1 {
+		t.Errorf("agendaveis apos o next_run_at = %d, quero 1", len(agendaveisNaHora))
+	}
+
+	for i, trigger := range []string{"manual", "schedule", "schedule"} {
+		id := "exec-" + string(rune('1'+i))
+		exec, err := q.CriarJobExecucao(ctx, sqlcgen.CriarJobExecucaoParams{ID: id, JobID: "backup_vacuum", Trigger: trigger})
+		check(t, err, "CriarJobExecucao")
+		if exec.Status != "running" {
+			t.Errorf("CriarJobExecucao.Status = %q, quero running", exec.Status)
+		}
+		finalizado, err := q.FinalizarJobExecucao(ctx, sqlcgen.FinalizarJobExecucaoParams{
+			Status: "success", Message: ns("backup gravado (7 mantidos)"), ID: id,
+		})
+		check(t, err, "FinalizarJobExecucao")
+		if finalizado.Status != "success" || !finalizado.FinishedAt.Valid {
+			t.Errorf("FinalizarJobExecucao = %+v, quero status=success com finished_at", finalizado)
+		}
+	}
+
+	defFinal, err := q.FinalizarJobDefinicao(ctx, sqlcgen.FinalizarJobDefinicaoParams{
+		LastRunAt: ns("2026-07-14T04:00:00Z"), LastStatus: ns("success"),
+		LastMessage: ns("backup gravado (7 mantidos)"), NextRunAt: ns("2026-07-15T04:00:00Z"), ID: "backup_vacuum",
+	})
+	check(t, err, "FinalizarJobDefinicao")
+	if defFinal.LastStatus.String != "success" {
+		t.Errorf("FinalizarJobDefinicao.LastStatus = %+v, quero success", defFinal.LastStatus)
+	}
+
+	execs, err := q.ListarJobExecucoes(ctx, sqlcgen.ListarJobExecucoesParams{JobID: "backup_vacuum", Limit: 10})
+	check(t, err, "ListarJobExecucoes")
+	if len(execs) != 3 {
+		t.Fatalf("ListarJobExecucoes = %d, quero 3", len(execs))
+	}
+
+	// Retencao: manter só a mais recente (offset=1), as outras duas são excedente.
+	excedentes, err := q.ListarJobExecucaoIdsExcedentes(ctx, sqlcgen.ListarJobExecucaoIdsExcedentesParams{
+		JobID: "backup_vacuum", Offset: 1,
+	})
+	check(t, err, "ListarJobExecucaoIdsExcedentes")
+	if len(excedentes) != 2 {
+		t.Fatalf("ListarJobExecucaoIdsExcedentes = %d, quero 2", len(excedentes))
+	}
+	for _, id := range excedentes {
+		check(t, q.ApagarJobExecucao(ctx, id), "ApagarJobExecucao")
+	}
+
+	restantes, err := q.ListarJobExecucoes(ctx, sqlcgen.ListarJobExecucoesParams{JobID: "backup_vacuum", Limit: 10})
+	check(t, err, "ListarJobExecucoes (pos-poda)")
+	if len(restantes) != 1 {
+		t.Errorf("ListarJobExecucoes pos-poda = %d, quero 1", len(restantes))
+	}
+}

@@ -1208,6 +1208,109 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
 
+  /api/v1/jobs:
+    get:
+      operationId: listJobs
+      summary: Lista os jobs conhecidos (briefing 0052).
+      description: >
+        Todos os job_definition com o estado atual (habilitado, agendamento,
+        última/próxima execução) + `running` do estado em memória do Manager.
+        Nunca vazio após a fundação (sempre tem o seed `backup_vacuum`).
+      tags: [jobs]
+      responses:
+        "200":
+          description: Lista de jobs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobList" }
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/jobs/{id}:
+    patch:
+      operationId: patchJob
+      summary: Edita a configuração de um job (habilitado/agendamento).
+      description: >
+        Patch PARCIAL: campos ausentes do corpo ficam inalterados.
+        `schedule_cron: null` explícito limpa o agendamento (job vira
+        só-manual). Recalcula `next_run_at`. `enabled` só governa o disparo
+        AUTOMÁTICO — a execução manual (POST .../run) funciona independente
+        deste flag.
+      tags: [jobs]
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PatchJob" }
+      responses:
+        "200":
+          description: Job atualizado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/jobs/{id}/run:
+    post:
+      operationId: runJob
+      summary: Dispara uma execução manual do job.
+      description: >
+        Dispara em background (trigger="manual"), independente de `enabled`.
+        409 se já houver uma execução em andamento para este job; 503 se o job
+        está seedado no banco mas nenhum Handler está registrado no binário
+        (ex.: downgrade).
+      tags: [jobs]
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "202":
+          description: Execução aceita.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunJob" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/jobs/{id}/executions:
+    get:
+      operationId: listJobExecutions
+      summary: Histórico paginado de execuções de um job, mais recente primeiro.
+      tags: [jobs]
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - name: limit
+          in: query
+          description: Tamanho da página (default 20, máximo 100).
+          required: false
+          schema: { type: integer, minimum: 0, default: 20 }
+        - name: before
+          in: query
+          description: >
+            Cursor de paginação (o `started_at` da última execução da página
+            anterior); pagina para trás (mais antigas). Ausente = primeira
+            página.
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Página de execuções.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobExecutionList" }
+        "404":
+          $ref: "#/components/responses/Error"
+
 components:
   parameters:
     EntityId:
@@ -1221,6 +1324,14 @@ components:
       in: path
       required: true
       description: Id do datasource.
+      schema: { type: string }
+    JobId:
+      name: id
+      in: path
+      required: true
+      description: >
+        Id do job (briefing 0052) — slug estável (a chave de Handler.Nome(),
+        ex.: "backup_vacuum"), não um uuid.
       schema: { type: string }
     AssetId:
       name: assetId
@@ -2072,6 +2183,95 @@ components:
       properties:
         job_id: { type: string }
         status: { type: string }
+    Job:
+      type: object
+      description: >
+        Um job conhecido pelo sistema (briefing 0052): config dinâmica
+        (habilitado/agendamento) + o espelho da última execução + `running`
+        (estado em memória, efêmero).
+      required:
+        [
+          id,
+          nome,
+          descricao,
+          enabled,
+          schedule_cron,
+          next_run_at,
+          last_run_at,
+          last_status,
+          last_message,
+          running,
+        ]
+      properties:
+        id:
+          type: string
+          description: Slug estável (ex. "backup_vacuum"), não um uuid.
+        nome: { type: string }
+        descricao: { type: [string, "null"] }
+        enabled:
+          type: boolean
+          description: Só gate do disparo AUTOMÁTICO; execução manual funciona independente.
+        schedule_cron:
+          type: [string, "null"]
+          description: Expressão cron de 5 campos; null = job só-manual (sem agendamento).
+        next_run_at:
+          type: [string, "null"]
+          description: Próxima execução prevista; null quando desabilitado ou sem agendamento.
+        last_run_at: { type: [string, "null"] }
+        last_status:
+          type: [string, "null"]
+          enum: [success, error, null]
+        last_message: { type: [string, "null"] }
+        running:
+          type: boolean
+          description: Estado em memória do Manager — true enquanto uma execução está em andamento.
+    JobList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Job" }
+    PatchJob:
+      type: object
+      description: Patch PARCIAL de PATCH /jobs/{id} — campos ausentes ficam inalterados.
+      properties:
+        enabled: { type: boolean }
+        schedule_cron:
+          type: [string, "null"]
+          description: >
+            Expressão cron de 5 campos; `null` explícito limpa o agendamento
+            (job vira só-manual); ausente = inalterado.
+    RunJob:
+      type: object
+      required: [execution_id]
+      properties:
+        execution_id: { type: string }
+    JobExecution:
+      type: object
+      description: Uma execução no histórico de um job (briefing 0052) — genérico para QUALQUER tipo de job.
+      required: [id, job_id, trigger, status, started_at, finished_at, message]
+      properties:
+        id: { type: string }
+        job_id: { type: string }
+        trigger:
+          type: string
+          enum: [schedule, manual]
+        status:
+          type: string
+          enum: [running, success, error]
+        started_at: { type: string }
+        finished_at: { type: [string, "null"] }
+        message:
+          type: [string, "null"]
+          description: Resultado curto (sucesso) ou erro (falha), sem stack trace.
+    JobExecutionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/JobExecution" }
     ExternalVideo:
       type: object
       required: [name, key, site, type, official, url]

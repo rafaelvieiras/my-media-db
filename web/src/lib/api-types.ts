@@ -720,6 +720,83 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/jobs': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Lista os jobs conhecidos (briefing 0052).
+     * @description Todos os job_definition com o estado atual (habilitado, agendamento, última/próxima execução) + `running` do estado em memória do Manager. Nunca vazio após a fundação (sempre tem o seed `backup_vacuum`).
+     */
+    get: operations['listJobs']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/jobs/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /**
+     * Edita a configuração de um job (habilitado/agendamento).
+     * @description Patch PARCIAL: campos ausentes do corpo ficam inalterados. `schedule_cron: null` explícito limpa o agendamento (job vira só-manual). Recalcula `next_run_at`. `enabled` só governa o disparo AUTOMÁTICO — a execução manual (POST .../run) funciona independente deste flag.
+     */
+    patch: operations['patchJob']
+    trace?: never
+  }
+  '/api/v1/jobs/{id}/run': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Dispara uma execução manual do job.
+     * @description Dispara em background (trigger="manual"), independente de `enabled`. 409 se já houver uma execução em andamento para este job; 503 se o job está seedado no banco mas nenhum Handler está registrado no binário (ex.: downgrade).
+     */
+    post: operations['runJob']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/jobs/{id}/executions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Histórico paginado de execuções de um job, mais recente primeiro. */
+    get: operations['listJobExecutions']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
 }
 export type webhooks = Record<string, never>
 export interface components {
@@ -1205,6 +1282,53 @@ export interface components {
       job_id: string
       status: string
     }
+    /** @description Um job conhecido pelo sistema (briefing 0052): config dinâmica (habilitado/agendamento) + o espelho da última execução + `running` (estado em memória, efêmero). */
+    Job: {
+      /** @description Slug estável (ex. "backup_vacuum"), não um uuid. */
+      id: string
+      nome: string
+      descricao: string | null
+      /** @description Só gate do disparo AUTOMÁTICO; execução manual funciona independente. */
+      enabled: boolean
+      /** @description Expressão cron de 5 campos; null = job só-manual (sem agendamento). */
+      schedule_cron: string | null
+      /** @description Próxima execução prevista; null quando desabilitado ou sem agendamento. */
+      next_run_at: string | null
+      last_run_at: string | null
+      /** @enum {string|null} */
+      last_status: 'success' | 'error' | null
+      last_message: string | null
+      /** @description Estado em memória do Manager — true enquanto uma execução está em andamento. */
+      running: boolean
+    }
+    JobList: {
+      items: components['schemas']['Job'][]
+    }
+    /** @description Patch PARCIAL de PATCH /jobs/{id} — campos ausentes ficam inalterados. */
+    PatchJob: {
+      enabled?: boolean
+      /** @description Expressão cron de 5 campos; `null` explícito limpa o agendamento (job vira só-manual); ausente = inalterado. */
+      schedule_cron?: string | null
+    }
+    RunJob: {
+      execution_id: string
+    }
+    /** @description Uma execução no histórico de um job (briefing 0052) — genérico para QUALQUER tipo de job. */
+    JobExecution: {
+      id: string
+      job_id: string
+      /** @enum {string} */
+      trigger: 'schedule' | 'manual'
+      /** @enum {string} */
+      status: 'running' | 'success' | 'error'
+      started_at: string
+      finished_at: string | null
+      /** @description Resultado curto (sucesso) ou erro (falha), sem stack trace. */
+      message: string | null
+    }
+    JobExecutionList: {
+      items: components['schemas']['JobExecution'][]
+    }
     ExternalVideo: {
       name: string
       key: string
@@ -1397,6 +1521,8 @@ export interface components {
     EntityId: string
     /** @description Id do datasource. */
     SourceId: string
+    /** @description Id do job (briefing 0052) — slug estável (a chave de Handler.Nome(), ex.: "backup_vacuum"), não um uuid. */
+    JobId: string
     /** @description Id do asset (arte). */
     AssetId: string
     /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
@@ -2621,6 +2747,112 @@ export interface operations {
       }
       404: components['responses']['Error']
       409: components['responses']['Error']
+    }
+  }
+  listJobs: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Lista de jobs. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['JobList']
+        }
+      }
+      503: components['responses']['Error']
+    }
+  }
+  patchJob: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id do job (briefing 0052) — slug estável (a chave de Handler.Nome(), ex.: "backup_vacuum"), não um uuid. */
+        id: components['parameters']['JobId']
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PatchJob']
+      }
+    }
+    responses: {
+      /** @description Job atualizado. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Job']
+        }
+      }
+      404: components['responses']['Error']
+      422: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  runJob: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id do job (briefing 0052) — slug estável (a chave de Handler.Nome(), ex.: "backup_vacuum"), não um uuid. */
+        id: components['parameters']['JobId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Execução aceita. */
+      202: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RunJob']
+        }
+      }
+      404: components['responses']['Error']
+      409: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  listJobExecutions: {
+    parameters: {
+      query?: {
+        /** @description Tamanho da página (default 20, máximo 100). */
+        limit?: number
+        /** @description Cursor de paginação (o `started_at` da última execução da página anterior); pagina para trás (mais antigas). Ausente = primeira página. */
+        before?: string
+      }
+      header?: never
+      path: {
+        /** @description Id do job (briefing 0052) — slug estável (a chave de Handler.Nome(), ex.: "backup_vacuum"), não um uuid. */
+        id: components['parameters']['JobId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Página de execuções. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['JobExecutionList']
+        }
+      }
+      404: components['responses']['Error']
     }
   }
 }

@@ -21,6 +21,7 @@ import { ExternalDetailScreen } from '@/routes/external-detail'
 import { CollectionDetailScreen } from '@/routes/collection-detail'
 import { PersonDetailScreen } from '@/routes/person-detail'
 import { SettingsScreen } from '@/routes/settings'
+import { JobsScreen } from '@/routes/jobs'
 import { HealthScreen } from '@/routes/health'
 
 // Contexto do router: carrega o QueryClient compartilhado, de modo que loaders
@@ -137,6 +138,15 @@ const settingsRoute = createRoute({
   component: SettingsScreen,
 })
 
+// Administração dos jobs internos (0052) — agendador embutido + histórico.
+// Agrupada com `/settings` no `AppHeader` ("Administração"), não solta como
+// Revisão/Órfãs.
+const jobsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/jobs',
+  component: JobsScreen,
+})
+
 const healthRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/health',
@@ -157,6 +167,7 @@ const routeTree = rootRoute.addChildren([
   collectionDetailRoute,
   personDetailRoute,
   settingsRoute,
+  jobsRoute,
   healthRoute,
 ])
 
