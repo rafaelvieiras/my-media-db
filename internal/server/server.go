@@ -142,7 +142,7 @@ func WithLibraryHealthJob() Option {
 		if s.jobs == nil {
 			s.jobs = job.NewManager(s.db)
 		}
-		s.jobs.Registry.Registrar(libraryhealth.New(s.library, s.scanner, curation.New(s.db)))
+		s.jobs.Registry.Registrar(libraryhealth.New(s.library, s.scanner, curation.New(s.db), s))
 	}
 }
 

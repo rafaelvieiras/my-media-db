@@ -82,6 +82,40 @@ type contadorFake struct {
 func (c *contadorFake) ContarRevisao(context.Context) (int, error) { return c.revisao, c.err }
 func (c *contadorFake) ContarOrfas(context.Context) (int, error)   { return c.orfas, c.err }
 
+// matcherFake e um Matcher fake (briefing 0054): valores fixos de
+// resolved/pending, ou erro para exercitar o caminho best-effort do job.
+type matcherFake struct {
+	resolved, pending int
+	err               error
+	chamadas          int
+}
+
+func (m *matcherFake) AutoMatchElegiveis(context.Context) (int, int, error) {
+	m.chamadas++
+	return m.resolved, m.pending, m.err
+}
+
+// contadorSequencialFake devolve um valor de ContarRevisao por chamada, na
+// ordem de revisaoValores (a última chamada extra repete o último valor) --
+// usado para provar que o job RECONTA a fila DEPOIS do auto-match (briefing
+// 0054), refletindo a queda de itens (contadorFake, com valor fixo, não
+// consegue distinguir "recontou" de "não recontou").
+type contadorSequencialFake struct {
+	revisaoValores []int
+	orfas          int
+	chamada        int
+}
+
+func (c *contadorSequencialFake) ContarRevisao(context.Context) (int, error) {
+	v := c.revisaoValores[c.chamada]
+	if c.chamada < len(c.revisaoValores)-1 {
+		c.chamada++
+	}
+	return v, nil
+}
+
+func (c *contadorSequencialFake) ContarOrfas(context.Context) (int, error) { return c.orfas, nil }
+
 func acelerarPoll(t *testing.T) {
 	t.Helper()
 	original := pollInterval
@@ -90,7 +124,7 @@ func acelerarPoll(t *testing.T) {
 }
 
 func TestNome(t *testing.T) {
-	h := New(&libraryFake{}, newScanFake(), &contadorFake{})
+	h := New(&libraryFake{}, newScanFake(), &contadorFake{}, &matcherFake{})
 	if h.Nome() != "saude_biblioteca" {
 		t.Fatalf("Nome() = %q, quero saude_biblioteca", h.Nome())
 	}
@@ -99,7 +133,7 @@ func TestNome(t *testing.T) {
 // TestExecutarSemFontes prova que zero library_source cadastradas nao e erro
 // -- so uma mensagem informativa + as contagens atuais.
 func TestExecutarSemFontes(t *testing.T) {
-	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 3, orfas: 2})
+	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 3, orfas: 2}, &matcherFake{})
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -124,7 +158,7 @@ func TestExecutarTodasSucesso(t *testing.T) {
 		{ID: "s2", Path: "/lib/dois"},
 	}}
 	cont := &contadorFake{revisao: 5, orfas: 1}
-	h := New(lib, scn, cont)
+	h := New(lib, scn, cont, &matcherFake{})
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -147,7 +181,7 @@ func TestExecutarFalhaParcial(t *testing.T) {
 		{ID: "s-offline", Path: "/lib/offline"},
 	}}
 	cont := &contadorFake{revisao: 0, orfas: 0}
-	h := New(lib, scn, cont)
+	h := New(lib, scn, cont, &matcherFake{})
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -170,7 +204,7 @@ func TestExecutarErroDeScanNoMeio(t *testing.T) {
 		{ID: "s-ok", Path: "/lib/ok"},
 		{ID: "s-quebra", Path: "/lib/quebra"},
 	}}
-	h := New(lib, scn, &contadorFake{})
+	h := New(lib, scn, &contadorFake{}, &matcherFake{})
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -196,7 +230,7 @@ func TestExecutarTodasFalham(t *testing.T) {
 		{ID: "s1", Path: "/lib/um"},
 		{ID: "s2", Path: "/lib/dois"},
 	}}
-	h := New(lib, scn, &contadorFake{})
+	h := New(lib, scn, &contadorFake{}, &matcherFake{})
 
 	_, err := h.Executar(context.Background(), nil)
 	if err == nil {
@@ -208,7 +242,7 @@ func TestExecutarTodasFalham(t *testing.T) {
 // imediatamente (nada para escanear).
 func TestExecutarErroListarFontes(t *testing.T) {
 	lib := &libraryFake{err: errors.New("banco indisponível")}
-	h := New(lib, newScanFake(), &contadorFake{})
+	h := New(lib, newScanFake(), &contadorFake{}, &matcherFake{})
 
 	if _, err := h.Executar(context.Background(), nil); err == nil {
 		t.Fatal("Executar deveria propagar o erro de listar fontes")
@@ -226,7 +260,7 @@ func TestExecutarAguardaAntesDeContar(t *testing.T) {
 	scn := newScanFake()
 	scn.duracao = 50 * time.Millisecond
 	lib := &libraryFake{sources: []library.Source{{ID: "s1", Path: "/lib/um"}}}
-	h := New(lib, scn, &contadorFake{})
+	h := New(lib, scn, &contadorFake{}, &matcherFake{})
 
 	inicio := time.Now()
 	if _, err := h.Executar(context.Background(), nil); err != nil {
@@ -241,7 +275,7 @@ func TestExecutarAguardaAntesDeContar(t *testing.T) {
 // TestExecutarContagemFalha prova que erro ao contar as filas não vira erro
 // do job (o scan em si funcionou) -- a mensagem reporta o problema.
 func TestExecutarContagemFalha(t *testing.T) {
-	h := New(&libraryFake{}, newScanFake(), &contadorFake{err: fmt.Errorf("banco indisponível")})
+	h := New(&libraryFake{}, newScanFake(), &contadorFake{err: fmt.Errorf("banco indisponível")}, &matcherFake{})
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -249,5 +283,46 @@ func TestExecutarContagemFalha(t *testing.T) {
 	}
 	if msg == "" {
 		t.Fatal("mensagem vazia")
+	}
+}
+
+// TestExecutarAcionaAutoMatchEReflete cobre o critério central do briefing
+// 0054: depois de contar revisão/órfãs, o job aciona o Matcher e a mensagem
+// final reflete "<M> resolvidos automaticamente" -- com a contagem de revisão
+// RECONTADA após o auto-match (3, não os 5 de antes de rodar), provando que o
+// job não usa a contagem obsoleta.
+func TestExecutarAcionaAutoMatchEReflete(t *testing.T) {
+	cont := &contadorSequencialFake{revisaoValores: []int{5, 3}, orfas: 1}
+	matcher := &matcherFake{resolved: 2, pending: 3}
+	h := New(&libraryFake{}, newScanFake(), cont, matcher)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 3 em revisão (2 resolvidos automaticamente), 1 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+	if matcher.chamadas != 1 {
+		t.Errorf("matcher chamado %d vez(es), quero exatamente 1", matcher.chamadas)
+	}
+}
+
+// TestExecutarFalhaDoAutoMatchNaoAbortaJob cobre o critério best-effort: uma
+// falha do Matcher não derruba o job -- o resumo de scan/contagem original
+// (sem "resolvidos automaticamente", já que nada foi resolvido) ainda sai.
+func TestExecutarFalhaDoAutoMatchNaoAbortaJob(t *testing.T) {
+	cont := &contadorFake{revisao: 4, orfas: 2}
+	matcher := &matcherFake{err: errors.New("erro simulado no auto-match")}
+	h := New(&libraryFake{}, newScanFake(), cont, matcher)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar não deveria falhar por causa do auto-match (best-effort): %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
 }

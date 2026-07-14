@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -57,20 +58,32 @@ type Contador interface {
 	ContarOrfas(ctx context.Context) (int, error)
 }
 
+// Matcher e o subconjunto de *server.Server que o Handler consome para rodar
+// o auto-match em lote sobre os itens elegiveis da fila de Revisao (briefing
+// 0054, follow-up do 0050/0053): resolve os de alta confianca sozinho, sem
+// precisar de clique manual. Satisfeita estruturalmente por *server.Server
+// (mesmo padrao de LibraryLister/ScanRunner/Contador) -- este pacote nunca
+// importa internal/server (evita ciclo, ja que server.Handler e construido
+// DE DENTRO do server, ver server.WithLibraryHealthJob).
+type Matcher interface {
+	AutoMatchElegiveis(ctx context.Context) (resolved, pending int, err error)
+}
+
 // Handler e o Handler do job saude_biblioteca.
 type Handler struct {
 	library  LibraryLister
 	scanner  ScanRunner
 	contador Contador
+	matcher  Matcher
 }
 
 // New cria o Handler a partir do servico de datasources, do gerenciador de
-// scan e do contador das filas de curadoria -- injetados pelo chamador
-// (server.WithLibraryHealthJob), mesmo padrao de enrich.Servico/
-// scanner.Manager serem construidos com suas dependencias na hora do
-// registro.
-func New(lib LibraryLister, scn ScanRunner, cont Contador) *Handler {
-	return &Handler{library: lib, scanner: scn, contador: cont}
+// scan, do contador das filas de curadoria e do Matcher de auto-match --
+// injetados pelo chamador (server.WithLibraryHealthJob), mesmo padrao de
+// enrich.Servico/scanner.Manager serem construidos com suas dependencias na
+// hora do registro.
+func New(lib LibraryLister, scn ScanRunner, cont Contador, matcher Matcher) *Handler {
+	return &Handler{library: lib, scanner: scn, contador: cont, matcher: matcher}
 }
 
 // Nome devolve o slug estavel do job.
@@ -106,7 +119,33 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 		return montarMensagemSemContagem(len(sources), escaneadas, falhas, err), nil
 	}
 
-	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas), nil
+	resolvidos := h.rodarAutoMatch(ctx)
+	if resolvidos > 0 {
+		// Recontagem: o auto-match pode ter tirado itens da fila -- reflete o
+		// estado FINAL, nao o de antes de rodar. Erro aqui degrada para a
+		// contagem ja obtida acima (best-effort, nao esconde o resto do resumo).
+		if recontado, err := h.contador.ContarRevisao(ctx); err == nil {
+			revisao = recontado
+		}
+	}
+
+	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas, resolvidos), nil
+}
+
+// rodarAutoMatch chama o Matcher (auto-match em lote sobre os elegiveis da
+// fila de Revisao, briefing 0054) e devolve quantos itens foram resolvidos
+// automaticamente. Best-effort: uma falha aqui NAO aborta o job -- so loga e
+// devolve 0, para o resumo original de scan/contagem ainda sair.
+func (h *Handler) rodarAutoMatch(ctx context.Context) int {
+	if h.matcher == nil {
+		return 0
+	}
+	resolved, _, err := h.matcher.AutoMatchElegiveis(ctx)
+	if err != nil {
+		log.Printf("saude_biblioteca: auto-match em lote falhou (best-effort, ignorado): %v", err)
+		return 0
+	}
+	return resolved
 }
 
 // escanearTodas dispara e aguarda o scan de cada fonte, sequencialmente.
@@ -160,8 +199,14 @@ func (h *Handler) aguardarConclusao(ctx context.Context, sourceID string) error 
 
 // montarMensagem compoe o resumo final de sucesso: quantas fontes
 // escaneadas (com o detalhe das falhas parciais, se houver) + as contagens
-// atuais das filas de curadoria.
-func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas int) string {
+// atuais das filas de curadoria. resolvidos (briefing 0054) e o resultado do
+// auto-match em lote; 0 omite o parenteses para nao poluir a mensagem em
+// operacao normal, quando nao havia nada a resolver.
+func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, resolvidos int) string {
+	if resolvidos > 0 {
+		return fmt.Sprintf("%s; %d em revisão (%d resolvidos automaticamente), %d órfã(s)",
+			resumoScans(total, escaneadas, falhas), revisao, resolvidos, orfas)
+	}
 	return fmt.Sprintf("%s; %d em revisão, %d órfã(s)",
 		resumoScans(total, escaneadas, falhas), revisao, orfas)
 }

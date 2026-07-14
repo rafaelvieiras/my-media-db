@@ -11,9 +11,9 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/matching"
 	"github.com/rafaelvieiras/my-media-db/internal/naming"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
-	"github.com/rafaelvieiras/my-media-db/internal/textsim"
 )
 
 // Este arquivo implementa o AUTO-MATCH da fila de revisão (briefing 0050): dado
@@ -24,12 +24,11 @@ import (
 // em nenhuma fonte, o item fica intacto na fila. Individual e lote reusam a
 // MESMA lógica interna (tentarAutoMatch); nunca HTTP-to-HTTP.
 
-// LimiarAutoMatch é o corte de score (escala 0-100, igual à de match_confidence)
-// acima do qual o auto-match aplica o candidato SOZINHO. Deliberadamente bem
-// acima de limiarBaixaConfianca (70, review.go): o custo de um falso-positivo
-// (contamina o catálogo em silêncio) é muito maior que o de um falso-negativo
-// (item que já estava visível na fila continua lá).
-const LimiarAutoMatch = 92.0
+// LimiarAutoMatch é alias de matching.LimiarAutoMatch (briefing 0054 extraiu a
+// pontuação para o pacote leaf internal/matching, consumido também por
+// internal/enrich). Mantido aqui para não quebrar chamadores/testes deste
+// pacote que já referenciam o símbolo local.
+const LimiarAutoMatch = matching.LimiarAutoMatch
 
 // autoMatchTargetDTO identifica o candidato aplicado (local ou externo) na
 // resposta do auto-match. Year é nil quando a fonte não informa ano.
@@ -116,17 +115,40 @@ func (s *Server) autoMatchReview(w http.ResponseWriter, r *http.Request) {
 
 	ids := body.IDs
 	if len(ids) == 0 {
-		rows, err := s.leitura().ListarRevisao(ctx, sql.NullFloat64{Float64: limiarBaixaConfianca, Valid: true})
+		listados, err := s.idsElegiveisAutoMatch(ctx)
 		if err != nil {
 			respondErroInterno(w)
 			return
 		}
-		ids = make([]string, 0, len(rows))
-		for _, row := range rows {
-			ids = append(ids, row.ID)
-		}
+		ids = listados
 	}
 
+	writeJSON(w, http.StatusOK, s.autoMatchLote(ctx, ids))
+}
+
+// idsElegiveisAutoMatch lista os ids da fila de Revisão elegíveis ao
+// auto-match em lote (mesma query de GET /review, limiarBaixaConfianca) --
+// reusado por autoMatchReview (corpo vazio) e por AutoMatchElegiveis (job de
+// saúde, briefing 0054), para não duplicar a query em dois lugares.
+func (s *Server) idsElegiveisAutoMatch(ctx context.Context) ([]string, error) {
+	rows, err := s.leitura().ListarRevisao(ctx, sql.NullFloat64{Float64: limiarBaixaConfianca, Valid: true})
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+	return ids, nil
+}
+
+// autoMatchLote roda tentarAutoMatch para cada id de `ids`, agregando o
+// resultado -- MESMA lógica usada por autoMatchReview (HTTP) e por
+// AutoMatchElegiveis (job de saúde, briefing 0054). Um id que sumiu entre a
+// listagem e o processamento (purga concorrente) é pulado, não derruba o
+// lote; erro real de banco NESTE item vira "pendente" no resultado, sem
+// abortar os demais.
+func (s *Server) autoMatchLote(ctx context.Context, ids []string) autoMatchBatchResultDTO {
 	items := make([]autoMatchBatchItemDTO, 0, len(ids))
 	resolvedCount := 0
 	for _, id := range ids {
@@ -149,11 +171,26 @@ func (s *Server) autoMatchReview(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, autoMatchBatchResultDTO{
+	return autoMatchBatchResultDTO{
 		ResolvedCount: resolvedCount,
 		PendingCount:  len(items) - resolvedCount,
 		Items:         items,
-	})
+	}
+}
+
+// AutoMatchElegiveis roda o auto-match em lote sobre TODOS os itens
+// elegíveis da fila de Revisão (mesma query de POST /review/auto-match sem
+// corpo) -- consumido pelo job saude_biblioteca (briefing 0053/0054) através
+// da interface libraryhealth.Matcher, que *Server satisfaz estruturalmente
+// (sem libraryhealth importar internal/server). err é só erro real de banco
+// na LISTAGEM; falha em um item individual já é absorvida por autoMatchLote.
+func (s *Server) AutoMatchElegiveis(ctx context.Context) (resolved, pending int, err error) {
+	ids, err := s.idsElegiveisAutoMatch(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	resultado := s.autoMatchLote(ctx, ids)
+	return resultado.ResolvedCount, resultado.PendingCount, nil
 }
 
 // ── Orquestração compartilhada ───────────────────────────────────────────────
@@ -283,7 +320,7 @@ func (s *Server) melhorCandidatoLocal(ctx context.Context, candidatos []entityCa
 			continue
 		}
 		anoCand := s.anoDaEntity(ctx, c.ID)
-		pontos, descartado := pontuarCandidato(titulo, ano, c.Title, anoCand)
+		pontos, descartado := matching.Pontuar(titulo, ano, c.Title, anoCand)
 		if descartado || pontos < LimiarAutoMatch {
 			continue
 		}
@@ -308,7 +345,7 @@ func melhorCandidatoExterno(candidatos []provider.ResultadoExterno, titulo strin
 	achou := false
 	for _, c := range candidatos {
 		anoCand := anoDeStringPtr(c.Year)
-		pontos, descartado := pontuarCandidato(titulo, ano, c.Title, anoCand)
+		pontos, descartado := matching.Pontuar(titulo, ano, c.Title, anoCand)
 		if descartado || pontos < LimiarAutoMatch {
 			continue
 		}
@@ -317,33 +354,6 @@ func melhorCandidatoExterno(candidatos []provider.ResultadoExterno, titulo strin
 		}
 	}
 	return melhor, melhorScore, achou
-}
-
-// pontuarCandidato calcula o score final [0,100] do briefing 0050 §4:
-// similaridade Jaro-Winkler do título (textsim) em escala 0-100, ajustada pelo
-// ano. descartado=true quando os DOIS anos existem e divergem em MAIS de 1 ano
-// (remake/refilmagem não deve colar, mesmo com título idêntico) — o candidato
-// nunca entra no ranking nesse caso. Anos iguais somam +5 (cap em 100);
-// diferença de exatamente 1 ano não ajusta (tolerância a erro comum de
-// catalogação); qualquer ano ausente também não ajusta (nada para comparar).
-func pontuarCandidato(tituloConsulta string, anoConsulta int, tituloCandidato string, anoCandidato int) (score float64, descartado bool) {
-	score = textsim.Similaridade(tituloConsulta, tituloCandidato) * 100
-	if anoConsulta > 0 && anoCandidato > 0 {
-		diff := anoConsulta - anoCandidato
-		if diff < 0 {
-			diff = -diff
-		}
-		switch {
-		case diff > 1:
-			return 0, true
-		case diff == 0:
-			score += 5
-			if score > 100 {
-				score = 100
-			}
-		}
-	}
-	return score, false
 }
 
 // anoDaEntity lê o release_date da entity (coluna núcleo, não o override

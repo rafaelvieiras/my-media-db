@@ -12,48 +12,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Testes do AUTO-MATCH (briefing 0050): pontuação pura (sem banco), e os dois
-// endpoints (individual e lote) via httptest, cobrindo os critérios §5.
-
-// ── pontuarCandidato (pura, sem banco) ───────────────────────────────────────
-
-func TestPontuarCandidato_AnosIguaisSomamBonus(t *testing.T) {
-	score, descartado := pontuarCandidato("The Matrix", 1999, "The Matrix", 1999)
-	if descartado {
-		t.Fatal("não deveria descartar (anos iguais)")
-	}
-	if score != 100 { // 100 (identico) + 5, com cap em 100
-		t.Errorf("score = %v, quero 100 (cap)", score)
-	}
-}
-
-func TestPontuarCandidato_DiferencaDeUmAnoNaoAjusta(t *testing.T) {
-	comAno, descartado := pontuarCandidato("The Matrix", 1999, "The Matrix", 2000)
-	if descartado {
-		t.Fatal("diferença de 1 ano não deveria descartar")
-	}
-	semAno, _ := pontuarCandidato("The Matrix", 0, "The Matrix", 0)
-	if comAno != semAno {
-		t.Errorf("diferença de 1 ano não deveria ajustar o score: comAno=%v semAno=%v", comAno, semAno)
-	}
-}
-
-func TestPontuarCandidato_DiferencaDeMaisDeUmAnoDescarta(t *testing.T) {
-	_, descartado := pontuarCandidato("The Matrix", 1999, "The Matrix", 2001)
-	if !descartado {
-		t.Error("diferença de 2 anos deveria descartar o candidato, mesmo com título idêntico")
-	}
-}
-
-func TestPontuarCandidato_AnoAusenteNaoAjustaNemDescarta(t *testing.T) {
-	score, descartado := pontuarCandidato("The Matrix", 1999, "The Matrix", 0)
-	if descartado {
-		t.Error("ano ausente no candidato não deveria descartar")
-	}
-	if score != 100 {
-		t.Errorf("score = %v, quero 100 (título idêntico, sem bônus/penalidade de ano)", score)
-	}
-}
+// Testes do AUTO-MATCH (briefing 0050): os dois endpoints (individual e
+// lote) via httptest, cobrindo os critérios §5. Os testes de pontuação pura
+// (antiga pontuarCandidato) migraram para internal/matching/matching_test.go
+// quando a função foi extraída para lá (briefing 0054).
 
 // ── setup ─────────────────────────────────────────────────────────────────
 
@@ -316,6 +278,33 @@ func TestAutoMatchLoteSubconjuntoIds(t *testing.T) {
 	// e-draft-fora não foi processada (fora do subconjunto) -- continua na fila.
 	if !idsDe(decodeCards(t, do(t, h, http.MethodGet, "/api/v1/review", nil)))["e-draft-fora"] {
 		t.Error("e-draft-fora deveria continuar na fila (fora do subconjunto ids)")
+	}
+}
+
+// TestAutoMatchElegiveis cobre o método usado pelo job de saúde (briefing
+// 0054): sem `ids` explícito, resolve todos os elegíveis de ListarRevisao e
+// devolve (resolved, pending) -- mesma contagem que POST /review/auto-match
+// devolveria no corpo.
+func TestAutoMatchElegiveis(t *testing.T) {
+	_, d := setupEntitiesServer(t)
+	semearEntityComAno(t, d, "e-target", "movie", "The Matrix", "1999-03-31")
+	semearEntity(t, d, "e-draft-ok", "movie", "Draft OK")
+	definirStatus(t, d, "e-draft-ok", "draft")
+	semearFile(t, d, "f-ok", "e-draft-ok", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 0, "")
+	semearEntity(t, d, "e-draft-pendente", "movie", "Draft Pendente")
+	definirStatus(t, d, "e-draft-pendente", "draft")
+	semearFile(t, d, "f-pendente", "e-draft-pendente", "/lib/Totally Unrelated Thing (2015)/x.mkv", "present", 0, "")
+
+	s := New("v-teste", d)
+	resolved, pending, err := s.AutoMatchElegiveis(context.Background())
+	if err != nil {
+		t.Fatalf("AutoMatchElegiveis: %v", err)
+	}
+	if resolved != 1 {
+		t.Errorf("resolved = %d, quero 1", resolved)
+	}
+	if pending != 1 {
+		t.Errorf("pending = %d, quero 1", pending)
 	}
 }
 

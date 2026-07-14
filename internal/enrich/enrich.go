@@ -160,6 +160,18 @@ func (s *Servico) importarItemBase(ctx context.Context, source, sourceID, tipo s
 	}
 	titulo := s.tituloInicial(source, raw, sourceID, langs)
 
+	// Casamento por nome contra drafts locais (briefing 0054): antes de criar
+	// uma entity nova, tenta achar um draft PURO (sem NENHUM external_id) do
+	// mesmo type e mesmo título/ano. Alta confiança -> enriquece ESSE draft em
+	// vez de criar uma segunda entity (a órfã "draft com arquivo, sem
+	// metadados" + "importada com metadados, sem arquivo" que motivou este
+	// briefing). Sem candidato: segue o fluxo de criação normal, inalterado.
+	if idDraft, achou, err := s.tentarCasarComDraftLocal(ctx, titulo, s.anoDoPayload(source, raw), tipo); err != nil {
+		return "", false, err
+	} else if achou {
+		return idDraft, false, s.Enriquecer(ctx, idDraft, source, sourceID, tipo, langs)
+	}
+
 	extIDs, err := json.Marshal(map[string]string{source: sourceID})
 	if err != nil {
 		return "", false, err
