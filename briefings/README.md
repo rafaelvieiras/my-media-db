@@ -102,9 +102,9 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0022](0022-detalhe-externo-rico-persistente.md) | Detalhe externo rico + cache persistente (provider) | feature | done | 0014, 0015, 0020 |
 | [0023](0023-tela-detalhe-externo-ui.md) | Tela rica de detalhe do item externo (UI) | feature | done | 0022, 0021 |
 | [0024](0024-paridade-detalhe-entity-rico.md) | Paridade rica entity↔externo: `ResolvedEntity` rico + `RichDetailView` compartilhada | feature | done | 0022, 0023 |
-| [0025](0025-colecao-entity-interna.md) | Coleção como entity interna: importável + criável/editável manual | feature | in-progress | 0024 |
-| [0026](0026-centralizacao-interno-first.md) | Centralização interno-first: priorizar o que já está na biblioteca | feature/fix | in-progress | 0024, 0025 |
-| [0027](0027-similar-search-ids-item-manual.md) | Interno-first em similares/busca + editar `external_ids` + item manual | feature | in-progress | 0025, 0026 |
+| [0025](0025-colecao-entity-interna.md) | Coleção como entity interna: importável + criável/editável manual | feature | done | 0024 |
+| [0026](0026-centralizacao-interno-first.md) | Centralização interno-first: priorizar o que já está na biblioteca | feature/fix | done | 0024, 0025 |
+| [0027](0027-similar-search-ids-item-manual.md) | Interno-first em similares/busca + editar `external_ids` + item manual | feature | done | 0025, 0026 |
 | [0028](0028-testes-e2e.md) | Testes end-to-end: validar o fluxo inteiro (UI + API) | infra/qualidade | in-progress | 0015, 0025, 0026, 0027 |
 | [0029](0029-md6-elenco-equipe-person-credit-company.md) | MD6: elenco, equipe e produtoras (`person`/`credit`/`company`) | feature | in-progress (A+B+D done) | 0012, 0013, 0022, 0023, 0024 |
 | [0030](0030-crud-por-rota-formulario-dirigido-por-schema.md) | CRUD por rota + formulário dirigido por schema (TanStack Form + Zod) | refactor/feature | done | 0016, 0025, 0027 |

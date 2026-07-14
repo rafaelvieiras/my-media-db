@@ -14,7 +14,7 @@
 | **Tipo** | feature/fix |
 | **Fase (roadmap)** | Fase 3 — extensão pós-revisão |
 | **Docs relacionadas** | [05-api](../docs/05-api.md), [04-resolver](../docs/04-resolver.md) |
-| **Status** | backend feito; frontend em implementação |
+| **Status** | done |
 | **Depende de** | [0024](0024-paridade-detalhe-entity-rico.md), [0025](0025-colecao-entity-interna.md) |
 
 ---

@@ -13,7 +13,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — extensão pós-revisão |
 | **Docs relacionadas** | [05-api](../docs/05-api.md), [03-modelo-dados](../docs/03-modelo-dados.md) |
-| **Status** | backend feito; frontend em implementação |
+| **Status** | done |
 | **Depende de** | [0025](0025-colecao-entity-interna.md), [0026](0026-centralizacao-interno-first.md) |
 
 ---
@@ -50,12 +50,14 @@ em `internal/server/items.go`; o helper `nsOpcional` (campo opcional → NULL qu
 vazio) é compartilhado com o `createCollection` (0025). Sem migração/sqlc novo (reusa
 `CriarEntity`).
 
-## Frontend (fica com os forks de UI)
+## Frontend — feito
 
-- Similares (`SimilaresRail`) e resultados de busca externa interno-aware (reusa o
-  padrão do `ExternalResultCard.internalId` do 0026 + selo "na biblioteca").
-- Editor de external_ids na página da entity (linhas source→id, salvar via PUT).
-- "Novo item" (form type+título) na home, análogo ao "Nova coleção".
+- Similares (`SimilaresRail`) e resultados de busca externa (`search-panel.tsx`)
+  interno-aware (reusa o padrão do `ExternalResultCard.internalId` do 0026 + selo
+  "na biblioteca").
+- Editor de external_ids na página da entity (`external-ids-editor.tsx`, linhas
+  source→id, salvar via PUT).
+- "Novo item" (`item-new.tsx`, form type+título) na home, análogo ao "Nova coleção".
 
 ## Decisões / follow-ups
 

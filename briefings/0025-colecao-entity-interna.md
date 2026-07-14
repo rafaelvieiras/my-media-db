@@ -12,7 +12,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — extensão pós-revisão |
 | **Docs relacionadas** | [03-modelo-dados](../docs/03-modelo-dados.md), [04-resolver](../docs/04-resolver.md), [05-api](../docs/05-api.md) |
-| **Status** | fase A feita (importável); fase B backend feito (criar + membros); front pendente |
+| **Status** | done |
 | **Depende de** | [0024](0024-paridade-detalhe-entity-rico.md) |
 
 ---
@@ -82,10 +82,12 @@ escritas diretas pelo pool de escrita (não passam pelo enrich — não há font
   `montarMembros` (montagem+ordenação num só lugar). Override de nome + arte já
   funcionam (é entity) — edição "de graça".
 
-**Frontend — pendente**
-- Criar coleção manual (form simples) → `createCollection` → navega ao detalhe.
-- Adicionar/remover itens: um PICKER da biblioteca (busca local) na página da coleção,
-  consumindo os endpoints de membros acima (ambos devolvem a lista já atualizada).
+**Frontend — feito**
+- Criar coleção manual (form simples) → `createCollection` → navega ao detalhe
+  (`collection-new.tsx`).
+- Adicionar/remover itens: PICKER da biblioteca (busca local) na página da coleção
+  (`collection-member-picker.tsx`, `collection-members.tsx`), consumindo os endpoints
+  de membros acima (ambos devolvem a lista já atualizada).
 - Membros misturam origem externa (importados) e local — indistintos no grid (são todos
   entities).
 
