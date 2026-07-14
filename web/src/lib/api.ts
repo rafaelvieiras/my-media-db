@@ -822,6 +822,44 @@ export async function purgeBatch(ids: string[]): Promise<PurgeBatchResult> {
   return lerJson<PurgeBatchResult>(res)
 }
 
+// ── Auto-match: busca e sincronização automática da fila (0050) ─────────────
+
+// Resultado do auto-match INDIVIDUAL: sempre `200`, mesmo sem candidato — "não
+// achou" é um resultado válido (`resolved: false, method: 'none'`), não erro.
+// `target` é o candidato aplicado (local ou externo); `null` quando não resolveu.
+export type AutoMatchResult = components['schemas']['AutoMatchResult']
+
+// Resultado do auto-match em LOTE: o resumo agregado (quantos resolvidos vs.
+// pendentes) + o detalhe por item (sem `target`, só o necessário para a UI).
+export type AutoMatchBatchResult = components['schemas']['AutoMatchBatchResult']
+
+// AUTO-MATCH individual (0050): tenta resolver sozinho o item da fila —
+// local-first, depois provedor externo — aplicando só quando a pontuação bate
+// o limiar conservador do backend (`LimiarAutoMatch`). Nunca lança por "não
+// achou candidato": isso é `{resolved: false, method: 'none'}`, resultado
+// válido em `200`, não erro de rede/servidor.
+export async function autoMatchEntity(id: string): Promise<AutoMatchResult> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/auto-match`,
+    { method: 'POST' },
+  )
+  return lerJson<AutoMatchResult>(res)
+}
+
+// AUTO-MATCH em lote (0050): processa os `ids` informados ou, se omitido/vazio,
+// TODOS os elegíveis da fila de revisão (mesmo predicado do `getReviewQueue`).
+// Devolve o resumo agregado + o detalhe por item.
+export async function autoMatchBatch(
+  ids?: string[],
+): Promise<AutoMatchBatchResult> {
+  const res = await fetch(`${base}/api/v1/review/auto-match`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(ids && ids.length > 0 ? { ids } : {}),
+  })
+  return lerJson<AutoMatchBatchResult>(res)
+}
+
 // ── Jobs (0052, fundação do sistema de jobs) ─────────────────────────────────
 //
 // Tipos gerados de `api-types.ts` (schema `Job`, não `JobDefinition` — nome do

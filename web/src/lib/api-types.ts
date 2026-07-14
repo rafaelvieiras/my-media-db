@@ -586,6 +586,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/review/auto-match': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Auto-match em LOTE da fila de revisão (briefing 0050).
+     * @description Tenta resolver sozinho todos os itens elegíveis da fila (ou o subconjunto de `ids` informado no corpo, quando presente): para cada um, deriva título/ano do arquivo, busca local-first + fonte externa default, pontua os candidatos (Jaro-Winkler + ajuste de ano) e aplica o melhor quando o score bate `LimiarAutoMatch` (92) — liga a uma entity local existente (nunca duplica) ou aplica a identidade externa (mesma sequência do "Corrigir"). Sem `ids` ou com `ids` vazio, processa TODOS os elegíveis (mesma fonte de GET /review). Sempre 200 com o resumo agregado; um id inexistente no corpo é ignorado (idempotente), não derruba o lote.
+     */
+    post: operations['autoMatchReview']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/orphans': {
     parameters: {
       query?: never
@@ -640,6 +660,26 @@ export interface paths {
      * @description O dono informa o id correto da fonte: grava external_ids[source]=source_id (identidade vence, MD4) e RE-ENRIQUECE pelo serviço do 0015 (multi-idioma de graça), depois sobe a confiança para 100. Não toca override/arte (o enrich é não-destrutivo). Responde a entity RESOLVIDA. source default "tmdb"; source_id obrigatório (422). 404 inexistente; 502 se a fonte falhar; 503 se o enrich está desligado.
      */
     post: operations['correctEntity']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/auto-match': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Auto-match individual de um item da fila (briefing 0050).
+     * @description Tenta resolver SOZINHO um item de baixa confiança/draft: deriva título/ano do arquivo (mesmo parser do scan), busca local-first (catálogo já existente) e, sem candidato local forte, busca na fonte externa default. Pontua os candidatos (Jaro-Winkler do título + ajuste de ano — score final 0-100) e aplica automaticamente o melhor quando bate `LimiarAutoMatch` (92, deliberadamente acima do `LIMIAR_BAIXA_CONFIANCA`=70 do 0018): candidato LOCAL liga a entity via fusão (nunca duplica, 0026); candidato EXTERNO aplica pela MESMA sequência do "Corrigir" (grava external_ids + re-enriquece + sobe a confiança). Candidato com ano divergindo em mais de 1 ano é DESCARTADO, mesmo com título idêntico. Sem candidato forte em nenhuma fonte, o item fica intacto na fila. SEMPRE 200 (nunca 5xx só por "não achou candidato" — é um resultado válido). 404 se a entity não existe.
+     */
+    post: operations['autoMatchEntity']
     delete?: never
     options?: never
     head?: never
@@ -1068,6 +1108,48 @@ export interface components {
     PurgeBatchResult: {
       /** @description Quantas entities foram de fato removidas (idempotente por ausente). */
       removed: number
+    }
+    /** @description O candidato aplicado pelo auto-match (briefing 0050) — local ou externo. `id` é o id da entity RESULTANTE: no método `local`, o id da entity SOBREVIVENTE já catalogada (a entity da fila foi fundida nela e deixou de existir); no método `external`, o próprio id da entity da fila (a identidade foi aplicada nela, sem trocar de id). */
+    AutoMatchTarget: {
+      id: string
+      title: string
+      /** @description Ano do candidato aplicado; null quando a fonte não informa. */
+      year: number | null
+    }
+    /** @description Resposta de POST /entities/{id}/auto-match. `target` é null quando `resolved` é false (nenhum candidato bateu `LimiarAutoMatch`). */
+    AutoMatchResult: {
+      /** @description true quando um candidato foi aplicado automaticamente. */
+      resolved: boolean
+      /**
+       * @description Como foi resolvido — `local` (fundido a entity já catalogada), `external` (identidade aplicada via fonte externa) ou `none` (nenhum candidato bateu o limiar; item continua na fila).
+       * @enum {string}
+       */
+      method: 'local' | 'external' | 'none'
+      /** @description Score do melhor candidato (0-100); 0 quando method=none. */
+      score: number
+      /** @description O candidato aplicado; null quando method=none. */
+      target: components['schemas']['AutoMatchTarget'] | null
+    }
+    /** @description Corpo OPCIONAL de POST /review/auto-match — os ids a processar. Omitido ou `ids` vazio/ausente processa TODOS os elegíveis da fila de revisão (ListarRevisao, mesma fonte de GET /review). */
+    AutoMatchBatchRequest: {
+      /** @description Ids das entities a processar; vazio/ausente = todos os elegíveis. */
+      ids?: string[]
+    }
+    /** @description Resultado do auto-match de UM item do lote. */
+    AutoMatchBatchItem: {
+      id: string
+      resolved: boolean
+      /** @enum {string} */
+      method: 'local' | 'external' | 'none'
+      score: number
+    }
+    /** @description Resposta de POST /review/auto-match — o resumo agregado do lote. */
+    AutoMatchBatchResult: {
+      /** @description Quantos itens foram resolvidos automaticamente. */
+      resolved_count: number
+      /** @description Quantos itens continuam na fila (nenhum candidato bateu o limiar). */
+      pending_count: number
+      items: components['schemas']['AutoMatchBatchItem'][]
     }
     /** @description Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a Fase 3 preenche os mesmos campos com override/externo sem mudar o shape. Os campos RICOS (tagline, keywords, runtime, certification, vote_average, backdrop_url, videos, collection, similar, external_links) dão PARIDADE com o detalhe do externo (0022/0023): vêm da camada externa já enriquecida e usam o MESMO shape (componentes ExternalVideo/Collection/Similar). Os gêneros NÃO têm campo próprio — são as `tags` (que já os carregam). */
     ResolvedEntity: {
@@ -2507,6 +2589,30 @@ export interface operations {
       }
     }
   }
+  autoMatchReview: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['AutoMatchBatchRequest']
+      }
+    }
+    responses: {
+      /** @description Resumo agregado do lote. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AutoMatchBatchResult']
+        }
+      }
+    }
+  }
   listOrphans: {
     parameters: {
       query?: never
@@ -2580,6 +2686,30 @@ export interface operations {
       422: components['responses']['Error']
       502: components['responses']['Error']
       503: components['responses']['Error']
+    }
+  }
+  autoMatchEntity: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Resultado do auto-match (resolvido ou não). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AutoMatchResult']
+        }
+      }
+      404: components['responses']['Error']
     }
   }
   purgeEntities: {

@@ -6,7 +6,15 @@ import {
   type QueryClient,
 } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Check, ImageOff, LoaderCircle, PencilLine, Search } from 'lucide-react'
+import {
+  Check,
+  ImageOff,
+  LoaderCircle,
+  PencilLine,
+  Search,
+  Sparkles,
+  Wand2,
+} from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,9 +22,12 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
 import { reviewQueueQueryOptions, searchQueryOptions } from '@/lib/queries'
 import {
   ApiError,
+  autoMatchBatch,
+  autoMatchEntity,
   confirmMatch,
   correctMatch,
   posterSrc,
+  type AutoMatchBatchResult,
   type EntityCard,
   type ExternalResult,
 } from '@/lib/api'
@@ -30,16 +41,56 @@ const DEBOUNCE_MS = 350
 // Fase 2 não tinha: confirmar o palpite, corrigir a identidade (re-enriquece) ou
 // abrir o detalhe. Nada aqui é destrutivo; corrigir/confirmar apenas re-resolvem.
 export function ReviewScreen() {
+  const qc = useQueryClient()
   const { data, isPending, isError, error } = useQuery(reviewQueueQueryOptions)
+  const [resumoLote, setResumoLote] = useState<string | null>(null)
+
+  const autoMatchLote = useMutation({
+    mutationFn: () => autoMatchBatch(),
+    onSuccess: (resultado: AutoMatchBatchResult) => {
+      qc.invalidateQueries({ queryKey: ['review'] })
+      qc.invalidateQueries({ queryKey: ['entities'] })
+      setResumoLote(
+        `${resultado.resolved_count} resolvidos automaticamente, ${resultado.pending_count} continuam para revisão manual.`,
+      )
+    },
+  })
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-6">
-      <div className="mb-4 flex flex-col gap-1">
-        <h1 className="font-heading text-xl font-semibold">Revisão</h1>
-        <p className="text-sm text-muted-foreground">
-          Itens casados com baixa confiança e não identificados. Confirme o
-          palpite ou corrija a identidade.
-        </p>
+      <div className="mb-4 flex flex-col gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <h1 className="font-heading text-xl font-semibold">Revisão</h1>
+            <p className="text-sm text-muted-foreground">
+              Itens casados com baixa confiança e não identificados. Confirme o
+              palpite ou corrija a identidade.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={autoMatchLote.isPending || !data || data.length === 0}
+            onClick={() => {
+              setResumoLote(null)
+              autoMatchLote.mutate()
+            }}
+          >
+            {autoMatchLote.isPending ? (
+              <LoaderCircle className="animate-spin" aria-hidden />
+            ) : (
+              <Wand2 aria-hidden />
+            )}
+            {autoMatchLote.isPending
+              ? 'Sincronizando…'
+              : 'Auto-sincronizar elegíveis'}
+          </Button>
+        </div>
+        {resumoLote ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            {resumoLote}
+          </p>
+        ) : null}
       </div>
 
       {isPending ? (
@@ -83,6 +134,13 @@ function invalidarRevisao(qc: QueryClient, id: string) {
   qc.invalidateQueries({ queryKey: ['entity', id] })
 }
 
+// Rótulo pt-BR da fonte do candidato aplicado pelo auto-match (0050): "local"
+// veio do catálogo já importado (fundiu via `fundirEntities`), "external" veio
+// do provedor remoto (mesmo caminho do "Corrigir").
+function rotuloMetodo(method: 'local' | 'external' | 'none'): string {
+  return method === 'local' ? 'catálogo local' : 'provedor externo'
+}
+
 function ReviewCard({ card }: { card: EntityCard }) {
   const qc = useQueryClient()
   const [falhouArte, setFalhouArte] = useState(false)
@@ -90,6 +148,9 @@ function ReviewCard({ card }: { card: EntityCard }) {
   // Avisa quando "Corrigir" fundiu uma duplicata automaticamente (0051): a
   // entity sem investimento do dono some sozinha da fila/biblioteca.
   const [avisoFusao, setAvisoFusao] = useState(false)
+  // Mensagem do auto-match individual (0050): sucesso (resolveu, some da fila
+  // na invalidação) ou neutro (não achou candidato confiável, item continua).
+  const [avisoAuto, setAvisoAuto] = useState<string | null>(null)
   const src = posterSrc(card.poster_url)
   const mostrarPlaceholder = src === null || falhouArte
 
@@ -98,8 +159,28 @@ function ReviewCard({ card }: { card: EntityCard }) {
     onSuccess: () => invalidarRevisao(qc, card.id),
   })
 
+  const autoSincronizar = useMutation({
+    mutationFn: () => autoMatchEntity(card.id),
+    onSuccess: (resultado) => {
+      if (resultado.resolved) {
+        setAvisoAuto(
+          `Resolvido automaticamente via ${rotuloMetodo(resultado.method)} (score ${resultado.score}).`,
+        )
+        invalidarRevisao(qc, card.id)
+      } else {
+        setAvisoAuto(
+          'Nenhum candidato confiável encontrado — revise manualmente.',
+        )
+      }
+    },
+  })
+
   const mensagemErro =
-    confirmar.error instanceof ApiError ? confirmar.error.message : null
+    confirmar.error instanceof ApiError
+      ? confirmar.error.message
+      : autoSincronizar.error instanceof ApiError
+        ? autoSincronizar.error.message
+        : null
 
   return (
     <li className="flex flex-col gap-3 rounded-xl bg-card p-3 ring-1 ring-foreground/10">
@@ -162,6 +243,24 @@ function ReviewCard({ card }: { card: EntityCard }) {
               <PencilLine aria-hidden />
               Corrigir
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={autoSincronizar.isPending}
+              onClick={() => {
+                setAvisoAuto(null)
+                autoSincronizar.mutate()
+              }}
+            >
+              {autoSincronizar.isPending ? (
+                <LoaderCircle className="animate-spin" aria-hidden />
+              ) : (
+                <Sparkles aria-hidden />
+              )}
+              {autoSincronizar.isPending
+                ? 'Sincronizando…'
+                : 'Auto-sincronizar'}
+            </Button>
             <Button asChild size="sm" variant="ghost">
               <Link to="/entities/$id" params={{ id: card.id }}>
                 Ver detalhe
@@ -183,6 +282,12 @@ function ReviewCard({ card }: { card: EntityCard }) {
         <p role="status" className="text-xs text-muted-foreground">
           Duplicata mesclada automaticamente — o item já importado foi combinado
           com este.
+        </p>
+      ) : null}
+
+      {avisoAuto ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          {avisoAuto}
         </p>
       ) : null}
 

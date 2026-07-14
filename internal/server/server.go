@@ -248,6 +248,12 @@ func (s *Server) Handler() (http.Handler, error) {
 			v1.Get("/review", s.listReview)
 			v1.Get("/orphans", s.listOrphans)
 
+			// AUTO-MATCH em LOTE (briefing 0050): tenta resolver sozinho todos os
+			// elegíveis da fila (ou o subconjunto de `ids` no corpo), reusando a
+			// MESMA lógica do individual em /entities/{id}/auto-match abaixo.
+			// Sempre 200 com o resumo agregado.
+			v1.Post("/review/auto-match", s.autoMatchReview)
+
 			// Página da PESSOA (briefing 0029 Fase D, interno-first): a pessoa
 			// deduplicada no catálogo + a filmografia (obras já importadas que a
 			// creditam). Destino do card de elenco/equipe quando o crédito traz
@@ -351,6 +357,12 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Post("/{id}/correct", s.correctEntity)
 				ent.Delete("/{id}", s.deleteEntity)
 				ent.Post("/purge", s.purgeBatch)
+
+				// AUTO-MATCH individual (briefing 0050): tenta resolver sozinho um
+				// item da fila — local-first (fundirEntities) ou externo (mesma
+				// sequência do "Corrigir"), só quando o score bate LimiarAutoMatch.
+				// Sempre 200 (nunca 5xx por "não achou candidato"); 404 inexistente.
+				ent.Post("/{id}/auto-match", s.autoMatchEntity)
 
 				// Edição da IDENTIDADE externa (briefing 0027): grava o mapa
 				// external_ids (source -> id na fonte). As colunas geradas re-derivam;

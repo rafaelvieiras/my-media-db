@@ -1019,6 +1019,34 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/EntityCard" }
 
+  /api/v1/review/auto-match:
+    post:
+      operationId: autoMatchReview
+      summary: Auto-match em LOTE da fila de revisão (briefing 0050).
+      description: >
+        Tenta resolver sozinho todos os itens elegíveis da fila (ou o
+        subconjunto de `ids` informado no corpo, quando presente): para cada
+        um, deriva título/ano do arquivo, busca local-first + fonte externa
+        default, pontua os candidatos (Jaro-Winkler + ajuste de ano) e aplica
+        o melhor quando o score bate `LimiarAutoMatch` (92) — liga a uma
+        entity local existente (nunca duplica) ou aplica a identidade externa
+        (mesma sequência do "Corrigir"). Sem `ids` ou com `ids` vazio,
+        processa TODOS os elegíveis (mesma fonte de GET /review). Sempre 200
+        com o resumo agregado; um id inexistente no corpo é ignorado
+        (idempotente), não derruba o lote.
+      tags: [entities]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AutoMatchBatchRequest" }
+      responses:
+        "200":
+          description: Resumo agregado do lote.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutoMatchBatchResult" }
+
   /api/v1/orphans:
     get:
       operationId: listOrphans
@@ -1091,6 +1119,36 @@ paths:
         "502":
           $ref: "#/components/responses/Error"
         "503":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/auto-match:
+    post:
+      operationId: autoMatchEntity
+      summary: Auto-match individual de um item da fila (briefing 0050).
+      description: >
+        Tenta resolver SOZINHO um item de baixa confiança/draft: deriva
+        título/ano do arquivo (mesmo parser do scan), busca local-first
+        (catálogo já existente) e, sem candidato local forte, busca na fonte
+        externa default. Pontua os candidatos (Jaro-Winkler do título + ajuste
+        de ano — score final 0-100) e aplica automaticamente o melhor quando
+        bate `LimiarAutoMatch` (92, deliberadamente acima do
+        `LIMIAR_BAIXA_CONFIANCA`=70 do 0018): candidato LOCAL liga a entity
+        via fusão (nunca duplica, 0026); candidato EXTERNO aplica pela MESMA
+        sequência do "Corrigir" (grava external_ids + re-enriquece + sobe a
+        confiança). Candidato com ano divergindo em mais de 1 ano é
+        DESCARTADO, mesmo com título idêntico. Sem candidato forte em nenhuma
+        fonte, o item fica intacto na fila. SEMPRE 200 (nunca 5xx só por "não
+        achou candidato" — é um resultado válido). 404 se a entity não existe.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Resultado do auto-match (resolvido ou não).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutoMatchResult" }
+        "404":
           $ref: "#/components/responses/Error"
 
   /api/v1/entities/purge:
@@ -1794,6 +1852,82 @@ components:
         removed:
           type: integer
           description: Quantas entities foram de fato removidas (idempotente por ausente).
+    AutoMatchTarget:
+      type: object
+      description: >
+        O candidato aplicado pelo auto-match (briefing 0050) — local ou
+        externo. `id` é o id da entity RESULTANTE: no método `local`, o id da
+        entity SOBREVIVENTE já catalogada (a entity da fila foi fundida nela e
+        deixou de existir); no método `external`, o próprio id da entity da
+        fila (a identidade foi aplicada nela, sem trocar de id).
+      required: [id, title, year]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        year:
+          type: [integer, "null"]
+          description: Ano do candidato aplicado; null quando a fonte não informa.
+    AutoMatchResult:
+      type: object
+      description: >
+        Resposta de POST /entities/{id}/auto-match. `target` é null quando
+        `resolved` é false (nenhum candidato bateu `LimiarAutoMatch`).
+      required: [resolved, method, score, target]
+      properties:
+        resolved:
+          type: boolean
+          description: true quando um candidato foi aplicado automaticamente.
+        method:
+          type: string
+          enum: [local, external, none]
+          description: >
+            Como foi resolvido — `local` (fundido a entity já catalogada),
+            `external` (identidade aplicada via fonte externa) ou `none`
+            (nenhum candidato bateu o limiar; item continua na fila).
+        score:
+          type: number
+          description: Score do melhor candidato (0-100); 0 quando method=none.
+        target:
+          description: O candidato aplicado; null quando method=none.
+          oneOf:
+            - $ref: "#/components/schemas/AutoMatchTarget"
+            - type: "null"
+    AutoMatchBatchRequest:
+      type: object
+      description: >
+        Corpo OPCIONAL de POST /review/auto-match — os ids a processar.
+        Omitido ou `ids` vazio/ausente processa TODOS os elegíveis da fila de
+        revisão (ListarRevisao, mesma fonte de GET /review).
+      properties:
+        ids:
+          type: array
+          items: { type: string }
+          description: Ids das entities a processar; vazio/ausente = todos os elegíveis.
+    AutoMatchBatchItem:
+      type: object
+      description: Resultado do auto-match de UM item do lote.
+      required: [id, resolved, method, score]
+      properties:
+        id: { type: string }
+        resolved: { type: boolean }
+        method:
+          type: string
+          enum: [local, external, none]
+        score: { type: number }
+    AutoMatchBatchResult:
+      type: object
+      description: Resposta de POST /review/auto-match — o resumo agregado do lote.
+      required: [resolved_count, pending_count, items]
+      properties:
+        resolved_count:
+          type: integer
+          description: Quantos itens foram resolvidos automaticamente.
+        pending_count:
+          type: integer
+          description: Quantos itens continuam na fila (nenhum candidato bateu o limiar).
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AutoMatchBatchItem" }
     ResolvedEntity:
       type: object
       description: >

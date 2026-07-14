@@ -68,15 +68,37 @@ interface Opcoes {
   search?: SearchResult
   confirmErro?: { status: number; code: string; message: string }
   correctErro?: { status: number; code: string; message: string }
+  // Auto-match individual (0050): resultado devolvido por POST .../auto-match.
+  autoMatchResultado?: {
+    resolved: boolean
+    method: 'local' | 'external' | 'none'
+    score: number
+    target: { id: string; title: string; year: number | null } | null
+  }
+  // Auto-match em lote (0050): resumo devolvido por POST /review/auto-match.
+  autoMatchLoteResultado?: {
+    resolved_count: number
+    pending_count: number
+    items: Array<{
+      id: string
+      resolved: boolean
+      method: 'local' | 'external' | 'none'
+      score: number
+    }>
+  }
 }
 
 interface Espioes {
   onConfirm: ReturnType<typeof vi.fn<(id: string) => void>>
   onCorrect: ReturnType<typeof vi.fn<(id: string, body: unknown) => void>>
+  onAutoMatch: ReturnType<typeof vi.fn<(id: string) => void>>
+  onAutoMatchLote: ReturnType<typeof vi.fn<() => void>>
 }
 
 // Handler de rotas da tela de revisão: GET /review (a fila), GET /search (a
-// correção), POST /entities/{id}/confirm e POST /entities/{id}/correct.
+// correção), POST /entities/{id}/confirm e POST /entities/{id}/correct, e os
+// dois endpoints do auto-match (0050): POST /entities/{id}/auto-match (item) e
+// POST /review/auto-match (lote).
 function montarFetch(opts: Opcoes, espioes: Espioes) {
   return criarFetch(({ path, method, init, u }) => {
     if (path === '/api/v1/review' && method === 'GET') {
@@ -116,6 +138,28 @@ function montarFetch(opts: Opcoes, espioes: Espioes) {
           )
         : okJson(baseEntity({ id: correct[1] }))
     }
+    const autoMatch = path.match(/^\/api\/v1\/entities\/(.+)\/auto-match$/)
+    if (autoMatch && method === 'POST') {
+      espioes.onAutoMatch(autoMatch[1])
+      return okJson(
+        opts.autoMatchResultado ?? {
+          resolved: false,
+          method: 'none',
+          score: 0,
+          target: null,
+        },
+      )
+    }
+    if (path === '/api/v1/review/auto-match' && method === 'POST') {
+      espioes.onAutoMatchLote()
+      return okJson(
+        opts.autoMatchLoteResultado ?? {
+          resolved_count: 0,
+          pending_count: 0,
+          items: [],
+        },
+      )
+    }
     throw new Error(`rota nao mockada: ${method} ${path}`)
   })
 }
@@ -124,6 +168,8 @@ function renderReview(opts: Opcoes = {}) {
   const espioes: Espioes = {
     onConfirm: vi.fn<(id: string) => void>(),
     onCorrect: vi.fn<(id: string, body: unknown) => void>(),
+    onAutoMatch: vi.fn<(id: string) => void>(),
+    onAutoMatchLote: vi.fn<() => void>(),
   }
   vi.stubGlobal('fetch', montarFetch(opts, espioes))
   return { espioes, ...renderComEspioes(<ReviewScreen />) }
@@ -217,5 +263,90 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
         'A fonte externa falhou.',
       ),
     )
+  })
+})
+
+describe('ReviewScreen — auto-match (0050)', () => {
+  it('"Auto-sincronizar" individual resolve o item e some da fila (§4: resolved true invalida a fila)', async () => {
+    const { user, espioes, invalidateSpy } = await renderBaixa({
+      fila: [baixaCard],
+      autoMatchResultado: {
+        resolved: true,
+        method: 'local',
+        score: 96.4,
+        target: { id: 'e-alvo', title: 'Palpite Certo', year: 2020 },
+      },
+    })
+
+    await user.click(screen.getByRole('button', { name: /Auto-sincronizar$/ }))
+
+    await waitFor(() =>
+      expect(espioes.onAutoMatch).toHaveBeenCalledWith('e-baixa'),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Resolvido automaticamente via catálogo local/),
+      ).toBeInTheDocument(),
+    )
+    expect(screen.getByText(/score 96\.4/)).toBeInTheDocument()
+    await esperarChaves(invalidateSpy, CHAVES_REVISAO)
+  })
+
+  it('"Auto-sincronizar" sem candidato mostra aviso neutro e o item continua na fila (§4: resolved false não aplica nada)', async () => {
+    const { user, espioes } = await renderBaixa({
+      fila: [baixaCard],
+      autoMatchResultado: {
+        resolved: false,
+        method: 'none',
+        score: 0,
+        target: null,
+      },
+    })
+
+    await user.click(screen.getByRole('button', { name: /Auto-sincronizar$/ }))
+
+    await waitFor(() =>
+      expect(espioes.onAutoMatch).toHaveBeenCalledWith('e-baixa'),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'Nenhum candidato confiável encontrado — revise manualmente.',
+        ),
+      ).toBeInTheDocument(),
+    )
+    // O card continua na fila (não some) — o item permanece intacto.
+    expect(screen.getByText('Palpite Fraco')).toBeInTheDocument()
+  })
+
+  it('"Auto-sincronizar elegíveis" (lote) mostra o resumo agregado e invalida a fila', async () => {
+    const user = userEvent.setup()
+    const { espioes, invalidateSpy } = renderReview({
+      fila: [baixaCard],
+      autoMatchLoteResultado: {
+        resolved_count: 22,
+        pending_count: 8,
+        items: [
+          { id: 'e-baixa', resolved: true, method: 'local', score: 95.1 },
+        ],
+      },
+    })
+    await waitFor(() =>
+      expect(screen.getByText('Palpite Fraco')).toBeInTheDocument(),
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: /Auto-sincronizar elegíveis/ }),
+    )
+
+    await waitFor(() => expect(espioes.onAutoMatchLote).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          '22 resolvidos automaticamente, 8 continuam para revisão manual.',
+        ),
+      ).toBeInTheDocument(),
+    )
+    await esperarChaves(invalidateSpy, ['["review"]', '["entities"]'])
   })
 })
