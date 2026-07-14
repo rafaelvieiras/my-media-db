@@ -35,6 +35,16 @@ services:
     # de .env.prod.example mesmo que vazio.
     env_file:
       - .env
+    # Sobrescreve o uid:gid non-root embutido na imagem (100:101, ver
+    # Dockerfile) pelo uid:gid do dono do host (rafael, 1000:1000). Motivo: a
+    # montagem FUSE do rclone (biblioteca de mídia, abaixo) só é visível para
+    # o uid que fez o mount — sem isto precisaríamos de `--allow-other` no
+    # rclone + `user_allow_other` em /etc/fuse.conf (mudança de escopo global
+    # no host). Rodar como 1000:1000 evita essa mudança de sistema; em troca,
+    # ./data (bind-mount) precisa pertencer a 1000:1000 em vez de 100:101 —
+    # `sudo chown -R 1000:1000 ./data`. Sem uso de os/user no binário, então
+    # um uid sem entrada em /etc/passwd do container não é problema.
+    user: "1000:1000"
     environment:
       PORT: "8080"
       # Dados persistidos em /data dentro do container (SQLite + arte
@@ -44,11 +54,20 @@ services:
     volumes:
       # Bind-mount: os dados ficam em ./data no host (visíveis e triviais de
       # fazer backup — um tar da pasta, ou o scripts/backup.sh com VACUUM INTO).
-      # O container roda como uid:gid 100:101 (non-root), então ./data precisa
-      # pertencer a esse usuário: `sudo chown -R 100:101 ./data`. Se preferir
-      # um volume nomeado gerenciado pelo Docker, troque por `- mymediadb-data:/data`
-      # e redeclare o volume no bloco `volumes:` no fim do arquivo.
+      # O container roda como uid:gid 1000:1000 (ver `user:` acima, override do
+      # non-root 100:101 da imagem), então ./data precisa pertencer ao seu
+      # usuário: `sudo chown -R 1000:1000 ./data`. Se preferir um volume
+      # nomeado gerenciado pelo Docker, troque por `- mymediadb-data:/data` e
+      # redeclare o volume no bloco `volumes:` no fim do arquivo.
       - ./data:/data
+      # Biblioteca de mídia: montagem rclone do Google Drive no host
+      # (/mnt/gdrive-media, remoto gdrive-rw:Medias/Videos). Somente leitura
+      # (:ro) — o scanner só LÊ os arquivos de origem, nunca escreve nela. O
+      # mount FUSE só é visível para o uid que o criou (rafael, 1000); daí o
+      # `user: "1000:1000"` acima em vez de exigir `--allow-other` no rclone.
+      # Ao cadastrar a fonte na UI/API, use o path *dentro do container*, ex.:
+      # /media/gdrive-media/Filmes.
+      - /mnt/gdrive-media:/media/gdrive-media:ro
     labels:
       # Só containers com este label são candidatos a auto-update do
       # Watchtower (WATCHTOWER_LABEL_ENABLE=true no serviço abaixo).
