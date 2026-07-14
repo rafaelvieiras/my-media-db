@@ -51,6 +51,10 @@ export function ExternalIdsEditor({
   const queryClient = useQueryClient()
   const [linhas, setLinhas] = useState<Linha[]>(() => linhasDe(externalIds))
   const [proximaKey, setProximaKey] = useState(() => linhas.length)
+  // Avisa quando a gravação da identidade fundiu uma duplicata automaticamente
+  // (0051) — a entity sem investimento do dono some sozinha, sem o dono precisar
+  // caçá-la na biblioteca.
+  const [avisoFusao, setAvisoFusao] = useState(false)
 
   function invalidar() {
     queryClient.invalidateQueries({ queryKey: ['entity', id] })
@@ -59,7 +63,11 @@ export function ExternalIdsEditor({
 
   const mutation = useMutation({
     mutationFn: () => updateExternalIds(id, mapaDe(linhas)),
-    onSuccess: invalidar,
+    onMutate: () => setAvisoFusao(false),
+    onSuccess: (resultado) => {
+      invalidar()
+      setAvisoFusao(resultado.duplicataMesclada)
+    },
   })
 
   // Salva os ids E, em sucesso, re-enriquece pela fonte (0027): fecha o ciclo de
@@ -69,10 +77,15 @@ export function ExternalIdsEditor({
   // ficaram salvos.
   const sincronizar = useMutation({
     mutationFn: async () => {
-      await updateExternalIds(id, mapaDe(linhas))
-      return enrichEntity(id)
+      const salvo = await updateExternalIds(id, mapaDe(linhas))
+      await enrichEntity(id)
+      return salvo.duplicataMesclada
     },
-    onSuccess: invalidar,
+    onMutate: () => setAvisoFusao(false),
+    onSuccess: (duplicataMesclada) => {
+      invalidar()
+      setAvisoFusao(duplicataMesclada)
+    },
   })
 
   const salvando = mutation.isPending || sincronizar.isPending
@@ -152,6 +165,12 @@ export function ExternalIdsEditor({
       {mensagemErro ? (
         <p role="alert" className="text-sm font-medium text-destructive">
           {mensagemErro}
+        </p>
+      ) : null}
+      {avisoFusao && !mensagemErro ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Duplicata mesclada automaticamente — o item já importado foi combinado
+          com este.
         </p>
       ) : null}
 

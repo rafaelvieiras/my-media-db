@@ -339,16 +339,38 @@ export async function createItem(body: {
   return lerJson<ResolvedEntity>(res)
 }
 
+// Header devolvido por `PUT external-ids`/`POST correct` (0051) quando a escrita
+// da identidade colide com outra entity SEM investimento do dono: o backend funde
+// a duplicata automaticamente e sinaliza aqui (id da entity removida) para a UI
+// avisar o dono, em vez de deixá-lo achar a duplicata sozinho.
+const HEADER_DUPLICATA_MESCLADA = 'X-Duplicate-Merged-Id'
+
+// Resultado de uma escrita de identidade externa (0051): a entity resolvida +
+// se a resposta veio com a fusão automática de uma duplicata.
+export interface EscritaIdentidade {
+  entity: ResolvedEntity
+  duplicataMesclada: boolean
+}
+
+async function lerEscritaIdentidade(res: Response): Promise<EscritaIdentidade> {
+  const entity = await lerJson<ResolvedEntity>(res)
+  return {
+    entity,
+    duplicataMesclada: Boolean(res.headers?.get(HEADER_DUPLICATA_MESCLADA)),
+  }
+}
+
 // Grava (FULL REPLACE) a identidade externa da entity (`external_ids`, MD4): o dono
 // fixa qual id de cada fonte a entity usa (ex.: tmdb=603), base para uma sincronização
 // futura — os ids da fonte podem mudar ou o item ser substituído por outro. O backend
 // descarta valores vazios (remover uma fonte = deixar o id em branco). As colunas
-// geradas (external_id_tmdb/imdb) re-derivam sozinhas. Devolve a entity RESOLVIDA.
-// Corpo INLINE `{ external_ids: {source: id} }`.
+// geradas (external_id_tmdb/imdb) re-derivam sozinhas. Corpo INLINE
+// `{ external_ids: {source: id} }`. Se o id gravado colidir com outra entity sem
+// investimento do dono, o backend funde as duas (0051) — ver `EscritaIdentidade`.
 export async function updateExternalIds(
   id: string,
   externalIds: Record<string, string>,
-): Promise<ResolvedEntity> {
+): Promise<EscritaIdentidade> {
   const res = await fetch(
     `${base}/api/v1/entities/${encodeURIComponent(id)}/external-ids`,
     {
@@ -357,7 +379,7 @@ export async function updateExternalIds(
       body: JSON.stringify({ external_ids: externalIds }),
     },
   )
-  return lerJson<ResolvedEntity>(res)
+  return lerEscritaIdentidade(res)
 }
 
 // ── Settings de idioma (0019) ────────────────────────────────────────────────
@@ -759,14 +781,15 @@ export async function confirmMatch(id: string): Promise<ResolvedEntity> {
 
 // CORRIGIR o match: o dono informa a identidade certa (`source`/`source_id`). O
 // backend grava `external_ids[source]`, re-enriquece pela fonte e sobe a
-// confiança (identidade vence). `source` default "tmdb". Devolve a entity
-// re-resolvida. Erros da fonte (422/404/502/503) viram `ApiError` com a
-// mensagem pt-BR do envelope.
+// confiança (identidade vence). `source` default "tmdb". Erros da fonte
+// (422/404/502/503) viram `ApiError` com a mensagem pt-BR do envelope. Se o id
+// colidir com outra entity sem investimento do dono, o backend funde as duas
+// (0051) — ver `EscritaIdentidade`.
 export async function correctMatch(
   id: string,
   source: string,
   sourceId: string,
-): Promise<ResolvedEntity> {
+): Promise<EscritaIdentidade> {
   const res = await fetch(
     `${base}/api/v1/entities/${encodeURIComponent(id)}/correct`,
     {
@@ -775,7 +798,7 @@ export async function correctMatch(
       body: JSON.stringify({ source, source_id: sourceId }),
     },
   )
-  return lerJson<ResolvedEntity>(res)
+  return lerEscritaIdentidade(res)
 }
 
 // PURGA individual (DELETE): remove a entity e seus derivados (media_file /

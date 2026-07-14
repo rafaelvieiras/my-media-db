@@ -87,6 +87,9 @@ function ReviewCard({ card }: { card: EntityCard }) {
   const qc = useQueryClient()
   const [falhouArte, setFalhouArte] = useState(false)
   const [corrigindo, setCorrigindo] = useState(false)
+  // Avisa quando "Corrigir" fundiu uma duplicata automaticamente (0051): a
+  // entity sem investimento do dono some sozinha da fila/biblioteca.
+  const [avisoFusao, setAvisoFusao] = useState(false)
   const src = posterSrc(card.poster_url)
   const mostrarPlaceholder = src === null || falhouArte
 
@@ -176,10 +179,20 @@ function ReviewCard({ card }: { card: EntityCard }) {
         </div>
       </div>
 
+      {avisoFusao ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          Duplicata mesclada automaticamente — o item já importado foi combinado
+          com este.
+        </p>
+      ) : null}
+
       {corrigindo ? (
         <CorrigirPainel
           entityId={card.id}
-          onCorrigido={() => setCorrigindo(false)}
+          onCorrigido={(duplicataMesclada) => {
+            setCorrigindo(false)
+            setAvisoFusao(duplicataMesclada)
+          }}
         />
       ) : null}
     </li>
@@ -195,7 +208,7 @@ function CorrigirPainel({
   onCorrigido,
 }: {
   entityId: string
-  onCorrigido: () => void
+  onCorrigido: (duplicataMesclada: boolean) => void
 }) {
   const qc = useQueryClient()
   const { lang } = useLanguage()
@@ -212,9 +225,9 @@ function CorrigirPainel({
   const corrigir = useMutation({
     mutationFn: (escolhido: ExternalResult) =>
       correctMatch(entityId, escolhido.source, escolhido.source_id),
-    onSuccess: () => {
+    onSuccess: (resultado) => {
       invalidarRevisao(qc, entityId)
-      onCorrigido()
+      onCorrigido(resultado.duplicataMesclada)
     },
   })
 

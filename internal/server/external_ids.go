@@ -40,7 +40,8 @@ func (s *Server) updateExternalIds(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	ctx := r.Context()
 
-	if _, err := s.leitura().ObterEntity(ctx, id); err != nil {
+	ent, err := s.leitura().ObterEntity(ctx, id)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "entidade não encontrada")
 			return
@@ -58,6 +59,14 @@ func (s *Server) updateExternalIds(w http.ResponseWriter, r *http.Request) {
 	ids, ok := normalizarExternalIds(w, body.ExternalIDs)
 	if !ok {
 		return
+	}
+	// Rede de seguranca contra duplicata (briefing 0051): cada id novo que ja
+	// pertence a OUTRA entity funde essa outra aqui (sem investimento do dono) ou
+	// aborta com 409 (com investimento) -- antes de gravar qualquer coisa.
+	for source, sourceID := range ids {
+		if _, ok := s.resolverColisaoExterna(w, ctx, id, ent.Type, source, sourceID); !ok {
+			return
+		}
 	}
 	b, err := json.Marshal(ids)
 	if err != nil {

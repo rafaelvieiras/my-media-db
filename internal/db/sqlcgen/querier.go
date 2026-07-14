@@ -166,6 +166,26 @@ type Querier interface {
 	// verdadeiro se, e so se, existe ao menos um arquivo 'present' vinculado aquela
 	// entity naquele kind.
 	EntidadeTemPosse(ctx context.Context, arg EntidadeTemPosseParams) (bool, error)
+	// Queries do FUNDIR DE DUPLICATA por conflito de external_id (briefing 0051):
+	// quando o dono grava um id externo que ja pertence a OUTRA entity (do mesmo
+	// tipo), em vez de deixar duas entities com a mesma identidade, o sistema funde
+	// a "perdedora" (a que ja tinha o id) na "sobrevivente" (a que esta sendo
+	// editada) -- SE a perdedora nao tiver investimento do dono (mesmo predicado da
+	// fila de orfas, ver review.sql). Comentarios em ASCII e colunas explicitas --
+	// ver a nota em entity.sql.
+	//
+	// O parser SQL do sqlc (engine sqlite) nao aceita alias na tabela-alvo de um
+	// UPDATE nem correlated subquery contra ela (self-join ambiguo) -- por isso as
+	// queries daqui sao deliberadamente SIMPLES (update por PK/id, sem subquery); a
+	// decisao "ja existe uma linha equivalente na sobrevivente?" e feita em GO (o
+	// chamador lista as linhas dos dois lados com ListarXPorEntity/ParaEntity e so
+	// move o que nao colide), no mesmo espirito do resto do codebase (ex.: purga em
+	// lote itera ids em vez de SQL em massa).
+	// Mesmo predicado de "investimento do dono" da fila de orfas (0018/review.sql):
+	// existe override OU asset custom (origin='user'). Decide se uma colisao de
+	// external_id pode ser fundida automaticamente (sem investimento) ou exige
+	// conflito reportado ao dono (com investimento).
+	EntityTemInvestimentoDono(ctx context.Context, arg EntityTemInvestimentoDonoParams) (sql.NullBool, error)
 	// POSSE DERIVADA (ADR-0009): verdadeiro se, e so se, existe ao menos um
 	// media_file 'present' para a entity. Posse NAO e coluna (uma coluna gerada nao
 	// enxerga outra tabela) -- e computada aqui.
@@ -253,12 +273,41 @@ type Querier interface {
 	// (E01-E03 vira 3 linhas com ordinal 0/1/2 sob o mesmo media_file). Sem filtro de
 	// kind: o detalhe do arquivo mostra todos os papeis.
 	ListarVinculosPorArquivo(ctx context.Context, mediaFileID string) ([]MediaFileEntity, error)
+	// Vinculos media_file_entity (N:M de serie, 0034) de UMA entidade, para o
+	// chamador comparar (media_file_id, kind) da perdedora contra os da
+	// sobrevivente antes de mover (evita violar a PK composta).
+	ListarVinculosPorEntidade(ctx context.Context, entityID string) ([]MediaFileEntity, error)
 	// Fecho do ciclo de vida (ADR-0012): ao concluir um scan COMPLETO com a fonte
 	// acessivel, todo media_file 'present' daquela fonte cujo last_seen NAO e o
 	// carimbo deste scan (ou seja, nao foi revisto) passa a 'missing'. A entity e
 	// preservada; a posse cai. Escopo por library_source_id garante que um datasource
 	// offline (que nem chega aqui) nao afete arquivos de outras fontes.
 	MarcarMediaFilesNaoVistosMissing(ctx context.Context, arg MarcarMediaFilesNaoVistosMissingParams) (int64, error)
+	// Move UM asset (por id) para a entity sobrevivente. Chamado so quando a
+	// sobrevivente ainda nao tem asset daquele kind (evita empilhar duplicata,
+	// ex.: dois posteres).
+	MoverAssetLinha(ctx context.Context, arg MoverAssetLinhaParams) error
+	// Espelha a de cima, para o lado FILHO (ex.: filme membro de colecao).
+	MoverEntityRelationChildLinha(ctx context.Context, arg MoverEntityRelationChildLinhaParams) error
+	// Move UMA relacao (por id) reatribuindo o lado PAI (ex.: colecao->filme) para a
+	// sobrevivente. Chamado so quando o Go ja confirmou que a sobrevivente nao tem a
+	// mesma (parent,child,kind) ainda (evita violar a UNIQUE).
+	MoverEntityRelationParentLinha(ctx context.Context, arg MoverEntityRelationParentLinhaParams) error
+	// Move UMA linha de cache externo (por id) para a entity sobrevivente. Chamado
+	// so quando a sobrevivente ainda nao tem cache daquela fonte (evita violar
+	// UNIQUE(entity_id, source)).
+	MoverMediaExternalLinha(ctx context.Context, arg MoverMediaExternalLinhaParams) error
+	// Move UMA linha (identificada pela PK antiga) para a entity sobrevivente.
+	// Chamado so quando o Go ja confirmou que a sobrevivente nao tem esse
+	// (media_file_id, kind) ainda.
+	MoverMediaFileEntityLinha(ctx context.Context, arg MoverMediaFileEntityLinhaParams) error
+	// media_file nao tem UNIQUE em entity_id (varios arquivos por obra) -- bulk
+	// UPDATE direto, sem risco de colisao.
+	MoverMediaFileParaEntity(ctx context.Context, arg MoverMediaFileParaEntityParams) error
+	// Move TODOS os creditos da perdedora para a sobrevivente -- chamado so quando
+	// o Go ja confirmou que a sobrevivente ainda nao tem NENHUM (evita misturar
+	// dois elencos); o resto fica para o ON DELETE CASCADE.
+	MoverTodosCreditsParaEntity(ctx context.Context, arg MoverTodosCreditsParaEntityParams) error
 	// Acesso a app_settings (briefing 0019): configs da aplicacao em pares key->JSON.
 	// A primeira chave e "languages" = {primary, fallback, allowed[]}. Comentarios em
 	// ASCII e colunas explicitas -- ver a nota em entity.sql (bug de offset do sqlc

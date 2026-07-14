@@ -147,6 +147,13 @@ func (s *Server) correctEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rede de seguranca contra duplicata (briefing 0051): a identidade corrigida
+	// pode ja pertencer a outra entity (ex.: importada por engano antes desta
+	// correcao) -- funde sem investimento do dono, ou aborta com 409 com.
+	if _, ok := s.resolverColisaoExterna(w, ctx, id, ent.Type, source, body.SourceID); !ok {
+		return
+	}
+
 	langs, err := s.idiomasPermitidos(ctx, w)
 	if err != nil {
 		return

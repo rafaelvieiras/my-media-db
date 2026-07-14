@@ -127,3 +127,5 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0047](0047-robustez-de-fonte-default-filme-e-serie.md) | Robustez de fonte-default: não assumir "tmdb" quando ele não está registrado | fix | done | — |
 | [0048](0048-fundacao-providers-de-enriquecimento-arte-trailer-tema.md) | Provider fanart.tv (ArteProvider) + taxonomia de kinds + inventário lazy | feature | done | 0044, 0045, 0046 |
 | [0049](0049-galeria-de-artes-linhas-lightbox-disponibilidade.md) | Galeria de artes: linhas por tipo + lightbox/zoom + selos de disponibilidade | feature | done | 0048 |
+| [0050](0050-auto-match-fila-de-revisao.md) | Auto-match: busca e sincronização automática da fila de revisão | feature | draft | 0009, 0014, 0015, 0018, 0026 |
+| [0051](0051-fundir-duplicata-conflito-external-id.md) | Fundir duplicata por conflito de external_id (import + corrigir) | fix | done | 0015, 0018, 0027 |
