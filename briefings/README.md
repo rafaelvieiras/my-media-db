@@ -140,3 +140,4 @@ e serve, explicitamente, de base técnica para o futuro sistema de plugins
 | ID | Briefing | Tipo | Status | Depende de |
 |---|---|---|---|---|
 | [0052](0052-fundacao-sistema-de-jobs.md) | Fundação do sistema de jobs: registro dinâmico + agendador embutido | feature | done | — |
+| [0053](0053-job-saude-biblioteca.md) | Job de saúde da biblioteca: re-scan de todas as fontes + resumo de revisão/órfãs | feature | done | 0052, 0018 |

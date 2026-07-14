@@ -139,8 +139,9 @@ func openAndMigrate() (*db.DB, error) {
 }
 
 // opcoesServer monta as options do server: a busca/enrich externa (briefing
-// 0014/0015), o diretório de assets e o job semente backup_vacuum (briefing
-// 0052). Erro só na criação dos diretórios (assets/backups).
+// 0014/0015), o diretório de assets e os jobs semente backup_vacuum
+// (briefing 0052) e saude_biblioteca (briefing 0053). Erro só na criação dos
+// diretórios (assets/backups).
 func opcoesServer(database *db.DB) ([]server.Option, error) {
 	opts := opcoesBusca()
 
@@ -157,6 +158,12 @@ func opcoesServer(database *db.DB) ([]server.Option, error) {
 	}
 	log.Printf("mymediadb: diretório de backups em %q (job backup_vacuum)", backupDir)
 	opts = append(opts, server.WithJobHandlers(backup.New(database.Write, backupDir)))
+
+	// Job saude_biblioteca (briefing 0053): registrado via option DEDICADA
+	// (não WithJobHandlers) porque o Handler precisa do scanner.Manager e do
+	// library.Service, internos ao Server — ver o comentário de
+	// WithLibraryHealthJob em internal/server/server.go.
+	opts = append(opts, server.WithLibraryHealthJob())
 
 	return opts, nil
 }

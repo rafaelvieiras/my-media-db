@@ -10,10 +10,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/rafaelvieiras/my-media-db/internal/curation"
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/externaldetail"
 	"github.com/rafaelvieiras/my-media-db/internal/job"
+	"github.com/rafaelvieiras/my-media-db/internal/job/libraryhealth"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
@@ -116,6 +118,31 @@ func WithJobHandlers(handlers ...job.Handler) Option {
 		for _, h := range handlers {
 			s.jobs.Registry.Registrar(h)
 		}
+	}
+}
+
+// WithLibraryHealthJob REGISTRA o job `saude_biblioteca` (briefing 0053,
+// follow-up do 0052) no Registry do Manager de jobs. Diferente de
+// WithJobHandlers (que recebe um Handler PRONTO, construído em main.go só
+// com dependências de main — ex.: backup.New(db, dir)), o Handler deste job
+// PRECISA do scanner.Manager e do library.Service, que são internos ao
+// Server (privados, construídos em New ANTES do loop de options — mesmo
+// pré-requisito que WithJobHandlers já assume para s.jobs existir). Por
+// isso a construção do Handler acontece AQUI DENTRO, no momento em que a
+// option roda (com s.library/s.scanner já montados), em vez de expor esses
+// serviços para main.go reconstruir por fora (o que duplicaria a fiação).
+// main.go só precisa passar server.WithLibraryHealthJob() junto das demais
+// options. Nula (sem registrar nada) se não houver banco — mesma guarda de
+// WithJobHandlers/montarServicos para os demais serviços opcionais.
+func WithLibraryHealthJob() Option {
+	return func(s *Server) {
+		if s.db == nil || s.library == nil || s.scanner == nil {
+			return
+		}
+		if s.jobs == nil {
+			s.jobs = job.NewManager(s.db)
+		}
+		s.jobs.Registry.Registrar(libraryhealth.New(s.library, s.scanner, curation.New(s.db)))
 	}
 }
 

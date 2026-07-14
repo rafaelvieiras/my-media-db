@@ -84,8 +84,36 @@ func aguardarJobEstado(t *testing.T, s *Server, jobID string, rodando bool) {
 	t.Fatalf("timeout esperando running=%v para %q", rodando, jobID)
 }
 
-// TestListJobsSeed prova o critério de aceite: GET /jobs lista o job semeado
-// backup_vacuum, desabilitado, agendado para 0 3 * * *, sem execuções ainda.
+// assertJobSeedado confere o estado padrão (recém-migrado, nunca rodou) de
+// UM job semeado dentro do mapa id->jobDTO -- extraído para manter
+// TestListJobsSeed com baixa complexidade ciclomática apesar de cobrir os
+// DOIS jobs semeados hoje (backup_vacuum + saude_biblioteca).
+func assertJobSeedado(t *testing.T, byID map[string]jobDTO, id, cron string) {
+	t.Helper()
+	item, ok := byID[id]
+	if !ok {
+		t.Fatalf("%s ausente da lista", id)
+	}
+	if item.Enabled {
+		t.Errorf("%s: enabled deveria ser false por padrão", id)
+	}
+	if item.ScheduleCron == nil || *item.ScheduleCron != cron {
+		t.Fatalf("%s: schedule_cron = %v, quero %q", id, item.ScheduleCron, cron)
+	}
+	if item.LastStatus != nil {
+		t.Fatalf("%s: last_status = %v, quero nil (sem execuções)", id, item.LastStatus)
+	}
+	if item.Running {
+		t.Errorf("%s: running deveria ser false", id)
+	}
+}
+
+// TestListJobsSeed prova o critério de aceite: GET /jobs lista os jobs
+// semeados via migration -- backup_vacuum (0011) e saude_biblioteca (0012,
+// briefing 0053) -- independente de quais Handlers estão registrados no
+// binário (a linha de job_definition existe pela migration; o Handler só
+// importa na hora de RODAR). Ambos desabilitados por padrão, sem execuções
+// ainda.
 func TestListJobsSeed(t *testing.T) {
 	_, h := setupJobsServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/jobs", nil)
@@ -96,25 +124,16 @@ func TestListJobsSeed(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(body.Items) != 1 {
-		t.Fatalf("items = %d, quero 1 (seed backup_vacuum)", len(body.Items))
+	if len(body.Items) != 2 {
+		t.Fatalf("items = %d, quero 2 (seed backup_vacuum + saude_biblioteca)", len(body.Items))
 	}
-	item := body.Items[0]
-	if item.ID != "backup_vacuum" {
-		t.Fatalf("id = %q, quero backup_vacuum", item.ID)
+	byID := make(map[string]jobDTO, len(body.Items))
+	for _, it := range body.Items {
+		byID[it.ID] = it
 	}
-	if item.Enabled {
-		t.Error("enabled deveria ser false por padrão")
-	}
-	if item.ScheduleCron == nil || *item.ScheduleCron != "0 3 * * *" {
-		t.Fatalf("schedule_cron = %v, quero \"0 3 * * *\"", item.ScheduleCron)
-	}
-	if item.LastStatus != nil {
-		t.Fatalf("last_status = %v, quero nil (sem execuções)", item.LastStatus)
-	}
-	if item.Running {
-		t.Error("running deveria ser false")
-	}
+
+	assertJobSeedado(t, byID, "backup_vacuum", "0 3 * * *")
+	assertJobSeedado(t, byID, "saude_biblioteca", "0 4 * * *")
 }
 
 // TestPatchJobHabilitaCalculaNextRunAt prova o critério de aceite do PATCH:
