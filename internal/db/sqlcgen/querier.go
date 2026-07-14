@@ -199,6 +199,17 @@ type Querier interface {
 	// id (estavel).
 	ListarCreditosDaEntity(ctx context.Context, entityID string) ([]Credit, error)
 	ListarEntities(ctx context.Context, arg ListarEntitiesParams) ([]Entity, error)
+	// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte imdb.
+	ListarEntitiesPorImdbExcetoId(ctx context.Context, arg ListarEntitiesPorImdbExcetoIdParams) ([]Entity, error)
+	// Espelha ObterEntityPorTmdb, mas devolve TODAS as entities com aquele id (menos
+	// alvo_id) em vez de :one -- corrige o bug do briefing 0051 em que um dado ja
+	// corrompido (duas entities com o MESMO external_id_tmdb, pre-existente antes da
+	// fusao automatica) fazia o :one devolver a propria entity-alvo (sem ORDER BY
+	// garantido) e mascarar a outra duplicata. Exclui alvo_id na propria SQL, entao
+	// o chamador nao depende de "no maximo um resultado no total".
+	ListarEntitiesPorTmdbExcetoId(ctx context.Context, arg ListarEntitiesPorTmdbExcetoIdParams) ([]Entity, error)
+	// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte tvdb.
+	ListarEntitiesPorTvdbExcetoId(ctx context.Context, arg ListarEntitiesPorTvdbExcetoIdParams) ([]Entity, error)
 	// Lista de CARDS para a UI (briefing 0010), ordenada por titulo ASCENDENTE. Uma
 	// unica query com agregacao por subselect correlacionado -- evita o N+1 (nada de
 	// uma query de posse/contagem por item). Colunas derivadas:

@@ -117,9 +117,10 @@ de deixar as duas vivas.
   (lista os dois lados com `ListarXPorEntity` e só move o que não colide),
   não em SQL, no mesmo espírito do resto do projeto (ex.: `purgeBatch` itera
   ids em vez de SQL em massa).
-- Colisão detectada via as queries já existentes `ObterEntityPorTmdb`/
-  `ObterEntityPorImdb`/`ObterEntityPorTvdb`, filtrando `id != alvo` e
-  `type == tipo` em Go.
+- Colisão detectada via `ListarEntitiesPorTmdbExcetoId`/`ListarEntitiesPorImdbExcetoId`/
+  `ListarEntitiesPorTvdbExcetoId` (`:many`, excluem o alvo na própria SQL),
+  filtrando `type == tipo` em Go — ver nota de bug residual abaixo sobre por
+  que **não** são as queries `ObterEntityPor*` (`:one`) + filtro em Go.
 
 ### API
 - `PUT /entities/{id}/external-ids` e `POST /entities/{id}/correct`: ao
@@ -164,7 +165,40 @@ de deixar as duas vivas.
   gerado), `internal/server/duplicata.go`, `internal/server/external_ids_dup_test.go`.
 - Alterados: `internal/server/external_ids.go`, `internal/server/review.go`,
   `web/src/lib/api.ts`, `web/src/components/external-ids-editor.tsx`,
-  `web/src/routes/review.tsx`.
+  `web/src/routes/review.tsx`, `internal/db/queries/entity.sql` (+ gerado) —
+  ver bug residual abaixo.
+
+### Bug residual encontrado em produção (pós-deploy) e correção
+
+Após o primeiro deploy, o dono relatou que uma duplicata **já existente antes
+deste fix** (criada pelo bug original, quando a coluna gerada `external_id_*`
+não é `UNIQUE` — só indexada) continuava sem fundir mesmo reenviando o mesmo
+id pela tela de edição ("Salvar e re-enriquecer"), e os assets exclusivos da
+duplicata (ex.: fanart do fanart.tv) nunca chegavam à entity com o arquivo.
+
+**Causa**: `acharColisaoExterna` usava `ObterEntityPorTmdb`/`ObterEntityPorImdb`/
+`ObterEntityPorTvdb` (queries `:one`, sem `ORDER BY`) e depois filtrava
+`ent.ID == alvoID` em **Go** para descartar "a própria entity". Isso só
+funciona quando existe **no máximo uma outra** entity com aquele id. Quando o
+dado já estava corrompido (duas entities com o mesmo `external_id_tmdb`), a
+query `:one` podia devolver a **própria** entity-alvo (sem garantia de ordem);
+o filtro descartava esse único resultado e o código concluía "achou=false" —
+nunca descobria a outra entity, e a fusão nunca disparava.
+
+**Correção**: três novas queries `:many` — `ListarEntitiesPorTmdbExcetoId`/
+`ListarEntitiesPorImdbExcetoId`/`ListarEntitiesPorTvdbExcetoId` — que já
+excluem `alvoID` no `WHERE ... AND id != sqlc.arg('alvo_id')`, então o
+resultado nunca inclui a própria entity-alvo, não importa quantas outras
+compartilhem o id. `acharColisaoExterna` percorre os resultados procurando o
+primeiro com `type == tipo`.
+
+**Teste de regressão**: `TestCorrigirExternalIdComDuplicataJaCorrompidaNoBanco`
+(`internal/server/external_ids_dup_test.go`) cria as DUAS entities já com
+`external_id_tmdb=777` (simulando o dado corrompido, sem passar por nenhum
+endpoint), dá um asset `fanart` só à duplicata, e confirma que reenviar o
+mesmo id na entity com arquivo funde a duplicata e transfere o asset.
+Confirmado que falha sem o fix (roda com o código antigo antes de aplicar a
+correção) e passa com ele.
 
 ## 5. Critérios de aceite
 

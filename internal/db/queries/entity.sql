@@ -50,6 +50,35 @@ SELECT id, type, title, original_title, description, release_date,
 FROM entity
 WHERE external_id_tvdb = ?;
 
+-- name: ListarEntitiesPorTmdbExcetoId :many
+-- Espelha ObterEntityPorTmdb, mas devolve TODAS as entities com aquele id (menos
+-- alvo_id) em vez de :one -- corrige o bug do briefing 0051 em que um dado ja
+-- corrompido (duas entities com o MESMO external_id_tmdb, pre-existente antes da
+-- fusao automatica) fazia o :one devolver a propria entity-alvo (sem ORDER BY
+-- garantido) e mascarar a outra duplicata. Exclui alvo_id na propria SQL, entao
+-- o chamador nao depende de "no maximo um resultado no total".
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+FROM entity
+WHERE external_id_tmdb = sqlc.arg('tmdb_id') AND id != sqlc.arg('alvo_id');
+
+-- name: ListarEntitiesPorImdbExcetoId :many
+-- Espelha ListarEntitiesPorTmdbExcetoId, para a fonte imdb.
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+FROM entity
+WHERE external_id_imdb = sqlc.arg('imdb_id') AND id != sqlc.arg('alvo_id');
+
+-- name: ListarEntitiesPorTvdbExcetoId :many
+-- Espelha ListarEntitiesPorTmdbExcetoId, para a fonte tvdb.
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+FROM entity
+WHERE external_id_tvdb = sqlc.arg('tvdb_id') AND id != sqlc.arg('alvo_id');
+
 -- name: ObterColecaoPorTmdb :one
 -- Dedup da entity COLECAO por id tmdb (briefing 0025): reusa a coluna gerada
 -- external_id_tmdb, mas RESTRITA a type='collection'. O namespace de id de colecao

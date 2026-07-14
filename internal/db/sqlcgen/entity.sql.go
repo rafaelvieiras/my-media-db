@@ -418,6 +418,173 @@ func (q *Queries) ListarEntities(ctx context.Context, arg ListarEntitiesParams) 
 	return items, nil
 }
 
+const listarEntitiesPorImdbExcetoId = `-- name: ListarEntitiesPorImdbExcetoId :many
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+FROM entity
+WHERE external_id_imdb = ?1 AND id != ?2
+`
+
+type ListarEntitiesPorImdbExcetoIdParams struct {
+	ImdbID sql.NullString
+	AlvoID string
+}
+
+// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte imdb.
+func (q *Queries) ListarEntitiesPorImdbExcetoId(ctx context.Context, arg ListarEntitiesPorImdbExcetoIdParams) ([]Entity, error) {
+	rows, err := q.db.QueryContext(ctx, listarEntitiesPorImdbExcetoId, arg.ImdbID, arg.AlvoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Entity{}
+	for rows.Next() {
+		var i Entity
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Title,
+			&i.OriginalTitle,
+			&i.Description,
+			&i.ReleaseDate,
+			&i.Status,
+			&i.TagsJson,
+			&i.ExternalIdsJson,
+			&i.ExtensionDataJson,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ExternalIDTmdb,
+			&i.ExternalIDImdb,
+			&i.OriginalLanguage,
+			&i.ExternalIDTvdb,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listarEntitiesPorTmdbExcetoId = `-- name: ListarEntitiesPorTmdbExcetoId :many
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+FROM entity
+WHERE external_id_tmdb = ?1 AND id != ?2
+`
+
+type ListarEntitiesPorTmdbExcetoIdParams struct {
+	TmdbID sql.NullString
+	AlvoID string
+}
+
+// Espelha ObterEntityPorTmdb, mas devolve TODAS as entities com aquele id (menos
+// alvo_id) em vez de :one -- corrige o bug do briefing 0051 em que um dado ja
+// corrompido (duas entities com o MESMO external_id_tmdb, pre-existente antes da
+// fusao automatica) fazia o :one devolver a propria entity-alvo (sem ORDER BY
+// garantido) e mascarar a outra duplicata. Exclui alvo_id na propria SQL, entao
+// o chamador nao depende de "no maximo um resultado no total".
+func (q *Queries) ListarEntitiesPorTmdbExcetoId(ctx context.Context, arg ListarEntitiesPorTmdbExcetoIdParams) ([]Entity, error) {
+	rows, err := q.db.QueryContext(ctx, listarEntitiesPorTmdbExcetoId, arg.TmdbID, arg.AlvoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Entity{}
+	for rows.Next() {
+		var i Entity
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Title,
+			&i.OriginalTitle,
+			&i.Description,
+			&i.ReleaseDate,
+			&i.Status,
+			&i.TagsJson,
+			&i.ExternalIdsJson,
+			&i.ExtensionDataJson,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ExternalIDTmdb,
+			&i.ExternalIDImdb,
+			&i.OriginalLanguage,
+			&i.ExternalIDTvdb,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listarEntitiesPorTvdbExcetoId = `-- name: ListarEntitiesPorTvdbExcetoId :many
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+FROM entity
+WHERE external_id_tvdb = ?1 AND id != ?2
+`
+
+type ListarEntitiesPorTvdbExcetoIdParams struct {
+	TvdbID sql.NullString
+	AlvoID string
+}
+
+// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte tvdb.
+func (q *Queries) ListarEntitiesPorTvdbExcetoId(ctx context.Context, arg ListarEntitiesPorTvdbExcetoIdParams) ([]Entity, error) {
+	rows, err := q.db.QueryContext(ctx, listarEntitiesPorTvdbExcetoId, arg.TvdbID, arg.AlvoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Entity{}
+	for rows.Next() {
+		var i Entity
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Title,
+			&i.OriginalTitle,
+			&i.Description,
+			&i.ReleaseDate,
+			&i.Status,
+			&i.TagsJson,
+			&i.ExternalIdsJson,
+			&i.ExtensionDataJson,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ExternalIDTmdb,
+			&i.ExternalIDImdb,
+			&i.OriginalLanguage,
+			&i.ExternalIDTvdb,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listarEntityCards = `-- name: ListarEntityCards :many
 SELECT
     e.id, e.type, e.title, e.status,

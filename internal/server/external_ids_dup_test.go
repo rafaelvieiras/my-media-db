@@ -154,3 +154,79 @@ func TestCorrigirExternalIdParaIdComInvestimentoDoDonoNaoFunde(t *testing.T) {
 		t.Errorf("entity importada (%q) nao deveria ter sido apagada, err=%v", importada.ID, err)
 	}
 }
+
+// TestCorrigirExternalIdComDuplicataJaCorrompidaNoBanco cobre um caso residual
+// do briefing 0051 encontrado em producao: a duplicata ja existia no BANCO
+// ANTES deste fix (o bug original deixava duas entities com o MESMO
+// external_id_tmdb, ja que a coluna gerada nao e UNIQUE, so indexada). Quando o
+// dono reenvia o MESMO id que a entity com arquivo ja tinha (ex.: clica "Salvar
+// e re-enriquecer" de novo), a deteccao de colisao tem que achar a OUTRA
+// entity mesmo que uma query :one sem ORDER BY pudesse ter devolvido a propria
+// entity-alvo primeiro -- ver o comentario de acharColisaoExterna.
+func TestCorrigirExternalIdComDuplicataJaCorrompidaNoBanco(t *testing.T) {
+	h, d, _, _, _ := setupEnrichServer(t)
+	ctx := context.Background()
+	w := sqlcgen.New(d.Write)
+
+	// e-arquivo JA nasce com external_id_tmdb=777 (simula o dado corrompido).
+	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{
+		ID: "e-arquivo", Type: "movie", Title: "arquivo.mkv",
+		ExternalIdsJson: sql.NullString{String: `{"tmdb":"777"}`, Valid: true},
+	}); err != nil {
+		t.Fatalf("CriarEntity e-arquivo: %v", err)
+	}
+	if _, err := w.CriarMediaFile(ctx, sqlcgen.CriarMediaFileParams{
+		ID: "mf1", EntityID: "e-arquivo", Path: "/lib/arquivo.mkv", State: "present",
+	}); err != nil {
+		t.Fatalf("CriarMediaFile: %v", err)
+	}
+
+	// e-duplicada TAMBEM ja tem tmdb=777 -- as duas ja colidem antes de qualquer
+	// chamada ao endpoint. Ganha um asset fanart (do fanart.tv) para validar que
+	// a fusao TRANSFERE o que so a perdedora tem.
+	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{
+		ID: "e-duplicada", Type: "movie", Title: "Filme Duplicado",
+		ExternalIdsJson: sql.NullString{String: `{"tmdb":"777"}`, Valid: true},
+	}); err != nil {
+		t.Fatalf("CriarEntity e-duplicada: %v", err)
+	}
+	if _, err := w.CriarAsset(ctx, sqlcgen.CriarAssetParams{
+		ID: "asset-fanart", EntityID: "e-duplicada", Kind: "fanart", Origin: "provider",
+		PathOrUri: "https://assets.fanart.tv/fanart.jpg",
+	}); err != nil {
+		t.Fatalf("CriarAsset: %v", err)
+	}
+
+	// Dono reenvia o MESMO id que e-arquivo ja tinha (ex.: reabre o editor e
+	// clica "Salvar e re-enriquecer" sem mudar nada).
+	rec := do(t, h, http.MethodPut, "/api/v1/entities/e-arquivo/external-ids", map[string]any{
+		"external_ids": map[string]string{"tmdb": "777"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT external-ids status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get(headerDuplicataFundida); got != "e-duplicada" {
+		t.Errorf("header %s = %q, quero %q", headerDuplicataFundida, got, "e-duplicada")
+	}
+
+	r := sqlcgen.New(d.Read)
+	if _, err := r.ObterEntity(ctx, "e-duplicada"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("e-duplicada deveria ter sido apagada pela fusao, err=%v", err)
+	}
+	assets, err := r.ListarAssetsPorEntity(ctx, "e-arquivo")
+	if err != nil {
+		t.Fatalf("ListarAssetsPorEntity: %v", err)
+	}
+	temFanart := false
+	for _, a := range assets {
+		if a.Kind == "fanart" {
+			temFanart = true
+		}
+	}
+	if !temFanart {
+		t.Errorf("e-arquivo deveria ter herdado o asset fanart da duplicata fundida")
+	}
+	if _, err := r.ObterMediaFile(ctx, "mf1"); err != nil {
+		t.Errorf("ObterMediaFile mf1: %v (deveria continuar existindo)", err)
+	}
+}

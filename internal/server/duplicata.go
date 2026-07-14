@@ -2,8 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -70,30 +68,44 @@ func (s *Server) resolverColisaoExterna(w http.ResponseWriter, ctx context.Conte
 // acharColisaoExterna procura uma entity do mesmo `tipo`, DIFERENTE de `alvoID`,
 // que já tenha `source`=`sourceID` na identidade. achou=false quando a fonte não
 // tem coluna gerada (dedup indisponível) ou ninguém mais tem aquele id.
+//
+// Usa queries :many que JÁ excluem alvoID na própria SQL (ListarEntitiesPor*
+// ExcetoId), em vez de um :one seguido de filtro em Go. Isso importa quando o
+// dado já está corrompido por uma duplicata PRÉ-EXISTENTE (ex.: um conflito
+// gravado antes deste fix existir, quando a coluna gerada external_id_* não é
+// UNIQUE — só indexada): se DUAS entities já compartilham o mesmo id e o dono
+// reenvia esse id na entity que já o tinha, um :one sem ORDER BY pode devolver a
+// PRÓPRIA entity-alvo, e um filtro `ent.ID == alvoID` em Go descartaria esse
+// único resultado sem nunca descobrir a outra — a fusão nunca dispararia.
 func (s *Server) acharColisaoExterna(ctx context.Context, alvoID, tipo, source, sourceID string) (id, titulo string, achou bool, err error) {
 	r := s.leitura()
 	sid := nsDe(sourceID)
-	var ent sqlcgen.Entity
+	var candidatas []sqlcgen.Entity
 	switch source {
 	case "tmdb":
-		ent, err = r.ObterEntityPorTmdb(ctx, sid)
+		candidatas, err = r.ListarEntitiesPorTmdbExcetoId(ctx, sqlcgen.ListarEntitiesPorTmdbExcetoIdParams{
+			TmdbID: sid, AlvoID: alvoID,
+		})
 	case "imdb":
-		ent, err = r.ObterEntityPorImdb(ctx, sid)
+		candidatas, err = r.ListarEntitiesPorImdbExcetoId(ctx, sqlcgen.ListarEntitiesPorImdbExcetoIdParams{
+			ImdbID: sid, AlvoID: alvoID,
+		})
 	case "tvdb":
-		ent, err = r.ObterEntityPorTvdb(ctx, sid)
+		candidatas, err = r.ListarEntitiesPorTvdbExcetoId(ctx, sqlcgen.ListarEntitiesPorTvdbExcetoIdParams{
+			TvdbID: sid, AlvoID: alvoID,
+		})
 	default:
 		return "", "", false, nil
 	}
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", "", false, nil
-		}
 		return "", "", false, err
 	}
-	if ent.ID == alvoID || ent.Type != tipo {
-		return "", "", false, nil
+	for _, ent := range candidatas {
+		if ent.Type == tipo {
+			return ent.ID, ent.Title, true, nil
+		}
 	}
-	return ent.ID, ent.Title, true, nil
+	return "", "", false, nil
 }
 
 // fundirEntities funde `perdedoraID` em `sobreviventeID`: reatribui media_file
