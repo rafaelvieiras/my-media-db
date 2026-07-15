@@ -24,6 +24,30 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Health" }
 
+  /api/v1/health/system:
+    get:
+      operationId: getSystemHealth
+      summary: Telemetria de sistema (banco + uso operacional + armazenamento).
+      description: >
+        Snapshot LOCAL, sob demanda (briefing 0055): tamanho do banco (PRAGMA),
+        retrato operacional (contagens de catálogo, filas de curadoria, uptime,
+        memória/goroutines) e uso de disco por `library_source` cadastrada.
+        SEPARADO de GET /api/v1/health de propósito — este é mais caro (N
+        syscalls Statfs + agregações SQL) e não pode pesar o HEALTHCHECK do
+        Docker, que bate em /health a cada 10s. Cacheado em memória por 60s: um
+        reload logo em seguida devolve o MESMO `computed_at`. Uma fonte com
+        `path` inacessível aparece com `offline:true`/`filesystem:null`, sem
+        abortar as demais nem o endpoint inteiro.
+      tags: [meta]
+      responses:
+        "200":
+          description: Snapshot calculado (ou servido do cache de 60s).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SystemHealth" }
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities:
     get:
       operationId: listEntities
@@ -1434,6 +1458,131 @@ components:
       properties:
         status: { type: string }
         version: { type: string }
+    SystemHealth:
+      type: object
+      description: >
+        Snapshot de telemetria de GET /api/v1/health/system (briefing 0055):
+        banco + retrato operacional + armazenamento por fonte.
+      required: [computed_at, database, usage, storage]
+      properties:
+        computed_at:
+          type: string
+          description: Instante (UTC) em que o snapshot foi calculado — igual entre chamadas dentro do TTL do cache (60s).
+        database: { $ref: "#/components/schemas/DatabaseHealth" }
+        usage: { $ref: "#/components/schemas/UsageCounts" }
+        storage: { $ref: "#/components/schemas/StorageSnapshot" }
+    DatabaseHealth:
+      type: object
+      description: >
+        Tamanho LÓGICO do arquivo .sqlite principal via PRAGMA
+        page_count/page_size (NÃO soma os sidecars -wal/-shm, decisão
+        consciente do briefing 0055). schema_version é o MESMO valor de
+        Health via GET /health (db.schema), reexposto aqui por conveniência.
+      required: [size_bytes, page_count, page_size, schema_version]
+      properties:
+        size_bytes: { type: integer, description: "page_count * page_size." }
+        page_count: { type: integer }
+        page_size: { type: integer }
+        schema_version: { type: integer }
+    UsageCounts:
+      type: object
+      description: >
+        Retrato operacional: contagens de catálogo + filas de curadoria
+        (0018/0053) + uptime/memória/goroutines do processo (termômetro
+        grosso, sem profiling).
+      required:
+        [
+          uptime_seconds,
+          entities,
+          media_files,
+          library_sources,
+          review_queue_size,
+          orphans_count,
+          job_executions_total,
+          goroutines,
+          mem_alloc_bytes,
+        ]
+      properties:
+        uptime_seconds:
+          type: integer
+          description: Há quantos segundos o processo está no ar.
+        entities: { $ref: "#/components/schemas/EntitiesUsage" }
+        media_files: { $ref: "#/components/schemas/MediaFilesUsage" }
+        library_sources:
+          type: integer
+          description: "COUNT(*) de library_source cadastradas."
+        review_queue_size:
+          type: integer
+          description: Tamanho da fila de revisão (mesma contagem de GET /review).
+        orphans_count:
+          type: integer
+          description: Tamanho da fila de órfãs (mesma contagem de GET /orphans).
+        job_executions_total:
+          type: integer
+          description: "COUNT(*) de job_execution (histórico completo, todos os jobs)."
+        goroutines:
+          type: integer
+          description: "runtime.NumGoroutine() no instante do cálculo."
+        mem_alloc_bytes:
+          type: integer
+          description: "runtime.MemStats.Alloc (heap alocado) no instante do cálculo."
+    EntitiesUsage:
+      type: object
+      description: >
+        by_type só inclui os tipos que OCORREM (chave ausente = zero, não `0`
+        explícito) — o contrato não fixa uma lista de tipos que já é livre no
+        schema (entity.type é TEXT sem CHECK).
+      required: [total, by_type]
+      properties:
+        total: { type: integer }
+        by_type:
+          type: object
+          additionalProperties: { type: integer }
+    MediaFilesUsage:
+      type: object
+      required: [total, present, missing]
+      properties:
+        total: { type: integer }
+        present: { type: integer }
+        missing: { type: integer }
+    StorageSnapshot:
+      type: object
+      required: [sources]
+      properties:
+        sources:
+          type: array
+          items: { $ref: "#/components/schemas/SourceStorage" }
+    SourceStorage:
+      type: object
+      description: >
+        Uma linha por library_source cadastrada: quanto de mídia RASTREADA
+        (SUM(media_file.size), sem varrer o filesystem de novo) ela ocupa e o
+        espaço livre/total do filesystem que hospeda `path`. `offline`/`error`
+        espelham a semântica de avaliarState já usada em library.Listar (o
+        path não responde a Statfs); `filesystem` é `null` quando offline —
+        sem número inventado. Erro em UMA fonte não aborta as demais.
+      required: [source_id, path, used_bytes, filesystem, offline]
+      properties:
+        source_id: { type: string }
+        path: { type: string }
+        used_bytes:
+          type: integer
+          description: "SUM(media_file.size) com state='present' daquela fonte — reflete o ÚLTIMO SCAN, não o disco agora-agora."
+        filesystem:
+          oneOf:
+            - $ref: "#/components/schemas/FilesystemStats"
+            - type: "null"
+          description: "null quando offline (Statfs falhou)."
+        offline: { type: boolean }
+        error:
+          type: string
+          description: Mensagem crua do erro de Statfs (só presente quando offline).
+    FilesystemStats:
+      type: object
+      required: [free_bytes, total_bytes]
+      properties:
+        free_bytes: { type: integer }
+        total_bytes: { type: integer }
     FieldSchema:
       type: object
       description: >

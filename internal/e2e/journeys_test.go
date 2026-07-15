@@ -636,3 +636,54 @@ func assertPosse(t *testing.T, c *cliente, id string, owned, total int) {
 		t.Errorf("posse incoerente em %s: owned (%d) > total (%d)", id, o, tt)
 	}
 }
+
+// TestJornadaHealthSystem: GET /api/v1/health/system devolve o snapshot de
+// telemetria (banco+uso+armazenamento) refletindo o catálogo real -- prova
+// ponta-a-ponta de internal/telemetry + internal/server/health_system.go
+// (briefing 0055) contra o MESMO Server real do harness. Também confere que
+// a segunda chamada imediata bate no cache TTL (telemetry_cache.go).
+func TestJornadaHealthSystem(t *testing.T) {
+	c := novoHarness(t)
+
+	c.obj(http.MethodPost, "/api/v1/import",
+		map[string]string{"source": "tmdb", "source_id": "603", "type": "movie"}, http.StatusCreated)
+
+	body := c.obj(http.MethodGet, "/api/v1/health/system", nil, http.StatusOK)
+
+	if got := str(t, body, "computed_at"); got == "" {
+		t.Error("computed_at vazio")
+	}
+
+	dbInfo, ok := body["database"].(map[string]any)
+	if !ok {
+		t.Fatalf("database ausente ou não-objeto em %v", body)
+	}
+	if sz, _ := dbInfo["size_bytes"].(float64); sz <= 0 {
+		t.Errorf("database.size_bytes = %v, quero > 0", dbInfo["size_bytes"])
+	}
+	if sv, _ := dbInfo["schema_version"].(float64); sv <= 0 {
+		t.Errorf("database.schema_version = %v, quero > 0", dbInfo["schema_version"])
+	}
+
+	usage, ok := body["usage"].(map[string]any)
+	if !ok {
+		t.Fatalf("usage ausente ou não-objeto em %v", body)
+	}
+	entUso, ok := usage["entities"].(map[string]any)
+	if !ok {
+		t.Fatalf("usage.entities ausente ou não-objeto em %v", usage)
+	}
+	if total, _ := entUso["total"].(float64); total < 1 {
+		t.Errorf("usage.entities.total = %v, quero >= 1 (filme importado)", entUso["total"])
+	}
+
+	if _, ok := body["storage"].(map[string]any); !ok {
+		t.Fatalf("storage ausente ou não-objeto em %v", body)
+	}
+
+	// Segunda chamada imediata deve bater no cache TTL (mesmo computed_at).
+	again := c.obj(http.MethodGet, "/api/v1/health/system", nil, http.StatusOK)
+	if str(t, again, "computed_at") != str(t, body, "computed_at") {
+		t.Error("segunda chamada imediata deveria vir do cache (mesmo computed_at)")
+	}
+}

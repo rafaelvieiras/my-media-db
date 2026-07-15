@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -19,6 +20,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
+	"github.com/rafaelvieiras/my-media-db/internal/telemetry"
 )
 
 // Server agrega as dependências necessárias para construir o handler HTTP.
@@ -67,6 +69,20 @@ type Server struct {
 	// assetsDir, diferente de enrich/externalDetail); os handlers concretos
 	// (ex.: backup_vacuum) entram via WithJobHandlers.
 	jobs *job.Manager
+	// telemetry calcula o snapshot de saúde operacional (briefing 0055):
+	// tamanho do banco + retrato de uso + uptime/memória do processo. Só
+	// existe quando há banco (mesmo padrão de s.jobs); sem ele
+	// GET /health/system degrada com 503 — GET /health (básico) continua
+	// funcionando independente (contrato do 0001/0006 preservado, ver
+	// health.go).
+	telemetry *telemetry.Servico
+	// telemetryCache guarda por TTL curto (ttlTelemetria) o snapshot JÁ
+	// SERIALIZADO de GET /health/system, para não recalcular a cada
+	// reload/foco de janela da tela de saúde. Cache SINGLETON (uma única
+	// entrada — este endpoint não tem parâmetro variável, diferente de
+	// cacheExterno). Sempre presente (mesmo sem banco; só nunca é populado
+	// nesse caso, já que o handler barra antes com s.telemetry == nil).
+	telemetryCache *telemetryCache
 }
 
 // Option configura opcionalmente o Server na construção, preservando a
@@ -160,7 +176,8 @@ func (s *Server) Jobs() *job.Manager {
 // segue válida.
 func New(version string, database *db.DB, opts ...Option) *Server {
 	s := &Server{version: version, db: database, settings: &settingsCache{},
-		hostsImagem: hostsImagemPadrao, httpImagem: clienteImagemPadrao()}
+		hostsImagem: hostsImagemPadrao, httpImagem: clienteImagemPadrao(),
+		telemetryCache: novoTelemetryCache(ttlTelemetria)}
 	if database != nil {
 		s.library = library.New(database)
 		s.scanner = scanner.NewManager(database)
@@ -205,6 +222,14 @@ func (s *Server) montarServicos(database *db.DB) {
 	if database != nil && s.jobs == nil {
 		s.jobs = job.NewManager(database)
 	}
+	// A telemetria de sistema (briefing 0055) só precisa de banco — não
+	// depende de provider/assetsDir (diferente de enrich/externalDetail).
+	// iniciadoEm=time.Now() aqui aproxima o "início do processo" (o uptime
+	// reportado): o Server é construído uma única vez no boot, então este é
+	// o melhor instante disponível sem plumbing adicional em main.go.
+	if database != nil && s.telemetry == nil {
+		s.telemetry = telemetry.New(database, curation.New(database), time.Now())
+	}
 }
 
 // idiomasScanner devolve os idiomas permitidos das settings (nil em erro), usado como
@@ -233,6 +258,13 @@ func (s *Server) Handler() (http.Handler, error) {
 
 		api.Route("/v1", func(v1 chi.Router) {
 			v1.Get("/health", s.healthHandler)
+
+			// Telemetria de sistema (briefing 0055): tamanho do banco + retrato
+			// operacional + uso de disco por fonte, em SNAPSHOT sob demanda
+			// (cache de 60s). Separado de /health de propósito — este é mais caro
+			// (N syscalls Statfs + agregações SQL) e não pode pesar o HEALTHCHECK
+			// do Docker (que bate em /health a cada 10s).
+			v1.Get("/health/system", s.systemHealthHandler)
 
 			// Busca local-first (briefing 0014): FTS5 no catálogo + passthrough
 			// opcional à fonte externa (resultados "não salvos").

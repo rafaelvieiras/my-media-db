@@ -107,10 +107,20 @@ type Querier interface {
 	// aqui (o total = numero de filhos, calculado por quem chama a partir das
 	// relacoes).
 	ContarEntidadesComPosse(ctx context.Context, arg ContarEntidadesComPosseParams) (int64, error)
+	// Leituras agregadas para GET /api/v1/health/system (briefing 0055): tamanho
+	// do banco via PRAGMA (fora deste arquivo, roda direto pelo Go -- ver
+	// internal/telemetry/telemetry.go) + contagens de uso + soma de disco por
+	// fonte. Nenhuma tabela nova. Comentarios em ASCII (sem acento) -- mesmo
+	// cuidado de entity.sql/job.sql contra o bug de corrupcao do sqlc v1.31 com
+	// .sql de query acentuado.
+	ContarEntitiesPorTipo(ctx context.Context) ([]ContarEntitiesPorTipoRow, error)
 	// Total de itens que casam os filtros (para o campo `total` da paginacao). Mesma
 	// clausula WHERE da ListarEntityCards -- sem LIMIT/OFFSET/ORDER BY. Inclui a mesma
 	// exclusao de sub-nos (season/episode) para o total bater com a pagina (0032).
 	ContarEntityCards(ctx context.Context, arg ContarEntityCardsParams) (int64, error)
+	ContarJobExecutions(ctx context.Context) (int64, error)
+	ContarLibrarySources(ctx context.Context) (int64, error)
+	ContarMediaFilesPorState(ctx context.Context) ([]ContarMediaFilesPorStateRow, error)
 	// CRUD de asset (poster/fanart/... referenciados por uma entity).
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
 	CriarAsset(ctx context.Context, arg CriarAssetParams) (Asset, error)
@@ -448,6 +458,7 @@ type Querier interface {
 	// de recria-los. Preferida no re-scan de um tipo especifico (ex.: o scanner de TV
 	// so mexe nos 'tv_episode', sem tocar vinculos de outros tipos).
 	RemoverVinculosDoArquivoPorKind(ctx context.Context, arg RemoverVinculosDoArquivoPorKindParams) error
+	SomarTamanhoMediaFilePorFonte(ctx context.Context, librarySourceID sql.NullString) (int64, error)
 	// Grava (ou substitui) uma config. Conflito na PK (key) atualiza value_json e
 	// recarimba updated_at -- nunca cria uma segunda linha para a mesma chave.
 	UpsertAppSetting(ctx context.Context, arg UpsertAppSettingParams) (AppSetting, error)

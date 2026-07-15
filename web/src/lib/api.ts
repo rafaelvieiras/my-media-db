@@ -111,6 +111,27 @@ export async function getHealth(): Promise<Health> {
   return (await res.json()) as Health
 }
 
+// Telemetria de sistema (briefing 0055): banco + uso operacional + armazenamento
+// por fonte. SEPARADA de `getHealth` de propósito (endpoint próprio, cacheado
+// por 60s no servidor) — uma falha aqui não deve derrubar o card de status
+// básico, que consome `getHealth` isoladamente.
+export type SystemHealth = components['schemas']['SystemHealth']
+export type DatabaseHealth = components['schemas']['DatabaseHealth']
+export type UsageCounts = components['schemas']['UsageCounts']
+export type EntitiesUsage = components['schemas']['EntitiesUsage']
+export type MediaFilesUsage = components['schemas']['MediaFilesUsage']
+export type StorageSnapshot = components['schemas']['StorageSnapshot']
+export type SourceStorage = components['schemas']['SourceStorage']
+export type FilesystemStats = components['schemas']['FilesystemStats']
+
+export async function getSystemHealth(): Promise<SystemHealth> {
+  const res = await fetch(`${base}/api/v1/health/system`)
+  if (!res.ok) {
+    throw new Error(`health/system respondeu HTTP ${res.status}`)
+  }
+  return (await res.json()) as SystemHealth
+}
+
 // ── Datasources (biblioteca) ─────────────────────────────────────────────────
 
 export async function listLibrary(): Promise<SourceList> {

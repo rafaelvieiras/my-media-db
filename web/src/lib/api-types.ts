@@ -21,6 +21,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/health/system': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Telemetria de sistema (banco + uso operacional + armazenamento).
+     * @description Snapshot LOCAL, sob demanda (briefing 0055): tamanho do banco (PRAGMA), retrato operacional (contagens de catálogo, filas de curadoria, uptime, memória/goroutines) e uso de disco por `library_source` cadastrada. SEPARADO de GET /api/v1/health de propósito — este é mais caro (N syscalls Statfs + agregações SQL) e não pode pesar o HEALTHCHECK do Docker, que bate em /health a cada 10s. Cacheado em memória por 60s: um reload logo em seguida devolve o MESMO `computed_at`. Uma fonte com `path` inacessível aparece com `offline:true`/`filesystem:null`, sem abortar as demais nem o endpoint inteiro.
+     */
+    get: operations['getSystemHealth']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities': {
     parameters: {
       query?: never
@@ -853,6 +873,72 @@ export interface components {
       status: string
       version: string
     }
+    /** @description Snapshot de telemetria de GET /api/v1/health/system (briefing 0055): banco + retrato operacional + armazenamento por fonte. */
+    SystemHealth: {
+      /** @description Instante (UTC) em que o snapshot foi calculado — igual entre chamadas dentro do TTL do cache (60s). */
+      computed_at: string
+      database: components['schemas']['DatabaseHealth']
+      usage: components['schemas']['UsageCounts']
+      storage: components['schemas']['StorageSnapshot']
+    }
+    /** @description Tamanho LÓGICO do arquivo .sqlite principal via PRAGMA page_count/page_size (NÃO soma os sidecars -wal/-shm, decisão consciente do briefing 0055). schema_version é o MESMO valor de Health via GET /health (db.schema), reexposto aqui por conveniência. */
+    DatabaseHealth: {
+      /** @description page_count * page_size. */
+      size_bytes: number
+      page_count: number
+      page_size: number
+      schema_version: number
+    }
+    /** @description Retrato operacional: contagens de catálogo + filas de curadoria (0018/0053) + uptime/memória/goroutines do processo (termômetro grosso, sem profiling). */
+    UsageCounts: {
+      /** @description Há quantos segundos o processo está no ar. */
+      uptime_seconds: number
+      entities: components['schemas']['EntitiesUsage']
+      media_files: components['schemas']['MediaFilesUsage']
+      /** @description COUNT(*) de library_source cadastradas. */
+      library_sources: number
+      /** @description Tamanho da fila de revisão (mesma contagem de GET /review). */
+      review_queue_size: number
+      /** @description Tamanho da fila de órfãs (mesma contagem de GET /orphans). */
+      orphans_count: number
+      /** @description COUNT(*) de job_execution (histórico completo, todos os jobs). */
+      job_executions_total: number
+      /** @description runtime.NumGoroutine() no instante do cálculo. */
+      goroutines: number
+      /** @description runtime.MemStats.Alloc (heap alocado) no instante do cálculo. */
+      mem_alloc_bytes: number
+    }
+    /** @description by_type só inclui os tipos que OCORREM (chave ausente = zero, não `0` explícito) — o contrato não fixa uma lista de tipos que já é livre no schema (entity.type é TEXT sem CHECK). */
+    EntitiesUsage: {
+      total: number
+      by_type: {
+        [key: string]: number
+      }
+    }
+    MediaFilesUsage: {
+      total: number
+      present: number
+      missing: number
+    }
+    StorageSnapshot: {
+      sources: components['schemas']['SourceStorage'][]
+    }
+    /** @description Uma linha por library_source cadastrada: quanto de mídia RASTREADA (SUM(media_file.size), sem varrer o filesystem de novo) ela ocupa e o espaço livre/total do filesystem que hospeda `path`. `offline`/`error` espelham a semântica de avaliarState já usada em library.Listar (o path não responde a Statfs); `filesystem` é `null` quando offline — sem número inventado. Erro em UMA fonte não aborta as demais. */
+    SourceStorage: {
+      source_id: string
+      path: string
+      /** @description SUM(media_file.size) com state='present' daquela fonte — reflete o ÚLTIMO SCAN, não o disco agora-agora. */
+      used_bytes: number
+      /** @description null quando offline (Statfs falhou). */
+      filesystem: components['schemas']['FilesystemStats'] | null
+      offline: boolean
+      /** @description Mensagem crua do erro de Statfs (só presente quando offline). */
+      error?: string
+    }
+    FilesystemStats: {
+      free_bytes: number
+      total_bytes: number
+    }
     /** @description Descritores de campo do formulário editorial (briefing 0030), ordenados por `order` crescente. */
     FieldSchema: {
       fields: components['schemas']['FieldDescriptor'][]
@@ -1634,6 +1720,27 @@ export interface operations {
           'application/json': components['schemas']['Health']
         }
       }
+    }
+  }
+  getSystemHealth: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Snapshot calculado (ou servido do cache de 60s). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SystemHealth']
+        }
+      }
+      503: components['responses']['Error']
     }
   }
   listEntities: {

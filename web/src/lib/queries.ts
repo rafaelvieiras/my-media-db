@@ -9,6 +9,7 @@ import {
   getArtwork,
   getExternalDetail,
   getHealth,
+  getSystemHealth,
   getLanguageSettings,
   listJobExecutions,
   listJobs,
@@ -32,6 +33,15 @@ import {
 export const healthQueryOptions = queryOptions({
   queryKey: ['health'],
   queryFn: getHealth,
+})
+
+// Telemetria de sistema (0055): chave própria `['health', 'system']` — SOB o
+// mesmo prefixo de `healthQueryOptions` (é a mesma tela/domínio), mas com
+// `queryFn` independente: uma falha aqui não deve marcar `['health']` como
+// erro (são dois `useQuery` distintos na tela, ver health.tsx).
+export const systemHealthQueryOptions = queryOptions({
+  queryKey: ['health', 'system'],
+  queryFn: getSystemHealth,
 })
 
 export const libraryQueryOptions = queryOptions({
