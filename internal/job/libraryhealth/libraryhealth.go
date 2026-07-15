@@ -67,6 +67,13 @@ type Contador interface {
 // DE DENTRO do server, ver server.WithLibraryHealthJob).
 type Matcher interface {
 	AutoMatchElegiveis(ctx context.Context) (resolved, pending int, err error)
+	// EnriquecerRetroativo varre o complemento de ListarRevisao restrito a
+	// itens locais puros (sem external_ids, nunca verificados contra
+	// provider nenhum) e tenta enriquecer um lote pequeno, throttled por
+	// item (briefing 0056, follow-up do 0053/0054): aplica sozinho com alta
+	// confiança, ou sinaliza para a fila de Revisão quando achou algo
+	// plausível mas não confiável o bastante.
+	EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizados int, err error)
 }
 
 // Handler e o Handler do job saude_biblioteca.
@@ -129,7 +136,18 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 		}
 	}
 
-	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas, resolvidos), nil
+	aplicados, sinalizados := h.rodarEnriquecimentoRetroativo(ctx)
+	if sinalizados > 0 {
+		// Recontagem de novo (briefing 0056): itens sinalizados por este
+		// passo passam a aparecer na fila de Revisao -- o resumo final
+		// precisa refletir o estado depois DESTE passo tambem, nao so do
+		// auto-match acima.
+		if recontado, err := h.contador.ContarRevisao(ctx); err == nil {
+			revisao = recontado
+		}
+	}
+
+	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas, resolvidos, aplicados, sinalizados), nil
 }
 
 // rodarAutoMatch chama o Matcher (auto-match em lote sobre os elegiveis da
@@ -146,6 +164,24 @@ func (h *Handler) rodarAutoMatch(ctx context.Context) int {
 		return 0
 	}
 	return resolved
+}
+
+// rodarEnriquecimentoRetroativo chama o Matcher (enriquecimento externo
+// retroativo, briefing 0056) e devolve quantos itens foram aplicados
+// sozinhos e quantos foram sinalizados para a fila de Revisao. Best-effort:
+// uma falha aqui NAO aborta o job -- so loga e devolve (0, 0), para o resumo
+// original ainda sair. Chamado DEPOIS de rodarAutoMatch (mesma ordem do
+// briefing: re-scan -> auto-match em lote -> enriquecimento retroativo).
+func (h *Handler) rodarEnriquecimentoRetroativo(ctx context.Context) (aplicados, sinalizados int) {
+	if h.matcher == nil {
+		return 0, 0
+	}
+	aplicados, sinalizados, err := h.matcher.EnriquecerRetroativo(ctx)
+	if err != nil {
+		log.Printf("saude_biblioteca: enriquecimento retroativo em lote falhou (best-effort, ignorado): %v", err)
+		return 0, 0
+	}
+	return aplicados, sinalizados
 }
 
 // escanearTodas dispara e aguarda o scan de cada fonte, sequencialmente.
@@ -201,14 +237,21 @@ func (h *Handler) aguardarConclusao(ctx context.Context, sourceID string) error 
 // escaneadas (com o detalhe das falhas parciais, se houver) + as contagens
 // atuais das filas de curadoria. resolvidos (briefing 0054) e o resultado do
 // auto-match em lote; 0 omite o parenteses para nao poluir a mensagem em
-// operacao normal, quando nao havia nada a resolver.
-func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, resolvidos int) string {
+// operacao normal, quando nao havia nada a resolver. aplicados/sinalizados
+// (briefing 0056) sao o resultado do enriquecimento retroativo; a clausula
+// extra e omitida quando os dois sao zero (mesmo espirito da omissao de
+// resolvidos==0 acima).
+func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, resolvidos, aplicados, sinalizados int) string {
+	base := fmt.Sprintf("%s; %d em revisão, %d órfã(s)", resumoScans(total, escaneadas, falhas), revisao, orfas)
 	if resolvidos > 0 {
-		return fmt.Sprintf("%s; %d em revisão (%d resolvidos automaticamente), %d órfã(s)",
+		base = fmt.Sprintf("%s; %d em revisão (%d resolvidos automaticamente), %d órfã(s)",
 			resumoScans(total, escaneadas, falhas), revisao, resolvidos, orfas)
 	}
-	return fmt.Sprintf("%s; %d em revisão, %d órfã(s)",
-		resumoScans(total, escaneadas, falhas), revisao, orfas)
+	if aplicados > 0 || sinalizados > 0 {
+		base = fmt.Sprintf("%s; enriquecimento retroativo: %d aplicado(s), %d sinalizado(s) para revisão",
+			base, aplicados, sinalizados)
+	}
+	return base
 }
 
 // montarMensagemSemContagem e usada quando os scans terminaram mas a

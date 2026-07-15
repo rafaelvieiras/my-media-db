@@ -30,6 +30,107 @@ func (q *Queries) AtualizarConfidencePorEntity(ctx context.Context, arg Atualiza
 	return err
 }
 
+const atualizarTentativaMatchExterno = `-- name: AtualizarTentativaMatchExterno :exec
+UPDATE entity
+SET last_external_match_attempt_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?1
+`
+
+// Registra que o item FOI verificado nesta execucao (aplicado, sinalizado
+// ou sem candidato) -- throttle do briefing 0056: o proximo lote so volta a
+// considerar este id depois de sqlc.arg('desde') (acima) ter passado.
+func (q *Queries) AtualizarTentativaMatchExterno(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, atualizarTentativaMatchExterno, id)
+	return err
+}
+
+const listarElegiveisEnriquecimentoRetroativo = `-- name: ListarElegiveisEnriquecimentoRetroativo :many
+SELECT e.id, e.type, e.title, e.release_date, e.last_external_match_attempt_at
+FROM entity e
+WHERE e.external_ids_json IS NULL
+  AND e.type IN ('movie', 'tv')
+  AND e.status != 'draft'
+  AND EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id AND m.state = 'present'
+      )
+  AND NOT EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id
+          AND m.state = 'present'
+          AND m.match_confidence > 0
+          AND m.match_confidence < ?1
+      )
+  AND (
+        e.last_external_match_attempt_at IS NULL
+        OR e.last_external_match_attempt_at < ?2
+      )
+ORDER BY
+    (e.last_external_match_attempt_at IS NULL) DESC,
+    e.last_external_match_attempt_at ASC,
+    e.title COLLATE NOCASE ASC,
+    e.id
+LIMIT ?3
+`
+
+type ListarElegiveisEnriquecimentoRetroativoParams struct {
+	Limiar sql.NullFloat64
+	Desde  sql.NullString
+	Limite int64
+}
+
+type ListarElegiveisEnriquecimentoRetroativoRow struct {
+	ID                         string
+	Type                       string
+	Title                      string
+	ReleaseDate                sql.NullString
+	LastExternalMatchAttemptAt sql.NullString
+}
+
+// Complemento EXATO (De Morgan) do WHERE de ListarRevisao: entities SEM
+// NENHUM external_id (external_ids_json IS NULL) que NAO estao na fila de
+// Revisao -- ou seja, status != 'draft' E sem nenhum media_file de baixa
+// confianca (0 < match_confidence < limiar). Na pratica, hoje isso e quase
+// sempre o caso confianca=70 (confTituloAno do scanner, titulo+ano
+// parseados do arquivo, sem id embutido) -- NUNCA verificado contra
+// provider nenhum, apesar de "parecer" catalogado. Restrito a type
+// movie/tv (nivel obra/serie-topo, mesmo escopo do briefing 0050) e a
+// entities com pelo menos um media_file 'present' (entity so-importada sem
+// arquivo nao e alvo do scanner, fora de escopo aqui). Throttle: nunca
+// tentado (NULL) tem prioridade, depois o mais antigo tentado primeiro;
+// sqlc.arg('desde') e o corte de "tentado ha pouco tempo, pula por agora";
+// sqlc.arg('limite') poda o lote por execucao (custo/rate-limit do
+// provider externo, briefing 0056).
+func (q *Queries) ListarElegiveisEnriquecimentoRetroativo(ctx context.Context, arg ListarElegiveisEnriquecimentoRetroativoParams) ([]ListarElegiveisEnriquecimentoRetroativoRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarElegiveisEnriquecimentoRetroativo, arg.Limiar, arg.Desde, arg.Limite)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarElegiveisEnriquecimentoRetroativoRow{}
+	for rows.Next() {
+		var i ListarElegiveisEnriquecimentoRetroativoRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Title,
+			&i.ReleaseDate,
+			&i.LastExternalMatchAttemptAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listarOrfas = `-- name: ListarOrfas :many
 SELECT
     e.id, e.type, e.title, e.status,

@@ -58,6 +58,57 @@ SET match_confidence = sqlc.arg('match_confidence'),
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE entity_id = sqlc.arg('entity_id');
 
+-- name: ListarElegiveisEnriquecimentoRetroativo :many
+-- Complemento EXATO (De Morgan) do WHERE de ListarRevisao: entities SEM
+-- NENHUM external_id (external_ids_json IS NULL) que NAO estao na fila de
+-- Revisao -- ou seja, status != 'draft' E sem nenhum media_file de baixa
+-- confianca (0 < match_confidence < limiar). Na pratica, hoje isso e quase
+-- sempre o caso confianca=70 (confTituloAno do scanner, titulo+ano
+-- parseados do arquivo, sem id embutido) -- NUNCA verificado contra
+-- provider nenhum, apesar de "parecer" catalogado. Restrito a type
+-- movie/tv (nivel obra/serie-topo, mesmo escopo do briefing 0050) e a
+-- entities com pelo menos um media_file 'present' (entity so-importada sem
+-- arquivo nao e alvo do scanner, fora de escopo aqui). Throttle: nunca
+-- tentado (NULL) tem prioridade, depois o mais antigo tentado primeiro;
+-- sqlc.arg('desde') e o corte de "tentado ha pouco tempo, pula por agora";
+-- sqlc.arg('limite') poda o lote por execucao (custo/rate-limit do
+-- provider externo, briefing 0056).
+SELECT e.id, e.type, e.title, e.release_date, e.last_external_match_attempt_at
+FROM entity e
+WHERE e.external_ids_json IS NULL
+  AND e.type IN ('movie', 'tv')
+  AND e.status != 'draft'
+  AND EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id AND m.state = 'present'
+      )
+  AND NOT EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id
+          AND m.state = 'present'
+          AND m.match_confidence > 0
+          AND m.match_confidence < sqlc.arg('limiar')
+      )
+  AND (
+        e.last_external_match_attempt_at IS NULL
+        OR e.last_external_match_attempt_at < sqlc.arg('desde')
+      )
+ORDER BY
+    (e.last_external_match_attempt_at IS NULL) DESC,
+    e.last_external_match_attempt_at ASC,
+    e.title COLLATE NOCASE ASC,
+    e.id
+LIMIT sqlc.arg('limite');
+
+-- name: AtualizarTentativaMatchExterno :exec
+-- Registra que o item FOI verificado nesta execucao (aplicado, sinalizado
+-- ou sem candidato) -- throttle do briefing 0056: o proximo lote so volta a
+-- considerar este id depois de sqlc.arg('desde') (acima) ter passado.
+UPDATE entity
+SET last_external_match_attempt_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = sqlc.arg('id');
+
 -- name: PromoverDeDraft :exec
 -- Curadoria (briefing 0018): um draft (nao-identificado) que o dono CONFIRMA ou
 -- CORRIGE deixa de ser rascunho -- vira 'cataloged' e sai da fila de revisao pelo

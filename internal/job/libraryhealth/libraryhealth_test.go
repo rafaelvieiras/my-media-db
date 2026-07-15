@@ -82,17 +82,30 @@ type contadorFake struct {
 func (c *contadorFake) ContarRevisao(context.Context) (int, error) { return c.revisao, c.err }
 func (c *contadorFake) ContarOrfas(context.Context) (int, error)   { return c.orfas, c.err }
 
-// matcherFake e um Matcher fake (briefing 0054): valores fixos de
-// resolved/pending, ou erro para exercitar o caminho best-effort do job.
+// matcherFake e um Matcher fake (briefing 0054/0056): valores fixos de
+// resolved/pending (auto-match) e aplicados/sinalizados (enriquecimento
+// retroativo), ou erro para exercitar o caminho best-effort do job. Os dois
+// metodos tem contadores de chamada separados (chamadasAutoMatch/
+// chamadasRetroativo) para os testes provarem que cada um roda EXATAMENTE
+// uma vez por execucao.
 type matcherFake struct {
 	resolved, pending int
 	err               error
-	chamadas          int
+	chamadasAutoMatch int
+
+	aplicados, sinalizados int
+	errRetroativo          error
+	chamadasRetroativo     int
 }
 
 func (m *matcherFake) AutoMatchElegiveis(context.Context) (int, int, error) {
-	m.chamadas++
+	m.chamadasAutoMatch++
 	return m.resolved, m.pending, m.err
+}
+
+func (m *matcherFake) EnriquecerRetroativo(context.Context) (int, int, error) {
+	m.chamadasRetroativo++
+	return m.aplicados, m.sinalizados, m.errRetroativo
 }
 
 // contadorSequencialFake devolve um valor de ContarRevisao por chamada, na
@@ -304,8 +317,8 @@ func TestExecutarAcionaAutoMatchEReflete(t *testing.T) {
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}
-	if matcher.chamadas != 1 {
-		t.Errorf("matcher chamado %d vez(es), quero exatamente 1", matcher.chamadas)
+	if matcher.chamadasAutoMatch != 1 {
+		t.Errorf("matcher chamado %d vez(es), quero exatamente 1", matcher.chamadasAutoMatch)
 	}
 }
 
@@ -322,6 +335,84 @@ func TestExecutarFalhaDoAutoMatchNaoAbortaJob(t *testing.T) {
 		t.Fatalf("Executar não deveria falhar por causa do auto-match (best-effort): %v", err)
 	}
 	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarAcionaEnriquecimentoRetroativoEReflete cobre o critério central
+// do briefing 0056: depois do auto-match em lote, o job aciona
+// EnriquecerRetroativo e a mensagem final ganha a cláusula "enriquecimento
+// retroativo: <A> aplicado(s), <S> sinalizado(s) para revisão" -- com a
+// contagem de revisão RECONTADA de novo após este passo (3, não os 5 de
+// antes), provando que o job reflete o estado FINAL (itens sinalizados
+// entraram na fila).
+func TestExecutarAcionaEnriquecimentoRetroativoEReflete(t *testing.T) {
+	cont := &contadorSequencialFake{revisaoValores: []int{5, 3}, orfas: 1}
+	matcher := &matcherFake{aplicados: 3, sinalizados: 2}
+	h := New(&libraryFake{}, newScanFake(), cont, matcher)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 3 em revisão, 1 órfã(s); enriquecimento retroativo: 3 aplicado(s), 2 sinalizado(s) para revisão"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+	if matcher.chamadasRetroativo != 1 {
+		t.Errorf("EnriquecerRetroativo chamado %d vez(es), quero exatamente 1", matcher.chamadasRetroativo)
+	}
+}
+
+// TestExecutarEnriquecimentoRetroativoOmiteClausulaQuandoZero cobre o
+// critério de omissão: sem nada aplicado nem sinalizado, a mensagem final
+// NÃO ganha a cláusula extra (mesmo espírito da omissão de "resolvidos
+// automaticamente" quando resolvidos==0).
+func TestExecutarEnriquecimentoRetroativoOmiteClausulaQuandoZero(t *testing.T) {
+	cont := &contadorFake{revisao: 4, orfas: 2}
+	matcher := &matcherFake{}
+	h := New(&libraryFake{}, newScanFake(), cont, matcher)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarFalhaDoEnriquecimentoRetroativoNaoAbortaJob cobre o critério
+// best-effort: uma falha do Matcher no passo retroativo não derruba o job --
+// o resumo original (sem a cláusula extra) ainda sai.
+func TestExecutarFalhaDoEnriquecimentoRetroativoNaoAbortaJob(t *testing.T) {
+	cont := &contadorFake{revisao: 4, orfas: 2}
+	matcher := &matcherFake{errRetroativo: errors.New("erro simulado no enriquecimento retroativo")}
+	h := New(&libraryFake{}, newScanFake(), cont, matcher)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar não deveria falhar por causa do enriquecimento retroativo (best-effort): %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarSemMatcherNaoRodaEnriquecimentoRetroativo cobre a guarda
+// matcher==nil (mesma guarda de rodarAutoMatch): sem Matcher injetado, o
+// passo retroativo degrada para (0, 0) sem panicar.
+func TestExecutarSemMatcherNaoRodaEnriquecimentoRetroativo(t *testing.T) {
+	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, nil)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfã(s)"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
 	}

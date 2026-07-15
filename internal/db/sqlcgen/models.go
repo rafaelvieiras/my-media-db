@@ -49,22 +49,23 @@ type Credit struct {
 }
 
 type Entity struct {
-	ID                string
-	Type              string
-	Title             string
-	OriginalTitle     sql.NullString
-	Description       sql.NullString
-	ReleaseDate       sql.NullString
-	Status            string
-	TagsJson          sql.NullString
-	ExternalIdsJson   sql.NullString
-	ExtensionDataJson sql.NullString
-	CreatedAt         string
-	UpdatedAt         string
-	ExternalIDTmdb    sql.NullString
-	ExternalIDImdb    sql.NullString
-	OriginalLanguage  sql.NullString
-	ExternalIDTvdb    sql.NullString
+	ID                         string
+	Type                       string
+	Title                      string
+	OriginalTitle              sql.NullString
+	Description                sql.NullString
+	ReleaseDate                sql.NullString
+	Status                     string
+	TagsJson                   sql.NullString
+	ExternalIdsJson            sql.NullString
+	ExtensionDataJson          sql.NullString
+	CreatedAt                  string
+	UpdatedAt                  string
+	ExternalIDTmdb             sql.NullString
+	ExternalIDImdb             sql.NullString
+	OriginalLanguage           sql.NullString
+	ExternalIDTvdb             sql.NullString
+	LastExternalMatchAttemptAt sql.NullString
 }
 
 type EntityFt struct {

@@ -23,12 +23,12 @@ INSERT INTO entity (
 )
 RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb;
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at;
 
 -- name: ObterEntity :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
 FROM entity
 WHERE id = ?;
 
@@ -36,7 +36,7 @@ WHERE id = ?;
 -- Lookup por id externo tmdb via coluna gerada + indice (doc 04, busca sem GIN).
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
 FROM entity
 WHERE external_id_tmdb = ?;
 
@@ -46,7 +46,7 @@ WHERE external_id_tmdb = ?;
 -- imdb, ex.: Looney Tunes) deduplicam por este caminho no import.
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
 FROM entity
 WHERE external_id_tvdb = ?;
 
@@ -59,7 +59,7 @@ WHERE external_id_tvdb = ?;
 -- o chamador nao depende de "no maximo um resultado no total".
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
 FROM entity
 WHERE external_id_tmdb = sqlc.arg('tmdb_id') AND id != sqlc.arg('alvo_id');
 
@@ -67,7 +67,7 @@ WHERE external_id_tmdb = sqlc.arg('tmdb_id') AND id != sqlc.arg('alvo_id');
 -- Espelha ListarEntitiesPorTmdbExcetoId, para a fonte imdb.
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
 FROM entity
 WHERE external_id_imdb = sqlc.arg('imdb_id') AND id != sqlc.arg('alvo_id');
 
@@ -75,7 +75,7 @@ WHERE external_id_imdb = sqlc.arg('imdb_id') AND id != sqlc.arg('alvo_id');
 -- Espelha ListarEntitiesPorTmdbExcetoId, para a fonte tvdb.
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
 FROM entity
 WHERE external_id_tvdb = sqlc.arg('tvdb_id') AND id != sqlc.arg('alvo_id');
 
@@ -86,7 +86,7 @@ WHERE external_id_tvdb = sqlc.arg('tvdb_id') AND id != sqlc.arg('alvo_id');
 -- evita casar um filme homonimo de mesmo id numerico. Mantem o re-import idempotente.
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
 FROM entity
 WHERE type = 'collection' AND external_id_tmdb = ?
 LIMIT 1;
@@ -120,7 +120,7 @@ WHERE e.id = ?;
 -- name: ObterEntityPorImdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
 FROM entity
 WHERE external_id_imdb = ?;
 
@@ -131,7 +131,7 @@ WHERE external_id_imdb = ?;
 -- id embutido no nome (nao duplica a entity).
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
 FROM entity
 WHERE type = ? AND title = ? AND release_date IS ?
 LIMIT 1;
@@ -143,7 +143,7 @@ LIMIT 1;
 -- provider a cada scan. Primeira por created_at (estavel).
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
 FROM entity
 WHERE type = ? AND title = ?
 ORDER BY created_at, id
@@ -152,7 +152,7 @@ LIMIT 1;
 -- name: ListarEntities :many
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
 FROM entity
 ORDER BY created_at DESC, id
 LIMIT ? OFFSET ?;
@@ -261,7 +261,7 @@ SET type = ?,
 WHERE id = ?
 RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb;
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at;
 
 -- name: AtualizarEpisodioBase :exec
 -- Reescreve a BASE do episodio no re-import (briefing 0043): o find-or-create por id

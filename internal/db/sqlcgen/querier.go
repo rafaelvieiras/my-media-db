@@ -92,6 +92,10 @@ type Querier interface {
 	// toca status/tags/original_title nem media_override -- a resolucao aplica override por
 	// cima; refrescar a base e seguro.
 	AtualizarTemporadaBase(ctx context.Context, arg AtualizarTemporadaBaseParams) error
+	// Registra que o item FOI verificado nesta execucao (aplicado, sinalizado
+	// ou sem candidato) -- throttle do briefing 0056: o proximo lote so volta a
+	// considerar este id depois de sqlc.arg('desde') (acima) ter passado.
+	AtualizarTentativaMatchExterno(ctx context.Context, id string) error
 	// Repara o titulo base de um item auto-criado/importado quando ele ficou como o
 	// fallback numerico (id da fonte) -- a regressao do "numero no lugar do nome". So o
 	// titulo e o updated_at mudam; nao toca override/externo (a autoridade do dono
@@ -225,6 +229,21 @@ type Querier interface {
 	// Todos os creditos de uma obra, para o detalhe. Ordena por kind, ordem de bilhagem e
 	// id (estavel).
 	ListarCreditosDaEntity(ctx context.Context, entityID string) ([]Credit, error)
+	// Complemento EXATO (De Morgan) do WHERE de ListarRevisao: entities SEM
+	// NENHUM external_id (external_ids_json IS NULL) que NAO estao na fila de
+	// Revisao -- ou seja, status != 'draft' E sem nenhum media_file de baixa
+	// confianca (0 < match_confidence < limiar). Na pratica, hoje isso e quase
+	// sempre o caso confianca=70 (confTituloAno do scanner, titulo+ano
+	// parseados do arquivo, sem id embutido) -- NUNCA verificado contra
+	// provider nenhum, apesar de "parecer" catalogado. Restrito a type
+	// movie/tv (nivel obra/serie-topo, mesmo escopo do briefing 0050) e a
+	// entities com pelo menos um media_file 'present' (entity so-importada sem
+	// arquivo nao e alvo do scanner, fora de escopo aqui). Throttle: nunca
+	// tentado (NULL) tem prioridade, depois o mais antigo tentado primeiro;
+	// sqlc.arg('desde') e o corte de "tentado ha pouco tempo, pula por agora";
+	// sqlc.arg('limite') poda o lote por execucao (custo/rate-limit do
+	// provider externo, briefing 0056).
+	ListarElegiveisEnriquecimentoRetroativo(ctx context.Context, arg ListarElegiveisEnriquecimentoRetroativoParams) ([]ListarElegiveisEnriquecimentoRetroativoRow, error)
 	ListarEntities(ctx context.Context, arg ListarEntitiesParams) ([]Entity, error)
 	// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte imdb.
 	ListarEntitiesPorImdbExcetoId(ctx context.Context, arg ListarEntitiesPorImdbExcetoIdParams) ([]Entity, error)

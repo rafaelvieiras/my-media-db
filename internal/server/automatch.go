@@ -244,6 +244,20 @@ func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoM
 		return autoMatchNone, nil
 	}
 
+	return s.aplicarCandidatoExterno(ctx, ent, cand, score)
+}
+
+// aplicarCandidatoExterno aplica UM candidato externo já escolhido (score ≥
+// LimiarAutoMatch em tentarAutoMatch, ou ≥ LimiarAutoMatch em
+// tentarEnriquecerOuSinalizar, briefing 0056) pela MESMA sequência do
+// "Corrigir" (0018): resolverColisaoExterna → s.enrich.Enriquecer →
+// finalizarRevisao. Extraído do corpo antes inline de tentarAutoMatch para
+// ser reusado pelos DOIS fluxos (fila de Revisão e enriquecimento
+// retroativo) sem duplicar a sequência de aplicação em dois arquivos —
+// único ponto de aplicação externa do pacote. O err de retorno é SÓ erro
+// real de banco/infra; colisão com investimento do dono degrada para
+// autoMatchNone (pendente), nunca aplica às cegas.
+func (s *Server) aplicarCandidatoExterno(ctx context.Context, ent sqlcgen.Entity, cand provider.ResultadoExterno, score float64) (autoMatchResultDTO, error) {
 	captura := &capturaResposta{}
 	if _, ok := s.resolverColisaoExterna(captura, ctx, ent.ID, ent.Type, cand.Source, cand.SourceID); !ok {
 		if captura.status != http.StatusConflict {
