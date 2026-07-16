@@ -82,8 +82,20 @@ Um PR/patch que contraria um princípio provavelmente será recusado.
   tempo real, nunca em data fixa.
 - Web: `tsc -b` é **zero-tolerância**; `npm run lint`; `npm run test:coverage`.
 - Catraca: `make gate-local`. Ela só deixa as métricas **melhorarem**
-  (ratchet). **NUNCA rode `make baseline`** — só o dono avança o baseline.
-  gocyclo é aviso não-bloqueante (mantenha funções novas ≤10 mesmo assim).
+  (ratchet) e agora é **sensível ao diff** — só roda os coletores do
+  lado (Go/Web) que seu diff realmente tocou; "pulada" nas métricas do
+  outro lado é esperado, não é bug. **NUNCA rode `make baseline`** — só
+  o dono avança o baseline. gocyclo é aviso não-bloqueante (mantenha
+  funções novas ≤10 mesmo assim).
+- Durante a implementação (iterando numa correção), use
+  `make gate-fast` — mesmo filtro por diff, sem golangci-lint/
+  govulncheck/gocyclo/jscpd/npm audit. Reserve o `make gate-local`
+  completo para **uma** rodada final, logo antes do commit/push — não
+  repita o gate completo "pra confirmar".
+- Se um coletor da catraca falhar (não "achou issues" — falhou de
+  rodar), o terminal mostra só as últimas linhas; a saída completa fica
+  em `reports/<metrica>-failure.log` — leia esse arquivo antes de
+  tentar adivinhar a causa pela saída truncada.
 - Após trabalho de subagente, os erros do `new-diagnostics`/gopls costumam ser
   **stale/falsos** ("não achou módulos", `sqlcgen ... undefined`). Confirme com
   `go build` real antes de acreditar.
@@ -107,8 +119,11 @@ Um PR/patch que contraria um princípio provavelmente será recusado.
 - **Segredos nunca no código** — chaves de API só por variável de ambiente.
 
 **Escala e contexto.**
-- Delegue pesquisa/implementação/validação a **subagentes** e receba resumos —
-  a saída verbosa da catraca é o maior consumidor de contexto do pai.
+- Delegue pesquisa/implementação/validação a **subagentes** e receba
+  resumos — rodar a catraca **completa** repetidas vezes dentro de uma
+  única implementação é o maior desperdício de tempo/contexto; prefira
+  `make gate-fast` ao iterar e reserve `make gate-local` completo para
+  o final (ver acima).
 - Ambiente de dev: `docker compose -f compose.dev.yaml up` (web :5173, api :8080
   com hot-reload via air). DB em `tmp/mymediadb.sqlite`.
 

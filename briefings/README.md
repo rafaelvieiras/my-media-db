@@ -141,3 +141,4 @@ e serve, explicitamente, de base técnica para o futuro sistema de plugins
 |---|---|---|---|---|
 | [0052](0052-fundacao-sistema-de-jobs.md) | Fundação do sistema de jobs: registro dinâmico + agendador embutido | feature | done | — |
 | [0053](0053-job-saude-biblioteca.md) | Job de saúde da biblioteca: re-scan de todas as fontes + resumo de revisão/órfãs | feature | done | 0052, 0018 |
+| [0061](0061-catraca-sensivel-ao-diff-e-log-sob-demanda.md) | Catraca sensível ao diff (filtro Go/Web) + `gate-fast` + log completo de falha em `reports/` | chore | done | — |

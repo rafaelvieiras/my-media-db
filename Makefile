@@ -4,7 +4,7 @@
 # direto pelo lefthook e pelo workflow de CI). Estes alvos são conveniência.
 
 .DEFAULT_GOAL := help
-.PHONY: help fmt gate gate-local baseline hooks e2e e2e-cov e2e-install
+.PHONY: help fmt gate gate-local gate-fast gate-local-full baseline hooks e2e e2e-cov e2e-install
 
 help: ## Lista os alvos disponíveis
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -19,6 +19,12 @@ gate: ## Roda a catraca em modo CI (saída Markdown)
 
 gate-local: ## Roda a catraca em modo local (tabela humana; usada no pre-push)
 	node scripts/quality-gate.mjs --local
+
+gate-fast: ## Catraca em modo rápido (filtro por diff, sem coletores caros)
+	node scripts/quality-gate.mjs --local --fast
+
+gate-local-full: ## Catraca completa, ignorando o filtro por diff (uso manual)
+	node scripts/quality-gate.mjs --local --full
 
 baseline: ## Regenera e avança o baseline.json (Go + TS)
 	node scripts/quality-gate.mjs --generate-baseline

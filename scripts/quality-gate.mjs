@@ -18,6 +18,12 @@
  *   node scripts/quality-gate.mjs                    # modo CI (saída Markdown)
  *   node scripts/quality-gate.mjs --local            # saída humana (terminal)
  *   node scripts/quality-gate.mjs --generate-baseline# roda coletores e grava baseline.json
+ *   node scripts/quality-gate.mjs --local --fast     # filtro por diff + só coletores baratos
+ *   node scripts/quality-gate.mjs --local --full     # ignora o filtro por diff, roda tudo
+ *
+ * Filtro por diff (briefing 0061): `--local`/CI só rodam os coletores do lado
+ * (Go/Web) que o diff atual realmente tocou (ver getChangedFiles/classifyDiff
+ * abaixo); `--generate-baseline` e `--full` sempre ignoram esse filtro.
  *
  * Robustez: ferramentas Go OPCIONAIS (golangci-lint, govulncheck, gocyclo) que
  * não estejam no PATH fazem a métrica ser PULADA (com aviso), nunca quebram nem
@@ -37,7 +43,11 @@ const REPORTS = join(ROOT, 'reports');
 const BASELINE_PATH = join(ROOT, 'baseline.json');
 const PROJECT = 'my-media-db';
 
-const isLocal        = process.argv.includes('--local');
+const isFast          = process.argv.includes('--fast');
+const isFull          = process.argv.includes('--full');
+// --fast sempre imprime no formato humano (é modo de iteração interativa),
+// mesmo que alguém rode só `--fast` sem `--local` explícito.
+const isLocal        = process.argv.includes('--local') || isFast;
 const isGenBaseline  = process.argv.includes('--generate-baseline');
 const isCI           = !isLocal && !isGenBaseline;
 
@@ -80,6 +90,80 @@ const METRIC_DEFS = {
   web_audit_critical:    { label: 'Web: vulns critical',     unit: 'vulns', side: 'web', lowerIsBetter: true,  blocking: 'zero' },
 };
 
+// ─── Filtro por diff (briefing 0061) ─────────────────────────────────────────
+// Arquivos de "infra do próprio gate": qualquer mudança neles força rodada
+// completa dos dois lados, pra nunca criar um ponto cego onde uma mudança no
+// gate/CI escapa de validação.
+const GATE_INFRA_FILES = new Set([
+  'scripts/quality-gate.mjs',
+  'lefthook.yml',
+  '.golangci.yml',
+  'baseline.json',
+  'Makefile',
+]);
+function isGateInfraFile(f) {
+  return GATE_INFRA_FILES.has(f) || f.startsWith('.github/workflows/');
+}
+
+const GO_SIDE_RE  = /^(cmd\/|internal\/|go\.mod$|go\.sum$)/;
+const WEB_SIDE_RE = /^web\//;
+
+/**
+ * Devolve a lista de arquivos mudados (`string[]`) ou `null` quando não foi
+ * possível determinar a base do diff com segurança. `null` é SEMPRE tratado
+ * como "rode tudo" por quem chama — nunca o contrário.
+ */
+function getChangedFiles() {
+  if (isCI) {
+    const base = process.env.GATE_DIFF_BASE;
+    if (!base) return null;
+    const check = spawnSync('git', ['cat-file', '-e', base], { cwd: ROOT, stdio: 'ignore' });
+    if (check.status !== 0) return null;
+    const r = run(`git diff --name-only ${base}...HEAD`);
+    if (r.code !== 0) return null;
+    return r.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+  }
+
+  // Local: tenta upstream → origin/master → origin/main, nesta ordem. Diff
+  // contra a ÁRVORE DE TRABALHO (não só HEAD) de propósito: `make gate-fast`
+  // é pra ser usado DURANTE a implementação, antes de commitar (ver §2 do
+  // briefing 0061) — se comparasse só commits, mudanças ainda não commitadas
+  // (o caso comum de quem está iterando) ficariam invisíveis pro filtro.
+  const candidateBases = ['@{upstream}', 'origin/master', 'origin/main'];
+  for (const ref of candidateBases) {
+    const mb = run(`git merge-base HEAD "${ref}"`);
+    if (mb.code !== 0 || !mb.stdout.trim()) continue;
+    const mergeBase = mb.stdout.trim();
+    const diff = run(`git diff --name-only ${mergeBase}`);
+    if (diff.code === 0) {
+      return diff.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+    }
+  }
+  return null;
+}
+
+/**
+ * Classifica a lista de arquivos mudados em `{ touchesGo, touchesWeb }`.
+ * `files === null` (base indeterminada) sempre vira `{ true, true }`.
+ */
+function classifyDiff(files) {
+  if (files === null) return { touchesGo: true, touchesWeb: true };
+
+  let touchesGo = false;
+  let touchesWeb = false;
+
+  for (const f of files) {
+    if (isGateInfraFile(f)) { touchesGo = true; touchesWeb = true; break; }
+  }
+  if (!(touchesGo && touchesWeb)) {
+    for (const f of files) {
+      if (GO_SIDE_RE.test(f)) touchesGo = true;
+      if (WEB_SIDE_RE.test(f)) touchesWeb = true;
+    }
+  }
+  return { touchesGo, touchesWeb };
+}
+
 // ─── Helpers de execução ─────────────────────────────────────────────────────
 function commandExists(cmd) {
   // Comando único como string (sem array de args) para evitar o DEP0190 do
@@ -117,6 +201,22 @@ function countNonEmptyLines(s) {
   return s.split('\n').filter((l) => l.trim() !== '').length;
 }
 
+// Log completo sob demanda (briefing 0061 §4.4): quando um coletor falha ao
+// RODAR (não "achou issues" — não conseguiu produzir resultado), grava
+// stdout+stderr completos em reports/<chave>-failure.log e mostra só as
+// últimas ~40 linhas no terminal/Markdown — o `--- FAIL:` real de go test/
+// vitest costuma ir pro stdout, que antes era descartado silenciosamente.
+function logFailure(key, stdout, stderr, message) {
+  const combined = `${stdout ?? ''}\n${stderr ?? ''}`;
+  mkdirSync(REPORTS, { recursive: true });
+  const logPath = join(REPORTS, `${key}-failure.log`);
+  writeFileSync(logPath, combined, 'utf8');
+  const tail = combined.split('\n').slice(-40).join('\n').trim();
+  warn(message);
+  if (tail) warn(tail);
+  warn(`Saída completa em: ${logPath}`);
+}
+
 // ─── Coletores Go (rodados na raiz) ──────────────────────────────────────────
 
 // Cobertura: go test -coverprofile → go tool cover -func → total %.
@@ -126,8 +226,7 @@ function collectGoCoverage() {
   const profile = join(REPORTS, 'go-coverage.out');
   const t = run(`go test ./... -coverprofile="${profile}" -covermode=set`);
   if (t.code !== 0) {
-    warn('go test falhou — cobertura não medida (métrica pulada):');
-    if (t.stderr.trim()) warn(t.stderr.trim().split('\n').slice(0, 8).join('\n'));
+    logFailure('go_coverage_lines', t.stdout, t.stderr, 'go test falhou — cobertura não medida (métrica pulada):');
     return null;
   }
   if (!existsSync(profile)) {
@@ -168,8 +267,7 @@ function collectE2ECoverage() {
     `go test ./internal/e2e/... -coverpkg="${pkgs.join(',')}" -covermode=set -coverprofile="${profile}" -count=1`,
   );
   if (t.code !== 0) {
-    warn('go test e2e falhou — cobertura E2E não medida (métrica pulada):');
-    if (t.stderr.trim()) warn(t.stderr.trim().split('\n').slice(0, 8).join('\n'));
+    logFailure('e2e_coverage_lines', t.stdout, t.stderr, 'go test e2e falhou — cobertura E2E não medida (métrica pulada):');
     return null;
   }
   if (!existsSync(profile)) {
@@ -208,8 +306,7 @@ function collectGolangciLint() {
   const r = run(`golangci-lint run --config .golangci.yml --output.json.path "${out}" ./...`);
   // exit 1 = achou issues (esperado); só falha real se o arquivo não existir.
   if (!existsSync(out)) {
-    warn('golangci-lint não produziu relatório JSON — métrica pulada. stderr:');
-    if (r.stderr.trim()) warn(r.stderr.trim().split('\n').slice(0, 8).join('\n'));
+    logFailure('go_lint_issues', r.stdout, r.stderr, 'golangci-lint não produziu relatório JSON — métrica pulada:');
     return null;
   }
   try {
@@ -231,8 +328,7 @@ function collectGovulncheck() {
   }
   const r = run('govulncheck -json ./...');
   if (r.code !== 0 && !r.stdout.trim()) {
-    warn('govulncheck falhou sem saída — métrica pulada. stderr:');
-    if (r.stderr.trim()) warn(r.stderr.trim().split('\n').slice(0, 8).join('\n'));
+    logFailure('go_vuln_high', r.stdout, r.stderr, 'govulncheck falhou sem saída — métrica pulada:');
     return null;
   }
   const affected = new Set();
@@ -294,8 +390,7 @@ function collectWebDuplication() {
   const r = run(`npx --yes jscpd src --reporters json --output "${outDir}" --silent`, { cwd: WEB });
   const reportPath = join(outDir, 'jscpd-report.json');
   if (!existsSync(reportPath)) {
-    warn('jscpd não gerou relatório — duplicação pulada. stderr:');
-    if (r.stderr.trim()) warn(r.stderr.trim().split('\n').slice(0, 6).join('\n'));
+    logFailure('web_duplicate_percent', r.stdout, r.stderr, 'jscpd não gerou relatório — duplicação pulada:');
     return null;
   }
   try {
@@ -314,8 +409,7 @@ function collectWebAuditCritical() {
   const r = run('npm audit --json', { cwd: WEB });
   const raw = r.stdout.trim();
   if (!raw) {
-    warn('npm audit não produziu saída — métrica pulada. stderr:');
-    if (r.stderr.trim()) warn(r.stderr.trim().split('\n').slice(0, 6).join('\n'));
+    logFailure('web_audit_critical', r.stdout, r.stderr, 'npm audit não produziu saída — métrica pulada:');
     return null;
   }
   try {
@@ -351,8 +445,7 @@ function collectWebTypecheck() {
   if (!m) {
     // saiu !=0 mas sem "error TS" reconhecível (ex.: tsc ausente/falha de setup):
     // pula em vez de bloquear indevidamente.
-    warn('tsc -b falhou sem erros TS reconhecíveis — métrica "web_typecheck_errors" pulada. stderr:');
-    if (r.stderr.trim()) warn(r.stderr.trim().split('\n').slice(0, 8).join('\n'));
+    logFailure('web_typecheck_errors', r.stdout, r.stderr, 'tsc -b falhou sem erros TS reconhecíveis — métrica "web_typecheck_errors" pulada:');
     return null;
   }
   return m.length;
@@ -366,8 +459,7 @@ function collectWebLint() {
   const r = run('npx --yes eslint . -f json', { cwd: WEB });
   const raw = r.stdout.trim();
   if (!raw) {
-    warn('eslint não produziu saída JSON — métrica "web_lint_issues" pulada. stderr:');
-    if (r.stderr.trim()) warn(r.stderr.trim().split('\n').slice(0, 8).join('\n'));
+    logFailure('web_lint_issues', r.stdout, r.stderr, 'eslint não produziu saída JSON — métrica "web_lint_issues" pulada:');
     return null;
   }
   try {
@@ -395,8 +487,7 @@ function collectWebCoverage() {
   const r = run('npm run test:coverage', { cwd: WEB });
   const summary = join(WEB, 'coverage', 'coverage-summary.json');
   if (!existsSync(summary)) {
-    warn('coverage-summary.json não gerado — métrica "web_coverage_lines" pulada. stderr:');
-    if (r.stderr.trim()) warn(r.stderr.trim().split('\n').slice(0, 8).join('\n'));
+    logFailure('web_coverage_lines', r.stdout, r.stderr, 'coverage-summary.json não gerado — métrica "web_coverage_lines" pulada:');
     return null;
   }
   try {
@@ -409,25 +500,65 @@ function collectWebCoverage() {
   }
 }
 
+// Coletor de cada métrica, indexado pela mesma chave usada em METRIC_DEFS —
+// permite iterar METRIC_DEFS e decidir o que rodar sem uma lista paralela.
+const COLLECTORS = {
+  go_coverage_lines:     collectGoCoverage,
+  e2e_coverage_lines:    collectE2ECoverage,
+  go_gofmt_unformatted:  collectGofmt,
+  go_lint_issues:        collectGolangciLint,
+  go_vuln_high:          collectGovulncheck,
+  go_cyclo_violations:   collectGocyclo,
+  web_coverage_lines:    collectWebCoverage,
+  web_typecheck_errors:  collectWebTypecheck,
+  web_duplicate_percent: collectWebDuplication,
+  web_lint_issues:       collectWebLint,
+  web_audit_critical:    collectWebAuditCritical,
+};
+
+// Modo `--fast` (briefing 0061 §4.3): só os coletores baratos de cada lado.
+const FAST_METRIC_KEYS = new Set([
+  'go_coverage_lines',
+  'go_gofmt_unformatted',
+  'web_coverage_lines',
+  'web_typecheck_errors',
+]);
+
+const SIDE_LABELS = { go: 'Go (raiz)', web: 'Web (web/)' };
+const SIDE_SKIP_REASONS = {
+  go:  'Go pulado: sem mudanças em cmd/, internal/, go.mod ou go.sum neste diff.',
+  web: 'Web pulado: sem mudanças em web/ neste diff.',
+};
+
 // ─── Coleta unificada ────────────────────────────────────────────────────────
-function collectMetrics() {
+// `touches` = { touchesGo, touchesWeb } (briefing 0061 §4.1). Quando um lado
+// não foi tocado, PULA a chamada dos coletores desse lado inteiramente (não
+// roda o comando e deixa a métrica null) — reaproveita o tratamento de null já
+// existente em compareMetrics/printLocal/printMarkdown.
+function collectMetrics(touches = { touchesGo: true, touchesWeb: true }, opts = {}) {
+  const { fast = false } = opts;
   mkdirSync(REPORTS, { recursive: true });
   const metrics = {};
+  const touchedBySide = { go: touches.touchesGo, web: touches.touchesWeb };
 
-  log(`${c.dim}Coletando métricas Go (raiz)...${c.reset}`);
-  metrics.go_coverage_lines    = collectGoCoverage();
-  metrics.e2e_coverage_lines   = collectE2ECoverage();
-  metrics.go_gofmt_unformatted = collectGofmt();
-  metrics.go_lint_issues       = collectGolangciLint();
-  metrics.go_vuln_high         = collectGovulncheck();
-  metrics.go_cyclo_violations  = collectGocyclo();
-
-  log(`${c.dim}Coletando métricas Web (web/)...${c.reset}`);
-  metrics.web_coverage_lines    = collectWebCoverage();
-  metrics.web_typecheck_errors  = collectWebTypecheck();
-  metrics.web_duplicate_percent = collectWebDuplication();
-  metrics.web_lint_issues       = collectWebLint();
-  metrics.web_audit_critical    = collectWebAuditCritical();
+  for (const side of ['go', 'web']) {
+    if (!touchedBySide[side]) {
+      log(`${c.dim}${SIDE_SKIP_REASONS[side]}${c.reset}`);
+      for (const [key, def] of Object.entries(METRIC_DEFS)) {
+        if (def.side === side) metrics[key] = null;
+      }
+      continue;
+    }
+    log(`${c.dim}Coletando métricas ${SIDE_LABELS[side]}...${c.reset}`);
+    for (const [key, def] of Object.entries(METRIC_DEFS)) {
+      if (def.side !== side) continue;
+      if (fast && !FAST_METRIC_KEYS.has(key)) {
+        metrics[key] = null;
+        continue;
+      }
+      metrics[key] = COLLECTORS[key]();
+    }
+  }
 
   return metrics;
 }
@@ -648,7 +779,22 @@ function main() {
     process.exit(1);
   }
 
-  const current = collectMetrics();
+  let touches;
+  if (isFull) {
+    touches = { touchesGo: true, touchesWeb: true };
+    log(`${c.dim}--full: filtro por diff ignorado, rodando os dois lados completos.${c.reset}`);
+  } else {
+    const changed = getChangedFiles();
+    touches = classifyDiff(changed);
+    if (changed === null) {
+      log(`${c.dim}Base do diff indeterminada — rodando os dois lados completos (fallback seguro).${c.reset}`);
+    }
+  }
+  if (isFast) {
+    warn('Modo --fast: só coletores baratos (go_coverage_lines, go_gofmt_unformatted, web_coverage_lines, web_typecheck_errors). Não substitui a rodada completa antes do push.');
+  }
+
+  const current = collectMetrics(touches, { fast: isFast });
   const result  = compareMetrics(current, baseline);
 
   const passed = isLocal ? printLocal(current, result) : printMarkdown(current, result);
