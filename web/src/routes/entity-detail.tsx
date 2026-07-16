@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { Pencil, Trash2, TriangleAlert } from 'lucide-react'
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
+import { Trash2, TriangleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ApiError, purgeEntity, type OrderingsInfo } from '@/lib/api'
@@ -22,6 +22,7 @@ import { rotuloIdioma } from '@/lib/languages'
 import { temOverrideEditado } from '@/lib/override-fields'
 import { ArtGallery } from '@/components/art-gallery'
 import { CollectionMembers } from '@/components/collection-members'
+import { EntityActionButtons } from '@/components/entity-action-buttons'
 import { MembrosSomenteLeitura } from '@/components/entity-members'
 import {
   EpisodiosAgrupados,
@@ -314,12 +315,10 @@ export function EntityDetailScreen() {
               ativo={temOverrideEditado(blob, 'title', lang, fields)}
             />
             <SeloPosse ownership={data.ownership} />
-            <Button asChild variant="outline" size="sm" className="ml-auto">
-              <Link to="/entities/$id/edit" params={{ id }}>
-                <Pencil aria-hidden />
-                Editar
-              </Link>
-            </Button>
+            <EntityActionButtons
+              id={id}
+              catalogCompleteness={data.catalog_completeness}
+            />
           </>
         }
         descriptionExtra={

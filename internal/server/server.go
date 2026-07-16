@@ -448,6 +448,15 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Get("/{id}/match-preview", s.matchPreview)
 				ent.Post("/{id}/confirm-candidate", s.confirmCandidate)
 
+				// Ações rápidas SOB DEMANDA de UM item aberto no detalhe
+				// (briefing 0059): enrich-missing dispara a MESMA orquestração
+				// de tentarEnriquecerOuSinalizar (0056), fora do lote/throttle
+				// do job; download-missing-artwork baixa a melhor arte
+				// disponível para os kinds que faltam na completude de
+				// catalogação (0058), via o mesmo agregador/download do 0048.
+				ent.Post("/{id}/enrich-missing", s.enrichMissing)
+				ent.Post("/{id}/download-missing-artwork", s.downloadMissingArtwork)
+
 				// Edição da IDENTIDADE externa (briefing 0027): grava o mapa
 				// external_ids (source -> id na fonte). As colunas geradas re-derivam;
 				// fixar o id prepara sincronização futura. NÃO re-enriquece (o dono

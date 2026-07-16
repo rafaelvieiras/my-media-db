@@ -914,6 +914,43 @@ export async function autoMatchBatch(
   return lerJson<AutoMatchBatchResult>(res)
 }
 
+// ── Ações rápidas por item (0059) ────────────────────────────────────────────
+
+// Resultado de POST .../enrich-missing: espelha `resultado` de
+// `tentarEnriquecerOuSinalizar` (0056), disparado sob demanda para UM item.
+export type EnrichMissingResult = components['schemas']['EnrichMissingResult']
+
+// Resultado de POST .../download-missing-artwork: kinds que ganharam asset
+// novo × kinds sem opção disponível em nenhum provider agora.
+export type DownloadMissingArtworkResult =
+  components['schemas']['DownloadMissingArtworkResult']
+
+// ENRIQUECER SOB DEMANDA (0059): dispara a MESMA busca local→externo do
+// 0056/0050 só para este item, fora do lote/throttle do job (mas ainda carimba
+// `last_external_match_attempt_at`). Sempre 200 — "não achou" é `outcome:
+// "none"`, resultado válido, não erro (mesma convenção do auto-match).
+export async function enrichMissing(id: string): Promise<EnrichMissingResult> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/enrich-missing`,
+    { method: 'POST' },
+  )
+  return lerJson<EnrichMissingResult>(res)
+}
+
+// BAIXAR ARTE FALTANTE (0059): lê `catalog_completeness.missing` ao vivo,
+// filtra as chaves `artwork:<kind>` e baixa a melhor opção disponível por
+// kind (reusa `selectArtwork`/`baixarEMaterializarArte` no backend). Sempre
+// 200 — kind sem opção em nenhum provider vira `unavailable`, não erro.
+export async function downloadMissingArtwork(
+  id: string,
+): Promise<DownloadMissingArtworkResult> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/download-missing-artwork`,
+    { method: 'POST' },
+  )
+  return lerJson<DownloadMissingArtworkResult>(res)
+}
+
 // ── Prévia de candidato + confirmação supervisionada (0060) ─────────────────
 
 // O candidato mostrado pela prévia (local OU externo) — pôster/título/ano/fonte.

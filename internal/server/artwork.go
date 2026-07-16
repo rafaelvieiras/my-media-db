@@ -57,12 +57,23 @@ func (s *Server) getEntityArtwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	grupos := s.montarGruposArtwork(ctx, id)
+
+	writeJSON(w, http.StatusOK, montarRespostaArtwork(grupos))
+}
+
+// montarGruposArtwork concentra as três chamadas de coleta (assets locais +
+// pôster/fundo das camadas externas + inventário fanart.tv) num único mapa
+// kind→[]artworkItem — extraído do corpo de getEntityArtwork (briefing 0059)
+// para ser reusado NÃO-HTTP por baixarMelhorArteDoKind (artwork_missing.go),
+// sem duplicar a lógica de mesclagem de fontes. Mesmo comportamento
+// observável de antes: getEntityArtwork continua o único chamador HTTP.
+func (s *Server) montarGruposArtwork(ctx context.Context, id string) map[string][]artworkItem {
 	grupos := map[string][]artworkItem{}
 	kindsExternosLocais := s.coletarArtesLocais(ctx, id, grupos)
 	s.coletarArtesDeCamadas(ctx, id, kindsExternosLocais, grupos)
 	s.coletarInventarioFanart(ctx, id, grupos)
-
-	writeJSON(w, http.StatusOK, montarRespostaArtwork(grupos))
+	return grupos
 }
 
 // coletarArtesLocais adiciona os assets materializados da entity (origin user/external)

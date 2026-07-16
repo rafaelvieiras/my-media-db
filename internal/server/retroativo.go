@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"log"
+	"net/http"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
@@ -85,7 +88,6 @@ func (s *Server) EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizad
 		return 0, 0, err
 	}
 
-	w := sqlcgen.New(s.db.Write)
 	for _, row := range rows {
 		ent, err := s.leitura().ObterEntity(ctx, row.ID)
 		if err != nil {
@@ -94,7 +96,7 @@ func (s *Server) EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizad
 			continue
 		}
 
-		resultado, tentarErr := s.tentarEnriquecerOuSinalizar(ctx, ent)
+		resultado, _, _, tentarErr := s.tentarEnriquecerOuSinalizar(ctx, ent)
 		if tentarErr != nil {
 			log.Printf("saude_biblioteca: enriquecimento retroativo falhou para %s (best-effort, ignorado): %v", ent.ID, tentarErr)
 		}
@@ -102,7 +104,10 @@ func (s *Server) EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizad
 		// Carimba a tentativa SEMPRE ao final (mesmo se tentarErr != nil): o
 		// item foi de fato verificado nesta execução -- best-effort, erro
 		// aqui só loga, não aborta o item nem o lote (briefing 0056 §4).
-		if werr := w.AtualizarTentativaMatchExterno(ctx, ent.ID); werr != nil {
+		// carimbarTentativaExterna (extraído no briefing 0059) é o MESMO
+		// helper reusado pelo endpoint individual enrichMissing, sem duplicar
+		// a chamada sqlc.
+		if werr := s.carimbarTentativaExterna(ctx, ent.ID); werr != nil {
 			log.Printf("saude_biblioteca: gravar tentativa de enriquecimento retroativo falhou para %s: %v", ent.ID, werr)
 		}
 
@@ -123,29 +128,32 @@ func (s *Server) EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizad
 // (automatch.go) já devolvem o maior-pontuado SEM o corte de LimiarAutoMatch
 // embutido -- quem decide aplicar é o chamador -- então este arquivo reusa os
 // dois diretamente, sem duplicar a lógica de ranking. resultado é
-// "applied"/"flagged"/"none" (só para log/teste, nunca vira DTO de API). err
-// é SÓ erro real de banco/infra.
-func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.Entity) (resultado string, err error) {
+// "applied"/"flagged"/"none"; method (só em "applied", "local"/"external") e
+// score (em "applied"/"flagged") alimentam o DTO público de enrichMissing
+// (briefing 0059) -- EnriquecerRetroativo (o job em lote) ignora os dois,
+// interessado só em resultado para as contagens agregadas. err é SÓ erro real
+// de banco/infra.
+func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.Entity) (resultado, method string, score float64, err error) {
 	titulo, ano, ok, err := s.tituloAnoDoArquivo(ctx, ent.ID)
 	if err != nil {
-		return "", err
+		return "", "", 0, err
 	}
 	if !ok {
-		return "none", nil
+		return "none", "", 0, nil
 	}
 
 	// 1) Local-first (mesma ordem de tentarAutoMatch): nunca duplica entity
 	// já catalogada.
 	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, "", "")
 	if err != nil {
-		return "", err
+		return "", "", 0, err
 	}
 	melhorLocal, achouLocal := s.melhorCandidatoLocal(ctx, candidatosLocais, ent.ID, titulo, ano)
 	if achouLocal && melhorLocal.Score >= LimiarAutoMatch {
 		if err := s.fundirEntities(ctx, melhorLocal.ID, ent.ID); err != nil {
-			return "", err
+			return "", "", 0, err
 		}
-		return "applied", nil
+		return "applied", "local", melhorLocal.Score, nil
 	}
 
 	// 2) Externo: só quando local não bateu o limiar de aplicação.
@@ -154,16 +162,16 @@ func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.En
 	if s.enrich != nil {
 		externos, disponivel := s.buscarExterno(ctx, titulo, ent.Type, "")
 		if disponivel {
-			cand, score, achou := melhorCandidatoExterno(externos, titulo, ano)
+			cand, scoreExterno, achou := melhorCandidatoExterno(externos, titulo, ano)
 			if achou {
-				melhorExternoScore, achouExterno = score, true
-				if score >= LimiarAutoMatch {
-					aplicado, err := s.aplicarCandidatoExterno(ctx, ent, cand, score)
+				melhorExternoScore, achouExterno = scoreExterno, true
+				if scoreExterno >= LimiarAutoMatch {
+					aplicado, err := s.aplicarCandidatoExterno(ctx, ent, cand, scoreExterno)
 					if err != nil {
-						return "", err
+						return "", "", 0, err
 					}
 					if aplicado.Resolved {
-						return "applied", nil
+						return "applied", "external", scoreExterno, nil
 					}
 					// aplicarCandidatoExterno degradou (colisão com
 					// investimento do dono na outra entity, ou a fonte
@@ -187,14 +195,17 @@ func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.En
 		melhorGeral = melhorExternoScore
 	}
 	if melhorGeral < limiarSinalizacaoRetroativa {
-		return "none", nil
+		return "none", "", 0, nil
 	}
 
-	// Teto do valor gravado: sem ele, um candidato pontuado entre
+	// Teto do valor GRAVADO no banco: sem ele, um candidato pontuado entre
 	// limiarBaixaConfianca e LimiarAutoMatch (achou algo bom, mas não bom o
 	// bastante para os 92 do auto-match) seria gravado com um
 	// match_confidence que NÃO bate `< limiar` -- o item continuaria
-	// invisível, o oposto do pretendido (ver §6 do briefing 0056).
+	// invisível, o oposto do pretendido (ver §6 do briefing 0056). O score
+	// DEVOLVIDO ao chamador (para o DTO de enrichMissing) é o melhorGeral
+	// real, não o teto -- o dono quer ver a pontuação de fato do candidato,
+	// não o valor artificialmente rebaixado só para a fila de Revisão.
 	valorGravado := melhorGeral
 	if valorGravado > limiarBaixaConfianca-1 {
 		valorGravado = limiarBaixaConfianca - 1
@@ -203,7 +214,74 @@ func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.En
 		MatchConfidence: sql.NullFloat64{Float64: valorGravado, Valid: true},
 		EntityID:        ent.ID,
 	}); err != nil {
-		return "", err
+		return "", "", 0, err
 	}
-	return "flagged", nil
+	return "flagged", "", melhorGeral, nil
+}
+
+// carimbarTentativaExterna grava last_external_match_attempt_at para `id` via
+// AtualizarTentativaMatchExterno -- extraído do corpo antes inline de
+// EnriquecerRetroativo (briefing 0059) para ser reusado SEM duplicar a
+// chamada sqlc pelo endpoint individual enrichMissing (que carimba
+// incondicionalmente, mesmo ignorando o throttle do job em lote).
+func (s *Server) carimbarTentativaExterna(ctx context.Context, id string) error {
+	return sqlcgen.New(s.db.Write).AtualizarTentativaMatchExterno(ctx, id)
+}
+
+// enrichMissingResultDTO é a resposta de POST /entities/{id}/enrich-missing
+// (briefing 0059, openapi.yaml EnrichMissingResult) -- espelha o `resultado`
+// de tentarEnriquecerOuSinalizar, reaproveitado como o DTO público deste
+// endpoint (sem vocabulário novo). Method só presente quando
+// outcome=="applied"; Score presente quando outcome é "applied" ou
+// "flagged"; nenhum dos dois em "none".
+type enrichMissingResultDTO struct {
+	Outcome string   `json:"outcome"`
+	Method  *string  `json:"method,omitempty"`
+	Score   *float64 `json:"score,omitempty"`
+}
+
+// enrichMissing trata POST /api/v1/entities/{id}/enrich-missing (briefing
+// 0059): dispara SOB DEMANDA, para UM item aberto no detalhe, a MESMA
+// orquestração de busca/aplicação/sinalização do job de saúde
+// (tentarEnriquecerOuSinalizar, 0056) -- SEM nenhuma guarda de elegibilidade
+// por status/throttle (ação explícita e pontual do dono, diferente da
+// varredura em lote; ver briefing 0059 §6 para a justificativa de não
+// replicar o filtro do job aqui). Sempre carimba
+// last_external_match_attempt_at ao final (mesmo em outcome=="none"), para o
+// PRÓXIMO lote do job não competir pelo item que o dono acabou de resolver
+// manualmente. 404 se a entity não existe; 200 sempre depois disso (nunca
+// 5xx só por "não achou candidato" -- mesmo padrão de /auto-match); 500 só em
+// erro real de banco/infra (na busca OU ao carimbar).
+func (s *Server) enrichMissing(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	ctx := r.Context()
+	ent, ok := s.exigirEntity(w, ctx, id)
+	if !ok {
+		return
+	}
+
+	resultado, method, score, tentarErr := s.tentarEnriquecerOuSinalizar(ctx, ent)
+	// Carimba SEMPRE, mesmo se tentarErr != nil -- o item foi de fato
+	// verificado nesta chamada (mesma semântica de EnriquecerRetroativo, só
+	// que aqui um erro de banco em QUALQUER um dos dois passos vira 500 (não
+	// é best-effort de lote -- é uma chamada HTTP individual).
+	carimbarErr := s.carimbarTentativaExterna(ctx, ent.ID)
+	if tentarErr != nil || carimbarErr != nil {
+		respondErroInterno(w)
+		return
+	}
+
+	dto := enrichMissingResultDTO{Outcome: resultado}
+	switch resultado {
+	case "applied":
+		m, sc := method, score
+		dto.Method, dto.Score = &m, &sc
+	case "flagged":
+		sc := score
+		dto.Score = &sc
+	}
+	writeJSON(w, http.StatusOK, dto)
 }

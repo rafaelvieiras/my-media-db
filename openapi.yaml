@@ -1304,6 +1304,66 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/enrich-missing:
+    post:
+      operationId: enrichMissing
+      summary: Enriquecimento externo sob demanda de UM item (briefing 0059).
+      description: >
+        Dispara a MESMA orquestração de busca/aplicação/sinalização do job de
+        saúde da biblioteca (`tentarEnriquecerOuSinalizar`, briefing 0056),
+        mas para UM item, fora do lote do job e IGNORANDO o throttle de
+        re-tentativa (`intervaloReTentativaRetroativa`) — ação explícita do
+        dono no detalhe, não a varredura diária. Sem guarda de elegibilidade
+        por status/confiança: ao contrário do job, pode ser chamado em
+        QUALQUER entity não-purgada, inclusive uma já com `external_ids`
+        preenchido. Sempre carimba `last_external_match_attempt_at` ao final
+        (mesmo em `outcome=none`), para coordenar com o próximo lote do job.
+        SEMPRE 200 (nunca 5xx só por "não achou candidato" — mesmo padrão de
+        `/auto-match`). 404 se a entity não existe.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Resultado do enriquecimento sob demanda (aplicado, sinalizado ou nada).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnrichMissingResult" }
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/download-missing-artwork:
+    post:
+      operationId: downloadMissingArtwork
+      summary: Baixa a melhor arte disponível para os kinds faltando (briefing 0059).
+      description: >
+        Recalcula `catalog_completeness` AO VIVO (mesmo caminho do detalhe,
+        briefing 0058), filtra as chaves `artwork:<kind>` de `missing` e, para
+        cada kind, consulta o MESMO agregador de inventário do briefing 0048
+        (assets locais + camadas externas + fanart.tv) e baixa a melhor opção
+        disponível (maior `likes` da fanart.tv; em empate/ausência, a primeira
+        da ordem estável do agregador) via `baixarEMaterializarArte`. Item já
+        completo (ou draft, sem `catalog_completeness`) responde 200 com as
+        duas listas vazias, sem tocar nada. Por kind, tenta múltiplas
+        candidatas em sequência antes de desistir — falha de download de UMA
+        opção não propaga como erro HTTP (nunca 502 aqui); só cai em
+        `unavailable` quando NENHUMA candidata do kind baixou. 404 se a
+        entity não existe; 503 se o diretório de assets não está configurado;
+        500 só em erro real de banco/infra.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Kinds que ganharam arte nova e kinds que faltavam sem opção disponível.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DownloadMissingArtworkResult" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/purge:
     post:
       operationId: purgeEntities
@@ -2335,6 +2395,56 @@ components:
         source_id:
           type: string
           description: Id na fonte externa (obrigatório quando method=external).
+    EnrichMissingResult:
+      type: object
+      description: >
+        Resposta de POST /entities/{id}/enrich-missing (briefing 0059) —
+        espelha o `resultado` de `tentarEnriquecerOuSinalizar` (0056),
+        reaproveitado como o DTO público deste endpoint. `method`/`score`
+        presentes só quando `outcome=="applied"`; `score` também presente em
+        `outcome=="flagged"` (sem `method`); nenhum dos dois em
+        `outcome=="none"`.
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [applied, flagged, none]
+          description: >
+            `applied` (candidato forte aplicado sozinho), `flagged`
+            (candidato plausível, item sinalizado para a fila de Revisão) ou
+            `none` (nenhum candidato encontrado em nenhuma fonte).
+        method:
+          type: string
+          enum: [local, external]
+          description: >
+            Como o candidato foi aplicado — só presente quando
+            `outcome=="applied"`.
+        score:
+          type: number
+          description: >
+            Score do candidato (0-100) — presente quando `outcome` é
+            `applied` ou `flagged`; ausente quando `none`.
+    DownloadMissingArtworkResult:
+      type: object
+      description: >
+        Resposta de POST /entities/{id}/download-missing-artwork (briefing
+        0059). `downloaded` são os kinds (`poster`, `fanart`, ...) que
+        ganharam um asset novo; `unavailable` são os kinds que estavam em
+        `catalog_completeness.missing` (`artwork:<kind>`) mas não tinham
+        NENHUMA opção disponível em nenhum provider agora. Um kind que já
+        tinha asset (corrida com upload manual concorrente) não aparece em
+        nenhuma das duas listas. Ambas `[]` quando o item já está completo ou
+        é draft (sem `catalog_completeness`).
+      required: [downloaded, unavailable]
+      properties:
+        downloaded:
+          type: array
+          items: { type: string }
+          description: Kinds de arte que ganharam um asset novo nesta chamada.
+        unavailable:
+          type: array
+          items: { type: string }
+          description: Kinds que estavam faltando mas sem opção em nenhum provider.
     ResolvedEntity:
       type: object
       description: >

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"net/http"
 	"path/filepath"
 	"testing"
 	"time"
@@ -476,5 +477,196 @@ func TestEnriquecerRetroativoLoteMisto(t *testing.T) {
 		if !ent.LastExternalMatchAttemptAt.Valid {
 			t.Errorf("%s: last_external_match_attempt_at deveria ter sido carimbado", id)
 		}
+	}
+}
+
+// ── POST /entities/{id}/enrich-missing (briefing 0059) ─────────────────────
+
+// decodeEnrichMissing decodifica a resposta do enrich-missing.
+func decodeEnrichMissing(t *testing.T, body []byte) enrichMissingResultDTO {
+	t.Helper()
+	var out enrichMissingResultDTO
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decodificar enrichMissingResultDTO: %v (corpo=%s)", err, body)
+	}
+	return out
+}
+
+// TestEnrichMissingAplicaLocal cobre o critério §5: candidato local com score
+// >= LimiarAutoMatch aplica sozinho (outcome=applied, method=local) via UM
+// POST individual -- mesma asserção do critério equivalente do 0056
+// (TestEnriquecerRetroativoAplicaLocal), só que disparado pelo endpoint HTTP
+// para UM item.
+func TestEnrichMissingAplicaLocal(t *testing.T) {
+	s, d := setupRetroativoServer(t, nil)
+	semearEntityComAno(t, d, "e-target", "movie", "The Matrix", "1999-03-31")
+	semearEntity(t, d, "e-gap", "movie", "Gap")
+	semearFile(t, d, "f-gap", "e-gap", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 70, "")
+
+	h, err := s.Handler()
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e-gap/enrich-missing", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	resultado := decodeEnrichMissing(t, rec.Body.Bytes())
+	if resultado.Outcome != "applied" {
+		t.Fatalf("outcome = %q, quero applied (corpo=%s)", resultado.Outcome, rec.Body.String())
+	}
+	if resultado.Method == nil || *resultado.Method != "local" {
+		t.Errorf("method = %v, quero \"local\"", resultado.Method)
+	}
+	if resultado.Score == nil || *resultado.Score < LimiarAutoMatch {
+		t.Errorf("score = %v, quero >= %v", resultado.Score, LimiarAutoMatch)
+	}
+
+	// e-gap (perdedora) foi fundida em e-target -- mesma prova de aplicação
+	// do teste em lote equivalente.
+	if _, err := escrita(t, d).ObterEntity(context.Background(), "e-gap"); err == nil {
+		t.Error("e-gap ainda existe após aplicar local, quero fundida/apagada")
+	}
+}
+
+// TestEnrichMissingAplicaExterno cobre o critério §5 pelo ramo EXTERNO:
+// candidato externo forte aplica via a sequência do "Corrigir"
+// (aplicarCandidatoExterno) e o corpo traz method=external.
+func TestEnrichMissingAplicaExterno(t *testing.T) {
+	resultados := []provider.ResultadoExterno{
+		{Source: "tmdb", SourceID: "335984", Type: "movie", Title: "Blade Runner 2049", Year: strp("2017")},
+	}
+	s, d := setupRetroativoServer(t, resultados)
+	semearEntity(t, d, "e-gap", "movie", "Gap")
+	semearFile(t, d, "f-gap", "e-gap", "/lib/Blade Runner 2049 (2017)/Blade Runner 2049 (2017).mkv", "present", 70, "")
+
+	h, err := s.Handler()
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e-gap/enrich-missing", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	resultado := decodeEnrichMissing(t, rec.Body.Bytes())
+	if resultado.Outcome != "applied" || resultado.Method == nil || *resultado.Method != "external" {
+		t.Fatalf("resultado = %+v, quero outcome=applied method=external", resultado)
+	}
+
+	ent, err := escrita(t, d).ObterEntity(context.Background(), "e-gap")
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	if !ent.LastExternalMatchAttemptAt.Valid {
+		t.Error("last_external_match_attempt_at deveria ter sido carimbado")
+	}
+}
+
+// TestEnrichMissingSinaliza cobre o critério §5: candidato médio (score
+// entre limiarSinalizacaoRetroativa e LimiarAutoMatch) sinaliza
+// (outcome=flagged, com score mas SEM method) -- e o item passa a aparecer
+// em GET /review.
+func TestEnrichMissingSinaliza(t *testing.T) {
+	s, d := setupRetroativoServer(t, nil)
+	semearEntity(t, d, "e-candidato", "movie", "The Matrix Reloaded")
+	semearEntity(t, d, "e-gap", "movie", "Gap")
+	semearFile(t, d, "f-gap", "e-gap", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 70, "")
+
+	h, err := s.Handler()
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e-gap/enrich-missing", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	resultado := decodeEnrichMissing(t, rec.Body.Bytes())
+	if resultado.Outcome != "flagged" {
+		t.Fatalf("outcome = %q, quero flagged (corpo=%s)", resultado.Outcome, rec.Body.String())
+	}
+	if resultado.Method != nil {
+		t.Errorf("method = %v, quero nil (só presente em outcome=applied)", *resultado.Method)
+	}
+	if resultado.Score == nil || *resultado.Score < limiarSinalizacaoRetroativa || *resultado.Score >= LimiarAutoMatch {
+		t.Errorf("score = %v, quero entre %v e %v", resultado.Score, limiarSinalizacaoRetroativa, LimiarAutoMatch)
+	}
+
+	if !idsDe(decodeCards(t, do(t, h, "GET", "/api/v1/review", nil)))["e-gap"] {
+		t.Error("e-gap deveria aparecer na fila de Revisão após ser sinalizado")
+	}
+}
+
+// TestEnrichMissingSemCandidato cobre o critério §5: sem candidato plausível
+// em nenhuma fonte, outcome=none (sem method/score), 200, e a tentativa AINDA
+// é carimbada.
+func TestEnrichMissingSemCandidato(t *testing.T) {
+	s, d := setupRetroativoServer(t, nil)
+	semearEntityComAno(t, d, "e-outro", "movie", "Xyzzy Plugh Quux", "2005-01-01")
+	semearEntity(t, d, "e-gap", "movie", "Gap")
+	semearFile(t, d, "f-gap", "e-gap", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 70, "")
+
+	h, err := s.Handler()
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e-gap/enrich-missing", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	resultado := decodeEnrichMissing(t, rec.Body.Bytes())
+	if resultado.Outcome != "none" || resultado.Method != nil || resultado.Score != nil {
+		t.Errorf("resultado = %+v, quero {outcome:none, method:nil, score:nil}", resultado)
+	}
+
+	ent, err := escrita(t, d).ObterEntity(context.Background(), "e-gap")
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	if !ent.LastExternalMatchAttemptAt.Valid {
+		t.Error("last_external_match_attempt_at deveria ter sido carimbado mesmo sem candidato")
+	}
+}
+
+// TestEnrichMissingIgnoraThrottle cobre o critério §5: o endpoint individual
+// FUNCIONA mesmo quando last_external_match_attempt_at foi carimbado há
+// MENOS de intervaloReTentativaRetroativa (30 dias) -- diferente do job em
+// lote (EnriquecerRetroativo), que nunca chegaria a chamar
+// tentarEnriquecerOuSinalizar para este item (filtrado pela query). O
+// endpoint não faz NENHUMA checagem de throttle antes de chamar a
+// orquestração.
+func TestEnrichMissingIgnoraThrottle(t *testing.T) {
+	resultados := []provider.ResultadoExterno{
+		{Source: "tmdb", SourceID: "335984", Type: "movie", Title: "Blade Runner 2049", Year: strp("2017")},
+	}
+	s, d := setupRetroativoServer(t, resultados)
+	semearEntity(t, d, "e-gap", "movie", "Gap")
+	semearFile(t, d, "f-gap", "e-gap", "/lib/Blade Runner 2049 (2017)/Blade Runner 2049 (2017).mkv", "present", 70, "")
+	// Carimba uma tentativa BEM recente -- um throttle de lote bloquearia.
+	carimbarTentativa(t, d, "e-gap", time.Now().Add(-1*time.Hour))
+
+	h, err := s.Handler()
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e-gap/enrich-missing", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	resultado := decodeEnrichMissing(t, rec.Body.Bytes())
+	if resultado.Outcome != "applied" {
+		t.Errorf("outcome = %q, quero applied (throttle recente deveria ter sido IGNORADO)", resultado.Outcome)
+	}
+}
+
+// TestEnrichMissingEntidadeInexistente: 404 para entity que não existe.
+func TestEnrichMissingEntidadeInexistente(t *testing.T) {
+	s, _ := setupRetroativoServer(t, nil)
+	h, err := s.Handler()
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/naoexiste/enrich-missing", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, quero 404 (corpo=%s)", rec.Code, rec.Body.String())
 	}
 }
