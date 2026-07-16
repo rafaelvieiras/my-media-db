@@ -51,7 +51,7 @@ func fixtureEntidadeCompleta() resolver.Entidade {
 // tabela de mapeamento do briefing 0062 SS4 (criterio de aceite SS5).
 func TestMontarNFOMovieCampoACampo(t *testing.T) {
 	e := fixtureEntidadeCompleta()
-	out, err := MontarNFO(e, InsumosArte{}) // nada materializado localmente -> thumb/fanart de fallback aparecem
+	out, err := MontarNFO(e, InsumosArte{}, CamposUsuarioNFO{}) // nada materializado localmente -> thumb/fanart de fallback aparecem
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestMontarNFOTVShowIncluiStatus(t *testing.T) {
 		Title:        "Show",
 		AiringStatus: strPtr("Returning Series"),
 	}
-	out, err := MontarNFO(e, InsumosArte{})
+	out, err := MontarNFO(e, InsumosArte{}, CamposUsuarioNFO{})
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestMontarNFOUniqueIDFallbackImdb(t *testing.T) {
 		Title:       "Sem TMDB",
 		ExternalIDs: map[string]string{"imdb": "tt9999999", "tvdb": "12345"},
 	}
-	out, err := MontarNFO(e, InsumosArte{})
+	out, err := MontarNFO(e, InsumosArte{}, CamposUsuarioNFO{})
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestMontarNFOUniqueIDFallbackImdb(t *testing.T) {
 // fallback (o arquivo local ja e a fonte -- briefing 0062 SS4).
 func TestMontarNFOThumbFanartOmitidosQuandoLocal(t *testing.T) {
 	e := fixtureEntidadeCompleta()
-	out, err := MontarNFO(e, InsumosArte{PosterLocal: true, FanartLocal: true})
+	out, err := MontarNFO(e, InsumosArte{PosterLocal: true, FanartLocal: true}, CamposUsuarioNFO{})
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
@@ -168,11 +168,92 @@ func TestMontarNFOThumbFanartOmitidosQuandoLocal(t *testing.T) {
 // TestMontarNFOSemRating: VoteAverage nil omite <rating> por completo.
 func TestMontarNFOSemRating(t *testing.T) {
 	e := resolver.Entidade{ID: "e3", Type: "movie", Title: "Sem nota"}
-	out, err := MontarNFO(e, InsumosArte{})
+	out, err := MontarNFO(e, InsumosArte{}, CamposUsuarioNFO{})
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
 	if strings.Contains(string(out), "<rating") {
 		t.Errorf("XML contem <rating> mesmo com VoteAverage nil:\n%s", out)
+	}
+}
+
+// TestExtrairCamposUsuarioRoundTrip prova que os campos LOCAIS (avaliacao do
+// usuario, assistido/contagem, ultima reproducao, data de adicao e ponto de
+// retomada -- convencao Kodi/Emby/Jellyfin) sobrevivem a um round-trip
+// ExtrairCamposUsuario -> MontarNFO: e exatamente o que gravarNFO
+// (internal/server/localmedia_handlers.go) faz antes de sobrescrever um .nfo
+// ja existente, para nao apagar edicao feita fora do MyMediaDB.
+func TestExtrairCamposUsuarioRoundTrip(t *testing.T) {
+	anterior := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<movie>
+  <title>Matrix (versao antiga, sera substituida)</title>
+  <userrating>9.5</userrating>
+  <playcount>3</playcount>
+  <watched>true</watched>
+  <lastplayed>2026-06-01 20:00:00</lastplayed>
+  <dateadded>2024-01-15 10:00:00</dateadded>
+  <resume>
+    <position>1200.5</position>
+    <total>7260</total>
+  </resume>
+</movie>`)
+
+	usuario := ExtrairCamposUsuario(anterior)
+	if usuario.UserRating == nil || *usuario.UserRating != 9.5 {
+		t.Errorf("UserRating = %v, quero 9.5", usuario.UserRating)
+	}
+	if usuario.PlayCount == nil || *usuario.PlayCount != 3 {
+		t.Errorf("PlayCount = %v, quero 3", usuario.PlayCount)
+	}
+	if usuario.Watched == nil || !*usuario.Watched {
+		t.Errorf("Watched = %v, quero true", usuario.Watched)
+	}
+	if usuario.LastPlayed != "2026-06-01 20:00:00" {
+		t.Errorf("LastPlayed = %q", usuario.LastPlayed)
+	}
+	if usuario.DateAdded != "2024-01-15 10:00:00" {
+		t.Errorf("DateAdded = %q", usuario.DateAdded)
+	}
+	if usuario.Resume == nil || usuario.Resume.Position != 1200.5 || usuario.Resume.Total != 7260 {
+		t.Errorf("Resume = %+v, quero {1200.5 7260}", usuario.Resume)
+	}
+
+	e := fixtureEntidadeCompleta()
+	out, err := MontarNFO(e, InsumosArte{}, usuario)
+	if err != nil {
+		t.Fatalf("MontarNFO: %v", err)
+	}
+	xmlStr := string(out)
+	for _, esperado := range []string{
+		"<userrating>9.5</userrating>",
+		"<playcount>3</playcount>",
+		"<watched>true</watched>",
+		"<lastplayed>2026-06-01 20:00:00</lastplayed>",
+		"<dateadded>2024-01-15 10:00:00</dateadded>",
+		"<position>1200.5</position>",
+		"<total>7260</total>",
+	} {
+		if !strings.Contains(xmlStr, esperado) {
+			t.Errorf("XML regravado nao contem %q (campo local do usuario deveria ter sido preservado):\n%s", esperado, xmlStr)
+		}
+	}
+	// O titulo, porem, DEVE ter sido atualizado com o valor novo -- so os
+	// campos locais sao preservados, o resto do NFO sempre reflete o dado
+	// atual do resolver.Entidade.
+	if !strings.Contains(xmlStr, "<title>Matrix</title>") {
+		t.Errorf("titulo nao foi atualizado para o valor atual da entity:\n%s", xmlStr)
+	}
+}
+
+// TestExtrairCamposUsuarioArquivoAusenteOuInvalido cobre os dois casos
+// degradados (best-effort): sem arquivo anterior (bytes vazio) e XML
+// corrompido -- ambos devolvem zero-value, nunca erro (a gravacao do NFO
+// nao pode falhar por causa disso).
+func TestExtrairCamposUsuarioArquivoAusenteOuInvalido(t *testing.T) {
+	if usuario := ExtrairCamposUsuario(nil); usuario != (CamposUsuarioNFO{}) {
+		t.Errorf("bytes nil = %+v, quero zero-value", usuario)
+	}
+	if usuario := ExtrairCamposUsuario([]byte("isso nao e xml valido <<<")); usuario != (CamposUsuarioNFO{}) {
+		t.Errorf("XML invalido = %+v, quero zero-value", usuario)
 	}
 }

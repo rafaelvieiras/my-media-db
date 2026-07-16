@@ -394,6 +394,14 @@ func (s *Server) writeEntityNfo(w http.ResponseWriter, r *http.Request) {
 // (localmedia.MontarNFO) e grava atomicamente, atualizando
 // entity.nfo_path/nfo_written_at. errSemDestino quando a entity não tem
 // media_file present (sem pasta de destino).
+//
+// Antes de sobrescrever, lê o .nfo que já estiver no destino (se houver) e
+// preserva os campos LOCAIS do Kodi/Emby/Jellyfin -- avaliação do usuário,
+// contagem/estado de assistido, última reprodução, data de adição e ponto de
+// retomada (localmedia.ExtrairCamposUsuario) -- para NÃO destruir edição
+// feita fora do MyMediaDB (à mão ou pelo próprio Kodi) ao regravar. Leitura
+// é best-effort: arquivo ausente ou corrompido não impede a gravação, só
+// resulta em zero-value (nada a preservar).
 func (s *Server) gravarNFO(ctx context.Context, ent sqlcgen.Entity, e resolver.Entidade) (nfoWriteResult, error) {
 	dir, nomeBaseVideo, _, ok, err := s.resolverDestino(ctx, ent)
 	if err != nil {
@@ -407,12 +415,15 @@ func (s *Server) gravarNFO(ctx context.Context, ent sqlcgen.Entity, e resolver.E
 	if err != nil {
 		return nfoWriteResult{}, err
 	}
-	corpo, err := localmedia.MontarNFO(e, arte)
+	nome := localmedia.NomeArquivoNFO(ent.Type, nomeBaseVideo)
+	destino := filepath.Join(dir, nome)
+	existente, _ := os.ReadFile(destino)
+	usuario := localmedia.ExtrairCamposUsuario(existente)
+
+	corpo, err := localmedia.MontarNFO(e, arte, usuario)
 	if err != nil {
 		return nfoWriteResult{}, err
 	}
-	nome := localmedia.NomeArquivoNFO(ent.Type, nomeBaseVideo)
-	destino := filepath.Join(dir, nome)
 	if err := localmedia.EscreverArquivoAtomico(destino, corpo); err != nil {
 		return nfoWriteResult{}, err
 	}

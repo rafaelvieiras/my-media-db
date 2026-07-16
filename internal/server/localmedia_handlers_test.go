@@ -305,6 +305,70 @@ func TestWriteEntityNfoMovieHappyPath(t *testing.T) {
 	}
 }
 
+// TestWriteEntityNfoPreservaCamposDoUsuario: uma regravacao (2a chamada de
+// POST .../nfo, ou o job midias_faltantes reescrevendo por qualquer motivo)
+// NUNCA pode apagar avaliacao/assistido/contagem/ultima-reproducao que o
+// usuario (ou o proprio Kodi/Emby/Jellyfin) tenha gravado no arquivo entre a
+// 1a e a 2a chamada -- so os campos que vem do resolver.Entidade (titulo,
+// plot, etc.) devem ser atualizados.
+func TestWriteEntityNfoPreservaCamposDoUsuario(t *testing.T) {
+	h, d, _ := setupAssetsServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e1/nfo", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("1a chamada status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	queroPath := filepath.Join(libDir, "Matrix.1999.nfo")
+
+	// Simula o Kodi (ou o usuario a mao) editando o arquivo que acabamos de
+	// gravar: avalia, marca como assistido 2x e grava um ponto de retomada.
+	editado := strings.Replace(
+		string(mustReadFile(t, queroPath)),
+		"</movie>",
+		"  <userrating>9</userrating>\n  <playcount>2</playcount>\n  <watched>true</watched>\n  <lastplayed>2026-07-01 21:00:00</lastplayed>\n  <resume><position>120</position><total>8160</total></resume>\n</movie>",
+		1,
+	)
+	if err := os.WriteFile(queroPath, []byte(editado), 0o644); err != nil {
+		t.Fatalf("simular edicao do usuario: %v", err)
+	}
+
+	// 2a chamada: regrava (ex.: metadado foi atualizado no resolver).
+	rec2 := do(t, h, http.MethodPost, "/api/v1/entities/e1/nfo", nil)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("2a chamada status = %d, quero 200", rec2.Code)
+	}
+	conteudo2 := string(mustReadFile(t, queroPath))
+	for _, esperado := range []string{
+		"<userrating>9</userrating>",
+		"<playcount>2</playcount>",
+		"<watched>true</watched>",
+		"<lastplayed>2026-07-01 21:00:00</lastplayed>",
+		"<position>120</position>",
+		"<total>8160</total>",
+	} {
+		if !strings.Contains(conteudo2, esperado) {
+			t.Errorf("2a gravacao apagou campo do usuario, nao encontrei %q:\n%s", esperado, conteudo2)
+		}
+	}
+	// O title, por outro lado, segue vindo do resolver (nao e um campo local).
+	if strings.Count(conteudo2, "<title>Matrix</title>") != 1 {
+		t.Errorf("title nao regravado corretamente: %s", conteudo2)
+	}
+}
+
+// mustReadFile le um arquivo ou falha o teste -- helper local so para deixar
+// TestWriteEntityNfoPreservaCamposDoUsuario legivel.
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ler %s: %v", path, err)
+	}
+	return b
+}
+
 // TestWriteEntityNfoTVShow: serie grava tvshow.nfo (nao <video>.nfo).
 func TestWriteEntityNfoTVShow(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
