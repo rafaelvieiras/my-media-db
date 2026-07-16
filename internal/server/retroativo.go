@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
-	"github.com/rafaelvieiras/my-media-db/internal/matching"
-	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
 // Este arquivo implementa o ENRIQUECIMENTO EXTERNO RETROATIVO (briefing 0056),
@@ -119,11 +117,12 @@ func (s *Server) EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizad
 }
 
 // tentarEnriquecerOuSinalizar tenta enriquecer UMA entity elegível: deriva
-// título/ano do arquivo, busca local-first e depois externo, SEM o corte de
-// LimiarAutoMatch embutido nas variantes de busca (precisa do MELHOR score
-// mesmo abaixo do limiar, para decidir "sinalizar" -- por isso NÃO reusa
-// melhorCandidatoLocal/melhorCandidatoExterno de automatch.go, que já
-// descartam candidato fraco antes de devolver). resultado é
+// título/ano do arquivo, busca local-first e depois externo, usando o MELHOR
+// score mesmo abaixo do limiar (precisa do valor para decidir "sinalizar").
+// Desde o briefing 0060, melhorCandidatoLocal/melhorCandidatoExterno
+// (automatch.go) já devolvem o maior-pontuado SEM o corte de LimiarAutoMatch
+// embutido -- quem decide aplicar é o chamador -- então este arquivo reusa os
+// dois diretamente, sem duplicar a lógica de ranking. resultado é
 // "applied"/"flagged"/"none" (só para log/teste, nunca vira DTO de API). err
 // é SÓ erro real de banco/infra.
 func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.Entity) (resultado string, err error) {
@@ -141,7 +140,7 @@ func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.En
 	if err != nil {
 		return "", err
 	}
-	melhorLocal, achouLocal := s.melhorCandidatoLocalSemCorte(ctx, candidatosLocais, ent.ID, titulo, ano)
+	melhorLocal, achouLocal := s.melhorCandidatoLocal(ctx, candidatosLocais, ent.ID, titulo, ano)
 	if achouLocal && melhorLocal.Score >= LimiarAutoMatch {
 		if err := s.fundirEntities(ctx, melhorLocal.ID, ent.ID); err != nil {
 			return "", err
@@ -155,7 +154,7 @@ func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.En
 	if s.enrich != nil {
 		externos, disponivel := s.buscarExterno(ctx, titulo, ent.Type, "")
 		if disponivel {
-			cand, score, achou := melhorCandidatoExternoSemCorte(externos, titulo, ano)
+			cand, score, achou := melhorCandidatoExterno(externos, titulo, ano)
 			if achou {
 				melhorExternoScore, achouExterno = score, true
 				if score >= LimiarAutoMatch {
@@ -207,54 +206,4 @@ func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.En
 		return "", err
 	}
 	return "flagged", nil
-}
-
-// melhorCandidatoLocalSemCorte espelha melhorCandidatoLocal (automatch.go),
-// mas SEM o corte por LimiarAutoMatch -- devolve o candidato de MAIOR score
-// mesmo abaixo do limiar (o enriquecimento retroativo precisa do valor para
-// decidir "sinalizar"). Candidato com ano divergente em mais de 1 ano
-// (matching.Pontuar descartado=true) nunca entra no ranking, igual ao
-// caminho com corte.
-func (s *Server) melhorCandidatoLocalSemCorte(ctx context.Context, candidatos []entityCardDTO, selfID, titulo string, ano int) (candidatoPontuado, bool) {
-	var melhor candidatoPontuado
-	achou := false
-	for _, c := range candidatos {
-		if c.ID == selfID {
-			continue
-		}
-		anoCand := s.anoDaEntity(ctx, c.ID)
-		pontos, descartado := matching.Pontuar(titulo, ano, c.Title, anoCand)
-		if descartado {
-			continue
-		}
-		if !achou || pontos > melhor.Score {
-			melhor = candidatoPontuado{ID: c.ID, Title: c.Title, Score: pontos}
-			if anoCand > 0 {
-				a := anoCand
-				melhor.Year = &a
-			}
-			achou = true
-		}
-	}
-	return melhor, achou
-}
-
-// melhorCandidatoExternoSemCorte espelha melhorCandidatoExterno
-// (automatch.go), mas SEM o corte por LimiarAutoMatch -- mesmo racional de
-// melhorCandidatoLocalSemCorte, para o ramo externo.
-func melhorCandidatoExternoSemCorte(candidatos []provider.ResultadoExterno, titulo string, ano int) (provider.ResultadoExterno, float64, bool) {
-	var melhor provider.ResultadoExterno
-	melhorScore := -1.0
-	achou := false
-	for _, c := range candidatos {
-		anoCand := anoDeStringPtr(c.Year)
-		pontos, descartado := matching.Pontuar(titulo, ano, c.Title, anoCand)
-		if descartado {
-			continue
-		}
-		if pontos > melhorScore {
-			melhor, melhorScore, achou = c, pontos, true
-		}
-	}
-	return melhor, melhorScore, achou
 }

@@ -881,6 +881,54 @@ export async function autoMatchBatch(
   return lerJson<AutoMatchBatchResult>(res)
 }
 
+// ── Prévia de candidato + confirmação supervisionada (0060) ─────────────────
+
+// O candidato mostrado pela prévia (local OU externo) — pôster/título/ano/fonte.
+export type MatchPreviewTarget = components['schemas']['MatchPreviewTarget']
+
+// Resposta de GET .../match-preview: sempre 200, mesmo sem candidato
+// (`found: false` é resultado válido, não erro) — mesma convenção do auto-match
+// (0050). Reusa a MESMA busca/pontuação, mas SEM o corte pelo `LimiarAutoMatch`:
+// devolve o melhor candidato mesmo abaixo de 92, para o dono decidir olhando o
+// card inteiro (pôster/título/ano/score/fonte) antes de qualquer clique.
+export type MatchPreview = components['schemas']['MatchPreview']
+
+// Corpo de POST .../confirm-candidate: `local` (funde com `local_id`) ou
+// `external` (grava a identidade e re-enriquece, `source`+`source_id`).
+export type ConfirmCandidateBody = components['schemas']['ConfirmCandidateBody']
+
+// PRÉVIA de candidato (0060), dry-run e SEM side-effect: busca o melhor
+// candidato (local-first, depois externo) e devolve pontuação/fonte sem aplicar
+// nada no banco. Chamada no mount de cada `ReviewCard` — nunca lança por "não
+// achou": isso é `{found: false, method: 'none'}`, resultado válido em `200`.
+export async function getMatchPreview(id: string): Promise<MatchPreview> {
+  return lerJson<MatchPreview>(
+    await fetch(
+      `${base}/api/v1/entities/${encodeURIComponent(id)}/match-preview`,
+    ),
+  )
+}
+
+// Aplica o candidato que a prévia mostrou (0060) — SEM checar `LimiarAutoMatch`
+// (decisão humana informada pelo card, diferente do corte conservador do
+// auto-match desatendido). Devolve a entity resolvida, como `confirmMatch`/
+// `correctMatch`. Erros (422 corpo incompleto, 404, 409 colisão de identidade,
+// 502/503 fonte) viram `ApiError` com a mensagem pt-BR do envelope.
+export async function confirmCandidate(
+  id: string,
+  body: ConfirmCandidateBody,
+): Promise<ResolvedEntity> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/confirm-candidate`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+  return lerJson<ResolvedEntity>(res)
+}
+
 // ── Jobs (0052, fundação do sistema de jobs) ─────────────────────────────────
 //
 // Tipos gerados de `api-types.ts` (schema `Job`, não `JobDefinition` — nome do

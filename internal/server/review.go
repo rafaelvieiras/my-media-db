@@ -147,26 +147,44 @@ func (s *Server) correctEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.aplicarIdentidadeExterna(w, ctx, id, ent.Type, source, body.SourceID)
+}
+
+// aplicarIdentidadeExterna aplica a identidade externa (source/sourceID) numa
+// entity já existente pela sequência canônica de "Corrigir" (0018):
+// resolverColisaoExterna (rede de segurança do 0051 -- funde sem investimento
+// do dono, ou responde 409 real) → idiomasPermitidos → s.enrich.Enriquecer
+// (identidade vence, multi-idioma de graça) → finalizarRevisao (sobe
+// confiança/promove de draft). Extraído de correctEntity (briefing 0060) para
+// ser reusado pelo branch `external` de confirmCandidate, chamado com o MESMO
+// ResponseWriter REAL da requisição nos dois casos -- uma colisão sempre vira
+// um 409 de verdade na resposta, nunca é degradada silenciosamente (esse
+// comportamento "degrada sem responder" é exclusivo do auto-match
+// desatendido, via capturaResposta em aplicarCandidatoExterno). ok=false
+// quando qualquer passo já escreveu uma resposta de erro -- o chamador só
+// precisa `return` sem escrever nada mais.
+func (s *Server) aplicarIdentidadeExterna(w http.ResponseWriter, ctx context.Context, id, tipo, source, sourceID string) bool {
 	// Rede de seguranca contra duplicata (briefing 0051): a identidade corrigida
 	// pode ja pertencer a outra entity (ex.: importada por engano antes desta
 	// correcao) -- funde sem investimento do dono, ou aborta com 409 com.
-	if _, ok := s.resolverColisaoExterna(w, ctx, id, ent.Type, source, body.SourceID); !ok {
-		return
+	if _, ok := s.resolverColisaoExterna(w, ctx, id, tipo, source, sourceID); !ok {
+		return false
 	}
 
 	langs, err := s.idiomasPermitidos(ctx, w)
 	if err != nil {
-		return
+		return false
 	}
-	if err := s.enrich.Enriquecer(ctx, id, source, body.SourceID, ent.Type, langs); err != nil {
+	if err := s.enrich.Enriquecer(ctx, id, source, sourceID, tipo, langs); err != nil {
 		respondFonteIndisponivel(w)
-		return
+		return false
 	}
 	if err := s.finalizarRevisao(ctx, id); err != nil {
 		respondErroInterno(w)
-		return
+		return false
 	}
 	s.responderResolvida(w, ctx, id, http.StatusOK)
+	return true
 }
 
 // deleteEntity trata DELETE /api/v1/entities/{id}: PURGA individual. Apaga a entity

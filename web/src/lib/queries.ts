@@ -11,6 +11,7 @@ import {
   getHealth,
   getSystemHealth,
   getLanguageSettings,
+  getMatchPreview,
   listJobExecutions,
   listJobs,
   getOrphans,
@@ -225,6 +226,18 @@ export const orphansQueryOptions = queryOptions({
   queryKey: ['orphans'],
   queryFn: getOrphans,
 })
+
+// Prévia de candidato por card da fila de revisão (0060). Chave `['match-preview',
+// id]` — um `useQuery` por `ReviewCard` ao montar (não lazy; ver briefing §6, um
+// request por card é aceitável para o volume da fila). Sem invalidação própria: o
+// card some da fila (e a query junto) assim que `confirm`/`confirm-candidate`
+// resolve, via `invalidarRevisao` do ['review'].
+export function matchPreviewQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: ['match-preview', id],
+    queryFn: () => getMatchPreview(id),
+  })
+}
 
 // Status do scan com POLLING: enquanto `running`, o TanStack Query re-busca a
 // cada 1,5s; ao concluir, `refetchInterval` devolve `false` e o polling para

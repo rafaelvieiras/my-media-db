@@ -1175,6 +1175,87 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/match-preview:
+    get:
+      operationId: matchPreview
+      summary: Prévia do candidato de match, sem aplicar nada (briefing 0060).
+      description: >
+        Dry-run, read-only, SEM side-effect: reusa a busca local-first +
+        externa e a pontuação do auto-match (0050), mas SEM o corte de
+        `LimiarAutoMatch` — devolve o candidato de MAIOR score entre local e
+        externo, mesmo abaixo do limiar (só o desqualificador de ano
+        divergindo mais de 1 ano continua excluindo um candidato).
+        `meets_auto_threshold` sinaliza se esse score bateria o corte do
+        auto-match (0050), sem filtrar o resultado. Sempre `200`, mesmo sem
+        candidato em nenhuma fonte (resultado válido, não erro — mesma
+        convenção do auto-match). 404 se a entity não existe.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: "A prévia do candidato (ou `found: false` sem candidato)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MatchPreview" }
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/confirm-candidate:
+    post:
+      operationId: confirmCandidate
+      summary: Aplica o candidato mostrado pela prévia (briefing 0060).
+      description: >
+        Aplica o candidato que `GET /match-preview` mostrou, **sem checar
+        `LimiarAutoMatch`** (é uma decisão humana informada, não um corte
+        automático). `method=local`: funde a entity da fila com `local_id`
+        (`fundirEntities` — sobrevivente é sempre o `local_id` do corpo, o
+        candidato escolhido). `method=external`: mesma sequência de
+        `POST /correct` (grava `external_ids[source]=source_id`, re-enriquece
+        e sobe a confiança). Terceiro endpoint — não uma reforma de
+        `/confirm` nem `/correct`, que continuam existindo inalterados. 404 se
+        a entity não existe; 422 se o corpo não bate o `method` (falta
+        `local_id`, ou falta `source`/`source_id`); 409 quando
+        `source`/`source_id` já pertence a outra entity com investimento do
+        dono (rede de segurança do 0051, mesma que `/correct` já expõe hoje);
+        502 se a fonte externa falhar ao entregar o detalhe; 503 se o enrich
+        está desligado.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConfirmCandidateBody" }
+      responses:
+        "200":
+          description: >
+            Entidade resolvida após aplicar o candidato (mesmo shape de
+            `/confirm` e `/correct`).
+          headers:
+            X-Duplicate-Merged-Id:
+              description: >
+                Id da entity duplicata que foi fundida (removida) durante esta
+                escrita — presente só quando o branch `external` funde
+                automaticamente uma duplicata sem investimento do dono
+                (`resolverColisaoExterna`, briefing 0051; mesmo header que
+                `/correct` já usa).
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResolvedEntity" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/purge:
     post:
       operationId: purgeEntities
@@ -2077,6 +2158,88 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/AutoMatchBatchItem" }
+    MatchPreviewTarget:
+      type: object
+      description: >
+        O candidato mostrado pela prévia de match (briefing 0060) — local ou
+        externo, sem aplicar nada. Quando veio do catálogo local, `local_id`
+        é o id da entity já catalogada e `source`/`source_id` são null;
+        quando veio da fonte externa, `local_id` é null e `source`/
+        `source_id` vêm preenchidos. `poster_url`: para local, a rota do
+        proxy da própria entity (mesma que `EntityCard.poster_url`); para
+        externo, a URL CRUA do provider (o front roteia via `arteSrc`).
+      required: [title, year, poster_url, local_id, source, source_id]
+      properties:
+        title: { type: string }
+        year:
+          type: [integer, "null"]
+          description: Ano do candidato; null quando a fonte não informa.
+        poster_url: { type: [string, "null"] }
+        local_id:
+          type: [string, "null"]
+          description: Id da entity local candidata; null quando method=external.
+        source:
+          type: [string, "null"]
+          description: Fonte externa do candidato; null quando method=local.
+        source_id:
+          type: [string, "null"]
+          description: Id na fonte externa; null quando method=local.
+    MatchPreview:
+      type: object
+      description: >
+        Resposta de GET /entities/{id}/match-preview (briefing 0060) —
+        dry-run, read-only, SEM side-effect. Devolve o candidato de MAIOR
+        score entre local e externo, mesmo abaixo do `LimiarAutoMatch`
+        (reusa a mesma busca+pontuação do auto-match/0050, sem o corte de
+        limiar). `target` é null quando `found` é false.
+      required: [found, method, score, meets_auto_threshold, target]
+      properties:
+        found:
+          type: boolean
+          description: true quando algum candidato foi encontrado (local ou externo).
+        method:
+          type: string
+          enum: [local, external, none]
+          description: >
+            De onde veio o candidato — `local` (catálogo já existente),
+            `external` (fonte externa default) ou `none` (nenhum candidato
+            encontrado em nenhuma fonte).
+        score:
+          type: number
+          description: Score do melhor candidato (0-100); 0 quando method=none.
+        meets_auto_threshold:
+          type: boolean
+          description: >
+            true quando esse score bateria o `LimiarAutoMatch` (92) do
+            auto-match (0050) — puramente informativo aqui, NÃO filtra o
+            resultado da prévia nem impede `confirm-candidate`.
+        target:
+          description: O candidato encontrado; null quando found=false.
+          oneOf:
+            - $ref: "#/components/schemas/MatchPreviewTarget"
+            - type: "null"
+    ConfirmCandidateBody:
+      type: object
+      description: >
+        Corpo de POST /entities/{id}/confirm-candidate (briefing 0060) —
+        aplica o candidato mostrado pela prévia, SEM checar
+        `LimiarAutoMatch`. Dois formatos conforme `method`: `local` exige
+        `local_id`; `external` exige `source` e `source_id`. Corpo que não
+        bate o `method` (campo obrigatório ausente) responde 422.
+      required: [method]
+      properties:
+        method:
+          type: string
+          enum: [local, external]
+        local_id:
+          type: string
+          description: Id da entity local candidata (obrigatório quando method=local).
+        source:
+          type: string
+          description: Fonte externa do candidato (obrigatório quando method=external).
+        source_id:
+          type: string
+          description: Id na fonte externa (obrigatório quando method=external).
     ResolvedEntity:
       type: object
       description: >

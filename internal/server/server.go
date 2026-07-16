@@ -423,6 +423,15 @@ func (s *Server) Handler() (http.Handler, error) {
 				// Sempre 200 (nunca 5xx por "não achou candidato"); 404 inexistente.
 				ent.Post("/{id}/auto-match", s.autoMatchEntity)
 
+				// Prévia de candidato + aplicação supervisionada (briefing
+				// 0060): a prévia reusa a MESMA busca/pontuação do auto-match
+				// acima, mas SEM o corte de LimiarAutoMatch (dry-run, nunca
+				// aplica nada); confirm-candidate aplica o candidato mostrado
+				// mesmo abaixo do limiar -- decisão humana informada, terceiro
+				// endpoint, não uma reforma de /confirm nem /correct.
+				ent.Get("/{id}/match-preview", s.matchPreview)
+				ent.Post("/{id}/confirm-candidate", s.confirmCandidate)
+
 				// Edição da IDENTIDADE externa (briefing 0027): grava o mapa
 				// external_ids (source -> id na fonte). As colunas geradas re-derivam;
 				// fixar o id prepara sincronização futura. NÃO re-enriquece (o dono

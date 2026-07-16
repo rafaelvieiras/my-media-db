@@ -215,12 +215,15 @@ func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoM
 		return autoMatchNone, nil
 	}
 
-	// 1) Local-first (0026): nunca duplica entity já catalogada.
+	// 1) Local-first (0026): nunca duplica entity já catalogada. O finder devolve
+	// o MAIOR-pontuado não-descartado independente de limiar (briefing 0060, para
+	// servir também a prévia sem corte) -- o corte >= LimiarAutoMatch é decidido
+	// AQUI, pelo chamador.
 	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, "", "")
 	if err != nil {
 		return autoMatchResultDTO{}, err
 	}
-	if alvo, achou := s.melhorCandidatoLocal(ctx, candidatosLocais, ent.ID, titulo, ano); achou {
+	if alvo, achou := s.melhorCandidatoLocal(ctx, candidatosLocais, ent.ID, titulo, ano); achou && alvo.Score >= LimiarAutoMatch {
 		if err := s.fundirEntities(ctx, alvo.ID, ent.ID); err != nil {
 			return autoMatchResultDTO{}, err
 		}
@@ -239,8 +242,10 @@ func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoM
 	if !disponivel {
 		return autoMatchNone, nil
 	}
+	// Mesmo raciocínio do local: o finder devolve o maior-pontuado não-descartado
+	// sem corte; o corte >= LimiarAutoMatch é decidido aqui.
 	cand, score, achou := melhorCandidatoExterno(externos, titulo, ano)
-	if !achou {
+	if !achou || score < LimiarAutoMatch {
 		return autoMatchNone, nil
 	}
 
@@ -313,19 +318,28 @@ func (s *Server) tituloAnoDoArquivo(ctx context.Context, entityID string) (titul
 }
 
 // candidatoPontuado é o melhor candidato local encontrado, já com o score
-// final (0-100) e os campos para compor autoMatchTargetDTO.
+// final (0-100) e os campos para compor autoMatchTargetDTO/matchPreviewDTO
+// (briefing 0060). PosterURL vem de graça do card da busca local
+// (entityCardDTO.PosterURL) -- nenhuma chamada extra.
 type candidatoPontuado struct {
-	ID    string
-	Title string
-	Year  *int
-	Score float64
+	ID        string
+	Title     string
+	Year      *int
+	Score     float64
+	PosterURL *string
 }
 
 // melhorCandidatoLocal repontua a shortlist da busca LOCAL (buscarLocal — o
-// BM25 do FTS5 é só um pré-filtro, nunca o score final) e devolve o de MAIOR
-// score que bate LimiarAutoMatch. Ignora `selfID` (o próprio item da fila pode
-// aparecer na shortlist quando o título já bate no FTS). ok=false quando
-// nenhum candidato qualifica.
+// BM25 do FTS5 é só um pré-filtro, nunca o score final) e devolve SEMPRE o
+// candidato de MAIOR score entre os não-descartados -- desde o briefing 0060
+// o corte por LimiarAutoMatch NÃO é mais feito aqui, e sim pelo CHAMADOR
+// (tentarAutoMatch aplica o corte; a prévia de match, matchPreviewDTO, não
+// aplica corte nenhum e só marca meets_auto_threshold). Ignora `selfID` (o
+// próprio item da fila pode aparecer na shortlist quando o título já bate no
+// FTS). Um candidato com ano divergindo mais de 1 ano (matching.Pontuar
+// descartado=true) nunca entra no ranking -- essa desqualificação estrutural
+// continua valendo sempre. ok=false quando nenhum candidato não-descartado
+// existe.
 func (s *Server) melhorCandidatoLocal(ctx context.Context, candidatos []entityCardDTO, selfID, titulo string, ano int) (candidatoPontuado, bool) {
 	var melhor candidatoPontuado
 	achou := false
@@ -335,11 +349,11 @@ func (s *Server) melhorCandidatoLocal(ctx context.Context, candidatos []entityCa
 		}
 		anoCand := s.anoDaEntity(ctx, c.ID)
 		pontos, descartado := matching.Pontuar(titulo, ano, c.Title, anoCand)
-		if descartado || pontos < LimiarAutoMatch {
+		if descartado {
 			continue
 		}
 		if !achou || pontos > melhor.Score {
-			melhor = candidatoPontuado{ID: c.ID, Title: c.Title, Score: pontos}
+			melhor = candidatoPontuado{ID: c.ID, Title: c.Title, Score: pontos, PosterURL: c.PosterURL}
 			if anoCand > 0 {
 				a := anoCand
 				melhor.Year = &a
@@ -351,8 +365,10 @@ func (s *Server) melhorCandidatoLocal(ctx context.Context, candidatos []entityCa
 }
 
 // melhorCandidatoExterno repontua os resultados da busca EXTERNA (buscarExterno,
-// já mesclados/deduplicados por fonte) e devolve o de MAIOR score que bate
-// LimiarAutoMatch. ok=false quando nenhum candidato qualifica.
+// já mesclados/deduplicados por fonte) e devolve SEMPRE o de MAIOR score entre
+// os não-descartados -- mesmo raciocínio de melhorCandidatoLocal (0060): o
+// corte por LimiarAutoMatch é decisão do CHAMADOR, não deste finder. ok=false
+// quando nenhum candidato não-descartado existe.
 func melhorCandidatoExterno(candidatos []provider.ResultadoExterno, titulo string, ano int) (provider.ResultadoExterno, float64, bool) {
 	var melhor provider.ResultadoExterno
 	melhorScore := -1.0
@@ -360,7 +376,7 @@ func melhorCandidatoExterno(candidatos []provider.ResultadoExterno, titulo strin
 	for _, c := range candidatos {
 		anoCand := anoDeStringPtr(c.Year)
 		pontos, descartado := matching.Pontuar(titulo, ano, c.Title, anoCand)
-		if descartado || pontos < LimiarAutoMatch {
+		if descartado {
 			continue
 		}
 		if pontos > melhorScore {

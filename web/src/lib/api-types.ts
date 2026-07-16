@@ -706,6 +706,46 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/match-preview': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Prévia do candidato de match, sem aplicar nada (briefing 0060).
+     * @description Dry-run, read-only, SEM side-effect: reusa a busca local-first + externa e a pontuação do auto-match (0050), mas SEM o corte de `LimiarAutoMatch` — devolve o candidato de MAIOR score entre local e externo, mesmo abaixo do limiar (só o desqualificador de ano divergindo mais de 1 ano continua excluindo um candidato). `meets_auto_threshold` sinaliza se esse score bateria o corte do auto-match (0050), sem filtrar o resultado. Sempre `200`, mesmo sem candidato em nenhuma fonte (resultado válido, não erro — mesma convenção do auto-match). 404 se a entity não existe.
+     */
+    get: operations['matchPreview']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/confirm-candidate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Aplica o candidato mostrado pela prévia (briefing 0060).
+     * @description Aplica o candidato que `GET /match-preview` mostrou, **sem checar `LimiarAutoMatch`** (é uma decisão humana informada, não um corte automático). `method=local`: funde a entity da fila com `local_id` (`fundirEntities` — sobrevivente é sempre o `local_id` do corpo, o candidato escolhido). `method=external`: mesma sequência de `POST /correct` (grava `external_ids[source]=source_id`, re-enriquece e sobe a confiança). Terceiro endpoint — não uma reforma de `/confirm` nem `/correct`, que continuam existindo inalterados. 404 se a entity não existe; 422 se o corpo não bate o `method` (falta `local_id`, ou falta `source`/`source_id`); 409 quando `source`/`source_id` já pertence a outra entity com investimento do dono (rede de segurança do 0051, mesma que `/correct` já expõe hoje); 502 se a fonte externa falhar ao entregar o detalhe; 503 se o enrich está desligado.
+     */
+    post: operations['confirmCandidate']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/purge': {
     parameters: {
       query?: never
@@ -1236,6 +1276,46 @@ export interface components {
       /** @description Quantos itens continuam na fila (nenhum candidato bateu o limiar). */
       pending_count: number
       items: components['schemas']['AutoMatchBatchItem'][]
+    }
+    /** @description O candidato mostrado pela prévia de match (briefing 0060) — local ou externo, sem aplicar nada. Quando veio do catálogo local, `local_id` é o id da entity já catalogada e `source`/`source_id` são null; quando veio da fonte externa, `local_id` é null e `source`/ `source_id` vêm preenchidos. `poster_url`: para local, a rota do proxy da própria entity (mesma que `EntityCard.poster_url`); para externo, a URL CRUA do provider (o front roteia via `arteSrc`). */
+    MatchPreviewTarget: {
+      title: string
+      /** @description Ano do candidato; null quando a fonte não informa. */
+      year: number | null
+      poster_url: string | null
+      /** @description Id da entity local candidata; null quando method=external. */
+      local_id: string | null
+      /** @description Fonte externa do candidato; null quando method=local. */
+      source: string | null
+      /** @description Id na fonte externa; null quando method=local. */
+      source_id: string | null
+    }
+    /** @description Resposta de GET /entities/{id}/match-preview (briefing 0060) — dry-run, read-only, SEM side-effect. Devolve o candidato de MAIOR score entre local e externo, mesmo abaixo do `LimiarAutoMatch` (reusa a mesma busca+pontuação do auto-match/0050, sem o corte de limiar). `target` é null quando `found` é false. */
+    MatchPreview: {
+      /** @description true quando algum candidato foi encontrado (local ou externo). */
+      found: boolean
+      /**
+       * @description De onde veio o candidato — `local` (catálogo já existente), `external` (fonte externa default) ou `none` (nenhum candidato encontrado em nenhuma fonte).
+       * @enum {string}
+       */
+      method: 'local' | 'external' | 'none'
+      /** @description Score do melhor candidato (0-100); 0 quando method=none. */
+      score: number
+      /** @description true quando esse score bateria o `LimiarAutoMatch` (92) do auto-match (0050) — puramente informativo aqui, NÃO filtra o resultado da prévia nem impede `confirm-candidate`. */
+      meets_auto_threshold: boolean
+      /** @description O candidato encontrado; null quando found=false. */
+      target: components['schemas']['MatchPreviewTarget'] | null
+    }
+    /** @description Corpo de POST /entities/{id}/confirm-candidate (briefing 0060) — aplica o candidato mostrado pela prévia, SEM checar `LimiarAutoMatch`. Dois formatos conforme `method`: `local` exige `local_id`; `external` exige `source` e `source_id`. Corpo que não bate o `method` (campo obrigatório ausente) responde 422. */
+    ConfirmCandidateBody: {
+      /** @enum {string} */
+      method: 'local' | 'external'
+      /** @description Id da entity local candidata (obrigatório quando method=local). */
+      local_id?: string
+      /** @description Fonte externa do candidato (obrigatório quando method=external). */
+      source?: string
+      /** @description Id na fonte externa (obrigatório quando method=external). */
+      source_id?: string
     }
     /** @description Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a Fase 3 preenche os mesmos campos com override/externo sem mudar o shape. Os campos RICOS (tagline, keywords, runtime, certification, vote_average, backdrop_url, videos, collection, similar, external_links) dão PARIDADE com o detalhe do externo (0022/0023): vêm da camada externa já enriquecida e usam o MESMO shape (componentes ExternalVideo/Collection/Similar). Os gêneros NÃO têm campo próprio — são as `tags` (que já os carregam). */
     ResolvedEntity: {
@@ -2817,6 +2897,64 @@ export interface operations {
         }
       }
       404: components['responses']['Error']
+    }
+  }
+  matchPreview: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description A prévia do candidato (ou `found: false` sem candidato). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MatchPreview']
+        }
+      }
+      404: components['responses']['Error']
+    }
+  }
+  confirmCandidate: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ConfirmCandidateBody']
+      }
+    }
+    responses: {
+      /** @description Entidade resolvida após aplicar o candidato (mesmo shape de `/confirm` e `/correct`). */
+      200: {
+        headers: {
+          /** @description Id da entity duplicata que foi fundida (removida) durante esta escrita — presente só quando o branch `external` funde automaticamente uma duplicata sem investimento do dono (`resolverColisaoExterna`, briefing 0051; mesmo header que `/correct` já usa). */
+          'X-Duplicate-Merged-Id'?: string
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ResolvedEntity']
+        }
+      }
+      404: components['responses']['Error']
+      409: components['responses']['Error']
+      422: components['responses']['Error']
+      502: components['responses']['Error']
+      503: components['responses']['Error']
     }
   }
   purgeEntities: {

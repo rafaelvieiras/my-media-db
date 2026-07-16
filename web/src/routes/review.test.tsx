@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ReviewScreen } from '@/routes/review'
-import type { EntityCard, ExternalResult, SearchResult } from '@/lib/api'
+import type {
+  EntityCard,
+  ExternalResult,
+  MatchPreview,
+  SearchResult,
+} from '@/lib/api'
 import { baseEntity, okJson } from '@/test/entity-fixtures'
 import {
   criarFetch,
@@ -62,19 +67,60 @@ const externo: ExternalResult = {
   saved: false,
 }
 
+// Prévia (0060) sem candidato — o default do backend quando nada bate em
+// nenhuma fonte.
+const previewVazia: MatchPreview = {
+  found: false,
+  method: 'none',
+  score: 0,
+  meets_auto_threshold: false,
+  target: null,
+}
+
+// Prévia (0060) com candidato do CATÁLOGO LOCAL, abaixo do limiar automático —
+// o caso central do briefing: o dono vê e decide aplicar mesmo assim.
+const previewLocal: MatchPreview = {
+  found: true,
+  method: 'local',
+  score: 87.3,
+  meets_auto_threshold: false,
+  target: {
+    title: 'Duna',
+    year: 2021,
+    poster_url: '/api/v1/entities/8f2a1c/assets/poster',
+    local_id: '8f2a1c',
+    source: null,
+    source_id: null,
+  },
+}
+
+// Prévia (0060) com candidato EXTERNO, batendo o limiar automático.
+const previewExterna: MatchPreview = {
+  found: true,
+  method: 'external',
+  score: 95.1,
+  meets_auto_threshold: true,
+  target: {
+    title: 'Duna: Parte Dois',
+    year: 2024,
+    poster_url: 'https://image.tmdb.org/t/p/w500/poster.jpg',
+    local_id: null,
+    source: 'tmdb',
+    source_id: '603',
+  },
+}
+
 interface Opcoes {
   fila?: EntityCard[]
   filaErro?: boolean
   search?: SearchResult
   confirmErro?: { status: number; code: string; message: string }
   correctErro?: { status: number; code: string; message: string }
-  // Auto-match individual (0050): resultado devolvido por POST .../auto-match.
-  autoMatchResultado?: {
-    resolved: boolean
-    method: 'local' | 'external' | 'none'
-    score: number
-    target: { id: string; title: string; year: number | null } | null
-  }
+  confirmCandidateErro?: { status: number; code: string; message: string }
+  // Prévia de candidato (0060): resultado devolvido por GET .../match-preview
+  // para QUALQUER card da fila (os testes usam um único card por vez).
+  preview?: MatchPreview
+  previewErro?: boolean
   // Auto-match em lote (0050): resumo devolvido por POST /review/auto-match.
   autoMatchLoteResultado?: {
     resolved_count: number
@@ -91,14 +137,16 @@ interface Opcoes {
 interface Espioes {
   onConfirm: ReturnType<typeof vi.fn<(id: string) => void>>
   onCorrect: ReturnType<typeof vi.fn<(id: string, body: unknown) => void>>
-  onAutoMatch: ReturnType<typeof vi.fn<(id: string) => void>>
+  onConfirmCandidate: ReturnType<
+    typeof vi.fn<(id: string, body: unknown) => void>
+  >
   onAutoMatchLote: ReturnType<typeof vi.fn<() => void>>
 }
 
 // Handler de rotas da tela de revisão: GET /review (a fila), GET /search (a
-// correção), POST /entities/{id}/confirm e POST /entities/{id}/correct, e os
-// dois endpoints do auto-match (0050): POST /entities/{id}/auto-match (item) e
-// POST /review/auto-match (lote).
+// correção), GET .../match-preview (0060, a prévia), POST /entities/{id}/confirm,
+// POST /entities/{id}/correct, POST /entities/{id}/confirm-candidate (0060) e o
+// endpoint do auto-match em LOTE (0050), POST /review/auto-match.
 function montarFetch(opts: Opcoes, espioes: Espioes) {
   return criarFetch(({ path, method, init, u }) => {
     if (path === '/api/v1/review' && method === 'GET') {
@@ -115,6 +163,12 @@ function montarFetch(opts: Opcoes, espioes: Espioes) {
           external_available: true,
         },
       )
+    }
+    const preview = path.match(/^\/api\/v1\/entities\/(.+)\/match-preview$/)
+    if (preview && method === 'GET') {
+      return opts.previewErro
+        ? erroJson(502, 'upstream_error', 'a fonte externa falhou')
+        : okJson(opts.preview ?? previewVazia)
     }
     const confirm = path.match(/^\/api\/v1\/entities\/(.+)\/confirm$/)
     if (confirm && method === 'POST') {
@@ -138,17 +192,21 @@ function montarFetch(opts: Opcoes, espioes: Espioes) {
           )
         : okJson(baseEntity({ id: correct[1] }))
     }
-    const autoMatch = path.match(/^\/api\/v1\/entities\/(.+)\/auto-match$/)
-    if (autoMatch && method === 'POST') {
-      espioes.onAutoMatch(autoMatch[1])
-      return okJson(
-        opts.autoMatchResultado ?? {
-          resolved: false,
-          method: 'none',
-          score: 0,
-          target: null,
-        },
+    const confirmCandidate = path.match(
+      /^\/api\/v1\/entities\/(.+)\/confirm-candidate$/,
+    )
+    if (confirmCandidate && method === 'POST') {
+      espioes.onConfirmCandidate(
+        confirmCandidate[1],
+        JSON.parse(String(init?.body)),
       )
+      return opts.confirmCandidateErro
+        ? erroJson(
+            opts.confirmCandidateErro.status,
+            opts.confirmCandidateErro.code,
+            opts.confirmCandidateErro.message,
+          )
+        : okJson(baseEntity({ id: confirmCandidate[1] }))
     }
     if (path === '/api/v1/review/auto-match' && method === 'POST') {
       espioes.onAutoMatchLote()
@@ -168,7 +226,7 @@ function renderReview(opts: Opcoes = {}) {
   const espioes: Espioes = {
     onConfirm: vi.fn<(id: string) => void>(),
     onCorrect: vi.fn<(id: string, body: unknown) => void>(),
-    onAutoMatch: vi.fn<(id: string) => void>(),
+    onConfirmCandidate: vi.fn<(id: string, body: unknown) => void>(),
     onAutoMatchLote: vi.fn<() => void>(),
   }
   vi.stubGlobal('fetch', montarFetch(opts, espioes))
@@ -176,7 +234,10 @@ function renderReview(opts: Opcoes = {}) {
 }
 
 // Cenário base de um card de baixa confiança já renderizado (o setup comum dos
-// casos de confirmar/corrigir): monta o fetch, renderiza e espera o card.
+// casos de confirmar/corrigir): monta o fetch, renderiza e espera o card. Por
+// padrão a prévia (0060) não acha candidato (`previewVazia`) — o mesmo
+// comportamento "sem metadados externos" de antes do briefing 0060 — a menos
+// que o cenário informe outra.
 async function renderBaixa(opts: Opcoes = { fila: [baixaCard] }) {
   const user = userEvent.setup()
   const r = renderReview(opts)
@@ -218,9 +279,23 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
     )
   })
 
-  it('Confirmar chama confirmMatch e invalida review/entities/entity (§5: confirmar sobe a confiança)', async () => {
-    const { user, espioes, invalidateSpy } = await renderBaixa()
-    await user.click(screen.getByRole('button', { name: /Confirmar/ }))
+  it('"Manter como está" (sem candidato na prévia) chama confirmMatch e invalida review/entities/entity (§5: comportamento antigo do "Confirmar")', async () => {
+    const { user, espioes, invalidateSpy } = await renderBaixa({
+      fila: [baixaCard],
+      preview: previewVazia,
+    })
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'nenhum candidato encontrado — nem no catálogo local, nem na fonte externa',
+        ),
+      ).toBeInTheDocument(),
+    )
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Manter como está (sem metadados externos)',
+      }),
+    )
 
     await waitFor(() =>
       expect(espioes.onConfirm).toHaveBeenCalledWith('e-baixa'),
@@ -266,63 +341,124 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
   })
 })
 
-describe('ReviewScreen — auto-match (0050)', () => {
-  it('"Auto-sincronizar" individual resolve o item e some da fila (§4: resolved true invalida a fila)', async () => {
-    const { user, espioes, invalidateSpy } = await renderBaixa({
-      fila: [baixaCard],
-      autoMatchResultado: {
-        resolved: true,
-        method: 'local',
-        score: 96.4,
-        target: { id: 'e-alvo', title: 'Palpite Certo', year: 2020 },
-      },
-    })
+describe('ReviewScreen — prévia de candidato (0060)', () => {
+  it('prévia com candidato local renderiza pôster/título/ano/score/fonte e o botão "Confirmar candidato"', async () => {
+    await renderBaixa({ fila: [baixaCard], preview: previewLocal })
 
-    await user.click(screen.getByRole('button', { name: /Auto-sincronizar$/ }))
-
-    await waitFor(() =>
-      expect(espioes.onAutoMatch).toHaveBeenCalledWith('e-baixa'),
-    )
-    await waitFor(() =>
-      expect(
-        screen.getByText(/Resolvido automaticamente via catálogo local/),
-      ).toBeInTheDocument(),
-    )
-    expect(screen.getByText(/score 96\.4/)).toBeInTheDocument()
-    await esperarChaves(invalidateSpy, CHAVES_REVISAO)
+    await waitFor(() => expect(screen.getByText('Duna')).toBeInTheDocument())
+    expect(screen.getByAltText('Pôster de Duna')).toBeInTheDocument()
+    expect(screen.getByText('2021')).toBeInTheDocument()
+    expect(screen.getByText('score 87.3')).toBeInTheDocument()
+    expect(screen.getByText('catálogo local')).toBeInTheDocument()
+    expect(screen.getByText('confira antes de confirmar')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Confirmar candidato' }),
+    ).toBeInTheDocument()
   })
 
-  it('"Auto-sincronizar" sem candidato mostra aviso neutro e o item continua na fila (§4: resolved false não aplica nada)', async () => {
-    const { user, espioes } = await renderBaixa({
-      fila: [baixaCard],
-      autoMatchResultado: {
-        resolved: false,
-        method: 'none',
-        score: 0,
-        target: null,
-      },
-    })
-
-    await user.click(screen.getByRole('button', { name: /Auto-sincronizar$/ }))
+  it('prévia com candidato externo acima do limiar mostra o selo "match forte" e fonte "provedor externo"', async () => {
+    await renderBaixa({ fila: [baixaCard], preview: previewExterna })
 
     await waitFor(() =>
-      expect(espioes.onAutoMatch).toHaveBeenCalledWith('e-baixa'),
+      expect(screen.getByText('Duna: Parte Dois')).toBeInTheDocument(),
     )
+    expect(screen.getByText('provedor externo')).toBeInTheDocument()
+    expect(screen.getByText('match forte')).toBeInTheDocument()
+  })
+
+  it('prévia sem candidato renderiza a mensagem vazia e o botão "Manter como está" (0060)', async () => {
+    await renderBaixa({ fila: [baixaCard], preview: previewVazia })
+
     await waitFor(() =>
       expect(
         screen.getByText(
-          'Nenhum candidato confiável encontrado — revise manualmente.',
+          'nenhum candidato encontrado — nem no catálogo local, nem na fonte externa',
         ),
       ).toBeInTheDocument(),
     )
-    // O card continua na fila (não some) — o item permanece intacto.
-    expect(screen.getByText('Palpite Fraco')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', {
+        name: 'Manter como está (sem metadados externos)',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Confirmar candidato' }),
+    ).not.toBeInTheDocument()
   })
 
+  it('falha ao buscar a prévia mostra erro curto e degrada para "Manter como está" sem travar o card', async () => {
+    await renderBaixa({ fila: [baixaCard], previewErro: true })
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'Não foi possível buscar um candidato — tente novamente mais tarde.',
+        ),
+      ).toBeInTheDocument(),
+    )
+    expect(
+      screen.getByRole('button', {
+        name: 'Manter como está (sem metadados externos)',
+      }),
+    ).toBeInTheDocument()
+    // "Corrigir" continua disponível mesmo com a prévia em erro.
+    expect(screen.getByRole('button', { name: /Corrigir/ })).toBeInTheDocument()
+  })
+
+  it('clicar em "Confirmar candidato" (local) chama confirmCandidate com o payload local_id e invalida a fila', async () => {
+    const { user, espioes, invalidateSpy } = await renderBaixa({
+      fila: [baixaCard],
+      preview: previewLocal,
+    })
+    await user.click(
+      await screen.findByRole('button', { name: 'Confirmar candidato' }),
+    )
+
+    await waitFor(() =>
+      expect(espioes.onConfirmCandidate).toHaveBeenCalledWith('e-baixa', {
+        method: 'local',
+        local_id: '8f2a1c',
+      }),
+    )
+    await esperarChaves(invalidateSpy, CHAVES_REVISAO)
+  })
+
+  it('clicar em "Confirmar candidato" (externo) chama confirmCandidate com o payload source/source_id', async () => {
+    const { user, espioes } = await renderBaixa({
+      fila: [baixaCard],
+      preview: previewExterna,
+    })
+    await user.click(
+      await screen.findByRole('button', { name: 'Confirmar candidato' }),
+    )
+
+    await waitFor(() =>
+      expect(espioes.onConfirmCandidate).toHaveBeenCalledWith('e-baixa', {
+        method: 'external',
+        source: 'tmdb',
+        source_id: '603',
+      }),
+    )
+  })
+
+  it('o botão "Auto-sincronizar" individual não existe mais no card, mas o de lote no topo continua', async () => {
+    await renderBaixa({ fila: [baixaCard], preview: previewVazia })
+
+    expect(
+      screen.queryByRole('button', { name: /^Auto-sincronizar$/ }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Auto-sincronizar elegíveis/ }),
+    ).toBeInTheDocument()
+  })
+})
+
+describe('ReviewScreen — auto-match em lote (0050)', () => {
   it('"Auto-sincronizar elegíveis" (lote) mostra o resumo agregado e invalida a fila', async () => {
     const user = userEvent.setup()
     const { espioes, invalidateSpy } = renderReview({
       fila: [baixaCard],
+      preview: previewVazia,
       autoMatchLoteResultado: {
         resolved_count: 22,
         pending_count: 8,

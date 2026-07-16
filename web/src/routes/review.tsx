@@ -12,24 +12,31 @@ import {
   LoaderCircle,
   PencilLine,
   Search,
-  Sparkles,
   Wand2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
-import { reviewQueueQueryOptions, searchQueryOptions } from '@/lib/queries'
+import {
+  matchPreviewQueryOptions,
+  reviewQueueQueryOptions,
+  searchQueryOptions,
+} from '@/lib/queries'
 import {
   ApiError,
+  arteSrc,
   autoMatchBatch,
-  autoMatchEntity,
+  confirmCandidate,
   confirmMatch,
   correctMatch,
   posterSrc,
   type AutoMatchBatchResult,
+  type ConfirmCandidateBody,
   type EntityCard,
   type ExternalResult,
+  type MatchPreview,
+  type MatchPreviewTarget,
 } from '@/lib/api'
 import { ehDraft, rotuloTipo } from '@/lib/entity-badges'
 import { useLanguage } from '@/lib/language-context'
@@ -134,11 +141,22 @@ function invalidarRevisao(qc: QueryClient, id: string) {
   qc.invalidateQueries({ queryKey: ['entity', id] })
 }
 
-// Rótulo pt-BR da fonte do candidato aplicado pelo auto-match (0050): "local"
-// veio do catálogo já importado (fundiu via `fundirEntities`), "external" veio
-// do provedor remoto (mesmo caminho do "Corrigir").
+// Rótulo pt-BR da fonte do candidato (0050/0060): "local" veio do catálogo já
+// importado (funde via `fundirEntities`), "external" veio do provedor remoto
+// (mesmo caminho do "Corrigir"). Usado tanto pelo aviso do auto-match em lote
+// quanto pelo selo de fonte da prévia (`PreviewBloco`).
 function rotuloMetodo(method: 'local' | 'external' | 'none'): string {
   return method === 'local' ? 'catálogo local' : 'provedor externo'
+}
+
+// Candidato "aplicável" pela prévia (0060): `found=true` E `target` não-nulo —
+// a MESMA checagem usada pelo bloco visual (`PreviewBloco`) e pelo botão
+// principal (`ReviewCard`), garantindo que nunca divirjam: se o card MOSTRA um
+// candidato, o botão principal SEMPRE aplica exatamente esse candidato.
+function candidatoValido(
+  data: MatchPreview | undefined,
+): data is MatchPreview & { target: MatchPreviewTarget } {
+  return !!data && data.found === true && data.target !== null
 }
 
 function ReviewCard({ card }: { card: EntityCard }) {
@@ -148,38 +166,51 @@ function ReviewCard({ card }: { card: EntityCard }) {
   // Avisa quando "Corrigir" fundiu uma duplicata automaticamente (0051): a
   // entity sem investimento do dono some sozinha da fila/biblioteca.
   const [avisoFusao, setAvisoFusao] = useState(false)
-  // Mensagem do auto-match individual (0050): sucesso (resolveu, some da fila
-  // na invalidação) ou neutro (não achou candidato confiável, item continua).
-  const [avisoAuto, setAvisoAuto] = useState<string | null>(null)
   const src = posterSrc(card.poster_url)
   const mostrarPlaceholder = src === null || falhouArte
+
+  // Prévia de candidato (0060): busca no MOUNT do card (não lazy) — mostra
+  // ANTES de qualquer clique o que o botão principal aplicaria.
+  const preview = useQuery(matchPreviewQueryOptions(card.id))
+  const achouCandidato = candidatoValido(preview.data)
 
   const confirmar = useMutation({
     mutationFn: () => confirmMatch(card.id),
     onSuccess: () => invalidarRevisao(qc, card.id),
   })
 
-  const autoSincronizar = useMutation({
-    mutationFn: () => autoMatchEntity(card.id),
-    onSuccess: (resultado) => {
-      if (resultado.resolved) {
-        setAvisoAuto(
-          `Resolvido automaticamente via ${rotuloMetodo(resultado.method)} (score ${resultado.score}).`,
-        )
-        invalidarRevisao(qc, card.id)
-      } else {
-        setAvisoAuto(
-          'Nenhum candidato confiável encontrado — revise manualmente.',
-        )
+  // Aplica exatamente o candidato mostrado pela prévia — local (funde) ou
+  // externo (grava identidade + re-enriquece), mesmo abaixo do limiar
+  // automático (decisão humana informada pelo card, não um corte silencioso).
+  const confirmarCandidato = useMutation({
+    mutationFn: () => {
+      const dadosPrevia = preview.data
+      if (!candidatoValido(dadosPrevia)) {
+        throw new Error('sem candidato para confirmar')
       }
+      const { target } = dadosPrevia
+      const body: ConfirmCandidateBody =
+        dadosPrevia.method === 'local'
+          ? { method: 'local', local_id: target.local_id ?? '' }
+          : {
+              method: 'external',
+              source: target.source ?? '',
+              source_id: target.source_id ?? '',
+            }
+      return confirmCandidate(card.id, body)
     },
+    onSuccess: () => invalidarRevisao(qc, card.id),
   })
+
+  const acaoPendente = achouCandidato
+    ? confirmarCandidato.isPending
+    : confirmar.isPending
 
   const mensagemErro =
     confirmar.error instanceof ApiError
       ? confirmar.error.message
-      : autoSincronizar.error instanceof ApiError
-        ? autoSincronizar.error.message
+      : confirmarCandidato.error instanceof ApiError
+        ? confirmarCandidato.error.message
         : null
 
   return (
@@ -221,73 +252,61 @@ function ReviewCard({ card }: { card: EntityCard }) {
               {motivoRevisao(card)}
             </Badge>
           </div>
-          <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
-            <Button
-              size="sm"
-              disabled={confirmar.isPending}
-              onClick={() => confirmar.mutate()}
-            >
-              {confirmar.isPending ? (
-                <LoaderCircle className="animate-spin" aria-hidden />
-              ) : (
-                <Check aria-hidden />
-              )}
-              {confirmar.isPending ? 'Confirmando…' : 'Confirmar'}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              aria-expanded={corrigindo}
-              onClick={() => setCorrigindo((v) => !v)}
-            >
-              <PencilLine aria-hidden />
-              Corrigir
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={autoSincronizar.isPending}
-              onClick={() => {
-                setAvisoAuto(null)
-                autoSincronizar.mutate()
-              }}
-            >
-              {autoSincronizar.isPending ? (
-                <LoaderCircle className="animate-spin" aria-hidden />
-              ) : (
-                <Sparkles aria-hidden />
-              )}
-              {autoSincronizar.isPending
-                ? 'Sincronizando…'
-                : 'Auto-sincronizar'}
-            </Button>
-            <Button asChild size="sm" variant="ghost">
-              <Link to="/entities/$id" params={{ id: card.id }}>
-                Ver detalhe
-              </Link>
-            </Button>
-            {mensagemErro ? (
-              <span
-                role="alert"
-                className="text-xs font-medium text-destructive"
-              >
-                {mensagemErro}
-              </span>
-            ) : null}
-          </div>
         </div>
+      </div>
+
+      <PreviewBloco
+        isPending={preview.isPending}
+        isError={preview.isError}
+        data={preview.data}
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          disabled={acaoPendente}
+          onClick={() =>
+            achouCandidato ? confirmarCandidato.mutate() : confirmar.mutate()
+          }
+        >
+          {acaoPendente ? (
+            <LoaderCircle className="animate-spin" aria-hidden />
+          ) : (
+            <Check aria-hidden />
+          )}
+          {achouCandidato
+            ? acaoPendente
+              ? 'Confirmando…'
+              : 'Confirmar candidato'
+            : acaoPendente
+              ? 'Confirmando…'
+              : 'Manter como está (sem metadados externos)'}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          aria-expanded={corrigindo}
+          onClick={() => setCorrigindo((v) => !v)}
+        >
+          <PencilLine aria-hidden />
+          Corrigir
+        </Button>
+        <Button asChild size="sm" variant="ghost">
+          <Link to="/entities/$id" params={{ id: card.id }}>
+            Ver detalhe
+          </Link>
+        </Button>
+        {mensagemErro ? (
+          <span role="alert" className="text-xs font-medium text-destructive">
+            {mensagemErro}
+          </span>
+        ) : null}
       </div>
 
       {avisoFusao ? (
         <p role="status" className="text-xs text-muted-foreground">
           Duplicata mesclada automaticamente — o item já importado foi combinado
           com este.
-        </p>
-      ) : null}
-
-      {avisoAuto ? (
-        <p role="status" className="text-xs text-muted-foreground">
-          {avisoAuto}
         </p>
       ) : null}
 
@@ -301,6 +320,101 @@ function ReviewCard({ card }: { card: EntityCard }) {
         />
       ) : null}
     </li>
+  )
+}
+
+// Bloco de prévia do candidato (0060): entre o cabeçalho (pôster do item +
+// título + badge de motivo) e a linha de botões. Quatro estados — carregando
+// (skeleton discreto), achou candidato (pôster + título + ano + selos),
+// não achou (mensagem neutra) e falha na busca (mensagem curta de erro, NÃO
+// bloqueia o resto do card — `ReviewCard` já trata isso como "sem candidato"
+// via `candidatoValido`, que só é `true` com `data` presente).
+function PreviewBloco({
+  isPending,
+  isError,
+  data,
+}: {
+  isPending: boolean
+  isError: boolean
+  data: MatchPreview | undefined
+}) {
+  const [falhouArte, setFalhouArte] = useState(false)
+
+  if (isPending) {
+    return (
+      <div
+        role="status"
+        className="flex items-center gap-2 rounded-lg bg-muted/40 p-2 text-muted-foreground"
+      >
+        <LoaderCircle className="size-4 animate-spin" aria-hidden />
+        <span className="text-xs">Buscando candidato…</span>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <p role="alert" className="text-xs font-medium text-destructive">
+        Não foi possível buscar um candidato — tente novamente mais tarde.
+      </p>
+    )
+  }
+
+  if (!data || data.found === false || !data.target) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        nenhum candidato encontrado — nem no catálogo local, nem na fonte
+        externa
+      </p>
+    )
+  }
+
+  const { target } = data
+  const candidatoSrc =
+    data.method === 'local'
+      ? posterSrc(target.poster_url)
+      : arteSrc(target.poster_url)
+  const mostrarPlaceholder = candidatoSrc === null || falhouArte
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg bg-muted/40 p-2">
+      <div className="relative aspect-[2/3] w-12 shrink-0 overflow-hidden rounded bg-muted">
+        {mostrarPlaceholder ? (
+          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+            <ImageOff className="size-4" aria-hidden />
+          </div>
+        ) : (
+          <img
+            src={candidatoSrc}
+            alt={`Pôster de ${target.title}`}
+            loading="lazy"
+            onError={() => setFalhouArte(true)}
+            className="h-full w-full object-cover"
+          />
+        )}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <span className="line-clamp-1 text-sm font-medium">
+            {target.title}
+          </span>
+          {target.year ? (
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {target.year}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="outline">score {data.score.toFixed(1)}</Badge>
+          <Badge variant="secondary">{rotuloMetodo(data.method)}</Badge>
+          {data.meets_auto_threshold ? (
+            <Badge>match forte</Badge>
+          ) : (
+            <Badge variant="outline">confira antes de confirmar</Badge>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
