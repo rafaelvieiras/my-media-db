@@ -3,7 +3,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { deleteLibrary, startScan, type Source, ApiError } from '@/lib/api'
+import { Switch } from '@/components/ui/switch'
+import {
+  deleteLibrary,
+  patchLibrary,
+  startScan,
+  type Source,
+  ApiError,
+} from '@/lib/api'
 import { libraryQueryOptions, scanStatusQueryOptions } from '@/lib/queries'
 import { DatasourceForm } from '@/components/datasource-form'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
@@ -69,6 +76,16 @@ function DatasourceRow({ source }: { source: Source }) {
     },
   })
 
+  // Liga/desliga o watcher de filesystem desta fonte (briefing 0064). Aplicado
+  // a quente pelo servidor — sem confirmação, é reversível e de baixo risco.
+  const watchMutation = useMutation({
+    mutationFn: (watch_enabled: boolean) =>
+      patchLibrary(source.id, { watch_enabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+    },
+  })
+
   const rodando = status?.running ?? false
 
   return (
@@ -105,6 +122,23 @@ function DatasourceRow({ source }: { source: Source }) {
           </Button>
         </div>
       </div>
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Switch
+          size="sm"
+          checked={source.watch_enabled}
+          disabled={watchMutation.isPending}
+          onCheckedChange={(checked) => watchMutation.mutate(checked)}
+          aria-label="Observar mudanças nesta pasta"
+        />
+        <span>
+          Observar mudanças nesta pasta
+          <span className="hidden sm:inline">
+            {' '}
+            — acelera a detecção de arquivos novos, mas não substitui o scan
+            periódico
+          </span>
+        </span>
+      </label>
       <ProgressoScan status={status} erroScan={scanMutation.error} />
     </li>
   )

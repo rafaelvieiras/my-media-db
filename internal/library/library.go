@@ -68,6 +68,10 @@ type Source struct {
 	// ContentType diz se a biblioteca e de filmes ("movie") ou de series ("series")
 	// — o scanner (0034) ramifica o fluxo de match por este valor. Default "movie".
 	ContentType string
+	// WatchEnabled liga/desliga o watcher fsnotify desta fonte (briefing 0064).
+	// Default false no cadastro; editavel so via AtualizarWatch (PATCH
+	// /api/v1/library/{id}), aplicado A QUENTE pelo handler (internal/watch).
+	WatchEnabled bool
 }
 
 // Service concentra as operações de domínio sobre library_source. Segue a
@@ -204,6 +208,37 @@ func (s *Service) Apagar(ctx context.Context, id string) error {
 	return tx.Commit()
 }
 
+// AtualizarWatch liga/desliga watch_enabled da fonte (briefing 0064, PATCH
+// /api/v1/library/{id}). ErrNaoEncontrado se o id não existir. O CHAMADOR
+// (internal/server) é quem aciona a rotina de registro/desregistro do
+// watcher fsnotify LOGO APÓS esta chamada retornar com sucesso — este
+// serviço só persiste a coluna, não conhece internal/watch (evitaria um
+// ciclo de import, já que watch depende de library.Source).
+func (s *Service) AtualizarWatch(ctx context.Context, id string, enabled bool) (Source, error) {
+	if _, err := s.leitura().ObterLibrarySource(ctx, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Source{}, ErrNaoEncontrado
+		}
+		return Source{}, err
+	}
+	row, err := s.escrita().AtualizarLibrarySourceWatch(ctx, sqlcgen.AtualizarLibrarySourceWatchParams{
+		WatchEnabled: watchEnabledInt(enabled),
+		ID:           id,
+	})
+	if err != nil {
+		return Source{}, err
+	}
+	return toSource(row, avaliarState(row.Path)), nil
+}
+
+// watchEnabledInt converte o bool de domínio para a coluna INTEGER (CHECK 0/1).
+func watchEnabledInt(enabled bool) int64 {
+	if enabled {
+		return 1
+	}
+	return 0
+}
+
 // toSource converte a linha gerada pelo sqlc na representação de domínio,
 // aplicando o state já derivado pelo chamador.
 func toSource(row sqlcgen.LibrarySource, state string) Source {
@@ -213,11 +248,12 @@ func toSource(row sqlcgen.LibrarySource, state string) Source {
 		lastScan = &v
 	}
 	return Source{
-		ID:          row.ID,
-		Path:        row.Path,
-		Type:        row.Type,
-		State:       state,
-		LastScan:    lastScan,
-		ContentType: row.ContentType,
+		ID:           row.ID,
+		Path:         row.Path,
+		Type:         row.Type,
+		State:        state,
+		LastScan:     lastScan,
+		ContentType:  row.ContentType,
+		WatchEnabled: row.WatchEnabled != 0,
 	}
 }

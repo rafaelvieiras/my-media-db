@@ -88,6 +88,14 @@ func run() error {
 	// que há banco.
 	go srv.Jobs().RunScheduler(ctx)
 
+	// Watch de filesystem opcional por fonte (briefing 0064): registra o
+	// watcher fsnotify de cada library_source com watch_enabled=1 ANTES do
+	// ListenAndServe (mesmo espírito do RunScheduler acima — não atrasa o
+	// boot do HTTP; best-effort, nunca aborta por causa de UMA fonte).
+	// FecharWatchers no shutdown gracioso, abaixo.
+	srv.IniciarWatchers(context.Background())
+	defer srv.FecharWatchers()
+
 	// Canal para propagar erro de ListenAndServe ao fluxo principal.
 	serverErr := make(chan error, 1)
 
@@ -139,9 +147,10 @@ func openAndMigrate() (*db.DB, error) {
 }
 
 // opcoesServer monta as options do server: a busca/enrich externa (briefing
-// 0014/0015), o diretório de assets e os jobs semente backup_vacuum
-// (briefing 0052) e saude_biblioteca (briefing 0053). Erro só na criação dos
-// diretórios (assets/backups).
+// 0014/0015), o diretório de assets, os jobs semente backup_vacuum
+// (briefing 0052), saude_biblioteca (briefing 0053) e midias_faltantes +
+// watch de filesystem (briefing 0064). Erro só na criação dos diretórios
+// (assets/backups).
 func opcoesServer(database *db.DB) ([]server.Option, error) {
 	opts := opcoesBusca()
 
@@ -164,6 +173,14 @@ func opcoesServer(database *db.DB) ([]server.Option, error) {
 	// library.Service, internos ao Server — ver o comentário de
 	// WithLibraryHealthJob em internal/server/server.go.
 	opts = append(opts, server.WithLibraryHealthJob())
+
+	// Job midias_faltantes + watch de filesystem opcional por fonte
+	// (briefing 0064): mesmo motivo de option DEDICADA do saude_biblioteca
+	// acima — os dois precisam de dependências internas ao Server. O boot
+	// efetivo do watch (listar fontes com watch_enabled=1 e registrar cada
+	// uma) acontece em srv.IniciarWatchers, chamado em run() depois de
+	// server.New (ver comentário lá).
+	opts = append(opts, server.WithMidiasFaltantesJob(), server.WithWatch())
 
 	return opts, nil
 }

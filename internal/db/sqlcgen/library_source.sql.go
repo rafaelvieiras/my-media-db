@@ -27,7 +27,7 @@ SET type = ?,
     state = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
 `
 
 type AtualizarLibrarySourceParams struct {
@@ -55,6 +55,40 @@ func (q *Queries) AtualizarLibrarySource(ctx context.Context, arg AtualizarLibra
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ContentType,
+		&i.WatchEnabled,
+	)
+	return i, err
+}
+
+const atualizarLibrarySourceWatch = `-- name: AtualizarLibrarySourceWatch :one
+UPDATE library_source
+SET watch_enabled = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
+`
+
+type AtualizarLibrarySourceWatchParams struct {
+	WatchEnabled int64
+	ID           string
+}
+
+// PATCH /api/v1/library/{id} (briefing 0064): liga/desliga watch_enabled. O
+// handler chama a rotina de registro/desregistro do watcher fsnotify LOGO
+// APOS este UPDATE (aplicado a quente, sem restart -- ver internal/watch).
+func (q *Queries) AtualizarLibrarySourceWatch(ctx context.Context, arg AtualizarLibrarySourceWatchParams) (LibrarySource, error) {
+	row := q.db.QueryRowContext(ctx, atualizarLibrarySourceWatch, arg.WatchEnabled, arg.ID)
+	var i LibrarySource
+	err := row.Scan(
+		&i.ID,
+		&i.Path,
+		&i.Type,
+		&i.LastScan,
+		&i.State,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ContentType,
+		&i.WatchEnabled,
 	)
 	return i, err
 }
@@ -66,7 +100,7 @@ INSERT INTO library_source (
 ) VALUES (
     ?, ?, ?, ?
 )
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
 `
 
 type CriarLibrarySourceParams struct {
@@ -81,7 +115,9 @@ type CriarLibrarySourceParams struct {
 // state e last_scan ficam de fora do INSERT: uma fonte nova nasce 'online'
 // (DEFAULT) e sem last_scan; o scan preenche depois via AtualizarLibrarySource.
 // content_type entra explicito (0034): 'movie' | 'series' -- o scanner ramifica
-// por este valor; o servico normaliza vazio para 'movie' (compat).
+// por este valor; o servico normaliza vazio para 'movie' (compat). watch_enabled
+// fica de fora do INSERT tambem: nasce 0 (DEFAULT, briefing 0064) -- o dono liga
+// depois via PATCH.
 func (q *Queries) CriarLibrarySource(ctx context.Context, arg CriarLibrarySourceParams) (LibrarySource, error) {
 	row := q.db.QueryRowContext(ctx, criarLibrarySource,
 		arg.ID,
@@ -99,12 +135,13 @@ func (q *Queries) CriarLibrarySource(ctx context.Context, arg CriarLibrarySource
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ContentType,
+		&i.WatchEnabled,
 	)
 	return i, err
 }
 
 const listarLibrarySources = `-- name: ListarLibrarySources :many
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
 FROM library_source
 ORDER BY created_at, id
 `
@@ -127,6 +164,50 @@ func (q *Queries) ListarLibrarySources(ctx context.Context) ([]LibrarySource, er
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ContentType,
+			&i.WatchEnabled,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listarLibrarySourcesComWatchHabilitado = `-- name: ListarLibrarySourcesComWatchHabilitado :many
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
+FROM library_source
+WHERE watch_enabled = 1
+ORDER BY created_at, id
+`
+
+// Usada no BOOT do servidor (briefing 0064) para registrar o watcher fsnotify
+// de cada fonte com watch_enabled=1 -- evita listar/filtrar em Go sobre TODAS
+// as fontes so para achar as poucas com watch ligado.
+func (q *Queries) ListarLibrarySourcesComWatchHabilitado(ctx context.Context) ([]LibrarySource, error) {
+	rows, err := q.db.QueryContext(ctx, listarLibrarySourcesComWatchHabilitado)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LibrarySource{}
+	for rows.Next() {
+		var i LibrarySource
+		if err := rows.Scan(
+			&i.ID,
+			&i.Path,
+			&i.Type,
+			&i.LastScan,
+			&i.State,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ContentType,
+			&i.WatchEnabled,
 		); err != nil {
 			return nil, err
 		}
@@ -142,7 +223,7 @@ func (q *Queries) ListarLibrarySources(ctx context.Context) ([]LibrarySource, er
 }
 
 const obterLibrarySource = `-- name: ObterLibrarySource :one
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
 FROM library_source
 WHERE id = ?
 `
@@ -159,12 +240,13 @@ func (q *Queries) ObterLibrarySource(ctx context.Context, id string) (LibrarySou
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ContentType,
+		&i.WatchEnabled,
 	)
 	return i, err
 }
 
 const obterLibrarySourcePorPath = `-- name: ObterLibrarySourcePorPath :one
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
 FROM library_source
 WHERE path = ?
 `
@@ -183,6 +265,7 @@ func (q *Queries) ObterLibrarySourcePorPath(ctx context.Context, path string) (L
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ContentType,
+		&i.WatchEnabled,
 	)
 	return i, err
 }

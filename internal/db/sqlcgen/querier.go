@@ -76,6 +76,10 @@ type Querier interface {
 	AtualizarJobConfig(ctx context.Context, arg AtualizarJobConfigParams) (JobDefinition, error)
 	// Atualiza o estado da varredura: carimbo do ultimo scan e online/offline.
 	AtualizarLibrarySource(ctx context.Context, arg AtualizarLibrarySourceParams) (LibrarySource, error)
+	// PATCH /api/v1/library/{id} (briefing 0064): liga/desliga watch_enabled. O
+	// handler chama a rotina de registro/desregistro do watcher fsnotify LOGO
+	// APOS este UPDATE (aplicado a quente, sem restart -- ver internal/watch).
+	AtualizarLibrarySourceWatch(ctx context.Context, arg AtualizarLibrarySourceWatchParams) (LibrarySource, error)
 	// Transicao de ciclo de vida: marca present/missing e carimba last_seen.
 	AtualizarMediaFileState(ctx context.Context, arg AtualizarMediaFileStateParams) (MediaFile, error)
 	// Reencontro num scan: o arquivo foi achado pelo content_hash. Atualiza o path
@@ -176,7 +180,9 @@ type Querier interface {
 	// state e last_scan ficam de fora do INSERT: uma fonte nova nasce 'online'
 	// (DEFAULT) e sem last_scan; o scan preenche depois via AtualizarLibrarySource.
 	// content_type entra explicito (0034): 'movie' | 'series' -- o scanner ramifica
-	// por este valor; o servico normaliza vazio para 'movie' (compat).
+	// por este valor; o servico normaliza vazio para 'movie' (compat). watch_enabled
+	// fica de fora do INSERT tambem: nasce 0 (DEFAULT, briefing 0064) -- o dono liga
+	// depois via PATCH.
 	CriarLibrarySource(ctx context.Context, arg CriarLibrarySourceParams) (LibrarySource, error)
 	// CRUD de media_file + a query de POSSE DERIVADA (ADR-0009) + as queries do
 	// scanner (briefing 0009): dedup por content_hash, reencontro (rename/move) e
@@ -307,6 +313,13 @@ type Querier interface {
 	// Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title). owned/
 	// file_count somam a juncao media_file_entity do mesmo jeito -- ver a nota longa acima.
 	ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCardsDescParams) ([]ListarEntityCardsDescRow, error)
+	// Universo elegivel do job `midias_faltantes` (briefing 0064): toda entity
+	// que possui ao menos um media_file 'present'. Para SERIE, media_file.entity_id
+	// aponta pra SERIE (nunca season/episodio, ver internal/scanner/serie.go
+	// gravarArquivoSerie) -- entao season/episodio nunca aparecem aqui, o que casa
+	// com a regra de writeEntityNfo (season nao tem NFO proprio, internal/server/
+	// localmedia_handlers.go).
+	ListarEntityIDsComMediaFilePresente(ctx context.Context) ([]string, error)
 	// Filmografia da pessoa (briefing 0029 Fase D, interno-first): as obras do catalogo
 	// que a creditam, elenco OU equipe (credito de produtora nao tem person_id, sai
 	// naturalmente do WHERE). Junta credit com entity para trazer o papel (kind/
@@ -341,6 +354,10 @@ type Querier interface {
 	// tras (started_at estritamente menor que o cursor).
 	ListarJobExecucoes(ctx context.Context, arg ListarJobExecucoesParams) ([]JobExecution, error)
 	ListarLibrarySources(ctx context.Context) ([]LibrarySource, error)
+	// Usada no BOOT do servidor (briefing 0064) para registrar o watcher fsnotify
+	// de cada fonte com watch_enabled=1 -- evita listar/filtrar em Go sobre TODAS
+	// as fontes so para achar as poucas com watch ligado.
+	ListarLibrarySourcesComWatchHabilitado(ctx context.Context) ([]LibrarySource, error)
 	// Todas as camadas externas cacheadas de uma entity (uma por fonte buscada).
 	ListarMediaExternalPorEntity(ctx context.Context, entityID string) ([]MediaExternal, error)
 	ListarMediaFilesPorEntity(ctx context.Context, entityID string) ([]MediaFile, error)
@@ -489,6 +506,12 @@ type Querier interface {
 	// content_hash NAO e UNIQUE (colisao real e astronomica com o hash parcial), por
 	// isso LIMIT 1. Se achar, o scanner atualiza o path em vez de criar outra linha.
 	ObterMediaFilePorContentHash(ctx context.Context, contentHash sql.NullString) (MediaFile, error)
+	// Scan incremental (briefing 0064): busca o media_file ja gravado para este
+	// MESMO path (UNIQUE, indexado) ANTES de re-hashear/re-extrair mediainfo --
+	// se mtime+size baterem com o que ja esta aqui, o scanner reusa content_hash/
+	// mediainfo_json em vez de reabrir o arquivo. sql.ErrNoRows para arquivo novo
+	// (nunca visto neste path).
+	ObterMediaFilePorPath(ctx context.Context, path string) (MediaFile, error)
 	// Le o override da entity (sql.ErrNoRows quando nao ha override ativo).
 	ObterMediaOverride(ctx context.Context, entityID string) (MediaOverride, error)
 	// Le a pessoa por (source, source_id) -- a chave logica de dedup.

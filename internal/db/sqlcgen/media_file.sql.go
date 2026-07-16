@@ -216,6 +216,42 @@ func (q *Queries) EntityTemPosse(ctx context.Context, entityID string) (bool, er
 	return tem_posse, err
 }
 
+const listarEntityIDsComMediaFilePresente = `-- name: ListarEntityIDsComMediaFilePresente :many
+SELECT DISTINCT entity_id
+FROM media_file
+WHERE state = 'present'
+ORDER BY entity_id
+`
+
+// Universo elegivel do job `midias_faltantes` (briefing 0064): toda entity
+// que possui ao menos um media_file 'present'. Para SERIE, media_file.entity_id
+// aponta pra SERIE (nunca season/episodio, ver internal/scanner/serie.go
+// gravarArquivoSerie) -- entao season/episodio nunca aparecem aqui, o que casa
+// com a regra de writeEntityNfo (season nao tem NFO proprio, internal/server/
+// localmedia_handlers.go).
+func (q *Queries) ListarEntityIDsComMediaFilePresente(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listarEntityIDsComMediaFilePresente)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var entity_id string
+		if err := rows.Scan(&entity_id); err != nil {
+			return nil, err
+		}
+		items = append(items, entity_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listarMediaFilesPorEntity = `-- name: ListarMediaFilesPorEntity :many
 SELECT id, entity_id, path, content_hash, size, mtime, edition, part_no,
     match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id
@@ -379,6 +415,41 @@ LIMIT 1
 // isso LIMIT 1. Se achar, o scanner atualiza o path em vez de criar outra linha.
 func (q *Queries) ObterMediaFilePorContentHash(ctx context.Context, contentHash sql.NullString) (MediaFile, error) {
 	row := q.db.QueryRowContext(ctx, obterMediaFilePorContentHash, contentHash)
+	var i MediaFile
+	err := row.Scan(
+		&i.ID,
+		&i.EntityID,
+		&i.Path,
+		&i.ContentHash,
+		&i.Size,
+		&i.Mtime,
+		&i.Edition,
+		&i.PartNo,
+		&i.MatchConfidence,
+		&i.MediainfoJson,
+		&i.State,
+		&i.LastSeen,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LibrarySourceID,
+	)
+	return i, err
+}
+
+const obterMediaFilePorPath = `-- name: ObterMediaFilePorPath :one
+SELECT id, entity_id, path, content_hash, size, mtime, edition, part_no,
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id
+FROM media_file
+WHERE path = ?
+`
+
+// Scan incremental (briefing 0064): busca o media_file ja gravado para este
+// MESMO path (UNIQUE, indexado) ANTES de re-hashear/re-extrair mediainfo --
+// se mtime+size baterem com o que ja esta aqui, o scanner reusa content_hash/
+// mediainfo_json em vez de reabrir o arquivo. sql.ErrNoRows para arquivo novo
+// (nunca visto neste path).
+func (q *Queries) ObterMediaFilePorPath(ctx context.Context, path string) (MediaFile, error) {
+	row := q.db.QueryRowContext(ctx, obterMediaFilePorPath, path)
 	var i MediaFile
 	err := row.Scan(
 		&i.ID,

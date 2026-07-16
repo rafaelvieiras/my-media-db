@@ -319,6 +319,79 @@ func TestDeleteLibrary(t *testing.T) {
 
 // TestApiNotFoundShapeNovo garante que o 404 genérico de /api migrou para o
 // shape padrão {error:{code,message}} (antes era {"error":"not found"}).
+// TestPatchLibraryWatchEnabled cobre o toggle do briefing 0064: PATCH liga
+// watch_enabled, persiste (reflete em GET), e desliga de volta -- sem
+// s.watch configurado (setupLibraryServer não usa WithWatch), a rotina de
+// aplicarWatchToggle degrada em silêncio (guarda s.watch==nil), só a
+// persistência é exercitada aqui.
+func TestPatchLibraryWatchEnabled(t *testing.T) {
+	h := setupLibraryServer(t)
+	src := criarOK(t, h, t.TempDir(), "movie")
+	if src.WatchEnabled {
+		t.Fatalf("watch_enabled no cadastro = true, quero false (default)")
+	}
+
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"watch_enabled": true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH watch_enabled=true: status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	ligado := decodeSource(t, rec)
+	if !ligado.WatchEnabled {
+		t.Error("watch_enabled na resposta do PATCH = false, quero true")
+	}
+
+	// Reflete em GET (persistiu de verdade, não só na resposta do PATCH).
+	get := do(t, h, http.MethodGet, "/api/v1/library/"+src.ID, nil)
+	if got := decodeSource(t, get); !got.WatchEnabled {
+		t.Error("watch_enabled no GET pos-PATCH = false, quero true (persistido)")
+	}
+
+	rec2 := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"watch_enabled": false})
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("PATCH watch_enabled=false: status = %d, quero 200 (corpo=%s)", rec2.Code, rec2.Body.String())
+	}
+	if desligado := decodeSource(t, rec2); desligado.WatchEnabled {
+		t.Error("watch_enabled apos desligar = true, quero false")
+	}
+}
+
+// TestPatchLibraryCorpoVazioSoDevolveEstado cobre o caso "PATCH sem
+// watch_enabled no corpo": não toca nada, só devolve o estado atual.
+func TestPatchLibraryCorpoVazioSoDevolveEstado(t *testing.T) {
+	h := setupLibraryServer(t)
+	src := criarOK(t, h, t.TempDir(), "movie")
+
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if got := decodeSource(t, rec); got.WatchEnabled {
+		t.Error("watch_enabled = true, quero false (nada deveria ter mudado)")
+	}
+}
+
+// TestPatchLibraryNaoEncontrado cobre o 404 de uma fonte inexistente.
+func TestPatchLibraryNaoEncontrado(t *testing.T) {
+	h := setupLibraryServer(t)
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/naoexiste", map[string]any{"watch_enabled": true})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, quero 404 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "not_found")
+}
+
+// TestPatchLibraryCorpoMalformado cobre o 422 de um corpo que não é JSON válido.
+func TestPatchLibraryCorpoMalformado(t *testing.T) {
+	h := setupLibraryServer(t)
+	src := criarOK(t, h, t.TempDir(), "movie")
+
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, []byte("{nao-e-json"))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, quero 422 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "invalid_body")
+}
+
 func TestApiNotFoundShapeNovo(t *testing.T) {
 	h := setupLibraryServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/rota-inexistente", nil)

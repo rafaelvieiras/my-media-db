@@ -12,6 +12,8 @@ const base = import.meta.env.VITE_API_BASE ?? ''
 export type Source = components['schemas']['Source']
 export type SourceList = components['schemas']['SourceList']
 export type CreateSource = components['schemas']['CreateSource']
+// Patch parcial de `library_source` (briefing 0064) — hoje só `watch_enabled`.
+export type PatchSource = components['schemas']['PatchSource']
 export type ScanStatus = components['schemas']['ScanStatus']
 export type StartScan = components['schemas']['StartScan']
 export type EntityCard = components['schemas']['EntityCard']
@@ -151,6 +153,21 @@ export async function listLibrary(): Promise<SourceList> {
 export async function createLibrary(body: CreateSource): Promise<Source> {
   const res = await fetch(`${base}/api/v1/library`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return lerJson<Source>(res)
+}
+
+// Patch parcial de datasource (briefing 0064) — hoje só liga/desliga o watcher
+// de filesystem (`watch_enabled`), aplicado a quente pelo servidor (sem
+// restart). Campos ausentes do corpo ficam inalterados.
+export async function patchLibrary(
+  id: string,
+  body: PatchSource,
+): Promise<Source> {
+  const res = await fetch(`${base}/api/v1/library/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   })

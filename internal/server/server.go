@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"time"
 
@@ -17,10 +18,12 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/externaldetail"
 	"github.com/rafaelvieiras/my-media-db/internal/job"
 	"github.com/rafaelvieiras/my-media-db/internal/job/libraryhealth"
+	"github.com/rafaelvieiras/my-media-db/internal/job/midiasfaltantes"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 	"github.com/rafaelvieiras/my-media-db/internal/telemetry"
+	"github.com/rafaelvieiras/my-media-db/internal/watch"
 )
 
 // Server agrega as dependências necessárias para construir o handler HTTP.
@@ -97,6 +100,14 @@ type Server struct {
 	// scanner) — os campos novos de storage degradam para 0 nesse caso, mesmo
 	// espírito defensivo do resto do Server.
 	libraryHealth *libraryhealth.Handler
+	// watch orquestra o watcher fsnotify opcional por library_source
+	// (briefing 0064, internal/watch): registrado via WithWatch, acionado no
+	// boot (IniciarWatchers) e a QUENTE pelo handler PATCH /library/{id}
+	// (aplicarWatchToggle, library.go). Nil quando WithWatch não foi
+	// aplicada (ou sem banco/library/scanner) -- o toggle de watch_enabled
+	// ainda persiste no banco nesse caso, só o efeito em memória não se
+	// aplica (mesma guarda defensiva de libraryHealth).
+	watch *watch.Watcher
 }
 
 // Option configura opcionalmente o Server na construção, preservando a
@@ -180,6 +191,82 @@ func WithLibraryHealthJob() Option {
 		s.libraryHealth = h
 		s.jobs.Registry.Registrar(h)
 	}
+}
+
+// WithMidiasFaltantesJob REGISTRA o job `midias_faltantes` (briefing 0064,
+// fecha o ciclo do 0062 em escala) no Registry do Manager de jobs. Mesmo
+// motivo de WithLibraryHealthJob ser uma option DEDICADA (não
+// WithJobHandlers): o Handler precisa do próprio *Server como
+// EntityLister/Materializador (internal/job/midiasfaltantes), que só existe
+// aqui dentro. Nula (sem registrar nada) se não houver banco -- mesma guarda
+// dos demais.
+func WithMidiasFaltantesJob() Option {
+	return func(s *Server) {
+		if s.db == nil {
+			return
+		}
+		if s.jobs == nil {
+			s.jobs = job.NewManager(s.db)
+		}
+		// s satisfaz tanto midiasfaltantes.EntityLister quanto
+		// midiasfaltantes.Materializador (ver internal/server/midias_faltantes.go).
+		h := midiasfaltantes.New(s, s)
+		s.jobs.Registry.Registrar(h)
+	}
+}
+
+// WithWatch REGISTRA o orquestrador do watch fsnotify opcional por fonte
+// (briefing 0064, internal/watch). Precisa do scanner.Manager (interno ao
+// Server, já construído antes do loop de options) para disparar o scan
+// DIRECIONADO de uma fonte quando o debounce expira. Nula (s.watch continua
+// nil) se não houver banco/library/scanner -- mesma guarda de
+// WithLibraryHealthJob; o chamador (main.go) ainda deve chamar
+// IniciarWatchers APÓS srv := server.New(...) para registrar as fontes que
+// já nascem com watch_enabled=1 (não é feito aqui dentro para não fazer I/O
+// de disco durante a construção do Server).
+func WithWatch() Option {
+	return func(s *Server) {
+		if s.db == nil || s.library == nil || s.scanner == nil {
+			return
+		}
+		s.watch = watch.New(s.scanner, watch.DebounceDefault)
+	}
+}
+
+// IniciarWatchers lista TODA library_source com watch_enabled=1 e registra o
+// watcher fsnotify de cada uma (mesma rotina usada pelo handler PATCH
+// /library/{id} quando liga o toggle a quente) -- chamado pelo main ANTES do
+// ListenAndServe, mesmo espírito de RunScheduler não atrasar o boot do HTTP.
+// Falha ao registrar UMA fonte é logada e NUNCA aborta o boot nem as demais
+// (briefing 0064 §4). No-op silencioso se WithWatch não foi aplicada ou não
+// há library.Service (sem banco).
+func (s *Server) IniciarWatchers(ctx context.Context) {
+	if s.watch == nil || s.library == nil {
+		return
+	}
+	sources, err := s.library.Listar(ctx)
+	if err != nil {
+		log.Printf("watch: falha ao listar fontes no boot (nenhum watcher registrado): %v", err)
+		return
+	}
+	for _, src := range sources {
+		if !src.WatchEnabled {
+			continue
+		}
+		if err := s.watch.RegistrarFonte(src); err != nil {
+			log.Printf("watch: falha ao registrar a fonte %q no boot (best-effort, fonte segue dependendo do polling periodico): %v", src.ID, err)
+		}
+	}
+}
+
+// FecharWatchers fecha todos os watchers fsnotify registrados -- chamado pelo
+// main no shutdown gracioso do servidor (mesmo instante de httpServer.Shutdown).
+// No-op se WithWatch não foi aplicada.
+func (s *Server) FecharWatchers() {
+	if s.watch == nil {
+		return
+	}
+	s.watch.Close()
 }
 
 // Jobs devolve o gerenciador de jobs (nil quando não há banco injetado) —
@@ -359,13 +446,16 @@ func (s *Server) Handler() (http.Handler, error) {
 				cfg.Put("/catalog-completeness", s.putCatalogCompletenessSettings)
 			})
 
-			// Datasources da biblioteca (briefing 0008). Escritas (POST/DELETE)
-			// pela conexão de escrita, leituras (GET) pelo pool — encapsulado no
-			// serviço internal/library (ADR-0010).
+			// Datasources da biblioteca (briefing 0008). Escritas (POST/PATCH/
+			// DELETE) pela conexão de escrita, leituras (GET) pelo pool —
+			// encapsulado no serviço internal/library (ADR-0010). PATCH
+			// (briefing 0064) edita watch_enabled e aplica o watcher fsnotify
+			// A QUENTE (aplicarWatchToggle, library.go), sem restart.
 			v1.Route("/library", func(lib chi.Router) {
 				lib.Post("/", s.createLibrary)
 				lib.Get("/", s.listLibrary)
 				lib.Get("/{id}", s.getLibrary)
+				lib.Patch("/{id}", s.patchLibrary)
 				lib.Delete("/{id}", s.deleteLibrary)
 
 				// Scan em background por datasource (briefing 0009): dispara

@@ -105,7 +105,7 @@ func TestMigrateUp(t *testing.T) {
 	if err := d.Migrate(ctx); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	// Há quinze migrations (0001 semente + 0002 schema do núcleo + 0003
+	// Há dezesseis migrations (0001 semente + 0002 schema do núcleo + 0003
 	// media_file.library_source_id + 0004 media_external/media_override + 0005
 	// app_settings/entity.original_language + 0006 external_detail + 0007
 	// series: entity_relation.sort_index + entity.external_id_tvdb + 0008
@@ -114,9 +114,10 @@ func TestMigrateUp(t *testing.T) {
 	// do job saude_biblioteca + 0013 entity.last_external_match_attempt_at
 	// (briefing 0056) + 0014 entity_catalog_completeness (briefing 0058) +
 	// 0015 asset.local_path/is_principal + entity.nfo_path/nfo_written_at
-	// (briefing 0062).
-	if v := mustSchemaVersion(t, d); v != 15 {
-		t.Errorf("versão após up = %d, quero 15", v)
+	// (briefing 0062) + 0016 library_source.watch_enabled + seed do job
+	// midias_faltantes (briefing 0064).
+	if v := mustSchemaVersion(t, d); v != 16 {
+		t.Errorf("versão após up = %d, quero 16", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -147,9 +148,15 @@ func downPara(t *testing.T, d *DB, querVersao int64) {
 }
 
 // querFalha confere que uma query FALHA (o objeto que ela toca sumiu no down).
+// Se a query inesperadamente TIVER sucesso (bug do down-migration), fecha o
+// *sql.Rows antes de reportar a falha -- sem isso, a conexão do pool de
+// leitura (só 4 no total, db.go) fica presa para sempre e QUALQUER query de
+// leitura seguinte no teste TRAVA esperando uma conexão livre que nunca volta.
 func querFalha(t *testing.T, d *DB, query, msg string) {
 	t.Helper()
-	if _, err := d.Read.QueryContext(context.Background(), query); err == nil {
+	rows, err := d.Read.QueryContext(context.Background(), query)
+	if err == nil {
+		_ = rows.Close()
 		t.Error(msg)
 	}
 }
@@ -161,6 +168,10 @@ func TestMigrateDown(t *testing.T) {
 	}
 
 	// Down reverte uma migration por vez, do topo para a base.
+	downPara(t, d, 15) // 0016: remove library_source.watch_enabled e o seed do job midias_faltantes.
+	querFalha(t, d, "SELECT watch_enabled FROM library_source",
+		"coluna watch_enabled ainda existe após o down do 0016")
+
 	downPara(t, d, 14) // 0015: remove asset.local_path/is_principal e entity.nfo_path/nfo_written_at.
 	querFalha(t, d, "SELECT local_path, is_principal FROM asset",
 		"colunas local_path/is_principal ainda existem após o down do 0015")

@@ -90,8 +90,8 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 	d, q := setupNucleo(t)
 	ctx := context.Background()
 
-	if v := mustSchemaVersion(t, d); v != 15 {
-		t.Fatalf("versão de schema = %d, quero 15", v)
+	if v := mustSchemaVersion(t, d); v != 16 {
+		t.Fatalf("versão de schema = %d, quero 16", v)
 	}
 	assertTabelasExistem(t, d,
 		"entity", "media_file", "library_source", "asset", "entity_relation", "entity_fts",
@@ -108,8 +108,9 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 		t.Error("foreign_key_check retornou violações, quero nenhuma")
 	}
 
-	// Down reverte, um por um, o 0015 (asset.local_path/is_principal +
-	// entity.nfo_path/nfo_written_at, briefing 0062), o 0014
+	// Down reverte, um por um, o 0016 (library_source.watch_enabled + seed do
+	// job midias_faltantes, briefing 0064), o 0015 (asset.local_path/
+	// is_principal + entity.nfo_path/nfo_written_at, briefing 0062), o 0014
 	// (entity_catalog_completeness, briefing 0058), o 0013
 	// (entity.last_external_match_attempt_at, briefing 0056), o 0012 (seed do
 	// job saude_biblioteca), o 0011 (job_definition/job_execution), o 0010
@@ -119,7 +120,7 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 	// original_language), o 0004 (camadas externo/override), o 0003 (coluna
 	// library_source_id) e depois o 0002 (schema do núcleo, volta ao 0001).
 	// Cada passo deve deixar a versão no valor esperado.
-	for _, esperada := range []int64{14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1} {
+	for _, esperada := range []int64{15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1} {
 		downEChecaVersao(t, d, esperada)
 	}
 	if _, err := d.Read.QueryContext(ctx, "SELECT 1 FROM entity"); err == nil {

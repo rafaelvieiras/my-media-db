@@ -903,7 +903,11 @@ export interface paths {
     delete: operations['deleteLibrary']
     options?: never
     head?: never
-    patch?: never
+    /**
+     * Edita configuração de um datasource cadastrado (briefing 0064).
+     * @description Patch PARCIAL: campos ausentes do corpo ficam inalterados. Hoje só expõe `watch_enabled` — nenhum outro campo de `library_source` é editável por este endpoint ainda. Mudar `watch_enabled` de `false` para `true` ativa o watcher `fsnotify` desta fonte IMEDIATAMENTE (mesma rotina de registro usada no boot do servidor, sem reiniciar nada); de `true` para `false` desativa o watcher IMEDIATAMENTE (`Close()` + remoção da entrada em memória). As duas direções são garantia comportamental do contrato: nenhuma delas exige restart do servidor.
+     */
+    patch: operations['patchLibrary']
     trace?: never
   }
   '/api/v1/library/{id}/scan': {
@@ -1687,6 +1691,8 @@ export interface components {
       /** @enum {string} */
       state: 'online' | 'offline'
       last_scan: string | null
+      /** @description Liga/desliga o watcher de filesystem (`fsnotify`) desta fonte (briefing 0064). Default `false` no cadastro — fontes montadas via rede (rclone/gdrive, o deploy real do projeto) não ganham quase nada do watch, então o dono liga explicitamente só quando sabe que é um disco local de verdade. Só reduz a LATÊNCIA até o próximo scan; o job periódico `midias_faltantes`/scan incremental continua sendo a base mesmo com watch ligado. Editável só via `PATCH /api/v1/library/{id}`, aplicado a quente (sem restart). */
+      watch_enabled: boolean
     }
     SourceList: {
       items: components['schemas']['Source'][]
@@ -1700,6 +1706,11 @@ export interface components {
        * @enum {string}
        */
       content_type?: 'movie' | 'series'
+    }
+    /** @description Patch PARCIAL de PATCH /api/v1/library/{id} (briefing 0064) — campos ausentes ficam inalterados. */
+    PatchSource: {
+      /** @description Liga/desliga o watcher `fsnotify` desta fonte. Aplicado a QUENTE pelo handler: `false→true` registra o watch imediatamente (mesma rotina usada no boot); `true→false` fecha o watcher e remove a entrada em memória imediatamente. Nenhuma das duas direções exige restart do servidor. */
+      watch_enabled?: boolean
     }
     ScanStatus: {
       running: boolean
@@ -3407,6 +3418,35 @@ export interface operations {
         content?: never
       }
       404: components['responses']['Error']
+    }
+  }
+  patchLibrary: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id do datasource. */
+        id: components['parameters']['SourceId']
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PatchSource']
+      }
+    }
+    responses: {
+      /** @description Fonte atualizada. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Source']
+        }
+      }
+      404: components['responses']['Error']
+      422: components['responses']['Error']
     }
   }
   getScanStatus: {

@@ -26,6 +26,16 @@ function fetchRouter(sources: Source[], status: ScanStatus) {
     if (method === 'DELETE') {
       return { ok: true, status: 204 } as Response
     }
+    if (u.startsWith('/api/v1/library/') && method === 'PATCH') {
+      const source = sources.find((s) => u === `/api/v1/library/${s.id}`)
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        watch_enabled?: boolean
+      }
+      // Muta em memória para que o refetch pós-invalidação (disparado pelo
+      // componente) reflita o novo estado, como faria a API real.
+      Object.assign(source ?? {}, body)
+      return okJson({ ...source, ...body })
+    }
     throw new Error(`rota não mockada: ${method} ${u}`)
   })
 }
@@ -55,6 +65,7 @@ describe('DatasourceList', () => {
       content_type: 'movie',
       state: 'online',
       last_scan: null,
+      watch_enabled: false,
     }
     vi.stubGlobal(
       'fetch',
@@ -86,6 +97,7 @@ describe('DatasourceList', () => {
       content_type: 'series',
       state: 'online',
       last_scan: null,
+      watch_enabled: false,
     }
     const fetchMock = fetchRouter([source], idle)
     vi.stubGlobal('fetch', fetchMock)
@@ -103,5 +115,44 @@ describe('DatasourceList', () => {
         ),
       ).toBe(true),
     )
+  })
+
+  it('liga o watch de filesystem via PATCH ao alternar o switch', async () => {
+    const user = userEvent.setup()
+    const source: Source = {
+      id: '9',
+      path: '/mnt/filmes',
+      type: 'movie',
+      content_type: 'movie',
+      state: 'online',
+      last_scan: null,
+      watch_enabled: false,
+    }
+    const fetchMock = fetchRouter([source], idle)
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithClient(<DatasourceList />)
+
+    await waitFor(() =>
+      expect(screen.getByText('/mnt/filmes')).toBeInTheDocument(),
+    )
+    const toggle = screen.getByRole('switch', {
+      name: 'Observar mudanças nesta pasta',
+    })
+    expect(toggle).not.toBeChecked()
+    await user.click(toggle)
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([u, init]) => {
+          const i = init as RequestInit | undefined
+          return (
+            String(u) === '/api/v1/library/9' &&
+            i?.method === 'PATCH' &&
+            JSON.parse(String(i.body)).watch_enabled === true
+          )
+        }),
+      ).toBe(true),
+    )
+    await waitFor(() => expect(toggle).toBeChecked())
   })
 })

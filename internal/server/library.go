@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -22,6 +23,16 @@ type sourceDTO struct {
 	ContentType string  `json:"content_type"`
 	State       string  `json:"state"`
 	LastScan    *string `json:"last_scan"`
+	// WatchEnabled liga/desliga o watcher fsnotify desta fonte (briefing
+	// 0064). Default false; editável só via PATCH /api/v1/library/{id}.
+	WatchEnabled bool `json:"watch_enabled"`
+}
+
+// patchSourceRequest é o corpo aceito por PATCH /api/v1/library/{id}
+// (briefing 0064, PatchSource no contrato): PATCH PARCIAL -- campo ausente
+// (ponteiro nil) fica inalterado. Hoje só expõe watch_enabled.
+type patchSourceRequest struct {
+	WatchEnabled *bool `json:"watch_enabled"`
 }
 
 // listDTO é a resposta de GET /api/v1/library.
@@ -40,12 +51,13 @@ type createRequest struct {
 // toDTO converte a Source de domínio para a forma serializável.
 func toDTO(s library.Source) sourceDTO {
 	return sourceDTO{
-		ID:          s.ID,
-		Path:        s.Path,
-		Type:        s.Type,
-		ContentType: s.ContentType,
-		State:       s.State,
-		LastScan:    s.LastScan,
+		ID:           s.ID,
+		Path:         s.Path,
+		Type:         s.Type,
+		ContentType:  s.ContentType,
+		State:        s.State,
+		LastScan:     s.LastScan,
+		WatchEnabled: s.WatchEnabled,
 	}
 }
 
@@ -159,4 +171,70 @@ func (s *Server) deleteLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// patchLibrary trata PATCH /api/v1/library/{id} (briefing 0064): PATCH
+// PARCIAL -- hoje só aceita watch_enabled. Campo ausente do corpo (ponteiro
+// nil) devolve a fonte como está, sem tocar nada. Mudar watch_enabled aplica
+// A QUENTE, sem restart do servidor (critério de aceite do briefing):
+// false->true chama a MESMA rotina de registro do boot para aquela fonte
+// (s.watch.RegistrarFonte); true->false chama Close() no watcher da fonte e
+// remove sua entrada do mapa em memória (s.watch.DesregistrarFonte). 200 com
+// a fonte atualizada; 404 fonte inexistente; 422 corpo malformado.
+func (s *Server) patchLibrary(w http.ResponseWriter, r *http.Request) {
+	if s.libraryUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	ctx := r.Context()
+
+	var req patchSourceRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_body",
+			"corpo da requisição inválido: "+err.Error())
+		return
+	}
+
+	if req.WatchEnabled == nil {
+		// Patch vazio é válido (nenhum campo suportado veio no corpo): só
+		// devolve o estado atual, sem tocar nada.
+		src, err := s.library.Obter(ctx, id)
+		if err != nil {
+			respondLibraryError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, toDTO(src))
+		return
+	}
+
+	src, err := s.library.AtualizarWatch(ctx, id, *req.WatchEnabled)
+	if err != nil {
+		respondLibraryError(w, err)
+		return
+	}
+	s.aplicarWatchToggle(src, *req.WatchEnabled)
+
+	writeJSON(w, http.StatusOK, toDTO(src))
+}
+
+// aplicarWatchToggle aciona o watcher fsnotify em memória (internal/watch)
+// para refletir a mudança de watch_enabled que ACABOU de ser persistida --
+// sem isso, o toggle só valeria depois de um restart (o que o briefing 0064
+// explicitamente proíbe). s.watch é nil quando o servidor não tem
+// banco/library/scanner (mesma guarda defensiva de WithLibraryHealthJob);
+// nesse caso degrada em silêncio (a coluna já foi persistida, só o efeito em
+// memória não se aplica -- cenário só de teste de rota sem banco real).
+func (s *Server) aplicarWatchToggle(src library.Source, enabled bool) {
+	if s.watch == nil {
+		return
+	}
+	if enabled {
+		if err := s.watch.RegistrarFonte(src); err != nil {
+			log.Printf("library: falha ao ativar o watch da fonte %q (best-effort, fonte segue dependendo do polling periodico): %v", src.ID, err)
+		}
+		return
+	}
+	s.watch.DesregistrarFonte(src.ID)
 }

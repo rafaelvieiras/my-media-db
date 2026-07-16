@@ -19,6 +19,17 @@ SELECT id, entity_id, path, content_hash, size, mtime, edition, part_no,
 FROM media_file
 WHERE id = ?;
 
+-- name: ObterMediaFilePorPath :one
+-- Scan incremental (briefing 0064): busca o media_file ja gravado para este
+-- MESMO path (UNIQUE, indexado) ANTES de re-hashear/re-extrair mediainfo --
+-- se mtime+size baterem com o que ja esta aqui, o scanner reusa content_hash/
+-- mediainfo_json em vez de reabrir o arquivo. sql.ErrNoRows para arquivo novo
+-- (nunca visto neste path).
+SELECT id, entity_id, path, content_hash, size, mtime, edition, part_no,
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id
+FROM media_file
+WHERE path = ?;
+
 -- name: ObterMediaFilePorContentHash :one
 -- Dedup do scanner: acha o arquivo pelo hash de conteudo (estavel a rename/move).
 -- content_hash NAO e UNIQUE (colisao real e astronomica com o hash parcial), por
@@ -96,6 +107,18 @@ WHERE library_source_id = ?;
 SELECT id, entity_id, path, state
 FROM media_file
 WHERE state = 'present';
+
+-- name: ListarEntityIDsComMediaFilePresente :many
+-- Universo elegivel do job `midias_faltantes` (briefing 0064): toda entity
+-- que possui ao menos um media_file 'present'. Para SERIE, media_file.entity_id
+-- aponta pra SERIE (nunca season/episodio, ver internal/scanner/serie.go
+-- gravarArquivoSerie) -- entao season/episodio nunca aparecem aqui, o que casa
+-- com a regra de writeEntityNfo (season nao tem NFO proprio, internal/server/
+-- localmedia_handlers.go).
+SELECT DISTINCT entity_id
+FROM media_file
+WHERE state = 'present'
+ORDER BY entity_id;
 
 -- name: EntityTemPosse :one
 -- POSSE DERIVADA (ADR-0009): verdadeiro se, e so se, existe ao menos um

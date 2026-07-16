@@ -128,30 +128,28 @@ func (r *scanRun) processarLotes(ctx context.Context, j *job, arquivos []string)
 	return nil
 }
 
-// computarFacts calcula hash + mediainfo e faz o parse dos nomes de um arquivo.
+// computarFacts calcula hash + mediainfo (ou reusa, ver hashEMediainfo) e faz
+// o parse dos nomes de um arquivo.
 func (r *scanRun) computarFacts(ctx context.Context, path string) (fileFacts, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return fileFacts{}, err
 	}
-	hash, err := hashDoArquivo(path, info.Size())
+	mtime := info.ModTime().UTC().Format(time.RFC3339Nano)
+
+	hash, mi, err := r.hashEMediainfo(ctx, path, info.Size(), mtime)
 	if err != nil {
 		return fileFacts{}, err
-	}
-
-	var mi []byte
-	if r.probeAtivo {
-		if b, perr := r.m.prober.Probe(ctx, path); perr == nil {
-			mi = b
-		} else {
-			log.Printf("scanner: ffprobe falhou em %q (mediainfo vazio): %v", path, perr)
-		}
 	}
 
 	// Ramifica pelo tipo de biblioteca: séries seguem o novo fluxo (0034); filme
 	// (ou default) mantém o caminho de agrupamento por pasta, intacto. A resolução
 	// da série (e o auto-import) acontece AQUI, fora da transação de escrita — o
 	// import do enrich escreve pela própria conexão, então nada de tx aninhada.
+	// Isto roda SEMPRE, mesmo quando hash/mediainfo foram reusados (scan
+	// incremental, briefing 0064): a resolução/vínculo de entity não depende do
+	// conteúdo do arquivo, só do nome/pasta — e o re-scan de vínculos de
+	// episódio precisa rodar a cada execução (ver gravarArquivoSerie).
 	var f fileFacts
 	if r.source.ContentType == contentTypeSeries {
 		f = r.factsSerie(ctx, path)
@@ -159,10 +157,70 @@ func (r *scanRun) computarFacts(ctx context.Context, path string) (fileFacts, er
 		f = montarFacts(r.source.Path, path)
 	}
 	f.size = info.Size()
-	f.mtime = info.ModTime().UTC().Format(time.RFC3339Nano)
+	f.mtime = mtime
 	f.hash = hash
 	f.mediainfo = mi
 	return f, nil
+}
+
+// hashEMediainfo calcula o content_hash (hashDoArquivoFn, indireto só para
+// instrumentação de teste) e o mediainfo_json de `path`, OU reusa os valores
+// JÁ GRAVADOS quando o media_file existente para este MESMO path (UNIQUE,
+// ObterMediaFilePorPath) tem EXATAMENTE o mesmo mtime e size (scan
+// incremental, briefing 0064) — nesse caso nem abre o arquivo nem chama
+// ffprobe de novo.
+//
+// Isto é uma HEURÍSTICA de melhor esforço, não uma garantia criptográfica: um
+// arquivo poderia, em teoria, mudar de conteúdo sem que mtime OU size mudem
+// (ex. algum editor exótico que preserva os dois, ou uma janela de
+// sincronização de `rclone --vfs-cache-mode full` onde o mtime local só
+// atualiza depois do upload terminar — rclone/rclone#8894). Aceito
+// conscientemente (briefing 0064 §6): nunca pior que o comportamento antigo
+// que sempre re-hasheava tudo, e hash de conteúdo como fallback anularia o
+// ganho de performance que motivou esta mudança — não reabra esta discussão.
+// Qualquer divergência (arquivo novo, ou mtime/size diferentes) cai no
+// caminho normal (hash + ffprobe completos).
+func (r *scanRun) hashEMediainfo(ctx context.Context, path string, size int64, mtime string) (hash string, mediainfo []byte, err error) {
+	if existente, ok := r.mediaFileInalteradoPorPath(ctx, path, size, mtime); ok {
+		return existente.ContentHash.String, []byte(existente.MediainfoJson.String), nil
+	}
+
+	hash, err = hashDoArquivoFn(path, size)
+	if err != nil {
+		return "", nil, err
+	}
+	if r.probeAtivo {
+		if b, perr := r.m.prober.Probe(ctx, path); perr == nil {
+			mediainfo = b
+		} else {
+			log.Printf("scanner: ffprobe falhou em %q (mediainfo vazio): %v", path, perr)
+		}
+	}
+	return hash, mediainfo, nil
+}
+
+// mediaFileInalteradoPorPath busca o media_file já gravado para `path` (pela
+// conexão de LEITURA — computarFacts roda fora da transação de escrita) e
+// devolve ok=true só quando ele tem content_hash gravado E mtime E size
+// batem EXATAMENTE com os valores atuais do arquivo no disco — o
+// short-circuit do scan incremental (briefing 0064). Ausente (arquivo novo
+// neste path), sem hash gravado (defensivo) ou qualquer divergência de
+// mtime/size: ok=false, caminho normal (hash + ffprobe completos).
+func (r *scanRun) mediaFileInalteradoPorPath(ctx context.Context, path string, size int64, mtime string) (sqlcgen.MediaFile, bool) {
+	existente, err := sqlcgen.New(r.m.db.Read).ObterMediaFilePorPath(ctx, path)
+	if err != nil {
+		return sqlcgen.MediaFile{}, false
+	}
+	if !existente.ContentHash.Valid || existente.ContentHash.String == "" {
+		return sqlcgen.MediaFile{}, false
+	}
+	if !existente.Size.Valid || existente.Size.Int64 != size {
+		return sqlcgen.MediaFile{}, false
+	}
+	if !existente.Mtime.Valid || existente.Mtime.String != mtime {
+		return sqlcgen.MediaFile{}, false
+	}
+	return existente, true
 }
 
 // montarFacts decide o agrupamento (pasta = obra; arquivo solto na raiz = obra
@@ -333,6 +391,13 @@ func descobrirPoster(dir, base string) string {
 func semExtensao(nome string) string {
 	return strings.TrimSuffix(nome, filepath.Ext(nome))
 }
+
+// hashDoArquivoFn é hashDoArquivo indireto por variável (nunca sobrescrita em
+// produção): existe só para os TESTES do scan incremental (briefing 0064)
+// poderem CONTAR/instrumentar quantas vezes o hash de verdade roda, sem
+// precisar reescrever o pipeline — mesmo espírito de m.agora/m.novoID serem
+// campos função injetáveis.
+var hashDoArquivoFn = hashDoArquivo
 
 // hashDoArquivo abre o arquivo e calcula o content_hash parcial.
 func hashDoArquivo(path string, size int64) (string, error) {
