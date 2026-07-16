@@ -61,13 +61,15 @@ services:
       # redeclare o volume no bloco `volumes:` no fim do arquivo.
       - ./data:/data
       # Biblioteca de mídia: montagem rclone do Google Drive no host
-      # (/mnt/gdrive-media, remoto gdrive-rw:Medias/Videos). Somente leitura
-      # (:ro) — o scanner só LÊ os arquivos de origem, nunca escreve nela. O
-      # mount FUSE só é visível para o uid que o criou (rafael, 1000); daí o
+      # (/mnt/gdrive-media, remoto gdrive-rw:Medias/Videos). Leitura E
+      # escrita — o export one-way de NFO/artes (briefings 0062-0065) grava
+      # nela; o remoto rclone já é "gdrive-rw" e o mount no host já é rw
+      # (rclone-gdrive-media.service) exatamente para isso. O mount FUSE só é
+      # visível para o uid que o criou (rafael, 1000); daí o
       # `user: "1000:1000"` acima em vez de exigir `--allow-other` no rclone.
       # Ao cadastrar a fonte na UI/API, use o path *dentro do container*, ex.:
       # /media/gdrive-media/Filmes.
-      - /mnt/gdrive-media:/media/gdrive-media:ro
+      - /mnt/gdrive-media:/media/gdrive-media
     labels:
       # Só containers com este label são candidatos a auto-update do
       # Watchtower (WATCHTOWER_LABEL_ENABLE=true no serviço abaixo).
