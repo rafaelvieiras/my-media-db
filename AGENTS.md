@@ -72,7 +72,13 @@ Um PR/patch que contraria um princípio provavelmente será recusado.
   `source` sem clobbar a identidade da fonte-base (ver briefing 0045).
 - **Artes** (`asset`): `kind` é TEXT livre no banco (poster/fanart/still hoje;
   extensível a clearlogo/cdart/banner). Precedência: preferida→user→external→
-  base→404. Ver [docs/08](docs/08-artwork-e-assets.md) e briefing 0044.
+  base→404. Desde o briefing 0062, a arte "preferida" (`is_principal`) pode
+  também estar **materializada na pasta real da biblioteca** (`asset.local_path`,
+  distinto do cache em `assetsDir`/`path_or_uri`) com nome canônico
+  Kodi/Emby — e a entity pode ter um `.nfo` exportado (`entity.nfo_path`).
+  NFO é exportação one-way (banco → disco); nunca é relido além do id
+  determinístico que o scanner já usa. Ver [docs/08](docs/08-artwork-e-assets.md)
+  e briefings 0044, 0062.
 
 ## Práticas operacionais (o que evita retrabalho)
 
@@ -110,6 +116,16 @@ Um PR/patch que contraria um princípio provavelmente será recusado.
   anônimo). `package-lock.json` precisa de npm ≥ 11.16, senão `npm ci` quebra.
 - **Multi-idioma é fundacional**: título/overview/tagline por idioma via
   `media_external`; não assuma idioma único.
+
+**Biblioteca em disco: scan/watch (desde o briefing 0064).**
+- O scan (`internal/scanner`) é **incremental**: só re-hasheia um arquivo
+  quando `mtime`/tamanho mudaram frente ao `media_file` já gravado. Não
+  reintroduza hash incondicional "pra garantir" — isso reverte o ganho de
+  performance que motivou o briefing.
+- `fsnotify` **não funciona sobre mounts FUSE remotos** (rclone/gdrive, o
+  deploy real do projeto) para mudanças originadas do lado remoto — é uma
+  limitação de kernel, não um bug a corrigir. Nunca trate o watch como única
+  fonte de verdade; o job periódico é a base, o watch só acelera.
 
 **Commits e comunicação.**
 - Conventional Commits em **pt-BR** (`feat:`/`fix:`/`docs:`/`refactor:`…),

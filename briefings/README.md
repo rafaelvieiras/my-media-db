@@ -129,6 +129,7 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0049](0049-galeria-de-artes-linhas-lightbox-disponibilidade.md) | Galeria de artes: linhas por tipo + lightbox/zoom + selos de disponibilidade | feature | done | 0048 |
 | [0050](0050-auto-match-fila-de-revisao.md) | Auto-match: busca e sincronização automática da fila de revisão | feature | done | 0009, 0014, 0015, 0018, 0026 |
 | [0051](0051-fundir-duplicata-conflito-external-id.md) | Fundir duplicata por conflito de external_id (import + corrigir) | fix | done | 0015, 0018, 0027 |
+| [0062](0062-midias-locais-nfo-e-artes-na-pasta.md) | Mídias locais: NFO + artes na pasta da biblioteca (padrão Kodi/Emby, arte "principal") | feature | ready | 0044, 0048, 0049, 0059 |
 
 ### Transversal — Infraestrutura operacional
 
@@ -142,3 +143,5 @@ e serve, explicitamente, de base técnica para o futuro sistema de plugins
 | [0052](0052-fundacao-sistema-de-jobs.md) | Fundação do sistema de jobs: registro dinâmico + agendador embutido | feature | done | — |
 | [0053](0053-job-saude-biblioteca.md) | Job de saúde da biblioteca: re-scan de todas as fontes + resumo de revisão/órfãs | feature | done | 0052, 0018 |
 | [0061](0061-catraca-sensivel-ao-diff-e-log-sob-demanda.md) | Catraca sensível ao diff (filtro Go/Web) + `gate-fast` + log completo de falha em `reports/` | chore | done | — |
+| [0063](0063-storage-diferenciado-saude-biblioteca.md) | Storage diferenciado na saúde: banco vs. mídia gerenciada vs. cache da app vs. não identificado | feature | ready | 0053, 0055, 0062 |
+| [0064](0064-job-midias-faltantes-watch-scan-incremental.md) | Job "baixar mídias faltantes" + scan incremental (mtime/size) + watch de filesystem opcional | feature | ready | 0009, 0052, 0053, 0062 |
