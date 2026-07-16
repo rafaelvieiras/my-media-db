@@ -61,6 +61,15 @@ type nfoResume struct {
 	Total    float64 `xml:"total"`
 }
 
+// xmlElementoBruto captura um elemento XML de nivel superior que nfoDoc nao
+// conhece -- nome, atributos e conteudo interno exatamente como estava no
+// arquivo anterior, para reembutir sem interpretar (briefing 0065 SS4).
+type xmlElementoBruto struct {
+	XMLName xml.Name
+	Attrs   []xml.Attr `xml:",any,attr"`
+	Inner   string     `xml:",innerxml"`
+}
+
 // nfoDoc é o corpo comum de movie.nfo/tvshow.nfo/<episódio>.nfo — o XMLName
 // muda por tipo (nomeRaizNFO), os campos são os mesmos (Kodi tolera
 // elementos vazios/ausentes num tipo que não os usa). Status só é preenchido
@@ -74,35 +83,45 @@ type nfoResume struct {
 // do nosso modelo de dados) -- eles só chegam aqui via CamposUsuarioNFO,
 // extraídos do .nfo anterior por ExtrairCamposUsuario, para SOBREVIVER a
 // uma regravação (ver gravarNFO/internal/server/localmedia_handlers.go).
+//
+// Extras é o catch-all genérico (briefing 0065): qualquer elemento de nível
+// superior do .nfo anterior que NENHUM campo acima modela (ex. <tag>, <set>,
+// <fileinfo>) cai aqui via xml:",any" e sobrevive à regravação tal como
+// estava, sem o MyMediaDB precisar conhecer o nome da tag de antemão. É um
+// superconjunto dos seis campos nomeados -- eles continuam explícitos acima
+// (mais legível, testes já existentes) e nunca duplicam em Extras porque já
+// bateram com um campo nomeado antes do catch-all entrar em ação.
 type nfoDoc struct {
 	XMLName       xml.Name
-	Title         string        `xml:"title"`
-	OriginalTitle string        `xml:"originaltitle,omitempty"`
-	Plot          string        `xml:"plot,omitempty"`
-	Tagline       string        `xml:"tagline,omitempty"`
-	Genre         []string      `xml:"genre,omitempty"`
-	MPAA          string        `xml:"mpaa,omitempty"`
-	Premiered     string        `xml:"premiered,omitempty"`
-	Rating        *nfoRating    `xml:"rating,omitempty"`
-	UniqueIDs     []nfoUniqueID `xml:"uniqueid,omitempty"`
-	Actors        []nfoActor    `xml:"actor,omitempty"`
-	Directors     []string      `xml:"director,omitempty"`
-	Credits       []string      `xml:"credits,omitempty"`
-	Studios       []string      `xml:"studio,omitempty"`
-	Status        string        `xml:"status,omitempty"`
-	Thumb         string        `xml:"thumb,omitempty"`
-	Fanart        *nfoFanart    `xml:"fanart,omitempty"`
-	UserRating    *float64      `xml:"userrating,omitempty"`
-	PlayCount     *int          `xml:"playcount,omitempty"`
-	Watched       *bool         `xml:"watched,omitempty"`
-	LastPlayed    string        `xml:"lastplayed,omitempty"`
-	DateAdded     string        `xml:"dateadded,omitempty"`
-	Resume        *nfoResume    `xml:"resume,omitempty"`
+	Title         string             `xml:"title"`
+	OriginalTitle string             `xml:"originaltitle,omitempty"`
+	Plot          string             `xml:"plot,omitempty"`
+	Tagline       string             `xml:"tagline,omitempty"`
+	Genre         []string           `xml:"genre,omitempty"`
+	MPAA          string             `xml:"mpaa,omitempty"`
+	Premiered     string             `xml:"premiered,omitempty"`
+	Rating        *nfoRating         `xml:"rating,omitempty"`
+	UniqueIDs     []nfoUniqueID      `xml:"uniqueid,omitempty"`
+	Actors        []nfoActor         `xml:"actor,omitempty"`
+	Directors     []string           `xml:"director,omitempty"`
+	Credits       []string           `xml:"credits,omitempty"`
+	Studios       []string           `xml:"studio,omitempty"`
+	Status        string             `xml:"status,omitempty"`
+	Thumb         string             `xml:"thumb,omitempty"`
+	Fanart        *nfoFanart         `xml:"fanart,omitempty"`
+	UserRating    *float64           `xml:"userrating,omitempty"`
+	PlayCount     *int               `xml:"playcount,omitempty"`
+	Watched       *bool              `xml:"watched,omitempty"`
+	LastPlayed    string             `xml:"lastplayed,omitempty"`
+	DateAdded     string             `xml:"dateadded,omitempty"`
+	Resume        *nfoResume         `xml:"resume,omitempty"`
+	Extras        []xmlElementoBruto `xml:",any"`
 }
 
 // CamposUsuarioNFO agrupa os campos LOCAIS do .nfo (ver nfoDoc) que só o
 // usuário/Kodi/Emby/Jellyfin editam depois que o arquivo já existe --
-// MontarNFO os copia tal como vieram, nunca os inventa nem os apaga.
+// MontarNFO os copia tal como vieram, nunca os inventa nem os apaga. Extras é
+// o catch-all genérico do briefing 0065 (ver comentário em nfoDoc).
 type CamposUsuarioNFO struct {
 	UserRating *float64
 	PlayCount  *int
@@ -110,6 +129,7 @@ type CamposUsuarioNFO struct {
 	LastPlayed string
 	DateAdded  string
 	Resume     *struct{ Position, Total float64 }
+	Extras     []xmlElementoBruto
 }
 
 // ExtrairCamposUsuario lê os campos de usuário de um .nfo já existente
@@ -131,6 +151,7 @@ func ExtrairCamposUsuario(existente []byte) CamposUsuarioNFO {
 		Watched:    doc.Watched,
 		LastPlayed: doc.LastPlayed,
 		DateAdded:  doc.DateAdded,
+		Extras:     doc.Extras,
 	}
 	if doc.Resume != nil {
 		out.Resume = &struct{ Position, Total float64 }{Position: doc.Resume.Position, Total: doc.Resume.Total}
@@ -190,6 +211,7 @@ func MontarNFO(e resolver.Entidade, arte InsumosArte, usuario CamposUsuarioNFO) 
 		Watched:       usuario.Watched,
 		LastPlayed:    usuario.LastPlayed,
 		DateAdded:     usuario.DateAdded,
+		Extras:        usuario.Extras,
 	}
 	if e.VoteAverage != nil {
 		doc.Rating = &nfoRating{Name: "tmdb", Value: *e.VoteAverage}

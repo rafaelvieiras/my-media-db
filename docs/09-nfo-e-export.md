@@ -10,6 +10,11 @@
   diferencia do TinyMediaManager).
 - **Não-destrutivo.** Gerar NFO/arte nas pastas é uma ação explícita e opcional.
 - **Reflete o override.** O NFO exportado carrega o título/dados do dono.
+- **Preserva o que não é nosso.** Ao regravar um `.nfo` existente, qualquer
+  elemento de nível superior que o MyMediaDB não gera/gerencia (tags do Kodi,
+  `<fileinfo>`, edição manual, etc.) é reembutido tal como estava — só os
+  campos que o MyMediaDB de fato modela (título, sinopse, elenco...) vêm
+  sempre do banco (briefing 0065).
 
 ## Escopo
 

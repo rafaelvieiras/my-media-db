@@ -9,7 +9,7 @@
 | **ID** | 0062 |
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [08-artwork-e-assets](../docs/08-artwork-e-assets.md), [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [05-api](../docs/05-api.md), [06-biblioteca-e-scan](../docs/06-biblioteca-e-scan.md), [11-decisoes-abertas](../docs/11-decisoes-abertas.md) |
 | **Depende de** | 0044, 0048, 0049, 0059 |
 

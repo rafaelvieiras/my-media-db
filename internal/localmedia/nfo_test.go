@@ -1,6 +1,7 @@
 package localmedia
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -245,15 +246,169 @@ func TestExtrairCamposUsuarioRoundTrip(t *testing.T) {
 	}
 }
 
+// TestExtrairCamposUsuarioPreservaTagDesconhecidaRepetida prova o catch-all
+// genérico (briefing 0065): uma tag repetida que nfoDoc NUNCA modelou
+// (<tag>) sobrevive a um round-trip ExtrairCamposUsuario -> MontarNFO, na
+// mesma ordem em que apareceu no arquivo anterior -- sem precisar de uma
+// nova entrada na lista fechada de campos nomeados.
+func TestExtrairCamposUsuarioPreservaTagDesconhecidaRepetida(t *testing.T) {
+	anterior := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<movie>
+  <title>Matrix (versao antiga)</title>
+  <tag>Sci-Fi</tag>
+  <tag>Cult</tag>
+</movie>`)
+
+	usuario := ExtrairCamposUsuario(anterior)
+	if len(usuario.Extras) != 2 {
+		t.Fatalf("Extras = %+v, quero 2 elementos <tag>", usuario.Extras)
+	}
+	for i, nome := range []string{"tag", "tag"} {
+		if usuario.Extras[i].XMLName.Local != nome {
+			t.Errorf("Extras[%d].XMLName.Local = %q, quero %q", i, usuario.Extras[i].XMLName.Local, nome)
+		}
+	}
+
+	e := fixtureEntidadeCompleta()
+	out, err := MontarNFO(e, InsumosArte{}, usuario)
+	if err != nil {
+		t.Fatalf("MontarNFO: %v", err)
+	}
+	xmlStr := string(out)
+
+	// As duas tags devem sobreviver, na mesma ordem relativa (Sci-Fi antes
+	// de Cult).
+	idxSciFi := strings.Index(xmlStr, "<tag>Sci-Fi</tag>")
+	idxCult := strings.Index(xmlStr, "<tag>Cult</tag>")
+	if idxSciFi == -1 || idxCult == -1 {
+		t.Fatalf("XML nao contem as duas <tag> desconhecidas:\n%s", xmlStr)
+	}
+	if idxSciFi > idxCult {
+		t.Errorf("<tag>Sci-Fi</tag> deveria vir antes de <tag>Cult</tag>:\n%s", xmlStr)
+	}
+}
+
+// TestExtrairCamposUsuarioPreservaBlocoAninhadoDesconhecido prova que um
+// bloco aninhado que nfoDoc não modela (ex. <fileinfo><streamdetails>...,
+// que o próprio Kodi escreve após identificar codecs) sobrevive INTACTO --
+// mesma estrutura interna -- a uma regravação (briefing 0065 SS5).
+func TestExtrairCamposUsuarioPreservaBlocoAninhadoDesconhecido(t *testing.T) {
+	blocoInterno := "<streamdetails><video><codec>h264</codec><width>1920</width></video></streamdetails>"
+	anterior := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<movie>
+  <title>Matrix (versao antiga)</title>
+  <fileinfo>` + blocoInterno + `</fileinfo>
+</movie>`)
+
+	usuario := ExtrairCamposUsuario(anterior)
+	if len(usuario.Extras) != 1 {
+		t.Fatalf("Extras = %+v, quero 1 elemento <fileinfo>", usuario.Extras)
+	}
+	if usuario.Extras[0].XMLName.Local != "fileinfo" {
+		t.Errorf("Extras[0].XMLName.Local = %q, quero \"fileinfo\"", usuario.Extras[0].XMLName.Local)
+	}
+	if usuario.Extras[0].Inner != blocoInterno {
+		t.Errorf("Extras[0].Inner = %q, quero %q (conteudo interno intacto)", usuario.Extras[0].Inner, blocoInterno)
+	}
+
+	e := fixtureEntidadeCompleta()
+	out, err := MontarNFO(e, InsumosArte{}, usuario)
+	if err != nil {
+		t.Fatalf("MontarNFO: %v", err)
+	}
+	xmlStr := string(out)
+	if !strings.Contains(xmlStr, blocoInterno) {
+		t.Errorf("XML regravado nao contem o bloco aninhado intacto:\n--- esperado dentro de ---\n%s\n--- XML ---\n%s", blocoInterno, xmlStr)
+	}
+}
+
+// TestMontarNFOCamposManagedNuncaVemDoArquivoAntigo prova que campos
+// MANAGED pelo MyMediaDB (title, plot etc.) NUNCA são herdados do .nfo
+// anterior mesmo com o catch-all genérico ativo -- eles batem com um campo
+// NOMEADO de nfoDoc (title/plot), então nunca caem em Extras, e MontarNFO
+// sempre os preenche a partir de resolver.Entidade (banco = unica fonte de
+// verdade, briefing 0065 SS3/SS5).
+func TestMontarNFOCamposManagedNuncaVemDoArquivoAntigo(t *testing.T) {
+	anterior := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<movie>
+  <title>Titulo Desatualizado</title>
+  <plot>Sinopse desatualizada, escrita por outra ferramenta.</plot>
+  <genre>Terror</genre>
+  <tag>Sci-Fi</tag>
+</movie>`)
+
+	usuario := ExtrairCamposUsuario(anterior)
+
+	// title/plot/genre sao campos nomeados de nfoDoc -- nao devem aparecer em
+	// Extras (so a tag verdadeiramente desconhecida deve).
+	for _, e := range usuario.Extras {
+		if e.XMLName.Local == "title" || e.XMLName.Local == "plot" || e.XMLName.Local == "genre" {
+			t.Errorf("Extras contem elemento MANAGED %q -- deveria ter sido capturado pelo campo nomeado, nao pelo catch-all", e.XMLName.Local)
+		}
+	}
+
+	e := fixtureEntidadeCompleta() // Title="Matrix", Description="Um hacker descobre a verdade.", Tags=[Action, Science Fiction]
+	out, err := MontarNFO(e, InsumosArte{}, usuario)
+	if err != nil {
+		t.Fatalf("MontarNFO: %v", err)
+	}
+	xmlStr := string(out)
+
+	if strings.Contains(xmlStr, "Titulo Desatualizado") {
+		t.Errorf("XML regravado herdou o title do arquivo antigo:\n%s", xmlStr)
+	}
+	if strings.Contains(xmlStr, "Sinopse desatualizada") {
+		t.Errorf("XML regravado herdou o plot do arquivo antigo:\n%s", xmlStr)
+	}
+	if strings.Contains(xmlStr, "<genre>Terror</genre>") {
+		t.Errorf("XML regravado herdou o genre do arquivo antigo:\n%s", xmlStr)
+	}
+	if !strings.Contains(xmlStr, "<title>Matrix</title>") {
+		t.Errorf("XML regravado nao reflete o title atual do banco:\n%s", xmlStr)
+	}
+	if !strings.Contains(xmlStr, "<plot>Um hacker descobre a verdade.</plot>") {
+		t.Errorf("XML regravado nao reflete o plot atual do banco:\n%s", xmlStr)
+	}
+	// A tag verdadeiramente desconhecida (nao MANAGED), por outro lado, DEVE
+	// sobreviver -- e o proprio objetivo deste briefing.
+	if !strings.Contains(xmlStr, "<tag>Sci-Fi</tag>") {
+		t.Errorf("XML regravado deveria preservar a tag desconhecida <tag>Sci-Fi</tag>:\n%s", xmlStr)
+	}
+}
+
+// TestMontarNFOSemElementosDesconhecidosNaoGeraExtrasFantasma prova que um
+// .nfo sem nenhum elemento desconhecido (caso comum, CamposUsuarioNFO.Extras
+// nil) continua gerando o mesmo XML de antes -- sem nenhum elemento
+// "<extras>" ou wrapper fantasma aparecendo. Isso e uma garantia estrutural
+// do encoding/xml (um campo ",any" com slice nil nao emite nada ao
+// marshalizar, e o nome do campo Go "Extras" nunca vira uma tag XML, so os
+// elementos individuais dentro dele importariam), mas o teste documenta essa
+// garantia explicitamente como criterio de aceite (briefing 0065 SS5).
+func TestMontarNFOSemElementosDesconhecidosNaoGeraExtrasFantasma(t *testing.T) {
+	e := fixtureEntidadeCompleta()
+	out, err := MontarNFO(e, InsumosArte{}, CamposUsuarioNFO{})
+	if err != nil {
+		t.Fatalf("MontarNFO: %v", err)
+	}
+	xmlStr := string(out)
+	if strings.Contains(xmlStr, "<extras") || strings.Contains(xmlStr, "</extras>") {
+		t.Errorf("XML contem elemento <extras> fantasma mesmo sem Extras preenchido:\n%s", xmlStr)
+	}
+}
+
 // TestExtrairCamposUsuarioArquivoAusenteOuInvalido cobre os dois casos
 // degradados (best-effort): sem arquivo anterior (bytes vazio) e XML
 // corrompido -- ambos devolvem zero-value, nunca erro (a gravacao do NFO
 // nao pode falhar por causa disso).
+//
+// Usa reflect.DeepEqual (nao == / !=) porque CamposUsuarioNFO ganhou o campo
+// Extras []xmlElementoBruto (briefing 0065) -- um slice torna o struct
+// nao-comparavel por igualdade nativa.
 func TestExtrairCamposUsuarioArquivoAusenteOuInvalido(t *testing.T) {
-	if usuario := ExtrairCamposUsuario(nil); usuario != (CamposUsuarioNFO{}) {
+	if usuario := ExtrairCamposUsuario(nil); !reflect.DeepEqual(usuario, CamposUsuarioNFO{}) {
 		t.Errorf("bytes nil = %+v, quero zero-value", usuario)
 	}
-	if usuario := ExtrairCamposUsuario([]byte("isso nao e xml valido <<<")); usuario != (CamposUsuarioNFO{}) {
+	if usuario := ExtrairCamposUsuario([]byte("isso nao e xml valido <<<")); !reflect.DeepEqual(usuario, CamposUsuarioNFO{}) {
 		t.Errorf("XML invalido = %+v, quero zero-value", usuario)
 	}
 }

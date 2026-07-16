@@ -12,7 +12,7 @@
 | **ID** | 0064 |
 | **Tipo** | feature |
 | **Fase (roadmap)** | Transversal / infraestrutura operacional — mesma família do [0052](0052-fundacao-sistema-de-jobs.md)/[0053](0053-job-saude-biblioteca.md) |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [06-biblioteca-e-scan](../docs/06-biblioteca-e-scan.md), [08-artwork-e-assets](../docs/08-artwork-e-assets.md) |
 | **Depende de** | 0009, 0052, 0053, 0062 |
 
