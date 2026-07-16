@@ -89,29 +89,39 @@ type xmlElementoBruto struct {
 // bateram com um campo nomeado antes do catch-all entrar em ação.
 type nfoDoc struct {
 	XMLName       xml.Name
-	Title         string             `xml:"title"`
-	OriginalTitle string             `xml:"originaltitle,omitempty"`
-	Plot          string             `xml:"plot,omitempty"`
-	Tagline       string             `xml:"tagline,omitempty"`
-	Genre         []string           `xml:"genre,omitempty"`
-	MPAA          string             `xml:"mpaa,omitempty"`
-	Premiered     string             `xml:"premiered,omitempty"`
-	Ratings       *nfoRatings        `xml:"ratings,omitempty"`
-	UniqueIDs     []nfoUniqueID      `xml:"uniqueid,omitempty"`
-	Actors        []nfoActor         `xml:"actor,omitempty"`
-	Directors     []string           `xml:"director,omitempty"`
-	Credits       []string           `xml:"credits,omitempty"`
-	Studios       []string           `xml:"studio,omitempty"`
-	Status        string             `xml:"status,omitempty"`
-	Thumb         string             `xml:"thumb,omitempty"`
-	Fanart        *nfoFanart         `xml:"fanart,omitempty"`
-	UserRating    *float64           `xml:"userrating,omitempty"`
-	PlayCount     *int               `xml:"playcount,omitempty"`
-	Watched       *bool              `xml:"watched,omitempty"`
-	LastPlayed    string             `xml:"lastplayed,omitempty"`
-	DateAdded     string             `xml:"dateadded,omitempty"`
-	Resume        *nfoResume         `xml:"resume,omitempty"`
-	Extras        []xmlElementoBruto `xml:",any"`
+	Title         string      `xml:"title"`
+	OriginalTitle string      `xml:"originaltitle,omitempty"`
+	Plot          string      `xml:"plot,omitempty"`
+	Tagline       string      `xml:"tagline,omitempty"`
+	Genre         []string    `xml:"genre,omitempty"`
+	MPAA          string      `xml:"mpaa,omitempty"`
+	Premiered     string      `xml:"premiered,omitempty"`
+	Ratings       *nfoRatings `xml:"ratings,omitempty"`
+	// RatingLegacy reconhece o <rating> de NIVEL SUPERIOR do formato
+	// pre-0066 (ex.: <rating name="tmdb">6.21</rating>, direto sob
+	// <movie>/<tvshow> -- nao confundir com o <rating> ANINHADO dentro
+	// de <ratings> acima, que e outro nivel e nao bate com este campo).
+	// Nunca e lido nem reemitido por MontarNFO -- existe so para
+	// "reivindicar" o nome da tag e impedir que caia no catch-all
+	// Extras (xml:",any", briefing 0065): sem isto, um .nfo escrito
+	// antes do 0066 teria a tag antiga preservada para sempre lado a
+	// lado com a nova <ratings>, duplicando a nota a cada regravacao.
+	RatingLegacy *xmlElementoBruto  `xml:"rating,omitempty"`
+	UniqueIDs    []nfoUniqueID      `xml:"uniqueid,omitempty"`
+	Actors       []nfoActor         `xml:"actor,omitempty"`
+	Directors    []string           `xml:"director,omitempty"`
+	Credits      []string           `xml:"credits,omitempty"`
+	Studios      []string           `xml:"studio,omitempty"`
+	Status       string             `xml:"status,omitempty"`
+	Thumb        string             `xml:"thumb,omitempty"`
+	Fanart       *nfoFanart         `xml:"fanart,omitempty"`
+	UserRating   *float64           `xml:"userrating,omitempty"`
+	PlayCount    *int               `xml:"playcount,omitempty"`
+	Watched      *bool              `xml:"watched,omitempty"`
+	LastPlayed   string             `xml:"lastplayed,omitempty"`
+	DateAdded    string             `xml:"dateadded,omitempty"`
+	Resume       *nfoResume         `xml:"resume,omitempty"`
+	Extras       []xmlElementoBruto `xml:",any"`
 }
 
 // CamposUsuarioNFO agrupa os campos LOCAIS do .nfo (ver nfoDoc) que só o

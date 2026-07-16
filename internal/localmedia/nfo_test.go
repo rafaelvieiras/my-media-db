@@ -194,6 +194,42 @@ func TestMontarNFOSemRating(t *testing.T) {
 	}
 }
 
+// TestExtrairCamposUsuarioDescartaRatingLegado prova a correcao do briefing
+// 0066: um .nfo escrito ANTES da migracao para <ratings> (formato antigo,
+// <rating name="tmdb">N</rating> direto sob <movie>) nao pode ficar
+// preservado para sempre pelo catch-all Extras (0065) so porque a tag
+// deixou de ser um campo NOMEADO -- isso duplicaria a nota (a antiga E a
+// nova <ratings>) a cada regravacao futura. RatingLegacy reivindica a tag
+// antiga e a descarta silenciosamente.
+func TestExtrairCamposUsuarioDescartaRatingLegado(t *testing.T) {
+	anterior := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<movie>
+  <title>Sabrina (versao antiga)</title>
+  <rating name="tmdb">6.21</rating>
+</movie>`)
+
+	usuario := ExtrairCamposUsuario(anterior)
+	for _, ex := range usuario.Extras {
+		if ex.XMLName.Local == "rating" {
+			t.Errorf("Extras contem a tag <rating> legada -- deveria ter sido descartada, nao preservada: %+v", ex)
+		}
+	}
+
+	e := fixtureEntidadeCompleta() // VoteAverage != nil
+	out, err := MontarNFO(e, usuario)
+	if err != nil {
+		t.Fatalf("MontarNFO: %v", err)
+	}
+	xmlStr := string(out)
+
+	if strings.Count(xmlStr, "<rating ") != 1 {
+		t.Errorf("esperava exatamente 1 <rating> (dentro de <ratings>, formato novo), achei %d:\n%s", strings.Count(xmlStr, "<rating "), xmlStr)
+	}
+	if !strings.Contains(xmlStr, `<rating name="tmdb" max="10" default="true">`) {
+		t.Errorf("XML nao contem o <rating> no formato novo (<ratings>):\n%s", xmlStr)
+	}
+}
+
 // TestExtrairCamposUsuarioRoundTrip prova que os campos LOCAIS (avaliacao do
 // usuario, assistido/contagem, ultima reproducao, data de adicao e ponto de
 // retomada -- convencao Kodi/Emby/Jellyfin) sobrevivem a um round-trip
