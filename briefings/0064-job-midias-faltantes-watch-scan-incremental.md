@@ -160,6 +160,11 @@ boot a partir de `library_source.watch_enabled`.
     a depender só do polling periódico até o próximo restart.
   - `Close()` de todos os watchers no shutdown gracioso do servidor (mesmo
     padrão de lifecycle já usado pelos outros componentes long-running).
+  - O handler `PATCH`/`PUT` de `library_source` (0008), ao mudar
+    `watch_enabled` de `false→true`, chama a MESMA rotina de registro usada
+    no boot para aquela fonte (sem reiniciar o servidor); de `true→false`,
+    chama `Close()` no watcher daquela fonte e remove a entrada do mapa em
+    memória. Nenhum dos dois casos exige restart.
   - Nova dependência: `github.com/fsnotify/fsnotify` (`go get`, ainda não
     está em `go.mod`).
 
@@ -221,9 +226,10 @@ boot a partir de `library_source.watch_enabled`.
       add) não impede o registro das demais subpastas nem derruba o boot.
 - [ ] `PATCH` de `library_source` com `watch_enabled: true` sobre uma fonte
       já em execução ativa o watcher para ela SEM precisar reiniciar o
-      servidor (ou, se o fechamento de decisão for "só aplica no próximo
-      boot", isso está test-coberto e documentado explicitamente — ver
-      Notas).
+      servidor (o handler chama a mesma rotina de registro do boot para
+      aquela fonte); `watch_enabled: false` chama `Close()` no watcher
+      daquela fonte e remove sua entrada do mapa em memória — nenhum dos dois
+      casos exige restart.
 
 ## 6. Notas de implementação / decisões
 
