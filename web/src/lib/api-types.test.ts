@@ -41,6 +41,7 @@ describe('api-types gerado', () => {
       external_links: { tmdb: 'https://www.themoviedb.org/movie/603' },
       ancestors: [],
       ownership: null,
+      catalog_completeness: null,
     }
     expect(ent.owned).toBe(true)
     expect(ent.external_ids.tmdb).toBe('603')
@@ -59,6 +60,7 @@ describe('api-types gerado', () => {
           file_count: 1,
           match_confidence: 0.9,
           poster_url: null,
+          catalog_completeness: null,
         },
       ],
       total: 1,

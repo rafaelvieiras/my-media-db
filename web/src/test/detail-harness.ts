@@ -51,6 +51,7 @@ export function entityCardBase(over: Partial<EntityCard> = {}): EntityCard {
     file_count: 1,
     match_confidence: 100,
     poster_url: null,
+    catalog_completeness: null,
     ...over,
   }
 }

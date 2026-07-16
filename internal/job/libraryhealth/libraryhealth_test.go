@@ -108,6 +108,21 @@ func (m *matcherFake) EnriquecerRetroativo(context.Context) (int, int, error) {
 	return m.aplicados, m.sinalizados, m.errRetroativo
 }
 
+// completenessFake e um CompletenessRecalculator fake (briefing 0058):
+// valores fixos de avaliados/incompletos, ou erro para exercitar o caminho
+// best-effort do job. chamadas conta quantas vezes o metodo rodou, para os
+// testes provarem que roda EXATAMENTE uma vez por execucao.
+type completenessFake struct {
+	avaliados, incompletos int
+	err                    error
+	chamadas               int
+}
+
+func (c *completenessFake) RecalcularCompletudeCatalogacao(context.Context) (int, int, error) {
+	c.chamadas++
+	return c.avaliados, c.incompletos, c.err
+}
+
 // contadorSequencialFake devolve um valor de ContarRevisao por chamada, na
 // ordem de revisaoValores (a última chamada extra repete o último valor) --
 // usado para provar que o job RECONTA a fila DEPOIS do auto-match (briefing
@@ -137,7 +152,7 @@ func acelerarPoll(t *testing.T) {
 }
 
 func TestNome(t *testing.T) {
-	h := New(&libraryFake{}, newScanFake(), &contadorFake{}, &matcherFake{})
+	h := New(&libraryFake{}, newScanFake(), &contadorFake{}, &matcherFake{}, nil)
 	if h.Nome() != "saude_biblioteca" {
 		t.Fatalf("Nome() = %q, quero saude_biblioteca", h.Nome())
 	}
@@ -146,7 +161,7 @@ func TestNome(t *testing.T) {
 // TestExecutarSemFontes prova que zero library_source cadastradas nao e erro
 // -- so uma mensagem informativa + as contagens atuais.
 func TestExecutarSemFontes(t *testing.T) {
-	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 3, orfas: 2}, &matcherFake{})
+	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 3, orfas: 2}, &matcherFake{}, nil)
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -171,7 +186,7 @@ func TestExecutarTodasSucesso(t *testing.T) {
 		{ID: "s2", Path: "/lib/dois"},
 	}}
 	cont := &contadorFake{revisao: 5, orfas: 1}
-	h := New(lib, scn, cont, &matcherFake{})
+	h := New(lib, scn, cont, &matcherFake{}, nil)
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -194,7 +209,7 @@ func TestExecutarFalhaParcial(t *testing.T) {
 		{ID: "s-offline", Path: "/lib/offline"},
 	}}
 	cont := &contadorFake{revisao: 0, orfas: 0}
-	h := New(lib, scn, cont, &matcherFake{})
+	h := New(lib, scn, cont, &matcherFake{}, nil)
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -217,7 +232,7 @@ func TestExecutarErroDeScanNoMeio(t *testing.T) {
 		{ID: "s-ok", Path: "/lib/ok"},
 		{ID: "s-quebra", Path: "/lib/quebra"},
 	}}
-	h := New(lib, scn, &contadorFake{}, &matcherFake{})
+	h := New(lib, scn, &contadorFake{}, &matcherFake{}, nil)
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -243,7 +258,7 @@ func TestExecutarTodasFalham(t *testing.T) {
 		{ID: "s1", Path: "/lib/um"},
 		{ID: "s2", Path: "/lib/dois"},
 	}}
-	h := New(lib, scn, &contadorFake{}, &matcherFake{})
+	h := New(lib, scn, &contadorFake{}, &matcherFake{}, nil)
 
 	_, err := h.Executar(context.Background(), nil)
 	if err == nil {
@@ -255,7 +270,7 @@ func TestExecutarTodasFalham(t *testing.T) {
 // imediatamente (nada para escanear).
 func TestExecutarErroListarFontes(t *testing.T) {
 	lib := &libraryFake{err: errors.New("banco indisponível")}
-	h := New(lib, newScanFake(), &contadorFake{}, &matcherFake{})
+	h := New(lib, newScanFake(), &contadorFake{}, &matcherFake{}, nil)
 
 	if _, err := h.Executar(context.Background(), nil); err == nil {
 		t.Fatal("Executar deveria propagar o erro de listar fontes")
@@ -273,7 +288,7 @@ func TestExecutarAguardaAntesDeContar(t *testing.T) {
 	scn := newScanFake()
 	scn.duracao = 50 * time.Millisecond
 	lib := &libraryFake{sources: []library.Source{{ID: "s1", Path: "/lib/um"}}}
-	h := New(lib, scn, &contadorFake{}, &matcherFake{})
+	h := New(lib, scn, &contadorFake{}, &matcherFake{}, nil)
 
 	inicio := time.Now()
 	if _, err := h.Executar(context.Background(), nil); err != nil {
@@ -288,7 +303,7 @@ func TestExecutarAguardaAntesDeContar(t *testing.T) {
 // TestExecutarContagemFalha prova que erro ao contar as filas não vira erro
 // do job (o scan em si funcionou) -- a mensagem reporta o problema.
 func TestExecutarContagemFalha(t *testing.T) {
-	h := New(&libraryFake{}, newScanFake(), &contadorFake{err: fmt.Errorf("banco indisponível")}, &matcherFake{})
+	h := New(&libraryFake{}, newScanFake(), &contadorFake{err: fmt.Errorf("banco indisponível")}, &matcherFake{}, nil)
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -307,7 +322,7 @@ func TestExecutarContagemFalha(t *testing.T) {
 func TestExecutarAcionaAutoMatchEReflete(t *testing.T) {
 	cont := &contadorSequencialFake{revisaoValores: []int{5, 3}, orfas: 1}
 	matcher := &matcherFake{resolved: 2, pending: 3}
-	h := New(&libraryFake{}, newScanFake(), cont, matcher)
+	h := New(&libraryFake{}, newScanFake(), cont, matcher, nil)
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -328,7 +343,7 @@ func TestExecutarAcionaAutoMatchEReflete(t *testing.T) {
 func TestExecutarFalhaDoAutoMatchNaoAbortaJob(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{err: errors.New("erro simulado no auto-match")}
-	h := New(&libraryFake{}, newScanFake(), cont, matcher)
+	h := New(&libraryFake{}, newScanFake(), cont, matcher, nil)
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -350,7 +365,7 @@ func TestExecutarFalhaDoAutoMatchNaoAbortaJob(t *testing.T) {
 func TestExecutarAcionaEnriquecimentoRetroativoEReflete(t *testing.T) {
 	cont := &contadorSequencialFake{revisaoValores: []int{5, 3}, orfas: 1}
 	matcher := &matcherFake{aplicados: 3, sinalizados: 2}
-	h := New(&libraryFake{}, newScanFake(), cont, matcher)
+	h := New(&libraryFake{}, newScanFake(), cont, matcher, nil)
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -372,7 +387,7 @@ func TestExecutarAcionaEnriquecimentoRetroativoEReflete(t *testing.T) {
 func TestExecutarEnriquecimentoRetroativoOmiteClausulaQuandoZero(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{}
-	h := New(&libraryFake{}, newScanFake(), cont, matcher)
+	h := New(&libraryFake{}, newScanFake(), cont, matcher, nil)
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -390,7 +405,7 @@ func TestExecutarEnriquecimentoRetroativoOmiteClausulaQuandoZero(t *testing.T) {
 func TestExecutarFalhaDoEnriquecimentoRetroativoNaoAbortaJob(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{errRetroativo: errors.New("erro simulado no enriquecimento retroativo")}
-	h := New(&libraryFake{}, newScanFake(), cont, matcher)
+	h := New(&libraryFake{}, newScanFake(), cont, matcher, nil)
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -406,7 +421,83 @@ func TestExecutarFalhaDoEnriquecimentoRetroativoNaoAbortaJob(t *testing.T) {
 // matcher==nil (mesma guarda de rodarAutoMatch): sem Matcher injetado, o
 // passo retroativo degrada para (0, 0) sem panicar.
 func TestExecutarSemMatcherNaoRodaEnriquecimentoRetroativo(t *testing.T) {
-	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, nil)
+	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, nil, nil)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarAcionaRecalculoCompletudeEReflete cobre o critério central do
+// briefing 0058: depois do enriquecimento retroativo, o job aciona
+// RecalcularCompletudeCatalogacao e a mensagem final ganha a cláusula
+// "<N> itens avaliados, <M> incompletos em catalogação".
+func TestExecutarAcionaRecalculoCompletudeEReflete(t *testing.T) {
+	cont := &contadorFake{revisao: 4, orfas: 2}
+	completeness := &completenessFake{avaliados: 10, incompletos: 3}
+	h := New(&libraryFake{}, newScanFake(), cont, &matcherFake{}, completeness)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s); 10 itens avaliados, 3 incompletos em catalogação"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+	if completeness.chamadas != 1 {
+		t.Errorf("RecalcularCompletudeCatalogacao chamado %d vez(es), quero exatamente 1", completeness.chamadas)
+	}
+}
+
+// TestExecutarRecalculoCompletudeClausulaComZeroIncompletos prova que a
+// cláusula aparece mesmo com incompletos==0, desde que avaliados>0 (0
+// incompletos é informação positiva relevante — diferente de
+// aplicados/sinalizados==0, que só significa "nada a fazer").
+func TestExecutarRecalculoCompletudeClausulaComZeroIncompletos(t *testing.T) {
+	cont := &contadorFake{revisao: 0, orfas: 0}
+	completeness := &completenessFake{avaliados: 5, incompletos: 0}
+	h := New(&libraryFake{}, newScanFake(), cont, &matcherFake{}, completeness)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 0 em revisão, 0 órfã(s); 5 itens avaliados, 0 incompletos em catalogação"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarFalhaDoRecalculoCompletudeNaoAbortaJob cobre o critério
+// best-effort: uma falha do CompletenessRecalculator não derruba o job -- o
+// resumo original (sem a cláusula extra) ainda sai.
+func TestExecutarFalhaDoRecalculoCompletudeNaoAbortaJob(t *testing.T) {
+	cont := &contadorFake{revisao: 4, orfas: 2}
+	completeness := &completenessFake{err: errors.New("erro simulado no recalculo de completude")}
+	h := New(&libraryFake{}, newScanFake(), cont, &matcherFake{}, completeness)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar não deveria falhar por causa do recalculo de completude (best-effort): %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarSemCompletenessRecalculatorNaoRecalcula cobre a guarda
+// completeness==nil (mesma guarda de rodarAutoMatch/
+// rodarEnriquecimentoRetroativo): sem CompletenessRecalculator injetado, o
+// passo degrada para (0, 0) sem panicar e sem a cláusula extra.
+func TestExecutarSemCompletenessRecalculatorNaoRecalcula(t *testing.T) {
+	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, &matcherFake{}, nil)
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {

@@ -29,6 +29,7 @@ function orfa(over: Partial<EntityCard> = {}): EntityCard {
     file_count: 1,
     match_confidence: null,
     poster_url: null,
+    catalog_completeness: null,
     ...over,
   }
 }

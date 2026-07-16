@@ -70,7 +70,11 @@ func (s *Server) listReview(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]entityCardDTO, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, cardDTO(sqlcgen.ListarEntityCardsRow(row)))
+		items = append(items, cardDTO(sqlcgen.ListarEntityCardsRow{
+			ID: row.ID, Type: row.Type, Title: row.Title, Status: row.Status,
+			Owned: row.Owned, FileCount: row.FileCount,
+			MatchConfidence: row.MatchConfidence, HasPoster: row.HasPoster,
+		}))
 	}
 	writeJSON(w, http.StatusOK, items)
 }
@@ -88,7 +92,11 @@ func (s *Server) listOrphans(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]entityCardDTO, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, cardDTO(sqlcgen.ListarEntityCardsRow(row)))
+		items = append(items, cardDTO(sqlcgen.ListarEntityCardsRow{
+			ID: row.ID, Type: row.Type, Title: row.Title, Status: row.Status,
+			Owned: row.Owned, FileCount: row.FileCount,
+			MatchConfidence: row.MatchConfidence, HasPoster: row.HasPoster,
+		}))
 	}
 	writeJSON(w, http.StatusOK, items)
 }

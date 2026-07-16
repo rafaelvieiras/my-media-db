@@ -68,6 +68,7 @@ describe('PosterGrid', () => {
         file_count: 1,
         match_confidence: 100,
         poster_url: null,
+        catalog_completeness: null,
       },
     ]
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(page(items, 1)))

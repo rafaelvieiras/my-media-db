@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { Pencil, Trash2 } from 'lucide-react'
+import { Pencil, Trash2, TriangleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ApiError, purgeEntity, type OrderingsInfo } from '@/lib/api'
@@ -12,6 +12,11 @@ import {
   overrideBlobQueryOptions,
 } from '@/lib/queries'
 import { ehDraft } from '@/lib/entity-badges'
+import {
+  precisaAtencaoCatalogacao,
+  rotuloItemFaltando,
+  type CatalogCompleteness,
+} from '@/lib/catalog-completeness-badges'
 import { useLanguage } from '@/lib/language-context'
 import { rotuloIdioma } from '@/lib/languages'
 import { temOverrideEditado } from '@/lib/override-fields'
@@ -93,6 +98,35 @@ function SeloPosse({
     <Badge variant="secondary" className="w-fit">
       possui {ownership.owned_count}/{ownership.total_count} episódios
     </Badge>
+  )
+}
+
+// SecaoCompletudeIncompleta lista, PT-BR, o que falta preencher para o item
+// atender a régua de completude de CATALOGAÇÃO (0057/0058) — DIFERENTE da posse
+// (`SeloPosse` acima, 0034/0036). Fica perto do topo/metadados (não escondida no
+// fim da página), sempre visível (sem depender de hover — útil em touch/mobile,
+// diferente do tooltip do card). Só renderiza quando incompleto; item que atende a
+// régua (ou tipo sem régua, ou draft) não mostra nada — sem confirmação positiva,
+// mesmo princípio de "sinalizar só o que precisa de atenção" do 0038.
+function SecaoCompletudeIncompleta({ cc }: { cc: CatalogCompleteness }) {
+  if (!precisaAtencaoCatalogacao(cc)) {
+    return null
+  }
+  return (
+    <section
+      aria-label="Catalogação incompleta"
+      className="flex flex-col gap-2 rounded-xl bg-amber-500/10 p-4 ring-1 ring-amber-500/30"
+    >
+      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-amber-600 dark:text-amber-400">
+        <TriangleAlert className="size-4" aria-hidden />
+        Catalogação incompleta
+      </h2>
+      <ul className="list-inside list-disc text-sm text-muted-foreground">
+        {cc?.missing.map((chave) => (
+          <li key={chave}>{rotuloItemFaltando(chave)}</li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
@@ -258,6 +292,7 @@ export function EntityDetailScreen() {
         ancestors={data.ancestors}
         atual={{ title: data.title, type: data.type }}
       />
+      <SecaoCompletudeIncompleta cc={data.catalog_completeness} />
     </div>
   )
 

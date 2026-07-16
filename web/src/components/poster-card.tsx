@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Check, ImageOff } from 'lucide-react'
+import { Check, ImageOff, TriangleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { posterSrc, type EntityCard } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -12,6 +12,10 @@ import {
   temCompletude,
   unidadeCompletude,
 } from '@/lib/entity-badges'
+import {
+  precisaAtencaoCatalogacao,
+  rotuloTooltipCompletude,
+} from '@/lib/catalog-completeness-badges'
 
 // Card de pôster do grid: arte (com fallback de placeholder), título e badges de
 // posse ("na biblioteca") e de revisão (baixa confiança / não identificado).
@@ -85,6 +89,7 @@ export function PosterCard({
       </Link>
       <div className="pointer-events-none absolute top-1.5 left-1.5 flex flex-wrap gap-1">
         <EstadoMatchBadge card={card} />
+        <IndicadorCompletudeCatalogacao card={card} />
       </div>
       <div className="pointer-events-none absolute top-1.5 right-1.5 flex flex-wrap justify-end gap-1">
         <IndicadorPosse card={card} />
@@ -174,4 +179,27 @@ function EstadoMatchBadge({ card }: { card: EntityCard }) {
     )
   }
   return null
+}
+
+// IndicadorCompletudeCatalogacao sinaliza, ícone-only, que o item não atende a
+// régua de completude de CATALOGAÇÃO (0057/0058) — DIFERENTE do selo de posse
+// (`IndicadorPosse`/`SeloCompletude` acima, 0036/0037). Fica ao lado do badge de
+// revisão (topo-ESQUERDO), depois dele no `flex-wrap`. `title`/`aria-label`
+// listam o que falta em PT-BR. Ausência de resultado (draft/ainda não avaliado)
+// ou item completo → sem badge (capa limpa, mesmo princípio do 0038).
+function IndicadorCompletudeCatalogacao({ card }: { card: EntityCard }) {
+  if (!precisaAtencaoCatalogacao(card.catalog_completeness)) {
+    return null
+  }
+  const rotulo = rotuloTooltipCompletude(card.catalog_completeness)
+  return (
+    <Badge
+      variant="outline"
+      className="pointer-events-none gap-1 px-1.5"
+      aria-label={rotulo}
+      title={rotulo}
+    >
+      <TriangleAlert className="size-3.5" aria-hidden />
+    </Badge>
+  )
 }

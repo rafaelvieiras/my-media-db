@@ -163,7 +163,11 @@ func WithLibraryHealthJob() Option {
 		if s.jobs == nil {
 			s.jobs = job.NewManager(s.db)
 		}
-		s.jobs.Registry.Registrar(libraryhealth.New(s.library, s.scanner, curation.New(s.db), s))
+		// s satisfaz tanto libraryhealth.Matcher (auto-match/enriquecimento
+		// retroativo, 0054/0056) quanto libraryhealth.CompletenessRecalculator
+		// (recalculo do cache de completude de catalogacao, briefing 0058) --
+		// os dois parametros recebem o MESMO *Server.
+		s.jobs.Registry.Registrar(libraryhealth.New(s.library, s.scanner, curation.New(s.db), s, s))
 	}
 }
 

@@ -99,6 +99,10 @@ LIMIT 1;
 -- (owned/file_count/match_confidence/has_poster), entao o mapeamento reusa o cardDTO.
 -- owned/file_count contam TAMBEM a juncao media_file_entity -- ver a nota longa em
 -- ListarEntityCards (o card do episodio possui arquivo so pela juncao).
+-- completeness_complete/completeness_missing_json vem do CACHE persistido
+-- entity_catalog_completeness (briefing 0058, recalculado em lote pelo job
+-- saude_biblioteca) via LEFT JOIN -- NULL quando o item ainda nao foi
+-- avaliado (item novo, ou draft).
 SELECT
     e.id, e.type, e.title, e.status, e.release_date,
     EXISTS (
@@ -113,8 +117,11 @@ SELECT
         SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
     )) AS file_count,
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
-    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster,
+    ecc.complete AS completeness_complete,
+    ecc.missing_json AS completeness_missing_json
 FROM entity e
+LEFT JOIN entity_catalog_completeness ecc ON ecc.entity_id = e.id
 WHERE e.id = ?;
 
 -- name: ObterEntityPorImdb :one
@@ -186,6 +193,11 @@ LIMIT ? OFFSET ?;
 -- por titulo em ordem DESC vive numa query irma (ListarEntityCardsDesc) porque o
 -- sqlc nao liga parametros dentro de expressoes de ORDER BY -- direcao dinamica
 -- num unico statement nao e suportada; o handler escolhe qual query rodar.
+-- completeness_complete/completeness_missing_json vem do CACHE persistido
+-- entity_catalog_completeness (briefing 0058, recalculado em lote pelo job
+-- saude_biblioteca) via LEFT JOIN -- NULL quando o item ainda nao foi
+-- avaliado (item novo, ou draft). E um JOIN simples (nao precisa de
+-- agregacao): a linha do cache ja vem pronta, 1:1 com a entity.
 SELECT
     e.id, e.type, e.title, e.status,
     EXISTS (
@@ -200,8 +212,11 @@ SELECT
         SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
     )) AS file_count,
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
-    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster,
+    ecc.complete AS completeness_complete,
+    ecc.missing_json AS completeness_missing_json
 FROM entity e
+LEFT JOIN entity_catalog_completeness ecc ON ecc.entity_id = e.id
 WHERE e.type NOT IN ('season', 'episode')
   AND (sqlc.narg('type') IS NULL OR e.type = sqlc.narg('type'))
   AND (sqlc.narg('owned') IS NULL
@@ -226,8 +241,11 @@ SELECT
         SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
     )) AS file_count,
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
-    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster,
+    ecc.complete AS completeness_complete,
+    ecc.missing_json AS completeness_missing_json
 FROM entity e
+LEFT JOIN entity_catalog_completeness ecc ON ecc.entity_id = e.id
 WHERE e.type NOT IN ('season', 'episode')
   AND (sqlc.narg('type') IS NULL OR e.type = sqlc.narg('type'))
   AND (sqlc.narg('owned') IS NULL
@@ -351,3 +369,20 @@ WHERE id = ?;
 -- asset e entity_relation.
 DELETE FROM entity
 WHERE id = ?;
+
+-- name: UpsertEntityCatalogCompleteness :exec
+-- Grava (ou substitui) o resultado da avaliacao de completude de CATALOGACAO
+-- (briefing 0058) de UM item -- chamada pelo recalculo em lote
+-- (RecalcularCompletudeCatalogacao, job saude_biblioteca). Conflito na PK
+-- (entity_id) atualiza complete/missing_json e recarimba evaluated_at --
+-- nunca cria uma segunda linha para a mesma entity (1:1, mesmo padrao de
+-- UpsertAppSetting).
+INSERT INTO entity_catalog_completeness (
+    entity_id, complete, missing_json
+) VALUES (
+    sqlc.arg('entity_id'), sqlc.arg('complete'), sqlc.arg('missing_json')
+)
+ON CONFLICT (entity_id) DO UPDATE SET
+    complete = excluded.complete,
+    missing_json = excluded.missing_json,
+    evaluated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now');

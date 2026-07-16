@@ -40,6 +40,7 @@ const localCard: EntityCard = {
   file_count: 1,
   match_confidence: 100,
   poster_url: null,
+  catalog_completeness: null,
 }
 
 const seasonCard: EntityCard = {
@@ -51,6 +52,7 @@ const seasonCard: EntityCard = {
   file_count: 0,
   match_confidence: null,
   poster_url: null,
+  catalog_completeness: null,
 }
 
 const episodeCard: EntityCard = {
@@ -62,6 +64,7 @@ const episodeCard: EntityCard = {
   file_count: 0,
   match_confidence: null,
   poster_url: null,
+  catalog_completeness: null,
 }
 
 const externalItem: ExternalResult = {

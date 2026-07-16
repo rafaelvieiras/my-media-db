@@ -76,21 +76,40 @@ type Matcher interface {
 	EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizados int, err error)
 }
 
+// CompletenessRecalculator e o subconjunto de *server.Server que o Handler
+// consome para recalcular o CACHE de completude de catalogacao (briefing
+// 0058, follow-up do 0053/0057): reavalia TODA entity nao-draft contra a
+// regua configurada em /settings e grava entity_catalog_completeness, que a
+// listagem/`/members` leem (a listagem NAO calcula ao vivo -- ver a nota
+// longa em internal/server/completeness.go/completeness_recalc.go sobre por
+// que). Interface pequena, mesmo padrao de Matcher/Contador: satisfeita
+// estruturalmente por *server.Server, sem este pacote importar
+// internal/server (evita ciclo, ja que server.Handler e construido DE DENTRO
+// do server, ver server.WithLibraryHealthJob).
+type CompletenessRecalculator interface {
+	RecalcularCompletudeCatalogacao(ctx context.Context) (avaliados, incompletos int, err error)
+}
+
 // Handler e o Handler do job saude_biblioteca.
 type Handler struct {
-	library  LibraryLister
-	scanner  ScanRunner
-	contador Contador
-	matcher  Matcher
+	library      LibraryLister
+	scanner      ScanRunner
+	contador     Contador
+	matcher      Matcher
+	completeness CompletenessRecalculator
 }
 
 // New cria o Handler a partir do servico de datasources, do gerenciador de
-// scan, do contador das filas de curadoria e do Matcher de auto-match --
-// injetados pelo chamador (server.WithLibraryHealthJob), mesmo padrao de
-// enrich.Servico/scanner.Manager serem construidos com suas dependencias na
-// hora do registro.
-func New(lib LibraryLister, scn ScanRunner, cont Contador, matcher Matcher) *Handler {
-	return &Handler{library: lib, scanner: scn, contador: cont, matcher: matcher}
+// scan, do contador das filas de curadoria, do Matcher de auto-match e do
+// CompletenessRecalculator (briefing 0058) -- injetados pelo chamador
+// (server.WithLibraryHealthJob), mesmo padrao de enrich.Servico/
+// scanner.Manager serem construidos com suas dependencias na hora do
+// registro. `completeness` e OPCIONAL: nil degrada para "nao recalcula"
+// (mesmo padrao de matcher == nil em rodarAutoMatch/
+// rodarEnriquecimentoRetroativo), util para testes que nao precisam
+// exercitar este passo.
+func New(lib LibraryLister, scn ScanRunner, cont Contador, matcher Matcher, completeness CompletenessRecalculator) *Handler {
+	return &Handler{library: lib, scanner: scn, contador: cont, matcher: matcher, completeness: completeness}
 }
 
 // Nome devolve o slug estavel do job.
@@ -147,7 +166,9 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 		}
 	}
 
-	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas, resolvidos, aplicados, sinalizados), nil
+	avaliados, incompletos := h.rodarRecalculoCompletude(ctx)
+
+	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas, resolvidos, aplicados, sinalizados, avaliados, incompletos), nil
 }
 
 // rodarAutoMatch chama o Matcher (auto-match em lote sobre os elegiveis da
@@ -182,6 +203,25 @@ func (h *Handler) rodarEnriquecimentoRetroativo(ctx context.Context) (aplicados,
 		return 0, 0
 	}
 	return aplicados, sinalizados
+}
+
+// rodarRecalculoCompletude chama o CompletenessRecalculator (recalculo em
+// lote do cache de completude de catalogacao, briefing 0058) e devolve
+// quantos itens foram avaliados e quantos ficaram incompletos. Best-effort:
+// uma falha aqui NAO aborta o job -- so loga e devolve (0, 0), para o resumo
+// original ainda sair. Chamado por ULTIMO (depois do re-scan, auto-match e
+// enriquecimento retroativo): a completude reflete o estado FINAL da
+// execucao, apos os passos anteriores poderem ter mudado dados resolvidos.
+func (h *Handler) rodarRecalculoCompletude(ctx context.Context) (avaliados, incompletos int) {
+	if h.completeness == nil {
+		return 0, 0
+	}
+	avaliados, incompletos, err := h.completeness.RecalcularCompletudeCatalogacao(ctx)
+	if err != nil {
+		log.Printf("saude_biblioteca: recalculo de completude de catalogacao falhou (best-effort, ignorado): %v", err)
+		return 0, 0
+	}
+	return avaliados, incompletos
 }
 
 // escanearTodas dispara e aguarda o scan de cada fonte, sequencialmente.
@@ -240,8 +280,13 @@ func (h *Handler) aguardarConclusao(ctx context.Context, sourceID string) error 
 // operacao normal, quando nao havia nada a resolver. aplicados/sinalizados
 // (briefing 0056) sao o resultado do enriquecimento retroativo; a clausula
 // extra e omitida quando os dois sao zero (mesmo espirito da omissao de
-// resolvidos==0 acima).
-func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, resolvidos, aplicados, sinalizados int) string {
+// resolvidos==0 acima). avaliados/incompletos (briefing 0058) sao o
+// resultado do recalculo de completude de catalogacao; a clausula extra e
+// omitida quando nao houve NENHUM item avaliado (h.completeness == nil ou a
+// biblioteca vazia) -- com pelo menos um avaliado, a clausula aparece mesmo
+// com incompletos==0 (0 incompletos e uma informacao positiva relevante,
+// diferente de aplicados/sinalizados==0 que so significa "nada a fazer").
+func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, resolvidos, aplicados, sinalizados, avaliados, incompletos int) string {
 	base := fmt.Sprintf("%s; %d em revisão, %d órfã(s)", resumoScans(total, escaneadas, falhas), revisao, orfas)
 	if resolvidos > 0 {
 		base = fmt.Sprintf("%s; %d em revisão (%d resolvidos automaticamente), %d órfã(s)",
@@ -250,6 +295,9 @@ func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, reso
 	if aplicados > 0 || sinalizados > 0 {
 		base = fmt.Sprintf("%s; enriquecimento retroativo: %d aplicado(s), %d sinalizado(s) para revisão",
 			base, aplicados, sinalizados)
+	}
+	if avaliados > 0 {
+		base = fmt.Sprintf("%s; %d itens avaliados, %d incompletos em catalogação", base, avaliados, incompletos)
 	}
 	return base
 }

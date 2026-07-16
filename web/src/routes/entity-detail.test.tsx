@@ -219,3 +219,41 @@ describe('EntityDetailScreen — árvore de séries (0031)', () => {
     expect(screen.queryByRole('heading', { name: 'Episódios' })).toBeNull()
   })
 })
+
+// Seção de completude de CATALOGAÇÃO (0058) — DIFERENTE da posse (0034/0036,
+// coberta acima). Só aparece quando `catalog_completeness.complete === false`.
+describe('EntityDetailScreen — completude de catalogação (0058)', () => {
+  it('mostra a seção "Catalogação incompleta" com a lista do que falta', async () => {
+    renderDetail(
+      baseEntity({
+        catalog_completeness: {
+          complete: false,
+          missing: ['cast', 'artwork:fanart'],
+        },
+      }),
+    )
+
+    await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
+    expect(screen.getByText('Catalogação incompleta')).toBeInTheDocument()
+    expect(screen.getByText('elenco')).toBeInTheDocument()
+    expect(screen.getByText('arte fanart')).toBeInTheDocument()
+  })
+
+  it('não mostra a seção quando completo', async () => {
+    renderDetail(
+      baseEntity({
+        catalog_completeness: { complete: true, missing: [] },
+      }),
+    )
+
+    await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
+    expect(screen.queryByText('Catalogação incompleta')).not.toBeInTheDocument()
+  })
+
+  it('não mostra a seção quando null (draft/ainda não avaliado)', async () => {
+    renderDetail(baseEntity({ catalog_completeness: null }))
+
+    await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
+    expect(screen.queryByText('Catalogação incompleta')).not.toBeInTheDocument()
+  })
+})

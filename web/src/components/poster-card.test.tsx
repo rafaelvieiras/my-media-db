@@ -33,6 +33,7 @@ function card(over: Partial<EntityCard> = {}): EntityCard {
     file_count: 1,
     match_confidence: 100,
     poster_url: null,
+    catalog_completeness: null,
     ...over,
   }
 }
@@ -197,5 +198,50 @@ describe('PosterCard — selo de completude por tipo (0037/0038)', () => {
   it('sem ownership não mostra selo (movie/episode/collection)', () => {
     render(<PosterCard card={card({ type: 'tv' })} />)
     expect(screen.queryByText(/temporadas/)).not.toBeInTheDocument()
+  })
+})
+
+// Indicador de completude de CATALOGAÇÃO (0058) — DIFERENTE do selo de posse
+// (0037/0038, coberto acima). Ícone-only no topo-ESQUERDO, ao lado do badge de
+// revisão. Só aparece quando `catalog_completeness.complete === false`.
+describe('PosterCard — indicador de completude de catalogação (0058)', () => {
+  it('mostra o ícone de alerta quando incompleto, com title/aria-label da lista', () => {
+    const { container } = render(
+      <PosterCard
+        card={card({
+          catalog_completeness: {
+            complete: false,
+            missing: ['cast', 'artwork:fanart'],
+          },
+        })}
+      />,
+    )
+    const rotulo = 'Catalogação incompleta: elenco, arte fanart'
+    const badge = screen.getByLabelText(rotulo)
+    expect(badge).toBeInTheDocument()
+    expect(badge).toHaveAttribute('title', rotulo)
+    // Fica no topo-ESQUERDO (junto do badge de revisão), não no de posse.
+    const overlayEsquerdo = container.querySelector('.left-1\\.5')
+    expect(overlayEsquerdo?.contains(badge)).toBe(true)
+  })
+
+  it('não mostra o ícone quando completo', () => {
+    render(
+      <PosterCard
+        card={card({
+          catalog_completeness: { complete: true, missing: [] },
+        })}
+      />,
+    )
+    expect(
+      screen.queryByLabelText(/Catalogação incompleta/),
+    ).not.toBeInTheDocument()
+  })
+
+  it('não mostra o ícone quando null (draft/ainda não avaliado pelo job)', () => {
+    render(<PosterCard card={card({ catalog_completeness: null })} />)
+    expect(
+      screen.queryByLabelText(/Catalogação incompleta/),
+    ).not.toBeInTheDocument()
   })
 })

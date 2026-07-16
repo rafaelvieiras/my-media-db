@@ -177,6 +177,37 @@ type Entidade struct {
 	// não conhece core.tv), e servida pelo image proxy (busca+cacheia sob demanda) no
 	// front. Não é baixada no import: só a URL é persistida.
 	StillURL *string `json:"still_url,omitempty"`
+
+	// CatalogCompleteness é a completude de CATALOGAÇÃO do item (briefing 0058)
+	// contra a régua configurada em /settings (0057), calculada AO VIVO a cada
+	// request pelo server (anotarCompletudeCatalogacao, entities.go) —
+	// reaproveita os dados que este mesmo resolverEntity já monta, sem query
+	// extra. NÃO vem do resolver puro (mesma fronteira de Ancestors/Ownership/
+	// StillURL). `null` somente quando o item é draft (nunca casado) — não faz
+	// sentido avaliar metadados que ainda não existem; para item não-draft
+	// nunca é nil aqui (diferente de EntityCard.catalog_completeness na
+	// listagem, que lê de um cache em lote recalculado pelo job e pode ficar
+	// nil até a primeira execução). Distinto de completude de POSSE
+	// (web/src/lib/entity-badges.ts, briefings 0036/0037).
+	CatalogCompleteness *CatalogCompleteness `json:"catalog_completeness"`
+}
+
+// CatalogCompleteness é o resultado da avaliação de completude de
+// CATALOGAÇÃO (briefing 0058) de um item contra a régua por tipo configurada
+// em /settings (0057, internal/server/catalog_completeness.go). Vive no
+// pacote resolver (não em internal/server) para poder ser um CAMPO do shape
+// final (Entidade), serializado direto por GET /entities/{id} — o pacote
+// server usa este MESMO tipo (via alias `resultadoCompletude`,
+// internal/server/completeness.go) para não duplicar a definição nem exigir
+// conversão ao preencher o campo.
+type CatalogCompleteness struct {
+	// Complete é true quando o item atende a régua inteira, ou quando o tipo
+	// não tem entrada na config (tipo sem régua nunca é incompleto).
+	Complete bool `json:"complete"`
+	// Missing são as chaves ESTÁVEIS do que falta, em ordem fixa (description,
+	// runtime, certification, keywords, cast, media_file, artwork:<kind>...).
+	// `[]` (nunca nil) quando Complete é true.
+	Missing []string `json:"missing"`
 }
 
 // OrderingsInfo descreve as ordens de exibição de episódios de uma série (0040):

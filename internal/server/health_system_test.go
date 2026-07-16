@@ -119,8 +119,8 @@ func TestSystemHealthShapeCompleto(t *testing.T) {
 	if out.Database.SizeBytes != pageCount*pageSize {
 		t.Errorf("database.size_bytes = %d, quero %d (page_count*page_size)", out.Database.SizeBytes, pageCount*pageSize)
 	}
-	if out.Database.SchemaVersion != 13 {
-		t.Errorf("database.schema_version = %d, quero 13", out.Database.SchemaVersion)
+	if out.Database.SchemaVersion != 14 {
+		t.Errorf("database.schema_version = %d, quero 14", out.Database.SchemaVersion)
 	}
 
 	if len(out.Storage.Sources) != 1 {
@@ -382,7 +382,7 @@ func TestSystemHealthNaoAlteraHealthBasico(t *testing.T) {
 	_ = doSystemHealth(t, s)
 
 	basico := doHealth(t, s)
-	if basico.Status != "ok" || basico.Version != "v-teste" || !basico.DB.OK || basico.DB.Schema != 13 {
+	if basico.Status != "ok" || basico.Version != "v-teste" || !basico.DB.OK || basico.DB.Schema != 14 {
 		t.Errorf("GET /health mudou de shape/valor apos /health/system: %+v", basico)
 	}
 }

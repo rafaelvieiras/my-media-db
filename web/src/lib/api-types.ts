@@ -1066,6 +1066,16 @@ export interface components {
       numbering?: components['schemas']['EpisodeNumbering'] | null
       /** @description URL CRUA do still (frame 16:9) do episódio (0042), como veio do provider — artwork NEUTRO de idioma, gravada no import SEM baixar a imagem. OPCIONAL: presente só nos cards `episode` com still; ausente/`null` para os demais tipos e para episódio sem still (cai no placeholder). O front a serve pelo image proxy (GET /images?src=), que busca+cacheia sob demanda na 1a exibição. */
       still_url?: string | null
+      /** @description Completude de catalogação do item (0058) contra a régua configurada em /settings (0057). `null` quando o item é draft (nunca casado) OU quando ainda não passou pela primeira execução do job `saude_biblioteca` que preenche o cache (0053) — este campo é lido de um cache persistido, recalculado em lote, por isso pode ficar desatualizado em relação à config até a próxima rodada do job (diferente de `ResolvedEntity.catalog_completeness`, calculado ao vivo a cada request). */
+      catalog_completeness:
+        components['schemas']['CatalogCompletenessResult'] | null
+    }
+    /** @description Resultado da avaliação de completude de CATALOGAÇÃO (0058) de um item contra a régua por tipo configurada em 0057 — distinto da completude de POSSE (`EntityCard.owned`/`OwnershipInfo`). Reusado em `EntityCard.catalog_completeness` e `ResolvedEntity.catalog_completeness`. */
+    CatalogCompletenessResult: {
+      /** @description true quando o item atende a régua inteira, ou quando o tipo não tem entrada na config (tipo sem régua nunca é incompleto). */
+      complete: boolean
+      /** @description Chaves ESTÁVEIS do que falta, em ordem fixa (description, runtime, certification, keywords, cast, media_file, artwork:<kind>...). String livre (não é um enum fechado aqui): os valores possíveis hoje são `description`, `runtime`, `certification`, `keywords`, `cast`, `media_file`, ou `artwork:<kind>` (um item por kind de arte AUSENTE da lista configurada, ex. `artwork:poster`, `artwork:fanart`). `[]` quando `complete` é true. */
+      missing: string[]
     }
     /** @description Numeração de um episódio na ordenação da temporada-pai (0039). `season`/`number` vêm do numbering multi-ordem gravado no import (core.tv@1); `absolute_number` é o número contínuo através das temporadas (anime), presente quando a fonte informou. */
     EpisodeNumbering: {
@@ -1413,6 +1423,9 @@ export interface components {
       orderings?: components['schemas']['OrderingsInfo']
       /** @description URL CRUA do still (frame 16:9) do EPISÓDIO (0042), como veio do provider — artwork NEUTRO de idioma, do extension_data core.tv@1. OPCIONAL: presente só para `episode` com still; AUSENTE para os demais tipos e para episódio sem still (cai no placeholder). O front a serve pelo image proxy (busca+cacheia sob demanda); nunca é baixada no import. */
       still_url?: string | null
+      /** @description Completude de catalogação do item (0058) contra a régua configurada em /settings (0057), calculada AO VIVO a cada request (reaproveita os dados que este mesmo endpoint já resolve, sem query extra). `null` somente quando o item é draft (nunca casado) — não faz sentido avaliar metadados que ainda não existem; para item não-draft nunca é null aqui (diferente de `EntityCard.catalog_completeness`, que lê de um cache em lote e pode ficar `null` até a primeira execução do job). */
+      catalog_completeness:
+        components['schemas']['CatalogCompletenessResult'] | null
     }
     /** @description Ordens de exibição de episódios de uma série (0040): `default` é a ordem inicial (o default_season_type gravado no import) e `available` a lista oferecida ao seletor (o default primeiro, `absolute` ao fim quando há número absoluto). O seletor só aparece com mais de uma ordem. */
     OrderingsInfo: {

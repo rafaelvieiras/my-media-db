@@ -68,6 +68,13 @@ type Entity struct {
 	LastExternalMatchAttemptAt sql.NullString
 }
 
+type EntityCatalogCompleteness struct {
+	EntityID    string
+	Complete    int64
+	MissingJson string
+	EvaluatedAt string
+}
+
 type EntityFt struct {
 	Title         string
 	OriginalTitle string

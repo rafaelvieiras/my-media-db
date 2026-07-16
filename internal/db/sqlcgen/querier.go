@@ -284,6 +284,11 @@ type Querier interface {
 	// por titulo em ordem DESC vive numa query irma (ListarEntityCardsDesc) porque o
 	// sqlc nao liga parametros dentro de expressoes de ORDER BY -- direcao dinamica
 	// num unico statement nao e suportada; o handler escolhe qual query rodar.
+	// completeness_complete/completeness_missing_json vem do CACHE persistido
+	// entity_catalog_completeness (briefing 0058, recalculado em lote pelo job
+	// saude_biblioteca) via LEFT JOIN -- NULL quando o item ainda nao foi
+	// avaliado (item novo, ou draft). E um JOIN simples (nao precisa de
+	// agregacao): a linha do cache ja vem pronta, 1:1 com a entity.
 	ListarEntityCards(ctx context.Context, arg ListarEntityCardsParams) ([]ListarEntityCardsRow, error)
 	// Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title). owned/
 	// file_count somam a juncao media_file_entity do mesmo jeito -- ver a nota longa acima.
@@ -422,6 +427,10 @@ type Querier interface {
 	// (owned/file_count/match_confidence/has_poster), entao o mapeamento reusa o cardDTO.
 	// owned/file_count contam TAMBEM a juncao media_file_entity -- ver a nota longa em
 	// ListarEntityCards (o card do episodio possui arquivo so pela juncao).
+	// completeness_complete/completeness_missing_json vem do CACHE persistido
+	// entity_catalog_completeness (briefing 0058, recalculado em lote pelo job
+	// saude_biblioteca) via LEFT JOIN -- NULL quando o item ainda nao foi
+	// avaliado (item novo, ou draft).
 	ObterEntityCard(ctx context.Context, id string) (ObterEntityCardRow, error)
 	ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.NullString) (Entity, error)
 	// Dedup do scanner sem id externo (briefing 0009): reusa a MESMA entity para o
@@ -488,6 +497,13 @@ type Querier interface {
 	// UNIQUE reusa a linha e atualiza name/logo_path/payload_json, devolvendo o id
 	// existente. `id` so e usado na primeira insercao.
 	UpsertCompany(ctx context.Context, arg UpsertCompanyParams) (string, error)
+	// Grava (ou substitui) o resultado da avaliacao de completude de CATALOGACAO
+	// (briefing 0058) de UM item -- chamada pelo recalculo em lote
+	// (RecalcularCompletudeCatalogacao, job saude_biblioteca). Conflito na PK
+	// (entity_id) atualiza complete/missing_json e recarimba evaluated_at --
+	// nunca cria uma segunda linha para a mesma entity (1:1, mesmo padrao de
+	// UpsertAppSetting).
+	UpsertEntityCatalogCompleteness(ctx context.Context, arg UpsertEntityCatalogCompletenessParams) error
 	// Acesso ao CACHE do detalhe externo rico (external_detail, briefing 0022): uma linha
 	// por (source, source_id). A primeira consulta faz UPSERT; as proximas LEEM daqui,
 	// com a app decidindo servir do cache ou re-puxar (TTL + gatilho por idiomas).

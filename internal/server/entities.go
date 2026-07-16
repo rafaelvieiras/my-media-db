@@ -66,6 +66,14 @@ type entityCardDTO struct {
 	// multiplicar consultas). `omitempty`: ausente para não-`episode` e para episódio sem
 	// still — a UI cai no placeholder.
 	StillURL *string `json:"still_url,omitempty"`
+	// CatalogCompleteness é a completude de CATALOGAÇÃO do card (briefing
+	// 0058) contra a régua de /settings (0057), lida do CACHE persistido
+	// entity_catalog_completeness (LEFT JOIN nas queries de card) --
+	// recalculado em lote pelo job saude_biblioteca (0053), NÃO ao vivo (ver
+	// a nota longa de completeness.go/completeness_recalc.go sobre por quê).
+	// `null` quando o item ainda não foi avaliado (item novo ou draft, sem
+	// linha no cache).
+	CatalogCompleteness *resultadoCompletude `json:"catalog_completeness"`
 }
 
 // episodeNumberingDTO é a numeração real de um episódio no card (0039): `season` e
@@ -238,13 +246,14 @@ func (s *Server) listarCards(ctx context.Context, tipo, owned any, limit, offset
 // poster_url só quando há arte local.
 func cardDTO(row sqlcgen.ListarEntityCardsRow) entityCardDTO {
 	dto := entityCardDTO{
-		ID:              row.ID,
-		Type:            row.Type,
-		Title:           row.Title,
-		Status:          row.Status,
-		Owned:           row.Owned,
-		FileCount:       row.FileCount,
-		MatchConfidence: floatPtr(row.MatchConfidence),
+		ID:                  row.ID,
+		Type:                row.Type,
+		Title:               row.Title,
+		Status:              row.Status,
+		Owned:               row.Owned,
+		FileCount:           row.FileCount,
+		MatchConfidence:     floatPtr(row.MatchConfidence),
+		CatalogCompleteness: completudeDoCache(row.CompletenessComplete, row.CompletenessMissingJson),
 	}
 	if row.HasPoster {
 		u := posterPath(row.ID)
@@ -513,14 +522,16 @@ func kindEOrdemMembros(tipoPai string) (kind string, ordenarPorAno bool) {
 // colunas derivadas + release_date), descartando o release_date (usado só p/ ordenar).
 func cardDTODeMembro(row sqlcgen.ObterEntityCardRow) entityCardDTO {
 	return cardDTO(sqlcgen.ListarEntityCardsRow{
-		ID:              row.ID,
-		Type:            row.Type,
-		Title:           row.Title,
-		Status:          row.Status,
-		Owned:           row.Owned,
-		FileCount:       row.FileCount,
-		MatchConfidence: row.MatchConfidence,
-		HasPoster:       row.HasPoster,
+		ID:                      row.ID,
+		Type:                    row.Type,
+		Title:                   row.Title,
+		Status:                  row.Status,
+		Owned:                   row.Owned,
+		FileCount:               row.FileCount,
+		MatchConfidence:         row.MatchConfidence,
+		HasPoster:               row.HasPoster,
+		CompletenessComplete:    row.CompletenessComplete,
+		CompletenessMissingJson: row.CompletenessMissingJson,
 	})
 }
 
@@ -690,7 +701,32 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 	resolvida.Orderings = s.montarOrderings(ctx, ent)
 	resolvida.StillURL = stillDaEntity(assets, ent)
 	s.herdarFanartTemporada(ctx, &resolvida, assets, ent)
+	s.anotarCompletudeCatalogacao(ctx, &resolvida, ent, assets)
 	return resolvida, true, nil
+}
+
+// anotarCompletudeCatalogacao preenche resolvida.CatalogCompleteness (briefing
+// 0058) AO VIVO, a cada request do detalhe: zero queries novas, só um loop
+// sobre bools e a lista de assets já em memória (resolverEntity já paga o
+// custo de montar tudo o mais, com ou sem este briefing). Campo fica `nil`
+// para item draft (ehDraft, completeness.go) -- não faz sentido avaliar
+// metadados que ainda não existem. `assets` é a MESMA lista que
+// resolverEntity já carregou (ListarAssetsPorEntity), reusada aqui sem nova
+// consulta. Falha ao ler a config de completude (0057) degrada para `nil`
+// (mesmo espírito das demais anotações pós-resolução: nunca derruba o
+// detalhe por um passo acessório).
+func (s *Server) anotarCompletudeCatalogacao(ctx context.Context, e *resolver.Entidade, ent sqlcgen.Entity, assets []sqlcgen.Asset) {
+	if ehDraft(ent.Status) {
+		return
+	}
+	cfg, err := s.obterCatalogCompletenessSettings(ctx)
+	if err != nil {
+		return
+	}
+	tipoCfg, achou := cfg[ent.Type]
+	dados := dadosCompletudeDeEntidade(*e, assets)
+	resultado := avaliarCompletude(tipoCfg, achou, dados)
+	e.CatalogCompleteness = &resultado
 }
 
 // herdarFanartTemporada preenche o BackdropURL de uma TEMPORADA sem fanart própria

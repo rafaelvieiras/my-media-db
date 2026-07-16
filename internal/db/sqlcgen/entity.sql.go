@@ -606,8 +606,11 @@ SELECT
         SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
     )) AS file_count,
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
-    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster,
+    ecc.complete AS completeness_complete,
+    ecc.missing_json AS completeness_missing_json
 FROM entity e
+LEFT JOIN entity_catalog_completeness ecc ON ecc.entity_id = e.id
 WHERE e.type NOT IN ('season', 'episode')
   AND (?1 IS NULL OR e.type = ?1)
   AND (?2 IS NULL
@@ -624,14 +627,16 @@ type ListarEntityCardsParams struct {
 }
 
 type ListarEntityCardsRow struct {
-	ID              string
-	Type            string
-	Title           string
-	Status          string
-	Owned           bool
-	FileCount       int64
-	MatchConfidence interface{}
-	HasPoster       bool
+	ID                      string
+	Type                    string
+	Title                   string
+	Status                  string
+	Owned                   bool
+	FileCount               int64
+	MatchConfidence         interface{}
+	HasPoster               bool
+	CompletenessComplete    sql.NullInt64
+	CompletenessMissingJson sql.NullString
 }
 
 // Lista de CARDS para a UI (briefing 0010), ordenada por titulo ASCENDENTE. Uma
@@ -664,6 +669,11 @@ type ListarEntityCardsRow struct {
 // por titulo em ordem DESC vive numa query irma (ListarEntityCardsDesc) porque o
 // sqlc nao liga parametros dentro de expressoes de ORDER BY -- direcao dinamica
 // num unico statement nao e suportada; o handler escolhe qual query rodar.
+// completeness_complete/completeness_missing_json vem do CACHE persistido
+// entity_catalog_completeness (briefing 0058, recalculado em lote pelo job
+// saude_biblioteca) via LEFT JOIN -- NULL quando o item ainda nao foi
+// avaliado (item novo, ou draft). E um JOIN simples (nao precisa de
+// agregacao): a linha do cache ja vem pronta, 1:1 com a entity.
 func (q *Queries) ListarEntityCards(ctx context.Context, arg ListarEntityCardsParams) ([]ListarEntityCardsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarEntityCards,
 		arg.Type,
@@ -687,6 +697,8 @@ func (q *Queries) ListarEntityCards(ctx context.Context, arg ListarEntityCardsPa
 			&i.FileCount,
 			&i.MatchConfidence,
 			&i.HasPoster,
+			&i.CompletenessComplete,
+			&i.CompletenessMissingJson,
 		); err != nil {
 			return nil, err
 		}
@@ -716,8 +728,11 @@ SELECT
         SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
     )) AS file_count,
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
-    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster,
+    ecc.complete AS completeness_complete,
+    ecc.missing_json AS completeness_missing_json
 FROM entity e
+LEFT JOIN entity_catalog_completeness ecc ON ecc.entity_id = e.id
 WHERE e.type NOT IN ('season', 'episode')
   AND (?1 IS NULL OR e.type = ?1)
   AND (?2 IS NULL
@@ -734,14 +749,16 @@ type ListarEntityCardsDescParams struct {
 }
 
 type ListarEntityCardsDescRow struct {
-	ID              string
-	Type            string
-	Title           string
-	Status          string
-	Owned           bool
-	FileCount       int64
-	MatchConfidence interface{}
-	HasPoster       bool
+	ID                      string
+	Type                    string
+	Title                   string
+	Status                  string
+	Owned                   bool
+	FileCount               int64
+	MatchConfidence         interface{}
+	HasPoster               bool
+	CompletenessComplete    sql.NullInt64
+	CompletenessMissingJson sql.NullString
 }
 
 // Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title). owned/
@@ -769,6 +786,8 @@ func (q *Queries) ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCar
 			&i.FileCount,
 			&i.MatchConfidence,
 			&i.HasPoster,
+			&i.CompletenessComplete,
+			&i.CompletenessMissingJson,
 		); err != nil {
 			return nil, err
 		}
@@ -869,21 +888,26 @@ SELECT
         SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
     )) AS file_count,
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
-    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster,
+    ecc.complete AS completeness_complete,
+    ecc.missing_json AS completeness_missing_json
 FROM entity e
+LEFT JOIN entity_catalog_completeness ecc ON ecc.entity_id = e.id
 WHERE e.id = ?
 `
 
 type ObterEntityCardRow struct {
-	ID              string
-	Type            string
-	Title           string
-	Status          string
-	ReleaseDate     sql.NullString
-	Owned           bool
-	FileCount       int64
-	MatchConfidence interface{}
-	HasPoster       bool
+	ID                      string
+	Type                    string
+	Title                   string
+	Status                  string
+	ReleaseDate             sql.NullString
+	Owned                   bool
+	FileCount               int64
+	MatchConfidence         interface{}
+	HasPoster               bool
+	CompletenessComplete    sql.NullInt64
+	CompletenessMissingJson sql.NullString
 }
 
 // CARD de UMA entity (mesmas colunas derivadas de ListarEntityCards) + release_date
@@ -893,6 +917,10 @@ type ObterEntityCardRow struct {
 // (owned/file_count/match_confidence/has_poster), entao o mapeamento reusa o cardDTO.
 // owned/file_count contam TAMBEM a juncao media_file_entity -- ver a nota longa em
 // ListarEntityCards (o card do episodio possui arquivo so pela juncao).
+// completeness_complete/completeness_missing_json vem do CACHE persistido
+// entity_catalog_completeness (briefing 0058, recalculado em lote pelo job
+// saude_biblioteca) via LEFT JOIN -- NULL quando o item ainda nao foi
+// avaliado (item novo, ou draft).
 func (q *Queries) ObterEntityCard(ctx context.Context, id string) (ObterEntityCardRow, error) {
 	row := q.db.QueryRowContext(ctx, obterEntityCard, id)
 	var i ObterEntityCardRow
@@ -906,6 +934,8 @@ func (q *Queries) ObterEntityCard(ctx context.Context, id string) (ObterEntityCa
 		&i.FileCount,
 		&i.MatchConfidence,
 		&i.HasPoster,
+		&i.CompletenessComplete,
+		&i.CompletenessMissingJson,
 	)
 	return i, err
 }
@@ -1099,4 +1129,33 @@ func (q *Queries) ObterEntityPorTvdb(ctx context.Context, externalIDTvdb sql.Nul
 		&i.LastExternalMatchAttemptAt,
 	)
 	return i, err
+}
+
+const upsertEntityCatalogCompleteness = `-- name: UpsertEntityCatalogCompleteness :exec
+INSERT INTO entity_catalog_completeness (
+    entity_id, complete, missing_json
+) VALUES (
+    ?1, ?2, ?3
+)
+ON CONFLICT (entity_id) DO UPDATE SET
+    complete = excluded.complete,
+    missing_json = excluded.missing_json,
+    evaluated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+`
+
+type UpsertEntityCatalogCompletenessParams struct {
+	EntityID    string
+	Complete    int64
+	MissingJson string
+}
+
+// Grava (ou substitui) o resultado da avaliacao de completude de CATALOGACAO
+// (briefing 0058) de UM item -- chamada pelo recalculo em lote
+// (RecalcularCompletudeCatalogacao, job saude_biblioteca). Conflito na PK
+// (entity_id) atualiza complete/missing_json e recarimba evaluated_at --
+// nunca cria uma segunda linha para a mesma entity (1:1, mesmo padrao de
+// UpsertAppSetting).
+func (q *Queries) UpsertEntityCatalogCompleteness(ctx context.Context, arg UpsertEntityCatalogCompletenessParams) error {
+	_, err := q.db.ExecContext(ctx, upsertEntityCatalogCompleteness, arg.EntityID, arg.Complete, arg.MissingJson)
+	return err
 }

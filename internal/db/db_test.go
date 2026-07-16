@@ -105,16 +105,16 @@ func TestMigrateUp(t *testing.T) {
 	if err := d.Migrate(ctx); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	// Há treze migrations (0001 semente + 0002 schema do núcleo + 0003
+	// Há catorze migrations (0001 semente + 0002 schema do núcleo + 0003
 	// media_file.library_source_id + 0004 media_external/media_override + 0005
 	// app_settings/entity.original_language + 0006 external_detail + 0007
 	// series: entity_relation.sort_index + entity.external_id_tvdb + 0008
 	// library_source.content_type + 0009 media_file_entity + 0010
 	// person/company/credit + 0011 job_definition/job_execution + 0012 seed
-	// do job saude_biblioteca + 0013 entity.last_external_match_attempt_at,
-	// briefing 0056).
-	if v := mustSchemaVersion(t, d); v != 13 {
-		t.Errorf("versão após up = %d, quero 13", v)
+	// do job saude_biblioteca + 0013 entity.last_external_match_attempt_at
+	// (briefing 0056) + 0014 entity_catalog_completeness (briefing 0058).
+	if v := mustSchemaVersion(t, d); v != 14 {
+		t.Errorf("versão após up = %d, quero 14", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -159,6 +159,10 @@ func TestMigrateDown(t *testing.T) {
 	}
 
 	// Down reverte uma migration por vez, do topo para a base.
+	downPara(t, d, 13) // 0014: remove entity_catalog_completeness.
+	querFalha(t, d, "SELECT 1 FROM entity_catalog_completeness",
+		"tabela entity_catalog_completeness ainda existe após o down do 0014")
+
 	downPara(t, d, 12) // 0013: remove entity.last_external_match_attempt_at.
 	querFalha(t, d, "SELECT last_external_match_attempt_at FROM entity",
 		"coluna last_external_match_attempt_at ainda existe após o down do 0013")

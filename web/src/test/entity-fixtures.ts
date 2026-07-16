@@ -165,6 +165,7 @@ export function baseEntity(over: Partial<ResolvedEntity> = {}): ResolvedEntity {
     external_links: {},
     ancestors: [],
     ownership: null,
+    catalog_completeness: null,
     ...over,
   }
 }

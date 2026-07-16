@@ -43,6 +43,7 @@ const draftCard: EntityCard = {
   file_count: 1,
   match_confidence: null,
   poster_url: null,
+  catalog_completeness: null,
 }
 
 const baixaCard: EntityCard = {
@@ -54,6 +55,7 @@ const baixaCard: EntityCard = {
   file_count: 1,
   match_confidence: 40,
   poster_url: null,
+  catalog_completeness: null,
 }
 
 const externo: ExternalResult = {
