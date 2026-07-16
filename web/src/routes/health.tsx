@@ -14,6 +14,7 @@ import type {
   DatabaseHealth,
   MediaFilesUsage,
   SourceStorage,
+  StorageSnapshot,
   UsageCounts,
 } from '@/lib/api'
 
@@ -107,7 +108,7 @@ function SystemSection() {
       </div>
 
       <StorageBlock
-        data={data?.storage?.sources}
+        data={data?.storage}
         isPending={isPending}
         isError={isError}
         message={mensagemErro}
@@ -218,13 +219,13 @@ function StorageBlock({
   isPending,
   isError,
   message,
-}: BlockState & { data: SourceStorage[] | undefined }) {
+}: BlockState & { data: StorageSnapshot | undefined }) {
   return (
     <Card size="sm">
       <CardHeader>
         <CardTitle>Armazenamento</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-col gap-4">
         {isPending ? (
           <LoadingState label="Carregando…" />
         ) : isError || !data ? (
@@ -232,16 +233,44 @@ function StorageBlock({
             title="Não foi possível carregar a telemetria"
             message={message}
           />
-        ) : data.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nenhuma fonte cadastrada.
-          </p>
         ) : (
-          <ul className="flex flex-col gap-3">
-            {data.map((source) => (
-              <StorageRow key={source.source_id} source={source} />
-            ))}
-          </ul>
+          <>
+            {/* 0063: distribuição do disco ocupado pelas pastas rastreadas —
+                mídia gerenciada (vídeo + NFO/arte de nome canônico, 0062),
+                cache interno da app (assetsDir) e o resto não identificado.
+                Só leitura: nenhuma ação sobre "não identificado" aqui. */}
+            <dl className="flex flex-col gap-1.5 text-sm">
+              <BlockRow
+                label="Mídia gerenciada"
+                value={formatBytes(data.managed_media_bytes)}
+              />
+              <BlockRow
+                label="Cache da aplicação"
+                value={formatBytes(data.app_cache_bytes)}
+              />
+              <BlockRow
+                label="Não identificado"
+                value={formatBytes(data.unmanaged_bytes)}
+              />
+            </dl>
+
+            <div className="flex flex-col gap-3 border-t border-border pt-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                Por fonte
+              </p>
+              {data.sources.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nenhuma fonte cadastrada.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {data.sources.map((source) => (
+                    <StorageRow key={source.source_id} source={source} />
+                  ))}
+                </ul>
+              )}
+            </div>
+          </>
         )}
       </CardContent>
     </Card>

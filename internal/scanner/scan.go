@@ -12,6 +12,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
+	"github.com/rafaelvieiras/my-media-db/internal/localmedia"
 	"github.com/rafaelvieiras/my-media-db/internal/naming"
 )
 
@@ -75,13 +76,18 @@ func (m *Manager) executarScan(ctx context.Context, source library.Source, j *jo
 		log.Printf("scanner: ffprobe indisponível; mediainfo ficará vazio no scan de %q", source.ID)
 	}
 
-	arquivos, err := coletarVideos(source.Path)
+	arquivos, naoVideos, err := coletarArquivos(source.Path)
 	if err != nil {
 		// A raiz ficou inacessível: sinaliza offline e NÃO marca nada missing.
 		m.persistirEstado(ctx, source, "offline")
 		return err
 	}
 	m.setTotal(j, len(arquivos))
+	// Classificação de arquivo NÃO-vídeo (briefing 0063, extensão do 0062):
+	// reaproveita a MESMA passada de WalkDir de coletarArquivos acima -- nunca
+	// varre o disco de novo só para isto.
+	managed, unmanaged := classificarNaoVideos(arquivos, naoVideos)
+	m.setStorageNaoVideo(j, managed, unmanaged)
 
 	if err := r.processarLotes(ctx, j, arquivos); err != nil {
 		// Cancelado/erro no meio: lotes já commitados persistem; não fechamos o
@@ -238,15 +244,24 @@ func (m *Manager) persistirEstado(ctx context.Context, source library.Source, st
 	}
 }
 
-// coletarVideos percorre a raiz e devolve os caminhos de arquivos de vídeo, em
-// ordem estável. Erro no stat da própria raiz é fatal (fonte offline); diretórios
-// internos ilegíveis são pulados (logados), não derrubam o walk.
-func coletarVideos(root string) ([]string, error) {
+// arquivoBruto é um arquivo NÃO-vídeo encontrado durante coletarArquivos,
+// pré-computado (path + tamanho) para a classificação managed/unmanaged do
+// briefing 0063 -- sem reabrir o arquivo depois.
+type arquivoBruto struct {
+	Path string
+	Size int64
+}
+
+// coletarArquivos percorre a raiz UMA ÚNICA VEZ (WalkDir) e separa vídeos
+// (para o pipeline de scan já existente) de não-vídeos (para a classificação
+// managed/unmanaged do briefing 0063, ver classificarNaoVideos) -- nunca duas
+// passadas de disco. Erro no stat da própria raiz é fatal (fonte offline);
+// diretórios internos ilegíveis são pulados (logados), não derrubam o walk.
+func coletarArquivos(root string) (videos []string, naoVideos []arquivoBruto, err error) {
 	if _, err := os.Stat(root); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var out []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			log.Printf("scanner: pulando %q: %v", path, err)
 			if d != nil && d.IsDir() {
@@ -258,15 +273,46 @@ func coletarVideos(root string) ([]string, error) {
 			return nil
 		}
 		if extensoesVideo[strings.ToLower(filepath.Ext(path))] {
-			out = append(out, path)
+			videos = append(videos, path)
+			return nil
 		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			log.Printf("scanner: nao foi possivel obter o tamanho de %q (ignorado na classificacao de armazenamento): %v", path, ierr)
+			return nil
+		}
+		naoVideos = append(naoVideos, arquivoBruto{Path: path, Size: info.Size()})
 		return nil
 	})
-	if err != nil {
-		return nil, err
+	if walkErr != nil {
+		return nil, nil, walkErr
 	}
-	sort.Strings(out)
-	return out, nil
+	sort.Strings(videos)
+	return videos, naoVideos, nil
+}
+
+// classificarNaoVideos agrupa os vídeos por diretório (nome-base sem
+// extensão, ver localmedia.NomeBaseVideo) e classifica cada arquivo
+// NÃO-vídeo encontrado na MESMA varredura em managed (nome casa com um
+// padrão canônico do briefing 0062, ver localmedia.EhArquivoGerenciado) ou
+// unmanaged (resto) -- soma de bytes por categoria. Puro (não acessa disco):
+// os tamanhos já vieram de coletarArquivos.
+func classificarNaoVideos(videos []string, naoVideos []arquivoBruto) (managedBytes, unmanagedBytes int64) {
+	basesPorDir := make(map[string][]string, len(videos))
+	for _, v := range videos {
+		dir := filepath.Dir(v)
+		basesPorDir[dir] = append(basesPorDir[dir], localmedia.NomeBaseVideo(v))
+	}
+	for _, nv := range naoVideos {
+		dir := filepath.Dir(nv.Path)
+		nome := filepath.Base(nv.Path)
+		if localmedia.EhArquivoGerenciado(nome, basesPorDir[dir]) {
+			managedBytes += nv.Size
+		} else {
+			unmanagedBytes += nv.Size
+		}
+	}
+	return managedBytes, unmanagedBytes
 }
 
 // descobrirPoster procura a arte local: poster.jpg/folder.jpg no diretório da

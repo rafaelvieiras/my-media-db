@@ -88,6 +88,15 @@ type Server struct {
 	// cacheExterno). Sempre presente (mesmo sem banco; só nunca é populado
 	// nesse caso, já que o handler barra antes com s.telemetry == nil).
 	telemetryCache *telemetryCache
+	// libraryHealth é o MESMO Handler do job saude_biblioteca registrado por
+	// WithLibraryHealthJob (briefing 0053) — guardado à parte (além de já
+	// estar no Registry de s.jobs) para health_system.go ler
+	// UltimoResultadoStorage (briefing 0063: managed/unmanaged de arquivo
+	// NÃO-vídeo da última execução do job, sem recalcular por fora). Nil
+	// quando WithLibraryHealthJob não foi aplicada (ou sem banco/library/
+	// scanner) — os campos novos de storage degradam para 0 nesse caso, mesmo
+	// espírito defensivo do resto do Server.
+	libraryHealth *libraryhealth.Handler
 }
 
 // Option configura opcionalmente o Server na construção, preservando a
@@ -167,7 +176,9 @@ func WithLibraryHealthJob() Option {
 		// retroativo, 0054/0056) quanto libraryhealth.CompletenessRecalculator
 		// (recalculo do cache de completude de catalogacao, briefing 0058) --
 		// os dois parametros recebem o MESMO *Server.
-		s.jobs.Registry.Registrar(libraryhealth.New(s.library, s.scanner, curation.New(s.db), s, s))
+		h := libraryhealth.New(s.library, s.scanner, curation.New(s.db), s, s)
+		s.libraryHealth = h
+		s.jobs.Registry.Registrar(h)
 	}
 }
 

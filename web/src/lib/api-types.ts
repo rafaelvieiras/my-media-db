@@ -1064,8 +1064,15 @@ export interface components {
       present: number
       missing: number
     }
+    /** @description A partir do briefing 0063, além de banco e mídia RASTREADA por fonte (`sources`), diferencia o disco ocupado pelas pastas rastreadas em mídia gerenciada, cache interno da app e não identificado — reaproveitando a MESMA varredura do job de saúde da biblioteca (0053), sem varredura de disco dedicada. */
     StorageSnapshot: {
       sources: components['schemas']['SourceStorage'][]
+      /** @description Soma de vídeos indexados (media_file.size) + arquivos de NFO/arte com nome canônico (briefing 0062, internal/localmedia/naming.go) dentro das pastas rastreadas. Reflete o último resultado do job de saúde da biblioteca (0053), não uma varredura sob demanda. */
+      managed_media_bytes: number
+      /** @description Tamanho total do cache interno da aplicação (`assetsDir`) — arte e sidecars baixados que ainda não foram materializados na pasta real, ou que vivem só no cache (fontes sem mídia local). */
+      app_cache_bytes: number
+      /** @description Resto encontrado dentro das pastas rastreadas que não casa nem com vídeo indexado nem com NFO/arte de nome canônico do 0062 (samples, legendas soltas, lixo de outra ferramenta). Não inclui ação alguma — este campo só mede/exibe (briefing 0063). */
+      unmanaged_bytes: number
     }
     /** @description Uma linha por library_source cadastrada: quanto de mídia RASTREADA (SUM(media_file.size), sem varrer o filesystem de novo) ela ocupa e o espaço livre/total do filesystem que hospeda `path`. `offline`/`error` espelham a semântica de avaliarState já usada em library.Listar (o path não responde a Statfs); `filesystem` é `null` quando offline — sem número inventado. Erro em UMA fonte não aborta as demais. */
     SourceStorage: {

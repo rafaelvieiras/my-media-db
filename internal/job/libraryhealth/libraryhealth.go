@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/library"
@@ -47,6 +48,12 @@ type LibraryLister interface {
 type ScanRunner interface {
 	Start(source library.Source) (string, error)
 	Status(sourceID string) scanner.Status
+	// StorageNaoVideo devolve os bytes de arquivo NÃO-vídeo classificados
+	// como managed/unmanaged (briefing 0063) na última varredura completa da
+	// fonte -- ok=false se nunca houve scan. Calculado DENTRO da mesma
+	// passada de WalkDir que Start já dispara (scanner.coletarArquivos);
+	// este pacote não varre o disco de novo, só lê o resultado em memória.
+	StorageNaoVideo(sourceID string) (managedBytes, unmanagedBytes int64, ok bool)
 }
 
 // Contador e o subconjunto de curation.Servico que o Handler consome: as
@@ -90,6 +97,17 @@ type CompletenessRecalculator interface {
 	RecalcularCompletudeCatalogacao(ctx context.Context) (avaliados, incompletos int, err error)
 }
 
+// resultadoStorage e o agregado managed/unmanaged de arquivo NÃO-vídeo
+// (briefing 0063) da ÚLTIMA execução do job que rodou pelo menos uma
+// fonte -- espelha o mesmo padrão de "resposta calculada sob demanda, sem
+// cache de longa duração no banco" do briefing 0055 (Statfs): fica só em
+// memória, recalculado a cada rodada do job saude_biblioteca.
+type resultadoStorage struct {
+	managedBytes   int64
+	unmanagedBytes int64
+	computadoEm    time.Time
+}
+
 // Handler e o Handler do job saude_biblioteca.
 type Handler struct {
 	library      LibraryLister
@@ -97,6 +115,10 @@ type Handler struct {
 	contador     Contador
 	matcher      Matcher
 	completeness CompletenessRecalculator
+
+	muStorage sync.Mutex
+	storage   resultadoStorage
+	storageOK bool
 }
 
 // New cria o Handler a partir do servico de datasources, do gerenciador de
@@ -131,6 +153,7 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 	}
 
 	escaneadas, falhas := h.escanearTodas(ctx, sources)
+	h.atualizarStorage(sources)
 	if len(sources) > 0 && escaneadas == 0 {
 		return "", fmt.Errorf("todas as %d fonte(s) falharam ao escanear: %s",
 			len(sources), strings.Join(falhas, "; "))
@@ -222,6 +245,44 @@ func (h *Handler) rodarRecalculoCompletude(ctx context.Context) (avaliados, inco
 		return 0, 0
 	}
 	return avaliados, incompletos
+}
+
+// atualizarStorage soma, por TODA fonte cadastrada (não só as escaneadas com
+// sucesso NESTA rodada), os buckets managed/unmanaged de arquivo NÃO-vídeo
+// que o scanner.Manager guarda em memória (briefing 0063), e grava o
+// agregado para internal/server/health_system.go ler via
+// UltimoResultadoStorage. Uma fonte offline nesta rodada simplesmente NÃO
+// atualiza seu bucket no scanner.Manager (Start falha antes de tocar o
+// estado do job) -- então o valor somado aqui automaticamente reflete a
+// política "mantém o último valor calculado" do briefing 0063 §3/§6, sem
+// nenhuma lógica extra de offline neste pacote (mesma política de
+// UsoDisco/Statfs do briefing 0055). Best-effort: nunca falha o job.
+func (h *Handler) atualizarStorage(sources []library.Source) {
+	var managed, unmanaged int64
+	for _, src := range sources {
+		m, u, ok := h.scanner.StorageNaoVideo(src.ID)
+		if !ok {
+			continue
+		}
+		managed += m
+		unmanaged += u
+	}
+	h.muStorage.Lock()
+	h.storage = resultadoStorage{managedBytes: managed, unmanagedBytes: unmanaged, computadoEm: time.Now().UTC()}
+	h.storageOK = true
+	h.muStorage.Unlock()
+}
+
+// UltimoResultadoStorage devolve o agregado managed/unmanaged de arquivo
+// NÃO-vídeo (briefing 0063) da ÚLTIMA execução do job saude_biblioteca --
+// lido por internal/server/health_system.go para montar
+// storage.managed_media_bytes (somado ao vídeo indexado)/
+// storage.unmanaged_bytes. ok=false antes da primeira execução (processo
+// recém-iniciado, job ainda não rodou nenhuma vez).
+func (h *Handler) UltimoResultadoStorage() (managedBytes, unmanagedBytes int64, computadoEm time.Time, ok bool) {
+	h.muStorage.Lock()
+	defer h.muStorage.Unlock()
+	return h.storage.managedBytes, h.storage.unmanagedBytes, h.storage.computadoEm, h.storageOK
 }
 
 // escanearTodas dispara e aguarda o scan de cada fonte, sequencialmente.

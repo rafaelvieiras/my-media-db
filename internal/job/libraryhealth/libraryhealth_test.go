@@ -32,8 +32,9 @@ type scanFake struct {
 	runErr   map[string]error
 	duracao  time.Duration
 
-	mu     sync.Mutex
-	status map[string]scanner.Status
+	mu      sync.Mutex
+	status  map[string]scanner.Status
+	storage map[string][2]int64 // sourceID -> [managed, unmanaged]
 }
 
 func newScanFake() *scanFake {
@@ -41,7 +42,21 @@ func newScanFake() *scanFake {
 		startErr: map[string]error{},
 		runErr:   map[string]error{},
 		status:   map[string]scanner.Status{},
+		storage:  map[string][2]int64{},
 	}
+}
+
+// StorageNaoVideo satisfaz ScanRunner (briefing 0063): devolve o valor
+// configurado em `storage` para a fonte, ou ok=false se ausente -- mesma
+// semântica de "nunca houve scan" do scanner.Manager real.
+func (f *scanFake) StorageNaoVideo(sourceID string) (managedBytes, unmanagedBytes int64, ok bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	v, existe := f.storage[sourceID]
+	if !existe {
+		return 0, 0, false
+	}
+	return v[0], v[1], true
 }
 
 func (f *scanFake) Start(source library.Source) (string, error) {
@@ -506,5 +521,89 @@ func TestExecutarSemCompletenessRecalculatorNaoRecalcula(t *testing.T) {
 	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfã(s)"
 	if msg != quero {
 		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// ── Storage diferenciado (briefing 0063) ─────────────────────────────────────
+
+// TestExecutarAgregaStorageNaoVideoDeTodasAsFontes prova que, apos uma
+// execucao bem-sucedida, UltimoResultadoStorage soma managed/unmanaged de
+// TODAS as fontes cadastradas.
+func TestExecutarAgregaStorageNaoVideoDeTodasAsFontes(t *testing.T) {
+	acelerarPoll(t)
+	scn := newScanFake()
+	scn.storage["s1"] = [2]int64{100, 10}
+	scn.storage["s2"] = [2]int64{200, 20}
+	lib := &libraryFake{sources: []library.Source{
+		{ID: "s1", Path: "/lib/um"},
+		{ID: "s2", Path: "/lib/dois"},
+	}}
+	h := New(lib, scn, &contadorFake{}, &matcherFake{}, nil)
+
+	if _, err := h.Executar(context.Background(), nil); err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+
+	managed, unmanaged, computadoEm, ok := h.UltimoResultadoStorage()
+	if !ok {
+		t.Fatal("UltimoResultadoStorage ok=false apos execucao bem-sucedida")
+	}
+	if managed != 300 {
+		t.Errorf("managedBytes = %d, quero 300 (100+200)", managed)
+	}
+	if unmanaged != 30 {
+		t.Errorf("unmanagedBytes = %d, quero 30 (10+20)", unmanaged)
+	}
+	if computadoEm.IsZero() {
+		t.Error("computadoEm zero, quero preenchido")
+	}
+}
+
+// TestUltimoResultadoStorageAntesDeExecutarDevolveOkFalse prova que, antes de
+// QUALQUER execucao, o Handler recem-criado nao tem resultado de storage
+// (processo recem-iniciado, job ainda nao rodou) -- o chamador
+// (health_system) deve tratar isso como "sem dado", nao como zero.
+func TestUltimoResultadoStorageAntesDeExecutarDevolveOkFalse(t *testing.T) {
+	h := New(&libraryFake{}, newScanFake(), &contadorFake{}, &matcherFake{}, nil)
+	if _, _, _, ok := h.UltimoResultadoStorage(); ok {
+		t.Fatal("ok = true antes de qualquer execucao, quero false")
+	}
+}
+
+// TestExecutarStorageMantemUltimoValorDeFonteOffline prova a política do
+// briefing 0063 §3/§6: uma fonte que falha NESTA rodada (offline) mantém o
+// ÚLTIMO valor conhecido (já presente no scanner.Manager de uma rodada
+// anterior bem-sucedida) em vez de zerar -- sem nenhuma lógica extra de
+// "offline" neste pacote, é consequência direta de Start() nunca sobrescrever
+// o storage quando falha (mesmo espírito de UsoDisco/Statfs do briefing
+// 0055).
+func TestExecutarStorageMantemUltimoValorDeFonteOffline(t *testing.T) {
+	acelerarPoll(t)
+	scn := newScanFake()
+	// s-offline já tem um valor de uma rodada anterior bem-sucedida -- Start()
+	// vai falhar nesta rodada, mas scn.storage não é tocado (mesmo
+	// comportamento do scanner.Manager real).
+	scn.storage["s-offline"] = [2]int64{500, 50}
+	scn.startErr["s-offline"] = errors.New("datasource inacessível (offline)")
+	scn.storage["s-ok"] = [2]int64{100, 10}
+	lib := &libraryFake{sources: []library.Source{
+		{ID: "s-ok", Path: "/lib/ok"},
+		{ID: "s-offline", Path: "/lib/offline"},
+	}}
+	h := New(lib, scn, &contadorFake{}, &matcherFake{}, nil)
+
+	if _, err := h.Executar(context.Background(), nil); err != nil {
+		t.Fatalf("Executar não deveria falhar com sucesso parcial: %v", err)
+	}
+
+	managed, unmanaged, _, ok := h.UltimoResultadoStorage()
+	if !ok {
+		t.Fatal("ok=false, quero true (pelo menos s-ok tem dado)")
+	}
+	if managed != 600 {
+		t.Errorf("managedBytes = %d, quero 600 (100 de s-ok + 500 mantido de s-offline)", managed)
+	}
+	if unmanaged != 60 {
+		t.Errorf("unmanagedBytes = %d, quero 60 (10+50)", unmanaged)
 	}
 }

@@ -68,6 +68,15 @@ type job struct {
 	startedAt  time.Time
 	lastError  string
 	cancel     context.CancelFunc
+
+	// naoVideoManagedBytes/naoVideoUnmanagedBytes são o resultado da
+	// classificação de arquivo NÃO-vídeo (briefing 0063) da ÚLTIMA passada de
+	// WalkDir deste job -- gravados por classificarNaoVideos/
+	// setStorageNaoVideo, ANTES do scan terminar (não esperam
+	// finalizarCicloVida), para sobreviverem mesmo se o scan for cancelado no
+	// meio dos lotes de escrita.
+	naoVideoManagedBytes   int64
+	naoVideoUnmanagedBytes int64
 }
 
 // Status é a fotografia consultável de um job (superfície da API GET .../scan).
@@ -206,6 +215,32 @@ func (m *Manager) addSeen(j *job, n int) {
 	m.mu.Lock()
 	j.filesSeen += n
 	m.mu.Unlock()
+}
+
+// setStorageNaoVideo grava o resultado da classificação managed/unmanaged de
+// arquivo NÃO-vídeo (briefing 0063) desta passada de WalkDir, sob o lock.
+func (m *Manager) setStorageNaoVideo(j *job, managedBytes, unmanagedBytes int64) {
+	m.mu.Lock()
+	j.naoVideoManagedBytes = managedBytes
+	j.naoVideoUnmanagedBytes = unmanagedBytes
+	m.mu.Unlock()
+}
+
+// StorageNaoVideo devolve os bytes de arquivo NÃO-vídeo classificados como
+// managed (nome casa com um padrão canônico do briefing 0062) e unmanaged
+// (resto) na ÚLTIMA varredura completa desta fonte -- briefing 0063, sem
+// varrer o disco de novo (o valor já foi calculado DENTRO de executarScan,
+// na MESMA passada de WalkDir que coletarArquivos já fazia). ok=false quando
+// nunca houve scan para esta fonte -- o chamador (libraryhealth.Handler)
+// trata isso como "sem dado ainda", não como zero.
+func (m *Manager) StorageNaoVideo(sourceID string) (managedBytes, unmanagedBytes int64, ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, existe := m.jobs[sourceID]
+	if !existe {
+		return 0, 0, false
+	}
+	return j.naoVideoManagedBytes, j.naoVideoUnmanagedBytes, true
 }
 
 // acessivel diz se um caminho existe, é diretório e é legível (stat barato).

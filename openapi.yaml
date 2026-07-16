@@ -1819,11 +1819,38 @@ components:
         missing: { type: integer }
     StorageSnapshot:
       type: object
-      required: [sources]
+      description: >
+        A partir do briefing 0063, além de banco e mídia RASTREADA por fonte
+        (`sources`), diferencia o disco ocupado pelas pastas rastreadas em
+        mídia gerenciada, cache interno da app e não identificado —
+        reaproveitando a MESMA varredura do job de saúde da biblioteca
+        (0053), sem varredura de disco dedicada.
+      required:
+        [sources, managed_media_bytes, app_cache_bytes, unmanaged_bytes]
       properties:
         sources:
           type: array
           items: { $ref: "#/components/schemas/SourceStorage" }
+        managed_media_bytes:
+          type: integer
+          description: >
+            Soma de vídeos indexados (media_file.size) + arquivos de NFO/arte
+            com nome canônico (briefing 0062, internal/localmedia/naming.go)
+            dentro das pastas rastreadas. Reflete o último resultado do job
+            de saúde da biblioteca (0053), não uma varredura sob demanda.
+        app_cache_bytes:
+          type: integer
+          description: >
+            Tamanho total do cache interno da aplicação (`assetsDir`) — arte
+            e sidecars baixados que ainda não foram materializados na pasta
+            real, ou que vivem só no cache (fontes sem mídia local).
+        unmanaged_bytes:
+          type: integer
+          description: >
+            Resto encontrado dentro das pastas rastreadas que não casa nem
+            com vídeo indexado nem com NFO/arte de nome canônico do 0062
+            (samples, legendas soltas, lixo de outra ferramenta). Não inclui
+            ação alguma — este campo só mede/exibe (briefing 0063).
     SourceStorage:
       type: object
       description: >

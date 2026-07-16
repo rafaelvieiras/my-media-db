@@ -33,6 +33,9 @@ const SYSTEM_HEALTH_OK = {
     mem_alloc_bytes: 18874368,
   },
   storage: {
+    managed_media_bytes: 850000000000,
+    app_cache_bytes: 2147483648,
+    unmanaged_bytes: 5368709120,
     sources: [
       {
         source_id: 'a1b2',
@@ -184,6 +187,21 @@ describe('HealthScreen', () => {
       expect(screen.getByText('/mnt/filmes')).toBeInTheDocument()
       expect(screen.getByText('/mnt/series')).toBeInTheDocument()
       expect(screen.getByText('indisponível')).toBeInTheDocument()
+    })
+
+    it('mostra os três buckets de disco do briefing 0063 (mídia gerenciada/cache/não identificado)', async () => {
+      mockFetch()
+
+      renderWithClient(<HealthScreen />)
+
+      await waitFor(() =>
+        expect(screen.getByText('Mídia gerenciada')).toBeInTheDocument(),
+      )
+      expect(screen.getByText('791,62 GB')).toBeInTheDocument() // managed_media_bytes
+      expect(screen.getByText('Cache da aplicação')).toBeInTheDocument()
+      expect(screen.getByText('2,00 GB')).toBeInTheDocument() // app_cache_bytes
+      expect(screen.getByText('Não identificado')).toBeInTheDocument()
+      expect(screen.getByText('5,00 GB')).toBeInTheDocument() // unmanaged_bytes
     })
   })
 })
