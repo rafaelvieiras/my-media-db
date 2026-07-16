@@ -47,6 +47,14 @@ export type PersonCredit = components['schemas']['PersonCredit']
 export type PersonExternalCredit = components['schemas']['PersonExternalCredit']
 export type ImportRequest = components['schemas']['ImportRequest']
 export type LanguageSettings = components['schemas']['LanguageSettings']
+// Config de completude de CATALOGAÇÃO (briefing 0057) — por `entity.type`, quais
+// campos/artes o dono considera desejáveis. Conceito DIFERENTE de completude de
+// POSSE (`web/src/lib/entity-badges.ts`, 0036/0037) — não reusar nomes daquele
+// módulo aqui.
+export type CatalogCompletenessSettings =
+  components['schemas']['CatalogCompletenessSettings']
+export type TypeCompletenessConfig =
+  components['schemas']['TypeCompletenessConfig']
 export type OverrideBlob = components['schemas']['OverrideBlob']
 export type OverridePatch = components['schemas']['OverridePatch']
 export type FieldDescriptor = components['schemas']['FieldDescriptor']
@@ -425,6 +433,31 @@ export async function putLanguageSettings(
     body: JSON.stringify(body),
   })
   return lerJson<LanguageSettings>(res)
+}
+
+// ── Settings de completude de catalogação (0057) ─────────────────────────────
+
+// Config vigente de completude de CATALOGAÇÃO (por `entity.type`). Quando não
+// há linha gravada, o backend responde o default de fábrica (description +
+// media_file + artwork:[poster] para movie/tv) sem gravar nada.
+export async function getCatalogCompletenessSettings(): Promise<CatalogCompletenessSettings> {
+  return lerJson<CatalogCompletenessSettings>(
+    await fetch(`${base}/api/v1/settings/catalog-completeness`),
+  )
+}
+
+// Grava (substituição total) a config de completude de catalogação. O 422 do
+// backend (chave de tipo vazia, kind de arte desconhecido) vira `ApiError` com
+// a mensagem pt-BR — exibida inline pela tela de configurações.
+export async function putCatalogCompletenessSettings(
+  body: CatalogCompletenessSettings,
+): Promise<CatalogCompletenessSettings> {
+  const res = await fetch(`${base}/api/v1/settings/catalog-completeness`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return lerJson<CatalogCompletenessSettings>(res)
 }
 
 export async function getEntityFiles(id: string): Promise<FileList> {

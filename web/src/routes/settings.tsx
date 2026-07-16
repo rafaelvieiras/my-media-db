@@ -1,11 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
-import { ErrorState, LoadingState } from '@/components/query-states'
+import {
+  ErrorState,
+  FormSaveFooter,
+  LoadingState,
+} from '@/components/query-states'
 import { languageSettingsQueryOptions } from '@/lib/queries'
 import { putLanguageSettings, type LanguageSettings } from '@/lib/api'
 import { IDIOMAS_DISPONIVEIS, rotuloIdioma } from '@/lib/languages'
+import { CatalogCompletenessForm } from '@/components/catalog-completeness-form'
 
 // Rota `/settings`: admin de idiomas (principal, fallback, permitidos). Lê as
 // settings, deixa editar e grava via PUT. A validação client-side espelha o
@@ -18,23 +22,39 @@ export function SettingsScreen() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
-      <div className="mb-4 flex flex-col gap-1">
-        <h1 className="font-heading text-xl font-semibold">Configurações</h1>
-        <p className="text-sm text-muted-foreground">
-          Idiomas do catálogo: principal, fallback e os permitidos.
-        </p>
-      </div>
+      <section className="mb-10">
+        <div className="mb-4 flex flex-col gap-1">
+          <h1 className="font-heading text-xl font-semibold">Configurações</h1>
+          <p className="text-sm text-muted-foreground">
+            Idiomas do catálogo: principal, fallback e os permitidos.
+          </p>
+        </div>
 
-      {isPending ? (
-        <LoadingState label="Carregando configurações…" />
-      ) : isError ? (
-        <ErrorState
-          title="Não foi possível carregar as configurações"
-          message={error instanceof Error ? error.message : undefined}
-        />
-      ) : (
-        <LanguageSettingsForm inicial={data} />
-      )}
+        {isPending ? (
+          <LoadingState label="Carregando configurações…" />
+        ) : isError ? (
+          <ErrorState
+            title="Não foi possível carregar as configurações"
+            message={error instanceof Error ? error.message : undefined}
+          />
+        ) : (
+          <LanguageSettingsForm inicial={data} />
+        )}
+      </section>
+
+      <section>
+        <div className="mb-4 flex flex-col gap-1">
+          <h2 className="font-heading text-lg font-semibold">
+            Completude de catalogação
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Por tipo de mídia, quais campos e artes são desejáveis para
+            considerar um item bem catalogado.
+          </p>
+        </div>
+
+        <CatalogCompletenessForm />
+      </section>
     </main>
   )
 }
@@ -151,22 +171,11 @@ function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
         </div>
       </fieldset>
 
-      {mensagemErro ? (
-        <p role="alert" className="text-sm text-destructive">
-          {mensagemErro}
-        </p>
-      ) : null}
-      {mutation.isSuccess && !mensagemErro ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Configurações salvas.
-        </p>
-      ) : null}
-
-      <div>
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending ? 'Salvando…' : 'Salvar'}
-        </Button>
-      </div>
+      <FormSaveFooter
+        erro={mensagemErro}
+        sucesso={mutation.isSuccess}
+        salvando={mutation.isPending}
+      />
     </form>
   )
 }

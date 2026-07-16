@@ -8,6 +8,7 @@ import {
   getEntityMembers,
   getArtwork,
   getExternalDetail,
+  getCatalogCompletenessSettings,
   getHealth,
   getSystemHealth,
   getLanguageSettings,
@@ -107,6 +108,15 @@ export const entityFieldsQueryOptions = queryOptions({
 export const languageSettingsQueryOptions = queryOptions({
   queryKey: ['settings', 'languages'],
   queryFn: getLanguageSettings,
+})
+
+// Config de completude de CATALOGAÇÃO (0057): fonte única para o formulário de
+// admin. Chave `['settings', 'catalog-completeness']` — invalidada pelo PUT da
+// tela de configurações. Conceito DIFERENTE de completude de POSSE
+// (`entity-badges.ts`) — não compartilha chave/cache com aquele.
+export const catalogCompletenessSettingsQueryOptions = queryOptions({
+  queryKey: ['settings', 'catalog-completeness'],
+  queryFn: getCatalogCompletenessSettings,
 })
 
 export function entityFilesQueryOptions(id: string) {

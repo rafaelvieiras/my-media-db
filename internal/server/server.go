@@ -58,6 +58,11 @@ type Server struct {
 	// settings é o cache leve (mutex) da config de idioma de app_settings (briefing
 	// 0019), invalidado no PUT /settings/languages. Sempre presente.
 	settings *settingsCache
+	// catalogCompleteness é o cache leve (mutex) da config de completude de
+	// CATALOGAÇÃO de app_settings (briefing 0057), invalidado no PUT
+	// /settings/catalog-completeness. Sempre presente. Não confundir com
+	// completude de POSSE (web/src/lib/entity-badges.ts).
+	catalogCompleteness *catalogCompletenessCache
 	// hostsImagem é a allowlist do proxy de imagem (GET /images; anti-SSRF). Default
 	// = hostsImagemPadrao; injetável em teste. httpImagem baixa a imagem (timeout
 	// curto). O proxy só opera com assetsDir configurado.
@@ -176,7 +181,8 @@ func (s *Server) Jobs() *job.Manager {
 // segue válida.
 func New(version string, database *db.DB, opts ...Option) *Server {
 	s := &Server{version: version, db: database, settings: &settingsCache{},
-		hostsImagem: hostsImagemPadrao, httpImagem: clienteImagemPadrao(),
+		catalogCompleteness: &catalogCompletenessCache{},
+		hostsImagem:         hostsImagemPadrao, httpImagem: clienteImagemPadrao(),
 		telemetryCache: novoTelemetryCache(ttlTelemetria)}
 	if database != nil {
 		s.library = library.New(database)
@@ -330,6 +336,12 @@ func (s *Server) Handler() (http.Handler, error) {
 			v1.Route("/settings", func(cfg chi.Router) {
 				cfg.Get("/languages", s.getLanguageSettings)
 				cfg.Put("/languages", s.putLanguageSettings)
+
+				// Completude de CATALOGAÇÃO por tipo (briefing 0057): quais campos/
+				// artes o dono considera desejáveis para um item estar bem
+				// catalogado. Diferente de completude de POSSE (front).
+				cfg.Get("/catalog-completeness", s.getCatalogCompletenessSettings)
+				cfg.Put("/catalog-completeness", s.putCatalogCompletenessSettings)
 			})
 
 			// Datasources da biblioteca (briefing 0008). Escritas (POST/DELETE)

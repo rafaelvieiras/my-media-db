@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SettingsScreen } from '@/routes/settings'
 import type { LanguageSettings } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
+import { erroJson, okJson } from '@/test/detail-harness'
+import { respostaCompletude } from '@/test/catalog-completeness-harness'
 
 // Config vigente devolvida pelo GET /settings/languages nos testes.
 const settingsIniciais: LanguageSettings = {
@@ -12,12 +14,10 @@ const settingsIniciais: LanguageSettings = {
   allowed: ['pt-BR', 'en'],
 }
 
-function okJson<T>(body: T, status = 200) {
-  return { ok: true, status, json: async () => body } as Response
-}
-
-// Roteia o fetch: GET devolve as settings iniciais; o PUT devolve `putResposta`
-// (config gravada) ou, quando `putErro` é dado, um envelope de erro (422).
+// Roteia o fetch: GET/PUT de idiomas são tratados aqui; GET/PUT de completude de
+// catalogação (0057) delegam a `respostaCompletude` (compartilhada com
+// catalog-completeness-form.test.tsx) — esta suíte só precisa que a 2ª seção não
+// quebre o mock de fetch, o comportamento próprio do formulário é coberto lá.
 function fetchRouter(opts?: {
   putResposta?: LanguageSettings
   putErro?: { status: number; code: string; message: string }
@@ -30,16 +30,16 @@ function fetchRouter(opts?: {
     }
     if (u === '/api/v1/settings/languages' && method === 'PUT') {
       if (opts?.putErro) {
-        return {
-          ok: false,
-          status: opts.putErro.status,
-          json: async () => ({
-            error: { code: opts.putErro!.code, message: opts.putErro!.message },
-          }),
-        } as Response
+        return erroJson(
+          opts.putErro.status,
+          opts.putErro.code,
+          opts.putErro.message,
+        )
       }
       return okJson(opts?.putResposta ?? settingsIniciais)
     }
+    const completude = respostaCompletude(u, method)
+    if (completude) return completude
     throw new Error(`rota nao mockada: ${method} ${u}`)
   })
 }
@@ -53,44 +53,70 @@ afterEach(() => {
 })
 
 // Renderiza a tela e espera o formulário (pós-carregamento das settings).
+// Devolve o escopo da seção de IDIOMAS: a tela agora tem duas seções, cada
+// uma com seu próprio botão "Salvar" — os testes desta suíte miram a de
+// idiomas (a de completude de catalogação tem sua própria suíte, ver
+// catalog-completeness-form.test.tsx).
 async function renderForm(fetchMock: ReturnType<typeof fetchRouter>) {
   vi.stubGlobal('fetch', fetchMock)
   renderWithClient(<SettingsScreen />)
+  const heading = await screen.findByRole('heading', { name: 'Configurações' })
+  const secaoIdiomas = within(heading.closest('section')!)
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Salvar' })).toBeInTheDocument(),
+    expect(
+      secaoIdiomas.getByRole('button', { name: 'Salvar' }),
+    ).toBeInTheDocument(),
   )
+  return secaoIdiomas
 }
 
 describe('SettingsScreen', () => {
   it('le a config vigente e semeia o formulario', async () => {
-    await renderForm(fetchRouter())
+    const secaoIdiomas = await renderForm(fetchRouter())
 
     // Principal semeado em pt-BR, fallback em en; ambos permitidos marcados.
-    expect(screen.getByLabelText('Idioma principal')).toHaveValue('pt-BR')
-    expect(screen.getByLabelText('Idioma de fallback')).toHaveValue('en')
+    expect(secaoIdiomas.getByLabelText('Idioma principal')).toHaveValue('pt-BR')
+    expect(secaoIdiomas.getByLabelText('Idioma de fallback')).toHaveValue('en')
     expect(
-      screen.getByRole('checkbox', { name: /Português \(BR\)/ }),
+      secaoIdiomas.getByRole('checkbox', { name: /Português \(BR\)/ }),
     ).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: /Inglês/ })).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: /Espanhol/ })).not.toBeChecked()
+    expect(secaoIdiomas.getByRole('checkbox', { name: /Inglês/ })).toBeChecked()
+    expect(
+      secaoIdiomas.getByRole('checkbox', { name: /Espanhol/ }),
+    ).not.toBeChecked()
+
+    // A 2ª seção (0057) aparece abaixo, com o formulário de completude já
+    // carregado.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Completude de catalogação' }),
+      ).toBeInTheDocument(),
+    )
   })
 
   it('valida principal fora dos permitidos e nao chama o PUT', async () => {
     const user = userEvent.setup()
     const fetchMock = fetchRouter()
-    await renderForm(fetchMock)
+    const secaoIdiomas = await renderForm(fetchMock)
 
     // 'es' nao esta em allowed; escolher como principal deve barrar no cliente.
-    await user.selectOptions(screen.getByLabelText('Idioma principal'), 'es')
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+    await user.selectOptions(
+      secaoIdiomas.getByLabelText('Idioma principal'),
+      'es',
+    )
+    await user.click(secaoIdiomas.getByRole('button', { name: 'Salvar' }))
 
     expect(
-      screen.getByText('O idioma principal precisa estar entre os permitidos.'),
+      secaoIdiomas.getByText(
+        'O idioma principal precisa estar entre os permitidos.',
+      ),
     ).toBeInTheDocument()
-    // Nenhum PUT foi enviado (validacao client-side barrou).
+    // Nenhum PUT foi enviado (validacao client-side barrou) para /languages.
     expect(
       fetchMock.mock.calls.some(
-        ([, init]) => (init as RequestInit | undefined)?.method === 'PUT',
+        ([url, init]) =>
+          String(url) === '/api/v1/settings/languages' &&
+          (init as RequestInit | undefined)?.method === 'PUT',
       ),
     ).toBe(false)
   })
@@ -104,17 +130,21 @@ describe('SettingsScreen', () => {
         allowed: ['pt-BR', 'en', 'es'],
       },
     })
-    await renderForm(fetchMock)
+    const secaoIdiomas = await renderForm(fetchMock)
 
     // Adiciona 'es' aos permitidos e salva (estado valido).
-    await user.click(screen.getByRole('checkbox', { name: /Espanhol/ }))
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+    await user.click(secaoIdiomas.getByRole('checkbox', { name: /Espanhol/ }))
+    await user.click(secaoIdiomas.getByRole('button', { name: 'Salvar' }))
 
     await waitFor(() =>
-      expect(screen.getByText('Configurações salvas.')).toBeInTheDocument(),
+      expect(
+        secaoIdiomas.getByText('Configurações salvas.'),
+      ).toBeInTheDocument(),
     )
     const putCall = fetchMock.mock.calls.find(
-      ([, init]) => (init as RequestInit | undefined)?.method === 'PUT',
+      ([url, init]) =>
+        String(url) === '/api/v1/settings/languages' &&
+        (init as RequestInit | undefined)?.method === 'PUT',
     )
     expect(putCall).toBeDefined()
     expect(JSON.parse((putCall![1] as RequestInit).body as string)).toEqual({
@@ -133,14 +163,14 @@ describe('SettingsScreen', () => {
         message: 'principal precisa estar entre os permitidos',
       },
     })
-    await renderForm(fetchMock)
+    const secaoIdiomas = await renderForm(fetchMock)
 
     // Estado valido no cliente (nao mexe em nada), mas o servidor rejeita.
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+    await user.click(secaoIdiomas.getByRole('button', { name: 'Salvar' }))
 
     await waitFor(() =>
       expect(
-        screen.getByText('principal precisa estar entre os permitidos'),
+        secaoIdiomas.getByText('principal precisa estar entre os permitidos'),
       ).toBeInTheDocument(),
     )
   })

@@ -204,6 +204,54 @@ paths:
         "422":
           $ref: "#/components/responses/Error"
 
+  /api/v1/settings/catalog-completeness:
+    get:
+      operationId: getCatalogCompletenessSettings
+      summary: Config de completude de catalogação, por tipo (briefing 0057).
+      description: >
+        Devolve a config vigente de "completude de catalogação" — quais campos e
+        artes o dono considera desejáveis para um item de cada `entity.type` estar
+        bem catalogado (conceito DIFERENTE de completude de POSSE, ver
+        `web/src/lib/entity-badges.ts`). Quando ainda não há chave
+        `catalog_completeness` gravada em `app_settings`, responde o default de
+        fábrica (`description` + `media_file` + `artwork:[poster]` marcados para
+        `movie` e `tv`, resto desmarcado) sem gravar nada.
+      tags: [settings]
+      responses:
+        "200":
+          description: Config de completude de catalogação.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogCompletenessSettings" }
+    put:
+      operationId: putCatalogCompletenessSettings
+      summary: Grava a config de completude de catalogação (substituição total).
+      description: >
+        Substitui a config inteira (não é PATCH parcial — mesmo padrão do
+        PUT /settings/languages: o formulário sempre manda o objeto completo).
+        Valida que cada chave de tipo não é vazia (`""`) e que cada item de
+        `artwork` pertence ao registro de kinds válidos do sistema
+        (`internal/server/assets.go`); tipos sem entrada (`{}`) são aceitos e
+        equivalem a "nada exigido" para os tipos ausentes. Responde o eco da
+        config gravada. 400 corpo não é objeto JSON válido; 422 chave de tipo
+        vazia ou kind de arte desconhecido.
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CatalogCompletenessSettings" }
+      responses:
+        "200":
+          description: Config gravada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogCompletenessSettings" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+
   /api/v1/schema/entity-fields:
     get:
       operationId: getEntityFieldsSchema
@@ -2486,6 +2534,72 @@ components:
         allowed:
           type: array
           description: Idiomas permitidos (governam o que pode ser escrito/scraped).
+          items: { type: string }
+    CatalogCompletenessSettings:
+      type: object
+      description: >
+        Config de "completude de catalogação" (briefing 0057): por `entity.type`,
+        quais campos/artes o dono considera desejáveis para o item estar bem
+        catalogado. Conceito DIFERENTE de completude de POSSE (quantos episódios/
+        temporadas o dono TEM no disco, `web/src/lib/entity-badges.ts`). Chave de
+        topo = `entity.type` — ABERTA (hoje só `movie`/`tv` têm UI, mas o schema
+        não fixa enum, já que `entity.type` é TEXT livre). Um tipo ausente do
+        objeto significa "nada exigido" para aquele tipo. É o corpo do PUT e a
+        resposta do GET/PUT /settings/catalog-completeness.
+      additionalProperties:
+        $ref: "#/components/schemas/TypeCompletenessConfig"
+    TypeCompletenessConfig:
+      type: object
+      description: >
+        Campos/artes desejáveis para UM `entity.type` (briefing 0057). Todos os
+        campos são obrigatórios — o formulário sempre manda o objeto completo
+        (substituição total no PUT, não merge parcial).
+      required:
+        [
+          description,
+          runtime,
+          certification,
+          keywords,
+          cast,
+          media_file,
+          artwork,
+        ]
+      properties:
+        description:
+          type: boolean
+          description: "Exige sinopse preenchida (espelha Entidade.Description)."
+        runtime:
+          type: boolean
+          description: "Exige duração preenchida (espelha Entidade.Runtime)."
+        certification:
+          type: boolean
+          description: >
+            Exige classificação indicativa preenchida (espelha
+            Entidade.Certification).
+        keywords:
+          type: boolean
+          description: >
+            Exige ao menos 1 palavra-chave (espelha Entidade.Keywords — não
+            confundir com Tags/gêneros).
+        cast:
+          type: boolean
+          description: >
+            Exige ao menos 1 crédito de elenco (espelha Entidade.Cast, briefing
+            0029/MD6).
+        media_file:
+          type: boolean
+          description: >
+            Exige ao menos um media_file com state='present' para a entity
+            (posse SIMPLES do item — não confundir com a posse AGREGADA de
+            série/temporada de Ownership/0036).
+        artwork:
+          type: array
+          description: >
+            Kinds de arte desejados (cada um marcável independentemente). Cada
+            item deve pertencer ao registro `kindsValidos` do sistema
+            (`internal/server/assets.go`), validado no handler Go — não fixado
+            como enum aqui. Valores aceitos hoje: `poster`, `fanart`, `still`,
+            `logo`, `clearart`, `disc`, `banner`, `thumb`, `characterart`.
           items: { type: string }
     OverrideBlob:
       type: object

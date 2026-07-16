@@ -113,6 +113,30 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/settings/catalog-completeness': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Config de completude de catalogação, por tipo (briefing 0057).
+     * @description Devolve a config vigente de "completude de catalogação" — quais campos e artes o dono considera desejáveis para um item de cada `entity.type` estar bem catalogado (conceito DIFERENTE de completude de POSSE, ver `web/src/lib/entity-badges.ts`). Quando ainda não há chave `catalog_completeness` gravada em `app_settings`, responde o default de fábrica (`description` + `media_file` + `artwork:[poster]` marcados para `movie` e `tv`, resto desmarcado) sem gravar nada.
+     */
+    get: operations['getCatalogCompletenessSettings']
+    /**
+     * Grava a config de completude de catalogação (substituição total).
+     * @description Substitui a config inteira (não é PATCH parcial — mesmo padrão do PUT /settings/languages: o formulário sempre manda o objeto completo). Valida que cada chave de tipo não é vazia (`""`) e que cada item de `artwork` pertence ao registro de kinds válidos do sistema (`internal/server/assets.go`); tipos sem entrada (`{}`) são aceitos e equivalem a "nada exigido" para os tipos ausentes. Responde o eco da config gravada. 400 corpo não é objeto JSON válido; 422 chave de tipo vazia ou kind de arte desconhecido.
+     */
+    put: operations['putCatalogCompletenessSettings']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/schema/entity-fields': {
     parameters: {
       query?: never
@@ -1432,6 +1456,27 @@ export interface components {
       /** @description Idiomas permitidos (governam o que pode ser escrito/scraped). */
       allowed: string[]
     }
+    /** @description Config de "completude de catalogação" (briefing 0057): por `entity.type`, quais campos/artes o dono considera desejáveis para o item estar bem catalogado. Conceito DIFERENTE de completude de POSSE (quantos episódios/ temporadas o dono TEM no disco, `web/src/lib/entity-badges.ts`). Chave de topo = `entity.type` — ABERTA (hoje só `movie`/`tv` têm UI, mas o schema não fixa enum, já que `entity.type` é TEXT livre). Um tipo ausente do objeto significa "nada exigido" para aquele tipo. É o corpo do PUT e a resposta do GET/PUT /settings/catalog-completeness. */
+    CatalogCompletenessSettings: {
+      [key: string]: components['schemas']['TypeCompletenessConfig']
+    }
+    /** @description Campos/artes desejáveis para UM `entity.type` (briefing 0057). Todos os campos são obrigatórios — o formulário sempre manda o objeto completo (substituição total no PUT, não merge parcial). */
+    TypeCompletenessConfig: {
+      /** @description Exige sinopse preenchida (espelha Entidade.Description). */
+      description: boolean
+      /** @description Exige duração preenchida (espelha Entidade.Runtime). */
+      runtime: boolean
+      /** @description Exige classificação indicativa preenchida (espelha Entidade.Certification). */
+      certification: boolean
+      /** @description Exige ao menos 1 palavra-chave (espelha Entidade.Keywords — não confundir com Tags/gêneros). */
+      keywords: boolean
+      /** @description Exige ao menos 1 crédito de elenco (espelha Entidade.Cast, briefing 0029/MD6). */
+      cast: boolean
+      /** @description Exige ao menos um media_file com state='present' para a entity (posse SIMPLES do item — não confundir com a posse AGREGADA de série/temporada de Ownership/0036). */
+      media_file: boolean
+      /** @description Kinds de arte desejados (cada um marcável independentemente). Cada item deve pertencer ao registro `kindsValidos` do sistema (`internal/server/assets.go`), validado no handler Go — não fixado como enum aqui. Valores aceitos hoje: `poster`, `fanart`, `still`, `logo`, `clearart`, `disc`, `banner`, `thumb`, `characterart`. */
+      artwork: string[]
+    }
     /** @description Blob CRU de override (briefing 0016), tal como guardado — o patch esparso que o resolver interpreta na leitura. Só campos EDITORIAIS. Traduzíveis (title/description/tags) são um MAPA por idioma (`{"pt-BR":…}`), com `null` num idioma = "definir vazio". Neutros (original_title/release_date/ extension_data) são o escalar/objeto direto; `local_rating` (nota local do dono) é um NÚMERO 0–10 ou `null`. Chaves ausentes = herdado. `{}` quando não há override. Forma livre (additionalProperties): a semântica por campo é a do resolver, não do schema. */
     OverrideBlob: {
       [key: string]: unknown
@@ -1976,6 +2021,52 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['LanguageSettings']
+        }
+      }
+      400: components['responses']['Error']
+      422: components['responses']['Error']
+    }
+  }
+  getCatalogCompletenessSettings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Config de completude de catalogação. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CatalogCompletenessSettings']
+        }
+      }
+    }
+  }
+  putCatalogCompletenessSettings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CatalogCompletenessSettings']
+      }
+    }
+    responses: {
+      /** @description Config gravada. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CatalogCompletenessSettings']
         }
       }
       400: components['responses']['Error']

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ArrowLeft, LoaderCircle, TriangleAlert } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 // Estados de UI compartilhados (carregando / erro / vazio). Centralizados aqui
 // para o grid e a lista de datasources não duplicarem markup (a catraca do 0005
@@ -50,6 +51,44 @@ export function ErrorState({
         <p className="max-w-md text-sm text-muted-foreground">{message}</p>
       ) : null}
     </div>
+  )
+}
+
+// FormSaveFooter é o rodapé comum aos formulários de settings (idiomas, 0057):
+// mensagem de erro (role="alert") OU de sucesso (role="status"), seguida do
+// botão de salvar. Extraído para LanguageSettingsForm/CompletenessSettingsForm
+// (settings.tsx, catalog-completeness-form.tsx) não duplicarem o mesmo markup
+// (jscpd).
+export function FormSaveFooter({
+  erro,
+  sucesso,
+  mensagemSucesso = 'Configurações salvas.',
+  salvando,
+}: {
+  erro: string | null
+  sucesso: boolean
+  mensagemSucesso?: string
+  salvando: boolean
+}) {
+  return (
+    <>
+      {erro ? (
+        <p role="alert" className="text-sm text-destructive">
+          {erro}
+        </p>
+      ) : null}
+      {sucesso && !erro ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {mensagemSucesso}
+        </p>
+      ) : null}
+
+      <div>
+        <Button type="submit" disabled={salvando}>
+          {salvando ? 'Salvando…' : 'Salvar'}
+        </Button>
+      </div>
+    </>
   )
 }
 
