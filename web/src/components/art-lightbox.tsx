@@ -5,6 +5,7 @@ import {
   Download,
   Maximize2,
   Minimize2,
+  Save,
   Star,
   Trash2,
   X,
@@ -24,19 +25,36 @@ import type { ArtworkItem } from '@/lib/api'
 // × dono).
 
 export interface AcoesLightbox {
-  // Definir como preferida: no pai, roteia asset local → PUT prefer; inventário →
-  // POST select {prefer:true}.
+  // Definir como PRINCIPAL (briefing 0062, fonte de verdade `is_principal`): no
+  // pai, cria o asset primeiro se o item ainda for só candidato do inventário
+  // (sem `asset_id`), depois chama PUT prefer — que materializa (se preciso) e
+  // renomeia os arquivos físicos. Um único clique encadeia as duas chamadas
+  // quando necessário (jornada §2 passo 4).
   onPreferir: (item: ArtworkItem) => void
-  // Baixar (materializar sem preferir): POST select {prefer:false}. Só faz sentido
-  // para arte de inventário (não-local).
+  // Salvar NA PASTA real da biblioteca (briefing 0062): cria o asset primeiro se
+  // preciso, depois materializa (baixa pro cache se preciso + copia pro disco).
+  // Distinto de `onBaixar` (que só cacheia internamente, sem tocar a pasta real).
+  onMaterializar: (item: ArtworkItem) => void
+  // Baixar pro CACHE interno (materializar sem preferir, sem tocar a pasta real):
+  // POST select {prefer:false}. Só faz sentido para arte ainda não cacheada.
   onBaixar: (item: ArtworkItem) => void
   // Remover: só para asset do DONO (source==='user'); DELETE do asset.
   onRemover: (item: ArtworkItem) => void
   // Alguma mutação em voo — desabilita os botões de ação.
   ocupado: boolean
+  // Posse (briefing 0062, `ResolvedEntity.owned`): sem media_file presente não há
+  // pasta de destino na biblioteca real — desabilita "Salvar na pasta"/"Definir
+  // como principal" com tooltip explicativo (jornada §2 passo 7). Não afeta
+  // "Baixar pro cache"/"Remover" (não tocam a pasta real).
+  podeSalvarNaPasta: boolean
   // Mensagem de erro de uma ação (pt-BR do envelope), exibida no rodapé.
   erro: string | null
 }
+
+// TOOLTIP_SEM_PASTA explica por que os botões de materializar ficam desabilitados
+// quando a entity não tem nenhum media_file presente (só catálogo).
+const TOOLTIP_SEM_PASTA =
+  'Este item não tem um arquivo na biblioteca — sem pasta de destino para salvar.'
 
 // Seletores dos elementos focáveis para o "foco preso" (trap de Tab) do dialog.
 const FOCAVEIS =
@@ -233,8 +251,11 @@ export function ArtLightbox({
       >
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="outline">{rotuloKind(kind)}</Badge>
-          {item.is_preferred ? (
-            <Badge variant="secondary">preferida</Badge>
+          {item.is_principal ? (
+            <Badge variant="secondary">principal</Badge>
+          ) : null}
+          {item.is_local_in_library ? (
+            <Badge variant="outline">salvo na pasta</Badge>
           ) : null}
           {item.lang ? (
             <Badge variant="secondary">{rotuloIdioma(item.lang)}</Badge>
@@ -257,15 +278,29 @@ export function ArtLightbox({
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          {!item.is_preferred ? (
+          {!item.is_principal ? (
             <Button
               type="button"
               size="sm"
-              disabled={acoes.ocupado}
+              disabled={acoes.ocupado || !acoes.podeSalvarNaPasta}
+              title={acoes.podeSalvarNaPasta ? undefined : TOOLTIP_SEM_PASTA}
               onClick={() => acoes.onPreferir(item)}
             >
               <Star aria-hidden />
-              Definir como preferida
+              Definir como principal
+            </Button>
+          ) : null}
+          {!item.is_local_in_library ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={acoes.ocupado || !acoes.podeSalvarNaPasta}
+              title={acoes.podeSalvarNaPasta ? undefined : TOOLTIP_SEM_PASTA}
+              onClick={() => acoes.onMaterializar(item)}
+            >
+              <Save aria-hidden />
+              Salvar na pasta
             </Button>
           ) : null}
           {!item.is_local ? (
@@ -277,7 +312,7 @@ export function ArtLightbox({
               onClick={() => acoes.onBaixar(item)}
             >
               <Download aria-hidden />
-              Baixar pro disco
+              Baixar pro cache
             </Button>
           ) : null}
           {item.source === 'user' && item.asset_id ? (

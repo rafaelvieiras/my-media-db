@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 
 	"github.com/go-chi/chi/v5"
 
@@ -25,7 +26,11 @@ import (
 // artworkItem é uma arte no agrupamento por kind do /artwork. URL já vem proxyada; lang/
 // likes vêm do inventário (fanart.tv) e são vazios/zero para as demais fontes. Source é a
 // proveniência ('user'/'external'/'tmdb'/'fanarttv'); IsLocal marca o asset materializado
-// (servido do disco), IsPreferred a escolha do dono (só para asset local).
+// (servido do disco, cache interno), IsPreferred a escolha do dono (lida do meta_json,
+// compat — só para asset local). Desde o briefing 0062: IsLocalInLibrary/IsPrincipal
+// distinguem a materialização física na pasta REAL da biblioteca (asset.local_path/
+// is_principal, colunas próprias) — sempre false para arte de inventário/URL externa
+// (IsLocal=false).
 type artworkItem struct {
 	URL         string `json:"url"`
 	Lang        string `json:"lang,omitempty"`
@@ -36,6 +41,14 @@ type artworkItem struct {
 	Season      string `json:"season,omitempty"`
 	IsPreferred bool   `json:"is_preferred"`
 	IsLocal     bool   `json:"is_local"`
+	// IsLocalInLibrary é true quando o asset materializado (IsLocal=true) também foi
+	// salvo fisicamente na pasta REAL da biblioteca (asset.local_path != null) —
+	// briefing 0062, espelha o selo "Salvo na pasta" da galeria (0049).
+	IsLocalInLibrary bool `json:"is_local_in_library"`
+	// IsPrincipal é true quando este é o asset is_principal=1 do seu (entity,kind)
+	// (briefing 0062, fonte de verdade em coluna própria — distinta de IsPreferred/
+	// meta_json). No máximo um true por kind.
+	IsPrincipal bool `json:"is_principal"`
 	// AssetID identifica o asset materializado (só quando IsLocal): a UI usa em
 	// PUT /assets/{id}/prefer e DELETE /assets/{id}. Vazio para arte de inventário.
 	AssetID string `json:"asset_id,omitempty"`
@@ -73,7 +86,26 @@ func (s *Server) montarGruposArtwork(ctx context.Context, id string) map[string]
 	kindsExternosLocais := s.coletarArtesLocais(ctx, id, grupos)
 	s.coletarArtesDeCamadas(ctx, id, kindsExternosLocais, grupos)
 	s.coletarInventarioFanart(ctx, id, grupos)
+	ordenarGruposArtwork(grupos)
 	return grupos
+}
+
+// ordenarGruposArtwork aplica a ordenação do briefing 0062 a CADA linha (por
+// kind): is_principal desc, is_local_in_library desc, ordem original
+// preservada asc (sort.SliceStable — as três fontes já entram na ordem
+// local->externo->inventário, preservada entre os empates).
+func ordenarGruposArtwork(grupos map[string][]artworkItem) {
+	for _, itens := range grupos {
+		sort.SliceStable(itens, func(i, j int) bool {
+			if itens[i].IsPrincipal != itens[j].IsPrincipal {
+				return itens[i].IsPrincipal // true vem primeiro
+			}
+			if itens[i].IsLocalInLibrary != itens[j].IsLocalInLibrary {
+				return itens[i].IsLocalInLibrary // true vem primeiro
+			}
+			return false // empate: mantém a ordem original (stable)
+		})
+	}
 }
 
 // coletarArtesLocais adiciona os assets materializados da entity (origin user/external)
@@ -87,11 +119,13 @@ func (s *Server) coletarArtesLocais(ctx context.Context, id string, grupos map[s
 	}
 	for _, a := range assets {
 		grupos[a.Kind] = append(grupos[a.Kind], artworkItem{
-			URL:         assetFilePath(a.EntityID, a.ID),
-			Source:      a.Origin,
-			IsPreferred: metaPreferred(a.MetaJson),
-			IsLocal:     true,
-			AssetID:     a.ID,
+			URL:              assetFilePath(a.EntityID, a.ID),
+			Source:           a.Origin,
+			IsPreferred:      metaPreferred(a.MetaJson),
+			IsLocal:          true,
+			IsLocalInLibrary: a.LocalPath.Valid && a.LocalPath.String != "",
+			IsPrincipal:      a.IsPrincipal != 0,
+			AssetID:          a.ID,
 		})
 		if a.Origin == originExternal {
 			externos[a.Kind] = true

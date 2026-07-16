@@ -705,22 +705,39 @@ paths:
   /api/v1/entities/{id}/assets/{assetId}/prefer:
     put:
       operationId: preferAsset
-      summary: Marca o asset como preferido do seu kind (briefing 0017).
+      summary: Marca o asset como preferido/principal do seu kind (briefing 0017; estendido no 0062).
       description: >
         Seta `meta.preferred=true` no asset e LIMPA a flag dos outros do mesmo
         `(entity, kind)` — uma preferida por kind. Preserva as demais chaves do
-        `meta_json`. 200 com o asset; 404 asset/entity inexistente.
+        `meta_json`. Desde o briefing 0062: se o asset ainda não tem `local_path`
+        (não materializado na pasta real), materializa primeiro — MESMO efeito de
+        POST .../assets/{assetId}/materialize, incluindo o download para o cache
+        se necessário (reusa a função de download do 0048). Em seguida RENOMEIA
+        os arquivos físicos do mesmo `kind`/pasta para refletir a nova ordem: o
+        antigo principal (se houver) vira o próximo sufixo numérico livre
+        (`os.Rename`, nunca recopia bytes), o novo principal assume o nome bare
+        (ex. `poster.jpg`). Seta `is_principal=1` no asset (e `0` no que era
+        principal antes do mesmo par) — fonte de verdade em coluna própria,
+        substituindo `meta_json.preferred` para o código novo. 200 com o asset
+        atualizado (`local_path`/`is_principal` refletidos); 404 asset/entity
+        inexistente OU entity sem `media_file` presente (sem pasta de destino
+        para materializar/renomear); 502 se a materialização exigir download e
+        ele falhar; 503 sem diretório de assets (cache) configurado.
       tags: [entities]
       parameters:
         - $ref: "#/components/parameters/EntityId"
         - $ref: "#/components/parameters/AssetId"
       responses:
         "200":
-          description: Asset marcado como preferido.
+          description: Asset marcado como preferido/principal (materializado e renomeado se necessário).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Asset" }
         "404":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+        "503":
           $ref: "#/components/responses/Error"
 
   /api/v1/entities/{id}/assets/{assetId}:
@@ -747,6 +764,41 @@ paths:
         "422":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/assets/{assetId}/materialize:
+    post:
+      operationId: materializeAsset
+      summary: Grava a arte fisicamente na pasta real da biblioteca (briefing 0062).
+      description: >
+        Baixa a arte para o cache interno (`assetsDir`) se `path_or_uri` ainda não
+        estiver materializado lá (reusa a função de download do 0048) e em seguida
+        grava uma CÓPIA física dentro da pasta real da biblioteca, no nome canônico
+        Kodi/Emby calculado por `internal/localmedia/naming.go` (bare name se for o
+        único vídeo/único `is_principal` do kind na pasta; senão prefixado pelo nome
+        do vídeo ou sufixo numérico de rotação). Escrita atômica (arquivo temporário
+        + rename). Para um candidato que ainda não existe como `asset` (item do
+        inventário lazy do fanart.tv/TMDB ainda não selecionado), a UI encadeia
+        primeiro POST .../artwork/select (que cria o asset) e só então chama este
+        endpoint. 200 com o `asset` atualizado, com `local_path` preenchido; 404 se
+        o asset/entity não existe OU a entity não tem nenhum `media_file` presente
+        (sem pasta de destino); 502 se o download para o cache falhar; 503 sem
+        diretório de assets (cache) configurado.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - $ref: "#/components/parameters/AssetId"
+      responses:
+        "200":
+          description: Asset materializado na pasta real (local_path preenchido).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Asset" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/{id}/artwork:
     get:
       operationId: getEntityArtwork
@@ -757,7 +809,11 @@ paths:
         (ex.: TMDB) e o INVENTÁRIO lazy da fanart.tv (`media_external source='fanarttv'`,
         sem baixar binários). Toda `url` já sai passada pelo proxy de imagem, então a UI
         não depende do CDN da fonte. Traz também `available: {kind: count}` para os selos
-        do card. Só leitura. 404 se a entity não existe; 503 sem persistência.
+        do card. Desde o briefing 0062, cada item também traz `is_local_in_library`
+        (`local_path != null`) e `is_principal`, e cada array por kind sai ORDENADO:
+        `is_principal` desc, `is_local_in_library` desc, ordem original preservada asc
+        (mesmo agregador `montarGruposArtwork`, só acrescenta o sort no fim). Só
+        leitura. 404 se a entity não existe; 503 sem persistência.
       tags: [entities]
       parameters:
         - $ref: "#/components/parameters/EntityId"
@@ -1362,6 +1418,33 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
         "503":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/nfo:
+    post:
+      operationId: writeEntityNfo
+      summary: (Re)gera e grava o .nfo da entity na pasta real (briefing 0062).
+      description: >
+        Monta o XML a partir do MESMO `resolver.Entidade` que
+        `(s *Server) resolverEntity(ctx, id, lang)` já produz (nunca duplica a
+        resolução) e grava `<nome-do-vídeo>.nfo` (filme/episódio) ou `tvshow.nfo`
+        na raiz da pasta da série, via escrita atômica (arquivo temporário +
+        rename). IDEMPOTENTE: sempre sobrescreve por completo, sem merge com NFO
+        de outra origem — nunca é relido de volta (export one-way, banco
+        autoritativo). Atualiza `entity.nfo_path`/`entity.nfo_written_at`. 404 se
+        a entity não existe OU não tem nenhum `media_file` presente (sem pasta de
+        destino); nada é escrito nesse caso.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - $ref: "#/components/parameters/LangQuery"
+      responses:
+        "200":
+          description: NFO gravado (ou regravado) com sucesso.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfoWriteResult" }
+        "404":
           $ref: "#/components/responses/Error"
 
   /api/v1/entities/purge:
@@ -2006,9 +2089,14 @@ components:
       description: >
         Uma arte da entity (briefing 0017). origin distingue a proveniência: `user`
         (upload do dono), `external` (cache re-puxável do enriquecimento) ou `local`
-        (arte do scanner). preferred é a flag do dono (uma por (entity, kind)); url é
-        a rota que serve o binário.
-      required: [id, kind, origin, preferred, url]
+        (arte do scanner). preferred é a flag do dono (uma por (entity, kind), lida
+        do meta_json — compat). Desde o briefing 0062, `is_principal` (coluna
+        própria) é a FONTE DE VERDADE de qual asset é o principal do seu
+        `(entity, kind)`, e `local_path` marca se o asset também foi materializado
+        fisicamente na pasta real da biblioteca (distinto do cache em
+        `assetsDir`, que é onde o binário sempre mora). url é a rota que serve o
+        binário.
+      required: [id, kind, origin, preferred, is_principal, url]
       properties:
         id: { type: string }
         kind:
@@ -2020,6 +2108,22 @@ components:
         preferred:
           type: boolean
           description: Marcada como preferida do seu kind (lida do meta_json).
+        is_principal:
+          type: boolean
+          description: >
+            Briefing 0062: fonte de verdade de "principal" do seu `(entity, kind)`
+            — no máximo um `true` por par, aplicado em código (não FK/trigger).
+            Ao marcar um novo principal via PUT .../prefer, o anterior do mesmo
+            par vira `false` na mesma transação.
+        local_path:
+          type: [string, "null"]
+          description: >
+            Briefing 0062: caminho absoluto do arquivo materializado na pasta REAL
+            da biblioteca, com nome canônico Kodi/Emby (ver naming.go). `null`
+            quando o asset ainda não foi salvo lá — só existe no cache interno
+            (`assetsDir`/`path_or_uri`). Preenchido por
+            POST .../assets/{assetId}/materialize ou por PUT .../prefer (que
+            materializa antes de rotacionar, se necessário).
         url:
           type: string
           description: Rota que serve o binário deste asset.
@@ -2033,9 +2137,14 @@ components:
         Uma arte no agrupamento por kind do /artwork (briefing 0048). `url` já vem
         proxyada. `lang`/`likes` vêm do inventário (fanart.tv) e são vazios/zero para as
         demais fontes. `source` é a proveniência (`user`|`external`|`tmdb`|`fanarttv`);
-        `is_local` marca o asset materializado (servido do disco), `is_preferred` a escolha
-        do dono. `disc_type`/`disc`/`season` só aparecem nas artes que os têm.
-      required: [url, source, is_preferred, is_local]
+        `is_local` marca o asset materializado (servido do disco, cache interno),
+        `is_preferred` a escolha do dono (compat, lida do meta_json). `disc_type`/`disc`/
+        `season` só aparecem nas artes que os têm. Desde o briefing 0062, `is_local_in_library`
+        e `is_principal` distinguem a materialização física na pasta REAL da biblioteca
+        (só possível quando `is_local=true`; sempre `false` para arte de inventário/URL
+        externa). A ORDENAÇÃO de cada array por kind é `is_principal` desc,
+        `is_local_in_library` desc, ordem original preservada asc.
+      required: [url, source, is_preferred, is_local, is_local_in_library, is_principal]
       properties:
         url:
           type: string
@@ -2064,6 +2173,21 @@ components:
         is_local:
           type: boolean
           description: Asset materializado, servido do disco.
+        is_local_in_library:
+          type: boolean
+          description: >
+            Briefing 0062: `true` quando o asset materializado (`is_local=true`)
+            também foi salvo fisicamente na pasta REAL da biblioteca
+            (`asset.local_path != null`) — espelha o "selo Salvo na pasta" da
+            galeria. Sempre `false` para arte de inventário/URL externa
+            (`is_local=false`).
+        is_principal:
+          type: boolean
+          description: >
+            Briefing 0062: `true` quando este é o asset `is_principal=1` do seu
+            `(entity, kind)` (fonte de verdade em coluna própria, distinta de
+            `is_preferred`/meta_json). No máximo um `true` por kind. Sempre
+            `false` para arte de inventário/URL externa.
         asset_id:
           type: string
           description: >
@@ -2445,6 +2569,22 @@ components:
           type: array
           items: { type: string }
           description: Kinds que estavam faltando mas sem opção em nenhum provider.
+    NfoWriteResult:
+      type: object
+      description: >
+        Resposta de POST /entities/{id}/nfo (briefing 0062) — espelha as duas
+        colunas novas de `entity` que a escrita atualiza. `nfo_path` é o caminho
+        absoluto do `.nfo` gravado (`<vídeo>.nfo` para filme/episódio, `tvshow.nfo`
+        na raiz da pasta da série); `nfo_written_at` é o timestamp ISO desta
+        escrita (muda a cada chamada, mesmo idempotente em conteúdo).
+      required: [nfo_path, nfo_written_at]
+      properties:
+        nfo_path:
+          type: string
+          description: Caminho absoluto do .nfo gravado na pasta real da biblioteca.
+        nfo_written_at:
+          type: string
+          description: Timestamp ISO da última escrita (entity.nfo_written_at).
     ResolvedEntity:
       type: object
       description: >

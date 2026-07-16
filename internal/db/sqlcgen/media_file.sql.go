@@ -263,6 +263,52 @@ func (q *Queries) ListarMediaFilesPorEntity(ctx context.Context, entityID string
 	return items, nil
 }
 
+const listarMediaFilesPresentes = `-- name: ListarMediaFilesPresentes :many
+SELECT id, entity_id, path, state
+FROM media_file
+WHERE state = 'present'
+`
+
+type ListarMediaFilesPresentesRow struct {
+	ID       string
+	EntityID string
+	Path     string
+	State    string
+}
+
+// Todos os media_file 'present' (de QUALQUER entity) -- usada por
+// EhPastaExclusiva (internal/localmedia, briefing 0062) para decidir se uma
+// pasta tem 1 unico video (nome de arte bare) ou varios (nome prefixado).
+// Biblioteca self-hosted: full scan tolerado (mesmo espirito de
+// montarPosseAgregada, internal/server/entities.go).
+func (q *Queries) ListarMediaFilesPresentes(ctx context.Context) ([]ListarMediaFilesPresentesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarMediaFilesPresentes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarMediaFilesPresentesRow{}
+	for rows.Next() {
+		var i ListarMediaFilesPresentesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityID,
+			&i.Path,
+			&i.State,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const marcarMediaFilesNaoVistosMissing = `-- name: MarcarMediaFilesNaoVistosMissing :execrows
 UPDATE media_file
 SET state = 'missing',

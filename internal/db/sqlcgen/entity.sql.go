@@ -37,7 +37,7 @@ SET type = ?,
 WHERE id = ?
 RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at
 `
 
 type AtualizarEntityParams struct {
@@ -85,8 +85,31 @@ func (q *Queries) AtualizarEntity(ctx context.Context, arg AtualizarEntityParams
 		&i.OriginalLanguage,
 		&i.ExternalIDTvdb,
 		&i.LastExternalMatchAttemptAt,
+		&i.NfoPath,
+		&i.NfoWrittenAt,
 	)
 	return i, err
+}
+
+const atualizarEntityNfo = `-- name: AtualizarEntityNfo :exec
+UPDATE entity
+SET nfo_path = ?,
+    nfo_written_at = ?
+WHERE id = ?
+`
+
+type AtualizarEntityNfoParams struct {
+	NfoPath      sql.NullString
+	NfoWrittenAt sql.NullString
+	ID           string
+}
+
+// Grava o caminho do .nfo exportado por ultimo + o timestamp da escrita
+// (briefing 0062). Chamado a cada POST /entities/{id}/nfo, mesmo idempotente
+// em conteudo (nfo_written_at muda sempre).
+func (q *Queries) AtualizarEntityNfo(ctx context.Context, arg AtualizarEntityNfoParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarEntityNfo, arg.NfoPath, arg.NfoWrittenAt, arg.ID)
+	return err
 }
 
 const atualizarEpisodioBase = `-- name: AtualizarEpisodioBase :exec
@@ -301,7 +324,7 @@ INSERT INTO entity (
 )
 RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at
 `
 
 type CriarEntityParams struct {
@@ -362,6 +385,8 @@ func (q *Queries) CriarEntity(ctx context.Context, arg CriarEntityParams) (Entit
 		&i.OriginalLanguage,
 		&i.ExternalIDTvdb,
 		&i.LastExternalMatchAttemptAt,
+		&i.NfoPath,
+		&i.NfoWrittenAt,
 	)
 	return i, err
 }
@@ -369,7 +394,7 @@ func (q *Queries) CriarEntity(ctx context.Context, arg CriarEntityParams) (Entit
 const listarEntities = `-- name: ListarEntities :many
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at
 FROM entity
 ORDER BY created_at DESC, id
 LIMIT ? OFFSET ?
@@ -407,6 +432,8 @@ func (q *Queries) ListarEntities(ctx context.Context, arg ListarEntitiesParams) 
 			&i.OriginalLanguage,
 			&i.ExternalIDTvdb,
 			&i.LastExternalMatchAttemptAt,
+			&i.NfoPath,
+			&i.NfoWrittenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -424,7 +451,7 @@ func (q *Queries) ListarEntities(ctx context.Context, arg ListarEntitiesParams) 
 const listarEntitiesPorImdbExcetoId = `-- name: ListarEntitiesPorImdbExcetoId :many
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at
 FROM entity
 WHERE external_id_imdb = ?1 AND id != ?2
 `
@@ -462,6 +489,8 @@ func (q *Queries) ListarEntitiesPorImdbExcetoId(ctx context.Context, arg ListarE
 			&i.OriginalLanguage,
 			&i.ExternalIDTvdb,
 			&i.LastExternalMatchAttemptAt,
+			&i.NfoPath,
+			&i.NfoWrittenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -479,7 +508,7 @@ func (q *Queries) ListarEntitiesPorImdbExcetoId(ctx context.Context, arg ListarE
 const listarEntitiesPorTmdbExcetoId = `-- name: ListarEntitiesPorTmdbExcetoId :many
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at
 FROM entity
 WHERE external_id_tmdb = ?1 AND id != ?2
 `
@@ -522,6 +551,8 @@ func (q *Queries) ListarEntitiesPorTmdbExcetoId(ctx context.Context, arg ListarE
 			&i.OriginalLanguage,
 			&i.ExternalIDTvdb,
 			&i.LastExternalMatchAttemptAt,
+			&i.NfoPath,
+			&i.NfoWrittenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -539,7 +570,7 @@ func (q *Queries) ListarEntitiesPorTmdbExcetoId(ctx context.Context, arg ListarE
 const listarEntitiesPorTvdbExcetoId = `-- name: ListarEntitiesPorTvdbExcetoId :many
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at
 FROM entity
 WHERE external_id_tvdb = ?1 AND id != ?2
 `
@@ -577,6 +608,8 @@ func (q *Queries) ListarEntitiesPorTvdbExcetoId(ctx context.Context, arg ListarE
 			&i.OriginalLanguage,
 			&i.ExternalIDTvdb,
 			&i.LastExternalMatchAttemptAt,
+			&i.NfoPath,
+			&i.NfoWrittenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -805,7 +838,7 @@ func (q *Queries) ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCar
 const obterColecaoPorTmdb = `-- name: ObterColecaoPorTmdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at
 FROM entity
 WHERE type = 'collection' AND external_id_tmdb = ?
 LIMIT 1
@@ -836,6 +869,8 @@ func (q *Queries) ObterColecaoPorTmdb(ctx context.Context, externalIDTmdb sql.Nu
 		&i.OriginalLanguage,
 		&i.ExternalIDTvdb,
 		&i.LastExternalMatchAttemptAt,
+		&i.NfoPath,
+		&i.NfoWrittenAt,
 	)
 	return i, err
 }
@@ -843,7 +878,7 @@ func (q *Queries) ObterColecaoPorTmdb(ctx context.Context, externalIDTmdb sql.Nu
 const obterEntity = `-- name: ObterEntity :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at
 FROM entity
 WHERE id = ?
 `
@@ -869,6 +904,8 @@ func (q *Queries) ObterEntity(ctx context.Context, id string) (Entity, error) {
 		&i.OriginalLanguage,
 		&i.ExternalIDTvdb,
 		&i.LastExternalMatchAttemptAt,
+		&i.NfoPath,
+		&i.NfoWrittenAt,
 	)
 	return i, err
 }
@@ -943,7 +980,7 @@ func (q *Queries) ObterEntityCard(ctx context.Context, id string) (ObterEntityCa
 const obterEntityPorImdb = `-- name: ObterEntityPorImdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at
 FROM entity
 WHERE external_id_imdb = ?
 `
@@ -969,6 +1006,8 @@ func (q *Queries) ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.Nul
 		&i.OriginalLanguage,
 		&i.ExternalIDTvdb,
 		&i.LastExternalMatchAttemptAt,
+		&i.NfoPath,
+		&i.NfoWrittenAt,
 	)
 	return i, err
 }
@@ -976,7 +1015,7 @@ func (q *Queries) ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.Nul
 const obterEntityPorTituloAno = `-- name: ObterEntityPorTituloAno :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at
 FROM entity
 WHERE type = ? AND title = ? AND release_date IS ?
 LIMIT 1
@@ -1013,6 +1052,8 @@ func (q *Queries) ObterEntityPorTituloAno(ctx context.Context, arg ObterEntityPo
 		&i.OriginalLanguage,
 		&i.ExternalIDTvdb,
 		&i.LastExternalMatchAttemptAt,
+		&i.NfoPath,
+		&i.NfoWrittenAt,
 	)
 	return i, err
 }
@@ -1020,7 +1061,7 @@ func (q *Queries) ObterEntityPorTituloAno(ctx context.Context, arg ObterEntityPo
 const obterEntityPorTituloTipo = `-- name: ObterEntityPorTituloTipo :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at
 FROM entity
 WHERE type = ? AND title = ?
 ORDER BY created_at, id
@@ -1057,6 +1098,8 @@ func (q *Queries) ObterEntityPorTituloTipo(ctx context.Context, arg ObterEntityP
 		&i.OriginalLanguage,
 		&i.ExternalIDTvdb,
 		&i.LastExternalMatchAttemptAt,
+		&i.NfoPath,
+		&i.NfoWrittenAt,
 	)
 	return i, err
 }
@@ -1064,7 +1107,7 @@ func (q *Queries) ObterEntityPorTituloTipo(ctx context.Context, arg ObterEntityP
 const obterEntityPorTmdb = `-- name: ObterEntityPorTmdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at
 FROM entity
 WHERE external_id_tmdb = ?
 `
@@ -1091,6 +1134,8 @@ func (q *Queries) ObterEntityPorTmdb(ctx context.Context, externalIDTmdb sql.Nul
 		&i.OriginalLanguage,
 		&i.ExternalIDTvdb,
 		&i.LastExternalMatchAttemptAt,
+		&i.NfoPath,
+		&i.NfoWrittenAt,
 	)
 	return i, err
 }
@@ -1098,7 +1143,7 @@ func (q *Queries) ObterEntityPorTmdb(ctx context.Context, externalIDTmdb sql.Nul
 const obterEntityPorTvdb = `-- name: ObterEntityPorTvdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
-    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at
 FROM entity
 WHERE external_id_tvdb = ?
 `
@@ -1127,6 +1172,8 @@ func (q *Queries) ObterEntityPorTvdb(ctx context.Context, externalIDTvdb sql.Nul
 		&i.OriginalLanguage,
 		&i.ExternalIDTvdb,
 		&i.LastExternalMatchAttemptAt,
+		&i.NfoPath,
+		&i.NfoWrittenAt,
 	)
 	return i, err
 }

@@ -363,10 +363,13 @@ func TestPosterServeArteDoDono(t *testing.T) {
 // ── Preferencia: uma por kind, limpa as outras (criterio 5.2) ────────────────
 
 // TestPreferLimpaOutrasDoMesmoKind cobre o criterio 5.2: marcar preferida seta a
-// flag no alvo e LIMPA a dos outros do MESMO kind, sem tocar outro kind.
+// flag no alvo e LIMPA a dos outros do MESMO kind, sem tocar outro kind. Desde o
+// briefing 0062, PUT /prefer também materializa/rotaciona fisicamente — por isso a
+// entity precisa de um media_file present (pasta de destino), senão 404.
 func TestPreferLimpaOutrasDoMesmoKind(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
+	semearFile(t, d, "mf1", "e1", filepath.Join(t.TempDir(), "video.mkv"), "present", 1.0, "")
 
 	a1 := decodeAsset(t, postAsset(t, h, "e1", "poster", pngPayload(64)))
 	a2 := decodeAsset(t, postAsset(t, h, "e1", "poster", pngPayload(64)))

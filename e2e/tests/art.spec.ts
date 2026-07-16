@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { expect, test } from '../fixtures'
 import { resetBiblioteca } from '../lib/reset'
 
@@ -67,4 +70,96 @@ test('arte: enviar, preferir e remover na galeria da entity', async ({
   await arte.getByRole('button', { name: 'Remover arte poster' }).click()
   await expect(arte.getByText('Nenhuma arte ainda')).toBeVisible()
   await expect(arte.getByRole('img', { name: 'poster sua' })).toHaveCount(0)
+})
+
+// leSrcDoPosterDoTopo le o `src` do poster do HERO do RichDetailView, ou `null`
+// quando so ha o placeholder (sem arte principal ainda) — helper local porque o
+// teste abaixo precisa comparar o ANTES/DEPOIS independente de o fake provider ja
+// ter uma arte inicial (MYMEDIADB_FAKE_IMAGE_BASE nao esta setado no e2e, entao o
+// poster do TMDB fake normalmente nem existe — ver global-setup.ts).
+async function leSrcDoPosterDoTopo(
+  page: import('@playwright/test').Page,
+): Promise<string | null> {
+  const img = page.getByRole('img', { name: /^Pôster de/ })
+  if ((await img.count()) === 0) {
+    return null
+  }
+  return img.getAttribute('src')
+}
+
+test('definir uma arte como principal materializa na pasta e atualiza o poster do topo (briefing 0062)', async ({
+  page,
+  request,
+}) => {
+  // Materializar/definir-principal exige um media_file 'present' de verdade (a
+  // API grava na pasta REAL) -- semeia uma pasta /tmp com um filme parseavel e
+  // escaneia, como em library.spec.ts (0028), em vez de importar so por API.
+  const dir = mkdtempSync(join(tmpdir(), 'mmdb-e2e-art-'))
+  let id = ''
+  try {
+    writeFileSync(join(dir, 'The Matrix (1999).mkv'), Buffer.alloc(2048, 7))
+
+    await page.goto('/library')
+    await page.getByLabel('Caminho do datasource').fill(dir)
+    await page.getByRole('button', { name: 'Adicionar' }).click()
+    await expect(page.getByText(dir)).toBeVisible()
+    await page.getByRole('button', { name: 'Escanear' }).click()
+
+    await expect
+      .poll(
+        async () => {
+          const body = await (
+            await request.get('/api/v1/entities?limit=1000')
+          ).json()
+          const itens: Array<{ id: string; title: string }> =
+            body.items ?? body ?? []
+          const achado = itens.find((e) => e.title === 'The Matrix')
+          id = achado?.id ?? ''
+          return !!achado
+        },
+        { timeout: 20_000 },
+      )
+      .toBe(true)
+
+    await page.goto(`/entities/${id}`)
+    const srcAntes = await leSrcDoPosterDoTopo(page)
+
+    // Envia um poster do dono (kind ja vem em "Poster" por padrao) -- vira um
+    // candidato NAO principal na galeria, distinto de qualquer poster do fake
+    // provider.
+    const arte = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Artes', level: 2 }) })
+    await arte
+      .getByLabel('Arquivo de arte')
+      .setInputFiles({ name: 'poster.png', mimeType: 'image/png', buffer: PNG })
+    await expect(
+      arte.getByRole('button', { name: /^Ver Pôster \d+$/ }).last(),
+    ).toBeVisible()
+
+    // Abre o card recem-enviado e define como principal -- PUT prefer direto (ja
+    // e um asset, sem precisar do encadeamento de criar via /artwork/select
+    // primeiro; esse encadeamento e' exercitado nos testes unitarios do
+    // componente).
+    await arte.getByRole('button', { name: /^Ver Pôster \d+$/ }).last().click()
+    await page.getByRole('button', { name: 'Definir como principal' }).click()
+    await expect(page.getByText('principal', { exact: true })).toBeVisible()
+    await expect(page.getByText('salvo na pasta', { exact: true })).toBeVisible()
+    await page.keyboard.press('Escape')
+
+    // O poster do TOPO do RichDetailView reflete a nova arte principal, sem
+    // reload de pagina (criterio de aceite do briefing 0062).
+    await expect
+      .poll(() => leSrcDoPosterDoTopo(page))
+      .not.toBe(srcAntes)
+  } finally {
+    if (id) {
+      await request.delete(`/api/v1/entities/${id}`).catch(() => {})
+    }
+    const dss = await (await request.get('/api/v1/library')).json()
+    for (const s of dss.items ?? []) {
+      await request.delete(`/api/v1/library/${s.id}`)
+    }
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

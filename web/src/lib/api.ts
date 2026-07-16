@@ -67,6 +67,8 @@ export type SelectArtworkRequest = components['schemas']['SelectArtworkRequest']
 export type CorrectRequest = components['schemas']['CorrectRequest']
 export type PurgeResult = components['schemas']['PurgeResult']
 export type PurgeBatchResult = components['schemas']['PurgeBatchResult']
+// Resultado de POST .../nfo (briefing 0062): caminho gravado + timestamp da escrita.
+export type NfoWriteResult = components['schemas']['NfoWriteResult']
 
 // Forma do corpo de `GET /api/v1/health` (contrato do briefing 0001).
 export interface Health {
@@ -750,14 +752,40 @@ export async function uploadAsset(
   return lerJson<Asset>(res)
 }
 
-// Marca um asset como preferido do seu kind (desempata entre várias do dono). O
-// backend limpa a flag dos outros do mesmo `(entity, kind)`.
+// Marca um asset como preferido/PRINCIPAL do seu kind (desempata entre várias do
+// dono). O backend limpa a flag dos outros do mesmo `(entity, kind)`. Desde o
+// briefing 0062: se o asset ainda não tem `local_path`, materializa primeiro
+// (baixa pro cache se preciso + grava cópia física na pasta real) e RENOMEIA os
+// arquivos físicos do kind para refletir a nova ordem (rotação numerada); seta
+// `is_principal=1` nele (fonte de verdade, distinta do `preferred` de meta_json).
+// Erros (404 sem media_file/pasta de destino, 502 download, 503 sem diretório de
+// assets) viram `ApiError` com a mensagem pt-BR do envelope.
 export async function preferAsset(id: string, assetId: string): Promise<Asset> {
   const res = await fetch(
     `${base}/api/v1/entities/${encodeURIComponent(id)}/assets/${encodeURIComponent(
       assetId,
     )}/prefer`,
     { method: 'PUT' },
+  )
+  return lerJson<Asset>(res)
+}
+
+// Materializa um asset na PASTA REAL da biblioteca (briefing 0062): baixa pro
+// cache interno se `path_or_uri` ainda não estiver lá e grava uma CÓPIA física no
+// diretório do item, com o nome canônico Kodi/Emby. Devolve o asset atualizado com
+// `local_path` preenchido. Erros (404 sem media_file/pasta de destino, 502
+// download, 503 sem diretório de assets) viram `ApiError` com a mensagem pt-BR do
+// envelope. Para um candidato do INVENTÁRIO (sem `asset_id` ainda), a UI encadeia
+// `selectArtwork({prefer:false})` (cria o asset) antes de chamar esta função.
+export async function materializeAsset(
+  id: string,
+  assetId: string,
+): Promise<Asset> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/assets/${encodeURIComponent(
+      assetId,
+    )}/materialize`,
+    { method: 'POST' },
   )
   return lerJson<Asset>(res)
 }
@@ -949,6 +977,26 @@ export async function downloadMissingArtwork(
     { method: 'POST' },
   )
   return lerJson<DownloadMissingArtworkResult>(res)
+}
+
+// ── NFO na pasta real (briefing 0062) ────────────────────────────────────────
+
+// (RE)GERA e grava o `.nfo` da entity na pasta real da biblioteca, a partir do
+// MESMO metadado já resolvido (sinopse, elenco, slogan, classificação, gêneros,
+// ids externos). Idempotente: sempre sobrescreve por completo. `lang` opcional
+// (idioma dos campos traduzíveis; omitido cai no principal). 404 (`ApiError`)
+// quando a entity não tem nenhum `media_file` presente (sem pasta de destino) —
+// a UI então desabilita o botão em vez de deixar o dono bater nesse erro.
+export async function writeEntityNfo(
+  id: string,
+  lang?: string,
+): Promise<NfoWriteResult> {
+  const qs = lang ? `?lang=${encodeURIComponent(lang)}` : ''
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/nfo${qs}`,
+    { method: 'POST' },
+  )
+  return lerJson<NfoWriteResult>(res)
 }
 
 // ── Prévia de candidato + confirmação supervisionada (0060) ─────────────────

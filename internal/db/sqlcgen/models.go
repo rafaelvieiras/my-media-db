@@ -15,13 +15,15 @@ type AppSetting struct {
 }
 
 type Asset struct {
-	ID        string
-	EntityID  string
-	Kind      string
-	Origin    string
-	PathOrUri string
-	MetaJson  sql.NullString
-	CreatedAt string
+	ID          string
+	EntityID    string
+	Kind        string
+	Origin      string
+	PathOrUri   string
+	MetaJson    sql.NullString
+	CreatedAt   string
+	LocalPath   sql.NullString
+	IsPrincipal int64
 }
 
 type Company struct {
@@ -66,6 +68,8 @@ type Entity struct {
 	OriginalLanguage           sql.NullString
 	ExternalIDTvdb             sql.NullString
 	LastExternalMatchAttemptAt sql.NullString
+	NfoPath                    sql.NullString
+	NfoWrittenAt               sql.NullString
 }
 
 type EntityCatalogCompleteness struct {

@@ -121,12 +121,14 @@ export function respostaComum(u: string): Response | null {
 }
 
 // Asset de teste (arte da galeria, 0017), com sobrescritas pontuais por campo.
+// `is_principal` (briefing 0062) é a fonte de verdade nova — default `false`.
 export function baseAsset(over: Partial<Asset> = {}): Asset {
   return {
     id: 'a1',
     kind: 'poster',
     origin: 'user',
     preferred: false,
+    is_principal: false,
     url: '/api/v1/entities/e1/assets/a1/file',
     ...over,
   }

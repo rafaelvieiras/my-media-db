@@ -16,6 +16,7 @@ vi.mock('@tanstack/react-router', async () => ({
 function stubEntityActions(
   respostaEnriquecer: () => Response,
   respostaArte: () => Response,
+  respostaNfo?: () => Response,
 ) {
   const m = vi.fn(async (url: string, init?: RequestInit) => {
     const u = new URL(String(url), 'http://localhost')
@@ -31,6 +32,12 @@ function stubEntityActions(
       method === 'POST'
     ) {
       return respostaArte()
+    }
+    if (u.pathname === '/api/v1/entities/e1/nfo' && method === 'POST') {
+      if (!respostaNfo) {
+        throw new Error('rota /nfo chamada sem resposta configurada')
+      }
+      return respostaNfo()
     }
     throw new Error(`rota nao mockada: ${method} ${u.pathname}`)
   })
@@ -65,9 +72,9 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function render(cc: CatalogCompleteness) {
+function render(cc: CatalogCompleteness, owned = true) {
   return renderWithClient(
-    <EntityActionButtons id="e1" catalogCompleteness={cc} />,
+    <EntityActionButtons id="e1" catalogCompleteness={cc} owned={owned} />,
   )
 }
 
@@ -86,15 +93,30 @@ function acionarInformacoesFaltando(respostaEnriquecer: () => Response) {
 }
 
 describe('EntityActionButtons — renderização condicional', () => {
-  it('"Editar" sempre aparece, mesmo sem catalog_completeness', () => {
+  it('"Editar" e "Salvar informações (NFO)" sempre aparecem, mesmo sem catalog_completeness', () => {
     render(null)
     expect(screen.getByRole('link', { name: /Editar/ })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Salvar informações \(NFO\)/ }),
+    ).toBeEnabled()
     expect(
       screen.queryByRole('button', { name: /Baixar informações faltando/ }),
     ).toBeNull()
     expect(
       screen.queryByRole('button', { name: /Baixar arte faltando/ }),
     ).toBeNull()
+  })
+
+  it('"Salvar informações (NFO)" fica desabilitado com tooltip quando não há media_file (owned=false)', () => {
+    render(null, false)
+    const botao = screen.getByRole('button', {
+      name: /Salvar informações \(NFO\)/,
+    })
+    expect(botao).toBeDisabled()
+    expect(botao).toHaveAttribute(
+      'title',
+      expect.stringContaining('sem pasta de destino'),
+    )
   })
 
   it('nenhum botão novo aparece quando catalog_completeness.complete é true', () => {
@@ -238,5 +260,44 @@ describe('EntityActionButtons — "Baixar arte faltando" (0048/0049 sob demanda)
         screen.getByRole('button', { name: /Baixar arte faltando/ }),
       ).toBeInTheDocument(),
     )
+  })
+})
+
+describe('EntityActionButtons — "Salvar informações (NFO)" (briefing 0062)', () => {
+  it('sucesso: mostra "Gravando…" enquanto pendente, depois o nfo_path gravado', async () => {
+    const liberar = stubEntityActionsAdiado('/api/v1/entities/e1/nfo', () =>
+      okJson({
+        nfo_path: '/biblioteca/The Matrix/movie.nfo',
+        nfo_written_at: '2026-07-16T12:00:00Z',
+      }),
+    )
+    render(null)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /Salvar informações \(NFO\)/ }),
+    )
+    expect(
+      await screen.findByText('Gravando…', { exact: false }),
+    ).toBeInTheDocument()
+
+    liberar()
+    expect(
+      await screen.findByText(/\/biblioteca\/The Matrix\/movie\.nfo/),
+    ).toBeInTheDocument()
+  })
+
+  it('404 sem media_file: mensagem de erro clara (role=alert)', async () => {
+    stubEntityActions(
+      () => okJson({ outcome: 'none' }),
+      () => okJson({ downloaded: [], unavailable: [] }),
+      () => erroJson(404, 'not_found', 'entity sem arquivo na biblioteca'),
+    )
+    render(null)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /Salvar informações \(NFO\)/ }),
+    )
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent('entity sem arquivo na biblioteca')
   })
 })

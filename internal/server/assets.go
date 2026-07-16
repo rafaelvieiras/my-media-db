@@ -55,14 +55,18 @@ const (
 )
 
 // assetDTO e um item da galeria (GET /assets) e o corpo devolvido por upload/
-// prefer: os campos publicos do asset mais a flag preferred (lida do meta_json) e a
-// url do binario (a rota do /file).
+// prefer/materialize: os campos publicos do asset mais a flag preferred (lida do
+// meta_json, compat) e a url do binario (a rota do /file). Desde o briefing 0062:
+// IsPrincipal (fonte de verdade em coluna, distinta de Preferred/meta_json) e
+// LocalPath (caminho na pasta REAL da biblioteca, null quando so no cache interno).
 type assetDTO struct {
-	ID        string `json:"id"`
-	Kind      string `json:"kind"`
-	Origin    string `json:"origin"`
-	Preferred bool   `json:"preferred"`
-	URL       string `json:"url"`
+	ID          string  `json:"id"`
+	Kind        string  `json:"kind"`
+	Origin      string  `json:"origin"`
+	Preferred   bool    `json:"preferred"`
+	IsPrincipal bool    `json:"is_principal"`
+	LocalPath   *string `json:"local_path"`
+	URL         string  `json:"url"`
 }
 
 // assetFilePath monta a rota que serve o binario de um asset especifico (miniaturas
@@ -72,14 +76,21 @@ func assetFilePath(entityID, assetID string) string {
 }
 
 // assetToDTO converte um asset no DTO da API, derivando preferred do meta_json e a
-// url do binario.
+// url do binario. IsPrincipal/LocalPath vem direto das colunas novas (0062).
 func assetToDTO(a sqlcgen.Asset) assetDTO {
+	var localPath *string
+	if a.LocalPath.Valid && a.LocalPath.String != "" {
+		v := a.LocalPath.String
+		localPath = &v
+	}
 	return assetDTO{
-		ID:        a.ID,
-		Kind:      a.Kind,
-		Origin:    a.Origin,
-		Preferred: metaPreferred(a.MetaJson),
-		URL:       assetFilePath(a.EntityID, a.ID),
+		ID:          a.ID,
+		Kind:        a.Kind,
+		Origin:      a.Origin,
+		Preferred:   metaPreferred(a.MetaJson),
+		IsPrincipal: a.IsPrincipal != 0,
+		LocalPath:   localPath,
+		URL:         assetFilePath(a.EntityID, a.ID),
 	}
 }
 
@@ -296,16 +307,32 @@ func (s *Server) getAssetFile(w http.ResponseWriter, r *http.Request) {
 
 // preferAsset trata PUT /api/v1/entities/{id}/assets/{assetId}/prefer: marca o asset
 // como preferido do seu kind (meta.preferred=true) e LIMPA a flag dos outros do
-// mesmo (entity, kind), preservando as demais chaves do meta_json. 200 com o asset;
-// 404 asset/entity inexistente.
+// mesmo (entity, kind), preservando as demais chaves do meta_json. Desde o
+// briefing 0062: também materializa fisicamente o alvo (se ainda não tiver
+// local_path) e RENOMEIA os arquivos do mesmo (entity,kind) para refletir a
+// nova ordem (o antigo principal vira o próximo índice de rotação livre; o
+// novo assume o nome bare), setando is_principal=1 nele (e 0 no antigo) — a
+// fonte de verdade em coluna, mantida em SINCRONIA com meta.preferred (lido
+// por escolherAssetServido/artesLocais em todo o resto do sistema, ainda a
+// fonte de verdade PARA A SERVIÇO do binário). 200 com o asset; 404 asset/
+// entity inexistente OU entity sem media_file presente (sem pasta de
+// destino); 502/503 nunca aqui (download já aconteceu no upload/select — ver
+// nota em materializarAsset); 503 sem assetsDir configurado.
 func (s *Server) preferAsset(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
+		return
+	}
+	if s.assetsIndisponivel(w) {
 		return
 	}
 	id := chi.URLParam(r, "id")
 	assetID := chi.URLParam(r, "assetId")
 	ctx := r.Context()
 
+	ent, ok := s.exigirEntity(w, ctx, id)
+	if !ok {
+		return
+	}
 	alvo, ok := s.obterAssetDaEntity(w, ctx, id, assetID)
 	if !ok {
 		return
@@ -315,6 +342,21 @@ func (s *Server) preferAsset(w http.ResponseWriter, r *http.Request) {
 		respondErroInterno(w)
 		return
 	}
+
+	alvo, err = s.materializarERotacionarPrincipal(ctx, ent, assets, alvo)
+	if err != nil {
+		respondErroLocalmedia(w, err)
+		return
+	}
+	// Recarrega: a rotação pode ter mudado o local_path de OUTRO asset do
+	// mesmo kind (o antigo principal) — marcarPreferida só mexe em
+	// meta_json, mas a lista precisa refletir o local_path físico atual.
+	assets, err = s.leitura().ListarAssetsPorEntity(ctx, id)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+
 	atualizado, err := s.marcarPreferida(ctx, assets, alvo)
 	if err != nil {
 		respondErroInterno(w)

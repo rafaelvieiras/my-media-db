@@ -87,6 +87,16 @@ WHERE id = ?;
 DELETE FROM media_file
 WHERE library_source_id = ?;
 
+-- name: ListarMediaFilesPresentes :many
+-- Todos os media_file 'present' (de QUALQUER entity) -- usada por
+-- EhPastaExclusiva (internal/localmedia, briefing 0062) para decidir se uma
+-- pasta tem 1 unico video (nome de arte bare) ou varios (nome prefixado).
+-- Biblioteca self-hosted: full scan tolerado (mesmo espirito de
+-- montarPosseAgregada, internal/server/entities.go).
+SELECT id, entity_id, path, state
+FROM media_file
+WHERE state = 'present';
+
 -- name: EntityTemPosse :one
 -- POSSE DERIVADA (ADR-0009): verdadeiro se, e so se, existe ao menos um
 -- media_file 'present' para a entity. Posse NAO e coluna (uma coluna gerada nao

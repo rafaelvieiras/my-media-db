@@ -20,6 +20,25 @@ func (q *Queries) ApagarAsset(ctx context.Context, id string) error {
 	return err
 }
 
+const atualizarAssetLocalPath = `-- name: AtualizarAssetLocalPath :exec
+UPDATE asset
+SET local_path = ?
+WHERE id = ?
+`
+
+type AtualizarAssetLocalPathParams struct {
+	LocalPath sql.NullString
+	ID        string
+}
+
+// Grava o caminho FISICO materializado na pasta real da biblioteca (briefing
+// 0062): coluna ortogonal a path_or_uri (cache interno/URL externa) -- so
+// preenchida quando a arte tambem foi copiada para dentro da pasta do item.
+func (q *Queries) AtualizarAssetLocalPath(ctx context.Context, arg AtualizarAssetLocalPathParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarAssetLocalPath, arg.LocalPath, arg.ID)
+	return err
+}
+
 const atualizarAssetMeta = `-- name: AtualizarAssetMeta :exec
 UPDATE asset
 SET meta_json = ?
@@ -66,7 +85,7 @@ INSERT INTO asset (
 ) VALUES (
     ?, ?, ?, ?, ?, ?
 )
-RETURNING id, entity_id, kind, origin, path_or_uri, meta_json, created_at
+RETURNING id, entity_id, kind, origin, path_or_uri, meta_json, created_at, local_path, is_principal
 `
 
 type CriarAssetParams struct {
@@ -98,12 +117,35 @@ func (q *Queries) CriarAsset(ctx context.Context, arg CriarAssetParams) (Asset, 
 		&i.PathOrUri,
 		&i.MetaJson,
 		&i.CreatedAt,
+		&i.LocalPath,
+		&i.IsPrincipal,
 	)
 	return i, err
 }
 
+const desmarcarAssetsPrincipalPorKind = `-- name: DesmarcarAssetsPrincipalPorKind :exec
+UPDATE asset
+SET is_principal = 0
+WHERE entity_id = ? AND kind = ?
+`
+
+type DesmarcarAssetsPrincipalPorKindParams struct {
+	EntityID string
+	Kind     string
+}
+
+// Zera is_principal de TODOS os assets do (entity,kind) -- aplica a
+// invariante "no maximo um principal por kind" (briefing 0062) em codigo:
+// sempre chamada ANTES de MarcarAssetPrincipal, na mesma sequencia de
+// escrita (pool de escritor unico, ADR-0010 -- sem concorrencia entre as
+// duas chamadas).
+func (q *Queries) DesmarcarAssetsPrincipalPorKind(ctx context.Context, arg DesmarcarAssetsPrincipalPorKindParams) error {
+	_, err := q.db.ExecContext(ctx, desmarcarAssetsPrincipalPorKind, arg.EntityID, arg.Kind)
+	return err
+}
+
 const listarAssetsPorEntity = `-- name: ListarAssetsPorEntity :many
-SELECT id, entity_id, kind, origin, path_or_uri, meta_json, created_at
+SELECT id, entity_id, kind, origin, path_or_uri, meta_json, created_at, local_path, is_principal
 FROM asset
 WHERE entity_id = ?
 ORDER BY created_at, id
@@ -126,6 +168,8 @@ func (q *Queries) ListarAssetsPorEntity(ctx context.Context, entityID string) ([
 			&i.PathOrUri,
 			&i.MetaJson,
 			&i.CreatedAt,
+			&i.LocalPath,
+			&i.IsPrincipal,
 		); err != nil {
 			return nil, err
 		}
@@ -140,8 +184,22 @@ func (q *Queries) ListarAssetsPorEntity(ctx context.Context, entityID string) ([
 	return items, nil
 }
 
+const marcarAssetPrincipal = `-- name: MarcarAssetPrincipal :exec
+UPDATE asset
+SET is_principal = 1
+WHERE id = ?
+`
+
+// Seta is_principal=1 no asset (fonte de verdade em coluna, briefing 0062).
+// O chamador ZERA o antigo principal do mesmo (entity,kind) numa query
+// separada (DesmarcarAssetsPrincipalPorKind) antes de chamar esta.
+func (q *Queries) MarcarAssetPrincipal(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, marcarAssetPrincipal, id)
+	return err
+}
+
 const obterAsset = `-- name: ObterAsset :one
-SELECT id, entity_id, kind, origin, path_or_uri, meta_json, created_at
+SELECT id, entity_id, kind, origin, path_or_uri, meta_json, created_at, local_path, is_principal
 FROM asset
 WHERE id = ?
 `
@@ -157,12 +215,14 @@ func (q *Queries) ObterAsset(ctx context.Context, id string) (Asset, error) {
 		&i.PathOrUri,
 		&i.MetaJson,
 		&i.CreatedAt,
+		&i.LocalPath,
+		&i.IsPrincipal,
 	)
 	return i, err
 }
 
 const obterAssetPorEntityKindOrigin = `-- name: ObterAssetPorEntityKindOrigin :one
-SELECT id, entity_id, kind, origin, path_or_uri, meta_json, created_at
+SELECT id, entity_id, kind, origin, path_or_uri, meta_json, created_at, local_path, is_principal
 FROM asset
 WHERE entity_id = ? AND kind = ? AND origin = ?
 ORDER BY created_at, id
@@ -190,12 +250,14 @@ func (q *Queries) ObterAssetPorEntityKindOrigin(ctx context.Context, arg ObterAs
 		&i.PathOrUri,
 		&i.MetaJson,
 		&i.CreatedAt,
+		&i.LocalPath,
+		&i.IsPrincipal,
 	)
 	return i, err
 }
 
 const obterAssetPosterPorEntity = `-- name: ObterAssetPosterPorEntity :one
-SELECT id, entity_id, kind, origin, path_or_uri, meta_json, created_at
+SELECT id, entity_id, kind, origin, path_or_uri, meta_json, created_at, local_path, is_principal
 FROM asset
 WHERE entity_id = ? AND kind = 'poster'
 ORDER BY created_at, id
@@ -215,6 +277,8 @@ func (q *Queries) ObterAssetPosterPorEntity(ctx context.Context, entityID string
 		&i.PathOrUri,
 		&i.MetaJson,
 		&i.CreatedAt,
+		&i.LocalPath,
+		&i.IsPrincipal,
 	)
 	return i, err
 }

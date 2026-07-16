@@ -30,6 +30,10 @@ type Querier interface {
 	ApagarMediaFilesPorFonte(ctx context.Context, librarySourceID sql.NullString) error
 	// Remove o override da entity (volta ao valor da base editorial/arquivo).
 	ApagarMediaOverride(ctx context.Context, entityID string) error
+	// Grava o caminho FISICO materializado na pasta real da biblioteca (briefing
+	// 0062): coluna ortogonal a path_or_uri (cache interno/URL externa) -- so
+	// preenchida quando a arte tambem foi copiada para dentro da pasta do item.
+	AtualizarAssetLocalPath(ctx context.Context, arg AtualizarAssetLocalPathParams) error
 	// Atualiza SO o meta_json de um asset (marca/desmarca a preferida do dono,
 	// briefing 0017). Nao toca entity_id/kind/origin/path_or_uri. Usada ao (des)marcar
 	// preferida: o merge preservando as demais chaves do meta_json e feito em Go.
@@ -42,6 +46,10 @@ type Querier interface {
 	// fazendo o item sair da fila de revisao. Nao toca override/arte.
 	AtualizarConfidencePorEntity(ctx context.Context, arg AtualizarConfidencePorEntityParams) error
 	AtualizarEntity(ctx context.Context, arg AtualizarEntityParams) (Entity, error)
+	// Grava o caminho do .nfo exportado por ultimo + o timestamp da escrita
+	// (briefing 0062). Chamado a cada POST /entities/{id}/nfo, mesmo idempotente
+	// em conteudo (nfo_written_at muda sempre).
+	AtualizarEntityNfo(ctx context.Context, arg AtualizarEntityNfoParams) error
 	// Reescreve a BASE do episodio no re-import (briefing 0043): o find-or-create por id
 	// externo reusa a linha, mas antes so o create gravava estes campos, entao still_url/
 	// numbering novos (extension_data) e titulo/sinopse/data/ids atualizados do provider
@@ -185,6 +193,12 @@ type Querier interface {
 	// arquivo so atualiza o ordinal, nunca duplica o vinculo. Mesmo padrao de
 	// ON CONFLICT ... DO UPDATE SET usado em app_settings/media_external.
 	CriarVinculoEntidade(ctx context.Context, arg CriarVinculoEntidadeParams) error
+	// Zera is_principal de TODOS os assets do (entity,kind) -- aplica a
+	// invariante "no maximo um principal por kind" (briefing 0062) em codigo:
+	// sempre chamada ANTES de MarcarAssetPrincipal, na mesma sequencia de
+	// escrita (pool de escritor unico, ADR-0010 -- sem concorrencia entre as
+	// duas chamadas).
+	DesmarcarAssetsPrincipalPorKind(ctx context.Context, arg DesmarcarAssetsPrincipalPorKindParams) error
 	// POSSE DERIVADA da entidade num papel (analogo ao EntityTemPosse de filme):
 	// verdadeiro se, e so se, existe ao menos um arquivo 'present' vinculado aquela
 	// entity naquele kind.
@@ -330,6 +344,12 @@ type Querier interface {
 	// Todas as camadas externas cacheadas de uma entity (uma por fonte buscada).
 	ListarMediaExternalPorEntity(ctx context.Context, entityID string) ([]MediaExternal, error)
 	ListarMediaFilesPorEntity(ctx context.Context, entityID string) ([]MediaFile, error)
+	// Todos os media_file 'present' (de QUALQUER entity) -- usada por
+	// EhPastaExclusiva (internal/localmedia, briefing 0062) para decidir se uma
+	// pasta tem 1 unico video (nome de arte bare) ou varios (nome prefixado).
+	// Biblioteca self-hosted: full scan tolerado (mesmo espirito de
+	// montarPosseAgregada, internal/server/entities.go).
+	ListarMediaFilesPresentes(ctx context.Context) ([]ListarMediaFilesPresentesRow, error)
 	// Fila de ORFAS: entities auto-criadas pelo scanner (status='cataloged') que TEM ao
 	// menos um media_file, com NENHUM 'present' (todos 'missing'), e SEM investimento do
 	// dono -- sem linha em media_override e sem asset origin='user'. Uma entity SO
@@ -365,6 +385,10 @@ type Querier interface {
 	// chamador comparar (media_file_id, kind) da perdedora contra os da
 	// sobrevivente antes de mover (evita violar a PK composta).
 	ListarVinculosPorEntidade(ctx context.Context, entityID string) ([]MediaFileEntity, error)
+	// Seta is_principal=1 no asset (fonte de verdade em coluna, briefing 0062).
+	// O chamador ZERA o antigo principal do mesmo (entity,kind) numa query
+	// separada (DesmarcarAssetsPrincipalPorKind) antes de chamar esta.
+	MarcarAssetPrincipal(ctx context.Context, id string) error
 	// Fecho do ciclo de vida (ADR-0012): ao concluir um scan COMPLETO com a fonte
 	// acessivel, todo media_file 'present' daquela fonte cujo last_seen NAO e o
 	// carimbo deste scan (ou seja, nao foi revisto) passa a 'missing'. A entity e

@@ -14,6 +14,7 @@ import { chavesInvalidadas } from '@/test/harness'
 interface Espioes {
   onSelect: ReturnType<typeof vi.fn<(body: unknown) => void>>
   onPrefer: ReturnType<typeof vi.fn<(assetId: string) => void>>
+  onMaterialize: ReturnType<typeof vi.fn<(assetId: string) => void>>
   onDelete: ReturnType<typeof vi.fn<(assetId: string) => void>>
   onUpload: ReturnType<typeof vi.fn<(kind: unknown, fileName: string) => void>>
 }
@@ -22,15 +23,19 @@ interface Opcoes {
   artwork?: ArtworkResponse
   type?: string
   stillUrl?: string | null
+  owned?: boolean
 }
 
-// Item de arte de teste, com sobrescritas pontuais.
+// Item de arte de teste, com sobrescritas pontuais. `is_local_in_library`/
+// `is_principal` (briefing 0062) default `false` — sobrescreva por caso.
 function item(over: Partial<ArtworkItem> = {}): ArtworkItem {
   return {
     url: '/api/v1/images?src=https%3A%2F%2Fassets.fanart.tv%2Fx.jpg',
     source: 'fanarttv',
     is_preferred: false,
     is_local: false,
+    is_local_in_library: false,
+    is_principal: false,
     src_url: 'https://assets.fanart.tv/x.jpg',
     lang: 'en',
     likes: 5,
@@ -48,6 +53,9 @@ function artworkPadrao(): ArtworkResponse {
         url: '/api/v1/entities/e1/assets/p1/file',
         source: 'user',
         is_local: true,
+        // Cacheado internamente, mas AINDA não salvo na pasta real (0062) — exercita
+        // "Salvar na pasta" isolado de "Definir como principal".
+        is_local_in_library: false,
         is_preferred: false,
         asset_id: 'p1',
         src_url: undefined,
@@ -58,7 +66,9 @@ function artworkPadrao(): ArtworkResponse {
         url: '/api/v1/entities/e1/assets/p2/file',
         source: 'external',
         is_local: true,
+        is_local_in_library: true,
         is_preferred: true,
+        is_principal: true,
         asset_id: 'p2',
         src_url: undefined,
         lang: undefined,
@@ -98,7 +108,16 @@ function fetchRouter(opts: Opcoes, espioes: Espioes) {
     const prefer = path.match(/^\/api\/v1\/entities\/e1\/assets\/(.+)\/prefer$/)
     if (prefer && method === 'PUT') {
       espioes.onPrefer(prefer[1])
-      return okJson(baseAsset({ id: prefer[1], preferred: true }))
+      return okJson(
+        baseAsset({ id: prefer[1], preferred: true, is_principal: true }),
+      )
+    }
+    const materialize = path.match(
+      /^\/api\/v1\/entities\/e1\/assets\/(.+)\/materialize$/,
+    )
+    if (materialize && method === 'POST') {
+      espioes.onMaterialize(materialize[1])
+      return okJson(baseAsset({ id: materialize[1], local_path: '/lib/p.jpg' }))
     }
     const del = path.match(/^\/api\/v1\/entities\/e1\/assets\/(.+)$/)
     if (del && method === 'DELETE') {
@@ -117,6 +136,7 @@ function renderGallery(opts: Opcoes = {}) {
   const espioes: Espioes = {
     onSelect: vi.fn<(body: unknown) => void>(),
     onPrefer: vi.fn<(assetId: string) => void>(),
+    onMaterialize: vi.fn<(assetId: string) => void>(),
     onDelete: vi.fn<(assetId: string) => void>(),
     onUpload: vi.fn<(kind: unknown, fileName: string) => void>(),
   }
@@ -131,6 +151,7 @@ function renderGallery(opts: Opcoes = {}) {
         entityId="e1"
         type={opts.type ?? 'movie'}
         stillUrl={opts.stillUrl ?? null}
+        owned={opts.owned ?? true}
       />
     </QueryClientProvider>,
   )
@@ -164,11 +185,11 @@ describe('ArtGallery — linhas por kind (0049)', () => {
     ).toBeInTheDocument()
   })
 
-  it('(b) marca a arte preferida (aria-label + selo)', async () => {
+  it('(b) marca a arte principal (aria-label + selo, briefing 0062)', async () => {
     renderGallery({ artwork: artworkPadrao() })
-    // O 3o pôster é a preferida: o botão a anuncia como tal.
+    // O 3o pôster é o principal: o botão o anuncia como tal.
     expect(
-      await screen.findByRole('button', { name: 'Ver Pôster 3 (preferida)' }),
+      await screen.findByRole('button', { name: 'Ver Pôster 3 (principal)' }),
     ).toBeInTheDocument()
   })
 
@@ -313,16 +334,19 @@ describe('ArtGallery — lightbox: metadados e backdrop (0049)', () => {
     expect(screen.getByText('Temporada 1')).toBeInTheDocument()
   })
 
-  it('(o) preferida: sem botão "Definir como preferida", com selo no rodapé', async () => {
+  it('(o) principal: sem botão "Definir como principal", com selos no rodapé (0062)', async () => {
     const user = userEvent.setup()
     renderGallery({ artwork: artworkPadrao() })
-    // Pôster 3 é a preferida.
-    await abrirLightbox(user, 'Ver Pôster 3 (preferida)')
+    // Pôster 3 é o principal (e está salvo na pasta).
+    await abrirLightbox(user, 'Ver Pôster 3 (principal)')
     expect(
-      screen.queryByRole('button', { name: 'Definir como preferida' }),
+      screen.queryByRole('button', { name: 'Definir como principal' }),
     ).toBeNull()
-    // O selo "preferida" aparece no rodapé do lightbox.
-    expect(screen.getAllByText('preferida').length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByRole('button', { name: 'Salvar na pasta' })).toBeNull()
+    expect(screen.getAllByText('principal').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('salvo na pasta').length).toBeGreaterThanOrEqual(
+      1,
+    )
   })
 
   it('(p) clique no backdrop fecha o lightbox', async () => {
@@ -337,17 +361,17 @@ describe('ArtGallery — lightbox: metadados e backdrop (0049)', () => {
   })
 })
 
-describe('ArtGallery — ações roteadas (0049)', () => {
-  it('(g) preferir arte LOCAL do dono → PUT prefer com o asset_id', async () => {
+describe('ArtGallery — ações roteadas (0049/0062)', () => {
+  it('(g) definir principal de arte LOCAL do dono → PUT prefer direto com o asset_id', async () => {
     const user = userEvent.setup()
     const { espioes, invalidateSpy } = renderGallery({
       artwork: artworkPadrao(),
     })
 
-    // Pôster 2 é o local do dono (asset_id p1), não preferido.
+    // Pôster 2 é o local do dono (asset_id p1), ainda não principal.
     await abrirLightbox(user, 'Ver Pôster 2')
     await user.click(
-      screen.getByRole('button', { name: 'Definir como preferida' }),
+      screen.getByRole('button', { name: 'Definir como principal' }),
     )
 
     await waitFor(() => expect(espioes.onPrefer).toHaveBeenCalledWith('p1'))
@@ -361,32 +385,15 @@ describe('ArtGallery — ações roteadas (0049)', () => {
     })
   })
 
-  it('(h) preferir arte do INVENTÁRIO → POST select {url:src_url, prefer:true}', async () => {
+  it('(h) definir principal de arte do INVENTÁRIO encadeia select (sem preferir) + prefer (0062 §2 passo 4)', async () => {
     const user = userEvent.setup()
     const { espioes } = renderGallery({ artwork: artworkPadrao() })
 
-    // Pôster 1 é do inventário (fanarttv).
+    // Pôster 1 é do inventário (fanarttv, sem asset_id ainda).
     await abrirLightbox(user, 'Ver Pôster 1')
     await user.click(
-      screen.getByRole('button', { name: 'Definir como preferida' }),
+      screen.getByRole('button', { name: 'Definir como principal' }),
     )
-
-    await waitFor(() =>
-      expect(espioes.onSelect).toHaveBeenCalledWith({
-        kind: 'poster',
-        url: 'https://assets.fanart.tv/x.jpg',
-        prefer: true,
-      }),
-    )
-    expect(espioes.onPrefer).not.toHaveBeenCalled()
-  })
-
-  it('(i) baixar arte do inventário → POST select {prefer:false}', async () => {
-    const user = userEvent.setup()
-    const { espioes } = renderGallery({ artwork: artworkPadrao() })
-
-    await abrirLightbox(user, 'Ver Pôster 1')
-    await user.click(screen.getByRole('button', { name: 'Baixar pro disco' }))
 
     await waitFor(() =>
       expect(espioes.onSelect).toHaveBeenCalledWith({
@@ -395,6 +402,82 @@ describe('ArtGallery — ações roteadas (0049)', () => {
         prefer: false,
       }),
     )
+    // O select cria o asset 'novo' (mock); o clique único encadeia o prefer nele.
+    await waitFor(() => expect(espioes.onPrefer).toHaveBeenCalledWith('novo'))
+  })
+
+  it('(i) salvar na pasta arte do INVENTÁRIO encadeia select + materialize', async () => {
+    const user = userEvent.setup()
+    const { espioes, invalidateSpy } = renderGallery({
+      artwork: artworkPadrao(),
+    })
+
+    await abrirLightbox(user, 'Ver Pôster 1')
+    await user.click(screen.getByRole('button', { name: 'Salvar na pasta' }))
+
+    await waitFor(() =>
+      expect(espioes.onSelect).toHaveBeenCalledWith({
+        kind: 'poster',
+        url: 'https://assets.fanart.tv/x.jpg',
+        prefer: false,
+      }),
+    )
+    await waitFor(() =>
+      expect(espioes.onMaterialize).toHaveBeenCalledWith('novo'),
+    )
+    expect(espioes.onPrefer).not.toHaveBeenCalled()
+    await waitFor(() => {
+      const chaves = chavesInvalidadas(invalidateSpy.mock.calls)
+      expect(chaves).toContain('["artwork","e1"]')
+    })
+  })
+
+  it('(i2) salvar na pasta arte já local (com asset_id) → POST materialize direto', async () => {
+    const user = userEvent.setup()
+    const { espioes } = renderGallery({ artwork: artworkPadrao() })
+
+    // Pôster 2 é local do dono (asset_id p1), ainda não salvo na pasta.
+    await abrirLightbox(user, 'Ver Pôster 2')
+    await user.click(screen.getByRole('button', { name: 'Salvar na pasta' }))
+
+    await waitFor(() =>
+      expect(espioes.onMaterialize).toHaveBeenCalledWith('p1'),
+    )
+    expect(espioes.onSelect).not.toHaveBeenCalled()
+  })
+
+  it('(i3) baixar pro cache do inventário → POST select {prefer:false} (0049, sem tocar a pasta real)', async () => {
+    const user = userEvent.setup()
+    const { espioes } = renderGallery({ artwork: artworkPadrao() })
+
+    await abrirLightbox(user, 'Ver Pôster 1')
+    await user.click(screen.getByRole('button', { name: 'Baixar pro cache' }))
+
+    await waitFor(() =>
+      expect(espioes.onSelect).toHaveBeenCalledWith({
+        kind: 'poster',
+        url: 'https://assets.fanart.tv/x.jpg',
+        prefer: false,
+      }),
+    )
+    expect(espioes.onMaterialize).not.toHaveBeenCalled()
+  })
+
+  it('(i4) sem media_file presente (owned=false): "Definir como principal"/"Salvar na pasta" ficam desabilitados', async () => {
+    const user = userEvent.setup()
+    renderGallery({ artwork: artworkPadrao(), owned: false })
+
+    await abrirLightbox(user, 'Ver Pôster 1')
+    expect(
+      screen.getByRole('button', { name: 'Definir como principal' }),
+    ).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: 'Salvar na pasta' }),
+    ).toBeDisabled()
+    // "Baixar pro cache" não depende de pasta na biblioteca — continua livre.
+    expect(
+      screen.getByRole('button', { name: 'Baixar pro cache' }),
+    ).toBeEnabled()
   })
 
   it('(j) remover só aparece na arte do dono e chama DELETE do asset', async () => {

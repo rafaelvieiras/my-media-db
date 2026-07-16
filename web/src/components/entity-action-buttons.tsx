@@ -1,11 +1,12 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ImageDown, Pencil, Sparkles } from 'lucide-react'
+import { FileText, ImageDown, Pencil, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   ApiError,
   downloadMissingArtwork,
   enrichMissing,
+  writeEntityNfo,
   type DownloadMissingArtworkResult,
   type EnrichMissingResult,
 } from '@/lib/api'
@@ -88,16 +89,27 @@ function mensagemArte(resultado: DownloadMissingArtworkResult) {
   return null
 }
 
+// TOOLTIP_SEM_PASTA explica por que "Salvar informações (NFO)" fica desabilitado
+// quando a entity não tem nenhum media_file presente — mesma condição usada pela
+// galeria de artes (0062) para "salvar na pasta"/"definir como principal".
+const TOOLTIP_SEM_PASTA =
+  'Este item não tem um arquivo na biblioteca — sem pasta de destino para gravar o .nfo.'
+
 export function EntityActionButtons({
   id,
   catalogCompleteness,
+  owned = true,
 }: {
   id: string
   catalogCompleteness: CatalogCompleteness
+  // Posse (`ResolvedEntity.owned`, `EXISTS media_file present`): sem isso não há
+  // pasta de destino na biblioteca real para o .nfo (briefing 0062). Default
+  // `true` — compat com quem não passa a prop.
+  owned?: boolean
 }) {
   const queryClient = useQueryClient()
 
-  // Invalidação compartilhada pelos dois botões novos (§4): a tela (entity),
+  // Invalidação compartilhada pelos botões novos (§4): a tela (entity),
   // a listagem (entities) e a galeria (artwork) refletem o resultado sem F5.
   const invalidar = () => {
     queryClient.invalidateQueries({ queryKey: ['entity', id] })
@@ -112,6 +124,14 @@ export function EntityActionButtons({
   const baixarArte = useMutation({
     mutationFn: () => downloadMissingArtwork(id),
     onSuccess: invalidar,
+  })
+  // Salvar informações (NFO, briefing 0062): idempotente — sempre sobrescreve. Não
+  // precisa invalidar `artwork`/`entities` (não mexe em arte nem nos campos que o
+  // grid mostra), mas invalida a entity: `nfo_path`/`nfo_written_at` mudam.
+  const salvarNfo = useMutation({
+    mutationFn: () => writeEntityNfo(id),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['entity', id] }),
   })
 
   const mostrarInformacoes = precisaAtencaoCatalogacao(catalogCompleteness)
@@ -130,6 +150,12 @@ export function EntityActionButtons({
       ? baixarArte.error.message
       : baixarArte.isError
         ? 'Não foi possível baixar a arte faltante.'
+        : null
+  const erroNfo =
+    salvarNfo.error instanceof ApiError
+      ? salvarNfo.error.message
+      : salvarNfo.isError
+        ? 'Não foi possível gravar o .nfo.'
         : null
 
   return (
@@ -163,6 +189,16 @@ export function EntityActionButtons({
             {baixarArte.isPending ? 'Baixando…' : 'Baixar arte faltando'}
           </Button>
         ) : null}
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={salvarNfo.isPending || !owned}
+          title={owned ? undefined : TOOLTIP_SEM_PASTA}
+          onClick={() => salvarNfo.mutate()}
+        >
+          <FileText aria-hidden />
+          {salvarNfo.isPending ? 'Gravando…' : 'Salvar informações (NFO)'}
+        </Button>
       </div>
       {erroEnriquecer ? (
         <span role="alert" className="text-sm font-medium text-destructive">
@@ -177,6 +213,15 @@ export function EntityActionButtons({
         </span>
       ) : baixarArte.isSuccess ? (
         mensagemArte(baixarArte.data)
+      ) : null}
+      {erroNfo ? (
+        <span role="alert" className="text-sm font-medium text-destructive">
+          {erroNfo}
+        </span>
+      ) : salvarNfo.isSuccess ? (
+        <span role="status" className="text-sm text-muted-foreground">
+          .nfo gravado em {salvarNfo.data.nfo_path}
+        </span>
       ) : null}
     </div>
   )

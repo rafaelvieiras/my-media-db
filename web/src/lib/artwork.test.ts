@@ -14,6 +14,8 @@ function item(over: Partial<ArtworkItem> = {}): ArtworkItem {
     source: 'fanarttv',
     is_preferred: false,
     is_local: false,
+    is_local_in_library: false,
+    is_principal: false,
     ...over,
   }
 }

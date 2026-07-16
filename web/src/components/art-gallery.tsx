@@ -5,7 +5,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query'
-import { Star, Upload } from 'lucide-react'
+import { FolderCheck, Star, Upload } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
@@ -16,6 +16,7 @@ import {
   arteSrc,
   deleteAsset,
   kindsParaTipo,
+  materializeAsset,
   preferAsset,
   selectArtwork,
   uploadAsset,
@@ -41,10 +42,16 @@ import { artworkQueryOptions } from '@/lib/queries'
 // a origem vira só um selo. Clicar numa arte abre o lightbox (alta + zoom +
 // navegação + ações). O dono ainda pode ENVIAR uma arte custom (upload do 0017).
 //
-// Ações e roteamento (contrato 0048):
-//   • Definir preferida → asset LOCAL: PUT .../assets/{asset_id}/prefer;
-//     INVENTÁRIO (não-local): POST .../artwork/select {url: src_url, prefer:true}.
-//   • Baixar (materializar sem preferir) → POST .../artwork/select {prefer:false}.
+// Ações e roteamento (contrato 0048, estendido no 0062):
+//   • Definir como PRINCIPAL (is_principal, fonte de verdade) → asset já existente:
+//     PUT .../assets/{asset_id}/prefer (o backend materializa+renomeia sozinho, se
+//     preciso); candidato do INVENTÁRIO (sem asset_id): encadeia POST
+//     .../artwork/select {prefer:false} (cria o asset) + o PUT prefer acima.
+//   • Salvar NA PASTA real da biblioteca (is_local_in_library) → mesmo encadeamento
+//     do candidato do inventário quando preciso, terminando em POST
+//     .../assets/{asset_id}/materialize.
+//   • Baixar pro CACHE interno (materializar sem preferir/tocar a pasta real) →
+//     POST .../artwork/select {prefer:false}.
 //   • Remover (só do DONO, source==='user') → DELETE .../assets/{asset_id}.
 
 // Aceite do <input file> e da validação no cliente (mesmo conjunto do backend).
@@ -63,6 +70,28 @@ function invalidarAposArte(qc: QueryClient, id: string) {
 interface Aberto {
   kind: string
   index: number
+}
+
+// garantirAssetId resolve o `asset_id` de um item da galeria: se o item JÁ é um
+// asset (local ou não), devolve o `asset_id` direto; se ainda é só um candidato do
+// INVENTÁRIO (fanart.tv/TMDB, sem asset ainda), cria o asset primeiro (POST select,
+// sem preferir) e devolve o id recém-criado. Compartilhado por `preferir` e
+// `materializar` (briefing 0062, jornada §2 passo 4): as duas ações podem precisar
+// desse mesmo passo antes de chamar PUT prefer / POST materialize.
+async function garantirAssetId(
+  entityId: string,
+  kind: string,
+  item: ArtworkItem,
+): Promise<string> {
+  if (item.asset_id) {
+    return item.asset_id
+  }
+  const asset = await selectArtwork(entityId, {
+    kind: kind as SelectArtworkRequest['kind'],
+    url: item.src_url ?? item.url,
+    prefer: false,
+  })
+  return asset.id
 }
 
 // LinhaGaleria renderiza UMA linha (kind): rótulo + scroll horizontal de cards no
@@ -91,10 +120,10 @@ function LinhaGaleria({
               type="button"
               onClick={() => onAbrir(linha.kind, i)}
               aria-label={`Ver ${rotuloKind(linha.kind)} ${i + 1}${
-                item.is_preferred ? ' (preferida)' : ''
+                item.is_principal ? ' (principal)' : ''
               }`}
               className={`group relative block ${larguraKind(linha.kind)} overflow-hidden rounded-lg ${fundo} ring-1 transition ${
-                item.is_preferred
+                item.is_principal
                   ? 'ring-2 ring-amber-500'
                   : 'ring-foreground/10 hover:ring-foreground/30'
               }`}
@@ -105,9 +134,22 @@ function LinhaGaleria({
                 loading="lazy"
                 className={`${info.aspect} w-full ${ajuste}`}
               />
-              {item.is_preferred ? (
-                <span className="absolute left-1.5 top-1.5 flex size-6 items-center justify-center rounded-full bg-amber-500 text-white shadow">
+              {item.is_principal ? (
+                <span
+                  title="Principal"
+                  className="absolute left-1.5 top-1.5 flex size-6 items-center justify-center rounded-full bg-amber-500 text-white shadow"
+                >
                   <Star className="size-3.5 fill-current" aria-hidden />
+                </span>
+              ) : null}
+              {item.is_local_in_library ? (
+                <span
+                  title="Salvo na pasta"
+                  className={`absolute top-1.5 flex size-6 items-center justify-center rounded-full bg-emerald-600 text-white shadow ${
+                    item.is_principal ? 'left-8' : 'left-1.5'
+                  }`}
+                >
+                  <FolderCheck className="size-3.5" aria-hidden />
                 </span>
               ) : null}
             </button>
@@ -122,6 +164,7 @@ export function ArtGallery({
   entityId,
   type = 'movie',
   stillUrl = null,
+  owned = true,
 }: {
   entityId: string
   // Tipo da entity: decide os kinds oferecidos no UPLOAD (episódio → só `still`) e
@@ -130,6 +173,12 @@ export function ArtGallery({
   // Still do EPISÓDIO vindo do detalhe (0044): CRU do provider ou rota local do
   // custom. Card read-only "provider" quando o inventário ainda não tem still.
   stillUrl?: string | null
+  // Posse (briefing 0062): `EXISTS media_file present` (mesmo `ResolvedEntity.
+  // owned`). Sem isso não há PASTA de destino na biblioteca real — "Salvar na
+  // pasta"/"Definir como principal" ficam desabilitados com tooltip (jornada §2
+  // passo 7). Default `true`: quem não passa (telas antigas) mantém os botões
+  // habilitados, como antes deste briefing.
+  owned?: boolean
 }) {
   const qc = useQueryClient()
   const { data, isPending, isError, error } = useQuery(
@@ -151,20 +200,29 @@ export function ArtGallery({
     onSuccess: () => invalidarAposArte(qc, entityId),
   })
 
-  // Definir preferida: asset LOCAL desempata via prefer; inventário baixa+prefere.
+  // Definir PRINCIPAL (briefing 0062, fonte de verdade `is_principal`): asset já
+  // existente → PUT prefer direto (o backend materializa+renomeia sozinho, se
+  // preciso); candidato do INVENTÁRIO (sem `asset_id` ainda) → cria o asset
+  // primeiro (POST select, sem preferir) e só então PUT prefer — um único clique
+  // do dono encadeia as duas chamadas quando necessário (jornada §2 passo 4).
   const preferir = useMutation({
-    mutationFn: ({ kind, item }: { kind: string; item: ArtworkItem }) =>
-      item.is_local && item.asset_id
-        ? preferAsset(entityId, item.asset_id)
-        : selectArtwork(entityId, {
-            kind: kind as SelectArtworkRequest['kind'],
-            url: item.src_url ?? item.url,
-            prefer: true,
-          }),
+    mutationFn: async ({ kind, item }: { kind: string; item: ArtworkItem }) =>
+      preferAsset(entityId, await garantirAssetId(entityId, kind, item)),
     onSuccess: () => invalidarAposArte(qc, entityId),
   })
 
-  // Baixar (materializar sem preferir) — só arte de inventário tem `src_url`.
+  // Salvar NA PASTA real da biblioteca (briefing 0062) — distinto de `baixar`
+  // (que só cacheia internamente, sem tocar a pasta real). Mesmo encadeamento do
+  // `preferir` para um candidato ainda sem `asset_id`, mas termina em POST
+  // materialize (não muda quem é o principal).
+  const materializar = useMutation({
+    mutationFn: async ({ kind, item }: { kind: string; item: ArtworkItem }) =>
+      materializeAsset(entityId, await garantirAssetId(entityId, kind, item)),
+    onSuccess: () => invalidarAposArte(qc, entityId),
+  })
+
+  // Baixar (materializar SÓ no cache interno, sem preferir nem tocar a pasta real
+  // da biblioteca) — só arte de inventário tem `src_url`.
   const baixar = useMutation({
     mutationFn: ({ kind, item }: { kind: string; item: ArtworkItem }) =>
       selectArtwork(entityId, {
@@ -196,19 +254,28 @@ export function ArtGallery({
     enviar.mutate({ file, kind: kindUpload })
   }
 
-  const ocupado = preferir.isPending || baixar.isPending || remover.isPending
+  const ocupado =
+    preferir.isPending ||
+    materializar.isPending ||
+    baixar.isPending ||
+    remover.isPending
 
   // Erro das AÇÕES do lightbox (pt-BR do envelope) — exibido no rodapé do lightbox.
   const erroAcao =
     preferir.error instanceof ApiError
       ? preferir.error.message
-      : baixar.error instanceof ApiError
-        ? baixar.error.message
-        : remover.error instanceof ApiError
-          ? remover.error.message
-          : preferir.isError || baixar.isError || remover.isError
-            ? 'Nao foi possivel atualizar a arte.'
-            : null
+      : materializar.error instanceof ApiError
+        ? materializar.error.message
+        : baixar.error instanceof ApiError
+          ? baixar.error.message
+          : remover.error instanceof ApiError
+            ? remover.error.message
+            : preferir.isError ||
+                materializar.isError ||
+                baixar.isError ||
+                remover.isError
+              ? 'Nao foi possivel atualizar a arte.'
+              : null
 
   // Erro do UPLOAD (cliente > envelope > genérico).
   const erroUpload =
@@ -232,9 +299,16 @@ export function ArtGallery({
   const acoes: AcoesLightbox = {
     onPreferir: (item) =>
       aberto && preferir.mutate({ kind: aberto.kind, item }),
+    onMaterializar: (item) =>
+      aberto && materializar.mutate({ kind: aberto.kind, item }),
     onBaixar: (item) => aberto && baixar.mutate({ kind: aberto.kind, item }),
     onRemover: (item) => aberto && remover.mutate({ kind: aberto.kind, item }),
     ocupado,
+    // Sem media_file presente não há pasta de destino na biblioteca real (jornada
+    // §2 passo 7) — "Salvar na pasta"/"Definir como principal" ficam desabilitados
+    // com tooltip; "Baixar pro cache"/"Remover" continuam livres (não tocam a
+    // pasta real).
+    podeSalvarNaPasta: owned,
     erro: erroAcao,
   }
 

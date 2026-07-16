@@ -420,6 +420,16 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Put("/{id}/assets/{assetId}/prefer", s.preferAsset)
 				ent.Delete("/{id}/assets/{assetId}", s.deleteAsset)
 
+				// Materialização física na pasta REAL da biblioteca (briefing 0062):
+				// copia uma arte já cacheada internamente para o disco da biblioteca,
+				// no nome canônico Kodi/Emby (internal/localmedia). NÃO mexe em
+				// is_principal (isso é o PUT /prefer acima, estendido no mesmo
+				// briefing). "Salvar informações (NFO)" (grupo de ações rápidas do
+				// 0059) grava/regrava o .nfo da entity na pasta real — export
+				// one-way (banco → disco), idempotente.
+				ent.Post("/{id}/assets/{assetId}/materialize", s.materializeAsset)
+				ent.Post("/{id}/nfo", s.writeEntityNfo)
+
 				// Enriquecimento de uma entity existente (briefing 0015): puxa o
 				// detalhe do provider e grava a base externa + pôster cacheado.
 				ent.Post("/{id}/enrich", s.enrichEntity)

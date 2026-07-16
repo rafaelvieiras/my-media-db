@@ -318,6 +318,7 @@ export function EntityDetailScreen() {
             <EntityActionButtons
               id={id}
               catalogCompleteness={data.catalog_completeness}
+              owned={data.owned}
             />
           </>
         }
@@ -383,6 +384,7 @@ export function EntityDetailScreen() {
           entityId={id}
           type={data.type}
           stillUrl={data.still_url ?? null}
+          owned={data.owned}
         />
 
         {/* Arquivos só nos nós-folha que têm media_file: filme e episódio. Coleção,
