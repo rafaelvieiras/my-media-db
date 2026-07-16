@@ -52,7 +52,7 @@ func fixtureEntidadeCompleta() resolver.Entidade {
 // tabela de mapeamento do briefing 0062 SS4 (criterio de aceite SS5).
 func TestMontarNFOMovieCampoACampo(t *testing.T) {
 	e := fixtureEntidadeCompleta()
-	out, err := MontarNFO(e, InsumosArte{}, CamposUsuarioNFO{}) // nada materializado localmente -> thumb/fanart de fallback aparecem
+	out, err := MontarNFO(e, CamposUsuarioNFO{})
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
@@ -68,7 +68,9 @@ func TestMontarNFOMovieCampoACampo(t *testing.T) {
 		"<genre>Science Fiction</genre>",
 		"<mpaa>R</mpaa>",
 		"<premiered>1999-03-31</premiered>",
-		`<rating name="tmdb">8.2</rating>`,
+		"<ratings>",
+		`<rating name="tmdb" max="10" default="true">`,
+		"<value>8.2</value>",
 		`<uniqueid type="imdb">tt0133093</uniqueid>`,
 		`<uniqueid type="tmdb" default="true">603</uniqueid>`,
 		"<name>Keanu Reeves</name>",
@@ -82,9 +84,6 @@ func TestMontarNFOMovieCampoACampo(t *testing.T) {
 		"<credits>Lana Wachowski</credits>",
 		"<studio>Warner Bros. Pictures</studio>",
 		"<studio>Village Roadshow Pictures</studio>",
-		"<thumb>/api/v1/entities/e1/assets/poster</thumb>",
-		"<fanart>",
-		"<thumb>https://image.tmdb.org/t/p/original/backdrop.jpg</thumb>",
 	}
 	for _, esperado := range esperados {
 		if !strings.Contains(xmlStr, esperado) {
@@ -100,6 +99,15 @@ func TestMontarNFOMovieCampoACampo(t *testing.T) {
 	if strings.Contains(xmlStr, "<status>") {
 		t.Error("movie.nfo contem <status>, mas status e exclusivo de tvshow.nfo")
 	}
+	// Pôster/fundo (nível de filme) NUNCA são escritos a partir de
+	// e.PosterURL/e.BackdropURL (briefing 0066) -- a arte materializada na
+	// pasta real já é descoberta pelo Kodi/Jellyfin via convenção de nome.
+	if strings.Contains(xmlStr, "/api/v1/entities/e1/assets/poster") {
+		t.Errorf("XML contem a URL do poster (e.PosterURL) -- <thumb> de nivel de filme nunca deveria ser escrito a partir do resolver:\n%s", xmlStr)
+	}
+	if strings.Contains(xmlStr, "<fanart>") {
+		t.Errorf("XML contem <fanart> -- nunca deveria ser escrito a partir de e.BackdropURL:\n%s", xmlStr)
+	}
 }
 
 // TestMontarNFOTVShowIncluiStatus: tvshow.nfo inclui <status> a partir de
@@ -111,7 +119,7 @@ func TestMontarNFOTVShowIncluiStatus(t *testing.T) {
 		Title:        "Show",
 		AiringStatus: strPtr("Returning Series"),
 	}
-	out, err := MontarNFO(e, InsumosArte{}, CamposUsuarioNFO{})
+	out, err := MontarNFO(e, CamposUsuarioNFO{})
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
@@ -133,7 +141,7 @@ func TestMontarNFOUniqueIDFallbackImdb(t *testing.T) {
 		Title:       "Sem TMDB",
 		ExternalIDs: map[string]string{"imdb": "tt9999999", "tvdb": "12345"},
 	}
-	out, err := MontarNFO(e, InsumosArte{}, CamposUsuarioNFO{})
+	out, err := MontarNFO(e, CamposUsuarioNFO{})
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
@@ -146,30 +154,38 @@ func TestMontarNFOUniqueIDFallbackImdb(t *testing.T) {
 	}
 }
 
-// TestMontarNFOThumbFanartOmitidosQuandoLocal: quando InsumosArte sinaliza
-// poster/fanart JA materializados na pasta real, o NFO OMITE as tags de
-// fallback (o arquivo local ja e a fonte -- briefing 0062 SS4).
-func TestMontarNFOThumbFanartOmitidosQuandoLocal(t *testing.T) {
+// TestMontarNFOThumbFanartNuncaEscritosDoResolver prova a garantia do
+// briefing 0066: <thumb>/<fanart> a nível de filme/série NUNCA são escritos
+// por MontarNFO a partir de e.PosterURL/e.BackdropURL -- independente do que
+// esses campos contenham (mesmo apontando para uma URL absoluta "válida"),
+// já que o parâmetro InsumosArte não existe mais. Quem materializa a arte na
+// pasta real (e portanto decide se poster/fanart "existem" para o
+// Kodi/Jellyfin) é gravarNFO, ANTES de chamar MontarNFO -- este pacote é
+// puro e não sabe nada sobre o disco.
+func TestMontarNFOThumbFanartNuncaEscritosDoResolver(t *testing.T) {
 	e := fixtureEntidadeCompleta()
-	out, err := MontarNFO(e, InsumosArte{PosterLocal: true, FanartLocal: true}, CamposUsuarioNFO{})
+	// e.PosterURL/e.BackdropURL (fixtureEntidadeCompleta) sao URLs "validas"
+	// (uma de rota interna, outra absoluta) -- mesmo assim nao devem
+	// vazar para o XML.
+	out, err := MontarNFO(e, CamposUsuarioNFO{})
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
 	xmlStr := string(out)
 	// So o <thumb> do ATOR (foto de perfil) pode sobrar -- o <thumb> de
-	// nivel superior (fallback do poster) e o <fanart> devem sumir.
+	// nivel superior (poster) e o <fanart> nunca devem aparecer.
 	if strings.Contains(xmlStr, "/api/v1/entities/e1/assets/poster") {
-		t.Errorf("XML contem a URL do poster mesmo com PosterLocal=true:\n%s", xmlStr)
+		t.Errorf("XML contem a URL do poster (e.PosterURL) -- nunca deveria ser escrita:\n%s", xmlStr)
 	}
 	if strings.Contains(xmlStr, "<fanart>") {
-		t.Errorf("XML contem <fanart> mesmo com FanartLocal=true:\n%s", xmlStr)
+		t.Errorf("XML contem <fanart> -- nunca deveria ser escrito a partir de e.BackdropURL:\n%s", xmlStr)
 	}
 }
 
 // TestMontarNFOSemRating: VoteAverage nil omite <rating> por completo.
 func TestMontarNFOSemRating(t *testing.T) {
 	e := resolver.Entidade{ID: "e3", Type: "movie", Title: "Sem nota"}
-	out, err := MontarNFO(e, InsumosArte{}, CamposUsuarioNFO{})
+	out, err := MontarNFO(e, CamposUsuarioNFO{})
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
@@ -220,7 +236,7 @@ func TestExtrairCamposUsuarioRoundTrip(t *testing.T) {
 	}
 
 	e := fixtureEntidadeCompleta()
-	out, err := MontarNFO(e, InsumosArte{}, usuario)
+	out, err := MontarNFO(e, usuario)
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
@@ -270,7 +286,7 @@ func TestExtrairCamposUsuarioPreservaTagDesconhecidaRepetida(t *testing.T) {
 	}
 
 	e := fixtureEntidadeCompleta()
-	out, err := MontarNFO(e, InsumosArte{}, usuario)
+	out, err := MontarNFO(e, usuario)
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
@@ -312,7 +328,7 @@ func TestExtrairCamposUsuarioPreservaBlocoAninhadoDesconhecido(t *testing.T) {
 	}
 
 	e := fixtureEntidadeCompleta()
-	out, err := MontarNFO(e, InsumosArte{}, usuario)
+	out, err := MontarNFO(e, usuario)
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
@@ -348,7 +364,7 @@ func TestMontarNFOCamposManagedNuncaVemDoArquivoAntigo(t *testing.T) {
 	}
 
 	e := fixtureEntidadeCompleta() // Title="Matrix", Description="Um hacker descobre a verdade.", Tags=[Action, Science Fiction]
-	out, err := MontarNFO(e, InsumosArte{}, usuario)
+	out, err := MontarNFO(e, usuario)
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
@@ -386,7 +402,7 @@ func TestMontarNFOCamposManagedNuncaVemDoArquivoAntigo(t *testing.T) {
 // garantia explicitamente como criterio de aceite (briefing 0065 SS5).
 func TestMontarNFOSemElementosDesconhecidosNaoGeraExtrasFantasma(t *testing.T) {
 	e := fixtureEntidadeCompleta()
-	out, err := MontarNFO(e, InsumosArte{}, CamposUsuarioNFO{})
+	out, err := MontarNFO(e, CamposUsuarioNFO{})
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}

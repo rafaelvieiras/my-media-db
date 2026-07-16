@@ -614,7 +614,7 @@ func (s *Server) getEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resolvida, encontrada, err := s.resolverEntity(ctx, id, lang)
+	resolvida, encontrada, err := s.resolverEntity(ctx, id, lang, true)
 	if err != nil {
 		respondErroInterno(w)
 		return
@@ -630,7 +630,13 @@ func (s *Server) getEntity(w http.ResponseWriter, r *http.Request) {
 // camadas (arquivo ⟵ externo ⟵ override) — o caminho único reusado por getEntity,
 // enrich e import. Devolve encontrada=false (sem erro) quando a entity não existe.
 // É AQUI que a camada externa fica viva de ponta a ponta (a fiação adiada do 0013).
-func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.Entidade, bool, error) {
+// proxiarImagens controla se s.proxyarCreditos reescreve as URLs de imagem de
+// créditos (cast/crew/companies) para a rota de proxy interna
+// (/api/v1/images?src=...) — pensado para o frontend web decouplar do CDN da
+// fonte. Quando false (gravação de .nfo, briefing 0066), os créditos ficam
+// com a URL DIRETA do provider (ex. TMDB), que é o que um Kodi/Jellyfin lendo
+// o .nfo do disco precisa.
+func (s *Server) resolverEntity(ctx context.Context, id, lang string, proxiarImagens bool) (resolver.Entidade, bool, error) {
 	ent, err := s.leitura().ObterEntity(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -695,7 +701,9 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string) (resolver.
 	// descobre-se por campo em vez de assumir a fonte de maior prioridade da entity.
 	s.anotarCreditosInternos(ctx, fonteDoCampoExterno(externo, "cast"), resolvida.Cast, nil)
 	s.anotarCreditosInternos(ctx, fonteDoCampoExterno(externo, "crew"), nil, resolvida.Crew)
-	s.proxyarCreditos(resolvida.Cast, resolvida.Crew, resolvida.Companies)
+	if proxiarImagens {
+		s.proxyarCreditos(resolvida.Cast, resolvida.Crew, resolvida.Companies)
+	}
 	resolvida.Ancestors = s.montarAncestrais(ctx, id)
 	resolvida.Ownership = s.montarPosseAgregada(ctx, ent)
 	resolvida.Orderings = s.montarOrderings(ctx, ent)

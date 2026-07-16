@@ -94,7 +94,7 @@ func (s *Server) avaliarERecalcularUmItem(ctx context.Context, w *sqlcgen.Querie
 	if _, achou := cfg[ent.Type]; !achou {
 		resultado = resultadoCompletude{Complete: true, Missing: []string{}}
 	} else {
-		resolvida, ok, err := s.resolverEntity(ctx, ent.ID, "")
+		resolvida, ok, err := s.resolverEntity(ctx, ent.ID, "", true)
 		if err != nil {
 			return resultadoCompletude{}, err
 		}

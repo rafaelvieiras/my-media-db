@@ -331,7 +331,7 @@ func removerCampo(info resolver.CampoInfo, blob map[string]json.RawMessage, camp
 // reflete o valor resolvido na hora). 404 se a entity sumiu no meio; 500 em erro
 // de banco.
 func (s *Server) responderOverride(w http.ResponseWriter, ctx context.Context, id, lang string) {
-	resolvida, encontrada, err := s.resolverEntity(ctx, id, lang)
+	resolvida, encontrada, err := s.resolverEntity(ctx, id, lang, true)
 	if err != nil {
 		respondErroInterno(w)
 		return

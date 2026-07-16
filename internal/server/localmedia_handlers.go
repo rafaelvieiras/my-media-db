@@ -14,6 +14,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -358,7 +359,7 @@ func (s *Server) writeEntityNfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resolvida, encontrada, err := s.resolverEntity(ctx, id, lang)
+	resolvida, encontrada, err := s.resolverEntity(ctx, id, lang, false)
 	if err != nil {
 		respondErroInterno(w)
 		return
@@ -395,6 +396,13 @@ func (s *Server) writeEntityNfo(w http.ResponseWriter, r *http.Request) {
 // entity.nfo_path/nfo_written_at. errSemDestino quando a entity não tem
 // media_file present (sem pasta de destino).
 //
+// Antes de montar o XML, materializa (best-effort) o pôster e o fundo
+// VENCEDORES na pasta real (mesma lógica de MaterializarMidiasFaltantes,
+// briefing 0064/0066): assim o .nfo nunca precisa de <thumb>/<fanart>
+// apontando para a API interna -- o Kodi/Jellyfin descobrem a arte sozinhos
+// pela convenção de nome de arquivo. Falha de materialização (rede,
+// permissão) é logada e IGNORADA -- nunca impede a gravação do .nfo.
+//
 // Antes de sobrescrever, lê o .nfo que já estiver no destino (se houver) e
 // preserva os campos LOCAIS do Kodi/Emby/Jellyfin -- avaliação do usuário,
 // contagem/estado de assistido, última reprodução, data de adição e ponto de
@@ -411,16 +419,19 @@ func (s *Server) gravarNFO(ctx context.Context, ent sqlcgen.Entity, e resolver.E
 		return nfoWriteResult{}, errSemDestino
 	}
 
-	arte, err := s.insumosArteDaEntity(ctx, ent.ID)
-	if err != nil {
-		return nfoWriteResult{}, err
+	if _, err := s.materializarKindVencedor(ctx, ent, kindPoster); err != nil {
+		log.Printf("gravarNFO: falha ao materializar poster da entity %q (best-effort, ignorado): %v", ent.ID, err)
 	}
+	if _, err := s.materializarKindVencedor(ctx, ent, kindFanart); err != nil {
+		log.Printf("gravarNFO: falha ao materializar fanart da entity %q (best-effort, ignorado): %v", ent.ID, err)
+	}
+
 	nome := localmedia.NomeArquivoNFO(ent.Type, nomeBaseVideo)
 	destino := filepath.Join(dir, nome)
 	existente, _ := os.ReadFile(destino)
 	usuario := localmedia.ExtrairCamposUsuario(existente)
 
-	corpo, err := localmedia.MontarNFO(e, arte, usuario)
+	corpo, err := localmedia.MontarNFO(e, usuario)
 	if err != nil {
 		return nfoWriteResult{}, err
 	}
@@ -437,26 +448,6 @@ func (s *Server) gravarNFO(ctx context.Context, ent sqlcgen.Entity, e resolver.E
 		return nfoWriteResult{}, err
 	}
 	return nfoWriteResult{NfoPath: destino, NfoWrittenAt: agora}, nil
-}
-
-// insumosArteDaEntity determina, para poster e fanart, se o asset SERVIDO
-// (mesma precedência de escolherAssetServido — a mesma fonte que
-// resolver.Entidade.PosterURL/BackdropURL refletem) já está materializado na
-// pasta REAL (local_path != null): o NFO usa isso para decidir se omite a
-// tag de fallback de URL (briefing 0062 §4).
-func (s *Server) insumosArteDaEntity(ctx context.Context, entityID string) (localmedia.InsumosArte, error) {
-	assets, err := s.leitura().ListarAssetsPorEntity(ctx, entityID)
-	if err != nil {
-		return localmedia.InsumosArte{}, err
-	}
-	var arte localmedia.InsumosArte
-	if a, ok := escolherAssetServido(assets, kindPoster); ok {
-		arte.PosterLocal = a.LocalPath.Valid && a.LocalPath.String != ""
-	}
-	if a, ok := escolherAssetServido(assets, kindFanart); ok {
-		arte.FanartLocal = a.LocalPath.Valid && a.LocalPath.String != ""
-	}
-	return arte, nil
 }
 
 // ── Extensão de PUT /assets/{assetId}/prefer (briefing 0062) ────────────────

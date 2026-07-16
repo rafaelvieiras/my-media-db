@@ -146,3 +146,4 @@ e serve, explicitamente, de base técnica para o futuro sistema de plugins
 | [0063](0063-storage-diferenciado-saude-biblioteca.md) | Storage diferenciado na saúde: banco vs. mídia gerenciada vs. cache da app vs. não identificado | feature | done | 0053, 0055, 0062 |
 | [0064](0064-job-midias-faltantes-watch-scan-incremental.md) | Job "baixar mídias faltantes" + scan incremental (mtime/size) + watch de filesystem opcional | feature | done | 0009, 0052, 0053, 0062 |
 | [0065](0065-preservacao-generica-de-elementos-desconhecidos-no-nfo.md) | Preservação genérica de elementos desconhecidos no `.nfo` (paridade com "Write clean NFO" do TMM) | fix | done | 0062 |
+| [0066](0066-nfo-thumb-local-e-rating-padrao-kodi.md) | NFO: `<thumb>` aponta para arquivo local/URL direta (nunca API interna) e `<rating>` no formato atual do Kodi | fix | done | 0062, 0064 |

@@ -140,7 +140,7 @@ func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 func (s *Server) responderResolvida(w http.ResponseWriter, ctx context.Context, id string, status int) {
 	// Idioma default (principal das settings): o enrich/import ainda não recebe
 	// ?lang= — resolverEntity com "" cai no principal.
-	resolvida, encontrada, err := s.resolverEntity(ctx, id, "")
+	resolvida, encontrada, err := s.resolverEntity(ctx, id, "", true)
 	if err != nil {
 		respondErroInterno(w)
 		return

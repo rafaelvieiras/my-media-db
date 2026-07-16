@@ -15,6 +15,13 @@
   `<fileinfo>`, edição manual, etc.) é reembutido tal como estava — só os
   campos que o MyMediaDB de fato modela (título, sinopse, elenco...) vêm
   sempre do banco (briefing 0065).
+- **`<thumb>`/`<rating>` no formato que Kodi/Jellyfin realmente conseguem ler
+  (briefing 0066).** Pôster/fundo de filme/série são sempre materializados no
+  disco ANTES de gravar o `.nfo` (nunca apontam para a API interna do
+  MyMediaDB) — o Kodi/Jellyfin descobrem a arte sozinhos pela convenção de
+  nome de arquivo. `<actor><thumb>` usa a URL direta do provider (nunca a
+  convenção `.actors` do Kodi, que o Jellyfin não suporta). `<rating>` sai no
+  formato atual do Kodi, com o wrapper `<ratings>`.
 
 ## Escopo
 

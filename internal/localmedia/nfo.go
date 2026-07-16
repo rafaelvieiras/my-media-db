@@ -15,18 +15,6 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
 
-// InsumosArte sinaliza, para poster/fanart, se JÁ há uma versão materializada
-// na pasta REAL da biblioteca (asset.local_path != null) — insumo que
-// resolver.Entidade não carrega (ela só sabe se há asset no CACHE interno,
-// via PosterURL/BackdropURL). Quando presente, o NFO OMITE o <thumb>/
-// <fanart> de fallback: o arquivo local canônico (ex. poster.jpg) já é a
-// fonte que o Kodi/Emby descobrem sozinhos pelo nome; a tag no NFO é só um
-// ponteiro de URL para quando NÃO há arquivo local (briefing 0062 §4).
-type InsumosArte struct {
-	PosterLocal bool
-	FanartLocal bool
-}
-
 // nfoActor é um <actor> do elenco.
 type nfoActor struct {
 	Name  string `xml:"name"`
@@ -42,10 +30,18 @@ type nfoUniqueID struct {
 	Value   string `xml:",chardata"`
 }
 
-// nfoRating é <rating name="tmdb">valor</rating>.
+// nfoRatings é o wrapper <ratings> (Kodi atual) em volta de uma ou mais
+// <rating>.
+type nfoRatings struct {
+	Ratings []nfoRating `xml:"rating"`
+}
+
+// nfoRating é <rating name="tmdb" max="10" default="true"><value>X</value></rating>.
 type nfoRating struct {
-	Name  string  `xml:"name,attr"`
-	Value float64 `xml:",chardata"`
+	Name    string  `xml:"name,attr"`
+	Max     int     `xml:"max,attr"`
+	Default bool    `xml:"default,attr"`
+	Value   float64 `xml:"value"`
 }
 
 // nfoFanart embrulha o fallback de fundo: <fanart><thumb>url</thumb></fanart>
@@ -100,7 +96,7 @@ type nfoDoc struct {
 	Genre         []string           `xml:"genre,omitempty"`
 	MPAA          string             `xml:"mpaa,omitempty"`
 	Premiered     string             `xml:"premiered,omitempty"`
-	Rating        *nfoRating         `xml:"rating,omitempty"`
+	Ratings       *nfoRatings        `xml:"ratings,omitempty"`
 	UniqueIDs     []nfoUniqueID      `xml:"uniqueid,omitempty"`
 	Actors        []nfoActor         `xml:"actor,omitempty"`
 	Directors     []string           `xml:"director,omitempty"`
@@ -187,11 +183,20 @@ func nomeRaizNFO(entityType string) string {
 var ordemUniqueIDDefault = []string{"tmdb", "imdb", "tvdb"}
 
 // MontarNFO monta o XML do .nfo a partir da Entidade JÁ RESOLVIDA
-// (resolver.Entidade), dos insumos de arte (InsumosArte) e dos campos locais
-// preservados de uma gravação anterior (CamposUsuarioNFO -- zero-value
-// quando não há .nfo anterior, ver ExtrairCamposUsuario). Devolve os bytes
-// prontos para gravar (cabeçalho XML + indentação + newline final).
-func MontarNFO(e resolver.Entidade, arte InsumosArte, usuario CamposUsuarioNFO) ([]byte, error) {
+// (resolver.Entidade) e dos campos locais preservados de uma gravação
+// anterior (CamposUsuarioNFO -- zero-value quando não há .nfo anterior, ver
+// ExtrairCamposUsuario). Devolve os bytes prontos para gravar (cabeçalho XML
+// + indentação + newline final).
+//
+// Pôster/fundo (Thumb/Fanart de nfoDoc) NUNCA são preenchidos a partir de
+// e.PosterURL/e.BackdropURL (briefing 0066): quem chama MontarNFO
+// (gravarNFO) já materializa o arquivo físico na pasta real ANTES de montar
+// o XML, e o Kodi/Jellyfin descobrem essa arte sozinhos pela convenção de
+// nome de arquivo (poster.jpg/fanart.jpg) -- sem precisar de <thumb>/
+// <fanart> nenhum. Os campos continuam existindo em nfoDoc só para
+// reconhecer esses elementos como NOMEADOS (não caírem em Extras) caso um
+// .nfo anterior os tenha.
+func MontarNFO(e resolver.Entidade, usuario CamposUsuarioNFO) ([]byte, error) {
 	doc := nfoDoc{
 		XMLName:       xml.Name{Local: nomeRaizNFO(e.Type)},
 		Title:         e.Title,
@@ -214,16 +219,10 @@ func MontarNFO(e resolver.Entidade, arte InsumosArte, usuario CamposUsuarioNFO) 
 		Extras:        usuario.Extras,
 	}
 	if e.VoteAverage != nil {
-		doc.Rating = &nfoRating{Name: "tmdb", Value: *e.VoteAverage}
+		doc.Ratings = &nfoRatings{Ratings: []nfoRating{{Name: "tmdb", Max: 10, Default: true, Value: *e.VoteAverage}}}
 	}
 	if e.Type == TipoSerie {
 		doc.Status = derefStr(e.AiringStatus)
-	}
-	if !arte.PosterLocal && e.PosterURL != nil {
-		doc.Thumb = *e.PosterURL
-	}
-	if !arte.FanartLocal && e.BackdropURL != nil {
-		doc.Fanart = &nfoFanart{Thumb: *e.BackdropURL}
 	}
 	if usuario.Resume != nil {
 		doc.Resume = &nfoResume{Position: usuario.Resume.Position, Total: usuario.Resume.Total}

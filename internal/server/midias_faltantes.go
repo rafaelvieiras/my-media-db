@@ -142,7 +142,7 @@ func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity) (b
 		return false, nil
 	}
 
-	resolvida, encontrada, err := s.resolverEntity(ctx, ent.ID, "")
+	resolvida, encontrada, err := s.resolverEntity(ctx, ent.ID, "", false)
 	if err != nil {
 		return false, err
 	}

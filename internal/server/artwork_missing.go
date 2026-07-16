@@ -54,7 +54,7 @@ func (s *Server) downloadMissingArtwork(w http.ResponseWriter, r *http.Request) 
 	// resolverEntity já roda anotarCompletudeCatalogacao (0058) a cada
 	// chamada -- é o MESMO caminho ao vivo do detalhe (GET /entities/{id}),
 	// nunca o cache de entity_catalog_completeness usado pela listagem.
-	resolvida, encontrada, err := s.resolverEntity(ctx, id, "")
+	resolvida, encontrada, err := s.resolverEntity(ctx, id, "", true)
 	if err != nil {
 		respondErroInterno(w)
 		return
