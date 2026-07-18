@@ -15,7 +15,7 @@
 | **Tipo** | fix |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override (vertical séries) |
 | **Docs relacionadas** | [07-enriquecimento-providers](../docs/07-enriquecimento-providers.md), [0031](0031-series-fundacao-modelo-enriquecimento.md), [0043](0043-re-enrich-atualiza-arvore-serie.md), [0050](0050-auto-match-fila-de-revisao.md), [0054](0054-auto-match-no-import-manual-e-job-de-saude.md), [0056](0056-enriquecimento-externo-retroativo-job-saude.md), [0059](0059-grupo-acoes-rapidas-por-item.md), [0060](0060-previa-de-candidato-na-fila-de-revisao.md) |
-| **Status** | in-progress |
+| **Status** | done |
 | **Depende de** | 0031, 0043 |
 
 ---
