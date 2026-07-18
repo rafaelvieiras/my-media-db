@@ -45,34 +45,34 @@ const (
 	nsTV = "core.tv@1"
 )
 
-// importarSerie importa a ÁRVORE de uma série. Requer a capacidade opcional
-// SerieProvider (senão erro → 502, como a coleção). A série (type='tv') nasce/atualiza
-// pelo molde de item (detalhe/pôster/curarTitulo) e recebe o namespace core.tv@1; em
-// seguida cada temporada da ordenação default e cada episódio fino são importados. A
-// falha de UMA temporada/episódio degrada (loga e segue) — a árvore parcial é válida.
-func (s *Servico) importarSerie(ctx context.Context, source, sourceID string, langs []string) (string, bool, error) {
+// arvoreDaSerie valida a capacidade do provider e busca a arvore bruta (temporadas +
+// episodios) na fonte -- sem tocar nenhuma entity. Extraido de importarSerie para ser
+// reusado por Enriquecer (0067): la, a entity ja existe e so a arvore precisa ser
+// buscada/aplicada; aqui, POST /import busca ANTES de criar a serie (falha rapido sem
+// deixar entity orfa quando a fonte nao suporta serie).
+func (s *Servico) arvoreDaSerie(ctx context.Context, source, sourceID string, langs []string) (provider.SerieArvore, error) {
 	prov, ok := s.provFonte(source)
 	if !ok {
-		return "", false, fmt.Errorf("enrich: fonte %q sem provider", source)
+		return provider.SerieArvore{}, fmt.Errorf("enrich: fonte %q sem provider", source)
 	}
 	sp, ok := prov.(provider.SerieProvider)
 	if !ok {
-		return "", false, fmt.Errorf("enrich: fonte %q nao suporta serie", source)
+		return provider.SerieArvore{}, fmt.Errorf("enrich: fonte %q nao suporta serie", source)
 	}
-	arvore, err := sp.BuscarSerieArvore(ctx, sourceID, langs)
-	if err != nil {
-		return "", false, fmt.Errorf("enrich: buscar arvore da serie: %w", err)
-	}
+	return sp.BuscarSerieArvore(ctx, sourceID, langs)
+}
 
-	serieID, criada, err := s.importarItem(ctx, source, sourceID, tipoSerie, langs)
-	if err != nil {
-		return serieID, criada, err
-	}
+// aplicarArvoreSerie grava a arvore JA BUSCADA numa serie que JA EXISTE (serieID
+// conhecido): extension_data da serie, enriquecimento rico cruzado (best-effort),
+// cada temporada/episodio (find-or-create com refresh, 0043) e o inventario de artes.
+// So AtualizarExtensionData propaga erro (escrita de banco real); o resto e best-effort,
+// exatamente como importarSerie ja fazia.
+func (s *Servico) aplicarArvoreSerie(ctx context.Context, serieID, source, sourceID string, arvore provider.SerieArvore, langs []string) error {
 	if err := s.escrita().AtualizarExtensionData(ctx, sqlcgen.AtualizarExtensionDataParams{
 		ExtensionDataJson: nsValid(extensaoSerie(arvore)),
 		ID:                serieID,
 	}); err != nil {
-		return serieID, criada, err
+		return err
 	}
 	// Enriquecimento RICO cruzado do nó série (0045, rota C; agnóstico de fonte no 0046):
 	// o OUTRO provider disponível (o que não é a fonte-base da árvore) preenche os campos
@@ -86,6 +86,42 @@ func (s *Servico) importarSerie(ctx context.Context, source, sourceID string, la
 	// encontrem a entity da temporada correspondente. Best-effort (sem ArteProvider ou id,
 	// degrada em silêncio).
 	s.enriquecerArtes(ctx, serieID, tipoSerie, langs)
+	return nil
+}
+
+// sincronizarArvoreSerie combina os dois passos acima para um chamador que so tem
+// (serieID, source, sourceID) -- o caso de Enriquecer (0067), que nao tem uma arvore
+// pre-buscada como importarSerie tem. Erro cobre tanto capacidade/rede (arvoreDaSerie)
+// quanto a escrita do extension_data (aplicarArvoreSerie); o chamador (Enriquecer)
+// trata como best-effort.
+func (s *Servico) sincronizarArvoreSerie(ctx context.Context, serieID, source, sourceID string, langs []string) error {
+	arvore, err := s.arvoreDaSerie(ctx, source, sourceID, langs)
+	if err != nil {
+		return err
+	}
+	return s.aplicarArvoreSerie(ctx, serieID, source, sourceID, arvore, langs)
+}
+
+// importarSerie importa a ÁRVORE de uma série. Requer a capacidade opcional
+// SerieProvider (senão erro → 502, como a coleção). A série (type='tv') nasce/atualiza
+// pelo molde de item (detalhe/pôster/curarTitulo) e recebe o namespace core.tv@1; em
+// seguida cada temporada da ordenação default e cada episódio fino são importados. A
+// falha de UMA temporada/episódio degrada (loga e segue) — a árvore parcial é válida.
+//
+// Capacidade/busca da árvore roda ANTES de resolver a entity da série (mesma ordem de
+// sempre: falha rápido sem deixar entity órfã quando a fonte não suporta série).
+func (s *Servico) importarSerie(ctx context.Context, source, sourceID string, langs []string) (string, bool, error) {
+	arvore, err := s.arvoreDaSerie(ctx, source, sourceID, langs)
+	if err != nil {
+		return "", false, fmt.Errorf("enrich: buscar arvore da serie: %w", err)
+	}
+	serieID, criada, err := s.importarItemSemArvore(ctx, source, sourceID, tipoSerie, langs)
+	if err != nil {
+		return serieID, criada, err
+	}
+	if err := s.aplicarArvoreSerie(ctx, serieID, source, sourceID, arvore, langs); err != nil {
+		return serieID, criada, err
+	}
 	return serieID, criada, nil
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
+	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
 // Testes do ENRIQUECIMENTO EXTERNO RETROATIVO (briefing 0056): a query nova
@@ -559,6 +560,40 @@ func TestEnrichMissingAplicaExterno(t *testing.T) {
 	}
 	if !ent.LastExternalMatchAttemptAt.Valid {
 		t.Error("last_external_match_attempt_at deveria ter sido carimbado")
+	}
+}
+
+// TestEnrichMissingSerieConstroiArvore cobre o briefing 0067: o retroativo/
+// enrich-missing individual (tentarEnriquecerOuSinalizar -> aplicarCandidatoExterno ->
+// s.enrich.Enriquecer) sobre uma entity type='tv' constroi temporada/episodio,
+// exatamente como POST /import ja construia -- GET /entities/{id}/members deixa de vir
+// vazio. Usa o fixture canned de fake.Provider (mesma arvore de internal/enrich/
+// enrich_arvore_test.go: 2 temporadas de 3 episodios).
+func TestEnrichMissingSerieConstroiArvore(t *testing.T) {
+	img := servidorImagemArvoreSerie(t)
+	h, d := setupSearchServer(t, WithSearchProvider(fake.New(img.URL)), WithAssetsDir(t.TempDir()))
+	semearEntity(t, d, "e-gap", "tv", "Gap")
+	semearFile(t, d, "f-gap", "e-gap", "/lib/Springfield Tales (1989)/Springfield Tales (1989).mkv", "present", 70, "")
+
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e-gap/enrich-missing", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	resultado := decodeEnrichMissing(t, rec.Body.Bytes())
+	if resultado.Outcome != "applied" || resultado.Method == nil || *resultado.Method != "external" {
+		t.Fatalf("resultado = %+v, quero outcome=applied method=external", resultado)
+	}
+
+	temporadas := membrosDe(t, h, "e-gap")
+	if len(temporadas) != 2 {
+		t.Fatalf("members(e-gap) = %d, quero 2 temporadas (enrich-missing sincronizou a arvore, 0067)", len(temporadas))
+	}
+	totalEpisodios := 0
+	for _, temp := range temporadas {
+		totalEpisodios += len(membrosDe(t, h, temp.ID))
+	}
+	if totalEpisodios != 6 {
+		t.Errorf("episodios = %d, quero 6", totalEpisodios)
 	}
 }
 

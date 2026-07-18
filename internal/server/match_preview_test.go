@@ -10,6 +10,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
+	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
 // Testes da PRÉVIA de candidato + aplicação supervisionada (briefing 0060):
@@ -253,6 +254,37 @@ func TestConfirmCandidateExternoAbaixoDoLimiar(t *testing.T) {
 	}
 	if idsDe(decodeCards(t, do(t, h, http.MethodGet, "/api/v1/review", nil)))["e-draft"] {
 		t.Error("e-draft ainda na fila de revisão após confirm-candidate externo")
+	}
+}
+
+// TestConfirmCandidateExternoSerieConstroiArvore cobre o briefing 0067: o branch
+// EXTERNO de confirm-candidate (aplicarIdentidadeExterna -> s.enrich.Enriquecer) sobre
+// uma entity type='tv' constroi temporada/episodio, exatamente como POST /import ja
+// construia -- GET /entities/{id}/members deixa de vir vazio. Usa o fixture canned de
+// fake.Provider (mesma arvore de internal/enrich/enrich_arvore_test.go: 2 temporadas
+// de 3 episodios).
+func TestConfirmCandidateExternoSerieConstroiArvore(t *testing.T) {
+	img := servidorImagemArvoreSerie(t)
+	h, d := setupSearchServer(t, WithSearchProvider(fake.New(img.URL)), WithAssetsDir(t.TempDir()))
+	semearEntity(t, d, "e-draft", "tv", "Draft")
+	definirStatus(t, d, "e-draft", "draft")
+
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e-draft/confirm-candidate",
+		map[string]string{"method": "external", "source": "tmdb", "source_id": fake.SerieFixtureID})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+
+	temporadas := membrosDe(t, h, "e-draft")
+	if len(temporadas) != 2 {
+		t.Fatalf("members(e-draft) = %d, quero 2 temporadas (confirm-candidate externo sincronizou a arvore, 0067)", len(temporadas))
+	}
+	totalEpisodios := 0
+	for _, temp := range temporadas {
+		totalEpisodios += len(membrosDe(t, h, temp.ID))
+	}
+	if totalEpisodios != 6 {
+		t.Errorf("episodios = %d, quero 6", totalEpisodios)
 	}
 }
 

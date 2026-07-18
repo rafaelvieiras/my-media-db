@@ -92,8 +92,26 @@ func (s *Servico) provFonte(source string) (provider.Provider, bool) {
 // Enriquecer enriquece uma entity JÁ EXISTENTE: puxa o detalhe (nos idiomas
 // permitidos `langs`, briefing 0020), mescla a identidade externa e persiste a base
 // externa + pôster + original_language. A falha da fonte é propagada; a da imagem
-// degrada. Fluxo do POST /entities/{id}/enrich.
+// degrada. Fluxo do POST /entities/{id}/enrich (e de todo chamador que aplica
+// identidade externa a uma entity já existente — Corrigir, Confirmar candidato,
+// auto-match, retroativo/enrich-missing). Wrapper fino de enriquecerBase que sempre
+// tenta sincronizar a árvore de série (0067): aqui é o único ponto além de
+// importarSerie que constrói temporada/episódio.
 func (s *Servico) Enriquecer(ctx context.Context, entityID, source, sourceID, tipo string, langs []string) error {
+	return s.enriquecerBase(ctx, entityID, source, sourceID, tipo, langs, true)
+}
+
+// enriquecerBase é o corpo de Enriquecer mais o parâmetro sincronizarArvore (0067):
+// quando tipo==tipoSerie e sincronizarArvore, sincroniza a árvore de temporada/
+// episódio como ÚLTIMO passo, best-effort — loga e degrada, NUNCA propaga o erro
+// para o chamador. Nesse ponto mesclarExternalIds/persistir/curarTitulo já gravaram
+// no banco (external_ids, payload base, pôster, título); uma falha só-da-árvore não
+// pode fazer o chamador HTTP reportar "falhou" sobre uma operação que já mudou o
+// estado da entity, e os chamadores best-effort (aplicarCandidatoExterno no
+// auto-match/retroativo) já tratam erro de Enriquecer como "sem aplicar, fica
+// pendente" — propagar faria uma identidade que já bateu o limiar de confiança nunca
+// ser aplicada, um retrocesso pior que a árvore ausente.
+func (s *Servico) enriquecerBase(ctx context.Context, entityID, source, sourceID, tipo string, langs []string, sincronizarArvore bool) error {
 	raw, err := s.detalhe.PayloadFresco(ctx, source, sourceID, tipo, langs)
 	if err != nil {
 		return fmt.Errorf("enrich: buscar detalhe: %w", err)
@@ -104,7 +122,15 @@ func (s *Servico) Enriquecer(ctx context.Context, entityID, source, sourceID, ti
 	if err := s.persistir(ctx, entityID, source, sourceID, raw); err != nil {
 		return err
 	}
-	return s.curarTitulo(ctx, entityID, source, sourceID, raw, langs)
+	if err := s.curarTitulo(ctx, entityID, source, sourceID, raw, langs); err != nil {
+		return err
+	}
+	if tipo == tipoSerie && sincronizarArvore {
+		if err := s.sincronizarArvoreSerie(ctx, entityID, source, sourceID, langs); err != nil {
+			log.Printf("enrich: sincronizar arvore da serie %s (fonte %s id %s) falhou (segue so-identidade): %v", entityID, source, sourceID, err)
+		}
+	}
+	return nil
 }
 
 // Importar é o find-or-create por id externo (MD4) do POST /import: se já existe
@@ -141,14 +167,32 @@ func (s *Servico) importarItem(ctx context.Context, source, sourceID, tipo strin
 	return id, criada, nil
 }
 
+// importarItemSemArvore é a variante de importarItemBase usada por importarSerie
+// (0067) para resolver a entity da série SEM disparar nada relacionado à árvore por
+// conta própria: hoje é importarItemBase diretamente, porque este caminho já não
+// dispara o gatilho de artes do 0048 (fica fora de tipoSerie) nem sincroniza a
+// árvore sozinho (os dois call sites internos de Enriquecer dentro de
+// importarItemBase passam sincronizarArvore=false) — importarSerie sincroniza a
+// árvore explicitamente logo em seguida, exatamente uma vez.
+func (s *Servico) importarItemSemArvore(ctx context.Context, source, sourceID, tipo string, langs []string) (string, bool, error) {
+	return s.importarItemBase(ctx, source, sourceID, tipo, langs)
+}
+
 // importarItemBase é o find-or-create puro do item (sem o enriquecimento de artes, que
 // importarItem dispara por cima). Separá-lo mantém o gatilho de artes fora do caminho da
 // série node (que reusa este molde) e o gocyclo baixo.
+//
+// Os dois call sites internos de enriquecerBase abaixo passam sincronizarArvore=false
+// (0067): quando tipo==tipoSerie, o único chamador destes branches é importarSerie
+// (via importarItemSemArvore), que já sincroniza a árvore explicitamente logo depois —
+// sem a flag, o branch de reuse faria DUAS idas ao provider (BuscarSerieArvore aqui
+// dentro do Enriquecer interno, e de novo em importarSerie). Para movie/collection o
+// parâmetro é inofensivo (o branch tipo==tipoSerie de enriquecerBase nunca roda).
 func (s *Servico) importarItemBase(ctx context.Context, source, sourceID, tipo string, langs []string) (string, bool, error) {
 	if existente, ok, err := s.acharPorIDExterno(ctx, source, sourceID); err != nil {
 		return "", false, err
 	} else if ok {
-		return existente, false, s.Enriquecer(ctx, existente, source, sourceID, tipo, langs)
+		return existente, false, s.enriquecerBase(ctx, existente, source, sourceID, tipo, langs, false)
 	}
 
 	// Não existe: puxa o detalhe uma vez (para o título inicial) e cria a entity
@@ -169,7 +213,7 @@ func (s *Servico) importarItemBase(ctx context.Context, source, sourceID, tipo s
 	if idDraft, achou, err := s.tentarCasarComDraftLocal(ctx, titulo, s.anoDoPayload(source, raw), tipo); err != nil {
 		return "", false, err
 	} else if achou {
-		return idDraft, false, s.Enriquecer(ctx, idDraft, source, sourceID, tipo, langs)
+		return idDraft, false, s.enriquecerBase(ctx, idDraft, source, sourceID, tipo, langs, false)
 	}
 
 	extIDs, err := json.Marshal(map[string]string{source: sourceID})

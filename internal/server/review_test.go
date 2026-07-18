@@ -14,6 +14,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
+	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
 // Testes das FILAS DE CURADORIA (briefing 0018): revisão, órfãs, confirmar,
@@ -242,6 +243,37 @@ func TestCorrigirPromoveDraft(t *testing.T) {
 	}
 	if idsDe(decodeCards(t, do(t, h, http.MethodGet, "/api/v1/review", nil)))["e-draft"] {
 		t.Error("e-draft ainda na fila de revisão após corrigir (draft não promovido)")
+	}
+}
+
+// TestCorrigirSerieConstroiArvore cobre o briefing 0067: "Corrigir" sobre uma entity
+// type='tv' sem arvore (aplicarIdentidadeExterna -> s.enrich.Enriquecer) constroi
+// temporada/episodio como entity filha, exatamente como POST /import ja construia --
+// GET /entities/{id}/members deixa de vir vazio. Usa o fixture canned de fake.Provider
+// (mesma arvore de internal/enrich/enrich_arvore_test.go: 2 temporadas de 3 episodios).
+func TestCorrigirSerieConstroiArvore(t *testing.T) {
+	img := servidorImagemArvoreSerie(t)
+	h, d := setupSearchServer(t, WithSearchProvider(fake.New(img.URL)), WithAssetsDir(t.TempDir()))
+	semearEntity(t, d, "s1", "tv", "Serie Sem Arvore")
+
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/s1/correct",
+		map[string]string{"source_id": fake.SerieFixtureID})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("correct status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	ent := decodeEntidade(t, rec)
+	eq(t, "external_ids.tmdb", ent.ExternalIDs["tmdb"], fake.SerieFixtureID)
+
+	temporadas := membrosDe(t, h, "s1")
+	if len(temporadas) != 2 {
+		t.Fatalf("members(s1) = %d, quero 2 temporadas (Corrigir sincronizou a arvore, 0067)", len(temporadas))
+	}
+	totalEpisodios := 0
+	for _, temp := range temporadas {
+		totalEpisodios += len(membrosDe(t, h, temp.ID))
+	}
+	if totalEpisodios != 6 {
+		t.Errorf("episodios = %d, quero 6", totalEpisodios)
 	}
 }
 

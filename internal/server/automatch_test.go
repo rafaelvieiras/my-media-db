@@ -10,6 +10,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
+	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
 // Testes do AUTO-MATCH (briefing 0050): os dois endpoints (individual e
@@ -55,6 +56,22 @@ func setupAutoMatchServer(t *testing.T, resultados []provider.ResultadoExterno) 
 
 // strp devolve o ponteiro de uma string literal (para Year de ResultadoExterno).
 func strp(s string) *string { return &s }
+
+// servidorImagemArvoreSerie sobe um httptest que responde QUALQUER caminho com um PNG
+// valido: usado como ImageBase do internal/provider/fake.Provider (mesma fixture de
+// arvore de serie de internal/enrich/enrich_arvore_test.go, briefing 0067) nos testes
+// que provam que Corrigir/Confirmar candidato/auto-match/retroativo constroem
+// temporada/episodio via GET /members -- a fixture gera varias URLs de poster/still
+// (serie, cada temporada, cada episodio), todas sob o mesmo ImageBase.
+func servidorImagemArvoreSerie(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(pngFake)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
 
 // semearEntityComAno cria uma entity com release_date (para o candidato local
 // entrar no ajuste de ano do score).
@@ -186,6 +203,41 @@ func TestAutoMatchExterno(t *testing.T) {
 	}
 	if idsDe(decodeCards(t, do(t, h, http.MethodGet, "/api/v1/review", nil)))["e-draft"] {
 		t.Error("e-draft ainda na fila de revisão após auto-match externo")
+	}
+}
+
+// TestAutoMatchExternoSerieConstroiArvore cobre o briefing 0067: o auto-match
+// externo sobre uma entity type='tv' (aplicarCandidatoExterno -> s.enrich.Enriquecer)
+// passa a sincronizar a arvore de temporada/episodio tambem, nao so POST /import --
+// GET /entities/{id}/members deixa de vir vazio apos o auto-match resolver sozinho.
+// Usa o fixture canned de fake.Provider (mesma arvore de internal/enrich/
+// enrich_arvore_test.go: 2 temporadas de 3 episodios).
+func TestAutoMatchExternoSerieConstroiArvore(t *testing.T) {
+	img := servidorImagemArvoreSerie(t)
+	h, d := setupSearchServer(t, WithSearchProvider(fake.New(img.URL)), WithAssetsDir(t.TempDir()))
+	semearEntity(t, d, "e-draft", "tv", "Draft")
+	definirStatus(t, d, "e-draft", "draft")
+	semearFile(t, d, "f-draft", "e-draft", "/lib/Springfield Tales (1989)/Springfield Tales (1989).mkv", "present", 0, "")
+
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e-draft/auto-match", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	got := decodeAutoMatch(t, rec)
+	if !got.Resolved || got.Method != "external" {
+		t.Fatalf("resultado = %+v, quero resolved:true method:external", got)
+	}
+
+	temporadas := membrosDe(t, h, "e-draft")
+	if len(temporadas) != 2 {
+		t.Fatalf("members(e-draft) = %d, quero 2 temporadas (auto-match externo sincronizou a arvore, 0067)", len(temporadas))
+	}
+	totalEpisodios := 0
+	for _, temp := range temporadas {
+		totalEpisodios += len(membrosDe(t, h, temp.ID))
+	}
+	if totalEpisodios != 6 {
+		t.Errorf("episodios = %d, quero 6", totalEpisodios)
 	}
 }
 
