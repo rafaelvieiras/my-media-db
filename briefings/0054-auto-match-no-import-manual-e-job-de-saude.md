@@ -12,7 +12,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override (extensão direta do [0050](0050-auto-match-fila-de-revisao.md)) |
 | **Docs relacionadas** | [06-biblioteca-e-scan](../docs/06-biblioteca-e-scan.md), [ADR-0008](../docs/adr/0008-identidade-e-matching-kodi-jellyfin.md), [ADR-0012](../docs/adr/0012-ciclo-de-vida-nao-destrutivo.md) |
-| **Status** | draft |
+| **Status** | done |
 | **Depende de** | [0050](0050-auto-match-fila-de-revisao.md), [0051](0051-fundir-duplicata-conflito-external-id.md), [0053](0053-job-saude-biblioteca.md), [0026](0026-centralizacao-interno-first.md) |
 
 ---
@@ -207,27 +207,27 @@ de acionar.
 
 ## 5. Critérios de aceite
 
-- [ ] Reproduzir o bug relatado vira teste: draft "O Foragido" (1998, arquivo
+- [x] Reproduzir o bug relatado vira teste: draft "O Foragido" (1998, arquivo
   presente, sem `external_ids`) + `POST /import` do mesmo filme no TMDB →
   UMA entity só, com arquivo E metadados; nenhuma entity órfã criada.
-- [ ] Import de um item **sem** candidato local forte continua criando uma
+- [x] Import de um item **sem** candidato local forte continua criando uma
   entity nova, exatamente como hoje (nenhuma regressão no caminho comum).
-- [ ] Candidato local com ano divergindo em mais de 1 ano nunca é casado no
+- [x] Candidato local com ano divergindo em mais de 1 ano nunca é casado no
   import, mesmo com título idêntico (mesma regra do 0050).
-- [ ] Draft que já tem QUALQUER `external_id` (de outra fonte) nunca é
+- [x] Draft que já tem QUALQUER `external_id` (de outra fonte) nunca é
   candidato do casamento por nome no import — só drafts puros.
-- [ ] `internal/matching.Pontuar`/`LimiarAutoMatch` produzem exatamente os
+- [x] `internal/matching.Pontuar`/`LimiarAutoMatch` produzem exatamente os
   mesmos resultados que a versão anterior privada de
   `internal/server/automatch.go` (testes migrados, mesmas expectativas).
-- [ ] `POST /review/auto-match` e `POST /entities/{id}/auto-match` continuam
+- [x] `POST /review/auto-match` e `POST /entities/{id}/auto-match` continuam
   funcionando sem mudança de contrato (mesma resposta, mesmo comportamento)
   depois da extração de `autoMatchLote`.
-- [ ] Job `saude_biblioteca`: rodar com itens elegíveis na fila resolve os de
+- [x] Job `saude_biblioteca`: rodar com itens elegíveis na fila resolve os de
   alta confiança e a mensagem final reflete `<M> resolvidos automaticamente`
   e a contagem de revisão RECONTADA (pós auto-match, não a de antes).
-- [ ] Falha do auto-match dentro do job não derruba o job — o resumo de
+- [x] Falha do auto-match dentro do job não derruba o job — o resumo de
   scan/contagem original ainda é reportado.
-- [ ] `go build/vet/test -count=1` verdes; `tsc -b` do web verde (nenhuma
+- [x] `go build/vet/test -count=1` verdes; `tsc -b` do web verde (nenhuma
   mudança de frontend prevista — nenhum contrato de API muda); catraca local
   não piora.
 
