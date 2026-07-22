@@ -266,6 +266,62 @@ canônica (a validar na Fase C):
   principalmente **forma + composição**, não um endpoint novo — preferir isso a inventar
   superfície.
 
+## 6.5. Fase C — decisões travadas (2026-07-22)
+
+Fase C nasce depois de A/B/D (D já entregou, inclusive, a página da pessoa — que o §7
+listava como fora de escopo original; o escopo cresceu organicamente e ficou registrado
+aqui para não reabrir debate). Falta só o **override de créditos**. Decisões fechadas
+antes de dividir back/front (minimizar decisão em aberto):
+
+- **Chave do crédito** (para `reorder`/`remove`/`edit`, já que `credit.source_id` sozinho
+  NÃO é único — um membro de equipe pode ter dois cargos, ex. Diretor+Roteirista, mesmo
+  `source_id`; ver `equipeSimples`/`equipeAgregada` em `tmdb_creditos.go`, que já dedupam
+  por `(source_id, job)`): **cast/companies usam `source_id`**; **crew usa
+  `source_id + "|" + job`** — a MESMA chave que o provider já usa para dedup.
+- **Forma do patch** (chave `credits` em `media_override.override_json`), **segregada por
+  kind** (o desenho original do §4 misturava cast/crew/company numa lista só, ambíguo):
+  ```jsonc
+  "credits": {
+    "cast":      { "reorder": ["<source_id>"], "remove": ["<source_id>"],
+                   "edit": { "<source_id>": { "character": "…" } },
+                   "add": [ { "source_id": "custom-1", "name": "…", "character": "…" } ] },
+    "crew":      { "reorder": ["<source_id>|<job>"], "remove": ["<source_id>|<job>"],
+                   "edit": { "<source_id>|<job>": { "job": "…", "department": "…" } },
+                   "add": [ { "source_id": "custom-2", "name": "…", "department": "…", "job": "…" } ] },
+    "companies": { "remove": ["<source_id>"], "edit": { "<source_id>": { "name": "…" } },
+                   "add": [ { "source_id": "custom-3", "name": "…" } ] }
+  }
+  ```
+  `null` no topo apaga TODOS os créditos (cast/crew/companies vazios); sub-chave ausente
+  (`cast`/`crew`/`companies`) não é tocada, herda a base externa. `add` exige
+  `source_id` **escolhido pelo dono** (o resolver é puro, não gera id) + `name`.
+- **`character`/`job`/`department` no `edit` são NEUTROS nesta fase** (valem para
+  qualquer idioma), NÃO um mapa por idioma: a própria fonte (TMDB) já não traz esses
+  campos por idioma hoje (nota em `tmdb_creditos.go`: "per-idioma é follow-up") — compor
+  a EDIÇÃO por idioma sobre uma base que não varia por idioma seria decisão sem
+  fundamento prático. Documentado como redução de escopo justificada; o critério de
+  aceite "character/department respeitam o idioma ativo" refere-se à leitura (Fase B,
+  já entregue), não à edição.
+- **Novo kind no resolver**: `kindCreditos` (público `KindCreditos = "creditos"`), entrada
+  `"credits": {base: baseExterno, kind: kindCreditos}` em `registroOrigem`. Composição
+  em `comporCreditos`: base = `rico["cast"|"crew"|"companies"]` (já mesclado por
+  prioridade, mesma fonte que os campos ricos read-only usavam); aplica remove→edit→add→
+  reorder (nessa ordem) por kind; o resultado alimenta `richfields.CastDe/CrewDe/CompaniesDe`
+  como hoje (reaproveita 100% do parsing existente — só muda a ENTRADA, que passa a ser
+  composta, não crua).
+- **Fora do form genérico (0030)**: `credits` é `editável` (`CamposEditaveis()` o inclui,
+  para `PATCH/DELETE /override` aceitarem a chave) mas fica de FORA de
+  `descritoresDeCampo()` (mesma exclusão que `extension_data`/`KindExtensao` já tem, em
+  `internal/server/formschema.go`) — não é um campo de formulário simples. A UI ganha um
+  **editor dedicado** (como o `ExternalIdsEditor` já é, em `entity-edit.tsx`, fora do
+  `SchemaForm`), com sua própria leitura (`GET /entities/{id}` + `GET .../override`) e
+  gravação (`PATCH/DELETE .../override` com a chave `credits`).
+- **Validação da forma** (`formaValida`, `KindCreditos`): `null` OU objeto com chaves
+  ⊆ {cast,crew,companies}; cada sub-bloco `null` OU objeto com chaves ⊆
+  {reorder,remove,edit,add}; `reorder`/`remove` = array de string; `edit` = objeto
+  string→objeto(string→string); `add` = array de objeto com `source_id`+`name` obrigatórios
+  (string), demais campos opcionais string. 422 fora disso.
+
 ## 7. Fora deste briefing / follow-ups
 
 - **Página da pessoa** (`GET /person/{source}/{id}` + rota) com filmografia navegável.

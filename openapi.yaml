@@ -2990,16 +2990,42 @@ components:
         release_date) aceitam `string` ou `null`; `tags` aceita um array de strings
         (substituição), um objeto `{add?:[],remove?:[]}` (merge de operações) ou
         `null`; `extension_data` aceita um objeto ou `null`; `local_rating` (nota
-        local) aceita um número 0–10 ou `null`. Para campos TRADUZÍVEIS o valor é o do
-        idioma `?lang=` (o handler monta o mapa por idioma); campos NEUTROS ignoram o
-        `lang`. `null` = definir vazio (não confundir com LIMPAR, que é o DELETE). Chave
-        não-editorial ou forma inválida → 422.
+        local) aceita um número 0–10 ou `null`; `credits` (elenco/equipe/produtoras,
+        briefing 0029 Fase C) aceita `null` (apaga TODOS os créditos) ou um objeto
+        com as chaves opcionais `cast`/`crew`/`companies` — sub-chave ausente herda a
+        base externa intacta. Cada bloco é `null` ou um objeto com as operações
+        opcionais `reorder`/`remove` (array de CHAVES do crédito) / `edit` (mapa
+        chave→patch de campos) / `add` (array de créditos novos, cada um exigindo
+        `source_id` ESCOLHIDO PELO DONO + `name`). A CHAVE do crédito é `source_id`
+        para `cast`/`companies`; para `crew` é `"<source_id>|<job>"` (a mesma chave
+        que o provider já usa para dedup — um membro pode ter dois cargos com o
+        mesmo `source_id`). `character`/`job`/`department` no `edit`/`add` são
+        NEUTROS nesta fase (não compõem por idioma — a fonte já não traz esses
+        campos por idioma). Para campos TRADUZÍVEIS o valor é o do idioma `?lang=`
+        (o handler monta o mapa por idioma); campos NEUTROS (incl. `credits`)
+        ignoram o `lang`. `null` = definir vazio (não confundir com LIMPAR, que é o
+        DELETE). Chave não-editorial ou forma inválida → 422.
       additionalProperties: true
       example:
         title: "Duna"
         description: null
         tags: { add: ["Clássico"], remove: ["Guerra"] }
         original_title: "Dune"
+        credits:
+          cast:
+            reorder: ["6193"]
+            edit: { "6193": { character: "Paul Atreides" } }
+          crew:
+            remove: ["1892|Producer"]
+            add:
+              [
+                {
+                  source_id: "custom-1",
+                  name: "Fulano de Tal",
+                  department: "Direção",
+                  job: "Assistente de Direção",
+                },
+              ]
     MediaInfo:
       type: object
       description: Fatos técnicos extraídos do arquivo (ffprobe).
