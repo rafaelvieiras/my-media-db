@@ -19,6 +19,7 @@ func TestCamposEditaveis(t *testing.T) {
 		"tags":           {Traduzivel: true, Kind: KindLista},
 		"extension_data": {Traduzivel: false, Kind: KindExtensao},
 		"local_rating":   {Traduzivel: false, Kind: KindNumero},
+		"credits":        {Traduzivel: false, Kind: KindCreditos},
 	}
 	if len(campos) != len(esperado) {
 		t.Fatalf("CamposEditaveis tem %d campos, quero %d", len(campos), len(esperado))

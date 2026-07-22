@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { SchemaForm } from '@/components/schema-form'
 import { ExternalIdsEditor } from '@/components/external-ids-editor'
+import { CreditsEditor } from '@/components/credits-editor'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import {
   ApiError,
@@ -182,6 +183,11 @@ function EntityEditForm({
           vive na rota de edição com seu próprio salvar/re-enriquecer. Não é
           override — grava a identidade autoritativa (MD4) e re-resolve. */}
       <ExternalIdsEditor id={id} externalIds={entity.external_ids} />
+
+      {/* Créditos (0029 Fase C): `credits` fica de fora do form genérico (não é um
+          campo simples), então tem seu próprio editor dedicado, seguindo o mesmo
+          padrão do ExternalIdsEditor acima. */}
+      <CreditsEditor id={id} lang={lang} entity={entity} blob={blob} />
     </div>
   )
 }

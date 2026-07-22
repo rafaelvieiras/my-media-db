@@ -17,9 +17,9 @@ import (
 // (R1/ADR-0001); a APRESENTAÇÃO (label/grupo/widget/ordem/faixa) vive aqui, no
 // server, num registro declarativo separado. São DOIS registros de propósito: o
 // resolver cuida da composição (puro, sem concern de UI); o server cuida da
-// apresentação (UI). Um teste os amarra — todo campo editável (exceto o
-// extension_data, ver abaixo) TEM de ter descritor —, garantindo que adicionar
-// um campo editável no backend nunca deixe o front órfão.
+// apresentação (UI). Um teste os amarra — todo campo editável (exceto
+// extension_data/credits, ver abaixo) TEM de ter descritor —, garantindo que
+// adicionar um campo editável no backend nunca deixe o front órfão.
 
 // apresentacaoCampo é o METADADO de UI de um campo editorial: como rotulá-lo,
 // em que seção mostrá-lo, com que widget renderizá-lo e em que ordem. É um
@@ -95,16 +95,19 @@ type fieldSchemaResponse struct {
 // Itera os campos EDITÁVEIS do resolver (nunca um `switch` por nome): translatable
 // e kind vêm do resolver; label/grupo/widget/ordem/faixa vêm da apresentação.
 //
-// O extension_data (kind=extensao) é EXCLUÍDO: não é campo de formulário simples
-// (é o mapa de verticais por namespace/plugin). Um campo editável de kind !=
-// extensao SEM apresentação é erro de programação — o teste de cobertura falha,
-// forçando o par "campo novo ⇒ descritor".
+// O extension_data (kind=extensao) e o credits (kind=creditos) são EXCLUÍDOS:
+// não são campos de formulário simples (extension_data é o mapa de verticais
+// por namespace/plugin; credits é o patch segregado por cast/crew/companies,
+// briefing 0029 Fase C) — ambos ganham editor DEDICADO no front, fora do
+// SchemaForm. Um campo editável de kind != extensao/creditos SEM apresentação é
+// erro de programação — o teste de cobertura falha, forçando o par "campo novo
+// ⇒ descritor".
 func descritoresDeCampo() []fieldDescriptor {
 	editaveis := resolver.CamposEditaveis()
 	out := make([]fieldDescriptor, 0, len(editaveis))
 	for campo, info := range editaveis {
-		if info.Kind == resolver.KindExtensao {
-			continue // extension_data: editável, mas não é campo de formulário simples.
+		if info.Kind == resolver.KindExtensao || info.Kind == resolver.KindCreditos {
+			continue // extension_data/credits: editáveis, mas com editor dedicado (não formulário simples).
 		}
 		apr, ok := registroApresentacao[campo]
 		if !ok {

@@ -13,7 +13,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override (extensão pós-revisão) |
 | **Docs relacionadas** | [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [07-enriquecimento-providers](../docs/07-enriquecimento-providers.md), [05-api](../docs/05-api.md), [ADR-0012](../docs/adr/0012-camadas-externo-override.md) |
-| **Status** | in-progress (A+B+D done; C edição de créditos pendente) |
+| **Status** | done (A+B+C+D — override de créditos entregue em 2026-07-22) |
 | **Depende de** | [0012](0012-schema-fase3-camadas-externo-override.md), [0013](0013-resolver-tres-camadas.md), [0022](0022-detalhe-externo-rico-persistente.md), [0023](0023-tela-detalhe-externo-ui.md), [0024](0024-paridade-detalhe-entity-rico.md) |
 
 ---
@@ -216,24 +216,24 @@ canônica (a validar na Fase C):
 
 ## 5. Critérios de aceite
 
-- [ ] Importar/enriquecer um filme popular popula `person`/`credit`/`company` e o
+- [x] Importar/enriquecer um filme popular popula `person`/`credit`/`company` e o
       `ResolvedEntity` traz `cast`/`crew`/`companies` não vazios, na ordem de bilhagem.
-- [ ] O **mesmo shape** de créditos sai no `ExternalDetail` (antes de importar) e no
+- [x] O **mesmo shape** de créditos sai no `ExternalDetail` (antes de importar) e no
       `ResolvedEntity` (catálogo) — paridade garantida por módulo compartilhado.
-- [ ] Uma pessoa que aparece em duas obras tem **uma** linha em `person` (dedup por
+- [x] Uma pessoa que aparece em duas obras tem **uma** linha em `person` (dedup por
       `source_id`), com dois créditos.
-- [ ] Override de créditos: reordenar/remover/adicionar/corrigir grava o delta; a base da
+- [x] Override de créditos: reordenar/remover/adicionar/corrigir grava o delta; a base da
       fonte segue viva por baixo; **re-enriquecer não desfaz** o ajuste (jornada E2E
       Camada 1, como a do enrich não-destrutivo).
-- [ ] Limpar (`DELETE …/override/credits`) volta ao elenco/equipe da fonte
+- [x] Limpar (`DELETE …/override/credits`) volta ao elenco/equipe da fonte
       (não-destrutivo).
-- [ ] `character`/`department` respeitam o idioma ativo; o **nome** da pessoa é neutro.
-- [ ] Forma de `credits` inválida → 422; fonte indisponível **degrada** o bloco sem
+- [x] `character`/`department` respeitam o idioma ativo; o **nome** da pessoa é neutro.
+- [x] Forma de `credits` inválida → 422; fonte indisponível **degrada** o bloco sem
       derrubar a leitura.
-- [ ] `internal_id` preenchido para pessoa/company já catalogada (interno-first).
-- [ ] UI: seções Elenco/Equipe/Produtoras aparecem nas duas telas; editor de créditos no
+- [x] `internal_id` preenchido para pessoa/company já catalogada (interno-first).
+- [x] UI: seções Elenco/Equipe/Produtoras aparecem nas duas telas; editor de créditos no
       modo Editar; estados vazio/carregando/erro.
-- [ ] Catraca (`quality-gate.mjs --local`) PASSA; cobertura mantida/melhorada
+- [x] Catraca (`quality-gate.mjs --local`) PASSA; cobertura mantida/melhorada
       (`make baseline` se melhorou).
 
 ## 6. Notas de implementação / decisões

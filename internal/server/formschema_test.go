@@ -14,10 +14,11 @@ import (
 // que nunca haja campo editável (kind != extensao) sem descritor.
 
 // TestDescritorCobreTodosEditaveis é a catraca de extensibilidade: TODO campo de
-// resolver.CamposEditaveis() com kind != extensao DEVE ter descritor. Se um campo
-// editável novo entrar no resolver sem apresentação, este teste FALHA — forçando o
-// par "campo novo ⇒ descritor". O extension_data (kind=extensao) é excluído de
-// propósito (não é campo de formulário simples).
+// resolver.CamposEditaveis() com kind != extensao/creditos DEVE ter descritor. Se
+// um campo editável novo entrar no resolver sem apresentação, este teste FALHA —
+// forçando o par "campo novo ⇒ descritor". extension_data (kind=extensao) e
+// credits (kind=creditos, briefing 0029 Fase C) são excluídos de propósito (não
+// são campos de formulário simples — ganham editor dedicado no front).
 func TestDescritorCobreTodosEditaveis(t *testing.T) {
 	descritores := descritoresDeCampo()
 	temDescritor := make(map[string]bool, len(descritores))
@@ -26,11 +27,11 @@ func TestDescritorCobreTodosEditaveis(t *testing.T) {
 	}
 
 	for campo, info := range resolver.CamposEditaveis() {
-		if info.Kind == resolver.KindExtensao {
-			// extension_data: editável, mas NÃO é campo de formulário simples;
-			// excluído dos descritores por regra (briefing 0030).
+		if info.Kind == resolver.KindExtensao || info.Kind == resolver.KindCreditos {
+			// extension_data/credits: editáveis, mas NÃO são campo de formulário
+			// simples; excluídos dos descritores por regra (briefing 0030/0029).
 			if temDescritor[campo] {
-				t.Errorf("campo %q (kind=extensao) NÃO deveria ter descritor", campo)
+				t.Errorf("campo %q (kind=%s) NÃO deveria ter descritor", campo, info.Kind)
 			}
 			continue
 		}

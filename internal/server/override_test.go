@@ -236,6 +236,71 @@ func TestPatchValidacoes(t *testing.T) {
 	}
 }
 
+// TestPatchCreditsValido cobre um PATCH de credits (briefing 0029 Fase C) com as
+// operações válidas do exemplo do openapi.yaml (OverridePatch): reorder+edit no
+// cast, remove+add no crew. 200, grava a chave `credits` no blob, e o `add`
+// aparece no resultado resolvido — o campo é NEUTRO (o lang é ignorado).
+func TestPatchCreditsValido(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "e1", "movie", "Base")
+
+	corpo := `{"credits":{
+		"cast": {"reorder": ["6193"], "edit": {"6193": {"character": "Paul Atreides"}}},
+		"crew": {"remove": ["1892|Producer"], "add": [
+			{"source_id": "custom-1", "name": "Fulano de Tal", "department": "Direcao", "job": "Assistente de Direcao"}
+		]}
+	}}`
+	rec := patchOv(t, h, "e1", "pt-BR", corpo)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH credits status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if _, ok := getBlob(t, h, "e1")["credits"]; !ok {
+		t.Fatalf("blob deveria ter a chave credits: %v", getBlob(t, h, "e1"))
+	}
+
+	// Sem provider/base externa neste teste, so o `add` de crew aparece; o campo é
+	// NEUTRO (vale em qualquer lang, sem consultar a cadeia de idioma).
+	en := decodeEntidade(t, do(t, h, http.MethodGet, "/api/v1/entities/e1?lang=en", nil))
+	if len(en.Crew) != 1 || en.Crew[0].SourceID != "custom-1" || en.Crew[0].Job != "Assistente de Direcao" {
+		t.Fatalf("crew = %+v, quero 1 credito custom-1 (o add, ja que a base externa esta vazia)", en.Crew)
+	}
+}
+
+// TestPatchCreditsFormaInvalida cobre as formas REJEITADAS (422) do patch de
+// credits: operação com tipo errado (reorder/edit), add sem os campos
+// obrigatórios, kind de sub-bloco desconhecido, e credits/sub-bloco que não é
+// objeto.
+func TestPatchCreditsFormaInvalida(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "e1", "movie", "Base")
+
+	casos := []struct {
+		nome  string
+		corpo string
+	}{
+		{"reorder nao-array", `{"credits":{"cast":{"reorder":"6193"}}}`},
+		{"edit nao-objeto", `{"credits":{"cast":{"edit":["x"]}}}`},
+		{"add sem source_id", `{"credits":{"crew":{"add":[{"name":"Fulano"}]}}}`},
+		{"add sem name", `{"credits":{"crew":{"add":[{"source_id":"c1"}]}}}`},
+		{"kind de sub-bloco desconhecido", `{"credits":{"director":{"remove":["1"]}}}`},
+		{"credits nao-objeto", `{"credits":"foo"}`},
+		{"sub-bloco nao-objeto", `{"credits":{"cast":"foo"}}`},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			rec := patchOv(t, h, "e1", "pt-BR", c.corpo)
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("status = %d, quero 422 (corpo=%s)", rec.Code, rec.Body.String())
+			}
+			checkErrorShape(t, rec, "invalid_body")
+		})
+	}
+	// Nenhuma das rejeições grava nada (validação antes do merge).
+	if b := getBlob(t, h, "e1"); len(b) != 0 {
+		t.Errorf("blob após rejeições = %v, quero {} (nada gravado)", b)
+	}
+}
+
 // TestPatchNotaLocalDefinirELimpar cobre a NOTA LOCAL do dono (ADR-0012): definir a
 // nota grava o número neutro (sem idioma) e o resolvido a expõe em local_rating;
 // LIMPAR (DELETE sem lang) remove a chave e a nota volta a null (não-destrutivo).

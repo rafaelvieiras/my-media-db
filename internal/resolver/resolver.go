@@ -261,6 +261,12 @@ const (
 	// como o escalar (override vence; `null` apaga), mas o valor é um número, não uma
 	// string. É uma classe própria para o motor despachar sem `switch` por nome.
 	kindNumero
+	// kindCreditos é o crédito (elenco/equipe/produtoras, briefing 0029 Fase C):
+	// base SEMPRE externa (mesclada por prioridade, sem base-arquivo), override é um
+	// PATCH segregado por sub-kind (cast/crew/companies) com operações
+	// reorder/remove/edit/add — não um escalar/lista/extensão comum. Ver
+	// comporCreditos.
+	kindCreditos
 )
 
 // origemCampo é a etiqueta declarativa de um campo editorial. `traduzivel` marca
@@ -308,6 +314,12 @@ var registroOrigem = map[string]origemCampo{
 	// arquivo e externo não a têm; a nota da fonte é o vote_average, campo distinto).
 	// EDITÁVEL (não soLeitura): entra em CamposEditaveis para o editor de override.
 	"local_rating": {base: baseNenhuma, kind: kindNumero},
+	// Créditos (elenco/equipe/produtoras, briefing 0029 Fase C): base externa
+	// (mesclada por prioridade, igual aos campos ricos), NEUTRO (não traduzível —
+	// character/job/department não compõem por idioma nesta fase, decisão travada
+	// no §6.5) e EDITÁVEL (o dono reordena/remove/edita/adiciona créditos sem
+	// destruir a base do provider).
+	"credits": {base: baseExterno, kind: kindCreditos},
 }
 
 // ── Superfície pública do registro (R1, briefing 0016) ───────────────────────
@@ -332,6 +344,10 @@ const (
 	KindExtensao Kind = "extensao"
 	// KindNumero é um campo escalar NUMÉRICO (nota local): aceita número|null.
 	KindNumero Kind = "numero"
+	// KindCreditos é o crédito (elenco/equipe/produtoras): aceita `null` (apaga
+	// tudo) ou um objeto `{cast?,crew?,companies?}` com as operações
+	// reorder/remove/edit/add por sub-kind (briefing 0029 Fase C).
+	KindCreditos Kind = "creditos"
 )
 
 // CampoInfo é a etiqueta PÚBLICA de um campo editorial, derivada do registroOrigem:
@@ -350,6 +366,8 @@ func kindPublico(k kindCampo) Kind {
 		return KindExtensao
 	case kindNumero:
 		return KindNumero
+	case kindCreditos:
+		return KindCreditos
 	default:
 		return KindEscalar
 	}
@@ -408,6 +426,9 @@ func Resolver(c Camadas) Entidade {
 		"extension_data": parseExtensionData(c.Entity.ExtensionDataJson),
 		// Nota local não tem base de arquivo (só o override a define): a base é nil.
 		"local_rating": (*float64)(nil),
+		// Créditos não têm base de arquivo (só externo+override falam) — igual ao
+		// padrão do extension_data, cuja base-arquivo é sempre um mapa vazio.
+		"credits": map[string]any{},
 	}
 
 	// Modo IDIOMA: só quando há cadeia derivada das settings. Sem cadeia, o motor
@@ -439,6 +460,12 @@ func Resolver(c Camadas) Entidade {
 	// garantindo o MESMO shape do detalhe do externo.
 	rico := camposExternosMesclados(c.Externo)
 	externalIDs := parseExternalIDs(c.Entity.ExternalIdsJson)
+
+	// Créditos (0029 Fase C): a ENTRADA de richfields.CastDe/CrewDe/CompaniesDe deixa
+	// de ser o `rico` cru e passa a ser o resultado da COMPOSIÇÃO (resolvido["credits"],
+	// já com override aplicado) — os extratores em si não mudam (reaproveita 100% do
+	// parsing existente).
+	creditos := asObjMap(resolvido["credits"])
 
 	// Backdrop: prefere o FUNDO cacheado localmente (rota do chamador); sem cache,
 	// cai na URL direta da fonte (canônico externo). Mesmo campo, origem diferente.
@@ -472,9 +499,9 @@ func Resolver(c Camadas) Entidade {
 		Videos:            richfields.VideosDe(rico),
 		Collection:        richfields.ColecaoDe(rico),
 		Similar:           richfields.SimilaresDe(rico),
-		Cast:              richfields.CastDe(rico),
-		Crew:              richfields.CrewDe(rico),
-		Companies:         richfields.CompaniesDe(rico),
+		Cast:              richfields.CastDe(creditos),
+		Crew:              richfields.CrewDe(creditos),
+		Companies:         richfields.CompaniesDe(creditos),
 		ExternalLinks:     richfields.LinksExternos(rico, c.Entity.Type, externalIDs["tmdb"]),
 		Lang:              c.LangPedido,
 		OriginalLanguage:  nsPtr(c.Entity.OriginalLanguage),
@@ -509,6 +536,8 @@ func comporCampo(campo string, orig origemCampo, arquivo any, externo []CamadaEx
 		return comporExtensao(campo, arquivo, externo, override)
 	case kindNumero:
 		return comporNumero(campo, orig, arquivo, externo, override)
+	case kindCreditos:
+		return comporCreditos(campo, externo, override)
 	default: // kindEscalar
 		return comporEscalar(campo, orig, arquivo, externo, override)
 	}
@@ -534,6 +563,210 @@ func comporNumero(campo string, orig origemCampo, arquivo any, externo []CamadaE
 		}
 	}
 	return asFloatPtr(arquivo)
+}
+
+// ── Créditos (elenco/equipe/produtoras, briefing 0029 Fase C) ───────────────
+
+// creditosKinds são os 3 sub-kinds de crédito, na ordem em que a forma canônica do
+// patch os declara (briefing 0029 §6.5 / openapi.yaml OverridePatch).
+var creditosKinds = [...]string{"cast", "crew", "companies"}
+
+// comporCreditos compõe o campo `credits`: a BASE é sempre a camada externa
+// mesclada por prioridade (as mesmas 3 chaves que os campos ricos read-only da
+// Fase B já usavam), SEM base-arquivo. Sem override, devolve a base tal qual
+// (chaves ausentes quando a fonte não trouxe). `override["credits"] == null`
+// apaga TUDO (mapa vazio). Um patch presente decodifica por sub-kind
+// (cast/crew/companies) e aplica remove→edit→add→reorder — sub-chave ausente no
+// patch herda a base daquele sub-kind intacta. Devolve sempre um mapa não-nil.
+func comporCreditos(campo string, externo []CamadaExterna, override map[string]json.RawMessage) map[string]any {
+	rico := camposExternosMesclados(externo)
+	base := map[string]any{}
+	for _, kind := range creditosKinds {
+		if v, ok := rico[kind]; ok {
+			base[kind] = v
+		}
+	}
+
+	raw, temOverride := override[campo]
+	if !temOverride {
+		return base
+	}
+	if ehNull(raw) {
+		return map[string]any{}
+	}
+
+	var patch map[string]json.RawMessage
+	if json.Unmarshal(raw, &patch) != nil {
+		// Forma inválida (já barrada na escrita pelo server): degrada para a base
+		// intacta em vez de propagar um erro de um resolver que é puro.
+		return base
+	}
+
+	out := make(map[string]any, len(base))
+	for k, v := range base {
+		out[k] = v
+	}
+	for _, kind := range creditosKinds {
+		rawKind, ok := patch[kind]
+		if !ok {
+			continue // sub-chave ausente: herda a base daquele sub-kind intacta.
+		}
+		if ehNull(rawKind) {
+			out[kind] = []any{}
+			continue
+		}
+		itens := clonarListaCreditos(base[kind])
+		itens = aplicarPatchCredito(kind, itens, rawKind)
+		out[kind] = creditosParaAny(itens)
+	}
+	return out
+}
+
+// patchCredito é a forma canônica de UM sub-bloco do patch de créditos (briefing
+// 0029 §6.5): as 4 operações, todas opcionais. Edit é chave→patch de campos
+// (map[string]any tolera qualquer valor; a validação de forma já rodou no
+// server).
+type patchCredito struct {
+	Reorder []string                  `json:"reorder"`
+	Remove  []string                  `json:"remove"`
+	Edit    map[string]map[string]any `json:"edit"`
+	Add     []map[string]any          `json:"add"`
+}
+
+// aplicarPatchCredito aplica as 4 operações de UM sub-kind NA ORDEM travada:
+// remove → edit → add → reorder. Para `cast`, reescreve o campo `order` de cada
+// item ao final (índice 0-based), mantendo richfields.Cast.Order coerente com a
+// lista resultante (crew/companies não têm campo `order`).
+func aplicarPatchCredito(kind string, itens []map[string]any, raw json.RawMessage) []map[string]any {
+	var ops patchCredito
+	if json.Unmarshal(raw, &ops) != nil {
+		return itens // forma inválida: degrada para os itens intactos.
+	}
+
+	if len(ops.Remove) > 0 {
+		removerSet := make(map[string]struct{}, len(ops.Remove))
+		for _, k := range ops.Remove {
+			removerSet[k] = struct{}{}
+		}
+		filtrados := make([]map[string]any, 0, len(itens))
+		for _, it := range itens {
+			if _, off := removerSet[chaveCredito(kind, it)]; !off {
+				filtrados = append(filtrados, it)
+			}
+		}
+		itens = filtrados
+	}
+
+	// Chaves ANTES do edit: para crew, a chave inclui `job` — um campo que o
+	// próprio `edit` pode mudar. Se o `reorder` (montado pelo front com a chave
+	// ANTIGA) casasse com a chave PÓS-edit, o item editado "sumiria" do reorder e
+	// seria empurrado ao fim da lista só por ter sido editado. Fixar as chaves
+	// aqui, antes da mutação, mantém `edit` e `reorder` na MESMA chave.
+	chaves := make([]string, len(itens))
+	for i, it := range itens {
+		chaves[i] = chaveCredito(kind, it)
+	}
+
+	for i, it := range itens {
+		if patchCampos, ok := ops.Edit[chaves[i]]; ok {
+			for k, v := range patchCampos {
+				it[k] = v
+			}
+		}
+	}
+
+	for _, novo := range ops.Add {
+		itens = append(itens, novo)
+		chaves = append(chaves, chaveCredito(kind, novo))
+	}
+
+	if len(ops.Reorder) > 0 {
+		itens = reordenarCreditos(itens, chaves, ops.Reorder)
+	}
+
+	if kind == "cast" {
+		for i := range itens {
+			itens[i]["order"] = i
+		}
+	}
+
+	return itens
+}
+
+// reordenarCreditos move os itens cujas chaves (pré-edit, `chaves[i]` casa com
+// `itens[i]`) aparecem em `reorder` para a posição correspondente, NA ORDEM
+// dada; os itens restantes (não mencionados) vêm depois, na ordem relativa
+// original. Chaves em `reorder` que não existem (mais) são ignoradas
+// silenciosamente.
+func reordenarCreditos(itens []map[string]any, chaves []string, reorder []string) []map[string]any {
+	idx := make(map[string]int, len(itens))
+	for i, k := range chaves {
+		idx[k] = i
+	}
+	usado := make(map[string]bool, len(itens))
+	out := make([]map[string]any, 0, len(itens))
+	for _, k := range reorder {
+		if i, ok := idx[k]; ok && !usado[k] {
+			out = append(out, itens[i])
+			usado[k] = true
+		}
+	}
+	for i, it := range itens {
+		k := chaves[i]
+		if !usado[k] {
+			out = append(out, it)
+			usado[k] = true
+		}
+	}
+	return out
+}
+
+// chaveCredito é a CHAVE do crédito para reorder/remove/edit (briefing 0029
+// §6.5): `source_id` para cast/companies; `source_id + "|" + job` para crew — a
+// MESMA chave que equipeSimples/equipeAgregada (tmdb_creditos.go) já usam para
+// dedup, porque um membro de equipe pode ter dois cargos com o mesmo source_id.
+// `job` ausente (ex.: crédito custom incompleto) trata como "".
+func chaveCredito(kind string, item map[string]any) string {
+	sourceID, _ := item["source_id"].(string)
+	if kind != "crew" {
+		return sourceID
+	}
+	job, _ := item["job"].(string)
+	return sourceID + "|" + job
+}
+
+// clonarListaCreditos converte a base de um sub-kind (uma []any de
+// map[string]any, o mesmo shape que os itens de rico["cast"] etc já têm) numa
+// []map[string]any de CÓPIAS RASAS — para o patch (edit/reorder de `order`) não
+// mutar os mapas da camada externa original.
+func clonarListaCreditos(v any) []map[string]any {
+	itensAny, _ := v.([]any)
+	out := make([]map[string]any, 0, len(itensAny))
+	for _, it := range itensAny {
+		if m, ok := it.(map[string]any); ok {
+			out = append(out, clonarCredito(m))
+		}
+	}
+	return out
+}
+
+// clonarCredito faz uma cópia rasa de um item de crédito.
+func clonarCredito(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+// creditosParaAny converte a []map[string]any de volta para []any — o shape que
+// richfields.CastDe/CrewDe/CompaniesDe (via comoListaAny) esperam.
+func creditosParaAny(itens []map[string]any) []any {
+	out := make([]any, len(itens))
+	for i, it := range itens {
+		out[i] = it
+	}
+	return out
 }
 
 // ── Composição por idioma (traduzíveis) ─────────────────────────────────────

@@ -373,9 +373,120 @@ func formaValida(info resolver.CampoInfo, raw json.RawMessage) bool {
 		return ehNullRaw(raw) || ehObjeto(raw)
 	case resolver.KindNumero:
 		return formaNumero(raw)
+	case resolver.KindCreditos:
+		return formaCreditos(raw)
 	default: // KindEscalar
 		return ehNullRaw(raw) || ehString(raw)
 	}
+}
+
+// formaCreditos valida a forma do patch de créditos (briefing 0029 §6.5): `null`
+// (apaga tudo) ou um objeto cujas chaves ⊆ {cast,crew,companies}; cada sub-bloco
+// presente é `null` ou um objeto cujas chaves ⊆ {reorder,remove,edit,add}, com
+// `reorder`/`remove` como array de string, `edit` como objeto raso
+// string→(string→string), e `add` como array de objeto exigindo `source_id`+
+// `name` string (demais chaves, se presentes, também string). Qualquer forma
+// fora disso é 422.
+func formaCreditos(raw json.RawMessage) bool {
+	if ehNullRaw(raw) {
+		return true
+	}
+	var top map[string]json.RawMessage
+	if json.Unmarshal(raw, &top) != nil {
+		return false
+	}
+	for kind, rawBloco := range top {
+		if kind != "cast" && kind != "crew" && kind != "companies" {
+			return false
+		}
+		if !formaBlocoCredito(rawBloco) {
+			return false
+		}
+	}
+	return true
+}
+
+// formaBlocoCredito valida UM sub-bloco (cast/crew/companies) do patch de
+// créditos: `null` ou objeto com chaves ⊆ {reorder,remove,edit,add}.
+func formaBlocoCredito(raw json.RawMessage) bool {
+	if ehNullRaw(raw) {
+		return true
+	}
+	var ops map[string]json.RawMessage
+	if json.Unmarshal(raw, &ops) != nil {
+		return false
+	}
+	for op, rawOp := range ops {
+		switch op {
+		case "reorder", "remove":
+			var arr []string
+			if json.Unmarshal(rawOp, &arr) != nil {
+				return false
+			}
+		case "edit":
+			if !formaEditCredito(rawOp) {
+				return false
+			}
+		case "add":
+			if !formaAddCredito(rawOp) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// formaEditCredito valida `edit`: objeto RASO chave→(campo→valor), com os
+// valores dos campos sempre string (character/job/department/name são NEUTROS,
+// sem sub-mapa por idioma nesta fase).
+func formaEditCredito(raw json.RawMessage) bool {
+	var m map[string]map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) != nil {
+		return false
+	}
+	for _, campos := range m {
+		for _, v := range campos {
+			var s string
+			if json.Unmarshal(v, &s) != nil {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// formaAddCredito valida `add`: array de objeto exigindo `source_id`+`name`
+// como string (escolhidos pelo DONO — o resolver é puro, não gera id); demais
+// chaves, se presentes, também devem ser string.
+func formaAddCredito(raw json.RawMessage) bool {
+	var arr []map[string]json.RawMessage
+	if json.Unmarshal(raw, &arr) != nil {
+		return false
+	}
+	for _, item := range arr {
+		if !presenteComoString(item, "source_id") || !presenteComoString(item, "name") {
+			return false
+		}
+		for _, v := range item {
+			var s string
+			if json.Unmarshal(v, &s) != nil {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// presenteComoString diz se `chave` está presente no objeto e é uma string.
+func presenteComoString(item map[string]json.RawMessage, chave string) bool {
+	raw, ok := item[chave]
+	if !ok {
+		return false
+	}
+	var s string
+	return json.Unmarshal(raw, &s) == nil
 }
 
 // formaNumero aceita `null` (definir/limpar a nota) ou um número na escala 0–10 (a
