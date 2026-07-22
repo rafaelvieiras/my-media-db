@@ -6,7 +6,7 @@
 // retorna do main, gravando o perfil), esperamos o processo morrer de fato e so
 // entao rodamos `go tool covdata` para o % e um perfil textfmt.
 import { execSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { ARTIFACTS, EstadoE2E, GOCOVERDIR, ROOT, STATE_FILE } from './lib/paths'
 
 async function esperarMorte(pid: number, tentativas = 40): Promise<void> {
@@ -73,6 +73,13 @@ async function coberturaFront(): Promise<void> {
     const pct = resultado?.summary?.lines?.pct
     console.log('[e2e] cobertura do FRONT (jornadas de navegador):')
     console.log(`[e2e] linhas: ${typeof pct === 'number' ? pct + '%' : 'n/d'} — relatorio v8 em ${COVERAGE_DIR}`)
+    // Persiste para a catraca (briefing 0068 - coletor collectE2EFrontCoverage
+    // le este arquivo em vez de rodar o Playwright/monocart ele mesmo).
+    if (typeof pct === 'number') {
+      const destino = `${ARTIFACTS}/e2e-front-coverage.json`
+      writeFileSync(destino, JSON.stringify({ linesPct: pct }), 'utf8')
+      console.log(`[e2e] cobertura do front persistida em ${destino}`)
+    }
   } catch (e) {
     console.warn(`[e2e] nao foi possivel gerar a cobertura do front: ${(e as Error).message}`)
   }

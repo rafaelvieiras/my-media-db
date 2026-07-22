@@ -4,7 +4,7 @@
 # direto pelo lefthook e pelo workflow de CI). Estes alvos são conveniência.
 
 .DEFAULT_GOAL := help
-.PHONY: help fmt gate gate-local gate-fast gate-local-full baseline hooks e2e e2e-cov e2e-install
+.PHONY: help fmt gate gate-local gate-fast gate-local-full baseline baseline-e2e hooks e2e e2e-cov e2e-install
 
 help: ## Lista os alvos disponíveis
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -28,6 +28,9 @@ gate-local-full: ## Catraca completa, ignorando o filtro por diff (uso manual)
 
 baseline: ## Regenera e avança o baseline.json (Go + TS)
 	node scripts/quality-gate.mjs --generate-baseline
+
+baseline-e2e: ## Avanca a catraca de cobertura de navegador (Camada 2): rode 'make e2e-cov' antes
+	node scripts/quality-gate.mjs --generate-baseline --e2e
 
 hooks: ## Instala os hooks de git do lefthook
 	lefthook install

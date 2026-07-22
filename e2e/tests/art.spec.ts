@@ -4,10 +4,13 @@ import { join } from 'node:path'
 import { expect, test } from '../fixtures'
 import { resetBiblioteca } from '../lib/reset'
 
-// Ciclo de arte da entity (briefing 0017): o dono envia um poster, marca como
-// preferida (desempata entre as suas) e remove. Cada teste comeca com a
-// biblioteca zerada; aqui importamos 603 (Matrix) por API e cobrimos a galeria
-// pela UI. So asseracoes de conteudo, web-first (sem sleeps).
+// Ciclo de arte da entity (briefing 0017, atualizado p/ galeria em lightbox do
+// 0044/0049 e posse do 0062): o dono envia um poster e remove. Aqui a entity so'
+// existe via import por API (sem media_file real), entao "Definir como
+// principal"/"Salvar na pasta" ficam desabilitados (owned=false) -- o fluxo de
+// tornar principal com pasta real ja e' coberto pelo teste seguinte (0062).
+// Cada teste comeca com a biblioteca zerada; so asseracoes de conteudo,
+// web-first (sem sleeps).
 
 test.beforeEach(async ({ request }) => {
   await resetBiblioteca(request)
@@ -39,7 +42,7 @@ test('arte: enviar, preferir e remover na galeria da entity', async ({
   await expect(arte.getByRole('heading', { name: 'Arte' })).toBeVisible()
 
   // Galeria comeca vazia.
-  await expect(arte.getByText('Nenhuma arte ainda')).toBeVisible()
+  await expect(arte.getByText('Nenhuma arte disponível ainda.')).toBeVisible()
 
   // Envia um poster. O tipo ja vem em "Poster" por padrao; o botao "Enviar arte"
   // dispara um <input type=file> escondido, entao alimentamos o input direto
@@ -51,25 +54,28 @@ test('arte: enviar, preferir e remover na galeria da entity', async ({
     .getByLabel('Arquivo de arte')
     .setInputFiles({ name: 'poster.png', mimeType: 'image/png', buffer: PNG })
 
-  // A galeria deixa de estar vazia e mostra 1 item do dono (selo "sua") com as
-  // acoes "Preferir" e "Remover".
-  await expect(arte.getByText('Nenhuma arte ainda')).toHaveCount(0)
-  await expect(arte.getByRole('img', { name: 'poster sua' })).toBeVisible()
-  await expect(arte.getByText('sua')).toBeVisible()
+  // A galeria deixa de estar vazia e mostra 1 card do poster recem-enviado.
+  await expect(arte.getByText('Nenhuma arte disponível ainda.')).toHaveCount(0)
+  const cardEnviado = arte.getByRole('button', { name: /^Ver Pôster \d+$/ })
+  await expect(cardEnviado).toHaveCount(1)
+
+  // Abre o lightbox: sem media_file real (owned=false), "Definir como principal"
+  // fica desabilitado com tooltip; "Remover" (acao do dono) fica habilitado.
+  await cardEnviado.click()
+  const definirPrincipal = page.getByRole('button', {
+    name: 'Definir como principal',
+  })
+  await expect(definirPrincipal).toBeVisible()
+  await expect(definirPrincipal).toBeDisabled()
+  await expect(page.getByText('principal', { exact: true })).toHaveCount(0)
+
+  // Remover: acao direta (sem confirmacao). Fecha o lightbox e a galeria volta
+  // ao estado vazio.
+  await page.getByRole('button', { name: 'Remover arte' }).click()
+  await expect(arte.getByText('Nenhuma arte disponível ainda.')).toBeVisible()
   await expect(
-    arte.getByRole('button', { name: 'Remover arte poster' }),
-  ).toBeVisible()
-
-  // Preferir: o item vira o preferido do seu kind. Aparece o selo "preferida" e o
-  // botao "Preferir" some (nao ha o que desempatar quando ele ja venceu).
-  await arte.getByRole('button', { name: 'Preferir' }).click()
-  await expect(arte.getByText('preferida')).toBeVisible()
-  await expect(arte.getByRole('button', { name: 'Preferir' })).toHaveCount(0)
-
-  // Remover: acao direta (sem confirmacao). A galeria volta ao estado vazio.
-  await arte.getByRole('button', { name: 'Remover arte poster' }).click()
-  await expect(arte.getByText('Nenhuma arte ainda')).toBeVisible()
-  await expect(arte.getByRole('img', { name: 'poster sua' })).toHaveCount(0)
+    arte.getByRole('button', { name: /^Ver Pôster \d+$/ }),
+  ).toHaveCount(0)
 })
 
 // leSrcDoPosterDoTopo le o `src` do poster do HERO do RichDetailView, ou `null`

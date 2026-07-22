@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-07-22T18:58:55.677Z",
-  "commit": "1668193",
+  "generatedAt": "2026-07-22T20:36:17.076Z",
+  "commit": "2ce45d6",
   "project": "my-media-db",
   "metrics": {
     "go_coverage_lines": 75.2,
@@ -13,6 +13,8 @@
     "web_typecheck_errors": 0,
     "web_duplicate_percent": 0.23,
     "web_lint_issues": 0,
-    "web_audit_critical": 0
+    "web_audit_critical": 0,
+    "e2e_binary_coverage_lines": 30.9,
+    "e2e_front_coverage_lines": 64.67
   }
 }

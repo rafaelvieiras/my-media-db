@@ -49,6 +49,7 @@ const isFull          = process.argv.includes('--full');
 // mesmo que alguém rode só `--fast` sem `--local` explícito.
 const isLocal        = process.argv.includes('--local') || isFast;
 const isGenBaseline  = process.argv.includes('--generate-baseline');
+const isE2E          = process.argv.includes('--e2e');
 const isCI           = !isLocal && !isGenBaseline;
 
 // ─── ANSI helpers (só quando --local) ────────────────────────────────────────
@@ -88,6 +89,9 @@ const METRIC_DEFS = {
   web_duplicate_percent: { label: 'Web: duplicação',         unit: '%',     side: 'web', lowerIsBetter: true,  blocking: true   },
   web_lint_issues:       { label: 'Web: issues ESLint',      unit: 'issues',side: 'web', lowerIsBetter: true,  blocking: false  },
   web_audit_critical:    { label: 'Web: vulns critical',     unit: 'vulns', side: 'web', lowerIsBetter: true,  blocking: 'zero' },
+  // --- E2E navegador (Camada 2, briefing 0068) — lido de artefatos do `make e2e-cov` ---
+  e2e_binary_coverage_lines: { label: 'E2E: cobertura do binário (navegador)', unit: '%', side: 'e2e', lowerIsBetter: false, blocking: true },
+  e2e_front_coverage_lines:  { label: 'E2E: cobertura do front (navegador)',   unit: '%', side: 'e2e', lowerIsBetter: false, blocking: true },
 };
 
 // ─── Filtro por diff (briefing 0061) ─────────────────────────────────────────
@@ -500,6 +504,48 @@ function collectWebCoverage() {
   }
 }
 
+// ─── Coletores E2E (Camada 2, briefing 0068) ─────────────────────────────────
+// Diferente de todos os coletores acima: NUNCA rodam o Playwright/build eles
+// mesmos — só leem os dois artefatos que `make e2e-cov` já deixou prontos em
+// e2e/.artifacts/. Se o artefato não existir (Playwright ainda não rodou),
+// mesmo padrão dos demais coletores: avisa e devolve null (métrica pulada).
+const E2E_ARTIFACTS = join(ROOT, 'e2e', '.artifacts');
+
+// Lê o perfil textfmt que `coberturaBinario()` (e2e/global-teardown.ts) grava e
+// extrai o total agregado via `go tool cover -func`, igual aos coletores Go.
+function collectE2EBinaryCoverage() {
+  const perfil = join(E2E_ARTIFACTS, 'e2e-binary-coverage.txt');
+  if (!existsSync(perfil)) {
+    warn('e2e/.artifacts/e2e-binary-coverage.txt não encontrado — rode `make e2e-cov` antes; métrica "e2e_binary_coverage_lines" pulada');
+    return null;
+  }
+  const f = run(`go tool cover -func="${perfil}"`);
+  if (f.code !== 0) {
+    logFailure('e2e_binary_coverage_lines', f.stdout, f.stderr, 'go tool cover falhou sobre o perfil E2E — métrica pulada:');
+    return null;
+  }
+  const line = f.stdout.trim().split('\n').filter((l) => l.startsWith('total:')).pop();
+  const m = line && line.match(/(\d+(?:\.\d+)?)%/);
+  return m ? parseFloat(m[1]) : null;
+}
+
+// Lê o JSON `{ linesPct }` que `coberturaFront()` (e2e/global-teardown.ts) grava
+// a partir do relatório monocart.
+function collectE2EFrontCoverage() {
+  const arquivo = join(E2E_ARTIFACTS, 'e2e-front-coverage.json');
+  if (!existsSync(arquivo)) {
+    warn('e2e/.artifacts/e2e-front-coverage.json não encontrado — rode `make e2e-cov` antes; métrica "e2e_front_coverage_lines" pulada');
+    return null;
+  }
+  try {
+    const data = JSON.parse(readFileSync(arquivo, 'utf8'));
+    return typeof data?.linesPct === 'number' ? data.linesPct : null;
+  } catch (e) {
+    warn('não foi possível parsear e2e-front-coverage.json: ' + e.message);
+    return null;
+  }
+}
+
 // Coletor de cada métrica, indexado pela mesma chave usada em METRIC_DEFS —
 // permite iterar METRIC_DEFS e decidir o que rodar sem uma lista paralela.
 const COLLECTORS = {
@@ -514,6 +560,8 @@ const COLLECTORS = {
   web_duplicate_percent: collectWebDuplication,
   web_lint_issues:       collectWebLint,
   web_audit_critical:    collectWebAuditCritical,
+  e2e_binary_coverage_lines: collectE2EBinaryCoverage,
+  e2e_front_coverage_lines:  collectE2EFrontCoverage,
 };
 
 // Modo `--fast` (briefing 0061 §4.3): só os coletores baratos de cada lado.
@@ -524,7 +572,7 @@ const FAST_METRIC_KEYS = new Set([
   'web_typecheck_errors',
 ]);
 
-const SIDE_LABELS = { go: 'Go (raiz)', web: 'Web (web/)' };
+const SIDE_LABELS = { go: 'Go (raiz)', web: 'Web (web/)', e2e: 'E2E (navegador)' };
 const SIDE_SKIP_REASONS = {
   go:  'Go pulado: sem mudanças em cmd/, internal/, go.mod ou go.sum neste diff.',
   web: 'Web pulado: sem mudanças em web/ neste diff.',
@@ -539,9 +587,13 @@ function collectMetrics(touches = { touchesGo: true, touchesWeb: true }, opts = 
   const { fast = false } = opts;
   mkdirSync(REPORTS, { recursive: true });
   const metrics = {};
-  const touchedBySide = { go: touches.touchesGo, web: touches.touchesWeb };
+  const touchedBySide = { go: touches.touchesGo, web: touches.touchesWeb, e2e: true };
 
-  for (const side of ['go', 'web']) {
+  // Modo --e2e (briefing 0068): só lê os artefatos do lado 'e2e' (não roda
+  // Go/Web); fora desse modo, comportamento idêntico ao anterior (['go','web']).
+  const sides = isE2E ? ['e2e'] : ['go', 'web'];
+
+  for (const side of sides) {
     if (!touchedBySide[side]) {
       log(`${c.dim}${SIDE_SKIP_REASONS[side]}${c.reset}`);
       for (const [key, def] of Object.entries(METRIC_DEFS)) {
@@ -566,7 +618,21 @@ function collectMetrics(touches = { touchesGo: true, touchesWeb: true }, opts = 
 // ─── Geração do baseline ─────────────────────────────────────────────────────
 function generateBaseline() {
   log(`${c.bold}Gerando baseline de qualidade para ${PROJECT}...${c.reset}\n`);
-  const metrics = collectMetrics();
+  const novasMetricas = collectMetrics();
+
+  // Sempre mescla por cima do baseline.json existente (se houver) — nunca
+  // sobrescreve do zero. Necessário porque `--generate-baseline --e2e` só
+  // recolhe o lado 'e2e'; sem a mesclagem, zeraria as chaves go_*/web_* vigentes.
+  let anteriores = {};
+  if (existsSync(BASELINE_PATH)) {
+    try {
+      const existing = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
+      anteriores = existing?.metrics ?? {};
+    } catch (e) {
+      warn('não foi possível ler o baseline.json existente (será tratado como vazio): ' + e.message);
+    }
+  }
+  const metrics = { ...anteriores, ...novasMetricas };
 
   const baseline = {
     generatedAt: new Date().toISOString(),
@@ -756,7 +822,8 @@ function printMarkdown(current, result) {
   const markdown = lines.join('\n');
   log(markdown);
   mkdirSync(REPORTS, { recursive: true });
-  writeFileSync(join(REPORTS, 'quality-gate-report.md'), markdown + '\n', 'utf8');
+  const reportFile = isE2E ? 'e2e-quality-gate-report.md' : 'quality-gate-report.md';
+  writeFileSync(join(REPORTS, reportFile), markdown + '\n', 'utf8');
   return passed;
 }
 

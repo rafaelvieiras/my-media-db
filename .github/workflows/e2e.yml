@@ -4,11 +4,13 @@
 # sobe o binario com o provider fake (MYMEDIADB_FAKE_PROVIDER=1) e dirige um
 # Chromium real via Playwright pelo inventario de fluxos do usuario (briefing
 # 0028 secao 7.1). Coleta a cobertura de navegador (binario via GOCOVERDIR + go
-# tool covdata; front via monocart V8) como TERMOMETRO — reportada no log e
-# subida como artefato, NAO ratcheada. A catraca unitaria continua no
-# quality-gate.yml. Se quiser que a falha aqui nao bloqueie o merge, marque este
-# check como nao-obrigatorio na protecao de branch (o workflow em si sempre
-# reporta pass/fail honesto).
+# tool covdata; front via monocart V8) e trava as duas metricas como ratchet
+# BLOQUEANTE na catraca (briefing 0068, node scripts/quality-gate.mjs --e2e vs
+# baseline.json) — job SEPARADO da catraca unitaria (quality-gate.yml), so
+# falha por regressao de cobertura de navegador, nao por qualquer mudanca de
+# codigo. Se quiser que a falha aqui nao bloqueie o merge, marque este check
+# como nao-obrigatorio na protecao de branch (o workflow em si sempre reporta
+# pass/fail honesto).
 
 name: E2E (Playwright)
 
@@ -74,6 +76,25 @@ jobs:
       # sobe com o fake, roda as jornadas e extrai as coberturas de navegador.
       - name: Run E2E (com cobertura)
         run: make e2e-cov
+
+      - name: Travar cobertura de navegador na catraca
+        id: e2e-gate
+        run: node scripts/quality-gate.mjs --e2e
+        continue-on-error: true
+
+      - name: Comment e2e coverage table on PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          header: e2e-quality-gate
+          recreate: true
+          path: reports/e2e-quality-gate-report.md
+
+      - name: Fail on blocking regression (cobertura de navegador)
+        if: steps.e2e-gate.outcome == 'failure'
+        run: |
+          echo "Cobertura de navegador regrediu vs baseline. Veja reports/e2e-quality-gate-report.md."
+          exit 1
 
       # Artefato e best-effort (as coberturas ja aparecem no log do step acima):
       # uma falha de upload — p.ex. cota de storage de artefatos cheia — NAO deve

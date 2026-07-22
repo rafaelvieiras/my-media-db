@@ -43,6 +43,10 @@ test('pagina de configuracoes de idioma', async ({ page }) => {
 
   await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible()
 
+  // Escopo: o form de idiomas (a pagina tambem tem o form de completude de
+  // catalogacao do briefing 0057, que tem seu proprio botao "Salvar").
+  const formIdiomas = page.locator('form').filter({ hasText: 'Idioma principal' })
+
   // Os controles refletem a config atual do catalogo: pt-BR principal, en fallback.
   await expect(page.getByLabel('Idioma principal')).toHaveValue('pt-BR')
   await expect(page.getByLabel('Idioma de fallback')).toHaveValue('en')
@@ -52,5 +56,5 @@ test('pagina de configuracoes de idioma', async ({ page }) => {
   await expect(page.getByRole('checkbox', { name: 'Inglês en' })).toBeChecked()
   await expect(page.getByRole('checkbox', { name: 'Espanhol es' })).not.toBeChecked()
 
-  await expect(page.getByRole('button', { name: 'Salvar' })).toBeVisible()
+  await expect(formIdiomas.getByRole('button', { name: 'Salvar' })).toBeVisible()
 })
