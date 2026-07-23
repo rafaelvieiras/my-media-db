@@ -139,3 +139,32 @@ describe('SchemaForm — interações', () => {
     expect(onClear).toHaveBeenCalledWith('original_title', false)
   })
 })
+
+// Guard de "sair sem salvar" (0073): onDirtyChange espelha `form.state.isDirty`,
+// chamado só na transição (não a cada tecla).
+describe('SchemaForm — onDirtyChange (0073)', () => {
+  it('reporta false ao montar (form pristino)', () => {
+    const onDirtyChange = vi.fn()
+    renderEdicao({ onDirtyChange })
+    expect(onDirtyChange).toHaveBeenCalledWith(false)
+    expect(onDirtyChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('reporta true na primeira alteração de um campo', async () => {
+    const user = userEvent.setup()
+    const onDirtyChange = vi.fn()
+    renderEdicao({ onDirtyChange })
+    await user.type(screen.getByLabelText('Título'), 'D')
+    await vi.waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true))
+  })
+
+  it('não repete a chamada em teclas seguintes (só na transição)', async () => {
+    const user = userEvent.setup()
+    const onDirtyChange = vi.fn()
+    renderEdicao({ onDirtyChange })
+    await user.type(screen.getByLabelText('Título'), 'Duna')
+    await vi.waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true))
+    // false (montagem) + true (1ª tecla) — as 3 teclas seguintes não repetem.
+    expect(onDirtyChange).toHaveBeenCalledTimes(2)
+  })
+})

@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useState,
   type ChangeEvent,
   type KeyboardEvent,
@@ -56,6 +57,10 @@ export interface SchemaFormProps {
   // Conteúdo extra no topo (ex.: o seletor de Tipo na criação de item — não é
   // campo editorial, então a rota o injeta).
   header?: ReactNode
+  // Guard de "sair sem salvar" (0073): chamado só na TRANSIÇÃO do estado sujo
+  // (alterações não salvas desde o último carregamento/salvamento), nunca a
+  // cada tecla — a rota combina com o dos outros blocos da edição.
+  onDirtyChange?: (sujo: boolean) => void
 }
 
 export function SchemaForm({
@@ -74,6 +79,7 @@ export function SchemaForm({
   clearDisabled,
   lang,
   header,
+  onDirtyChange,
 }: SchemaFormProps) {
   // Zod é Standard Schema (aceito direto pelo TanStack Form v1). O `input` do
   // schema derivado é `unknown` (efeito do refine do número), então estreitamos
@@ -124,6 +130,15 @@ export function SchemaForm({
       className="mt-2 flex flex-col gap-5 rounded-xl bg-card p-4 ring-1 ring-foreground/10"
     >
       {header}
+
+      {onDirtyChange ? (
+        <form.Subscribe
+          selector={(s) => s.isDirty}
+          children={(sujo) => (
+            <NotificarSujo sujo={sujo} onDirtyChange={onDirtyChange} />
+          )}
+        />
+      ) : null}
 
       {traduziveis.length > 0 ? (
         <div className="flex flex-col gap-4">
@@ -186,6 +201,22 @@ export function SchemaForm({
       </div>
     </form>
   )
+}
+
+// NotificarSujo repassa `form.state.isDirty` para o pai via `onDirtyChange`
+// só na TRANSIÇÃO (o array de dependências do efeito é o próprio booleano) —
+// não renderiza nada, é só a ponte entre o form.Subscribe e o callback.
+function NotificarSujo({
+  sujo,
+  onDirtyChange,
+}: {
+  sujo: boolean
+  onDirtyChange: (sujo: boolean) => void
+}) {
+  useEffect(() => {
+    onDirtyChange(sujo)
+  }, [sujo, onDirtyChange])
+  return null
 }
 
 // LinhaCampo renderiza UM descritor pelo `widget`, com o rótulo (= aria-label), o

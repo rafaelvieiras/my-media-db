@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { KeyRound, Plus, RefreshCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -35,6 +35,14 @@ function mapaDe(linhas: Linha[]): Record<string, string> {
   return out
 }
 
+// mapaChave normaliza um mapa {source: id} numa string comparável (ordem de
+// chaves não importa) — usada para detectar o estado "sujo" (0073).
+function mapaChave(mapa: Record<string, string>): string {
+  return JSON.stringify(
+    Object.entries(mapa).sort(([a], [b]) => a.localeCompare(b)),
+  )
+}
+
 // ExternalIdsEditor edita a IDENTIDADE EXTERNA da entity (`external_ids`, MD4, 0027): o
 // dono fixa qual id de cada fonte a entity usa — base para sincronizar no futuro (os ids
 // da fonte podem mudar, ou o item ser substituído por outro). Full replace: salvar grava
@@ -44,17 +52,32 @@ function mapaDe(linhas: Linha[]): Record<string, string> {
 export function ExternalIdsEditor({
   id,
   externalIds,
+  onDirtyChange,
 }: {
   id: string
   externalIds: Record<string, string>
+  // Guard de "sair sem salvar" (0073): chamado só na transição do estado sujo.
+  onDirtyChange?: (sujo: boolean) => void
 }) {
   const queryClient = useQueryClient()
   const [linhas, setLinhas] = useState<Linha[]>(() => linhasDe(externalIds))
   const [proximaKey, setProximaKey] = useState(() => linhas.length)
+  // Baseline do que está gravado (carregado ou salvo com sucesso) — comparado
+  // com o mapa atual para saber se há algo sujo (0073).
+  const [salvo, setSalvo] = useState(() => mapaDe(linhasDe(externalIds)))
   // Avisa quando a gravação da identidade fundiu uma duplicata automaticamente
   // (0051) — a entity sem investimento do dono some sozinha, sem o dono precisar
   // caçá-la na biblioteca.
   const [avisoFusao, setAvisoFusao] = useState(false)
+
+  const sujo = useMemo(
+    () => mapaChave(mapaDe(linhas)) !== mapaChave(salvo),
+    [linhas, salvo],
+  )
+
+  useEffect(() => {
+    onDirtyChange?.(sujo)
+  }, [sujo, onDirtyChange])
 
   function invalidar() {
     queryClient.invalidateQueries({ queryKey: ['entity', id] })
@@ -62,11 +85,12 @@ export function ExternalIdsEditor({
   }
 
   const mutation = useMutation({
-    mutationFn: () => updateExternalIds(id, mapaDe(linhas)),
+    mutationFn: (mapa: Record<string, string>) => updateExternalIds(id, mapa),
     onMutate: () => setAvisoFusao(false),
-    onSuccess: (resultado) => {
+    onSuccess: (resultado, mapa) => {
       invalidar()
       setAvisoFusao(resultado.duplicataMesclada)
+      setSalvo(mapa)
     },
   })
 
@@ -76,15 +100,16 @@ export function ExternalIdsEditor({
   // ANTES). Uma falha do enrich (ex.: id não é da fonte) aparece inline, mas os ids já
   // ficaram salvos.
   const sincronizar = useMutation({
-    mutationFn: async () => {
-      const salvo = await updateExternalIds(id, mapaDe(linhas))
+    mutationFn: async (mapa: Record<string, string>) => {
+      const resultado = await updateExternalIds(id, mapa)
       await enrichEntity(id)
-      return salvo.duplicataMesclada
+      return { duplicataMesclada: resultado.duplicataMesclada, mapa }
     },
     onMutate: () => setAvisoFusao(false),
-    onSuccess: (duplicataMesclada) => {
+    onSuccess: ({ duplicataMesclada, mapa }) => {
       invalidar()
       setAvisoFusao(duplicataMesclada)
+      setSalvo(mapa)
     },
   })
 
@@ -184,7 +209,7 @@ export function ExternalIdsEditor({
           variant="outline"
           size="sm"
           disabled={salvando}
-          onClick={() => mutation.mutate()}
+          onClick={() => mutation.mutate(mapaDe(linhas))}
         >
           {mutation.isPending ? 'Salvando…' : 'Salvar IDs'}
         </Button>
@@ -192,7 +217,7 @@ export function ExternalIdsEditor({
           type="button"
           size="sm"
           disabled={salvando}
-          onClick={() => sincronizar.mutate()}
+          onClick={() => sincronizar.mutate(mapaDe(linhas))}
         >
           <RefreshCw
             className={sincronizar.isPending ? 'animate-spin' : undefined}

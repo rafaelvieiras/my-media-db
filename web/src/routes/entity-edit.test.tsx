@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
+import type { MouseEventHandler, ReactNode } from 'react'
 import { EntityEditScreen } from '@/routes/entity-edit'
 import { LanguageProvider } from '@/lib/language-context'
 import type { OverrideBlob, ResolvedEntity } from '@/lib/api'
@@ -21,7 +21,20 @@ const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
 vi.mock('@tanstack/react-router', () => ({
   useParams: () => ({ id: 'e1' }),
   useNavigate: () => spies.navigate,
-  Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
+  // Repassa `onClick` (0073: o guard de "sair sem salvar" intercepta o clique
+  // no link "Voltar ao item" via preventDefault + confirm) — antes o mock
+  // descartava qualquer prop além de `children`.
+  Link: ({
+    children,
+    onClick,
+  }: {
+    children: ReactNode
+    onClick?: MouseEventHandler<HTMLAnchorElement>
+  }) => (
+    <a href="#" onClick={onClick}>
+      {children}
+    </a>
+  ),
 }))
 
 interface Espioes {
@@ -278,5 +291,114 @@ describe('EntityEditScreen — edição por idioma', () => {
       await screen.findByText('Não foi possível carregar o item'),
     ).toBeInTheDocument()
     void espioes
+  })
+})
+
+// Guard de "sair sem salvar" (0073): os 3 blocos (SchemaForm/ExternalIdsEditor/
+// CreditsEditor) reportam seu próprio "sujo" via onDirtyChange; a rota combina e
+// intercepta o link "Voltar ao item" + o beforeunload nativo.
+describe('EntityEditScreen — guard de sair sem salvar (0073)', () => {
+  function clicarVoltar() {
+    fireEvent.click(screen.getByRole('link', { name: /Voltar ao item/ }))
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('sem alterações, "Voltar ao item" navega direto sem confirmação', async () => {
+    const confirmar = vi.fn()
+    vi.stubGlobal('confirm', confirmar)
+    await editar()
+    // Sem sujeira, o guard não intercepta o clique — a navegação segue pelo
+    // comportamento padrão do Link (não simulado pelo mock deste arquivo).
+    clicarVoltar()
+    expect(confirmar).not.toHaveBeenCalled()
+    // O guard nunca chama `navigate` explicitamente neste caso (não é ele
+    // quem navega quando não há sujeira — é o próprio Link).
+    expect(spies.navigate).not.toHaveBeenCalled()
+  })
+
+  it('editar o Título dispara confirmação; cancelar mantém a edição', async () => {
+    const confirmar = vi.fn(() => false)
+    vi.stubGlobal('confirm', confirmar)
+    const { user } = await editar()
+    await user.type(screen.getByLabelText('Título'), 'Duna')
+    clicarVoltar()
+    expect(confirmar).toHaveBeenCalledTimes(1)
+    expect(spies.navigate).not.toHaveBeenCalled()
+    expect((screen.getByLabelText('Título') as HTMLInputElement).value).toBe(
+      'Duna',
+    )
+  })
+
+  it('editar o Título e confirmar a saída navega', async () => {
+    vi.stubGlobal(
+      'confirm',
+      vi.fn(() => true),
+    )
+    const { user } = await editar()
+    await user.type(screen.getByLabelText('Título'), 'Duna')
+    clicarVoltar()
+    expect(spies.navigate).toHaveBeenCalledWith({
+      to: '/entities/$id',
+      params: { id: 'e1' },
+    })
+  })
+
+  it('editar só os IDs externos dispara confirmação', async () => {
+    const confirmar = vi.fn(() => false)
+    vi.stubGlobal('confirm', confirmar)
+    await editar()
+    fireEvent.click(screen.getByText('Adicionar fonte'))
+    fireEvent.change(screen.getByLabelText('Fonte do id externo'), {
+      target: { value: 'tmdb' },
+    })
+    clicarVoltar()
+    expect(confirmar).toHaveBeenCalledTimes(1)
+    expect(spies.navigate).not.toHaveBeenCalled()
+  })
+
+  it('reordenar só o elenco (sem salvar) dispara confirmação', async () => {
+    const confirmar = vi.fn(() => false)
+    vi.stubGlobal('confirm', confirmar)
+    await editar({
+      entityOver: {
+        cast: [
+          {
+            source_id: '1',
+            name: 'Ana',
+            character: 'Heroína',
+            order: 0,
+          },
+          {
+            source_id: '2',
+            name: 'Beto',
+            character: 'Vilão',
+            order: 1,
+          },
+        ],
+      },
+    })
+    fireEvent.click(screen.getAllByLabelText('Mover para baixo')[0])
+    clicarVoltar()
+    expect(confirmar).toHaveBeenCalledTimes(1)
+    expect(spies.navigate).not.toHaveBeenCalled()
+  })
+
+  it('dispara o aviso nativo (beforeunload) só enquanto há alteração pendente', async () => {
+    const { user } = await editar()
+    const evento = new Event('beforeunload', { cancelable: true })
+    const preventDefault = vi.spyOn(evento, 'preventDefault')
+
+    // Pristino: nada registrado, o evento não é interceptado.
+    window.dispatchEvent(evento)
+    expect(preventDefault).not.toHaveBeenCalled()
+
+    await user.type(screen.getByLabelText('Título'), 'D')
+    const eventoSujo = new Event('beforeunload', { cancelable: true })
+    const preventDefaultSujo = vi.spyOn(eventoSujo, 'preventDefault')
+    window.dispatchEvent(eventoSujo)
+    expect(preventDefaultSujo).toHaveBeenCalled()
   })
 })
