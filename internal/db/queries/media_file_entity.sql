@@ -52,6 +52,23 @@ WHERE media_file_id = ?;
 DELETE FROM media_file_entity
 WHERE media_file_id = ? AND kind = ?;
 
+-- name: ListarEntityIDsPorFonte :many
+-- Entities alcancadas pelos media_file de UMA fonte (briefing 0070, recasco de
+-- path do datasource): direto (media_file.entity_id -- caso do filme, ou da
+-- SERIE no caso de TV) UNION via a juncao generica (media_file_entity.entity_id
+-- -- caso do EPISODIO, ligado ao arquivo so pela juncao, nunca pelo entity_id
+-- direto). Usada para saber em quais entities checar/recascar
+-- asset.local_path e entity.nfo_path apos trocar library_source.path. O mesmo
+-- parametro (library_source_id) aparece nas duas metades da UNION.
+SELECT DISTINCT mf1.entity_id
+FROM media_file mf1
+WHERE mf1.library_source_id = sqlc.arg('library_source_id')
+UNION
+SELECT DISTINCT mfe.entity_id
+FROM media_file_entity mfe
+JOIN media_file mf2 ON mf2.id = mfe.media_file_id
+WHERE mf2.library_source_id = sqlc.arg('library_source_id');
+
 -- name: EntidadeTemPosse :one
 -- POSSE DERIVADA da entidade num papel (analogo ao EntityTemPosse de filme):
 -- verdadeiro se, e so se, existe ao menos um arquivo 'present' vinculado aquela

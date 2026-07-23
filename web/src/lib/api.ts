@@ -12,7 +12,8 @@ const base = import.meta.env.VITE_API_BASE ?? ''
 export type Source = components['schemas']['Source']
 export type SourceList = components['schemas']['SourceList']
 export type CreateSource = components['schemas']['CreateSource']
-// Patch parcial de `library_source` (briefing 0064) — hoje só `watch_enabled`.
+// Patch parcial de `library_source` (briefings 0064/0070) — `watch_enabled`
+// e/ou `path` (recasco em cascata do datasource para um novo caminho).
 export type PatchSource = components['schemas']['PatchSource']
 export type ScanStatus = components['schemas']['ScanStatus']
 export type StartScan = components['schemas']['StartScan']
@@ -159,9 +160,10 @@ export async function createLibrary(body: CreateSource): Promise<Source> {
   return lerJson<Source>(res)
 }
 
-// Patch parcial de datasource (briefing 0064) — hoje só liga/desliga o watcher
-// de filesystem (`watch_enabled`), aplicado a quente pelo servidor (sem
-// restart). Campos ausentes do corpo ficam inalterados.
+// Patch parcial de datasource (briefings 0064/0070): liga/desliga o watcher de
+// filesystem (`watch_enabled`), aplicado a quente pelo servidor (sem restart),
+// e/ou reaponta o caminho (`path`) — recasca em cascata media_file/asset/nfo
+// para o novo prefixo, sem re-scan. Campos ausentes do corpo ficam inalterados.
 export async function patchLibrary(
   id: string,
   body: PatchSource,

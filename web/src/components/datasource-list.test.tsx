@@ -30,6 +30,7 @@ function fetchRouter(sources: Source[], status: ScanStatus) {
       const source = sources.find((s) => u === `/api/v1/library/${s.id}`)
       const body = JSON.parse(String(init?.body ?? '{}')) as {
         watch_enabled?: boolean
+        path?: string
       }
       // Muta em memória para que o refetch pós-invalidação (disparado pelo
       // componente) reflita o novo estado, como faria a API real.
@@ -154,5 +155,151 @@ describe('DatasourceList', () => {
       ).toBe(true),
     )
     await waitFor(() => expect(toggle).toBeChecked())
+  })
+
+  it('edita o caminho via PATCH ao salvar o formulário inline (briefing 0070)', async () => {
+    const user = userEvent.setup()
+    const source: Source = {
+      id: '11',
+      path: '/mnt/antigo',
+      type: 'movie',
+      content_type: 'movie',
+      state: 'offline',
+      last_scan: null,
+      watch_enabled: false,
+    }
+    const fetchMock = fetchRouter([source], idle)
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithClient(<DatasourceList />)
+
+    await waitFor(() =>
+      expect(screen.getByText('/mnt/antigo')).toBeInTheDocument(),
+    )
+    await user.click(screen.getByRole('button', { name: 'Editar caminho' }))
+
+    const input = screen.getByLabelText('Novo caminho do datasource')
+    expect(input).toHaveValue('/mnt/antigo')
+    await user.clear(input)
+    await user.type(input, '/mnt/novo')
+    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([u, init]) => {
+          const i = init as RequestInit | undefined
+          return (
+            String(u) === '/api/v1/library/11' &&
+            i?.method === 'PATCH' &&
+            JSON.parse(String(i.body)).path === '/mnt/novo'
+          )
+        }),
+      ).toBe(true),
+    )
+    // Sucesso: volta a mostrar o path (agora atualizado) sem o formulário.
+    await waitFor(() =>
+      expect(screen.getByText('/mnt/novo')).toBeInTheDocument(),
+    )
+    expect(
+      screen.queryByLabelText('Novo caminho do datasource'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('mostra o erro inline ao editar caminho para um path inválido', async () => {
+    const user = userEvent.setup()
+    const source: Source = {
+      id: '12',
+      path: '/mnt/atual',
+      type: 'movie',
+      content_type: 'movie',
+      state: 'online',
+      last_scan: null,
+      watch_enabled: false,
+    }
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url)
+      const method = init?.method ?? 'GET'
+      if (u === '/api/v1/library' && method === 'GET') {
+        return okJson({ items: [source] })
+      }
+      if (u.endsWith('/scan') && method === 'GET') {
+        return okJson(idle)
+      }
+      if (u === `/api/v1/library/${source.id}` && method === 'PATCH') {
+        return {
+          ok: false,
+          status: 422,
+          json: async () => ({
+            error: {
+              code: 'invalid_path',
+              message: 'o caminho informado não existe',
+            },
+          }),
+        } as Response
+      }
+      throw new Error(`rota não mockada: ${method} ${u}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithClient(<DatasourceList />)
+
+    await waitFor(() =>
+      expect(screen.getByText('/mnt/atual')).toBeInTheDocument(),
+    )
+    await user.click(screen.getByRole('button', { name: 'Editar caminho' }))
+    await user.clear(screen.getByLabelText('Novo caminho do datasource'))
+    await user.type(
+      screen.getByLabelText('Novo caminho do datasource'),
+      '/nao/existe',
+    )
+    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('o caminho informado não existe'),
+      ).toBeInTheDocument(),
+    )
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    // Erro fica inline: o formulário de edição permanece aberto.
+    expect(
+      screen.getByLabelText('Novo caminho do datasource'),
+    ).toBeInTheDocument()
+  })
+
+  it('cancela a edição de caminho sem chamar a API', async () => {
+    const user = userEvent.setup()
+    const source: Source = {
+      id: '13',
+      path: '/mnt/original',
+      type: 'movie',
+      content_type: 'movie',
+      state: 'online',
+      last_scan: null,
+      watch_enabled: false,
+    }
+    const fetchMock = fetchRouter([source], idle)
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithClient(<DatasourceList />)
+
+    await waitFor(() =>
+      expect(screen.getByText('/mnt/original')).toBeInTheDocument(),
+    )
+    await user.click(screen.getByRole('button', { name: 'Editar caminho' }))
+    await user.type(
+      screen.getByLabelText('Novo caminho do datasource'),
+      '-mudanca',
+    )
+    await user.click(
+      screen.getByRole('button', { name: 'Cancelar edição do caminho' }),
+    )
+
+    expect(
+      screen.queryByLabelText('Novo caminho do datasource'),
+    ).not.toBeInTheDocument()
+    expect(
+      fetchMock.mock.calls.some(
+        ([u, init]) =>
+          String(u) === '/api/v1/library/13' &&
+          (init as RequestInit | undefined)?.method === 'PATCH',
+      ),
+    ).toBe(false)
   })
 })

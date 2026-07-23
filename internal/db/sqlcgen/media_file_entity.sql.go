@@ -182,6 +182,47 @@ func (q *Queries) ListarArquivosDaEntidade(ctx context.Context, arg ListarArquiv
 	return items, nil
 }
 
+const listarEntityIDsPorFonte = `-- name: ListarEntityIDsPorFonte :many
+SELECT DISTINCT mf1.entity_id
+FROM media_file mf1
+WHERE mf1.library_source_id = ?1
+UNION
+SELECT DISTINCT mfe.entity_id
+FROM media_file_entity mfe
+JOIN media_file mf2 ON mf2.id = mfe.media_file_id
+WHERE mf2.library_source_id = ?1
+`
+
+// Entities alcancadas pelos media_file de UMA fonte (briefing 0070, recasco de
+// path do datasource): direto (media_file.entity_id -- caso do filme, ou da
+// SERIE no caso de TV) UNION via a juncao generica (media_file_entity.entity_id
+// -- caso do EPISODIO, ligado ao arquivo so pela juncao, nunca pelo entity_id
+// direto). Usada para saber em quais entities checar/recascar
+// asset.local_path e entity.nfo_path apos trocar library_source.path. O mesmo
+// parametro (library_source_id) aparece nas duas metades da UNION.
+func (q *Queries) ListarEntityIDsPorFonte(ctx context.Context, librarySourceID sql.NullString) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listarEntityIDsPorFonte, librarySourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var entity_id string
+		if err := rows.Scan(&entity_id); err != nil {
+			return nil, err
+		}
+		items = append(items, entity_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listarVinculosPorArquivo = `-- name: ListarVinculosPorArquivo :many
 SELECT media_file_id, entity_id, kind, ordinal
 FROM media_file_entity

@@ -61,6 +61,19 @@ SET watch_enabled = ?,
 WHERE id = ?
 RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled;
 
+-- name: AtualizarLibrarySourcePath :one
+-- PATCH /api/v1/library/{id} (briefing 0070): reaponta o datasource para um
+-- novo caminho (ex.: o disco/mount mudou de lugar). O CHAMADOR recasca em
+-- cascata media_file.path/asset.local_path/entity.nfo_path NA MESMA
+-- transacao, logo apos este UPDATE (mesmo padrao de Apagar). Nao mexe em
+-- `state`: e sempre reavaliado na leitura (avaliarState), nunca lido desta
+-- coluna.
+UPDATE library_source
+SET path = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled;
+
 -- name: ApagarLibrarySource :exec
 DELETE FROM library_source
 WHERE id = ?;

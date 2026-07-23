@@ -33,6 +33,26 @@ func (q *Queries) ApagarMediaFilesPorFonte(ctx context.Context, librarySourceID 
 	return err
 }
 
+const atualizarMediaFilePath = `-- name: AtualizarMediaFilePath :exec
+UPDATE media_file
+SET path = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+`
+
+type AtualizarMediaFilePathParams struct {
+	Path string
+	ID   string
+}
+
+// Grava o path ja recascado (calculado em Go) de UM media_file. Nao toca o
+// resto da linha (content_hash/entity_id/state seguem intactos -- o arquivo
+// fisico e o MESMO, so mudou de onde e montado).
+func (q *Queries) AtualizarMediaFilePath(ctx context.Context, arg AtualizarMediaFilePathParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarMediaFilePath, arg.Path, arg.ID)
+	return err
+}
+
 const atualizarMediaFileState = `-- name: AtualizarMediaFileState :one
 UPDATE media_file
 SET state = ?,
@@ -242,6 +262,44 @@ func (q *Queries) ListarEntityIDsComMediaFilePresente(ctx context.Context) ([]st
 			return nil, err
 		}
 		items = append(items, entity_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listarMediaFilePathsPorFonte = `-- name: ListarMediaFilePathsPorFonte :many
+SELECT id, path
+FROM media_file
+WHERE library_source_id = ?
+`
+
+type ListarMediaFilePathsPorFonteRow struct {
+	ID   string
+	Path string
+}
+
+// Recasco de path do datasource (briefing 0070): so as duas colunas que o
+// rename precisa (o resto da linha nao muda). O chamador troca o PREFIXO em
+// Go (strings.TrimPrefix) -- nunca SUBSTR/REPLACE no SQL, que divergiria em
+// paths com acento (SQLite conta codepoint, Go conta byte).
+func (q *Queries) ListarMediaFilePathsPorFonte(ctx context.Context, librarySourceID sql.NullString) ([]ListarMediaFilePathsPorFonteRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarMediaFilePathsPorFonte, librarySourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarMediaFilePathsPorFonteRow{}
+	for rows.Next() {
+		var i ListarMediaFilePathsPorFonteRow
+		if err := rows.Scan(&i.ID, &i.Path); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

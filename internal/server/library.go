@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -29,10 +30,13 @@ type sourceDTO struct {
 }
 
 // patchSourceRequest é o corpo aceito por PATCH /api/v1/library/{id}
-// (briefing 0064, PatchSource no contrato): PATCH PARCIAL -- campo ausente
-// (ponteiro nil) fica inalterado. Hoje só expõe watch_enabled.
+// (briefing 0064 + 0070, PatchSource no contrato): PATCH PARCIAL -- campo
+// ausente (ponteiro nil) fica inalterado. Path e watch_enabled podem vir
+// juntos ou cada um sozinho; quando os dois vêm no mesmo corpo, o path é
+// aplicado PRIMEIRO (recasco em cascata) e o watch_enabled depois.
 type patchSourceRequest struct {
-	WatchEnabled *bool `json:"watch_enabled"`
+	WatchEnabled *bool   `json:"watch_enabled"`
+	Path         *string `json:"path"`
 }
 
 // listDTO é a resposta de GET /api/v1/library.
@@ -173,20 +177,23 @@ func (s *Server) deleteLibrary(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// patchLibrary trata PATCH /api/v1/library/{id} (briefing 0064): PATCH
-// PARCIAL -- hoje só aceita watch_enabled. Campo ausente do corpo (ponteiro
-// nil) devolve a fonte como está, sem tocar nada. Mudar watch_enabled aplica
-// A QUENTE, sem restart do servidor (critério de aceite do briefing):
-// false->true chama a MESMA rotina de registro do boot para aquela fonte
-// (s.watch.RegistrarFonte); true->false chama Close() no watcher da fonte e
-// remove sua entrada do mapa em memória (s.watch.DesregistrarFonte). 200 com
-// a fonte atualizada; 404 fonte inexistente; 422 corpo malformado.
+// patchLibrary trata PATCH /api/v1/library/{id} (briefing 0064 + 0070): PATCH
+// PARCIAL -- aceita path e/ou watch_enabled, cada um sozinho ou os dois
+// juntos. Campo ausente do corpo (ponteiro nil) fica inalterado. Quando os
+// dois vêm juntos, path é aplicado PRIMEIRO (recasco em cascata de
+// media_file/asset/entity para o novo prefixo) e watch_enabled depois, na
+// MESMA resposta final. Mudar watch_enabled aplica A QUENTE, sem restart do
+// servidor (critério de aceite do briefing 0064): false->true chama a MESMA
+// rotina de registro do boot para aquela fonte (s.watch.RegistrarFonte);
+// true->false chama Close() no watcher da fonte e remove sua entrada do mapa
+// em memória (s.watch.DesregistrarFonte). 200 com a fonte atualizada; 404
+// fonte inexistente; 400/422/409 conforme o erro de domínio (path vazio/
+// inválido/duplicado); 422 corpo malformado.
 func (s *Server) patchLibrary(w http.ResponseWriter, r *http.Request) {
 	if s.libraryUnavailable(w) {
 		return
 	}
 	id := chi.URLParam(r, "id")
-	ctx := r.Context()
 
 	var req patchSourceRequest
 	dec := json.NewDecoder(r.Body)
@@ -197,26 +204,46 @@ func (s *Server) patchLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.WatchEnabled == nil {
-		// Patch vazio é válido (nenhum campo suportado veio no corpo): só
-		// devolve o estado atual, sem tocar nada.
-		src, err := s.library.Obter(ctx, id)
-		if err != nil {
-			respondLibraryError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, toDTO(src))
-		return
-	}
-
-	src, err := s.library.AtualizarWatch(ctx, id, *req.WatchEnabled)
+	src, err := s.aplicarPatchLibrary(r.Context(), id, req)
 	if err != nil {
 		respondLibraryError(w, err)
 		return
 	}
-	s.aplicarWatchToggle(src, *req.WatchEnabled)
-
 	writeJSON(w, http.StatusOK, toDTO(src))
+}
+
+// aplicarPatchLibrary aplica o patch parcial (path e/ou watch_enabled) e
+// devolve a fonte final -- extraído de patchLibrary para manter a
+// complexidade ciclomática baixa. Corpo vazio (os dois nil) só devolve o
+// estado atual, sem tocar nada. path é aplicado PRIMEIRO (recasco em
+// cascata via AtualizarPath); watch_enabled depois, aplicado A QUENTE pelo
+// watcher fsnotify (aplicarWatchToggle).
+func (s *Server) aplicarPatchLibrary(ctx context.Context, id string, req patchSourceRequest) (library.Source, error) {
+	if req.Path == nil && req.WatchEnabled == nil {
+		return s.library.Obter(ctx, id)
+	}
+
+	src, err := s.aplicarPatchPath(ctx, id, req.Path)
+	if err != nil || req.WatchEnabled == nil {
+		return src, err
+	}
+
+	src, err = s.library.AtualizarWatch(ctx, id, *req.WatchEnabled)
+	if err != nil {
+		return library.Source{}, err
+	}
+	s.aplicarWatchToggle(src, *req.WatchEnabled)
+	return src, nil
+}
+
+// aplicarPatchPath reaponta a fonte (briefing 0070) quando path foi
+// informado; caso contrário, só relê o estado atual (nenhuma mudança de path
+// pedida -- o corpo trouxe só watch_enabled).
+func (s *Server) aplicarPatchPath(ctx context.Context, id string, path *string) (library.Source, error) {
+	if path == nil {
+		return s.library.Obter(ctx, id)
+	}
+	return s.library.AtualizarPath(ctx, id, *path)
 }
 
 // aplicarWatchToggle aciona o watcher fsnotify em memória (internal/watch)

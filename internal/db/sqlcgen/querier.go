@@ -50,6 +50,11 @@ type Querier interface {
 	// (briefing 0062). Chamado a cada POST /entities/{id}/nfo, mesmo idempotente
 	// em conteudo (nfo_written_at muda sempre).
 	AtualizarEntityNfo(ctx context.Context, arg AtualizarEntityNfoParams) error
+	// Recasca SO o caminho do .nfo ja exportado (briefing 0070, editar path do
+	// datasource): diferente de AtualizarEntityNfo, NAO toca nfo_written_at --
+	// isto nao e uma nova exportacao, so o prefixo do path mudou de lugar no
+	// disco (o mount/HD trocou, o conteudo e o mesmo).
+	AtualizarEntityNfoPath(ctx context.Context, arg AtualizarEntityNfoPathParams) error
 	// Reescreve a BASE do episodio no re-import (briefing 0043): o find-or-create por id
 	// externo reusa a linha, mas antes so o create gravava estes campos, entao still_url/
 	// numbering novos (extension_data) e titulo/sinopse/data/ids atualizados do provider
@@ -76,10 +81,21 @@ type Querier interface {
 	AtualizarJobConfig(ctx context.Context, arg AtualizarJobConfigParams) (JobDefinition, error)
 	// Atualiza o estado da varredura: carimbo do ultimo scan e online/offline.
 	AtualizarLibrarySource(ctx context.Context, arg AtualizarLibrarySourceParams) (LibrarySource, error)
+	// PATCH /api/v1/library/{id} (briefing 0070): reaponta o datasource para um
+	// novo caminho (ex.: o disco/mount mudou de lugar). O CHAMADOR recasca em
+	// cascata media_file.path/asset.local_path/entity.nfo_path NA MESMA
+	// transacao, logo apos este UPDATE (mesmo padrao de Apagar). Nao mexe em
+	// `state`: e sempre reavaliado na leitura (avaliarState), nunca lido desta
+	// coluna.
+	AtualizarLibrarySourcePath(ctx context.Context, arg AtualizarLibrarySourcePathParams) (LibrarySource, error)
 	// PATCH /api/v1/library/{id} (briefing 0064): liga/desliga watch_enabled. O
 	// handler chama a rotina de registro/desregistro do watcher fsnotify LOGO
 	// APOS este UPDATE (aplicado a quente, sem restart -- ver internal/watch).
 	AtualizarLibrarySourceWatch(ctx context.Context, arg AtualizarLibrarySourceWatchParams) (LibrarySource, error)
+	// Grava o path ja recascado (calculado em Go) de UM media_file. Nao toca o
+	// resto da linha (content_hash/entity_id/state seguem intactos -- o arquivo
+	// fisico e o MESMO, so mudou de onde e montado).
+	AtualizarMediaFilePath(ctx context.Context, arg AtualizarMediaFilePathParams) error
 	// Transicao de ciclo de vida: marca present/missing e carimba last_seen.
 	AtualizarMediaFileState(ctx context.Context, arg AtualizarMediaFileStateParams) (MediaFile, error)
 	// Reencontro num scan: o arquivo foi achado pelo content_hash. Atualiza o path
@@ -320,6 +336,14 @@ type Querier interface {
 	// com a regra de writeEntityNfo (season nao tem NFO proprio, internal/server/
 	// localmedia_handlers.go).
 	ListarEntityIDsComMediaFilePresente(ctx context.Context) ([]string, error)
+	// Entities alcancadas pelos media_file de UMA fonte (briefing 0070, recasco de
+	// path do datasource): direto (media_file.entity_id -- caso do filme, ou da
+	// SERIE no caso de TV) UNION via a juncao generica (media_file_entity.entity_id
+	// -- caso do EPISODIO, ligado ao arquivo so pela juncao, nunca pelo entity_id
+	// direto). Usada para saber em quais entities checar/recascar
+	// asset.local_path e entity.nfo_path apos trocar library_source.path. O mesmo
+	// parametro (library_source_id) aparece nas duas metades da UNION.
+	ListarEntityIDsPorFonte(ctx context.Context, librarySourceID sql.NullString) ([]string, error)
 	// Filmografia da pessoa (briefing 0029 Fase D, interno-first): as obras do catalogo
 	// que a creditam, elenco OU equipe (credito de produtora nao tem person_id, sai
 	// naturalmente do WHERE). Junta credit com entity para trazer o papel (kind/
@@ -360,6 +384,11 @@ type Querier interface {
 	ListarLibrarySourcesComWatchHabilitado(ctx context.Context) ([]LibrarySource, error)
 	// Todas as camadas externas cacheadas de uma entity (uma por fonte buscada).
 	ListarMediaExternalPorEntity(ctx context.Context, entityID string) ([]MediaExternal, error)
+	// Recasco de path do datasource (briefing 0070): so as duas colunas que o
+	// rename precisa (o resto da linha nao muda). O chamador troca o PREFIXO em
+	// Go (strings.TrimPrefix) -- nunca SUBSTR/REPLACE no SQL, que divergiria em
+	// paths com acento (SQLite conta codepoint, Go conta byte).
+	ListarMediaFilePathsPorFonte(ctx context.Context, librarySourceID sql.NullString) ([]ListarMediaFilePathsPorFonteRow, error)
 	ListarMediaFilesPorEntity(ctx context.Context, entityID string) ([]MediaFile, error)
 	// Todos os media_file 'present' (de QUALQUER entity) -- usada por
 	// EhPastaExclusiva (internal/localmedia, briefing 0062) para decidir se uma

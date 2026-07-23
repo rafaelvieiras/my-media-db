@@ -270,6 +270,79 @@ func TestCRUDLibrarySourceEMeta(t *testing.T) {
 	}
 }
 
+// TestCRUDLibrarySourcePathRecasco cobre as queries novas do briefing 0070
+// (editar path de um datasource cadastrado): AtualizarLibrarySourcePath,
+// ListarMediaFilePathsPorFonte, AtualizarMediaFilePath, ListarEntityIDsPorFonte
+// (direto via media_file.entity_id + via a juncao media_file_entity) e
+// AtualizarEntityNfoPath.
+func TestCRUDLibrarySourcePathRecasco(t *testing.T) {
+	q := setup(t)
+	ctx := context.Background()
+
+	ls, err := q.CriarLibrarySource(ctx, sqlcgen.CriarLibrarySourceParams{
+		ID: "ls-recasco", Path: "/mnt/antigo", Type: "tv", ContentType: "series",
+	})
+	check(t, err, "CriarLibrarySource")
+
+	// Entity alcancada DIRETO (media_file.entity_id).
+	filme, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "filme-recasco", Type: "movie", Title: "Filme"})
+	check(t, err, "CriarEntity filme")
+	mf, err := q.CriarMediaFile(ctx, sqlcgen.CriarMediaFileParams{
+		ID: "mf-recasco", EntityID: filme.ID, Path: "/mnt/antigo/filme.mkv", State: "present",
+		LibrarySourceID: ns(ls.ID),
+	})
+	check(t, err, "CriarMediaFile")
+
+	// Entity alcancada via JUNCAO (media_file_entity), caso do episodio.
+	episodio, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "ep-recasco", Type: "episode", Title: "Ep"})
+	check(t, err, "CriarEntity episodio")
+	check(t, q.CriarVinculoEntidade(ctx, sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: mf.ID, EntityID: episodio.ID, Kind: "tv_episode", Ordinal: 0,
+	}), "CriarVinculoEntidade")
+
+	upd, err := q.AtualizarLibrarySourcePath(ctx, sqlcgen.AtualizarLibrarySourcePathParams{
+		Path: "/mnt/novo", ID: ls.ID,
+	})
+	check(t, err, "AtualizarLibrarySourcePath")
+	if upd.Path != "/mnt/novo" {
+		t.Errorf("path apos update = %q, quero /mnt/novo", upd.Path)
+	}
+
+	arquivos, err := q.ListarMediaFilePathsPorFonte(ctx, ns(ls.ID))
+	check(t, err, "ListarMediaFilePathsPorFonte")
+	if len(arquivos) != 1 || arquivos[0].ID != mf.ID {
+		t.Fatalf("ListarMediaFilePathsPorFonte = %+v, quero 1 linha (%s)", arquivos, mf.ID)
+	}
+
+	check(t, q.AtualizarMediaFilePath(ctx, sqlcgen.AtualizarMediaFilePathParams{
+		Path: "/mnt/novo/filme.mkv", ID: mf.ID,
+	}), "AtualizarMediaFilePath")
+	gotMf, err := q.ObterMediaFile(ctx, mf.ID)
+	check(t, err, "ObterMediaFile")
+	if gotMf.Path != "/mnt/novo/filme.mkv" {
+		t.Errorf("path do media_file apos update = %q, quero /mnt/novo/filme.mkv", gotMf.Path)
+	}
+
+	entityIDs, err := q.ListarEntityIDsPorFonte(ctx, ns(ls.ID))
+	check(t, err, "ListarEntityIDsPorFonte")
+	vistos := map[string]bool{}
+	for _, id := range entityIDs {
+		vistos[id] = true
+	}
+	if !vistos[filme.ID] || !vistos[episodio.ID] || len(entityIDs) != 2 {
+		t.Errorf("ListarEntityIDsPorFonte = %v, quero [%s %s]", entityIDs, filme.ID, episodio.ID)
+	}
+
+	check(t, q.AtualizarEntityNfoPath(ctx, sqlcgen.AtualizarEntityNfoPathParams{
+		NfoPath: ns("/mnt/novo/tvshow.nfo"), ID: filme.ID,
+	}), "AtualizarEntityNfoPath")
+	gotEnt, err := q.ObterEntity(ctx, filme.ID)
+	check(t, err, "ObterEntity")
+	if !gotEnt.NfoPath.Valid || gotEnt.NfoPath.String != "/mnt/novo/tvshow.nfo" {
+		t.Errorf("nfo_path apos update = %+v, quero /mnt/novo/tvshow.nfo", gotEnt.NfoPath)
+	}
+}
+
 // TestCRUDJob cobre o schema de jobs (briefing 0052): as definicoes seed
 // (backup_vacuum e saude_biblioteca da migration 0011, midias_faltantes da
 // migration 0016/briefing 0064), a consulta de agendaveis, o ciclo de uma

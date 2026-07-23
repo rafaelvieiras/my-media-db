@@ -112,6 +112,26 @@ func (q *Queries) AtualizarEntityNfo(ctx context.Context, arg AtualizarEntityNfo
 	return err
 }
 
+const atualizarEntityNfoPath = `-- name: AtualizarEntityNfoPath :exec
+UPDATE entity
+SET nfo_path = ?
+WHERE id = ?
+`
+
+type AtualizarEntityNfoPathParams struct {
+	NfoPath sql.NullString
+	ID      string
+}
+
+// Recasca SO o caminho do .nfo ja exportado (briefing 0070, editar path do
+// datasource): diferente de AtualizarEntityNfo, NAO toca nfo_written_at --
+// isto nao e uma nova exportacao, so o prefixo do path mudou de lugar no
+// disco (o mount/HD trocou, o conteudo e o mesmo).
+func (q *Queries) AtualizarEntityNfoPath(ctx context.Context, arg AtualizarEntityNfoPathParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarEntityNfoPath, arg.NfoPath, arg.ID)
+	return err
+}
+
 const atualizarEpisodioBase = `-- name: AtualizarEpisodioBase :exec
 UPDATE entity
 SET title = ?,

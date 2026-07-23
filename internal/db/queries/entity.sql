@@ -379,6 +379,15 @@ SET nfo_path = ?,
     nfo_written_at = ?
 WHERE id = ?;
 
+-- name: AtualizarEntityNfoPath :exec
+-- Recasca SO o caminho do .nfo ja exportado (briefing 0070, editar path do
+-- datasource): diferente de AtualizarEntityNfo, NAO toca nfo_written_at --
+-- isto nao e uma nova exportacao, so o prefixo do path mudou de lugar no
+-- disco (o mount/HD trocou, o conteudo e o mesmo).
+UPDATE entity
+SET nfo_path = ?
+WHERE id = ?;
+
 -- name: UpsertEntityCatalogCompleteness :exec
 -- Grava (ou substitui) o resultado da avaliacao de completude de CATALOGACAO
 -- (briefing 0058) de UM item -- chamada pelo recalculo em lote

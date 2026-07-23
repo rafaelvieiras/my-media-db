@@ -904,8 +904,8 @@ export interface paths {
     options?: never
     head?: never
     /**
-     * Edita configuração de um datasource cadastrado (briefing 0064).
-     * @description Patch PARCIAL: campos ausentes do corpo ficam inalterados. Hoje só expõe `watch_enabled` — nenhum outro campo de `library_source` é editável por este endpoint ainda. Mudar `watch_enabled` de `false` para `true` ativa o watcher `fsnotify` desta fonte IMEDIATAMENTE (mesma rotina de registro usada no boot do servidor, sem reiniciar nada); de `true` para `false` desativa o watcher IMEDIATAMENTE (`Close()` + remoção da entrada em memória). As duas direções são garantia comportamental do contrato: nenhuma delas exige restart do servidor.
+     * Edita configuração de um datasource cadastrado (briefings 0064/0070).
+     * @description Patch PARCIAL: campos ausentes do corpo ficam inalterados; `path` e `watch_enabled` podem vir juntos ou cada um sozinho. Mudar `watch_enabled` de `false` para `true` ativa o watcher `fsnotify` desta fonte IMEDIATAMENTE (mesma rotina de registro usada no boot do servidor, sem reiniciar nada); de `true` para `false` desativa o watcher IMEDIATAMENTE (`Close()` + remoção da entrada em memória). As duas direções são garantia comportamental do contrato: nenhuma delas exige restart do servidor. Mudar `path` (briefing 0070) reaponta o datasource para um novo caminho — valida como no cadastro (existe, é diretório, legível, sem duplicar outra fonte) e recasca em cascata `media_file.path`, `asset.local_path` e `entity.nfo_path` desta fonte para o novo prefixo; NÃO dispara scan nem move bytes no disco. Quando os dois campos vêm juntos, `path` é aplicado primeiro. Path novo IGUAL ao atual é no-op (200, nada muda no banco).
      */
     patch: operations['patchLibrary']
     trace?: never
@@ -1732,10 +1732,12 @@ export interface components {
        */
       content_type?: 'movie' | 'series'
     }
-    /** @description Patch PARCIAL de PATCH /api/v1/library/{id} (briefing 0064) — campos ausentes ficam inalterados. */
+    /** @description Patch PARCIAL de PATCH /api/v1/library/{id} (briefings 0064/0070) — campos ausentes ficam inalterados; `path` e `watch_enabled` podem vir juntos ou cada um sozinho. */
     PatchSource: {
       /** @description Liga/desliga o watcher `fsnotify` desta fonte. Aplicado a QUENTE pelo handler: `false→true` registra o watch imediatamente (mesma rotina usada no boot); `true→false` fecha o watcher e remove a entrada em memória imediatamente. Nenhuma das duas direções exige restart do servidor. */
       watch_enabled?: boolean
+      /** @description Reaponta o datasource para um novo caminho (ex.: o disco/mount mudou de lugar). Valida como no cadastro (existe, é diretório, legível, sem duplicar outra fonte). Recasca em cascata `media_file.path`, `asset.local_path` e `entity.nfo_path` desta fonte para o novo prefixo — NÃO dispara scan nem move bytes no disco. Igual ao caminho atual é no-op. */
+      path?: string
     }
     ScanStatus: {
       running: boolean
@@ -3470,7 +3472,9 @@ export interface operations {
           'application/json': components['schemas']['Source']
         }
       }
+      400: components['responses']['Error']
       404: components['responses']['Error']
+      409: components['responses']['Error']
       422: components['responses']['Error']
     }
   }

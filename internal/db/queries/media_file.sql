@@ -87,6 +87,24 @@ WHERE library_source_id = ?
   AND state = 'present'
   AND last_seen IS NOT ?;
 
+-- name: ListarMediaFilePathsPorFonte :many
+-- Recasco de path do datasource (briefing 0070): so as duas colunas que o
+-- rename precisa (o resto da linha nao muda). O chamador troca o PREFIXO em
+-- Go (strings.TrimPrefix) -- nunca SUBSTR/REPLACE no SQL, que divergiria em
+-- paths com acento (SQLite conta codepoint, Go conta byte).
+SELECT id, path
+FROM media_file
+WHERE library_source_id = ?;
+
+-- name: AtualizarMediaFilePath :exec
+-- Grava o path ja recascado (calculado em Go) de UM media_file. Nao toca o
+-- resto da linha (content_hash/entity_id/state seguem intactos -- o arquivo
+-- fisico e o MESMO, so mudou de onde e montado).
+UPDATE media_file
+SET path = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?;
+
 -- name: ApagarMediaFile :exec
 DELETE FROM media_file
 WHERE id = ?;

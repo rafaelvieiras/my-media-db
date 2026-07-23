@@ -392,6 +392,141 @@ func TestPatchLibraryCorpoMalformado(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
+// TestPatchLibraryPathValido cobre o núcleo do briefing 0070: PATCH com
+// `path` válido reaponta a fonte (200, path novo, state online) sem re-scan.
+func TestPatchLibraryPathValido(t *testing.T) {
+	h := setupLibraryServer(t)
+	src := criarOK(t, h, t.TempDir(), "movie")
+	novoDir := t.TempDir()
+
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"path": novoDir})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH path: status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	got := decodeSource(t, rec)
+	if got.Path != novoDir {
+		t.Errorf("path = %q, quero %q", got.Path, novoDir)
+	}
+	if got.State != "online" {
+		t.Errorf("state = %q, quero online", got.State)
+	}
+
+	// Reflete em GET (persistiu de verdade).
+	get := do(t, h, http.MethodGet, "/api/v1/library/"+src.ID, nil)
+	if gotGet := decodeSource(t, get); gotGet.Path != novoDir {
+		t.Errorf("path no GET pos-PATCH = %q, quero %q (persistido)", gotGet.Path, novoDir)
+	}
+}
+
+// TestPatchLibraryPathNoOp cobre o no-op (path novo IGUAL ao atual): 200, nada muda.
+func TestPatchLibraryPathNoOp(t *testing.T) {
+	h := setupLibraryServer(t)
+	dir := t.TempDir()
+	src := criarOK(t, h, dir, "movie")
+
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"path": dir})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if got := decodeSource(t, rec); got.Path != dir {
+		t.Errorf("path = %q, quero %q (no-op)", got.Path, dir)
+	}
+}
+
+// TestPatchLibraryPathDuplicado cobre o 409 duplicate_path.
+func TestPatchLibraryPathDuplicado(t *testing.T) {
+	h := setupLibraryServer(t)
+	srcA := criarOK(t, h, t.TempDir(), "movie")
+	dirB := t.TempDir()
+	criarOK(t, h, dirB, "movie")
+
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/"+srcA.ID, map[string]any{"path": dirB})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, quero 409 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "duplicate_path")
+}
+
+// TestPatchLibraryPathInexistente cobre o 422 invalid_path.
+func TestPatchLibraryPathInexistente(t *testing.T) {
+	h := setupLibraryServer(t)
+	src := criarOK(t, h, t.TempDir(), "movie")
+	inexistente := filepath.Join(t.TempDir(), "nao-existe")
+
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"path": inexistente})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, quero 422 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "invalid_path")
+}
+
+// TestPatchLibraryPathNaoDiretorio cobre o 422 not_a_directory.
+func TestPatchLibraryPathNaoDiretorio(t *testing.T) {
+	h := setupLibraryServer(t)
+	src := criarOK(t, h, t.TempDir(), "movie")
+	arquivo := filepath.Join(t.TempDir(), "f.txt")
+	if err := os.WriteFile(arquivo, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"path": arquivo})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, quero 422 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "not_a_directory")
+}
+
+// TestPatchLibraryPathVazio cobre o 400 invalid_body (path == "").
+func TestPatchLibraryPathVazio(t *testing.T) {
+	h := setupLibraryServer(t)
+	src := criarOK(t, h, t.TempDir(), "movie")
+
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"path": ""})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, quero 400 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "invalid_body")
+}
+
+// TestPatchLibraryPathIdInexistente cobre o 404 de um id inexistente.
+func TestPatchLibraryPathIdInexistente(t *testing.T) {
+	h := setupLibraryServer(t)
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/naoexiste", map[string]any{"path": t.TempDir()})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, quero 404 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "not_found")
+}
+
+// TestPatchLibraryPathEWatchEnabledJuntos cobre o PATCH parcial compondo os
+// dois campos no mesmo corpo (briefing 0070): path é aplicado primeiro
+// (recasco), watch_enabled depois -- a resposta final reflete os dois.
+func TestPatchLibraryPathEWatchEnabledJuntos(t *testing.T) {
+	h := setupLibraryServer(t)
+	src := criarOK(t, h, t.TempDir(), "movie")
+	novoDir := t.TempDir()
+
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID,
+		map[string]any{"path": novoDir, "watch_enabled": true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	got := decodeSource(t, rec)
+	if got.Path != novoDir {
+		t.Errorf("path = %q, quero %q", got.Path, novoDir)
+	}
+	if !got.WatchEnabled {
+		t.Error("watch_enabled = false, quero true")
+	}
+
+	// Persistiu os dois campos.
+	get := do(t, h, http.MethodGet, "/api/v1/library/"+src.ID, nil)
+	gotGet := decodeSource(t, get)
+	if gotGet.Path != novoDir || !gotGet.WatchEnabled {
+		t.Errorf("estado pos-PATCH nao persistiu: %+v", gotGet)
+	}
+}
+
 func TestApiNotFoundShapeNovo(t *testing.T) {
 	h := setupLibraryServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/rota-inexistente", nil)

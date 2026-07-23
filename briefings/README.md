@@ -133,6 +133,7 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0062](0062-midias-locais-nfo-e-artes-na-pasta.md) | Mídias locais: NFO + artes na pasta da biblioteca (padrão Kodi/Emby, arte "principal") | feature | done | 0044, 0048, 0049, 0059 |
 | [0067](0067-arvore-de-serie-em-todo-caminho-de-identidade-externa.md) | Árvore de série (temporada/episódio) em TODO caminho de identidade externa (Corrigir, confirmar candidato, auto-match, retroativo) | fix | done | 0031, 0043 |
 | [0069](0069-recasar-arquivos-pendentes-ao-sincronizar-arvore-serie.md) | Recasar arquivos pendentes de episódio ao sincronizar a árvore da série | fix | done | 0034, 0043, 0054, 0067 |
+| [0070](0070-editar-path-datasource-cadastrado.md) | Editar path de um datasource já cadastrado (recasca em cascata media_file/asset/nfo) | feature | done | 0008, 0062, 0064 |
 
 ### Transversal — Infraestrutura operacional
 
