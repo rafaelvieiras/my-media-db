@@ -341,6 +341,41 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
       ),
     )
   })
+
+  it('resultado da correção mostra sinopse truncada e, quando já é entity, o selo "Na biblioteca" JUNTO do "Usar este" (0074)', async () => {
+    // Diferente do fluxo de Importar: internalId aqui NÃO esconde a ação — é
+    // justamente o caso de fundir duplicata (0051). O internal_id vai defensivamente
+    // (cast) porque o tipo gerado só o ganha após a regeneração do backend.
+    const externoNaBiblioteca = {
+      ...externo,
+      internal_id: 'ent-9',
+    } as ExternalResult
+    const { user, espioes } = await renderBaixa({
+      fila: [baixaCard],
+      search: {
+        query: 'certo',
+        local: [],
+        external: [externoNaBiblioteca],
+        external_available: true,
+      },
+    })
+    await user.click(screen.getByRole('button', { name: /Corrigir/ }))
+    await user.type(screen.getByLabelText('Buscar o título correto'), 'certo')
+
+    await waitFor(() =>
+      expect(screen.getByText('A identidade correta.')).toBeInTheDocument(),
+    )
+    expect(screen.getByText('Na biblioteca')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Usar este' }))
+
+    await waitFor(() =>
+      expect(espioes.onCorrect).toHaveBeenCalledWith('e-baixa', {
+        source: 'tmdb',
+        source_id: '1234',
+      }),
+    )
+  })
 })
 
 describe('ReviewScreen — prévia de candidato (0060)', () => {
