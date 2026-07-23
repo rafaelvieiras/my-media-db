@@ -737,10 +737,77 @@ function MembroNome({
   )
 }
 
-// EquipeGrupos mostra a equipe agrupada por departamento; cada grupo lista os membros
-// (nome + cargo, com "· N eps" na série). O nome linka para a página interna da pessoa
-// quando já catalogada (interno-first, 0029 fase D), senão para o TMDB. Vazio → a
-// seção some.
+// grupoTemFoto decide se o DEPARTAMENTO ganha foto na Equipe (0076): os mesmos
+// priorizados no agrupamento (`PRIORIDADE_DEPARTAMENTO` — Direção/Roteiro),
+// reaproveitando `rankDepartamento` sem alterar essa lista/lógica em si. Curadoria
+// deliberada — não é TODOS os ~40 nomes de equipe (pesaria a página sem ganho
+// proporcional; ver briefing 0076 §6), só os papéis que o dono reconhece de cara,
+// no mesmo padrão visual do Elenco.
+function grupoTemFoto(department: string): boolean {
+  return rankDepartamento(department) < PRIORIDADE_DEPARTAMENTO.length
+}
+
+// GrupoEquipeFotos mostra UM departamento priorizado como grade de cartões com
+// foto — reusa o MESMO `PessoaCard` do `ElencoGrid` (paridade visual completa,
+// inclusive selo "Na biblioteca" e degradê gracioso sem `profile_url`).
+function GrupoEquipeFotos({ grupo }: { grupo: GrupoEquipe }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-sm font-medium text-foreground/70">
+        {grupo.department}
+      </h3>
+      <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+        {grupo.membros.map((m, i) => (
+          <li key={`${m.source_id}:${m.job}:${i}`}>
+            <PessoaCard
+              sourceId={m.source_id}
+              name={m.name}
+              profileUrl={m.profile_url ?? null}
+              papel={m.job || null}
+              eps={m.episode_count}
+              personId={m.person_id ?? null}
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+// GrupoEquipeTexto é a lista textual compacta ORIGINAL (nome + cargo, com "· N
+// eps" na série) — inalterada, só extraída para alternar com `GrupoEquipeFotos`.
+function GrupoEquipeTexto({ grupo }: { grupo: GrupoEquipe }) {
+  return (
+    <div className="flex flex-col gap-1 sm:flex-row sm:gap-3">
+      <h3 className="shrink-0 text-sm font-medium text-foreground/70 sm:w-40">
+        {grupo.department}
+      </h3>
+      <ul className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm">
+        {grupo.membros.map((m, i) => {
+          const sufEps = sufixoEpisodios(m.episode_count)
+          return (
+            <li key={`${m.source_id}:${m.job}:${i}`}>
+              <MembroNome
+                name={m.name}
+                sourceId={m.source_id}
+                personId={m.person_id}
+              />
+              <span className="text-muted-foreground">
+                {' '}
+                — {m.job}
+                {sufEps ? ` · ${sufEps}` : null}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
+// EquipeGrupos mostra a equipe agrupada por departamento: os priorizados
+// (Direção/Roteiro) em grade com foto (0076, paridade com o Elenco); os demais em
+// lista textual compacta, como já era. Vazio → a seção some.
 function EquipeGrupos({ crew }: { crew: CreditCrew[] }) {
   if (crew.length === 0) {
     return null
@@ -749,38 +816,14 @@ function EquipeGrupos({ crew }: { crew: CreditCrew[] }) {
   return (
     <section className="flex flex-col gap-3">
       <h2 className="font-heading text-lg font-medium">Equipe</h2>
-      {/* Lista compacta: a equipe é secundária ao elenco (0029). Departamento à
-          esquerda, membros fluindo inline à direita. */}
-      <div className="flex flex-col gap-2.5">
-        {grupos.map((grupo) => (
-          <div
-            key={grupo.department}
-            className="flex flex-col gap-1 sm:flex-row sm:gap-3"
-          >
-            <h3 className="shrink-0 text-sm font-medium text-foreground/70 sm:w-40">
-              {grupo.department}
-            </h3>
-            <ul className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm">
-              {grupo.membros.map((m, i) => {
-                const sufEps = sufixoEpisodios(m.episode_count)
-                return (
-                  <li key={`${m.source_id}:${m.job}:${i}`}>
-                    <MembroNome
-                      name={m.name}
-                      sourceId={m.source_id}
-                      personId={m.person_id}
-                    />
-                    <span className="text-muted-foreground">
-                      {' '}
-                      — {m.job}
-                      {sufEps ? ` · ${sufEps}` : null}
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        ))}
+      <div className="flex flex-col gap-4">
+        {grupos.map((grupo) =>
+          grupoTemFoto(grupo.department) ? (
+            <GrupoEquipeFotos key={grupo.department} grupo={grupo} />
+          ) : (
+            <GrupoEquipeTexto key={grupo.department} grupo={grupo} />
+          ),
+        )}
       </div>
     </section>
   )

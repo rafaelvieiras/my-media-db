@@ -40,6 +40,16 @@ function company(over: Partial<CreditCompany> = {}): CreditCompany {
   return { source_id: '100', name: 'StudioX', ...over }
 }
 
+// doisAtores é o elenco de duas pessoas reusado pelos testes de reordenação
+// (setas e em lote, briefing 0076) — evita repetir a mesma dupla Ana/Beto em
+// cada teste.
+function doisAtores(): CreditCast[] {
+  return [
+    cast({ source_id: '1', name: 'Ana' }),
+    cast({ source_id: '2', name: 'Beto' }),
+  ]
+}
+
 // renderEditor monta o CreditsEditor com os créditos informados (as chaves
 // ausentes viram `[]`) — elimina o bloco repetido de renderWithClient/props
 // fixas (id/lang/blob) em cada teste.
@@ -90,25 +100,49 @@ describe('CreditsEditor', () => {
 
   it('reordenar o elenco troca a posição e manda reorder no patch', async () => {
     const m = patchOverrideRota(() => okJson({ id: 'e1' }, 200))
-    renderEditor({
-      cast: [
-        cast({ source_id: '1', name: 'Ana' }),
-        cast({ source_id: '2', name: 'Beto' }),
-      ],
-    })
+    renderEditor({ cast: doisAtores() })
     fireEvent.click(screen.getAllByLabelText('Mover para baixo')[0])
+    const corpo = await salvarECorpo(m)
+    expect(corpo.credits.cast).toEqual({ reorder: ['2', '1'] })
+  })
+
+  it('reordenar em lote (mover para posição) manda o reorder final completo (briefing 0076)', async () => {
+    const m = patchOverrideRota(() => okJson({ id: 'e1' }, 200))
+    renderEditor({
+      cast: [...doisAtores(), cast({ source_id: '3', name: 'Carla' })],
+    })
+    // Carla (3ª posição) vai para a posição 1 num único passo, sem um clique por
+    // posição intermediária.
+    const campo = screen.getByLabelText('Mover Carla para a posição (de 3)')
+    fireEvent.change(campo, { target: { value: '1' } })
+    fireEvent.blur(campo)
+    const corpo = await salvarECorpo(m)
+    expect(corpo.credits.cast).toEqual({ reorder: ['3', '1', '2'] })
+  })
+
+  it('mover para posição via Enter também aplica a reordenação', async () => {
+    const m = patchOverrideRota(() => okJson({ id: 'e1' }, 200))
+    renderEditor({ cast: doisAtores() })
+    const campo = screen.getByLabelText('Mover Ana para a posição (de 2)')
+    fireEvent.change(campo, { target: { value: '2' } })
+    fireEvent.keyDown(campo, { key: 'Enter' })
+    const corpo = await salvarECorpo(m)
+    expect(corpo.credits.cast).toEqual({ reorder: ['2', '1'] })
+  })
+
+  it('mover para uma posição além do total grampeia no fim da lista', async () => {
+    const m = patchOverrideRota(() => okJson({ id: 'e1' }, 200))
+    renderEditor({ cast: doisAtores() })
+    const campo = screen.getByLabelText('Mover Ana para a posição (de 2)')
+    fireEvent.change(campo, { target: { value: '99' } })
+    fireEvent.blur(campo)
     const corpo = await salvarECorpo(m)
     expect(corpo.credits.cast).toEqual({ reorder: ['2', '1'] })
   })
 
   it('remover do elenco manda remove no patch', async () => {
     const m = patchOverrideRota(() => okJson({ id: 'e1' }, 200))
-    renderEditor({
-      cast: [
-        cast({ source_id: '1', name: 'Ana' }),
-        cast({ source_id: '2', name: 'Beto' }),
-      ],
-    })
+    renderEditor({ cast: doisAtores() })
     fireEvent.click(screen.getByLabelText('Remover Ana do elenco'))
     const corpo = await salvarECorpo(m)
     expect(corpo.credits.cast).toEqual({ reorder: ['2'], remove: ['1'] })
@@ -326,16 +360,17 @@ describe('CreditsEditor — onDirtyChange (0073)', () => {
 
   it('reporta true ao reordenar o elenco', () => {
     const onDirtyChange = vi.fn()
-    renderEditorComOnDirtyChange(
-      {
-        cast: [
-          cast({ source_id: '1', name: 'Ana' }),
-          cast({ source_id: '2', name: 'Beto' }),
-        ],
-      },
-      onDirtyChange,
-    )
+    renderEditorComOnDirtyChange({ cast: doisAtores() }, onDirtyChange)
     fireEvent.click(screen.getAllByLabelText('Mover para baixo')[0])
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true)
+  })
+
+  it('reporta true ao reordenar em lote (mover para posição, briefing 0076)', () => {
+    const onDirtyChange = vi.fn()
+    renderEditorComOnDirtyChange({ cast: doisAtores() }, onDirtyChange)
+    const campo = screen.getByLabelText('Mover Ana para a posição (de 2)')
+    fireEvent.change(campo, { target: { value: '2' } })
+    fireEvent.blur(campo)
     expect(onDirtyChange).toHaveBeenLastCalledWith(true)
   })
 
