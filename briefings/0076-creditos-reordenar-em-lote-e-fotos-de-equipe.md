@@ -9,7 +9,7 @@
 | **ID** | 0076 |
 | **Tipo** | feature/fix |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [04-modelo-de-dados](../docs/04-modelo-de-dados.md) |
 | **Depende de** | 0029, 0073 |
 

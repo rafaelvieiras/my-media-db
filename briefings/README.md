@@ -135,7 +135,7 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0073](0073-guard-sair-sem-salvar-edicao-item.md) | Guard de "sair sem salvar" na edição de item (3 blocos de salvamento independentes) | fix | done | 0016, 0027, 0029, 0030 |
 | [0074](0074-busca-rica-na-correcao-da-fila-de-revisao.md) | Busca rica (pôster/sinopse) na correção da fila de Revisão | fix | done | 0014, 0018, 0026 |
 | [0075](0075-navegacao-responsiva-mobile.md) | Navegação responsiva em telas de celular (nav não colapsa, transborda) | fix | done | — |
-| [0076](0076-creditos-reordenar-em-lote-e-fotos-de-equipe.md) | Créditos: reordenar em lote (elenco/equipe grandes) + foto para papéis-chave de equipe | feature/fix | ready | 0029, 0073 |
+| [0076](0076-creditos-reordenar-em-lote-e-fotos-de-equipe.md) | Créditos: reordenar em lote (elenco/equipe grandes) + foto para papéis-chave de equipe | feature/fix | done | 0029, 0073 |
 | [0077](0077-descoberta-acionavel-completude-e-novo-item.md) | Descoberta acionável: banner de completude com ação por item + cross-link "Novo item" ↔ Busca | fix | done | 0030, 0057, 0058 |
 | [0078](0078-polimentos-status-uid-dev-e-retry-do-navegador.md) | Polimentos: badge de status traduzido, paridade de uid no dev e retry do navegador de pastas | fix/chore | done | 0004, 0071 |
 | [0067](0067-arvore-de-serie-em-todo-caminho-de-identidade-externa.md) | Árvore de série (temporada/episódio) em TODO caminho de identidade externa (Corrigir, confirmar candidato, auto-match, retroativo) | fix | done | 0031, 0043 |
