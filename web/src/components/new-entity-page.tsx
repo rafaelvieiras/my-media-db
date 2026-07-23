@@ -11,11 +11,17 @@ import { entityFieldsQueryOptions } from '@/lib/queries'
 // carregando/erro que consomem `entityFieldsQueryOptions`. As rotas de item e de
 // coleção só diferem no `<Form>` específico, então recebem os descritores por
 // render-prop e montam apenas o formulário — o resto (idêntico) mora aqui.
+// `topo` é um slot opcional renderizado ANTES do formulário (depois do `<h1>`),
+// sempre visível independente do estado de carregamento — usado pelo cross-link
+// "Novo item" ↔ Busca (briefing 0077); rotas que não passam `topo` continuam
+// idênticas a antes.
 export function NewEntityPage({
   title,
+  topo,
   children,
 }: {
   title: string
+  topo?: ReactNode
   children: (fields: FieldDescriptor[]) => ReactNode
 }) {
   const fieldsQuery = useQuery(entityFieldsQueryOptions)
@@ -30,6 +36,7 @@ export function NewEntityPage({
         Voltar à biblioteca
       </Link>
       <h1 className="mt-4 mb-4 font-heading text-xl font-semibold">{title}</h1>
+      {topo}
       {fieldsQuery.isPending ? (
         <LoadingState label="Carregando formulário…" />
       ) : fieldsQuery.isError ? (

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { Trash2, TriangleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -102,6 +102,30 @@ function SeloPosse({
   )
 }
 
+// ItemFaltandoComAcao renderiza UM item de `missing`. `media_file` (arquivo de
+// mídia) é o único que o botão genérico "Baixar informações faltando"
+// (re-enriquecimento via provider) comprovadamente NÃO resolve — só se resolve
+// vinculando um datasource/rodando um scan em Bibliotecas, tela diferente —
+// então ganha um link junto ao rótulo (briefing 0077). As demais chaves (campo/
+// arte) continuam só texto, pois o botão genérico já resolve.
+function ItemFaltandoComAcao({ chave }: { chave: string }) {
+  if (chave === 'media_file') {
+    return (
+      <li>
+        <span>{rotuloItemFaltando(chave)}</span>
+        {' — '}
+        <Link
+          to="/library"
+          className="underline underline-offset-2 hover:text-foreground"
+        >
+          ver Bibliotecas
+        </Link>
+      </li>
+    )
+  }
+  return <li>{rotuloItemFaltando(chave)}</li>
+}
+
 // SecaoCompletudeIncompleta lista, PT-BR, o que falta preencher para o item
 // atender a régua de completude de CATALOGAÇÃO (0057/0058) — DIFERENTE da posse
 // (`SeloPosse` acima, 0034/0036). Fica perto do topo/metadados (não escondida no
@@ -124,7 +148,7 @@ function SecaoCompletudeIncompleta({ cc }: { cc: CatalogCompleteness }) {
       </h2>
       <ul className="list-inside list-disc text-sm text-muted-foreground">
         {cc?.missing.map((chave) => (
-          <li key={chave}>{rotuloItemFaltando(chave)}</li>
+          <ItemFaltandoComAcao key={chave} chave={chave} />
         ))}
       </ul>
     </section>
