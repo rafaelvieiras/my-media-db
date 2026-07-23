@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '../fixtures'
@@ -156,4 +156,49 @@ test('arquivo catalogado que some vira orfa e pode ser purgado', async ({
 
   // Purgada: a fila fica vazia.
   await expect(page.getByText('Nenhuma órfã')).toBeVisible()
+})
+
+test('editar caminho de datasource cadastrado recasca sem novo scan', async ({
+  page,
+  request,
+}) => {
+  // Semeia com um arquivo catalogavel para provar que o media_file recascado
+  // (briefing 0070) continua resolvendo a mesma entity, SEM disparar scan.
+  const dirAntigo = semeiaPasta(['The Matrix (1999).mkv'])
+
+  await page.goto('/library')
+  await page.getByLabel('Caminho do datasource').fill(dirAntigo)
+  await page.getByRole('button', { name: 'Adicionar' }).click()
+  await expect(page.getByText(dirAntigo)).toBeVisible()
+
+  // 1o scan: a entity catalogada aparece.
+  await page.getByRole('button', { name: 'Escanear' }).click()
+  await expect
+    .poll(
+      async () => {
+        const body = await (await request.get('/api/v1/entities?limit=1000')).json()
+        const itens: Array<{ title: string }> = body.items ?? body ?? []
+        return itens.some((e) => e.title === 'The Matrix')
+      },
+      { timeout: 20_000 },
+    )
+    .toBe(true)
+
+  // O disco "muda de lugar": renomeia a pasta fisica para um novo caminho
+  // (mesmo conteudo, novo mount) e edita o datasource para apontar pra la --
+  // SEM rodar scan de novo.
+  const dirNovo = `${dirAntigo}-remontado`
+  renameSync(dirAntigo, dirNovo)
+  pastas.splice(pastas.indexOf(dirAntigo), 1, dirNovo)
+
+  await page.getByRole('button', { name: 'Editar caminho' }).click()
+  await page.getByLabel('Novo caminho do datasource').fill(dirNovo)
+  await page.getByRole('button', { name: 'Salvar' }).click()
+
+  // A linha passa a mostrar o caminho novo, online, sem precisar de scan --
+  // o vinculo com a entity ja catalogada continua intacto.
+  await expect(page.getByText(dirNovo)).toBeVisible()
+  await expect(page.getByText('online')).toBeVisible()
+  await page.goto('/')
+  await expect(page.getByRole('link', { name: /Matrix/ }).first()).toBeVisible()
 })
