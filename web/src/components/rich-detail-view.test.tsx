@@ -202,6 +202,51 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
     expect(screen.getByText(/— Fotógrafo/)).toBeInTheDocument()
   })
 
+  it('equipe: Direção/Roteiro (priorizados) ganham foto, no padrão do PessoaCard do Elenco', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({
+          crew: [
+            membro('Denis Villeneuve', 'Direção', 'Diretor', {
+              profile_url: '/api/v1/images?src=denis',
+            }),
+            membro('Roger Deakins', 'Fotografia', 'Fotógrafo', {
+              profile_url: '/api/v1/images?src=roger',
+            }),
+          ],
+        })}
+      />,
+    )
+    // Direção (priorizado): foto real via <img alt="Foto de X">, como o Elenco.
+    expect(
+      screen.getByRole('img', { name: 'Foto de Denis Villeneuve' }),
+    ).toHaveAttribute('src', '/api/v1/images?src=denis')
+    // Fotografia (não priorizado): segue em texto compacto, sem foto — mesmo com
+    // profile_url disponível.
+    expect(
+      screen.queryByRole('img', { name: 'Foto de Roger Deakins' }),
+    ).toBeNull()
+    expect(screen.getByText(/— Fotógrafo/)).toBeInTheDocument()
+  })
+
+  it('equipe: departamento priorizado sem profile_url degrada para o placeholder (como o Elenco)', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({
+          crew: [membro('Denis Villeneuve', 'Direção', 'Diretor')],
+        })}
+      />,
+    )
+    expect(
+      screen.queryByRole('img', { name: 'Foto de Denis Villeneuve' }),
+    ).toBeNull()
+    expect(screen.getAllByTestId('poster-placeholder').length).toBeGreaterThan(
+      0,
+    )
+  })
+
   it('produtora sem logo cai no nome; com logo renderiza a imagem já proxyada', () => {
     renderWithClient(
       <RichDetailView

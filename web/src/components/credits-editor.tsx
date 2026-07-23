@@ -306,6 +306,20 @@ function moverItem<T>(lista: T[], indice: number, direcao: -1 | 1): T[] {
   return copia
 }
 
+// moverParaIndice reordena em LOTE (briefing 0076): tira o item de `indice` e o
+// reinsere em `destino` (ambos 0-based), preservando a ordem relativa dos demais —
+// a mesma mecânica de `moverItem`, generalizada para qualquer distância (não só um
+// passo). `destino` fora dos limites é grampeado, então "mover para 1" ou um número
+// maior que o total sempre aterrissa numa posição válida.
+function moverParaIndice<T>(lista: T[], indice: number, destino: number): T[] {
+  const destinoValido = Math.max(0, Math.min(lista.length - 1, destino))
+  if (destinoValido === indice) return lista
+  const copia = [...lista]
+  const [item] = copia.splice(indice, 1)
+  copia.splice(destinoValido, 0, item)
+  return copia
+}
+
 export function CreditsEditor({
   id,
   lang,
@@ -668,6 +682,64 @@ function BotoesOrdem({
   )
 }
 
+// CampoPosicao é a reordenação EM LOTE (briefing 0076): campo numérico "mover
+// para posição N", ao lado das setas de um passo — mover de 50ª para 1ª exige um
+// número + Enter, não 49 cliques. Mantém texto de edição local (não controlado
+// pelo índice a cada tecla) para o dono poder apagar/digitar livremente; só
+// aplica a reordenação no Enter ou ao perder o foco, e sempre volta a refletir
+// a posição atual (1-based) depois — inclusive quando o valor digitado é
+// inválido ou fora dos limites (`moverParaIndice` grampeia).
+function CampoPosicao({
+  indice,
+  total,
+  nome,
+  mover,
+}: {
+  indice: number
+  total: number
+  nome: string
+  mover: (destino: number) => void
+}) {
+  const [texto, setTexto] = useState(String(indice + 1))
+  // Reseta o texto durante a renderização (padrão React p/ "ajustar estado quando
+  // uma prop muda", sem useEffect) quando o índice mudou por fora — reordenação
+  // pelas setas, por outra linha, ou pela própria reordenação que este campo
+  // acabou de disparar.
+  const [indiceRefletido, setIndiceRefletido] = useState(indice)
+  if (indice !== indiceRefletido) {
+    setIndiceRefletido(indice)
+    setTexto(String(indice + 1))
+  }
+
+  function aplicar() {
+    const posicao = Number.parseInt(texto, 10)
+    if (Number.isNaN(posicao)) {
+      setTexto(String(indice + 1))
+      return
+    }
+    mover(posicao - 1)
+  }
+
+  return (
+    <Input
+      type="number"
+      min={1}
+      max={total}
+      value={texto}
+      onChange={(e) => setTexto(e.target.value)}
+      onBlur={aplicar}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          aplicar()
+        }
+      }}
+      aria-label={`Mover ${nome} para a posição (de ${total})`}
+      className="w-16 shrink-0 text-center"
+    />
+  )
+}
+
 // CampoEditavel descreve UM input editável de uma linha de crédito (usado por
 // SecaoCreditos, genérico entre elenco/equipe/produtoras): `character` (cast),
 // `department`+`job` (crew) ou `name` (companies, que não tem "nome fixo").
@@ -721,6 +793,14 @@ function SecaoCreditos<
                 indice={i}
                 total={linhas.length}
                 mover={(d) => setLinhas((atual) => moverItem(atual, i, d))}
+              />
+              <CampoPosicao
+                indice={i}
+                total={linhas.length}
+                nome={l.name}
+                mover={(destino) =>
+                  setLinhas((atual) => moverParaIndice(atual, i, destino))
+                }
               />
               {mostrarNomeFixo ? (
                 <span className="w-32 shrink-0 truncate text-sm" title={l.name}>
