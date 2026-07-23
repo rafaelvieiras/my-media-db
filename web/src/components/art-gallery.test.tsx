@@ -85,12 +85,17 @@ function artworkPadrao(): ArtworkResponse {
   }
 }
 
+// caminhoEMetodo extrai (path, method) de uma chamada fetch mockada — parse
+// compartilhado por todo mock de rota deste arquivo (jscpd).
+function caminhoEMetodo(url: string, init?: RequestInit) {
+  const u = new URL(String(url), 'http://localhost')
+  return { path: u.pathname, method: init?.method ?? 'GET' }
+}
+
 function fetchRouter(opts: Opcoes, espioes: Espioes) {
   const artwork = opts.artwork ?? {}
   return vi.fn(async (url: string, init?: RequestInit) => {
-    const u = new URL(String(url), 'http://localhost')
-    const path = u.pathname
-    const method = init?.method ?? 'GET'
+    const { path, method } = caminhoEMetodo(url, init)
 
     if (path === '/api/v1/entities/e1/artwork' && method === 'GET') {
       return okJson(artwork)
@@ -156,6 +161,24 @@ function renderGallery(opts: Opcoes = {}) {
     </QueryClientProvider>,
   )
   return { espioes, invalidateSpy }
+}
+
+// renderGalleryDinamica monta a galeria com um mock de fetch PRÓPRIO (não o
+// fetchRouter fixo de artworkPadrao()): usado pelos testes de reancoragem do
+// lightbox (0072), cujo GET /artwork precisa responder DIFERENTE a cada
+// chamada (a lista muda de verdade após a ação).
+function renderGalleryDinamica(
+  fetchImpl: (url: string, init?: RequestInit) => Promise<Response>,
+) {
+  vi.stubGlobal('fetch', vi.fn(fetchImpl))
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={queryClient}>
+      <ArtGallery entityId="e1" type="movie" owned />
+    </QueryClientProvider>,
+  )
 }
 
 // Abre o lightbox no card `label` e espera o dialog aparecer.
@@ -529,5 +552,120 @@ describe('ArtGallery — upload do dono (0017)', () => {
       ),
     )
     expect(espioes.onUpload).not.toHaveBeenCalled()
+  })
+})
+
+describe('ArtGallery — lightbox reancorado por identidade (0072)', () => {
+  it('(q) uma ação que reordena a lista mantém o lightbox no MESMO item', async () => {
+    const user = userEvent.setup()
+    const candidato = item({
+      url: '/api/v1/images?src=https%3A%2F%2Fassets.fanart.tv%2Fcand.jpg',
+      source: 'fanarttv',
+      src_url: 'https://assets.fanart.tv/cand.jpg',
+    })
+    const local = item({
+      url: '/api/v1/entities/e1/assets/p1/file',
+      source: 'user',
+      is_local: true,
+      asset_id: 'p1',
+      src_url: undefined,
+      lang: undefined,
+      likes: undefined,
+    })
+    // Ordem inicial: [local, candidato] — abre no candidato (2o card).
+    let artworkAtual: ArtworkResponse = {
+      poster: [local, candidato],
+      available: { poster: 2 },
+    }
+    renderGalleryDinamica(async (url, init) => {
+      const { path, method } = caminhoEMetodo(url, init)
+      if (path === '/api/v1/entities/e1/artwork' && method === 'GET') {
+        return okJson(artworkAtual)
+      }
+      if (path === '/api/v1/entities/e1/artwork/select' && method === 'POST') {
+        return okJson(baseAsset({ id: 'novo', origin: 'external' }))
+      }
+      const prefer = path.match(
+        /^\/api\/v1\/entities\/e1\/assets\/(.+)\/prefer$/,
+      )
+      if (prefer && method === 'PUT') {
+        // Preferir o candidato (agora materializado como asset 'novo') o torna
+        // principal — a ordenação (is_principal desc) o move para o INÍCIO da
+        // lista: mesma arte, posição numérica diferente.
+        artworkAtual = {
+          poster: [
+            {
+              ...candidato,
+              asset_id: 'novo',
+              src_url: undefined,
+              is_principal: true,
+              is_local: true,
+              is_preferred: true,
+            },
+            local,
+          ],
+          available: { poster: 2 },
+        }
+        return okJson(
+          baseAsset({ id: prefer[1], preferred: true, is_principal: true }),
+        )
+      }
+      throw new Error(`rota nao mockada: ${method} ${path}`)
+    })
+
+    const dialog = await abrirLightbox(user, 'Ver Pôster 2')
+    expect(dialog).toHaveAttribute('aria-label', 'Pôster 2 de 2')
+
+    await user.click(
+      screen.getByRole('button', { name: 'Definir como principal' }),
+    )
+
+    // A lista reordenou (o candidato virou o 1o), mas o lightbox segue nele —
+    // não no que sobrou na posição 2 (agora `local`).
+    await waitFor(() =>
+      expect(screen.getByRole('dialog')).toHaveAttribute(
+        'aria-label',
+        'Pôster 1 de 2',
+      ),
+    )
+    expect(
+      screen.getByRole('dialog').querySelector('img')?.getAttribute('src'),
+    ).toBe(candidato.url)
+  })
+
+  it('(r) remover o item aberto no lightbox fecha o lightbox', async () => {
+    const user = userEvent.setup()
+    const local = item({
+      url: '/api/v1/entities/e1/assets/p1/file',
+      source: 'user',
+      is_local: true,
+      asset_id: 'p1',
+      src_url: undefined,
+      lang: undefined,
+      likes: undefined,
+    })
+    let artworkAtual: ArtworkResponse = {
+      poster: [local],
+      available: { poster: 1 },
+    }
+    renderGalleryDinamica(async (url, init) => {
+      const { path, method } = caminhoEMetodo(url, init)
+      if (path === '/api/v1/entities/e1/artwork' && method === 'GET') {
+        return okJson(artworkAtual)
+      }
+      const del = path.match(/^\/api\/v1\/entities\/e1\/assets\/(.+)$/)
+      if (del && method === 'DELETE') {
+        artworkAtual = { poster: [], available: { poster: 0 } }
+        return okJson(baseAsset({ id: del[1] }))
+      }
+      throw new Error(`rota nao mockada: ${method} ${path}`)
+    })
+
+    await abrirLightbox(user, 'Ver Pôster 1')
+    await user.click(screen.getByRole('button', { name: 'Remover arte' }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    )
   })
 })

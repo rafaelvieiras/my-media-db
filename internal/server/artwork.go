@@ -83,9 +83,9 @@ func (s *Server) getEntityArtwork(w http.ResponseWriter, r *http.Request) {
 // observável de antes: getEntityArtwork continua o único chamador HTTP.
 func (s *Server) montarGruposArtwork(ctx context.Context, id string) map[string][]artworkItem {
 	grupos := map[string][]artworkItem{}
-	kindsExternosLocais := s.coletarArtesLocais(ctx, id, grupos)
+	kindsExternosLocais, sourceURLsMaterializadas := s.coletarArtesLocais(ctx, id, grupos)
 	s.coletarArtesDeCamadas(ctx, id, kindsExternosLocais, grupos)
-	s.coletarInventarioFanart(ctx, id, grupos)
+	s.coletarInventarioFanart(ctx, id, sourceURLsMaterializadas, grupos)
 	ordenarGruposArtwork(grupos)
 	return grupos
 }
@@ -109,13 +109,18 @@ func ordenarGruposArtwork(grupos map[string][]artworkItem) {
 }
 
 // coletarArtesLocais adiciona os assets materializados da entity (origin user/external)
-// agrupados por kind e devolve o CONJUNTO de kinds que já têm um asset origin='external'
-// (para não duplicar o mesmo pôster/fundo do TMDB, que é a origem daquele cache).
-func (s *Server) coletarArtesLocais(ctx context.Context, id string, grupos map[string][]artworkItem) map[string]bool {
+// agrupados por kind e devolve (1) o CONJUNTO de kinds que já têm um asset
+// origin='external' (para não duplicar o mesmo pôster/fundo do TMDB, que é a origem
+// daquele cache) e (2) por kind, o CONJUNTO de source_url (meta.source_url) já
+// materializadas como asset origin='external' — usado por coletarInventarioFanart
+// (briefing 0072) para não repetir no inventário lazy uma arte que já foi baixada via
+// POST /artwork/select.
+func (s *Server) coletarArtesLocais(ctx context.Context, id string, grupos map[string][]artworkItem) (map[string]bool, map[string]map[string]bool) {
 	externos := map[string]bool{}
+	sourceURLs := map[string]map[string]bool{}
 	assets, err := s.leitura().ListarAssetsPorEntity(ctx, id)
 	if err != nil {
-		return externos
+		return externos, sourceURLs
 	}
 	for _, a := range assets {
 		grupos[a.Kind] = append(grupos[a.Kind], artworkItem{
@@ -129,9 +134,15 @@ func (s *Server) coletarArtesLocais(ctx context.Context, id string, grupos map[s
 		})
 		if a.Origin == originExternal {
 			externos[a.Kind] = true
+			if u := metaSourceURL(a.MetaJson); u != "" {
+				if sourceURLs[a.Kind] == nil {
+					sourceURLs[a.Kind] = map[string]bool{}
+				}
+				sourceURLs[a.Kind][u] = true
+			}
 		}
 	}
-	return externos
+	return externos, sourceURLs
 }
 
 // coletarArtesDeCamadas adiciona o pôster/fundo das camadas media_external que têm
@@ -179,8 +190,10 @@ func (s *Server) adicionarArteDeCampo(campos map[string]any, campo, kind, source
 // coletarInventarioFanart adiciona o inventário lazy da fanart.tv (media_external
 // source='fanarttv'): parseia o envelope e emite um artworkItem por arte de cada kind,
 // com lang/likes/disc/season preservados e a URL proxyada. Ausente/vazio degrada (sem
-// inventário — nada a adicionar).
-func (s *Server) coletarInventarioFanart(ctx context.Context, id string, grupos map[string][]artworkItem) {
+// inventário — nada a adicionar). Pula a arte cujo `url` já foi materializada como asset
+// origin='external' daquele kind (`materializadas`, briefing 0072) — evita o mesmo binário
+// aparecer duas vezes (a versão local já cobre o card; o candidato do inventário some).
+func (s *Server) coletarInventarioFanart(ctx context.Context, id string, materializadas map[string]map[string]bool, grupos map[string][]artworkItem) {
 	row, err := s.leitura().ObterMediaExternalPorFonte(ctx, sqlcgen.ObterMediaExternalPorFonteParams{
 		EntityID: id,
 		Source:   "fanarttv",
@@ -191,6 +204,9 @@ func (s *Server) coletarInventarioFanart(ctx context.Context, id string, grupos 
 	inv := parseInventarioFanart(row.PayloadJson.String)
 	for kind, artes := range inv {
 		for _, a := range artes {
+			if materializadas[kind][a.URL] {
+				continue
+			}
 			url := a.URL
 			grupos[kind] = append(grupos[kind], artworkItem{
 				URL:      arteSrc(s.urlImagemServida(&url)),

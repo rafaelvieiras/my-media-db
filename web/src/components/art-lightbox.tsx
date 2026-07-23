@@ -12,6 +12,12 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { rotuloIdioma } from '@/lib/languages'
 import { infoKind, rotuloKind } from '@/lib/artwork'
 import type { ArtworkItem } from '@/lib/api'
@@ -149,193 +155,210 @@ export function ArtLightbox({
   const legenda = `${rotuloKind(kind)} ${index + 1} de ${total}`
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={legenda}
-      tabIndex={-1}
-      ref={containerRef}
-      // Backdrop: click FORA da imagem/painel fecha. Os filhos param a propagação.
-      onClick={onClose}
-      // Backdrop SEMPRE escuro (valoriza a arte), mesmo no tema claro: a classe `dark`
-      // força os tokens shadcn (texto/botões) para claro-no-escuro no subtree do lightbox.
-      className="dark fixed inset-0 z-50 flex flex-col bg-black/85 text-foreground outline-none backdrop-blur-sm"
-    >
-      {/* Barra do topo: legenda + zoom + fechar. */}
+    // TooltipProvider próprio (não depende do ancestral): o lightbox é montado em
+    // vários lugares (galeria, testes) e os dois botões desabilitados abaixo
+    // precisam do tooltip do design system funcionando sempre.
+    <TooltipProvider>
       <div
-        className="flex items-center gap-2 p-3"
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={legenda}
+        tabIndex={-1}
+        ref={containerRef}
+        // Backdrop: click FORA da imagem/painel fecha. Os filhos param a propagação.
+        onClick={onClose}
+        // Backdrop SEMPRE escuro (valoriza a arte), mesmo no tema claro: a classe `dark`
+        // força os tokens shadcn (texto/botões) para claro-no-escuro no subtree do lightbox.
+        className="dark fixed inset-0 z-50 flex flex-col bg-black/85 text-foreground outline-none backdrop-blur-sm"
       >
-        <span className="text-sm font-medium text-muted-foreground">
-          {legenda}
-        </span>
-        <div className="ml-auto flex items-center gap-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-label={zoom ? 'Ajustar à tela' : 'Ampliar para 100%'}
-            aria-pressed={zoom}
-            onClick={() => setZoom((z) => !z)}
-          >
-            {zoom ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
-            {zoom ? 'Ajustar' : '100%'}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-label="Fechar"
-            onClick={onClose}
-          >
-            <X aria-hidden />
-          </Button>
-        </div>
-      </div>
-
-      {/* Palco: imagem em alta + setas de navegação. */}
-      <div className="relative flex min-h-0 flex-1 items-center justify-center px-2">
-        {total > 1 ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            aria-label="Arte anterior"
-            className="absolute left-3 z-10"
-            onClick={(e) => {
-              e.stopPropagation()
-              irAnterior()
-            }}
-          >
-            <ChevronLeft aria-hidden />
-          </Button>
-        ) : null}
-
+        {/* Barra do topo: legenda + zoom + fechar. */}
         <div
-          className={`flex h-full w-full items-center justify-center ${
-            zoom ? 'overflow-auto' : ''
-          } ${info.contain ? 'bg-muted/40' : ''}`}
+          className="flex items-center gap-2 p-3"
           onClick={(e) => e.stopPropagation()}
         >
-          <img
-            key={item.url}
-            src={item.url}
-            alt={`${rotuloKind(kind)} — arte ${index + 1}`}
-            className={
-              zoom ? 'max-w-none' : 'max-h-full max-w-full object-contain'
-            }
-          />
-        </div>
-
-        {total > 1 ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            aria-label="Próxima arte"
-            className="absolute right-3 z-10"
-            onClick={(e) => {
-              e.stopPropagation()
-              irProxima()
-            }}
-          >
-            <ChevronRight aria-hidden />
-          </Button>
-        ) : null}
-      </div>
-
-      {/* Rodapé: metadados (idioma/likes/origem/preferida) + ações. */}
-      <div
-        className="flex flex-col gap-2 border-t border-foreground/10 p-3"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="outline">{rotuloKind(kind)}</Badge>
-          {item.is_principal ? (
-            <Badge variant="secondary">principal</Badge>
-          ) : null}
-          {item.is_local_in_library ? (
-            <Badge variant="outline">salvo na pasta</Badge>
-          ) : null}
-          {item.lang ? (
-            <Badge variant="secondary">{rotuloIdioma(item.lang)}</Badge>
-          ) : (
-            <Badge variant="outline">sem texto</Badge>
-          )}
-          {item.likes ? (
-            <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-              <Star className="size-4" aria-hidden />
-              {item.likes}
-            </span>
-          ) : null}
-          <Badge variant="outline">{item.source}</Badge>
-          {item.disc_type ? (
-            <Badge variant="outline">{item.disc_type}</Badge>
-          ) : null}
-          {item.season ? (
-            <Badge variant="outline">Temporada {item.season}</Badge>
-          ) : null}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5">
-          {!item.is_principal ? (
-            <Button
-              type="button"
-              size="sm"
-              disabled={acoes.ocupado || !acoes.podeSalvarNaPasta}
-              title={acoes.podeSalvarNaPasta ? undefined : TOOLTIP_SEM_PASTA}
-              onClick={() => acoes.onPreferir(item)}
-            >
-              <Star aria-hidden />
-              Definir como principal
-            </Button>
-          ) : null}
-          {!item.is_local_in_library ? (
+          <span className="text-sm font-medium text-muted-foreground">
+            {legenda}
+          </span>
+          <div className="ml-auto flex items-center gap-1.5">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              disabled={acoes.ocupado || !acoes.podeSalvarNaPasta}
-              title={acoes.podeSalvarNaPasta ? undefined : TOOLTIP_SEM_PASTA}
-              onClick={() => acoes.onMaterializar(item)}
+              aria-label={zoom ? 'Ajustar à tela' : 'Ampliar para 100%'}
+              aria-pressed={zoom}
+              onClick={() => setZoom((z) => !z)}
             >
-              <Save aria-hidden />
-              Salvar na pasta
+              {zoom ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
+              {zoom ? 'Ajustar' : '100%'}
             </Button>
-          ) : null}
-          {!item.is_local ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={acoes.ocupado}
-              onClick={() => acoes.onBaixar(item)}
-            >
-              <Download aria-hidden />
-              Baixar pro cache
-            </Button>
-          ) : null}
-          {item.source === 'user' && item.asset_id ? (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              aria-label="Remover arte"
-              disabled={acoes.ocupado}
-              onClick={() => acoes.onRemover(item)}
+              aria-label="Fechar"
+              onClick={onClose}
             >
-              <Trash2 aria-hidden />
-              Remover
+              <X aria-hidden />
+            </Button>
+          </div>
+        </div>
+
+        {/* Palco: imagem em alta + setas de navegação. */}
+        <div className="relative flex min-h-0 flex-1 items-center justify-center px-2">
+          {total > 1 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label="Arte anterior"
+              className="absolute left-3 z-10"
+              onClick={(e) => {
+                e.stopPropagation()
+                irAnterior()
+              }}
+            >
+              <ChevronLeft aria-hidden />
+            </Button>
+          ) : null}
+
+          <div
+            className={`flex h-full w-full items-center justify-center ${
+              zoom ? 'overflow-auto' : ''
+            } ${info.contain ? 'bg-muted/40' : ''}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              key={item.url}
+              src={item.url}
+              alt={`${rotuloKind(kind)} — arte ${index + 1}`}
+              className={
+                zoom ? 'max-w-none' : 'max-h-full max-w-full object-contain'
+              }
+            />
+          </div>
+
+          {total > 1 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label="Próxima arte"
+              className="absolute right-3 z-10"
+              onClick={(e) => {
+                e.stopPropagation()
+                irProxima()
+              }}
+            >
+              <ChevronRight aria-hidden />
             </Button>
           ) : null}
         </div>
 
-        {acoes.erro ? (
-          <p role="alert" className="text-sm font-medium text-destructive">
-            {acoes.erro}
-          </p>
-        ) : null}
+        {/* Rodapé: metadados (idioma/likes/origem/preferida) + ações. */}
+        <div
+          className="flex flex-col gap-2 border-t border-foreground/10 p-3"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Badge variant="outline">{rotuloKind(kind)}</Badge>
+            {item.is_principal ? (
+              <Badge variant="secondary">principal</Badge>
+            ) : null}
+            {item.is_local_in_library ? (
+              <Badge variant="outline">salvo na pasta</Badge>
+            ) : null}
+            {item.lang ? (
+              <Badge variant="secondary">{rotuloIdioma(item.lang)}</Badge>
+            ) : (
+              <Badge variant="outline">sem texto</Badge>
+            )}
+            {item.likes ? (
+              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                <Star className="size-4" aria-hidden />
+                {item.likes}
+              </span>
+            ) : null}
+            <Badge variant="outline">{item.source}</Badge>
+            {item.disc_type ? (
+              <Badge variant="outline">{item.disc_type}</Badge>
+            ) : null}
+            {item.season ? (
+              <Badge variant="outline">Temporada {item.season}</Badge>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {!item.is_principal ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={acoes.ocupado || !acoes.podeSalvarNaPasta}
+                    onClick={() => acoes.onPreferir(item)}
+                  >
+                    <Star aria-hidden />
+                    Definir como principal
+                  </Button>
+                </TooltipTrigger>
+                {acoes.podeSalvarNaPasta ? null : (
+                  <TooltipContent>{TOOLTIP_SEM_PASTA}</TooltipContent>
+                )}
+              </Tooltip>
+            ) : null}
+            {!item.is_local_in_library ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={acoes.ocupado || !acoes.podeSalvarNaPasta}
+                    onClick={() => acoes.onMaterializar(item)}
+                  >
+                    <Save aria-hidden />
+                    Salvar na pasta
+                  </Button>
+                </TooltipTrigger>
+                {acoes.podeSalvarNaPasta ? null : (
+                  <TooltipContent>{TOOLTIP_SEM_PASTA}</TooltipContent>
+                )}
+              </Tooltip>
+            ) : null}
+            {!item.is_local ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={acoes.ocupado}
+                onClick={() => acoes.onBaixar(item)}
+              >
+                <Download aria-hidden />
+                Baixar pro cache
+              </Button>
+            ) : null}
+            {item.source === 'user' && item.asset_id ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label="Remover arte"
+                disabled={acoes.ocupado}
+                onClick={() => acoes.onRemover(item)}
+              >
+                <Trash2 aria-hidden />
+                Remover
+              </Button>
+            ) : null}
+          </div>
+
+          {acoes.erro ? (
+            <p role="alert" className="text-sm font-medium text-destructive">
+              {acoes.erro}
+            </p>
+          ) : null}
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }

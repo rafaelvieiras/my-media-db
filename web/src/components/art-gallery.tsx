@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import {
   useMutation,
   useQuery,
@@ -72,6 +72,16 @@ interface Aberto {
   index: number
 }
 
+// identidadeItem devolve um identificador ESTÁVEL do item entre revalidações da
+// galeria (briefing 0072): `asset_id` quando o item já é um asset materializado;
+// senão `src_url` (candidato do inventário, ainda sem asset_id). O lightbox usa
+// essa identidade para se reancorar na MESMA arte depois que a lista reordena
+// (ex.: materializar um candidato o move de posição), em vez de continuar preso a
+// um índice numérico que agora aponta pra outra arte.
+function identidadeItem(item: ArtworkItem): string {
+  return item.asset_id ?? item.src_url ?? ''
+}
+
 // garantirAssetId resolve o `asset_id` de um item da galeria: se o item JÁ é um
 // asset (local ou não), devolve o `asset_id` direto; se ainda é só um candidato do
 // INVENTÁRIO (fanart.tv/TMDB, sem asset ainda), cria o asset primeiro (POST select,
@@ -102,7 +112,7 @@ function LinhaGaleria({
   onAbrir,
 }: {
   linha: LinhaArte
-  onAbrir: (kind: string, index: number) => void
+  onAbrir: (kind: string, index: number, item: ArtworkItem) => void
 }) {
   const info = infoKind(linha.kind)
   const ajuste = info.contain ? 'object-contain' : 'object-cover'
@@ -118,7 +128,7 @@ function LinhaGaleria({
           <li key={`${item.url}:${i}`} className="shrink-0">
             <button
               type="button"
-              onClick={() => onAbrir(linha.kind, i)}
+              onClick={() => onAbrir(linha.kind, i, item)}
               aria-label={`Ver ${rotuloKind(linha.kind)} ${i + 1}${
                 item.is_principal ? ' (principal)' : ''
               }`}
@@ -191,8 +201,32 @@ export function ArtGallery({
   const [erroCliente, setErroCliente] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Lightbox aberto (kind + índice) ou null.
+  // Lightbox aberto (kind + índice) ou null. `identidadeAbertaRef` acompanha a
+  // IDENTIDADE (identidadeItem) do item aberto — sobrevive a reordenações da
+  // lista (não é limpa por render, só por abrir/navegar/fechar).
   const [aberto, setAberto] = useState<Aberto | null>(null)
+  const identidadeAbertaRef = useRef<string | null>(null)
+
+  function abrirLightbox(kind: string, index: number, item: ArtworkItem) {
+    identidadeAbertaRef.current = identidadeItem(item)
+    setAberto({ kind, index })
+  }
+
+  function navegarLightbox(index: number, item: ArtworkItem | undefined) {
+    identidadeAbertaRef.current = item ? identidadeItem(item) : null
+    setAberto((prev) => (prev ? { kind: prev.kind, index } : prev))
+  }
+
+  // marcarIdentidadeEInvalidar reancora a identidade rastreada do item ABERTO no
+  // `asset.id` recém-resolvido antes de invalidar a query (briefing 0072): as três
+  // mutações abaixo podem ter acabado de MATERIALIZAR um candidato do inventário
+  // (identidade até então = src_url) — sem isto, o reconciliador do useEffect
+  // procuraria pelo src_url antigo na lista já reordenada/atualizada e não o
+  // acharia mais (o item novo só carrega asset_id), fechando o lightbox à toa.
+  function marcarIdentidadeEInvalidar(asset: { id: string }) {
+    identidadeAbertaRef.current = asset.id
+    invalidarAposArte(qc, entityId)
+  }
 
   const enviar = useMutation({
     mutationFn: ({ file, kind }: { file: File; kind: KindArte }) =>
@@ -208,7 +242,7 @@ export function ArtGallery({
   const preferir = useMutation({
     mutationFn: async ({ kind, item }: { kind: string; item: ArtworkItem }) =>
       preferAsset(entityId, await garantirAssetId(entityId, kind, item)),
-    onSuccess: () => invalidarAposArte(qc, entityId),
+    onSuccess: marcarIdentidadeEInvalidar,
   })
 
   // Salvar NA PASTA real da biblioteca (briefing 0062) — distinto de `baixar`
@@ -218,7 +252,7 @@ export function ArtGallery({
   const materializar = useMutation({
     mutationFn: async ({ kind, item }: { kind: string; item: ArtworkItem }) =>
       materializeAsset(entityId, await garantirAssetId(entityId, kind, item)),
-    onSuccess: () => invalidarAposArte(qc, entityId),
+    onSuccess: marcarIdentidadeEInvalidar,
   })
 
   // Baixar (materializar SÓ no cache interno, sem preferir nem tocar a pasta real
@@ -230,7 +264,7 @@ export function ArtGallery({
         url: item.src_url ?? item.url,
         prefer: false,
       }),
-    onSuccess: () => invalidarAposArte(qc, entityId),
+    onSuccess: marcarIdentidadeEInvalidar,
   })
 
   // Remover (só do dono): DELETE do asset.
@@ -296,6 +330,35 @@ export function ArtGallery({
   const linhaAberta = aberto
     ? linhas.find((l) => l.kind === aberto.kind)
     : undefined
+
+  // Reancora o lightbox por IDENTIDADE (briefing 0072) sempre que `data` revalida
+  // (preferir/materializar/baixar/remover invalidam `['artwork', id]`): procura a
+  // NOVA posição do item com a mesma identidade em `linhaAberta.items` e corrige
+  // `aberto.index`; se o item não existe mais (foi removido), fecha o lightbox em
+  // vez de mostrar o que sobrou naquele índice.
+  useEffect(() => {
+    if (!aberto) {
+      return
+    }
+    const identidade = identidadeAbertaRef.current
+    if (!linhaAberta || identidade === null) {
+      setAberto(null)
+      return
+    }
+    const novoIndex = linhaAberta.items.findIndex(
+      (item) => identidadeItem(item) === identidade,
+    )
+    if (novoIndex === -1) {
+      identidadeAbertaRef.current = null
+      setAberto(null)
+      return
+    }
+    if (novoIndex !== aberto.index) {
+      setAberto({ kind: aberto.kind, index: novoIndex })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
+
   const acoes: AcoesLightbox = {
     onPreferir: (item) =>
       aberto && preferir.mutate({ kind: aberto.kind, item }),
@@ -404,7 +467,7 @@ export function ArtGallery({
             <LinhaGaleria
               key={linha.kind}
               linha={linha}
-              onAbrir={(kind, index) => setAberto({ kind, index })}
+              onAbrir={abrirLightbox}
             />
           ))}
         </div>
@@ -416,8 +479,11 @@ export function ArtGallery({
           kind={aberto.kind}
           items={linhaAberta.items}
           index={Math.min(aberto.index, linhaAberta.items.length - 1)}
-          onIndex={(i) => setAberto({ kind: aberto.kind, index: i })}
-          onClose={() => setAberto(null)}
+          onIndex={(i) => navegarLightbox(i, linhaAberta.items[i])}
+          onClose={() => {
+            identidadeAbertaRef.current = null
+            setAberto(null)
+          }}
           acoes={acoes}
         />
       ) : null}
