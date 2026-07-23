@@ -23,7 +23,7 @@ ARG VERSION=docker
 # emulada — o dist gerado é arch-neutro, então não há motivo pra buildar
 # via QEMU (mais lento à toa).
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM node:lts-slim AS builder-web
+FROM --platform=$BUILDPLATFORM node:24-slim AS builder-web
 WORKDIR /app/web
 
 # Camada de dependências: só o manifest muda raramente, aproveita cache.

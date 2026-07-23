@@ -86,6 +86,16 @@ juntos num container que qualquer um sobe com um `docker run`.
   limpo o normaliza) — com ele o `npm ci` passa em `node:lts` sem pin. Preferido a pinar
   um patch exato do Node (que fixaria o npm antigo e mascararia o lock quebrado). O
   builder é estágio descartado, então usar a base LTS cheia/slim não afeta a imagem final.
+- **Atualização (2026-07-23, decisão do dono):** `node:lts-slim`/`node:lts` trocados por
+  `node:24-slim` (Dockerfile) e `node:24` (`compose.dev.yaml`) — fixa o **major**
+  (continua flutuando em patch/minor dentro do 24.x, mesmo comportamento do
+  `node-version: '24'` já usado em `.github/workflows/*.yml`). Motivo: o dono pediu o
+  pin explícito após o mesmo sintoma (`Missing: @emnapi/… from lock file`) se repetir
+  no briefing 0070 — mesmo com o lockfile correto, `node:lts` deixa a versão do Node
+  (logo do npm embutido) à mercê de quando a imagem é *pulled*, e alinhar Docker+CI+local
+  no mesmo major reduz a superfície de divergência. A correção de raiz continua sendo
+  regenerar o lock com um npm ≥ 11.16 (ver briefing 0005 §"lockfile npm estrito");
+  o pin de major é reforço, não substitui isso.
 - Imagem final medida: **~16 MB** (alpine + binário estático ~7,6 MB).
 
 ## 7. Fora deste briefing / follow-ups
