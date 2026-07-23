@@ -118,3 +118,68 @@ describe('ExternalIdsEditor', () => {
     expect(await screen.findByText('a fonte externa falhou')).toBeTruthy()
   })
 })
+
+// Guard de "sair sem salvar" (0073): onDirtyChange reflete se o mapa atual
+// diverge do último carregado/salvo — só na transição.
+describe('ExternalIdsEditor — onDirtyChange (0073)', () => {
+  it('reporta false ao montar (nada editado)', () => {
+    const onDirtyChange = vi.fn()
+    renderWithClient(
+      <ExternalIdsEditor
+        id="e1"
+        externalIds={{ tmdb: '603' }}
+        onDirtyChange={onDirtyChange}
+      />,
+    )
+    expect(onDirtyChange).toHaveBeenCalledWith(false)
+    expect(onDirtyChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('reporta true ao adicionar uma fonte', () => {
+    const onDirtyChange = vi.fn()
+    renderWithClient(
+      <ExternalIdsEditor
+        id="e1"
+        externalIds={{}}
+        onDirtyChange={onDirtyChange}
+      />,
+    )
+    fireEvent.click(screen.getByText('Adicionar fonte'))
+    fireEvent.change(screen.getByLabelText('Fonte do id externo'), {
+      target: { value: 'tmdb' },
+    })
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true)
+  })
+
+  it('reporta true ao remover uma fonte existente', () => {
+    const onDirtyChange = vi.fn()
+    renderWithClient(
+      <ExternalIdsEditor
+        id="e1"
+        externalIds={{ tmdb: '603' }}
+        onDirtyChange={onDirtyChange}
+      />,
+    )
+    fireEvent.click(screen.getByLabelText('Remover tmdb'))
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true)
+  })
+
+  it('volta a false depois de "Salvar IDs" com sucesso', async () => {
+    const m = putIds(() => okJson({ id: 'e1' }, 200))
+    const onDirtyChange = vi.fn()
+    renderWithClient(
+      <ExternalIdsEditor
+        id="e1"
+        externalIds={{ tmdb: '603' }}
+        onDirtyChange={onDirtyChange}
+      />,
+    )
+    fireEvent.click(screen.getByLabelText('Remover tmdb'))
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true)
+    fireEvent.click(screen.getByText('Salvar IDs'))
+    await vi.waitFor(() => expect(m).toHaveBeenCalled())
+    await vi.waitFor(() =>
+      expect(onDirtyChange).toHaveBeenLastCalledWith(false),
+    )
+  })
+})

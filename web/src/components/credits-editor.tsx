@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowDown,
@@ -147,18 +147,23 @@ interface ConfigDiff<L extends LinhaBase & { source_id: string }> {
   montarAdd: (linha: L) => Record<string, string>
 }
 
-// montarBlocoKind compara o estado inicial (resolvido ao abrir) com o estado atual
-// (editado na tela) e monta o bloco de patch do kind, já mesclado com o que já
-// estava gravado (`anterior`, do blob) — remove/edit/add anteriores que esta
-// sessão não tocou seguem adiante; o `reorder` é sempre a ordem final completa
-// (não precisa mesclar: já reflete a ordem herdada mais o que o dono mudou agora).
-// `undefined` = nada mudou nesse kind — a chave fica de fora do patch (herda).
-function montarBlocoKind<L extends LinhaBase & { source_id: string }>(
+// Resultado de comparar o estado inicial (resolvido ao abrir) com o atual
+// (editado na tela) — a base tanto de `montarBlocoKind` (monta o patch) quanto
+// do estado "sujo" (0073, só precisa de `mudou`), para não duplicar a
+// comparação campo a campo entre as duas necessidades.
+interface DiffKind {
+  removidosAgora: string[]
+  editadosAgora: Record<string, Record<string, string>>
+  adicionadosAgora: Record<string, string>[]
+  chavesFinais: string[]
+  mudou: boolean
+}
+
+function diffKind<L extends LinhaBase & { source_id: string }>(
   inicial: L[],
   atual: L[],
-  anterior: BlocoPatch | null | undefined,
   cfg: ConfigDiff<L>,
-): BlocoPatch | undefined {
+): DiffKind {
   const porChaveInicial = new Map(
     inicial.map((l) => [l.chaveOriginal as string, l]),
   )
@@ -178,14 +183,14 @@ function montarBlocoKind<L extends LinhaBase & { source_id: string }>(
     if (!original) continue
     const camposAtuais = cfg.camposEditaveis(linha)
     const camposOriginais = cfg.camposEditaveis(original)
-    const mudou: Record<string, string> = {}
+    const mudouCampos: Record<string, string> = {}
     for (const campo of Object.keys(camposAtuais)) {
       if (camposAtuais[campo] !== camposOriginais[campo]) {
-        mudou[campo] = camposAtuais[campo]
+        mudouCampos[campo] = camposAtuais[campo]
       }
     }
-    if (Object.keys(mudou).length > 0) {
-      editadosAgora[linha.chaveOriginal] = mudou
+    if (Object.keys(mudouCampos).length > 0) {
+      editadosAgora[linha.chaveOriginal] = mudouCampos
     }
   }
 
@@ -198,25 +203,60 @@ function montarBlocoKind<L extends LinhaBase & { source_id: string }>(
   const ordemMudou =
     JSON.stringify(chavesIniciais) !== JSON.stringify(chavesFinais)
 
-  const algoMudouAgora =
+  const mudou =
     removidosAgora.length > 0 ||
     Object.keys(editadosAgora).length > 0 ||
     adicionadosAgora.length > 0 ||
     ordemMudou
 
-  if (!algoMudouAgora) {
+  return {
+    removidosAgora,
+    editadosAgora,
+    adicionadosAgora,
+    chavesFinais,
+    mudou,
+  }
+}
+
+// algoMudouKind é o estado "sujo" (0073) de um kind: `true` se há reorder/edit/
+// remove/add pendente desde o estado inicial.
+function algoMudouKind<L extends LinhaBase & { source_id: string }>(
+  inicial: L[],
+  atual: L[],
+  cfg: ConfigDiff<L>,
+): boolean {
+  return diffKind(inicial, atual, cfg).mudou
+}
+
+// montarBlocoKind monta o bloco de patch do kind a partir do diff, já mesclado
+// com o que já estava gravado (`anterior`, do blob) — remove/edit/add
+// anteriores que esta sessão não tocou seguem adiante; o `reorder` é sempre a
+// ordem final completa (não precisa mesclar: já reflete a ordem herdada mais
+// o que o dono mudou agora). `undefined` = nada mudou nesse kind — a chave
+// fica de fora do patch (herda).
+function montarBlocoKind<L extends LinhaBase & { source_id: string }>(
+  inicial: L[],
+  atual: L[],
+  anterior: BlocoPatch | null | undefined,
+  cfg: ConfigDiff<L>,
+): BlocoPatch | undefined {
+  const diff = diffKind(inicial, atual, cfg)
+  if (!diff.mudou) {
     return undefined
   }
 
-  const removeFinal = uniq([...(anterior?.remove ?? []), ...removidosAgora])
+  const removeFinal = uniq([
+    ...(anterior?.remove ?? []),
+    ...diff.removidosAgora,
+  ])
   const chavesRemovidas = new Set(removeFinal)
   const addAnteriorVivo = (anterior?.add ?? []).filter(
     (item) => !chavesRemovidas.has(cfg.chaveDoAdd(item)),
   )
-  const addFinal = [...addAnteriorVivo, ...adicionadosAgora]
-  const editFinal = { ...(anterior?.edit ?? {}), ...editadosAgora }
+  const addFinal = [...addAnteriorVivo, ...diff.adicionadosAgora]
+  const editFinal = { ...(anterior?.edit ?? {}), ...diff.editadosAgora }
 
-  const bloco: BlocoPatch = { reorder: chavesFinais }
+  const bloco: BlocoPatch = { reorder: diff.chavesFinais }
   if (removeFinal.length > 0) bloco.remove = removeFinal
   if (Object.keys(editFinal).length > 0) bloco.edit = editFinal
   if (addFinal.length > 0) bloco.add = addFinal
@@ -271,11 +311,14 @@ export function CreditsEditor({
   lang,
   entity,
   blob,
+  onDirtyChange,
 }: {
   id: string
   lang: string
   entity: Pick<ResolvedEntity, 'cast' | 'crew' | 'companies'>
   blob: OverrideBlob
+  // Guard de "sair sem salvar" (0073): chamado só na transição do estado sujo.
+  onDirtyChange?: (sujo: boolean) => void
 }) {
   const qc = useQueryClient()
 
@@ -302,6 +345,20 @@ export function CreditsEditor({
   const [novoCrewDepartamento, setNovoCrewDepartamento] = useState('')
   const [novoCrewCargo, setNovoCrewCargo] = useState('')
   const [novoCompanyNome, setNovoCompanyNome] = useState('')
+
+  // Sujo (0073): mesma regra usada para montar o patch de cada kind — qualquer
+  // reorder/edição/remoção/adição pendente em elenco, equipe ou produtoras.
+  const sujo = useMemo(
+    () =>
+      algoMudouKind(inicialCast, cast, cfgCast) ||
+      algoMudouKind(inicialCrew, crew, cfgCrew) ||
+      algoMudouKind(inicialCompanies, companies, cfgCompany),
+    [inicialCast, cast, inicialCrew, crew, inicialCompanies, companies],
+  )
+
+  useEffect(() => {
+    onDirtyChange?.(sujo)
+  }, [sujo, onDirtyChange])
 
   function invalidar() {
     qc.invalidateQueries({ queryKey: ['entity', id] })

@@ -1,3 +1,4 @@
+import { useEffect, useState, type MouseEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
@@ -41,15 +42,45 @@ import {
 export function EntityEditScreen() {
   const { id } = useParams({ from: '/entities/$id/edit' })
   const { lang } = useLanguage()
+  const navigate = useNavigate()
 
   const entityQuery = useQuery(entityQueryOptions(id, lang))
   const blobQuery = useQuery(overrideBlobQueryOptions(id))
   const fieldsQuery = useQuery(entityFieldsQueryOptions)
 
+  // Guard de "sair sem salvar" (0073): combina o estado sujo dos 3 blocos de
+  // edição (SchemaForm/ExternalIdsEditor/CreditsEditor), reportado pelo
+  // EntityEditForm. Enquanto algum estiver sujo, "Voltar ao item" confirma
+  // antes de navegar e fechar a aba/recarregar dispara o aviso nativo.
+  const [algumSujo, setAlgumSujo] = useState(false)
+
+  useEffect(() => {
+    if (!algumSujo) return
+    function aoFechar(e: BeforeUnloadEvent) {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', aoFechar)
+    return () => window.removeEventListener('beforeunload', aoFechar)
+  }, [algumSujo])
+
+  function aoClicarVoltar(e: MouseEvent<HTMLAnchorElement>) {
+    if (!algumSujo) return
+    e.preventDefault()
+    if (
+      window.confirm(
+        'Você tem alterações não salvas neste item. Sair mesmo assim?',
+      )
+    ) {
+      navigate({ to: '/entities/$id', params: { id } })
+    }
+  }
+
   const voltar = (
     <Link
       to="/entities/$id"
       params={{ id }}
+      onClick={aoClicarVoltar}
       className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
     >
       <ArrowLeft className="size-4" aria-hidden />
@@ -83,6 +114,7 @@ export function EntityEditScreen() {
           entity={entityQuery.data}
           blob={blobQuery.data}
           fields={fieldsQuery.data}
+          onSujoChange={setAlgumSujo}
           // Remonta o form quando o idioma muda ou o blob revalida (após "Limpar"),
           // recompondo as sementes — o mesmo padrão do editor antigo.
           key={`${lang}:${blobQuery.dataUpdatedAt}`}
@@ -98,15 +130,28 @@ function EntityEditForm({
   entity,
   blob,
   fields,
+  onSujoChange,
 }: {
   id: string
   lang: string
   entity: ResolvedEntity
   blob: OverrideBlob
   fields: FieldDescriptor[]
+  onSujoChange: (sujo: boolean) => void
 }) {
   const qc = useQueryClient()
   const navigate = useNavigate()
+
+  // Guard de "sair sem salvar" (0073): cada bloco reporta seu próprio estado
+  // sujo; a combinação sobe para o EntityEditScreen (link "Voltar" + beforeunload).
+  const [schemaSujo, setSchemaSujo] = useState(false)
+  const [idsSujo, setIdsSujo] = useState(false)
+  const [creditosSujo, setCreditosSujo] = useState(false)
+  const algumSujo = schemaSujo || idsSujo || creditosSujo
+
+  useEffect(() => {
+    onSujoChange(algumSujo)
+  }, [algumSujo, onSujoChange])
 
   const sementes = valoresDeEdicao(fields, blob, lang, entity)
 
@@ -177,17 +222,28 @@ function EntityEditForm({
         onClear={(campo, traduzivel) => limpar.mutate({ campo, traduzivel })}
         clearDisabled={ocupado}
         lang={lang}
+        onDirtyChange={setSchemaSujo}
       />
 
       {/* Identidade externa (0027): fixar os ids da fonte é EDIÇÃO avançada, então
           vive na rota de edição com seu próprio salvar/re-enriquecer. Não é
           override — grava a identidade autoritativa (MD4) e re-resolve. */}
-      <ExternalIdsEditor id={id} externalIds={entity.external_ids} />
+      <ExternalIdsEditor
+        id={id}
+        externalIds={entity.external_ids}
+        onDirtyChange={setIdsSujo}
+      />
 
       {/* Créditos (0029 Fase C): `credits` fica de fora do form genérico (não é um
           campo simples), então tem seu próprio editor dedicado, seguindo o mesmo
           padrão do ExternalIdsEditor acima. */}
-      <CreditsEditor id={id} lang={lang} entity={entity} blob={blob} />
+      <CreditsEditor
+        id={id}
+        lang={lang}
+        entity={entity}
+        blob={blob}
+        onDirtyChange={setCreditosSujo}
+      />
     </div>
   )
 }

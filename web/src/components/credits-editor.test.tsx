@@ -295,3 +295,73 @@ describe('CreditsEditor', () => {
     expect(await screen.findByText('patch de creditos invalido')).toBeTruthy()
   })
 })
+
+// Guard de "sair sem salvar" (0073): onDirtyChange reflete a MESMA regra usada
+// para montar o patch por kind (reorder/edit/remove/add) — só na transição.
+describe('CreditsEditor — onDirtyChange (0073)', () => {
+  function renderEditorComOnDirtyChange(
+    entity: Partial<Pick<ResolvedEntity, 'cast' | 'crew' | 'companies'>>,
+    onDirtyChange: (sujo: boolean) => void,
+  ) {
+    return renderWithClient(
+      <CreditsEditor
+        id="e1"
+        lang="pt-BR"
+        blob={{}}
+        entity={{ cast: [], crew: [], companies: [], ...entity }}
+        onDirtyChange={onDirtyChange}
+      />,
+    )
+  }
+
+  it('reporta false ao montar (nada editado)', () => {
+    const onDirtyChange = vi.fn()
+    renderEditorComOnDirtyChange(
+      { cast: [cast({ source_id: '1', name: 'Ana' })] },
+      onDirtyChange,
+    )
+    expect(onDirtyChange).toHaveBeenCalledWith(false)
+    expect(onDirtyChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('reporta true ao reordenar o elenco', () => {
+    const onDirtyChange = vi.fn()
+    renderEditorComOnDirtyChange(
+      {
+        cast: [
+          cast({ source_id: '1', name: 'Ana' }),
+          cast({ source_id: '2', name: 'Beto' }),
+        ],
+      },
+      onDirtyChange,
+    )
+    fireEvent.click(screen.getAllByLabelText('Mover para baixo')[0])
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true)
+  })
+
+  it('reporta true ao editar um campo da equipe', () => {
+    const onDirtyChange = vi.fn()
+    renderEditorComOnDirtyChange({ crew: [crew()] }, onDirtyChange)
+    fireEvent.change(screen.getByLabelText('Cargo de Dirigente'), {
+      target: { value: 'Diretor Geral' },
+    })
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true)
+  })
+
+  it('reporta true ao remover uma produtora', () => {
+    const onDirtyChange = vi.fn()
+    renderEditorComOnDirtyChange({ companies: [company()] }, onDirtyChange)
+    fireEvent.click(screen.getByLabelText('Remover StudioX'))
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true)
+  })
+
+  it('reporta true ao adicionar um novo membro do elenco', () => {
+    const onDirtyChange = vi.fn()
+    renderEditorComOnDirtyChange({}, onDirtyChange)
+    fireEvent.change(screen.getByLabelText('Nome do novo membro do elenco'), {
+      target: { value: 'Carlos' },
+    })
+    fireEvent.click(screen.getByText('Adicionar ao elenco'))
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true)
+  })
+})
