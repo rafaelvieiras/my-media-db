@@ -9,7 +9,7 @@
 | **ID** | 0074 |
 | **Tipo** | fix |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [07-enriquecimento-providers](../docs/07-enriquecimento-providers.md) |
 | **Depende de** | 0014, 0018, 0026 |
 
