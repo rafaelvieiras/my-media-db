@@ -172,6 +172,53 @@ func exigirBackdropProxyado(t *testing.T, itens []artworkItem) {
 	}
 }
 
+// TestArtworkInventarioDedupeContraMaterializado: uma arte do inventario fanart.tv cujo
+// url ja foi materializado (asset origin=external com meta.source_url igual) NAO aparece
+// de novo como candidato -- so a versao local conta (briefing 0072).
+func TestArtworkInventarioDedupeContraMaterializado(t *testing.T) {
+	h, d := setupSearchServer(t, WithAssetsDir(t.TempDir()))
+	semearEntity(t, d, "e1", "movie", "Matrix")
+
+	// Ja materializado via POST /artwork/select: asset external com o source_url apontando
+	// para a MESMA url que ainda esta no inventario fanart.tv.
+	semearAssetOrigin(t, d, "a1", "e1", "poster", "external", "/x/poster.jpg",
+		`{"source_url":"https://assets.fanart.tv/p-en.jpg"}`)
+
+	inv, _ := json.Marshal(map[string]any{
+		provider.ChaveEnvelopeInventarioArtes: map[string]any{
+			"poster": []provider.ArteInventario{
+				{URL: "https://assets.fanart.tv/p-en.jpg", Lang: "en", Likes: 10},
+				{URL: "https://assets.fanart.tv/p-textless.jpg", Lang: "", Likes: 4},
+			},
+		},
+	})
+	semearMediaExternal(t, d, "me-fa", "e1", "fanarttv", string(inv))
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/e1/artwork", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET artwork status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	grupos, available := respostaArtwork(t, rec.Body.Bytes())
+
+	// poster: 1 local (ja materializado) + 1 candidato restante do inventario (p-textless) = 2.
+	// Sem o dedupe seria 3 (o p-en apareceria duas vezes: local E candidato).
+	if available["poster"] != 2 {
+		t.Errorf("available.poster = %d, quero 2 (dedupe do candidato ja materializado)", available["poster"])
+	}
+	var candidatosFanart int
+	for _, it := range grupos["poster"] {
+		if it.Source == "fanarttv" {
+			candidatosFanart++
+			if it.SrcURL == "https://assets.fanart.tv/p-en.jpg" {
+				t.Errorf("candidato ja materializado (p-en.jpg) nao deveria reaparecer no inventario")
+			}
+		}
+	}
+	if candidatosFanart != 1 {
+		t.Errorf("candidatos fanart.tv restantes = %d, quero 1 (p-textless)", candidatosFanart)
+	}
+}
+
 // TestArtworkEntidadeInexistente: 404 para entity que nao existe.
 func TestArtworkEntidadeInexistente(t *testing.T) {
 	h, _ := setupSearchServer(t, WithSearchProvider(&provTmdbArte{}), WithAssetsDir(t.TempDir()))
