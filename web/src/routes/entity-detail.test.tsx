@@ -122,6 +122,23 @@ describe('EntityDetailScreen — selo de fallback', () => {
   })
 })
 
+describe('EntityDetailScreen — badge de status (0078)', () => {
+  it('traduz status cataloged para "catalogado"', async () => {
+    renderDetail(baseEntity({ status: 'cataloged' }))
+
+    await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
+    expect(screen.getByText('catalogado')).toBeInTheDocument()
+    expect(screen.queryByText('cataloged')).not.toBeInTheDocument()
+  })
+
+  it('draft mostra "não identificado", não o rótulo de cataloged', async () => {
+    renderDetail(baseEntity({ status: 'draft' }))
+
+    await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
+    expect(screen.getByText('não identificado')).toBeInTheDocument()
+  })
+})
+
 describe('EntityDetailScreen — selo "editado" e nota local', () => {
   it('mostra o selo quando o blob tem override no idioma atual', async () => {
     // title overridado em pt-BR (idioma corrente) → selo; en não contaria.

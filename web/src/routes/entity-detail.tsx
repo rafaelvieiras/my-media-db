@@ -11,7 +11,7 @@ import {
   entityQueryOptions,
   overrideBlobQueryOptions,
 } from '@/lib/queries'
-import { ehDraft } from '@/lib/entity-badges'
+import { ehDraft, rotuloStatus } from '@/lib/entity-badges'
 import {
   precisaAtencaoCatalogacao,
   rotuloItemFaltando,
@@ -309,7 +309,7 @@ export function EntityDetailScreen() {
             {ehDraft(data.status) ? (
               <Badge variant="secondary">não identificado</Badge>
             ) : (
-              <Badge variant="outline">{data.status}</Badge>
+              <Badge variant="outline">{rotuloStatus(data.status)}</Badge>
             )}
             <SeloEditado
               ativo={temOverrideEditado(blob, 'title', lang, fields)}

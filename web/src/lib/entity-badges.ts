@@ -78,6 +78,18 @@ export function unidadeCompletude(type: string): string {
   return 'itens'
 }
 
+// Rótulo pt-BR do status de catalogação do item. O backend só usa dois valores
+// (`draft`/`cataloged` — ver internal/scanner/match.go,
+// internal/server/completeness.go); `draft` já tem tratamento especial
+// (`ehDraft` → "não identificado"), esta função cobre o restante. Valor
+// desconhecido ecoa cru (nunca quebra a UI).
+export function rotuloStatus(status: string): string {
+  const mapa: Record<string, string> = {
+    cataloged: 'catalogado',
+  }
+  return mapa[status] ?? status
+}
+
 // Rótulo pt-BR do tipo de mídia para exibição. Cobre os tipos canônicos: os de
 // topo (filme/série/coleção) e os nós da árvore de séries (temporada/episódio,
 // 0031). Tipo desconhecido ecoa cru (nunca quebra a UI).

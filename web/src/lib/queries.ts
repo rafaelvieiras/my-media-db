@@ -59,6 +59,9 @@ export function libraryBrowseQueryOptions(path: string) {
   return queryOptions({
     queryKey: ['library', 'browse', path],
     queryFn: () => browseLibraryPath(path),
+    // Path inválido (422) é erro permanente — retentar não muda o resultado
+    // sem mudar `path`. Retry aqui só gera 3 chamadas idênticas ao servidor.
+    retry: false,
   })
 }
 
