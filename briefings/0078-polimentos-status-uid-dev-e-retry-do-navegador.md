@@ -10,7 +10,7 @@
 | **ID** | 0078 |
 | **Tipo** | fix/chore |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [09-nfo-e-export](../docs/09-nfo-e-export.md), [deploy](../docs/deploy.md) |
 | **Depende de** | 0004, 0071 |
 

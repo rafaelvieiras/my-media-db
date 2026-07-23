@@ -137,7 +137,7 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0075](0075-navegacao-responsiva-mobile.md) | Navegação responsiva em telas de celular (nav não colapsa, transborda) | fix | ready | — |
 | [0076](0076-creditos-reordenar-em-lote-e-fotos-de-equipe.md) | Créditos: reordenar em lote (elenco/equipe grandes) + foto para papéis-chave de equipe | feature/fix | ready | 0029, 0073 |
 | [0077](0077-descoberta-acionavel-completude-e-novo-item.md) | Descoberta acionável: banner de completude com ação por item + cross-link "Novo item" ↔ Busca | fix | done | 0030, 0057, 0058 |
-| [0078](0078-polimentos-status-uid-dev-e-retry-do-navegador.md) | Polimentos: badge de status traduzido, paridade de uid no dev e retry do navegador de pastas | fix/chore | ready | 0004, 0071 |
+| [0078](0078-polimentos-status-uid-dev-e-retry-do-navegador.md) | Polimentos: badge de status traduzido, paridade de uid no dev e retry do navegador de pastas | fix/chore | done | 0004, 0071 |
 | [0067](0067-arvore-de-serie-em-todo-caminho-de-identidade-externa.md) | Árvore de série (temporada/episódio) em TODO caminho de identidade externa (Corrigir, confirmar candidato, auto-match, retroativo) | fix | done | 0031, 0043 |
 | [0069](0069-recasar-arquivos-pendentes-ao-sincronizar-arvore-serie.md) | Recasar arquivos pendentes de episódio ao sincronizar a árvore da série | fix | done | 0034, 0043, 0054, 0067 |
 | [0070](0070-editar-path-datasource-cadastrado.md) | Editar path de um datasource já cadastrado (recasca em cascata media_file/asset/nfo) | feature | done | 0008, 0062, 0064 |
