@@ -9,7 +9,7 @@
 | **ID** | 0072 |
 | **Tipo** | fix |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [08-artwork-e-assets](../docs/08-artwork-e-assets.md) |
 | **Depende de** | 0048, 0049, 0062 |
 

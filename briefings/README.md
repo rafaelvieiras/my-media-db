@@ -131,10 +131,10 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0051](0051-fundir-duplicata-conflito-external-id.md) | Fundir duplicata por conflito de external_id (import + corrigir) | fix | done | 0015, 0018, 0027 |
 | [0054](0054-auto-match-no-import-manual-e-job-de-saude.md) | Fechar o gap do auto-match: import manual e job de saúde | feature | done | 0050, 0051, 0053, 0026 |
 | [0062](0062-midias-locais-nfo-e-artes-na-pasta.md) | Mídias locais: NFO + artes na pasta da biblioteca (padrão Kodi/Emby, arte "principal") | feature | done | 0044, 0048, 0049, 0059 |
-| [0072](0072-galeria-de-artes-dedupe-inventario-e-lightbox-por-id.md) | Galeria de artes: de-duplicar inventário materializado + lightbox reancorado por asset | fix | ready | 0048, 0049, 0062 |
-| [0073](0073-guard-sair-sem-salvar-edicao-item.md) | Guard de "sair sem salvar" na edição de item (3 blocos de salvamento independentes) | fix | ready | 0016, 0027, 0029, 0030 |
+| [0072](0072-galeria-de-artes-dedupe-inventario-e-lightbox-por-id.md) | Galeria de artes: de-duplicar inventário materializado + lightbox reancorado por asset | fix | done | 0048, 0049, 0062 |
+| [0073](0073-guard-sair-sem-salvar-edicao-item.md) | Guard de "sair sem salvar" na edição de item (3 blocos de salvamento independentes) | fix | done | 0016, 0027, 0029, 0030 |
 | [0074](0074-busca-rica-na-correcao-da-fila-de-revisao.md) | Busca rica (pôster/sinopse) na correção da fila de Revisão | fix | done | 0014, 0018, 0026 |
-| [0075](0075-navegacao-responsiva-mobile.md) | Navegação responsiva em telas de celular (nav não colapsa, transborda) | fix | ready | — |
+| [0075](0075-navegacao-responsiva-mobile.md) | Navegação responsiva em telas de celular (nav não colapsa, transborda) | fix | done | — |
 | [0076](0076-creditos-reordenar-em-lote-e-fotos-de-equipe.md) | Créditos: reordenar em lote (elenco/equipe grandes) + foto para papéis-chave de equipe | feature/fix | ready | 0029, 0073 |
 | [0077](0077-descoberta-acionavel-completude-e-novo-item.md) | Descoberta acionável: banner de completude com ação por item + cross-link "Novo item" ↔ Busca | fix | done | 0030, 0057, 0058 |
 | [0078](0078-polimentos-status-uid-dev-e-retry-do-navegador.md) | Polimentos: badge de status traduzido, paridade de uid no dev e retry do navegador de pastas | fix/chore | done | 0004, 0071 |
