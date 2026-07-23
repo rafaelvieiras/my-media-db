@@ -50,6 +50,18 @@ describe('ItemNewScreen', () => {
     expect(corpo.title).toBe('Severance')
   })
 
+  it('mostra o cross-link para a Busca antes do formulário (0077)', async () => {
+    fetchRouter(() => okJson({}))
+    renderWithClient(<ItemNewScreen />)
+
+    expect(
+      screen.getByText(/Procurando um título existente\?/),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Use a Busca' }),
+    ).toBeInTheDocument()
+  })
+
   it('não submete com título vazio (botão desabilitado)', async () => {
     fetchRouter(() => okJson({}))
     renderWithClient(<ItemNewScreen />)

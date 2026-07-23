@@ -239,6 +239,24 @@ describe('EntityDetailScreen — completude de catalogação (0058)', () => {
     expect(screen.getByText('arte fanart')).toBeInTheDocument()
   })
 
+  it('"arquivo de mídia" na lista vem com link para Bibliotecas (0077)', async () => {
+    renderDetail(
+      baseEntity({
+        catalog_completeness: {
+          complete: false,
+          missing: ['cast', 'media_file'],
+        },
+      }),
+    )
+
+    await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
+    expect(screen.getByText('elenco')).toBeInTheDocument()
+    expect(screen.getByText('arquivo de mídia')).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'ver Bibliotecas' }),
+    ).toBeInTheDocument()
+  })
+
   it('não mostra a seção quando completo', async () => {
     renderDetail(
       baseEntity({

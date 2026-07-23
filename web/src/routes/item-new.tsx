@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { FilmIcon } from 'lucide-react'
 import { Select } from '@/components/ui/select'
 import { SchemaForm } from '@/components/schema-form'
@@ -18,11 +18,32 @@ import {
 // (subconjunto `creatable`, corpo plano); o seletor de Tipo (movie/tv) NÃO é campo
 // editorial, então a rota o injeta no topo do form. Ao criar, navega para
 // `/entities/{id}`, onde o dono fixa os IDs externos e re-enriquece.
+//
+// Cross-link para a Busca (briefing 0077): quem clica "Novo item" esperando
+// importar um título já existente (perto do TMDB) cai aqui num formulário
+// manual em branco sem nenhuma pista de que `/search` é o caminho certo — o
+// bloco `CrossLinkBusca` no topo, antes do form, aponta para lá. O formulário
+// manual continua como está (cadastro do que não existe em fonte externa).
 export function ItemNewScreen() {
   return (
-    <NewEntityPage title="Novo item">
+    <NewEntityPage title="Novo item" topo={<CrossLinkBusca />}>
       {(fields) => <ItemNewForm fields={fields} />}
     </NewEntityPage>
+  )
+}
+
+function CrossLinkBusca() {
+  return (
+    <p className="mb-4 text-sm text-muted-foreground">
+      Procurando um título existente?{' '}
+      <Link
+        to="/search"
+        className="font-medium text-foreground underline underline-offset-2"
+      >
+        Use a Busca
+      </Link>{' '}
+      para importar direto do catálogo.
+    </p>
   )
 }
 
