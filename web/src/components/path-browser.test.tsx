@@ -176,4 +176,50 @@ describe('PathBrowser', () => {
       await screen.findByText('Mostrando as primeiras 2000 pastas.'),
     ).toBeInTheDocument()
   })
+
+  it('caminho inicial quebrado (fonte offline) recupera sozinho para a raiz em vez de travar', async () => {
+    await montarEAbrir(
+      {
+        '/media/quebrado': 'erro',
+        '/': browseResult({ path: '/', parent: null }),
+      },
+      { value: '/media/quebrado' },
+    )
+
+    // Erra ao abrir no path quebrado, mas se recupera para a raiz sozinho —
+    // não fica preso na mensagem de erro esperando o dono clicar em algo.
+    await waitFor(() => expect(screen.getByText('filmes')).toBeInTheDocument())
+  })
+
+  it('navegação manual não é desfeita pelo debounce de sincronização do texto digitado (regressão)', async () => {
+    // `value` do chamador permanece parado em '/mnt' (o dono não editou o
+    // campo de texto) enquanto o dono navega manualmente pelo navegador —
+    // antes da correção, o debounce de sincronização reagia a QUALQUER
+    // divergência entre `pasta` e `value`, não só a uma edição real do
+    // campo, e revertia a navegação de volta para `value` ~400ms depois.
+    const { user } = await montarEAbrir(
+      {
+        '/mnt': browseResult({
+          path: '/mnt',
+          parent: '/',
+          entries: [{ name: 'filmes', path: '/mnt/filmes', readable: true }],
+        }),
+        '/mnt/filmes': browseResult({
+          path: '/mnt/filmes',
+          parent: '/mnt',
+          entries: [{ name: 'acao', path: '/mnt/filmes/acao', readable: true }],
+        }),
+      },
+      { value: '/mnt' },
+    )
+
+    await waitFor(() => expect(screen.getByText('filmes')).toBeInTheDocument())
+    await user.click(screen.getByText('filmes'))
+    await waitFor(() => expect(screen.getByText('acao')).toBeInTheDocument())
+
+    // Espera passar do intervalo do debounce (400ms) sem editar `value`: a
+    // navegação para /mnt/filmes deve continuar de pé.
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    expect(screen.getByText('acao')).toBeInTheDocument()
+  })
 })

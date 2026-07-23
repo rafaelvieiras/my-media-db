@@ -38,19 +38,31 @@ export function PathBrowser({ value, onChange }: PathBrowserProps) {
   const [pasta, setPasta] = useState(() =>
     pareceAbsoluto(value) ? value.trim() : RAIZ,
   )
-  const ultimaValida = useRef(pasta)
+  // Começa em RAIZ (não na `pasta` inicial, que pode ser o caminho quebrado de
+  // uma fonte offline): se o primeiro carregamento já der erro, o efeito de
+  // recuperação abaixo tem para onde voltar em vez de ficar preso sem dado
+  // nenhum.
+  const ultimaValida = useRef(RAIZ)
+  // Rastreia o ÚLTIMO `value` (texto do campo do chamador) já sincronizado —
+  // sem isso, o debounce abaixo dispara toda vez que `pasta` diverge de
+  // `value` por QUALQUER motivo (ex.: o dono navegando manualmente pelo
+  // navegador), e não só quando o dono de fato EDITOU o campo de texto —
+  // sobrescrevendo a navegação manual 400ms depois e travando o navegador no
+  // caminho antigo (o bug reportado: nenhum nível do breadcrumb "pega").
+  const ultimoValueSincronizado = useRef(value)
 
   useEffect(() => {
+    if (value === ultimoValueSincronizado.current) {
+      return
+    }
+    ultimoValueSincronizado.current = value
     if (!aberto || !pareceAbsoluto(value)) {
       return
     }
     const alvo = value.trim()
-    if (alvo === pasta) {
-      return
-    }
     const timer = setTimeout(() => setPasta(alvo), 400)
     return () => clearTimeout(timer)
-  }, [value, aberto, pasta])
+  }, [value, aberto])
 
   const query = useQuery(libraryBrowseQueryOptions(pasta))
 
