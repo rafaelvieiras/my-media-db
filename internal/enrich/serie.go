@@ -15,11 +15,15 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/naming"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
+	"github.com/rafaelvieiras/my-media-db/internal/tvext"
+	"github.com/rafaelvieiras/my-media-db/internal/tvmatch"
 )
 
 // Erros sentinela de ImportarSeriePorNome: o scanner de series (0034) os distingue
@@ -86,7 +90,136 @@ func (s *Servico) aplicarArvoreSerie(ctx context.Context, serieID, source, sourc
 	// encontrem a entity da temporada correspondente. Best-effort (sem ArteProvider ou id,
 	// degrada em silêncio).
 	s.enriquecerArtes(ctx, serieID, tipoSerie, langs)
+	// Recasamento de arquivos pendentes (0069): arquivos que ja estavam presos na SERIE
+	// (escaneados ANTES da arvore existir, sem vinculo tv_episode) ganham o vinculo certo
+	// agora que a arvore acabou de ser sincronizada -- sem esperar um novo scan. Por
+	// ULTIMO, best-effort (nunca propaga erro): a arvore/identidade ja foram gravadas com
+	// sucesso quando este passo roda.
+	s.recasarArquivosPendentes(ctx, serieID)
 	return nil
+}
+
+// recasarArquivosPendentes fecha o gap do 0069: o vinculo arquivo->episodio
+// (media_file_entity, kind=tv_episode) so era tentado DENTRO de um scan, contra a
+// arvore que ja existisse naquele momento (internal/scanner/serie.go). Quando o
+// scanner encontra a serie ANTES dela ter identidade externa, o arquivo fica preso
+// direto na entity da serie, sem vinculo, ate o PROXIMO scan completo. Este passo
+// tenta o mesmo casamento por NUMERO (internal/tvmatch, regra do 0034) contra a
+// arvore recem-sincronizada, no MESMO instante em que ela passa a existir -- e
+// idempotente (pula arquivo ja vinculado) e nunca casa forcado (sem match, o
+// arquivo continua pendente, exatamente como hoje).
+func (s *Servico) recasarArquivosPendentes(ctx context.Context, serieID string) {
+	arquivos, err := s.leitura().ListarMediaFilesPorEntity(ctx, serieID)
+	if err != nil {
+		log.Printf("enrich: listar arquivos da serie %s p/ recasamento falhou (segue): %v", serieID, err)
+		return
+	}
+	var idx *tvmatch.Index // construido sob demanda, so' se houver candidato a recasar
+	for _, mf := range arquivos {
+		if s.temVinculoEpisodio(ctx, mf.ID) {
+			continue // ja vinculado (scan anterior ou iteracao anterior deste loop)
+		}
+		ep, ok := naming.ParseEpisode(semExtensaoArquivo(filepath.Base(mf.Path)))
+		if !ok {
+			continue // nao reconhece padrao de episodio -- fica pendente
+		}
+		if idx == nil {
+			idx = s.carregarIndexSerie(ctx, serieID)
+		}
+		ids, ok := tvmatch.Casar(idx, ep)
+		if !ok {
+			continue // sem match na arvore -- fica pendente, como hoje
+		}
+		s.ligarArquivoAosEpisodios(ctx, mf.ID, ids)
+	}
+}
+
+// temVinculoEpisodio diz se o media_file ja tem algum vinculo kind=tv_episode em
+// media_file_entity -- garante a idempotencia do recasamento (nunca reprocessa nem
+// duplica um arquivo que um scan anterior, ou uma iteracao anterior deste mesmo
+// loop, ja vinculou). Erro de leitura degrada para "sem vinculo" (o pior caso e
+// tentar recasar de novo, que e idempotente por causa do upsert em
+// CriarVinculoEntidade).
+func (s *Servico) temVinculoEpisodio(ctx context.Context, mediaFileID string) bool {
+	vinculos, err := s.leitura().ListarVinculosPorArquivo(ctx, mediaFileID)
+	if err != nil {
+		log.Printf("enrich: listar vinculos do arquivo %s falhou (segue): %v", mediaFileID, err)
+		return false
+	}
+	for _, v := range vinculos {
+		if v.Kind == relacaoEpisodio {
+			return true
+		}
+	}
+	return false
+}
+
+// ligarArquivoAosEpisodios cria o vinculo media_file_entity (kind=tv_episode) para
+// cada episodio casado, com ordinal = posicao na lista -- mesmo layout do scanner
+// (um range S01E01-E03 vira 3 linhas, ordinal 0/1/2, sob o mesmo media_file). Falha
+// degrada (loga e segue, um episodio da lista nao derruba os demais).
+func (s *Servico) ligarArquivoAosEpisodios(ctx context.Context, mediaFileID string, episodioIDs []string) {
+	for i, epID := range episodioIDs {
+		if err := s.escrita().CriarVinculoEntidade(ctx, sqlcgen.CriarVinculoEntidadeParams{
+			MediaFileID: mediaFileID,
+			EntityID:    epID,
+			Kind:        relacaoEpisodio,
+			Ordinal:     int64(i),
+		}); err != nil {
+			log.Printf("enrich: vincular arquivo %s ao episodio %s falhou (segue): %v", mediaFileID, epID, err)
+		}
+	}
+}
+
+// carregarIndexSerie monta o indice numero->episode_id da arvore de uma serie
+// (espelha scanner.carregarIndex, MESMA leitura: ListarRelacoesFilhas + extension_data
+// de cada episodio), agora disponivel em internal/enrich via internal/tvmatch. Falha
+// de leitura degrada para um indice vazio -- Casar simplesmente nao encontra nada, o
+// arquivo fica pendente (nenhum casamento forcado).
+func (s *Servico) carregarIndexSerie(ctx context.Context, serieID string) *tvmatch.Index {
+	idx := tvmatch.NovoIndex()
+	q := s.leitura()
+
+	serie, err := q.ObterEntity(ctx, serieID)
+	if err != nil {
+		log.Printf("enrich: serie %s ilegivel ao montar indice de recasamento: %v", serieID, err)
+		return idx
+	}
+	idx.PreencherOrdenacoes(tvext.Namespace(serie.ExtensionDataJson, nsTV))
+
+	temps, err := q.ListarRelacoesFilhas(ctx, serieID)
+	if err != nil {
+		log.Printf("enrich: temporadas da serie %s ilegiveis ao montar indice de recasamento: %v", serieID, err)
+		return idx
+	}
+	for _, t := range temps {
+		if t.Kind != relacaoTemporada {
+			continue
+		}
+		eps, err := q.ListarRelacoesFilhas(ctx, t.ChildID)
+		if err != nil {
+			continue // temporada ilegivel: degrada sem derrubar o resto do indice
+		}
+		for _, e := range eps {
+			if e.Kind != relacaoEpisodio {
+				continue
+			}
+			ep, err := q.ObterEntity(ctx, e.ChildID)
+			if err != nil {
+				continue
+			}
+			idx.IndexarEpisodio(ep.ID, tvext.Namespace(ep.ExtensionDataJson, nsTV))
+		}
+	}
+	return idx
+}
+
+// semExtensaoArquivo remove a extensao do nome-base de um arquivo antes do
+// naming.ParseEpisode (que espera o nome sem extensao) -- espelha
+// scanner.semExtensao, sem depender do pacote scanner (internal/enrich nao pode
+// importa-lo, so' o contrario).
+func semExtensaoArquivo(nome string) string {
+	return strings.TrimSuffix(nome, filepath.Ext(nome))
 }
 
 // sincronizarArvoreSerie combina os dois passos acima para um chamador que so tem

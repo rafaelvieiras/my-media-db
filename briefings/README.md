@@ -132,6 +132,7 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0054](0054-auto-match-no-import-manual-e-job-de-saude.md) | Fechar o gap do auto-match: import manual e job de saúde | feature | done | 0050, 0051, 0053, 0026 |
 | [0062](0062-midias-locais-nfo-e-artes-na-pasta.md) | Mídias locais: NFO + artes na pasta da biblioteca (padrão Kodi/Emby, arte "principal") | feature | done | 0044, 0048, 0049, 0059 |
 | [0067](0067-arvore-de-serie-em-todo-caminho-de-identidade-externa.md) | Árvore de série (temporada/episódio) em TODO caminho de identidade externa (Corrigir, confirmar candidato, auto-match, retroativo) | fix | done | 0031, 0043 |
+| [0069](0069-recasar-arquivos-pendentes-ao-sincronizar-arvore-serie.md) | Recasar arquivos pendentes de episódio ao sincronizar a árvore da série | fix | done | 0034, 0043, 0054, 0067 |
 
 ### Transversal — Infraestrutura operacional
 

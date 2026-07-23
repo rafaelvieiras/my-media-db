@@ -26,13 +26,13 @@ import (
 	"log"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/naming"
 	"github.com/rafaelvieiras/my-media-db/internal/tvext"
+	"github.com/rafaelvieiras/my-media-db/internal/tvmatch"
 )
 
 const (
@@ -66,20 +66,9 @@ var reSeasonFolder = regexp.MustCompile(`(?i)^(season|temporada|s)[ ._-]*\d{1,4}
 // ser identificada (ambígua/não encontrada) — um rascunho, sem árvore.
 type serieResolvida struct {
 	serieID   string
-	index     *episodeIndex
+	index     *tvmatch.Index
 	conf      float64
 	emRevisao bool
-}
-
-// episodeIndex é o mapa EM MEMÓRIA número→episode_id de uma série, montado uma vez a
-// partir do extension_data dos episódios. byOrdering casa (ordenação, temporada,
-// número); byAbsolute casa o número absoluto (anime). defaultType é a ordenação
-// default da série; orderings são todas as ordens que ela usa.
-type episodeIndex struct {
-	byOrdering  map[string]map[[2]int]string
-	byAbsolute  map[int]string
-	defaultType string
-	orderings   []string
 }
 
 // factsSerie monta os fatos de um arquivo de série: deriva a pasta/nome da série,
@@ -107,7 +96,7 @@ func (r *scanRun) factsSerie(ctx context.Context, path string) fileFacts {
 	if res.emRevisao || res.index == nil {
 		return f // série em revisão: media_file fica pendente, sem vínculo
 	}
-	ids, matched := casarEpisodios(res.index, ep)
+	ids, matched := tvmatch.Casar(res.index, ep)
 	if !matched {
 		log.Printf("scanner: episódio de %q não casou (revisão): %+v", path, ep)
 		return f
@@ -266,17 +255,18 @@ func (r *scanRun) acharOuCriarDraftSerie(ctx context.Context, nome string) strin
 
 // carregarIndex monta o índice número→episode_id de uma série, lendo a série (para as
 // ordenações) e cada episódio (numbering + absolute_number no extension_data). É a
-// leitura ÚNICA por série do scan; o casamento em memória vem depois, sem SQL.
-func (r *scanRun) carregarIndex(ctx context.Context, serieID string) *episodeIndex {
+// leitura ÚNICA por série do scan; o casamento em memória (internal/tvmatch) vem
+// depois, sem SQL.
+func (r *scanRun) carregarIndex(ctx context.Context, serieID string) *tvmatch.Index {
 	q := sqlcgen.New(r.m.db.Read)
-	idx := &episodeIndex{byOrdering: map[string]map[[2]int]string{}, byAbsolute: map[int]string{}}
+	idx := tvmatch.NovoIndex()
 
 	serie, err := q.ObterEntity(ctx, serieID)
 	if err != nil {
 		log.Printf("scanner: série %s ilegível ao montar índice: %v", serieID, err)
 		return idx
 	}
-	preencherOrdenacoes(idx, extrairTVNS(serie.ExtensionDataJson))
+	idx.PreencherOrdenacoes(extrairTVNS(serie.ExtensionDataJson))
 
 	temps, err := q.ListarRelacoesFilhas(ctx, serieID)
 	if err != nil {
@@ -292,25 +282,9 @@ func (r *scanRun) carregarIndex(ctx context.Context, serieID string) *episodeInd
 	return idx
 }
 
-// preencherOrdenacoes lê a ordenação default e a lista de season_types do
-// namespace core.tv@1 da série e as escreve no índice. Ausência de qualquer
-// campo é degradação silenciosa (índice sem ordenação explícita).
-func preencherOrdenacoes(idx *episodeIndex, ns map[string]any) {
-	if s, ok := ns["default_season_type"].(string); ok {
-		idx.defaultType = s
-	}
-	if tipos, ok := ns["season_types"].([]any); ok {
-		for _, o := range tipos {
-			if s, ok := o.(string); ok {
-				idx.orderings = append(idx.orderings, s)
-			}
-		}
-	}
-}
-
 // indexarTemporada percorre os episódios de UMA temporada e os insere no índice.
 // Temporada ilegível é pulada (degrada sem derrubar o resto do índice).
-func (r *scanRun) indexarTemporada(ctx context.Context, q *sqlcgen.Queries, idx *episodeIndex, tempID string) {
+func (r *scanRun) indexarTemporada(ctx context.Context, q *sqlcgen.Queries, idx *tvmatch.Index, tempID string) {
 	eps, err := q.ListarRelacoesFilhas(ctx, tempID)
 	if err != nil {
 		return
@@ -323,139 +297,14 @@ func (r *scanRun) indexarTemporada(ctx context.Context, q *sqlcgen.Queries, idx 
 	}
 }
 
-// indexarEpisodio lê o extension_data de um episódio e o insere no índice: cada
-// (ordenação, temporada, número) e o absoluto apontam para o SEU id (a âncora).
-func (r *scanRun) indexarEpisodio(ctx context.Context, q *sqlcgen.Queries, idx *episodeIndex, epID string) {
+// indexarEpisodio lê o extension_data de um episódio e delega a montagem em memória
+// (numbering + absolute_number) ao internal/tvmatch. Episódio ilegível é pulado.
+func (r *scanRun) indexarEpisodio(ctx context.Context, q *sqlcgen.Queries, idx *tvmatch.Index, epID string) {
 	ent, err := q.ObterEntity(ctx, epID)
 	if err != nil {
 		return
 	}
-	ns := extrairTVNS(ent.ExtensionDataJson)
-	if numbering, ok := ns["numbering"].(map[string]any); ok {
-		for ordem, v := range numbering {
-			par, ok := v.(map[string]any)
-			if !ok {
-				continue
-			}
-			season, sOK := comoInt(par["season"])
-			number, nOK := comoInt(par["number"])
-			if !sOK || !nOK {
-				continue
-			}
-			if idx.byOrdering[ordem] == nil {
-				idx.byOrdering[ordem] = map[[2]int]string{}
-			}
-			idx.byOrdering[ordem][[2]int{season, number}] = epID
-		}
-	}
-	if abs, ok := comoInt(ns["absolute_number"]); ok {
-		idx.byAbsolute[abs] = epID
-	}
-}
-
-// casarEpisodios casa o EpisodeInfo do arquivo aos ids de episódio, em ordem. Passos
-// (0034 §C.4): (1) ordenação default; (2) fallback às demais ordens; (3) absoluto
-// contra absolute_number. Range → lista de ids (ordinal 0,1,2…). Ambíguo (ordens
-// diferentes → episódios distintos) ou número sem match → (nil,false) = revisão.
-func casarEpisodios(idx *episodeIndex, ep naming.EpisodeInfo) ([]string, bool) {
-	if ep.IsAbsolute {
-		return casarAbsoluto(idx, ep.Absolute)
-	}
-
-	if idx.defaultType != "" {
-		if ids, ok := casarNaOrdem(idx, idx.defaultType, ep.Season, ep.Episodes); ok {
-			return ids, true
-		}
-	}
-
-	// Fallback: tenta CADA outra ordenação presente. Coleta as resoluções completas;
-	// se todas apontam para a MESMA sequência de episódios, não há ambiguidade real.
-	var achadas [][]string
-	for _, ord := range ordensFallback(idx) {
-		if ids, ok := casarNaOrdem(idx, ord, ep.Season, ep.Episodes); ok {
-			achadas = append(achadas, ids)
-		}
-	}
-	if len(achadas) == 0 {
-		return nil, false
-	}
-	primeira := achadas[0]
-	for _, a := range achadas[1:] {
-		if !mesmaSequencia(primeira, a) {
-			return nil, false // mesmo número casa episódios distintos em ordens diferentes
-		}
-	}
-	return primeira, true
-}
-
-// ordensFallback devolve as ordenações a tentar no fallback (todas menos a default),
-// em ordem estável. Usa a união de season_types com as chaves realmente presentes no
-// índice (uma série pode numerar numa ordem que não listou em season_types).
-func ordensFallback(idx *episodeIndex) []string {
-	visto := map[string]bool{idx.defaultType: true}
-	var out []string
-	add := func(o string) {
-		if !visto[o] {
-			visto[o] = true
-			out = append(out, o)
-		}
-	}
-	for _, o := range idx.orderings {
-		add(o)
-	}
-	presentes := make([]string, 0, len(idx.byOrdering))
-	for o := range idx.byOrdering {
-		presentes = append(presentes, o)
-	}
-	sort.Strings(presentes)
-	for _, o := range presentes {
-		add(o)
-	}
-	return out
-}
-
-// casarNaOrdem resolve TODOS os episódios de uma temporada numa dada ordenação;
-// (nil,false) se qualquer número faltar (nada de vínculo parcial nesta ordem).
-func casarNaOrdem(idx *episodeIndex, ordem string, season int, numeros []int) ([]string, bool) {
-	m, ok := idx.byOrdering[ordem]
-	if !ok {
-		return nil, false
-	}
-	out := make([]string, 0, len(numeros))
-	for _, n := range numeros {
-		id, ok := m[[2]int{season, n}]
-		if !ok {
-			return nil, false
-		}
-		out = append(out, id)
-	}
-	return out, true
-}
-
-// casarAbsoluto resolve TODOS os números absolutos; (nil,false) se algum faltar.
-func casarAbsoluto(idx *episodeIndex, absolutos []int) ([]string, bool) {
-	out := make([]string, 0, len(absolutos))
-	for _, n := range absolutos {
-		id, ok := idx.byAbsolute[n]
-		if !ok {
-			return nil, false
-		}
-		out = append(out, id)
-	}
-	return out, true
-}
-
-// mesmaSequencia diz se duas listas de ids são idênticas em conteúdo e ordem.
-func mesmaSequencia(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	idx.IndexarEpisodio(epID, extrairTVNS(ent.ExtensionDataJson))
 }
 
 // gravarArquivoSerie persiste o arquivo de série: o media_file aponta para a SÉRIE (a
@@ -541,9 +390,4 @@ func (r *scanRun) upsertMediaFileSerie(ctx context.Context, q *sqlcgen.Queries, 
 // server no 0039); mantido como nome local pela clareza dos chamadores do scanner.
 func extrairTVNS(raw sql.NullString) map[string]any {
 	return tvext.Namespace(raw, nsTV)
-}
-
-// comoInt coage um valor de JSON (float64) para int. (0,false) quando não é número.
-func comoInt(v any) (int, bool) {
-	return tvext.AsInt(v)
 }
