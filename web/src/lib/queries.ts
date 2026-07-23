@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import {
+  browseLibraryPath,
   getCollectionDetail,
   getEntity,
   getEntityEpisodes,
@@ -50,6 +51,16 @@ export const libraryQueryOptions = queryOptions({
   queryKey: ['library'],
   queryFn: listLibrary,
 })
+
+// Navegador de pastas (briefing 0071): a chave carrega o caminho navegado — cada
+// pasta visitada cacheia sob sua própria chave (voltar a uma pasta já vista na
+// sessão não refaz o fetch). Usado pelo `PathBrowser`.
+export function libraryBrowseQueryOptions(path: string) {
+  return queryOptions({
+    queryKey: ['library', 'browse', path],
+    queryFn: () => browseLibraryPath(path),
+  })
+}
 
 // `lang` entra na queryKey: trocar o idioma de leitura é cache-miss = re-busca
 // por `?lang=`, sem recarregar a página. `lang` omitido usa `null` na chave

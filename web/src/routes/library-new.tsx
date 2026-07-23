@@ -1,17 +1,25 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { FolderPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { PathBrowser } from '@/components/path-browser'
+import { LibraryFormHeader } from '@/components/library-form-header'
 import { ApiError, createLibrary, type CreateSource } from '@/lib/api'
 
-// Formulário de adição de datasource: caminho + tipo (Filmes/Séries). Erro de path
-// inválido vindo da API aparece INLINE (a `message` pt-BR do envelope). Ao criar
-// com sucesso, invalida a lista de datasources e limpa o caminho. O seletor define
-// tanto `type` (movie/tv, contrato legado) quanto `content_type` (movie/series,
-// 0034) — este último liga o fluxo de scan de séries (arquivo→episódio).
-export function DatasourceForm() {
+// Rota `/library/new` (briefing 0071): substitui o antigo `DatasourceForm`
+// sempre-visível no topo da lista por uma página própria — dá o espaço de tela
+// que o navegador de pastas precisa (não cabia espremido numa linha de lista).
+// O campo de caminho continua editável em paralelo ao `PathBrowser` (o navegador
+// é um atalho visual, não o único jeito de preencher o caminho). Sucesso navega
+// de volta para `/library`; erro (`ApiError`, ex. 422 path inválido/duplicado)
+// aparece inline, logo abaixo do campo — naturalmente perto dele nesta página
+// (o achado #7 da auditoria, erro longe do campo na lista espremida, some de
+// graça aqui).
+export function LibraryNewScreen() {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [path, setPath] = useState('')
   const [type, setType] = useState<CreateSource['type']>('movie')
@@ -19,8 +27,8 @@ export function DatasourceForm() {
   const mutation = useMutation({
     mutationFn: (body: CreateSource) => createLibrary(body),
     onSuccess: () => {
-      setPath('')
       queryClient.invalidateQueries({ queryKey: ['library'] })
+      navigate({ to: '/library' })
     },
   })
 
@@ -44,12 +52,11 @@ export function DatasourceForm() {
         : null
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="flex flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10"
-    >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-        <label className="flex flex-1 flex-col gap-1 text-sm">
+    <main className="mx-auto max-w-2xl px-4 py-6">
+      <LibraryFormHeader titulo="Adicionar datasource" />
+
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">Caminho</span>
           <Input
             value={path}
@@ -59,28 +66,34 @@ export function DatasourceForm() {
             aria-invalid={mensagemErro !== null || undefined}
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm">
+
+        <PathBrowser value={path} onChange={setPath} />
+
+        <label className="flex max-w-40 flex-col gap-1 text-sm">
           <span className="text-muted-foreground">Tipo</span>
           <Select
             value={type}
             onChange={(e) => setType(e.target.value as CreateSource['type'])}
             aria-label="Tipo do datasource"
-            className="w-full sm:w-36"
           >
             <option value="movie">Filmes</option>
             <option value="tv">Séries</option>
           </Select>
         </label>
-        <Button type="submit" disabled={mutation.isPending}>
-          <FolderPlus aria-hidden />
-          {mutation.isPending ? 'Adicionando…' : 'Adicionar'}
-        </Button>
-      </div>
-      {mensagemErro ? (
-        <p role="alert" className="text-sm font-medium text-destructive">
-          {mensagemErro}
-        </p>
-      ) : null}
-    </form>
+
+        {mensagemErro ? (
+          <p role="alert" className="text-sm font-medium text-destructive">
+            {mensagemErro}
+          </p>
+        ) : null}
+
+        <div>
+          <Button type="submit" disabled={mutation.isPending}>
+            <FolderPlus aria-hidden />
+            {mutation.isPending ? 'Adicionando…' : 'Adicionar datasource'}
+          </Button>
+        </div>
+      </form>
+    </main>
   )
 }

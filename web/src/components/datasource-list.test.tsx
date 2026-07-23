@@ -5,6 +5,15 @@ import { DatasourceList } from '@/components/datasource-list'
 import type { ScanStatus, Source } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 
+// Briefing 0071: a criação e a edição/remoção de path migraram para rotas
+// dedicadas (`/library/new`, `/library/$id/edit` — cobertas em
+// `library-new.test.tsx`/`library-edit.test.tsx`). Esta lista só cobre o que
+// continua aqui: estado vazio, path+badge+progresso, "Escanear", o switch de
+// watch e os links "Adicionar datasource"/"Editar".
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/link-mock')).LinkMock,
+}))
+
 function okJson<T>(body: T, status = 200) {
   return { ok: true, status, json: async () => body } as Response
 }
@@ -23,9 +32,6 @@ function fetchRouter(sources: Source[], status: ScanStatus) {
     if (u.endsWith('/scan') && method === 'POST') {
       return okJson({ job_id: 'j', status: 'accepted' }, 202)
     }
-    if (method === 'DELETE') {
-      return { ok: true, status: 204 } as Response
-    }
     if (u.startsWith('/api/v1/library/') && method === 'PATCH') {
       const source = sources.find((s) => u === `/api/v1/library/${s.id}`)
       const body = JSON.parse(String(init?.body ?? '{}')) as {
@@ -43,6 +49,20 @@ function fetchRouter(sources: Source[], status: ScanStatus) {
 
 const idle: ScanStatus = { running: false, files_seen: 0, files_total: 0 }
 
+// Fixture da fonte — a maioria dos testes só varia id/path/type/watch_enabled.
+function sourceFixture(over: Partial<Source> = {}): Source {
+  return {
+    id: '1',
+    path: '/mnt/filmes',
+    type: 'movie',
+    content_type: 'movie',
+    state: 'online',
+    last_scan: null,
+    watch_enabled: false,
+    ...over,
+  }
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
@@ -58,16 +78,18 @@ describe('DatasourceList', () => {
     )
   })
 
+  it('mostra o link "Adicionar datasource" apontando para /library/new', async () => {
+    vi.stubGlobal('fetch', fetchRouter([], idle))
+    renderWithClient(<DatasourceList />)
+
+    const link = await screen.findByRole('link', {
+      name: /Adicionar datasource/,
+    })
+    expect(link).toHaveAttribute('href', '/library/new')
+  })
+
   it('lista o datasource com estado e progresso de scan em andamento', async () => {
-    const source: Source = {
-      id: '1',
-      path: '/mnt/filmes',
-      type: 'movie',
-      content_type: 'movie',
-      state: 'online',
-      last_scan: null,
-      watch_enabled: false,
-    }
+    const source = sourceFixture()
     vi.stubGlobal(
       'fetch',
       fetchRouter([source], {
@@ -89,17 +111,23 @@ describe('DatasourceList', () => {
     )
   })
 
+  it('o link "Editar" de cada linha aponta para /library/$id/edit', async () => {
+    const source = sourceFixture({ id: '42' })
+    vi.stubGlobal('fetch', fetchRouter([source], idle))
+    renderWithClient(<DatasourceList />)
+
+    const link = await screen.findByRole('link', { name: /Editar/ })
+    expect(link).toHaveAttribute('href', '/library/42/edit')
+  })
+
   it('dispara o scan ao clicar em Escanear', async () => {
     const user = userEvent.setup()
-    const source: Source = {
+    const source = sourceFixture({
       id: '7',
       path: '/tv',
       type: 'tv',
       content_type: 'series',
-      state: 'online',
-      last_scan: null,
-      watch_enabled: false,
-    }
+    })
     const fetchMock = fetchRouter([source], idle)
     vi.stubGlobal('fetch', fetchMock)
     renderWithClient(<DatasourceList />)
@@ -120,15 +148,7 @@ describe('DatasourceList', () => {
 
   it('liga o watch de filesystem via PATCH ao alternar o switch', async () => {
     const user = userEvent.setup()
-    const source: Source = {
-      id: '9',
-      path: '/mnt/filmes',
-      type: 'movie',
-      content_type: 'movie',
-      state: 'online',
-      last_scan: null,
-      watch_enabled: false,
-    }
+    const source = sourceFixture({ id: '9' })
     const fetchMock = fetchRouter([source], idle)
     vi.stubGlobal('fetch', fetchMock)
     renderWithClient(<DatasourceList />)
@@ -157,149 +177,19 @@ describe('DatasourceList', () => {
     await waitFor(() => expect(toggle).toBeChecked())
   })
 
-  it('edita o caminho via PATCH ao salvar o formulário inline (briefing 0070)', async () => {
-    const user = userEvent.setup()
-    const source: Source = {
-      id: '11',
-      path: '/mnt/antigo',
-      type: 'movie',
-      content_type: 'movie',
-      state: 'offline',
-      last_scan: null,
-      watch_enabled: false,
-    }
-    const fetchMock = fetchRouter([source], idle)
-    vi.stubGlobal('fetch', fetchMock)
+  it('não tem mais formulário fixo no topo nem botão de remoção direto na lista', async () => {
+    const source = sourceFixture()
+    vi.stubGlobal('fetch', fetchRouter([source], idle))
     renderWithClient(<DatasourceList />)
 
     await waitFor(() =>
-      expect(screen.getByText('/mnt/antigo')).toBeInTheDocument(),
-    )
-    await user.click(screen.getByRole('button', { name: 'Editar caminho' }))
-
-    const input = screen.getByLabelText('Novo caminho do datasource')
-    expect(input).toHaveValue('/mnt/antigo')
-    await user.clear(input)
-    await user.type(input, '/mnt/novo')
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    await waitFor(() =>
-      expect(
-        fetchMock.mock.calls.some(([u, init]) => {
-          const i = init as RequestInit | undefined
-          return (
-            String(u) === '/api/v1/library/11' &&
-            i?.method === 'PATCH' &&
-            JSON.parse(String(i.body)).path === '/mnt/novo'
-          )
-        }),
-      ).toBe(true),
-    )
-    // Sucesso: volta a mostrar o path (agora atualizado) sem o formulário.
-    await waitFor(() =>
-      expect(screen.getByText('/mnt/novo')).toBeInTheDocument(),
+      expect(screen.getByText('/mnt/filmes')).toBeInTheDocument(),
     )
     expect(
-      screen.queryByLabelText('Novo caminho do datasource'),
-    ).not.toBeInTheDocument()
-  })
-
-  it('mostra o erro inline ao editar caminho para um path inválido', async () => {
-    const user = userEvent.setup()
-    const source: Source = {
-      id: '12',
-      path: '/mnt/atual',
-      type: 'movie',
-      content_type: 'movie',
-      state: 'online',
-      last_scan: null,
-      watch_enabled: false,
-    }
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      const u = String(url)
-      const method = init?.method ?? 'GET'
-      if (u === '/api/v1/library' && method === 'GET') {
-        return okJson({ items: [source] })
-      }
-      if (u.endsWith('/scan') && method === 'GET') {
-        return okJson(idle)
-      }
-      if (u === `/api/v1/library/${source.id}` && method === 'PATCH') {
-        return {
-          ok: false,
-          status: 422,
-          json: async () => ({
-            error: {
-              code: 'invalid_path',
-              message: 'o caminho informado não existe',
-            },
-          }),
-        } as Response
-      }
-      throw new Error(`rota não mockada: ${method} ${u}`)
-    })
-    vi.stubGlobal('fetch', fetchMock)
-    renderWithClient(<DatasourceList />)
-
-    await waitFor(() =>
-      expect(screen.getByText('/mnt/atual')).toBeInTheDocument(),
-    )
-    await user.click(screen.getByRole('button', { name: 'Editar caminho' }))
-    await user.clear(screen.getByLabelText('Novo caminho do datasource'))
-    await user.type(
-      screen.getByLabelText('Novo caminho do datasource'),
-      '/nao/existe',
-    )
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    await waitFor(() =>
-      expect(
-        screen.getByText('o caminho informado não existe'),
-      ).toBeInTheDocument(),
-    )
-    expect(screen.getByRole('alert')).toBeInTheDocument()
-    // Erro fica inline: o formulário de edição permanece aberto.
-    expect(
-      screen.getByLabelText('Novo caminho do datasource'),
-    ).toBeInTheDocument()
-  })
-
-  it('cancela a edição de caminho sem chamar a API', async () => {
-    const user = userEvent.setup()
-    const source: Source = {
-      id: '13',
-      path: '/mnt/original',
-      type: 'movie',
-      content_type: 'movie',
-      state: 'online',
-      last_scan: null,
-      watch_enabled: false,
-    }
-    const fetchMock = fetchRouter([source], idle)
-    vi.stubGlobal('fetch', fetchMock)
-    renderWithClient(<DatasourceList />)
-
-    await waitFor(() =>
-      expect(screen.getByText('/mnt/original')).toBeInTheDocument(),
-    )
-    await user.click(screen.getByRole('button', { name: 'Editar caminho' }))
-    await user.type(
-      screen.getByLabelText('Novo caminho do datasource'),
-      '-mudanca',
-    )
-    await user.click(
-      screen.getByRole('button', { name: 'Cancelar edição do caminho' }),
-    )
-
-    expect(
-      screen.queryByLabelText('Novo caminho do datasource'),
+      screen.queryByLabelText('Caminho do datasource'),
     ).not.toBeInTheDocument()
     expect(
-      fetchMock.mock.calls.some(
-        ([u, init]) =>
-          String(u) === '/api/v1/library/13' &&
-          (init as RequestInit | undefined)?.method === 'PATCH',
-      ),
-    ).toBe(false)
+      screen.queryByRole('button', { name: 'Remover datasource' }),
+    ).not.toBeInTheDocument()
   })
 })

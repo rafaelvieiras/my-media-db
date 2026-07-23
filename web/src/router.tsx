@@ -10,6 +10,8 @@ import { AppHeader } from '@/components/app-header'
 import { LanguageProvider } from '@/lib/language-context'
 import { LibraryItemsScreen } from '@/routes/index'
 import { LibraryScreen } from '@/routes/library'
+import { LibraryNewScreen } from '@/routes/library-new'
+import { LibraryEditScreen } from '@/routes/library-edit'
 import { SearchScreen } from '@/routes/search'
 import { ReviewScreen } from '@/routes/review'
 import { OrphansScreen } from '@/routes/orphans'
@@ -53,6 +55,21 @@ const libraryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library',
   component: LibraryScreen,
+})
+
+// Rotas dedicadas de datasource (briefing 0071): criar caminho/tipo e reapontar
+// caminho/remover saem do formulário fixo + edição inline da lista para páginas
+// próprias — o mesmo padrão de `entityEditRoute`/`itemNewRoute` abaixo.
+const libraryNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library/new',
+  component: LibraryNewScreen,
+})
+
+const libraryEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library/$id/edit',
+  component: LibraryEditScreen,
 })
 
 const searchRoute = createRoute({
@@ -156,6 +173,8 @@ const healthRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   libraryRoute,
+  libraryNewRoute,
+  libraryEditRoute,
   searchRoute,
   reviewRoute,
   orphansRoute,

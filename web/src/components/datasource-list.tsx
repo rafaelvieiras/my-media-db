@@ -1,29 +1,32 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, RefreshCw, Trash2, X } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { FolderPlus, Pencil, RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import {
-  deleteLibrary,
-  patchLibrary,
-  startScan,
-  type Source,
-  ApiError,
-} from '@/lib/api'
+import { patchLibrary, startScan, type Source, ApiError } from '@/lib/api'
 import { libraryQueryOptions, scanStatusQueryOptions } from '@/lib/queries'
-import { DatasourceForm } from '@/components/datasource-form'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
 
-// Tela de datasources: formulário de adição + lista com estado (online/offline),
-// disparo de scan com progresso por polling e remoção.
+// Tela de datasources (briefing 0071): a criação e a edição/remoção de caminho
+// saíram para rotas dedicadas (`/library/new`, `/library/$id/edit`) — esta lista
+// só mostra path + estado, com as ações transientes/binárias de baixo risco que
+// continuam inline: "Escanear" (+ progresso) e o switch de observar mudanças.
 export function DatasourceList() {
   const { data, isPending, isError, error } = useQuery(libraryQueryOptions)
 
   return (
-    <div className="flex flex-col gap-6">
-      <DatasourceForm />
+    <div className="flex flex-col gap-4">
+      <div>
+        <Button asChild size="sm">
+          <Link to="/library/new">
+            <FolderPlus aria-hidden />
+            Adicionar datasource
+          </Link>
+        </Button>
+      </div>
+
       {isPending ? (
         <LoadingState label="Carregando datasources…" />
       ) : isError ? (
@@ -34,7 +37,7 @@ export function DatasourceList() {
       ) : data.items.length === 0 ? (
         <EmptyState
           title="Nenhum datasource cadastrado"
-          description="Adicione um caminho acima para começar a escanear sua mídia."
+          description="Adicione um caminho para começar a escanear sua mídia."
         />
       ) : (
         <ul className="flex flex-col gap-2">
@@ -51,8 +54,6 @@ function DatasourceRow({ source }: { source: Source }) {
   const queryClient = useQueryClient()
   const { data: status } = useQuery(scanStatusQueryOptions(source.id))
   const rodavaAntes = useRef(false)
-  const [editandoPath, setEditandoPath] = useState(false)
-  const [novoPath, setNovoPath] = useState(source.path)
 
   // Ao concluir um scan (running: true → false), invalida catálogo e lista para
   // refletir os itens recém-detectados e o novo `last_scan`.
@@ -72,13 +73,6 @@ function DatasourceRow({ source }: { source: Source }) {
     },
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: () => deleteLibrary(source.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['library'] })
-    },
-  })
-
   // Liga/desliga o watcher de filesystem desta fonte (briefing 0064). Aplicado
   // a quente pelo servidor — sem confirmação, é reversível e de baixo risco.
   const watchMutation = useMutation({
@@ -89,106 +83,17 @@ function DatasourceRow({ source }: { source: Source }) {
     },
   })
 
-  // Reaponta o datasource para um novo caminho (briefing 0070): recasca em
-  // cascata media_file/asset/entity no backend, sem re-scan. Erro (409
-  // duplicata, 422 path inválido/não-diretório/ilegível, 400 vazio) aparece
-  // INLINE no formulário, igual ao DatasourceForm.
-  const pathMutation = useMutation({
-    mutationFn: (path: string) => patchLibrary(source.id, { path }),
-    onSuccess: () => {
-      setEditandoPath(false)
-      queryClient.invalidateQueries({ queryKey: ['library'] })
-    },
-  })
-
-  function onSubmitPath(e: FormEvent) {
-    e.preventDefault()
-    const limpo = novoPath.trim()
-    if (!limpo) {
-      return
-    }
-    pathMutation.mutate(limpo)
-  }
-
-  function abrirEdicaoPath() {
-    setNovoPath(source.path)
-    pathMutation.reset()
-    setEditandoPath(true)
-  }
-
-  function cancelarEdicaoPath() {
-    pathMutation.reset()
-    setEditandoPath(false)
-  }
-
-  const mensagemErroPath =
-    pathMutation.error instanceof ApiError
-      ? pathMutation.error.message
-      : pathMutation.isError
-        ? 'Não foi possível atualizar o caminho.'
-        : null
-
   const rodando = status?.running ?? false
 
   return (
     <li className="flex flex-col gap-2 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          {editandoPath ? (
-            <form
-              onSubmit={onSubmitPath}
-              className="flex flex-col gap-2 sm:flex-row sm:items-center"
-            >
-              <Input
-                value={novoPath}
-                onChange={(e) => setNovoPath(e.target.value)}
-                aria-label="Novo caminho do datasource"
-                aria-invalid={mensagemErroPath !== null || undefined}
-                autoFocus
-                className="min-w-0 flex-1"
-              />
-              <div className="flex shrink-0 gap-2">
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={pathMutation.isPending}
-                >
-                  {pathMutation.isPending ? 'Salvando…' : 'Salvar'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-sm"
-                  aria-label="Cancelar edição do caminho"
-                  disabled={pathMutation.isPending}
-                  onClick={cancelarEdicaoPath}
-                >
-                  <X aria-hidden />
-                </Button>
-              </div>
-            </form>
-          ) : (
-            <div className="flex min-w-0 items-center gap-1">
-              <span className="truncate font-medium">{source.path}</span>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Editar caminho"
-                onClick={abrirEdicaoPath}
-              >
-                <Pencil aria-hidden />
-              </Button>
-            </div>
-          )}
+          <span className="truncate font-medium">{source.path}</span>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>{source.type === 'tv' ? 'Séries' : 'Filmes'}</span>
             <EstadoBadge state={source.state} />
           </div>
-          {mensagemErroPath ? (
-            <p role="alert" className="text-xs font-medium text-destructive">
-              {mensagemErroPath}
-            </p>
-          ) : null}
         </div>
         <div className="flex shrink-0 gap-2">
           <Button
@@ -203,14 +108,11 @@ function DatasourceRow({ source }: { source: Source }) {
             />
             {rodando ? 'Escaneando…' : 'Escanear'}
           </Button>
-          <Button
-            variant="destructive"
-            size="icon-sm"
-            aria-label="Remover datasource"
-            disabled={deleteMutation.isPending}
-            onClick={() => deleteMutation.mutate()}
-          >
-            <Trash2 aria-hidden />
+          <Button asChild variant="outline" size="sm">
+            <Link to="/library/$id/edit" params={{ id: source.id }}>
+              <Pencil aria-hidden />
+              Editar
+            </Link>
           </Button>
         </div>
       </div>

@@ -928,6 +928,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/library/browse': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Lista subdiretórios de um caminho (navegador de pastas).
+     * @description Navegador de pastas do filesystem que o processo da API enxerga (briefing 0071) — usado pelo formulário de cadastro/edição de datasource para escolher um `path` clicando em vez de digitar de cor. `path` ausente ou vazio usa `/` como raiz. Lista SÓ subdiretórios (arquivos soltos são omitidos), ordenados por `name` alfabeticamente (case-insensitive); symlinks são seguidos (`os.Stat`, não `os.Lstat`) para decidir se contam como pasta, já que mounts via symlink são comuns. Cada entrada tenta ser aberta para listagem só para decidir `readable`; uma entrada sem permissão aparece com `readable:false` (o dono vê que a pasta existe, mas o front desabilita o clique nela) SEM abortar o restante da listagem. Cap de segurança de **2000 entradas**: se o diretório tiver mais, a resposta vem cortada (ordem alfabética) com `truncated:true`. `parent` é o diretório um nível acima do `path` pedido, ou `null` quando `path` já é a raiz do filesystem (`/`). Erros reaproveitam `mapLibraryError` (mesmos códigos de `createLibrary`/`patchLibrary`): `422 invalid_path` quando o próprio `path` pedido não existe ou não é diretório; `422 path_unreadable` quando o próprio `path` pedido não pode ser aberto para listagem (diferente de uma entrada FILHA ilegível, que só marca `readable:false` sem virar erro).
+     */
+    get: operations['browseLibraryPath']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/jobs': {
     parameters: {
       query?: never
@@ -1749,6 +1769,23 @@ export interface components {
     StartScan: {
       job_id: string
       status: string
+    }
+    /** @description Um subdiretório listado pelo navegador de pastas (briefing 0071). */
+    BrowseEntry: {
+      name: string
+      path: string
+      /** @description `false` quando esta entrada não pode ser aberta para listagem (permissão negada) — aparece na lista (o dono vê que a pasta existe) mas não é navegável; o front desabilita o clique nela. */
+      readable: boolean
+    }
+    /** @description Resposta de `GET /api/v1/library/browse` (briefing 0071): conteúdo de um diretório do filesystem que o processo da API enxerga, usado pelo navegador de pastas do formulário de cadastro/edição de datasource. */
+    BrowseResult: {
+      /** @description Caminho absoluto efetivamente listado (normalizado). */
+      path: string
+      /** @description Diretório um nível acima de `path`; `null` quando `path` já é a raiz do filesystem (`/`). */
+      parent: string | null
+      entries: components['schemas']['BrowseEntry'][]
+      /** @description `true` quando o diretório tem mais de 2000 subpastas e a lista veio cortada (ordem alfabética) nesse limite de segurança. */
+      truncated: boolean
     }
     /** @description Um job conhecido pelo sistema (briefing 0052): config dinâmica (habilitado/agendamento) + o espelho da última execução + `running` (estado em memória, efêmero). */
     Job: {
@@ -3525,6 +3562,30 @@ export interface operations {
       }
       404: components['responses']['Error']
       409: components['responses']['Error']
+    }
+  }
+  browseLibraryPath: {
+    parameters: {
+      query?: {
+        /** @description Caminho absoluto a listar; ausente ou vazio equivale a raiz `/`. */
+        path?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Listagem do diretório. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['BrowseResult']
+        }
+      }
+      422: components['responses']['Error']
     }
   }
   listJobs: {

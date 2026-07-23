@@ -454,6 +454,14 @@ func (s *Server) Handler() (http.Handler, error) {
 			v1.Route("/library", func(lib chi.Router) {
 				lib.Post("/", s.createLibrary)
 				lib.Get("/", s.listLibrary)
+
+				// Navegador de pastas (briefing 0071): rota ESTÁTICA, precisa
+				// vir declarada antes de conflitar em teoria com o wildcard
+				// "/{id}" abaixo — na prática o radix tree do chi já prefere
+				// a rota estática de qualquer forma, mas a ordem aqui deixa a
+				// intenção explícita e é coberta por teste de integração.
+				lib.Get("/browse", s.browseLibraryPath)
+
 				lib.Get("/{id}", s.getLibrary)
 				lib.Patch("/{id}", s.patchLibrary)
 				lib.Delete("/{id}", s.deleteLibrary)

@@ -52,6 +52,37 @@ type createRequest struct {
 	ContentType string `json:"content_type"`
 }
 
+// browseEntryDTO é a forma de serialização de uma entrada do navegador de
+// pastas (schema BrowseEntry do openapi.yaml, briefing 0071).
+type browseEntryDTO struct {
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Readable bool   `json:"readable"`
+}
+
+// browseResultDTO é a resposta de GET /api/v1/library/browse (schema
+// BrowseResult do openapi.yaml, briefing 0071).
+type browseResultDTO struct {
+	Path      string           `json:"path"`
+	Parent    *string          `json:"parent"`
+	Entries   []browseEntryDTO `json:"entries"`
+	Truncated bool             `json:"truncated"`
+}
+
+// toBrowseDTO converte o BrowseResult de domínio para a forma serializável.
+func toBrowseDTO(r library.BrowseResult) browseResultDTO {
+	entries := make([]browseEntryDTO, 0, len(r.Entries))
+	for _, e := range r.Entries {
+		entries = append(entries, browseEntryDTO{Name: e.Name, Path: e.Path, Readable: e.Readable})
+	}
+	return browseResultDTO{
+		Path:      r.Path,
+		Parent:    r.Parent,
+		Entries:   entries,
+		Truncated: r.Truncated,
+	}
+}
+
 // toDTO converte a Source de domínio para a forma serializável.
 func toDTO(s library.Source) sourceDTO {
 	return sourceDTO{
@@ -148,6 +179,25 @@ func (s *Server) listLibrary(w http.ResponseWriter, r *http.Request) {
 		items = append(items, toDTO(src))
 	}
 	writeJSON(w, http.StatusOK, listDTO{Items: items})
+}
+
+// browseLibraryPath trata GET /api/v1/library/browse (briefing 0071):
+// navegador de pastas do filesystem que o processo da API enxerga, usado
+// pelo formulário de cadastro/edição de datasource para escolher um path
+// clicando em vez de digitar de cor. path ausente/vazio usa "/" como raiz;
+// erros reaproveitam mapLibraryError (422 invalid_path/not_a_directory/
+// path_unreadable), mesmos códigos de createLibrary/patchLibrary.
+func (s *Server) browseLibraryPath(w http.ResponseWriter, r *http.Request) {
+	if s.libraryUnavailable(w) {
+		return
+	}
+	rawPath := r.URL.Query().Get("path")
+	result, err := s.library.Browse(r.Context(), rawPath)
+	if err != nil {
+		respondLibraryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toBrowseDTO(result))
 }
 
 // getLibrary trata GET /api/v1/library/{id}.

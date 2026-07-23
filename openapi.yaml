@@ -1602,6 +1602,48 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
 
+  /api/v1/library/browse:
+    get:
+      operationId: browseLibraryPath
+      summary: Lista subdiretórios de um caminho (navegador de pastas).
+      description: >
+        Navegador de pastas do filesystem que o processo da API enxerga
+        (briefing 0071) — usado pelo formulário de cadastro/edição de
+        datasource para escolher um `path` clicando em vez de digitar de
+        cor. `path` ausente ou vazio usa `/` como raiz. Lista SÓ
+        subdiretórios (arquivos soltos são omitidos), ordenados por `name`
+        alfabeticamente (case-insensitive); symlinks são seguidos (`os.Stat`,
+        não `os.Lstat`) para decidir se contam como pasta, já que mounts via
+        symlink são comuns. Cada entrada tenta ser aberta para listagem só
+        para decidir `readable`; uma entrada sem permissão aparece com
+        `readable:false` (o dono vê que a pasta existe, mas o front desabilita
+        o clique nela) SEM abortar o restante da listagem. Cap de segurança
+        de **2000 entradas**: se o diretório tiver mais, a resposta vem
+        cortada (ordem alfabética) com `truncated:true`. `parent` é o
+        diretório um nível acima do `path` pedido, ou `null` quando `path` já
+        é a raiz do filesystem (`/`). Erros reaproveitam `mapLibraryError`
+        (mesmos códigos de `createLibrary`/`patchLibrary`): `422
+        invalid_path` quando o próprio `path` pedido não existe ou não é
+        diretório; `422 path_unreadable` quando o próprio `path` pedido não
+        pode ser aberto para listagem (diferente de uma entrada FILHA
+        ilegível, que só marca `readable:false` sem virar erro).
+      tags: [library]
+      parameters:
+        - name: path
+          in: query
+          required: false
+          schema: { type: string }
+          description: >
+            Caminho absoluto a listar; ausente ou vazio equivale a raiz `/`.
+      responses:
+        "200":
+          description: Listagem do diretório.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BrowseResult" }
+        "422":
+          $ref: "#/components/responses/Error"
+
   /api/v1/jobs:
     get:
       operationId: listJobs
@@ -3181,6 +3223,44 @@ components:
       properties:
         job_id: { type: string }
         status: { type: string }
+    BrowseEntry:
+      type: object
+      description: >
+        Um subdiretório listado pelo navegador de pastas (briefing 0071).
+      required: [name, path, readable]
+      properties:
+        name: { type: string }
+        path: { type: string }
+        readable:
+          type: boolean
+          description: >
+            `false` quando esta entrada não pode ser aberta para listagem
+            (permissão negada) — aparece na lista (o dono vê que a pasta
+            existe) mas não é navegável; o front desabilita o clique nela.
+    BrowseResult:
+      type: object
+      description: >
+        Resposta de `GET /api/v1/library/browse` (briefing 0071): conteúdo de
+        um diretório do filesystem que o processo da API enxerga, usado pelo
+        navegador de pastas do formulário de cadastro/edição de datasource.
+      required: [path, parent, entries, truncated]
+      properties:
+        path:
+          type: string
+          description: Caminho absoluto efetivamente listado (normalizado).
+        parent:
+          type: [string, "null"]
+          description: >
+            Diretório um nível acima de `path`; `null` quando `path` já é a
+            raiz do filesystem (`/`).
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/BrowseEntry" }
+        truncated:
+          type: boolean
+          description: >
+            `true` quando o diretório tem mais de 2000 subpastas e a lista
+            veio cortada (ordem alfabética) nesse limite de segurança.
     Job:
       type: object
       description: >

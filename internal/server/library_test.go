@@ -527,6 +527,107 @@ func TestPatchLibraryPathEWatchEnabledJuntos(t *testing.T) {
 	}
 }
 
+// TestBrowseLibraryPathListaSubpastas cobre o 200 do navegador de pastas
+// (briefing 0071): lista só diretórios do path pedido, ordenados, com parent
+// não-nil (o tempdir não é raiz).
+func TestBrowseLibraryPathListaSubpastas(t *testing.T) {
+	h := setupLibraryServer(t)
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "arquivo.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	rec := do(t, h, http.MethodGet, "/api/v1/library/browse?path="+dir, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	var got browseResultDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decodificar browseResultDTO: %v (corpo=%s)", err, rec.Body.String())
+	}
+	if got.Path != dir {
+		t.Errorf("path = %q, quero %q", got.Path, dir)
+	}
+	if got.Parent == nil || *got.Parent != filepath.Dir(dir) {
+		t.Errorf("parent = %v, quero %q", got.Parent, filepath.Dir(dir))
+	}
+	if got.Truncated {
+		t.Error("truncated = true, quero false")
+	}
+	if len(got.Entries) != 1 || got.Entries[0].Name != "sub" {
+		t.Fatalf("entries = %+v, quero só [sub] (arquivo comum ignorado)", got.Entries)
+	}
+	if !got.Entries[0].Readable {
+		t.Error("readable = false, quero true")
+	}
+}
+
+// TestBrowseLibraryPathRaizDefault cobre path ausente/vazio -> raiz "/".
+func TestBrowseLibraryPathRaizDefault(t *testing.T) {
+	h := setupLibraryServer(t)
+
+	rec := do(t, h, http.MethodGet, "/api/v1/library/browse", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	var got browseResultDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decodificar browseResultDTO: %v (corpo=%s)", err, rec.Body.String())
+	}
+	if got.Path != "/" {
+		t.Errorf("path = %q, quero /", got.Path)
+	}
+	if got.Parent != nil {
+		t.Errorf("parent = %v, quero nil (raiz)", *got.Parent)
+	}
+}
+
+// TestBrowseLibraryPathInexistente cobre o 422 invalid_path.
+func TestBrowseLibraryPathInexistente(t *testing.T) {
+	h := setupLibraryServer(t)
+	inexistente := filepath.Join(t.TempDir(), "nao-existe")
+
+	rec := do(t, h, http.MethodGet, "/api/v1/library/browse?path="+inexistente, nil)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, quero 422 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "invalid_path")
+}
+
+// TestBrowseLibraryPathNaoDiretorio cobre o 422 not_a_directory.
+func TestBrowseLibraryPathNaoDiretorio(t *testing.T) {
+	h := setupLibraryServer(t)
+	arquivo := filepath.Join(t.TempDir(), "f.txt")
+	if err := os.WriteFile(arquivo, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	rec := do(t, h, http.MethodGet, "/api/v1/library/browse?path="+arquivo, nil)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, quero 422 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "not_a_directory")
+}
+
+// TestBrowseLibraryPathRotaEstaticaNaoColideComWildcardID garante que
+// "/browse" cai no handler dedicado, e não em getLibrary com id="browse"
+// (briefing 0071: a rota estática precisa vencer o wildcard "/{id}").
+func TestBrowseLibraryPathRotaEstaticaNaoColideComWildcardID(t *testing.T) {
+	h := setupLibraryServer(t)
+
+	rec := do(t, h, http.MethodGet, "/api/v1/library/browse", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (se caísse em getLibrary com id=browse, seria 404) (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	var got browseResultDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("corpo não é um browseResultDTO (indício de rota errada): %v (corpo=%s)", err, rec.Body.String())
+	}
+}
+
 func TestApiNotFoundShapeNovo(t *testing.T) {
 	h := setupLibraryServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/rota-inexistente", nil)

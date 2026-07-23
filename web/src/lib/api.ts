@@ -17,6 +17,9 @@ export type CreateSource = components['schemas']['CreateSource']
 export type PatchSource = components['schemas']['PatchSource']
 export type ScanStatus = components['schemas']['ScanStatus']
 export type StartScan = components['schemas']['StartScan']
+// Navegador de pastas (briefing 0071): resposta de `GET /library/browse`.
+export type BrowseResult = components['schemas']['BrowseResult']
+export type BrowseEntry = components['schemas']['BrowseEntry']
 export type EntityCard = components['schemas']['EntityCard']
 export type EntityList = components['schemas']['EntityList']
 export type OrderingsInfo = components['schemas']['OrderingsInfo']
@@ -198,6 +201,23 @@ export async function getScanStatus(id: string): Promise<ScanStatus> {
     `${base}/api/v1/library/${encodeURIComponent(id)}/scan`,
   )
   return lerJson<ScanStatus>(res)
+}
+
+// Lista o conteúdo (só diretórios) de um caminho absoluto do filesystem que o
+// processo da API enxerga (briefing 0071) — usado pelo navegador de pastas do
+// formulário de cadastro/edição de datasource (`PathBrowser`). `path`
+// ausente/vazio cai na raiz `/` (mesmo default do backend). Erros de path
+// inválido/não-diretório/ilegível chegam como `ApiError` (422
+// `invalid_path`/`path_unreadable`) — quem chama decide como exibir.
+export async function browseLibraryPath(path?: string): Promise<BrowseResult> {
+  const qs = new URLSearchParams()
+  if (path) {
+    qs.set('path', path)
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return lerJson<BrowseResult>(
+    await fetch(`${base}/api/v1/library/browse${suffix}`),
+  )
 }
 
 // ── Descritor de formulário editorial (0030) ─────────────────────────────────

@@ -59,17 +59,32 @@ test('adicionar e remover datasource', async ({ page }) => {
   await page.goto('/library')
   await expect(page.getByRole('heading', { level: 1, name: 'Bibliotecas' })).toBeVisible()
 
-  // Adiciona o datasource (tipo Filmes ja e o default do Select).
+  // Adicionar saiu do form inline: navega para a rota dedicada /library/new
+  // (briefing 0071), digita o caminho direto no campo (sem abrir o PathBrowser,
+  // que e so um atalho visual opcional) e escolhe o tipo (Filmes ja e o default).
+  await page.getByRole('link', { name: 'Adicionar datasource' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Adicionar datasource' })).toBeVisible()
   await page.getByLabel('Caminho do datasource').fill(dir)
-  await page.getByRole('button', { name: 'Adicionar' }).click()
+  await page.getByRole('button', { name: 'Adicionar datasource' }).click()
 
-  // A linha aparece com o path e o estado online; o botao de scan fica disponivel.
+  // Volta para /library; a linha aparece com o path e o estado online; o botao
+  // de scan fica disponivel.
+  await expect(page).toHaveURL('/library')
   await expect(page.getByText(dir)).toBeVisible()
   await expect(page.getByText('online')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Escanear' })).toBeEnabled()
 
-  // Remove: a lista volta ao vazio.
+  // Remove: navega pela linha ate /library/$id/edit, usa a "Zona de perigo" com
+  // confirmacao EXPLICITA em 2 passos (nao existe mais remocao direta).
+  await page.getByRole('link', { name: 'Editar' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Editar datasource' })).toBeVisible()
   await page.getByRole('button', { name: 'Remover datasource' }).click()
+  const dialogo = page.getByRole('alertdialog', { name: 'Confirmar remoção do datasource' })
+  await expect(dialogo).toBeVisible()
+  await dialogo.getByRole('button', { name: 'Confirmar remoção' }).click()
+
+  // Volta para /library; a lista fica vazia de novo.
+  await expect(page).toHaveURL('/library')
   await expect(page.getByText('Nenhum datasource cadastrado')).toBeVisible()
 })
 
@@ -81,8 +96,10 @@ test('scan de arquivo nao-identificado vira draft e a correcao o tira da revisao
   const dir = semeiaPasta(['2160p.mkv'])
 
   await page.goto('/library')
+  await page.getByRole('link', { name: 'Adicionar datasource' }).click()
   await page.getByLabel('Caminho do datasource').fill(dir)
-  await page.getByRole('button', { name: 'Adicionar' }).click()
+  await page.getByRole('button', { name: 'Adicionar datasource' }).click()
+  await expect(page).toHaveURL('/library')
   await expect(page.getByText(dir)).toBeVisible()
 
   // Dispara o scan pela UI e espera ele PRODUZIR o draft (fila de revisao != vazia).
@@ -115,8 +132,10 @@ test('arquivo catalogado que some vira orfa e pode ser purgado', async ({
   const dir = semeiaPasta(['The Matrix (1999).mkv'])
 
   await page.goto('/library')
+  await page.getByRole('link', { name: 'Adicionar datasource' }).click()
   await page.getByLabel('Caminho do datasource').fill(dir)
-  await page.getByRole('button', { name: 'Adicionar' }).click()
+  await page.getByRole('button', { name: 'Adicionar datasource' }).click()
+  await expect(page).toHaveURL('/library')
   await expect(page.getByText(dir)).toBeVisible()
 
   // 1o scan: espera a entity catalogada aparecer.
@@ -167,8 +186,10 @@ test('editar caminho de datasource cadastrado recasca sem novo scan', async ({
   const dirAntigo = semeiaPasta(['The Matrix (1999).mkv'])
 
   await page.goto('/library')
+  await page.getByRole('link', { name: 'Adicionar datasource' }).click()
   await page.getByLabel('Caminho do datasource').fill(dirAntigo)
-  await page.getByRole('button', { name: 'Adicionar' }).click()
+  await page.getByRole('button', { name: 'Adicionar datasource' }).click()
+  await expect(page).toHaveURL('/library')
   await expect(page.getByText(dirAntigo)).toBeVisible()
 
   // 1o scan: a entity catalogada aparece.
@@ -191,12 +212,16 @@ test('editar caminho de datasource cadastrado recasca sem novo scan', async ({
   renameSync(dirAntigo, dirNovo)
   pastas.splice(pastas.indexOf(dirAntigo), 1, dirNovo)
 
-  await page.getByRole('button', { name: 'Editar caminho' }).click()
-  await page.getByLabel('Novo caminho do datasource').fill(dirNovo)
+  // Editar saiu da lista (icone de lapis com form inline) para a rota dedicada
+  // /library/$id/edit (briefing 0071).
+  await page.getByRole('link', { name: 'Editar' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Editar datasource' })).toBeVisible()
+  await page.getByLabel('Caminho do datasource').fill(dirNovo)
   await page.getByRole('button', { name: 'Salvar' }).click()
 
-  // A linha passa a mostrar o caminho novo, online, sem precisar de scan --
-  // o vinculo com a entity ja catalogada continua intacto.
+  // Volta para /library; a linha passa a mostrar o caminho novo, online, sem
+  // precisar de scan -- o vinculo com a entity ja catalogada continua intacto.
+  await expect(page).toHaveURL('/library')
   await expect(page.getByText(dirNovo)).toBeVisible()
   await expect(page.getByText('online')).toBeVisible()
   await page.goto('/')
