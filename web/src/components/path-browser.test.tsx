@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PathBrowser } from '@/components/path-browser'
 import type { BrowseResult } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
@@ -189,6 +190,51 @@ describe('PathBrowser', () => {
     // Erra ao abrir no path quebrado, mas se recupera para a raiz sozinho —
     // não fica preso na mensagem de erro esperando o dono clicar em algo.
     await waitFor(() => expect(screen.getByText('filmes')).toBeInTheDocument())
+  })
+
+  it('path offline dispara UMA chamada ao browse, sem retry automático do TanStack Query (0078)', async () => {
+    // `renderWithClient` (helper padrão dos outros testes) já desliga retry
+    // no CLIENTE inteiro, o que mascararia justamente o bug deste briefing
+    // (retry:false precisa estar na queryOptions, não só no client de teste).
+    // Aqui usamos um QueryClient com o default REAL do TanStack Query (retry:
+    // 3) para provar que `libraryBrowseQueryOptions` desliga retry sozinha.
+    const fetchMock = vi.fn(async (url: string) => {
+      const u = new URL(String(url), 'http://localhost')
+      const path = u.searchParams.get('path') ?? '/'
+      if (path === '/media/quebrado') {
+        return {
+          ok: false,
+          status: 422,
+          json: async () => ({
+            error: {
+              code: 'invalid_path',
+              message: 'o caminho informado não existe',
+            },
+          }),
+        } as Response
+      }
+      return okJson(browseResult({ path: '/', parent: null }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const queryClient = new QueryClient()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PathBrowser value="/media/quebrado" onChange={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: 'Procurar pasta…' }))
+
+    // Recupera para a raiz sozinho (comportamento já coberto acima); aqui o
+    // que importa é QUANTAS vezes o path quebrado foi chamado.
+    await waitFor(() => expect(screen.getByText('filmes')).toBeInTheDocument())
+
+    const chamadasPathQuebrado = fetchMock.mock.calls.filter(([url]) => {
+      const u = new URL(String(url), 'http://localhost')
+      return u.searchParams.get('path') === '/media/quebrado'
+    })
+    expect(chamadasPathQuebrado).toHaveLength(1)
   })
 
   it('navegação manual não é desfeita pelo debounce de sincronização do texto digitado (regressão)', async () => {

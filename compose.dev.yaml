@@ -34,6 +34,11 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     working_dir: /app
+    # Uid/gid do dono do host (rafael, 1000:1000) — mesmo padrão de
+    # compose.prod.yaml (linha ~47). Sem isto o container roda como root e
+    # NFO/artes exportadas para a biblioteca montada do host nascem com dono
+    # root, ilegíveis sem sudo (o gap que este ajuste fecha, briefing 0078).
+    user: "1000:1000"
     # Credenciais opcionais (ex.: MYMEDIADB_TMDB_TOKEN da busca externa, briefing
     # 0014) vêm do .env — gitignored, seguro. Ausente/vazio: busca externa fica
     # desligada, sem erro. NUNCA versionar o .env nem logar o valor.
@@ -45,8 +50,10 @@ services:
       # Todo o repositório montado: o air observa os *.go e recompila.
       - .:/app
       # Caches do Go em volumes nomeados para rebuilds rápidos entre `up`s.
+      # go-build-cache aponta para GOCACHE=/go-cache (Dockerfile.dev), não
+      # /root/.cache/go-build — o uid 1000 não tem HOME=/root.
       - go-mod-cache:/go/pkg/mod
-      - go-build-cache:/root/.cache/go-build
+      - go-build-cache:/go-cache
 
 volumes:
   go-mod-cache:

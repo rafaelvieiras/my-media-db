@@ -18,6 +18,21 @@ RUN apt-get update \
 # está no PATH da imagem oficial do Go.
 RUN go install github.com/air-verse/air@latest
 
+# Uid/gid 1000:1000 em runtime: paridade com compose.prod.yaml (linha ~47) —
+# sem isso o serviço roda como root e NFO/artes exportadas para a biblioteca
+# montada do host nascem com dono root, ilegíveis sem sudo. apt-get/go install
+# acima já rodaram como root (build steps da imagem); só o CMD/runtime precisa
+# do uid não-root. GOCACHE aponta para um caminho fixo (não depende de $HOME,
+# que muda com o usuário) para o volume nomeado go-build-cache (ver
+# compose.dev.yaml) continuar gravável pelo uid 1000.
+ENV GOCACHE=/go-cache
+RUN mkdir -p /go-cache \
+    && groupadd -g 1000 mymediadb \
+    && useradd -u 1000 -g mymediadb -m -d /home/mymediadb mymediadb \
+    && chown -R mymediadb:mymediadb /go /go-cache
+
+USER mymediadb
+
 # O código é montado como volume no compose; o build real acontece via air em
 # runtime. Cache de módulos/build vive em volumes nomeados (ver compose.dev.yaml).
 CMD ["air", "-c", ".air.toml"]

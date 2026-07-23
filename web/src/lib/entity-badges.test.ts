@@ -4,6 +4,7 @@ import {
   ehDraft,
   estadoCompletude,
   precisaRevisao,
+  rotuloStatus,
   rotuloTipo,
   temCompletude,
   unidadeCompletude,
@@ -48,6 +49,13 @@ describe('precisaRevisao', () => {
     expect(precisaRevisao({ status: 'draft', match_confidence: 40 })).toBe(
       false,
     )
+  })
+})
+
+describe('rotuloStatus', () => {
+  it('traduz cataloged e ecoa valor desconhecido', () => {
+    expect(rotuloStatus('cataloged')).toBe('catalogado')
+    expect(rotuloStatus('outro')).toBe('outro')
   })
 })
 
