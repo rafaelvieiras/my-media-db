@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
+import { CorrectMatchResultCard } from '@/components/external-result-card'
 import {
   matchPreviewQueryOptions,
   reviewQueueQueryOptions,
@@ -39,6 +40,7 @@ import {
   type MatchPreviewTarget,
 } from '@/lib/api'
 import { ehDraft, rotuloTipo } from '@/lib/entity-badges'
+import { internalIdDe } from '@/lib/internal-id'
 import { useLanguage } from '@/lib/language-context'
 
 const DEBOUNCE_MS = 350
@@ -490,9 +492,12 @@ function CorrigirPainel({
   )
 }
 
-// Lista os resultados EXTERNOS da busca com um botão "Usar este" por item — a
-// escolha vira a identidade correta. Só os externos importam aqui (a identidade
-// que o dono informa vem de uma fonte, não do catálogo local).
+// Lista os resultados EXTERNOS da busca como o mesmo card rico de `/search`
+// (0074): pôster, sinopse truncada e selo "Na biblioteca" quando o resultado já é
+// uma entity interna — mas aqui o botão é "Usar este" (não Importar), e o selo
+// NÃO esconde a ação (é o caso de fundir duplicata, 0051). A escolha vira a
+// identidade correta. Só os externos importam aqui (a identidade que o dono
+// informa vem de uma fonte, não do catálogo local).
 function ResultadosCorrecao({
   query,
   isPending,
@@ -546,24 +551,15 @@ function ResultadosCorrecao({
     )
   }
   return (
-    <ul className="flex flex-col gap-2">
+    <ul className="flex flex-col gap-3">
       {externos.map((r) => (
-        <li
+        <CorrectMatchResultCard
           key={`${r.source}:${r.source_id}`}
-          className="flex items-center gap-3 rounded-lg bg-card p-2 ring-1 ring-foreground/10"
-        >
-          <div className="flex min-w-0 flex-1 items-baseline gap-2">
-            <span className="line-clamp-1 text-sm font-medium">{r.title}</span>
-            {r.year ? (
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {r.year}
-              </span>
-            ) : null}
-          </div>
-          <Button size="sm" disabled={escolhendo} onClick={() => onEscolher(r)}>
-            Usar este
-          </Button>
-        </li>
+          result={r}
+          internalId={internalIdDe(r)}
+          pendente={escolhendo}
+          onEscolher={onEscolher}
+        />
       ))}
     </ul>
   )

@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
-import { ExternalResultCard } from '@/components/external-result-card'
+import userEvent from '@testing-library/user-event'
+import {
+  CorrectMatchResultCard,
+  ExternalResultCard,
+} from '@/components/external-result-card'
 import type { ExternalResult } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 
@@ -51,5 +55,36 @@ describe('ExternalResultCard', () => {
     expect(link.getAttribute('href')).toBe('/entities/ent-9')
     expect(screen.getByText('Na biblioteca')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Importar/ })).toBeNull()
+  })
+})
+
+describe('CorrectMatchResultCard (0074)', () => {
+  it('mostra pôster/sinopse (mesmo miolo do ExternalResultCard) e chama onEscolher com o resultado', async () => {
+    const user = userEvent.setup()
+    const onEscolher = vi.fn()
+    renderWithClient(
+      <CorrectMatchResultCard result={externo} onEscolher={onEscolher} />,
+    )
+
+    expect(screen.getByText('Um hacker descobre a verdade.')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Usar este' }))
+    expect(onEscolher).toHaveBeenCalledWith(externo)
+  })
+
+  it('com internalId mostra o selo "Na biblioteca" JUNTO do "Usar este" (não esconde a ação, diferente do Importar)', () => {
+    // Caso de fundir duplicata (0051): o resultado já é entity interna, mas a
+    // correção ainda precisa poder escolhê-lo.
+    renderWithClient(
+      <CorrectMatchResultCard
+        result={externo}
+        internalId="ent-9"
+        onEscolher={() => {}}
+      />,
+    )
+
+    expect(screen.getByText('Na biblioteca')).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: 'Usar este' }),
+    ).toBeInTheDocument()
   })
 })
