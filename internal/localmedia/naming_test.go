@@ -193,6 +193,67 @@ func TestDiretorioDestinoSeasonUsaRaizDaSerie(t *testing.T) {
 	}
 }
 
+// TestDiretorioDestinoSerieMultiTemporadaPrefixoComum: série com 2+ pastas de
+// temporada IRMÃS -- o prefixo comum já resolve a raiz real, sem precisar do
+// fallback de subir nível (briefing 0081 §4, caso "multi-temporada").
+func TestDiretorioDestinoSerieMultiTemporadaPrefixoComum(t *testing.T) {
+	ent := Entity{ID: "serie1", Type: TipoSerie}
+	files := []MediaFile{
+		{EntityID: "serie1", Path: "/lib/Show/Season 01/S01E01.mkv", State: "present", CreatedAt: "2024-01-01T00:00:00.000Z"},
+		{EntityID: "serie1", Path: "/lib/Show/Season 01/S01E02.mkv", State: "present", CreatedAt: "2024-01-02T00:00:00.000Z"},
+		{EntityID: "serie1", Path: "/lib/Show/Season 02/S02E01.mkv", State: "present", CreatedAt: "2024-02-01T00:00:00.000Z"},
+	}
+	dir, ok := DiretorioDestino(ent, files, nil)
+	if !ok || dir != "/lib/Show" {
+		t.Fatalf("dir = %q ok=%v, quero /lib/Show true (raiz, nao Season 01/02)", dir, ok)
+	}
+}
+
+// TestDiretorioDestinoSerieTemporadaUnicaSobeNivel: série com UMA única
+// temporada (todo arquivo presente concentrado em "Season 01/") -- o prefixo
+// comum cai na própria pasta de temporada, exige o fallback de subir um
+// nível (briefing 0081 §4, caso "temporada única").
+func TestDiretorioDestinoSerieTemporadaUnicaSobeNivel(t *testing.T) {
+	ent := Entity{ID: "serie1", Type: TipoSerie}
+	files := []MediaFile{
+		{EntityID: "serie1", Path: "/lib/Show/Season 01/S01E01.mkv", State: "present", CreatedAt: "2024-01-01T00:00:00.000Z"},
+		{EntityID: "serie1", Path: "/lib/Show/Season 01/S01E02.mkv", State: "present", CreatedAt: "2024-01-02T00:00:00.000Z"},
+	}
+	dir, ok := DiretorioDestino(ent, files, nil)
+	if !ok || dir != "/lib/Show" {
+		t.Fatalf("dir = %q ok=%v, quero /lib/Show true (subiu de Season 01)", dir, ok)
+	}
+}
+
+// TestDiretorioDestinoSerieTemporadaUnicaFormatoCurto: variante "S01" (forma
+// curta, sem "Season") também precisa disparar o fallback.
+func TestDiretorioDestinoSerieTemporadaUnicaFormatoCurto(t *testing.T) {
+	ent := Entity{ID: "serie1", Type: TipoSerie}
+	files := []MediaFile{
+		{EntityID: "serie1", Path: "/lib/Show/S01/E01.mkv", State: "present", CreatedAt: "2024-01-01T00:00:00.000Z"},
+	}
+	dir, ok := DiretorioDestino(ent, files, nil)
+	if !ok || dir != "/lib/Show" {
+		t.Fatalf("dir = %q ok=%v, quero /lib/Show true (subiu de S01)", dir, ok)
+	}
+}
+
+// TestDiretorioDestinoEpisodioNaoSobeDeSeasonFolder: o fallback de "subir
+// nível" (regexPastaTemporada) é EXCLUSIVO de tv/season -- um episódio cuja
+// própria pasta se chama "Season 01" (convenção Kodi normal) mantém essa
+// pasta como destino, NUNCA sobe pra raiz da série (briefing 0081, nota do
+// contrato: DiretorioDestino de movie/episode não muda).
+func TestDiretorioDestinoEpisodioNaoSobeDeSeasonFolder(t *testing.T) {
+	ent := Entity{ID: "ep1", Type: TipoEpisodio}
+	files := []MediaFile{
+		{EntityID: "ep1", Path: "/lib/Show/Season 01/S01E01.mkv", State: "present", CreatedAt: "2024-01-01T00:00:00.000Z"},
+	}
+	dir, ok := DiretorioDestino(ent, files, nil)
+	if !ok || dir != "/lib/Show/Season 01" {
+		t.Fatalf("dir = %q ok=%v, quero /lib/Show/Season 01 true (episodio fica na propria pasta)", dir, ok)
+	}
+}
+
 // TestEhPastaExclusivaUmVideo: pasta com 1 único vídeo present -> exclusiva.
 func TestEhPastaExclusivaUmVideo(t *testing.T) {
 	files := []MediaFile{

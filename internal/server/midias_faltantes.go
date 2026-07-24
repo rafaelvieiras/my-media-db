@@ -36,14 +36,35 @@ import (
 // de obra.
 var kindsMidiasFaltantes = []string{kindPoster, kindFanart, kindBanner, kindLogo, kindDisc, kindThumb}
 
-// ListarEntitiesComMediaFilePresente devolve os ids de TODA entity que possui
-// ao menos um media_file 'present' -- o universo elegível do job
-// midias_faltantes (briefing 0064). Para série, media_file.entity_id aponta
-// pra SÉRIE (nunca season/episódio, ver internal/scanner/serie.go
-// gravarArquivoSerie) -- então season/episódio nunca aparecem aqui, o que já
-// casa com a guarda de writeEntityNfo (season não tem NFO próprio).
+// ListarEntitiesComMediaFilePresente devolve os ids de TODA entity elegível
+// para o job midias_faltantes (briefing 0064, estendido pelo 0081): movie/tv
+// com media_file 'present' direto (ListarEntityIDsComMediaFilePresente --
+// media_file.entity_id aponta pra SÉRIE, nunca season/episódio, ver
+// internal/scanner/serie.go gravarArquivoSerie), MAIS season com ao menos um
+// episódio descendente presente (ListarSeasonIDsComEpisodioPresente --
+// habilita o pôster de temporada) MAIS episódio com media_file presente via
+// a junção media_file_entity (ListarEpisodeIDsComMediaFilePresente --
+// habilita o NFO do episódio). Season aparecer aqui NÃO contradiz a guarda
+// de gravarNFOSeFaltante (season não tem NFO próprio) -- só passa a
+// materializar arte de nível de temporada.
 func (s *Server) ListarEntitiesComMediaFilePresente(ctx context.Context) ([]string, error) {
-	return s.leitura().ListarEntityIDsComMediaFilePresente(ctx)
+	diretos, err := s.leitura().ListarEntityIDsComMediaFilePresente(ctx)
+	if err != nil {
+		return nil, err
+	}
+	seasons, err := s.leitura().ListarSeasonIDsComEpisodioPresente(ctx)
+	if err != nil {
+		return nil, err
+	}
+	episodios, err := s.leitura().ListarEpisodeIDsComMediaFilePresente(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(diretos)+len(seasons)+len(episodios))
+	ids = append(ids, diretos...)
+	ids = append(ids, seasons...)
+	ids = append(ids, episodios...)
+	return ids, nil
 }
 
 // MaterializarMidiasFaltantes materializa, para UMA entity, a arte vencedora
@@ -129,11 +150,15 @@ func (s *Server) materializarKindVencedor(ctx context.Context, ent sqlcgen.Entit
 
 // gravarNFOSeFaltante gera o NFO da entity (mesma função gravarNFO do 0062)
 // quando ainda não existe (entity.nfo_path nulo). season nunca tem NFO
-// próprio (mesma guarda de writeEntityNfo) -- defensivo aqui, já que season
-// nunca aparece no universo de ListarEntitiesComMediaFilePresente de
-// qualquer forma. Erro só propaga em falha real (banco/disco);
-// "sem pasta de destino" (errSemDestino -- entity sem media_file present,
-// nunca deveria acontecer aqui, mas defensivo) degrada para (false, nil).
+// próprio (mesma guarda de writeEntityNfo) -- desde o briefing 0081, season
+// PASSA a aparecer no universo de ListarEntitiesComMediaFilePresente (para o
+// pôster de temporada), então esta guarda deixou de ser só defensiva: é ela
+// quem impede o job de tentar gravar um NFO de season. Episódio, por outro
+// lado, também passou a aparecer aqui e AGORA ganha NFO normalmente (kind já
+// suportado por nomeRaizNFO/raizEpisode, só nunca era alcançado antes). Erro
+// só propaga em falha real (banco/disco); "sem pasta de destino"
+// (errSemDestino -- entity sem media_file present, nunca deveria acontecer
+// aqui, mas defensivo) degrada para (false, nil).
 func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity) (bool, error) {
 	if ent.NfoPath.Valid && ent.NfoPath.String != "" {
 		return false, nil

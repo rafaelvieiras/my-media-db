@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
+	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
 // setupMidiasFaltantesServer sobe um Server (guardando a referência, não só
@@ -100,6 +101,138 @@ func TestMaterializarMidiasFaltantesBaixaPosterEGravaNFO(t *testing.T) {
 	}
 	if nfoGravado2 {
 		t.Error("2a chamada nfoGravado = true, quero false (nfo_path já preenchido)")
+	}
+}
+
+// semearArvoreSerie monta uma série com 2 temporadas/3 episódios, arquivos
+// PRESENTES em subpastas reais "Season 01"/"Season 02" (a estrutura normal de
+// qualquer biblioteca real -- briefing 0081): mf1/mf2 em Season 01, mf3 em
+// Season 02, todos com media_file.entity_id=SÉRIE (convenção real do
+// scanner) e vinculados aos episódios só pela junção media_file_entity
+// (kind=tv_episode). Devolve o diretório-raiz da biblioteca (libRoot).
+func semearArvoreSerie(t *testing.T, d *db.DB) (libRoot string) {
+	t.Helper()
+	semearEntity(t, d, "s1", "tv", "Serie")
+	semearEntity(t, d, "se1", "season", "Temporada 1")
+	semearEntity(t, d, "se2", "season", "Temporada 2")
+	semearEntity(t, d, "e1", "episode", "Episodio 1")
+	semearEntity(t, d, "e2", "episode", "Episodio 2")
+	semearEntity(t, d, "e3", "episode", "Episodio 3")
+	ligarFilhoOrdenado(t, d, "r-se1", "s1", "se1", "tv_season", 1)
+	ligarFilhoOrdenado(t, d, "r-se2", "s1", "se2", "tv_season", 2)
+	ligarFilhoOrdenado(t, d, "r-e1", "se1", "e1", "tv_episode", 1)
+	ligarFilhoOrdenado(t, d, "r-e2", "se1", "e2", "tv_episode", 2)
+	ligarFilhoOrdenado(t, d, "r-e3", "se2", "e3", "tv_episode", 1)
+
+	libRoot = t.TempDir()
+	season1 := filepath.Join(libRoot, "Season 01")
+	season2 := filepath.Join(libRoot, "Season 02")
+	semearFile(t, d, "mf1", "s1", filepath.Join(season1, "Show.S01E01.mkv"), "present", 0.9, "")
+	semearFile(t, d, "mf2", "s1", filepath.Join(season1, "Show.S01E02.mkv"), "present", 0.9, "")
+	semearFile(t, d, "mf3", "s1", filepath.Join(season2, "Show.S02E01.mkv"), "present", 0.9, "")
+	for mfID, epID := range map[string]string{"mf1": "e1", "mf2": "e2", "mf3": "e3"} {
+		if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+			MediaFileID: mfID, EntityID: epID, Kind: "tv_episode", Ordinal: 0,
+		}); err != nil {
+			t.Fatalf("CriarVinculoEntidade(%s->%s): %v", mfID, epID, err)
+		}
+	}
+	return libRoot
+}
+
+// TestListarEntitiesComMediaFilePresenteArvoreDeSerie cobre a causa 1 do
+// briefing 0081: temporada (episódio descendente presente) e episódio
+// (media_file via junção) passam a aparecer no universo elegível do job --
+// antes, só a série (media_file.entity_id direto) aparecia.
+func TestListarEntitiesComMediaFilePresenteArvoreDeSerie(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	semearArvoreSerie(t, d)
+
+	ids, err := srv.ListarEntitiesComMediaFilePresente(context.Background())
+	if err != nil {
+		t.Fatalf("ListarEntitiesComMediaFilePresente: %v", err)
+	}
+	achados := map[string]bool{}
+	for _, id := range ids {
+		achados[id] = true
+	}
+	for _, quero := range []string{"s1", "se1", "se2", "e1", "e2", "e3"} {
+		if !achados[quero] {
+			t.Errorf("id %q ausente de ListarEntitiesComMediaFilePresente (%v)", quero, ids)
+		}
+	}
+}
+
+// TestMaterializarMidiasFaltantesArvoreDeSerieGravaNaRaiz cobre a causa 2 do
+// briefing 0081 (raiz errada): numa série com subpastas por temporada, o
+// pôster da SÉRIE materializa na RAIZ (libRoot), NUNCA em "Season 01/"; o
+// pôster de TEMPORADA materializa como season01-poster.jpg TAMBÉM na raiz; o
+// NFO do EPISÓDIO é gravado (kind agora alcançado); episódio NÃO ganha still
+// automático; temporada NÃO ganha NFO próprio (guarda preservada).
+func TestMaterializarMidiasFaltantesArvoreDeSerieGravaNaRaiz(t *testing.T) {
+	srv, h, d := setupMidiasFaltantesServer(t)
+	libRoot := semearArvoreSerie(t, d)
+	ctx := context.Background()
+
+	// Pôster da SÉRIE: selecionado como asset (ainda só no cache).
+	postAsset(t, h, "s1", "poster", pngPayload(64))
+	artesSerie, nfoSerie, err := srv.MaterializarMidiasFaltantes(ctx, "s1")
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes(s1): %v", err)
+	}
+	if len(artesSerie) != 1 || artesSerie[0] != "poster" {
+		t.Errorf("artesSerie = %v, quero [poster]", artesSerie)
+	}
+	if !nfoSerie {
+		t.Error("nfoSerie = false, quero true (tvshow.nfo)")
+	}
+	posterSerie := filepath.Join(libRoot, "poster.png")
+	if _, err := os.Stat(posterSerie); err != nil {
+		t.Errorf("poster da serie nao esta na RAIZ (%s): %v", posterSerie, err)
+	}
+	if _, err := os.Stat(filepath.Join(libRoot, "Season 01", "poster.png")); err == nil {
+		t.Error("poster da serie foi gravado DENTRO de Season 01 -- bug da raiz errada")
+	}
+	if _, err := os.Stat(filepath.Join(libRoot, "tvshow.nfo")); err != nil {
+		t.Errorf("tvshow.nfo ausente na raiz: %v", err)
+	}
+
+	// Pôster de TEMPORADA (se1 = temporada 1): selecionado como asset da
+	// própria season.
+	postAsset(t, h, "se1", "poster", pngPayload(64))
+	artesSeason, nfoSeason, err := srv.MaterializarMidiasFaltantes(ctx, "se1")
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes(se1): %v", err)
+	}
+	if len(artesSeason) != 1 || artesSeason[0] != "poster" {
+		t.Errorf("artesSeason = %v, quero [poster]", artesSeason)
+	}
+	if nfoSeason {
+		t.Error("nfoSeason = true, quero false (temporada nao tem NFO proprio)")
+	}
+	seasonPoster := filepath.Join(libRoot, "season01-poster.png")
+	if _, err := os.Stat(seasonPoster); err != nil {
+		t.Errorf("season01-poster.png ausente na raiz (%s): %v", seasonPoster, err)
+	}
+	if _, err := os.Stat(filepath.Join(libRoot, "tvshow.nfo.season")); err == nil {
+		t.Error("nao deveria existir NFO de temporada")
+	}
+
+	// NFO do EPISÓDIO (e1): sem still, mas com NFO gravado na pasta real do
+	// episódio (Season 01, nao na raiz).
+	artesEp, nfoEp, err := srv.MaterializarMidiasFaltantes(ctx, "e1")
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes(e1): %v", err)
+	}
+	if len(artesEp) != 0 {
+		t.Errorf("artesEp = %v, quero [] (still de episodio continua lazy/manual, 0044)", artesEp)
+	}
+	if !nfoEp {
+		t.Error("nfoEp = false, quero true (episodio ganha NFO, causa 1 do 0081)")
+	}
+	nfoEpPath := filepath.Join(libRoot, "Season 01", "Show.S01E01.nfo")
+	if _, err := os.Stat(nfoEpPath); err != nil {
+		t.Errorf("nfo do episodio ausente em %s: %v", nfoEpPath, err)
 	}
 }
 
