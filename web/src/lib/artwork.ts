@@ -1,4 +1,4 @@
-import type { ArtworkItem, ArtworkResponse } from '@/lib/api'
+import type { Asset, ArtworkItem, ArtworkResponse } from '@/lib/api'
 
 // Taxonomia de kinds de arte (0048/0049), centralizada: rótulo pt-BR, enquadramento
 // (aspect) e ajuste (contain × cover) por kind. Fica fora dos componentes para a
@@ -145,4 +145,29 @@ export function selosDisponibilidade(
     }
   }
   return selos
+}
+
+// HeroAssets são a logo/banner/disco PREFERIDOS (0082): o hero imersivo só
+// EXIBE a escolha já feita pelo dono na galeria (0048/0049) — sem
+// auto-seleção nova aqui. `undefined` por kind quando não há preferida.
+export interface HeroAssets {
+  logo: Asset | undefined
+  banner: Asset | undefined
+  disc: Asset | undefined
+}
+
+// assetsPreferidosDoHero extrai, de UMA chamada a `GET .../assets` (a MESMA
+// lista consumida pela galeria via `listAssets`/`assetsQueryOptions`), a
+// primeira arte `preferred:true` de cada um dos três kinds do hero
+// (logo/banner/disc). Puro — sem I/O.
+export function assetsPreferidosDoHero(
+  assets: Asset[] | undefined,
+): HeroAssets {
+  const porKind = (kind: string): Asset | undefined =>
+    assets?.find((a) => a.kind === kind && a.preferred)
+  return {
+    logo: porKind('logo'),
+    banner: porKind('banner'),
+    disc: porKind('disc'),
+  }
 }

@@ -539,6 +539,17 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Post("/{id}/assets/{assetId}/materialize", s.materializeAsset)
 				ent.Post("/{id}/nfo", s.writeEntityNfo)
 
+				// Tema musical local (briefing 0082): fundação LOCAL-ONLY, sem
+				// provider — detecta um theme.{mp3,ogg,flac} colocado à mão pelo
+				// dono na MESMA pasta-raiz que materialize/nfo usam e serve o
+				// binário. 404 sem pasta de destino/arquivo; nunca materializa
+				// asset.
+				ent.Get("/{id}/theme", s.getEntityTheme)
+				// HEAD do mesmo handler: o front confere existência (checagem
+				// única, sem baixar o binário inteiro) antes de renderizar o
+				// player — http.ServeContent já respeita HEAD (sem corpo).
+				ent.Head("/{id}/theme", s.getEntityTheme)
+
 				// Enriquecimento de uma entity existente (briefing 0015): puxa o
 				// detalhe do provider e grava a base externa + pôster cacheado.
 				ent.Post("/{id}/enrich", s.enrichEntity)

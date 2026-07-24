@@ -55,7 +55,12 @@ test('detalhe externo: secoes sem dado nao renderizam (degradacao graciosa)', as
   ).toBeVisible()
   // As secoes ricas COM dado aparecem. Generos (briefing 0079) viraram badges
   // compactos perto do titulo, sem heading propria -- checa o badge em vez da heading.
-  await expect(page.getByRole('heading', { name: 'Sinopse' })).toBeVisible()
+  // Sinopse (briefing 0082) move para DENTRO do hero, tambem sem heading propria --
+  // checa o texto do paragrafo.
+  await expect(
+    page.getByText('Um hacker descobre a verdadeira natureza da sua realidade.'),
+  ).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Sinopse' })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Gêneros' })).toHaveCount(0)
   await expect(page.getByText('Ficcao cientifica')).toBeVisible()
   // As sem dado no fake (videos/similares/colecao/palavras-chave) nao emitem cabecalho.

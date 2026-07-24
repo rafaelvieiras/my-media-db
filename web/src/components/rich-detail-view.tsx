@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useRef, useState, type ReactNode } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
   Clock,
@@ -8,14 +8,20 @@ import {
   ImageOff,
   Library,
   LoaderCircle,
+  Music,
+  Pause,
   Play,
   Star,
+  X,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   ApiError,
+  assetFileSrc,
   importExternal,
+  themeSrc,
+  type Asset,
   type CreditCast,
   type CreditCompany,
   type CreditCrew,
@@ -24,25 +30,28 @@ import {
   type ExternalVideo,
   type ImportRequest,
 } from '@/lib/api'
+import { assetsPreferidosDoHero, selosDisponibilidade } from '@/lib/artwork'
 import { rotuloTipo } from '@/lib/entity-badges'
 import { internalIdDe } from '@/lib/internal-id'
 import { rotuloIdioma } from '@/lib/languages'
+import { assetsQueryOptions, entityThemeQueryOptions } from '@/lib/queries'
 import {
   rotuloSituacao,
   type RichDetail,
   type RotuloSituacao,
 } from '@/lib/rich-detail'
-import { selosDisponibilidade } from '@/lib/artwork'
 import { cn } from '@/lib/utils'
 
 // RichDetailView é a tela RICA COMPARTILHADA entre o detalhe do item EXTERNO (antes
 // de importar, 0022/0023) e o detalhe da ENTITY importada (catálogo). As duas telas
-// têm o MESMO padrão visual e de informação — hero (backdrop+pôster), slogan em
-// destaque, metadados, gêneros, palavras-chave, vídeos, coleção, similares e links —
-// e diferem só nos SLOTS: a externa traz o botão Importar; a entity traz os selos de
-// override, o editor e a galeria/arquivos. O backend serve o MESMO shape rico nos
-// dois DTOs (internal/richfields), então um único adapter normaliza cada um em
-// `RichDetail` e o componente é agnóstico à origem.
+// têm o MESMO padrão visual e de informação — hero IMERSIVO full-bleed (backdrop +
+// overlay + pôster + sinopse, briefing 0082), barra de ações acima do hero, gêneros,
+// palavras-chave, vídeos, coleção, similares e links — e diferem só nos SLOTS: a
+// externa traz o botão Importar; a entity traz os selos de override, o editor, a
+// galeria/arquivos e (via `entityId`) a logo/banner/disco preferidos e o player do
+// tema musical local. O backend serve o MESMO shape rico nos dois DTOs (internal/
+// richfields), então um único adapter normaliza cada um em `RichDetail` e o
+// componente é agnóstico à origem.
 
 // formatarDuracao converte minutos em `2h 35min` (`45min` quando < 1h).
 function formatarDuracao(min: number): string {
@@ -130,37 +139,35 @@ export function StillFrame({ src, alt }: { src: string | null; alt: string }) {
   )
 }
 
-// BackdropImg é o BANNER 16:9 largo do hero (fanart) com degradê para o `bg-card`.
-// Paridade com o `PosterImg` (0044): `loading="lazy"` + `onError` caem no placeholder
-// (ícone `ImageOff`) em vez de sumir silenciosamente se a URL falha. A `src` já vem
-// PRONTA (via `arteSrc` — proxy p/ crua, base p/ rota local). Só renderiza quando há
-// backdrop (o hero decide); por isso a `src` aqui é sempre uma string.
-function BackdropImg({ src }: { src: string }) {
+// HeroBackdropFundo é o FUNDO full-bleed do hero imersivo (0082) para os tipos
+// COM pôster (tudo, exceto episódio — que usa o StillFrame acima no lugar): uma
+// caixa com altura em torno de 40% da viewport (`min-h`, não mais o `aspect-[16/6]`
+// fixo do 0079), preenchida pela imagem (`object-cover`) ou, sem backdrop/em erro,
+// pelo placeholder (`ImageOff`, paridade com PosterImg/StillFrame). O degradê de
+// legibilidade é aplicado pelo CALLER (uma única camada por cima de qualquer
+// fundo — imagem, placeholder ou nenhum) para não duplicar o overlay por ramo.
+function HeroBackdropFundo({ src }: { src: string | null }) {
   const [falhou, setFalhou] = useState(false)
-  if (falhou) {
-    return (
-      <div className="relative aspect-[16/6] w-full sm:aspect-[16/5]">
+  const mostrarPlaceholder = !src || falhou
+  return (
+    <div className="relative h-full min-h-[32vh] w-full bg-muted sm:min-h-[40vh]">
+      {mostrarPlaceholder ? (
         <div
           data-testid="backdrop-placeholder"
-          className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground"
+          className="absolute inset-0 flex items-center justify-center text-muted-foreground"
         >
-          <ImageOff className="size-8" aria-hidden />
+          <ImageOff className="size-10" aria-hidden />
         </div>
-        <div className="absolute inset-0 bg-gradient-to-t from-card via-card/40 to-transparent" />
-      </div>
-    )
-  }
-  return (
-    <div className="relative aspect-[16/6] w-full sm:aspect-[16/5]">
-      <img
-        src={src}
-        alt=""
-        aria-hidden
-        loading="lazy"
-        onError={() => setFalhou(true)}
-        className="h-full w-full object-cover"
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-card via-card/40 to-transparent" />
+      ) : (
+        <img
+          src={src ?? undefined}
+          alt=""
+          aria-hidden
+          loading="lazy"
+          onError={() => setFalhou(true)}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      )}
     </div>
   )
 }
@@ -234,11 +241,32 @@ function ehYouTube(video: ExternalVideo): boolean {
   return video.site === 'YouTube' && !!video.key
 }
 
+// YouTubeEmbedFrame é o <iframe> do domínio `youtube-nocookie` (sem cookies de
+// rastreio) compartilhado pelo player CLICK-TO-PLAY da `VideosRail` (VideoCard) e
+// pelo botão "Assistir trailer" do hero (0082, `TrailerModal` abaixo) — um único
+// lugar que monta a URL de embed, nunca duplicado entre os dois usos.
+function YouTubeEmbedFrame({
+  videoKey,
+  title,
+}: {
+  videoKey: string
+  title: string
+}) {
+  return (
+    <iframe
+      src={`https://www.youtube-nocookie.com/embed/${videoKey}?autoplay=1`}
+      title={title}
+      allow="autoplay; encrypted-media; picture-in-picture"
+      allowFullScreen
+      className="absolute inset-0 h-full w-full border-0"
+    />
+  )
+}
+
 // VideoCard renderiza um vídeo. Para o YouTube, é um player CLICK-TO-PLAY: mostra o
-// thumbnail com botão de play e, ao clicar, troca por um <iframe> embutido do domínio
-// `youtube-nocookie` (sem cookies de rastreio até o play). Vídeos não-YouTube (raros
-// no TMDB) mantêm o link externo. Não pré-carregamos o iframe: evita N players e o
-// tráfego/rastreio do YouTube antes de o dono querer assistir.
+// thumbnail com botão de play e, ao clicar, troca pelo `YouTubeEmbedFrame`. Vídeos
+// não-YouTube (raros no TMDB) mantêm o link externo. Não pré-carregamos o iframe:
+// evita N players e o tráfego/rastreio do YouTube antes de o dono querer assistir.
 function VideoCard({ video }: { video: ExternalVideo }) {
   const [tocando, setTocando] = useState(false)
 
@@ -265,13 +293,7 @@ function VideoCard({ video }: { video: ExternalVideo }) {
     <figure className="flex flex-col gap-1.5">
       <div className="relative aspect-video overflow-hidden rounded-xl bg-muted ring-1 ring-foreground/10">
         {tocando ? (
-          <iframe
-            src={`https://www.youtube-nocookie.com/embed/${video.key}?autoplay=1`}
-            title={video.name}
-            allow="autoplay; encrypted-media; picture-in-picture"
-            allowFullScreen
-            className="absolute inset-0 h-full w-full border-0"
-          />
+          <YouTubeEmbedFrame videoKey={video.key} title={video.name} />
         ) : (
           <button
             type="button"
@@ -321,6 +343,72 @@ function VideosRail({ videos }: { videos: ExternalVideo[] }) {
         ))}
       </ul>
     </section>
+  )
+}
+
+// primeiroTrailer acha o primeiro vídeo REPRODUZÍVEL (`ehYouTube`) do tipo
+// "Trailer" (convenção TMDB) — só trailer de verdade, sem fallback para Teaser/
+// Clip (briefing 0082 §4.3). `null` quando não há nenhum.
+function primeiroTrailer(videos: ExternalVideo[]): ExternalVideo | null {
+  return videos.find((v) => v.type === 'Trailer' && ehYouTube(v)) ?? null
+}
+
+// TrailerModal é o overlay de tela cheia que abre ao clicar em "Assistir trailer"
+// na barra de ações do hero (0082): reusa o MESMO `YouTubeEmbedFrame` da
+// `VideosRail`/`VideoCard` (sem duplicar a lógica de embed), já em modo tocando (o
+// clique no botão já expressa a intenção — sem o passo extra de clicar no
+// thumbnail). Fecha ao clicar fora ou no X.
+function TrailerModal({
+  video,
+  onClose,
+}: {
+  video: ExternalVideo
+  onClose: () => void
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-label={`Trailer de ${video.name}`}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="relative aspect-video w-full max-w-3xl overflow-hidden rounded-xl bg-black shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <YouTubeEmbedFrame videoKey={video.key} title={video.name} />
+      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Fechar trailer"
+        className="absolute right-4 top-4 flex size-10 items-center justify-center rounded-full bg-background/90 text-foreground shadow-lg"
+      >
+        <X className="size-5" aria-hidden />
+      </button>
+    </div>
+  )
+}
+
+// TrailerButton é o botão "Assistir trailer" da barra de ações (0082 §4.3): some
+// quando não há trailer reproduzível (`primeiroTrailer` null) — sem fallback para
+// Teaser/Clip.
+function TrailerButton({ videos }: { videos: ExternalVideo[] }) {
+  const [aberto, setAberto] = useState(false)
+  const trailer = primeiroTrailer(videos)
+  if (!trailer) {
+    return null
+  }
+  return (
+    <>
+      <Button variant="outline" size="sm" onClick={() => setAberto(true)}>
+        <Play aria-hidden />
+        Assistir trailer
+      </Button>
+      {aberto ? (
+        <TrailerModal video={trailer} onClose={() => setAberto(false)} />
+      ) : null}
+    </>
   )
 }
 
@@ -565,6 +653,113 @@ function SelosArtes({
           {selo.label} {selo.count}
         </Badge>
       ))}
+    </div>
+  )
+}
+
+// ── Logo, banner, disco e tema musical (0082) ────────────────────────────────
+//
+// As três artes e o tema abaixo só aparecem na tela da ENTITY (via `entityId`,
+// passado só por `/entities/$id`) — o externo (antes de importar) não tem assets
+// próprios nem pasta local ainda (§4.2/§4.4 do briefing).
+
+// LogoHero substitui o TÍTULO EM TEXTO pela logo preferida (`kind=logo`, 0048),
+// sobreposta ao backdrop no estilo Jellyfin. Sem logo, o CALLER cai no `<h1>` de
+// sempre — mesmo comportamento de hoje, sem regressão.
+function LogoHero({ logo, alt }: { logo: Asset; alt: string }) {
+  return (
+    <img
+      src={assetFileSrc(logo.url)}
+      alt={alt}
+      loading="lazy"
+      className="max-h-16 w-auto max-w-full object-contain drop-shadow-lg sm:max-h-24"
+    />
+  )
+}
+
+// BannerFaixa mostra o banner preferido (`kind=banner`) como uma faixa larga e
+// baixa — só quando existe; sem gating por tipo além de "existe ou não".
+function BannerFaixa({ banner }: { banner: Asset }) {
+  return (
+    <img
+      src={assetFileSrc(banner.url)}
+      alt=""
+      aria-hidden
+      loading="lazy"
+      className="aspect-[1000/185] w-56 shrink-0 overflow-hidden rounded-md object-cover shadow-lg sm:w-72"
+    />
+  )
+}
+
+// DiscoGiratorio é o disco (`kind=disc`) decorativo perto do pôster, com rotação
+// contínua lenta em CSS puro (`animate-spin`, arbitrário para uma volta a cada 9s —
+// bem mais lenta que o spinner padrão) — `motion-reduce:animate-none` desliga a
+// animação para quem pediu `prefers-reduced-motion: reduce` (variante nativa do
+// Tailwind, sem JS extra). Só aparece com asset preferido do kind.
+function DiscoGiratorio({ disc }: { disc: Asset }) {
+  return (
+    <div
+      title="Disco"
+      className="absolute -bottom-3 -right-3 size-14 overflow-hidden rounded-full shadow-lg ring-2 ring-background sm:size-16"
+    >
+      <img
+        src={assetFileSrc(disc.url)}
+        alt=""
+        aria-hidden
+        loading="lazy"
+        className="h-full w-full animate-spin object-cover [animation-duration:9s] motion-reduce:animate-none"
+      />
+    </div>
+  )
+}
+
+// TemaMusicalPlayer é o player compacto do tema local (`theme.mp3`/`.ogg`/`.flac`,
+// briefing 0082 §4.4): a query (`entityThemeQueryOptions`, HEAD — sem baixar o
+// binário inteiro) confere a existência UMA vez por carga da tela; sem tema
+// (404/erro), o componente não renderiza nada — sem erro, sem espaço reservado.
+// Play/pause é SEMPRE uma ação do dono (nenhum navegador autoplay áudio com som, e
+// seria intrusivo mesmo se permitisse); o `loop` fica ligado no elemento o tempo
+// todo (só importa enquanto toca).
+function TemaMusicalPlayer({ entityId }: { entityId: string }) {
+  const { data: temTema } = useQuery(entityThemeQueryOptions(entityId))
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const [tocando, setTocando] = useState(false)
+
+  if (!temTema) {
+    return null
+  }
+
+  function alternar() {
+    const audio = audioRef.current
+    if (!audio) {
+      return
+    }
+    if (tocando) {
+      audio.pause()
+    } else {
+      void audio.play()
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={alternar}
+        aria-label={tocando ? 'Pausar tema musical' : 'Tocar tema musical'}
+      >
+        {tocando ? <Pause aria-hidden /> : <Music aria-hidden />}
+        {tocando ? 'Pausar tema' : 'Tocar tema'}
+      </Button>
+      <audio
+        ref={audioRef}
+        src={themeSrc(entityId)}
+        loop
+        onPlay={() => setTocando(true)}
+        onPause={() => setTocando(false)}
+      />
     </div>
   )
 }
@@ -934,78 +1129,113 @@ function ProdutorasBand({ companies }: { companies: CreditCompany[] }) {
   )
 }
 
-// ── Componente principal ─────────────────────────────────────────────────────
-
-export function RichDetailView({
-  detail,
-  source,
-  back,
-  titleBadges,
+// BarraAcoesHero é a barra de ações ACIMA do hero (0082 §4.1): os MESMOS botões de
+// hoje (`actions` — Importar no externo, `EntityActionButtons` na entity), agora
+// reposicionados para o TOPO da tela, mais o botão "Assistir trailer" (§4.3),
+// quando houver. Sem nenhum dos dois, a barra inteira some (sem faixa vazia).
+function BarraAcoesHero({
   actions,
+  videos,
+}: {
+  actions?: ReactNode
+  videos: ExternalVideo[]
+}) {
+  if (!actions && !primeiroTrailer(videos)) {
+    return null
+  }
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <TrailerButton videos={videos} />
+      {actions}
+    </div>
+  )
+}
+
+// HeroImersivo é o hero FULL-BLEED (0082): o fundo (backdrop/still) e a camada de
+// conteúdo (pôster + texto) ocupam a MESMA célula de um grid de uma linha só —
+// técnica robusta de "sobrepor sem `position: absolute`" que deixa a ALTURA da
+// linha ser o maior dos dois (o fundo tem uma altura MÍNIMA de ~40% da viewport;
+// o conteúdo cresce livremente além disso quando o texto é longo, sem cortar
+// nada — diferente de conteúdo `absolute`, que não empurra a altura do pai). A
+// largura bleeda até a borda da TELA (`w-screen` + margem negativa de 50vw), mas o
+// conteúdo interno volta a ficar centralizado no `max-w-4xl` de sempre. Um
+// degradê escurece o fundo por trás do texto (contraste AA em claro/escuro,
+// critério do 0079 mantido).
+function HeroImersivo({
+  detail,
+  situacao,
+  titleBadges,
   descriptionExtra,
   genresExtra,
   availableArtwork,
-  children,
+  logo,
+  banner,
+  disc,
+  entityId,
 }: {
   detail: RichDetail
-  // source da fonte (ex.: 'tmdb') para montar os links dos similares.
-  source: string
-  // Área de "voltar" (Link ou botão) — cada tela decide o destino.
-  back?: ReactNode
-  // Selos/ações ao lado do título (status, "editado", botão Editar) — entity.
+  situacao: RotuloSituacao | null
   titleBadges?: ReactNode
-  // Ação primária no hero (Importar) — externo.
-  actions?: ReactNode
-  // Anotações após a sinopse (selos de fallback/editado) — entity.
   descriptionExtra?: ReactNode
-  // Anotações após os gêneros — entity.
   genresExtra?: ReactNode
-  // Contagem de artes por kind (0049): a faixa de selos de disponibilidade no hero.
-  // Só a tela da ENTITY passa (lê `/artwork`); a do externo omite (sem a faixa).
   availableArtwork?: Record<string, number>
-  // Seções extras anexadas (editor de override, galeria, arquivos) — entity.
-  children?: ReactNode
+  logo?: Asset
+  banner?: Asset
+  disc?: Asset
+  entityId?: string
 }) {
-  // Selo de SITUAÇÃO da série (0045): só existe quando a fonte informou a situação
-  // (série enriquecida). Para filme/episódio o campo é ausente → `situacao` é null e
-  // o selo não aparece — sem gating por tipo, só por presença do dado.
-  const situacao = rotuloSituacao(detail.airingStatus)
   return (
-    <div className="flex flex-col gap-6">
-      {back}
-
-      {/* Hero: o backdrop é um BANNER no topo com degradê para o `bg-card`; o
-          conteúdo (pôster + texto) fica sobre o card SÓLIDO abaixo. Assim o texto
-          nunca compete com a arte — o contraste dos metadados é o do tema (AA), em
-          claro e escuro — e o backdrop segue cinematográfico. Sem backdrop, é só o
-          card com pôster + texto. */}
-      <div className="overflow-hidden rounded-2xl bg-card ring-1 ring-foreground/10">
-        {/* Episódio (0042): o STILL 16:9 é o herói do topo (via proxy, com placeholder),
-            no lugar do backdrop — e o pôster 2:3 some (o episódio não tem pôster). Os
-            demais tipos mantêm o backdrop cinematográfico + pôster 2:3 de sempre. */}
+    <div className="relative left-1/2 right-1/2 grid w-screen -mx-[50vw]">
+      {/* Fundo: Episódio (0042) usa o STILL 16:9 no lugar do backdrop (o pôster
+          some — episódio não tem); os demais tipos usam o backdrop, com altura
+          mínima de ~40vh (HeroBackdropFundo) mesmo sem imagem (placeholder).
+          `z-0`/`z-10`/`z-20` explícitos (em vez de confiar na ordem do DOM)
+          garantem a pilha fundo→degradê→conteúdo sem ambiguidade entre os
+          itens do grid sobrepostos. */}
+      <div className="relative z-0 col-start-1 row-start-1">
         {detail.type === 'episode' ? (
           <StillFrame src={detail.stillUrl} alt={`Still de ${detail.title}`} />
-        ) : detail.backdropUrl ? (
-          <BackdropImg src={detail.backdropUrl} />
-        ) : null}
-        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:p-6">
+        ) : (
+          <HeroBackdropFundo src={detail.backdropUrl} />
+        )}
+      </div>
+
+      {/* Overlay: degradê vertical (o texto mora na base) + horizontal em telas
+          largas (mais escuro à esquerda, no padrão Jellyfin/TMDB). O tom sólido
+          no fim do degradê é o `background` do tema — garante AA em claro e
+          escuro sem depender da imagem por trás. */}
+      <div className="relative z-10 col-start-1 row-start-1 bg-gradient-to-t from-background via-background/75 to-background/10" />
+      <div className="relative z-10 col-start-1 row-start-1 hidden bg-gradient-to-r from-background/90 via-background/25 to-transparent sm:block" />
+
+      {/* Conteúdo: re-centralizado no max-w-4xl de sempre, ancorado na base da
+          célula do grid (`items-end`) — cresce para cima sem cortar quando o
+          texto é mais alto que a altura mínima do fundo. */}
+      <div className="relative z-20 col-start-1 row-start-1 flex items-end">
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-end sm:gap-6 sm:py-8">
           {detail.type === 'episode' ? null : (
-            <div className="relative w-32 shrink-0 sm:w-40">
+            <div className="relative w-40 shrink-0 sm:w-56">
               <PosterImg
                 src={detail.posterUrl}
                 alt={`Pôster de ${detail.title}`}
               />
               <FaixaStatusPoster situacao={situacao} />
+              {disc ? <DiscoGiratorio disc={disc} /> : null}
             </div>
           )}
           <div className="flex min-w-0 flex-col gap-2">
-            {/* Linha do título: nome+ano+tipo compactos, no padrão TMDB — o resto dos
-                metadados (classificação/gêneros/nota/duração) fica logo abaixo, perto
-                do título, não espalhado em seções próprias com heading. */}
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-heading text-2xl font-semibold">
-                {detail.title}
-              </h1>
+            {banner ? <BannerFaixa banner={banner} /> : null}
+
+            {/* Linha do título: a LOGO (0082, quando preferida) substitui o texto
+                do título — sem ela, cai no `<h1>` de sempre (sem regressão). Ano
+                e tipo seguem ao lado, como antes. */}
+            <div className="flex flex-wrap items-end gap-2">
+              {logo ? (
+                <LogoHero logo={logo} alt={detail.title} />
+              ) : (
+                <h1 className="font-heading text-2xl font-semibold text-foreground sm:text-3xl">
+                  {detail.title}
+                </h1>
+              )}
               {detail.year ? (
                 <span className="text-lg text-muted-foreground">
                   {detail.year}
@@ -1020,12 +1250,8 @@ export function RichDetailView({
               </p>
             ) : null}
 
-            {/* Gêneros (0079): movidos para logo abaixo do título — texto/badges
-                compactos, sem heading "Gêneros" própria. Badge compacto (em vez de
-                texto corrido) porque reusa o mesmo componente/visual dos demais
-                selos do hero e evita ambiguidade quando um gênero tem espaço no nome
-                ("Ficção científica"); listas muito longas quebram linha (flex-wrap),
-                sem exigir a seção própria de antes. */}
+            {/* Gêneros (0079): logo abaixo do título — texto/badges compactos,
+                sem heading "Gêneros" própria. */}
             {detail.genres.length > 0 ? (
               <div className="flex flex-wrap items-center gap-1.5">
                 {detail.genres.map((g) => (
@@ -1054,11 +1280,9 @@ export function RichDetailView({
               ) : null}
             </div>
 
-            {/* Nota (0079): medalhão circular no lugar do ícone de estrela + número.
-                Prioriza a nota LOCAL do dono (ADR-0012, contorno âmbar); sem ela, cai
-                na nota da FONTE (contorno neutro) — mesmo fallback de antes. Com as
-                DUAS presentes, a nota da fonte segue exibida ao lado (texto compacto),
-                como já era. */}
+            {/* Nota (0079): medalhão circular. Prioriza a nota LOCAL do dono
+                (ADR-0012, contorno âmbar); sem ela, cai na nota da FONTE
+                (contorno neutro). Com as DUAS, a da fonte segue ao lado. */}
             {detail.localRating != null || detail.voteAverage ? (
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 {detail.localRating != null ? (
@@ -1084,19 +1308,100 @@ export function RichDetailView({
               </p>
             ) : null}
 
-            {actions ? <div className="pt-1">{actions}</div> : null}
+            {/* Sinopse (0082): move para DENTRO do hero — não é mais uma seção
+                separada abaixo do card, sem heading própria (parágrafo
+                proeminente sobre o overlay, no padrão Jellyfin/TMDB). */}
+            {detail.description ? (
+              <p className="max-w-3xl text-sm text-foreground/90 sm:text-base">
+                {detail.description}
+              </p>
+            ) : null}
+            {descriptionExtra}
+
+            {entityId ? <TemaMusicalPlayer entityId={entityId} /> : null}
+
             <SelosArtes available={availableArtwork} />
           </div>
         </div>
       </div>
+    </div>
+  )
+}
 
-      {detail.description ? (
-        <section className="flex flex-col gap-2">
-          <h2 className="font-heading text-lg font-medium">Sinopse</h2>
-          <p className="text-sm text-muted-foreground">{detail.description}</p>
-          {descriptionExtra}
-        </section>
-      ) : null}
+// ── Componente principal ─────────────────────────────────────────────────────
+
+export function RichDetailView({
+  detail,
+  source,
+  back,
+  titleBadges,
+  actions,
+  descriptionExtra,
+  genresExtra,
+  availableArtwork,
+  entityId,
+  children,
+}: {
+  detail: RichDetail
+  // source da fonte (ex.: 'tmdb') para montar os links dos similares.
+  source: string
+  // Área de "voltar" (Link ou botão) — cada tela decide o destino.
+  back?: ReactNode
+  // Selos ao lado do título (status, "editado") — entity.
+  titleBadges?: ReactNode
+  // Ações da barra ACIMA do hero (Importar no externo; EntityActionButtons na
+  // entity) — o trailer entra ao lado, calculado aqui (0082).
+  actions?: ReactNode
+  // Anotações após a sinopse (selos de fallback/editado) — entity.
+  descriptionExtra?: ReactNode
+  // Anotações após os gêneros — entity.
+  genresExtra?: ReactNode
+  // Contagem de artes por kind (0049): a faixa de selos de disponibilidade no hero.
+  // Só a tela da ENTITY passa (lê `/artwork`); a do externo omite (sem a faixa).
+  availableArtwork?: Record<string, number>
+  // Id INTERNO da entity (0082): habilita a logo/banner/disco preferidos (lê
+  // `GET .../assets`) e o player do tema musical local (`GET .../theme`) — só a
+  // tela da ENTITY passa; o externo (antes de importar) não tem assets/pasta
+  // local ainda, então omite (sem regressão, mesmo gating de `availableArtwork`).
+  entityId?: string
+  // Seções extras anexadas (editor de override, galeria, arquivos) — entity.
+  children?: ReactNode
+}) {
+  // Selo de SITUAÇÃO da série (0045): só existe quando a fonte informou a situação
+  // (série enriquecida). Para filme/episódio o campo é ausente → `situacao` é null e
+  // o selo não aparece — sem gating por tipo, só por presença do dado.
+  const situacao = rotuloSituacao(detail.airingStatus)
+
+  // Logo/banner/disco preferidos (0082 §4.2): a MESMA chamada a `GET .../assets`
+  // que a galeria (art-gallery.tsx) usa, aqui só para extrair os três kinds do
+  // hero. `enabled: !!entityId` mantém a tela do externo sem chamada alguma
+  // (sem assets próprios antes de importar).
+  const assetsQuery = useQuery({
+    ...assetsQueryOptions(entityId ?? ''),
+    enabled: !!entityId,
+  })
+  const heroAssets = assetsPreferidosDoHero(
+    entityId ? assetsQuery.data : undefined,
+  )
+
+  return (
+    <div className="flex flex-col gap-6">
+      {back}
+
+      <BarraAcoesHero actions={actions} videos={detail.videos} />
+
+      <HeroImersivo
+        detail={detail}
+        situacao={situacao}
+        titleBadges={titleBadges}
+        descriptionExtra={descriptionExtra}
+        genresExtra={genresExtra}
+        availableArtwork={availableArtwork}
+        logo={heroAssets.logo}
+        banner={heroAssets.banner}
+        disc={heroAssets.disc}
+        entityId={entityId}
+      />
 
       {detail.keywords.length > 0 ? (
         <section className="flex flex-col gap-2">

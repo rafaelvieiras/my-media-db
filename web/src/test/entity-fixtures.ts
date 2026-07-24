@@ -96,11 +96,11 @@ export function okFields() {
 }
 
 // respostaComum roteia as rotas AUXILIARES do detalhe da entity (settings, descritores,
-// override vazio, assets e files vazios) — o pano de fundo compartilhado por todos os
-// fetchRouter de EntityDetailScreen. Devolve null quando a URL não é auxiliar (o caller
-// trata as rotas específicas: a entity resolvida, membros, episódios). Centraliza o
-// bloco para os testes não o duplicarem (jscpd). Não cobre `/override` com blob custom
-// (o teste que precisa disso trata a rota antes).
+// override vazio, assets e files vazios, tema musical ausente) — o pano de fundo
+// compartilhado por todos os fetchRouter de EntityDetailScreen. Devolve null quando a
+// URL não é auxiliar (o caller trata as rotas específicas: a entity resolvida, membros,
+// episódios). Centraliza o bloco para os testes não o duplicarem (jscpd). Não cobre
+// `/override` com blob custom (o teste que precisa disso trata a rota antes).
 export function respostaComum(u: string): Response | null {
   if (u === '/api/v1/settings/languages') {
     return okJson(settingsPadrao)
@@ -110,6 +110,17 @@ export function respostaComum(u: string): Response | null {
   }
   if (u.includes('/override')) {
     return okJson({})
+  }
+  if (u.includes('/theme')) {
+    // Tema musical (0082): HEAD sem theme.* na pasta -> 404 (degradação
+    // graciosa, o player simplesmente não aparece).
+    return {
+      ok: false,
+      status: 404,
+      json: async () => ({
+        error: { code: 'not_found', message: 'tema musical não encontrado' },
+      }),
+    } as Response
   }
   if (u.includes('/assets')) {
     return okJson([])

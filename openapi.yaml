@@ -1447,6 +1447,34 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/theme:
+    get:
+      operationId: getEntityTheme
+      summary: Serve o binário do tema musical local (audio/*, briefing 0082).
+      description: >
+        Fundação MÍNIMA e LOCAL-ONLY de tema musical (sem provider algum — não
+        há fonte confiável integrada, ver briefing 0082 §3): resolve a pasta-raiz
+        do item (MESMA resolução de `DiretorioDestino` usada por
+        POST .../nfo e .../assets/{assetId}/materialize — raiz da série ou
+        pasta do filme) e procura `theme.mp3`/`theme.ogg`/`theme.flac` ali,
+        nessa ordem. Devolve o binário com o Content-Type correto quando
+        encontrado. 404 quando a entity não existe, não tem nenhum
+        `media_file` presente (sem pasta de destino) ou não há arquivo de tema
+        na pasta; 503 se a leitura de entities está indisponível (banco).
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Binário do tema musical.
+          content:
+            audio/*:
+              schema: { type: string, format: binary }
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/purge:
     post:
       operationId: purgeEntities

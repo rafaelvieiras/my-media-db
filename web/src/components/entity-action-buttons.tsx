@@ -159,7 +159,7 @@ export function EntityActionButtons({
         : null
 
   return (
-    <div className="ml-auto flex flex-col items-end gap-1.5">
+    <div className="flex flex-col items-end gap-1.5">
       <div className="flex flex-wrap items-center gap-2">
         <Button asChild variant="outline" size="sm">
           <Link to="/entities/$id/edit" params={{ id }}>
