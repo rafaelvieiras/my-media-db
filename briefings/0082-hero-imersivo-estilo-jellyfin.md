@@ -15,7 +15,7 @@
 | **ID** | 0082 |
 | **Tipo** | feature (substitui o layout do 0079) |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [03-arquitetura](../docs/03-arquitetura.md), [09-nfo-e-export](../docs/09-nfo-e-export.md) |
 | **Depende de** | 0079, 0048, 0049, 0062 |
 
