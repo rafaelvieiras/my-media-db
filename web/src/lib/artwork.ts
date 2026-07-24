@@ -156,18 +156,36 @@ export interface HeroAssets {
   disc: Asset | undefined
 }
 
+// assetVencedor replica em TS a PRECEDENCIA DE SERVICO do briefing 0017
+// (`escolherAssetServido`/`coletarCandidatos` em internal/server/assets.go):
+// preferida (preferred:true) -> origin='user' mais recente (ultimo do array,
+// que vem ordenado por created_at asc) -> origin='external' (primeiro) ->
+// qualquer um (base, ex. arte local do scanner). Sem essa precedencia, artes
+// importadas da pasta real (origin='external', preferred:false — o caso
+// normal do fluxo de midias locais 0062+) nunca "venciam" e o hero ficava
+// sem logo/banner/disco mesmo com o asset presente em disco.
+function assetVencedor(assets: Asset[], kind: string): Asset | undefined {
+  const doKind = assets.filter((a) => a.kind === kind)
+  if (doKind.length === 0) return undefined
+  return (
+    doKind.find((a) => a.preferred) ??
+    doKind.findLast((a) => a.origin === 'user') ??
+    doKind.find((a) => a.origin === 'external') ??
+    doKind[0]
+  )
+}
+
 // assetsPreferidosDoHero extrai, de UMA chamada a `GET .../assets` (a MESMA
-// lista consumida pela galeria via `listAssets`/`assetsQueryOptions`), a
-// primeira arte `preferred:true` de cada um dos três kinds do hero
+// lista consumida pela galeria via `listAssets`/`assetsQueryOptions`), a arte
+// VENCEDORA (assetVencedor) de cada um dos três kinds do hero
 // (logo/banner/disc). Puro — sem I/O.
 export function assetsPreferidosDoHero(
   assets: Asset[] | undefined,
 ): HeroAssets {
-  const porKind = (kind: string): Asset | undefined =>
-    assets?.find((a) => a.kind === kind && a.preferred)
+  const lista = assets ?? []
   return {
-    logo: porKind('logo'),
-    banner: porKind('banner'),
-    disc: porKind('disc'),
+    logo: assetVencedor(lista, 'logo'),
+    banner: assetVencedor(lista, 'banner'),
+    disc: assetVencedor(lista, 'disc'),
   }
 }

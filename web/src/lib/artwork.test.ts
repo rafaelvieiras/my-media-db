@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  assetsPreferidosDoHero,
   infoKind,
   larguraKind,
   linhasDeArtwork,
   rotuloKind,
   selosDisponibilidade,
 } from '@/lib/artwork'
-import type { ArtworkItem, ArtworkResponse } from '@/lib/api'
+import type { Asset, ArtworkItem, ArtworkResponse } from '@/lib/api'
 
 function item(over: Partial<ArtworkItem> = {}): ArtworkItem {
   return {
@@ -16,6 +17,19 @@ function item(over: Partial<ArtworkItem> = {}): ArtworkItem {
     is_local: false,
     is_local_in_library: false,
     is_principal: false,
+    ...over,
+  }
+}
+
+function asset(over: Partial<Asset> = {}): Asset {
+  return {
+    id: 'a1',
+    kind: 'logo',
+    origin: 'external',
+    preferred: false,
+    is_principal: true,
+    local_path: null,
+    url: '/api/v1/entities/e1/assets/a1/file',
     ...over,
   }
 }
@@ -74,5 +88,46 @@ describe('artwork — taxonomia de kinds (0049)', () => {
 
   it('selosDisponibilidade sem available devolve vazio', () => {
     expect(selosDisponibilidade(undefined)).toEqual([])
+  })
+})
+
+describe('assetsPreferidosDoHero — precedencia de servico (0017/0082)', () => {
+  it('sem nenhuma arte preferida, cai na origin=external (caso normal de midia local importada)', () => {
+    // Reproduz o caso de producao que motivou o fix: asset materializado da
+    // pasta real via scanner/import, nunca passou pelo fluxo de "preferir".
+    const assets = [
+      asset({ kind: 'logo', origin: 'external', preferred: false }),
+    ]
+    expect(assetsPreferidosDoHero(assets).logo).toEqual(assets[0])
+  })
+
+  it('com uma preferida, ela vence mesmo havendo origin=user mais recente', () => {
+    const preferida = asset({ id: 'p', kind: 'banner', preferred: true })
+    const maisRecente = asset({ id: 'u', kind: 'banner', origin: 'user' })
+    expect(assetsPreferidosDoHero([preferida, maisRecente]).banner).toEqual(
+      preferida,
+    )
+  })
+
+  it('sem preferida, origin=user (a mais recente/ultima do array) vence a external', () => {
+    const externa = asset({ id: 'e', kind: 'disc', origin: 'external' })
+    const doDono = asset({ id: 'u', kind: 'disc', origin: 'user' })
+    expect(assetsPreferidosDoHero([externa, doDono]).disc).toEqual(doDono)
+  })
+
+  it('sem nenhum asset do kind, devolve undefined (sem regressao)', () => {
+    const resultado = assetsPreferidosDoHero([])
+    expect(resultado.logo).toBeUndefined()
+    expect(resultado.banner).toBeUndefined()
+    expect(resultado.disc).toBeUndefined()
+  })
+
+  it('assets undefined devolve os tres kinds undefined', () => {
+    const resultado = assetsPreferidosDoHero(undefined)
+    expect(resultado).toEqual({
+      logo: undefined,
+      banner: undefined,
+      disc: undefined,
+    })
   })
 })

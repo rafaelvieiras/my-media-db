@@ -1185,13 +1185,27 @@ function HeroImersivo({
   entityId?: string
 }) {
   return (
-    <div className="relative left-1/2 right-1/2 grid w-screen -mx-[50vw]">
-      {/* Fundo: Episódio (0042) usa o STILL 16:9 no lugar do backdrop (o pôster
-          some — episódio não tem); os demais tipos usam o backdrop, com altura
-          mínima de ~40vh (HeroBackdropFundo) mesmo sem imagem (placeholder).
-          `z-0`/`z-10`/`z-20` explícitos (em vez de confiar na ordem do DOM)
-          garantem a pilha fundo→degradê→conteúdo sem ambiguidade entre os
-          itens do grid sobrepostos. */}
+    <div className="dark relative left-1/2 right-1/2 grid w-screen -mx-[50vw]">
+      {/* Correção de contraste: a classe `dark` aqui é PROPOSITAL e
+          INDEPENDENTE do tema do app (claro/escuro) — o seletor `.dark` deste
+          projeto é uma classe comum (`@custom-variant dark (&:is(.dark *))`
+          em index.css), não uma media query, então aplicá-la a este wrapper
+          FORÇA a paleta escura (fundo quase-preto, texto quase-branco) em
+          todo o conteúdo do hero, sem afetar o resto da tela. Sem isso, em
+          tema CLARO o token `background` usado no degradê abaixo é branco —
+          ou seja, o overlay CLAREIA em vez de escurecer o backdrop, e texto
+          escuro (`text-foreground` do tema claro) fica ilegível sobre uma
+          arte de fundo clara/colorida. Backdrops são fotografia de brilho
+          imprevisível (não controlamos a arte) — por isso o hero, como no
+          TMDB/Jellyfin, usa SEMPRE texto claro sobre scrim escuro, e não
+          adapta ao tema geral do app.
+
+          Fundo: Episódio (0042) usa o STILL 16:9 no lugar do backdrop (o
+          pôster some — episódio não tem); os demais tipos usam o backdrop,
+          com altura mínima de ~40vh (HeroBackdropFundo) mesmo sem imagem
+          (placeholder). `z-0`/`z-10`/`z-20` explícitos (em vez de confiar na
+          ordem do DOM) garantem a pilha fundo→degradê→conteúdo sem
+          ambiguidade entre os itens do grid sobrepostos. */}
       <div className="relative z-0 col-start-1 row-start-1">
         {detail.type === 'episode' ? (
           <StillFrame src={detail.stillUrl} alt={`Still de ${detail.title}`} />
@@ -1201,9 +1215,9 @@ function HeroImersivo({
       </div>
 
       {/* Overlay: degradê vertical (o texto mora na base) + horizontal em telas
-          largas (mais escuro à esquerda, no padrão Jellyfin/TMDB). O tom sólido
-          no fim do degradê é o `background` do tema — garante AA em claro e
-          escuro sem depender da imagem por trás. */}
+          largas (mais escuro à esquerda, no padrão Jellyfin/TMDB). `background`
+          aqui é sempre o quase-preto do `.dark` forçado no wrapper (não o do
+          tema do app) — garante AA sem depender do brilho da imagem por trás. */}
       <div className="relative z-10 col-start-1 row-start-1 bg-gradient-to-t from-background via-background/75 to-background/10" />
       <div className="relative z-10 col-start-1 row-start-1 hidden bg-gradient-to-r from-background/90 via-background/25 to-transparent sm:block" />
 
