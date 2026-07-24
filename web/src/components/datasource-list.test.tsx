@@ -78,14 +78,14 @@ describe('DatasourceList', () => {
     )
   })
 
-  it('mostra o link "Adicionar datasource" apontando para /library/new', async () => {
+  it('mostra o link "Adicionar datasource" apontando para /dashboard/library/new', async () => {
     vi.stubGlobal('fetch', fetchRouter([], idle))
     renderWithClient(<DatasourceList />)
 
     const link = await screen.findByRole('link', {
       name: /Adicionar datasource/,
     })
-    expect(link).toHaveAttribute('href', '/library/new')
+    expect(link).toHaveAttribute('href', '/dashboard/library/new')
   })
 
   it('lista o datasource com estado e progresso de scan em andamento', async () => {
@@ -111,13 +111,13 @@ describe('DatasourceList', () => {
     )
   })
 
-  it('o link "Editar" de cada linha aponta para /library/$id/edit', async () => {
+  it('o link "Editar" de cada linha aponta para /dashboard/library/$id/edit', async () => {
     const source = sourceFixture({ id: '42' })
     vi.stubGlobal('fetch', fetchRouter([source], idle))
     renderWithClient(<DatasourceList />)
 
     const link = await screen.findByRole('link', { name: /Editar/ })
-    expect(link).toHaveAttribute('href', '/library/42/edit')
+    expect(link).toHaveAttribute('href', '/dashboard/library/42/edit')
   })
 
   it('dispara o scan ao clicar em Escanear', async () => {

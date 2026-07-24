@@ -105,11 +105,11 @@ test('definir uma arte como principal materializa na pasta e atualiza o poster d
   try {
     writeFileSync(join(dir, 'The Matrix (1999).mkv'), Buffer.alloc(2048, 7))
 
-    await page.goto('/library')
+    await page.goto('/dashboard/library')
     await page.getByRole('link', { name: 'Adicionar datasource' }).click()
     await page.getByLabel('Caminho do datasource').fill(dir)
     await page.getByRole('button', { name: 'Adicionar datasource' }).click()
-    await expect(page).toHaveURL('/library')
+    await expect(page).toHaveURL('/dashboard/library')
     await expect(page.getByText(dir)).toBeVisible()
     await page.getByRole('button', { name: 'Escanear' }).click()
 

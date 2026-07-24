@@ -16,16 +16,7 @@ vi.mock('@/components/language-selector', () => ({
   LanguageSelector: () => <div data-testid="seletor-idioma-stub" />,
 }))
 
-const TODOS_OS_LINKS = [
-  'Biblioteca',
-  'Buscar',
-  'Bibliotecas',
-  'Revisão',
-  'Órfãs',
-  'Configurações',
-  'Jobs',
-  'Saúde',
-]
+const TODOS_OS_LINKS = ['Biblioteca', 'Buscar', 'Dashboard']
 
 // 0075: abaixo de ~768px a nav não pode mais transbordar a página (o achado da
 // auditoria: `body.scrollWidth` de 1043px contra 390px de viewport). jsdom não
@@ -85,7 +76,7 @@ describe('AppHeader — colapso mobile (0075)', () => {
     )
     const painel = await screen.findByRole('dialog', { name: 'Navegação' })
 
-    await user.click(within(painel).getByRole('link', { name: 'Saúde' }))
+    await user.click(within(painel).getByRole('link', { name: 'Dashboard' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: 'Navegação' })).toBeNull()

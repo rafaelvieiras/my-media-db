@@ -115,7 +115,7 @@ function ItemFaltandoComAcao({ chave }: { chave: string }) {
         <span>{rotuloItemFaltando(chave)}</span>
         {' — '}
         <Link
-          to="/library"
+          to="/dashboard/library"
           className="underline underline-offset-2 hover:text-foreground"
         >
           ver Bibliotecas

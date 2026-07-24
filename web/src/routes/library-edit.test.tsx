@@ -107,7 +107,7 @@ describe('LibraryEditScreen', () => {
     ).toBeInTheDocument()
   })
 
-  it('salva o novo caminho via PATCH e navega para /library', async () => {
+  it('salva o novo caminho via PATCH e navega para /dashboard/library', async () => {
     const user = userEvent.setup()
     const fetchMock = fetchRouter({ fonte: source() })
     vi.stubGlobal('fetch', fetchMock)
@@ -119,7 +119,7 @@ describe('LibraryEditScreen', () => {
     await user.click(screen.getByRole('button', { name: 'Salvar' }))
 
     await waitFor(() =>
-      expect(spies.navigate).toHaveBeenCalledWith({ to: '/library' }),
+      expect(spies.navigate).toHaveBeenCalledWith({ to: '/dashboard/library' }),
     )
     const chamada = fetchMock.mock.calls.find(
       ([u, init]) =>
@@ -165,7 +165,7 @@ describe('LibraryEditScreen', () => {
 
     await waitFor(() => expect(chamouDelete(fetchMock)).toBe(true))
     await waitFor(() =>
-      expect(spies.navigate).toHaveBeenCalledWith({ to: '/library' }),
+      expect(spies.navigate).toHaveBeenCalledWith({ to: '/dashboard/library' }),
     )
   })
 

@@ -9,12 +9,12 @@ import { PathBrowser } from '@/components/path-browser'
 import { LibraryFormHeader } from '@/components/library-form-header'
 import { ApiError, createLibrary, type CreateSource } from '@/lib/api'
 
-// Rota `/library/new` (briefing 0071): substitui o antigo `DatasourceForm`
+// Rota `/dashboard/library/new` (briefing 0071): substitui o antigo `DatasourceForm`
 // sempre-visível no topo da lista por uma página própria — dá o espaço de tela
 // que o navegador de pastas precisa (não cabia espremido numa linha de lista).
 // O campo de caminho continua editável em paralelo ao `PathBrowser` (o navegador
 // é um atalho visual, não o único jeito de preencher o caminho). Sucesso navega
-// de volta para `/library`; erro (`ApiError`, ex. 422 path inválido/duplicado)
+// de volta para `/dashboard/library`; erro (`ApiError`, ex. 422 path inválido/duplicado)
 // aparece inline, logo abaixo do campo — naturalmente perto dele nesta página
 // (o achado #7 da auditoria, erro longe do campo na lista espremida, some de
 // graça aqui).
@@ -28,7 +28,7 @@ export function LibraryNewScreen() {
     mutationFn: (body: CreateSource) => createLibrary(body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['library'] })
-      navigate({ to: '/library' })
+      navigate({ to: '/dashboard/library' })
     },
   })
 

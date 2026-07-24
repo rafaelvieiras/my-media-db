@@ -3,10 +3,12 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  redirect,
 } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { z } from 'zod'
 import { AppHeader } from '@/components/app-header'
+import { DashboardShell } from '@/components/dashboard-shell'
 import { LanguageProvider } from '@/lib/language-context'
 import { LibraryItemsScreen } from '@/routes/index'
 import { LibraryScreen } from '@/routes/library'
@@ -53,8 +55,26 @@ const indexRoute = createRoute({
   component: LibraryItemsScreen,
 })
 
-const libraryRoute = createRoute({
+// Área administrativa (briefing 0083): as 6 telas de operação/config viram
+// subrotas de `/dashboard`, navegadas pela sidebar do `DashboardShell` — em vez
+// de soltas no `AppHeader`. `dashboardIndexRoute` redireciona `/dashboard` para
+// a primeira seção (Bibliotecas).
+const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
+  path: '/dashboard',
+  component: DashboardShell,
+})
+
+const dashboardIndexRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/dashboard/library' })
+  },
+})
+
+const dashboardLibraryRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
   path: '/library',
   component: LibraryScreen,
 })
@@ -62,14 +82,14 @@ const libraryRoute = createRoute({
 // Rotas dedicadas de datasource (briefing 0071): criar caminho/tipo e reapontar
 // caminho/remover saem do formulário fixo + edição inline da lista para páginas
 // próprias — o mesmo padrão de `entityEditBasicoRoute`/`itemNewRoute` abaixo.
-const libraryNewRoute = createRoute({
-  getParentRoute: () => rootRoute,
+const dashboardLibraryNewRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
   path: '/library/new',
   component: LibraryNewScreen,
 })
 
-const libraryEditRoute = createRoute({
-  getParentRoute: () => rootRoute,
+const dashboardLibraryEditRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
   path: '/library/$id/edit',
   component: LibraryEditScreen,
 })
@@ -80,14 +100,14 @@ const searchRoute = createRoute({
   component: SearchScreen,
 })
 
-const reviewRoute = createRoute({
-  getParentRoute: () => rootRoute,
+const dashboardReviewRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
   path: '/review',
   component: ReviewScreen,
 })
 
-const orphansRoute = createRoute({
-  getParentRoute: () => rootRoute,
+const dashboardOrphansRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
   path: '/orphans',
   component: OrphansScreen,
 })
@@ -168,35 +188,28 @@ const personDetailRoute = createRoute({
   component: PersonDetailScreen,
 })
 
-const settingsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+const dashboardSettingsRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
   path: '/settings',
   component: SettingsScreen,
 })
 
 // Administração dos jobs internos (0052) — agendador embutido + histórico.
-// Agrupada com `/settings` no `AppHeader` ("Administração"), não solta como
-// Revisão/Órfãs.
-const jobsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+const dashboardJobsRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
   path: '/jobs',
   component: JobsScreen,
 })
 
-const healthRoute = createRoute({
-  getParentRoute: () => rootRoute,
+const dashboardHealthRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
   path: '/health',
   component: HealthScreen,
 })
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  libraryRoute,
-  libraryNewRoute,
-  libraryEditRoute,
   searchRoute,
-  reviewRoute,
-  orphansRoute,
   itemNewRoute,
   collectionNewRoute,
   entityDetailRoute,
@@ -206,9 +219,17 @@ const routeTree = rootRoute.addChildren([
   externalDetailRoute,
   collectionDetailRoute,
   personDetailRoute,
-  settingsRoute,
-  jobsRoute,
-  healthRoute,
+  dashboardRoute.addChildren([
+    dashboardIndexRoute,
+    dashboardLibraryRoute,
+    dashboardLibraryNewRoute,
+    dashboardLibraryEditRoute,
+    dashboardReviewRoute,
+    dashboardOrphansRoute,
+    dashboardSettingsRoute,
+    dashboardJobsRoute,
+    dashboardHealthRoute,
+  ]),
 ])
 
 export const router = createRouter({

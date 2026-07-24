@@ -90,23 +90,23 @@ describe('PosterCard', () => {
     expect(screen.getByTestId('poster-placeholder')).toBeInTheDocument()
   })
 
-  it('mostra badge de revisão em baixa confiança e ele linka para /review', () => {
+  it('mostra badge de revisão em baixa confiança e ele linka para /dashboard/review', () => {
     const { container } = render(
       <PosterCard card={card({ match_confidence: 40 })} />,
     )
     const badge = screen.getByText('revisar')
     expect(badge).toBeInTheDocument()
-    expect(badge.closest('a')).toHaveAttribute('href', '/review')
+    expect(badge.closest('a')).toHaveAttribute('href', '/dashboard/review')
     // Revisão (atenção) fica no topo-ESQUERDO, não no de posse (0038).
     const overlayEsquerdo = container.querySelector('.left-1\\.5')
     expect(overlayEsquerdo?.textContent).toContain('revisar')
   })
 
-  it('mostra badge de não identificado para draft e ele linka para /review', () => {
+  it('mostra badge de não identificado para draft e ele linka para /dashboard/review', () => {
     render(<PosterCard card={card({ status: 'draft' })} />)
     const badge = screen.getByText('não identificado')
     expect(badge).toBeInTheDocument()
-    expect(badge.closest('a')).toHaveAttribute('href', '/review')
+    expect(badge.closest('a')).toHaveAttribute('href', '/dashboard/review')
     expect(screen.queryByText('revisar')).not.toBeInTheDocument()
   })
 })

@@ -10,7 +10,8 @@ import { libraryQueryOptions, scanStatusQueryOptions } from '@/lib/queries'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
 
 // Tela de datasources (briefing 0071): a criação e a edição/remoção de caminho
-// saíram para rotas dedicadas (`/library/new`, `/library/$id/edit`) — esta lista
+// saíram para rotas dedicadas (`/dashboard/library/new`,
+// `/dashboard/library/$id/edit`) — esta lista
 // só mostra path + estado, com as ações transientes/binárias de baixo risco que
 // continuam inline: "Escanear" (+ progresso) e o switch de observar mudanças.
 export function DatasourceList() {
@@ -20,7 +21,7 @@ export function DatasourceList() {
     <div className="flex flex-col gap-4">
       <div>
         <Button asChild size="sm">
-          <Link to="/library/new">
+          <Link to="/dashboard/library/new">
             <FolderPlus aria-hidden />
             Adicionar datasource
           </Link>
@@ -109,7 +110,7 @@ function DatasourceRow({ source }: { source: Source }) {
             {rodando ? 'Escaneando…' : 'Escanear'}
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link to="/library/$id/edit" params={{ id: source.id }}>
+            <Link to="/dashboard/library/$id/edit" params={{ id: source.id }}>
               <Pencil aria-hidden />
               Editar
             </Link>

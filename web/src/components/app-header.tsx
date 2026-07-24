@@ -1,12 +1,9 @@
 import { Link } from '@tanstack/react-router'
 import {
-  Briefcase,
-  ListChecks,
+  LayoutDashboard,
   Library,
   Menu,
   Search,
-  Settings,
-  Trash2,
   type LucideIcon,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -59,8 +56,11 @@ function NavLink({
 }
 
 // Lista de navegação reaproveitada pelas DUAS renderizações (nav desktop em
-// linha e conteúdo do `Sheet` mobile) — evita duplicar os 7 `NavLink`s (0075).
+// linha e conteúdo do `Sheet` mobile) — evita duplicar os `NavLink`s (0075).
 // `onNavigate` fecha o Sheet no mobile; fica `undefined` (no-op) no desktop.
+// As 6 telas de operação/config (Bibliotecas/Revisão/Órfãs/Jobs/Configurações/
+// Saúde) saíram daqui para a sidebar do `DashboardShell` (briefing 0083) — só
+// resta o link único "Dashboard" para a área administrativa.
 function LinksNavegacao({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <>
@@ -70,36 +70,8 @@ function LinksNavegacao({ onNavigate }: { onNavigate?: () => void }) {
       <NavLink to="/search" icon={Search} onNavigate={onNavigate}>
         Buscar
       </NavLink>
-      <NavLink to="/library" onNavigate={onNavigate}>
-        Bibliotecas
-      </NavLink>
-      <NavLink to="/review" icon={ListChecks} onNavigate={onNavigate}>
-        Revisão
-      </NavLink>
-      <NavLink to="/orphans" icon={Trash2} onNavigate={onNavigate}>
-        Órfãs
-      </NavLink>
-      {/* Administração: agrupa Configurações (idiomas) e Jobs (0052) — área de
-      operação/config, não navegação do dia a dia. Um separador visual (borda +
-      rótulo) basta para distingui-los dos links de navegação acima, sem
-      precisar de um dropdown. */}
-      <div
-        role="group"
-        aria-label="Administração"
-        className="ml-1 flex items-center gap-1 border-l border-border pl-2 max-md:ml-0 max-md:w-full max-md:border-l-0 max-md:border-t max-md:pt-2 max-md:pl-0"
-      >
-        <span className="hidden text-xs text-muted-foreground sm:inline">
-          Administração
-        </span>
-        <NavLink to="/settings" icon={Settings} onNavigate={onNavigate}>
-          Configurações
-        </NavLink>
-        <NavLink to="/jobs" icon={Briefcase} onNavigate={onNavigate}>
-          Jobs
-        </NavLink>
-      </div>
-      <NavLink to="/health" onNavigate={onNavigate}>
-        Saúde
+      <NavLink to="/dashboard" icon={LayoutDashboard} onNavigate={onNavigate}>
+        Dashboard
       </NavLink>
     </>
   )

@@ -57,7 +57,7 @@ function mensagemEnriquecimento(resultado: EnrichMissingResult) {
     return (
       <span role="status" className="text-sm text-muted-foreground">
         Não encontramos uma correspondência confiável — o item foi enviado para
-        a fila de <Link to="/review">Revisão</Link>.
+        a fila de <Link to="/dashboard/review">Revisão</Link>.
       </span>
     )
   }

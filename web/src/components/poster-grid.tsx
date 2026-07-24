@@ -86,7 +86,7 @@ export function PosterGrid({ lang }: { lang?: string } = {}) {
           description="Adicione um datasource e escaneie para popular a biblioteca."
           action={
             <Button asChild variant="outline" size="sm">
-              <Link to="/library">Ir para Bibliotecas</Link>
+              <Link to="/dashboard/library">Ir para Bibliotecas</Link>
             </Button>
           }
         />

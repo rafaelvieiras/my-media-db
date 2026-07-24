@@ -167,14 +167,14 @@ function EstadoMatchBadge({ card }: { card: EntityCard }) {
   if (ehDraft(card.status)) {
     return (
       <Badge asChild variant="secondary" className="pointer-events-auto">
-        <Link to="/review">não identificado</Link>
+        <Link to="/dashboard/review">não identificado</Link>
       </Badge>
     )
   }
   if (precisaRevisao(card)) {
     return (
       <Badge asChild variant="destructive" className="pointer-events-auto">
-        <Link to="/review">revisar</Link>
+        <Link to="/dashboard/review">revisar</Link>
       </Badge>
     )
   }

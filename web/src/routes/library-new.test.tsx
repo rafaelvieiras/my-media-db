@@ -6,8 +6,8 @@ import { renderWithClient } from '@/test/render'
 import { okJson } from '@/test/entity-fixtures'
 import { erroJson } from '@/test/detail-harness'
 
-// Rota `/library/new` (briefing 0071): campo de caminho + PathBrowser + Select
-// de tipo + submit (`createLibrary`). Sucesso navega para `/library`; erro
+// Rota `/dashboard/library/new` (briefing 0071): campo de caminho + PathBrowser + Select
+// de tipo + submit (`createLibrary`). Sucesso navega para `/dashboard/library`; erro
 // (`ApiError`, ex. 422 path inválido/duplicado) aparece inline.
 const spies = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -57,7 +57,7 @@ afterEach(() => {
 })
 
 describe('LibraryNewScreen', () => {
-  it('cria o datasource (caminho + tipo) e navega para /library', async () => {
+  it('cria o datasource (caminho + tipo) e navega para /dashboard/library', async () => {
     const user = userEvent.setup()
     const fetchMock = fetchRouter({})
     vi.stubGlobal('fetch', fetchMock)
@@ -73,7 +73,7 @@ describe('LibraryNewScreen', () => {
     )
 
     await waitFor(() =>
-      expect(spies.navigate).toHaveBeenCalledWith({ to: '/library' }),
+      expect(spies.navigate).toHaveBeenCalledWith({ to: '/dashboard/library' }),
     )
     const chamada = fetchMock.mock.calls.find(
       ([u, init]) =>

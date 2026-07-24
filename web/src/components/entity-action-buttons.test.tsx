@@ -180,13 +180,13 @@ describe('EntityActionButtons — "Baixar informações faltando" (0056 sob dema
     ).toBeInTheDocument()
   })
 
-  it('outcome "flagged" mostra a mensagem com link para /review', async () => {
+  it('outcome "flagged" mostra a mensagem com link para /dashboard/review', async () => {
     acionarInformacoesFaltando(() => okJson({ outcome: 'flagged', score: 61 }))
     expect(
       await screen.findByText(/Não encontramos uma correspondência confiável/),
     ).toBeInTheDocument()
     const link = screen.getByRole('link', { name: 'Revisão' })
-    expect(link).toHaveAttribute('href', '/review')
+    expect(link).toHaveAttribute('href', '/dashboard/review')
   })
 
   it('outcome "none" mostra mensagem neutra', async () => {

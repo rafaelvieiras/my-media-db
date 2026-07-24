@@ -10,16 +10,16 @@ import { ErrorState, LoadingState } from '@/components/query-states'
 import { ApiError, deleteLibrary, patchLibrary, type Source } from '@/lib/api'
 import { libraryQueryOptions } from '@/lib/queries'
 
-// Rota `/library/$id/edit` (briefing 0071): reaponta o caminho do datasource
+// Rota `/dashboard/library/$id/edit` (briefing 0071): reaponta o caminho do datasource
 // (PATCH, recasco em cascata do 0070) e concentra a remoção — antes um ícone de
 // lixeira sem confirmação colado ao botão "Escanear" na lista (achado de risco
 // de clique acidental da auditoria de UX) — numa "zona de perigo" com
 // confirmação explícita em 2 passos, no mesmo padrão de `/orphans`.
 //
 // Não existe um `GET /library/{id}` dedicado — a fonte é encontrada na mesma
-// lista que a tela `/library` já consome (`libraryQueryOptions`).
+// lista que a tela `/dashboard/library` já consome (`libraryQueryOptions`).
 export function LibraryEditScreen() {
-  const { id } = useParams({ from: '/library/$id/edit' })
+  const { id } = useParams({ from: '/dashboard/library/$id/edit' })
   const query = useQuery(libraryQueryOptions)
   const source = query.data?.items.find((s) => s.id === id)
 
@@ -58,7 +58,7 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
     mutationFn: (novoPath: string) => patchLibrary(id, { path: novoPath }),
     onSuccess: () => {
       invalidar()
-      navigate({ to: '/library' })
+      navigate({ to: '/dashboard/library' })
     },
   })
 
@@ -66,7 +66,7 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
     mutationFn: () => deleteLibrary(id),
     onSuccess: () => {
       invalidar()
-      navigate({ to: '/library' })
+      navigate({ to: '/dashboard/library' })
     },
   })
 
