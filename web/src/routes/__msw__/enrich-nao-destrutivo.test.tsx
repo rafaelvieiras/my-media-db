@@ -12,8 +12,10 @@ import { renderRota } from '@/test/route-tree-harness'
 // Fase 3 (MSW + jsdom, briefing 0068) — jornada #6 do checklist 0028 §7.1,
 // CRÍTICA (ADR-0012): re-enriquecer uma entity com título overridado e uma tag
 // removida pelo dono não pode reverter esse investimento — só os campos SEM
-// override refletem o dado novo da fonte. Testa a árvore de rota real
-// (/entities/$id/edit), não um componente isolado.
+// override refletem o dado novo da fonte. Testa a árvore de rota real: dispara
+// "Salvar e re-enriquecer" na subrota "IDs de terceiros" (0080) e confere o
+// resultado navegando para a subrota "Informações básicas" (a sidebar
+// compartilhada, `EntityEditShell`, mantém as duas subrotas na mesma árvore).
 describe('enrich não-destrutivo (Fase 3)', () => {
   it('preserva título editado e tag removida ao "Salvar e re-enriquecer"', async () => {
     const id = '7'
@@ -63,6 +65,7 @@ describe('enrich não-destrutivo (Fase 3)', () => {
       }),
     )
 
+    // Confere o estado "antes" na seção "Informações básicas" primeiro.
     await renderRota(`/entities/${id}/edit`)
 
     const tituloInput = await screen.findByLabelText('Título')
@@ -78,9 +81,20 @@ describe('enrich não-destrutivo (Fase 3)', () => {
       'Sinopse antiga da fonte.',
     )
 
+    // Dispara "Salvar e re-enriquecer" na subrota "IDs de terceiros" (0080) —
+    // mesma sidebar/cabeçalho compartilhados (`EntityEditShell`), navegação
+    // pelo Link real (sem mock nesta suíte MSW).
+    fireEvent.click(screen.getByRole('link', { name: 'IDs de terceiros' }))
+    await screen.findByText('Salvar e re-enriquecer')
+
     fireEvent.click(screen.getByText('Salvar e re-enriquecer'))
 
     await waitFor(() => expect(enrichChamado).toBe(true))
+
+    // Volta para "Informações básicas" para conferir o resultado do enrich.
+    fireEvent.click(
+      await screen.findByRole('link', { name: 'Informações básicas' }),
+    )
 
     // Dado novo da fonte chegou (placeholder da sinopse, campo SEM override).
     await waitFor(() => {

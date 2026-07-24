@@ -37,12 +37,15 @@ test('re-enriquecer sem id da fonte mostra 422 inline e nao corrompe a entity', 
     page.getByRole('heading', { level: 1, name: 'Item Sem Fonte' }),
   ).toBeVisible()
 
-  // "Editar" e um LINK para `/entities/$id/edit` (0030); o editor de IDs externos
-  // vive nela. Dispara "Salvar e re-enriquecer" SEM fixar nenhum id externo: salva
+  // "Editar" e um LINK para `/entities/$id/edit` (0030), agora com uma sidebar de
+  // secoes (0080): o editor de IDs externos vive na subrota "IDs de terceiros".
+  // Dispara "Salvar e re-enriquecer" SEM fixar nenhum id externo: salva
   // external_ids (vazio) e tenta enriquecer; sem source_id o backend responde 422
   // (invalid_body) e a UI mostra a mensagem do envelope inline.
   await page.getByRole('link', { name: 'Editar' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
+  await page.getByRole('link', { name: 'IDs de terceiros' }).click()
+  await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit/ids$`))
   await expect(page.getByText('Nenhum id externo definido.')).toBeVisible()
   await page.getByRole('button', { name: 'Salvar e re-enriquecer' }).click()
 
@@ -84,10 +87,12 @@ test('re-enriquecer com id que a fonte nao entrega mostra 502 inline e preserva 
     page.getByRole('heading', { level: 1, name: 'Item Fonte Indisponivel' }),
   ).toBeVisible()
 
-  // "Editar" e um LINK para `/entities/$id/edit` (0030); o editor de IDs externos
-  // vive nela.
+  // "Editar" e um LINK para `/entities/$id/edit` (0030), agora com uma sidebar de
+  // secoes (0080): o editor de IDs externos vive na subrota "IDs de terceiros".
   await page.getByRole('link', { name: 'Editar' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
+  await page.getByRole('link', { name: 'IDs de terceiros' }).click()
+  await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit/ids$`))
   await page.getByRole('button', { name: 'Adicionar fonte' }).click()
   await page.getByRole('textbox', { name: 'Fonte do id externo' }).fill('tmdb')
   // O aria-label do id passa a "Id na fonte tmdb" depois que a fonte e digitada.

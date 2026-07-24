@@ -16,7 +16,9 @@ import { SearchScreen } from '@/routes/search'
 import { ReviewScreen } from '@/routes/review'
 import { OrphansScreen } from '@/routes/orphans'
 import { EntityDetailScreen } from '@/routes/entity-detail'
-import { EntityEditScreen } from '@/routes/entity-edit'
+import { EntityEditBasicoScreen } from '@/routes/entity-edit-basico'
+import { EntityEditIdsScreen } from '@/routes/entity-edit-ids'
+import { EntityEditCreditosScreen } from '@/routes/entity-edit-creditos'
 import { ItemNewScreen } from '@/routes/item-new'
 import { CollectionNewScreen } from '@/routes/collection-new'
 import { ExternalDetailScreen } from '@/routes/external-detail'
@@ -59,7 +61,7 @@ const libraryRoute = createRoute({
 
 // Rotas dedicadas de datasource (briefing 0071): criar caminho/tipo e reapontar
 // caminho/remover saem do formulário fixo + edição inline da lista para páginas
-// próprias — o mesmo padrão de `entityEditRoute`/`itemNewRoute` abaixo.
+// próprias — o mesmo padrão de `entityEditBasicoRoute`/`itemNewRoute` abaixo.
 const libraryNewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library/new',
@@ -118,10 +120,27 @@ const entityDetailRoute = createRoute({
   validateSearch: entityDetailSearchSchema,
 })
 
-const entityEditRoute = createRoute({
+// Edição de item (briefing 0030), dividida em subrotas no padrão sidebar do
+// TMDB (briefing 0080): `/entities/$id/edit` continua sendo a URL default —
+// agora a seção "Informações básicas" —, com IDs de terceiros e Elenco/equipe
+// em subrotas próprias (deep-linkáveis), todas FLAT (mesmo padrão das demais
+// rotas deste arquivo — não uma rota de layout aninhada).
+const entityEditBasicoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/entities/$id/edit',
-  component: EntityEditScreen,
+  component: EntityEditBasicoScreen,
+})
+
+const entityEditIdsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/entities/$id/edit/ids',
+  component: EntityEditIdsScreen,
+})
+
+const entityEditCreditosRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/entities/$id/edit/creditos',
+  component: EntityEditCreditosScreen,
 })
 
 // Detalhe rico do item externo ANTES de importar (0023). Params: fonte, tipo
@@ -181,7 +200,9 @@ const routeTree = rootRoute.addChildren([
   itemNewRoute,
   collectionNewRoute,
   entityDetailRoute,
-  entityEditRoute,
+  entityEditBasicoRoute,
+  entityEditIdsRoute,
+  entityEditCreditosRoute,
   externalDetailRoute,
   collectionDetailRoute,
   personDetailRoute,
