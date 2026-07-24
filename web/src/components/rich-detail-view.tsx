@@ -27,7 +27,11 @@ import {
 import { rotuloTipo } from '@/lib/entity-badges'
 import { internalIdDe } from '@/lib/internal-id'
 import { rotuloIdioma } from '@/lib/languages'
-import { rotuloSituacao, type RichDetail } from '@/lib/rich-detail'
+import {
+  rotuloSituacao,
+  type RichDetail,
+  type RotuloSituacao,
+} from '@/lib/rich-detail'
 import { selosDisponibilidade } from '@/lib/artwork'
 import { cn } from '@/lib/utils'
 
@@ -469,6 +473,75 @@ function LinksExternos({ links }: { links: Record<string, string> }) {
         </a>
       ))}
     </section>
+  )
+}
+
+// FaixaStatusPoster é a faixa compacta de SITUAÇÃO (0045/0079) ancorada na base do
+// pôster, no padrão visual do TMDB (que mostra o status junto da capa, não solto no
+// bloco de texto). Só aparece quando `situacao` existe (série/temporada enriquecida);
+// filme/coleção sem `airing_status` seguem sem faixa — mesmo gating de antes, só que
+// visualmente movido do bloco de metadados para o pôster. Sobrepõe via `absolute`
+// num wrapper `relative` em volta do `PosterImg` (que não ganha prop nova).
+function FaixaStatusPoster({ situacao }: { situacao: RotuloSituacao | null }) {
+  if (!situacao) {
+    return null
+  }
+  return (
+    <div className="absolute inset-x-0 bottom-0 rounded-b-xl bg-gradient-to-t from-black/85 via-black/55 to-transparent px-2 pt-6 pb-1.5">
+      <span className="block truncate text-center text-[11px] font-semibold tracking-wide text-white">
+        {situacao.label}
+      </span>
+    </div>
+  )
+}
+
+// NotaMedalhao é o "medalhão" circular da nota do hero (0079), no padrão visual do
+// círculo de avaliação do TMDB — SVG simples com `stroke-dasharray`, sem dependência
+// nova. Prioriza a nota LOCAL do dono (ADR-0012, contorno âmbar); o CALLER decide o
+// fallback para a nota da FONTE (contorno neutro) quando não há nota local — o mesmo
+// comportamento de antes (ícone de estrela + número), só que neste componente.
+function NotaMedalhao({
+  value,
+  variant,
+}: {
+  value: number
+  variant: 'local' | 'fonte'
+}) {
+  const ehLocal = variant === 'local'
+  const raio = 16
+  const circunferencia = 2 * Math.PI * raio
+  const pctPreenchido = Math.max(0, Math.min(1, value / 10))
+  const tracoPreenchido = pctPreenchido * circunferencia
+  return (
+    <div
+      className="relative flex size-11 shrink-0 items-center justify-center"
+      aria-label={ehLocal ? `Sua nota: ${value.toFixed(1)}` : undefined}
+      title={ehLocal ? 'Sua nota' : 'Nota da fonte'}
+    >
+      <svg viewBox="0 0 40 40" className="size-11 -rotate-90" aria-hidden>
+        <circle
+          cx="20"
+          cy="20"
+          r={raio}
+          strokeWidth="4"
+          fill="none"
+          className="stroke-muted"
+        />
+        <circle
+          cx="20"
+          cy="20"
+          r={raio}
+          strokeWidth="4"
+          strokeLinecap="round"
+          fill="none"
+          strokeDasharray={`${tracoPreenchido} ${circunferencia}`}
+          className={ehLocal ? 'stroke-amber-500' : 'stroke-foreground'}
+        />
+      </svg>
+      <span className="absolute text-xs font-semibold text-foreground">
+        {value.toFixed(1)}
+      </span>
+    </div>
   )
 }
 
@@ -917,13 +990,18 @@ export function RichDetailView({
         ) : null}
         <div className="flex flex-col gap-4 p-4 sm:flex-row sm:p-6">
           {detail.type === 'episode' ? null : (
-            <PosterImg
-              src={detail.posterUrl}
-              alt={`Pôster de ${detail.title}`}
-              className="w-32 shrink-0 sm:w-40"
-            />
+            <div className="relative w-32 shrink-0 sm:w-40">
+              <PosterImg
+                src={detail.posterUrl}
+                alt={`Pôster de ${detail.title}`}
+              />
+              <FaixaStatusPoster situacao={situacao} />
+            </div>
           )}
           <div className="flex min-w-0 flex-col gap-2">
+            {/* Linha do título: nome+ano+tipo compactos, no padrão TMDB — o resto dos
+                metadados (classificação/gêneros/nota/duração) fica logo abaixo, perto
+                do título, não espalhado em seções próprias com heading. */}
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-heading text-2xl font-semibold">
                 {detail.title}
@@ -941,49 +1019,32 @@ export function RichDetailView({
                 {detail.originalTitle}
               </p>
             ) : null}
-            {detail.tagline ? (
-              <p className="text-base font-medium italic text-foreground/80">
-                “{detail.tagline}”
-              </p>
+
+            {/* Gêneros (0079): movidos para logo abaixo do título — texto/badges
+                compactos, sem heading "Gêneros" própria. Badge compacto (em vez de
+                texto corrido) porque reusa o mesmo componente/visual dos demais
+                selos do hero e evita ambiguidade quando um gênero tem espaço no nome
+                ("Ficção científica"); listas muito longas quebram linha (flex-wrap),
+                sem exigir a seção própria de antes. */}
+            {detail.genres.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {detail.genres.map((g) => (
+                  <Badge key={g} variant="outline" className="font-normal">
+                    {g}
+                  </Badge>
+                ))}
+                {genresExtra}
+              </div>
             ) : null}
+
             <div className="flex flex-wrap items-center gap-2 pt-1">
               {detail.certification ? (
                 <Badge variant="secondary">{detail.certification}</Badge>
-              ) : null}
-              {situacao ? (
-                <Badge variant={situacao.variant}>{situacao.label}</Badge>
               ) : null}
               {detail.runtime ? (
                 <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
                   <Clock className="size-4" aria-hidden />
                   {formatarDuracao(detail.runtime)}
-                </span>
-              ) : null}
-              {/* Nota LOCAL do dono (ADR-0012): estrela CHEIA âmbar, destacada do
-                  texto. Complementa a nota da fonte (que segue exibida ao lado). Usa
-                  `!= null` para admitir a nota 0. */}
-              {detail.localRating != null ? (
-                <span
-                  className="inline-flex items-center gap-1 text-sm font-medium text-foreground"
-                  aria-label={`Sua nota: ${detail.localRating.toFixed(1)}`}
-                  title="Sua nota"
-                >
-                  <Star
-                    className="size-4 fill-amber-500 text-amber-500"
-                    aria-hidden
-                  />
-                  {detail.localRating.toFixed(1)}
-                </span>
-              ) : null}
-              {detail.voteAverage ? (
-                <span
-                  className="inline-flex items-center gap-1 text-sm text-muted-foreground"
-                  title={
-                    detail.localRating != null ? 'Nota da fonte' : undefined
-                  }
-                >
-                  <Star className="size-4" aria-hidden />
-                  {detail.voteAverage.toFixed(1)}
                 </span>
               ) : null}
               {detail.originalLanguage ? (
@@ -992,8 +1053,39 @@ export function RichDetailView({
                 </span>
               ) : null}
             </div>
+
+            {/* Nota (0079): medalhão circular no lugar do ícone de estrela + número.
+                Prioriza a nota LOCAL do dono (ADR-0012, contorno âmbar); sem ela, cai
+                na nota da FONTE (contorno neutro) — mesmo fallback de antes. Com as
+                DUAS presentes, a nota da fonte segue exibida ao lado (texto compacto),
+                como já era. */}
+            {detail.localRating != null || detail.voteAverage ? (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {detail.localRating != null ? (
+                  <NotaMedalhao value={detail.localRating} variant="local" />
+                ) : detail.voteAverage ? (
+                  <NotaMedalhao value={detail.voteAverage} variant="fonte" />
+                ) : null}
+                {detail.localRating != null && detail.voteAverage ? (
+                  <span
+                    className="inline-flex items-center gap-1 text-sm text-muted-foreground"
+                    title="Nota da fonte"
+                  >
+                    <Star className="size-4" aria-hidden />
+                    {detail.voteAverage.toFixed(1)}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+
+            {detail.tagline ? (
+              <p className="text-base font-medium italic text-foreground/80">
+                “{detail.tagline}”
+              </p>
+            ) : null}
+
+            {actions ? <div className="pt-1">{actions}</div> : null}
             <SelosArtes available={availableArtwork} />
-            {actions ? <div className="pt-2">{actions}</div> : null}
           </div>
         </div>
       </div>
@@ -1003,20 +1095,6 @@ export function RichDetailView({
           <h2 className="font-heading text-lg font-medium">Sinopse</h2>
           <p className="text-sm text-muted-foreground">{detail.description}</p>
           {descriptionExtra}
-        </section>
-      ) : null}
-
-      {detail.genres.length > 0 ? (
-        <section className="flex flex-col gap-2">
-          <h2 className="font-heading text-lg font-medium">Gêneros</h2>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {detail.genres.map((g) => (
-              <Badge key={g} variant="outline">
-                {g}
-              </Badge>
-            ))}
-            {genresExtra}
-          </div>
         </section>
       ) : null}
 
