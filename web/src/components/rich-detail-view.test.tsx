@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { RichDetailView } from '@/components/rich-detail-view'
-import type { CreditCast, CreditCrew } from '@/lib/api'
+import type { Asset, CreditCast, CreditCrew, ExternalVideo } from '@/lib/api'
 import { richDetailBase } from '@/test/detail-harness'
 import { renderWithClient } from '@/test/render'
 
@@ -268,5 +268,246 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
     // Com logo → <img> com a URL proxyada direta (sem reproxyar) e alt = nome.
     const logo = screen.getByRole('img', { name: 'Warner Bros.' })
     expect(logo).toHaveAttribute('src', '/api/v1/images?src=logo')
+  })
+})
+
+// ── Hero imersivo: sinopse dentro do hero (0082) ─────────────────────────────
+
+describe('RichDetailView — sinopse dentro do hero (0082)', () => {
+  it('a sinopse aparece como paragrafo, sem heading "Sinopse" separada', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({
+          description: 'Um hacker descobre a verdade.',
+        })}
+      />,
+    )
+    expect(
+      screen.getByText('Um hacker descobre a verdade.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Sinopse' })).toBeNull()
+  })
+
+  it('sem sinopse, nada aparece no lugar dela', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({ description: null })}
+      />,
+    )
+    expect(screen.queryByRole('heading', { name: 'Sinopse' })).toBeNull()
+  })
+})
+
+// ── Trailer (0082 §4.3) ───────────────────────────────────────────────────────
+
+function videoFixture(over: Partial<ExternalVideo> = {}): ExternalVideo {
+  return {
+    name: 'Trailer Oficial',
+    key: 'abc123',
+    site: 'YouTube',
+    type: 'Trailer',
+    official: true,
+    url: null,
+    ...over,
+  }
+}
+
+describe('RichDetailView — botão de trailer na barra de ações (0082)', () => {
+  it('com trailer do YouTube: o botão aparece e abre o MESMO player embutido', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({ videos: [videoFixture()] })}
+      />,
+    )
+    const botao = screen.getByRole('button', { name: 'Assistir trailer' })
+    fireEvent.click(botao)
+    expect(screen.getByTitle('Trailer Oficial')).toHaveAttribute(
+      'src',
+      'https://www.youtube-nocookie.com/embed/abc123?autoplay=1',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar trailer' }))
+    expect(screen.queryByTitle('Trailer Oficial')).toBeNull()
+  })
+
+  it('sem vídeo do tipo Trailer (só Teaser), o botão não aparece', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({
+          videos: [videoFixture({ type: 'Teaser' })],
+        })}
+      />,
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Assistir trailer' }),
+    ).toBeNull()
+  })
+
+  it('trailer não reproduzível (não-YouTube), o botão não aparece', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({
+          videos: [videoFixture({ site: 'Vimeo', key: '' })],
+        })}
+      />,
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Assistir trailer' }),
+    ).toBeNull()
+  })
+
+  it('sem vídeo algum, o botão não aparece', () => {
+    renderWithClient(<RichDetailView source="tmdb" detail={richDetailBase()} />)
+    expect(
+      screen.queryByRole('button', { name: 'Assistir trailer' }),
+    ).toBeNull()
+  })
+})
+
+// ── Logo, banner e disco preferidos + tema musical (0082, só entity) ─────────
+
+function assetFixture(over: Partial<Asset> = {}): Asset {
+  return {
+    id: 'a1',
+    kind: 'logo',
+    origin: 'user',
+    preferred: true,
+    is_principal: true,
+    local_path: null,
+    url: '/api/v1/entities/e1/assets/a1/file',
+    ...over,
+  }
+}
+
+// stubEntityFetch roteia `/assets` e `/theme` (HEAD) para as respostas dadas —
+// as duas chamadas que o hero dispara quando `entityId` está presente.
+function stubEntityFetch(assets: Asset[], temTema = false) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      const u = String(url)
+      if (u.includes('/theme')) {
+        return temTema
+          ? ({ ok: true, status: 200, json: async () => ({}) } as Response)
+          : ({ ok: false, status: 404, json: async () => ({}) } as Response)
+      }
+      if (u.includes('/assets')) {
+        return { ok: true, status: 200, json: async () => assets } as Response
+      }
+      throw new Error(`rota nao mockada: ${u}`)
+    }),
+  )
+}
+
+describe('RichDetailView — logo/banner/disco preferidos (0082, entity)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('com asset kind=logo preferido, a logo substitui o título em texto', async () => {
+    stubEntityFetch([assetFixture({ kind: 'logo' })])
+    const { container } = renderWithClient(
+      <RichDetailView detail={richDetailBase()} source="tmdb" entityId="e1" />,
+    )
+    await waitFor(() =>
+      expect(container.querySelector('img[alt="Duna"]')).toBeTruthy(),
+    )
+    expect(container.querySelector('img[alt="Duna"]')).toHaveAttribute(
+      'src',
+      '/api/v1/entities/e1/assets/a1/file',
+    )
+    expect(screen.queryByRole('heading', { level: 1, name: 'Duna' })).toBeNull()
+  })
+
+  it('sem asset kind=logo, o título em texto continua aparecendo (sem regressão)', async () => {
+    stubEntityFetch([])
+    renderWithClient(
+      <RichDetailView detail={richDetailBase()} source="tmdb" entityId="e1" />,
+    )
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Duna' }),
+    ).toBeInTheDocument()
+  })
+
+  it('com asset kind=banner preferido, a faixa do banner aparece', async () => {
+    stubEntityFetch([
+      assetFixture({
+        id: 'b1',
+        kind: 'banner',
+        url: '/api/v1/entities/e1/assets/b1/file',
+      }),
+    ])
+    const { container } = renderWithClient(
+      <RichDetailView detail={richDetailBase()} source="tmdb" entityId="e1" />,
+    )
+    await waitFor(() =>
+      expect(
+        container.querySelector(
+          'img[src="/api/v1/entities/e1/assets/b1/file"]',
+        ),
+      ).toBeTruthy(),
+    )
+  })
+
+  it('com asset kind=disc preferido, o disco aparece (com rotação em CSS)', async () => {
+    stubEntityFetch([
+      assetFixture({
+        id: 'd1',
+        kind: 'disc',
+        url: '/api/v1/entities/e1/assets/d1/file',
+      }),
+    ])
+    const { container } = renderWithClient(
+      <RichDetailView detail={richDetailBase()} source="tmdb" entityId="e1" />,
+    )
+    await waitFor(() =>
+      expect(
+        container.querySelector(
+          'img[src="/api/v1/entities/e1/assets/d1/file"]',
+        ),
+      ).toBeTruthy(),
+    )
+  })
+
+  it('sem entityId (tela do externo), não busca assets nem mostra logo/banner/disco', () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithClient(<RichDetailView detail={richDetailBase()} source="tmdb" />)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('RichDetailView — player do tema musical local (0082 §4.4)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('com theme.* na pasta-raiz, mostra o botão "Tocar tema" (sem autoplay)', async () => {
+    stubEntityFetch([], true)
+    renderWithClient(
+      <RichDetailView detail={richDetailBase()} source="tmdb" entityId="e1" />,
+    )
+    const botao = await screen.findByRole('button', {
+      name: 'Tocar tema musical',
+    })
+    expect(botao).toBeInTheDocument()
+    // Sem autoplay: nenhum estado de "tocando" (rótulo "Pausar") antes da ação.
+    expect(
+      screen.queryByRole('button', { name: 'Pausar tema musical' }),
+    ).toBeNull()
+  })
+
+  it('sem theme.*, o player não aparece', async () => {
+    stubEntityFetch([], false)
+    renderWithClient(
+      <RichDetailView detail={richDetailBase()} source="tmdb" entityId="e1" />,
+    )
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /tema musical/ })).toBeNull(),
+    )
   })
 })

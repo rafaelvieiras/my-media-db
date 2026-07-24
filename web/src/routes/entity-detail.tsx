@@ -327,6 +327,7 @@ export function EntityDetailScreen() {
         detail={deResolvedEntity(data)}
         source="tmdb"
         back={topo}
+        entityId={id}
         availableArtwork={artwork?.available}
         titleBadges={
           <>
@@ -339,12 +340,14 @@ export function EntityDetailScreen() {
               ativo={temOverrideEditado(blob, 'title', lang, fields)}
             />
             <SeloPosse ownership={data.ownership} />
-            <EntityActionButtons
-              id={id}
-              catalogCompleteness={data.catalog_completeness}
-              owned={data.owned}
-            />
           </>
+        }
+        actions={
+          <EntityActionButtons
+            id={id}
+            catalogCompleteness={data.catalog_completeness}
+            owned={data.owned}
+          />
         }
         descriptionExtra={
           <div className="flex flex-wrap items-center gap-1.5">

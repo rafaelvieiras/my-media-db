@@ -530,3 +530,155 @@ func TestMaterializeFalhaIOSemOrfaoELocalPath(t *testing.T) {
 		t.Errorf("asset.local_path = %v apos falha, quero NULL (nada persistido)", got.LocalPath)
 	}
 }
+
+// ── GET /entities/{id}/theme (briefing 0082) ─────────────────────────────
+
+// TestGetEntityThemeMp3Encontrado cobre o caso feliz: theme.mp3 na raiz
+// resolvida por DiretorioDestino e servido com o content-type correto.
+func TestGetEntityThemeMp3Encontrado(t *testing.T) {
+	h, d, _ := setupAssetsServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	dir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+
+	conteudo := []byte("id3-fake-mp3-bytes")
+	if err := os.WriteFile(filepath.Join(dir, "theme.mp3"), conteudo, 0o644); err != nil {
+		t.Fatalf("escrever theme.mp3: %v", err)
+	}
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/e1/theme", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "audio/mpeg" {
+		t.Errorf("Content-Type = %q, quero audio/mpeg", ct)
+	}
+	if rec.Body.String() != string(conteudo) {
+		t.Errorf("corpo = %q, quero %q", rec.Body.String(), conteudo)
+	}
+}
+
+// TestGetEntityThemeOggEFlac cobre as extensoes alternativas aceitas.
+func TestGetEntityThemeOggEFlac(t *testing.T) {
+	for _, tc := range []struct {
+		arquivo   string
+		contentCT string
+	}{
+		{"theme.ogg", "audio/ogg"},
+		{"theme.flac", "audio/flac"},
+	} {
+		t.Run(tc.arquivo, func(t *testing.T) {
+			h, d, _ := setupAssetsServer(t)
+			semearEntity(t, d, "e1", "movie", "Matrix")
+			dir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+			if err := os.WriteFile(filepath.Join(dir, tc.arquivo), []byte("x"), 0o644); err != nil {
+				t.Fatalf("escrever %s: %v", tc.arquivo, err)
+			}
+			rec := do(t, h, http.MethodGet, "/api/v1/entities/e1/theme", nil)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+			}
+			if ct := rec.Header().Get("Content-Type"); ct != tc.contentCT {
+				t.Errorf("Content-Type = %q, quero %q", ct, tc.contentCT)
+			}
+		})
+	}
+}
+
+// TestGetEntityThemeSemArquivo404 cobre a degradacao graciosa: pasta
+// resolvida existe (media_file present), mas sem nenhum theme.* -> 404, sem
+// erro 500.
+func TestGetEntityThemeSemArquivo404(t *testing.T) {
+	h, d, _ := setupAssetsServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/e1/theme", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, quero 404 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "not_found")
+}
+
+// TestGetEntityThemeSemMediaFile404 cobre o criterio "sem storage local
+// associado": entity sem nenhum media_file present -> 404, mesma condicao
+// de sem pasta de destino que materialize/nfo ja tratam.
+func TestGetEntityThemeSemMediaFile404(t *testing.T) {
+	h, d, _ := setupAssetsServer(t)
+	semearEntity(t, d, "e1", "movie", "Sem Arquivo")
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/e1/theme", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, quero 404 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "not_found")
+}
+
+// TestGetEntityThemeHead cobre o HEAD (o front confere existência sem baixar
+// o binário inteiro antes de renderizar o player): 200 sem corpo quando há
+// tema, 404 quando não há.
+func TestGetEntityThemeHead(t *testing.T) {
+	h, d, _ := setupAssetsServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	dir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+
+	recAusente := do(t, h, http.MethodHead, "/api/v1/entities/e1/theme", nil)
+	if recAusente.Code != http.StatusNotFound {
+		t.Fatalf("HEAD sem tema: status = %d, quero 404", recAusente.Code)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "theme.mp3"), []byte("xyz"), 0o644); err != nil {
+		t.Fatalf("escrever theme.mp3: %v", err)
+	}
+	recPresente := do(t, h, http.MethodHead, "/api/v1/entities/e1/theme", nil)
+	if recPresente.Code != http.StatusOK {
+		t.Fatalf("HEAD com tema: status = %d, quero 200", recPresente.Code)
+	}
+	if recPresente.Body.Len() != 0 {
+		t.Errorf("HEAD com tema: corpo = %d bytes, quero 0 (sem corpo)", recPresente.Body.Len())
+	}
+}
+
+// TestGetEntityThemeEntidadeInexistente404 cobre o 404 de entity inexistente.
+func TestGetEntityThemeEntidadeInexistente404(t *testing.T) {
+	h, _, _ := setupAssetsServer(t)
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/naoexiste/theme", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, quero 404", rec.Code)
+	}
+	checkErrorShape(t, rec, "not_found")
+}
+
+// TestGetEntityThemeSerieUsaRaizDaSerie cobre o item "raiz da série": tema
+// na raiz da SERIE (nao numa subpasta de temporada) e encontrado quando o
+// endpoint e chamado com o id da serie -- mesma resolucao de DiretorioDestino
+// usada por materialize/nfo (briefing 0081).
+func TestGetEntityThemeSerieUsaRaizDaSerie(t *testing.T) {
+	h, d, _ := setupAssetsServer(t)
+	semearEntity(t, d, "serie1", "tv", "Serie")
+	semearEntity(t, d, "temp1", "season", "Temporada 1")
+	if _, err := escrita(t, d).CriarEntityRelation(context.Background(), sqlcgen.CriarEntityRelationParams{
+		ID: "rel1", ParentID: "serie1", ChildID: "temp1", Kind: "tv_season",
+	}); err != nil {
+		t.Fatalf("CriarEntityRelation: %v", err)
+	}
+
+	raiz := t.TempDir()
+	// Duas pastas de temporada IRMAS sob a raiz -- o prefixo comum cai na
+	// raiz da serie (briefing 0081), sem precisar do fallback de subir nivel.
+	semearFile(t, d, "mf1", "serie1", filepath.Join(raiz, "Season 01", "s01e01.mkv"), "present", 1.0, "")
+	semearFile(t, d, "mf2", "serie1", filepath.Join(raiz, "Season 02", "s02e01.mkv"), "present", 1.0, "")
+
+	if err := os.WriteFile(filepath.Join(raiz, "theme.mp3"), []byte("tema-serie"), 0o644); err != nil {
+		t.Fatalf("escrever theme.mp3: %v", err)
+	}
+
+	recSerie := do(t, h, http.MethodGet, "/api/v1/entities/serie1/theme", nil)
+	if recSerie.Code != http.StatusOK {
+		t.Fatalf("serie: status = %d, quero 200 (corpo=%s)", recSerie.Code, recSerie.Body.String())
+	}
+
+	recTemp := do(t, h, http.MethodGet, "/api/v1/entities/temp1/theme", nil)
+	if recTemp.Code != http.StatusOK {
+		t.Fatalf("temporada: status = %d, quero 200 (corpo=%s)", recTemp.Code, recTemp.Body.String())
+	}
+}

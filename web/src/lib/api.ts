@@ -772,6 +772,34 @@ export async function listAssets(id: string): Promise<AssetList> {
   )
 }
 
+// ── Tema musical local (briefing 0082) ───────────────────────────────────────
+
+// themePath monta a rota do binário do tema — fonte única do template (o
+// player do hero usa a MESMA rota como `src` do `<audio>` e no HEAD abaixo).
+function themePath(id: string): string {
+  return `/api/v1/entities/${encodeURIComponent(id)}/theme`
+}
+
+// themeSrc é a URL absoluta (respeitando a base) do binário do tema, pronta
+// para o `src` do `<audio>`.
+export function themeSrc(id: string): string {
+  return `${base}${themePath(id)}`
+}
+
+// hasEntityTheme confere se a entity tem um theme.{mp3,ogg,flac} na pasta-raiz
+// SEM baixar o binário inteiro (HEAD — o backend serve o mesmo handler,
+// `http.ServeContent` já omite o corpo). Usada uma vez por carga da tela (sem
+// polling): 200 → true, 404 → false. Falha de rede também vira `false`
+// (degradação graciosa — o player simplesmente não aparece).
+export async function hasEntityTheme(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${base}${themePath(id)}`, { method: 'HEAD' })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 // Upload multipart do binário do dono (`origin=user`). Monta um FormData com os
 // campos `file` e `kind` — NÃO seta `content-type` à mão: o browser preenche o
 // header com o boundary do multipart. Os limites do backend (415 tipo, 413

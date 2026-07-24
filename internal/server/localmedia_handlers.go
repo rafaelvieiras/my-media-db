@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -608,4 +609,98 @@ func (s *Server) renomearParaBare(ctx context.Context, ent sqlcgen.Entity, alvo 
 		return "", err
 	}
 	return destino, nil
+}
+
+// ── GET /entities/{id}/theme — tema musical local (briefing 0082) ──────────
+//
+// Fundação MÍNIMA e LOCAL-ONLY: sem provider (não há fonte confiável
+// integrada de tema musical, ver briefing §3) — o dono coloca manualmente um
+// `theme.{mp3,ogg,flac}` na pasta-raiz do item (mesma raiz de
+// DiretorioDestino, reaproveitada de resolverDestino, já usada por
+// materialize/nfo acima) e este endpoint só DETECTA e serve o binário, sem
+// materializar asset algum.
+
+// extensoesTema lista, em ordem de preferência, os formatos de tema aceitos —
+// mp3 primeiro (o caso comum Kodi/Jellyfin), ogg/flac como alternativas. Lista
+// fixa em código (briefing §5: "não exposta como opção").
+var extensoesTema = []string{".mp3", ".ogg", ".flac"}
+
+// encontrarArquivoTema procura theme.<ext> na raiz `dir`, na ordem de
+// extensoesTema — a primeira que existir (e não for diretório) vence.
+func encontrarArquivoTema(dir string) (string, bool) {
+	for _, ext := range extensoesTema {
+		caminho := filepath.Join(dir, "theme"+ext)
+		info, err := os.Stat(caminho)
+		if err == nil && !info.IsDir() {
+			return caminho, true
+		}
+	}
+	return "", false
+}
+
+// contentTypeTema resolve o content-type do tema pela extensão — as três
+// aceitas por encontrarArquivoTema têm content-type conhecido e fixo (sem
+// precisar farejar bytes como contentTypeImagem faz para a arte).
+func contentTypeTema(caminho string) string {
+	switch strings.ToLower(filepath.Ext(caminho)) {
+	case ".ogg":
+		return "audio/ogg"
+	case ".flac":
+		return "audio/flac"
+	default:
+		return "audio/mpeg"
+	}
+}
+
+// getEntityTheme trata GET /api/v1/entities/{id}/theme: resolve a pasta-raiz
+// do item (resolverDestino — MESMA resolução de DiretorioDestino usada por
+// materialize/nfo) e serve o binário do theme.{mp3,ogg,flac} encontrado ali,
+// se houver. O caminho nasce 100% da resolução SERVER-SIDE (nunca de input do
+// cliente, que só fornece o id) — sem materializar asset, sem tocar o banco.
+// 404 quando a entity não existe, não tem pasta de destino (sem media_file
+// present) ou não há arquivo de tema na pasta.
+func (s *Server) getEntityTheme(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	ctx := r.Context()
+
+	ent, ok := s.exigirEntity(w, ctx, id)
+	if !ok {
+		return
+	}
+
+	dir, _, _, ok, err := s.resolverDestino(ctx, ent)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found",
+			"sem pasta de destino na biblioteca (nenhum arquivo presente)")
+		return
+	}
+
+	caminho, ok := encontrarArquivoTema(dir)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "tema musical não encontrado")
+		return
+	}
+
+	limpo := filepath.Clean(caminho)
+	f, err := os.Open(limpo) //nolint:gosec // caminho vem so da resolucao server-side (resolverDestino), nunca de input do cliente
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "arquivo de tema indisponível")
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		writeError(w, http.StatusNotFound, "not_found", "arquivo de tema indisponível")
+		return
+	}
+	w.Header().Set("Content-Type", contentTypeTema(limpo))
+	http.ServeContent(w, r, filepath.Base(limpo), info.ModTime(), f)
 }

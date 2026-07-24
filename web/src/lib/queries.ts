@@ -12,6 +12,7 @@ import {
   getCatalogCompletenessSettings,
   getHealth,
   getSystemHealth,
+  hasEntityTheme,
   getLanguageSettings,
   getMatchPreview,
   listJobExecutions,
@@ -160,6 +161,16 @@ export function assetsQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['assets', id],
     queryFn: () => listAssets(id),
+  })
+}
+
+// Tema musical local (briefing 0082): confere (HEAD, uma vez por carga) se a
+// entity tem um theme.{mp3,ogg,flac} na pasta-raiz — sem invalidação própria
+// (o arquivo só muda por ação manual do dono no disco, fora da UI).
+export function entityThemeQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: ['entity', id, 'theme'],
+    queryFn: () => hasEntityTheme(id),
   })
 }
 

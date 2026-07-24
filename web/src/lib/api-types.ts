@@ -850,6 +850,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/theme': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Serve o binário do tema musical local (audio/*, briefing 0082).
+     * @description Fundação MÍNIMA e LOCAL-ONLY de tema musical (sem provider algum — não há fonte confiável integrada, ver briefing 0082 §3): resolve a pasta-raiz do item (MESMA resolução de `DiretorioDestino` usada por POST .../nfo e .../assets/{assetId}/materialize — raiz da série ou pasta do filme) e procura `theme.mp3`/`theme.ogg`/`theme.flac` ali, nessa ordem. Devolve o binário com o Content-Type correto quando encontrado. 404 quando a entity não existe, não tem nenhum `media_file` presente (sem pasta de destino) ou não há arquivo de tema na pasta; 503 se a leitura de entities está indisponível (banco).
+     */
+    get: operations['getEntityTheme']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/purge': {
     parameters: {
       query?: never
@@ -3364,6 +3384,31 @@ export interface operations {
         }
       }
       404: components['responses']['Error']
+    }
+  }
+  getEntityTheme: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Binário do tema musical. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'audio/*': string
+        }
+      }
+      404: components['responses']['Error']
+      503: components['responses']['Error']
     }
   }
   purgeEntities: {
