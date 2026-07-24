@@ -13,7 +13,7 @@
 | **ID** | 0079 |
 | **Tipo** | fix/chore (refactor visual) |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [03-arquitetura](../docs/03-arquitetura.md) |
 | **Depende de** | 0022, 0023, 0044, 0045, 0048, 0049 |
 
