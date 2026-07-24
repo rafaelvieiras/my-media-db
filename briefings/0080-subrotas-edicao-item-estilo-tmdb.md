@@ -10,7 +10,7 @@
 | **ID** | 0080 |
 | **Tipo** | feature (refactor de rota) |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [03-arquitetura](../docs/03-arquitetura.md) |
 | **Depende de** | 0030, 0073 |
 
