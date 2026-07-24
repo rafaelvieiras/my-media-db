@@ -53,9 +53,11 @@ test('detalhe externo: secoes sem dado nao renderizam (degradacao graciosa)', as
   await expect(
     page.getByRole('heading', { level: 1, name: 'Matrix' }),
   ).toBeVisible()
-  // As secoes ricas COM dado aparecem.
+  // As secoes ricas COM dado aparecem. Generos (briefing 0079) viraram badges
+  // compactos perto do titulo, sem heading propria -- checa o badge em vez da heading.
   await expect(page.getByRole('heading', { name: 'Sinopse' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Gêneros' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Gêneros' })).toHaveCount(0)
+  await expect(page.getByText('Ficcao cientifica')).toBeVisible()
   // As sem dado no fake (videos/similares/colecao/palavras-chave) nao emitem cabecalho.
   for (const secao of ['Vídeos', 'Similares', 'Coleção', 'Palavras-chave']) {
     await expect(page.getByRole('heading', { name: secao })).toHaveCount(0)
