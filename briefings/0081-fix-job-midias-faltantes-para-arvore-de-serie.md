@@ -13,7 +13,7 @@
 | **ID** | 0081 |
 | **Tipo** | fix |
 | **Fase (roadmap)** | Fase 4 — Mídias locais |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [09-nfo-e-export](../docs/09-nfo-e-export.md) |
 | **Depende de** | 0062, 0063, 0064, 0044 |
 
