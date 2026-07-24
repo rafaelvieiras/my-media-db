@@ -92,6 +92,30 @@ export function FormSaveFooter({
   )
 }
 
+// EntityEditEstadoCarga é o estado de carregando/erro comum às 3 subrotas de
+// edição de item (briefing 0080: entity-edit-basico/-ids/-creditos.tsx) —
+// extraído para as três não duplicarem o mesmo wrapper (jscpd).
+export function EntityEditEstadoCarga({
+  carregando,
+  erro,
+}: {
+  carregando: boolean
+  erro?: unknown
+}) {
+  return (
+    <main className="mx-auto max-w-2xl px-4 py-6">
+      {carregando ? (
+        <LoadingState label="Carregando item…" />
+      ) : (
+        <ErrorState
+          title="Não foi possível carregar o item"
+          message={erro instanceof Error ? erro.message : undefined}
+        />
+      )}
+    </main>
+  )
+}
+
 export function EmptyState({
   title,
   description,

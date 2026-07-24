@@ -42,9 +42,11 @@ describe('erro: fonte indisponível ao re-enriquecer (Fase 3)', () => {
       ),
     )
 
-    await renderRota(`/entities/${id}/edit`)
+    // Subrota "IDs de terceiros" (briefing 0080): é onde "Salvar e
+    // re-enriquecer" vive agora, isolada da seção "Informações básicas".
+    await renderRota(`/entities/${id}/edit/ids`)
 
-    await screen.findByLabelText('Título')
+    await screen.findByText('Salvar e re-enriquecer')
 
     fireEvent.click(screen.getByText('Salvar e re-enriquecer'))
 
@@ -55,6 +57,6 @@ describe('erro: fonte indisponível ao re-enriquecer (Fase 3)', () => {
       ).toBeInTheDocument()
     })
     expect(screen.getByText('Salvar e re-enriquecer')).toBeInTheDocument()
-    expect(screen.getByLabelText('Título')).toBeInTheDocument()
+    expect(screen.getByLabelText('Fonte do id externo')).toBeInTheDocument()
   })
 })

@@ -73,19 +73,23 @@ test('item manual: fixar external-ids e re-enriquecer puxa dados da fonte', asyn
     page.getByRole('heading', { level: 1, name: 'Meu Filme Local' }),
   ).toBeVisible()
 
-  // "Editar" e um LINK para a rota `/entities/$id/edit` (0030); o editor de IDs
-  // externos foi realocado para dentro dela. Fixa a fonte tmdb=603.
+  // "Editar" e um LINK para a rota `/entities/$id/edit` (0030), agora com uma
+  // sidebar de secoes (0080): o editor de IDs externos vive na subrota
+  // "IDs de terceiros" (`/entities/$id/edit/ids`). Fixa a fonte tmdb=603.
   await page.getByRole('link', { name: 'Editar' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
+  await page.getByRole('link', { name: 'IDs de terceiros' }).click()
+  await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit/ids$`))
   await page.getByRole('button', { name: 'Adicionar fonte' }).click()
   await page.getByRole('textbox', { name: 'Fonte do id externo' }).fill('tmdb')
   // O aria-label do id passa a "Id na fonte tmdb" depois que a fonte e digitada.
   await page.getByRole('textbox', { name: /^Id na fonte/ }).fill('603')
   await page.getByRole('button', { name: 'Salvar e re-enriquecer' }).click()
 
-  // Espera o enrich round-tripar: o form da edicao reflete o novo titulo resolvido
-  // da fonte no placeholder do campo Titulo (prova de que os dados da fonte 603
-  // foram puxados). Depois navega para o detalhe (view limpa de leitura).
+  // Espera o enrich round-tripar: volta para "Informacoes basicas" e confere que
+  // o form reflete o novo titulo resolvido da fonte no placeholder do campo
+  // Titulo (prova de que os dados da fonte 603 foram puxados).
+  await page.getByRole('link', { name: 'Informações básicas' }).click()
   await expect(
     page.getByRole('textbox', { name: 'Título', exact: true }),
   ).toHaveAttribute('placeholder', 'Matrix')

@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { MouseEventHandler, ReactNode } from 'react'
-import { EntityEditScreen } from '@/routes/entity-edit'
+import { EntityEditBasicoScreen } from '@/routes/entity-edit-basico'
 import { LanguageProvider } from '@/lib/language-context'
 import type { OverrideBlob, ResolvedEntity } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
@@ -13,29 +12,26 @@ import {
   settingsPadrao,
 } from '@/test/entity-fixtures'
 
-// Rota `/entities/$id/edit` (0030): a edição do override dirigida por schema. Cobre
-// a semântica por-idioma preservada do editor antigo (0016): definir vazio × Limpar,
-// tags {add,remove}, neutro escalar, número, 422 inline e a navegação de volta.
+// Rota `/entities/$id/edit` (0030; dividida em subrotas pelo 0080): a seção
+// "Informações básicas" — o formulário dirigido por descritores. Cobre a
+// semântica por-idioma preservada do editor antigo (0016): definir vazio ×
+// Limpar, tags {add,remove}, neutro escalar, número, 422 inline e a navegação de
+// volta, além do guard de "sair sem salvar" (0073), agora local a esta seção.
 const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
 
-vi.mock('@tanstack/react-router', () => ({
-  useParams: () => ({ id: 'e1' }),
-  useNavigate: () => spies.navigate,
-  // Repassa `onClick` (0073: o guard de "sair sem salvar" intercepta o clique
-  // no link "Voltar ao item" via preventDefault + confirm) — antes o mock
-  // descartava qualquer prop além de `children`.
-  Link: ({
-    children,
-    onClick,
-  }: {
-    children: ReactNode
-    onClick?: MouseEventHandler<HTMLAnchorElement>
-  }) => (
-    <a href="#" onClick={onClick}>
-      {children}
-    </a>
-  ),
-}))
+// Import DINÂMICO do mock do Link (`@/test/router-mock`) — a fábrica de
+// `vi.mock` é içada acima dos imports estáticos; referenciar `LinkMock`
+// estaticamente aqui quebraria com "Cannot access before initialization".
+vi.mock('@tanstack/react-router', async () => {
+  const { LinkMock } = await import('@/test/router-mock')
+  return {
+    useParams: () => ({ id: 'e1' }),
+    useNavigate: () => spies.navigate,
+    // Repassa `onClick`/`aria-current` (0073/0080: o guard de "sair sem salvar"
+    // intercepta o clique nos links de navegação via preventDefault + confirm).
+    Link: LinkMock,
+  }
+})
 
 interface Espioes {
   onPatch: ReturnType<
@@ -119,7 +115,7 @@ function renderEdit(opts: Opcoes = {}): Espioes {
   vi.stubGlobal('fetch', fetchRouter(opts, espioes))
   renderWithClient(
     <LanguageProvider>
-      <EntityEditScreen />
+      <EntityEditBasicoScreen />
     </LanguageProvider>,
   )
   return espioes
@@ -147,7 +143,7 @@ async function salvarEEsperarPatch(
   expect(espioes.onPatch).toHaveBeenCalledWith('pt-BR', corpo)
 }
 
-describe('EntityEditScreen — edição por idioma', () => {
+describe('EntityEditBasicoScreen — edição por idioma', () => {
   it('editar o título faz PATCH com lang e corpo certos', async () => {
     const { user, espioes } = await editar()
     await user.type(screen.getByLabelText('Título'), 'Duna')
@@ -261,7 +257,6 @@ describe('EntityEditScreen — edição por idioma', () => {
   })
 
   it('id inexistente (404) mostra o estado de erro', async () => {
-    const espioes: Espioes = { onPatch: vi.fn(), onDelete: vi.fn() }
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
@@ -284,22 +279,21 @@ describe('EntityEditScreen — edição por idioma', () => {
     )
     renderWithClient(
       <LanguageProvider>
-        <EntityEditScreen />
+        <EntityEditBasicoScreen />
       </LanguageProvider>,
     )
     expect(
       await screen.findByText('Não foi possível carregar o item'),
     ).toBeInTheDocument()
-    void espioes
   })
 })
 
-// Guard de "sair sem salvar" (0073): os 3 blocos (SchemaForm/ExternalIdsEditor/
-// CreditsEditor) reportam seu próprio "sujo" via onDirtyChange; a rota combina e
-// intercepta o link "Voltar ao item" + o beforeunload nativo.
-describe('EntityEditScreen — guard de sair sem salvar (0073)', () => {
-  function clicarVoltar() {
-    fireEvent.click(screen.getByRole('link', { name: /Voltar ao item/ }))
+// Guard de "sair sem salvar" (0073), agora local à seção (0080): só o "sujo" do
+// SchemaForm — o EntityEditShell intercepta o link "Voltar ao item" + os links
+// da sidebar + o beforeunload nativo.
+describe('EntityEditBasicoScreen — guard de sair sem salvar (0073/0080)', () => {
+  function linkVoltar() {
+    return screen.getByRole('link', { name: /Voltar ao item/ })
   }
 
   afterEach(() => {
@@ -309,27 +303,31 @@ describe('EntityEditScreen — guard de sair sem salvar (0073)', () => {
   it('sem alterações, "Voltar ao item" navega direto sem confirmação', async () => {
     const confirmar = vi.fn()
     vi.stubGlobal('confirm', confirmar)
-    await editar()
+    const { user } = await editar()
     // Sem sujeira, o guard não intercepta o clique — a navegação segue pelo
     // comportamento padrão do Link (não simulado pelo mock deste arquivo).
-    clicarVoltar()
+    await user.click(linkVoltar())
     expect(confirmar).not.toHaveBeenCalled()
-    // O guard nunca chama `navigate` explicitamente neste caso (não é ele
-    // quem navega quando não há sujeira — é o próprio Link).
     expect(spies.navigate).not.toHaveBeenCalled()
   })
 
-  it('editar o Título dispara confirmação; cancelar mantém a edição', async () => {
+  it('editar o Título dispara confirmação (Voltar e sidebar); cancelar mantém a edição', async () => {
     const confirmar = vi.fn(() => false)
     vi.stubGlobal('confirm', confirmar)
     const { user } = await editar()
     await user.type(screen.getByLabelText('Título'), 'Duna')
-    clicarVoltar()
+    await user.click(linkVoltar())
     expect(confirmar).toHaveBeenCalledTimes(1)
     expect(spies.navigate).not.toHaveBeenCalled()
     expect((screen.getByLabelText('Título') as HTMLInputElement).value).toBe(
       'Duna',
     )
+
+    // Mesmo guard também intercepta o clique em OUTRA seção da sidebar (0080),
+    // não só "Voltar ao item".
+    await user.click(screen.getByRole('link', { name: 'IDs de terceiros' }))
+    expect(confirmar).toHaveBeenCalledTimes(2)
+    expect(spies.navigate).not.toHaveBeenCalled()
   })
 
   it('editar o Título e confirmar a saída navega', async () => {
@@ -339,51 +337,11 @@ describe('EntityEditScreen — guard de sair sem salvar (0073)', () => {
     )
     const { user } = await editar()
     await user.type(screen.getByLabelText('Título'), 'Duna')
-    clicarVoltar()
+    await user.click(linkVoltar())
     expect(spies.navigate).toHaveBeenCalledWith({
       to: '/entities/$id',
       params: { id: 'e1' },
     })
-  })
-
-  it('editar só os IDs externos dispara confirmação', async () => {
-    const confirmar = vi.fn(() => false)
-    vi.stubGlobal('confirm', confirmar)
-    await editar()
-    fireEvent.click(screen.getByText('Adicionar fonte'))
-    fireEvent.change(screen.getByLabelText('Fonte do id externo'), {
-      target: { value: 'tmdb' },
-    })
-    clicarVoltar()
-    expect(confirmar).toHaveBeenCalledTimes(1)
-    expect(spies.navigate).not.toHaveBeenCalled()
-  })
-
-  it('reordenar só o elenco (sem salvar) dispara confirmação', async () => {
-    const confirmar = vi.fn(() => false)
-    vi.stubGlobal('confirm', confirmar)
-    await editar({
-      entityOver: {
-        cast: [
-          {
-            source_id: '1',
-            name: 'Ana',
-            character: 'Heroína',
-            order: 0,
-          },
-          {
-            source_id: '2',
-            name: 'Beto',
-            character: 'Vilão',
-            order: 1,
-          },
-        ],
-      },
-    })
-    fireEvent.click(screen.getAllByLabelText('Mover para baixo')[0])
-    clicarVoltar()
-    expect(confirmar).toHaveBeenCalledTimes(1)
-    expect(spies.navigate).not.toHaveBeenCalled()
   })
 
   it('dispara o aviso nativo (beforeunload) só enquanto há alteração pendente', async () => {
