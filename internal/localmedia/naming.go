@@ -14,6 +14,7 @@ package localmedia
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -200,43 +201,141 @@ type MediaFile struct {
 const estadoPresente = "present"
 
 // DiretorioDestino calcula o DIRETÓRIO de destino (pasta real da biblioteca)
-// de uma entity, seguindo o briefing 0062 §4:
+// de uma entity, seguindo o briefing 0062 §4 (corrigido pelo 0081 -- a versão
+// anterior usava o diretório do media_file mais antigo, que numa árvore de
+// série com subpastas por temporada cai DENTRO de `Season NN/`, nunca na
+// raiz real):
 //
-//   - movie/episode (e qualquer outro tipo "de folha"): o diretório do
-//     media_file mais antigo (created_at asc, state=present) da PRÓPRIA
-//     entity — filtra mediaFiles por EntityID==entity.ID.
-//   - tv (série): idem, filtrando por EntityID==entity.ID — no banco, todo
-//     media_file de episódio já aponta entity_id para a SÉRIE (vínculo N:M
-//     via media_file_entity, ADR-0021), então "a própria entity" da série JÁ
-//     é "qualquer descendente" — sem precisar de travessia extra aqui.
-//   - season (temporada): a pasta é SEMPRE a raiz da SÉRIE, nunca uma
-//     subpasta de temporada — acha o ancestral mais próximo do tipo "tv" na
-//     trilha `ancestors` (a mesma trilha RAIZ->PAI que
-//     resolver.AncestorRef/montarAncestrais já produzem) e filtra mediaFiles
-//     por esse id.
+//   - resolve o alvo (própria entity, ou o ancestral "tv" para season --
+//     mesma resolução de sempre, ver resolverAlvo) e reúne os diretórios
+//     (filepath.Dir) de TODOS os media_file 'present' desse alvo, sem
+//     duplicar.
+//   - calcula o ANCESTRAL COMUM (common path prefix) desses diretórios --
+//     numa série com 2+ pastas de temporada IRMÃS, o prefixo comum já cai
+//     naturalmente na raiz da série (briefing 0081 §4).
+//   - caso de borda: série com 1 única temporada (ou todo arquivo presente
+//     concentrado numa só subpasta) faz o prefixo comum AINDA cair na
+//     própria pasta de temporada -- detecta pelo NOME da pasta resultante
+//     (regexPastaTemporada, tolerante a "Season 01"/"S01"/etc.) e sobe mais
+//     um nível, repetindo enquanto o nome ainda casar (defensivo contra
+//     aninhamento).
 //
 // ok=false quando não há nenhum media_file present elegível (sem pasta de
 // destino — 404 no handler).
+//
+// O fallback "subir mais um nível" (regexPastaTemporada) só se aplica a
+// tv/season -- é a resolução da RAIZ DA SÉRIE que pode colidir com uma
+// subpasta de temporada. Para movie/episode (tipo "de folha"), a pasta de
+// destino LEGITIMAMENTE é uma pasta chamada "Season NN" (convenção Kodi do
+// próprio episódio) -- aplicar o mesmo fallback ali subiria incorretamente
+// para a raiz da série.
 func DiretorioDestino(entity Entity, mediaFiles []MediaFile, ancestors []Entity) (string, bool) {
-	mf, ok := ArquivoMaisAntigo(entity, mediaFiles, ancestors)
-	if !ok {
+	dirs := diretoriosPresentesDoAlvo(entity, mediaFiles, ancestors)
+	if len(dirs) == 0 {
 		return "", false
 	}
-	return filepath.Dir(mf.Path), true
+	raiz := prefixoComumDeDiretorios(dirs)
+	if entity.Type == TipoSerie || entity.Type == TipoTemporada {
+		raiz = subirEnquantoPastaDeTemporada(raiz)
+	}
+	return raiz, true
+}
+
+// regexPastaTemporada casa nomes de pasta de temporada (Kodi/Jellyfin, ver
+// briefing 0081 §2): "Season 1", "Season 01", "season12" (com ou sem espaço)
+// ou a forma curta "S01"/"s1" -- tolerante a variação de zero-padding/caixa.
+var regexPastaTemporada = regexp.MustCompile(`(?i)^season\s*\d+$|^s\d{1,2}$`)
+
+// diretoriosPresentesDoAlvo reúne, na ordem de aparição e sem duplicar, os
+// diretórios (filepath.Dir) de todo media_file 'present' do alvo resolvido
+// para `entity` (resolverAlvo).
+func diretoriosPresentesDoAlvo(entity Entity, mediaFiles []MediaFile, ancestors []Entity) []string {
+	alvo := resolverAlvo(entity, ancestors)
+	vistos := make(map[string]bool, len(mediaFiles))
+	var dirs []string
+	for _, mf := range mediaFiles {
+		if mf.EntityID != alvo || mf.State != estadoPresente {
+			continue
+		}
+		dir := filepath.Dir(mf.Path)
+		if !vistos[dir] {
+			vistos[dir] = true
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs
+}
+
+// subirEnquantoPastaDeTemporada sobe um nível de `raiz` enquanto o NOME da
+// pasta ainda parecer uma pasta de temporada (regexPastaTemporada) -- ver
+// DiretorioDestino (só chamada para tv/season).
+func subirEnquantoPastaDeTemporada(raiz string) string {
+	for raiz != "" && regexPastaTemporada.MatchString(filepath.Base(raiz)) {
+		pai := filepath.Dir(raiz)
+		if pai == raiz {
+			break // já na raiz do filesystem -- nada mais a subir (defensivo)
+		}
+		raiz = pai
+	}
+	return raiz
+}
+
+// prefixoComumDeDiretorios calcula o prefixo de caminho comum a todos os
+// diretórios de `dirs`, comparando por SEGMENTO de path (nunca por
+// substring bruta, que cortaria nomes de pasta ao meio). Um único diretório
+// devolve ele mesmo.
+func prefixoComumDeDiretorios(dirs []string) string {
+	if len(dirs) == 0 {
+		return ""
+	}
+	comuns := strings.Split(filepath.Clean(dirs[0]), string(filepath.Separator))
+	for _, d := range dirs[1:] {
+		comuns = prefixoComumDeSegmentos(comuns, strings.Split(filepath.Clean(d), string(filepath.Separator)))
+	}
+	raiz := strings.Join(comuns, string(filepath.Separator))
+	if raiz == "" {
+		raiz = string(filepath.Separator)
+	}
+	return raiz
+}
+
+// prefixoComumDeSegmentos devolve o prefixo comum de dois slices de
+// segmentos de path (comparação posicional, para no primeiro que diverge).
+func prefixoComumDeSegmentos(a, b []string) []string {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	i := 0
+	for i < n && a[i] == b[i] {
+		i++
+	}
+	return a[:i]
+}
+
+// resolverAlvo devolve o id da entity cujos media_file devem ser
+// considerados para DiretorioDestino/ArquivoMaisAntigo: a própria entity,
+// exceto season, que usa o ancestral "tv" (a série não tem media_file
+// próprio -- todo arquivo de episódio aponta entity_id para ELA, ADR-0021).
+func resolverAlvo(entity Entity, ancestors []Entity) string {
+	if entity.Type == TipoTemporada {
+		if serieID, ok := serieAncestral(ancestors); ok {
+			return serieID
+		}
+	}
+	return entity.ID
 }
 
 // ArquivoMaisAntigo devolve o media_file 'present' mais antigo (created_at
 // asc) elegível para a entity (mesma resolução de alvo que DiretorioDestino
 // usa — própria entity, ou o ancestral "tv" para season). ok=false quando
 // nenhum é elegível. Exposta separadamente de DiretorioDestino porque o
-// chamador do NFO também precisa do nome-base do vídeo (não só o diretório).
+// chamador do NFO/nome de arquivo de vídeo também precisa de UM vídeo
+// representativo (nome-base), não só o diretório -- desde o 0081,
+// DiretorioDestino não usa mais este resultado internamente (a raiz real da
+// série pode não ser o diretório deste arquivo).
 func ArquivoMaisAntigo(entity Entity, mediaFiles []MediaFile, ancestors []Entity) (MediaFile, bool) {
-	alvo := entity.ID
-	if entity.Type == TipoTemporada {
-		if serieID, ok := serieAncestral(ancestors); ok {
-			alvo = serieID
-		}
-	}
+	alvo := resolverAlvo(entity, ancestors)
 	var maisAntigo MediaFile
 	achou := false
 	for _, mf := range mediaFiles {

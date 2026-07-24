@@ -127,16 +127,59 @@ FROM media_file
 WHERE state = 'present';
 
 -- name: ListarEntityIDsComMediaFilePresente :many
--- Universo elegivel do job `midias_faltantes` (briefing 0064): toda entity
--- que possui ao menos um media_file 'present'. Para SERIE, media_file.entity_id
--- aponta pra SERIE (nunca season/episodio, ver internal/scanner/serie.go
--- gravarArquivoSerie) -- entao season/episodio nunca aparecem aqui, o que casa
--- com a regra de writeEntityNfo (season nao tem NFO proprio, internal/server/
--- localmedia_handlers.go).
+-- Universo elegivel do job `midias_faltantes` (briefing 0064) PARA MOVIE/TV
+-- DIRETO: toda entity que possui ao menos um media_file 'present' apontando
+-- entity_id pra ela. Para SERIE, media_file.entity_id aponta pra SERIE (nunca
+-- season/episodio, ver internal/scanner/serie.go gravarArquivoSerie) -- entao
+-- esta query sozinha nao alcanca season/episodio (o vinculo deles e via a
+-- juncao media_file_entity, kind='tv_episode'). Desde o briefing 0081, o
+-- chamador (ListarEntitiesComMediaFilePresente, internal/server/midias_
+-- faltantes.go) combina o resultado desta query com
+-- ListarSeasonIDsComEpisodioPresente/ListarEpisodeIDsComMediaFilePresente
+-- abaixo -- season continua sem NFO proprio (guarda em gravarNFOSeFaltante),
+-- mas episodio passa a ser elegivel (NFO) e season tambem (poster de
+-- temporada).
 SELECT DISTINCT entity_id
 FROM media_file
 WHERE state = 'present'
 ORDER BY entity_id;
+
+-- name: ListarSeasonIDsComEpisodioPresente :many
+-- Temporadas elegiveis para o job `midias_faltantes` (briefing 0081): toda
+-- season com ao menos um episodio DESCENDENTE com media_file 'present'. O
+-- vinculo serie->season->episodio e entity_relation (kind='tv_episode', ver
+-- internal/enrich/serie.go relacaoEpisodio -- er.parent_id=season,
+-- er.child_id=episodio); o vinculo episodio<->arquivo e a juncao generica
+-- media_file_entity (mesmo kind, ADR-0021). Season continua sem NFO proprio
+-- (guarda em gravarNFOSeFaltante) -- esta query so habilita o job a
+-- materializar o POSTER de temporada (season0N-poster.jpg) na raiz da serie.
+SELECT DISTINCT er.parent_id AS entity_id
+FROM entity_relation er
+WHERE er.kind = 'tv_episode'
+  AND EXISTS (
+      SELECT 1
+      FROM media_file_entity mfe
+      JOIN media_file mf ON mf.id = mfe.media_file_id
+      WHERE mfe.entity_id = er.child_id
+        AND mfe.kind = 'tv_episode'
+        AND mf.state = 'present'
+  )
+ORDER BY entity_id;
+
+-- name: ListarEpisodeIDsComMediaFilePresente :many
+-- Episodios elegiveis para o job `midias_faltantes` (briefing 0081): todo
+-- episodio com media_file 'present' vinculado via a juncao generica
+-- media_file_entity (kind='tv_episode') -- media_file.entity_id aponta pra
+-- SERIE, nunca pro episodio (ver ListarEntityIDsComMediaFilePresente acima),
+-- entao esta query cobre o caminho que a outra nao alcanca. Habilita o job a
+-- gravar o NFO do episodio (kind ja suportado por nomeRaizNFO/raizEpisode,
+-- so nunca era alcancado); arte de episodio (still) continua FORA
+-- (kindsMidiasFaltantes nao ganha still -- lazy/manual, briefing 0044).
+SELECT DISTINCT mfe.entity_id
+FROM media_file_entity mfe
+JOIN media_file mf ON mf.id = mfe.media_file_id
+WHERE mfe.kind = 'tv_episode' AND mf.state = 'present'
+ORDER BY mfe.entity_id;
 
 -- name: EntityTemPosse :one
 -- POSSE DERIVADA (ADR-0009): verdadeiro se, e so se, existe ao menos um

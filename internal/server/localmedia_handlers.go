@@ -226,18 +226,41 @@ func (s *Server) locaisExistentesDoKind(ctx context.Context, entityID, kind, exc
 // resolverDestino calcula o diretório de destino, o nome-base do vídeo e se
 // a pasta é EXCLUSIVA (um único vídeo) para uma entity — a base compartilhada
 // por materialize/prefer/nfo. ok=false quando a entity não tem media_file
-// present elegível (sem pasta de destino).
+// present elegível (sem pasta de destino). O DIRETÓRIO vem de
+// localmedia.DiretorioDestino (raiz real da série, briefing 0081 -- nunca
+// mais uma subpasta de temporada); o nome-base do vídeo continua vindo do
+// media_file mais antigo (ArquivoMaisAntigo), que é quem nomeia o .nfo/still
+// de filme e episódio.
+//
+// tv/season SEMPRE são "pasta exclusiva" (briefing 0081): a raiz da série
+// nunca tem vídeo diretamente dentro dela (0031/TV1-TV5, os episódios ficam
+// em subpastas de temporada) -- então EhPastaExclusiva (que conta vídeo
+// PRESENTE direto no diretório) sempre devolveria false ali, forçando o
+// pôster/fanart da série a nascer prefixado pelo nome do vídeo mais antigo
+// (exatamente o bug relatado: "poster.jpg salvo como ...-S01E01-...-
+// poster.jpg"). Kodi não tem conceito de "edição"/ambiguidade para arte de
+// NÍVEL DE OBRA de série -- é sempre poster.jpg/fanart.jpg bare (a rotação
+// numérica de múltiplas artes continua via sufixoRotacao, independente desta
+// flag).
 func (s *Server) resolverDestino(ctx context.Context, ent sqlcgen.Entity) (dir, nomeBaseVideo string, pastaExclusiva, ok bool, err error) {
 	localFiles, ancestors, err := s.carregarMediaFilesLocalmedia(ctx, ent)
 	if err != nil {
 		return "", "", false, false, err
 	}
-	mf, achou := localmedia.ArquivoMaisAntigo(localmedia.Entity{ID: ent.ID, Type: ent.Type}, localFiles, ancestors)
+	entLocal := localmedia.Entity{ID: ent.ID, Type: ent.Type}
+	dir, ok = localmedia.DiretorioDestino(entLocal, localFiles, ancestors)
+	if !ok {
+		return "", "", false, false, nil
+	}
+	mf, achou := localmedia.ArquivoMaisAntigo(entLocal, localFiles, ancestors)
 	if !achou {
 		return "", "", false, false, nil
 	}
-	dir = filepath.Dir(mf.Path)
 	nomeBaseVideo = localmedia.NomeBaseVideo(mf.Path)
+
+	if ent.Type == tipoEntSerie || ent.Type == tipoEntTemporada {
+		return dir, nomeBaseVideo, true, true, nil
+	}
 
 	todosPresentes, err := s.leitura().ListarMediaFilesPresentes(ctx)
 	if err != nil {
