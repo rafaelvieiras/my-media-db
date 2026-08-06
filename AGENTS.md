@@ -140,6 +140,21 @@ Um PR/patch que contraria um princípio provavelmente será recusado.
   única implementação é o maior desperdício de tempo/contexto; prefira
   `make gate-fast` ao iterar e reserve `make gate-local` completo para
   o final (ver acima).
+- **A catraca completa (`make gate-local`) só roda no agente dedicado de
+  validação/commit/push — nunca dentro de um agente de implementação.**
+  Rodá-la em cada agente de implementação duplica uma saída verbosa que a
+  etapa final já vai rodar de novo. Agente de implementação valida com
+  `go build`/`go vet`/`go test -count=1` (escopado aos pacotes tocados
+  durante a iteração; `./...` só na passada final dele) e, se quiser,
+  `make gate-fast`; `make gate-local` fica reservado pro agente final.
+- **Tarefa grande e multi-camada → pipeline de agentes estreitos por
+  camada, não um agente monolítico.** No briefing 0084, um único agente de
+  backend cobrindo 10 subsistemas (migration+sqlc, algoritmo, capacidade
+  de provider, 4 pontos de integração, scanner, testes) consumiu ~349k
+  tokens/206 tool-calls/~30min; o agente de frontend do mesmo briefing,
+  com escopo de 3 arquivos, consumiu 77k. Prefira quebrar por camada (ex.:
+  dados/sqlc → algoritmo/provider → integração/threading → testes), cada
+  agente com brief detalhado e escopo de arquivo estreito.
 - Ambiente de dev: `docker compose -f compose.dev.yaml up` (web :5173, api :8080
   com hot-reload via air). DB em `tmp/mymediadb.sqlite`.
 
