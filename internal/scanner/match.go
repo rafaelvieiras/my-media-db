@@ -35,6 +35,19 @@ func (r *scanRun) gravarArquivo(ctx context.Context, q *sqlcgen.Queries, f fileF
 		return err
 	}
 
+	// O hash não bateu com nenhuma linha, mas o PATH pode já ter uma (conteúdo
+	// trocado no lugar -- reencode/substituição, ou mtime/size do provedor
+	// sofreram drift o bastante pra invalidar o short-circuit de
+	// mediaFileInalteradoPorPath). Sem esta checagem, o INSERT abaixo bateria no
+	// UNIQUE(path) e abortaria o lote inteiro.
+	porPath, err := q.ObterMediaFilePorPath(ctx, f.path)
+	if err == nil {
+		return r.atualizarConteudoMudou(ctx, q, porPath, f)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+
 	entityID, err := r.resolverEntity(ctx, q, f)
 	if err != nil {
 		return err
@@ -65,6 +78,29 @@ func (r *scanRun) reencontrar(ctx context.Context, q *sqlcgen.Queries, existente
 		Path:            f.path,
 		Size:            niInt(f.size),
 		Mtime:           nsOpt(f.mtime),
+		LastSeen:        nsOpt(r.scanTS),
+		LibrarySourceID: nsOpt(r.source.ID),
+		ID:              existente.ID,
+	})
+	if err == nil {
+		r.cache[f.folderKey] = existente.EntityID
+	}
+	return err
+}
+
+// atualizarConteudoMudou trata um arquivo cujo PATH já era conhecido mas o
+// content_hash recém-calculado diverge da linha existente: o conteúdo foi
+// substituído no lugar (reencode, arquivo trocado). Atualiza todos os campos
+// derivados do conteúdo, preservando id/entity_id (mesma obra, mesmo path).
+func (r *scanRun) atualizarConteudoMudou(ctx context.Context, q *sqlcgen.Queries, existente sqlcgen.MediaFile, f fileFacts) error {
+	_, err := q.AtualizarMediaFileConteudoMudou(ctx, sqlcgen.AtualizarMediaFileConteudoMudouParams{
+		ContentHash:     nsOpt(f.hash),
+		Size:            niInt(f.size),
+		Mtime:           nsOpt(f.mtime),
+		Edition:         nsOpt(f.arquivo.Edition),
+		PartNo:          niOptInt(f.arquivo.PartNo),
+		MatchConfidence: nfFloat(confianca(f.entidade)),
+		MediainfoJson:   nsBytes(f.mediainfo),
 		LastSeen:        nsOpt(r.scanTS),
 		LibrarySourceID: nsOpt(r.source.ID),
 		ID:              existente.ID,

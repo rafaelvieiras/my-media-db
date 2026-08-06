@@ -74,6 +74,32 @@ WHERE id = ?
 RETURNING id, entity_id, path, content_hash, size, mtime, edition, part_no,
     match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id;
 
+-- name: AtualizarMediaFileConteudoMudou :one
+-- O path ja tinha uma linha, mas o content_hash recem-calculado NAO bate com
+-- ela (arquivo substituido/reencodado no lugar, ou mtime/size do provedor
+-- (ex.: rclone/Drive) sofreram drift o bastante para invalidar o
+-- short-circuit de ObterMediaFilePorPath -- ver mediaFileInalteradoPorPath em
+-- internal/scanner/scan.go). Sem esta query, gravarArquivo cairia num INSERT
+-- que bate no UNIQUE(path) da linha ja existente. Atualiza TODOS os campos
+-- derivados do conteudo (hash/tamanho/mtime/mediainfo/edicao/parte/
+-- confianca), preservando id/entity_id -- mesmo espirito de
+-- AtualizarMediaFileVisto, mas o gatilho aqui e o PATH bater, nao o hash.
+UPDATE media_file
+SET content_hash = ?,
+    size = ?,
+    mtime = ?,
+    edition = ?,
+    part_no = ?,
+    match_confidence = ?,
+    mediainfo_json = ?,
+    state = 'present',
+    last_seen = ?,
+    library_source_id = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+RETURNING id, entity_id, path, content_hash, size, mtime, edition, part_no,
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id;
+
 -- name: MarcarMediaFilesNaoVistosMissing :execrows
 -- Fecho do ciclo de vida (ADR-0012): ao concluir um scan COMPLETO com a fonte
 -- acessivel, todo media_file 'present' daquela fonte cujo last_seen NAO e o

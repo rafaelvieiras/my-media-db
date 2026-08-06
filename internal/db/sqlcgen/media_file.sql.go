@@ -33,6 +33,80 @@ func (q *Queries) ApagarMediaFilesPorFonte(ctx context.Context, librarySourceID 
 	return err
 }
 
+const atualizarMediaFileConteudoMudou = `-- name: AtualizarMediaFileConteudoMudou :one
+UPDATE media_file
+SET content_hash = ?,
+    size = ?,
+    mtime = ?,
+    edition = ?,
+    part_no = ?,
+    match_confidence = ?,
+    mediainfo_json = ?,
+    state = 'present',
+    last_seen = ?,
+    library_source_id = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+RETURNING id, entity_id, path, content_hash, size, mtime, edition, part_no,
+    match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id
+`
+
+type AtualizarMediaFileConteudoMudouParams struct {
+	ContentHash     sql.NullString
+	Size            sql.NullInt64
+	Mtime           sql.NullString
+	Edition         sql.NullString
+	PartNo          sql.NullInt64
+	MatchConfidence sql.NullFloat64
+	MediainfoJson   sql.NullString
+	LastSeen        sql.NullString
+	LibrarySourceID sql.NullString
+	ID              string
+}
+
+// O path ja tinha uma linha, mas o content_hash recem-calculado NAO bate com
+// ela (arquivo substituido/reencodado no lugar, ou mtime/size do provedor
+// (ex.: rclone/Drive) sofreram drift o bastante para invalidar o
+// short-circuit de ObterMediaFilePorPath -- ver mediaFileInalteradoPorPath em
+// internal/scanner/scan.go). Sem esta query, gravarArquivo cairia num INSERT
+// que bate no UNIQUE(path) da linha ja existente. Atualiza TODOS os campos
+// derivados do conteudo (hash/tamanho/mtime/mediainfo/edicao/parte/
+// confianca), preservando id/entity_id -- mesmo espirito de
+// AtualizarMediaFileVisto, mas o gatilho aqui e o PATH bater, nao o hash.
+func (q *Queries) AtualizarMediaFileConteudoMudou(ctx context.Context, arg AtualizarMediaFileConteudoMudouParams) (MediaFile, error) {
+	row := q.db.QueryRowContext(ctx, atualizarMediaFileConteudoMudou,
+		arg.ContentHash,
+		arg.Size,
+		arg.Mtime,
+		arg.Edition,
+		arg.PartNo,
+		arg.MatchConfidence,
+		arg.MediainfoJson,
+		arg.LastSeen,
+		arg.LibrarySourceID,
+		arg.ID,
+	)
+	var i MediaFile
+	err := row.Scan(
+		&i.ID,
+		&i.EntityID,
+		&i.Path,
+		&i.ContentHash,
+		&i.Size,
+		&i.Mtime,
+		&i.Edition,
+		&i.PartNo,
+		&i.MatchConfidence,
+		&i.MediainfoJson,
+		&i.State,
+		&i.LastSeen,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LibrarySourceID,
+	)
+	return i, err
+}
+
 const atualizarMediaFilePath = `-- name: AtualizarMediaFilePath :exec
 UPDATE media_file
 SET path = ?,

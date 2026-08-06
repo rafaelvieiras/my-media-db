@@ -181,6 +181,56 @@ func TestReScanIdempotente(t *testing.T) {
 	}
 }
 
+// TestConteudoTrocadoNoMesmoPathNaoDuplica prova que, quando o content_hash
+// recalculado diverge do que estava gravado para o MESMO path (arquivo
+// substituído/reencodado no lugar, ou mtime/size do provedor sofreram drift o
+// bastante para invalidar o short-circuit incremental), o scanner ATUALIZA a
+// linha existente em vez de tentar um INSERT que bateria no UNIQUE(path).
+func TestConteudoTrocadoNoMesmoPathNaoDuplica(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "Filme (2000)", "Filme (2000).mkv")
+	escrever(t, arq)
+
+	m := managerFake(t, d)
+	src := criarSource(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan 1: %v", err)
+	}
+	var hashAntigo string
+	if err := d.Read.QueryRowContext(context.Background(),
+		"SELECT content_hash FROM media_file").Scan(&hashAntigo); err != nil {
+		t.Fatalf("ler hash: %v", err)
+	}
+
+	// Substitui o conteúdo NO MESMO path (tamanho diferente, então o
+	// short-circuit de size/mtime não reusa o hash antigo -- força recálculo).
+	if err := os.WriteFile(arq, []byte("conteudo-totalmente-diferente-e-maior-"+arq), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan 2 (conteúdo trocado): %v", err)
+	}
+
+	if n := contar(t, d, "SELECT count(*) FROM media_file"); n != 1 {
+		t.Errorf("media_file após troca de conteúdo = %d, quero 1 (atualizado, não duplicado)", n)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity"); n != 1 {
+		t.Errorf("entity após troca de conteúdo = %d, quero 1", n)
+	}
+	var hashNovo, state string
+	if err := d.Read.QueryRowContext(context.Background(),
+		"SELECT content_hash, state FROM media_file WHERE path = ?", arq).Scan(&hashNovo, &state); err != nil {
+		t.Fatalf("ler hash novo: %v", err)
+	}
+	if hashNovo == hashAntigo {
+		t.Errorf("content_hash não foi atualizado após troca de conteúdo")
+	}
+	if state != "present" {
+		t.Errorf("state após troca de conteúdo = %q, quero present", state)
+	}
+}
+
 // TestMatchTituloAnoVsID contrasta o id embutido (confiança 100) com o match por
 // título+ano (score < 100), e prova que o re-scan reusa a mesma entity sem id.
 func TestMatchTituloAnoVsID(t *testing.T) {
@@ -307,6 +357,47 @@ func TestDatasourceOfflineNaoMarcaMissing(t *testing.T) {
 	}
 	if n := contar(t, d, "SELECT count(*) FROM library_source WHERE state='offline'"); n != 1 {
 		t.Errorf("library_source offline = %d, quero 1", n)
+	}
+}
+
+// TestScanParcialNaoMarcaMissing prova que quando uma SUBPASTA fica ilegível
+// no meio da varredura (não a raiz -- isso já é coberto por
+// TestDatasourceOfflineNaoMarcaMissing), o scan é tratado como PARCIAL:
+// nenhum media_file é marcado missing, mesmo que ele não tenha sido revisto
+// nesta rodada. Simula uma falha transitória de mount de rede (FUSE/rclone)
+// que derruba a listagem de uma subpasta sem derrubar a raiz.
+func TestScanParcialNaoMarcaMissing(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("rodando como root: chmod 0000 não impede leitura; caso não aplicável")
+	}
+	d := abrirDB(t)
+	root := t.TempDir()
+	pastaA := filepath.Join(root, "Filme A (2001)")
+	pastaB := filepath.Join(root, "Filme B (2002)")
+	escrever(t, filepath.Join(pastaA, "Filme A (2001).mkv"))
+	escrever(t, filepath.Join(pastaB, "Filme B (2002).mkv"))
+
+	m := managerFake(t, d)
+	src := criarSource(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan 1: %v", err)
+	}
+
+	// Simula a subpasta B ficando ilegível (ex.: FUSE/rclone instável) sem
+	// remover nada -- a raiz continua acessível.
+	if err := os.Chmod(pastaB, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(pastaB, 0o755) })
+
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan 2 (parcial): %v", err)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM media_file WHERE state='missing'"); n != 0 {
+		t.Errorf("missing após scan parcial = %d, quero 0 (B só ficou ilegível, não foi removido)", n)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM media_file WHERE state='present'"); n != 2 {
+		t.Errorf("present após scan parcial = %d, quero 2 (A revisto + B preservado do scan anterior)", n)
 	}
 }
 

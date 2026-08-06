@@ -92,6 +92,16 @@ type Querier interface {
 	// handler chama a rotina de registro/desregistro do watcher fsnotify LOGO
 	// APOS este UPDATE (aplicado a quente, sem restart -- ver internal/watch).
 	AtualizarLibrarySourceWatch(ctx context.Context, arg AtualizarLibrarySourceWatchParams) (LibrarySource, error)
+	// O path ja tinha uma linha, mas o content_hash recem-calculado NAO bate com
+	// ela (arquivo substituido/reencodado no lugar, ou mtime/size do provedor
+	// (ex.: rclone/Drive) sofreram drift o bastante para invalidar o
+	// short-circuit de ObterMediaFilePorPath -- ver mediaFileInalteradoPorPath em
+	// internal/scanner/scan.go). Sem esta query, gravarArquivo cairia num INSERT
+	// que bate no UNIQUE(path) da linha ja existente. Atualiza TODOS os campos
+	// derivados do conteudo (hash/tamanho/mtime/mediainfo/edicao/parte/
+	// confianca), preservando id/entity_id -- mesmo espirito de
+	// AtualizarMediaFileVisto, mas o gatilho aqui e o PATH bater, nao o hash.
+	AtualizarMediaFileConteudoMudou(ctx context.Context, arg AtualizarMediaFileConteudoMudouParams) (MediaFile, error)
 	// Grava o path ja recascado (calculado em Go) de UM media_file. Nao toca o
 	// resto da linha (content_hash/entity_id/state seguem intactos -- o arquivo
 	// fisico e o MESMO, so mudou de onde e montado).

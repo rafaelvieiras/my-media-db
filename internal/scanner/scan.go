@@ -38,6 +38,16 @@ type scanRun struct {
 	// para não re-buscar/re-importar a mesma série a cada arquivo. Análogo ao cache de
 	// folderKey do filme, mas keyed pela pasta da série (0034).
 	serieCache map[string]serieResolvida
+	// parcial marca que uma SUBPASTA (não a raiz, já validada por Stat) falhou
+	// ao ser lida durante o WalkDir (ex.: timeout/desconexão transitória de um
+	// mount de rede FUSE/rclone no meio da varredura). Diferente da raiz
+	// inacessível (offline, aborta antes de escrever qualquer coisa), aqui os
+	// arquivos que FORAM vistos continuam sendo gravados normalmente -- só o
+	// fechamento destrutivo do ciclo de vida (marcar `missing` o que não foi
+	// revisto) é pulado, para não desconectar arquivos que só não foram
+	// listados por instabilidade passageira do mount, não porque sumiram de
+	// verdade do disco.
+	parcial bool
 }
 
 // fileFacts são os fatos pré-computados de um arquivo (fora da transação de
@@ -76,11 +86,15 @@ func (m *Manager) executarScan(ctx context.Context, source library.Source, j *jo
 		log.Printf("scanner: ffprobe indisponível; mediainfo ficará vazio no scan de %q", source.ID)
 	}
 
-	arquivos, naoVideos, err := coletarArquivos(source.Path)
+	arquivos, naoVideos, parcial, err := coletarArquivos(source.Path)
 	if err != nil {
 		// A raiz ficou inacessível: sinaliza offline e NÃO marca nada missing.
 		m.persistirEstado(ctx, source, "offline")
 		return err
+	}
+	r.parcial = parcial
+	if parcial {
+		log.Printf("scanner: varredura parcial de %q (subpasta(s) ilegível(is) durante o walk); ciclo de vida NÃO marcará arquivos ausentes nesta rodada", source.ID)
 	}
 	m.setTotal(j, len(arquivos))
 	// Classificação de arquivo NÃO-vídeo (briefing 0063, extensão do 0062):
@@ -265,15 +279,21 @@ func (r *scanRun) escreverLote(ctx context.Context, fatos []fileFacts) error {
 	return tx.Commit()
 }
 
-// finalizarCicloVida fecha o scan completo (fonte acessível): marca `missing` os
-// arquivos não-revistos desta fonte e carimba library_source (online + last_scan).
+// finalizarCicloVida fecha o scan (fonte acessível): carimba library_source
+// (online + last_scan) e, só quando a varredura foi COMPLETA (r.parcial ==
+// false), marca `missing` os arquivos não-revistos desta fonte. Numa
+// varredura parcial (subpasta ilegível no meio do walk, ver r.parcial), essa
+// marcação é pulada de propósito -- "não vi este arquivo agora" não é prova
+// de que ele sumiu do disco quando nem toda a árvore pôde ser lida.
 func (r *scanRun) finalizarCicloVida(ctx context.Context) error {
 	q := sqlcgen.New(r.m.db.Write)
-	if _, err := q.MarcarMediaFilesNaoVistosMissing(ctx, sqlcgen.MarcarMediaFilesNaoVistosMissingParams{
-		LibrarySourceID: nsOpt(r.source.ID),
-		LastSeen:        nsOpt(r.scanTS),
-	}); err != nil {
-		return err
+	if !r.parcial {
+		if _, err := q.MarcarMediaFilesNaoVistosMissing(ctx, sqlcgen.MarcarMediaFilesNaoVistosMissingParams{
+			LibrarySourceID: nsOpt(r.source.ID),
+			LastSeen:        nsOpt(r.scanTS),
+		}); err != nil {
+			return err
+		}
 	}
 	_, err := q.AtualizarLibrarySource(ctx, sqlcgen.AtualizarLibrarySourceParams{
 		Type:     r.source.Type,
@@ -314,14 +334,19 @@ type arquivoBruto struct {
 // (para o pipeline de scan já existente) de não-vídeos (para a classificação
 // managed/unmanaged do briefing 0063, ver classificarNaoVideos) -- nunca duas
 // passadas de disco. Erro no stat da própria raiz é fatal (fonte offline);
-// diretórios internos ilegíveis são pulados (logados), não derrubam o walk.
-func coletarArquivos(root string) (videos []string, naoVideos []arquivoBruto, err error) {
+// diretórios internos ilegíveis são pulados (logados), não derrubam o walk --
+// mas fazem `parcial` voltar true, para o chamador saber que a lista de
+// arquivos vistos pode estar incompleta (ex.: timeout transitório de um mount
+// de rede FUSE/rclone no meio da varredura) e não tratar "não visto" como
+// "removido" no fechamento do ciclo de vida.
+func coletarArquivos(root string) (videos []string, naoVideos []arquivoBruto, parcial bool, err error) {
 	if _, err := os.Stat(root); err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			log.Printf("scanner: pulando %q: %v", path, err)
+			parcial = true
 			if d != nil && d.IsDir() {
 				return fs.SkipDir
 			}
@@ -343,10 +368,10 @@ func coletarArquivos(root string) (videos []string, naoVideos []arquivoBruto, er
 		return nil
 	})
 	if walkErr != nil {
-		return nil, nil, walkErr
+		return nil, nil, parcial, walkErr
 	}
 	sort.Strings(videos)
-	return videos, naoVideos, nil
+	return videos, naoVideos, parcial, nil
 }
 
 // classificarNaoVideos agrupa os vídeos por diretório (nome-base sem
