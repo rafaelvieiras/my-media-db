@@ -3,10 +3,14 @@ package server
 import (
 	"context"
 	"database/sql"
+	"log"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -215,6 +219,14 @@ func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoM
 		return autoMatchNone, nil
 	}
 
+	// Idioma de busca (briefing 0084): a biblioteca de origem da entity pode
+	// ter um idioma preferido; sem um, cai no idioma PRINCIPAL global (nunca
+	// mais o "" cego de antes deste briefing).
+	lang, err := s.idiomaDeBusca(ctx, ent.ID)
+	if err != nil {
+		return autoMatchResultDTO{}, err
+	}
+
 	// 1) Local-first (0026): nunca duplica entity já catalogada. O finder devolve
 	// o MAIOR-pontuado não-descartado independente de limiar (briefing 0060, para
 	// servir também a prévia sem corte) -- o corte >= LimiarAutoMatch é decidido
@@ -238,13 +250,14 @@ func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoM
 	if s.enrich == nil {
 		return autoMatchNone, nil
 	}
-	externos, disponivel := s.buscarExterno(ctx, titulo, ent.Type, "")
+	externos, disponivel := s.buscarExterno(ctx, titulo, ent.Type, lang)
 	if !disponivel {
 		return autoMatchNone, nil
 	}
 	// Mesmo raciocínio do local: o finder devolve o maior-pontuado não-descartado
-	// sem corte; o corte >= LimiarAutoMatch é decidido aqui.
-	cand, score, achou := melhorCandidatoExterno(externos, titulo, ano)
+	// sem corte; o corte >= LimiarAutoMatch é decidido aqui. tituloVencedor não
+	// interessa ao auto-match (só à prévia, match_preview.go).
+	cand, score, _, achou := s.melhorCandidatoExterno(ctx, externos, titulo, ano)
 	if !achou || score < LimiarAutoMatch {
 		return autoMatchNone, nil
 	}
@@ -364,26 +377,157 @@ func (s *Server) melhorCandidatoLocal(ctx context.Context, candidatos []entityCa
 	return melhor, achou
 }
 
+// candidatoExternoPontuado é um candidato externo já pontuado por título
+// único (matching.Pontuar) -- passo 1 de melhorCandidatoExterno, antes da
+// repontuação por títulos alternativos dos top-3.
+type candidatoExternoPontuado struct {
+	cand  provider.ResultadoExterno
+	score float64
+}
+
+// candidatosAlternativosTopN é o teto de candidatos que disparam busca de
+// títulos alternativos (briefing 0084 §3): custo controlado, 1 chamada de
+// rede extra por candidato -- o candidato certo quase sempre está entre os
+// top-3 por score de título principal.
+const candidatosAlternativosTopN = 3
+
 // melhorCandidatoExterno repontua os resultados da busca EXTERNA (buscarExterno,
 // já mesclados/deduplicados por fonte) e devolve SEMPRE o de MAIOR score entre
 // os não-descartados -- mesmo raciocínio de melhorCandidatoLocal (0060): o
-// corte por LimiarAutoMatch é decisão do CHAMADOR, não deste finder. ok=false
+// corte por LimiarAutoMatch é decisão do CHAMADOR, não deste finder. achou=false
 // quando nenhum candidato não-descartado existe.
-func melhorCandidatoExterno(candidatos []provider.ResultadoExterno, titulo string, ano int) (provider.ResultadoExterno, float64, bool) {
-	var melhor provider.ResultadoExterno
-	melhorScore := -1.0
-	achou := false
+//
+// Desde o briefing 0084, a pontuação passa por DOIS estágios: (1) título único
+// (matching.Pontuar) para TODOS os candidatos, ordenados por score desc; (2) os
+// TOP-3 (candidatosAlternativosTopN) são repontuados com
+// matching.PontuarComAlternativos contra os títulos alternativos/traduzidos que
+// o provider conhecer (capacidade OPCIONAL provider.TituloAlternativoProvider,
+// best-effort — falha/ausência degrada para o score de título único desse
+// candidato, sem abortar a função). O vencedor final é o maior score entre os
+// N candidatos do estágio 1 e os 3 repontuados do estágio 2. tituloVencedor é o
+// título ALTERNATIVO que produziu o score do vencedor, quando ele bateu o
+// título principal do próprio candidato; "" quando o vencedor não passou pela
+// repontuação (fora do top-3) ou quando o título principal já era o melhor.
+func (s *Server) melhorCandidatoExterno(ctx context.Context, candidatos []provider.ResultadoExterno, titulo string, ano int) (provider.ResultadoExterno, float64, string, bool) {
+	pontuados := make([]candidatoExternoPontuado, 0, len(candidatos))
 	for _, c := range candidatos {
 		anoCand := anoDeStringPtr(c.Year)
 		pontos, descartado := matching.Pontuar(titulo, ano, c.Title, anoCand)
 		if descartado {
 			continue
 		}
-		if pontos > melhorScore {
-			melhor, melhorScore, achou = c, pontos, true
+		pontuados = append(pontuados, candidatoExternoPontuado{cand: c, score: pontos})
+	}
+	if len(pontuados) == 0 {
+		return provider.ResultadoExterno{}, 0, "", false
+	}
+	sort.SliceStable(pontuados, func(i, j int) bool { return pontuados[i].score > pontuados[j].score })
+
+	melhor := pontuados[0]
+	tituloVencedor := ""
+
+	topN := candidatosAlternativosTopN
+	if topN > len(pontuados) {
+		topN = len(pontuados)
+	}
+	for i := 0; i < topN; i++ {
+		p := pontuados[i]
+		alternativos := s.titulosAlternativosDoCandidato(ctx, p.cand)
+		if len(alternativos) == 0 {
+			continue
+		}
+		anoCand := anoDeStringPtr(p.cand.Year)
+		repontuado, vencedor, descartado := matching.PontuarComAlternativos(titulo, ano, p.cand.Title, alternativos, anoCand)
+		if descartado || repontuado <= melhor.score {
+			continue
+		}
+		melhor = candidatoExternoPontuado{cand: p.cand, score: repontuado}
+		if vencedor != p.cand.Title {
+			tituloVencedor = vencedor
+		} else {
+			tituloVencedor = ""
 		}
 	}
-	return melhor, melhorScore, achou
+	return melhor.cand, melhor.score, tituloVencedor, true
+}
+
+// titulosAlternativosDoCandidato busca os títulos alternativos/traduzidos que
+// o provider da fonte de `cand` conhecer (capacidade OPCIONAL
+// provider.TituloAlternativoProvider, type-assert -- fontes sem essa
+// capacidade, ou sem provider registrado sob aquele nome, devolvem nil em
+// silêncio). Resultado cacheado em memória por (source,source_id), mesmo TTL
+// do cacheExterno (ttlCacheExterno) -- duas buscas pelo MESMO candidato
+// dentro do TTL não disparam nova chamada. Erro real de rede é BEST-EFFORT:
+// loga e devolve nil (o chamador repontua só com o título principal).
+func (s *Server) titulosAlternativosDoCandidato(ctx context.Context, cand provider.ResultadoExterno) []string {
+	if s.cacheTitulosAlt == nil {
+		return nil
+	}
+	chave := cand.Source + "\x00" + cand.SourceID
+	if v, ok := s.cacheTitulosAlt.obter(chave); ok {
+		return v
+	}
+	prov, ok := s.providers.Get(cand.Source)
+	if !ok {
+		return nil
+	}
+	tap, ok := prov.(provider.TituloAlternativoProvider)
+	if !ok {
+		return nil
+	}
+	titulos, err := tap.BuscarTitulosAlternativos(ctx, cand.Type, cand.SourceID)
+	if err != nil {
+		log.Printf("automatch: titulos alternativos de %s %s/%s falharam (best-effort, segue so titulo principal): %v",
+			cand.Type, cand.Source, cand.SourceID, err)
+		return nil
+	}
+	s.cacheTitulosAlt.guardar(chave, titulos)
+	return titulos
+}
+
+// ── cache de titulos alternativos ────────────────────────────────────────────
+
+// cacheTitulosAlternativos é um cache em memória, protegido por mutex, dos
+// títulos alternativos de um candidato externo por chave (source+"\x00"+
+// source_id), com expiração por TTL -- mesmo desenho de cacheExterno
+// (search.go), reaproveitado aqui para não inventar um segundo padrão de
+// cache no mesmo pacote.
+type cacheTitulosAlternativos struct {
+	mu    sync.Mutex
+	ttl   time.Duration
+	itens map[string]entradaCacheTitulosAlternativos
+	agora func() time.Time
+}
+
+// entradaCacheTitulosAlternativos é uma entrada do cache: os títulos e o
+// instante de expiração.
+type entradaCacheTitulosAlternativos struct {
+	titulos []string
+	expira  time.Time
+}
+
+// novoCacheTitulosAlternativos cria um cache com o TTL dado.
+func novoCacheTitulosAlternativos(ttl time.Duration) *cacheTitulosAlternativos {
+	return &cacheTitulosAlternativos{ttl: ttl, itens: make(map[string]entradaCacheTitulosAlternativos), agora: time.Now}
+}
+
+// obter devolve os títulos cacheados e true quando a chave existe e não
+// expirou; caso contrário (nil, false).
+func (c *cacheTitulosAlternativos) obter(chave string) ([]string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.itens[chave]
+	if !ok || c.agora().After(e.expira) {
+		return nil, false
+	}
+	return e.titulos, true
+}
+
+// guardar grava (ou sobrescreve) os títulos da chave com nova expiração.
+func (c *cacheTitulosAlternativos) guardar(chave string, titulos []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.itens[chave] = entradaCacheTitulosAlternativos{titulos: titulos, expira: c.agora().Add(c.ttl)}
 }
 
 // anoDaEntity lê o release_date da entity (coluna núcleo, não o override

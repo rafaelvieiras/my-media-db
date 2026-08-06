@@ -356,12 +356,22 @@ func (s *Servico) persistirSerieRico(ctx context.Context, serieID, ricoSource st
 // titulo exato vence e e importado. Um provider que devolva 2+ exatos e ambiguo. Se
 // nenhum provider deu exato-unico mas houve candidatos, e ErrSerieAmbigua; se nao
 // houve candidato algum, e ErrSerieNaoEncontrada. NUNCA adivinha por titulo parcial.
-func (s *Servico) ImportarSeriePorNome(ctx context.Context, nome string, langs []string) (string, error) {
+//
+// preferredLang (briefing 0084) e o idioma preferido da library_source que
+// disparou o import (library.Source.PreferredLanguage), quando definido --
+// usado no lugar do PRIMEIRO idioma de `langs` (langPrincipal) so para a
+// BUSCA por nome abaixo; `langs` continua sendo a lista completa de idiomas
+// permitidos usada no import da arvore/detalhe (importarSeriePorFonte). Vazio
+// mantem o comportamento de sempre (langPrincipal(langs), idioma global).
+func (s *Servico) ImportarSeriePorNome(ctx context.Context, nome string, langs []string, preferredLang string) (string, error) {
 	alvo := strings.TrimSpace(nome)
 	if alvo == "" {
 		return "", ErrSerieNaoEncontrada
 	}
-	lang := langPrincipal(langs)
+	lang := preferredLang
+	if lang == "" {
+		lang = langPrincipal(langs)
+	}
 	houveCandidato := false
 	for _, prov := range s.providers.All() {
 		if _, ok := prov.(provider.SerieProvider); !ok {

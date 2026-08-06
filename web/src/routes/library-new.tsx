@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { FolderPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,8 @@ import { Select } from '@/components/ui/select'
 import { PathBrowser } from '@/components/path-browser'
 import { LibraryFormHeader } from '@/components/library-form-header'
 import { ApiError, createLibrary, type CreateSource } from '@/lib/api'
+import { languageSettingsQueryOptions } from '@/lib/queries'
+import { rotuloIdioma } from '@/lib/languages'
 
 // Rota `/dashboard/library/new` (briefing 0071): substitui o antigo `DatasourceForm`
 // sempre-visível no topo da lista por uma página própria — dá o espaço de tela
@@ -23,6 +25,10 @@ export function LibraryNewScreen() {
   const queryClient = useQueryClient()
   const [path, setPath] = useState('')
   const [type, setType] = useState<CreateSource['type']>('movie')
+  const [preferredLanguage, setPreferredLanguage] = useState('')
+
+  const languagesQuery = useQuery(languageSettingsQueryOptions)
+  const idiomasPermitidos = languagesQuery.data?.allowed ?? []
 
   const mutation = useMutation({
     mutationFn: (body: CreateSource) => createLibrary(body),
@@ -41,7 +47,12 @@ export function LibraryNewScreen() {
     // Séries (type=tv) marca a biblioteca como content_type='series'; Filmes fica
     // 'movie'. É o valor por que o scanner ramifica o fluxo de match (0034).
     const content_type = type === 'tv' ? 'series' : 'movie'
-    mutation.mutate({ path: limpo, type, content_type })
+    mutation.mutate({
+      path: limpo,
+      type,
+      content_type,
+      preferred_language: preferredLanguage || undefined,
+    })
   }
 
   const mensagemErro =
@@ -78,6 +89,22 @@ export function LibraryNewScreen() {
           >
             <option value="movie">Filmes</option>
             <option value="tv">Séries</option>
+          </Select>
+        </label>
+
+        <label className="flex max-w-64 flex-col gap-1 text-sm">
+          <span className="text-muted-foreground">Idioma preferido</span>
+          <Select
+            value={preferredLanguage}
+            onChange={(e) => setPreferredLanguage(e.target.value)}
+            aria-label="Idioma preferido do datasource"
+          >
+            <option value="">Usar idioma global</option>
+            {idiomasPermitidos.map((codigo) => (
+              <option key={codigo} value={codigo}>
+                {rotuloIdioma(codigo)}
+              </option>
+            ))}
           </Select>
         </label>
 

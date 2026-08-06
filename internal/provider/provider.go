@@ -87,6 +87,24 @@ type Colecao struct {
 	Parts []ResultadoExterno
 }
 
+// TituloAlternativoProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing
+// 0084, análoga a ColecaoProvider): trazer os TÍTULOS ALTERNATIVOS/TRADUZIDOS
+// que a fonte conhece de um item, para a pontuação de candidato
+// (matching.PontuarComAlternativos) comparar contra o LEQUE de títulos que a
+// fonte já tem, não só o título no idioma consultado. É opcional porque nem
+// toda fonte expõe traduções de título de forma barata; o finder de candidato
+// (melhorCandidatoExterno, internal/server/automatch.go) faz type-assert do
+// Provider para esta interface e degrada para o score de título único quando
+// ausente -- NUNCA bloqueia a pontuação.
+type TituloAlternativoProvider interface {
+	// BuscarTitulosAlternativos lista os títulos alternativos/traduzidos que a
+	// fonte conhece do item `sourceID` (tipo "movie"|"tv"). A lista pode conter
+	// duplicatas ou strings vazias -- o chamador não exige dedupe perfeito.
+	// Erro/timeout propaga; o chamador degrada (best-effort, loga e segue sem
+	// alternativos para aquele candidato).
+	BuscarTitulosAlternativos(ctx context.Context, tipo, sourceID string) ([]string, error)
+}
+
 // SerieProvider é uma CAPACIDADE OPCIONAL de um Provider (análoga a ColecaoProvider,
 // briefing 0031 / ADR-0021): trazer a HIERARQUIA de uma série — temporadas +
 // episódios + as ordenações (season types) que ela usa. É opcional porque nem toda

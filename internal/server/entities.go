@@ -609,9 +609,28 @@ func (s *Server) getEntity(w http.ResponseWriter, r *http.Request) {
 		respondErroInterno(w)
 		return
 	}
-	lang, ok := s.parseLang(w, cfg, r.URL.Query().Get("lang"))
-	if !ok {
-		return
+
+	// Idioma de EXIBIÇÃO default (briefing 0084): sem `?lang=` explícito na
+	// querystring, o default passa a ser o idioma preferido da biblioteca de
+	// origem do item (que já cai no `primary` global quando não há
+	// preferência, ou em caso de ambiguidade -- s.idiomaDeBusca). Um erro
+	// real ao resolver isso degrada para o `primary` global (best-effort, é
+	// só o DEFAULT -- nunca deveria quebrar a resposta por isso). `?lang=`
+	// explícito SEMPRE vence, sem exceção (comportamento inalterado: valida
+	// contra os permitidos via parseLang).
+	rawLang := r.URL.Query().Get("lang")
+	var lang string
+	if rawLang == "" {
+		lang, err = s.idiomaDeBusca(ctx, id)
+		if err != nil {
+			lang = cfg.Primary
+		}
+	} else {
+		var ok bool
+		lang, ok = s.parseLang(w, cfg, rawLang)
+		if !ok {
+			return
+		}
 	}
 
 	resolvida, encontrada, err := s.resolverEntity(ctx, id, lang, true)

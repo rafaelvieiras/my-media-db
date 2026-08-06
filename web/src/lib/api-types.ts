@@ -1462,6 +1462,8 @@ export interface components {
       source: string | null
       /** @description Id na fonte externa; null quando method=local. */
       source_id: string | null
+      /** @description Título (principal ou alternativo/traduzido) que efetivamente produziu o score mostrado (briefing 0084). Ausente quando o candidato é local ou quando o título vencedor é o próprio título principal do candidato. */
+      matched_title?: string
     }
     /** @description Resposta de GET /entities/{id}/match-preview (briefing 0060) — dry-run, read-only, SEM side-effect. Devolve o candidato de MAIOR score entre local e externo, mesmo abaixo do `LimiarAutoMatch` (reusa a mesma busca+pontuação do auto-match/0050, sem o corte de limiar). `target` é null quando `found` é false. */
     MatchPreview: {
@@ -1758,6 +1760,8 @@ export interface components {
       last_scan: string | null
       /** @description Liga/desliga o watcher de filesystem (`fsnotify`) desta fonte (briefing 0064). Default `false` no cadastro — fontes montadas via rede (rclone/gdrive, o deploy real do projeto) não ganham quase nada do watch, então o dono liga explicitamente só quando sabe que é um disco local de verdade. Só reduz a LATÊNCIA até o próximo scan; o job periódico `midias_faltantes`/scan incremental continua sendo a base mesmo com watch ligado. Editável só via `PATCH /api/v1/library/{id}`, aplicado a quente (sem restart). */
       watch_enabled: boolean
+      /** @description Idioma preferido de busca/exibição desta biblioteca (briefing 0084). `null` = sem preferência, usa o idioma global de `app_settings`. */
+      preferred_language?: string | null
     }
     SourceList: {
       items: components['schemas']['Source'][]
@@ -1771,6 +1775,8 @@ export interface components {
        * @enum {string}
        */
       content_type?: 'movie' | 'series'
+      /** @description Idioma preferido de busca/exibição desta biblioteca (briefing 0084). */
+      preferred_language?: string
     }
     /** @description Patch PARCIAL de PATCH /api/v1/library/{id} (briefings 0064/0070) — campos ausentes ficam inalterados; `path` e `watch_enabled` podem vir juntos ou cada um sozinho. */
     PatchSource: {
@@ -1778,6 +1784,8 @@ export interface components {
       watch_enabled?: boolean
       /** @description Reaponta o datasource para um novo caminho (ex.: o disco/mount mudou de lugar). Valida como no cadastro (existe, é diretório, legível, sem duplicar outra fonte). Recasca em cascata `media_file.path`, `asset.local_path` e `entity.nfo_path` desta fonte para o novo prefixo — NÃO dispara scan nem move bytes no disco. Igual ao caminho atual é no-op. */
       path?: string
+      /** @description Idioma preferido de busca/exibição desta biblioteca (briefing 0084). `null` explícito no corpo LIMPA a preferência (volta a usar o idioma global); campo AUSENTE deixa inalterado. */
+      preferred_language?: string | null
     }
     ScanStatus: {
       running: boolean

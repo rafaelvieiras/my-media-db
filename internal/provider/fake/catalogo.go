@@ -32,6 +32,11 @@ func catalogoFilmes() map[string]filme {
 			releaseDate:      "1999-03-31",
 			posterPath:       "/matrix.png",
 			colecaoID:        "2344",
+			// Alternativo conhecido (aka pt-BR) que NÃO bate melhor que o próprio
+			// título principal para uma busca em "The Matrix" -- prova o caminho
+			// "candidato já é o melhor" de PontuarComAlternativos (matched_title
+			// deve sair vazio mesmo com alternativos disponíveis e consultados).
+			titulosAlternativos: []string{"Matrix"},
 		},
 		"604": {
 			sourceID: "604",
@@ -76,6 +81,36 @@ func catalogoFilmes() map[string]filme {
 			originalLanguage: "en",
 			releaseDate:      "1989-12-17",
 			posterPath:       "/springfield.png",
+		},
+		// "605" é a fixture do achado colateral #2 do briefing 0084: um candidato cujo
+		// título PRINCIPAL (sempre o "en", ver tituloPreferido) é bem diferente do
+		// título ALTERNATIVO/regional que o provedor só entrega via
+		// BuscarTitulosAlternativos -- análogo ao caso real "The Pink Panther" vs "A
+		// Pantera Cor-De-Rosa" citado no §1 do briefing. originalTitle carrega o termo
+		// de busca (permite Buscar achar o candidato por substring, como qualquer
+		// outra fixture) e coincide de propósito com o único item de
+		// titulosAlternativos: só comparando o arquivo contra o ALTERNATIVO (nunca
+		// contra "The Rose Prowler"/"O Perseguidor Rosa", os títulos "oficiais") o
+		// score sobe o suficiente para provar PontuarComAlternativos.
+		"605": {
+			sourceID: "605",
+			tipo:     "movie",
+			title: map[string]string{
+				"en": "The Rose Prowler", "pt-BR": "O Perseguidor Rosa", "pt": "O Perseguidor Rosa",
+			},
+			description: map[string]string{
+				"en":    "A masked prowler stalks the city in a rose-pink coat.",
+				"pt-BR": "Um perseguidor mascarado ronda a cidade com um sobretudo rosa.",
+				"pt":    "Um perseguidor mascarado ronda a cidade com um sobretudo rosa.",
+			},
+			tags: map[string][]string{
+				"en": {"Comedy", "Crime"}, "pt-BR": {"Comedia", "Crime"}, "pt": {"Comedia", "Crime"},
+			},
+			originalTitle:       "A Pantera Cor-De-Rosa",
+			originalLanguage:    "pt-BR",
+			releaseDate:         "2011-06-10",
+			posterPath:          "/pink-prowler.png",
+			titulosAlternativos: []string{"A Pantera Cor-De-Rosa"},
 		},
 	}
 }

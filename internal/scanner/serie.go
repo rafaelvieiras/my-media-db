@@ -171,7 +171,7 @@ func (r *scanRun) resolverSerieMiss(ctx context.Context, serieNome string, folde
 	}
 
 	if r.m.serieImporter != nil && serieNome != "" {
-		id, err := r.m.serieImporter.ImportarSeriePorNome(ctx, serieNome, r.langsPermitidos(ctx))
+		id, err := r.m.serieImporter.ImportarSeriePorNome(ctx, serieNome, r.langsPermitidos(ctx), r.preferredLangDaFonte())
 		if err == nil {
 			return serieResolvida{serieID: id, index: r.carregarIndex(ctx, id), conf: confSerieEp}
 		}
@@ -194,6 +194,18 @@ func (r *scanRun) langsPermitidos(ctx context.Context) []string {
 		return nil
 	}
 	return r.m.idiomas(ctx)
+}
+
+// preferredLangDaFonte devolve o idioma preferido da library_source que
+// disparou este scan (briefing 0084), ou "" quando a fonte não tem
+// preferência definida -- nesse caso o SerieImporter cai no idioma global
+// (langsPermitidos/Manager.idiomas), mesmo comportamento de antes deste
+// briefing.
+func (r *scanRun) preferredLangDaFonte() string {
+	if r.source.PreferredLanguage == nil {
+		return ""
+	}
+	return *r.source.PreferredLanguage
 }
 
 // acharSeriePorIDExterno procura a série pelo id embutido no nome da pasta (tmdb tem

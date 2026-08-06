@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
@@ -32,6 +33,13 @@ type filme struct {
 	releaseDate      string // "AAAA-MM-DD"
 	posterPath       string // relativo; combinado com ImageBase quando não-vazio
 	colecaoID        string // "" quando não pertence a coleção
+	// titulosAlternativos (briefing 0084) são os títulos alternativos/traduzidos
+	// que BuscarTitulosAlternativos devolve para este item -- uma fonte de dados
+	// SEPARADA do mapa `title` acima (o provider real também os traz por uma
+	// chamada distinta, append_to_response=translations). Vazio na maioria das
+	// fixtures (degrada pro score de título único, como qualquer fonte sem
+	// tradução para aquele candidato); a fixture "605" é a prova do mecanismo.
+	titulosAlternativos []string
 }
 
 // colecaoFix é uma fixture de coleção (conjunto de filmes, ≠ playlist).
@@ -43,12 +51,14 @@ type colecaoFix struct {
 	parts      []string // sourceIDs dos membros, em ordem
 }
 
-// Asserções de interface: o fake é um Provider completo, um ColecaoProvider E um
-// SerieProvider (a árvore canned de séries do briefing 0031).
+// Asserções de interface: o fake é um Provider completo, um ColecaoProvider, um
+// SerieProvider (a árvore canned de séries do briefing 0031) E um
+// TituloAlternativoProvider (briefing 0084, títulos alternativos/traduzidos).
 var (
-	_ provider.Provider        = (*Provider)(nil)
-	_ provider.ColecaoProvider = (*Provider)(nil)
-	_ provider.SerieProvider   = (*Provider)(nil)
+	_ provider.Provider                  = (*Provider)(nil)
+	_ provider.ColecaoProvider           = (*Provider)(nil)
+	_ provider.SerieProvider             = (*Provider)(nil)
+	_ provider.TituloAlternativoProvider = (*Provider)(nil)
 )
 
 // SerieFixtureID é o id da série canned servida por BuscarSerieArvore (exposto para os
@@ -61,6 +71,13 @@ type Provider struct {
 	imageBase string
 	filmes    map[string]filme
 	colecoes  map[string]colecaoFix
+	// buscas registra o `lang` recebido em cada chamada Buscar (briefing 0084) --
+	// só para os testes E2E comprovarem que o idioma resolvido pelo servidor
+	// (idiomaDeBusca) de fato chega ao provider, sem precisar instrumentar rede
+	// real nem tornar o casamento de título sensível a idioma (o que quebraria o
+	// comportamento multi-idioma já coberto pelas jornadas existentes). Puramente
+	// observacional -- nunca influencia o resultado de Buscar.
+	buscas *logDeIdiomas
 }
 
 // New cria o provider com o catálogo padrão. imageBase é o prefixo das URLs de
@@ -70,15 +87,26 @@ func New(imageBase string) *Provider {
 		imageBase: strings.TrimRight(imageBase, "/"),
 		filmes:    catalogoFilmes(),
 		colecoes:  catalogoColecoes(),
+		buscas:    &logDeIdiomas{},
 	}
 }
 
 // Nome identifica a fonte. "tmdb" para exercitar dedup e interno-first como a real.
 func (p *Provider) Nome() string { return "tmdb" }
 
+// IdiomasBuscados devolve, na ordem das chamadas, o `lang` que cada Buscar recebeu
+// desde a criação do provider (briefing 0084) -- usado pelas jornadas E2E de idioma
+// preferido por biblioteca para comprovar que automatch/retroativo/match-preview
+// resolvem e propagam o idioma certo até o provider, sem expor rede real.
+func (p *Provider) IdiomasBuscados() []string { return p.buscas.todos() }
+
 // Buscar filtra o catálogo por substring (case-insensitive) no título de qualquer
 // idioma, opcionalmente por tipo, em ordem estável (por sourceID numérico/lexical).
-func (p *Provider) Buscar(_ context.Context, query, tipo, _ string) ([]provider.ResultadoExterno, error) {
+// `lang` NÃO filtra o casamento (o catálogo já expõe todo idioma que tiver, como
+// antes deste briefing -- mudar isso quebraria as jornadas multi-idioma
+// existentes); é só REGISTRADO em p.buscas para a observabilidade acima.
+func (p *Provider) Buscar(_ context.Context, query, tipo, lang string) ([]provider.ResultadoExterno, error) {
+	p.buscas.registrar(lang)
 	q := strings.ToLower(strings.TrimSpace(query))
 	var out []provider.ResultadoExterno
 	for _, f := range p.ordenados() {
@@ -163,6 +191,27 @@ func (p *Provider) BuscarColecao(_ context.Context, colecaoID, _ string) (provid
 		}
 	}
 	return col, nil
+}
+
+// BuscarTitulosAlternativos implementa provider.TituloAlternativoProvider (briefing
+// 0084): devolve os títulos alternativos/traduzidos CANNED da fixture (campo
+// titulosAlternativos de `filme`) -- uma fonte de dados PRÓPRIA, independente do mapa
+// `title`. A maioria das fixtures não tem nenhum (nil, sem erro: "sem tradução aqui",
+// mesma postura best-effort de uma fonte real sem esse dado) -- só a fixture "605"
+// ("A Pantera Cor-De-Rosa"/"The Rose Prowler", ver catalogo.go) tem um alternativo, e
+// é DELIBERADAMENTE diferente do título "en" que Buscar devolve como principal
+// (tituloPreferido sempre prefere "en"): é a prova do achado colateral #2 do briefing
+// 0084 -- o candidato só pontua alto contra um arquivo em português comparando-se
+// contra o alternativo, nunca contra o principal. sourceID desconhecido devolve nil
+// sem erro (ausência de alternativos é resultado válido, não falha).
+func (p *Provider) BuscarTitulosAlternativos(_ context.Context, _, sourceID string) ([]string, error) {
+	f, ok := p.filmes[sourceID]
+	if !ok || len(f.titulosAlternativos) == 0 {
+		return nil, nil
+	}
+	out := make([]string, len(f.titulosAlternativos))
+	copy(out, f.titulosAlternativos)
+	return out, nil
 }
 
 // BuscarSerieArvore devolve a ÁRVORE canned da série fixture (1 série, 2 temporadas de
@@ -288,6 +337,28 @@ func (p *Provider) posterURL(path string) string {
 }
 
 // --- helpers puros ---
+
+// logDeIdiomas registra, sob mutex, cada `lang` recebido por Buscar (briefing 0084).
+// Puramente observacional: nenhum método de Provider decide comportamento a partir
+// dele, só os testes E2E leem via Provider.IdiomasBuscados().
+type logDeIdiomas struct {
+	mu    sync.Mutex
+	langs []string
+}
+
+func (l *logDeIdiomas) registrar(lang string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.langs = append(l.langs, lang)
+}
+
+func (l *logDeIdiomas) todos() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]string, len(l.langs))
+	copy(out, l.langs)
+	return out
+}
 
 func casaTitulo(f filme, q string) bool {
 	for _, t := range f.title {

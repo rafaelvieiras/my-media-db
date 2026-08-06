@@ -234,6 +234,42 @@ func (c *Client) BuscarDetalhe(ctx context.Context, sourceID, tipo string, langs
 	return json.RawMessage(body), nil
 }
 
+// BuscarTitulosAlternativos implementa provider.TituloAlternativoProvider
+// (briefing 0084): GET {base}/{movie|tv}/{id}?append_to_response=translations
+// -- uma chamada NOVA e mais leve que BuscarDetalhe, SEM os appends pesados
+// (credits/keywords/similar/etc), usada só para repontuar os TOP-3 candidatos
+// do auto-match contra o leque de títulos que o TMDB conhece. Extrai `title`
+// (filme) ou `name` (série) de cada item de `translations.translations[].data`
+// -- pode haver strings vazias/duplicatas, o chamador não exige dedupe
+// perfeito. Erro/timeout propaga (o chamador degrada, best-effort).
+func (c *Client) BuscarTitulosAlternativos(ctx context.Context, tipo, sourceID string) ([]string, error) {
+	if sourceID == "" {
+		return nil, fmt.Errorf("tmdb: sourceID vazio")
+	}
+	if tipo != "movie" && tipo != "tv" {
+		return nil, fmt.Errorf("tmdb: tipo inválido %q (use movie|tv)", tipo)
+	}
+
+	params := url.Values{"append_to_response": {"translations"}}
+	body, err := c.getBytes(ctx, "/"+tipo+"/"+url.PathEscape(sourceID), params)
+	if err != nil {
+		return nil, err
+	}
+
+	var d detalheTMDB
+	if err := json.Unmarshal(body, &d); err != nil {
+		return nil, fmt.Errorf("tmdb: titulos alternativos invalidos: %w", err)
+	}
+
+	out := make([]string, 0, len(d.Translations.Translations))
+	for _, tr := range d.Translations.Translations {
+		if titulo := primeiroNaoVazio(tr.Data.Title, tr.Data.Name); titulo != "" {
+			out = append(out, titulo)
+		}
+	}
+	return out, nil
+}
+
 // getBytes faz um GET autenticado a `path` com os `params` e devolve o corpo, com
 // checagem de status. Ponto único de I/O de leitura (detalhe e listas de gênero).
 func (c *Client) getBytes(ctx context.Context, path string, params url.Values) ([]byte, error) {

@@ -350,6 +350,57 @@ func TestListaGenerosCache(t *testing.T) {
 	}
 }
 
+// TestBuscarTitulosAlternativos cobre a capacidade provider.TituloAlternativoProvider
+// (briefing 0084): extrai title (filme) / name (série) de translations.translations[].data.
+func TestBuscarTitulosAlternativos(t *testing.T) {
+	srv := servidorDetalhe(t, nil)
+	c := New(Credencial{Token: "tok"}, srv.Client(), srv.URL)
+
+	titulosFilme, err := c.BuscarTitulosAlternativos(context.Background(), "movie", "603")
+	if err != nil {
+		t.Fatalf("BuscarTitulosAlternativos(movie): %v", err)
+	}
+	eqLista(t, "titulos alternativos (filme)", titulosFilme, []string{"The Matrix", "Matrix"})
+
+	titulosSerie, err := c.BuscarTitulosAlternativos(context.Background(), "tv", "1396")
+	if err != nil {
+		t.Fatalf("BuscarTitulosAlternativos(tv): %v", err)
+	}
+	if len(titulosSerie) == 0 {
+		t.Error("titulos alternativos (serie) vazio, quero ao menos um item das translations")
+	}
+}
+
+// TestBuscarTitulosAlternativosUsaAppendMaisLeve prova que a chamada NÃO pede os
+// appends pesados de BuscarDetalhe (credits/keywords/similar/etc) -- só translations.
+func TestBuscarTitulosAlternativosUsaAppendMaisLeve(t *testing.T) {
+	var appendRecebido string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		appendRecebido = r.URL.Query().Get("append_to_response")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(detalheFilme))
+	}))
+	t.Cleanup(srv.Close)
+	c := New(Credencial{Token: "tok"}, srv.Client(), srv.URL)
+
+	if _, err := c.BuscarTitulosAlternativos(context.Background(), "movie", "603"); err != nil {
+		t.Fatalf("BuscarTitulosAlternativos: %v", err)
+	}
+	if appendRecebido != "translations" {
+		t.Errorf("append_to_response = %q, quero \"translations\" (chamada mais leve que BuscarDetalhe)", appendRecebido)
+	}
+}
+
+func TestBuscarTitulosAlternativosTipoInvalido(t *testing.T) {
+	c := New(Credencial{Token: "tok"}, nil, "http://exemplo")
+	if _, err := c.BuscarTitulosAlternativos(context.Background(), "person", "1"); err == nil {
+		t.Fatal("quero erro para tipo != movie|tv")
+	}
+	if _, err := c.BuscarTitulosAlternativos(context.Background(), "movie", ""); err == nil {
+		t.Fatal("quero erro para sourceID vazio")
+	}
+}
+
 func TestBuscarDetalheTipoInvalido(t *testing.T) {
 	c := New(Credencial{Token: "tok"}, nil, "http://exemplo")
 	if _, err := c.BuscarDetalhe(context.Background(), "1", "person", nil); err == nil {

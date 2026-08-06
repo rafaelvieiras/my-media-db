@@ -415,6 +415,11 @@ function PreviewBloco({
             <Badge variant="outline">confira antes de confirmar</Badge>
           )}
         </div>
+        {target.matched_title && target.matched_title !== target.title ? (
+          <p className="line-clamp-1 text-xs text-muted-foreground">
+            via título alternativo: &quot;{target.matched_title}&quot;
+          </p>
+        ) : null}
       </div>
     </div>
   )

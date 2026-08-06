@@ -42,6 +42,23 @@ func TestExtrairTVNS(t *testing.T) {
 	}
 }
 
+// TestPreferredLangDaFonte cobre o resolvedor do idioma preferido da fonte
+// (briefing 0084) que alimenta o auto-import de série via SerieImporter:
+// fonte com PreferredLanguage devolve o valor; fonte sem preferência (nil)
+// devolve "" (o SerieImporter cai no idioma global de Manager.idiomas).
+func TestPreferredLangDaFonte(t *testing.T) {
+	en := "en"
+	comPreferencia := &scanRun{source: library.Source{PreferredLanguage: &en}}
+	if got := comPreferencia.preferredLangDaFonte(); got != "en" {
+		t.Errorf("preferredLangDaFonte() = %q, quero \"en\"", got)
+	}
+
+	semPreferencia := &scanRun{source: library.Source{PreferredLanguage: nil}}
+	if got := semPreferencia.preferredLangDaFonte(); got != "" {
+		t.Errorf("preferredLangDaFonte() = %q, quero \"\" (sem preferência)", got)
+	}
+}
+
 // TestEhPastaTemporada cobre os reconhecimentos de pasta de temporada (incluindo os
 // specials/temporada 0) e a rejeicao de nomes que sao a propria serie.
 func TestEhPastaTemporada(t *testing.T) {
@@ -63,7 +80,7 @@ func TestEhPastaTemporada(t *testing.T) {
 // de library ainda não expõe o campo — a API é de outro passo; aqui gravamos direto).
 func criarSourceSerie(t *testing.T, d *db.DB, dir string) library.Source {
 	t.Helper()
-	src, err := library.New(d).Criar(context.Background(), dir, "tv", "")
+	src, err := library.New(d).Criar(context.Background(), dir, "tv", "", nil)
 	if err != nil {
 		t.Fatalf("criar source: %v", err)
 	}
@@ -100,7 +117,7 @@ type importerStub struct {
 	err error
 }
 
-func (s importerStub) ImportarSeriePorNome(context.Context, string, []string) (string, error) {
+func (s importerStub) ImportarSeriePorNome(context.Context, string, []string, string) (string, error) {
 	return s.id, s.err
 }
 
@@ -223,6 +240,55 @@ func TestScanSerieReScanIdempotente(t *testing.T) {
 	}
 	if n := contarVinculos(t, d); n != 3 {
 		t.Errorf("vínculos após re-scan = %d, quero 3 (sem duplicar)", n)
+	}
+}
+
+// capturingImporterStub é um SerieImporter de teste que grava o preferredLang
+// recebido na ÚLTIMA chamada (briefing 0084) e devolve um erro fixo -- para
+// provar que o scanner passa adiante o PreferredLanguage da fonte, sem
+// depender de um provider real.
+type capturingImporterStub struct {
+	err           error
+	preferredLang string
+}
+
+func (s *capturingImporterStub) ImportarSeriePorNome(_ context.Context, _ string, _ []string, preferredLang string) (string, error) {
+	s.preferredLang = preferredLang
+	return "", s.err
+}
+
+// TestScanSerieUsaPreferredLanguageDaFonteNoAutoImport cobre o item 10 do
+// briefing 0084: uma library_source com preferred_language definido ("en")
+// deve prevalecer sobre o idioma GLOBAL injetado via ConfigurarSeries
+// ("pt-BR") na chamada ao SerieImporter.
+func TestScanSerieUsaPreferredLanguageDaFonteNoAutoImport(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	escrever(t, filepath.Join(root, "Mystery Show", "Season 01", "Mystery Show S01E01.mkv"))
+
+	stub := &capturingImporterStub{err: enrich.ErrSerieAmbigua}
+	m := managerFake(t, d)
+	m.ConfigurarSeries(stub, func(context.Context) []string { return []string{"pt-BR"} })
+
+	src := criarSourceSerie(t, d, root)
+	en := "en"
+	if _, err := d.Write.ExecContext(context.Background(),
+		"UPDATE library_source SET preferred_language=? WHERE id=?", en, src.ID); err != nil {
+		t.Fatalf("marcar preferred_language: %v", err)
+	}
+	src2, err := library.New(d).Obter(context.Background(), src.ID)
+	if err != nil {
+		t.Fatalf("reobter source: %v", err)
+	}
+	if src2.PreferredLanguage == nil || *src2.PreferredLanguage != "en" {
+		t.Fatalf("fixture: source.PreferredLanguage = %v, quero \"en\"", src2.PreferredLanguage)
+	}
+
+	if err := scanSync(t, m, src2); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if stub.preferredLang != "en" {
+		t.Errorf("preferredLang recebido pelo SerieImporter = %q, quero \"en\" (da fonte, não o global pt-BR)", stub.preferredLang)
 	}
 }
 

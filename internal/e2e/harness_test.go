@@ -35,10 +35,15 @@ var pngFixture = []byte{
 }
 
 // cliente é o driver HTTP do harness: fala com o Server real por sua URL pública.
+// `prov` é o MESMO *fake.Provider injetado no Server (briefing 0084): o harness
+// continua black-box pela API, mas alguns efeitos (ex.: qual idioma chegou ao
+// provider numa busca) não aparecem no corpo HTTP de nenhum endpoint -- só ali dá
+// pra confirmar sem instrumentar rede real. Ver fake.Provider.IdiomasBuscados.
 type cliente struct {
 	t    *testing.T
 	base string
 	hc   *http.Client
+	prov *fake.Provider
 }
 
 // novoHarness sobe tudo o que uma jornada precisa e devolve um cliente HTTP. Fecha
@@ -64,8 +69,9 @@ func novoHarness(t *testing.T) *cliente {
 		t.Fatalf("migrar banco: %v", err)
 	}
 
+	prov := fake.New(img.URL)
 	srv := server.New("e2e", database,
-		server.WithSearchProvider(fake.New(img.URL)),
+		server.WithSearchProvider(prov),
 		server.WithAssetsDir(t.TempDir()),
 	)
 	handler, err := srv.Handler()
@@ -75,7 +81,7 @@ func novoHarness(t *testing.T) *cliente {
 	pub := httptest.NewServer(handler)
 	t.Cleanup(pub.Close)
 
-	return &cliente{t: t, base: pub.URL, hc: pub.Client()}
+	return &cliente{t: t, base: pub.URL, hc: pub.Client(), prov: prov}
 }
 
 // bruto envia uma requisição e devolve status + corpo cru. body nil => sem corpo.

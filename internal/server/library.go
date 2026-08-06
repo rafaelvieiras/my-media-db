@@ -27,16 +27,56 @@ type sourceDTO struct {
 	// WatchEnabled liga/desliga o watcher fsnotify desta fonte (briefing
 	// 0064). Default false; editável só via PATCH /api/v1/library/{id}.
 	WatchEnabled bool `json:"watch_enabled"`
+	// PreferredLanguage é o idioma preferido de busca/exibição desta
+	// biblioteca (briefing 0084); nil = sem preferência, usa o idioma
+	// global de app_settings.
+	PreferredLanguage *string `json:"preferred_language"`
 }
 
 // patchSourceRequest é o corpo aceito por PATCH /api/v1/library/{id}
-// (briefing 0064 + 0070, PatchSource no contrato): PATCH PARCIAL -- campo
-// ausente (ponteiro nil) fica inalterado. Path e watch_enabled podem vir
-// juntos ou cada um sozinho; quando os dois vêm no mesmo corpo, o path é
-// aplicado PRIMEIRO (recasco em cascata) e o watch_enabled depois.
+// (briefing 0064 + 0070 + 0084, PatchSource no contrato): PATCH PARCIAL --
+// campo ausente fica inalterado. Path e watch_enabled podem vir juntos ou
+// cada um sozinho; quando os dois vêm no mesmo corpo, o path é aplicado
+// PRIMEIRO (recasco em cascata) e o watch_enabled depois. PreferredLanguage
+// usa jsonNullable (campo de VALOR, não ponteiro -- ver o tipo) para
+// distinguir as três formas: campo AUSENTE no JSON deixa inalterado; `null`
+// explícito limpa a preferência; uma string define.
 type patchSourceRequest struct {
-	WatchEnabled *bool   `json:"watch_enabled"`
-	Path         *string `json:"path"`
+	WatchEnabled      *bool        `json:"watch_enabled"`
+	Path              *string      `json:"path"`
+	PreferredLanguage jsonNullable `json:"preferred_language"`
+}
+
+// jsonNullable distingue as TRÊS formas de um campo JSON opcional-e-anulável
+// (briefing 0084, preferred_language do patch): ausente / `null` explícito /
+// valor. O CAMPO DA STRUCT PRECISA SER DE VALOR (não `*jsonNullable`): o
+// pacote encoding/json, ao encontrar o literal `null`, zera diretamente um
+// campo cujo TIPO DECLARADO já é ponteiro -- sem sequer chamar UnmarshalJSON
+// (ver encoding/json/decode.go, indirect(): o early-break
+// `decodingNull && v.CanSet()` dispara antes de checar a interface
+// Unmarshaler quando o próprio campo já é um ponteiro). Com o campo de
+// VALOR, o decoder tira o ENDEREÇO dele para satisfazer Unmarshaler --
+// nesse caminho o CanSet() do endereço temporário é false, o early-break não
+// dispara, e UnmarshalJSON É chamado inclusive para `null`. Campo ausente no
+// JSON nunca invoca UnmarshalJSON (o decoder não toca a chave) -- por isso
+// Present nasce false (zero value) e só vira true dentro do método.
+type jsonNullable struct {
+	Present bool
+	Value   *string
+}
+
+func (n *jsonNullable) UnmarshalJSON(data []byte) error {
+	n.Present = true
+	if string(data) == "null" {
+		n.Value = nil
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	n.Value = &s
+	return nil
 }
 
 // listDTO é a resposta de GET /api/v1/library.
@@ -50,6 +90,9 @@ type createRequest struct {
 	Type string `json:"type"`
 	// ContentType e opcional (0034): "movie" | "series". Omitido => "movie" (compat).
 	ContentType string `json:"content_type"`
+	// PreferredLanguage e opcional (0084): idioma preferido de busca/exibicao
+	// desta biblioteca. Omitido/vazio => sem preferencia (usa o idioma global).
+	PreferredLanguage string `json:"preferred_language"`
 }
 
 // browseEntryDTO é a forma de serialização de uma entrada do navegador de
@@ -86,13 +129,14 @@ func toBrowseDTO(r library.BrowseResult) browseResultDTO {
 // toDTO converte a Source de domínio para a forma serializável.
 func toDTO(s library.Source) sourceDTO {
 	return sourceDTO{
-		ID:           s.ID,
-		Path:         s.Path,
-		Type:         s.Type,
-		ContentType:  s.ContentType,
-		State:        s.State,
-		LastScan:     s.LastScan,
-		WatchEnabled: s.WatchEnabled,
+		ID:                s.ID,
+		Path:              s.Path,
+		Type:              s.Type,
+		ContentType:       s.ContentType,
+		State:             s.State,
+		LastScan:          s.LastScan,
+		WatchEnabled:      s.WatchEnabled,
+		PreferredLanguage: s.PreferredLanguage,
 	}
 }
 
@@ -156,12 +200,52 @@ func (s *Server) createLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	src, err := s.library.Criar(r.Context(), req.Path, req.Type, req.ContentType)
+	ctx := r.Context()
+	preferredLanguage := preferredLanguagePtr(req.PreferredLanguage)
+	if !s.validarPreferredLanguageOuErro(ctx, w, preferredLanguage) {
+		return
+	}
+
+	src, err := s.library.Criar(ctx, req.Path, req.Type, req.ContentType, preferredLanguage)
 	if err != nil {
 		respondLibraryError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, toDTO(src))
+}
+
+// preferredLanguagePtr converte o campo de string plana (JSON, sem
+// distinção de "ausente" x "vazio") para o ponteiro de domínio: string vazia
+// vira nil ("sem preferência"), mesma convenção de content_type vazio =>
+// default em library.Criar.
+func preferredLanguagePtr(lang string) *string {
+	if lang == "" {
+		return nil
+	}
+	return &lang
+}
+
+// validarPreferredLanguageOuErro valida um preferred_language não-vazio
+// contra app_settings.languages.allowed (briefing 0084), escrevendo 422
+// invalid_body quando o código está fora da lista. lang nil/vazio nunca
+// valida nada (sem preferência é sempre válido). ok=false quando a resposta
+// já foi escrita (erro de validação ou erro real de banco) -- o chamador
+// deve retornar imediatamente nesse caso.
+func (s *Server) validarPreferredLanguageOuErro(ctx context.Context, w http.ResponseWriter, lang *string) bool {
+	if lang == nil || *lang == "" {
+		return true
+	}
+	cfg, err := s.obterLanguageSettings(ctx)
+	if err != nil {
+		respondErroInterno(w)
+		return false
+	}
+	if !cfg.permite(*lang) {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_body",
+			"preferred_language fora dos idiomas permitidos")
+		return false
+	}
+	return true
 }
 
 // listLibrary trata GET /api/v1/library.
@@ -254,7 +338,12 @@ func (s *Server) patchLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	src, err := s.aplicarPatchLibrary(r.Context(), id, req)
+	ctx := r.Context()
+	if req.PreferredLanguage.Present && !s.validarPreferredLanguageOuErro(ctx, w, req.PreferredLanguage.Value) {
+		return
+	}
+
+	src, err := s.aplicarPatchLibrary(ctx, id, req)
 	if err != nil {
 		respondLibraryError(w, err)
 		return
@@ -269,13 +358,24 @@ func (s *Server) patchLibrary(w http.ResponseWriter, r *http.Request) {
 // cascata via AtualizarPath); watch_enabled depois, aplicado A QUENTE pelo
 // watcher fsnotify (aplicarWatchToggle).
 func (s *Server) aplicarPatchLibrary(ctx context.Context, id string, req patchSourceRequest) (library.Source, error) {
-	if req.Path == nil && req.WatchEnabled == nil {
+	if req.Path == nil && req.WatchEnabled == nil && !req.PreferredLanguage.Present {
 		return s.library.Obter(ctx, id)
 	}
 
 	src, err := s.aplicarPatchPath(ctx, id, req.Path)
-	if err != nil || req.WatchEnabled == nil {
+	if err != nil {
 		return src, err
+	}
+
+	if req.PreferredLanguage.Present {
+		src, err = s.library.AtualizarPreferredLanguage(ctx, id, req.PreferredLanguage.Value)
+		if err != nil {
+			return library.Source{}, err
+		}
+	}
+
+	if req.WatchEnabled == nil {
+		return src, nil
 	}
 
 	src, err = s.library.AtualizarWatch(ctx, id, *req.WatchEnabled)

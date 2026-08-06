@@ -35,6 +35,11 @@ type matchPreviewTargetDTO struct {
 	LocalID   *string `json:"local_id"`
 	Source    *string `json:"source"`
 	SourceID  *string `json:"source_id"`
+	// MatchedTitle é o título (principal ou alternativo/traduzido) que
+	// efetivamente produziu o score mostrado (briefing 0084) -- omitido
+	// (nil) quando o candidato é local, ou quando o vencedor é o próprio
+	// título principal (nada de alternativo bateu melhor).
+	MatchedTitle *string `json:"matched_title,omitempty"`
 }
 
 // matchPreviewDTO é a resposta de GET /entities/{id}/match-preview -- SEMPRE
@@ -99,6 +104,14 @@ func (s *Server) montarMatchPreview(ctx context.Context, ent sqlcgen.Entity) (ma
 		return matchPreviewNone, nil
 	}
 
+	// Idioma de busca (briefing 0084): a prévia deve refletir o MESMO idioma
+	// que o auto-match de fato usaria -- mesmo resolvedor dos outros dois
+	// fluxos (automatch.go/retroativo.go).
+	lang, err := s.idiomaDeBusca(ctx, ent.ID)
+	if err != nil {
+		return matchPreviewDTO{}, err
+	}
+
 	// 1) Local-first (0026): mesma busca do auto-match.
 	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, "", "")
 	if err != nil {
@@ -122,11 +135,11 @@ func (s *Server) montarMatchPreview(ctx context.Context, ent sqlcgen.Entity) (ma
 	if s.enrich == nil {
 		return matchPreviewNone, nil
 	}
-	externos, disponivel := s.buscarExterno(ctx, titulo, ent.Type, "")
+	externos, disponivel := s.buscarExterno(ctx, titulo, ent.Type, lang)
 	if !disponivel {
 		return matchPreviewNone, nil
 	}
-	cand, score, achou := melhorCandidatoExterno(externos, titulo, ano)
+	cand, score, tituloVencedor, achou := s.melhorCandidatoExterno(ctx, externos, titulo, ano)
 	if !achou {
 		return matchPreviewNone, nil
 	}
@@ -135,13 +148,17 @@ func (s *Server) montarMatchPreview(ctx context.Context, ent sqlcgen.Entity) (ma
 	if a := anoDeStringPtr(cand.Year); a > 0 {
 		anoAlvo = &a
 	}
+	var matchedTitle *string
+	if tituloVencedor != "" {
+		matchedTitle = &tituloVencedor
+	}
 	source, sourceID := cand.Source, cand.SourceID
 	return matchPreviewDTO{
 		Found: true, Method: "external", Score: score,
 		MeetsAutoThreshold: score >= LimiarAutoMatch,
 		Target: &matchPreviewTargetDTO{
 			Title: cand.Title, Year: anoAlvo, PosterURL: cand.PosterURL,
-			Source: &source, SourceID: &sourceID,
+			Source: &source, SourceID: &sourceID, MatchedTitle: matchedTitle,
 		},
 	}, nil
 }

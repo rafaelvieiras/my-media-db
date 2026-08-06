@@ -54,9 +54,11 @@ type Prober interface {
 // quando a série de uma pasta ainda não está no catálogo: busca pelo nome no
 // provider, escolhe o match exato e único e importa a árvore (reusa o enrich da Fase
 // 1). Interface para injetar sem acoplar o scanner ao enrich e para testar com um
-// stub. Implementado por *enrich.Servico.
+// stub. Implementado por *enrich.Servico. preferredLang (briefing 0084) é o
+// idioma preferido da library_source que disparou o import (vazio = sem
+// preferência, usa o idioma global resolvido por `idiomas`).
 type SerieImporter interface {
-	ImportarSeriePorNome(ctx context.Context, nome string, langs []string) (string, error)
+	ImportarSeriePorNome(ctx context.Context, nome string, langs []string, preferredLang string) (string, error)
 }
 
 // job é o estado em memória de um scan de um datasource.

@@ -27,7 +27,7 @@ SET type = ?,
     state = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
 `
 
 type AtualizarLibrarySourceParams struct {
@@ -56,6 +56,7 @@ func (q *Queries) AtualizarLibrarySource(ctx context.Context, arg AtualizarLibra
 		&i.UpdatedAt,
 		&i.ContentType,
 		&i.WatchEnabled,
+		&i.PreferredLanguage,
 	)
 	return i, err
 }
@@ -65,7 +66,7 @@ UPDATE library_source
 SET path = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
 `
 
 type AtualizarLibrarySourcePathParams struct {
@@ -92,6 +93,42 @@ func (q *Queries) AtualizarLibrarySourcePath(ctx context.Context, arg AtualizarL
 		&i.UpdatedAt,
 		&i.ContentType,
 		&i.WatchEnabled,
+		&i.PreferredLanguage,
+	)
+	return i, err
+}
+
+const atualizarLibrarySourcePreferredLanguage = `-- name: AtualizarLibrarySourcePreferredLanguage :one
+UPDATE library_source
+SET preferred_language = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
+`
+
+type AtualizarLibrarySourcePreferredLanguageParams struct {
+	PreferredLanguage sql.NullString
+	ID                string
+}
+
+// PATCH /api/v1/library/{id} (briefing 0084): define ou limpa o idioma
+// preferido de busca/exibicao da fonte. NULL explicito limpa (volta a usar o
+// idioma global). O HANDLER (internal/server/library.go) ja validou o codigo
+// contra app_settings.languages.allowed antes de chamar esta query.
+func (q *Queries) AtualizarLibrarySourcePreferredLanguage(ctx context.Context, arg AtualizarLibrarySourcePreferredLanguageParams) (LibrarySource, error) {
+	row := q.db.QueryRowContext(ctx, atualizarLibrarySourcePreferredLanguage, arg.PreferredLanguage, arg.ID)
+	var i LibrarySource
+	err := row.Scan(
+		&i.ID,
+		&i.Path,
+		&i.Type,
+		&i.LastScan,
+		&i.State,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ContentType,
+		&i.WatchEnabled,
+		&i.PreferredLanguage,
 	)
 	return i, err
 }
@@ -101,7 +138,7 @@ UPDATE library_source
 SET watch_enabled = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
 `
 
 type AtualizarLibrarySourceWatchParams struct {
@@ -125,6 +162,7 @@ func (q *Queries) AtualizarLibrarySourceWatch(ctx context.Context, arg Atualizar
 		&i.UpdatedAt,
 		&i.ContentType,
 		&i.WatchEnabled,
+		&i.PreferredLanguage,
 	)
 	return i, err
 }
@@ -132,18 +170,19 @@ func (q *Queries) AtualizarLibrarySourceWatch(ctx context.Context, arg Atualizar
 const criarLibrarySource = `-- name: CriarLibrarySource :one
 
 INSERT INTO library_source (
-    id, path, type, content_type
+    id, path, type, content_type, preferred_language
 ) VALUES (
-    ?, ?, ?, ?
+    ?, ?, ?, ?, ?
 )
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
 `
 
 type CriarLibrarySourceParams struct {
-	ID          string
-	Path        string
-	Type        string
-	ContentType string
+	ID                string
+	Path              string
+	Type              string
+	ContentType       string
+	PreferredLanguage sql.NullString
 }
 
 // CRUD de library_source (raizes de varredura).
@@ -153,13 +192,15 @@ type CriarLibrarySourceParams struct {
 // content_type entra explicito (0034): 'movie' | 'series' -- o scanner ramifica
 // por este valor; o servico normaliza vazio para 'movie' (compat). watch_enabled
 // fica de fora do INSERT tambem: nasce 0 (DEFAULT, briefing 0064) -- o dono liga
-// depois via PATCH.
+// depois via PATCH. preferred_language (0084) entra explicito, NULLABLE -- o
+// servico passa NULL quando o dono nao escolheu idioma preferido no cadastro.
 func (q *Queries) CriarLibrarySource(ctx context.Context, arg CriarLibrarySourceParams) (LibrarySource, error) {
 	row := q.db.QueryRowContext(ctx, criarLibrarySource,
 		arg.ID,
 		arg.Path,
 		arg.Type,
 		arg.ContentType,
+		arg.PreferredLanguage,
 	)
 	var i LibrarySource
 	err := row.Scan(
@@ -172,12 +213,13 @@ func (q *Queries) CriarLibrarySource(ctx context.Context, arg CriarLibrarySource
 		&i.UpdatedAt,
 		&i.ContentType,
 		&i.WatchEnabled,
+		&i.PreferredLanguage,
 	)
 	return i, err
 }
 
 const listarLibrarySources = `-- name: ListarLibrarySources :many
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
 FROM library_source
 ORDER BY created_at, id
 `
@@ -201,6 +243,7 @@ func (q *Queries) ListarLibrarySources(ctx context.Context) ([]LibrarySource, er
 			&i.UpdatedAt,
 			&i.ContentType,
 			&i.WatchEnabled,
+			&i.PreferredLanguage,
 		); err != nil {
 			return nil, err
 		}
@@ -216,7 +259,7 @@ func (q *Queries) ListarLibrarySources(ctx context.Context) ([]LibrarySource, er
 }
 
 const listarLibrarySourcesComWatchHabilitado = `-- name: ListarLibrarySourcesComWatchHabilitado :many
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
 FROM library_source
 WHERE watch_enabled = 1
 ORDER BY created_at, id
@@ -244,6 +287,7 @@ func (q *Queries) ListarLibrarySourcesComWatchHabilitado(ctx context.Context) ([
 			&i.UpdatedAt,
 			&i.ContentType,
 			&i.WatchEnabled,
+			&i.PreferredLanguage,
 		); err != nil {
 			return nil, err
 		}
@@ -259,7 +303,7 @@ func (q *Queries) ListarLibrarySourcesComWatchHabilitado(ctx context.Context) ([
 }
 
 const obterLibrarySource = `-- name: ObterLibrarySource :one
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
 FROM library_source
 WHERE id = ?
 `
@@ -277,12 +321,13 @@ func (q *Queries) ObterLibrarySource(ctx context.Context, id string) (LibrarySou
 		&i.UpdatedAt,
 		&i.ContentType,
 		&i.WatchEnabled,
+		&i.PreferredLanguage,
 	)
 	return i, err
 }
 
 const obterLibrarySourcePorPath = `-- name: ObterLibrarySourcePorPath :one
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
 FROM library_source
 WHERE path = ?
 `
@@ -302,6 +347,7 @@ func (q *Queries) ObterLibrarySourcePorPath(ctx context.Context, path string) (L
 		&i.UpdatedAt,
 		&i.ContentType,
 		&i.WatchEnabled,
+		&i.PreferredLanguage,
 	)
 	return i, err
 }

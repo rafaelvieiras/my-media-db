@@ -142,6 +142,14 @@ func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.En
 		return "none", "", 0, nil
 	}
 
+	// Idioma de busca (briefing 0084): mesmo resolvedor do auto-match -- a
+	// biblioteca de origem pode ter um idioma preferido; sem um, cai no
+	// idioma PRINCIPAL global (nunca mais o "" cego de antes deste briefing).
+	lang, err := s.idiomaDeBusca(ctx, ent.ID)
+	if err != nil {
+		return "", "", 0, err
+	}
+
 	// 1) Local-first (mesma ordem de tentarAutoMatch): nunca duplica entity
 	// já catalogada.
 	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, "", "")
@@ -160,9 +168,9 @@ func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.En
 	melhorExternoScore := -1.0
 	achouExterno := false
 	if s.enrich != nil {
-		externos, disponivel := s.buscarExterno(ctx, titulo, ent.Type, "")
+		externos, disponivel := s.buscarExterno(ctx, titulo, ent.Type, lang)
 		if disponivel {
-			cand, scoreExterno, achou := melhorCandidatoExterno(externos, titulo, ano)
+			cand, scoreExterno, _, achou := s.melhorCandidatoExterno(ctx, externos, titulo, ano)
 			if achou {
 				melhorExternoScore, achouExterno = scoreExterno, true
 				if scoreExterno >= LimiarAutoMatch {

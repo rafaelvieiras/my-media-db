@@ -73,6 +73,12 @@ type Source struct {
 	// Default false no cadastro; editavel so via AtualizarWatch (PATCH
 	// /api/v1/library/{id}), aplicado A QUENTE pelo handler (internal/watch).
 	WatchEnabled bool
+	// PreferredLanguage e o idioma preferido de busca/exibicao desta biblioteca
+	// (briefing 0084); nil = sem preferencia, usa o idioma global de
+	// app_settings. A VALIDACAO contra os idiomas permitidos e feita pelo
+	// CHAMADOR (internal/server), para este pacote nao importar internal/server
+	// nem conhecer app_settings -- aqui so persiste o que recebe.
+	PreferredLanguage *string
 }
 
 // Service concentra as operações de domínio sobre library_source. Segue a
@@ -104,8 +110,11 @@ func (s *Service) leitura() *sqlcgen.Queries { return sqlcgen.New(s.database.Rea
 // nasce online (acabou de ser validada como legível) e sem last_scan.
 // contentType é a natureza da biblioteca (movie|series, 0034), que o scanner usa
 // para ramificar o fluxo de match. Valor livre (sem CHECK); vazio normaliza para
-// "movie" (compat com o cadastro pré-0034).
-func (s *Service) Criar(ctx context.Context, rawPath, tipo, contentType string) (Source, error) {
+// "movie" (compat com o cadastro pré-0034). preferredLanguage é o idioma
+// preferido opcional (briefing 0084); nil = sem preferência. A VALIDAÇÃO contra
+// os idiomas permitidos já foi feita pelo CHAMADOR (internal/server) antes desta
+// chamada -- este serviço só persiste o valor recebido.
+func (s *Service) Criar(ctx context.Context, rawPath, tipo, contentType string, preferredLanguage *string) (Source, error) {
 	if !tiposValidos[tipo] {
 		return Source{}, ErrTipoInvalido
 	}
@@ -133,10 +142,11 @@ func (s *Service) Criar(ctx context.Context, rawPath, tipo, contentType string) 
 	}
 
 	row, err := s.escrita().CriarLibrarySource(ctx, sqlcgen.CriarLibrarySourceParams{
-		ID:          s.novoID(),
-		Path:        abs,
-		Type:        tipo,
-		ContentType: contentType,
+		ID:                s.novoID(),
+		Path:              abs,
+		Type:              tipo,
+		ContentType:       contentType,
+		PreferredLanguage: ptrParaNullString(preferredLanguage),
 	})
 	if err != nil {
 		return Source{}, err
@@ -225,6 +235,28 @@ func (s *Service) AtualizarWatch(ctx context.Context, id string, enabled bool) (
 	row, err := s.escrita().AtualizarLibrarySourceWatch(ctx, sqlcgen.AtualizarLibrarySourceWatchParams{
 		WatchEnabled: watchEnabledInt(enabled),
 		ID:           id,
+	})
+	if err != nil {
+		return Source{}, err
+	}
+	return toSource(row, avaliarState(row.Path)), nil
+}
+
+// AtualizarPreferredLanguage grava (ou limpa, quando lang==nil) o idioma
+// preferido da fonte (briefing 0084, PATCH /api/v1/library/{id}).
+// ErrNaoEncontrado se o id não existir. A VALIDAÇÃO contra os idiomas
+// permitidos já foi feita pelo CHAMADOR (internal/server) antes desta
+// chamada -- este serviço só persiste o valor recebido.
+func (s *Service) AtualizarPreferredLanguage(ctx context.Context, id string, lang *string) (Source, error) {
+	if _, err := s.leitura().ObterLibrarySource(ctx, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Source{}, ErrNaoEncontrado
+		}
+		return Source{}, err
+	}
+	row, err := s.escrita().AtualizarLibrarySourcePreferredLanguage(ctx, sqlcgen.AtualizarLibrarySourcePreferredLanguageParams{
+		PreferredLanguage: ptrParaNullString(lang),
+		ID:                id,
 	})
 	if err != nil {
 		return Source{}, err
@@ -446,12 +478,32 @@ func toSource(row sqlcgen.LibrarySource, state string) Source {
 		lastScan = &v
 	}
 	return Source{
-		ID:           row.ID,
-		Path:         row.Path,
-		Type:         row.Type,
-		State:        state,
-		LastScan:     lastScan,
-		ContentType:  row.ContentType,
-		WatchEnabled: row.WatchEnabled != 0,
+		ID:                row.ID,
+		Path:              row.Path,
+		Type:              row.Type,
+		State:             state,
+		LastScan:          lastScan,
+		ContentType:       row.ContentType,
+		WatchEnabled:      row.WatchEnabled != 0,
+		PreferredLanguage: nullStringParaPtr(row.PreferredLanguage),
 	}
+}
+
+// ptrParaNullString converte um *string de domínio (nil = ausente) para o
+// sql.NullString gravável pela coluna NULLABLE preferred_language.
+func ptrParaNullString(s *string) sql.NullString {
+	if s == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: *s, Valid: true}
+}
+
+// nullStringParaPtr converte a coluna NULLABLE lida de volta para *string de
+// domínio (nil quando NULL).
+func nullStringParaPtr(ns sql.NullString) *string {
+	if !ns.Valid {
+		return nil
+	}
+	v := ns.String
+	return &v
 }

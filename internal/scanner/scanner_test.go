@@ -59,7 +59,7 @@ func (proberVazio) Probe(context.Context, string) ([]byte, error) { return nil, 
 // criarSource cadastra um datasource apontando para dir (via o serviço real).
 func criarSource(t *testing.T, d *db.DB, dir string) library.Source {
 	t.Helper()
-	src, err := library.New(d).Criar(context.Background(), dir, "movie", "")
+	src, err := library.New(d).Criar(context.Background(), dir, "movie", "", nil)
 	if err != nil {
 		t.Fatalf("criar source: %v", err)
 	}

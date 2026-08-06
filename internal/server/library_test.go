@@ -392,6 +392,100 @@ func TestPatchLibraryCorpoMalformado(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
+// TestPostLibraryComPreferredLanguage cobre o cadastro com preferred_language
+// (briefing 0084): "en" está no allowed default (defaultLanguageSettings) e
+// entra sem exigir PUT /settings/languages antes.
+func TestPostLibraryComPreferredLanguage(t *testing.T) {
+	h := setupLibraryServer(t)
+	rec := do(t, h, http.MethodPost, "/api/v1/library",
+		map[string]string{"path": t.TempDir(), "type": "movie", "preferred_language": "en"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, quero 201 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	got := decodeSource(t, rec)
+	if got.PreferredLanguage == nil || *got.PreferredLanguage != "en" {
+		t.Errorf("preferred_language = %v, quero \"en\"", got.PreferredLanguage)
+	}
+}
+
+// TestPostLibrarySemPreferredLanguageFicaNil cobre o default (campo
+// omitido): preferred_language fica nil, comportamento idêntico a antes do
+// briefing 0084.
+func TestPostLibrarySemPreferredLanguageFicaNil(t *testing.T) {
+	h := setupLibraryServer(t)
+	got := criarOK(t, h, t.TempDir(), "movie")
+	if got.PreferredLanguage != nil {
+		t.Errorf("preferred_language = %v, quero nil (omitido no cadastro)", *got.PreferredLanguage)
+	}
+}
+
+// TestPostLibraryPreferredLanguageInvalido cobre o 422 invalid_body quando o
+// código não está em app_settings.languages.allowed.
+func TestPostLibraryPreferredLanguageInvalido(t *testing.T) {
+	h := setupLibraryServer(t)
+	rec := do(t, h, http.MethodPost, "/api/v1/library",
+		map[string]string{"path": t.TempDir(), "type": "movie", "preferred_language": "xx-XX"})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, quero 422 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "invalid_body")
+}
+
+// TestPatchLibraryPreferredLanguageDefineELimpa cobre o ciclo completo do
+// briefing 0084: PATCH com preferred_language define; `null` explícito
+// limpa; campo AUSENTE deixa inalterado.
+func TestPatchLibraryPreferredLanguageDefineELimpa(t *testing.T) {
+	h := setupLibraryServer(t)
+	src := criarOK(t, h, t.TempDir(), "movie")
+
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"preferred_language": "en"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH preferred_language=en: status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if got := decodeSource(t, rec); got.PreferredLanguage == nil || *got.PreferredLanguage != "en" {
+		t.Errorf("preferred_language = %v, quero \"en\"", got.PreferredLanguage)
+	}
+
+	// Campo AUSENTE (só outro campo qualquer no corpo) não altera o valor atual.
+	recInalterado := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"watch_enabled": true})
+	if got := decodeSource(t, recInalterado); got.PreferredLanguage == nil || *got.PreferredLanguage != "en" {
+		t.Errorf("preferred_language após PATCH sem o campo = %v, quero continuar \"en\"", got.PreferredLanguage)
+	}
+
+	// `null` explícito LIMPA a preferência.
+	recNull := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, []byte(`{"preferred_language":null}`))
+	if recNull.Code != http.StatusOK {
+		t.Fatalf("PATCH preferred_language=null: status = %d, quero 200 (corpo=%s)", recNull.Code, recNull.Body.String())
+	}
+	if got := decodeSource(t, recNull); got.PreferredLanguage != nil {
+		t.Errorf("preferred_language após null explícito = %v, quero nil", *got.PreferredLanguage)
+	}
+
+	// Reflete em GET (persistiu de verdade).
+	get := do(t, h, http.MethodGet, "/api/v1/library/"+src.ID, nil)
+	if got := decodeSource(t, get); got.PreferredLanguage != nil {
+		t.Errorf("GET pós-PATCH: preferred_language = %v, quero nil (persistido)", *got.PreferredLanguage)
+	}
+}
+
+// TestPatchLibraryPreferredLanguageInvalido cobre o 422 invalid_body no PATCH.
+func TestPatchLibraryPreferredLanguageInvalido(t *testing.T) {
+	h := setupLibraryServer(t)
+	src := criarOK(t, h, t.TempDir(), "movie")
+
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"preferred_language": "xx-XX"})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, quero 422 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "invalid_body")
+
+	// Nada foi persistido (a validação falhou antes de tocar o banco).
+	get := do(t, h, http.MethodGet, "/api/v1/library/"+src.ID, nil)
+	if got := decodeSource(t, get); got.PreferredLanguage != nil {
+		t.Errorf("preferred_language após PATCH inválido = %v, quero nil (não persistido)", *got.PreferredLanguage)
+	}
+}
+
 // TestPatchLibraryPathValido cobre o núcleo do briefing 0070: PATCH com
 // `path` válido reaponta a fonte (200, path novo, state online) sem re-scan.
 func TestPatchLibraryPathValido(t *testing.T) {

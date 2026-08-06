@@ -4,11 +4,22 @@ import { useNavigate, useParams } from '@tanstack/react-router'
 import { LoaderCircle, Save, Trash2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { PathBrowser } from '@/components/path-browser'
 import { LibraryFormHeader } from '@/components/library-form-header'
 import { ErrorState, LoadingState } from '@/components/query-states'
-import { ApiError, deleteLibrary, patchLibrary, type Source } from '@/lib/api'
-import { libraryQueryOptions } from '@/lib/queries'
+import {
+  ApiError,
+  deleteLibrary,
+  patchLibrary,
+  type PatchSource,
+  type Source,
+} from '@/lib/api'
+import {
+  libraryQueryOptions,
+  languageSettingsQueryOptions,
+} from '@/lib/queries'
+import { rotuloIdioma } from '@/lib/languages'
 
 // Rota `/dashboard/library/$id/edit` (briefing 0071): reaponta o caminho do datasource
 // (PATCH, recasco em cascata do 0070) e concentra a remoção — antes um ícone de
@@ -49,13 +60,20 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [path, setPath] = useState(source.path)
+  const [preferredLanguage, setPreferredLanguage] = useState(
+    source.preferred_language ?? '',
+  )
+  const [preferredLanguageTocado, setPreferredLanguageTocado] = useState(false)
+
+  const languagesQuery = useQuery(languageSettingsQueryOptions)
+  const idiomasPermitidos = languagesQuery.data?.allowed ?? []
 
   function invalidar() {
     queryClient.invalidateQueries({ queryKey: ['library'] })
   }
 
   const salvar = useMutation({
-    mutationFn: (novoPath: string) => patchLibrary(id, { path: novoPath }),
+    mutationFn: (body: PatchSource) => patchLibrary(id, body),
     onSuccess: () => {
       invalidar()
       navigate({ to: '/dashboard/library' })
@@ -76,7 +94,15 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
     if (!limpo) {
       return
     }
-    salvar.mutate(limpo)
+    const body: PatchSource = { path: limpo }
+    // PATCH parcial: só manda `preferred_language` se o dono de fato mexeu no
+    // select (mesmo espírito do `path`/`watch_enabled`) — campo ausente no
+    // corpo mantém o valor atual no backend. Voltar pra "Usar idioma global"
+    // envia `null` explícito, que limpa a preferência.
+    if (preferredLanguageTocado) {
+      body.preferred_language = preferredLanguage || null
+    }
+    salvar.mutate(body)
   }
 
   const mensagemErroSalvar =
@@ -107,6 +133,25 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
         </label>
 
         <PathBrowser value={path} onChange={setPath} />
+
+        <label className="flex max-w-64 flex-col gap-1 text-sm">
+          <span className="text-muted-foreground">Idioma preferido</span>
+          <Select
+            value={preferredLanguage}
+            onChange={(e) => {
+              setPreferredLanguage(e.target.value)
+              setPreferredLanguageTocado(true)
+            }}
+            aria-label="Idioma preferido do datasource"
+          >
+            <option value="">Usar idioma global</option>
+            {idiomasPermitidos.map((codigo) => (
+              <option key={codigo} value={codigo}>
+                {rotuloIdioma(codigo)}
+              </option>
+            ))}
+          </Select>
+        </label>
 
         {mensagemErroSalvar ? (
           <p role="alert" className="text-sm font-medium text-destructive">

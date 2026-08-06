@@ -45,6 +45,12 @@ type Server struct {
 	// cacheExterno guarda por TTL curto o resultado externo por (query,tipo),
 	// para poupar a fonte. Só existe quando há provider.
 	cacheExterno *cacheExterno
+	// cacheTitulosAlt guarda por TTL curto (ttlCacheExterno) os títulos
+	// alternativos/traduzidos de um candidato externo por (source,source_id)
+	// (briefing 0084, melhorCandidatoExterno em automatch.go) -- poupa o
+	// provider quando o mesmo candidato aparece de novo dentro do TTL. Só
+	// existe quando há provider (mesma condição de cacheExterno).
+	cacheTitulosAlt *cacheTitulosAlternativos
 	// assetsDir é o diretório confiável onde o cache de imagem grava os binários
 	// (briefing 0015). Injetado via WithAssetsDir; também entra na guarda de path
 	// do endpoint de pôster (além dos datasources).
@@ -131,6 +137,9 @@ func WithSearchProvider(provs ...provider.Provider) Option {
 		}
 		if registrou && s.cacheExterno == nil {
 			s.cacheExterno = novoCacheExterno(ttlCacheExterno)
+		}
+		if registrou && s.cacheTitulosAlt == nil {
+			s.cacheTitulosAlt = novoCacheTitulosAlternativos(ttlCacheExterno)
 		}
 	}
 }

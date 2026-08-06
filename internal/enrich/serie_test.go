@@ -254,7 +254,7 @@ func TestImportarSeriePorNomeCasaExato(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
 
-	id, err := svc.ImportarSeriePorNome(ctx, "Springfield Tales", []string{"en"})
+	id, err := svc.ImportarSeriePorNome(ctx, "Springfield Tales", []string{"en"}, "")
 	if err != nil {
 		t.Fatalf("ImportarSeriePorNome: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestImportarSeriePorNomeCasaExato(t *testing.T) {
 // sentinela ErrSerieNaoEncontrada (o scanner roteia para revisão).
 func TestImportarSeriePorNomeNaoEncontrada(t *testing.T) {
 	svc, _ := svcSerieFake(t)
-	_, err := svc.ImportarSeriePorNome(context.Background(), "Serie Inexistente XYZ", []string{"en"})
+	_, err := svc.ImportarSeriePorNome(context.Background(), "Serie Inexistente XYZ", []string{"en"}, "")
 	if !errors.Is(err, ErrSerieNaoEncontrada) {
 		t.Fatalf("err = %v, quero ErrSerieNaoEncontrada", err)
 	}
@@ -287,7 +287,7 @@ func TestImportarSeriePorNomeNaoEncontrada(t *testing.T) {
 func TestImportarSeriePorNomeAmbigua(t *testing.T) {
 	database := setupDB(t)
 	svc := New(database, provider.NovaRegistry(serieDupla{}), t.TempDir())
-	_, err := svc.ImportarSeriePorNome(context.Background(), "Dup Show", []string{"en"})
+	_, err := svc.ImportarSeriePorNome(context.Background(), "Dup Show", []string{"en"}, "")
 	if !errors.Is(err, ErrSerieAmbigua) {
 		t.Fatalf("err = %v, quero ErrSerieAmbigua", err)
 	}

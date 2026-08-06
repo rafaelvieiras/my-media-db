@@ -2600,6 +2600,13 @@ components:
         source_id:
           type: [string, "null"]
           description: Id na fonte externa; null quando method=local.
+        matched_title:
+          type: string
+          description: >
+            Título (principal ou alternativo/traduzido) que efetivamente
+            produziu o score mostrado (briefing 0084). Ausente quando o
+            candidato é local ou quando o título vencedor é o próprio
+            título principal do candidato.
     MatchPreview:
       type: object
       description: >
@@ -3191,6 +3198,12 @@ components:
             próximo scan; o job periódico `midias_faltantes`/scan incremental
             continua sendo a base mesmo com watch ligado. Editável só via
             `PATCH /api/v1/library/{id}`, aplicado a quente (sem restart).
+        preferred_language:
+          type: [string, "null"]
+          description: >
+            Idioma preferido de busca/exibição desta biblioteca (briefing
+            0084). `null` = sem preferência, usa o idioma global de
+            `app_settings`.
     SourceList:
       type: object
       required: [items]
@@ -3212,6 +3225,9 @@ components:
           description: >
             Natureza da biblioteca (0034). Opcional; omitido => `movie` (compat).
             `series` liga o fluxo de scan de séries (arquivo→episódio).
+        preferred_language:
+          type: string
+          description: Idioma preferido de busca/exibição desta biblioteca (briefing 0084).
     PatchSource:
       type: object
       description: >
@@ -3236,6 +3252,12 @@ components:
             `media_file.path`, `asset.local_path` e `entity.nfo_path` desta
             fonte para o novo prefixo — NÃO dispara scan nem move bytes no
             disco. Igual ao caminho atual é no-op.
+        preferred_language:
+          type: [string, "null"]
+          description: >
+            Idioma preferido de busca/exibição desta biblioteca (briefing
+            0084). `null` explícito no corpo LIMPA a preferência (volta a
+            usar o idioma global); campo AUSENTE deixa inalterado.
     ScanStatus:
       type: object
       required: [running, files_seen, files_total]

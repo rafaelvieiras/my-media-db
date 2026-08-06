@@ -88,6 +88,11 @@ type Querier interface {
 	// `state`: e sempre reavaliado na leitura (avaliarState), nunca lido desta
 	// coluna.
 	AtualizarLibrarySourcePath(ctx context.Context, arg AtualizarLibrarySourcePathParams) (LibrarySource, error)
+	// PATCH /api/v1/library/{id} (briefing 0084): define ou limpa o idioma
+	// preferido de busca/exibicao da fonte. NULL explicito limpa (volta a usar o
+	// idioma global). O HANDLER (internal/server/library.go) ja validou o codigo
+	// contra app_settings.languages.allowed antes de chamar esta query.
+	AtualizarLibrarySourcePreferredLanguage(ctx context.Context, arg AtualizarLibrarySourcePreferredLanguageParams) (LibrarySource, error)
 	// PATCH /api/v1/library/{id} (briefing 0064): liga/desliga watch_enabled. O
 	// handler chama a rotina de registro/desregistro do watcher fsnotify LOGO
 	// APOS este UPDATE (aplicado a quente, sem restart -- ver internal/watch).
@@ -208,7 +213,8 @@ type Querier interface {
 	// content_type entra explicito (0034): 'movie' | 'series' -- o scanner ramifica
 	// por este valor; o servico normaliza vazio para 'movie' (compat). watch_enabled
 	// fica de fora do INSERT tambem: nasce 0 (DEFAULT, briefing 0064) -- o dono liga
-	// depois via PATCH.
+	// depois via PATCH. preferred_language (0084) entra explicito, NULLABLE -- o
+	// servico passa NULL quando o dono nao escolheu idioma preferido no cadastro.
 	CriarLibrarySource(ctx context.Context, arg CriarLibrarySourceParams) (LibrarySource, error)
 	// CRUD de media_file + a query de POSSE DERIVADA (ADR-0009) + as queries do
 	// scanner (briefing 0009): dedup por content_hash, reencontro (rename/move) e
