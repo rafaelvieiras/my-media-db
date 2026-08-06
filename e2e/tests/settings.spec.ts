@@ -37,9 +37,11 @@ test('trocar o idioma de leitura re-resolve o titulo exibido', async ({ page, re
 })
 
 test('pagina de configuracoes de idioma', async ({ page }) => {
-  await page.goto('/')
+  // Configurações mora na sidebar da área administrativa (briefing 0083),
+  // não mais no header de "/" -- rota real é /dashboard/settings.
+  await page.goto('/dashboard')
   await page.getByRole('link', { name: 'Configurações' }).click()
-  await expect(page).toHaveURL(/\/settings$/)
+  await expect(page).toHaveURL(/\/dashboard\/settings$/)
 
   await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible()
 
