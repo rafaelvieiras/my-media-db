@@ -19,6 +19,20 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
+// AtualizarInventarioArtes é o wrapper PÚBLICO de enriquecerArtes (briefing 0088, ação
+// "Baixar Artes Faltantes" do menu Gerenciar): permite ao chamador (o handler HTTP de
+// POST /entities/{id}/materialize-missing-media) disparar uma nova consulta ao(s)
+// ArteProvider(s) registrado(s) SEM passar por todo o Enriquecer (que também re-puxaria
+// metadados/árvore). Delega inteiramente à função já existente — sem duplicar lógica.
+// Best-effort por natureza (mesmo contrato de enriquecerArtes): nunca retorna erro, já
+// que a ausência de id externo/capacidade/match é degradação silenciosa esperada
+// (AGENTS.md §6). O `error` de retorno existe só para uma assinatura estável caso um
+// erro real (ex.: banco fora do ar) precise propagar no futuro; hoje é sempre nil.
+func (s *Servico) AtualizarInventarioArtes(ctx context.Context, entityID, tipo string, langs []string) error {
+	s.enriquecerArtes(ctx, entityID, tipo, langs)
+	return nil
+}
+
 // enriquecerArtes busca e persiste o inventário de artes de `entityID` (tipo movie|tv)
 // em cada provider com a capacidade ArteProvider. Best-effort: erro/ausência degrada em
 // silêncio. Chamado após o import primário do filme e após a árvore da série (quando as

@@ -30,7 +30,7 @@ func TestEnriquecerSerieSincronizaArvore(t *testing.T) {
 	}
 	svc := New(database, provider.NovaRegistry(fake.New(img.URL)), t.TempDir())
 
-	if err := svc.Enriquecer(ctx, "s1", "tmdb", fake.SerieFixtureID, tipoSerie, []string{"en"}); err != nil {
+	if err := svc.Enriquecer(ctx, "s1", "tmdb", fake.SerieFixtureID, tipoSerie, []string{"en"}, false); err != nil {
 		t.Fatalf("Enriquecer: %v", err)
 	}
 
@@ -77,7 +77,7 @@ func TestEnriquecerSerieArvoreFalhaDegrada(t *testing.T) {
 	}
 	svc, _ := novoServico(t, database, fk)
 
-	if err := svc.Enriquecer(ctx, "s1", "tmdb", "999", tipoSerie, []string{"en"}); err != nil {
+	if err := svc.Enriquecer(ctx, "s1", "tmdb", "999", tipoSerie, []string{"en"}, false); err != nil {
 		t.Fatalf("Enriquecer nao deveria falhar por causa da arvore: %v", err)
 	}
 
@@ -126,7 +126,7 @@ func TestEnriquecerMovieNaoSincronizaArvore(t *testing.T) {
 	contavel := &provSerieContavel{Provider: fake.New(img.URL)}
 	svc := New(database, provider.NovaRegistry(contavel), t.TempDir())
 
-	if err := svc.Enriquecer(ctx, "m1", "tmdb", "603", "movie", []string{"en"}); err != nil {
+	if err := svc.Enriquecer(ctx, "m1", "tmdb", "603", "movie", []string{"en"}, false); err != nil {
 		t.Fatalf("Enriquecer: %v", err)
 	}
 	if contavel.chamadasArvore != 0 {

@@ -183,7 +183,7 @@ func (s *Server) aplicarIdentidadeExterna(w http.ResponseWriter, ctx context.Con
 	if err != nil {
 		return false
 	}
-	if err := s.enrich.Enriquecer(ctx, id, source, sourceID, tipo, langs); err != nil {
+	if err := s.enrich.Enriquecer(ctx, id, source, sourceID, tipo, langs, false); err != nil {
 		respondFonteIndisponivel(w)
 		return false
 	}

@@ -195,7 +195,7 @@ func TestEnriquecerFilmeForaDoImportPersisteInventarioArtes(t *testing.T) {
 	svc := New(database, provider.NovaRegistry(tmdb, arte), t.TempDir())
 
 	for i := 0; i < 2; i++ {
-		if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"en"}); err != nil {
+		if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"en"}, false); err != nil {
 			t.Fatalf("Enriquecer #%d: %v", i, err)
 		}
 	}

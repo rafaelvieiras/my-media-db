@@ -3,9 +3,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
   ChevronDown,
+  CloudDownload,
   FileText,
   ImageDown,
+  Images,
   Pencil,
+  RefreshCw,
   Settings,
   Sparkles,
   Trash2,
@@ -31,11 +34,16 @@ import {
 import {
   ApiError,
   downloadMissingArtwork,
+  enrichEntity,
   enrichMissing,
+  materializeMissingMedia,
   purgeEntity,
+  refreshEntityFiles,
   writeEntityNfo,
   type DownloadMissingArtworkResult,
   type EnrichMissingResult,
+  type MaterializeMissingMediaResult,
+  type RefreshFilesResult,
 } from '@/lib/api'
 import { rotuloKind } from '@/lib/artwork'
 import {
@@ -46,7 +54,9 @@ import {
 // EntityManageMenu (briefing 0086, ex-`EntityActionButtons` do 0059) compacta as
 // ações do item num ÚNICO dropdown "Gerenciar" — Editar (sempre) + "Baixar
 // informações faltando"/"Baixar arte faltando" (0056/0048-0049, condicionais a
-// `catalog_completeness`) + "Salvar informações (NFO)" (0062) + "Excluir
+// `catalog_completeness`) + "Salvar informações (NFO)" (0062) + "Verificar
+// Atualizações de Arquivos"/"Baixar Metadados"/"Baixar Artes Faltantes" (0088,
+// SEMPRE visíveis, ações forçadas que ignoram cache/incrementalidade) + "Excluir
 // coleção" (0026, só `isCollection`, migrado de `entity-detail.tsx::
 // ExcluirColecao`). A LÓGICA de cada mutation é a MESMA de antes — só a
 // apresentação virou itens de menu em vez de botões soltos acima do hero.
@@ -93,6 +103,53 @@ function mensagemEnriquecimento(resultado: EnrichMissingResult) {
   return (
     <span role="status" className="text-sm text-muted-foreground">
       Nenhuma correspondência encontrada desta vez.
+    </span>
+  )
+}
+
+// mensagemVerificarArquivos resolve o desfecho de POST .../refresh-files (0088):
+// formato solto e informativo (o próprio contrato não é rígido) — arquivos
+// reconferidos, assets locais atualizados e campos locais de reprodução
+// preenchidos a partir do .nfo, quando houver algum.
+function mensagemVerificarArquivos(resultado: RefreshFilesResult) {
+  const partes = [`${resultado.files_rechecked} arquivo(s) reconferido(s)`]
+  if (resultado.assets_found > 0) {
+    partes.push(`${resultado.assets_found} asset(s) local(is) atualizado(s)`)
+  }
+  if (resultado.playback_fields_filled.length > 0) {
+    partes.push(
+      `campos de reprodução preenchidos: ${resultado.playback_fields_filled.join(', ')}`,
+    )
+  }
+  return (
+    <span role="status" className="text-sm text-muted-foreground">
+      {partes.join(' — ')}.
+    </span>
+  )
+}
+
+// mensagemArtesFaltantes resolve o desfecho de POST .../materialize-missing-media
+// (0088): reusa `montarListaBaixados` (mesma frase PT-BR da galeria/lightbox) para
+// os kinds baixados, mais o .nfo quando gravado nesta chamada.
+function mensagemArtesFaltantes(resultado: MaterializeMissingMediaResult) {
+  if (resultado.artes_baixadas.length > 0) {
+    return (
+      <span role="status" className="text-sm text-muted-foreground">
+        {montarListaBaixados(resultado.artes_baixadas)}
+        {resultado.nfo_gravado ? ' O .nfo também foi gravado.' : ''}
+      </span>
+    )
+  }
+  if (resultado.nfo_gravado) {
+    return (
+      <span role="status" className="text-sm text-muted-foreground">
+        Nenhuma arte nova baixada — o .nfo foi gravado.
+      </span>
+    )
+  }
+  return (
+    <span role="status" className="text-sm text-muted-foreground">
+      Nenhuma arte nova para materializar.
     </span>
   )
 }
@@ -184,6 +241,32 @@ export function EntityManageMenu({
     },
   })
 
+  // As 3 ações abaixo (briefing 0088) são SEMPRE VISÍVEIS — diferente de
+  // `enriquecer`/`baixarArte` acima, não dependem de `catalog_completeness`. Cada
+  // uma reusa `invalidar()`: como `entityFilesQueryOptions` (queries.ts) usa a
+  // chave `['entity', id, 'files']`, ela já cai sob o prefixo `['entity', id]`
+  // invalidado abaixo — sem precisar de uma chave extra.
+  //
+  // "Verificar Atualizações de Arquivos": re-hash forçado + asset local novo +
+  // campos locais de reprodução a partir do .nfo, restrito a esta entity.
+  const verificarArquivos = useMutation({
+    mutationFn: () => refreshEntityFiles(id),
+    onSuccess: invalidar,
+  })
+  // "Baixar Metadados": mesmo endpoint de sempre (`enrich`), mas com
+  // `force: true` pra pular o cache de 24h do detalhe externo.
+  const baixarMetadados = useMutation({
+    mutationFn: () => enrichEntity(id, { force: true }),
+    onSuccess: invalidar,
+  })
+  // "Baixar Artes Faltantes": nova consulta ao(s) ArteProvider + materialização
+  // do que faltar na pasta real — mesmo efeito do job `midias_faltantes`, sob
+  // demanda e só para esta entity.
+  const baixarArtesFaltantes = useMutation({
+    mutationFn: () => materializeMissingMedia(id),
+    onSuccess: invalidar,
+  })
+
   const mostrarInformacoes = precisaAtencaoCatalogacao(catalogCompleteness)
   const mostrarArte = !!catalogCompleteness?.missing.some((chave) =>
     chave.startsWith('artwork:'),
@@ -211,6 +294,24 @@ export function EntityManageMenu({
   // para erro não-ApiError) — migrada tal qual.
   const erroExcluir =
     excluir.error instanceof ApiError ? excluir.error.message : null
+  const erroVerificarArquivos =
+    verificarArquivos.error instanceof ApiError
+      ? verificarArquivos.error.message
+      : verificarArquivos.isError
+        ? 'Não foi possível reconferir os arquivos.'
+        : null
+  const erroBaixarMetadados =
+    baixarMetadados.error instanceof ApiError
+      ? baixarMetadados.error.message
+      : baixarMetadados.isError
+        ? 'Não foi possível baixar os metadados.'
+        : null
+  const erroBaixarArtesFaltantes =
+    baixarArtesFaltantes.error instanceof ApiError
+      ? baixarArtesFaltantes.error.message
+      : baixarArtesFaltantes.isError
+        ? 'Não foi possível baixar as artes faltantes.'
+        : null
 
   return (
     <div className="flex flex-col items-end gap-1.5">
@@ -256,6 +357,34 @@ export function EntityManageMenu({
           >
             <FileText aria-hidden />
             {salvarNfo.isPending ? 'Gravando…' : 'Salvar informações (NFO)'}
+          </DropdownMenuItem>
+          {/* 3 ações SEMPRE VISÍVEIS (briefing 0088) — não dependem de
+              `catalog_completeness`, diferente dos 2 itens condicionais acima. */}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            disabled={verificarArquivos.isPending}
+            onSelect={() => verificarArquivos.mutate()}
+          >
+            <RefreshCw aria-hidden />
+            {verificarArquivos.isPending
+              ? 'Verificando…'
+              : 'Verificar Atualizações de Arquivos'}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={baixarMetadados.isPending}
+            onSelect={() => baixarMetadados.mutate()}
+          >
+            <CloudDownload aria-hidden />
+            {baixarMetadados.isPending ? 'Baixando…' : 'Baixar Metadados'}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={baixarArtesFaltantes.isPending}
+            onSelect={() => baixarArtesFaltantes.mutate()}
+          >
+            <Images aria-hidden />
+            {baixarArtesFaltantes.isPending
+              ? 'Baixando…'
+              : 'Baixar Artes Faltantes'}
           </DropdownMenuItem>
           {isCollection ? (
             <>
@@ -313,6 +442,41 @@ export function EntityManageMenu({
         <span role="status" className="text-sm text-muted-foreground">
           .nfo gravado em {salvarNfo.data.nfo_path}
         </span>
+      ) : null}
+      {verificarArquivos.isPending ? (
+        <span role="status" className="text-sm text-muted-foreground">
+          Verificando…
+        </span>
+      ) : erroVerificarArquivos ? (
+        <span role="alert" className="text-sm font-medium text-destructive">
+          {erroVerificarArquivos}
+        </span>
+      ) : verificarArquivos.isSuccess ? (
+        mensagemVerificarArquivos(verificarArquivos.data)
+      ) : null}
+      {baixarMetadados.isPending ? (
+        <span role="status" className="text-sm text-muted-foreground">
+          Baixando…
+        </span>
+      ) : erroBaixarMetadados ? (
+        <span role="alert" className="text-sm font-medium text-destructive">
+          {erroBaixarMetadados}
+        </span>
+      ) : baixarMetadados.isSuccess ? (
+        <span role="status" className="text-sm text-muted-foreground">
+          Metadados atualizados.
+        </span>
+      ) : null}
+      {baixarArtesFaltantes.isPending ? (
+        <span role="status" className="text-sm text-muted-foreground">
+          Baixando…
+        </span>
+      ) : erroBaixarArtesFaltantes ? (
+        <span role="alert" className="text-sm font-medium text-destructive">
+          {erroBaixarArtesFaltantes}
+        </span>
+      ) : baixarArtesFaltantes.isSuccess ? (
+        mensagemArtesFaltantes(baixarArtesFaltantes.data)
       ) : null}
 
       {isCollection ? (

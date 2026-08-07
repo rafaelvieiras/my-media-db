@@ -77,7 +77,7 @@ func TestRecasarArquivosPendentesAoSincronizarArvore(t *testing.T) {
 	criarMediaFileSolto(t, database, "mf1", "s1", "/lib/Springfield Tales/Season 01/Springfield Tales S01E01.mkv")
 	criarMediaFileSolto(t, database, "mf2", "s1", "/lib/Springfield Tales/Season 01/Springfield Tales S01E02.mkv")
 
-	if err := svc.Enriquecer(ctx, "s1", "tmdb", fake.SerieFixtureID, tipoSerie, []string{"en"}); err != nil {
+	if err := svc.Enriquecer(ctx, "s1", "tmdb", fake.SerieFixtureID, tipoSerie, []string{"en"}, false); err != nil {
 		t.Fatalf("Enriquecer: %v", err)
 	}
 
@@ -108,7 +108,7 @@ func TestRecasarArquivosPendentesSemPadraoOuSemMatchFicaPendente(t *testing.T) {
 	criarMediaFileSolto(t, database, "mf1", "s1", "/lib/Springfield Tales/featurette bonus.mkv")
 	criarMediaFileSolto(t, database, "mf2", "s1", "/lib/Springfield Tales/Season 05/Springfield Tales S05E99.mkv")
 
-	if err := svc.Enriquecer(ctx, "s1", "tmdb", fake.SerieFixtureID, tipoSerie, []string{"en"}); err != nil {
+	if err := svc.Enriquecer(ctx, "s1", "tmdb", fake.SerieFixtureID, tipoSerie, []string{"en"}, false); err != nil {
 		t.Fatalf("Enriquecer: %v", err)
 	}
 
@@ -145,7 +145,7 @@ func TestRecasarArquivosPendentesNaoReprocessaVinculoExistente(t *testing.T) {
 		t.Fatalf("CriarVinculoEntidade (pre-existente): %v", err)
 	}
 
-	if err := svc.Enriquecer(ctx, "s1", "tmdb", fake.SerieFixtureID, tipoSerie, []string{"en"}); err != nil {
+	if err := svc.Enriquecer(ctx, "s1", "tmdb", fake.SerieFixtureID, tipoSerie, []string{"en"}, false); err != nil {
 		t.Fatalf("Enriquecer: %v", err)
 	}
 

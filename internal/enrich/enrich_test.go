@@ -95,7 +95,7 @@ func TestEnriquecerGravaExternalIDsEPoster(t *testing.T) {
 	fake := &fakeProvider{raw: raw, campos: map[string]any{"title": "Filme X", "poster_url": img.URL + "/p.jpg"}}
 	svc, dir := novoServico(t, database, fake)
 
-	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"pt-BR", "en"}); err != nil {
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"pt-BR", "en"}, false); err != nil {
 		t.Fatalf("Enriquecer: %v", err)
 	}
 
@@ -138,7 +138,7 @@ func TestEnriquecerCacheiaBackdrop(t *testing.T) {
 		"backdrop_url": backdrop.URL + "/b.jpg",
 	}}
 	svc, dir := novoServico(t, database, fake)
-	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"pt-BR"}); err != nil {
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"pt-BR"}, false); err != nil {
 		t.Fatalf("Enriquecer: %v", err)
 	}
 
@@ -205,7 +205,7 @@ func TestReEnriquecerNaoDestruvivo(t *testing.T) {
 	svc, _ := novoServico(t, database, fake)
 
 	for i := 0; i < 2; i++ {
-		if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"pt-BR", "en"}); err != nil {
+		if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"pt-BR", "en"}, false); err != nil {
 			t.Fatalf("Enriquecer #%d: %v", i, err)
 		}
 	}
@@ -269,7 +269,7 @@ func TestEnriquecerGravaOriginalLanguage(t *testing.T) {
 	svc, _ := novoServico(t, database, fake)
 
 	permitidos := []string{"pt-BR", "en", "ja"}
-	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", permitidos); err != nil {
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", permitidos, false); err != nil {
 		t.Fatalf("Enriquecer: %v", err)
 	}
 
@@ -282,7 +282,7 @@ func TestEnriquecerGravaOriginalLanguage(t *testing.T) {
 	eqLista(t, "langs repassados", fake.langs, permitidos)
 
 	// Re-enrich: override do dono intacto.
-	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", permitidos); err != nil {
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", permitidos, false); err != nil {
 		t.Fatalf("re-Enriquecer: %v", err)
 	}
 	ov, err := r.ObterMediaOverride(ctx, "e1")
@@ -323,7 +323,7 @@ func TestEnriquecerFalhaImagemDegrada(t *testing.T) {
 	svc, _ := novoServico(t, database, fake)
 
 	// Enrich NAO quebra por causa da imagem.
-	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"pt-BR", "en"}); err != nil {
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"pt-BR", "en"}, false); err != nil {
 		t.Fatalf("Enriquecer nao deveria falhar por imagem: %v", err)
 	}
 	r := sqlcgen.New(database.Read)
@@ -421,7 +421,7 @@ func TestEnriquecerCuraTituloNumerico(t *testing.T) {
 	}
 	svc, _ := novoServico(t, database, fake)
 
-	if err := svc.Enriquecer(ctx, "e1", "tmdb", "438631", "movie", []string{"pt-BR", "en"}); err != nil {
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "438631", "movie", []string{"pt-BR", "en"}, false); err != nil {
 		t.Fatalf("Enriquecer: %v", err)
 	}
 	ent, _ := sqlcgen.New(database.Read).ObterEntity(ctx, "e1")
@@ -445,7 +445,7 @@ func TestEnriquecerNaoTocaTituloLegivel(t *testing.T) {
 	}
 	svc, _ := novoServico(t, database, fake)
 
-	if err := svc.Enriquecer(ctx, "e1", "tmdb", "438631", "movie", []string{"pt-BR"}); err != nil {
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "438631", "movie", []string{"pt-BR"}, false); err != nil {
 		t.Fatalf("Enriquecer: %v", err)
 	}
 	ent, _ := sqlcgen.New(database.Read).ObterEntity(ctx, "e1")

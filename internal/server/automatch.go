@@ -290,7 +290,7 @@ func (s *Server) aplicarCandidatoExterno(ctx context.Context, ent sqlcgen.Entity
 	if err != nil {
 		return autoMatchResultDTO{}, err
 	}
-	if err := s.enrich.Enriquecer(ctx, ent.ID, cand.Source, cand.SourceID, ent.Type, langs); err != nil {
+	if err := s.enrich.Enriquecer(ctx, ent.ID, cand.Source, cand.SourceID, ent.Type, langs, false); err != nil {
 		// Fonte falhou ao entregar o detalhe -- não é erro do auto-match em si
 		// (a fonte pode se recuperar depois); o item fica pendente.
 		return autoMatchNone, nil

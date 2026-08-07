@@ -24,6 +24,11 @@ function stubEntityActions(
   respostaArte: () => Response,
   respostaNfo?: () => Response,
   respostaExcluir?: () => Response,
+  // As 3 rotas abaixo (briefing 0088) são opcionais igual `respostaNfo`/
+  // `respostaExcluir` — só os testes que as exercitam passam algo.
+  respostaVerificarArquivos?: () => Response,
+  respostaBaixarMetadados?: () => Response,
+  respostaArtesFaltantes?: () => Response,
 ) {
   const m = vi.fn(async (url: string, init?: RequestInit) => {
     const u = new URL(String(url), 'http://localhost')
@@ -51,6 +56,32 @@ function stubEntityActions(
         throw new Error('rota DELETE chamada sem resposta configurada')
       }
       return respostaExcluir()
+    }
+    if (
+      u.pathname === '/api/v1/entities/e1/refresh-files' &&
+      method === 'POST'
+    ) {
+      if (!respostaVerificarArquivos) {
+        throw new Error('rota /refresh-files chamada sem resposta configurada')
+      }
+      return respostaVerificarArquivos()
+    }
+    if (u.pathname === '/api/v1/entities/e1/enrich' && method === 'POST') {
+      if (!respostaBaixarMetadados) {
+        throw new Error('rota /enrich chamada sem resposta configurada')
+      }
+      return respostaBaixarMetadados()
+    }
+    if (
+      u.pathname === '/api/v1/entities/e1/materialize-missing-media' &&
+      method === 'POST'
+    ) {
+      if (!respostaArtesFaltantes) {
+        throw new Error(
+          'rota /materialize-missing-media chamada sem resposta configurada',
+        )
+      }
+      return respostaArtesFaltantes()
     }
     throw new Error(`rota nao mockada: ${method} ${u.pathname}`)
   })
@@ -103,6 +134,41 @@ async function abrirMenu(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /Gerenciar/ }))
 }
 
+// expectForcedActionsVisible confirma que os 3 itens sempre-visíveis do
+// briefing 0088 estão no menu — chamado pelos 2 testes que provam isso em
+// cenários distintos de catalog_completeness (jscpd).
+function expectForcedActionsVisible() {
+  expect(
+    screen.getByRole('menuitem', {
+      name: /Verificar Atualizações de Arquivos/,
+    }),
+  ).toBeInTheDocument()
+  expect(
+    screen.getByRole('menuitem', { name: /Baixar Metadados/ }),
+  ).toBeInTheDocument()
+  expect(
+    screen.getByRole('menuitem', { name: /Baixar Artes Faltantes/ }),
+  ).toBeInTheDocument()
+}
+
+// acionarEEsperarErro centraliza o padrão stub+render+abrir+click+esperar
+// role=alert repetido pelos 3 testes de "erro de rede/500" das ações
+// forçadas (0088) — só o stub, o item clicado e a mensagem mudam (jscpd).
+async function acionarEEsperarErro(
+  configurarStub: () => void,
+  nomeItem: RegExp,
+  mensagemEsperada: string,
+) {
+  const user = userEvent.setup()
+  configurarStub()
+  render(null)
+  await abrirMenu(user)
+
+  await user.click(screen.getByRole('menuitem', { name: nomeItem }))
+  const alerta = await screen.findByRole('alert')
+  expect(alerta).toHaveTextContent(mensagemEsperada)
+}
+
 // acionarInformacoesFaltando centraliza o padrão stub+render+abrir+click repetido
 // pelos testes de desfecho de "Baixar informações faltando" (applied/flagged/
 // none/erro) — só a resposta do endpoint muda entre eles (jscpd).
@@ -137,6 +203,14 @@ describe('EntityManageMenu — itens condicionais do dropdown', () => {
     ).toBeNull()
   })
 
+  it('as 3 ações forçadas (0088) sempre aparecem, mesmo sem catalog_completeness', async () => {
+    const user = userEvent.setup()
+    render(null)
+    await abrirMenu(user)
+
+    expectForcedActionsVisible()
+  })
+
   it('"Salvar informações (NFO)" fica desabilitado com tooltip quando não há media_file (owned=false)', async () => {
     const user = userEvent.setup()
     render(null, false)
@@ -152,7 +226,7 @@ describe('EntityManageMenu — itens condicionais do dropdown', () => {
     )
   })
 
-  it('nenhum item novo aparece quando catalog_completeness.complete é true', async () => {
+  it('nenhum item condicional aparece quando catalog_completeness.complete é true, mas as 3 ações forçadas (0088) continuam aparecendo', async () => {
     const user = userEvent.setup()
     render({ complete: true, missing: [] })
     await abrirMenu(user)
@@ -163,6 +237,7 @@ describe('EntityManageMenu — itens condicionais do dropdown', () => {
     expect(
       screen.queryByRole('menuitem', { name: /Baixar arte faltando/ }),
     ).toBeNull()
+    expectForcedActionsVisible()
   })
 
   it('"Baixar informações faltando" aparece quando falta algo não-arte, "Baixar arte faltando" não', async () => {
@@ -317,6 +392,183 @@ describe('EntityManageMenu — "Baixar arte faltando" (0048/0049 sob demanda)', 
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent('falha ao baixar arte')
   })
+})
+
+describe('EntityManageMenu — "Verificar Atualizações de Arquivos" (briefing 0088, sempre visível)', () => {
+  it('mostra "Verificando…" enquanto pendente, depois o resumo do resultado', async () => {
+    const user = userEvent.setup()
+    const liberar = stubEntityActionsAdiado(
+      '/api/v1/entities/e1/refresh-files',
+      () =>
+        okJson({
+          files_rechecked: 2,
+          assets_found: 1,
+          playback_fields_filled: ['watched', 'play_count'],
+        }),
+    )
+    render(null)
+    await abrirMenu(user)
+
+    await user.click(
+      screen.getByRole('menuitem', {
+        name: /Verificar Atualizações de Arquivos/,
+      }),
+    )
+    expect(
+      await screen.findByText('Verificando…', { exact: false }),
+    ).toBeInTheDocument()
+
+    liberar()
+    expect(
+      await screen.findByText(/2 arquivo\(s\) reconferido\(s\)/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/watched, play_count/)).toBeInTheDocument()
+  })
+
+  it('desabilita o item enquanto a mutation está pendente', async () => {
+    const user = userEvent.setup()
+    stubEntityActionsAdiado('/api/v1/entities/e1/refresh-files', () =>
+      okJson({
+        files_rechecked: 0,
+        assets_found: 0,
+        playback_fields_filled: [],
+      }),
+    )
+    render(null)
+    await abrirMenu(user)
+
+    await user.click(
+      screen.getByRole('menuitem', {
+        name: /Verificar Atualizações de Arquivos/,
+      }),
+    )
+    await abrirMenu(user)
+    expect(
+      screen.getByRole('menuitem', { name: /Verificando…/ }),
+    ).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('erro de rede/500 mostra mensagem role=alert', () =>
+    acionarEEsperarErro(
+      () =>
+        stubEntityActions(
+          () => okJson({ outcome: 'none' }),
+          () => okJson({ downloaded: [], unavailable: [] }),
+          undefined,
+          undefined,
+          () => erroJson(500, 'db_error', 'falha ao reconferir arquivos'),
+        ),
+      /Verificar Atualizações de Arquivos/,
+      'falha ao reconferir arquivos',
+    ))
+})
+
+describe('EntityManageMenu — "Baixar Metadados" (briefing 0088, sempre visível, force: true)', () => {
+  it('envia { force: true } para POST /enrich e mostra "Baixando…"/sucesso', async () => {
+    const user = userEvent.setup()
+    const fetchMock = stubEntityActions(
+      () => okJson({ outcome: 'none' }),
+      () => okJson({ downloaded: [], unavailable: [] }),
+      undefined,
+      undefined,
+      undefined,
+      () => okJson({ id: 'e1', type: 'movie', title: 'Duna' }),
+    )
+    render(null)
+    await abrirMenu(user)
+
+    await user.click(screen.getByRole('menuitem', { name: /Baixar Metadados/ }))
+    expect(
+      await screen.findByText('Metadados atualizados.'),
+    ).toBeInTheDocument()
+
+    const chamada = fetchMock.mock.calls.find(
+      ([url]) =>
+        new URL(String(url), 'http://localhost').pathname ===
+        '/api/v1/entities/e1/enrich',
+    )
+    expect(chamada).toBeDefined()
+    const init = chamada?.[1] as RequestInit
+    expect(JSON.parse(String(init.body))).toEqual({ force: true })
+  })
+
+  it('erro de rede/500 mostra mensagem role=alert', () =>
+    acionarEEsperarErro(
+      () =>
+        stubEntityActions(
+          () => okJson({ outcome: 'none' }),
+          () => okJson({ downloaded: [], unavailable: [] }),
+          undefined,
+          undefined,
+          undefined,
+          () => erroJson(500, 'db_error', 'falha ao baixar metadados'),
+        ),
+      /Baixar Metadados/,
+      'falha ao baixar metadados',
+    ))
+})
+
+describe('EntityManageMenu — "Baixar Artes Faltantes" (briefing 0088, sempre visível)', () => {
+  it('mostra "Baixando…" enquanto pendente, depois a lista PT-BR dos kinds baixados', async () => {
+    const user = userEvent.setup()
+    const liberar = stubEntityActionsAdiado(
+      '/api/v1/entities/e1/materialize-missing-media',
+      () =>
+        okJson({ artes_baixadas: ['poster', 'fanart'], nfo_gravado: false }),
+    )
+    render(null)
+    await abrirMenu(user)
+
+    await user.click(
+      screen.getByRole('menuitem', { name: /Baixar Artes Faltantes/ }),
+    )
+    expect(
+      await screen.findByText('Baixando…', { exact: false }),
+    ).toBeInTheDocument()
+
+    liberar()
+    expect(
+      await screen.findByText(/Pôster e fanart baixados\./),
+    ).toBeInTheDocument()
+  })
+
+  it('nada baixado e nfo não gravado mostra mensagem neutra', async () => {
+    const user = userEvent.setup()
+    stubEntityActions(
+      () => okJson({ outcome: 'none' }),
+      () => okJson({ downloaded: [], unavailable: [] }),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => okJson({ artes_baixadas: [], nfo_gravado: false }),
+    )
+    render(null)
+    await abrirMenu(user)
+
+    await user.click(
+      screen.getByRole('menuitem', { name: /Baixar Artes Faltantes/ }),
+    )
+    expect(
+      await screen.findByText('Nenhuma arte nova para materializar.'),
+    ).toBeInTheDocument()
+  })
+
+  it('erro de rede/500 mostra mensagem role=alert', () =>
+    acionarEEsperarErro(
+      () =>
+        stubEntityActions(
+          () => okJson({ outcome: 'none' }),
+          () => okJson({ downloaded: [], unavailable: [] }),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          () => erroJson(500, 'db_error', 'falha ao baixar artes'),
+        ),
+      /Baixar Artes Faltantes/,
+      'falha ao baixar artes',
+    ))
 })
 
 describe('EntityManageMenu — "Salvar informações (NFO)" (briefing 0062)', () => {

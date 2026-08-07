@@ -603,6 +603,25 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Post("/{id}/enrich-missing", s.enrichMissing)
 				ent.Post("/{id}/download-missing-artwork", s.downloadMissingArtwork)
 
+				// "Verificar Atualizações de Arquivos" (briefing 0088): ação
+				// SEMPRE visível do menu Gerenciar (não depende de
+				// catalog_completeness) — força re-hash/mediainfo dos
+				// arquivos da entity mesmo sem mudança de mtime/size,
+				// reconfere a pasta em busca de asset local novo/atualizado
+				// e preenche campos LOCAIS de reprodução a partir de um
+				// `.nfo` já em disco (só o que ainda estiver vazio).
+				ent.Post("/{id}/refresh-files", s.refreshEntityFiles)
+
+				// "Baixar Artes Faltantes" (briefing 0088): ação SEMPRE
+				// visível do menu Gerenciar (não depende de
+				// catalog_completeness) — força nova consulta ao(s)
+				// ArteProvider(s) registrado(s) (hoje: fanart.tv) para
+				// atualizar o inventário de artes da entity e, em seguida,
+				// materializa na pasta real o que estiver faltando (mesmo
+				// efeito do job midias_faltantes, sob demanda e restrito a
+				// esta entity).
+				ent.Post("/{id}/materialize-missing-media", s.materializeMissingMediaEntity)
+
 				// Edição da IDENTIDADE externa (briefing 0027): grava o mapa
 				// external_ids (source -> id na fonte). As colunas geradas re-derivam;
 				// fixar o id prepara sincronização futura. NÃO re-enriquece (o dono

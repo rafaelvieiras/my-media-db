@@ -38,7 +38,7 @@ func TestPersistirCreditosPopula(t *testing.T) {
 	}
 	fake := &fakeProvider{raw: json.RawMessage(`{}`), campos: camposComCreditos()}
 	svc, _ := novoServico(t, database, fake)
-	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"en"}); err != nil {
+	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"en"}, false); err != nil {
 		t.Fatalf("Enriquecer: %v", err)
 	}
 
@@ -97,7 +97,7 @@ func TestPersistirCreditosDedupPersonEntreObras(t *testing.T) {
 	fake := &fakeProvider{raw: json.RawMessage(`{}`), campos: camposComCreditos()}
 	svc, _ := novoServico(t, database, fake)
 	for _, id := range []string{"e1", "e2"} {
-		if err := svc.Enriquecer(ctx, id, "tmdb", "603", "movie", []string{"en"}); err != nil {
+		if err := svc.Enriquecer(ctx, id, "tmdb", "603", "movie", []string{"en"}, false); err != nil {
 			t.Fatalf("Enriquecer %s: %v", id, err)
 		}
 	}
@@ -132,7 +132,7 @@ func TestReEnriquecerCreditosIdempotente(t *testing.T) {
 	svc, _ := novoServico(t, database, fake)
 
 	for i := 0; i < 2; i++ {
-		if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"en"}); err != nil {
+		if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"en"}, false); err != nil {
 			t.Fatalf("Enriquecer #%d: %v", i, err)
 		}
 	}
@@ -164,7 +164,7 @@ func TestPersistirCreditosSerieNormalizado(t *testing.T) {
 	}
 	fake := &fakeProvider{raw: json.RawMessage(`{}`), campos: campos}
 	svc, _ := novoServico(t, database, fake)
-	if err := svc.Enriquecer(ctx, "s1", "tmdb", "1434", "tv", []string{"en"}); err != nil {
+	if err := svc.Enriquecer(ctx, "s1", "tmdb", "1434", "tv", []string{"en"}, false); err != nil {
 		t.Fatalf("Enriquecer: %v", err)
 	}
 

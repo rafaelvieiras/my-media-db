@@ -50,17 +50,23 @@ func New(database *db.DB, provs provider.Registry, ttl time.Duration) *Servico {
 // PayloadFresco devolve o ENVELOPE AUMENTADO do detalhe externo (o mesmo formato de
 // BuscarDetalhe, cache re-componível): do cache quando fresco, senão puxando da fonte
 // e persistindo (best-effort). `langs` são os idiomas PERMITIDOS (todas as traduções
-// numa só ida, 0020). Propaga provider.ErrNaoEncontrado quando o item não existe na
-// fonte, e o erro cru quando a fonte falha (o chamador traduz em 404/502). Fonte
-// desconhecida (sem provider correspondente) devolve ErrNaoEncontrado.
-func (s *Servico) PayloadFresco(ctx context.Context, source, sourceID, tipo string, langs []string) (json.RawMessage, error) {
+// numa só ida, 0020). `force` (briefing 0088) pula a LEITURA do cache (doCacheFresco)
+// e vai direto ao provider mesmo com um cache fresco dentro do TTL — a ESCRITA do
+// resultado (persistir) continua acontecendo normalmente, então o cache fica
+// atualizado com o payload novo para as próximas leituras sem force. Propaga
+// provider.ErrNaoEncontrado quando o item não existe na fonte, e o erro cru quando a
+// fonte falha (o chamador traduz em 404/502). Fonte desconhecida (sem provider
+// correspondente) devolve ErrNaoEncontrado.
+func (s *Servico) PayloadFresco(ctx context.Context, source, sourceID, tipo string, langs []string, force bool) (json.RawMessage, error) {
 	prov, ok := s.providers.Get(source)
 	if !ok {
 		return nil, provider.ErrNaoEncontrado
 	}
 
-	if cached, ok := s.doCacheFresco(ctx, source, sourceID, langs); ok {
-		return cached, nil
+	if !force {
+		if cached, ok := s.doCacheFresco(ctx, source, sourceID, langs); ok {
+			return cached, nil
+		}
 	}
 
 	raw, err := prov.BuscarDetalhe(ctx, sourceID, tipo, langs)

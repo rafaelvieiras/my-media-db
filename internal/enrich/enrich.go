@@ -96,9 +96,14 @@ func (s *Servico) provFonte(source string) (provider.Provider, bool) {
 // identidade externa a uma entity já existente — Corrigir, Confirmar candidato,
 // auto-match, retroativo/enrich-missing). Wrapper fino de enriquecerBase que sempre
 // tenta sincronizar a árvore de série (0067): aqui é o único ponto além de
-// importarSerie que constrói temporada/episódio.
-func (s *Servico) Enriquecer(ctx context.Context, entityID, source, sourceID, tipo string, langs []string) error {
-	return s.enriquecerBase(ctx, entityID, source, sourceID, tipo, langs, true)
+// importarSerie que constrói temporada/episódio. `force` (briefing 0088, ação
+// "Baixar Metadados" do menu Gerenciar) propaga até TODAS as idas a
+// externaldetail.PayloadFresco desta passada (base + enriquecimento rico da série,
+// quando houver), pulando o cache de 24h e indo sempre à rede — a escrita do cache
+// continua acontecendo, então a próxima chamada sem force já serve do resultado
+// fresco.
+func (s *Servico) Enriquecer(ctx context.Context, entityID, source, sourceID, tipo string, langs []string, force bool) error {
+	return s.enriquecerBase(ctx, entityID, source, sourceID, tipo, langs, true, force)
 }
 
 // enriquecerBase é o corpo de Enriquecer mais o parâmetro sincronizarArvore (0067):
@@ -110,9 +115,12 @@ func (s *Servico) Enriquecer(ctx context.Context, entityID, source, sourceID, ti
 // estado da entity, e os chamadores best-effort (aplicarCandidatoExterno no
 // auto-match/retroativo) já tratam erro de Enriquecer como "sem aplicar, fica
 // pendente" — propagar faria uma identidade que já bateu o limiar de confiança nunca
-// ser aplicada, um retrocesso pior que a árvore ausente.
-func (s *Servico) enriquecerBase(ctx context.Context, entityID, source, sourceID, tipo string, langs []string, sincronizarArvore bool) error {
-	raw, err := s.detalhe.PayloadFresco(ctx, source, sourceID, tipo, langs)
+// ser aplicada, um retrocesso pior que a árvore ausente. `force` (0088) é repassado
+// à ida de PayloadFresco abaixo; os dois call sites internos de importarItemBase
+// sempre passam force=false (item novo/reuse do import já busca fresco por
+// definição, fora do escopo do botão "Baixar Metadados").
+func (s *Servico) enriquecerBase(ctx context.Context, entityID, source, sourceID, tipo string, langs []string, sincronizarArvore, force bool) error {
+	raw, err := s.detalhe.PayloadFresco(ctx, source, sourceID, tipo, langs, force)
 	if err != nil {
 		return fmt.Errorf("enrich: buscar detalhe: %w", err)
 	}
@@ -217,13 +225,13 @@ func (s *Servico) importarItemBase(ctx context.Context, source, sourceID, tipo s
 	if existente, ok, err := s.acharPorIDExterno(ctx, source, sourceID); err != nil {
 		return "", false, err
 	} else if ok {
-		return existente, false, s.enriquecerBase(ctx, existente, source, sourceID, tipo, langs, false)
+		return existente, false, s.enriquecerBase(ctx, existente, source, sourceID, tipo, langs, false, false)
 	}
 
 	// Não existe: puxa o detalhe uma vez (para o título inicial) e cria a entity
 	// já com a identidade externa; em seguida persiste a base externa e o pôster. O
 	// detalhe vem do cache-first (external_detail): a 1ª ida grava, próximas reusam.
-	raw, err := s.detalhe.PayloadFresco(ctx, source, sourceID, tipo, langs)
+	raw, err := s.detalhe.PayloadFresco(ctx, source, sourceID, tipo, langs, false)
 	if err != nil {
 		return "", false, fmt.Errorf("enrich: buscar detalhe: %w", err)
 	}
@@ -238,7 +246,7 @@ func (s *Servico) importarItemBase(ctx context.Context, source, sourceID, tipo s
 	if idDraft, achou, err := s.tentarCasarComDraftLocal(ctx, titulo, s.anoDoPayload(source, raw), tipo); err != nil {
 		return "", false, err
 	} else if achou {
-		return idDraft, false, s.enriquecerBase(ctx, idDraft, source, sourceID, tipo, langs, false)
+		return idDraft, false, s.enriquecerBase(ctx, idDraft, source, sourceID, tipo, langs, false, false)
 	}
 
 	extIDs, err := json.Marshal(map[string]string{source: sourceID})

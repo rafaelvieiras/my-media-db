@@ -198,7 +198,18 @@ func (r *scanRun) hashEMediainfo(ctx context.Context, path string, size int64, m
 	if existente, ok := r.mediaFileInalteradoPorPath(ctx, path, size, mtime); ok {
 		return existente.ContentHash.String, []byte(existente.MediainfoJson.String), nil
 	}
+	return r.computarHashEMediainfo(ctx, path, size)
+}
 
+// computarHashEMediainfo SEMPRE calcula o content_hash e o mediainfo_json de
+// `path` (SEM checar o short-circuit de mediaFileInalteradoPorPath) — extraído
+// de hashEMediainfo para ser reusado também pelo recheck forçado de paths
+// específicos (RecheckEntityFiles, briefing 0088, ver recheck.go), que
+// precisa ignorar mtime/size DE PROPÓSITO. O caminho normal do scan
+// (hashEMediainfo acima) continua chamando isto só depois que o
+// short-circuit falha — nenhuma mudança de comportamento no scan incremental
+// de datasource inteiro.
+func (r *scanRun) computarHashEMediainfo(ctx context.Context, path string, size int64) (hash string, mediainfo []byte, err error) {
 	hash, err = hashDoArquivoFn(path, size)
 	if err != nil {
 		return "", nil, err

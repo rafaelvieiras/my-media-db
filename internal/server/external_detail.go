@@ -115,7 +115,7 @@ func (s *Server) getExternalDetail(w http.ResponseWriter, r *http.Request) {
 
 	// Puxa (ou serve do cache) TODAS as traduções permitidas numa só ida (0020); a
 	// resolução por idioma acontece aqui, no read-time.
-	raw, err := s.externalDetail.PayloadFresco(ctx, source, id, tipo, cfg.Allowed)
+	raw, err := s.externalDetail.PayloadFresco(ctx, source, id, tipo, cfg.Allowed, false)
 	if err != nil {
 		if errors.Is(err, provider.ErrNaoEncontrado) {
 			writeError(w, http.StatusNotFound, "not_found", "item não encontrado na fonte")

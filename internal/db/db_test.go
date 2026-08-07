@@ -117,9 +117,11 @@ func TestMigrateUp(t *testing.T) {
 	// (briefing 0062) + 0016 library_source.watch_enabled + seed do job
 	// midias_faltantes (briefing 0064) + 0017 library_source.preferred_language
 	// (briefing 0084) + 0018 library_source.retroactive_enrichment_days
-	// (briefing 0085).
-	if v := mustSchemaVersion(t, d); v != 18 {
-		t.Errorf("versão após up = %d, quero 18", v)
+	// (briefing 0085) + 0019 entity.watched/play_count/user_rating/
+	// last_played_at/resume_position_seconds/resume_total_seconds
+	// (briefing 0088).
+	if v := mustSchemaVersion(t, d); v != 19 {
+		t.Errorf("versão após up = %d, quero 19", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -170,6 +172,10 @@ func TestMigrateDown(t *testing.T) {
 	}
 
 	// Down reverte uma migration por vez, do topo para a base.
+	downPara(t, d, 18) // 0019: remove os campos locais de reprodução de entity.
+	querFalha(t, d, "SELECT watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds FROM entity",
+		"campos locais de reprodução ainda existem após o down do 0019")
+
 	downPara(t, d, 17) // 0018: remove library_source.retroactive_enrichment_days.
 	querFalha(t, d, "SELECT retroactive_enrichment_days FROM library_source",
 		"coluna retroactive_enrichment_days ainda existe após o down do 0018")

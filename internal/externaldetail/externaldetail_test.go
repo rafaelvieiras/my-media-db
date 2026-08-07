@@ -57,7 +57,7 @@ func TestPersisteNaPrimeiraServeDoCache(t *testing.T) {
 	svc := New(database, provider.NovaRegistry(fake), time.Hour)
 
 	langs := []string{"pt-BR", "en"}
-	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", langs); err != nil {
+	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", langs, false); err != nil {
 		t.Fatalf("PayloadFresco #1: %v", err)
 	}
 	if fake.chamadas != 1 {
@@ -72,7 +72,7 @@ func TestPersisteNaPrimeiraServeDoCache(t *testing.T) {
 		t.Errorf("type gravado = %q, quero movie", row.Type)
 	}
 
-	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", langs); err != nil {
+	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", langs, false); err != nil {
 		t.Fatalf("PayloadFresco #2: %v", err)
 	}
 	if fake.chamadas != 1 {
@@ -88,11 +88,11 @@ func TestRefreshQuandoIdiomaNovo(t *testing.T) {
 	fake := &fakeProv{nome: "tmdb", raw: json.RawMessage(`{"detail":{"id":603}}`)}
 	svc := New(database, provider.NovaRegistry(fake), time.Hour)
 
-	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", []string{"pt-BR"}); err != nil {
+	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", []string{"pt-BR"}, false); err != nil {
 		t.Fatalf("PayloadFresco #1: %v", err)
 	}
 	// Agora "en" foi permitido: nao esta no payload guardado -> re-puxa.
-	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", []string{"pt-BR", "en"}); err != nil {
+	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", []string{"pt-BR", "en"}, false); err != nil {
 		t.Fatalf("PayloadFresco #2: %v", err)
 	}
 	if fake.chamadas != 2 {
@@ -115,16 +115,71 @@ func TestRefreshQuandoTTLExpira(t *testing.T) {
 	svc.agora = func() time.Time { return base }
 
 	langs := []string{"pt-BR"}
-	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", langs); err != nil {
+	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", langs, false); err != nil {
 		t.Fatalf("PayloadFresco #1: %v", err)
 	}
 	// Avanca o relogio alem do TTL.
 	svc.agora = func() time.Time { return base.Add(2 * time.Hour) }
-	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", langs); err != nil {
+	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", langs, false); err != nil {
 		t.Fatalf("PayloadFresco #2: %v", err)
 	}
 	if fake.chamadas != 2 {
 		t.Errorf("chamadas = %d, quero 2 (refresh por TTL)", fake.chamadas)
+	}
+}
+
+// TestForcePulaCacheFrescoEAtualiza (briefing 0088): com um cache FRESCO (dentro do
+// TTL) para o mesmo source/source_id, force=false continua servindo do cache (provider
+// NAO consultado de novo); force=true vai ao provider MESMO com cache fresco, e o
+// resultado novo fica gravado no cache (a proxima leitura sem force ja serve o payload
+// atualizado, sem nova ida a fonte).
+func TestForcePulaCacheFrescoEAtualiza(t *testing.T) {
+	database := setupDB(t)
+	ctx := context.Background()
+	fake := &fakeProv{nome: "tmdb", raw: json.RawMessage(`{"detail":{"id":603,"v":1}}`)}
+	svc := New(database, provider.NovaRegistry(fake), time.Hour)
+
+	langs := []string{"pt-BR"}
+	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", langs, false); err != nil {
+		t.Fatalf("PayloadFresco #1: %v", err)
+	}
+	if fake.chamadas != 1 {
+		t.Fatalf("chamadas apos #1 = %d, quero 1", fake.chamadas)
+	}
+
+	// Cache ainda fresco (TTL de 1h, nada avancou o relogio): force=false serve do
+	// cache, sem nova ida ao provider.
+	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", langs, false); err != nil {
+		t.Fatalf("PayloadFresco #2 (force=false): %v", err)
+	}
+	if fake.chamadas != 1 {
+		t.Errorf("chamadas apos #2 (force=false) = %d, quero 1 (serviu do cache)", fake.chamadas)
+	}
+
+	// force=true ignora o cache fresco e vai ao provider de novo, com um payload novo.
+	fake.raw = json.RawMessage(`{"detail":{"id":603,"v":2}}`)
+	raw, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", langs, true)
+	if err != nil {
+		t.Fatalf("PayloadFresco #3 (force=true): %v", err)
+	}
+	if fake.chamadas != 2 {
+		t.Errorf("chamadas apos #3 (force=true) = %d, quero 2 (ignorou o cache fresco)", fake.chamadas)
+	}
+	if string(raw) != string(fake.raw) {
+		t.Errorf("payload devolvido = %s, quero o payload novo %s", raw, fake.raw)
+	}
+
+	// O cache foi ATUALIZADO com o resultado novo: a proxima leitura sem force ja serve
+	// o payload v2, sem nova ida ao provider.
+	raw2, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", langs, false)
+	if err != nil {
+		t.Fatalf("PayloadFresco #4 (force=false apos force=true): %v", err)
+	}
+	if fake.chamadas != 2 {
+		t.Errorf("chamadas apos #4 = %d, quero 2 (cache ja atualizado pelo force)", fake.chamadas)
+	}
+	if string(raw2) != string(fake.raw) {
+		t.Errorf("payload do cache apos force = %s, quero o payload novo %s", raw2, fake.raw)
 	}
 }
 
@@ -134,7 +189,7 @@ func TestFonteDesconhecida(t *testing.T) {
 	fake := &fakeProv{nome: "tmdb", raw: json.RawMessage(`{}`)}
 	svc := New(database, provider.NovaRegistry(fake), time.Hour)
 
-	_, err := svc.PayloadFresco(context.Background(), "tvdb", "1", "movie", []string{"pt-BR"})
+	_, err := svc.PayloadFresco(context.Background(), "tvdb", "1", "movie", []string{"pt-BR"}, false)
 	if !errors.Is(err, provider.ErrNaoEncontrado) {
 		t.Fatalf("erro = %v, quero ErrNaoEncontrado", err)
 	}
@@ -147,7 +202,7 @@ func TestErroDaFontePropaga(t *testing.T) {
 	fake := &fakeProv{nome: "tmdb", erro: errors.New("timeout")}
 	svc := New(database, provider.NovaRegistry(fake), time.Hour)
 
-	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", []string{"pt-BR"}); err == nil {
+	if _, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", []string{"pt-BR"}, false); err == nil {
 		t.Fatal("quero erro da fonte propagado")
 	}
 	if _, err := sqlcgen.New(database.Read).ObterExternalDetail(ctx, sqlcgen.ObterExternalDetailParams{Source: "tmdb", SourceID: "603"}); err == nil {

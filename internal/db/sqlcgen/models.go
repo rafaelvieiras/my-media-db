@@ -70,6 +70,12 @@ type Entity struct {
 	LastExternalMatchAttemptAt sql.NullString
 	NfoPath                    sql.NullString
 	NfoWrittenAt               sql.NullString
+	Watched                    sql.NullInt64
+	PlayCount                  sql.NullInt64
+	UserRating                 sql.NullFloat64
+	LastPlayedAt               sql.NullString
+	ResumePositionSeconds      sql.NullFloat64
+	ResumeTotalSeconds         sql.NullFloat64
 }
 
 type EntityCatalogCompleteness struct {

@@ -600,6 +600,13 @@ type Querier interface {
 	// Le a pessoa pelo id local (person.id) -- para a pagina da pessoa (briefing 0029
 	// Fase D, GET /person/{id}).
 	ObterPersonPorID(ctx context.Context, id string) (Person, error)
+	// Preenche os campos LOCAIS de reproducao (briefing 0088) SO onde ainda
+	// estao NULL (COALESCE) -- nunca sobrescreve um valor ja presente (mesmo
+	// espirito de "override do dono vence"/"nao-destrutivo", AGENTS.md). Chamada
+	// pelo endpoint POST /entities/{id}/refresh-files apos ler o .nfo em disco
+	// (internal/localmedia.ExtrairCamposUsuario); parametros ausentes no .nfo
+	// entram como NULL/zero-value, o COALESCE cuida do resto.
+	PreencherCamposLocaisReproducaoSeAusentes(ctx context.Context, arg PreencherCamposLocaisReproducaoSeAusentesParams) error
 	// Curadoria (briefing 0018): um draft (nao-identificado) que o dono CONFIRMA ou
 	// CORRIGE deixa de ser rascunho -- vira 'cataloged' e sai da fila de revisao pelo
 	// ramo do status (senao a confianca sobe a 100 mas o item fica preso como draft).

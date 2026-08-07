@@ -327,7 +327,10 @@ paths:
         (settings.allowed) numa só ida e grava um payload AUMENTADO tagueado por
         idioma, além de gravar entity.original_language (âncora do fallback). O shape
         RESOLVIDO desta resposta não muda — só passa a ter mais idiomas para o
-        `?lang=` do GET /entities/{id} servir.
+        `?lang=` do GET /entities/{id} servir. `force: true` (briefing 0088)
+        ignora o cache de 24h de `external_detail` e busca sempre o detalhe
+        mais recente do provider — sem `force` (ou `force: false`) o cache
+        continua sendo servido normalmente.
       tags: [entities]
       parameters:
         - $ref: "#/components/parameters/EntityId"
@@ -1461,6 +1464,63 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/refresh-files:
+    post:
+      operationId: refreshEntityFiles
+      summary: Reconfere arquivos/assets/campos locais de reprodução em disco (briefing 0088).
+      description: >
+        Ação incondicional do menu "Gerenciar" (não depende de
+        `catalog_completeness`, ao contrário de `/download-missing-artwork`).
+        Força o re-hash/mediainfo dos `media_file` da entity mesmo sem
+        mudança de mtime/size (o scan incremental de datasource inteiro
+        continua como está — este é um caminho de entrada à parte, restrito
+        aos arquivos DESTA entity); procura um asset `origin='local'`
+        novo/atualizado na(s) pasta(s) dos arquivos (cobre o caso hoje
+        quebrado de a entity já existir no catálogo); e, se houver `.nfo` em
+        `entity.nfo_path`, lê os campos LOCAIS de reprodução
+        (assistido/contagem de reproduções/avaliação do usuário/última
+        reprodução/retomada) e preenche no banco só os que ainda estiverem
+        vazios — nunca sobrescreve um valor já presente (não-destrutivo).
+        Sem body. 404 se a entity não existe.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Resumo do que foi reconferido/encontrado/preenchido.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RefreshFilesResult" }
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/materialize-missing-media:
+    post:
+      operationId: materializeMissingMedia
+      summary: Força nova consulta ao provider de arte + materializa o que faltar (briefing 0088).
+      description: >
+        Ação incondicional do menu "Gerenciar" (não depende de
+        `catalog_completeness`). Primeiro consulta de novo o(s)
+        `ArteProvider` registrado(s) (hoje: fanart.tv) para atualizar o
+        inventário de artes da entity (`media_external(source='fanarttv')`);
+        em seguida reaproveita a MESMA materialização do job periódico
+        `midias_faltantes` (`MaterializarMidiasFaltantes`, briefing 0064)
+        para gravar na pasta real da biblioteca a arte hoje VENCEDORA de
+        cada kind ainda sem `local_path`, e o `.nfo` quando ausente — mesmo
+        efeito do job, só que imediato e sob demanda, restrito a esta
+        entity. Sem body. 404 se a entity não existe.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Artes materializadas e se o .nfo foi gravado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MaterializeMissingMediaResult" }
+        "404":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/{id}/nfo:
     post:
       operationId: writeEntityNfo
@@ -2427,6 +2487,14 @@ components:
         source_id:
           type: string
           description: Id do item NA FONTE; se ausente, usa external_ids[source].
+        force:
+          type: boolean
+          default: false
+          description: >
+            Quando true, ignora o cache de 24h do detalhe externo
+            (`external_detail`) e busca sempre a versão mais recente do
+            provider (briefing 0088). Default false preserva o
+            comportamento de cache já existente.
     ImportRequest:
       type: object
       description: Corpo de POST /import — o item externo a importar.
@@ -2754,6 +2822,50 @@ components:
           type: array
           items: { type: string }
           description: Kinds que estavam faltando mas sem opção em nenhum provider.
+    RefreshFilesResult:
+      type: object
+      description: >
+        Resposta de POST /entities/{id}/refresh-files (briefing 0088) —
+        resumo informativo do que foi reconferido/encontrado/preenchido
+        nesta chamada; formato solto (não é contrato rígido para outra
+        integração consumir, só feedback pro dono na UI).
+      required: [files_rechecked, assets_found, playback_fields_filled]
+      properties:
+        files_rechecked:
+          type: integer
+          description: Quantos `media_file` da entity tiveram re-hash/mediainfo forçado.
+        assets_found:
+          type: integer
+          description: >
+            Quantos assets `origin='local'` foram criados/atualizados a
+            partir de arquivo(s) encontrado(s) na pasta.
+        playback_fields_filled:
+          type: array
+          items: { type: string }
+          description: >
+            Nomes dos campos locais de reprodução (`watched`, `play_count`,
+            `user_rating`, `last_played_at`, `resume_position_seconds`,
+            `resume_total_seconds`) que estavam vazios e foram preenchidos a
+            partir do `.nfo` nesta chamada. Vazio se não havia `.nfo`, ou se
+            todos os campos já tinham valor.
+    MaterializeMissingMediaResult:
+      type: object
+      description: >
+        Resposta de POST /entities/{id}/materialize-missing-media (briefing
+        0088) — espelha o retorno de `MaterializarMidiasFaltantes` (mesmo
+        usado internamente pelo job `midias_faltantes`, briefing 0064),
+        reaproveitado como DTO público deste endpoint.
+      required: [artes_baixadas, nfo_gravado]
+      properties:
+        artes_baixadas:
+          type: array
+          items: { type: string }
+          description: >
+            Kinds de arte (`poster`, `fanart`, ...) materializados na pasta
+            real nesta chamada.
+        nfo_gravado:
+          type: boolean
+          description: Se o `.nfo` da entity foi gravado nesta chamada (estava ausente).
     NfoWriteResult:
       type: object
       description: >

@@ -646,9 +646,12 @@ export async function importExternal(
 // `external_ids[tmdb]` da própria entity — o passo de sincronização após fixar o id
 // (0027). Devolve a entity re-resolvida. Erros da fonte/identidade (422 sem id, 502
 // fonte, 503 sem provider) viram `ApiError` com a mensagem pt-BR do envelope.
+// `force: true` (briefing 0088, item "Baixar Metadados" do menu Gerenciar) pula o
+// cache de 24h de `external_detail` e sempre vai à rede — call sites existentes que
+// não passam `force` continuam servindo do cache normalmente (sem regressão).
 export async function enrichEntity(
   id: string,
-  body?: { source?: string; source_id?: string },
+  body?: { source?: string; source_id?: string; force?: boolean },
 ): Promise<ResolvedEntity> {
   const res = await fetch(
     `${base}/api/v1/entities/${encodeURIComponent(id)}/enrich`,
@@ -1072,6 +1075,48 @@ export async function downloadMissingArtwork(
     { method: 'POST' },
   )
   return lerJson<DownloadMissingArtworkResult>(res)
+}
+
+// Resultado de POST .../refresh-files (briefing 0088): resumo informativo do que
+// foi reconferido/encontrado/preenchido nesta chamada — formato solto (feedback
+// pro dono na UI, não é contrato rígido pra outra integração consumir).
+export type RefreshFilesResult = components['schemas']['RefreshFilesResult']
+
+// Resultado de POST .../materialize-missing-media (briefing 0088): espelha o
+// retorno de `MaterializarMidiasFaltantes` (mesmo usado pelo job periódico
+// `midias_faltantes`, briefing 0064).
+export type MaterializeMissingMediaResult =
+  components['schemas']['MaterializeMissingMediaResult']
+
+// VERIFICAR ATUALIZAÇÕES DE ARQUIVOS (briefing 0088, item incondicional do menu
+// Gerenciar): força o re-hash/mediainfo dos `media_file` da entity mesmo sem
+// mudança de mtime/size, procura asset `origin='local'` novo/atualizado na(s)
+// pasta(s) e preenche no banco os campos locais de reprodução ainda vazios a
+// partir do `.nfo` (quando presente). Sem body. 404 se a entity não existe.
+export async function refreshEntityFiles(
+  id: string,
+): Promise<RefreshFilesResult> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/refresh-files`,
+    { method: 'POST' },
+  )
+  return lerJson<RefreshFilesResult>(res)
+}
+
+// BAIXAR ARTES FALTANTES (briefing 0088, item incondicional do menu Gerenciar,
+// diferente de `downloadMissingArtwork`/"Baixar arte faltando" que só aparece
+// condicionado a `catalog_completeness`): força nova consulta ao(s) `ArteProvider`
+// registrado(s) (hoje: fanart.tv) pra atualizar o inventário de artes da entity e,
+// na sequência, materializa na pasta real o que estiver faltando. Sem body. 404
+// se a entity não existe.
+export async function materializeMissingMedia(
+  id: string,
+): Promise<MaterializeMissingMediaResult> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/materialize-missing-media`,
+    { method: 'POST' },
+  )
+  return lerJson<MaterializeMissingMediaResult>(res)
 }
 
 // ── NFO na pasta real (briefing 0062) ────────────────────────────────────────

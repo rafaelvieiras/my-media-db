@@ -78,7 +78,7 @@ func TestEnriquecerSerieSemTvdbCapturaCrossId(t *testing.T) {
 		t.Fatalf("CriarEntity: %v", err)
 	}
 
-	if err := svc.Enriquecer(ctx, "s1", "tmdb", "9999", tipoSerie, []string{"en"}); err != nil {
+	if err := svc.Enriquecer(ctx, "s1", "tmdb", "9999", tipoSerie, []string{"en"}, false); err != nil {
 		t.Fatalf("Enriquecer: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func TestEnriquecerSerieSemTvdbIdempotente(t *testing.T) {
 		t.Fatalf("CriarEntity: %v", err)
 	}
 	for i := 0; i < 2; i++ {
-		if err := svc.Enriquecer(ctx, "s1", "tmdb", "9999", tipoSerie, []string{"en"}); err != nil {
+		if err := svc.Enriquecer(ctx, "s1", "tmdb", "9999", tipoSerie, []string{"en"}, false); err != nil {
 			t.Fatalf("Enriquecer #%d: %v", i, err)
 		}
 	}

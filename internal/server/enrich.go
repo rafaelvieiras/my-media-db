@@ -20,12 +20,15 @@ import (
 // pool de escrita, ADR-0010) e devolvem a entity RESOLVIDA pelo caminho comum
 // (resolverEntity), então a resposta já reflete os dados externos compostos.
 
-// enrichBody é o corpo OPCIONAL de POST /entities/{id}/enrich. Ambos os campos são
+// enrichBody é o corpo OPCIONAL de POST /entities/{id}/enrich. source/source_id são
 // opcionais: sem source resolve a fonte-default DINAMICAMENTE (fonteDefault, 0047);
-// sem source_id tenta entity.external_ids[source].
+// sem source_id tenta entity.external_ids[source]. force (briefing 0088, default
+// false — o zero-value do bool já cobre "campo ausente") pula o cache de 24h do
+// detalhe externo e busca sempre a versão mais recente do provider.
 type enrichBody struct {
 	Source   string `json:"source"`
 	SourceID string `json:"source_id"`
+	Force    bool   `json:"force"`
 }
 
 // importBody é o corpo de POST /import. type deve ser movie|tv|collection e
@@ -78,7 +81,7 @@ func (s *Server) enrichEntity(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	if err := s.enrich.Enriquecer(ctx, id, source, sourceID, ent.Type, langs); err != nil {
+	if err := s.enrich.Enriquecer(ctx, id, source, sourceID, ent.Type, langs, body.Force); err != nil {
 		respondFonteIndisponivel(w)
 		return
 	}

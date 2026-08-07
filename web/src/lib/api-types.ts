@@ -192,7 +192,7 @@ export interface paths {
     put?: never
     /**
      * Enriquece uma entity existente a partir do provider (briefing 0015).
-     * @description Puxa o detalhe da fonte e grava a camada externa (media_external, payload cru) + a identidade (external_ids) + o pôster cacheado; NÃO toca override nem arte do dono (não-destrutivo). Corpo opcional: sem source usa "tmdb"; sem source_id usa external_ids[source] da entity (422 se não houver id). Responde a entity RESOLVIDA (com os dados externos compostos). MULTI-IDIOMA (briefing 0020): a fonte puxa TODAS as traduções permitidas (settings.allowed) numa só ida e grava um payload AUMENTADO tagueado por idioma, além de gravar entity.original_language (âncora do fallback). O shape RESOLVIDO desta resposta não muda — só passa a ter mais idiomas para o `?lang=` do GET /entities/{id} servir.
+     * @description Puxa o detalhe da fonte e grava a camada externa (media_external, payload cru) + a identidade (external_ids) + o pôster cacheado; NÃO toca override nem arte do dono (não-destrutivo). Corpo opcional: sem source usa "tmdb"; sem source_id usa external_ids[source] da entity (422 se não houver id). Responde a entity RESOLVIDA (com os dados externos compostos). MULTI-IDIOMA (briefing 0020): a fonte puxa TODAS as traduções permitidas (settings.allowed) numa só ida e grava um payload AUMENTADO tagueado por idioma, além de gravar entity.original_language (âncora do fallback). O shape RESOLVIDO desta resposta não muda — só passa a ter mais idiomas para o `?lang=` do GET /entities/{id} servir. `force: true` (briefing 0088) ignora o cache de 24h de `external_detail` e busca sempre o detalhe mais recente do provider — sem `force` (ou `force: false`) o cache continua sendo servido normalmente.
      */
     post: operations['enrichEntity']
     delete?: never
@@ -854,6 +854,46 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/refresh-files': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Reconfere arquivos/assets/campos locais de reprodução em disco (briefing 0088).
+     * @description Ação incondicional do menu "Gerenciar" (não depende de `catalog_completeness`, ao contrário de `/download-missing-artwork`). Força o re-hash/mediainfo dos `media_file` da entity mesmo sem mudança de mtime/size (o scan incremental de datasource inteiro continua como está — este é um caminho de entrada à parte, restrito aos arquivos DESTA entity); procura um asset `origin='local'` novo/atualizado na(s) pasta(s) dos arquivos (cobre o caso hoje quebrado de a entity já existir no catálogo); e, se houver `.nfo` em `entity.nfo_path`, lê os campos LOCAIS de reprodução (assistido/contagem de reproduções/avaliação do usuário/última reprodução/retomada) e preenche no banco só os que ainda estiverem vazios — nunca sobrescreve um valor já presente (não-destrutivo). Sem body. 404 se a entity não existe.
+     */
+    post: operations['refreshEntityFiles']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/materialize-missing-media': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Força nova consulta ao provider de arte + materializa o que faltar (briefing 0088).
+     * @description Ação incondicional do menu "Gerenciar" (não depende de `catalog_completeness`). Primeiro consulta de novo o(s) `ArteProvider` registrado(s) (hoje: fanart.tv) para atualizar o inventário de artes da entity (`media_external(source='fanarttv')`); em seguida reaproveita a MESMA materialização do job periódico `midias_faltantes` (`MaterializarMidiasFaltantes`, briefing 0064) para gravar na pasta real da biblioteca a arte hoje VENCEDORA de cada kind ainda sem `local_path`, e o `.nfo` quando ausente — mesmo efeito do job, só que imediato e sob demanda, restrito a esta entity. Sem body. 404 se a entity não existe.
+     */
+    post: operations['materializeMissingMedia']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/{id}/nfo': {
     parameters: {
       query?: never
@@ -1362,6 +1402,11 @@ export interface components {
       source?: string
       /** @description Id do item NA FONTE; se ausente, usa external_ids[source]. */
       source_id?: string
+      /**
+       * @description Quando true, ignora o cache de 24h do detalhe externo (`external_detail`) e busca sempre a versão mais recente do provider (briefing 0088). Default false preserva o comportamento de cache já existente.
+       * @default false
+       */
+      force: boolean
     }
     /** @description Corpo de POST /import — o item externo a importar. */
     ImportRequest: {
@@ -1537,6 +1582,22 @@ export interface components {
       downloaded: string[]
       /** @description Kinds que estavam faltando mas sem opção em nenhum provider. */
       unavailable: string[]
+    }
+    /** @description Resposta de POST /entities/{id}/refresh-files (briefing 0088) — resumo informativo do que foi reconferido/encontrado/preenchido nesta chamada; formato solto (não é contrato rígido para outra integração consumir, só feedback pro dono na UI). */
+    RefreshFilesResult: {
+      /** @description Quantos `media_file` da entity tiveram re-hash/mediainfo forçado. */
+      files_rechecked: number
+      /** @description Quantos assets `origin='local'` foram criados/atualizados a partir de arquivo(s) encontrado(s) na pasta. */
+      assets_found: number
+      /** @description Nomes dos campos locais de reprodução (`watched`, `play_count`, `user_rating`, `last_played_at`, `resume_position_seconds`, `resume_total_seconds`) que estavam vazios e foram preenchidos a partir do `.nfo` nesta chamada. Vazio se não havia `.nfo`, ou se todos os campos já tinham valor. */
+      playback_fields_filled: string[]
+    }
+    /** @description Resposta de POST /entities/{id}/materialize-missing-media (briefing 0088) — espelha o retorno de `MaterializarMidiasFaltantes` (mesmo usado internamente pelo job `midias_faltantes`, briefing 0064), reaproveitado como DTO público deste endpoint. */
+    MaterializeMissingMediaResult: {
+      /** @description Kinds de arte (`poster`, `fanart`, ...) materializados na pasta real nesta chamada. */
+      artes_baixadas: string[]
+      /** @description Se o `.nfo` da entity foi gravado nesta chamada (estava ausente). */
+      nfo_gravado: boolean
     }
     /** @description Resposta de POST /entities/{id}/nfo (briefing 0062) — espelha as duas colunas novas de `entity` que a escrita atualiza. `nfo_path` é o caminho absoluto do `.nfo` gravado (`<vídeo>.nfo` para filme/episódio, `tvshow.nfo` na raiz da pasta da série); `nfo_written_at` é o timestamp ISO desta escrita (muda a cada chamada, mesmo idempotente em conteúdo). */
     NfoWriteResult: {
@@ -3453,6 +3514,54 @@ export interface operations {
       }
       404: components['responses']['Error']
       503: components['responses']['Error']
+    }
+  }
+  refreshEntityFiles: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Resumo do que foi reconferido/encontrado/preenchido. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RefreshFilesResult']
+        }
+      }
+      404: components['responses']['Error']
+    }
+  }
+  materializeMissingMedia: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Artes materializadas e se o .nfo foi gravado. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MaterializeMissingMediaResult']
+        }
+      }
+      404: components['responses']['Error']
     }
   }
   writeEntityNfo: {
