@@ -1,20 +1,20 @@
 {
-  "generatedAt": "2026-07-22T20:36:17.076Z",
-  "commit": "2ce45d6",
+  "generatedAt": "2026-08-07T02:36:58.154Z",
+  "commit": "e397174",
   "project": "my-media-db",
   "metrics": {
-    "go_coverage_lines": 75.2,
-    "e2e_coverage_lines": 39.7,
+    "go_coverage_lines": 75.3,
+    "e2e_coverage_lines": 41.5,
     "go_gofmt_unformatted": 0,
     "go_lint_issues": 0,
     "go_vuln_high": 0,
-    "go_cyclo_violations": 31,
-    "web_coverage_lines": 91.51,
+    "go_cyclo_violations": 40,
+    "web_coverage_lines": 94.08,
     "web_typecheck_errors": 0,
-    "web_duplicate_percent": 0.23,
+    "web_duplicate_percent": 0.22,
     "web_lint_issues": 0,
     "web_audit_critical": 0,
-    "e2e_binary_coverage_lines": 30.9,
-    "e2e_front_coverage_lines": 64.67
+    "e2e_binary_coverage_lines": 32.1,
+    "e2e_front_coverage_lines": 63.38
   }
 }
