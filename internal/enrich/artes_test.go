@@ -14,9 +14,10 @@ import (
 // fanart.tv real) MAIS a capacidade provider.ArteProvider, devolvendo artes canned. Grava
 // os ids/tipo recebidos para as assercoes.
 type fakeArteProvider struct {
-	artes   []provider.Arte
-	recebeu provider.ExternalIDs
-	tipo    string
+	artes    []provider.Arte
+	recebeu  provider.ExternalIDs
+	tipo     string
+	chamadas int // conta as invocacoes de BuscarArtes (0087: prova ausencia de dupla-chamada)
 }
 
 func (f *fakeArteProvider) Nome() string { return "fanarttv" }
@@ -34,6 +35,7 @@ func (f *fakeArteProvider) MapearDetalhe(json.RawMessage) (map[string]any, error
 }
 
 func (f *fakeArteProvider) BuscarArtes(_ context.Context, ids provider.ExternalIDs, tipo string, _ []string) ([]provider.Arte, error) {
+	f.chamadas++
 	f.recebeu = ids
 	f.tipo = tipo
 	return f.artes, nil
@@ -164,6 +166,89 @@ func TestImportarSerieRoteiaArtesDeTemporada(t *testing.T) {
 	invTemp := lerInventario(t, r, temp1)
 	if len(invTemp["poster"]) != 1 || invTemp["poster"][0].Season != "1" {
 		t.Errorf("poster da temporada 1 = %+v, quero 1 com season=1", invTemp["poster"])
+	}
+}
+
+// TestEnriquecerFilmeForaDoImportPersisteInventarioArtes (0087, causa 1): um filme
+// enriquecido via Enriquecer (nao Importar -- o caminho de auto-match/retroativo/
+// Corrigir/Confirmar candidato/POST /entities/{id}/enrich) passa a ter o inventario
+// fanart.tv gravado, igual ao import manual. Repetir a chamada nao duplica a linha
+// (UPSERT por entity_id+source; ObterMediaExternalPorFonte e :one -- erraria se
+// duplicasse).
+func TestEnriquecerFilmeForaDoImportPersisteInventarioArtes(t *testing.T) {
+	database := setupDB(t)
+	ctx := context.Background()
+	img := servidorImagem(t, "image/jpeg", []byte("POSTER"))
+
+	w := sqlcgen.New(database.Write)
+	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "e1", Type: "movie", Title: "arquivo.mkv"}); err != nil {
+		t.Fatalf("CriarEntity: %v", err)
+	}
+
+	tmdb := &fakeProvider{
+		raw:    json.RawMessage(`{"title":"Matrix"}`),
+		campos: map[string]any{"title": "Matrix", "poster_url": img.URL + "/p.jpg"},
+	}
+	arte := &fakeArteProvider{artes: []provider.Arte{
+		{Kind: "poster", URL: "https://assets.fanart.tv/p1.jpg", Lang: "en"},
+	}}
+	svc := New(database, provider.NovaRegistry(tmdb, arte), t.TempDir())
+
+	for i := 0; i < 2; i++ {
+		if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"en"}); err != nil {
+			t.Fatalf("Enriquecer #%d: %v", i, err)
+		}
+	}
+
+	r := sqlcgen.New(database.Read)
+	inv := lerInventario(t, r, "e1") // :one -- so passa se nao duplicou
+	if len(inv["poster"]) != 1 {
+		t.Errorf("poster inventario = %d, quero 1", len(inv["poster"]))
+	}
+	if arte.recebeu.Tmdb != "603" || arte.tipo != "movie" {
+		t.Errorf("BuscarArtes recebeu ids=%+v tipo=%q, quero Tmdb=603 tipo=movie", arte.recebeu, arte.tipo)
+	}
+}
+
+// TestImportarFilmeNaoDuplicaChamadaDeArtes (0087): o fix da causa 1 reusa o parametro
+// sincronizarArvore para NAO disparar enriquecerArtes de dentro de enriquecerBase quando a
+// chamada vem de importarItemBase (sincronizarArvore=false) -- quem dispara e' o proprio
+// importarItem, explicitamente, uma unica vez por chamada de Importar (seja criando, seja
+// reusando um item existente). Sem essa guarda, o import de um filme JA EXISTENTE
+// chamaria BuscarArtes DUAS vezes (uma da enriquecerBase reusada, outra do gatilho de
+// importarItem).
+func TestImportarFilmeNaoDuplicaChamadaDeArtes(t *testing.T) {
+	database := setupDB(t)
+	ctx := context.Background()
+	img := servidorImagem(t, "image/png", []byte("PNG"))
+
+	tmdb := &fakeProvider{
+		raw:    json.RawMessage(`{"title":"Matrix"}`),
+		campos: map[string]any{"title": "Matrix", "poster_url": img.URL + "/p.png"},
+	}
+	arte := &fakeArteProvider{artes: []provider.Arte{
+		{Kind: "poster", URL: "https://assets.fanart.tv/p1.jpg"},
+	}}
+	svc := New(database, provider.NovaRegistry(tmdb, arte), t.TempDir())
+
+	// #1: cria o filme -- BuscarArtes deve ser chamado exatamente 1 vez (nao 0, nao 2).
+	id1, criada1, err := svc.Importar(ctx, "tmdb", "603", "movie", []string{"en"})
+	if err != nil || !criada1 {
+		t.Fatalf("Importar #1: id=%s criada=%v err=%v", id1, criada1, err)
+	}
+	if arte.chamadas != 1 {
+		t.Errorf("chamadas apos import #1 = %d, quero 1", arte.chamadas)
+	}
+
+	// #2: reusa o MESMO filme (dedup por external_id_tmdb) -- passa pelo branch de
+	// reuse de importarItemBase (enriquecerBase com sincronizarArvore=false). Ainda assim
+	// deve somar so +1 chamada (feita pelo gatilho explicito de importarItem), nao +2.
+	id2, criada2, err := svc.Importar(ctx, "tmdb", "603", "movie", []string{"en"})
+	if err != nil || criada2 || id2 != id1 {
+		t.Fatalf("Importar #2: id=%s criada=%v err=%v, quero reuso de %s", id2, criada2, err, id1)
+	}
+	if arte.chamadas != 2 {
+		t.Errorf("chamadas apos import #2 = %d, quero 2 (1 por chamada de Importar, sem duplicar)", arte.chamadas)
 	}
 }
 

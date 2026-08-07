@@ -2,6 +2,7 @@ package tmdb
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -207,4 +208,63 @@ func asLista(v any) []string {
 		return s
 	}
 	return nil
+}
+
+// TestTvdbIDDoDetalheSerieDoEnvelope (0087): o append external_ids de serie ja traz
+// tvdb_id de graca; TvdbIDDoDetalheSerie extrai do envelope AUMENTADO (o mesmo raw
+// devolvido por BuscarDetalhe/PayloadFresco), sem ida extra a rede.
+func TestTvdbIDDoDetalheSerieDoEnvelope(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		lang := r.URL.Query().Get("language")
+		switch r.URL.Path {
+		case "/tv/1396":
+			_, _ = w.Write([]byte(`{
+			  "id": 1396,
+			  "original_language": "en",
+			  "name": "Breaking Bad",
+			  "external_ids": {"imdb_id": "tt0903747", "tvdb_id": "81189"},
+			  "translations": {"id": 1396, "translations": []}
+			}`))
+		case "/genre/tv/list":
+			_, _ = w.Write([]byte(generosSerie[lang]))
+		default:
+			http.Error(w, "path inesperado", http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c := New(Credencial{Token: "tok"}, srv.Client(), srv.URL)
+
+	raw, err := c.BuscarDetalhe(context.Background(), "1396", "tv", []string{"en"})
+	if err != nil {
+		t.Fatalf("BuscarDetalhe: %v", err)
+	}
+	id, ok := c.TvdbIDDoDetalheSerie(raw)
+	if !ok || id != "81189" {
+		t.Errorf("TvdbIDDoDetalheSerie = (%q,%v), quero (81189,true)", id, ok)
+	}
+}
+
+// TestTvdbIDDoDetalheSeriePayloadLegado prova que o metodo tambem aceita o detalhe cru
+// SEM envelope (payload legado do 0015, sem {detail,tags_by_lang}) -- nao assume que
+// PayloadFresco sempre devolve o envelope aumentado.
+func TestTvdbIDDoDetalheSeriePayloadLegado(t *testing.T) {
+	c := New(Credencial{Token: "tok"}, nil, "")
+	raw := json.RawMessage(`{"id":1396,"external_ids":{"tvdb_id":"81189"}}`)
+	id, ok := c.TvdbIDDoDetalheSerie(raw)
+	if !ok || id != "81189" {
+		t.Errorf("payload legado: got (%q,%v), quero (81189,true)", id, ok)
+	}
+}
+
+// TestTvdbIDDoDetalheSerieSemMatch cobre a degradacao silenciosa (0087): sem tvdb_id no
+// external_ids, ou payload ilegivel, ok=false -- nunca panico/erro propagado.
+func TestTvdbIDDoDetalheSerieSemMatch(t *testing.T) {
+	c := New(Credencial{Token: "tok"}, nil, "")
+	if id, ok := c.TvdbIDDoDetalheSerie(json.RawMessage(`{"detail":{"external_ids":{"imdb_id":"tt1"}}}`)); ok || id != "" {
+		t.Errorf("sem tvdb_id: got (%q,%v), quero (\"\",false)", id, ok)
+	}
+	if id, ok := c.TvdbIDDoDetalheSerie(json.RawMessage(`nao e json`)); ok || id != "" {
+		t.Errorf("payload ilegivel: got (%q,%v), quero (\"\",false)", id, ok)
+	}
 }

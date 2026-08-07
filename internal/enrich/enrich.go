@@ -125,6 +125,28 @@ func (s *Servico) enriquecerBase(ctx context.Context, entityID, source, sourceID
 	if err := s.curarTitulo(ctx, entityID, source, sourceID, raw, langs); err != nil {
 		return err
 	}
+	// Inventario de artes do fanart.tv (0048) para FILME fora do import explicito (0087):
+	// Importar ja dispara isto via importarItem (linha ~165); ate aqui, o caminho publico
+	// de Enriquecer() (auto-match, retroativo/0085, "Corrigir", "Confirmar candidato",
+	// POST /entities/{id}/enrich) NUNCA chamava enriquecerArtes para filme, deixando a
+	// esmagadora maioria dos filmes novos (que entram via scan, nao busca manual) sem
+	// artes extras do fanart.tv. sincronizarArvore=false nos dois call sites internos de
+	// importarItemBase evita dupla-chamada aqui: esses casos ja sao cobertos pela chamada
+	// explicita de importarItem logo depois.
+	if tipo == tipoFilme && sincronizarArvore {
+		s.enriquecerArtes(ctx, entityID, tipo, langs)
+	}
+	if tipo == tipoSerie {
+		// Cross-id TVDB capturado do detalhe da fonte-base, quando ela suportar a
+		// capacidade opcional (0087; hoje so o client TMDB): fecha a lacuna que deixava
+		// toda serie cuja arvore vem SO do TMDB (sem TVDB configurado, independencia de
+		// provider do 0046) sem id utilizavel para o fanart.tv, que na TV exige tvdb_id
+		// exclusivamente (fanarttv.rotaETabela, case "tv"). Roda ANTES de
+		// sincronizarArvoreSerie/enriquecerArtes (abaixo) para que idsExternosDe ja
+		// enxergue o tvdb novo na MESMA passada. Nao-destrutivo (nunca sobrescreve um
+		// tvdb ja presente) e best-effort (degrada em silencio sem a capacidade/match).
+		s.mesclarTvdbCruzado(ctx, entityID, source, raw)
+	}
 	if tipo == tipoSerie && sincronizarArvore {
 		if err := s.sincronizarArvoreSerie(ctx, entityID, source, sourceID, langs); err != nil {
 			log.Printf("enrich: sincronizar arvore da serie %s (fonte %s id %s) falhou (segue so-identidade): %v", entityID, source, sourceID, err)
@@ -186,8 +208,11 @@ func (s *Servico) importarItemSemArvore(ctx context.Context, source, sourceID, t
 // (0067): quando tipo==tipoSerie, o único chamador destes branches é importarSerie
 // (via importarItemSemArvore), que já sincroniza a árvore explicitamente logo depois —
 // sem a flag, o branch de reuse faria DUAS idas ao provider (BuscarSerieArvore aqui
-// dentro do Enriquecer interno, e de novo em importarSerie). Para movie/collection o
-// parâmetro é inofensivo (o branch tipo==tipoSerie de enriquecerBase nunca roda).
+// dentro do Enriquecer interno, e de novo em importarSerie). Para FILME (0087) a flag
+// TAMBÉM evita a dupla-chamada de enriquecerArtes: com sincronizarArvore=false aqui, o
+// gatilho novo dentro de enriquecerBase não dispara — quem dispara é o próprio
+// importarItem, logo abaixo (ver seu comentário). Deixou de ser "inofensivo" para
+// movie/collection: o parâmetro agora tem efeito real também para filme.
 func (s *Servico) importarItemBase(ctx context.Context, source, sourceID, tipo string, langs []string) (string, bool, error) {
 	if existente, ok, err := s.acharPorIDExterno(ctx, source, sourceID); err != nil {
 		return "", false, err
@@ -456,6 +481,46 @@ func (s *Servico) mesclarExternalIds(ctx context.Context, entityID, source, sour
 		}
 	}
 	ids[source] = sourceID
+	b, err := json.Marshal(ids)
+	if err != nil {
+		return err
+	}
+	return s.escrita().AtualizarExternalIds(ctx, sqlcgen.AtualizarExternalIdsParams{
+		ExternalIdsJson: nsValid(string(b)),
+		ID:              entityID,
+	})
+}
+
+// mesclarExternalIdSeAusente mescla {chave: valor} em entity.external_ids_json SOMENTE
+// quando a chave ainda não está presente (ou está vazia) — ao contrário de
+// mesclarExternalIds (que SEMPRE sobrescreve a própria fonte, autoritativa), este é para
+// um CROSS-ID auxiliar (0087: o tvdb capturado do detalhe do TMDB) que nunca deve
+// clobbar um valor autoritativo já gravado por outra via (ex.: a própria árvore TVDB, que
+// grava "tvdb" via mesclarExternalIds quando ELA é a fonte-base). Preserva as demais
+// chaves. valor=="" é no-op. Erro de leitura/escrita propaga ao chamador degradar.
+func (s *Servico) mesclarExternalIdSeAusente(ctx context.Context, entityID, chave, valor string) error {
+	if valor == "" {
+		return nil
+	}
+	ent, err := s.leitura().ObterEntity(ctx, entityID)
+	if err != nil {
+		return err
+	}
+	ids := map[string]string{}
+	if ent.ExternalIdsJson.Valid && ent.ExternalIdsJson.String != "" {
+		bruto := map[string]any{}
+		if json.Unmarshal([]byte(ent.ExternalIdsJson.String), &bruto) == nil {
+			for k, v := range bruto {
+				if str, ok := v.(string); ok {
+					ids[k] = str
+				}
+			}
+		}
+	}
+	if ids[chave] != "" {
+		return nil // ja tem valor autoritativo -- nao sobrescreve (nao-destrutivo)
+	}
+	ids[chave] = valor
 	b, err := json.Marshal(ids)
 	if err != nil {
 		return err

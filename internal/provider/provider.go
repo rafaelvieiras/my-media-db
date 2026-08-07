@@ -146,6 +146,23 @@ type SerieRicoProvider interface {
 // filme, SEM clobbar título/idioma da árvore TVDB (o envelope não os carrega).
 const ChaveEnvelopeSerieRico = "tmdb_serie_rico"
 
+// TvdbCruzadoProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0087): extrair
+// o cross-id TVDB de um payload de detalhe de SÉRIE já buscado (sem ida extra à rede) —
+// fecha a lacuna que deixava toda série cuja árvore vem só do TMDB (sem TVDB configurado,
+// o cenário do briefing 0046, independência de provider) sem id utilizável para o
+// ArteProvider fanart.tv, que na TV exige tvdb_id exclusivamente (fanarttv.rotaETabela,
+// case "tv" — sem fallback para tmdb/imdb, ao contrário do case "movie"). Só o client
+// TMDB a implementa hoje (o append `external_ids` que o TMDB já busca no detalhe rico traz
+// `tvdb_id` de graça, mas o mapeamento canônico só extraía o `imdb_id` até aqui). O
+// enrich faz type-assert do provider da FONTE-BASE da árvore para esta interface e
+// degrada em silêncio quando ausente (fonte-base != TMDB) ou sem match no payload.
+type TvdbCruzadoProvider interface {
+	// TvdbIDDoDetalheSerie extrai o tvdb_id de um payload de detalhe de série JÁ
+	// buscado (o mesmo raw devolvido por BuscarDetalhe/PayloadFresco) — PURO, sem rede.
+	// ok=false quando o payload não traz um tvdb_id utilizável.
+	TvdbIDDoDetalheSerie(raw json.RawMessage) (string, bool)
+}
+
 // ArteProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0048): buscar o
 // INVENTÁRIO de artes de um item por seu id externo — pôster, fanart, logo, clearart,
 // disc, banner, thumb, characterart e artes de temporada. É a capacidade da fanart.tv

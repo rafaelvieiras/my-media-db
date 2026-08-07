@@ -1,6 +1,9 @@
 package tmdb
 
-import "strconv"
+import (
+	"encoding/json"
+	"strconv"
+)
 
 // Este arquivo concentra o DETALHE RICO do TMDB (briefing 0022): as structs dos
 // blocos vindos do append_to_response ampliado e o mapeamento desses blocos para o
@@ -81,10 +84,12 @@ type paisContentRatingTMDB struct {
 	Rating  string `json:"rating"`
 }
 
-// externalIdsTMDB é o append `external_ids`: hoje só o imdb_id nos interessa (link
-// para a página externa). Outras fontes entram aqui conforme o roadmap.
+// externalIdsTMDB é o append `external_ids`: imdb_id (link para a página externa) e
+// tvdb_id (0087 — o cross-id que o fanart.tv exige para TV; o TMDB já devolve isso de
+// graça para /tv/{id}, vazio/inofensivo para /movie/{id}).
 type externalIdsTMDB struct {
 	ImdbID string `json:"imdb_id"`
+	TvdbID string `json:"tvdb_id"`
 }
 
 // similarTMDB envelopa os itens similares do append `similar`.
@@ -338,4 +343,27 @@ func porSeAusenteAny(m map[string]any, chave, valor string) {
 // itoa formata um id inteiro do TMDB como string (source_id canônico).
 func itoa(id int64) string {
 	return strconv.FormatInt(id, 10)
+}
+
+// TvdbIDDoDetalheSerie extrai o tvdb_id do append external_ids de um detalhe de série JÁ
+// BUSCADO (o mesmo raw devolvido por BuscarDetalhe/PayloadFresco) — SEM ida extra à
+// rede. Satisfaz provider.TvdbCruzadoProvider (0087): fecha a lacuna que deixava toda
+// série cuja árvore vem só do TMDB (sem TVDB configurado, briefing 0046) sem id
+// utilizável para o fanart.tv, que na TV exige tvdb_id exclusivamente (rotaETabela, case
+// "tv"). Aceita tanto o envelope AUMENTADO {detail,tags_by_lang} (0020) quanto o detalhe
+// cru sem envelope (payload legado do 0015) — se não há `detail` no envelope, tenta o raw
+// direto. ok=false sem tvdb_id ou payload ilegível.
+func (c *Client) TvdbIDDoDetalheSerie(raw json.RawMessage) (string, bool) {
+	detail := raw
+	var env envelopeTMDB
+	if err := json.Unmarshal(raw, &env); err == nil && len(env.Detail) > 0 {
+		detail = env.Detail
+	}
+	var d struct {
+		ExternalIds externalIdsTMDB `json:"external_ids"`
+	}
+	if err := json.Unmarshal(detail, &d); err != nil {
+		return "", false
+	}
+	return d.ExternalIds.TvdbID, d.ExternalIds.TvdbID != ""
 }

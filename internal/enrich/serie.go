@@ -222,6 +222,37 @@ func semExtensaoArquivo(nome string) string {
 	return strings.TrimSuffix(nome, filepath.Ext(nome))
 }
 
+// mesclarTvdbCruzado tenta capturar o tvdb_id do detalhe de serie JA BUSCADO (raw, sem
+// ida extra a rede) e mescla-o em entity.external_ids_json quando a serie ainda nao tem
+// um tvdb proprio (0087): fecha a lacuna que deixava toda serie cuja arvore vem SO do
+// TMDB (sem TVDB configurado, independencia de provider do 0046) sem id utilizavel para o
+// fanart.tv, que na TV exige tvdb_id exclusivamente (fanarttv.rotaETabela, case "tv"). So
+// roda quando a fonte-base `source` implementa a capacidade opcional
+// provider.TvdbCruzadoProvider (hoje so o client TMDB, cujo append external_ids ja traz
+// tvdb_id de graca); SEM hardcode de "tmdb" -- type-assert generico, como
+// enriquecedorRico. Ausencia da capacidade ou sem match no payload degrada em silencio
+// (best-effort). Nunca sobrescreve um tvdb ja presente (mesclarExternalIdSeAusente):
+// quando a arvore vem do proprio TVDB, mesclarExternalIds ja gravou o tvdb autoritativo
+// antes deste ponto, e este metodo nunca roda de qualquer forma (o client TVDB nao
+// implementa a capacidade).
+func (s *Servico) mesclarTvdbCruzado(ctx context.Context, entityID, source string, raw json.RawMessage) {
+	prov, ok := s.provFonte(source)
+	if !ok {
+		return
+	}
+	cruzado, ok := prov.(provider.TvdbCruzadoProvider)
+	if !ok {
+		return // fonte-base nao expoe o cross-id: degradacao silenciosa (0087)
+	}
+	tvdbID, ok := cruzado.TvdbIDDoDetalheSerie(raw)
+	if !ok {
+		return // sem tvdb_id no detalhe (serie exclusiva do TMDB, sem match no TVDB)
+	}
+	if err := s.mesclarExternalIdSeAusente(ctx, entityID, "tvdb", tvdbID); err != nil {
+		log.Printf("enrich: mesclar tvdb cruzado da serie %s (fonte %s) falhou (segue): %v", entityID, source, err)
+	}
+}
+
 // sincronizarArvoreSerie combina os dois passos acima para um chamador que so tem
 // (serieID, source, sourceID) -- o caso de Enriquecer (0067), que nao tem uma arvore
 // pre-buscada como importarSerie tem. Erro cobre tanto capacidade/rede (arvoreDaSerie)
