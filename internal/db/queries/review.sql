@@ -70,9 +70,13 @@ WHERE entity_id = sqlc.arg('entity_id');
 -- entities com pelo menos um media_file 'present' (entity so-importada sem
 -- arquivo nao e alvo do scanner, fora de escopo aqui). Throttle: nunca
 -- tentado (NULL) tem prioridade, depois o mais antigo tentado primeiro;
--- sqlc.arg('desde') e o corte de "tentado ha pouco tempo, pula por agora";
--- sqlc.arg('limite') poda o lote por execucao (custo/rate-limit do
--- provider externo, briefing 0056).
+-- sqlc.arg('dias_global') e o intervalo GLOBAL em dias (briefing 0085), usado
+-- como fallback quando nenhum media_file 'present' da entity vem de uma
+-- biblioteca com override; quando existe override, usa o MENOR valor entre
+-- as bibliotecas de origem via subquery correlacionada (o SQLite calcula o
+-- cutoff por linha com datetime('now', '-N days'), evitando duplicar essa
+-- conta em Go); sqlc.arg('limite') poda o lote por execucao (custo/rate-limit
+-- do provider externo, briefing 0056).
 SELECT e.id, e.type, e.title, e.release_date, e.last_external_match_attempt_at
 FROM entity e
 WHERE e.external_ids_json IS NULL
@@ -91,7 +95,13 @@ WHERE e.external_ids_json IS NULL
       )
   AND (
         e.last_external_match_attempt_at IS NULL
-        OR e.last_external_match_attempt_at < sqlc.arg('desde')
+        OR e.last_external_match_attempt_at < COALESCE(
+            (SELECT datetime('now', '-' || MIN(COALESCE(ls.retroactive_enrichment_days, CAST(sqlc.arg('dias_global') AS INTEGER))) || ' days')
+             FROM media_file mf
+             JOIN library_source ls ON ls.id = mf.library_source_id
+             WHERE mf.entity_id = e.id AND mf.state = 'present'),
+            datetime('now', '-' || CAST(sqlc.arg('dias_global') AS INTEGER) || ' days')
+        )
       )
 ORDER BY
     (e.last_external_match_attempt_at IS NULL) DESC,

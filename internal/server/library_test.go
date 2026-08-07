@@ -486,6 +486,103 @@ func TestPatchLibraryPreferredLanguageInvalido(t *testing.T) {
 	}
 }
 
+// ── retroactive_enrichment_days (briefing 0085) ─────────────────────────────
+
+// TestPostLibraryComRetroactiveEnrichmentDays cobre o cadastro com override
+// válido (briefing 0085).
+func TestPostLibraryComRetroactiveEnrichmentDays(t *testing.T) {
+	h := setupLibraryServer(t)
+	rec := do(t, h, http.MethodPost, "/api/v1/library",
+		map[string]any{"path": t.TempDir(), "type": "movie", "retroactive_enrichment_days": 3})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, quero 201 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	got := decodeSource(t, rec)
+	if got.RetroactiveEnrichmentDays == nil || *got.RetroactiveEnrichmentDays != 3 {
+		t.Errorf("retroactive_enrichment_days = %v, quero 3", got.RetroactiveEnrichmentDays)
+	}
+}
+
+// TestPostLibrarySemRetroactiveEnrichmentDaysFicaNil cobre o default (campo
+// omitido): retroactive_enrichment_days fica nil (herda o global).
+func TestPostLibrarySemRetroactiveEnrichmentDaysFicaNil(t *testing.T) {
+	h := setupLibraryServer(t)
+	got := criarOK(t, h, t.TempDir(), "movie")
+	if got.RetroactiveEnrichmentDays != nil {
+		t.Errorf("retroactive_enrichment_days = %v, quero nil (omitido no cadastro)", *got.RetroactiveEnrichmentDays)
+	}
+}
+
+// TestPostLibraryRetroactiveEnrichmentDaysInvalido cobre o 422 invalid_body
+// quando o valor está fora de [1, 365].
+func TestPostLibraryRetroactiveEnrichmentDaysInvalido(t *testing.T) {
+	h := setupLibraryServer(t)
+	for _, v := range []int{0, 366, -5} {
+		rec := do(t, h, http.MethodPost, "/api/v1/library",
+			map[string]any{"path": t.TempDir(), "type": "movie", "retroactive_enrichment_days": v})
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("valor %d: status = %d, quero 422 (corpo=%s)", v, rec.Code, rec.Body.String())
+		}
+		checkErrorShape(t, rec, "invalid_body")
+	}
+}
+
+// TestPatchLibraryRetroactiveEnrichmentDaysDefineELimpa cobre o ciclo
+// completo do briefing 0085: PATCH com retroactive_enrichment_days define;
+// `null` explícito limpa; campo AUSENTE deixa inalterado.
+func TestPatchLibraryRetroactiveEnrichmentDaysDefineELimpa(t *testing.T) {
+	h := setupLibraryServer(t)
+	src := criarOK(t, h, t.TempDir(), "movie")
+
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"retroactive_enrichment_days": 5})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH retroactive_enrichment_days=5: status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if got := decodeSource(t, rec); got.RetroactiveEnrichmentDays == nil || *got.RetroactiveEnrichmentDays != 5 {
+		t.Errorf("retroactive_enrichment_days = %v, quero 5", got.RetroactiveEnrichmentDays)
+	}
+
+	// Campo AUSENTE (só outro campo qualquer no corpo) não altera o valor atual.
+	recInalterado := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"watch_enabled": true})
+	if got := decodeSource(t, recInalterado); got.RetroactiveEnrichmentDays == nil || *got.RetroactiveEnrichmentDays != 5 {
+		t.Errorf("retroactive_enrichment_days após PATCH sem o campo = %v, quero continuar 5", got.RetroactiveEnrichmentDays)
+	}
+
+	// `null` explícito LIMPA o override.
+	recNull := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, []byte(`{"retroactive_enrichment_days":null}`))
+	if recNull.Code != http.StatusOK {
+		t.Fatalf("PATCH retroactive_enrichment_days=null: status = %d, quero 200 (corpo=%s)", recNull.Code, recNull.Body.String())
+	}
+	if got := decodeSource(t, recNull); got.RetroactiveEnrichmentDays != nil {
+		t.Errorf("retroactive_enrichment_days após null explícito = %v, quero nil", *got.RetroactiveEnrichmentDays)
+	}
+
+	// Reflete em GET (persistiu de verdade).
+	get := do(t, h, http.MethodGet, "/api/v1/library/"+src.ID, nil)
+	if got := decodeSource(t, get); got.RetroactiveEnrichmentDays != nil {
+		t.Errorf("GET pós-PATCH: retroactive_enrichment_days = %v, quero nil (persistido)", *got.RetroactiveEnrichmentDays)
+	}
+}
+
+// TestPatchLibraryRetroactiveEnrichmentDaysInvalido cobre o 422 invalid_body
+// no PATCH.
+func TestPatchLibraryRetroactiveEnrichmentDaysInvalido(t *testing.T) {
+	h := setupLibraryServer(t)
+	src := criarOK(t, h, t.TempDir(), "movie")
+
+	rec := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"retroactive_enrichment_days": 400})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, quero 422 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "invalid_body")
+
+	// Nada foi persistido (a validação falhou antes de tocar o banco).
+	get := do(t, h, http.MethodGet, "/api/v1/library/"+src.ID, nil)
+	if got := decodeSource(t, get); got.RetroactiveEnrichmentDays != nil {
+		t.Errorf("retroactive_enrichment_days após PATCH inválido = %v, quero nil (não persistido)", *got.RetroactiveEnrichmentDays)
+	}
+}
+
 // TestPatchLibraryPathValido cobre o núcleo do briefing 0070: PATCH com
 // `path` válido reaponta a fonte (200, path novo, state online) sem re-scan.
 func TestPatchLibraryPathValido(t *testing.T) {

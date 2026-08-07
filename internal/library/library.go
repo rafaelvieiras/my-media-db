@@ -79,6 +79,12 @@ type Source struct {
 	// CHAMADOR (internal/server), para este pacote nao importar internal/server
 	// nem conhecer app_settings -- aqui so persiste o que recebe.
 	PreferredLanguage *string
+	// RetroactiveEnrichmentDays e o override OPCIONAL (briefing 0085) do
+	// intervalo de reentativa do enriquecimento retroativo desta biblioteca;
+	// nil = sem override, usa o valor global de app_settings. A VALIDACAO do
+	// intervalo (1-365) e feita pelo CHAMADOR (internal/server) -- aqui so
+	// persiste o que recebe.
+	RetroactiveEnrichmentDays *int
 }
 
 // Service concentra as operações de domínio sobre library_source. Segue a
@@ -111,10 +117,12 @@ func (s *Service) leitura() *sqlcgen.Queries { return sqlcgen.New(s.database.Rea
 // contentType é a natureza da biblioteca (movie|series, 0034), que o scanner usa
 // para ramificar o fluxo de match. Valor livre (sem CHECK); vazio normaliza para
 // "movie" (compat com o cadastro pré-0034). preferredLanguage é o idioma
-// preferido opcional (briefing 0084); nil = sem preferência. A VALIDAÇÃO contra
-// os idiomas permitidos já foi feita pelo CHAMADOR (internal/server) antes desta
-// chamada -- este serviço só persiste o valor recebido.
-func (s *Service) Criar(ctx context.Context, rawPath, tipo, contentType string, preferredLanguage *string) (Source, error) {
+// preferido opcional (briefing 0084); nil = sem preferência. retroactiveEnrichmentDays
+// é o override opcional do intervalo de reentativa (briefing 0085); nil = sem
+// override. A VALIDAÇÃO de ambos (idiomas permitidos, intervalo 1-365) já foi
+// feita pelo CHAMADOR (internal/server) antes desta chamada -- este serviço só
+// persiste o valor recebido.
+func (s *Service) Criar(ctx context.Context, rawPath, tipo, contentType string, preferredLanguage *string, retroactiveEnrichmentDays *int) (Source, error) {
 	if !tiposValidos[tipo] {
 		return Source{}, ErrTipoInvalido
 	}
@@ -142,11 +150,12 @@ func (s *Service) Criar(ctx context.Context, rawPath, tipo, contentType string, 
 	}
 
 	row, err := s.escrita().CriarLibrarySource(ctx, sqlcgen.CriarLibrarySourceParams{
-		ID:                s.novoID(),
-		Path:              abs,
-		Type:              tipo,
-		ContentType:       contentType,
-		PreferredLanguage: ptrParaNullString(preferredLanguage),
+		ID:                        s.novoID(),
+		Path:                      abs,
+		Type:                      tipo,
+		ContentType:               contentType,
+		PreferredLanguage:         ptrParaNullString(preferredLanguage),
+		RetroactiveEnrichmentDays: ptrParaNullInt64(retroactiveEnrichmentDays),
 	})
 	if err != nil {
 		return Source{}, err
@@ -257,6 +266,29 @@ func (s *Service) AtualizarPreferredLanguage(ctx context.Context, id string, lan
 	row, err := s.escrita().AtualizarLibrarySourcePreferredLanguage(ctx, sqlcgen.AtualizarLibrarySourcePreferredLanguageParams{
 		PreferredLanguage: ptrParaNullString(lang),
 		ID:                id,
+	})
+	if err != nil {
+		return Source{}, err
+	}
+	return toSource(row, avaliarState(row.Path)), nil
+}
+
+// AtualizarRetroactiveEnrichmentDays grava (ou limpa, quando dias==nil) o
+// override de intervalo de reentativa do enriquecimento retroativo da fonte
+// (briefing 0085, PATCH /api/v1/library/{id}). ErrNaoEncontrado se o id não
+// existir. A VALIDAÇÃO do intervalo (1-365) já foi feita pelo CHAMADOR
+// (internal/server) antes desta chamada -- este serviço só persiste o valor
+// recebido.
+func (s *Service) AtualizarRetroactiveEnrichmentDays(ctx context.Context, id string, dias *int) (Source, error) {
+	if _, err := s.leitura().ObterLibrarySource(ctx, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Source{}, ErrNaoEncontrado
+		}
+		return Source{}, err
+	}
+	row, err := s.escrita().AtualizarLibrarySourceRetroactiveEnrichmentDays(ctx, sqlcgen.AtualizarLibrarySourceRetroactiveEnrichmentDaysParams{
+		RetroactiveEnrichmentDays: ptrParaNullInt64(dias),
+		ID:                        id,
 	})
 	if err != nil {
 		return Source{}, err
@@ -478,14 +510,15 @@ func toSource(row sqlcgen.LibrarySource, state string) Source {
 		lastScan = &v
 	}
 	return Source{
-		ID:                row.ID,
-		Path:              row.Path,
-		Type:              row.Type,
-		State:             state,
-		LastScan:          lastScan,
-		ContentType:       row.ContentType,
-		WatchEnabled:      row.WatchEnabled != 0,
-		PreferredLanguage: nullStringParaPtr(row.PreferredLanguage),
+		ID:                        row.ID,
+		Path:                      row.Path,
+		Type:                      row.Type,
+		State:                     state,
+		LastScan:                  lastScan,
+		ContentType:               row.ContentType,
+		WatchEnabled:              row.WatchEnabled != 0,
+		PreferredLanguage:         nullStringParaPtr(row.PreferredLanguage),
+		RetroactiveEnrichmentDays: nullInt64ParaPtr(row.RetroactiveEnrichmentDays),
 	}
 }
 
@@ -505,5 +538,24 @@ func nullStringParaPtr(ns sql.NullString) *string {
 		return nil
 	}
 	v := ns.String
+	return &v
+}
+
+// ptrParaNullInt64 converte um *int de domínio (nil = ausente) para o
+// sql.NullInt64 gravável pela coluna NULLABLE retroactive_enrichment_days.
+func ptrParaNullInt64(v *int) sql.NullInt64 {
+	if v == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: int64(*v), Valid: true}
+}
+
+// nullInt64ParaPtr converte a coluna NULLABLE lida de volta para *int de
+// domínio (nil quando NULL).
+func nullInt64ParaPtr(ni sql.NullInt64) *int {
+	if !ni.Valid {
+		return nil
+	}
+	v := int(ni.Int64)
 	return &v
 }

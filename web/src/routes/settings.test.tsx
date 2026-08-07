@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SettingsScreen } from '@/routes/settings'
-import type { LanguageSettings } from '@/lib/api'
+import type { LanguageSettings, RetroactiveEnrichmentSettings } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 import { respostaCompletude } from '@/test/catalog-completeness-harness'
@@ -14,13 +14,19 @@ const settingsIniciais: LanguageSettings = {
   allowed: ['pt-BR', 'en'],
 }
 
-// Roteia o fetch: GET/PUT de idiomas são tratados aqui; GET/PUT de completude de
-// catalogação (0057) delegam a `respostaCompletude` (compartilhada com
-// catalog-completeness-form.test.tsx) — esta suíte só precisa que a 2ª seção não
-// quebre o mock de fetch, o comportamento próprio do formulário é coberto lá.
+// Config vigente devolvida pelo GET /settings/enrichment-retroativo (0085).
+const retroativoIniciais: RetroactiveEnrichmentSettings = { retry_days: 15 }
+
+// Roteia o fetch: GET/PUT de idiomas e de throttle de enriquecimento retroativo
+// (0085) são tratados aqui; GET/PUT de completude de catalogação (0057) delegam
+// a `respostaCompletude` (compartilhada com catalog-completeness-form.test.tsx)
+// — esta suíte só precisa que a 3ª seção não quebre o mock de fetch, o
+// comportamento próprio do formulário é coberto lá.
 function fetchRouter(opts?: {
   putResposta?: LanguageSettings
   putErro?: { status: number; code: string; message: string }
+  putRetroativoResposta?: RetroactiveEnrichmentSettings
+  putRetroativoErro?: { status: number; code: string; message: string }
 }) {
   return vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url)
@@ -37,6 +43,19 @@ function fetchRouter(opts?: {
         )
       }
       return okJson(opts?.putResposta ?? settingsIniciais)
+    }
+    if (u === '/api/v1/settings/enrichment-retroativo' && method === 'GET') {
+      return okJson(retroativoIniciais)
+    }
+    if (u === '/api/v1/settings/enrichment-retroativo' && method === 'PUT') {
+      if (opts?.putRetroativoErro) {
+        return erroJson(
+          opts.putRetroativoErro.status,
+          opts.putRetroativoErro.code,
+          opts.putRetroativoErro.message,
+        )
+      }
+      return okJson(opts?.putRetroativoResposta ?? retroativoIniciais)
     }
     const completude = respostaCompletude(u, method)
     if (completude) return completude
@@ -68,6 +87,21 @@ async function renderForm(fetchMock: ReturnType<typeof fetchRouter>) {
     ).toBeInTheDocument(),
   )
   return secaoIdiomas
+}
+
+// Mesma ideia de `renderForm`, mas devolve o escopo da seção de ENRIQUECIMENTO
+// RETROATIVO (0085) — cada seção tem seu próprio botão "Salvar".
+async function renderFormRetroativo(fetchMock: ReturnType<typeof fetchRouter>) {
+  vi.stubGlobal('fetch', fetchMock)
+  renderWithClient(<SettingsScreen />)
+  const heading = await screen.findByRole('heading', {
+    name: 'Enriquecimento retroativo',
+  })
+  const secao = within(heading.closest('section')!)
+  await waitFor(() =>
+    expect(secao.getByRole('button', { name: 'Salvar' })).toBeInTheDocument(),
+  )
+  return secao
 }
 
 describe('SettingsScreen', () => {
@@ -171,6 +205,84 @@ describe('SettingsScreen', () => {
     await waitFor(() =>
       expect(
         secaoIdiomas.getByText('principal precisa estar entre os permitidos'),
+      ).toBeInTheDocument(),
+    )
+  })
+
+  it('le o throttle vigente e semeia o campo de enriquecimento retroativo', async () => {
+    const secao = await renderFormRetroativo(fetchRouter())
+
+    expect(secao.getByLabelText('Repetir tentativa após (dias)')).toHaveValue(
+      15,
+    )
+  })
+
+  it('grava o throttle de enriquecimento retroativo via PUT e confirma o sucesso', async () => {
+    const user = userEvent.setup()
+    const fetchMock = fetchRouter({
+      putRetroativoResposta: { retry_days: 30 },
+    })
+    const secao = await renderFormRetroativo(fetchMock)
+
+    const input = secao.getByLabelText('Repetir tentativa após (dias)')
+    await user.clear(input)
+    await user.type(input, '30')
+    await user.click(secao.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() =>
+      expect(secao.getByText('Configurações salvas.')).toBeInTheDocument(),
+    )
+    const putCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        String(url) === '/api/v1/settings/enrichment-retroativo' &&
+        (init as RequestInit | undefined)?.method === 'PUT',
+    )
+    expect(putCall).toBeDefined()
+    expect(JSON.parse((putCall![1] as RequestInit).body as string)).toEqual({
+      retry_days: 30,
+    })
+  })
+
+  it('valida client-side o range [1, 365] do throttle e nao chama o PUT', async () => {
+    const user = userEvent.setup()
+    const fetchMock = fetchRouter()
+    const secao = await renderFormRetroativo(fetchMock)
+
+    const input = secao.getByLabelText('Repetir tentativa após (dias)')
+    await user.clear(input)
+    await user.type(input, '400')
+    await user.click(secao.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() =>
+      expect(
+        secao.getByText('Informe um número inteiro entre 1 e 365 dias.'),
+      ).toBeInTheDocument(),
+    )
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, init]) =>
+          String(url) === '/api/v1/settings/enrichment-retroativo' &&
+          (init as RequestInit | undefined)?.method === 'PUT',
+      ),
+    ).toBe(false)
+  })
+
+  it('exibe inline a mensagem do 422 do servidor para o throttle', async () => {
+    const user = userEvent.setup()
+    const fetchMock = fetchRouter({
+      putRetroativoErro: {
+        status: 422,
+        code: 'invalid_retroactive_enrichment_settings',
+        message: 'retry_days precisa estar entre 1 e 365',
+      },
+    })
+    const secao = await renderFormRetroativo(fetchMock)
+
+    await user.click(secao.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() =>
+      expect(
+        secao.getByText('retry_days precisa estar entre 1 e 365'),
       ).toBeInTheDocument(),
     )
   })

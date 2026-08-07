@@ -4,9 +4,9 @@ import { useNavigate, useParams } from '@tanstack/react-router'
 import { LoaderCircle, Save, Trash2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
 import { PathBrowser } from '@/components/path-browser'
 import { LibraryFormHeader } from '@/components/library-form-header'
+import { LibraryLanguageAndRetryFields } from '@/components/library-language-retry-fields'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import {
   ApiError,
@@ -18,8 +18,8 @@ import {
 import {
   libraryQueryOptions,
   languageSettingsQueryOptions,
+  retroactiveEnrichmentSettingsQueryOptions,
 } from '@/lib/queries'
-import { rotuloIdioma } from '@/lib/languages'
 
 // Rota `/dashboard/library/$id/edit` (briefing 0071): reaponta o caminho do datasource
 // (PATCH, recasco em cascata do 0070) e concentra a remoção — antes um ícone de
@@ -64,9 +64,17 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
     source.preferred_language ?? '',
   )
   const [preferredLanguageTocado, setPreferredLanguageTocado] = useState(false)
+  const [retryDays, setRetryDays] = useState(
+    source.retroactive_enrichment_days != null
+      ? String(source.retroactive_enrichment_days)
+      : '',
+  )
+  const [retryDaysTocado, setRetryDaysTocado] = useState(false)
 
   const languagesQuery = useQuery(languageSettingsQueryOptions)
   const idiomasPermitidos = languagesQuery.data?.allowed ?? []
+  const retroativoQuery = useQuery(retroactiveEnrichmentSettingsQueryOptions)
+  const retryDaysGlobal = retroativoQuery.data?.retry_days
 
   function invalidar() {
     queryClient.invalidateQueries({ queryKey: ['library'] })
@@ -102,6 +110,15 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
     if (preferredLanguageTocado) {
       body.preferred_language = preferredLanguage || null
     }
+    // PATCH parcial (mesmo espírito de `preferred_language`): só manda
+    // `retroactive_enrichment_days` se o dono mexeu no campo. Voltar a vazio
+    // envia `null` explícito, que limpa o override (volta a herdar o global).
+    if (retryDaysTocado) {
+      const retryDaysLimpo = retryDays.trim()
+      body.retroactive_enrichment_days = retryDaysLimpo
+        ? Number(retryDaysLimpo)
+        : null
+    }
     salvar.mutate(body)
   }
 
@@ -121,7 +138,10 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
 
   return (
     <div className="flex flex-col gap-8">
-      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+      {/* noValidate: o min/max do campo de reentativa (0085) é só hint nativo;
+          a validação de range é do backend (422 inline), sem depender do
+          balão nativo do navegador bloqueando o submit antes de chegar lá. */}
+      <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">Caminho</span>
           <Input
@@ -134,24 +154,20 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
 
         <PathBrowser value={path} onChange={setPath} />
 
-        <label className="flex max-w-64 flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">Idioma preferido</span>
-          <Select
-            value={preferredLanguage}
-            onChange={(e) => {
-              setPreferredLanguage(e.target.value)
-              setPreferredLanguageTocado(true)
-            }}
-            aria-label="Idioma preferido do datasource"
-          >
-            <option value="">Usar idioma global</option>
-            {idiomasPermitidos.map((codigo) => (
-              <option key={codigo} value={codigo}>
-                {rotuloIdioma(codigo)}
-              </option>
-            ))}
-          </Select>
-        </label>
+        <LibraryLanguageAndRetryFields
+          idiomasPermitidos={idiomasPermitidos}
+          preferredLanguage={preferredLanguage}
+          onPreferredLanguageChange={(valor) => {
+            setPreferredLanguage(valor)
+            setPreferredLanguageTocado(true)
+          }}
+          retryDays={retryDays}
+          onRetryDaysChange={(valor) => {
+            setRetryDays(valor)
+            setRetryDaysTocado(true)
+          }}
+          retryDaysGlobal={retryDaysGlobal}
+        />
 
         {mensagemErroSalvar ? (
           <p role="alert" className="text-sm font-medium text-destructive">

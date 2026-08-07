@@ -74,7 +74,7 @@ func TestStorageSnapshotArquivoEstranhoViraUnmanaged(t *testing.T) {
 	escreverArquivoDeTamanho(t, filepath.Join(pasta, "Filme Teste (2020).mkv"), 999)
 	escreverArquivoDeTamanho(t, filepath.Join(pasta, "sample.txt"), 333)
 
-	if _, err := library.New(d).Criar(context.Background(), root, "movie", "", nil); err != nil {
+	if _, err := library.New(d).Criar(context.Background(), root, "movie", "", nil, nil); err != nil {
 		t.Fatalf("criar library_source: %v", err)
 	}
 
@@ -108,7 +108,7 @@ func TestStorageSnapshotPosterCanonicoViraManaged(t *testing.T) {
 	escreverArquivoDeTamanho(t, filepath.Join(pasta, "Filme Com Poster (2021).mkv"), 1000)
 	escreverArquivoDeTamanho(t, filepath.Join(pasta, "poster.jpg"), 777)
 
-	if _, err := library.New(d).Criar(context.Background(), root, "movie", "", nil); err != nil {
+	if _, err := library.New(d).Criar(context.Background(), root, "movie", "", nil, nil); err != nil {
 		t.Fatalf("criar library_source: %v", err)
 	}
 

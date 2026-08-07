@@ -27,7 +27,7 @@ SET type = ?,
     state = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days
 `
 
 type AtualizarLibrarySourceParams struct {
@@ -57,6 +57,7 @@ func (q *Queries) AtualizarLibrarySource(ctx context.Context, arg AtualizarLibra
 		&i.ContentType,
 		&i.WatchEnabled,
 		&i.PreferredLanguage,
+		&i.RetroactiveEnrichmentDays,
 	)
 	return i, err
 }
@@ -66,7 +67,7 @@ UPDATE library_source
 SET path = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days
 `
 
 type AtualizarLibrarySourcePathParams struct {
@@ -94,6 +95,7 @@ func (q *Queries) AtualizarLibrarySourcePath(ctx context.Context, arg AtualizarL
 		&i.ContentType,
 		&i.WatchEnabled,
 		&i.PreferredLanguage,
+		&i.RetroactiveEnrichmentDays,
 	)
 	return i, err
 }
@@ -103,7 +105,7 @@ UPDATE library_source
 SET preferred_language = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days
 `
 
 type AtualizarLibrarySourcePreferredLanguageParams struct {
@@ -129,6 +131,44 @@ func (q *Queries) AtualizarLibrarySourcePreferredLanguage(ctx context.Context, a
 		&i.ContentType,
 		&i.WatchEnabled,
 		&i.PreferredLanguage,
+		&i.RetroactiveEnrichmentDays,
+	)
+	return i, err
+}
+
+const atualizarLibrarySourceRetroactiveEnrichmentDays = `-- name: AtualizarLibrarySourceRetroactiveEnrichmentDays :one
+UPDATE library_source
+SET retroactive_enrichment_days = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days
+`
+
+type AtualizarLibrarySourceRetroactiveEnrichmentDaysParams struct {
+	RetroactiveEnrichmentDays sql.NullInt64
+	ID                        string
+}
+
+// PATCH /api/v1/library/{id} (briefing 0085): define ou limpa o override de
+// intervalo de reentativa do enriquecimento retroativo da fonte. NULL
+// explicito limpa (volta a usar o valor global). O HANDLER
+// (internal/server/library.go) ja validou o intervalo (1-365) antes de
+// chamar esta query.
+func (q *Queries) AtualizarLibrarySourceRetroactiveEnrichmentDays(ctx context.Context, arg AtualizarLibrarySourceRetroactiveEnrichmentDaysParams) (LibrarySource, error) {
+	row := q.db.QueryRowContext(ctx, atualizarLibrarySourceRetroactiveEnrichmentDays, arg.RetroactiveEnrichmentDays, arg.ID)
+	var i LibrarySource
+	err := row.Scan(
+		&i.ID,
+		&i.Path,
+		&i.Type,
+		&i.LastScan,
+		&i.State,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ContentType,
+		&i.WatchEnabled,
+		&i.PreferredLanguage,
+		&i.RetroactiveEnrichmentDays,
 	)
 	return i, err
 }
@@ -138,7 +178,7 @@ UPDATE library_source
 SET watch_enabled = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days
 `
 
 type AtualizarLibrarySourceWatchParams struct {
@@ -163,6 +203,7 @@ func (q *Queries) AtualizarLibrarySourceWatch(ctx context.Context, arg Atualizar
 		&i.ContentType,
 		&i.WatchEnabled,
 		&i.PreferredLanguage,
+		&i.RetroactiveEnrichmentDays,
 	)
 	return i, err
 }
@@ -170,19 +211,20 @@ func (q *Queries) AtualizarLibrarySourceWatch(ctx context.Context, arg Atualizar
 const criarLibrarySource = `-- name: CriarLibrarySource :one
 
 INSERT INTO library_source (
-    id, path, type, content_type, preferred_language
+    id, path, type, content_type, preferred_language, retroactive_enrichment_days
 ) VALUES (
-    ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?
 )
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days
 `
 
 type CriarLibrarySourceParams struct {
-	ID                string
-	Path              string
-	Type              string
-	ContentType       string
-	PreferredLanguage sql.NullString
+	ID                        string
+	Path                      string
+	Type                      string
+	ContentType               string
+	PreferredLanguage         sql.NullString
+	RetroactiveEnrichmentDays sql.NullInt64
 }
 
 // CRUD de library_source (raizes de varredura).
@@ -194,6 +236,8 @@ type CriarLibrarySourceParams struct {
 // fica de fora do INSERT tambem: nasce 0 (DEFAULT, briefing 0064) -- o dono liga
 // depois via PATCH. preferred_language (0084) entra explicito, NULLABLE -- o
 // servico passa NULL quando o dono nao escolheu idioma preferido no cadastro.
+// retroactive_enrichment_days (0085) entra explicito, NULLABLE -- o servico
+// passa NULL quando o dono nao definiu override de reentativa no cadastro.
 func (q *Queries) CriarLibrarySource(ctx context.Context, arg CriarLibrarySourceParams) (LibrarySource, error) {
 	row := q.db.QueryRowContext(ctx, criarLibrarySource,
 		arg.ID,
@@ -201,6 +245,7 @@ func (q *Queries) CriarLibrarySource(ctx context.Context, arg CriarLibrarySource
 		arg.Type,
 		arg.ContentType,
 		arg.PreferredLanguage,
+		arg.RetroactiveEnrichmentDays,
 	)
 	var i LibrarySource
 	err := row.Scan(
@@ -214,12 +259,13 @@ func (q *Queries) CriarLibrarySource(ctx context.Context, arg CriarLibrarySource
 		&i.ContentType,
 		&i.WatchEnabled,
 		&i.PreferredLanguage,
+		&i.RetroactiveEnrichmentDays,
 	)
 	return i, err
 }
 
 const listarLibrarySources = `-- name: ListarLibrarySources :many
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days
 FROM library_source
 ORDER BY created_at, id
 `
@@ -244,6 +290,7 @@ func (q *Queries) ListarLibrarySources(ctx context.Context) ([]LibrarySource, er
 			&i.ContentType,
 			&i.WatchEnabled,
 			&i.PreferredLanguage,
+			&i.RetroactiveEnrichmentDays,
 		); err != nil {
 			return nil, err
 		}
@@ -259,7 +306,7 @@ func (q *Queries) ListarLibrarySources(ctx context.Context) ([]LibrarySource, er
 }
 
 const listarLibrarySourcesComWatchHabilitado = `-- name: ListarLibrarySourcesComWatchHabilitado :many
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days
 FROM library_source
 WHERE watch_enabled = 1
 ORDER BY created_at, id
@@ -288,6 +335,7 @@ func (q *Queries) ListarLibrarySourcesComWatchHabilitado(ctx context.Context) ([
 			&i.ContentType,
 			&i.WatchEnabled,
 			&i.PreferredLanguage,
+			&i.RetroactiveEnrichmentDays,
 		); err != nil {
 			return nil, err
 		}
@@ -303,7 +351,7 @@ func (q *Queries) ListarLibrarySourcesComWatchHabilitado(ctx context.Context) ([
 }
 
 const obterLibrarySource = `-- name: ObterLibrarySource :one
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days
 FROM library_source
 WHERE id = ?
 `
@@ -322,12 +370,13 @@ func (q *Queries) ObterLibrarySource(ctx context.Context, id string) (LibrarySou
 		&i.ContentType,
 		&i.WatchEnabled,
 		&i.PreferredLanguage,
+		&i.RetroactiveEnrichmentDays,
 	)
 	return i, err
 }
 
 const obterLibrarySourcePorPath = `-- name: ObterLibrarySourcePorPath :one
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days
 FROM library_source
 WHERE path = ?
 `
@@ -348,6 +397,7 @@ func (q *Queries) ObterLibrarySourcePorPath(ctx context.Context, path string) (L
 		&i.ContentType,
 		&i.WatchEnabled,
 		&i.PreferredLanguage,
+		&i.RetroactiveEnrichmentDays,
 	)
 	return i, err
 }

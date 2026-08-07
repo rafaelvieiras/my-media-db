@@ -14,6 +14,7 @@ import {
   getSystemHealth,
   hasEntityTheme,
   getLanguageSettings,
+  getRetroactiveEnrichmentSettings,
   getMatchPreview,
   listJobExecutions,
   listJobs,
@@ -123,6 +124,15 @@ export const entityFieldsQueryOptions = queryOptions({
 export const languageSettingsQueryOptions = queryOptions({
   queryKey: ['settings', 'languages'],
   queryFn: getLanguageSettings,
+})
+
+// Config de throttle do enriquecimento retroativo (0085): fonte única para o
+// admin (settings.tsx) e o placeholder do override por biblioteca
+// (library-new.tsx/library-edit.tsx). Chave `['settings', 'enrichment-retroativo']`
+// — invalidada pelo PUT da tela de configurações.
+export const retroactiveEnrichmentSettingsQueryOptions = queryOptions({
+  queryKey: ['settings', 'enrichment-retroativo'],
+  queryFn: getRetroactiveEnrichmentSettings,
 })
 
 // Config de completude de CATALOGAÇÃO (0057): fonte única para o formulário de

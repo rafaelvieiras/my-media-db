@@ -72,6 +72,85 @@ func TestPutLanguageSettingsInvalida(t *testing.T) {
 	}
 }
 
+// ── Enriquecimento retroativo (briefing 0085) ───────────────────────────────
+
+// decodeRetro decodifica o corpo de GET/PUT /settings/enrichment-retroativo.
+func decodeRetro(t *testing.T, body []byte) retroactiveEnrichmentSettings {
+	t.Helper()
+	var out retroactiveEnrichmentSettings
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decodificar retroactiveEnrichmentSettings: %v (corpo=%s)", err, body)
+	}
+	return out
+}
+
+// TestGetEnrichmentRetroativoSettingsDefault cobre o critério §5: sem linha
+// em app_settings, o GET devolve o default seguro {retry_days: 15}.
+func TestGetEnrichmentRetroativoSettingsDefault(t *testing.T) {
+	h, _ := setupEntitiesServer(t)
+	rec := do(t, h, http.MethodGet, "/api/v1/settings/enrichment-retroativo", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	got := decodeRetro(t, rec.Body.Bytes())
+	if got.RetryDays != 15 {
+		t.Errorf("retry_days = %d, quero 15", got.RetryDays)
+	}
+}
+
+// TestPutEnrichmentRetroativoSettingsPersiste cobre o critério §5: PUT válido
+// grava e o GET seguinte reflete (cache invalidado, sem reiniciar o servidor).
+func TestPutEnrichmentRetroativoSettingsPersiste(t *testing.T) {
+	h, _ := setupEntitiesServer(t)
+	corpo := retroactiveEnrichmentSettings{RetryDays: 7}
+	rec := do(t, h, http.MethodPut, "/api/v1/settings/enrichment-retroativo", corpo)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	recGet := do(t, h, http.MethodGet, "/api/v1/settings/enrichment-retroativo", nil)
+	got := decodeRetro(t, recGet.Body.Bytes())
+	if got.RetryDays != 7 {
+		t.Errorf("retry_days após PUT = %d, quero 7", got.RetryDays)
+	}
+}
+
+// TestPutEnrichmentRetroativoSettingsInvalida cobre o critério §5: retry_days
+// fora de [1, 365] → 422 invalid_body, valor anterior preservado.
+func TestPutEnrichmentRetroativoSettingsInvalida(t *testing.T) {
+	h, _ := setupEntitiesServer(t)
+	casos := []retroactiveEnrichmentSettings{
+		{RetryDays: 0},
+		{RetryDays: 400},
+		{RetryDays: -1},
+	}
+	for i, c := range casos {
+		rec := do(t, h, http.MethodPut, "/api/v1/settings/enrichment-retroativo", c)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("caso %d: status = %d, quero 422 (corpo=%s)", i, rec.Code, rec.Body.String())
+		}
+		checkErrorShape(t, rec, "invalid_body")
+	}
+
+	// Valor anterior (default 15) preservado -- nenhum PUT inválido acima
+	// deveria ter gravado nada.
+	recGet := do(t, h, http.MethodGet, "/api/v1/settings/enrichment-retroativo", nil)
+	got := decodeRetro(t, recGet.Body.Bytes())
+	if got.RetryDays != 15 {
+		t.Errorf("retry_days após PUTs inválidos = %d, quero 15 (default preservado)", got.RetryDays)
+	}
+}
+
+// TestPutEnrichmentRetroativoSettingsCorpoMalformado cobre o critério §5:
+// corpo JSON inválido → 400 invalid_body.
+func TestPutEnrichmentRetroativoSettingsCorpoMalformado(t *testing.T) {
+	h, _ := setupEntitiesServer(t)
+	rec := do(t, h, http.MethodPut, "/api/v1/settings/enrichment-retroativo", []byte(`{`))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, quero 400 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "invalid_body")
+}
+
 // TestGetEntityLangInvalido cobre §5: ?lang= fora dos permitidos → 400 invalid_query.
 func TestGetEntityLangInvalido(t *testing.T) {
 	h, d := setupEntitiesServer(t)

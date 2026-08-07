@@ -7,9 +7,12 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { PathBrowser } from '@/components/path-browser'
 import { LibraryFormHeader } from '@/components/library-form-header'
+import { LibraryLanguageAndRetryFields } from '@/components/library-language-retry-fields'
 import { ApiError, createLibrary, type CreateSource } from '@/lib/api'
-import { languageSettingsQueryOptions } from '@/lib/queries'
-import { rotuloIdioma } from '@/lib/languages'
+import {
+  languageSettingsQueryOptions,
+  retroactiveEnrichmentSettingsQueryOptions,
+} from '@/lib/queries'
 
 // Rota `/dashboard/library/new` (briefing 0071): substitui o antigo `DatasourceForm`
 // sempre-visível no topo da lista por uma página própria — dá o espaço de tela
@@ -26,9 +29,12 @@ export function LibraryNewScreen() {
   const [path, setPath] = useState('')
   const [type, setType] = useState<CreateSource['type']>('movie')
   const [preferredLanguage, setPreferredLanguage] = useState('')
+  const [retryDays, setRetryDays] = useState('')
 
   const languagesQuery = useQuery(languageSettingsQueryOptions)
   const idiomasPermitidos = languagesQuery.data?.allowed ?? []
+  const retroativoQuery = useQuery(retroactiveEnrichmentSettingsQueryOptions)
+  const retryDaysGlobal = retroativoQuery.data?.retry_days
 
   const mutation = useMutation({
     mutationFn: (body: CreateSource) => createLibrary(body),
@@ -47,11 +53,15 @@ export function LibraryNewScreen() {
     // Séries (type=tv) marca a biblioteca como content_type='series'; Filmes fica
     // 'movie'. É o valor por que o scanner ramifica o fluxo de match (0034).
     const content_type = type === 'tv' ? 'series' : 'movie'
+    const retryDaysLimpo = retryDays.trim()
     mutation.mutate({
       path: limpo,
       type,
       content_type,
       preferred_language: preferredLanguage || undefined,
+      retroactive_enrichment_days: retryDaysLimpo
+        ? Number(retryDaysLimpo)
+        : undefined,
     })
   }
 
@@ -66,7 +76,10 @@ export function LibraryNewScreen() {
     <main className="mx-auto max-w-2xl px-4 py-6">
       <LibraryFormHeader titulo="Adicionar datasource" />
 
-      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+      {/* noValidate: o min/max do campo de reentativa (0085) é só hint nativo;
+          a validação de range é do backend (422 inline), sem depender do
+          balão nativo do navegador bloqueando o submit antes de chegar lá. */}
+      <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">Caminho</span>
           <Input
@@ -92,21 +105,14 @@ export function LibraryNewScreen() {
           </Select>
         </label>
 
-        <label className="flex max-w-64 flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">Idioma preferido</span>
-          <Select
-            value={preferredLanguage}
-            onChange={(e) => setPreferredLanguage(e.target.value)}
-            aria-label="Idioma preferido do datasource"
-          >
-            <option value="">Usar idioma global</option>
-            {idiomasPermitidos.map((codigo) => (
-              <option key={codigo} value={codigo}>
-                {rotuloIdioma(codigo)}
-              </option>
-            ))}
-          </Select>
-        </label>
+        <LibraryLanguageAndRetryFields
+          idiomasPermitidos={idiomasPermitidos}
+          preferredLanguage={preferredLanguage}
+          onPreferredLanguageChange={setPreferredLanguage}
+          retryDays={retryDays}
+          onRetryDaysChange={setRetryDays}
+          retryDaysGlobal={retryDaysGlobal}
+        />
 
         {mensagemErro ? (
           <p role="alert" className="text-sm font-medium text-destructive">

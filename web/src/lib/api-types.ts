@@ -113,6 +113,30 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/settings/enrichment-retroativo': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Config de throttle do enriquecimento retroativo (briefing 0085).
+     * @description Devolve o intervalo mínimo (em dias) entre duas tentativas de enriquecimento retroativo do MESMO item, aplicado a bibliotecas sem override próprio (`Source.retroactive_enrichment_days`). Quando ainda não há linha gravada, responde o default seguro (`{"retry_days": 15}`).
+     */
+    get: operations['getEnrichmentRetroativoSettings']
+    /**
+     * Grava a config de throttle do enriquecimento retroativo (com validação).
+     * @description Valida que `retry_days` está entre 1 e 365, então persiste (upsert) e invalida o cache. A partir da PRÓXIMA execução do job `saude_biblioteca`, bibliotecas sem override próprio passam a usar o novo valor, sem reiniciar o servidor. 422 quando fora do intervalo.
+     */
+    put: operations['putEnrichmentRetroativoSettings']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/settings/catalog-completeness': {
     parameters: {
       query?: never
@@ -1639,6 +1663,11 @@ export interface components {
       /** @description Idiomas permitidos (governam o que pode ser escrito/scraped). */
       allowed: string[]
     }
+    /** @description Config de throttle do enriquecimento retroativo (briefing 0085): intervalo mínimo, em dias, entre duas tentativas do MESMO item. É o corpo do PUT e a resposta do GET/PUT /settings/enrichment-retroativo. */
+    RetroactiveEnrichmentSettings: {
+      /** @description Dias entre duas tentativas de enriquecimento retroativo do mesmo item, para bibliotecas sem override próprio. Default de fábrica 15 quando nunca configurado. */
+      retry_days: number
+    }
     /** @description Config de "completude de catalogação" (briefing 0057): por `entity.type`, quais campos/artes o dono considera desejáveis para o item estar bem catalogado. Conceito DIFERENTE de completude de POSSE (quantos episódios/ temporadas o dono TEM no disco, `web/src/lib/entity-badges.ts`). Chave de topo = `entity.type` — ABERTA (hoje só `movie`/`tv` têm UI, mas o schema não fixa enum, já que `entity.type` é TEXT livre). Um tipo ausente do objeto significa "nada exigido" para aquele tipo. É o corpo do PUT e a resposta do GET/PUT /settings/catalog-completeness. */
     CatalogCompletenessSettings: {
       [key: string]: components['schemas']['TypeCompletenessConfig']
@@ -1762,6 +1791,8 @@ export interface components {
       watch_enabled: boolean
       /** @description Idioma preferido de busca/exibição desta biblioteca (briefing 0084). `null` = sem preferência, usa o idioma global de `app_settings`. */
       preferred_language?: string | null
+      /** @description Override, em dias, do throttle de enriquecimento retroativo desta biblioteca (briefing 0085). `null` = sem override, usa o valor global de `GET /settings/enrichment-retroativo`. */
+      retroactive_enrichment_days?: number | null
     }
     SourceList: {
       items: components['schemas']['Source'][]
@@ -1777,6 +1808,8 @@ export interface components {
       content_type?: 'movie' | 'series'
       /** @description Idioma preferido de busca/exibição desta biblioteca (briefing 0084). */
       preferred_language?: string
+      /** @description Override, em dias, do throttle de enriquecimento retroativo desta biblioteca (briefing 0085). Opcional; ausente = sem override, usa o valor global. */
+      retroactive_enrichment_days?: number
     }
     /** @description Patch PARCIAL de PATCH /api/v1/library/{id} (briefings 0064/0070) — campos ausentes ficam inalterados; `path` e `watch_enabled` podem vir juntos ou cada um sozinho. */
     PatchSource: {
@@ -1786,6 +1819,8 @@ export interface components {
       path?: string
       /** @description Idioma preferido de busca/exibição desta biblioteca (briefing 0084). `null` explícito no corpo LIMPA a preferência (volta a usar o idioma global); campo AUSENTE deixa inalterado. */
       preferred_language?: string | null
+      /** @description Override, em dias, do throttle de enriquecimento retroativo desta biblioteca (briefing 0085). `null` explícito no corpo LIMPA o override (volta a herdar o global); campo AUSENTE deixa inalterado. */
+      retroactive_enrichment_days?: number | null
     }
     ScanStatus: {
       running: boolean
@@ -2261,6 +2296,52 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['LanguageSettings']
+        }
+      }
+      400: components['responses']['Error']
+      422: components['responses']['Error']
+    }
+  }
+  getEnrichmentRetroativoSettings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Config de throttle do enriquecimento retroativo. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RetroactiveEnrichmentSettings']
+        }
+      }
+    }
+  }
+  putEnrichmentRetroativoSettings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RetroactiveEnrichmentSettings']
+      }
+    }
+    responses: {
+      /** @description Config gravada. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RetroactiveEnrichmentSettings']
         }
       }
       400: components['responses']['Error']

@@ -204,6 +204,47 @@ paths:
         "422":
           $ref: "#/components/responses/Error"
 
+  /api/v1/settings/enrichment-retroativo:
+    get:
+      operationId: getEnrichmentRetroativoSettings
+      summary: Config de throttle do enriquecimento retroativo (briefing 0085).
+      description: >
+        Devolve o intervalo mínimo (em dias) entre duas tentativas de
+        enriquecimento retroativo do MESMO item, aplicado a bibliotecas sem
+        override próprio (`Source.retroactive_enrichment_days`). Quando ainda
+        não há linha gravada, responde o default seguro (`{"retry_days": 15}`).
+      tags: [settings]
+      responses:
+        "200":
+          description: Config de throttle do enriquecimento retroativo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetroactiveEnrichmentSettings" }
+    put:
+      operationId: putEnrichmentRetroativoSettings
+      summary: Grava a config de throttle do enriquecimento retroativo (com validação).
+      description: >
+        Valida que `retry_days` está entre 1 e 365, então persiste (upsert) e
+        invalida o cache. A partir da PRÓXIMA execução do job
+        `saude_biblioteca`, bibliotecas sem override próprio passam a usar o
+        novo valor, sem reiniciar o servidor. 422 quando fora do intervalo.
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RetroactiveEnrichmentSettings" }
+      responses:
+        "200":
+          description: Config gravada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetroactiveEnrichmentSettings" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+
   /api/v1/settings/catalog-completeness:
     get:
       operationId: getCatalogCompletenessSettings
@@ -2989,6 +3030,22 @@ components:
           type: array
           description: Idiomas permitidos (governam o que pode ser escrito/scraped).
           items: { type: string }
+    RetroactiveEnrichmentSettings:
+      type: object
+      description: >
+        Config de throttle do enriquecimento retroativo (briefing 0085):
+        intervalo mínimo, em dias, entre duas tentativas do MESMO item. É o
+        corpo do PUT e a resposta do GET/PUT /settings/enrichment-retroativo.
+      required: [retry_days]
+      properties:
+        retry_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: >
+            Dias entre duas tentativas de enriquecimento retroativo do mesmo
+            item, para bibliotecas sem override próprio. Default de fábrica
+            15 quando nunca configurado.
     CatalogCompletenessSettings:
       type: object
       description: >
@@ -3204,6 +3261,14 @@ components:
             Idioma preferido de busca/exibição desta biblioteca (briefing
             0084). `null` = sem preferência, usa o idioma global de
             `app_settings`.
+        retroactive_enrichment_days:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 365
+          description: >
+            Override, em dias, do throttle de enriquecimento retroativo
+            desta biblioteca (briefing 0085). `null` = sem override, usa o
+            valor global de `GET /settings/enrichment-retroativo`.
     SourceList:
       type: object
       required: [items]
@@ -3228,6 +3293,14 @@ components:
         preferred_language:
           type: string
           description: Idioma preferido de busca/exibição desta biblioteca (briefing 0084).
+        retroactive_enrichment_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: >
+            Override, em dias, do throttle de enriquecimento retroativo
+            desta biblioteca (briefing 0085). Opcional; ausente = sem
+            override, usa o valor global.
     PatchSource:
       type: object
       description: >
@@ -3258,6 +3331,15 @@ components:
             Idioma preferido de busca/exibição desta biblioteca (briefing
             0084). `null` explícito no corpo LIMPA a preferência (volta a
             usar o idioma global); campo AUSENTE deixa inalterado.
+        retroactive_enrichment_days:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 365
+          description: >
+            Override, em dias, do throttle de enriquecimento retroativo
+            desta biblioteca (briefing 0085). `null` explícito no corpo
+            LIMPA o override (volta a herdar o global); campo AUSENTE deixa
+            inalterado.
     ScanStatus:
       type: object
       required: [running, files_seen, files_total]

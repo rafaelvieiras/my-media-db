@@ -93,6 +93,12 @@ type Querier interface {
 	// idioma global). O HANDLER (internal/server/library.go) ja validou o codigo
 	// contra app_settings.languages.allowed antes de chamar esta query.
 	AtualizarLibrarySourcePreferredLanguage(ctx context.Context, arg AtualizarLibrarySourcePreferredLanguageParams) (LibrarySource, error)
+	// PATCH /api/v1/library/{id} (briefing 0085): define ou limpa o override de
+	// intervalo de reentativa do enriquecimento retroativo da fonte. NULL
+	// explicito limpa (volta a usar o valor global). O HANDLER
+	// (internal/server/library.go) ja validou o intervalo (1-365) antes de
+	// chamar esta query.
+	AtualizarLibrarySourceRetroactiveEnrichmentDays(ctx context.Context, arg AtualizarLibrarySourceRetroactiveEnrichmentDaysParams) (LibrarySource, error)
 	// PATCH /api/v1/library/{id} (briefing 0064): liga/desliga watch_enabled. O
 	// handler chama a rotina de registro/desregistro do watcher fsnotify LOGO
 	// APOS este UPDATE (aplicado a quente, sem restart -- ver internal/watch).
@@ -215,6 +221,8 @@ type Querier interface {
 	// fica de fora do INSERT tambem: nasce 0 (DEFAULT, briefing 0064) -- o dono liga
 	// depois via PATCH. preferred_language (0084) entra explicito, NULLABLE -- o
 	// servico passa NULL quando o dono nao escolheu idioma preferido no cadastro.
+	// retroactive_enrichment_days (0085) entra explicito, NULLABLE -- o servico
+	// passa NULL quando o dono nao definiu override de reentativa no cadastro.
 	CriarLibrarySource(ctx context.Context, arg CriarLibrarySourceParams) (LibrarySource, error)
 	// CRUD de media_file + a query de POSSE DERIVADA (ADR-0009) + as queries do
 	// scanner (briefing 0009): dedup por content_hash, reencontro (rename/move) e
@@ -292,9 +300,13 @@ type Querier interface {
 	// entities com pelo menos um media_file 'present' (entity so-importada sem
 	// arquivo nao e alvo do scanner, fora de escopo aqui). Throttle: nunca
 	// tentado (NULL) tem prioridade, depois o mais antigo tentado primeiro;
-	// sqlc.arg('desde') e o corte de "tentado ha pouco tempo, pula por agora";
-	// sqlc.arg('limite') poda o lote por execucao (custo/rate-limit do
-	// provider externo, briefing 0056).
+	// sqlc.arg('dias_global') e o intervalo GLOBAL em dias (briefing 0085), usado
+	// como fallback quando nenhum media_file 'present' da entity vem de uma
+	// biblioteca com override; quando existe override, usa o MENOR valor entre
+	// as bibliotecas de origem via subquery correlacionada (o SQLite calcula o
+	// cutoff por linha com datetime('now', '-N days'), evitando duplicar essa
+	// conta em Go); sqlc.arg('limite') poda o lote por execucao (custo/rate-limit
+	// do provider externo, briefing 0056).
 	ListarElegiveisEnriquecimentoRetroativo(ctx context.Context, arg ListarElegiveisEnriquecimentoRetroativoParams) ([]ListarElegiveisEnriquecimentoRetroativoRow, error)
 	ListarEntities(ctx context.Context, arg ListarEntitiesParams) ([]Entity, error)
 	// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte imdb.

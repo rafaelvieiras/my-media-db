@@ -26,6 +26,7 @@ vi.mock('@tanstack/react-router', async () => {
 function fetchRouter(opts: {
   createResp?: () => Response
   browse?: Record<string, unknown>
+  retryDaysGlobal?: number
 }) {
   return vi.fn(async (url: string, init?: RequestInit) => {
     const u = new URL(String(url), 'http://localhost')
@@ -37,6 +38,12 @@ function fetchRouter(opts: {
         throw new Error(`path de browse não mockado no teste: ${path}`)
       }
       return okJson(resultado)
+    }
+    if (
+      u.pathname === '/api/v1/settings/enrichment-retroativo' &&
+      method === 'GET'
+    ) {
+      return okJson({ retry_days: opts.retryDaysGlobal ?? 15 })
     }
     if (u.pathname === '/api/v1/library' && method === 'POST') {
       return opts.createResp
@@ -56,6 +63,27 @@ afterEach(() => {
   spies.navigate.mockReset()
 })
 
+// Clica em "Adicionar datasource", espera a navegação de sucesso e devolve o
+// corpo (já parseado) do POST /library — os testes de submit só variam no que
+// preencheram antes e no que checam depois deste ponto em comum.
+async function clicarAdicionarEPegarCorpo(
+  user: ReturnType<typeof userEvent.setup>,
+  fetchMock: ReturnType<typeof fetchRouter>,
+) {
+  await user.click(screen.getByRole('button', { name: /Adicionar datasource/ }))
+
+  await waitFor(() =>
+    expect(spies.navigate).toHaveBeenCalledWith({ to: '/dashboard/library' }),
+  )
+  const chamada = fetchMock.mock.calls.find(
+    ([u, init]) =>
+      String(u) === '/api/v1/library' &&
+      (init as RequestInit | undefined)?.method === 'POST',
+  )
+  expect(chamada).toBeDefined()
+  return JSON.parse(String(chamada?.[1]?.body))
+}
+
 describe('LibraryNewScreen', () => {
   it('cria o datasource (caminho + tipo) e navega para /dashboard/library', async () => {
     const user = userEvent.setup()
@@ -68,20 +96,7 @@ describe('LibraryNewScreen', () => {
       '/mnt/series',
     )
     await user.selectOptions(screen.getByLabelText('Tipo do datasource'), 'tv')
-    await user.click(
-      screen.getByRole('button', { name: /Adicionar datasource/ }),
-    )
-
-    await waitFor(() =>
-      expect(spies.navigate).toHaveBeenCalledWith({ to: '/dashboard/library' }),
-    )
-    const chamada = fetchMock.mock.calls.find(
-      ([u, init]) =>
-        String(u) === '/api/v1/library' &&
-        (init as RequestInit | undefined)?.method === 'POST',
-    )
-    expect(chamada).toBeDefined()
-    const corpo = JSON.parse(String(chamada?.[1]?.body))
+    const corpo = await clicarAdicionarEPegarCorpo(user, fetchMock)
     expect(corpo).toEqual({
       path: '/mnt/series',
       type: 'tv',
@@ -121,6 +136,31 @@ describe('LibraryNewScreen', () => {
       await screen.findByText('o caminho informado não existe'),
     ).toBeInTheDocument()
     expect(spies.navigate).not.toHaveBeenCalled()
+  })
+
+  it('mostra o placeholder com o padrão global e cria com override de reentativa', async () => {
+    const user = userEvent.setup()
+    const fetchMock = fetchRouter({ retryDaysGlobal: 20 })
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithClient(<LibraryNewScreen />)
+
+    const input = await screen.findByLabelText(
+      'Reentativa de enriquecimento (dias) do datasource',
+    )
+    await waitFor(() =>
+      expect(input).toHaveAttribute(
+        'placeholder',
+        'Usar padrão global (20 dias)',
+      ),
+    )
+
+    await user.type(
+      screen.getByLabelText('Caminho do datasource'),
+      '/mnt/series',
+    )
+    await user.type(input, '7')
+    const corpo = await clicarAdicionarEPegarCorpo(user, fetchMock)
+    expect(corpo.retroactive_enrichment_days).toBe(7)
   })
 
   it('abre o PathBrowser atrás de "Procurar pasta…" e usa a pasta escolhida', async () => {

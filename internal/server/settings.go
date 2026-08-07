@@ -21,6 +21,20 @@ import (
 // appSettingLanguages é a chave da config de idioma em app_settings.
 const appSettingLanguages = "languages"
 
+// appSettingEnrichmentRetroativo é a chave da config de throttle do
+// enriquecimento retroativo em app_settings (briefing 0085).
+const appSettingEnrichmentRetroativo = "enrichment_retroativo"
+
+// retryDaysPadrao/retryDaysMinimo/retryDaysMaximo são o default (quando nunca
+// configurado) e o intervalo válido do throttle de reentativa (briefing
+// 0085): antes uma constante fixa de 30 dias em retroativo.go, agora
+// configurável pelo dono, com default de 15 dias.
+const (
+	retryDaysPadrao = 15
+	retryDaysMinimo = 1
+	retryDaysMaximo = 365
+)
+
 // languageSettings é a config de idioma canônica (ADR-0018): idioma principal,
 // fallback e o conjunto de permitidos. Serializada como value_json da chave
 // `languages`. É também o corpo do PUT e a resposta do GET.
@@ -37,13 +51,31 @@ func defaultLanguageSettings() languageSettings {
 	return languageSettings{Primary: "pt-BR", Fallback: "en", Allowed: []string{"pt-BR", "en"}}
 }
 
-// settingsCache guarda em memória a config de idioma já decodificada, protegido por
-// mutex. `carregado` distingue "ainda não lido" de "lido" (o valor pode ser o
-// default). Invalidado no PUT.
+// retroactiveEnrichmentSettings é a config de throttle do enriquecimento
+// retroativo (briefing 0085): intervalo mínimo, em dias, entre duas
+// tentativas do MESMO item sem provider. Serializada como value_json da
+// chave `enrichment_retroativo`. É também o corpo do PUT e a resposta do GET.
+type retroactiveEnrichmentSettings struct {
+	RetryDays int `json:"retry_days"`
+}
+
+// defaultRetroactiveEnrichmentSettings é o DEFAULT SEGURO usado quando a linha
+// `enrichment_retroativo` não existe (ou está corrompida): 15 dias.
+func defaultRetroactiveEnrichmentSettings() retroactiveEnrichmentSettings {
+	return retroactiveEnrichmentSettings{RetryDays: retryDaysPadrao}
+}
+
+// settingsCache guarda em memória a config de idioma e a de throttle do
+// enriquecimento retroativo já decodificadas, protegidas pelo MESMO mutex.
+// `carregado`/`retroCarregado` distinguem "ainda não lido" de "lido" (o valor
+// pode ser o default). Invalidados no PUT correspondente.
 type settingsCache struct {
 	mu        sync.Mutex
 	carregado bool
 	langs     languageSettings
+
+	retroCarregado bool
+	retro          retroactiveEnrichmentSettings
 }
 
 // obterLanguageSettings devolve a config de idioma, do cache quando já carregada,
@@ -76,10 +108,43 @@ func (s *Server) obterLanguageSettings(ctx context.Context) (languageSettings, e
 	return langs, nil
 }
 
+// obterRetroactiveEnrichmentSettings devolve a config de throttle do
+// enriquecimento retroativo, do cache quando já carregada, senão lendo
+// app_settings pela conexão de LEITURA. Linha ausente ou JSON inválido ⇒
+// default seguro (nunca erro por isso). Só um erro real de banco é propagado.
+// Espelha obterLanguageSettings linha a linha (briefing 0085).
+func (s *Server) obterRetroactiveEnrichmentSettings(ctx context.Context) (retroactiveEnrichmentSettings, error) {
+	s.settings.mu.Lock()
+	defer s.settings.mu.Unlock()
+	if s.settings.retroCarregado {
+		return s.settings.retro, nil
+	}
+	row, err := s.leitura().ObterAppSetting(ctx, appSettingEnrichmentRetroativo)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			s.settings.retro = defaultRetroactiveEnrichmentSettings()
+			s.settings.retroCarregado = true
+			return s.settings.retro, nil
+		}
+		return retroactiveEnrichmentSettings{}, err
+	}
+	retro := defaultRetroactiveEnrichmentSettings()
+	if row.ValueJson.Valid && row.ValueJson.String != "" {
+		var parsed retroactiveEnrichmentSettings
+		if json.Unmarshal([]byte(row.ValueJson.String), &parsed) == nil && parsed.valida() {
+			retro = parsed
+		}
+	}
+	s.settings.retro = retro
+	s.settings.retroCarregado = true
+	return retro, nil
+}
+
 // invalidarSettings zera o cache (chamado após o PUT gravar).
 func (s *Server) invalidarSettings() {
 	s.settings.mu.Lock()
 	s.settings.carregado = false
+	s.settings.retroCarregado = false
 	s.settings.mu.Unlock()
 }
 
@@ -96,6 +161,13 @@ func (l languageSettings) valida() bool {
 		}
 	}
 	return l.permite(l.Primary) && l.permite(l.Fallback)
+}
+
+// valida diz se a config de throttle é internamente consistente (briefing
+// 0085): retry_days dentro de [retryDaysMinimo, retryDaysMaximo]. É a regra
+// do PUT e o guarda contra um value_json corrompido no banco.
+func (r retroactiveEnrichmentSettings) valida() bool {
+	return r.RetryDays >= retryDaysMinimo && r.RetryDays <= retryDaysMaximo
 }
 
 // permite diz se o código está no conjunto de permitidos.
@@ -185,6 +257,57 @@ func (s *Server) putLanguageSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = sqlcgen.New(s.db.Write).UpsertAppSetting(r.Context(), sqlcgen.UpsertAppSettingParams{
 		Key:       appSettingLanguages,
+		ValueJson: sql.NullString{String: string(valor), Valid: true},
+	})
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	s.invalidarSettings()
+	writeJSON(w, http.StatusOK, body)
+}
+
+// getEnrichmentRetroativoSettings trata GET /api/v1/settings/enrichment-retroativo
+// (briefing 0085): devolve a config atual (ou o default seguro {retry_days:15}
+// quando ausente). Espelha getLanguageSettings.
+func (s *Server) getEnrichmentRetroativoSettings(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	cfg, err := s.obterRetroactiveEnrichmentSettings(r.Context())
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+// putEnrichmentRetroativoSettings trata PUT /api/v1/settings/enrichment-retroativo
+// (briefing 0085): valida (retry_days ∈ [1, 365]) e faz upsert, invalidando o
+// cache. Corpo malformado ⇒ 400; inválido ⇒ 422; sucesso ⇒ 200 com a config
+// gravada. Espelha putLanguageSettings.
+func (s *Server) putEnrichmentRetroativoSettings(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	var body retroactiveEnrichmentSettings
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "corpo JSON inválido")
+		return
+	}
+	if !body.valida() {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_body",
+			"config de enriquecimento retroativo inválida: retry_days deve estar entre 1 e 365")
+		return
+	}
+
+	valor, err := json.Marshal(body)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	_, err = sqlcgen.New(s.db.Write).UpsertAppSetting(r.Context(), sqlcgen.UpsertAppSettingParams{
+		Key:       appSettingEnrichmentRetroativo,
 		ValueJson: sql.NullString{String: string(valor), Valid: true},
 	})
 	if err != nil {

@@ -130,16 +130,17 @@ type JobExecution struct {
 }
 
 type LibrarySource struct {
-	ID                string
-	Path              string
-	Type              string
-	LastScan          sql.NullString
-	State             string
-	CreatedAt         string
-	UpdatedAt         string
-	ContentType       string
-	WatchEnabled      int64
-	PreferredLanguage sql.NullString
+	ID                        string
+	Path                      string
+	Type                      string
+	LastScan                  sql.NullString
+	State                     string
+	CreatedAt                 string
+	UpdatedAt                 string
+	ContentType               string
+	WatchEnabled              int64
+	PreferredLanguage         sql.NullString
+	RetroactiveEnrichmentDays sql.NullInt64
 }
 
 type MediaExternal struct {

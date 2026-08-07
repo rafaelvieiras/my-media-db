@@ -9,27 +9,29 @@
 -- fica de fora do INSERT tambem: nasce 0 (DEFAULT, briefing 0064) -- o dono liga
 -- depois via PATCH. preferred_language (0084) entra explicito, NULLABLE -- o
 -- servico passa NULL quando o dono nao escolheu idioma preferido no cadastro.
+-- retroactive_enrichment_days (0085) entra explicito, NULLABLE -- o servico
+-- passa NULL quando o dono nao definiu override de reentativa no cadastro.
 INSERT INTO library_source (
-    id, path, type, content_type, preferred_language
+    id, path, type, content_type, preferred_language, retroactive_enrichment_days
 ) VALUES (
-    ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?
 )
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language;
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days;
 
 -- name: ObterLibrarySource :one
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days
 FROM library_source
 WHERE id = ?;
 
 -- name: ObterLibrarySourcePorPath :one
 -- Usada pelo handler POST para detectar path duplicado (ja normalizado) antes
 -- do INSERT e responder 409 com mensagem clara em vez de estourar o UNIQUE.
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days
 FROM library_source
 WHERE path = ?;
 
 -- name: ListarLibrarySources :many
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days
 FROM library_source
 ORDER BY created_at, id;
 
@@ -37,7 +39,7 @@ ORDER BY created_at, id;
 -- Usada no BOOT do servidor (briefing 0064) para registrar o watcher fsnotify
 -- de cada fonte com watch_enabled=1 -- evita listar/filtrar em Go sobre TODAS
 -- as fontes so para achar as poucas com watch ligado.
-SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language
+SELECT id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days
 FROM library_source
 WHERE watch_enabled = 1
 ORDER BY created_at, id;
@@ -50,7 +52,7 @@ SET type = ?,
     state = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language;
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days;
 
 -- name: AtualizarLibrarySourceWatch :one
 -- PATCH /api/v1/library/{id} (briefing 0064): liga/desliga watch_enabled. O
@@ -60,7 +62,7 @@ UPDATE library_source
 SET watch_enabled = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language;
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days;
 
 -- name: AtualizarLibrarySourcePath :one
 -- PATCH /api/v1/library/{id} (briefing 0070): reaponta o datasource para um
@@ -73,7 +75,7 @@ UPDATE library_source
 SET path = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language;
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days;
 
 -- name: AtualizarLibrarySourcePreferredLanguage :one
 -- PATCH /api/v1/library/{id} (briefing 0084): define ou limpa o idioma
@@ -84,7 +86,19 @@ UPDATE library_source
 SET preferred_language = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
-RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language;
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days;
+
+-- name: AtualizarLibrarySourceRetroactiveEnrichmentDays :one
+-- PATCH /api/v1/library/{id} (briefing 0085): define ou limpa o override de
+-- intervalo de reentativa do enriquecimento retroativo da fonte. NULL
+-- explicito limpa (volta a usar o valor global). O HANDLER
+-- (internal/server/library.go) ja validou o intervalo (1-365) antes de
+-- chamar esta query.
+UPDATE library_source
+SET retroactive_enrichment_days = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+RETURNING id, path, type, last_scan, state, created_at, updated_at, content_type, watch_enabled, preferred_language, retroactive_enrichment_days;
 
 -- name: ApagarLibrarySource :exec
 DELETE FROM library_source

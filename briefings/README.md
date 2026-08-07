@@ -142,6 +142,8 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0080](0080-subrotas-edicao-item-estilo-tmdb.md) | Subrotas na edição de item, com sidebar no padrão do TMDB | feature | done | 0030, 0073 |
 | [0082](0082-hero-imersivo-estilo-jellyfin.md) | Hero imersivo (backdrop full-bleed, logo/banner/disco, trailer e player de tema musical) | feature | done | 0079, 0048, 0049, 0062 |
 | [0083](0083-area-administrativa-dashboard-com-sidebar.md) | Área administrativa unificada em `/dashboard`, com sidebar (Bibliotecas/Revisão/Órfãs/Jobs/Configurações/Saúde) | feature | done | 0071, 0075, 0080 |
+| [0084](0084-idioma-preferido-por-biblioteca.md) | Idioma preferido por biblioteca (busca + exibição) + match contra títulos alternativos/traduzidos | feature | done | 0019, 0050, 0056, 0060 |
+| [0085](0085-throttle-configuravel-enriquecimento-retroativo.md) | Throttle configurável do enriquecimento retroativo: valor global via painel (default 15 dias) + override por biblioteca | feature | done | 0019, 0056, 0084 |
 | [0067](0067-arvore-de-serie-em-todo-caminho-de-identidade-externa.md) | Árvore de série (temporada/episódio) em TODO caminho de identidade externa (Corrigir, confirmar candidato, auto-match, retroativo) | fix | done | 0031, 0043 |
 | [0069](0069-recasar-arquivos-pendentes-ao-sincronizar-arvore-serie.md) | Recasar arquivos pendentes de episódio ao sincronizar a árvore da série | fix | done | 0034, 0043, 0054, 0067 |
 | [0070](0070-editar-path-datasource-cadastrado.md) | Editar path de um datasource já cadastrado (recasca em cascata media_file/asset/nfo) | feature | done | 0008, 0062, 0064 |

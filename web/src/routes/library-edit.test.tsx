@@ -39,6 +39,7 @@ function fetchRouter(opts: {
   fonte?: Source
   patchResp?: () => Response
   deleteResp?: () => Response
+  retryDaysGlobal?: number
 }) {
   const items = opts.fonte ? [opts.fonte] : []
   return vi.fn(async (url: string, init?: RequestInit) => {
@@ -46,6 +47,9 @@ function fetchRouter(opts: {
     const method = init?.method ?? 'GET'
     if (u === '/api/v1/library' && method === 'GET') {
       return okJson({ items })
+    }
+    if (u === '/api/v1/settings/enrichment-retroativo' && method === 'GET') {
+      return okJson({ retry_days: opts.retryDaysGlobal ?? 15 })
     }
     if (u === '/api/v1/library/s1' && method === 'PATCH') {
       return opts.patchResp ? opts.patchResp() : okJson({ ...items[0] })
@@ -73,6 +77,26 @@ function chamouDelete(fetchMock: ReturnType<typeof fetchRouter>): boolean {
   )
 }
 
+// Clica em "Salvar", espera a navegação de sucesso e devolve o corpo (já
+// parseado) do PATCH /library/s1 — os testes de submit só variam no que
+// preencheram antes e no que checam depois deste ponto em comum.
+async function clicarSalvarEPegarCorpo(
+  user: ReturnType<typeof userEvent.setup>,
+  fetchMock: ReturnType<typeof fetchRouter>,
+) {
+  await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+  await waitFor(() =>
+    expect(spies.navigate).toHaveBeenCalledWith({ to: '/dashboard/library' }),
+  )
+  const chamada = fetchMock.mock.calls.find(
+    ([u, init]) =>
+      String(u) === '/api/v1/library/s1' &&
+      (init as RequestInit | undefined)?.method === 'PATCH',
+  )
+  return JSON.parse(String(chamada?.[1]?.body))
+}
+
 // abrirZonaDePerigo monta a tela, clica em "Remover datasource" e devolve
 // `user`/`fetchMock` para o teste continuar (confirmar ou cancelar).
 async function abrirZonaDePerigo() {
@@ -98,6 +122,42 @@ describe('LibraryEditScreen', () => {
     )
   })
 
+  it('pré-carrega o override de reentativa de enriquecimento quando a fonte já tem um', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchRouter({ fonte: source({ retroactive_enrichment_days: 45 }) }),
+    )
+    renderWithClient(<LibraryEditScreen />)
+
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText(
+          'Reentativa de enriquecimento (dias) do datasource',
+        ),
+      ).toHaveValue(45),
+    )
+  })
+
+  it('limpa o override de reentativa (campo vazio) e envia null no PATCH', async () => {
+    const user = userEvent.setup()
+    const fetchMock = fetchRouter({
+      fonte: source({ retroactive_enrichment_days: 45 }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithClient(<LibraryEditScreen />)
+
+    const input = await screen.findByLabelText(
+      'Reentativa de enriquecimento (dias) do datasource',
+    )
+    await waitFor(() => expect(input).toHaveValue(45))
+    await user.clear(input)
+    const corpo = await clicarSalvarEPegarCorpo(user, fetchMock)
+    expect(corpo).toEqual({
+      path: '/mnt/atual',
+      retroactive_enrichment_days: null,
+    })
+  })
+
   it('mostra "Datasource não encontrado" quando o id não existe na lista', async () => {
     vi.stubGlobal('fetch', fetchRouter({}))
     renderWithClient(<LibraryEditScreen />)
@@ -116,17 +176,8 @@ describe('LibraryEditScreen', () => {
     const input = await screen.findByLabelText('Caminho do datasource')
     await user.clear(input)
     await user.type(input, '/mnt/novo')
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    await waitFor(() =>
-      expect(spies.navigate).toHaveBeenCalledWith({ to: '/dashboard/library' }),
-    )
-    const chamada = fetchMock.mock.calls.find(
-      ([u, init]) =>
-        String(u) === '/api/v1/library/s1' &&
-        (init as RequestInit | undefined)?.method === 'PATCH',
-    )
-    expect(JSON.parse(String(chamada?.[1]?.body))).toEqual({
+    const corpo = await clicarSalvarEPegarCorpo(user, fetchMock)
+    expect(corpo).toEqual({
       path: '/mnt/novo',
     })
   })

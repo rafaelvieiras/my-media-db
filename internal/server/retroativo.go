@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -34,11 +33,6 @@ const (
 	// do provider externo numa biblioteca que pode ter um backlog grande na
 	// primeira vez que este briefing roda.
 	limiteEnriquecimentoRetroativoPorExecucao = 15
-
-	// intervaloReTentativaRetroativa é o intervalo mínimo entre duas
-	// tentativas do MESMO item -- não re-bate no provider por um item que já
-	// foi verificado recentemente e não achou nada (ou não bateu o limiar).
-	intervaloReTentativaRetroativa = 30 * 24 * time.Hour
 
 	// limiarSinalizacaoRetroativa é o piso de plausibilidade para gravar o
 	// item na fila de Revisão (via AtualizarConfidencePorEntity): abaixo
@@ -78,11 +72,19 @@ func (s *Server) EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizad
 		return 0, 0, nil
 	}
 
-	desde := time.Now().Add(-intervaloReTentativaRetroativa).UTC().Format(carimboRetroativoFormato)
+	// Throttle configurável (briefing 0085): intervalo GLOBAL vindo de
+	// app_settings (default retryDaysPadrao=15 quando nunca configurado); o
+	// override OPCIONAL por biblioteca é resolvido direto em SQL, dentro da
+	// própria query (COALESCE por library_source, MENOR valor em ambiguidade
+	// -- ver ListarElegiveisEnriquecimentoRetroativo).
+	cfgRetry, err := s.obterRetroactiveEnrichmentSettings(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
 	rows, err := s.leitura().ListarElegiveisEnriquecimentoRetroativo(ctx, sqlcgen.ListarElegiveisEnriquecimentoRetroativoParams{
-		Limiar: sql.NullFloat64{Float64: limiarBaixaConfianca, Valid: true},
-		Desde:  sql.NullString{String: desde, Valid: true},
-		Limite: limiteEnriquecimentoRetroativoPorExecucao,
+		Limiar:     sql.NullFloat64{Float64: limiarBaixaConfianca, Valid: true},
+		DiasGlobal: int64(cfgRetry.RetryDays),
+		Limite:     limiteEnriquecimentoRetroativoPorExecucao,
 	})
 	if err != nil {
 		return 0, 0, err
@@ -119,6 +121,57 @@ func (s *Server) EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizad
 		}
 	}
 	return aplicados, sinalizados, nil
+}
+
+// diasReentativaRetroativa resolve o intervalo de throttle (em dias)
+// aplicável a uma entity (briefing 0085): olha a biblioteca do PRIMEIRO
+// media_file 'present' (mesmo critério de desempate do idiomaDeBusca --
+// created_at ASC, id ASC, herdado da ordenação de
+// ListarMediaFilesPorEntity); com override definido em alguma biblioteca de
+// origem, usa o MENOR valor entre elas; sem override em NENHUMA (ou sem
+// media_file algum), cai no global. Ao contrário de idiomaDeBusca, entities
+// com media_files de bibliotecas com overrides DIFERENTES usam o MENOR valor
+// (nunca o global) -- decisão proposital: aqui ambiguidade só afeta QUANDO
+// retentar, nunca o resultado da busca, então errar para "retentar mais
+// cedo" é seguro (ver §6 do briefing 0085). Não é chamado por
+// EnriquecerRetroativo (a query em lote já resolve a mesma regra em SQL);
+// existe para decisão informativa/testes unitários e para um eventual uso
+// futuro (ex.: "próxima tentativa prevista" por item, §7 do briefing).
+func (s *Server) diasReentativaRetroativa(ctx context.Context, entityID string) (int, error) {
+	cfgRetry, err := s.obterRetroactiveEnrichmentSettings(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	files, err := s.leitura().ListarMediaFilesPorEntity(ctx, entityID)
+	if err != nil {
+		return 0, err
+	}
+
+	menor := -1
+	for _, f := range files {
+		if f.State != "present" || !f.LibrarySourceID.Valid || f.LibrarySourceID.String == "" {
+			continue
+		}
+		src, err := s.leitura().ObterLibrarySource(ctx, f.LibrarySourceID.String)
+		if err != nil {
+			// Fonte referenciada sumiu (raríssimo): degrada em silêncio, mesmo
+			// padrão de idiomaDeBusca.
+			continue
+		}
+		if !src.RetroactiveEnrichmentDays.Valid {
+			continue
+		}
+		v := int(src.RetroactiveEnrichmentDays.Int64)
+		if menor == -1 || v < menor {
+			menor = v
+		}
+	}
+
+	if menor == -1 {
+		return cfgRetry.RetryDays, nil
+	}
+	return menor, nil
 }
 
 // tentarEnriquecerOuSinalizar tenta enriquecer UMA entity elegível: deriva

@@ -1,13 +1,22 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Select } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import {
   ErrorState,
   FormSaveFooter,
   LoadingState,
 } from '@/components/query-states'
-import { languageSettingsQueryOptions } from '@/lib/queries'
-import { putLanguageSettings, type LanguageSettings } from '@/lib/api'
+import {
+  languageSettingsQueryOptions,
+  retroactiveEnrichmentSettingsQueryOptions,
+} from '@/lib/queries'
+import {
+  putLanguageSettings,
+  putRetroactiveEnrichmentSettings,
+  type LanguageSettings,
+  type RetroactiveEnrichmentSettings,
+} from '@/lib/api'
 import { IDIOMAS_DISPONIVEIS, rotuloIdioma } from '@/lib/languages'
 import { CatalogCompletenessForm } from '@/components/catalog-completeness-form'
 
@@ -19,6 +28,7 @@ export function SettingsScreen() {
   const { data, isPending, isError, error } = useQuery(
     languageSettingsQueryOptions,
   )
+  const retroativo = useQuery(retroactiveEnrichmentSettingsQueryOptions)
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
@@ -39,6 +49,33 @@ export function SettingsScreen() {
           />
         ) : (
           <LanguageSettingsForm inicial={data} />
+        )}
+      </section>
+
+      <section className="mb-10">
+        <div className="mb-4 flex flex-col gap-1">
+          <h2 className="font-heading text-lg font-semibold">
+            Enriquecimento retroativo
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Intervalo mínimo entre duas tentativas de reenriquecer o MESMO item,
+            para bibliotecas sem override próprio.
+          </p>
+        </div>
+
+        {retroativo.isPending ? (
+          <LoadingState label="Carregando configurações…" />
+        ) : retroativo.isError ? (
+          <ErrorState
+            title="Não foi possível carregar as configurações"
+            message={
+              retroativo.error instanceof Error
+                ? retroativo.error.message
+                : undefined
+            }
+          />
+        ) : (
+          <RetroactiveEnrichmentSettingsForm inicial={retroativo.data} />
         )}
       </section>
 
@@ -170,6 +207,84 @@ function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
           ))}
         </div>
       </fieldset>
+
+      <FormSaveFooter
+        erro={mensagemErro}
+        sucesso={mutation.isSuccess}
+        salvando={mutation.isPending}
+      />
+    </form>
+  )
+}
+
+// Formulário semeado pelo throttle vigente (briefing 0085). Mesmo padrão do
+// LanguageSettingsForm: input controlado, validação client-side espelhando o
+// backend ([1, 365]) e PUT via TanStack Query.
+function RetroactiveEnrichmentSettingsForm({
+  inicial,
+}: {
+  inicial: RetroactiveEnrichmentSettings
+}) {
+  const queryClient = useQueryClient()
+  const [retryDays, setRetryDays] = useState(String(inicial.retry_days))
+  const [erroValidacao, setErroValidacao] = useState<string | null>(null)
+
+  const mutation = useMutation({
+    mutationFn: (body: RetroactiveEnrichmentSettings) =>
+      putRetroactiveEnrichmentSettings(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['settings', 'enrichment-retroativo'],
+      })
+    },
+  })
+
+  // Espelha o backend (retry_days entre 1 e 365). Devolve a mensagem do 1º
+  // problema, ou null se válido.
+  function validar(valor: number): string | null {
+    if (!Number.isInteger(valor) || valor < 1 || valor > 365) {
+      return 'Informe um número inteiro entre 1 e 365 dias.'
+    }
+    return null
+  }
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const valor = Number(retryDays)
+    const problema = validar(valor)
+    setErroValidacao(problema)
+    if (problema) {
+      return
+    }
+    mutation.mutate({ retry_days: valor })
+  }
+
+  const erroServidor =
+    mutation.isError && mutation.error instanceof Error
+      ? mutation.error.message
+      : null
+  const mensagemErro = erroValidacao ?? erroServidor
+
+  return (
+    // noValidate: os atributos min/max abaixo são só um hint nativo (spinner/
+    // teclado numérico); a validação de verdade é a `validar()` acima —
+    // mesma mensagem pt-BR do backend, sem depender do balão nativo do
+    // navegador (que bloquearia o submit ANTES do onSubmit rodar).
+    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
+      <label className="flex max-w-64 flex-col gap-1.5">
+        <span className="text-sm font-medium">
+          Repetir tentativa após (dias)
+        </span>
+        <Input
+          type="number"
+          min={1}
+          max={365}
+          value={retryDays}
+          onChange={(e) => setRetryDays(e.target.value)}
+          aria-label="Repetir tentativa após (dias)"
+          aria-invalid={mensagemErro !== null || undefined}
+        />
+      </label>
 
       <FormSaveFooter
         erro={mensagemErro}

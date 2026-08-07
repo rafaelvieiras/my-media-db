@@ -476,6 +476,34 @@ export async function putLanguageSettings(
   return lerJson<LanguageSettings>(res)
 }
 
+// ── Settings de throttle do enriquecimento retroativo (0085) ────────────────
+
+export type RetroactiveEnrichmentSettings =
+  components['schemas']['RetroactiveEnrichmentSettings']
+
+// Intervalo mínimo (em dias) entre duas tentativas de enriquecimento
+// retroativo do MESMO item, aplicado às bibliotecas sem override próprio
+// (`Source.retroactive_enrichment_days`). Quando ainda não há linha gravada,
+// o backend responde o default seguro (`{"retry_days": 15}`).
+export async function getRetroactiveEnrichmentSettings(): Promise<RetroactiveEnrichmentSettings> {
+  return lerJson<RetroactiveEnrichmentSettings>(
+    await fetch(`${base}/api/v1/settings/enrichment-retroativo`),
+  )
+}
+
+// Grava (upsert) a config de throttle. O 422 do backend (`retry_days` fora de
+// [1, 365]) vira `ApiError` com a mensagem pt-BR — exibida inline.
+export async function putRetroactiveEnrichmentSettings(
+  body: RetroactiveEnrichmentSettings,
+): Promise<RetroactiveEnrichmentSettings> {
+  const res = await fetch(`${base}/api/v1/settings/enrichment-retroativo`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return lerJson<RetroactiveEnrichmentSettings>(res)
+}
+
 // ── Settings de completude de catalogação (0057) ─────────────────────────────
 
 // Config vigente de completude de CATALOGAÇÃO (por `entity.type`). Quando não

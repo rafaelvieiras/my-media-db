@@ -453,6 +453,13 @@ func (s *Server) Handler() (http.Handler, error) {
 				// catalogado. Diferente de completude de POSSE (front).
 				cfg.Get("/catalog-completeness", s.getCatalogCompletenessSettings)
 				cfg.Put("/catalog-completeness", s.putCatalogCompletenessSettings)
+
+				// Throttle do enriquecimento retroativo (briefing 0085): intervalo
+				// GLOBAL de reentativa, em dias, entre duas tentativas do MESMO
+				// item sem provider (default 15 dias). Override opcional por
+				// biblioteca vive em library_source (ver library.go).
+				cfg.Get("/enrichment-retroativo", s.getEnrichmentRetroativoSettings)
+				cfg.Put("/enrichment-retroativo", s.putEnrichmentRetroativoSettings)
 			})
 
 			// Datasources da biblioteca (briefing 0008). Escritas (POST/PATCH/

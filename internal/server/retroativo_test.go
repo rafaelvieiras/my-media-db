@@ -139,12 +139,16 @@ func TestListarElegiveisEnriquecimentoRetroativoRestricoesDeEscopo(t *testing.T)
 }
 
 // TestListarElegiveisEnriquecimentoRetroativoThrottle cobre o critério §5.5:
-// item tentado há MENOS de intervaloReTentativaRetroativa não volta;
-// nunca tentado e tentado há MAIS tempo voltam. Fixture de tempo CONTROLADO
-// (não time.Now() real).
+// item tentado há MENOS do que o throttle configurado (30 dias, neste teste) não volta;
+// nunca tentado e tentado há MAIS tempo voltam. A query resolve o cutoff via
+// datetime('now', ...) dentro do SQLite (briefing 0085), então os carimbos de
+// fixture são ancorados no tempo REAL (time.Now()), nunca numa data fixa.
 func TestListarElegiveisEnriquecimentoRetroativoThrottle(t *testing.T) {
 	_, d := setupEntitiesServer(t)
-	agora := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	// Relógio de teste ancora no tempo REAL (nunca em data fixa): a query
+	// agora resolve o cutoff via datetime('now', ...) dentro do próprio
+	// SQLite (briefing 0085), não mais um `desde` pré-formatado em Go.
+	agora := time.Now()
 
 	semearEntity(t, d, "e-nunca", "movie", "Nunca Tentado")
 	semearFile(t, d, "f-nunca", "e-nunca", "/lib/nunca.mkv", "present", 70, "")
@@ -157,12 +161,11 @@ func TestListarElegiveisEnriquecimentoRetroativoThrottle(t *testing.T) {
 	semearFile(t, d, "f-antigo", "e-antigo", "/lib/antigo.mkv", "present", 70, "")
 	carimbarTentativa(t, d, "e-antigo", agora.Add(-31*24*time.Hour))
 
-	desde := agora.Add(-intervaloReTentativaRetroativa).UTC().Format(carimboRetroativoFormato)
 	rows, err := escrita(t, d).ListarElegiveisEnriquecimentoRetroativo(context.Background(),
 		sqlcgen.ListarElegiveisEnriquecimentoRetroativoParams{
-			Limiar: sql.NullFloat64{Float64: limiarBaixaConfianca, Valid: true},
-			Desde:  sql.NullString{String: desde, Valid: true},
-			Limite: 100,
+			Limiar:     sql.NullFloat64{Float64: limiarBaixaConfianca, Valid: true},
+			DiasGlobal: 30,
+			Limite:     100,
 		})
 	if err != nil {
 		t.Fatalf("ListarElegiveisEnriquecimentoRetroativo: %v", err)
@@ -184,7 +187,9 @@ func TestListarElegiveisEnriquecimentoRetroativoThrottle(t *testing.T) {
 // ANTES de tentados-há-muito-tempo (mais antigo primeiro entre estes).
 func TestListarElegiveisEnriquecimentoRetroativoLimiteEPrioridade(t *testing.T) {
 	_, d := setupEntitiesServer(t)
-	agora := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	// Relógio de teste ancora no tempo REAL -- ver nota do teste de Throttle
+	// acima.
+	agora := time.Now()
 
 	semearEntity(t, d, "e-nulo-b", "movie", "Nulo B")
 	semearFile(t, d, "f-nulo-b", "e-nulo-b", "/lib/b.mkv", "present", 70, "")
@@ -199,12 +204,11 @@ func TestListarElegiveisEnriquecimentoRetroativoLimiteEPrioridade(t *testing.T) 
 	semearFile(t, d, "f-menos-velho", "e-menos-velho", "/lib/menosvelho.mkv", "present", 70, "")
 	carimbarTentativa(t, d, "e-menos-velho", agora.Add(-40*24*time.Hour))
 
-	desde := agora.Add(-intervaloReTentativaRetroativa).UTC().Format(carimboRetroativoFormato)
 	rows, err := escrita(t, d).ListarElegiveisEnriquecimentoRetroativo(context.Background(),
 		sqlcgen.ListarElegiveisEnriquecimentoRetroativoParams{
-			Limiar: sql.NullFloat64{Float64: limiarBaixaConfianca, Valid: true},
-			Desde:  sql.NullString{String: desde, Valid: true},
-			Limite: 3,
+			Limiar:     sql.NullFloat64{Float64: limiarBaixaConfianca, Valid: true},
+			DiasGlobal: 30,
+			Limite:     3,
 		})
 	if err != nil {
 		t.Fatalf("ListarElegiveisEnriquecimentoRetroativo: %v", err)
@@ -220,17 +224,18 @@ func TestListarElegiveisEnriquecimentoRetroativoLimiteEPrioridade(t *testing.T) 
 	}
 }
 
-// listarElegiveisTeste chama a query com um `desde` no futuro (qualquer item
-// nunca tentado ou tentado no passado volta) e um limite alto -- usado pelos
+// listarElegiveisTeste chama a query com um DiasGlobal irrelevante (os
+// fixtures usados pelos chamadores desta função NUNCA carimbam
+// last_external_match_attempt_at, então a condição IS NULL já basta -- o
+// valor do throttle não entra em jogo) e um limite alto -- usado pelos
 // testes que não exercitam o throttle/limite em si.
 func listarElegiveisTeste(t *testing.T, d *db.DB, limite int64) []sqlcgen.ListarElegiveisEnriquecimentoRetroativoRow {
 	t.Helper()
-	desde := time.Now().Add(24 * time.Hour).UTC().Format(carimboRetroativoFormato)
 	rows, err := escrita(t, d).ListarElegiveisEnriquecimentoRetroativo(context.Background(),
 		sqlcgen.ListarElegiveisEnriquecimentoRetroativoParams{
-			Limiar: sql.NullFloat64{Float64: limiarBaixaConfianca, Valid: true},
-			Desde:  sql.NullString{String: desde, Valid: true},
-			Limite: limite,
+			Limiar:     sql.NullFloat64{Float64: limiarBaixaConfianca, Valid: true},
+			DiasGlobal: retryDaysPadrao,
+			Limite:     limite,
 		})
 	if err != nil {
 		t.Fatalf("ListarElegiveisEnriquecimentoRetroativo: %v", err)
@@ -664,7 +669,7 @@ func TestEnrichMissingSemCandidato(t *testing.T) {
 
 // TestEnrichMissingIgnoraThrottle cobre o critério §5: o endpoint individual
 // FUNCIONA mesmo quando last_external_match_attempt_at foi carimbado há
-// MENOS de intervaloReTentativaRetroativa (30 dias) -- diferente do job em
+// MENOS do que o intervalo de throttle configurado (30 dias, neste teste) -- diferente do job em
 // lote (EnriquecerRetroativo), que nunca chegaria a chamar
 // tentarEnriquecerOuSinalizar para este item (filtrado pela query). O
 // endpoint não faz NENHUMA checagem de throttle antes de chamar a

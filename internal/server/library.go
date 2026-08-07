@@ -31,6 +31,11 @@ type sourceDTO struct {
 	// biblioteca (briefing 0084); nil = sem preferência, usa o idioma
 	// global de app_settings.
 	PreferredLanguage *string `json:"preferred_language"`
+	// RetroactiveEnrichmentDays é o override OPCIONAL do intervalo de
+	// reentativa do enriquecimento retroativo desta biblioteca (briefing
+	// 0085); nil = sem override, usa o valor global de
+	// app_settings.enrichment_retroativo.
+	RetroactiveEnrichmentDays *int `json:"retroactive_enrichment_days"`
 }
 
 // patchSourceRequest é o corpo aceito por PATCH /api/v1/library/{id}
@@ -42,9 +47,10 @@ type sourceDTO struct {
 // distinguir as três formas: campo AUSENTE no JSON deixa inalterado; `null`
 // explícito limpa a preferência; uma string define.
 type patchSourceRequest struct {
-	WatchEnabled      *bool        `json:"watch_enabled"`
-	Path              *string      `json:"path"`
-	PreferredLanguage jsonNullable `json:"preferred_language"`
+	WatchEnabled              *bool           `json:"watch_enabled"`
+	Path                      *string         `json:"path"`
+	PreferredLanguage         jsonNullable    `json:"preferred_language"`
+	RetroactiveEnrichmentDays jsonNullableInt `json:"retroactive_enrichment_days"`
 }
 
 // jsonNullable distingue as TRÊS formas de um campo JSON opcional-e-anulável
@@ -79,6 +85,29 @@ func (n *jsonNullable) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// jsonNullableInt é o equivalente de jsonNullable para um campo INTEIRO
+// opcional-e-anulável (briefing 0085, retroactive_enrichment_days do patch):
+// ausente / `null` explícito / valor. MESMA técnica (campo de VALOR, não
+// ponteiro) e MESMO motivo -- ver o comentário de jsonNullable acima.
+type jsonNullableInt struct {
+	Present bool
+	Value   *int
+}
+
+func (n *jsonNullableInt) UnmarshalJSON(data []byte) error {
+	n.Present = true
+	if string(data) == "null" {
+		n.Value = nil
+		return nil
+	}
+	var v int
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	n.Value = &v
+	return nil
+}
+
 // listDTO é a resposta de GET /api/v1/library.
 type listDTO struct {
 	Items []sourceDTO `json:"items"`
@@ -93,6 +122,12 @@ type createRequest struct {
 	// PreferredLanguage e opcional (0084): idioma preferido de busca/exibicao
 	// desta biblioteca. Omitido/vazio => sem preferencia (usa o idioma global).
 	PreferredLanguage string `json:"preferred_language"`
+	// RetroactiveEnrichmentDays e opcional (0085): override do intervalo de
+	// reentativa do enriquecimento retroativo desta biblioteca. Omitido/nil
+	// => sem override (usa o valor global). Ponteiro porque 0 nao e um valor
+	// valido (o intervalo minimo e 1) -- diferenciar "ausente" de "0" evita
+	// silenciosamente aceitar um valor invalido como se fosse "sem override".
+	RetroactiveEnrichmentDays *int `json:"retroactive_enrichment_days"`
 }
 
 // browseEntryDTO é a forma de serialização de uma entrada do navegador de
@@ -129,14 +164,15 @@ func toBrowseDTO(r library.BrowseResult) browseResultDTO {
 // toDTO converte a Source de domínio para a forma serializável.
 func toDTO(s library.Source) sourceDTO {
 	return sourceDTO{
-		ID:                s.ID,
-		Path:              s.Path,
-		Type:              s.Type,
-		ContentType:       s.ContentType,
-		State:             s.State,
-		LastScan:          s.LastScan,
-		WatchEnabled:      s.WatchEnabled,
-		PreferredLanguage: s.PreferredLanguage,
+		ID:                        s.ID,
+		Path:                      s.Path,
+		Type:                      s.Type,
+		ContentType:               s.ContentType,
+		State:                     s.State,
+		LastScan:                  s.LastScan,
+		WatchEnabled:              s.WatchEnabled,
+		PreferredLanguage:         s.PreferredLanguage,
+		RetroactiveEnrichmentDays: s.RetroactiveEnrichmentDays,
 	}
 }
 
@@ -205,8 +241,11 @@ func (s *Server) createLibrary(w http.ResponseWriter, r *http.Request) {
 	if !s.validarPreferredLanguageOuErro(ctx, w, preferredLanguage) {
 		return
 	}
+	if !validarRetroactiveEnrichmentDaysOuErro(w, req.RetroactiveEnrichmentDays) {
+		return
+	}
 
-	src, err := s.library.Criar(ctx, req.Path, req.Type, req.ContentType, preferredLanguage)
+	src, err := s.library.Criar(ctx, req.Path, req.Type, req.ContentType, preferredLanguage, req.RetroactiveEnrichmentDays)
 	if err != nil {
 		respondLibraryError(w, err)
 		return
@@ -243,6 +282,24 @@ func (s *Server) validarPreferredLanguageOuErro(ctx context.Context, w http.Resp
 	if !cfg.permite(*lang) {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_body",
 			"preferred_language fora dos idiomas permitidos")
+		return false
+	}
+	return true
+}
+
+// validarRetroactiveEnrichmentDaysOuErro valida um override não-nil de
+// retroactive_enrichment_days contra o intervalo [retryDaysMinimo,
+// retryDaysMaximo] (briefing 0085), escrevendo 422 invalid_body quando fora
+// da faixa. dias nil nunca valida nada (sem override é sempre válido).
+// ok=false quando a resposta já foi escrita -- o chamador deve retornar
+// imediatamente nesse caso.
+func validarRetroactiveEnrichmentDaysOuErro(w http.ResponseWriter, dias *int) bool {
+	if dias == nil {
+		return true
+	}
+	if *dias < retryDaysMinimo || *dias > retryDaysMaximo {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_body",
+			"retroactive_enrichment_days fora do intervalo permitido (1-365)")
 		return false
 	}
 	return true
@@ -342,6 +399,9 @@ func (s *Server) patchLibrary(w http.ResponseWriter, r *http.Request) {
 	if req.PreferredLanguage.Present && !s.validarPreferredLanguageOuErro(ctx, w, req.PreferredLanguage.Value) {
 		return
 	}
+	if req.RetroactiveEnrichmentDays.Present && !validarRetroactiveEnrichmentDaysOuErro(w, req.RetroactiveEnrichmentDays.Value) {
+		return
+	}
 
 	src, err := s.aplicarPatchLibrary(ctx, id, req)
 	if err != nil {
@@ -351,14 +411,16 @@ func (s *Server) patchLibrary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toDTO(src))
 }
 
-// aplicarPatchLibrary aplica o patch parcial (path e/ou watch_enabled) e
-// devolve a fonte final -- extraído de patchLibrary para manter a
-// complexidade ciclomática baixa. Corpo vazio (os dois nil) só devolve o
-// estado atual, sem tocar nada. path é aplicado PRIMEIRO (recasco em
-// cascata via AtualizarPath); watch_enabled depois, aplicado A QUENTE pelo
-// watcher fsnotify (aplicarWatchToggle).
+// aplicarPatchLibrary aplica o patch parcial (path e/ou watch_enabled e/ou
+// preferred_language e/ou retroactive_enrichment_days) e devolve a fonte
+// final -- extraído de patchLibrary para manter a complexidade ciclomática
+// baixa. Corpo vazio (nenhum campo presente) só devolve o estado atual, sem
+// tocar nada. path é aplicado PRIMEIRO (recasco em cascata via
+// AtualizarPath); preferred_language e retroactive_enrichment_days depois;
+// watch_enabled por último, aplicado A QUENTE pelo watcher fsnotify
+// (aplicarWatchToggle).
 func (s *Server) aplicarPatchLibrary(ctx context.Context, id string, req patchSourceRequest) (library.Source, error) {
-	if req.Path == nil && req.WatchEnabled == nil && !req.PreferredLanguage.Present {
+	if req.Path == nil && req.WatchEnabled == nil && !req.PreferredLanguage.Present && !req.RetroactiveEnrichmentDays.Present {
 		return s.library.Obter(ctx, id)
 	}
 
@@ -369,6 +431,13 @@ func (s *Server) aplicarPatchLibrary(ctx context.Context, id string, req patchSo
 
 	if req.PreferredLanguage.Present {
 		src, err = s.library.AtualizarPreferredLanguage(ctx, id, req.PreferredLanguage.Value)
+		if err != nil {
+			return library.Source{}, err
+		}
+	}
+
+	if req.RetroactiveEnrichmentDays.Present {
+		src, err = s.library.AtualizarRetroactiveEnrichmentDays(ctx, id, req.RetroactiveEnrichmentDays.Value)
 		if err != nil {
 			return library.Source{}, err
 		}

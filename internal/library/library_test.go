@@ -93,7 +93,7 @@ func TestCriarDiretorioValido(t *testing.T) {
 	s := novoServico(t)
 	dir := t.TempDir()
 
-	src, err := s.Criar(context.Background(), dir, "movie", "", nil)
+	src, err := s.Criar(context.Background(), dir, "movie", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestCriarNormalizaPathNaoLimpo(t *testing.T) {
 	dir := t.TempDir()
 	naoLimpo := filepath.Join(dir, "..", filepath.Base(dir))
 
-	src, err := s.Criar(context.Background(), naoLimpo, "tv", "", nil)
+	src, err := s.Criar(context.Background(), naoLimpo, "tv", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar path não-limpo: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestCriarErrosDeValidacao(t *testing.T) {
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
-			_, err := s.Criar(ctx, c.path, c.tipo, "", nil)
+			_, err := s.Criar(ctx, c.path, c.tipo, "", nil, nil)
 			if !errors.Is(err, c.querErr) {
 				t.Errorf("erro = %v, quero %v", err, c.querErr)
 			}
@@ -170,7 +170,7 @@ func TestCriarSemPermissao(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
 
-	_, err := s.Criar(context.Background(), dir, "movie", "", nil)
+	_, err := s.Criar(context.Background(), dir, "movie", "", nil, nil)
 	if !errors.Is(err, library.ErrPathIlegivel) {
 		t.Errorf("erro = %v, quero ErrPathIlegivel", err)
 	}
@@ -181,10 +181,10 @@ func TestCriarDuplicado(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	if _, err := s.Criar(ctx, dir, "movie", "", nil); err != nil {
+	if _, err := s.Criar(ctx, dir, "movie", "", nil, nil); err != nil {
 		t.Fatalf("primeiro Criar: %v", err)
 	}
-	_, err := s.Criar(ctx, dir, "movie", "", nil)
+	_, err := s.Criar(ctx, dir, "movie", "", nil, nil)
 	if !errors.Is(err, library.ErrPathDuplicado) {
 		t.Errorf("erro = %v, quero ErrPathDuplicado", err)
 	}
@@ -198,11 +198,11 @@ func TestListarEObterComStateReavaliado(t *testing.T) {
 	if err := os.Mkdir(dirRemovido, 0o755); err != nil {
 		t.Fatalf("Mkdir: %v", err)
 	}
-	removido, err := s.Criar(ctx, dirRemovido, "movie", "", nil)
+	removido, err := s.Criar(ctx, dirRemovido, "movie", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar removido: %v", err)
 	}
-	if _, err := s.Criar(ctx, t.TempDir(), "tv", "", nil); err != nil {
+	if _, err := s.Criar(ctx, t.TempDir(), "tv", "", nil, nil); err != nil {
 		t.Fatalf("Criar vivo: %v", err)
 	}
 
@@ -243,7 +243,7 @@ func TestContentType(t *testing.T) {
 	ctx := context.Background()
 
 	// Omitido => "movie".
-	filme, err := s.Criar(ctx, t.TempDir(), "movie", "", nil)
+	filme, err := s.Criar(ctx, t.TempDir(), "movie", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar filme: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestContentType(t *testing.T) {
 	}
 
 	// "series" persiste e volta no Obter.
-	serie, err := s.Criar(ctx, t.TempDir(), "tv", "series", nil)
+	serie, err := s.Criar(ctx, t.TempDir(), "tv", "series", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar serie: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestApagar(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	src, err := s.Criar(ctx, dir, "movie", "", nil)
+	src, err := s.Criar(ctx, dir, "movie", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 	q := sqlcgen.New(d.Write)
 
 	dirAntigo := t.TempDir()
-	src, err := s.Criar(ctx, dirAntigo, "tv", "series", nil)
+	src, err := s.Criar(ctx, dirAntigo, "tv", "series", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar: %v", err)
 	}
@@ -524,7 +524,7 @@ func TestAtualizarPathNoOp(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	src, err := s.Criar(ctx, dir, "movie", "", nil)
+	src, err := s.Criar(ctx, dir, "movie", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar: %v", err)
 	}
@@ -547,11 +547,11 @@ func TestAtualizarPathDuplicado(t *testing.T) {
 	dirA := t.TempDir()
 	dirB := t.TempDir()
 
-	srcA, err := s.Criar(ctx, dirA, "movie", "", nil)
+	srcA, err := s.Criar(ctx, dirA, "movie", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar A: %v", err)
 	}
-	if _, err := s.Criar(ctx, dirB, "movie", "", nil); err != nil {
+	if _, err := s.Criar(ctx, dirB, "movie", "", nil, nil); err != nil {
 		t.Fatalf("Criar B: %v", err)
 	}
 
@@ -574,7 +574,7 @@ func TestAtualizarPathDuplicado(t *testing.T) {
 func TestAtualizarPathErrosDeValidacao(t *testing.T) {
 	s := novoServico(t)
 	ctx := context.Background()
-	src, err := s.Criar(ctx, t.TempDir(), "movie", "", nil)
+	src, err := s.Criar(ctx, t.TempDir(), "movie", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar: %v", err)
 	}
@@ -611,7 +611,7 @@ func TestAtualizarPathSemPermissao(t *testing.T) {
 	}
 	s := novoServico(t)
 	ctx := context.Background()
-	src, err := s.Criar(ctx, t.TempDir(), "movie", "", nil)
+	src, err := s.Criar(ctx, t.TempDir(), "movie", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar: %v", err)
 	}
@@ -650,7 +650,7 @@ func TestApagarComArquivos(t *testing.T) {
 	s := library.New(d)
 
 	// Fonte de séries com um episódio escaneado.
-	src, err := s.Criar(ctx, t.TempDir(), "tv", "series", nil)
+	src, err := s.Criar(ctx, t.TempDir(), "tv", "series", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar: %v", err)
 	}
