@@ -82,9 +82,24 @@ test('adicionar e remover datasource', async ({ page }) => {
   await page.getByRole('link', { name: 'Editar' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Editar datasource' })).toBeVisible()
   // O override de reentativa (0085) gravado na criacao pre-carrega aqui.
+  const inputReentativa = page.getByLabel(
+    'Reentativa de enriquecimento (dias) do datasource',
+  )
+  await expect(inputReentativa).toHaveValue('20')
+
+  // Editar o override e salvar (PATCH parcial so manda o campo se "tocado" --
+  // exercita esse ramo, distinto do path-only da jornada de recasco).
+  await inputReentativa.fill('45')
+  await page.getByRole('button', { name: 'Salvar' }).click()
+  await expect(page).toHaveURL('/dashboard/library')
+
+  // Reabre a edicao: o novo valor persistiu no PATCH.
+  await page.getByRole('link', { name: 'Editar' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Editar datasource' })).toBeVisible()
   await expect(
     page.getByLabel('Reentativa de enriquecimento (dias) do datasource'),
-  ).toHaveValue('20')
+  ).toHaveValue('45')
+
   await page.getByRole('button', { name: 'Remover datasource' }).click()
   const dialogo = page.getByRole('alertdialog', { name: 'Confirmar remoção do datasource' })
   await expect(dialogo).toBeVisible()

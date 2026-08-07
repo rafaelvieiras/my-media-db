@@ -77,6 +77,16 @@ test('pagina de configuracoes de enriquecimento retroativo (throttle global)', a
   // Default global: 15 dias.
   await expect(input).toHaveValue('15')
 
+  // Validacao client-side (espelha o backend, [1, 365]): valor fora do
+  // intervalo mostra a mensagem inline e NAO dispara o PUT.
+  await input.fill('400')
+  await formRetroativo.getByRole('button', { name: 'Salvar' }).click()
+  await expect(
+    formRetroativo.getByText('Informe um número inteiro entre 1 e 365 dias.'),
+  ).toBeVisible()
+  const resNaoDisparado = await request.get('/api/v1/settings/enrichment-retroativo')
+  expect(await resNaoDisparado.json()).toEqual({ retry_days: 15 })
+
   await input.fill('20')
   await formRetroativo.getByRole('button', { name: 'Salvar' }).click()
   await expect(formRetroativo.getByText('Configurações salvas.')).toBeVisible()
