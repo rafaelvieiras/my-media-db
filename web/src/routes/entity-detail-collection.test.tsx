@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import { EntityDetailScreen } from '@/routes/entity-detail'
 import { LanguageProvider } from '@/lib/language-context'
 import type { ResolvedEntity } from '@/lib/api'
@@ -13,16 +12,20 @@ import {
   settingsPadrao,
 } from '@/test/entity-fixtures'
 
-// Cobre a tela da entity quando é COLEÇÃO (0026): a ação "Excluir coleção" (duas
-// etapas → purga → volta à biblioteca) e a ausência da seção Arquivos. `useNavigate`
-// é spy (a exclusão navega para "/"). `Link` vira um <a> simples.
+// Cobre a tela da entity quando é COLEÇÃO (0026): a ação "Excluir coleção" —
+// desde o 0086, um item DESTRUTIVO dentro do dropdown "Gerenciar", que abre um
+// AlertDialog de confirmação em vez de mutar direto (purga → volta à
+// biblioteca) — e a ausência da seção Arquivos. `useNavigate` é spy (a
+// exclusão navega para "/"). `Link` usa o mock compartilhado (jscpd — o
+// `{...rest}` preserva `role`/demais props que o Radix `asChild` clona no
+// filho).
 const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async () => ({
   useParams: () => ({ id: 'e1' }),
   useSearch: () => ({ ordering: undefined }),
   useNavigate: () => spies.navigate,
-  Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
+  Link: (await import('@/test/link-mock')).LinkMock,
 }))
 
 // Roteia o fetch: settings, membros (vazio), assets (vazio), override (vazio), a
@@ -70,6 +73,15 @@ function renderColecao(onDelete: () => void, over = {}) {
   )
 }
 
+// abrirMenuEItemExcluir abre o dropdown "Gerenciar" e clica no item
+// destrutivo "Excluir coleção" — que abre o AlertDialog de confirmação
+// (NÃO purga direto, briefing 0086).
+async function abrirMenuEItemExcluir(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: /Gerenciar/ }))
+  await user.click(screen.getByRole('menuitem', { name: 'Excluir coleção' }))
+  await screen.findByRole('alertdialog', { name: 'Excluir coleção?' })
+}
+
 beforeEach(() => {
   localStorage.clear()
 })
@@ -79,19 +91,15 @@ afterEach(() => {
   spies.navigate.mockReset()
 })
 
-describe('EntityDetailScreen — coleção (0026)', () => {
-  it('exclui a coleção em duas etapas, purga e volta à biblioteca', async () => {
+describe('EntityDetailScreen — coleção (0026/0086)', () => {
+  it('exclui a coleção via AlertDialog, purga e volta à biblioteca', async () => {
     const onDelete = vi.fn()
     renderColecao(onDelete)
     const user = userEvent.setup()
 
-    const abrir = await screen.findByRole('button', { name: 'Excluir coleção' })
-    await user.click(abrir)
-    // 2ª etapa: só o botão de confirmação dispara a purga.
-    const confirmar = await screen.findByRole('button', {
-      name: 'Excluir coleção?',
-    })
-    await user.click(confirmar)
+    await abrirMenuEItemExcluir(user)
+    // Confirma no AlertDialog: só o botão de ação dispara a purga.
+    await user.click(screen.getByRole('button', { name: 'Excluir coleção' }))
 
     await waitFor(() => expect(onDelete).toHaveBeenCalledTimes(1))
     await waitFor(() =>
@@ -99,25 +107,24 @@ describe('EntityDetailScreen — coleção (0026)', () => {
     )
   })
 
-  it('cancelar a exclusão não purga', async () => {
+  it('cancelar a exclusão fecha o diálogo sem purgar', async () => {
     const onDelete = vi.fn()
     renderColecao(onDelete)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', { name: 'Excluir coleção' }),
-    )
+    await abrirMenuEItemExcluir(user)
     await user.click(screen.getByRole('button', { name: 'Cancelar' }))
 
-    expect(
-      screen.queryByRole('button', { name: 'Excluir coleção?' }),
-    ).toBeNull()
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).toBeNull()
+    })
     expect(onDelete).not.toHaveBeenCalled()
+    expect(spies.navigate).not.toHaveBeenCalled()
   })
 
   it('coleção não mostra a seção de Arquivos', async () => {
     renderColecao(() => {})
-    await screen.findByRole('button', { name: 'Excluir coleção' })
+    await screen.findByRole('button', { name: /Gerenciar/ })
     expect(screen.queryByRole('heading', { name: 'Arquivos' })).toBeNull()
   })
 })

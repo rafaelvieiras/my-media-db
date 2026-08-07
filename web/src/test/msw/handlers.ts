@@ -54,6 +54,7 @@ export function entidadeResolvidaPadrao(
     ancestors: [],
     ownership: null,
     catalog_completeness: { complete: true, missing: [] },
+    ratings: [],
     ...overrides,
   }
 }

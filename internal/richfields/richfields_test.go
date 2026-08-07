@@ -139,7 +139,7 @@ func TestSimilaresDe(t *testing.T) {
 func TestLinksExternos(t *testing.T) {
 	campos := map[string]any{"external_links": map[string]any{"imdb": "https://imdb/x", "vazio": ""}}
 	// Com id TMDB → acrescenta o link do TMDB; ignora entradas vazias.
-	links := LinksExternos(campos, "movie", "603")
+	links := LinksExternos(campos, "movie", "603", "", "")
 	if links["imdb"] != "https://imdb/x" || links["tmdb"] != "https://www.themoviedb.org/movie/603" {
 		t.Errorf("links = %v", links)
 	}
@@ -147,9 +147,37 @@ func TestLinksExternos(t *testing.T) {
 		t.Error("entrada vazia não deveria entrar")
 	}
 	// Sem id TMDB → sem link do TMDB.
-	links = LinksExternos(campos, "", "")
+	links = LinksExternos(campos, "", "", "", "")
 	if _, ok := links["tmdb"]; ok {
 		t.Error("sem id TMDB, não deveria ter link tmdb")
+	}
+}
+
+// TestLinksExternosImdbTvdb (0086) cobre os ids crus de imdb/tvdb: preenchem o mapa
+// quando a fonte não os modelou em `external_links`, mas NUNCA sobrescrevem o que a
+// fonte já mandou (precedência do canônico sobre o id cru).
+func TestLinksExternosImdbTvdb(t *testing.T) {
+	// Sem external_links algum: imdb/tvdb crus montam as URLs canônicas.
+	links := LinksExternos(map[string]any{}, "tv", "1399", "tt0944947", "121361")
+	if links["tmdb"] != "https://www.themoviedb.org/tv/1399" {
+		t.Errorf("tmdb = %q", links["tmdb"])
+	}
+	if links["imdb"] != "https://www.imdb.com/title/tt0944947/" {
+		t.Errorf("imdb = %q", links["imdb"])
+	}
+	if links["tvdb"] != "https://www.thetvdb.com/dereferrer/series/121361" {
+		t.Errorf("tvdb = %q", links["tvdb"])
+	}
+
+	// external_links já tem um imdb (mais específico) → o id cru NÃO sobrescreve.
+	campos := map[string]any{"external_links": map[string]any{"imdb": "https://imdb/da-fonte"}}
+	links = LinksExternos(campos, "tv", "1399", "tt0944947", "121361")
+	if links["imdb"] != "https://imdb/da-fonte" {
+		t.Errorf("imdb deveria preservar o valor da fonte, veio %q", links["imdb"])
+	}
+	// tvdb ainda entra (a fonte não modelou esse).
+	if links["tvdb"] != "https://www.thetvdb.com/dereferrer/series/121361" {
+		t.Errorf("tvdb = %q", links["tvdb"])
 	}
 }
 

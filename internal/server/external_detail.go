@@ -208,15 +208,18 @@ func (s *Server) montarDetalheExterno(ctx context.Context, source, id, tipo, lan
 		// e o host é proxyável (0024): a UI as serve do cache, sem bater no CDN da
 		// fonte. Sem isso, saem como a URL direta (degradação). Similares/coleção
 		// (muitas miniaturas) seguem diretas de propósito — evita rajada de proxy.
-		PosterURL:     s.urlImagemServida(richfields.StrPtrDe(campos, "poster_url")),
-		BackdropURL:   s.urlImagemServida(richfields.StrPtrDe(campos, "backdrop_url")),
-		Videos:        richfields.VideosDe(campos),
-		Collection:    colecao,
-		Similar:       similares,
-		Cast:          cast,
-		Crew:          crew,
-		Companies:     companies,
-		ExternalLinks: richfields.LinksExternos(campos, tmdbTipo, tmdbID),
+		PosterURL:   s.urlImagemServida(richfields.StrPtrDe(campos, "poster_url")),
+		BackdropURL: s.urlImagemServida(richfields.StrPtrDe(campos, "backdrop_url")),
+		Videos:      richfields.VideosDe(campos),
+		Collection:  colecao,
+		Similar:     similares,
+		Cast:        cast,
+		Crew:        crew,
+		Companies:   companies,
+		// imdb/tvdb vazios (0086): o detalhe do EXTERNO (item ainda não importado)
+		// não tem IDs cross-fonte resolvidos como o resolver tem (só o que a própria
+		// fonte já mapeou em `external_links` aparece aqui).
+		ExternalLinks: richfields.LinksExternos(campos, tmdbTipo, tmdbID, "", ""),
 		ResolvedLanguages: map[string]string{
 			"title":       provTitulo,
 			"description": provDesc,

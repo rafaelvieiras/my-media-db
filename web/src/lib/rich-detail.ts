@@ -61,6 +61,11 @@ export interface RichDetail {
   crew: CreditCrew[]
   companies: CreditCompany[]
   externalLinks: Record<string, string>
+  // Notas por FONTE (0086): ao contrário de `voteAverage` (a nota mesclada por
+  // prioridade, 1 valor só, mantida por compat com quem ainda a lê), esta é
+  // UMA entrada por fonte que modela `vote_average` — a fileira de notas do
+  // hero mostra lado a lado. Sempre `[]` quando vazia (nunca undefined).
+  ratings: { source: string; value: number }[]
 }
 
 // deExternalDetail normaliza o DTO do detalhe EXTERNO. Pôster/backdrop do hero podem
@@ -95,6 +100,14 @@ export function deExternalDetail(d: ExternalDetail): RichDetail {
     crew: d.crew ?? [],
     companies: d.companies ?? [],
     externalLinks: d.external_links,
+    // Sintetiza 1 entrada — a própria fonte sendo vista (`d.source`, já existe
+    // no DTO). O externo não tem "fontes cruzadas" antes de importar; a
+    // fileira de notas mostra só isso, mas mostra (decisão do dono: fileira
+    // aparece mesmo com 1 fonte só).
+    ratings:
+      d.vote_average != null
+        ? [{ source: d.source, value: d.vote_average }]
+        : [],
   }
 }
 
@@ -135,6 +148,9 @@ export function deResolvedEntity(e: ResolvedEntity): RichDetail {
     crew: e.crew ?? [],
     companies: e.companies ?? [],
     externalLinks: e.external_links,
+    // Já vem pronto do backend (`ratingsPorFonte`, resolver 0086) — sempre
+    // `[]` quando nenhuma camada externa modela `vote_average`.
+    ratings: e.ratings,
   }
 }
 

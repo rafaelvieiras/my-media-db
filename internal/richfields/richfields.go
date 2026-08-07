@@ -206,9 +206,13 @@ func SimilaresDe(campos map[string]any) []Similar {
 }
 
 // LinksExternos monta o mapa de links a partir do canônico (ex.: imdb do provider),
-// acrescentando o link do próprio TMDB quando há id TMDB — o chamador tem o tipo e o
-// id (o provider mapeou só o imdb). `tmdbID` vazio omite o link do TMDB.
-func LinksExternos(campos map[string]any, tmdbTipo, tmdbID string) map[string]string {
+// acrescentando os links de TMDB/IMDb/TVDB montados a partir dos IDS CRUS quando o
+// chamador os tem (0086: `externalIDs` cross-fonte já resolvidos no resolver) — o
+// provider às vezes só mapeia um subconjunto em `external_links`. Precedência: o que
+// a FONTE já mandou em `external_links` SEMPRE vence (pode ser uma URL mais
+// específica que o provider montou); os ids crus só preenchem o que ainda falta no
+// mapa. `tmdbID`/`imdbID`/`tvdbID` vazios simplesmente omitem o respectivo link.
+func LinksExternos(campos map[string]any, tmdbTipo, tmdbID, imdbID, tvdbID string) map[string]string {
 	out := map[string]string{}
 	if m, ok := campos["external_links"].(map[string]any); ok {
 		for k, v := range m {
@@ -219,6 +223,16 @@ func LinksExternos(campos map[string]any, tmdbTipo, tmdbID string) map[string]st
 	}
 	if tmdbID != "" && tmdbTipo != "" {
 		out["tmdb"] = "https://www.themoviedb.org/" + tmdbTipo + "/" + tmdbID
+	}
+	if imdbID != "" {
+		if _, ok := out["imdb"]; !ok {
+			out["imdb"] = "https://www.imdb.com/title/" + imdbID + "/"
+		}
+	}
+	if tvdbID != "" {
+		if _, ok := out["tvdb"]; !ok {
+			out["tvdb"] = "https://www.thetvdb.com/dereferrer/series/" + tvdbID
+		}
 	}
 	return out
 }

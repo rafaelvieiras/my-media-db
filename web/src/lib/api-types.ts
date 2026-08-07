@@ -1591,6 +1591,8 @@ export interface components {
       vote_average: number | null
       /** @description Nota LOCAL do dono (0–10), gravada na camada de override (ADR-0012): complementa/sobrepõe a nota da fonte (vote_average). null quando o dono não avaliou — a UI então mostra a nota da fonte (limpar é não-destrutivo). */
       local_rating: number | null
+      /** @description Nota (vote_average) de CADA camada externa que modela o campo, uma entrada por fonte (0086) — ao contrário de vote_average (mesclado por prioridade, 1 valor só), permite a UI mostrar notas de fontes diferentes lado a lado. `[]` quando ausentes. */
+      ratings: components['schemas']['EntityRating'][]
       /** @description Fundo (backdrop) da entity: rota LOCAL do fanart cacheado (0015) quando existe, senão a URL direta da fonte; null quando não há. */
       backdrop_url: string | null
       /** @description Vídeos (trailer/clip) da fonte. `[]` quando ausentes. */
@@ -1620,6 +1622,11 @@ export interface components {
       /** @description Completude de catalogação do item (0058) contra a régua configurada em /settings (0057), calculada AO VIVO a cada request (reaproveita os dados que este mesmo endpoint já resolve, sem query extra). `null` somente quando o item é draft (nunca casado) — não faz sentido avaliar metadados que ainda não existem; para item não-draft nunca é null aqui (diferente de `EntityCard.catalog_completeness`, que lê de um cache em lote e pode ficar `null` até a primeira execução do job). */
       catalog_completeness:
         components['schemas']['CatalogCompletenessResult'] | null
+    }
+    /** @description Nota (vote_average) de UMA fonte específica, para exibição lado a lado das notas de fontes diferentes (0086) — ver `ResolvedEntity.ratings`. */
+    EntityRating: {
+      source: string
+      value: number
     }
     /** @description Ordens de exibição de episódios de uma série (0040): `default` é a ordem inicial (o default_season_type gravado no import) e `available` a lista oferecida ao seletor (o default primeiro, `absolute` ao fim quando há número absoluto). O seletor só aparece com mais de uma ordem. */
     OrderingsInfo: {

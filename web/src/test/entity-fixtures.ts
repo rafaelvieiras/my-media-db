@@ -179,6 +179,7 @@ export function baseEntity(over: Partial<ResolvedEntity> = {}): ResolvedEntity {
     ancestors: [],
     ownership: null,
     catalog_completeness: null,
+    ratings: [],
     ...over,
   }
 }

@@ -2785,8 +2785,8 @@ components:
          tags, external_ids, owned, file_count, poster_url, extension_data,
          lang, original_language, resolved_languages,
          tagline, keywords, runtime, certification, vote_average, local_rating,
-         backdrop_url, videos, collection, similar, external_links, ancestors,
-         ownership, catalog_completeness]
+         ratings, backdrop_url, videos, collection, similar, external_links,
+         ancestors, ownership, catalog_completeness]
       properties:
         id: { type: string }
         type:
@@ -2861,6 +2861,14 @@ components:
             Nota LOCAL do dono (0–10), gravada na camada de override (ADR-0012):
             complementa/sobrepõe a nota da fonte (vote_average). null quando o dono
             não avaliou — a UI então mostra a nota da fonte (limpar é não-destrutivo).
+        ratings:
+          type: array
+          description: >
+            Nota (vote_average) de CADA camada externa que modela o campo,
+            uma entrada por fonte (0086) — ao contrário de vote_average
+            (mesclado por prioridade, 1 valor só), permite a UI mostrar
+            notas de fontes diferentes lado a lado. `[]` quando ausentes.
+          items: { $ref: '#/components/schemas/EntityRating' }
         backdrop_url:
           type: [string, "null"]
           description: >
@@ -2943,6 +2951,15 @@ components:
           oneOf:
             - $ref: "#/components/schemas/CatalogCompletenessResult"
             - type: "null"
+    EntityRating:
+      type: object
+      description: >
+        Nota (vote_average) de UMA fonte específica, para exibição lado a lado
+        das notas de fontes diferentes (0086) — ver `ResolvedEntity.ratings`.
+      required: [source, value]
+      properties:
+        source: { type: string }
+        value: { type: number }
     OrderingsInfo:
       type: object
       description: >

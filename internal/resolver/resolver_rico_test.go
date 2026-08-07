@@ -1,6 +1,7 @@
 package resolver
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
@@ -229,6 +230,55 @@ func TestResolverAiringStatusSerie(t *testing.T) {
 	})
 	if semStatus.AiringStatus != nil {
 		t.Errorf("airing_status = %v, quero nil (ausente)", *semStatus.AiringStatus)
+	}
+}
+
+// TestResolverRatingsPorFonte (0086): cada camada externa que modela vote_average
+// entra em Ratings, na ORDEM das camadas (já vem por prioridade, R2) — distinto de
+// VoteAverage, que é só o valor mesclado da fonte de maior prioridade.
+func TestResolverRatingsPorFonte(t *testing.T) {
+	got := Resolver(Camadas{
+		Entity:          entRica(),
+		Cadeia:          []string{"pt-BR", "en"},
+		LangPedido:      "pt-BR",
+		IdiomaPrincipal: "pt-BR",
+		Externo: []CamadaExterna{
+			{Fonte: "tmdb", Campos: map[string]any{"vote_average": 7.5}},
+			{Fonte: "outrafonte", Campos: map[string]any{"vote_average": 8.0}},
+		},
+	})
+	if len(got.Ratings) != 2 {
+		t.Fatalf("ratings = %+v, quero 2 entradas", got.Ratings)
+	}
+	if got.Ratings[0].Source != "tmdb" || got.Ratings[0].Value != 7.5 {
+		t.Errorf("ratings[0] = %+v, quero {tmdb 7.5}", got.Ratings[0])
+	}
+	if got.Ratings[1].Source != "outrafonte" || got.Ratings[1].Value != 8.0 {
+		t.Errorf("ratings[1] = %+v, quero {outrafonte 8.0}", got.Ratings[1])
+	}
+}
+
+// TestResolverRatingsPorFonteVazio: nenhuma camada modela vote_average → Ratings sai
+// `[]RatingFonte{}` (nunca nil), e o JSON serializa como `[]` (nunca null).
+func TestResolverRatingsPorFonteVazio(t *testing.T) {
+	got := Resolver(Camadas{
+		Entity:          entRica(),
+		Cadeia:          []string{"pt-BR", "en"},
+		LangPedido:      "pt-BR",
+		IdiomaPrincipal: "pt-BR",
+		Externo: []CamadaExterna{
+			{Fonte: "tmdb", Campos: map[string]any{"runtime": 120}},
+		},
+	})
+	if got.Ratings == nil || len(got.Ratings) != 0 {
+		t.Fatalf("ratings = %v, quero [] (nao nil)", got.Ratings)
+	}
+	b, err := json.Marshal(got.Ratings)
+	if err != nil {
+		t.Fatalf("marshal ratings: %v", err)
+	}
+	if string(b) != "[]" {
+		t.Errorf("json ratings = %s, quero []", b)
 	}
 }
 

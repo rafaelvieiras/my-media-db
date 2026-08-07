@@ -1,10 +1,8 @@
-import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { Trash2, TriangleAlert } from 'lucide-react'
+import { TriangleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { ApiError, purgeEntity, type OrderingsInfo } from '@/lib/api'
+import type { OrderingsInfo } from '@/lib/api'
 import {
   artworkQueryOptions,
   entityFieldsQueryOptions,
@@ -22,7 +20,7 @@ import { rotuloIdioma } from '@/lib/languages'
 import { temOverrideEditado } from '@/lib/override-fields'
 import { ArtGallery } from '@/components/art-gallery'
 import { CollectionMembers } from '@/components/collection-members'
-import { EntityActionButtons } from '@/components/entity-action-buttons'
+import { EntityManageMenu } from '@/components/entity-manage-menu'
 import { MembrosSomenteLeitura } from '@/components/entity-members'
 import {
   EpisodiosAgrupados,
@@ -155,65 +153,6 @@ function SecaoCompletudeIncompleta({ cc }: { cc: CatalogCompleteness }) {
   )
 }
 
-// ExcluirColecao apaga a entity COLEÇÃO (briefing 0026) via DELETE /entities/{id}
-// (purga com CASCADE das relações — os filmes membros NÃO são apagados). Ação
-// DESTRUTIVA, então confirma em DUAS etapas (mesmo padrão da remoção de membro) e
-// fica discreta. No sucesso, invalida a lista e volta para a biblioteca.
-function ExcluirColecao({ id }: { id: string }) {
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const [confirmando, setConfirmando] = useState(false)
-  const mutation = useMutation({
-    mutationFn: () => purgeEntity(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['entities'] })
-      navigate({ to: '/' })
-    },
-  })
-  const mensagemErro =
-    mutation.error instanceof ApiError ? mutation.error.message : null
-
-  return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
-      {mensagemErro ? (
-        <span role="alert" className="text-sm font-medium text-destructive">
-          {mensagemErro}
-        </span>
-      ) : null}
-      {confirmando ? (
-        <>
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={mutation.isPending}
-            onClick={() => mutation.mutate()}
-          >
-            {mutation.isPending ? 'Excluindo…' : 'Excluir coleção?'}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={mutation.isPending}
-            onClick={() => setConfirmando(false)}
-          >
-            Cancelar
-          </Button>
-        </>
-      ) : (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-destructive"
-          onClick={() => setConfirmando(true)}
-        >
-          <Trash2 aria-hidden />
-          Excluir coleção
-        </Button>
-      )}
-    </div>
-  )
-}
-
 // SecaoSerie decide a view da árvore de uma SÉRIE conforme a ordem escolhida (0040):
 // o seletor aparece só quando há mais de uma ordem; a ordem default (ou ausente)
 // mostra os cards de temporada navegáveis (a view de sempre); uma ordem alternativa
@@ -343,10 +282,11 @@ export function EntityDetailScreen() {
           </>
         }
         actions={
-          <EntityActionButtons
+          <EntityManageMenu
             id={id}
             catalogCompleteness={data.catalog_completeness}
             owned={data.owned}
+            isCollection={data.type === 'collection'}
           />
         }
         descriptionExtra={
@@ -375,13 +315,11 @@ export function EntityDetailScreen() {
         }
       >
         {/* Coleção (0025): mostra os MEMBROS no lugar dos Arquivos (coleção não tem
-            media_file). A galeria de arte segue valendo (arte própria da coleção). O
-            "Excluir coleção" (0026) fica ao fim, discreto (ação destrutiva). */}
+            media_file). A galeria de arte segue valendo (arte própria da coleção).
+            "Excluir coleção" (0026) migrou para o dropdown "Gerenciar" (0086,
+            `actions` acima) — item destrutivo com confirmação via AlertDialog. */}
         {data.type === 'collection' ? (
-          <>
-            <CollectionMembers id={id} editable />
-            <ExcluirColecao id={id} />
-          </>
+          <CollectionMembers id={id} editable />
         ) : null}
 
         {/* Árvore de séries (0031/0040), somente leitura: a série lista as TEMPORADAS

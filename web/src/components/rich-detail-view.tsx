@@ -11,7 +11,6 @@ import {
   Music,
   Pause,
   Play,
-  Star,
   X,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -34,6 +33,7 @@ import { assetsPreferidosDoHero, selosDisponibilidade } from '@/lib/artwork'
 import { rotuloTipo } from '@/lib/entity-badges'
 import { internalIdDe } from '@/lib/internal-id'
 import { rotuloIdioma } from '@/lib/languages'
+import { metaDaFonte } from '@/lib/provider-meta'
 import { assetsQueryOptions, entityThemeQueryOptions } from '@/lib/queries'
 import {
   rotuloSituacao,
@@ -45,13 +45,14 @@ import { cn } from '@/lib/utils'
 // RichDetailView é a tela RICA COMPARTILHADA entre o detalhe do item EXTERNO (antes
 // de importar, 0022/0023) e o detalhe da ENTITY importada (catálogo). As duas telas
 // têm o MESMO padrão visual e de informação — hero IMERSIVO full-bleed (backdrop +
-// overlay + pôster + sinopse, briefing 0082), barra de ações acima do hero, gêneros,
-// palavras-chave, vídeos, coleção, similares e links — e diferem só nos SLOTS: a
-// externa traz o botão Importar; a entity traz os selos de override, o editor, a
-// galeria/arquivos e (via `entityId`) a logo/banner/disco preferidos e o player do
-// tema musical local. O backend serve o MESMO shape rico nos dois DTOs (internal/
-// richfields), então um único adapter normaliza cada um em `RichDetail` e o
-// componente é agnóstico à origem.
+// overlay + pôster + sinopse + ações + fileira de notas, briefings 0082/0086),
+// fileira de links externos logo abaixo, gêneros, palavras-chave, vídeos, coleção,
+// similares — e diferem só nos SLOTS: a externa traz o botão Importar; a entity traz
+// o dropdown "Gerenciar", os selos de override, o editor, a galeria/arquivos e (via
+// `entityId`) a logo/banner/disco preferidos e o player do tema musical local. O
+// backend serve o MESMO shape rico nos dois DTOs (internal/richfields), então um
+// único adapter normaliza cada um em `RichDetail` e o componente é agnóstico à
+// origem.
 
 // formatarDuracao converte minutos em `2h 35min` (`45min` quando < 1h).
 function formatarDuracao(min: number): string {
@@ -62,9 +63,6 @@ function formatarDuracao(min: number): string {
   }
   return resto === 0 ? `${horas}h` : `${horas}h ${resto}min`
 }
-
-// Rótulos de links externos conhecidos.
-const ROTULO_LINK: Record<string, string> = { tmdb: 'TMDB', imdb: 'IMDb' }
 
 // ── Pôster reutilizável ──────────────────────────────────────────────────────
 
@@ -541,26 +539,40 @@ function SimilarCard({
   )
 }
 
-function LinksExternos({ links }: { links: Record<string, string> }) {
+// ExternalLinksRow (briefing 0086, ex-`LinksExternos`) é a fileira HORIZONTAL de
+// chips com o LOGO de cada provedor — desvio deliberado do print de referência
+// (que mostra numa sidebar lateral, ver briefing §1/§3): este projeto não tem
+// sidebar de metadados, então a fileira fica logo ABAIXO do hero (era a última
+// seção da página, depois de Produtoras — moveu para o topo). `metaDaFonte`
+// resolve logo+rótulo; fonte sem entrada no registro cai no ícone genérico
+// `ExternalLink` + nome em maiúsculas — nunca quebra, nunca esconde o link.
+function ExternalLinksRow({ links }: { links: Record<string, string> }) {
   const entradas = Object.entries(links)
   if (entradas.length === 0) {
     return null
   }
   return (
-    <section className="flex flex-wrap items-center gap-2">
-      {entradas.map(([chave, url]) => (
-        <a
-          key={chave}
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ExternalLink className="size-4" aria-hidden />
-          {ROTULO_LINK[chave] ?? chave}
-        </a>
-      ))}
-    </section>
+    <div className="flex flex-wrap items-center gap-2">
+      {entradas.map(([fonte, url]) => {
+        const { label, Logo } = metaDaFonte(fonte)
+        return (
+          <a
+            key={fonte}
+            href={url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex items-center gap-1.5 rounded-full border border-foreground/15 px-3 py-1.5 text-sm text-foreground/90 transition-colors hover:bg-foreground/5"
+          >
+            {Logo ? (
+              <Logo className="h-4 w-auto" />
+            ) : (
+              <ExternalLink className="size-4" aria-hidden />
+            )}
+            {label}
+          </a>
+        )
+      })}
+    </div>
   )
 }
 
@@ -630,6 +642,31 @@ function NotaMedalhao({
         {value.toFixed(1)}
       </span>
     </div>
+  )
+}
+
+// NotaFonteBadge (briefing 0086) é o badge compacto de UMA nota de FONTE — ao
+// lado do `NotaMedalhao` local, um por entrada de `detail.ratings`. Aparece
+// SEMPRE que há pelo menos uma fonte (decisão do dono: mesmo com 1 fonte só,
+// caso comum hoje — só TMDB —, a fileira não fica escondida esperando 2+).
+// `metaDaFonte` resolve logo+rótulo; fonte sem registro cai no rótulo em
+// maiúsculas (mesmo fallback da fileira de links).
+function NotaFonteBadge({ source, value }: { source: string; value: number }) {
+  const { label, Logo } = metaDaFonte(source)
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border border-foreground/15 px-2.5 py-1 text-sm text-foreground/90"
+      title={label}
+    >
+      {Logo ? (
+        <Logo className="h-4 w-auto" />
+      ) : (
+        <span className="text-xs font-medium text-muted-foreground">
+          {label}
+        </span>
+      )}
+      {value.toFixed(1)}
+    </span>
   )
 }
 
@@ -1129,28 +1166,6 @@ function ProdutorasBand({ companies }: { companies: CreditCompany[] }) {
   )
 }
 
-// BarraAcoesHero é a barra de ações ACIMA do hero (0082 §4.1): os MESMOS botões de
-// hoje (`actions` — Importar no externo, `EntityActionButtons` na entity), agora
-// reposicionados para o TOPO da tela, mais o botão "Assistir trailer" (§4.3),
-// quando houver. Sem nenhum dos dois, a barra inteira some (sem faixa vazia).
-function BarraAcoesHero({
-  actions,
-  videos,
-}: {
-  actions?: ReactNode
-  videos: ExternalVideo[]
-}) {
-  if (!actions && !primeiroTrailer(videos)) {
-    return null
-  }
-  return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
-      <TrailerButton videos={videos} />
-      {actions}
-    </div>
-  )
-}
-
 // HeroImersivo é o hero FULL-BLEED (0082): o fundo (backdrop/still) e a camada de
 // conteúdo (pôster + texto) ocupam a MESMA célula de um grid de uma linha só —
 // técnica robusta de "sobrepor sem `position: absolute`" que deixa a ALTURA da
@@ -1165,6 +1180,7 @@ function HeroImersivo({
   detail,
   situacao,
   titleBadges,
+  actions,
   descriptionExtra,
   genresExtra,
   availableArtwork,
@@ -1176,6 +1192,11 @@ function HeroImersivo({
   detail: RichDetail
   situacao: RotuloSituacao | null
   titleBadges?: ReactNode
+  // Ações do item (0086): "Assistir trailer" + o dropdown "Gerenciar" (entity)
+  // ou "Importar" (externo) — agora DENTRO do hero, perto do título, em vez de
+  // numa barra separada acima dele (desvio deliberado do print de referência,
+  // que usa 2-3 botões soltos — briefing §1).
+  actions?: ReactNode
   descriptionExtra?: ReactNode
   genresExtra?: ReactNode
   availableArtwork?: Record<string, number>
@@ -1258,6 +1279,18 @@ function HeroImersivo({
               <Badge variant="outline">{rotuloTipo(detail.type)}</Badge>
               {titleBadges}
             </div>
+
+            {/* Ações (0086): trailer + "Gerenciar"/"Importar", perto do título —
+                substitui a antiga `BarraAcoesHero` separada acima do hero. Some
+                por inteiro quando não há nem trailer nem `actions` (mesmo guard
+                de antes, agora dentro do próprio componente). */}
+            {actions || primeiroTrailer(detail.videos) ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <TrailerButton videos={detail.videos} />
+                {actions}
+              </div>
+            ) : null}
+
             {detail.originalTitle && detail.originalTitle !== detail.title ? (
               <p className="text-sm text-muted-foreground">
                 {detail.originalTitle}
@@ -1294,25 +1327,24 @@ function HeroImersivo({
               ) : null}
             </div>
 
-            {/* Nota (0079): medalhão circular. Prioriza a nota LOCAL do dono
-                (ADR-0012, contorno âmbar); sem ela, cai na nota da FONTE
-                (contorno neutro). Com as DUAS, a da fonte segue ao lado. */}
-            {detail.localRating != null || detail.voteAverage ? (
+            {/* Fileira de notas (0086): o medalhão circular da nota LOCAL do dono
+                (ADR-0012, contorno âmbar, inalterado) + um badge compacto POR
+                FONTE em `detail.ratings` (logo/rótulo via `metaDaFonte`).
+                Aparece com 1 fonte só (decisão do dono: caso comum hoje — só
+                TMDB — não fica escondido esperando 2+ fontes). Substitui o par
+                antigo local×fonte-única (0079). */}
+            {detail.localRating != null || detail.ratings.length > 0 ? (
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 {detail.localRating != null ? (
                   <NotaMedalhao value={detail.localRating} variant="local" />
-                ) : detail.voteAverage ? (
-                  <NotaMedalhao value={detail.voteAverage} variant="fonte" />
                 ) : null}
-                {detail.localRating != null && detail.voteAverage ? (
-                  <span
-                    className="inline-flex items-center gap-1 text-sm text-muted-foreground"
-                    title="Nota da fonte"
-                  >
-                    <Star className="size-4" aria-hidden />
-                    {detail.voteAverage.toFixed(1)}
-                  </span>
-                ) : null}
+                {detail.ratings.map((r) => (
+                  <NotaFonteBadge
+                    key={r.source}
+                    source={r.source}
+                    value={r.value}
+                  />
+                ))}
               </div>
             ) : null}
 
@@ -1363,8 +1395,9 @@ export function RichDetailView({
   back?: ReactNode
   // Selos ao lado do título (status, "editado") — entity.
   titleBadges?: ReactNode
-  // Ações da barra ACIMA do hero (Importar no externo; EntityActionButtons na
-  // entity) — o trailer entra ao lado, calculado aqui (0082).
+  // Ações DENTRO do hero, perto do título (0086: Importar no externo; o
+  // dropdown "Gerenciar" na entity) — o trailer entra ao lado, calculado no
+  // próprio `HeroImersivo`.
   actions?: ReactNode
   // Anotações após a sinopse (selos de fallback/editado) — entity.
   descriptionExtra?: ReactNode
@@ -1402,12 +1435,11 @@ export function RichDetailView({
     <div className="flex flex-col gap-6">
       {back}
 
-      <BarraAcoesHero actions={actions} videos={detail.videos} />
-
       <HeroImersivo
         detail={detail}
         situacao={situacao}
         titleBadges={titleBadges}
+        actions={actions}
         descriptionExtra={descriptionExtra}
         genresExtra={genresExtra}
         availableArtwork={availableArtwork}
@@ -1416,6 +1448,11 @@ export function RichDetailView({
         disc={heroAssets.disc}
         entityId={entityId}
       />
+
+      {/* Fileira de links externos (0086): PRIMEIRA seção após o hero — era a
+          ÚLTIMA da página (depois de Produtoras); moveu para o topo porque é
+          navegação de saída (TMDB/IMDb/TVDB), não metadado de leitura. */}
+      <ExternalLinksRow links={detail.externalLinks} />
 
       {detail.keywords.length > 0 ? (
         <section className="flex flex-col gap-2">
@@ -1438,7 +1475,6 @@ export function RichDetailView({
       <ElencoGrid cast={detail.cast} />
       <EquipeGrupos crew={detail.crew} />
       <ProdutorasBand companies={detail.companies} />
-      <LinksExternos links={detail.externalLinks} />
 
       {children}
     </div>

@@ -433,45 +433,26 @@ describe('RichDetailView — logo/banner/disco preferidos (0082, entity)', () =>
     ).toBeInTheDocument()
   })
 
-  it('com asset kind=banner preferido, a faixa do banner aparece', async () => {
-    stubEntityFetch([
-      assetFixture({
-        id: 'b1',
-        kind: 'banner',
-        url: '/api/v1/entities/e1/assets/b1/file',
-      }),
-    ])
-    const { container } = renderWithClient(
-      <RichDetailView detail={richDetailBase()} source="tmdb" entityId="e1" />,
-    )
-    await waitFor(() =>
-      expect(
-        container.querySelector(
-          'img[src="/api/v1/entities/e1/assets/b1/file"]',
-        ),
-      ).toBeTruthy(),
-    )
-  })
-
-  it('com asset kind=disc preferido, o disco aparece (com rotação em CSS)', async () => {
-    stubEntityFetch([
-      assetFixture({
-        id: 'd1',
-        kind: 'disc',
-        url: '/api/v1/entities/e1/assets/d1/file',
-      }),
-    ])
-    const { container } = renderWithClient(
-      <RichDetailView detail={richDetailBase()} source="tmdb" entityId="e1" />,
-    )
-    await waitFor(() =>
-      expect(
-        container.querySelector(
-          'img[src="/api/v1/entities/e1/assets/d1/file"]',
-        ),
-      ).toBeTruthy(),
-    )
-  })
+  it.each([
+    ['banner', 'b1'],
+    ['disc', 'd1'],
+  ] as const)(
+    'com asset kind=%s preferido, ele aparece (asset id=%s)',
+    async (kind, id) => {
+      const url = `/api/v1/entities/e1/assets/${id}/file`
+      stubEntityFetch([assetFixture({ id, kind, url })])
+      const { container } = renderWithClient(
+        <RichDetailView
+          detail={richDetailBase()}
+          source="tmdb"
+          entityId="e1"
+        />,
+      )
+      await waitFor(() =>
+        expect(container.querySelector(`img[src="${url}"]`)).toBeTruthy(),
+      )
+    },
+  )
 
   it('sem entityId (tela do externo), não busca assets nem mostra logo/banner/disco', () => {
     const fetchMock = vi.fn()
@@ -509,5 +490,99 @@ describe('RichDetailView — player do tema musical local (0082 §4.4)', () => {
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /tema musical/ })).toBeNull(),
     )
+  })
+})
+
+// ── Fileira de notas por fonte (0086) ─────────────────────────────────────────
+
+describe('RichDetailView — fileira de notas por fonte (0086)', () => {
+  it('aparece mesmo com 1 fonte só — não fica escondida esperando 2+ (decisão do dono)', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({ ratings: [{ source: 'tmdb', value: 7.4 }] })}
+      />,
+    )
+    // O badge da fonte conhecida (TMDB) usa a LOGO svg (`aria-hidden`), não
+    // texto — a nota em si (7.4) é texto visível ao lado.
+    expect(screen.getByText('7.4')).toBeInTheDocument()
+  })
+
+  it('sem nota local nem ratings, a fileira inteira não aparece', () => {
+    renderWithClient(<RichDetailView source="tmdb" detail={richDetailBase()} />)
+    expect(screen.queryByText(/^\d\.\d$/)).toBeNull()
+  })
+
+  it('nota local + fonte SEM logo no registro cai no rótulo maiúsculo (fallback)', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({
+          localRating: 9,
+          ratings: [{ source: 'meufornecedor', value: 6.1 }],
+        })}
+      />,
+    )
+    expect(screen.getByLabelText('Sua nota: 9.0')).toBeInTheDocument()
+    expect(screen.getByText('MEUFORNECEDOR')).toBeInTheDocument()
+    expect(screen.getByText('6.1')).toBeInTheDocument()
+  })
+
+  it('duas fontes: um badge por entrada, lado a lado', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({
+          ratings: [
+            { source: 'tmdb', value: 7.4 },
+            { source: 'fake', value: 8.0 },
+          ],
+        })}
+      />,
+    )
+    expect(screen.getByText('7.4')).toBeInTheDocument()
+    expect(screen.getByText('8.0')).toBeInTheDocument()
+    expect(screen.getByText('FAKE')).toBeInTheDocument()
+  })
+})
+
+// ── Fileira de links externos (0086) ──────────────────────────────────────────
+
+describe('RichDetailView — fileira de links externos, logo após o hero (0086)', () => {
+  it('aparece logo após o hero, ANTES da seção de Palavras-chave', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({
+          externalLinks: { tmdb: 'https://www.themoviedb.org/movie/603' },
+          keywords: ['simulação'],
+        })}
+      />,
+    )
+    const link = screen.getByRole('link', { name: 'TMDB' })
+    const heading = screen.getByRole('heading', { name: 'Palavras-chave' })
+    // DOCUMENT_POSITION_FOLLOWING no resultado de `link.compareDocumentPosition`
+    // significa que `heading` vem DEPOIS de `link` no documento.
+    expect(
+      link.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(link).toHaveAttribute('href', 'https://www.themoviedb.org/movie/603')
+  })
+
+  it('sem links externos, a fileira não aparece', () => {
+    renderWithClient(<RichDetailView source="tmdb" detail={richDetailBase()} />)
+    expect(screen.queryByRole('link', { name: 'TMDB' })).toBeNull()
+  })
+
+  it('fonte sem logo no registro cai no ícone genérico + nome em maiúsculas', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({
+          externalLinks: { letterboxd: 'https://letterboxd.com/film/x' },
+        })}
+      />,
+    )
+    expect(screen.getByRole('link', { name: 'LETTERBOXD' })).toBeInTheDocument()
   })
 })

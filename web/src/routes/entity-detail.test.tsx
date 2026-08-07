@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import userEvent from '@testing-library/user-event'
 import { EntityDetailScreen } from '@/routes/entity-detail'
 import { LanguageProvider } from '@/lib/language-context'
-import type { ResolvedEntity } from '@/lib/api'
+import type { EntityCard, OverrideBlob, ResolvedEntity } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
-import type { EntityCard, OverrideBlob } from '@/lib/api'
 import { entityCardBase as card } from '@/test/detail-harness'
 import {
   baseEntity,
@@ -15,12 +14,15 @@ import {
 } from '@/test/entity-fixtures'
 
 // Mocka o router: `useParams` fixa o id da rota; `useSearch` devolve sem ordem
-// (view default); `useNavigate` é um no-op; `Link` vira um <a>.
-vi.mock('@tanstack/react-router', () => ({
+// (view default); `useNavigate` é um no-op; `Link` usa o mock compartilhado
+// (jscpd — `{...rest}`, 0086, repassa `role`/demais props que o Radix
+// `asChild` do DropdownMenuItem do "Gerenciar" clona no filho — sem isso o
+// item perderia `role="menuitem"`).
+vi.mock('@tanstack/react-router', async () => ({
   useParams: () => ({ id: 'e1' }),
   useSearch: () => ({ ordering: undefined }),
   useNavigate: () => vi.fn(),
-  Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
+  Link: (await import('@/test/link-mock')).LinkMock,
 }))
 
 // Roteia o fetch: settings, descritores (para o selo "editado" saber o que é
@@ -156,20 +158,29 @@ describe('EntityDetailScreen — selo "editado" e nota local', () => {
     expect(screen.queryByText('editado')).not.toBeInTheDocument()
   })
 
-  it('a nota local resolvida aparece no hero (distinta da nota da fonte)', async () => {
-    renderDetail(baseEntity({ local_rating: 9.5, vote_average: 8.2 }))
+  it('a nota local resolvida aparece no hero (distinta da nota da fonte, 0086: fileira por fonte)', async () => {
+    renderDetail(
+      baseEntity({
+        local_rating: 9.5,
+        vote_average: 8.2,
+        ratings: [{ source: 'tmdb', value: 8.2 }],
+      }),
+    )
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
     expect(screen.getByLabelText('Sua nota: 9.5')).toBeInTheDocument()
     expect(screen.getByText('8.2')).toBeInTheDocument()
   })
 
-  it('"Editar" é um link para a rota de edição da entity', async () => {
+  it('"Editar" é um item do dropdown "Gerenciar" que linka para a rota de edição', async () => {
+    const user = userEvent.setup()
     renderDetail(baseEntity())
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
-    // No mock do Link, `to` vira o href; o botão usa asChild sobre o <Link>.
-    const editar = screen.getByRole('link', { name: 'Editar' })
+    // O dropdown "Gerenciar" (0086) só monta o conteúdo no DOM depois de aberto
+    // (Radix). No mock do Link, `to` vira o href; o item usa asChild sobre o <Link>.
+    await user.click(screen.getByRole('button', { name: /Gerenciar/ }))
+    const editar = screen.getByRole('menuitem', { name: /Editar/ })
     expect(editar).toBeInTheDocument()
   })
 })

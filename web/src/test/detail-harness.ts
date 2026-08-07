@@ -30,6 +30,7 @@ export function richDetailBase(over: Partial<RichDetail> = {}): RichDetail {
     crew: [],
     companies: [],
     externalLinks: {},
+    ratings: [],
     ...over,
   }
 }

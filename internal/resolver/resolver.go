@@ -75,6 +75,14 @@ type Camadas struct {
 	IdiomaPrincipal string
 }
 
+// RatingFonte é a nota (vote_average) de UMA fonte específica — ao contrário
+// de VoteAverage (mesclado por prioridade, 1 valor só), aqui é 1 entrada POR
+// fonte que modela o campo, para a UI mostrar lado a lado (briefing 0086).
+type RatingFonte struct {
+	Source string  `json:"source"`
+	Value  float64 `json:"value"`
+}
+
 // Entidade é a visão RESOLVIDA — o shape final servido em
 // GET /api/v1/entities/{id}. Os ponteiros saem como `null` no JSON quando
 // ausentes; `tags`/`external_ids`/`extension_data` saem sempre como
@@ -133,6 +141,12 @@ type Entidade struct {
 	Cast      []richfields.Cast    `json:"cast"`
 	Crew      []richfields.Crew    `json:"crew"`
 	Companies []richfields.Company `json:"companies"`
+
+	// Ratings (0086) são as notas POR FONTE (vote_average de cada camada externa
+	// que o modela), ao lado de VoteAverage (o valor único já mesclado por
+	// prioridade) — permite a UI comparar notas de fontes diferentes lado a lado.
+	// Sempre `[]` (nunca null); fonte que não modela o campo não aparece.
+	Ratings []RatingFonte `json:"ratings"`
 
 	// Lang é o eco do idioma pedido (ADR-0019). Vazio quando não há contexto de
 	// idioma (comportamento do 0013).
@@ -502,7 +516,8 @@ func Resolver(c Camadas) Entidade {
 		Cast:              richfields.CastDe(creditos),
 		Crew:              richfields.CrewDe(creditos),
 		Companies:         richfields.CompaniesDe(creditos),
-		ExternalLinks:     richfields.LinksExternos(rico, c.Entity.Type, externalIDs["tmdb"]),
+		Ratings:           ratingsPorFonte(c.Externo),
+		ExternalLinks:     richfields.LinksExternos(rico, c.Entity.Type, externalIDs["tmdb"], externalIDs["imdb"], externalIDs["tvdb"]),
 		Lang:              c.LangPedido,
 		OriginalLanguage:  nsPtr(c.Entity.OriginalLanguage),
 		ResolvedLanguages: resolvedLangs,
@@ -520,6 +535,20 @@ func camposExternosMesclados(externo []CamadaExterna) map[string]any {
 			if v != nil {
 				out[k] = v
 			}
+		}
+	}
+	return out
+}
+
+// ratingsPorFonte (0086) coleta a nota de CADA camada externa que modela
+// vote_average, em vez do valor único mesclado por prioridade — permite a UI
+// mostrar notas de fontes diferentes lado a lado. Fonte que não modela o
+// campo simplesmente não aparece (degradação silenciosa, AGENTS.md §6).
+func ratingsPorFonte(externo []CamadaExterna) []RatingFonte {
+	out := []RatingFonte{}
+	for _, cam := range externo {
+		if v := richfields.FloatPtrDe(cam.Campos, "vote_average"); v != nil {
+			out = append(out, RatingFonte{Source: cam.Fonte, Value: *v})
 		}
 	}
 	return out

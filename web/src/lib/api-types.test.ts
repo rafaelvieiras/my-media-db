@@ -42,6 +42,7 @@ describe('api-types gerado', () => {
       ancestors: [],
       ownership: null,
       catalog_completeness: null,
+      ratings: [{ source: 'tmdb', value: 8.2 }],
     }
     expect(ent.owned).toBe(true)
     expect(ent.external_ids.tmdb).toBe('603')
