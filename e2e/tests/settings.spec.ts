@@ -60,3 +60,35 @@ test('pagina de configuracoes de idioma', async ({ page }) => {
 
   await expect(formIdiomas.getByRole('button', { name: 'Salvar' })).toBeVisible()
 })
+
+test('pagina de configuracoes de enriquecimento retroativo (throttle global)', async ({
+  page,
+  request,
+}) => {
+  // Secao "Enriquecimento retroativo" (briefing 0085): throttle GLOBAL que
+  // biblioteca sem override proprio usa. Mesma pagina dos idiomas, form
+  // separado (proprio botao "Salvar").
+  await page.goto('/dashboard/settings')
+  await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible()
+
+  const formRetroativo = page.locator('form').filter({ hasText: 'Repetir tentativa após (dias)' })
+  const input = formRetroativo.getByLabel('Repetir tentativa após (dias)')
+
+  // Default global: 15 dias.
+  await expect(input).toHaveValue('15')
+
+  await input.fill('20')
+  await formRetroativo.getByRole('button', { name: 'Salvar' }).click()
+  await expect(formRetroativo.getByText('Configurações salvas.')).toBeVisible()
+
+  // Persistiu de verdade: a API reflete o novo valor.
+  const res = await request.get('/api/v1/settings/enrichment-retroativo')
+  expect(await res.json()).toEqual({ retry_days: 20 })
+
+  // Restaura o default: o valor e GLOBAL e o worker unico (workers=1)
+  // compartilha o banco com as demais jornadas do arquivo -- mesmo espirito
+  // do idioma de leitura acima, que volta a pt-BR no fim.
+  await input.fill('15')
+  await formRetroativo.getByRole('button', { name: 'Salvar' }).click()
+  await expect(formRetroativo.getByText('Configurações salvas.')).toBeVisible()
+})

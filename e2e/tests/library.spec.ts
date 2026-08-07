@@ -65,6 +65,9 @@ test('adicionar e remover datasource', async ({ page }) => {
   await page.getByRole('link', { name: 'Adicionar datasource' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Adicionar datasource' })).toBeVisible()
   await page.getByLabel('Caminho do datasource').fill(dir)
+  // Override de reentativa de enriquecimento (briefing 0085): opcional, sobrepoe
+  // o throttle global (default 15 dias) so para esta biblioteca.
+  await page.getByLabel('Reentativa de enriquecimento (dias) do datasource').fill('20')
   await page.getByRole('button', { name: 'Adicionar datasource' }).click()
 
   // Volta para /dashboard/library; a linha aparece com o path e o estado online; o botao
@@ -78,6 +81,10 @@ test('adicionar e remover datasource', async ({ page }) => {
   // confirmacao EXPLICITA em 2 passos (nao existe mais remocao direta).
   await page.getByRole('link', { name: 'Editar' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Editar datasource' })).toBeVisible()
+  // O override de reentativa (0085) gravado na criacao pre-carrega aqui.
+  await expect(
+    page.getByLabel('Reentativa de enriquecimento (dias) do datasource'),
+  ).toHaveValue('20')
   await page.getByRole('button', { name: 'Remover datasource' }).click()
   const dialogo = page.getByRole('alertdialog', { name: 'Confirmar remoção do datasource' })
   await expect(dialogo).toBeVisible()
