@@ -80,9 +80,11 @@ test('nova colecao: criar, adicionar/remover membro e excluir', async ({
   await expect(removerMatrix).toHaveCount(0)
   await expect(page.getByText('Esta coleção ainda não tem itens.')).toBeVisible()
 
-  // Exclui a colecao (DUAS etapas: "Excluir coleção" -> "Excluir coleção?").
-  await page.getByRole('button', { name: 'Excluir coleção', exact: true }).click()
-  await page.getByRole('button', { name: 'Excluir coleção?' }).click()
+  // Exclui a colecao: item destrutivo dentro do dropdown "Gerenciar" (0086) abre
+  // um AlertDialog de confirmacao — nao apaga direto ao clicar no item do menu.
+  await page.getByRole('button', { name: 'Gerenciar' }).click()
+  await page.getByRole('menuitem', { name: 'Excluir coleção' }).click()
+  await page.getByRole('button', { name: 'Excluir coleção' }).click()
 
   // Sai da tela da colecao e volta para a biblioteca (home).
   await expect(

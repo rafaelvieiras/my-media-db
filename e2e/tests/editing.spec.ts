@@ -25,9 +25,10 @@ test('editar override nao e destrutivo apos re-enriquecer', async ({
   await expect(page.getByRole('heading', { level: 1, name: 'Matrix' })).toBeVisible()
 
   // "Editar" agora e um LINK para a rota `/entities/$id/edit` (0030), nao mais um
-  // editor inline. Na pagina de edicao, edita em pt-BR: novo titulo, remove "Acao"
-  // e adiciona "Favorito".
-  await page.getByRole('link', { name: 'Editar' }).click()
+  // editor inline, e mora dentro do dropdown "Gerenciar" (0086). Na pagina de
+  // edicao, edita em pt-BR: novo titulo, remove "Acao" e adiciona "Favorito".
+  await page.getByRole('button', { name: 'Gerenciar' }).click()
+  await page.getByRole('menuitem', { name: 'Editar' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
   await page.getByRole('textbox', { name: 'Título', exact: true }).fill('Matrix EDITADO')
   await page.getByRole('button', { name: 'Remover tag Acao' }).click()
@@ -75,8 +76,10 @@ test('item manual: fixar external-ids e re-enriquecer puxa dados da fonte', asyn
 
   // "Editar" e um LINK para a rota `/entities/$id/edit` (0030), agora com uma
   // sidebar de secoes (0080): o editor de IDs externos vive na subrota
-  // "IDs de terceiros" (`/entities/$id/edit/ids`). Fixa a fonte tmdb=603.
-  await page.getByRole('link', { name: 'Editar' }).click()
+  // "IDs de terceiros" (`/entities/$id/edit/ids`). Mora dentro do dropdown
+  // "Gerenciar" (0086). Fixa a fonte tmdb=603.
+  await page.getByRole('button', { name: 'Gerenciar' }).click()
+  await page.getByRole('menuitem', { name: 'Editar' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
   await page.getByRole('link', { name: 'IDs de terceiros' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit/ids$`))

@@ -39,10 +39,12 @@ test('re-enriquecer sem id da fonte mostra 422 inline e nao corrompe a entity', 
 
   // "Editar" e um LINK para `/entities/$id/edit` (0030), agora com uma sidebar de
   // secoes (0080): o editor de IDs externos vive na subrota "IDs de terceiros".
-  // Dispara "Salvar e re-enriquecer" SEM fixar nenhum id externo: salva
-  // external_ids (vazio) e tenta enriquecer; sem source_id o backend responde 422
-  // (invalid_body) e a UI mostra a mensagem do envelope inline.
-  await page.getByRole('link', { name: 'Editar' }).click()
+  // Mora dentro do dropdown "Gerenciar" (0086). Dispara "Salvar e re-enriquecer"
+  // SEM fixar nenhum id externo: salva external_ids (vazio) e tenta enriquecer;
+  // sem source_id o backend responde 422 (invalid_body) e a UI mostra a mensagem
+  // do envelope inline.
+  await page.getByRole('button', { name: 'Gerenciar' }).click()
+  await page.getByRole('menuitem', { name: 'Editar' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
   await page.getByRole('link', { name: 'IDs de terceiros' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit/ids$`))
@@ -89,7 +91,9 @@ test('re-enriquecer com id que a fonte nao entrega mostra 502 inline e preserva 
 
   // "Editar" e um LINK para `/entities/$id/edit` (0030), agora com uma sidebar de
   // secoes (0080): o editor de IDs externos vive na subrota "IDs de terceiros".
-  await page.getByRole('link', { name: 'Editar' }).click()
+  // Mora dentro do dropdown "Gerenciar" (0086).
+  await page.getByRole('button', { name: 'Gerenciar' }).click()
+  await page.getByRole('menuitem', { name: 'Editar' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
   await page.getByRole('link', { name: 'IDs de terceiros' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit/ids$`))
