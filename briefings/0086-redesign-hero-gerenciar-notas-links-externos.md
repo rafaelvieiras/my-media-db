@@ -12,7 +12,7 @@
 | **ID** | 0086 |
 | **Tipo** | feature/redesign |
 | **Fase (roadmap)** | Fase 3 — polimento de UI |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [08-artwork-e-assets](../docs/08-artwork-e-assets.md) |
 | **Depende de** | 0082 (hero imersivo full-bleed), 0079 (medalhão de nota local), 0029 (MD6 elenco/equipe/produtoras) |
 
