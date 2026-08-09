@@ -16,7 +16,7 @@
 | **ID** | 0089 |
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 3 — Enriquecimento + override |
-| **Status** | draft |
+| **Status** | done |
 | **Docs relacionadas** | [06-biblioteca-e-scan](../docs/06-biblioteca-e-scan.md), [07-enriquecimento-providers](../docs/07-enriquecimento-providers.md), [08-artwork-e-assets](../docs/08-artwork-e-assets.md) |
 | **Depende de** | 0046, 0048, 0056, 0064, 0084, 0087 |
 
