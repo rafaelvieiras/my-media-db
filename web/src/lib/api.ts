@@ -504,6 +504,34 @@ export async function putRetroactiveEnrichmentSettings(
   return lerJson<RetroactiveEnrichmentSettings>(res)
 }
 
+// ── Settings de materialização automática de artes (0089) ───────────────────
+
+export type AutoMaterializeArtworkSettings =
+  components['schemas']['AutoMaterializeArtworkSettings']
+
+// Toggle: quando ligado, todo auto-import bem-sucedido do scan (filme ou
+// série) já materializa na hora, na pasta real da biblioteca, as artes
+// descobertas no inventário. Quando ainda não há linha gravada, o backend
+// responde o default seguro (`{"enabled": false}`).
+export async function getAutoMaterializeArtworkSettings(): Promise<AutoMaterializeArtworkSettings> {
+  return lerJson<AutoMaterializeArtworkSettings>(
+    await fetch(`${base}/api/v1/settings/auto-materialize-artwork`),
+  )
+}
+
+// Grava (upsert) o toggle. O 400 do backend (corpo malformado) vira
+// `ApiError` com a mensagem pt-BR — exibida inline.
+export async function putAutoMaterializeArtworkSettings(
+  body: AutoMaterializeArtworkSettings,
+): Promise<AutoMaterializeArtworkSettings> {
+  const res = await fetch(`${base}/api/v1/settings/auto-materialize-artwork`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return lerJson<AutoMaterializeArtworkSettings>(res)
+}
+
 // ── Settings de completude de catalogação (0057) ─────────────────────────────
 
 // Config vigente de completude de CATALOGAÇÃO (por `entity.type`). Quando não

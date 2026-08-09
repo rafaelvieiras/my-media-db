@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SettingsScreen } from '@/routes/settings'
-import type { LanguageSettings, RetroactiveEnrichmentSettings } from '@/lib/api'
+import type {
+  AutoMaterializeArtworkSettings,
+  LanguageSettings,
+  RetroactiveEnrichmentSettings,
+} from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 import { respostaCompletude } from '@/test/catalog-completeness-harness'
@@ -17,16 +21,25 @@ const settingsIniciais: LanguageSettings = {
 // Config vigente devolvida pelo GET /settings/enrichment-retroativo (0085).
 const retroativoIniciais: RetroactiveEnrichmentSettings = { retry_days: 15 }
 
-// Roteia o fetch: GET/PUT de idiomas e de throttle de enriquecimento retroativo
-// (0085) são tratados aqui; GET/PUT de completude de catalogação (0057) delegam
-// a `respostaCompletude` (compartilhada com catalog-completeness-form.test.tsx)
-// — esta suíte só precisa que a 3ª seção não quebre o mock de fetch, o
-// comportamento próprio do formulário é coberto lá.
+// Config vigente devolvida pelo GET /settings/auto-materialize-artwork (0089).
+const autoMaterializarIniciais: AutoMaterializeArtworkSettings = {
+  enabled: false,
+}
+
+// Roteia o fetch: GET/PUT de idiomas, de throttle de enriquecimento
+// retroativo (0085) e do toggle de materialização automática de artes
+// (0089) são tratados aqui; GET/PUT de completude de catalogação (0057)
+// delegam a `respostaCompletude` (compartilhada com
+// catalog-completeness-form.test.tsx) — esta suíte só precisa que a seção
+// não quebre o mock de fetch, o comportamento próprio do formulário é
+// coberto lá.
 function fetchRouter(opts?: {
   putResposta?: LanguageSettings
   putErro?: { status: number; code: string; message: string }
   putRetroativoResposta?: RetroactiveEnrichmentSettings
   putRetroativoErro?: { status: number; code: string; message: string }
+  autoMaterializarInicial?: AutoMaterializeArtworkSettings
+  putAutoMaterializarErro?: { status: number; code: string; message: string }
 }) {
   return vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url)
@@ -56,6 +69,22 @@ function fetchRouter(opts?: {
         )
       }
       return okJson(opts?.putRetroativoResposta ?? retroativoIniciais)
+    }
+    if (u === '/api/v1/settings/auto-materialize-artwork' && method === 'GET') {
+      return okJson(opts?.autoMaterializarInicial ?? autoMaterializarIniciais)
+    }
+    if (u === '/api/v1/settings/auto-materialize-artwork' && method === 'PUT') {
+      if (opts?.putAutoMaterializarErro) {
+        return erroJson(
+          opts.putAutoMaterializarErro.status,
+          opts.putAutoMaterializarErro.code,
+          opts.putAutoMaterializarErro.message,
+        )
+      }
+      const body = JSON.parse(
+        (init?.body as string) ?? '{}',
+      ) as AutoMaterializeArtworkSettings
+      return okJson(body)
     }
     const completude = respostaCompletude(u, method)
     if (completude) return completude
@@ -100,6 +129,24 @@ async function renderFormRetroativo(fetchMock: ReturnType<typeof fetchRouter>) {
   const secao = within(heading.closest('section')!)
   await waitFor(() =>
     expect(secao.getByRole('button', { name: 'Salvar' })).toBeInTheDocument(),
+  )
+  return secao
+}
+
+// Mesma ideia de `renderForm`, mas devolve o escopo da seção ARTES (0089) —
+// sem botão "Salvar" (o switch grava a cada mudança), por isso espera pelo
+// próprio switch em vez de um botão.
+async function renderFormArtes(fetchMock: ReturnType<typeof fetchRouter>) {
+  vi.stubGlobal('fetch', fetchMock)
+  renderWithClient(<SettingsScreen />)
+  const heading = await screen.findByRole('heading', { name: 'Artes' })
+  const secao = within(heading.closest('section')!)
+  await waitFor(() =>
+    expect(
+      secao.getByRole('switch', {
+        name: 'Baixar artes automaticamente após o scan',
+      }),
+    ).toBeInTheDocument(),
   )
   return secao
 }
@@ -284,6 +331,71 @@ describe('SettingsScreen', () => {
       expect(
         secao.getByText('retry_days precisa estar entre 1 e 365'),
       ).toBeInTheDocument(),
+    )
+  })
+
+  it('le a config vigente e semeia o switch de materializacao automatica de artes (desligado)', async () => {
+    const secao = await renderFormArtes(fetchRouter())
+
+    expect(
+      secao.getByRole('switch', {
+        name: 'Baixar artes automaticamente após o scan',
+      }),
+    ).not.toBeChecked()
+  })
+
+  it('semeia o switch ligado quando o backend ja devolve enabled=true', async () => {
+    const secao = await renderFormArtes(
+      fetchRouter({ autoMaterializarInicial: { enabled: true } }),
+    )
+
+    expect(
+      secao.getByRole('switch', {
+        name: 'Baixar artes automaticamente após o scan',
+      }),
+    ).toBeChecked()
+  })
+
+  it('grava o toggle de materializacao automatica via PUT ao ligar o switch', async () => {
+    const user = userEvent.setup()
+    const fetchMock = fetchRouter()
+    const secao = await renderFormArtes(fetchMock)
+
+    const switchArtes = secao.getByRole('switch', {
+      name: 'Baixar artes automaticamente após o scan',
+    })
+    await user.click(switchArtes)
+
+    await waitFor(() => expect(switchArtes).toBeChecked())
+    const putCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        String(url) === '/api/v1/settings/auto-materialize-artwork' &&
+        (init as RequestInit | undefined)?.method === 'PUT',
+    )
+    expect(putCall).toBeDefined()
+    expect(JSON.parse((putCall![1] as RequestInit).body as string)).toEqual({
+      enabled: true,
+    })
+  })
+
+  it('exibe inline a mensagem do erro do servidor ao falhar o PUT do toggle de artes', async () => {
+    const user = userEvent.setup()
+    const fetchMock = fetchRouter({
+      putAutoMaterializarErro: {
+        status: 400,
+        code: 'invalid_body',
+        message: 'corpo invalido',
+      },
+    })
+    const secao = await renderFormArtes(fetchMock)
+
+    const switchArtes = secao.getByRole('switch', {
+      name: 'Baixar artes automaticamente após o scan',
+    })
+    await user.click(switchArtes)
+
+    await waitFor(() =>
+      expect(secao.getByText('corpo invalido')).toBeInTheDocument(),
     )
   })
 })

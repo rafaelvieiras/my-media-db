@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/naming"
@@ -48,7 +49,7 @@ func (r *scanRun) gravarArquivo(ctx context.Context, q *sqlcgen.Queries, f fileF
 		return err
 	}
 
-	entityID, err := r.resolverEntity(ctx, q, f)
+	entityID, criada, err := r.resolverEntity(ctx, q, f)
 	if err != nil {
 		return err
 	}
@@ -67,7 +68,37 @@ func (r *scanRun) gravarArquivo(ctx context.Context, q *sqlcgen.Queries, f fileF
 		LastSeen:        nsOpt(r.scanTS),
 		LibrarySourceID: nsOpt(r.source.ID),
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if criada {
+		r.dispararAutoMatchFilme(ctx, entityID)
+	}
+	return nil
+}
+
+// dispararAutoMatchFilme é o gatilho best-effort do auto-match imediato de
+// filme (0089): roda só para entity NOVA nesta passada de scan, DEPOIS do
+// media_file já gravado (o auto-match lê título/ano via media_file) -- uma
+// falha aqui nunca desfaz a gravação do arquivo. Achando candidato forte o
+// bastante e com "materializar artes automaticamente" ligado, materializa na
+// hora; sem candidato ou toggle desligado, a entity segue pendente na fila de
+// Revisão (ou só enriquecida, sem materializar), como hoje.
+func (r *scanRun) dispararAutoMatchFilme(ctx context.Context, entityID string) {
+	if r.m.filmeImportador == nil {
+		return
+	}
+	matched, err := r.m.filmeImportador.TentarAutoMatchFilme(ctx, entityID)
+	if err != nil {
+		log.Printf("scanner: auto-match imediato do filme %q falhou (%v) -- entity permanece pendente na fila de Revisão", entityID, err)
+		return
+	}
+	if !matched || r.m.materializador == nil {
+		return
+	}
+	if err := r.m.materializador.MaterializarSeAutoDownloadLigado(ctx, entityID); err != nil {
+		log.Printf("scanner: materialização automática do filme %q falhou (%v)", entityID, err)
+	}
 }
 
 // reencontrar trata um arquivo já conhecido pelo content_hash: atualiza o path
@@ -113,27 +144,35 @@ func (r *scanRun) atualizarConteudoMudou(ctx context.Context, q *sqlcgen.Queries
 
 // resolverEntity acha ou cria a Entity da obra. Ordem: cache do scan → id externo
 // (tmdb/imdb) → título+ano → cria nova. Sem id e sem título vira draft.
-func (r *scanRun) resolverEntity(ctx context.Context, q *sqlcgen.Queries, f fileFacts) (string, error) {
+// criada é true SÓ quando o branch que efetivamente criou a entity (criarEntity)
+// foi percorrido -- os demais branches (cache do scan, id externo/título+ano já
+// existentes) devolvem false. Usado por gravarArquivo (0089) para disparar o
+// auto-match imediato só em entity NOVA desta passada de scan.
+func (r *scanRun) resolverEntity(ctx context.Context, q *sqlcgen.Queries, f fileFacts) (id string, criada bool, err error) {
 	if id, ok := r.cache[f.folderKey]; ok {
-		return id, nil
+		return id, false, nil
 	}
 	if id, achou, err := acharPorIDExterno(ctx, q, f.entidade); err != nil {
-		return "", err
+		return "", false, err
 	} else if achou {
 		r.cache[f.folderKey] = id
-		return id, nil
+		return id, false, nil
 	}
 
 	titulo, releaseDate, status := classificar(f.entidade, f.rawNome)
 
 	if id, achou, err := r.acharPorTituloAno(ctx, q, f.entidade, titulo, releaseDate); err != nil {
-		return "", err
+		return "", false, err
 	} else if achou {
 		r.cache[f.folderKey] = id
-		return id, nil
+		return id, false, nil
 	}
 
-	return r.criarEntity(ctx, q, f, titulo, releaseDate, status)
+	id, err = r.criarEntity(ctx, q, f, titulo, releaseDate, status)
+	if err != nil {
+		return "", false, err
+	}
+	return id, true, nil
 }
 
 // acharPorIDExterno procura a entity pelo id embutido no nome (tmdb tem

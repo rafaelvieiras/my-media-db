@@ -148,6 +148,24 @@ func (s *Server) materializarKindVencedor(ctx context.Context, ent sqlcgen.Entit
 	return true, nil
 }
 
+// MaterializarSeAutoDownloadLigado é o adaptador que satisfaz
+// scanner.Materializador (briefing 0089): chamado pelo scanner logo após
+// QUALQUER auto-import bem-sucedido (filme via TentarAutoMatchFilme, série
+// via ImportarSeriePorNome). Toggle desligado (default) ⇒ no-op, sem tocar o
+// disco -- só quando o dono ligou "materializar artes automaticamente" em
+// Configurações a materialização de fato roda, reusando
+// MaterializarMidiasFaltantes (0064) sem lógica nova. err só propaga em
+// falha real de leitura da config/entity; falhas pontuais de download já são
+// absorvidas (best-effort) dentro de MaterializarMidiasFaltantes.
+func (s *Server) MaterializarSeAutoDownloadLigado(ctx context.Context, entityID string) error {
+	cfg, err := s.obterAutoMaterializeArtworkSettings(ctx)
+	if err != nil || !cfg.Enabled {
+		return err
+	}
+	_, _, err = s.MaterializarMidiasFaltantes(ctx, entityID)
+	return err
+}
+
 // gravarNFOSeFaltante gera o NFO da entity (mesma função gravarNFO do 0062)
 // quando ainda não existe (entity.nfo_path nulo). season nunca tem NFO
 // próprio (mesma guarda de writeEntityNfo) -- desde o briefing 0081, season

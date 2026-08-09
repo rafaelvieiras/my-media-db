@@ -25,6 +25,10 @@ const appSettingLanguages = "languages"
 // enriquecimento retroativo em app_settings (briefing 0085).
 const appSettingEnrichmentRetroativo = "enrichment_retroativo"
 
+// appSettingAutoMaterializeArtwork é a chave do toggle de materialização
+// automática de artes em app_settings (briefing 0089).
+const appSettingAutoMaterializeArtwork = "materializar_artes_automaticamente"
+
 // retryDaysPadrao/retryDaysMinimo/retryDaysMaximo são o default (quando nunca
 // configurado) e o intervalo válido do throttle de reentativa (briefing
 // 0085): antes uma constante fixa de 30 dias em retroativo.go, agora
@@ -65,6 +69,24 @@ func defaultRetroactiveEnrichmentSettings() retroactiveEnrichmentSettings {
 	return retroactiveEnrichmentSettings{RetryDays: retryDaysPadrao}
 }
 
+// autoMaterializeArtworkSettings é o toggle de materialização automática de
+// artes (briefing 0089): quando Enabled, todo auto-import bem-sucedido do
+// scan (filme ou série) já materializa na hora as artes do inventário na
+// pasta real da biblioteca, sem esperar o job periódico midias_faltantes nem
+// clique manual. Serializado como value_json da chave
+// `materializar_artes_automaticamente`. É também o corpo do PUT e a resposta
+// do GET.
+type autoMaterializeArtworkSettings struct {
+	Enabled bool `json:"enabled"`
+}
+
+// defaultAutoMaterializeArtworkSettings é o DEFAULT SEGURO usado quando a
+// linha `materializar_artes_automaticamente` não existe (ou está corrompida):
+// desligado -- materialização automática é opt-in (o dono liga quando quiser).
+func defaultAutoMaterializeArtworkSettings() autoMaterializeArtworkSettings {
+	return autoMaterializeArtworkSettings{Enabled: false}
+}
+
 // settingsCache guarda em memória a config de idioma e a de throttle do
 // enriquecimento retroativo já decodificadas, protegidas pelo MESMO mutex.
 // `carregado`/`retroCarregado` distinguem "ainda não lido" de "lido" (o valor
@@ -76,6 +98,9 @@ type settingsCache struct {
 
 	retroCarregado bool
 	retro          retroactiveEnrichmentSettings
+
+	autoMaterializeCarregado bool
+	autoMaterialize          autoMaterializeArtworkSettings
 }
 
 // obterLanguageSettings devolve a config de idioma, do cache quando já carregada,
@@ -140,11 +165,45 @@ func (s *Server) obterRetroactiveEnrichmentSettings(ctx context.Context) (retroa
 	return retro, nil
 }
 
+// obterAutoMaterializeArtworkSettings devolve o toggle de materialização
+// automática de artes, do cache quando já carregado, senão lendo
+// app_settings pela conexão de LEITURA. Linha ausente ou JSON inválido ⇒
+// default seguro (desligado, nunca erro por isso). Só um erro real de banco
+// é propagado. Espelha obterLanguageSettings/obterRetroactiveEnrichmentSettings
+// linha a linha (briefing 0089).
+func (s *Server) obterAutoMaterializeArtworkSettings(ctx context.Context) (autoMaterializeArtworkSettings, error) {
+	s.settings.mu.Lock()
+	defer s.settings.mu.Unlock()
+	if s.settings.autoMaterializeCarregado {
+		return s.settings.autoMaterialize, nil
+	}
+	row, err := s.leitura().ObterAppSetting(ctx, appSettingAutoMaterializeArtwork)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			s.settings.autoMaterialize = defaultAutoMaterializeArtworkSettings()
+			s.settings.autoMaterializeCarregado = true
+			return s.settings.autoMaterialize, nil
+		}
+		return autoMaterializeArtworkSettings{}, err
+	}
+	cfg := defaultAutoMaterializeArtworkSettings()
+	if row.ValueJson.Valid && row.ValueJson.String != "" {
+		var parsed autoMaterializeArtworkSettings
+		if json.Unmarshal([]byte(row.ValueJson.String), &parsed) == nil {
+			cfg = parsed
+		}
+	}
+	s.settings.autoMaterialize = cfg
+	s.settings.autoMaterializeCarregado = true
+	return cfg, nil
+}
+
 // invalidarSettings zera o cache (chamado após o PUT gravar).
 func (s *Server) invalidarSettings() {
 	s.settings.mu.Lock()
 	s.settings.carregado = false
 	s.settings.retroCarregado = false
+	s.settings.autoMaterializeCarregado = false
 	s.settings.mu.Unlock()
 }
 
@@ -257,6 +316,55 @@ func (s *Server) putLanguageSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = sqlcgen.New(s.db.Write).UpsertAppSetting(r.Context(), sqlcgen.UpsertAppSettingParams{
 		Key:       appSettingLanguages,
+		ValueJson: sql.NullString{String: string(valor), Valid: true},
+	})
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	s.invalidarSettings()
+	writeJSON(w, http.StatusOK, body)
+}
+
+// getAutoMaterializeArtworkSettings trata GET
+// /api/v1/settings/auto-materialize-artwork (briefing 0089): devolve o
+// toggle atual (ou o default seguro {enabled:false} quando ausente). Espelha
+// getLanguageSettings/getEnrichmentRetroativoSettings.
+func (s *Server) getAutoMaterializeArtworkSettings(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	cfg, err := s.obterAutoMaterializeArtworkSettings(r.Context())
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+// putAutoMaterializeArtworkSettings trata PUT
+// /api/v1/settings/auto-materialize-artwork (briefing 0089): faz upsert do
+// toggle, invalidando o cache. Corpo malformado ⇒ 400 invalid_body; sucesso
+// ⇒ 200 com o valor gravado. Espelha putLanguageSettings/
+// putEnrichmentRetroativoSettings (sem etapa de validação semântica: um bool
+// não tem estado inválido além de "não decodificou").
+func (s *Server) putAutoMaterializeArtworkSettings(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	var body autoMaterializeArtworkSettings
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "corpo JSON inválido")
+		return
+	}
+
+	valor, err := json.Marshal(body)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	_, err = sqlcgen.New(s.db.Write).UpsertAppSetting(r.Context(), sqlcgen.UpsertAppSettingParams{
+		Key:       appSettingAutoMaterializeArtwork,
 		ValueJson: sql.NullString{String: string(valor), Valid: true},
 	})
 	if err != nil {

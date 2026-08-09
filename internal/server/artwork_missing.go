@@ -94,10 +94,16 @@ func (s *Server) downloadMissingArtwork(w http.ResponseWriter, r *http.Request) 
 // baixarMelhorArteDoKind monta os grupos do agregador de inventário
 // (montarGruposArtwork, artwork.go) e tenta, em ordem de "melhor opção"
 // primeiro, materializar UMA arte do `kind` via baixarEMaterializarArte
-// (0048). Critério de "melhor" (briefing 0059 §6): maior Likes (fanart.tv);
-// em empate/ausência de likes, a ordem estável de chegada do agregador
-// (sort.SliceStable preserva a ordem original entre iguais). Best-effort
-// entre candidatas: uma falha de DOWNLOAD (errBaixarArte -- rede/status/tipo
+// (0048). Critério de "melhor" (briefing 0059 §6, refinado pelo 0089): a
+// MESMA precedência de ordenarGruposArtwork -- is_principal desc,
+// is_local_in_library desc, rank de idioma preferido/textless/inglês/outro
+// (rankIdiomaArte) -- com maior Likes (fanart.tv) como desempate DENTRO do
+// mesmo rank; em empate total, a ordem estável de chegada do agregador
+// (sort.SliceStable preserva a ordem original entre iguais). Reordenar aqui
+// (em vez de só reusar a ordem de montarGruposArtwork) é necessário porque
+// aquele agregador não considera Likes -- mas NUNCA pode descartar
+// is_principal/is_local/idioma para fazer isso. Best-effort entre
+// candidatas: uma falha de DOWNLOAD (errBaixarArte -- rede/status/tipo
 // inválido) tenta a PRÓXIMA candidata do mesmo kind antes de desistir; só
 // devolve (false, nil) depois de esgotar todas (ou quando não há nenhuma
 // candidata para o kind). Erro de BANCO/disco (não de download) propaga como
@@ -108,8 +114,26 @@ func (s *Server) baixarMelhorArteDoKind(ctx context.Context, id, kind string) (b
 	if len(candidatos) == 0 {
 		return false, nil
 	}
+	// idiomaDeBusca degrada em silêncio pra "" em erro real de banco (mesmo
+	// padrão de montarGruposArtwork) -- só afeta o rank de idioma, nunca
+	// impede o download.
+	idioma, _ := s.idiomaDeBusca(ctx, id)
+	base := idiomaBase(idioma)
 	sort.SliceStable(candidatos, func(i, j int) bool {
-		return candidatos[i].Likes > candidatos[j].Likes
+		if candidatos[i].IsPrincipal != candidatos[j].IsPrincipal {
+			return candidatos[i].IsPrincipal
+		}
+		if candidatos[i].IsLocalInLibrary != candidatos[j].IsLocalInLibrary {
+			return candidatos[i].IsLocalInLibrary
+		}
+		ri, rj := rankIdiomaArte(candidatos[i].Lang, base), rankIdiomaArte(candidatos[j].Lang, base)
+		if ri != rj {
+			return ri < rj
+		}
+		if candidatos[i].Likes != candidatos[j].Likes {
+			return candidatos[i].Likes > candidatos[j].Likes
+		}
+		return false // empate total: mantém a ordem original (stable)
 	})
 
 	for _, cand := range candidatos {

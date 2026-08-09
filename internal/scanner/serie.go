@@ -173,6 +173,13 @@ func (r *scanRun) resolverSerieMiss(ctx context.Context, serieNome string, folde
 	if r.m.serieImporter != nil && serieNome != "" {
 		id, err := r.m.serieImporter.ImportarSeriePorNome(ctx, serieNome, r.langsPermitidos(ctx), r.preferredLangDaFonte())
 		if err == nil {
+			// Materialização automática opcional (0089): best-effort, nunca
+			// aborta a resolução -- a série já foi importada com sucesso.
+			if r.m.materializador != nil {
+				if merr := r.m.materializador.MaterializarSeAutoDownloadLigado(ctx, id); merr != nil {
+					log.Printf("scanner: materialização automática da série %q falhou (%v)", serieNome, merr)
+				}
+			}
 			return serieResolvida{serieID: id, index: r.carregarIndex(ctx, id), conf: confSerieEp}
 		}
 		if errors.Is(err, enrich.ErrSerieAmbigua) {

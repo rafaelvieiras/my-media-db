@@ -388,3 +388,71 @@ func decodeAutoMatch(t *testing.T, rec *httptest.ResponseRecorder) autoMatchResu
 	}
 	return out
 }
+
+// ── TentarAutoMatchFilme (briefing 0089, adaptador de scanner.FilmeImportador) ──
+
+// TestTentarAutoMatchFilmeCandidatoForteAplica cobre o auto-match imediato de
+// filme no scan: candidato local >= LimiarAutoMatch é de fato aplicado
+// (fundirEntities) e o adaptador devolve matched=true, sem erro.
+func TestTentarAutoMatchFilmeCandidatoForteAplica(t *testing.T) {
+	_, d := setupEntitiesServer(t)
+	semearEntityComAno(t, d, "e-target", "movie", "The Matrix", "1999-03-31")
+	semearEntity(t, d, "e-draft", "movie", "Draft Sem Nome")
+	definirStatus(t, d, "e-draft", "draft")
+	semearFile(t, d, "f-draft", "e-draft", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 0, "")
+
+	s := New("v-teste", d)
+	matched, err := s.TentarAutoMatchFilme(context.Background(), "e-draft")
+	if err != nil {
+		t.Fatalf("TentarAutoMatchFilme: %v", err)
+	}
+	if !matched {
+		t.Fatal("matched = false, quero true (candidato local bate o limiar)")
+	}
+	// e-draft (perdedora) foi fundida em e-target -- mesma garantia do auto-match HTTP.
+	if _, err := escrita(t, d).ObterEntity(context.Background(), "e-draft"); err == nil {
+		t.Error("e-draft ainda existe após o auto-match, quero fundida/apagada")
+	}
+}
+
+// TestTentarAutoMatchFilmeSemCandidatoNaoFalha cobre a degradação em silêncio:
+// sem candidato forte o bastante em nenhuma fonte, matched=false e err=nil --
+// a entity permanece intacta, pendente na fila de Revisão (mesmo espírito de
+// ErrSerieNaoEncontrada para série).
+func TestTentarAutoMatchFilmeSemCandidatoNaoFalha(t *testing.T) {
+	_, d := setupEntitiesServer(t)
+	semearEntityComAno(t, d, "e-outro", "movie", "Completely Unrelated Title", "2005-01-01")
+	semearEntity(t, d, "e-draft", "movie", "Draft")
+	definirStatus(t, d, "e-draft", "draft")
+	semearFile(t, d, "f-draft", "e-draft", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 0, "")
+
+	s := New("v-teste", d)
+	matched, err := s.TentarAutoMatchFilme(context.Background(), "e-draft")
+	if err != nil {
+		t.Fatalf("TentarAutoMatchFilme: quero err=nil sem candidato forte, veio %v", err)
+	}
+	if matched {
+		t.Error("matched = true, quero false (nenhum candidato bateu o limiar)")
+	}
+	if _, err := escrita(t, d).ObterEntity(context.Background(), "e-draft"); err != nil {
+		t.Errorf("e-draft deveria continuar intacta: %v", err)
+	}
+}
+
+// TestTentarAutoMatchFilmeErroDeInfraPropaga cobre a outra metade da
+// semântica: uma falha REAL de banco (pool de leitura fechado) propaga como
+// erro, nunca degrada silenciosamente para matched=false.
+func TestTentarAutoMatchFilmeErroDeInfraPropaga(t *testing.T) {
+	_, d := setupEntitiesServer(t)
+	semearEntity(t, d, "e-draft", "movie", "Draft")
+	definirStatus(t, d, "e-draft", "draft")
+
+	if err := d.Read.Close(); err != nil {
+		t.Fatalf("fechar Read: %v", err)
+	}
+
+	s := New("v-teste", d)
+	if _, err := s.TentarAutoMatchFilme(context.Background(), "e-draft"); err == nil {
+		t.Fatal("TentarAutoMatchFilme com pool de leitura fechado: quero erro, veio nil")
+	}
+}

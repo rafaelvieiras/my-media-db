@@ -15,6 +15,7 @@ import {
   hasEntityTheme,
   getLanguageSettings,
   getRetroactiveEnrichmentSettings,
+  getAutoMaterializeArtworkSettings,
   getMatchPreview,
   listJobExecutions,
   listJobs,
@@ -133,6 +134,14 @@ export const languageSettingsQueryOptions = queryOptions({
 export const retroactiveEnrichmentSettingsQueryOptions = queryOptions({
   queryKey: ['settings', 'enrichment-retroativo'],
   queryFn: getRetroactiveEnrichmentSettings,
+})
+
+// Config do toggle de materialização automática de artes (0089): fonte única
+// para o card de artes da tela de configurações. Chave
+// `['settings', 'auto-materialize-artwork']` — invalidada pelo PUT do switch.
+export const autoMaterializeArtworkSettingsQueryOptions = queryOptions({
+  queryKey: ['settings', 'auto-materialize-artwork'],
+  queryFn: getAutoMaterializeArtworkSettings,
 })
 
 // Config de completude de CATALOGAÇÃO (0057): fonte única para o formulário de

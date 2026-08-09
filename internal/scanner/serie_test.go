@@ -345,6 +345,82 @@ func TestScanSerieSemPadraoEpisodio(t *testing.T) {
 	}
 }
 
+// TestScanSerieMaterializaAposAutoImport cobre a materialização automática
+// opcional (0089) no caminho de série: quando ImportarSeriePorNome tem
+// sucesso e um Materializador está configurado,
+// MaterializarSeAutoDownloadLigado é chamado uma vez com o id da série
+// auto-importada.
+func TestScanSerieMaterializaAposAutoImport(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	escrever(t, filepath.Join(root, "Springfield Tales", "Season 01", "Springfield Tales S01E01.mkv"))
+
+	mat := &materializadorFake{}
+	m := managerSerieAutoImport(t, d)
+	m.ConfigurarMaterializacao(mat)
+	src := criarSourceSerie(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if mat.chamadas != 1 {
+		t.Fatalf("MaterializarSeAutoDownloadLigado chamado %d vez(es), quero 1", mat.chamadas)
+	}
+	serieID := valorUnico(t, d, "SELECT id FROM entity WHERE type='tv'")
+	if len(mat.entityIDs) != 1 || mat.entityIDs[0] != serieID {
+		t.Errorf("MaterializarSeAutoDownloadLigado recebeu %v, quero [%q] (id da série auto-importada)", mat.entityIDs, serieID)
+	}
+}
+
+// TestScanSerieNaoMaterializaQuandoImportFalha cobre: import ambíguo/erro
+// (sem série auto-importada) NÃO dispara MaterializarSeAutoDownloadLigado,
+// mesmo com Materializador configurado.
+func TestScanSerieNaoMaterializaQuandoImportFalha(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	escrever(t, filepath.Join(root, "Mystery Show", "Season 01", "Mystery Show S01E01.mkv"))
+
+	mat := &materializadorFake{}
+	m := managerFake(t, d)
+	m.ConfigurarSeries(importerStub{err: enrich.ErrSerieAmbigua}, nil)
+	m.ConfigurarMaterializacao(mat)
+	src := criarSourceSerie(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if mat.chamadas != 0 {
+		t.Errorf("MaterializarSeAutoDownloadLigado chamado %d vez(es), quero 0 (import falhou)", mat.chamadas)
+	}
+}
+
+// TestScanSerieSemMaterializadorNaoQuebra cobre a degradação: sem
+// ConfigurarMaterializacao (nil, modo pré-0089), o auto-import de série
+// continua funcionando normalmente, sem pânico.
+func TestScanSerieSemMaterializadorNaoQuebra(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	escrever(t, filepath.Join(root, "Springfield Tales", "Season 01", "Springfield Tales S01E01.mkv"))
+
+	m := managerSerieAutoImport(t, d)
+	src := criarSourceSerie(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='tv'"); n != 1 {
+		t.Errorf("séries = %d, quero 1", n)
+	}
+}
+
+// valorUnico lê uma coluna string de uma linha única esperada (helper de
+// asserção enxuto para os testes de materialização).
+func valorUnico(t *testing.T, d *db.DB, query string, args ...any) string {
+	t.Helper()
+	var v string
+	if err := d.Read.QueryRowContext(context.Background(), query, args...).Scan(&v); err != nil {
+		t.Fatalf("valorUnico (%s): %v", query, err)
+	}
+	return v
+}
+
 // TestScanSerieAncoraNoID: o vínculo guarda o ID do episódio, não o número. Trocar a
 // ordenação default da série (re-projeção) NÃO altera a linha de media_file_entity.
 func TestScanSerieAncoraNoID(t *testing.T) {

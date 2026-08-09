@@ -601,3 +601,27 @@ type errStatus int
 func (e errStatus) Error() string {
 	return "auto-match: helper interno escreveu status " + strconv.Itoa(int(e))
 }
+
+// ── Auto-match imediato de filme no scan (briefing 0089) ────────────────────
+
+// TentarAutoMatchFilme é o adaptador que satisfaz scanner.FilmeImportador:
+// chamado pelo scanner logo após criar uma entity NOVA de filme, tenta
+// casar+enriquecer contra os providers configurados reusando a MESMA
+// orquestração (tentarAutoMatch) e o MESMO limiar (LimiarAutoMatch) do
+// auto-match em lote/job saude_biblioteca -- nunca uma heurística paralela.
+// matched=true só quando um candidato de fato foi aplicado (Resolved).
+// err só propaga em falha de infra real (banco/rede irrecuperável); "sem
+// candidato forte o bastante" NÃO é erro -- mesma semântica de degradação em
+// silêncio que resolverSerieMiss já aplica pro caminho de série (a entity
+// permanece cataloged/draft, pendente na fila de Revisão).
+func (s *Server) TentarAutoMatchFilme(ctx context.Context, entityID string) (bool, error) {
+	ent, err := s.leitura().ObterEntity(ctx, entityID)
+	if err != nil {
+		return false, err
+	}
+	resultado, err := s.tentarAutoMatch(ctx, ent)
+	if err != nil {
+		return false, err
+	}
+	return resultado.Resolved, nil
+}

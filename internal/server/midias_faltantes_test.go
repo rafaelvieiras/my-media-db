@@ -261,3 +261,55 @@ func TestMaterializarMidiasFaltantesSemCandidatoNaoFalha(t *testing.T) {
 		t.Errorf("nfo não gravado em disco: %v", err)
 	}
 }
+
+// ── MaterializarSeAutoDownloadLigado (briefing 0089, adaptador de scanner.Materializador) ──
+
+// TestMaterializarSeAutoDownloadLigadoToggleDesligadoNaoMaterializaNada cobre
+// o critério §5: com o toggle desligado (default de fábrica), a chamada é
+// no-op -- nenhuma arte é materializada, nenhum erro.
+func TestMaterializarSeAutoDownloadLigadoToggleDesligadoNaoMaterializaNada(t *testing.T) {
+	srv, h, d := setupMidiasFaltantesServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+	a := decodeAsset(t, postAsset(t, h, "e1", "poster", pngPayload(64)))
+	if a.LocalPath != nil {
+		t.Fatalf("local_path recem-criado = %v, quero nil", a.LocalPath)
+	}
+
+	if err := srv.MaterializarSeAutoDownloadLigado(context.Background(), "e1"); err != nil {
+		t.Fatalf("MaterializarSeAutoDownloadLigado (toggle desligado): %v", err)
+	}
+
+	posterPath := filepath.Join(libDir, "poster.png")
+	if _, err := os.Stat(posterPath); err == nil {
+		t.Errorf("poster materializado em disco (%s) com o toggle desligado -- quero nada", posterPath)
+	}
+}
+
+// TestMaterializarSeAutoDownloadLigadoToggleLigadoMaterializa cobre o
+// critério §5: com o toggle ligado, a chamada materializa de fato a arte
+// vencedora na pasta real, reusando MaterializarMidiasFaltantes.
+func TestMaterializarSeAutoDownloadLigadoToggleLigadoMaterializa(t *testing.T) {
+	srv, h, d := setupMidiasFaltantesServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+	a := decodeAsset(t, postAsset(t, h, "e1", "poster", pngPayload(64)))
+	if a.LocalPath != nil {
+		t.Fatalf("local_path recem-criado = %v, quero nil", a.LocalPath)
+	}
+
+	rec := do(t, h, http.MethodPut, "/api/v1/settings/auto-materialize-artwork",
+		autoMaterializeArtworkSettings{Enabled: true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT toggle status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+
+	if err := srv.MaterializarSeAutoDownloadLigado(context.Background(), "e1"); err != nil {
+		t.Fatalf("MaterializarSeAutoDownloadLigado (toggle ligado): %v", err)
+	}
+
+	posterPath := filepath.Join(libDir, "poster.png")
+	if _, err := os.Stat(posterPath); err != nil {
+		t.Errorf("poster não materializado em disco (%s) com o toggle ligado: %v", posterPath, err)
+	}
+}

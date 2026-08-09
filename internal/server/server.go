@@ -330,6 +330,22 @@ func (s *Server) montarServicos(database *db.DB) {
 	if s.scanner != nil && s.enrich != nil {
 		s.scanner.ConfigurarSeries(s.enrich, s.idiomasScanner)
 	}
+	// Liga o AUTO-MATCH imediato de filme no scan (briefing 0089): a entity
+	// nova recém-criada pelo scanner tenta casar+enriquecer sozinha, reusando
+	// tentarAutoMatch (mesmo limiar do job saude_biblioteca). Diferente de
+	// ConfigurarSeries, não depende de s.enrich != nil -- o local-first do
+	// auto-match funciona sem provider externo nenhum, e o passo externo já
+	// degrada em silêncio (autoMatchNone) quando s.enrich é nil.
+	if s.scanner != nil {
+		s.scanner.ConfigurarFilmes(s)
+	}
+	// Liga a materialização automática OPCIONAL (briefing 0089): consumida
+	// depois de QUALQUER auto-import bem-sucedido do scan (filme ou série).
+	// Toggle desligado (default) faz o adaptador degradar a no-op -- seguro
+	// configurar sempre que o scanner existe.
+	if s.scanner != nil {
+		s.scanner.ConfigurarMaterializacao(s)
+	}
 	// O Manager de jobs (briefing 0052) só precisa de banco -- diferente de
 	// enrich/externalDetail, não depende de provider nem assetsDir (o job
 	// semente backup_vacuum não usa fonte externa). WithJobHandlers pode já
@@ -460,6 +476,14 @@ func (s *Server) Handler() (http.Handler, error) {
 				// biblioteca vive em library_source (ver library.go).
 				cfg.Get("/enrichment-retroativo", s.getEnrichmentRetroativoSettings)
 				cfg.Put("/enrichment-retroativo", s.putEnrichmentRetroativoSettings)
+
+				// Toggle de materialização automática de artes (briefing 0089):
+				// desligado por padrão -- quando ligado, todo auto-import
+				// bem-sucedido do scan (filme ou série) já materializa as artes
+				// do inventário na pasta real, sem esperar o job periódico
+				// midias_faltantes nem clique manual.
+				cfg.Get("/auto-materialize-artwork", s.getAutoMaterializeArtworkSettings)
+				cfg.Put("/auto-materialize-artwork", s.putAutoMaterializeArtworkSettings)
 			})
 
 			// Datasources da biblioteca (briefing 0008). Escritas (POST/PATCH/

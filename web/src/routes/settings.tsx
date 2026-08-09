@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import {
   ErrorState,
   FormSaveFooter,
@@ -10,12 +11,16 @@ import {
 import {
   languageSettingsQueryOptions,
   retroactiveEnrichmentSettingsQueryOptions,
+  autoMaterializeArtworkSettingsQueryOptions,
 } from '@/lib/queries'
 import {
   putLanguageSettings,
   putRetroactiveEnrichmentSettings,
+  putAutoMaterializeArtworkSettings,
   type LanguageSettings,
   type RetroactiveEnrichmentSettings,
+  type AutoMaterializeArtworkSettings,
+  ApiError,
 } from '@/lib/api'
 import { IDIOMAS_DISPONIVEIS, rotuloIdioma } from '@/lib/languages'
 import { CatalogCompletenessForm } from '@/components/catalog-completeness-form'
@@ -29,6 +34,7 @@ export function SettingsScreen() {
     languageSettingsQueryOptions,
   )
   const retroativo = useQuery(retroactiveEnrichmentSettingsQueryOptions)
+  const autoMaterializar = useQuery(autoMaterializeArtworkSettingsQueryOptions)
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
@@ -76,6 +82,31 @@ export function SettingsScreen() {
           />
         ) : (
           <RetroactiveEnrichmentSettingsForm inicial={retroativo.data} />
+        )}
+      </section>
+
+      <section className="mb-10">
+        <div className="mb-4 flex flex-col gap-1">
+          <h2 className="font-heading text-lg font-semibold">Artes</h2>
+          <p className="text-sm text-muted-foreground">
+            Comportamento da materialização de pôsteres/fundos na pasta real da
+            biblioteca.
+          </p>
+        </div>
+
+        {autoMaterializar.isPending ? (
+          <LoadingState label="Carregando configurações…" />
+        ) : autoMaterializar.isError ? (
+          <ErrorState
+            title="Não foi possível carregar as configurações"
+            message={
+              autoMaterializar.error instanceof Error
+                ? autoMaterializar.error.message
+                : undefined
+            }
+          />
+        ) : (
+          <AutoMaterializeArtworkSwitch inicial={autoMaterializar.data} />
         )}
       </section>
 
@@ -292,5 +323,59 @@ function RetroactiveEnrichmentSettingsForm({
         salvando={mutation.isPending}
       />
     </form>
+  )
+}
+
+// Switch semeado pelo toggle vigente (briefing 0089): grava a cada mudança —
+// sem botão salvar, mesmo padrão do switch "Observar mudanças" da lista de
+// datasources (baixo risco, reversível a qualquer momento).
+function AutoMaterializeArtworkSwitch({
+  inicial,
+}: {
+  inicial: AutoMaterializeArtworkSettings
+}) {
+  const queryClient = useQueryClient()
+
+  const mutation = useMutation({
+    mutationFn: (body: AutoMaterializeArtworkSettings) =>
+      putAutoMaterializeArtworkSettings(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['settings', 'auto-materialize-artwork'],
+      })
+    },
+  })
+
+  const ligado = mutation.isSuccess
+    ? mutation.variables.enabled
+    : inicial.enabled
+  const mensagemErro =
+    mutation.isError && mutation.error instanceof ApiError
+      ? mutation.error.message
+      : null
+
+  return (
+    <label className="flex items-center gap-2 text-sm">
+      <Switch
+        checked={ligado}
+        disabled={mutation.isPending}
+        onCheckedChange={(checked) => mutation.mutate({ enabled: checked })}
+        aria-label="Baixar artes automaticamente após o scan"
+        aria-invalid={mensagemErro !== null || undefined}
+      />
+      <span className="flex flex-col gap-0.5">
+        <span>Baixar artes automaticamente após o scan</span>
+        <span className="text-xs text-muted-foreground">
+          Quando um item novo é auto-importado durante o scan, baixa e copia as
+          artes encontradas para a pasta real da biblioteca na hora, sem esperar
+          ação manual ou o job periódico.
+        </span>
+        {mensagemErro ? (
+          <span role="alert" className="text-xs font-medium text-destructive">
+            {mensagemErro}
+          </span>
+        ) : null}
+      </span>
+    </label>
   )
 }

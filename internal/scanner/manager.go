@@ -61,6 +61,29 @@ type SerieImporter interface {
 	ImportarSeriePorNome(ctx context.Context, nome string, langs []string, preferredLang string) (string, error)
 }
 
+// FilmeImportador é o ponto de AUTO-MATCH que o scanner de filme consome
+// logo após criar uma entity NOVA: tenta casar+enriquecer (metadados +
+// inventário de artes) contra os providers configurados, reusando o MESMO
+// limiar de confiança do auto-match em lote (LimiarAutoMatch, saude_biblioteca).
+// Sem candidato forte o bastante, a entity permanece cataloged/draft,
+// pendente na fila de Revisão -- igual hoje. Interface para não acoplar o
+// scanner ao pacote server. Implementado por *Server.
+type FilmeImportador interface {
+	// TentarAutoMatchFilme tenta casar+enriquecer a entity; matched=true só
+	// quando um candidato >= LimiarAutoMatch foi de fato aplicado.
+	TentarAutoMatchFilme(ctx context.Context, entityID string) (matched bool, err error)
+}
+
+// Materializador é o ponto OPCIONAL que o scanner consome depois de
+// QUALQUER auto-import bem-sucedido (filme ou série) para, se o dono tiver
+// ligado "materializar artes automaticamente" (app_settings), materializar
+// na hora as artes que o enrich acabou de descobrir -- sem esperar o job
+// periódico midias_faltantes. Toggle desligado (default) = no-op.
+// Implementado por *Server.
+type Materializador interface {
+	MaterializarSeAutoDownloadLigado(ctx context.Context, entityID string) error
+}
+
 // job é o estado em memória de um scan de um datasource.
 type job struct {
 	id         string
@@ -107,6 +130,20 @@ type Manager struct {
 	serieImporter SerieImporter
 	idiomas       func(ctx context.Context) []string
 
+	// filmeImportador alimenta o caminho de FILME (0089): auto-match imediato
+	// disparado logo após o scanner criar uma entity nova. nil quando o
+	// enrich está desligado -- sem ele, o filme fica cataloged/draft até um
+	// job periódico ou ação manual (comportamento pré-0089). Configurado via
+	// ConfigurarFilmes.
+	filmeImportador FilmeImportador
+
+	// materializador é OPCIONAL (0089): quando configurado e o toggle
+	// "materializar_artes_automaticamente" está ligado, materializa as
+	// artes recém-descobertas logo após um auto-import bem-sucedido (filme
+	// ou série) do scan. nil = no-op, igual ao comportamento pré-0089.
+	// Configurado via ConfigurarMaterializacao.
+	materializador Materializador
+
 	mu   sync.Mutex
 	jobs map[string]*job
 }
@@ -118,6 +155,22 @@ type Manager struct {
 func (m *Manager) ConfigurarSeries(imp SerieImporter, idiomas func(ctx context.Context) []string) {
 	m.serieImporter = imp
 	m.idiomas = idiomas
+}
+
+// ConfigurarFilmes injeta o auto-match imediato de filme (0089): chamado pelo
+// server após montar o enrich; sem isso o scanner de filme opera em modo
+// degradado (não tenta auto-match no scan, só cria a entity cataloged/draft
+// como antes deste briefing).
+func (m *Manager) ConfigurarFilmes(imp FilmeImportador) {
+	m.filmeImportador = imp
+}
+
+// ConfigurarMaterializacao injeta a materialização automática opcional
+// (0089), consumida depois de qualquer auto-import bem-sucedido do scan
+// (filme ou série). Sem chamar isto, o scan nunca materializa artes
+// automaticamente, mesmo com o toggle de settings ligado.
+func (m *Manager) ConfigurarMaterializacao(mat Materializador) {
+	m.materializador = mat
 }
 
 // NewManager cria um Manager com o ffprobe real do PATH.

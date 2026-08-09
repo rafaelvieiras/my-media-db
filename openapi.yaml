@@ -245,6 +245,47 @@ paths:
         "422":
           $ref: "#/components/responses/Error"
 
+  /api/v1/settings/auto-materialize-artwork:
+    get:
+      operationId: getAutoMaterializeArtworkSettings
+      summary: Toggle de materialização automática de artes (briefing 0089).
+      description: >
+        Devolve se a materialização automática de artes está ligada. Quando
+        ligada, todo auto-import bem-sucedido do scan (filme via auto-match
+        imediato, ou série) já materializa na hora, na pasta real da
+        biblioteca, as artes descobertas no inventário -- sem esperar o job
+        periódico `midias_faltantes` nem clique manual. Quando ainda não há
+        linha gravada, responde o default seguro (`{"enabled": false}`).
+      tags: [settings]
+      responses:
+        "200":
+          description: Toggle de materialização automática de artes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutoMaterializeArtworkSettings" }
+    put:
+      operationId: putAutoMaterializeArtworkSettings
+      summary: Grava o toggle de materialização automática de artes.
+      description: >
+        Persiste (upsert) o toggle e invalida o cache. Escopo restrito ao
+        caminho de AUTO-IMPORT do scan (filme novo auto-matchado, série
+        nova) -- não afeta ações manuais (Corrigir, Confirmar candidato,
+        Baixar Metadados, auto-match em lote), mesmo com o toggle ligado.
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AutoMaterializeArtworkSettings" }
+      responses:
+        "200":
+          description: Toggle gravado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutoMaterializeArtworkSettings" }
+        "400":
+          $ref: "#/components/responses/Error"
+
   /api/v1/settings/catalog-completeness:
     get:
       operationId: getCatalogCompletenessSettings
@@ -3175,6 +3216,22 @@ components:
             Dias entre duas tentativas de enriquecimento retroativo do mesmo
             item, para bibliotecas sem override próprio. Default de fábrica
             15 quando nunca configurado.
+    AutoMaterializeArtworkSettings:
+      type: object
+      description: >
+        Toggle de materialização automática de artes (briefing 0089): quando
+        ligado, todo auto-import bem-sucedido do scan (filme ou série) já
+        materializa na hora, na pasta real da biblioteca, as artes
+        descobertas no inventário. É o corpo do PUT e a resposta do
+        GET/PUT /settings/auto-materialize-artwork.
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+          description: >
+            Desligado por padrão (default de fábrica `false`). Escopo
+            restrito ao auto-import do scan -- não afeta ações manuais de
+            enriquecimento.
     CatalogCompletenessSettings:
       type: object
       description: >

@@ -137,6 +137,30 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/settings/auto-materialize-artwork': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Toggle de materialização automática de artes (briefing 0089).
+     * @description Devolve se a materialização automática de artes está ligada. Quando ligada, todo auto-import bem-sucedido do scan (filme via auto-match imediato, ou série) já materializa na hora, na pasta real da biblioteca, as artes descobertas no inventário -- sem esperar o job periódico `midias_faltantes` nem clique manual. Quando ainda não há linha gravada, responde o default seguro (`{"enabled": false}`).
+     */
+    get: operations['getAutoMaterializeArtworkSettings']
+    /**
+     * Grava o toggle de materialização automática de artes.
+     * @description Persiste (upsert) o toggle e invalida o cache. Escopo restrito ao caminho de AUTO-IMPORT do scan (filme novo auto-matchado, série nova) -- não afeta ações manuais (Corrigir, Confirmar candidato, Baixar Metadados, auto-match em lote), mesmo com o toggle ligado.
+     */
+    put: operations['putAutoMaterializeArtworkSettings']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/settings/catalog-completeness': {
     parameters: {
       query?: never
@@ -1736,6 +1760,11 @@ export interface components {
       /** @description Dias entre duas tentativas de enriquecimento retroativo do mesmo item, para bibliotecas sem override próprio. Default de fábrica 15 quando nunca configurado. */
       retry_days: number
     }
+    /** @description Toggle de materialização automática de artes (briefing 0089): quando ligado, todo auto-import bem-sucedido do scan (filme ou série) já materializa na hora, na pasta real da biblioteca, as artes descobertas no inventário. É o corpo do PUT e a resposta do GET/PUT /settings/auto-materialize-artwork. */
+    AutoMaterializeArtworkSettings: {
+      /** @description Desligado por padrão (default de fábrica `false`). Escopo restrito ao auto-import do scan -- não afeta ações manuais de enriquecimento. */
+      enabled: boolean
+    }
     /** @description Config de "completude de catalogação" (briefing 0057): por `entity.type`, quais campos/artes o dono considera desejáveis para o item estar bem catalogado. Conceito DIFERENTE de completude de POSSE (quantos episódios/ temporadas o dono TEM no disco, `web/src/lib/entity-badges.ts`). Chave de topo = `entity.type` — ABERTA (hoje só `movie`/`tv` têm UI, mas o schema não fixa enum, já que `entity.type` é TEXT livre). Um tipo ausente do objeto significa "nada exigido" para aquele tipo. É o corpo do PUT e a resposta do GET/PUT /settings/catalog-completeness. */
     CatalogCompletenessSettings: {
       [key: string]: components['schemas']['TypeCompletenessConfig']
@@ -2414,6 +2443,51 @@ export interface operations {
       }
       400: components['responses']['Error']
       422: components['responses']['Error']
+    }
+  }
+  getAutoMaterializeArtworkSettings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Toggle de materialização automática de artes. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AutoMaterializeArtworkSettings']
+        }
+      }
+    }
+  }
+  putAutoMaterializeArtworkSettings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AutoMaterializeArtworkSettings']
+      }
+    }
+    responses: {
+      /** @description Toggle gravado. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AutoMaterializeArtworkSettings']
+        }
+      }
+      400: components['responses']['Error']
     }
   }
   getCatalogCompletenessSettings: {

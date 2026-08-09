@@ -244,3 +244,165 @@ func TestArtworkSemFanartFunciona(t *testing.T) {
 		t.Errorf("available.poster = %d, quero 1 (so o asset local)", available["poster"])
 	}
 }
+
+// TestArtworkOrdenaPorIdiomaPreferido (briefing 0089): /artwork sem nenhuma
+// configuracao explicita de idioma cai no default pt-BR (defaultLanguageSettings);
+// com pt/en/textless disponiveis no inventario fanart.tv, o item em pt vem primeiro.
+func TestArtworkOrdenaPorIdiomaPreferido(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "e3", "movie", "Item")
+
+	inv, _ := json.Marshal(map[string]any{
+		provider.ChaveEnvelopeInventarioArtes: map[string]any{
+			"poster": []provider.ArteInventario{
+				{URL: "https://assets.fanart.tv/p-en.jpg", Lang: "en", Likes: 10},
+				{URL: "https://assets.fanart.tv/p-textless.jpg", Lang: "", Likes: 4},
+				{URL: "https://assets.fanart.tv/p-pt.jpg", Lang: "pt", Likes: 1},
+			},
+		},
+	})
+	semearMediaExternal(t, d, "me-fa", "e3", "fanarttv", string(inv))
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/e3/artwork", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	grupos, _ := respostaArtwork(t, rec.Body.Bytes())
+	itens := grupos["poster"]
+	if len(itens) != 3 {
+		t.Fatalf("poster itens = %d, quero 3", len(itens))
+	}
+	if itens[0].Lang != "pt" {
+		t.Errorf("primeiro item lang = %q, quero \"pt\" (idioma preferido default pt-BR)", itens[0].Lang)
+	}
+}
+
+// --- Testes unitarios de ordenarGruposArtwork/idiomaBase/rankIdiomaArte (briefing 0089) ---
+
+// TestIdiomaBaseNormalizaLocale: idiomaBase extrai o ISO 639-1 de um locale completo
+// (formato de app_settings.languages/idiomaDeBusca) para bater com o `lang` puro do
+// inventario fanart.tv.
+func TestIdiomaBaseNormalizaLocale(t *testing.T) {
+	casos := []struct{ entrada, quero string }{
+		{"pt-BR", "pt"},
+		{"en", "en"},
+		{"", ""},
+		{"PT-br", "pt"},
+		{"es-ES", "es"},
+	}
+	for _, c := range casos {
+		if got := idiomaBase(c.entrada); got != c.quero {
+			t.Errorf("idiomaBase(%q) = %q, quero %q", c.entrada, got, c.quero)
+		}
+	}
+}
+
+// TestRankIdiomaArte: idioma preferido normalizado sempre rank 0; textless rank 1;
+// ingles rank 2; qualquer outro rank 3.
+func TestRankIdiomaArte(t *testing.T) {
+	casos := []struct {
+		lang, preferidoBase string
+		quero               int
+	}{
+		{"pt", "pt", 0},
+		{"", "pt", 1},
+		{"en", "pt", 2},
+		{"fr", "pt", 3},
+		{"", "", 1},   // sem preferencia: textless ainda vence ingles/outro
+		{"en", "", 2}, // sem preferencia: ingles vence "qualquer outro"
+		{"pt", "", 3}, // sem preferencia (base vazia): pt cai em "qualquer outro"
+	}
+	for _, c := range casos {
+		if got := rankIdiomaArte(c.lang, c.preferidoBase); got != c.quero {
+			t.Errorf("rankIdiomaArte(%q, %q) = %d, quero %d", c.lang, c.preferidoBase, got, c.quero)
+		}
+	}
+}
+
+// TestOrdenarGruposArtworkPrioridadeIdioma: com pt/en/textless disponiveis e idioma
+// preferido "pt-BR", a arte pt vem primeiro (precisa normalizar via idiomaBase -- uma
+// comparacao direta "pt-BR" == "pt" nunca bateria).
+func TestOrdenarGruposArtworkPrioridadeIdioma(t *testing.T) {
+	grupos := map[string][]artworkItem{
+		"poster": {
+			{SrcURL: "en", Lang: "en"},
+			{SrcURL: "textless", Lang: ""},
+			{SrcURL: "pt", Lang: "pt"},
+		},
+	}
+	ordenarGruposArtwork(grupos, "pt-BR")
+	if got := grupos["poster"][0].Lang; got != "pt" {
+		t.Errorf("primeiro item lang = %q, quero \"pt\"", got)
+	}
+}
+
+// TestOrdenarGruposArtworkSemPtCaiParaTextless: sem nenhuma arte no idioma preferido,
+// a textless (lang=="") vem antes da en e de qualquer outro idioma.
+func TestOrdenarGruposArtworkSemPtCaiParaTextless(t *testing.T) {
+	grupos := map[string][]artworkItem{
+		"poster": {
+			{SrcURL: "outro", Lang: "fr"},
+			{SrcURL: "en", Lang: "en"},
+			{SrcURL: "textless", Lang: ""},
+		},
+	}
+	ordenarGruposArtwork(grupos, "pt-BR")
+	itens := grupos["poster"]
+	if itens[0].Lang != "" {
+		t.Errorf("primeiro item lang = %q, quero \"\" (textless)", itens[0].Lang)
+	}
+	if itens[1].Lang != "en" {
+		t.Errorf("segundo item lang = %q, quero \"en\"", itens[1].Lang)
+	}
+	if itens[2].Lang != "fr" {
+		t.Errorf("terceiro item lang = %q, quero \"fr\" (qualquer outro, por ultimo)", itens[2].Lang)
+	}
+}
+
+// TestOrdenarGruposArtworkIsPrincipalVenceIdioma: uma arte ja marcada is_principal num
+// idioma "pior" (fr, quando o preferido e pt) continua vencendo -- a prioridade de idioma
+// nunca derruba is_principal/is_local_in_library.
+func TestOrdenarGruposArtworkIsPrincipalVenceIdioma(t *testing.T) {
+	grupos := map[string][]artworkItem{
+		"poster": {
+			{SrcURL: "pt", Lang: "pt"},
+			{SrcURL: "principal-fr", Lang: "fr", IsPrincipal: true},
+		},
+	}
+	ordenarGruposArtwork(grupos, "pt-BR")
+	if got := grupos["poster"][0].SrcURL; got != "principal-fr" {
+		t.Errorf("primeiro item = %q, quero \"principal-fr\" (is_principal vence idioma)", got)
+	}
+
+	gruposLocal := map[string][]artworkItem{
+		"poster": {
+			{SrcURL: "pt", Lang: "pt"},
+			{SrcURL: "local-fr", Lang: "fr", IsLocalInLibrary: true},
+		},
+	}
+	ordenarGruposArtwork(gruposLocal, "pt-BR")
+	if got := gruposLocal["poster"][0].SrcURL; got != "local-fr" {
+		t.Errorf("primeiro item = %q, quero \"local-fr\" (is_local_in_library vence idioma)", got)
+	}
+}
+
+// TestOrdenarGruposArtworkEmpateMantemOrdemOriginal: mesmo rank de idioma, mesmo
+// is_principal, mesmo is_local_in_library -- a ordem original de chegada e preservada
+// (sort.SliceStable).
+func TestOrdenarGruposArtworkEmpateMantemOrdemOriginal(t *testing.T) {
+	grupos := map[string][]artworkItem{
+		"poster": {
+			{SrcURL: "primeiro", Lang: "fr"},
+			{SrcURL: "segundo", Lang: "fr"},
+			{SrcURL: "terceiro", Lang: "fr"},
+		},
+	}
+	ordenarGruposArtwork(grupos, "pt-BR")
+	itens := grupos["poster"]
+	quero := []string{"primeiro", "segundo", "terceiro"}
+	for i, q := range quero {
+		if itens[i].SrcURL != q {
+			t.Errorf("posicao %d = %q, quero %q (ordem original preservada)", i, itens[i].SrcURL, q)
+		}
+	}
+}

@@ -151,6 +151,65 @@ func TestPutEnrichmentRetroativoSettingsCorpoMalformado(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
+// ── Materialização automática de artes (briefing 0089) ──────────────────────
+
+// decodeAutoMaterialize decodifica o corpo de GET/PUT
+// /settings/auto-materialize-artwork.
+func decodeAutoMaterialize(t *testing.T, body []byte) autoMaterializeArtworkSettings {
+	t.Helper()
+	var out autoMaterializeArtworkSettings
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decodificar autoMaterializeArtworkSettings: %v (corpo=%s)", err, body)
+	}
+	return out
+}
+
+// TestGetAutoMaterializeArtworkSettingsDefault cobre o critério §5: sem linha
+// em app_settings, o GET devolve o default seguro {enabled:false}.
+func TestGetAutoMaterializeArtworkSettingsDefault(t *testing.T) {
+	h, _ := setupEntitiesServer(t)
+	rec := do(t, h, http.MethodGet, "/api/v1/settings/auto-materialize-artwork", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	got := decodeAutoMaterialize(t, rec.Body.Bytes())
+	if got.Enabled {
+		t.Error("enabled = true, quero false (default de fábrica)")
+	}
+}
+
+// TestPutAutoMaterializeArtworkSettingsPersiste cobre o critério §5: PUT
+// grava e o GET seguinte reflete (cache invalidado).
+func TestPutAutoMaterializeArtworkSettingsPersiste(t *testing.T) {
+	h, _ := setupEntitiesServer(t)
+	corpo := autoMaterializeArtworkSettings{Enabled: true}
+	rec := do(t, h, http.MethodPut, "/api/v1/settings/auto-materialize-artwork", corpo)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	got := decodeAutoMaterialize(t, rec.Body.Bytes())
+	if !got.Enabled {
+		t.Error("resposta do PUT: enabled = false, quero true")
+	}
+
+	recGet := do(t, h, http.MethodGet, "/api/v1/settings/auto-materialize-artwork", nil)
+	gotGet := decodeAutoMaterialize(t, recGet.Body.Bytes())
+	if !gotGet.Enabled {
+		t.Error("GET após PUT: enabled = false, quero true (cache invalidado)")
+	}
+}
+
+// TestPutAutoMaterializeArtworkSettingsCorpoMalformado cobre o critério §5:
+// corpo JSON inválido → 400 invalid_body.
+func TestPutAutoMaterializeArtworkSettingsCorpoMalformado(t *testing.T) {
+	h, _ := setupEntitiesServer(t)
+	rec := do(t, h, http.MethodPut, "/api/v1/settings/auto-materialize-artwork", []byte(`{`))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, quero 400 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	checkErrorShape(t, rec, "invalid_body")
+}
+
 // TestGetEntityLangInvalido cobre §5: ?lang= fora dos permitidos → 400 invalid_query.
 func TestGetEntityLangInvalido(t *testing.T) {
 	h, d := setupEntitiesServer(t)

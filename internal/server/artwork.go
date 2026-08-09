@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -86,15 +87,23 @@ func (s *Server) montarGruposArtwork(ctx context.Context, id string) map[string]
 	kindsExternosLocais, sourceURLsMaterializadas := s.coletarArtesLocais(ctx, id, grupos)
 	s.coletarArtesDeCamadas(ctx, id, kindsExternosLocais, grupos)
 	s.coletarInventarioFanart(ctx, id, sourceURLsMaterializadas, grupos)
-	ordenarGruposArtwork(grupos)
+	// idiomaDeBusca (0084) já trata ambiguidade/fallback pro idioma global --
+	// erro real de banco degrada em silêncio pra "" (ordenação cai só em
+	// textless->en->qualquer outro, sem preferência de idioma).
+	idioma, _ := s.idiomaDeBusca(ctx, id)
+	ordenarGruposArtwork(grupos, idioma)
 	return grupos
 }
 
-// ordenarGruposArtwork aplica a ordenação do briefing 0062 a CADA linha (por
-// kind): is_principal desc, is_local_in_library desc, ordem original
-// preservada asc (sort.SliceStable — as três fontes já entram na ordem
-// local->externo->inventário, preservada entre os empates).
-func ordenarGruposArtwork(grupos map[string][]artworkItem) {
+// ordenarGruposArtwork aplica a ordenação do briefing 0062 (is_principal desc,
+// is_local_in_library desc) mais a prioridade de idioma do briefing 0089: em
+// empate de is_principal/is_local_in_library, a arte no idioma preferido do
+// dono (`idiomaPreferido`, formato locale completo tipo "pt-BR") vence;
+// depois textless (lang==""), depois inglês, depois qualquer outro. Último
+// desempate preserva a ordem original de chegada (sort.SliceStable -- as
+// fontes já entram na ordem local->externo->inventário).
+func ordenarGruposArtwork(grupos map[string][]artworkItem, idiomaPreferido string) {
+	base := idiomaBase(idiomaPreferido) // "pt-BR" -> "pt"
 	for _, itens := range grupos {
 		sort.SliceStable(itens, func(i, j int) bool {
 			if itens[i].IsPrincipal != itens[j].IsPrincipal {
@@ -103,8 +112,42 @@ func ordenarGruposArtwork(grupos map[string][]artworkItem) {
 			if itens[i].IsLocalInLibrary != itens[j].IsLocalInLibrary {
 				return itens[i].IsLocalInLibrary // true vem primeiro
 			}
+			ri, rj := rankIdiomaArte(itens[i].Lang, base), rankIdiomaArte(itens[j].Lang, base)
+			if ri != rj {
+				return ri < rj
+			}
 			return false // empate: mantém a ordem original (stable)
 		})
+	}
+}
+
+// idiomaBase extrai o código ISO 639-1 de um locale completo (formato usado
+// por app_settings.languages/idiomaDeBusca, ex. "pt-BR"), em minúsculas: a
+// parte antes do primeiro "-". "pt-BR" -> "pt"; "en" -> "en"; "" -> "".
+// Necessário porque o `lang` gravado no inventário fanart.tv é ISO 639-1 puro
+// ("pt", "en", "") -- comparar direto contra o locale completo nunca bateria.
+func idiomaBase(locale string) string {
+	if locale == "" {
+		return ""
+	}
+	base, _, _ := strings.Cut(locale, "-")
+	return strings.ToLower(base)
+}
+
+// rankIdiomaArte ordena por prioridade de idioma (briefing 0089): 0=idioma
+// preferido do dono, 1=textless (lang vazio, comum no fanart.tv para arte sem
+// texto), 2=inglês, 3=qualquer outro. `preferidoBase` já vem normalizado
+// (idiomaBase) para bater com o `lang` ISO 639-1 puro do inventário.
+func rankIdiomaArte(lang, preferidoBase string) int {
+	switch {
+	case preferidoBase != "" && lang == preferidoBase:
+		return 0
+	case lang == "":
+		return 1
+	case lang == "en":
+		return 2
+	default:
+		return 3
 	}
 }
 
