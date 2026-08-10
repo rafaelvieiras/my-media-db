@@ -19,6 +19,7 @@ type Querier interface {
 	// asset e entity_relation.
 	ApagarEntity(ctx context.Context, id string) error
 	ApagarEntityRelation(ctx context.Context, id string) error
+	ApagarHistoricoEvento(ctx context.Context, id string) error
 	ApagarJobExecucao(ctx context.Context, id string) error
 	ApagarLibrarySource(ctx context.Context, id string) error
 	// Remove uma linha de cache pelo seu id (ex.: invalidar uma fonte).
@@ -151,6 +152,7 @@ type Querier interface {
 	// segue vencendo na resolucao). Chamada pelo enrich (auto-cura) sob condicao
 	// estrita (titulo == sourceID), nunca sobre um titulo ja legivel.
 	AtualizarTitulo(ctx context.Context, arg AtualizarTituloParams) error
+	BuscarHistoricoEventoPorID(ctx context.Context, id string) (HistoricoEvento, error)
 	// Posse agregada BASICA: quantos FILHOS DIRETOS de parent_id (via entity_relation)
 	// tem, no kind dado, ao menos um arquivo 'present' vinculado. Serve direto para a
 	// TEMPORADA (cujos filhos diretos sao episodios: "possui 12 de 13"). Para a SERIE
@@ -209,6 +211,11 @@ type Querier interface {
 	// temporada passam o numero (temporada dentro da serie, episodio dentro da
 	// temporada) para a ordenacao estavel de ListarRelacoesFilhas.
 	CriarEntityRelation(ctx context.Context, arg CriarEntityRelationParams) (EntityRelation, error)
+	// CRUD de historico_evento (briefing 0092, ADR-0022): eventos de consumo
+	// genericos (assistir/ouvir/jogar/etc.), append-only, filhos de entity.
+	// Comentarios em ASCII -- ver a nota em entity.sql (sqlc v1.31 corrompe SQL
+	// de query com acento).
+	CriarHistoricoEvento(ctx context.Context, arg CriarHistoricoEventoParams) (HistoricoEvento, error)
 	// Cria a linha de execucao em status 'running', no INICIO do disparo
 	// (Manager.Executar, antes de chamar o Handler).
 	CriarJobExecucao(ctx context.Context, arg CriarJobExecucaoParams) (JobExecution, error)
@@ -394,6 +401,9 @@ type Querier interface {
 	// titulo/poster/ano de cada entity via ObterEntityCard (mesmo card da lista, sem
 	// reinventar resolucao). Ordena por tipo, ordem de bilhagem e id (estavel).
 	ListarFilmografiaDaPessoa(ctx context.Context, personID sql.NullString) ([]ListarFilmografiaDaPessoaRow, error)
+	// Lista os eventos de uma entity em ordem cronologica reversa. kind e
+	// filtro opcional via sqlc.narg -- NULL = sem filtro (todos os kinds).
+	ListarHistoricoEventoPorEntity(ctx context.Context, arg ListarHistoricoEventoPorEntityParams) ([]HistoricoEvento, error)
 	// Acesso a job_definition/job_execution (briefing 0052): fundacao do sistema
 	// de jobs (registro dinamico + agendador embutido). Comentarios em ASCII e
 	// colunas explicitas -- ver a nota em entity.sql (bug de offset do sqlc v1.31
@@ -475,6 +485,13 @@ type Querier interface {
 	// (guarda em gravarNFOSeFaltante) -- esta query so habilita o job a
 	// materializar o POSTER de temporada (season0N-poster.jpg) na raiz da serie.
 	ListarSeasonIDsComEpisodioPresente(ctx context.Context) ([]string, error)
+	// Base da projecao de "estado atual" (GET .../historico/estado): todos os
+	// eventos da entity, mesma ordem cronologica reversa da listagem acima --
+	// o agrupamento por kind (pegar so o primeiro de cada kind, ja que a
+	// ordenacao e occurred_at DESC) fica para a camada Go, conforme o
+	// briefing 0092 autoriza (volume baixo por entity, nao compensa SQL
+	// avancado).
+	ListarUltimoHistoricoEventoPorKind(ctx context.Context, entityID string) ([]HistoricoEvento, error)
 	// As entidades vinculadas a UM arquivo, na ordem local (ordinal) -- cobre o range
 	// (E01-E03 vira 3 linhas com ordinal 0/1/2 sob o mesmo media_file). Sem filtro de
 	// kind: o detalhe do arquivo mostra todos os papeis.

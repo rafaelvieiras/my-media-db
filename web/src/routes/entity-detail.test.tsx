@@ -10,6 +10,7 @@ import {
   baseEntity,
   okFields,
   okJson,
+  respostaHistoricoVazia,
   settingsPadrao,
 } from '@/test/entity-fixtures'
 
@@ -52,6 +53,13 @@ function fetchRouter(
     }
     if (u.startsWith('/api/v1/entities/e1/members')) {
       return okJson(membros)
+    }
+    // Histórico de consumo (0092/0094): estado vazio (sem selo "Assistido") e
+    // sem eventos (sem seção "Histórico") por padrão — os testes deste arquivo
+    // não exercitam o histórico em si (ver historico-section.test.tsx).
+    const historico = respostaHistoricoVazia(u)
+    if (historico) {
+      return historico
     }
     if (u.startsWith('/api/v1/entities/e1')) {
       return okJson(entity)

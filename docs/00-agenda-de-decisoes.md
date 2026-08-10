@@ -86,9 +86,49 @@ empírica** dos dois providers (TMDB + TheTVDB) e das convenções de media serv
 
 ---
 
+## Histórico de consumo (tracking/scrobbling) — fundacional, levantado a partir de pesquisa de mercado
+
+O dono pediu um sistema de tracking/marcos agnóstico a tipo de mídia e a
+cliente de origem, inspirado no ecossistema de scrobbling (Trakt.tv, Last.fm,
+ListenBrainz, Open Scrobbler) e de tracking por vertical (scrob.app,
+sofa.watch, Librarium, GamingGaiden, RetroAchievements e concorrentes).
+Pesquisa de mercado em 5 frentes (filme/série, música, livros, jogos, schema
+atual) fundamenta as decisões abaixo.
+
+| ID | Questão | Status | Decisão | Destino |
+|---|---|---|---|---|
+| **H1** | Histórico é coluna(s) de estado (como a migration 0019) ou eventos? | **documentado** | **Tabela de eventos genérica, append-only** (`historico_evento`, filha de `entity`, `kind`/`status`/`source` livres). Todo concorrente relevante modela histórico como sequência de eventos (progress updates, múltiplas leituras/plays), nunca 1 valor mutável. "Estado atual" vira projeção derivada do último evento, não segunda fonte de verdade. Migration 0019 não é migrada/unificada agora (tensão conhecida e aceita). | [ADR-0022](adr/0022-historico-de-consumo-eventos-genericos-e-trackerprovider.md) |
+| **H2** | Entrada de eventos: webhook de player, API própria, capacidade de provider, ou os três? | **documentado** | **Webhook (adapter próprio, não é `provider.Provider`) + API manual primeiro**; capacidade de provider (`TrackerProvider`) fica reservada para SAÍDA/sincronização com serviço externo (Trakt), desenhada mas sem implementação concreta nesta entrega. Primeira integração de webhook: só Jellyfin (payload mais simples/documentado; Plex exige Plex Pass). | [ADR-0022](adr/0022-historico-de-consumo-eventos-genericos-e-trackerprovider.md) |
+| **H3** | Vocabulário de campos (progresso, threshold de "assistido", identidade externa) — inventar formato próprio ou convergir com o mercado? | **documentado** | **Convergir**: identidade por `ids.{tmdb,imdb,tvdb}` (já é `entity.external_ids_json`), `progress_percent` 0–100, limiar de **80%** pra fechar `completed` — mesmo vocabulário que Trakt e Simkl já convergiram, minimiza fricção de um `TrackerProvider` futuro. | [ADR-0022](adr/0022-historico-de-consumo-eventos-genericos-e-trackerprovider.md) |
+| **H4** | Como fatiar o épico — tudo de uma vez (schema+webhook+UI+`TrackerProvider`, todas as verticais) ou incremental? | **documentado** | **Incremental, só filme/série na primeira entrega** (schema já nasce agnóstico de vertical). Ordem: schema+API mínima (0092) → webhook Jellyfin (0093) → UI de estado/histórico (0094). `TrackerProvider` concreto, demais verticais (música/livro/jogo) e a implementação de "marcos"/conquistas (modelo já desenhado em H5) ficam para depois — nenhum pede migration nova quando chegar a vez. | briefings 0092–0094 |
+| **H5** | "Marco"/conquista (RetroAchievements/Steam-style) — evento único, ou catálogo navegável (título/descrição/ícone mesmo sem desbloquear) + evento de desbloqueio? | **documentado** | **Catálogo + evento**, revisão da decisão inicial (que tratava conquista só como evento). Definição da conquista = `entity` própria (`type='conquista'`), ligada ao item-pai pelo `entity_relation` genérico já existente; ícone = `asset` comum. Desbloqueio = `historico_evento` apontando pra conquista. Condição de desbloqueio específica da fonte (ex. endereço de memória do RetroAchievements) fica opaca em `extension_data`, nunca interpretada pelo núcleo. Nova capacidade `MarcoProvider` (import do catálogo) segue o molde de `SimilarProvider`. Identidade de jogos por hash de ROM reaproveita `media_file.content_hash` já existente; fan-translation (hash diferente) = mais um `media_file` da mesma entity (MD1); hash não reconhecido degrada sem travar, correção é manual (MD1); condição de desbloqueio divergente por hash usa o override universal já existente (R6) — nenhum mecanismo novo em nenhum dos casos. | [ADR-0022](adr/0022-historico-de-consumo-eventos-genericos-e-trackerprovider.md) |
+
+---
+
 ## Histórico de decisões fechadas
 
 <!-- Conforme cada item fecha, mover o resumo da decisão para cá com data. -->
+
+- **H1–H5 — Histórico de consumo: eventos genéricos + catálogo de marcos +
+  `TrackerProvider`** (2026-08-10). Pesquisa de mercado em 5 frentes
+  (filme/série: Trakt, scrob.app, sofa.watch, Simkl, Watcharr; música:
+  Last.fm, ListenBrainz, Maloja, Koito; livros: Librarium, BookWyrm,
+  Hardcover, StoryGraph; jogos: RetroAchievements, Playnite/SuccessStory,
+  GamingGaiden) encontrou um padrão convergente: identidade por ID externo já
+  conhecido, histórico como sequência de eventos (nunca estado único), e N
+  clientes heterogêneos agregados por um schema canônico via plugin/
+  capacidade. Decisão: tabela `historico_evento` genérica (append-only,
+  `kind` livre), entrada por webhook de player (Jellyfin primeiro) + API
+  manual, saída/sync como nova capacidade opcional `TrackerProvider`
+  (desenhada, sem provider concreto ainda). **Revisão H5** (mesma sessão, a
+  partir de pergunta direta do dono sobre RetroAchievements/Steam): "marco"/
+  conquista NÃO é um evento sozinho — é catálogo (`entity`+`entity_relation`+
+  `asset`, navegável mesmo sem desbloquear) + evento de desbloqueio; condição
+  de desbloqueio específica de fonte fica opaca em `extension_data`; hash de
+  ROM reaproveita `media_file.content_hash` já existente; fan-translation e
+  correção de condição por hash reaproveitam mecanismos já existentes (MD1 +
+  R6), sem nada novo. Épico fatiado em 3 briefings (0092–0094), só
+  filme/série na primeira entrega.
 
 - **TV1–TV5 — Fundação de séries (hierarquia, ordenações, providers)** (2026-07-11).
   Fecha o modelo de séries antes de qualquer código, fundado em **pesquisa empírica**

@@ -109,6 +109,19 @@ type ExternalDetail struct {
 	FetchedAt   string
 }
 
+type HistoricoEvento struct {
+	ID              string
+	EntityID        string
+	Kind            string
+	Status          string
+	ProgressPercent sql.NullFloat64
+	PositionSeconds sql.NullFloat64
+	OccurredAt      string
+	Source          string
+	PayloadJson     sql.NullString
+	CreatedAt       string
+}
+
 type JobDefinition struct {
 	ID           string
 	Nome         string

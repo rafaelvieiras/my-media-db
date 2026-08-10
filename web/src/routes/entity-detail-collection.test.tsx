@@ -9,6 +9,7 @@ import {
   baseEntity,
   okFields,
   okJson,
+  respostaHistoricoVazia,
   settingsPadrao,
 } from '@/test/entity-fixtures'
 
@@ -51,6 +52,13 @@ function fetchRouter(entity: ResolvedEntity, onDelete: () => void) {
     if (u === '/api/v1/entities/e1' && init?.method === 'DELETE') {
       onDelete()
       return okJson({ purged: 1 })
+    }
+    // Histórico de consumo (0092/0094): estado/eventos vazios por padrão (sem
+    // selo "Assistido" nem seção "Histórico" — este arquivo não exercita o
+    // histórico em si).
+    const historico = respostaHistoricoVazia(u)
+    if (historico) {
+      return historico
     }
     if (u.startsWith('/api/v1/entities/e1')) {
       return okJson(entity)

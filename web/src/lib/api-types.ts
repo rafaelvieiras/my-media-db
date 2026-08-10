@@ -958,6 +958,70 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/historico': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Lista o histórico de consumo de uma entity (briefing 0092).
+     * @description Eventos em ordem cronológica reversa (`occurred_at DESC`). `?kind=` filtra por um `kind` específico (ex.: `assistir`) quando presente. 404 se a entity não existe.
+     */
+    get: operations['listHistoricoEventos']
+    put?: never
+    /**
+     * Registra um evento de histórico de consumo (briefing 0092, ADR-0022).
+     * @description Cria um `historico_evento` genérico (agnóstico de vertical — filme, série e, no futuro, música/livro/jogo) ligado à entity. `source` ausente vira `"manual"`; `occurred_at` ausente vira o timestamp do servidor no momento da chamada. 201 com o evento criado; 404 se a entity não existe; 422 se `kind`/`status` vierem vazios ou `progress_percent` estiver fora de `[0, 100]`.
+     */
+    post: operations['createHistoricoEvento']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/historico/estado': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Estado atual derivado do histórico, por kind (briefing 0092).
+     * @description Um objeto por `kind` distinto já visto no histórico da entity, com o evento mais recente (`occurred_at` mais alto) daquele `kind` — derivado em cada chamada, nunca mantido como coluna redundante (nunca "mente" — ver ADR-0022). Objeto vazio (`{}`) quando não há histórico. 404 se a entity não existe.
+     */
+    get: operations['getHistoricoEstado']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/historico/{eventoId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Remove um evento de histórico (briefing 0092).
+     * @description Correção pontual do dono (fat-finger, teste) — mesma lógica já aplicada a `asset`/`credit` custom removíveis; não é purga em massa (princípio 5 do AGENTS.md continua intacto). 204 em sucesso; 404 se a entity ou o evento não existirem, ou o evento não pertencer à entity.
+     */
+    delete: operations['deleteHistoricoEvento']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/purge': {
     parameters: {
       query?: never
@@ -1127,6 +1191,50 @@ export interface paths {
     get: operations['listJobExecutions']
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/webhooks/jellyfin': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Recebe o webhook de reprodução do Jellyfin (briefing 0093, ADR-0022).
+     * @description Destino do plugin `jellyfin-plugin-webhook` — corpo JSON de forma variável por versão do plugin (`NotificationType`, `ItemType`, `Provider_tmdb`/`Provider_imdb`/`Provider_tvdb`, `PlaybackPositionTicks`, `RunTimeTicks`, `PlaybackPercentage`, entre outros), parseado best-effort — qualquer campo pode faltar sem derrubar o handler. Casa o item pelos IDs externos presentes no payload; sem match, o evento é descartado e logado (nunca cria entity nova a partir de um webhook). Autenticado por `token` de query, comparado em tempo constante. Responde sempre `204` quando o token bate — inclusive payload não reconhecível/sem match, para não fazer o Jellyfin retentar; `401` quando o `token` falta ou não bate.
+     */
+    post: operations['receiveJellyfinWebhook']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/webhooks/jellyfin/token': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Devolve o token atual do webhook do Jellyfin (briefing 0093).
+     * @description 200 com o token vigente; 404 se nenhum token foi gerado ainda (nesse caso o dono deve chamar POST .../webhooks/jellyfin/token primeiro).
+     */
+    get: operations['getJellyfinWebhookToken']
+    put?: never
+    /**
+     * Gera (ou regenera) o token do webhook do Jellyfin (briefing 0093).
+     * @description Cria um token novo e substitui o anterior (armazenado em `app_settings`, chave `webhook_jellyfin_token`) — chamadas subsequentes ao webhook com o token antigo deixam de funcionar. Autenticado como qualquer outro endpoint interno da API (é o painel do dono operando, sem token próprio). 200 com o token novo.
+     */
+    post: operations['regenerateJellyfinWebhookToken']
     delete?: never
     options?: never
     head?: never
@@ -1354,6 +1462,57 @@ export interface components {
     }
     /** @description Galeria de arte da entity (vazia quando não há arte). */
     AssetList: components['schemas']['Asset'][]
+    /** @description Corpo de POST .../historico (briefing 0092). `kind`/`status` são TEXT livre (ex.: kind="assistir", status="started"|"paused"|"stopped"| "completed") — vocabulário sugerido, não travado no schema. */
+    CreateHistoricoEvento: {
+      /** @description Tipo de evento (ex.: assistir, ouvir, jogar). Não-vazio. */
+      kind: string
+      /** @description Status do evento (ex.: started, paused, stopped, completed). Não-vazio. */
+      status: string
+      /** @description Progresso em [0, 100]. Fora do intervalo → 422. */
+      progress_percent?: number | null
+      /** @description Posição de reprodução em segundos, quando aplicável. */
+      position_seconds?: number | null
+      /** @description Instante do evento (RFC3339). Ausente → timestamp do servidor no momento da chamada. */
+      occurred_at?: string
+      /** @description Proveniência do evento (ex.: manual, jellyfin-webhook). Ausente → "manual". */
+      source?: string
+      /** @description Payload cru opcional (ex.: o corpo original do webhook), gravado como está. */
+      payload?: Record<string, never> | null
+    }
+    /** @description Um evento de histórico de consumo (briefing 0092, ADR-0022). */
+    HistoricoEvento: {
+      id: string
+      kind: string
+      status: string
+      progress_percent?: number | null
+      position_seconds?: number | null
+      occurred_at: string
+      source: string
+      payload?: Record<string, never> | null
+      created_at: string
+    }
+    /** @description Resposta de GET .../historico — eventos em ordem occurred_at DESC. */
+    HistoricoEventoList: {
+      eventos: components['schemas']['HistoricoEvento'][]
+    }
+    /** @description Projeção do evento mais recente de um `kind` (briefing 0092) — sem `id`/`payload`, só o resumo usado pela UI. */
+    HistoricoEstadoItem: {
+      status: string
+      progress_percent?: number | null
+      position_seconds?: number | null
+      occurred_at: string
+      source: string
+    }
+    /** @description Resposta de GET .../historico/estado — um `HistoricoEstadoItem` por `kind` distinto já visto no histórico da entity (chave = kind). Objeto vazio quando não há histórico. */
+    HistoricoEstado: {
+      estado: {
+        [key: string]: components['schemas']['HistoricoEstadoItem']
+      }
+    }
+    /** @description Resposta de GET/POST .../webhooks/jellyfin/token (briefing 0093). */
+    JellyfinWebhookToken: {
+      token: string
+    }
     /** @description Uma arte no agrupamento por kind do /artwork (briefing 0048). `url` já vem proxyada. `lang`/`likes` vêm do inventário (fanart.tv) e são vazios/zero para as demais fontes. `source` é a proveniência (`user`|`external`|`tmdb`|`fanarttv`); `is_local` marca o asset materializado (servido do disco, cache interno), `is_preferred` a escolha do dono (compat, lida do meta_json). `disc_type`/`disc`/ `season` só aparecem nas artes que os têm. Desde o briefing 0062, `is_local_in_library` e `is_principal` distinguem a materialização física na pasta REAL da biblioteca (só possível quando `is_local=true`; sempre `false` para arte de inventário/URL externa). A ORDENAÇÃO de cada array por kind é `is_principal` desc, `is_local_in_library` desc, ordem original preservada asc. */
     ArtworkItem: {
       /** @description URL já passada pelo proxy de imagem. */
@@ -2190,6 +2349,8 @@ export interface components {
     JobId: string
     /** @description Id do asset (arte). */
     AssetId: string
+    /** @description Id do evento de histórico de consumo (briefing 0092). */
+    HistoricoEventoId: string
     /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
     LangQuery: string
   }
@@ -3690,6 +3851,110 @@ export interface operations {
       503: components['responses']['Error']
     }
   }
+  listHistoricoEventos: {
+    parameters: {
+      query?: {
+        /** @description Filtra por kind (ex.: assistir, ouvir). Ausente = todos. */
+        kind?: string
+      }
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Histórico de eventos (vazio quando não há nenhum). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HistoricoEventoList']
+        }
+      }
+      404: components['responses']['Error']
+    }
+  }
+  createHistoricoEvento: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateHistoricoEvento']
+      }
+    }
+    responses: {
+      /** @description Evento criado. */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HistoricoEvento']
+        }
+      }
+      404: components['responses']['Error']
+      422: components['responses']['Error']
+    }
+  }
+  getHistoricoEstado: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Estado atual, por kind. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HistoricoEstado']
+        }
+      }
+      404: components['responses']['Error']
+    }
+  }
+  deleteHistoricoEvento: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+        /** @description Id do evento de histórico de consumo (briefing 0092). */
+        eventoId: components['parameters']['HistoricoEventoId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Evento removido. */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      404: components['responses']['Error']
+    }
+  }
   purgeEntities: {
     parameters: {
       query?: never
@@ -4016,6 +4281,75 @@ export interface operations {
         }
       }
       404: components['responses']['Error']
+    }
+  }
+  receiveJellyfinWebhook: {
+    parameters: {
+      query: {
+        /** @description Token do webhook (gerado via POST .../webhooks/jellyfin/token). */
+        token: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': {
+          [key: string]: unknown
+        }
+      }
+    }
+    responses: {
+      /** @description Aceito — evento gravado, ou descartado/logado sem match (mesmo código para não gerar retry do Jellyfin). */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      401: components['responses']['Error']
+    }
+  }
+  getJellyfinWebhookToken: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Token vigente. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['JellyfinWebhookToken']
+        }
+      }
+      404: components['responses']['Error']
+    }
+  }
+  regenerateJellyfinWebhookToken: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Token gerado/regenerado. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['JellyfinWebhookToken']
+        }
+      }
     }
   }
 }

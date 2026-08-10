@@ -4,6 +4,7 @@ import { RichDetailView } from '@/components/rich-detail-view'
 import type { Asset, CreditCast, CreditCrew, ExternalVideo } from '@/lib/api'
 import { richDetailBase } from '@/test/detail-harness'
 import { renderWithClient } from '@/test/render'
+import type { RichDetail } from '@/lib/rich-detail'
 
 // Fábricas de créditos mockados (0029): o backend live ainda não retorna créditos,
 // então as seções são exercitadas com dados montados aqui.
@@ -383,9 +384,14 @@ function assetFixture(over: Partial<Asset> = {}): Asset {
   }
 }
 
-// stubEntityFetch roteia `/assets` e `/theme` (HEAD) para as respostas dadas —
-// as duas chamadas que o hero dispara quando `entityId` está presente.
-function stubEntityFetch(assets: Asset[], temTema = false) {
+// stubEntityFetch roteia `/assets`, `/theme` (HEAD) e `/historico/estado` (selo
+// "Assistido", 0094) para as respostas dadas — as chamadas que o hero dispara
+// quando `entityId` está presente. `estado` default vazio (sem selo).
+function stubEntityFetch(
+  assets: Asset[],
+  temTema = false,
+  estado: Record<string, unknown> = {},
+) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
@@ -395,12 +401,39 @@ function stubEntityFetch(assets: Asset[], temTema = false) {
           ? ({ ok: true, status: 200, json: async () => ({}) } as Response)
           : ({ ok: false, status: 404, json: async () => ({}) } as Response)
       }
+      if (u.includes('/historico/estado')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ estado }),
+        } as Response
+      }
       if (u.includes('/assets')) {
         return { ok: true, status: 200, json: async () => assets } as Response
       }
       throw new Error(`rota nao mockada: ${u}`)
     }),
   )
+}
+
+// Atalho comum às três descrições abaixo (logo/banner/disco, selo "Assistido",
+// tema musical): todas renderizam com o mesmo entityId="e1"/source="tmdb" —
+// só o que `stubEntityFetch` devolve muda.
+function renderComEntity(detailOver: Partial<RichDetail> = {}) {
+  return renderWithClient(
+    <RichDetailView
+      detail={richDetailBase(detailOver)}
+      source="tmdb"
+      entityId="e1"
+    />,
+  )
+}
+
+// Idem para o caso "sem entityId": nenhuma das três seções busca `fetch`.
+function stubFetchNaoDeveSerChamado() {
+  const fetchMock = vi.fn()
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
 }
 
 describe('RichDetailView — logo/banner/disco preferidos (0082, entity)', () => {
@@ -410,9 +443,7 @@ describe('RichDetailView — logo/banner/disco preferidos (0082, entity)', () =>
 
   it('com asset kind=logo preferido, a logo substitui o título em texto', async () => {
     stubEntityFetch([assetFixture({ kind: 'logo' })])
-    const { container } = renderWithClient(
-      <RichDetailView detail={richDetailBase()} source="tmdb" entityId="e1" />,
-    )
+    const { container } = renderComEntity()
     await waitFor(() =>
       expect(container.querySelector('img[alt="Duna"]')).toBeTruthy(),
     )
@@ -425,9 +456,7 @@ describe('RichDetailView — logo/banner/disco preferidos (0082, entity)', () =>
 
   it('sem asset kind=logo, o título em texto continua aparecendo (sem regressão)', async () => {
     stubEntityFetch([])
-    renderWithClient(
-      <RichDetailView detail={richDetailBase()} source="tmdb" entityId="e1" />,
-    )
+    renderComEntity()
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Duna' }),
     ).toBeInTheDocument()
@@ -441,13 +470,7 @@ describe('RichDetailView — logo/banner/disco preferidos (0082, entity)', () =>
     async (kind, id) => {
       const url = `/api/v1/entities/e1/assets/${id}/file`
       stubEntityFetch([assetFixture({ id, kind, url })])
-      const { container } = renderWithClient(
-        <RichDetailView
-          detail={richDetailBase()}
-          source="tmdb"
-          entityId="e1"
-        />,
-      )
+      const { container } = renderComEntity()
       await waitFor(() =>
         expect(container.querySelector(`img[src="${url}"]`)).toBeTruthy(),
       )
@@ -455,10 +478,53 @@ describe('RichDetailView — logo/banner/disco preferidos (0082, entity)', () =>
   )
 
   it('sem entityId (tela do externo), não busca assets nem mostra logo/banner/disco', () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
+    const fetchMock = stubFetchNaoDeveSerChamado()
     renderWithClient(<RichDetailView detail={richDetailBase()} source="tmdb" />)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+// ── Selo "Assistido" (briefing 0094) ─────────────────────────────────────────
+
+describe('RichDetailView — selo "Assistido" (0094)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it.each([
+    ['completed', true],
+    ['started', false],
+  ] as const)(
+    'evento assistir=%s: selo "Assistido" visível=%s',
+    async (status, deveAparecer) => {
+      stubEntityFetch([], false, {
+        assistir: {
+          status,
+          occurred_at: '2026-01-05T20:00:00Z',
+          source: 'jellyfin-webhook',
+        },
+      })
+      renderComEntity()
+      if (deveAparecer) {
+        expect(await screen.findByText(/Assistido em/)).toBeInTheDocument()
+      } else {
+        await waitFor(() =>
+          expect(screen.queryByText(/Assistido em/)).toBeNull(),
+        )
+      }
+    },
+  )
+
+  it('sem evento assistir, o selo não aparece', async () => {
+    stubEntityFetch([], false, {})
+    renderComEntity()
+    await waitFor(() => expect(screen.queryByText(/Assistido em/)).toBeNull())
+  })
+
+  it('sem entityId (tela do externo), o selo não aparece', () => {
+    stubFetchNaoDeveSerChamado()
+    renderWithClient(<RichDetailView detail={richDetailBase()} source="tmdb" />)
+    expect(screen.queryByText(/Assistido em/)).toBeNull()
   })
 })
 
@@ -469,9 +535,7 @@ describe('RichDetailView — player do tema musical local (0082 §4.4)', () => {
 
   it('com theme.* na pasta-raiz, mostra o botão "Tocar tema" (sem autoplay)', async () => {
     stubEntityFetch([], true)
-    renderWithClient(
-      <RichDetailView detail={richDetailBase()} source="tmdb" entityId="e1" />,
-    )
+    renderComEntity()
     const botao = await screen.findByRole('button', {
       name: 'Tocar tema musical',
     })
@@ -484,9 +548,7 @@ describe('RichDetailView — player do tema musical local (0082 §4.4)', () => {
 
   it('sem theme.*, o player não aparece', async () => {
     stubEntityFetch([], false)
-    renderWithClient(
-      <RichDetailView detail={richDetailBase()} source="tmdb" entityId="e1" />,
-    )
+    renderComEntity()
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /tema musical/ })).toBeNull(),
     )

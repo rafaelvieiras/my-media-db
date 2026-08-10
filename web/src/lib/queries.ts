@@ -11,8 +11,10 @@ import {
   getExternalDetail,
   getCatalogCompletenessSettings,
   getHealth,
+  getHistoricoEstado,
   getSystemHealth,
   hasEntityTheme,
+  listHistoricoEventos,
   getLanguageSettings,
   getRetroactiveEnrichmentSettings,
   getAutoMaterializeArtworkSettings,
@@ -203,6 +205,30 @@ export function artworkQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['artwork', id],
     queryFn: () => getArtwork(id),
+  })
+}
+
+// Histórico de consumo (briefing 0092/0094, ADR-0022). Eventos brutos, mais
+// recente primeiro (`kind` opcional filtra; ausente traz todos). Chave própria
+// `['historico', id, 'eventos', kind]` — SOB o prefixo `['historico', id]`, para
+// uma invalidação por `['historico', id]` (após criar/apagar evento) derrubar
+// de uma vez esta chave E `historicoEstadoQueryOptions` abaixo, sem enumerar
+// `kind`s nem duplicar a chamada de invalidação.
+export function historicoEventosQueryOptions(id: string, kind?: string) {
+  return queryOptions({
+    queryKey: ['historico', id, 'eventos', kind ?? null],
+    queryFn: () => listHistoricoEventos(id, kind),
+  })
+}
+
+// Estado atual derivado do histórico, por kind (0092) — alimenta o selo
+// "Assistido" do hero (kind="assistir"). Chave `['historico', id, 'estado']`,
+// mesmo prefixo `['historico', id]` da query de eventos acima (mesma
+// invalidação após criar/apagar).
+export function historicoEstadoQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: ['historico', id, 'estado'],
+    queryFn: () => getHistoricoEstado(id),
   })
 }
 

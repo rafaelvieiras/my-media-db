@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { EstadoAssistidoBadge } from '@/components/historico-section'
 import {
   ApiError,
   assetFileSrc,
@@ -1277,6 +1278,11 @@ function HeroImersivo({
                 </span>
               ) : null}
               <Badge variant="outline">{rotuloTipo(detail.type)}</Badge>
+              {/* Selo "Assistido" (0094): só a tela da ENTITY passa `entityId` —
+                  mesmo gate de `TemaMusicalPlayer`/logo/banner/disco acima. Lê o
+                  histórico (kind="assistir") e some sem nenhum evento
+                  `completed`, nunca mostra "não assistido" ativo. */}
+              {entityId ? <EstadoAssistidoBadge entityId={entityId} /> : null}
               {titleBadges}
             </div>
 

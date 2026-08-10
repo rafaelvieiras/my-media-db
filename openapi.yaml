@@ -1617,6 +1617,101 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/historico:
+    post:
+      operationId: createHistoricoEvento
+      summary: Registra um evento de histórico de consumo (briefing 0092, ADR-0022).
+      description: >
+        Cria um `historico_evento` genérico (agnóstico de vertical — filme,
+        série e, no futuro, música/livro/jogo) ligado à entity. `source`
+        ausente vira `"manual"`; `occurred_at` ausente vira o timestamp do
+        servidor no momento da chamada. 201 com o evento criado; 404 se a
+        entity não existe; 422 se `kind`/`status` vierem vazios ou
+        `progress_percent` estiver fora de `[0, 100]`.
+      tags: [historico]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateHistoricoEvento" }
+      responses:
+        "201":
+          description: Evento criado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HistoricoEvento" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+    get:
+      operationId: listHistoricoEventos
+      summary: Lista o histórico de consumo de uma entity (briefing 0092).
+      description: >
+        Eventos em ordem cronológica reversa (`occurred_at DESC`). `?kind=`
+        filtra por um `kind` específico (ex.: `assistir`) quando presente.
+        404 se a entity não existe.
+      tags: [historico]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - name: kind
+          in: query
+          description: "Filtra por kind (ex.: assistir, ouvir). Ausente = todos."
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Histórico de eventos (vazio quando não há nenhum).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HistoricoEventoList" }
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/historico/estado:
+    get:
+      operationId: getHistoricoEstado
+      summary: Estado atual derivado do histórico, por kind (briefing 0092).
+      description: >
+        Um objeto por `kind` distinto já visto no histórico da entity, com o
+        evento mais recente (`occurred_at` mais alto) daquele `kind` —
+        derivado em cada chamada, nunca mantido como coluna redundante
+        (nunca "mente" — ver ADR-0022). Objeto vazio (`{}`) quando não há
+        histórico. 404 se a entity não existe.
+      tags: [historico]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Estado atual, por kind.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HistoricoEstado" }
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/historico/{eventoId}:
+    delete:
+      operationId: deleteHistoricoEvento
+      summary: Remove um evento de histórico (briefing 0092).
+      description: >
+        Correção pontual do dono (fat-finger, teste) — mesma lógica já
+        aplicada a `asset`/`credit` custom removíveis; não é purga em massa
+        (princípio 5 do AGENTS.md continua intacto). 204 em sucesso; 404 se a
+        entity ou o evento não existirem, ou o evento não pertencer à
+        entity.
+      tags: [historico]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - $ref: "#/components/parameters/HistoricoEventoId"
+      responses:
+        "204":
+          description: Evento removido.
+        "404":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/purge:
     post:
       operationId: purgeEntities
@@ -1917,6 +2012,80 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/v1/webhooks/jellyfin:
+    post:
+      operationId: receiveJellyfinWebhook
+      summary: Recebe o webhook de reprodução do Jellyfin (briefing 0093, ADR-0022).
+      description: >
+        Destino do plugin `jellyfin-plugin-webhook` — corpo JSON de forma
+        variável por versão do plugin (`NotificationType`, `ItemType`,
+        `Provider_tmdb`/`Provider_imdb`/`Provider_tvdb`,
+        `PlaybackPositionTicks`, `RunTimeTicks`, `PlaybackPercentage`, entre
+        outros), parseado best-effort — qualquer campo pode faltar sem
+        derrubar o handler. Casa o item pelos IDs externos presentes no
+        payload; sem match, o evento é descartado e logado (nunca cria
+        entity nova a partir de um webhook). Autenticado por `token` de
+        query, comparado em tempo constante. Responde sempre `204` quando o
+        token bate — inclusive payload não reconhecível/sem match, para não
+        fazer o Jellyfin retentar; `401` quando o `token` falta ou não bate.
+      tags: [webhooks]
+      parameters:
+        - name: token
+          in: query
+          description: Token do webhook (gerado via POST .../webhooks/jellyfin/token).
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: >
+                Payload do jellyfin-plugin-webhook — forma livre/variável por
+                versão do plugin, parseada best-effort.
+              additionalProperties: true
+      responses:
+        "204":
+          description: >
+            Aceito — evento gravado, ou descartado/logado sem match (mesmo
+            código para não gerar retry do Jellyfin).
+        "401":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/webhooks/jellyfin/token:
+    post:
+      operationId: regenerateJellyfinWebhookToken
+      summary: Gera (ou regenera) o token do webhook do Jellyfin (briefing 0093).
+      description: >
+        Cria um token novo e substitui o anterior (armazenado em
+        `app_settings`, chave `webhook_jellyfin_token`) — chamadas
+        subsequentes ao webhook com o token antigo deixam de funcionar.
+        Autenticado como qualquer outro endpoint interno da API (é o painel
+        do dono operando, sem token próprio). 200 com o token novo.
+      tags: [webhooks]
+      responses:
+        "200":
+          description: Token gerado/regenerado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JellyfinWebhookToken" }
+    get:
+      operationId: getJellyfinWebhookToken
+      summary: Devolve o token atual do webhook do Jellyfin (briefing 0093).
+      description: >
+        200 com o token vigente; 404 se nenhum token foi gerado ainda (nesse
+        caso o dono deve chamar POST .../webhooks/jellyfin/token primeiro).
+      tags: [webhooks]
+      responses:
+        "200":
+          description: Token vigente.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JellyfinWebhookToken" }
+        "404":
+          $ref: "#/components/responses/Error"
+
 components:
   parameters:
     EntityId:
@@ -1944,6 +2113,12 @@ components:
       in: path
       required: true
       description: Id do asset (arte).
+      schema: { type: string }
+    HistoricoEventoId:
+      name: eventoId
+      in: path
+      required: true
+      description: Id do evento de histórico de consumo (briefing 0092).
       schema: { type: string }
     LangQuery:
       name: lang
@@ -2410,6 +2585,88 @@ components:
       type: array
       description: Galeria de arte da entity (vazia quando não há arte).
       items: { $ref: "#/components/schemas/Asset" }
+    CreateHistoricoEvento:
+      type: object
+      description: >
+        Corpo de POST .../historico (briefing 0092). `kind`/`status` são TEXT
+        livre (ex.: kind="assistir", status="started"|"paused"|"stopped"|
+        "completed") — vocabulário sugerido, não travado no schema.
+      required: [kind, status]
+      properties:
+        kind:
+          type: string
+          description: "Tipo de evento (ex.: assistir, ouvir, jogar). Não-vazio."
+        status:
+          type: string
+          description: "Status do evento (ex.: started, paused, stopped, completed). Não-vazio."
+        progress_percent:
+          type: [number, "null"]
+          description: "Progresso em [0, 100]. Fora do intervalo → 422."
+        position_seconds:
+          type: [number, "null"]
+          description: Posição de reprodução em segundos, quando aplicável.
+        occurred_at:
+          type: string
+          description: >
+            Instante do evento (RFC3339). Ausente → timestamp do servidor no
+            momento da chamada.
+        source:
+          type: string
+          description: 'Proveniência do evento (ex.: manual, jellyfin-webhook). Ausente → "manual".'
+        payload:
+          type: [object, "null"]
+          description: "Payload cru opcional (ex.: o corpo original do webhook), gravado como está."
+    HistoricoEvento:
+      type: object
+      description: Um evento de histórico de consumo (briefing 0092, ADR-0022).
+      required: [id, kind, status, occurred_at, source, created_at]
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        status: { type: string }
+        progress_percent: { type: [number, "null"] }
+        position_seconds: { type: [number, "null"] }
+        occurred_at: { type: string }
+        source: { type: string }
+        payload: { type: [object, "null"] }
+        created_at: { type: string }
+    HistoricoEventoList:
+      type: object
+      description: Resposta de GET .../historico — eventos em ordem occurred_at DESC.
+      required: [eventos]
+      properties:
+        eventos:
+          type: array
+          items: { $ref: "#/components/schemas/HistoricoEvento" }
+    HistoricoEstadoItem:
+      type: object
+      description: >
+        Projeção do evento mais recente de um `kind` (briefing 0092) — sem
+        `id`/`payload`, só o resumo usado pela UI.
+      required: [status, occurred_at, source]
+      properties:
+        status: { type: string }
+        progress_percent: { type: [number, "null"] }
+        position_seconds: { type: [number, "null"] }
+        occurred_at: { type: string }
+        source: { type: string }
+    HistoricoEstado:
+      type: object
+      description: >
+        Resposta de GET .../historico/estado — um `HistoricoEstadoItem` por
+        `kind` distinto já visto no histórico da entity (chave = kind).
+        Objeto vazio quando não há histórico.
+      required: [estado]
+      properties:
+        estado:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/HistoricoEstadoItem" }
+    JellyfinWebhookToken:
+      type: object
+      description: Resposta de GET/POST .../webhooks/jellyfin/token (briefing 0093).
+      required: [token]
+      properties:
+        token: { type: string }
     ArtworkItem:
       type: object
       description: >

@@ -4,6 +4,8 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import {
   ChevronDown,
   CloudDownload,
+  Eye,
+  EyeOff,
   FileText,
   ImageDown,
   Images,
@@ -33,9 +35,12 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   ApiError,
+  createHistoricoEvento,
+  deleteHistoricoEvento,
   downloadMissingArtwork,
   enrichEntity,
   enrichMissing,
+  listHistoricoEventos,
   materializeMissingMedia,
   purgeEntity,
   refreshEntityFiles,
@@ -50,6 +55,7 @@ import {
   precisaAtencaoCatalogacao,
   type CatalogCompleteness,
 } from '@/lib/catalog-completeness-badges'
+import { KIND_ASSISTIR } from '@/lib/historico'
 
 // EntityManageMenu (briefing 0086, ex-`EntityActionButtons` do 0059) compacta as
 // ações do item num ÚNICO dropdown "Gerenciar" — Editar (sempre) + "Baixar
@@ -267,6 +273,34 @@ export function EntityManageMenu({
     onSuccess: invalidar,
   })
 
+  // invalidarHistorico deriva do prefixo `['historico', id]` (queries.ts) — o
+  // selo "Assistido" do hero (mesma chave) e a seção "Histórico" refletem sem
+  // reload manual, mesma convenção de invalidação-por-prefixo do resto do menu.
+  const invalidarHistorico = () =>
+    queryClient.invalidateQueries({ queryKey: ['historico', id] })
+  // "Marcar como assistido"/"Marcar como não assistido" (briefing 0094): ação
+  // manual para item sem Jellyfin (ou histórico retroativo). Ambos os itens do
+  // menu ficam SEMPRE visíveis (não dependem de saber o estado atual — decisão
+  // de UX que evita uma query própria só para rotular o item; a query do selo/
+  // seção já cobre a leitura, este menu só ESCREVE). "Assistido" cria o evento
+  // `completed`; "não assistido" apaga o evento `kind=assistir` MAIS RECENTE
+  // (interpretação mais simples do briefing — sem paginar/escolher qual apagar).
+  const marcarAssistido = useMutation({
+    mutationFn: () =>
+      createHistoricoEvento(id, { kind: KIND_ASSISTIR, status: 'completed' }),
+    onSuccess: invalidarHistorico,
+  })
+  const desmarcarAssistido = useMutation({
+    mutationFn: async () => {
+      const lista = await listHistoricoEventos(id, KIND_ASSISTIR)
+      const maisRecente = lista.eventos[0]
+      if (maisRecente) {
+        await deleteHistoricoEvento(id, maisRecente.id)
+      }
+    },
+    onSuccess: invalidarHistorico,
+  })
+
   const mostrarInformacoes = precisaAtencaoCatalogacao(catalogCompleteness)
   const mostrarArte = !!catalogCompleteness?.missing.some((chave) =>
     chave.startsWith('artwork:'),
@@ -312,6 +346,16 @@ export function EntityManageMenu({
       : baixarArtesFaltantes.isError
         ? 'Não foi possível baixar as artes faltantes.'
         : null
+  const erroAssistido =
+    marcarAssistido.error instanceof ApiError
+      ? marcarAssistido.error.message
+      : desmarcarAssistido.error instanceof ApiError
+        ? desmarcarAssistido.error.message
+        : marcarAssistido.isError || desmarcarAssistido.isError
+          ? 'Não foi possível atualizar o histórico.'
+          : null
+  const atualizandoAssistido =
+    marcarAssistido.isPending || desmarcarAssistido.isPending
 
   return (
     <div className="flex flex-col items-end gap-1.5">
@@ -361,6 +405,26 @@ export function EntityManageMenu({
           {/* 3 ações SEMPRE VISÍVEIS (briefing 0088) — não dependem de
               `catalog_completeness`, diferente dos 2 itens condicionais acima. */}
           <DropdownMenuSeparator />
+          {/* "Marcar como assistido"/"não assistido" (briefing 0094): também
+              sempre visível — cria/apaga o evento de histórico direto, sem
+              precisar saber o estado atual (a leitura já é feita pelo selo/seção
+              do detalhe). */}
+          <DropdownMenuItem
+            disabled={atualizandoAssistido}
+            onSelect={() => marcarAssistido.mutate()}
+          >
+            <Eye aria-hidden />
+            {marcarAssistido.isPending ? 'Marcando…' : 'Marcar como assistido'}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={atualizandoAssistido}
+            onSelect={() => desmarcarAssistido.mutate()}
+          >
+            <EyeOff aria-hidden />
+            {desmarcarAssistido.isPending
+              ? 'Desmarcando…'
+              : 'Marcar como não assistido'}
+          </DropdownMenuItem>
           <DropdownMenuItem
             disabled={verificarArquivos.isPending}
             onSelect={() => verificarArquivos.mutate()}
@@ -441,6 +505,27 @@ export function EntityManageMenu({
       ) : salvarNfo.isSuccess ? (
         <span role="status" className="text-sm text-muted-foreground">
           .nfo gravado em {salvarNfo.data.nfo_path}
+        </span>
+      ) : null}
+      {marcarAssistido.isPending ? (
+        <span role="status" className="text-sm text-muted-foreground">
+          Marcando…
+        </span>
+      ) : desmarcarAssistido.isPending ? (
+        <span role="status" className="text-sm text-muted-foreground">
+          Desmarcando…
+        </span>
+      ) : erroAssistido ? (
+        <span role="alert" className="text-sm font-medium text-destructive">
+          {erroAssistido}
+        </span>
+      ) : marcarAssistido.isSuccess ? (
+        <span role="status" className="text-sm text-muted-foreground">
+          Marcado como assistido.
+        </span>
+      ) : desmarcarAssistido.isSuccess ? (
+        <span role="status" className="text-sm text-muted-foreground">
+          Marcado como não assistido.
         </span>
       ) : null}
       {verificarArquivos.isPending ? (

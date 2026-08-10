@@ -88,6 +88,12 @@ Objetivo: cumprir o escopo universal.
 - Novas **verticais internas** (music videos, música, games…) via `extension_data`.
 - **Maquinário de plugins** de terceiros (manifest, registry, ciclo de vida,
   isolamento) — só depois da base estável ([11](11-decisoes-abertas.md)).
+- **Histórico de consumo (tracking/scrobbling)** agnóstico a vertical —
+  tabela de eventos genérica + webhook de media server + capacidade
+  `TrackerProvider` para sync externo (Trakt e afins). Fundado em pesquisa de
+  mercado, decisão em [ADR-0022](adr/0022-historico-de-consumo-eventos-genericos-e-trackerprovider.md)
+  (agenda [H1–H4](00-agenda-de-decisoes.md)), breakdown em
+  [briefings 0092–0094](../briefings/README.md#fase-5--histórico-de-consumo-trackingscrobbling).
 
 ---
 

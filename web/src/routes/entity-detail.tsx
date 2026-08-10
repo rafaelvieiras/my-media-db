@@ -26,6 +26,7 @@ import {
   EpisodiosAgrupados,
   SeletorOrdenacao,
 } from '@/components/episode-ordering'
+import { HistoricoSection } from '@/components/historico-section'
 import { MediaInfoTable } from '@/components/media-info-table'
 import {
   ErrorState,
@@ -360,6 +361,11 @@ export function EntityDetailScreen() {
             <MediaInfoTable entityId={id} />
           </section>
         ) : null}
+
+        {/* Histórico de consumo (0094): timeline de eventos "assistir" (webhook
+            Jellyfin do 0093 ou ação manual do dropdown "Gerenciar" acima). Some
+            por inteiro sem nenhum evento — mesmo padrão da SimilaresRail. */}
+        <HistoricoSection entityId={id} />
       </RichDetailView>
     </main>
   )

@@ -75,6 +75,15 @@ export type PurgeResult = components['schemas']['PurgeResult']
 export type PurgeBatchResult = components['schemas']['PurgeBatchResult']
 // Resultado de POST .../nfo (briefing 0062): caminho gravado + timestamp da escrita.
 export type NfoWriteResult = components['schemas']['NfoWriteResult']
+// Histórico de consumo (briefing 0092/ADR-0022): evento genérico (kind/status TEXT
+// livre — hoje só kind="assistir", status started/paused/stopped/completed) +
+// estado derivado (o mais recente por kind). Agnóstico de vertical de propósito.
+export type HistoricoEvento = components['schemas']['HistoricoEvento']
+export type HistoricoEventoList = components['schemas']['HistoricoEventoList']
+export type CreateHistoricoEvento =
+  components['schemas']['CreateHistoricoEvento']
+export type HistoricoEstado = components['schemas']['HistoricoEstado']
+export type HistoricoEstadoItem = components['schemas']['HistoricoEstadoItem']
 
 // Forma do corpo de `GET /api/v1/health` (contrato do briefing 0001).
 export interface Health {
@@ -1165,6 +1174,71 @@ export async function writeEntityNfo(
     { method: 'POST' },
   )
   return lerJson<NfoWriteResult>(res)
+}
+
+// ── Histórico de consumo (briefing 0092/0094, ADR-0022) ─────────────────────
+
+// Lista os eventos de histórico da entity, mais recente primeiro (occurred_at
+// DESC, já ordenado pelo backend). `kind` filtra (ex.: "assistir"); ausente traz
+// todos os kinds já vistos — agnóstico de vertical (filme/série hoje, música/
+// livro/jogo no futuro reusam o mesmo endpoint).
+export async function listHistoricoEventos(
+  id: string,
+  kind?: string,
+): Promise<HistoricoEventoList> {
+  const qs = kind ? `?kind=${encodeURIComponent(kind)}` : ''
+  return lerJson<HistoricoEventoList>(
+    await fetch(
+      `${base}/api/v1/entities/${encodeURIComponent(id)}/historico${qs}`,
+    ),
+  )
+}
+
+// Estado ATUAL derivado do histórico, por kind (projeção do evento mais recente
+// de cada kind — sem `id`/`payload`). Objeto vazio quando a entity nunca teve
+// nenhum evento. Alimenta o selo "Assistido" do card/hero (kind="assistir").
+export async function getHistoricoEstado(id: string): Promise<HistoricoEstado> {
+  return lerJson<HistoricoEstado>(
+    await fetch(
+      `${base}/api/v1/entities/${encodeURIComponent(id)}/historico/estado`,
+    ),
+  )
+}
+
+// Registra um evento de histórico (manual, pelo dono, ou reaproveitado por uma
+// futura fonte automática além do webhook Jellyfin do 0093). `source` ausente
+// vira "manual" no servidor; `occurred_at` ausente vira o timestamp do servidor.
+export async function createHistoricoEvento(
+  id: string,
+  body: CreateHistoricoEvento,
+): Promise<HistoricoEvento> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/historico`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+  return lerJson<HistoricoEvento>(res)
+}
+
+// Apaga UM evento da timeline (204 sem corpo). Usado pela ação "apagar" de cada
+// linha da timeline e por "marcar como não assistido" (apaga o evento
+// `completed` mais recente).
+export async function deleteHistoricoEvento(
+  id: string,
+  eventoId: string,
+): Promise<void> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/historico/${encodeURIComponent(
+      eventoId,
+    )}`,
+    { method: 'DELETE' },
+  )
+  if (!res.ok) {
+    throw await erroDaResposta(res)
+  }
 }
 
 // ── Prévia de candidato + confirmação supervisionada (0060) ─────────────────

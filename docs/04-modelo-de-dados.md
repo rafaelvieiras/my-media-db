@@ -308,6 +308,17 @@ media_override    (entity_id, override_json, updated_at)   -- patch esparso (1 l
 person            (id, name, external_ids_json)
 credit            (id, entity_id, person_id, role, ord)
 company           (id, name, kind, external_ids_json)
+historico_evento  (id, entity_id→entity, kind, status, progress_percent,
+                   position_seconds, occurred_at, source, payload_json,
+                   created_at)
+                   -- histórico de consumo genérico e agnóstico de vertical
+                   -- (filme/série hoje; música/livro/jogo no futuro) —
+                   -- briefing 0092, ADR-0022. Append-only, ON DELETE CASCADE
+                   -- filha de entity; kind/status/source são TEXT livre (sem
+                   -- CHECK). "Estado atual" (GET .../historico/estado) é
+                   -- DERIVADO (último evento por kind), nunca coluna
+                   -- redundante. Não sincroniza com entity.watched/
+                   -- play_count/... (migration 0019, legado passivo).
 -- fase posterior: user, token, permission, plugin_registry
 ```
 
@@ -392,6 +403,17 @@ erDiagram
         text last_scan
         text state
     }
+    historico_evento {
+        text id PK
+        text entity_id FK
+        text kind
+        text status
+        real progress_percent
+        real position_seconds
+        text occurred_at
+        text source
+        json payload_json
+    }
 
     entity         ||--o{ media_file      : "1:N versões/qualidades"
     entity         ||--o| media_override  : "1 patch esparso"
@@ -402,6 +424,7 @@ erDiagram
     entity         ||--o{ entity_relation : "parent_id"
     entity         ||--o{ entity_relation : "child_id"
     library_source ||--o{ media_file      : "varre"
+    entity         ||--o{ historico_evento : "consumo (assistir/ouvir/...)"
 ```
 
 > **`company`** aparece sem aresta rígida porque a ligação `entity`↔`company`

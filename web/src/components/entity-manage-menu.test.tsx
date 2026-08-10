@@ -5,6 +5,7 @@ import { EntityManageMenu } from '@/components/entity-manage-menu'
 import type { CatalogCompleteness } from '@/lib/catalog-completeness-badges'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
+import { stubRota, stubRotas } from '@/test/stub-fetch'
 
 // Testa o dropdown "Gerenciar" (briefing 0086, ex-`EntityActionButtons`/0059):
 // Editar (sempre) + "Baixar informações faltando"/"Baixar arte faltando"
@@ -674,5 +675,129 @@ describe('EntityManageMenu — "Excluir coleção" (0026, agora via AlertDialog)
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent('não foi possível excluir a coleção')
     expect(navigateSpy).not.toHaveBeenCalled()
+  })
+})
+
+// "Marcar como assistido"/"Marcar como não assistido" (briefing 0094): os dois
+// itens ficam SEMPRE visíveis (não dependem de saber o estado atual — a leitura
+// já é feita pelo selo/seção do detalhe, não por este menu). "Assistido" cria o
+// evento `completed`; "não assistido" apaga o evento `kind=assistir` MAIS
+// RECENTE (busca a lista antes de apagar).
+describe('EntityManageMenu — "Marcar como (não) assistido" (0094)', () => {
+  it('os dois itens sempre aparecem no menu', async () => {
+    const user = userEvent.setup()
+    render(null)
+    await abrirMenu(user)
+
+    expect(
+      screen.getByRole('menuitem', { name: /Marcar como assistido/ }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('menuitem', { name: /Marcar como não assistido/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('"Marcar como assistido" cria o evento e mostra a mensagem de sucesso', async () => {
+    const user = userEvent.setup()
+    const fetchMock = stubRota(
+      (p, m) => p === '/api/v1/entities/e1/historico' && m === 'POST',
+      () => okJson({ id: 'ev1', kind: 'assistir', status: 'completed' }, 201),
+    )
+    render(null)
+    await abrirMenu(user)
+
+    await user.click(
+      screen.getByRole('menuitem', { name: /Marcar como assistido/ }),
+    )
+    expect(
+      await screen.findByText('Marcado como assistido.'),
+    ).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/entities/e1/historico'),
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it('erro ao "Marcar como assistido" mostra role=alert com a mensagem do envelope', async () => {
+    const user = userEvent.setup()
+    stubRota(
+      (p, m) => p === '/api/v1/entities/e1/historico' && m === 'POST',
+      () => erroJson(422, 'invalid', 'status inválido'),
+    )
+    render(null)
+    await abrirMenu(user)
+
+    await user.click(
+      screen.getByRole('menuitem', { name: /Marcar como assistido/ }),
+    )
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent('status inválido')
+  })
+
+  // Comum aos dois testes abaixo: abre o menu, clica "Marcar como não
+  // assistido" e confirma a mensagem de sucesso — o que muda é só a rota
+  // stubada (com/sem evento `assistir` prévio) e a asserção sobre o DELETE.
+  async function clicarMarcarComoNaoAssistido(
+    user: ReturnType<typeof userEvent.setup>,
+  ) {
+    render(null)
+    await abrirMenu(user)
+    await user.click(
+      screen.getByRole('menuitem', { name: /Marcar como não assistido/ }),
+    )
+    expect(
+      await screen.findByText('Marcado como não assistido.'),
+    ).toBeInTheDocument()
+  }
+
+  it('"Marcar como não assistido" busca o evento mais recente e apaga-o', async () => {
+    const user = userEvent.setup()
+    const fetchMock = stubRotas([
+      [
+        (p, m) => p === '/api/v1/entities/e1/historico' && m === 'GET',
+        () =>
+          okJson({
+            eventos: [
+              {
+                id: 'ev-recente',
+                kind: 'assistir',
+                status: 'completed',
+                occurred_at: '2026-01-05T20:00:00Z',
+                source: 'jellyfin-webhook',
+                created_at: '2026-01-05T20:00:00Z',
+              },
+            ],
+          }),
+      ],
+      [
+        (p, m) =>
+          p === '/api/v1/entities/e1/historico/ev-recente' && m === 'DELETE',
+        () => ({ ok: true, status: 204, json: async () => ({}) }) as Response,
+      ],
+    ])
+
+    await clicarMarcarComoNaoAssistido(user)
+
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, init]) =>
+          String(url) === '/api/v1/entities/e1/historico/ev-recente' &&
+          init?.method === 'DELETE',
+      ),
+    ).toBe(true)
+  })
+
+  it('"Marcar como não assistido" sem nenhum evento assistir não chama DELETE', async () => {
+    const user = userEvent.setup()
+    const fetchMock = stubRota(
+      (p, m) => p === '/api/v1/entities/e1/historico' && m === 'GET',
+      () => okJson({ eventos: [] }),
+    )
+
+    await clicarMarcarComoNaoAssistido(user)
+
+    expect(
+      fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE'),
+    ).toBe(false)
   })
 })

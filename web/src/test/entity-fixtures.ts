@@ -128,6 +128,23 @@ export function respostaComum(u: string): Response | null {
   if (u.includes('/files')) {
     return okJson({ items: [] })
   }
+  return respostaHistoricoVazia(u)
+}
+
+// Sub-rota do histórico de consumo (0092/0094): estado vazio (sem selo
+// "Assistido") e sem eventos (sem seção "Histórico") por padrão — o teste que
+// precisa exercitar o histórico em si trata a rota antes (mesmo padrão de
+// `/override`). Extraída à parte (não só embutida em `respostaComum`) porque
+// alguns `fetchRouter` locais (entity-detail.test.tsx,
+// entity-detail-collection.test.tsx) montam o próprio roteamento em vez de
+// chamar `respostaComum` inteiro — reaproveitam só este pedaço (jscpd).
+export function respostaHistoricoVazia(u: string): Response | null {
+  if (u.includes('/historico/estado')) {
+    return okJson({ estado: {} })
+  }
+  if (u.includes('/historico')) {
+    return okJson({ eventos: [] })
+  }
   return null
 }
 

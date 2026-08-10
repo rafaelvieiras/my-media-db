@@ -660,6 +660,18 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Get("/{id}/override", s.getOverride)
 				ent.Delete("/{id}/override", s.deleteOverride)
 				ent.Delete("/{id}/override/{campo}", s.deleteOverrideCampo)
+
+				// Histórico de consumo (briefing 0092, ADR-0022): eventos
+				// genéricos de tracking (assistir/ouvir/jogar/etc.),
+				// agnósticos de vertical. POST registra um evento; GET lista
+				// o histórico (filtro opcional ?kind=) em ordem
+				// occurred_at DESC; GET .../estado deriva o resumo por kind
+				// (último evento de cada); DELETE remove um evento pontual
+				// (correção do dono, não é purga em massa).
+				ent.Post("/{id}/historico", s.createHistoricoEvento)
+				ent.Get("/{id}/historico", s.listHistoricoEventos)
+				ent.Get("/{id}/historico/estado", s.getHistoricoEstado)
+				ent.Delete("/{id}/historico/{eventoId}", s.deleteHistoricoEvento)
 			})
 
 			// Sistema de JOBS (briefing 0052): tipos de job registrados em código
@@ -673,6 +685,19 @@ func (s *Server) Handler() (http.Handler, error) {
 				jobs.Patch("/{id}", s.patchJob)
 				jobs.Post("/{id}/run", s.runJob)
 				jobs.Get("/{id}/executions", s.listJobExecutions)
+			})
+
+			// Webhook do Jellyfin (briefing 0093, ADR-0022, depende do
+			// 0092): recebe a notificação de reprodução do plugin
+			// `jellyfin-plugin-webhook` (autenticada por ?token=,
+			// comparação em tempo constante) e grava um historico_evento
+			// quando o item casa por id externo. Endpoints de token
+			// (gerar/ler) são internos, sem token próprio -- é o painel
+			// do dono operando.
+			v1.Route("/webhooks/jellyfin", func(wh chi.Router) {
+				wh.Post("/", s.receiveJellyfinWebhook)
+				wh.Post("/token", s.regenerateJellyfinWebhookToken)
+				wh.Get("/token", s.getJellyfinWebhookToken)
 			})
 		})
 	})
