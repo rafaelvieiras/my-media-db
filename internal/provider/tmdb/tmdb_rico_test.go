@@ -268,3 +268,16 @@ func TestTvdbIDDoDetalheSerieSemMatch(t *testing.T) {
 		t.Errorf("payload ilegivel: got (%q,%v), quero (\"\",false)", id, ok)
 	}
 }
+
+// TestTvdbIDDoDetalheSerieNumerico (0090) prova que o tvdb_id numerico (o TMDB e
+// inconsistente entre titulos: as vezes string, as vezes numero JSON) e aceito e
+// normalizado para string -- antes do fix, o Unmarshal falhava e o metodo devolvia
+// ("",false) mesmo com o tvdb_id presente.
+func TestTvdbIDDoDetalheSerieNumerico(t *testing.T) {
+	c := New(Credencial{Token: "tok"}, nil, "")
+	raw := json.RawMessage(`{"detail":{"external_ids":{"imdb_id":"tt0229888","tvdb_id":212601}}}`)
+	id, ok := c.TvdbIDDoDetalheSerie(raw)
+	if !ok || id != "212601" {
+		t.Errorf("tvdb_id numerico: got (%q,%v), quero (212601,true)", id, ok)
+	}
+}

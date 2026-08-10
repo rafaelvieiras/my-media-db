@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"mime"
 	"net/http"
 	"net/url"
@@ -1030,6 +1031,7 @@ func (s *Server) camadasDaFonte(rows []sqlcgen.MediaExternal, fonte string) []re
 		}
 		campos, err := prov.MapearDetalhe(json.RawMessage(row.PayloadJson.String))
 		if err != nil {
+			log.Printf("entities: mapear detalhe da fonte %q da entity %q falhou (degrada esta fonte): %v", row.Source, row.EntityID, err)
 			continue // payload cru inválido: degrada esta fonte
 		}
 		out = append(out, resolver.CamadaExterna{Fonte: row.Source, Campos: campos})

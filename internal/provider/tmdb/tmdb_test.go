@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -324,6 +325,34 @@ func TestBuscarDetalheEnvelopeSerie(t *testing.T) {
 	eqCampo(t, campos, "release_date", "2008-01-20")
 	eqCampo(t, campos, "poster_url", "https://image.tmdb.org/t/p/w342/bb.jpg")
 	eqCampo(t, campos, "original_language", "en")
+}
+
+// TestMapearDetalheEnvelopeSerieComTvdbIdNumerico (0090) reproduz o bug real de
+// producao: o TMDB as vezes devolve external_ids.tvdb_id como NUMERO JSON (nao
+// string). Antes do fix, isso derrubava o Unmarshal do detalhe INTEIRO -- nao so o
+// tvdb_id, mas title/description/tags tambem sumiam. Aqui confirmamos que o
+// mapeamento completo continua funcionando com tvdb_id numerico, com o mesmo
+// payload-base ja usado por TestBuscarDetalheEnvelopeSerie (detalheSerie).
+func TestMapearDetalheEnvelopeSerieComTvdbIdNumerico(t *testing.T) {
+	c := New(Credencial{Token: "tok"}, nil, "")
+	detalheComTvdbNumerico := strings.Replace(
+		detalheSerie, `"poster_path": "/bb.jpg",`,
+		`"poster_path": "/bb.jpg", "external_ids": {"imdb_id": "tt0903747", "tvdb_id": 81189},`,
+		1,
+	)
+	raw := json.RawMessage(`{"detail": ` + detalheComTvdbNumerico + `, "tags_by_lang": {"pt-BR": ["Drama"]}}`)
+
+	campos, err := c.MapearDetalhe(raw)
+	if err != nil {
+		t.Fatalf("MapearDetalhe com tvdb_id numerico: %v", err)
+	}
+	eqIdioma(t, campos, "title", "en", "Breaking Bad")
+	eqIdioma(t, campos, "description", "pt-BR", "Um professor vira quimico do crime.")
+	eqCampo(t, campos, "release_date", "2008-01-20")
+	links, _ := campos["external_links"].(map[string]any)
+	if links["imdb"] != "https://www.imdb.com/title/tt0903747" {
+		t.Errorf("external_links[imdb] = %v, quero o link do imdb_id", links["imdb"])
+	}
 }
 
 // TestListaGenerosCache prova que as listas de genero por idioma sao cacheadas: dois

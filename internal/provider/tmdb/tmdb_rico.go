@@ -88,8 +88,29 @@ type paisContentRatingTMDB struct {
 // tvdb_id (0087 — o cross-id que o fanart.tv exige para TV; o TMDB já devolve isso de
 // graça para /tv/{id}, vazio/inofensivo para /movie/{id}).
 type externalIdsTMDB struct {
-	ImdbID string `json:"imdb_id"`
-	TvdbID string `json:"tvdb_id"`
+	ImdbID string         `json:"imdb_id"`
+	TvdbID idFlexivelTMDB `json:"tvdb_id"`
+}
+
+// idFlexivelTMDB (0090) aceita `tvdb_id` vindo como STRING ou NÚMERO JSON — o TMDB é
+// inconsistente entre títulos/endpoints nesse campo especificamente. Antes desta
+// tolerância, um único título com tvdb_id numérico fazia o Unmarshal do detalhe
+// INTEIRO falhar, derrubando título/sinopse/elenco/tagline junto (mapearEnvelope
+// aborta tudo em qualquer erro de subcampo).
+type idFlexivelTMDB string
+
+func (id *idFlexivelTMDB) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*id = idFlexivelTMDB(s)
+		return nil
+	}
+	var n json.Number
+	if err := json.Unmarshal(data, &n); err != nil {
+		return err
+	}
+	*id = idFlexivelTMDB(n.String())
+	return nil
 }
 
 // similarTMDB envelopa os itens similares do append `similar`.
@@ -365,5 +386,5 @@ func (c *Client) TvdbIDDoDetalheSerie(raw json.RawMessage) (string, bool) {
 	if err := json.Unmarshal(detail, &d); err != nil {
 		return "", false
 	}
-	return d.ExternalIds.TvdbID, d.ExternalIds.TvdbID != ""
+	return string(d.ExternalIds.TvdbID), d.ExternalIds.TvdbID != ""
 }
