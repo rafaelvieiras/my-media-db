@@ -10,7 +10,8 @@ import (
 
 // detalheSerieRico e um payload de /tv/{id} com os blocos ricos de SERIE (0045): status
 // (situacao), genres, tagline (top + por idioma), backdrop, content_ratings (classificacao
-// de serie), keywords (results), similar (name/first_air_date) e external_ids.
+// de serie), keywords (results), recommendations (0091 — name/first_air_date, trocado de
+// `similar`, ver tmdb.go) e external_ids.
 const detalheSerieRico = `{
   "id": 456,
   "original_language": "en",
@@ -38,8 +39,8 @@ const detalheSerieRico = `{
     {"iso_3166_1": "US", "rating": "TV-PG"}
   ]},
   "external_ids": {"imdb_id": "tt0096697"},
-  "similar": {"results": [
-    {"id": 1434, "name": "Family Guy", "first_air_date": "1999-01-31", "poster_path": "/fg.jpg"}
+  "recommendations": {"results": [
+    {"id": 1434, "name": "Family Guy", "first_air_date": "1999-01-31", "poster_path": "/fg.jpg", "genre_ids": [16, 35], "vote_average": 7.5, "vote_count": 5000}
   ]}
 }`
 
@@ -93,7 +94,7 @@ func TestBuscarSerieDetalheRicoAppend(t *testing.T) {
 		t.Errorf("find external_source = %q, quero tvdb_id", src)
 	}
 	ap := reqTV.URL.Query().Get("append_to_response")
-	for _, bloco := range []string{"content_ratings", "keywords", "translations", "similar", "external_ids"} {
+	for _, bloco := range []string{"content_ratings", "keywords", "translations", "recommendations", "external_ids"} {
 		if !strings.Contains(ap, bloco) {
 			t.Errorf("append_to_response %q nao contem %q", ap, bloco)
 		}
@@ -128,8 +129,13 @@ func TestSerieRicoTraduziveis(t *testing.T) {
 }
 
 // TestSerieRicoNeutros cobre os campos ricos NEUTROS do contrato: classificacao por
-// regiao, similar (tipo tv), backdrop_url e airing_status (cru) — e a NAO-inclusao de
-// title/overview/original_language/poster (que clobbariam a arvore TVDB).
+// regiao, backdrop_url e airing_status (cru) — e a NAO-inclusao de
+// title/overview/original_language/poster (que clobbariam a arvore TVDB). Os
+// SIMILARES (0091) deixaram de ser cobertos aqui: o mapeamento canonico rico de serie
+// (mapearSerieRicoCanonico -> enriquecerCanonicoRico -> enriquecerNeutrosRico) nao
+// preenche mais campos["similar"] -- essa responsabilidade migrou para o metodo
+// Similares (provider.SimilarProvider), coberto pelos testes TestSimilares* em
+// tmdb_rico_test.go.
 func TestSerieRicoNeutros(t *testing.T) {
 	campos := mapearSerieRicoTeste(t)
 
@@ -138,10 +144,8 @@ func TestSerieRicoNeutros(t *testing.T) {
 		t.Errorf("certification_by_region = %v, quero BR=12 US=TV-PG", cert)
 	}
 
-	sim, _ := campos["similar"].([]any)
-	item, _ := primeiroSimilar(sim)
-	if item["type"] != "tv" || item["title"] != "Family Guy" {
-		t.Errorf("similar[0] = %v, quero type=tv title=Family Guy", item)
+	if _, ok := campos["similar"]; ok {
+		t.Errorf("campos[\"similar\"] presente = %v, mapeamento rico de serie nao deve mais preencher essa chave (0091)", campos["similar"])
 	}
 
 	if bd, _ := campos["backdrop_url"].(string); !strings.Contains(bd, "/simpsons_bg.jpg") {
@@ -151,16 +155,6 @@ func TestSerieRicoNeutros(t *testing.T) {
 		t.Errorf("airing_status = %v, quero Returning Series (cru)", campos["airing_status"])
 	}
 	exigirSemChavesTMDB(t, campos, "title", "description", "original_language", "poster_url", "release_date")
-}
-
-// primeiroSimilar devolve o primeiro similar como mapa (falha o teste via mapa vazio se
-// a lista nao tem exatamente 1 item — checado pelo chamador via os campos esperados).
-func primeiroSimilar(sim []any) (map[string]any, bool) {
-	if len(sim) != 1 {
-		return map[string]any{}, false
-	}
-	m, ok := sim[0].(map[string]any)
-	return m, ok
 }
 
 // exigirSemChavesTMDB falha se o mapa carrega qualquer uma das chaves dadas.

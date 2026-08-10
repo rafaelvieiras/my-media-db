@@ -68,10 +68,11 @@ func (c *Client) acharSeriePorTvdb(ctx context.Context, tvdbID string) (string, 
 
 // buscarDetalheSerieTMDB puxa o /tv/{id} com o append_to_response dos blocos ricos de
 // série (content_ratings = classificação; keywords; translations = slogan por idioma;
-// similar; external_ids = imdb) no idioma principal. Reusa o mesmo cliente/auth/base do
-// filme (getBytes/novoGet). O `status` (situação) já vem no corpo do /tv, sem append.
+// recommendations (0091, ver tmdb.go); external_ids = imdb) no idioma principal. Reusa
+// o mesmo cliente/auth/base do filme (getBytes/novoGet). O `status` (situação) já vem
+// no corpo do /tv, sem append.
 func (c *Client) buscarDetalheSerieTMDB(ctx context.Context, tmdbID string, langs []string) (detalheTMDB, error) {
-	params := url.Values{"append_to_response": {"content_ratings,keywords,translations,similar,external_ids,aggregate_credits"}}
+	params := url.Values{"append_to_response": {"content_ratings,keywords,translations,recommendations,external_ids,aggregate_credits"}}
 	if len(langs) > 0 && langs[0] != "" {
 		params.Set("language", langs[0])
 	}

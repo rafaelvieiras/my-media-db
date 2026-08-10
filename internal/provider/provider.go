@@ -163,6 +163,37 @@ type TvdbCruzadoProvider interface {
 	TvdbIDDoDetalheSerie(raw json.RawMessage) (string, bool)
 }
 
+// Similar é um item similar/recomendado canônico (briefing 0091), já filtrado
+// (sem adulto, sem volume de voto irrelevante) e ORDENADO por afinidade com o
+// item de origem — o consumidor não reprocessa nota/gênero/adulto, só exibe.
+type Similar struct {
+	// SourceID é o id do item NA FONTE (ex.: id numérico do TMDB, como string).
+	SourceID string
+	// Type é o nosso tipo canônico ("movie"|"tv"), herdado do item de origem.
+	Type string
+	// Title é o título exibível do item.
+	Title string
+	// Year são os 4 primeiros dígitos da data de lançamento/estreia, quando houver.
+	Year *string
+	// PosterURL é a URL DIRETA do pôster do item na fonte, quando houver.
+	PosterURL *string
+}
+
+// SimilarProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0091):
+// extrai os itens SIMILARES/recomendados a partir do payload de detalhe JÁ
+// buscado por BuscarDetalhe (sem ida extra à rede — mesmo padrão de
+// TvdbCruzadoProvider), já filtrados por qualidade (sem adulto, sem volume de
+// voto irrelevante) e ORDENADOS por afinidade real com o item de origem. É
+// opcional porque nem toda fonte modela recomendação (o TVDB não tem); o
+// chamador (entities.go/external_detail.go) faz type-assert do Provider para
+// esta interface e degrada para lista vazia (sem erro, sem 500) quando ausente.
+type SimilarProvider interface {
+	// Similares extrai os itens similares/recomendados do payload `raw` (o
+	// mesmo devolvido por BuscarDetalhe) — PURO, sem rede. Erro real (payload
+	// ilegível) propaga; o chamador loga e segue sem similares daquela camada.
+	Similares(raw json.RawMessage) ([]Similar, error)
+}
+
 // ArteProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0048): buscar o
 // INVENTÁRIO de artes de um item por seu id externo — pôster, fanart, logo, clearart,
 // disc, banner, thumb, characterart e artes de temporada. É a capacidade da fanart.tv

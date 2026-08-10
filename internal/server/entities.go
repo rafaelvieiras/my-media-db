@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 	"github.com/rafaelvieiras/my-media-db/internal/tvext"
 )
@@ -1015,6 +1016,52 @@ func (s *Server) montarExterno(ctx context.Context, id string) ([]resolver.Camad
 	return camadas, nil
 }
 
+// similaresParaCampo converte a lista canônica do provider (provider.Similar,
+// briefing 0091) para o formato de mapa que campos["similar"] já usa há tempos —
+// []any de map[string]any com as chaves que richfields.SimilaresDe espera
+// (source_id/type/title/year/poster_url). Ponteiros nil simplesmente omitem a
+// chave (mesma convenção de similaresCanonicos no provider TMDB).
+func similaresParaCampo(sims []provider.Similar) []any {
+	out := make([]any, 0, len(sims))
+	for _, s := range sims {
+		item := map[string]any{
+			"source_id": s.SourceID,
+			"type":      s.Type,
+			"title":     s.Title,
+		}
+		if s.Year != nil {
+			item["year"] = *s.Year
+		}
+		if s.PosterURL != nil {
+			item["poster_url"] = *s.PosterURL
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+// preencherSimilares chama a capacidade OPCIONAL SimilarProvider (briefing 0091)
+// quando o provider a implementa e grava o resultado em campos["similar"] no
+// formato que richfields.SimilaresDe espera. Sem a capacidade, não faz nada (a
+// chave "similar" fica ausente, igual a hoje quando a fonte não a modela). Erro
+// real de Similares (payload ilegível) só loga e segue sem similares daquela
+// camada — nunca derruba a linha inteira.
+func preencherSimilares(prov provider.Provider, raw json.RawMessage, fonte, entityID string, campos map[string]any) {
+	sp, ok := prov.(provider.SimilarProvider)
+	if !ok {
+		return
+	}
+	sims, err := sp.Similares(raw)
+	if err != nil {
+		log.Printf("entities: similares da fonte %q da entity %q falharam (degrada só os similares): %v", fonte, entityID, err)
+		return
+	}
+	if len(sims) == 0 {
+		return
+	}
+	campos["similar"] = similaresParaCampo(sims)
+}
+
 // camadasDaFonte converte as linhas de UMA fonte em camadas canônicas via o provider
 // DAQUELA fonte (escolhido no registro pelo nome). Devolve nil quando a fonte não tem
 // provider registrado (degrada: camada vazia). Uma linha com payload ausente/inválido
@@ -1029,11 +1076,13 @@ func (s *Server) camadasDaFonte(rows []sqlcgen.MediaExternal, fonte string) []re
 		if row.Source != fonte || !row.PayloadJson.Valid || row.PayloadJson.String == "" {
 			continue
 		}
-		campos, err := prov.MapearDetalhe(json.RawMessage(row.PayloadJson.String))
+		raw := json.RawMessage(row.PayloadJson.String)
+		campos, err := prov.MapearDetalhe(raw)
 		if err != nil {
 			log.Printf("entities: mapear detalhe da fonte %q da entity %q falhou (degrada esta fonte): %v", row.Source, row.EntityID, err)
 			continue // payload cru inválido: degrada esta fonte
 		}
+		preencherSimilares(prov, raw, row.Source, row.EntityID, campos)
 		out = append(out, resolver.CamadaExterna{Fonte: row.Source, Campos: campos})
 	}
 	return out

@@ -2,7 +2,11 @@ package tmdb
 
 import (
 	"encoding/json"
+	"fmt"
+	"sort"
 	"strconv"
+
+	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
 // Este arquivo concentra o DETALHE RICO do TMDB (briefing 0022): as structs dos
@@ -113,20 +117,29 @@ func (id *idFlexivelTMDB) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// similarTMDB envelopa os itens similares do append `similar`.
-type similarTMDB struct {
-	Results []itemSimilarTMDB `json:"results"`
+// recommendationsTMDB envelopa os itens recomendados do append `recommendations`
+// (0091 — trocado de `similar`, ver tmdb.go).
+type recommendationsTMDB struct {
+	Results []itemRecommendationTMDB `json:"results"`
 }
 
-// itemSimilarTMDB é um item similar (mesmo media_type do pai). title/release_date são
-// de filme; name/first_air_date de série — o pai define o tipo (o similar herda-o).
-type itemSimilarTMDB struct {
-	ID           int64  `json:"id"`
-	Title        string `json:"title"`
-	Name         string `json:"name"`
-	ReleaseDate  string `json:"release_date"`
-	FirstAirDate string `json:"first_air_date"`
-	PosterPath   string `json:"poster_path"`
+// itemRecommendationTMDB é um item recomendado (mesmo media_type do pai).
+// title/release_date são de filme; name/first_air_date de série — o pai define o
+// tipo (o item herda-o). Os campos de QUALIDADE (genre_ids/vote_average/vote_count/
+// adult) foram acrescentados no briefing 0091: o payload de `recommendations` já os
+// trazia, mas até então eram descartados no unmarshal — servem só para o filtro/
+// ordenação de similaresFiltrados, nunca são expostos no canônico (provider.Similar).
+type itemRecommendationTMDB struct {
+	ID           int64   `json:"id"`
+	Title        string  `json:"title"`
+	Name         string  `json:"name"`
+	ReleaseDate  string  `json:"release_date"`
+	FirstAirDate string  `json:"first_air_date"`
+	PosterPath   string  `json:"poster_path"`
+	GenreIds     []int64 `json:"genre_ids"`
+	VoteAverage  float64 `json:"vote_average"`
+	VoteCount    int     `json:"vote_count"`
+	Adult        bool    `json:"adult"`
 }
 
 // enriquecerCanonicoRico acrescenta ao mapa canônico os campos do DETALHE RICO
@@ -151,7 +164,11 @@ func enriquecerTraduziveisRico(out map[string]any, d detalheTMDB) {
 }
 
 // enriquecerNeutrosRico grava os campos ricos NEUTROS (escalares/listas): duração,
-// classificação por região, backdrop, nota, vídeos, coleção, similares e links.
+// classificação por região, backdrop, nota, vídeos, coleção e links. Os SIMILARES
+// (0091) NÃO são mais preenchidos aqui — essa responsabilidade migrou inteiramente
+// para o método Similares (provider.SimilarProvider), chamado explicitamente pelo
+// servidor (entities.go/external_detail.go) fora de MapearDetalhe, para o filtro/
+// ordenação por afinidade ser um ponto de extensão de verdade (ver provider.go).
 func enriquecerNeutrosRico(out map[string]any, d detalheTMDB) {
 	if r := runtimeDe(d); r > 0 {
 		out["runtime"] = r
@@ -170,9 +187,6 @@ func enriquecerNeutrosRico(out map[string]any, d detalheTMDB) {
 	}
 	if col := colecaoCanonica(d.BelongsToCollection); col != nil {
 		out["collection"] = col
-	}
-	if sim := similaresCanonicos(d); len(sim) > 0 {
-		out["similar"] = sim
 	}
 	if links := linksExternos(d); len(links) > 0 {
 		out["external_links"] = links
@@ -303,31 +317,103 @@ func colecaoCanonica(c *colecaoTMDB) map[string]any {
 	return out
 }
 
-// similaresCanonicos converte os similares na lista canônica, herdando o TIPO do pai
-// (filme/série) — usado pelo 0023 para navegar ao detalhe externo do similar. Descarta
-// itens sem título.
-func similaresCanonicos(d detalheTMDB) []any {
+// votoMinimoSimilar é o piso de vote_count abaixo do qual um item recomendado é
+// descartado (briefing 0091): volume de voto é um proxy melhor de "recomendação de
+// um título real, conhecido, não ruído" do que a nota média isolada — um título com
+// 2 votos e nota 8 não é "melhor" que um com 500 votos e nota 6.5. Não há piso de
+// nota: mesmo um título de nota mediana é uma recomendação válida se for do gênero
+// certo e amplamente assistido.
+const votoMinimoSimilar = 20
+
+// similaresFiltrados filtra e ordena os itens de `d.Recommendations.Results` por
+// qualidade e por afinidade com o item de ORIGEM (briefing 0091):
+//  1. descarta item adulto (`Adult == true`) — nunca conteúdo adulto na lista;
+//  2. descarta item com `VoteCount` abaixo de votoMinimoSimilar (ruído estatístico);
+//  3. ordena o que sobra por (a) sobreposição de gênero com o item de origem, DESC —
+//     usando os IDs numéricos de `d.Genres` (o item de origem, MESMO payload), nunca
+//     nomes de tag traduzidos/resolvidos (evita mismatch de idioma/taxonomia entre
+//     fontes); (b) `VoteAverage` DESC como desempate.
+//
+// Não trunca a lista além do filtro — o que sobra é devolvido inteiro (SliceStable
+// preserva a ordem original da fonte em empate total).
+func similaresFiltrados(d detalheTMDB) []itemRecommendationTMDB {
+	generosOrigem := make(map[int64]struct{}, len(d.Genres))
+	for _, g := range d.Genres {
+		generosOrigem[g.ID] = struct{}{}
+	}
+	overlapDe := func(it itemRecommendationTMDB) int {
+		n := 0
+		for _, gid := range it.GenreIds {
+			if _, ok := generosOrigem[gid]; ok {
+				n++
+			}
+		}
+		return n
+	}
+
+	itens := make([]itemRecommendationTMDB, 0, len(d.Recommendations.Results))
+	for _, it := range d.Recommendations.Results {
+		if it.Adult {
+			continue
+		}
+		if it.VoteCount < votoMinimoSimilar {
+			continue
+		}
+		itens = append(itens, it)
+	}
+
+	sort.SliceStable(itens, func(i, j int) bool {
+		oi, oj := overlapDe(itens[i]), overlapDe(itens[j])
+		if oi != oj {
+			return oi > oj
+		}
+		return itens[i].VoteAverage > itens[j].VoteAverage
+	})
+	return itens
+}
+
+// similaresCanonicos converte os itens JÁ FILTRADOS/ORDENADOS (similaresFiltrados)
+// na lista canônica (provider.Similar), herdando o TIPO do pai (filme/série) —
+// usado pelo 0023 para navegar ao detalhe externo do similar. Descarta itens sem
+// título (mesma regra de sempre).
+func similaresCanonicos(d detalheTMDB) []provider.Similar {
 	tipo := tipoInferido(d)
-	out := make([]any, 0, len(d.Similar.Results))
-	for _, it := range d.Similar.Results {
+	filtrados := similaresFiltrados(d)
+	out := make([]provider.Similar, 0, len(filtrados))
+	for _, it := range filtrados {
 		titulo := primeiroNaoVazio(it.Title, it.Name)
 		if titulo == "" {
 			continue
 		}
-		item := map[string]any{
-			"source_id": itoa(it.ID),
-			"type":      tipo,
-			"title":     titulo,
+		item := provider.Similar{
+			SourceID: itoa(it.ID),
+			Type:     tipo,
+			Title:    titulo,
 		}
 		if ano := anoDe(primeiroNaoVazio(it.ReleaseDate, it.FirstAirDate)); ano != nil {
-			item["year"] = *ano
+			item.Year = ano
 		}
 		if it.PosterPath != "" {
-			item["poster_url"] = imagemBaseURL + it.PosterPath
+			u := imagemBaseURL + it.PosterPath
+			item.PosterURL = &u
 		}
 		out = append(out, item)
 	}
 	return out
+}
+
+// Similares implementa provider.SimilarProvider (briefing 0091): extrai os itens
+// similares/recomendados de um payload de detalhe JÁ buscado por BuscarDetalhe —
+// PURO, sem ida extra à rede (mesmo padrão de TvdbIDDoDetalheSerie). Aceita tanto o
+// envelope AUMENTADO {detail,tags_by_lang} (0020) quanto o payload LEGADO sem
+// envelope (0015), via detalheBrutoDoRaw (mesma detecção de MapearDetalhe,
+// extraída em tmdb.go para os dois métodos reusarem sem duplicar o parsing).
+func (c *Client) Similares(raw json.RawMessage) ([]provider.Similar, error) {
+	var d detalheTMDB
+	if err := json.Unmarshal(detalheBrutoDoRaw(raw), &d); err != nil {
+		return nil, fmt.Errorf("tmdb: detalhe invalido para similares: %w", err)
+	}
+	return similaresCanonicos(d), nil
 }
 
 // linksExternos monta o mapa de links para páginas externas. Hoje só o imdb (a partir
@@ -375,15 +461,10 @@ func itoa(id int64) string {
 // cru sem envelope (payload legado do 0015) — se não há `detail` no envelope, tenta o raw
 // direto. ok=false sem tvdb_id ou payload ilegível.
 func (c *Client) TvdbIDDoDetalheSerie(raw json.RawMessage) (string, bool) {
-	detail := raw
-	var env envelopeTMDB
-	if err := json.Unmarshal(raw, &env); err == nil && len(env.Detail) > 0 {
-		detail = env.Detail
-	}
 	var d struct {
 		ExternalIds externalIdsTMDB `json:"external_ids"`
 	}
-	if err := json.Unmarshal(detail, &d); err != nil {
+	if err := json.Unmarshal(detalheBrutoDoRaw(raw), &d); err != nil {
 		return "", false
 	}
 	return string(d.ExternalIds.TvdbID), d.ExternalIds.TvdbID != ""

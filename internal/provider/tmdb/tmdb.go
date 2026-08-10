@@ -202,14 +202,20 @@ func (c *Client) BuscarDetalhe(ctx context.Context, sourceID, tipo string, langs
 
 	// append_to_response numa só ida (0022): translations (traduções de título/
 	// sinopse/slogan), videos, keywords, release_dates (classificação de filme),
-	// content_ratings (classificação de série), external_ids (imdb…) e similar. O
-	// TMDB ignora os appends que não se aplicam ao tipo (ex.: content_ratings em
-	// filme). belongs_to_collection já vem no detalhe de filme, sem append.
+	// content_ratings (classificação de série), external_ids (imdb…) e
+	// recommendations. O TMDB ignora os appends que não se aplicam ao tipo (ex.:
+	// content_ratings em filme). belongs_to_collection já vem no detalhe de filme,
+	// sem append.
+	//
+	// RECOMMENDATIONS (0091): trocado de `similar` (matching genérico por gênero/
+	// palavra-chave, ruidoso — relato do dono com título sem relação de tema/tom)
+	// para `recommendations` (sinal de comportamento, "quem viu isso também viu",
+	// mais relevante). O canônico filtra/ordena o resultado (ver tmdb_rico.go).
 	//
 	// CREDITOS (MD6, 0029): `credits` traz o elenco/equipe do FILME; `aggregate_credits`
 	// o da SERIE (agregado por episodio). Pedimos os dois — a fonte ignora o que não se
 	// aplica ao tipo; o mapeamento prefere o agregado quando presente (série).
-	params := url.Values{"append_to_response": {"translations,videos,keywords,release_dates,content_ratings,external_ids,similar,credits,aggregate_credits"}}
+	params := url.Values{"append_to_response": {"translations,videos,keywords,release_dates,content_ratings,external_ids,recommendations,credits,aggregate_credits"}}
 	if len(langs) > 0 && langs[0] != "" {
 		params.Set("language", langs[0])
 	}
@@ -401,18 +407,18 @@ type detalheTMDB struct {
 	Translations     traducoesTMDB `json:"translations"`
 
 	// Campos do DETALHE RICO (0022), preenchidos pelo append_to_response ampliado.
-	Tagline             string             `json:"tagline"`
-	BackdropPath        string             `json:"backdrop_path"`
-	VoteAverage         float64            `json:"vote_average"`
-	Runtime             int                `json:"runtime"`          // filme (minutos)
-	EpisodeRunTime      []int              `json:"episode_run_time"` // série (minutos/ep)
-	BelongsToCollection *colecaoTMDB       `json:"belongs_to_collection"`
-	Videos              videosTMDB         `json:"videos"`
-	Keywords            keywordsTMDB       `json:"keywords"`
-	ReleaseDates        listaPaisTMDB      `json:"release_dates"`   // classificação de filme
-	ContentRatings      contentRatingsTMDB `json:"content_ratings"` // classificação de série
-	ExternalIds         externalIdsTMDB    `json:"external_ids"`
-	Similar             similarTMDB        `json:"similar"`
+	Tagline             string              `json:"tagline"`
+	BackdropPath        string              `json:"backdrop_path"`
+	VoteAverage         float64             `json:"vote_average"`
+	Runtime             int                 `json:"runtime"`          // filme (minutos)
+	EpisodeRunTime      []int               `json:"episode_run_time"` // série (minutos/ep)
+	BelongsToCollection *colecaoTMDB        `json:"belongs_to_collection"`
+	Videos              videosTMDB          `json:"videos"`
+	Keywords            keywordsTMDB        `json:"keywords"`
+	ReleaseDates        listaPaisTMDB       `json:"release_dates"`   // classificação de filme
+	ContentRatings      contentRatingsTMDB  `json:"content_ratings"` // classificação de série
+	ExternalIds         externalIdsTMDB     `json:"external_ids"`
+	Recommendations     recommendationsTMDB `json:"recommendations"`
 
 	// Blocos de CREDITOS (MD6, briefing 0029): `credits` (filme, cast/crew planos),
 	// `aggregate_credits` (serie, cast com roles/crew com jobs agregados por episodio) e
@@ -474,6 +480,20 @@ func (c *Client) MapearDetalhe(raw json.RawMessage) (map[string]any, error) {
 		return mapearEnvelope(env)
 	}
 	return mapearLegado(raw)
+}
+
+// detalheBrutoDoRaw extrai os bytes do DETALHE cru de um `raw`: o envelope
+// AUMENTADO {detail,tags_by_lang} (0020) quando presente, ou o próprio `raw`
+// quando é o payload LEGADO sem envelope (0015) — mesma detecção que
+// MapearDetalhe já faz (mapearEnvelope/mapearLegado). Extraído no briefing
+// 0091 para o novo método Similares (tmdb_rico.go) reusar sem duplicar o
+// parsing do envelope.
+func detalheBrutoDoRaw(raw json.RawMessage) json.RawMessage {
+	var env envelopeTMDB
+	if err := json.Unmarshal(raw, &env); err == nil && len(env.Detail) > 0 {
+		return env.Detail
+	}
+	return raw
 }
 
 // mapearSerieRico detecta o envelope SÉRIE-RICO (0045) e devolve o canônico rico que

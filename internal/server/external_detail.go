@@ -131,6 +131,7 @@ func (s *Server) getExternalDetail(w http.ResponseWriter, r *http.Request) {
 		respondFonteIndisponivel(w)
 		return
 	}
+	preencherSimilares(prov, raw, source, id, campos)
 
 	dto := s.montarDetalheExterno(ctx, source, id, tipo, lang, cfg, campos)
 	writeJSON(w, http.StatusOK, dto)

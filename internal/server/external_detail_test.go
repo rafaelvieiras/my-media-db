@@ -41,7 +41,7 @@ const filmeRicoJSON = `{
     {"iso_3166_1": "US", "release_dates": [{"certification": "R"}]}
   ]},
   "external_ids": {"imdb_id": "tt0133093"},
-  "similar": {"results": [{"id": 604, "title": "The Matrix Reloaded", "release_date": "2003-05-15", "poster_path": "/rel.jpg"}]},
+  "recommendations": {"results": [{"id": 604, "title": "The Matrix Reloaded", "release_date": "2003-05-15", "poster_path": "/rel.jpg", "vote_count": 20}]},
   "credits": {
     "cast": [{"id": 6384, "name": "Keanu Reeves", "character": "Neo", "order": 0, "profile_path": "/keanu.jpg"}],
     "crew": [{"id": 9339, "name": "Lana Wachowski", "department": "Directing", "job": "Director", "profile_path": "/lw.jpg"}]

@@ -14,7 +14,8 @@ import (
 
 // detalheFilmeRico e um payload de /movie/{id} com os blocos do DETALHE RICO (0022):
 // tagline (top + por idioma nas translations), backdrop, nota, runtime, coleção,
-// vídeos, keywords, classificação por região (release_dates), external_ids e similar.
+// vídeos, keywords, classificação por região (release_dates), external_ids e
+// recommendations (0091 — trocado de `similar`, ver tmdb.go).
 const detalheFilmeRico = `{
   "id": 603,
   "original_language": "en",
@@ -46,8 +47,8 @@ const detalheFilmeRico = `{
     {"iso_3166_1": "US", "release_dates": [{"certification": ""}, {"certification": "R"}]}
   ]},
   "external_ids": {"imdb_id": "tt0133093"},
-  "similar": {"results": [
-    {"id": 604, "title": "The Matrix Reloaded", "release_date": "2003-05-15", "poster_path": "/rel.jpg"}
+  "recommendations": {"results": [
+    {"id": 604, "title": "The Matrix Reloaded", "release_date": "2003-05-15", "poster_path": "/rel.jpg", "genre_ids": [28], "vote_average": 7.1, "vote_count": 5000}
   ]}
 }`
 
@@ -75,7 +76,8 @@ func servidorRico(t *testing.T, capturar *http.Request) *httptest.Server {
 }
 
 // TestBuscarDetalheAppendRico garante que o append_to_response pede os blocos ricos
-// (videos/keywords/release_dates/content_ratings/external_ids/similar) numa so ida.
+// (videos/keywords/release_dates/content_ratings/external_ids/recommendations) numa
+// so ida. `recommendations` substitui `similar` desde o briefing 0091.
 func TestBuscarDetalheAppendRico(t *testing.T) {
 	var req http.Request
 	srv := servidorRico(t, &req)
@@ -85,7 +87,7 @@ func TestBuscarDetalheAppendRico(t *testing.T) {
 		t.Fatalf("BuscarDetalhe: %v", err)
 	}
 	ap := req.URL.Query().Get("append_to_response")
-	for _, bloco := range []string{"translations", "videos", "keywords", "release_dates", "content_ratings", "external_ids", "similar"} {
+	for _, bloco := range []string{"translations", "videos", "keywords", "release_dates", "content_ratings", "external_ids", "recommendations"} {
 		if !strings.Contains(ap, bloco) {
 			t.Errorf("append_to_response %q nao contem %q", ap, bloco)
 		}
@@ -123,7 +125,10 @@ func TestMapearDetalheRicoTraduziveis(t *testing.T) {
 }
 
 // TestMapearDetalheRicoNeutros cobre os campos ricos NEUTROS: runtime, nota, backdrop,
-// classificacao por regiao, videos, colecao, similares e links.
+// classificacao por regiao, videos, colecao e links. Os SIMILARES (0091) deixaram de
+// ser cobertos aqui: MapearDetalhe/enriquecerNeutrosRico nao preenche mais out["similar"]
+// -- essa responsabilidade migrou para o metodo Similares (provider.SimilarProvider),
+// coberto pelos testes TestSimilares* mais abaixo.
 func TestMapearDetalheRicoNeutros(t *testing.T) {
 	campos := mapearRico(t)
 
@@ -151,14 +156,9 @@ func TestMapearDetalheRicoNeutros(t *testing.T) {
 	eqMapaItem(t, col, "source_id", "2344")
 	eqMapaItem(t, col, "name", "The Matrix Collection")
 
-	// Similares herdam o tipo do pai (movie) e trazem ano do release_date.
-	sim, ok := campos["similar"].([]any)
-	if !ok || len(sim) != 1 {
-		t.Fatalf("similar = %v, quero 1", campos["similar"])
+	if _, ok := campos["similar"]; ok {
+		t.Errorf("campos[\"similar\"] presente = %v, MapearDetalhe nao deve mais preencher essa chave (0091)", campos["similar"])
 	}
-	eqMapaItem(t, sim[0], "source_id", "604")
-	eqMapaItem(t, sim[0], "type", "movie")
-	eqMapaItem(t, sim[0], "year", "2003")
 
 	// Links externos (imdb do external_ids).
 	links, _ := campos["external_links"].(map[string]any)
@@ -279,5 +279,96 @@ func TestTvdbIDDoDetalheSerieNumerico(t *testing.T) {
 	id, ok := c.TvdbIDDoDetalheSerie(raw)
 	if !ok || id != "212601" {
 		t.Errorf("tvdb_id numerico: got (%q,%v), quero (212601,true)", id, ok)
+	}
+}
+
+// TestSimilaresFiltraAdultoEVotoBaixo (0091): um item adulto e um item com
+// vote_count abaixo do limiar (votoMinimoSimilar=20) nunca aparecem na lista de
+// similares, mesmo com sobreposicao de genero e nota altas; so o item valido
+// (nao-adulto, vote_count no limiar) sobrevive.
+func TestSimilaresFiltraAdultoEVotoBaixo(t *testing.T) {
+	c := New(Credencial{Token: "tok"}, nil, "")
+	raw := json.RawMessage(`{
+		"id": 603, "title": "The Matrix", "genres": [{"id": 28, "name": "Action"}],
+		"recommendations": {"results": [
+			{"id": 1, "title": "Adulto", "adult": true, "genre_ids": [28], "vote_average": 9, "vote_count": 1000},
+			{"id": 2, "title": "PoucosVotos", "adult": false, "genre_ids": [28], "vote_average": 9, "vote_count": 19},
+			{"id": 3, "title": "Valido", "adult": false, "genre_ids": [28], "vote_average": 7, "vote_count": 20}
+		]}
+	}`)
+	sim, err := c.Similares(raw)
+	if err != nil {
+		t.Fatalf("Similares: %v", err)
+	}
+	if len(sim) != 1 || sim[0].SourceID != "3" {
+		t.Fatalf("Similares = %+v, quero so o item 3 (valido)", sim)
+	}
+}
+
+// TestSimilaresOrdenaPorSobreposicaoDeGenero (0091): entre dois itens com o MESMO
+// vote_count acima do limiar, o que tem mais generos em comum com o item de ORIGEM
+// (d.Genres) aparece antes -- mesmo com nota (vote_average) menor.
+func TestSimilaresOrdenaPorSobreposicaoDeGenero(t *testing.T) {
+	c := New(Credencial{Token: "tok"}, nil, "")
+	raw := json.RawMessage(`{
+		"id": 603, "title": "The Matrix",
+		"genres": [{"id": 28, "name": "Action"}, {"id": 878, "name": "Sci-Fi"}],
+		"recommendations": {"results": [
+			{"id": 10, "title": "UmGenero", "genre_ids": [28], "vote_average": 9, "vote_count": 100},
+			{"id": 20, "title": "DoisGeneros", "genre_ids": [28, 878], "vote_average": 5, "vote_count": 100}
+		]}
+	}`)
+	sim, err := c.Similares(raw)
+	if err != nil {
+		t.Fatalf("Similares: %v", err)
+	}
+	if len(sim) != 2 || sim[0].SourceID != "20" || sim[1].SourceID != "10" {
+		t.Fatalf("Similares = %+v, quero [20,10] (mais sobreposicao de genero primeiro)", sim)
+	}
+}
+
+// TestSimilaresDesempataPorNota (0091): em sobreposicao de genero IGUAL, a nota
+// (vote_average) desempata -- maior primeiro.
+func TestSimilaresDesempataPorNota(t *testing.T) {
+	c := New(Credencial{Token: "tok"}, nil, "")
+	raw := json.RawMessage(`{
+		"id": 603, "title": "The Matrix", "genres": [{"id": 28, "name": "Action"}],
+		"recommendations": {"results": [
+			{"id": 30, "title": "NotaBaixa", "genre_ids": [28], "vote_average": 5, "vote_count": 100},
+			{"id": 40, "title": "NotaAlta", "genre_ids": [28], "vote_average": 9, "vote_count": 100}
+		]}
+	}`)
+	sim, err := c.Similares(raw)
+	if err != nil {
+		t.Fatalf("Similares: %v", err)
+	}
+	if len(sim) != 2 || sim[0].SourceID != "40" || sim[1].SourceID != "30" {
+		t.Fatalf("Similares = %+v, quero [40,30] (nota maior primeiro em empate de genero)", sim)
+	}
+}
+
+// TestSimilaresEnvelopeEPayloadLegado (0091) prova que Similares aceita tanto o
+// payload LEGADO (detalhe cru sem envelope, formato do 0015) quanto o envelope
+// AUMENTADO {detail,tags_by_lang} (0020) -- via detalheBrutoDoRaw, a mesma deteccao
+// que MapearDetalhe/TvdbIDDoDetalheSerie ja usam (0091 nao duplica esse parsing).
+func TestSimilaresEnvelopeEPayloadLegado(t *testing.T) {
+	const detalhe = `{"id": 603, "title": "The Matrix", "genres": [{"id": 28, "name": "Action"}], "recommendations": {"results": [{"id": 50, "title": "Recomendado", "genre_ids": [28], "vote_average": 7, "vote_count": 100}]}}`
+	c := New(Credencial{Token: "tok"}, nil, "")
+
+	simLegado, err := c.Similares(json.RawMessage(detalhe))
+	if err != nil {
+		t.Fatalf("Similares (legado): %v", err)
+	}
+	if len(simLegado) != 1 || simLegado[0].SourceID != "50" {
+		t.Fatalf("Similares (legado) = %+v, quero 1 item (50)", simLegado)
+	}
+
+	envelope := json.RawMessage(`{"detail": ` + detalhe + `, "tags_by_lang": {}}`)
+	simEnvelope, err := c.Similares(envelope)
+	if err != nil {
+		t.Fatalf("Similares (envelope): %v", err)
+	}
+	if len(simEnvelope) != 1 || simEnvelope[0].SourceID != "50" {
+		t.Fatalf("Similares (envelope) = %+v, quero 1 item (50)", simEnvelope)
 	}
 }
