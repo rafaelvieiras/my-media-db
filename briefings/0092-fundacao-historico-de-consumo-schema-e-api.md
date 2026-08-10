@@ -10,7 +10,7 @@
 | **ID** | 0092 |
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 5+ — Verticais e plugins |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [ADR-0022](../docs/adr/0022-historico-de-consumo-eventos-genericos-e-trackerprovider.md) |
 | **Depende de** | — |
 

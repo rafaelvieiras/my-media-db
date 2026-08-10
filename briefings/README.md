@@ -163,14 +163,14 @@ e agenda [H1–H4](../docs/00-agenda-de-decisoes.md#histórico-de-consumo-tracki
 tabela de eventos genérica (`kind` livre, cobre qualquer vertical futura sem
 migration nova), entrada por webhook de media server + API manual, saída/sync
 externo (`TrackerProvider`) desenhada para depois. Primeira entrega só
-filme/série. Os briefings `draft` (0093/0094) são detalhados quando o
-predecessor aterrissa (mesma convenção da Fase 2/3).
+filme/série. Os 3 briefings estão implementados e validados; `TrackerProvider`
+concreto e demais verticais (música/livro/jogo) ficam para depois.
 
 | ID | Briefing | Tipo | Status | Depende de |
 |---|---|---|---|---|
-| [0092](0092-fundacao-historico-de-consumo-schema-e-api.md) | Fundação do histórico de consumo: schema genérico `historico_evento` + API mínima (criar/listar/estado derivado/apagar evento) | feature | ready | — |
-| [0093](0093-webhook-jellyfin-historico-consumo.md) | Receptor de webhook do Jellyfin: normaliza play/pause/stop para `historico_evento`, casando por ID externo (TMDB/IMDB/TVDB) | feature | draft | 0092 |
-| [0094](0094-ui-historico-e-estado-assistido.md) | UI do histórico: selo de assistido no card/hero + timeline no detalhe + ação manual | feature | draft | 0092, 0093 |
+| [0092](0092-fundacao-historico-de-consumo-schema-e-api.md) | Fundação do histórico de consumo: schema genérico `historico_evento` + API mínima (criar/listar/estado derivado/apagar evento) | feature | done | — |
+| [0093](0093-webhook-jellyfin-historico-consumo.md) | Receptor de webhook do Jellyfin: normaliza play/pause/stop para `historico_evento`, casando por ID externo (TMDB/IMDB/TVDB) | feature | done | 0092 |
+| [0094](0094-ui-historico-e-estado-assistido.md) | UI do histórico: selo de assistido no card/hero + timeline no detalhe + ação manual | feature | done | 0092, 0093 |
 
 ### Transversal — Infraestrutura operacional
 
