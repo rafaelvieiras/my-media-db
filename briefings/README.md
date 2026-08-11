@@ -172,6 +172,8 @@ concreto e demais verticais (música/livro/jogo) ficam para depois.
 | [0093](0093-webhook-jellyfin-historico-consumo.md) | Receptor de webhook do Jellyfin: normaliza play/pause/stop para `historico_evento`, casando por ID externo (TMDB/IMDB/TVDB) | feature | done | 0092 |
 | [0094](0094-ui-historico-e-estado-assistido.md) | UI do histórico: selo de assistido no card/hero + timeline no detalhe + ação manual | feature | done | 0092, 0093 |
 | [0097](0097-ui-webhook-token-jellyfin.md) | UI de Webhook: `/dashboard/webhook` para gerar/copiar o token do webhook Jellyfin (0093 nunca ganhou tela) + placeholder de webhooks de saída | feature | done | 0093 |
+| [0098](0098-guard-esvaziar-external-ids.md) | Guard de confirmação no editor de IDs externos antes de salvar um mapa vazio (evita zerar a identidade de uma entity por engano) | fix | done | — |
+| [0099](0099-eventos-orfaos-historico-backfill.md) | Eventos de histórico sem match viram registro órfão (em vez de descartados) e são vinculados retroativamente quando a entity ganhar o ID externo | feature | done | 0092, 0093 |
 
 ### Fase 5+ — Integrações configuráveis via UI
 

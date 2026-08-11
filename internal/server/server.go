@@ -699,6 +699,12 @@ func (s *Server) Handler() (http.Handler, error) {
 				wh.Post("/token", s.regenerateJellyfinWebhookToken)
 				wh.Get("/token", s.getJellyfinWebhookToken)
 			})
+			// Eventos de histórico órfãos (briefing 0099): rota GLOBAL, fora
+			// de /entities/{id} -- por definição um órfão ainda não tem
+			// entity.
+			v1.Route("/historico", func(h chi.Router) {
+				h.Get("/orfaos", s.listHistoricoOrfaos)
+			})
 		})
 	})
 

@@ -27,9 +27,22 @@ FROM historico_evento
 WHERE id = ?
 `
 
-func (q *Queries) BuscarHistoricoEventoPorID(ctx context.Context, id string) (HistoricoEvento, error) {
+type BuscarHistoricoEventoPorIDRow struct {
+	ID              string
+	EntityID        sql.NullString
+	Kind            string
+	Status          string
+	ProgressPercent sql.NullFloat64
+	PositionSeconds sql.NullFloat64
+	OccurredAt      string
+	Source          string
+	PayloadJson     sql.NullString
+	CreatedAt       string
+}
+
+func (q *Queries) BuscarHistoricoEventoPorID(ctx context.Context, id string) (BuscarHistoricoEventoPorIDRow, error) {
 	row := q.db.QueryRowContext(ctx, buscarHistoricoEventoPorID, id)
-	var i HistoricoEvento
+	var i BuscarHistoricoEventoPorIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.EntityID,
@@ -43,6 +56,18 @@ func (q *Queries) BuscarHistoricoEventoPorID(ctx context.Context, id string) (Hi
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const contarHistoricoEventoOrfaos = `-- name: ContarHistoricoEventoOrfaos :one
+SELECT COUNT(*) FROM historico_evento WHERE entity_id IS NULL
+`
+
+// Total de eventos orfaos, para o campo "total" da paginacao acima.
+func (q *Queries) ContarHistoricoEventoOrfaos(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, contarHistoricoEventoOrfaos)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const criarHistoricoEvento = `-- name: CriarHistoricoEvento :one
@@ -60,7 +85,7 @@ RETURNING id, entity_id, kind, status, progress_percent, position_seconds,
 
 type CriarHistoricoEventoParams struct {
 	ID              string
-	EntityID        string
+	EntityID        sql.NullString
 	Kind            string
 	Status          string
 	ProgressPercent sql.NullFloat64
@@ -70,11 +95,24 @@ type CriarHistoricoEventoParams struct {
 	PayloadJson     sql.NullString
 }
 
+type CriarHistoricoEventoRow struct {
+	ID              string
+	EntityID        sql.NullString
+	Kind            string
+	Status          string
+	ProgressPercent sql.NullFloat64
+	PositionSeconds sql.NullFloat64
+	OccurredAt      string
+	Source          string
+	PayloadJson     sql.NullString
+	CreatedAt       string
+}
+
 // CRUD de historico_evento (briefing 0092, ADR-0022): eventos de consumo
 // genericos (assistir/ouvir/jogar/etc.), append-only, filhos de entity.
 // Comentarios em ASCII -- ver a nota em entity.sql (sqlc v1.31 corrompe SQL
 // de query com acento).
-func (q *Queries) CriarHistoricoEvento(ctx context.Context, arg CriarHistoricoEventoParams) (HistoricoEvento, error) {
+func (q *Queries) CriarHistoricoEvento(ctx context.Context, arg CriarHistoricoEventoParams) (CriarHistoricoEventoRow, error) {
 	row := q.db.QueryRowContext(ctx, criarHistoricoEvento,
 		arg.ID,
 		arg.EntityID,
@@ -86,7 +124,7 @@ func (q *Queries) CriarHistoricoEvento(ctx context.Context, arg CriarHistoricoEv
 		arg.Source,
 		arg.PayloadJson,
 	)
-	var i HistoricoEvento
+	var i CriarHistoricoEventoRow
 	err := row.Scan(
 		&i.ID,
 		&i.EntityID,
@@ -102,6 +140,134 @@ func (q *Queries) CriarHistoricoEvento(ctx context.Context, arg CriarHistoricoEv
 	return i, err
 }
 
+const criarHistoricoEventoOrfao = `-- name: CriarHistoricoEventoOrfao :one
+INSERT INTO historico_evento (
+    id, kind, status, progress_percent, position_seconds,
+    occurred_at, source, payload_json, raw_tmdb_id, raw_imdb_id,
+    raw_tvdb_id, raw_title, raw_year
+) VALUES (
+    ?, ?, ?, ?, ?,
+    ?, ?, ?, ?, ?,
+    ?, ?, ?
+)
+RETURNING id, entity_id, kind, status, progress_percent, position_seconds,
+    occurred_at, source, payload_json, raw_tmdb_id, raw_imdb_id,
+    raw_tvdb_id, raw_title, raw_year, created_at
+`
+
+type CriarHistoricoEventoOrfaoParams struct {
+	ID              string
+	Kind            string
+	Status          string
+	ProgressPercent sql.NullFloat64
+	PositionSeconds sql.NullFloat64
+	OccurredAt      string
+	Source          string
+	PayloadJson     sql.NullString
+	RawTmdbID       sql.NullString
+	RawImdbID       sql.NullString
+	RawTvdbID       sql.NullString
+	RawTitle        sql.NullString
+	RawYear         sql.NullString
+}
+
+// Grava um evento sem entity casada (briefing 0099): entity_id fica NULL
+// implicitamente (nao e parametro). Guarda os IDs/titulo/ano brutos do
+// payload para permitir localizar o evento como candidato a backfill
+// quando uma entity ganhar aquele ID externo no futuro.
+func (q *Queries) CriarHistoricoEventoOrfao(ctx context.Context, arg CriarHistoricoEventoOrfaoParams) (HistoricoEvento, error) {
+	row := q.db.QueryRowContext(ctx, criarHistoricoEventoOrfao,
+		arg.ID,
+		arg.Kind,
+		arg.Status,
+		arg.ProgressPercent,
+		arg.PositionSeconds,
+		arg.OccurredAt,
+		arg.Source,
+		arg.PayloadJson,
+		arg.RawTmdbID,
+		arg.RawImdbID,
+		arg.RawTvdbID,
+		arg.RawTitle,
+		arg.RawYear,
+	)
+	var i HistoricoEvento
+	err := row.Scan(
+		&i.ID,
+		&i.EntityID,
+		&i.Kind,
+		&i.Status,
+		&i.ProgressPercent,
+		&i.PositionSeconds,
+		&i.OccurredAt,
+		&i.Source,
+		&i.PayloadJson,
+		&i.RawTmdbID,
+		&i.RawImdbID,
+		&i.RawTvdbID,
+		&i.RawTitle,
+		&i.RawYear,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const listarHistoricoEventoOrfaos = `-- name: ListarHistoricoEventoOrfaos :many
+SELECT id, entity_id, kind, status, progress_percent, position_seconds,
+    occurred_at, source, payload_json, raw_tmdb_id, raw_imdb_id,
+    raw_tvdb_id, raw_title, raw_year, created_at
+FROM historico_evento
+WHERE entity_id IS NULL
+ORDER BY occurred_at DESC, id DESC
+LIMIT ? OFFSET ?
+`
+
+type ListarHistoricoEventoOrfaosParams struct {
+	Limit  int64
+	Offset int64
+}
+
+// Lista paginada dos eventos ainda sem entity (entity_id IS NULL), mesmo
+// padrao de paginacao de outras listas do projeto (limit/offset).
+func (q *Queries) ListarHistoricoEventoOrfaos(ctx context.Context, arg ListarHistoricoEventoOrfaosParams) ([]HistoricoEvento, error) {
+	rows, err := q.db.QueryContext(ctx, listarHistoricoEventoOrfaos, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []HistoricoEvento{}
+	for rows.Next() {
+		var i HistoricoEvento
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityID,
+			&i.Kind,
+			&i.Status,
+			&i.ProgressPercent,
+			&i.PositionSeconds,
+			&i.OccurredAt,
+			&i.Source,
+			&i.PayloadJson,
+			&i.RawTmdbID,
+			&i.RawImdbID,
+			&i.RawTvdbID,
+			&i.RawTitle,
+			&i.RawYear,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listarHistoricoEventoPorEntity = `-- name: ListarHistoricoEventoPorEntity :many
 SELECT id, entity_id, kind, status, progress_percent, position_seconds,
     occurred_at, source, payload_json, created_at
@@ -112,21 +278,34 @@ ORDER BY occurred_at DESC, id DESC
 `
 
 type ListarHistoricoEventoPorEntityParams struct {
-	EntityID string
+	EntityID sql.NullString
 	Kind     interface{}
+}
+
+type ListarHistoricoEventoPorEntityRow struct {
+	ID              string
+	EntityID        sql.NullString
+	Kind            string
+	Status          string
+	ProgressPercent sql.NullFloat64
+	PositionSeconds sql.NullFloat64
+	OccurredAt      string
+	Source          string
+	PayloadJson     sql.NullString
+	CreatedAt       string
 }
 
 // Lista os eventos de uma entity em ordem cronologica reversa. kind e
 // filtro opcional via sqlc.narg -- NULL = sem filtro (todos os kinds).
-func (q *Queries) ListarHistoricoEventoPorEntity(ctx context.Context, arg ListarHistoricoEventoPorEntityParams) ([]HistoricoEvento, error) {
+func (q *Queries) ListarHistoricoEventoPorEntity(ctx context.Context, arg ListarHistoricoEventoPorEntityParams) ([]ListarHistoricoEventoPorEntityRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarHistoricoEventoPorEntity, arg.EntityID, arg.Kind)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []HistoricoEvento{}
+	items := []ListarHistoricoEventoPorEntityRow{}
 	for rows.Next() {
-		var i HistoricoEvento
+		var i ListarHistoricoEventoPorEntityRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.EntityID,
@@ -160,21 +339,34 @@ WHERE entity_id = ?
 ORDER BY occurred_at DESC, id DESC
 `
 
+type ListarUltimoHistoricoEventoPorKindRow struct {
+	ID              string
+	EntityID        sql.NullString
+	Kind            string
+	Status          string
+	ProgressPercent sql.NullFloat64
+	PositionSeconds sql.NullFloat64
+	OccurredAt      string
+	Source          string
+	PayloadJson     sql.NullString
+	CreatedAt       string
+}
+
 // Base da projecao de "estado atual" (GET .../historico/estado): todos os
 // eventos da entity, mesma ordem cronologica reversa da listagem acima --
 // o agrupamento por kind (pegar so o primeiro de cada kind, ja que a
 // ordenacao e occurred_at DESC) fica para a camada Go, conforme o
 // briefing 0092 autoriza (volume baixo por entity, nao compensa SQL
 // avancado).
-func (q *Queries) ListarUltimoHistoricoEventoPorKind(ctx context.Context, entityID string) ([]HistoricoEvento, error) {
+func (q *Queries) ListarUltimoHistoricoEventoPorKind(ctx context.Context, entityID sql.NullString) ([]ListarUltimoHistoricoEventoPorKindRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarUltimoHistoricoEventoPorKind, entityID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []HistoricoEvento{}
+	items := []ListarUltimoHistoricoEventoPorKindRow{}
 	for rows.Next() {
-		var i HistoricoEvento
+		var i ListarUltimoHistoricoEventoPorKindRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.EntityID,
@@ -198,4 +390,64 @@ func (q *Queries) ListarUltimoHistoricoEventoPorKind(ctx context.Context, entity
 		return nil, err
 	}
 	return items, nil
+}
+
+const vincularHistoricoEventoOrfaoPorImdb = `-- name: VincularHistoricoEventoOrfaoPorImdb :execrows
+UPDATE historico_evento
+SET entity_id = ?
+WHERE entity_id IS NULL AND raw_imdb_id = ?
+`
+
+type VincularHistoricoEventoOrfaoPorImdbParams struct {
+	EntityID  sql.NullString
+	RawImdbID sql.NullString
+}
+
+func (q *Queries) VincularHistoricoEventoOrfaoPorImdb(ctx context.Context, arg VincularHistoricoEventoOrfaoPorImdbParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, vincularHistoricoEventoOrfaoPorImdb, arg.EntityID, arg.RawImdbID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const vincularHistoricoEventoOrfaoPorTmdb = `-- name: VincularHistoricoEventoOrfaoPorTmdb :execrows
+UPDATE historico_evento
+SET entity_id = ?
+WHERE entity_id IS NULL AND raw_tmdb_id = ?
+`
+
+type VincularHistoricoEventoOrfaoPorTmdbParams struct {
+	EntityID  sql.NullString
+	RawTmdbID sql.NullString
+}
+
+// Backfill retroativo (briefing 0099): vincula todo evento orfao cujo
+// raw_tmdb_id bate com o ID que a entity acabou de ganhar. :execrows para o
+// chamador saber quantas linhas foram vinculadas (log opcional).
+func (q *Queries) VincularHistoricoEventoOrfaoPorTmdb(ctx context.Context, arg VincularHistoricoEventoOrfaoPorTmdbParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, vincularHistoricoEventoOrfaoPorTmdb, arg.EntityID, arg.RawTmdbID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const vincularHistoricoEventoOrfaoPorTvdb = `-- name: VincularHistoricoEventoOrfaoPorTvdb :execrows
+UPDATE historico_evento
+SET entity_id = ?
+WHERE entity_id IS NULL AND raw_tvdb_id = ?
+`
+
+type VincularHistoricoEventoOrfaoPorTvdbParams struct {
+	EntityID  sql.NullString
+	RawTvdbID sql.NullString
+}
+
+func (q *Queries) VincularHistoricoEventoOrfaoPorTvdb(ctx context.Context, arg VincularHistoricoEventoOrfaoPorTvdbParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, vincularHistoricoEventoOrfaoPorTvdb, arg.EntityID, arg.RawTvdbID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

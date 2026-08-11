@@ -1712,6 +1712,40 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/v1/historico/orfaos:
+    get:
+      operationId: listHistoricoEventoOrfaos
+      summary: Lista eventos de histórico sem entity vinculada (briefing 0099).
+      description: >
+        Eventos de webhook (ex.: Jellyfin) cujos IDs externos não casaram com
+        nenhuma entity local no momento em que chegaram, guardados como
+        "órfãos" em vez de descartados (princípio 2 do AGENTS.md). Rota
+        GLOBAL (fora de /entities/{id}), já que por definição um evento
+        órfão ainda não tem entity. Some da lista automaticamente quando um
+        backfill retroativo vincula o evento (correção/confirmação de match
+        que faz a entity ganhar o mesmo ID externo bruto). Paginado, em
+        ordem `occurred_at DESC`.
+      tags: [historico]
+      parameters:
+        - name: limit
+          in: query
+          description: Tamanho da página (default 50, máximo 200).
+          required: false
+          schema: { type: integer, minimum: 0, default: 50 }
+        - name: offset
+          in: query
+          description: Deslocamento da página (default 0).
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: Página de eventos órfãos.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HistoricoEventoOrfaoList" }
+        "400":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/purge:
     post:
       operationId: purgeEntities
@@ -2661,6 +2695,43 @@ components:
         estado:
           type: object
           additionalProperties: { $ref: "#/components/schemas/HistoricoEstadoItem" }
+    HistoricoEventoOrfao:
+      type: object
+      description: >
+        Evento de histórico sem entity vinculada (briefing 0099). Guarda os
+        IDs externos e título/ano BRUTOS do payload original (não resolvidos
+        contra o catálogo) — usados para localizar candidatos a backfill
+        quando uma entity ganhar aquele ID no futuro; continuam preenchidos
+        mesmo depois de eventualmente vinculado.
+      required: [id, kind, status, occurred_at, source, raw_external_ids]
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        status: { type: string }
+        progress_percent: { type: [number, "null"] }
+        position_seconds: { type: [number, "null"] }
+        occurred_at: { type: string }
+        source: { type: string }
+        raw_title: { type: [string, "null"] }
+        raw_year: { type: [string, "null"] }
+        raw_external_ids:
+          type: object
+          description: "IDs externos brutos do payload, por fonte. Ausente = não informado pelo evento."
+          properties:
+            tmdb: { type: string }
+            imdb: { type: string }
+            tvdb: { type: string }
+    HistoricoEventoOrfaoList:
+      type: object
+      description: Resposta de GET /historico/orfaos — mesmo envelope de paginação de GET /entities.
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/HistoricoEventoOrfao" }
+        total: { type: integer, format: int64 }
+        limit: { type: integer }
+        offset: { type: integer }
     JellyfinWebhookToken:
       type: object
       description: Resposta de GET/POST .../webhooks/jellyfin/token (briefing 0093).

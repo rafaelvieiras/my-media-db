@@ -15,6 +15,7 @@ import {
   getSystemHealth,
   hasEntityTheme,
   listHistoricoEventos,
+  listHistoricoOrfaos,
   getJellyfinWebhookToken,
   getLanguageSettings,
   getRetroactiveEnrichmentSettings,
@@ -32,6 +33,7 @@ import {
   listLibrary,
   searchMedia,
   type EntityListParams,
+  type HistoricoOrfaoListParams,
   type JobExecutionsParams,
 } from '@/lib/api'
 
@@ -238,6 +240,17 @@ export function historicoEstadoQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['historico', id, 'estado'],
     queryFn: () => getHistoricoEstado(id),
+  })
+}
+
+// Lista GLOBAL de eventos órfãos (briefing 0099), tela `/dashboard/historico-
+// orfaos`. Chave própria `['historico', 'orfaos', params]` — FORA do prefixo
+// `['historico', id]` acima (é uma lista global, não de uma entity), então a
+// invalidação por-entity não precisa (nem deveria) tocar aqui.
+export function historicoOrfaosQueryOptions(params: HistoricoOrfaoListParams) {
+  return queryOptions({
+    queryKey: ['historico', 'orfaos', params],
+    queryFn: () => listHistoricoOrfaos(params),
   })
 }
 

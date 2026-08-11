@@ -55,9 +55,16 @@ type Evento struct {
 	TmdbID           string
 	ImdbID           string
 	TvdbID           string
-	PositionSeconds  *float64
-	RunTimeSeconds   *float64
-	ProgressPercent  *float64
+	// Title/Year (briefing 0099): captura best-effort do titulo/ano do item
+	// (chaves "Name"/"Year" do template do jellyfin-plugin-webhook) para
+	// exibicao na lista de eventos orfaos quando nenhum id externo bate --
+	// "" quando o payload nao traz (mesmo espirito tolerante do resto do
+	// parser, nunca falha por causa de um campo ausente).
+	Title           string
+	Year            string
+	PositionSeconds *float64
+	RunTimeSeconds  *float64
+	ProgressPercent *float64
 }
 
 // ItemTypeSuportado diz se o ItemType do evento e um dos cobertos por esta
@@ -85,6 +92,8 @@ func ParsePayload(body []byte) (Evento, error) {
 		TmdbID:           stringField(raw, "Provider_tmdb"),
 		ImdbID:           stringField(raw, "Provider_imdb"),
 		TvdbID:           stringField(raw, "Provider_tvdb"),
+		Title:            stringField(raw, "Name"),
+		Year:             stringField(raw, "Year"),
 	}
 
 	if posTicks := numberField(raw, "PlaybackPositionTicks"); posTicks != nil {

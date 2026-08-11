@@ -84,6 +84,11 @@ export type CreateHistoricoEvento =
   components['schemas']['CreateHistoricoEvento']
 export type HistoricoEstado = components['schemas']['HistoricoEstado']
 export type HistoricoEstadoItem = components['schemas']['HistoricoEstadoItem']
+// Evento de histórico SEM entity vinculada (briefing 0099) — lista global de
+// órfãos, complementar à timeline por-entity acima.
+export type HistoricoEventoOrfao = components['schemas']['HistoricoEventoOrfao']
+export type HistoricoEventoOrfaoList =
+  components['schemas']['HistoricoEventoOrfaoList']
 
 // Forma do corpo de `GET /api/v1/health` (contrato do briefing 0001).
 export interface Health {
@@ -1265,6 +1270,32 @@ export async function deleteHistoricoEvento(
   if (!res.ok) {
     throw await erroDaResposta(res)
   }
+}
+
+// Lista GLOBAL (fora de /entities/{id}) de eventos sem entity vinculada
+// (briefing 0099) — eventos de webhook cujos IDs externos brutos não casaram
+// com nenhuma entity local no momento em que chegaram. Some da lista quando o
+// backend vincula por backfill retroativo (correção/confirmação de match que
+// faz a entity ganhar o mesmo ID externo). Ordenado por `occurred_at` DESC.
+export interface HistoricoOrfaoListParams {
+  limit?: number
+  offset?: number
+}
+
+export async function listHistoricoOrfaos(
+  params: HistoricoOrfaoListParams = {},
+): Promise<HistoricoEventoOrfaoList> {
+  const qs = new URLSearchParams()
+  if (params.limit !== undefined) {
+    qs.set('limit', String(params.limit))
+  }
+  if (params.offset !== undefined) {
+    qs.set('offset', String(params.offset))
+  }
+  const query = qs.toString()
+  return lerJson<HistoricoEventoOrfaoList>(
+    await fetch(`${base}/api/v1/historico/orfaos${query ? `?${query}` : ''}`),
+  )
 }
 
 // ── Prévia de candidato + confirmação supervisionada (0060) ─────────────────

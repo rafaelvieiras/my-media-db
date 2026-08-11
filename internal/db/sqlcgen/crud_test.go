@@ -434,3 +434,134 @@ func TestCRUDJob(t *testing.T) {
 		t.Errorf("ListarJobExecucoes pos-poda = %d, quero 1", len(restantes))
 	}
 }
+
+// TestCRUDHistoricoEvento cobre o ciclo de historico_evento (briefing 0092)
+// e a extensao de eventos orfaos + backfill (briefing 0099): criacao normal
+// (com entity), criacao orfa (sem entity), listagens, busca por id, contagem
+// de orfaos e vinculo retroativo por tmdb/imdb/tvdb.
+func TestCRUDHistoricoEvento(t *testing.T) {
+	q := setup(t)
+	ctx := context.Background()
+
+	e, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{
+		ID: "ent-hist-1", Type: "movie", Title: "O Foragido",
+		ExternalIdsJson: ns(`{"tmdb":"9417"}`),
+	})
+	check(t, err, "CriarEntity")
+
+	// Evento normal, ja com entity casada.
+	evNormal, err := q.CriarHistoricoEvento(ctx, sqlcgen.CriarHistoricoEventoParams{
+		ID: "hist-1", EntityID: ns(e.ID), Kind: "watch", Status: "finished",
+		OccurredAt: "2026-08-01T12:00:00Z", Source: "jellyfin",
+	})
+	check(t, err, "CriarHistoricoEvento")
+	if evNormal.EntityID.String != e.ID {
+		t.Errorf("CriarHistoricoEvento.EntityID = %+v, quero %s", evNormal.EntityID, e.ID)
+	}
+
+	achado, err := q.BuscarHistoricoEventoPorID(ctx, "hist-1")
+	check(t, err, "BuscarHistoricoEventoPorID")
+	if achado.ID != "hist-1" || achado.Kind != "watch" {
+		t.Errorf("BuscarHistoricoEventoPorID = %+v, quero hist-1/watch", achado)
+	}
+
+	porEntity, err := q.ListarHistoricoEventoPorEntity(ctx, sqlcgen.ListarHistoricoEventoPorEntityParams{
+		EntityID: ns(e.ID), Kind: nil,
+	})
+	check(t, err, "ListarHistoricoEventoPorEntity")
+	if len(porEntity) != 1 {
+		t.Fatalf("ListarHistoricoEventoPorEntity = %d, quero 1", len(porEntity))
+	}
+
+	ultimoPorKind, err := q.ListarUltimoHistoricoEventoPorKind(ctx, ns(e.ID))
+	check(t, err, "ListarUltimoHistoricoEventoPorKind")
+	if len(ultimoPorKind) != 1 {
+		t.Fatalf("ListarUltimoHistoricoEventoPorKind = %d, quero 1", len(ultimoPorKind))
+	}
+
+	// Eventos orfaos: sem entity, com IDs brutos para eventual backfill.
+	orfaoTmdb, err := q.CriarHistoricoEventoOrfao(ctx, sqlcgen.CriarHistoricoEventoOrfaoParams{
+		ID: "hist-orfao-tmdb", Kind: "watch", Status: "finished",
+		OccurredAt: "2026-08-02T12:00:00Z", Source: "jellyfin",
+		RawTmdbID: ns("9417"), RawTitle: ns("O Foragido"), RawYear: ns("1993"),
+	})
+	check(t, err, "CriarHistoricoEventoOrfao (tmdb)")
+	if orfaoTmdb.EntityID.Valid {
+		t.Errorf("CriarHistoricoEventoOrfao.EntityID = %+v, quero invalido (NULL)", orfaoTmdb.EntityID)
+	}
+
+	orfaoImdb, err := q.CriarHistoricoEventoOrfao(ctx, sqlcgen.CriarHistoricoEventoOrfaoParams{
+		ID: "hist-orfao-imdb", Kind: "watch", Status: "finished",
+		OccurredAt: "2026-08-03T12:00:00Z", Source: "jellyfin",
+		RawImdbID: ns("tt0106977"),
+	})
+	check(t, err, "CriarHistoricoEventoOrfao (imdb)")
+
+	orfaoTvdb, err := q.CriarHistoricoEventoOrfao(ctx, sqlcgen.CriarHistoricoEventoOrfaoParams{
+		ID: "hist-orfao-tvdb", Kind: "watch", Status: "finished",
+		OccurredAt: "2026-08-04T12:00:00Z", Source: "jellyfin",
+		RawTvdbID: ns("70983"),
+	})
+	check(t, err, "CriarHistoricoEventoOrfao (tvdb)")
+
+	total, err := q.ContarHistoricoEventoOrfaos(ctx)
+	check(t, err, "ContarHistoricoEventoOrfaos")
+	if total != 3 {
+		t.Fatalf("ContarHistoricoEventoOrfaos = %d, quero 3", total)
+	}
+
+	orfaos, err := q.ListarHistoricoEventoOrfaos(ctx, sqlcgen.ListarHistoricoEventoOrfaosParams{Limit: 10, Offset: 0})
+	check(t, err, "ListarHistoricoEventoOrfaos")
+	if len(orfaos) != 3 {
+		t.Fatalf("ListarHistoricoEventoOrfaos = %d, quero 3", len(orfaos))
+	}
+
+	// Backfill: entity ganhou o tmdb -- vincula o orfao correspondente.
+	linhasTmdb, err := q.VincularHistoricoEventoOrfaoPorTmdb(ctx, sqlcgen.VincularHistoricoEventoOrfaoPorTmdbParams{
+		EntityID: ns(e.ID), RawTmdbID: ns("9417"),
+	})
+	check(t, err, "VincularHistoricoEventoOrfaoPorTmdb")
+	if linhasTmdb != 1 {
+		t.Errorf("VincularHistoricoEventoOrfaoPorTmdb = %d, quero 1", linhasTmdb)
+	}
+
+	linhasImdb, err := q.VincularHistoricoEventoOrfaoPorImdb(ctx, sqlcgen.VincularHistoricoEventoOrfaoPorImdbParams{
+		EntityID: ns(e.ID), RawImdbID: ns("tt0106977"),
+	})
+	check(t, err, "VincularHistoricoEventoOrfaoPorImdb")
+	if linhasImdb != 1 {
+		t.Errorf("VincularHistoricoEventoOrfaoPorImdb = %d, quero 1", linhasImdb)
+	}
+
+	linhasTvdb, err := q.VincularHistoricoEventoOrfaoPorTvdb(ctx, sqlcgen.VincularHistoricoEventoOrfaoPorTvdbParams{
+		EntityID: ns(e.ID), RawTvdbID: ns("70983"),
+	})
+	check(t, err, "VincularHistoricoEventoOrfaoPorTvdb")
+	if linhasTvdb != 1 {
+		t.Errorf("VincularHistoricoEventoOrfaoPorTvdb = %d, quero 1", linhasTvdb)
+	}
+
+	totalPos, err := q.ContarHistoricoEventoOrfaos(ctx)
+	check(t, err, "ContarHistoricoEventoOrfaos (pos-backfill)")
+	if totalPos != 0 {
+		t.Errorf("ContarHistoricoEventoOrfaos pos-backfill = %d, quero 0", totalPos)
+	}
+
+	vinculado, err := q.BuscarHistoricoEventoPorID(ctx, orfaoTmdb.ID)
+	check(t, err, "BuscarHistoricoEventoPorID (orfao vinculado)")
+	if vinculado.EntityID.String != e.ID {
+		t.Errorf("orfao vinculado EntityID = %+v, quero %s", vinculado.EntityID, e.ID)
+	}
+
+	// Apagar um evento (usado por rotinas de limpeza/testes).
+	check(t, q.ApagarHistoricoEvento(ctx, orfaoImdb.ID), "ApagarHistoricoEvento")
+	check(t, q.ApagarHistoricoEvento(ctx, orfaoTvdb.ID), "ApagarHistoricoEvento")
+
+	restantesPorEntity, err := q.ListarHistoricoEventoPorEntity(ctx, sqlcgen.ListarHistoricoEventoPorEntityParams{
+		EntityID: ns(e.ID), Kind: nil,
+	})
+	check(t, err, "ListarHistoricoEventoPorEntity (pos-apagar/backfill)")
+	if len(restantesPorEntity) != 2 {
+		t.Errorf("ListarHistoricoEventoPorEntity pos-backfill = %d, quero 2 (normal + tmdb vinculado -- imdb/tvdb vinculados foram apagados)", len(restantesPorEntity))
+	}
+}

@@ -120,6 +120,91 @@ func TestJornadaHistoricoConsumo(t *testing.T) {
 	}
 }
 
+// TestJornadaHistoricoOrfaosBackfill cobre a jornada ponta-a-ponta do
+// briefing 0099 (eventos órfãos + backfill retroativo): um webhook do
+// Jellyfin cujo id externo não casa com nenhuma entity local vira um evento
+// ÓRFÃO (em vez de ser descartado), aparece em GET /historico/orfaos, e
+// quando o dono corrige o `external_ids` da entity certa (PUT
+// .../external-ids) para incluir aquele mesmo id, o backfill automático
+// vincula o evento -- ele some da lista de órfãos e passa a aparecer em GET
+// .../entities/{id}/historico.
+func TestJornadaHistoricoOrfaosBackfill(t *testing.T) {
+	c := novoHarness(t)
+
+	// Importa o filme (mesmo alvo das demais jornadas deste pacote), mas SEM
+	// o imdb que o webhook vai reportar -- só tmdb=603 vem do fixture fake.
+	ent := c.obj(http.MethodPost, "/api/v1/import",
+		map[string]string{"source": "tmdb", "source_id": "603", "type": "movie"}, http.StatusCreated)
+	id := str(t, ent, "id")
+
+	tok := c.obj(http.MethodPost, "/api/v1/webhooks/jellyfin/token", nil, http.StatusOK)
+	token := str(t, tok, "token")
+
+	// (1) Webhook de um item cujo tmdb NÃO casa com nenhuma entity local:
+	// antes do 0099 seria descartado (204 sem gravar nada); agora vira um
+	// evento ÓRFÃO (ainda 204 -- contrato HTTP do webhook não muda).
+	if status, _ := c.bruto(http.MethodPost, "/api/v1/webhooks/jellyfin?token="+token,
+		map[string]any{
+			"NotificationType": "PlaybackStart",
+			"ItemType":         "Movie",
+			"Provider_tmdb":    "999999",
+			"Name":             "Filme Desconhecido",
+			"Year":             2020,
+		}); status != http.StatusNoContent {
+		t.Errorf("webhook sem match: status = %d, quero 204", status)
+	}
+
+	// (2) GET /historico/orfaos lista o evento recém-gravado.
+	orfaos1 := c.obj(http.MethodGet, "/api/v1/historico/orfaos", nil, http.StatusOK)
+	if got := orfaos1["total"]; got != float64(1) {
+		t.Fatalf("historico/orfaos total = %v, quero 1", got)
+	}
+	itens1, _ := orfaos1["items"].([]any)
+	if len(itens1) != 1 {
+		t.Fatalf("historico/orfaos items = %d, quero 1", len(itens1))
+	}
+	orfao1, _ := itens1[0].(map[string]any)
+	if got := str(t, orfao1, "raw_title"); got != "Filme Desconhecido" {
+		t.Errorf("orfao.raw_title = %q, quero \"Filme Desconhecido\"", got)
+	}
+	rawIDs1, _ := orfao1["raw_external_ids"].(map[string]any)
+	if got, _ := rawIDs1["tmdb"].(string); got != "999999" {
+		t.Errorf("orfao.raw_external_ids.tmdb = %q, quero \"999999\"", got)
+	}
+
+	// A entity importada, sem esse id ainda, não vê o evento no seu histórico.
+	semMatch := c.obj(http.MethodGet, "/api/v1/entities/"+id+"/historico", nil, http.StatusOK)
+	if eventos, _ := semMatch["eventos"].([]any); len(eventos) != 0 {
+		t.Fatalf("historico da entity antes do backfill = %d, quero 0", len(eventos))
+	}
+
+	// (3) O dono corrige a identidade da entity (cenário real: o tmdb estava
+	// errado/incompleto) para o id que o evento órfão trouxe -- PUT é
+	// substituição total do mapa, então reenvia o tmdb correto (999999, o
+	// mesmo do webhook) mais um imdb novo, simulando uma correção real de
+	// identidade.
+	c.obj(http.MethodPut, "/api/v1/entities/"+id+"/external-ids",
+		map[string]any{"external_ids": map[string]string{"tmdb": "999999", "imdb": "tt9999999"}}, http.StatusOK)
+
+	// (4) O evento órfão foi vinculado automaticamente: some da lista de
+	// órfãos...
+	orfaos2 := c.obj(http.MethodGet, "/api/v1/historico/orfaos", nil, http.StatusOK)
+	if got := orfaos2["total"]; got != float64(0) {
+		t.Fatalf("historico/orfaos total apos backfill = %v, quero 0", got)
+	}
+
+	// ...e passa a aparecer no histórico da entity.
+	comMatch := c.obj(http.MethodGet, "/api/v1/entities/"+id+"/historico", nil, http.StatusOK)
+	eventos, _ := comMatch["eventos"].([]any)
+	if len(eventos) != 1 {
+		t.Fatalf("historico da entity apos backfill = %d, quero 1", len(eventos))
+	}
+	vinculado, _ := eventos[0].(map[string]any)
+	if got := str(t, vinculado, "source"); got != "jellyfin-webhook" {
+		t.Errorf("evento vinculado por backfill: source = %q, quero \"jellyfin-webhook\"", got)
+	}
+}
+
 // estadoStatus lê estado[kind].status de uma resposta de GET .../historico/estado.
 func estadoStatus(t *testing.T, m map[string]any, kind string) string {
 	t.Helper()

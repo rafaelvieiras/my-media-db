@@ -111,7 +111,7 @@ type ExternalDetail struct {
 
 type HistoricoEvento struct {
 	ID              string
-	EntityID        string
+	EntityID        sql.NullString
 	Kind            string
 	Status          string
 	ProgressPercent sql.NullFloat64
@@ -119,6 +119,11 @@ type HistoricoEvento struct {
 	OccurredAt      string
 	Source          string
 	PayloadJson     sql.NullString
+	RawTmdbID       sql.NullString
+	RawImdbID       sql.NullString
+	RawTvdbID       sql.NullString
+	RawTitle        sql.NullString
+	RawYear         sql.NullString
 	CreatedAt       string
 }
 

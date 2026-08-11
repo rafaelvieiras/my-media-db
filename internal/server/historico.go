@@ -94,6 +94,53 @@ func historicoEventoToDTO(e sqlcgen.HistoricoEvento) historicoEventoDTO {
 	return dto
 }
 
+// Os helpers *ParaEvento abaixo existem porque o sqlc só reusa o model
+// sqlcgen.HistoricoEvento (SELECT *) quando a query seleciona TODAS as
+// colunas da tabela; desde o briefing 0099 (colunas raw_tmdb_id/raw_imdb_id/
+// raw_tvdb_id/raw_title/raw_year), as queries que não as selecionam
+// (CriarHistoricoEvento, ListarHistoricoEventoPorEntity,
+// ListarUltimoHistoricoEventoPorKind, BuscarHistoricoEventoPorID) ganharam
+// cada uma seu próprio Row type -- estruturalmente igual a HistoricoEvento
+// menos os campos raw_*/EntityID nunca usados por esses handlers. Converte
+// para o shape comum em vez de duplicar historicoEventoToDTO/
+// derivarHistoricoEstado por Row type.
+
+func criarRowParaEvento(r sqlcgen.CriarHistoricoEventoRow) sqlcgen.HistoricoEvento {
+	return sqlcgen.HistoricoEvento{
+		ID: r.ID, EntityID: r.EntityID, Kind: r.Kind, Status: r.Status,
+		ProgressPercent: r.ProgressPercent, PositionSeconds: r.PositionSeconds,
+		OccurredAt: r.OccurredAt, Source: r.Source, PayloadJson: r.PayloadJson,
+		CreatedAt: r.CreatedAt,
+	}
+}
+
+func listarPorEntityRowParaEvento(r sqlcgen.ListarHistoricoEventoPorEntityRow) sqlcgen.HistoricoEvento {
+	return sqlcgen.HistoricoEvento{
+		ID: r.ID, EntityID: r.EntityID, Kind: r.Kind, Status: r.Status,
+		ProgressPercent: r.ProgressPercent, PositionSeconds: r.PositionSeconds,
+		OccurredAt: r.OccurredAt, Source: r.Source, PayloadJson: r.PayloadJson,
+		CreatedAt: r.CreatedAt,
+	}
+}
+
+func ultimoPorKindRowParaEvento(r sqlcgen.ListarUltimoHistoricoEventoPorKindRow) sqlcgen.HistoricoEvento {
+	return sqlcgen.HistoricoEvento{
+		ID: r.ID, EntityID: r.EntityID, Kind: r.Kind, Status: r.Status,
+		ProgressPercent: r.ProgressPercent, PositionSeconds: r.PositionSeconds,
+		OccurredAt: r.OccurredAt, Source: r.Source, PayloadJson: r.PayloadJson,
+		CreatedAt: r.CreatedAt,
+	}
+}
+
+func buscarPorIDRowParaEvento(r sqlcgen.BuscarHistoricoEventoPorIDRow) sqlcgen.HistoricoEvento {
+	return sqlcgen.HistoricoEvento{
+		ID: r.ID, EntityID: r.EntityID, Kind: r.Kind, Status: r.Status,
+		ProgressPercent: r.ProgressPercent, PositionSeconds: r.PositionSeconds,
+		OccurredAt: r.OccurredAt, Source: r.Source, PayloadJson: r.PayloadJson,
+		CreatedAt: r.CreatedAt,
+	}
+}
+
 // nf64Ptr converte sql.NullFloat64 em *float64 (nil quando NULL).
 func nf64Ptr(nf sql.NullFloat64) *float64 {
 	if !nf.Valid {
@@ -136,7 +183,7 @@ func (s *Server) createHistoricoEvento(w http.ResponseWriter, r *http.Request) {
 
 	evento, err := sqlcgen.New(s.db.Write).CriarHistoricoEvento(ctx, sqlcgen.CriarHistoricoEventoParams{
 		ID:              uuid.NewString(),
-		EntityID:        id,
+		EntityID:        nsDe(id),
 		Kind:            body.Kind,
 		Status:          body.Status,
 		ProgressPercent: f64ToNull(body.ProgressPercent),
@@ -149,7 +196,7 @@ func (s *Server) createHistoricoEvento(w http.ResponseWriter, r *http.Request) {
 		respondErroInterno(w)
 		return
 	}
-	writeJSON(w, http.StatusCreated, historicoEventoToDTO(evento))
+	writeJSON(w, http.StatusCreated, historicoEventoToDTO(criarRowParaEvento(evento)))
 }
 
 // validarCreateHistoricoEvento valida o corpo de POST .../historico e devolve
@@ -207,7 +254,7 @@ func (s *Server) listHistoricoEventos(w http.ResponseWriter, r *http.Request) {
 		kindFiltro = k
 	}
 	eventos, err := s.leitura().ListarHistoricoEventoPorEntity(ctx, sqlcgen.ListarHistoricoEventoPorEntityParams{
-		EntityID: id,
+		EntityID: nsDe(id),
 		Kind:     kindFiltro,
 	})
 	if err != nil {
@@ -216,7 +263,7 @@ func (s *Server) listHistoricoEventos(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]historicoEventoDTO, 0, len(eventos))
 	for _, e := range eventos {
-		out = append(out, historicoEventoToDTO(e))
+		out = append(out, historicoEventoToDTO(listarPorEntityRowParaEvento(e)))
 	}
 	writeJSON(w, http.StatusOK, historicoEventoListDTO{Eventos: out})
 }
@@ -240,12 +287,16 @@ func (s *Server) getHistoricoEstado(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventos, err := s.leitura().ListarUltimoHistoricoEventoPorKind(ctx, id)
+	eventos, err := s.leitura().ListarUltimoHistoricoEventoPorKind(ctx, nsDe(id))
 	if err != nil {
 		respondErroInterno(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, historicoEstadoDTO{Estado: derivarHistoricoEstado(eventos)})
+	convertidos := make([]sqlcgen.HistoricoEvento, 0, len(eventos))
+	for _, e := range eventos {
+		convertidos = append(convertidos, ultimoPorKindRowParaEvento(e))
+	}
+	writeJSON(w, http.StatusOK, historicoEstadoDTO{Estado: derivarHistoricoEstado(convertidos)})
 }
 
 // derivarHistoricoEstado agrupa eventos (ja ordenados occurred_at DESC, id
@@ -298,7 +349,7 @@ func (s *Server) deleteHistoricoEvento(w http.ResponseWriter, r *http.Request) {
 // pertenca a `id` (404 quando ausente ou de outra entity). Guarda comum do
 // DELETE (espelha obterAssetDaEntity em assets.go).
 func (s *Server) obterHistoricoEventoDaEntity(w http.ResponseWriter, ctx context.Context, id, eventoID string) (sqlcgen.HistoricoEvento, bool) {
-	evento, err := s.leitura().BuscarHistoricoEventoPorID(ctx, eventoID)
+	row, err := s.leitura().BuscarHistoricoEventoPorID(ctx, eventoID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "evento de historico nao encontrado")
@@ -307,9 +358,104 @@ func (s *Server) obterHistoricoEventoDaEntity(w http.ResponseWriter, ctx context
 		respondErroInterno(w)
 		return sqlcgen.HistoricoEvento{}, false
 	}
-	if evento.EntityID != id {
+	evento := buscarPorIDRowParaEvento(row)
+	if !evento.EntityID.Valid || evento.EntityID.String != id {
 		writeError(w, http.StatusNotFound, "not_found", "evento de historico nao encontrado")
 		return sqlcgen.HistoricoEvento{}, false
 	}
 	return evento, true
+}
+
+// ── Eventos órfãos (briefing 0099) ──────────────────────────────────────────
+
+// historicoRawExternalIdsDTO é o `raw_external_ids` de historicoEventoOrfaoDTO
+// -- só as chaves presentes no evento aparecem no JSON (omitempty), espelhando
+// "Ausente = não informado pelo evento" do openapi.yaml.
+type historicoRawExternalIdsDTO struct {
+	Tmdb string `json:"tmdb,omitempty"`
+	Imdb string `json:"imdb,omitempty"`
+	Tvdb string `json:"tvdb,omitempty"`
+}
+
+// historicoEventoOrfaoDTO é o shape de um item de GET /historico/orfaos --
+// sem payload/created_at (não fazem parte do schema HistoricoEventoOrfao do
+// openapi.yaml), com os campos raw_* de proveniência em vez de entity_id
+// (que é sempre NULL para um órfão, por definição).
+type historicoEventoOrfaoDTO struct {
+	ID              string                     `json:"id"`
+	Kind            string                     `json:"kind"`
+	Status          string                     `json:"status"`
+	ProgressPercent *float64                   `json:"progress_percent"`
+	PositionSeconds *float64                   `json:"position_seconds"`
+	OccurredAt      string                     `json:"occurred_at"`
+	Source          string                     `json:"source"`
+	RawTitle        *string                    `json:"raw_title"`
+	RawYear         *string                    `json:"raw_year"`
+	RawExternalIDs  historicoRawExternalIdsDTO `json:"raw_external_ids"`
+}
+
+// historicoEventoOrfaoListDTO é a resposta de GET /historico/orfaos -- mesmo
+// envelope de paginação de GET /entities (items/total/limit/offset).
+type historicoEventoOrfaoListDTO struct {
+	Items  []historicoEventoOrfaoDTO `json:"items"`
+	Total  int64                     `json:"total"`
+	Limit  int                       `json:"limit"`
+	Offset int                       `json:"offset"`
+}
+
+// historicoEventoOrfaoToDTO converte a linha do banco (sqlcgen.HistoricoEvento,
+// já com entity_id NULL) no shape público de órfão.
+func historicoEventoOrfaoToDTO(e sqlcgen.HistoricoEvento) historicoEventoOrfaoDTO {
+	return historicoEventoOrfaoDTO{
+		ID:              e.ID,
+		Kind:            e.Kind,
+		Status:          e.Status,
+		ProgressPercent: nf64Ptr(e.ProgressPercent),
+		PositionSeconds: nf64Ptr(e.PositionSeconds),
+		OccurredAt:      e.OccurredAt,
+		Source:          e.Source,
+		RawTitle:        nsPtr(e.RawTitle),
+		RawYear:         nsPtr(e.RawYear),
+		RawExternalIDs: historicoRawExternalIdsDTO{
+			Tmdb: e.RawTmdbID.String,
+			Imdb: e.RawImdbID.String,
+			Tvdb: e.RawTvdbID.String,
+		},
+	}
+}
+
+// listHistoricoOrfaos trata GET /api/v1/historico/orfaos (briefing 0099):
+// lista paginada dos eventos ainda sem entity, ordem occurred_at DESC. 200
+// sempre (lista vazia é estado normal, não erro); 400 limit/offset inválidos
+// (mesmo parsePaginacao de GET /entities).
+func (s *Server) listHistoricoOrfaos(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	ctx := r.Context()
+	limit, offset, ok := parsePaginacao(w, r.URL.Query())
+	if !ok {
+		return
+	}
+
+	eventos, err := s.leitura().ListarHistoricoEventoOrfaos(ctx, sqlcgen.ListarHistoricoEventoOrfaosParams{
+		Limit:  int64(limit),
+		Offset: int64(offset),
+	})
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	total, err := s.leitura().ContarHistoricoEventoOrfaos(ctx)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	items := make([]historicoEventoOrfaoDTO, 0, len(eventos))
+	for _, e := range eventos {
+		items = append(items, historicoEventoOrfaoToDTO(e))
+	}
+	writeJSON(w, http.StatusOK, historicoEventoOrfaoListDTO{
+		Items: items, Total: total, Limit: limit, Offset: offset,
+	})
 }

@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/uuid"
+
+	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
@@ -35,6 +38,16 @@ func decodeHistoricoEstado(t *testing.T, body []byte) historicoEstadoDTO {
 	var out historicoEstadoDTO
 	if err := json.Unmarshal(body, &out); err != nil {
 		t.Fatalf("decodificar historicoEstadoDTO: %v (corpo=%s)", err, body)
+	}
+	return out
+}
+
+// decodeHistoricoOrfaoList decodifica o corpo de GET /historico/orfaos.
+func decodeHistoricoOrfaoList(t *testing.T, body []byte) historicoEventoOrfaoListDTO {
+	t.Helper()
+	var out historicoEventoOrfaoListDTO
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decodificar historicoEventoOrfaoListDTO: %v (corpo=%s)", err, body)
 	}
 	return out
 }
@@ -352,5 +365,113 @@ func TestHistoricoEventoCascadeAoApagarEntity(t *testing.T) {
 	_, err := sqlcgen.New(d.Read).BuscarHistoricoEventoPorID(context.Background(), criado.ID)
 	if err == nil {
 		t.Error("evento ainda existe apos apagar a entity, quero CASCADE")
+	}
+}
+
+// ── Eventos órfãos / backfill retroativo (briefing 0099) ────────────────────
+
+// semearOrfao cria um historico_evento órfão (entity_id NULL) direto pela
+// query sqlc, com os raw ids/título/ano dados.
+func semearOrfao(t *testing.T, d *db.DB, tmdb, imdb, tvdb, titulo, ano string) sqlcgen.HistoricoEvento {
+	t.Helper()
+	ev, err := escrita(t, d).CriarHistoricoEventoOrfao(context.Background(), sqlcgen.CriarHistoricoEventoOrfaoParams{
+		ID:         uuid.NewString(),
+		Kind:       "assistir",
+		Status:     "started",
+		OccurredAt: "2026-01-01T10:00:00Z",
+		Source:     "jellyfin-webhook",
+		RawTmdbID:  nsOf(tmdb),
+		RawImdbID:  nsOf(imdb),
+		RawTvdbID:  nsOf(tvdb),
+		RawTitle:   nsOf(titulo),
+		RawYear:    nsOf(ano),
+	})
+	if err != nil {
+		t.Fatalf("CriarHistoricoEventoOrfao: %v", err)
+	}
+	return ev
+}
+
+// TestListHistoricoOrfaosVazio cobre §5: lista vazia inicialmente (200, não
+// 404 -- não há entity/rota que possa faltar).
+func TestListHistoricoOrfaosVazio(t *testing.T) {
+	h, _ := setupEntitiesServer(t)
+	rec := do(t, h, http.MethodGet, "/api/v1/historico/orfaos", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	list := decodeHistoricoOrfaoList(t, rec.Body.Bytes())
+	if list.Total != 0 || len(list.Items) != 0 {
+		t.Errorf("orfaos = %+v, quero vazio", list)
+	}
+}
+
+// TestListHistoricoOrfaosApareceEPagina cobre §5: um evento órfão aparece na
+// lista com os campos certos, e a paginação (limit/offset) funciona.
+func TestListHistoricoOrfaosApareceEPagina(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearOrfao(t, d, "603", "", "", "Matrix", "1999")
+	semearOrfao(t, d, "604", "", "", "Matrix Reloaded", "2003")
+	semearOrfao(t, d, "605", "", "", "Matrix Revolutions", "2003")
+
+	rec := do(t, h, http.MethodGet, "/api/v1/historico/orfaos", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	list := decodeHistoricoOrfaoList(t, rec.Body.Bytes())
+	if list.Total != 3 || len(list.Items) != 3 {
+		t.Fatalf("orfaos = %+v, quero 3", list)
+	}
+
+	// Paginação: limit=1 devolve só 1 item, total continua 3.
+	recPag := do(t, h, http.MethodGet, "/api/v1/historico/orfaos?limit=1&offset=1", nil)
+	if recPag.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", recPag.Code, recPag.Body.String())
+	}
+	pag := decodeHistoricoOrfaoList(t, recPag.Body.Bytes())
+	if pag.Total != 3 || len(pag.Items) != 1 || pag.Limit != 1 || pag.Offset != 1 {
+		t.Errorf("pagina = %+v, quero total=3 items=1 limit=1 offset=1", pag)
+	}
+}
+
+// TestBackfillViaPutExternalIds cobre o critério de aceite central do
+// briefing 0099 de PONTA A PONTA (via API real, não só o pacote isolado):
+// um evento órfão gravado (aqui, direto pela query -- mesmo efeito de um
+// webhook sem match) some da lista de órfãos e passa a aparecer em
+// GET /entities/{id}/historico depois de PUT /entities/{id}/external-ids
+// gravar o mesmo id bruto.
+func TestBackfillViaPutExternalIds(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	id := semearEntity(t, d, "e1", "movie", "Item Local")
+	orfao := semearOrfao(t, d, "603", "", "", "Matrix", "1999")
+
+	// Antes do PUT: o evento está órfão, entity sem histórico.
+	recOrfaosAntes := do(t, h, http.MethodGet, "/api/v1/historico/orfaos", nil)
+	listAntes := decodeHistoricoOrfaoList(t, recOrfaosAntes.Body.Bytes())
+	if listAntes.Total != 1 {
+		t.Fatalf("orfaos antes do PUT = %d, quero 1", listAntes.Total)
+	}
+	recHistAntes := do(t, h, http.MethodGet, "/api/v1/entities/"+id+"/historico", nil)
+	if len(decodeHistoricoList(t, recHistAntes.Body.Bytes()).Eventos) != 0 {
+		t.Fatal("historico da entity ja tinha evento antes do backfill")
+	}
+
+	rec := do(t, h, http.MethodPut, "/api/v1/entities/"+id+"/external-ids",
+		map[string]any{"external_ids": map[string]string{"tmdb": "603"}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT external-ids: status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+
+	// Depois: some da lista de órfãos...
+	recOrfaosDepois := do(t, h, http.MethodGet, "/api/v1/historico/orfaos", nil)
+	listDepois := decodeHistoricoOrfaoList(t, recOrfaosDepois.Body.Bytes())
+	if listDepois.Total != 0 {
+		t.Errorf("orfaos depois do PUT = %d, quero 0 (vinculado)", listDepois.Total)
+	}
+	// ...e aparece no histórico DA ENTITY.
+	recHistDepois := do(t, h, http.MethodGet, "/api/v1/entities/"+id+"/historico", nil)
+	listHist := decodeHistoricoList(t, recHistDepois.Body.Bytes())
+	if len(listHist.Eventos) != 1 || listHist.Eventos[0].ID != orfao.ID {
+		t.Fatalf("historico da entity apos backfill = %+v, quero o evento %s", listHist.Eventos, orfao.ID)
 	}
 }

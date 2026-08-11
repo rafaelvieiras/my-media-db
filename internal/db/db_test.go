@@ -105,7 +105,7 @@ func TestMigrateUp(t *testing.T) {
 	if err := d.Migrate(ctx); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	// Há dezoito migrations (0001 semente + 0002 schema do núcleo + 0003
+	// Há dezenove migrations (0001 semente + 0002 schema do núcleo + 0003
 	// media_file.library_source_id + 0004 media_external/media_override + 0005
 	// app_settings/entity.original_language + 0006 external_detail + 0007
 	// series: entity_relation.sort_index + entity.external_id_tvdb + 0008
@@ -119,9 +119,11 @@ func TestMigrateUp(t *testing.T) {
 	// (briefing 0084) + 0018 library_source.retroactive_enrichment_days
 	// (briefing 0085) + 0019 entity.watched/play_count/user_rating/
 	// last_played_at/resume_position_seconds/resume_total_seconds
-	// (briefing 0088) + 0020 historico_evento (briefing 0092).
-	if v := mustSchemaVersion(t, d); v != 20 {
-		t.Errorf("versão após up = %d, quero 20", v)
+	// (briefing 0088) + 0020 historico_evento (briefing 0092) + 0021
+	// historico_evento.entity_id nullable + raw_* (eventos órfãos, briefing
+	// 0099).
+	if v := mustSchemaVersion(t, d); v != 21 {
+		t.Errorf("versão após up = %d, quero 21", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -172,6 +174,10 @@ func TestMigrateDown(t *testing.T) {
 	}
 
 	// Down reverte uma migration por vez, do topo para a base.
+	downPara(t, d, 20) // 0021: volta historico_evento.entity_id a NOT NULL, remove as colunas raw_*.
+	querFalha(t, d, "SELECT raw_tmdb_id, raw_imdb_id, raw_tvdb_id, raw_title, raw_year FROM historico_evento",
+		"colunas raw_* ainda existem após o down do 0021")
+
 	downPara(t, d, 19) // 0020: remove historico_evento.
 	querFalha(t, d, "SELECT 1 FROM historico_evento",
 		"tabela historico_evento ainda existe após o down do 0020")

@@ -2,6 +2,7 @@ import { Link, Outlet } from '@tanstack/react-router'
 import {
   Activity,
   Briefcase,
+  FileQuestion,
   Library,
   ListChecks,
   Menu,
@@ -34,6 +35,7 @@ const ITENS: {
     | '/dashboard/jobs'
     | '/dashboard/settings'
     | '/dashboard/webhook'
+    | '/dashboard/historico-orfaos'
     | '/dashboard/health'
   label: string
   icon: LucideIcon
@@ -44,6 +46,11 @@ const ITENS: {
   { to: '/dashboard/jobs', label: 'Jobs', icon: Briefcase },
   { to: '/dashboard/settings', label: 'Configurações', icon: Settings },
   { to: '/dashboard/webhook', label: 'Webhook', icon: Webhook },
+  {
+    to: '/dashboard/historico-orfaos',
+    label: 'Eventos sem item',
+    icon: FileQuestion,
+  },
   { to: '/dashboard/health', label: 'Saúde', icon: Activity },
 ]
 

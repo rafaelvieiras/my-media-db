@@ -28,6 +28,7 @@ import { CollectionDetailScreen } from '@/routes/collection-detail'
 import { PersonDetailScreen } from '@/routes/person-detail'
 import { SettingsScreen } from '@/routes/settings'
 import { WebhookScreen } from '@/routes/webhook'
+import { HistoricoOrfaosScreen } from '@/routes/historico-orfaos'
 import { JobsScreen } from '@/routes/jobs'
 import { HealthScreen } from '@/routes/health'
 
@@ -202,6 +203,14 @@ const dashboardWebhookRoute = createRoute({
   component: WebhookScreen,
 })
 
+// Lista GLOBAL de eventos de histórico sem item relacionado (briefing 0099):
+// somente leitura, complementar à timeline por-entity do 0092/0094.
+const dashboardHistoricoOrfaosRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
+  path: '/historico-orfaos',
+  component: HistoricoOrfaosScreen,
+})
+
 // Administração dos jobs internos (0052) — agendador embutido + histórico.
 const dashboardJobsRoute = createRoute({
   getParentRoute: () => dashboardRoute,
@@ -236,6 +245,7 @@ const routeTree = rootRoute.addChildren([
     dashboardOrphansRoute,
     dashboardSettingsRoute,
     dashboardWebhookRoute,
+    dashboardHistoricoOrfaosRoute,
     dashboardJobsRoute,
     dashboardHealthRoute,
   ]),

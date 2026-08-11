@@ -165,15 +165,40 @@ func (s *Server) receiveJellyfinWebhook(w http.ResponseWriter, r *http.Request) 
 
 	entityID, ok := s.casarEntityJellyfin(ctx, ev)
 	if !ok {
-		log.Printf("webhook jellyfin: nenhuma entity casou (tmdb=%q imdb=%q tvdb=%q) -- descartado",
-			ev.TmdbID, ev.ImdbID, ev.TvdbID)
+		// Sem match (briefing 0099): NAO descarta mais -- grava um evento
+		// ORFAO (entity_id NULL) com os IDs/titulo/ano brutos do payload,
+		// para permitir backfill retroativo quando uma entity ganhar aquele
+		// id externo (import futuro, correcao/confirmacao de match). Erro na
+		// gravacao so loga -- mesmo espirito "nunca falha para o Jellyfin"
+		// do caminho com match logo abaixo.
+		if _, err := sqlcgen.New(s.db.Write).CriarHistoricoEventoOrfao(ctx, sqlcgen.CriarHistoricoEventoOrfaoParams{
+			ID:              uuid.NewString(),
+			Kind:            webhook.Kind,
+			Status:          status,
+			ProgressPercent: f64ToNull(ev.ProgressPercent),
+			PositionSeconds: f64ToNull(ev.PositionSeconds),
+			OccurredAt:      time.Now().UTC().Format(time.RFC3339),
+			Source:          webhook.Source,
+			PayloadJson:     sql.NullString{String: string(body), Valid: true},
+			RawTmdbID:       nsDe(ev.TmdbID),
+			RawImdbID:       nsDe(ev.ImdbID),
+			RawTvdbID:       nsDe(ev.TvdbID),
+			RawTitle:        nsDe(ev.Title),
+			RawYear:         nsDe(ev.Year),
+		}); err != nil {
+			log.Printf("webhook jellyfin: falha ao gravar evento orfao (tmdb=%q imdb=%q tvdb=%q): %v",
+				ev.TmdbID, ev.ImdbID, ev.TvdbID, err)
+		} else {
+			log.Printf("webhook jellyfin: nenhuma entity casou (tmdb=%q imdb=%q tvdb=%q) -- gravado como orfao",
+				ev.TmdbID, ev.ImdbID, ev.TvdbID)
+		}
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
 	_, err = sqlcgen.New(s.db.Write).CriarHistoricoEvento(ctx, sqlcgen.CriarHistoricoEventoParams{
 		ID:              uuid.NewString(),
-		EntityID:        entityID,
+		EntityID:        nsDe(entityID),
 		Kind:            webhook.Kind,
 		Status:          status,
 		ProgressPercent: f64ToNull(ev.ProgressPercent),

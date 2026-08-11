@@ -4,12 +4,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/historico"
 )
 
 // Este arquivo implementa a EDIÇÃO da identidade externa da entity (briefing 0027):
@@ -79,6 +81,12 @@ func (s *Server) updateExternalIds(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		respondErroInterno(w)
 		return
+	}
+	// Backfill retroativo (briefing 0099): a identidade já foi gravada com
+	// sucesso -- vincular eventos órfãos é um bônus, nunca reverte/bloqueia
+	// a resposta já formada. Erro só loga.
+	if _, err := historico.VincularOrfaos(ctx, sqlcgen.New(s.db.Write), id, ids); err != nil {
+		log.Printf("external-ids: backfill de eventos orfaos para %s falhou (segue): %v", id, err)
 	}
 	s.responderResolvida(w, ctx, id, http.StatusOK)
 }

@@ -41,6 +41,40 @@ func TestParsePayloadCamposCompletos(t *testing.T) {
 	}
 }
 
+// TestParsePayloadTituloAno cobre o briefing 0099: Name/Year do payload
+// viram Title/Year no Evento -- usados quando o item nao casa nenhuma
+// entity (exibicao na lista de orfaos).
+func TestParsePayloadTituloAno(t *testing.T) {
+	body := []byte(`{
+		"NotificationType": "PlaybackStart",
+		"ItemType": "Movie",
+		"Name": "The Matrix",
+		"Year": 1999
+	}`)
+	ev, err := ParsePayload(body)
+	if err != nil {
+		t.Fatalf("ParsePayload: %v", err)
+	}
+	if ev.Title != "The Matrix" {
+		t.Errorf("Title = %q, quero %q", ev.Title, "The Matrix")
+	}
+	if ev.Year != "1999" {
+		t.Errorf("Year = %q, quero %q (numero vira string)", ev.Year, "1999")
+	}
+}
+
+// TestParsePayloadTituloAnoAusentes cobre o briefing 0099: payload sem
+// Name/Year nao falha o parse -- Title/Year ficam "".
+func TestParsePayloadTituloAnoAusentes(t *testing.T) {
+	ev, err := ParsePayload([]byte(`{"NotificationType":"PlaybackStart","ItemType":"Movie"}`))
+	if err != nil {
+		t.Fatalf("ParsePayload: %v", err)
+	}
+	if ev.Title != "" || ev.Year != "" {
+		t.Errorf("Title/Year deveriam ser vazios: Title=%q Year=%q", ev.Title, ev.Year)
+	}
+}
+
 // TestParsePayloadCamposComoString cobre §3/§5: algumas versões do plugin
 // serializam TUDO como string via template Handlebars -- o parser deve
 // tolerar e converter.

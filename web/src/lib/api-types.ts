@@ -1022,6 +1022,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/historico/orfaos': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Lista eventos de histórico sem entity vinculada (briefing 0099).
+     * @description Eventos de webhook (ex.: Jellyfin) cujos IDs externos não casaram com nenhuma entity local no momento em que chegaram, guardados como "órfãos" em vez de descartados (princípio 2 do AGENTS.md). Rota GLOBAL (fora de /entities/{id}), já que por definição um evento órfão ainda não tem entity. Some da lista automaticamente quando um backfill retroativo vincula o evento (correção/confirmação de match que faz a entity ganhar o mesmo ID externo bruto). Paginado, em ordem `occurred_at DESC`.
+     */
+    get: operations['listHistoricoEventoOrfaos']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/purge': {
     parameters: {
       query?: never
@@ -1508,6 +1528,32 @@ export interface components {
       estado: {
         [key: string]: components['schemas']['HistoricoEstadoItem']
       }
+    }
+    /** @description Evento de histórico sem entity vinculada (briefing 0099). Guarda os IDs externos e título/ano BRUTOS do payload original (não resolvidos contra o catálogo) — usados para localizar candidatos a backfill quando uma entity ganhar aquele ID no futuro; continuam preenchidos mesmo depois de eventualmente vinculado. */
+    HistoricoEventoOrfao: {
+      id: string
+      kind: string
+      status: string
+      progress_percent?: number | null
+      position_seconds?: number | null
+      occurred_at: string
+      source: string
+      raw_title?: string | null
+      raw_year?: string | null
+      /** @description IDs externos brutos do payload, por fonte. Ausente = não informado pelo evento. */
+      raw_external_ids: {
+        tmdb?: string
+        imdb?: string
+        tvdb?: string
+      }
+    }
+    /** @description Resposta de GET /historico/orfaos — mesmo envelope de paginação de GET /entities. */
+    HistoricoEventoOrfaoList: {
+      items: components['schemas']['HistoricoEventoOrfao'][]
+      /** Format: int64 */
+      total: number
+      limit: number
+      offset: number
     }
     /** @description Resposta de GET/POST .../webhooks/jellyfin/token (briefing 0093). */
     JellyfinWebhookToken: {
@@ -3953,6 +3999,32 @@ export interface operations {
         content?: never
       }
       404: components['responses']['Error']
+    }
+  }
+  listHistoricoEventoOrfaos: {
+    parameters: {
+      query?: {
+        /** @description Tamanho da página (default 50, máximo 200). */
+        limit?: number
+        /** @description Deslocamento da página (default 0). */
+        offset?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Página de eventos órfãos. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HistoricoEventoOrfaoList']
+        }
+      }
+      400: components['responses']['Error']
     }
   }
   purgeEntities: {

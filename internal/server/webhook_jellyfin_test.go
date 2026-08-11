@@ -205,7 +205,8 @@ func TestReceiveJellyfinWebhookCasaPorTvdb(t *testing.T) {
 }
 
 // TestReceiveJellyfinWebhookSemMatch cobre §5: payload sem nenhum id
-// batendo -> 204, nenhum historico_evento criado.
+// batendo -> 204, nenhum historico_evento criado NA ENTITY (o briefing 0099
+// muda o destino para órfão, testado em TestReceiveJellyfinWebhookSemMatchGravaOrfao).
 func TestReceiveJellyfinWebhookSemMatch(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	entID := "e1"
@@ -224,6 +225,52 @@ func TestReceiveJellyfinWebhookSemMatch(t *testing.T) {
 	list := decodeHistoricoList(t, recHist.Body.Bytes())
 	if len(list.Eventos) != 0 {
 		t.Errorf("len(eventos) = %d, quero 0 (sem match)", len(list.Eventos))
+	}
+}
+
+// TestReceiveJellyfinWebhookSemMatchGravaOrfao cobre o briefing 0099: um
+// evento sem match NÃO é mais descartado silenciosamente -- vira uma linha
+// histórico_evento com entity_id NULL e os IDs/título/ano brutos do payload,
+// visível em GET /historico/orfaos.
+func TestReceiveJellyfinWebhookSemMatchGravaOrfao(t *testing.T) {
+	h, _ := setupEntitiesServer(t)
+	token := gerarTokenTeste(t, h)
+
+	rec := do(t, h, http.MethodPost, "/api/v1/webhooks/jellyfin?token="+token, map[string]any{
+		"NotificationType": "PlaybackStart",
+		"ItemType":         "Movie",
+		"Provider_tmdb":    "999999",
+		"Provider_imdb":    "tt9999999",
+		"Name":             "Filme Desconhecido",
+		"Year":             2020,
+	})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, quero 204 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+
+	recOrfaos := do(t, h, http.MethodGet, "/api/v1/historico/orfaos", nil)
+	if recOrfaos.Code != http.StatusOK {
+		t.Fatalf("GET orfaos: status = %d, quero 200 (corpo=%s)", recOrfaos.Code, recOrfaos.Body.String())
+	}
+	list := decodeHistoricoOrfaoList(t, recOrfaos.Body.Bytes())
+	if list.Total != 1 || len(list.Items) != 1 {
+		t.Fatalf("orfaos = %+v, quero 1 item", list)
+	}
+	item := list.Items[0]
+	eq(t, "kind", item.Kind, "assistir")
+	eq(t, "status", item.Status, "started")
+	eq(t, "source", item.Source, "jellyfin-webhook")
+	if item.RawTitle == nil || *item.RawTitle != "Filme Desconhecido" {
+		t.Errorf("raw_title = %v, quero 'Filme Desconhecido'", item.RawTitle)
+	}
+	if item.RawYear == nil || *item.RawYear != "2020" {
+		t.Errorf("raw_year = %v, quero '2020'", item.RawYear)
+	}
+	if item.RawExternalIDs.Tmdb != "999999" {
+		t.Errorf("raw_external_ids.tmdb = %q, quero 999999", item.RawExternalIDs.Tmdb)
+	}
+	if item.RawExternalIDs.Imdb != "tt9999999" {
+		t.Errorf("raw_external_ids.imdb = %q, quero tt9999999", item.RawExternalIDs.Imdb)
 	}
 }
 

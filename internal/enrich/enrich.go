@@ -26,6 +26,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/externaldetail"
+	"github.com/rafaelvieiras/my-media-db/internal/historico"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
@@ -493,10 +494,19 @@ func (s *Servico) mesclarExternalIds(ctx context.Context, entityID, source, sour
 	if err != nil {
 		return err
 	}
-	return s.escrita().AtualizarExternalIds(ctx, sqlcgen.AtualizarExternalIdsParams{
+	if err := s.escrita().AtualizarExternalIds(ctx, sqlcgen.AtualizarExternalIdsParams{
 		ExternalIdsJson: nsValid(string(b)),
 		ID:              entityID,
-	})
+	}); err != nil {
+		return err
+	}
+	// Backfill retroativo (briefing 0099): a identidade já foi gravada com
+	// sucesso -- vincular eventos órfãos é best-effort, mesmo tratamento de
+	// degradação já usado em cachearArte/ligarMembros deste arquivo.
+	if _, err := historico.VincularOrfaos(ctx, s.escrita(), entityID, ids); err != nil {
+		log.Printf("enrich: backfill de eventos orfaos para %s falhou (segue): %v", entityID, err)
+	}
+	return nil
 }
 
 // mesclarExternalIdSeAusente mescla {chave: valor} em entity.external_ids_json SOMENTE
@@ -533,10 +543,20 @@ func (s *Servico) mesclarExternalIdSeAusente(ctx context.Context, entityID, chav
 	if err != nil {
 		return err
 	}
-	return s.escrita().AtualizarExternalIds(ctx, sqlcgen.AtualizarExternalIdsParams{
+	if err := s.escrita().AtualizarExternalIds(ctx, sqlcgen.AtualizarExternalIdsParams{
 		ExternalIdsJson: nsValid(string(b)),
 		ID:              entityID,
-	})
+	}); err != nil {
+		return err
+	}
+	// Backfill retroativo (briefing 0099): só a fonte que de fato mudou aqui
+	// (não o mapa inteiro -- evita trabalho redundante já coberto por outra
+	// via quando as demais fontes não mudaram). Best-effort, mesmo padrão de
+	// mesclarExternalIds.
+	if _, err := historico.VincularOrfaos(ctx, s.escrita(), entityID, map[string]string{chave: valor}); err != nil {
+		log.Printf("enrich: backfill de eventos orfaos (chave %s) para %s falhou (segue): %v", chave, entityID, err)
+	}
+	return nil
 }
 
 // cachearArte baixa o binário de uma arte (pôster ou fanart/backdrop), grava em
