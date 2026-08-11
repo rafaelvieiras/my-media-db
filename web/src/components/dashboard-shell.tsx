@@ -7,6 +7,7 @@ import {
   Menu,
   Settings,
   Trash2,
+  Webhook,
   type LucideIcon,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -32,6 +33,7 @@ const ITENS: {
     | '/dashboard/orphans'
     | '/dashboard/jobs'
     | '/dashboard/settings'
+    | '/dashboard/webhook'
     | '/dashboard/health'
   label: string
   icon: LucideIcon
@@ -41,6 +43,7 @@ const ITENS: {
   { to: '/dashboard/orphans', label: 'Órfãs', icon: Trash2 },
   { to: '/dashboard/jobs', label: 'Jobs', icon: Briefcase },
   { to: '/dashboard/settings', label: 'Configurações', icon: Settings },
+  { to: '/dashboard/webhook', label: 'Webhook', icon: Webhook },
   { to: '/dashboard/health', label: 'Saúde', icon: Activity },
 ]
 

@@ -15,6 +15,7 @@ import {
   getSystemHealth,
   hasEntityTheme,
   listHistoricoEventos,
+  getJellyfinWebhookToken,
   getLanguageSettings,
   getRetroactiveEnrichmentSettings,
   getAutoMaterializeArtworkSettings,
@@ -144,6 +145,14 @@ export const retroactiveEnrichmentSettingsQueryOptions = queryOptions({
 export const autoMaterializeArtworkSettingsQueryOptions = queryOptions({
   queryKey: ['settings', 'auto-materialize-artwork'],
   queryFn: getAutoMaterializeArtworkSettings,
+})
+
+// Token do webhook de entrada Jellyfin (0093/0097): fonte única para a tela
+// `/dashboard/webhook`. Chave `['webhooks', 'jellyfin', 'token']` — invalidada
+// depois de gerar/regenerar o token.
+export const jellyfinWebhookTokenQueryOptions = queryOptions({
+  queryKey: ['webhooks', 'jellyfin', 'token'],
+  queryFn: getJellyfinWebhookToken,
 })
 
 // Config de completude de CATALOGAÇÃO (0057): fonte única para o formulário de

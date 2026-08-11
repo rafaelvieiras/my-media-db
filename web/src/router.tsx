@@ -27,6 +27,7 @@ import { ExternalDetailScreen } from '@/routes/external-detail'
 import { CollectionDetailScreen } from '@/routes/collection-detail'
 import { PersonDetailScreen } from '@/routes/person-detail'
 import { SettingsScreen } from '@/routes/settings'
+import { WebhookScreen } from '@/routes/webhook'
 import { JobsScreen } from '@/routes/jobs'
 import { HealthScreen } from '@/routes/health'
 
@@ -194,6 +195,13 @@ const dashboardSettingsRoute = createRoute({
   component: SettingsScreen,
 })
 
+// Webhook de entrada Jellyfin (0093/0097): gerar/copiar o token do webhook.
+const dashboardWebhookRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
+  path: '/webhook',
+  component: WebhookScreen,
+})
+
 // Administração dos jobs internos (0052) — agendador embutido + histórico.
 const dashboardJobsRoute = createRoute({
   getParentRoute: () => dashboardRoute,
@@ -227,6 +235,7 @@ const routeTree = rootRoute.addChildren([
     dashboardReviewRoute,
     dashboardOrphansRoute,
     dashboardSettingsRoute,
+    dashboardWebhookRoute,
     dashboardJobsRoute,
     dashboardHealthRoute,
   ]),

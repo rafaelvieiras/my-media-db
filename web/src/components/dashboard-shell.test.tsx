@@ -11,14 +11,15 @@ import {
 } from '@tanstack/react-router'
 import { DashboardShell } from '@/components/dashboard-shell'
 
-// DashboardShell (briefing 0083): sidebar da área administrativa (Bibliotecas/
-// Revisão/Órfãs/Jobs/Configurações/Saúde) + `<Outlet/>` para a seção ativa. O
-// destaque da seção ativa (`aria-current="page"`) vem do PRÓPRIO `activeProps`
+// DashboardShell (briefing 0083, seção Webhook somada no 0097): sidebar da
+// área administrativa (Bibliotecas/Revisão/Órfãs/Jobs/Configurações/Webhook/
+// Saúde) + `<Outlet/>` para a seção ativa. O destaque da seção ativa
+// (`aria-current="page"`) vem do PRÓPRIO `activeProps`
 // do `<Link>` do TanStack Router (0075: mesmo mecanismo do `AppHeader`) — não é
 // um cálculo manual como o `EntityEditShell` (0080) fazia via prop `secaoAtiva`.
 // Por isso o teste monta uma árvore de rota MÍNIMA e isolada (rootRoute +
-// dashboardRoute + 6 filhas triviais), num `memoryHistory` — não a árvore real
-// do app (cada uma das 6 telas reais tem endpoints/MSW próprios, irrelevantes
+// dashboardRoute + 7 filhas triviais), num `memoryHistory` — não a árvore real
+// do app (cada uma das 7 telas reais tem endpoints/MSW próprios, irrelevantes
 // aqui) nem mocka o `Link` (perderia o comportamento de `activeProps` que é
 // exatamente o que queremos exercitar).
 const SECOES = [
@@ -27,6 +28,7 @@ const SECOES = [
   'orphans',
   'jobs',
   'settings',
+  'webhook',
   'health',
 ] as const
 
@@ -60,11 +62,12 @@ const ROTULOS = [
   'Órfãs',
   'Jobs',
   'Configurações',
+  'Webhook',
   'Saúde',
 ]
 
 describe('DashboardShell', () => {
-  it('mostra as 6 seções na sidebar e renderiza o conteúdo da rota ativa', async () => {
+  it('mostra as 7 seções na sidebar e renderiza o conteúdo da rota ativa', async () => {
     await montarEmRota('/dashboard/review')
 
     const nav = screen.getByRole('navigation', { name: 'Administração' })
@@ -89,7 +92,7 @@ describe('DashboardShell', () => {
     ).not.toHaveAttribute('aria-current')
   })
 
-  it('mobile: o botão de menu tem md:hidden e abre um Sheet com as 6 seções', async () => {
+  it('mobile: o botão de menu tem md:hidden e abre um Sheet com as 7 seções', async () => {
     const user = userEvent.setup()
     await montarEmRota('/dashboard/library')
 

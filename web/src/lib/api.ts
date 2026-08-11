@@ -541,6 +541,32 @@ export async function putAutoMaterializeArtworkSettings(
   return lerJson<AutoMaterializeArtworkSettings>(res)
 }
 
+// ── Webhook de entrada Jellyfin (0093/0097) ──────────────────────────────────
+
+export type JellyfinWebhookToken = components['schemas']['JellyfinWebhookToken']
+
+// Token vigente do webhook de entrada do Jellyfin. 404 (nenhum token gerado
+// ainda) é um estado NORMAL na primeira visita — não deve virar erro de
+// query, então vira `{token: null}` em vez de lançar.
+export async function getJellyfinWebhookToken(): Promise<{
+  token: string | null
+}> {
+  const res = await fetch(`${base}/api/v1/webhooks/jellyfin/token`)
+  if (res.status === 404) {
+    return { token: null }
+  }
+  const dado = await lerJson<JellyfinWebhookToken>(res)
+  return { token: dado.token }
+}
+
+// Gera (ou substitui, se já existir) o token do webhook Jellyfin.
+export async function regenerateJellyfinWebhookToken(): Promise<JellyfinWebhookToken> {
+  const res = await fetch(`${base}/api/v1/webhooks/jellyfin/token`, {
+    method: 'POST',
+  })
+  return lerJson<JellyfinWebhookToken>(res)
+}
+
 // ── Settings de completude de catalogação (0057) ─────────────────────────────
 
 // Config vigente de completude de CATALOGAÇÃO (por `entity.type`). Quando não

@@ -171,6 +171,22 @@ concreto e demais verticais (música/livro/jogo) ficam para depois.
 | [0092](0092-fundacao-historico-de-consumo-schema-e-api.md) | Fundação do histórico de consumo: schema genérico `historico_evento` + API mínima (criar/listar/estado derivado/apagar evento) | feature | done | — |
 | [0093](0093-webhook-jellyfin-historico-consumo.md) | Receptor de webhook do Jellyfin: normaliza play/pause/stop para `historico_evento`, casando por ID externo (TMDB/IMDB/TVDB) | feature | done | 0092 |
 | [0094](0094-ui-historico-e-estado-assistido.md) | UI do histórico: selo de assistido no card/hero + timeline no detalhe + ação manual | feature | done | 0092, 0093 |
+| [0097](0097-ui-webhook-token-jellyfin.md) | UI de Webhook: `/dashboard/webhook` para gerar/copiar o token do webhook Jellyfin (0093 nunca ganhou tela) + placeholder de webhooks de saída | feature | done | 0093 |
+
+### Fase 5+ — Integrações configuráveis via UI
+
+Substitui o hardcode de credencial de provider (env var lida só no boot) por
+um registro dinâmico gravável em banco (precedência sobre a variável de
+ambiente, mesmo formato override-vence do resolver) — ver
+[ADR-0023](../docs/adr/0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md)
+e agenda [I1–I4](../docs/00-agenda-de-decisoes.md#integrações-configuráveis-ui--fundacional-levantada-a-partir-de-pedido-do-dono).
+Primeira integração: TMDB. `internal/integration.Registry` é o primeiro ponto
+de extensão concreto que um futuro sistema de plugins vai reusar.
+
+| ID | Briefing | Tipo | Status | Depende de |
+|---|---|---|---|---|
+| [0095](0095-fundacao-integracoes-schema-registry-api.md) | Fundação de Integrações: schema `integration_config` + registry Go + API (`GET/PUT`) + migra o TMDB para ler do registro | feature | draft | — |
+| [0096](0096-ui-integracoes-dashboard-tmdb.md) | UI de Integrações: `/dashboard/integrations` (lista) + subpágina TMDB com formulário dinâmico | feature | draft | 0095 |
 
 ### Transversal — Infraestrutura operacional
 
