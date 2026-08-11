@@ -75,6 +75,7 @@ describe('ExternalIdsEditor', () => {
 
   it('remover deixa o mapa sem a fonte', async () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderWithClient(
       <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
     )
@@ -166,6 +167,7 @@ describe('ExternalIdsEditor — onDirtyChange (0073)', () => {
 
   it('volta a false depois de "Salvar IDs" com sucesso', async () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const onDirtyChange = vi.fn()
     renderWithClient(
       <ExternalIdsEditor
@@ -181,5 +183,64 @@ describe('ExternalIdsEditor — onDirtyChange (0073)', () => {
     await vi.waitFor(() =>
       expect(onDirtyChange).toHaveBeenLastCalledWith(false),
     )
+  })
+})
+
+// Guard de "esvaziar sem querer" (0098): salvar um mapa vazio é um PUT de
+// full-replace que zera a identidade da entity — só deve confirmar quando é
+// uma remoção líquida (havia algo salvo antes).
+describe('ExternalIdsEditor — guard de mapa vazio (0098)', () => {
+  it('pede confirmação ao remover a única fonte e salvar', async () => {
+    const m = putIds(() => okJson({ id: 'e1' }, 200))
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderWithClient(
+      <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
+    )
+    fireEvent.click(screen.getByLabelText('Remover tmdb'))
+    expect(await salvarECorpo(m)).toEqual({})
+    expect(confirmar).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancelar a confirmação não envia o PUT', () => {
+    const m = putIds(() => okJson({ id: 'e1' }, 200))
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderWithClient(
+      <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
+    )
+    fireEvent.click(screen.getByLabelText('Remover tmdb'))
+    fireEvent.click(screen.getByText('Salvar IDs'))
+    expect(m).not.toHaveBeenCalled()
+  })
+
+  it('cancelar a confirmação no "Salvar e re-enriquecer" não chama nenhuma rota', () => {
+    const m = stubIdsEEnrich(
+      () => okJson({ id: 'e1' }, 200),
+      () => okJson({ id: 'e1' }, 200),
+    )
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderWithClient(
+      <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
+    )
+    fireEvent.click(screen.getByLabelText('Remover tmdb'))
+    fireEvent.click(screen.getByText('Salvar e re-enriquecer'))
+    expect(m).not.toHaveBeenCalled()
+  })
+
+  it('salvar um mapa não-vazio não pede confirmação', async () => {
+    const m = putIds(() => okJson({ id: 'e1' }, 200))
+    const confirmar = vi.spyOn(window, 'confirm')
+    renderWithClient(
+      <ExternalIdsEditor id="e1" externalIds={{ tmdb: '603' }} />,
+    )
+    expect(await salvarECorpo(m)).toEqual({ tmdb: '603' })
+    expect(confirmar).not.toHaveBeenCalled()
+  })
+
+  it('item sem ids desde o início: salvar vazio não pede confirmação', async () => {
+    const m = putIds(() => okJson({ id: 'e1' }, 200))
+    const confirmar = vi.spyOn(window, 'confirm')
+    renderWithClient(<ExternalIdsEditor id="e1" externalIds={{}} />)
+    expect(await salvarECorpo(m)).toEqual({})
+    expect(confirmar).not.toHaveBeenCalled()
   })
 })

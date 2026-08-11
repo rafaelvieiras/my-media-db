@@ -130,6 +130,19 @@ export function ExternalIdsEditor({
     setProximaKey((k) => k + 1)
   }
 
+  // Guard (0098): salvar um mapa vazio é um PUT de full-replace que zera a
+  // identidade da entity. Só pede confirmação quando é uma REMOÇÃO líquida
+  // (havia algo salvo antes) — um item que nunca teve id nenhum pode salvar
+  // vazio sem aviso, não é uma remoção.
+  function confirmarSeVazio(mapaNovo: Record<string, string>): boolean {
+    const removendoTudo =
+      Object.keys(mapaNovo).length === 0 && Object.keys(salvo).length > 0
+    if (!removendoTudo) return true
+    return window.confirm(
+      'Isso vai remover todos os IDs externos desta entity. Ela pode parar de casar com eventos de webhook e integrações externas até ser re-vinculada. Continuar?',
+    )
+  }
+
   const erroAtivo = sincronizar.error ?? mutation.error
   const mensagemErro =
     erroAtivo instanceof ApiError
@@ -209,7 +222,10 @@ export function ExternalIdsEditor({
           variant="outline"
           size="sm"
           disabled={salvando}
-          onClick={() => mutation.mutate(mapaDe(linhas))}
+          onClick={() => {
+            const mapa = mapaDe(linhas)
+            if (confirmarSeVazio(mapa)) mutation.mutate(mapa)
+          }}
         >
           {mutation.isPending ? 'Salvando…' : 'Salvar IDs'}
         </Button>
@@ -217,7 +233,10 @@ export function ExternalIdsEditor({
           type="button"
           size="sm"
           disabled={salvando}
-          onClick={() => sincronizar.mutate(mapaDe(linhas))}
+          onClick={() => {
+            const mapa = mapaDe(linhas)
+            if (confirmarSeVazio(mapa)) sincronizar.mutate(mapa)
+          }}
         >
           <RefreshCw
             className={sincronizar.isPending ? 'animate-spin' : undefined}
