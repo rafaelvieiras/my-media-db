@@ -146,10 +146,12 @@ npm run test:coverage    # testes + cobertura → web/coverage/coverage-summary.
 
 ## Segurança
 
-**Segredos nunca no código.** Chaves de API e credenciais entram por
-**variável de ambiente / config**, jamais commitadas. Se encontrar um segredo no
-histórico, reporte de forma privada (não abra issue pública) para que seja
-**rotacionado**.
+**Segredos nunca no código.** Chaves de API e credenciais entram pelo **banco**
+(UI de Integrações, `/dashboard/integrations`, [ADR-0023](docs/adr/0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md))
+ou por **variável de ambiente** de bootstrap/fallback quando não configuradas
+pela UI — jamais commitadas nem hardcoded no repositório. Se encontrar um
+segredo no histórico, reporte de forma privada (não abra issue pública) para
+que seja **rotacionado**.
 
 ## Licença da sua contribuição
 

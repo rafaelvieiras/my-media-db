@@ -39,3 +39,5 @@ achatada de "decisões abertas" por um registro rastreável, um arquivo por deci
 | [0019](0019-resolucao-por-idioma-fallback-proveniencia.md) | Resolução por idioma: cadeia de fallback + proveniência | L2 | Aceita |
 | [0020](0020-traducao-de-tags-genres-keywords.md) | Tradução de tags (genres localizados + keywords) | L3 | Aceita |
 | [0021](0021-modelo-de-series-hierarquia-ordenacoes-vinculo-arquivo.md) | Séries: hierarquia, ordenações como projeção, vínculo N:M arquivo↔episódio | TV1–TV5 | Aceita |
+| [0022](0022-historico-de-consumo-eventos-genericos-e-trackerprovider.md) | Histórico de consumo: eventos genéricos + capacidade `TrackerProvider` | H1–H5 | Aceita |
+| [0023](0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md) | Integrações configuráveis via UI: banco com precedência sobre variável de ambiente | I1–I4 | Aceita |

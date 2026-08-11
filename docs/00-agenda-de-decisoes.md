@@ -105,9 +105,41 @@ atual) fundamenta as decisões abaixo.
 
 ---
 
+## Integrações configuráveis (UI) — fundacional, levantada a partir de pedido do dono
+
+O dono pediu uma tela `/dashboard/integrations` (subpágina por integração,
+formulário dinâmico) para configurar credenciais de provider (TMDB primeiro)
+que hoje só existem como variável de ambiente lida uma vez no boot — e que
+sirva de ponto de extensão para plugins futuros registrarem suas próprias
+integrações.
+
+| ID | Questão | Status | Decisão | Destino |
+|---|---|---|---|---|
+| **I1** | Onde a config de integração mora e qual a precedência frente à variável de ambiente hoje usada para credenciais? | **documentado** | **Banco tem precedência; env var vira bootstrap/fallback** — mesmo formato override-vence do resolver (R1–R7) e mesmo precedente do L1 (idiomas em banco+UI, não env). Atualiza a letra da regra de segredos de AGENTS.md/CONTRIBUTING.md (texto novo abaixo). | [ADR-0023](adr/0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md) |
+| **I2** | Como uma integração (núcleo hoje, plugin amanhã) declara seus campos de config sem o framework conhecer cada fonte por nome? | **documentado** | Interface `integration.Descriptor` (`Slug/Nome/Descricao/Campos/Configurada`) + `integration.Registry`, mesmo molde do `provider.Registry` (capacidade-opcional, ordem de registro preservada). Cada provider dono de credencial contribui seu próprio adapter. | [ADR-0023](adr/0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md) |
+| **I3** | Como a API expõe isso pro front renderizar formulário dinâmico, sem vazar segredo cru? | **documentado** | `GET /integrations`, `GET/PUT /integrations/{slug}`, mesmo vocabulário de descritor do form-por-schema (briefing 0030: `name/label/widget/...`). Campo `secret` nunca devolve valor cru (só `definido`+`origem`). PUT é parcial e esparso (R6: `null` remove o override daquele campo). | [ADR-0023](adr/0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md) |
+| **I4** | Hot-reload da credencial ao salvar, ou restart? Como fatiar o épico? | **documentado** | **Sem hot-reload no MVP** (salvar grava no banco; efeito só no próximo restart do processo — já um ganho sobre editar `.env`+redeploy). Hot-reload e "testar conexão" ficam de follow-up explícito. Dois briefings: **0095** (fundação: schema+registry+API+migra TMDB) → **0096** (UI `/dashboard/integrations`). | briefings 0095–0096 |
+
+---
+
 ## Histórico de decisões fechadas
 
 <!-- Conforme cada item fecha, mover o resumo da decisão para cá com data. -->
+
+- **I1–I4 — Integrações configuráveis via UI: banco com precedência sobre env**
+  (2026-08-10). Substitui o hardcode de credencial (TMDB/TVDB/fanart.tv só
+  como variável de ambiente lida no boot) por uma tela `/dashboard/
+  integrations` com subpágina por integração. Decisão: **banco (via UI) vence,
+  env var vira bootstrap/fallback** — o mesmo formato override-vence do
+  resolver (R1–R7), com precedente já aberto pelo L1 (idiomas em banco+UI).
+  Novo pacote `internal/integration` (`Descriptor`+`Registry`, mesmo molde do
+  `provider.Registry`) é o primeiro ponto de extensão concreto para o futuro
+  sistema de plugins (docs/11) — sem implementar o maquinário completo de
+  plugins agora. Segredo nunca volta cru pela API (só `definido`+`origem`);
+  **sem hot-reload no MVP** (restart aplica a troca); "testar conexão" fica de
+  follow-up. Atualiza a letra da regra de segredos em AGENTS.md/
+  CONTRIBUTING.md. Registrado no [ADR-0023](adr/0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md),
+  fatiado em briefings **0095** (fundação) e **0096** (UI).
 
 - **H1–H5 — Histórico de consumo: eventos genéricos + catálogo de marcos +
   `TrackerProvider`** (2026-08-10). Pesquisa de mercado em 5 frentes

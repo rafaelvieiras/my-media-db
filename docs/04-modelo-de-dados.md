@@ -319,6 +319,16 @@ historico_evento  (id, entity_id→entity, kind, status, progress_percent,
                    -- DERIVADO (último evento por kind), nunca coluna
                    -- redundante. Não sincroniza com entity.watched/
                    -- play_count/... (migration 0019, legado passivo).
+integration_config (slug PK, values_json, updated_at)
+                   -- config de integração (credenciais de provider hoje;
+                   -- ponto de extensão de plugin amanhã) — briefing 0095,
+                   -- ADR-0023. Uma linha por slug ("tmdb", "tvdb", ...);
+                   -- values_json é blob ESPARSO (R4/R6): só os campos que o
+                   -- dono setou pela UI. Valor efetivo de um campo = banco SE
+                   -- PRESENTE, senão a variável de ambiente registrada pro
+                   -- campo (integration.Campo.EnvVar), senão "não definido".
+                   -- Banco tem precedência (mesmo override-vence do
+                   -- resolver); sem hot-reload no MVP (restart aplica).
 -- fase posterior: user, token, permission, plugin_registry
 ```
 

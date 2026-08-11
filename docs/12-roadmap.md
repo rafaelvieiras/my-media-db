@@ -94,6 +94,13 @@ Objetivo: cumprir o escopo universal.
   mercado, decisão em [ADR-0022](adr/0022-historico-de-consumo-eventos-genericos-e-trackerprovider.md)
   (agenda [H1–H4](00-agenda-de-decisoes.md)), breakdown em
   [briefings 0092–0094](../briefings/README.md#fase-5--histórico-de-consumo-trackingscrobbling).
+- **Integrações configuráveis via UI** — tela `/dashboard/integrations` para
+  configurar credenciais de provider (TMDB primeiro) hoje só disponíveis por
+  variável de ambiente, com registro dinâmico (`internal/integration`) pronto
+  para plugins futuros declararem as suas. Decisão em
+  [ADR-0023](adr/0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md)
+  (agenda [I1–I4](00-agenda-de-decisoes.md#integrações-configuráveis-ui--fundacional-levantada-a-partir-de-pedido-do-dono)),
+  breakdown em [briefings 0095–0096](../briefings/README.md).
 
 ---
 

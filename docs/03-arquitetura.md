@@ -131,3 +131,11 @@ O núcleo não conhece "filme" ou "série" de forma privilegiada: conhece uma
 verticais e **plugins de terceiros** sem alterar o schema do núcleo — mas o
 *maquinário* de plugins (registry, ciclo de vida, sandbox) está **fora do MVP**
 (ver [11](11-decisoes-abertas.md)).
+
+Um primeiro ponto de extensão concreto já existe para **config de
+integração**: `internal/integration.Registry` (análogo ao
+`provider.Registry` acima) mapeia um `Descriptor` por integração — hoje só
+TMDB/TVDB/fanart.tv se registram nele, mas um plugin futuro registraria o
+seu do mesmo jeito, sem o núcleo conhecer seu nome. Credenciais gravadas via
+UI (`/dashboard/integrations`) têm precedência sobre a variável de ambiente
+de bootstrap ([ADR-0023](adr/0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md)).

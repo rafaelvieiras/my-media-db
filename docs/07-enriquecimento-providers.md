@@ -36,9 +36,19 @@ para a `Entity`/`extension_data`. Providers são plugáveis e declarados por
 - **Visão (multi-vertical):** TVDB, IMVDB (music videos), MusicBrainz (música),
   ScreenScraper (games), fanart.tv (arte) e outros — cada um como provider.
 
+## Configuração de credenciais
+
+Gestão de **chaves de API** — nunca hardcoded no código (alerta em
+[11](11-decisoes-abertas.md); incidente do IMVDB no repo antigo). Desde o
+[ADR-0023](adr/0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md),
+a credencial de cada provider é configurável por uma UI dedicada
+(`/dashboard/integrations`, briefings 0095/0096): valor gravado no banco tem
+precedência sobre a variável de ambiente de bootstrap, via o novo pacote
+`internal/integration` (`Descriptor`+`Registry`, capacidade-opcional, mesmo
+molde do `provider.Registry`).
+
 ## Decisões abertas (ver [11](11-decisoes-abertas.md))
 
-- Gestão de **chaves de API** (nunca hardcoded — ver alerta em [11](11-decisoes-abertas.md)).
 - Estratégia de rate-limit/cache por provider.
 - ~~Universal scraper (combinar fontes) vs escolha explícita da fonte~~ →
   **fechada**: fonte-base única por item + demais providers enriquecem por

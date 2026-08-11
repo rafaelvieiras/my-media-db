@@ -132,7 +132,12 @@ Um PR/patch que contraria um princípio provavelmente será recusado.
   imperativo, **assunto ≤ 100 chars** (o hook `commit-msg` recusa acima).
   Finalize com `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
 - Escreva docs, comentários e mensagens em **pt-BR com acentuação correta**.
-- **Segredos nunca no código** — chaves de API só por variável de ambiente.
+- **Segredos nunca no código.** Chave de API vive no **banco** (UI de
+  Integrações, `/dashboard/integrations`, ADR-0023) **ou** por variável de
+  ambiente de bootstrap/fallback — nunca commitada nem hardcoded no código de
+  nenhum dos dois jeitos. Banco tem precedência quando o dono configurou pela
+  UI (mesmo override-vence do resolver); ausente no banco, cai na env var
+  registrada pro campo.
 
 **Escala e contexto.**
 - Delegue pesquisa/implementação/validação a **subagentes** e receba

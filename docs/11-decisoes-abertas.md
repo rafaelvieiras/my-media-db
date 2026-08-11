@@ -34,7 +34,12 @@ implementados. A base já foi desenhada para acomodá-los.
   namespaced + schema), mas o **maquinário** (manifest, registry, ciclo de vida
   install/enable/disable/purge, sandbox de execução, widgets de frontend dinâmicos)
   fica para depois da base estabilizar. Princípios firmes: **plugin nunca altera o
-  schema do núcleo** e **código não-confiável roda isolado**.
+  schema do núcleo** e **código não-confiável roda isolado**. Uma primeira peça
+  concreta desse maquinário já nasce fora do MVP-de-plugins propriamente dito:
+  o registro de **config de integração** (`internal/integration.Registry`,
+  [ADR-0023](adr/0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md))
+  é o mesmo molde que um plugin real usaria para declarar credenciais — sem
+  carregar código de terceiros dinamicamente.
 - **Autenticação/permissões** *(Fase 4)*: esquema de token e escopos
   (ver [10](10-usuarios-e-permissoes.md)).
 - **Escopo exato das rotas TMDB a espelhar** *(Fase 4)*: movie, tv, search,
