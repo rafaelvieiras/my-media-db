@@ -133,10 +133,10 @@ export function SettingsScreen() {
         <div className="mb-4 flex flex-col gap-1">
           <h2 className="font-heading text-lg font-semibold">yt-dlp</h2>
           <p className="text-sm text-muted-foreground">
-            Downloader usado para baixar trailer e música-tema do YouTube
-            (briefings futuros). Nenhuma ação é necessária: o próprio MyMediaDB
-            baixa o binário sozinho, dentro do container, na primeira vez que
-            precisar dele.
+            Downloader usado para baixar trailer (briefing 0102) e música-tema
+            (briefing 0103) do YouTube. Nenhuma ação é necessária: o próprio
+            MyMediaDB baixa o binário sozinho, dentro do container, na primeira
+            vez que precisar dele.
           </p>
         </div>
 
@@ -414,7 +414,7 @@ function AutoMaterializeArtworkSwitch({
 // único de path customizado (string vazia == limpar o override, mesmo
 // contrato do backend) + badge de status. Sem botão "baixar agora" de
 // propósito — o download é lazy, disparado pelo primeiro uso real em
-// trailer/tema (briefings futuros); este card só reflete e configura, nunca
+// trailer/tema (briefings 0102/0103); este card só reflete e configura, nunca
 // dispara download.
 function YtdlpSettingsForm({ inicial }: { inicial: YtdlpSettings }) {
   const queryClient = useQueryClient()
