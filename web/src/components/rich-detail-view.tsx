@@ -19,8 +19,10 @@ import { EstadoAssistidoBadge } from '@/components/historico-section'
 import {
   ApiError,
   assetFileSrc,
+  downloadEntityTrailer,
   importExternal,
   themeSrc,
+  trailerSrc,
   type Asset,
   type CreditCast,
   type CreditCompany,
@@ -35,7 +37,12 @@ import { rotuloTipo } from '@/lib/entity-badges'
 import { internalIdDe } from '@/lib/internal-id'
 import { rotuloIdioma } from '@/lib/languages'
 import { metaDaFonte } from '@/lib/provider-meta'
-import { assetsQueryOptions, entityThemeQueryOptions } from '@/lib/queries'
+import {
+  assetsQueryOptions,
+  entityThemeQueryOptions,
+  entityTrailerQueryOptions,
+  ytdlpSettingsQueryOptions,
+} from '@/lib/queries'
 import {
   rotuloSituacao,
   type RichDetail,
@@ -408,6 +415,90 @@ function TrailerButton({ videos }: { videos: ExternalVideo[] }) {
         <TrailerModal video={trailer} onClose={() => setAberto(false)} />
       ) : null}
     </>
+  )
+}
+
+// TrailerDownloadButton é o botão "Baixar trailer" (briefing 0102, ADR-0025):
+// materializa em disco o MESMO trailer que "Assistir trailer" já toca embutido
+// — puramente aditivo, o player embutido continua igual com ou sem download
+// local. Só aparece com TODAS as condições: (a) `entityId` presente (a
+// materialização precisa de uma pasta REAL na biblioteca, que só existe para
+// um item já catalogado — a tela do externo nunca mostra este botão), (b) há
+// um trailer reproduzível (`primeiroTrailer`) e (c) o yt-dlp está disponível
+// (`GET /settings/ytdlp`, cache de app via TanStack Query). Qualquer condição
+// ausente: sem botão, sem erro (briefing §2.1/§2.5).
+function TrailerDownloadButton({
+  entityId,
+  videos,
+}: {
+  entityId: string
+  videos: ExternalVideo[]
+}) {
+  const trailer = primeiroTrailer(videos)
+  const queryClient = useQueryClient()
+  // `enabled: !!trailer` evita as DUAS chamadas de rede quando o item nem tem
+  // trailer reproduzível (o caso comum) — sem trailer, nem vale a pena saber
+  // se o yt-dlp está disponível.
+  const { data: ytdlp } = useQuery({
+    ...ytdlpSettingsQueryOptions,
+    enabled: !!trailer,
+  })
+  const { data: jaBaixado } = useQuery({
+    ...entityTrailerQueryOptions(entityId),
+    enabled: !!trailer,
+  })
+  const downloadMutation = useMutation({
+    mutationFn: () => downloadEntityTrailer(entityId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['entity', entityId, 'trailer'],
+      })
+    },
+  })
+  const mensagemErro =
+    downloadMutation.error instanceof ApiError
+      ? downloadMutation.error.message
+      : null
+
+  if (!trailer || !ytdlp?.disponivel) {
+    return null
+  }
+
+  // Estado PERSISTENTE (0102 §2.3): já baixado (calculado a cada carga via
+  // HEAD) ou acabado de baixar nesta sessão — vira um link pro arquivo em vez
+  // de um botão de ação, sem oferecer re-download acidental sem `force`.
+  if (jaBaixado || downloadMutation.isSuccess) {
+    return (
+      <Button variant="outline" size="sm" asChild>
+        <a href={trailerSrc(entityId)} target="_blank" rel="noreferrer">
+          <Download aria-hidden />
+          Trailer baixado
+        </a>
+      </Button>
+    )
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={downloadMutation.isPending}
+        onClick={() => downloadMutation.mutate()}
+      >
+        {downloadMutation.isPending ? (
+          <LoaderCircle className="animate-spin" aria-hidden />
+        ) : (
+          <Download aria-hidden />
+        )}
+        {downloadMutation.isPending ? 'Baixando trailer…' : 'Baixar trailer'}
+      </Button>
+      {mensagemErro ? (
+        <span role="alert" className="text-sm font-medium text-destructive">
+          {mensagemErro}
+        </span>
+      ) : null}
+    </div>
   )
 }
 
@@ -1293,6 +1384,15 @@ function HeroImersivo({
             {actions || primeiroTrailer(detail.videos) ? (
               <div className="flex flex-wrap items-center gap-2">
                 <TrailerButton videos={detail.videos} />
+                {/* "Baixar trailer" (0102): só na tela da ENTITY (entityId) —
+                    materializar em disco exige a pasta real da biblioteca,
+                    que a tela do externo (ainda não catalogado) não tem. */}
+                {entityId ? (
+                  <TrailerDownloadButton
+                    entityId={entityId}
+                    videos={detail.videos}
+                  />
+                ) : null}
                 {actions}
               </div>
             ) : null}

@@ -982,6 +982,46 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/trailer': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Serve o binário do trailer materializado em disco (video/*, briefing 0102).
+     * @description Resolve a pasta-raiz do item (MESMA resolução de `DiretorioDestino` usada por .../nfo, .../theme e .../assets/{assetId}/materialize) e procura o trailer no nome canônico Kodi/Jellyfin (`<nome-do-vídeo>-trailer.<ext>` ou `trailer.<ext>` em pasta exclusiva), testando `.mp4`/`.mkv`/`.webm` nessa ordem — `.mp4` é o que POST .../trailer/download sempre grava; os demais cobrem um trailer colocado manualmente pelo dono com outro container. Devolve o binário com o Content-Type correto quando encontrado. 404 quando a entity não existe, não tem nenhum `media_file` presente (sem pasta de destino) ou não há trailer materializado na pasta; 503 se a leitura de entities está indisponível (banco).
+     */
+    get: operations['getEntityTrailer']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/trailer/download': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Baixa o trailer YouTube do item via yt-dlp e materializa em disco (briefing 0102, ADR-0025).
+     * @description Resolve o trailer a baixar a partir de `videos` (já extraído do TMDB/TVDB, MESMO shape de GET /entities/{id}): com `key` no corpo, o vídeo do YouTube com essa key exata; sem `key`, o primeiro vídeo `type=="Trailer" && site=="YouTube"` (richfields.PrimeiroTrailerYoutube, mesmo critério do botão "Assistir trailer" do frontend). Baixa via yt-dlp (fundação do briefing 0101) para um arquivo TEMPORÁRIO no destino final e só renomeia para o nome canônico (`<nome-do-vídeo>-trailer.mp4` ou `trailer.mp4` em pasta exclusiva) em caso de sucesso — nunca deixa um arquivo parcial com o nome canônico. Download é SÍNCRONO nesta entrega (o request fica pendurado até terminar). **Nunca sobrescreve** um trailer já presente (baixado antes OU colocado manualmente pelo dono) — 409 sem `force:true` explícito.
+     */
+    post: operations['postEntityTrailerDownload']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/{id}/historico': {
     parameters: {
       query?: never
@@ -1858,6 +1898,18 @@ export interface components {
       nfo_path: string
       /** @description Timestamp ISO da última escrita (entity.nfo_written_at). */
       nfo_written_at: string
+    }
+    /** @description Corpo (opcional) de POST /entities/{id}/trailer/download (briefing 0102, ADR-0025). Corpo ausente/vazio usa os dois defaults. */
+    TrailerDownloadRequest: {
+      /** @description Key do YouTube do vídeo a baixar (seleciona um vídeo ESPECÍFICO de `videos`). Ausente/vazio: baixa o primeiro `type=="Trailer" && site=="YouTube"` (mesmo critério do botão "Assistir trailer" do frontend). */
+      key?: string
+      /** @description `true` pede RE-DOWNLOAD mesmo com um trailer já materializado (baixado antes OU colocado manualmente pelo dono) — sobrescreve. Default `false`: um trailer já presente nunca é sobrescrito (princípio 5, não-destrutivo), respondendo 409. */
+      force?: boolean
+    }
+    /** @description Resposta de sucesso de POST /entities/{id}/trailer/download (briefing 0102). */
+    TrailerDownloadResult: {
+      /** @description Caminho absoluto do trailer gravado na pasta real da biblioteca. */
+      local_path: string
     }
     /** @description Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a Fase 3 preenche os mesmos campos com override/externo sem mudar o shape. Os campos RICOS (tagline, keywords, runtime, certification, vote_average, backdrop_url, videos, collection, similar, external_links) dão PARIDADE com o detalhe do externo (0022/0023): vêm da camada externa já enriquecida e usam o MESMO shape (componentes ExternalVideo/Collection/Similar). Os gêneros NÃO têm campo próprio — são as `tags` (que já os carregam). */
     ResolvedEntity: {
@@ -3982,6 +4034,66 @@ export interface operations {
         }
       }
       404: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  getEntityTrailer: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Binário do trailer. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'video/*': string
+        }
+      }
+      404: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  postEntityTrailerDownload: {
+    parameters: {
+      query?: {
+        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        lang?: components['parameters']['LangQuery']
+      }
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['TrailerDownloadRequest']
+      }
+    }
+    responses: {
+      /** @description Trailer baixado e materializado com sucesso. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TrailerDownloadResult']
+        }
+      }
+      404: components['responses']['Error']
+      409: components['responses']['Error']
+      422: components['responses']['Error']
+      502: components['responses']['Error']
       503: components['responses']['Error']
     }
   }

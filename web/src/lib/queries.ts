@@ -14,6 +14,7 @@ import {
   getHistoricoEstado,
   getSystemHealth,
   hasEntityTheme,
+  hasEntityTrailer,
   listHistoricoEventos,
   listHistoricoOrfaos,
   getJellyfinWebhookToken,
@@ -212,6 +213,17 @@ export function entityThemeQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['entity', id, 'theme'],
     queryFn: () => hasEntityTheme(id),
+  })
+}
+
+// Trailer materializado em disco (briefing 0102, ADR-0025): confere (HEAD,
+// uma vez por carga) se a entity já tem um trailer baixado — invalidada
+// explicitamente pela mutation de download (a única ação da UI que muda esse
+// estado; fora dela, o arquivo só muda por ação manual do dono no disco).
+export function entityTrailerQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: ['entity', id, 'trailer'],
+    queryFn: () => hasEntityTrailer(id),
   })
 }
 

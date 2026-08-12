@@ -1664,6 +1664,80 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/trailer:
+    get:
+      operationId: getEntityTrailer
+      summary: Serve o binário do trailer materializado em disco (video/*, briefing 0102).
+      description: >
+        Resolve a pasta-raiz do item (MESMA resolução de `DiretorioDestino`
+        usada por .../nfo, .../theme e .../assets/{assetId}/materialize) e
+        procura o trailer no nome canônico Kodi/Jellyfin
+        (`<nome-do-vídeo>-trailer.<ext>` ou `trailer.<ext>` em pasta
+        exclusiva), testando `.mp4`/`.mkv`/`.webm` nessa ordem — `.mp4` é o
+        que POST .../trailer/download sempre grava; os demais cobrem um
+        trailer colocado manualmente pelo dono com outro container. Devolve
+        o binário com o Content-Type correto quando encontrado. 404 quando a
+        entity não existe, não tem nenhum `media_file` presente (sem pasta de
+        destino) ou não há trailer materializado na pasta; 503 se a leitura
+        de entities está indisponível (banco).
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Binário do trailer.
+          content:
+            video/*:
+              schema: { type: string, format: binary }
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/entities/{id}/trailer/download:
+    post:
+      operationId: postEntityTrailerDownload
+      summary: Baixa o trailer YouTube do item via yt-dlp e materializa em disco (briefing 0102, ADR-0025).
+      description: >
+        Resolve o trailer a baixar a partir de `videos` (já extraído do
+        TMDB/TVDB, MESMO shape de GET /entities/{id}): com `key` no corpo, o
+        vídeo do YouTube com essa key exata; sem `key`, o primeiro vídeo
+        `type=="Trailer" && site=="YouTube"` (richfields.PrimeiroTrailerYoutube,
+        mesmo critério do botão "Assistir trailer" do frontend). Baixa via
+        yt-dlp (fundação do briefing 0101) para um arquivo TEMPORÁRIO no
+        destino final e só renomeia para o nome canônico
+        (`<nome-do-vídeo>-trailer.mp4` ou `trailer.mp4` em pasta exclusiva)
+        em caso de sucesso — nunca deixa um arquivo parcial com o nome
+        canônico. Download é SÍNCRONO nesta entrega (o request fica
+        pendurado até terminar). **Nunca sobrescreve** um trailer já
+        presente (baixado antes OU colocado manualmente pelo dono) — 409
+        sem `force:true` explícito.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+        - $ref: "#/components/parameters/LangQuery"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrailerDownloadRequest" }
+      responses:
+        "200":
+          description: Trailer baixado e materializado com sucesso.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrailerDownloadResult" }
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/{id}/historico:
     post:
       operationId: createHistoricoEvento
@@ -3298,6 +3372,36 @@ components:
         nfo_written_at:
           type: string
           description: Timestamp ISO da última escrita (entity.nfo_written_at).
+    TrailerDownloadRequest:
+      type: object
+      description: >
+        Corpo (opcional) de POST /entities/{id}/trailer/download (briefing
+        0102, ADR-0025). Corpo ausente/vazio usa os dois defaults.
+      properties:
+        key:
+          type: string
+          description: >
+            Key do YouTube do vídeo a baixar (seleciona um vídeo ESPECÍFICO
+            de `videos`). Ausente/vazio: baixa o primeiro
+            `type=="Trailer" && site=="YouTube"` (mesmo critério do botão
+            "Assistir trailer" do frontend).
+        force:
+          type: boolean
+          description: >
+            `true` pede RE-DOWNLOAD mesmo com um trailer já materializado
+            (baixado antes OU colocado manualmente pelo dono) — sobrescreve.
+            Default `false`: um trailer já presente nunca é sobrescrito
+            (princípio 5, não-destrutivo), respondendo 409.
+    TrailerDownloadResult:
+      type: object
+      description: >
+        Resposta de sucesso de POST /entities/{id}/trailer/download
+        (briefing 0102).
+      required: [local_path]
+      properties:
+        local_path:
+          type: string
+          description: Caminho absoluto do trailer gravado na pasta real da biblioteca.
     ResolvedEntity:
       type: object
       description: >

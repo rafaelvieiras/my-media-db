@@ -115,6 +115,37 @@ func TestVideosDe(t *testing.T) {
 	}
 }
 
+// TestPrimeiroTrailerYoutube cobre o critério do briefing 0102: acha o
+// primeiro vídeo type=="Trailer" && site=="YouTube" com key, ignorando
+// Teaser/Clip e vídeos de outro site (MESMO critério de `primeiroTrailer`
+// do frontend, rich-detail-view.tsx).
+func TestPrimeiroTrailerYoutube(t *testing.T) {
+	videos := []Video{
+		{Name: "Teaser", Key: "t1", Site: "YouTube", Type: "Teaser"},
+		{Name: "Trailer Vimeo", Key: "v1", Site: "Vimeo", Type: "Trailer"},
+		{Name: "Trailer Oficial", Key: "abc123", Site: "YouTube", Type: "Trailer"},
+		{Name: "Outro Trailer", Key: "def456", Site: "YouTube", Type: "Trailer"},
+	}
+	got, ok := PrimeiroTrailerYoutube(videos)
+	if !ok || got.Key != "abc123" {
+		t.Fatalf("PrimeiroTrailerYoutube = (%+v, %v), quero (key=abc123, true)", got, ok)
+	}
+
+	if _, ok := PrimeiroTrailerYoutube(nil); ok {
+		t.Error("PrimeiroTrailerYoutube(nil) = true, quero false")
+	}
+
+	semTrailer := []Video{{Name: "Teaser", Key: "t1", Site: "YouTube", Type: "Teaser"}}
+	if _, ok := PrimeiroTrailerYoutube(semTrailer); ok {
+		t.Error("PrimeiroTrailerYoutube sem Trailer YouTube = true, quero false")
+	}
+
+	semKey := []Video{{Name: "Trailer sem key", Key: "", Site: "YouTube", Type: "Trailer"}}
+	if _, ok := PrimeiroTrailerYoutube(semKey); ok {
+		t.Error("PrimeiroTrailerYoutube com key vazia = true, quero false")
+	}
+}
+
 func TestColecaoDe(t *testing.T) {
 	campos := map[string]any{"collection": map[string]any{"source_id": "2344", "name": "Colecao", "poster_url": "https://img/c.jpg"}}
 	c := ColecaoDe(campos)

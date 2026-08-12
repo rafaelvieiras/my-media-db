@@ -652,6 +652,15 @@ func (s *Server) Handler() (http.Handler, error) {
 				// player — http.ServeContent já respeita HEAD (sem corpo).
 				ent.Head("/{id}/theme", s.getEntityTheme)
 
+				// Trailer materializado em disco (briefing 0102, ADR-0025):
+				// GET detecta/serve o binário já baixado (mesma resolução de
+				// destino do tema acima); POST baixa via yt-dlp (0101) o
+				// primeiro trailer YouTube listado em `videos` e grava no
+				// nome canônico Kodi/Jellyfin. Sem tabela `asset` nova —
+				// mesmo precedente do theme.mp3.
+				ent.Get("/{id}/trailer", s.getEntityTrailer)
+				ent.Post("/{id}/trailer/download", s.postEntityTrailerDownload)
+
 				// Enriquecimento de uma entity existente (briefing 0015): puxa o
 				// detalhe do provider e grava a base externa + pôster cacheado.
 				ent.Post("/{id}/enrich", s.enrichEntity)

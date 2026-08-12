@@ -172,6 +172,21 @@ func VideosDe(campos map[string]any) []Video {
 	return out
 }
 
+// PrimeiroTrailerYoutube acha o primeiro vídeo do tipo "Trailer" (convenção
+// TMDB/TVDB) hospedado no YouTube com `key` presente — MESMO critério de
+// `primeiroTrailer` do frontend (web/src/components/rich-detail-view.tsx),
+// espelhado aqui para o backend materializar em disco (briefing 0102) sem
+// duplicar a regra em dois lugares sem uma fonte comum documentada. Sem
+// fallback para Teaser/Clip; ok=false quando nenhum vídeo casa.
+func PrimeiroTrailerYoutube(videos []Video) (Video, bool) {
+	for _, v := range videos {
+		if v.Type == "Trailer" && v.Site == "YouTube" && v.Key != "" {
+			return v, true
+		}
+	}
+	return Video{}, false
+}
+
 // ColecaoDe converte a coleção canônica, ou nil quando ausente.
 func ColecaoDe(campos map[string]any) *Collection {
 	m, ok := campos["collection"].(map[string]any)

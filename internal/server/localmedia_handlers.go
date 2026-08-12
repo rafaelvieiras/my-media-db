@@ -26,6 +26,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/localmedia"
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
+	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
 
 // carimboNfoFormato é o layout Go do timestamp gravado em nfo_written_at,
@@ -703,4 +704,291 @@ func (s *Server) getEntityTheme(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", contentTypeTema(limpo))
 	http.ServeContent(w, r, filepath.Base(limpo), info.ModTime(), f)
+}
+
+// ── Trailer: materialização em disco via yt-dlp (briefing 0102, ADR-0025) ──
+//
+// GET .../trailer detecta e serve um trailer já materializado (mesmo padrão
+// de getEntityTheme, MESMA pasta-raiz de resolverDestino). POST
+// .../trailer/download BAIXA o primeiro trailer YouTube listado em
+// `videos` (TMDB/TVDB, já extraído via richfields) usando o yt-dlp (0101) e
+// grava no nome canônico Kodi/Jellyfin. Sem tabela `asset` nova -- mesmo
+// precedente de theme.mp3 (0082): detecção por existência de arquivo, sem
+// linha de banco dedicada (vídeo não entra no pipeline de imagem de
+// assets.go/parseKind/galeria).
+
+// extensoesTrailer lista, em ordem de checagem, os containers de vídeo que
+// encontrarArquivoTrailer aceita como "trailer já presente": .mp4 é o
+// destino FIXO de todo download feito por este endpoint (extPadraoDeKind);
+// .mkv/.webm cobrem um trailer colocado manualmente pelo dono com outro
+// container -- também precisa ser detectado (princípio 5: nunca sobrescrever
+// sem force), não só o que o download em si produz.
+var extensoesTrailer = []string{".mp4", ".mkv", ".webm"}
+
+// encontrarArquivoTrailer procura o nome canônico do trailer (internal/
+// localmedia.NomeArquivoArte com KindTrailer) na raiz `dir`, testando cada
+// extensão de extensoesTrailer -- a primeira que existir (e não for
+// diretório) vence.
+func encontrarArquivoTrailer(dir, nomeBaseVideo string, pastaExclusiva bool) (string, bool) {
+	for _, ext := range extensoesTrailer {
+		nome := localmedia.NomeArquivoArte(localmedia.KindTrailer, true, 0, pastaExclusiva, nomeBaseVideo, ext)
+		caminho := filepath.Join(dir, nome)
+		info, err := os.Stat(caminho)
+		if err == nil && !info.IsDir() {
+			return caminho, true
+		}
+	}
+	return "", false
+}
+
+// contentTypeTrailer resolve o content-type do trailer pela extensão -- as
+// três aceitas por encontrarArquivoTrailer têm content-type conhecido e
+// fixo, mesmo espírito de contentTypeTema.
+func contentTypeTrailer(caminho string) string {
+	switch strings.ToLower(filepath.Ext(caminho)) {
+	case ".mkv":
+		return "video/x-matroska"
+	case ".webm":
+		return "video/webm"
+	default:
+		return "video/mp4"
+	}
+}
+
+// getEntityTrailer trata GET /api/v1/entities/{id}/trailer: resolve a
+// pasta-raiz do item (resolverDestino, MESMA resolução de materialize/nfo/
+// theme) e serve o binário do trailer encontrado ali, se houver. 404 quando
+// a entity não existe, não tem pasta de destino (sem media_file present) ou
+// não há trailer materializado na pasta.
+func (s *Server) getEntityTrailer(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	ctx := r.Context()
+
+	ent, ok := s.exigirEntity(w, ctx, id)
+	if !ok {
+		return
+	}
+
+	dir, nomeBaseVideo, pastaExclusiva, ok, err := s.resolverDestino(ctx, ent)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found",
+			"sem pasta de destino na biblioteca (nenhum arquivo presente)")
+		return
+	}
+
+	caminho, ok := encontrarArquivoTrailer(dir, nomeBaseVideo, pastaExclusiva)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "trailer não encontrado")
+		return
+	}
+
+	limpo := filepath.Clean(caminho)
+	f, err := os.Open(limpo) //nolint:gosec // caminho vem so da resolucao server-side (resolverDestino+encontrarArquivoTrailer), nunca de input do cliente
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "arquivo de trailer indisponível")
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		writeError(w, http.StatusNotFound, "not_found", "arquivo de trailer indisponível")
+		return
+	}
+	w.Header().Set("Content-Type", contentTypeTrailer(limpo))
+	http.ServeContent(w, r, filepath.Base(limpo), info.ModTime(), f)
+}
+
+// trailerDownloadRequest é o corpo (opcional) de POST .../trailer/download.
+// Key seleciona um vídeo específico por `key` do YouTube (porta aberta para
+// um seletor futuro no frontend, briefing §3 "fora"); vazio cai no default
+// (primeiro trailer, richfields.PrimeiroTrailerYoutube). Force pede
+// re-download mesmo com um trailer já presente (princípio 5: sem Force, um
+// trailer existente -- baixado antes OU colocado manualmente pelo dono --
+// NUNCA é sobrescrito).
+type trailerDownloadRequest struct {
+	Key   string `json:"key"`
+	Force bool   `json:"force"`
+}
+
+// trailerDownloadResult é o corpo de sucesso de POST .../trailer/download.
+type trailerDownloadResult struct {
+	LocalPath string `json:"local_path"`
+}
+
+// escolherTrailerYoutube decide QUAL vídeo baixar: com `key` não-vazio, o
+// vídeo do YouTube com essa key exata; vazio cai no default (primeiro
+// trailer reprodutível, MESMO critério do frontend --
+// richfields.PrimeiroTrailerYoutube).
+func escolherTrailerYoutube(videos []richfields.Video, key string) (richfields.Video, bool) {
+	if key == "" {
+		return richfields.PrimeiroTrailerYoutube(videos)
+	}
+	for _, v := range videos {
+		if v.Site == "YouTube" && v.Key == key {
+			return v, true
+		}
+	}
+	return richfields.Video{}, false
+}
+
+// ytdlpDisponivel responde 503 (SEM tocar disco) quando não há um binário
+// yt-dlp utilizável agora -- checado ANTES de resolver trailer/destino, para
+// a feature indisponível nunca gastar trabalho (nem I/O) à toa. Nunca 500:
+// indisponibilidade é um estado normal (ADR-0025), não um erro interno.
+func (s *Server) ytdlpDisponivel(ctx context.Context, w http.ResponseWriter) bool {
+	if s.ytdlp == nil {
+		writeError(w, http.StatusServiceUnavailable, "ytdlp_indisponivel", "yt-dlp indisponível")
+		return false
+	}
+	disponivel, _, detalhe := s.ytdlp.Status(ctx)
+	if !disponivel {
+		msg := "yt-dlp indisponível"
+		if detalhe != "" {
+			msg += ": " + detalhe
+		}
+		writeError(w, http.StatusServiceUnavailable, "ytdlp_indisponivel", msg)
+		return false
+	}
+	return true
+}
+
+// resolverVideoTrailer resolve o trailer YouTube do item (idioma preferido +
+// richfields.Videos, MESMO shape de GET /entities/{id}) já escrevendo a
+// resposta de erro apropriada quando falha em qualquer etapa -- extraído de
+// postEntityTrailerDownload só para reduzir a complexidade ciclomática do
+// handler (cada guard aqui já é exercitado pelos mesmos cenários de erro que
+// o handler cobria antes da extração).
+func (s *Server) resolverVideoTrailer(w http.ResponseWriter, r *http.Request, id, key string) (richfields.Video, bool) {
+	ctx := r.Context()
+	cfg, err := s.obterLanguageSettings(ctx)
+	if err != nil {
+		respondErroInterno(w)
+		return richfields.Video{}, false
+	}
+	lang, ok := s.parseLang(w, cfg, r.URL.Query().Get("lang"))
+	if !ok {
+		return richfields.Video{}, false
+	}
+	resolvida, encontrada, err := s.resolverEntity(ctx, id, lang, false)
+	if err != nil {
+		respondErroInterno(w)
+		return richfields.Video{}, false
+	}
+	if !encontrada {
+		writeError(w, http.StatusNotFound, "not_found", "entidade não encontrada")
+		return richfields.Video{}, false
+	}
+	video, ok := escolherTrailerYoutube(resolvida.Videos, key)
+	if !ok {
+		writeError(w, http.StatusUnprocessableEntity, "sem_trailer",
+			"nenhum trailer do YouTube disponível para este item")
+		return richfields.Video{}, false
+	}
+	return video, true
+}
+
+// resolverDestinoTrailerLivre resolve a pasta de destino (resolverDestino) e
+// confirma que não há trailer já materializado ali sem `force` -- escreve a
+// resposta de erro apropriada (500/404/409) e devolve ok=false quando
+// qualquer checagem falha. Extraído de postEntityTrailerDownload pelo mesmo
+// motivo de resolverVideoTrailer: reduzir a complexidade ciclomática do
+// handler, mantendo cada guard testado pelos mesmos cenários de antes.
+func (s *Server) resolverDestinoTrailerLivre(w http.ResponseWriter, ctx context.Context, ent sqlcgen.Entity, force bool) (dir, nomeBaseVideo string, pastaExclusiva, ok bool) {
+	dir, nomeBaseVideo, pastaExclusiva, ok, err := s.resolverDestino(ctx, ent)
+	if err != nil {
+		respondErroInterno(w)
+		return "", "", false, false
+	}
+	if !ok {
+		respondErroLocalmedia(w, errSemDestino)
+		return "", "", false, false
+	}
+	if _, jaExiste := encontrarArquivoTrailer(dir, nomeBaseVideo, pastaExclusiva); jaExiste && !force {
+		writeError(w, http.StatusConflict, "ja_existe",
+			"trailer já baixado (use force=true para re-baixar)")
+		return "", "", false, false
+	}
+	return dir, nomeBaseVideo, pastaExclusiva, true
+}
+
+// postEntityTrailerDownload trata POST /api/v1/entities/{id}/trailer/download
+// (briefing 0102, ADR-0025): resolve o trailer YouTube do item (videos já
+// extraído via richfields, MESMO shape de GET /entities/{id}), baixa via
+// yt-dlp (s.ytdlp.Baixar, 0101) para um arquivo TEMPORÁRIO no destino final e
+// só renomeia para o nome canônico em caso de sucesso (nunca deixa um
+// arquivo parcial com o nome canônico). 503 sem yt-dlp disponível; 422 sem
+// trailer YouTube no item; 404 sem pasta de destino (sem media_file
+// present); 409 quando já existe um trailer e `force` não foi pedido; 502
+// quando o próprio download falha (rede, vídeo removido do YouTube, etc.).
+func (s *Server) postEntityTrailerDownload(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	ctx := r.Context()
+
+	ent, ok := s.exigirEntity(w, ctx, id)
+	if !ok {
+		return
+	}
+	if !s.ytdlpDisponivel(ctx, w) {
+		return
+	}
+
+	var body trailerDownloadRequest
+	if ok := decodeOpcional(w, r, &body); !ok {
+		return
+	}
+
+	video, ok := s.resolverVideoTrailer(w, r, id, body.Key)
+	if !ok {
+		return
+	}
+
+	dir, nomeBaseVideo, pastaExclusiva, ok := s.resolverDestinoTrailerLivre(w, ctx, ent, body.Force)
+	if !ok {
+		return
+	}
+
+	destino := filepath.Join(dir, localmedia.NomeArquivoArte(localmedia.KindTrailer, true, 0, pastaExclusiva, nomeBaseVideo, ""))
+	if err := s.baixarTrailerAtomico(ctx, video, destino); err != nil {
+		writeError(w, http.StatusBadGateway, "youtube_download_failed",
+			"falha ao baixar o trailer: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, trailerDownloadResult{LocalPath: destino})
+}
+
+// baixarTrailerAtomico baixa `video` (s.ytdlp.Baixar) para um arquivo
+// TEMPORÁRIO (destino+".tmp", mesmo diretório do destino final) e só
+// RENOMEIA para o nome canônico em caso de sucesso -- nunca deixa um
+// binário parcial com o nome canônico (mesmo princípio de
+// EscreverArquivoAtomico/RenomearArquivo, adaptado: aqui é o yt-dlp que
+// escreve os bytes, não este processo). Falha em qualquer etapa remove o
+// temporário (best-effort) e propaga o erro.
+func (s *Server) baixarTrailerAtomico(ctx context.Context, video richfields.Video, destino string) error {
+	urlOrigem := video.URL
+	if urlOrigem == nil || *urlOrigem == "" {
+		u := "https://www.youtube.com/watch?v=" + video.Key
+		urlOrigem = &u
+	}
+	destinoTemp := destino + ".tmp"
+	if err := s.ytdlp.Baixar(ctx, *urlOrigem, destinoTemp); err != nil {
+		_ = os.Remove(destinoTemp)
+		return err
+	}
+	if err := localmedia.RenomearArquivo(destinoTemp, destino); err != nil {
+		_ = os.Remove(destinoTemp)
+		return err
+	}
+	return nil
 }

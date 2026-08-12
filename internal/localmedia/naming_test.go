@@ -121,6 +121,26 @@ func TestNomeArquivoArteBackdropSinonimo(t *testing.T) {
 	}
 }
 
+// TestNomeArquivoArteTrailer cobre o criterio 5.1 do briefing 0102: kind
+// desconhecido de baseDeKind (KindTrailer) cai no fallback `base = kind`
+// (baseComPrefixo), produzindo "<nomeBaseVideo>-trailer.mp4" (nao-exclusiva)
+// ou "trailer.mp4" (exclusiva), sem nenhuma regra nova em baseComPrefixo.
+func TestNomeArquivoArteTrailer(t *testing.T) {
+	naoExclusiva := NomeArquivoArte(KindTrailer, true, 0, false, "Filme (2026)", ".mp4")
+	if naoExclusiva != "Filme (2026)-trailer.mp4" {
+		t.Fatalf("nao-exclusiva = %q, quero %q", naoExclusiva, "Filme (2026)-trailer.mp4")
+	}
+	exclusiva := NomeArquivoArte(KindTrailer, true, 0, true, "Filme (2026)", ".mp4")
+	if exclusiva != "trailer.mp4" {
+		t.Fatalf("exclusiva = %q, quero %q", exclusiva, "trailer.mp4")
+	}
+	// ExtensaoPadrao(KindTrailer) == .mp4 -- ext "" cai no default de video.
+	comExtDefault := NomeArquivoArte(KindTrailer, true, 0, true, "Filme (2026)", "")
+	if comExtDefault != "trailer.mp4" {
+		t.Fatalf("ext default = %q, quero %q", comExtDefault, "trailer.mp4")
+	}
+}
+
 // TestDiretorioDestinoMovie: movie usa o media_file mais antigo (created_at
 // asc, state=present) da PRÓPRIA entity.
 func TestDiretorioDestinoMovie(t *testing.T) {

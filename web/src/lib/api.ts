@@ -925,6 +925,58 @@ export async function hasEntityTheme(id: string): Promise<boolean> {
   }
 }
 
+// ── Trailer materializado em disco (briefing 0102, ADR-0025) ────────────────
+
+export type TrailerDownloadRequest =
+  components['schemas']['TrailerDownloadRequest']
+export type TrailerDownloadResult =
+  components['schemas']['TrailerDownloadResult']
+
+// trailerPath monta a rota do binário do trailer — fonte única do template
+// (mesmo padrão de themePath).
+function trailerPath(id: string): string {
+  return `/api/v1/entities/${encodeURIComponent(id)}/trailer`
+}
+
+// trailerSrc é a URL absoluta (respeitando a base) do binário do trailer já
+// materializado — usada pelo link "Trailer já baixado" (abre/baixa o
+// arquivo direto do navegador).
+export function trailerSrc(id: string): string {
+  return `${base}${trailerPath(id)}`
+}
+
+// hasEntityTrailer confere se a entity já tem um trailer materializado SEM
+// baixar o binário inteiro (HEAD — o backend serve o mesmo handler do GET,
+// `http.ServeContent` já omite o corpo). 200 → true, 404 → false. Falha de
+// rede também vira `false` (degradação graciosa — o botão simplesmente
+// oferece "baixar" de novo).
+export async function hasEntityTrailer(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${base}${trailerPath(id)}`, { method: 'HEAD' })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+// Baixa (via yt-dlp, no servidor) o trailer YouTube do item e materializa no
+// nome canônico Kodi/Jellyfin. SÍNCRONO: a promise só resolve quando o
+// download termina (segundos a poucos minutos, briefing §6). Erros (503 sem
+// yt-dlp, 422 sem trailer, 409 já existe sem `force`, 502 falha do
+// download) chegam como `ApiError` com a `message` pt-BR do envelope — quem
+// chama decide como exibir.
+export async function downloadEntityTrailer(
+  id: string,
+  body?: TrailerDownloadRequest,
+): Promise<TrailerDownloadResult> {
+  const res = await fetch(`${base}${trailerPath(id)}/download`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  })
+  return lerJson<TrailerDownloadResult>(res)
+}
+
 // Upload multipart do binário do dono (`origin=user`). Monta um FormData com os
 // campos `file` e `kind` — NÃO seta `content-type` à mão: o browser preenche o
 // header com o boundary do multipart. Os limites do backend (415 tipo, 413

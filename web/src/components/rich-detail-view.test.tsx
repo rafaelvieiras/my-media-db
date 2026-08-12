@@ -648,3 +648,120 @@ describe('RichDetailView — fileira de links externos, logo após o hero (0086)
     expect(screen.getByRole('link', { name: 'LETTERBOXD' })).toBeInTheDocument()
   })
 })
+
+// ── Botões "Baixar trailer"/"Baixar tema" (briefings 0102/0103, ADR-0025) ────
+
+// Resposta Response-like mínima reaproveitada pelos stubs de fetch abaixo —
+// só os campos que o cliente HTTP do app lê (`ok`/`status`/`json`).
+function respostaJson(body: unknown, status = 200): Response {
+  return { ok: status < 400, status, json: async () => body } as Response
+}
+
+// Roteia as chamadas COMUNS a qualquer teste com `entityId`: status do
+// yt-dlp (0101), estado do histórico de consumo (selo assistido) e lista de
+// assets (hero) — antes de cair nelas, delega pro `extra` de cada stub
+// específico (trailer OU tema); `extra` devolve `undefined` quando a rota
+// não é dele, pra seguir o roteamento comum.
+function stubFetchComYtdlp(
+  ytdlpDisponivel: boolean,
+  extra: (u: string) => Response | undefined,
+) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      const u = String(url)
+      if (u.includes('/settings/ytdlp')) {
+        return respostaJson({
+          disponivel: ytdlpDisponivel,
+          origem: ytdlpDisponivel ? 'baixado' : 'nenhum',
+          custom_binary_path: null,
+          detalhe: null,
+        })
+      }
+      const resp = extra(u)
+      if (resp) return resp
+      if (u.includes('/historico/estado')) {
+        return respostaJson({ estado: {} })
+      }
+      if (u.includes('/assets')) {
+        return respostaJson([])
+      }
+      throw new Error(`rota nao mockada: ${u}`)
+    }),
+  )
+}
+
+// `jaBaixado` simula um trailer JÁ materializado antes do teste começar; um
+// POST bem-sucedido em .../trailer/download também vira `jaBaixado=true`
+// daí em diante (o invalidate da mutation refaz o HEAD).
+function stubTrailerFetch({
+  ytdlpDisponivel,
+  jaBaixado = false,
+}: {
+  ytdlpDisponivel: boolean
+  jaBaixado?: boolean
+}) {
+  let baixado = jaBaixado
+  stubFetchComYtdlp(ytdlpDisponivel, (u) => {
+    if (u.includes('/trailer/download')) {
+      baixado = true
+      return respostaJson({ local_path: '/lib/Duna (2024)-trailer.mp4' })
+    }
+    if (u.includes('/trailer')) {
+      return baixado ? respostaJson({}) : respostaJson({}, 404)
+    }
+    if (u.includes('/theme')) {
+      return respostaJson({}, 404)
+    }
+    return undefined
+  })
+}
+
+describe('RichDetailView — botão "Baixar trailer" (0102, ADR-0025)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('sem entityId (tela do externo), o botão não aparece mesmo com trailer', () => {
+    renderWithClient(
+      <RichDetailView
+        source="tmdb"
+        detail={richDetailBase({ videos: [videoFixture()] })}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: /Baixar trailer/ })).toBeNull()
+  })
+
+  it('sem trailer reproduzível, o botão não aparece (mesmo com entityId)', async () => {
+    stubTrailerFetch({ ytdlpDisponivel: true })
+    renderComEntity()
+    await screen.findByRole('heading', { level: 1, name: 'Duna' })
+    expect(screen.queryByRole('button', { name: /Baixar trailer/ })).toBeNull()
+  })
+
+  it('yt-dlp indisponível: o botão não aparece', async () => {
+    stubTrailerFetch({ ytdlpDisponivel: false })
+    renderComEntity({ videos: [videoFixture()] })
+    await screen.findByRole('button', { name: 'Assistir trailer' })
+    expect(screen.queryByRole('button', { name: /Baixar trailer/ })).toBeNull()
+  })
+
+  it('yt-dlp disponível e sem trailer local: baixar mostra "trailer baixado" ao final', async () => {
+    stubTrailerFetch({ ytdlpDisponivel: true })
+    renderComEntity({ videos: [videoFixture()] })
+    const botao = await screen.findByRole('button', { name: 'Baixar trailer' })
+    fireEvent.click(botao)
+    expect(
+      await screen.findByRole('link', { name: /Trailer baixado/ }),
+    ).toHaveAttribute('href', '/api/v1/entities/e1/trailer')
+  })
+
+  it('trailer já baixado antes: mostra o link direto, sem oferecer baixar de novo', async () => {
+    stubTrailerFetch({ ytdlpDisponivel: true, jaBaixado: true })
+    renderComEntity({ videos: [videoFixture()] })
+    expect(
+      await screen.findByRole('link', { name: /Trailer baixado/ }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Baixar trailer' })).toBeNull()
+  })
+})

@@ -48,6 +48,14 @@ const (
 	// season E o kind do asset é poster; para os demais casos, o kind vem
 	// direto de asset.Kind.
 	KindSeasonPoster = "season_poster"
+	// KindTrailer é o kind do trailer materializado em disco (briefing 0102,
+	// ADR-0025) — NÃO é um kind de `asset` (não entra na tabela `asset`, ver
+	// nota em internal/server/localmedia_handlers.go): kind DESCONHECIDO de
+	// baseDeKind, então baseComPrefixo já cai no fallback `base = kind`
+	// (linha ~100 abaixo), produzindo `<nomeBaseVideo>-trailer.<ext>` (pasta
+	// não-exclusiva) ou `trailer.<ext>` (pasta exclusiva) sem precisar de
+	// nenhuma regra nova.
+	KindTrailer = "trailer"
 )
 
 // baseDeKind é a tabela FIXA kind->nome-base do briefing 0062 §4. Os kinds
@@ -64,9 +72,15 @@ var baseDeKind = map[string]string{
 }
 
 // extPadraoDeKind são as exceções à extensão default .jpg (briefing 0062 §4).
+// KindTrailer (briefing 0102) usa .mp4 como default de VÍDEO — o nome final
+// gravado pelo download em si é sempre este (destino fixo, ver
+// postEntityTrailerDownload); a detecção de um trailer já presente na pasta
+// (encontrarArquivoTrailer) testa extensões adicionais (.mkv/.webm) para o
+// caso de o dono ter colocado o arquivo manualmente com outro container.
 var extPadraoDeKind = map[string]string{
 	KindClearlogo: ".png",
 	KindDiscart:   ".png",
+	KindTrailer:   ".mp4",
 }
 
 // ExtensaoPadrao devolve a extensão DEFAULT do kind (.png para clearlogo/
