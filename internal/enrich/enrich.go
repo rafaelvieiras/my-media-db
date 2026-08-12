@@ -144,6 +144,10 @@ func (s *Servico) enriquecerBase(ctx context.Context, entityID, source, sourceID
 	// explicita de importarItem logo depois.
 	if tipo == tipoFilme && sincronizarArvore {
 		s.enriquecerArtes(ctx, entityID, tipo, langs)
+		// Candidato de tema musical (0103): mesmo gatilho/guarda de
+		// enriquecerArtes acima -- os dois dependem só dos external_ids já
+		// mesclados nesta passada, sem passo próprio.
+		s.enriquecerTemaMusical(ctx, entityID, tipo, langs)
 	}
 	if tipo == tipoSerie {
 		// Cross-id TVDB capturado do detalhe da fonte-base, quando ela suportar a
@@ -194,6 +198,9 @@ func (s *Servico) importarItem(ctx context.Context, source, sourceID, tipo strin
 	// chama enriquecerArtes depois, para rotear as artes de temporada). Best-effort.
 	if tipo == tipoFilme {
 		s.enriquecerArtes(ctx, id, tipo, langs)
+		// Candidato de tema musical (0103): mesmo gatilho de enriquecerArtes
+		// acima -- o caminho de import de FILME dispara os dois juntos.
+		s.enriquecerTemaMusical(ctx, id, tipo, langs)
 	}
 	return id, criada, nil
 }

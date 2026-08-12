@@ -50,6 +50,16 @@ type cliente struct {
 // os servidores e o banco no Cleanup do teste.
 func novoHarness(t *testing.T) *cliente {
 	t.Helper()
+	return novoHarnessComOpcoes(t)
+}
+
+// novoHarnessComOpcoes é a base de novoHarness: monta banco+imagem+Server reais,
+// aceitando `extra` server.Option ADICIONAIS por cima do par
+// WithSearchProvider/WithAssetsDir sempre presente -- usado por
+// novoHarnessComYtdlp (journeys_trailer_tema_test.go, briefings 0101/0102/0103)
+// para injetar um ytdlp.Gerenciador sem duplicar o boot inteiro do harness.
+func novoHarnessComOpcoes(t *testing.T, extra ...server.Option) *cliente {
+	t.Helper()
 
 	img := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -70,10 +80,11 @@ func novoHarness(t *testing.T) *cliente {
 	}
 
 	prov := fake.New(img.URL)
-	srv := server.New("e2e", database,
+	opts := append([]server.Option{
 		server.WithSearchProvider(prov),
 		server.WithAssetsDir(t.TempDir()),
-	)
+	}, extra...)
+	srv := server.New("e2e", database, opts...)
 	handler, err := srv.Handler()
 	if err != nil {
 		t.Fatalf("montar handler: %v", err)

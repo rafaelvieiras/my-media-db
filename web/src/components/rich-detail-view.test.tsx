@@ -765,3 +765,95 @@ describe('RichDetailView — botão "Baixar trailer" (0102, ADR-0025)', () => {
     expect(screen.queryByRole('button', { name: 'Baixar trailer' })).toBeNull()
   })
 })
+
+// `jaTemLocal` simula um theme.* JÁ materializado antes do teste começar; um
+// POST bem-sucedido em .../theme/download também vira `jaTemLocal=true` daí
+// em diante (o invalidate da mutation refaz TANTO o candidato QUANTO o HEAD
+// que TemaMusicalPlayer usa).
+function stubThemeDownloadFetch({
+  ytdlpDisponivel,
+  candidatoDisponivel,
+  jaTemLocal = false,
+}: {
+  ytdlpDisponivel: boolean
+  candidatoDisponivel: boolean
+  jaTemLocal?: boolean
+}) {
+  let local = jaTemLocal
+  stubFetchComYtdlp(ytdlpDisponivel, (u) => {
+    if (u.includes('/theme/download')) {
+      local = true
+      return respostaJson({ local_path: '/lib/Duna (2024)/theme.mp3' })
+    }
+    if (u.includes('/theme/candidato')) {
+      return respostaJson({
+        disponivel: candidatoDisponivel,
+        ja_tem_local: local,
+      })
+    }
+    if (u.includes('/theme')) {
+      return local ? respostaJson({}) : respostaJson({}, 404)
+    }
+    return undefined
+  })
+}
+
+describe('RichDetailView — botão "Baixar tema" (0103, ADR-0025)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('sem entityId (tela do externo), o botão não aparece', () => {
+    renderWithClient(<RichDetailView source="tmdb" detail={richDetailBase()} />)
+    expect(screen.queryByRole('button', { name: /Baixar tema/ })).toBeNull()
+  })
+
+  it('sem candidato do ThemerrDB, o botão não aparece (caso comum — cobertura parcial)', async () => {
+    stubThemeDownloadFetch({
+      ytdlpDisponivel: true,
+      candidatoDisponivel: false,
+    })
+    renderComEntity()
+    await screen.findByRole('heading', { level: 1, name: 'Duna' })
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Baixar tema/ })).toBeNull(),
+    )
+  })
+
+  it('yt-dlp indisponível: o botão não aparece mesmo com candidato', async () => {
+    stubThemeDownloadFetch({
+      ytdlpDisponivel: false,
+      candidatoDisponivel: true,
+    })
+    renderComEntity()
+    await screen.findByRole('heading', { level: 1, name: 'Duna' })
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Baixar tema/ })).toBeNull(),
+    )
+  })
+
+  it('candidato e yt-dlp disponíveis: baixar faz o player de tema aparecer e o botão sumir', async () => {
+    stubThemeDownloadFetch({
+      ytdlpDisponivel: true,
+      candidatoDisponivel: true,
+    })
+    renderComEntity()
+    const botao = await screen.findByRole('button', { name: 'Baixar tema' })
+    fireEvent.click(botao)
+    expect(
+      await screen.findByRole('button', { name: 'Tocar tema musical' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Baixar tema' })).toBeNull()
+  })
+
+  it('já tem tema local: o botão não aparece (sem `force`, nunca oferece re-download)', async () => {
+    stubThemeDownloadFetch({
+      ytdlpDisponivel: true,
+      candidatoDisponivel: true,
+      jaTemLocal: true,
+    })
+    renderComEntity()
+    await screen.findByRole('button', { name: 'Tocar tema musical' })
+    expect(screen.queryByRole('button', { name: 'Baixar tema' })).toBeNull()
+  })
+})

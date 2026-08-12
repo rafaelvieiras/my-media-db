@@ -190,6 +190,20 @@ de extensão concreto que um futuro sistema de plugins vai reusar.
 | [0095](0095-fundacao-integracoes-schema-registry-api.md) | Fundação de Integrações: schema `integration_config` + registry Go + API (`GET/PUT`) + migra o TMDB para ler do registro | feature | draft | — |
 | [0096](0096-ui-integracoes-dashboard-tmdb.md) | UI de Integrações: `/dashboard/integrations` (lista) + subpágina TMDB com formulário dinâmico | feature | draft | 0095 |
 
+### Fase 5+ — Trailer e música-tema
+
+Paridade com o tinyMediaManager: materializa trailer (TMDB/TVDB `/videos`) e
+música-tema (ThemerrDB) na pasta real da biblioteca, convenção Kodi/Jellyfin
+(`<nome>-trailer.<ext>` / `theme.mp3`), usando yt-dlp como downloader opcional
+de YouTube — ver [ADR-0025](../docs/adr/0025-trailer-tema-musical-ytdlp-themerrdb.md)
+e agenda [TR1–TR2](../docs/00-agenda-de-decisoes.md#trailer-e-música-tema--fundacional-levantada-a-partir-de-pesquisa-sobre-paridade-com-tinymediamanager).
+
+| ID | Briefing | Tipo | Status | Depende de |
+|---|---|---|---|---|
+| [0101](0101-fundacao-ytdlp-binario-dinamico.md) | Fundação: binário yt-dlp (download dinâmico em runtime + path customizável) | feature | done | — |
+| [0102](0102-trailer-materializacao-disco.md) | Trailer: materialização em disco (TMDB/TVDB `/videos` + yt-dlp) | feature | done | 0101 |
+| [0103](0103-tema-musical-themerrdb.md) | Música-tema automática via ThemerrDB (+ yt-dlp) | feature | done | 0101 |
+
 ### Transversal — Infraestrutura operacional
 
 Não pertence a nenhuma fase de UI do roadmap; é infraestrutura de execução que

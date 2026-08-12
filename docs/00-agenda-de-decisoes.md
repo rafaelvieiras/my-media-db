@@ -136,7 +136,28 @@ e decisão em [ADR-0024](adr/0024-cache-externo-sobrevive-sem-provider-vivo.md).
 
 | ID | Questão | Status | Decisão | Destino |
 |---|---|---|---|---|
-| **PR1** | Leitura de `media_external`/`external_detail` já cacheado deve exigir provider com credencial viva, ou só a BUSCA nova deve exigir? | **em implementação** | **Separar as duas capacidades**: parse de payload já salvo (`MapearDetalhe`/`Similares`/richfields) fica disponível para qualquer `source` conhecida do binário, credencial presente ou não; só `BuscarDetalhe` (busca nova) continua gated por credencial. `externaldetail.PayloadFresco` passa a servir o payload stale quando a re-busca falha, em vez de descartar o dado. | [ADR-0024](adr/0024-cache-externo-sobrevive-sem-provider-vivo.md) / [briefing 0100](../briefings/0100-cache-externo-sobrevive-sem-provider-vivo.md) |
+| **PR1** | Leitura de `media_external`/`external_detail` já cacheado deve exigir provider com credencial viva, ou só a BUSCA nova deve exigir? | **documentado** | **Separar as duas capacidades**: parse de payload já salvo (`MapearDetalhe`/`Similares`/richfields) fica disponível para qualquer `source` conhecida do binário, credencial presente ou não; só `BuscarDetalhe` (busca nova) continua gated por credencial. `externaldetail.PayloadFresco` passa a servir o payload stale quando a re-busca falha, em vez de descartar o dado. Implementado, deployado e validado em prod em 12/08/2026. | [ADR-0024](adr/0024-cache-externo-sobrevive-sem-provider-vivo.md) / [briefing 0100](../briefings/0100-cache-externo-sobrevive-sem-provider-vivo.md) |
+
+---
+
+## Trailer e música-tema — fundacional, levantada a partir de pesquisa sobre paridade com tinyMediaManager
+
+Pesquisa de 12/08/2026 confirmou: o TMDB (`/movie|tv/{id}/videos`) e o TVDB v4
+(`trailers`) só entregam **link/id de vídeo no YouTube**, nunca o arquivo — o
+mesmo vale pra fonte viva de música-tema (**ThemerrDB**, do projeto LizardByte,
+JSON estático por id TMDB/IMDb com `youtube_theme_url`). Baixar o binário pro
+disco (convenção Kodi/Jellyfin: `<nome>-trailer.<ext>` e `theme.mp3`) exige
+portanto um downloader de YouTube — **yt-dlp**, o mesmo que o tinyMediaManager já
+embute. É a única peça nova que foge do padrão dos demais providers do projeto
+(TMDB/TVDB/fanart.tv são uso autorizado via API key; yt-dlp tecnicamente
+contraria os Termos de Serviço do YouTube, apesar de ser prática de-facto em
+Kodi/Jellyfin/Plex/TMM). Detalhe completo em
+[ADR-0025](adr/0025-trailer-tema-musical-ytdlp-themerrdb.md).
+
+| ID | Questão | Status | Decisão | Destino |
+|---|---|---|---|---|
+| **TR1** | Aceitar a dependência de yt-dlp (risco de ToS) e de onde vem o binário? | **documentado** | **Aceitar.** Binário obtido **em runtime, pelo próprio processo Go do MyMediaDB** (não Dockerfile, não entrypoint): baixado sob demanda (1º boot / primeira necessidade) da release oficial do yt-dlp pro SO/arquitetura do container, gravado dentro do container em execução, no MESMO volume de dados que a app já usa hoje (nenhum volume novo). Não entra na imagem no build (imagem continua leve, sem rebuild pra atualizar). Admin pode **sobrepor com path de binário próprio** (mesma precedência banco>env do ADR-0023). Ausência/falha de download **degrada em silêncio** (feature de trailer/tema fica indisponível; player embutido de trailer via link continua funcionando). Implementado e validado localmente em 12/08/2026. | [ADR-0025](adr/0025-trailer-tema-musical-ytdlp-themerrdb.md) / [briefing 0101](../briefings/0101-fundacao-ytdlp-binario-dinamico.md) |
+| **TR2** | Qual fonte pra música-tema, já que TMDB/TVDB/fanart.tv não têm campo pra isso? | **documentado** | **ThemerrDB** (LizardByte) como capacidade opcional de provider (`TemaMusicalProvider`), sem API key, indexado por id TMDB (filme/série) ou IMDb (só filme). Cobertura é curada pela comunidade (best-effort, pode não achar) — mesma postura "sem match não bloqueia" do resto do projeto. Implementado e validado localmente em 12/08/2026. | [ADR-0025](adr/0025-trailer-tema-musical-ytdlp-themerrdb.md) / [briefing 0103](../briefings/0103-tema-musical-themerrdb.md) |
 
 ---
 

@@ -661,6 +661,15 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Get("/{id}/trailer", s.getEntityTrailer)
 				ent.Post("/{id}/trailer/download", s.postEntityTrailerDownload)
 
+				// Tema musical automático via ThemerrDB (briefing 0103,
+				// ADR-0025): GET expõe se há um candidato cacheado (sem
+				// vazar a URL do YouTube) e se já existe um theme.* local;
+				// POST baixa o candidato via yt-dlp (0101) para theme.mp3 —
+				// MESMO path que GET /{id}/theme acima já serve. Sem
+				// `force`: tema é singular por pasta.
+				ent.Get("/{id}/theme/candidato", s.getEntityThemeCandidato)
+				ent.Post("/{id}/theme/download", s.postEntityThemeDownload)
+
 				// Enriquecimento de uma entity existente (briefing 0015): puxa o
 				// detalhe do provider e grava a base externa + pôster cacheado.
 				ent.Post("/{id}/enrich", s.enrichEntity)

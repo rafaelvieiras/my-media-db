@@ -925,6 +925,45 @@ export async function hasEntityTheme(id: string): Promise<boolean> {
   }
 }
 
+// Tema musical automático via ThemerrDB (briefing 0103, ADR-0025). O
+// candidato é lido do CACHE (media_external, gravado pelo enrich) — nunca
+// consulta a ThemerrDB ao vivo. A URL do YouTube nunca chega ao cliente
+// (§6): o download acontece inteiramente no servidor.
+export type ThemeCandidatoResult = components['schemas']['ThemeCandidatoResult']
+export type ThemeDownloadResult = components['schemas']['ThemeDownloadResult']
+
+// getEntityThemeCandidato confere se há um candidato de tema musical do
+// ThemerrDB cacheado e se já existe um theme.* local. Erro de rede vira o
+// estado "sem candidato, sem local" (degradação graciosa — o botão
+// simplesmente não aparece).
+export async function getEntityThemeCandidato(
+  id: string,
+): Promise<ThemeCandidatoResult> {
+  try {
+    const res = await fetch(
+      `${base}/api/v1/entities/${encodeURIComponent(id)}/theme/candidato`,
+    )
+    return await lerJson<ThemeCandidatoResult>(res)
+  } catch {
+    return { disponivel: false, ja_tem_local: false }
+  }
+}
+
+// downloadEntityTheme baixa (via yt-dlp, no servidor) o candidato de tema
+// musical do ThemerrDB e materializa como theme.mp3 na raiz da pasta.
+// SÍNCRONO: a promise só resolve quando o download termina. Erros (503 sem
+// yt-dlp, 422 sem candidato, 409 já existe, 502 falha do download) chegam
+// como `ApiError` com a `message` pt-BR do envelope.
+export async function downloadEntityTheme(
+  id: string,
+): Promise<ThemeDownloadResult> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/theme/download`,
+    { method: 'POST' },
+  )
+  return lerJson<ThemeDownloadResult>(res)
+}
+
 // ── Trailer materializado em disco (briefing 0102, ADR-0025) ────────────────
 
 export type TrailerDownloadRequest =

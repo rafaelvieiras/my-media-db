@@ -982,6 +982,46 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/theme/candidato': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Diz se há um candidato de tema musical do ThemerrDB para baixar (briefing 0103).
+     * @description O candidato vive em cache (media_external, source=themerrdb, gravado pelo enriquecimento best-effort do briefing 0103, ADR-0025) — este endpoint só LÊ, nunca consulta a ThemerrDB ao vivo. NÃO vaza a URL do YouTube ao cliente (decisão conservadora, reavaliar se o produto quiser um preview antes do download); o download acontece inteiramente no servidor via POST .../theme/download. `ja_tem_local` reflete o MESMO arquivo que GET /entities/{id}/theme (briefing 0082) já serve — theme.{mp3,ogg,flac} na pasta-raiz do item, colocado à mão pelo dono OU baixado por este briefing. 404 quando a entity não existe; 503 se a leitura de entities está indisponível (banco).
+     */
+    get: operations['getEntityThemeCandidato']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/entities/{id}/theme/download': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Baixa o candidato de tema musical do ThemerrDB via yt-dlp e materializa em disco (briefing 0103, ADR-0025).
+     * @description Baixa via yt-dlp (fundação do briefing 0101) o candidato cacheado em media_external (source=themerrdb, gravado pelo enriquecimento) para `theme.mp3` na raiz da pasta — MESMO path que GET /entities/{id}/theme (briefing 0082) já serve. Download é SÍNCRONO (o request fica pendurado até terminar). SEM parâmetro `force` (ao contrário do trailer): tema é singular por pasta — um `theme.*` já presente (baixado antes OU colocado à mão pelo dono) NUNCA é sobrescrito; o dono precisa apagar o arquivo manualmente antes de re-baixar.
+     */
+    post: operations['postEntityThemeDownload']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/{id}/trailer': {
     parameters: {
       query?: never
@@ -1909,6 +1949,18 @@ export interface components {
     /** @description Resposta de sucesso de POST /entities/{id}/trailer/download (briefing 0102). */
     TrailerDownloadResult: {
       /** @description Caminho absoluto do trailer gravado na pasta real da biblioteca. */
+      local_path: string
+    }
+    /** @description Resposta de GET /entities/{id}/theme/candidato (briefing 0103, ADR-0025). */
+    ThemeCandidatoResult: {
+      /** @description Há um candidato de tema musical do ThemerrDB cacheado para este item (sem expor a URL do YouTube — o download acontece server-side via POST .../theme/download). */
+      disponivel: boolean
+      /** @description A entity já tem um theme.{mp3,ogg,flac} na pasta-raiz (baixado antes OU colocado à mão pelo dono) — o mesmo arquivo que GET /entities/{id}/theme (briefing 0082) serve. */
+      ja_tem_local: boolean
+    }
+    /** @description Resposta de sucesso de POST /entities/{id}/theme/download (briefing 0103). */
+    ThemeDownloadResult: {
+      /** @description Caminho absoluto do tema musical gravado na pasta real da biblioteca. */
       local_path: string
     }
     /** @description Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a Fase 3 preenche os mesmos campos com override/externo sem mudar o shape. Os campos RICOS (tagline, keywords, runtime, certification, vote_average, backdrop_url, videos, collection, similar, external_links) dão PARIDADE com o detalhe do externo (0022/0023): vêm da camada externa já enriquecida e usam o MESMO shape (componentes ExternalVideo/Collection/Similar). Os gêneros NÃO têm campo próprio — são as `tags` (que já os carregam). */
@@ -4034,6 +4086,59 @@ export interface operations {
         }
       }
       404: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  getEntityThemeCandidato: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Disponibilidade do candidato e do arquivo local. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ThemeCandidatoResult']
+        }
+      }
+      404: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  postEntityThemeDownload: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Tema musical baixado e materializado com sucesso. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ThemeDownloadResult']
+        }
+      }
+      404: components['responses']['Error']
+      409: components['responses']['Error']
+      422: components['responses']['Error']
+      502: components['responses']['Error']
       503: components['responses']['Error']
     }
   }

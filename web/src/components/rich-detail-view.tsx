@@ -19,6 +19,7 @@ import { EstadoAssistidoBadge } from '@/components/historico-section'
 import {
   ApiError,
   assetFileSrc,
+  downloadEntityTheme,
   downloadEntityTrailer,
   importExternal,
   themeSrc,
@@ -39,6 +40,7 @@ import { rotuloIdioma } from '@/lib/languages'
 import { metaDaFonte } from '@/lib/provider-meta'
 import {
   assetsQueryOptions,
+  entityThemeCandidatoQueryOptions,
   entityThemeQueryOptions,
   entityTrailerQueryOptions,
   ytdlpSettingsQueryOptions,
@@ -893,6 +895,79 @@ function TemaMusicalPlayer({ entityId }: { entityId: string }) {
   )
 }
 
+// ThemeDownloadButton é o botão "Baixar tema" (briefing 0103, ADR-0025):
+// materializa em disco o candidato automático do ThemerrDB para o MESMO
+// theme.mp3 que TemaMusicalPlayer acima passa a tocar — puramente aditivo,
+// nunca troca um tema que o dono já colocou (o servidor recusa com 409, e
+// esta ação nem aparece nesse caso). Só aparece com TODAS as condições: (a)
+// há um candidato cacheado (`disponivel`, GET .../theme/candidato —
+// cobertura do ThemerrDB é parcial por natureza, a maioria dos itens não
+// terá), (b) ainda NÃO existe um theme.* local (`ja_tem_local`; havendo, o
+// player acima já cobre o caso — sem oferecer re-download, este endpoint não
+// tem `force`) e (c) o yt-dlp está disponível. Qualquer condição ausente:
+// sem botão, sem erro.
+function ThemeDownloadButton({ entityId }: { entityId: string }) {
+  const queryClient = useQueryClient()
+  const { data: candidato } = useQuery(
+    entityThemeCandidatoQueryOptions(entityId),
+  )
+  // `enabled` evita a chamada de rede do status do yt-dlp quando nem há
+  // candidato pra baixar (o caso comum, dada a cobertura parcial do
+  // ThemerrDB).
+  const { data: ytdlp } = useQuery({
+    ...ytdlpSettingsQueryOptions,
+    enabled: candidato?.disponivel === true,
+  })
+  const downloadMutation = useMutation({
+    mutationFn: () => downloadEntityTheme(entityId),
+    onSuccess: () => {
+      // Invalida o prefixo ['entity', id, 'theme']: cobre TANTO o HEAD que
+      // TemaMusicalPlayer usa (o player passa a aparecer) QUANTO este
+      // próprio candidato (`ja_tem_local` vira true, escondendo o botão).
+      queryClient.invalidateQueries({
+        queryKey: ['entity', entityId, 'theme'],
+      })
+    },
+  })
+  const mensagemErro =
+    downloadMutation.error instanceof ApiError
+      ? downloadMutation.error.message
+      : null
+
+  if (
+    !candidato?.disponivel ||
+    candidato.ja_tem_local ||
+    downloadMutation.isSuccess ||
+    !ytdlp?.disponivel
+  ) {
+    return null
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={downloadMutation.isPending}
+        onClick={() => downloadMutation.mutate()}
+      >
+        {downloadMutation.isPending ? (
+          <LoaderCircle className="animate-spin" aria-hidden />
+        ) : (
+          <Download aria-hidden />
+        )}
+        {downloadMutation.isPending ? 'Baixando tema…' : 'Baixar tema'}
+      </Button>
+      {mensagemErro ? (
+        <span role="alert" className="text-sm font-medium text-destructive">
+          {mensagemErro}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
 // ── Créditos: elenco, equipe e produtoras (0029, fase B, read-only) ──────────
 
 // TETO_ELENCO: quantos atores o Elenco mostra ANTES do "Ver todos". O backend
@@ -1470,7 +1545,15 @@ function HeroImersivo({
             ) : null}
             {descriptionExtra}
 
-            {entityId ? <TemaMusicalPlayer entityId={entityId} /> : null}
+            {entityId ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <TemaMusicalPlayer entityId={entityId} />
+                {/* "Baixar tema" (0103): só na tela da ENTITY (entityId) —
+                    mesma restrição de TrailerDownloadButton acima, materializar
+                    exige a pasta real da biblioteca. */}
+                <ThemeDownloadButton entityId={entityId} />
+              </div>
+            ) : null}
 
             <SelosArtes available={availableArtwork} />
           </div>

@@ -13,6 +13,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/localmedia"
+	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
@@ -983,6 +985,163 @@ func (s *Server) baixarTrailerAtomico(ctx context.Context, video richfields.Vide
 	}
 	destinoTemp := destino + ".tmp"
 	if err := s.ytdlp.Baixar(ctx, *urlOrigem, destinoTemp); err != nil {
+		_ = os.Remove(destinoTemp)
+		return err
+	}
+	if err := localmedia.RenomearArquivo(destinoTemp, destino); err != nil {
+		_ = os.Remove(destinoTemp)
+		return err
+	}
+	return nil
+}
+
+// ── Tema musical automático via ThemerrDB (briefing 0103, ADR-0025) ────────
+//
+// GET .../theme/candidato expõe SE há um candidato do ThemerrDB (sem vazar a
+// URL do YouTube ao cliente — decisão conservadora do briefing §6; o download
+// acontece inteiramente no servidor) e se já existe um theme.* local
+// (reaproveita encontrarArquivoTema). POST .../theme/download baixa o
+// candidato via yt-dlp (0101) para theme.mp3 na raiz da pasta — MESMO path
+// que GET /entities/{id}/theme (0082) já serve. SEM `force`: tema é singular
+// por pasta, então um theme.* já presente (baixado antes OU colocado à mão
+// pelo dono) NUNCA é sobrescrito — o dono apaga manualmente antes de
+// re-baixar (briefing §6, ao contrário do trailer).
+
+// nomeFonteThemerrdb é o `source` hardcoded do envelope de candidato em
+// media_external — hoje só a ThemerrDB implementa provider.TemaMusicalProvider
+// (mesmo precedente de "fanarttv" hardcoded em coletarInventarioFanart,
+// internal/server/artwork.go).
+const nomeFonteThemerrdb = "themerrdb"
+
+// themeCandidatoResult é o corpo de GET .../theme/candidato.
+type themeCandidatoResult struct {
+	Disponivel bool `json:"disponivel"`
+	JaTemLocal bool `json:"ja_tem_local"`
+}
+
+// candidatoTemaURL lê o envelope de candidato de tema musical (media_external,
+// source=themerrdb, chave provider.ChaveEnvelopeTemaMusical) gravado pelo
+// enrich (internal/enrich/tema_musical.go) — NUNCA consulta o ThemerrDB ao
+// vivo. ok=false quando não há linha, o payload é ilegível, ou o envelope não
+// carrega URL (candidato "sem match" gravado do mesmo jeito, best-effort).
+func (s *Server) candidatoTemaURL(ctx context.Context, entityID string) (string, bool) {
+	row, err := s.leitura().ObterMediaExternalPorFonte(ctx, sqlcgen.ObterMediaExternalPorFonteParams{
+		EntityID: entityID,
+		Source:   nomeFonteThemerrdb,
+	})
+	if err != nil || !row.PayloadJson.Valid {
+		return "", false
+	}
+	var env map[string]any
+	if json.Unmarshal([]byte(row.PayloadJson.String), &env) != nil {
+		return "", false
+	}
+	url, ok := env[provider.ChaveEnvelopeTemaMusical].(string)
+	if !ok || url == "" {
+		return "", false
+	}
+	return url, true
+}
+
+// getEntityThemeCandidato trata GET /api/v1/entities/{id}/theme/candidato
+// (briefing 0103): diz se há um candidato do ThemerrDB e se já existe um
+// theme.* local. 404 quando a entity não existe. Nunca falha por a entity não
+// ter pasta de destino (media_file ausente) — nesse caso `ja_tem_local`
+// simplesmente vem false, junto do que `disponivel` já indicar.
+func (s *Server) getEntityThemeCandidato(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	ctx := r.Context()
+
+	ent, ok := s.exigirEntity(w, ctx, id)
+	if !ok {
+		return
+	}
+
+	_, disponivel := s.candidatoTemaURL(ctx, id)
+
+	jaTemLocal := false
+	if dir, _, _, achouDestino, err := s.resolverDestino(ctx, ent); err == nil && achouDestino {
+		_, jaTemLocal = encontrarArquivoTema(dir)
+	}
+
+	writeJSON(w, http.StatusOK, themeCandidatoResult{
+		Disponivel: disponivel,
+		JaTemLocal: jaTemLocal,
+	})
+}
+
+// themeDownloadResult é o corpo de sucesso de POST .../theme/download.
+type themeDownloadResult struct {
+	LocalPath string `json:"local_path"`
+}
+
+// postEntityThemeDownload trata POST /api/v1/entities/{id}/theme/download
+// (briefing 0103, ADR-0025): baixa o candidato cacheado (media_external,
+// source=themerrdb) via yt-dlp para theme.mp3 na raiz da pasta — MESMO path
+// que GET /entities/{id}/theme (0082) já serve. 503 sem yt-dlp disponível;
+// 422 sem candidato; 404 sem pasta de destino (sem media_file present); 409
+// quando já existe um theme.* local (baixado antes OU colocado à mão pelo
+// dono) — SEM parâmetro `force` nesta entrega (briefing §6: tema é singular
+// por pasta); 502 quando o próprio download falha.
+func (s *Server) postEntityThemeDownload(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	ctx := r.Context()
+
+	ent, ok := s.exigirEntity(w, ctx, id)
+	if !ok {
+		return
+	}
+	if !s.ytdlpDisponivel(ctx, w) {
+		return
+	}
+
+	urlOrigem, ok := s.candidatoTemaURL(ctx, id)
+	if !ok {
+		writeError(w, http.StatusUnprocessableEntity, "sem_candidato",
+			"nenhum candidato de tema musical disponível para este item")
+		return
+	}
+
+	dir, _, _, ok, err := s.resolverDestino(ctx, ent)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	if !ok {
+		respondErroLocalmedia(w, errSemDestino)
+		return
+	}
+
+	if _, jaExiste := encontrarArquivoTema(dir); jaExiste {
+		writeError(w, http.StatusConflict, "ja_existe",
+			"tema musical já presente (apague o arquivo manualmente para re-baixar)")
+		return
+	}
+
+	destino := filepath.Join(dir, "theme.mp3")
+	if err := s.baixarTemaAtomico(ctx, urlOrigem, destino); err != nil {
+		writeError(w, http.StatusBadGateway, "youtube_download_failed",
+			"falha ao baixar o tema musical: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, themeDownloadResult{LocalPath: destino})
+}
+
+// baixarTemaAtomico baixa `urlOrigem` (s.ytdlp.Baixar) para um arquivo
+// TEMPORÁRIO no mesmo diretório do destino final e só RENOMEIA para o nome
+// canônico em caso de sucesso — mesmo princípio de baixarTrailerAtomico
+// (0102), adaptado: aqui a URL já chega pronta do candidato cacheado, sem
+// richfields.Video envolvido.
+func (s *Server) baixarTemaAtomico(ctx context.Context, urlOrigem, destino string) error {
+	destinoTemp := destino + ".tmp"
+	if err := s.ytdlp.Baixar(ctx, urlOrigem, destinoTemp); err != nil {
 		_ = os.Remove(destinoTemp)
 		return err
 	}

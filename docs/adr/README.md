@@ -41,3 +41,5 @@ achatada de "decisões abertas" por um registro rastreável, um arquivo por deci
 | [0021](0021-modelo-de-series-hierarquia-ordenacoes-vinculo-arquivo.md) | Séries: hierarquia, ordenações como projeção, vínculo N:M arquivo↔episódio | TV1–TV5 | Aceita |
 | [0022](0022-historico-de-consumo-eventos-genericos-e-trackerprovider.md) | Histórico de consumo: eventos genéricos + capacidade `TrackerProvider` | H1–H5 | Aceita |
 | [0023](0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md) | Integrações configuráveis via UI: banco com precedência sobre variável de ambiente | I1–I4 | Aceita |
+| [0024](0024-cache-externo-sobrevive-sem-provider-vivo.md) | Cache externo sobrevive sem provider vivo (parse puro ≠ busca ao vivo) | PR1 | Aceita |
+| [0025](0025-trailer-tema-musical-ytdlp-themerrdb.md) | Trailer e música-tema: yt-dlp aceito (binário dinâmico + path custom) + ThemerrDB | TR1–TR2 | Aceita |

@@ -101,6 +101,14 @@ Objetivo: cumprir o escopo universal.
   [ADR-0023](adr/0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md)
   (agenda [I1–I4](00-agenda-de-decisoes.md#integrações-configuráveis-ui--fundacional-levantada-a-partir-de-pedido-do-dono)),
   breakdown em [briefings 0095–0096](../briefings/README.md).
+- **Trailer e música-tema** (paridade com tinyMediaManager) — materializar
+  trailer (fonte: TMDB/TVDB `/videos`) e música-tema (fonte: ThemerrDB) na pasta
+  real, convenção Kodi/Jellyfin (`<nome>-trailer.<ext>` / `theme.mp3`), com
+  yt-dlp como downloader opcional (binário dinâmico + path customizável pelo
+  admin). Decisão em
+  [ADR-0025](adr/0025-trailer-tema-musical-ytdlp-themerrdb.md) (agenda
+  [TR1–TR2](00-agenda-de-decisoes.md#trailer-e-música-tema--fundacional-levantada-a-partir-de-pesquisa-sobre-paridade-com-tinymediamanager)) —
+  breakdown em briefing(s) a numerar.
 
 ---
 

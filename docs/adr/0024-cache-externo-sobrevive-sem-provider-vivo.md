@@ -1,6 +1,6 @@
 # ADR-0024 — Cache externo sobrevive sem provider vivo (parse puro ≠ busca ao vivo)
 
-- **Status:** Proposta
+- **Status:** Aceita
 - **Data:** 2026-08-12
 - **Agenda:** novo item PR1 (ver [00](../00-agenda-de-decisoes.md)) · **Spec:** [03](../03-arquitetura.md), [04](../04-modelo-de-dados.md), [07](../07-enriquecimento-providers.md)
 

@@ -211,6 +211,34 @@ type ArteProvider interface {
 	BuscarArtes(ctx context.Context, ids ExternalIDs, tipo string, langs []string) ([]Arte, error)
 }
 
+// TemaMusicalProvider é uma CAPACIDADE OPCIONAL (briefing 0103): busca um
+// candidato de música-tema (link de vídeo, nunca binário) pelos ids
+// externos que o item tiver. É opcional porque nem toda fonte modela tema
+// musical (só ThemerrDB hoje); o chamador faz type-assert e degrada em
+// silêncio (sem candidato) quando ausente ou sem match.
+type TemaMusicalProvider interface {
+	// BuscarTemaMusical procura um tema pelos ids externos (`ids`), filtrando
+	// por `tipo` ("movie"|"tv"). Sem id utilizável ou sem match:
+	// (TemaMusical{}, false, nil) — graça, não erro. Erro real (rede/status)
+	// propaga.
+	BuscarTemaMusical(ctx context.Context, ids ExternalIDs, tipo string) (TemaMusical, bool, error)
+}
+
+// TemaMusical é um candidato de tema musical (ThemerrDB): a URL do vídeo na
+// fonte (YouTube) — NUNCA o binário; download real é lazy via yt-dlp (0101).
+type TemaMusical struct {
+	URL string
+}
+
+// ChaveEnvelopeTemaMusical é a chave do envelope de media_external que carrega
+// o CANDIDATO de tema musical de uma fonte (ThemerrDB, briefing 0103) — mesma
+// técnica de ChaveEnvelopeInventarioArtes, mas mais simples (um candidato só,
+// não um mapa por kind). O enrich grava {ChaveEnvelopeTemaMusical: <url>} sob
+// a fonte "themerrdb" quando há match; sem match, grava um envelope vazio (a
+// consulta já foi feita, sem re-bater na API a cada GET). É uma camada de
+// candidato PURA: NUNCA entra na composição de camadas do resolver.
+const ChaveEnvelopeTemaMusical = "themerrdb_tema"
+
 // PessoaProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0029 Fase D,
 // segunda seção): trazer a FILMOGRAFIA de uma PESSOA na fonte — os trabalhos dela
 // (cast/crew) que AINDA NÃO estão no catálogo, para a página da pessoa mostrar "ainda

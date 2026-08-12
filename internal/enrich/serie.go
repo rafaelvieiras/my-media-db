@@ -90,6 +90,10 @@ func (s *Servico) aplicarArvoreSerie(ctx context.Context, serieID, source, sourc
 	// encontrem a entity da temporada correspondente. Best-effort (sem ArteProvider ou id,
 	// degrada em silêncio).
 	s.enriquecerArtes(ctx, serieID, tipoSerie, langs)
+	// Candidato de tema musical (0103): mesmo gatilho de enriquecerArtes acima --
+	// depende só dos external_ids da série (já mesclados pela árvore/enriquecimento
+	// rico), sem precisar da árvore em si. Best-effort.
+	s.enriquecerTemaMusical(ctx, serieID, tipoSerie, langs)
 	// Recasamento de arquivos pendentes (0069): arquivos que ja estavam presos na SERIE
 	// (escaneados ANTES da arvore existir, sem vinculo tv_episode) ganham o vinculo certo
 	// agora que a arvore acabou de ser sincronizada -- sem esperar um novo scan. Por

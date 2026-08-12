@@ -10,6 +10,7 @@ import {
   getArtwork,
   getExternalDetail,
   getCatalogCompletenessSettings,
+  getEntityThemeCandidato,
   getHealth,
   getHistoricoEstado,
   getSystemHealth,
@@ -213,6 +214,20 @@ export function entityThemeQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['entity', id, 'theme'],
     queryFn: () => hasEntityTheme(id),
+  })
+}
+
+// Candidato de tema musical do ThemerrDB (briefing 0103, ADR-0025): fonte
+// única do botão "Baixar tema". Chave própria `['entity', id, 'theme',
+// 'candidato']` (sob o prefixo `['entity', id]`, mas distinta de ['entity',
+// id, 'theme'] acima, que é o HEAD do binário local) — invalidada
+// explicitamente pela mutation de download (a única ação da UI que muda
+// `ja_tem_local`; o candidato em si só muda no próximo ciclo de
+// enriquecimento, fora da UI).
+export function entityThemeCandidatoQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: ['entity', id, 'theme', 'candidato'],
+    queryFn: () => getEntityThemeCandidato(id),
   })
 }
 
