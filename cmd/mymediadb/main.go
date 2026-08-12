@@ -155,11 +155,15 @@ func opcoesServer(database *db.DB) ([]server.Option, error) {
 	opts := opcoesBusca()
 
 	// Registro de CODECS (briefing 0100, ADR-0024): sempre populado,
-	// independente de credencial e independente do modo fake acima -- só
-	// habilita a capacidade de INTERPRETAR payload já cacheado (nunca busca
-	// ao vivo), para dado catalogado sobreviver à ausência/revogação de
-	// chave.
-	opts = append(opts, server.WithCodecRegistry(provedoresConhecidos()...))
+	// independente de credencial, só habilita a capacidade de INTERPRETAR
+	// payload já cacheado (nunca busca ao vivo), para dado catalogado
+	// sobreviver à ausência/revogação de chave. FORA do modo fake (E2E):
+	// lá o registro de busca (fake.New, em opcoesBusca) já responde por
+	// "tmdb" sozinho -- registrar também o codec real de tmdb aqui faria
+	// codecPara priorizá-lo sobre o fake e quebrar o parse das fixtures.
+	if os.Getenv("MYMEDIADB_FAKE_PROVIDER") != "1" {
+		opts = append(opts, server.WithCodecRegistry(provedoresConhecidos()...))
+	}
 
 	dir, err := resolveAssetsDir()
 	if err != nil {
