@@ -42,6 +42,15 @@ type Server struct {
 	// escolhida PELO nome do dado (camada externa, detalhe, coleção); a busca
 	// consulta TODAS e mescla. Alimentado via WithSearchProvider (variádico/acumula).
 	providers provider.Registry
+	// codecs é o REGISTRO de providers usados SÓ para a capacidade de PARSE
+	// de payload já cacheado (MapearDetalhe/Similares/TvdbCruzadoProvider) --
+	// nunca para busca ao vivo (briefing 0100, ADR-0024). Diferente de
+	// `providers`, é alimentado INDEPENDENTE de credencial (main.go registra
+	// tmdb/tvdb/fanarttv com credencial vazia sempre): uma linha de
+	// media_external/external_detail já salva continua interpretável mesmo
+	// sem NENHUMA chave configurada. Ver codecPara em entities.go (fallback
+	// para `providers`, cobre o MYMEDIADB_FAKE_PROVIDER dos testes E2E).
+	codecs provider.Registry
 	// cacheExterno guarda por TTL curto o resultado externo por (query,tipo),
 	// para poupar a fonte. Só existe quando há provider.
 	cacheExterno *cacheExterno
@@ -140,6 +149,19 @@ func WithSearchProvider(provs ...provider.Provider) Option {
 		}
 		if registrou && s.cacheTitulosAlt == nil {
 			s.cacheTitulosAlt = novoCacheTitulosAlternativos(ttlCacheExterno)
+		}
+	}
+}
+
+// WithCodecRegistry REGISTRA um ou mais providers SÓ para a capacidade de
+// parse de payload já cacheado (MapearDetalhe/Similares/TvdbCruzadoProvider)
+// -- nunca para busca ao vivo. Independente de WithSearchProvider: um
+// provider pode estar aqui sem estar lá (sem credencial) e vice-versa (modo
+// fake dos testes E2E). Ver ADR-0024/briefing 0100.
+func WithCodecRegistry(provs ...provider.Provider) Option {
+	return func(s *Server) {
+		for _, p := range provs {
+			s.codecs.Registrar(p)
 		}
 	}
 }
@@ -318,10 +340,13 @@ func (s *Server) montarServicos(database *db.DB) {
 	if database != nil && !s.providers.Vazio() && s.assetsDir != "" {
 		s.enrich = enrich.New(database, s.providers, s.assetsDir)
 	}
-	// O detalhe externo rico (briefing 0022) precisa só de banco + fonte externa
-	// (não escreve binários, então dispensa assetsDir). Sem qualquer um deles fica
-	// nil e o handler GET /external degrada com 503.
-	if database != nil && !s.providers.Vazio() {
+	// O detalhe externo rico (briefing 0022) precisa só de banco -- desde o
+	// briefing 0100 (ADR-0024) não depende mais de `providers` não-vazio: o
+	// serviço passa a existir sempre que há banco, e a degradação por falta
+	// de credencial acontece POR FONTE dentro de PayloadFresco (serve cache
+	// stale/qualquer em vez de desligar o serviço inteiro). `s.codecs` entra
+	// para a capacidade de parse do payload cacheado sobreviver sem chave.
+	if database != nil {
 		s.externalDetail = externaldetail.New(database, s.providers, 0)
 	}
 	// Liga o AUTO-IMPORT de séries no scanner (0034): o importador por nome (enrich) e

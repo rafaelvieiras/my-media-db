@@ -992,13 +992,30 @@ func (s *Server) anotarInternos(ctx context.Context, e *resolver.Entidade) {
 // tornar configurável (via settings) é follow-up; por ora é o default do briefing 0031.
 var prioridadeFontes = []string{"tmdb", "tvdb"}
 
+// codecPara resolve o provider usado SÓ para interpretar payload já
+// cacheado (MapearDetalhe/Similares) de uma fonte: primeiro tenta o
+// registro de parse (codecs, sempre populado); cai para o registro de
+// busca ao vivo (providers) quando ausente -- cobre o MYMEDIADB_FAKE_PROVIDER
+// dos testes E2E, que só registra em providers. ADR-0024/briefing 0100.
+func (s *Server) codecPara(fonte string) (provider.Provider, bool) {
+	if p, ok := s.codecs.Get(fonte); ok {
+		return p, ok
+	}
+	return s.providers.Get(fonte)
+}
+
 // montarExterno carrega as linhas de media_external da entity e as converte em
 // camadas canônicas via o provider (raw→canônico é do provider; o resolver não
 // conhece o TMDB). Sem provider configurado devolve nil (comportamento do 0010
 // preservado). Uma linha cujo mapeamento falha é PULADA (degrada aquela fonte),
 // não derruba a leitura. Ordena pela prioridade das fontes.
 func (s *Server) montarExterno(ctx context.Context, id string) ([]resolver.CamadaExterna, error) {
-	if s.providers.Vazio() {
+	// Só pula a query quando NENHUM dos dois registros (busca ao vivo E
+	// parse) tem nada -- otimização preservada só para uma instalação que
+	// nunca teve nenhum provider. Com `codecs` sempre populado pelo main
+	// (briefing 0100, ADR-0024), esta guarda só dispara de fato em testes
+	// que constroem o Server sem nenhuma option de provider.
+	if s.providers.Vazio() && s.codecs.Vazio() {
 		return nil, nil
 	}
 	rows, err := s.leitura().ListarMediaExternalPorEntity(ctx, id)
@@ -1067,7 +1084,7 @@ func preencherSimilares(prov provider.Provider, raw json.RawMessage, fonte, enti
 // provider registrado (degrada: camada vazia). Uma linha com payload ausente/inválido
 // é pulada (degrada aquela linha).
 func (s *Server) camadasDaFonte(rows []sqlcgen.MediaExternal, fonte string) []resolver.CamadaExterna {
-	prov, ok := s.providers.Get(fonte)
+	prov, ok := s.codecPara(fonte)
 	if !ok {
 		return nil
 	}

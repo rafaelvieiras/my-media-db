@@ -122,6 +122,24 @@ integrações.
 
 ---
 
+## Sobrevivência offline do catálogo — fundacional, levantada a partir da migração de 12/08/2026
+
+Na migração de produção para o Batocera (12/08/2026), o ambiente novo subiu sem
+nenhuma credencial de provider configurada. Sintoma: itens já catalogados há
+meses, com `media_external`/`external_detail` intactos (copiados na migração),
+apareceram SEM sinopse/elenco/equipe/tags/similares — não por perda de dado, mas
+porque o código de leitura (`internal/server/entities.go:montarExterno`/
+`camadasDaFonte`) usa o MESMO gate (`provider.Registry`) tanto para "pode buscar
+ao vivo" (precisa de chave, correto) quanto para "pode interpretar o payload já
+salvo" (função pura, não deveria precisar de chave nenhuma). Investigação completa
+e decisão em [ADR-0024](adr/0024-cache-externo-sobrevive-sem-provider-vivo.md).
+
+| ID | Questão | Status | Decisão | Destino |
+|---|---|---|---|---|
+| **PR1** | Leitura de `media_external`/`external_detail` já cacheado deve exigir provider com credencial viva, ou só a BUSCA nova deve exigir? | **em implementação** | **Separar as duas capacidades**: parse de payload já salvo (`MapearDetalhe`/`Similares`/richfields) fica disponível para qualquer `source` conhecida do binário, credencial presente ou não; só `BuscarDetalhe` (busca nova) continua gated por credencial. `externaldetail.PayloadFresco` passa a servir o payload stale quando a re-busca falha, em vez de descartar o dado. | [ADR-0024](adr/0024-cache-externo-sobrevive-sem-provider-vivo.md) / [briefing 0100](../briefings/0100-cache-externo-sobrevive-sem-provider-vivo.md) |
+
+---
+
 ## Histórico de decisões fechadas
 
 <!-- Conforme cada item fecha, mover o resumo da decisão para cá com data. -->

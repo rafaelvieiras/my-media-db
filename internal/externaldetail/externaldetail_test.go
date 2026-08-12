@@ -195,6 +195,72 @@ func TestFonteDesconhecida(t *testing.T) {
 	}
 }
 
+// TestServeCacheQualquerSemProviderDeBusca (briefing 0100/ADR-0024): sem NENHUM
+// provider de busca ao vivo registrado para a fonte (registro vazio), um payload
+// já cacheado (mesmo fora do TTL) é servido em vez de propagar
+// ErrNaoEncontrado -- o dado já visitado não some por falta de credencial.
+func TestServeCacheQualquerSemProviderDeBusca(t *testing.T) {
+	database := setupDB(t)
+	ctx := context.Background()
+	// Semeia o cache diretamente (sem provider nenhum para persistir via
+	// PayloadFresco): svc SEM nenhum provider registrado (Registry vazio).
+	svc := New(database, provider.Registry{}, time.Hour)
+	if err := sqlcgen.New(database.Write).UpsertExternalDetail(ctx, sqlcgen.UpsertExternalDetailParams{
+		Source: "tmdb", SourceID: "603", Type: "movie",
+		PayloadJson: nsValid(`{"detail":{"id":603}}`),
+		LangsJson:   nsValid(`["pt-BR"]`),
+	}); err != nil {
+		t.Fatalf("UpsertExternalDetail: %v", err)
+	}
+	// Forca o carimbo para o passado, alem do TTL de 1h configurado.
+	if _, err := database.Write.ExecContext(ctx,
+		`UPDATE external_detail SET fetched_at = '2000-01-01T00:00:00.000Z' WHERE source='tmdb' AND source_id='603'`); err != nil {
+		t.Fatalf("forcar staleness: %v", err)
+	}
+
+	raw, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", []string{"pt-BR"}, false)
+	if err != nil {
+		t.Fatalf("PayloadFresco: quero cache stale servido, veio erro: %v", err)
+	}
+	if string(raw) != `{"detail":{"id":603}}` {
+		t.Errorf("payload = %s, quero o cache stale intacto", raw)
+	}
+}
+
+// TestServeCacheStaleQuandoBuscaAoVivoFalha (briefing 0100/ADR-0024): com um
+// provider REGISTRADO cuja busca ao vivo falha (rede fora/chave revogada), o
+// payload cacheado (mesmo stale) e servido em vez do erro cru -- nunca perde
+// dado ja salvo por indisponibilidade momentanea/permanente da fonte.
+func TestServeCacheStaleQuandoBuscaAoVivoFalha(t *testing.T) {
+	database := setupDB(t)
+	ctx := context.Background()
+	fake := &fakeProv{nome: "tmdb", erro: errors.New("timeout")}
+	svc := New(database, provider.NovaRegistry(fake), time.Hour)
+
+	if err := sqlcgen.New(database.Write).UpsertExternalDetail(ctx, sqlcgen.UpsertExternalDetailParams{
+		Source: "tmdb", SourceID: "603", Type: "movie",
+		PayloadJson: nsValid(`{"detail":{"id":603}}`),
+		LangsJson:   nsValid(`["pt-BR"]`),
+	}); err != nil {
+		t.Fatalf("UpsertExternalDetail: %v", err)
+	}
+	if _, err := database.Write.ExecContext(ctx,
+		`UPDATE external_detail SET fetched_at = '2000-01-01T00:00:00.000Z' WHERE source='tmdb' AND source_id='603'`); err != nil {
+		t.Fatalf("forcar staleness: %v", err)
+	}
+
+	raw, err := svc.PayloadFresco(ctx, "tmdb", "603", "movie", []string{"pt-BR"}, false)
+	if err != nil {
+		t.Fatalf("PayloadFresco: quero cache stale servido apos falha da busca, veio erro: %v", err)
+	}
+	if string(raw) != `{"detail":{"id":603}}` {
+		t.Errorf("payload = %s, quero o cache stale intacto", raw)
+	}
+	if fake.chamadas != 1 {
+		t.Errorf("chamadas = %d, quero 1 (tentou buscar ao vivo antes de cair no stale)", fake.chamadas)
+	}
+}
+
 // TestErroDaFontePropaga: um erro real da fonte propaga e nada e cacheado.
 func TestErroDaFontePropaga(t *testing.T) {
 	database := setupDB(t)

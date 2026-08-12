@@ -55,22 +55,36 @@ func New(database *db.DB, provs provider.Registry, ttl time.Duration) *Servico {
 // resultado (persistir) continua acontecendo normalmente, então o cache fica
 // atualizado com o payload novo para as próximas leituras sem force. Propaga
 // provider.ErrNaoEncontrado quando o item não existe na fonte, e o erro cru quando a
-// fonte falha (o chamador traduz em 404/502). Fonte desconhecida (sem provider
-// correspondente) devolve ErrNaoEncontrado.
+// fonte falha (o chamador traduz em 404/502).
+//
+// Desde o briefing 0100 (ADR-0024): quando não há provider de busca ao vivo
+// registrado para a fonte, OU a busca ao vivo falha, cai para o cache
+// "qualquer" (doCacheQualquer, ignora TTL/langs -- só checa payload não-vazio)
+// antes de propagar erro. Um item já visitado antes nunca perde o payload
+// salvo por indisponibilidade momentânea/permanente da fonte (chave ausente,
+// revogada, rede fora, provedor descontinuado); só falha de verdade quando
+// não há cache algum.
 func (s *Servico) PayloadFresco(ctx context.Context, source, sourceID, tipo string, langs []string, force bool) (json.RawMessage, error) {
-	prov, ok := s.providers.Get(source)
-	if !ok {
-		return nil, provider.ErrNaoEncontrado
-	}
-
 	if !force {
 		if cached, ok := s.doCacheFresco(ctx, source, sourceID, langs); ok {
 			return cached, nil
 		}
 	}
 
+	prov, ok := s.providers.Get(source)
+	if !ok {
+		if cached, ok := s.doCacheQualquer(ctx, source, sourceID); ok {
+			return cached, nil
+		}
+		return nil, provider.ErrNaoEncontrado
+	}
+
 	raw, err := prov.BuscarDetalhe(ctx, sourceID, tipo, langs)
 	if err != nil {
+		if cached, ok := s.doCacheQualquer(ctx, source, sourceID); ok {
+			log.Printf("externaldetail: busca ao vivo de %s/%s falhou, servindo cache stale: %v", source, sourceID, err)
+			return cached, nil
+		}
 		return nil, err
 	}
 	s.persistir(ctx, source, sourceID, tipo, raw, langs)
@@ -82,17 +96,8 @@ func (s *Servico) PayloadFresco(ctx context.Context, source, sourceID, tipo stri
 // ausente, timestamp/langs ilegível, payload vazio) devolve (nil,false) — o chamador
 // re-puxa. Nunca propaga erro: o cache é otimização, não barreira.
 func (s *Servico) doCacheFresco(ctx context.Context, source, sourceID string, langs []string) (json.RawMessage, bool) {
-	row, err := sqlcgen.New(s.database.Read).ObterExternalDetail(ctx, sqlcgen.ObterExternalDetailParams{
-		Source:   source,
-		SourceID: sourceID,
-	})
-	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			log.Printf("externaldetail: ler cache de %s/%s falhou (vai re-puxar): %v", source, sourceID, err)
-		}
-		return nil, false
-	}
-	if !row.PayloadJson.Valid || row.PayloadJson.String == "" {
+	row, ok := s.obterLinhaCache(ctx, source, sourceID)
+	if !ok {
 		return nil, false
 	}
 	if !dentroDoTTL(row.FetchedAt, s.ttl, s.agora()) {
@@ -102,6 +107,40 @@ func (s *Servico) doCacheFresco(ctx context.Context, source, sourceID string, la
 		return nil, false
 	}
 	return json.RawMessage(row.PayloadJson.String), true
+}
+
+// doCacheQualquer devolve o payload cacheado quando existe, IGNORANDO
+// frescor (TTL/langs) — usado como último recurso quando a busca ao vivo não
+// é possível (sem provider) ou falhou, para nunca perder dado já salvo por
+// indisponibilidade momentânea/permanente da fonte (ADR-0024/briefing 0100).
+func (s *Servico) doCacheQualquer(ctx context.Context, source, sourceID string) (json.RawMessage, bool) {
+	row, ok := s.obterLinhaCache(ctx, source, sourceID)
+	if !ok {
+		return nil, false
+	}
+	return json.RawMessage(row.PayloadJson.String), true
+}
+
+// obterLinhaCache lê a linha de external_detail e devolve (linha,true) só
+// quando existe e tem payload não-vazio -- a checagem de frescor (TTL/langs)
+// fica por conta do chamador (doCacheFresco); doCacheQualquer usa a linha
+// crua. Qualquer tropeço (linha ausente, erro de leitura) devolve
+// (zero,false) e NUNCA propaga erro: o cache é otimização, não barreira.
+func (s *Servico) obterLinhaCache(ctx context.Context, source, sourceID string) (sqlcgen.ExternalDetail, bool) {
+	row, err := sqlcgen.New(s.database.Read).ObterExternalDetail(ctx, sqlcgen.ObterExternalDetailParams{
+		Source:   source,
+		SourceID: sourceID,
+	})
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("externaldetail: ler cache de %s/%s falhou: %v", source, sourceID, err)
+		}
+		return sqlcgen.ExternalDetail{}, false
+	}
+	if !row.PayloadJson.Valid || row.PayloadJson.String == "" {
+		return sqlcgen.ExternalDetail{}, false
+	}
+	return row, true
 }
 
 // persistir grava (upsert) o payload no cache external_detail, best-effort: uma falha

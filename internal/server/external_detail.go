@@ -68,13 +68,16 @@ type detalheExternoDTO struct {
 	ResolvedLanguages map[string]string `json:"resolved_languages"`
 }
 
-// provedorDetalhe resolve o provider da FONTE da rota para o detalhe externo. Escreve
-// 503 e devolve ok=false quando o detalhe está desligado (sem cache) OU a fonte não tem
-// provider registrado — a mesma porta de "fonte externa não configurada". Get(source)
-// já cobre o registro vazio (nenhum provider => sempre !ok).
+// provedorDetalhe resolve o provider de PARSE (codecPara, briefing 0100/ADR-0024) da
+// FONTE da rota para o detalhe externo. Escreve 503 e devolve ok=false quando o
+// detalhe está desligado (sem banco) OU a fonte é totalmente desconhecida do binário
+// (nem em `codecs` nem em `providers`) -- nesses casos PayloadFresco nem seria chamado
+// com proveito. Diferente de antes, NÃO gateia mais em busca ao vivo registrada: uma
+// fonte sem credencial ainda pode servir payload já cacheado (PayloadFresco decide
+// sozinho fresh/stale/erro).
 func (s *Server) provedorDetalhe(w http.ResponseWriter, source string) (provider.Provider, bool) {
 	if s.externalDetail != nil {
-		if prov, ok := s.providers.Get(source); ok {
+		if prov, ok := s.codecPara(source); ok {
 			return prov, true
 		}
 	}

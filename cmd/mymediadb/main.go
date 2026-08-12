@@ -154,6 +154,13 @@ func openAndMigrate() (*db.DB, error) {
 func opcoesServer(database *db.DB) ([]server.Option, error) {
 	opts := opcoesBusca()
 
+	// Registro de CODECS (briefing 0100, ADR-0024): sempre populado,
+	// independente de credencial e independente do modo fake acima -- só
+	// habilita a capacidade de INTERPRETAR payload já cacheado (nunca busca
+	// ao vivo), para dado catalogado sobreviver à ausência/revogação de
+	// chave.
+	opts = append(opts, server.WithCodecRegistry(provedoresConhecidos()...))
+
 	dir, err := resolveAssetsDir()
 	if err != nil {
 		return nil, err
@@ -242,6 +249,20 @@ func provedoresReais() []provider.Provider {
 	}
 
 	return provs
+}
+
+// provedoresConhecidos constrói TODOS os providers que o binário sabe
+// interpretar (tmdb/tvdb/fanarttv), com credencial VAZIA, INDEPENDENTE de
+// qualquer chave configurada -- usados só para a capacidade de PARSE de
+// payload já cacheado (MapearDetalhe/Similares/TvdbCruzadoProvider), nunca
+// para busca ao vivo. Registrar sempre garante que dado já catalogado
+// sobrevive à ausência/revogação de credencial (ADR-0024/briefing 0100).
+func provedoresConhecidos() []provider.Provider {
+	return []provider.Provider{
+		tmdb.New(tmdb.Credencial{}, nil, ""),
+		tvdb.New(tvdb.Credencial{}, nil, ""),
+		fanarttv.New(fanarttv.Credencial{}, nil, ""),
+	}
 }
 
 // resolveAssetsDir determina o diretório do cache de imagem (briefing 0015): env

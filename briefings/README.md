@@ -208,3 +208,4 @@ e serve, explicitamente, de base técnica para o futuro sistema de plugins
 | [0066](0066-nfo-thumb-local-e-rating-padrao-kodi.md) | NFO: `<thumb>` aponta para arquivo local/URL direta (nunca API interna) e `<rating>` no formato atual do Kodi | fix | done | 0062, 0064 |
 | [0081](0081-fix-job-midias-faltantes-para-arvore-de-serie.md) | Corrige o job de mídias faltantes para a árvore de série (temporada/episódio nunca alcançados + raiz da série resolvida errada) | fix | done | 0044, 0062, 0063, 0064 |
 | [0068](0068-e2e-fase3-msw-jsdom-e-catraca-de-cobertura-navegador.md) | E2E Fase 3 (MSW+jsdom) + travar cobertura de navegador (Camada 2) na catraca | infra/qualidade | done | 0028, 0061 |
+| [0100](0100-cache-externo-sobrevive-sem-provider-vivo.md) | Cache externo sobrevive sem provider vivo: separa capacidade de busca ao vivo (exige credencial) de capacidade de parse de payload já cacheado (sempre disponível) | fix | done | — |
