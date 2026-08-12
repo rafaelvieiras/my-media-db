@@ -20,6 +20,7 @@ import {
   getLanguageSettings,
   getRetroactiveEnrichmentSettings,
   getAutoMaterializeArtworkSettings,
+  getYtdlpSettings,
   getMatchPreview,
   listJobExecutions,
   listJobs,
@@ -147,6 +148,14 @@ export const retroactiveEnrichmentSettingsQueryOptions = queryOptions({
 export const autoMaterializeArtworkSettingsQueryOptions = queryOptions({
   queryKey: ['settings', 'auto-materialize-artwork'],
   queryFn: getAutoMaterializeArtworkSettings,
+})
+
+// Status do binário yt-dlp + path customizado (0101, ADR-0025): fonte única
+// para o card "yt-dlp" da tela de configurações. Chave `['settings', 'ytdlp']`
+// — invalidada pelo PUT do formulário.
+export const ytdlpSettingsQueryOptions = queryOptions({
+  queryKey: ['settings', 'ytdlp'],
+  queryFn: getYtdlpSettings,
 })
 
 // Token do webhook de entrada Jellyfin (0093/0097): fonte única para a tela

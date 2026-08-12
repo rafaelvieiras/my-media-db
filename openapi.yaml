@@ -286,6 +286,53 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
 
+  /api/v1/settings/ytdlp:
+    get:
+      operationId: getYtdlpSettings
+      summary: Status do binário yt-dlp + path customizado (briefing 0101, ADR-0025).
+      description: >
+        Fundação do downloader de YouTube reaproveitado por trailer (briefing
+        0102) e música-tema (briefing 0103). Devolve o status EFETIVO do
+        yt-dlp: `disponivel` diz se há um binário utilizável agora; `origem` é
+        `"custom"` (path do admin, banco ou env `MYMEDIADB_YTDLP_PATH`),
+        `"baixado"` (baixado dinamicamente pelo próprio processo na 1ª
+        necessidade) ou `"nenhum"` (indisponível); `detalhe` carrega o motivo
+        quando `disponivel=false` (ex.: falha de download sem rede).
+        `custom_binary_path` é o path atualmente gravado no BANCO (`null`
+        quando não configurado -- distinto de `origem="custom"` via env, que
+        nunca é ecoada por esta API). Precedência banco > env, mesmo espírito
+        do ADR-0023.
+      tags: [settings]
+      responses:
+        "200":
+          description: Status do yt-dlp.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/YtdlpSettings" }
+    put:
+      operationId: putYtdlpSettings
+      summary: Grava (ou limpa) o path customizado do binário yt-dlp.
+      description: >
+        Persiste (upsert) `custom_binary_path` em `app_settings` e sincroniza
+        IMEDIATAMENTE o Gerenciador do yt-dlp -- efeito em runtime, sem
+        reiniciar o servidor. `null` ou string vazia limpa o override (volta a
+        herdar a env var `MYMEDIADB_YTDLP_PATH`/download automático). Devolve
+        o mesmo shape do GET, já com o status recalculado.
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/YtdlpCustomPath" }
+      responses:
+        "200":
+          description: Path gravado; status recalculado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/YtdlpSettings" }
+        "400":
+          $ref: "#/components/responses/Error"
+
   /api/v1/settings/catalog-completeness:
     get:
       operationId: getCatalogCompletenessSettings
@@ -3560,6 +3607,51 @@ components:
             Desligado por padrão (default de fábrica `false`). Escopo
             restrito ao auto-import do scan -- não afeta ações manuais de
             enriquecimento.
+    YtdlpCustomPath:
+      type: object
+      description: >
+        Corpo do PUT /settings/ytdlp (briefing 0101, ADR-0025): o path
+        customizado que o dono quer usar para o binário yt-dlp.
+      properties:
+        custom_binary_path:
+          type: string
+          nullable: true
+          description: >
+            Path absoluto do binário yt-dlp gerenciado pelo dono. `null` ou
+            string vazia limpa o override (volta a herdar a env var
+            `MYMEDIADB_YTDLP_PATH`/download automático).
+    YtdlpSettings:
+      type: object
+      description: >
+        Status EFETIVO do binário yt-dlp (briefing 0101, ADR-0025): fundação
+        do downloader de YouTube reaproveitado por trailer (0102) e
+        música-tema (0103). É a resposta do GET/PUT /settings/ytdlp.
+      required: [disponivel, origem]
+      properties:
+        disponivel:
+          type: boolean
+          description: Se há um binário yt-dlp utilizável agora.
+        origem:
+          type: string
+          enum: [custom, baixado, nenhum]
+          description: >
+            `custom` = path do admin (banco ou env `MYMEDIADB_YTDLP_PATH`,
+            banco tem precedência); `baixado` = binário baixado dinamicamente
+            pelo próprio processo na 1ª necessidade; `nenhum` = indisponível.
+        custom_binary_path:
+          type: string
+          nullable: true
+          description: >
+            Path customizado atualmente gravado no BANCO (`null` quando não
+            configurado). Distinto de `origem="custom"` via env var, que
+            nunca é ecoada por esta API.
+        detalhe:
+          type: string
+          nullable: true
+          description: >
+            Motivo quando `disponivel=false` (ex.: "falha ao baixar: sem
+            rede", "path customizado inacessível: ..."). `null` quando
+            disponível.
     CatalogCompletenessSettings:
       type: object
       description: >

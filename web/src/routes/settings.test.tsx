@@ -6,6 +6,7 @@ import type {
   AutoMaterializeArtworkSettings,
   LanguageSettings,
   RetroactiveEnrichmentSettings,
+  YtdlpSettings,
 } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
@@ -26,6 +27,14 @@ const autoMaterializarIniciais: AutoMaterializeArtworkSettings = {
   enabled: false,
 }
 
+// Status vigente devolvido pelo GET /settings/ytdlp (0101, ADR-0025).
+const ytdlpIniciais: YtdlpSettings = {
+  disponivel: true,
+  origem: 'baixado',
+  custom_binary_path: null,
+  detalhe: null,
+}
+
 // Roteia o fetch: GET/PUT de idiomas, de throttle de enriquecimento
 // retroativo (0085) e do toggle de materialização automática de artes
 // (0089) são tratados aqui; GET/PUT de completude de catalogação (0057)
@@ -40,6 +49,9 @@ function fetchRouter(opts?: {
   putRetroativoErro?: { status: number; code: string; message: string }
   autoMaterializarInicial?: AutoMaterializeArtworkSettings
   putAutoMaterializarErro?: { status: number; code: string; message: string }
+  ytdlpInicial?: YtdlpSettings
+  putYtdlpResposta?: YtdlpSettings
+  putYtdlpErro?: { status: number; code: string; message: string }
 }) {
   return vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url)
@@ -85,6 +97,19 @@ function fetchRouter(opts?: {
         (init?.body as string) ?? '{}',
       ) as AutoMaterializeArtworkSettings
       return okJson(body)
+    }
+    if (u === '/api/v1/settings/ytdlp' && method === 'GET') {
+      return okJson(opts?.ytdlpInicial ?? ytdlpIniciais)
+    }
+    if (u === '/api/v1/settings/ytdlp' && method === 'PUT') {
+      if (opts?.putYtdlpErro) {
+        return erroJson(
+          opts.putYtdlpErro.status,
+          opts.putYtdlpErro.code,
+          opts.putYtdlpErro.message,
+        )
+      }
+      return okJson(opts?.putYtdlpResposta ?? ytdlpIniciais)
     }
     const completude = respostaCompletude(u, method)
     if (completude) return completude
@@ -149,6 +174,31 @@ async function renderFormArtes(fetchMock: ReturnType<typeof fetchRouter>) {
     ).toBeInTheDocument(),
   )
   return secao
+}
+
+// Mesma ideia de `renderForm`, mas devolve o escopo da seção YT-DLP (0101) --
+// tem botão "Salvar" (diferente do switch de Artes: o campo de path
+// customizado precisa de confirmação explícita antes de gravar).
+async function renderFormYtdlp(fetchMock: ReturnType<typeof fetchRouter>) {
+  vi.stubGlobal('fetch', fetchMock)
+  renderWithClient(<SettingsScreen />)
+  const heading = await screen.findByRole('heading', { name: 'yt-dlp' })
+  const secao = within(heading.closest('section')!)
+  await waitFor(() =>
+    expect(secao.getByRole('button', { name: 'Salvar' })).toBeInTheDocument(),
+  )
+  return secao
+}
+
+// Acha a chamada PUT feita para `url` no mock de fetch e devolve o corpo já
+// parseado -- evita repetir o find+parse em cada teste que confirma o PUT.
+function corpoDoPut(fetchMock: ReturnType<typeof fetchRouter>, url: string) {
+  const putCall = fetchMock.mock.calls.find(
+    ([u, init]) =>
+      String(u) === url && (init as RequestInit | undefined)?.method === 'PUT',
+  )
+  expect(putCall).toBeDefined()
+  return JSON.parse((putCall![1] as RequestInit).body as string) as unknown
 }
 
 describe('SettingsScreen', () => {
@@ -397,5 +447,122 @@ describe('SettingsScreen', () => {
     await waitFor(() =>
       expect(secao.getByText('corpo invalido')).toBeInTheDocument(),
     )
+  })
+
+  it('le o status vigente do yt-dlp e exibe o badge "baixado automaticamente"', async () => {
+    const secao = await renderFormYtdlp(fetchRouter())
+
+    expect(
+      secao.getByText('disponível (baixado automaticamente)'),
+    ).toBeInTheDocument()
+    expect(
+      secao.getByLabelText('Path customizado do binário yt-dlp'),
+    ).toHaveValue('')
+  })
+
+  it('exibe o badge "indisponivel" com o detalhe quando o backend reporta falha', async () => {
+    const secao = await renderFormYtdlp(
+      fetchRouter({
+        ytdlpInicial: {
+          disponivel: false,
+          origem: 'nenhum',
+          custom_binary_path: null,
+          detalhe: 'falha ao baixar: sem rede',
+        },
+      }),
+    )
+
+    expect(secao.getByText('indisponível')).toBeInTheDocument()
+    expect(secao.getByText('falha ao baixar: sem rede')).toBeInTheDocument()
+  })
+
+  it('semeia o campo de path customizado quando ja gravado e mostra o badge correspondente', async () => {
+    const secao = await renderFormYtdlp(
+      fetchRouter({
+        ytdlpInicial: {
+          disponivel: true,
+          origem: 'custom',
+          custom_binary_path: '/usr/local/bin/yt-dlp',
+          detalhe: null,
+        },
+      }),
+    )
+
+    expect(secao.getByText('disponível (path customizado)')).toBeInTheDocument()
+    expect(
+      secao.getByLabelText('Path customizado do binário yt-dlp'),
+    ).toHaveValue('/usr/local/bin/yt-dlp')
+  })
+
+  it('grava o path customizado via PUT e confirma o sucesso', async () => {
+    const user = userEvent.setup()
+    const fetchMock = fetchRouter({
+      putYtdlpResposta: {
+        disponivel: true,
+        origem: 'custom',
+        custom_binary_path: '/opt/yt-dlp',
+        detalhe: null,
+      },
+    })
+    const secao = await renderFormYtdlp(fetchMock)
+
+    const input = secao.getByLabelText('Path customizado do binário yt-dlp')
+    await user.type(input, '/opt/yt-dlp')
+    await user.click(secao.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() =>
+      expect(secao.getByText('Configurações salvas.')).toBeInTheDocument(),
+    )
+    expect(corpoDoPut(fetchMock, '/api/v1/settings/ytdlp')).toEqual({
+      custom_binary_path: '/opt/yt-dlp',
+    })
+  })
+
+  it('envia custom_binary_path=null ao limpar o campo', async () => {
+    const user = userEvent.setup()
+    const fetchMock = fetchRouter({
+      ytdlpInicial: {
+        disponivel: true,
+        origem: 'custom',
+        custom_binary_path: '/opt/yt-dlp',
+        detalhe: null,
+      },
+    })
+    const secao = await renderFormYtdlp(fetchMock)
+
+    const input = secao.getByLabelText('Path customizado do binário yt-dlp')
+    await user.clear(input)
+    await user.click(secao.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() =>
+      expect(secao.getByText('Configurações salvas.')).toBeInTheDocument(),
+    )
+    expect(corpoDoPut(fetchMock, '/api/v1/settings/ytdlp')).toEqual({
+      custom_binary_path: null,
+    })
+  })
+
+  it('exibe inline a mensagem do erro do servidor ao falhar o PUT do yt-dlp', async () => {
+    const user = userEvent.setup()
+    const fetchMock = fetchRouter({
+      putYtdlpErro: {
+        status: 400,
+        code: 'invalid_body',
+        message: 'corpo invalido',
+      },
+    })
+    const secao = await renderFormYtdlp(fetchMock)
+
+    await user.click(secao.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() =>
+      expect(secao.getByText('corpo invalido')).toBeInTheDocument(),
+    )
+  })
+
+  it('exibe o aviso de risco de ToS do YouTube', async () => {
+    const secao = await renderFormYtdlp(fetchRouter())
+
+    expect(secao.getByText(/Termos de Serviço do YouTube/)).toBeInTheDocument()
   })
 })

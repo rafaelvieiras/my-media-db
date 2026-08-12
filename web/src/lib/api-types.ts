@@ -161,6 +161,30 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/settings/ytdlp': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Status do binário yt-dlp + path customizado (briefing 0101, ADR-0025).
+     * @description Fundação do downloader de YouTube reaproveitado por trailer (briefing 0102) e música-tema (briefing 0103). Devolve o status EFETIVO do yt-dlp: `disponivel` diz se há um binário utilizável agora; `origem` é `"custom"` (path do admin, banco ou env `MYMEDIADB_YTDLP_PATH`), `"baixado"` (baixado dinamicamente pelo próprio processo na 1ª necessidade) ou `"nenhum"` (indisponível); `detalhe` carrega o motivo quando `disponivel=false` (ex.: falha de download sem rede). `custom_binary_path` é o path atualmente gravado no BANCO (`null` quando não configurado -- distinto de `origem="custom"` via env, que nunca é ecoada por esta API). Precedência banco > env, mesmo espírito do ADR-0023.
+     */
+    get: operations['getYtdlpSettings']
+    /**
+     * Grava (ou limpa) o path customizado do binário yt-dlp.
+     * @description Persiste (upsert) `custom_binary_path` em `app_settings` e sincroniza IMEDIATAMENTE o Gerenciador do yt-dlp -- efeito em runtime, sem reiniciar o servidor. `null` ou string vazia limpa o override (volta a herdar a env var `MYMEDIADB_YTDLP_PATH`/download automático). Devolve o mesmo shape do GET, já com o status recalculado.
+     */
+    put: operations['putYtdlpSettings']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/settings/catalog-completeness': {
     parameters: {
       query?: never
@@ -1970,6 +1994,25 @@ export interface components {
       /** @description Desligado por padrão (default de fábrica `false`). Escopo restrito ao auto-import do scan -- não afeta ações manuais de enriquecimento. */
       enabled: boolean
     }
+    /** @description Corpo do PUT /settings/ytdlp (briefing 0101, ADR-0025): o path customizado que o dono quer usar para o binário yt-dlp. */
+    YtdlpCustomPath: {
+      /** @description Path absoluto do binário yt-dlp gerenciado pelo dono. `null` ou string vazia limpa o override (volta a herdar a env var `MYMEDIADB_YTDLP_PATH`/download automático). */
+      custom_binary_path?: string | null
+    }
+    /** @description Status EFETIVO do binário yt-dlp (briefing 0101, ADR-0025): fundação do downloader de YouTube reaproveitado por trailer (0102) e música-tema (0103). É a resposta do GET/PUT /settings/ytdlp. */
+    YtdlpSettings: {
+      /** @description Se há um binário yt-dlp utilizável agora. */
+      disponivel: boolean
+      /**
+       * @description `custom` = path do admin (banco ou env `MYMEDIADB_YTDLP_PATH`, banco tem precedência); `baixado` = binário baixado dinamicamente pelo próprio processo na 1ª necessidade; `nenhum` = indisponível.
+       * @enum {string}
+       */
+      origem: 'custom' | 'baixado' | 'nenhum'
+      /** @description Path customizado atualmente gravado no BANCO (`null` quando não configurado). Distinto de `origem="custom"` via env var, que nunca é ecoada por esta API. */
+      custom_binary_path?: string | null
+      /** @description Motivo quando `disponivel=false` (ex.: "falha ao baixar: sem rede", "path customizado inacessível: ..."). `null` quando disponível. */
+      detalhe?: string | null
+    }
     /** @description Config de "completude de catalogação" (briefing 0057): por `entity.type`, quais campos/artes o dono considera desejáveis para o item estar bem catalogado. Conceito DIFERENTE de completude de POSSE (quantos episódios/ temporadas o dono TEM no disco, `web/src/lib/entity-badges.ts`). Chave de topo = `entity.type` — ABERTA (hoje só `movie`/`tv` têm UI, mas o schema não fixa enum, já que `entity.type` é TEXT livre). Um tipo ausente do objeto significa "nada exigido" para aquele tipo. É o corpo do PUT e a resposta do GET/PUT /settings/catalog-completeness. */
     CatalogCompletenessSettings: {
       [key: string]: components['schemas']['TypeCompletenessConfig']
@@ -2692,6 +2735,51 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['AutoMaterializeArtworkSettings']
+        }
+      }
+      400: components['responses']['Error']
+    }
+  }
+  getYtdlpSettings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Status do yt-dlp. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['YtdlpSettings']
+        }
+      }
+    }
+  }
+  putYtdlpSettings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['YtdlpCustomPath']
+      }
+    }
+    responses: {
+      /** @description Path gravado; status recalculado. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['YtdlpSettings']
         }
       }
       400: components['responses']['Error']

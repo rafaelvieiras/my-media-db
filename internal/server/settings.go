@@ -29,6 +29,10 @@ const appSettingEnrichmentRetroativo = "enrichment_retroativo"
 // automática de artes em app_settings (briefing 0089).
 const appSettingAutoMaterializeArtwork = "materializar_artes_automaticamente"
 
+// appSettingYtdlp é a chave do path customizado do binário yt-dlp em
+// app_settings (briefing 0101, ADR-0025).
+const appSettingYtdlp = "ytdlp"
+
 // retryDaysPadrao/retryDaysMinimo/retryDaysMaximo são o default (quando nunca
 // configurado) e o intervalo válido do throttle de reentativa (briefing
 // 0085): antes uma constante fixa de 30 dias em retroativo.go, agora
@@ -87,6 +91,36 @@ func defaultAutoMaterializeArtworkSettings() autoMaterializeArtworkSettings {
 	return autoMaterializeArtworkSettings{Enabled: false}
 }
 
+// ytdlpPathSettings é o path customizado do binário yt-dlp configurado pelo
+// dono (briefing 0101, ADR-0025): {"custom_binary_path": string|null}.
+// Serializado como value_json da chave `ytdlp`. É o corpo do PUT (o GET devolve
+// o shape mais rico ytdlpStatusResponse, abaixo). Tem PRECEDÊNCIA sobre a env
+// var MYMEDIADB_YTDLP_PATH (mesmo espírito do ADR-0023) -- aplicada em runtime
+// via ytdlp.Gerenciador.SetCustomPath, sem reiniciar o processo.
+type ytdlpPathSettings struct {
+	CustomBinaryPath *string `json:"custom_binary_path"`
+}
+
+// defaultYtdlpPathSettings é o DEFAULT SEGURO usado quando a linha `ytdlp`
+// não existe (ou está corrompida): nenhum path customizado -- o Gerenciador
+// cai para a env var (se houver) ou o download automático.
+func defaultYtdlpPathSettings() ytdlpPathSettings {
+	return ytdlpPathSettings{CustomBinaryPath: nil}
+}
+
+// ytdlpStatusResponse é o corpo devolvido por GET/PUT /settings/ytdlp: o
+// status EFETIVO do Gerenciador (disponível/origem/detalhe, calculado por
+// ytdlp.Gerenciador.Status) mais o path customizado atualmente gravado no
+// banco. `origem` não distingue se um path "custom" veio do banco ou da env
+// var (o contrato só expõe custom_binary_path do BANCO -- a env var nunca é
+// ecoada por API, mesmo espírito de nunca expor segredo/config de boot).
+type ytdlpStatusResponse struct {
+	Disponivel       bool    `json:"disponivel"`
+	Origem           string  `json:"origem"`
+	CustomBinaryPath *string `json:"custom_binary_path"`
+	Detalhe          *string `json:"detalhe"`
+}
+
 // settingsCache guarda em memória a config de idioma e a de throttle do
 // enriquecimento retroativo já decodificadas, protegidas pelo MESMO mutex.
 // `carregado`/`retroCarregado` distinguem "ainda não lido" de "lido" (o valor
@@ -101,6 +135,9 @@ type settingsCache struct {
 
 	autoMaterializeCarregado bool
 	autoMaterialize          autoMaterializeArtworkSettings
+
+	ytdlpCarregado bool
+	ytdlpPath      ytdlpPathSettings
 }
 
 // obterLanguageSettings devolve a config de idioma, do cache quando já carregada,
@@ -198,12 +235,80 @@ func (s *Server) obterAutoMaterializeArtworkSettings(ctx context.Context) (autoM
 	return cfg, nil
 }
 
+// obterYtdlpPathSettings devolve o path customizado do yt-dlp gravado no
+// banco, do cache quando já carregado, senão lendo app_settings pela conexão
+// de LEITURA. Linha ausente ou JSON inválido ⇒ default seguro (nenhum path
+// customizado). Só um erro real de banco é propagado. Ao (re)carregar,
+// sincroniza o valor no ytdlp.Gerenciador (s.ytdlp.SetCustomPath) -- é assim
+// que o override persistido passa a valer, tanto no boot (chamado uma vez em
+// montarServicos) quanto depois de um PUT (invalidarSettings zera o cache,
+// forçando esta releitura na próxima chamada). Sem s.ytdlp injetado, só
+// devolve a config (sem sincronizar nada) -- cenário defensivo de teste de
+// rota sem Gerenciador.
+func (s *Server) obterYtdlpPathSettings(ctx context.Context) (ytdlpPathSettings, error) {
+	s.settings.mu.Lock()
+	defer s.settings.mu.Unlock()
+	if s.settings.ytdlpCarregado {
+		return s.settings.ytdlpPath, nil
+	}
+	cfg := defaultYtdlpPathSettings()
+	row, err := s.leitura().ObterAppSetting(ctx, appSettingYtdlp)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return ytdlpPathSettings{}, err
+		}
+	} else if row.ValueJson.Valid && row.ValueJson.String != "" {
+		var parsed ytdlpPathSettings
+		if json.Unmarshal([]byte(row.ValueJson.String), &parsed) == nil {
+			cfg = parsed
+		}
+	}
+	s.settings.ytdlpPath = cfg
+	s.settings.ytdlpCarregado = true
+	if s.ytdlp != nil {
+		if cfg.CustomBinaryPath != nil {
+			s.ytdlp.SetCustomPath(*cfg.CustomBinaryPath)
+		} else {
+			s.ytdlp.SetCustomPath("")
+		}
+	}
+	return cfg, nil
+}
+
+// montarYtdlpStatusResponse monta o corpo de GET/PUT /settings/ytdlp: o
+// status efetivo (via s.ytdlp.Status) mais o path customizado gravado no
+// banco. Sem s.ytdlp injetado, degrada para indisponível/"nenhum" em vez de
+// consultar um Gerenciador inexistente (cenário defensivo, não deveria
+// ocorrer em produção -- main.go sempre injeta via WithYtdlp).
+func (s *Server) montarYtdlpStatusResponse(ctx context.Context, pathCfg ytdlpPathSettings) ytdlpStatusResponse {
+	if s.ytdlp == nil {
+		detalhe := "yt-dlp nao configurado neste servidor"
+		return ytdlpStatusResponse{
+			Disponivel:       false,
+			Origem:           "nenhum",
+			CustomBinaryPath: pathCfg.CustomBinaryPath,
+			Detalhe:          &detalhe,
+		}
+	}
+	disponivel, origem, detalhe := s.ytdlp.Status(ctx)
+	resp := ytdlpStatusResponse{
+		Disponivel:       disponivel,
+		Origem:           origem,
+		CustomBinaryPath: pathCfg.CustomBinaryPath,
+	}
+	if detalhe != "" {
+		resp.Detalhe = &detalhe
+	}
+	return resp
+}
+
 // invalidarSettings zera o cache (chamado após o PUT gravar).
 func (s *Server) invalidarSettings() {
 	s.settings.mu.Lock()
 	s.settings.carregado = false
 	s.settings.retroCarregado = false
 	s.settings.autoMaterializeCarregado = false
+	s.settings.ytdlpCarregado = false
 	s.settings.mu.Unlock()
 }
 
@@ -424,4 +529,68 @@ func (s *Server) putEnrichmentRetroativoSettings(w http.ResponseWriter, r *http.
 	}
 	s.invalidarSettings()
 	writeJSON(w, http.StatusOK, body)
+}
+
+// getYtdlpSettings trata GET /api/v1/settings/ytdlp (briefing 0101,
+// ADR-0025): devolve o status EFETIVO do binário yt-dlp (path customizado do
+// banco vence sobre a env var MYMEDIADB_YTDLP_PATH, que vence sobre o
+// binário baixado dinamicamente) mais o path customizado gravado no banco.
+// Nunca 500 por falta de yt-dlp -- indisponibilidade é um ESTADO normal do
+// corpo (disponivel=false + detalhe), não um erro HTTP.
+func (s *Server) getYtdlpSettings(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	pathCfg, err := s.obterYtdlpPathSettings(r.Context())
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.montarYtdlpStatusResponse(r.Context(), pathCfg))
+}
+
+// putYtdlpSettings trata PUT /api/v1/settings/ytdlp (briefing 0101,
+// ADR-0025): grava (ou limpa, quando null/string vazia) o path customizado
+// no banco e sincroniza IMEDIATAMENTE o ytdlp.Gerenciador (SetCustomPath) --
+// efeito em runtime, sem reiniciar o processo (diferente do TMDB do 0095:
+// aqui não há credencial de provider envolvida no boot, só um path de
+// binário). Corpo malformado ⇒ 400 invalid_body; sucesso ⇒ 200 com o status
+// efetivo recalculado (mesmo shape do GET).
+func (s *Server) putYtdlpSettings(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	var body ytdlpPathSettings
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "corpo JSON inválido")
+		return
+	}
+	// string vazia == null: ambos limpam o override (voltam a herdar a env
+	// var/download automático).
+	if body.CustomBinaryPath != nil && *body.CustomBinaryPath == "" {
+		body.CustomBinaryPath = nil
+	}
+
+	valor, err := json.Marshal(body)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	_, err = sqlcgen.New(s.db.Write).UpsertAppSetting(r.Context(), sqlcgen.UpsertAppSettingParams{
+		Key:       appSettingYtdlp,
+		ValueJson: sql.NullString{String: string(valor), Valid: true},
+	})
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	s.invalidarSettings()
+	if s.ytdlp != nil {
+		if body.CustomBinaryPath != nil {
+			s.ytdlp.SetCustomPath(*body.CustomBinaryPath)
+		} else {
+			s.ytdlp.SetCustomPath("")
+		}
+	}
+	writeJSON(w, http.StatusOK, s.montarYtdlpStatusResponse(r.Context(), body))
 }

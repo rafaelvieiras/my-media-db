@@ -24,6 +24,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 	"github.com/rafaelvieiras/my-media-db/internal/telemetry"
 	"github.com/rafaelvieiras/my-media-db/internal/watch"
+	"github.com/rafaelvieiras/my-media-db/internal/ytdlp"
 )
 
 // Server agrega as dependências necessárias para construir o handler HTTP.
@@ -123,6 +124,13 @@ type Server struct {
 	// ainda persiste no banco nesse caso, só o efeito em memória não se
 	// aplica (mesma guarda defensiva de libraryHealth).
 	watch *watch.Watcher
+	// ytdlp gerencia o binário yt-dlp (briefing 0101, ADR-0025): resolve o
+	// path utilizável (customizado banco→env → baixado dinamicamente →
+	// ausente) e expõe Baixar/Status, reaproveitados por trailer/tema
+	// (0102/0103). Injetado via WithYtdlp; nil quando não injetado (ex.:
+	// testes de rota) -- GET/PUT /settings/ytdlp degradam para
+	// indisponível/"nenhum" nesse caso, sem panicar.
+	ytdlp *ytdlp.Gerenciador
 }
 
 // Option configura opcionalmente o Server na construção, preservando a
@@ -172,6 +180,17 @@ func WithCodecRegistry(provs ...provider.Provider) Option {
 func WithAssetsDir(dir string) Option {
 	return func(s *Server) {
 		s.assetsDir = dir
+	}
+}
+
+// WithYtdlp injeta o Gerenciador do binário yt-dlp (briefing 0101, ADR-0025).
+// O main o constrói com resolveYtdlpDir() + a env var MYMEDIADB_YTDLP_PATH já
+// resolvida, mesmo espírito de WithAssetsDir/WithSearchProvider. Sem esta
+// option, s.ytdlp fica nil e GET/PUT /settings/ytdlp degradam para
+// indisponível/"nenhum" (cenário defensivo, não deveria ocorrer em produção).
+func WithYtdlp(g *ytdlp.Gerenciador) Option {
+	return func(s *Server) {
+		s.ytdlp = g
 	}
 }
 
@@ -388,6 +407,16 @@ func (s *Server) montarServicos(database *db.DB) {
 	if database != nil && s.telemetry == nil {
 		s.telemetry = telemetry.New(database, curation.New(database), time.Now())
 	}
+	// Sincroniza o path customizado do yt-dlp persistido em app_settings
+	// (briefing 0101) já no boot: sem isso, um override gravado numa execução
+	// anterior só passaria a valer depois da 1ª leitura via GET
+	// /settings/ytdlp, deixando 0102/0103 chamando ytdlp.Gerenciador
+	// diretamente sem o override até então. Best-effort (mesmo espírito de
+	// tudo que já é lazy-cache neste arquivo): erro aqui não aborta o boot,
+	// só adia a sincronização para a próxima leitura via HTTP.
+	if database != nil && s.ytdlp != nil {
+		_, _ = s.obterYtdlpPathSettings(context.Background())
+	}
 }
 
 // idiomasScanner devolve os idiomas permitidos das settings (nil em erro), usado como
@@ -509,6 +538,14 @@ func (s *Server) Handler() (http.Handler, error) {
 				// midias_faltantes nem clique manual.
 				cfg.Get("/auto-materialize-artwork", s.getAutoMaterializeArtworkSettings)
 				cfg.Put("/auto-materialize-artwork", s.putAutoMaterializeArtworkSettings)
+
+				// Path customizado do binário yt-dlp (briefing 0101,
+				// ADR-0025): status efetivo (disponível/origem/detalhe) +
+				// override do dono, com precedência banco > env var
+				// MYMEDIADB_YTDLP_PATH, aplicada em runtime sem reiniciar.
+				// Fundação para trailer (0102) e música-tema (0103).
+				cfg.Get("/ytdlp", s.getYtdlpSettings)
+				cfg.Put("/ytdlp", s.putYtdlpSettings)
 			})
 
 			// Datasources da biblioteca (briefing 0008). Escritas (POST/PATCH/

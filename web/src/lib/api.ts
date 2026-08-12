@@ -546,6 +546,32 @@ export async function putAutoMaterializeArtworkSettings(
   return lerJson<AutoMaterializeArtworkSettings>(res)
 }
 
+// ── Settings de path customizado do yt-dlp (0101, ADR-0025) ─────────────────
+
+export type YtdlpSettings = components['schemas']['YtdlpSettings']
+export type YtdlpCustomPath = components['schemas']['YtdlpCustomPath']
+
+// Status EFETIVO do binário yt-dlp -- fundação do downloader de YouTube
+// reaproveitado por trailer (0102) e música-tema (0103). `disponivel` diz se
+// há um binário utilizável agora; `origem` distingue path customizado
+// ("custom"), baixado dinamicamente ("baixado") ou indisponível ("nenhum").
+export async function getYtdlpSettings(): Promise<YtdlpSettings> {
+  return lerJson<YtdlpSettings>(await fetch(`${base}/api/v1/settings/ytdlp`))
+}
+
+// Grava (ou limpa, com `null`/string vazia) o path customizado do yt-dlp.
+// Efeito IMEDIATO em runtime, sem reiniciar o servidor.
+export async function putYtdlpSettings(
+  body: YtdlpCustomPath,
+): Promise<YtdlpSettings> {
+  const res = await fetch(`${base}/api/v1/settings/ytdlp`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return lerJson<YtdlpSettings>(res)
+}
+
 // ── Webhook de entrada Jellyfin (0093/0097) ──────────────────────────────────
 
 export type JellyfinWebhookToken = components['schemas']['JellyfinWebhookToken']

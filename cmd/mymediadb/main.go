@@ -22,6 +22,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/tmdb"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/tvdb"
 	"github.com/rafaelvieiras/my-media-db/internal/server"
+	"github.com/rafaelvieiras/my-media-db/internal/ytdlp"
 )
 
 // defaultDBPath é o caminho padrão do banco em desenvolvimento: dentro de tmp/,
@@ -179,6 +180,20 @@ func opcoesServer(database *db.DB) ([]server.Option, error) {
 	log.Printf("mymediadb: diretório de backups em %q (job backup_vacuum)", backupDir)
 	opts = append(opts, server.WithJobHandlers(backup.New(database.Write, backupDir)))
 
+	// Gerenciador do binário yt-dlp (briefing 0101, ADR-0025): fundação para
+	// trailer (0102) e música-tema (0103). Diretório de dados no mesmo padrão
+	// de resolveAssetsDir/resolveBackupDir; o path customizado do admin (env
+	// MYMEDIADB_YTDLP_PATH) é resolvido AQUI e passado pronto -- o pacote
+	// internal/ytdlp nunca lê os.Getenv sozinho (mantém-se testável). O
+	// override via banco (app_settings, UI de Integrações) tem precedência e
+	// é sincronizado depois, no boot do Server (montarServicos).
+	ytdlpDir, err := resolveYtdlpDir()
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("mymediadb: diretório do yt-dlp em %q", ytdlpDir)
+	opts = append(opts, server.WithYtdlp(ytdlp.Novo(ytdlpDir, os.Getenv("MYMEDIADB_YTDLP_PATH"))))
+
 	// Job saude_biblioteca (briefing 0053): registrado via option DEDICADA
 	// (não WithJobHandlers) porque o Handler precisa do scanner.Manager e do
 	// library.Service, internos ao Server — ver o comentário de
@@ -292,6 +307,22 @@ func resolveBackupDir() (string, error) {
 	dir := os.Getenv("MYMEDIADB_BACKUP_DIR")
 	if dir == "" {
 		dir = filepath.Join(filepath.Dir(resolveDBPath()), "backups")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+// resolveYtdlpDir determina o diretório de dados do binário yt-dlp baixado
+// dinamicamente (briefing 0101, ADR-0025): env MYMEDIADB_YTDLP_DIR tem
+// prioridade; caso ausente, usa dirname(DB)/bin -- mesma convenção de
+// resolveAssetsDir/resolveBackupDir, reaproveitando o volume que já existe
+// hoje (nenhum volume novo a provisionar). Cria o diretório se faltar.
+func resolveYtdlpDir() (string, error) {
+	dir := os.Getenv("MYMEDIADB_YTDLP_DIR")
+	if dir == "" {
+		dir = filepath.Join(filepath.Dir(resolveDBPath()), "bin")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err

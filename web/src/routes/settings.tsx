@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Select } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
 import {
   ErrorState,
   FormSaveFooter,
@@ -12,14 +13,17 @@ import {
   languageSettingsQueryOptions,
   retroactiveEnrichmentSettingsQueryOptions,
   autoMaterializeArtworkSettingsQueryOptions,
+  ytdlpSettingsQueryOptions,
 } from '@/lib/queries'
 import {
   putLanguageSettings,
   putRetroactiveEnrichmentSettings,
   putAutoMaterializeArtworkSettings,
+  putYtdlpSettings,
   type LanguageSettings,
   type RetroactiveEnrichmentSettings,
   type AutoMaterializeArtworkSettings,
+  type YtdlpSettings,
   ApiError,
 } from '@/lib/api'
 import { IDIOMAS_DISPONIVEIS, rotuloIdioma } from '@/lib/languages'
@@ -35,6 +39,7 @@ export function SettingsScreen() {
   )
   const retroativo = useQuery(retroactiveEnrichmentSettingsQueryOptions)
   const autoMaterializar = useQuery(autoMaterializeArtworkSettingsQueryOptions)
+  const ytdlp = useQuery(ytdlpSettingsQueryOptions)
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
@@ -110,7 +115,7 @@ export function SettingsScreen() {
         )}
       </section>
 
-      <section>
+      <section className="mb-10">
         <div className="mb-4 flex flex-col gap-1">
           <h2 className="font-heading text-lg font-semibold">
             Completude de catalogação
@@ -122,6 +127,31 @@ export function SettingsScreen() {
         </div>
 
         <CatalogCompletenessForm />
+      </section>
+
+      <section>
+        <div className="mb-4 flex flex-col gap-1">
+          <h2 className="font-heading text-lg font-semibold">yt-dlp</h2>
+          <p className="text-sm text-muted-foreground">
+            Downloader usado para baixar trailer e música-tema do YouTube
+            (briefings futuros). Nenhuma ação é necessária: o próprio MyMediaDB
+            baixa o binário sozinho, dentro do container, na primeira vez que
+            precisar dele.
+          </p>
+        </div>
+
+        {ytdlp.isPending ? (
+          <LoadingState label="Carregando status do yt-dlp…" />
+        ) : ytdlp.isError ? (
+          <ErrorState
+            title="Não foi possível carregar o status do yt-dlp"
+            message={
+              ytdlp.error instanceof Error ? ytdlp.error.message : undefined
+            }
+          />
+        ) : (
+          <YtdlpSettingsForm inicial={ytdlp.data} />
+        )}
       </section>
     </main>
   )
@@ -377,5 +407,104 @@ function AutoMaterializeArtworkSwitch({
         ) : null}
       </span>
     </label>
+  )
+}
+
+// Formulário semeado pelo status vigente (briefing 0101, ADR-0025): campo
+// único de path customizado (string vazia == limpar o override, mesmo
+// contrato do backend) + badge de status. Sem botão "baixar agora" de
+// propósito — o download é lazy, disparado pelo primeiro uso real em
+// trailer/tema (briefings futuros); este card só reflete e configura, nunca
+// dispara download.
+function YtdlpSettingsForm({ inicial }: { inicial: YtdlpSettings }) {
+  const queryClient = useQueryClient()
+  const [customPath, setCustomPath] = useState(inicial.custom_binary_path ?? '')
+
+  const mutation = useMutation({
+    mutationFn: (path: string) =>
+      putYtdlpSettings({ custom_binary_path: path.trim() || null }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'ytdlp'] })
+    },
+  })
+
+  const dados = mutation.isSuccess ? mutation.data : inicial
+  const mensagemErro =
+    mutation.isError && mutation.error instanceof ApiError
+      ? mutation.error.message
+      : null
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    mutation.mutate(customPath)
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <YtdlpStatusBadge dados={dados} />
+
+      <form onSubmit={onSubmit} className="flex flex-col gap-5">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium">
+            Path customizado do binário
+          </span>
+          <Input
+            type="text"
+            value={customPath}
+            onChange={(e) => setCustomPath(e.target.value)}
+            placeholder="/usr/local/bin/yt-dlp (opcional)"
+            aria-label="Path customizado do binário yt-dlp"
+            aria-invalid={mensagemErro !== null || undefined}
+          />
+          <span className="text-xs text-muted-foreground">
+            Deixe em branco para usar o binário baixado automaticamente (ou a
+            variável de ambiente MYMEDIADB_YTDLP_PATH, quando configurada).
+            Preencha só se você já gerencia sua própria instalação do yt-dlp.
+          </span>
+        </label>
+
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-400">
+          Atenção: baixar vídeos do YouTube via yt-dlp contraria os Termos de
+          Serviço do YouTube — prática tolerada de facto no ecossistema
+          Kodi/Jellyfin/Plex/tinyMediaManager, mas um risco que você assume ao
+          usar este recurso.
+        </p>
+
+        <FormSaveFooter
+          erro={mensagemErro}
+          sucesso={mutation.isSuccess}
+          salvando={mutation.isPending}
+        />
+      </form>
+    </div>
+  )
+}
+
+// Badge de status do yt-dlp: "disponível (baixado automaticamente)",
+// "disponível (path customizado)" ou "indisponível" + o motivo (briefing
+// 0101 §2, jornada do usuário).
+function YtdlpStatusBadge({ dados }: { dados: YtdlpSettings }) {
+  if (!dados.disponivel) {
+    return (
+      <div className="flex flex-col gap-1">
+        <Badge variant="destructive" className="w-fit">
+          indisponível
+        </Badge>
+        {dados.detalhe ? (
+          <span className="text-xs text-muted-foreground">{dados.detalhe}</span>
+        ) : null}
+      </div>
+    )
+  }
+
+  const rotulo =
+    dados.origem === 'custom'
+      ? 'disponível (path customizado)'
+      : 'disponível (baixado automaticamente)'
+
+  return (
+    <Badge className="w-fit border-transparent bg-emerald-600 text-white">
+      {rotulo}
+    </Badge>
   )
 }
