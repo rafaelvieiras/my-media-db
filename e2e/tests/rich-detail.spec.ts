@@ -98,3 +98,102 @@ test('paridade externo<->interno: a entity importada mostra a mesma tela rica', 
   // Genero exclusivo do Reloaded (pt-BR), confirmando a resolucao no idioma ativo.
   await expect(page.getByText('Aventura')).toBeVisible()
 })
+
+test('baixar trailer e musica-tema materializam em disco (yt-dlp mockado)', async ({
+  page,
+  request,
+}) => {
+  // O fake provider (internal/provider/fake) NAO tem fixture de video, e o
+  // candidato de tema do ThemerrDB nunca e buscado ao vivo (so cache
+  // pre-existente) -- os dois, alem do proprio yt-dlp (que baixaria o
+  // binario de verdade da internet na 1a chamada sem mock), precisam ser
+  // injetados via interceptacao de rede pra exercitar os botoes "Baixar
+  // trailer"/"Baixar tema" (briefings 0101/0102/0103) de forma deterministica
+  // e offline no CI.
+  const res = await request.post('/api/v1/import', {
+    data: { source: 'tmdb', source_id: '604', type: 'movie' },
+  })
+  expect(res.ok()).toBeTruthy()
+  const entity: { id: string } = await res.json()
+
+  await page.route(
+    (url) => url.pathname === '/api/v1/settings/ytdlp',
+    async (route) => {
+      await route.fulfill({
+        json: { disponivel: true, origem: 'baixado', custom_binary_path: null },
+      })
+    },
+  )
+  // Reaproveita a resposta REAL da entity (titulo/generos/etc.) e so injeta
+  // `videos` -- assim o resto da tela (ja coberto pelos testes acima) segue
+  // vindo do fake provider de verdade.
+  await page.route(
+    (url) => url.pathname === `/api/v1/entities/${entity.id}`,
+    async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue()
+        return
+      }
+      const response = await route.fetch()
+      const json = await response.json()
+      json.videos = [
+        {
+          name: 'Trailer Oficial',
+          key: 'dQw4w9WgXcQ',
+          site: 'YouTube',
+          type: 'Trailer',
+          official: true,
+          url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        },
+      ]
+      await route.fulfill({ response, json })
+    },
+  )
+  await page.route(
+    (url) => url.pathname === `/api/v1/entities/${entity.id}/theme/candidato`,
+    async (route) => {
+      await route.fulfill({ json: { disponivel: true, ja_tem_local: false } })
+    },
+  )
+  await page.route(
+    (url) =>
+      url.pathname === `/api/v1/entities/${entity.id}/trailer/download`,
+    async (route) => {
+      await route.fulfill({
+        json: { local_path: '/biblioteca/Matrix Reloaded/trailer.mp4' },
+      })
+    },
+  )
+  await page.route(
+    (url) => url.pathname === `/api/v1/entities/${entity.id}/theme/download`,
+    async (route) => {
+      await route.fulfill({
+        json: { local_path: '/biblioteca/Matrix Reloaded/theme.mp3' },
+      })
+    },
+  )
+
+  await page.goto(`/entities/${entity.id}`)
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Matrix Reloaded' }),
+  ).toBeVisible()
+
+  // "Assistir trailer" (embutido, 0082) continua igual; "Baixar trailer"
+  // (0102) e puramente aditivo ao lado dele. Clicar materializa e o botao
+  // vira um link "Trailer baixado".
+  await expect(
+    page.getByRole('button', { name: 'Assistir trailer' }),
+  ).toBeVisible()
+  const baixarTrailer = page.getByRole('button', { name: 'Baixar trailer' })
+  await expect(baixarTrailer).toBeVisible()
+  await baixarTrailer.click()
+  await expect(page.getByRole('link', { name: 'Trailer baixado' })).toBeVisible()
+
+  // "Baixar tema" (0103): candidato do ThemerrDB mockado disponivel, sem
+  // theme local ainda -- clicar materializa e o botao some (sem `force`,
+  // nunca oferece re-download).
+  const baixarTema = page.getByRole('button', { name: 'Baixar tema' })
+  await expect(baixarTema).toBeVisible()
+  await baixarTema.click()
+  await expect(baixarTema).toHaveCount(0)
+})

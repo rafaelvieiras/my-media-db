@@ -102,3 +102,50 @@ test('pagina de configuracoes de enriquecimento retroativo (throttle global)', a
   await formRetroativo.getByRole('button', { name: 'Salvar' }).click()
   await expect(formRetroativo.getByText('Configurações salvas.')).toBeVisible()
 })
+
+test('card yt-dlp mostra status e permite configurar path customizado', async ({
+  page,
+}) => {
+  // O yt-dlp real (internal/ytdlp) baixa o binario de verdade da internet (API
+  // do GitHub) na 1a chamada sem path customizado -- mocka GET/PUT
+  // /settings/ytdlp pra manter a jornada deterministica e offline, sem
+  // depender de rede externa no CI (briefings 0101/0102/0103).
+  let pathAtual: string | null = null
+  await page.route('**/api/v1/settings/ytdlp', async (route) => {
+    const req = route.request()
+    if (req.method() === 'PUT') {
+      const body = req.postDataJSON() as { custom_binary_path: string | null }
+      pathAtual = body.custom_binary_path
+    }
+    await route.fulfill({
+      json: {
+        disponivel: pathAtual !== null,
+        origem: pathAtual !== null ? 'custom' : 'nenhum',
+        custom_binary_path: pathAtual,
+        detalhe: pathAtual !== null ? null : 'yt-dlp indisponível (mock e2e)',
+      },
+    })
+  })
+
+  await page.goto('/dashboard/settings')
+  const secaoYtdlp = page.locator('section').filter({ hasText: 'yt-dlp' })
+
+  await expect(
+    page.getByRole('heading', { level: 2, name: 'yt-dlp' }),
+  ).toBeVisible()
+  // Sem path customizado (mock inicial), o badge mostra "indisponível" (match
+  // exato: o detalhe abaixo do badge tambem contem a substring).
+  await expect(
+    secaoYtdlp.getByText('indisponível', { exact: true }),
+  ).toBeVisible()
+
+  const input = page.getByLabel('Path customizado do binário yt-dlp')
+  await input.fill('/usr/local/bin/yt-dlp')
+  await secaoYtdlp.getByRole('button', { name: 'Salvar' }).click()
+
+  await expect(secaoYtdlp.getByText('Configurações salvas.')).toBeVisible()
+  // Path customizado gravado: o badge reflete "disponível (path customizado)".
+  await expect(
+    secaoYtdlp.getByText('disponível (path customizado)'),
+  ).toBeVisible()
+})
