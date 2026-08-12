@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -139,7 +138,7 @@ func TestResolverBaixaNaPrimeiraChamadaEReusa(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/release", func(w http.ResponseWriter, _ *http.Request) {
 		atomic.AddInt32(&chamadasRelease, 1)
-		_, _ = fmt.Fprintf(w, `{"assets":[{"name":"yt-dlp_linux","browser_download_url":%q}]}`, srv.URL+"/binario")
+		_, _ = fmt.Fprintf(w, `{"assets":[{"name":"yt-dlp","browser_download_url":%q}]}`, srv.URL+"/binario")
 	})
 	mux.HandleFunc("/binario", func(w http.ResponseWriter, _ *http.Request) {
 		atomic.AddInt32(&chamadasBinario, 1)
@@ -266,17 +265,15 @@ func TestBaixarErroQuandoBinarioFalha(t *testing.T) {
 	}
 }
 
-// TestNomeAssetPlataformaLinuxAmd64 cobre o mapeamento GOOS/GOARCH → asset da
-// release (briefing 0101 §3: Linux é o único SO do container de produção).
-// Pulado fora de linux/amd64 (ex.: dev em outra plataforma) -- o mapeamento
-// para as demais combinações é exercitado só por leitura de código, não é
-// crítico de aceite (bônus, não obrigatório).
-func TestNomeAssetPlataformaLinuxAmd64(t *testing.T) {
-	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
-		t.Skip("teste especifico da plataforma linux/amd64 do CI/dev")
-	}
+// TestNomeAssetPlataformaSempreZipapp cobre a escolha do asset "yt-dlp" (o
+// zipapp Python plataforma-independente, não os binários standalone por SO
+// ligados a glibc) -- correção pós-achado de produção: o standalone Linux
+// falha em runtime numa imagem Alpine/musl (ver comentário de
+// nomeAssetPlataforma). Sem skip por plataforma: o valor não depende de
+// GOOS/GOARCH.
+func TestNomeAssetPlataformaSempreZipapp(t *testing.T) {
 	nome, ok := nomeAssetPlataforma()
-	if !ok || nome != "yt-dlp_linux" {
-		t.Errorf("nomeAssetPlataforma() = (%q, %v), quero (yt-dlp_linux, true)", nome, ok)
+	if !ok || nome != "yt-dlp" {
+		t.Errorf("nomeAssetPlataforma() = (%q, %v), quero (yt-dlp, true)", nome, ok)
 	}
 }

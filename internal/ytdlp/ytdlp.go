@@ -326,27 +326,20 @@ func validarBinario(ctx context.Context, path string) error {
 	return nil
 }
 
-// nomeAssetPlataforma mapeia GOOS/GOARCH para o nome do asset standalone
-// correto na release do yt-dlp. Linux amd64/arm64 é o caso real (único SO do
-// container de produção); os demais são bônus, não obrigatório (briefing
-// 0101 §3). Combinação não mapeada devolve ok=false.
+// nomeAssetPlataforma devolve o nome do asset a baixar da release do yt-dlp.
+// SEMPRE "yt-dlp" -- o zipapp Python PLATAFORMA-INDEPENDENTE (roda via shebang
+// `#!/usr/bin/env python3`), não os binários standalone por SO/arquitetura
+// (`yt-dlp_linux` etc., build PyInstaller). Decisão pós-achado de produção
+// (briefing 0101 §6): o standalone Linux é ligado a glibc e a imagem final do
+// projeto é Alpine/musl -- falha em runtime com "no such file or directory"
+// (o kernel não acha o linker dinâmico glibc embutido no ELF; `gcompat`
+// TAMBÉM não resolve, falha mais adiante por símbolo glibc ausente na libpython
+// embutida). O zipapp evita o problema na raiz: precisa só de `python3` no
+// PATH (já garantido pelo Dockerfile, `apk add python3`), sem depender de
+// qual glibc/musl a imagem usa. ok sempre true -- existe só pra manter a
+// assinatura extensível caso uma exceção real apareça no futuro.
 func nomeAssetPlataforma() (string, bool) {
-	switch runtime.GOOS {
-	case "linux":
-		switch runtime.GOARCH {
-		case "amd64":
-			return "yt-dlp_linux", true
-		case "arm64":
-			return "yt-dlp_linux_aarch64", true
-		case "arm":
-			return "yt-dlp_linux_armv7l", true
-		}
-	case "darwin":
-		return "yt-dlp_macos", true
-	case "windows":
-		return "yt-dlp.exe", true
-	}
-	return "", false
+	return "yt-dlp", true
 }
 
 // truncar corta `s` em `n` bytes, com reticências -- evita mensagens de erro

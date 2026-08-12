@@ -172,6 +172,21 @@ Decisão de arquitetura já fechada em [ADR-0025](../docs/adr/0025-trailer-tema-
   mão na pasta. De passagem, `postEntityTrailerDownload` foi refatorada
   (extraídos `resolverVideoTrailer`/`resolverDestinoTrailerLivre`) pra manter
   gocyclo ≤10 nas funções tocadas.
+- **Validação em produção achou um gotcha de deploy não coberto por nenhum
+  teste local/CI**: o binário `yt-dlp_linux` (standalone, build PyInstaller)
+  baixado dinamicamente é ligado a glibc; a imagem final do projeto é
+  `alpine:3.22` (musl) — o `exec` falhava com `fork/exec ...: no such file or
+  directory` (kernel não acha o linker dinâmico glibc embutido no ELF).
+  Tentativa 1 (`gcompat`, shim leve de compat) NÃO resolveu: passa dessa
+  falha mas quebra em seguida por símbolo glibc ausente (`dladdr1`) na
+  libpython embutida no binário. Correção real: trocar o ASSET baixado de
+  `yt-dlp_linux` (por-SO) para `yt-dlp` (zipapp Python plataforma-
+  independente, shebang `#!/usr/bin/env python3`) — `nomeAssetPlataforma()`
+  agora devolve sempre `"yt-dlp"`, sem branch por GOOS/GOARCH — mais
+  `apk add python3` no Dockerfile (troca o `gcompat`, que foi removido).
+  Resolve o problema na raiz em vez de remendar a compatibilidade glibc/musl.
+  Registrado em `AGENTS.md` (seção de convenções que quebram runtime se
+  ignoradas) pra qualquer binário de terceiro futuro.
 
 ## 7. Fora deste briefing / follow-ups
 

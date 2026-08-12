@@ -89,8 +89,17 @@ FROM alpine:3.22 AS final
 #   sqlite  → CLI usado por scripts/backup.sh para `VACUUM INTO` (snapshot
 #             consistente do banco WAL sem downtime). O app em si usa o driver
 #             Go puro modernc e NÃO depende deste binário; é só para o backup.
+#   python3 → runtime do binário yt-dlp baixado dinamicamente em runtime
+#             (briefing 0101, ADR-0025): o pacote `internal/ytdlp` baixa o
+#             asset "yt-dlp" (zipapp Python plataforma-independente, shebang
+#             `#!/usr/bin/env python3`) da release oficial, NUNCA o standalone
+#             por SO (`yt-dlp_linux` etc., build PyInstaller ligado a glibc) --
+#             esta imagem é Alpine/musl e o standalone falha em runtime com
+#             "no such file or directory" (nem `gcompat` resolve: falha mais
+#             adiante por símbolo glibc ausente na libpython embutida). Achado
+#             na 1ª validação em produção do briefing 0101.
 # --no-cache mantém a imagem enxuta.
-RUN apk add --no-cache ffmpeg sqlite
+RUN apk add --no-cache ffmpeg sqlite python3
 
 # Usuário não-root dedicado.
 RUN addgroup -S mymediadb && adduser -S -G mymediadb -H -h /nonexistent mymediadb

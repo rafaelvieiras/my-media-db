@@ -116,6 +116,18 @@ Um PR/patch que contraria um princípio provavelmente será recusado.
   anônimo). `package-lock.json` precisa de npm ≥ 11.16, senão `npm ci` quebra.
 - **Multi-idioma é fundacional**: título/overview/tagline por idioma via
   `media_external`; não assuma idioma único.
+- **Binário de terceiro baixado em runtime numa imagem Alpine: evite build
+  standalone ligado a glibc** (desde o briefing 0101/ADR-0025,
+  `internal/ytdlp`): a imagem final é `alpine:3.22` (musl); um binário tipo
+  PyInstaller standalone (ex.: `yt-dlp_linux`) falha com `fork/exec ...: no
+  such file or directory` — o kernel não acha o linker dinâmico glibc
+  embutido no ELF. `gcompat` (shim leve) NÃO resolve pra binários complexos:
+  chega mais longe mas falha depois por símbolo glibc ausente (ex.:
+  `dladdr1`) na lib embutida. Prefira, quando existir, o asset
+  plataforma-independente da própria ferramenta (yt-dlp publica um zipapp
+  Python puro, `#!/usr/bin/env python3`) + o runtime nativo do Alpine
+  (`apk add python3`) — evita o problema na raiz em vez de remendar. Achado
+  na 1ª validação em produção.
 
 **Biblioteca em disco: scan/watch (desde o briefing 0064).**
 - O scan (`internal/scanner`) é **incremental**: só re-hasheia um arquivo
