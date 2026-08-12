@@ -208,6 +208,11 @@ func opcoesServer(database *db.DB) ([]server.Option, error) {
 	// server.New (ver comentário lá).
 	opts = append(opts, server.WithMidiasFaltantesJob(), server.WithWatch())
 
+	// Job trailer_tema_faltantes (briefing 0104, ADR-0026): mesmo motivo de
+	// option DEDICADA -- o Handler precisa do próprio *Server como
+	// EntityLister/TrailerTemaBaixador.
+	opts = append(opts, server.WithTrailerTemaJob())
+
 	return opts, nil
 }
 

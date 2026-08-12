@@ -13,16 +13,19 @@ import {
   languageSettingsQueryOptions,
   retroactiveEnrichmentSettingsQueryOptions,
   autoMaterializeArtworkSettingsQueryOptions,
+  autoDownloadTrailerTemaSettingsQueryOptions,
   ytdlpSettingsQueryOptions,
 } from '@/lib/queries'
 import {
   putLanguageSettings,
   putRetroactiveEnrichmentSettings,
   putAutoMaterializeArtworkSettings,
+  putAutoDownloadTrailerTemaSettings,
   putYtdlpSettings,
   type LanguageSettings,
   type RetroactiveEnrichmentSettings,
   type AutoMaterializeArtworkSettings,
+  type AutoDownloadTrailerTemaSettings,
   type YtdlpSettings,
   ApiError,
 } from '@/lib/api'
@@ -39,6 +42,9 @@ export function SettingsScreen() {
   )
   const retroativo = useQuery(retroactiveEnrichmentSettingsQueryOptions)
   const autoMaterializar = useQuery(autoMaterializeArtworkSettingsQueryOptions)
+  const autoDownloadTrailerTema = useQuery(
+    autoDownloadTrailerTemaSettingsQueryOptions,
+  )
   const ytdlp = useQuery(ytdlpSettingsQueryOptions)
 
   return (
@@ -112,6 +118,35 @@ export function SettingsScreen() {
           />
         ) : (
           <AutoMaterializeArtworkSwitch inicial={autoMaterializar.data} />
+        )}
+      </section>
+
+      <section className="mb-10">
+        <div className="mb-4 flex flex-col gap-1">
+          <h2 className="font-heading text-lg font-semibold">
+            Trailer e tema musical
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Comportamento do download automático de trailer e música-tema via
+            yt-dlp (briefings 0102/0103).
+          </p>
+        </div>
+
+        {autoDownloadTrailerTema.isPending ? (
+          <LoadingState label="Carregando configurações…" />
+        ) : autoDownloadTrailerTema.isError ? (
+          <ErrorState
+            title="Não foi possível carregar as configurações"
+            message={
+              autoDownloadTrailerTema.error instanceof Error
+                ? autoDownloadTrailerTema.error.message
+                : undefined
+            }
+          />
+        ) : (
+          <AutoDownloadTrailerTemaSwitch
+            inicial={autoDownloadTrailerTema.data}
+          />
         )}
       </section>
 
@@ -399,6 +434,60 @@ function AutoMaterializeArtworkSwitch({
           Quando um item novo é auto-importado durante o scan, baixa e copia as
           artes encontradas para a pasta real da biblioteca na hora, sem esperar
           ação manual ou o job periódico.
+        </span>
+        {mensagemErro ? (
+          <span role="alert" className="text-xs font-medium text-destructive">
+            {mensagemErro}
+          </span>
+        ) : null}
+      </span>
+    </label>
+  )
+}
+
+// Switch semeado pelo toggle vigente (briefing 0104): mesmo padrão do
+// AutoMaterializeArtworkSwitch (0089) — grava a cada mudança, sem botão
+// salvar.
+function AutoDownloadTrailerTemaSwitch({
+  inicial,
+}: {
+  inicial: AutoDownloadTrailerTemaSettings
+}) {
+  const queryClient = useQueryClient()
+
+  const mutation = useMutation({
+    mutationFn: (body: AutoDownloadTrailerTemaSettings) =>
+      putAutoDownloadTrailerTemaSettings(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['settings', 'auto-download-trailer-tema'],
+      })
+    },
+  })
+
+  const ligado = mutation.isSuccess
+    ? mutation.variables.enabled
+    : inicial.enabled
+  const mensagemErro =
+    mutation.isError && mutation.error instanceof ApiError
+      ? mutation.error.message
+      : null
+
+  return (
+    <label className="flex items-center gap-2 text-sm">
+      <Switch
+        checked={ligado}
+        disabled={mutation.isPending}
+        onCheckedChange={(checked) => mutation.mutate({ enabled: checked })}
+        aria-label="Baixar trailer e tema automaticamente"
+        aria-invalid={mensagemErro !== null || undefined}
+      />
+      <span className="flex flex-col gap-0.5">
+        <span>Baixar trailer e tema automaticamente</span>
+        <span className="text-xs text-muted-foreground">
+          Ao importar um item novo no scan, tenta baixar trailer e música-tema
+          automaticamente em segundo plano (não bloqueia o scan). Desligado por
+          padrão.
         </span>
         {mensagemErro ? (
           <span role="alert" className="text-xs font-medium text-destructive">

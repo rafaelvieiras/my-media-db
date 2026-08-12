@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
@@ -158,12 +159,42 @@ func (s *Server) materializarKindVencedor(ctx context.Context, ent sqlcgen.Entit
 // falha real de leitura da config/entity; falhas pontuais de download já são
 // absorvidas (best-effort) dentro de MaterializarMidiasFaltantes.
 func (s *Server) MaterializarSeAutoDownloadLigado(ctx context.Context, entityID string) error {
+	s.dispararTrailerTemaAutomaticoSeLigado(ctx, entityID)
+
 	cfg, err := s.obterAutoMaterializeArtworkSettings(ctx)
 	if err != nil || !cfg.Enabled {
 		return err
 	}
 	_, _, err = s.MaterializarMidiasFaltantes(ctx, entityID)
 	return err
+}
+
+// dispararTrailerTemaAutomaticoSeLigado dispara, em best-effort e SEM
+// bloquear o chamador, uma tentativa de baixar trailer/tema para `entityID`
+// quando o toggle "baixar_trailer_tema_automaticamente" está ligado
+// (briefing 0104, ADR-0026 item 3). A leitura do toggle é síncrona (settings
+// já ficam em cache, custo desprezível); o download em si roda numa
+// goroutine com contexto PRÓPRIO (context.Background(), NUNCA o do request
+// HTTP do scan -- que morre assim que a resposta é enviada) e timeout
+// generoso, já que baixar vídeo via yt-dlp é ordens de magnitude mais lento
+// que uma imagem (briefing 0102 §6). Falha (rede, sem candidato, yt-dlp
+// indisponível) só é logada -- o job periódico trailer_tema_faltantes cobre
+// depois, se ligado (ADR-0026 item 4).
+func (s *Server) dispararTrailerTemaAutomaticoSeLigado(ctx context.Context, entityID string) {
+	cfg, err := s.obterAutoDownloadTrailerTemaSettings(ctx)
+	if err != nil || !cfg.Enabled {
+		return
+	}
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if _, err := s.BaixarTrailerEntity(bgCtx, entityID); err != nil {
+			log.Printf("trailer_tema_faltantes: falha ao baixar trailer automatico da entity %q (best-effort, ignorado): %v", entityID, err)
+		}
+		if _, err := s.BaixarTemaEntity(bgCtx, entityID); err != nil {
+			log.Printf("trailer_tema_faltantes: falha ao baixar tema automatico da entity %q (best-effort, ignorado): %v", entityID, err)
+		}
+	}()
 }
 
 // gravarNFOSeFaltante gera o NFO da entity (mesma função gravarNFO do 0062)

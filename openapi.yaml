@@ -286,6 +286,51 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
 
+  /api/v1/settings/auto-download-trailer-tema:
+    get:
+      operationId: getAutoDownloadTrailerTemaSettings
+      summary: Toggle de download automático de trailer/tema musical (briefing 0104, ADR-0026).
+      description: >
+        Devolve se o download automático de trailer/tema musical está ligado.
+        O toggle é compartilhado por DOIS mecanismos (ADR-0026 item 5): o job
+        periódico `trailer_tema_faltantes` (sempre registrado/agendável,
+        independente deste toggle) E o gatilho automático no scan -- quando
+        ligado, todo auto-import bem-sucedido (filme via auto-match imediato,
+        ou série) dispara, em background, uma tentativa de baixar
+        trailer/tema para o item novo, sem esperar o job periódico nem
+        clique manual e sem atrasar a resposta do scan. Quando ainda não há
+        linha gravada, responde o default seguro (`{"enabled": false}`).
+      tags: [settings]
+      responses:
+        "200":
+          description: Toggle de download automático de trailer/tema musical.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutoDownloadTrailerTemaSettings" }
+    put:
+      operationId: putAutoDownloadTrailerTemaSettings
+      summary: Grava o toggle de download automático de trailer/tema musical.
+      description: >
+        Persiste (upsert) o toggle e invalida o cache. Escopo restrito ao
+        caminho de AUTO-IMPORT do scan (filme novo auto-matchado, série
+        nova) -- não afeta o botão manual de trailer/tema (0102/0103), mesmo
+        com o toggle ligado; o job periódico continua sempre agendável
+        independente deste valor.
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AutoDownloadTrailerTemaSettings" }
+      responses:
+        "200":
+          description: Toggle gravado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutoDownloadTrailerTemaSettings" }
+        "400":
+          $ref: "#/components/responses/Error"
+
   /api/v1/settings/ytdlp:
     get:
       operationId: getYtdlpSettings
@@ -3802,6 +3847,25 @@ components:
             Desligado por padrão (default de fábrica `false`). Escopo
             restrito ao auto-import do scan -- não afeta ações manuais de
             enriquecimento.
+    AutoDownloadTrailerTemaSettings:
+      type: object
+      description: >
+        Toggle de download automático de trailer/tema musical (briefing
+        0104, ADR-0026): compartilhado pelo job periódico
+        `trailer_tema_faltantes` e pelo gatilho automático no scan -- quando
+        ligado, todo auto-import bem-sucedido do scan (filme ou série) tenta
+        baixar trailer/tema em background, sem esperar o job periódico nem
+        clique manual. É o corpo do PUT e a resposta do GET/PUT
+        /settings/auto-download-trailer-tema.
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+          description: >
+            Desligado por padrão (default de fábrica `false`). Escopo
+            restrito ao auto-import do scan -- não afeta o botão manual de
+            trailer/tema (0102/0103); o job periódico continua sempre
+            agendável independente deste valor.
     YtdlpCustomPath:
       type: object
       description: >

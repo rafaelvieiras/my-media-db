@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { SettingsScreen } from '@/routes/settings'
 import type {
   AutoMaterializeArtworkSettings,
+  AutoDownloadTrailerTemaSettings,
   LanguageSettings,
   RetroactiveEnrichmentSettings,
   YtdlpSettings,
@@ -24,6 +25,12 @@ const retroativoIniciais: RetroactiveEnrichmentSettings = { retry_days: 15 }
 
 // Config vigente devolvida pelo GET /settings/auto-materialize-artwork (0089).
 const autoMaterializarIniciais: AutoMaterializeArtworkSettings = {
+  enabled: false,
+}
+
+// Config vigente devolvida pelo GET /settings/auto-download-trailer-tema
+// (0104).
+const autoDownloadTrailerTemaIniciais: AutoDownloadTrailerTemaSettings = {
   enabled: false,
 }
 
@@ -49,6 +56,12 @@ function fetchRouter(opts?: {
   putRetroativoErro?: { status: number; code: string; message: string }
   autoMaterializarInicial?: AutoMaterializeArtworkSettings
   putAutoMaterializarErro?: { status: number; code: string; message: string }
+  autoDownloadTrailerTemaInicial?: AutoDownloadTrailerTemaSettings
+  putAutoDownloadTrailerTemaErro?: {
+    status: number
+    code: string
+    message: string
+  }
   ytdlpInicial?: YtdlpSettings
   putYtdlpResposta?: YtdlpSettings
   putYtdlpErro?: { status: number; code: string; message: string }
@@ -96,6 +109,30 @@ function fetchRouter(opts?: {
       const body = JSON.parse(
         (init?.body as string) ?? '{}',
       ) as AutoMaterializeArtworkSettings
+      return okJson(body)
+    }
+    if (
+      u === '/api/v1/settings/auto-download-trailer-tema' &&
+      method === 'GET'
+    ) {
+      return okJson(
+        opts?.autoDownloadTrailerTemaInicial ?? autoDownloadTrailerTemaIniciais,
+      )
+    }
+    if (
+      u === '/api/v1/settings/auto-download-trailer-tema' &&
+      method === 'PUT'
+    ) {
+      if (opts?.putAutoDownloadTrailerTemaErro) {
+        return erroJson(
+          opts.putAutoDownloadTrailerTemaErro.status,
+          opts.putAutoDownloadTrailerTemaErro.code,
+          opts.putAutoDownloadTrailerTemaErro.message,
+        )
+      }
+      const body = JSON.parse(
+        (init?.body as string) ?? '{}',
+      ) as AutoDownloadTrailerTemaSettings
       return okJson(body)
     }
     if (u === '/api/v1/settings/ytdlp' && method === 'GET') {
@@ -170,6 +207,27 @@ async function renderFormArtes(fetchMock: ReturnType<typeof fetchRouter>) {
     expect(
       secao.getByRole('switch', {
         name: 'Baixar artes automaticamente após o scan',
+      }),
+    ).toBeInTheDocument(),
+  )
+  return secao
+}
+
+// Mesma ideia de `renderFormArtes`, mas devolve o escopo da seção TRAILER E
+// TEMA MUSICAL (0104) -- sem botão "Salvar" (o switch grava a cada mudança).
+async function renderFormTrailerTema(
+  fetchMock: ReturnType<typeof fetchRouter>,
+) {
+  vi.stubGlobal('fetch', fetchMock)
+  renderWithClient(<SettingsScreen />)
+  const heading = await screen.findByRole('heading', {
+    name: 'Trailer e tema musical',
+  })
+  const secao = within(heading.closest('section')!)
+  await waitFor(() =>
+    expect(
+      secao.getByRole('switch', {
+        name: 'Baixar trailer e tema automaticamente',
       }),
     ).toBeInTheDocument(),
   )
@@ -443,6 +501,65 @@ describe('SettingsScreen', () => {
       name: 'Baixar artes automaticamente após o scan',
     })
     await user.click(switchArtes)
+
+    await waitFor(() =>
+      expect(secao.getByText('corpo invalido')).toBeInTheDocument(),
+    )
+  })
+
+  it('le a config vigente e semeia o switch de download automatico de trailer/tema (desligado)', async () => {
+    const secao = await renderFormTrailerTema(fetchRouter())
+
+    expect(
+      secao.getByRole('switch', {
+        name: 'Baixar trailer e tema automaticamente',
+      }),
+    ).not.toBeChecked()
+  })
+
+  it('semeia o switch de trailer/tema ligado quando o backend ja devolve enabled=true', async () => {
+    const secao = await renderFormTrailerTema(
+      fetchRouter({ autoDownloadTrailerTemaInicial: { enabled: true } }),
+    )
+
+    expect(
+      secao.getByRole('switch', {
+        name: 'Baixar trailer e tema automaticamente',
+      }),
+    ).toBeChecked()
+  })
+
+  it('grava o toggle de trailer/tema via PUT ao ligar o switch', async () => {
+    const user = userEvent.setup()
+    const fetchMock = fetchRouter()
+    const secao = await renderFormTrailerTema(fetchMock)
+
+    const switchTrailerTema = secao.getByRole('switch', {
+      name: 'Baixar trailer e tema automaticamente',
+    })
+    await user.click(switchTrailerTema)
+
+    await waitFor(() => expect(switchTrailerTema).toBeChecked())
+    expect(
+      corpoDoPut(fetchMock, '/api/v1/settings/auto-download-trailer-tema'),
+    ).toEqual({ enabled: true })
+  })
+
+  it('exibe inline a mensagem do erro do servidor ao falhar o PUT do toggle de trailer/tema', async () => {
+    const user = userEvent.setup()
+    const fetchMock = fetchRouter({
+      putAutoDownloadTrailerTemaErro: {
+        status: 400,
+        code: 'invalid_body',
+        message: 'corpo invalido',
+      },
+    })
+    const secao = await renderFormTrailerTema(fetchMock)
+
+    const switchTrailerTema = secao.getByRole('switch', {
+      name: 'Baixar trailer e tema automaticamente',
+    })
+    await user.click(switchTrailerTema)
 
     await waitFor(() =>
       expect(secao.getByText('corpo invalido')).toBeInTheDocument(),

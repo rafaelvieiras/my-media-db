@@ -203,6 +203,7 @@ e agenda [TR1–TR2](../docs/00-agenda-de-decisoes.md#trailer-e-música-tema--fu
 | [0101](0101-fundacao-ytdlp-binario-dinamico.md) | Fundação: binário yt-dlp (download dinâmico em runtime + path customizável) | feature | done | — |
 | [0102](0102-trailer-materializacao-disco.md) | Trailer: materialização em disco (TMDB/TVDB `/videos` + yt-dlp) | feature | done | 0101 |
 | [0103](0103-tema-musical-themerrdb.md) | Música-tema automática via ThemerrDB (+ yt-dlp) | feature | done | 0101 |
+| [0104](0104-trailer-tema-job-e-scan-automatico.md) | Trailer/tema: detecção em massa, job periódico e gatilho automático no scan | feature | done | 0101, 0102, 0103 |
 
 ### Transversal — Infraestrutura operacional
 

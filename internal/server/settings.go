@@ -33,6 +33,11 @@ const appSettingAutoMaterializeArtwork = "materializar_artes_automaticamente"
 // app_settings (briefing 0101, ADR-0025).
 const appSettingYtdlp = "ytdlp"
 
+// appSettingAutoDownloadTrailerTema é a chave do toggle de download
+// automático de trailer/tema musical em app_settings (briefing 0104,
+// ADR-0026).
+const appSettingAutoDownloadTrailerTema = "baixar_trailer_tema_automaticamente"
+
 // retryDaysPadrao/retryDaysMinimo/retryDaysMaximo são o default (quando nunca
 // configurado) e o intervalo válido do throttle de reentativa (briefing
 // 0085): antes uma constante fixa de 30 dias em retroativo.go, agora
@@ -91,6 +96,28 @@ func defaultAutoMaterializeArtworkSettings() autoMaterializeArtworkSettings {
 	return autoMaterializeArtworkSettings{Enabled: false}
 }
 
+// autoDownloadTrailerTemaSettings é o toggle de download automático de
+// trailer/tema musical (briefing 0104, ADR-0026): quando Enabled, os dois
+// mecanismos compartilham o MESMO toggle (ver ADR-0026 item 5) --
+// (a) o job periódico `trailer_tema_faltantes` continua sempre registrado/
+// agendável independente deste toggle; (b) todo auto-import bem-sucedido do
+// scan (filme ou série) dispara, em goroutine best-effort, uma tentativa de
+// baixar trailer/tema para o item novo, sem esperar o job periódico nem
+// clique manual. Serializado como value_json da chave
+// `baixar_trailer_tema_automaticamente`. É também o corpo do PUT e a
+// resposta do GET.
+type autoDownloadTrailerTemaSettings struct {
+	Enabled bool `json:"enabled"`
+}
+
+// defaultAutoDownloadTrailerTemaSettings é o DEFAULT SEGURO usado quando a
+// linha `baixar_trailer_tema_automaticamente` não existe (ou está
+// corrompida): desligado -- download automático é opt-in (o dono liga
+// quando quiser).
+func defaultAutoDownloadTrailerTemaSettings() autoDownloadTrailerTemaSettings {
+	return autoDownloadTrailerTemaSettings{Enabled: false}
+}
+
 // ytdlpPathSettings é o path customizado do binário yt-dlp configurado pelo
 // dono (briefing 0101, ADR-0025): {"custom_binary_path": string|null}.
 // Serializado como value_json da chave `ytdlp`. É o corpo do PUT (o GET devolve
@@ -135,6 +162,9 @@ type settingsCache struct {
 
 	autoMaterializeCarregado bool
 	autoMaterialize          autoMaterializeArtworkSettings
+
+	autoDownloadTrailerTemaCarregado bool
+	autoDownloadTrailerTema          autoDownloadTrailerTemaSettings
 
 	ytdlpCarregado bool
 	ytdlpPath      ytdlpPathSettings
@@ -235,6 +265,39 @@ func (s *Server) obterAutoMaterializeArtworkSettings(ctx context.Context) (autoM
 	return cfg, nil
 }
 
+// obterAutoDownloadTrailerTemaSettings devolve o toggle de download
+// automático de trailer/tema musical, do cache quando já carregado, senão
+// lendo app_settings pela conexão de LEITURA. Linha ausente ou JSON
+// inválido ⇒ default seguro (desligado, nunca erro por isso). Só um erro
+// real de banco é propagado. Espelha obterAutoMaterializeArtworkSettings
+// linha a linha (briefing 0104).
+func (s *Server) obterAutoDownloadTrailerTemaSettings(ctx context.Context) (autoDownloadTrailerTemaSettings, error) {
+	s.settings.mu.Lock()
+	defer s.settings.mu.Unlock()
+	if s.settings.autoDownloadTrailerTemaCarregado {
+		return s.settings.autoDownloadTrailerTema, nil
+	}
+	row, err := s.leitura().ObterAppSetting(ctx, appSettingAutoDownloadTrailerTema)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			s.settings.autoDownloadTrailerTema = defaultAutoDownloadTrailerTemaSettings()
+			s.settings.autoDownloadTrailerTemaCarregado = true
+			return s.settings.autoDownloadTrailerTema, nil
+		}
+		return autoDownloadTrailerTemaSettings{}, err
+	}
+	cfg := defaultAutoDownloadTrailerTemaSettings()
+	if row.ValueJson.Valid && row.ValueJson.String != "" {
+		var parsed autoDownloadTrailerTemaSettings
+		if json.Unmarshal([]byte(row.ValueJson.String), &parsed) == nil {
+			cfg = parsed
+		}
+	}
+	s.settings.autoDownloadTrailerTema = cfg
+	s.settings.autoDownloadTrailerTemaCarregado = true
+	return cfg, nil
+}
+
 // obterYtdlpPathSettings devolve o path customizado do yt-dlp gravado no
 // banco, do cache quando já carregado, senão lendo app_settings pela conexão
 // de LEITURA. Linha ausente ou JSON inválido ⇒ default seguro (nenhum path
@@ -308,6 +371,7 @@ func (s *Server) invalidarSettings() {
 	s.settings.carregado = false
 	s.settings.retroCarregado = false
 	s.settings.autoMaterializeCarregado = false
+	s.settings.autoDownloadTrailerTemaCarregado = false
 	s.settings.ytdlpCarregado = false
 	s.settings.mu.Unlock()
 }
@@ -470,6 +534,55 @@ func (s *Server) putAutoMaterializeArtworkSettings(w http.ResponseWriter, r *htt
 	}
 	_, err = sqlcgen.New(s.db.Write).UpsertAppSetting(r.Context(), sqlcgen.UpsertAppSettingParams{
 		Key:       appSettingAutoMaterializeArtwork,
+		ValueJson: sql.NullString{String: string(valor), Valid: true},
+	})
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	s.invalidarSettings()
+	writeJSON(w, http.StatusOK, body)
+}
+
+// getAutoDownloadTrailerTemaSettings trata GET
+// /api/v1/settings/auto-download-trailer-tema (briefing 0104): devolve o
+// toggle atual (ou o default seguro {enabled:false} quando ausente). Espelha
+// getAutoMaterializeArtworkSettings.
+func (s *Server) getAutoDownloadTrailerTemaSettings(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	cfg, err := s.obterAutoDownloadTrailerTemaSettings(r.Context())
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+// putAutoDownloadTrailerTemaSettings trata PUT
+// /api/v1/settings/auto-download-trailer-tema (briefing 0104): faz upsert do
+// toggle, invalidando o cache. Corpo malformado ⇒ 400 invalid_body; sucesso
+// ⇒ 200 com o valor gravado. Espelha putAutoMaterializeArtworkSettings (sem
+// etapa de validação semântica: um bool não tem estado inválido além de
+// "não decodificou").
+func (s *Server) putAutoDownloadTrailerTemaSettings(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	var body autoDownloadTrailerTemaSettings
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "corpo JSON inválido")
+		return
+	}
+
+	valor, err := json.Marshal(body)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	_, err = sqlcgen.New(s.db.Write).UpsertAppSetting(r.Context(), sqlcgen.UpsertAppSettingParams{
+		Key:       appSettingAutoDownloadTrailerTema,
 		ValueJson: sql.NullString{String: string(valor), Valid: true},
 	})
 	if err != nil {

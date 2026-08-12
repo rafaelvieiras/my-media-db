@@ -345,16 +345,17 @@ func TestCRUDLibrarySourcePathRecasco(t *testing.T) {
 
 // TestCRUDJob cobre o schema de jobs (briefing 0052): as definicoes seed
 // (backup_vacuum e saude_biblioteca da migration 0011, midias_faltantes da
-// migration 0016/briefing 0064), a consulta de agendaveis, o ciclo de uma
-// execucao e a poda do historico por contagem.
+// migration 0016/briefing 0064, trailer_tema_faltantes da migration
+// 0022/briefing 0104), a consulta de agendaveis, o ciclo de uma execucao e a
+// poda do historico por contagem.
 func TestCRUDJob(t *testing.T) {
 	q := setup(t)
 	ctx := context.Background()
 
 	defs, err := q.ListarJobDefinitions(ctx)
 	check(t, err, "ListarJobDefinitions")
-	if len(defs) != 3 || defs[0].ID != "backup_vacuum" || defs[1].ID != "saude_biblioteca" || defs[2].ID != "midias_faltantes" {
-		t.Fatalf("ListarJobDefinitions = %+v, quero 3 linhas (backup_vacuum, saude_biblioteca, midias_faltantes)", defs)
+	if len(defs) != 4 || defs[0].ID != "backup_vacuum" || defs[1].ID != "saude_biblioteca" || defs[2].ID != "midias_faltantes" || defs[3].ID != "trailer_tema_faltantes" {
+		t.Fatalf("ListarJobDefinitions = %+v, quero 4 linhas (backup_vacuum, saude_biblioteca, midias_faltantes, trailer_tema_faltantes)", defs)
 	}
 	if defs[0].Enabled != 0 || !defs[0].ScheduleCron.Valid || defs[0].ScheduleCron.String != "0 3 * * *" {
 		t.Errorf("seed backup_vacuum = %+v, quero enabled=0 schedule='0 3 * * *'", defs[0])

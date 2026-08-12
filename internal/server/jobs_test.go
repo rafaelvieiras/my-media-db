@@ -87,7 +87,8 @@ func aguardarJobEstado(t *testing.T, s *Server, jobID string, rodando bool) {
 // assertJobSeedado confere o estado padrão (recém-migrado, nunca rodou) de
 // UM job semeado dentro do mapa id->jobDTO -- extraído para manter
 // TestListJobsSeed com baixa complexidade ciclomática apesar de cobrir os
-// TRÊS jobs semeados hoje (backup_vacuum + saude_biblioteca + midias_faltantes).
+// QUATRO jobs semeados hoje (backup_vacuum + saude_biblioteca +
+// midias_faltantes + trailer_tema_faltantes).
 func assertJobSeedado(t *testing.T, byID map[string]jobDTO, id, cron string) {
 	t.Helper()
 	item, ok := byID[id]
@@ -110,9 +111,10 @@ func assertJobSeedado(t *testing.T, byID map[string]jobDTO, id, cron string) {
 
 // TestListJobsSeed prova o critério de aceite: GET /jobs lista os jobs
 // semeados via migration -- backup_vacuum (0011), saude_biblioteca (0012,
-// briefing 0053) e midias_faltantes (0016, briefing 0064) -- independente de
-// quais Handlers estão registrados no binário (a linha de job_definition
-// existe pela migration; o Handler só importa na hora de RODAR). Todos
+// briefing 0053), midias_faltantes (0016, briefing 0064) e
+// trailer_tema_faltantes (0022, briefing 0104) -- independente de quais
+// Handlers estão registrados no binário (a linha de job_definition existe
+// pela migration; o Handler só importa na hora de RODAR). Todos
 // desabilitados por padrão, sem execuções ainda.
 func TestListJobsSeed(t *testing.T) {
 	_, h := setupJobsServer(t)
@@ -124,8 +126,8 @@ func TestListJobsSeed(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(body.Items) != 3 {
-		t.Fatalf("items = %d, quero 3 (seed backup_vacuum + saude_biblioteca + midias_faltantes)", len(body.Items))
+	if len(body.Items) != 4 {
+		t.Fatalf("items = %d, quero 4 (seed backup_vacuum + saude_biblioteca + midias_faltantes + trailer_tema_faltantes)", len(body.Items))
 	}
 	byID := make(map[string]jobDTO, len(body.Items))
 	for _, it := range body.Items {
@@ -135,6 +137,7 @@ func TestListJobsSeed(t *testing.T) {
 	assertJobSeedado(t, byID, "backup_vacuum", "0 3 * * *")
 	assertJobSeedado(t, byID, "saude_biblioteca", "0 4 * * *")
 	assertJobSeedado(t, byID, "midias_faltantes", "0 4 * * *")
+	assertJobSeedado(t, byID, "trailer_tema_faltantes", "30 4 * * *")
 }
 
 // TestPatchJobHabilitaCalculaNextRunAt prova o critério de aceite do PATCH:

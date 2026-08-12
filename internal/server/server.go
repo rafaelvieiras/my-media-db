@@ -19,6 +19,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/job"
 	"github.com/rafaelvieiras/my-media-db/internal/job/libraryhealth"
 	"github.com/rafaelvieiras/my-media-db/internal/job/midiasfaltantes"
+	"github.com/rafaelvieiras/my-media-db/internal/job/trailertema"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
@@ -261,6 +262,29 @@ func WithMidiasFaltantesJob() Option {
 		// s satisfaz tanto midiasfaltantes.EntityLister quanto
 		// midiasfaltantes.Materializador (ver internal/server/midias_faltantes.go).
 		h := midiasfaltantes.New(s, s)
+		s.jobs.Registry.Registrar(h)
+	}
+}
+
+// WithTrailerTemaJob REGISTRA o job `trailer_tema_faltantes` (briefing 0104,
+// ADR-0026) no Registry do Manager de jobs. Mesmo motivo de
+// WithMidiasFaltantesJob ser uma option DEDICADA (não WithJobHandlers): o
+// Handler precisa do próprio *Server como trailertema.EntityLister/
+// TrailerTemaBaixador (ver internal/server/localmedia_handlers.go e
+// midias_faltantes.go), que só existe aqui dentro. Nula (sem registrar
+// nada) se não houver banco -- mesma guarda dos demais.
+func WithTrailerTemaJob() Option {
+	return func(s *Server) {
+		if s.db == nil {
+			return
+		}
+		if s.jobs == nil {
+			s.jobs = job.NewManager(s.db)
+		}
+		// s satisfaz tanto trailertema.EntityLister (ListarEntitiesComMediaFilePresente,
+		// midias_faltantes.go) quanto trailertema.TrailerTemaBaixador
+		// (YtdlpDisponivel/BaixarTrailerEntity/BaixarTemaEntity, localmedia_handlers.go).
+		h := trailertema.New(s, s)
 		s.jobs.Registry.Registrar(h)
 	}
 }
@@ -538,6 +562,15 @@ func (s *Server) Handler() (http.Handler, error) {
 				// midias_faltantes nem clique manual.
 				cfg.Get("/auto-materialize-artwork", s.getAutoMaterializeArtworkSettings)
 				cfg.Put("/auto-materialize-artwork", s.putAutoMaterializeArtworkSettings)
+
+				// Toggle de download automático de trailer/tema musical
+				// (briefing 0104, ADR-0026): desligado por padrão -- quando
+				// ligado, compartilhado pelo job periódico
+				// trailer_tema_faltantes E pelo gatilho automático no scan
+				// (todo auto-import bem-sucedido tenta baixar trailer/tema
+				// em background, sem bloquear a resposta do scan).
+				cfg.Get("/auto-download-trailer-tema", s.getAutoDownloadTrailerTemaSettings)
+				cfg.Put("/auto-download-trailer-tema", s.putAutoDownloadTrailerTemaSettings)
 
 				// Path customizado do binário yt-dlp (briefing 0101,
 				// ADR-0025): status efetivo (disponível/origem/detalhe) +

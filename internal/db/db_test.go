@@ -121,9 +121,9 @@ func TestMigrateUp(t *testing.T) {
 	// last_played_at/resume_position_seconds/resume_total_seconds
 	// (briefing 0088) + 0020 historico_evento (briefing 0092) + 0021
 	// historico_evento.entity_id nullable + raw_* (eventos órfãos, briefing
-	// 0099).
-	if v := mustSchemaVersion(t, d); v != 21 {
-		t.Errorf("versão após up = %d, quero 21", v)
+	// 0099) + 0022 seed do job trailer_tema_faltantes (briefing 0104).
+	if v := mustSchemaVersion(t, d); v != 22 {
+		t.Errorf("versão após up = %d, quero 22", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -174,6 +174,8 @@ func TestMigrateDown(t *testing.T) {
 	}
 
 	// Down reverte uma migration por vez, do topo para a base.
+	downPara(t, d, 21) // 0022: remove o seed do job trailer_tema_faltantes.
+
 	downPara(t, d, 20) // 0021: volta historico_evento.entity_id a NOT NULL, remove as colunas raw_*.
 	querFalha(t, d, "SELECT raw_tmdb_id, raw_imdb_id, raw_tvdb_id, raw_title, raw_year FROM historico_evento",
 		"colunas raw_* ainda existem após o down do 0021")

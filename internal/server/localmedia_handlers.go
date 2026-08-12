@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -46,6 +47,49 @@ func nowISO() string {
 // para materializar arte/NFO) — o handler mapeia para 404, distinto de erro
 // de I/O real (500).
 var errSemDestino = errors.New("localmedia: entity sem media_file presente (sem pasta de destino)")
+
+// Sentinels de "nada a fazer" devolvidos por baixarTrailerEntityComOpcoes/
+// BaixarTemaEntity (briefing 0104) — cada um mapeia para um status HTTP
+// específico em postEntityTrailerDownload/postEntityThemeDownload
+// (respondErroBaixarTrailer/respondErroBaixarTema, via errors.Is) e, ao
+// mesmo tempo, são reconhecidos como "não é falha real" por
+// trailerTemaErroBenigno (usado pelo job trailer_tema_faltantes e pelo
+// gatilho automático do scan, que só querem saber se baixou ou não, sem
+// distinguir o motivo).
+var (
+	errEntityNaoEncontrada = errors.New("localmedia: entity nao encontrada")
+	errYtdlpIndisponivel   = errors.New("localmedia: yt-dlp indisponivel")
+	errSemTrailerYoutube   = errors.New("localmedia: sem trailer do youtube disponivel")
+	errTrailerJaExiste     = errors.New("localmedia: trailer ja baixado")
+	errSemCandidatoTema    = errors.New("localmedia: sem candidato de tema musical")
+	errTemaJaExiste        = errors.New("localmedia: tema musical ja presente")
+	errDownloadFalhou      = errors.New("localmedia: falha ao baixar")
+	errLangInvalida        = errors.New("localmedia: lang fora dos idiomas permitidos")
+)
+
+// trailerTemaErroBenigno diz se `err` é um dos sentinels de "nada a fazer"
+// (entity sumiu, yt-dlp indisponível, sem candidato disponível, já existe
+// local, sem pasta de destino) -- usado por BaixarTrailerEntity/
+// BaixarTemaEntity (job trailer_tema_faltantes e gatilho automático do
+// scan, briefing 0104/ADR-0026) para NÃO tratar esses casos esperados como
+// falha real (só uma falha de verdade -- rede, banco -- deve virar erro
+// propagado/logado).
+func trailerTemaErroBenigno(err error) bool {
+	for _, sentinela := range []error{
+		errEntityNaoEncontrada,
+		errYtdlpIndisponivel,
+		errSemTrailerYoutube,
+		errTrailerJaExiste,
+		errSemDestino,
+		errSemCandidatoTema,
+		errTemaJaExiste,
+	} {
+		if errors.Is(err, sentinela) {
+			return true
+		}
+	}
+	return false
+}
 
 // materializeAsset trata POST /api/v1/entities/{id}/assets/{assetId}/materialize:
 // copia o binário já cacheado (assetsDir) do asset para a pasta REAL da
@@ -841,132 +885,167 @@ func escolherTrailerYoutube(videos []richfields.Video, key string) (richfields.V
 	return richfields.Video{}, false
 }
 
-// ytdlpDisponivel responde 503 (SEM tocar disco) quando não há um binário
-// yt-dlp utilizável agora -- checado ANTES de resolver trailer/destino, para
-// a feature indisponível nunca gastar trabalho (nem I/O) à toa. Nunca 500:
-// indisponibilidade é um estado normal (ADR-0025), não um erro interno.
-func (s *Server) ytdlpDisponivel(ctx context.Context, w http.ResponseWriter) bool {
+// baixarTrailerEntityComOpcoes é a implementação PURA (sem
+// http.ResponseWriter) de "baixar o trailer do YouTube para UMA entity":
+// resolve o vídeo (idioma + richfields.Videos, MESMO shape de GET
+// /entities/{id}), o destino na pasta real da biblioteca e baixa via yt-dlp
+// (s.ytdlp.Baixar, 0101) para um arquivo TEMPORÁRIO, só renomeando para o
+// nome canônico em caso de sucesso (nunca deixa um arquivo parcial com o
+// nome canônico). Reaproveitada por postEntityTrailerDownload (que traduz o
+// erro devolvido em status HTTP via respondErroBaixarTrailer/errors.Is) e
+// por BaixarTrailerEntity (job trailer_tema_faltantes e gatilho automático
+// do scan, briefing 0104). `lang` vazio cai no idioma principal; `key` vazio
+// escolhe o primeiro trailer disponível (richfields.PrimeiroTrailerYoutube);
+// `force` ignora um trailer já presente. Devolve os sentinels
+// errEntityNaoEncontrada/errYtdlpIndisponivel/errSemTrailerYoutube/
+// errSemDestino/errTrailerJaExiste para os casos de "nada a fazer"; qualquer
+// outro erro é falha real (rede, banco).
+func (s *Server) baixarTrailerEntityComOpcoes(ctx context.Context, entityID, lang, key string, force bool) (destino string, err error) {
+	ent, err := s.leitura().ObterEntity(ctx, entityID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", errEntityNaoEncontrada
+		}
+		return "", err
+	}
+
 	if s.ytdlp == nil {
-		writeError(w, http.StatusServiceUnavailable, "ytdlp_indisponivel", "yt-dlp indisponível")
-		return false
+		return "", errYtdlpIndisponivel
 	}
 	disponivel, _, detalhe := s.ytdlp.Status(ctx)
 	if !disponivel {
-		msg := "yt-dlp indisponível"
 		if detalhe != "" {
-			msg += ": " + detalhe
+			return "", fmt.Errorf("%w: %s", errYtdlpIndisponivel, detalhe)
 		}
-		writeError(w, http.StatusServiceUnavailable, "ytdlp_indisponivel", msg)
-		return false
+		return "", errYtdlpIndisponivel
 	}
-	return true
-}
 
-// resolverVideoTrailer resolve o trailer YouTube do item (idioma preferido +
-// richfields.Videos, MESMO shape de GET /entities/{id}) já escrevendo a
-// resposta de erro apropriada quando falha em qualquer etapa -- extraído de
-// postEntityTrailerDownload só para reduzir a complexidade ciclomática do
-// handler (cada guard aqui já é exercitado pelos mesmos cenários de erro que
-// o handler cobria antes da extração).
-func (s *Server) resolverVideoTrailer(w http.ResponseWriter, r *http.Request, id, key string) (richfields.Video, bool) {
-	ctx := r.Context()
 	cfg, err := s.obterLanguageSettings(ctx)
 	if err != nil {
-		respondErroInterno(w)
-		return richfields.Video{}, false
+		return "", err
 	}
-	lang, ok := s.parseLang(w, cfg, r.URL.Query().Get("lang"))
-	if !ok {
-		return richfields.Video{}, false
+	if lang != "" && !cfg.permite(lang) {
+		return "", errLangInvalida
 	}
-	resolvida, encontrada, err := s.resolverEntity(ctx, id, lang, false)
+	if lang == "" {
+		lang = cfg.Primary
+	}
+	resolvida, encontrada, err := s.resolverEntity(ctx, entityID, lang, false)
 	if err != nil {
-		respondErroInterno(w)
-		return richfields.Video{}, false
+		return "", err
 	}
 	if !encontrada {
-		writeError(w, http.StatusNotFound, "not_found", "entidade não encontrada")
-		return richfields.Video{}, false
+		return "", errEntityNaoEncontrada
 	}
 	video, ok := escolherTrailerYoutube(resolvida.Videos, key)
 	if !ok {
-		writeError(w, http.StatusUnprocessableEntity, "sem_trailer",
-			"nenhum trailer do YouTube disponível para este item")
-		return richfields.Video{}, false
+		return "", errSemTrailerYoutube
 	}
-	return video, true
-}
 
-// resolverDestinoTrailerLivre resolve a pasta de destino (resolverDestino) e
-// confirma que não há trailer já materializado ali sem `force` -- escreve a
-// resposta de erro apropriada (500/404/409) e devolve ok=false quando
-// qualquer checagem falha. Extraído de postEntityTrailerDownload pelo mesmo
-// motivo de resolverVideoTrailer: reduzir a complexidade ciclomática do
-// handler, mantendo cada guard testado pelos mesmos cenários de antes.
-func (s *Server) resolverDestinoTrailerLivre(w http.ResponseWriter, ctx context.Context, ent sqlcgen.Entity, force bool) (dir, nomeBaseVideo string, pastaExclusiva, ok bool) {
 	dir, nomeBaseVideo, pastaExclusiva, ok, err := s.resolverDestino(ctx, ent)
 	if err != nil {
-		respondErroInterno(w)
-		return "", "", false, false
+		return "", err
 	}
 	if !ok {
-		respondErroLocalmedia(w, errSemDestino)
-		return "", "", false, false
+		return "", errSemDestino
 	}
 	if _, jaExiste := encontrarArquivoTrailer(dir, nomeBaseVideo, pastaExclusiva); jaExiste && !force {
+		return "", errTrailerJaExiste
+	}
+
+	dest := filepath.Join(dir, localmedia.NomeArquivoArte(localmedia.KindTrailer, true, 0, pastaExclusiva, nomeBaseVideo, ""))
+	if err := s.baixarTrailerAtomico(ctx, video, dest); err != nil {
+		return "", fmt.Errorf("%w: %v", errDownloadFalhou, err)
+	}
+	return dest, nil
+}
+
+// YtdlpDisponivel expõe o status do yt-dlp (s.ytdlp.Status) para o job
+// trailer_tema_faltantes (internal/job/trailertema, briefing 0104) checar
+// UMA VEZ por execução, antes de iterar as entities -- evita golpear o
+// binário (--version) uma vez por entity da biblioteca quando ele está
+// simplesmente indisponível. Sem s.ytdlp injetado, degrada para
+// indisponível (mesmo cenário defensivo de ytdlpDisponivel/
+// montarYtdlpStatusResponse).
+func (s *Server) YtdlpDisponivel(ctx context.Context) (disponivel bool, detalhe string) {
+	if s.ytdlp == nil {
+		return false, "yt-dlp nao configurado neste servidor"
+	}
+	disponivel, _, detalhe = s.ytdlp.Status(ctx)
+	return disponivel, detalhe
+}
+
+// BaixarTrailerEntity baixa (best-effort) o trailer padrão do YouTube (sem
+// seleção explícita de vídeo, sem force, idioma principal) para `entityID`
+// -- usada pelo job trailer_tema_faltantes (internal/job/trailertema) e pelo
+// gatilho automático do scan (briefing 0104, ADR-0026). Sentinels de "nada a
+// fazer" (sem trailer disponível, já existe local, sem destino, yt-dlp
+// indisponível, entity sumiu) voltam como baixado=false, err=nil -- só uma
+// falha REAL (rede, banco) propaga err, para o chamador (job/goroutine)
+// contar/logar como falha de verdade.
+func (s *Server) BaixarTrailerEntity(ctx context.Context, entityID string) (bool, error) {
+	_, err := s.baixarTrailerEntityComOpcoes(ctx, entityID, "", "", false)
+	if err == nil {
+		return true, nil
+	}
+	if trailerTemaErroBenigno(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+// respondErroBaixarTrailer mapeia os sentinels de
+// baixarTrailerEntityComOpcoes para o status HTTP do contrato de POST
+// .../trailer/download (briefing 0102, preservado pela extração do 0104):
+// entity ausente -> 404; lang fora dos permitidos -> 400; yt-dlp
+// indisponível -> 503; sem trailer YouTube no item -> 422; sem pasta de
+// destino -> 404; trailer já existe (sem force) -> 409; falha do próprio
+// download -> 502; qualquer outro erro (banco, settings) -> 500.
+func respondErroBaixarTrailer(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, errEntityNaoEncontrada):
+		writeError(w, http.StatusNotFound, "not_found", "entidade não encontrada")
+	case errors.Is(err, errLangInvalida):
+		writeError(w, http.StatusBadRequest, "invalid_query", "lang fora dos idiomas permitidos")
+	case errors.Is(err, errYtdlpIndisponivel):
+		writeError(w, http.StatusServiceUnavailable, "ytdlp_indisponivel", err.Error())
+	case errors.Is(err, errSemTrailerYoutube):
+		writeError(w, http.StatusUnprocessableEntity, "sem_trailer",
+			"nenhum trailer do YouTube disponível para este item")
+	case errors.Is(err, errSemDestino):
+		respondErroLocalmedia(w, errSemDestino)
+	case errors.Is(err, errTrailerJaExiste):
 		writeError(w, http.StatusConflict, "ja_existe",
 			"trailer já baixado (use force=true para re-baixar)")
-		return "", "", false, false
+	case errors.Is(err, errDownloadFalhou):
+		writeError(w, http.StatusBadGateway, "youtube_download_failed",
+			"falha ao baixar o trailer: "+err.Error())
+	default:
+		respondErroInterno(w)
 	}
-	return dir, nomeBaseVideo, pastaExclusiva, true
 }
 
 // postEntityTrailerDownload trata POST /api/v1/entities/{id}/trailer/download
-// (briefing 0102, ADR-0025): resolve o trailer YouTube do item (videos já
-// extraído via richfields, MESMO shape de GET /entities/{id}), baixa via
-// yt-dlp (s.ytdlp.Baixar, 0101) para um arquivo TEMPORÁRIO no destino final e
-// só renomeia para o nome canônico em caso de sucesso (nunca deixa um
-// arquivo parcial com o nome canônico). 503 sem yt-dlp disponível; 422 sem
-// trailer YouTube no item; 404 sem pasta de destino (sem media_file
-// present); 409 quando já existe um trailer e `force` não foi pedido; 502
-// quando o próprio download falha (rede, vídeo removido do YouTube, etc.).
+// (briefing 0102, ADR-0025; extraído para baixarTrailerEntityComOpcoes no
+// briefing 0104): só decodifica o corpo opcional e traduz o retorno de
+// baixarTrailerEntityComOpcoes para status HTTP (respondErroBaixarTrailer) —
+// toda a lógica de resolver vídeo/destino/baixar vive na função pura.
 func (s *Server) postEntityTrailerDownload(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
 	}
 	id := chi.URLParam(r, "id")
-	ctx := r.Context()
-
-	ent, ok := s.exigirEntity(w, ctx, id)
-	if !ok {
-		return
-	}
-	if !s.ytdlpDisponivel(ctx, w) {
-		return
-	}
 
 	var body trailerDownloadRequest
 	if ok := decodeOpcional(w, r, &body); !ok {
 		return
 	}
 
-	video, ok := s.resolverVideoTrailer(w, r, id, body.Key)
-	if !ok {
+	destino, err := s.baixarTrailerEntityComOpcoes(r.Context(), id, r.URL.Query().Get("lang"), body.Key, body.Force)
+	if err != nil {
+		respondErroBaixarTrailer(w, err)
 		return
 	}
-
-	dir, nomeBaseVideo, pastaExclusiva, ok := s.resolverDestinoTrailerLivre(w, ctx, ent, body.Force)
-	if !ok {
-		return
-	}
-
-	destino := filepath.Join(dir, localmedia.NomeArquivoArte(localmedia.KindTrailer, true, 0, pastaExclusiva, nomeBaseVideo, ""))
-	if err := s.baixarTrailerAtomico(ctx, video, destino); err != nil {
-		writeError(w, http.StatusBadGateway, "youtube_download_failed",
-			"falha ao baixar o trailer: "+err.Error())
-		return
-	}
-
 	writeJSON(w, http.StatusOK, trailerDownloadResult{LocalPath: destino})
 }
 
@@ -1091,47 +1170,111 @@ func (s *Server) postEntityThemeDownload(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	id := chi.URLParam(r, "id")
-	ctx := r.Context()
 
-	ent, ok := s.exigirEntity(w, ctx, id)
-	if !ok {
+	destino, err := s.baixarTemaEntityComOpcoes(r.Context(), id)
+	if err != nil {
+		respondErroBaixarTema(w, err)
 		return
 	}
-	if !s.ytdlpDisponivel(ctx, w) {
-		return
+	writeJSON(w, http.StatusOK, themeDownloadResult{LocalPath: destino})
+}
+
+// baixarTemaEntityComOpcoes é a implementação PURA (sem
+// http.ResponseWriter) de "baixar o tema musical para UMA entity": lê o
+// candidato cacheado (media_external, source=themerrdb — NUNCA consulta o
+// ThemerrDB ao vivo, candidatoTemaURL), resolve a pasta de destino e baixa
+// via yt-dlp para theme.mp3 na raiz da pasta — MESMO path que GET
+// /entities/{id}/theme (0082) já serve. SEM `force`: tema é singular por
+// pasta, um theme.* já presente NUNCA é sobrescrito. Reaproveitada por
+// postEntityThemeDownload (traduz o erro em status HTTP via
+// respondErroBaixarTema/errors.Is) e por BaixarTemaEntity (job
+// trailer_tema_faltantes e gatilho automático do scan, briefing 0104).
+func (s *Server) baixarTemaEntityComOpcoes(ctx context.Context, entityID string) (destino string, err error) {
+	ent, err := s.leitura().ObterEntity(ctx, entityID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", errEntityNaoEncontrada
+		}
+		return "", err
 	}
 
-	urlOrigem, ok := s.candidatoTemaURL(ctx, id)
+	if s.ytdlp == nil {
+		return "", errYtdlpIndisponivel
+	}
+	disponivel, _, detalhe := s.ytdlp.Status(ctx)
+	if !disponivel {
+		if detalhe != "" {
+			return "", fmt.Errorf("%w: %s", errYtdlpIndisponivel, detalhe)
+		}
+		return "", errYtdlpIndisponivel
+	}
+
+	urlOrigem, ok := s.candidatoTemaURL(ctx, entityID)
 	if !ok {
-		writeError(w, http.StatusUnprocessableEntity, "sem_candidato",
-			"nenhum candidato de tema musical disponível para este item")
-		return
+		return "", errSemCandidatoTema
 	}
 
 	dir, _, _, ok, err := s.resolverDestino(ctx, ent)
 	if err != nil {
-		respondErroInterno(w)
-		return
+		return "", err
 	}
 	if !ok {
-		respondErroLocalmedia(w, errSemDestino)
-		return
+		return "", errSemDestino
+	}
+	if _, jaExiste := encontrarArquivoTema(dir); jaExiste {
+		return "", errTemaJaExiste
 	}
 
-	if _, jaExiste := encontrarArquivoTema(dir); jaExiste {
+	dest := filepath.Join(dir, "theme.mp3")
+	if err := s.baixarTemaAtomico(ctx, urlOrigem, dest); err != nil {
+		return "", fmt.Errorf("%w: %v", errDownloadFalhou, err)
+	}
+	return dest, nil
+}
+
+// BaixarTemaEntity baixa (best-effort) o tema musical de `entityID` -- usada
+// pelo job trailer_tema_faltantes (internal/job/trailertema) e pelo gatilho
+// automático do scan (briefing 0104, ADR-0026). Sentinels de "nada a fazer"
+// (sem candidato, já existe local, sem destino, yt-dlp indisponível, entity
+// sumiu) voltam como baixado=false, err=nil -- só uma falha REAL (rede,
+// banco) propaga err.
+func (s *Server) BaixarTemaEntity(ctx context.Context, entityID string) (bool, error) {
+	_, err := s.baixarTemaEntityComOpcoes(ctx, entityID)
+	if err == nil {
+		return true, nil
+	}
+	if trailerTemaErroBenigno(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+// respondErroBaixarTema mapeia os sentinels de baixarTemaEntityComOpcoes
+// para o status HTTP do contrato de POST .../theme/download (briefing 0103,
+// preservado pela extração do 0104): entity ausente -> 404; yt-dlp
+// indisponível -> 503; sem candidato -> 422; sem pasta de destino -> 404;
+// tema já existe -> 409; falha do próprio download -> 502; qualquer outro
+// erro (banco) -> 500.
+func respondErroBaixarTema(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, errEntityNaoEncontrada):
+		writeError(w, http.StatusNotFound, "not_found", "entidade não encontrada")
+	case errors.Is(err, errYtdlpIndisponivel):
+		writeError(w, http.StatusServiceUnavailable, "ytdlp_indisponivel", err.Error())
+	case errors.Is(err, errSemCandidatoTema):
+		writeError(w, http.StatusUnprocessableEntity, "sem_candidato",
+			"nenhum candidato de tema musical disponível para este item")
+	case errors.Is(err, errSemDestino):
+		respondErroLocalmedia(w, errSemDestino)
+	case errors.Is(err, errTemaJaExiste):
 		writeError(w, http.StatusConflict, "ja_existe",
 			"tema musical já presente (apague o arquivo manualmente para re-baixar)")
-		return
-	}
-
-	destino := filepath.Join(dir, "theme.mp3")
-	if err := s.baixarTemaAtomico(ctx, urlOrigem, destino); err != nil {
+	case errors.Is(err, errDownloadFalhou):
 		writeError(w, http.StatusBadGateway, "youtube_download_failed",
 			"falha ao baixar o tema musical: "+err.Error())
-		return
+	default:
+		respondErroInterno(w)
 	}
-
-	writeJSON(w, http.StatusOK, themeDownloadResult{LocalPath: destino})
 }
 
 // baixarTemaAtomico baixa `urlOrigem` (s.ytdlp.Baixar) para um arquivo

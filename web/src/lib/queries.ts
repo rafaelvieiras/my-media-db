@@ -22,6 +22,7 @@ import {
   getLanguageSettings,
   getRetroactiveEnrichmentSettings,
   getAutoMaterializeArtworkSettings,
+  getAutoDownloadTrailerTemaSettings,
   getYtdlpSettings,
   getMatchPreview,
   listJobExecutions,
@@ -150,6 +151,15 @@ export const retroactiveEnrichmentSettingsQueryOptions = queryOptions({
 export const autoMaterializeArtworkSettingsQueryOptions = queryOptions({
   queryKey: ['settings', 'auto-materialize-artwork'],
   queryFn: getAutoMaterializeArtworkSettings,
+})
+
+// Config do toggle de download automático de trailer/tema no scan (0104):
+// fonte única para o card "Trailer e tema musical" da tela de configurações.
+// Chave `['settings', 'auto-download-trailer-tema']` — invalidada pelo PUT
+// do switch.
+export const autoDownloadTrailerTemaSettingsQueryOptions = queryOptions({
+  queryKey: ['settings', 'auto-download-trailer-tema'],
+  queryFn: getAutoDownloadTrailerTemaSettings,
 })
 
 // Status do binário yt-dlp + path customizado (0101, ADR-0025): fonte única

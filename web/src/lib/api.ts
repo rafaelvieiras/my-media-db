@@ -546,6 +546,40 @@ export async function putAutoMaterializeArtworkSettings(
   return lerJson<AutoMaterializeArtworkSettings>(res)
 }
 
+// ── Settings de download automático de trailer/tema no scan (0104) ─────────
+
+// Shape manual (não via `components['schemas']`): o backend deste briefing
+// está sendo implementado em paralelo e o openapi.yaml/gen:types ainda não
+// tem o schema novo. Mesmo shape de `AutoMaterializeArtworkSettings`
+// (`{ enabled: boolean }`).
+export type AutoDownloadTrailerTemaSettings = { enabled: boolean }
+
+// Toggle: quando ligado, ao importar/auto-casar um item novo no scan, tenta
+// baixar trailer e tema em segundo plano (best-effort, não bloqueia a
+// resposta do scan). Quando ainda não há linha gravada, o backend responde o
+// default seguro (`{"enabled": false}`).
+export async function getAutoDownloadTrailerTemaSettings(): Promise<AutoDownloadTrailerTemaSettings> {
+  return lerJson<AutoDownloadTrailerTemaSettings>(
+    await fetch(`${base}/api/v1/settings/auto-download-trailer-tema`),
+  )
+}
+
+// Grava (upsert) o toggle. O 400 do backend (corpo malformado) vira
+// `ApiError` com a mensagem pt-BR — exibida inline.
+export async function putAutoDownloadTrailerTemaSettings(
+  body: AutoDownloadTrailerTemaSettings,
+): Promise<AutoDownloadTrailerTemaSettings> {
+  const res = await fetch(
+    `${base}/api/v1/settings/auto-download-trailer-tema`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+  return lerJson<AutoDownloadTrailerTemaSettings>(res)
+}
+
 // ── Settings de path customizado do yt-dlp (0101, ADR-0025) ─────────────────
 
 export type YtdlpSettings = components['schemas']['YtdlpSettings']
