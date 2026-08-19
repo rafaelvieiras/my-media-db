@@ -905,6 +905,152 @@ func (q *Queries) ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCar
 	return items, nil
 }
 
+const listarEntityCardsRecentes = `-- name: ListarEntityCardsRecentes :many
+SELECT
+    e.id, e.type, e.title, e.status,
+    EXISTS (
+        SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present'
+        UNION ALL
+        SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
+            WHERE mfe.entity_id = e.id AND mf.state = 'present'
+    ) AS owned,
+    (SELECT COUNT(*) FROM (
+        SELECT m.id FROM media_file m WHERE m.entity_id = e.id
+        UNION ALL
+        SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
+    )) AS file_count,
+    (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster,
+    ecc.complete AS completeness_complete,
+    ecc.missing_json AS completeness_missing_json
+FROM entity e
+LEFT JOIN entity_catalog_completeness ecc ON ecc.entity_id = e.id
+WHERE e.type NOT IN ('season', 'episode')
+  AND (?1 IS NULL OR e.type = ?1)
+  AND (?2 IS NULL
+       OR EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') = ?2)
+ORDER BY e.created_at DESC, e.id
+LIMIT ?4 OFFSET ?3
+`
+
+type ListarEntityCardsRecentesParams struct {
+	Type   interface{}
+	Owned  interface{}
+	Offset int64
+	Limit  int64
+}
+
+type ListarEntityCardsRecentesRow struct {
+	ID                      string
+	Type                    string
+	Title                   string
+	Status                  string
+	Owned                   bool
+	FileCount               int64
+	MatchConfidence         interface{}
+	HasPoster               bool
+	CompletenessComplete    sql.NullInt64
+	CompletenessMissingJson sql.NullString
+}
+
+// Igual a ListarEntityCards, mas ordena por created_at DESCENDENTE
+// (sort=-created_at, briefings 0109/0110): "adicionados recentemente" na
+// home. owned/file_count somam a juncao media_file_entity do mesmo jeito --
+// ver a nota longa em ListarEntityCards. So a variante DESC existe (mais
+// recente primeiro); nao ha pedido de "mais antigo primeiro". Mesmo shape de
+// paginacao LIMIT/OFFSET das irmas por titulo -- o consumidor real (carrossel
+// da home) sempre usa limit pequeno (ex. 10), sem necessidade de um shape de
+// paginacao dedicado.
+func (q *Queries) ListarEntityCardsRecentes(ctx context.Context, arg ListarEntityCardsRecentesParams) ([]ListarEntityCardsRecentesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarEntityCardsRecentes,
+		arg.Type,
+		arg.Owned,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarEntityCardsRecentesRow{}
+	for rows.Next() {
+		var i ListarEntityCardsRecentesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Title,
+			&i.Status,
+			&i.Owned,
+			&i.FileCount,
+			&i.MatchConfidence,
+			&i.HasPoster,
+			&i.CompletenessComplete,
+			&i.CompletenessMissingJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listarTiposComContagem = `-- name: ListarTiposComContagem :many
+SELECT type, COUNT(*) AS count
+FROM entity
+WHERE type NOT IN ('season', 'episode')
+  AND status != 'draft'
+GROUP BY type
+ORDER BY count DESC, type ASC
+`
+
+type ListarTiposComContagemRow struct {
+	Type  string
+	Count int64
+}
+
+// Tipos de entity DISTINTOS com pelo menos 1 item CATALOGADO (status !=
+// 'draft'), para a home (0109) e o dropdown da navbar (0110) descobrirem
+// quais schemas mostrar sem hardcode de lista fixa no frontend -- cobre
+// album/artista/faixa (0105-0107) junto de movie/tv sem exigir mudanca aqui a
+// cada vertical nova. Criterio = "status != 'draft'" (o MESMO da fila de
+// revisao em review.sql: um item 'draft' e so um resultado de busca ainda nao
+// comprometido ao catalogo) -- DELIBERADAMENTE distinto de "owned"
+// (ContarEntityCards/ListarEntityCards: posse FISICA de arquivo). Um item
+// 'wanted'/'unreleased' catalogado mas sem arquivo em disco ainda conta --
+// coerente com AGENTS.md #2 ("o banco e maior que a biblioteca": cataloga o
+// que se tem E o que ainda nao se tem). Exclui season/episode (nos internos
+// da arvore de series, ver ListarEntityCards/0032). Ordenado por count
+// DESCENDENTE (schema mais populoso primeiro) e type ASCENDENTE como
+// desempate estavel.
+func (q *Queries) ListarTiposComContagem(ctx context.Context) ([]ListarTiposComContagemRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarTiposComContagem)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarTiposComContagemRow{}
+	for rows.Next() {
+		var i ListarTiposComContagemRow
+		if err := rows.Scan(&i.Type, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const obterColecaoPorTmdb = `-- name: ObterColecaoPorTmdb :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,

@@ -109,6 +109,18 @@ func semearSource(t *testing.T, d *db.DB, id, path string) {
 	}
 }
 
+// definirCreatedAt sobrescreve created_at direto no banco (CriarEntity nasce
+// sempre com o timestamp do DEFAULT, sem parâmetro dedicado) -- usado pelos
+// testes de sort=-created_at (0109/0110) para garantir uma ordem
+// determinística entre entities criadas na mesma janela de milissegundos.
+func definirCreatedAt(t *testing.T, d *db.DB, id, createdAt string) {
+	t.Helper()
+	if _, err := d.Write.ExecContext(context.Background(),
+		"UPDATE entity SET created_at = ? WHERE id = ?", createdAt, id); err != nil {
+		t.Fatalf("definirCreatedAt(%s=%s): %v", id, createdAt, err)
+	}
+}
+
 // decodeList decodifica a resposta paginada de GET /api/v1/entities.
 func decodeList(t *testing.T, body []byte) entityListDTO {
 	t.Helper()
@@ -249,6 +261,112 @@ func TestListEntitiesQueryInvalida(t *testing.T) {
 			t.Errorf("%s: status = %d, quero 400", qs, rec.Code)
 		}
 		checkErrorShape(t, rec, "invalid_query")
+	}
+}
+
+// TestListEntitiesSortCreatedAtDesc cobre sort=-created_at (briefing 0109): a
+// home usa esta ordem para o carrossel "adicionados recentemente". A ordem de
+// CRIAÇÃO na semeadura é deliberadamente diferente da ordem de created_at
+// forçada abaixo, para provar que a ordenação é por created_at e não por
+// ordem de inserção/id.
+func TestListEntitiesSortCreatedAtDesc(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "id-x", "movie", "Xeque")
+	definirCreatedAt(t, d, "id-x", "2026-01-01T00:00:00.000Z")
+	semearEntity(t, d, "id-y", "movie", "Yankee")
+	definirCreatedAt(t, d, "id-y", "2026-03-01T00:00:00.000Z")
+	semearEntity(t, d, "id-z", "movie", "Zulu")
+	definirCreatedAt(t, d, "id-z", "2026-02-01T00:00:00.000Z")
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities?sort=-created_at", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	out := decodeList(t, rec.Body.Bytes())
+	if len(out.Items) != 3 {
+		t.Fatalf("items = %d, quero 3", len(out.Items))
+	}
+	gotIDs := []string{out.Items[0].ID, out.Items[1].ID, out.Items[2].ID}
+	wantIDs := []string{"id-y", "id-z", "id-x"} // mar > fev > jan
+	for i := range wantIDs {
+		if gotIDs[i] != wantIDs[i] {
+			t.Fatalf("ordem = %v, quero %v", gotIDs, wantIDs)
+		}
+	}
+
+	// limit pequeno (uso real do carrossel): só os 2 mais recentes.
+	recLim := do(t, h, http.MethodGet, "/api/v1/entities?sort=-created_at&limit=2", nil)
+	outLim := decodeList(t, recLim.Body.Bytes())
+	if len(outLim.Items) != 2 || outLim.Items[0].ID != "id-y" || outLim.Items[1].ID != "id-z" {
+		t.Fatalf("limit=2 = %+v, quero [id-y,id-z]", outLim.Items)
+	}
+}
+
+// TestListEntityTypes cobre GET /entities/types (briefings 0109/0110): tipos
+// distintos catalogados (status != 'draft') com a contagem certa, incluindo
+// um tipo de música (album) desde 0105-0107 -- sem lista fixa hardcoded. Um
+// item 'wanted' conta (catalogado, ainda que sem arquivo); um item 'draft'
+// NÃO conta.
+func TestListEntityTypes(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "m1", "movie", "M1")
+	semearEntity(t, d, "m2", "movie", "M2")
+	semearEntity(t, d, "s1", "tv", "S1")
+	semearEntity(t, d, "al1", "album", "AL1")
+	semearEntity(t, d, "al2", "album", "AL2")
+	semearEntity(t, d, "al3", "album", "AL3")
+	semearEntity(t, d, "w1", "tv", "W1 wanted")
+	definirStatus(t, d, "w1", "wanted")
+	semearEntity(t, d, "dr1", "artista", "DR1 draft")
+	definirStatus(t, d, "dr1", "draft")
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/types", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	var out []entityTypeDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decodificar []entityTypeDTO: %v (corpo=%s)", err, rec.Body.Bytes())
+	}
+	byType := map[string]int64{}
+	for _, tt := range out {
+		byType[tt.Type] = tt.Count
+	}
+	eq(t, "movie count", byType["movie"], int64(2))
+	eq(t, "tv count", byType["tv"], int64(2)) // s1 (cataloged) + w1 (wanted)
+	eq(t, "album count", byType["album"], int64(3))
+	if _, ok := byType["artista"]; ok {
+		t.Errorf("artista (draft) não deveria aparecer, byType=%+v", byType)
+	}
+}
+
+// TestListEntityTypesNaoColideComGetPorId garante que a rota estática
+// /entities/types não é capturada pelo wildcard /entities/{id} (briefing
+// 0109/0110): sem uma entity literal de id "types" no banco, o handler de
+// tipos responde 200 com a lista -- se a colisão existisse, cairia no
+// getEntity e devolveria 404 "entidade não encontrada".
+func TestListEntityTypesNaoColideComGetPorId(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "m1", "movie", "M1")
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/types", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s) -- rota /types caiu no wildcard /{id}?", rec.Code, rec.Body.String())
+	}
+	var out []entityTypeDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decodificar []entityTypeDTO: %v (corpo=%s)", err, rec.Body.Bytes())
+	}
+	if len(out) != 1 || out[0].Type != "movie" || out[0].Count != 1 {
+		t.Fatalf("out = %+v, quero [{movie 1}]", out)
+	}
+
+	// Um id literal "types" nunca existiu -- GET /entities/{id} normal para um
+	// id qualquer que não seja "types" segue 404, provando que a rota estática
+	// não "roubou" o wildcard para outros ids.
+	rec404 := do(t, h, http.MethodGet, "/api/v1/entities/inexistente", nil)
+	if rec404.Code != http.StatusNotFound {
+		t.Errorf("GET /entities/inexistente: status = %d, quero 404", rec404.Code)
 	}
 }
 

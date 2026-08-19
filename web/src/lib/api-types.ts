@@ -65,6 +65,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/types': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Tipos de entity com dado catalogado (briefings 0109/0110).
+     * @description Devolve os `type` distintos com pelo menos 1 entity CATALOGADA (status != draft), ordenados por `count DESC, type ASC`, sem lista fixa — cobre qualquer tipo existente de fato no banco (ex.: movie, tv, album, artista, faixa). Alimenta os carrosséis "adicionados recentemente" da home (0109) e o dropdown de biblioteca da navbar (0110). Rota ESTÁTICA, resolvida antes de /entities/{id}.
+     */
+    get: operations['listEntityTypes']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/{id}': {
     parameters: {
       query?: never
@@ -154,6 +174,30 @@ export interface paths {
      * @description Persiste (upsert) o toggle e invalida o cache. Escopo restrito ao caminho de AUTO-IMPORT do scan (filme novo auto-matchado, série nova) -- não afeta ações manuais (Corrigir, Confirmar candidato, Baixar Metadados, auto-match em lote), mesmo com o toggle ligado.
      */
     put: operations['putAutoMaterializeArtworkSettings']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/settings/auto-download-trailer-tema': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Toggle de download automático de trailer/tema musical (briefing 0104, ADR-0026).
+     * @description Devolve se o download automático de trailer/tema musical está ligado. O toggle é compartilhado por DOIS mecanismos (ADR-0026 item 5): o job periódico `trailer_tema_faltantes` (sempre registrado/agendável, independente deste toggle) E o gatilho automático no scan -- quando ligado, todo auto-import bem-sucedido (filme via auto-match imediato, ou série) dispara, em background, uma tentativa de baixar trailer/tema para o item novo, sem esperar o job periódico nem clique manual e sem atrasar a resposta do scan. Quando ainda não há linha gravada, responde o default seguro (`{"enabled": false}`).
+     */
+    get: operations['getAutoDownloadTrailerTemaSettings']
+    /**
+     * Grava o toggle de download automático de trailer/tema musical.
+     * @description Persiste (upsert) o toggle e invalida o cache. Escopo restrito ao caminho de AUTO-IMPORT do scan (filme novo auto-matchado, série nova) -- não afeta o botão manual de trailer/tema (0102/0103), mesmo com o toggle ligado; o job periódico continua sempre agendável independente deste valor.
+     */
+    put: operations['putAutoDownloadTrailerTemaSettings']
     post?: never
     delete?: never
     options?: never
@@ -1497,10 +1541,18 @@ export interface components {
     EntityCard: {
       id: string
       /**
-       * @description Tipo canonico da entity. `season`/`episode` (0031) compoem a arvore de series: GET /members de uma `tv` traz as `season`s; de uma `season`, os `episode`s (ordenados por sort_index).
+       * @description Tipo canonico da entity. `season`/`episode` (0031) compoem a arvore de series: GET /members de uma `tv` traz as `season`s; de uma `season`, os `episode`s (ordenados por sort_index). `album`/`artista`/`faixa` (0105-0107) sao a vertical de musica -- nomes em portugues no schema, nao `artist`/`track`.
        * @enum {string}
        */
-      type: 'movie' | 'tv' | 'collection' | 'season' | 'episode'
+      type:
+        | 'movie'
+        | 'tv'
+        | 'collection'
+        | 'season'
+        | 'episode'
+        | 'album'
+        | 'artista'
+        | 'faixa'
       title: string
       status: string
       /** @description Posse derivada (EXISTS media_file present). */
@@ -1541,6 +1593,12 @@ export interface components {
       total: number
       limit: number
       offset: number
+    }
+    /** @description Um `type` de entity com pelo menos 1 item CATALOGADO (status != draft, briefing 0109/0110) e a contagem correspondente. Sem lista fixa de tipos — cobre album/artista/faixa (0105-0107) junto de movie/tv. */
+    EntityType: {
+      type: string
+      /** Format: int64 */
+      count: number
     }
     /** @description Resultado de uma fonte EXTERNA (ex.: TMDB). saved é sempre false: nunca é uma entidade do catálogo até o import explícito (briefing 0015). */
     ExternalResult: {
@@ -1967,10 +2025,18 @@ export interface components {
     ResolvedEntity: {
       id: string
       /**
-       * @description Tipo canonico da entity. `season`/`episode` (0031) sao os nos internos da arvore de series (mesmo shape resolvido; navegados por GET /members).
+       * @description Tipo canonico da entity. `season`/`episode` (0031) sao os nos internos da arvore de series (mesmo shape resolvido; navegados por GET /members). `album`/`artista`/`faixa` (0105-0107) sao a vertical de musica -- mesmo enum de EntityCard.type (nomes em portugues, nao `artist`/`track`).
        * @enum {string}
        */
-      type: 'movie' | 'tv' | 'collection' | 'season' | 'episode'
+      type:
+        | 'movie'
+        | 'tv'
+        | 'collection'
+        | 'season'
+        | 'episode'
+        | 'album'
+        | 'artista'
+        | 'faixa'
       title: string
       original_title: string | null
       description: string | null
@@ -2096,6 +2162,11 @@ export interface components {
     /** @description Toggle de materialização automática de artes (briefing 0089): quando ligado, todo auto-import bem-sucedido do scan (filme ou série) já materializa na hora, na pasta real da biblioteca, as artes descobertas no inventário. É o corpo do PUT e a resposta do GET/PUT /settings/auto-materialize-artwork. */
     AutoMaterializeArtworkSettings: {
       /** @description Desligado por padrão (default de fábrica `false`). Escopo restrito ao auto-import do scan -- não afeta ações manuais de enriquecimento. */
+      enabled: boolean
+    }
+    /** @description Toggle de download automático de trailer/tema musical (briefing 0104, ADR-0026): compartilhado pelo job periódico `trailer_tema_faltantes` e pelo gatilho automático no scan -- quando ligado, todo auto-import bem-sucedido do scan (filme ou série) tenta baixar trailer/tema em background, sem esperar o job periódico nem clique manual. É o corpo do PUT e a resposta do GET/PUT /settings/auto-download-trailer-tema. */
+    AutoDownloadTrailerTemaSettings: {
+      /** @description Desligado por padrão (default de fábrica `false`). Escopo restrito ao auto-import do scan -- não afeta o botão manual de trailer/tema (0102/0103); o job periódico continua sempre agendável independente deste valor. */
       enabled: boolean
     }
     /** @description Corpo do PUT /settings/ytdlp (briefing 0101, ADR-0025): o path customizado que o dono quer usar para o binário yt-dlp. */
@@ -2605,8 +2676,8 @@ export interface operations {
         limit?: number
         /** @description Deslocamento da página (default 0). */
         offset?: number
-        /** @description Ordenação por título — `title` (asc, default) ou `-title` (desc). */
-        sort?: 'title' | '-title'
+        /** @description Ordenação — por título `title` (asc, default) ou `-title` (desc), ou por data de criação `-created_at` (mais recente primeiro, briefing 0109 — alimenta os carrosséis "adicionados recentemente" da home). */
+        sort?: 'title' | '-title' | '-created_at'
         /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
         lang?: components['parameters']['LangQuery']
       }
@@ -2653,6 +2724,26 @@ export interface operations {
       400: components['responses']['Error']
       422: components['responses']['Error']
       503: components['responses']['Error']
+    }
+  }
+  listEntityTypes: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Tipos com dado, do mais numeroso ao menos numeroso. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['EntityType'][]
+        }
+      }
     }
   }
   getEntity: {
@@ -2839,6 +2930,51 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['AutoMaterializeArtworkSettings']
+        }
+      }
+      400: components['responses']['Error']
+    }
+  }
+  getAutoDownloadTrailerTemaSettings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Toggle de download automático de trailer/tema musical. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AutoDownloadTrailerTemaSettings']
+        }
+      }
+    }
+  }
+  putAutoDownloadTrailerTemaSettings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AutoDownloadTrailerTemaSettings']
+      }
+    }
+    responses: {
+      /** @description Toggle gravado. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AutoDownloadTrailerTemaSettings']
         }
       }
       400: components['responses']['Error']

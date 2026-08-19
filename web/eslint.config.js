@@ -40,6 +40,10 @@ export default tseslint.config([
     files: ['src/components/ui/**'],
     rules: {
       'react-refresh/only-export-components': 'off',
+      // carousel.tsx (gerado via `npx shadcn add carousel`, briefing 0109) chama
+      // setState num useEffect de sincronização com o embla-carousel-react — é o
+      // stock template do shadcn upstream, não código nosso.
+      'react-hooks/set-state-in-effect': 'off',
     },
   },
 ])

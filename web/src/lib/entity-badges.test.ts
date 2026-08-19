@@ -6,6 +6,7 @@ import {
   precisaRevisao,
   rotuloStatus,
   rotuloTipo,
+  rotuloTipoPlural,
   temCompletude,
   unidadeCompletude,
 } from '@/lib/entity-badges'
@@ -70,6 +71,26 @@ describe('rotuloTipo', () => {
     expect(rotuloTipo('collection')).toBe('Coleção')
     expect(rotuloTipo('season')).toBe('Temporada')
     expect(rotuloTipo('episode')).toBe('Episódio')
+  })
+
+  it('traduz os tipos da vertical de música (0105-0107)', () => {
+    expect(rotuloTipo('album')).toBe('Álbum')
+    expect(rotuloTipo('artista')).toBe('Artista')
+    expect(rotuloTipo('faixa')).toBe('Faixa')
+  })
+})
+
+describe('rotuloTipoPlural', () => {
+  it('traduz tipos conhecidos no plural, incluindo música (0109/0110)', () => {
+    expect(rotuloTipoPlural('movie')).toBe('Filmes')
+    expect(rotuloTipoPlural('tv')).toBe('Séries')
+    expect(rotuloTipoPlural('album')).toBe('Álbuns')
+    expect(rotuloTipoPlural('artista')).toBe('Artistas')
+    expect(rotuloTipoPlural('faixa')).toBe('Faixas')
+  })
+
+  it('cai no singular de rotuloTipo para tipo sem plural cadastrado', () => {
+    expect(rotuloTipoPlural('other')).toBe('other')
   })
 })
 

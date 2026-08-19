@@ -91,8 +91,10 @@ export function rotuloStatus(status: string): string {
 }
 
 // Rótulo pt-BR do tipo de mídia para exibição. Cobre os tipos canônicos: os de
-// topo (filme/série/coleção) e os nós da árvore de séries (temporada/episódio,
-// 0031). Tipo desconhecido ecoa cru (nunca quebra a UI).
+// topo (filme/série/coleção), os nós da árvore de séries (temporada/episódio,
+// 0031) e os da vertical de música (artista/álbum/faixa, 0105-0107 — nomes em
+// português no schema, não `artist`/`album`/`track`). Tipo desconhecido ecoa
+// cru (nunca quebra a UI).
 export function rotuloTipo(type: string): string {
   const mapa: Record<string, string> = {
     movie: 'Filme',
@@ -100,6 +102,30 @@ export function rotuloTipo(type: string): string {
     collection: 'Coleção',
     season: 'Temporada',
     episode: 'Episódio',
+    album: 'Álbum',
+    artista: 'Artista',
+    faixa: 'Faixa',
   }
   return mapa[type] ?? type
+}
+
+// Rótulo pt-BR PLURAL do tipo, para cabeçalhos de seção/categoria — o
+// carrossel "adicionados recentemente" da home (0109) e o dropdown de
+// biblioteca da navbar (0110), que listam o tipo como CATEGORIA, não como
+// selo inline de um item ("Filmes" acima de uma prateleira, não "Filme" como
+// em `rotuloTipo`). Mesma fonte de tipos que `rotuloTipo` (central, sem mapa
+// duplicado à parte); tipo sem plural cadastrado cai no singular (nunca
+// quebra a UI).
+export function rotuloTipoPlural(type: string): string {
+  const mapa: Record<string, string> = {
+    movie: 'Filmes',
+    tv: 'Séries',
+    collection: 'Coleções',
+    season: 'Temporadas',
+    episode: 'Episódios',
+    album: 'Álbuns',
+    artista: 'Artistas',
+    faixa: 'Faixas',
+  }
+  return mapa[type] ?? rotuloTipo(type)
 }

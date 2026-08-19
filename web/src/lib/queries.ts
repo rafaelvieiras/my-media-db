@@ -34,6 +34,7 @@ import {
   getScanStatus,
   listAssets,
   listEntities,
+  listEntityTypes,
   listLibrary,
   searchMedia,
   type EntityListParams,
@@ -86,6 +87,17 @@ export function entitiesQueryOptions(params: EntityListParams, lang?: string) {
     queryFn: () => listEntities(params, lang),
   })
 }
+
+// Tipos de entity com dado catalogado (briefings 0109/0110). Chave própria
+// `['entities', 'types']` — SOB o prefixo `['entities']` (mesmo domínio de
+// `entitiesQueryOptions`), mas com `queryFn` independente e sem `params`
+// (o endpoint não aceita filtro). Consumida pela home (um `RecentlyAddedRail`
+// por tipo, 0109) e pela navbar (dropdown de biblioteca, 0110) — export
+// nomeado de propósito para o 0110 reaproveitar.
+export const entityTypesQueryOptions = queryOptions({
+  queryKey: ['entities', 'types'],
+  queryFn: listEntityTypes,
+})
 
 export function entityQueryOptions(id: string, lang?: string) {
   return queryOptions({

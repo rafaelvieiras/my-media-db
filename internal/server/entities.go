@@ -179,7 +179,7 @@ func (s *Server) listEntities(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	desc, ok := parseSort(w, q)
+	modo, ok := parseSort(w, q)
 	if !ok {
 		return
 	}
@@ -205,7 +205,7 @@ func (s *Server) listEntities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.listarCards(ctx, tipoFiltro, ownedFiltro, int64(limit), int64(offset), desc)
+	rows, err := s.listarCards(ctx, tipoFiltro, ownedFiltro, int64(limit), int64(offset), modo)
 	if err != nil {
 		respondErroInterno(w)
 		return
@@ -222,11 +222,14 @@ func (s *Server) listEntities(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, entityListDTO{Items: items, Total: total, Limit: limit, Offset: offset})
 }
 
-// listarCards escolhe a query pela direção de ordenação (o sqlc não liga
-// parâmetro dentro de ORDER BY, então há uma query por direção) e normaliza o
-// resultado para o mesmo tipo de linha.
-func (s *Server) listarCards(ctx context.Context, tipo, owned any, limit, offset int64, desc bool) ([]sqlcgen.ListarEntityCardsRow, error) {
-	if desc {
+// listarCards escolhe a query pelo modo de ordenação (o sqlc não liga
+// parâmetro dentro de ORDER BY, então há uma query por modo — título asc,
+// título desc, ou created_at desc desde 0109/0110) e normaliza o resultado
+// para o mesmo tipo de linha (as três queries têm exatamente as mesmas
+// colunas, na mesma ordem — conversão direta de struct).
+func (s *Server) listarCards(ctx context.Context, tipo, owned any, limit, offset int64, modo sortModo) ([]sqlcgen.ListarEntityCardsRow, error) {
+	switch modo {
+	case sortTituloDesc:
 		rows, err := s.leitura().ListarEntityCardsDesc(ctx, sqlcgen.ListarEntityCardsDescParams{
 			Type: tipo, Owned: owned, Limit: limit, Offset: offset,
 		})
@@ -238,10 +241,23 @@ func (s *Server) listarCards(ctx context.Context, tipo, owned any, limit, offset
 			out[i] = sqlcgen.ListarEntityCardsRow(r)
 		}
 		return out, nil
+	case sortCriacaoDesc:
+		rows, err := s.leitura().ListarEntityCardsRecentes(ctx, sqlcgen.ListarEntityCardsRecentesParams{
+			Type: tipo, Owned: owned, Limit: limit, Offset: offset,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]sqlcgen.ListarEntityCardsRow, len(rows))
+		for i, r := range rows {
+			out[i] = sqlcgen.ListarEntityCardsRow(r)
+		}
+		return out, nil
+	default:
+		return s.leitura().ListarEntityCards(ctx, sqlcgen.ListarEntityCardsParams{
+			Type: tipo, Owned: owned, Limit: limit, Offset: offset,
+		})
 	}
-	return s.leitura().ListarEntityCards(ctx, sqlcgen.ListarEntityCardsParams{
-		Type: tipo, Owned: owned, Limit: limit, Offset: offset,
-	})
 }
 
 // cardDTO converte uma linha da query de cards no DTO da API, montando o
@@ -262,6 +278,40 @@ func cardDTO(row sqlcgen.ListarEntityCardsRow) entityCardDTO {
 		dto.PosterURL = &u
 	}
 	return dto
+}
+
+// entityTypeDTO é um item de GET /api/v1/entities/types: um `type` de entity
+// com pelo menos 1 item catalogado (briefings 0109/0110) e a contagem
+// correspondente.
+type entityTypeDTO struct {
+	Type  string `json:"type"`
+	Count int64  `json:"count"`
+}
+
+// listEntityTypes trata GET /api/v1/entities/types: os `type` distintos com
+// pelo menos 1 entity CATALOGADA (status != 'draft' — ver o comentário longo
+// de ListarTiposComContagem em entity.sql sobre por que este critério, e não
+// "owned"/posse física de arquivo, foi escolhido). Alimenta a home
+// (carrosséis "adicionados recentemente" por schema, 0109) e o dropdown da
+// navbar (0110) sem hardcodar uma lista fixa de tipos no frontend — cobre
+// album/artista/faixa (0105-0107) junto de movie/tv sem exigir mudança aqui a
+// cada vertical nova. Rota ESTÁTICA registrada em server.go antes de
+// /entities/{id} (radix tree do chi resolve isso mesmo sem a ordem, mas a
+// posição deixa a intenção explícita — mesmo padrão de /library/browse).
+func (s *Server) listEntityTypes(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	rows, err := s.leitura().ListarTiposComContagem(r.Context())
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+	out := make([]entityTypeDTO, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, entityTypeDTO{Type: row.Type, Count: row.Count})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // kindColecao é o `kind` da entity_relation que liga uma coleção aos seus filmes
@@ -1374,17 +1424,33 @@ func parseOwnedFiltro(w http.ResponseWriter, q url.Values) (any, bool) {
 	return int64(0), true
 }
 
-// parseSort lê sort=title|-title. Default (ausente/"title") é ascendente;
-// "-title"/"title_desc" é descendente. Outro valor => 400.
-func parseSort(w http.ResponseWriter, q url.Values) (desc, ok bool) {
+// sortModo enumera os valores aceitos de ?sort= em GET /api/v1/entities: os
+// dois históricos por título (briefing 0010) mais o `-created_at` do
+// briefing 0109/0110 ("adicionados recentemente"). Cada modo mapeia para UMA
+// query sqlc em listarCards (o sqlc não liga parâmetro dentro de ORDER BY).
+type sortModo int
+
+const (
+	sortTituloAsc   sortModo = iota // default: sort ausente, "title" ou "title_asc"
+	sortTituloDesc                  // "-title" ou "title_desc"
+	sortCriacaoDesc                 // "-created_at" (0109): só a direção DESC é pedida
+)
+
+// parseSort lê sort=title|-title|-created_at. Default (ausente/"title") é
+// título ascendente; "-title"/"title_desc" é título descendente;
+// "-created_at" (briefing 0109) é criação descendente — não há variante
+// ascendente ("mais antigo primeiro" não foi pedida). Outro valor => 400.
+func parseSort(w http.ResponseWriter, q url.Values) (sortModo, bool) {
 	switch q.Get("sort") {
 	case "", "title", "title_asc":
-		return false, true
+		return sortTituloAsc, true
 	case "-title", "title_desc":
-		return true, true
+		return sortTituloDesc, true
+	case "-created_at":
+		return sortCriacaoDesc, true
 	default:
-		writeError(w, http.StatusBadRequest, "invalid_query", "sort inválido (use title ou -title)")
-		return false, false
+		writeError(w, http.StatusBadRequest, "invalid_query", "sort inválido (use title, -title ou -created_at)")
+		return sortTituloAsc, false
 	}
 }
 

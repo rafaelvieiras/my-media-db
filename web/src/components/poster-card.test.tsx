@@ -3,6 +3,14 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { PosterCard } from '@/components/poster-card'
 import type { EntityCard } from '@/lib/api'
+import { entityCardBase } from '@/test/detail-harness'
+
+// card: mesmos defaults de entityCardBase, só troca id/título pros valores que
+// este arquivo já usava (id 'x', título 'Matrix') — evita duplicar a fábrica
+// inteira (jscpd) só por causa desses dois campos.
+function card(over: Partial<EntityCard> = {}): EntityCard {
+  return entityCardBase({ id: 'x', title: 'Matrix', ...over })
+}
 
 // O <Link> do TanStack Router exige contexto de router; para um teste de unidade
 // do card, mockamos por um <a> simples. O `to` vira `href` para afirmar o destino
@@ -22,21 +30,6 @@ vi.mock('@tanstack/react-router', () => ({
     </a>
   ),
 }))
-
-function card(over: Partial<EntityCard> = {}): EntityCard {
-  return {
-    id: 'x',
-    type: 'movie',
-    title: 'Matrix',
-    status: 'cataloged',
-    owned: true,
-    file_count: 1,
-    match_confidence: 100,
-    poster_url: null,
-    catalog_completeness: null,
-    ...over,
-  }
-}
 
 describe('PosterCard', () => {
   it('mostra título, tipo e badge de posse', () => {

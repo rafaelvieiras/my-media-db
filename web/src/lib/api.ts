@@ -22,6 +22,10 @@ export type BrowseResult = components['schemas']['BrowseResult']
 export type BrowseEntry = components['schemas']['BrowseEntry']
 export type EntityCard = components['schemas']['EntityCard']
 export type EntityList = components['schemas']['EntityList']
+// Tipo de entity com dado catalogado (briefings 0109/0110): alimenta os
+// carrosséis "adicionados recentemente" da home e o dropdown de biblioteca da
+// navbar, sem lista fixa de tipos no frontend.
+export type EntityType = components['schemas']['EntityType']
 export type OrderingsInfo = components['schemas']['OrderingsInfo']
 export type EpisodeGroups = components['schemas']['EpisodeGroups']
 export type EpisodeGroup = components['schemas']['EpisodeGroup']
@@ -255,7 +259,10 @@ export interface EntityListParams {
   owned?: boolean
   limit?: number
   offset?: number
-  sort?: 'title' | '-title'
+  // '-created_at' (0109): mais recente primeiro — alimenta os carrosséis
+  // "adicionados recentemente" da home. Ausente/'title' continua o default
+  // (ordenação por título).
+  sort?: 'title' | '-title' | '-created_at'
 }
 
 export async function listEntities(
@@ -284,6 +291,15 @@ export async function listEntities(
   }
   const suffix = qs.toString() ? `?${qs.toString()}` : ''
   return lerJson<EntityList>(await fetch(`${base}/api/v1/entities${suffix}`))
+}
+
+// Tipos de entity com pelo menos 1 item catalogado (briefings 0109/0110), do
+// mais numeroso ao menos numeroso — sem lista fixa: cobre qualquer `type`
+// existente de fato no banco (movie/tv, mas também album/artista/faixa desde
+// 0105-0107). Alimenta os carrosséis "adicionados recentemente" da home
+// (0109) e o dropdown de biblioteca da navbar (0110).
+export async function listEntityTypes(): Promise<EntityType[]> {
+  return lerJson<EntityType[]>(await fetch(`${base}/api/v1/entities/types`))
 }
 
 export async function getEntity(

@@ -80,11 +80,14 @@ paths:
           schema: { type: integer, minimum: 0, default: 0 }
         - name: sort
           in: query
-          description: Ordenação por título — `title` (asc, default) ou `-title` (desc).
+          description: >
+            Ordenação — por título `title` (asc, default) ou `-title` (desc), ou
+            por data de criação `-created_at` (mais recente primeiro, briefing
+            0109 — alimenta os carrosséis "adicionados recentemente" da home).
           required: false
           schema:
             type: string
-            enum: [title, -title]
+            enum: [title, -title, -created_at]
             default: title
         - $ref: "#/components/parameters/LangQuery"
       responses:
@@ -122,6 +125,28 @@ paths:
           $ref: "#/components/responses/Error"
         "503":
           $ref: "#/components/responses/Error"
+
+  /api/v1/entities/types:
+    get:
+      operationId: listEntityTypes
+      summary: >
+        Tipos de entity com dado catalogado (briefings 0109/0110).
+      description: >
+        Devolve os `type` distintos com pelo menos 1 entity CATALOGADA
+        (status != draft), ordenados por `count DESC, type ASC`, sem lista
+        fixa — cobre qualquer tipo existente de fato no banco (ex.: movie,
+        tv, album, artista, faixa). Alimenta os carrosséis "adicionados
+        recentemente" da home (0109) e o dropdown de biblioteca da navbar
+        (0110). Rota ESTÁTICA, resolvida antes de /entities/{id}.
+      tags: [entities]
+      responses:
+        "200":
+          description: Tipos com dado, do mais numeroso ao menos numeroso.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EntityType" }
 
   /api/v1/entities/{id}:
     get:
@@ -2645,11 +2670,14 @@ components:
         id: { type: string }
         type:
           type: string
-          enum: [movie, tv, collection, season, episode]
+          enum:
+            [movie, tv, collection, season, episode, album, artista, faixa]
           description: >
             Tipo canonico da entity. `season`/`episode` (0031) compoem a arvore de
             series: GET /members de uma `tv` traz as `season`s; de uma `season`, os
-            `episode`s (ordenados por sort_index).
+            `episode`s (ordenados por sort_index). `album`/`artista`/`faixa`
+            (0105-0107) sao a vertical de musica -- nomes em portugues no schema,
+            nao `artist`/`track`.
         title: { type: string }
         status: { type: string }
         owned:
@@ -2753,6 +2781,16 @@ components:
         total: { type: integer, format: int64 }
         limit: { type: integer }
         offset: { type: integer }
+    EntityType:
+      type: object
+      description: >
+        Um `type` de entity com pelo menos 1 item CATALOGADO (status != draft,
+        briefing 0109/0110) e a contagem correspondente. Sem lista fixa de
+        tipos — cobre album/artista/faixa (0105-0107) junto de movie/tv.
+      required: [type, count]
+      properties:
+        type: { type: string }
+        count: { type: integer, format: int64 }
     ExternalResult:
       type: object
       description: >
@@ -3559,10 +3597,13 @@ components:
         id: { type: string }
         type:
           type: string
-          enum: [movie, tv, collection, season, episode]
+          enum:
+            [movie, tv, collection, season, episode, album, artista, faixa]
           description: >
             Tipo canonico da entity. `season`/`episode` (0031) sao os nos internos da
             arvore de series (mesmo shape resolvido; navegados por GET /members).
+            `album`/`artista`/`faixa` (0105-0107) sao a vertical de musica -- mesmo
+            enum de EntityCard.type (nomes em portugues, nao `artist`/`track`).
         title: { type: string }
         original_title: { type: [string, "null"] }
         description: { type: [string, "null"] }
