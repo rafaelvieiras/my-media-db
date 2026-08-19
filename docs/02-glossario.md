@@ -5,7 +5,7 @@ e nos briefings.
 
 | Termo | Definição |
 |---|---|
-| **Entity (entidade)** | Unidade central do modelo: qualquer mídia catalogada. Tem um `type` (`movie`, `tv`, `episode`, `collection`, …). Ver [04](04-modelo-de-dados.md). |
+| **Entity (entidade)** | Unidade central do modelo: qualquer mídia catalogada. Tem um `type` (`movie`, `tv`, `episode`, `collection`, `artista`, `album`, `faixa`, …). Ver [04](04-modelo-de-dados.md). |
 | **Camada de override** | Registro esparso das edições do dono. Vence sempre sobre o dado externo e o do arquivo. É o que dá autoridade final ao usuário. |
 | **Override universal** | Propriedade do override: alcança **qualquer** campo (núcleo, técnico e de extensão), sem campo blindado. Ver [04](04-modelo-de-dados.md). |
 | **Precedência do resolver** | A ordem fixa de composição `override ⟵ externo ⟵ arquivo`: o override vence o externo, que vence o do arquivo. Lida como "puxa de" (⟵). |
@@ -34,4 +34,6 @@ e nos briefings.
 | **`/api/v1`** | API **nativa**, para tudo que o TMDB não modela (override, biblioteca, mediainfo, usuários). |
 | **`VITE_API_BASE`** | Variável que define a base da API para o frontend: vazia = mesmo origin (binário Go); preenchida = API externa/remota. |
 | **Plugin** | Extensão de terceiros que adiciona verticais/integrações. **Alvo do design, fora do MVP** — ver [11](11-decisoes-abertas.md). |
+| **Artista / Álbum / Faixa** | Hierarquia da vertical música (`entity type='artista'\|'album'\|'faixa'`). Faixa é o grão fino canônico (ancorada em MBID); álbum existe só para artwork/override/agrupamento; artista é entity de 1ª classe (não reaproveita `person`). "Various Artists" é um artista comum, com o MBID canônico da MusicBrainz. Ver [ADR-0027](adr/0027-modelo-de-musica-hierarquia-artista-album-faixa.md). |
+| **`core.music@1`** | Namespace de `extension_data` da vertical música: `track_number`, `disc_number`, `disc_total`, `isrc`. Lido por `internal/musicext` (molde do `internal/tvext` de série). |
 | **Briefing** | Ordem de serviço autocontida para uma unidade de trabalho. Ver [`briefings/`](../briefings/README.md). |

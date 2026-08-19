@@ -121,9 +121,10 @@ func TestMigrateUp(t *testing.T) {
 	// last_played_at/resume_position_seconds/resume_total_seconds
 	// (briefing 0088) + 0020 historico_evento (briefing 0092) + 0021
 	// historico_evento.entity_id nullable + raw_* (eventos órfãos, briefing
-	// 0099) + 0022 seed do job trailer_tema_faltantes (briefing 0104).
-	if v := mustSchemaVersion(t, d); v != 22 {
-		t.Errorf("versão após up = %d, quero 22", v)
+	// 0099) + 0022 seed do job trailer_tema_faltantes (briefing 0104) + 0023
+	// entity.external_id_mbid (fundação da vertical música, briefing 0105).
+	if v := mustSchemaVersion(t, d); v != 23 {
+		t.Errorf("versão após up = %d, quero 23", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -174,6 +175,10 @@ func TestMigrateDown(t *testing.T) {
 	}
 
 	// Down reverte uma migration por vez, do topo para a base.
+	downPara(t, d, 22) // 0023: remove entity.external_id_mbid.
+	querFalha(t, d, "SELECT external_id_mbid FROM entity",
+		"coluna external_id_mbid ainda existe após o down do 0023")
+
 	downPara(t, d, 21) // 0022: remove o seed do job trailer_tema_faltantes.
 
 	downPara(t, d, 20) // 0021: volta historico_evento.entity_id a NOT NULL, remove as colunas raw_*.
