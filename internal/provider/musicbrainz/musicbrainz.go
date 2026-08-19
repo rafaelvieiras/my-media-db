@@ -393,15 +393,65 @@ func (c *Client) ResolverArtistaDaFaixa(ctx context.Context, recordingMBID strin
 	return rec.ArtistCredit[0].Artist.ID, nil
 }
 
+// tentativasMB é o número MÁXIMO de tentativas de getMB por chamada -- o servidor
+// público do MusicBrainz devolve 503 "currently busy" com frequência real observada
+// em produção (~1 em 3 chamadas na validação deste briefing), e uma árvore de artista
+// inteira faz 1+2N requisições sequenciais (N álbuns): sem retry, a probabilidade de
+// TODA a sequência dar certo cai pra perto de zero num artista com discografia grande.
+const tentativasMB = 3
+
+// backoffMB é o atraso entre tentativas em cima de um 502/503/504 -- multiplicado pelo
+// número da tentativa (1ª retry espera backoffMB, 2ª espera 2×backoffMB).
+const backoffMB = 500 * time.Millisecond
+
 // getMB faz um GET RATE-LIMITADO (1 req/s) a musicbrainz.org com o User-Agent obrigatório
 // e `fmt=json` sempre presente. 404 vira erro-sentinela provider.ErrNaoEncontrado
-// (errors.Is); outro status != 200 é erro genérico; I/O propaga.
+// (errors.Is), sem retry (não é transitório). 502/503/504 (instabilidade documentada do
+// servidor público) tenta de novo até tentativasMB vezes, com backoff crescente; outro
+// status != 200 é erro genérico sem retry. I/O propaga sem retry (rede local instável não
+// é o problema que este retry resolve).
 func (c *Client) getMB(ctx context.Context, path string, params url.Values) ([]byte, error) {
+	var ultimoErr error
+	for tentativa := 1; tentativa <= tentativasMB; tentativa++ {
+		if tentativa > 1 {
+			c.lim.dormirFn(backoffMB * time.Duration(tentativa-1))
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
+		body, status, err := c.tentarGetMB(ctx, path, params)
+		if err != nil {
+			return nil, err
+		}
+		if status == http.StatusNotFound {
+			return nil, fmt.Errorf("musicbrainz: %s: %w", path, provider.ErrNaoEncontrado)
+		}
+		if status == http.StatusOK {
+			return body, nil
+		}
+		if !transitorioMB(status) {
+			return nil, fmt.Errorf("musicbrainz: status inesperado %d em %s", status, path)
+		}
+		ultimoErr = fmt.Errorf("musicbrainz: status inesperado %d em %s", status, path)
+	}
+	return nil, fmt.Errorf("musicbrainz: %s: esgotou %d tentativas: %w", path, tentativasMB, ultimoErr)
+}
+
+// transitorioMB diz se `status` é o tipo de instabilidade do servidor público do
+// MusicBrainz que vale a pena tentar de novo (502/503/504) -- nunca 4xx, que é erro do
+// pedido em si e não some numa segunda tentativa.
+func transitorioMB(status int) bool {
+	return status == http.StatusBadGateway || status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
+}
+
+// tentarGetMB faz UMA tentativa de GET (sem retry) e devolve o status bruto pro chamador
+// decidir -- separado de getMB só para isolar o loop de retry da montagem do request.
+func (c *Client) tentarGetMB(ctx context.Context, path string, params url.Values) ([]byte, int, error) {
 	c.lim.esperar()
 
 	u, err := url.Parse(c.baseURL + path)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	q := params
 	if q == nil {
@@ -412,28 +462,28 @@ func (c *Client) getMB(ctx context.Context, path string, params url.Values) ([]b
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("musicbrainz: %s: %w", path, provider.ErrNaoEncontrado)
-	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("musicbrainz: status inesperado %d em %s", resp.StatusCode, path)
+		// Corpo de erro não nos interessa (a mensagem já é genérica o bastante nos dois
+		// status tratados por getMB), mas precisa ser drenado para o keep-alive da conexão.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, resp.StatusCode, nil
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("musicbrainz: ler %s: %w", path, err)
+		return nil, 0, fmt.Errorf("musicbrainz: ler %s: %w", path, err)
 	}
-	return body, nil
+	return body, resp.StatusCode, nil
 }
 
 // getCAA faz um GET ao Cover Art Archive — SEM rate-limit (a fonte não documenta um

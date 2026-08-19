@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -515,5 +517,134 @@ func TestResolverArtistaDaFaixaNaoEncontrada(t *testing.T) {
 	_, err := c.ResolverArtistaDaFaixa(context.Background(), "rec-inexistente")
 	if !errors.Is(err, provider.ErrNaoEncontrado) {
 		t.Errorf("err = %v, quero errors.Is(err, provider.ErrNaoEncontrado)", err)
+	}
+}
+
+// servidorContadorMB cria um httptest.Server que conta as chamadas a `path` e devolve, para
+// a n-ésima chamada (1-based), `statusPorChamada[n-1]` -- chamadas além do tamanho do slice
+// repetem o ÚLTIMO status da lista (útil para "sempre 503"). Um status 200 devolve um corpo
+// mínimo válido para BuscarDetalhe/MapearDetalhe; qualquer outro status devolve corpo vazio
+// (getMB não olha o corpo de erro). Usado para exercitar o retry de getMB de forma
+// determinística, sem depender da API pública de verdade.
+func servidorContadorMB(t *testing.T, path string, statusPorChamada []int) (*httptest.Server, *int32) {
+	t.Helper()
+	var chamadas int32
+	mux := http.NewServeMux()
+	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&chamadas, 1)
+		idx := int(n) - 1
+		if idx >= len(statusPorChamada) {
+			idx = len(statusPorChamada) - 1
+		}
+		status := statusPorChamada[idx]
+		if status == http.StatusOK {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"name": "Retry Artist"}`))
+			return
+		}
+		w.WriteHeader(status)
+	})
+	return httptest.NewServer(mux), &chamadas
+}
+
+// clientComBackoffFake monta um Client de teste (sem sleep do rate-limiter em si, como
+// novoClientDeTeste) e SUBSTITUI o `dormir` do limitador compartilhado por um no-op: o loop
+// de retry de getMB usa `c.lim.dormirFn` para o backoff entre tentativas (500ms x tentativa
+// -- ver comentário de backoffMB em musicbrainz.go), e sem essa injeção os testes de
+// esgotamento de tentativas dormiriam de verdade (500ms + 1000ms = 1.5s só no caso 2).
+func clientComBackoffFake(mbURL string) *Client {
+	c := novoClientDeTeste(mbURL, "")
+	c.lim.dormir = func(time.Duration) {}
+	return c
+}
+
+// TestGetMBRetrySucessoAposFalhasTransitorias cobre o caso feliz do retry (briefing: API
+// pública do MusicBrainz devolve 503 "currently busy" com frequência real ~1 em 3
+// chamadas): as 2 primeiras tentativas veem 503, a 3ª (dentro de tentativasMB=3) tem
+// sucesso -- getMB deve devolver o resultado da tentativa que deu certo, não um erro.
+func TestGetMBRetrySucessoAposFalhasTransitorias(t *testing.T) {
+	srv, chamadas := servidorContadorMB(t, "/artist/retry-artist", []int{
+		http.StatusServiceUnavailable, http.StatusServiceUnavailable, http.StatusOK,
+	})
+	defer srv.Close()
+	c := clientComBackoffFake(srv.URL)
+
+	raw, err := c.BuscarDetalhe(context.Background(), "retry-artist", "artista", nil)
+	if err != nil {
+		t.Fatalf("BuscarDetalhe: %v", err)
+	}
+	campos, err := c.MapearDetalhe(raw)
+	if err != nil {
+		t.Fatalf("MapearDetalhe: %v", err)
+	}
+	if campos["title"] != "Retry Artist" {
+		t.Fatalf("campos[title] = %v, esperava Retry Artist (resultado da 3a tentativa)", campos["title"])
+	}
+	if got := atomic.LoadInt32(chamadas); got != 3 {
+		t.Fatalf("chamadas ao servidor = %d, esperava 3 (2 falhas + 1 sucesso)", got)
+	}
+}
+
+// TestGetMBRetryEsgotaTentativas cobre o caso de 503 persistente: getMB deve tentar
+// exatamente tentativasMB vezes (nunca mais, nunca menos) e devolver erro -- não travar
+// nem entrar em loop infinito.
+func TestGetMBRetryEsgotaTentativas(t *testing.T) {
+	srv, chamadas := servidorContadorMB(t, "/artist/sempre-ocupado", []int{http.StatusServiceUnavailable})
+	defer srv.Close()
+	c := clientComBackoffFake(srv.URL)
+
+	_, err := c.BuscarDetalhe(context.Background(), "sempre-ocupado", "artista", nil)
+	if err == nil {
+		t.Fatal("BuscarDetalhe deveria falhar (503 em todas as tentativas)")
+	}
+	if errors.Is(err, provider.ErrNaoEncontrado) {
+		t.Fatalf("err nao deveria ser ErrNaoEncontrado (503 nao e 404): %v", err)
+	}
+	if !strings.Contains(err.Error(), "esgotou") {
+		t.Fatalf("err = %v, esperava mencionar esgotamento das tentativas", err)
+	}
+	if got := atomic.LoadInt32(chamadas); got != tentativasMB {
+		t.Fatalf("chamadas ao servidor = %d, esperava %d (tentativasMB)", got, tentativasMB)
+	}
+}
+
+// TestGetMB404NaoTentaNovamente confirma que um 404 (recurso realmente inexistente, não
+// instabilidade do servidor) faz getMB devolver provider.ErrNaoEncontrado na PRIMEIRA
+// tentativa, sem retry -- transitorioMB nunca considera 404 transitório.
+func TestGetMB404NaoTentaNovamente(t *testing.T) {
+	srv, chamadas := servidorContadorMB(t, "/artist/inexistente-de-verdade", []int{http.StatusNotFound})
+	defer srv.Close()
+	c := clientComBackoffFake(srv.URL)
+
+	_, err := c.BuscarDetalhe(context.Background(), "inexistente-de-verdade", "artista", nil)
+	if !errors.Is(err, provider.ErrNaoEncontrado) {
+		t.Fatalf("err = %v, esperava provider.ErrNaoEncontrado", err)
+	}
+	if got := atomic.LoadInt32(chamadas); got != 1 {
+		t.Fatalf("chamadas ao servidor = %d, esperava 1 (404 nao tenta de novo)", got)
+	}
+}
+
+// TestGetMBStatusGenericoNaoTentaNovamente confirma que um status != 200/404/502/503/504
+// (ex.: 500) é erro genérico SEM retry -- só os 3 status documentados como instabilidade do
+// servidor público (502/503/504) disparam o retry; qualquer outra coisa é tratada como
+// definitiva.
+func TestGetMBStatusGenericoNaoTentaNovamente(t *testing.T) {
+	srv, chamadas := servidorContadorMB(t, "/artist/erro-generico", []int{http.StatusInternalServerError})
+	defer srv.Close()
+	c := clientComBackoffFake(srv.URL)
+
+	_, err := c.BuscarDetalhe(context.Background(), "erro-generico", "artista", nil)
+	if err == nil {
+		t.Fatal("BuscarDetalhe deveria falhar (500)")
+	}
+	if errors.Is(err, provider.ErrNaoEncontrado) {
+		t.Fatalf("err nao deveria ser ErrNaoEncontrado (500 nao e 404): %v", err)
+	}
+	if strings.Contains(err.Error(), "esgotou") {
+		t.Fatalf("err = %v, nao deveria mencionar esgotamento de tentativas (500 nao e transitorio)", err)
+	}
+	if got := atomic.LoadInt32(chamadas); got != 1 {
+		t.Fatalf("chamadas ao servidor = %d, esperava 1 (500 nao tenta de novo)", got)
 	}
 }
