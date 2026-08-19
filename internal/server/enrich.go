@@ -90,8 +90,8 @@ func (s *Server) enrichEntity(w http.ResponseWriter, r *http.Request) {
 }
 
 // importar trata POST /api/v1/import: find-or-create por id externo (dedup MD4) e
-// enriquece. 400 corpo inválido; 422 type fora de movie|tv ou source_id vazio;
-// 201 se criou / 200 se já existia, com a entity resolvida.
+// enriquece. 400 corpo inválido; 422 type fora de movie|tv|collection|artista ou
+// source_id vazio; 201 se criou / 200 se já existia, com a entity resolvida.
 func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -227,10 +227,11 @@ func (s *Server) resolverFonte(w http.ResponseWriter, tipo, sourceExplicito stri
 }
 
 // tipoImportavel diz se `tipo` pode ser importado via POST /import (find-or-create):
-// movie, tv ou collection. Grãos finos (season/episode) entram pela árvore de série,
-// não por import direto.
+// movie, tv, collection ou artista (briefing 0106, ADR-0027 -- artista importa a
+// discografia inteira via MusicaProvider). Grãos finos (season/episode/album/faixa)
+// entram pela árvore do provider (série/música), não por import direto.
 func tipoImportavel(tipo string) bool {
-	return tipo == "movie" || tipo == "tv" || tipo == "collection"
+	return tipo == "movie" || tipo == "tv" || tipo == "collection" || tipo == "artista"
 }
 
 // resolverSourceID devolve o source_id a usar: o do corpo (`sourceIDBody`), senão o
