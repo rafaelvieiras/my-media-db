@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { entitiesQueryOptions } from '@/lib/queries'
@@ -14,17 +14,18 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
 
 const POR_PAGINA = 24
 
-type FiltroTipo = MediaTypeFilterValue
 type FiltroPosse = 'all' | 'owned' | 'not'
 
-// Traduz os filtros da UI para os params da API (undefined = sem filtro).
+// Traduz os filtros da UI para os params da API (undefined = sem filtro). `tipo`
+// já chega no MESMO formato do param da API (string|undefined, briefing 0110) —
+// não passa mais por `MediaTypeFilterValue`/'all' aqui, só na exibição do Select.
 function montarParams(
-  tipo: FiltroTipo,
+  tipo: string | undefined,
   posse: FiltroPosse,
   pagina: number,
 ): EntityListParams {
   return {
-    type: tipo === 'all' ? undefined : tipo,
+    type: tipo || undefined,
     owned: posse === 'all' ? undefined : posse === 'owned',
     limit: POR_PAGINA,
     offset: pagina * POR_PAGINA,
@@ -32,13 +33,41 @@ function montarParams(
   }
 }
 
+// paraOpcaoSelect narrowing do `type` da URL (string livre — cobre qualquer
+// schema, ex. "album") para as 3 opções que o `MediaTypeFilter` sabe exibir
+// (briefing 0110 não expande esse Select, fora de escopo). Um tipo fora dessas
+// 3 opções (ex. vindo do dropdown da navbar) continua filtrando o GRID
+// corretamente via `montarParams` acima — só a exibição do Select cai em
+// "Todos" (nenhuma opção rotulada para ele ainda).
+function paraOpcaoSelect(tipo: string | undefined): MediaTypeFilterValue {
+  return tipo === 'movie' || tipo === 'tv' ? tipo : 'all'
+}
+
 // Grid de pôsteres do catálogo: filtros (tipo/posse), paginação e os três
 // estados claros (carregando / erro / vazio). É o componente "esperto": possui
-// o estado de filtro/página e consome o TanStack Query.
+// o estado de filtro/página e consome o TanStack Query. O filtro de TIPO
+// (briefing 0110) migrou de `useState` local para o search param `?type=` da
+// rota `/` — linkável, sobrevive a refresh e fica sincronizado com o dropdown
+// "Biblioteca" da navbar (mesma fonte de verdade). Posse continua local (fora
+// de escopo do 0110).
 export function PosterGrid({ lang }: { lang?: string } = {}) {
-  const [tipo, setTipo] = useState<FiltroTipo>('all')
+  const { type: tipo } = useSearch({ from: '/' })
+  const navigate = useNavigate()
   const [posse, setPosse] = useState<FiltroPosse>('all')
   const [pagina, setPagina] = useState(0)
+
+  // Trocar de tipo (pelo Select OU pelo dropdown da navbar, que navega direto)
+  // reinicia a página — mesmo efeito do `reiniciarPagina` de antes, só que o
+  // tipo agora muda por navegação (search param), não por um setState direto
+  // que já pudesse resetar a página no mesmo callback. Ajuste de estado
+  // DURANTE o render (padrão recomendado pelo React para "resetar estado
+  // quando um valor externo muda"), não num `useEffect` — evita o
+  // cascading-render que o `react-hooks/set-state-in-effect` do lint aponta.
+  const [ultimoTipo, setUltimoTipo] = useState(tipo)
+  if (tipo !== ultimoTipo) {
+    setUltimoTipo(tipo)
+    setPagina(0)
+  }
 
   const params = montarParams(tipo, posse, pagina)
   const { data, isPending, isError, error } = useQuery(
@@ -52,10 +81,14 @@ export function PosterGrid({ lang }: { lang?: string } = {}) {
     }
   }
 
+  const trocarTipo = (novo: MediaTypeFilterValue) => {
+    navigate({ to: '/', search: novo === 'all' ? {} : { type: novo } })
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <MediaTypeFilter value={tipo} onChange={reiniciarPagina(setTipo)} />
+        <MediaTypeFilter value={paraOpcaoSelect(tipo)} onChange={trocarTipo} />
         <label className="flex items-center gap-2 text-sm">
           <span className="text-muted-foreground">Posse</span>
           <Select

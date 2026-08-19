@@ -51,10 +51,21 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   ),
 })
 
+// Search param `type` da biblioteca (briefing 0110): o filtro de schema do
+// `PosterGrid`/`MediaTypeFilter` passa a viver na URL — linkável e sobrevive a
+// refresh (mesmo espírito de `ordering` na rota do detalhe da série abaixo).
+// Ausente = "todos os tipos" (comportamento atual, sem regressão). Consumido
+// pelo dropdown "Biblioteca" da navbar (`app-header.tsx`) para navegar direto
+// pra biblioteca já filtrada por um schema (filme/série/álbum/artista...).
+const librarySearchSchema = z.object({
+  type: z.string().optional(),
+})
+
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   component: LibraryItemsScreen,
+  validateSearch: librarySearchSchema,
 })
 
 // Área administrativa (briefing 0083): as 6 telas de operação/config viram

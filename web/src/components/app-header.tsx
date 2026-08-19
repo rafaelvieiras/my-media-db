@@ -1,5 +1,7 @@
 import { Link } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import {
+  ChevronDown,
   LayoutDashboard,
   Library,
   Menu,
@@ -9,6 +11,12 @@ import {
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Sheet,
   SheetContent,
   SheetHeader,
@@ -16,6 +24,8 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import { LanguageSelector } from '@/components/language-selector'
+import { entityTypesQueryOptions } from '@/lib/queries'
+import { rotuloTipoPlural } from '@/lib/entity-badges'
 
 // Cabeçalho com navegação entre as telas da Fase 2. `activeProps` destaca a rota
 // atual (type-safe pelo router code-based).
@@ -55,6 +65,51 @@ function NavLink({
   )
 }
 
+// BibliotecaNavItem (briefing 0110) combina o link direto de sempre ("Biblioteca"
+// → `/` sem filtro, comportamento preservado) com um `DropdownMenu` separado
+// (trigger = chevron ao lado do texto) que lista os schemas com dado
+// catalogado (`entityTypesQueryOptions`, mesma fonte do carrossel da home,
+// 0109) e navega direto pra biblioteca já filtrada (`?type=X`, sincronizado
+// com o `MediaTypeFilter` da própria tela via o mesmo search param da rota
+// `/` — ver `poster-grid.tsx`). Trigger PRÓPRIO (não o texto inteiro) porque o
+// texto precisa continuar navegando direto sem abrir menu — decisão explícita
+// do briefing ("garanta que ainda dá pra ir pra biblioteca sem filtro tão
+// fácil quanto hoje"). O `DropdownMenu` do Radix abre por clique/teclado (não
+// hover), então funciona igual por toque dentro do `Sheet` mobile sem
+// tratamento especial.
+function BibliotecaNavItem({ onNavigate }: { onNavigate?: () => void }) {
+  const { data: tipos } = useQuery(entityTypesQueryOptions)
+
+  return (
+    <div className="flex items-center">
+      <NavLink to="/" exact onNavigate={onNavigate}>
+        Biblioteca
+      </NavLink>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+            aria-label="Filtrar biblioteca por tipo"
+          >
+            <ChevronDown className="size-3.5" aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {(tipos ?? []).map((tipo) => (
+            <DropdownMenuItem key={tipo.type} asChild onSelect={onNavigate}>
+              <Link to="/" search={{ type: tipo.type }}>
+                {rotuloTipoPlural(tipo.type)}
+              </Link>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
+
 // Lista de navegação reaproveitada pelas DUAS renderizações (nav desktop em
 // linha e conteúdo do `Sheet` mobile) — evita duplicar os `NavLink`s (0075).
 // `onNavigate` fecha o Sheet no mobile; fica `undefined` (no-op) no desktop.
@@ -64,9 +119,7 @@ function NavLink({
 function LinksNavegacao({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <>
-      <NavLink to="/" exact onNavigate={onNavigate}>
-        Biblioteca
-      </NavLink>
+      <BibliotecaNavItem onNavigate={onNavigate} />
       <NavLink to="/search" icon={Search} onNavigate={onNavigate}>
         Buscar
       </NavLink>

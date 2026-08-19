@@ -129,6 +129,14 @@ export const handlers = [
     HttpResponse.json({ fields: camposEditoriaisPadrao() }),
   ),
 
+  // Tipos com dado catalogado (briefing 0110): o dropdown "Biblioteca" da
+  // navbar é montado por TODA rota (via `AppHeader`, no `rootRoute`) — `[]`
+  // default (nenhuma jornada MSW deste diretório exercita o CONTEÚDO do
+  // dropdown, só precisa não estourar `onUnhandledRequest: 'error'`). Path
+  // LITERAL registrado ANTES de `/api/v1/entities/:id` abaixo — MSW resolve
+  // handlers na ordem declarada, e `:id` casaria com "types" também.
+  http.get('/api/v1/entities/types', () => HttpResponse.json([])),
+
   // Entidade resolvida por id (GET /entities/{id}) — 404 se o teste não a
   // semeou em `entidades`.
   http.get('/api/v1/entities/:id', ({ params }) => {
