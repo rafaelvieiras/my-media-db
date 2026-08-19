@@ -40,7 +40,7 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jobID, err := s.scanner.Start(src)
+	jobID, err := s.scanner.Start(src, scanner.TriggerManual)
 	if err != nil {
 		respondScanError(w, err)
 		return

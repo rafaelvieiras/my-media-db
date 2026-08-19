@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 	"github.com/rafaelvieiras/my-media-db/internal/server"
 )
@@ -80,9 +81,29 @@ func novoHarnessComOpcoes(t *testing.T, extra ...server.Option) *cliente {
 	}
 
 	prov := fake.New(img.URL)
+	// A fila de execução unificada (briefing 0108, ADR-0028) é exigida pelo
+	// scanner desde que ele parou de disparar sua própria goroutine --
+	// Start() só enfileira; sem um worker rodando, POST .../scan nunca sai
+	// do estado 'queued'. Em produção quem sobe isto é cmd/mymediadb/main.go
+	// (camada seguinte, fora do escopo do scanner em si); aqui o harness
+	// E2E sobe e roda seu PRÓPRIO execqueue.Manager de teste, exatamente
+	// como faria o boot real.
+	fila := execqueue.NewManager(database)
+	filaCtx, filaCancel := context.WithCancel(context.Background())
+	filaDone := make(chan struct{})
+	go func() {
+		fila.Run(filaCtx)
+		close(filaDone)
+	}()
+	t.Cleanup(func() {
+		filaCancel()
+		<-filaDone
+	})
+
 	opts := append([]server.Option{
 		server.WithSearchProvider(prov),
 		server.WithAssetsDir(t.TempDir()),
+		server.WithExecQueue(fila),
 	}, extra...)
 	srv := server.New("e2e", database, opts...)
 	handler, err := srv.Handler()

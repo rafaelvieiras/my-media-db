@@ -15,6 +15,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/curation"
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/externaldetail"
 	"github.com/rafaelvieiras/my-media-db/internal/job"
 	"github.com/rafaelvieiras/my-media-db/internal/job/libraryhealth"
@@ -304,6 +305,28 @@ func WithWatch() Option {
 			return
 		}
 		s.watch = watch.New(s.scanner, watch.DebounceDefault)
+	}
+}
+
+// WithExecQueue liga o scanner interno do Server à fila de execução
+// unificada (briefing 0108, ADR-0028, internal/execqueue): chama
+// scanner.Manager.ConfigurarLibrary/ConfigurarFila com as dependências já
+// montadas (s.library, o `fila` recebido). Não cria a fila nem inicia o
+// worker (fila.Run) -- isso é responsabilidade de quem CONSTRÓI o
+// *execqueue.Manager e o passa aqui (produção: cmd/mymediadb/main.go, numa
+// camada seguinte que também vai migrar internal/job para a MESMA fila;
+// testes: cada harness sobe e roda seu próprio execqueue.Manager de teste).
+// Sem esta option (ou com fila nil), Start() do scanner devolve
+// scanner.ErrFilaNaoConfigurada -- nenhum caminho de scan funciona até
+// alguém aplicar isto. Nula (no-op) se não houver banco/library/scanner --
+// mesma guarda de WithWatch/WithLibraryHealthJob.
+func WithExecQueue(fila *execqueue.Manager) Option {
+	return func(s *Server) {
+		if s.db == nil || s.library == nil || s.scanner == nil || fila == nil {
+			return
+		}
+		s.scanner.ConfigurarLibrary(s.library)
+		s.scanner.ConfigurarFila(fila)
 	}
 }
 
@@ -629,6 +652,14 @@ func (s *Server) Handler() (http.Handler, error) {
 				// resolvida. Combina com o PUT .../external-ids abaixo (fixar o id da
 				// fonte depois, para sincronizar). Coleção manual tem o /collections.
 				ent.Post("/", s.createItem)
+
+				// Tipos com dado catalogado (briefings 0109/0110): rota
+				// ESTÁTICA, precisa vir declarada antes do wildcard "/{id}"
+				// abaixo — na prática o radix tree do chi já prefere a rota
+				// estática de qualquer forma (mesmo padrão de
+				// /library/browse acima), mas a ordem aqui deixa a intenção
+				// explícita e é coberta por teste de integração.
+				ent.Get("/types", s.listEntityTypes)
 
 				ent.Get("/{id}", s.getEntity)
 				ent.Get("/{id}/files", s.getEntityFiles)

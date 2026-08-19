@@ -30,6 +30,10 @@ func setupLibraryHealthServer(t *testing.T) (*Server, http.Handler) {
 	if err != nil {
 		t.Fatalf("Handler: %v", err)
 	}
+	// configurarFilaDeTeste (scan_test.go) liga s.jobs na fila de teste --
+	// necessário desde o briefing 0108/ADR-0028 CAMADA 3 (job.Manager não
+	// dispara mais sua própria goroutine; Executar() só enfileira).
+	configurarFilaDeTeste(t, s)
 	return s, h
 }
 

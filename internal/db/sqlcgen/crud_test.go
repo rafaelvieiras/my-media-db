@@ -386,19 +386,28 @@ func TestCRUDJob(t *testing.T) {
 		t.Errorf("agendaveis apos o next_run_at = %d, quero 1", len(agendaveisNaHora))
 	}
 
+	// Historico de execucao (briefing 0108/ADR-0028, CAMADA 3): desde que
+	// job_execution foi derrubada (migration 0025), o historico de job vive
+	// em queue_item (kind='job') -- exercitado aqui com as MESMAS queries
+	// que internal/job.Manager usa (executarViaRunner/podarHistorico).
 	for i, trigger := range []string{"manual", "schedule", "schedule"} {
 		id := "exec-" + string(rune('1'+i))
-		exec, err := q.CriarJobExecucao(ctx, sqlcgen.CriarJobExecucaoParams{ID: id, JobID: "backup_vacuum", Trigger: trigger})
-		check(t, err, "CriarJobExecucao")
-		if exec.Status != "running" {
-			t.Errorf("CriarJobExecucao.Status = %q, quero running", exec.Status)
+		criado, err := q.CriarQueueItem(ctx, sqlcgen.CriarQueueItemParams{ID: id, Kind: "job", RefID: "backup_vacuum", Trigger: trigger})
+		check(t, err, "CriarQueueItem")
+		if criado.Status != "queued" {
+			t.Errorf("CriarQueueItem.Status = %q, quero queued", criado.Status)
 		}
-		finalizado, err := q.FinalizarJobExecucao(ctx, sqlcgen.FinalizarJobExecucaoParams{
+		iniciado, err := q.IniciarQueueItem(ctx, id)
+		check(t, err, "IniciarQueueItem")
+		if iniciado.Status != "running" {
+			t.Errorf("IniciarQueueItem.Status = %q, quero running", iniciado.Status)
+		}
+		finalizado, err := q.FinalizarQueueItem(ctx, sqlcgen.FinalizarQueueItemParams{
 			Status: "success", Message: ns("backup gravado (7 mantidos)"), ID: id,
 		})
-		check(t, err, "FinalizarJobExecucao")
+		check(t, err, "FinalizarQueueItem")
 		if finalizado.Status != "success" || !finalizado.FinishedAt.Valid {
-			t.Errorf("FinalizarJobExecucao = %+v, quero status=success com finished_at", finalizado)
+			t.Errorf("FinalizarQueueItem = %+v, quero status=success com finished_at", finalizado)
 		}
 	}
 
@@ -411,28 +420,28 @@ func TestCRUDJob(t *testing.T) {
 		t.Errorf("FinalizarJobDefinicao.LastStatus = %+v, quero success", defFinal.LastStatus)
 	}
 
-	execs, err := q.ListarJobExecucoes(ctx, sqlcgen.ListarJobExecucoesParams{JobID: "backup_vacuum", Limit: 10})
-	check(t, err, "ListarJobExecucoes")
+	execs, err := q.ListarQueueItemsPorKindRef(ctx, sqlcgen.ListarQueueItemsPorKindRefParams{Kind: "job", RefID: "backup_vacuum", Limit: 10})
+	check(t, err, "ListarQueueItemsPorKindRef")
 	if len(execs) != 3 {
-		t.Fatalf("ListarJobExecucoes = %d, quero 3", len(execs))
+		t.Fatalf("ListarQueueItemsPorKindRef = %d, quero 3", len(execs))
 	}
 
 	// Retencao: manter só a mais recente (offset=1), as outras duas são excedente.
-	excedentes, err := q.ListarJobExecucaoIdsExcedentes(ctx, sqlcgen.ListarJobExecucaoIdsExcedentesParams{
-		JobID: "backup_vacuum", Offset: 1,
+	excedentes, err := q.ListarQueueItemsExcedentesPorRef(ctx, sqlcgen.ListarQueueItemsExcedentesPorRefParams{
+		Kind: "job", RefID: "backup_vacuum", Offset: 1,
 	})
-	check(t, err, "ListarJobExecucaoIdsExcedentes")
+	check(t, err, "ListarQueueItemsExcedentesPorRef")
 	if len(excedentes) != 2 {
-		t.Fatalf("ListarJobExecucaoIdsExcedentes = %d, quero 2", len(excedentes))
+		t.Fatalf("ListarQueueItemsExcedentesPorRef = %d, quero 2", len(excedentes))
 	}
 	for _, id := range excedentes {
-		check(t, q.ApagarJobExecucao(ctx, id), "ApagarJobExecucao")
+		check(t, q.ApagarQueueItem(ctx, id), "ApagarQueueItem")
 	}
 
-	restantes, err := q.ListarJobExecucoes(ctx, sqlcgen.ListarJobExecucoesParams{JobID: "backup_vacuum", Limit: 10})
-	check(t, err, "ListarJobExecucoes (pos-poda)")
+	restantes, err := q.ListarQueueItemsPorKindRef(ctx, sqlcgen.ListarQueueItemsPorKindRefParams{Kind: "job", RefID: "backup_vacuum", Limit: 10})
+	check(t, err, "ListarQueueItemsPorKindRef (pos-poda)")
 	if len(restantes) != 1 {
-		t.Errorf("ListarJobExecucoes pos-poda = %d, quero 1", len(restantes))
+		t.Errorf("ListarQueueItemsPorKindRef pos-poda = %d, quero 1", len(restantes))
 	}
 }
 

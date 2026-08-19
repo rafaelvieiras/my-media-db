@@ -13,6 +13,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 )
 
 // handlerFake é um Handler mínimo/determinístico para os testes de Manager;
@@ -63,7 +64,10 @@ func (h *handlerBloqueante) Executar(ctx context.Context, _ json.RawMessage) (st
 }
 
 // setupManager sobe um Manager com banco migrado (a migration 0011 já semeia
-// backup_vacuum desabilitado, sem agendamento inicial no next_run_at).
+// backup_vacuum desabilitado, sem agendamento inicial no next_run_at) e já
+// ligado a uma fila de execução unificada de teste (ver configurarFilaDeTeste)
+// -- necessário desde o briefing 0108/ADR-0028 (CAMADA 3): Executar só
+// enfileira, quem roda o Handler de verdade é o worker da fila.
 func setupManager(t *testing.T) *Manager {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "job.sqlite")
@@ -75,7 +79,31 @@ func setupManager(t *testing.T) *Manager {
 	if err := database.Migrate(context.Background()); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	return NewManager(database)
+	m := NewManager(database)
+	configurarFilaDeTeste(t, m)
+	return m
+}
+
+// configurarFilaDeTeste sobe um execqueue.Manager de teste, liga `m` nele
+// (ConfigurarFila) e roda o worker sequencial em background até o teste
+// terminar -- mesmo padrão de internal/scanner/execqueue_test.go e
+// internal/server/scan_test.go (configurarFilaDeTeste), aplicado aqui para
+// o kind "job".
+func configurarFilaDeTeste(t *testing.T, m *Manager) {
+	t.Helper()
+	fila := execqueue.NewManager(m.db)
+	m.ConfigurarFila(fila)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		fila.Run(ctx)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
 }
 
 func aguardarRodando(t *testing.T, m *Manager, jobID string, quer bool) {
@@ -269,6 +297,9 @@ func TestAtualizarConfigLimpaSchedule(t *testing.T) {
 	}
 }
 
+// TestPodarHistoricoMantemLimite semeia execuções diretamente em queue_item
+// (kind='job') -- desde o briefing 0108/ADR-0028 (CAMADA 3), o histórico de
+// job vive lá, não mais em job_execution (derrubada pela migration 0025).
 func TestPodarHistoricoMantemLimite(t *testing.T) {
 	m := setupManager(t)
 	ctx := context.Background()
@@ -276,10 +307,10 @@ func TestPodarHistoricoMantemLimite(t *testing.T) {
 	total := manterExecucoes + 5
 	for i := 0; i < total; i++ {
 		id := fmt.Sprintf("exec-%03d", i)
-		if _, err := m.escrita().CriarJobExecucao(ctx, sqlcgen.CriarJobExecucaoParams{
-			ID: id, JobID: "backup_vacuum", Trigger: "manual",
+		if _, err := m.escrita().CriarQueueItem(ctx, sqlcgen.CriarQueueItemParams{
+			ID: id, Kind: execqueue.KindJob, RefID: "backup_vacuum", Trigger: "manual",
 		}); err != nil {
-			t.Fatalf("CriarJobExecucao: %v", err)
+			t.Fatalf("CriarQueueItem: %v", err)
 		}
 	}
 
@@ -294,16 +325,22 @@ func TestPodarHistoricoMantemLimite(t *testing.T) {
 	}
 }
 
+// TestHistoricoPaginacaoComBefore prova a paginação por cursor de
+// Manager.Historico -- desde o briefing 0108/ADR-0028 (CAMADA 3), o cursor
+// filtra por enqueued_at (não mais started_at: ListarQueueItemsPorKindRef,
+// camada 1, não tem suporte nativo a cursor, então o filtro roda em Go sobre
+// enqueued_at, o mesmo campo do ORDER BY da query -- ver o comentário de
+// Historico).
 func TestHistoricoPaginacaoComBefore(t *testing.T) {
 	m := setupManager(t)
 	ctx := context.Background()
 
 	for i := 0; i < 5; i++ {
 		id := fmt.Sprintf("exec-%d", i)
-		if _, err := m.escrita().CriarJobExecucao(ctx, sqlcgen.CriarJobExecucaoParams{
-			ID: id, JobID: "backup_vacuum", Trigger: "manual",
+		if _, err := m.escrita().CriarQueueItem(ctx, sqlcgen.CriarQueueItemParams{
+			ID: id, Kind: execqueue.KindJob, RefID: "backup_vacuum", Trigger: "manual",
 		}); err != nil {
-			t.Fatalf("CriarJobExecucao: %v", err)
+			t.Fatalf("CriarQueueItem: %v", err)
 		}
 	}
 
@@ -315,15 +352,62 @@ func TestHistoricoPaginacaoComBefore(t *testing.T) {
 		t.Fatalf("pagina 1 len = %d, quero 2", len(primeira))
 	}
 
-	cursor := primeira[len(primeira)-1].StartedAt
+	cursor := primeira[len(primeira)-1].EnqueuedAt
 	segunda, err := m.Historico(ctx, "backup_vacuum", 2, &cursor)
 	if err != nil {
 		t.Fatalf("Historico (pagina 2): %v", err)
 	}
 	for _, e := range segunda {
-		if e.StartedAt >= cursor {
-			t.Fatalf("execucao %q com started_at >= cursor %q na pagina 2", e.ID, cursor)
+		if e.EnqueuedAt >= cursor {
+			t.Fatalf("execucao %q com enqueued_at >= cursor %q na pagina 2", e.ID, cursor)
 		}
+	}
+}
+
+// TestExecutarDoisJobsDiferentesRespeitaConcorrenciaGlobal prova a decisão
+// central da ADR-0028: a fila unificada tem concorrência 1 GLOBAL -- dois
+// jobs DIFERENTES podem coexistir na fila (dedup é por referência, não pela
+// fila inteira), mas NUNCA rodam ao mesmo tempo. É uma mudança de
+// comportamento REAL frente ao sistema pré-0108 (onde jobs diferentes
+// rodavam livremente em paralelo) -- não é um bug, é a decisão deliberada
+// documentada na ADR.
+func TestExecutarDoisJobsDiferentesRespeitaConcorrenciaGlobal(t *testing.T) {
+	m := setupManager(t)
+	liberar := make(chan struct{})
+	h1 := &handlerBloqueante{nome: "backup_vacuum", liberar: liberar}
+	h2 := &handlerFake{nome: "saude_biblioteca", mensagem: "ok"}
+	m.Registry.Registrar(h1)
+	m.Registry.Registrar(h2)
+
+	if _, err := m.Executar(context.Background(), "backup_vacuum", "manual"); err != nil {
+		t.Fatalf("Executar backup_vacuum: %v", err)
+	}
+	aguardarRodando(t, m, "backup_vacuum", true)
+
+	// saude_biblioteca é uma referência DIFERENTE -- Enqueue não rejeita
+	// (dedup é por (kind, ref_id), não pela fila inteira), mas o item fica
+	// 'queued' atrás de backup_vacuum até ele liberar.
+	if _, err := m.Executar(context.Background(), "saude_biblioteca", "manual"); err != nil {
+		t.Fatalf("Executar saude_biblioteca: %v", err)
+	}
+
+	// De propósito: um curto intervalo confirma que saude_biblioteca AINDA
+	// não rodou enquanto backup_vacuum segue bloqueado -- prova que a fila é
+	// sequencial de verdade (concorrência 1), não dois workers paralelos.
+	time.Sleep(100 * time.Millisecond)
+	if h2.Chamadas() != 0 {
+		t.Fatal("saude_biblioteca rodou mesmo com backup_vacuum ainda bloqueando a fila (concorrência deveria ser 1)")
+	}
+
+	close(liberar)
+	aguardarRodando(t, m, "backup_vacuum", false)
+
+	prazo := time.Now().Add(5 * time.Second)
+	for h2.Chamadas() == 0 && time.Now().Before(prazo) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if h2.Chamadas() != 1 {
+		t.Fatalf("saude_biblioteca chamado %d vez(es) depois de liberar backup_vacuum, quero 1", h2.Chamadas())
 	}
 }
 

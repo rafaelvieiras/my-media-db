@@ -60,12 +60,16 @@ func semearLibrarySource(t *testing.T, d *db.DB, id, path string) {
 	}
 }
 
+// semearJobExecucao insere um item de historico de job diretamente em
+// queue_item (kind='job') -- desde o briefing 0108/ADR-0028 (CAMADA 3),
+// ContarJobExecutions conta queue_item, não mais job_execution (derrubada
+// pela migration 0025).
 func semearJobExecucao(t *testing.T, d *db.DB, id, jobID string) {
 	t.Helper()
-	if _, err := sqlcgen.New(d.Write).CriarJobExecucao(context.Background(), sqlcgen.CriarJobExecucaoParams{
-		ID: id, JobID: jobID, Trigger: "manual",
+	if _, err := sqlcgen.New(d.Write).CriarQueueItem(context.Background(), sqlcgen.CriarQueueItemParams{
+		ID: id, Kind: "job", RefID: jobID, Trigger: "manual",
 	}); err != nil {
-		t.Fatalf("CriarJobExecucao(%s): %v", id, err)
+		t.Fatalf("CriarQueueItem(%s): %v", id, err)
 	}
 }
 
@@ -298,9 +302,9 @@ func TestSnapshotComputedAtAvanca(t *testing.T) {
 	}
 }
 
-// TestContarJobExecutions prova que a contagem de job_execution bate com o
-// numero de linhas inseridas (alem dos seeds de job_definition, que nao
-// contam aqui -- so job_execution).
+// TestContarJobExecutions prova que a contagem de queue_item (kind='job')
+// bate com o numero de linhas inseridas (alem dos seeds de job_definition,
+// que nao contam aqui -- so o historico de execucao).
 func TestContarJobExecutions(t *testing.T) {
 	d := setupBanco(t)
 	s := New(d, nil, time.Now())

@@ -23,6 +23,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/rafaelvieiras/my-media-db/internal/library"
+	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 )
 
 // DebounceDefault é o intervalo de debounce por fonte (briefing 0064 §6):
@@ -36,7 +37,7 @@ const DebounceDefault = 15 * time.Second
 // disco de verdade, e para este pacote nunca importar internal/scanner
 // diretamente (evita acoplar o watch ao pipeline completo do scan).
 type ScanStarter interface {
-	Start(source library.Source) (string, error)
+	Start(source library.Source, trigger string) (string, error)
 }
 
 // adder é o subconjunto de *fsnotify.Watcher usado por registrarSubdiretorios
@@ -223,7 +224,7 @@ func (w *Watcher) agendarScan(source library.Source, fa *fonteAtiva) {
 		fa.timer.Stop()
 	}
 	fa.timer = time.AfterFunc(w.debounce, func() {
-		if _, err := w.scanner.Start(source); err != nil {
+		if _, err := w.scanner.Start(source, scanner.TriggerWatch); err != nil {
 			log.Printf("watch: falha ao disparar scan de %q apos evento fsnotify (best-effort): %v", source.Path, err)
 		}
 	})

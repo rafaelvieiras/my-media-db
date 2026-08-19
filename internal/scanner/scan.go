@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/localmedia"
 	"github.com/rafaelvieiras/my-media-db/internal/naming"
@@ -56,6 +57,28 @@ type scanRun struct {
 	// listados por instabilidade passageira do mount, não porque sumiram de
 	// verdade do disco.
 	parcial bool
+
+	// progresso/filesSeen/filesTotal (briefing 0108) são o estado local de
+	// progresso desta ÚNICA execução -- substituem o antigo *job em memória
+	// no Manager (addSeen/setTotal sob m.mu): não precisam mais ser
+	// thread-safe entre execuções concorrentes (a fila garante concorrência
+	// 1), só entre o worker desta execução, que é single-threaded aqui.
+	// progresso pode ser nil (bypass da fila em teste, ver scanner_test.go);
+	// filesSeen incrementa POR ARQUIVO processado (sucesso OU erro/skip),
+	// dentro do loop interno de processarLotes -- não mais por lote de 25
+	// (era isso que fazia o contador parecer travado em scans de música
+	// lentos, achado real na validação em produção do briefing 0107).
+	progresso  execqueue.ProgressoFunc
+	filesSeen  int
+	filesTotal int
+}
+
+// reportarProgresso chama o callback de progresso (se houver) com o estado
+// atual de filesSeen/filesTotal desta execução.
+func (r *scanRun) reportarProgresso() {
+	if r.progresso != nil {
+		r.progresso(r.filesSeen, r.filesTotal, "")
+	}
 }
 
 // fileFacts são os fatos pré-computados de um arquivo (fora da transação de
@@ -85,8 +108,10 @@ type fileFacts struct {
 	faixaConf float64 // confiança do vínculo (confIDExterno/confMusicaTextual/confDraft, ver musica.go)
 }
 
-// executarScan roda o pipeline completo de um datasource.
-func (m *Manager) executarScan(ctx context.Context, source library.Source, j *job) error {
+// executarScan roda o pipeline completo de um datasource. progresso (briefing
+// 0108) é o callback do execqueue chamado a cada arquivo processado -- pode
+// ser nil (bypass da fila em teste, ver scanner_test.go).
+func (m *Manager) executarScan(ctx context.Context, source library.Source, progresso execqueue.ProgressoFunc) error {
 	r := &scanRun{
 		m:          m,
 		source:     source,
@@ -94,6 +119,7 @@ func (m *Manager) executarScan(ctx context.Context, source library.Source, j *jo
 		probeAtivo: m.prober.Disponivel(),
 		cache:      make(map[string]string),
 		serieCache: make(map[string]serieResolvida),
+		progresso:  progresso,
 	}
 	if !r.probeAtivo {
 		log.Printf("scanner: ffprobe indisponível; mediainfo ficará vazio no scan de %q", source.ID)
@@ -109,14 +135,15 @@ func (m *Manager) executarScan(ctx context.Context, source library.Source, j *jo
 	if parcial {
 		log.Printf("scanner: varredura parcial de %q (subpasta(s) ilegível(is) durante o walk); ciclo de vida NÃO marcará arquivos ausentes nesta rodada", source.ID)
 	}
-	m.setTotal(j, len(arquivos))
+	r.filesTotal = len(arquivos)
+	r.reportarProgresso()
 	// Classificação de arquivo NÃO-vídeo (briefing 0063, extensão do 0062):
 	// reaproveita a MESMA passada de WalkDir de coletarArquivos acima -- nunca
 	// varre o disco de novo só para isto.
 	managed, unmanaged := classificarNaoVideos(arquivos, naoVideos)
-	m.setStorageNaoVideo(j, managed, unmanaged)
+	m.setStorageNaoVideo(source.ID, managed, unmanaged)
 
-	if err := r.processarLotes(ctx, j, arquivos); err != nil {
+	if err := r.processarLotes(ctx, arquivos); err != nil {
 		// Cancelado/erro no meio: lotes já commitados persistem; não fechamos o
 		// ciclo de vida (nada de missing) nem carimbamos last_scan.
 		return err
@@ -126,8 +153,13 @@ func (m *Manager) executarScan(ctx context.Context, source library.Source, j *jo
 }
 
 // processarLotes pré-computa os fatos de cada arquivo (I/O e ffprobe, fora da
-// transação) e grava em lotes curtos, checando o cancelamento entre lotes.
-func (r *scanRun) processarLotes(ctx context.Context, j *job, arquivos []string) error {
+// transação) e grava em lotes curtos, checando o cancelamento entre lotes. O
+// progresso (briefing 0108) é reportado a cada ARQUIVO processado dentro do
+// loop interno (sucesso OU erro/skip -- o arquivo foi "visto" de qualquer
+// forma, e filesTotal já conta ele) -- o lote de loteEscrita continua
+// existindo só como granularidade de ESCRITA em banco (escreverLote), agora
+// desacoplada do reporte de progresso.
+func (r *scanRun) processarLotes(ctx context.Context, arquivos []string) error {
 	for i := 0; i < len(arquivos); i += loteEscrita {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -141,6 +173,8 @@ func (r *scanRun) processarLotes(ctx context.Context, j *job, arquivos []string)
 		fatos := make([]fileFacts, 0, len(lote))
 		for _, p := range lote {
 			f, err := r.computarFacts(ctx, p)
+			r.filesSeen++
+			r.reportarProgresso()
 			if err != nil {
 				log.Printf("scanner: ignorando %q: %v", p, err)
 				continue
@@ -150,7 +184,6 @@ func (r *scanRun) processarLotes(ctx context.Context, j *job, arquivos []string)
 		if err := r.escreverLote(ctx, fatos); err != nil {
 			return err
 		}
-		r.m.addSeen(j, len(lote))
 	}
 	return nil
 }

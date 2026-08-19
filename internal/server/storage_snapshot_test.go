@@ -33,6 +33,7 @@ func setupStorageSnapshotServer(t *testing.T) (*Server, *db.DB, string) {
 		t.Fatalf("MkdirAll assetsDir: %v", err)
 	}
 	s := New("v-teste", database, WithLibraryHealthJob(), WithAssetsDir(assetsDir))
+	configurarFilaDeTeste(t, s)
 	return s, database, assetsDir
 }
 

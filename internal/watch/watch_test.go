@@ -20,7 +20,7 @@ type fakeScanner struct {
 	started []string
 }
 
-func (f *fakeScanner) Start(source library.Source) (string, error) {
+func (f *fakeScanner) Start(source library.Source, _ string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.started = append(f.started, source.ID)

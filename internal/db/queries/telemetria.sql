@@ -19,7 +19,10 @@ GROUP BY state;
 SELECT COUNT(*) AS total FROM library_source;
 
 -- name: ContarJobExecutions :one
-SELECT COUNT(*) AS total FROM job_execution;
+-- Desde o briefing 0108/ADR-0028 (CAMADA 3): job_execution foi derrubada
+-- (migration 0025); o historico de execucao de job vive em queue_item
+-- (kind='job') -- ver internal/db/queries/queue_item.sql.
+SELECT COUNT(*) AS total FROM queue_item WHERE kind = 'job';
 
 -- name: SomarTamanhoMediaFilePorFonte :one
 SELECT CAST(COALESCE(SUM(size), 0) AS INTEGER) AS total_bytes

@@ -122,9 +122,15 @@ func TestMigrateUp(t *testing.T) {
 	// (briefing 0088) + 0020 historico_evento (briefing 0092) + 0021
 	// historico_evento.entity_id nullable + raw_* (eventos órfãos, briefing
 	// 0099) + 0022 seed do job trailer_tema_faltantes (briefing 0104) + 0023
-	// entity.external_id_mbid (fundação da vertical música, briefing 0105).
-	if v := mustSchemaVersion(t, d); v != 23 {
-		t.Errorf("versão após up = %d, quero 23", v)
+	// entity.external_id_mbid (fundação da vertical música, briefing 0105) +
+	// 0024 queue_item (fila de execução unificada, briefing 0108/ADR-0028 --
+	// job_execution permanece intacta nesta camada, ver a nota de
+	// faseamento na própria migration) + 0025 remove job_execution (CAMADA 3
+	// da mesma ADR: internal/job/manager.go passou a enfileirar via
+	// execqueue, então job_execution vira uma segunda fonte de verdade
+	// redundante e é derrubada).
+	if v := mustSchemaVersion(t, d); v != 25 {
+		t.Errorf("versão após up = %d, quero 25", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -175,6 +181,17 @@ func TestMigrateDown(t *testing.T) {
 	}
 
 	// Down reverte uma migration por vez, do topo para a base.
+	downPara(t, d, 24) // 0025: recria job_execution (só o SCHEMA, sem dados -- ver a nota no Down da migration).
+	if rows, err := d.Read.QueryContext(context.Background(), "SELECT 1 FROM job_execution WHERE 0"); err != nil {
+		t.Errorf("job_execution deveria existir de novo após o down do 0025: %v", err)
+	} else {
+		_ = rows.Close()
+	}
+
+	downPara(t, d, 23) // 0024: remove queue_item (job_execution nao e tocada, ver a nota de faseamento na migration).
+	querFalha(t, d, "SELECT 1 FROM queue_item",
+		"tabela queue_item ainda existe após o down do 0024")
+
 	downPara(t, d, 22) // 0023: remove entity.external_id_mbid.
 	querFalha(t, d, "SELECT external_id_mbid FROM entity",
 		"coluna external_id_mbid ainda existe após o down do 0023")

@@ -20,7 +20,6 @@ type Querier interface {
 	ApagarEntity(ctx context.Context, id string) error
 	ApagarEntityRelation(ctx context.Context, id string) error
 	ApagarHistoricoEvento(ctx context.Context, id string) error
-	ApagarJobExecucao(ctx context.Context, id string) error
 	ApagarLibrarySource(ctx context.Context, id string) error
 	// Remove uma linha de cache pelo seu id (ex.: invalidar uma fonte).
 	ApagarMediaExternal(ctx context.Context, id string) error
@@ -31,6 +30,7 @@ type Querier interface {
 	ApagarMediaFilesPorFonte(ctx context.Context, librarySourceID sql.NullString) error
 	// Remove o override da entity (volta ao valor da base editorial/arquivo).
 	ApagarMediaOverride(ctx context.Context, entityID string) error
+	ApagarQueueItem(ctx context.Context, id string) error
 	// Grava o caminho FISICO materializado na pasta real da biblioteca (briefing
 	// 0062): coluna ortogonal a path_or_uri (cache interno/URL externa) -- so
 	// preenchida quando a arte tambem foi copiada para dentro da pasta do item.
@@ -130,6 +130,13 @@ type Querier interface {
 	// um fato da fonte, nao dado do dono; re-enriquecer apenas o reafirma. So esta
 	// coluna e o updated_at mudam.
 	AtualizarOriginalLanguage(ctx context.Context, arg AtualizarOriginalLanguageParams) error
+	// Grava progress_current/progress_total/message a cada report do callback de
+	// progresso durante Runner.Executar (ADR-0028: "atualiza progress_current/
+	// message via callback durante a execucao -- nao so no fim"). Sem throttle:
+	// grava a cada chamada, decisao documentada em
+	// internal/execqueue/manager.go (simples e correta; otimizar so se virar
+	// problema real de I/O).
+	AtualizarProgressoQueueItem(ctx context.Context, arg AtualizarProgressoQueueItemParams) error
 	// Grava a DATA DE LANCAMENTO neutra da obra, obtida do detalhe da fonte no enrich/
 	// import (mesmo tratamento de AtualizarOriginalLanguage: fato da fonte, nao dado do
 	// dono; re-enriquecer reafirma). Denormaliza a coluna base para ordenacao/listagem
@@ -175,6 +182,9 @@ type Querier interface {
 	ContarEntityCards(ctx context.Context, arg ContarEntityCardsParams) (int64, error)
 	// Total de eventos orfaos, para o campo "total" da paginacao acima.
 	ContarHistoricoEventoOrfaos(ctx context.Context) (int64, error)
+	// Desde o briefing 0108/ADR-0028 (CAMADA 3): job_execution foi derrubada
+	// (migration 0025); o historico de execucao de job vive em queue_item
+	// (kind='job') -- ver internal/db/queries/queue_item.sql.
 	ContarJobExecutions(ctx context.Context) (int64, error)
 	ContarLibrarySources(ctx context.Context) (int64, error)
 	ContarMediaFilesPorState(ctx context.Context) ([]ContarMediaFilesPorStateRow, error)
@@ -225,9 +235,6 @@ type Querier interface {
 	// payload para permitir localizar o evento como candidato a backfill
 	// quando uma entity ganhar aquele ID externo no futuro.
 	CriarHistoricoEventoOrfao(ctx context.Context, arg CriarHistoricoEventoOrfaoParams) (HistoricoEvento, error)
-	// Cria a linha de execucao em status 'running', no INICIO do disparo
-	// (Manager.Executar, antes de chamar o Handler).
-	CriarJobExecucao(ctx context.Context, arg CriarJobExecucaoParams) (JobExecution, error)
 	// CRUD de library_source (raizes de varredura).
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
 	// state e last_scan ficam de fora do INSERT: uma fonte nova nasce 'online'
@@ -245,6 +252,12 @@ type Querier interface {
 	// marcacao de missing por datasource.
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
 	CriarMediaFile(ctx context.Context, arg CriarMediaFileParams) (MediaFile, error)
+	// Acesso a queue_item (briefing 0108, ADR-0028): fila de execucao unificada
+	// para scan e job. Comentarios em ASCII e colunas explicitas -- ver a nota em
+	// entity.sql (bug de offset do sqlc v1.31 com acentos/'*' em .sql de query).
+	// Enfileira um item novo em status 'queued' (Manager.Enqueue, DEPOIS do guard
+	// de dedup ja ter confirmado que nao ha item ativo para a mesma referencia).
+	CriarQueueItem(ctx context.Context, arg CriarQueueItemParams) (QueueItem, error)
 	// Queries da juncao N:M GENERICA arquivo<->entidade (briefing 0034, migration
 	// 0009). Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql (o
 	// sqlc v1.31 corrompe SQL de query com acento). O vinculo e ancorado no entity_id
@@ -294,9 +307,11 @@ type Querier interface {
 	// next_run_at (nil quando desabilitado ou sem schedule_cron -- computado em
 	// Go via cron.ParseStandard(...).Next(agora)).
 	FinalizarJobDefinicao(ctx context.Context, arg FinalizarJobDefinicaoParams) (JobDefinition, error)
-	// Fecha a linha de execucao ao fim (sucesso ou erro), com a mensagem curta
-	// devolvida pelo Handler (ou o erro, sem stack trace).
-	FinalizarJobExecucao(ctx context.Context, arg FinalizarJobExecucaoParams) (JobExecution, error)
+	// Transicao running -> success|error, ao FIM do processamento (ou quando nao
+	// ha Runner registrado para o kind).
+	FinalizarQueueItem(ctx context.Context, arg FinalizarQueueItemParams) (QueueItem, error)
+	// Transicao queued -> running, no INICIO do processamento pelo worker.
+	IniciarQueueItem(ctx context.Context, id string) (QueueItem, error)
 	// Os arquivos de UMA entidade num dado papel (detalhe do episodio: mediainfo,
 	// caminho, estado). Filtra por entity_id + kind e faz join com media_file para
 	// trazer a linha do arquivo. Ordena por ordinal e depois pela criacao, estavel.
@@ -373,6 +388,15 @@ type Querier interface {
 	// Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title). owned/
 	// file_count somam a juncao media_file_entity do mesmo jeito -- ver a nota longa acima.
 	ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCardsDescParams) ([]ListarEntityCardsDescRow, error)
+	// Igual a ListarEntityCards, mas ordena por created_at DESCENDENTE
+	// (sort=-created_at, briefings 0109/0110): "adicionados recentemente" na
+	// home. owned/file_count somam a juncao media_file_entity do mesmo jeito --
+	// ver a nota longa em ListarEntityCards. So a variante DESC existe (mais
+	// recente primeiro); nao ha pedido de "mais antigo primeiro". Mesmo shape de
+	// paginacao LIMIT/OFFSET das irmas por titulo -- o consumidor real (carrossel
+	// da home) sempre usa limit pequeno (ex. 10), sem necessidade de um shape de
+	// paginacao dedicado.
+	ListarEntityCardsRecentes(ctx context.Context, arg ListarEntityCardsRecentesParams) ([]ListarEntityCardsRecentesRow, error)
 	// Universo elegivel do job `midias_faltantes` (briefing 0064) PARA MOVIE/TV
 	// DIRETO: toda entity que possui ao menos um media_file 'present' apontando
 	// entity_id pra ela. Para SERIE, media_file.entity_id aponta pra SERIE (nunca
@@ -416,10 +440,16 @@ type Querier interface {
 	// Lista os eventos de uma entity em ordem cronologica reversa. kind e
 	// filtro opcional via sqlc.narg -- NULL = sem filtro (todos os kinds).
 	ListarHistoricoEventoPorEntity(ctx context.Context, arg ListarHistoricoEventoPorEntityParams) ([]ListarHistoricoEventoPorEntityRow, error)
-	// Acesso a job_definition/job_execution (briefing 0052): fundacao do sistema
-	// de jobs (registro dinamico + agendador embutido). Comentarios em ASCII e
-	// colunas explicitas -- ver a nota em entity.sql (bug de offset do sqlc v1.31
-	// com acentos/'*' em .sql de query).
+	// Acesso a job_definition (briefing 0052): fundacao do sistema de jobs
+	// (registro dinamico + agendador embutido). Comentarios em ASCII e colunas
+	// explicitas -- ver a nota em entity.sql (bug de offset do sqlc v1.31 com
+	// acentos/'*' em .sql de query).
+	//
+	// job_execution (historico de execucao) NAO vive mais aqui desde o briefing
+	// 0108/ADR-0028 (CAMADA 3): internal/job/manager.go passou a enfileirar via
+	// internal/execqueue, cujo queue_item (kind='job') e a fonte unica de
+	// historico -- ver internal/db/queries/queue_item.sql. A tabela job_execution
+	// em si foi derrubada pela migration 0025.
 	// Lista todos os jobs conhecidos (sempre tem ao menos o seed backup_vacuum),
 	// ordem estavel por created_at.
 	ListarJobDefinitions(ctx context.Context) ([]JobDefinition, error)
@@ -428,20 +458,6 @@ type Querier interface {
 	// ja estao "running" em memoria antes de disparar (nao ha essa informacao no
 	// banco).
 	ListarJobDefinitionsAgendaveis(ctx context.Context, nextRunAt sql.NullString) ([]JobDefinition, error)
-	// Retencao do historico (briefing 0052): ids do excedente mais antigo alem das
-	// N mais recentes DAQUELE job_id ("manter", constante Go, nao exposta na API).
-	// O parser SQL do sqlc (engine sqlite) acusa "column reference job_id
-	// ambiguous" para um DELETE ... NOT IN (SELECT ... mesma tabela) sem alias --
-	// mesma familia da limitacao documentada em duplicata.sql (self-reference na
-	// tabela alvo). Por isso a poda e DUAS queries simples: esta lista os ids
-	// excedentes (OFFSET "manter", mesmo criterio de ORDER BY do historico), e
-	// ApagarJobExecucao (abaixo) apaga cada um em Go -- mesmo espirito de
-	// duplicata.go (iterar ids em vez de SQL em massa).
-	ListarJobExecucaoIdsExcedentes(ctx context.Context, arg ListarJobExecucaoIdsExcedentesParams) ([]string, error)
-	// Historico paginado de UM job, mais recente primeiro. sqlc.narg('before') e
-	// opcional (NULL = sem cursor, primeira pagina); quando presente, pagina para
-	// tras (started_at estritamente menor que o cursor).
-	ListarJobExecucoes(ctx context.Context, arg ListarJobExecucoesParams) ([]JobExecution, error)
 	ListarLibrarySources(ctx context.Context) ([]LibrarySource, error)
 	// Usada no BOOT do servidor (briefing 0064) para registrar o watcher fsnotify
 	// de cada fonte com watch_enabled=1 -- evita listar/filtrar em Go sobre TODAS
@@ -466,6 +482,20 @@ type Querier interface {
 	// dono -- sem linha em media_override e sem asset origin='user'. Uma entity SO
 	// importada (sem media_file) NAO e orfa. owned e sempre falso aqui (nenhum present).
 	ListarOrfas(ctx context.Context) ([]ListarOrfasRow, error)
+	// Retencao do historico (mesmo padrao de ListarJobExecucaoIdsExcedentes em
+	// job.sql): ids do excedente mais antigo alem das N mais recentes DAQUELA
+	// (kind, ref_id) -- poda aplicada em Go, um DELETE por id.
+	ListarQueueItemsExcedentesPorRef(ctx context.Context, arg ListarQueueItemsExcedentesPorRefParams) ([]string, error)
+	// Historico paginado de UMA referencia (kind, ref_id), mais recente primeiro
+	// por enqueued_at -- substitui a antiga ListarJobExecucoes (job.sql) numa
+	// camada futura; as colunas ja cobrem o shape que GET /jobs/{id}/executions e
+	// GET /library/{id}/scan precisam.
+	ListarQueueItemsPorKindRef(ctx context.Context, arg ListarQueueItemsPorKindRefParams) ([]QueueItem, error)
+	// Usado no BOOT do worker (Manager.Run, antes do loop comecar): qualquer item
+	// 'running' encontrado aqui e orfao de uma execucao anterior que nao
+	// terminou (o processo caiu no meio) -- o Manager finaliza cada um como
+	// 'error' antes de comecar a processar a fila normalmente.
+	ListarQueueItemsRunning(ctx context.Context) ([]QueueItem, error)
 	// Relacoes onde a entity e o pai (ex.: as temporadas de uma serie). Ordena por
 	// sort_index (numero estavel do filho) e cai para id quando ele e NULL. A forma
 	// `sort_index IS NULL, sort_index, id` empurra os NULL para o fim sem depender de
@@ -497,6 +527,21 @@ type Querier interface {
 	// (guarda em gravarNFOSeFaltante) -- esta query so habilita o job a
 	// materializar o POSTER de temporada (season0N-poster.jpg) na raiz da serie.
 	ListarSeasonIDsComEpisodioPresente(ctx context.Context) ([]string, error)
+	// Tipos de entity DISTINTOS com pelo menos 1 item CATALOGADO (status !=
+	// 'draft'), para a home (0109) e o dropdown da navbar (0110) descobrirem
+	// quais schemas mostrar sem hardcode de lista fixa no frontend -- cobre
+	// album/artista/faixa (0105-0107) junto de movie/tv sem exigir mudanca aqui a
+	// cada vertical nova. Criterio = "status != 'draft'" (o MESMO da fila de
+	// revisao em review.sql: um item 'draft' e so um resultado de busca ainda nao
+	// comprometido ao catalogo) -- DELIBERADAMENTE distinto de "owned"
+	// (ContarEntityCards/ListarEntityCards: posse FISICA de arquivo). Um item
+	// 'wanted'/'unreleased' catalogado mas sem arquivo em disco ainda conta --
+	// coerente com AGENTS.md #2 ("o banco e maior que a biblioteca": cataloga o
+	// que se tem E o que ainda nao se tem). Exclui season/episode (nos internos
+	// da arvore de series, ver ListarEntityCards/0032). Ordenado por count
+	// DESCENDENTE (schema mais populoso primeiro) e type ASCENDENTE como
+	// desempate estavel.
+	ListarTiposComContagem(ctx context.Context) ([]ListarTiposComContagemRow, error)
 	// Base da projecao de "estado atual" (GET .../historico/estado): todos os
 	// eventos da entity, mesma ordem cronologica reversa da listagem acima --
 	// o agrupamento por kind (pegar so o primeiro de cada kind, ja que a
@@ -633,6 +678,23 @@ type Querier interface {
 	// Le a pessoa pelo id local (person.id) -- para a pagina da pessoa (briefing 0029
 	// Fase D, GET /person/{id}).
 	ObterPersonPorID(ctx context.Context, id string) (Person, error)
+	// Guard de dedup (Manager.Enqueue): existe algum item queued/running para
+	// esta MESMA referencia (kind, ref_id)? sql.ErrNoRows = nao existe, pode
+	// enfileirar. O mais recente primeiro (ORDER BY enqueued_at DESC) nao importa
+	// de verdade aqui (so pode existir UM ativo por referencia, ja que o proprio
+	// guard impede um segundo), mas mantem a query deterministica.
+	ObterQueueItemAtivo(ctx context.Context, arg ObterQueueItemAtivoParams) (QueueItem, error)
+	// Usado por Manager.Status(kind, refID): o item ATIVO (queued/running) mais
+	// recente da referencia, se houver -- Status cai para
+	// ObterUltimoQueueItemPorKindRef quando esta query devolve sql.ErrNoRows (sem
+	// item ativo, mostra o ultimo resultado finalizado).
+	ObterQueueItemAtivoPorKindRef(ctx context.Context, arg ObterQueueItemAtivoPorKindRefParams) (QueueItem, error)
+	ObterQueueItemPorId(ctx context.Context, id string) (QueueItem, error)
+	// Complemento de ObterQueueItemAtivoPorKindRef: o item mais recente (QUALQUER
+	// status) de uma referencia -- usado por Manager.Status quando nao ha item
+	// ativo, para devolver o resultado da ULTIMA execucao (sql.ErrNoRows = nunca
+	// houve item nenhum para esta referencia).
+	ObterUltimoQueueItemPorKindRef(ctx context.Context, arg ObterUltimoQueueItemPorKindRefParams) (QueueItem, error)
 	// Preenche os campos LOCAIS de reproducao (briefing 0088) SO onde ainda
 	// estao NULL (COALESCE) -- nunca sobrescreve um valor ja presente (mesmo
 	// espirito de "override do dono vence"/"nao-destrutivo", AGENTS.md). Chamada
@@ -646,6 +708,10 @@ type Querier interface {
 	// Guardada por status='draft': no-op idempotente em qualquer outro estado (nao
 	// rebaixa 'wanted'/'unreleased' nem mexe em item ja catalogado).
 	PromoverDeDraft(ctx context.Context, id string) error
+	// O worker usa isso para achar o proximo item 'queued' mais antigo (FIFO por
+	// enqueued_at; id como desempate estavel quando enqueued_at colide).
+	// sql.ErrNoRows = fila vazia, o worker dorme um intervalo curto.
+	ProximoQueueItemPendente(ctx context.Context) (QueueItem, error)
 	// Re-scan limpo TOTAL: apaga todos os vinculos de um arquivo, de qualquer kind.
 	// Use com cuidado: se o arquivo tem papeis de tipos diferentes, prefira a
 	// variante por kind abaixo para nao apagar vinculo de outro plugin.

@@ -143,17 +143,6 @@ type JobDefinition struct {
 	UpdatedAt    string
 }
 
-type JobExecution struct {
-	ID         string
-	JobID      string
-	Trigger    string
-	Status     string
-	StartedAt  string
-	FinishedAt sql.NullString
-	Message    sql.NullString
-	CreatedAt  string
-}
-
 type LibrarySource struct {
 	ID                        string
 	Path                      string
@@ -220,4 +209,18 @@ type Person struct {
 	Name        string
 	ProfilePath sql.NullString
 	PayloadJson sql.NullString
+}
+
+type QueueItem struct {
+	ID              string
+	Kind            string
+	RefID           string
+	Trigger         string
+	Status          string
+	ProgressCurrent int64
+	ProgressTotal   int64
+	Message         sql.NullString
+	EnqueuedAt      string
+	StartedAt       sql.NullString
+	FinishedAt      sql.NullString
 }

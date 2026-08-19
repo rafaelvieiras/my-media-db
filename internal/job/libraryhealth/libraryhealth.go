@@ -13,13 +13,13 @@ package libraryhealth
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 )
@@ -28,11 +28,6 @@ import (
 // pela migration 0012.
 const nomeJob = "saude_biblioteca"
 
-// pollInterval e o intervalo entre checagens de scanner.Status enquanto o
-// Handler espera um scan terminar. var (nao const) para o teste poder
-// encurtar sem esperar de verdade -- mesmo padrao de job.pollInterval.
-var pollInterval = 200 * time.Millisecond
-
 // LibraryLister e o subconjunto de library.Service que o Handler consome:
 // listar as fontes cadastradas. Interface para injetar um fake em teste sem
 // depender de filesystem real.
@@ -40,18 +35,29 @@ type LibraryLister interface {
 	Listar(ctx context.Context) ([]library.Source, error)
 }
 
-// ScanRunner e o subconjunto de scanner.Manager que o Handler consome:
-// disparar um scan e acompanhar o progresso ate terminar. Interface para
-// injetar um fake em teste -- scanner.Manager de verdade satisfaz isto
-// estruturalmente, sem precisar declarar a interface la (evita import
-// reverso).
+// ScanRunner e o subconjunto de scanner.Manager que o Handler consome: rodar
+// o pipeline de scan de UMA fonte, SÍNCRONA E DIRETAMENTE, sem passar pela
+// fila unificada (internal/execqueue).
+//
+// Desde o briefing 0108/ADR-0028 (CAMADA 3): job.Manager também roda sobre o
+// MESMO worker sequencial (concorrência 1) que o scanner -- se este Handler
+// (que já está executando DENTRO desse worker, chamado por
+// job.Manager.executarViaRunner) enfileirasse um scan e esperasse ele
+// terminar (o padrão antigo, Start()+polling de Status()), o worker
+// deadlockaria contra si mesmo: o único worker estaria ocupado rodando ESTE
+// job, então nunca chegaria a pegar o item de scan que o próprio job
+// acabou de enfileirar (achado real ao validar esta camada -- os testes de
+// storage_snapshot_test.go/TestWithLibraryHealthJobWiring travavam até o
+// timeout do teste). Executar (o MESMO método que scanner.Manager expõe
+// como execqueue.Runner) roda o pipeline de scan INLINE, no mesmo goroutine
+// deste Handler, sem tocar a fila -- exatamente como o worker faria, só que
+// chamado diretamente em vez de agendado.
 type ScanRunner interface {
-	Start(source library.Source) (string, error)
-	Status(sourceID string) scanner.Status
+	Executar(ctx context.Context, refID, trigger string, progresso execqueue.ProgressoFunc) (mensagem string, err error)
 	// StorageNaoVideo devolve os bytes de arquivo NÃO-vídeo classificados
 	// como managed/unmanaged (briefing 0063) na última varredura completa da
 	// fonte -- ok=false se nunca houve scan. Calculado DENTRO da mesma
-	// passada de WalkDir que Start já dispara (scanner.coletarArquivos);
+	// passada de WalkDir que Executar já dispara (scanner.coletarArquivos);
 	// este pacote não varre o disco de novo, só lê o resultado em memória.
 	StorageNaoVideo(sourceID string) (managedBytes, unmanagedBytes int64, ok bool)
 }
@@ -252,8 +258,8 @@ func (h *Handler) rodarRecalculoCompletude(ctx context.Context) (avaliados, inco
 // que o scanner.Manager guarda em memória (briefing 0063), e grava o
 // agregado para internal/server/health_system.go ler via
 // UltimoResultadoStorage. Uma fonte offline nesta rodada simplesmente NÃO
-// atualiza seu bucket no scanner.Manager (Start falha antes de tocar o
-// estado do job) -- então o valor somado aqui automaticamente reflete a
+// atualiza seu bucket no scanner.Manager (Executar falha antes de tocar o
+// estado de storage) -- então o valor somado aqui automaticamente reflete a
 // política "mantém o último valor calculado" do briefing 0063 §3/§6, sem
 // nenhuma lógica extra de offline neste pacote (mesma política de
 // UsoDisco/Statfs do briefing 0055). Best-effort: nunca falha o job.
@@ -301,37 +307,20 @@ func (h *Handler) escanearTodas(ctx context.Context, sources []library.Source) (
 	return escaneadas, falhas
 }
 
-// escanearEAguardar dispara o scan da fonte e bloqueia ate ele terminar
-// (sucesso ou erro), consultando scanner.Status em intervalos curtos.
+// escanearEAguardar roda o scan da fonte SÍNCRONA E DIRETAMENTE (via
+// ScanRunner.Executar, que bypassa a fila unificada -- ver o comentário
+// longo em ScanRunner sobre por que: enfileirar+esperar aqui deadlockaria
+// contra o próprio worker que está executando este job). Não há mais
+// polling: Executar só devolve quando o scan de fato terminou.
 func (h *Handler) escanearEAguardar(ctx context.Context, src library.Source) error {
-	if _, err := h.scanner.Start(src); err != nil {
-		return err
-	}
-	return h.aguardarConclusao(ctx, src.ID)
-}
-
-// aguardarConclusao faz polling de scanner.Status ate Running=false --
-// Start() sempre cria um job NOVO (com lastError zerado) no map do
-// scanner.Manager antes de devolver, entao o LastError lido aqui pertence
-// SEMPRE a esta execucao (nunca a uma anterior). Sai antes do tempo se ctx
-// for cancelado (nao ha timeout proprio -- ver nota do briefing 0053 sobre
-// esta limitacao, compartilhada com todo o sistema de jobs: Manager.executar
-// roda o Handler em context.Background(), sem prazo).
-func (h *Handler) aguardarConclusao(ctx context.Context, sourceID string) error {
-	for {
-		status := h.scanner.Status(sourceID)
-		if !status.Existe || !status.Running {
-			if status.LastError != "" {
-				return errors.New(status.LastError)
-			}
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(pollInterval):
-		}
-	}
+	// TriggerSchedule é a aproximação razoável (briefing 0108): o
+	// job.Handler.Executar não recebe hoje se foi disparado manual ou por
+	// schedule (job.Handler{Nome, Executar} não carrega esse dado, e mudar
+	// essa interface é fora do escopo desta camada) -- "schedule" é sempre
+	// verdade no sentido de ser um disparo SISTÊMICO, nunca literalmente "o
+	// dono clicou em escanear ESTA fonte".
+	_, err := h.scanner.Executar(ctx, src.ID, scanner.TriggerSchedule, nil)
+	return err
 }
 
 // montarMensagem compoe o resumo final de sucesso: quantas fontes

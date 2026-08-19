@@ -1,7 +1,6 @@
 package scanner
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,18 +9,15 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 )
 
-// scanSyncRegistrado roda o scan sincronamente (como scanSync, em
-// scanner_test.go) mas REGISTRA o job em m.jobs ANTES -- necessário para
-// consultar m.StorageNaoVideo(sourceID) depois (a API pública real, usada
-// por internal/job/libraryhealth), já que scanSync não registra (os testes
-// existentes não precisavam).
+// scanSyncRegistrado roda o scan sincronamente -- mesmo caminho de scanSync
+// (scanner_test.go). Desde o briefing 0108, StorageNaoVideo é populado
+// diretamente por Manager.executarScan (chave = source.ID, sem depender de
+// nenhum registro prévio em mapa de job), então este helper é hoje só um
+// alias nomeado -- mantido para não precisar tocar nos call-sites deste
+// arquivo.
 func scanSyncRegistrado(t *testing.T, m *Manager, src library.Source) error {
 	t.Helper()
-	j := &job{id: "job-teste", running: true, startedAt: m.agora()}
-	m.mu.Lock()
-	m.jobs[src.ID] = j
-	m.mu.Unlock()
-	return m.executarScan(context.Background(), src, j)
+	return scanSync(t, m, src)
 }
 
 // TestScanClassificaArquivoNaoVideoManagedEUnmanaged cobre o núcleo do
@@ -92,7 +88,7 @@ func TestStorageNaoVideoMantemUltimoValorQuandoFonteFicaOffline(t *testing.T) {
 	if err := os.RemoveAll(root); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Start(src); err == nil {
+	if _, err := m.Start(src, TriggerManual); err == nil {
 		t.Fatal("Start deveria falhar com a fonte removida")
 	}
 

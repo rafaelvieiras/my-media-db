@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 )
 
@@ -31,7 +32,41 @@ func setupScanServer(t *testing.T) (*Server, http.Handler) {
 	if err != nil {
 		t.Fatalf("Handler: %v", err)
 	}
+	configurarFilaDeTeste(t, s)
 	return s, h
+}
+
+// configurarFilaDeTeste sobe UMA ÚNICA execqueue.Manager de teste, liga o
+// scanner de `s` nela (ConfigurarFila/ConfigurarLibrary) e, quando `s.jobs`
+// existe, liga o job.Manager na MESMA fila (ConfigurarFila) -- mesma
+// realidade de produção desde o briefing 0108/ADR-0028 CAMADA 3
+// (cmd/mymediadb/main.go: uma única fila compartilhada entre scan e job).
+// Roda o worker sequencial em background até o teste terminar -- necessário
+// porque nem scanner.Manager nem job.Manager disparam mais goroutine
+// própria (Start()/Executar() só enfileiram; quem roda de verdade é este
+// worker). Chamar de novo sempre que `s.scanner` for SUBSTITUÍDO por um novo
+// *scanner.Manager (a configuração de fila/library não sobrevive à troca de
+// instância) -- reconfigura s.jobs na fila NOVA também, nesse caso (inofensivo:
+// o worker antigo é cancelado no Cleanup independente do novo).
+func configurarFilaDeTeste(t *testing.T, s *Server) {
+	t.Helper()
+	fila := execqueue.NewManager(s.db)
+	s.scanner.ConfigurarLibrary(s.library)
+	s.scanner.ConfigurarFila(fila)
+	if s.jobs != nil {
+		s.jobs.ConfigurarFila(fila)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		fila.Run(ctx)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
 }
 
 // criarSourceHTTP cadastra um datasource via a API e devolve seu id.
@@ -116,9 +151,12 @@ func TestPostScanEmAndamento409(t *testing.T) {
 	escreverDummy(t, filepath.Join(dir, "Filme (2000)", "Filme (2000).mkv"))
 	id := criarSourceHTTP(t, h, dir)
 
-	// Substitui o scanner por um que trava no Probe (mantém running).
+	// Substitui o scanner por um que trava no Probe (mantém running) -- a
+	// nova instância não herda a configuração de fila/library, então
+	// reconfigura antes de usar (ver configurarFilaDeTeste).
 	prober := proberBloqueante{liberar: make(chan struct{})}
 	s.scanner = scanner.NewManagerComProber(s.db, prober)
+	configurarFilaDeTeste(t, s)
 
 	rec1 := do(t, h, http.MethodPost, "/api/v1/library/"+id+"/scan", nil)
 	if rec1.Code != http.StatusAccepted {

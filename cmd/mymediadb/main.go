@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/job/backup"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
@@ -62,11 +63,29 @@ func run() error {
 		}
 	}()
 
+	// Fila de execução unificada para scan e jobs (briefing 0108, ADR-0028,
+	// CAMADA 3 final): UMA única *execqueue.Manager compartilhada, sobre o
+	// MESMO *db.DB que os demais managers já recebem. Construída ANTES de
+	// server.New (server.WithExecQueue, abaixo, precisa dela para ligar o
+	// scanner) e ANTES de srv.Jobs().ConfigurarFila (liga o job) -- ambas as
+	// ligações (que registram os Runners via RegistrarRunner) precisam
+	// acontecer antes de `go fila.Run(ctx)` começar a processar itens, mais
+	// abaixo, senão um item que chegasse cedo demais cairia no caminho
+	// "nenhum runner registrado" (o execqueue já trata isso sem travar o
+	// worker, mas é desperdício e confunde log).
+	fila := execqueue.NewManager(database)
+
 	opts, err := opcoesServer(database)
 	if err != nil {
 		return err
 	}
+	opts = append(opts, server.WithExecQueue(fila))
 	srv := server.New(version, database, opts...)
+	// srv.Jobs() nunca é nil aqui — database (acima) é sempre não-nil quando
+	// o boot chega a este ponto, e opcoesServer sempre inclui
+	// WithJobHandlers (backup_vacuum), que constrói o Manager de jobs.
+	srv.Jobs().ConfigurarFila(fila)
+
 	handler, err := srv.Handler()
 	if err != nil {
 		return err
@@ -77,17 +96,23 @@ func run() error {
 		Handler: handler,
 	}
 
-	// Sinal de término (SIGINT/SIGTERM) — o MESMO ctx encerra tanto o
-	// agendador de jobs (RunScheduler, abaixo) quanto o shutdown do HTTP.
+	// Sinal de término (SIGINT/SIGTERM) — o MESMO ctx encerra o worker da
+	// fila (fila.Run, abaixo), o agendador de jobs (RunScheduler) e o
+	// shutdown do HTTP.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Worker sequencial da fila unificada (briefing 0108, ADR-0028): consome
+	// scan e job em FIFO, concorrência 1. Sobe ANTES do RunScheduler abaixo
+	// (que só ENFILEIRA via job.Manager.Executar desde esta camada -- quem
+	// de fato roda o Handler é este worker) -- ambos os Runners (scan e job)
+	// já foram registrados acima (WithExecQueue / ConfigurarFila), então não
+	// há corrida entre "worker começa a processar" e "runner é registrado".
+	go fila.Run(ctx)
 
 	// Agendador embutido de jobs (briefing 0052): dispara ANTES do
 	// ListenAndServe, para o boot do HTTP não atrasar o primeiro tick. Sai
 	// sozinho quando ctx é cancelado (mesmo sinal do shutdown do HTTP).
-	// srv.Jobs() nunca é nil aqui — database (acima) é sempre não-nil quando
-	// o boot chega a este ponto, e montarServicos constrói o Manager sempre
-	// que há banco.
 	go srv.Jobs().RunScheduler(ctx)
 
 	// Watch de filesystem opcional por fonte (briefing 0064): registra o

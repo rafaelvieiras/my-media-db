@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,12 +79,36 @@ func escrever(t *testing.T, path string) {
 	}
 }
 
-// scanSync roda o pipeline de scan de forma síncrona (sem a goroutine), para
-// asserções determinísticas.
+// libraryGetterFake é um LibraryGetter fake que SEMPRE devolve o mesmo
+// library.Source recebido na construção, independente do id passado a
+// Obter -- suficiente para os testes deste pacote, que chamam
+// Manager.Executar diretamente (bypass da fila, briefing 0108) com o
+// library.Source já em mãos e só querem rodar o pipeline de scan
+// determinísticamente.
+type libraryGetterFake struct {
+	source library.Source
+}
+
+func (f libraryGetterFake) Obter(context.Context, string) (library.Source, error) {
+	return f.source, nil
+}
+
+// progressoNoOp é o callback de progresso usado pelos testes deste pacote
+// que chamam Manager.Executar diretamente e não se importam com o reporte
+// intermediário (ver TestExecutarReportaProgressoPorArquivo, que SIM se
+// importa e usa o seu próprio callback).
+func progressoNoOp(int, int, string) {}
+
+// scanSync roda o pipeline de scan de forma síncrona bypassando a fila
+// (execqueue, briefing 0108): chama Manager.Executar diretamente -- que
+// resolve `src` via um LibraryGetter fake que sempre devolve o próprio `src`
+// recebido -- para asserções determinísticas, sem precisar subir um
+// execqueue.Manager de verdade nem um worker em goroutine própria.
 func scanSync(t *testing.T, m *Manager, src library.Source) error {
 	t.Helper()
-	j := &job{id: "job-teste", running: true, startedAt: m.agora()}
-	return m.executarScan(context.Background(), src, j)
+	m.ConfigurarLibrary(libraryGetterFake{source: src})
+	_, err := m.Executar(context.Background(), src.ID, TriggerManual, progressoNoOp)
+	return err
 }
 
 // ── helpers de asserção sobre o banco ────────────────────────────────────────
@@ -413,8 +438,23 @@ func TestStartOfflineRetornaErro(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := managerFake(t, d)
-	if _, err := m.Start(src); err != ErrSourceOffline {
+	if _, err := m.Start(src, TriggerManual); err != ErrSourceOffline {
 		t.Errorf("Start offline err = %v, quero ErrSourceOffline", err)
+	}
+}
+
+// TestStartSemFilaConfiguradaDevolveErro prova que Start recusa com um erro
+// claro (não pânico) quando ConfigurarFila nunca foi chamado -- todo caminho
+// de produção configura a fila no boot (cmd/mymediadb/main.go); isto só
+// deveria acontecer em uso incompleto do pacote.
+func TestStartSemFilaConfiguradaDevolveErro(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	escrever(t, filepath.Join(root, "Filme (2000)", "Filme (2000).mkv"))
+	m := managerFake(t, d)
+	src := criarSource(t, d, root)
+	if _, err := m.Start(src, TriggerManual); !errors.Is(err, ErrFilaNaoConfigurada) {
+		t.Errorf("Start sem fila err = %v, quero ErrFilaNaoConfigurada", err)
 	}
 }
 

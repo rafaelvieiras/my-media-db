@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
-	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 )
 
 // libraryFake e um LibraryLister fake, sem tocar filesystem.
@@ -22,18 +22,18 @@ func (f *libraryFake) Listar(context.Context) ([]library.Source, error) {
 	return f.sources, f.err
 }
 
-// scanFake e um ScanRunner fake: cada Start() "termina" apos uma pequena
-// espera assincrona (goroutine), simulando o scanner de verdade rodando em
-// background e reportando via Status(). startErr[sourceID] forca Start() a
-// falhar para aquela fonte; runErr[sourceID] forca o scan a terminar com
-// erro (LastError) em vez de sucesso.
+// scanFake e um ScanRunner fake (briefing 0108, CAMADA 3: Executar roda
+// SÍNCRONO, sem fila -- ver o comentário em ScanRunner sobre o deadlock que
+// isso evita). startErr[sourceID] forca Executar a falhar IMEDIATAMENTE para
+// aquela fonte (equivalente ao antigo Start() falhando); runErr[sourceID]
+// forca Executar a falhar DEPOIS de `duracao` (equivalente ao antigo
+// LastError de um scan que rodou e terminou com erro).
 type scanFake struct {
 	startErr map[string]error
 	runErr   map[string]error
 	duracao  time.Duration
 
 	mu      sync.Mutex
-	status  map[string]scanner.Status
 	storage map[string][2]int64 // sourceID -> [managed, unmanaged]
 }
 
@@ -41,7 +41,6 @@ func newScanFake() *scanFake {
 	return &scanFake{
 		startErr: map[string]error{},
 		runErr:   map[string]error{},
-		status:   map[string]scanner.Status{},
 		storage:  map[string][2]int64{},
 	}
 }
@@ -59,33 +58,24 @@ func (f *scanFake) StorageNaoVideo(sourceID string) (managedBytes, unmanagedByte
 	return v[0], v[1], true
 }
 
-func (f *scanFake) Start(source library.Source) (string, error) {
-	if err := f.startErr[source.ID]; err != nil {
+// Executar simula o scan síncrono de UMA fonte: falha imediatamente se
+// startErr estiver configurado; senão "roda" por `duracao` (respeitando
+// ctx.Done) e falha com runErr, se configurado, ao final.
+func (f *scanFake) Executar(ctx context.Context, refID, _ string, _ execqueue.ProgressoFunc) (string, error) {
+	if err := f.startErr[refID]; err != nil {
 		return "", err
 	}
-	f.mu.Lock()
-	f.status[source.ID] = scanner.Status{Existe: true, Running: true}
-	f.mu.Unlock()
-
-	go func() {
-		if f.duracao > 0 {
-			time.Sleep(f.duracao)
+	if f.duracao > 0 {
+		select {
+		case <-time.After(f.duracao):
+		case <-ctx.Done():
+			return "", ctx.Err()
 		}
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		st := scanner.Status{Existe: true, Running: false}
-		if err := f.runErr[source.ID]; err != nil {
-			st.LastError = err.Error()
-		}
-		f.status[source.ID] = st
-	}()
-	return "job-" + source.ID, nil
-}
-
-func (f *scanFake) Status(sourceID string) scanner.Status {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.status[sourceID]
+	}
+	if err := f.runErr[refID]; err != nil {
+		return "", err
+	}
+	return "", nil
 }
 
 // contadorFake e um Contador fake com valores fixos (ou erro).
@@ -159,13 +149,6 @@ func (c *contadorSequencialFake) ContarRevisao(context.Context) (int, error) {
 
 func (c *contadorSequencialFake) ContarOrfas(context.Context) (int, error) { return c.orfas, nil }
 
-func acelerarPoll(t *testing.T) {
-	t.Helper()
-	original := pollInterval
-	pollInterval = 5 * time.Millisecond
-	t.Cleanup(func() { pollInterval = original })
-}
-
 func TestNome(t *testing.T) {
 	h := New(&libraryFake{}, newScanFake(), &contadorFake{}, &matcherFake{}, nil)
 	if h.Nome() != "saude_biblioteca" {
@@ -193,7 +176,6 @@ func TestExecutarSemFontes(t *testing.T) {
 // é indireta -- se o Handler não esperasse, o teste seria não-determinístico
 // e falharia esporadicamente sob -race/-count=10).
 func TestExecutarTodasSucesso(t *testing.T) {
-	acelerarPoll(t)
 	scn := newScanFake()
 	scn.duracao = 30 * time.Millisecond
 	lib := &libraryFake{sources: []library.Source{
@@ -216,7 +198,6 @@ func TestExecutarTodasSucesso(t *testing.T) {
 // TestExecutarFalhaParcial prova que uma fonte offline (Start falha) nao
 // aborta a outra, e a mensagem final reporta a falha parcial.
 func TestExecutarFalhaParcial(t *testing.T) {
-	acelerarPoll(t)
 	scn := newScanFake()
 	scn.startErr["s-offline"] = errors.New("datasource inacessível (offline)")
 	lib := &libraryFake{sources: []library.Source{
@@ -240,7 +221,6 @@ func TestExecutarFalhaParcial(t *testing.T) {
 // erro (LastError) também conta como falha daquela fonte, sem abortar as
 // outras.
 func TestExecutarErroDeScanNoMeio(t *testing.T) {
-	acelerarPoll(t)
 	scn := newScanFake()
 	scn.runErr["s-quebra"] = errors.New("permissão negada")
 	lib := &libraryFake{sources: []library.Source{
@@ -265,7 +245,6 @@ func TestExecutarErroDeScanNoMeio(t *testing.T) {
 // TestExecutarTodasFalham prova o critério: se TODAS as fontes falharem, o
 // job devolve ERRO (não sucesso mentiroso).
 func TestExecutarTodasFalham(t *testing.T) {
-	acelerarPoll(t)
 	scn := newScanFake()
 	scn.startErr["s1"] = errors.New("offline")
 	scn.startErr["s2"] = errors.New("offline")
@@ -299,7 +278,6 @@ func TestExecutarErroListarFontes(t *testing.T) {
 // é maior que o tempo de uma chamada síncrona, qualquer implementação que não
 // espere passaria por sorte; repetir com -count=10 no CI pega regressão.
 func TestExecutarAguardaAntesDeContar(t *testing.T) {
-	acelerarPoll(t)
 	scn := newScanFake()
 	scn.duracao = 50 * time.Millisecond
 	lib := &libraryFake{sources: []library.Source{{ID: "s1", Path: "/lib/um"}}}
@@ -530,7 +508,6 @@ func TestExecutarSemCompletenessRecalculatorNaoRecalcula(t *testing.T) {
 // execucao bem-sucedida, UltimoResultadoStorage soma managed/unmanaged de
 // TODAS as fontes cadastradas.
 func TestExecutarAgregaStorageNaoVideoDeTodasAsFontes(t *testing.T) {
-	acelerarPoll(t)
 	scn := newScanFake()
 	scn.storage["s1"] = [2]int64{100, 10}
 	scn.storage["s2"] = [2]int64{200, 20}
@@ -578,7 +555,6 @@ func TestUltimoResultadoStorageAntesDeExecutarDevolveOkFalse(t *testing.T) {
 // o storage quando falha (mesmo espírito de UsoDisco/Statfs do briefing
 // 0055).
 func TestExecutarStorageMantemUltimoValorDeFonteOffline(t *testing.T) {
-	acelerarPoll(t)
 	scn := newScanFake()
 	// s-offline já tem um valor de uma rodada anterior bem-sucedida -- Start()
 	// vai falhar nesta rodada, mas scn.storage não é tocado (mesmo

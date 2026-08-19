@@ -52,9 +52,12 @@ func (q *Queries) ContarEntitiesPorTipo(ctx context.Context) ([]ContarEntitiesPo
 }
 
 const contarJobExecutions = `-- name: ContarJobExecutions :one
-SELECT COUNT(*) AS total FROM job_execution
+SELECT COUNT(*) AS total FROM queue_item WHERE kind = 'job'
 `
 
+// Desde o briefing 0108/ADR-0028 (CAMADA 3): job_execution foi derrubada
+// (migration 0025); o historico de execucao de job vive em queue_item
+// (kind='job') -- ver internal/db/queries/queue_item.sql.
 func (q *Queries) ContarJobExecutions(ctx context.Context) (int64, error) {
 	row := q.db.QueryRowContext(ctx, contarJobExecutions)
 	var total int64

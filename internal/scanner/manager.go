@@ -6,15 +6,20 @@
 // (ADR-0012). As escritas serializam pela conexão única, em lotes curtos
 // (ADR-0010); o parser e o hash são puros e paralelizáveis.
 //
-// O mecanismo de job é mínimo (ADR-0010/doc 03): uma goroutine por datasource
-// com estado em memória e um contexto cancelável; um scan por datasource por
-// vez. Uma fila persistente com retry/agenda é evolução (§7 do briefing).
+// Orquestração (briefing 0108, ADR-0028): o scanner NÃO dispara mais sua
+// própria goroutine nem guarda estado de execução em memória (running/
+// filesSeen/filesTotal/startedAt/lastError) — isso vive na fila unificada
+// (internal/execqueue). Start() só enfileira (ConfigurarFila); o trabalho de
+// scan em si roda depois, quando o worker sequencial da fila chama de volta
+// o Manager como um execqueue.Runner (Executar) — ver ConfigurarFila/
+// ConfigurarLibrary abaixo. O único estado que continua vivendo no Manager é
+// StorageNaoVideo (briefing 0063), que é específico do domínio scan e não
+// pertence à fila genérica.
 package scanner
 
 import (
 	"context"
 	"errors"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -22,6 +27,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
+	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/mediainfo"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
@@ -36,12 +42,28 @@ const carimboFormato = "2006-01-02T15:04:05.000000000Z"
 // a transação é commitada, para que uma interrupção preserve o já gravado.
 const loteEscrita = 25
 
+// Triggers conhecidos de Start — espelham execqueue.TriggerManual/Schedule/
+// Watch (briefing 0108), mas DEFINIDOS AQUI (não como alias) para que
+// pacotes que só dependem de scanner (watch, libraryhealth) não precisem
+// importar internal/execqueue só para ter a constante — ver mapTrigger.
+const (
+	TriggerManual   = "manual"
+	TriggerSchedule = "schedule"
+	TriggerWatch    = "watch"
+)
+
 // Erros de orquestração; sentinelas para o handler mapear ao envelope de erro.
 var (
-	// ErrScanEmAndamento: já há um scan rodando para este datasource. -> 409
+	// ErrScanEmAndamento: já há um scan rodando (ou enfileirado) para este
+	// datasource. -> 409. Espelha execqueue.ErrJaEnfileirado na superfície
+	// pública do scanner (Start mapeia um para o outro).
 	ErrScanEmAndamento = errors.New("já existe um scan em andamento para este datasource")
 	// ErrSourceOffline: o datasource está inacessível (não dá para varrer). -> 409
 	ErrSourceOffline = errors.New("datasource inacessível (offline)")
+	// ErrFilaNaoConfigurada: Start chamado antes de ConfigurarFila -- todo
+	// caminho de produção configura a fila no boot (cmd/mymediadb/main.go);
+	// isto só deveria aparecer em teste/uso incompleto do pacote.
+	ErrFilaNaoConfigurada = errors.New("scanner: fila de execução não configurada (ConfigurarFila)")
 )
 
 // Prober é a dependência de mediainfo que o scanner consome (ffprobe). Interface
@@ -97,27 +119,17 @@ type MusicaImportador interface {
 	Importar(ctx context.Context, source, sourceID, tipo string, langs []string) (id string, criada bool, err error)
 }
 
-// job é o estado em memória de um scan de um datasource.
-type job struct {
-	id         string
-	running    bool
-	filesSeen  int
-	filesTotal int
-	startedAt  time.Time
-	lastError  string
-	cancel     context.CancelFunc
-
-	// naoVideoManagedBytes/naoVideoUnmanagedBytes são o resultado da
-	// classificação de arquivo NÃO-vídeo (briefing 0063) da ÚLTIMA passada de
-	// WalkDir deste job -- gravados por classificarNaoVideos/
-	// setStorageNaoVideo, ANTES do scan terminar (não esperam
-	// finalizarCicloVida), para sobreviverem mesmo se o scan for cancelado no
-	// meio dos lotes de escrita.
-	naoVideoManagedBytes   int64
-	naoVideoUnmanagedBytes int64
+// LibraryGetter é o subconjunto de library.Service que o scanner consome
+// para RE-RESOLVER um library.Source a partir só do id (briefing 0108): o
+// worker da fila chama Manager.Executar bem depois do Enqueue original, só
+// com o refID (string) em mãos -- precisa buscar de novo o Source completo
+// (path, content_type) para poder escanear. *library.Service satisfaz isto
+// estruturalmente (mesma assinatura usada em internal/server/scan.go).
+type LibraryGetter interface {
+	Obter(ctx context.Context, id string) (library.Source, error)
 }
 
-// Status é a fotografia consultável de um job (superfície da API GET .../scan).
+// Status é a fotografia consultável de um scan (superfície da API GET .../scan).
 type Status struct {
 	// Existe é falso quando nunca houve scan para o datasource.
 	Existe     bool
@@ -128,13 +140,36 @@ type Status struct {
 	LastError  string
 }
 
-// Manager guarda os jobs em memória e serializa o acesso a eles. As escritas de
-// banco usam sempre o pool de escrita (db.Write) — o escritor único da ADR-0010.
+// storageResultado é o resultado da classificação de arquivo NÃO-vídeo
+// (briefing 0063) da ÚLTIMA passada de WalkDir de UMA fonte -- dado
+// específico do domínio scan (não pertence à fila genérica execqueue),
+// mantido em memória no próprio Manager, DESACOPLADO do ciclo de vida do
+// item de fila (sobrevive mesmo que o histórico do item em si já tenha sido
+// consultado/rotacionado).
+type storageResultado struct {
+	managedBytes   int64
+	unmanagedBytes int64
+}
+
+// Manager guarda as dependências do scan e o pequeno estado de storage em
+// memória (StorageNaoVideo). A orquestração de execução (fila, concorrência,
+// progresso, histórico) vive em internal/execqueue -- ver ConfigurarFila. As
+// escritas de banco usam sempre o pool de escrita (db.Write) — o escritor
+// único da ADR-0010.
 type Manager struct {
 	db     *db.DB
 	prober Prober
 	novoID func() string
 	agora  func() time.Time
+
+	// fila é a fila de execução unificada (briefing 0108): Start enfileira
+	// nela em vez de disparar uma goroutine própria. nil só em uso
+	// incompleto do pacote (todo caminho de produção chama ConfigurarFila no
+	// boot) -- Start devolve ErrFilaNaoConfigurada nesse caso.
+	fila *execqueue.Manager
+	// library resolve library.Source por id -- necessário porque Executar
+	// (chamado pelo worker da fila) só recebe o refID, não o Source inteiro.
+	library LibraryGetter
 
 	// serieImporter e idiomas alimentam o caminho de SÉRIE (0034): auto-import da
 	// árvore pelo nome e os idiomas permitidos das settings. Ambos nil quando o
@@ -168,8 +203,28 @@ type Manager struct {
 	musicaImportador MusicaImportador
 	musicaProvider   provider.Provider
 
-	mu   sync.Mutex
-	jobs map[string]*job
+	// muStorage protege storageNaoVideo -- pequeno estado em memória, POR
+	// FONTE, do resultado da classificação managed/unmanaged do briefing
+	// 0063 (ver StorageNaoVideo). Mutex próprio, separado de qualquer
+	// orquestração de execução (que agora vive no execqueue).
+	muStorage       sync.Mutex
+	storageNaoVideo map[string]storageResultado
+}
+
+// ConfigurarFila injeta a fila de execução unificada (briefing 0108,
+// ADR-0028) e registra o próprio Manager como o execqueue.Runner do kind
+// "scan" -- chamado pelo boot do processo (cmd/mymediadb/main.go). Sem isto,
+// Start devolve ErrFilaNaoConfigurada.
+func (m *Manager) ConfigurarFila(fila *execqueue.Manager) {
+	m.fila = fila
+	fila.RegistrarRunner(execqueue.KindScan, m)
+}
+
+// ConfigurarLibrary injeta o resolvedor de library.Source por id (briefing
+// 0108) -- chamado pelo boot do processo. Sem isto, Executar (chamado pelo
+// worker da fila) falha ao tentar re-resolver o Source do refID.
+func (m *Manager) ConfigurarLibrary(lister LibraryGetter) {
+	m.library = lister
 }
 
 // ConfigurarSeries injeta o auto-import de séries (0034): o importador por nome e a
@@ -218,104 +273,136 @@ func NewManager(database *db.DB) *Manager {
 // NewManagerComProber cria um Manager com um Prober explícito (testes).
 func NewManagerComProber(database *db.DB, prober Prober) *Manager {
 	return &Manager{
-		db:     database,
-		prober: prober,
-		novoID: func() string { return uuid.NewString() },
-		agora:  func() time.Time { return time.Now().UTC() },
-		jobs:   make(map[string]*job),
+		db:              database,
+		prober:          prober,
+		novoID:          func() string { return uuid.NewString() },
+		agora:           func() time.Time { return time.Now().UTC() },
+		storageNaoVideo: make(map[string]storageResultado),
 	}
 }
 
-// Start dispara o scan de um datasource em background. Devolve o id do job (202
-// na API). ErrScanEmAndamento se já houver scan rodando; ErrSourceOffline se o
-// datasource estiver inacessível — nesse caso o estado offline é PERSISTIDO e
-// nada é marcado missing (ADR-0012).
-func (m *Manager) Start(source library.Source) (string, error) {
+// Start enfileira o scan de um datasource (briefing 0108: não dispara mais
+// goroutine própria) e devolve o id do item de fila (202 na API).
+// ErrSourceOffline se o datasource estiver inacessível — nesse caso o estado
+// offline é PERSISTIDO e nada é marcado missing (ADR-0012); essa checagem
+// continua SÍNCRONA (stat barato, não precisa de fila). ErrScanEmAndamento
+// se já houver um item queued/running para esta fonte (dedup do execqueue,
+// mapeado para o erro sentinela público de sempre). ErrFilaNaoConfigurada se
+// ConfigurarFila nunca foi chamado.
+func (m *Manager) Start(source library.Source, trigger string) (string, error) {
 	if !acessivel(source.Path) {
 		m.persistirEstado(context.Background(), source, "offline")
 		return "", ErrSourceOffline
 	}
-
-	m.mu.Lock()
-	if j, ok := m.jobs[source.ID]; ok && j.running {
-		m.mu.Unlock()
-		return "", ErrScanEmAndamento
+	if m.fila == nil {
+		return "", ErrFilaNaoConfigurada
 	}
-	jobID := m.novoID()
-	ctx, cancel := context.WithCancel(context.Background())
-	j := &job{id: jobID, running: true, startedAt: m.agora(), cancel: cancel}
-	m.jobs[source.ID] = j
-	m.mu.Unlock()
 
-	go m.run(ctx, source, j)
-	return jobID, nil
+	id, err := m.fila.Enqueue(context.Background(), execqueue.KindScan, source.ID, mapTrigger(trigger))
+	if err != nil {
+		if errors.Is(err, execqueue.ErrJaEnfileirado) {
+			return "", ErrScanEmAndamento
+		}
+		return "", err
+	}
+	return id, nil
 }
 
-// Status devolve a fotografia do job do datasource (ou Existe=false se nunca
-// houve scan).
+// mapTrigger traduz um scanner.TriggerX para o execqueue.TriggerX
+// equivalente -- valores string IGUAIS hoje, mas mapeados explicitamente
+// (não por alias/const compartilhada) para que scanner.TriggerX continue
+// definido neste pacote sem depender da representação interna do execqueue.
+// Um trigger fora do conjunto conhecido é repassado como está -- Enqueue
+// devolve ErrTriggerInvalido, que sobe como erro normal de Start.
+func mapTrigger(trigger string) string {
+	switch trigger {
+	case TriggerManual:
+		return execqueue.TriggerManual
+	case TriggerSchedule:
+		return execqueue.TriggerSchedule
+	case TriggerWatch:
+		return execqueue.TriggerWatch
+	default:
+		return trigger
+	}
+}
+
+// Executar implementa execqueue.Runner: é chamado pelo worker sequencial da
+// fila (bem depois do Enqueue original de Start), com só o refID
+// (library_source.id) em mãos -- re-resolve o Source completo via
+// LibraryGetter e roda o pipeline de scan de sempre, síncrono (o worker JÁ É
+// a goroutine de background; o scanner não precisa mais da própria). Pânico
+// dentro do pipeline é recuperado pelo PRÓPRIO execqueue
+// (executarComRecover) -- não duplicamos recover aqui.
+func (m *Manager) Executar(ctx context.Context, refID string, _ string, progresso execqueue.ProgressoFunc) (string, error) {
+	if m.library == nil {
+		return "", errors.New("scanner: library getter não configurado (ConfigurarLibrary)")
+	}
+	source, err := m.library.Obter(ctx, refID)
+	if err != nil {
+		return "", err
+	}
+	if err := m.executarScan(ctx, source, progresso); err != nil {
+		return "", err
+	}
+	return "", nil
+}
+
+// Status devolve a fotografia do scan do datasource (Existe=false se nunca
+// houve item de fila para esta fonte), traduzindo execqueue.QueueItemStatus
+// para o shape público de sempre -- ver internal/server/scan.go, que
+// continua consumindo isto sem mudança de contrato JSON.
 func (m *Manager) Status(sourceID string) Status {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	j, ok := m.jobs[sourceID]
-	if !ok {
+	if m.fila == nil {
 		return Status{}
 	}
-	return Status{
-		Existe:     true,
-		Running:    j.running,
-		FilesSeen:  j.filesSeen,
-		FilesTotal: j.filesTotal,
-		StartedAt:  j.startedAt,
-		LastError:  j.lastError,
+	qis, err := m.fila.Status(context.Background(), execqueue.KindScan, sourceID)
+	if err != nil || !qis.Existe {
+		return Status{}
 	}
-}
 
-// run executa o scan e, ao fim, marca o job como parado (registrando o erro, se
-// houver). Recupera de pânico para nunca deixar um job "running" preso.
-func (m *Manager) run(ctx context.Context, source library.Source, j *job) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			m.finalizarJob(j, errors.New("pânico durante o scan"))
-			log.Printf("scanner: pânico no scan de %q: %v", source.ID, rec)
-		}
-	}()
-	err := m.executarScan(ctx, source, j)
-	m.finalizarJob(j, err)
-	if err != nil {
-		log.Printf("scanner: scan de %q terminou com erro: %v", source.ID, err)
+	st := Status{
+		Existe: true,
+		// Running=true tanto para 'queued' quanto 'running': um item recém
+		// enfileirado pode não ter sido pego pelo worker ainda (algo mais
+		// rodando), mas o chamador (libraryhealth.aguardarConclusao) não deve
+		// ver Running=false prematuramente só por causa disso -- preserva o
+		// comportamento observável de antes (Start() criava o job síncrono
+		// já com running=true).
+		Running:    qis.Status == execqueue.StatusQueued || qis.Status == execqueue.StatusRunning,
+		FilesSeen:  qis.ProgressCurrent,
+		FilesTotal: qis.ProgressTotal,
 	}
-}
 
-// finalizarJob marca o job como parado e grava o último erro, sob o lock.
-func (m *Manager) finalizarJob(j *job, err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	j.running = false
-	if err != nil {
-		j.lastError = err.Error()
+	// started_at: vazio enquanto o item ainda está 'queued' (nunca começou a
+	// rodar de verdade). O job antigo sempre tinha startedAt setado desde a
+	// CRIAÇÃO -- para preservar essa garantia (Existe=true nunca teve
+	// started_at zero antes), cai para enqueued_at quando started_at ainda
+	// não existe.
+	ts := qis.StartedAt
+	if ts == "" {
+		ts = qis.EnqueuedAt
 	}
-}
+	if t, perr := time.Parse(time.RFC3339, ts); perr == nil {
+		st.StartedAt = t
+	}
 
-// setTotal / addSeen atualizam o progresso do job sob o lock.
-func (m *Manager) setTotal(j *job, total int) {
-	m.mu.Lock()
-	j.filesTotal = total
-	m.mu.Unlock()
-}
-
-func (m *Manager) addSeen(j *job, n int) {
-	m.mu.Lock()
-	j.filesSeen += n
-	m.mu.Unlock()
+	// LastError só em erro -- não vaza qis.Message de uma finalização com
+	// sucesso (o campo Message também carrega a mensagem final de sucesso,
+	// que aqui é sempre "" pelo Runner, mas defensivamente checamos o
+	// status mesmo assim).
+	if qis.Status == execqueue.StatusError {
+		st.LastError = qis.Message
+	}
+	return st
 }
 
 // setStorageNaoVideo grava o resultado da classificação managed/unmanaged de
-// arquivo NÃO-vídeo (briefing 0063) desta passada de WalkDir, sob o lock.
-func (m *Manager) setStorageNaoVideo(j *job, managedBytes, unmanagedBytes int64) {
-	m.mu.Lock()
-	j.naoVideoManagedBytes = managedBytes
-	j.naoVideoUnmanagedBytes = unmanagedBytes
-	m.mu.Unlock()
+// arquivo NÃO-vídeo (briefing 0063) desta passada de WalkDir, sob muStorage.
+func (m *Manager) setStorageNaoVideo(sourceID string, managedBytes, unmanagedBytes int64) {
+	m.muStorage.Lock()
+	m.storageNaoVideo[sourceID] = storageResultado{managedBytes: managedBytes, unmanagedBytes: unmanagedBytes}
+	m.muStorage.Unlock()
 }
 
 // StorageNaoVideo devolve os bytes de arquivo NÃO-vídeo classificados como
@@ -326,13 +413,13 @@ func (m *Manager) setStorageNaoVideo(j *job, managedBytes, unmanagedBytes int64)
 // nunca houve scan para esta fonte -- o chamador (libraryhealth.Handler)
 // trata isso como "sem dado ainda", não como zero.
 func (m *Manager) StorageNaoVideo(sourceID string) (managedBytes, unmanagedBytes int64, ok bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	j, existe := m.jobs[sourceID]
+	m.muStorage.Lock()
+	defer m.muStorage.Unlock()
+	res, existe := m.storageNaoVideo[sourceID]
 	if !existe {
 		return 0, 0, false
 	}
-	return j.naoVideoManagedBytes, j.naoVideoUnmanagedBytes, true
+	return res.managedBytes, res.unmanagedBytes, true
 }
 
 // acessivel diz se um caminho existe, é diretório e é legível (stat barato).

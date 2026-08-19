@@ -272,13 +272,32 @@ func jobToDTO(def sqlcgen.JobDefinition, running bool) jobDTO {
 	}
 }
 
-func execToDTO(e sqlcgen.JobExecution) jobExecutionDTO {
+// execToDTO converte um sqlcgen.QueueItem (kind='job') no shape de sempre de
+// UMA execução (jobExecutionDTO) -- desde o briefing 0108/ADR-0028 (CAMADA
+// 3), o histórico de job vem de queue_item, não mais de sqlcgen.JobExecution
+// (job_execution foi derrubada, migration 0025); o shape JSON exposto por
+// GET /jobs/{id}/executions permanece IDÊNTICO.
+//
+// StartedAt no DTO é string NÃO-nullable, mas queue_item.started_at PODE ser
+// NULL (item ainda 'queued', nunca chegou a rodar -- teoricamente raro pra
+// job, já que a fila é concorrência 1, mas pode acontecer se outro item
+// -- scan ou job -- estiver rodando quando este foi enfileirado). Aplica o
+// MESMO fallback que a Camada 2 já aplicou pro scanner, pela MESMA razão de
+// consistência (ver o comentário em internal/scanner/manager.go, função
+// Status: "started_at: vazio enquanto o item ainda está 'queued' ... cai
+// para enqueued_at quando started_at ainda não existe"): usa
+// queue_item.enqueued_at como fallback quando started_at for NULL.
+func execToDTO(e sqlcgen.QueueItem) jobExecutionDTO {
+	startedAt := e.EnqueuedAt
+	if e.StartedAt.Valid {
+		startedAt = e.StartedAt.String
+	}
 	return jobExecutionDTO{
 		ID:         e.ID,
-		JobID:      e.JobID,
+		JobID:      e.RefID,
 		Trigger:    e.Trigger,
 		Status:     e.Status,
-		StartedAt:  e.StartedAt,
+		StartedAt:  startedAt,
 		FinishedAt: nsPtr(e.FinishedAt),
 		Message:    nsPtr(e.Message),
 	}

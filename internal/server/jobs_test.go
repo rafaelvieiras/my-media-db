@@ -69,6 +69,12 @@ func setupJobsServer(t *testing.T, handlers ...job.Handler) (*Server, http.Handl
 	if err != nil {
 		t.Fatalf("Handler: %v", err)
 	}
+	// configurarFilaDeTeste (scan_test.go) liga TANTO o scanner quanto
+	// s.jobs (quando existe, que é sempre o caso aqui) na MESMA
+	// execqueue.Manager de teste e sobe o worker em background -- necessário
+	// desde o briefing 0108/ADR-0028 CAMADA 3 (job.Manager não dispara mais
+	// sua própria goroutine; Executar() só enfileira).
+	configurarFilaDeTeste(t, s)
 	return s, h
 }
 

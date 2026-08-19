@@ -10,15 +10,6 @@ import (
 	"database/sql"
 )
 
-const apagarJobExecucao = `-- name: ApagarJobExecucao :exec
-DELETE FROM job_execution WHERE id = ?
-`
-
-func (q *Queries) ApagarJobExecucao(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, apagarJobExecucao, id)
-	return err
-}
-
 const atualizarJobConfig = `-- name: AtualizarJobConfig :one
 UPDATE job_definition
 SET enabled = ?,
@@ -62,39 +53,6 @@ func (q *Queries) AtualizarJobConfig(ctx context.Context, arg AtualizarJobConfig
 		&i.LastMessage,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const criarJobExecucao = `-- name: CriarJobExecucao :one
-INSERT INTO job_execution (
-    id, job_id, trigger, status
-) VALUES (
-    ?, ?, ?, 'running'
-)
-RETURNING id, job_id, trigger, status, started_at, finished_at, message, created_at
-`
-
-type CriarJobExecucaoParams struct {
-	ID      string
-	JobID   string
-	Trigger string
-}
-
-// Cria a linha de execucao em status 'running', no INICIO do disparo
-// (Manager.Executar, antes de chamar o Handler).
-func (q *Queries) CriarJobExecucao(ctx context.Context, arg CriarJobExecucaoParams) (JobExecution, error) {
-	row := q.db.QueryRowContext(ctx, criarJobExecucao, arg.ID, arg.JobID, arg.Trigger)
-	var i JobExecution
-	err := row.Scan(
-		&i.ID,
-		&i.JobID,
-		&i.Trigger,
-		&i.Status,
-		&i.StartedAt,
-		&i.FinishedAt,
-		&i.Message,
-		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -149,39 +107,6 @@ func (q *Queries) FinalizarJobDefinicao(ctx context.Context, arg FinalizarJobDef
 	return i, err
 }
 
-const finalizarJobExecucao = `-- name: FinalizarJobExecucao :one
-UPDATE job_execution
-SET status = ?,
-    finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-    message = ?
-WHERE id = ?
-RETURNING id, job_id, trigger, status, started_at, finished_at, message, created_at
-`
-
-type FinalizarJobExecucaoParams struct {
-	Status  string
-	Message sql.NullString
-	ID      string
-}
-
-// Fecha a linha de execucao ao fim (sucesso ou erro), com a mensagem curta
-// devolvida pelo Handler (ou o erro, sem stack trace).
-func (q *Queries) FinalizarJobExecucao(ctx context.Context, arg FinalizarJobExecucaoParams) (JobExecution, error) {
-	row := q.db.QueryRowContext(ctx, finalizarJobExecucao, arg.Status, arg.Message, arg.ID)
-	var i JobExecution
-	err := row.Scan(
-		&i.ID,
-		&i.JobID,
-		&i.Trigger,
-		&i.Status,
-		&i.StartedAt,
-		&i.FinishedAt,
-		&i.Message,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const listarJobDefinitions = `-- name: ListarJobDefinitions :many
 
 SELECT id, nome, descricao, enabled, schedule_cron, config_json, next_run_at,
@@ -190,10 +115,16 @@ FROM job_definition
 ORDER BY created_at, id
 `
 
-// Acesso a job_definition/job_execution (briefing 0052): fundacao do sistema
-// de jobs (registro dinamico + agendador embutido). Comentarios em ASCII e
-// colunas explicitas -- ver a nota em entity.sql (bug de offset do sqlc v1.31
-// com acentos/'*' em .sql de query).
+// Acesso a job_definition (briefing 0052): fundacao do sistema de jobs
+// (registro dinamico + agendador embutido). Comentarios em ASCII e colunas
+// explicitas -- ver a nota em entity.sql (bug de offset do sqlc v1.31 com
+// acentos/'*' em .sql de query).
+//
+// job_execution (historico de execucao) NAO vive mais aqui desde o briefing
+// 0108/ADR-0028 (CAMADA 3): internal/job/manager.go passou a enfileirar via
+// internal/execqueue, cujo queue_item (kind='job') e a fonte unica de
+// historico -- ver internal/db/queries/queue_item.sql. A tabela job_execution
+// em si foi derrubada pela migration 0025.
 // Lista todos os jobs conhecidos (sempre tem ao menos o seed backup_vacuum),
 // ordem estavel por created_at.
 func (q *Queries) ListarJobDefinitions(ctx context.Context) ([]JobDefinition, error) {
@@ -268,100 +199,6 @@ func (q *Queries) ListarJobDefinitionsAgendaveis(ctx context.Context, nextRunAt 
 			&i.LastMessage,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listarJobExecucaoIdsExcedentes = `-- name: ListarJobExecucaoIdsExcedentes :many
-SELECT id FROM job_execution
-WHERE job_id = ?
-ORDER BY started_at DESC
-LIMIT -1 OFFSET ?
-`
-
-type ListarJobExecucaoIdsExcedentesParams struct {
-	JobID  string
-	Offset int64
-}
-
-// Retencao do historico (briefing 0052): ids do excedente mais antigo alem das
-// N mais recentes DAQUELE job_id ("manter", constante Go, nao exposta na API).
-// O parser SQL do sqlc (engine sqlite) acusa "column reference job_id
-// ambiguous" para um DELETE ... NOT IN (SELECT ... mesma tabela) sem alias --
-// mesma familia da limitacao documentada em duplicata.sql (self-reference na
-// tabela alvo). Por isso a poda e DUAS queries simples: esta lista os ids
-// excedentes (OFFSET "manter", mesmo criterio de ORDER BY do historico), e
-// ApagarJobExecucao (abaixo) apaga cada um em Go -- mesmo espirito de
-// duplicata.go (iterar ids em vez de SQL em massa).
-func (q *Queries) ListarJobExecucaoIdsExcedentes(ctx context.Context, arg ListarJobExecucaoIdsExcedentesParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listarJobExecucaoIdsExcedentes, arg.JobID, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listarJobExecucoes = `-- name: ListarJobExecucoes :many
-SELECT id, job_id, trigger, status, started_at, finished_at, message, created_at
-FROM job_execution
-WHERE job_id = ?1
-  AND (?2 IS NULL OR started_at < ?2)
-ORDER BY started_at DESC
-LIMIT ?3
-`
-
-type ListarJobExecucoesParams struct {
-	JobID  string
-	Before interface{}
-	Limit  int64
-}
-
-// Historico paginado de UM job, mais recente primeiro. sqlc.narg('before') e
-// opcional (NULL = sem cursor, primeira pagina); quando presente, pagina para
-// tras (started_at estritamente menor que o cursor).
-func (q *Queries) ListarJobExecucoes(ctx context.Context, arg ListarJobExecucoesParams) ([]JobExecution, error) {
-	rows, err := q.db.QueryContext(ctx, listarJobExecucoes, arg.JobID, arg.Before, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []JobExecution{}
-	for rows.Next() {
-		var i JobExecution
-		if err := rows.Scan(
-			&i.ID,
-			&i.JobID,
-			&i.Trigger,
-			&i.Status,
-			&i.StartedAt,
-			&i.FinishedAt,
-			&i.Message,
-			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
