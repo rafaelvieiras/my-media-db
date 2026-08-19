@@ -485,8 +485,31 @@ func (c *Client) tentarGetMB(ctx context.Context, path string, params url.Values
 // getCAA faz um GET ao Cover Art Archive — SEM rate-limit (a fonte não documenta um
 // limite; ver comentário do package), mas com o mesmo User-Agent por boa prática. ok=false
 // num 404 (release/release-group sem arte, ou mbid inexistente — a própria CAA não
-// distingue os dois casos; não é erro). Status != 200/404 e I/O propagam como erro.
+// distingue os dois casos; não é erro). Status != 200/404 tenta de novo (retry, ver
+// tentarGetCAA) -- achado real na validação em produção: o redirect do CAA pra
+// archive.org (dnNNNNNN.ca.archive.org, CDN distribuída) deu "context deadline exceeded"
+// em boa parte das chamadas de uma importação de 25 álbuns, sem padrão de status HTTP (é
+// timeout de rede, não um 5xx) -- diferente do 503 "busy" do MusicBrainz em getMB.
 func (c *Client) getCAA(ctx context.Context, path string) ([]byte, bool, error) {
+	var ultimoErr error
+	for tentativa := 1; tentativa <= tentativasMB; tentativa++ {
+		if tentativa > 1 {
+			c.lim.dormirFn(backoffMB * time.Duration(tentativa-1))
+			if err := ctx.Err(); err != nil {
+				return nil, false, err
+			}
+		}
+		body, ok, err := c.tentarGetCAA(ctx, path)
+		if err == nil {
+			return body, ok, nil
+		}
+		ultimoErr = err
+	}
+	return nil, false, fmt.Errorf("musicbrainz: %s: esgotou %d tentativas (cover art archive): %w", path, tentativasMB, ultimoErr)
+}
+
+// tentarGetCAA faz UMA tentativa de GET ao Cover Art Archive (sem retry).
+func (c *Client) tentarGetCAA(ctx context.Context, path string) ([]byte, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.caaBaseURL+path, nil)
 	if err != nil {
 		return nil, false, err
@@ -504,6 +527,7 @@ func (c *Client) getCAA(ctx context.Context, path string) ([]byte, bool, error) 
 		return nil, false, nil
 	}
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, false, fmt.Errorf("musicbrainz: status inesperado %d em %s (cover art archive)", resp.StatusCode, path)
 	}
 	body, err := io.ReadAll(resp.Body)

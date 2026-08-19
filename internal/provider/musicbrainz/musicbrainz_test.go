@@ -695,3 +695,77 @@ func TestGetMBStatusGenericoNaoTentaNovamente(t *testing.T) {
 		t.Fatalf("chamadas ao servidor = %d, esperava 1 (500 nao tenta de novo)", got)
 	}
 }
+
+// servidorContadorCAA é o equivalente de servidorContadorMB para o Cover Art Archive --
+// devolve um corpo de imagens válido no status OK, corpo vazio nos demais (o conteúdo do
+// erro não importa para getCAA).
+func servidorContadorCAA(t *testing.T, path string, statusPorChamada []int) (*httptest.Server, *int32) {
+	t.Helper()
+	var chamadas int32
+	mux := http.NewServeMux()
+	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&chamadas, 1)
+		idx := int(n) - 1
+		if idx >= len(statusPorChamada) {
+			idx = len(statusPorChamada) - 1
+		}
+		status := statusPorChamada[idx]
+		if status == http.StatusOK {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"images": [{"front": true, "back": false, "image": "https://x/front.jpg"}]}`))
+			return
+		}
+		w.WriteHeader(status)
+	})
+	return httptest.NewServer(mux), &chamadas
+}
+
+// clientComBackoffFakeCAA é clientComBackoffFake, mas apontando caaBaseURL (não baseURL)
+// para o servidor fake -- getCAA usa c.caaBaseURL, um host separado de getMB.
+func clientComBackoffFakeCAA(caaURL string) *Client {
+	c := novoClientDeTeste("", caaURL)
+	c.lim.dormir = func(time.Duration) {}
+	return c
+}
+
+// TestGetCAARetrySucessoAposFalhasTransitorias cobre o achado real da validação em
+// produção: o redirect do Cover Art Archive pra archive.org (CDN distribuída,
+// dnNNNNNN.ca.archive.org) deu timeout/erro em boa parte das chamadas de uma importação
+// real de 25 álbuns -- diferente do 503 "busy" do MusicBrainz, getCAA tenta de novo em
+// QUALQUER erro (não só 502/503/504), porque a CAA nem sempre falha com um status HTTP
+// (timeout de rede não tem status nenhum).
+func TestGetCAARetrySucessoAposFalhasTransitorias(t *testing.T) {
+	srv, chamadas := servidorContadorCAA(t, "/release-group/rg-retry", []int{
+		http.StatusInternalServerError, http.StatusInternalServerError, http.StatusOK,
+	})
+	defer srv.Close()
+	c := clientComBackoffFakeCAA(srv.URL)
+
+	artes, err := c.BuscarArtes(context.Background(), provider.ExternalIDs{Mbid: "rg-retry"}, "album", nil)
+	if err != nil {
+		t.Fatalf("BuscarArtes: %v", err)
+	}
+	if len(artes) != 1 || artes[0].Kind != "poster" {
+		t.Fatalf("artes inesperadas apos retry: %+v", artes)
+	}
+	if got := atomic.LoadInt32(chamadas); got != 3 {
+		t.Fatalf("chamadas ao servidor CAA = %d, esperava 3 (2 falhas + 1 sucesso)", got)
+	}
+}
+
+// TestGetCAARetryEsgotaTentativas confirma que getCAA não tenta pra sempre: esgota
+// tentativasMB e devolve erro (BuscarArtes propaga; quem chama já trata isso como
+// enriquecimento best-effort, ver internal/enrich).
+func TestGetCAARetryEsgotaTentativas(t *testing.T) {
+	srv, chamadas := servidorContadorCAA(t, "/release-group/rg-sempre-500", []int{http.StatusInternalServerError})
+	defer srv.Close()
+	c := clientComBackoffFakeCAA(srv.URL)
+
+	_, err := c.BuscarArtes(context.Background(), provider.ExternalIDs{Mbid: "rg-sempre-500"}, "album", nil)
+	if err == nil {
+		t.Fatal("BuscarArtes deveria falhar apos esgotar as tentativas")
+	}
+	if got := atomic.LoadInt32(chamadas); got != tentativasMB {
+		t.Fatalf("chamadas ao servidor CAA = %d, esperava %d (tentativasMB)", got, tentativasMB)
+	}
+}
