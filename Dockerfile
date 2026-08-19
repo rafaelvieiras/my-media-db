@@ -40,10 +40,10 @@ RUN npm run build
 # --platform=$BUILDPLATFORM: o toolchain Go também roda na arch nativa do
 # runner (evita QEMU pro `go build` em si); quem determina a arch do
 # BINÁRIO final é o cross-compile via GOOS/GOARCH/GOARM abaixo, não a
-# plataforma do estágio. Versão do Go pinada em 1.26.5 (patch exato, mesma
+# plataforma do estágio. Versão do Go pinada em 1.26.6 (patch exato, mesma
 # versão fixada no CI por vuln de stdlib/determinismo do build).
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine AS builder-go
+FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine AS builder-go
 WORKDIR /app
 
 # Camada de dependências Go.
