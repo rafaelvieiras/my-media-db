@@ -18,7 +18,6 @@ package musicbrainz
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -190,55 +189,52 @@ func (c *Client) BuscarArtistaArvore(ctx context.Context, sourceID string, langs
 		if rg.ID == "" {
 			continue
 		}
-		album, err := c.montarAlbum(ctx, rg.ID, rg.Title, rg.FirstReleaseDate)
-		if err != nil {
-			return provider.ArtistaArvore{}, err
-		}
+		// QUALQUER erro (não só 404) degrada este ÁLBUM pra um shell sem faixas, nunca
+		// aborta a árvore inteira -- achado real na validação em produção: o servidor
+		// público do MusicBrainz é instável o bastante (503 em ~1/3 das chamadas) que,
+		// numa árvore de dezenas de álbuns (1+2N chamadas), mesmo com retry (getMB) a
+		// chance de UMA chamada específica esgotar as tentativas não é desprezível. Um
+		// artista com discografia grande é bem mais útil parcialmente importado (álbuns
+		// sem faixa, corrigível depois via reimport) do que falhando por inteiro.
+		album := c.montarAlbum(ctx, rg.ID, rg.Title, rg.FirstReleaseDate)
 		arvore.Albuns = append(arvore.Albuns, album)
 	}
 	return arvore, nil
 }
 
 // montarAlbum busca o release-group (releases+genres, 1 chamada), escolhe a release
-// "oficial" a representar o álbum, e busca as faixas dessa release (1 chamada). Um
-// release-group sem NENHUMA release (dado incompleto na fonte, não um erro nosso) vira um
-// álbum sem faixas — degrada, não falha a árvore inteira.
-func (c *Client) montarAlbum(ctx context.Context, rgID, title, firstReleaseDate string) (provider.AlbumExterno, error) {
+// "oficial" a representar o álbum, e busca as faixas dessa release (1 chamada). NUNCA
+// devolve erro: release-group sem nenhuma release, 404 pontual, ou esgotamento do retry de
+// getMB (instabilidade do servidor público) todos degradam pro mesmo shell -- álbum com
+// nome/MBID/ano mas sem faixas -- em vez de derrubar a árvore inteira (ver
+// BuscarArtistaArvore). Faixas ausentes por causa disso são corrigíveis num reimport
+// posterior (find-or-create por MBID, idempotente).
+func (c *Client) montarAlbum(ctx context.Context, rgID, title, firstReleaseDate string) provider.AlbumExterno {
+	shell := provider.AlbumExterno{Name: title, MBID: rgID, Year: anoDe(firstReleaseDate)}
+
 	body, err := c.getMB(ctx, "/release-group/"+url.PathEscape(rgID), url.Values{"inc": {"releases+genres"}})
 	if err != nil {
-		if errors.Is(err, provider.ErrNaoEncontrado) {
-			// release-group listado pelo artista mas 404 ao detalhar: inconsistência
-			// pontual da fonte -- degrada este album (sem faixas), nao a arvore.
-			return provider.AlbumExterno{Name: title, MBID: rgID, Year: anoDe(firstReleaseDate)}, nil
-		}
-		return provider.AlbumExterno{}, err
+		return shell
 	}
 	var rg respReleaseGroup
 	if err := json.Unmarshal(body, &rg); err != nil {
-		return provider.AlbumExterno{}, fmt.Errorf("musicbrainz: release-group invalido: %w", err)
+		return shell
 	}
 
-	album := provider.AlbumExterno{
-		Name:  title,
-		MBID:  rgID,
-		Year:  anoDe(firstReleaseDate),
-		Genre: generoPrincipal(rg.Genres),
-	}
+	album := shell
+	album.Genre = generoPrincipal(rg.Genres)
 
 	releaseID, ok := escolherRelease(rg.Releases)
 	if !ok {
-		return album, nil // release-group sem nenhuma release: album sem faixas
+		return album // release-group sem nenhuma release: album sem faixas
 	}
 
 	faixas, err := c.buscarFaixas(ctx, releaseID)
 	if err != nil {
-		if errors.Is(err, provider.ErrNaoEncontrado) {
-			return album, nil // release escolhida 404 ao detalhar: degrada sem faixas
-		}
-		return provider.AlbumExterno{}, err
+		return album // release indisponivel (404 ou retry esgotado): degrada sem faixas
 	}
 	album.Faixas = faixas
-	return album, nil
+	return album
 }
 
 // escolherRelease escolhe QUAL release representa o álbum para efeito de tracklist,

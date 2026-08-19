@@ -353,15 +353,62 @@ func TestBuscarArtistaArvoreNaoEncontrado(t *testing.T) {
 	}
 }
 
+// TestBuscarArtistaArvoreAlbumPersistentementeIndisponivelDegradaSemAbortar cobre o achado
+// real da validação em produção (Duran Duran, MBID real): o servidor público do
+// MusicBrainz é instável o bastante que, numa árvore com dezenas de álbuns, é esperado que
+// a chamada de detalhe de UM release-group específico esgote todas as tentativas de retry.
+// Isso NÃO pode abortar a árvore inteira -- o álbum problemático deve degradar pra um
+// shell sem gênero/faixas, e os demais álbuns (antes e depois dele) continuam completos.
+func TestBuscarArtistaArvoreAlbumPersistentementeIndisponivelDegradaSemAbortar(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/artist/artist-1", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"name": "Test Artist",
+			"release-groups": [
+				{"id": "rg-1", "title": "Album One", "first-release-date": "1999-05-01"},
+				{"id": "rg-2", "title": "Album Two (instavel)", "first-release-date": "2001-01-01"}
+			]
+		}`))
+	})
+	mux.HandleFunc("/release-group/rg-1", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"genres": [{"name": "rock", "count": 5}], "releases": []}`))
+	})
+	mux.HandleFunc("/release-group/rg-2", func(w http.ResponseWriter, r *http.Request) {
+		// Sempre 503 -- simula a instabilidade real do servidor público. getMB vai
+		// esgotar tentativasMB tentativas para ESTE release-group especificamente.
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	c := clientComBackoffFake(srv.URL)
+
+	arvore, err := c.BuscarArtistaArvore(context.Background(), "artist-1", nil)
+	if err != nil {
+		t.Fatalf("BuscarArtistaArvore nao deveria falhar por causa de UM album instavel: %v", err)
+	}
+	if len(arvore.Albuns) != 2 {
+		t.Fatalf("esperava 2 albuns (1 completo + 1 degradado), teve %d", len(arvore.Albuns))
+	}
+	completo, degradado := arvore.Albuns[0], arvore.Albuns[1]
+	if completo.MBID != "rg-1" || completo.Genre != "rock" {
+		t.Fatalf("album completo inesperado: %+v", completo)
+	}
+	if degradado.MBID != "rg-2" || degradado.Name != "Album Two (instavel)" {
+		t.Fatalf("album degradado com identidade errada: %+v", degradado)
+	}
+	if degradado.Genre != "" || len(degradado.Faixas) != 0 {
+		t.Fatalf("album degradado deveria vir sem genero/faixas, teve: %+v", degradado)
+	}
+}
+
 func TestMontarAlbumReleaseGroupSemReleases(t *testing.T) {
 	mb := servidorMBFake(t)
 	defer mb.Close()
 	c := novoClientDeTeste(mb.URL, "")
 
-	album, err := c.montarAlbum(context.Background(), "rg-empty", "Album Vazio", "2020")
-	if err != nil {
-		t.Fatalf("montarAlbum: %v", err)
-	}
+	album := c.montarAlbum(context.Background(), "rg-empty", "Album Vazio", "2020")
 	if album.Name != "Album Vazio" || album.MBID != "rg-empty" {
 		t.Fatalf("album inesperado: %+v", album)
 	}
