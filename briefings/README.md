@@ -205,6 +205,21 @@ e agenda [TR1–TR2](../docs/00-agenda-de-decisoes.md#trailer-e-música-tema--fu
 | [0103](0103-tema-musical-themerrdb.md) | Música-tema automática via ThemerrDB (+ yt-dlp) | feature | done | 0101 |
 | [0104](0104-trailer-tema-job-e-scan-automatico.md) | Trailer/tema: detecção em massa, job periódico e gatilho automático no scan | feature | done | 0101, 0102, 0103 |
 
+### Fase 5+ — Música (artista/álbum/faixa)
+
+Primeira vertical nova de fato desde o núcleo: hierarquia artista→álbum→faixa,
+provider base MusicBrainz + Cover Art Archive (sem chave). `entity`/
+`entity_relation` genéricos cobrem toda a estrutura — ver
+[ADR-0027](../docs/adr/0027-modelo-de-musica-hierarquia-artista-album-faixa.md)
+e agenda [MU1–MU4](../docs/00-agenda-de-decisoes.md#modelo-de-música--fundacional-levantada-a-partir-de-pedido-do-dono-pra-implementar-o-schema).
+Quebra por camada (mesmo raciocínio de escala do [AGENTS.md](../AGENTS.md)):
+0105 fecha a fundação de dados; provider MusicBrainz, scanner/matching de
+arquivo e UI ficam para briefings seguintes, a numerar depois de 0105 validado.
+
+| ID | Briefing | Tipo | Status | Depende de |
+|---|---|---|---|---|
+| [0105](0105-fundacao-schema-musica.md) | Fundação do schema de música: tipos de entity (artista/álbum/faixa), `extension_data core.music@1`, coluna gerada `external_id_mbid`, kinds de `entity_relation` | feature | draft | — |
+
 ### Transversal — Infraestrutura operacional
 
 Não pertence a nenhuma fase de UI do roadmap; é infraestrutura de execução que

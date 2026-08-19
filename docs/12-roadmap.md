@@ -109,6 +109,16 @@ Objetivo: cumprir o escopo universal.
   [ADR-0025](adr/0025-trailer-tema-musical-ytdlp-themerrdb.md) (agenda
   [TR1–TR2](00-agenda-de-decisoes.md#trailer-e-música-tema--fundacional-levantada-a-partir-de-pesquisa-sobre-paridade-com-tinymediamanager)) —
   breakdown em briefing(s) a numerar.
+- **Música** — primeira vertical nova de fato (artista/álbum/faixa), teste real
+  da promessa "sem migration do core": `entity`/`entity_relation` genéricos
+  cobrem toda a hierarquia e a atribuição artista↔faixa/álbum (feat./Various
+  Artists), único touch de schema é uma coluna gerada `external_id_mbid`.
+  Provider base **MusicBrainz + Cover Art Archive** (sem chave). Decisão em
+  [ADR-0027](adr/0027-modelo-de-musica-hierarquia-artista-album-faixa.md)
+  (agenda [MU1–MU4](00-agenda-de-decisoes.md#modelo-de-música--fundacional-levantada-a-partir-de-pedido-do-dono-pra-implementar-o-schema)) —
+  breakdown inicia no [briefing 0105](../briefings/0105-fundacao-schema-musica.md)
+  (fundação de dados); provider, scanner/matching e UI ficam para briefings
+  seguintes, a numerar.
 
 ---
 

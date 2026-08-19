@@ -162,6 +162,28 @@ Kodi/Jellyfin/Plex/TMM). Detalhe completo em
 
 ---
 
+## Modelo de música — fundacional, levantada a partir de pedido do dono pra implementar o schema
+
+Pesquisa cruzou o modelo de séries ([ADR-0021](adr/0021-modelo-de-series-hierarquia-ordenacoes-vinculo-arquivo.md),
+precedente direto de hierarquia grão-fino + entity só para artwork/override)
+com os scripts pessoais de organização de música do dono
+(`~/ai-workspace/scripts/music-organizer`), que já resolvem em produção os
+pontos espinhosos reais: artista de faixa divergindo do artista do álbum
+(feat.), "Various Artists" como agrupador de compilação, e identidade de
+álbum dependendo de nome+artista+discos+selo+código de barras (variar
+qualquer um fragmenta o álbum em players reais — achado empírico documentado
+no próprio código do organizador). Detalhe completo em
+[ADR-0027](adr/0027-modelo-de-musica-hierarquia-artista-album-faixa.md).
+
+| ID | Questão | Status | Decisão | Destino |
+|---|---|---|---|---|
+| **MU1** | Qual provider primário de metadados? | **documentado** | **MusicBrainz + Cover Art Archive** — sem chave de API, papel equivalente ao TheTVDB; único provider já cobre a vertical inteira (independência de provider). Spotify/Deezer (já usados nos scripts pessoais do dono) ficam como enriquecimento cruzado futuro, não dependência de base. | [ADR-0027](adr/0027-modelo-de-musica-hierarquia-artista-album-faixa.md) |
+| **MU2** | Vínculo arquivo↔faixa: 1:1 simples ou N:M como episódio? | **documentado** | **1:1 pro MVP** (`media_file.entity_id` direto, mesmo padrão de filme) — cobre o caso dominante (rip = 1 arquivo = 1 faixa); evolui para N:M (`media_file_faixa`) se medley/DJ-mix virar necessidade real, sem quebrar o modelo. | [ADR-0027](adr/0027-modelo-de-musica-hierarquia-artista-album-faixa.md) |
+| **MU3** | Artista é entity própria ou reaproveita `person`/`credit` (elenco/equipe, MD6)? | **documentado** | **Entity própria** (`type='artista'`) — banda não é pessoa e precisa de artwork/bio catalogável como item de 1ª classe; atribuição faixa↔artista (principal/feat.) via `entity_relation` genérica, não join table nova. | [ADR-0027](adr/0027-modelo-de-musica-hierarquia-artista-album-faixa.md) |
+| **MU4** | Como modelar "Various Artists" (compilação/trilha sonora)? | **documentado** | **Artista comum**, com o MBID canônico fixo que a própria MusicBrainz já usa — sem caso especial no código/schema. | [ADR-0027](adr/0027-modelo-de-musica-hierarquia-artista-album-faixa.md) |
+
+---
+
 ## Histórico de decisões fechadas
 
 <!-- Conforme cada item fecha, mover o resumo da decisão para cá com data. -->
