@@ -9,7 +9,7 @@
 | **ID** | 0107 |
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 5+ — Verticais e plugins (música) |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [ADR-0027](../docs/adr/0027-modelo-de-musica-hierarquia-artista-album-faixa.md), [06-biblioteca-e-scan](../docs/06-biblioteca-e-scan.md) |
 | **Depende de** | 0105, 0106 |
 
@@ -181,3 +181,18 @@ sozinha, do mesmo jeito que filme/série já funcionam.
   em produção.
 - **Enriquecimento cruzado** (Spotify/Deezer/Discogs/Last.fm) — ADR-0027,
   fica para depois.
+- **Achado na validação em produção**: `files_seen` do status do job de scan
+  (`GET /library/{id}/scan`) fica travado em `0` durante um scan de música
+  real (411 arquivos), mesmo com entidades sendo criadas de verdade (album/
+  artista/faixa subindo — confirmado via `/health/system`). Parece que o
+  contador só é incrementado no caminho de vídeo, não no de música — bug
+  cosmético (não afeta o resultado do scan), registrar para correção futura.
+- **Achado na validação em produção**: um scan real de biblioteca de música
+  com muitos artistas nunca vistos é **lento** por design (1 req/s por
+  artista novo, cada um custando 1+2N chamadas) — para a pasta real do dono
+  (411 arquivos), levou dezenas de minutos e ainda estava rodando quando
+  parei de observar. Aceitável como MVP (mesma decisão do ADR-0027/0106:
+  "operação assíncrona, não é caminho de leitura"), mas pode justificar, no
+  futuro, processar artistas em paralelo (respeitando o rate-limit por
+  artista, não globalmente serializado) ou um job dedicado com progresso
+  mais granular.

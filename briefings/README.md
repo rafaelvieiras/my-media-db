@@ -219,8 +219,8 @@ arquivo e UI ficam para briefings seguintes, a numerar depois de 0105 validado.
 | ID | Briefing | Tipo | Status | Depende de |
 |---|---|---|---|---|
 | [0105](0105-fundacao-schema-musica.md) | Fundação do schema de música: tipos de entity (artista/álbum/faixa), `extension_data core.music@1`, coluna gerada `external_id_mbid`, kinds de `entity_relation` | feature | done | — |
-| [0106](0106-provider-musicbrainz-cover-art-archive.md) | Provider MusicBrainz + Cover Art Archive: busca/import de artista→álbum→faixa + arte de capa | feature | ready | 0105 |
-| [0107](0107-scanner-matching-arquivo-faixa.md) | Scanner: matching de arquivo↔faixa (tags de áudio + MusicBrainz) | feature | ready | 0105, 0106 |
+| [0106](0106-provider-musicbrainz-cover-art-archive.md) | Provider MusicBrainz + Cover Art Archive: busca/import de artista→álbum→faixa + arte de capa | feature | done | 0105 |
+| [0107](0107-scanner-matching-arquivo-faixa.md) | Scanner: matching de arquivo↔faixa (tags de áudio + MusicBrainz) | feature | done | 0105, 0106 |
 
 ### Transversal — Infraestrutura operacional
 
