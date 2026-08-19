@@ -147,6 +147,50 @@ export function StillFrame({ src, alt }: { src: string | null; alt: string }) {
   )
 }
 
+// CapaQuadrada renderiza a capa QUADRADA (1:1) do hero de ÁLBUM/ARTISTA
+// (briefing 0111) no lugar do pôster 2:3 — mesmo padrão do `StillFrame` acima
+// para episódio (troca só o bloco de imagem, o resto do hero segue genérico).
+// `circular` aplica `rounded-full` (usado só para artista — tratamento visual
+// opcional de "foto", não obrigatório pelo briefing); álbum mantém o canto
+// arredondado normal (`rounded-xl`, como o pôster).
+function CapaQuadrada({
+  src,
+  alt,
+  circular = false,
+}: {
+  src: string | null
+  alt: string
+  circular?: boolean
+}) {
+  const [falhou, setFalhou] = useState(false)
+  const mostrarPlaceholder = !src || falhou
+  return (
+    <div
+      className={cn(
+        'relative aspect-square w-40 shrink-0 overflow-hidden bg-muted sm:w-56',
+        circular ? 'rounded-full' : 'rounded-xl',
+      )}
+    >
+      {mostrarPlaceholder ? (
+        <div
+          data-testid="capa-placeholder"
+          className="flex h-full w-full items-center justify-center text-muted-foreground"
+        >
+          <ImageOff className="size-8" aria-hidden />
+        </div>
+      ) : (
+        <img
+          src={src ?? undefined}
+          alt={alt}
+          loading="lazy"
+          onError={() => setFalhou(true)}
+          className="h-full w-full object-cover"
+        />
+      )}
+    </div>
+  )
+}
+
 // HeroBackdropFundo é o FUNDO full-bleed do hero imersivo (0082) para os tipos
 // COM pôster (tudo, exceto episódio — que usa o StillFrame acima no lugar): uma
 // caixa com altura em torno de 40% da viewport (`min-h`, não mais o `aspect-[16/6]`
@@ -1414,7 +1458,21 @@ function HeroImersivo({
           texto é mais alto que a altura mínima do fundo. */}
       <div className="relative z-20 col-start-1 row-start-1 flex items-end">
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-end sm:gap-6 sm:py-8">
-          {detail.type === 'episode' ? null : (
+          {detail.type === 'episode' ? null : detail.type === 'album' ||
+            detail.type === 'artista' ? (
+            // Álbum/artista (0111): capa/foto QUADRADA (1:1) no lugar do
+            // pôster 2:3 — sem faixa de situação nem disco giratório (só
+            // fazem sentido para série/filme).
+            <CapaQuadrada
+              src={detail.posterUrl}
+              alt={
+                detail.type === 'artista'
+                  ? `Foto de ${detail.title}`
+                  : `Capa de ${detail.title}`
+              }
+              circular={detail.type === 'artista'}
+            />
+          ) : (
             <div className="relative w-40 shrink-0 sm:w-56">
               <PosterImg
                 src={detail.posterUrl}

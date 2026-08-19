@@ -1,6 +1,11 @@
 import { vi } from 'vitest'
-import type { EntityCard, EpisodeGroup } from '@/lib/api'
+import type { EntityCard, EpisodeGroup, ResolvedEntity } from '@/lib/api'
 import type { RichDetail } from '@/lib/rich-detail'
+import {
+  okFields,
+  respostaHistoricoVazia,
+  settingsPadrao,
+} from '@/test/entity-fixtures'
 
 // richDetailBase é o RichDetail canônico (tudo vazio) que a RichDetailView consome:
 // `over` sobrescreve só o que o teste precisa. Compartilhado para os testes da view
@@ -135,6 +140,47 @@ export function stubMembros(resp: () => Response) {
   })
   vi.stubGlobal('fetch', m)
   return m
+}
+
+// criarFetchRouterEntity monta o fetch mock COMUM aos testes de EntityDetailScreen:
+// settings/languages, schema/entity-fields, override, files, assets, histórico vazio
+// e por fim GET .../{id} -> entity. `membrosResp` sobrescreve a resposta de
+// .../members (default: array vazio) — o único ponto que varia entre os testes que
+// consomem este roteiro. Compartilhado para os arquivos entity-detail*.test.tsx não
+// repetirem a mesma sequência de rotas (jscpd).
+export function criarFetchRouterEntity(
+  entity: ResolvedEntity,
+  membrosResp: () => Response = () => okJson([]),
+) {
+  return vi.fn(async (url: string) => {
+    const u = String(url)
+    if (u === '/api/v1/settings/languages') {
+      return okJson(settingsPadrao)
+    }
+    if (u === '/api/v1/schema/entity-fields') {
+      return okFields()
+    }
+    if (u.startsWith('/api/v1/entities/e1/override')) {
+      return okJson({})
+    }
+    if (u.startsWith('/api/v1/entities/e1/files')) {
+      return okJson({ items: [] })
+    }
+    if (u.startsWith('/api/v1/entities/e1/assets')) {
+      return okJson([])
+    }
+    if (u.startsWith('/api/v1/entities/e1/members')) {
+      return membrosResp()
+    }
+    const historico = respostaHistoricoVazia(u)
+    if (historico) {
+      return historico
+    }
+    if (u.startsWith('/api/v1/entities/e1')) {
+      return okJson(entity)
+    }
+    throw new Error(`rota nao mockada: ${u}`)
+  })
 }
 
 // stubExternalFetch instala um fetch que roteia o GET do detalhe/coleção externa para

@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"testing"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/musicext"
 )
 
 // semearMembro cria um filme com release_date (para a ordenacao por ano dos membros).
@@ -100,4 +102,67 @@ func TestMembers404(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, quero 404", rec.Code)
 	}
+}
+
+// TestMembersAlbumTracklistPorSortIndex: /members de um album (briefing 0111) devolve
+// as faixas (kind=music_album) na ordem de sort_index (track_number) -- NAO por ano,
+// ao contrario de colecao.
+func TestMembersAlbumTracklistPorSortIndex(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "alb1", "album", "Rio")
+	semearMembro(t, d, "fx2", "Save A Prayer", "")
+	semearMembro(t, d, "fx1", "Rio", "")
+	if _, err := escrita(t, d).CriarEntityRelation(context.Background(), sqlcgen.CriarEntityRelationParams{
+		ID: "r1", ParentID: "alb1", ChildID: "fx2", Kind: musicext.KindAlbum, SortIndex: sql.NullInt64{Int64: 2, Valid: true},
+	}); err != nil {
+		t.Fatalf("CriarEntityRelation fx2: %v", err)
+	}
+	if _, err := escrita(t, d).CriarEntityRelation(context.Background(), sqlcgen.CriarEntityRelationParams{
+		ID: "r2", ParentID: "alb1", ChildID: "fx1", Kind: musicext.KindAlbum, SortIndex: sql.NullInt64{Int64: 1, Valid: true},
+	}); err != nil {
+		t.Fatalf("CriarEntityRelation fx1: %v", err)
+	}
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/alb1/members", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	cards := decodeCards(t, rec)
+	if len(cards) != 2 {
+		t.Fatalf("membros = %d, quero 2", len(cards))
+	}
+	eq(t, "1a faixa por track_number", cards[0].ID, "fx1")
+	eq(t, "2a faixa por track_number", cards[1].ID, "fx2")
+}
+
+// TestMembersArtistaDiscografiaPorAno: /members de um artista (briefing 0111) devolve
+// os filhos ligados por music_artista_principal, ordenados por ano (mesma logica de
+// colecao) -- inclui album e faixa de colaboracao divergente, filtro por type fica a
+// cargo do consumidor (DiscografiaArtista, no front).
+func TestMembersArtistaDiscografiaPorAno(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "art1", "artista", "Duran Duran")
+	semearMembro(t, d, "alb2015", "Paper Gods", "2015-09-11")
+	semearMembro(t, d, "alb1982", "Rio", "1982-05-10")
+	if _, err := escrita(t, d).CriarEntityRelation(context.Background(), sqlcgen.CriarEntityRelationParams{
+		ID: "r1", ParentID: "art1", ChildID: "alb2015", Kind: musicext.KindArtistaPrincipal,
+	}); err != nil {
+		t.Fatalf("CriarEntityRelation alb2015: %v", err)
+	}
+	if _, err := escrita(t, d).CriarEntityRelation(context.Background(), sqlcgen.CriarEntityRelationParams{
+		ID: "r2", ParentID: "art1", ChildID: "alb1982", Kind: musicext.KindArtistaPrincipal,
+	}); err != nil {
+		t.Fatalf("CriarEntityRelation alb1982: %v", err)
+	}
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/art1/members", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	cards := decodeCards(t, rec)
+	if len(cards) != 2 {
+		t.Fatalf("membros = %d, quero 2", len(cards))
+	}
+	eq(t, "1o album por ano", cards[0].ID, "alb1982")
+	eq(t, "2o album por ano", cards[1].ID, "alb2015")
 }

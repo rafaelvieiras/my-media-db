@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/musicext"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 	"github.com/rafaelvieiras/my-media-db/internal/tvext"
@@ -328,6 +329,14 @@ const (
 	tipoEntTemporada = "season"
 	kindTemporada    = "tv_season"
 	kindEpisodio     = "tv_episode"
+	// tipoEntAlbum/tipoEntArtista: vertical de música (ADR-0027, briefings
+	// 0105-0107/0111). álbum → faixa via musicext.KindAlbum (sort_index =
+	// track_number); artista → álbum/faixa via musicext.KindArtistaPrincipal
+	// (billing principal — inclui faixas em colaboração divergente, filtradas
+	// no front pro grid de discografia mostrar só álbuns, ver
+	// discografia-artista.tsx).
+	tipoEntAlbum   = "album"
+	tipoEntArtista = "artista"
 	// nsTVCore é o namespace do extension_data da vertical de séries (core.tv@1): a
 	// temporada guarda `ordering`/`season_number`, o episódio guarda `numbering`
 	// (ordem→{season,number}) + `absolute_number`. Lido aqui para o numbering do card
@@ -557,14 +566,20 @@ func projetarParaOrdem(ns map[string]any, ordering string) *episodeNumberingDTO 
 
 // kindEOrdemMembros escolhe o kind de relação dos filhos e se eles são reordenados por
 // ANO, conforme o tipo do pai: série → temporadas (sort_index); temporada → episódios
-// (sort_index); qualquer outro (coleção) → membros por ano. O default preserva o
-// comportamento de coleção para os callers que não são da árvore de séries.
+// (sort_index); álbum → faixas (sort_index = track_number, briefing 0111); artista →
+// discografia por ano (mesma lógica de coleção); qualquer outro (coleção) → membros por
+// ano. O default preserva o comportamento de coleção para os callers que não são da
+// árvore de séries/música.
 func kindEOrdemMembros(tipoPai string) (kind string, ordenarPorAno bool) {
 	switch tipoPai {
 	case tipoEntSerie:
 		return kindTemporada, false
 	case tipoEntTemporada:
 		return kindEpisodio, false
+	case tipoEntAlbum:
+		return musicext.KindAlbum, false
+	case tipoEntArtista:
+		return musicext.KindArtistaPrincipal, true
 	default:
 		return kindColecao, true
 	}

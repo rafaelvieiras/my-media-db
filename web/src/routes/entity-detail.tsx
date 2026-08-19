@@ -20,12 +20,14 @@ import { rotuloIdioma } from '@/lib/languages'
 import { temOverrideEditado } from '@/lib/override-fields'
 import { ArtGallery } from '@/components/art-gallery'
 import { CollectionMembers } from '@/components/collection-members'
+import { DiscografiaArtista } from '@/components/discografia-artista'
 import { EntityManageMenu } from '@/components/entity-manage-menu'
 import { MembrosSomenteLeitura } from '@/components/entity-members'
 import {
   EpisodiosAgrupados,
   SeletorOrdenacao,
 } from '@/components/episode-ordering'
+import { TracklistAlbum } from '@/components/tracklist-album'
 import { HistoricoSection } from '@/components/historico-section'
 import { MediaInfoTable } from '@/components/media-info-table'
 import {
@@ -345,6 +347,14 @@ export function EntityDetailScreen() {
             numerar
           />
         ) : null}
+
+        {/* Vertical de música (briefing 0111, ADR-0027): álbum mostra a
+            tracklist (faixas via entity_relation kind=music_album); artista
+            mostra a discografia (álbuns via kind=music_artista_principal,
+            filtrando type=album). Mesmo padrão de branch por `data.type` do
+            caller, acima. */}
+        {data.type === 'album' ? <TracklistAlbum id={id} /> : null}
+        {data.type === 'artista' ? <DiscografiaArtista id={id} /> : null}
 
         <ArtGallery
           entityId={id}

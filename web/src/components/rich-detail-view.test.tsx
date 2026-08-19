@@ -33,6 +33,63 @@ vi.mock('@tanstack/react-router', async () => ({
   useNavigate: () => vi.fn(),
 }))
 
+// hero renderiza SÓ o HeroImersivo (via RichDetailView) para as asserções de
+// capa/pôster abaixo — os testes miram o bloco de imagem do hero, não a
+// página inteira.
+function hero(detail: RichDetail) {
+  return renderWithClient(<RichDetailView detail={detail} source="tmdb" />)
+}
+
+describe('RichDetailView — hero de álbum/artista (0111): capa quadrada 1:1', () => {
+  it('álbum: capa 1:1 (rounded-xl), não o pôster 2:3', () => {
+    const { container } = hero(
+      richDetailBase({
+        type: 'album',
+        title: 'Rio',
+        posterUrl: 'https://cdn.example/rio.jpg',
+      }),
+    )
+    const img = screen.getByAltText('Capa de Rio') as HTMLImageElement
+    expect(img.getAttribute('src')).toBe('https://cdn.example/rio.jpg')
+    expect(container.querySelector('.aspect-square')).toBeTruthy()
+    expect(container.querySelector('.aspect-\\[2\\/3\\]')).toBeNull()
+    expect(container.querySelector('.rounded-full')).toBeNull()
+  })
+
+  it('artista: foto 1:1 circular (rounded-full)', () => {
+    const { container } = hero(
+      richDetailBase({
+        type: 'artista',
+        title: 'Duran Duran',
+        posterUrl: 'https://cdn.example/dd.jpg',
+      }),
+    )
+    const img = screen.getByAltText('Foto de Duran Duran') as HTMLImageElement
+    expect(img.getAttribute('src')).toBe('https://cdn.example/dd.jpg')
+    expect(container.querySelector('.aspect-square')).toBeTruthy()
+    expect(container.querySelector('.rounded-full')).toBeTruthy()
+  })
+
+  it('sem capa: placeholder no lugar da imagem (sem quebrar)', () => {
+    hero(richDetailBase({ type: 'album', title: 'Rio', posterUrl: null }))
+    expect(screen.getByTestId('capa-placeholder')).toBeTruthy()
+    expect(screen.queryByAltText('Capa de Rio')).toBeNull()
+  })
+
+  it('filme continua com o pôster 2:3 de sempre (sem regressão)', () => {
+    const { container } = hero(
+      richDetailBase({
+        type: 'movie',
+        title: 'Duna',
+        posterUrl: 'https://cdn.example/duna.jpg',
+      }),
+    )
+    expect(screen.getByAltText('Pôster de Duna')).toBeTruthy()
+    expect(container.querySelector('.aspect-\\[2\\/3\\]')).toBeTruthy()
+    expect(screen.queryByTestId('capa-placeholder')).toBeNull()
+  })
+})
+
 describe('RichDetailView — selos de disponibilidade de artes (0049)', () => {
   it('mostra um selo por kind disponível, com rótulo + contagem, na ordem canônica', () => {
     renderWithClient(
