@@ -221,6 +221,10 @@ arquivo e UI ficam para briefings seguintes, a numerar depois de 0105 validado.
 | [0105](0105-fundacao-schema-musica.md) | Fundação do schema de música: tipos de entity (artista/álbum/faixa), `extension_data core.music@1`, coluna gerada `external_id_mbid`, kinds de `entity_relation` | feature | done | — |
 | [0106](0106-provider-musicbrainz-cover-art-archive.md) | Provider MusicBrainz + Cover Art Archive: busca/import de artista→álbum→faixa + arte de capa | feature | done | 0105 |
 | [0107](0107-scanner-matching-arquivo-faixa.md) | Scanner: matching de arquivo↔faixa (tags de áudio + MusicBrainz) | feature | done | 0105, 0106 |
+| [0108](0108-fila-execucao-unificada-scan-jobs.md) | Fila de execução unificada (scan + jobs, ADR-0028) + contador de progresso real por arquivo | feature | done | 0107 |
+| [0109](0109-home-adicionados-recentemente.md) | Home: "Adicionados recentemente" em carrosséis por schema | feature | done | 0107 |
+| [0110](0110-navbar-biblioteca-dropdown-schema.md) | Navbar: "Biblioteca" com dropdown por schema | feature | done | 0107 |
+| [0111](0111-entity-view-musica-album-artista.md) | Variação de view de entidade para música (tracklist de álbum, discografia de artista), não exclusiva | feature | done | 0107 |
 
 ### Transversal — Infraestrutura operacional
 
