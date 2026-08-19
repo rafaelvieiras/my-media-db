@@ -75,9 +75,14 @@ func (s *Servico) idsExternosDe(ctx context.Context, entityID string) (provider.
 			ids.Tmdb = comoString(bruto["tmdb"])
 			ids.Imdb = comoString(bruto["imdb"])
 			ids.Tvdb = comoString(bruto["tvdb"])
+			// Mbid (briefing 0106, ADR-0027 item 6): MBID de MusicBrainz do item de
+			// musica (artista/album/faixa) -- sem isto o ArteProvider MusicBrainz
+			// (Cover Art Archive) nunca recebe o id de que precisa para cruzar a
+			// capa do album.
+			ids.Mbid = comoString(bruto["mbid"])
 		}
 	}
-	if ids.Tmdb == "" && ids.Imdb == "" && ids.Tvdb == "" {
+	if ids.Tmdb == "" && ids.Imdb == "" && ids.Tvdb == "" && ids.Mbid == "" {
 		return provider.ExternalIDs{}, false
 	}
 	return ids, true

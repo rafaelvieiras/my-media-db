@@ -8,9 +8,11 @@
 -- sofrem disso (sao parseadas por estrutura, nao guardadas como texto), entao la
 -- os comentarios seguem em pt-BR acentuado. Aqui, ASCII. Regra geral: colunas
 -- sempre EXPLICITAS, nunca '*'/'RETURNING *' (a expansao de '*' tem o mesmo bug
--- de offset). As colunas geradas (external_id_tmdb/imdb/tvdb) derivam de
+-- de offset). As colunas geradas (external_id_tmdb/imdb/tvdb/mbid) derivam de
 -- external_ids_json e NAO entram no INSERT/UPDATE, mas aparecem no
--- RETURNING/SELECT para espelhar o modelo (migration 0007 somou tvdb).
+-- RETURNING/SELECT para espelhar o modelo (migration 0007 somou tvdb; a
+-- migration 0023/briefing 0106 somou mbid -- ATENCAO: 0023 tinha ficado sem
+-- regenerar o sqlc por um tempo, corrigido junto com este briefing).
 
 -- name: CriarEntity :one
 -- status NAO entra no INSERT: usa o DEFAULT 'cataloged' (item auto-criado nasce
@@ -24,13 +26,13 @@ INSERT INTO entity (
 RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
-    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds;
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid;
 
 -- name: ObterEntity :one
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
-    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
 FROM entity
 WHERE id = ?;
 
@@ -39,7 +41,7 @@ WHERE id = ?;
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
-    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
 FROM entity
 WHERE external_id_tmdb = ?;
 
@@ -50,9 +52,20 @@ WHERE external_id_tmdb = ?;
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
-    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
 FROM entity
 WHERE external_id_tvdb = ?;
+
+-- name: ObterEntityPorMbid :one
+-- Lookup por id externo mbid (MusicBrainz) via coluna gerada + indice (briefing 0106,
+-- ADR-0027 item 6). Espelha ObterEntityPorTmdb: usado pelo import da vertical de musica
+-- para o dedup idempotente de artista/album/faixa por MBID.
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
+FROM entity
+WHERE external_id_mbid = ?;
 
 -- name: ListarEntitiesPorTmdbExcetoId :many
 -- Espelha ObterEntityPorTmdb, mas devolve TODAS as entities com aquele id (menos
@@ -64,7 +77,7 @@ WHERE external_id_tvdb = ?;
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
-    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
 FROM entity
 WHERE external_id_tmdb = sqlc.arg('tmdb_id') AND id != sqlc.arg('alvo_id');
 
@@ -73,7 +86,7 @@ WHERE external_id_tmdb = sqlc.arg('tmdb_id') AND id != sqlc.arg('alvo_id');
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
-    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
 FROM entity
 WHERE external_id_imdb = sqlc.arg('imdb_id') AND id != sqlc.arg('alvo_id');
 
@@ -82,7 +95,7 @@ WHERE external_id_imdb = sqlc.arg('imdb_id') AND id != sqlc.arg('alvo_id');
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
-    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
 FROM entity
 WHERE external_id_tvdb = sqlc.arg('tvdb_id') AND id != sqlc.arg('alvo_id');
 
@@ -94,7 +107,7 @@ WHERE external_id_tvdb = sqlc.arg('tvdb_id') AND id != sqlc.arg('alvo_id');
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
-    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
 FROM entity
 WHERE type = 'collection' AND external_id_tmdb = ?
 LIMIT 1;
@@ -136,7 +149,7 @@ WHERE e.id = ?;
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
-    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
 FROM entity
 WHERE external_id_imdb = ?;
 
@@ -148,7 +161,7 @@ WHERE external_id_imdb = ?;
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
-    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
 FROM entity
 WHERE type = ? AND title = ? AND release_date IS ?
 LIMIT 1;
@@ -161,7 +174,7 @@ LIMIT 1;
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
-    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
 FROM entity
 WHERE type = ? AND title = ?
 ORDER BY created_at, id
@@ -171,7 +184,7 @@ LIMIT 1;
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
-    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
 FROM entity
 ORDER BY created_at DESC, id
 LIMIT ? OFFSET ?;
@@ -292,7 +305,7 @@ WHERE id = ?
 RETURNING id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
     created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
-    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds;
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid;
 
 -- name: AtualizarEpisodioBase :exec
 -- Reescreve a BASE do episodio no re-import (briefing 0043): o find-or-create por id

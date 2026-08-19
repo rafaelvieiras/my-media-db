@@ -24,6 +24,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/mediainfo"
+	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
 // carimboFormato é o formato do timestamp de last_seen usado pelo ciclo de vida.
@@ -82,6 +83,18 @@ type FilmeImportador interface {
 // Implementado por *Server.
 type Materializador interface {
 	MaterializarSeAutoDownloadLigado(ctx context.Context, entityID string) error
+}
+
+// MusicaImportador é o ponto de IMPORT da vertical de música (briefing 0107,
+// ADR-0027) que o scanner consome quando resolve o MBID de um ARTISTA (por
+// MBID embutido no arquivo, resolução reversa faixa→artista, ou busca
+// textual): importa a discografia inteira, idempotente por MBID -- o MESMO
+// método genérico Importar que toda vertical já usa (0015/0031/0106).
+// Interface estreita (mesmo padrão de SerieImporter/FilmeImportador) para não
+// acoplar o scanner ao pacote enrich inteiro. Implementado por
+// *enrich.Servico.
+type MusicaImportador interface {
+	Importar(ctx context.Context, source, sourceID, tipo string, langs []string) (id string, criada bool, err error)
 }
 
 // job é o estado em memória de um scan de um datasource.
@@ -144,6 +157,17 @@ type Manager struct {
 	// Configurado via ConfigurarMaterializacao.
 	materializador Materializador
 
+	// musicaImportador/musicaProvider alimentam o caminho de MÚSICA (0107): o
+	// import por MBID (idempotente, via MusicaImportador) e o provider
+	// MusicBrainz em si (para a busca textual no fallback sem MBID embutido,
+	// Provider.Buscar, e a capacidade opcional provider.FaixaResolverProvider
+	// -- resolução reversa faixa→artista). Ambos nil = scanner de música opera
+	// em modo degradado (toda faixa vira draft, sem tentar casar) -- mesmo
+	// padrão de nil-safe de serieImporter/filmeImportador. Configurados via
+	// ConfigurarMusica.
+	musicaImportador MusicaImportador
+	musicaProvider   provider.Provider
+
 	mu   sync.Mutex
 	jobs map[string]*job
 }
@@ -171,6 +195,19 @@ func (m *Manager) ConfigurarFilmes(imp FilmeImportador) {
 // automaticamente, mesmo com o toggle de settings ligado.
 func (m *Manager) ConfigurarMaterializacao(mat Materializador) {
 	m.materializador = mat
+}
+
+// ConfigurarMusica injeta a vertical de música (0107): o importador por MBID
+// (find-or-create idempotente da árvore inteira, via *enrich.Servico.Importar)
+// e o provider MusicBrainz em si (busca textual + resolução reversa
+// faixa→artista, quando o provider implementar provider.FaixaResolverProvider
+// -- ver internal/scanner/musica.go). Sem chamar isto, o scanner de música
+// opera em modo degradado: todo arquivo de áudio vira uma entity `faixa`
+// rascunho, sem tentar casar contra a fonte (mesmo padrão de
+// ConfigurarSeries/ConfigurarFilmes).
+func (m *Manager) ConfigurarMusica(imp MusicaImportador, prov provider.Provider) {
+	m.musicaImportador = imp
+	m.musicaProvider = prov
 }
 
 // NewManager cria um Manager com o ffprobe real do PATH.

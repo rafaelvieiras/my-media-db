@@ -19,6 +19,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fanarttv"
+	"github.com/rafaelvieiras/my-media-db/internal/provider/musicbrainz"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/tmdb"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/tvdb"
 	"github.com/rafaelvieiras/my-media-db/internal/server"
@@ -271,6 +272,15 @@ func provedoresReais() []provider.Provider {
 		log.Printf("mymediadb: enriquecimento de arte fanart.tv habilitado")
 		provs = append(provs, fanarttv.New(credFanart, nil, ""))
 	}
+
+	// MusicBrainz + Cover Art Archive (briefing 0106, ADR-0027 item 6): provider BASE
+	// da vertical de musica (busca/import de artista->album->faixa + capa de album),
+	// SEM chave de API -- sempre disponivel, mesmo papel que TheTVDB tem para serie.
+	// Registrado INCONDICIONALMENTE (sem guarda de credencial): o briefing 0106 achou
+	// que o ThemerrDB (mesmo padrao "sem chave", briefing 0103) tinha ficado
+	// implementado mas nunca construido/registrado aqui -- nao repetir esse gap.
+	log.Printf("mymediadb: provider MusicBrainz (musica) habilitado")
+	provs = append(provs, musicbrainz.New(nil, ""))
 
 	return provs
 }

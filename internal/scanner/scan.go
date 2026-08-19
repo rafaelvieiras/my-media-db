@@ -22,6 +22,14 @@ var extensoesVideo = map[string]bool{
 	".wmv": true, ".flv": true, ".webm": true,
 }
 
+// extensoesAudio é o filtro de extensões de ÁUDIO (briefing 0107, molde de
+// extensoesVideo) — usado no lugar de extensoesVideo quando
+// library_source.content_type == contentTypeMusic (ver extensoesPrincipais).
+var extensoesAudio = map[string]bool{
+	".mp3": true, ".flac": true, ".m4a": true,
+	".ogg": true, ".opus": true, ".wav": true,
+}
+
 // nomesPoster são os nomes de arte local de nível de pasta (Kodi/Jellyfin).
 var nomesPoster = []string{"poster.jpg", "poster.png", "folder.jpg", "folder.png"}
 
@@ -70,6 +78,11 @@ type fileFacts struct {
 	serieID    string   // entity da SÉRIE (a "obra"); o media_file aponta para ela
 	serieConf  float64  // confiança da resolução da série (100 por id externo, 90 por título/import)
 	episodeIDs []string // episódios casados, em ordem (define o ordinal do vínculo)
+
+	// Campos do caminho de MÚSICA (0107), preenchidos só quando content_type='music'.
+	isMusica  bool    // marca o fluxo de música (ramifica gravarArquivo)
+	faixaID   string  // entity FAIXA já resolvida; media_file.entity_id aponta DIRETO pra ela (1:1, ADR-0027 item 5)
+	faixaConf float64 // confiança do vínculo (confIDExterno/confMusicaTextual/confDraft, ver musica.go)
 }
 
 // executarScan roda o pipeline completo de um datasource.
@@ -86,7 +99,7 @@ func (m *Manager) executarScan(ctx context.Context, source library.Source, j *jo
 		log.Printf("scanner: ffprobe indisponível; mediainfo ficará vazio no scan de %q", source.ID)
 	}
 
-	arquivos, naoVideos, parcial, err := coletarArquivos(source.Path)
+	arquivos, naoVideos, parcial, err := coletarArquivos(source.Path, r.extensoesPrincipais())
 	if err != nil {
 		// A raiz ficou inacessível: sinaliza offline e NÃO marca nada missing.
 		m.persistirEstado(ctx, source, "offline")
@@ -165,9 +178,15 @@ func (r *scanRun) computarFacts(ctx context.Context, path string) (fileFacts, er
 	// conteúdo do arquivo, só do nome/pasta — e o re-scan de vínculos de
 	// episódio precisa rodar a cada execução (ver gravarArquivoSerie).
 	var f fileFacts
-	if r.source.ContentType == contentTypeSeries {
+	switch r.source.ContentType {
+	case contentTypeSeries:
 		f = r.factsSerie(ctx, path)
-	} else {
+	case contentTypeMusic:
+		// Música (0107) PRECISA do mediainfo (tags de áudio) para casar --
+		// diferente de série (só nome/pasta), por isso recebe `mi` (e
+		// size/mtime, para o short-circuit de incrementalidade) aqui.
+		f = r.factsMusica(ctx, path, mi, info.Size(), mtime)
+	default:
 		f = montarFacts(r.source.Path, path)
 	}
 	f.size = info.Size()
@@ -341,16 +360,30 @@ type arquivoBruto struct {
 	Size int64
 }
 
-// coletarArquivos percorre a raiz UMA ÚNICA VEZ (WalkDir) e separa vídeos
-// (para o pipeline de scan já existente) de não-vídeos (para a classificação
-// managed/unmanaged do briefing 0063, ver classificarNaoVideos) -- nunca duas
-// passadas de disco. Erro no stat da própria raiz é fatal (fonte offline);
-// diretórios internos ilegíveis são pulados (logados), não derrubam o walk --
-// mas fazem `parcial` voltar true, para o chamador saber que a lista de
-// arquivos vistos pode estar incompleta (ex.: timeout transitório de um mount
-// de rede FUSE/rclone no meio da varredura) e não tratar "não visto" como
-// "removido" no fechamento do ciclo de vida.
-func coletarArquivos(root string) (videos []string, naoVideos []arquivoBruto, parcial bool, err error) {
+// extensoesPrincipais devolve o conjunto de extensões tratadas como o
+// CONTEÚDO principal do datasource nesta varredura (0107): extensoesVideo
+// para filme/série (default) ou extensoesAudio quando content_type='music'.
+// coletarArquivos usa isto para decidir o que alimenta o pipeline de
+// matching (vs. o que cai em naoVideos, só para a classificação
+// managed/unmanaged de storage do briefing 0063).
+func (r *scanRun) extensoesPrincipais() map[string]bool {
+	if r.source.ContentType == contentTypeMusic {
+		return extensoesAudio
+	}
+	return extensoesVideo
+}
+
+// coletarArquivos percorre a raiz UMA ÚNICA VEZ (WalkDir) e separa o
+// CONTEÚDO principal (`extensoesConteudo` -- vídeo ou áudio, ver
+// extensoesPrincipais) do resto (para a classificação managed/unmanaged do
+// briefing 0063, ver classificarNaoVideos) -- nunca duas passadas de disco.
+// Erro no stat da própria raiz é fatal (fonte offline); diretórios internos
+// ilegíveis são pulados (logados), não derrubam o walk -- mas fazem
+// `parcial` voltar true, para o chamador saber que a lista de arquivos
+// vistos pode estar incompleta (ex.: timeout transitório de um mount de rede
+// FUSE/rclone no meio da varredura) e não tratar "não visto" como "removido"
+// no fechamento do ciclo de vida.
+func coletarArquivos(root string, extensoesConteudo map[string]bool) (videos []string, naoVideos []arquivoBruto, parcial bool, err error) {
 	if _, err := os.Stat(root); err != nil {
 		return nil, nil, false, err
 	}
@@ -366,7 +399,7 @@ func coletarArquivos(root string) (videos []string, naoVideos []arquivoBruto, pa
 		if d.IsDir() {
 			return nil
 		}
-		if extensoesVideo[strings.ToLower(filepath.Ext(path))] {
+		if extensoesConteudo[strings.ToLower(filepath.Ext(path))] {
 			videos = append(videos, path)
 			return nil
 		}

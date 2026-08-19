@@ -200,9 +200,11 @@ type Querier interface {
 	// sofrem disso (sao parseadas por estrutura, nao guardadas como texto), entao la
 	// os comentarios seguem em pt-BR acentuado. Aqui, ASCII. Regra geral: colunas
 	// sempre EXPLICITAS, nunca '*'/'RETURNING *' (a expansao de '*' tem o mesmo bug
-	// de offset). As colunas geradas (external_id_tmdb/imdb/tvdb) derivam de
+	// de offset). As colunas geradas (external_id_tmdb/imdb/tvdb/mbid) derivam de
 	// external_ids_json e NAO entram no INSERT/UPDATE, mas aparecem no
-	// RETURNING/SELECT para espelhar o modelo (migration 0007 somou tvdb).
+	// RETURNING/SELECT para espelhar o modelo (migration 0007 somou tvdb; a
+	// migration 0023/briefing 0106 somou mbid -- ATENCAO: 0023 tinha ficado sem
+	// regenerar o sqlc por um tempo, corrigido junto com este briefing).
 	// status NAO entra no INSERT: usa o DEFAULT 'cataloged' (item auto-criado nasce
 	// catalogado; a curadoria muda depois via AtualizarEntity). ADR-0009.
 	CriarEntity(ctx context.Context, arg CriarEntityParams) (Entity, error)
@@ -582,6 +584,10 @@ type Querier interface {
 	// avaliado (item novo, ou draft).
 	ObterEntityCard(ctx context.Context, id string) (ObterEntityCardRow, error)
 	ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.NullString) (Entity, error)
+	// Lookup por id externo mbid (MusicBrainz) via coluna gerada + indice (briefing 0106,
+	// ADR-0027 item 6). Espelha ObterEntityPorTmdb: usado pelo import da vertical de musica
+	// para o dedup idempotente de artista/album/faixa por MBID.
+	ObterEntityPorMbid(ctx context.Context, externalIDMbid sql.NullString) (Entity, error)
 	// Dedup do scanner sem id externo (briefing 0009): reusa a MESMA entity para o
 	// mesmo (type, title, release_date). Usa `IS` (nao `=`) para casar release_date
 	// NULO quando o nome nao traz ano. Mantem o re-scan idempotente para obras sem

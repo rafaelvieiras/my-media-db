@@ -204,7 +204,8 @@ type SimilarProvider interface {
 // download real é lazy (só a arte selecionada, via cachearArte).
 type ArteProvider interface {
 	// BuscarArtes lista as artes do item pelos ids externos que ele tiver (`ids`),
-	// filtrando por `tipo` ("movie"|"tv"). `langs` são os idiomas permitidos (0020),
+	// filtrando por `tipo` ("movie"|"tv"; desde o briefing 0106, também "album" para a
+	// capa via Cover Art Archive/MusicBrainz). `langs` são os idiomas permitidos (0020),
 	// para a escolha da arte servida por padrão; o inventário PRESERVA o `lang` de todas.
 	// Sem id utilizável para a fonte, ou sem match, devolve (nil, nil) — graça. Erro real
 	// (rede/status) propaga para o enrich logar e seguir.
@@ -286,11 +287,16 @@ type CreditoFilmografia struct {
 
 // ExternalIDs carrega os ids externos que um item possui (o que a identidade MD4 tiver).
 // A fanart.tv usa Tmdb/Imdb para filme e Tvdb para série; cada ArteProvider escolhe o
-// que sabe consumir e degrada quando o id de que precisa está vazio.
+// que sabe consumir e degrada quando o id de que precisa está vazio. Mbid (briefing 0106,
+// ADR-0027 item 6) é o MBID MusicBrainz do item de música — para álbum, é o MBID de
+// RELEASE-GROUP (o mesmo gravado em external_id_mbid da entity `album`, ADR-0027 item 2),
+// não o de uma release/pressing específica; o Cover Art Archive aceita esse mbid
+// diretamente no endpoint /release-group/{mbid}.
 type ExternalIDs struct {
 	Tmdb string
 	Imdb string
 	Tvdb string
+	Mbid string
 }
 
 // Arte é uma arte canônica do inventário de um ArteProvider (briefing 0048). Kind é o
@@ -392,6 +398,98 @@ type EpisodioExterno struct {
 type Numero struct {
 	Season int
 	Number int
+}
+
+// MusicaProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0106, ADR-0027 item
+// 6, molde de SerieProvider): trazer a HIERARQUIA de um ARTISTA — discografia (álbuns) e
+// faixas, com o artista REAL de cada faixa (artist-credit do recording), que pode
+// divergir do artista do álbum (feat./colaboração — ADR-0027 item 4). É opcional porque
+// nem toda fonte modela música (só o MusicBrainz hoje); o chamador (enrich) faz
+// type-assert do Provider para esta interface e degrada quando ausente.
+type MusicaProvider interface {
+	// BuscarArtistaArvore puxa a árvore do artista `sourceID` (MBID) na fonte, com todos
+	// os álbuns (release-groups) e faixas (recordings). `langs` é mantido na assinatura
+	// por paridade com SerieProvider/BuscarSerieArvore; o MusicBrainz não é multi-idioma
+	// como TMDB/TVDB (os campos textuais saem no idioma nativo cadastrado na fonte), então
+	// a implementação atual o ignora — reservado para uma fonte futura que o use.
+	// ErrNaoEncontrado quando o artista não existe na fonte (→ 404); demais erros
+	// propagam (→ 502).
+	BuscarArtistaArvore(ctx context.Context, sourceID string, langs []string) (ArtistaArvore, error)
+}
+
+// ArtistaArvore é a hierarquia canônica de um artista: identidade + bio (quando a fonte
+// tiver) + discografia (álbuns, cada um já com suas faixas).
+type ArtistaArvore struct {
+	// Name é o nome exibível do artista.
+	Name string
+	// MBID é o id do artista na fonte (MusicBrainz) — a âncora canônica (ADR-0027 item 6).
+	MBID string
+	// Bio é a biografia/anotação do artista, quando a fonte tiver (MusicBrainz raramente
+	// tem; vazio é o caso comum, não um erro).
+	Bio string
+	// Albuns são os álbuns (release-groups) do artista, na ordem em que a fonte os lista.
+	Albuns []AlbumExterno
+}
+
+// AlbumExterno é um álbum canônico (release-group do MusicBrainz, ADR-0027 item 2) com
+// suas faixas. O artista do álbum é implicitamente a raiz de ArtistaArvore (inclusive
+// quando é "Various Artists" — ADR-0027 item 5, sem caso especial).
+type AlbumExterno struct {
+	// Name é o título do álbum.
+	Name string
+	// MBID é o id do release-group na fonte — a âncora canônica do álbum (o mesmo gravado
+	// em external_id_mbid da entity `album`; usado também por ExternalIDs.Mbid para a
+	// busca de arte via Cover Art Archive, endpoint /release-group/{mbid}).
+	MBID string
+	// Year são os 4 primeiros dígitos da data de lançamento do release-group, quando houver.
+	Year string
+	// Genre é o gênero de maior contagem (voto) que a fonte associa ao álbum, quando
+	// houver (ADR-0027 item 7: gênero vive no nível de álbum/artista, não por faixa).
+	Genre string
+	// Faixas são as faixas do álbum (da release "oficial" escolhida — ver comentário em
+	// escolherRelease no client musicbrainz), em ordem de disco+posição.
+	Faixas []FaixaExterna
+}
+
+// FaixaExterna é uma faixa canônica (recording do MusicBrainz), ancorada no MBID de
+// RECORDING — nunca em número/posição (ADR-0027 item 1, espelha EpisodioExterno).
+type FaixaExterna struct {
+	// Title é o título da faixa.
+	Title string
+	// MBID é o id do recording na fonte — a âncora canônica da faixa.
+	MBID string
+	// TrackNumber é a posição da faixa dentro do disco (1-based).
+	TrackNumber int
+	// DiscNumber é o número do disco/mídia dentro da release (1-based).
+	DiscNumber int
+	// DiscTotal é o total de discos/mídias da release.
+	DiscTotal int
+	// ISRC é o identificador auxiliar de faixa (ADR-0027 item 6), quando a fonte tiver;
+	// pode haver mais de um ISRC por recording — carregamos só o primeiro.
+	ISRC string
+	// ArtistaCreditoNome é o nome do artista REAL creditado nesta faixa (artist-credit do
+	// recording) — pode divergir do artista do álbum (feat./colaboração, ADR-0027 item 4).
+	ArtistaCreditoNome string
+	// ArtistaCreditoMBID é o MBID do artista REAL creditado nesta faixa.
+	ArtistaCreditoMBID string
+}
+
+// FaixaResolverProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0107):
+// resolve o MBID do ARTISTA a partir do MBID de uma FAIXA (recording) já conhecida —
+// cobre o caso de um arquivo com o MBID de faixa embutido pelo tagueador mas SEM o
+// MBID de artista (alguns tagueadores só gravam o recording MBID, não o do artista).
+// Sem esta capacidade, o scanner não consegue chamar Importar(artistaMBID, "artista",
+// ...) a partir de só um MBID de faixa. É opcional porque nem toda fonte modela essa
+// resolução reversa (só o MusicBrainz hoje); o scanner (internal/scanner/musica.go)
+// faz type-assert do Provider para esta interface e degrada (cai para busca textual,
+// ou draft) quando ausente ou sem match.
+type FaixaResolverProvider interface {
+	// ResolverArtistaDaFaixa resolve o MBID do artista a partir do MBID do recording
+	// `recordingMBID`, usando o PRIMEIRO artist-credit da faixa na fonte (mesmo
+	// critério de "artista principal" usado em BuscarArtistaArvore/FaixaExterna.
+	// ArtistaCreditoMBID). ErrNaoEncontrado quando a faixa não existe na fonte (→ o
+	// chamador degrada); demais erros (rede, faixa sem nenhum artist-credit) propagam.
+	ResolverArtistaDaFaixa(ctx context.Context, recordingMBID string) (artistaMBID string, err error)
 }
 
 // ResultadoExterno é o resultado canônico de uma busca externa, independente da

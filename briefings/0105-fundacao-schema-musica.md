@@ -9,7 +9,7 @@
 | **ID** | 0105 |
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 5+ — Verticais e plugins (música) |
-| **Status** | draft |
+| **Status** | done |
 | **Docs relacionadas** | [ADR-0027](../docs/adr/0027-modelo-de-musica-hierarquia-artista-album-faixa.md), [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [12-roadmap](../docs/12-roadmap.md) |
 | **Depende de** | — |
 

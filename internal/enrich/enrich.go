@@ -178,6 +178,8 @@ func (s *Servico) Importar(ctx context.Context, source, sourceID, tipo string, l
 		return s.importarColecao(ctx, source, sourceID, langs)
 	case tipoSerie:
 		return s.importarSerie(ctx, source, sourceID, langs)
+	case tipoArtista:
+		return s.importarArtista(ctx, source, sourceID, langs)
 	default:
 		return s.importarItem(ctx, source, sourceID, tipo, langs)
 	}

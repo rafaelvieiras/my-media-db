@@ -28,6 +28,9 @@ func (r *scanRun) gravarArquivo(ctx context.Context, q *sqlcgen.Queries, f fileF
 	if f.isSerie {
 		return r.gravarArquivoSerie(ctx, q, f)
 	}
+	if f.isMusica {
+		return r.gravarArquivoMusica(ctx, q, f)
+	}
 	existente, err := q.ObterMediaFilePorContentHash(ctx, nsOpt(f.hash))
 	if err == nil {
 		return r.reencontrar(ctx, q, existente, f)

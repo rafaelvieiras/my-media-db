@@ -76,6 +76,7 @@ type Entity struct {
 	LastPlayedAt               sql.NullString
 	ResumePositionSeconds      sql.NullFloat64
 	ResumeTotalSeconds         sql.NullFloat64
+	ExternalIDMbid             sql.NullString
 }
 
 type EntityCatalogCompleteness struct {

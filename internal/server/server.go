@@ -407,6 +407,17 @@ func (s *Server) montarServicos(database *db.DB) {
 	if s.scanner != nil {
 		s.scanner.ConfigurarFilmes(s)
 	}
+	// Liga o matching de música no scanner (briefing 0107, ADR-0027): o
+	// import por MBID (idempotente, via s.enrich) e o provider MusicBrainz
+	// (busca textual + resolução reversa faixa->artista). Só quando os dois
+	// existem -- sem enrich ou sem o provider registrado, o scan de um
+	// library_source content_type=music degrada para draft (arquivo
+	// catalogado sem hierarquia, corrigível depois).
+	if s.scanner != nil && s.enrich != nil {
+		if mb, ok := s.providers.Get("musicbrainz"); ok {
+			s.scanner.ConfigurarMusica(s.enrich, mb)
+		}
+	}
 	// Liga a materialização automática OPCIONAL (briefing 0089): consumida
 	// depois de QUALQUER auto-import bem-sucedido do scan (filme ou série).
 	// Toggle desligado (default) faz o adaptador degradar a no-op -- seguro

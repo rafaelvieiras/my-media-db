@@ -55,6 +55,141 @@ func TestProbeMapeiaComRunnerInjetado(t *testing.T) {
 	eq(t, "subtitle.language", got.Subtitle[0].Language, "por")
 }
 
+// saidaFakeAudio imita o JSON do ffprobe para um arquivo de ÁUDIO (briefing
+// 0107): format.tags com grafias VARIADAS de propósito (título/artista em
+// minúsculas comuns, MusicBrainz Track/Artist Id em formas diferentes de
+// separador/case, ISRC via TSRC maiúsculo, track/disc com barra "N/M") para
+// provar que extrairAudioTags normaliza a chave e não só o caso óbvio.
+const saidaFakeAudio = `{
+  "streams": [
+    {"codec_type":"audio","codec_name":"flac","channels":2}
+  ],
+  "format": {
+    "format_name":"flac",
+    "duration":"210.5",
+    "size":"5000000",
+    "bit_rate":"900000",
+    "tags": {
+      "artist":"Fake Band",
+      "album":"Fake Album",
+      "ALBUM_ARTIST":"Fake Band",
+      "title":"Fake Track",
+      "track":"3/12",
+      "disc":"1/2",
+      "genre":"Rock",
+      "TSRC":"US1234500001",
+      "MusicBrainz Track Id":"cccccccc-0000-0000-0000-000000000001",
+      "musicbrainz_artistid":"aaaaaaaa-0000-0000-0000-000000000001"
+    }
+  }
+}`
+
+// TestProbeMapeiaTagsDeAudioComRunnerInjetado cobre o campo NOVO Info.Tags
+// (briefing 0107, mediainfo): artist/album/album_artist/title/genre/track/disc
+// (com barra "N/M") e os dois MBIDs (faixa/artista) com grafias de tag
+// diferentes das outras — a prova de que extrairAudioTags normaliza a CHAVE,
+// não depende de o arquivo usar exatamente "musicbrainz_trackid".
+func TestProbeMapeiaTagsDeAudioComRunnerInjetado(t *testing.T) {
+	run := func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return []byte(saidaFakeAudio), nil
+	}
+	p := NewProberComRunner("ffprobe-fake", run)
+
+	raw, err := p.Probe(context.Background(), "/x.flac")
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	var got Info
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Tags == nil {
+		t.Fatal("Tags = nil, quero AudioTags preenchido")
+	}
+	eq(t, "tags.artist", got.Tags.Artist, "Fake Band")
+	eq(t, "tags.album", got.Tags.Album, "Fake Album")
+	eq(t, "tags.album_artist", got.Tags.AlbumArtist, "Fake Band")
+	eq(t, "tags.title", got.Tags.Title, "Fake Track")
+	eq(t, "tags.track_number", got.Tags.TrackNumber, 3)
+	eq(t, "tags.disc_number", got.Tags.DiscNumber, 1)
+	eq(t, "tags.genre", got.Tags.Genre, "Rock")
+	eq(t, "tags.isrc", got.Tags.ISRC, "US1234500001")
+	eq(t, "tags.musicbrainz_track_id", got.Tags.MusicBrainzTrackID, "cccccccc-0000-0000-0000-000000000001")
+	eq(t, "tags.musicbrainz_artist_id", got.Tags.MusicBrainzArtistID, "aaaaaaaa-0000-0000-0000-000000000001")
+	// Consumidor pré-existente de General/Video/Audio: nada quebrou.
+	eq(t, "general.duration", got.General.Duration, 210.5)
+	eq(t, "len(audio)", len(got.Audio), 1)
+}
+
+// TestProbeSemTagsDeFormatoDevolveTagsNil cobre a compatibilidade retroativa:
+// um arquivo de VÍDEO comum, sem format.tags, não deve ganhar um
+// Info.Tags{} vazio (poluição do JSON persistido) — deve continuar nil.
+func TestProbeSemTagsDeFormatoDevolveTagsNil(t *testing.T) {
+	run := func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return []byte(saidaFake), nil
+	}
+	p := NewProberComRunner("ffprobe-fake", run)
+	raw, err := p.Probe(context.Background(), "/x.mkv")
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	var got Info
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Tags != nil {
+		t.Errorf("Tags = %+v, quero nil (sem format.tags na fonte)", got.Tags)
+	}
+}
+
+// TestProbeRealFfprobeAudioTags roda o ffprobe DE VERDADE contra um .mp3
+// sintético gerado pelo ffmpeg com -metadata (mesmo padrão de
+// TestProbeRealFfprobe, mas para tags de áudio). Skip se ffmpeg/ffprobe
+// faltarem no ambiente.
+func TestProbeRealFfprobeAudioTags(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg ausente; pulando o teste de integração de tags de áudio")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe ausente; pulando o teste de integração de tags de áudio")
+	}
+	dir := t.TempDir()
+	clipe := dir + "/clipe.mp3"
+	cmd := exec.Command("ffmpeg", "-v", "quiet", "-f", "lavfi",
+		"-i", "sine=frequency=440:duration=1",
+		"-metadata", "artist=Fake Band",
+		"-metadata", "album=Fake Album",
+		"-metadata", "album_artist=Fake Band",
+		"-metadata", "title=Fake Track",
+		"-metadata", "track=3/12",
+		"-metadata", "genre=Rock",
+		"-c:a", "libmp3lame", "-b:a", "64k", clipe)
+	if err := cmd.Run(); err != nil {
+		t.Skipf("ffmpeg não gerou o clipe de áudio: %v", err)
+	}
+
+	p := NewProber()
+	if !p.Disponivel() {
+		t.Skip("ffprobe indisponível")
+	}
+	raw, err := p.Probe(context.Background(), clipe)
+	if err != nil {
+		t.Fatalf("Probe real: %v", err)
+	}
+	var got Info
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Tags == nil {
+		t.Fatal("Tags = nil, quero AudioTags preenchido a partir do .mp3 real")
+	}
+	eq(t, "tags.artist real", got.Tags.Artist, "Fake Band")
+	eq(t, "tags.album real", got.Tags.Album, "Fake Album")
+	eq(t, "tags.title real", got.Tags.Title, "Fake Track")
+	eq(t, "tags.track_number real", got.Tags.TrackNumber, 3)
+	eq(t, "tags.genre real", got.Tags.Genre, "Rock")
+}
+
 // TestProbeRealFfprobe roda o ffprobe DE VERDADE contra um clipe sintético
 // gerado pelo ffmpeg. Se qualquer um dos binários faltar no ambiente, faz Skip
 // (não falha).
