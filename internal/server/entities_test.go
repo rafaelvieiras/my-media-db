@@ -302,19 +302,23 @@ func TestListEntitiesSortCreatedAtDesc(t *testing.T) {
 	}
 }
 
-// TestListEntityTypes cobre GET /entities/types (briefings 0109/0110): tipos
-// distintos catalogados (status != 'draft') com a contagem certa, incluindo
-// um tipo de música (album) desde 0105-0107 -- sem lista fixa hardcoded. Um
-// item 'wanted' conta (catalogado, ainda que sem arquivo); um item 'draft'
-// NÃO conta.
+// TestListEntityTypes cobre GET /entities/types (briefings 0109/0110/0112):
+// tipos DE TOPO distintos catalogados (status != 'draft') com a contagem
+// certa -- sem lista fixa hardcoded no frontend. Um item 'wanted' conta
+// (catalogado, ainda que sem arquivo); um item 'draft' NÃO conta. album/
+// faixa são SUB-NÓS (tiposSubNo, ADR-0030/0112) e NUNCA aparecem, mesmo
+// catalogados -- regressão do achado em produção (nenhuma das duas exclusões
+// hardcoded antigas cobria música).
 func TestListEntityTypes(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "m1", "movie", "M1")
 	semearEntity(t, d, "m2", "movie", "M2")
 	semearEntity(t, d, "s1", "tv", "S1")
+	semearEntity(t, d, "ar1", "artista", "AR1")
 	semearEntity(t, d, "al1", "album", "AL1")
 	semearEntity(t, d, "al2", "album", "AL2")
 	semearEntity(t, d, "al3", "album", "AL3")
+	semearEntity(t, d, "fx1", "faixa", "FX1")
 	semearEntity(t, d, "w1", "tv", "W1 wanted")
 	definirStatus(t, d, "w1", "wanted")
 	semearEntity(t, d, "dr1", "artista", "DR1 draft")
@@ -334,9 +338,12 @@ func TestListEntityTypes(t *testing.T) {
 	}
 	eq(t, "movie count", byType["movie"], int64(2))
 	eq(t, "tv count", byType["tv"], int64(2)) // s1 (cataloged) + w1 (wanted)
-	eq(t, "album count", byType["album"], int64(3))
-	if _, ok := byType["artista"]; ok {
-		t.Errorf("artista (draft) não deveria aparecer, byType=%+v", byType)
+	eq(t, "artista count", byType["artista"], int64(1))
+	if _, ok := byType["album"]; ok {
+		t.Errorf("album (sub-nó) não deveria aparecer, byType=%+v", byType)
+	}
+	if _, ok := byType["faixa"]; ok {
+		t.Errorf("faixa (sub-nó) não deveria aparecer, byType=%+v", byType)
 	}
 }
 

@@ -8,6 +8,7 @@ package sqlcgen
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const apagarEntity = `-- name: ApagarEntity :exec
@@ -1003,7 +1004,7 @@ func (q *Queries) ListarEntityCardsRecentes(ctx context.Context, arg ListarEntit
 const listarTiposComContagem = `-- name: ListarTiposComContagem :many
 SELECT type, COUNT(*) AS count
 FROM entity
-WHERE type NOT IN ('season', 'episode')
+WHERE type NOT IN (/*SLICE:sub_nos*/?)
   AND status != 'draft'
 GROUP BY type
 ORDER BY count DESC, type ASC
@@ -1024,12 +1025,24 @@ type ListarTiposComContagemRow struct {
 // (ContarEntityCards/ListarEntityCards: posse FISICA de arquivo). Um item
 // 'wanted'/'unreleased' catalogado mas sem arquivo em disco ainda conta --
 // coerente com AGENTS.md #2 ("o banco e maior que a biblioteca": cataloga o
-// que se tem E o que ainda nao se tem). Exclui season/episode (nos internos
-// da arvore de series, ver ListarEntityCards/0032). Ordenado por count
-// DESCENDENTE (schema mais populoso primeiro) e type ASCENDENTE como
-// desempate estavel.
-func (q *Queries) ListarTiposComContagem(ctx context.Context) ([]ListarTiposComContagemRow, error) {
-	rows, err := q.db.QueryContext(ctx, listarTiposComContagem)
+// que se tem E o que ainda nao se tem). Exclui os SUB-NOS (nos internos da
+// arvore de series/musica, ver ListarEntityCards/0032) recebidos via
+// sub_nos -- o CHAMADOR passa a lista unica tiposSubNo (ADR-0030, briefing
+// 0112, internal/server/entities.go), nao mais um literal fixo aqui.
+// Ordenado por count DESCENDENTE (schema mais populoso primeiro) e type
+// ASCENDENTE como desempate estavel.
+func (q *Queries) ListarTiposComContagem(ctx context.Context, subNos []string) ([]ListarTiposComContagemRow, error) {
+	query := listarTiposComContagem
+	var queryParams []interface{}
+	if len(subNos) > 0 {
+		for _, v := range subNos {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:sub_nos*/?", strings.Repeat(",?", len(subNos))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:sub_nos*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}

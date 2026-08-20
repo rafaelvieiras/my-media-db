@@ -231,7 +231,7 @@ func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoM
 	// o MAIOR-pontuado não-descartado independente de limiar (briefing 0060, para
 	// servir também a prévia sem corte) -- o corte >= LimiarAutoMatch é decidido
 	// AQUI, pelo chamador.
-	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, "", "")
+	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, nil)
 	if err != nil {
 		return autoMatchResultDTO{}, err
 	}

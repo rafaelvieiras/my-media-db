@@ -9,7 +9,7 @@
 | **ID** | 0112 |
 | **Tipo** | chore/fundação |
 | **Fase (roadmap)** | Fase 5+ — Verticais e plugins |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [ADR-0030](../docs/adr/0030-tipos-de-topo-biblioteca-e-busca-genericas.md) |
 | **Depende de** | — |
 
@@ -127,6 +127,42 @@ artista → álbuns → tela do álbum → faixas).
   primeiro e sozinho, mesmo padrão de "contrato antes de back+front" já usado
   no projeto (ver [memória de sessões anteriores]: 1 agente fecha a fundação,
   os consumidores vêm depois em paralelo).
+
+**Implementado (18/08/2026).** Decisões tomadas durante a implementação, não
+100% especificadas no briefing:
+
+- `sqlc.slice` **é suportado** pelo dialeto `sqlite` do sqlc v1.31.1 (testado
+  na prática, `sqlc generate` local) — não foi preciso o fallback "expandir
+  `?` manualmente em Go" cogitado na seção 4 para `ListarTiposComContagem`.
+  `WHERE type NOT IN (sqlc.slice('sub_nos'))` gera
+  `ListarTiposComContagem(ctx, subNos []string)`; o sqlc resolve o `NOT IN`
+  dinâmico em runtime (substitui um marcador `/*SLICE:sub_nos*/?` pela lista
+  de `?` do tamanho da slice, ou por `NULL` se vazia).
+- `buscarCardsFTSSQL` (`search.go`) é SQL escrita à mão (não via sqlc, por
+  motivos já documentados no arquivo — MATCH de tabela inteira do FTS5). Para
+  generalizar o `NOT IN`/`IN` dinâmico dela também, replicou-se à mão o MESMO
+  mecanismo de marcador `/*SLICE:nome*/?` que o sqlc gera (função nova
+  `expandirSlice` em `search.go`) — mesma ideia, aplicada ao ponto que não
+  passa pelo sqlc.
+- `tiposSubNo` é `var` (não `const`, Go não permite slice const), definida em
+  `internal/server/entities.go` logo antes de `listEntityTypes`; nova
+  constante `tipoEntFaixa = "faixa"` adicionada ao bloco de `tipoEnt*` já
+  existente (não havia constante para o tipo `"faixa"` no pacote `server`
+  antes deste briefing, só como string literal em `internal/scanner/musica.go`
+  e `internal/enrich/musica.go`).
+- `parseInclude` mudou de assinatura: de `(season, episode string)` para
+  `[]string` (lista de sub-nós religados, dedup, filtrados contra
+  `tiposSubNo`) — os 3 outros chamadores de `buscarLocal`
+  (`match_preview.go`, `automatch.go`, `retroativo.go`), que sempre passavam
+  `("", "")`, agora passam `nil`.
+- `TestListEntityTypes` (`entities_test.go`) existia ANTES deste briefing
+  esperando que `album` aparecesse em `/entities/types` (comportamento
+  antigo, já incorreto per ADR-0030) — foi reescrito para o comportamento
+  correto (album/faixa nunca aparecem), preservando a cobertura de
+  movie/tv/artista/wanted/draft. Teste novo
+  `TestSearchAlbumFaixaSubNoDefaultForaEIncluidos` (`search_test.go`) cobre
+  os critérios de aceite de música explicitamente (espelha a
+  `TestSearchSubNosDefaultForaEIncluidos` já existente para season/episode).
 
 ## 7. Fora deste briefing / follow-ups
 

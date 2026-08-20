@@ -231,6 +231,37 @@ func TestSearchSubNosDefaultForaEIncluidos(t *testing.T) {
 	}
 }
 
+// TestSearchAlbumFaixaSubNoDefaultForaEIncluidos: mesma garantia de
+// TestSearchSubNosDefaultForaEIncluidos, mas para os sub-nós da vertical de
+// música (ADR-0027/0030, briefing 0112) -- album/faixa NUNCA aparecem por
+// padrão na busca (regressão do achado em produção: nenhuma das duas
+// exclusões antigas cobria música), e o `include` generalizado (não mais só
+// season/episode) os religa.
+func TestSearchAlbumFaixaSubNoDefaultForaEIncluidos(t *testing.T) {
+	h, d := setupSearchServer(t)
+	semearEntity(t, d, "artista", "artista", "Zeze Musico")
+	semearEntity(t, d, "album", "album", "Zeze Album")
+	semearEntity(t, d, "faixa", "faixa", "Zeze Faixa")
+
+	// (a) Default: so o artista de topo; nada de album/faixa.
+	out := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Zeze", nil).Body.Bytes())
+	if ids := idsLocais(out); len(ids) != 1 || ids[0] != "artista" {
+		t.Fatalf("default: local = %v, quero so [artista] (sub-nos fora)", ids)
+	}
+
+	// (b) include=album: artista + album, sem faixa.
+	outA := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Zeze&include=album", nil).Body.Bytes())
+	if ids := idsLocais(outA); !contemTodos(ids, "artista", "album") || contem(ids, "faixa") {
+		t.Fatalf("include=album: local = %v, quero [artista, album] sem faixa", ids)
+	}
+
+	// (c) include=album,faixa (CSV): traz os tres.
+	outAll := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Zeze&include=album,faixa", nil).Body.Bytes())
+	if ids := idsLocais(outAll); !contemTodos(ids, "artista", "album", "faixa") {
+		t.Fatalf("include=album,faixa: local = %v, quero os tres", ids)
+	}
+}
+
 // TestSearchEpisodioPossuidoPelaJuncao: com include=episode, o card do episodio na
 // busca marca a posse vinda da juncao media_file_entity (0034) -- o arquivo tem
 // entity_id=SERIE e liga ao episodio so pela juncao. Sem a extensao, viria

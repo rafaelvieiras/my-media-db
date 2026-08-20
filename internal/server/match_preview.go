@@ -113,7 +113,7 @@ func (s *Server) montarMatchPreview(ctx context.Context, ent sqlcgen.Entity) (ma
 	}
 
 	// 1) Local-first (0026): mesma busca do auto-match.
-	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, "", "")
+	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, nil)
 	if err != nil {
 		return matchPreviewDTO{}, err
 	}

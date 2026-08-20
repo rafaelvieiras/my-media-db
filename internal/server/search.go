@@ -36,13 +36,20 @@ const ttlCacheExterno = 60 * time.Second
 // do usuário vira uma frase entre aspas com prefixo, de modo que aspas, parênteses
 // e operadores do FTS5 no input não quebrem a sintaxe da consulta.
 //
-// Por PADRÃO a busca só retorna OBRAS DE TOPO: os sub-nós da árvore de séries
-// (season/episode) ficam de fora, senão uma busca por "Simpsons" afogaria a série
-// numa enxurrada de episódios/temporadas de várias séries (0033, SUPERSEDE a exclusão
-// dura do 0032). A cláusula `e.type NOT IN ('season','episode') OR e.type IN (?, ?)`
-// deixa os dois placeholders serem os sub-nós a INCLUIR: a string vazia não casa
-// nenhum type, então o default preserva o só-topo; 'season'/'episode' religa o sub-nó
-// correspondente. Os parâmetros posicionais seguem (match, incl1, incl2, tipo, tipo, limit).
+// Por PADRÃO a busca só retorna OBRAS DE TOPO: os sub-nós de tiposSubNo
+// (ADR-0030/briefing 0112, entities.go — season/episode/album/faixa) ficam de
+// fora, senão uma busca por "Simpsons" afogaria a série numa enxurrada de
+// episódios/temporadas de várias séries (0033, SUPERSEDE a exclusão dura do
+// 0032). A cláusula `e.type NOT IN (/*SLICE:sub_nos*/?) OR e.type IN
+// (/*SLICE:incluir*/?)` usa o MESMO mecanismo que o sqlc gera para
+// `sqlc.slice` (ver ListarTiposComContagem em entity.sql.go), replicado à mão
+// aqui porque esta query é escrita manualmente (motivo (1)/(2) acima) — os
+// marcadores são expandidos em Go por expandirSlice antes da execução:
+// sub_nos recebe SEMPRE tiposSubNo inteiro (exclusão fixa), incluir recebe os
+// sub-nós religados via `?include=` (parseInclude), vazio por padrão (a lista
+// vazia expande para `NOT IN (NULL)`/`IN (NULL)`, que nunca casa, preservando
+// o só-topo). Os parâmetros posicionais seguem (match, sub_nos..., incluir...,
+// tipo, tipo, limit).
 //
 // owned/file_count contam TAMBEM a juncao media_file_entity (0034): com `?include=
 // episode` a busca traz episodios, cujo arquivo tem entity_id=SERIE e liga ao episodio
@@ -66,10 +73,28 @@ const buscarCardsFTSSQL = `SELECT
 FROM entity_fts
 JOIN entity e ON e.id = entity_fts.entity_id
 WHERE entity_fts MATCH ?
-  AND (e.type NOT IN ('season', 'episode') OR e.type IN (?, ?))
+  AND (e.type NOT IN (/*SLICE:sub_nos*/?) OR e.type IN (/*SLICE:incluir*/?))
   AND (? IS NULL OR e.type = ?)
 ORDER BY entity_fts.rank
 LIMIT ?;`
+
+// expandirSlice substitui o marcador `/*SLICE:<marcador>*/?` de buscarCardsFTSSQL por
+// uma lista `?,?,...` do tamanho de valores (e acrescenta cada valor em args, na
+// mesma ordem) ou por `NULL` quando valores está vazia (mesmo mecanismo que o sqlc
+// gera para `sqlc.slice` em query gerada — replicado à mão aqui porque esta query é
+// escrita manualmente). `x NOT IN (NULL)`/`x IN (NULL)` nunca casa nenhuma linha,
+// então uma slice vazia é sempre "nenhuma exceção"/"nada incluído", nunca erro de
+// sintaxe SQL.
+func expandirSlice(query, marcador string, valores []string, args []any) (string, []any) {
+	m := "/*SLICE:" + marcador + "*/?"
+	if len(valores) == 0 {
+		return strings.Replace(query, m, "NULL", 1), args
+	}
+	for _, v := range valores {
+		args = append(args, v)
+	}
+	return strings.Replace(query, m, strings.Repeat(",?", len(valores))[1:], 1), args
+}
 
 // externalResultDTO é um resultado da fonte EXTERNA (briefing 0014). saved é
 // sempre false: resultado externo nunca é entidade do catálogo até o import (0015).
@@ -109,8 +134,8 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "o parâmetro q é obrigatório")
 		return
 	}
-	tipo := parseTipoFiltro(q)                 // string | nil
-	inclSeason, inclEpisode := parseInclude(q) // sub-nós a religar na busca local
+	tipo := parseTipoFiltro(q) // string | nil
+	incluir := parseInclude(q) // sub-nós de tiposSubNo a religar na busca local
 
 	ctx := r.Context()
 	// Idioma de leitura ATIVO (0021): valida o ?lang= contra os permitidos (400 se
@@ -126,7 +151,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	locais, err := s.buscarLocal(ctx, termo, tipo, inclSeason, inclEpisode)
+	locais, err := s.buscarLocal(ctx, termo, tipo, incluir)
 	if err != nil {
 		respondErroInterno(w)
 		return
@@ -143,35 +168,50 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// parseInclude lê o parâmetro `include` (CSV, ex.: "season,episode") e devolve os
-// dois slots de inclusão da busca local: um "season"/"" e um "episode"/"", cada um
-// preenchido só quando o respectivo sub-nó foi pedido. Aceita repetição (idempotente)
-// e ignora silenciosamente qualquer valor fora de {season, episode}. Por padrão (sem
-// include) ambos ficam "" — os sub-nós continuam de fora (0033).
-func parseInclude(q url.Values) (season, episode string) {
+// parseInclude lê o parâmetro `include` (CSV, ex.: "season,episode" ou
+// "album,faixa") e devolve os sub-nós de tiposSubNo (ADR-0030/briefing 0112) a
+// RELIGAR na busca local. Generalizado no 0112: aceita QUALQUER valor de
+// tiposSubNo, não mais só season/episode — schema novo que vira sub-nó (ex.
+// uma vertical futura) já religa via este mesmo parâmetro, sem tocar aqui.
+// Aceita repetição (idempotente, dedup) e ignora silenciosamente qualquer
+// valor fora de tiposSubNo. Por padrão (sem include) devolve vazio — os
+// sub-nós continuam de fora (0033).
+func parseInclude(q url.Values) []string {
+	permitido := make(map[string]bool, len(tiposSubNo))
+	for _, t := range tiposSubNo {
+		permitido[t] = true
+	}
+	vistos := make(map[string]bool)
+	incluir := make([]string, 0, len(tiposSubNo))
 	for _, raw := range q["include"] {
 		for _, v := range strings.Split(raw, ",") {
-			switch strings.TrimSpace(v) {
-			case "season":
-				season = "season"
-			case "episode":
-				episode = "episode"
+			v = strings.TrimSpace(v)
+			if v == "" || !permitido[v] || vistos[v] {
+				continue
 			}
+			vistos[v] = true
+			incluir = append(incluir, v)
 		}
 	}
-	return season, episode
+	return incluir
 }
 
 // buscarLocal roda o MATCH FTS5 sanitizado no pool de LEITURA e devolve os cards.
-// inclSeason/inclEpisode são os sub-nós a RELIGAR na busca ("season"/"episode" ou "");
-// por padrão ("") os sub-nós ficam de fora (0033). Input sem nenhum termo pesquisável
-// (só pontuação/operadores) devolve lista vazia sem tocar o banco — nunca erro.
-func (s *Server) buscarLocal(ctx context.Context, termo string, tipo any, inclSeason, inclEpisode string) ([]entityCardDTO, error) {
+// incluir são os sub-nós de tiposSubNo a RELIGAR na busca (ADR-0030/0112, vindo de
+// parseInclude); por padrão (nil/vazio) os sub-nós ficam de fora (0033). Input sem
+// nenhum termo pesquisável (só pontuação/operadores) devolve lista vazia sem tocar
+// o banco — nunca erro.
+func (s *Server) buscarLocal(ctx context.Context, termo string, tipo any, incluir []string) ([]entityCardDTO, error) {
 	match, ok := sanitizarMatchFTS(termo)
 	if !ok {
 		return []entityCardDTO{}, nil
 	}
-	rows, err := s.db.Read.QueryContext(ctx, buscarCardsFTSSQL, match, inclSeason, inclEpisode, tipo, tipo, int64(limitPadrao))
+	query := buscarCardsFTSSQL
+	args := []any{match}
+	query, args = expandirSlice(query, "sub_nos", tiposSubNo, args)
+	query, args = expandirSlice(query, "incluir", incluir, args)
+	args = append(args, tipo, tipo, int64(limitPadrao))
+	rows, err := s.db.Read.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

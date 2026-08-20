@@ -289,21 +289,37 @@ type entityTypeDTO struct {
 	Count int64  `json:"count"`
 }
 
+// tiposSubNo é o registro ÚNICO (ADR-0030, briefing 0112) dos `type` de
+// entity que são SUB-NÓ: só navegáveis via drill-down do pai (temporada/
+// episódio da série, faixa do álbum, álbum do artista) — NUNCA de topo
+// (home/navbar/`/library`/busca-padrão). É uma lista de EXCLUSÃO, não de
+// inclusão: um schema novo (`entity.type` inédito) nasce "de topo" por
+// padrão sem precisar de entrada aqui — só sub-nós explícitos entram nesta
+// lista. Se o catálogo crescer a ponto de sub-nó virar o caso mais comum,
+// inverter para lista de inclusão é uma mudança localizada aqui.
+//
+// Fonte única consumida por dois pontos que antes reimplementavam a mesma
+// exclusão separadamente e divergiam (nenhum cobria album/faixa,
+// achado em produção): ListarTiposComContagem (GET /entities/types, abaixo)
+// e buscarCardsFTSSQL (GET /search, search.go).
+var tiposSubNo = []string{tipoEntTemporada, tipoEntEpisodio, tipoEntAlbum, tipoEntFaixa}
+
 // listEntityTypes trata GET /api/v1/entities/types: os `type` distintos com
 // pelo menos 1 entity CATALOGADA (status != 'draft' — ver o comentário longo
 // de ListarTiposComContagem em entity.sql sobre por que este critério, e não
 // "owned"/posse física de arquivo, foi escolhido). Alimenta a home
 // (carrosséis "adicionados recentemente" por schema, 0109) e o dropdown da
-// navbar (0110) sem hardcodar uma lista fixa de tipos no frontend — cobre
-// album/artista/faixa (0105-0107) junto de movie/tv sem exigir mudança aqui a
-// cada vertical nova. Rota ESTÁTICA registrada em server.go antes de
-// /entities/{id} (radix tree do chi resolve isso mesmo sem a ordem, mas a
-// posição deixa a intenção explícita — mesmo padrão de /library/browse).
+// navbar (0110) sem hardcodar uma lista fixa de tipos no frontend — exclui os
+// sub-nós de tiposSubNo (season/episode/album/faixa) junto de movie/tv sem
+// exigir mudança aqui a cada vertical nova. Rota ESTÁTICA registrada em
+// server.go antes de /entities/{id} (radix tree do chi resolve isso mesmo sem
+// a ordem, mas a posição deixa a intenção explícita — mesmo padrão de
+// /library/browse).
 func (s *Server) listEntityTypes(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
 	}
-	rows, err := s.leitura().ListarTiposComContagem(r.Context())
+	rows, err := s.leitura().ListarTiposComContagem(r.Context(), tiposSubNo)
 	if err != nil {
 		respondErroInterno(w)
 		return
@@ -337,6 +353,10 @@ const (
 	// discografia-artista.tsx).
 	tipoEntAlbum   = "album"
 	tipoEntArtista = "artista"
+	// tipoEntFaixa é o `type` da faixa (vertical de música, ADR-0027/0111):
+	// sub-nó do álbum, só acessível via drill-down (nunca de topo — ver
+	// tiposSubNo).
+	tipoEntFaixa = "faixa"
 	// nsTVCore é o namespace do extension_data da vertical de séries (core.tv@1): a
 	// temporada guarda `ordering`/`season_number`, o episódio guarda `numbering`
 	// (ordem→{season,number}) + `absolute_number`. Lido aqui para o numbering do card

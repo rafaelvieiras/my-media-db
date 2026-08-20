@@ -537,11 +537,13 @@ type Querier interface {
 	// (ContarEntityCards/ListarEntityCards: posse FISICA de arquivo). Um item
 	// 'wanted'/'unreleased' catalogado mas sem arquivo em disco ainda conta --
 	// coerente com AGENTS.md #2 ("o banco e maior que a biblioteca": cataloga o
-	// que se tem E o que ainda nao se tem). Exclui season/episode (nos internos
-	// da arvore de series, ver ListarEntityCards/0032). Ordenado por count
-	// DESCENDENTE (schema mais populoso primeiro) e type ASCENDENTE como
-	// desempate estavel.
-	ListarTiposComContagem(ctx context.Context) ([]ListarTiposComContagemRow, error)
+	// que se tem E o que ainda nao se tem). Exclui os SUB-NOS (nos internos da
+	// arvore de series/musica, ver ListarEntityCards/0032) recebidos via
+	// sub_nos -- o CHAMADOR passa a lista unica tiposSubNo (ADR-0030, briefing
+	// 0112, internal/server/entities.go), nao mais um literal fixo aqui.
+	// Ordenado por count DESCENDENTE (schema mais populoso primeiro) e type
+	// ASCENDENTE como desempate estavel.
+	ListarTiposComContagem(ctx context.Context, subNos []string) ([]ListarTiposComContagemRow, error)
 	// Base da projecao de "estado atual" (GET .../historico/estado): todos os
 	// eventos da entity, mesma ordem cronologica reversa da listagem acima --
 	// o agrupamento por kind (pegar so o primeiro de cada kind, ja que a

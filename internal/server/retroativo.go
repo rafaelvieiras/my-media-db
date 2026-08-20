@@ -205,7 +205,7 @@ func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.En
 
 	// 1) Local-first (mesma ordem de tentarAutoMatch): nunca duplica entity
 	// já catalogada.
-	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, "", "")
+	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, nil)
 	if err != nil {
 		return "", "", 0, err
 	}
