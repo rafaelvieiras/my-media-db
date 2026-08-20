@@ -273,10 +273,18 @@ func resolverSourceID(w http.ResponseWriter, source string, externalIdsJson sql.
 	return sourceID, true
 }
 
-// provedorCapaz diz se o provider `p` sabe importar o `tipo` pedido, via type-assert da
-// capacidade opcional correspondente (0031/0046): 'tv' exige provider.SerieProvider (a
-// árvore), 'collection' exige provider.ColecaoProvider; para 'movie' (e demais grãos, como
-// season/episode) basta o core Provider — todo provider registrado o cumpre.
+// provedorCapaz diz se o provider `p` sabe importar/enriquecer o `tipo` pedido, via
+// type-assert da capacidade opcional correspondente (0031/0046): 'tv' exige
+// provider.SerieProvider (a árvore), 'collection' exige provider.ColecaoProvider;
+// 'artista'/'album'/'faixa' exigem a capacidade de música (ADR-0027) -- sem isso,
+// um provider registrado que não modela música (ex.: TMDB) era erroneamente aceito
+// pelo `default` abaixo como "capaz", e o /enrich sem `source` explícito escolhia-o
+// como fonte-default para uma entity de música, batendo em 422 "sem source_id" (o
+// external_ids[mbid] da entity não bate com external_ids[tmdb] que o handler
+// procurava) -- achado ao validar o botão "Baixar Metadados" no artista/álbum,
+// gap deixado pré-existente quando o caso "faixa" foi adicionado. Para 'movie' (e
+// demais grãos, como season/episode) basta o core Provider — todo provider
+// registrado o cumpre.
 func provedorCapaz(p provider.Provider, tipo string) bool {
 	switch tipo {
 	case "tv":
@@ -285,11 +293,10 @@ func provedorCapaz(p provider.Provider, tipo string) bool {
 	case "collection":
 		_, ok := p.(provider.ColecaoProvider)
 		return ok
-	case "faixa":
-		// briefing 0115 Parte 2: faixa avulsa exige a capacidade SELETIVA de álbum
-		// (BuscarAlbumPorMbid) -- ao contrário de "artista" (default abaixo, gap
-		// pré-existente fora deste escopo), aqui a checagem é nova e não muda
-		// comportamento de tipo nenhum que já funcionava.
+	case "artista":
+		_, ok := p.(provider.MusicaProvider)
+		return ok
+	case "album", "faixa":
 		_, ok := p.(provider.MusicaAlbumProvider)
 		return ok
 	default:
@@ -312,6 +319,13 @@ func decodeOpcional(w http.ResponseWriter, r *http.Request, v any) bool {
 // externalIDDe extrai external_ids[source] do external_ids_json (string→string).
 // Vazio quando ausente/inválido. Usado quando o enrich não recebe source_id no
 // corpo (item já casado pelo scanner, id na identidade).
+//
+// "musicbrainz" é o único source cuja chave em external_ids diverge do Nome() do
+// provider: ADR-0027 grava o id sob "mbid" (não "musicbrainz") em todo o resto do
+// código (internal/enrich/musica.go, external_ids.mbid no frontend) -- achado ao
+// validar "Baixar Metadados" sem source_id explícito num artista/álbum/faixa já
+// catalogado: sem este desvio, a busca por external_ids["musicbrainz"] nunca acha
+// o id já gravado e o botão sempre bate em 422 "sem source_id".
 func externalIDDe(ns sql.NullString, source string) string {
 	if !ns.Valid || ns.String == "" {
 		return ""
@@ -320,7 +334,11 @@ func externalIDDe(ns sql.NullString, source string) string {
 	if json.Unmarshal([]byte(ns.String), &m) != nil {
 		return ""
 	}
-	if v, ok := m[source].(string); ok {
+	chave := source
+	if source == "musicbrainz" {
+		chave = "mbid"
+	}
+	if v, ok := m[chave].(string); ok {
 		return v
 	}
 	return ""

@@ -263,6 +263,15 @@ export function EntityDetailScreen() {
     </div>
   )
 
+  // `data.owned` (ADR-0027) inclui posse via ÁRVORE para artista/album — só a
+  // FAIXA liga direto a media_file, então um artista/album "possuído" nunca tem
+  // pasta real PRÓPRIA (resolverDestino não sabe escolher entre os vários
+  // diretórios das faixas). "Salvar informações (NFO)"/"Salvar na pasta" batem
+  // em 404 (sem pasta de destino) se habilitados com o `owned` cru — por isso
+  // ficam desabilitados para essas duas verticais mesmo com `owned: true`.
+  const podeGravarNaPastaReal =
+    data.owned && data.type !== 'album' && data.type !== 'artista'
+
   return (
     <main className="mx-auto max-w-4xl px-4 py-6">
       <RichDetailView
@@ -288,7 +297,7 @@ export function EntityDetailScreen() {
           <EntityManageMenu
             id={id}
             catalogCompleteness={data.catalog_completeness}
-            owned={data.owned}
+            owned={podeGravarNaPastaReal}
             isCollection={data.type === 'collection'}
           />
         }
@@ -362,7 +371,7 @@ export function EntityDetailScreen() {
           entityId={id}
           type={data.type}
           stillUrl={data.still_url ?? null}
-          owned={data.owned}
+          owned={podeGravarNaPastaReal}
         />
 
         {/* Arquivos só nos nós-folha que têm media_file: filme e episódio. Coleção,

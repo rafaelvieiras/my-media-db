@@ -277,6 +277,25 @@ func TestEnrichSemSourceID422(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
+// TestExternalIDDeMusicbrainzUsaChaveMbid: o Nome() do provider MusicBrainz é
+// "musicbrainz", mas o id em si é gravado em external_ids sob a chave "mbid"
+// (ADR-0027, todo o resto do código: internal/enrich/musica.go, external_ids.mbid
+// no frontend) -- achado ao validar "Baixar Metadados" sem source_id explícito
+// num artista/álbum/faixa de música já catalogado: sem o desvio em externalIDDe,
+// a busca por external_ids["musicbrainz"] nunca acha o id e o botão sempre bate
+// em 422 "sem source_id", mesmo com a fonte corretamente resolvida.
+func TestExternalIDDeMusicbrainzUsaChaveMbid(t *testing.T) {
+	ns := nsOf(`{"mbid":"artista-fake-1"}`)
+	if got := externalIDDe(ns, "musicbrainz"); got != "artista-fake-1" {
+		t.Errorf(`externalIDDe(musicbrainz) = %q, quero "artista-fake-1"`, got)
+	}
+	// Regressão: outras fontes continuam olhando a própria chave (sem desvio).
+	nsTmdb := nsOf(`{"tmdb":"603"}`)
+	if got := externalIDDe(nsTmdb, "tmdb"); got != "603" {
+		t.Errorf(`externalIDDe(tmdb) = %q, quero "603"`, got)
+	}
+}
+
 func TestImportValidacoes(t *testing.T) {
 	h, _, _, _, _ := setupEnrichServer(t)
 

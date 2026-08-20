@@ -123,6 +123,64 @@ func TestImportTvSemFonteCapaz422(t *testing.T) {
 	checkErrorShape(t, rec, "no_source_for_type")
 }
 
+// provMusicaNaoTmdb estende provNaoTmdb com as capacidades de música (MusicaProvider +
+// MusicaAlbumProvider, ADR-0027) -- exercita provedorCapaz("artista"/"album"/"faixa"),
+// achado ao validar o botão "Baixar Metadados" pra artista/álbum em produção: sem essas
+// capacidades explícitas em provedorCapaz, o `default: true` aceitava QUALQUER provider
+// registrado (inclusive um "tmdb" sem nada a ver com música) como capaz de 'artista'/
+// 'album', e fonteDefault o escolhia por prioridade mesmo sem saber servir o tipo.
+type provMusicaNaoTmdb struct{ provNaoTmdb }
+
+func (p *provMusicaNaoTmdb) BuscarArtistaArvore(context.Context, string, []string) (provider.ArtistaArvore, error) {
+	return provider.ArtistaArvore{}, nil
+}
+
+func (p *provMusicaNaoTmdb) BuscarAlbumDaFaixa(context.Context, string, []string) (provider.AlbumExterno, bool, error) {
+	return provider.AlbumExterno{}, false, nil
+}
+
+func (p *provMusicaNaoTmdb) BuscarAlbumPorNome(context.Context, string, string, []string) (provider.AlbumExterno, bool, error) {
+	return provider.AlbumExterno{}, false, nil
+}
+
+func (p *provMusicaNaoTmdb) BuscarAlbumPorMbid(context.Context, string, []string) (provider.AlbumExterno, error) {
+	return provider.AlbumExterno{}, nil
+}
+
+// TestFonteDefaultMusicaNaoEscolheProviderSemCapacidade: com um provider SEM música
+// registrado ANTES (maior prioridade) de um provider DE música, fonteDefault('artista'/
+// 'album'/'faixa') pula o primeiro e escolhe o musical -- nunca assume "o primeiro
+// registrado serve" para os tipos de música (regressão do bug relatado acima).
+func TestFonteDefaultMusicaNaoEscolheProviderSemCapacidade(t *testing.T) {
+	_, d := setupEntitiesServer(t)
+
+	s := New("v-teste", d, WithSearchProvider(
+		&provNaoTmdb{nome: "tmdb"},
+		&provMusicaNaoTmdb{provNaoTmdb{nome: "musicbrainz"}},
+	))
+
+	for _, tipo := range []string{"artista", "album", "faixa"} {
+		if src, ok := s.fonteDefault(tipo); !ok || src != "musicbrainz" {
+			t.Errorf("fonteDefault(%s) = (%q,%v), quero (musicbrainz,true)", tipo, src, ok)
+		}
+	}
+}
+
+// TestFonteDefaultMusicaSemProviderCapaz422: um ambiente cujo único provider registrado
+// não modela música (core-only, tipo "tmdb") não tem fonte-default para 'artista'/
+// 'album'/'faixa' -- 422 semântico, nunca um 502/422 "sem source_id" por escolher uma
+// fonte incapaz.
+func TestFonteDefaultMusicaSemProviderCapaz422(t *testing.T) {
+	_, d := setupEntitiesServer(t)
+	s := New("v-teste", d, WithSearchProvider(&provNaoTmdb{nome: "tmdb"}))
+
+	for _, tipo := range []string{"artista", "album", "faixa"} {
+		if src, ok := s.fonteDefault(tipo); ok {
+			t.Errorf("fonteDefault(%s) = (%q,%v), quero (\"\",false) sem provider de música", tipo, src, ok)
+		}
+	}
+}
+
 // TestIdInternoItemFonteTvdb: o interno-first resolve um item importado de fonte NÃO-tmdb
 // (tvdb, via coluna gerada external_id_tvdb) — não só tmdb. Fonte sem coluna sai nil.
 func TestIdInternoItemFonteTvdb(t *testing.T) {

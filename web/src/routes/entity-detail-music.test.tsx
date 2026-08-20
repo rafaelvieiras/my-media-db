@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { EntityDetailScreen } from '@/routes/entity-detail'
 import { LanguageProvider } from '@/lib/language-context'
 import type { EntityCard, ResolvedEntity } from '@/lib/api'
@@ -185,6 +186,54 @@ describe('EntityDetailScreen — artista: discografia (0111)', () => {
       expect(screen.getByText('Discografia')).toBeInTheDocument(),
     )
     expect(screen.queryByText('Faixas')).toBeNull()
+  })
+})
+
+// ADR-0027: só a FAIXA liga direto a media_file — um álbum/artista "possuído"
+// (owned:true via árvore, completarOwnedViaArvore) nunca tem pasta real
+// PRÓPRIA (resolverDestino não escolhe entre os diretórios das várias
+// faixas). "Salvar informações (NFO)" bateria em 404 (sem pasta de destino)
+// se habilitado com o `owned` cru — por isso a tela força esses dois
+// itens para desabilitado nessas duas verticais, mesmo com owned:true.
+describe('EntityDetailScreen — música: "Salvar informações (NFO)" continua desabilitado mesmo com owned:true (regressão)', () => {
+  it('álbum possuído via árvore: item fica desabilitado com tooltip', async () => {
+    const user = userEvent.setup()
+    renderDetail(
+      baseEntity({
+        id: 'e1',
+        type: 'album',
+        title: 'Álbum Teste',
+        owned: true,
+      }),
+      [faixa1],
+    )
+    await waitFor(() => expect(screen.getByText('Faixas')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /Gerenciar/ }))
+    const item = screen.getByRole('menuitem', {
+      name: /Salvar informações \(NFO\)/,
+    })
+    expect(item).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('artista possuído via árvore: item fica desabilitado com tooltip', async () => {
+    const user = userEvent.setup()
+    renderDetail(
+      baseEntity({
+        id: 'e1',
+        type: 'artista',
+        title: 'Duran Duran',
+        owned: true,
+      }),
+      [album1],
+    )
+    await waitFor(() =>
+      expect(screen.getByText('Discografia')).toBeInTheDocument(),
+    )
+    await user.click(screen.getByRole('button', { name: /Gerenciar/ }))
+    const item = screen.getByRole('menuitem', {
+      name: /Salvar informações \(NFO\)/,
+    })
+    expect(item).toHaveAttribute('aria-disabled', 'true')
   })
 })
 
