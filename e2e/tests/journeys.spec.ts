@@ -55,6 +55,14 @@ test('item ja importado aparece como "Na biblioteca" e linka ao interno', async 
   // O nao-importado (Reloaded, 2003) segue oferecendo Importar e linkando ao externo.
   const reloaded = page.getByRole('listitem').filter({ hasText: '2003' })
   await expect(reloaded.getByRole('button', { name: 'Importar' })).toBeVisible()
+
+  // Filtro de tipo (briefing 0113/ADR-0030): dinâmico, lista os tipos de topo
+  // REAIS com dado catalogado (aqui, só "Filmes" — o 603 já foi importado
+  // acima). Escolher "Filmes" exercita o caminho de troca de tipo
+  // (MediaTypeFilter.onChange -> refiltra `/search?type=movie`), e o Matrix
+  // segue visível (é, de fato, um filme).
+  await page.getByLabel('Filtrar por tipo').selectOption({ label: 'Filmes' })
+  await expect(matrix.getByText('Na biblioteca')).toBeVisible()
 })
 
 test('a biblioteca lista o filme importado', async ({ page, request }) => {
@@ -65,9 +73,29 @@ test('a biblioteca lista o filme importado', async ({ page, request }) => {
   // deste teste é só CATALOGADO (import sem arquivo/posse real), então não
   // aparece ali por desenho. A listagem completa (owned + não-owned, mesmo
   // comportamento que a home tinha antes do 0114) virou a rota própria
-  // `/library/:entitySlug`; "movies" é o slug de `movie` (lib/library-slugs.ts).
-  await page.goto('/library/movies')
+  // `/library/:entitySlug`, alcançável pelo dropdown "Biblioteca" da navbar
+  // (`app-header.tsx`/`BibliotecaNavItem`) — usado aqui em vez de navegação
+  // direta por URL, para exercitar esse caminho também.
+  await page.goto('/')
+  await page
+    .getByRole('button', { name: 'Filtrar biblioteca por tipo' })
+    .click()
+  await page.getByRole('menuitem', { name: 'Filmes' }).click()
+
+  await expect(page).toHaveURL('/library/movies')
   await expect(page.getByRole('heading', { level: 1, name: 'Filmes' })).toBeVisible()
   // O card do Matrix aparece no catalogo, linkando ao detalhe interno.
+  await expect(page.getByRole('link', { name: /Matrix/ }).first()).toBeVisible()
+
+  // Filtro de posse (PosterGrid): trocar pra "Na biblioteca" refiltra
+  // (owned=true) e some o Matrix (só CATALOGADO, sem arquivo/posse real) —
+  // exercita o handler `reiniciarPagina(setPosse)` e o estado vazio.
+  await page.getByLabel('Filtrar por posse').selectOption('owned')
+  await expect(
+    page.getByText('Nenhum item no catálogo'),
+  ).toBeVisible()
+
+  // Voltar pra "Fora da biblioteca" mostra o Matrix de novo (owned=false).
+  await page.getByLabel('Filtrar por posse').selectOption('not')
   await expect(page.getByRole('link', { name: /Matrix/ }).first()).toBeVisible()
 })

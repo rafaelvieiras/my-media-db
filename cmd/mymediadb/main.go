@@ -259,7 +259,14 @@ func opcoesServer(database *db.DB) ([]server.Option, error) {
 func opcoesBusca() []server.Option {
 	if os.Getenv("MYMEDIADB_FAKE_PROVIDER") == "1" {
 		log.Printf("mymediadb: PROVIDER FAKE de fixtures habilitado (E2E; sem fonte real)")
-		return []server.Option{server.WithSearchProvider(fake.New(os.Getenv("MYMEDIADB_FAKE_IMAGE_BASE")))}
+		// O fake de música (0115) roda ao lado do fake de filme/série sob
+		// Nome()="musicbrainz" — mesma fonte de dados fixos que
+		// internal/e2e usa na Camada 1, agora também alcançável pelo
+		// binário real que a Camada 2 (Playwright) dirige.
+		return []server.Option{server.WithSearchProvider(
+			fake.New(os.Getenv("MYMEDIADB_FAKE_IMAGE_BASE")),
+			fake.NewMusicbrainz(),
+		)}
 	}
 	provs := provedoresReais()
 	if len(provs) == 0 {

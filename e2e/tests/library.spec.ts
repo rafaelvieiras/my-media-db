@@ -248,4 +248,11 @@ test('editar caminho de datasource cadastrado recasca sem novo scan', async ({
   await expect(page.getByText('online')).toBeVisible()
   await page.goto('/')
   await expect(page.getByRole('link', { name: /Matrix/ }).first()).toBeVisible()
+
+  // "Ver Todos" (briefing 0114/ADR-0030): link ao lado do título do carrossel,
+  // só aparece com dado real no rail (este item TEM posse, via scan real acima)
+  // — navega pra /library/movies, a listagem completa daquele tipo.
+  await page.getByRole('link', { name: 'Ver Todos' }).click()
+  await expect(page).toHaveURL('/library/movies')
+  await expect(page.getByRole('link', { name: /Matrix/ }).first()).toBeVisible()
 })

@@ -3,10 +3,12 @@ package e2e
 // Jornada de MÚSICA (briefings 0106/0115): importa um artista pela busca manual
 // (discografia inteira, ADR-0027) e completa o álbum com a faixa que ficou de
 // fora via a tela externa de "faixas faltando" (0115 Parte 2, ADR-0029). Usa o
-// fakeMusicbrainz (fake_musicbrainz_test.go) — o harness E2E desta camada não
-// sobe o scanner, então o caminho testado é o de import HTTP direto (busca
-// manual → importar artista; tela externa → importar faixa avulsa), não o
-// gatilho automático do scan.
+// fake.Musicbrainz (internal/provider/fake/musicbrainz.go) — o MESMO fake que
+// o binário real usa quando MYMEDIADB_FAKE_PROVIDER=1 (cmd/mymediadb), pra não
+// duplicar a fixture entre Camada 1 (aqui) e Camada 2 (Playwright). O harness
+// E2E desta camada não sobe o scanner, então o caminho testado é o de import
+// HTTP direto (busca manual → importar artista; tela externa → importar faixa
+// avulsa), não o gatilho automático do scan.
 //
 // As asserções por etapa vivem em helpers próprios (importarArtistaEAlbum/
 // assertMembrosAlbum/assertFaixaFaltando/importarFaixaAvulsa) para manter o
@@ -17,11 +19,12 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 	"github.com/rafaelvieiras/my-media-db/internal/server"
 )
 
 func TestJornadaMusicaImportArtistaEFaixaFaltando(t *testing.T) {
-	c := novoHarnessComOpcoes(t, server.WithSearchProvider(fakeMusicbrainz{}))
+	c := novoHarnessComOpcoes(t, server.WithSearchProvider(fake.NewMusicbrainz()))
 
 	// 1) Importa o artista inteiro (busca manual → POST /import type=artista,
 	// 0106): cria artista + o único álbum + a faixa que a árvore fake traz.
@@ -58,7 +61,7 @@ func importarArtistaEAlbum(t *testing.T, c *cliente) (artistaID, albumID string)
 	t.Helper()
 	artista := c.obj("POST", "/api/v1/import", map[string]any{
 		"source":    "musicbrainz",
-		"source_id": mbArtistaMBID,
+		"source_id": fake.MusicbrainzArtistaID,
 		"type":      "artista",
 	}, http.StatusCreated)
 	artistaID = str(t, artista, "id")
@@ -86,7 +89,7 @@ func assertMembrosAlbum(t *testing.T, c *cliente, albumID string, quero int) {
 // da faixa faltando, para o chamador importá-la em seguida.
 func assertFaixaFaltando(t *testing.T, c *cliente, albumID string) string {
 	t.Helper()
-	albumExt := c.obj("GET", "/api/v1/external/musicbrainz/album/"+mbAlbumMBID, nil, http.StatusOK)
+	albumExt := c.obj("GET", "/api/v1/external/musicbrainz/album/"+fake.MusicbrainzAlbumID, nil, http.StatusOK)
 	if got := str(t, albumExt, "internal_id"); got != albumID {
 		t.Fatalf("internal_id do álbum externo = %q, quero %q", got, albumID)
 	}
@@ -102,8 +105,8 @@ func assertFaixaFaltando(t *testing.T, c *cliente, albumID string) string {
 		t.Fatalf("track[1].internal_id = %v, quero nil (faixa ainda não importada)", tracks[1]["internal_id"])
 	}
 	faixa2SourceID := str(t, tracks[1], "source_id")
-	if faixa2SourceID != mbFaixa2MBID {
-		t.Fatalf("track[1].source_id = %q, quero %q", faixa2SourceID, mbFaixa2MBID)
+	if faixa2SourceID != fake.MusicbrainzFaixa2ID {
+		t.Fatalf("track[1].source_id = %q, quero %q", faixa2SourceID, fake.MusicbrainzFaixa2ID)
 	}
 	return faixa2SourceID
 }
