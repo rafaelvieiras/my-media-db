@@ -25,7 +25,9 @@ import (
 	"sort"
 	"time"
 
+	"github.com/rafaelvieiras/my-media-db/internal/matching"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
+	"github.com/rafaelvieiras/my-media-db/internal/textsim"
 )
 
 const (
@@ -208,33 +210,174 @@ func (c *Client) BuscarArtistaArvore(ctx context.Context, sourceID string, langs
 // getMB (instabilidade do servidor público) todos degradam pro mesmo shell -- álbum com
 // nome/MBID/ano mas sem faixas -- em vez de derrubar a árvore inteira (ver
 // BuscarArtistaArvore). Faixas ausentes por causa disso são corrigíveis num reimport
-// posterior (find-or-create por MBID, idempotente).
+// posterior (find-or-create por MBID, idempotente). `title`/`firstReleaseDate` são
+// OPCIONAIS (briefing 0115): quando vazios (chamador não os tem de antemão, ver
+// BuscarAlbumDaFaixa), usa o título/data que o PRÓPRIO release-group devolve
+// (rg.Title/rg.FirstReleaseDate) -- o chamador que já os tem (BuscarArtistaArvore, a
+// partir do browse de release-groups do artista) evita essa dependência do 2º campo.
 func (c *Client) montarAlbum(ctx context.Context, rgID, title, firstReleaseDate string) provider.AlbumExterno {
-	shell := provider.AlbumExterno{Name: title, MBID: rgID, Year: anoDe(firstReleaseDate)}
+	album, err := c.montarAlbumOuErro(ctx, rgID, title, firstReleaseDate)
+	if err != nil {
+		return provider.AlbumExterno{Name: title, MBID: rgID, Year: anoDe(firstReleaseDate)}
+	}
+	return album
+}
 
+// montarAlbumOuErro é o corpo de montarAlbum que PROPAGA o erro da 1ª chamada
+// (busca do release-group) em vez de degradar para o shell -- extraído para
+// BuscarAlbumPorMbid (briefing 0115 Parte 2), o único caminho de
+// MusicaAlbumProvider que não tem uma resolução prévia confirmando que o
+// release-group existe, então precisa saber se a falha foi "não encontrado"
+// (→ ErrNaoEncontrado, 404) ou outra coisa. A falha da chamada de FAIXAS
+// (buscarFaixas) continua degradando em silêncio (mesma semântica de sempre):
+// o release-group já foi confirmado nesta mesma chamada, então uma
+// instabilidade pontual na 2ª ida vale mais como álbum parcial (sem faixas,
+// corrigível num reimport) do que como erro pro chamador.
+func (c *Client) montarAlbumOuErro(ctx context.Context, rgID, title, firstReleaseDate string) (provider.AlbumExterno, error) {
 	body, err := c.getMB(ctx, "/release-group/"+url.PathEscape(rgID), url.Values{"inc": {"releases+genres"}})
 	if err != nil {
-		return shell
+		return provider.AlbumExterno{}, err
 	}
 	var rg respReleaseGroup
 	if err := json.Unmarshal(body, &rg); err != nil {
-		return shell
+		return provider.AlbumExterno{}, fmt.Errorf("musicbrainz: release-group invalido: %w", err)
 	}
 
-	album := shell
+	album := provider.AlbumExterno{Name: title, MBID: rgID, Year: anoDe(firstReleaseDate)}
+	if album.Name == "" {
+		album.Name = rg.Title
+	}
+	if album.Year == "" {
+		album.Year = anoDe(rg.FirstReleaseDate)
+	}
 	album.Genre = generoPrincipal(rg.Genres)
 
 	releaseID, ok := escolherRelease(rg.Releases)
 	if !ok {
-		return album // release-group sem nenhuma release: album sem faixas
+		return album, nil // release-group sem nenhuma release: album sem faixas
 	}
 
 	faixas, err := c.buscarFaixas(ctx, releaseID)
 	if err != nil {
-		return album // release indisponivel (404 ou retry esgotado): degrada sem faixas
+		return album, nil // release indisponivel (404 ou retry esgotado): degrada sem faixas
 	}
 	album.Faixas = faixas
-	return album
+	return album, nil
+}
+
+// BuscarAlbumPorMbid é a capacidade provider.MusicaAlbumProvider (ADR-0029 item 6,
+// briefing 0115 Parte 2), caminho DIRETO: o MBID já é o do release-group -- usado
+// pela tela externa de álbum (GET /external/musicbrainz/album/{mbid}) e pelo import
+// de faixa avulsa (ambos partem do external_ids["mbid"] já gravado na entity álbum
+// interna). Ao contrário de montarAlbum (usado só DEPOIS de resolvido por outro
+// caminho), aqui a existência do release-group é validada nesta própria chamada via
+// montarAlbumOuErro -- 404 vira provider.ErrNaoEncontrado (errors.Is).
+func (c *Client) BuscarAlbumPorMbid(ctx context.Context, albumMBID string, langs []string) (provider.AlbumExterno, error) {
+	_ = langs
+	if albumMBID == "" {
+		return provider.AlbumExterno{}, fmt.Errorf("musicbrainz: mbid de album vazio")
+	}
+	return c.montarAlbumOuErro(ctx, albumMBID, "", "")
+}
+
+// BuscarAlbumDaFaixa é a capacidade provider.MusicaAlbumProvider (ADR-0029 item 6,
+// briefing 0115), caminho PRECISO: resolve o release-group que contém o recording
+// `recordingMBID` (1 chamada, /recording/{id}?inc=releases+release-groups -- cada
+// release do recording já vem com seu release-group aninhado, sem chamada extra) e
+// monta ESSE único álbum via montarAlbum (mais 1+1 chamadas) -- nunca a discografia
+// inteira. Entre as releases do recording, prefere a de status "Official" (mesmo
+// critério de escolherRelease); sem nenhuma, a primeira com release-group presente.
+func (c *Client) BuscarAlbumDaFaixa(ctx context.Context, recordingMBID string, langs []string) (provider.AlbumExterno, bool, error) {
+	_ = langs
+	if recordingMBID == "" {
+		return provider.AlbumExterno{}, false, fmt.Errorf("musicbrainz: mbid de faixa vazio")
+	}
+	body, err := c.getMB(ctx, "/recording/"+url.PathEscape(recordingMBID), url.Values{"inc": {"releases+release-groups"}})
+	if err != nil {
+		return provider.AlbumExterno{}, false, err
+	}
+	var rec respRecordingReleases
+	if err := json.Unmarshal(body, &rec); err != nil {
+		return provider.AlbumExterno{}, false, fmt.Errorf("musicbrainz: recording invalido: %w", err)
+	}
+	rgID, ok := escolherReleaseGroupDoRecording(rec.Releases)
+	if !ok {
+		return provider.AlbumExterno{}, false, nil
+	}
+	return c.montarAlbum(ctx, rgID, "", ""), true, nil
+}
+
+// escolherReleaseGroupDoRecording escolhe, entre as releases do recording, o
+// release-group da PRIMEIRA de status "Official" (mesmo critério de
+// escolherRelease); sem nenhuma oficial, o release-group da primeira que tiver um
+// (algumas releases podem vir sem release-group aninhado -- dado incompleto na
+// fonte). ok=false sem NENHUMA release com release-group utilizável.
+func escolherReleaseGroupDoRecording(releases []respReleaseComGrupo) (string, bool) {
+	for _, r := range releases {
+		if r.Status == "Official" && r.ReleaseGroup.ID != "" {
+			return r.ReleaseGroup.ID, true
+		}
+	}
+	for _, r := range releases {
+		if r.ReleaseGroup.ID != "" {
+			return r.ReleaseGroup.ID, true
+		}
+	}
+	return "", false
+}
+
+// BuscarAlbumPorNome é a capacidade provider.MusicaAlbumProvider (ADR-0029 item 6,
+// briefing 0115), caminho TEXTUAL: lista os release-groups do artista `artistaMBID`
+// (1 chamada barata -- /artist/{id}?inc=release-groups, só ids/títulos, o MESMO
+// 1º request que BuscarArtistaArvore já faz), escolhe o de título mais próximo de
+// `nomeAlbum` (Jaro-Winkler via internal/textsim, limiar matching.LimiarAutoMatch --
+// mesmo motor/número que o scanner usa para o match textual de artista, ver
+// internal/scanner/musica.go melhorCandidatoTexto) e monta SÓ esse álbum via
+// montarAlbum -- nunca os demais release-groups listados.
+func (c *Client) BuscarAlbumPorNome(ctx context.Context, artistaMBID, nomeAlbum string, langs []string) (provider.AlbumExterno, bool, error) {
+	_ = langs
+	if artistaMBID == "" || nomeAlbum == "" {
+		return provider.AlbumExterno{}, false, fmt.Errorf("musicbrainz: artista ou nome de album vazio")
+	}
+	body, err := c.getMB(ctx, "/artist/"+url.PathEscape(artistaMBID), url.Values{"inc": {"release-groups"}})
+	if err != nil {
+		return provider.AlbumExterno{}, false, err
+	}
+	var art respArtistaArvore
+	if err := json.Unmarshal(body, &art); err != nil {
+		return provider.AlbumExterno{}, false, fmt.Errorf("musicbrainz: artista invalido: %w", err)
+	}
+	rg, ok := melhorReleaseGroupPorTitulo(nomeAlbum, art.ReleaseGroups)
+	if !ok {
+		return provider.AlbumExterno{}, false, nil
+	}
+	return c.montarAlbum(ctx, rg.ID, rg.Title, rg.FirstReleaseDate), true, nil
+}
+
+// melhorReleaseGroupPorTitulo escolhe, entre `rgs`, o de título mais próximo de
+// `alvo` -- mesmo critério de melhorCandidatoTexto do scanner (Jaro-Winkler,
+// matching.LimiarAutoMatch, SEM empate no topo): um nome ambíguo ou fraco demais
+// nunca aplica um match "parecido", cai para (zero,false).
+func melhorReleaseGroupPorTitulo(alvo string, rgs []respReleaseGroupBreve) (respReleaseGroupBreve, bool) {
+	melhorScore := -1.0
+	var melhor respReleaseGroupBreve
+	empate := false
+	for _, rg := range rgs {
+		if rg.ID == "" {
+			continue
+		}
+		score := textsim.Similaridade(alvo, rg.Title) * 100
+		switch {
+		case score > melhorScore:
+			melhorScore, melhor, empate = score, rg, false
+		case score == melhorScore:
+			empate = true
+		}
+	}
+	if empate || melhorScore < matching.LimiarAutoMatch {
+		return respReleaseGroupBreve{}, false
+	}
+	return melhor, true
 }
 
 // escolherRelease escolhe QUAL release representa o álbum para efeito de tracklist,
@@ -546,15 +689,40 @@ type respBuscaArtista struct {
 	} `json:"artists"`
 }
 
-// respArtistaArvore é a resposta de GET /artist/{id}?inc=release-groups+annotation&fmt=json.
+// respArtistaArvore é a resposta de GET /artist/{id}?inc=release-groups+annotation&fmt=json
+// (BuscarArtistaArvore) OU GET /artist/{id}?inc=release-groups&fmt=json (BuscarAlbumPorNome
+// -- annotation não é pedido nesse caminho, o campo fica zero-value, sem problema).
 type respArtistaArvore struct {
-	Name          string `json:"name"`
-	Annotation    string `json:"annotation"`
-	ReleaseGroups []struct {
-		ID               string `json:"id"`
-		Title            string `json:"title"`
-		FirstReleaseDate string `json:"first-release-date"`
-	} `json:"release-groups"`
+	Name          string                  `json:"name"`
+	Annotation    string                  `json:"annotation"`
+	ReleaseGroups []respReleaseGroupBreve `json:"release-groups"`
+}
+
+// respReleaseGroupBreve é um release-group RESUMIDO, como listado dentro da árvore do
+// artista (inc=release-groups) -- ids/títulos, sem faixas (BuscarArtistaArvore itera e
+// monta cada um via montarAlbum; BuscarAlbumPorNome escolhe UM por título e só monta
+// esse, ver melhorReleaseGroupPorTitulo).
+type respReleaseGroupBreve struct {
+	ID               string `json:"id"`
+	Title            string `json:"title"`
+	FirstReleaseDate string `json:"first-release-date"`
+}
+
+// respReleaseComGrupo é uma release do recording (inc=releases+release-groups), com o
+// release-group ANINHADO -- usada só por BuscarAlbumDaFaixa/escolherReleaseGroupDoRecording
+// para resolver o álbum de um recording sem uma 2ª ida por release.
+type respReleaseComGrupo struct {
+	ID           string `json:"id"`
+	Status       string `json:"status"`
+	ReleaseGroup struct {
+		ID string `json:"id"`
+	} `json:"release-group"`
+}
+
+// respRecordingReleases é a resposta de GET /recording/{id}?inc=releases+release-groups&fmt=json
+// (só o campo usado por BuscarAlbumDaFaixa).
+type respRecordingReleases struct {
+	Releases []respReleaseComGrupo `json:"releases"`
 }
 
 // generoMB é um gênero com sua contagem (voto), como o MusicBrainz devolve em `inc=genres`.
@@ -571,9 +739,15 @@ type respReleaseResumo struct {
 }
 
 // respReleaseGroup é a resposta de GET /release-group/{id}?inc=releases+genres&fmt=json.
+// Title/FirstReleaseDate são atributos CORE do release-group (a fonte sempre os devolve,
+// mesmo sem pedir via inc) -- usados por montarAlbum como fallback quando o chamador não
+// os tem de antemão (briefing 0115, BuscarAlbumDaFaixa não faz o browse do artista
+// antes).
 type respReleaseGroup struct {
-	Genres   []generoMB          `json:"genres"`
-	Releases []respReleaseResumo `json:"releases"`
+	Title            string              `json:"title"`
+	FirstReleaseDate string              `json:"first-release-date"`
+	Genres           []generoMB          `json:"genres"`
+	Releases         []respReleaseResumo `json:"releases"`
 }
 
 // creditoMB é uma entrada de artist-credit (a MusicBrainz modela como lista, para juntar

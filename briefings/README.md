@@ -237,10 +237,10 @@ busca como se fossem tipos de topo. Ver [ADR-0029](../docs/adr/0029-import-de-mu
 
 | ID | Briefing | Tipo | Status | Depende de |
 |---|---|---|---|---|
-| [0112](0112-registro-tipos-de-topo.md) | Registro de tipos "de topo" (fundação): fonte única Go, substitui duas exclusões hardcoded divergentes | chore/fundação | ready | — |
-| [0113](0113-busca-generica-multi-schema.md) | Busca genérica multi-schema: filtro de tipo dinâmico, agrupamento por tipo real | feature | ready | 0112 |
-| [0114](0114-home-topo-e-rota-library.md) | Home só com tipos de topo (remove grid completo) + rota `/library/:entitySlug` com "Ver Todos" | feature | ready | 0112 |
-| [0115](0115-musica-import-local-first.md) | Música: import local-first (só o que a faixa possuída traz), faixas faltando importáveis sob demanda, feat não auto-criado | fix/feature | ready | 0105, 0106, 0107 |
+| [0112](0112-registro-tipos-de-topo.md) | Registro de tipos "de topo" (fundação): fonte única Go, substitui duas exclusões hardcoded divergentes | chore/fundação | done | — |
+| [0113](0113-busca-generica-multi-schema.md) | Busca genérica multi-schema: filtro de tipo dinâmico, agrupamento por tipo real | feature | done | 0112 |
+| [0114](0114-home-topo-e-rota-library.md) | Home só com tipos de topo (remove grid completo) + rota `/library/:entitySlug` com "Ver Todos" | feature | done | 0112 |
+| [0115](0115-musica-import-local-first.md) | Música: import local-first (só o que a faixa possuída traz), faixas faltando importáveis sob demanda, feat não auto-criado | fix/feature | in-progress | 0105, 0106, 0107 |
 
 ### Transversal — Infraestrutura operacional
 

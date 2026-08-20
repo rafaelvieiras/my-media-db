@@ -65,6 +65,27 @@ func (s *Server) idInternoColecao(ctx context.Context, source, sourceID string) 
 	return &col.ID
 }
 
+// idInternoPorMbid devolve o id da entity interna (artista/álbum/faixa) já
+// catalogada com este MBID de MusicBrainz, ou nil quando não existe ou `sourceID`
+// é vazio. Generaliza idInternoItem/idInternoColecao (que despacham por `source` de
+// filme/tv) para a vertical de música (briefing 0115 Parte 2): o id externo
+// universal da música é sempre o MBID (coluna gerada external_id_mbid),
+// independente do entity.type. Usado pela tela externa de álbum
+// (external_album.go) para marcar internal_id tanto no álbum quanto em cada faixa
+// oficial do release. Mesma resiliência de idInternoItem: erro real de banco
+// degrada para nil (loga).
+func (s *Server) idInternoPorMbid(ctx context.Context, sourceID string) *string {
+	if sourceID == "" {
+		return nil
+	}
+	ent, err := s.leitura().ObterEntityPorMbid(ctx, nsDe(sourceID))
+	if err != nil {
+		logSeErroReal("id interno por mbid", sourceID, err)
+		return nil
+	}
+	return &ent.ID
+}
+
 // logSeErroReal loga apenas erros REAIS de banco — a ausência de linha
 // (sql.ErrNoRows) é o caso normal "não importado" e não merece log.
 func logSeErroReal(contexto, sourceID string, err error) {

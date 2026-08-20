@@ -27,6 +27,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
+	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/mediainfo"
@@ -107,16 +108,20 @@ type Materializador interface {
 	MaterializarSeAutoDownloadLigado(ctx context.Context, entityID string) error
 }
 
-// MusicaImportador é o ponto de IMPORT da vertical de música (briefing 0107,
-// ADR-0027) que o scanner consome quando resolve o MBID de um ARTISTA (por
-// MBID embutido no arquivo, resolução reversa faixa→artista, ou busca
-// textual): importa a discografia inteira, idempotente por MBID -- o MESMO
-// método genérico Importar que toda vertical já usa (0015/0031/0106).
-// Interface estreita (mesmo padrão de SerieImporter/FilmeImportador) para não
-// acoplar o scanner ao pacote enrich inteiro. Implementado por
+// MusicaImportador é o ponto de IMPORT da vertical de música que o scanner
+// consome. Importar (briefing 0107/ADR-0027) é o método genérico que toda
+// vertical já usa (0015/0031/0106) -- hoje só usado pelo import MANUAL
+// deliberado (busca → importar artista, dispatcher type="artista"), que traz
+// a discografia inteira e PERMANECE intocado. ImportarFaixaPossuida (ADR-0029,
+// briefing 0115) é o import ESCOPADO que o gatilho AUTOMÁTICO do scan usa
+// desde então: uma faixa possuída traz só o artista (identidade) + o ÁLBUM
+// daquela faixa + a própria faixa, nunca a árvore inteira. Interface estreita
+// (mesmo padrão de SerieImporter/FilmeImportador) para não acoplar o scanner
+// ao pacote enrich inteiro (só o tipo FaixaAlvo é exposto). Implementado por
 // *enrich.Servico.
 type MusicaImportador interface {
 	Importar(ctx context.Context, source, sourceID, tipo string, langs []string) (id string, criada bool, err error)
+	ImportarFaixaPossuida(ctx context.Context, source, artistaMBID string, alvo enrich.FaixaAlvo, langs []string) (faixaID string, criada bool, err error)
 }
 
 // LibraryGetter é o subconjunto de library.Service que o scanner consome

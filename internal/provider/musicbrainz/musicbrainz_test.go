@@ -52,7 +52,10 @@ func servidorMBFake(t *testing.T) *httptest.Server {
 
 	mux.HandleFunc("/artist/artist-1", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Query().Get("inc") == "release-groups+annotation" {
+		// BuscarArtistaArvore pede "release-groups+annotation"; BuscarAlbumPorNome
+		// (briefing 0115) pede só "release-groups" (sem annotation, que não usa) --
+		// os dois recebem a mesma lista de release-groups.
+		if inc := r.URL.Query().Get("inc"); strings.Contains(inc, "release-groups") {
 			_, _ = w.Write([]byte(`{
 				"name": "Test Artist",
 				"annotation": "",
@@ -74,9 +77,33 @@ func servidorMBFake(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/release-group/rg-1", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
+			"title": "Album One",
+			"first-release-date": "1999-05-01",
 			"genres": [{"name": "rock", "count": 5}, {"name": "pop", "count": 2}],
 			"releases": [{"id": "rel-1", "status": "Official"}]
 		}`))
+	})
+
+	// rotas de /recording -- usadas por BuscarAlbumDaFaixa (briefing 0115): "rec-1"
+	// resolve para o release-group "rg-1" (via "rel-1", já servido acima); "rec-sem-rg"
+	// tem uma release SEM release-group aninhado (dado incompleto na fonte).
+	mux.HandleFunc("/recording/rec-1", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("inc"); got != "releases+release-groups" {
+			t.Errorf("inc = %q, quero releases+release-groups", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"releases": [
+				{"id": "rel-1", "status": "Official", "release-group": {"id": "rg-1"}}
+			]
+		}`))
+	})
+	mux.HandleFunc("/recording/rec-sem-rg", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"releases": [{"id": "rel-x", "status": "Official"}]}`))
+	})
+	mux.HandleFunc("/recording/rec-inexistente-album", func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
 	})
 
 	mux.HandleFunc("/release-group/rg-2", func(w http.ResponseWriter, r *http.Request) {
@@ -403,6 +430,120 @@ func TestBuscarArtistaArvoreAlbumPersistentementeIndisponivelDegradaSemAbortar(t
 	}
 }
 
+// TestBuscarAlbumDaFaixa cobre o caminho PRECISO (briefing 0115): resolve o
+// release-group a partir do MBID de recording "rec-1" (via "rel-1"/status
+// Official) e monta SÓ esse álbum -- nome/ano vêm do PRÓPRIO release-group
+// (rg.Title/rg.FirstReleaseDate), já que o chamador não os tem de antemão.
+func TestBuscarAlbumDaFaixa(t *testing.T) {
+	mb := servidorMBFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	album, achou, err := c.BuscarAlbumDaFaixa(context.Background(), "rec-1", nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumDaFaixa: %v", err)
+	}
+	if !achou {
+		t.Fatal("achou = false, esperava true")
+	}
+	if album.Name != "Album One" || album.MBID != "rg-1" || album.Year != "1999" || album.Genre != "rock" {
+		t.Fatalf("album inesperado: %+v", album)
+	}
+	if len(album.Faixas) != 2 {
+		t.Fatalf("len(Faixas) = %d, esperava 2 (rel-1)", len(album.Faixas))
+	}
+}
+
+// TestBuscarAlbumDaFaixaSemReleaseGroup cobre o dado incompleto na fonte
+// (recording tem releases, mas NENHUMA com release-group aninhado): ok=false,
+// graça -- não é erro.
+func TestBuscarAlbumDaFaixaSemReleaseGroup(t *testing.T) {
+	mb := servidorMBFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	_, achou, err := c.BuscarAlbumDaFaixa(context.Background(), "rec-sem-rg", nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumDaFaixa: %v", err)
+	}
+	if achou {
+		t.Fatal("achou = true, esperava false (sem release-group utilizavel)")
+	}
+}
+
+// TestBuscarAlbumDaFaixaRecordingNaoEncontrado cobre o 404: erro-sentinela
+// provider.ErrNaoEncontrado (errors.Is), mesmo contrato dos demais métodos.
+func TestBuscarAlbumDaFaixaRecordingNaoEncontrado(t *testing.T) {
+	mb := servidorMBFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	_, _, err := c.BuscarAlbumDaFaixa(context.Background(), "rec-inexistente-album", nil)
+	if !errors.Is(err, provider.ErrNaoEncontrado) {
+		t.Fatalf("err = %v, esperava provider.ErrNaoEncontrado", err)
+	}
+}
+
+// TestBuscarAlbumDaFaixaMbidVazio cobre a validação de entrada (sem ida à
+// rede): erro imediato, nunca um GET com path vazio.
+func TestBuscarAlbumDaFaixaMbidVazio(t *testing.T) {
+	c := novoClientDeTeste("http://unused.invalid", "")
+	if _, _, err := c.BuscarAlbumDaFaixa(context.Background(), "", nil); err == nil {
+		t.Fatal("esperava erro (mbid de faixa vazio)")
+	}
+}
+
+// TestBuscarAlbumPorNome cobre o caminho TEXTUAL (briefing 0115): lista os
+// release-groups do artista "artist-1" (rg-1 "Album One", rg-2 "Album Two") e
+// monta SÓ o que bate com "Album One" -- rg-2 nunca é montado (só listado).
+func TestBuscarAlbumPorNome(t *testing.T) {
+	mb := servidorMBFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	album, achou, err := c.BuscarAlbumPorNome(context.Background(), "artist-1", "Album One", nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumPorNome: %v", err)
+	}
+	if !achou {
+		t.Fatal("achou = false, esperava true")
+	}
+	if album.Name != "Album One" || album.MBID != "rg-1" || album.Year != "1999" || album.Genre != "rock" {
+		t.Fatalf("album inesperado: %+v", album)
+	}
+	if len(album.Faixas) != 2 {
+		t.Fatalf("len(Faixas) = %d, esperava 2 (rel-1)", len(album.Faixas))
+	}
+}
+
+// TestBuscarAlbumPorNomeSemCandidato cobre nome sem correspondência
+// plausível (abaixo do limiar matching.LimiarAutoMatch): ok=false, graça.
+func TestBuscarAlbumPorNomeSemCandidato(t *testing.T) {
+	mb := servidorMBFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	_, achou, err := c.BuscarAlbumPorNome(context.Background(), "artist-1", "Totally Unrelated Name", nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumPorNome: %v", err)
+	}
+	if achou {
+		t.Fatal("achou = true, esperava false (nome sem correspondencia plausivel)")
+	}
+}
+
+// TestBuscarAlbumPorNomeArtistaNaoEncontrado cobre o 404 do artista.
+func TestBuscarAlbumPorNomeArtistaNaoEncontrado(t *testing.T) {
+	mb := servidorMBFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	_, _, err := c.BuscarAlbumPorNome(context.Background(), "does-not-exist", "Album One", nil)
+	if !errors.Is(err, provider.ErrNaoEncontrado) {
+		t.Fatalf("err = %v, esperava provider.ErrNaoEncontrado", err)
+	}
+}
+
 func TestMontarAlbumReleaseGroupSemReleases(t *testing.T) {
 	mb := servidorMBFake(t)
 	defer mb.Close()
@@ -414,6 +555,49 @@ func TestMontarAlbumReleaseGroupSemReleases(t *testing.T) {
 	}
 	if len(album.Faixas) != 0 {
 		t.Fatalf("esperava 0 faixas para release-group sem releases, teve %d", len(album.Faixas))
+	}
+}
+
+// TestBuscarAlbumPorMbid cobre o caminho DIRETO (briefing 0115 Parte 2): o MBID já
+// é o do release-group ("rg-1"), sem passo de resolução prévio -- monta o álbum
+// com suas faixas, mesmo shape de BuscarAlbumDaFaixa/BuscarAlbumPorNome.
+func TestBuscarAlbumPorMbid(t *testing.T) {
+	mb := servidorMBFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	album, err := c.BuscarAlbumPorMbid(context.Background(), "rg-1", nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumPorMbid: %v", err)
+	}
+	if album.Name != "Album One" || album.MBID != "rg-1" || album.Year != "1999" || album.Genre != "rock" {
+		t.Fatalf("album inesperado: %+v", album)
+	}
+	if len(album.Faixas) != 2 {
+		t.Fatalf("len(Faixas) = %d, esperava 2 (rel-1)", len(album.Faixas))
+	}
+}
+
+// TestBuscarAlbumPorMbidNaoEncontrado cobre o 404: ao contrário de montarAlbum (só
+// usado DEPOIS de uma resolução prévia, que degrada em silêncio), este método NÃO
+// tem resolução prévia -- por isso precisa propagar provider.ErrNaoEncontrado
+// (errors.Is) em vez de devolver um shell vazio indistinguível de "achou, sem dado".
+func TestBuscarAlbumPorMbidNaoEncontrado(t *testing.T) {
+	mb := servidorMBFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	_, err := c.BuscarAlbumPorMbid(context.Background(), "rg-inexistente", nil)
+	if !errors.Is(err, provider.ErrNaoEncontrado) {
+		t.Fatalf("err = %v, esperava provider.ErrNaoEncontrado", err)
+	}
+}
+
+// TestBuscarAlbumPorMbidVazio cobre a validação de entrada (sem ida à rede).
+func TestBuscarAlbumPorMbidVazio(t *testing.T) {
+	c := novoClientDeTeste("http://unused.invalid", "")
+	if _, err := c.BuscarAlbumPorMbid(context.Background(), "", nil); err == nil {
+		t.Fatal("esperava erro (mbid de album vazio)")
 	}
 }
 
@@ -491,11 +675,13 @@ func TestBuscarArtesSemMbidEhNoop(t *testing.T) {
 }
 
 // TestImplementaInterfaces é uma checagem em tempo de compilacao (nao roda nada) de que o
-// Client satisfaz as 3 interfaces esperadas: core provider.Provider, provider.MusicaProvider
-// e provider.ArteProvider.
+// Client satisfaz as interfaces esperadas: core provider.Provider, provider.MusicaProvider
+// (arvore, legado), provider.MusicaAlbumProvider (seletiva, briefing 0115),
+// provider.ArteProvider e provider.FaixaResolverProvider.
 func TestImplementaInterfaces(t *testing.T) {
 	var _ provider.Provider = (*Client)(nil)
 	var _ provider.MusicaProvider = (*Client)(nil)
+	var _ provider.MusicaAlbumProvider = (*Client)(nil)
 	var _ provider.ArteProvider = (*Client)(nil)
 	var _ provider.FaixaResolverProvider = (*Client)(nil)
 }

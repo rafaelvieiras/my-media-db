@@ -1271,6 +1271,46 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/v1/external/{source}/album/{id}:
+    get:
+      operationId: getExternalAlbum
+      summary: Álbum externo como página própria (briefing 0115 Parte 2, ADR-0029).
+      description: >
+        Faixas OFICIAIS do release de um álbum, para o dono ver o que falta importar
+        do que já tem em catálogo -- mesmo padrão de "item externo não-possuído" que
+        filme/série/coleção já usam. `id` é o MBID de RELEASE-GROUP (o mesmo gravado
+        em external_ids["mbid"] da entity `album` interna). `internal_id` (interno-
+        first, 0026) sai preenchido no álbum e em cada faixa já catalogada. Requer
+        uma fonte com a capacidade seletiva de álbum (provider.MusicaAlbumProvider,
+        senão 503). Ver o externo NUNCA cria entity.
+      tags: [entities]
+      parameters:
+        - name: source
+          in: path
+          required: true
+          description: "Fonte externa (ex.: musicbrainz)."
+          schema: { type: string }
+        - name: id
+          in: path
+          required: true
+          description: MBID de release-group do álbum NA FONTE (source_id).
+          schema: { type: string }
+        - $ref: "#/components/parameters/LangQuery"
+      responses:
+        "200":
+          description: Álbum externo com suas faixas oficiais.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExternalAlbum" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/images:
     get:
       operationId: getImageProxy
@@ -3143,10 +3183,18 @@ components:
           description: Id do item NA FONTE (obrigatório).
         type:
           type: string
-          enum: [movie, tv, collection]
+          enum: [movie, tv, collection, artista, faixa]
           description: >
             Tipo canônico do item (obrigatório). `collection` (0025) importa a coleção
             inteira: cria a entity `type='collection'` e importa/liga os filmes membros.
+            `artista` (0106) importa a discografia inteira (álbuns + faixas). `faixa`
+            (briefing 0115 Parte 2) importa UMA faixa avulsa faltando de um álbum já
+            interno -- exige `parent_id`.
+        parent_id:
+          type: string
+          description: >-
+            Id INTERNO do álbum pai a ligar (entity_relation kind=music_album) --
+            obrigatório quando type=faixa; ignorado nos demais tipos.
     CreateCollection:
       type: object
       description: >
@@ -4446,6 +4494,42 @@ components:
         parts:
           type: array
           items: { $ref: "#/components/schemas/ExternalCollectionPart" }
+    ExternalAlbumTrack:
+      type: object
+      description: >
+        Uma faixa OFICIAL do release (recording do MusicBrainz), briefing 0115
+        Parte 2.
+      required: [source_id, title, track_number, disc_number, isrc]
+      properties:
+        source_id: { type: string }
+        title: { type: string }
+        track_number: { type: integer }
+        disc_number: { type: integer }
+        isrc: { type: [string, "null"] }
+        internal_id:
+          type: [string, "null"]
+          description: >-
+            id da entity faixa interna quando esta faixa JA foi importada
+            (ligada ao album via entity_relation kind=music_album); null caso
+            contrario -- a UI entao oferece "Importar" para essa faixa.
+    ExternalAlbum:
+      type: object
+      description: >
+        Álbum externo como página (briefing 0115 Parte 2): metadados do release e
+        as faixas oficiais. `tracks` sai sempre como `[]` (nunca null).
+      required: [source, source_id, name, year, genre, tracks]
+      properties:
+        source: { type: string }
+        source_id: { type: string }
+        name: { type: string }
+        year: { type: [string, "null"] }
+        genre: { type: [string, "null"] }
+        internal_id:
+          type: [string, "null"]
+          description: "id da entity album interna quando este album ja foi importado; null caso contrario."
+        tracks:
+          type: array
+          items: { $ref: "#/components/schemas/ExternalAlbumTrack" }
     ExternalSimilar:
       type: object
       required: [source_id, type, title, year, poster_url]

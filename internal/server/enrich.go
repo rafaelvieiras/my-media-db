@@ -31,14 +31,18 @@ type enrichBody struct {
 	Force    bool   `json:"force"`
 }
 
-// importBody é o corpo de POST /import. type deve ser movie|tv|collection e
-// source_id não-vazio (senão 422); sem source a fonte-default é resolvida
+// importBody é o corpo de POST /import. type deve ser movie|tv|collection|artista|
+// faixa e source_id não-vazio (senão 422); sem source a fonte-default é resolvida
 // DINAMICAMENTE por capacidade (fonteDefault, 0047). type='collection' (0025)
-// importa a coleção inteira: cria a entity da coleção e importa/liga os filmes membros.
+// importa a coleção inteira: cria a entity da coleção e importa/liga os filmes
+// membros. type='faixa' (briefing 0115 Parte 2, faixa avulsa faltando de um álbum
+// já interno) exige ParentID: o id INTERNO do álbum pai a ligar (entity_relation
+// kind=music_album) -- os demais tipos ignoram este campo.
 type importBody struct {
 	Source   string `json:"source"`
 	SourceID string `json:"source_id"`
 	Type     string `json:"type"`
+	ParentID string `json:"parent_id"`
 }
 
 // enrichEntity trata POST /api/v1/entities/{id}/enrich. 404 se a entity não
@@ -107,11 +111,18 @@ func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !tipoImportavel(body.Type) {
-		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "type inválido (use movie, tv ou collection)")
+		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "type inválido (use movie, tv, collection, artista ou faixa)")
 		return
 	}
 	if body.SourceID == "" {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "source_id é obrigatório")
+		return
+	}
+	// type=faixa (briefing 0115 Parte 2) exige o id INTERNO do álbum pai: sem ele
+	// não há como ligar a faixa avulsa (entity_relation kind=music_album) -- os
+	// demais tipos nem chegam a olhar body.ParentID.
+	if body.Type == "faixa" && body.ParentID == "" {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "parent_id é obrigatório para type=faixa")
 		return
 	}
 	// Sem source explícito: escolhe DINAMICAMENTE a fonte-default capaz do tipo (0047),
@@ -125,7 +136,17 @@ func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	id, criada, err := s.enrich.Importar(ctx, source, body.SourceID, body.Type, langs)
+	// type=faixa foge do dispatcher genérico s.enrich.Importar (que não carrega
+	// contexto de PAI): precisa do álbum interno (body.ParentID) para resolver o
+	// mbid do release e ligar a faixa por entity_relation -- ver
+	// enrich.ImportarFaixaAvulsa.
+	var id string
+	var criada bool
+	if body.Type == "faixa" {
+		id, criada, err = s.enrich.ImportarFaixaAvulsa(ctx, source, body.SourceID, body.ParentID, langs)
+	} else {
+		id, criada, err = s.enrich.Importar(ctx, source, body.SourceID, body.Type, langs)
+	}
 	if err != nil {
 		respondFonteIndisponivel(w)
 		return
@@ -227,11 +248,13 @@ func (s *Server) resolverFonte(w http.ResponseWriter, tipo, sourceExplicito stri
 }
 
 // tipoImportavel diz se `tipo` pode ser importado via POST /import (find-or-create):
-// movie, tv, collection ou artista (briefing 0106, ADR-0027 -- artista importa a
-// discografia inteira via MusicaProvider). Grãos finos (season/episode/album/faixa)
-// entram pela árvore do provider (série/música), não por import direto.
+// movie, tv, collection, artista (briefing 0106, ADR-0027 -- artista importa a
+// discografia inteira via MusicaProvider) ou faixa (briefing 0115 Parte 2 -- faixa
+// AVULSA faltando de um álbum já interno, exige body.ParentID; ver ImportarFaixaAvulsa
+// no importar() acima). Os demais grãos finos (season/episode/album) continuam
+// entrando só pela árvore do provider (série/música), não por import direto.
 func tipoImportavel(tipo string) bool {
-	return tipo == "movie" || tipo == "tv" || tipo == "collection" || tipo == "artista"
+	return tipo == "movie" || tipo == "tv" || tipo == "collection" || tipo == "artista" || tipo == "faixa"
 }
 
 // resolverSourceID devolve o source_id a usar: o do corpo (`sourceIDBody`), senão o
@@ -261,6 +284,13 @@ func provedorCapaz(p provider.Provider, tipo string) bool {
 		return ok
 	case "collection":
 		_, ok := p.(provider.ColecaoProvider)
+		return ok
+	case "faixa":
+		// briefing 0115 Parte 2: faixa avulsa exige a capacidade SELETIVA de álbum
+		// (BuscarAlbumPorMbid) -- ao contrário de "artista" (default abaixo, gap
+		// pré-existente fora deste escopo), aqui a checagem é nova e não muda
+		// comportamento de tipo nenhum que já funcionava.
+		_, ok := p.(provider.MusicaAlbumProvider)
 		return ok
 	default:
 		return true

@@ -107,13 +107,14 @@ describe('EntityDetailScreen — álbum: tracklist (0111)', () => {
     expect(link.closest('a')?.getAttribute('href')).toBe('/entities/fx1')
   })
 
-  it('não mostra a Discografia (seção de artista) no álbum', async () => {
+  it('não mostra a Discografia (seção de artista) no álbum, nem "Ver faixas faltando" sem mbid', async () => {
     renderDetail(
       baseEntity({ id: 'e1', type: 'album', title: 'Álbum Teste' }),
       [faixa1],
     )
     await waitFor(() => expect(screen.getByText('Faixas')).toBeInTheDocument())
     expect(screen.queryByText('Discografia')).toBeNull()
+    expect(screen.queryByText('Ver faixas faltando')).toBeNull()
   })
 
   it('erro ao carregar as faixas: mostra o estado de erro, sem quebrar', async () => {
@@ -125,6 +126,24 @@ describe('EntityDetailScreen — álbum: tracklist (0111)', () => {
     expect(
       await screen.findByText('Não foi possível carregar as faixas'),
     ).toBeInTheDocument()
+  })
+
+  // "Ver faixas faltando" (briefing 0115 Parte 2, ADR-0029): link pra tela
+  // externa de álbum, só quando o álbum tem external_ids.mbid (MusicBrainz).
+  it('álbum com mbid: mostra o link "Ver faixas faltando" pro externo', async () => {
+    renderDetail(
+      baseEntity({
+        id: 'e1',
+        type: 'album',
+        title: 'Álbum Teste',
+        external_ids: { mbid: 'rg-1' },
+      }),
+      [faixa1],
+    )
+    const link = await screen.findByRole('link', {
+      name: /Ver faixas faltando/,
+    })
+    expect(link.getAttribute('href')).toBe('/external/musicbrainz/album/rg-1')
   })
 })
 

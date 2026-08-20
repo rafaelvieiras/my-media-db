@@ -1,10 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Music } from 'lucide-react'
+import { ListMusic, Music } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import { useLanguage } from '@/lib/language-context'
 import { entityMembersQueryOptions } from '@/lib/queries'
 import type { EntityCard } from '@/lib/api'
+
+// Fonte fixa da vertical de música (0106/0115): hoje só o MusicBrainz modela
+// artista/álbum/faixa — mesmo hardcode que o backend usa em provider.Nome().
+const SOURCE_MUSICBRAINZ = 'musicbrainz'
 
 // TracklistAlbum lista as FAIXAS de um ÁLBUM (briefing 0111): filhos por
 // entity_relation kind=music_album (ADR-0027, sort_index=track_number) — o
@@ -29,7 +34,7 @@ import type { EntityCard } from '@/lib/api'
 // contra dado real até o backend ganhar o mapeamento genérico (reportado no
 // resumo da implementação, não feito aqui por instrução explícita do
 // briefing §Passo 1: "endpoint hardcoded → não reescreva sozinho").
-export function TracklistAlbum({ id }: { id: string }) {
+export function TracklistAlbum({ id, mbid }: { id: string; mbid?: string }) {
   const { lang } = useLanguage()
   const { data, isPending, isError } = useQuery(
     entityMembersQueryOptions(id, lang),
@@ -38,7 +43,24 @@ export function TracklistAlbum({ id }: { id: string }) {
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-heading text-lg font-medium">Faixas</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-heading text-lg font-medium">Faixas</h2>
+        {/* "Ver faixas faltando" (briefing 0115 Parte 2, ADR-0029): mesma UX de
+            item externo não-possuído que filme/série/coleção já usam — só
+            aparece quando o álbum tem mbid (MusicBrainz), a única fonte que
+            modela a busca seletiva de álbum hoje. */}
+        {mbid ? (
+          <Button asChild variant="outline" size="sm">
+            <Link
+              to="/external/$source/$type/$id"
+              params={{ source: SOURCE_MUSICBRAINZ, type: 'album', id: mbid }}
+            >
+              <ListMusic aria-hidden />
+              Ver faixas faltando
+            </Link>
+          </Button>
+        ) : null}
+      </div>
       {isPending ? (
         <LoadingState label="Carregando faixas…" />
       ) : isError ? (

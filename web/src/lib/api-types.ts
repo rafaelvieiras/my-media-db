@@ -706,6 +706,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/external/{source}/album/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Álbum externo como página própria (briefing 0115 Parte 2, ADR-0029).
+     * @description Faixas OFICIAIS do release de um álbum, para o dono ver o que falta importar do que já tem em catálogo -- mesmo padrão de "item externo não-possuído" que filme/série/coleção já usam. `id` é o MBID de RELEASE-GROUP (o mesmo gravado em external_ids["mbid"] da entity `album` interna). `internal_id` (interno- first, 0026) sai preenchido no álbum e em cada faixa já catalogada. Requer uma fonte com a capacidade seletiva de álbum (provider.MusicaAlbumProvider, senão 503). Ver o externo NUNCA cria entity.
+     */
+    get: operations['getExternalAlbum']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/images': {
     parameters: {
       query?: never
@@ -1806,10 +1826,12 @@ export interface components {
       /** @description Id do item NA FONTE (obrigatório). */
       source_id: string
       /**
-       * @description Tipo canônico do item (obrigatório). `collection` (0025) importa a coleção inteira: cria a entity `type='collection'` e importa/liga os filmes membros.
+       * @description Tipo canônico do item (obrigatório). `collection` (0025) importa a coleção inteira: cria a entity `type='collection'` e importa/liga os filmes membros. `artista` (0106) importa a discografia inteira (álbuns + faixas). `faixa` (briefing 0115 Parte 2) importa UMA faixa avulsa faltando de um álbum já interno -- exige `parent_id`.
        * @enum {string}
        */
-      type: 'movie' | 'tv' | 'collection'
+      type: 'movie' | 'tv' | 'collection' | 'artista' | 'faixa'
+      /** @description Id INTERNO do álbum pai a ligar (entity_relation kind=music_album) -- obrigatório quando type=faixa; ignorado nos demais tipos. */
+      parent_id?: string
     }
     /** @description Corpo de POST /collections (0025 Fase B) — cria uma coleção LOCAL manual. Só o título é obrigatório; a descrição é opcional. */
     CreateCollection: {
@@ -2455,6 +2477,27 @@ export interface components {
       /** @description id da entity coleção interna quando esta coleção ja foi importada (0025/0026); null caso contrario. */
       internal_id?: string | null
       parts: components['schemas']['ExternalCollectionPart'][]
+    }
+    /** @description Uma faixa OFICIAL do release (recording do MusicBrainz), briefing 0115 Parte 2. */
+    ExternalAlbumTrack: {
+      source_id: string
+      title: string
+      track_number: number
+      disc_number: number
+      isrc: string | null
+      /** @description id da entity faixa interna quando esta faixa JA foi importada (ligada ao album via entity_relation kind=music_album); null caso contrario -- a UI entao oferece "Importar" para essa faixa. */
+      internal_id?: string | null
+    }
+    /** @description Álbum externo como página (briefing 0115 Parte 2): metadados do release e as faixas oficiais. `tracks` sai sempre como `[]` (nunca null). */
+    ExternalAlbum: {
+      source: string
+      source_id: string
+      name: string
+      year: string | null
+      genre: string | null
+      /** @description id da entity album interna quando este album ja foi importado; null caso contrario. */
+      internal_id?: string | null
+      tracks: components['schemas']['ExternalAlbumTrack'][]
     }
     ExternalSimilar: {
       source_id: string
@@ -3817,6 +3860,38 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['ExternalCollectionDetail']
+        }
+      }
+      400: components['responses']['Error']
+      404: components['responses']['Error']
+      502: components['responses']['Error']
+      503: components['responses']['Error']
+    }
+  }
+  getExternalAlbum: {
+    parameters: {
+      query?: {
+        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        lang?: components['parameters']['LangQuery']
+      }
+      header?: never
+      path: {
+        /** @description Fonte externa (ex.: musicbrainz). */
+        source: string
+        /** @description MBID de release-group do álbum NA FONTE (source_id). */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Álbum externo com suas faixas oficiais. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ExternalAlbum']
         }
       }
       400: components['responses']['Error']

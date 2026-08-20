@@ -203,6 +203,23 @@ func strs(t *testing.T, m map[string]any, chave string) []string {
 	return out
 }
 
+// objs converte um array JSON já decodificado ([]any, ex.: devolvido por
+// cliente.arr ou por um campo array dentro de um objeto) para []map[string]any,
+// falhando alto se algum elemento não for objeto — evita repetir o type-assert
+// em cada jornada que itera sobre members/tracks/etc.
+func objs(t *testing.T, xs []any) []map[string]any {
+	t.Helper()
+	out := make([]map[string]any, len(xs))
+	for i, x := range xs {
+		m, ok := x.(map[string]any)
+		if !ok {
+			t.Fatalf("elemento[%d] nao e objeto: %v", i, x)
+		}
+		out[i] = m
+	}
+	return out
+}
+
 func contem(xs []string, alvo string) bool {
 	for _, x := range xs {
 		if x == alvo {

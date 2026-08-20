@@ -353,7 +353,9 @@ export function EntityDetailScreen() {
             mostra a discografia (álbuns via kind=music_artista_principal,
             filtrando type=album). Mesmo padrão de branch por `data.type` do
             caller, acima. */}
-        {data.type === 'album' ? <TracklistAlbum id={id} /> : null}
+        {data.type === 'album' ? (
+          <TracklistAlbum id={id} mbid={data.external_ids.mbid} />
+        ) : null}
         {data.type === 'artista' ? <DiscografiaArtista id={id} /> : null}
 
         <ArtGallery

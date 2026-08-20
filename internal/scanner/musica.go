@@ -1,27 +1,34 @@
 package scanner
 
-// musica.go é o núcleo do scanner de MÚSICA (briefing 0107, ADR-0027): quando a
-// biblioteca é `content_type='music'`, cada arquivo de áudio é UMA faixa. O fluxo,
-// por arquivo, na ordem em que tenta resolver (para na primeira que resolver):
+// musica.go é o núcleo do scanner de MÚSICA (briefing 0107/0115, ADR-0027/ADR-0029):
+// quando a biblioteca é `content_type='music'`, cada arquivo de áudio é UMA faixa. O
+// fluxo, por arquivo, na ordem em que tenta resolver (para na primeira que resolver):
 //
 //  1. MBID de faixa (recording) embutido na tag -> ObterEntityPorMbid direto (o
-//     arquivo já foi catalogado antes, ou outra faixa do mesmo álbum já trouxe a
-//     árvore inteira nesta mesma execução ou numa anterior).
+//     arquivo já foi catalogado antes, ou outro arquivo do mesmo álbum já trouxe essa
+//     faixa nesta mesma execução ou numa anterior).
 //  2. MBID de faixa SEM match ainda, mas a tag TAMBÉM tem o MBID do artista ->
-//     importa a árvore inteira do artista (idempotente) e tenta o lookup de novo.
+//     import ESCOPADO (ADR-0029, enrich.ImportarFaixaPossuida): SÓ o artista
+//     (identidade) + o ÁLBUM daquela faixa + a própria faixa, idempotente -- NUNCA a
+//     discografia inteira -- e tenta o lookup de novo.
 //  3. MBID de faixa SEM MBID de artista na tag -> resolução REVERSA
 //     (provider.FaixaResolverProvider) faixa->artista, depois cai no mesmo caminho
 //     do passo 2.
 //  4. SEM NENHUM MBID embutido (caso DOMINANTE nos arquivos reais do dono -- os
 //     scripts pessoais dele não gravam esse tag): busca textual do artista
 //     (album_artist, com fallback para artist) no provider; candidato único e forte
-//     o bastante importa a árvore, e a faixa certa é localizada dentro dela
-//     comparando álbum/título/track_number da tag contra os filhos.
+//     o bastante dispara o MESMO import escopado do passo 2, mas pelo caminho
+//     TEXTUAL (álbum por nome via MusicaAlbumProvider.BuscarAlbumPorNome, faixa por
+//     título/track_number dentro dele) -- nunca a árvore inteira.
 //  5. SEM MATCH PLAUSÍVEL nenhum: cria uma entity `faixa` RASCUNHO (status=draft),
 //     só com os dados da tag (ou o nome do arquivo) -- SEM entity_relation de
 //     artista/álbum, fica solta até correção manual (mesmo espírito de
 //     acharOuCriarDraftSerie, mas sem find-or-create por título: cada arquivo sem
 //     match vira seu próprio draft).
+//
+// O import de árvore INTEIRA (discografia completa) continua existindo
+// (enrich.Importar, tipo="artista") mas só é disparado pelo import MANUAL
+// deliberado do dono (busca -> importar artista) -- nunca por este scanner.
 //
 // TUDO isto roda em factsMusica (fase de FATOS, chamada por computarFacts em
 // scan.go), FORA da transação de escrita do lote -- o import do enrich usa a
@@ -40,9 +47,9 @@ import (
 	"path/filepath"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/matching"
 	"github.com/rafaelvieiras/my-media-db/internal/mediainfo"
-	"github.com/rafaelvieiras/my-media-db/internal/musicext"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/textsim"
 )
@@ -125,8 +132,8 @@ func (r *scanRun) resolverFaixa(ctx context.Context, tags mediainfo.AudioTags, r
 }
 
 // acharFaixaPorMbid é o lookup PURO (sem rede) por MBID de recording -- o
-// caminho mais barato: o arquivo já foi catalogado antes, ou outra faixa do
-// mesmo álbum já disparou o import da árvore inteira nesta execução.
+// caminho mais barato: o arquivo já foi catalogado antes, ou o mesmo arquivo
+// (renomeado/movido) já resolveu esta faixa antes nesta mesma execução.
 func (r *scanRun) acharFaixaPorMbid(ctx context.Context, trackMBID string) (string, bool) {
 	e, err := sqlcgen.New(r.m.db.Read).ObterEntityPorMbid(ctx, nsOpt(trackMBID))
 	if err != nil {
@@ -136,12 +143,14 @@ func (r *scanRun) acharFaixaPorMbid(ctx context.Context, trackMBID string) (stri
 }
 
 // importarEAcharPorMbid resolve o MBID do ARTISTA (embutido na tag, ou via
-// resolução reversa faixa->artista quando só o MBID de faixa está presente),
-// importa a árvore inteira (idempotente) e refaz o lookup por MBID de faixa
-// para pegar a entity recém-criada. ok=false em qualquer degradação (sem
-// importador configurado, sem MBID de artista resolvível, import falhou, ou a
-// faixa buscada não apareceu na árvore importada -- dado divergente entre a
-// tag do arquivo e a fonte, raro mas possível).
+// resolução reversa faixa->artista quando só o MBID de faixa está presente) e
+// dispara o import ESCOPADO (ADR-0029, enrich.ImportarFaixaPossuida): só o
+// artista (identidade) + o ÁLBUM daquela faixa (resolvido pelo MBID de
+// recording via MusicaAlbumProvider.BuscarAlbumDaFaixa) + a própria faixa --
+// NUNCA a discografia inteira. ok=false em qualquer degradação (sem
+// importador configurado, sem MBID de artista resolvível, ou o import
+// escopado falhou -- sem match plausível na fonte, sem suporte à capacidade
+// seletiva, ou erro de rede/banco).
 func (r *scanRun) importarEAcharPorMbid(ctx context.Context, tags mediainfo.AudioTags, langs []string) (string, bool) {
 	if r.m.musicaImportador == nil {
 		return "", false
@@ -150,11 +159,13 @@ func (r *scanRun) importarEAcharPorMbid(ctx context.Context, tags mediainfo.Audi
 	if !ok {
 		return "", false
 	}
-	if _, _, err := r.m.musicaImportador.Importar(ctx, sourceMusicBrainz, artistaMBID, tipoArtista, langs); err != nil {
-		log.Printf("scanner: import da arvore do artista %s (faixa %s) falhou: %v", artistaMBID, tags.MusicBrainzTrackID, err)
+	alvo := enrich.FaixaAlvo{RecordingMBID: tags.MusicBrainzTrackID}
+	faixaID, _, err := r.m.musicaImportador.ImportarFaixaPossuida(ctx, sourceMusicBrainz, artistaMBID, alvo, langs)
+	if err != nil {
+		log.Printf("scanner: import escopado da faixa %s (artista %s) falhou: %v", tags.MusicBrainzTrackID, artistaMBID, err)
 		return "", false
 	}
-	return r.acharFaixaPorMbid(ctx, tags.MusicBrainzTrackID)
+	return faixaID, faixaID != ""
 }
 
 // resolverArtistaMBID devolve o MBID do artista: direto da tag quando
@@ -182,15 +193,16 @@ func (r *scanRun) resolverArtistaMBID(ctx context.Context, tags mediainfo.AudioT
 
 // matchTextual é o FALLBACK sem MBID embutido (caso dominante nos arquivos
 // reais do dono, ver AGENTS.md/briefing 0107): busca o artista por nome
-// (album_artist, com fallback para artist) no provider, importa a discografia
-// quando existe UM ÚNICO candidato cujo título bate com o limiar de
-// matching.LimiarAutoMatch (92%, o MESMO limiar já usado pelo auto-match de
-// filme -- reaproveitado de propósito para não inventar um segundo número
-// mágico: o raciocínio é idêntico, o custo de um falso-positivo aqui é
-// contaminar a árvore inteira do artista errado) contra o nome retornado pela
-// fonte, e localiza a faixa certa dentro da árvore recém-importada. Ambíguo
-// (>1 candidato empatado no topo) ou nenhum candidato forte o bastante:
-// ok=false (cai para o draft, passo 5) -- nunca aplica um match "parecido".
+// (album_artist, com fallback para artist) no provider e, existindo UM ÚNICO
+// candidato cujo título bate com o limiar de matching.LimiarAutoMatch (92%, o
+// MESMO limiar já usado pelo auto-match de filme -- reaproveitado de
+// propósito para não inventar um segundo número mágico) contra o nome
+// retornado pela fonte, dispara o import ESCOPADO (ADR-0029, briefing 0115:
+// enrich.ImportarFaixaPossuida) pelo caminho TEXTUAL -- álbum localizado por
+// nome (tags.Album, obrigatório aqui) e a faixa por título/track_number
+// dentro dele, NUNCA a árvore inteira. Ambíguo (>1 candidato empatado no
+// topo), sem álbum na tag, ou nenhum candidato forte o bastante: ok=false
+// (cai para o draft, passo 5) -- nunca aplica um match "parecido".
 func (r *scanRun) matchTextual(ctx context.Context, tags mediainfo.AudioTags, langs []string) (string, bool) {
 	if r.m.musicaProvider == nil || r.m.musicaImportador == nil {
 		return "", false
@@ -199,7 +211,7 @@ func (r *scanRun) matchTextual(ctx context.Context, tags mediainfo.AudioTags, la
 	if nomeArtista == "" {
 		nomeArtista = tags.Artist
 	}
-	if nomeArtista == "" {
+	if nomeArtista == "" || tags.Album == "" {
 		return "", false
 	}
 
@@ -217,17 +229,19 @@ func (r *scanRun) matchTextual(ctx context.Context, tags mediainfo.AudioTags, la
 		return "", false
 	}
 
-	artistaID, _, err := r.m.musicaImportador.Importar(ctx, sourceMusicBrainz, artistaMBID, tipoArtista, langs)
+	alvo := enrich.FaixaAlvo{AlbumNome: tags.Album, FaixaTitulo: tags.Title, FaixaNumero: tags.TrackNumber}
+	faixaID, _, err := r.m.musicaImportador.ImportarFaixaPossuida(ctx, sourceMusicBrainz, artistaMBID, alvo, langs)
 	if err != nil {
-		log.Printf("scanner: import do artista %s (busca textual %q) falhou: %v", artistaMBID, nomeArtista, err)
+		log.Printf("scanner: import escopado (busca textual artista %q album %q) falhou: %v", nomeArtista, tags.Album, err)
 		return "", false
 	}
-	return r.acharFaixaNaArvore(ctx, artistaID, tags)
+	return faixaID, faixaID != ""
 }
 
-// candidatoTexto é um par (id,título) candidato a match textual -- usado
-// tanto para o artista (resultado de Provider.Buscar) quanto para um filho de
-// entity_relation (álbum ou faixa), ver melhorFilhoPorTitulo.
+// candidatoTexto é um par (id,título) candidato a match textual do ARTISTA
+// (resultado de Provider.Buscar) -- o match textual de álbum/faixa dentro do
+// release já resolvido é papel do provider (musicbrainz.melhorReleaseGroupPorTitulo)
+// e do enrich (melhorFaixaPorTitulo), não deste pacote (briefing 0115).
 type candidatoTexto struct {
 	id     string
 	titulo string
@@ -260,81 +274,6 @@ func melhorCandidatoTexto(alvo string, candidatos []candidatoTexto) (string, boo
 		return "", false
 	}
 	return melhorID, true
-}
-
-// acharFaixaNaArvore localiza, dentro da árvore JÁ IMPORTADA do artista
-// `artistaID`, o álbum cujo título mais se aproxima de tags.Album e, dentro
-// dele, a faixa cujo título mais se aproxima de tags.Title (ou, sem título na
-// tag, a faixa cujo track_number bate) -- reaproveita entity_relation
-// GENÉRICA (kind=music_artista_principal artista->álbum, kind=music_album
-// álbum->faixa, internal/musicext), nenhuma query nova.
-func (r *scanRun) acharFaixaNaArvore(ctx context.Context, artistaID string, tags mediainfo.AudioTags) (string, bool) {
-	if tags.Album == "" {
-		return "", false
-	}
-	q := sqlcgen.New(r.m.db.Read)
-	rels, err := q.ListarRelacoesFilhas(ctx, artistaID)
-	if err != nil {
-		return "", false
-	}
-	albumID, ok := melhorFilhoPorTitulo(ctx, q, rels, musicext.KindArtistaPrincipal, tags.Album)
-	if !ok {
-		return "", false
-	}
-	faixaRels, err := q.ListarRelacoesFilhas(ctx, albumID)
-	if err != nil {
-		return "", false
-	}
-	if tags.Title != "" {
-		return melhorFilhoPorTitulo(ctx, q, faixaRels, musicext.KindAlbum, tags.Title)
-	}
-	return faixaPorNumero(ctx, q, faixaRels, tags.TrackNumber)
-}
-
-// melhorFilhoPorTitulo escolhe, entre os filhos de `rels` do `kind` pedido, o
-// de título mais próximo de `titulo` (mesmo critério/limiar de
-// melhorCandidatoTexto) -- usado tanto para achar o álbum quanto, dentro
-// dele, a faixa por título.
-func melhorFilhoPorTitulo(ctx context.Context, q *sqlcgen.Queries, rels []sqlcgen.EntityRelation, kind, titulo string) (string, bool) {
-	var candidatos []candidatoTexto
-	for _, rel := range rels {
-		if rel.Kind != kind {
-			continue
-		}
-		ent, err := q.ObterEntity(ctx, rel.ChildID)
-		if err != nil {
-			continue
-		}
-		candidatos = append(candidatos, candidatoTexto{id: ent.ID, titulo: ent.Title})
-	}
-	return melhorCandidatoTexto(titulo, candidatos)
-}
-
-// faixaPorNumero é o desempate quando a tag não trouxe título de faixa (só
-// track number): compara contra o track_number gravado em extension_data
-// core.music@1 de cada faixa filha do álbum. numero<=0 (tag também sem
-// número): ok=false, sem heurística.
-func faixaPorNumero(ctx context.Context, q *sqlcgen.Queries, rels []sqlcgen.EntityRelation, numero int) (string, bool) {
-	if numero <= 0 {
-		return "", false
-	}
-	for _, rel := range rels {
-		if rel.Kind != musicext.KindAlbum {
-			continue
-		}
-		ent, err := q.ObterEntity(ctx, rel.ChildID)
-		if err != nil {
-			continue
-		}
-		ns := musicext.ExtractNamespace(ent.ExtensionDataJson, musicext.Namespace)
-		if ns == nil {
-			continue
-		}
-		if tn, ok := musicext.AsInt(ns["track_number"]); ok && tn == numero {
-			return ent.ID, true
-		}
-	}
-	return "", false
 }
 
 // criarFaixaDraft é o FALLBACK final (passo 5): cria a entity `faixa`

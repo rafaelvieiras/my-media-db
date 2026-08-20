@@ -233,12 +233,17 @@ export function ImportarButton({
   source,
   sourceId,
   type,
+  parentId,
   size = 'default',
   label = 'Importar',
 }: {
   source: string
   sourceId: string
   type: string
+  // parentId (briefing 0115 Parte 2): id INTERNO do álbum pai, obrigatório só
+  // para type="faixa" (faixa avulsa faltando de um álbum já interno) — os
+  // demais tipos o ignoram.
+  parentId?: string
   size?: 'sm' | 'default' | 'lg'
   label?: string
 }) {
@@ -250,6 +255,7 @@ export function ImportarButton({
         source,
         source_id: sourceId,
         type: type as ImportRequest['type'],
+        ...(parentId ? { parent_id: parentId } : {}),
       }),
     onSuccess: (entity) => {
       queryClient.invalidateQueries({ queryKey: ['entities'] })

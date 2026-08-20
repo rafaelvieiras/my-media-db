@@ -474,6 +474,48 @@ type FaixaExterna struct {
 	ArtistaCreditoMBID string
 }
 
+// MusicaAlbumProvider é uma CAPACIDADE OPCIONAL de um Provider (ADR-0029 item 6,
+// briefing 0115): buscar/montar UM release (álbum) específico do artista, SEM
+// enumerar a discografia inteira -- o contraponto SELETIVO de MusicaProvider (a
+// árvore completa), usado pelo import LOCAL-FIRST do scanner (uma faixa possuída
+// só traz o artista + o ÁLBUM DAQUELA faixa, nunca os demais releases -- ver
+// enrich.ImportarFaixaPossuida). É opcional porque nem toda fonte de música
+// modela essa busca seletiva (só o MusicBrainz hoje); o enrich faz type-assert
+// do Provider para esta interface e devolve erro (o scanner degrada, loga e cai
+// para o próximo passo do pipeline/draft) quando a fonte não a implementa.
+type MusicaAlbumProvider interface {
+	// BuscarAlbumDaFaixa resolve, a partir do MBID de RECORDING `recordingMBID`, o
+	// release (álbum) que o contém, e monta ESSE único álbum (nome/ano/gênero/
+	// faixas) -- o caminho PRECISO, usado quando o arquivo tem o MBID de faixa
+	// embutido. Nunca enumera a discografia inteira do artista. ok=false quando o
+	// recording não tem NENHUMA release associada (dado incompleto na fonte,
+	// raríssimo) -- graça, não erro; erro real (rede, MBID inexistente) propaga.
+	BuscarAlbumDaFaixa(ctx context.Context, recordingMBID string, langs []string) (AlbumExterno, bool, error)
+
+	// BuscarAlbumPorNome localiza, entre os release-groups do artista
+	// `artistaMBID`, o de título mais próximo de `nomeAlbum` (mesmo motor/limiar
+	// de similaridade que o scanner já usa no match textual --
+	// internal/matching.LimiarAutoMatch) e monta ESSE único álbum -- o caminho
+	// TEXTUAL, usado quando o arquivo não tem MBID de faixa embutido (fallback).
+	// A implementação pode precisar de 1 chamada barata (só ids/títulos) para
+	// listar os release-groups do artista e escolher o candidato, mas monta --
+	// faixas incluídas -- só o escolhido, nunca os demais. ok=false sem candidato
+	// plausível (empate no topo ou abaixo do limiar) -- graça; erro real propaga.
+	BuscarAlbumPorNome(ctx context.Context, artistaMBID, nomeAlbum string, langs []string) (AlbumExterno, bool, error)
+
+	// BuscarAlbumPorMbid monta o álbum cujo MBID DE RELEASE-GROUP já é conhecido
+	// -- o caminho DIRETO (briefing 0115 Parte 2), usado quando o chamador já tem
+	// o mbid gravado (ex.: a entity `album` interna, via external_ids["mbid"]),
+	// sem precisar de uma faixa nem de um nome de partida. Ao contrário de
+	// BuscarAlbumDaFaixa/BuscarAlbumPorNome (que resolvem o release-group a
+	// partir de outro dado antes de montar), aqui não há passo de resolução
+	// prévio: a EXISTÊNCIA do release-group é validada nesta própria chamada, e
+	// ErrNaoEncontrado propaga (errors.Is) quando `albumMBID` não existe na
+	// fonte -- outros erros de rede/parsing também propagam. Nunca enumera a
+	// discografia do artista.
+	BuscarAlbumPorMbid(ctx context.Context, albumMBID string, langs []string) (AlbumExterno, error)
+}
+
 // FaixaResolverProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0107):
 // resolve o MBID do ARTISTA a partir do MBID de uma FAIXA (recording) já conhecida —
 // cobre o caso de um arquivo com o MBID de faixa embutido pelo tagueador mas SEM o

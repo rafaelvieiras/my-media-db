@@ -13,12 +13,70 @@ import (
 
 // MBIDs fixos usados pelo fakeMusicaProvider abaixo. UUIDs sintéticos, não reais.
 const (
-	mbidArtistaFixture = "aaaaaaaa-0000-0000-0000-000000000001"
-	mbidAlbumFixture   = "bbbbbbbb-0000-0000-0000-000000000001"
-	mbidFaixa1Fixture  = "cccccccc-0000-0000-0000-000000000001"
-	mbidFaixa2Fixture  = "cccccccc-0000-0000-0000-000000000002"
-	mbidFeatFixture    = "dddddddd-0000-0000-0000-000000000001"
+	mbidArtistaFixture    = "aaaaaaaa-0000-0000-0000-000000000001"
+	mbidAlbumFixture      = "bbbbbbbb-0000-0000-0000-000000000001"
+	mbidFaixa1Fixture     = "cccccccc-0000-0000-0000-000000000001"
+	mbidFaixa2Fixture     = "cccccccc-0000-0000-0000-000000000002"
+	mbidFeatFixture       = "dddddddd-0000-0000-0000-000000000001"
+	mbidAlbumOutroFixture = "bbbbbbbb-0000-0000-0000-000000000002"
+	mbidFaixaOutroFixture = "cccccccc-0000-0000-0000-000000000003"
 )
+
+// albumFixture/albumOutroFixture são os DOIS álbuns da discografia fake (briefing
+// 0115): albumFixture é o único usado por BuscarArtistaArvore (árvore, legado --
+// mantido igual ao de sempre para não alterar TestImportarArtistaCriaArvore/
+// TestReimportarArtistaIdempotente); albumOutroFixture só existe para
+// TestImportarFaixaPossuidaCriaSoUmAlbum provar que importar 1 faixa de
+// albumFixture NÃO cria albumOutroFixture (a discografia tem MAIS de 1 álbum,
+// mas o import escopado só toca o pedido).
+func albumFixture() provider.AlbumExterno {
+	return provider.AlbumExterno{
+		Name:  "Fake Album",
+		MBID:  mbidAlbumFixture,
+		Year:  "1999",
+		Genre: "rock",
+		Faixas: []provider.FaixaExterna{
+			{
+				Title:              "Track One",
+				MBID:               mbidFaixa1Fixture,
+				TrackNumber:        1,
+				DiscNumber:         1,
+				DiscTotal:          1,
+				ISRC:               "US1234500001",
+				ArtistaCreditoNome: "Fake Band",
+				ArtistaCreditoMBID: mbidArtistaFixture,
+			},
+			{
+				Title:              "Track Two (feat. Guest)",
+				MBID:               mbidFaixa2Fixture,
+				TrackNumber:        2,
+				DiscNumber:         1,
+				DiscTotal:          1,
+				ArtistaCreditoNome: "Guest Artist",
+				ArtistaCreditoMBID: mbidFeatFixture,
+			},
+		},
+	}
+}
+
+func albumOutroFixture() provider.AlbumExterno {
+	return provider.AlbumExterno{
+		Name: "Other Album",
+		MBID: mbidAlbumOutroFixture,
+		Year: "2005",
+		Faixas: []provider.FaixaExterna{
+			{
+				Title:              "Other Track",
+				MBID:               mbidFaixaOutroFixture,
+				TrackNumber:        1,
+				DiscNumber:         1,
+				DiscTotal:          1,
+				ArtistaCreditoNome: "Fake Band",
+				ArtistaCreditoMBID: mbidArtistaFixture,
+			},
+		},
+	}
+}
 
 // fakeMusicaProvider implementa o core provider.Provider (mínimo) + a capacidade
 // provider.MusicaProvider, sem rede real: BuscarArtistaArvore devolve uma árvore fixa
@@ -32,12 +90,31 @@ func (fakeMusicaProvider) Buscar(context.Context, string, string, string) ([]pro
 	return nil, nil
 }
 
-func (fakeMusicaProvider) BuscarDetalhe(context.Context, string, string, []string) (json.RawMessage, error) {
+// BuscarDetalhe/MapearDetalhe são o core MÍNIMO (briefing 0115,
+// acharOuCriarArtistaIdentidade): devolvem o nome do artista fixture como
+// "title", o suficiente para o import ESCOPADO criar a entity sem tocar em
+// release-groups. Qualquer outro sourceID devolve um payload vazio (título
+// cai no fallback do MBID, comportamento aceitável para os testes que não
+// exercitam esse caminho).
+func (fakeMusicaProvider) BuscarDetalhe(_ context.Context, sourceID, _ string, _ []string) (json.RawMessage, error) {
+	if sourceID == mbidArtistaFixture {
+		return json.RawMessage(`{"name":"Fake Band"}`), nil
+	}
 	return json.RawMessage(`{}`), nil
 }
 
-func (fakeMusicaProvider) MapearDetalhe(json.RawMessage) (map[string]any, error) {
-	return map[string]any{}, nil
+func (fakeMusicaProvider) MapearDetalhe(raw json.RawMessage) (map[string]any, error) {
+	var d struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(raw, &d); err != nil {
+		return nil, err
+	}
+	out := map[string]any{}
+	if d.Name != "" {
+		out["title"] = d.Name
+	}
+	return out, nil
 }
 
 func (fakeMusicaProvider) BuscarArtistaArvore(_ context.Context, sourceID string, _ []string) (provider.ArtistaArvore, error) {
@@ -45,39 +122,55 @@ func (fakeMusicaProvider) BuscarArtistaArvore(_ context.Context, sourceID string
 		return provider.ArtistaArvore{}, provider.ErrNaoEncontrado
 	}
 	return provider.ArtistaArvore{
-		Name: "Fake Band",
-		MBID: mbidArtistaFixture,
-		Bio:  "uma banda fake para teste",
-		Albuns: []provider.AlbumExterno{
-			{
-				Name:  "Fake Album",
-				MBID:  mbidAlbumFixture,
-				Year:  "1999",
-				Genre: "rock",
-				Faixas: []provider.FaixaExterna{
-					{
-						Title:              "Track One",
-						MBID:               mbidFaixa1Fixture,
-						TrackNumber:        1,
-						DiscNumber:         1,
-						DiscTotal:          1,
-						ISRC:               "US1234500001",
-						ArtistaCreditoNome: "Fake Band",
-						ArtistaCreditoMBID: mbidArtistaFixture,
-					},
-					{
-						Title:              "Track Two (feat. Guest)",
-						MBID:               mbidFaixa2Fixture,
-						TrackNumber:        2,
-						DiscNumber:         1,
-						DiscTotal:          1,
-						ArtistaCreditoNome: "Guest Artist",
-						ArtistaCreditoMBID: mbidFeatFixture,
-					},
-				},
-			},
-		},
+		Name:   "Fake Band",
+		MBID:   mbidArtistaFixture,
+		Bio:    "uma banda fake para teste",
+		Albuns: []provider.AlbumExterno{albumFixture()},
 	}, nil
+}
+
+// BuscarAlbumDaFaixa é a capacidade SELETIVA (provider.MusicaAlbumProvider,
+// briefing 0115) usada pelo import ESCOPADO no caminho por MBID: monta SÓ o
+// álbum que contém `recordingMBID` -- procura em AMBOS os álbuns da
+// discografia fake (albumFixture/albumOutroFixture) para provar que o import
+// escopado não precisa "saber" de antemão qual é o álbum certo.
+func (fakeMusicaProvider) BuscarAlbumDaFaixa(_ context.Context, recordingMBID string, _ []string) (provider.AlbumExterno, bool, error) {
+	for _, alb := range []provider.AlbumExterno{albumFixture(), albumOutroFixture()} {
+		for _, fx := range alb.Faixas {
+			if fx.MBID == recordingMBID {
+				return alb, true, nil
+			}
+		}
+	}
+	return provider.AlbumExterno{}, false, nil
+}
+
+// BuscarAlbumPorNome é a capacidade SELETIVA (provider.MusicaAlbumProvider,
+// briefing 0115) usada pelo import ESCOPADO no caminho textual: monta SÓ o
+// álbum `nomeAlbum` do artista `artistaMBID`.
+func (fakeMusicaProvider) BuscarAlbumPorNome(_ context.Context, artistaMBID, nomeAlbum string, _ []string) (provider.AlbumExterno, bool, error) {
+	if artistaMBID != mbidArtistaFixture {
+		return provider.AlbumExterno{}, false, nil
+	}
+	for _, alb := range []provider.AlbumExterno{albumFixture(), albumOutroFixture()} {
+		if alb.Name == nomeAlbum {
+			return alb, true, nil
+		}
+	}
+	return provider.AlbumExterno{}, false, nil
+}
+
+// BuscarAlbumPorMbid é a capacidade SELETIVA (provider.MusicaAlbumProvider,
+// briefing 0115 Parte 2) usada pela tela externa de álbum e por
+// ImportarFaixaAvulsa: monta SÓ o álbum `albumMBID`, sem passo de resolução
+// prévio -- ErrNaoEncontrado quando nenhum dos álbuns fixture bate.
+func (fakeMusicaProvider) BuscarAlbumPorMbid(_ context.Context, albumMBID string, _ []string) (provider.AlbumExterno, error) {
+	for _, alb := range []provider.AlbumExterno{albumFixture(), albumOutroFixture()} {
+		if alb.MBID == albumMBID {
+			return alb, nil
+		}
+	}
+	return provider.AlbumExterno{}, provider.ErrNaoEncontrado
 }
 
 // svcMusicaFake monta o Servico com o fakeMusicaProvider registrado sob "musicbrainz".
@@ -213,6 +306,149 @@ func TestReimportarArtistaIdempotente(t *testing.T) {
 	}
 }
 
+// TestImportarFaixaPossuidaCriaSoUmAlbum é o critério de aceite CENTRAL do briefing
+// 0115 (ADR-0029 item 1/3): casar 1 faixa via ImportarFaixaPossuida cria SÓ o
+// artista + O ÁLBUM DAQUELA FAIXA + a própria faixa -- a discografia fake tem um
+// SEGUNDO álbum (albumOutroFixture) que NUNCA é tocado, provando que o import
+// escopado não enumera a discografia inteira (ao contrário de importarArtista,
+// TestImportarArtistaCriaArvore acima, que continua trazendo tudo).
+func TestImportarFaixaPossuidaCriaSoUmAlbum(t *testing.T) {
+	svc, database := svcMusicaFake(t)
+	ctx := context.Background()
+
+	faixaID, criada, err := svc.ImportarFaixaPossuida(ctx, "musicbrainz", mbidArtistaFixture,
+		FaixaAlvo{RecordingMBID: mbidFaixa1Fixture}, []string{"en"})
+	if err != nil {
+		t.Fatalf("ImportarFaixaPossuida: %v", err)
+	}
+	if !criada {
+		t.Error("criada = false, quero true (faixa nova)")
+	}
+
+	r := sqlcgen.New(database.Read)
+	faixa, err := r.ObterEntity(ctx, faixaID)
+	if err != nil {
+		t.Fatalf("ObterEntity faixa: %v", err)
+	}
+	if faixa.Type != tipoFaixa || faixa.Title != "Track One" {
+		t.Errorf("faixa = {type:%q title:%q}, quero {faixa, Track One}", faixa.Type, faixa.Title)
+	}
+
+	artista, err := r.ObterEntityPorMbid(ctx, nsValid(mbidArtistaFixture))
+	if err != nil {
+		t.Fatalf("ObterEntityPorMbid artista: %v", err)
+	}
+	if artista.Title != "Fake Band" {
+		t.Errorf("artista title = %q, quero Fake Band (via BuscarDetalhe/MapearDetalhe, sem release-groups)", artista.Title)
+	}
+
+	if n := contarComFiltro(t, database, "SELECT count(*) FROM entity WHERE type = ?", tipoArtista); n != 1 {
+		t.Errorf("artistas = %d, quero 1", n)
+	}
+	if n := contarComFiltro(t, database, "SELECT count(*) FROM entity WHERE type = ?", tipoAlbum); n != 1 {
+		t.Errorf("albuns = %d, quero 1 (SO Fake Album -- Other Album NAO tocado)", n)
+	}
+	if n := contarComFiltro(t, database, "SELECT count(*) FROM entity WHERE type = ?", tipoFaixa); n != 1 {
+		t.Errorf("faixas = %d, quero 1 (SO Track One -- Track Two/Other Track NAO tocadas)", n)
+	}
+	if _, err := r.ObterEntityPorMbid(ctx, nsValid(mbidAlbumOutroFixture)); !isNoRows(err) {
+		t.Errorf("Other Album foi criado (err=%v), quero NoRows (nunca tocado)", err)
+	}
+
+	albuns := filhosPorKind(t, database, artista.ID, musicext.KindArtistaPrincipal)
+	if len(albuns) != 1 {
+		t.Fatalf("albuns do artista = %d, quero 1", len(albuns))
+	}
+	faixas := filhosPorKind(t, database, albuns[0].ChildID, musicext.KindAlbum)
+	if len(faixas) != 1 || faixas[0].ChildID != faixaID {
+		t.Errorf("faixas do album = %+v, quero 1 ligada a %s", faixas, faixaID)
+	}
+}
+
+// TestImportarFaixaPossuidaFeatGravaMetadadoSemEntity é o 2o critério de aceite
+// central (ADR-0029 item 4): a faixa com artist-credit DIVERGENTE (Track Two,
+// feat. Guest Artist) NÃO cria entity nem entity_relation(kind=music_artista_feat)
+// automaticamente -- só grava o nome/MBID bruto em extension_data.
+func TestImportarFaixaPossuidaFeatGravaMetadadoSemEntity(t *testing.T) {
+	svc, database := svcMusicaFake(t)
+	ctx := context.Background()
+
+	faixaID, _, err := svc.ImportarFaixaPossuida(ctx, "musicbrainz", mbidArtistaFixture,
+		FaixaAlvo{RecordingMBID: mbidFaixa2Fixture}, []string{"en"})
+	if err != nil {
+		t.Fatalf("ImportarFaixaPossuida: %v", err)
+	}
+
+	r := sqlcgen.New(database.Read)
+	faixa, err := r.ObterEntity(ctx, faixaID)
+	if err != nil {
+		t.Fatalf("ObterEntity faixa: %v", err)
+	}
+	ns := extNSMusica(t, faixa.ExtensionDataJson.String)
+	if ns[musicext.FeatArtistNameKey] != "Guest Artist" {
+		t.Errorf("feat_artist_name = %v, quero 'Guest Artist'", ns[musicext.FeatArtistNameKey])
+	}
+	if ns[musicext.FeatArtistMbidKey] != mbidFeatFixture {
+		t.Errorf("feat_artist_mbid = %v, quero %s", ns[musicext.FeatArtistMbidKey], mbidFeatFixture)
+	}
+
+	if _, err := r.ObterEntityPorMbid(ctx, nsValid(mbidFeatFixture)); !isNoRows(err) {
+		t.Errorf("artista feat foi criado (err=%v), quero NoRows -- import escopado NUNCA auto-cria entity/relation de feat", err)
+	}
+	if n := contarComFiltro(t, database, "SELECT count(*) FROM entity_relation WHERE kind = ?", musicext.KindArtistaFeat); n != 0 {
+		t.Errorf("relacoes music_artista_feat = %d, quero 0", n)
+	}
+	if n := contarComFiltro(t, database, "SELECT count(*) FROM entity WHERE type = ?", tipoArtista); n != 1 {
+		t.Errorf("artistas = %d, quero 1 (so o principal)", n)
+	}
+}
+
+// TestImportarFaixaPossuidaViaNomeTextual cobre o caminho TEXTUAL (sem MBID de
+// recording embutido): resolve o álbum por nome (MusicaAlbumProvider.
+// BuscarAlbumPorNome) e a faixa por título dentro dele -- mesma seletividade do
+// caminho por MBID (só 1 álbum/1 faixa, Other Album continua intocado).
+func TestImportarFaixaPossuidaViaNomeTextual(t *testing.T) {
+	svc, database := svcMusicaFake(t)
+	ctx := context.Background()
+
+	faixaID, criada, err := svc.ImportarFaixaPossuida(ctx, "musicbrainz", mbidArtistaFixture,
+		FaixaAlvo{AlbumNome: "Fake Album", FaixaTitulo: "Track One"}, []string{"en"})
+	if err != nil {
+		t.Fatalf("ImportarFaixaPossuida: %v", err)
+	}
+	if !criada {
+		t.Error("criada = false, quero true")
+	}
+
+	r := sqlcgen.New(database.Read)
+	faixa, err := r.ObterEntity(ctx, faixaID)
+	if err != nil {
+		t.Fatalf("ObterEntity faixa: %v", err)
+	}
+	if faixa.Title != "Track One" {
+		t.Errorf("faixa title = %q, quero Track One", faixa.Title)
+	}
+	if n := contarComFiltro(t, database, "SELECT count(*) FROM entity WHERE type = ?", tipoAlbum); n != 1 {
+		t.Errorf("albuns = %d, quero 1", n)
+	}
+	if n := contarComFiltro(t, database, "SELECT count(*) FROM entity WHERE type = ?", tipoFaixa); n != 1 {
+		t.Errorf("faixas = %d, quero 1", n)
+	}
+}
+
+// TestImportarFaixaPossuidaSemSuporte: uma fonte que NAO implementa
+// MusicaAlbumProvider (a capacidade SELETIVA) devolve erro -- o scanner degrada
+// (loga e cai para o próximo passo/draft).
+func TestImportarFaixaPossuidaSemSuporte(t *testing.T) {
+	database := setupDB(t)
+	fakeProv := &fakeProvider{raw: json.RawMessage(`{}`), campos: map[string]any{}}
+	svc, _ := novoServico(t, database, fakeProv)
+	if _, _, err := svc.ImportarFaixaPossuida(context.Background(), "tmdb", mbidArtistaFixture,
+		FaixaAlvo{RecordingMBID: mbidFaixa1Fixture}, []string{"en"}); err == nil {
+		t.Fatal("quero erro: provider sem suporte a album seletivo de musica")
+	}
+}
+
 // TestImportarArtistaSemSuporte: uma fonte que NAO implementa MusicaProvider devolve
 // erro (o handler traduz para 502).
 func TestImportarArtistaSemSuporte(t *testing.T) {
@@ -237,4 +473,17 @@ func extNSMusica(t *testing.T, raw string) map[string]any {
 		t.Fatalf("extension_data sem namespace %s: %q", musicext.Namespace, raw)
 	}
 	return ns
+}
+
+// contarComFiltro roda um SELECT count(*) parametrizado (WHERE simples) contra o
+// banco de teste -- variante de contarLinhas/contarEntities (creditos_test.go/
+// matchlocal_test.go) que aceita filtro, usada pelos testes de seletividade do
+// import escopado (briefing 0115).
+func contarComFiltro(t *testing.T, database *db.DB, query string, args ...any) int {
+	t.Helper()
+	var n int
+	if err := database.Read.QueryRowContext(context.Background(), query, args...).Scan(&n); err != nil {
+		t.Fatalf("contarComFiltro (%q, %v): %v", query, args, err)
+	}
+	return n
 }

@@ -43,6 +43,11 @@ export type ExternalCollectionDetail =
 export type ExternalCollectionPart =
   components['schemas']['ExternalCollectionPart']
 export type ExternalSimilar = components['schemas']['ExternalSimilar']
+// Álbum externo como página própria (briefing 0115 Parte 2, ADR-0029): faixas
+// oficiais do release, com internal_id para as já catalogadas — "faixas
+// faltando" do álbum, mesmo padrão de ExternalCollectionDetail/parts acima.
+export type ExternalAlbum = components['schemas']['ExternalAlbum']
+export type ExternalAlbumTrack = components['schemas']['ExternalAlbumTrack']
 // Créditos (0029, fase B): elenco/equipe/produtoras. `profile_url`/`logo_url` já
 // vêm PROXYADOS do backend (uso direto no <img>). `episode_count` só em série.
 export type CreditCast = components['schemas']['CreditCast']
@@ -746,9 +751,11 @@ export async function resetOverride(id: string): Promise<ResolvedEntity> {
 
 // Busca unificada: `local` (catálogo) + `external` (fonte externa, "não salvos").
 // `q` vazio é rejeitado pelo backend (400) — a UI só chama com termo preenchido.
-// `type` opcional filtra por `movie`|`tv`. `include` (0033) religa sub-nós da árvore
-// de séries (`season`/`episode`), que por padrão ficam fora da busca; vêm no mesmo
-// `local[]`, e a UI os separa por `type` em seções próprias.
+// `type` opcional filtra por QUALQUER tipo de topo real (briefing 0113/ADR-0030 —
+// não mais só `movie`|`tv`; o backend já não valida contra um enum fixo desde o
+// 0112). `include` (0033) religa sub-nós da árvore de séries (`season`/`episode`),
+// que por padrão ficam fora da busca; vêm no mesmo `local[]`, e a UI os separa por
+// `type` em seções próprias.
 export async function searchMedia(
   q: string,
   type?: string,
@@ -857,6 +864,30 @@ export async function getCollectionDetail(
       `${base}/api/v1/external/${encodeURIComponent(
         source,
       )}/collection/${encodeURIComponent(id)}${suffix}`,
+    ),
+  )
+}
+
+// Álbum externo como página (briefing 0115 Parte 2, ADR-0029): as faixas OFICIAIS
+// do release, com `internal_id` para as já catalogadas — "faixas faltando" do
+// álbum, mesmo padrão de getCollectionDetail acima. `id` é o MBID de
+// release-group. Erros a `ApiError`: 404 (inexistente na fonte), 502 (fonte
+// falhou), 503 (fonte sem a capacidade seletiva de álbum).
+export async function getExternalAlbum(
+  source: string,
+  id: string,
+  lang?: string,
+): Promise<ExternalAlbum> {
+  const qs = new URLSearchParams()
+  if (lang) {
+    qs.set('lang', lang)
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return lerJson<ExternalAlbum>(
+    await fetch(
+      `${base}/api/v1/external/${encodeURIComponent(
+        source,
+      )}/album/${encodeURIComponent(id)}${suffix}`,
     ),
   )
 }

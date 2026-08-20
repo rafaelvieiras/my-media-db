@@ -8,6 +8,7 @@ import {
   getEntityFiles,
   getEntityMembers,
   getArtwork,
+  getExternalAlbum,
   getExternalDetail,
   getCatalogCompletenessSettings,
   getEntityThemeCandidato,
@@ -360,6 +361,20 @@ export function collectionDetailQueryOptions(
   return queryOptions({
     queryKey: ['collection', source, id, lang ?? null],
     queryFn: () => getCollectionDetail(source, id, lang),
+  })
+}
+
+// Álbum externo como página (0115 Parte 2, ADR-0029): faixas oficiais do release
+// + internal_id das já catalogadas ("faixas faltando"). Mesma lição de chave de
+// collectionDetailQueryOptions acima: `(source, id, lang)`, idioma na chave.
+export function externalAlbumQueryOptions(
+  source: string,
+  id: string,
+  lang?: string,
+) {
+  return queryOptions({
+    queryKey: ['external-album', source, id, lang ?? null],
+    queryFn: () => getExternalAlbum(source, id, lang),
   })
 }
 

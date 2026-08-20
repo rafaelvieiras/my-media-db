@@ -129,6 +129,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   spies.navigate.mockReset()
   spies.back.mockReset()
+  spies.params = { source: 'tmdb', type: 'movie', id: '603' }
   estado.lang = 'pt-BR'
 })
 
@@ -339,5 +340,30 @@ describe('ExternalDetailScreen', () => {
     expect(
       await screen.findByText('Fonte indisponível no momento'),
     ).toBeTruthy()
+  })
+
+  // type==='album' (briefing 0115 Parte 2): delega a ExternalAlbumView (faixas
+  // do release), nunca ao RichDetailView de item único.
+  it('type=album delega à tela de faixas do álbum, não ao RichDetailView', async () => {
+    spies.params = { source: 'musicbrainz', type: 'album', id: 'rg-1' }
+    stubFetch(() =>
+      okJson({
+        source: 'musicbrainz',
+        source_id: 'rg-1',
+        name: 'Fake Album',
+        year: '1999',
+        genre: 'rock',
+        internal_id: 'album-1',
+        tracks: [],
+      }),
+    )
+    renderWithClient(<ExternalDetailScreen />)
+
+    expect(
+      await screen.findByRole('heading', { name: 'Fake Album' }),
+    ).toBeTruthy()
+    expect(screen.getByText('Faixas do álbum')).toBeTruthy()
+    // Nunca renderiza os campos exclusivos do detalhe rico de item único.
+    expect(screen.queryByRole('button', { name: /Importar/ })).toBeNull()
   })
 })

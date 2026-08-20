@@ -538,6 +538,14 @@ func (s *Server) Handler() (http.Handler, error) {
 			// provider.ColecaoProvider; fontes sem colecao degradam com 503.
 			v1.Get("/external/{source}/collection/{id}", s.getExternalCollection)
 
+			// Album externo como PAGINA propria (briefing 0115 Parte 2, ADR-0029):
+			// nome/faixas oficiais do release (via provider.MusicaAlbumProvider,
+			// BuscarAlbumPorMbid) -- a tela de "faixas faltando" do album ja interno,
+			// mesmo padrao de colecao acima ("album" tambem tem precedencia sobre o
+			// {type} generico). Fontes sem a capacidade seletiva de album degradam
+			// com 503.
+			v1.Get("/external/{source}/album/{id}", s.getExternalAlbum)
+
 			// Proxy READ-THROUGH de imagem (briefing 0024): baixa e cacheia em
 			// disco a imagem de um host permitido (allowlist anti-SSRF) para a
 			// tela de detalhe do EXTERNO (pré-import) não depender do CDN da fonte

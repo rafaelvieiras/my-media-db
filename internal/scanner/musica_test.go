@@ -32,14 +32,51 @@ const (
 )
 
 // fakeMusicaProvider implementa o core provider.Provider + provider.MusicaProvider
-// + provider.FaixaResolverProvider, sem rede real. Conta as chamadas (buscarN/
-// arvoreN/resolverN) para os testes provarem que um re-scan sem mudança NÃO
+// (árvore, capacidade legada -- só usada pelo import MANUAL/dispatcher, não pelo
+// scanner desde o briefing 0115) + provider.MusicaAlbumProvider (capacidade
+// SELETIVA, briefing 0115 -- a que o scanner efetivamente usa) +
+// provider.FaixaResolverProvider, sem rede real. Conta as chamadas (buscarN/
+// arvoreN/resolverN/albumFaixaN/albumNomeN) para os testes provarem tanto a
+// seletividade (nenhuma árvore inteira) quanto que um re-scan sem mudança NÃO
 // rechama a fonte (briefing 0107 §5, incrementalidade).
 type fakeMusicaProvider struct {
-	buscarN, arvoreN, resolverN int
+	buscarN, arvoreN, resolverN, albumFaixaN, albumNomeN int
 }
 
 func (p *fakeMusicaProvider) Nome() string { return sourceMusicBrainz }
+
+// albumFixture é o ÚNICO álbum da discografia fake: "Fake Album", 2 faixas -- a 2ª
+// (Track Two) com artist-credit DIVERGENTE (feat.) do artista principal, cobrindo o
+// mesmo caso do ADR-0027 item 4 / ADR-0029 item 4. Reaproveitado por
+// BuscarArtistaArvore (árvore, legado) e pelas capacidades seletivas novas
+// (BuscarAlbumDaFaixa/BuscarAlbumPorNome) para não divergir os dois caminhos.
+func albumFixture() provider.AlbumExterno {
+	return provider.AlbumExterno{
+		Name: "Fake Album",
+		MBID: mbidAlbumFixture,
+		Year: "1999",
+		Faixas: []provider.FaixaExterna{
+			{
+				Title:              "Track One",
+				MBID:               mbidFaixa1Fixture,
+				TrackNumber:        1,
+				DiscNumber:         1,
+				DiscTotal:          1,
+				ArtistaCreditoNome: "Fake Band",
+				ArtistaCreditoMBID: mbidArtistaFixture,
+			},
+			{
+				Title:              "Track Two",
+				MBID:               mbidFaixa2Fixture,
+				TrackNumber:        2,
+				DiscNumber:         1,
+				DiscTotal:          1,
+				ArtistaCreditoNome: "Guest Artist",
+				ArtistaCreditoMBID: mbidFeatFixture,
+			},
+		},
+	}
+}
 
 // Buscar responde por NOME exato (normalizado) de artista: "Fake Band" -> 1
 // candidato único (mbidArtistaFixture); "Artista Ambiguo" -> 2 candidatos
@@ -76,35 +113,9 @@ func (p *fakeMusicaProvider) BuscarArtistaArvore(_ context.Context, sourceID str
 		return provider.ArtistaArvore{}, provider.ErrNaoEncontrado
 	}
 	return provider.ArtistaArvore{
-		Name: "Fake Band",
-		MBID: mbidArtistaFixture,
-		Albuns: []provider.AlbumExterno{
-			{
-				Name: "Fake Album",
-				MBID: mbidAlbumFixture,
-				Year: "1999",
-				Faixas: []provider.FaixaExterna{
-					{
-						Title:              "Track One",
-						MBID:               mbidFaixa1Fixture,
-						TrackNumber:        1,
-						DiscNumber:         1,
-						DiscTotal:          1,
-						ArtistaCreditoNome: "Fake Band",
-						ArtistaCreditoMBID: mbidArtistaFixture,
-					},
-					{
-						Title:              "Track Two",
-						MBID:               mbidFaixa2Fixture,
-						TrackNumber:        2,
-						DiscNumber:         1,
-						DiscTotal:          1,
-						ArtistaCreditoNome: "Guest Artist",
-						ArtistaCreditoMBID: mbidFeatFixture,
-					},
-				},
-			},
-		},
+		Name:   "Fake Band",
+		MBID:   mbidArtistaFixture,
+		Albuns: []provider.AlbumExterno{albumFixture()},
 	}, nil
 }
 
@@ -116,6 +127,45 @@ func (p *fakeMusicaProvider) ResolverArtistaDaFaixa(_ context.Context, recording
 		return "", provider.ErrNaoEncontrado
 	}
 	return mbidArtistaFixture, nil
+}
+
+// BuscarAlbumDaFaixa é a capacidade SELETIVA (provider.MusicaAlbumProvider,
+// briefing 0115) que o scanner efetivamente usa no caminho por MBID: monta SÓ o
+// álbum que contém `recordingMBID`, nunca a árvore inteira.
+func (p *fakeMusicaProvider) BuscarAlbumDaFaixa(_ context.Context, recordingMBID string, _ []string) (provider.AlbumExterno, bool, error) {
+	p.albumFaixaN++
+	alb := albumFixture()
+	for _, fx := range alb.Faixas {
+		if fx.MBID == recordingMBID {
+			return alb, true, nil
+		}
+	}
+	return provider.AlbumExterno{}, false, nil
+}
+
+// BuscarAlbumPorNome é a capacidade SELETIVA (provider.MusicaAlbumProvider,
+// briefing 0115) que o scanner usa no caminho textual: monta SÓ o álbum
+// `nomeAlbum` do artista `artistaMBID`, nunca a árvore inteira.
+func (p *fakeMusicaProvider) BuscarAlbumPorNome(_ context.Context, artistaMBID, nomeAlbum string, _ []string) (provider.AlbumExterno, bool, error) {
+	p.albumNomeN++
+	alb := albumFixture()
+	if artistaMBID != mbidArtistaFixture || nomeAlbum != alb.Name {
+		return provider.AlbumExterno{}, false, nil
+	}
+	return alb, true, nil
+}
+
+// BuscarAlbumPorMbid é a capacidade SELETIVA (provider.MusicaAlbumProvider,
+// briefing 0115 Parte 2) que o scanner NÃO chama (é a tela externa de álbum/
+// import de faixa avulsa que usa) -- só precisa satisfazer a interface para o
+// type-assert de MusicaAlbumProvider nos testes deste pacote continuar
+// bem-sucedido.
+func (p *fakeMusicaProvider) BuscarAlbumPorMbid(_ context.Context, albumMBID string, _ []string) (provider.AlbumExterno, error) {
+	alb := albumFixture()
+	if albumMBID != alb.MBID {
+		return provider.AlbumExterno{}, provider.ErrNaoEncontrado
+	}
+	return alb, nil
 }
 
 // proberComTags é um Prober fake (0107): devolve um mediainfo_json cujo campo
@@ -228,11 +278,13 @@ func TestScanMusicaMbidFaixaFastPath(t *testing.T) {
 	}
 }
 
-// TestScanMusicaMbidFaixaEArtistaDisparaImport cobre o passo 2: MBID de faixa
-// SEM match ainda, mas a tag TAMBÉM tem o MBID do artista -- importa a árvore
-// inteira e refaz o lookup. A faixa 2 (feat.) fica disponível na árvore, mas
-// só o media_file da faixa 1 foi escaneado.
-func TestScanMusicaMbidFaixaEArtistaDisparaImport(t *testing.T) {
+// TestScanMusicaMbidFaixaEArtistaImportaEscopado cobre o passo 2 (ADR-0029,
+// briefing 0115): MBID de faixa SEM match ainda, mas a tag TAMBÉM tem o MBID
+// do artista -- dispara o import ESCOPADO (artista + ALBUM DAQUELA FAIXA +
+// a própria faixa), NUNCA a árvore inteira. A faixa 2 do mesmo álbum (Track
+// Two, feat.) NÃO é tocada só por estar no mesmo release: nem ela nem o
+// artista feat (Guest Artist) viram entity.
+func TestScanMusicaMbidFaixaEArtistaImportaEscopado(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
 	arq := filepath.Join(root, "track-one.mp3")
@@ -258,20 +310,26 @@ func TestScanMusicaMbidFaixaEArtistaDisparaImport(t *testing.T) {
 	if conf != confIDExterno {
 		t.Errorf("match_confidence = %v, quero %v", conf, confIDExterno)
 	}
-	if prov.arvoreN != 1 {
-		t.Errorf("BuscarArtistaArvore chamado %d vez(es), quero 1", prov.arvoreN)
+	if prov.arvoreN != 0 {
+		t.Errorf("BuscarArtistaArvore chamado %d vez(es), quero 0 (import escopado, nunca a arvore inteira)", prov.arvoreN)
 	}
-	// Artista principal + o artista feat (Guest Artist, ArtistaCreditoMBID
-	// divergente da 2ª faixa) + álbum + as 2 faixas da árvore entraram no
-	// catálogo -- a importação da árvore inteira, não só a faixa pedida.
-	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='artista'"); n != 2 {
-		t.Errorf("artistas = %d, quero 2 (artista principal + feat)", n)
+	if prov.albumFaixaN != 1 {
+		t.Errorf("BuscarAlbumDaFaixa chamado %d vez(es), quero 1", prov.albumFaixaN)
 	}
-	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='faixa'"); n != 2 {
-		t.Errorf("faixas = %d, quero 2 (árvore inteira importada)", n)
+	// ADR-0029 item 1/3: só o artista + O ÁLBUM DAQUELA FAIXA + a própria faixa
+	// entram no catálogo -- nenhum outro release, nenhuma outra faixa do MESMO
+	// álbum (Track Two) e nenhum artista feat são auto-criados.
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='artista'"); n != 1 {
+		t.Errorf("artistas = %d, quero 1 (só o principal; feat NÃO auto-cria entity)", n)
 	}
-	if n := contar(t, d, "SELECT count(*) FROM entity_relation WHERE kind = ?", musicext.KindArtistaFeat); n != 1 {
-		t.Errorf("relacoes music_artista_feat = %d, quero 1 (faixa 2 diverge do artista do album)", n)
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='album'"); n != 1 {
+		t.Errorf("albuns = %d, quero 1", n)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='faixa'"); n != 1 {
+		t.Errorf("faixas = %d, quero 1 (só a faixa casada, não a arvore/album inteiro)", n)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity_relation WHERE kind = ?", musicext.KindArtistaFeat); n != 0 {
+		t.Errorf("relacoes music_artista_feat = %d, quero 0 (import escopado nunca auto-cria feat)", n)
 	}
 }
 
@@ -304,15 +362,19 @@ func TestScanMusicaResolucaoReversaFaixaSemArtista(t *testing.T) {
 	if prov.resolverN != 1 {
 		t.Errorf("ResolverArtistaDaFaixa chamado %d vez(es), quero 1", prov.resolverN)
 	}
-	if prov.arvoreN != 1 {
-		t.Errorf("BuscarArtistaArvore chamado %d vez(es), quero 1", prov.arvoreN)
+	if prov.arvoreN != 0 {
+		t.Errorf("BuscarArtistaArvore chamado %d vez(es), quero 0 (import escopado, nunca a arvore inteira)", prov.arvoreN)
+	}
+	if prov.albumFaixaN != 1 {
+		t.Errorf("BuscarAlbumDaFaixa chamado %d vez(es), quero 1", prov.albumFaixaN)
 	}
 }
 
 // TestScanMusicaBuscaTextual cobre o passo 4 (caso DOMINANTE nos arquivos
 // reais do dono): sem NENHUM MBID embutido, casamento por nome do artista
-// (album_artist) + localização da faixa certa dentro da árvore recém-importada
-// por álbum/título da tag.
+// (album_artist) + import ESCOPADO pelo caminho TEXTUAL (álbum por nome via
+// BuscarAlbumPorNome, faixa por título dentro dele) -- ADR-0029/briefing 0115,
+// nunca a árvore inteira.
 func TestScanMusicaBuscaTextual(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -338,6 +400,15 @@ func TestScanMusicaBuscaTextual(t *testing.T) {
 	}
 	if prov.buscarN != 1 {
 		t.Errorf("Buscar chamado %d vez(es), quero 1", prov.buscarN)
+	}
+	if prov.arvoreN != 0 {
+		t.Errorf("BuscarArtistaArvore chamado %d vez(es), quero 0 (import escopado, nunca a arvore inteira)", prov.arvoreN)
+	}
+	if prov.albumNomeN != 1 {
+		t.Errorf("BuscarAlbumPorNome chamado %d vez(es), quero 1", prov.albumNomeN)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='faixa'"); n != 1 {
+		t.Errorf("faixas = %d, quero 1 (só a faixa casada, não o album inteiro)", n)
 	}
 }
 
@@ -424,7 +495,7 @@ func TestScanMusicaReescaneioNaoRechamaImportarNemDuplica(t *testing.T) {
 		t.Fatalf("scan 1: %v", err)
 	}
 	entityID1, _ := mediaFileDe(t, d, arq)
-	arvoreNApos1 := prov.arvoreN
+	albumFaixaNApos1 := prov.albumFaixaN
 
 	if err := scanSync(t, m, src); err != nil {
 		t.Fatalf("scan 2 (re-scan sem mudanca): %v", err)
@@ -437,11 +508,14 @@ func TestScanMusicaReescaneioNaoRechamaImportarNemDuplica(t *testing.T) {
 	if conf2 != confIDExterno {
 		t.Errorf("match_confidence apos re-scan = %v, quero %v", conf2, confIDExterno)
 	}
-	if prov.arvoreN != arvoreNApos1 {
-		t.Errorf("BuscarArtistaArvore chamado de novo no re-scan sem mudanca: antes=%d depois=%d", arvoreNApos1, prov.arvoreN)
+	if prov.arvoreN != 0 {
+		t.Errorf("BuscarArtistaArvore chamado %d vez(es), quero 0 (import escopado, nunca a arvore inteira)", prov.arvoreN)
 	}
-	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='faixa'"); n != 2 {
-		t.Errorf("faixas apos re-scan = %d, quero 2 (nao duplicou)", n)
+	if prov.albumFaixaN != albumFaixaNApos1 {
+		t.Errorf("BuscarAlbumDaFaixa chamado de novo no re-scan sem mudanca: antes=%d depois=%d", albumFaixaNApos1, prov.albumFaixaN)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='faixa'"); n != 1 {
+		t.Errorf("faixas apos re-scan = %d, quero 1 (nao duplicou, import escopado so traz 1 faixa)", n)
 	}
 	if n := contar(t, d, "SELECT count(*) FROM media_file"); n != 1 {
 		t.Errorf("media_file apos re-scan = %d, quero 1 (nao duplicou)", n)

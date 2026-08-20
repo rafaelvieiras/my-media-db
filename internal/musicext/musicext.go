@@ -25,6 +25,24 @@ const (
 	KindArtistaFeat = "music_artista_feat"
 )
 
+// Chaves do extension_data core.music@1 que guardam o nome/MBID BRUTO da
+// colaboração (feat.) de uma faixa, quando o artist-credit dela diverge do
+// artista PRINCIPAL do álbum (ADR-0027 item 4, ADR-0029 item 4, briefing 0115).
+// São METADADO de leitura só -- gravadas pelo import ESCOPADO (local-first, uma
+// faixa possuída por vez, internal/enrich/musica.go ImportarFaixaPossuida) SEM
+// criar entity/entity_relation(kind=music_artista_feat) automaticamente; o
+// import de ÁRVORE completa (importarArtista, pull explícito do dono) continua
+// criando a entity+relação como antes (ADR-0029 item 5) e também grava estas
+// mesmas chaves (redundante com a relação, mas sem custo e sem contradição).
+const (
+	// FeatArtistNameKey é o nome exibível do artista colaborador, quando a fonte
+	// o trouxe. Ausente do payload quando não há divergência de artist-credit.
+	FeatArtistNameKey = "feat_artist_name"
+	// FeatArtistMbidKey é o MBID do artista colaborador na fonte. Sempre presente
+	// junto de FeatArtistNameKey (a divergência só é detectável com o MBID).
+	FeatArtistMbidKey = "feat_artist_mbid"
+)
+
 // MBIDVariousArtists é o MBID canônico que a própria MusicBrainz usa para o
 // artista de agrupamento de compilações/trilhas sonoras. Usar este valor ao
 // ligar um álbum de compilação a "Various Artists" — não é caso especial de
