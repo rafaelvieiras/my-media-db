@@ -10,7 +10,7 @@
 | **ID** | 0113 |
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 5+ — Verticais e plugins |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [ADR-0030](../docs/adr/0030-tipos-de-topo-biblioteca-e-busca-genericas.md) |
 | **Depende de** | 0112 |
 
@@ -118,6 +118,49 @@ topo reais da biblioteca** (`artista` incluso).
   este briefing consome já precisa excluir album/faixa corretamente).
 - Pode rodar em paralelo com o 0114 (home/rota `/library`) — são consumidores
   irmãos do mesmo 0112, sem dependência um do outro.
+
+### Implementado (frontend, escopo §3/§4 deste briefing)
+
+- `MediaTypeFilter` (`media-type-filter.tsx`) virou um componente "esperto":
+  passou a fazer sua PRÓPRIA `useQuery(entityTypesQueryOptions)` (mesma fonte
+  de `RecentlyAddedSection`/`BibliotecaNavItem`) e renderizar `<option>` "Todos"
+  + uma por tipo real, rotulada via `rotuloTipoPlural`. `MediaTypeFilterValue`
+  virou `string` (era `'all'|'movie'|'tv'`); `'all'` continua o sentinela de
+  "sem filtro". Decisão de onde colocar a query: DENTRO do componente (não
+  como prop dos consumidores) — assim `SearchPanel` e qualquer consumidor
+  futuro ganham o comportamento dinâmico automaticamente, sem replicar a
+  `useQuery` em cada tela.
+- `SearchPanel`/`search-panel.tsx`: os cards de TOPO (excluindo season/episode,
+  que mantêm suas seções próprias e o comportamento de toggle inalterado) agora
+  são agrupados por `agruparPorTipo` (novo helper) — uma seção por `type` real
+  devolvido, título via `rotuloTipoPlural`. Ordem dos grupos = ordem de
+  primeira aparição em `data.local` (ordem de relevância do FTS5), sem
+  reordenar por nome. **Decisão não 100% especificada pelo briefing**: quando
+  `gruposTopo` fica vazio (zero cards de topo no resultado local), em vez de
+  não renderizar seção nenhuma (o que faria a tela pular direto pra "Resultados
+  externos" sem indicar que o catálogo FOI consultado), mantive uma seção
+  fixa "Catálogo" com o `emptyLabel` de sempre — evita regressão de UX frente
+  ao comportamento anterior (que sempre mostrava "Filmes e séries", mesmo
+  vazio).
+- `poster-grid.tsx` **não foi tocado**: o briefing 0114 (rodando em paralelo,
+  mesmo working tree) já havia removido o `MediaTypeFilter`/`useSearch` de
+  dentro do `PosterGrid` antes desta implementação terminar — o tipo agora
+  chega FIXO via prop `type` (resolvido do slug de `/library/:entitySlug`), e
+  não há mais seletor de tipo dentro do grid. Confirmado por leitura do
+  arquivo já modificado; nada do escopo §3/§4 sobrou pendente ali.
+- `lib/api.ts`: comentário de `searchMedia` atualizado (não filtra mais só
+  `movie|tv`, é `type` livre desde o backend do 0112).
+- Testes: `media-type-filter.test.tsx` (novo — lista dinâmica, degrade em
+  falha do fetch, `onChange` com o `type` real) e `search-panel.test.tsx`
+  atualizado (rotas `fetchRouter` passaram a servir `GET /entities/types`;
+  asserção "Filmes e séries" trocada por seção "Filmes" via `getByRole`
+  `heading` — o texto "Filmes" deixou de ser único na tela porque também é
+  `<option>` do Select dinâmico; teste novo cobrindo agrupamento de um tipo
+  não-filme/série, artista, em seção própria).
+- `owned` como filtro estruturado de `/search` (mencionado na §4 do briefing)
+  **não foi tocado** por este agente: `internal/server/search.go` está sendo
+  modificado por trabalho concorrente de outro briefing no mesmo working tree
+  (fora do escopo de arquivos frontend delegado a esta implementação).
 
 ## 7. Fora deste briefing / follow-ups
 

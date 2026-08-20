@@ -67,6 +67,18 @@ const episodeCard: EntityCard = {
   catalog_completeness: null,
 }
 
+const artistaCard: EntityCard = {
+  id: 'artista-1',
+  type: 'artista',
+  title: 'Artista Local',
+  status: 'cataloged',
+  owned: true,
+  file_count: 3,
+  match_confidence: null,
+  poster_url: null,
+  catalog_completeness: null,
+}
+
 const externalItem: ExternalResult = {
   source: 'tmdb',
   source_id: '603',
@@ -78,12 +90,26 @@ const externalItem: ExternalResult = {
   saved: false,
 }
 
-// Roteia fetch por URL: /search devolve o resultado dado; /import devolve a
-// entity resolvida (com id, para a navegação).
+// Tipos de topo devolvidos por GET /entities/types: o `MediaTypeFilter` (dentro
+// do SearchPanel, briefing 0113) dispara essa busca sozinho ao montar — todo
+// teste precisa rotear essa URL, senão `fetchRouter` explode em "rota não
+// mockada".
+const TIPOS_DE_TOPO = [
+  { type: 'movie', count: 1 },
+  { type: 'tv', count: 1 },
+  { type: 'artista', count: 1 },
+]
+
+// Roteia fetch por URL: /entities/types alimenta o MediaTypeFilter; /search
+// devolve o resultado dado; /import devolve a entity resolvida (com id, para a
+// navegação).
 function fetchRouter(result: SearchResult) {
   return vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url)
     const method = init?.method ?? 'GET'
+    if (u.startsWith('/api/v1/entities/types') && method === 'GET') {
+      return okJson(TIPOS_DE_TOPO)
+    }
     if (u.startsWith('/api/v1/search') && method === 'GET') {
       return okJson(result)
     }
@@ -127,10 +153,17 @@ describe('SearchPanel', () => {
     expect(
       screen.getByText('Busque no seu catálogo e em fontes externas'),
     ).toBeInTheDocument()
-    expect(fetchMock).not.toHaveBeenCalled()
+    // Com input vazio a busca (`/search`) não dispara — mas o MediaTypeFilter
+    // (briefing 0113) busca os tipos de topo (`/entities/types`) sozinho, ao
+    // montar, independente do termo. Não é mais "fetch nunca chamado".
+    expect(
+      fetchMock.mock.calls.some(([u]) =>
+        String(u).startsWith('/api/v1/search'),
+      ),
+    ).toBe(false)
   })
 
-  it('dispara a busca após o debounce e separa locais de externos', async () => {
+  it('dispara a busca após o debounce e agrupa os locais por tipo real (0113)', async () => {
     const { fetchMock } = await buscar({
       query: 'matrix',
       local: [localCard],
@@ -141,15 +174,45 @@ describe('SearchPanel', () => {
     await waitFor(() =>
       expect(screen.getByText('Matrix Local')).toBeInTheDocument(),
     )
-    expect(screen.getByText('Filmes e séries')).toBeInTheDocument()
+    // Balde fixo "Filmes e séries" não existe mais (ADR-0030): um card `movie`
+    // vira a seção "Filmes". `getByRole('heading', ...)` (não `getByText`)
+    // porque "Filmes" agora TAMBÉM é uma `<option>` do MediaTypeFilter dinâmico
+    // (0113) — o texto sozinho deixou de ser único na tela.
+    expect(screen.getByRole('heading', { name: 'Filmes' })).toBeInTheDocument()
+    expect(screen.queryByText('Filmes e séries')).toBeNull()
     expect(screen.getByText('Resultados externos')).toBeInTheDocument()
     expect(screen.getByText('The Matrix')).toBeInTheDocument()
-    // Só chamou /search (com o termo debounced), não por caractere.
+    // Só chamou /search e /entities/types (com o termo debounced), não por
+    // caractere.
     expect(
-      fetchMock.mock.calls.every(([u]) =>
-        String(u).startsWith('/api/v1/search'),
+      fetchMock.mock.calls.every(
+        ([u]) =>
+          String(u).startsWith('/api/v1/search') ||
+          String(u).startsWith('/api/v1/entities/types'),
       ),
     ).toBe(true)
+  })
+
+  it('agrupa um resultado de tipo não-filme/série (artista) na própria seção, sem balde "Filmes e séries" (0113)', async () => {
+    await buscar({
+      query: 'artista',
+      local: [localCard, artistaCard],
+      external: [],
+      external_available: true,
+    })
+
+    await waitFor(() =>
+      expect(screen.getByText('Artista Local')).toBeInTheDocument(),
+    )
+    // `getByRole('heading', ...)`, não `getByText`: "Filmes"/"Artistas" também
+    // são `<option>` do MediaTypeFilter dinâmico (0113), então o texto sozinho
+    // não é mais único na tela.
+    expect(screen.getByRole('heading', { name: 'Filmes' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Artistas' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Filmes e séries')).toBeNull()
+    expect(screen.getByText('Matrix Local')).toBeInTheDocument()
   })
 
   it('mantém sub-nós ocultos por padrão, mesmo vindo no payload (0033)', async () => {

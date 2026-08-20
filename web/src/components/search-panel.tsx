@@ -13,6 +13,7 @@ import {
   MediaTypeFilter,
   type MediaTypeFilterValue,
 } from '@/components/media-type-filter'
+import { rotuloTipoPlural } from '@/lib/entity-badges'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
 
 const DEBOUNCE_MS = 350
@@ -27,8 +28,10 @@ type SubNo = 'season' | 'episode'
 const SUB_NOS: SubNo[] = ['season', 'episode']
 
 // Painel de busca: input com debounce dispara `GET /search`; enquanto vazio, a
-// tela fica em estado de instrução (não consulta). Separa "Filmes e séries"
-// (cards de topo) de "Temporadas"/"Episódios" (sub-nós, só quando ligados) e de
+// tela fica em estado de instrução (não consulta). Agrupa os cards de TOPO
+// dinamicamente por `type` real (briefing 0113/ADR-0030 — "Filmes", "Séries",
+// "Artistas" etc., sem balde fixo "Filmes e séries" que não cobria música),
+// separado de "Temporadas"/"Episódios" (sub-nós, só quando ligados) e de
 // "Resultados externos" (não salvos, com Importar), tratando
 // `external_available:false` como indisponibilidade — não como zero resultados.
 export function SearchPanel() {
@@ -189,13 +192,30 @@ function SearchResults({
   )
   const temporadas = data.local.filter((c) => c.type === 'season')
   const episodios = data.local.filter((c) => c.type === 'episode')
+  const gruposTopo = agruparPorTipo(topo)
   return (
     <div className="flex flex-col gap-8">
-      <CardGridSection
-        title="Filmes e séries"
-        cards={topo}
-        emptyLabel="Nenhum item do seu catálogo corresponde à busca."
-      />
+      {gruposTopo.length === 0 ? (
+        // Nenhum card de topo: mantém uma seção (mesmo vazia) para o dono
+        // saber que o catálogo FOI consultado — sem isso, com resultado local
+        // zerado a tela pularia direto pra "Resultados externos" sem dizer
+        // que o catálogo não tinha nada (decisão de implementação, briefing
+        // 0113 §6: não especificado pelo dono).
+        <CardGridSection
+          title="Catálogo"
+          cards={[]}
+          emptyLabel="Nenhum item do seu catálogo corresponde à busca."
+        />
+      ) : (
+        gruposTopo.map((grupo) => (
+          <CardGridSection
+            key={grupo.type}
+            title={rotuloTipoPlural(grupo.type)}
+            cards={grupo.cards}
+            emptyLabel="Nenhum item do seu catálogo corresponde à busca."
+          />
+        ))
+      )}
       {mostrarTemporadas && (
         <CardGridSection
           title="Temporadas"
@@ -216,6 +236,27 @@ function SearchResults({
       />
     </div>
   )
+}
+
+// agruparPorTipo separa os cards de TOPO (já sem season/episode, que têm seção
+// própria) pelo `type` real de cada um (briefing 0113/ADR-0030) — generaliza o
+// antigo balde único "Filmes e séries", que não fazia sentido pra tipos como
+// "artista". Preserva a ordem de relevância do FTS5: dentro de cada grupo os
+// cards mantêm a ordem de chegada em `cards`; os grupos saem na ordem do
+// PRIMEIRO card de cada tipo (sem reordenar por nome/alfabeto).
+function agruparPorTipo(
+  cards: SearchResult['local'],
+): Array<{ type: string; cards: SearchResult['local'] }> {
+  const grupos = new Map<string, SearchResult['local']>()
+  for (const card of cards) {
+    const atual = grupos.get(card.type)
+    if (atual) {
+      atual.push(card)
+    } else {
+      grupos.set(card.type, [card])
+    }
+  }
+  return Array.from(grupos, ([type, cards]) => ({ type, cards }))
 }
 
 // CardGridSection: uma seção de cards do catálogo (título + grid ou estado vazio),
