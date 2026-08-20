@@ -55,13 +55,25 @@ const ttlCacheExterno = 60 * time.Second
 // episode` a busca traz episodios, cujo arquivo tem entity_id=SERIE e liga ao episodio
 // so pela juncao -- sem isto o card do episodio viria owned=false/file_count=0. Mesma
 // extensao (e mesmas formas UNION que preservam bool/int64 no scan) de ListarEntityCards.
-const buscarCardsFTSSQL = `SELECT
+// owned soma tambem qualquer DESCENDENTE na arvore de entity_relation (briefing
+// 0116) que possua media_file 'present' -- cobre artista/album de musica, cujo
+// unico vinculo com o arquivo fica na FAIXA, dois niveis abaixo (ver nota longa
+// em ObterEntityCard, internal/db/queries/entity.sql).
+const buscarCardsFTSSQL = `WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT parent_id, child_id FROM entity_relation
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
+SELECT
     e.id, e.type, e.title, e.status,
     EXISTS (
         SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present'
         UNION ALL
         SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
             WHERE mfe.entity_id = e.id AND mf.state = 'present'
+        UNION ALL
+        SELECT 1 FROM arvore t JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+            WHERE t.ancestor_id = e.id
     ) AS owned,
     (SELECT COUNT(*) FROM (
         SELECT m.id FROM media_file m WHERE m.entity_id = e.id

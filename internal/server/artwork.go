@@ -230,21 +230,43 @@ func (s *Server) adicionarArteDeCampo(campos map[string]any, campo, kind, source
 	})
 }
 
-// coletarInventarioFanart adiciona o inventário lazy da fanart.tv (media_external
-// source='fanarttv'): parseia o envelope e emite um artworkItem por arte de cada kind,
-// com lang/likes/disc/season preservados e a URL proxyada. Ausente/vazio degrada (sem
-// inventário — nada a adicionar). Pula a arte cujo `url` já foi materializada como asset
-// origin='external' daquele kind (`materializadas`, briefing 0072) — evita o mesmo binário
-// aparecer duas vezes (a versão local já cobre o card; o candidato do inventário some).
+// coletarInventarioFanart adiciona o inventário lazy de QUALQUER fonte com envelope de
+// arte já cacheado em media_external (briefing 0116): até então hardcoded a source=
+// 'fanarttv' (a única fonte de arte que existia no briefing 0048), o que fazia o
+// inventário do MusicBrainz/Cover Art Archive (source='musicbrainz', capacidade ganha
+// nos briefings 0106/0107 para capa de álbum) nunca ser lido de volta mesmo gravado com
+// sucesso pelo lado de escrita (enrich.enriquecerArtes já era genérico a qualquer
+// ArteProvider) — bug real achado em produção: álbum de música nunca mostrava capa mesmo
+// com a fonte respondendo com dado real. Lê TODAS as camadas cacheadas da entity
+// (ListarMediaExternalPorEntity) e filtra pelo ENVELOPE (ChaveEnvelopeInventarioArtes),
+// não pela fonte estar registrada AGORA — mesmo espírito de "cache sobrevive sem
+// provider" (ADR-0024): a inventário buscado ontem continua visível mesmo que a
+// credencial daquela fonte tenha sido removida depois. Generico a qualquer fonte futura
+// (ex.: Spotify) sem exigir mudança aqui. Parseia o envelope de cada fonte e emite um
+// artworkItem por arte de cada kind, com lang/likes/disc/season preservados e a URL
+// proxyada. Fonte sem inventário degrada em silêncio (nada a adicionar). Pula a arte
+// cujo `url` já foi materializada como asset origin='external' daquele kind
+// (`materializadas`, briefing 0072) — evita o mesmo binário aparecer duas vezes (a versão
+// local já cobre o card; o candidato do inventário some).
 func (s *Server) coletarInventarioFanart(ctx context.Context, id string, materializadas map[string]map[string]bool, grupos map[string][]artworkItem) {
-	row, err := s.leitura().ObterMediaExternalPorFonte(ctx, sqlcgen.ObterMediaExternalPorFonteParams{
-		EntityID: id,
-		Source:   "fanarttv",
-	})
-	if err != nil || !row.PayloadJson.Valid {
+	camadas, err := s.leitura().ListarMediaExternalPorEntity(ctx, id)
+	if err != nil {
 		return
 	}
-	inv := parseInventarioFanart(row.PayloadJson.String)
+	for _, camada := range camadas {
+		s.coletarInventarioDeFonte(camada, materializadas, grupos)
+	}
+}
+
+// coletarInventarioDeFonte é o corpo por-camada de coletarInventarioFanart (extraído
+// para iterar cada linha de media_external sem duplicar o parse/merge). Camada sem o
+// envelope de arte (payload de detalhe normal, ex.: tmdb/tvdb) degrada em silêncio via
+// parseInventarioFanart devolvendo nil.
+func (s *Server) coletarInventarioDeFonte(camada sqlcgen.MediaExternal, materializadas map[string]map[string]bool, grupos map[string][]artworkItem) {
+	if !camada.PayloadJson.Valid {
+		return
+	}
+	inv := parseInventarioFanart(camada.PayloadJson.String)
 	for kind, artes := range inv {
 		for _, a := range artes {
 			if materializadas[kind][a.URL] {
@@ -255,7 +277,7 @@ func (s *Server) coletarInventarioFanart(ctx context.Context, id string, materia
 				URL:      arteSrc(s.urlImagemServida(&url)),
 				Lang:     a.Lang,
 				Likes:    a.Likes,
-				Source:   "fanarttv",
+				Source:   camada.Source,
 				DiscType: a.DiscType,
 				Disc:     a.Disc,
 				Season:   a.Season,

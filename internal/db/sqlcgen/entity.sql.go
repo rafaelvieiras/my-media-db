@@ -320,12 +320,21 @@ func (q *Queries) AtualizarTitulo(ctx context.Context, arg AtualizarTituloParams
 }
 
 const contarEntityCards = `-- name: ContarEntityCards :one
+WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT parent_id, child_id FROM entity_relation
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
 SELECT COUNT(*) AS total
 FROM entity e
 WHERE e.type NOT IN ('season', 'episode')
   AND (?1 IS NULL OR e.type = ?1)
   AND (?2 IS NULL
-       OR EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') = ?2)
+       OR (
+            EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present')
+            OR EXISTS (SELECT 1 FROM arvore t JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+                WHERE t.ancestor_id = e.id)
+          ) = ?2)
 `
 
 type ContarEntityCardsParams struct {
@@ -696,6 +705,11 @@ func (q *Queries) ListarEntitiesPorTvdbExcetoId(ctx context.Context, arg ListarE
 }
 
 const listarEntityCards = `-- name: ListarEntityCards :many
+WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT parent_id, child_id FROM entity_relation
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
 SELECT
     e.id, e.type, e.title, e.status,
     EXISTS (
@@ -703,6 +717,9 @@ SELECT
         UNION ALL
         SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
             WHERE mfe.entity_id = e.id AND mf.state = 'present'
+        UNION ALL
+        SELECT 1 FROM arvore t JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+            WHERE t.ancestor_id = e.id
     ) AS owned,
     (SELECT COUNT(*) FROM (
         SELECT m.id FROM media_file m WHERE m.entity_id = e.id
@@ -718,7 +735,11 @@ LEFT JOIN entity_catalog_completeness ecc ON ecc.entity_id = e.id
 WHERE e.type NOT IN ('season', 'episode')
   AND (?1 IS NULL OR e.type = ?1)
   AND (?2 IS NULL
-       OR EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') = ?2)
+       OR (
+            EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present')
+            OR EXISTS (SELECT 1 FROM arvore t JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+                WHERE t.ancestor_id = e.id)
+          ) = ?2)
 ORDER BY e.title COLLATE NOCASE ASC, e.id
 LIMIT ?4 OFFSET ?3
 `
@@ -778,6 +799,8 @@ type ListarEntityCardsRow struct {
 // saude_biblioteca) via LEFT JOIN -- NULL quando o item ainda nao foi
 // avaliado (item novo, ou draft). E um JOIN simples (nao precisa de
 // agregacao): a linha do cache ja vem pronta, 1:1 com a entity.
+// Posse via ARVORE (entity_relation, briefing 0116) somada tanto na coluna `owned`
+// quanto no FILTRO `owned` -- ver nota longa na versao ASC/ObterEntityCard.
 func (q *Queries) ListarEntityCards(ctx context.Context, arg ListarEntityCardsParams) ([]ListarEntityCardsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarEntityCards,
 		arg.Type,
@@ -818,6 +841,11 @@ func (q *Queries) ListarEntityCards(ctx context.Context, arg ListarEntityCardsPa
 }
 
 const listarEntityCardsDesc = `-- name: ListarEntityCardsDesc :many
+WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT parent_id, child_id FROM entity_relation
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
 SELECT
     e.id, e.type, e.title, e.status,
     EXISTS (
@@ -825,6 +853,9 @@ SELECT
         UNION ALL
         SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
             WHERE mfe.entity_id = e.id AND mf.state = 'present'
+        UNION ALL
+        SELECT 1 FROM arvore t JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+            WHERE t.ancestor_id = e.id
     ) AS owned,
     (SELECT COUNT(*) FROM (
         SELECT m.id FROM media_file m WHERE m.entity_id = e.id
@@ -840,7 +871,11 @@ LEFT JOIN entity_catalog_completeness ecc ON ecc.entity_id = e.id
 WHERE e.type NOT IN ('season', 'episode')
   AND (?1 IS NULL OR e.type = ?1)
   AND (?2 IS NULL
-       OR EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') = ?2)
+       OR (
+            EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present')
+            OR EXISTS (SELECT 1 FROM arvore t JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+                WHERE t.ancestor_id = e.id)
+          ) = ?2)
 ORDER BY e.title COLLATE NOCASE DESC, e.id
 LIMIT ?4 OFFSET ?3
 `
@@ -867,6 +902,8 @@ type ListarEntityCardsDescRow struct {
 
 // Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title). owned/
 // file_count somam a juncao media_file_entity do mesmo jeito -- ver a nota longa acima.
+// Posse via ARVORE (entity_relation, briefing 0116) somada tanto na coluna `owned`
+// quanto no FILTRO `owned` -- ver nota longa na versao ASC/ObterEntityCard.
 func (q *Queries) ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCardsDescParams) ([]ListarEntityCardsDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarEntityCardsDesc,
 		arg.Type,
@@ -907,6 +944,11 @@ func (q *Queries) ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCar
 }
 
 const listarEntityCardsRecentes = `-- name: ListarEntityCardsRecentes :many
+WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT parent_id, child_id FROM entity_relation
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
 SELECT
     e.id, e.type, e.title, e.status,
     EXISTS (
@@ -914,6 +956,9 @@ SELECT
         UNION ALL
         SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
             WHERE mfe.entity_id = e.id AND mf.state = 'present'
+        UNION ALL
+        SELECT 1 FROM arvore t JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+            WHERE t.ancestor_id = e.id
     ) AS owned,
     (SELECT COUNT(*) FROM (
         SELECT m.id FROM media_file m WHERE m.entity_id = e.id
@@ -929,7 +974,11 @@ LEFT JOIN entity_catalog_completeness ecc ON ecc.entity_id = e.id
 WHERE e.type NOT IN ('season', 'episode')
   AND (?1 IS NULL OR e.type = ?1)
   AND (?2 IS NULL
-       OR EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') = ?2)
+       OR (
+            EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present')
+            OR EXISTS (SELECT 1 FROM arvore t JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+                WHERE t.ancestor_id = e.id)
+          ) = ?2)
 ORDER BY e.created_at DESC, e.id
 LIMIT ?4 OFFSET ?3
 `
@@ -962,6 +1011,10 @@ type ListarEntityCardsRecentesRow struct {
 // paginacao LIMIT/OFFSET das irmas por titulo -- o consumidor real (carrossel
 // da home) sempre usa limit pequeno (ex. 10), sem necessidade de um shape de
 // paginacao dedicado.
+// Posse via ARVORE (entity_relation, briefing 0116) somada tanto na coluna `owned`
+// quanto no FILTRO `owned` -- ver nota longa na versao ASC/ObterEntityCard. E o
+// que faz o carrossel "adicionados recentemente" de artista (owned=true) trazer
+// resultado mesmo o artista nunca tendo media_file DIRETO nem via juncao.
 func (q *Queries) ListarEntityCardsRecentes(ctx context.Context, arg ListarEntityCardsRecentesParams) ([]ListarEntityCardsRecentesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarEntityCardsRecentes,
 		arg.Type,
@@ -1156,6 +1209,11 @@ func (q *Queries) ObterEntity(ctx context.Context, id string) (Entity, error) {
 }
 
 const obterEntityCard = `-- name: ObterEntityCard :one
+WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT parent_id, child_id FROM entity_relation
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
 SELECT
     e.id, e.type, e.title, e.status, e.release_date,
     EXISTS (
@@ -1163,6 +1221,9 @@ SELECT
         UNION ALL
         SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
             WHERE mfe.entity_id = e.id AND mf.state = 'present'
+        UNION ALL
+        SELECT 1 FROM arvore t JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+            WHERE t.ancestor_id = e.id
     ) AS owned,
     (SELECT COUNT(*) FROM (
         SELECT m.id FROM media_file m WHERE m.entity_id = e.id
@@ -1203,6 +1264,13 @@ type ObterEntityCardRow struct {
 // entity_catalog_completeness (briefing 0058, recalculado em lote pelo job
 // saude_biblioteca) via LEFT JOIN -- NULL quando o item ainda nao foi
 // avaliado (item novo, ou draft).
+// Posse via ARVORE (entity_relation, briefing 0116): alem do arquivo DIRETO e da
+// juncao media_file_entity (posse de IRMAO, ver nota longa em ListarEntityCards),
+// soma tambem qualquer DESCENDENTE na arvore de entity_relation (CTE recursiva
+// parent_id->child_id) que possua um media_file 'present' -- cobre artista/album
+// de musica (ADR-0027/0029), cujo unico vinculo com o arquivo fica na FAIXA, dois
+// niveis abaixo, sem NUNCA usar media_file_entity para faixa. Generico a qualquer
+// profundidade e a qualquer kind de relacao (nao hardcoded a musica).
 func (q *Queries) ObterEntityCard(ctx context.Context, id string) (ObterEntityCardRow, error) {
 	row := q.db.QueryRowContext(ctx, obterEntityCard, id)
 	var i ObterEntityCardRow

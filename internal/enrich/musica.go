@@ -45,6 +45,12 @@ func (s *Servico) importarArtista(ctx context.Context, source, sourceID string, 
 	if err != nil {
 		return "", false, err
 	}
+	// Inventário de artes do ARTISTA (fanart.tv, briefing 0116): mesmo gatilho
+	// best-effort já usado pelo álbum (Cover Art Archive) — cruza pelo
+	// external_id_mbid que acharOuCriarArtista acabou de gravar. Cover Art
+	// Archive não modela foto/fundo de artista (só capa de release), por isso
+	// só a fanart.tv (quando configurada) tem chance de responder aqui.
+	s.enriquecerArtes(ctx, artistaID, tipoArtista, langs)
 	for i, alb := range arvore.Albuns {
 		s.importarAlbum(ctx, artistaID, arvore.MBID, alb, i, langs)
 	}
@@ -302,6 +308,9 @@ func (s *Servico) ImportarFaixaPossuida(ctx context.Context, source, artistaMBID
 	if err != nil {
 		return "", false, err
 	}
+	// Inventário de artes do ARTISTA (fanart.tv, briefing 0116) — mesmo gatilho
+	// best-effort do álbum abaixo, ver nota longa em importarArtista.
+	s.enriquecerArtes(ctx, artistaID, tipoArtista, langs)
 
 	alb, err := s.buscarAlbumAlvo(ctx, ap, artistaMBID, alvo, langs)
 	if err != nil {

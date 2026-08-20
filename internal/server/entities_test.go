@@ -223,6 +223,68 @@ func TestListEntitiesFiltroOwned(t *testing.T) {
 	}
 }
 
+// TestListEntitiesOwnedViaArvore (briefing 0116): `owned` de um artista/album de música
+// SEMPRE seria false num check direto (só a faixa liga a media_file, ADR-0027) -- essa
+// checagem estrita deixava o carrossel "adicionados recentemente" de artista sempre vazio
+// e a "Posse" de /library/artists sempre zerada, mesmo com faixas realmente possuídas.
+// Monta a arvore artista->album->faixa via entity_relation (mesmo shape que
+// enrich.ImportarFaixaPossuida grava) com um media_file present só na FAIXA, e exige que
+// tanto o artista quanto o álbum apareçam como owned=true (rollup pela árvore), e que o
+// filtro `owned=true` os traga de volta. Um segundo artista SEM nenhuma faixa possuída
+// prova que o rollup não é sempre true (owned=false continua funcionando).
+func TestListEntitiesOwnedViaArvore(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "art1", "artista", "Duran Duran")
+	semearEntity(t, d, "alb1", "album", "Rio")
+	semearEntity(t, d, "fx1", "faixa", "Hungry Like the Wolf")
+	ligarFilhoOrdenado(t, d, "r1", "art1", "alb1", "music_artista_principal", 0)
+	ligarFilhoOrdenado(t, d, "r2", "alb1", "fx1", "music_album", 1)
+	semearFile(t, d, "f1", "fx1", "/lib/musica/rio/01.flac", "present", 1, "")
+
+	semearEntity(t, d, "art2", "artista", "Sem Posse")
+	semearEntity(t, d, "alb2", "album", "Nada Aqui")
+	ligarFilhoOrdenado(t, d, "r3", "art2", "alb2", "music_artista_principal", 0)
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities?type=artista", nil)
+	out := decodeList(t, rec.Body.Bytes())
+	owned := map[string]bool{}
+	for _, it := range out.Items {
+		owned[it.ID] = it.Owned
+	}
+	if !owned["art1"] {
+		t.Errorf("art1.owned = false, quero true (faixa possuida 2 niveis abaixo)")
+	}
+	if owned["art2"] {
+		t.Errorf("art2.owned = true, quero false (nenhuma faixa possuida)")
+	}
+
+	recAlb := do(t, h, http.MethodGet, "/api/v1/entities?type=album", nil)
+	outAlb := decodeList(t, recAlb.Body.Bytes())
+	for _, it := range outAlb.Items {
+		if it.ID == "alb1" && !it.Owned {
+			t.Errorf("alb1.owned = false, quero true (faixa possuida 1 nivel abaixo)")
+		}
+		if it.ID == "alb2" && it.Owned {
+			t.Errorf("alb2.owned = true, quero false")
+		}
+	}
+
+	recFiltro := do(t, h, http.MethodGet, "/api/v1/entities?type=artista&owned=true", nil)
+	outFiltro := decodeList(t, recFiltro.Body.Bytes())
+	if outFiltro.Total != 1 || outFiltro.Items[0].ID != "art1" {
+		t.Fatalf("type=artista&owned=true: total=%d, quero só art1", outFiltro.Total)
+	}
+
+	// sort=-created_at&owned=true é EXATAMENTE a query do carrossel "adicionados
+	// recentemente" da home (RecentlyAddedRail) -- sem o rollup pela árvore, o
+	// carrossel de artista fica sempre vazio mesmo com faixas possuídas.
+	recRail := do(t, h, http.MethodGet, "/api/v1/entities?type=artista&owned=true&sort=-created_at&limit=10", nil)
+	outRail := decodeList(t, recRail.Body.Bytes())
+	if outRail.Total != 1 || outRail.Items[0].ID != "art1" {
+		t.Fatalf("carrossel (sort=-created_at&owned=true): total=%d, quero só art1", outRail.Total)
+	}
+}
+
 func TestListEntitiesPaginacaoEOrdenacao(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	// Títulos fora de ordem para provar a ordenação por título.

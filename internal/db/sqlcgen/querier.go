@@ -384,9 +384,13 @@ type Querier interface {
 	// saude_biblioteca) via LEFT JOIN -- NULL quando o item ainda nao foi
 	// avaliado (item novo, ou draft). E um JOIN simples (nao precisa de
 	// agregacao): a linha do cache ja vem pronta, 1:1 com a entity.
+	// Posse via ARVORE (entity_relation, briefing 0116) somada tanto na coluna `owned`
+	// quanto no FILTRO `owned` -- ver nota longa na versao ASC/ObterEntityCard.
 	ListarEntityCards(ctx context.Context, arg ListarEntityCardsParams) ([]ListarEntityCardsRow, error)
 	// Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title). owned/
 	// file_count somam a juncao media_file_entity do mesmo jeito -- ver a nota longa acima.
+	// Posse via ARVORE (entity_relation, briefing 0116) somada tanto na coluna `owned`
+	// quanto no FILTRO `owned` -- ver nota longa na versao ASC/ObterEntityCard.
 	ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCardsDescParams) ([]ListarEntityCardsDescRow, error)
 	// Igual a ListarEntityCards, mas ordena por created_at DESCENDENTE
 	// (sort=-created_at, briefings 0109/0110): "adicionados recentemente" na
@@ -396,6 +400,10 @@ type Querier interface {
 	// paginacao LIMIT/OFFSET das irmas por titulo -- o consumidor real (carrossel
 	// da home) sempre usa limit pequeno (ex. 10), sem necessidade de um shape de
 	// paginacao dedicado.
+	// Posse via ARVORE (entity_relation, briefing 0116) somada tanto na coluna `owned`
+	// quanto no FILTRO `owned` -- ver nota longa na versao ASC/ObterEntityCard. E o
+	// que faz o carrossel "adicionados recentemente" de artista (owned=true) trazer
+	// resultado mesmo o artista nunca tendo media_file DIRETO nem via juncao.
 	ListarEntityCardsRecentes(ctx context.Context, arg ListarEntityCardsRecentesParams) ([]ListarEntityCardsRecentesRow, error)
 	// Universo elegivel do job `midias_faltantes` (briefing 0064) PARA MOVIE/TV
 	// DIRETO: toda entity que possui ao menos um media_file 'present' apontando
@@ -629,6 +637,13 @@ type Querier interface {
 	// entity_catalog_completeness (briefing 0058, recalculado em lote pelo job
 	// saude_biblioteca) via LEFT JOIN -- NULL quando o item ainda nao foi
 	// avaliado (item novo, ou draft).
+	// Posse via ARVORE (entity_relation, briefing 0116): alem do arquivo DIRETO e da
+	// juncao media_file_entity (posse de IRMAO, ver nota longa em ListarEntityCards),
+	// soma tambem qualquer DESCENDENTE na arvore de entity_relation (CTE recursiva
+	// parent_id->child_id) que possua um media_file 'present' -- cobre artista/album
+	// de musica (ADR-0027/0029), cujo unico vinculo com o arquivo fica na FAIXA, dois
+	// niveis abaixo, sem NUNCA usar media_file_entity para faixa. Generico a qualquer
+	// profundidade e a qualquer kind de relacao (nao hardcoded a musica).
 	ObterEntityCard(ctx context.Context, id string) (ObterEntityCardRow, error)
 	ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.NullString) (Entity, error)
 	// Lookup por id externo mbid (MusicBrainz) via coluna gerada + indice (briefing 0106,

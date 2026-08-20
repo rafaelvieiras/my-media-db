@@ -172,6 +172,54 @@ func exigirBackdropProxyado(t *testing.T, itens []artworkItem) {
 	}
 }
 
+// TestArtworkInventarioMultiplasFontes (briefing 0116): o /artwork mescla o inventario de
+// QUALQUER fonte cacheada em media_external, nao so 'fanarttv' -- regressao real achada em
+// producao onde o inventario do MusicBrainz/Cover Art Archive (source='musicbrainz', capa
+// de album) era gravado com sucesso mas NUNCA aparecia no /artwork porque a leitura estava
+// hardcoded a source='fanarttv' (briefing 0048, antes de existir uma 2a fonte de arte).
+// Semeia inventario sob DUAS fontes diferentes e exige que ambas apareçam mescladas.
+func TestArtworkInventarioMultiplasFontes(t *testing.T) {
+	h, d := setupSearchServer(t, WithAssetsDir(t.TempDir()))
+	semearEntity(t, d, "alb1", "album", "Collected")
+
+	invFanart, _ := json.Marshal(map[string]any{
+		provider.ChaveEnvelopeInventarioArtes: map[string]any{
+			"logo": []provider.ArteInventario{{URL: "https://assets.fanart.tv/logo.png", Likes: 5}},
+		},
+	})
+	semearMediaExternal(t, d, "me-fa", "alb1", "fanarttv", string(invFanart))
+
+	invMusicbrainz, _ := json.Marshal(map[string]any{
+		provider.ChaveEnvelopeInventarioArtes: map[string]any{
+			"poster": []provider.ArteInventario{{URL: "https://coverartarchive.org/release/x/front.jpg"}},
+			"back":   []provider.ArteInventario{{URL: "https://coverartarchive.org/release/x/back.jpg"}},
+		},
+	})
+	semearMediaExternal(t, d, "me-mb", "alb1", "musicbrainz", string(invMusicbrainz))
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/alb1/artwork", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET artwork status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	grupos, available := respostaArtwork(t, rec.Body.Bytes())
+
+	if available["poster"] != 1 {
+		t.Errorf("available.poster = %d, quero 1 (Cover Art Archive/musicbrainz)", available["poster"])
+	}
+	if available["back"] != 1 {
+		t.Errorf("available.back = %d, quero 1 (Cover Art Archive/musicbrainz)", available["back"])
+	}
+	if available["logo"] != 1 {
+		t.Errorf("available.logo = %d, quero 1 (fanart.tv)", available["logo"])
+	}
+	if len(grupos["poster"]) != 1 || grupos["poster"][0].Source != "musicbrainz" {
+		t.Errorf("grupos[poster] = %+v, quero 1 item source=musicbrainz", grupos["poster"])
+	}
+	if len(grupos["logo"]) != 1 || grupos["logo"][0].Source != "fanarttv" {
+		t.Errorf("grupos[logo] = %+v, quero 1 item source=fanarttv", grupos["logo"])
+	}
+}
+
 // TestArtworkInventarioDedupeContraMaterializado: uma arte do inventario fanart.tv cujo
 // url ja foi materializado (asset origin=external com meta.source_url igual) NAO aparece
 // de novo como candidato -- so a versao local conta (briefing 0072).

@@ -60,6 +60,20 @@ var kindsTV = map[string]string{
 	"seasonbanner":   "banner",
 }
 
+// kindsArtista mapeia cada tipo de arte de ARTISTA de música da fanart.tv para o nosso
+// kind (briefing 0116, endpoint GET /music/{mbid} — mesmo shape achatado tipo->array que
+// filme/série, então reusa mapearArtes sem struct nova). A fanart.tv também aninha
+// capa/cdart de álbum dentro da MESMA resposta sob a chave "albums" (por release-group),
+// mas essa chave não está na tabela abaixo, então mapearArtes a ignora — capa de álbum já
+// é coberta pelo Cover Art Archive (MusicaBrainz), sem duplicar aqui.
+var kindsArtista = map[string]string{
+	"artistthumb":      "thumb",
+	"artistbackground": "fanart",
+	"hdmusiclogo":      "logo",
+	"musiclogo":        "logo",
+	"musicbanner":      "banner",
+}
+
 // Credencial é a credencial da fanart.tv: a chave PESSOAL (api_key), que autentica
 // sozinha (validado, HTTP 200) e bypassa o limite da chave de projeto. Quem lê o env é
 // o main; aqui já chega resolvida.
@@ -114,8 +128,10 @@ func (c *Client) MapearDetalhe(json.RawMessage) (map[string]any, error) {
 }
 
 // BuscarArtes lista as artes do item na fanart.tv (capacidade provider.ArteProvider).
-// Filme: /movies/{id} (id TMDB preferido, senão IMDB). Série: /tv/{id} (id TheTVDB). Sem
-// id utilizável ou sem match (404) devolve (nil, nil) — graça. Erro real propaga. `langs`
+// Filme: /movies/{id} (id TMDB preferido, senão IMDB). Série: /tv/{id} (id TheTVDB).
+// Artista de música: /music/{id} (id MBID, briefing 0116) — foto/fundo/logo do artista;
+// capa de álbum fica a cargo do Cover Art Archive (MusicBrainz), não desta fonte. Sem id
+// utilizável ou sem match (404) devolve (nil, nil) — graça. Erro real propaga. `langs`
 // não é usado na chamada (a fanart.tv devolve TODOS os idiomas de uma vez); o lang de cada
 // arte é preservado no inventário.
 func (c *Client) BuscarArtes(ctx context.Context, ids provider.ExternalIDs, tipo string, langs []string) ([]provider.Arte, error) {
@@ -152,6 +168,11 @@ func (c *Client) rotaETabela(ids provider.ExternalIDs, tipo string) (string, map
 			return "", nil, false
 		}
 		return "/tv/" + url.PathEscape(ids.Tvdb), kindsTV, true
+	case "artista":
+		if ids.Mbid == "" {
+			return "", nil, false
+		}
+		return "/music/" + url.PathEscape(ids.Mbid), kindsArtista, true
 	default:
 		return "", nil, false
 	}
