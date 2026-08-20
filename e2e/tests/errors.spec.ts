@@ -131,7 +131,8 @@ test('import com type invalido responde 422 com envelope pt-BR', async ({
 }) => {
   // Caminho de erro de VALIDACAO sem tela dedicada (a UI de import nunca manda um
   // type invalido): garante o contrato do envelope 422 direto na API. source_id
-  // valido, type fora de movie|tv|collection.
+  // valido, type fora de movie|tv|collection|artista|faixa (0115 Parte 2
+  // acrescentou artista/faixa ao enum aceito e a mensagem correspondente).
   const res = await request.post('/api/v1/import', {
     data: { source: 'tmdb', source_id: '603', type: 'banana' },
   })
@@ -139,6 +140,6 @@ test('import com type invalido responde 422 com envelope pt-BR', async ({
   const body = await res.json()
   expect(body.error.code).toBe('invalid_body')
   expect(body.error.message).toBe(
-    'type inválido (use movie, tv ou collection)',
+    'type inválido (use movie, tv, collection, artista ou faixa)',
   )
 })

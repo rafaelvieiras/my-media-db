@@ -60,8 +60,14 @@ test('item ja importado aparece como "Na biblioteca" e linka ao interno', async 
 test('a biblioteca lista o filme importado', async ({ page, request }) => {
   await request.post('/api/v1/import', { data: { source_id: '603', type: 'movie' } })
 
-  await page.goto('/')
-  await expect(page.getByRole('heading', { level: 1, name: 'Biblioteca' })).toBeVisible()
+  // Desde o briefing 0114/ADR-0030 a home (`/`) só mostra os carrosséis de
+  // "adicionados recentemente" (owned=true, ver RecentlyAddedRail) — o item
+  // deste teste é só CATALOGADO (import sem arquivo/posse real), então não
+  // aparece ali por desenho. A listagem completa (owned + não-owned, mesmo
+  // comportamento que a home tinha antes do 0114) virou a rota própria
+  // `/library/:entitySlug`; "movies" é o slug de `movie` (lib/library-slugs.ts).
+  await page.goto('/library/movies')
+  await expect(page.getByRole('heading', { level: 1, name: 'Filmes' })).toBeVisible()
   // O card do Matrix aparece no catalogo, linkando ao detalhe interno.
   await expect(page.getByRole('link', { name: /Matrix/ }).first()).toBeVisible()
 })
