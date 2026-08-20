@@ -305,6 +305,78 @@ func TestBuscarDetalheNaoEncontrado(t *testing.T) {
 	}
 }
 
+// servidorDetalheMusicaFake serve só /release-group/{id} e /recording/{id} SEM exigir
+// nenhum `inc` (diferente de servidorMBFake, cujo /recording/rec-1 valida
+// inc=releases+release-groups para outro consumidor, BuscarAlbumDaFaixa) -- o caminho
+// de BuscarDetalhe pra album/faixa não pede `inc` nenhum, só o título.
+func servidorDetalheMusicaFake(t *testing.T) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/release-group/rg-1", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"title": "Album One", "first-release-date": "1999-05-01"}`))
+	})
+	mux.HandleFunc("/release-group/rg-inexistente", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	mux.HandleFunc("/recording/rec-1", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"title": "Track A"}`))
+	})
+	return httptest.NewServer(mux)
+}
+
+// TestBuscarDetalheAlbumEFaixaDespachaPorTipo cobre o bug achado na validação em
+// produção de 20/08/2026: BuscarDetalhe pra tipo=album/faixa chamava sempre /artist/
+// (sourceID errado -- pra esses dois tipos o sourceID é MBID de release-group/recording,
+// não de artista) e batia em 404/502, quebrando "Baixar Metadados". Confirma o dispatch
+// correto de endpoint E o remap "title"→"name" (remapParaNome) que deixa MapearDetalhe
+// funcionar sem mudar a assinatura da interface core provider.Provider.
+func TestBuscarDetalheAlbumEFaixaDespachaPorTipo(t *testing.T) {
+	mb := servidorDetalheMusicaFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	t.Run("album", func(t *testing.T) {
+		raw, err := c.BuscarDetalhe(context.Background(), "rg-1", "album", nil)
+		if err != nil {
+			t.Fatalf("BuscarDetalhe: %v", err)
+		}
+		campos, err := c.MapearDetalhe(raw)
+		if err != nil {
+			t.Fatalf("MapearDetalhe: %v", err)
+		}
+		if campos["title"] != "Album One" {
+			t.Fatalf("campos[title] = %v, esperava Album One", campos["title"])
+		}
+	})
+
+	t.Run("faixa", func(t *testing.T) {
+		raw, err := c.BuscarDetalhe(context.Background(), "rec-1", "faixa", nil)
+		if err != nil {
+			t.Fatalf("BuscarDetalhe: %v", err)
+		}
+		campos, err := c.MapearDetalhe(raw)
+		if err != nil {
+			t.Fatalf("MapearDetalhe: %v", err)
+		}
+		if campos["title"] != "Track A" {
+			t.Fatalf("campos[title] = %v, esperava Track A", campos["title"])
+		}
+	})
+}
+
+func TestBuscarDetalheAlbumNaoEncontrado(t *testing.T) {
+	mb := servidorDetalheMusicaFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	_, err := c.BuscarDetalhe(context.Background(), "rg-inexistente", "album", nil)
+	if !errors.Is(err, provider.ErrNaoEncontrado) {
+		t.Fatalf("err = %v, esperava provider.ErrNaoEncontrado", err)
+	}
+}
+
 func TestBuscarArtistaArvore(t *testing.T) {
 	mb := servidorMBFake(t)
 	defer mb.Close()

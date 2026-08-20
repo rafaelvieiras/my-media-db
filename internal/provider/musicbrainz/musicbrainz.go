@@ -135,21 +135,70 @@ func (c *Client) Buscar(ctx context.Context, query, tipo, lang string) ([]provid
 	return out, nil
 }
 
-// BuscarDetalhe puxa o detalhe CRU do artista (capacidade core provider.Provider,
-// suficiente para o import genérico existente). `tipo`/`langs` não têm efeito aqui: o
-// MusicBrainz não modela detalhe por tipo, e não é multi-idioma.
+// BuscarDetalhe puxa o detalhe CRU (capacidade core provider.Provider, usada pelo
+// "Baixar Metadados" genérico via internal/enrich e por importarItemBase). Despacha por
+// `tipo` para o endpoint correto — /artist para artista, /release-group para album,
+// /recording para faixa (os MESMOS que montarAlbumOuErro/BuscarAlbumDaFaixa já usam) —
+// achado real na validação em produção de 20/08/2026: antes disso, SEMPRE chamava
+// /artist/{sourceID} não importa o tipo, e sourceID pra album/faixa é o MBID de
+// release-group/recording (não de artista), então batia em 404/502 nesses dois tipos.
+// `langs` não tem efeito: o MusicBrainz não é multi-idioma. Para album/faixa, o corpo
+// passa por remapParaNome antes de devolver: release-group/recording expõem o título na
+// chave "title" (não "name"), então sem esse remap MapearDetalhe (abaixo) não encontraria
+// nada — normalizar aqui evita mudar a assinatura de MapearDetalhe (que não recebe
+// `tipo`), uma mudança que seria BREAKING em todo Provider registrado (tmdb/tvdb/
+// fanarttv/themerrdb), para resolver um problema que é só do MusicBrainz.
 func (c *Client) BuscarDetalhe(ctx context.Context, sourceID, tipo string, langs []string) (json.RawMessage, error) {
-	_, _ = tipo, langs
-	body, err := c.getMB(ctx, "/artist/"+url.PathEscape(sourceID), url.Values{})
-	if err != nil {
-		return nil, err
+	_ = langs
+	switch tipo {
+	case "album":
+		body, err := c.getMB(ctx, "/release-group/"+url.PathEscape(sourceID), url.Values{})
+		if err != nil {
+			return nil, err
+		}
+		return remapParaNome(body)
+	case "faixa":
+		body, err := c.getMB(ctx, "/recording/"+url.PathEscape(sourceID), url.Values{})
+		if err != nil {
+			return nil, err
+		}
+		return remapParaNome(body)
+	default:
+		body, err := c.getMB(ctx, "/artist/"+url.PathEscape(sourceID), url.Values{})
+		if err != nil {
+			return nil, err
+		}
+		return json.RawMessage(body), nil
 	}
-	return json.RawMessage(body), nil
 }
 
-// MapearDetalhe extrai só o nome do artista para o shape canônico — o suficiente para o
-// import genérico (0015) dar título à entity `artista`; o resto da árvore (álbuns/faixas)
-// entra por importarArtista (internal/enrich/musica.go, fora deste pacote).
+// remapParaNome reescreve o `"title"` de um release-group/recording cru para `"name"` —
+// o campo que MapearDetalhe sabe ler (mesma chave que o shape de artista já usa). Ver
+// comentário de BuscarDetalhe para o porquê deste desvio em vez de mudar MapearDetalhe.
+func remapParaNome(body []byte) (json.RawMessage, error) {
+	var t respTitulo
+	if err := json.Unmarshal(body, &t); err != nil {
+		return nil, fmt.Errorf("musicbrainz: detalhe invalido: %w", err)
+	}
+	out, err := json.Marshal(struct {
+		Name string `json:"name"`
+	}{Name: t.Title})
+	if err != nil {
+		return nil, fmt.Errorf("musicbrainz: remapear detalhe: %w", err)
+	}
+	return json.RawMessage(out), nil
+}
+
+// respTitulo é o shape mínimo comum a /release-group/{id} e /recording/{id}: ambos
+// expõem o título do recurso na chave "title" (atributo core, sempre presente).
+type respTitulo struct {
+	Title string `json:"title"`
+}
+
+// MapearDetalhe extrai só o nome (artista) ou o título já remapeado (album/faixa, ver
+// BuscarDetalhe) para o shape canônico — o suficiente para o import/enrich genérico
+// (0015) dar título à entity; o resto da árvore (álbuns/faixas) entra por importarArtista
+// (internal/enrich/musica.go, fora deste pacote).
 func (c *Client) MapearDetalhe(raw json.RawMessage) (map[string]any, error) {
 	var d struct {
 		Name string `json:"name"`

@@ -93,12 +93,21 @@ func (fakeMusicaProvider) Buscar(context.Context, string, string, string) ([]pro
 // BuscarDetalhe/MapearDetalhe são o core MÍNIMO (briefing 0115,
 // acharOuCriarArtistaIdentidade): devolvem o nome do artista fixture como
 // "title", o suficiente para o import ESCOPADO criar a entity sem tocar em
-// release-groups. Qualquer outro sourceID devolve um payload vazio (título
-// cai no fallback do MBID, comportamento aceitável para os testes que não
-// exercitam esse caminho).
+// release-groups. Álbum/faixa (mbidAlbumFixture/mbidFaixa1Fixture) também
+// respondem, imitando o remapParaNome do provider real (achado 20/08/2026:
+// BuscarDetalhe pra esses dois tipos ignorava o tipo/sourceID e sempre
+// buscava artista, quebrando "Baixar Metadados" -- ver
+// TestEnriquecerAlbumEFaixaAtualizaTitulo). Qualquer outro sourceID devolve
+// um payload vazio (título cai no fallback do MBID, comportamento aceitável
+// para os testes que não exercitam esse caminho).
 func (fakeMusicaProvider) BuscarDetalhe(_ context.Context, sourceID, _ string, _ []string) (json.RawMessage, error) {
-	if sourceID == mbidArtistaFixture {
+	switch sourceID {
+	case mbidArtistaFixture:
 		return json.RawMessage(`{"name":"Fake Band"}`), nil
+	case mbidAlbumFixture:
+		return json.RawMessage(`{"name":"Fake Album Atualizado"}`), nil
+	case mbidFaixa1Fixture:
+		return json.RawMessage(`{"name":"Track One Atualizada"}`), nil
 	}
 	return json.RawMessage(`{}`), nil
 }
@@ -486,4 +495,49 @@ func contarComFiltro(t *testing.T, database *db.DB, query string, args ...any) i
 		t.Fatalf("contarComFiltro (%q, %v): %v", query, args, err)
 	}
 	return n
+}
+
+// TestEnriquecerAlbumEFaixaAtualizaTitulo cobre o bug achado na validação em produção
+// de 20/08/2026: "Baixar Metadados" (Enriquecer force=true) pra tipo=album/faixa
+// batia em 404/502 no MusicBrainz real porque BuscarDetalhe ignorava o tipo e sempre
+// buscava /artist/{sourceID} -- sourceID pra esses dois tipos é MBID de
+// release-group/recording, não de artista. fakeMusicaProvider.BuscarDetalhe agora
+// imita o remapParaNome do provider real (título vem em "name") pra mbidAlbumFixture/
+// mbidFaixa1Fixture; entity nasce com Title==sourceID (fallback pré-fix, mesmo molde
+// de TestEnriquecerCuraTituloNumerico em enrich_test.go) pra provar que Enriquecer
+// atualiza o título em vez de falhar.
+func TestEnriquecerAlbumEFaixaAtualizaTitulo(t *testing.T) {
+	svc, database := svcMusicaFake(t)
+	ctx := context.Background()
+	w := sqlcgen.New(database.Write)
+
+	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "al1", Type: tipoAlbum, Title: mbidAlbumFixture}); err != nil {
+		t.Fatalf("CriarEntity album: %v", err)
+	}
+	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "fx1", Type: tipoFaixa, Title: mbidFaixa1Fixture}); err != nil {
+		t.Fatalf("CriarEntity faixa: %v", err)
+	}
+
+	if err := svc.Enriquecer(ctx, "al1", "musicbrainz", mbidAlbumFixture, tipoAlbum, []string{"en"}, true); err != nil {
+		t.Fatalf("Enriquecer album: %v", err)
+	}
+	if err := svc.Enriquecer(ctx, "fx1", "musicbrainz", mbidFaixa1Fixture, tipoFaixa, []string{"en"}, true); err != nil {
+		t.Fatalf("Enriquecer faixa: %v", err)
+	}
+
+	album, err := sqlcgen.New(database.Read).ObterEntity(ctx, "al1")
+	if err != nil {
+		t.Fatalf("ObterEntity album: %v", err)
+	}
+	if album.Title != "Fake Album Atualizado" {
+		t.Errorf("titulo do album = %q, esperava \"Fake Album Atualizado\"", album.Title)
+	}
+
+	faixa, err := sqlcgen.New(database.Read).ObterEntity(ctx, "fx1")
+	if err != nil {
+		t.Fatalf("ObterEntity faixa: %v", err)
+	}
+	if faixa.Title != "Track One Atualizada" {
+		t.Errorf("titulo da faixa = %q, esperava \"Track One Atualizada\"", faixa.Title)
+	}
 }
