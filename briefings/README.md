@@ -226,6 +226,22 @@ arquivo e UI ficam para briefings seguintes, a numerar depois de 0105 validado.
 | [0110](0110-navbar-biblioteca-dropdown-schema.md) | Navbar: "Biblioteca" com dropdown por schema | feature | done | 0107 |
 | [0111](0111-entity-view-musica-album-artista.md) | Variação de view de entidade para música (tracklist de álbum, discografia de artista), não exclusiva | feature | done | 0107 |
 
+### Fase 5+ — Música local-first e navegação genérica por schema
+
+Correção de rota achada em produção: o import automático de música trazia a
+discografia inteira a partir de 1 faixa casada (478 artistas/236 álbuns/2478
+faixas para 411 arquivos físicos), e álbum/faixa vazavam para home/navbar/
+busca como se fossem tipos de topo. Ver [ADR-0029](../docs/adr/0029-import-de-musica-local-first-por-faixa-possuida.md)
+(import local-first) e [ADR-0030](../docs/adr/0030-tipos-de-topo-biblioteca-e-busca-genericas.md)
+(registro único de tipos de topo).
+
+| ID | Briefing | Tipo | Status | Depende de |
+|---|---|---|---|---|
+| [0112](0112-registro-tipos-de-topo.md) | Registro de tipos "de topo" (fundação): fonte única Go, substitui duas exclusões hardcoded divergentes | chore/fundação | ready | — |
+| [0113](0113-busca-generica-multi-schema.md) | Busca genérica multi-schema: filtro de tipo dinâmico, agrupamento por tipo real | feature | ready | 0112 |
+| [0114](0114-home-topo-e-rota-library.md) | Home só com tipos de topo (remove grid completo) + rota `/library/:entitySlug` com "Ver Todos" | feature | ready | 0112 |
+| [0115](0115-musica-import-local-first.md) | Música: import local-first (só o que a faixa possuída traz), faixas faltando importáveis sob demanda, feat não auto-criado | fix/feature | ready | 0105, 0106, 0107 |
+
 ### Transversal — Infraestrutura operacional
 
 Não pertence a nenhuma fase de UI do roadmap; é infraestrutura de execução que
