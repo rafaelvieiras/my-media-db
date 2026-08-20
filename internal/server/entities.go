@@ -810,6 +810,7 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string, proxiarIma
 	if proxiarImagens {
 		s.proxyarCreditos(resolvida.Cast, resolvida.Crew, resolvida.Companies)
 	}
+	s.completarOwnedViaArvore(ctx, &resolvida, id)
 	resolvida.Ancestors = s.montarAncestrais(ctx, id)
 	resolvida.Ownership = s.montarPosseAgregada(ctx, ent)
 	resolvida.Orderings = s.montarOrderings(ctx, ent)
@@ -817,6 +818,23 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string, proxiarIma
 	s.herdarFanartTemporada(ctx, &resolvida, assets, ent)
 	s.anotarCompletudeCatalogacao(ctx, &resolvida, ent, assets)
 	return resolvida, true, nil
+}
+
+// completarOwnedViaArvore completa o Owned do detalhe único quando o resolver (via
+// listarFilesDaEntity/temPosse) o deu como false (briefing 0116): listarFilesDaEntity só
+// olha media_file.entity_id DIRETO (ou a junção media_file_entity, pro episódio) — nunca
+// desce a árvore de entity_relation. Para artista/album de música (ADR-0027: só a FAIXA,
+// dois níveis abaixo, liga media_file), isso fazia Owned SEMPRE false no detalhe único,
+// mesmo já corrigido nas listagens (entity.sql, CTE recursiva). Só consulta o banco de
+// novo quando o resolver não achou posse direta (custo extra restrito ao caso que
+// precisa); erro de leitura degrada em silêncio (mantém o Owned que o resolver já deu).
+func (s *Server) completarOwnedViaArvore(ctx context.Context, e *resolver.Entidade, id string) {
+	if e.Owned {
+		return
+	}
+	if arv, err := s.leitura().EntityTemPosseNaArvore(ctx, id); err == nil && arv {
+		e.Owned = true
+	}
 }
 
 // anotarCompletudeCatalogacao preenche resolvida.CatalogCompleteness (briefing

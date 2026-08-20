@@ -310,6 +310,84 @@ func (q *Queries) EntityTemPosse(ctx context.Context, entityID string) (bool, er
 	return tem_posse, err
 }
 
+const entityTemPosseNaArvore = `-- name: EntityTemPosseNaArvore :one
+WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT parent_id, child_id FROM entity_relation
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
+SELECT EXISTS (
+    SELECT 1 FROM arvore t
+    JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+    WHERE t.ancestor_id = e.id
+) AS tem_posse
+FROM entity e
+WHERE e.id = ?
+`
+
+// POSSE DERIVADA na ARVORE de descendentes (briefing 0116): verdadeiro se existe
+// media_file 'present' em QUALQUER descendente desta entity via entity_relation, a
+// qualquer profundidade -- cobre artista->album->faixa (ADR-0027: media_file.entity_id
+// so aponta pra faixa, nunca pro album/artista). Mesma CTE de fecho transitivo ja usada
+// pelas listagens (entity.sql, ObterEntityCard/ListarEntityCards*), aqui isolada porque
+// cada query sqlc compila a propria WITH RECURSIVE. Usada pelo detalhe unico
+// (resolverEntity, internal/server/entities.go) para completar o Owned do resolver
+// quando EntityTemPosse (arquivo DIRETO) e false -- sem isso, artista/album de musica
+// sempre mostravam posse=false no detalhe mesmo com faixa possuida (as listagens ja
+// foram corrigidas antes; o detalhe usava um caminho separado, ListarMediaFilesPorEntity,
+// que nunca desce a arvore).
+func (q *Queries) EntityTemPosseNaArvore(ctx context.Context, id string) (bool, error) {
+	row := q.db.QueryRowContext(ctx, entityTemPosseNaArvore, id)
+	var tem_posse bool
+	err := row.Scan(&tem_posse)
+	return tem_posse, err
+}
+
+const listarEntitiesMusicaComFaixaPossuida = `-- name: ListarEntitiesMusicaComFaixaPossuida :many
+WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT parent_id, child_id FROM entity_relation
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
+SELECT DISTINCT e.id AS entity_id
+FROM entity e
+JOIN arvore t ON t.ancestor_id = e.id
+JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+WHERE e.type IN ('artista', 'album')
+ORDER BY entity_id
+`
+
+// Universo elegivel do job `midias_faltantes` PARA MUSICA (briefing 0116): toda entity
+// artista/album com ao menos um descendente (faixa, via artista->album->faixa ou
+// album->faixa direto) com media_file 'present'. media_file.entity_id de musica aponta
+// SEMPRE pra faixa (ADR-0027), nunca pro album/artista -- ListarEntityIDsComMediaFilePresente
+// acima nunca alcanca artista/album, entao precisa da MESMA arvore recursiva de
+// entity_relation ja usada pelo campo `owned` das listagens (entity.sql, WITH RECURSIVE
+// arvore) e por EntityTemPosseNaArvore acima. Sem isso, capa de album/foto de artista
+// nunca eram materializadas pelo job/toggle de auto-download (so cobriam movie/tv).
+func (q *Queries) ListarEntitiesMusicaComFaixaPossuida(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listarEntitiesMusicaComFaixaPossuida)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var entity_id string
+		if err := rows.Scan(&entity_id); err != nil {
+			return nil, err
+		}
+		items = append(items, entity_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listarEntityIDsComMediaFilePresente = `-- name: ListarEntityIDsComMediaFilePresente :many
 SELECT DISTINCT entity_id
 FROM media_file

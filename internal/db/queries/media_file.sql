@@ -207,6 +207,27 @@ JOIN media_file mf ON mf.id = mfe.media_file_id
 WHERE mfe.kind = 'tv_episode' AND mf.state = 'present'
 ORDER BY mfe.entity_id;
 
+-- name: ListarEntitiesMusicaComFaixaPossuida :many
+-- Universo elegivel do job `midias_faltantes` PARA MUSICA (briefing 0116): toda entity
+-- artista/album com ao menos um descendente (faixa, via artista->album->faixa ou
+-- album->faixa direto) com media_file 'present'. media_file.entity_id de musica aponta
+-- SEMPRE pra faixa (ADR-0027), nunca pro album/artista -- ListarEntityIDsComMediaFilePresente
+-- acima nunca alcanca artista/album, entao precisa da MESMA arvore recursiva de
+-- entity_relation ja usada pelo campo `owned` das listagens (entity.sql, WITH RECURSIVE
+-- arvore) e por EntityTemPosseNaArvore acima. Sem isso, capa de album/foto de artista
+-- nunca eram materializadas pelo job/toggle de auto-download (so cobriam movie/tv).
+WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT parent_id, child_id FROM entity_relation
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
+SELECT DISTINCT e.id AS entity_id
+FROM entity e
+JOIN arvore t ON t.ancestor_id = e.id
+JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+WHERE e.type IN ('artista', 'album')
+ORDER BY entity_id;
+
 -- name: EntityTemPosse :one
 -- POSSE DERIVADA (ADR-0009): verdadeiro se, e so se, existe ao menos um
 -- media_file 'present' para a entity. Posse NAO e coluna (uma coluna gerada nao
@@ -215,3 +236,28 @@ SELECT EXISTS (
     SELECT 1 FROM media_file
     WHERE entity_id = ? AND state = 'present'
 ) AS tem_posse;
+
+-- name: EntityTemPosseNaArvore :one
+-- POSSE DERIVADA na ARVORE de descendentes (briefing 0116): verdadeiro se existe
+-- media_file 'present' em QUALQUER descendente desta entity via entity_relation, a
+-- qualquer profundidade -- cobre artista->album->faixa (ADR-0027: media_file.entity_id
+-- so aponta pra faixa, nunca pro album/artista). Mesma CTE de fecho transitivo ja usada
+-- pelas listagens (entity.sql, ObterEntityCard/ListarEntityCards*), aqui isolada porque
+-- cada query sqlc compila a propria WITH RECURSIVE. Usada pelo detalhe unico
+-- (resolverEntity, internal/server/entities.go) para completar o Owned do resolver
+-- quando EntityTemPosse (arquivo DIRETO) e false -- sem isso, artista/album de musica
+-- sempre mostravam posse=false no detalhe mesmo com faixa possuida (as listagens ja
+-- foram corrigidas antes; o detalhe usava um caminho separado, ListarMediaFilesPorEntity,
+-- que nunca desce a arvore).
+WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT parent_id, child_id FROM entity_relation
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
+SELECT EXISTS (
+    SELECT 1 FROM arvore t
+    JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+    WHERE t.ancestor_id = e.id
+) AS tem_posse
+FROM entity e
+WHERE e.id = ?;

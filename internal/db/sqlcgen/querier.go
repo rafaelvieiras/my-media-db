@@ -302,6 +302,18 @@ type Querier interface {
 	// media_file 'present' para a entity. Posse NAO e coluna (uma coluna gerada nao
 	// enxerga outra tabela) -- e computada aqui.
 	EntityTemPosse(ctx context.Context, entityID string) (bool, error)
+	// POSSE DERIVADA na ARVORE de descendentes (briefing 0116): verdadeiro se existe
+	// media_file 'present' em QUALQUER descendente desta entity via entity_relation, a
+	// qualquer profundidade -- cobre artista->album->faixa (ADR-0027: media_file.entity_id
+	// so aponta pra faixa, nunca pro album/artista). Mesma CTE de fecho transitivo ja usada
+	// pelas listagens (entity.sql, ObterEntityCard/ListarEntityCards*), aqui isolada porque
+	// cada query sqlc compila a propria WITH RECURSIVE. Usada pelo detalhe unico
+	// (resolverEntity, internal/server/entities.go) para completar o Owned do resolver
+	// quando EntityTemPosse (arquivo DIRETO) e false -- sem isso, artista/album de musica
+	// sempre mostravam posse=false no detalhe mesmo com faixa possuida (as listagens ja
+	// foram corrigidas antes; o detalhe usava um caminho separado, ListarMediaFilesPorEntity,
+	// que nunca desce a arvore).
+	EntityTemPosseNaArvore(ctx context.Context, id string) (bool, error)
 	// Ao fim de uma execucao (Manager.Executar): espelha o resultado em
 	// job_definition (redundancia de leitura, evita JOIN na listagem) e recalcula
 	// next_run_at (nil quando desabilitado ou sem schedule_cron -- computado em
@@ -340,6 +352,15 @@ type Querier interface {
 	// do provider externo, briefing 0056).
 	ListarElegiveisEnriquecimentoRetroativo(ctx context.Context, arg ListarElegiveisEnriquecimentoRetroativoParams) ([]ListarElegiveisEnriquecimentoRetroativoRow, error)
 	ListarEntities(ctx context.Context, arg ListarEntitiesParams) ([]Entity, error)
+	// Universo elegivel do job `midias_faltantes` PARA MUSICA (briefing 0116): toda entity
+	// artista/album com ao menos um descendente (faixa, via artista->album->faixa ou
+	// album->faixa direto) com media_file 'present'. media_file.entity_id de musica aponta
+	// SEMPRE pra faixa (ADR-0027), nunca pro album/artista -- ListarEntityIDsComMediaFilePresente
+	// acima nunca alcanca artista/album, entao precisa da MESMA arvore recursiva de
+	// entity_relation ja usada pelo campo `owned` das listagens (entity.sql, WITH RECURSIVE
+	// arvore) e por EntityTemPosseNaArvore acima. Sem isso, capa de album/foto de artista
+	// nunca eram materializadas pelo job/toggle de auto-download (so cobriam movie/tv).
+	ListarEntitiesMusicaComFaixaPossuida(ctx context.Context) ([]string, error)
 	// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte imdb.
 	ListarEntitiesPorImdbExcetoId(ctx context.Context, arg ListarEntitiesPorImdbExcetoIdParams) ([]Entity, error)
 	// Espelha ObterEntityPorTmdb, mas devolve TODAS as entities com aquele id (menos

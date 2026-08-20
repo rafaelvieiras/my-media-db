@@ -38,15 +38,20 @@ import (
 var kindsMidiasFaltantes = []string{kindPoster, kindFanart, kindBanner, kindLogo, kindDisc, kindThumb}
 
 // ListarEntitiesComMediaFilePresente devolve os ids de TODA entity elegível
-// para o job midias_faltantes (briefing 0064, estendido pelo 0081): movie/tv
-// com media_file 'present' direto (ListarEntityIDsComMediaFilePresente --
+// para o job midias_faltantes (briefing 0064, estendido pelo 0081 e 0116):
+// movie/tv com media_file 'present' direto (ListarEntityIDsComMediaFilePresente --
 // media_file.entity_id aponta pra SÉRIE, nunca season/episódio, ver
 // internal/scanner/serie.go gravarArquivoSerie), MAIS season com ao menos um
 // episódio descendente presente (ListarSeasonIDsComEpisodioPresente --
 // habilita o pôster de temporada) MAIS episódio com media_file presente via
 // a junção media_file_entity (ListarEpisodeIDsComMediaFilePresente --
-// habilita o NFO do episódio). Season aparecer aqui NÃO contradiz a guarda
-// de gravarNFOSeFaltante (season não tem NFO próprio) -- só passa a
+// habilita o NFO do episódio) MAIS artista/album de música com ao menos uma
+// FAIXA descendente presente (ListarEntitiesMusicaComFaixaPossuida, briefing
+// 0116 -- media_file.entity_id de música só aponta pra faixa, ADR-0027; sem
+// isso o job nunca alcançava artista/album, então capa de álbum e foto de
+// artista nunca eram materializadas mesmo com o toggle de auto-download
+// ligado). Season aparecer aqui NÃO contradiz a guarda de
+// gravarNFOSeFaltante (season não tem NFO próprio) -- só passa a
 // materializar arte de nível de temporada.
 func (s *Server) ListarEntitiesComMediaFilePresente(ctx context.Context) ([]string, error) {
 	diretos, err := s.leitura().ListarEntityIDsComMediaFilePresente(ctx)
@@ -61,10 +66,15 @@ func (s *Server) ListarEntitiesComMediaFilePresente(ctx context.Context) ([]stri
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]string, 0, len(diretos)+len(seasons)+len(episodios))
+	musica, err := s.leitura().ListarEntitiesMusicaComFaixaPossuida(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(diretos)+len(seasons)+len(episodios)+len(musica))
 	ids = append(ids, diretos...)
 	ids = append(ids, seasons...)
 	ids = append(ids, episodios...)
+	ids = append(ids, musica...)
 	return ids, nil
 }
 
@@ -83,7 +93,21 @@ func (s *Server) MaterializarMidiasFaltantes(ctx context.Context, entityID strin
 		return nil, false, err
 	}
 
+	// materializarPosterDeArtista roda ANTES do loop de kindsMidiasFaltantes de propósito:
+	// ela usa o vencedor AINDA-NÃO-MATERIALIZADO do kind `thumb` (com SrcURL, pra baixar) --
+	// se rodasse depois, o próprio loop abaixo (kindsMidiasFaltantes inclui "thumb") já
+	// teria materializado o thumb como asset LOCAL sem SrcURL, e o alias não acharia nada
+	// pra baixar.
+	if ok, kerr := s.materializarPosterDeArtista(ctx, ent); kerr != nil {
+		log.Printf("midias_faltantes: falha ao materializar o poster da entity artista %q (best-effort, ignorado): %v", entityID, kerr)
+	} else if ok {
+		artesBaixadas = append(artesBaixadas, kindPoster)
+	}
+
 	for _, kind := range kindsMidiasFaltantes {
+		if kind == kindPoster && ent.Type == tipoEntArtista {
+			continue // já tratado por materializarPosterDeArtista acima (alias thumb->poster) -- reprocessar aqui contaria a mesma arte duas vezes em artesBaixadas
+		}
 		ok, kerr := s.materializarKindVencedor(ctx, ent, kind)
 		if kerr != nil {
 			log.Printf("midias_faltantes: falha ao materializar o kind %q da entity %q (best-effort, ignorado): %v", kind, entityID, kerr)
@@ -125,10 +149,7 @@ func (s *Server) materializarKindVencedor(ctx context.Context, ent sqlcgen.Entit
 		if err != nil {
 			return false, err
 		}
-		if _, err := s.materializarAsset(ctx, ent, asset); err != nil {
-			return false, err
-		}
-		return true, nil
+		return s.materializarAssetOuCache(ctx, ent, asset)
 	}
 
 	if vencedor.SrcURL == "" {
@@ -143,10 +164,64 @@ func (s *Server) materializarKindVencedor(ctx context.Context, ent sqlcgen.Entit
 		}
 		return false, err
 	}
+	return s.materializarAssetOuCache(ctx, ent, asset)
+}
+
+// materializarAssetOuCache chama materializarAsset (grava na pasta REAL da biblioteca) e
+// trata errSemDestino como sucesso "só cache" (briefing 0116): álbum/artista de música
+// não tem media_file DIRETO (só a faixa, descendente, liga -- ADR-0027), então
+// resolverDestino nunca acha uma pasta pra eles -- gravarAssetNaPastaReal sempre devolveria
+// errSemDestino. Isso não invalida o ganho do fix: o asset já foi criado no CACHE interno
+// por baixarEMaterializarArte (ANTES desta chamada, ou já existia via ObterAsset), que é
+// tudo que has_poster/o card precisam (entity.sql: EXISTS asset do kind, sem exigir
+// local_path). Materializar capa/foto de música na pasta REAL (arquivo ao lado das faixas)
+// fica FORA de escopo aqui -- exigiria resolver um "diretório canônico" de álbum/artista a
+// partir dos arquivos das faixas descendentes, decisão própria não coberta pelo bug
+// relatado (ausência da capa/foto no card). Para movie/tv/season/episódio (que sempre têm
+// destino resolvível, únicos tipos elegíveis antes do 0116) o comportamento não muda --
+// errSemDestino nunca ocorre pra eles aqui.
+func (s *Server) materializarAssetOuCache(ctx context.Context, ent sqlcgen.Entity, asset sqlcgen.Asset) (bool, error) {
 	if _, err := s.materializarAsset(ctx, ent, asset); err != nil {
+		if errors.Is(err, errSemDestino) {
+			return true, nil
+		}
 		return false, err
 	}
 	return true, nil
+}
+
+// materializarPosterDeArtista materializa o "poster" de uma entity artista a partir do
+// vencedor do kind `thumb` (briefing 0116): a fanart.tv não modela um kind próprio de
+// pôster para artista de música (kindsArtista, internal/provider/fanarttv/fanarttv.go, só
+// tem thumb/fanart/logo/banner), mas o card/has_poster (internal/db/queries/entity.sql)
+// só enxerga kind='poster' -- sem este passo, artista NUNCA teria has_poster=true mesmo
+// com foto disponível no inventário. No-op (false, nil) para qualquer tipo != artista, se
+// já existe algo no slot `poster` (materializado ou não -- o loop normal de
+// kindsMidiasFaltantes cuida do resto) ou se não há candidato/URL de origem no kind
+// `thumb`. Sempre baixa (nunca reusa um asset local de OUTRO kind): o thumb já
+// materializado não pode virar poster só trocando a linha do banco, porque
+// materializarAsset nomeia o arquivo na pasta real pelo kind.
+func (s *Server) materializarPosterDeArtista(ctx context.Context, ent sqlcgen.Entity) (bool, error) {
+	if ent.Type != tipoEntArtista {
+		return false, nil
+	}
+	grupos := s.montarGruposArtwork(ctx, ent.ID)
+	if len(grupos[kindPoster]) > 0 {
+		return false, nil // ja tem poster (o loop normal de kindsMidiasFaltantes cuida do resto)
+	}
+	candidatos := grupos[kindThumb]
+	if len(candidatos) == 0 || candidatos[0].SrcURL == "" {
+		return false, nil // sem candidato de thumb, ou o vencedor e um asset local (sem SrcURL)
+	}
+
+	asset, err := s.baixarEMaterializarArte(ctx, ent.ID, candidatos[0].SrcURL, kindPoster)
+	if err != nil {
+		if errors.Is(err, errBaixarArte) {
+			return false, nil
+		}
+		return false, err
+	}
+	return s.materializarAssetOuCache(ctx, ent, asset)
 }
 
 // MaterializarSeAutoDownloadLigado é o adaptador que satisfaz

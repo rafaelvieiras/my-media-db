@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
 // setupMidiasFaltantesServer sobe um Server (guardando a referência, não só
@@ -260,6 +262,218 @@ func TestMaterializarMidiasFaltantesSemCandidatoNaoFalha(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(libDir, "Sem.Arte.nfo")); err != nil {
 		t.Errorf("nfo não gravado em disco: %v", err)
 	}
+}
+
+// ── Música (briefing 0116): álbum/artista entram no universo do job e ganham "poster" ──
+
+// semearArvoreMusica monta artista->album->faixa (entity_relation) com UM media_file
+// present na faixa (o único jeito de música ligar a media_file, ADR-0027) e devolve os
+// ids (artistaID, albumID).
+func semearArvoreMusica(t *testing.T, d *db.DB) (artistaID, albumID string) {
+	t.Helper()
+	semearEntity(t, d, "art1", "artista", "Duran Duran")
+	semearEntity(t, d, "alb1", "album", "Rio")
+	semearEntity(t, d, "fx1", "faixa", "Hungry Like the Wolf")
+	ligarFilhoOrdenado(t, d, "r1", "art1", "alb1", "music_artista_principal", 0)
+	ligarFilhoOrdenado(t, d, "r2", "alb1", "fx1", "music_album", 1)
+	semearFile(t, d, "f1", "fx1", "/lib/musica/rio/01.flac", "present", 1, "")
+	return "art1", "alb1"
+}
+
+// TestListarEntitiesComMediaFilePresenteMusica cobre a extensão do universo elegível do
+// job midias_faltantes pra música (briefing 0116): artista/album SEM media_file DIRETO,
+// mas com uma faixa descendente possuída, agora aparecem -- antes, só media_file.entity_id
+// direto (que música nunca tem em artista/album) era considerado.
+func TestListarEntitiesComMediaFilePresenteMusica(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	artistaID, albumID := semearArvoreMusica(t, d)
+	semearEntity(t, d, "art2", "artista", "Sem Posse")
+
+	ids, err := srv.ListarEntitiesComMediaFilePresente(context.Background())
+	if err != nil {
+		t.Fatalf("ListarEntitiesComMediaFilePresente: %v", err)
+	}
+	achados := map[string]bool{}
+	for _, id := range ids {
+		achados[id] = true
+	}
+	if !achados[artistaID] {
+		t.Errorf("artista %q ausente de ListarEntitiesComMediaFilePresente (%v)", artistaID, ids)
+	}
+	if !achados[albumID] {
+		t.Errorf("album %q ausente de ListarEntitiesComMediaFilePresente (%v)", albumID, ids)
+	}
+	if achados["art2"] {
+		t.Errorf("art2 (sem faixa possuida nenhuma) presente em ListarEntitiesComMediaFilePresente (%v)", ids)
+	}
+}
+
+// semearInventarioArte grava o envelope de inventário de arte (ChaveEnvelopeInventarioArtes)
+// em media_external, no formato lido por montarGruposArtwork -- mesmo shape usado pelo
+// enrich real (fanart.tv/musicbrainz).
+func semearInventarioArte(t *testing.T, d *db.DB, meID, entityID, source, kind, url string) {
+	t.Helper()
+	inv, err := json.Marshal(map[string]any{
+		provider.ChaveEnvelopeInventarioArtes: map[string]any{
+			kind: []provider.ArteInventario{{URL: url}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal inventario: %v", err)
+	}
+	semearMediaExternal(t, d, meID, entityID, source, string(inv))
+}
+
+// TestMaterializarMidiasFaltantesAlbumBaixaCapaDoMusicbrainz cobre o caso ÁLBUM: a
+// fanart.tv/Cover Art Archive já grava a capa sob kind='poster' (mesmo vocabulário do
+// agregador), então o loop GENÉRICO de kindsMidiasFaltantes já materializa sem nenhum
+// caso especial -- só precisava que álbum entrasse no universo elegível (teste acima) e
+// que o helper de destino tratasse a ausência de pasta real graciosamente
+// (materializarAssetOuCache).
+func TestMaterializarMidiasFaltantesAlbumBaixaCapaDoMusicbrainz(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	_, albumID := semearArvoreMusica(t, d)
+	imgSrv := servidorImagem(t, nil)
+	semearInventarioArte(t, d, "me-mb", albumID, "musicbrainz", "poster", imgSrv.URL+"/img")
+
+	artes, _, err := srv.MaterializarMidiasFaltantes(context.Background(), albumID)
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes(%s): %v", albumID, err)
+	}
+	achouPoster := false
+	for _, k := range artes {
+		if k == "poster" {
+			achouPoster = true
+		}
+	}
+	if !achouPoster {
+		t.Fatalf("artesBaixadas = %v, quero conter poster", artes)
+	}
+
+	assets := decodeAssetList(t, srv, albumID)
+	if len(assets) != 1 || assets[0].Kind != "poster" {
+		t.Errorf("assets do album = %+v, quero 1 asset kind=poster", assets)
+	}
+}
+
+// TestMaterializarMidiasFaltantesArtistaBaixaPosterViaThumb cobre o caso ARTISTA: a
+// fanart.tv não modela um kind próprio de pôster de artista (só thumb/fanart/logo/banner,
+// kindsArtista em internal/provider/fanarttv) -- materializarPosterDeArtista usa o
+// vencedor do kind `thumb` como poster (briefing 0116), senão o card de artista NUNCA
+// teria has_poster=true.
+func TestMaterializarMidiasFaltantesArtistaBaixaPosterViaThumb(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	artistaID, _ := semearArvoreMusica(t, d)
+	imgSrv := servidorImagem(t, nil)
+	semearInventarioArte(t, d, "me-fa", artistaID, "fanarttv", "thumb", imgSrv.URL+"/img")
+
+	artes, _, err := srv.MaterializarMidiasFaltantes(context.Background(), artistaID)
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes(%s): %v", artistaID, err)
+	}
+	achouPoster := false
+	for _, k := range artes {
+		if k == "poster" {
+			achouPoster = true
+		}
+	}
+	if !achouPoster {
+		t.Fatalf("artesBaixadas = %v, quero conter poster (via alias de thumb)", artes)
+	}
+
+	assets := decodeAssetList(t, srv, artistaID)
+	temPoster := false
+	for _, a := range assets {
+		if a.Kind == "poster" {
+			temPoster = true
+		}
+	}
+	if !temPoster {
+		t.Errorf("assets do artista = %+v, quero um asset kind=poster (derivado do thumb)", assets)
+	}
+}
+
+// TestMaterializarPosterDeArtistaIdempotente cobre que uma 2a chamada não rebaixa/duplica
+// quando o artista já tem um poster (mesmo que só em cache, sem pasta real).
+func TestMaterializarPosterDeArtistaIdempotente(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	artistaID, _ := semearArvoreMusica(t, d)
+	imgSrv := servidorImagem(t, nil)
+	semearInventarioArte(t, d, "me-fa", artistaID, "fanarttv", "thumb", imgSrv.URL+"/img")
+
+	if _, _, err := srv.MaterializarMidiasFaltantes(context.Background(), artistaID); err != nil {
+		t.Fatalf("1a chamada: %v", err)
+	}
+	antes := decodeAssetList(t, srv, artistaID)
+
+	artes2, _, err := srv.MaterializarMidiasFaltantes(context.Background(), artistaID)
+	if err != nil {
+		t.Fatalf("2a chamada: %v", err)
+	}
+	for _, k := range artes2 {
+		if k == "poster" {
+			t.Errorf("2a chamada artesBaixadas = %v, nao deveria rebaixar poster (ja existe)", artes2)
+		}
+	}
+	depois := decodeAssetList(t, srv, artistaID)
+	if len(depois) != len(antes) {
+		t.Errorf("assets do artista mudaram de %d para %d entre chamadas -- duplicou", len(antes), len(depois))
+	}
+}
+
+// TestMaterializarPosterDeArtistaSemInventarioNaoFaz nada cobre "nada a fazer" (briefing
+// 0116): artista elegível (faixa possuída) mas SEM nenhum inventário de arte cacheado --
+// nenhum candidato de thumb, então nenhum poster é criado, sem erro.
+func TestMaterializarPosterDeArtistaSemInventarioNaoFazNada(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	artistaID, _ := semearArvoreMusica(t, d)
+
+	artes, _, err := srv.MaterializarMidiasFaltantes(context.Background(), artistaID)
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes: %v", err)
+	}
+	for _, k := range artes {
+		if k == "poster" {
+			t.Errorf("artesBaixadas = %v, nao deveria conter poster (sem inventario nenhum)", artes)
+		}
+	}
+	if assets := decodeAssetList(t, srv, artistaID); len(assets) != 0 {
+		t.Errorf("assets do artista = %+v, quero nenhum", assets)
+	}
+}
+
+// TestMaterializarPosterDeArtistaFalhaDownloadNaoPropaga cobre que uma falha de DOWNLOAD
+// (conteúdo não é imagem) degrada em silêncio (best-effort, mesmo espírito de
+// materializarKindVencedor) em vez de propagar erro -- sem asset criado.
+func TestMaterializarPosterDeArtistaFalhaDownloadNaoPropaga(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	artistaID, _ := semearArvoreMusica(t, d)
+	imgSrv := servidorImagem(t, nil)
+	semearInventarioArte(t, d, "me-fa", artistaID, "fanarttv", "thumb", imgSrv.URL+"/texto")
+
+	artes, _, err := srv.MaterializarMidiasFaltantes(context.Background(), artistaID)
+	if err != nil {
+		t.Fatalf("MaterializarMidiasFaltantes: %v", err)
+	}
+	for _, k := range artes {
+		if k == "poster" {
+			t.Errorf("artesBaixadas = %v, nao deveria conter poster (download falhou -- nao e imagem)", artes)
+		}
+	}
+	if assets := decodeAssetList(t, srv, artistaID); len(assets) != 0 {
+		t.Errorf("assets do artista = %+v, quero nenhum (download falhou)", assets)
+	}
+}
+
+// decodeAssetList lista os assets da entity direto do banco (mais simples que decodificar
+// a resposta HTTP agrupada por kind de /artwork).
+func decodeAssetList(t *testing.T, srv *Server, entityID string) []sqlcgen.Asset {
+	t.Helper()
+	assets, err := srv.leitura().ListarAssetsPorEntity(context.Background(), entityID)
+	if err != nil {
+		t.Fatalf("ListarAssetsPorEntity(%s): %v", entityID, err)
+	}
+	return assets
 }
 
 // ── MaterializarSeAutoDownloadLigado (briefing 0089, adaptador de scanner.Materializador) ──

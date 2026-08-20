@@ -285,6 +285,49 @@ func TestListEntitiesOwnedViaArvore(t *testing.T) {
 	}
 }
 
+// TestGetEntityOwnedViaArvore cobre o MESMO bug de TestListEntitiesOwnedViaArvore, mas no
+// DETALHE ÚNICO (GET /api/v1/entities/{id}), que usa um caminho de cálculo SEPARADO das
+// listagens (resolver.Entidade.Owned via listarFilesDaEntity/temPosse -- só olha
+// media_file.entity_id DIRETO, nunca desce a árvore de entity_relation). Sem
+// completarOwnedViaArvore (briefing 0116, entities.go), artista/album de música sempre
+// mostravam owned=false no detalhe único mesmo já corrigido nas listagens.
+func TestGetEntityOwnedViaArvore(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "art1", "artista", "Duran Duran")
+	semearEntity(t, d, "alb1", "album", "Rio")
+	semearEntity(t, d, "fx1", "faixa", "Hungry Like the Wolf")
+	ligarFilhoOrdenado(t, d, "r1", "art1", "alb1", "music_artista_principal", 0)
+	ligarFilhoOrdenado(t, d, "r2", "alb1", "fx1", "music_album", 1)
+	semearFile(t, d, "f1", "fx1", "/lib/musica/rio/01.flac", "present", 1, "")
+
+	semearEntity(t, d, "art2", "artista", "Sem Posse")
+
+	var alvo struct {
+		Owned bool `json:"owned"`
+	}
+
+	recArt := do(t, h, http.MethodGet, "/api/v1/entities/art1", nil)
+	if recArt.Code != http.StatusOK {
+		t.Fatalf("GET /entities/art1 status = %d, quero 200", recArt.Code)
+	}
+	decodeInto(t, recArt, &alvo)
+	if !alvo.Owned {
+		t.Errorf("art1 (detalhe único) owned = false, quero true (faixa possuída 2 níveis abaixo)")
+	}
+
+	recAlb := do(t, h, http.MethodGet, "/api/v1/entities/alb1", nil)
+	decodeInto(t, recAlb, &alvo)
+	if !alvo.Owned {
+		t.Errorf("alb1 (detalhe único) owned = false, quero true (faixa possuída 1 nível abaixo)")
+	}
+
+	recArt2 := do(t, h, http.MethodGet, "/api/v1/entities/art2", nil)
+	decodeInto(t, recArt2, &alvo)
+	if alvo.Owned {
+		t.Errorf("art2 (detalhe único) owned = true, quero false (sem faixa nenhuma)")
+	}
+}
+
 func TestListEntitiesPaginacaoEOrdenacao(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	// Títulos fora de ordem para provar a ordenação por título.
