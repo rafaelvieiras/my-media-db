@@ -26,6 +26,7 @@ import {
 import { LanguageSelector } from '@/components/language-selector'
 import { entityTypesQueryOptions } from '@/lib/queries'
 import { rotuloTipoPlural } from '@/lib/entity-badges'
+import { tipoParaSlug } from '@/lib/library-slugs'
 
 // Cabeçalho com navegação entre as telas da Fase 2. `activeProps` destaca a rota
 // atual (type-safe pelo router code-based).
@@ -65,20 +66,26 @@ function NavLink({
   )
 }
 
-// BibliotecaNavItem (briefing 0110) combina o link direto de sempre ("Biblioteca"
-// → `/` sem filtro, comportamento preservado) com um `DropdownMenu` separado
-// (trigger = chevron ao lado do texto) que lista os schemas com dado
-// catalogado (`entityTypesQueryOptions`, mesma fonte do carrossel da home,
-// 0109) e navega direto pra biblioteca já filtrada (`?type=X`, sincronizado
-// com o `MediaTypeFilter` da própria tela via o mesmo search param da rota
-// `/` — ver `poster-grid.tsx`). Trigger PRÓPRIO (não o texto inteiro) porque o
-// texto precisa continuar navegando direto sem abrir menu — decisão explícita
-// do briefing ("garanta que ainda dá pra ir pra biblioteca sem filtro tão
-// fácil quanto hoje"). O `DropdownMenu` do Radix abre por clique/teclado (não
-// hover), então funciona igual por toque dentro do `Sheet` mobile sem
-// tratamento especial.
+// BibliotecaNavItem (briefing 0110, atualizado no 0114/ADR-0030) combina o
+// link direto de sempre ("Biblioteca" → `/` sem filtro, comportamento
+// preservado) com um `DropdownMenu` separado (trigger = chevron ao lado do
+// texto) que lista os schemas com dado catalogado (`entityTypesQueryOptions`,
+// mesma fonte do carrossel da home, 0109) e navega direto pra rota dedicada
+// `/library/$entitySlug` daquele tipo (0114 — antes era `?type=X` na própria
+// `/`, que não existe mais). Slug resolvido por `tipoParaSlug`
+// (`library-slugs.ts`, mesmo mapa do link "Ver Todos" do carrossel); um tipo
+// sem slug mapeado (defensivo) some do dropdown em vez de virar link quebrado.
+// Trigger PRÓPRIO (não o texto inteiro) porque o texto precisa continuar
+// navegando direto sem abrir menu — decisão explícita do briefing ("garanta
+// que ainda dá pra ir pra biblioteca sem filtro tão fácil quanto hoje"). O
+// `DropdownMenu` do Radix abre por clique/teclado (não hover), então funciona
+// igual por toque dentro do `Sheet` mobile sem tratamento especial.
 function BibliotecaNavItem({ onNavigate }: { onNavigate?: () => void }) {
   const { data: tipos } = useQuery(entityTypesQueryOptions)
+  const itensComSlug = (tipos ?? []).flatMap((tipo) => {
+    const slug = tipoParaSlug(tipo.type)
+    return slug ? [{ type: tipo.type, slug }] : []
+  })
 
   return (
     <div className="flex items-center">
@@ -97,10 +104,10 @@ function BibliotecaNavItem({ onNavigate }: { onNavigate?: () => void }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          {(tipos ?? []).map((tipo) => (
-            <DropdownMenuItem key={tipo.type} asChild onSelect={onNavigate}>
-              <Link to="/" search={{ type: tipo.type }}>
-                {rotuloTipoPlural(tipo.type)}
+          {itensComSlug.map(({ type, slug }) => (
+            <DropdownMenuItem key={type} asChild onSelect={onNavigate}>
+              <Link to="/library/$entitySlug" params={{ entitySlug: slug }}>
+                {rotuloTipoPlural(type)}
               </Link>
             </DropdownMenuItem>
           ))}

@@ -1,31 +1,27 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { entitiesQueryOptions } from '@/lib/queries'
 import type { EntityListParams } from '@/lib/api'
 import { PosterCard } from '@/components/poster-card'
-import {
-  MediaTypeFilter,
-  type MediaTypeFilterValue,
-} from '@/components/media-type-filter'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
 
 const POR_PAGINA = 24
 
 type FiltroPosse = 'all' | 'owned' | 'not'
 
-// Traduz os filtros da UI para os params da API (undefined = sem filtro). `tipo`
-// já chega no MESMO formato do param da API (string|undefined, briefing 0110) —
-// não passa mais por `MediaTypeFilterValue`/'all' aqui, só na exibição do Select.
+// Traduz os filtros da UI para os params da API (undefined = sem filtro de
+// posse). `tipo` é sempre FIXO (briefing 0114/ADR-0030 — ver comentário do
+// componente abaixo), nunca "todos os tipos" aqui.
 function montarParams(
-  tipo: string | undefined,
+  tipo: string,
   posse: FiltroPosse,
   pagina: number,
 ): EntityListParams {
   return {
-    type: tipo || undefined,
+    type: tipo,
     owned: posse === 'all' ? undefined : posse === 'owned',
     limit: POR_PAGINA,
     offset: pagina * POR_PAGINA,
@@ -33,43 +29,20 @@ function montarParams(
   }
 }
 
-// paraOpcaoSelect narrowing do `type` da URL (string livre — cobre qualquer
-// schema, ex. "album") para as 3 opções que o `MediaTypeFilter` sabe exibir
-// (briefing 0110 não expande esse Select, fora de escopo). Um tipo fora dessas
-// 3 opções (ex. vindo do dropdown da navbar) continua filtrando o GRID
-// corretamente via `montarParams` acima — só a exibição do Select cai em
-// "Todos" (nenhuma opção rotulada para ele ainda).
-function paraOpcaoSelect(tipo: string | undefined): MediaTypeFilterValue {
-  return tipo === 'movie' || tipo === 'tv' ? tipo : 'all'
-}
-
-// Grid de pôsteres do catálogo: filtros (tipo/posse), paginação e os três
-// estados claros (carregando / erro / vazio). É o componente "esperto": possui
-// o estado de filtro/página e consome o TanStack Query. O filtro de TIPO
-// (briefing 0110) migrou de `useState` local para o search param `?type=` da
-// rota `/` — linkável, sobrevive a refresh e fica sincronizado com o dropdown
-// "Biblioteca" da navbar (mesma fonte de verdade). Posse continua local (fora
-// de escopo do 0110).
-export function PosterGrid({ lang }: { lang?: string } = {}) {
-  const { type: tipo } = useSearch({ from: '/' })
-  const navigate = useNavigate()
+// Grid de pôsteres do catálogo: paginação, filtro de posse e os três estados
+// claros (carregando / erro / vazio). Desde o briefing 0114/ADR-0030, o TIPO
+// chega FIXO via prop (`type`, resolvido do slug da URL pela rota
+// `/library/$entitySlug` — ver `routes/library-browse.tsx`), em vez do search
+// param `?type=` da antiga rota `/` (briefing 0110): a home não tem mais grid
+// completo, só carrosséis (`RecentlyAddedSection`), e a listagem paginada de
+// cada tipo agora vive numa tela própria por tipo — por isso não há mais
+// seletor de tipo (`MediaTypeFilter`) dentro do grid, o tipo já vem fixo da
+// rota. Posse continua local (estado interno da tela).
+export function PosterGrid({ lang, type }: { lang?: string; type: string }) {
   const [posse, setPosse] = useState<FiltroPosse>('all')
   const [pagina, setPagina] = useState(0)
 
-  // Trocar de tipo (pelo Select OU pelo dropdown da navbar, que navega direto)
-  // reinicia a página — mesmo efeito do `reiniciarPagina` de antes, só que o
-  // tipo agora muda por navegação (search param), não por um setState direto
-  // que já pudesse resetar a página no mesmo callback. Ajuste de estado
-  // DURANTE o render (padrão recomendado pelo React para "resetar estado
-  // quando um valor externo muda"), não num `useEffect` — evita o
-  // cascading-render que o `react-hooks/set-state-in-effect` do lint aponta.
-  const [ultimoTipo, setUltimoTipo] = useState(tipo)
-  if (tipo !== ultimoTipo) {
-    setUltimoTipo(tipo)
-    setPagina(0)
-  }
-
-  const params = montarParams(tipo, posse, pagina)
+  const params = montarParams(type, posse, pagina)
   const { data, isPending, isError, error } = useQuery(
     entitiesQueryOptions(params, lang),
   )
@@ -81,14 +54,9 @@ export function PosterGrid({ lang }: { lang?: string } = {}) {
     }
   }
 
-  const trocarTipo = (novo: MediaTypeFilterValue) => {
-    navigate({ to: '/', search: novo === 'all' ? {} : { type: novo } })
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <MediaTypeFilter value={paraOpcaoSelect(tipo)} onChange={trocarTipo} />
         <label className="flex items-center gap-2 text-sm">
           <span className="text-muted-foreground">Posse</span>
           <Select

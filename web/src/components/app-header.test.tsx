@@ -112,17 +112,20 @@ describe('AppHeader — colapso mobile (0075)', () => {
   })
 })
 
-// Dropdown "Biblioteca" (briefing 0110): lista os schemas com dado catalogado
-// (mesmo endpoint/hook do carrossel da home, 0109) e navega direto pra
-// biblioteca filtrada — sem perder o link direto pra biblioteca SEM filtro
-// (o texto "Biblioteca" continua um `NavLink` de sempre, só ganhou um trigger
-// separado ao lado, o chevron). O trigger não depende de hover (Radix abre por
-// clique/teclado), então o mesmo teste vale pro desktop e, via `within(painel)`,
-// pro Sheet mobile — cobrindo o critério de aceite "funciona por toque".
-describe('AppHeader — dropdown "Biblioteca" (0110)', () => {
+// Dropdown "Biblioteca" (briefing 0110, atualizado no 0114/ADR-0030): lista os
+// schemas com dado catalogado (mesmo endpoint/hook do carrossel da home,
+// 0109) e navega direto pra `/library/$entitySlug` do tipo — sem perder o
+// link direto pra biblioteca SEM filtro (o texto "Biblioteca" continua um
+// `NavLink` de sempre, só ganhou um trigger separado ao lado, o chevron). O
+// trigger não depende de hover (Radix abre por clique/teclado), então o mesmo
+// teste vale pro desktop e, via `within(painel)`, pro Sheet mobile — cobrindo
+// o critério de aceite "funciona por toque". `TIPOS` usa só tipos DE TOPO
+// mapeados em `library-slugs.ts` (movie/artista) — `GET /entities/types` já
+// não devolve sub-nó (album/faixa) desde o 0112.
+describe('AppHeader — dropdown "Biblioteca" (0110/0114)', () => {
   const TIPOS: EntityType[] = [
     { type: 'movie', count: 21 },
-    { type: 'album', count: 3 },
+    { type: 'tv', count: 5 },
     { type: 'artista', count: 2 },
   ]
 
@@ -147,13 +150,13 @@ describe('AppHeader — dropdown "Biblioteca" (0110)', () => {
     expect(
       await screen.findByRole('menuitem', { name: 'Filmes' }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: 'Álbuns' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Séries' })).toBeInTheDocument()
     expect(
       screen.getByRole('menuitem', { name: 'Artistas' }),
     ).toBeInTheDocument()
   })
 
-  it('clicar num item do dropdown navega pra "/" com "?type=" do schema escolhido', async () => {
+  it('clicar num item do dropdown navega pra "/library/:entitySlug" do schema escolhido', async () => {
     stubEntityTypes(TIPOS)
     const user = userEvent.setup()
     renderWithClient(<AppHeader />)
@@ -161,8 +164,20 @@ describe('AppHeader — dropdown "Biblioteca" (0110)', () => {
     await user.click(
       screen.getByRole('button', { name: 'Filtrar biblioteca por tipo' }),
     )
-    const item = await screen.findByRole('menuitem', { name: 'Álbuns' })
-    expect(item).toHaveAttribute('href', '/?type=album')
+    const item = await screen.findByRole('menuitem', { name: 'Artistas' })
+    expect(item).toHaveAttribute('href', '/library/artists')
+  })
+
+  it('um tipo sem slug mapeado (defensivo) não aparece no dropdown', async () => {
+    stubEntityTypes([...TIPOS, { type: 'album', count: 3 }])
+    const user = userEvent.setup()
+    renderWithClient(<AppHeader />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Filtrar biblioteca por tipo' }),
+    )
+    await screen.findByRole('menuitem', { name: 'Filmes' })
+    expect(screen.queryByRole('menuitem', { name: 'Álbuns' })).toBeNull()
   })
 
   it('mobile: o dropdown funciona por toque dentro do Sheet', async () => {
@@ -174,7 +189,7 @@ describe('AppHeader — dropdown "Biblioteca" (0110)', () => {
       }),
     )
 
-    const item = await screen.findByRole('menuitem', { name: 'Artistas' })
-    expect(item).toHaveAttribute('href', '/?type=artista')
+    const item = await screen.findByRole('menuitem', { name: 'Séries' })
+    expect(item).toHaveAttribute('href', '/library/series')
   })
 })

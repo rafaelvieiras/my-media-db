@@ -1,50 +1,21 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
+import { vi } from 'vitest'
+import { screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { PosterGrid } from '@/components/poster-grid'
 import type { EntityCard } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
+import { erroJson } from '@/test/detail-harness'
+import { paginaResposta as page, urlEnviada } from '@/test/stub-fetch'
 
-// O filtro de tipo (briefing 0110) migrou de `useState` local pro search
-// param `?type=` da rota `/` — mesmo padrão de mock de router com estado
-// mutável de `entity-detail-series.test.tsx` (`state.search`/`state.navigate`),
-// pra afirmar tanto a LEITURA (refresh com `?type=X` filtra de cara) quanto a
-// ESCRITA (trocar o Select navega com o search certo).
-const state = vi.hoisted(() => ({
-  search: { type: undefined as string | undefined },
-  navigate: vi.fn(),
-}))
-
+// Desde o briefing 0114/ADR-0030, o TIPO chega FIXO via prop (`type`) — o
+// grid não lê mais `?type=` da URL nem navega ao trocar de tipo (isso saiu
+// pra `routes/library-browse.tsx`). O `<Link>` só é usado pelo estado vazio
+// ("Ir para Bibliotecas"), mockado como `<a>` simples (mesmo padrão de
+// outros testes deste diretório).
 vi.mock('@tanstack/react-router', () => ({
-  useSearch: () => state.search,
-  useNavigate: () => state.navigate,
   Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
 }))
-
-function page(items: EntityCard[], total = items.length) {
-  return {
-    ok: true,
-    status: 200,
-    json: async () => ({ items, total, limit: 24, offset: 0 }),
-  } as Response
-}
-
-beforeEach(() => {
-  state.search = { type: undefined }
-  state.navigate = vi.fn()
-})
-
-// renderEObterTypeDaQuery renderiza o grid e devolve o `?type=` que a PRIMEIRA
-// chamada de fetch usou — o núcleo comum dos testes de leitura da URL na
-// montagem (jscpd).
-async function renderEObterTypeDaQuery(): Promise<string | null> {
-  const fetchMock = vi.fn().mockResolvedValue(page([]))
-  vi.stubGlobal('fetch', fetchMock)
-  renderWithClient(<PosterGrid />)
-  await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-  const url = new URL(fetchMock.mock.calls[0][0] as string, 'http://x')
-  return url.searchParams.get('type')
-}
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -56,20 +27,16 @@ describe('PosterGrid', () => {
       'fetch',
       vi.fn(() => new Promise<Response>(() => {})),
     )
-    renderWithClient(<PosterGrid />)
+    renderWithClient(<PosterGrid type="movie" />)
     expect(screen.getByText('Carregando catálogo…')).toBeInTheDocument()
   })
 
   it('mostra o estado de erro', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: false,
-        status: 500,
-        json: async () => ({ error: { code: 'x', message: 'falhou' } }),
-      } as Response),
+      vi.fn().mockResolvedValue(erroJson(500, 'x', 'falhou')),
     )
-    renderWithClient(<PosterGrid />)
+    renderWithClient(<PosterGrid type="movie" />)
     await waitFor(() =>
       expect(
         screen.getByText('Não foi possível carregar o catálogo'),
@@ -79,7 +46,7 @@ describe('PosterGrid', () => {
 
   it('mostra o estado vazio que orienta o usuário', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(page([], 0)))
-    renderWithClient(<PosterGrid />)
+    renderWithClient(<PosterGrid type="movie" />)
     await waitFor(() =>
       expect(screen.getByText('Nenhum item no catálogo')).toBeInTheDocument(),
     )
@@ -101,45 +68,16 @@ describe('PosterGrid', () => {
       },
     ]
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(page(items, 1)))
-    renderWithClient(<PosterGrid />)
+    renderWithClient(<PosterGrid type="movie" />)
     await waitFor(() => expect(screen.getByText('Alfa')).toBeInTheDocument())
     expect(screen.getByText('1–1 de 1')).toBeInTheDocument()
   })
-})
 
-// URL como fonte de verdade do filtro de tipo (briefing 0110).
-describe('PosterGrid — filtro de tipo via URL (0110)', () => {
-  it('refresh com "?type=album" na URL já filtra o catálogo por album (leitura na montagem)', async () => {
-    state.search = { type: 'album' }
-    expect(await renderEObterTypeDaQuery()).toBe('album')
-  })
-
-  it('sem "?type=" na URL, busca sem filtro de tipo (comportamento atual preservado)', async () => {
-    expect(await renderEObterTypeDaQuery()).toBeNull()
-  })
-
-  it('trocar o MediaTypeFilter da tela navega pra "/" com o novo "?type="', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(page([])))
-    renderWithClient(<PosterGrid />)
-
-    const select = await screen.findByLabelText('Filtrar por tipo')
-    fireEvent.change(select, { target: { value: 'tv' } })
-
-    expect(state.navigate).toHaveBeenCalledWith(
-      expect.objectContaining({ to: '/', search: { type: 'tv' } }),
-    )
-  })
-
-  it('voltar pra "Todos" no MediaTypeFilter navega com search vazio (sem "type")', async () => {
-    state.search = { type: 'movie' }
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(page([])))
-    renderWithClient(<PosterGrid />)
-
-    const select = await screen.findByLabelText('Filtrar por tipo')
-    fireEvent.change(select, { target: { value: 'all' } })
-
-    expect(state.navigate).toHaveBeenCalledWith(
-      expect.objectContaining({ to: '/', search: {} }),
-    )
+  it('busca com o `type` recebido via prop, fixo (0114)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(page([]))
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithClient(<PosterGrid type="artista" />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(urlEnviada(fetchMock).searchParams.get('type')).toBe('artista')
   })
 })

@@ -12,6 +12,7 @@ import { DashboardShell } from '@/components/dashboard-shell'
 import { LanguageProvider } from '@/lib/language-context'
 import { LibraryItemsScreen } from '@/routes/index'
 import { LibraryScreen } from '@/routes/library'
+import { LibraryBrowseScreen } from '@/routes/library-browse'
 import { LibraryNewScreen } from '@/routes/library-new'
 import { LibraryEditScreen } from '@/routes/library-edit'
 import { SearchScreen } from '@/routes/search'
@@ -51,21 +52,22 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   ),
 })
 
-// Search param `type` da biblioteca (briefing 0110): o filtro de schema do
-// `PosterGrid`/`MediaTypeFilter` passa a viver na URL — linkável e sobrevive a
-// refresh (mesmo espírito de `ordering` na rota do detalhe da série abaixo).
-// Ausente = "todos os tipos" (comportamento atual, sem regressão). Consumido
-// pelo dropdown "Biblioteca" da navbar (`app-header.tsx`) para navegar direto
-// pra biblioteca já filtrada por um schema (filme/série/álbum/artista...).
-const librarySearchSchema = z.object({
-  type: z.string().optional(),
-})
-
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   component: LibraryItemsScreen,
-  validateSearch: librarySearchSchema,
+})
+
+// Rota `/library/$entitySlug` (briefing 0114/ADR-0030): biblioteca completa
+// paginada de um tipo de topo por vez, alcançada pelo "Ver Todos" de cada
+// carrossel da home e pelo dropdown "Biblioteca" da navbar. Substitui o
+// search param `?type=` da rota `/` (briefing 0110, removido — não era
+// contrato público documentado) por uma URL amigável e dedicada; o slug é
+// resolvido para `entity.type` por `lib/library-slugs.ts`.
+const libraryBrowseRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library/$entitySlug',
+  component: LibraryBrowseScreen,
 })
 
 // Área administrativa (briefing 0083): as 6 telas de operação/config viram
@@ -237,6 +239,7 @@ const dashboardHealthRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  libraryBrowseRoute,
   searchRoute,
   itemNewRoute,
   collectionNewRoute,

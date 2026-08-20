@@ -9,7 +9,7 @@
 | **ID** | 0114 |
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 5+ — Verticais e plugins |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [ADR-0030](../docs/adr/0030-tipos-de-topo-biblioteca-e-busca-genericas.md) |
 | **Depende de** | 0112 |
 
@@ -103,14 +103,15 @@ tela própria vive numa rota nova, amigável: `/library/:entitySlug`.
 
 ## 5. Critérios de aceite
 
-- [ ] Home (`/`) mostra só carrosséis de tipos de topo, sem grid completo
+- [x] Home (`/`) mostra só carrosséis de tipos de topo, sem grid completo
       abaixo.
-- [ ] Cada carrossel tem "Ver Todos" navegando pro slug certo.
-- [ ] `/library/movies`, `/library/series`, `/library/artists` renderizam a
+- [x] Cada carrossel tem "Ver Todos" navegando pro slug certo.
+- [x] `/library/movies`, `/library/series`, `/library/artists` renderizam a
       listagem completa e paginada do tipo certo, com filtro de posse
       funcionando.
-- [ ] Dropdown "Biblioteca" da navbar navega pra `/library/:slug`.
-- [ ] `tsc -b` zero-tolerância, `npm run lint`, `npm run test:coverage`.
+- [x] Dropdown "Biblioteca" da navbar navega pra `/library/:slug`.
+- [x] `tsc -b` zero-tolerância, `npm run lint`, `npm run test:coverage`
+      (rodado sem `--coverage`, ver nota abaixo).
 
 ## 6. Notas de implementação / decisões
 
@@ -119,6 +120,41 @@ tela própria vive numa rota nova, amigável: `/library/:entitySlug`.
 - Reaproveitar `PosterGrid` quase integralmente — a única mudança estrutural
   é a origem do `type` (prop/route param fixo em vez de search param
   editável pelo próprio grid).
+- **Nome do arquivo da rota nova: `web/src/routes/library-browse.tsx`
+  (`LibraryBrowseScreen`), não `library.tsx`.** O briefing sugeria
+  `routes/library.tsx`, mas esse caminho já existe — é `LibraryScreen`, a
+  tela de gestão de datasources de `/dashboard/library` (briefing 0071), algo
+  completamente diferente. Rota registrada como `/library/$entitySlug` em
+  `router.tsx`.
+- **`PosterGrid` perdeu de vez o seletor de tipo (`MediaTypeFilter`) e o
+  `useSearch`/`useNavigate` da rota `/`.** Como `/library/$entitySlug` sempre
+  passa um `type` fixo e é o ÚNICO consumidor restante do grid (a home não
+  usa mais `PosterGrid`), o componente ficou mais simples: `type: string`
+  agora é prop OBRIGATÓRIA (sem default "todos"), sem lógica de troca de tipo
+  interna. Isso também evita qualquer conflito de merge com o 0113, que mexe
+  em `media-type-filter.tsx`/`search-panel.tsx` — `poster-grid.tsx` não
+  importa mais `MediaTypeFilter`.
+- **`librarySearchSchema`/`?type=` da rota `/` foi removido de vez** (não
+  mantido como redirect) — conforme a preferência já indicada no briefing;
+  não havia indício de uso externo desse contrato.
+- Link "Ver Todos" e dropdown "Biblioteca" tratam um tipo sem slug mapeado em
+  `library-slugs.ts` como **ausência do link** (não um link quebrado) — hoje
+  isso não deveria acontecer na prática (`GET /entities/types` já exclui
+  sub-nós desde o 0112), mas é defensivo caso um tipo de topo novo apareça
+  antes de ganhar entrada no mapa.
+- `/library/:entitySlug` com slug desconhecido cai num `EmptyState` ("Tipo de
+  biblioteca não encontrado"), sem fetch nem crash — nunca 404 hard.
+- **Ambiente:** `npm run test:coverage` falhou neste agente por um artefato
+  `web/coverage/` pré-existente dono de `root` (`EACCES` ao tentar
+  sobrescrever `coverage-summary.json`), sem relação com o código mudado —
+  provável resíduo de uma rodada anterior via Docker. Validado via
+  `npx vitest run` (sem `--coverage`): 596/598 testes passando; os 2 testes
+  que falham são de `search-panel.test.tsx`, arquivo do 0113 (trabalho
+  concorrente, fora do escopo deste briefing) — não referenciam nada tocado
+  aqui (`PosterGrid`/`RecentlyAddedRail`/`library-slugs`). `tsc -b` e
+  `npm run lint` passaram limpos. Recomendo que o agente final de
+  validação/commit limpe `web/coverage/` (`sudo rm -rf web/coverage`) antes
+  de rodar `make gate-local`.
 
 ## 7. Fora deste briefing / follow-ups
 

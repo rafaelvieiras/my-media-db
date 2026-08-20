@@ -1,19 +1,17 @@
 import { Link } from '@tanstack/react-router'
 import { FilmIcon, FolderPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { PosterGrid } from '@/components/poster-grid'
 import { RecentlyAddedSection } from '@/components/recently-added-rail'
 import { useLanguage } from '@/lib/language-context'
 
-// Home (rota `/`): o grid de pôsteres é a tela principal do dono — o catálogo
-// detectado. Decisão do 0011: a home vira o grid (a antiga tela de saúde foi
-// para `/health`). O idioma de leitura (global) é repassado ao grid para o
-// `?lang=` — coerência com o detalhe e base para a resolução de card futura. As
-// ações "Novo item"/"Nova coleção" (0030) navegam para as rotas de criação
-// dedicadas (antes eram formulários inline). A seção "Adicionados
-// recentemente" (0109, um carrossel por schema) fica ACIMA do grid paginado —
-// destaque primeiro, navegação completa depois (mesmo padrão Netflix/
-// Jellyfin); o grid continua exatamente como antes, sem remoção.
+// Home (rota `/`): desde o briefing 0114/ADR-0030, a home mostra SÓ os
+// carrosséis "Adicionados recentemente" (`RecentlyAddedSection`, um por tipo
+// de topo) — o grid paginado completo (`PosterGrid`) saiu daqui e virou a
+// rota própria `/library/$entitySlug` (ver `routes/library-browse.tsx`),
+// alcançada pelo link "Ver Todos" de cada carrossel. O idioma de leitura
+// (global) é repassado ao carrossel para o `?lang=` — coerência com o detalhe.
+// As ações "Novo item"/"Nova coleção" (0030) navegam para as rotas de criação
+// dedicadas (antes eram formulários inline).
 export function LibraryItemsScreen() {
   const { lang } = useLanguage()
   return (
@@ -41,7 +39,6 @@ export function LibraryItemsScreen() {
         </div>
       </div>
       <RecentlyAddedSection lang={lang} />
-      <PosterGrid lang={lang} />
     </main>
   )
 }

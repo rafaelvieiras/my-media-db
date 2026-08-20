@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { entitiesQueryOptions, entityTypesQueryOptions } from '@/lib/queries'
 import { PosterCard } from '@/components/poster-card'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import { rotuloTipoPlural } from '@/lib/entity-badges'
+import { tipoParaSlug } from '@/lib/library-slugs'
 import {
   Carousel,
   CarouselContent,
@@ -51,12 +53,12 @@ export function RecentlyAddedRail({
     <section className="flex flex-col gap-3">
       {isPending ? (
         <>
-          <RailTitulo label={label} />
+          <RailTitulo type={type} label={label} />
           <LoadingState label={`Carregando ${label.toLowerCase()}…`} />
         </>
       ) : isError ? (
         <>
-          <RailTitulo label={label} />
+          <RailTitulo type={type} label={label} />
           <ErrorState
             title={`Não foi possível carregar "${label}"`}
             message={error instanceof Error ? error.message : undefined}
@@ -65,7 +67,7 @@ export function RecentlyAddedRail({
       ) : (
         <Carousel opts={{ align: 'start' }} className="w-full">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <RailTitulo label={label} />
+            <RailTitulo type={type} label={label} />
             <div className="flex gap-1">
               <CarouselPrevious className="static translate-y-0" />
               <CarouselNext className="static translate-y-0" />
@@ -87,8 +89,28 @@ export function RecentlyAddedRail({
   )
 }
 
-function RailTitulo({ label }: { label: string }) {
-  return <h2 className="font-heading text-lg font-medium">{label}</h2>
+// RailTitulo (briefing 0114/ADR-0030) ganha um link "Ver Todos" ao lado do
+// título, apontando para a rota `/library/$entitySlug` do tipo daquele
+// carrossel — mesmo mapa slug↔type de `app-header.tsx` (`library-slugs.ts`).
+// Tipo sem slug mapeado (defensivo — hoje `GET /entities/types` já exclui
+// sub-nós, então isso não deveria acontecer na prática) só omite o link, sem
+// quebrar o título.
+function RailTitulo({ type, label }: { type: string; label: string }) {
+  const slug = tipoParaSlug(type)
+  return (
+    <div className="flex items-center gap-3">
+      <h2 className="font-heading text-lg font-medium">{label}</h2>
+      {slug ? (
+        <Link
+          to="/library/$entitySlug"
+          params={{ entitySlug: slug }}
+          className="text-sm text-muted-foreground hover:text-foreground hover:underline"
+        >
+          Ver Todos
+        </Link>
+      ) : null}
+    </div>
+  )
 }
 
 // RecentlyAddedSection é a seção da home (briefing 0109): busca os `type`

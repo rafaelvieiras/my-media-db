@@ -1,5 +1,20 @@
 import { vi } from 'vitest'
 
+// paginaResposta monta o shape paginado que `GET /entities` devolve
+// (`{items, total, limit, offset}`) — usado por qualquer teste que stuba essa
+// rota (`PosterGrid`/`LibraryBrowseScreen`), centralizando o boilerplate pra
+// não duplicar a mesma função `page()` em cada arquivo (jscpd).
+export function paginaResposta(
+  items: unknown[] = [],
+  total = items.length,
+): Response {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ items, total, limit: 24, offset: 0 }),
+  } as Response
+}
+
 // stubRota instala um `fetch` global que responde `resp()` quando `casa(pathname, method)`
 // e lança nas demais rotas (falha alto, não silenciosa). Centraliza o boilerplate de mock
 // de rede dos testes de mutação (jscpd) — cada teste só descreve a rota que espera.
@@ -48,4 +63,11 @@ export function corpoEnviado(
   chamada = 0,
 ): unknown {
   return JSON.parse(String(m.mock.calls[chamada][1]?.body))
+}
+
+// urlEnviada extrai e parseia a URL da N-ésima chamada do mock de fetch — mesmo
+// padrão de corpoEnviado, para testes que afirmam query params (ex.: `?type=`)
+// em vez do corpo.
+export function urlEnviada(m: ReturnType<typeof vi.fn>, chamada = 0): URL {
+  return new URL(m.mock.calls[chamada][0] as string, 'http://x')
 }

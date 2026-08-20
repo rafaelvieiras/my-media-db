@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import {
   RecentlyAddedRail,
   RecentlyAddedSection,
@@ -16,10 +15,11 @@ function card(over: Partial<EntityCard> = {}): EntityCard {
   return entityCardBase({ id: 'x', title: 'Matrix', ...over })
 }
 
-// O <Link> do TanStack Router exige contexto de router; mockado por um <a>
-// simples, mesmo padrão de poster-card.test.tsx/poster-grid.test.tsx.
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
+// O <Link> do TanStack Router exige contexto de router; mockado pelo
+// `LinkMock` compartilhado (resolve `params` no href), pra afirmar o destino
+// do link "Ver Todos" (briefing 0114) — mesmo padrão de app-header.test.tsx.
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/link-mock')).LinkMock,
 }))
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
@@ -60,6 +60,28 @@ describe('RecentlyAddedRail', () => {
     expect(url.searchParams.get('sort')).toBe('-created_at')
     expect(url.searchParams.get('owned')).toBe('true')
     expect(url.searchParams.get('limit')).toBe('10')
+  })
+
+  it('o título tem um link "Ver Todos" pra "/library/movies" (briefing 0114)', async () => {
+    const items = [card({ id: 'a', title: 'Matrix', type: 'movie' })]
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(entityList(items)))
+
+    renderWithClient(<RecentlyAddedRail type="movie" label="Filmes" />)
+
+    const link = await screen.findByRole('link', { name: 'Ver Todos' })
+    expect(link).toHaveAttribute('href', '/library/movies')
+  })
+
+  it('sem slug mapeado pro tipo, não renderiza "Ver Todos" (defensivo)', async () => {
+    const items = [card({ id: 'a', title: 'Álbum X', type: 'album' })]
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(entityList(items)))
+
+    renderWithClient(<RecentlyAddedRail type="album" label="Álbuns" />)
+
+    await waitFor(() => expect(screen.getByText('Álbum X')).toBeInTheDocument())
+    expect(
+      screen.queryByRole('link', { name: 'Ver Todos' }),
+    ).not.toBeInTheDocument()
   })
 
   it('mostra o estado de carregamento com o rótulo', () => {
