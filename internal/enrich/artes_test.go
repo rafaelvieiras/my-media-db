@@ -252,6 +252,63 @@ func TestImportarFilmeNaoDuplicaChamadaDeArtes(t *testing.T) {
 	}
 }
 
+// TestEnriquecerArtistaForaDoImportPersisteInventarioArtesEChaveMbid (briefing 0119):
+// espelha TestEnriquecerFilmeForaDoImportPersisteInventarioArtes para a vertical de
+// musica -- um artista LEGADO (sem external_ids, criado antes do MusicBrainz existir)
+// que ganha a identidade via Enriquecer (o caminho generico de auto-match/retroativo/
+// "Corrigir"/"Confirmar candidato", nunca importarArtista/ImportarFaixaPossuida) passa
+// a ter o inventario fanart.tv gravado, igual ao import de arvore. Tambem prova que a
+// identidade fica sob a chave "mbid" (musicext.ChaveExternalIDMbid) -- nao sob o nome
+// literal da fonte "musicbrainz" -- que e a chave que idsExternosDe/ObterEntityPorMbid
+// realmente leem. Repetir a chamada nao duplica o inventario (mesma prova de
+// TestEnriquecerFilmeForaDoImportPersisteInventarioArtes, ObterMediaExternalPorFonte e
+// :one).
+func TestEnriquecerArtistaForaDoImportPersisteInventarioArtesEChaveMbid(t *testing.T) {
+	database := setupDB(t)
+	ctx := context.Background()
+
+	w := sqlcgen.New(database.Write)
+	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "a1", Type: tipoArtista, Title: "Nome Legado"}); err != nil {
+		t.Fatalf("CriarEntity: %v", err)
+	}
+
+	arte := &fakeArteProvider{artes: []provider.Arte{
+		{Kind: "artistthumb", URL: "https://assets.fanart.tv/thumb.jpg"},
+	}}
+	svc := New(database, provider.NovaRegistry(fakeMusicaProvider{}, arte), t.TempDir())
+
+	for i := 0; i < 2; i++ {
+		if err := svc.Enriquecer(ctx, "a1", "musicbrainz", mbidArtistaFixture, tipoArtista, []string{"en"}, false); err != nil {
+			t.Fatalf("Enriquecer #%d: %v", i, err)
+		}
+	}
+
+	if arte.recebeu.Mbid != mbidArtistaFixture || arte.tipo != tipoArtista {
+		t.Errorf("BuscarArtes recebeu ids=%+v tipo=%q, quero Mbid=%s tipo=%s", arte.recebeu, arte.tipo, mbidArtistaFixture, tipoArtista)
+	}
+
+	r := sqlcgen.New(database.Read)
+	inv := lerInventario(t, r, "a1") // :one -- so passa se nao duplicou
+	if len(inv["artistthumb"]) != 1 {
+		t.Errorf("artistthumb inventario = %d, quero 1", len(inv["artistthumb"]))
+	}
+
+	ent, err := r.ObterEntity(ctx, "a1")
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	var ids map[string]string
+	if err := json.Unmarshal([]byte(ent.ExternalIdsJson.String), &ids); err != nil {
+		t.Fatalf("external_ids invalido: %v", err)
+	}
+	if ids["mbid"] != mbidArtistaFixture {
+		t.Errorf(`external_ids["mbid"] = %q, quero %q`, ids["mbid"], mbidArtistaFixture)
+	}
+	if _, ok := ids["musicbrainz"]; ok {
+		t.Errorf(`external_ids nao deveria ter a chave "musicbrainz" (so "mbid")`)
+	}
+}
+
 // temporadaComSortIndex acha o id da entity temporada de sort_index dado sob a serie.
 func temporadaComSortIndex(t *testing.T, r *sqlcgen.Queries, serieID string, idx int) string {
 	t.Helper()

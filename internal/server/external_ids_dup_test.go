@@ -98,6 +98,54 @@ func TestCorrigirExternalIdParaIdJaImportadoDuplicaEntity(t *testing.T) {
 	}
 }
 
+// TestExternalIdsMbidDetectaColisaoEFunde (briefing 0119) espelha
+// TestCorrigirExternalIdParaIdJaImportadoDuplicaEntity para a chave "mbid": antes
+// deste briefing, acharColisaoExterna só cobria tmdb/imdb/tvdb -- uma entity
+// `artista` LEGADA (sem external_ids, dado de antes do MusicBrainz existir) que
+// ganhava, via PUT /entities/{id}/external-ids, o MESMO mbid que outra entity já
+// catalogada não era detectada como colisão: as duas ficavam com o mesmo mbid,
+// uma duplicata silenciosa do mesmo artista real.
+func TestExternalIdsMbidDetectaColisaoEFunde(t *testing.T) {
+	h, d := setupSearchServer(t)
+	ctx := context.Background()
+	w := sqlcgen.New(d.Write)
+
+	const mbid = "aaaaaaaa-0000-0000-0000-000000000099"
+	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{
+		ID: "artista-existente", Type: "artista", Title: "Ja Catalogado",
+		ExternalIdsJson: sql.NullString{String: `{"mbid":"` + mbid + `"}`, Valid: true},
+	}); err != nil {
+		t.Fatalf("CriarEntity existente: %v", err)
+	}
+	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{
+		ID: "artista-legado", Type: "artista", Title: "Legado sem mbid",
+	}); err != nil {
+		t.Fatalf("CriarEntity legado: %v", err)
+	}
+
+	rec := do(t, h, http.MethodPut, "/api/v1/entities/artista-legado/external-ids", map[string]any{
+		"external_ids": map[string]string{"mbid": mbid},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT external-ids status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get(headerDuplicataFundida); got != "artista-existente" {
+		t.Errorf("header %s = %q, quero artista-existente", headerDuplicataFundida, got)
+	}
+
+	r := sqlcgen.New(d.Read)
+	if _, err := r.ObterEntity(ctx, "artista-existente"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("artista-existente deveria ter sido fundido/apagado, err=%v", err)
+	}
+	legado, err := r.ObterEntity(ctx, "artista-legado")
+	if err != nil {
+		t.Fatalf("ObterEntity artista-legado: %v", err)
+	}
+	if !legado.ExternalIDMbid.Valid || legado.ExternalIDMbid.String != mbid {
+		t.Errorf("artista-legado.external_id_mbid = %v, quero %q", legado.ExternalIDMbid, mbid)
+	}
+}
+
 // TestCorrigirExternalIdParaIdComInvestimentoDoDonoNaoFunde cobre o outro lado
 // do briefing 0051: quando a entity que ja tem o id externo TEM investimento do
 // dono (aqui, um media_override), a fusao automatica NAO acontece -- a escrita

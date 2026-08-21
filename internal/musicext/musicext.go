@@ -49,6 +49,22 @@ const (
 // código, é o id certo (ADR-0027 §3/MU4).
 const MBIDVariousArtists = "89ad4ac3-39f7-470e-963a-56509c546377"
 
+// FonteMusicBrainz/ChaveExternalIDMbid documentam a ÚNICA exceção à convenção
+// "chave do external_ids == Provider.Nome()" que tmdb/imdb/tvdb seguem em todo
+// o resto do sistema: o id de MusicBrainz sempre vive sob a chave "mbid"
+// (ADR-0027 item 6, coluna gerada external_id_mbid + índice), nunca sob o nome
+// literal da fonte "musicbrainz" — Nome() só identifica a FONTE (media_external
+// .source, rastreio de crédito), não a chave de identidade. acharOuCriarArtista/
+// Album/Faixa (musica.go) já gravam direto sob "mbid"; o gap fechado no
+// briefing 0119 é o caminho GENÉRICO de enriquecimento (mesclarExternalIds,
+// acharColisaoExterna) que, sem este mapeamento, gravaria/consultaria sob
+// "musicbrainz" — chave que idsExternosDe (enrich/artes.go) e a coluna gerada
+// nunca leem.
+const (
+	FonteMusicBrainz    = "musicbrainz"
+	ChaveExternalIDMbid = "mbid"
+)
+
 // ExtractNamespace extrai o objeto do namespace (ex.: "core.music@1") de um
 // extension_data_json (envelope namespace→objeto). Devolve nil quando o raw é
 // NULL/vazio, ilegível, ou não contém o namespace — o chamador degrada (a

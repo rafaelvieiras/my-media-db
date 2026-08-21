@@ -27,6 +27,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/externaldetail"
 	"github.com/rafaelvieiras/my-media-db/internal/historico"
+	"github.com/rafaelvieiras/my-media-db/internal/musicext"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
@@ -148,6 +149,21 @@ func (s *Servico) enriquecerBase(ctx context.Context, entityID, source, sourceID
 		// enriquecerArtes acima -- os dois dependem só dos external_ids já
 		// mesclados nesta passada, sem passo próprio.
 		s.enriquecerTemaMusical(ctx, entityID, tipo, langs)
+	}
+	if tipo == tipoArtista && sincronizarArvore {
+		// Inventario de artes do ARTISTA (fanart.tv) fora do import explicito de
+		// arvore (mesma causa do 0087, so que na vertical de musica): importarArtista/
+		// ImportarFaixaPossuida (musica.go) chamam enriquecerArtes na criacao, mas
+		// NUNCA passam por enriquecerBase -- entao um artista pre-existente sem
+		// external_ids (dado legado, de antes do MusicBrainz) que ganha o mbid pelo
+		// caminho generico Enriquecer() (auto-match, retroativo/0116, "Corrigir",
+		// "Confirmar candidato", POST /entities/{id}/enrich) nunca disparava a busca
+		// de arte -- ficava para sempre sem foto/fundo do fanart.tv. Sem risco de
+		// dupla-chamada: nenhum call site de tipo=="artista" passa sincronizarArvore=
+		// false (importarItemBase, que usa a flag para evitar duplicar, nunca e
+		// chamado para este tipo -- Importar despacha artista direto para
+		// importarArtista).
+		s.enriquecerArtes(ctx, entityID, tipo, langs)
 	}
 	if tipo == tipoSerie {
 		// Cross-id TVDB capturado do detalhe da fonte-base, quando ela suportar a
@@ -478,10 +494,12 @@ func (s *Servico) cachearArtes(ctx context.Context, entityID string, campos map[
 	}
 }
 
-// mesclarExternalIds lê o external_ids atual, junta {source: sourceID} e grava — a
+// mesclarExternalIds lê o external_ids atual, junta {chave: sourceID} e grava — a
 // identidade é autoritativa (MD4). Preserva ids de outras fontes; sobrescreve o da
 // própria fonte (re-import sob id corrigido). Valores não-string do JSON legado são
-// descartados (o modelo é string→string).
+// descartados (o modelo é string→string). A chave normalmente é o próprio `source`
+// (tmdb/imdb/tvdb); chaveExternalID desvia para "mbid" quando source=="musicbrainz"
+// (briefing 0119 — ver musicext.ChaveExternalIDMbid).
 func (s *Servico) mesclarExternalIds(ctx context.Context, entityID, source, sourceID string) error {
 	ent, err := s.leitura().ObterEntity(ctx, entityID)
 	if err != nil {
@@ -498,7 +516,7 @@ func (s *Servico) mesclarExternalIds(ctx context.Context, entityID, source, sour
 			}
 		}
 	}
-	ids[source] = sourceID
+	ids[chaveExternalID(source)] = sourceID
 	b, err := json.Marshal(ids)
 	if err != nil {
 		return err
@@ -516,6 +534,21 @@ func (s *Servico) mesclarExternalIds(ctx context.Context, entityID, source, sour
 		log.Printf("enrich: backfill de eventos orfaos para %s falhou (segue): %v", entityID, err)
 	}
 	return nil
+}
+
+// chaveExternalID mapeia o nome da FONTE (Provider.Nome(), ex.: "tmdb"/"imdb"/
+// "tvdb"/"musicbrainz") para a chave gravada em external_ids_json. Identidade
+// para todo provider, EXCETO musicbrainz — cujo id sempre vive sob "mbid"
+// (musicext.ChaveExternalIDMbid), a única convenção que o resto do código
+// (idsExternosDe, ObterEntityPorMbid/coluna gerada external_id_mbid) entende.
+// Sem este desvio, o caminho genérico de aplicação externa (auto-match/
+// retroativo, "Corrigir", "Confirmar candidato") gravaria sob "musicbrainz" —
+// chave que nunca é lida em nenhum lugar do sistema (briefing 0119).
+func chaveExternalID(source string) string {
+	if source == musicext.FonteMusicBrainz {
+		return musicext.ChaveExternalIDMbid
+	}
+	return source
 }
 
 // mesclarExternalIdSeAusente mescla {chave: valor} em entity.external_ids_json SOMENTE

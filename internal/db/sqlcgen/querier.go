@@ -368,6 +368,12 @@ type Querier interface {
 	ListarEntitiesMusicaComFaixaPossuida(ctx context.Context) ([]string, error)
 	// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte imdb.
 	ListarEntitiesPorImdbExcetoId(ctx context.Context, arg ListarEntitiesPorImdbExcetoIdParams) ([]Entity, error)
+	// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte mbid (MusicBrainz) -- usada por
+	// acharColisaoExterna quando o auto-match/retroativo aplica um candidato musicbrainz a
+	// uma entity `artista` (briefing 0116/0119): sem esta query, o dedup de colisao ficava
+	// restrito a tmdb/imdb/tvdb e um artista ja catalogado por outra via (import de arvore,
+	// scan de faixa) podia ganhar uma SEGUNDA entity para o mesmo MBID.
+	ListarEntitiesPorMbidExcetoId(ctx context.Context, arg ListarEntitiesPorMbidExcetoIdParams) ([]Entity, error)
 	// Espelha ObterEntityPorTmdb, mas devolve TODAS as entities com aquele id (menos
 	// alvo_id) em vez de :one -- corrige o bug do briefing 0051 em que um dado ja
 	// corrompido (duas entities com o MESMO external_id_tmdb, pre-existente antes da

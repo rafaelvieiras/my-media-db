@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/musicext"
 )
 
 // Este arquivo implementa a REDE DE SEGURANÇA contra duplicata por conflito de
@@ -17,9 +18,11 @@ import (
 // (some a duplicata); com investimento → responde 409 sem gravar nada.
 //
 // A colisão só é detectável para fontes com coluna gerada indexada
-// (tmdb/imdb/tvdb, ADR-0011/0021) — mesmo escopo do find-or-create do import
-// (enrich.acharPorIDExterno). Fontes sem coluna própria não têm como colidir
-// hoje (o find-or-create do import também não dedupe nelas).
+// (tmdb/imdb/tvdb, ADR-0011/0021; mbid desde o briefing 0119, ADR-0027 item 6)
+// — mesmo escopo do find-or-create do import (enrich.acharPorIDExterno para
+// tmdb/imdb/tvdb; ObterEntityPorMbid para a vertical de música). Fontes sem
+// coluna própria não têm como colidir hoje (o find-or-create do import também
+// não dedupe nelas).
 
 // headerDuplicataFundida é o header de resposta que sinaliza ao frontend que uma
 // duplicata foi fundida (removida) durante esta escrita — o corpo segue sendo a
@@ -93,6 +96,16 @@ func (s *Server) acharColisaoExterna(ctx context.Context, alvoID, tipo, source, 
 	case "tvdb":
 		candidatas, err = r.ListarEntitiesPorTvdbExcetoId(ctx, sqlcgen.ListarEntitiesPorTvdbExcetoIdParams{
 			TvdbID: sid, AlvoID: alvoID,
+		})
+	case musicext.FonteMusicBrainz, musicext.ChaveExternalIDMbid:
+		// Dois valores de `source` chegam aqui para o MESMO id: aplicarCandidatoExterno/
+		// aplicarIdentidadeExterna passam o Provider.Nome() ("musicbrainz", convencao de
+		// TODO o resto do arquivo), enquanto PUT /entities/{id}/external-ids
+		// (external_ids.go) itera a chave BRUTA que o cliente grava no JSON ("mbid",
+		// convencao de armazenamento -- musicext.ChaveExternalIDMbid). Cobrir só um dos
+		// dois deixaria o outro caminho sem deteccao de colisao (briefing 0119).
+		candidatas, err = r.ListarEntitiesPorMbidExcetoId(ctx, sqlcgen.ListarEntitiesPorMbidExcetoIdParams{
+			MbidID: sid, AlvoID: alvoID,
 		})
 	default:
 		return "", "", false, nil

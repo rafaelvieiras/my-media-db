@@ -99,6 +99,19 @@ SELECT id, type, title, original_title, description, release_date,
 FROM entity
 WHERE external_id_tvdb = sqlc.arg('tvdb_id') AND id != sqlc.arg('alvo_id');
 
+-- name: ListarEntitiesPorMbidExcetoId :many
+-- Espelha ListarEntitiesPorTmdbExcetoId, para a fonte mbid (MusicBrainz) -- usada por
+-- acharColisaoExterna quando o auto-match/retroativo aplica um candidato musicbrainz a
+-- uma entity `artista` (briefing 0116/0119): sem esta query, o dedup de colisao ficava
+-- restrito a tmdb/imdb/tvdb e um artista ja catalogado por outra via (import de arvore,
+-- scan de faixa) podia ganhar uma SEGUNDA entity para o mesmo MBID.
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
+FROM entity
+WHERE external_id_mbid = sqlc.arg('mbid_id') AND id != sqlc.arg('alvo_id');
+
 -- name: ObterColecaoPorTmdb :one
 -- Dedup da entity COLECAO por id tmdb (briefing 0025): reusa a coluna gerada
 -- external_id_tmdb, mas RESTRITA a type='collection'. O namespace de id de colecao

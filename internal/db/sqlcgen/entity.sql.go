@@ -569,6 +569,75 @@ func (q *Queries) ListarEntitiesPorImdbExcetoId(ctx context.Context, arg ListarE
 	return items, nil
 }
 
+const listarEntitiesPorMbidExcetoId = `-- name: ListarEntitiesPorMbidExcetoId :many
+SELECT id, type, title, original_title, description, release_date,
+    status, tags_json, external_ids_json, extension_data_json,
+    created_at, updated_at, external_id_tmdb, external_id_imdb, original_language, external_id_tvdb, last_external_match_attempt_at, nfo_path, nfo_written_at,
+    watched, play_count, user_rating, last_played_at, resume_position_seconds, resume_total_seconds, external_id_mbid
+FROM entity
+WHERE external_id_mbid = ?1 AND id != ?2
+`
+
+type ListarEntitiesPorMbidExcetoIdParams struct {
+	MbidID sql.NullString
+	AlvoID string
+}
+
+// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte mbid (MusicBrainz) -- usada por
+// acharColisaoExterna quando o auto-match/retroativo aplica um candidato musicbrainz a
+// uma entity `artista` (briefing 0116/0119): sem esta query, o dedup de colisao ficava
+// restrito a tmdb/imdb/tvdb e um artista ja catalogado por outra via (import de arvore,
+// scan de faixa) podia ganhar uma SEGUNDA entity para o mesmo MBID.
+func (q *Queries) ListarEntitiesPorMbidExcetoId(ctx context.Context, arg ListarEntitiesPorMbidExcetoIdParams) ([]Entity, error) {
+	rows, err := q.db.QueryContext(ctx, listarEntitiesPorMbidExcetoId, arg.MbidID, arg.AlvoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Entity{}
+	for rows.Next() {
+		var i Entity
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Title,
+			&i.OriginalTitle,
+			&i.Description,
+			&i.ReleaseDate,
+			&i.Status,
+			&i.TagsJson,
+			&i.ExternalIdsJson,
+			&i.ExtensionDataJson,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ExternalIDTmdb,
+			&i.ExternalIDImdb,
+			&i.OriginalLanguage,
+			&i.ExternalIDTvdb,
+			&i.LastExternalMatchAttemptAt,
+			&i.NfoPath,
+			&i.NfoWrittenAt,
+			&i.Watched,
+			&i.PlayCount,
+			&i.UserRating,
+			&i.LastPlayedAt,
+			&i.ResumePositionSeconds,
+			&i.ResumeTotalSeconds,
+			&i.ExternalIDMbid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listarEntitiesPorTmdbExcetoId = `-- name: ListarEntitiesPorTmdbExcetoId :many
 SELECT id, type, title, original_title, description, release_date,
     status, tags_json, external_ids_json, extension_data_json,
