@@ -113,6 +113,7 @@ func TestCRUDEntity(t *testing.T) {
 
 	upd, err := q.AtualizarEntity(ctx, sqlcgen.AtualizarEntityParams{
 		ID: e.ID, Type: "movie", Title: "Matrix (upgrade)", Status: "wanted",
+		ExternalIdsJson: e.ExternalIdsJson, // preserva a identidade (AtualizarEntity SETa a coluna inteira)
 	})
 	check(t, err, "AtualizarEntity")
 	if upd.Status != "wanted" || upd.Title != "Matrix (upgrade)" {
@@ -129,6 +130,23 @@ func TestCRUDEntity(t *testing.T) {
 	check(t, err, "CriarMediaFile")
 	if tem, _ := q.EntityTemPosse(ctx, e.ID); !tem {
 		t.Error("posse com present = false, quero true")
+	}
+
+	// reprocessamento de artes (briefing 0118): "e" ja tem external_ids (NOT
+	// NULL), status nao-draft e media_file present -- elegivel de cara (nunca
+	// verificado, last_external_match_attempt_at NULL).
+	elegiveisArtes, err := q.ListarElegiveisReprocessamentoArtes(ctx, sqlcgen.ListarElegiveisReprocessamentoArtesParams{
+		DiasGlobal: 15, Limite: 10,
+	})
+	check(t, err, "ListarElegiveisReprocessamentoArtes")
+	achou := false
+	for _, r := range elegiveisArtes {
+		if r.ID == e.ID {
+			achou = true
+		}
+	}
+	if !achou {
+		t.Errorf("ListarElegiveisReprocessamentoArtes = %+v, queria conter %q", elegiveisArtes, e.ID)
 	}
 
 	check(t, q.ApagarEntity(ctx, e.ID), "ApagarEntity")

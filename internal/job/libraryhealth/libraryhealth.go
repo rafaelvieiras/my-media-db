@@ -87,6 +87,13 @@ type Matcher interface {
 	// confiança, ou sinaliza para a fila de Revisão quando achou algo
 	// plausível mas não confiável o bastante.
 	EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizados int, err error)
+	// ReprocessarArtesFaltantes varre entities JÁ identificadas (com
+	// external_ids) cujo inventário de arte (fanart.tv etc.) nunca foi
+	// verificado -- e tenta de novo, em lote pequeno, throttled por item
+	// (briefing 0118, complemento do 0056/0117): fecha o gap de uma entity
+	// que ganhou a identidade ANTES de um ArteProvider existir/ser
+	// configurado no sistema.
+	ReprocessarArtesFaltantes(ctx context.Context) (processados int, err error)
 }
 
 // CompletenessRecalculator e o subconjunto de *server.Server que o Handler
@@ -195,9 +202,11 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 		}
 	}
 
+	artesReprocessadas := h.rodarReprocessamentoArtes(ctx)
+
 	avaliados, incompletos := h.rodarRecalculoCompletude(ctx)
 
-	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas, resolvidos, aplicados, sinalizados, avaliados, incompletos), nil
+	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, avaliados, incompletos), nil
 }
 
 // rodarAutoMatch chama o Matcher (auto-match em lote sobre os elegiveis da
@@ -232,6 +241,24 @@ func (h *Handler) rodarEnriquecimentoRetroativo(ctx context.Context) (aplicados,
 		return 0, 0
 	}
 	return aplicados, sinalizados
+}
+
+// rodarReprocessamentoArtes chama o Matcher (reprocessamento de artes
+// faltantes, briefing 0118) e devolve quantos itens foram verificados de
+// novo. Best-effort: uma falha aqui NAO aborta o job -- so loga e devolve 0,
+// para o resumo original ainda sair. Chamado DEPOIS de
+// rodarEnriquecimentoRetroativo (mesma familia de passo best-effort de
+// enriquecimento) e ANTES do recalculo de completude.
+func (h *Handler) rodarReprocessamentoArtes(ctx context.Context) int {
+	if h.matcher == nil {
+		return 0
+	}
+	processados, err := h.matcher.ReprocessarArtesFaltantes(ctx)
+	if err != nil {
+		log.Printf("saude_biblioteca: reprocessamento de artes em lote falhou (best-effort, ignorado): %v", err)
+		return 0
+	}
+	return processados
 }
 
 // rodarRecalculoCompletude chama o CompletenessRecalculator (recalculo em
@@ -330,13 +357,16 @@ func (h *Handler) escanearEAguardar(ctx context.Context, src library.Source) err
 // operacao normal, quando nao havia nada a resolver. aplicados/sinalizados
 // (briefing 0056) sao o resultado do enriquecimento retroativo; a clausula
 // extra e omitida quando os dois sao zero (mesmo espirito da omissao de
-// resolvidos==0 acima). avaliados/incompletos (briefing 0058) sao o
-// resultado do recalculo de completude de catalogacao; a clausula extra e
-// omitida quando nao houve NENHUM item avaliado (h.completeness == nil ou a
-// biblioteca vazia) -- com pelo menos um avaliado, a clausula aparece mesmo
-// com incompletos==0 (0 incompletos e uma informacao positiva relevante,
-// diferente de aplicados/sinalizados==0 que so significa "nada a fazer").
-func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, resolvidos, aplicados, sinalizados, avaliados, incompletos int) string {
+// resolvidos==0 acima). artesReprocessadas (briefing 0118) e quantas entities
+// JA identificadas tiveram o inventario de arte reverificado; clausula
+// omitida quando zero (mesmo espirito). avaliados/incompletos (briefing 0058)
+// sao o resultado do recalculo de completude de catalogacao; a clausula
+// extra e omitida quando nao houve NENHUM item avaliado (h.completeness ==
+// nil ou a biblioteca vazia) -- com pelo menos um avaliado, a clausula
+// aparece mesmo com incompletos==0 (0 incompletos e uma informacao positiva
+// relevante, diferente de aplicados/sinalizados==0 que so significa "nada a
+// fazer").
+func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, avaliados, incompletos int) string {
 	base := fmt.Sprintf("%s; %d em revisão, %d órfã(s)", resumoScans(total, escaneadas, falhas), revisao, orfas)
 	if resolvidos > 0 {
 		base = fmt.Sprintf("%s; %d em revisão (%d resolvidos automaticamente), %d órfã(s)",
@@ -345,6 +375,9 @@ func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, reso
 	if aplicados > 0 || sinalizados > 0 {
 		base = fmt.Sprintf("%s; enriquecimento retroativo: %d aplicado(s), %d sinalizado(s) para revisão",
 			base, aplicados, sinalizados)
+	}
+	if artesReprocessadas > 0 {
+		base = fmt.Sprintf("%s; %d entity(ies) com inventário de arte reprocessado", base, artesReprocessadas)
 	}
 	if avaliados > 0 {
 		base = fmt.Sprintf("%s; %d itens avaliados, %d incompletos em catalogação", base, avaliados, incompletos)

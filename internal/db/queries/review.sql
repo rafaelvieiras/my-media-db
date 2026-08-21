@@ -124,6 +124,58 @@ ORDER BY
     e.id
 LIMIT sqlc.arg('limite');
 
+-- name: ListarElegiveisReprocessamentoArtes :many
+-- Complemento de ListarElegiveisEnriquecimentoRetroativo (briefing 0118): em vez
+-- de entities SEM identidade, aqui sao as JA IDENTIFICADAS (external_ids_json
+-- NOT NULL) cujo inventario de arte (fanart.tv etc, briefing 0048) nunca foi
+-- (re)verificado -- fecha o gap de uma entity que ganhou a identidade ANTES de
+-- um ArteProvider existir/ser configurado no sistema (ou cuja busca de arte na
+-- epoca nao achou nada e nunca foi reprocessada): sem este passo ela fica sem
+-- arte extra para sempre, so alcancavel pelo botao manual "Baixar Artes
+-- Faltantes" por item (briefing 0088). Reusa last_external_match_attempt_at --
+-- LIVRE para estas entities, ja que a query irma (acima) so olha entities com
+-- external_ids_json IS NULL -- so que aqui o carimbo significa "ultima vez que
+-- o inventario de arte foi verificado", nao "ultima tentativa de match". Mesmo
+-- throttle/dias (retroactive_enrichment_days) e mesma lista literal de tipos
+-- de topo (sub_nos EXCLUIDOS, ADR-0030/0112 -- TestListaSubNosSincronizadaComQuery
+-- trava as DUAS queries contra tiposSubNo) e posse via arvore de entity_relation
+-- (musica: artista nunca liga media_file direto, ADR-0027) que a query irma ja
+-- usa.
+WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT parent_id, child_id FROM entity_relation
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
+SELECT e.id, e.type, e.title
+FROM entity e
+WHERE e.external_ids_json IS NOT NULL
+  AND e.type NOT IN ('season', 'episode', 'album', 'faixa')
+  AND e.status != 'draft'
+  AND EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id AND m.state = 'present'
+        UNION
+        SELECT 1 FROM arvore t
+        JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+        WHERE t.ancestor_id = e.id
+      )
+  AND (
+        e.last_external_match_attempt_at IS NULL
+        OR e.last_external_match_attempt_at < COALESCE(
+            (SELECT datetime('now', '-' || MIN(COALESCE(ls.retroactive_enrichment_days, CAST(sqlc.arg('dias_global') AS INTEGER))) || ' days')
+             FROM media_file mf
+             JOIN library_source ls ON ls.id = mf.library_source_id
+             WHERE mf.entity_id = e.id AND mf.state = 'present'),
+            datetime('now', '-' || CAST(sqlc.arg('dias_global') AS INTEGER) || ' days')
+        )
+      )
+ORDER BY
+    (e.last_external_match_attempt_at IS NULL) DESC,
+    e.last_external_match_attempt_at ASC,
+    e.title COLLATE NOCASE ASC,
+    e.id
+LIMIT sqlc.arg('limite');
+
 -- name: AtualizarTentativaMatchExterno :exec
 -- Registra que o item FOI verificado nesta execucao (aplicado, sinalizado
 -- ou sem candidato) -- throttle do briefing 0056: o proximo lote so volta a

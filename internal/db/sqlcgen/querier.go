@@ -356,6 +356,23 @@ type Querier interface {
 	// media_file DIRETO -- para artista isso sempre cai no fallback global, ver
 	// briefing 0116 secao 3 "Fora"); sqlc.arg('limite') poda o lote por execucao.
 	ListarElegiveisEnriquecimentoRetroativo(ctx context.Context, arg ListarElegiveisEnriquecimentoRetroativoParams) ([]ListarElegiveisEnriquecimentoRetroativoRow, error)
+	// Complemento de ListarElegiveisEnriquecimentoRetroativo (briefing 0118): em vez
+	// de entities SEM identidade, aqui sao as JA IDENTIFICADAS (external_ids_json
+	// NOT NULL) cujo inventario de arte (fanart.tv etc, briefing 0048) nunca foi
+	// (re)verificado -- fecha o gap de uma entity que ganhou a identidade ANTES de
+	// um ArteProvider existir/ser configurado no sistema (ou cuja busca de arte na
+	// epoca nao achou nada e nunca foi reprocessada): sem este passo ela fica sem
+	// arte extra para sempre, so alcancavel pelo botao manual "Baixar Artes
+	// Faltantes" por item (briefing 0088). Reusa last_external_match_attempt_at --
+	// LIVRE para estas entities, ja que a query irma (acima) so olha entities com
+	// external_ids_json IS NULL -- so que aqui o carimbo significa "ultima vez que
+	// o inventario de arte foi verificado", nao "ultima tentativa de match". Mesmo
+	// throttle/dias (retroactive_enrichment_days) e mesma lista literal de tipos
+	// de topo (sub_nos EXCLUIDOS, ADR-0030/0112 -- TestListaSubNosSincronizadaComQuery
+	// trava as DUAS queries contra tiposSubNo) e posse via arvore de entity_relation
+	// (musica: artista nunca liga media_file direto, ADR-0027) que a query irma ja
+	// usa.
+	ListarElegiveisReprocessamentoArtes(ctx context.Context, arg ListarElegiveisReprocessamentoArtesParams) ([]ListarElegiveisReprocessamentoArtesRow, error)
 	ListarEntities(ctx context.Context, arg ListarEntitiesParams) ([]Entity, error)
 	// Universo elegivel do job `midias_faltantes` PARA MUSICA (briefing 0116): toda entity
 	// artista/album com ao menos um descendente (faixa, via artista->album->faixa ou

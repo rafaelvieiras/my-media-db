@@ -272,10 +272,12 @@ func TestListarElegiveisEnriquecimentoRetroativoArtistaViaArvore(t *testing.T) {
 }
 
 // TestListaSubNosSincronizadaComQuery trava a lista literal de tipos
-// excluídos em ListarElegiveisEnriquecimentoRetroativo (review.sql) contra
-// tiposSubNo (ADR-0030/briefing 0112) -- sqlc.slice não pôde ser usado aqui
-// (ver nota de implementação do briefing 0116), então a lista é literal; este
-// teste é a rede de segurança contra as duas divergirem no futuro.
+// excluídos em ListarElegiveisEnriquecimentoRetroativo E em
+// ListarElegiveisReprocessamentoArtes (review.sql, briefing 0118 -- mesma
+// lista literal, copiada da primeira) contra tiposSubNo (ADR-0030/briefing
+// 0112) -- sqlc.slice não pôde ser usado aqui (ver nota de implementação do
+// briefing 0116), então a lista é literal; este teste é a rede de segurança
+// contra as três divergirem no futuro.
 func TestListaSubNosSincronizadaComQuery(t *testing.T) {
 	esperado := map[string]bool{}
 	for _, tipo := range tiposSubNo {

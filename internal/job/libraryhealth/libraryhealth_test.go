@@ -101,6 +101,10 @@ type matcherFake struct {
 	aplicados, sinalizados int
 	errRetroativo          error
 	chamadasRetroativo     int
+
+	artesProcessadas       int
+	errArtes               error
+	chamadasReprocessArtes int
 }
 
 func (m *matcherFake) AutoMatchElegiveis(context.Context) (int, int, error) {
@@ -111,6 +115,11 @@ func (m *matcherFake) AutoMatchElegiveis(context.Context) (int, int, error) {
 func (m *matcherFake) EnriquecerRetroativo(context.Context) (int, int, error) {
 	m.chamadasRetroativo++
 	return m.aplicados, m.sinalizados, m.errRetroativo
+}
+
+func (m *matcherFake) ReprocessarArtesFaltantes(context.Context) (int, error) {
+	m.chamadasReprocessArtes++
+	return m.artesProcessadas, m.errArtes
 }
 
 // completenessFake e um CompletenessRecalculator fake (briefing 0058):
@@ -414,6 +423,80 @@ func TestExecutarFalhaDoEnriquecimentoRetroativoNaoAbortaJob(t *testing.T) {
 // matcher==nil (mesma guarda de rodarAutoMatch): sem Matcher injetado, o
 // passo retroativo degrada para (0, 0) sem panicar.
 func TestExecutarSemMatcherNaoRodaEnriquecimentoRetroativo(t *testing.T) {
+	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, nil, nil)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarAcionaReprocessamentoArtesEReflete cobre o critério central do
+// briefing 0118: depois do enriquecimento retroativo, o job aciona
+// ReprocessarArtesFaltantes e a mensagem final ganha a cláusula "<N>
+// entity(ies) com inventário de arte reprocessado".
+func TestExecutarAcionaReprocessamentoArtesEReflete(t *testing.T) {
+	cont := &contadorFake{revisao: 4, orfas: 2}
+	matcher := &matcherFake{artesProcessadas: 7}
+	h := New(&libraryFake{}, newScanFake(), cont, matcher, nil)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s); 7 entity(ies) com inventário de arte reprocessado"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+	if matcher.chamadasReprocessArtes != 1 {
+		t.Errorf("ReprocessarArtesFaltantes chamado %d vez(es), quero exatamente 1", matcher.chamadasReprocessArtes)
+	}
+}
+
+// TestExecutarReprocessamentoArtesOmiteClausulaQuandoZero cobre o critério de
+// omissão: sem nenhuma entity reprocessada, a mensagem final NÃO ganha a
+// cláusula extra.
+func TestExecutarReprocessamentoArtesOmiteClausulaQuandoZero(t *testing.T) {
+	cont := &contadorFake{revisao: 4, orfas: 2}
+	matcher := &matcherFake{}
+	h := New(&libraryFake{}, newScanFake(), cont, matcher, nil)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarFalhaDoReprocessamentoArtesNaoAbortaJob cobre o critério
+// best-effort: uma falha do Matcher neste passo não derruba o job -- o
+// resumo original (sem a cláusula extra) ainda sai.
+func TestExecutarFalhaDoReprocessamentoArtesNaoAbortaJob(t *testing.T) {
+	cont := &contadorFake{revisao: 4, orfas: 2}
+	matcher := &matcherFake{errArtes: errors.New("erro simulado no reprocessamento de artes")}
+	h := New(&libraryFake{}, newScanFake(), cont, matcher, nil)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar não deveria falhar por causa do reprocessamento de artes (best-effort): %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarSemMatcherNaoRodaReprocessamentoArtes cobre a guarda
+// matcher==nil (mesma guarda de rodarAutoMatch/rodarEnriquecimentoRetroativo):
+// sem Matcher injetado, o passo degrada para 0 sem panicar.
+func TestExecutarSemMatcherNaoRodaReprocessamentoArtes(t *testing.T) {
 	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, nil, nil)
 
 	msg, err := h.Executar(context.Background(), nil)
