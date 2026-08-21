@@ -139,7 +139,7 @@ func (p *provMusicaNaoTmdb) BuscarAlbumDaFaixa(context.Context, string, []string
 	return provider.AlbumExterno{}, false, nil
 }
 
-func (p *provMusicaNaoTmdb) BuscarAlbumPorNome(context.Context, string, string, []string) (provider.AlbumExterno, bool, error) {
+func (p *provMusicaNaoTmdb) BuscarAlbumPorNome(context.Context, string, string, provider.AlvoFaixaAlbum, []string) (provider.AlbumExterno, bool, error) {
 	return provider.AlbumExterno{}, false, nil
 }
 

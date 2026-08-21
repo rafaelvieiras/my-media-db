@@ -474,6 +474,23 @@ type FaixaExterna struct {
 	ArtistaCreditoMBID string
 }
 
+// AlvoFaixaAlbum identifica, opcionalmente, UMA faixa específica que o chamador
+// precisa encontrar dentro do álbum resolvido -- permite ao provider tentar
+// releases alternativas do mesmo release-group quando a escolhida por padrão
+// (ex.: "Official") não contém essa faixa (briefing 0121, achado real: Bomfunk
+// MC's "Freestyler" existe só num álbum completo do release-group, não na
+// edição "Official" — um maxi-single com faixas remixadas). Zero value (todos
+// os campos vazios) preserva o comportamento de sempre escolher só 1 release,
+// sem nenhuma tentativa adicional. Prioridade quando mais de um campo é
+// preenchido: RecordingMBID > FaixaTitulo > FaixaNumero (mesma ordem de
+// enrich.FaixaAlvo/escolherFaixaAlvo — duplicação mínima e proposital, ver
+// nota do briefing 0121: provider não pode depender de enrich).
+type AlvoFaixaAlbum struct {
+	RecordingMBID string
+	FaixaTitulo   string
+	FaixaNumero   int
+}
+
 // MusicaAlbumProvider é uma CAPACIDADE OPCIONAL de um Provider (ADR-0029 item 6,
 // briefing 0115): buscar/montar UM release (álbum) específico do artista, SEM
 // enumerar a discografia inteira -- o contraponto SELETIVO de MusicaProvider (a
@@ -499,9 +516,13 @@ type MusicaAlbumProvider interface {
 	// TEXTUAL, usado quando o arquivo não tem MBID de faixa embutido (fallback).
 	// A implementação pode precisar de 1 chamada barata (só ids/títulos) para
 	// listar os release-groups do artista e escolher o candidato, mas monta --
-	// faixas incluídas -- só o escolhido, nunca os demais. ok=false sem candidato
-	// plausível (empate no topo ou abaixo do limiar) -- graça; erro real propaga.
-	BuscarAlbumPorNome(ctx context.Context, artistaMBID, nomeAlbum string, langs []string) (AlbumExterno, bool, error)
+	// faixas incluídas -- só o escolhido, nunca os demais. `alvoFaixa` (briefing
+	// 0121), quando preenchido, permite à implementação tentar releases
+	// alternativas do MESMO release-group escolhido quando a release padrão não
+	// contém essa faixa (zero value preserva o comportamento de sempre 1
+	// release só). ok=false sem candidato plausível (empate no topo ou abaixo do
+	// limiar) -- graça; erro real propaga.
+	BuscarAlbumPorNome(ctx context.Context, artistaMBID, nomeAlbum string, alvoFaixa AlvoFaixaAlbum, langs []string) (AlbumExterno, bool, error)
 
 	// BuscarAlbumPorMbid monta o álbum cujo MBID DE RELEASE-GROUP já é conhecido
 	// -- o caminho DIRETO (briefing 0115 Parte 2), usado quando o chamador já tem

@@ -146,7 +146,7 @@ func (p *fakeMusicaProvider) BuscarAlbumDaFaixa(_ context.Context, recordingMBID
 // BuscarAlbumPorNome é a capacidade SELETIVA (provider.MusicaAlbumProvider,
 // briefing 0115) que o scanner usa no caminho textual: monta SÓ o álbum
 // `nomeAlbum` do artista `artistaMBID`, nunca a árvore inteira.
-func (p *fakeMusicaProvider) BuscarAlbumPorNome(_ context.Context, artistaMBID, nomeAlbum string, _ []string) (provider.AlbumExterno, bool, error) {
+func (p *fakeMusicaProvider) BuscarAlbumPorNome(_ context.Context, artistaMBID, nomeAlbum string, _ provider.AlvoFaixaAlbum, _ []string) (provider.AlbumExterno, bool, error) {
 	p.albumNomeN++
 	alb := albumFixture()
 	if artistaMBID != mbidArtistaFixture || nomeAlbum != alb.Name {

@@ -96,7 +96,7 @@ func (m *Musicbrainz) BuscarAlbumDaFaixa(_ context.Context, _ string, _ []string
 	return provider.AlbumExterno{}, false, nil
 }
 
-func (m *Musicbrainz) BuscarAlbumPorNome(_ context.Context, _, _ string, _ []string) (provider.AlbumExterno, bool, error) {
+func (m *Musicbrainz) BuscarAlbumPorNome(_ context.Context, _, _ string, _ provider.AlvoFaixaAlbum, _ []string) (provider.AlbumExterno, bool, error) {
 	return provider.AlbumExterno{}, false, nil
 }
 

@@ -157,7 +157,7 @@ func (fakeMusicaProvider) BuscarAlbumDaFaixa(_ context.Context, recordingMBID st
 // BuscarAlbumPorNome é a capacidade SELETIVA (provider.MusicaAlbumProvider,
 // briefing 0115) usada pelo import ESCOPADO no caminho textual: monta SÓ o
 // álbum `nomeAlbum` do artista `artistaMBID`.
-func (fakeMusicaProvider) BuscarAlbumPorNome(_ context.Context, artistaMBID, nomeAlbum string, _ []string) (provider.AlbumExterno, bool, error) {
+func (fakeMusicaProvider) BuscarAlbumPorNome(_ context.Context, artistaMBID, nomeAlbum string, _ provider.AlvoFaixaAlbum, _ []string) (provider.AlbumExterno, bool, error) {
 	if artistaMBID != mbidArtistaFixture {
 		return provider.AlbumExterno{}, false, nil
 	}

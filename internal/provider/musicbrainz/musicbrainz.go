@@ -247,25 +247,27 @@ func (c *Client) BuscarArtistaArvore(ctx context.Context, sourceID string, langs
 		// chance de UMA chamada específica esgotar as tentativas não é desprezível. Um
 		// artista com discografia grande é bem mais útil parcialmente importado (álbuns
 		// sem faixa, corrigível depois via reimport) do que falhando por inteiro.
-		album := c.montarAlbum(ctx, rg.ID, rg.Title, rg.FirstReleaseDate)
+		album := c.montarAlbum(ctx, rg.ID, rg.Title, rg.FirstReleaseDate, provider.AlvoFaixaAlbum{})
 		arvore.Albuns = append(arvore.Albuns, album)
 	}
 	return arvore, nil
 }
 
-// montarAlbum busca o release-group (releases+genres, 1 chamada), escolhe a release
-// "oficial" a representar o álbum, e busca as faixas dessa release (1 chamada). NUNCA
-// devolve erro: release-group sem nenhuma release, 404 pontual, ou esgotamento do retry de
-// getMB (instabilidade do servidor público) todos degradam pro mesmo shell -- álbum com
-// nome/MBID/ano mas sem faixas -- em vez de derrubar a árvore inteira (ver
-// BuscarArtistaArvore). Faixas ausentes por causa disso são corrigíveis num reimport
-// posterior (find-or-create por MBID, idempotente). `title`/`firstReleaseDate` são
-// OPCIONAIS (briefing 0115): quando vazios (chamador não os tem de antemão, ver
-// BuscarAlbumDaFaixa), usa o título/data que o PRÓPRIO release-group devolve
-// (rg.Title/rg.FirstReleaseDate) -- o chamador que já os tem (BuscarArtistaArvore, a
-// partir do browse de release-groups do artista) evita essa dependência do 2º campo.
-func (c *Client) montarAlbum(ctx context.Context, rgID, title, firstReleaseDate string) provider.AlbumExterno {
-	album, err := c.montarAlbumOuErro(ctx, rgID, title, firstReleaseDate)
+// montarAlbum busca o release-group (releases+genres, 1 chamada), escolhe a(s)
+// release(s) a representar o álbum conforme `alvoFaixa` (ver buscarFaixasComAlvo), e
+// busca as faixas. NUNCA devolve erro: release-group sem nenhuma release, 404
+// pontual, ou esgotamento do retry de getMB (instabilidade do servidor público) todos
+// degradam pro mesmo shell -- álbum com nome/MBID/ano mas sem faixas -- em vez de
+// derrubar a árvore inteira (ver BuscarArtistaArvore). Faixas ausentes por causa disso
+// são corrigíveis num reimport posterior (find-or-create por MBID, idempotente).
+// `title`/`firstReleaseDate` são OPCIONAIS (briefing 0115): quando vazios (chamador
+// não os tem de antemão, ver BuscarAlbumDaFaixa), usa o título/data que o PRÓPRIO
+// release-group devolve (rg.Title/rg.FirstReleaseDate) -- o chamador que já os tem
+// (BuscarArtistaArvore, a partir do browse de release-groups do artista) evita essa
+// dependência do 2º campo. `alvoFaixa` (briefing 0121) é zero value nos caminhos que
+// não precisam dela (BuscarArtistaArvore/BuscarAlbumPorMbid).
+func (c *Client) montarAlbum(ctx context.Context, rgID, title, firstReleaseDate string, alvoFaixa provider.AlvoFaixaAlbum) provider.AlbumExterno {
+	album, err := c.montarAlbumOuErro(ctx, rgID, title, firstReleaseDate, alvoFaixa)
 	if err != nil {
 		return provider.AlbumExterno{Name: title, MBID: rgID, Year: anoDe(firstReleaseDate)}
 	}
@@ -278,11 +280,11 @@ func (c *Client) montarAlbum(ctx context.Context, rgID, title, firstReleaseDate 
 // MusicaAlbumProvider que não tem uma resolução prévia confirmando que o
 // release-group existe, então precisa saber se a falha foi "não encontrado"
 // (→ ErrNaoEncontrado, 404) ou outra coisa. A falha da chamada de FAIXAS
-// (buscarFaixas) continua degradando em silêncio (mesma semântica de sempre):
+// (buscarFaixasComAlvo) continua degradando em silêncio (mesma semântica de sempre):
 // o release-group já foi confirmado nesta mesma chamada, então uma
-// instabilidade pontual na 2ª ida vale mais como álbum parcial (sem faixas,
-// corrigível num reimport) do que como erro pro chamador.
-func (c *Client) montarAlbumOuErro(ctx context.Context, rgID, title, firstReleaseDate string) (provider.AlbumExterno, error) {
+// instabilidade pontual na(s) ida(s) seguinte(s) vale mais como álbum parcial (sem
+// faixas, corrigível num reimport) do que como erro pro chamador.
+func (c *Client) montarAlbumOuErro(ctx context.Context, rgID, title, firstReleaseDate string, alvoFaixa provider.AlvoFaixaAlbum) (provider.AlbumExterno, error) {
 	body, err := c.getMB(ctx, "/release-group/"+url.PathEscape(rgID), url.Values{"inc": {"releases+genres"}})
 	if err != nil {
 		return provider.AlbumExterno{}, err
@@ -301,14 +303,9 @@ func (c *Client) montarAlbumOuErro(ctx context.Context, rgID, title, firstReleas
 	}
 	album.Genre = generoPrincipal(rg.Genres)
 
-	releaseID, ok := escolherRelease(rg.Releases)
-	if !ok {
-		return album, nil // release-group sem nenhuma release: album sem faixas
-	}
-
-	faixas, err := c.buscarFaixas(ctx, releaseID)
+	faixas, err := c.buscarFaixasComAlvo(ctx, rg.Releases, alvoFaixa)
 	if err != nil {
-		return album, nil // release indisponivel (404 ou retry esgotado): degrada sem faixas
+		return album, nil // nenhuma release respondeu (404/retry esgotado): degrada sem faixas
 	}
 	album.Faixas = faixas
 	return album, nil
@@ -326,16 +323,21 @@ func (c *Client) BuscarAlbumPorMbid(ctx context.Context, albumMBID string, langs
 	if albumMBID == "" {
 		return provider.AlbumExterno{}, fmt.Errorf("musicbrainz: mbid de album vazio")
 	}
-	return c.montarAlbumOuErro(ctx, albumMBID, "", "")
+	return c.montarAlbumOuErro(ctx, albumMBID, "", "", provider.AlvoFaixaAlbum{})
 }
 
 // BuscarAlbumDaFaixa é a capacidade provider.MusicaAlbumProvider (ADR-0029 item 6,
 // briefing 0115), caminho PRECISO: resolve o release-group que contém o recording
 // `recordingMBID` (1 chamada, /recording/{id}?inc=releases+release-groups -- cada
 // release do recording já vem com seu release-group aninhado, sem chamada extra) e
-// monta ESSE único álbum via montarAlbum (mais 1+1 chamadas) -- nunca a discografia
+// monta ESSE único álbum via montarAlbum (mais 1+N chamadas) -- nunca a discografia
 // inteira. Entre as releases do recording, prefere a de status "Official" (mesmo
 // critério de escolherRelease); sem nenhuma, a primeira com release-group presente.
+// Passa `provider.AlvoFaixaAlbum{RecordingMBID: recordingMBID}` a montarAlbum
+// (briefing 0121): a release "Official" do release-group pode NÃO ser a mesma que
+// contém este recording especificamente (escolherReleaseGroupDoRecording só resolve
+// o release-group, não garante que montarAlbum escolha a release certa dentro dele)
+// -- sem o alvo, o caminho PRECISO tinha o mesmo gap estrutural do textual.
 func (c *Client) BuscarAlbumDaFaixa(ctx context.Context, recordingMBID string, langs []string) (provider.AlbumExterno, bool, error) {
 	_ = langs
 	if recordingMBID == "" {
@@ -353,7 +355,7 @@ func (c *Client) BuscarAlbumDaFaixa(ctx context.Context, recordingMBID string, l
 	if !ok {
 		return provider.AlbumExterno{}, false, nil
 	}
-	return c.montarAlbum(ctx, rgID, "", ""), true, nil
+	return c.montarAlbum(ctx, rgID, "", "", provider.AlvoFaixaAlbum{RecordingMBID: recordingMBID}), true, nil
 }
 
 // escolherReleaseGroupDoRecording escolhe, entre as releases do recording, o
@@ -382,8 +384,10 @@ func escolherReleaseGroupDoRecording(releases []respReleaseComGrupo) (string, bo
 // `nomeAlbum` (Jaro-Winkler via internal/textsim, limiar matching.LimiarAutoMatch --
 // mesmo motor/número que o scanner usa para o match textual de artista, ver
 // internal/scanner/musica.go melhorCandidatoTexto) e monta SÓ esse álbum via
-// montarAlbum -- nunca os demais release-groups listados.
-func (c *Client) BuscarAlbumPorNome(ctx context.Context, artistaMBID, nomeAlbum string, langs []string) (provider.AlbumExterno, bool, error) {
+// montarAlbum -- nunca os demais release-groups listados. `alvoFaixa` (briefing
+// 0121) é só repassado a montarAlbum, sem lógica extra própria aqui -- quem decide
+// QUAIS releases tentar dentro do release-group escolhido é buscarFaixasComAlvo.
+func (c *Client) BuscarAlbumPorNome(ctx context.Context, artistaMBID, nomeAlbum string, alvoFaixa provider.AlvoFaixaAlbum, langs []string) (provider.AlbumExterno, bool, error) {
 	_ = langs
 	if artistaMBID == "" || nomeAlbum == "" {
 		return provider.AlbumExterno{}, false, fmt.Errorf("musicbrainz: artista ou nome de album vazio")
@@ -400,7 +404,7 @@ func (c *Client) BuscarAlbumPorNome(ctx context.Context, artistaMBID, nomeAlbum 
 	if !ok {
 		return provider.AlbumExterno{}, false, nil
 	}
-	return c.montarAlbum(ctx, rg.ID, rg.Title, rg.FirstReleaseDate), true, nil
+	return c.montarAlbum(ctx, rg.ID, rg.Title, rg.FirstReleaseDate, alvoFaixa), true, nil
 }
 
 // melhorReleaseGroupPorTitulo escolhe, entre `rgs`, o de título mais próximo de
@@ -444,6 +448,125 @@ func escolherRelease(releases []respReleaseResumo) (string, bool) {
 		return releases[0].ID, true
 	}
 	return "", false
+}
+
+// maxReleasesTentadosPorAlvo é o TETO de releases tentadas por buscarFaixasComAlvo
+// quando há um alvoFaixa a satisfazer (briefing 0121) -- um release-group real pode
+// ter dezenas de releases (reedições, países, remasters); sem teto, uma faixa
+// genuinamente ausente do MusicBrainz inteiro geraria dezenas de chamadas HTTP por
+// tentativa de import/reconciliação, a <= 1 req/s (rate limit já apertado).
+const maxReleasesTentadosPorAlvo = 5
+
+// buscarFaixasComAlvo busca as faixas do release-group representado por `releases`,
+// tentando 1 ou mais releases conforme `alvoFaixa` (briefing 0121, achado real:
+// Bomfunk MC's "Freestyler" não está na release "Official" escolhida por
+// escolherRelease, mas existe noutra release do MESMO release-group). Com
+// `alvoFaixa` no ZERO VALUE, preserva o comportamento HISTÓRICO exato de antes deste
+// briefing: escolhe 1 única release (escolherRelease) e faz 1 única chamada a
+// buscarFaixas -- ZERO regressão de custo/nº de chamadas HTTP para quem nunca
+// precisou de uma faixa específica (BuscarArtistaArvore/BuscarAlbumPorMbid). Com
+// `alvoFaixa` preenchido: tenta as releases em ordem de prioridade
+// (ordenarReleasesPorPrioridade) até achar uma cujas faixas satisfaçam o alvo
+// (releaseContemFaixaAlvo) -- para no primeiro sucesso -- ou esgotar
+// maxReleasesTentadosPorAlvo tentativas, o que vier primeiro. Sem nenhuma bater
+// dentro do teto, devolve as faixas da ÚLTIMA release que respondeu com sucesso
+// (mesma degradação silenciosa de sempre -- quem decide se a faixa certa foi
+// encontrada continua sendo escolherFaixaAlvo em internal/enrich/musica.go, esta
+// função só melhora as CANDIDATAS oferecidas). O erro só é propagado quando TODAS as
+// tentativas falharam de rede (nenhuma faixa obtida em nenhuma tentativa) -- uma
+// falha pontual no meio do laço não aborta a tentativa da próxima release.
+func (c *Client) buscarFaixasComAlvo(ctx context.Context, releases []respReleaseResumo, alvoFaixa provider.AlvoFaixaAlbum) ([]provider.FaixaExterna, error) {
+	if alvoFaixa == (provider.AlvoFaixaAlbum{}) {
+		releaseID, ok := escolherRelease(releases)
+		if !ok {
+			return nil, nil // release-group sem nenhuma release: sem faixas, sem erro
+		}
+		return c.buscarFaixas(ctx, releaseID)
+	}
+
+	ids := ordenarReleasesPorPrioridade(releases)
+	if len(ids) > maxReleasesTentadosPorAlvo {
+		ids = ids[:maxReleasesTentadosPorAlvo]
+	}
+
+	var faixas []provider.FaixaExterna
+	var ultimoErr error
+	obtevesAlgumaVez := false
+	for _, releaseID := range ids {
+		fx, err := c.buscarFaixas(ctx, releaseID)
+		if err != nil {
+			ultimoErr = err
+			continue
+		}
+		obtevesAlgumaVez = true
+		faixas = fx
+		if releaseContemFaixaAlvo(fx, alvoFaixa) {
+			return fx, nil
+		}
+	}
+	if !obtevesAlgumaVez {
+		return nil, ultimoErr // TODAS as tentativas falharam de rede
+	}
+	return faixas, nil // nenhuma bateu dentro do teto: degrada com a ULTIMA obtida
+}
+
+// ordenarReleasesPorPrioridade ordena os IDs de `releases` por prioridade -- MESMO
+// critério de escolherRelease (status=="Official" primeiro, na ordem original entre
+// si; depois as demais, também na ordem original entre si), mas devolvendo a LISTA
+// INTEIRA em vez de parar na primeira -- usada por buscarFaixasComAlvo para tentar
+// múltiplas releases do mesmo release-group quando há um alvoFaixa a satisfazer.
+func ordenarReleasesPorPrioridade(releases []respReleaseResumo) []string {
+	ids := make([]string, 0, len(releases))
+	for _, r := range releases {
+		if r.Status == "Official" {
+			ids = append(ids, r.ID)
+		}
+	}
+	for _, r := range releases {
+		if r.Status != "Official" {
+			ids = append(ids, r.ID)
+		}
+	}
+	return ids
+}
+
+// releaseContemFaixaAlvo diz se `faixas` (as de UMA release já buscada) contêm a
+// faixa que `alvo` descreve. AUTOCONTIDO neste pacote (briefing 0121) -- NÃO reusa
+// escolherFaixaAlvo/melhorFaixaPorTitulo de internal/enrich por import cycle
+// (provider não pode depender de enrich, que já depende de provider); é uma cópia
+// funcional MÍNIMA, mesma fórmula/limiar, não uma abstração compartilhada nova.
+// Mesma prioridade de AlvoFaixaAlbum: MBID exato > título por similaridade
+// (textsim.Similaridade, melhor score entre as faixas, limiar
+// matching.LimiarAutoMatch) > track_number exato. Sem nenhum critério aplicável
+// (todos os campos de `alvo` vazios/zero), devolve false -- nunca aplica um
+// "parecido" à toa.
+func releaseContemFaixaAlvo(faixas []provider.FaixaExterna, alvo provider.AlvoFaixaAlbum) bool {
+	if alvo.RecordingMBID != "" {
+		for _, fx := range faixas {
+			if fx.MBID == alvo.RecordingMBID {
+				return true
+			}
+		}
+		return false
+	}
+	if alvo.FaixaTitulo != "" {
+		melhorScore := -1.0
+		for _, fx := range faixas {
+			score := textsim.Similaridade(alvo.FaixaTitulo, fx.Title) * 100
+			if score > melhorScore {
+				melhorScore = score
+			}
+		}
+		return melhorScore >= matching.LimiarAutoMatch
+	}
+	if alvo.FaixaNumero > 0 {
+		for _, fx := range faixas {
+			if fx.TrackNumber == alvo.FaixaNumero {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // buscarFaixas busca a release escolhida com as faixas (recordings), o artist-credit de

@@ -85,7 +85,7 @@ func (p *fakeMusicaProviderOrfaos) BuscarAlbumDaFaixa(_ context.Context, _ strin
 	return provider.AlbumExterno{}, false, nil
 }
 
-func (p *fakeMusicaProviderOrfaos) BuscarAlbumPorNome(_ context.Context, artistaMBID, nomeAlbum string, _ []string) (provider.AlbumExterno, bool, error) {
+func (p *fakeMusicaProviderOrfaos) BuscarAlbumPorNome(_ context.Context, artistaMBID, nomeAlbum string, _ provider.AlvoFaixaAlbum, _ []string) (provider.AlbumExterno, bool, error) {
 	if artistaMBID != "mbid-artista-1" || !strings.EqualFold(nomeAlbum, "Fake Album") {
 		return provider.AlbumExterno{}, false, nil
 	}

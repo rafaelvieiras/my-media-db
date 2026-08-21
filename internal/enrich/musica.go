@@ -365,7 +365,10 @@ func (s *Servico) acharOuCriarArtistaIdentidade(ctx context.Context, prov provid
 
 // buscarAlbumAlvo escolhe entre BuscarAlbumDaFaixa (preferencial, quando o scanner já
 // sabe o MBID de recording) e BuscarAlbumPorNome (fallback textual, quando só há o
-// nome do álbum da tag) — os dois caminhos que FaixaAlvo modela.
+// nome do álbum da tag) — os dois caminhos que FaixaAlvo modela. No caminho textual,
+// repassa FaixaTitulo/FaixaNumero como provider.AlvoFaixaAlbum (briefing 0121) — o
+// provider pode então tentar releases alternativas do mesmo release-group quando a
+// release padrão não contém a faixa que este import está atrás.
 func (s *Servico) buscarAlbumAlvo(ctx context.Context, ap provider.MusicaAlbumProvider, artistaMBID string, alvo FaixaAlvo, langs []string) (provider.AlbumExterno, error) {
 	if alvo.RecordingMBID != "" {
 		alb, achou, err := ap.BuscarAlbumDaFaixa(ctx, alvo.RecordingMBID, langs)
@@ -380,7 +383,7 @@ func (s *Servico) buscarAlbumAlvo(ctx context.Context, ap provider.MusicaAlbumPr
 	if alvo.AlbumNome == "" {
 		return provider.AlbumExterno{}, fmt.Errorf("enrich: alvo de faixa sem mbid de recording e sem nome de album")
 	}
-	alb, achou, err := ap.BuscarAlbumPorNome(ctx, artistaMBID, alvo.AlbumNome, langs)
+	alb, achou, err := ap.BuscarAlbumPorNome(ctx, artistaMBID, alvo.AlbumNome, provider.AlvoFaixaAlbum{FaixaTitulo: alvo.FaixaTitulo, FaixaNumero: alvo.FaixaNumero}, langs)
 	if err != nil {
 		return provider.AlbumExterno{}, err
 	}

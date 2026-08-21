@@ -573,7 +573,7 @@ func TestBuscarAlbumPorNome(t *testing.T) {
 	defer mb.Close()
 	c := novoClientDeTeste(mb.URL, "")
 
-	album, achou, err := c.BuscarAlbumPorNome(context.Background(), "artist-1", "Album One", nil)
+	album, achou, err := c.BuscarAlbumPorNome(context.Background(), "artist-1", "Album One", provider.AlvoFaixaAlbum{}, nil)
 	if err != nil {
 		t.Fatalf("BuscarAlbumPorNome: %v", err)
 	}
@@ -595,7 +595,7 @@ func TestBuscarAlbumPorNomeSemCandidato(t *testing.T) {
 	defer mb.Close()
 	c := novoClientDeTeste(mb.URL, "")
 
-	_, achou, err := c.BuscarAlbumPorNome(context.Background(), "artist-1", "Totally Unrelated Name", nil)
+	_, achou, err := c.BuscarAlbumPorNome(context.Background(), "artist-1", "Totally Unrelated Name", provider.AlvoFaixaAlbum{}, nil)
 	if err != nil {
 		t.Fatalf("BuscarAlbumPorNome: %v", err)
 	}
@@ -610,7 +610,7 @@ func TestBuscarAlbumPorNomeArtistaNaoEncontrado(t *testing.T) {
 	defer mb.Close()
 	c := novoClientDeTeste(mb.URL, "")
 
-	_, _, err := c.BuscarAlbumPorNome(context.Background(), "does-not-exist", "Album One", nil)
+	_, _, err := c.BuscarAlbumPorNome(context.Background(), "does-not-exist", "Album One", provider.AlvoFaixaAlbum{}, nil)
 	if !errors.Is(err, provider.ErrNaoEncontrado) {
 		t.Fatalf("err = %v, esperava provider.ErrNaoEncontrado", err)
 	}
@@ -621,7 +621,7 @@ func TestMontarAlbumReleaseGroupSemReleases(t *testing.T) {
 	defer mb.Close()
 	c := novoClientDeTeste(mb.URL, "")
 
-	album := c.montarAlbum(context.Background(), "rg-empty", "Album Vazio", "2020")
+	album := c.montarAlbum(context.Background(), "rg-empty", "Album Vazio", "2020", provider.AlvoFaixaAlbum{})
 	if album.Name != "Album Vazio" || album.MBID != "rg-empty" {
 		t.Fatalf("album inesperado: %+v", album)
 	}
@@ -1025,5 +1025,285 @@ func TestGetCAARetryEsgotaTentativas(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(chamadas); got != tentativasMB {
 		t.Fatalf("chamadas ao servidor CAA = %d, esperava %d (tentativasMB)", got, tentativasMB)
+	}
+}
+
+// servidorFreestylerFake monta o cenário REAL do briefing 0121 (Bomfunk MC's
+// "Freestyler", achado ao validar o 0120 em produção): o release-group
+// "rg-freestyler" tem 2 releases -- "rel-maxi" (status "Official", um
+// maxi-single só com versões remixadas, SEM "Freestyler" puro) e "rel-full"
+// (status diferente de Official, mas com a faixa "Freestyler" exata). Devolve
+// também `chamadasFaixas`, que conta as chamadas aos endpoints /release/{id}
+// (nunca /release-group/{id}) -- usado pelos testes que provam ausência de
+// regressão de custo no caminho sem alvoFaixa.
+func servidorFreestylerFake(t *testing.T) (*httptest.Server, *int32) {
+	t.Helper()
+	var chamadasFaixas int32
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/artist/artist-freestyler", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"name": "Bomfunk MC's",
+			"release-groups": [
+				{"id": "rg-freestyler", "title": "Freestyler", "first-release-date": "2000-01-01"}
+			]
+		}`))
+	})
+
+	mux.HandleFunc("/release-group/rg-freestyler", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Official listada PRIMEIRO no JSON de propósito -- ordenarReleasesPorPrioridade
+		// não depende da ordem de entrada, só do status; e escolherRelease (caminho
+		// zero-value) já a acharia de qualquer jeito.
+		_, _ = w.Write([]byte(`{
+			"title": "Freestyler",
+			"first-release-date": "2000-01-01",
+			"genres": [],
+			"releases": [
+				{"id": "rel-maxi", "status": "Official"},
+				{"id": "rel-full", "status": "Bootleg"}
+			]
+		}`))
+	})
+
+	mux.HandleFunc("/release/rel-maxi", func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&chamadasFaixas, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"media": [{
+				"position": 1,
+				"tracks": [
+					{"position": 1, "title": "Freestyler (radio edit)", "artist-credit": [],
+					 "recording": {"id": "rec-radio", "title": "Freestyler (radio edit)", "isrcs": [], "artist-credit": []}}
+				]
+			}]
+		}`))
+	})
+
+	mux.HandleFunc("/release/rel-full", func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&chamadasFaixas, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"media": [{
+				"position": 1,
+				"tracks": [
+					{"position": 5, "title": "Freestyler", "artist-credit": [],
+					 "recording": {"id": "rec-full-freestyler", "title": "Freestyler", "isrcs": [], "artist-credit": []}}
+				]
+			}]
+		}`))
+	})
+
+	return httptest.NewServer(mux), &chamadasFaixas
+}
+
+// TestBuscarFaixasComAlvoTentaOutraReleaseQuandoOfficialNaoTemAFaixa é o critério de
+// aceite principal do briefing 0121: a release "Official" (rel-maxi) NÃO tem a
+// faixa "Freestyler" pura (só versões remixadas -- 89.5 de similaridade, abaixo do
+// limiar de 92), mas "rel-full" (mesmo release-group) tem -- BuscarAlbumPorNome com
+// `alvoFaixa` preenchido deve trazer as faixas de rel-full, não as de rel-maxi.
+func TestBuscarFaixasComAlvoTentaOutraReleaseQuandoOfficialNaoTemAFaixa(t *testing.T) {
+	mb, _ := servidorFreestylerFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	album, achou, err := c.BuscarAlbumPorNome(context.Background(), "artist-freestyler", "Freestyler",
+		provider.AlvoFaixaAlbum{FaixaTitulo: "Freestyler"}, nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumPorNome: %v", err)
+	}
+	if !achou {
+		t.Fatal("achou = false, esperava true")
+	}
+
+	achouFaixa := false
+	for _, fx := range album.Faixas {
+		if fx.Title == "Freestyler" {
+			achouFaixa = true
+		}
+	}
+	if !achouFaixa {
+		t.Fatalf("faixa 'Freestyler' nao encontrada entre as faixas devolvidas -- deveria ter tentado rel-full (a release Official nao a tem): %+v", album.Faixas)
+	}
+}
+
+// TestBuscarFaixasComAlvoZeroValueMantemUmaSoChamada confirma que o caminho sem
+// alvoFaixa (zero value) preserva o comportamento HISTÓRICO exato: só 1 chamada
+// HTTP ao endpoint de faixas de release, mesmo release-group tendo outra release
+// que conteria "Freestyler" -- ninguém pediu pra procurar, então não procura (zero
+// regressão de custo).
+func TestBuscarFaixasComAlvoZeroValueMantemUmaSoChamada(t *testing.T) {
+	mb, chamadas := servidorFreestylerFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	_, achou, err := c.BuscarAlbumPorNome(context.Background(), "artist-freestyler", "Freestyler", provider.AlvoFaixaAlbum{}, nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumPorNome: %v", err)
+	}
+	if !achou {
+		t.Fatal("achou = false, esperava true")
+	}
+	if got := atomic.LoadInt32(chamadas); got != 1 {
+		t.Fatalf("chamadas a /release/{id} = %d, esperava 1 (sem alvoFaixa nao deve regredir custo)", got)
+	}
+}
+
+// servidorTetoFake monta um release-group com 7 releases (mais que
+// maxReleasesTentadosPorAlvo=5), NENHUMA contendo a faixa-alvo -- prova que
+// buscarFaixasComAlvo respeita o teto em vez de iterar o release-group inteiro.
+func servidorTetoFake(t *testing.T) (*httptest.Server, *int32) {
+	t.Helper()
+	var chamadas int32
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/artist/artist-teto", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"name": "Artista Teto",
+			"release-groups": [
+				{"id": "rg-teto", "title": "Album Teto", "first-release-date": "2005-01-01"}
+			]
+		}`))
+	})
+
+	mux.HandleFunc("/release-group/rg-teto", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"title": "Album Teto",
+			"first-release-date": "2005-01-01",
+			"genres": [],
+			"releases": [
+				{"id": "rel-t1", "status": "Official"},
+				{"id": "rel-t2", "status": "Bootleg"},
+				{"id": "rel-t3", "status": "Bootleg"},
+				{"id": "rel-t4", "status": "Bootleg"},
+				{"id": "rel-t5", "status": "Bootleg"},
+				{"id": "rel-t6", "status": "Bootleg"},
+				{"id": "rel-t7", "status": "Bootleg"}
+			]
+		}`))
+	})
+
+	releaseIDs := []string{"rel-t1", "rel-t2", "rel-t3", "rel-t4", "rel-t5", "rel-t6", "rel-t7"}
+	for _, id := range releaseIDs {
+		id := id
+		mux.HandleFunc("/release/"+id, func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddInt32(&chamadas, 1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"media": [{"position": 1, "tracks": [
+					{"position": 1, "title": "Faixa Qualquer", "artist-credit": [],
+					 "recording": {"id": "rec-` + id + `", "title": "Faixa Qualquer", "isrcs": [], "artist-credit": []}}
+				]}]
+			}`))
+		})
+	}
+
+	return httptest.NewServer(mux), &chamadas
+}
+
+// TestBuscarFaixasComAlvoRespeitaTeto confirma o teto maxReleasesTentadosPorAlvo:
+// com 7 releases no release-group e NENHUMA contendo a faixa-alvo, o provider tenta
+// no máximo 5 (nunca as 7) antes de degradar.
+func TestBuscarFaixasComAlvoRespeitaTeto(t *testing.T) {
+	mb, chamadas := servidorTetoFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	_, achou, err := c.BuscarAlbumPorNome(context.Background(), "artist-teto", "Album Teto",
+		provider.AlvoFaixaAlbum{FaixaTitulo: "Musica Que Nao Existe Em Lugar Nenhum"}, nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumPorNome: %v", err)
+	}
+	if !achou {
+		t.Fatal("achou = false, esperava true (o release-group bate por TITULO -- quem decide se a FAIXA foi achada e enrich.escolherFaixaAlvo, nao este provider)")
+	}
+	if got := atomic.LoadInt32(chamadas); got != maxReleasesTentadosPorAlvo {
+		t.Fatalf("chamadas a /release/{id} = %d, esperava exatamente %d (teto respeitado, release-group tinha 7 releases)", got, maxReleasesTentadosPorAlvo)
+	}
+}
+
+// servidorRecordingNaoOfficialFake cobre o gap do caminho PRECISO (BuscarAlbumDaFaixa):
+// o recording "rec-y-precisa" pertence à release "rel-y-bootleg", que NÃO é a
+// "Official" do release-group "rg-y" (essa é "rel-y-official", sem a faixa) --
+// prova que, ao repassar AlvoFaixaAlbum{RecordingMBID}, o provider tenta a release
+// REAL do recording em vez de travar na "Official" errada.
+func servidorRecordingNaoOfficialFake(t *testing.T) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/recording/rec-y-precisa", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"releases": [
+				{"id": "rel-y-bootleg", "status": "Bootleg", "release-group": {"id": "rg-y"}}
+			]
+		}`))
+	})
+
+	mux.HandleFunc("/release-group/rg-y", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"title": "Album Y",
+			"first-release-date": "2010-01-01",
+			"genres": [],
+			"releases": [
+				{"id": "rel-y-official", "status": "Official"},
+				{"id": "rel-y-bootleg", "status": "Bootleg"}
+			]
+		}`))
+	})
+
+	mux.HandleFunc("/release/rel-y-official", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"media": [{"position": 1, "tracks": [
+				{"position": 1, "title": "Outra Faixa", "artist-credit": [],
+				 "recording": {"id": "rec-y-outra", "title": "Outra Faixa", "isrcs": [], "artist-credit": []}}
+			]}]
+		}`))
+	})
+
+	mux.HandleFunc("/release/rel-y-bootleg", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"media": [{"position": 1, "tracks": [
+				{"position": 1, "title": "A Faixa Certa", "artist-credit": [],
+				 "recording": {"id": "rec-y-precisa", "title": "A Faixa Certa", "isrcs": [], "artist-credit": []}}
+			]}]
+		}`))
+	})
+
+	return httptest.NewServer(mux)
+}
+
+// TestBuscarAlbumDaFaixaTentaReleaseQueContemORecordingQuandoNaoEhOfficial cobre o
+// 2º critério de aceite do briefing 0121: o caminho PRECISO (BuscarAlbumDaFaixa)
+// agora acha a faixa mesmo quando ela mora numa release que NÃO é a "Official" do
+// release-group -- antes desta correção, montarAlbum (sem alvoFaixa) escolheria
+// sempre rel-y-official via escolherRelease, e a faixa nunca seria encontrada.
+func TestBuscarAlbumDaFaixaTentaReleaseQueContemORecordingQuandoNaoEhOfficial(t *testing.T) {
+	mb := servidorRecordingNaoOfficialFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	album, achou, err := c.BuscarAlbumDaFaixa(context.Background(), "rec-y-precisa", nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumDaFaixa: %v", err)
+	}
+	if !achou {
+		t.Fatal("achou = false, esperava true")
+	}
+
+	achouFaixa := false
+	for _, fx := range album.Faixas {
+		if fx.MBID == "rec-y-precisa" {
+			achouFaixa = true
+		}
+	}
+	if !achouFaixa {
+		t.Fatalf("faixa com MBID 'rec-y-precisa' nao encontrada -- rel-y-official nao a contem, deveria ter tentado rel-y-bootleg (a release REAL do recording): %+v", album.Faixas)
 	}
 }

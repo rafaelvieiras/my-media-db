@@ -98,7 +98,7 @@ func TestMusicbrainzBuscarAlbumDaFaixaStub(t *testing.T) {
 }
 
 func TestMusicbrainzBuscarAlbumPorNomeStub(t *testing.T) {
-	_, ok, err := NewMusicbrainz().BuscarAlbumPorNome(context.Background(), MusicbrainzArtistaID, "qualquer", nil)
+	_, ok, err := NewMusicbrainz().BuscarAlbumPorNome(context.Background(), MusicbrainzArtistaID, "qualquer", provider.AlvoFaixaAlbum{}, nil)
 	if ok || err != nil {
 		t.Errorf("BuscarAlbumPorNome ok=%v err=%v, quero (false, nil)", ok, err)
 	}
