@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
+	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
@@ -407,6 +408,103 @@ func TestScanSerieSemMaterializadorNaoQuebra(t *testing.T) {
 	}
 	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='tv'"); n != 1 {
 		t.Errorf("séries = %d, quero 1", n)
+	}
+}
+
+// criarSerieDraft cria diretamente uma entity type='tv' status='draft' com o
+// título dado -- simula o resultado de acharOuCriarDraftSerie de um scan
+// ANTERIOR (sem importer configurado, ou import que falhou), sem depender do
+// scanner para chegar nesse estado.
+func criarSerieDraft(t *testing.T, d *db.DB, id, titulo string) {
+	t.Helper()
+	if _, err := sqlcgen.New(d.Write).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
+		ID: id, Type: tipoSerieTV, Title: titulo,
+	}); err != nil {
+		t.Fatalf("criar série draft: %v", err)
+	}
+	if _, err := sqlcgen.New(d.Write).AtualizarEntity(context.Background(), sqlcgen.AtualizarEntityParams{
+		ID: id, Type: tipoSerieTV, Title: titulo, Status: "draft",
+	}); err != nil {
+		t.Fatalf("rebaixar série draft: %v", err)
+	}
+}
+
+// TestResolverSerieMissIgnoraDraftEResolveDeVerdade cobre o fix do briefing
+// 0120 (bug achado investigando o Bomfunk MC's): uma série JÁ EXISTENTE como
+// rascunho de revisão (status='draft'), com o MESMO título que o auto-import
+// vai casar, NÃO deve travar a resolução para sempre -- resolverSerieMiss
+// deve tentar tentarImportarSerie de novo (o draft é ignorado por
+// acharSerieResolvidaPorTitulo, que só filtra o find-by-título; a entity
+// reaproveitada pelo PRÓPRIO enrich via tentarCasarComDraftLocal, briefing
+// 0054, é um mecanismo de casamento independente deste fix -- pode devolver o
+// MESMO id do draft, e está tudo bem: o que importa é que ImportarSeriePorNome
+// FOI chamado de verdade). Prova disso: SEM o fix, acharSeriePorTitulo (sem
+// filtro) reencontrava o draft ANTES de qualquer tentativa de import --
+// carregarIndex via um draft sem árvore de episódios (entity_relation vazia)
+// nunca casa nenhum episódio, então o arquivo ficaria para sempre sem vínculo
+// e com confiança de revisão (40). COM o fix, o import de verdade roda,
+// popula a árvore de episódios (entity_relation) e o arquivo casa o episódio
+// certo (vínculo + confiança de série, 90).
+func TestResolverSerieMissIgnoraDraftEResolveDeVerdade(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "Springfield Tales", "Season 01", "Springfield Tales S01E01.mkv")
+	escrever(t, arq)
+
+	m := managerSerieAutoImport(t, d)
+	src := criarSourceSerie(t, d, root)
+
+	draftID := "serie-draft-preexistente"
+	criarSerieDraft(t, d, draftID, "Springfield Tales")
+
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	// Nenhuma série duplicada -- o import real reconheceu/reaproveitou a
+	// mesma identidade de título (0054), não criou uma segunda entity solta.
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='tv'"); n != 1 {
+		t.Errorf("séries type=tv = %d, quero 1 (sem duplicar)", n)
+	}
+	// A prova de que o import de verdade rodou (e não travou no draft achado
+	// por título, sem árvore): o episódio casou, com vínculo e confiança de
+	// série -- um draft nunca importado não tem entity_relation nenhuma.
+	if n := contarVinculos(t, d); n != 1 {
+		t.Errorf("vínculos tv_episode = %d, quero 1 (prova de import real, não só o draft achado por título)", n)
+	}
+	entityID, conf := mediaFileDe(t, d, arq)
+	if entityID != draftID {
+		t.Errorf("media_file.entity_id = %q, quero %q (mesma identidade, reaproveitada pelo import)", entityID, draftID)
+	}
+	if conf != confSerieEp {
+		t.Errorf("match_confidence = %v, quero %v (confiança de série casada, não revisão)", conf, confSerieEp)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE id=? AND external_id_tmdb IS NOT NULL", draftID); n != 1 {
+		t.Errorf("entity %q sem external_id_tmdb -- import real não persistiu identidade externa", draftID)
+	}
+}
+
+// TestAcharOuCriarDraftSerieReusaMesmoDraft cobre a preocupação explícita do
+// briefing 0120: o fix de acharSerieResolvidaPorTitulo (usada só pelo
+// caminho de RESOLUÇÃO) NÃO pode mudar o comportamento de
+// acharOuCriarDraftSerie (usada pelo caminho de CRIAÇÃO/reuso de rascunho) --
+// chamado duas vezes pro MESMO título, continua devolvendo o MESMO id
+// (idempotente, sem duplicar o draft a cada scan).
+func TestAcharOuCriarDraftSerieReusaMesmoDraft(t *testing.T) {
+	d := abrirDB(t)
+	m := managerFake(t, d)
+	r := &scanRun{m: m}
+
+	id1 := r.acharOuCriarDraftSerie(context.Background(), "Série Sem Match")
+	if id1 == "" {
+		t.Fatalf("acharOuCriarDraftSerie devolveu vazio")
+	}
+	id2 := r.acharOuCriarDraftSerie(context.Background(), "Série Sem Match")
+	if id2 != id1 {
+		t.Errorf("acharOuCriarDraftSerie duplicou o draft: %q -> %q", id1, id2)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='tv' AND status='draft'"); n != 1 {
+		t.Errorf("rascunhos = %d, quero 1 (reusado, não duplicado)", n)
 	}
 }
 

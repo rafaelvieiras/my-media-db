@@ -101,6 +101,13 @@ type Matcher interface {
 	// já tem na pasta passa a valer como fonte de arte, junto de MusicBrainz/
 	// fanart.tv.
 	DescobrirArteLocalMusica(ctx context.Context) (encontrados int, err error)
+	// ReconciliarFilhosOrfaos tenta religar faixa/episodio DRAFT orfao (com
+	// arquivo presente, mas nunca vinculado a arvore pai) contra a
+	// identidade/arvore ja resolvida -- ou que veio a se resolver depois
+	// (briefing 0120, fecha o gap descoberto ao investigar o 0119 em
+	// producao: um match que falhou uma vez no scan fica preso pra sempre
+	// sem isso).
+	ReconciliarFilhosOrfaos(ctx context.Context) (reconciliados int, err error)
 }
 
 // CompletenessRecalculator e o subconjunto de *server.Server que o Handler
@@ -212,9 +219,20 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 	artesReprocessadas := h.rodarReprocessamentoArtes(ctx)
 	arteLocalMusica := h.rodarDescobertaArteLocalMusica(ctx)
 
+	reconciliados := h.rodarReconciliacaoFilhosOrfaos(ctx)
+	if reconciliados > 0 {
+		// Recontagem (briefing 0120, mesmo espirito de resolvidos/sinalizados
+		// acima): reconciliar tira faixa/serie draft da fila de revisao, o
+		// resumo final precisa refletir o estado FINAL, nao o de antes deste
+		// passo.
+		if recontado, err := h.contador.ContarRevisao(ctx); err == nil {
+			revisao = recontado
+		}
+	}
+
 	avaliados, incompletos := h.rodarRecalculoCompletude(ctx)
 
-	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, arteLocalMusica, avaliados, incompletos), nil
+	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, arteLocalMusica, reconciliados, avaliados, incompletos), nil
 }
 
 // rodarAutoMatch chama o Matcher (auto-match em lote sobre os elegiveis da
@@ -284,6 +302,24 @@ func (h *Handler) rodarDescobertaArteLocalMusica(ctx context.Context) int {
 		return 0
 	}
 	return encontrados
+}
+
+// rodarReconciliacaoFilhosOrfaos chama o Matcher (reconciliacao de filhos
+// orfaos -- faixa/episodio draft com arquivo mas nunca vinculado a arvore
+// pai, briefing 0120) e devolve quantos itens foram de fato religados.
+// Best-effort: uma falha aqui NAO aborta o job -- so loga e devolve 0.
+// Chamado logo depois de rodarDescobertaArteLocalMusica e ANTES do
+// recalculo de completude.
+func (h *Handler) rodarReconciliacaoFilhosOrfaos(ctx context.Context) int {
+	if h.matcher == nil {
+		return 0
+	}
+	reconciliados, err := h.matcher.ReconciliarFilhosOrfaos(ctx)
+	if err != nil {
+		log.Printf("saude_biblioteca: reconciliacao de filhos orfaos falhou (best-effort, ignorado): %v", err)
+		return 0
+	}
+	return reconciliados
 }
 
 // rodarRecalculoCompletude chama o CompletenessRecalculator (recalculo em
@@ -386,14 +422,16 @@ func (h *Handler) escanearEAguardar(ctx context.Context, src library.Source) err
 // JA identificadas tiveram o inventario de arte reverificado; clausula
 // omitida quando zero (mesmo espirito). arteLocalMusica (briefing 0119) e
 // quantas entities artista/album ganharam/atualizaram um poster local;
-// clausula omitida quando zero. avaliados/incompletos (briefing 0058)
-// sao o resultado do recalculo de completude de catalogacao; a clausula
-// extra e omitida quando nao houve NENHUM item avaliado (h.completeness ==
-// nil ou a biblioteca vazia) -- com pelo menos um avaliado, a clausula
-// aparece mesmo com incompletos==0 (0 incompletos e uma informacao positiva
-// relevante, diferente de aplicados/sinalizados==0 que so significa "nada a
-// fazer").
-func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, arteLocalMusica, avaliados, incompletos int) string {
+// clausula omitida quando zero. reconciliados (briefing 0120) e quantas
+// faixas/episodios draft orfaos foram religados de volta a arvore pai
+// (artista/album, serie); clausula omitida quando zero (mesmo espirito).
+// avaliados/incompletos (briefing 0058) sao o resultado do recalculo de
+// completude de catalogacao; a clausula extra e omitida quando nao houve
+// NENHUM item avaliado (h.completeness == nil ou a biblioteca vazia) -- com
+// pelo menos um avaliado, a clausula aparece mesmo com incompletos==0 (0
+// incompletos e uma informacao positiva relevante, diferente de
+// aplicados/sinalizados==0 que so significa "nada a fazer").
+func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, arteLocalMusica, reconciliados, avaliados, incompletos int) string {
 	base := fmt.Sprintf("%s; %d em revisão, %d órfã(s)", resumoScans(total, escaneadas, falhas), revisao, orfas)
 	if resolvidos > 0 {
 		base = fmt.Sprintf("%s; %d em revisão (%d resolvidos automaticamente), %d órfã(s)",
@@ -408,6 +446,9 @@ func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, reso
 	}
 	if arteLocalMusica > 0 {
 		base = fmt.Sprintf("%s; %d entity(ies) de música com pôster local encontrado", base, arteLocalMusica)
+	}
+	if reconciliados > 0 {
+		base = fmt.Sprintf("%s; %d faixa(s)/episódio(s) religado(s) à árvore", base, reconciliados)
 	}
 	if avaliados > 0 {
 		base = fmt.Sprintf("%s; %d itens avaliados, %d incompletos em catalogação", base, avaliados, incompletos)

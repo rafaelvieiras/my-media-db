@@ -164,24 +164,34 @@ func (r *scanRun) resolverSerieMiss(ctx context.Context, serieNome string, folde
 	q := sqlcgen.New(r.m.db.Read)
 
 	if id, ok := acharSeriePorIDExterno(ctx, q, folderInfo); ok {
-		return serieResolvida{serieID: id, index: r.carregarIndex(ctx, id), conf: confIDExterno}
+		return serieResolvida{serieID: id, index: r.m.carregarIndex(ctx, id), conf: confIDExterno}
 	}
-	if id, ok := acharSeriePorTitulo(ctx, q, serieNome); ok {
-		return serieResolvida{serieID: id, index: r.carregarIndex(ctx, id), conf: confSerieEp}
+	if id, ok := acharSerieResolvidaPorTitulo(ctx, q, serieNome); ok {
+		return serieResolvida{serieID: id, index: r.m.carregarIndex(ctx, id), conf: confSerieEp}
 	}
 
-	if r.m.serieImporter != nil && serieNome != "" {
-		id, err := r.m.serieImporter.ImportarSeriePorNome(ctx, serieNome, r.langsPermitidos(ctx), r.preferredLangDaFonte())
-		if err == nil {
-			// Materialização automática opcional (0089): best-effort, nunca
-			// aborta a resolução -- a série já foi importada com sucesso.
-			if r.m.materializador != nil {
-				if merr := r.m.materializador.MaterializarSeAutoDownloadLigado(ctx, id); merr != nil {
-					log.Printf("scanner: materialização automática da série %q falhou (%v)", serieNome, merr)
-				}
-			}
-			return serieResolvida{serieID: id, index: r.carregarIndex(ctx, id), conf: confSerieEp}
-		}
+	if res, ok := r.m.tentarImportarSerie(ctx, serieNome, r.langsPermitidos(ctx), r.preferredLangDaFonte()); ok {
+		return res
+	}
+
+	return serieResolvida{serieID: r.acharOuCriarDraftSerie(ctx, serieNome), conf: confRevisaoSerie, emRevisao: true}
+}
+
+// tentarImportarSerie tenta o auto-import de uma série pelo NOME (0034):
+// extraído de resolverSerieMiss (briefing 0120) para ser reutilizável pela
+// reconciliação de séries-rascunho (reconciliar.go), que precisa da MESMA
+// tentativa de import fora do contexto de um scanRun. ok=false em qualquer
+// degradação/falha -- sem SerieImporter configurado, nome vazio, ou o import
+// falhou (ambíguo/não encontrado/erro de rede) -- com os MESMOS 3 logs de
+// sempre. Sucesso: dispara a materialização automática opcional (best-effort,
+// nunca aborta a resolução) e devolve a serieResolvida já com o índice de
+// episódios carregado.
+func (m *Manager) tentarImportarSerie(ctx context.Context, serieNome string, langs []string, preferredLang string) (serieResolvida, bool) {
+	if m.serieImporter == nil || serieNome == "" {
+		return serieResolvida{}, false
+	}
+	id, err := m.serieImporter.ImportarSeriePorNome(ctx, serieNome, langs, preferredLang)
+	if err != nil {
 		if errors.Is(err, enrich.ErrSerieAmbigua) {
 			log.Printf("scanner: série %q ambígua no provider — vai para revisão", serieNome)
 		} else if errors.Is(err, enrich.ErrSerieNaoEncontrada) {
@@ -189,9 +199,16 @@ func (r *scanRun) resolverSerieMiss(ctx context.Context, serieNome string, folde
 		} else {
 			log.Printf("scanner: auto-import da série %q falhou (%v) — vai para revisão", serieNome, err)
 		}
+		return serieResolvida{}, false
 	}
-
-	return serieResolvida{serieID: r.acharOuCriarDraftSerie(ctx, serieNome), conf: confRevisaoSerie, emRevisao: true}
+	// Materialização automática opcional (0089): best-effort, nunca
+	// aborta a resolução -- a série já foi importada com sucesso.
+	if m.materializador != nil {
+		if merr := m.materializador.MaterializarSeAutoDownloadLigado(ctx, id); merr != nil {
+			log.Printf("scanner: materialização automática da série %q falhou (%v)", serieNome, merr)
+		}
+	}
+	return serieResolvida{serieID: id, index: m.carregarIndex(ctx, id), conf: confSerieEp}, true
 }
 
 // langsPermitidos devolve os idiomas permitidos (settings) para o auto-import, ou nil
@@ -234,6 +251,12 @@ func acharSeriePorIDExterno(ctx context.Context, q *sqlcgen.Queries, info naming
 
 // acharSeriePorTitulo procura a série já no catálogo pelo par (type='tv', título),
 // para reusar uma série importada num scan anterior sem novo round-trip ao provider.
+// SEM filtro de status, de propósito: usada EXCLUSIVAMENTE por
+// acharOuCriarDraftSerie (find-or-create do rascunho de revisão), que precisa
+// continuar reencontrando o MESMO draft já criado para não duplicá-lo a cada
+// scan. O caminho de RESOLUÇÃO (resolverSerieMiss) usa
+// acharSerieResolvidaPorTitulo abaixo, que filtra rascunho -- NÃO reuse esta
+// função ali (briefing 0120).
 func acharSeriePorTitulo(ctx context.Context, q *sqlcgen.Queries, nome string) (string, bool) {
 	if nome == "" {
 		return "", false
@@ -243,6 +266,26 @@ func acharSeriePorTitulo(ctx context.Context, q *sqlcgen.Queries, nome string) (
 		return e.ID, true
 	}
 	return "", false
+}
+
+// acharSerieResolvidaPorTitulo procura a série já RESOLVIDA de verdade
+// (type='tv', título, qualquer status DIFERENTE de 'draft') -- usada SÓ pelo
+// caminho de RESOLUÇÃO (resolverSerieMiss). Bug corrigido no briefing 0120: um
+// rascunho de revisão (status='draft', criado por acharOuCriarDraftSerie)
+// nunca deve ser reencontrado aqui como se fosse identidade resolvida --
+// antes deste fix, isso bloqueava PERMANENTEMENTE a tentativa de auto-import
+// real (tentarImportarSerie nunca era alcançado de novo depois que o
+// rascunho existia). "", false tanto para "não achou" quanto para "achou,
+// mas é rascunho".
+func acharSerieResolvidaPorTitulo(ctx context.Context, q *sqlcgen.Queries, nome string) (string, bool) {
+	if nome == "" {
+		return "", false
+	}
+	e, err := q.ObterEntityPorTituloTipo(ctx, sqlcgen.ObterEntityPorTituloTipoParams{Type: tipoSerieTV, Title: nome})
+	if err != nil || e.Status == "draft" {
+		return "", false
+	}
+	return e.ID, true
 }
 
 // acharOuCriarDraftSerie é o FALLBACK de revisão: reusa (find) a série rascunho pelo
@@ -275,9 +318,11 @@ func (r *scanRun) acharOuCriarDraftSerie(ctx context.Context, nome string) strin
 // carregarIndex monta o índice número→episode_id de uma série, lendo a série (para as
 // ordenações) e cada episódio (numbering + absolute_number no extension_data). É a
 // leitura ÚNICA por série do scan; o casamento em memória (internal/tvmatch) vem
-// depois, sem SQL.
-func (r *scanRun) carregarIndex(ctx context.Context, serieID string) *tvmatch.Index {
-	q := sqlcgen.New(r.m.db.Read)
+// depois, sem SQL. Método de Manager (não scanRun, briefing 0120) para ser
+// reutilizável fora de um scan (reconciliar.go, tentarImportarSerie) -- não usa
+// nenhum estado específico de scanRun.
+func (m *Manager) carregarIndex(ctx context.Context, serieID string) *tvmatch.Index {
+	q := sqlcgen.New(m.db.Read)
 	idx := tvmatch.NovoIndex()
 
 	serie, err := q.ObterEntity(ctx, serieID)
@@ -296,14 +341,14 @@ func (r *scanRun) carregarIndex(ctx context.Context, serieID string) *tvmatch.In
 		if t.Kind != kindRelTemporada {
 			continue
 		}
-		r.indexarTemporada(ctx, q, idx, t.ChildID)
+		m.indexarTemporada(ctx, q, idx, t.ChildID)
 	}
 	return idx
 }
 
 // indexarTemporada percorre os episódios de UMA temporada e os insere no índice.
 // Temporada ilegível é pulada (degrada sem derrubar o resto do índice).
-func (r *scanRun) indexarTemporada(ctx context.Context, q *sqlcgen.Queries, idx *tvmatch.Index, tempID string) {
+func (m *Manager) indexarTemporada(ctx context.Context, q *sqlcgen.Queries, idx *tvmatch.Index, tempID string) {
 	eps, err := q.ListarRelacoesFilhas(ctx, tempID)
 	if err != nil {
 		return
@@ -312,13 +357,13 @@ func (r *scanRun) indexarTemporada(ctx context.Context, q *sqlcgen.Queries, idx 
 		if e.Kind != kindVinculoEpisodio {
 			continue
 		}
-		r.indexarEpisodio(ctx, q, idx, e.ChildID)
+		m.indexarEpisodio(ctx, q, idx, e.ChildID)
 	}
 }
 
 // indexarEpisodio lê o extension_data de um episódio e delega a montagem em memória
 // (numbering + absolute_number) ao internal/tvmatch. Episódio ilegível é pulado.
-func (r *scanRun) indexarEpisodio(ctx context.Context, q *sqlcgen.Queries, idx *tvmatch.Index, epID string) {
+func (m *Manager) indexarEpisodio(ctx context.Context, q *sqlcgen.Queries, idx *tvmatch.Index, epID string) {
 	ent, err := q.ObterEntity(ctx, epID)
 	if err != nil {
 		return

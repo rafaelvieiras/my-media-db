@@ -131,6 +131,18 @@ SET path = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?;
 
+-- name: AtualizarMediaFileEntityID :exec
+-- Repontamento do briefing 0120 (reconciliacao de filhos orfaos): move um
+-- media_file de uma entity RASCUNHO/orfa para a entity de verdade resolvida
+-- depois (faixa ou serie), atualizando tambem o match_confidence do match
+-- que resolveu. A entity antiga fica sem media_file (posse cai pra nao,
+-- derivada) e some da fila de revisao sem ser apagada (principio 5).
+UPDATE media_file
+SET entity_id = ?,
+    match_confidence = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?;
+
 -- name: ApagarMediaFile :exec
 DELETE FROM media_file
 WHERE id = ?;

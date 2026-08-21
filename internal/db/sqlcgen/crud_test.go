@@ -198,6 +198,89 @@ func TestObterCaminhoDescendentePresente(t *testing.T) {
 	}
 }
 
+// TestListarFaixasDraftOrfasEListarSeriesDraftComArquivo cobre as duas
+// queries novas do briefing 0120 (reconciliacao de filhos orfaos): faixa
+// draft SEM entity_relation como filha aparece; faixa draft COM
+// entity_relation (ja vinculada a um album) NAO aparece; faixa/serie com
+// last_external_match_attempt_at recente (dentro do throttle) NAO aparece;
+// serie draft com media_file present aparece.
+func TestListarFaixasDraftOrfasEListarSeriesDraftComArquivo(t *testing.T) {
+	q := setup(t)
+	ctx := context.Background()
+
+	// Faixa draft orfa elegivel (sem entity_relation nenhuma).
+	_, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "faixa-orfa", Type: "faixa", Title: "Faixa Orfa"})
+	check(t, err, "CriarEntity faixa-orfa")
+	_, err = q.AtualizarEntity(ctx, sqlcgen.AtualizarEntityParams{ID: "faixa-orfa", Type: "faixa", Title: "Faixa Orfa", Status: "draft"})
+	check(t, err, "AtualizarEntity faixa-orfa para draft")
+	_, err = q.CriarMediaFile(ctx, sqlcgen.CriarMediaFileParams{ID: "mf-faixa-orfa", EntityID: "faixa-orfa", Path: "/musica/orfa.mp3", State: "present"})
+	check(t, err, "CriarMediaFile faixa-orfa")
+
+	// Faixa draft JA vinculada a um album (entity_relation) -- NAO deve aparecer.
+	_, err = q.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "album-x", Type: "album", Title: "Album X"})
+	check(t, err, "CriarEntity album-x")
+	_, err = q.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "faixa-vinculada", Type: "faixa", Title: "Faixa Vinculada"})
+	check(t, err, "CriarEntity faixa-vinculada")
+	_, err = q.AtualizarEntity(ctx, sqlcgen.AtualizarEntityParams{ID: "faixa-vinculada", Type: "faixa", Title: "Faixa Vinculada", Status: "draft"})
+	check(t, err, "AtualizarEntity faixa-vinculada para draft")
+	_, err = q.CriarMediaFile(ctx, sqlcgen.CriarMediaFileParams{ID: "mf-faixa-vinculada", EntityID: "faixa-vinculada", Path: "/musica/vinculada.mp3", State: "present"})
+	check(t, err, "CriarMediaFile faixa-vinculada")
+	_, err = q.CriarEntityRelation(ctx, sqlcgen.CriarEntityRelationParams{ID: "rel-album-faixa", ParentID: "album-x", ChildID: "faixa-vinculada", Kind: "music_album"})
+	check(t, err, "CriarEntityRelation album->faixa-vinculada")
+
+	// Faixa draft orfa MAS dentro do throttle (tentativa recente) -- NAO deve aparecer.
+	_, err = q.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "faixa-throttled", Type: "faixa", Title: "Faixa Throttled"})
+	check(t, err, "CriarEntity faixa-throttled")
+	_, err = q.AtualizarEntity(ctx, sqlcgen.AtualizarEntityParams{ID: "faixa-throttled", Type: "faixa", Title: "Faixa Throttled", Status: "draft"})
+	check(t, err, "AtualizarEntity faixa-throttled para draft")
+	_, err = q.CriarMediaFile(ctx, sqlcgen.CriarMediaFileParams{ID: "mf-faixa-throttled", EntityID: "faixa-throttled", Path: "/musica/throttled.mp3", State: "present"})
+	check(t, err, "CriarMediaFile faixa-throttled")
+	check(t, q.AtualizarTentativaMatchExterno(ctx, "faixa-throttled"), "AtualizarTentativaMatchExterno faixa-throttled")
+
+	faixas, err := q.ListarFaixasDraftOrfas(ctx, sqlcgen.ListarFaixasDraftOrfasParams{DiasGlobal: 15, Limite: 10})
+	check(t, err, "ListarFaixasDraftOrfas")
+	achouOrfa, achouVinculada, achouThrottled := false, false, false
+	for _, f := range faixas {
+		switch f.ID {
+		case "faixa-orfa":
+			achouOrfa = true
+		case "faixa-vinculada":
+			achouVinculada = true
+		case "faixa-throttled":
+			achouThrottled = true
+		}
+	}
+	if !achouOrfa {
+		t.Errorf("ListarFaixasDraftOrfas = %+v, queria conter faixa-orfa", faixas)
+	}
+	if achouVinculada {
+		t.Errorf("ListarFaixasDraftOrfas = %+v, NAO queria faixa-vinculada (ja tem entity_relation)", faixas)
+	}
+	if achouThrottled {
+		t.Errorf("ListarFaixasDraftOrfas = %+v, NAO queria faixa-throttled (dentro do throttle)", faixas)
+	}
+
+	// Serie draft com media_file present -- elegivel.
+	_, err = q.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "serie-draft", Type: "tv", Title: "Serie Draft"})
+	check(t, err, "CriarEntity serie-draft")
+	_, err = q.AtualizarEntity(ctx, sqlcgen.AtualizarEntityParams{ID: "serie-draft", Type: "tv", Title: "Serie Draft", Status: "draft"})
+	check(t, err, "AtualizarEntity serie-draft para draft")
+	_, err = q.CriarMediaFile(ctx, sqlcgen.CriarMediaFileParams{ID: "mf-serie-draft", EntityID: "serie-draft", Path: "/series/serie/S01E01.mkv", State: "present"})
+	check(t, err, "CriarMediaFile serie-draft")
+
+	series, err := q.ListarSeriesDraftComArquivo(ctx, sqlcgen.ListarSeriesDraftComArquivoParams{DiasGlobal: 15, Limite: 10})
+	check(t, err, "ListarSeriesDraftComArquivo")
+	achouSerie := false
+	for _, s := range series {
+		if s.ID == "serie-draft" {
+			achouSerie = true
+		}
+	}
+	if !achouSerie {
+		t.Errorf("ListarSeriesDraftComArquivo = %+v, queria conter serie-draft", series)
+	}
+}
+
 // TestCRUDMediaFile cobre criar/obter/listar/atualizar-estado/apagar.
 func TestCRUDMediaFile(t *testing.T) {
 	q := setup(t)

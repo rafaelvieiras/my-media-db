@@ -109,6 +109,10 @@ type matcherFake struct {
 	arteLocalEncontrada int
 	errArteLocal        error
 	chamadasArteLocal   int
+
+	reconciliados       int
+	errReconciliar      error
+	chamadasReconciliar int
 }
 
 func (m *matcherFake) AutoMatchElegiveis(context.Context) (int, int, error) {
@@ -129,6 +133,11 @@ func (m *matcherFake) ReprocessarArtesFaltantes(context.Context) (int, error) {
 func (m *matcherFake) DescobrirArteLocalMusica(context.Context) (int, error) {
 	m.chamadasArteLocal++
 	return m.arteLocalEncontrada, m.errArteLocal
+}
+
+func (m *matcherFake) ReconciliarFilhosOrfaos(context.Context) (int, error) {
+	m.chamadasReconciliar++
+	return m.reconciliados, m.errReconciliar
 }
 
 // completenessFake e um CompletenessRecalculator fake (briefing 0058):
@@ -579,6 +588,81 @@ func TestExecutarFalhaDaDescobertaArteLocalMusicaNaoAbortaJob(t *testing.T) {
 // TestExecutarSemMatcherNaoRodaDescobertaArteLocalMusica cobre a guarda
 // matcher==nil: sem Matcher injetado, o passo degrada para 0 sem panicar.
 func TestExecutarSemMatcherNaoRodaDescobertaArteLocalMusica(t *testing.T) {
+	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, nil, nil)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarAcionaReconciliacaoFilhosOrfaosEReflete cobre o critério
+// central do briefing 0120: depois da descoberta de arte local de música, o
+// job aciona ReconciliarFilhosOrfaos e a mensagem final ganha a cláusula
+// "<N> faixa(s)/episódio(s) religado(s) à árvore" -- com a contagem de
+// revisão RECONTADA de novo após este passo (3, não os 5 de antes), provando
+// que a reconciliação de fato tira itens da fila.
+func TestExecutarAcionaReconciliacaoFilhosOrfaosEReflete(t *testing.T) {
+	cont := &contadorSequencialFake{revisaoValores: []int{5, 3}, orfas: 1}
+	matcher := &matcherFake{reconciliados: 2}
+	h := New(&libraryFake{}, newScanFake(), cont, matcher, nil)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 3 em revisão, 1 órfã(s); 2 faixa(s)/episódio(s) religado(s) à árvore"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+	if matcher.chamadasReconciliar != 1 {
+		t.Errorf("ReconciliarFilhosOrfaos chamado %d vez(es), quero exatamente 1", matcher.chamadasReconciliar)
+	}
+}
+
+// TestExecutarReconciliacaoFilhosOrfaosOmiteClausulaQuandoZero cobre o
+// critério de omissão: sem nenhum item religado, a mensagem final NÃO ganha
+// a cláusula extra.
+func TestExecutarReconciliacaoFilhosOrfaosOmiteClausulaQuandoZero(t *testing.T) {
+	cont := &contadorFake{revisao: 4, orfas: 2}
+	matcher := &matcherFake{}
+	h := New(&libraryFake{}, newScanFake(), cont, matcher, nil)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarFalhaDaReconciliacaoFilhosOrfaosNaoAbortaJob cobre o critério
+// best-effort: uma falha do Matcher neste passo não derruba o job -- o
+// resumo original (sem a cláusula extra) ainda sai.
+func TestExecutarFalhaDaReconciliacaoFilhosOrfaosNaoAbortaJob(t *testing.T) {
+	cont := &contadorFake{revisao: 4, orfas: 2}
+	matcher := &matcherFake{errReconciliar: errors.New("erro simulado na reconciliação de filhos órfãos")}
+	h := New(&libraryFake{}, newScanFake(), cont, matcher, nil)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar não deveria falhar por causa da reconciliação de filhos órfãos (best-effort): %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarSemMatcherNaoRodaReconciliacaoFilhosOrfaos cobre a guarda
+// matcher==nil: sem Matcher injetado, o passo degrada para 0 sem panicar.
+func TestExecutarSemMatcherNaoRodaReconciliacaoFilhosOrfaos(t *testing.T) {
 	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, nil, nil)
 
 	msg, err := h.Executar(context.Background(), nil)

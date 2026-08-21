@@ -192,19 +192,28 @@ func (r *scanRun) resolverArtistaMBID(ctx context.Context, tags mediainfo.AudioT
 }
 
 // matchTextual é o FALLBACK sem MBID embutido (caso dominante nos arquivos
-// reais do dono, ver AGENTS.md/briefing 0107): busca o artista por nome
-// (album_artist, com fallback para artist) no provider e, existindo UM ÚNICO
-// candidato cujo título bate com o limiar de matching.LimiarAutoMatch (92%, o
-// MESMO limiar já usado pelo auto-match de filme -- reaproveitado de
-// propósito para não inventar um segundo número mágico) contra o nome
-// retornado pela fonte, dispara o import ESCOPADO (ADR-0029, briefing 0115:
-// enrich.ImportarFaixaPossuida) pelo caminho TEXTUAL -- álbum localizado por
-// nome (tags.Album, obrigatório aqui) e a faixa por título/track_number
-// dentro dele, NUNCA a árvore inteira. Ambíguo (>1 candidato empatado no
-// topo), sem álbum na tag, ou nenhum candidato forte o bastante: ok=false
-// (cai para o draft, passo 5) -- nunca aplica um match "parecido".
+// reais do dono, ver AGENTS.md/briefing 0107) -- repasse fino para
+// Manager.matchTextualFaixa (briefing 0120), extraído para ser reutilizável
+// pela reconciliação de faixas-rascunho fora de um scanRun (reconciliar.go).
 func (r *scanRun) matchTextual(ctx context.Context, tags mediainfo.AudioTags, langs []string) (string, bool) {
-	if r.m.musicaProvider == nil || r.m.musicaImportador == nil {
+	return r.m.matchTextualFaixa(ctx, tags, langs)
+}
+
+// matchTextualFaixa busca o artista por nome (album_artist, com fallback para
+// artist) no provider e, existindo UM ÚNICO candidato cujo título bate com o
+// limiar de matching.LimiarAutoMatch (92%, o MESMO limiar já usado pelo
+// auto-match de filme -- reaproveitado de propósito para não inventar um
+// segundo número mágico) contra o nome retornado pela fonte, dispara o import
+// ESCOPADO (ADR-0029, briefing 0115: enrich.ImportarFaixaPossuida) pelo
+// caminho TEXTUAL -- álbum localizado por nome (tags.Album, obrigatório aqui)
+// e a faixa por título/track_number dentro dele, NUNCA a árvore inteira.
+// Ambíguo (>1 candidato empatado no topo), sem álbum na tag, ou nenhum
+// candidato forte o bastante: ok=false (cai para o draft, passo 5) -- nunca
+// aplica um match "parecido". Método de Manager (não scanRun, briefing 0120)
+// para ser chamável tanto do scan (matchTextual acima) quanto da
+// reconciliação de faixa-rascunho órfã (reconciliar.go).
+func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTags, langs []string) (string, bool) {
+	if m.musicaProvider == nil || m.musicaImportador == nil {
 		return "", false
 	}
 	nomeArtista := tags.AlbumArtist
@@ -215,7 +224,7 @@ func (r *scanRun) matchTextual(ctx context.Context, tags mediainfo.AudioTags, la
 		return "", false
 	}
 
-	resultados, err := r.m.musicaProvider.Buscar(ctx, nomeArtista, "artista", "")
+	resultados, err := m.musicaProvider.Buscar(ctx, nomeArtista, "artista", "")
 	if err != nil {
 		log.Printf("scanner: busca textual do artista %q falhou: %v", nomeArtista, err)
 		return "", false
@@ -230,7 +239,7 @@ func (r *scanRun) matchTextual(ctx context.Context, tags mediainfo.AudioTags, la
 	}
 
 	alvo := enrich.FaixaAlvo{AlbumNome: tags.Album, FaixaTitulo: tags.Title, FaixaNumero: tags.TrackNumber}
-	faixaID, _, err := r.m.musicaImportador.ImportarFaixaPossuida(ctx, sourceMusicBrainz, artistaMBID, alvo, langs)
+	faixaID, _, err := m.musicaImportador.ImportarFaixaPossuida(ctx, sourceMusicBrainz, artistaMBID, alvo, langs)
 	if err != nil {
 		log.Printf("scanner: import escopado (busca textual artista %q album %q) falhou: %v", nomeArtista, tags.Album, err)
 		return "", false

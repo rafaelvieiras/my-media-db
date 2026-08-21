@@ -195,3 +195,73 @@ UPDATE entity
 SET status = 'cataloged',
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = sqlc.arg('id') AND status = 'draft';
+
+-- name: ListarFaixasDraftOrfas :many
+-- Complemento de ListarElegiveisReprocessamentoArtes (briefing 0120): faixas
+-- type='faixa' status='draft' com media_file present (entity_id aponta
+-- direto, ADR-0027 e 1:1) SEM entity_relation como filha de nenhum album (NOT
+-- EXISTS child_id) -- diferente das outras queries de elegibilidade deste
+-- arquivo, aqui faixa/tv NAO sao excluidos como "sub_nos": sao exatamente o
+-- universo que este briefing cobre. Mesmo throttle por
+-- library_source.retroactive_enrichment_days com fallback pro dias_global,
+-- mesma logica de ListarElegiveisReprocessamentoArtes.
+WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT parent_id, child_id FROM entity_relation
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
+SELECT e.id, e.type
+FROM entity e
+WHERE e.type = 'faixa'
+  AND e.status = 'draft'
+  AND EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id AND m.state = 'present'
+      )
+  AND NOT EXISTS (
+        SELECT 1 FROM entity_relation er WHERE er.child_id = e.id
+      )
+  AND (
+        e.last_external_match_attempt_at IS NULL
+        OR e.last_external_match_attempt_at < COALESCE(
+            (SELECT datetime('now', '-' || MIN(COALESCE(ls.retroactive_enrichment_days, CAST(sqlc.arg('dias_global') AS INTEGER))) || ' days')
+             FROM media_file mf
+             JOIN library_source ls ON ls.id = mf.library_source_id
+             WHERE mf.entity_id = e.id AND mf.state = 'present'),
+            datetime('now', '-' || CAST(sqlc.arg('dias_global') AS INTEGER) || ' days')
+        )
+      )
+ORDER BY
+    (e.last_external_match_attempt_at IS NULL) DESC,
+    e.last_external_match_attempt_at ASC,
+    e.id
+LIMIT sqlc.arg('limite');
+
+-- name: ListarSeriesDraftComArquivo :many
+-- Complemento de ListarFaixasDraftOrfas (briefing 0120): series type='tv'
+-- status='draft' com media_file present apontando direto (entity_id =
+-- serie.id, gravarArquivoSerie sempre grava assim, mesmo em revisao). Mesmo
+-- throttle da query irma acima.
+SELECT e.id, e.type
+FROM entity e
+WHERE e.type = 'tv'
+  AND e.status = 'draft'
+  AND EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id AND m.state = 'present'
+      )
+  AND (
+        e.last_external_match_attempt_at IS NULL
+        OR e.last_external_match_attempt_at < COALESCE(
+            (SELECT datetime('now', '-' || MIN(COALESCE(ls.retroactive_enrichment_days, CAST(sqlc.arg('dias_global') AS INTEGER))) || ' days')
+             FROM media_file mf
+             JOIN library_source ls ON ls.id = mf.library_source_id
+             WHERE mf.entity_id = e.id AND mf.state = 'present'),
+            datetime('now', '-' || CAST(sqlc.arg('dias_global') AS INTEGER) || ' days')
+        )
+      )
+ORDER BY
+    (e.last_external_match_attempt_at IS NULL) DESC,
+    e.last_external_match_attempt_at ASC,
+    e.id
+LIMIT sqlc.arg('limite');

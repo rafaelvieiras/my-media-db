@@ -106,6 +106,15 @@ func novoHarnessComOpcoes(t *testing.T, extra ...server.Option) *cliente {
 		server.WithExecQueue(fila),
 	}, extra...)
 	srv := server.New("e2e", database, opts...)
+	// Liga o sistema de jobs (internal/job) à MESMA fila unificada, espelhando
+	// srv.Jobs().ConfigurarFila(fila) de cmd/mymediadb/main.go -- sem isto,
+	// POST /jobs/{id}/run enfileira mas NENHUM worker jamais roda o Handler
+	// (nenhuma jornada usava jobs até o briefing 0120/journeys_reconciliar_test.go
+	// ser a primeira). Nula quando nenhuma option de job (ex.: WithLibraryHealthJob)
+	// foi aplicada -- srv.Jobs() devolve nil nesse caso.
+	if jobs := srv.Jobs(); jobs != nil {
+		jobs.ConfigurarFila(fila)
+	}
 	handler, err := srv.Handler()
 	if err != nil {
 		t.Fatalf("montar handler: %v", err)

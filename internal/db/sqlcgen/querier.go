@@ -114,6 +114,12 @@ type Querier interface {
 	// confianca), preservando id/entity_id -- mesmo espirito de
 	// AtualizarMediaFileVisto, mas o gatilho aqui e o PATH bater, nao o hash.
 	AtualizarMediaFileConteudoMudou(ctx context.Context, arg AtualizarMediaFileConteudoMudouParams) (MediaFile, error)
+	// Repontamento do briefing 0120 (reconciliacao de filhos orfaos): move um
+	// media_file de uma entity RASCUNHO/orfa para a entity de verdade resolvida
+	// depois (faixa ou serie), atualizando tambem o match_confidence do match
+	// que resolveu. A entity antiga fica sem media_file (posse cai pra nao,
+	// derivada) e some da fila de revisao sem ser apagada (principio 5).
+	AtualizarMediaFileEntityID(ctx context.Context, arg AtualizarMediaFileEntityIDParams) error
 	// Grava o path ja recascado (calculado em Go) de UM media_file. Nao toca o
 	// resto da linha (content_hash/entity_id/state seguem intactos -- o arquivo
 	// fisico e o MESMO, so mudou de onde e montado).
@@ -484,6 +490,15 @@ type Querier interface {
 	// so nunca era alcancado); arte de episodio (still) continua FORA
 	// (kindsMidiasFaltantes nao ganha still -- lazy/manual, briefing 0044).
 	ListarEpisodeIDsComMediaFilePresente(ctx context.Context) ([]string, error)
+	// Complemento de ListarElegiveisReprocessamentoArtes (briefing 0120): faixas
+	// type='faixa' status='draft' com media_file present (entity_id aponta
+	// direto, ADR-0027 e 1:1) SEM entity_relation como filha de nenhum album (NOT
+	// EXISTS child_id) -- diferente das outras queries de elegibilidade deste
+	// arquivo, aqui faixa/tv NAO sao excluidos como "sub_nos": sao exatamente o
+	// universo que este briefing cobre. Mesmo throttle por
+	// library_source.retroactive_enrichment_days com fallback pro dias_global,
+	// mesma logica de ListarElegiveisReprocessamentoArtes.
+	ListarFaixasDraftOrfas(ctx context.Context, arg ListarFaixasDraftOrfasParams) ([]ListarFaixasDraftOrfasRow, error)
 	// Filmografia da pessoa (briefing 0029 Fase D, interno-first): as obras do catalogo
 	// que a creditam, elenco OU equipe (credito de produtora nao tem person_id, sai
 	// naturalmente do WHERE). Junta credit com entity para trazer o papel (kind/
@@ -584,6 +599,11 @@ type Querier interface {
 	// (guarda em gravarNFOSeFaltante) -- esta query so habilita o job a
 	// materializar o POSTER de temporada (season0N-poster.jpg) na raiz da serie.
 	ListarSeasonIDsComEpisodioPresente(ctx context.Context) ([]string, error)
+	// Complemento de ListarFaixasDraftOrfas (briefing 0120): series type='tv'
+	// status='draft' com media_file present apontando direto (entity_id =
+	// serie.id, gravarArquivoSerie sempre grava assim, mesmo em revisao). Mesmo
+	// throttle da query irma acima.
+	ListarSeriesDraftComArquivo(ctx context.Context, arg ListarSeriesDraftComArquivoParams) ([]ListarSeriesDraftComArquivoRow, error)
 	// Tipos de entity DISTINTOS com pelo menos 1 item CATALOGADO (status !=
 	// 'draft'), para a home (0109) e o dropdown da navbar (0110) descobrirem
 	// quais schemas mostrar sem hardcode de lista fixa no frontend -- cobre

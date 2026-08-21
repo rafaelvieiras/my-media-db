@@ -107,6 +107,30 @@ func (q *Queries) AtualizarMediaFileConteudoMudou(ctx context.Context, arg Atual
 	return i, err
 }
 
+const atualizarMediaFileEntityID = `-- name: AtualizarMediaFileEntityID :exec
+UPDATE media_file
+SET entity_id = ?,
+    match_confidence = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+`
+
+type AtualizarMediaFileEntityIDParams struct {
+	EntityID        string
+	MatchConfidence sql.NullFloat64
+	ID              string
+}
+
+// Repontamento do briefing 0120 (reconciliacao de filhos orfaos): move um
+// media_file de uma entity RASCUNHO/orfa para a entity de verdade resolvida
+// depois (faixa ou serie), atualizando tambem o match_confidence do match
+// que resolveu. A entity antiga fica sem media_file (posse cai pra nao,
+// derivada) e some da fila de revisao sem ser apagada (principio 5).
+func (q *Queries) AtualizarMediaFileEntityID(ctx context.Context, arg AtualizarMediaFileEntityIDParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarMediaFileEntityID, arg.EntityID, arg.MatchConfidence, arg.ID)
+	return err
+}
+
 const atualizarMediaFilePath = `-- name: AtualizarMediaFilePath :exec
 UPDATE media_file
 SET path = ?,

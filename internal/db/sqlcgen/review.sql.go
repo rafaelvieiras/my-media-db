@@ -242,6 +242,81 @@ func (q *Queries) ListarElegiveisReprocessamentoArtes(ctx context.Context, arg L
 	return items, nil
 }
 
+const listarFaixasDraftOrfas = `-- name: ListarFaixasDraftOrfas :many
+WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT parent_id, child_id FROM entity_relation
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
+SELECT e.id, e.type
+FROM entity e
+WHERE e.type = 'faixa'
+  AND e.status = 'draft'
+  AND EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id AND m.state = 'present'
+      )
+  AND NOT EXISTS (
+        SELECT 1 FROM entity_relation er WHERE er.child_id = e.id
+      )
+  AND (
+        e.last_external_match_attempt_at IS NULL
+        OR e.last_external_match_attempt_at < COALESCE(
+            (SELECT datetime('now', '-' || MIN(COALESCE(ls.retroactive_enrichment_days, CAST(?1 AS INTEGER))) || ' days')
+             FROM media_file mf
+             JOIN library_source ls ON ls.id = mf.library_source_id
+             WHERE mf.entity_id = e.id AND mf.state = 'present'),
+            datetime('now', '-' || CAST(?1 AS INTEGER) || ' days')
+        )
+      )
+ORDER BY
+    (e.last_external_match_attempt_at IS NULL) DESC,
+    e.last_external_match_attempt_at ASC,
+    e.id
+LIMIT ?2
+`
+
+type ListarFaixasDraftOrfasParams struct {
+	DiasGlobal int64
+	Limite     int64
+}
+
+type ListarFaixasDraftOrfasRow struct {
+	ID   string
+	Type string
+}
+
+// Complemento de ListarElegiveisReprocessamentoArtes (briefing 0120): faixas
+// type='faixa' status='draft' com media_file present (entity_id aponta
+// direto, ADR-0027 e 1:1) SEM entity_relation como filha de nenhum album (NOT
+// EXISTS child_id) -- diferente das outras queries de elegibilidade deste
+// arquivo, aqui faixa/tv NAO sao excluidos como "sub_nos": sao exatamente o
+// universo que este briefing cobre. Mesmo throttle por
+// library_source.retroactive_enrichment_days com fallback pro dias_global,
+// mesma logica de ListarElegiveisReprocessamentoArtes.
+func (q *Queries) ListarFaixasDraftOrfas(ctx context.Context, arg ListarFaixasDraftOrfasParams) ([]ListarFaixasDraftOrfasRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarFaixasDraftOrfas, arg.DiasGlobal, arg.Limite)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarFaixasDraftOrfasRow{}
+	for rows.Next() {
+		var i ListarFaixasDraftOrfasRow
+		if err := rows.Scan(&i.ID, &i.Type); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listarOrfas = `-- name: ListarOrfas :many
 SELECT
     e.id, e.type, e.title, e.status,
@@ -368,6 +443,69 @@ func (q *Queries) ListarRevisao(ctx context.Context, limiar sql.NullFloat64) ([]
 			&i.MatchConfidence,
 			&i.HasPoster,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listarSeriesDraftComArquivo = `-- name: ListarSeriesDraftComArquivo :many
+SELECT e.id, e.type
+FROM entity e
+WHERE e.type = 'tv'
+  AND e.status = 'draft'
+  AND EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id AND m.state = 'present'
+      )
+  AND (
+        e.last_external_match_attempt_at IS NULL
+        OR e.last_external_match_attempt_at < COALESCE(
+            (SELECT datetime('now', '-' || MIN(COALESCE(ls.retroactive_enrichment_days, CAST(?1 AS INTEGER))) || ' days')
+             FROM media_file mf
+             JOIN library_source ls ON ls.id = mf.library_source_id
+             WHERE mf.entity_id = e.id AND mf.state = 'present'),
+            datetime('now', '-' || CAST(?1 AS INTEGER) || ' days')
+        )
+      )
+ORDER BY
+    (e.last_external_match_attempt_at IS NULL) DESC,
+    e.last_external_match_attempt_at ASC,
+    e.id
+LIMIT ?2
+`
+
+type ListarSeriesDraftComArquivoParams struct {
+	DiasGlobal int64
+	Limite     int64
+}
+
+type ListarSeriesDraftComArquivoRow struct {
+	ID   string
+	Type string
+}
+
+// Complemento de ListarFaixasDraftOrfas (briefing 0120): series type='tv'
+// status='draft' com media_file present apontando direto (entity_id =
+// serie.id, gravarArquivoSerie sempre grava assim, mesmo em revisao). Mesmo
+// throttle da query irma acima.
+func (q *Queries) ListarSeriesDraftComArquivo(ctx context.Context, arg ListarSeriesDraftComArquivoParams) ([]ListarSeriesDraftComArquivoRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarSeriesDraftComArquivo, arg.DiasGlobal, arg.Limite)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarSeriesDraftComArquivoRow{}
+	for rows.Next() {
+		var i ListarSeriesDraftComArquivoRow
+		if err := rows.Scan(&i.ID, &i.Type); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
