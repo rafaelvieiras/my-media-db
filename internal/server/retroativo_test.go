@@ -109,14 +109,24 @@ func TestListarElegiveisEnriquecimentoRetroativoQuadrantes(t *testing.T) {
 }
 
 // TestListarElegiveisEnriquecimentoRetroativoRestricoesDeEscopo cobre as
-// restrições adicionais do §4: só type IN (movie, tv) e só entities com ao
-// menos um media_file 'present'.
+// restrições adicionais do §4: qualquer type DE TOPO (ADR-0030/briefing 0116
+// -- NOT IN sub-nós, não mais só IN (movie, tv)) e só entities com ao menos
+// um media_file 'present' (direto ou via árvore).
 func TestListarElegiveisEnriquecimentoRetroativoRestricoesDeEscopo(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 
-	// collection não é alvo (nível obra/série-topo só, mesmo escopo do 0050).
+	// collection É tipo de topo (não está em tiposSubNo) -- desde o briefing
+	// 0116, elegível como qualquer outro tipo de topo com media_file próprio
+	// (a restrição antiga "só movie/tv" era um escopo herdado do 0050, não
+	// uma regra de negócio permanente -- ver §6 do briefing 0116).
 	semearEntity(t, d, "e-colecao", "collection", "Coleção")
 	semearFile(t, d, "f-colecao", "e-colecao", "/lib/colecao.mkv", "present", 70, "")
+
+	// season é SUB-NÓ (tiposSubNo) -- nunca elegível, mesmo com media_file
+	// 'present' direto (cenário artificial só para provar a exclusão por
+	// tipo, já que season normalmente não liga media_file direto).
+	semearEntity(t, d, "e-temporada", "season", "Temporada 1")
+	semearFile(t, d, "f-temporada", "e-temporada", "/lib/temporada.mkv", "present", 70, "")
 
 	// Sem NENHUM media_file present (todos missing) -- fora de escopo.
 	semearEntity(t, d, "e-missing", "movie", "Missing")
@@ -127,8 +137,11 @@ func TestListarElegiveisEnriquecimentoRetroativoRestricoesDeEscopo(t *testing.T)
 	semearFile(t, d, "f-tv", "e-tv", "/lib/serie.mkv", "present", 70, "")
 
 	got := idsDeRetroativo(listarElegiveisTeste(t, d, 100))
-	if got["e-colecao"] {
-		t.Error("collection não deveria ser elegível (fora do escopo movie/tv)")
+	if !got["e-colecao"] {
+		t.Error("collection deveria ser elegível (tipo de topo, briefing 0116)")
+	}
+	if got["e-temporada"] {
+		t.Error("season nunca deveria ser elegível (sub-nó, tiposSubNo)")
 	}
 	if got["e-missing"] {
 		t.Error("entity sem nenhum media_file present não deveria ser elegível")
@@ -220,6 +233,61 @@ func TestListarElegiveisEnriquecimentoRetroativoLimiteEPrioridade(t *testing.T) 
 	for i, id := range quero {
 		if rows[i].ID != id {
 			t.Errorf("rows[%d].ID = %q, quero %q (nunca-tentados primeiro, depois o mais antigo)", i, rows[i].ID, id)
+		}
+	}
+}
+
+// TestListarElegiveisEnriquecimentoRetroativoArtistaViaArvore cobre o
+// critério §5.1/§5.2 do briefing 0116: artista SEM media_file direto
+// (ADR-0027 -- só a faixa liga) é elegível quando tem uma faixa descendente
+// 'present' na árvore de entity_relation; album/faixa NUNCA aparecem, mesmo
+// nas mesmas condições (sub-nós, ADR-0030).
+func TestListarElegiveisEnriquecimentoRetroativoArtistaViaArvore(t *testing.T) {
+	_, d := setupEntitiesServer(t)
+
+	semearEntity(t, d, "art1", "artista", "Duran Duran")
+	semearEntity(t, d, "alb1", "album", "Rio")
+	semearEntity(t, d, "fx1", "faixa", "Hungry Like the Wolf")
+	ligarFilhoOrdenado(t, d, "r1", "art1", "alb1", "music_artista_principal", 0)
+	ligarFilhoOrdenado(t, d, "r2", "alb1", "fx1", "music_album", 1)
+	semearFile(t, d, "f1", "fx1", "/lib/musica/rio/01.flac", "present", 1, "")
+
+	// Artista sem NENHUMA faixa possuída na árvore: fora de escopo (nada a
+	// verificar contra provider nenhum).
+	semearEntity(t, d, "art-sem-posse", "artista", "Sem Posse")
+
+	got := idsDeRetroativo(listarElegiveisTeste(t, d, 100))
+	if !got["art1"] {
+		t.Error("artista com faixa possuída na árvore deveria ser elegível")
+	}
+	if got["art-sem-posse"] {
+		t.Error("artista sem nenhuma faixa possuída não deveria ser elegível")
+	}
+	if got["alb1"] {
+		t.Error("album nunca deveria ser elegível (sub-nó, ADR-0030)")
+	}
+	if got["fx1"] {
+		t.Error("faixa nunca deveria ser elegível (sub-nó, ADR-0030)")
+	}
+}
+
+// TestListaSubNosSincronizadaComQuery trava a lista literal de tipos
+// excluídos em ListarElegiveisEnriquecimentoRetroativo (review.sql) contra
+// tiposSubNo (ADR-0030/briefing 0112) -- sqlc.slice não pôde ser usado aqui
+// (ver nota de implementação do briefing 0116), então a lista é literal; este
+// teste é a rede de segurança contra as duas divergirem no futuro.
+func TestListaSubNosSincronizadaComQuery(t *testing.T) {
+	esperado := map[string]bool{}
+	for _, tipo := range tiposSubNo {
+		esperado[tipo] = true
+	}
+	naQuery := map[string]bool{"season": true, "episode": true, "album": true, "faixa": true}
+	if len(esperado) != len(naQuery) {
+		t.Fatalf("tiposSubNo tem %d tipos, a lista literal da query tem %d -- atualize review.sql", len(esperado), len(naQuery))
+	}
+	for tipo := range esperado {
+		if !naQuery[tipo] {
+			t.Errorf("tiposSubNo tem %q, mas a lista literal de ListarElegiveisEnriquecimentoRetroativo (review.sql) não -- atualize a query", tipo)
 		}
 	}
 }
@@ -483,6 +551,129 @@ func TestEnriquecerRetroativoLoteMisto(t *testing.T) {
 		if !ent.LastExternalMatchAttemptAt.Valid {
 			t.Errorf("%s: last_external_match_attempt_at deveria ter sido carimbado", id)
 		}
+	}
+}
+
+// ── termoBuscaRetroativo / música (briefing 0116) ───────────────────────────
+
+// TestTermoBuscaRetroativoArtista cobre o critério §5.4: artista devolve o
+// próprio título catalogado, sem ano, SEM exigir media_file algum (ADR-0027 --
+// artista nunca liga direto). movie continua delegando a tituloAnoDoArquivo
+// sem mudança (ok=false quando a entity não tem arquivo, mesmo comportamento
+// de sempre).
+func TestTermoBuscaRetroativoArtista(t *testing.T) {
+	s, d := setupRetroativoServer(t, nil)
+	ctx := context.Background()
+
+	ent := semearEntity(t, d, "art1", "artista", "Duran Duran")
+	entRow, err := escrita(t, d).ObterEntity(ctx, ent)
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	titulo, ano, ok, err := s.termoBuscaRetroativo(ctx, entRow)
+	if err != nil {
+		t.Fatalf("termoBuscaRetroativo(artista): %v", err)
+	}
+	if !ok || titulo != "Duran Duran" || ano != 0 {
+		t.Errorf("termoBuscaRetroativo(artista) = (%q, %d, %v), quero (\"Duran Duran\", 0, true)", titulo, ano, ok)
+	}
+
+	semearEntity(t, d, "mv-sem-arquivo", "movie", "Sem Arquivo")
+	entMovie, err := escrita(t, d).ObterEntity(ctx, "mv-sem-arquivo")
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	_, _, ok, err = s.termoBuscaRetroativo(ctx, entMovie)
+	if err != nil {
+		t.Fatalf("termoBuscaRetroativo(movie): %v", err)
+	}
+	if ok {
+		t.Error("termoBuscaRetroativo(movie sem media_file) deveria devolver ok=false (delega a tituloAnoDoArquivo)")
+	}
+}
+
+// automatchProviderMusica é o mesmo fake de automatchProvider, registrado
+// sob "musicbrainz" -- usado pelos testes de EnriquecerRetroativo para
+// artista (buscarLocal/buscarExterno/Enriquecer só precisam do core
+// provider.Provider, não das capacidades MusicaProvider/MusicaAlbumProvider).
+type automatchProviderMusica struct {
+	resultados []provider.ResultadoExterno
+	raw        json.RawMessage
+	campos     map[string]any
+}
+
+func (p *automatchProviderMusica) Nome() string { return "musicbrainz" }
+
+func (p *automatchProviderMusica) Buscar(context.Context, string, string, string) ([]provider.ResultadoExterno, error) {
+	return p.resultados, nil
+}
+
+func (p *automatchProviderMusica) BuscarDetalhe(context.Context, string, string, []string) (json.RawMessage, error) {
+	return p.raw, nil
+}
+
+func (p *automatchProviderMusica) MapearDetalhe(json.RawMessage) (map[string]any, error) {
+	return p.campos, nil
+}
+
+// setupRetroativoServerMusica é o mesmo molde de setupRetroativoServer, mas
+// registra automatchProviderMusica (fonte "musicbrainz") em vez de "tmdb".
+func setupRetroativoServerMusica(t *testing.T, resultados []provider.ResultadoExterno) (*Server, *db.DB) {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "retroativo-musica.sqlite")
+	database, err := db.Open(db.Config{Path: dbPath})
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := database.Migrate(context.Background()); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	prov := &automatchProviderMusica{
+		resultados: resultados,
+		raw:        json.RawMessage(`{"name":"Duran Duran"}`),
+		campos:     map[string]any{"title": "Duran Duran"},
+	}
+	s := New("v-teste", database, WithSearchProvider(prov), WithAssetsDir(t.TempDir()))
+	return s, database
+}
+
+// TestEnriquecerRetroativoArtistaAplicaExterno cobre o critério §5.4/§5.5 do
+// briefing 0116 fim-a-fim: um artista elegível via árvore (faixa possuída,
+// sem external_ids) com candidato externo forte é aplicado sozinho, mesma
+// orquestração de sempre (aplicarCandidatoExterno) -- prova que
+// termoBuscaRetroativo/a query nova se encaixam no fluxo real sem exigir
+// nada especial de EnriquecerRetroativo.
+func TestEnriquecerRetroativoArtistaAplicaExterno(t *testing.T) {
+	resultados := []provider.ResultadoExterno{
+		{Source: "musicbrainz", SourceID: "mbid-1", Type: "artista", Title: "Duran Duran"},
+	}
+	s, d := setupRetroativoServerMusica(t, resultados)
+
+	semearEntity(t, d, "art1", "artista", "Duran Duran")
+	semearEntity(t, d, "alb1", "album", "Rio")
+	semearEntity(t, d, "fx1", "faixa", "Hungry Like the Wolf")
+	ligarFilhoOrdenado(t, d, "r1", "art1", "alb1", "music_artista_principal", 0)
+	ligarFilhoOrdenado(t, d, "r2", "alb1", "fx1", "music_album", 1)
+	semearFile(t, d, "f1", "fx1", "/lib/musica/rio/01.flac", "present", 1, "")
+
+	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background())
+	if err != nil {
+		t.Fatalf("EnriquecerRetroativo: %v", err)
+	}
+	if aplicados != 1 {
+		t.Errorf("aplicados = %d, quero 1", aplicados)
+	}
+	if sinalizados != 0 {
+		t.Errorf("sinalizados = %d, quero 0", sinalizados)
+	}
+
+	ent, err := escrita(t, d).ObterEntity(context.Background(), "art1")
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	if !ent.LastExternalMatchAttemptAt.Valid {
+		t.Error("last_external_match_attempt_at deveria ter sido carimbado")
 	}
 }
 

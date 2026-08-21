@@ -174,6 +174,24 @@ func (s *Server) diasReentativaRetroativa(ctx context.Context, entityID string) 
 	return menor, nil
 }
 
+// termoBuscaRetroativo deriva o termo de busca (título/ano) para UMA entity
+// elegível, despachado por tipo (briefing 0116): `artista` nunca tem
+// media_file PRÓPRIO (ADR-0027, só a faixa liga direto) -- tituloAnoDoArquivo
+// (automatch.go) sempre devolveria ok=false para esse tipo, já que depende de
+// um arquivo no disco. Um artista já nasce com título legível (nome de pasta
+// reconhecido pelo scanner de música, briefing 0106/0115), então usa
+// ent.Title diretamente, sem ano (0 -- matching.ajustarPorAno já degrada sem
+// bônus nem descarte quando qualquer um dos dois anos é <= 0, comportamento
+// existente, só passa a ser exercitado com dado real de música aqui).
+// Qualquer outro tipo (movie/tv, e qualquer type de topo futuro com arquivo
+// próprio) reusa tituloAnoDoArquivo tal como sempre foi.
+func (s *Server) termoBuscaRetroativo(ctx context.Context, ent sqlcgen.Entity) (titulo string, ano int, ok bool, err error) {
+	if ent.Type == tipoEntArtista {
+		return ent.Title, 0, ent.Title != "", nil
+	}
+	return s.tituloAnoDoArquivo(ctx, ent.ID)
+}
+
 // tentarEnriquecerOuSinalizar tenta enriquecer UMA entity elegível: deriva
 // título/ano do arquivo, busca local-first e depois externo, usando o MELHOR
 // score mesmo abaixo do limiar (precisa do valor para decidir "sinalizar").
@@ -187,7 +205,7 @@ func (s *Server) diasReentativaRetroativa(ctx context.Context, entityID string) 
 // interessado só em resultado para as contagens agregadas. err é SÓ erro real
 // de banco/infra.
 func (s *Server) tentarEnriquecerOuSinalizar(ctx context.Context, ent sqlcgen.Entity) (resultado, method string, score float64, err error) {
-	titulo, ano, ok, err := s.tituloAnoDoArquivo(ctx, ent.ID)
+	titulo, ano, ok, err := s.termoBuscaRetroativo(ctx, ent)
 	if err != nil {
 		return "", "", 0, err
 	}

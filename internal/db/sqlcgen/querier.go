@@ -332,24 +332,29 @@ type Querier interface {
 	// Todos os creditos de uma obra, para o detalhe. Ordena por kind, ordem de bilhagem e
 	// id (estavel).
 	ListarCreditosDaEntity(ctx context.Context, entityID string) ([]Credit, error)
-	// Complemento EXATO (De Morgan) do WHERE de ListarRevisao: entities SEM
-	// NENHUM external_id (external_ids_json IS NULL) que NAO estao na fila de
-	// Revisao -- ou seja, status != 'draft' E sem nenhum media_file de baixa
-	// confianca (0 < match_confidence < limiar). Na pratica, hoje isso e quase
-	// sempre o caso confianca=70 (confTituloAno do scanner, titulo+ano
-	// parseados do arquivo, sem id embutido) -- NUNCA verificado contra
-	// provider nenhum, apesar de "parecer" catalogado. Restrito a type
-	// movie/tv (nivel obra/serie-topo, mesmo escopo do briefing 0050) e a
-	// entities com pelo menos um media_file 'present' (entity so-importada sem
-	// arquivo nao e alvo do scanner, fora de escopo aqui). Throttle: nunca
-	// tentado (NULL) tem prioridade, depois o mais antigo tentado primeiro;
-	// sqlc.arg('dias_global') e o intervalo GLOBAL em dias (briefing 0085), usado
-	// como fallback quando nenhum media_file 'present' da entity vem de uma
-	// biblioteca com override; quando existe override, usa o MENOR valor entre
-	// as bibliotecas de origem via subquery correlacionada (o SQLite calcula o
-	// cutoff por linha com datetime('now', '-N days'), evitando duplicar essa
-	// conta em Go); sqlc.arg('limite') poda o lote por execucao (custo/rate-limit
-	// do provider externo, briefing 0056).
+	// Complemento do WHERE de ListarRevisao, restrito a tipos DE TOPO (ADR-0030):
+	// entities SEM nenhum external_id (external_ids_json IS NULL) que NAO estao
+	// na fila de Revisao (status != 'draft', sem media_file de baixa confianca)
+	// E que tem ao menos um media_file 'present' -- direto (movie/tv/qualquer
+	// tipo com arquivo proprio) OU via arvore de entity_relation (musica:
+	// artista nunca liga media_file direto, ADR-0027 -- so a faixa liga; mesmo
+	// padrao WITH RECURSIVE ja usado por ListarEntitiesMusicaComFaixaPossuida,
+	// media_file.sql). O type NOT IN abaixo e a lista LITERAL dos mesmos valores
+	// de tiposSubNo (ADR-0030/briefing 0112, internal/server/entities.go) --
+	// sqlc.slice('sub_nos') foi tentado (briefing 0116) e descartado: sqlc, no
+	// dialeto sqlite, nao combina sqlc.slice com outros sqlc.arg no MESMO
+	// statement -- a expansao dinamica de `?` do slice desalinha a numeracao dos
+	// placeholders nomeados (?N) dos demais args, causando erro de bind em
+	// runtime ("missing named argument"/"datatype mismatch"), mesmo com cada arg
+	// referenciado uma unica vez. TestListaSubNosSincronizadaComQuery
+	// (retroativo_test.go) trava a lista literal contra tiposSubNo -- se um tipo
+	// novo entrar ali, o teste falha ate esta query ser atualizada a mao.
+	// Throttle: nunca tentado (NULL) tem prioridade, depois o mais antigo
+	// tentado primeiro; sqlc.arg('dias_global') e o intervalo GLOBAL em dias
+	// (briefing 0085), usado como fallback quando nenhum media_file 'present' da
+	// entity vem de uma biblioteca com override (a subquery de override so olha
+	// media_file DIRETO -- para artista isso sempre cai no fallback global, ver
+	// briefing 0116 secao 3 "Fora"); sqlc.arg('limite') poda o lote por execucao.
 	ListarElegiveisEnriquecimentoRetroativo(ctx context.Context, arg ListarElegiveisEnriquecimentoRetroativoParams) ([]ListarElegiveisEnriquecimentoRetroativoRow, error)
 	ListarEntities(ctx context.Context, arg ListarEntitiesParams) ([]Entity, error)
 	// Universo elegivel do job `midias_faltantes` PARA MUSICA (briefing 0116): toda entity
