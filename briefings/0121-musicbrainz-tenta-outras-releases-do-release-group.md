@@ -443,3 +443,37 @@ de música (LMS/Lyrion, Jellyfin) resolvem esse tipo de ambiguidade.
       e4edaa106975`) sai da fila de revisão — ou, se ainda não sair,
       documentar o motivo concreto observado (não otimista) antes de
       fechar.
+
+      **Não validado ainda — throttle da rodada 1 continua ativo.** Deploy
+      da rodada 2 feito em produção em 21/08/2026 (imagem
+      `4aa982ed8a6e9d346e6aaeadac44edf0666f0db5`, logs limpos, schema=25 sem
+      migration nova). Duas tentativas de forçar a reconciliação via API
+      HTTP (nunca SQL direto, conforme instrução):
+      1. `POST /api/v1/jobs/saude_biblioteca/run` — job rodou com sucesso
+         (`3 fonte(s) escaneada(s)... 185 em revisão`), mas o número de itens
+         em revisão não mudou entre a execução manual da rodada 1 (mesmo dia)
+         e esta; a entity continua em `status: "draft"` na fila
+         (`GET /api/v1/review`, 185 itens, Freestyler ainda listada).
+      2. `POST /api/v1/entities/{id}/enrich-missing` — endpoint que existe e
+         *ignora* o throttle, mas é o caminho de enriquecimento retroativo de
+         `external_ids` (briefing 0056/0059), não o mesmo código de
+         `ReconciliarFaixaDraft`/`ReconciliarFilhosOrfaos` (briefing 0120) que
+         de fato tenta casar a faixa-rascunho contra o MusicBrainz; devolveu
+         `{"outcome":"none"}` — não há evidência de que essa chamada tenha
+         disparado o novo gate de duração pra este caso.
+
+      Motivo concreto: `entity.last_external_match_attempt_at` foi carimbado
+      pela tentativa da rodada 1 mais cedo no mesmo dia (21/08/2026); o job
+      `saude_biblioteca` só reconsidera uma entity quando já passou
+      `retry_days` (mínimo 1 dia = 24h corridas, não meia-noite) desde o
+      carimbo — `internal/db/queries/review.sql` (`ListarFaixasDraftOrfas`/
+      `ListarSeriesDraftComArquivo`). Não existe, hoje, nenhum endpoint HTTP
+      legítimo que force `ReconciliarFaixaDraft` ignorando esse throttle por
+      entity — só o `enrich-missing` (código diferente) ignora throttle.
+      Próximo passo pra fechar este critério: repetir a validação depois que
+      as 24h desde o carimbo da rodada 1 tiverem passado (o job diário às
+      04:00 já reconsidera a entity automaticamente) ou, se o dono preferir
+      validar mais cedo, um briefing futuro poderia expor um endpoint de
+      "forçar reconciliação por entity" que ignore o throttle
+      deliberadamente (hoje não existe por design — o throttle existe
+      justamente pra não martelar a API do MusicBrainz).
