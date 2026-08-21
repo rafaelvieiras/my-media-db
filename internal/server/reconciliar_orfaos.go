@@ -3,6 +3,9 @@ package server
 import (
 	"context"
 	"log"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
@@ -95,4 +98,82 @@ func (s *Server) reconciliarECarimbar(ctx context.Context, id string, langs []st
 		log.Printf("saude_biblioteca: gravar tentativa de reconciliação falhou para %s: %v", id, werr)
 	}
 	return linked
+}
+
+// forcarReconciliacaoResultDTO é a resposta de POST
+// /entities/{id}/force-reconcile (briefing 0122, openapi.yaml
+// ForceReconcileResult) -- único campo, `linked`, espelhando o retorno de
+// ReconciliarFaixaDraft/ReconciliarSerieDraft.
+type forcarReconciliacaoResultDTO struct {
+	Linked bool `json:"linked"`
+}
+
+// forcarReconciliacao trata POST /api/v1/entities/{id}/force-reconcile
+// (briefing 0122): dispara a MESMA reconciliação pai-filho do job em lote
+// (ReconciliarFilhosOrfaos, 0120) para UMA entity, mas IGNORANDO
+// completamente o throttle de last_external_match_attempt_at -- válvula de
+// escape manual para quando o dono quer feedback imediato (ex.: acabou de
+// corrigir uma tag do arquivo, ou sabe que uma correção no backend acabou de
+// ser publicada) sem esperar o próximo ciclo do saude_biblioteca. Dispatch
+// por ent.Type: "faixa" -> ReconciliarFaixaDraft, "tv" ->
+// ReconciliarSerieDraft; qualquer outro tipo é no-op (200, linked=false, SEM
+// carimbar -- não houve tentativa real de nada, mesmo critério de "tipo não
+// aplicável" do §4 do briefing). Nos dois casos aplicáveis, carimba a
+// tentativa SEMPRE ao final (mesmo em erro de tentar), mesma semântica de
+// enrichMissing (retroativo.go): coordena com o PRÓXIMO lote do job para ele
+// não competir pelo item que o dono acabou de resolver manualmente. 404
+// entity inexistente; 500 só em erro real de banco/infra (na reconciliação
+// OU no carimbo) -- nunca por "não achou candidato" (linked=false é
+// resultado válido, não erro).
+func (s *Server) forcarReconciliacao(w http.ResponseWriter, r *http.Request) {
+	if s.entitiesUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	ctx := r.Context()
+	ent, ok := s.exigirEntity(w, ctx, id)
+	if !ok {
+		return
+	}
+
+	// Sem scanner configurado, ReconciliarFaixaDraft/ReconciliarSerieDraft nem
+	// existiriam para chamar -- mesma guarda de ReconciliarFilhosOrfaos:
+	// degrada (200, linked=false) em vez de 503/500.
+	if s.scanner == nil {
+		writeJSON(w, http.StatusOK, forcarReconciliacaoResultDTO{Linked: false})
+		return
+	}
+
+	langCfg, err := s.obterLanguageSettings(ctx)
+	if err != nil {
+		respondErroInterno(w)
+		return
+	}
+
+	var tentar func(context.Context, string, []string) (bool, error)
+	switch ent.Type {
+	case tipoEntFaixa:
+		tentar = s.scanner.ReconciliarFaixaDraft
+	case tipoEntSerie:
+		tentar = s.scanner.ReconciliarSerieDraft
+	default:
+		// Tipo não aplicável (ex.: movie): no-op, sem carimbar -- não houve
+		// tentativa real de reconciliação pai-filho nenhuma.
+		writeJSON(w, http.StatusOK, forcarReconciliacaoResultDTO{Linked: false})
+		return
+	}
+
+	linked, tentarErr := tentar(ctx, ent.ID, langCfg.Allowed)
+	// Carimba SEMPRE, mesmo se tentarErr != nil -- o item foi de fato
+	// verificado nesta chamada (mesma semântica de enrichMissing/
+	// EnriquecerRetroativo). Diferente do job em lote (best-effort, loga e
+	// segue), aqui um erro real de banco em QUALQUER um dos dois passos vira
+	// 500 -- é uma chamada HTTP individual, não um lote.
+	carimbarErr := s.carimbarTentativaExterna(ctx, ent.ID)
+	if tentarErr != nil || carimbarErr != nil {
+		respondErroInterno(w)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, forcarReconciliacaoResultDTO{Linked: linked})
 }

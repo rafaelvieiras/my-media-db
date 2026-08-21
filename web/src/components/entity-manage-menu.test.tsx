@@ -118,10 +118,21 @@ afterEach(() => {
   navigateSpy.mockClear()
 })
 
-function render(cc: CatalogCompleteness, owned = true, isCollection = false) {
+// `type`/`status` (briefing 0122) default a algo que NUNCA mostra "Forçar
+// reconciliação" (movie/cataloged) — os testes que não são sobre esta feature
+// continuam se comportando como antes, sem precisar passar os dois valores.
+function render(
+  cc: CatalogCompleteness,
+  owned = true,
+  isCollection = false,
+  type = 'movie',
+  status = 'cataloged',
+) {
   return renderWithClient(
     <EntityManageMenu
       id="e1"
+      type={type}
+      status={status}
       catalogCompleteness={cc}
       owned={owned}
       isCollection={isCollection}
@@ -392,6 +403,126 @@ describe('EntityManageMenu — "Baixar arte faltando" (0048/0049 sob demanda)', 
     )
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent('falha ao baixar arte')
+  })
+})
+
+describe('EntityManageMenu — "Forçar reconciliação" (briefing 0122)', () => {
+  it('aparece quando type="faixa" e status="draft"', async () => {
+    const user = userEvent.setup()
+    render(null, true, false, 'faixa', 'draft')
+    await abrirMenu(user)
+
+    expect(
+      screen.getByRole('menuitem', { name: /Forçar reconciliação/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('aparece quando type="tv" e status="draft"', async () => {
+    const user = userEvent.setup()
+    render(null, true, false, 'tv', 'draft')
+    await abrirMenu(user)
+
+    expect(
+      screen.getByRole('menuitem', { name: /Forçar reconciliação/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('some quando o type não é faixa/tv, mesmo em draft', async () => {
+    const user = userEvent.setup()
+    render(null, true, false, 'movie', 'draft')
+    await abrirMenu(user)
+
+    expect(
+      screen.queryByRole('menuitem', { name: /Forçar reconciliação/ }),
+    ).toBeNull()
+  })
+
+  it('some quando o status não é draft, mesmo em type faixa/tv', async () => {
+    const user = userEvent.setup()
+    render(null, true, false, 'faixa', 'cataloged')
+    await abrirMenu(user)
+
+    expect(
+      screen.queryByRole('menuitem', { name: /Forçar reconciliação/ }),
+    ).toBeNull()
+  })
+
+  it('clique chama forceReconcile e mostra "Religado com sucesso" quando linked=true', async () => {
+    const user = userEvent.setup()
+    const fetchMock = stubRota(
+      (p, m) => p === '/api/v1/entities/e1/force-reconcile' && m === 'POST',
+      () => okJson({ linked: true }),
+    )
+    render(null, true, false, 'faixa', 'draft')
+    await abrirMenu(user)
+
+    await user.click(
+      screen.getByRole('menuitem', { name: /Forçar reconciliação/ }),
+    )
+    expect(
+      await screen.findByText('Religado com sucesso — item saiu do rascunho.'),
+    ).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/entities/e1/force-reconcile'),
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it('mostra "Não foi possível religar desta vez" quando linked=false', async () => {
+    const user = userEvent.setup()
+    stubRota(
+      (p, m) => p === '/api/v1/entities/e1/force-reconcile' && m === 'POST',
+      () => okJson({ linked: false }),
+    )
+    render(null, true, false, 'tv', 'draft')
+    await abrirMenu(user)
+
+    await user.click(
+      screen.getByRole('menuitem', { name: /Forçar reconciliação/ }),
+    )
+    expect(
+      await screen.findByText(
+        'Não foi possível religar desta vez — o item continua em rascunho.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('mostra "Reconciliando…" enquanto pendente', async () => {
+    const user = userEvent.setup()
+    const liberar = stubEntityActionsAdiado(
+      '/api/v1/entities/e1/force-reconcile',
+      () => okJson({ linked: true }),
+    )
+    render(null, true, false, 'faixa', 'draft')
+    await abrirMenu(user)
+
+    await user.click(
+      screen.getByRole('menuitem', { name: /Forçar reconciliação/ }),
+    )
+    expect(
+      await screen.findByText('Reconciliando…', { exact: false }),
+    ).toBeInTheDocument()
+
+    liberar()
+    expect(
+      await screen.findByText('Religado com sucesso — item saiu do rascunho.'),
+    ).toBeInTheDocument()
+  })
+
+  it('erro de rede/500 mostra mensagem role=alert', async () => {
+    const user = userEvent.setup()
+    stubRota(
+      (p, m) => p === '/api/v1/entities/e1/force-reconcile' && m === 'POST',
+      () => erroJson(500, 'db_error', 'falha ao forçar reconciliação'),
+    )
+    render(null, true, false, 'faixa', 'draft')
+    await abrirMenu(user)
+
+    await user.click(
+      screen.getByRole('menuitem', { name: /Forçar reconciliação/ }),
+    )
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent('falha ao forçar reconciliação')
   })
 })
 

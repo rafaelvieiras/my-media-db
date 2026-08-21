@@ -790,6 +790,13 @@ func (s *Server) Handler() (http.Handler, error) {
 				ent.Post("/{id}/enrich-missing", s.enrichMissing)
 				ent.Post("/{id}/download-missing-artwork", s.downloadMissingArtwork)
 
+				// Forçar reconciliação de UMA faixa/série presa em rascunho
+				// (briefing 0122): dispara a MESMA lógica do job em lote
+				// (ReconciliarFilhosOrfaos, 0120), mas ignorando o throttle
+				// de last_external_match_attempt_at -- válvula de escape
+				// manual, mesmo padrão SOB DEMANDA de enrich-missing acima.
+				ent.Post("/{id}/force-reconcile", s.forcarReconciliacao)
+
 				// "Verificar Atualizações de Arquivos" (briefing 0088): ação
 				// SEMPRE visível do menu Gerenciar (não depende de
 				// catalog_completeness) — força re-hash/mediainfo dos

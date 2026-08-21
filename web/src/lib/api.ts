@@ -1343,6 +1343,27 @@ export async function downloadMissingArtwork(
   return lerJson<DownloadMissingArtworkResult>(res)
 }
 
+// Resultado de POST .../force-reconcile (briefing 0122): dispara a MESMA lógica
+// de reconciliação pai-filho do job em lote (`ReconciliarFaixaDraft`/
+// `ReconciliarSerieDraft`), mas para UM item e ignorando o throttle de 1x/dia —
+// válvula de escape manual quando o dono quer feedback imediato.
+export type ForceReconcileResult = components['schemas']['ForceReconcileResult']
+
+// FORÇAR RECONCILIAÇÃO SOB DEMANDA (0122): religa uma faixa/série presa em
+// rascunho contra o pai já identificado, ignorando o throttle
+// `last_external_match_attempt_at` (mas carimbando a tentativa ao final, mesma
+// semântica de `enrichMissing`). Sempre 200 — `linked: false` é resultado
+// válido (não achou candidato, ou tipo não aplicável), não erro.
+export async function forceReconcile(
+  id: string,
+): Promise<ForceReconcileResult> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/force-reconcile`,
+    { method: 'POST' },
+  )
+  return lerJson<ForceReconcileResult>(res)
+}
+
 // Resultado de POST .../refresh-files (briefing 0088): resumo informativo do que
 // foi reconferido/encontrado/preenchido nesta chamada — formato solto (feedback
 // pro dono na UI, não é contrato rígido pra outra integração consumir).

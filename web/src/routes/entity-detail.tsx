@@ -296,6 +296,8 @@ export function EntityDetailScreen() {
         actions={
           <EntityManageMenu
             id={id}
+            type={data.type}
+            status={data.status}
             catalogCompleteness={data.catalog_completeness}
             owned={podeGravarNaPastaReal}
             isCollection={data.type === 'collection'}

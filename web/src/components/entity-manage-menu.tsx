@@ -9,6 +9,7 @@ import {
   FileText,
   ImageDown,
   Images,
+  Link2,
   Pencil,
   RefreshCw,
   Settings,
@@ -40,6 +41,7 @@ import {
   downloadMissingArtwork,
   enrichEntity,
   enrichMissing,
+  forceReconcile,
   listHistoricoEventos,
   materializeMissingMedia,
   purgeEntity,
@@ -47,6 +49,7 @@ import {
   writeEntityNfo,
   type DownloadMissingArtworkResult,
   type EnrichMissingResult,
+  type ForceReconcileResult,
   type MaterializeMissingMediaResult,
   type RefreshFilesResult,
 } from '@/lib/api'
@@ -55,6 +58,7 @@ import {
   precisaAtencaoCatalogacao,
   type CatalogCompleteness,
 } from '@/lib/catalog-completeness-badges'
+import { ehDraft } from '@/lib/entity-badges'
 import { KIND_ASSISTIR } from '@/lib/historico'
 
 // EntityManageMenu (briefing 0086, ex-`EntityActionButtons` do 0059) compacta as
@@ -64,10 +68,12 @@ import { KIND_ASSISTIR } from '@/lib/historico'
 // Atualizações de Arquivos"/"Baixar Metadados"/"Baixar Artes Faltantes" (0088,
 // SEMPRE visíveis, ações forçadas que ignoram cache/incrementalidade) + "Excluir
 // coleção" (0026, só `isCollection`, migrado de `entity-detail.tsx::
-// ExcluirColecao`). A LÓGICA de cada mutation é a MESMA de antes — só a
-// apresentação virou itens de menu em vez de botões soltos acima do hero.
-// Nenhum modal de "escolher candidato": "flagged" só linka para a fila de
-// Revisão já existente (mesma decisão do 0059).
+// ExcluirColecao`) + "Forçar reconciliação" (0122, só faixa/série EM
+// RASCUNHO, ignora o throttle de 1x/dia da reconciliação em lote). A LÓGICA de
+// cada mutation é a MESMA de antes — só a apresentação virou itens de menu em
+// vez de botões soltos acima do hero. Nenhum modal de "escolher candidato":
+// "flagged" só linka para a fila de Revisão já existente (mesma decisão do
+// 0059).
 
 // montarListaBaixados monta a frase PT-BR "Pôster e fanart baixados." a partir
 // dos kinds baixados (rótulo via `rotuloKind`, mesma fonte de verdade da
@@ -181,6 +187,24 @@ function mensagemArte(resultado: DownloadMissingArtworkResult) {
   return null
 }
 
+// mensagemReconciliar resolve o desfecho de POST .../force-reconcile (0122):
+// religou contra o pai × não religou desta vez (sem candidato, ou o tipo não é
+// aplicável) — nenhum dos dois é erro; erro de rede/500 é tratado à parte.
+function mensagemReconciliar(resultado: ForceReconcileResult) {
+  if (resultado.linked) {
+    return (
+      <span role="status" className="text-sm text-muted-foreground">
+        Religado com sucesso — item saiu do rascunho.
+      </span>
+    )
+  }
+  return (
+    <span role="status" className="text-sm text-muted-foreground">
+      Não foi possível religar desta vez — o item continua em rascunho.
+    </span>
+  )
+}
+
 // TOOLTIP_SEM_PASTA explica por que "Salvar informações (NFO)" fica desabilitado
 // quando a entity não tem nenhum media_file presente — mesma condição usada pela
 // galeria de artes (0062) para "salvar na pasta"/"definir como principal".
@@ -189,11 +213,18 @@ const TOOLTIP_SEM_PASTA =
 
 export function EntityManageMenu({
   id,
+  type,
+  status,
   catalogCompleteness,
   owned = true,
   isCollection = false,
 }: {
   id: string
+  // `entity.type`/`entity.status` (briefing 0122): controlam a visibilidade de
+  // "Forçar reconciliação" — só faixa/série EM RASCUNHO (`ehDraft`) fazem
+  // sentido religar contra um pai já identificado.
+  type: string
+  status: string
   catalogCompleteness: CatalogCompleteness
   // Posse (`ResolvedEntity.owned`, `EXISTS media_file present`): sem isso não há
   // pasta de destino na biblioteca real para o .nfo (briefing 0062). Default
@@ -225,6 +256,13 @@ export function EntityManageMenu({
   })
   const baixarArte = useMutation({
     mutationFn: () => downloadMissingArtwork(id),
+    onSuccess: invalidar,
+  })
+  // "Forçar reconciliação" (briefing 0122): dispara a MESMA reconciliação
+  // pai-filho do job em lote, mas para ESTE item e ignorando o throttle de
+  // 1x/dia. A entity muda de `status` quando religada — `invalidar()` reflete.
+  const forcarReconciliar = useMutation({
+    mutationFn: () => forceReconcile(id),
     onSuccess: invalidar,
   })
   // Salvar informações (NFO, briefing 0062): idempotente — sempre sobrescreve. Não
@@ -305,6 +343,8 @@ export function EntityManageMenu({
   const mostrarArte = !!catalogCompleteness?.missing.some((chave) =>
     chave.startsWith('artwork:'),
   )
+  const mostrarReconciliar =
+    (type === 'faixa' || type === 'tv') && ehDraft(status)
 
   const erroEnriquecer =
     enriquecer.error instanceof ApiError
@@ -317,6 +357,12 @@ export function EntityManageMenu({
       ? baixarArte.error.message
       : baixarArte.isError
         ? 'Não foi possível baixar a arte faltante.'
+        : null
+  const erroReconciliar =
+    forcarReconciliar.error instanceof ApiError
+      ? forcarReconciliar.error.message
+      : forcarReconciliar.isError
+        ? 'Não foi possível forçar a reconciliação.'
         : null
   const erroNfo =
     salvarNfo.error instanceof ApiError
@@ -392,6 +438,17 @@ export function EntityManageMenu({
             >
               <ImageDown aria-hidden />
               {baixarArte.isPending ? 'Baixando…' : 'Baixar arte faltando'}
+            </DropdownMenuItem>
+          ) : null}
+          {mostrarReconciliar ? (
+            <DropdownMenuItem
+              disabled={forcarReconciliar.isPending}
+              onSelect={() => forcarReconciliar.mutate()}
+            >
+              <Link2 aria-hidden />
+              {forcarReconciliar.isPending
+                ? 'Reconciliando…'
+                : 'Forçar reconciliação'}
             </DropdownMenuItem>
           ) : null}
           <DropdownMenuItem
@@ -493,6 +550,17 @@ export function EntityManageMenu({
         </span>
       ) : baixarArte.isSuccess ? (
         mensagemArte(baixarArte.data)
+      ) : null}
+      {forcarReconciliar.isPending ? (
+        <span role="status" className="text-sm text-muted-foreground">
+          Reconciliando…
+        </span>
+      ) : erroReconciliar ? (
+        <span role="alert" className="text-sm font-medium text-destructive">
+          {erroReconciliar}
+        </span>
+      ) : forcarReconciliar.isSuccess ? (
+        mensagemReconciliar(forcarReconciliar.data)
       ) : null}
       {salvarNfo.isPending ? (
         <span role="status" className="text-sm text-muted-foreground">

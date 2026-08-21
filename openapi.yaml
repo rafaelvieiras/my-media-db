@@ -1662,6 +1662,37 @@ paths:
         "503":
           $ref: "#/components/responses/Error"
 
+  /api/v1/entities/{id}/force-reconcile:
+    post:
+      operationId: forceReconcile
+      summary: Força reconciliação manual de UMA entity, ignorando o throttle (briefing 0122).
+      description: >
+        Dispara a MESMA lógica de `Manager.ReconciliarFaixaDraft`/
+        `Manager.ReconciliarSerieDraft` (`internal/scanner/reconciliar.go`) já
+        usada pelo lote `ReconciliarFilhosOrfaos` (briefing 0120), mas para UM
+        item e IGNORANDO COMPLETAMENTE o throttle de 1x/dia
+        (`last_external_match_attempt_at`/`retry_days`) — ação explícita do
+        dono no detalhe, não a varredura diária do job `saude_biblioteca`.
+        Diferença para `/enrich-missing`: aqui é reconciliação pai-filho
+        (religar uma faixa/série em rascunho contra o pai já identificado),
+        não resolução de identidade externa. Dispatch por `entity.type`:
+        `faixa` e `tv` tentam de fato; qualquer outro tipo responde
+        `{"linked": false}` sem tentar nada e sem carimbar. Sempre carimba
+        `last_external_match_attempt_at` ao final de uma tentativa real (mesmo
+        quando `linked=false`), para coordenar com o próximo lote do job. 404
+        se a entity não existe.
+      tags: [entities]
+      parameters:
+        - $ref: "#/components/parameters/EntityId"
+      responses:
+        "200":
+          description: Resultado da reconciliação forçada (religou ou não).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ForceReconcileResult" }
+        "404":
+          $ref: "#/components/responses/Error"
+
   /api/v1/entities/{id}/refresh-files:
     post:
       operationId: refreshEntityFiles
@@ -3505,6 +3536,18 @@ components:
           type: array
           items: { type: string }
           description: Kinds que estavam faltando mas sem opção em nenhum provider.
+    ForceReconcileResult:
+      type: object
+      description: >
+        Resposta de POST /entities/{id}/force-reconcile (briefing 0122) —
+        `linked=true` quando a entity foi religada contra o pai nesta
+        chamada; `linked=false` quando não havia candidato, o tipo não é
+        aplicável (nem `faixa` nem `tv`) ou não há scanner configurado.
+      required: [linked]
+      properties:
+        linked:
+          type: boolean
+          description: Se a entity foi religada contra o pai nesta chamada.
     RefreshFilesResult:
       type: object
       description: >

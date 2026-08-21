@@ -966,6 +966,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/force-reconcile': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Força reconciliação manual de UMA entity, ignorando o throttle (briefing 0122).
+     * @description Dispara a MESMA lógica de `Manager.ReconciliarFaixaDraft`/ `Manager.ReconciliarSerieDraft` (`internal/scanner/reconciliar.go`) já usada pelo lote `ReconciliarFilhosOrfaos` (briefing 0120), mas para UM item e IGNORANDO COMPLETAMENTE o throttle de 1x/dia (`last_external_match_attempt_at`/`retry_days`) — ação explícita do dono no detalhe, não a varredura diária do job `saude_biblioteca`. Diferença para `/enrich-missing`: aqui é reconciliação pai-filho (religar uma faixa/série em rascunho contra o pai já identificado), não resolução de identidade externa. Dispatch por `entity.type`: `faixa` e `tv` tentam de fato; qualquer outro tipo responde `{"linked": false}` sem tentar nada e sem carimbar. Sempre carimba `last_external_match_attempt_at` ao final de uma tentativa real (mesmo quando `linked=false`), para coordenar com o próximo lote do job. 404 se a entity não existe.
+     */
+    post: operations['forceReconcile']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/{id}/refresh-files': {
     parameters: {
       query?: never
@@ -1995,6 +2015,11 @@ export interface components {
       downloaded: string[]
       /** @description Kinds que estavam faltando mas sem opção em nenhum provider. */
       unavailable: string[]
+    }
+    /** @description Resposta de POST /entities/{id}/force-reconcile (briefing 0122) — `linked=true` quando a entity foi religada contra o pai nesta chamada; `linked=false` quando não havia candidato, o tipo não é aplicável (nem `faixa` nem `tv`) ou não há scanner configurado. */
+    ForceReconcileResult: {
+      /** @description Se a entity foi religada contra o pai nesta chamada. */
+      linked: boolean
     }
     /** @description Resposta de POST /entities/{id}/refresh-files (briefing 0088) — resumo informativo do que foi reconferido/encontrado/preenchido nesta chamada; formato solto (não é contrato rígido para outra integração consumir, só feedback pro dono na UI). */
     RefreshFilesResult: {
@@ -4198,6 +4223,30 @@ export interface operations {
       }
       404: components['responses']['Error']
       503: components['responses']['Error']
+    }
+  }
+  forceReconcile: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Resultado da reconciliacao forcada (religou ou nao). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ForceReconcileResult']
+        }
+      }
+      404: components['responses']['Error']
     }
   }
   refreshEntityFiles: {
