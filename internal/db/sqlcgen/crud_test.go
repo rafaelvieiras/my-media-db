@@ -74,6 +74,37 @@ func TestCRUDEntity(t *testing.T) {
 	_, err = q.ObterEntityPorImdb(ctx, ns("tt0133093"))
 	check(t, err, "ObterEntityPorImdb")
 
+	// mbid (vertical de musica, briefing 0119): mesmo par obter/listar-exceto-id
+	// de tmdb/imdb/tvdb, exercitado aqui por ser a query nova deste briefing.
+	artista, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{
+		ID: "artista-1", Type: "artista", Title: "Fake Band",
+		ExternalIdsJson: ns(`{"mbid":"aaaaaaaa-0000-0000-0000-000000000001"}`),
+	})
+	check(t, err, "CriarEntity artista")
+	gotMbid, err := q.ObterEntityPorMbid(ctx, ns("aaaaaaaa-0000-0000-0000-000000000001"))
+	check(t, err, "ObterEntityPorMbid")
+	if gotMbid.ID != artista.ID {
+		t.Errorf("ObterEntityPorMbid id = %q, quero %q", gotMbid.ID, artista.ID)
+	}
+	outroArtista, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "artista-2", Type: "artista", Title: "Outra Banda"})
+	check(t, err, "CriarEntity outro artista")
+	colisao, err := q.ListarEntitiesPorMbidExcetoId(ctx, sqlcgen.ListarEntitiesPorMbidExcetoIdParams{
+		MbidID: ns("aaaaaaaa-0000-0000-0000-000000000001"), AlvoID: outroArtista.ID,
+	})
+	check(t, err, "ListarEntitiesPorMbidExcetoId")
+	if len(colisao) != 1 || colisao[0].ID != artista.ID {
+		t.Errorf("ListarEntitiesPorMbidExcetoId = %+v, quero so %q", colisao, artista.ID)
+	}
+	semColisao, err := q.ListarEntitiesPorMbidExcetoId(ctx, sqlcgen.ListarEntitiesPorMbidExcetoIdParams{
+		MbidID: ns("aaaaaaaa-0000-0000-0000-000000000001"), AlvoID: artista.ID,
+	})
+	check(t, err, "ListarEntitiesPorMbidExcetoId (alvo = a propria)")
+	if len(semColisao) != 0 {
+		t.Errorf("ListarEntitiesPorMbidExcetoId com alvo=a propria = %+v, quero vazio", semColisao)
+	}
+	check(t, q.ApagarEntity(ctx, artista.ID), "ApagarEntity artista")
+	check(t, q.ApagarEntity(ctx, outroArtista.ID), "ApagarEntity outro artista")
+
 	lista, err := q.ListarEntities(ctx, sqlcgen.ListarEntitiesParams{Limit: 10, Offset: 0})
 	check(t, err, "ListarEntities")
 	if len(lista) != 1 {
