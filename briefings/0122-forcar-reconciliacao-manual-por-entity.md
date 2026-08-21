@@ -199,3 +199,19 @@ onde toda ação individual sob demanda já mora (briefing 0059/0088).
       Freestyler (`4838fee1-8b95-4d72-8142-e4edaa106975`) e confirmar se a
       correção do briefing 0121 (rodada 2) resolveu o caso real, sem
       depender do throttle — fecha o item que ficou em aberto no 0121.
+      **Validado em 21/08/2026 (deploy do commit `d2d6a6c`, versão exibida
+      no log de boot): o mecanismo deste briefing funciona — o endpoint
+      ignorou o throttle e fez uma tentativa real (~40s, chamada de rede
+      de fato disparada), confirmado pelo log
+      `POST .../force-reconcile ... 200 17B in 40.415582778s`. Porém o
+      resultado foi `{"linked":false}` e a entity permanece `status:
+      "draft"`. O log do scanner aponta a causa raiz, e não é mais o
+      throttle: `scanner: import escopado (busca textual artista
+      "Bomfunk MC's" album "Freestyler") falhou: enrich: faixa alvo nao
+      encontrada no album 1ca542d9-eec9-4bad-9e20-7535431f5b1c` — ou
+      seja, a correção do 0121 (rodada 2, teto de releases/duração como
+      confirmação) não resolveu o caso real: o MusicBrainz encontra o
+      álbum mas não localiza a faixa-alvo dentro dele. Este item
+      permanece em aberto; precisa de um briefing de investigação novo
+      sobre o matching faixa↔álbum do provider MusicBrainz para este
+      release-group específico.**
