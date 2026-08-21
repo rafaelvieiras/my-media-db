@@ -94,6 +94,13 @@ type Matcher interface {
 	// que ganhou a identidade ANTES de um ArteProvider existir/ser
 	// configurado no sistema.
 	ReprocessarArtesFaltantes(ctx context.Context) (processados int, err error)
+	// DescobrirArteLocalMusica varre artista/album de música com faixa
+	// possuída em busca de um pôster local (poster.jpg/folder.jpg) na pasta
+	// derivada dos arquivos das faixas -- mesmo mecanismo que filme/série já
+	// tinham (briefing 0119, complemento do 0117/0118): a imagem que o dono
+	// já tem na pasta passa a valer como fonte de arte, junto de MusicBrainz/
+	// fanart.tv.
+	DescobrirArteLocalMusica(ctx context.Context) (encontrados int, err error)
 }
 
 // CompletenessRecalculator e o subconjunto de *server.Server que o Handler
@@ -203,10 +210,11 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 	}
 
 	artesReprocessadas := h.rodarReprocessamentoArtes(ctx)
+	arteLocalMusica := h.rodarDescobertaArteLocalMusica(ctx)
 
 	avaliados, incompletos := h.rodarRecalculoCompletude(ctx)
 
-	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, avaliados, incompletos), nil
+	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, arteLocalMusica, avaliados, incompletos), nil
 }
 
 // rodarAutoMatch chama o Matcher (auto-match em lote sobre os elegiveis da
@@ -259,6 +267,23 @@ func (h *Handler) rodarReprocessamentoArtes(ctx context.Context) int {
 		return 0
 	}
 	return processados
+}
+
+// rodarDescobertaArteLocalMusica chama o Matcher (descoberta de arte local de
+// música, briefing 0119) e devolve quantas entities ganharam/atualizaram um
+// pôster local. Best-effort: uma falha aqui NAO aborta o job -- so loga e
+// devolve 0. Chamado logo depois de rodarReprocessamentoArtes (mesma familia
+// de passo de arte) e ANTES do recalculo de completude.
+func (h *Handler) rodarDescobertaArteLocalMusica(ctx context.Context) int {
+	if h.matcher == nil {
+		return 0
+	}
+	encontrados, err := h.matcher.DescobrirArteLocalMusica(ctx)
+	if err != nil {
+		log.Printf("saude_biblioteca: descoberta de arte local de musica falhou (best-effort, ignorado): %v", err)
+		return 0
+	}
+	return encontrados
 }
 
 // rodarRecalculoCompletude chama o CompletenessRecalculator (recalculo em
@@ -359,14 +384,16 @@ func (h *Handler) escanearEAguardar(ctx context.Context, src library.Source) err
 // extra e omitida quando os dois sao zero (mesmo espirito da omissao de
 // resolvidos==0 acima). artesReprocessadas (briefing 0118) e quantas entities
 // JA identificadas tiveram o inventario de arte reverificado; clausula
-// omitida quando zero (mesmo espirito). avaliados/incompletos (briefing 0058)
+// omitida quando zero (mesmo espirito). arteLocalMusica (briefing 0119) e
+// quantas entities artista/album ganharam/atualizaram um poster local;
+// clausula omitida quando zero. avaliados/incompletos (briefing 0058)
 // sao o resultado do recalculo de completude de catalogacao; a clausula
 // extra e omitida quando nao houve NENHUM item avaliado (h.completeness ==
 // nil ou a biblioteca vazia) -- com pelo menos um avaliado, a clausula
 // aparece mesmo com incompletos==0 (0 incompletos e uma informacao positiva
 // relevante, diferente de aplicados/sinalizados==0 que so significa "nada a
 // fazer").
-func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, avaliados, incompletos int) string {
+func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, arteLocalMusica, avaliados, incompletos int) string {
 	base := fmt.Sprintf("%s; %d em revisão, %d órfã(s)", resumoScans(total, escaneadas, falhas), revisao, orfas)
 	if resolvidos > 0 {
 		base = fmt.Sprintf("%s; %d em revisão (%d resolvidos automaticamente), %d órfã(s)",
@@ -378,6 +405,9 @@ func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, reso
 	}
 	if artesReprocessadas > 0 {
 		base = fmt.Sprintf("%s; %d entity(ies) com inventário de arte reprocessado", base, artesReprocessadas)
+	}
+	if arteLocalMusica > 0 {
+		base = fmt.Sprintf("%s; %d entity(ies) de música com pôster local encontrado", base, arteLocalMusica)
 	}
 	if avaliados > 0 {
 		base = fmt.Sprintf("%s; %d itens avaliados, %d incompletos em catalogação", base, avaliados, incompletos)

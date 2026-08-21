@@ -673,6 +673,35 @@ func (q *Queries) MarcarMediaFilesNaoVistosMissing(ctx context.Context, arg Marc
 	return result.RowsAffected()
 }
 
+const obterCaminhoDescendentePresente = `-- name: ObterCaminhoDescendentePresente :one
+WITH RECURSIVE arvore(ancestor_id, descendant_id) AS (
+    SELECT parent_id, child_id FROM entity_relation
+    UNION
+    SELECT a.ancestor_id, er.child_id FROM arvore a JOIN entity_relation er ON er.parent_id = a.descendant_id
+)
+SELECT m.path
+FROM entity e
+JOIN arvore t ON t.ancestor_id = e.id
+JOIN media_file m ON m.entity_id = t.descendant_id AND m.state = 'present'
+WHERE e.id = ?1
+LIMIT 1
+`
+
+// Devolve o path de UM media_file 'present' qualquer, descendente (via a MESMA
+// arvore de entity_relation) da entity `entity_id` -- usado pelo briefing 0119
+// (descoberta de arte LOCAL de artista/album de musica: a pasta canonica de um
+// album e o diretorio do arquivo da faixa; a do artista, um nivel acima). Artista/
+// album NUNCA tem media_file DIRETO (ADR-0027, so a faixa liga), entao so a arvore
+// alcanca. sql.ErrNoRows quando a entity nao tem nenhum descendente possuido (nao
+// deveria acontecer para quem passou por ListarEntitiesMusicaComFaixaPossuida, mas
+// o chamador trata como "nada a fazer", nao erro).
+func (q *Queries) ObterCaminhoDescendentePresente(ctx context.Context, entityID string) (string, error) {
+	row := q.db.QueryRowContext(ctx, obterCaminhoDescendentePresente, entityID)
+	var path string
+	err := row.Scan(&path)
+	return path, err
+}
+
 const obterMediaFile = `-- name: ObterMediaFile :one
 SELECT id, entity_id, path, content_hash, size, mtime, edition, part_no,
     match_confidence, mediainfo_json, state, last_seen, created_at, updated_at, library_source_id

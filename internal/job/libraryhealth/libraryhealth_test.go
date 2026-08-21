@@ -105,6 +105,10 @@ type matcherFake struct {
 	artesProcessadas       int
 	errArtes               error
 	chamadasReprocessArtes int
+
+	arteLocalEncontrada int
+	errArteLocal        error
+	chamadasArteLocal   int
 }
 
 func (m *matcherFake) AutoMatchElegiveis(context.Context) (int, int, error) {
@@ -120,6 +124,11 @@ func (m *matcherFake) EnriquecerRetroativo(context.Context) (int, int, error) {
 func (m *matcherFake) ReprocessarArtesFaltantes(context.Context) (int, error) {
 	m.chamadasReprocessArtes++
 	return m.artesProcessadas, m.errArtes
+}
+
+func (m *matcherFake) DescobrirArteLocalMusica(context.Context) (int, error) {
+	m.chamadasArteLocal++
+	return m.arteLocalEncontrada, m.errArteLocal
 }
 
 // completenessFake e um CompletenessRecalculator fake (briefing 0058):
@@ -497,6 +506,79 @@ func TestExecutarFalhaDoReprocessamentoArtesNaoAbortaJob(t *testing.T) {
 // matcher==nil (mesma guarda de rodarAutoMatch/rodarEnriquecimentoRetroativo):
 // sem Matcher injetado, o passo degrada para 0 sem panicar.
 func TestExecutarSemMatcherNaoRodaReprocessamentoArtes(t *testing.T) {
+	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, nil, nil)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 1 em revisão, 0 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarAcionaDescobertaArteLocalMusicaEReflete cobre o critério central
+// do briefing 0119: depois do reprocessamento de artes, o job aciona
+// DescobrirArteLocalMusica e a mensagem final ganha a cláusula "<N>
+// entity(ies) de música com pôster local encontrado".
+func TestExecutarAcionaDescobertaArteLocalMusicaEReflete(t *testing.T) {
+	cont := &contadorFake{revisao: 4, orfas: 2}
+	matcher := &matcherFake{arteLocalEncontrada: 3}
+	h := New(&libraryFake{}, newScanFake(), cont, matcher, nil)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s); 3 entity(ies) de música com pôster local encontrado"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+	if matcher.chamadasArteLocal != 1 {
+		t.Errorf("DescobrirArteLocalMusica chamado %d vez(es), quero exatamente 1", matcher.chamadasArteLocal)
+	}
+}
+
+// TestExecutarDescobertaArteLocalMusicaOmiteClausulaQuandoZero cobre o
+// critério de omissão: sem nenhum pôster local encontrado, a mensagem final
+// NÃO ganha a cláusula extra.
+func TestExecutarDescobertaArteLocalMusicaOmiteClausulaQuandoZero(t *testing.T) {
+	cont := &contadorFake{revisao: 4, orfas: 2}
+	matcher := &matcherFake{}
+	h := New(&libraryFake{}, newScanFake(), cont, matcher, nil)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarFalhaDaDescobertaArteLocalMusicaNaoAbortaJob cobre o critério
+// best-effort: uma falha do Matcher neste passo não derruba o job -- o
+// resumo original (sem a cláusula extra) ainda sai.
+func TestExecutarFalhaDaDescobertaArteLocalMusicaNaoAbortaJob(t *testing.T) {
+	cont := &contadorFake{revisao: 4, orfas: 2}
+	matcher := &matcherFake{errArteLocal: errors.New("erro simulado na descoberta de arte local")}
+	h := New(&libraryFake{}, newScanFake(), cont, matcher, nil)
+
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar não deveria falhar por causa da descoberta de arte local (best-effort): %v", err)
+	}
+	quero := "nenhuma fonte de biblioteca cadastrada; 4 em revisão, 2 órfã(s)"
+	if msg != quero {
+		t.Fatalf("mensagem = %q, quero %q", msg, quero)
+	}
+}
+
+// TestExecutarSemMatcherNaoRodaDescobertaArteLocalMusica cobre a guarda
+// matcher==nil: sem Matcher injetado, o passo degrada para 0 sem panicar.
+func TestExecutarSemMatcherNaoRodaDescobertaArteLocalMusica(t *testing.T) {
 	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, nil, nil)
 
 	msg, err := h.Executar(context.Background(), nil)

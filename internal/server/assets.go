@@ -22,23 +22,33 @@ import (
 // asset e a preferencia (flag em meta_json, uma por (entity, kind)). A decisao de
 // design: a escolha do dono VENCE — a precedencia de servico do poster passa a ser
 //
-//	preferida (meta.preferred) -> origin='user' (mais recente) -> origin='external' -> 404
+//	preferida (meta.preferred) -> origin='user' (mais recente) -> origin='local'
+//	(pasta/arquivo no disco, briefing 0119) -> origin='external' -> 404
 //
 // calculada EM GO (escolherAssetServido) sobre ListarAssetsPorEntity, mantendo a
 // guarda de path-traversal do 0010. O cache externo (0015) casa so origin='external',
 // entao re-enriquecer NUNCA toca a arte do dono (nao-destrutivo, ADR-0012). As
-// escritas passam pelo pool de escrita (ADR-0010).
-
+// escritas passam pelo pool de escrita (ADR-0010). origin='local' (0119) vence
+// origin='external': uma imagem que o dono JA TEM na pasta (folder.jpg/poster.jpg,
+// scanner.descobrirPoster) e tratada como decisao dele -- nao clobra nada do dono
+// (still fica abaixo de user/preferida), mas nao deve perder pra um provider externo.
 const (
 	// kindPoster/kindFanart/kindStill sao os kinds de arte que o dono pode subir;
-	// originUser/originExternal etiquetam a proveniencia (dono x cache externo). O
-	// still (frame 16:9 do episodio, 0044) e o unico still que vira asset: o still do
-	// provider segue lazy em extension_data (0042), so o custom do dono e arquivo.
+	// originUser/originExternal/originLocal etiquetam a proveniencia (dono x cache
+	// externo x arquivo achado no disco pelo scanner). O still (frame 16:9 do
+	// episodio, 0044) e o unico still que vira asset: o still do provider segue lazy
+	// em extension_data (0042), so o custom do dono e arquivo.
 	kindPoster     = "poster"
 	kindFanart     = "fanart"
 	kindStill      = "still"
 	originUser     = "user"
 	originExternal = "external"
+	// originLocal etiqueta o asset achado pelo SCANNER na pasta da obra (poster.jpg/
+	// folder.jpg, briefing 0088/0119) -- distinto de originUser (upload explicito
+	// pela UI) e originExternal (cache de provider). Mesmo literal "local" que
+	// internal/scanner/match.go e recheck.go ja gravam (pacotes sem import cruzado
+	// -- so uma coincidencia de valor, sem const compartilhada).
+	originLocal = "local"
 	// kindLogo/kindClearart/kindDisc/kindBanner/kindThumb/kindCharacterart sao os
 	// kinds de arte EXPANDIDOS (briefing 0048): a fanart.tv traz logo, clearart, disc,
 	// banner, thumb e characterart alem de poster/fanart/still. O kind e TEXT livre no
@@ -478,12 +488,13 @@ func (s *Server) servirBinarioAsset(w http.ResponseWriter, r *http.Request, ctx 
 	http.ServeContent(w, r, filepath.Base(limpo), info.ModTime(), f)
 }
 
-// escolherAssetServido aplica a PRECEDENCIA DE SERVICO do briefing 0017 sobre os
-// assets de um kind: preferida (meta.preferred) -> origin='user' (mais recente) ->
-// origin='external' (primeiro) -> qualquer outro (base, ex.: arte 'local' do
-// scanner) -> nada. `assets` vem de ListarAssetsPorEntity (ordenado por created_at
-// asc), entao "mais recente" = o ultimo do slice e "primeiro" = o primeiro. Helper
-// PURO — testado isoladamente. Subir arte ja a faz vencer a externa (o upload e a
+// escolherAssetServido aplica a PRECEDENCIA DE SERVICO do briefing 0017 (mais o
+// briefing 0119) sobre os assets de um kind: preferida (meta.preferred) ->
+// origin='user' (mais recente) -> origin='local' (primeiro, arquivo achado pelo
+// scanner na pasta) -> origin='external' (primeiro) -> qualquer outro (base) ->
+// nada. `assets` vem de ListarAssetsPorEntity (ordenado por created_at asc), entao
+// "mais recente" = o ultimo do slice e "primeiro" = o primeiro. Helper PURO —
+// testado isoladamente. Subir arte ja a faz vencer a local/externa (o upload e a
 // intencao); marcar preferida so desempata entre varias do dono.
 func escolherAssetServido(assets []sqlcgen.Asset, kind string) (sqlcgen.Asset, bool) {
 	c := coletarCandidatos(assets, kind)
@@ -492,6 +503,8 @@ func escolherAssetServido(assets []sqlcgen.Asset, kind string) (sqlcgen.Asset, b
 		return c.preferida, true
 	case c.temU:
 		return c.user, true
+	case c.temL:
+		return c.local, true
 	case c.temE:
 		return c.external, true
 	case c.temBase:
@@ -504,12 +517,12 @@ func escolherAssetServido(assets []sqlcgen.Asset, kind string) (sqlcgen.Asset, b
 // candidatosAsset guarda os candidatos por camada de precedencia enquanto o slice e
 // varrido uma vez (ver escolherAssetServido/coletarCandidatos).
 type candidatosAsset struct {
-	preferida, user, external, base sqlcgen.Asset
-	temP, temU, temE, temBase       bool
+	preferida, user, local, external, base sqlcgen.Asset
+	temP, temU, temL, temE, temBase        bool
 }
 
 // coletarCandidatos varre os assets do kind uma vez e preenche cada camada da
-// precedencia (preferida/user/external/base).
+// precedencia (preferida/user/local/external/base).
 func coletarCandidatos(assets []sqlcgen.Asset, kind string) candidatosAsset {
 	var c candidatosAsset
 	for _, a := range assets {
@@ -522,7 +535,7 @@ func coletarCandidatos(assets []sqlcgen.Asset, kind string) candidatosAsset {
 
 // considerar classifica UM asset nas camadas: base = o primeiro de qualquer origem
 // (ultima defesa antes do 404); preferida = ultima marcada; user = a mais recente;
-// external = a primeira.
+// local = a primeira (briefing 0119); external = a primeira.
 func (c *candidatosAsset) considerar(a sqlcgen.Asset) {
 	if !c.temBase {
 		c.base, c.temBase = a, true
@@ -533,6 +546,10 @@ func (c *candidatosAsset) considerar(a sqlcgen.Asset) {
 	switch a.Origin {
 	case originUser:
 		c.user, c.temU = a, true // ultimo = mais recente
+	case originLocal:
+		if !c.temL {
+			c.local, c.temL = a, true // primeiro local
+		}
 	case originExternal:
 		if !c.temE {
 			c.external, c.temE = a, true // primeiro external

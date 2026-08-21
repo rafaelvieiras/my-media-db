@@ -270,9 +270,11 @@ func mkAsset(id, kind, origin string, preferred bool) sqlcgen.Asset {
 	return a
 }
 
-// TestEscolherAssetServido cobre o criterio 5.2 no helper PURO: preferida vence user
-// vence external vence base; sem arte cai na base ('local' do scanner); nada quando
-// vazio; o kind filtra. `quer` vazio significa ok=false.
+// TestEscolherAssetServido cobre o criterio 5.2 (mais o 0119) no helper PURO:
+// preferida vence user vence local (arquivo achado pelo scanner na pasta) vence
+// external vence base; sem nenhum dos quatro cai na base (proveniencia
+// desconhecida/futura); nada quando vazio; o kind filtra. `quer` vazio significa
+// ok=false.
 func TestEscolherAssetServido(t *testing.T) {
 	casos := []struct {
 		nome   string
@@ -295,11 +297,19 @@ func TestEscolherAssetServido(t *testing.T) {
 			mkAsset("u1", "poster", "user", false),
 			mkAsset("u2", "poster", "user", false),
 		}, "u2"},
-		{"external vence base local", []sqlcgen.Asset{
+		{"local (pasta) vence external (briefing 0119)", []sqlcgen.Asset{
 			mkAsset("loc", "poster", "local", false),
 			mkAsset("ext", "poster", "external", false),
-		}, "ext"},
-		{"base local quando nao ha user/external", []sqlcgen.Asset{
+		}, "loc"},
+		{"user vence local", []sqlcgen.Asset{
+			mkAsset("loc", "poster", "local", false),
+			mkAsset("usr", "poster", "user", false),
+		}, "usr"},
+		{"preferida vence local", []sqlcgen.Asset{
+			mkAsset("loc", "poster", "local", false),
+			mkAsset("u1", "poster", "user", true),
+		}, "u1"},
+		{"local sozinho quando nao ha user/external", []sqlcgen.Asset{
 			mkAsset("loc", "poster", "local", false),
 		}, "loc"},
 		{"kind filtra", []sqlcgen.Asset{

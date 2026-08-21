@@ -152,6 +152,52 @@ func TestCRUDEntity(t *testing.T) {
 	check(t, q.ApagarEntity(ctx, e.ID), "ApagarEntity")
 }
 
+// TestObterCaminhoDescendentePresente cobre a query nova do briefing 0119
+// (descoberta de arte local de musica): artista -> album -> faixa via
+// entity_relation, media_file 'present' so na faixa (ADR-0027) -- pedir o
+// caminho descendente do ARTISTA (nao so do album, filho direto) prova que a
+// arvore RECURSIVA alcanca mais de um nivel.
+func TestObterCaminhoDescendentePresente(t *testing.T) {
+	q := setup(t)
+	ctx := context.Background()
+
+	_, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "artista-1", Type: "artista", Title: "Banda"})
+	check(t, err, "CriarEntity artista")
+	_, err = q.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "album-1", Type: "album", Title: "Album"})
+	check(t, err, "CriarEntity album")
+	_, err = q.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "faixa-1", Type: "faixa", Title: "Faixa"})
+	check(t, err, "CriarEntity faixa")
+
+	_, err = q.CriarEntityRelation(ctx, sqlcgen.CriarEntityRelationParams{
+		ID: "rel-1", ParentID: "artista-1", ChildID: "album-1", Kind: "music_artista_principal",
+	})
+	check(t, err, "CriarEntityRelation artista->album")
+	_, err = q.CriarEntityRelation(ctx, sqlcgen.CriarEntityRelationParams{
+		ID: "rel-2", ParentID: "album-1", ChildID: "faixa-1", Kind: "music_album",
+	})
+	check(t, err, "CriarEntityRelation album->faixa")
+	_, err = q.CriarMediaFile(ctx, sqlcgen.CriarMediaFileParams{
+		ID: "mf-faixa-1", EntityID: "faixa-1", Path: "/musica/banda/album/01.mp3", State: "present",
+	})
+	check(t, err, "CriarMediaFile faixa")
+
+	pathAlbum, err := q.ObterCaminhoDescendentePresente(ctx, "album-1")
+	check(t, err, "ObterCaminhoDescendentePresente(album)")
+	if pathAlbum != "/musica/banda/album/01.mp3" {
+		t.Errorf("path do album = %q, quero /musica/banda/album/01.mp3", pathAlbum)
+	}
+
+	pathArtista, err := q.ObterCaminhoDescendentePresente(ctx, "artista-1")
+	check(t, err, "ObterCaminhoDescendentePresente(artista)")
+	if pathArtista != "/musica/banda/album/01.mp3" {
+		t.Errorf("path do artista = %q, quero /musica/banda/album/01.mp3 (2 niveis de arvore)", pathArtista)
+	}
+
+	if _, err := q.ObterCaminhoDescendentePresente(ctx, "faixa-1"); err == nil {
+		t.Error("faixa sem descendente proprio deveria devolver ErrNoRows, nao achou nada")
+	}
+}
+
 // TestCRUDMediaFile cobre criar/obter/listar/atualizar-estado/apagar.
 func TestCRUDMediaFile(t *testing.T) {
 	q := setup(t)

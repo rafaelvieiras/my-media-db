@@ -667,6 +667,15 @@ type Querier interface {
 	// Poster local da entity (briefing 0010): o primeiro asset kind='poster'. Usado
 	// pelo endpoint que serve o binario. Sem poster -> sql.ErrNoRows -> 404 na API.
 	ObterAssetPosterPorEntity(ctx context.Context, entityID string) (Asset, error)
+	// Devolve o path de UM media_file 'present' qualquer, descendente (via a MESMA
+	// arvore de entity_relation) da entity `entity_id` -- usado pelo briefing 0119
+	// (descoberta de arte LOCAL de artista/album de musica: a pasta canonica de um
+	// album e o diretorio do arquivo da faixa; a do artista, um nivel acima). Artista/
+	// album NUNCA tem media_file DIRETO (ADR-0027, so a faixa liga), entao so a arvore
+	// alcanca. sql.ErrNoRows quando a entity nao tem nenhum descendente possuido (nao
+	// deveria acontecer para quem passou por ListarEntitiesMusicaComFaixaPossuida, mas
+	// o chamador trata como "nada a fazer", nao erro).
+	ObterCaminhoDescendentePresente(ctx context.Context, entityID string) (string, error)
 	// Dedup da entity COLECAO por id tmdb (briefing 0025): reusa a coluna gerada
 	// external_id_tmdb, mas RESTRITA a type='collection'. O namespace de id de colecao
 	// e distinto do de filme, porem a coluna gerada e compartilhada; o filtro por type
