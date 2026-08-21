@@ -216,12 +216,31 @@ muda: sem alvo de faixa, mantém o comportamento atual (1 release, 1 chamada).
 - [x] `go build ./...`, `go vet ./...`, `go test ./... -count=1` verdes;
       `make gate-local` sem regressão de cobertura (cobertura de linhas
       75.8%→75.9%, cobertura E2E de jornadas 42.1%→46.4%).
-- [ ] Validado em produção: reconciliação (0120) ou reimport manual da faixa
-      "Freestyler" do Bomfunk MC's sai da fila de revisão (ou, se a faixa
-      realmente não existir em NENHUMA release do release-group real do
-      MusicBrainz — a validado antes de fechar —, confirma que o teto foi
-      respeitado e a faixa permanece corretamente em revisão, sem tentar
-      infinitas releases).
+- [ ] Validado em produção (21/08/2026): deploy feito (imagem com o commit
+      `6560c64`, CI verde), `saude_biblioteca` disparado manualmente várias
+      vezes via `POST /jobs/saude_biblioteca/run` — mas a faixa "Freestyler"
+      (entity `4838fee1-8b95-4d72-8142-e4edaa106975`) **continua na fila de
+      revisão** (`GET /review`), e **não é o caso "sem dado na fonte"** que
+      este briefing previa como fallback legítimo. Investigação direta na API
+      pública do MusicBrainz (`release-group/1ca542d9-...?inc=releases`, sem
+      tocar o banco de produção) mostra que este release-group tem **13
+      releases** (bem acima do normal) e que a faixa "Freestyler" **pura
+      existe sim** numa delas — `43c49ea4-b213-4a97-afe0-3e6418374f96`,
+      faixa 5 —, só que essa release cai em ~10º lugar na ordem
+      Official-primeiro (`ordenarReleasesPorPrioridade`), **além do teto
+      `maxReleasesTentadosPorAlvo=5`** implementado neste briefing. Ou seja: o
+      mecanismo funciona exatamente como projetado (tenta mais releases,
+      respeita o teto, degrada sem loop infinito) — o gap real é que este
+      release-group específico é um outlier grande demais para o teto atual,
+      não "faixa ausente na fonte". Não foi possível re-exercitar a
+      reconciliação ao vivo para ESTE item específico hoje porque
+      `last_external_match_attempt_at` dele já tinha sido carimbado mais cedo
+      no mesmo dia civil (durante a validação do 0120) e o throttle
+      (`retry_days`, mínimo 1 dia) não permite reentrada no mesmo dia por
+      nenhum valor válido de configuração — sem SQL direto em produção (não
+      autorizado nesta etapa), não há caminho HTTP legítimo pra forçar o
+      retry hoje. Ficou fora de escopo deste briefing subir o teto ou mudar o
+      critério de escolha; ver follow-up abaixo.
 
 ## 6. Notas de implementação / decisões
 
@@ -254,3 +273,19 @@ muda: sem alvo de faixa, mantém o comportamento atual (1 release, 1 chamada).
   limitação de dado na fonte (MusicBrainz), não um bug — fica como
   candidato a curadoria manual do dono (edição manual do vínculo faixa↔
   álbum), sem novo briefing necessário.
+- **Achado real da validação em produção (21/08/2026, ver §5):** o cenário
+  acima NÃO se confirmou — a faixa "Freestyler" pura EXISTE no
+  release-group real (`43c49ea4-b213-4a97-afe0-3e6418374f96`, faixa 5), só
+  que esse release-group é um outlier com 13 releases catalogadas (a
+  maioria reedições/remixes por país) e a release certa fica em ~10º lugar
+  na ordem Official-primeiro, além do `maxReleasesTentadosPorAlvo=5`. Ou
+  seja, o teto fixo de 5 é baixo demais para release-groups desse porte.
+  Candidato a um novo briefing pequeno, se o dono quiser mesmo resolver este
+  caso específico automaticamente: (a) subir o teto (custo/rate-limit
+  proporcional — MusicBrainz é ~1 req/s); ou (b) só quando há `alvoFaixa`
+  preenchido E nenhuma das primeiras N bateu, buscar a lista completa de
+  releases e tentar casar por TÍTULO da release contra padrões óbvios
+  (ex.: preferir releases sem sufixo de remix no nome da faixa ANTES de ir
+  por ordem Official/data) — mais barato que só aumentar o teto às cegas.
+  Curadoria manual do dono (edição direta do vínculo faixa↔álbum) resolve
+  este caso específico hoje sem esperar por isso.
