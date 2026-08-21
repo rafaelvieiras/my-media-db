@@ -96,14 +96,20 @@ func (r *scanRun) factsMusica(ctx context.Context, path string, mi []byte, size 
 	}
 
 	var tags mediainfo.AudioTags
+	var duracaoSegundos float64
 	if len(mi) > 0 {
 		var info mediainfo.Info
-		if err := json.Unmarshal(mi, &info); err == nil && info.Tags != nil {
-			tags = *info.Tags
+		if err := json.Unmarshal(mi, &info); err == nil {
+			if info.Tags != nil {
+				tags = *info.Tags
+			}
+			if info.General.Duration > 0 {
+				duracaoSegundos = info.General.Duration
+			}
 		}
 	}
 
-	f.faixaID, f.faixaConf = r.resolverFaixa(ctx, tags, f.rawNome)
+	f.faixaID, f.faixaConf = r.resolverFaixa(ctx, tags, duracaoSegundos, f.rawNome)
 	return f
 }
 
@@ -112,19 +118,25 @@ func (r *scanRun) factsMusica(ctx context.Context, path string, mi []byte, size 
 // MBID de artista embutido) -> busca textual -> draft. Sempre devolve um
 // faixaID utilizável (o passo 5 nunca falha, exceto erro de banco -- nesse
 // caso "" e o chamador loga e pula o arquivo, ver gravarArquivoMusica).
-func (r *scanRun) resolverFaixa(ctx context.Context, tags mediainfo.AudioTags, rawNome string) (string, float64) {
+// duracaoSegundos é a duração do arquivo local extraída pelo probe
+// (info.General.Duration, factsMusica acima), 0 quando desconhecida --
+// repassada como sinal ADICIONAL de CONFIRMAÇÃO por duração (briefing 0121
+// §8, matching.ToleranciaDuracaoSegundos) até o enrich.FaixaAlvo construído
+// nos dois pontos de import escopado abaixo (importarEAcharPorMbid/
+// matchTextualFaixa); nunca usada aqui para decidir nada por si só.
+func (r *scanRun) resolverFaixa(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, rawNome string) (string, float64) {
 	langs := r.langsPermitidos(ctx)
 
 	if tags.MusicBrainzTrackID != "" {
 		if id, ok := r.acharFaixaPorMbid(ctx, tags.MusicBrainzTrackID); ok {
 			return id, confIDExterno
 		}
-		if id, ok := r.importarEAcharPorMbid(ctx, tags, langs); ok {
+		if id, ok := r.importarEAcharPorMbid(ctx, tags, duracaoSegundos, langs); ok {
 			return id, confIDExterno
 		}
 	}
 
-	if id, ok := r.matchTextual(ctx, tags, langs); ok {
+	if id, ok := r.matchTextual(ctx, tags, duracaoSegundos, langs); ok {
 		return id, confMusicaTextual
 	}
 
@@ -150,8 +162,10 @@ func (r *scanRun) acharFaixaPorMbid(ctx context.Context, trackMBID string) (stri
 // NUNCA a discografia inteira. ok=false em qualquer degradação (sem
 // importador configurado, sem MBID de artista resolvível, ou o import
 // escopado falhou -- sem match plausível na fonte, sem suporte à capacidade
-// seletiva, ou erro de rede/banco).
-func (r *scanRun) importarEAcharPorMbid(ctx context.Context, tags mediainfo.AudioTags, langs []string) (string, bool) {
+// seletiva, ou erro de rede/banco). duracaoSegundos (0 = desconhecida) é só
+// repassada no enrich.FaixaAlvo como sinal ADICIONAL de confirmação (briefing
+// 0121 §8) -- nunca decide nada por si só neste método.
+func (r *scanRun) importarEAcharPorMbid(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, langs []string) (string, bool) {
 	if r.m.musicaImportador == nil {
 		return "", false
 	}
@@ -159,7 +173,7 @@ func (r *scanRun) importarEAcharPorMbid(ctx context.Context, tags mediainfo.Audi
 	if !ok {
 		return "", false
 	}
-	alvo := enrich.FaixaAlvo{RecordingMBID: tags.MusicBrainzTrackID}
+	alvo := enrich.FaixaAlvo{RecordingMBID: tags.MusicBrainzTrackID, DuracaoSegundos: duracaoSegundos}
 	faixaID, _, err := r.m.musicaImportador.ImportarFaixaPossuida(ctx, sourceMusicBrainz, artistaMBID, alvo, langs)
 	if err != nil {
 		log.Printf("scanner: import escopado da faixa %s (artista %s) falhou: %v", tags.MusicBrainzTrackID, artistaMBID, err)
@@ -195,8 +209,8 @@ func (r *scanRun) resolverArtistaMBID(ctx context.Context, tags mediainfo.AudioT
 // reais do dono, ver AGENTS.md/briefing 0107) -- repasse fino para
 // Manager.matchTextualFaixa (briefing 0120), extraído para ser reutilizável
 // pela reconciliação de faixas-rascunho fora de um scanRun (reconciliar.go).
-func (r *scanRun) matchTextual(ctx context.Context, tags mediainfo.AudioTags, langs []string) (string, bool) {
-	return r.m.matchTextualFaixa(ctx, tags, langs)
+func (r *scanRun) matchTextual(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, langs []string) (string, bool) {
+	return r.m.matchTextualFaixa(ctx, tags, duracaoSegundos, langs)
 }
 
 // matchTextualFaixa busca o artista por nome (album_artist, com fallback para
@@ -211,8 +225,11 @@ func (r *scanRun) matchTextual(ctx context.Context, tags mediainfo.AudioTags, la
 // candidato forte o bastante: ok=false (cai para o draft, passo 5) -- nunca
 // aplica um match "parecido". Método de Manager (não scanRun, briefing 0120)
 // para ser chamável tanto do scan (matchTextual acima) quanto da
-// reconciliação de faixa-rascunho órfã (reconciliar.go).
-func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTags, langs []string) (string, bool) {
+// reconciliação de faixa-rascunho órfã (reconciliar.go). duracaoSegundos (0 =
+// desconhecida) é a duração do arquivo local, repassada no enrich.FaixaAlvo
+// como sinal ADICIONAL de confirmação (briefing 0121 §8, matching.
+// ToleranciaDuracaoSegundos) -- nunca decide nada por si só neste método.
+func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, langs []string) (string, bool) {
 	if m.musicaProvider == nil || m.musicaImportador == nil {
 		return "", false
 	}
@@ -238,7 +255,7 @@ func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTag
 		return "", false
 	}
 
-	alvo := enrich.FaixaAlvo{AlbumNome: tags.Album, FaixaTitulo: tags.Title, FaixaNumero: tags.TrackNumber}
+	alvo := enrich.FaixaAlvo{AlbumNome: tags.Album, FaixaTitulo: tags.Title, FaixaNumero: tags.TrackNumber, DuracaoSegundos: duracaoSegundos}
 	faixaID, _, err := m.musicaImportador.ImportarFaixaPossuida(ctx, sourceMusicBrainz, artistaMBID, alvo, langs)
 	if err != nil {
 		log.Printf("scanner: import escopado (busca textual artista %q album %q) falhou: %v", nomeArtista, tags.Album, err)

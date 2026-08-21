@@ -46,12 +46,12 @@ func (m *Manager) ReconciliarFaixaDraft(ctx context.Context, entityID string, la
 		return false, nil
 	}
 
-	tags, ok := m.probarTags(ctx, mf.Path)
+	tags, duracaoSegundos, ok := m.probarTags(ctx, mf.Path)
 	if !ok {
 		return false, nil
 	}
 
-	faixaID, ok := m.matchTextualFaixa(ctx, tags, langs)
+	faixaID, ok := m.matchTextualFaixa(ctx, tags, duracaoSegundos, langs)
 	if !ok {
 		return false, nil
 	}
@@ -180,21 +180,28 @@ func (m *Manager) mediaFilePresentePorEntity(ctx context.Context, entityID strin
 	return sqlcgen.MediaFile{}, false, nil
 }
 
-// probarTags re-extrai as tags de áudio de um path via o Prober já injetado
-// no Manager (mesmo caminho de factsMusica, musica.go). ok=false sem erro
-// quando o probe falha, devolve vazio, ou o JSON não desserializa -- nunca um
-// erro de negócio (a reconciliação apenas não consegue tentar de novo agora).
-func (m *Manager) probarTags(ctx context.Context, path string) (mediainfo.AudioTags, bool) {
+// probarTags re-extrai as tags de áudio (e a duração do container,
+// info.General.Duration -- 0 quando indisponível) de um path via o Prober já
+// injetado no Manager (mesmo caminho de factsMusica, musica.go). ok=false sem
+// erro quando o probe falha, devolve vazio, ou o JSON não desserializa --
+// nunca um erro de negócio (a reconciliação apenas não consegue tentar de
+// novo agora); duração 0 nesse caso, tratada como "desconhecida" pelo
+// enrich/provider (briefing 0121 §8), sem regressão.
+func (m *Manager) probarTags(ctx context.Context, path string) (mediainfo.AudioTags, float64, bool) {
 	mi, err := m.prober.Probe(ctx, path)
 	if err != nil || len(mi) == 0 {
 		if err != nil {
 			log.Printf("scanner: reconciliação: probe de %q falhou: %v", path, err)
 		}
-		return mediainfo.AudioTags{}, false
+		return mediainfo.AudioTags{}, 0, false
 	}
 	var info mediainfo.Info
 	if err := json.Unmarshal(mi, &info); err != nil || info.Tags == nil {
-		return mediainfo.AudioTags{}, false
+		return mediainfo.AudioTags{}, 0, false
 	}
-	return *info.Tags, true
+	var duracaoSegundos float64
+	if info.General.Duration > 0 {
+		duracaoSegundos = info.General.Duration
+	}
+	return *info.Tags, duracaoSegundos, true
 }

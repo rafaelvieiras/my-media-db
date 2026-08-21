@@ -3,6 +3,7 @@ package musicbrainz
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1150,8 +1151,8 @@ func TestBuscarFaixasComAlvoZeroValueMantemUmaSoChamada(t *testing.T) {
 	}
 }
 
-// servidorTetoFake monta um release-group com 7 releases (mais que
-// maxReleasesTentadosPorAlvo=5), NENHUMA contendo a faixa-alvo -- prova que
+// servidorTetoFake monta um release-group com 17 releases (mais que
+// maxReleasesTentadosPorAlvo=15), NENHUMA contendo a faixa-alvo -- prova que
 // buscarFaixasComAlvo respeita o teto em vez de iterar o release-group inteiro.
 func servidorTetoFake(t *testing.T) (*httptest.Server, *int32) {
 	t.Helper()
@@ -1168,25 +1169,34 @@ func servidorTetoFake(t *testing.T) (*httptest.Server, *int32) {
 		}`))
 	})
 
+	const totalReleases = 17
+	releaseIDs := make([]string, 0, totalReleases)
+	for i := 1; i <= totalReleases; i++ {
+		releaseIDs = append(releaseIDs, fmt.Sprintf("rel-t%d", i))
+	}
+
+	var releasesJSON strings.Builder
+	for i, id := range releaseIDs {
+		if i > 0 {
+			releasesJSON.WriteString(",")
+		}
+		status := "Bootleg"
+		if i == 0 {
+			status = "Official"
+		}
+		releasesJSON.WriteString(fmt.Sprintf(`{"id": "%s", "status": "%s"}`, id, status))
+	}
+
 	mux.HandleFunc("/release-group/rg-teto", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"title": "Album Teto",
 			"first-release-date": "2005-01-01",
 			"genres": [],
-			"releases": [
-				{"id": "rel-t1", "status": "Official"},
-				{"id": "rel-t2", "status": "Bootleg"},
-				{"id": "rel-t3", "status": "Bootleg"},
-				{"id": "rel-t4", "status": "Bootleg"},
-				{"id": "rel-t5", "status": "Bootleg"},
-				{"id": "rel-t6", "status": "Bootleg"},
-				{"id": "rel-t7", "status": "Bootleg"}
-			]
+			"releases": [` + releasesJSON.String() + `]
 		}`))
 	})
 
-	releaseIDs := []string{"rel-t1", "rel-t2", "rel-t3", "rel-t4", "rel-t5", "rel-t6", "rel-t7"}
 	for _, id := range releaseIDs {
 		id := id
 		mux.HandleFunc("/release/"+id, func(w http.ResponseWriter, r *http.Request) {
@@ -1205,8 +1215,8 @@ func servidorTetoFake(t *testing.T) (*httptest.Server, *int32) {
 }
 
 // TestBuscarFaixasComAlvoRespeitaTeto confirma o teto maxReleasesTentadosPorAlvo:
-// com 7 releases no release-group e NENHUMA contendo a faixa-alvo, o provider tenta
-// no máximo 5 (nunca as 7) antes de degradar.
+// com 17 releases no release-group e NENHUMA contendo a faixa-alvo, o provider tenta
+// no máximo maxReleasesTentadosPorAlvo (nunca as 17) antes de degradar.
 func TestBuscarFaixasComAlvoRespeitaTeto(t *testing.T) {
 	mb, chamadas := servidorTetoFake(t)
 	defer mb.Close()
@@ -1221,7 +1231,7 @@ func TestBuscarFaixasComAlvoRespeitaTeto(t *testing.T) {
 		t.Fatal("achou = false, esperava true (o release-group bate por TITULO -- quem decide se a FAIXA foi achada e enrich.escolherFaixaAlvo, nao este provider)")
 	}
 	if got := atomic.LoadInt32(chamadas); got != maxReleasesTentadosPorAlvo {
-		t.Fatalf("chamadas a /release/{id} = %d, esperava exatamente %d (teto respeitado, release-group tinha 7 releases)", got, maxReleasesTentadosPorAlvo)
+		t.Fatalf("chamadas a /release/{id} = %d, esperava exatamente %d (teto respeitado, release-group tinha 17 releases)", got, maxReleasesTentadosPorAlvo)
 	}
 }
 
@@ -1305,5 +1315,38 @@ func TestBuscarAlbumDaFaixaTentaReleaseQueContemORecordingQuandoNaoEhOfficial(t 
 	}
 	if !achouFaixa {
 		t.Fatalf("faixa com MBID 'rec-y-precisa' nao encontrada -- rel-y-official nao a contem, deveria ter tentado rel-y-bootleg (a release REAL do recording): %+v", album.Faixas)
+	}
+}
+
+// TestReleaseContemFaixaAlvoGateDeDuracaoRejeitaDivergencia cobre o gate de duração
+// da rodada 2 (briefing 0121 §8): a release tem uma faixa cujo TÍTULO bate o
+// suficiente para passar do limiar (mesmo texto do alvo), mas a duração diverge
+// muito mais do que a tolerância (matching.ToleranciaDuracaoSegundos, 3s) -- o gate
+// deve REJEITAR (false) mesmo com o título batendo, porque é uma trava de segurança
+// adicional, nunca mais permissiva do que o critério de título sozinho.
+func TestReleaseContemFaixaAlvoGateDeDuracaoRejeitaDivergencia(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Song Title", MBID: "rec-divergente", TrackNumber: 1, DuracaoMs: 200_000},
+	}
+	alvo := provider.AlvoFaixaAlbum{FaixaTitulo: "Song Title", DuracaoMs: 180_000} // diff = 20s >> 3s
+
+	if releaseContemFaixaAlvo(faixas, alvo) {
+		t.Fatal("releaseContemFaixaAlvo = true, esperava false (titulo bate mas duracao diverge bem alem da tolerancia)")
+	}
+}
+
+// TestReleaseContemFaixaAlvoGateDeDuracaoPuladoQuandoDesconhecida confirma que o
+// gate de duração é PULADO (sem regressão) quando qualquer um dos lados não informa
+// duração conhecida (0) -- mesmo cenário de título/duração divergente do teste
+// anterior, mas com AlvoFaixaAlbum.DuracaoMs == 0: o resultado deve ser idêntico ao
+// comportamento de antes desta mudança (aceita só por título).
+func TestReleaseContemFaixaAlvoGateDeDuracaoPuladoQuandoDesconhecida(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Song Title", MBID: "rec-divergente", TrackNumber: 1, DuracaoMs: 200_000},
+	}
+	alvo := provider.AlvoFaixaAlbum{FaixaTitulo: "Song Title", DuracaoMs: 0} // duracao do arquivo local desconhecida
+
+	if !releaseContemFaixaAlvo(faixas, alvo) {
+		t.Fatal("releaseContemFaixaAlvo = false, esperava true (duracao desconhecida de um dos lados deve pular o gate, sem regressao)")
 	}
 }

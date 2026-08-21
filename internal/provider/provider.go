@@ -472,6 +472,9 @@ type FaixaExterna struct {
 	ArtistaCreditoNome string
 	// ArtistaCreditoMBID é o MBID do artista REAL creditado nesta faixa.
 	ArtistaCreditoMBID string
+	// DuracaoMs é a duração da faixa em milissegundos, quando a fonte informar
+	// (briefing 0121 §8); 0 = desconhecida.
+	DuracaoMs int
 }
 
 // AlvoFaixaAlbum identifica, opcionalmente, UMA faixa específica que o chamador
@@ -489,6 +492,10 @@ type AlvoFaixaAlbum struct {
 	RecordingMBID string
 	FaixaTitulo   string
 	FaixaNumero   int
+	// DuracaoMs é a duração conhecida do arquivo local, em milissegundos,
+	// quando disponível (briefing 0121 §8); 0 = não informada. Usada como
+	// sinal de CONFIRMAÇÃO adicional ao título, nunca de busca.
+	DuracaoMs int
 }
 
 // MusicaAlbumProvider é uma CAPACIDADE OPCIONAL de um Provider (ADR-0029 item 6,

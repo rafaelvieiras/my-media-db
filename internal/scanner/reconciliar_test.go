@@ -112,6 +112,78 @@ func TestReconciliarFaixaDraftSemMediaFileNaoLiga(t *testing.T) {
 	}
 }
 
+// TestReconciliarFaixaDraftPropagaDuracaoDoArquivo cobre a extensão do
+// briefing 0121 §8 na reconciliação: a duração do arquivo local extraída por
+// probarTags chega intacta até o enrich.FaixaAlvo construído em
+// matchTextualFaixa -- o MESMO caminho que o scan usa (musica.go). Usa
+// spyMusicaImportador (definido em musica_test.go) em vez do enrich real
+// para observar o FaixaAlvo diretamente.
+func TestReconciliarFaixaDraftPropagaDuracaoDoArquivo(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "01 - Track One.mp3")
+	escrever(t, arq)
+
+	spy := &spyMusicaImportador{faixaID: "faixa-spy-reconciliar"}
+	preSemearFaixaSpy(t, d, spy.faixaID, "Track One")
+
+	m := NewManagerComProber(d, proberComTags{
+		porPath:        map[string]mediainfo.AudioTags{arq: {AlbumArtist: "Fake Band", Album: "Fake Album", Title: "Track One", TrackNumber: 1}},
+		duracaoPorPath: map[string]float64{arq: 199.4},
+	})
+	m.ConfigurarMusica(spy, &fakeMusicaProvider{})
+
+	draftID := "faixa-draft-orfa-duracao"
+	criarFaixaDraftOrfa(t, d, draftID, "Track One", arq)
+
+	linked, err := m.ReconciliarFaixaDraft(context.Background(), draftID, []string{"en"})
+	if err != nil {
+		t.Fatalf("ReconciliarFaixaDraft: %v", err)
+	}
+	if !linked {
+		t.Fatalf("linked = false, quero true")
+	}
+	if spy.chamadas != 1 {
+		t.Fatalf("ImportarFaixaPossuida chamado %d vez(es), quero 1", spy.chamadas)
+	}
+	if spy.ultimoAlvo.DuracaoSegundos != 199.4 {
+		t.Errorf("FaixaAlvo.DuracaoSegundos = %v, quero 199.4 (duração extraída do arquivo)", spy.ultimoAlvo.DuracaoSegundos)
+	}
+}
+
+// TestReconciliarFaixaDraftSemDuracaoChegaZero cobre a degradação segura: sem
+// info.General.Duration disponível na re-extração de tags, o FaixaAlvo chega
+// com DuracaoSegundos=0 -- sem quebrar a reconciliação.
+func TestReconciliarFaixaDraftSemDuracaoChegaZero(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "01 - Track One.mp3")
+	escrever(t, arq)
+
+	spy := &spyMusicaImportador{faixaID: "faixa-spy-reconciliar-sem-duracao"}
+	preSemearFaixaSpy(t, d, spy.faixaID, "Track One")
+
+	// duracaoPorPath deliberadamente OMITIDO (nil).
+	m := NewManagerComProber(d, proberComTags{
+		porPath: map[string]mediainfo.AudioTags{arq: {AlbumArtist: "Fake Band", Album: "Fake Album", Title: "Track One", TrackNumber: 1}},
+	})
+	m.ConfigurarMusica(spy, &fakeMusicaProvider{})
+
+	draftID := "faixa-draft-orfa-sem-duracao"
+	criarFaixaDraftOrfa(t, d, draftID, "Track One", arq)
+
+	linked, err := m.ReconciliarFaixaDraft(context.Background(), draftID, []string{"en"})
+	if err != nil {
+		t.Fatalf("ReconciliarFaixaDraft: %v", err)
+	}
+	if !linked {
+		t.Fatalf("linked = false, quero true")
+	}
+	if spy.ultimoAlvo.DuracaoSegundos != 0 {
+		t.Errorf("FaixaAlvo.DuracaoSegundos = %v, quero 0 (duração desconhecida)", spy.ultimoAlvo.DuracaoSegundos)
+	}
+}
+
 // ── ReconciliarSerieDraft ─────────────────────────────────────────────────
 
 // managerSerieAutoImportReconciliar monta um Manager só com ConfigurarSeries

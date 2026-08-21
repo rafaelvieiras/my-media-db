@@ -7,6 +7,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/matching"
 	"github.com/rafaelvieiras/my-media-db/internal/musicext"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
@@ -539,5 +540,73 @@ func TestEnriquecerAlbumEFaixaAtualizaTitulo(t *testing.T) {
 	}
 	if faixa.Title != "Track One Atualizada" {
 		t.Errorf("titulo da faixa = %q, esperava \"Track One Atualizada\"", faixa.Title)
+	}
+}
+
+// TestMelhorFaixaPorTituloGateDuracaoRejeitaDivergencia: título bate (score >=
+// LimiarAutoMatch, sem empate), mas a duração do arquivo local diverge da do
+// candidato além de matching.ToleranciaDuracaoSegundos, com AMBOS os lados
+// conhecidos — o gate de CONFIRMAÇÃO (briefing 0121 §8) rejeita mesmo com título
+// perfeito.
+func TestMelhorFaixaPorTituloGateDuracaoRejeitaDivergencia(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Track One", MBID: mbidFaixa1Fixture, DuracaoMs: 200000}, // 200s
+	}
+	// alvo com 10s de diferença (> ToleranciaDuracaoSegundos, 3s) do candidato.
+	duracaoAlvoSegundos := 200 + matching.ToleranciaDuracaoSegundos + 7
+	if _, ok := melhorFaixaPorTitulo("Track One", faixas, duracaoAlvoSegundos); ok {
+		t.Error("esperava rejeicao pelo gate de duracao (divergencia > tolerancia), mas aceitou")
+	}
+}
+
+// TestMelhorFaixaPorTituloGateDuracaoAceitaDentroDaTolerancia: mesmo cenário
+// acima, mas a divergência fica dentro de matching.ToleranciaDuracaoSegundos —
+// o gate confirma o candidato escolhido por título.
+func TestMelhorFaixaPorTituloGateDuracaoAceitaDentroDaTolerancia(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Track One", MBID: mbidFaixa1Fixture, DuracaoMs: 200000}, // 200s
+	}
+	duracaoAlvoSegundos := 200 + matching.ToleranciaDuracaoSegundos - 1
+	fx, ok := melhorFaixaPorTitulo("Track One", faixas, duracaoAlvoSegundos)
+	if !ok {
+		t.Fatal("esperava aceitar (divergencia dentro da tolerancia), mas rejeitou")
+	}
+	if fx.MBID != mbidFaixa1Fixture {
+		t.Errorf("MBID = %q, esperava %q", fx.MBID, mbidFaixa1Fixture)
+	}
+}
+
+// TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoAlvoDesconhecida: quando
+// duracaoAlvoSegundos é 0 (arquivo local sem duração conhecida), o gate é
+// pulado e o candidato escolhido por título é aceito mesmo com uma duração de
+// candidato bem diferente do que seria uma faixa "real" qualquer — preserva o
+// comportamento anterior ao briefing 0121 §8.
+func TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoAlvoDesconhecida(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Track One", MBID: mbidFaixa1Fixture, DuracaoMs: 200000}, // 200s
+	}
+	fx, ok := melhorFaixaPorTitulo("Track One", faixas, 0)
+	if !ok {
+		t.Fatal("esperava aceitar (gate pulado com duracaoAlvoSegundos=0), mas rejeitou")
+	}
+	if fx.MBID != mbidFaixa1Fixture {
+		t.Errorf("MBID = %q, esperava %q", fx.MBID, mbidFaixa1Fixture)
+	}
+}
+
+// TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoCandidatoDesconhecida: quando
+// o candidato não informa DuracaoMs (0, fonte não trouxe), o gate também é
+// pulado mesmo com duracaoAlvoSegundos conhecida — só compara quando AMBOS os
+// lados têm o dado.
+func TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoCandidatoDesconhecida(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Track One", MBID: mbidFaixa1Fixture}, // DuracaoMs=0
+	}
+	fx, ok := melhorFaixaPorTitulo("Track One", faixas, 200)
+	if !ok {
+		t.Fatal("esperava aceitar (gate pulado com DuracaoMs do candidato=0), mas rejeitou")
+	}
+	if fx.MBID != mbidFaixa1Fixture {
+		t.Errorf("MBID = %q, esperava %q", fx.MBID, mbidFaixa1Fixture)
 	}
 }

@@ -171,9 +171,14 @@ func (p *fakeMusicaProvider) BuscarAlbumPorMbid(_ context.Context, albumMBID str
 // proberComTags é um Prober fake (0107): devolve um mediainfo_json cujo campo
 // Tags vem do mapa `porPath` (chaveado pelo path do arquivo) -- permite
 // exercitar o pipeline de matching sem depender de ffmpeg/ffprobe reais (mesmo
-// espírito de proberVazio, mas com tags controláveis).
+// espírito de proberVazio, mas com tags controláveis). duracaoPorPath
+// (opcional, briefing 0121 §8) povoa info.General.Duration por path -- um
+// path ausente do mapa (ou o mapa nil, o caso de todos os testes anteriores a
+// este briefing) deixa Duration no zero-value, o mesmo "desconhecida" que o
+// ffprobe real devolveria para um arquivo sem essa informação.
 type proberComTags struct {
-	porPath map[string]mediainfo.AudioTags
+	porPath        map[string]mediainfo.AudioTags
+	duracaoPorPath map[string]float64
 }
 
 func (proberComTags) Disponivel() bool { return true }
@@ -183,7 +188,46 @@ func (p proberComTags) Probe(_ context.Context, path string) ([]byte, error) {
 	if tags, ok := p.porPath[path]; ok {
 		info.Tags = &tags
 	}
+	if dur, ok := p.duracaoPorPath[path]; ok {
+		info.General.Duration = dur
+	}
 	return json.Marshal(info)
+}
+
+// spyMusicaImportador é um MusicaImportador fake que NÃO faz nenhum match
+// real: só grava o ÚLTIMO enrich.FaixaAlvo recebido por ImportarFaixaPossuida
+// e devolve sempre o mesmo faixaID pré-configurado (a entity correspondente
+// deve ser pré-semeada pelo teste, já que este fake não cria nada -- ver
+// preSemearFaixaSpy). Usado para provar, isolado da lógica de match do enrich
+// real, que o SCANNER propaga corretamente a duração do arquivo local até o
+// FaixaAlvo (briefing 0121 §8) nos dois pontos onde ele é construído
+// (importarEAcharPorMbid/matchTextualFaixa, musica.go).
+type spyMusicaImportador struct {
+	faixaID    string
+	ultimoAlvo enrich.FaixaAlvo
+	chamadas   int
+}
+
+func (s *spyMusicaImportador) Importar(context.Context, string, string, string, []string) (string, bool, error) {
+	return "", false, nil
+}
+
+func (s *spyMusicaImportador) ImportarFaixaPossuida(_ context.Context, _, _ string, alvo enrich.FaixaAlvo, _ []string) (string, bool, error) {
+	s.chamadas++
+	s.ultimoAlvo = alvo
+	return s.faixaID, true, nil
+}
+
+// preSemearFaixaSpy cria a entity `faixa` que spyMusicaImportador vai devolver
+// (satisfaz a FK de media_file.entity_id -- spyMusicaImportador, ao contrário
+// do enrich real, não cria a entity sozinho).
+func preSemearFaixaSpy(t *testing.T, d *db.DB, id, titulo string) {
+	t.Helper()
+	if _, err := sqlcgen.New(d.Write).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
+		ID: id, Type: tipoFaixa, Title: titulo,
+	}); err != nil {
+		t.Fatalf("pre-semear faixa spy: %v", err)
+	}
 }
 
 // criarSourceMusica cadastra um datasource content_type='music' (0107; o campo
@@ -523,5 +567,121 @@ func TestScanMusicaReescaneioNaoRechamaImportarNemDuplica(t *testing.T) {
 	// Vinculo 1:1: nunca a juncao N:M de serie.
 	if n := contar(t, d, "SELECT count(*) FROM media_file_entity"); n != 0 {
 		t.Errorf("media_file_entity = %d, quero 0 (musica e 1:1, media_file.entity_id direto)", n)
+	}
+}
+
+// ── duração local como sinal de confirmação (briefing 0121 §8) ──────────────
+//
+// As três testes abaixo usam spyMusicaImportador (não o enrich real) para
+// isolar UMA coisa: que o SCANNER propaga corretamente a duração extraída de
+// mediainfo.Info (info.General.Duration) até o enrich.FaixaAlvo, nos DOIS
+// pontos onde ele é construído (importarEAcharPorMbid/matchTextualFaixa,
+// musica.go) -- o uso dessa duração para confirmar/desambiguar já foi
+// validado nas camadas enrich/provider/matching (rodada 1 da extensão).
+
+// TestScanMusicaMbidPropagaDuracaoDoArquivo cobre o caminho por MBID (passo
+// 2): a duração do arquivo local chega intacta até o FaixaAlvo construído em
+// importarEAcharPorMbid.
+func TestScanMusicaMbidPropagaDuracaoDoArquivo(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "track-one.mp3")
+	escrever(t, arq)
+
+	spy := &spyMusicaImportador{faixaID: "faixa-spy-mbid"}
+	preSemearFaixaSpy(t, d, spy.faixaID, "Track One")
+
+	m := NewManagerComProber(d, proberComTags{
+		porPath:        map[string]mediainfo.AudioTags{arq: {MusicBrainzTrackID: mbidFaixa1Fixture, MusicBrainzArtistID: mbidArtistaFixture}},
+		duracaoPorPath: map[string]float64{arq: 214.8},
+	})
+	m.agora = relogioCrescente()
+	m.ConfigurarMusica(spy, &fakeMusicaProvider{})
+	m.idiomas = func(context.Context) []string { return []string{"en"} }
+
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	if spy.chamadas != 1 {
+		t.Fatalf("ImportarFaixaPossuida chamado %d vez(es), quero 1", spy.chamadas)
+	}
+	if spy.ultimoAlvo.DuracaoSegundos != 214.8 {
+		t.Errorf("FaixaAlvo.DuracaoSegundos = %v, quero 214.8 (duração extraída do arquivo)", spy.ultimoAlvo.DuracaoSegundos)
+	}
+	if spy.ultimoAlvo.RecordingMBID != mbidFaixa1Fixture {
+		t.Errorf("FaixaAlvo.RecordingMBID = %q, quero %q", spy.ultimoAlvo.RecordingMBID, mbidFaixa1Fixture)
+	}
+}
+
+// TestScanMusicaBuscaTextualPropagaDuracaoDoArquivo cobre o caminho TEXTUAL
+// (passo 4, caso dominante): a duração do arquivo local chega intacta até o
+// FaixaAlvo construído em matchTextualFaixa.
+func TestScanMusicaBuscaTextualPropagaDuracaoDoArquivo(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "01 - Track One.mp3")
+	escrever(t, arq)
+
+	spy := &spyMusicaImportador{faixaID: "faixa-spy-textual"}
+	preSemearFaixaSpy(t, d, spy.faixaID, "Track One")
+
+	m := NewManagerComProber(d, proberComTags{
+		porPath:        map[string]mediainfo.AudioTags{arq: {AlbumArtist: "Fake Band", Album: "Fake Album", Title: "Track One", TrackNumber: 1}},
+		duracaoPorPath: map[string]float64{arq: 187.25},
+	})
+	m.agora = relogioCrescente()
+	m.ConfigurarMusica(spy, &fakeMusicaProvider{})
+	m.idiomas = func(context.Context) []string { return []string{"en"} }
+
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	if spy.chamadas != 1 {
+		t.Fatalf("ImportarFaixaPossuida chamado %d vez(es), quero 1", spy.chamadas)
+	}
+	if spy.ultimoAlvo.DuracaoSegundos != 187.25 {
+		t.Errorf("FaixaAlvo.DuracaoSegundos = %v, quero 187.25 (duração extraída do arquivo)", spy.ultimoAlvo.DuracaoSegundos)
+	}
+	if spy.ultimoAlvo.AlbumNome != "Fake Album" || spy.ultimoAlvo.FaixaTitulo != "Track One" {
+		t.Errorf("FaixaAlvo = {album:%q titulo:%q}, quero {Fake Album, Track One}", spy.ultimoAlvo.AlbumNome, spy.ultimoAlvo.FaixaTitulo)
+	}
+}
+
+// TestScanMusicaSemDuracaoNoMediainfoChegaZero cobre a degradação segura: sem
+// info.General.Duration disponível (probe parcial/degradado), o FaixaAlvo
+// chega com DuracaoSegundos=0 ("desconhecida" para enrich/provider) -- sem
+// quebrar o import escopado.
+func TestScanMusicaSemDuracaoNoMediainfoChegaZero(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "01 - Track One.mp3")
+	escrever(t, arq)
+
+	spy := &spyMusicaImportador{faixaID: "faixa-spy-sem-duracao"}
+	preSemearFaixaSpy(t, d, spy.faixaID, "Track One")
+
+	// duracaoPorPath deliberadamente OMITIDO (nil) -- simula um mediainfo sem
+	// General.Duration disponível.
+	m := NewManagerComProber(d, proberComTags{
+		porPath: map[string]mediainfo.AudioTags{arq: {AlbumArtist: "Fake Band", Album: "Fake Album", Title: "Track One", TrackNumber: 1}},
+	})
+	m.agora = relogioCrescente()
+	m.ConfigurarMusica(spy, &fakeMusicaProvider{})
+	m.idiomas = func(context.Context) []string { return []string{"en"} }
+
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	if spy.chamadas != 1 {
+		t.Fatalf("ImportarFaixaPossuida chamado %d vez(es), quero 1", spy.chamadas)
+	}
+	if spy.ultimoAlvo.DuracaoSegundos != 0 {
+		t.Errorf("FaixaAlvo.DuracaoSegundos = %v, quero 0 (duração desconhecida)", spy.ultimoAlvo.DuracaoSegundos)
 	}
 }

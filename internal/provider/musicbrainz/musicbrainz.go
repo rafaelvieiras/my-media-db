@@ -454,8 +454,12 @@ func escolherRelease(releases []respReleaseResumo) (string, bool) {
 // quando há um alvoFaixa a satisfazer (briefing 0121) -- um release-group real pode
 // ter dezenas de releases (reedições, países, remasters); sem teto, uma faixa
 // genuinamente ausente do MusicBrainz inteiro geraria dezenas de chamadas HTTP por
-// tentativa de import/reconciliação, a <= 1 req/s (rate limit já apertado).
-const maxReleasesTentadosPorAlvo = 5
+// tentativa de import/reconciliação, a <= 1 req/s (rate limit já apertado). Subido de
+// 5 para 15 na rodada 2 (briefing 0121 §8): validação em produção achou um outlier
+// real de 13 releases (Bomfunk MC's "Freestyler") cuja release certa cai em ~10º
+// lugar na ordem Official-primeiro -- 15 cobre esse caso com folga, custo continua
+// desprezível (só entra em jogo quando a 1ª tentativa falha).
+const maxReleasesTentadosPorAlvo = 15
 
 // buscarFaixasComAlvo busca as faixas do release-group representado por `releases`,
 // tentando 1 ou mais releases conforme `alvoFaixa` (briefing 0121, achado real:
@@ -542,31 +546,88 @@ func ordenarReleasesPorPrioridade(releases []respReleaseResumo) []string {
 // "parecido" à toa.
 func releaseContemFaixaAlvo(faixas []provider.FaixaExterna, alvo provider.AlvoFaixaAlbum) bool {
 	if alvo.RecordingMBID != "" {
-		for _, fx := range faixas {
-			if fx.MBID == alvo.RecordingMBID {
-				return true
-			}
-		}
-		return false
+		return releaseContemRecordingMBID(faixas, alvo.RecordingMBID)
 	}
 	if alvo.FaixaTitulo != "" {
-		melhorScore := -1.0
-		for _, fx := range faixas {
-			score := textsim.Similaridade(alvo.FaixaTitulo, fx.Title) * 100
-			if score > melhorScore {
-				melhorScore = score
-			}
-		}
-		return melhorScore >= matching.LimiarAutoMatch
+		return releaseContemFaixaPorTitulo(faixas, alvo)
 	}
 	if alvo.FaixaNumero > 0 {
-		for _, fx := range faixas {
-			if fx.TrackNumber == alvo.FaixaNumero {
-				return true
-			}
+		return releaseContemFaixaPorNumero(faixas, alvo.FaixaNumero)
+	}
+	return false
+}
+
+// releaseContemRecordingMBID é o critério de maior prioridade de
+// releaseContemFaixaAlvo: MBID exato de recording.
+func releaseContemRecordingMBID(faixas []provider.FaixaExterna, recordingMBID string) bool {
+	for _, fx := range faixas {
+		if fx.MBID == recordingMBID {
+			return true
 		}
 	}
 	return false
+}
+
+// releaseContemFaixaPorTitulo escolhe a faixa de MELHOR score de similaridade de
+// título contra alvo.FaixaTitulo; aceita quando o score bate matching.LimiarAutoMatch
+// E, adicionalmente, quando o gate de duração (briefing 0121 §8) confirma (ou é
+// pulado por duração desconhecida de um dos lados, via duracoesCompativeis).
+func releaseContemFaixaPorTitulo(faixas []provider.FaixaExterna, alvo provider.AlvoFaixaAlbum) bool {
+	melhorScore := -1.0
+	var melhorFx provider.FaixaExterna
+	for _, fx := range faixas {
+		score := textsim.Similaridade(alvo.FaixaTitulo, fx.Title) * 100
+		if score > melhorScore {
+			melhorScore = score
+			melhorFx = fx
+		}
+	}
+	if melhorScore < matching.LimiarAutoMatch {
+		return false
+	}
+	return duracoesCompativeis(alvo.DuracaoMs, melhorFx.DuracaoMs)
+}
+
+// releaseContemFaixaPorNumero é o critério de menor prioridade de
+// releaseContemFaixaAlvo: track_number exato.
+func releaseContemFaixaPorNumero(faixas []provider.FaixaExterna, faixaNumero int) bool {
+	for _, fx := range faixas {
+		if fx.TrackNumber == faixaNumero {
+			return true
+		}
+	}
+	return false
+}
+
+// duracoesCompativeis aplica o gate de duração da rodada 2 (briefing 0121 §8):
+// CONFIRMAÇÃO adicional ao match de título, nunca torna o match mais permissivo.
+// Só aplica quando AMBOS os lados informam duração conhecida (> 0 nos dois) --
+// qualquer um dos dois em 0 (desconhecida) pula o gate e devolve true, preservando o
+// comportamento de antes desta mudança (sem regressão para arquivos/dados sem
+// duração confiável).
+func duracoesCompativeis(duracaoAlvoMs, duracaoCandidatoMs int) bool {
+	if duracaoAlvoMs <= 0 || duracaoCandidatoMs <= 0 {
+		return true
+	}
+	diff := duracaoAlvoMs - duracaoCandidatoMs
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff <= int(matching.ToleranciaDuracaoSegundos*1000)
+}
+
+// duracaoMsDaFaixa escolhe a duração (ms) a usar para uma faixa (briefing 0121 §8):
+// prioriza o `length` do TRACK dentro da release; sem esse (<= 0), cai para o
+// `length` do RECORDING aninhado; sem nenhum dos dois (ou negativo), 0 (desconhecida).
+func duracaoMsDaFaixa(trackLength, recordingLength int) int {
+	duracaoMs := trackLength
+	if duracaoMs <= 0 {
+		duracaoMs = recordingLength
+	}
+	if duracaoMs < 0 {
+		duracaoMs = 0
+	}
+	return duracaoMs
 }
 
 // buscarFaixas busca a release escolhida com as faixas (recordings), o artist-credit de
@@ -602,6 +663,7 @@ func (c *Client) buscarFaixas(ctx context.Context, releaseID string) ([]provider
 			if titulo == "" {
 				titulo = tr.Title
 			}
+			duracaoMs := duracaoMsDaFaixa(tr.Length, tr.Recording.Length)
 			faixas = append(faixas, provider.FaixaExterna{
 				Title:              titulo,
 				MBID:               tr.Recording.ID,
@@ -611,6 +673,7 @@ func (c *Client) buscarFaixas(ctx context.Context, releaseID string) ([]provider
 				ISRC:               isrc,
 				ArtistaCreditoNome: creditoNome,
 				ArtistaCreditoMBID: creditoMBID,
+				DuracaoMs:          duracaoMs,
 			})
 		}
 	}
@@ -938,10 +1001,12 @@ type respRelease struct {
 		Tracks   []struct {
 			Position     int         `json:"position"`
 			Title        string      `json:"title"`
+			Length       int         `json:"length"`
 			ArtistCredit []creditoMB `json:"artist-credit"`
 			Recording    struct {
 				ID           string      `json:"id"`
 				Title        string      `json:"title"`
+				Length       int         `json:"length"`
 				ISRCs        []string    `json:"isrcs"`
 				ArtistCredit []creditoMB `json:"artist-credit"`
 			} `json:"recording"`

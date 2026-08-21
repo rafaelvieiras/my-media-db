@@ -282,6 +282,11 @@ type FaixaAlvo struct {
 	FaixaTitulo string
 	// FaixaNumero é o track_number (tag), desempate quando FaixaTitulo está vazio.
 	FaixaNumero int
+	// DuracaoSegundos é a duração conhecida do arquivo local, em segundos (tag/
+	// probe), quando disponível (briefing 0121 §8); 0 = desconhecida. Usada só
+	// como sinal de CONFIRMAÇÃO adicional ao título já escolhido por
+	// melhorFaixaPorTitulo, nunca de busca/desempate.
+	DuracaoSegundos float64
 }
 
 // ImportarFaixaPossuida é o import ESCOPADO de UMA faixa que o scanner casou contra um
@@ -366,9 +371,10 @@ func (s *Servico) acharOuCriarArtistaIdentidade(ctx context.Context, prov provid
 // buscarAlbumAlvo escolhe entre BuscarAlbumDaFaixa (preferencial, quando o scanner já
 // sabe o MBID de recording) e BuscarAlbumPorNome (fallback textual, quando só há o
 // nome do álbum da tag) — os dois caminhos que FaixaAlvo modela. No caminho textual,
-// repassa FaixaTitulo/FaixaNumero como provider.AlvoFaixaAlbum (briefing 0121) — o
-// provider pode então tentar releases alternativas do mesmo release-group quando a
-// release padrão não contém a faixa que este import está atrás.
+// repassa FaixaTitulo/FaixaNumero/DuracaoMs (a partir de alvo.DuracaoSegundos) como
+// provider.AlvoFaixaAlbum (briefing 0121 §8) — o provider pode então tentar releases
+// alternativas do mesmo release-group quando a release padrão não contém a faixa que
+// este import está atrás.
 func (s *Servico) buscarAlbumAlvo(ctx context.Context, ap provider.MusicaAlbumProvider, artistaMBID string, alvo FaixaAlvo, langs []string) (provider.AlbumExterno, error) {
 	if alvo.RecordingMBID != "" {
 		alb, achou, err := ap.BuscarAlbumDaFaixa(ctx, alvo.RecordingMBID, langs)
@@ -383,7 +389,11 @@ func (s *Servico) buscarAlbumAlvo(ctx context.Context, ap provider.MusicaAlbumPr
 	if alvo.AlbumNome == "" {
 		return provider.AlbumExterno{}, fmt.Errorf("enrich: alvo de faixa sem mbid de recording e sem nome de album")
 	}
-	alb, achou, err := ap.BuscarAlbumPorNome(ctx, artistaMBID, alvo.AlbumNome, provider.AlvoFaixaAlbum{FaixaTitulo: alvo.FaixaTitulo, FaixaNumero: alvo.FaixaNumero}, langs)
+	alb, achou, err := ap.BuscarAlbumPorNome(ctx, artistaMBID, alvo.AlbumNome, provider.AlvoFaixaAlbum{
+		FaixaTitulo: alvo.FaixaTitulo,
+		FaixaNumero: alvo.FaixaNumero,
+		DuracaoMs:   int(alvo.DuracaoSegundos * 1000),
+	}, langs)
 	if err != nil {
 		return provider.AlbumExterno{}, err
 	}
@@ -409,7 +419,7 @@ func escolherFaixaAlvo(faixas []provider.FaixaExterna, alvo FaixaAlvo) (provider
 		return provider.FaixaExterna{}, false
 	}
 	if alvo.FaixaTitulo != "" {
-		return melhorFaixaPorTitulo(alvo.FaixaTitulo, faixas)
+		return melhorFaixaPorTitulo(alvo.FaixaTitulo, faixas, alvo.DuracaoSegundos)
 	}
 	if alvo.FaixaNumero > 0 {
 		for _, fx := range faixas {
@@ -491,8 +501,14 @@ func (s *Servico) artistaPrincipalDoAlbum(ctx context.Context, albumID string) s
 // melhorFaixaPorTitulo escolhe, entre `faixas`, a de título mais próximo de `alvo`
 // (Jaro-Winkler via internal/textsim, limiar matching.LimiarAutoMatch — mesmo motor/
 // número do scanner). Empate no topo ou abaixo do limiar: (zero,false), nunca um
-// match "parecido".
-func melhorFaixaPorTitulo(alvo string, faixas []provider.FaixaExterna) (provider.FaixaExterna, bool) {
+// match "parecido". Depois de escolhido o melhor candidato por título, aplica um gate
+// de CONFIRMAÇÃO por duração (briefing 0121 §8, matching.ToleranciaDuracaoSegundos):
+// quando `duracaoAlvoSegundos` e a duração do candidato (FaixaExterna.DuracaoMs) são
+// AMBAS conhecidas e divergem além da tolerância, rejeita mesmo com título batendo —
+// nunca participa da escolha do candidato nem resolve empate de score, só confirma ou
+// veta o que o título já escolheu. Qualquer um dos dois lados desconhecido (0) pula o
+// gate, preservando o comportamento anterior.
+func melhorFaixaPorTitulo(alvo string, faixas []provider.FaixaExterna, duracaoAlvoSegundos float64) (provider.FaixaExterna, bool) {
 	melhorScore := -1.0
 	var melhor provider.FaixaExterna
 	empate := false
@@ -507,6 +523,15 @@ func melhorFaixaPorTitulo(alvo string, faixas []provider.FaixaExterna) (provider
 	}
 	if empate || melhorScore < matching.LimiarAutoMatch {
 		return provider.FaixaExterna{}, false
+	}
+	if duracaoAlvoSegundos > 0 && melhor.DuracaoMs > 0 {
+		diffMs := duracaoAlvoSegundos*1000 - float64(melhor.DuracaoMs)
+		if diffMs < 0 {
+			diffMs = -diffMs
+		}
+		if diffMs > matching.ToleranciaDuracaoSegundos*1000 {
+			return provider.FaixaExterna{}, false
+		}
 	}
 	return melhor, true
 }

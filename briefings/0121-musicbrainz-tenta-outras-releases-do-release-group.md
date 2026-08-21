@@ -12,7 +12,7 @@
 | **Tipo** | fix |
 | **Fase (roadmap)** | Transversal / correção de dado — achado ao validar o 0120 em produção (caso real: Bomfunk MC's / Freestyler). |
 | **Docs relacionadas** | [ADR-0027](../docs/adr/0027-modelo-de-musica-hierarquia-artista-album-faixa.md) |
-| **Status** | done |
+| **Status** | in-progress |
 | **Depende de** | [0115](0115-musica-import-local-first.md), [0120](0120-reconciliacao-de-filhos-orfaos-musica-serie.md) |
 
 ---
@@ -268,24 +268,178 @@ muda: sem alvo de faixa, mantém o comportamento atual (1 release, 1 chamada).
 
 ## 7. Fora deste briefing / follow-ups
 
-- Se, após este fix, o caso real do Bomfunk MC's ainda não resolver (nenhuma
-  release do release-group real tiver a faixa "Freestyler" pura), é uma
-  limitação de dado na fonte (MusicBrainz), não um bug — fica como
-  candidato a curadoria manual do dono (edição manual do vínculo faixa↔
-  álbum), sem novo briefing necessário.
-- **Achado real da validação em produção (21/08/2026, ver §5):** o cenário
-  acima NÃO se confirmou — a faixa "Freestyler" pura EXISTE no
-  release-group real (`43c49ea4-b213-4a97-afe0-3e6418374f96`, faixa 5), só
-  que esse release-group é um outlier com 13 releases catalogadas (a
-  maioria reedições/remixes por país) e a release certa fica em ~10º lugar
-  na ordem Official-primeiro, além do `maxReleasesTentadosPorAlvo=5`. Ou
-  seja, o teto fixo de 5 é baixo demais para release-groups desse porte.
-  Candidato a um novo briefing pequeno, se o dono quiser mesmo resolver este
-  caso específico automaticamente: (a) subir o teto (custo/rate-limit
-  proporcional — MusicBrainz é ~1 req/s); ou (b) só quando há `alvoFaixa`
-  preenchido E nenhuma das primeiras N bateu, buscar a lista completa de
-  releases e tentar casar por TÍTULO da release contra padrões óbvios
-  (ex.: preferir releases sem sufixo de remix no nome da faixa ANTES de ir
-  por ordem Official/data) — mais barato que só aumentar o teto às cegas.
-  Curadoria manual do dono (edição direta do vínculo faixa↔álbum) resolve
-  este caso específico hoje sem esperar por isso.
+- Se, mesmo depois da rodada 2 (§8), o caso real do Bomfunk MC's ainda não
+  resolver, é uma limitação de dado na fonte (MusicBrainz), não um bug —
+  fica como candidato a curadoria manual do dono (edição manual do vínculo
+  faixa↔álbum), sem novo briefing necessário.
+- Tie-break por duração (quando dois candidatos EMPATAM no score de título e
+  só um bate a duração) fica FORA desta rodada — o gate de duração (§8) só
+  atua como CONFIRMAÇÃO do candidato já escolhido por título (single best
+  score, sem empate), nunca resolve um empate que hoje já é rejeitado. Se
+  isso se mostrar necessário na prática, vira um briefing novo e pequeno.
+- Filtragem de release por metadado (`title`/`disambiguation`) pra
+  deprioritizar edições de remix ANTES de buscar as faixas foi cogitada e
+  DESCARTADA (ver §8): confirmado ao vivo que o release-group real do
+  Bomfunk MC's tem as 13 releases tituladas igualmente "Freestyler", sem
+  `disambiguation` distintiva — o dado não existe pra sustentar essa
+  heurística neste caso, e não há evidência de que ajudaria em geral.
+
+## 8. Extensão (rodada 2) — teto insuficiente + duração como sinal de match
+
+A validação em produção (§5, 21/08/2026) achou um teto baixo demais para o
+release-group real (13 releases, a certa ficando ~10ª). Antes de só
+aumentar o número às cegas, o dono pediu pra investigar exatamente que
+comparação o projeto já faz hoje e como ferramentas estabelecidas de gestão
+de música (LMS/Lyrion, Jellyfin) resolvem esse tipo de ambiguidade.
+
+**Achados da pesquisa:**
+- O match hoje é uma cascata sequencial e SEM duração: MBID exato →
+  similaridade textual de título (Jaro-Winkler, `matching.LimiarAutoMatch`)
+  → `track_number`. Nenhuma combinação simultânea de sinais.
+- **Jellyfin** (`MediaBrowser.Providers/Plugins/MusicBrainz/
+  MusicBrainzAlbumProvider.cs`) escolhe a release do release-group pegando a
+  PRIMEIRA da lista, com um `// TODO: ... Simply taking the first result is
+  stupid.` literal no próprio código — pior que o que este projeto já tem
+  desde a rodada 1. Não usa AcoustID/Chromaprint no core.
+- **LMS/Lyrion** (`slimserver`) nem faz esse tipo de match remoto — usa
+  `musicbrainz_id` só como chave de dedup LOCAL de tags já gravadas por uma
+  ferramenta externa (Picard); não resolve ambiguidade textual contra o
+  MusicBrainz.
+- **MusicBrainz Picard** (a ferramenta de referência que resolve exatamente
+  este problema) combina similaridade de título com **duração do áudio
+  dentro de uma tolerância** (padrão 2s) como parte do score — e o próprio
+  AcoustID já embute duração como filtro (recordings com duração muito
+  diferente nunca recebem o mesmo fingerprint).
+- Filtragem por metadado de RELEASE (`title`/`disambiguation`) pra
+  deprioritizar edições de remix sem precisar buscar as faixas foi
+  verificada ao vivo contra o release-group real e **não se sustenta**: as
+  13 releases se chamam todas só "Freestyler", `disambiguation` vazio na
+  maioria — não há sinal aí pra explorar.
+- O dado de duração já existe DOS DOIS LADOS sem custo extra: `mediainfo`
+  já extrai `Info.General.Duration` (segundos) de todo arquivo de áudio via
+  ffprobe (hoje descartado antes de chegar no matching); o MusicBrainz já
+  devolve `length` (ms) tanto no recording quanto no track dentro da MESMA
+  chamada `GET /release/{id}?inc=recordings+...` que `buscarFaixas` já faz
+  (confirmado ao vivo) — só não está mapeado nas structs hoje.
+
+**Decisão:** ainda dentro deste briefing (0121), fazer as duas coisas:
+
+1. Subir `maxReleasesTentadosPorAlvo` de 5 para **15** (cobre o outlier real
+   de 13 releases com folga; custo continua desprezível — só entra em jogo
+   quando a busca por `alvoFaixa` falha na 1ª tentativa, e MusicBrainz
+   aguenta ~1 req/s).
+2. Adicionar **duração como sinal de CONFIRMAÇÃO** (não de busca/ordenação —
+   não reduz quantas releases são tentadas, só torna o aceite mais robusto
+   uma vez que uma release já foi buscada): `provider.FaixaExterna` e
+   `provider.AlvoFaixaAlbum` ganham `DuracaoMs int`; `enrich.FaixaAlvo` ganha
+   `DuracaoSegundos float64`, populado pelo scanner a partir de
+   `mediainfo.Info.General.Duration` (hoje descartado em `factsMusica`/
+   `probarTags`). Regra (aplicada em `melhorFaixaPorTitulo` no enrich E em
+   `releaseContemFaixaAlvo` no provider — mesma regra, cópias autocontidas
+   pelo mesmo motivo de import cycle já documentado em §6):
+   - Calcula o candidato de MELHOR score de título como hoje (sem empate no
+     topo — tie-break por duração fica fora, ver §7).
+   - Se o score bate o limiar E ambas as durações são conhecidas (`> 0` dos
+     dois lados): só aceita se `|duração local − duração candidato| <=
+     matching.ToleranciaDuracaoSegundos` (nova constante, 3.0s — um pouco
+     mais folgada que o padrão de 2s do Picard, pra absorver a imprecisão
+     de duração de container do ffprobe vs. decodificação exata).
+   - Se qualquer uma das durações for desconhecida (0): pula o gate, mantém
+     o comportamento de hoje (sem regressão pra arquivos/dados sem duração
+     confiável).
+   - Isso é uma trava de SEGURANÇA adicional (reduz falso-positivo de título
+     parecido) — nunca torna um match mais permissivo do que hoje.
+
+### Contrato técnico da rodada 2
+
+- `internal/matching/matching.go`: nova constante `ToleranciaDuracaoSegundos
+  = 3.0`.
+- `internal/provider/provider.go`: `FaixaExterna` ganha `DuracaoMs int`
+  (0 = desconhecida); `AlvoFaixaAlbum` ganha `DuracaoMs int` (0 = não
+  informada pelo chamador).
+- `internal/provider/musicbrainz/musicbrainz.go`:
+  - `maxReleasesTentadosPorAlvo`: 5 → 15.
+  - `respRelease.Media[].Tracks[]` ganha `Length int \`json:"length"\`` (nível
+    do track dentro da release) e `.Recording` ganha `Length int
+    \`json:"length"\`` (nível do recording) — mesmo JSON já buscado por
+    `buscarFaixas`, sem chamada nova.
+  - `buscarFaixas`: popula `FaixaExterna.DuracaoMs` com `tr.Length` quando
+    `> 0`, senão `tr.Recording.Length`, senão 0.
+  - `releaseContemFaixaAlvo`: no ramo de `FaixaTitulo`, além do score de
+    título, aplica o gate de duração descrito acima (usa `alvo.DuracaoMs`/
+    `fx.DuracaoMs`, em ms, contra `matching.ToleranciaDuracaoSegundos*1000`).
+- `internal/enrich/musica.go`:
+  - `FaixaAlvo` ganha `DuracaoSegundos float64`.
+  - `melhorFaixaPorTitulo` ganha parâmetro `duracaoAlvoSegundos float64`
+    (chamada por `escolherFaixaAlvo`, que repassa `alvo.DuracaoSegundos`);
+    aplica o mesmo gate (convertendo para ms para comparar com
+    `fx.DuracaoMs`).
+  - `buscarAlbumAlvo`: o `provider.AlvoFaixaAlbum` passado a
+    `BuscarAlbumPorNome` ganha `DuracaoMs: int(alvo.DuracaoSegundos *
+    1000)` (0 quando `DuracaoSegundos` é 0).
+- `internal/scanner/musica.go`: `factsMusica` extrai
+  `info.General.Duration` (quando o unmarshal de `mi` teve sucesso) e passa
+  adiante como novo parâmetro `duracaoSegundos float64` por toda a cadeia
+  que hoje só carrega `tags`/`langs`: `resolverFaixa`,
+  `importarEAcharPorMbid`, `matchTextual`, `(*Manager).matchTextualFaixa` —
+  esta última monta `enrich.FaixaAlvo{..., DuracaoSegundos:
+  duracaoSegundos}` nos dois pontos onde `FaixaAlvo` é construída (linhas
+  162 e 241 antes desta mudança).
+- `internal/scanner/reconciliar.go`: `probarTags` passa a devolver também a
+  duração (`(mediainfo.AudioTags, float64, bool)`); `ReconciliarFaixaDraft`
+  repassa pra `matchTextualFaixa`.
+
+### Testes novos da rodada 2
+
+- `internal/provider/musicbrainz/musicbrainz_test.go`: cenário sintético
+  com DOIS candidatos de título igualmente plausíveis mas SÓ um deles
+  batendo a duração (ex.: mesmo texto de título, um exatamente na duração
+  do arquivo local e outro com diferença grande) confirma que o gate REJEITA
+  o candidato de duração incompatível mesmo com score de título acima do
+  limiar (prova a trava de segurança). Cenário complementar com duração
+  desconhecida de um dos lados confirma que o gate é PULADO (sem regressão).
+  Atualizar/ajustar o teste de teto (`TestBuscarFaixasComAlvoRespeitaTeto`)
+  pro novo valor de `maxReleasesTentadosPorAlvo` (mais releases sintéticas
+  que 15 pra continuar provando o corte).
+- `internal/enrich/musica_test.go`: equivalente pro lado `melhorFaixaPorTitulo`
+  /`escolherFaixaAlvo`.
+- `internal/scanner/musica_test.go` / `internal/scanner/reconciliar_test.go`:
+  confirma que a duração extraída de `mediainfo.Info.General.Duration`
+  chega em `FaixaAlvo.DuracaoSegundos` nos dois pontos de construção (import
+  por MBID e import textual) e no caminho de reconciliação.
+
+### Critérios de aceite da rodada 2
+
+- [x] `maxReleasesTentadosPorAlvo = 15`; teste de teto atualizado prova o
+      novo valor (`TestBuscarFaixasComAlvoRespeitaTeto`: release-group
+      sintético com 17 releases, exatamente 15 tentativas antes de degradar).
+- [x] Duração chega ponta-a-ponta: arquivo local (`mediainfo`) → `FaixaAlvo.
+      DuracaoSegundos` (scanner) → `AlvoFaixaAlbum.DuracaoMs` (enrich) →
+      gate em `releaseContemFaixaAlvo` (provider) e em `melhorFaixaPorTitulo`
+      (enrich). Confirmado por leitura de código (`internal/scanner/musica.go`,
+      `internal/scanner/reconciliar.go`, `internal/enrich/musica.go`,
+      `internal/provider/musicbrainz/musicbrainz.go`) e pelos testes novos
+      (`TestScanMusicaMbidPropagaDuracaoDoArquivo`,
+      `TestScanMusicaBuscaTextualPropagaDuracaoDoArquivo`,
+      `TestReconciliarFaixaDraftPropagaDuracaoDoArquivo`).
+- [x] Gate de duração REJEITA um candidato de título plausível mas duração
+      incompatível (`TestReleaseContemFaixaAlvoGateDeDuracaoRejeitaDivergencia`,
+      `TestMelhorFaixaPorTituloGateDuracaoRejeitaDivergencia`); PULA o gate sem
+      duração conhecida de um dos lados, sem regressão pra dados incompletos
+      (`TestReleaseContemFaixaAlvoGateDeDuracaoPuladoQuandoDesconhecida`,
+      `TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoAlvoDesconhecida`,
+      `TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoCandidatoDesconhecida`,
+      `TestScanMusicaSemDuracaoNoMediainfoChegaZero`,
+      `TestReconciliarFaixaDraftSemDuracaoChegaZero`).
+- [x] `go build ./...`, `go vet ./...`, `go test ./... -count=1` verdes;
+      `make gate-local` sem regressão de cobertura (cobertura Go subiu de
+      75.8% para 75.9%, cobertura E2E de 42.1% para 46.4%; 1 aviso novo de
+      golangci-lint — sugestão cosmética de staticcheck QF1012 em arquivo de
+      teste — e gocyclo com mais funções >10, ambos não-bloqueantes e sem
+      função de produção nova acima de 10 (pico real: 10, nas funções
+      alteradas por esta rodada)).
+- [ ] Validado em produção: reconciliação ou reimport manual da faixa
+      "Freestyler" do Bomfunk MC's (entity `4838fee1-8b95-4d72-8142-
+      e4edaa106975`) sai da fila de revisão — ou, se ainda não sair,
+      documentar o motivo concreto observado (não otimista) antes de
+      fechar.

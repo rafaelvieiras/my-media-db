@@ -21,6 +21,14 @@ import (
 // estava visível na fila/órfãos continua lá).
 const LimiarAutoMatch = 92.0
 
+// ToleranciaDuracaoSegundos é a folga (em segundos) usada como CONFIRMAÇÃO
+// adicional de match de faixa de música quando duas durações (arquivo local
+// vs. candidato externo) são comparadas (briefing 0121 §8). O MusicBrainz
+// Picard usa 2s como padrão para esse mesmo gate; aqui um pouco mais folgado
+// (3s) para absorver a imprecisão de duração de CONTAINER que o ffprobe
+// reporta (via mediainfo) frente à decodificação exata do áudio.
+const ToleranciaDuracaoSegundos = 3.0
+
 // Pontuar calcula o score final [0,100] do briefing 0050 §4: similaridade
 // Jaro-Winkler do título (textsim) em escala 0-100, ajustada pelo ano.
 // descartado=true quando os DOIS anos existem e divergem em MAIS de 1 ano
