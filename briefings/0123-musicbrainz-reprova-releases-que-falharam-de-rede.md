@@ -164,3 +164,68 @@ tal como estão hoje.
       (briefing 0122) e confirmar se agora resolve o caso real — fecha (ou
       documenta honestamente, se ainda não resolver) o item pendente do
       0121/0122.
+
+## 6. Validação em produção (22/08/2026) — mecanismo funciona, caso real AINDA `linked=false`
+
+Deploy em produção confirmado na versão do commit `960910dfe30ecb222c87e4ddc0c9222483f4f3b1`
+(log de boot). 4 chamadas consecutivas a
+`POST /entities/4838fee1-8b95-4d72-8142-e4edaa106975/force-reconcile`:
+
+- **Tentativa 1** (8s): falhou ANTES de chegar em `buscarFaixasComAlvo` —
+  `scanner: busca textual do artista "Bomfunk MC's" falhou: ... context deadline
+  exceeded` (timeout na busca de ARTISTA, estágio anterior ao desta correção).
+  `linked=false`.
+- **Tentativa 2** (26s): **o log novo apareceu e funcionou como projetado** —
+  `musicbrainz: busca de faixas da release 8f21e8bc-... falhou (retentando
+  outra release do grupo): ... context deadline exceeded`. Prova que o
+  diagnóstico e a 2ª passada estão ativos em produção. Mas `8f21e8bc` NÃO é a
+  release-alvo (`43c49ea4-b213-4a97-afe0-3e6418374f96`, 10ª de 13 na ordem de
+  prioridade) — terminou em "faixa alvo nao encontrada", `linked=false`.
+- **Tentativas 3 e 4** (18-19s cada): **ZERO falhas de rede logadas** — todas
+  as releases responderam normalmente (nenhuma linha `musicbrainz: busca de
+  faixas ... falhou`) — e AINDA ASSIM `linked=false`, mesmo resultado final.
+
+O achado importante da tentativa 3/4: num cenário limpo, SEM nenhuma
+instabilidade de rede (o que esta correção resolveria), o caso real continua
+não batendo. Investigação adicional (consulta direta ao MusicBrainz público,
+mesmos parâmetros/`inc` do client, e ao endpoint interno
+`GET /entities/{id}/files` para o dado local exato):
+
+- Arquivo local: `duration_seconds: 306.364082`, tag `title: "Freestyler"`
+  (confirma os números already usados na investigação do 0123 original).
+- Release-alvo `43c49ea4-...` continua na 10ª posição de 13 (dentro do teto de
+  15 com folga), com a faixa 5 = `"Freestyler"` (título EXATO, similaridade
+  100) e `length=306000ms` (diff de 364ms, bem dentro da tolerância de 3s).
+- Reconstrução manual de `releaseContemFaixaAlvo`/`melhorFaixaPorTitulo`
+  (mesma fórmula Jaro-Winkler de `textsim.Similaridade`, limiar
+  `matching.LimiarAutoMatch=92`) contra TODAS as 13 releases do grupo
+  (buscadas diretamente via `curl` ao MusicBrainz público) não encontra
+  NENHUMA outra release cujo melhor score de título bata >= 92 com duração
+  compatível ANTES da release 10 — ou seja, pelos dados públicos disponíveis,
+  nada deveria fazer `buscarFaixasComAlvo` parar antes de chegar em
+  `43c49ea4` e nada impede o match nela.
+
+Ou seja: matematicamente, pelos dados públicos do MusicBrainz e pelo dado
+local exato, a release/faixa-alvo DEVERIA satisfazer `releaseContemFaixaAlvo`
+sem ambiguidade — e ainda assim o resultado final em produção (2 tentativas
+limpas seguidas) foi "não encontrada". **Isso indica que o problema restante
+NÃO é (ou não é mais só) a falha de rede que este briefing corrigiu** — a
+correção do 0123 está confirmada funcionando (log ativo, 2ª passada exercida
+de fato na tentativa 2), mas não é suficiente para fechar o caso real. A
+causa provável é um bug distinto, ainda não identificado, em algum ponto do
+caminho `BuscarAlbumPorNome` → `montarAlbum` → `buscarFaixasComAlvo` →
+`escolherFaixaAlvo`/`melhorFaixaPorTitulo` que não foi possível confirmar
+sem acesso de leitura ao banco de produção (proibido usar SQL direto,
+`docs/`/AGENTS.md) e sem instrumentação adicional (fora do escopo desta
+validação). **Recomenda-se abrir um NOVO briefing** dedicado a investigar por
+que `buscarFaixasComAlvo`/`escolherFaixaAlvo` não fecham o match mesmo num
+cenário 100% livre de falha de rede, incluindo (se necessário) log temporário
+de qual release venceu e com que score/duração em cada tentativa, para não
+repetir esta reconstrução manual às cegas.
+
+Critério de aceite de validação em produção: **NÃO fechado**. O caso real
+Bomfunk MC's/Freestyler segue `status=draft` em produção após 4 tentativas
+(2 com falha de rede real, 2 limpas). O mecanismo do 0123 está correto e
+confirmado em produção; a cadeia 0121→0122→0123 melhora robustez de rede mas
+não resolve este caso específico — provável curadoria manual necessária até
+uma investigação nova identificar a causa raiz remanescente.
