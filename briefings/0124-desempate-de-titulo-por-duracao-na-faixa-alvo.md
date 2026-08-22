@@ -15,7 +15,7 @@
 | **Tipo** | fix |
 | **Fase (roadmap)** | Transversal / correção de dado — achado ao validar o 0123 em produção (força reconciliação real do Bomfunk MC's/Freestyler, cenário 100% livre de falha de rede). |
 | **Docs relacionadas** | — |
-| **Status** | in-progress |
+| **Status** | done |
 | **Depende de** | [0121](0121-musicbrainz-tenta-outras-releases-do-release-group.md), [0123](0123-musicbrainz-reprova-releases-que-falharam-de-rede.md) |
 
 ---
@@ -142,6 +142,19 @@ muda) — só o corpo interno do critério de desempate.
       enrich), mesma regra.
 - [x] Os 4 cenários de teste acima cobertos nos dois pacotes.
 - [x] `go build`/`go vet`/`go test ./... -count=1`, `make gate-local` verdes.
-- [ ] Validado em produção: repetir `POST /entities/4838fee1-.../force-reconcile`
+- [x] Validado em produção: repetir `POST /entities/4838fee1-.../force-reconcile`
       (briefing 0122) e confirmar `linked=true` — fecha finalmente a cadeia
       0120→0121→0122→0123→0124 no caso real do Bomfunk MC's/Freestyler.
+      Confirmado em 21/08/2026 (deploy do commit 7d18edc): `linked=true` na
+      4ª tentativa (as 3 anteriores falharam por timeout de rede genuíno
+      contra o MusicBrainz — `Client.Timeout exceeded`, nunca chegaram a
+      rodar o código deste briefing). O arquivo antes preso na entity
+      rascunho `4838fee1-...` foi repontado para a entity CORRETA
+      `4a977cb5-8e7f-444a-a014-d04fc925ca09` (title="Freestyler",
+      status=cataloged, owned=true, mbid=0d8df525-cc5a-4ee4-a303-e4df9ca0a685,
+      extension_data.core.music@1={track_number:5, isrc:"AUXN21104289"} —
+      exatamente a faixa 5/306000ms citada no §1, não mais a faixa 1/247000ms
+      errada). Árvore ancestors confirma Bomfunk MC's → álbum Freestyler →
+      faixa Freestyler. A entity rascunho original ficou órfã (owned=false,
+      file_count=0) — comportamento esperado de `ReconciliarFaixaDraft`
+      (repontea o `media_file`, não atualiza a entity rascunho em si).
