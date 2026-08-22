@@ -610,3 +610,54 @@ func TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoCandidatoDesconhecida(t *tes
 		t.Errorf("MBID = %q, esperava %q", fx.MBID, mbidFaixa1Fixture)
 	}
 }
+
+// TestMelhorFaixaPorTituloDesempataPorDuracaoQuandoTituloEmpata cobre o caso
+// real do briefing 0124 (Bomfunk MC's/Freestyler): duas faixas com o MESMO
+// título empatam no maior score -- uma com duração compatível com o alvo,
+// outra não. A duração deve desempatar e devolver a faixa compatível, em vez
+// de rejeitar (zero,false) só por existir empate.
+func TestMelhorFaixaPorTituloDesempataPorDuracaoQuandoTituloEmpata(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Freestyler", MBID: mbidFaixa1Fixture, DuracaoMs: 247_000},
+		{Title: "Freestyler", MBID: mbidFaixa2Fixture, DuracaoMs: 306_000},
+	}
+	duracaoAlvoSegundos := 306.364 // diff = 364ms << 3s de tolerancia
+
+	fx, ok := melhorFaixaPorTitulo("Freestyler", faixas, duracaoAlvoSegundos)
+	if !ok {
+		t.Fatal("esperava aceitar (duracao deveria desempatar as duas faixas 'Freestyler'), mas rejeitou")
+	}
+	if fx.MBID != mbidFaixa2Fixture {
+		t.Errorf("MBID = %q, esperava %q (a faixa de duracao compativel)", fx.MBID, mbidFaixa2Fixture)
+	}
+}
+
+// TestMelhorFaixaPorTituloNaoDesempataQuandoDuracaoDoAlvoDesconhecida cobre o
+// mesmo empate de título do teste anterior, mas com duracaoAlvoSegundos == 0
+// (arquivo local sem duração conhecida) -- sem sinal para decidir, rejeita
+// (comportamento seguro, sem regressao).
+func TestMelhorFaixaPorTituloNaoDesempataQuandoDuracaoDoAlvoDesconhecida(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Freestyler", MBID: mbidFaixa1Fixture, DuracaoMs: 247_000},
+		{Title: "Freestyler", MBID: mbidFaixa2Fixture, DuracaoMs: 306_000},
+	}
+
+	if _, ok := melhorFaixaPorTitulo("Freestyler", faixas, 0); ok {
+		t.Fatal("esperava rejeicao (duracao do alvo desconhecida nao pode desempatar titulo duplicado), mas aceitou")
+	}
+}
+
+// TestMelhorFaixaPorTituloNaoDesempataQuandoAmbasCompativeis cobre o empate de
+// título com AMBAS as faixas dentro da tolerância de duração -- continua
+// ambíguo (empate também na duração), nunca escolhe arbitrariamente.
+func TestMelhorFaixaPorTituloNaoDesempataQuandoAmbasCompativeis(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Freestyler", MBID: mbidFaixa1Fixture, DuracaoMs: 306_100},
+		{Title: "Freestyler", MBID: mbidFaixa2Fixture, DuracaoMs: 306_900},
+	}
+	duracaoAlvoSegundos := 306.5
+
+	if _, ok := melhorFaixaPorTitulo("Freestyler", faixas, duracaoAlvoSegundos); ok {
+		t.Fatal("esperava rejeicao (ambas as faixas empatadas ficam dentro da tolerancia, continua ambiguo), mas aceitou")
+	}
+}

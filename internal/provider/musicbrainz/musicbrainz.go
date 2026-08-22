@@ -614,20 +614,45 @@ func releaseContemRecordingMBID(faixas []provider.FaixaExterna, recordingMBID st
 // título contra alvo.FaixaTitulo; aceita quando o score bate matching.LimiarAutoMatch
 // E, adicionalmente, quando o gate de duração (briefing 0121 §8) confirma (ou é
 // pulado por duração desconhecida de um dos lados, via duracoesCompativeis).
+//
+// Briefing 0124: releases reais podem ter 2+ faixas com o MESMO título (ex.:
+// remix/edit que ficou com o título "limpo" no MusicBrainz) -- todas empatam no
+// maior score. Nesse caso a duração vira critério de DESEMPATE (não só
+// confirmação): entre os empatados, só aceita quando exatamente 1 tem duração
+// conhecida E dentro da tolerância; 0 ou 2+ candidatos plausíveis continua
+// ambíguo e rejeita (nunca escolhe arbitrariamente pela ordem de iteração).
 func releaseContemFaixaPorTitulo(faixas []provider.FaixaExterna, alvo provider.AlvoFaixaAlbum) bool {
 	melhorScore := -1.0
-	var melhorFx provider.FaixaExterna
+	var empatados []provider.FaixaExterna
 	for _, fx := range faixas {
 		score := textsim.Similaridade(alvo.FaixaTitulo, fx.Title) * 100
-		if score > melhorScore {
+		switch {
+		case score > melhorScore:
 			melhorScore = score
-			melhorFx = fx
+			empatados = []provider.FaixaExterna{fx}
+		case score == melhorScore:
+			empatados = append(empatados, fx)
 		}
 	}
 	if melhorScore < matching.LimiarAutoMatch {
 		return false
 	}
-	return duracoesCompativeis(alvo.DuracaoMs, melhorFx.DuracaoMs)
+	if len(empatados) == 1 {
+		return duracoesCompativeis(alvo.DuracaoMs, empatados[0].DuracaoMs)
+	}
+	// 2+ empatados no topo: a duração desempata, não confirma. Sem duração do
+	// alvo não há sinal para decidir -- rejeita (mesmo comportamento seguro de
+	// quando não há duração).
+	if alvo.DuracaoMs <= 0 {
+		return false
+	}
+	compativeis := 0
+	for _, fx := range empatados {
+		if fx.DuracaoMs > 0 && duracoesCompativeis(alvo.DuracaoMs, fx.DuracaoMs) {
+			compativeis++
+		}
+	}
+	return compativeis == 1
 }
 
 // releaseContemFaixaPorNumero é o critério de menor prioridade de

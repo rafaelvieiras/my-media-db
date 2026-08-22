@@ -1519,3 +1519,52 @@ func TestReleaseContemFaixaAlvoGateDeDuracaoPuladoQuandoDesconhecida(t *testing.
 		t.Fatal("releaseContemFaixaAlvo = false, esperava true (duracao desconhecida de um dos lados deve pular o gate, sem regressao)")
 	}
 }
+
+// TestReleaseContemFaixaAlvoDesempataPorDuracaoQuandoTituloEmpata cobre o caso
+// real do briefing 0124 (Bomfunk MC's/Freestyler): a release tem DUAS faixas com
+// o título EXATO do alvo (empate no maior score) -- uma com duração compatível
+// com o alvo, outra não. A duração deve desempatar para a faixa compatível, sem
+// rejeitar a release inteira.
+func TestReleaseContemFaixaAlvoDesempataPorDuracaoQuandoTituloEmpata(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Freestyler", MBID: "rec-errada", TrackNumber: 1, DuracaoMs: 247_000},
+		{Title: "Freestyler (Skillsters remix)", MBID: "rec-remix", TrackNumber: 2, DuracaoMs: 183_000},
+		{Title: "Freestyler", MBID: "rec-certa", TrackNumber: 5, DuracaoMs: 306_000},
+	}
+	alvo := provider.AlvoFaixaAlbum{FaixaTitulo: "Freestyler", DuracaoMs: 306_364} // diff = 364ms << 3s
+
+	if !releaseContemFaixaAlvo(faixas, alvo) {
+		t.Fatal("releaseContemFaixaAlvo = false, esperava true (duracao deveria desempatar as duas faixas 'Freestyler' para a compativel)")
+	}
+}
+
+// TestReleaseContemFaixaAlvoNaoDesempataQuandoDuracaoDoAlvoDesconhecida cobre o
+// mesmo empate de título do teste anterior, mas com a duração do alvo
+// desconhecida (0) -- sem sinal para decidir entre as duas faixas "Freestyler",
+// deve rejeitar (comportamento seguro, sem regressao).
+func TestReleaseContemFaixaAlvoNaoDesempataQuandoDuracaoDoAlvoDesconhecida(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Freestyler", MBID: "rec-errada", TrackNumber: 1, DuracaoMs: 247_000},
+		{Title: "Freestyler", MBID: "rec-certa", TrackNumber: 5, DuracaoMs: 306_000},
+	}
+	alvo := provider.AlvoFaixaAlbum{FaixaTitulo: "Freestyler", DuracaoMs: 0}
+
+	if releaseContemFaixaAlvo(faixas, alvo) {
+		t.Fatal("releaseContemFaixaAlvo = true, esperava false (duracao do alvo desconhecida nao pode desempatar titulo duplicado)")
+	}
+}
+
+// TestReleaseContemFaixaAlvoNaoDesempataQuandoAmbasCompativeis cobre o empate de
+// título com AMBAS as faixas dentro da tolerância de duração -- continua
+// ambíguo (empate também na duração), nunca escolhe arbitrariamente.
+func TestReleaseContemFaixaAlvoNaoDesempataQuandoAmbasCompativeis(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Freestyler", MBID: "rec-a", TrackNumber: 1, DuracaoMs: 306_100},
+		{Title: "Freestyler", MBID: "rec-b", TrackNumber: 5, DuracaoMs: 306_900},
+	}
+	alvo := provider.AlvoFaixaAlbum{FaixaTitulo: "Freestyler", DuracaoMs: 306_500}
+
+	if releaseContemFaixaAlvo(faixas, alvo) {
+		t.Fatal("releaseContemFaixaAlvo = true, esperava false (ambas as faixas empatadas ficam dentro da tolerancia, continua ambiguo)")
+	}
+}

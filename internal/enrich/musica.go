@@ -500,38 +500,74 @@ func (s *Servico) artistaPrincipalDoAlbum(ctx context.Context, albumID string) s
 
 // melhorFaixaPorTitulo escolhe, entre `faixas`, a de título mais próximo de `alvo`
 // (Jaro-Winkler via internal/textsim, limiar matching.LimiarAutoMatch — mesmo motor/
-// número do scanner). Empate no topo ou abaixo do limiar: (zero,false), nunca um
-// match "parecido". Depois de escolhido o melhor candidato por título, aplica um gate
-// de CONFIRMAÇÃO por duração (briefing 0121 §8, matching.ToleranciaDuracaoSegundos):
-// quando `duracaoAlvoSegundos` e a duração do candidato (FaixaExterna.DuracaoMs) são
-// AMBAS conhecidas e divergem além da tolerância, rejeita mesmo com título batendo —
-// nunca participa da escolha do candidato nem resolve empate de score, só confirma ou
-// veta o que o título já escolheu. Qualquer um dos dois lados desconhecido (0) pula o
-// gate, preservando o comportamento anterior.
+// número do scanner). Abaixo do limiar: (zero,false), nunca um match "parecido".
+// Depois de escolhido o melhor candidato por título, aplica um gate de CONFIRMAÇÃO
+// por duração (briefing 0121 §8, matching.ToleranciaDuracaoSegundos): quando
+// `duracaoAlvoSegundos` e a duração do candidato (FaixaExterna.DuracaoMs) são AMBAS
+// conhecidas e divergem além da tolerância, rejeita mesmo com título batendo. Qualquer
+// um dos dois lados desconhecido (0) pula o gate, preservando o comportamento
+// anterior.
+//
+// Briefing 0124: releases reais podem ter 2+ faixas com o MESMO título (ex.:
+// remix/edit que ficou com o título "limpo" no MusicBrainz) -- todas empatam no
+// maior score. Nesse caso a duração vira critério de DESEMPATE (não só
+// confirmação): entre os empatados, só aceita (e devolve) quando exatamente 1 tem
+// duração conhecida E dentro da tolerância; sem duração do alvo, ou com 0/2+
+// candidatos plausíveis, continua ambíguo -- (zero,false), nunca escolhe
+// arbitrariamente pela ordem de iteração.
 func melhorFaixaPorTitulo(alvo string, faixas []provider.FaixaExterna, duracaoAlvoSegundos float64) (provider.FaixaExterna, bool) {
 	melhorScore := -1.0
-	var melhor provider.FaixaExterna
-	empate := false
+	var empatados []provider.FaixaExterna
 	for _, fx := range faixas {
 		score := textsim.Similaridade(alvo, fx.Title) * 100
 		switch {
 		case score > melhorScore:
-			melhorScore, melhor, empate = score, fx, false
+			melhorScore = score
+			empatados = []provider.FaixaExterna{fx}
 		case score == melhorScore:
-			empate = true
+			empatados = append(empatados, fx)
 		}
 	}
-	if empate || melhorScore < matching.LimiarAutoMatch {
+	if melhorScore < matching.LimiarAutoMatch {
 		return provider.FaixaExterna{}, false
 	}
-	if duracaoAlvoSegundos > 0 && melhor.DuracaoMs > 0 {
-		diffMs := duracaoAlvoSegundos*1000 - float64(melhor.DuracaoMs)
+	if len(empatados) == 1 {
+		melhor := empatados[0]
+		if duracaoAlvoSegundos > 0 && melhor.DuracaoMs > 0 {
+			diffMs := duracaoAlvoSegundos*1000 - float64(melhor.DuracaoMs)
+			if diffMs < 0 {
+				diffMs = -diffMs
+			}
+			if diffMs > matching.ToleranciaDuracaoSegundos*1000 {
+				return provider.FaixaExterna{}, false
+			}
+		}
+		return melhor, true
+	}
+	// 2+ empatados no topo: a duração desempata, não confirma. Sem duração do
+	// alvo não há sinal para decidir -- rejeita (mesmo comportamento seguro de
+	// quando não há duração).
+	if duracaoAlvoSegundos <= 0 {
+		return provider.FaixaExterna{}, false
+	}
+	duracaoAlvoMs := duracaoAlvoSegundos * 1000
+	var unico provider.FaixaExterna
+	compativeis := 0
+	for _, fx := range empatados {
+		if fx.DuracaoMs <= 0 {
+			continue
+		}
+		diffMs := duracaoAlvoMs - float64(fx.DuracaoMs)
 		if diffMs < 0 {
 			diffMs = -diffMs
 		}
-		if diffMs > matching.ToleranciaDuracaoSegundos*1000 {
-			return provider.FaixaExterna{}, false
+		if diffMs <= matching.ToleranciaDuracaoSegundos*1000 {
+			compativeis++
+			unico = fx
 		}
 	}
-	return melhor, true
+	if compativeis == 1 {
+		return unico, true
+	}
+	return provider.FaixaExterna{}, false
 }

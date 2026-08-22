@@ -15,7 +15,7 @@
 | **Tipo** | fix |
 | **Fase (roadmap)** | Transversal / correção de dado — achado ao validar o 0122 em produção (força reconciliação do caso real Bomfunk MC's/Freestyler). |
 | **Docs relacionadas** | — |
-| **Status** | in-progress |
+| **Status** | done |
 | **Depende de** | [0121](0121-musicbrainz-tenta-outras-releases-do-release-group.md), [0122](0122-forcar-reconciliacao-manual-por-entity.md) |
 
 ---
@@ -223,9 +223,14 @@ cenário 100% livre de falha de rede, incluindo (se necessário) log temporário
 de qual release venceu e com que score/duração em cada tentativa, para não
 repetir esta reconstrução manual às cegas.
 
-Critério de aceite de validação em produção: **NÃO fechado**. O caso real
-Bomfunk MC's/Freestyler segue `status=draft` em produção após 4 tentativas
-(2 com falha de rede real, 2 limpas). O mecanismo do 0123 está correto e
-confirmado em produção; a cadeia 0121→0122→0123 melhora robustez de rede mas
-não resolve este caso específico — provável curadoria manual necessária até
-uma investigação nova identificar a causa raiz remanescente.
+Critério de aceite de validação em produção: **NÃO fechado por este
+briefing** — mas a causa raiz remanescente foi identificada e tratada em
+[0124](0124-desempate-de-titulo-por-duracao-na-faixa-alvo.md): a release
+real dessa faixa tem DUAS faixas tituladas exatamente "Freestyler" (posições
+1 e 5); o desempate de score de título (tanto no provider quanto no enrich)
+ficava com a PRIMEIRA candidata empatada em vez de considerar as duas, e o
+gate de duração da rodada 2 do 0121 rejeitava a release inteira por causa
+disso (a faixa 1 errada não bate a duração; a faixa 5 certa bateria). O
+mecanismo DESTE briefing (0123 — resiliência de rede + log por tentativa)
+está correto, verificado e permanece em produção; o caso real só fecha
+depois do 0124.
