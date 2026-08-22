@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"sort"
@@ -477,8 +478,17 @@ const maxReleasesTentadosPorAlvo = 15
 // (mesma degradação silenciosa de sempre -- quem decide se a faixa certa foi
 // encontrada continua sendo escolherFaixaAlvo em internal/enrich/musica.go, esta
 // função só melhora as CANDIDATAS oferecidas). O erro só é propagado quando TODAS as
-// tentativas falharam de rede (nenhuma faixa obtida em nenhuma tentativa) -- uma
-// falha pontual no meio do laço não aborta a tentativa da próxima release.
+// tentativas (das DUAS passadas, ver tentarReleases) falharam de rede (nenhuma faixa
+// obtida em nenhuma tentativa) -- uma falha pontual no meio do laço não aborta a
+// tentativa da próxima release.
+//
+// Achado real em produção (briefing 0123): uma release ESPECÍFICA que esgota o retry
+// de rede de getMB (3 tentativas, 503 "currently busy" transitório do servidor
+// público) era descartada PARA SEMPRE nesta função -- mesmo que fosse justo a release
+// com a faixa-alvo. Por isso, quando a 1ª passada não bate o alvo e ao menos uma
+// release falhou de REDE (não por não bater o match), há uma 2ª passada só sobre
+// essas -- cada uma ganha um ciclo NOVO e completo de tentativas (503 é
+// instabilidade transitória: a mesma release pode responder segundos depois).
 func (c *Client) buscarFaixasComAlvo(ctx context.Context, releases []respReleaseResumo, alvoFaixa provider.AlvoFaixaAlbum) ([]provider.FaixaExterna, error) {
 	if alvoFaixa == (provider.AlvoFaixaAlbum{}) {
 		releaseID, ok := escolherRelease(releases)
@@ -493,25 +503,57 @@ func (c *Client) buscarFaixasComAlvo(ctx context.Context, releases []respRelease
 		ids = ids[:maxReleasesTentadosPorAlvo]
 	}
 
-	var faixas []provider.FaixaExterna
-	var ultimoErr error
-	obtevesAlgumaVez := false
+	match, ultimaObtida, obtevesAlgumaVez, falhadas, ultimoErr := c.tentarReleases(ctx, ids, alvoFaixa)
+	if match {
+		return ultimaObtida, nil
+	}
+	if len(falhadas) > 0 {
+		// 2a passada: só sobre as releases que falharam de REDE na 1a -- economiza a
+		// chamada extra quando tudo já respondeu e só não bateu por matching mesmo.
+		match2, ultimaObtida2, obtevesAlgumaVez2, _, ultimoErr2 := c.tentarReleases(ctx, falhadas, alvoFaixa)
+		if match2 {
+			return ultimaObtida2, nil
+		}
+		if obtevesAlgumaVez2 {
+			ultimaObtida = ultimaObtida2 // a mais recente sucedida, entre as duas passadas
+			obtevesAlgumaVez = true
+		}
+		ultimoErr = ultimoErr2
+	}
+	if !obtevesAlgumaVez {
+		return nil, ultimoErr // TODAS as tentativas (das duas passadas) falharam de rede
+	}
+	return ultimaObtida, nil // nenhuma bateu dentro do teto: degrada com a ULTIMA obtida
+}
+
+// tentarReleases tenta, em ordem, buscar as faixas de cada release em `ids`, parando no
+// primeiro sucesso que satisfaça `alvoFaixa` (releaseContemFaixaAlvo) -- corpo do loop
+// extraído de buscarFaixasComAlvo (briefing 0123) para ser reusado por uma 2ª passada
+// (ver ali). Cada falha de `buscarFaixas` (erro de REDE, não "respondeu mas não bateu o
+// match") é logada com o releaseID e o erro, e acumulada em `falhadas` -- antes deste
+// briefing essas releases eram descartadas para sempre e em silêncio. Devolve: `match`
+// (achou uma release que satisfaz o alvo -- `ultimaObtida` já são as faixas dela),
+// `ultimaObtida` (as faixas da ÚLTIMA release que respondeu com sucesso, para o
+// fallback de degradação de buscarFaixasComAlvo quando nada bate), `obtevesAlgumaVez`
+// (true se QUALQUER release desta passada respondeu com sucesso), `falhadas`
+// (releaseIDs que falharam de rede nesta passada) e `ultimoErr` (o erro da última
+// falha de rede desta passada, só relevante quando `obtevesAlgumaVez` for false).
+func (c *Client) tentarReleases(ctx context.Context, ids []string, alvoFaixa provider.AlvoFaixaAlbum) (match bool, ultimaObtida []provider.FaixaExterna, obtevesAlgumaVez bool, falhadas []string, ultimoErr error) {
 	for _, releaseID := range ids {
 		fx, err := c.buscarFaixas(ctx, releaseID)
 		if err != nil {
+			log.Printf("musicbrainz: busca de faixas da release %s falhou (retentando outra release do grupo): %v", releaseID, err)
+			falhadas = append(falhadas, releaseID)
 			ultimoErr = err
 			continue
 		}
 		obtevesAlgumaVez = true
-		faixas = fx
+		ultimaObtida = fx
 		if releaseContemFaixaAlvo(fx, alvoFaixa) {
-			return fx, nil
+			return true, fx, true, falhadas, nil
 		}
 	}
-	if !obtevesAlgumaVez {
-		return nil, ultimoErr // TODAS as tentativas falharam de rede
-	}
-	return faixas, nil // nenhuma bateu dentro do teto: degrada com a ULTIMA obtida
+	return false, ultimaObtida, obtevesAlgumaVez, falhadas, ultimoErr
 }
 
 // ordenarReleasesPorPrioridade ordena os IDs de `releases` por prioridade -- MESMO

@@ -1184,7 +1184,7 @@ func servidorTetoFake(t *testing.T) (*httptest.Server, *int32) {
 		if i == 0 {
 			status = "Official"
 		}
-		releasesJSON.WriteString(fmt.Sprintf(`{"id": "%s", "status": "%s"}`, id, status))
+		fmt.Fprintf(&releasesJSON, `{"id": "%s", "status": "%s"}`, id, status)
 	}
 
 	mux.HandleFunc("/release-group/rg-teto", func(w http.ResponseWriter, r *http.Request) {
@@ -1232,6 +1232,175 @@ func TestBuscarFaixasComAlvoRespeitaTeto(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(chamadas); got != maxReleasesTentadosPorAlvo {
 		t.Fatalf("chamadas a /release/{id} = %d, esperava exatamente %d (teto respeitado, release-group tinha 17 releases)", got, maxReleasesTentadosPorAlvo)
+	}
+}
+
+// TestBuscarFaixasComAlvoSemFalhaDeRedeNaoFazSegundaPassada confirma o critério de
+// aceite do briefing 0123 de NAO gastar chamada extra à toa: no cenário do 0121
+// (servidorFreestylerFake, nenhuma release falha de rede -- rel-maxi responde 200 sem
+// bater o alvo, rel-full responde 200 e bate), a 2a passada nunca acontece porque
+// `falhadas` fica vazia -- só 2 chamadas HTTP a /release/{id} no total (uma por
+// release, nenhuma repetida).
+func TestBuscarFaixasComAlvoSemFalhaDeRedeNaoFazSegundaPassada(t *testing.T) {
+	mb, chamadasFaixas := servidorFreestylerFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	album, achou, err := c.BuscarAlbumPorNome(context.Background(), "artist-freestyler", "Freestyler",
+		provider.AlvoFaixaAlbum{FaixaTitulo: "Freestyler"}, nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumPorNome: %v", err)
+	}
+	if !achou {
+		t.Fatal("achou = false, esperava true")
+	}
+	achouFaixa := false
+	for _, fx := range album.Faixas {
+		if fx.Title == "Freestyler" {
+			achouFaixa = true
+		}
+	}
+	if !achouFaixa {
+		t.Fatalf("faixa 'Freestyler' nao encontrada: %+v", album.Faixas)
+	}
+	if got := atomic.LoadInt32(chamadasFaixas); got != 2 {
+		t.Fatalf("chamadas a /release/{id} = %d, esperava exatamente 2 (1 por release, sem 2a passada -- nenhuma falhou de rede)", got)
+	}
+}
+
+// servidorRedeFake monta um release-group ("rg-rede") com 2 releases: "rel-official"
+// (status "Official", SEM a faixa-alvo -- responde 200 sempre, de primeira) e
+// "rel-target" (status "Bootleg", COM a faixa-alvo -- seu status HTTP depende de
+// `statusPorChamada`, indexado pelo NÚMERO da chamada especificamente a
+// /release/rel-target, 1-based; chamadas além do tamanho do slice repetem o último
+// item). Isso permite simular, na MESMA release, "falha nas N primeiras chamadas
+// (esgotando tentativasMB na 1a passada) e sucesso numa chamada posterior (a da 2a
+// passada)" -- o cenário real do briefing 0123 (Bomfunk MC's/Freestyler). Devolve
+// também o contador de chamadas a /release/rel-target, para os testes confirmarem
+// exatamente quantas tentativas físicas aconteceram.
+func servidorRedeFake(t *testing.T, statusPorChamadaAlvo []int) (*httptest.Server, *int32) {
+	t.Helper()
+	var chamadasAlvo int32
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/artist/artist-rede", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"name": "Artista Rede",
+			"release-groups": [
+				{"id": "rg-rede", "title": "Album Rede", "first-release-date": "2000-01-01"}
+			]
+		}`))
+	})
+
+	mux.HandleFunc("/release-group/rg-rede", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"title": "Album Rede",
+			"first-release-date": "2000-01-01",
+			"genres": [],
+			"releases": [
+				{"id": "rel-official", "status": "Official"},
+				{"id": "rel-target", "status": "Bootleg"}
+			]
+		}`))
+	})
+
+	mux.HandleFunc("/release/rel-official", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"media": [{"position": 1, "tracks": [
+				{"position": 1, "title": "Faixa Sem Relacao", "artist-credit": [],
+				 "recording": {"id": "rec-sem-relacao", "title": "Faixa Sem Relacao", "isrcs": [], "artist-credit": []}}
+			]}]
+		}`))
+	})
+
+	mux.HandleFunc("/release/rel-target", func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&chamadasAlvo, 1)
+		idx := int(n) - 1
+		if idx >= len(statusPorChamadaAlvo) {
+			idx = len(statusPorChamadaAlvo) - 1
+		}
+		status := statusPorChamadaAlvo[idx]
+		if status != http.StatusOK {
+			w.WriteHeader(status)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"media": [{"position": 1, "tracks": [
+				{"position": 5, "title": "Freestyler", "artist-credit": [],
+				 "recording": {"id": "rec-full-freestyler", "title": "Freestyler", "isrcs": [], "artist-credit": []}}
+			]}]
+		}`))
+	})
+
+	return httptest.NewServer(mux), &chamadasAlvo
+}
+
+// TestBuscarFaixasComAlvoSegundaPassadaResgataReleaseAposFalhaTransitoria é o critério
+// de aceite principal do briefing 0123: "rel-target" (a release que contém a
+// faixa-alvo) esgota as tentativasMB=3 tentativas da 1a passada (503 em todas), mas
+// responde 200 na 1a chamada da 2a passada -- exatamente o cenário real (Bomfunk
+// MC's/Freestyler) que motivou o briefing. Antes da correção, essa release era
+// descartada para sempre na 1a falha e o resultado final NUNCA bateria o alvo,
+// mesmo a release certa existindo e respondendo pouco depois.
+func TestBuscarFaixasComAlvoSegundaPassadaResgataReleaseAposFalhaTransitoria(t *testing.T) {
+	mb, chamadasAlvo := servidorRedeFake(t, []int{
+		http.StatusServiceUnavailable, http.StatusServiceUnavailable, http.StatusServiceUnavailable, // esgota a 1a passada
+		http.StatusOK, // sucesso logo na 1a tentativa da 2a passada
+	})
+	defer mb.Close()
+	c := clientComBackoffFake(mb.URL)
+
+	album, achou, err := c.BuscarAlbumPorNome(context.Background(), "artist-rede", "Album Rede",
+		provider.AlvoFaixaAlbum{FaixaTitulo: "Freestyler"}, nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumPorNome: %v", err)
+	}
+	if !achou {
+		t.Fatal("achou = false, esperava true")
+	}
+	achouFaixa := false
+	for _, fx := range album.Faixas {
+		if fx.Title == "Freestyler" {
+			achouFaixa = true
+		}
+	}
+	if !achouFaixa {
+		t.Fatalf("faixa 'Freestyler' nao encontrada -- a 2a passada deveria ter resgatado rel-target: %+v", album.Faixas)
+	}
+	if got := atomic.LoadInt32(chamadasAlvo); got != 4 {
+		t.Fatalf("chamadas a /release/rel-target = %d, esperava 4 (3 falhas esgotando a 1a passada + 1 sucesso na 2a)", got)
+	}
+}
+
+// TestBuscarFaixasComAlvoFalhaPersistenteNasDuasPassadasDegradaSemPanico cobre o pior
+// caso: "rel-target" falha em TODAS as tentativas de AMBAS as passadas (503
+// persistente demais -- raro, mas o briefing exige não travar nem entrar em loop
+// infinito). O resultado final deve degradar exatamente como hoje: usa a última
+// release que respondeu com sucesso (rel-official), sem tentar uma 3a passada.
+func TestBuscarFaixasComAlvoFalhaPersistenteNasDuasPassadasDegradaSemPanico(t *testing.T) {
+	mb, chamadasAlvo := servidorRedeFake(t, []int{http.StatusServiceUnavailable})
+	defer mb.Close()
+	c := clientComBackoffFake(mb.URL)
+
+	album, achou, err := c.BuscarAlbumPorNome(context.Background(), "artist-rede", "Album Rede",
+		provider.AlvoFaixaAlbum{FaixaTitulo: "Freestyler"}, nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumPorNome: %v", err)
+	}
+	if !achou {
+		t.Fatal("achou = false, esperava true (o release-group bate por titulo)")
+	}
+	if len(album.Faixas) != 1 || album.Faixas[0].Title != "Faixa Sem Relacao" {
+		t.Fatalf("faixas = %+v, esperava degradar para as de rel-official (unica release que respondeu com sucesso)", album.Faixas)
+	}
+	// tentativasMB=3 por passada, 2 passadas (1a com todos os ids, 2a só com
+	// rel-target, que e' o unico que falhou de rede) -- nunca uma 3a.
+	if got := atomic.LoadInt32(chamadasAlvo); got != int32(2*tentativasMB) {
+		t.Fatalf("chamadas a /release/rel-target = %d, esperava exatamente %d (tentativasMB x 2 passadas, sem 3a passada)", got, 2*tentativasMB)
 	}
 }
 
