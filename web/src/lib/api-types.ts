@@ -1050,6 +1050,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/entities/{id}/audio-tags/write': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Regrava a tag de áudio (ID3v2/Vorbis comment) com o metadado resolvido (briefing 0125).
+     * @description Alternativa ao NFO de música (decisão do briefing 0125: não vale o investimento — só o Kodi lê, o resto do ecossistema real do dono — LMS/Lyrion, Navidrome, gonic, Supysonic e clientes Subsonic/ OpenSubsonic — lê direto da tag do arquivo). Regrava a tag do(s) arquivo(s) de áudio com o metadado JÁ RESOLVIDO (override ⟵ externo ⟵ arquivo — o mesmo valor que o detalhe da entity exibe): título, artista, álbum, ano, faixa/disco, gênero, flag de compilação, MusicBrainz IDs, ISRC e a capa do álbum embutida. `id` pode ser uma `faixa` (grava só o arquivo dela) ou um `album` (grava TODAS as faixas possuídas do álbum, uma a uma, best-effort — uma falha isolada não aborta as demais); cada faixa leva o artista da PRÓPRIA faixa na tag de artista quando o artist-credit diverge do artista principal do álbum (feat./colaboração, ADR-0027 item 4) — álbum/ ano/gênero/capa continuam vindo do álbum. Depois de cada faixa regravada, sincroniza `media_file.hash`/`mtime`/`size` (mesmo recheck restrito do briefing 0088), para o próximo scan incremental não ver o arquivo como "mudado" de surpresa. A escrita é sempre SOBRE O VALOR RESOLVIDO — nunca é relida de volta para o banco (a camada "arquivo" do resolver segue vindo só do próximo `ffprobe` natural). Sem body. Ação destrutiva/irreversível sobre o arquivo original (sem "desfazer") — só dispara pelo clique explícito do dono. 404 se a entity não existe; 422 se `type` não for `faixa`/ `album` (ex.: `artista` — sem cascata coerente de "obra"); 503 se o mecanismo de escrita (ffmpeg) não estiver disponível no ambiente.
+     */
+    post: operations['writeAudioTags']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/entities/{id}/materialize-missing-media': {
     parameters: {
       query?: never
@@ -2073,6 +2093,13 @@ export interface components {
       assets_found: number
       /** @description Nomes dos campos locais de reprodução (`watched`, `play_count`, `user_rating`, `last_played_at`, `resume_position_seconds`, `resume_total_seconds`) que estavam vazios e foram preenchidos a partir do `.nfo` nesta chamada. Vazio se não havia `.nfo`, ou se todos os campos já tinham valor. */
       playback_fields_filled: string[]
+    }
+    /** @description Resposta de POST /entities/{id}/audio-tags/write (briefing 0125) — resumo informativo, mesmo espírito solto do RefreshFilesResult (formato não é contrato rígido para outra integração consumir, só feedback pro dono na UI). Sucesso PARCIAL é o caso normal de uma cascata de álbum (uma faixa sem arquivo/com tag ilegível não impede as demais). */
+    AudioTagsWriteResult: {
+      /** @description Quantas faixas tiveram a tag regravada com sucesso nesta chamada. */
+      faixas_regravadas: number
+      /** @description Uma entrada por faixa que falhou ("faixaID: motivo"). Vazio quando todas as faixas regravaram com sucesso (ou quando `id` era uma `faixa` avulsa que regravou). */
+      falhas: string[]
     }
     /** @description Resposta de POST /entities/{id}/materialize-missing-media (briefing 0088) — espelha o retorno de `MaterializarMidiasFaltantes` (mesmo usado internamente pelo job `midias_faltantes`, briefing 0064), reaproveitado como DTO público deste endpoint. */
     MaterializeMissingMediaResult: {
@@ -4454,6 +4481,32 @@ export interface operations {
         }
       }
       404: components['responses']['Error']
+    }
+  }
+  writeAudioTags: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id da entity. */
+        id: components['parameters']['EntityId']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Resumo de faixas regravadas e falhas (sucesso parcial é normal numa cascata de álbum). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AudioTagsWriteResult']
+        }
+      }
+      404: components['responses']['Error']
+      422: components['responses']['Error']
+      503: components['responses']['Error']
     }
   }
   materializeMissingMedia: {

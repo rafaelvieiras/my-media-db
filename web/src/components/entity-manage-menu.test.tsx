@@ -932,3 +932,160 @@ describe('EntityManageMenu — "Marcar como (não) assistido" (0094)', () => {
     ).toBe(false)
   })
 })
+
+// "Gravar metadados no arquivo" (briefing 0125): item visível só para
+// `type==='faixa'`/`type==='album'` (NÃO depende de `owned`/posse de pasta
+// real — isso é sobre NFO). Ação destrutiva/irreversível sobre a tag do
+// arquivo: exige confirmação via AlertDialog antes de disparar
+// `writeAudioTags`, mesmo padrão de 2 passos do "Excluir coleção".
+describe('EntityManageMenu — "Gravar metadados no arquivo" (briefing 0125)', () => {
+  it('aparece para type="faixa"', async () => {
+    const user = userEvent.setup()
+    render(null, true, false, 'faixa', 'cataloged')
+    await abrirMenu(user)
+    expect(
+      screen.getByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('aparece para type="album"', async () => {
+    const user = userEvent.setup()
+    render(null, true, false, 'album', 'cataloged')
+    await abrirMenu(user)
+    expect(
+      screen.getByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('não aparece para type="movie"', async () => {
+    const user = userEvent.setup()
+    render(null, true, false, 'movie', 'cataloged')
+    await abrirMenu(user)
+    expect(
+      screen.queryByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+    ).toBeNull()
+  })
+
+  it('não aparece para type="artista"', async () => {
+    const user = userEvent.setup()
+    render(null, true, false, 'artista', 'cataloged')
+    await abrirMenu(user)
+    expect(
+      screen.queryByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+    ).toBeNull()
+  })
+
+  it('clicar no item abre o AlertDialog de confirmação — NÃO dispara a mutation direto', async () => {
+    const user = userEvent.setup()
+    const fetchMock = stubRota(
+      (p, m) => p === '/api/v1/entities/e1/audio-tags/write' && m === 'POST',
+      () => okJson({ faixas_regravadas: 1, falhas: [] }),
+    )
+    render(null, true, false, 'faixa', 'cataloged')
+    await abrirMenu(user)
+
+    await user.click(
+      screen.getByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+    )
+
+    expect(
+      await screen.findByRole('alertdialog', {
+        name: 'Gravar metadados no arquivo?',
+      }),
+    ).toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('"Cancelar" fecha o diálogo sem chamar a API', async () => {
+    const user = userEvent.setup()
+    const fetchMock = stubRota(
+      (p, m) => p === '/api/v1/entities/e1/audio-tags/write' && m === 'POST',
+      () => okJson({ faixas_regravadas: 1, falhas: [] }),
+    )
+    render(null, true, false, 'faixa', 'cataloged')
+    await abrirMenu(user)
+    await user.click(
+      screen.getByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+    )
+    await screen.findByRole('alertdialog')
+
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).toBeNull()
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('confirmar chama writeAudioTags e mostra "Gravando…" seguido do resumo de sucesso', async () => {
+    const user = userEvent.setup()
+    const liberar = stubEntityActionsAdiado(
+      '/api/v1/entities/e1/audio-tags/write',
+      () => okJson({ faixas_regravadas: 12, falhas: [] }),
+    )
+    render(null, true, false, 'album', 'cataloged')
+    await abrirMenu(user)
+    await user.click(
+      screen.getByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+    )
+    await screen.findByRole('alertdialog')
+
+    await user.click(screen.getByRole('button', { name: 'Gravar metadados' }))
+    // Enquanto o AlertDialog está aberto, o resto da árvore (onde mora o eco
+    // inline "Gravando…") fica `aria-hidden` (Radix trapa o foco/AT) — a
+    // asserção de pendência é sobre o PRÓPRIO botão do diálogo, não o eco.
+    expect(
+      await screen.findByRole('button', { name: 'Gravando…' }),
+    ).toBeDisabled()
+
+    liberar()
+    expect(
+      await screen.findByText('12 faixa(s) regravada(s).'),
+    ).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).toBeNull()
+    })
+  })
+
+  it('resumo com falhas parciais mostra a contagem de erros junto do sucesso', async () => {
+    const user = userEvent.setup()
+    stubRota(
+      (p, m) => p === '/api/v1/entities/e1/audio-tags/write' && m === 'POST',
+      () =>
+        okJson({
+          faixas_regravadas: 10,
+          falhas: ['faixaX: arquivo ausente', 'faixaY: tag ilegível'],
+        }),
+    )
+    render(null, true, false, 'album', 'cataloged')
+    await abrirMenu(user)
+    await user.click(
+      screen.getByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+    )
+    await screen.findByRole('alertdialog')
+    await user.click(screen.getByRole('button', { name: 'Gravar metadados' }))
+
+    expect(
+      await screen.findByText('10 faixa(s) regravada(s) — 2 com erro.'),
+    ).toBeInTheDocument()
+  })
+
+  it('erro de rede/500 mostra role=alert DENTRO do diálogo, que permanece aberto', async () => {
+    const user = userEvent.setup()
+    stubRota(
+      (p, m) => p === '/api/v1/entities/e1/audio-tags/write' && m === 'POST',
+      () => erroJson(503, 'unavailable', 'ffmpeg indisponível'),
+    )
+    render(null, true, false, 'faixa', 'cataloged')
+    await abrirMenu(user)
+    await user.click(
+      screen.getByRole('menuitem', { name: /Gravar metadados no arquivo/ }),
+    )
+    await screen.findByRole('alertdialog')
+    await user.click(screen.getByRole('button', { name: 'Gravar metadados' }))
+
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent('ffmpeg indisponível')
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+  })
+})

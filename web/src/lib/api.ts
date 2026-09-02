@@ -1458,6 +1458,29 @@ export async function materializeMissingMedia(
   return lerJson<MaterializeMissingMediaResult>(res)
 }
 
+// Resultado de POST .../audio-tags/write (briefing 0125): resumo informativo
+// (formato solto, não é contrato rígido) — quantas faixas tiveram a tag
+// regravada com sucesso e uma entrada por falha ("faixaID: motivo"). Sucesso
+// parcial é normal numa cascata de álbum.
+export type AudioTagsWriteResult = components['schemas']['AudioTagsWriteResult']
+
+// GRAVAR METADADOS NA TAG DE ÁUDIO (briefing 0125, item do menu Gerenciar
+// para `faixa`/`album`): regrava a tag do(s) arquivo(s) de áudio (ID3v2/
+// Vorbis comment) com o metadado JÁ RESOLVIDO (título/artista/álbum/ano/
+// faixa-disco/gênero/MBIDs/ISRC/capa) — nunca relido de volta pro banco.
+// `id` de `album` cascateia para todas as faixas possuídas, best-effort. Sem
+// body. 404 se a entity não existe; 422 se `type` não suportar (ex.:
+// `artista`); 503 se o mecanismo de escrita não estiver disponível.
+export async function writeAudioTags(
+  id: string,
+): Promise<AudioTagsWriteResult> {
+  const res = await fetch(
+    `${base}/api/v1/entities/${encodeURIComponent(id)}/audio-tags/write`,
+    { method: 'POST' },
+  )
+  return lerJson<AudioTagsWriteResult>(res)
+}
+
 // ── NFO na pasta real (briefing 0062) ────────────────────────────────────────
 
 // (RE)GERA e grava o `.nfo` da entity na pasta real da biblioteca, a partir do

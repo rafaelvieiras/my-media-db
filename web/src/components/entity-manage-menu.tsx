@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Settings,
   Sparkles,
+  Tag,
   Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -46,7 +47,9 @@ import {
   materializeMissingMedia,
   purgeEntity,
   refreshEntityFiles,
+  writeAudioTags,
   writeEntityNfo,
+  type AudioTagsWriteResult,
   type DownloadMissingArtworkResult,
   type EnrichMissingResult,
   type ForceReconcileResult,
@@ -187,6 +190,22 @@ function mensagemArte(resultado: DownloadMissingArtworkResult) {
   return null
 }
 
+// mensagemGravarTag resolve o desfecho de POST .../audio-tags/write (0125):
+// formato solto e informativo (contrato não é rígido) — quantas faixas
+// tiveram a tag regravada com sucesso, mais as falhas quando uma cascata de
+// álbum tem sucesso PARCIAL (uma faixa com erro não impede as demais).
+function mensagemGravarTag(resultado: AudioTagsWriteResult) {
+  const partes = [`${resultado.faixas_regravadas} faixa(s) regravada(s)`]
+  if (resultado.falhas.length > 0) {
+    partes.push(`${resultado.falhas.length} com erro`)
+  }
+  return (
+    <span role="status" className="text-sm text-muted-foreground">
+      {partes.join(' — ')}.
+    </span>
+  )
+}
+
 // mensagemReconciliar resolve o desfecho de POST .../force-reconcile (0122):
 // religou contra o pai × não religou desta vez (sem candidato, ou o tipo não é
 // aplicável) — nenhum dos dois é erro; erro de rede/500 é tratado à parte.
@@ -241,6 +260,11 @@ export function EntityManageMenu({
   // confirmação de 2 cliques que existia INLINE dentro da mesma área não cabe
   // mais lá; abre este modal separado em vez de mutar direto.
   const [alertaAberto, setAlertaAberto] = useState(false)
+  // Estado do diálogo de confirmação de "Gravar metadados no arquivo"
+  // (briefing 0125): mesmo padrão de 2 passos do "Excluir coleção" acima —
+  // ação destrutiva/irreversível sobre o arquivo original, nunca dispara
+  // direto do clique no item do dropdown.
+  const [alertaGravarTagAberto, setAlertaGravarTagAberto] = useState(false)
 
   // Invalidação compartilhada pelos botões novos (§4): a tela (entity),
   // a listagem (entities) e a galeria (artwork) refletem o resultado sem F5.
@@ -272,6 +296,21 @@ export function EntityManageMenu({
     mutationFn: () => writeEntityNfo(id),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['entity', id] }),
+  })
+  // "Gravar metadados no arquivo" (briefing 0125): regrava a tag de áudio
+  // (ID3v2/Vorbis comment) do(s) arquivo(s) com o metadado JÁ RESOLVIDO —
+  // alternativa ao NFO de música (que não existe funcionalmente, ver
+  // briefing §1). Só dispara após confirmação no AlertDialog
+  // (`alertaGravarTagAberto`). No sucesso fecha o diálogo e invalida a
+  // entity (a escrita também sincroniza `media_file.hash`/`mtime`/`size` no
+  // backend); o resumo (faixas regravadas/falhas) aparece inline, mesmo
+  // padrão das ações SEMPRE VISÍVEIS do 0088.
+  const gravarTag = useMutation({
+    mutationFn: () => writeAudioTags(id),
+    onSuccess: () => {
+      invalidar()
+      setAlertaGravarTagAberto(false)
+    },
   })
   // Excluir coleção (migrado de `entity-detail.tsx::ExcluirColecao`, briefing
   // 0026): DELETE /entities/{id} — purga com CASCADE das relações, os filmes
@@ -345,6 +384,10 @@ export function EntityManageMenu({
   )
   const mostrarReconciliar =
     (type === 'faixa' || type === 'tv') && ehDraft(status)
+  // "Gravar metadados no arquivo" (briefing 0125): NÃO depende de
+  // `podeGravarNaPastaReal`/posse de pasta real (isso é sobre NFO) — só do
+  // `type`, já que álbum cascateia para as faixas possuídas no backend.
+  const mostrarGravarTag = type === 'faixa' || type === 'album'
 
   const erroEnriquecer =
     enriquecer.error instanceof ApiError
@@ -369,6 +412,12 @@ export function EntityManageMenu({
       ? salvarNfo.error.message
       : salvarNfo.isError
         ? 'Não foi possível gravar o .nfo.'
+        : null
+  const erroGravarTag =
+    gravarTag.error instanceof ApiError
+      ? gravarTag.error.message
+      : gravarTag.isError
+        ? 'Não foi possível gravar os metadados no arquivo.'
         : null
   // Mesma lógica de erro do `ExcluirColecao` original (sem fallback genérico
   // para erro não-ApiError) — migrada tal qual.
@@ -459,6 +508,12 @@ export function EntityManageMenu({
             <FileText aria-hidden />
             {salvarNfo.isPending ? 'Gravando…' : 'Salvar informações (NFO)'}
           </DropdownMenuItem>
+          {mostrarGravarTag ? (
+            <DropdownMenuItem onSelect={() => setAlertaGravarTagAberto(true)}>
+              <Tag aria-hidden />
+              Gravar metadados no arquivo
+            </DropdownMenuItem>
+          ) : null}
           {/* 3 ações SEMPRE VISÍVEIS (briefing 0088) — não dependem de
               `catalog_completeness`, diferente dos 2 itens condicionais acima. */}
           <DropdownMenuSeparator />
@@ -575,6 +630,13 @@ export function EntityManageMenu({
           .nfo gravado em {salvarNfo.data.nfo_path}
         </span>
       ) : null}
+      {gravarTag.isPending ? (
+        <span role="status" className="text-sm text-muted-foreground">
+          Gravando…
+        </span>
+      ) : gravarTag.isSuccess ? (
+        mensagemGravarTag(gravarTag.data)
+      ) : null}
       {marcarAssistido.isPending ? (
         <span role="status" className="text-sm text-muted-foreground">
           Marcando…
@@ -666,6 +728,52 @@ export function EntityManageMenu({
                 }}
               >
                 {excluir.isPending ? 'Excluindo…' : 'Excluir coleção'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
+
+      {mostrarGravarTag ? (
+        <AlertDialog
+          open={alertaGravarTagAberto}
+          onOpenChange={setAlertaGravarTagAberto}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Gravar metadados no arquivo?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação SOBRESCREVE a tag original (ID3v2/Vorbis comment)
+                do(s) arquivo(s) de áudio{' '}
+                {type === 'album' ? 'do álbum' : 'da faixa'} com o metadado
+                atualmente resolvido — inclusive a capa embutida. É, na prática,
+                irreversível: o valor anterior da tag não é preservado em lugar
+                nenhum.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {erroGravarTag ? (
+              <span
+                role="alert"
+                className="text-sm font-medium text-destructive"
+              >
+                {erroGravarTag}
+              </span>
+            ) : null}
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={gravarTag.isPending}>
+                Cancelar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={gravarTag.isPending}
+                onClick={(e) => {
+                  // preventDefault: mesmo motivo do "Excluir coleção" acima —
+                  // controlamos `open` manualmente (fica aberto em erro,
+                  // mostrando a mensagem; fecha só no sucesso).
+                  e.preventDefault()
+                  gravarTag.mutate()
+                }}
+              >
+                {gravarTag.isPending ? 'Gravando…' : 'Gravar metadados'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
