@@ -28,6 +28,8 @@ import { ExternalDetailScreen } from '@/routes/external-detail'
 import { CollectionDetailScreen } from '@/routes/collection-detail'
 import { PersonDetailScreen } from '@/routes/person-detail'
 import { SettingsScreen } from '@/routes/settings'
+import { IntegrationsListScreen } from '@/routes/integrations'
+import { IntegrationDetailScreen } from '@/routes/integration-detail'
 import { WebhookScreen } from '@/routes/webhook'
 import { HistoricoOrfaosScreen } from '@/routes/historico-orfaos'
 import { JobsScreen } from '@/routes/jobs'
@@ -209,6 +211,20 @@ const dashboardSettingsRoute = createRoute({
   component: SettingsScreen,
 })
 
+// Integrações configuráveis via UI/banco (0095/0096, ADR-0023): lista e
+// formulário por schema para credenciais de provider (TMDB primeiro).
+const dashboardIntegrationsRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
+  path: '/integrations',
+  component: IntegrationsListScreen,
+})
+
+const dashboardIntegrationDetailRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
+  path: '/integrations/$slug',
+  component: IntegrationDetailScreen,
+})
+
 // Webhook de entrada Jellyfin (0093/0097): gerar/copiar o token do webhook.
 const dashboardWebhookRoute = createRoute({
   getParentRoute: () => dashboardRoute,
@@ -258,6 +274,8 @@ const routeTree = rootRoute.addChildren([
     dashboardReviewRoute,
     dashboardOrphansRoute,
     dashboardSettingsRoute,
+    dashboardIntegrationsRoute,
+    dashboardIntegrationDetailRoute,
     dashboardWebhookRoute,
     dashboardHistoricoOrfaosRoute,
     dashboardJobsRoute,

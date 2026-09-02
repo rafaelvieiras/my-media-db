@@ -16,6 +16,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
+	"github.com/rafaelvieiras/my-media-db/internal/integration"
 	"github.com/rafaelvieiras/my-media-db/internal/job/backup"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
@@ -179,7 +180,13 @@ func openAndMigrate() (*db.DB, error) {
 // watch de filesystem (briefing 0064). Erro só na criação dos diretórios
 // (assets/backups).
 func opcoesServer(database *db.DB) ([]server.Option, error) {
-	opts := opcoesBusca()
+	opts := opcoesBusca(database)
+
+	// Fundação de integrações configuráveis via UI/banco (briefing 0095,
+	// ADR-0023): registra o schema de campos do TMDB no Registry consumido
+	// por GET/PUT /api/v1/integrations. Só o TMDB nesta entrega -- TVDB/
+	// fanart.tv seguem via env var direto (fora de escopo, ver briefing).
+	opts = append(opts, server.WithIntegrations(tmdb.NovoDescriptorIntegracao()))
 
 	// Registro de CODECS (briefing 0100, ADR-0024): sempre populado,
 	// independente de credencial, só habilita a capacidade de INTERPRETAR
@@ -256,7 +263,7 @@ func opcoesServer(database *db.DB) ([]server.Option, error) {
 // determinístico (briefing 0028), EXCLUSIVO: o binário roda o fluxo inteiro sem fonte
 // real nem segredo, para os testes E2E (Camada 2) e inspeção manual. As imagens vêm de
 // MYMEDIADB_FAKE_IMAGE_BASE (um servidor de fixtures); vazio => sem pôster.
-func opcoesBusca() []server.Option {
+func opcoesBusca(database *db.DB) []server.Option {
 	if os.Getenv("MYMEDIADB_FAKE_PROVIDER") == "1" {
 		log.Printf("mymediadb: PROVIDER FAKE de fixtures habilitado (E2E; sem fonte real)")
 		// O fake de música (0115) roda ao lado do fake de filme/série sob
@@ -268,7 +275,7 @@ func opcoesBusca() []server.Option {
 			fake.NewMusicbrainz(),
 		)}
 	}
-	provs := provedoresReais()
+	provs := provedoresReais(context.Background(), integration.NovoResolver(database))
 	if len(provs) == 0 {
 		log.Printf("mymediadb: busca externa desabilitada (sem credencial)")
 		return nil
@@ -276,14 +283,21 @@ func opcoesBusca() []server.Option {
 	return []server.Option{server.WithSearchProvider(provs...)}
 }
 
-// provedoresReais constrói os providers reais cujas credenciais estão no ambiente
-// (TMDB e/ou TheTVDB), na ordem de prioridade padrão. Vazio quando nenhuma existe.
-func provedoresReais() []provider.Provider {
+// provedoresReais constrói os providers reais cujas credenciais estão
+// configuradas (TMDB e/ou TheTVDB), na ordem de prioridade padrão. Vazio
+// quando nenhuma existe. O TMDB resolve a credencial via integration.Resolver
+// (briefing 0095, ADR-0023): banco (integration_config) tem PRECEDÊNCIA sobre
+// a env var -- mesmo resultado de hoje quando o banco está vazio (cai na env
+// var), mas já lendo pela camada nova. TVDB/fanart.tv NÃO migraram nesta
+// entrega (fora de escopo) -- continuam via os.Getenv direto.
+func provedoresReais(ctx context.Context, resolver *integration.Resolver) []provider.Provider {
 	var provs []provider.Provider
 
+	descTmdb := tmdb.NovoDescriptorIntegracao()
+	efetivosTmdb := resolver.Valores(ctx, descTmdb.Slug(), descTmdb.Campos())
 	credTmdb := tmdb.Credencial{
-		Token:  os.Getenv("MYMEDIADB_TMDB_TOKEN"),
-		APIKey: os.Getenv("MYMEDIADB_TMDB_API_KEY"),
+		Token:  efetivosTmdb["token"],
+		APIKey: efetivosTmdb["api_key"],
 	}
 	if credTmdb.Configurada() {
 		log.Printf("mymediadb: busca externa TMDB habilitada")

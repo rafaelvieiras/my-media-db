@@ -105,7 +105,7 @@ Os briefings `draft` são detalhados quando cada predecessor aterrissa (como na 
 | [0025](0025-colecao-entity-interna.md) | Coleção como entity interna: importável + criável/editável manual | feature | done | 0024 |
 | [0026](0026-centralizacao-interno-first.md) | Centralização interno-first: priorizar o que já está na biblioteca | feature/fix | done | 0024, 0025 |
 | [0027](0027-similar-search-ids-item-manual.md) | Interno-first em similares/busca + editar `external_ids` + item manual | feature | done | 0025, 0026 |
-| [0028](0028-testes-e2e.md) | Testes end-to-end: validar o fluxo inteiro (UI + API) | infra/qualidade | in-progress | 0015, 0025, 0026, 0027 |
+| [0028](0028-testes-e2e.md) | Testes end-to-end: validar o fluxo inteiro (UI + API) | infra/qualidade | done | 0015, 0025, 0026, 0027 |
 | [0029](0029-md6-elenco-equipe-person-credit-company.md) | MD6: elenco, equipe e produtoras (`person`/`credit`/`company`) | feature | done | 0012, 0013, 0022, 0023, 0024 |
 | [0030](0030-crud-por-rota-formulario-dirigido-por-schema.md) | CRUD por rota + formulário dirigido por schema (TanStack Form + Zod) | refactor/feature | done | 0016, 0025, 0027 |
 | [0031](0031-series-fundacao-modelo-enriquecimento.md) | Séries: fundação do modelo + enriquecimento (TheTVDB + registry multi-provider) | feature | done | 0022, 0024, 0025, 0026 |
@@ -187,8 +187,8 @@ de extensão concreto que um futuro sistema de plugins vai reusar.
 
 | ID | Briefing | Tipo | Status | Depende de |
 |---|---|---|---|---|
-| [0095](0095-fundacao-integracoes-schema-registry-api.md) | Fundação de Integrações: schema `integration_config` + registry Go + API (`GET/PUT`) + migra o TMDB para ler do registro | feature | draft | — |
-| [0096](0096-ui-integracoes-dashboard-tmdb.md) | UI de Integrações: `/dashboard/integrations` (lista) + subpágina TMDB com formulário dinâmico | feature | draft | 0095 |
+| [0095](0095-fundacao-integracoes-schema-registry-api.md) | Fundação de Integrações: schema `integration_config` + registry Go + API (`GET/PUT`) + migra o TMDB para ler do registro | feature | done | — |
+| [0096](0096-ui-integracoes-dashboard-tmdb.md) | UI de Integrações: `/dashboard/integrations` (lista) + subpágina TMDB com formulário dinâmico | feature | done | 0095 |
 
 ### Fase 5+ — Trailer e música-tema
 
@@ -240,7 +240,7 @@ busca como se fossem tipos de topo. Ver [ADR-0029](../docs/adr/0029-import-de-mu
 | [0112](0112-registro-tipos-de-topo.md) | Registro de tipos "de topo" (fundação): fonte única Go, substitui duas exclusões hardcoded divergentes | chore/fundação | done | — |
 | [0113](0113-busca-generica-multi-schema.md) | Busca genérica multi-schema: filtro de tipo dinâmico, agrupamento por tipo real | feature | done | 0112 |
 | [0114](0114-home-topo-e-rota-library.md) | Home só com tipos de topo (remove grid completo) + rota `/library/:entitySlug` com "Ver Todos" | feature | done | 0112 |
-| [0115](0115-musica-import-local-first.md) | Música: import local-first (só o que a faixa possuída traz), faixas faltando importáveis sob demanda, feat não auto-criado | fix/feature | in-progress | 0105, 0106, 0107 |
+| [0115](0115-musica-import-local-first.md) | Música: import local-first (só o que a faixa possuída traz), faixas faltando importáveis sob demanda, feat não auto-criado | fix/feature | done | 0105, 0106, 0107 |
 
 ### Transversal — Infraestrutura operacional
 
@@ -266,7 +266,7 @@ e serve, explicitamente, de base técnica para o futuro sistema de plugins
 | [0118](0118-reprocessar-artes-faltantes-entities-ja-identificadas.md) | Reprocessar artes faltantes de entities já identificadas: retenta o inventário de arte em lote quando um ArteProvider foi configurado depois do import | feature | done | 0048, 0056, 0085, 0088, 0117 |
 | [0119](0119-arte-local-musica-e-precedencia.md) | Arte local de música + precedência `local` acima de `external`: imagem já na pasta (artista/álbum) passa a ser fonte de arte e vence qualquer provider | feature | done | 0017, 0048, 0088, 0106, 0116 |
 | [0120](0120-reconciliacao-de-filhos-orfaos-musica-serie.md) | Reconciliação de filhos órfãos (faixa/episódio) contra árvore já identificada: retenta o vínculo depois do scan + corrige bug ativo que travava re-import de série rascunho | fix/feature | done | 0034, 0056, 0107, 0115, 0116, 0118 |
-| [0121](0121-musicbrainz-tenta-outras-releases-do-release-group.md) | MusicBrainz tenta outras releases do mesmo release-group quando a faixa-alvo não está na escolhida por padrão + duração como sinal de confirmação de match (caso real: Bomfunk MC's/Freestyler) | fix | in-progress | 0115, 0120 |
-| [0122](0122-forcar-reconciliacao-manual-por-entity.md) | Forçar reconciliação manual de UMA entity (faixa/série em rascunho), ignorando o throttle de 1x/dia da reconciliação automática | feature | in-progress | 0059, 0120 |
+| [0121](0121-musicbrainz-tenta-outras-releases-do-release-group.md) | MusicBrainz tenta outras releases do mesmo release-group quando a faixa-alvo não está na escolhida por padrão + duração como sinal de confirmação de match (caso real: Bomfunk MC's/Freestyler) | fix | done | 0115, 0120 |
+| [0122](0122-forcar-reconciliacao-manual-por-entity.md) | Forçar reconciliação manual de UMA entity (faixa/série em rascunho), ignorando o throttle de 1x/dia da reconciliação automática | feature | done | 0059, 0120 |
 | [0123](0123-musicbrainz-reprova-releases-que-falharam-de-rede.md) | MusicBrainz dá uma segunda chance a releases que falharam só de rede (503 transitório) ao buscar a faixa-alvo, com log de diagnóstico por tentativa (caso real: Bomfunk MC's/Freestyler) | fix | done | 0121, 0122 |
-| [0124](0124-desempate-de-titulo-por-duracao-na-faixa-alvo.md) | Desempate por duração quando 2+ faixas da mesma release empatam no score de título (regressão real da rodada 2 do 0121: release com 2 faixas "Freestyler" escolhia a errada e o gate de duração rejeitava a release inteira) | fix | in-progress | 0121, 0123 |
+| [0124](0124-desempate-de-titulo-por-duracao-na-faixa-alvo.md) | Desempate por duração quando 2+ faixas da mesma release empatam no score de título (regressão real da rodada 2 do 0121: release com 2 faixas "Freestyler" escolhia a errada e o gate de duração rejeitava a release inteira) | fix | done | 0121, 0123 |

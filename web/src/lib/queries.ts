@@ -19,6 +19,7 @@ import {
   hasEntityTrailer,
   listHistoricoEventos,
   listHistoricoOrfaos,
+  getIntegration,
   getJellyfinWebhookToken,
   getLanguageSettings,
   getRetroactiveEnrichmentSettings,
@@ -36,6 +37,7 @@ import {
   listAssets,
   listEntities,
   listEntityTypes,
+  listIntegrations,
   listLibrary,
   searchMedia,
   type EntityListParams,
@@ -190,6 +192,26 @@ export const jellyfinWebhookTokenQueryOptions = queryOptions({
   queryKey: ['webhooks', 'jellyfin', 'token'],
   queryFn: getJellyfinWebhookToken,
 })
+
+// Integrações configuráveis via UI/banco (briefing 0095/0096, ADR-0023):
+// fonte única para `/dashboard/integrations` (lista, badge `configurada`) e o
+// formulário por slug abaixo. Chave `['integrations']` — invalidada pelo PUT
+// do formulário (o badge da lista precisa refletir na hora).
+export const integrationsQueryOptions = queryOptions({
+  queryKey: ['integrations'],
+  queryFn: listIntegrations,
+})
+
+// Schema + valor efetivo dos campos de UMA integração. Chave
+// `['integrations', slug]` — invalidada pelo próprio PUT (eco pós-gravação
+// não é usado direto para não reidratar campo `secret`; a tela remonta o
+// formulário a partir do refetch, ver `IntegrationDetailScreen`).
+export function integrationDetailQueryOptions(slug: string) {
+  return queryOptions({
+    queryKey: ['integrations', slug],
+    queryFn: () => getIntegration(slug),
+  })
+}
 
 // Config de completude de CATALOGAÇÃO (0057): fonte única para o formulário de
 // admin. Chave `['settings', 'catalog-completeness']` — invalidada pelo PUT da

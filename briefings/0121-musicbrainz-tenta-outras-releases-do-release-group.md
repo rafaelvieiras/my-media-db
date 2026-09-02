@@ -12,7 +12,7 @@
 | **Tipo** | fix |
 | **Fase (roadmap)** | Transversal / correção de dado — achado ao validar o 0120 em produção (caso real: Bomfunk MC's / Freestyler). |
 | **Docs relacionadas** | [ADR-0027](../docs/adr/0027-modelo-de-musica-hierarquia-artista-album-faixa.md) |
-| **Status** | in-progress |
+| **Status** | done |
 | **Depende de** | [0115](0115-musica-import-local-first.md), [0120](0120-reconciliacao-de-filhos-orfaos-musica-serie.md) |
 
 ---
@@ -477,3 +477,20 @@ de música (LMS/Lyrion, Jellyfin) resolvem esse tipo de ambiguidade.
       "forçar reconciliação por entity" que ignore o throttle
       deliberadamente (hoje não existe por design — o throttle existe
       justamente pra não martelar a API do MusicBrainz).
+
+## 7. Fechamento (02/09/2026) — caso real confirmado em produção
+
+O escape-valve do throttle saiu como [0122](0122-forcar-reconciliacao-manual-por-entity.md)
+(endpoint `force-reconcile`). Repetir a validação com ele ligado mostrou que
+o teto de releases/duração desta rodada 2 era necessário mas não suficiente:
+a release-alvo tem duas faixas tituladas exatamente "Freestyler" e o
+desempate por score de título (arbitrário, "primeira encontrada") descartava
+a release inteira antes mesmo do gate de duração ter chance de decidir —
+causa raiz isolada e corrigida em [0124](0124-desempate-de-titulo-por-duracao-na-faixa-alvo.md).
+Com 0122+0124 em produção, `force-reconcile` na entity
+`4838fee1-8b95-4d72-8142-e4edaa106975` retornou `linked=true`, repontando o
+arquivo para a faixa 5 correta (mbid `0d8df525-cc5a-4ee4-a303-e4df9ca0a685`,
+isrc `AUXN21104289`). O mecanismo desta rodada 2 (teto 15 + duração como
+confirmação) está correto, verificado e em produção — o critério de
+validação acima fecha via a cadeia 0122→0123→0124, não isoladamente por
+este briefing.

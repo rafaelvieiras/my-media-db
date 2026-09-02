@@ -6,6 +6,7 @@ import {
   Library,
   ListChecks,
   Menu,
+  Plug,
   Settings,
   Trash2,
   Webhook,
@@ -34,6 +35,7 @@ const ITENS: {
     | '/dashboard/orphans'
     | '/dashboard/jobs'
     | '/dashboard/settings'
+    | '/dashboard/integrations'
     | '/dashboard/webhook'
     | '/dashboard/historico-orfaos'
     | '/dashboard/health'
@@ -45,6 +47,10 @@ const ITENS: {
   { to: '/dashboard/orphans', label: 'Órfãs', icon: Trash2 },
   { to: '/dashboard/jobs', label: 'Jobs', icon: Briefcase },
   { to: '/dashboard/settings', label: 'Configurações', icon: Settings },
+  // Integrações (briefing 0096): entre Configurações e Webhook -- mesma área
+  // de "credenciais/config de provider", antes das áreas mais operacionais
+  // (Webhook/Eventos sem item/Saúde).
+  { to: '/dashboard/integrations', label: 'Integrações', icon: Plug },
   { to: '/dashboard/webhook', label: 'Webhook', icon: Webhook },
   {
     to: '/dashboard/historico-orfaos',

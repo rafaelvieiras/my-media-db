@@ -17,6 +17,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/externaldetail"
+	"github.com/rafaelvieiras/my-media-db/internal/integration"
 	"github.com/rafaelvieiras/my-media-db/internal/job"
 	"github.com/rafaelvieiras/my-media-db/internal/job/libraryhealth"
 	"github.com/rafaelvieiras/my-media-db/internal/job/midiasfaltantes"
@@ -54,6 +55,18 @@ type Server struct {
 	// sem NENHUMA chave configurada. Ver codecPara em entities.go (fallback
 	// para `providers`, cobre o MYMEDIADB_FAKE_PROVIDER dos testes E2E).
 	codecs provider.Registry
+	// integrations é o REGISTRO de config de integração (briefing 0095,
+	// ADR-0023): slug→integration.Descriptor (hoje só "tmdb"). Alimentado via
+	// WithIntegrations. GET/PUT /integrations (internal/server/integrations.go)
+	// leem este registro; o valor EFETIVO de cada campo (banco→env var→
+	// ausente) é calculado por integrationsResolver, abaixo.
+	integrations integration.Registry
+	// integrationsResolver calcula o valor efetivo de cada Campo de uma
+	// integração (briefing 0095). Construído em New sempre que há banco --
+	// não depende de options (mesmo espírito de s.library/s.scanner) --
+	// porque só precisa do *db.DB, nunca fica nil quando entitiesUnavailable
+	// já barrou antes.
+	integrationsResolver *integration.Resolver
 	// cacheExterno guarda por TTL curto o resultado externo por (query,tipo),
 	// para poupar a fonte. Só existe quando há provider.
 	cacheExterno *cacheExterno
@@ -172,6 +185,20 @@ func WithCodecRegistry(provs ...provider.Provider) Option {
 	return func(s *Server) {
 		for _, p := range provs {
 			s.codecs.Registrar(p)
+		}
+	}
+}
+
+// WithIntegrations REGISTRA um ou mais integration.Descriptor no registro de
+// integrações (briefing 0095, ADR-0023) -- hoje só tmdb.NovoDescriptorIntegracao().
+// Variádico e ACUMULATIVO (mesmo padrão de WithCodecRegistry): cada Descriptor
+// entra sob o seu Slug(); nil é ignorado. Sem esta option, o registro fica
+// vazio (GET /integrations lista nada; GET/PUT /integrations/{slug} degradam
+// para 404 em qualquer slug).
+func WithIntegrations(descs ...integration.Descriptor) Option {
+	return func(s *Server) {
+		for _, d := range descs {
+			s.integrations.Registrar(d)
 		}
 	}
 }
@@ -386,6 +413,7 @@ func New(version string, database *db.DB, opts ...Option) *Server {
 	if database != nil {
 		s.library = library.New(database)
 		s.scanner = scanner.NewManager(database)
+		s.integrationsResolver = integration.NovoResolver(database)
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -621,6 +649,20 @@ func (s *Server) Handler() (http.Handler, error) {
 				// Fundação para trailer (0102) e música-tema (0103).
 				cfg.Get("/ytdlp", s.getYtdlpSettings)
 				cfg.Put("/ytdlp", s.putYtdlpSettings)
+			})
+
+			// Integrações configuráveis via UI (briefing 0095, ADR-0023):
+			// registro genérico de config de provider (hoje só TMDB), com
+			// precedência banco > env var calculada por integrationsResolver.
+			// Sem tela própria nesta entrega -- o briefing 0096 consome estes
+			// endpoints. GET lista (com `configurada`)/detalha (schema + valor
+			// efetivo por campo, nunca o valor cru de um campo secreto); PUT
+			// grava PARCIAL (só os campos presentes no body mudam, `null`
+			// remove a chave e volta a herdar a env var).
+			v1.Route("/integrations", func(ig chi.Router) {
+				ig.Get("/", s.listIntegrations)
+				ig.Get("/{slug}", s.getIntegration)
+				ig.Put("/{slug}", s.putIntegration)
 			})
 
 			// Datasources da biblioteca (briefing 0008). Escritas (POST/PATCH/

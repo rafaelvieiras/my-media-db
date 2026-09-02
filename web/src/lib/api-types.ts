@@ -253,6 +253,50 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/integrations': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Lista as integrações configuráveis registradas (briefing 0095, ADR-0023).
+     * @description Fundação de config de integração gravável em banco, com precedência sobre a variável de ambiente — hoje só `tmdb` está registrado (TVDB e fanart.tv seguem via env var direto, fora de escopo). Para cada integração, resolve o valor EFETIVO (banco → env var → ausente) de cada campo e calcula `configurada` via a regra própria do provider (ex.: TMDB aceita `token` OU `api_key`). Sem UI própria nesta entrega — consumida pelo briefing 0096.
+     */
+    get: operations['listIntegrations']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/integrations/{slug}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Schema de campos + valor efetivo de UMA integração (briefing 0095).
+     * @description Devolve o schema de campos da integração (`token`/`api_key` para o TMDB) junto do valor EFETIVO de cada um (banco → env var → ausente). Um campo `tipo:"secret"` NUNCA devolve `valor` cru — só `definido` (se há algum valor efetivo) e `origem` (`"banco"`, `"env"` ou `"nenhum"`). 404 se o slug não está registrado.
+     */
+    get: operations['getIntegration']
+    /**
+     * Grava (parcialmente) os valores de UMA integração (briefing 0095).
+     * @description Upsert PARCIAL em `integration_config`: só as chaves presentes em `valores` mudam; um valor `null` REMOVE a chave (o campo volta a herdar a env var de bootstrap/fallback, ou fica `origem:"nenhum"` se ela também estiver vazia). Não bloqueia por obrigatoriedade ausente — o dono pode salvar parcialmente (reflete só em `configurada:false` na listagem). Sem hot-reload: um provider já construído no boot (ex. o TMDB do busca externa) só passa a usar o novo valor após reiniciar o processo (ADR-0023). 404 se o slug não está registrado; 422 se `valores` vier vazio ou citar uma chave que não é um campo do schema desta integração.
+     */
+    put: operations['putIntegration']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/schema/entity-fields': {
     parameters: {
       query?: never
@@ -2192,6 +2236,69 @@ export interface components {
       type: 'movie' | 'tv' | 'collection' | 'season' | 'episode'
       title: string
     }
+    /** @description UM item da listagem GET /integrations (briefing 0095). `configurada` é calculada pela regra PRÓPRIA do provider (ex.: TMDB aceita `token` OU `api_key`) a partir dos valores efetivos de cada campo — não é "todos os campos obrigatórios preenchidos". */
+    IntegrationSummary: {
+      /** @description Chave estável de URL/registro (ex.: tmdb). */
+      slug: string
+      /** @description Rótulo amigável (ex.: TMDB). */
+      nome: string
+      /** @description Texto curto de apoio. */
+      descricao: string
+      /** @description Se a integração está operante com os valores efetivos atuais. */
+      configurada: boolean
+    }
+    /** @description Corpo de GET /integrations. */
+    IntegrationsListResponse: {
+      integrations: components['schemas']['IntegrationSummary'][]
+    }
+    /** @description Uma alternativa de um campo `tipo:"select"`. */
+    IntegrationFieldOption: {
+      valor: string
+      label: string
+    }
+    /** @description UM campo do schema de uma integração, com o valor EFETIVO já resolvido (banco → env var → ausente). `valor` só aparece quando `tipo` NÃO é `"secret"` E há um valor efetivo — um campo secreto NUNCA devolve o valor cru, em nenhuma resposta (GET nem eco do PUT). */
+    IntegrationField: {
+      /** @description Chave estável do campo (chave em `values_json` e no PUT). */
+      nome: string
+      /** @description Rótulo amigável para a UI. */
+      label: string
+      /**
+       * @description Hint de apresentação para a UI — não afeta a resolução de valor.
+       * @enum {string}
+       */
+      tipo: 'text' | 'secret' | 'bool' | 'number' | 'select'
+      /** @description Hint de UI (asterisco); NÃO decide `configurada` — cada integração tem sua própria regra (ver IntegrationSummary). */
+      obrigatorio: boolean
+      /** @description Texto de apoio opcional (ex.: onde obter a chave). */
+      ajuda?: string
+      /** @description Texto de exemplo opcional. */
+      placeholder?: string
+      /** @description Só presente quando `tipo` é `"select"`. */
+      opcoes?: components['schemas']['IntegrationFieldOption'][]
+      /** @description Se há um valor efetivo (banco OU env var) para este campo. */
+      definido: boolean
+      /**
+       * @description `banco` = valor gravado em `integration_config` (precedência sobre a env var, ADR-0023); `env` = herdado da env var de bootstrap/fallback deste campo; `nenhum` = nenhum dos dois.
+       * @enum {string}
+       */
+      origem: 'banco' | 'env' | 'nenhum'
+      /** @description Valor efetivo cru — só presente quando `tipo != "secret"` E `definido:true`. Ausente (nunca `null`) nos demais casos. */
+      valor?: string
+    }
+    /** @description Corpo de GET /integrations/{slug} e de PUT /integrations/{slug} (o eco pós-gravação, mesmo shape). */
+    IntegrationDetail: {
+      slug: string
+      nome: string
+      descricao: string
+      campos: components['schemas']['IntegrationField'][]
+    }
+    /** @description Corpo do PUT /integrations/{slug} (briefing 0095): upsert PARCIAL — só as chaves presentes em `valores` mudam. Um valor `null` REMOVE a chave do `values_json` (o campo volta a herdar a env var, ou fica `origem:"nenhum"` se ela também estiver vazia); uma chave AUSENTE do objeto não é tocada. 422 se `valores` vier vazio ou citar uma chave que não é um campo do schema desta integração. */
+    PutIntegrationRequest: {
+      /** @description Mapa nome-do-campo → novo valor (string) ou `null` (remove). */
+      valores: {
+        [key: string]: string | null
+      }
+    }
     /** @description Config de idioma (ADR-0018): idioma principal, fallback e o conjunto de permitidos (códigos BCP-47/TMDB). É o corpo do PUT e a resposta do GET/PUT /settings/languages. */
     LanguageSettings: {
       /** @description Idioma principal (base de leitura, ∈ allowed). */
@@ -2685,6 +2792,8 @@ export interface components {
     HistoricoEventoId: string
     /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
     LangQuery: string
+    /** @description Slug estável da integração (chave de URL e de registro em `integration_config`, ex.: `"tmdb"` — briefing 0095). */
+    IntegrationSlug: string
   }
   requestBodies: never
   headers: never
@@ -3136,6 +3245,80 @@ export interface operations {
         }
       }
       400: components['responses']['Error']
+      422: components['responses']['Error']
+    }
+  }
+  listIntegrations: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Integrações registradas. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['IntegrationsListResponse']
+        }
+      }
+    }
+  }
+  getIntegration: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Slug estável da integração (chave de URL e de registro em `integration_config`, ex.: `"tmdb"` — briefing 0095). */
+        slug: components['parameters']['IntegrationSlug']
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Detalhe da integração. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['IntegrationDetail']
+        }
+      }
+      404: components['responses']['Error']
+    }
+  }
+  putIntegration: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Slug estável da integração (chave de URL e de registro em `integration_config`, ex.: `"tmdb"` — briefing 0095). */
+        slug: components['parameters']['IntegrationSlug']
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PutIntegrationRequest']
+      }
+    }
+    responses: {
+      /** @description Detalhe da integração após a gravação (mesmo shape do GET). */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['IntegrationDetail']
+        }
+      }
+      400: components['responses']['Error']
+      404: components['responses']['Error']
       422: components['responses']['Error']
     }
   }
@@ -4237,7 +4420,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Resultado da reconciliacao forcada (religou ou nao). */
+      /** @description Resultado da reconciliação forçada (religou ou não). */
       200: {
         headers: {
           [name: string]: unknown

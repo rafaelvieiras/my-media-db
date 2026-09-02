@@ -128,9 +128,10 @@ func TestMigrateUp(t *testing.T) {
 	// faseamento na própria migration) + 0025 remove job_execution (CAMADA 3
 	// da mesma ADR: internal/job/manager.go passou a enfileirar via
 	// execqueue, então job_execution vira uma segunda fonte de verdade
-	// redundante e é derrubada).
-	if v := mustSchemaVersion(t, d); v != 25 {
-		t.Errorf("versão após up = %d, quero 25", v)
+	// redundante e é derrubada) + 0026 integration_config (fundação de
+	// integrações configuráveis via UI, briefing 0095/ADR-0023).
+	if v := mustSchemaVersion(t, d); v != 26 {
+		t.Errorf("versão após up = %d, quero 26", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -181,6 +182,10 @@ func TestMigrateDown(t *testing.T) {
 	}
 
 	// Down reverte uma migration por vez, do topo para a base.
+	downPara(t, d, 25) // 0026: remove integration_config (briefing 0095).
+	querFalha(t, d, "SELECT 1 FROM integration_config",
+		"tabela integration_config ainda existe após o down do 0026")
+
 	downPara(t, d, 24) // 0025: recria job_execution (só o SCHEMA, sem dados -- ver a nota no Down da migration).
 	if rows, err := d.Read.QueryContext(context.Background(), "SELECT 1 FROM job_execution WHERE 0"); err != nil {
 		t.Errorf("job_execution deveria existir de novo após o down do 0025: %v", err)

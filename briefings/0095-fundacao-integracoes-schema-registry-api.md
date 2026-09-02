@@ -9,7 +9,7 @@
 | **ID** | 0095 |
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 5+ — Integrações configuráveis via UI |
-| **Status** | draft |
+| **Status** | done |
 | **Docs relacionadas** | [ADR-0023](../docs/adr/0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md), [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [07-enriquecimento-providers](../docs/07-enriquecimento-providers.md), [03-arquitetura](../docs/03-arquitetura.md) |
 | **Depende de** | — |
 
@@ -202,28 +202,28 @@ entrega.
 
 ## 5. Critérios de aceite
 
-- [ ] `GET /integrations` lista `tmdb` com `configurada:false` quando nem
+- [x] `GET /integrations` lista `tmdb` com `configurada:false` quando nem
       banco nem env var têm valor.
-- [ ] Setar `MYMEDIADB_TMDB_TOKEN` no ambiente (sem tocar o banco) faz
+- [x] Setar `MYMEDIADB_TMDB_TOKEN` no ambiente (sem tocar o banco) faz
       `GET /integrations` devolver `configurada:true` e
       `GET /integrations/tmdb` devolver o campo `token` com
       `origem:"env"`, `definido:true`, sem `valor` (é secreto).
-- [ ] `PUT /integrations/tmdb {"valores":{"token":"abc"}}` grava no banco;
+- [x] `PUT /integrations/tmdb {"valores":{"token":"abc"}}` grava no banco;
       `GET` subsequente devolve `origem:"banco"` pro campo `token` (a env var
       segue setada, mas não é mais a fonte efetiva).
-- [ ] `PUT` com `{"valores":{"token":null}}` remove o override — `GET`
+- [x] `PUT` com `{"valores":{"token":null}}` remove o override — `GET`
       volta a mostrar `origem:"env"` (ou `"nenhum"` se a env var também
       estiver vazia).
-- [ ] Reiniciar o processo com um valor gravado no banco faz o provider TMDB
+- [x] Reiniciar o processo com um valor gravado no banco faz o provider TMDB
       efetivamente usar esse valor nas chamadas reais (teste de integração
       construindo `main`'s `provedoresReais()`-equivalente contra um banco
       com `integration_config` populado).
-- [ ] `GET /integrations/inexistente` → `404`.
-- [ ] `PUT /integrations/tmdb {"valores":{}}` → `422`.
-- [ ] `PUT /integrations/tmdb {"valores":{"campo_que_nao_existe":"x"}}` → `422`.
-- [ ] Campo `tipo:"secret"` NUNCA aparece com `valor` no JSON de resposta
+- [x] `GET /integrations/inexistente` → `404`.
+- [x] `PUT /integrations/tmdb {"valores":{}}` → `422`.
+- [x] `PUT /integrations/tmdb {"valores":{"campo_que_nao_existe":"x"}}` → `422`.
+- [x] Campo `tipo:"secret"` NUNCA aparece com `valor` no JSON de resposta
       (nem em `GET` nem no `PUT` de eco) — só `definido`/`origem`.
-- [ ] `go build ./...`, `go vet ./...`, `go test ./... -count=1` verdes;
+- [x] `go build ./...`, `go vet ./...`, `go test ./... -count=1` verdes;
       `tsc -b` verde após `gen:types`.
 
 ## 6. Notas de implementação / decisões

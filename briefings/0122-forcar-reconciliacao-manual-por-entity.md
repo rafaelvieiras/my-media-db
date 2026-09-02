@@ -14,7 +14,7 @@
 | **Tipo** | feature |
 | **Fase (roadmap)** | Transversal / UX operacional — achado ao validar o 0121 em produção (o throttle do 0120 bloqueou um retry manual no mesmo dia). |
 | **Docs relacionadas** | — |
-| **Status** | in-progress |
+| **Status** | done |
 | **Depende de** | [0059](0059-acoes-sob-demanda-item-aberto-enrich-missing-download-artwork.md), [0120](0120-reconciliacao-de-filhos-orfaos-musica-serie.md) |
 
 ---
@@ -215,3 +215,16 @@ onde toda ação individual sob demanda já mora (briefing 0059/0088).
       permanece em aberto; precisa de um briefing de investigação novo
       sobre o matching faixa↔álbum do provider MusicBrainz para este
       release-group específico.**
+
+## 7. Fechamento (02/09/2026) — caso real confirmado em produção
+
+A investigação continuou em [0123](0123-musicbrainz-reprova-releases-que-falharam-de-rede.md)
+(resiliência de rede, confirmada funcionando mas insuficiente sozinha) e
+fechou em [0124](0124-desempate-de-titulo-por-duracao-na-faixa-alvo.md): a
+release-alvo tem duas faixas tituladas exatamente "Freestyler" e o desempate
+por score de título ficava com a primeira encontrada em vez de considerar
+as duas, descartando a release certa antes do gate de duração decidir. Com
+0123+0124 em produção, repetir `POST /entities/4838fee1-.../force-reconcile`
+retornou `linked=true` — o mecanismo deste briefing (endpoint que ignora o
+throttle) está correto, verificado e em produção; o item de validação acima
+fecha via a cadeia 0121→0123→0124, não isoladamente por este briefing.

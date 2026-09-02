@@ -748,6 +748,14 @@ type Querier interface {
 	// Le o cache de UM item externo pela chave logica (source, source_id). fetched_at e
 	// langs_json alimentam a decisao de refresh (TTL + conjunto de idiomas) na app.
 	ObterExternalDetail(ctx context.Context, arg ObterExternalDetailParams) (ExternalDetail, error)
+	// Acesso a integration_config (briefing 0095): registro generico de config de
+	// integracao (credenciais/parametros de provider), com precedencia BANCO >
+	// env var calculada pelo Resolver (internal/integration). Comentarios em
+	// ASCII e colunas explicitas -- mesma nota do sqlc v1.31 corrompendo acento
+	// em .sql de query (ver entity.sql).
+	// Le a config de uma integracao pelo slug (sql.ErrNoRows quando o slug nunca
+	// foi gravado -- o Resolver cai para a env var nesse caso).
+	ObterIntegrationConfig(ctx context.Context, slug string) (IntegrationConfig, error)
 	ObterJobDefinition(ctx context.Context, id string) (JobDefinition, error)
 	ObterLibrarySource(ctx context.Context, id string) (LibrarySource, error)
 	// Usada pelo handler POST para detectar path duplicado (ja normalizado) antes
@@ -841,6 +849,12 @@ type Querier interface {
 	// atualiza o payload/langs/type e recarimba fetched_at, sem duplicar a linha. E
 	// best-effort na app: uma falha aqui nao impede a leitura (a proxima visita re-tenta).
 	UpsertExternalDetail(ctx context.Context, arg UpsertExternalDetailParams) error
+	// Grava (ou substitui) o values_json inteiro de um slug. Conflito na PK
+	// (slug) atualiza values_json e recarimba updated_at -- nunca cria uma
+	// segunda linha para o mesmo slug. O PUT parcial (merge campo a campo,
+	// null remove a chave) e responsabilidade do handler HTTP, que le o valor
+	// atual, mescla em memoria e chama este upsert com o objeto ja completo.
+	UpsertIntegrationConfig(ctx context.Context, arg UpsertIntegrationConfigParams) (IntegrationConfig, error)
 	// Acesso ao cache da camada EXTERNA (media_external): uma linha de payload cru por
 	// (entity_id, source). O re-enriquecimento faz UPSERT por essa chave (ADR-0011).
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.

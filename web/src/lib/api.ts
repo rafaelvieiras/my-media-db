@@ -653,6 +653,58 @@ export async function regenerateJellyfinWebhookToken(): Promise<JellyfinWebhookT
   return lerJson<JellyfinWebhookToken>(res)
 }
 
+// ── Integrações configuráveis via UI/banco (0095/0096, ADR-0023) ────────────
+
+export type IntegrationSummary = components['schemas']['IntegrationSummary']
+export type IntegrationsListResponse =
+  components['schemas']['IntegrationsListResponse']
+export type IntegrationField = components['schemas']['IntegrationField']
+export type IntegrationFieldOption =
+  components['schemas']['IntegrationFieldOption']
+export type IntegrationDetail = components['schemas']['IntegrationDetail']
+export type PutIntegrationRequest =
+  components['schemas']['PutIntegrationRequest']
+
+// Lista as integrações registradas no Registry (hoje só TMDB) com o
+// `configurada` já calculado pelo backend — o front nunca recalcula essa
+// regra (cada provider tem a sua, ex.: TMDB aceita token OU api_key).
+export async function listIntegrations(): Promise<IntegrationSummary[]> {
+  const dado = await lerJson<IntegrationsListResponse>(
+    await fetch(`${base}/api/v1/integrations`),
+  )
+  return dado.integrations
+}
+
+// Schema de campos + valor efetivo (banco → env var → ausente) de UMA
+// integração. Um campo `tipo:"secret"` nunca vem com `valor` no corpo — só
+// `definido`/`origem` (mesmo no eco de `putIntegration` abaixo).
+export async function getIntegration(slug: string): Promise<IntegrationDetail> {
+  return lerJson<IntegrationDetail>(
+    await fetch(`${base}/api/v1/integrations/${encodeURIComponent(slug)}`),
+  )
+}
+
+// Upsert PARCIAL: só as chaves presentes em `valores` mudam; `null` remove a
+// chave (o campo volta a herdar a env var, ou fica `origem:"nenhum"` se ela
+// também estiver vazia). 404 (slug desconhecido) / 422 (valores vazio ou
+// chave desconhecida) viram `ApiError` com a mensagem pt-BR — exibida inline
+// pelo `IntegrationForm`.
+export async function putIntegration(
+  slug: string,
+  valores: Record<string, string | null>,
+): Promise<IntegrationDetail> {
+  const body: PutIntegrationRequest = { valores }
+  const res = await fetch(
+    `${base}/api/v1/integrations/${encodeURIComponent(slug)}`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+  return lerJson<IntegrationDetail>(res)
+}
+
 // ── Settings de completude de catalogação (0057) ─────────────────────────────
 
 // Config vigente de completude de CATALOGAÇÃO (por `entity.type`). Quando não

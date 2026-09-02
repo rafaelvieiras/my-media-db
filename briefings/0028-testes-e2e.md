@@ -13,7 +13,7 @@
 | **Tipo** | infra/qualidade |
 | **Fase (roadmap)** | Fase 3 — extensão pós-revisão |
 | **Docs relacionadas** | [05-api](../docs/05-api.md), [ADR-0010](../docs/adr), [ADR-0012](../docs/adr) |
-| **Status** | Fases 1 e 2 IMPLEMENTADAS (Camada 1 Go + Camada 2 Playwright, com cobertura de binário e front); Fase 3 planejada |
+| **Status** | done — Fases 1, 2 e 3 implementadas (Camada 1 Go + Camada 2 Playwright, com cobertura de binário e front; Fase 3/MSW entregue pelo [briefing 0068](0068-e2e-fase3-msw-jsdom-e-catraca-de-cobertura-navegador.md)) |
 | **Depende de** | 0015 (enrich), 0025/0026/0027 (features a cobrir) |
 
 ---
@@ -245,7 +245,10 @@ provider `tmdb` fica em 0% de propósito (o fake o substitui nas jornadas).
   do front via `monocart-coverage-reports` lendo a cobertura V8 do Chromium com sourcemap
   inline (78,93% linhas). `make e2e` / `make e2e-cov`. Imagens: `MYMEDIADB_FAKE_IMAGE_BASE` (hoje sem pôster nas jornadas de
   navegador — placeholders; ligar quando uma jornada precisar de imagem determinística).
-- **Fase 3** (opcional) — MSW + montagem de rotas no Vitest para UI rápida por commit.
+- **Fase 3** (FEITA, via [briefing 0068](0068-e2e-fase3-msw-jsdom-e-catraca-de-cobertura-navegador.md)) —
+  MSW + montagem de rotas no Vitest (`web/src/test/msw/`, `route-tree-harness.tsx`,
+  jornadas de integração em `web/src/routes/__msw__/*.test.tsx`) para UI rápida por
+  commit, sem depender do binário Go real.
 
 ## 10. Decisões em aberto / follow-ups
 

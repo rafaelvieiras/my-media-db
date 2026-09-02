@@ -128,6 +128,12 @@ type HistoricoEvento struct {
 	CreatedAt       string
 }
 
+type IntegrationConfig struct {
+	Slug       string
+	ValuesJson string
+	UpdatedAt  string
+}
+
 type JobDefinition struct {
 	ID           string
 	Nome         string

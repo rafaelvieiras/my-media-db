@@ -12,13 +12,14 @@ import {
 import { DashboardShell } from '@/components/dashboard-shell'
 
 // DashboardShell (briefing 0083, seção Webhook somada no 0097, Eventos sem
-// item somada no 0099): sidebar da área administrativa (Bibliotecas/Revisão/
-// Órfãs/Jobs/Configurações/Webhook/Eventos sem item/Saúde) + `<Outlet/>` para
-// a seção ativa. O destaque da seção ativa (`aria-current="page"`) vem do
-// PRÓPRIO `activeProps` do `<Link>` do TanStack Router (0075: mesmo mecanismo
-// do `AppHeader`) — não é um cálculo manual como o `EntityEditShell` (0080)
-// fazia via prop `secaoAtiva`. Por isso o teste monta uma árvore de rota
-// MÍNIMA e isolada (rootRoute + dashboardRoute + 8 filhas triviais), num
+// item somada no 0099, Integrações somada no 0096): sidebar da área
+// administrativa (Bibliotecas/Revisão/Órfãs/Jobs/Configurações/Integrações/
+// Webhook/Eventos sem item/Saúde) + `<Outlet/>` para a seção ativa. O destaque
+// da seção ativa (`aria-current="page"`) vem do PRÓPRIO `activeProps` do
+// `<Link>` do TanStack Router (0075: mesmo mecanismo do `AppHeader`) — não é
+// um cálculo manual como o `EntityEditShell` (0080) fazia via prop
+// `secaoAtiva`. Por isso o teste monta uma árvore de rota MÍNIMA e isolada
+// (rootRoute + dashboardRoute + 9 filhas triviais), num
 // `memoryHistory` — não a árvore real do app (cada uma das 8 telas reais tem
 // endpoints/MSW próprios, irrelevantes aqui) nem mocka o `Link` (perderia o
 // comportamento de `activeProps` que é exatamente o que queremos exercitar).
@@ -28,6 +29,7 @@ const SECOES = [
   'orphans',
   'jobs',
   'settings',
+  'integrations',
   'webhook',
   'historico-orfaos',
   'health',
@@ -63,6 +65,7 @@ const ROTULOS = [
   'Órfãs',
   'Jobs',
   'Configurações',
+  'Integrações',
   'Webhook',
   'Eventos sem item',
   'Saúde',

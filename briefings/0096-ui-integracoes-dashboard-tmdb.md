@@ -8,7 +8,7 @@
 | **ID** | 0096 |
 | **Tipo** | feature |
 | **Fase (roadmap)** | Fase 5+ — Integrações configuráveis via UI |
-| **Status** | draft |
+| **Status** | done |
 | **Docs relacionadas** | [ADR-0023](../docs/adr/0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md), [03-arquitetura](../docs/03-arquitetura.md) |
 | **Depende de** | 0095 |
 
@@ -116,22 +116,22 @@ Nenhuma nova — consome integralmente a API do 0095
 
 ## 5. Critérios de aceite
 
-- [ ] `/dashboard/integrations` lista o card do TMDB com o badge correto
+- [x] `/dashboard/integrations` lista o card do TMDB com o badge correto
       (`configurada` reflete o efetivo do backend, sem lógica própria no
       front).
-- [ ] Abrir `/dashboard/integrations/tmdb` mostra os 2 campos com a legenda
+- [x] Abrir `/dashboard/integrations/tmdb` mostra os 2 campos com a legenda
       de origem correta em cada cenário (env/banco/nenhum).
-- [ ] Salvar um valor por campo `secret` nunca ecoa o valor de volta no
+- [x] Salvar um valor por campo `secret` nunca ecoa o valor de volta no
       formulário — o campo volta a mostrar mascarado/vazio com
       "Definido no painel" (nunca reidrata com o texto digitado a partir da
       resposta do PUT).
-- [ ] Botão "Limpar" num campo com `origem:"banco"` envia `null` e o campo
+- [x] Botão "Limpar" num campo com `origem:"banco"` envia `null` e o campo
       volta a refletir `origem:"env"`/`"nenhum"`.
-- [ ] Sidebar do `DashboardShell` mostra "Integrações" e marca
+- [x] Sidebar do `DashboardShell` mostra "Integrações" e marca
       `aria-current="page"` quando ativa (mesmo mecanismo do TanStack Router
       já usado nos outros itens).
-- [ ] Estado de erro (API fora) e de loading cobertos nas duas telas.
-- [ ] `tsc -b` zero-tolerância; `npm run lint`; `npm run test:coverage` sem
+- [x] Estado de erro (API fora) e de loading cobertos nas duas telas.
+- [x] `tsc -b` zero-tolerância; `npm run lint`; `npm run test:coverage` sem
       regressão; spec Playwright verde e contribuindo pra cobertura de
       navegador da catraca (não regredir `e2e_front_coverage_lines`).
 
