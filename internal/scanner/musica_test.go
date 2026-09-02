@@ -11,6 +11,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/library"
+	"github.com/rafaelvieiras/my-media-db/internal/matching"
 	"github.com/rafaelvieiras/my-media-db/internal/mediainfo"
 	"github.com/rafaelvieiras/my-media-db/internal/musicext"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
@@ -253,6 +254,86 @@ func managerMusica(t *testing.T, d *db.DB, porPath map[string]mediainfo.AudioTag
 	svc := enrich.New(d, provider.NovaRegistry(prov), t.TempDir())
 	m.ConfigurarMusica(svc, prov)
 	m.idiomas = func(context.Context) []string { return []string{"en"} }
+	return m
+}
+
+// ── fixtures/fakes de FINGERPRINT ACÚSTICO (briefing 0126) ────────────────
+//
+// Cobrem o passo 4.5 SEM fpcalc/rede real, no MESMO universo de fixtures do
+// resto do arquivo (mbidFaixa1Fixture/mbidArtistaFixture, resolvíveis pelo
+// fakeMusicaProvider já existente via ResolverArtistaDaFaixa/
+// BuscarAlbumDaFaixa) -- assim um teste de fingerprint acima do limiar
+// encadeia até o MESMO import escopado que os testes de passo 2/3 já
+// provam, sem precisar de um segundo conjunto de fixtures.
+
+// fakeFingerprintCalculador é um scanner.FingerprintCalculador fake: devolve
+// um fingerprint/duração/erro pré-configurados, sem tocar fpcalc real.
+// calcularN conta as chamadas -- os testes de ORDEM (0126, critério de
+// aceite "só chamado depois do textual falhar") provam ZERO chamadas quando
+// o passo 4 já resolveu.
+type fakeFingerprintCalculador struct {
+	disponivel  bool
+	fingerprint string
+	duracao     float64
+	err         error
+	calcularN   int
+}
+
+func (f *fakeFingerprintCalculador) Disponivel() bool { return f.disponivel }
+
+func (f *fakeFingerprintCalculador) CalcularFingerprint(_ context.Context, _ string) (string, float64, error) {
+	f.calcularN++
+	if f.err != nil {
+		return "", 0, f.err
+	}
+	return f.fingerprint, f.duracao, nil
+}
+
+// fakeFingerprintProvider implementa o core provider.Provider (stubs NO-OP,
+// mesmo espírito de internal/provider/acoustid.Client) + a capacidade
+// provider.FingerprintProvider (briefing 0126), sem rede real.
+// identificarN conta as chamadas pelo mesmo motivo de calcularN acima.
+type fakeFingerprintProvider struct {
+	candidato    provider.RecordingCandidato
+	ok           bool
+	err          error
+	identificarN int
+}
+
+func (p *fakeFingerprintProvider) Nome() string { return "acoustid" }
+
+func (p *fakeFingerprintProvider) Buscar(context.Context, string, string, string) ([]provider.ResultadoExterno, error) {
+	return nil, nil
+}
+
+func (p *fakeFingerprintProvider) BuscarDetalhe(context.Context, string, string, []string) (json.RawMessage, error) {
+	return json.RawMessage(`{}`), nil
+}
+
+func (p *fakeFingerprintProvider) MapearDetalhe(json.RawMessage) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+
+func (p *fakeFingerprintProvider) IdentificarPorFingerprint(_ context.Context, _ string, _ float64) (provider.RecordingCandidato, bool, error) {
+	p.identificarN++
+	if p.err != nil {
+		return provider.RecordingCandidato{}, false, p.err
+	}
+	return p.candidato, p.ok, nil
+}
+
+var (
+	_ provider.Provider            = (*fakeFingerprintProvider)(nil)
+	_ provider.FingerprintProvider = (*fakeFingerprintProvider)(nil)
+)
+
+// managerMusicaComFingerprint monta o mesmo Manager de managerMusica, mas
+// também liga o passo 4.5 (ConfigurarFingerprint) com o calculador/provider
+// fake dados -- helper dos testes de fingerprint abaixo.
+func managerMusicaComFingerprint(t *testing.T, d *db.DB, porPath map[string]mediainfo.AudioTags, prov *fakeMusicaProvider, calc *fakeFingerprintCalculador, fpProv provider.Provider) *Manager {
+	t.Helper()
+	m := managerMusica(t, d, porPath, prov)
+	m.ConfigurarFingerprint(calc, fpProv)
 	return m
 }
 
@@ -683,5 +764,193 @@ func TestScanMusicaSemDuracaoNoMediainfoChegaZero(t *testing.T) {
 	}
 	if spy.ultimoAlvo.DuracaoSegundos != 0 {
 		t.Errorf("FaixaAlvo.DuracaoSegundos = %v, quero 0 (duração desconhecida)", spy.ultimoAlvo.DuracaoSegundos)
+	}
+}
+
+// ── passo 4.5: fingerprint acústico (briefing 0126) ─────────────────────────
+
+// TestScanMusicaFingerprintNaoChamadoQuandoTextualResolve cobre o critério de
+// aceite central do briefing 0126: o passo 4.5 NUNCA roda quando o passo 4
+// (textual) já resolveu -- zero chamadas ao calculador/provider de
+// fingerprint, mesmo com os dois configurados e prontos para responder.
+func TestScanMusicaFingerprintNaoChamadoQuandoTextualResolve(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "01 - Track One.mp3")
+	escrever(t, arq)
+
+	prov := &fakeMusicaProvider{}
+	calc := &fakeFingerprintCalculador{disponivel: true, fingerprint: "fp-nunca-usado"}
+	fpProv := &fakeFingerprintProvider{ok: true, candidato: provider.RecordingCandidato{RecordingMBID: mbidFaixa1Fixture, Confianca: 0.95}}
+	m := managerMusicaComFingerprint(t, d, map[string]mediainfo.AudioTags{
+		arq: {AlbumArtist: "Fake Band", Album: "Fake Album", Title: "Track One", TrackNumber: 1},
+	}, prov, calc, fpProv)
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	_, conf := mediaFileDe(t, d, arq)
+	if conf != confMusicaTextual {
+		t.Errorf("match_confidence = %v, quero %v (textual resolveu antes do fingerprint)", conf, confMusicaTextual)
+	}
+	if calc.calcularN != 0 {
+		t.Errorf("CalcularFingerprint chamado %d vez(es), quero 0 (textual ja resolveu)", calc.calcularN)
+	}
+	if fpProv.identificarN != 0 {
+		t.Errorf("IdentificarPorFingerprint chamado %d vez(es), quero 0 (textual ja resolveu)", fpProv.identificarN)
+	}
+}
+
+// TestScanMusicaFingerprintAcimaDoLimiarImportaEscopado cobre o caminho feliz
+// do passo 4.5: sem MBID embutido e sem match textual (tag sem artista
+// utilizável), um candidato de fingerprint ACIMA do limiar
+// (matching.LimiarConfiancaFingerprint) dispara o MESMO import ESCOPADO dos
+// passos 2/3 (ADR-0029) -- só o artista + o álbum daquela faixa + a própria
+// faixa, NUNCA a discografia inteira.
+func TestScanMusicaFingerprintAcimaDoLimiarImportaEscopado(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "faixa-desconhecida.mp3")
+	escrever(t, arq)
+
+	prov := &fakeMusicaProvider{}
+	calc := &fakeFingerprintCalculador{disponivel: true, fingerprint: "fp-conhecido", duracao: 214.8}
+	fpProv := &fakeFingerprintProvider{ok: true, candidato: provider.RecordingCandidato{RecordingMBID: mbidFaixa1Fixture, Confianca: 0.9}}
+	// Sem tags utilizáveis (nem MBID, nem artista/album) -- passos 1-4 falham
+	// todos, só resta o passo 4.5.
+	m := managerMusicaComFingerprint(t, d, map[string]mediainfo.AudioTags{}, prov, calc, fpProv)
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	entityID, conf := mediaFileDe(t, d, arq)
+	tipo, titulo, status := entityDe(t, d, entityID)
+	if tipo != tipoFaixa || titulo != "Track One" {
+		t.Errorf("faixa = {type:%q title:%q}, quero {faixa, Track One}", tipo, titulo)
+	}
+	if status != "cataloged" {
+		t.Errorf("status = %q, quero cataloged (import via fingerprint, nao draft)", status)
+	}
+	if conf != confFingerprint {
+		t.Errorf("match_confidence = %v, quero %v", conf, confFingerprint)
+	}
+	if calc.calcularN != 1 {
+		t.Errorf("CalcularFingerprint chamado %d vez(es), quero 1", calc.calcularN)
+	}
+	if fpProv.identificarN != 1 {
+		t.Errorf("IdentificarPorFingerprint chamado %d vez(es), quero 1", fpProv.identificarN)
+	}
+	if prov.resolverN != 1 {
+		t.Errorf("ResolverArtistaDaFaixa chamado %d vez(es), quero 1 (fingerprint so traz o recording)", prov.resolverN)
+	}
+	if prov.albumFaixaN != 1 {
+		t.Errorf("BuscarAlbumDaFaixa chamado %d vez(es), quero 1", prov.albumFaixaN)
+	}
+	if prov.arvoreN != 0 {
+		t.Errorf("BuscarArtistaArvore chamado %d vez(es), quero 0 (import escopado, nunca a arvore inteira)", prov.arvoreN)
+	}
+	// ADR-0029: só o artista + O ÁLBUM DAQUELA FAIXA + a própria faixa --
+	// nenhuma outra faixa do mesmo álbum (Track Two) nem o artista feat.
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='artista'"); n != 1 {
+		t.Errorf("artistas = %d, quero 1", n)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='album'"); n != 1 {
+		t.Errorf("albuns = %d, quero 1", n)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='faixa'"); n != 1 {
+		t.Errorf("faixas = %d, quero 1 (so a faixa identificada, nunca a discografia inteira)", n)
+	}
+}
+
+// TestScanMusicaFingerprintIndisponivelViraDraft cobre a degradação quando o
+// fpcalc não está disponível (Disponivel()=false): o passo 4.5 nem tenta
+// calcular nem consultar o provider -- cai direto para o draft (passo 5),
+// sem erro fatal.
+func TestScanMusicaFingerprintIndisponivelViraDraft(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "sem-fpcalc.mp3")
+	escrever(t, arq)
+
+	prov := &fakeMusicaProvider{}
+	calc := &fakeFingerprintCalculador{disponivel: false}
+	fpProv := &fakeFingerprintProvider{ok: true, candidato: provider.RecordingCandidato{RecordingMBID: mbidFaixa1Fixture, Confianca: 0.9}}
+	m := managerMusicaComFingerprint(t, d, map[string]mediainfo.AudioTags{}, prov, calc, fpProv)
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	entityID, conf := mediaFileDe(t, d, arq)
+	_, _, status := entityDe(t, d, entityID)
+	if status != "draft" || conf != confDraft {
+		t.Errorf("faixa = {status:%q conf:%v}, quero {draft, %v} (fpcalc indisponivel)", status, conf, confDraft)
+	}
+	if calc.calcularN != 0 {
+		t.Errorf("CalcularFingerprint chamado %d vez(es), quero 0 (fpcalc indisponivel, nem tenta)", calc.calcularN)
+	}
+	if fpProv.identificarN != 0 {
+		t.Errorf("IdentificarPorFingerprint chamado %d vez(es), quero 0 (fpcalc indisponivel, nem consulta)", fpProv.identificarN)
+	}
+}
+
+// TestScanMusicaSemProviderFingerprintViraDraft cobre a degradação quando o
+// provider registrado NÃO implementa provider.FingerprintProvider (ex.:
+// AcoustID nunca configurado/registrado) -- mesmo com fpcalc disponível, o
+// scanner faz o type-assert, não encontra a capacidade, e cai para o draft.
+func TestScanMusicaSemProviderFingerprintViraDraft(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "sem-provider-fingerprint.mp3")
+	escrever(t, arq)
+
+	prov := &fakeMusicaProvider{}
+	calc := &fakeFingerprintCalculador{disponivel: true, fingerprint: "fp-qualquer"}
+	// fakeMusicaProvider NÃO implementa provider.FingerprintProvider -- o
+	// mesmo cenário de "provider ativo sem a capacidade".
+	m := managerMusicaComFingerprint(t, d, map[string]mediainfo.AudioTags{}, prov, calc, prov)
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	entityID, conf := mediaFileDe(t, d, arq)
+	_, _, status := entityDe(t, d, entityID)
+	if status != "draft" || conf != confDraft {
+		t.Errorf("faixa = {status:%q conf:%v}, quero {draft, %v} (provider sem capacidade)", status, conf, confDraft)
+	}
+	if calc.calcularN != 0 {
+		t.Errorf("CalcularFingerprint chamado %d vez(es), quero 0 (provider sem a capacidade, nem calcula)", calc.calcularN)
+	}
+}
+
+// TestScanMusicaFingerprintAbaixoDoLimiarViraDraft cobre o critério de
+// aceite de confiança: um candidato com Confianca ABAIXO de
+// matching.LimiarConfiancaFingerprint não é aceito -- cai para o draft, sem
+// disparar import nenhum.
+func TestScanMusicaFingerprintAbaixoDoLimiarViraDraft(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "fingerprint-fraco.mp3")
+	escrever(t, arq)
+
+	prov := &fakeMusicaProvider{}
+	calc := &fakeFingerprintCalculador{disponivel: true, fingerprint: "fp-fraco"}
+	fpProv := &fakeFingerprintProvider{ok: true, candidato: provider.RecordingCandidato{RecordingMBID: mbidFaixa1Fixture, Confianca: matching.LimiarConfiancaFingerprint - 0.01}}
+	m := managerMusicaComFingerprint(t, d, map[string]mediainfo.AudioTags{}, prov, calc, fpProv)
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	entityID, conf := mediaFileDe(t, d, arq)
+	_, _, status := entityDe(t, d, entityID)
+	if status != "draft" || conf != confDraft {
+		t.Errorf("faixa = {status:%q conf:%v}, quero {draft, %v} (confianca abaixo do limiar)", status, conf, confDraft)
+	}
+	if prov.resolverN != 0 || prov.albumFaixaN != 0 {
+		t.Errorf("import escopado disparado (resolverN=%d albumFaixaN=%d), quero 0/0 -- candidato fraco nunca importa", prov.resolverN, prov.albumFaixaN)
 	}
 }

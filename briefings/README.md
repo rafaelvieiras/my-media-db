@@ -242,6 +242,7 @@ busca como se fossem tipos de topo. Ver [ADR-0029](../docs/adr/0029-import-de-mu
 | [0114](0114-home-topo-e-rota-library.md) | Home só com tipos de topo (remove grid completo) + rota `/library/:entitySlug` com "Ver Todos" | feature | done | 0112 |
 | [0115](0115-musica-import-local-first.md) | Música: import local-first (só o que a faixa possuída traz), faixas faltando importáveis sob demanda, feat não auto-criado | fix/feature | done | 0105, 0106, 0107 |
 | [0125](0125-gravacao-metadados-tag-audio.md) | Gravação de metadados resolvidos na tag de áudio (write-back ID3v2/Vorbis comment), em vez de NFO de música (abandonado — só relevante para Kodi) | feature | done | 0105, 0106, 0107, 0115 |
+| [0126](0126-fingerprint-acustico-fallback-acoustid.md) | Fingerprint acústico (Chromaprint/AcoustID) como último fallback do matching de faixa, quando arquivo não tem MBID nem metadado textual confiável (prática de mercado do beets/Picard) | feature | done | 0105, 0106, 0107, 0115 |
 
 ### Transversal — Infraestrutura operacional
 

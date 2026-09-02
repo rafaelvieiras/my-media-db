@@ -16,9 +16,11 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
+	"github.com/rafaelvieiras/my-media-db/internal/fingerprint"
 	"github.com/rafaelvieiras/my-media-db/internal/integration"
 	"github.com/rafaelvieiras/my-media-db/internal/job/backup"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
+	"github.com/rafaelvieiras/my-media-db/internal/provider/acoustid"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fanarttv"
 	"github.com/rafaelvieiras/my-media-db/internal/provider/musicbrainz"
@@ -186,7 +188,11 @@ func opcoesServer(database *db.DB) ([]server.Option, error) {
 	// ADR-0023): registra o schema de campos do TMDB no Registry consumido
 	// por GET/PUT /api/v1/integrations. Só o TMDB nesta entrega -- TVDB/
 	// fanart.tv seguem via env var direto (fora de escopo, ver briefing).
-	opts = append(opts, server.WithIntegrations(tmdb.NovoDescriptorIntegracao()))
+	// AcoustID (briefing 0126): registra o schema de campos (client key) no
+	// mesmo Registry -- a UI de Integrações herda a entrada "de graça" via o
+	// formulário dinâmico genérico (briefing 0096), sem código de tela
+	// dedicado.
+	opts = append(opts, server.WithIntegrations(tmdb.NovoDescriptorIntegracao(), acoustid.NovoDescriptorIntegracao()))
 
 	// Registro de CODECS (briefing 0100, ADR-0024): sempre populado,
 	// independente de credencial, só habilita a capacidade de INTERPRETAR
@@ -327,6 +333,29 @@ func provedoresReais(ctx context.Context, resolver *integration.Resolver) []prov
 	// implementado mas nunca construido/registrado aqui -- nao repetir esse gap.
 	log.Printf("mymediadb: provider MusicBrainz (musica) habilitado")
 	provs = append(provs, musicbrainz.New(nil, ""))
+
+	// AcoustID (briefing 0126): provider APENAS da capacidade
+	// FingerprintProvider (fingerprint acustico via Chromaprint/fpcalc),
+	// ultimo fallback do matching de musica (passo 4.5). So entra no
+	// registry quando AS DUAS dependencias estao presentes: a client key
+	// configurada (banco com precedencia sobre env var, mesmo resolver de
+	// sempre) E o binario fpcalc disponivel no container
+	// (fingerprint.Disponivel(), checado aqui no BOOT, nunca em build).
+	// Faltando qualquer uma, DEGRADA (loga um aviso, nao registra a
+	// capacidade) -- nunca derruba o boot; o scan de musica cai direto no
+	// passo 5 (draft) como antes deste briefing.
+	descAcoustid := acoustid.NovoDescriptorIntegracao()
+	efetivosAcoustid := resolver.Valores(ctx, descAcoustid.Slug(), descAcoustid.Campos())
+	credAcoustid := acoustid.Credencial{ClientKey: efetivosAcoustid["client_key"]}
+	switch {
+	case !credAcoustid.Configurada():
+		log.Printf("mymediadb: fingerprint acustico (AcoustID) desabilitado: client key nao configurada")
+	case !fingerprint.NewCalculador().Disponivel():
+		log.Printf("mymediadb: fingerprint acustico (AcoustID) desabilitado: fpcalc nao encontrado no PATH")
+	default:
+		log.Printf("mymediadb: fingerprint acustico (AcoustID) habilitado")
+		provs = append(provs, acoustid.New(credAcoustid, nil, ""))
+	}
 
 	return provs
 }

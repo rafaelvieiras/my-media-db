@@ -29,6 +29,20 @@ const LimiarAutoMatch = 92.0
 // reporta (via mediainfo) frente à decodificação exata do áudio.
 const ToleranciaDuracaoSegundos = 3.0
 
+// LimiarConfiancaFingerprint é o corte mínimo (escala 0-1, a MESMA do escore
+// que o AcoustID devolve) para aceitar um RecordingCandidato do passo 4.5 de
+// fingerprint acústico (briefing 0126) como match válido. O AcoustID já
+// filtra internamente por similaridade de duração antes de devolver um
+// candidato, então o escore aqui reflete majoritariamente a qualidade do
+// próprio fingerprint (ruído/qualidade de captura, não ambiguidade de
+// metadado) -- por isso um corte mais permissivo que LimiarAutoMatch (que
+// mede similaridade de TEXTO, sujeita a nomes parecidos de itens
+// diferentes) é aceitável. 0.6 é o meio do intervalo "bom o bastante"
+// documentado pela própria AcoustID/Picard (candidatos < 0.5 costumam ser
+// ruído; >= 0.8 é alta confiança) -- valor calibrável depois com dados reais
+// de produção, sem mudar o contrato desta constante.
+const LimiarConfiancaFingerprint = 0.6
+
 // Pontuar calcula o score final [0,100] do briefing 0050 §4: similaridade
 // Jaro-Winkler do título (textsim) em escala 0-100, ajustada pelo ano.
 // descartado=true quando os DOIS anos existem e divergem em MAIS de 1 ano

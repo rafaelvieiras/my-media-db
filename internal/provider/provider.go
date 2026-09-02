@@ -562,6 +562,27 @@ type FaixaResolverProvider interface {
 	ResolverArtistaDaFaixa(ctx context.Context, recordingMBID string) (artistaMBID string, err error)
 }
 
+// FingerprintProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing
+// 0126): identificar uma faixa a partir do FINGERPRINT ACÚSTICO do áudio
+// (não de metadado/nome) -- último fallback do pipeline de matching de
+// música, usado só quando MBID embutido e busca textual já falharam. Nem
+// toda fonte tem essa capacidade (hoje: um client AcoustID dedicado,
+// nunca o MusicaProvider/MusicaAlbumProvider do MusicBrainz -- lookup por
+// fingerprint é um serviço/endpoint DISTINTO da API de metadado); o
+// scanner faz type-assert do Provider para esta interface e degrada em
+// silêncio (cai para o passo de draft) quando ausente.
+type FingerprintProvider interface {
+	IdentificarPorFingerprint(ctx context.Context, fingerprint string, duracaoSegundos float64) (RecordingCandidato, bool, error)
+}
+
+// RecordingCandidato é o resultado de UM lookup por fingerprint: o MBID
+// de recording mais provável e o escore de confiança devolvido pelo
+// AcoustID (0-1), usado como limiar mínimo de aceite (ver matching.go).
+type RecordingCandidato struct {
+	RecordingMBID string
+	Confianca     float64
+}
+
 // ResultadoExterno é o resultado canônico de uma busca externa, independente da
 // fonte. Os ponteiros são opcionais (nil quando a fonte não trouxe o campo).
 // Saved é SEMPRE false na busca: um resultado externo nunca é uma entidade do

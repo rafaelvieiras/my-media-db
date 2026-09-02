@@ -84,22 +84,28 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v}
 FROM alpine:3.22 AS final
 
 # Dependências de RUNTIME:
-#   ffmpeg  → ffprobe do scanner (ADR-0014, briefing 0009). Sem ele o scan ainda
-#             roda, mas degrada (mediainfo vazio).
-#   sqlite  → CLI usado por scripts/backup.sh para `VACUUM INTO` (snapshot
-#             consistente do banco WAL sem downtime). O app em si usa o driver
-#             Go puro modernc e NÃO depende deste binário; é só para o backup.
-#   python3 → runtime do binário yt-dlp baixado dinamicamente em runtime
-#             (briefing 0101, ADR-0025): o pacote `internal/ytdlp` baixa o
-#             asset "yt-dlp" (zipapp Python plataforma-independente, shebang
-#             `#!/usr/bin/env python3`) da release oficial, NUNCA o standalone
-#             por SO (`yt-dlp_linux` etc., build PyInstaller ligado a glibc) --
-#             esta imagem é Alpine/musl e o standalone falha em runtime com
-#             "no such file or directory" (nem `gcompat` resolve: falha mais
-#             adiante por símbolo glibc ausente na libpython embutida). Achado
-#             na 1ª validação em produção do briefing 0101.
+#   ffmpeg     → ffprobe do scanner (ADR-0014, briefing 0009). Sem ele o scan ainda
+#                roda, mas degrada (mediainfo vazio).
+#   sqlite     → CLI usado por scripts/backup.sh para `VACUUM INTO` (snapshot
+#                consistente do banco WAL sem downtime). O app em si usa o driver
+#                Go puro modernc e NÃO depende deste binário; é só para o backup.
+#   python3    → runtime do binário yt-dlp baixado dinamicamente em runtime
+#                (briefing 0101, ADR-0025): o pacote `internal/ytdlp` baixa o
+#                asset "yt-dlp" (zipapp Python plataforma-independente, shebang
+#                `#!/usr/bin/env python3`) da release oficial, NUNCA o standalone
+#                por SO (`yt-dlp_linux` etc., build PyInstaller ligado a glibc) --
+#                esta imagem é Alpine/musl e o standalone falha em runtime com
+#                "no such file or directory" (nem `gcompat` resolve: falha mais
+#                adiante por símbolo glibc ausente na libpython embutida). Achado
+#                na 1ª validação em produção do briefing 0101.
+#   chromaprint → fpcalc do passo 4.5 de fingerprint acústico (briefing 0126,
+#                 internal/fingerprint): subprocesso, mesmo padrão de ffprobe
+#                 acima -- ausência degrada (scanner pula o passo, loga um
+#                 aviso), nunca derruba o scan. Pacote confirmado no repo
+#                 `community` do Alpine 3.22 (x86_64/aarch64/armhf/armv7);
+#                 instala /usr/bin/fpcalc direto, sem pacote `-tools` separado.
 # --no-cache mantém a imagem enxuta.
-RUN apk add --no-cache ffmpeg sqlite python3
+RUN apk add --no-cache ffmpeg sqlite python3 chromaprint
 
 # Usuário não-root dedicado.
 RUN addgroup -S mymediadb && adduser -S -G mymediadb -H -h /nonexistent mymediadb

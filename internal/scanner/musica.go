@@ -20,6 +20,15 @@ package scanner
 //     o bastante dispara o MESMO import escopado do passo 2, mas pelo caminho
 //     TEXTUAL (álbum por nome via MusicaAlbumProvider.BuscarAlbumPorNome, faixa por
 //     título/track_number dentro dele) -- nunca a árvore inteira.
+//  4.5. SEM match textual plausível (briefing 0126): ÚLTIMO fallback antes do
+//     draft. Calcula o fingerprint acústico do ARQUIVO (fpcalc/Chromaprint,
+//     subprocesso -- internal/fingerprint) e consulta a capacidade opcional
+//     provider.FingerprintProvider (hoje só internal/provider/acoustid) --
+//     achando um `recording` MBID com confiança >= matching.
+//     LimiarConfiancaFingerprint, reaproveita o MESMO caminho de import
+//     escopado do passo 2/3 (importarEAcharPorMbid), NUNCA a discografia
+//     inteira. fpcalc ausente, provider sem a capacidade, ou candidato fraco
+//     demais: degrada em silêncio, cai para o passo 5.
 //  5. SEM MATCH PLAUSÍVEL nenhum: cria uma entity `faixa` RASCUNHO (status=draft),
 //     só com os dados da tag (ou o nome do arquivo) -- SEM entity_relation de
 //     artista/álbum, fica solta até correção manual (mesmo espírito de
@@ -73,6 +82,15 @@ const (
 	// confTituloAno tem para filme (match.go): um nome de artista batendo
 	// exato contra a fonte é um bom sinal, mas não é um id embutido.
 	confMusicaTextual = confTituloAno
+	// confFingerprint é a confiança do match por fingerprint acústico (passo
+	// 4.5, briefing 0126) -- por princípio, ESTRITAMENTE abaixo de
+	// confMusicaTextual (um escore de similaridade acústica não é uma prova
+	// de identidade tão forte quanto um MBID embutido pelo dono NEM quanto
+	// um nome batendo exato na busca textual) e ACIMA de confDraft (ainda é
+	// um sinal utilizável, não um chute). Reaproveita confTituloSoNom (match
+	// de filme só por nome, sem confirmação de ano) em vez de inventar um
+	// terceiro número mágico -- mesmo espírito de confMusicaTextual acima.
+	confFingerprint = confTituloSoNom
 )
 
 // factsMusica monta os fatos de um arquivo de áudio: extrai as tags (via o
@@ -109,22 +127,25 @@ func (r *scanRun) factsMusica(ctx context.Context, path string, mi []byte, size 
 		}
 	}
 
-	f.faixaID, f.faixaConf = r.resolverFaixa(ctx, tags, duracaoSegundos, f.rawNome)
+	f.faixaID, f.faixaConf = r.resolverFaixa(ctx, path, tags, duracaoSegundos, f.rawNome)
 	return f
 }
 
 // resolverFaixa executa o pipeline de matching descrito no comentário do
 // pacote, na ordem: MBID de faixa direto -> MBID de faixa + import (com ou sem
-// MBID de artista embutido) -> busca textual -> draft. Sempre devolve um
-// faixaID utilizável (o passo 5 nunca falha, exceto erro de banco -- nesse
-// caso "" e o chamador loga e pula o arquivo, ver gravarArquivoMusica).
+// MBID de artista embutido) -> busca textual -> fingerprint acústico ->
+// draft. Sempre devolve um faixaID utilizável (o passo 5 nunca falha, exceto
+// erro de banco -- nesse caso "" e o chamador loga e pula o arquivo, ver
+// gravarArquivoMusica). path é o caminho do arquivo no disco, necessário só
+// pelo passo 4.5 (fpcalc lê o áudio bruto, não as tags já extraídas).
 // duracaoSegundos é a duração do arquivo local extraída pelo probe
 // (info.General.Duration, factsMusica acima), 0 quando desconhecida --
 // repassada como sinal ADICIONAL de CONFIRMAÇÃO por duração (briefing 0121
 // §8, matching.ToleranciaDuracaoSegundos) até o enrich.FaixaAlvo construído
-// nos dois pontos de import escopado abaixo (importarEAcharPorMbid/
-// matchTextualFaixa); nunca usada aqui para decidir nada por si só.
-func (r *scanRun) resolverFaixa(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, rawNome string) (string, float64) {
+// nos pontos de import escopado abaixo (importarEAcharPorMbid/
+// matchTextualFaixa/matchPorFingerprint); nunca usada aqui para decidir nada
+// por si só.
+func (r *scanRun) resolverFaixa(ctx context.Context, path string, tags mediainfo.AudioTags, duracaoSegundos float64, rawNome string) (string, float64) {
 	langs := r.langsPermitidos(ctx)
 
 	if tags.MusicBrainzTrackID != "" {
@@ -138,6 +159,10 @@ func (r *scanRun) resolverFaixa(ctx context.Context, tags mediainfo.AudioTags, d
 
 	if id, ok := r.matchTextual(ctx, tags, duracaoSegundos, langs); ok {
 		return id, confMusicaTextual
+	}
+
+	if id, ok := r.matchPorFingerprint(ctx, path, duracaoSegundos, langs); ok {
+		return id, confFingerprint
 	}
 
 	return r.criarFaixaDraft(ctx, tags, rawNome), confDraft
@@ -300,6 +325,56 @@ func melhorCandidatoTexto(alvo string, candidatos []candidatoTexto) (string, boo
 		return "", false
 	}
 	return melhorID, true
+}
+
+// matchPorFingerprint é o passo 4.5 (briefing 0126): ÚLTIMO fallback antes
+// do draft, disparado SÓ quando o passo 4 (textual) já falhou -- nunca
+// antes, nunca em paralelo (o chamador, resolverFaixa, garante a ordem).
+// Calcula o fingerprint acústico do ARQUIVO (fpcalc, subprocesso --
+// internal/fingerprint) e consulta a capacidade opcional
+// provider.FingerprintProvider (hoje só internal/provider/acoustid) contra
+// ele. Qualquer degradação -- calculador/provider não configurados, fpcalc
+// indisponível, erro de cálculo, provider sem a capacidade, sem candidato,
+// ou confiança abaixo de matching.LimiarConfiancaFingerprint -- devolve
+// ok=false SEM erro fatal: o chamador cai para o passo 5 (draft), mesmo
+// contrato de degradação silenciosa de qualquer capacidade opcional do
+// projeto. Achando um candidato plausível, reaproveita o MESMO caminho de
+// import ESCOPADO dos passos 2/3 (importarEAcharPorMbid, ADR-0029): monta
+// uma AudioTags SINTÉTICA só com o MusicBrainzTrackID do candidato -- ZERO
+// lógica de import nova, o fingerprint só produz um RecordingMBID que entra
+// no mesmo cano que o passo 2/3 já usa (resolução reversa artista<-faixa via
+// provider.FaixaResolverProvider, quando necessário, + enrich.
+// ImportarFaixaPossuida).
+func (r *scanRun) matchPorFingerprint(ctx context.Context, path string, duracaoSegundos float64, langs []string) (string, bool) {
+	if r.m.fingerprintCalculador == nil || r.m.fingerprintProvider == nil {
+		return "", false
+	}
+	fpProv, ok := r.m.fingerprintProvider.(provider.FingerprintProvider)
+	if !ok {
+		return "", false
+	}
+	if !r.m.fingerprintCalculador.Disponivel() {
+		return "", false
+	}
+
+	fp, _, err := r.m.fingerprintCalculador.CalcularFingerprint(ctx, path)
+	if err != nil {
+		log.Printf("scanner: calculo de fingerprint acustico de %q falhou: %v", path, err)
+		return "", false
+	}
+
+	cand, ok, err := fpProv.IdentificarPorFingerprint(ctx, fp, duracaoSegundos)
+	if err != nil {
+		log.Printf("scanner: lookup de fingerprint acustico de %q falhou: %v", path, err)
+		return "", false
+	}
+	if !ok || cand.Confianca < matching.LimiarConfiancaFingerprint {
+		return "", false
+	}
+
+	log.Printf("scanner: fingerprint acustico identificou %q como recording %s (confianca=%.2f)", path, cand.RecordingMBID, cand.Confianca)
+	tagsSinteticas := mediainfo.AudioTags{MusicBrainzTrackID: cand.RecordingMBID}
+	return r.importarEAcharPorMbid(ctx, tagsSinteticas, duracaoSegundos, langs)
 }
 
 // criarFaixaDraft é o FALLBACK final (passo 5): cria a entity `faixa`

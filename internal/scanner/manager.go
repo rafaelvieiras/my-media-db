@@ -74,6 +74,17 @@ type Prober interface {
 	Probe(ctx context.Context, path string) ([]byte, error)
 }
 
+// FingerprintCalculador é a dependência de fingerprint acústico (fpcalc/
+// Chromaprint, briefing 0126) que o passo 4.5 do matching de música consome
+// -- MESMO MOLDE de Prober acima (Disponivel + operação), implementada em
+// produção por *internal/fingerprint.Calculador e injetável para testes sem
+// o fpcalc real. Disponivel()=false ou erro em CalcularFingerprint DEGRADAM
+// o passo 4.5 (cai para o draft, passo 5), nunca derrubam o scan.
+type FingerprintCalculador interface {
+	Disponivel() bool
+	CalcularFingerprint(ctx context.Context, path string) (fingerprint string, duracaoSegundos float64, err error)
+}
+
 // SerieImporter é o ponto de AUTO-IMPORT que o scanner de séries (0034) consome
 // quando a série de uma pasta ainda não está no catálogo: busca pelo nome no
 // provider, escolhe o match exato e único e importa a árvore (reusa o enrich da Fase
@@ -208,6 +219,20 @@ type Manager struct {
 	musicaImportador MusicaImportador
 	musicaProvider   provider.Provider
 
+	// fingerprintCalculador/fingerprintProvider alimentam o passo 4.5 de
+	// FINGERPRINT ACÚSTICO (briefing 0126): último fallback do pipeline de
+	// música, disparado só depois que o passo 4 (busca textual) já falhou.
+	// fingerprintProvider é um provider DISTINTO de musicaProvider (hoje:
+	// internal/provider/acoustid, nunca o MusicBrainz) -- a capacidade real
+	// (provider.FingerprintProvider) é descoberta por type-assert em
+	// matchPorFingerprint (musica.go), não aqui. Ambos nil = passo 4.5
+	// degrada em silêncio (mesmo padrão nil-safe de musicaImportador/
+	// musicaProvider) -- sem fpcalc disponível OU sem um provider com a
+	// capacidade, o scan cai direto para o draft (passo 5). Configurados via
+	// ConfigurarFingerprint.
+	fingerprintCalculador FingerprintCalculador
+	fingerprintProvider   provider.Provider
+
 	// muStorage protege storageNaoVideo -- pequeno estado em memória, POR
 	// FONTE, do resultado da classificação managed/unmanaged do briefing
 	// 0063 (ver StorageNaoVideo). Mutex próprio, separado de qualquer
@@ -268,6 +293,18 @@ func (m *Manager) ConfigurarMaterializacao(mat Materializador) {
 func (m *Manager) ConfigurarMusica(imp MusicaImportador, prov provider.Provider) {
 	m.musicaImportador = imp
 	m.musicaProvider = prov
+}
+
+// ConfigurarFingerprint injeta o passo 4.5 de fingerprint acústico (briefing
+// 0126): o calculador da impressão digital (fpcalc, internal/fingerprint) e
+// o provider capaz de consultá-la (hoje só internal/provider/acoustid, via
+// a capacidade opcional provider.FingerprintProvider -- o type-assert
+// acontece em matchPorFingerprint, não aqui). Sem chamar isto, o passo 4.5
+// degrada para no-op e todo arquivo sem match textual cai direto no draft
+// (passo 5) -- mesmo comportamento pré-0126.
+func (m *Manager) ConfigurarFingerprint(calc FingerprintCalculador, prov provider.Provider) {
+	m.fingerprintCalculador = calc
+	m.fingerprintProvider = prov
 }
 
 // NewManager cria um Manager com o ffprobe real do PATH.
