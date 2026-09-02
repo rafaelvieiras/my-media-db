@@ -13,7 +13,7 @@ import {
   posterSrc,
   type EntityCard,
 } from '@/lib/api'
-import { rotuloTipo } from '@/lib/entity-badges'
+import { aspectPorTipo, rotuloTipo } from '@/lib/entity-badges'
 
 const DEBOUNCE_MS = 350
 
@@ -174,7 +174,9 @@ function PickerResultados({
 function Miniatura({ card }: { card: EntityCard }) {
   const src = posterSrc(card.poster_url)
   return (
-    <span className="aspect-[2/3] h-12 shrink-0 overflow-hidden rounded bg-muted ring-1 ring-foreground/10">
+    <span
+      className={`${aspectPorTipo(card.type)} h-12 shrink-0 overflow-hidden rounded bg-muted ring-1 ring-foreground/10`}
+    >
       {src ? (
         <img
           src={src}

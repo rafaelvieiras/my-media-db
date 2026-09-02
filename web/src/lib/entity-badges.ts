@@ -109,6 +109,21 @@ export function rotuloTipo(type: string): string {
   return mapa[type] ?? type
 }
 
+// Frame de capa (classe Tailwind `aspect-*`) conforme o tipo do card (0111+):
+// álbum e artista usam capa QUADRADA (1:1 — mesmo frame do hero, `CapaQuadrada`
+// em rich-detail-view.tsx), os demais tipos mantêm o pôster clássico 2:3. Fonte
+// ÚNICA para qualquer grid que renderize `PosterCard` (biblioteca, carrossel,
+// busca, discografia) — evita repetir a checagem de tipo em cada callsite;
+// `PosterCard` só a ignora quando o CALLER passa `aspectClass` explícito (caso
+// do episódio, que usa still 16:9 em vez de pôster). Tipo desconhecido cai no
+// 2:3 (nunca quebra a UI, mesmo idioma de `rotuloTipo`).
+export function aspectPorTipo(type: string): string {
+  if (type === 'album' || type === 'artista') {
+    return 'aspect-square'
+  }
+  return 'aspect-[2/3]'
+}
+
 // Rótulo pt-BR PLURAL do tipo, para cabeçalhos de seção/categoria — o
 // carrossel "adicionados recentemente" da home (0109) e o dropdown de
 // biblioteca da navbar (0110), que listam o tipo como CATEGORIA, não como

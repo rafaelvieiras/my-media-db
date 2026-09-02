@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { posterSrc, type EntityCard } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import {
+  aspectPorTipo,
   ehDraft,
   estadoCompletude,
   precisaRevisao,
@@ -29,13 +30,15 @@ import {
 // PosterCard aceita, opcionalmente, uma ARTE e um ASPECTO próprios (0042): o card de
 // EPISÓDIO passa o still 16:9 (via image proxy) e `aspect-video` em vez do pôster 2:3 —
 // o still é paisagem e cortá-lo no frame de pôster ficaria feio. `artSrc` ausente
-// (undefined) mantém o comportamento clássico: pôster local via `posterSrc(poster_url)`
-// no frame 2:3 (movie/tv/season/collection intactos). `artSrc` presente mas null (ex.:
-// episódio sem still) cai no placeholder "Sem arte" no aspecto pedido.
+// (undefined) mantém o comportamento clássico: pôster local via `posterSrc(poster_url)`.
+// `artSrc` presente mas null (ex.: episódio sem still) cai no placeholder "Sem arte" no
+// aspecto pedido. SEM `aspectClass` explícito, o frame vem de `aspectPorTipo(card.type)`
+// (0111+) — álbum/artista renderizam 1:1 em QUALQUER grid (biblioteca, carrossel, busca,
+// discografia) sem cada callsite precisar checar o tipo; os demais tipos seguem 2:3.
 export function PosterCard({
   card,
   artSrc,
-  aspectClass = 'aspect-[2/3]',
+  aspectClass,
   artAlt,
 }: {
   card: EntityCard
@@ -46,6 +49,7 @@ export function PosterCard({
   const [falhouArte, setFalhouArte] = useState(false)
   const src = artSrc !== undefined ? artSrc : posterSrc(card.poster_url)
   const mostrarPlaceholder = src === null || falhouArte
+  const aspecto = aspectClass ?? aspectPorTipo(card.type)
 
   return (
     <div className="group relative flex flex-col gap-2" data-slot="poster-card">
@@ -57,7 +61,7 @@ export function PosterCard({
         <div
           className={cn(
             'relative overflow-hidden rounded-xl bg-muted ring-1 ring-foreground/10',
-            aspectClass,
+            aspecto,
           )}
         >
           {mostrarPlaceholder ? (

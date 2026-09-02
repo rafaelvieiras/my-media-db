@@ -39,7 +39,7 @@ import {
   type MatchPreview,
   type MatchPreviewTarget,
 } from '@/lib/api'
-import { ehDraft, rotuloTipo } from '@/lib/entity-badges'
+import { aspectPorTipo, ehDraft, rotuloTipo } from '@/lib/entity-badges'
 import { internalIdDe } from '@/lib/internal-id'
 import { useLanguage } from '@/lib/language-context'
 
@@ -218,7 +218,9 @@ function ReviewCard({ card }: { card: EntityCard }) {
   return (
     <li className="flex flex-col gap-3 rounded-xl bg-card p-3 ring-1 ring-foreground/10">
       <div className="flex gap-3">
-        <div className="relative aspect-[2/3] w-20 shrink-0 overflow-hidden rounded-lg bg-muted">
+        <div
+          className={`relative ${aspectPorTipo(card.type)} w-20 shrink-0 overflow-hidden rounded-lg bg-muted`}
+        >
           {mostrarPlaceholder ? (
             <div
               data-testid="review-poster-placeholder"
@@ -258,6 +260,7 @@ function ReviewCard({ card }: { card: EntityCard }) {
       </div>
 
       <PreviewBloco
+        tipo={card.type}
         isPending={preview.isPending}
         isError={preview.isError}
         data={preview.data}
@@ -330,12 +333,18 @@ function ReviewCard({ card }: { card: EntityCard }) {
 // (skeleton discreto), achou candidato (pôster + título + ano + selos),
 // não achou (mensagem neutra) e falha na busca (mensagem curta de erro, NÃO
 // bloqueia o resto do card — `ReviewCard` já trata isso como "sem candidato"
-// via `candidatoValido`, que só é `true` com `data` presente).
+// via `candidatoValido`, que só é `true` com `data` presente). `tipo` é o
+// tipo do ITEM sendo revisado (`card.type` do `ReviewCard` pai) — o candidato
+// (`MatchPreviewTarget`) não carrega o próprio tipo no contrato da API, mas o
+// match nunca sugere um candidato de tipo diferente do alvo (álbum só casa
+// com álbum), então reaproveitar o tipo do pai para o frame da capa é seguro.
 function PreviewBloco({
+  tipo,
   isPending,
   isError,
   data,
 }: {
+  tipo: string
   isPending: boolean
   isError: boolean
   data: MatchPreview | undefined
@@ -380,7 +389,9 @@ function PreviewBloco({
 
   return (
     <div className="flex items-center gap-3 rounded-lg bg-muted/40 p-2">
-      <div className="relative aspect-[2/3] w-12 shrink-0 overflow-hidden rounded bg-muted">
+      <div
+        className={`relative ${aspectPorTipo(tipo)} w-12 shrink-0 overflow-hidden rounded bg-muted`}
+      >
         {mostrarPlaceholder ? (
           <div className="flex h-full w-full items-center justify-center text-muted-foreground">
             <ImageOff className="size-4" aria-hidden />

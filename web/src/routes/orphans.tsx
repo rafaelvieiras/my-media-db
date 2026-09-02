@@ -17,7 +17,7 @@ import {
   purgeEntity,
   type EntityCard,
 } from '@/lib/api'
-import { rotuloTipo } from '@/lib/entity-badges'
+import { aspectPorTipo, rotuloTipo } from '@/lib/entity-badges'
 
 // Invalidação após purgar (individual ou lote): a fila de órfãs muda e o grid
 // (`['entities']`) perde os cards purgados. Não há `['entity', id]` — a entity
@@ -258,7 +258,9 @@ function OrphanCard({
           checked={selecionada}
           onChange={onAlternar}
         />
-        <div className="relative aspect-[2/3] w-14 shrink-0 overflow-hidden rounded-lg bg-muted">
+        <div
+          className={`relative ${aspectPorTipo(card.type)} w-14 shrink-0 overflow-hidden rounded-lg bg-muted`}
+        >
           {mostrarPlaceholder ? (
             <div
               data-testid="orphan-poster-placeholder"
