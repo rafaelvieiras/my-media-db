@@ -12,11 +12,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/rafaelvieiras/my-media-db/internal/audiotag"
 	"github.com/rafaelvieiras/my-media-db/internal/curation"
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 	"github.com/rafaelvieiras/my-media-db/internal/externaldetail"
+	"github.com/rafaelvieiras/my-media-db/internal/fingerprint"
 	"github.com/rafaelvieiras/my-media-db/internal/integration"
 	"github.com/rafaelvieiras/my-media-db/internal/job"
 	"github.com/rafaelvieiras/my-media-db/internal/job/libraryhealth"
@@ -146,6 +148,13 @@ type Server struct {
 	// testes de rota) -- GET/PUT /settings/ytdlp degradam para
 	// indisponível/"nenhum" nesse caso, sem panicar.
 	ytdlp *ytdlp.Gerenciador
+	// audioTagWriter regrava a tag de áudio (ID3v2/Vorbis comment) com o
+	// metadado resolvido de uma faixa (briefing 0125, internal/audiotag —
+	// subprocesso ffmpeg). Sempre construído (não depende de banco/opções,
+	// mesmo padrão de hostsImagem/httpImagem acima): o handler
+	// (audio_tags.go) checa Disponivel() e degrada com 503 quando o
+	// binário ffmpeg não está no ambiente.
+	audioTagWriter *audiotag.Writer
 }
 
 // Option configura opcionalmente o Server na construção, preservando a
@@ -409,7 +418,8 @@ func New(version string, database *db.DB, opts ...Option) *Server {
 	s := &Server{version: version, db: database, settings: &settingsCache{},
 		catalogCompleteness: &catalogCompletenessCache{},
 		hostsImagem:         hostsImagemPadrao, httpImagem: clienteImagemPadrao(),
-		telemetryCache: novoTelemetryCache(ttlTelemetria)}
+		telemetryCache: novoTelemetryCache(ttlTelemetria),
+		audioTagWriter: audiotag.NewWriter()}
 	if database != nil {
 		s.library = library.New(database)
 		s.scanner = scanner.NewManager(database)
@@ -467,6 +477,20 @@ func (s *Server) montarServicos(database *db.DB) {
 	if s.scanner != nil && s.enrich != nil {
 		if mb, ok := s.providers.Get("musicbrainz"); ok {
 			s.scanner.ConfigurarMusica(s.enrich, mb)
+		}
+	}
+	// Liga o passo 4.5 de FINGERPRINT ACÚSTICO no scanner de música (briefing
+	// 0126): o calculador via fpcalc (internal/fingerprint) e o provider
+	// capaz de consultar o AcoustID (capacidade opcional provider.
+	// FingerprintProvider -- o type-assert real acontece dentro do
+	// scanner). Só quando o provider "acoustid" foi registrado
+	// (cmd/mymediadb/main.go só registra com a client key configurada E
+	// fpcalc disponível no boot) -- sem ele, o passo 4.5 degrada em
+	// silêncio e o scan cai direto no draft (passo 5), como antes deste
+	// briefing.
+	if s.scanner != nil {
+		if fp, ok := s.providers.Get("acoustid"); ok {
+			s.scanner.ConfigurarFingerprint(fingerprint.NewCalculador(), fp)
 		}
 	}
 	// Liga a materialização automática OPCIONAL (briefing 0089): consumida
@@ -857,6 +881,16 @@ func (s *Server) Handler() (http.Handler, error) {
 				// efeito do job midias_faltantes, sob demanda e restrito a
 				// esta entity).
 				ent.Post("/{id}/materialize-missing-media", s.materializeMissingMediaEntity)
+
+				// "Gravar metadados no arquivo" (briefing 0125): regrava a
+				// PRÓPRIA tag de áudio (ID3v2/Vorbis comment) com o
+				// metadado RESOLVIDO da faixa (ou de cada faixa possuída,
+				// em cascata, para um álbum) -- alternativa ao NFO de
+				// música (que o projeto decidiu NÃO fazer, briefing 0125
+				// §3): LMS/Navidrome/gonic/Supysonic e o ecossistema
+				// Subsonic/OpenSubsonic leem direto da tag. Sem body; 422
+				// para type=='artista' (sem cascata coerente de "obra").
+				ent.Post("/{id}/audio-tags/write", s.writeAudioTags)
 
 				// Edição da IDENTIDADE externa (briefing 0027): grava o mapa
 				// external_ids (source -> id na fonte). As colunas geradas re-derivam;
