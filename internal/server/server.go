@@ -296,9 +296,9 @@ func WithMidiasFaltantesJob() Option {
 		if s.jobs == nil {
 			s.jobs = job.NewManager(s.db)
 		}
-		// s satisfaz tanto midiasfaltantes.EntityLister quanto
-		// midiasfaltantes.Materializador (ver internal/server/midias_faltantes.go).
-		h := midiasfaltantes.New(s, s)
+		// s satisfaz midiasfaltantes.EntityLister, midiasfaltantes.Materializador
+		// e midiasfaltantes.ContadorMissing (ver internal/server/midias_faltantes.go).
+		h := midiasfaltantes.New(s, s, s)
 		s.jobs.Registry.Registrar(h)
 	}
 }

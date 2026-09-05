@@ -278,3 +278,4 @@ e serve, explicitamente, de base técnica para o futuro sistema de plugins
 | ID | Briefing | Tipo | Status | Depende de |
 |---|---|---|---|---|
 | [0127](0127-revalidacao-arte-nfo-materializados-no-disco.md) | Revalidação de arte/NFO materializados contra o disco real (self-heal): `os.Stat` antes de tratar `local_path`/`nfo_path` como "já materializado" — corrige caso real em produção (arte apagada externamente do mount rclone/gdrive fica presa como "salvo na pasta" para sempre) | fix | done | 0062, 0064, 0081 |
+| [0128](0128-convergencia-local-path-nfo-e-job-midias-faltantes-honesto.md) | Convergência de `local_path`/`nfo_path` legados (arquivo existe, mas no nome/pasta errado desde antes do 0081) + exclusão silenciosa do job `midias_faltantes` por corrida de cron com `saude_biblioteca` — dois gaps que o 0127 não cobria, achados em duas entities reais (Chapolin Colorado, MIB Homens de Preto) | fix | in-progress | 0064, 0081, 0127 |

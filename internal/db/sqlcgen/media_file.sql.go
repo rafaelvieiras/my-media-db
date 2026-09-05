@@ -248,6 +248,22 @@ func (q *Queries) AtualizarMediaFileVisto(ctx context.Context, arg AtualizarMedi
 	return i, err
 }
 
+const contarMediaFilesEmEstadoMissing = `-- name: ContarMediaFilesEmEstadoMissing :one
+SELECT COUNT(*) FROM media_file WHERE state = 'missing'
+`
+
+// Contagem informativa para o resumo do job midias_faltantes (briefing
+// 0128): media_file 'missing' e um sinal de instabilidade do mount remoto
+// (rclone/gdrive) que pode ter excluido silenciosamente alguma entity do
+// universo elegivel daquela execucao (ListarEntityIDsComMediaFilePresente
+// exige state='present'). So leitura, nao muda nenhum comportamento.
+func (q *Queries) ContarMediaFilesEmEstadoMissing(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, contarMediaFilesEmEstadoMissing)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const criarMediaFile = `-- name: CriarMediaFile :one
 
 INSERT INTO media_file (

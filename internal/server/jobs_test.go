@@ -142,7 +142,7 @@ func TestListJobsSeed(t *testing.T) {
 
 	assertJobSeedado(t, byID, "backup_vacuum", "0 3 * * *")
 	assertJobSeedado(t, byID, "saude_biblioteca", "0 4 * * *")
-	assertJobSeedado(t, byID, "midias_faltantes", "0 4 * * *")
+	assertJobSeedado(t, byID, "midias_faltantes", "0 5 * * *")
 	assertJobSeedado(t, byID, "trailer_tema_faltantes", "30 4 * * *")
 }
 

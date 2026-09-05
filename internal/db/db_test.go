@@ -130,8 +130,8 @@ func TestMigrateUp(t *testing.T) {
 	// execqueue, então job_execution vira uma segunda fonte de verdade
 	// redundante e é derrubada) + 0026 integration_config (fundação de
 	// integrações configuráveis via UI, briefing 0095/ADR-0023).
-	if v := mustSchemaVersion(t, d); v != 26 {
-		t.Errorf("versão após up = %d, quero 26", v)
+	if v := mustSchemaVersion(t, d); v != 27 {
+		t.Errorf("versão após up = %d, quero 27", v)
 	}
 
 	// A migration-semente criou a tabela de metadados com uma linha.
@@ -182,6 +182,8 @@ func TestMigrateDown(t *testing.T) {
 	}
 
 	// Down reverte uma migration por vez, do topo para a base.
+	downPara(t, d, 26) // 0027: volta o cron do job midias_faltantes de 0h5 para 0h4 (briefing 0128).
+
 	downPara(t, d, 25) // 0026: remove integration_config (briefing 0095).
 	querFalha(t, d, "SELECT 1 FROM integration_config",
 		"tabela integration_config ainda existe após o down do 0026")

@@ -378,6 +378,176 @@ func TestMaterializarMidiasFaltantesNfoSumidoRegravaDoZero(t *testing.T) {
 	}
 }
 
+// ── Convergência de naming legado (briefing 0128, Caso B) ────────────────
+
+// semearAssetPrincipalEMoverParaLocalLegado materializa um poster (que vira
+// o principal do kind) e depois simula naming legado (pre-briefing-0081):
+// move o binário pra dentro de "Season 01" com nome de episódio e atualiza
+// local_path no banco -- mesmo estado real observado no MIB Homens de Preto
+// em produção. Devolve o asset (já com local_path legado), o caminho
+// canônico esperado (raiz de libDir) e o caminho legado.
+func semearAssetPrincipalEMoverParaLocalLegado(t *testing.T, srv *Server, h http.Handler, d *db.DB, libDir string) (asset sqlcgen.Asset, canonico, legadoPath string) {
+	t.Helper()
+	postAsset(t, h, "e1", "poster", pngPayload(64))
+	if _, _, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1"); err != nil {
+		t.Fatalf("1a materializacao: %v", err)
+	}
+	assets := decodeAssetList(t, srv, "e1")
+	if len(assets) != 1 || assets[0].IsPrincipal == 0 {
+		t.Fatalf("asset nao materializado como principal: %+v", assets)
+	}
+	asset = assets[0]
+	canonico = filepath.Join(libDir, "poster.png")
+	if asset.LocalPath.String != canonico {
+		t.Fatalf("local_path = %q, quero %q", asset.LocalPath.String, canonico)
+	}
+
+	legadoDir := filepath.Join(libDir, "Season 01")
+	if err := os.MkdirAll(legadoDir, 0o755); err != nil {
+		t.Fatalf("mkdir legado: %v", err)
+	}
+	legadoPath = filepath.Join(legadoDir, "Matrix.1999.S01E01-poster.png")
+	if err := os.Rename(canonico, legadoPath); err != nil {
+		t.Fatalf("mover para local legado: %v", err)
+	}
+	if err := escrita(t, d).AtualizarAssetLocalPath(context.Background(), sqlcgen.AtualizarAssetLocalPathParams{
+		LocalPath: nsOf(legadoPath), ID: asset.ID,
+	}); err != nil {
+		t.Fatalf("AtualizarAssetLocalPath (simular legado): %v", err)
+	}
+	asset.LocalPath = nsOf(legadoPath)
+	return asset, canonico, legadoPath
+}
+
+// TestMaterializarMidiasFaltantesAssetLegadoPrincipalConvergeParaNomeCanonico
+// cobre o critério de aceite do briefing 0128: um asset JÁ PRINCIPAL cujo
+// local_path aponta pra um nome/pasta de EPISÓDIO (naming legado, gravado
+// antes do briefing 0081 corrigir DiretorioDestino) -- rodar
+// MaterializarMidiasFaltantes de novo RENOMEIA (não recopia) o arquivo de
+// volta pro nome bare canônico na raiz, e persiste o novo local_path.
+func TestMaterializarMidiasFaltantesAssetLegadoPrincipalConvergeParaNomeCanonico(t *testing.T) {
+	srv, h, d := setupMidiasFaltantesServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+	_, canonico, legadoPath := semearAssetPrincipalEMoverParaLocalLegado(t, srv, h, d, libDir)
+
+	artes, _, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1")
+	if err != nil {
+		t.Fatalf("2a materializacao (convergencia): %v", err)
+	}
+	achouPoster := false
+	for _, k := range artes {
+		if k == "poster" {
+			achouPoster = true
+		}
+	}
+	if !achouPoster {
+		t.Errorf("artesBaixadas = %v, quero conter poster (convergencia reportada)", artes)
+	}
+	if _, err := os.Stat(canonico); err != nil {
+		t.Errorf("poster nao convergiu de volta pro nome canonico (%s): %v", canonico, err)
+	}
+	if _, err := os.Stat(legadoPath); err == nil {
+		t.Error("arquivo legado ainda existe apos convergencia -- deveria ter sido RENOMEADO (movido), nao recopiado")
+	}
+	assetsDepois := decodeAssetList(t, srv, "e1")
+	if len(assetsDepois) != 1 || assetsDepois[0].LocalPath.String != canonico {
+		t.Errorf("local_path no banco = %+v, quero %q", assetsDepois, canonico)
+	}
+}
+
+// TestMaterializarMidiasFaltantesAssetLegadoNaoPrincipalNaoConverge cobre a
+// contrapartida de segurança (briefing 0128 §6): um asset local em naming
+// legado que NÃO é is_principal (edge case -- nenhum asset do kind é
+// principal) NÃO tem o nome recalculado -- só preserva o comportamento
+// existente do briefing 0127 (regravar in-place se o arquivo tiver sumido).
+// Recalcular o nome bare para um não-principal colidiria com o nome que o
+// verdadeiro principal deveria ocupar.
+func TestMaterializarMidiasFaltantesAssetLegadoNaoPrincipalNaoConverge(t *testing.T) {
+	srv, h, d := setupMidiasFaltantesServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+	_, _, legadoPath := semearAssetPrincipalEMoverParaLocalLegado(t, srv, h, d, libDir)
+
+	if err := escrita(t, d).DesmarcarAssetsPrincipalPorKind(context.Background(), sqlcgen.DesmarcarAssetsPrincipalPorKindParams{
+		EntityID: "e1", Kind: "poster",
+	}); err != nil {
+		t.Fatalf("DesmarcarAssetsPrincipalPorKind: %v", err)
+	}
+
+	if _, _, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1"); err != nil {
+		t.Fatalf("2a materializacao: %v", err)
+	}
+
+	if _, err := os.Stat(legadoPath); err != nil {
+		t.Errorf("arquivo legado deveria continuar no lugar (asset nao-principal nao converge): %v", err)
+	}
+	assetsDepois := decodeAssetList(t, srv, "e1")
+	if assetsDepois[0].LocalPath.String != legadoPath {
+		t.Errorf("local_path mudou = %q, quero continuar %q (nao-principal nao converge)", assetsDepois[0].LocalPath.String, legadoPath)
+	}
+}
+
+// semearNfoNaRaizEMoverParaLocalLegado grava o tvshow.nfo corretamente na
+// raiz (pós-briefing-0081) e depois simula naming legado (pré-0081): move o
+// .nfo pra dentro de "Season 01" e atualiza entity.nfo_path pra lá -- mesmo
+// estado real observado no MIB Homens de Preto em produção. Devolve o
+// caminho canônico esperado (raiz) e o caminho legado.
+func semearNfoNaRaizEMoverParaLocalLegado(t *testing.T, srv *Server, d *db.DB, libRoot string) (nfoCanonico, legadoPath string) {
+	t.Helper()
+	_, nfoGravado, err := srv.MaterializarMidiasFaltantes(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("1a chamada: %v", err)
+	}
+	if !nfoGravado {
+		t.Fatal("1a chamada nfoGravado = false, quero true")
+	}
+	nfoCanonico = filepath.Join(libRoot, "tvshow.nfo")
+	if _, err := os.Stat(nfoCanonico); err != nil {
+		t.Fatalf("tvshow.nfo ausente na raiz: %v", err)
+	}
+
+	legadoDir := filepath.Join(libRoot, "Season 01")
+	if err := os.MkdirAll(legadoDir, 0o755); err != nil {
+		t.Fatalf("mkdir legado: %v", err)
+	}
+	legadoPath = filepath.Join(legadoDir, "tvshow.nfo")
+	if err := os.Rename(nfoCanonico, legadoPath); err != nil {
+		t.Fatalf("mover nfo para local legado: %v", err)
+	}
+	if err := escrita(t, d).AtualizarEntityNfo(context.Background(), sqlcgen.AtualizarEntityNfoParams{
+		NfoPath: nsOf(legadoPath), NfoWrittenAt: nsOf("2026-07-23T00:00:00Z"), ID: "s1",
+	}); err != nil {
+		t.Fatalf("AtualizarEntityNfo (simular legado): %v", err)
+	}
+	return nfoCanonico, legadoPath
+}
+
+// TestMaterializarMidiasFaltantesNfoLegadoConvergeERemoveOrfao cobre o
+// critério de aceite do briefing 0128 para o NFO: um entity.nfo_path legado
+// (gravado antes do briefing 0081, apontando pra dentro de "Season 01") --
+// rodar MaterializarMidiasFaltantes de novo regrava o .nfo na raiz correta
+// e remove o arquivo antigo órfão.
+func TestMaterializarMidiasFaltantesNfoLegadoConvergeERemoveOrfao(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	libRoot := semearArvoreSerie(t, d)
+	nfoCanonico, legadoPath := semearNfoNaRaizEMoverParaLocalLegado(t, srv, d, libRoot)
+
+	_, nfoGravado2, err := srv.MaterializarMidiasFaltantes(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("2a chamada (convergencia): %v", err)
+	}
+	if !nfoGravado2 {
+		t.Error("2a chamada nfoGravado = false, quero true (convergencia reportada)")
+	}
+	if _, err := os.Stat(nfoCanonico); err != nil {
+		t.Errorf("tvshow.nfo nao convergiu de volta pra raiz (%s): %v", nfoCanonico, err)
+	}
+	if _, err := os.Stat(legadoPath); err == nil {
+		t.Error("nfo legado orfao ainda existe apos convergencia -- deveria ter sido removido")
+	}
+}
+
 // ── Música (briefing 0116): álbum/artista entram no universo do job e ganham "poster" ──
 
 // semearArvoreMusica monta artista->album->faixa (entity_relation) com UM media_file

@@ -294,3 +294,11 @@ SELECT EXISTS (
 ) AS tem_posse
 FROM entity e
 WHERE e.id = ?;
+
+-- name: ContarMediaFilesEmEstadoMissing :one
+-- Contagem informativa para o resumo do job midias_faltantes (briefing
+-- 0128): media_file 'missing' e um sinal de instabilidade do mount remoto
+-- (rclone/gdrive) que pode ter excluido silenciosamente alguma entity do
+-- universo elegivel daquela execucao (ListarEntityIDsComMediaFilePresente
+-- exige state='present'). So leitura, nao muda nenhum comportamento.
+SELECT COUNT(*) FROM media_file WHERE state = 'missing';

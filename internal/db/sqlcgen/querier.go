@@ -193,6 +193,12 @@ type Querier interface {
 	// (kind='job') -- ver internal/db/queries/queue_item.sql.
 	ContarJobExecutions(ctx context.Context) (int64, error)
 	ContarLibrarySources(ctx context.Context) (int64, error)
+	// Contagem informativa para o resumo do job midias_faltantes (briefing
+	// 0128): media_file 'missing' e um sinal de instabilidade do mount remoto
+	// (rclone/gdrive) que pode ter excluido silenciosamente alguma entity do
+	// universo elegivel daquela execucao (ListarEntityIDsComMediaFilePresente
+	// exige state='present'). So leitura, nao muda nenhum comportamento.
+	ContarMediaFilesEmEstadoMissing(ctx context.Context) (int64, error)
 	ContarMediaFilesPorState(ctx context.Context) ([]ContarMediaFilesPorStateRow, error)
 	// CRUD de asset (poster/fanart/... referenciados por uma entity).
 	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.

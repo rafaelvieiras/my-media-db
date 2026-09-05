@@ -35,8 +35,18 @@ func (f *materializadorFake) MaterializarMidiasFaltantes(_ context.Context, enti
 	return f.artesPorID[entityID], f.nfoPorID[entityID], nil
 }
 
+// contadorMissingFake é um ContadorMissing fake, sem tocar banco.
+type contadorMissingFake struct {
+	n   int64
+	err error
+}
+
+func (f *contadorMissingFake) ContarMediaFilesEmEstadoMissing(context.Context) (int64, error) {
+	return f.n, f.err
+}
+
 func TestNomeEstavel(t *testing.T) {
-	h := New(&entityListerFake{}, &materializadorFake{})
+	h := New(&entityListerFake{}, &materializadorFake{}, &contadorMissingFake{})
 	if h.Nome() != "midias_faltantes" {
 		t.Errorf("Nome() = %q, quero \"midias_faltantes\"", h.Nome())
 	}
@@ -55,7 +65,7 @@ func TestExecutarProcessaTodasEResume(t *testing.T) {
 		nfoPorID: map[string]bool{"e1": true, "e3": false},
 		errPorID: map[string]error{},
 	}
-	h := New(entities, mat)
+	h := New(entities, mat, &contadorMissingFake{})
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -80,7 +90,7 @@ func TestExecutarErroDeUmaEntityNaoAbortaAsDemais(t *testing.T) {
 		nfoPorID:   map[string]bool{},
 		errPorID:   map[string]error{"e1": errors.New("falha de rede")},
 	}
-	h := New(entities, mat)
+	h := New(entities, mat, &contadorMissingFake{})
 
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
@@ -99,7 +109,7 @@ func TestExecutarErroDeUmaEntityNaoAbortaAsDemais(t *testing.T) {
 
 // TestExecutarSemEntitiesElegiveis: universo vazio não é erro.
 func TestExecutarSemEntitiesElegiveis(t *testing.T) {
-	h := New(&entityListerFake{ids: nil}, &materializadorFake{})
+	h := New(&entityListerFake{ids: nil}, &materializadorFake{}, &contadorMissingFake{})
 	msg, err := h.Executar(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("Executar: %v", err)
@@ -113,8 +123,50 @@ func TestExecutarSemEntitiesElegiveis(t *testing.T) {
 // (banco fora do ar) propaga o erro -- diferente de falha por-entity.
 func TestExecutarErroDeListagemPropaga(t *testing.T) {
 	entities := &entityListerFake{err: errors.New("banco indisponível")}
-	h := New(entities, &materializadorFake{})
+	h := New(entities, &materializadorFake{}, &contadorMissingFake{})
 	if _, err := h.Executar(context.Background(), nil); err == nil {
 		t.Fatal("Executar deveria propagar o erro de listagem")
+	}
+}
+
+// TestExecutarResumoIncluiMissingQuandoMaiorQueZero cobre o briefing 0128
+// (Caso A): quando há media_file(s) 'missing' no momento do scan, o resumo
+// anexa a contagem -- sinal de que o universo elegível desta execução pode
+// ter ficado incompleto por uma corrida com outro job sobre o mesmo mount.
+func TestExecutarResumoIncluiMissingQuandoMaiorQueZero(t *testing.T) {
+	h := New(&entityListerFake{}, &materializadorFake{}, &contadorMissingFake{n: 3})
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	if !strings.Contains(msg, "3 media_file(s) em estado 'missing'") {
+		t.Errorf("mensagem %q deveria conter a contagem de missing", msg)
+	}
+}
+
+// TestExecutarResumoOmiteMissingQuandoZero cobre a contrapartida: sem
+// nenhum media_file 'missing', o resumo não ganha ruído extra.
+func TestExecutarResumoOmiteMissingQuandoZero(t *testing.T) {
+	h := New(&entityListerFake{}, &materializadorFake{}, &contadorMissingFake{n: 0})
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar: %v", err)
+	}
+	if strings.Contains(msg, "missing") {
+		t.Errorf("mensagem %q não deveria mencionar missing quando a contagem é 0", msg)
+	}
+}
+
+// TestExecutarResumoOmiteMissingQuandoContagemFalha cobre que uma falha
+// best-effort na contagem (banco indisponível no meio da execução) não
+// aborta o job nem propaga erro -- só omite o dado do resumo.
+func TestExecutarResumoOmiteMissingQuandoContagemFalha(t *testing.T) {
+	h := New(&entityListerFake{}, &materializadorFake{}, &contadorMissingFake{err: errors.New("banco indisponível")})
+	msg, err := h.Executar(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Executar não deveria falhar por causa da contagem de missing: %v", err)
+	}
+	if strings.Contains(msg, "missing") {
+		t.Errorf("mensagem %q não deveria mencionar missing quando a contagem falhou", msg)
 	}
 }

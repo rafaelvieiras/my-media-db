@@ -12,11 +12,15 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
+	"github.com/rafaelvieiras/my-media-db/internal/localmedia"
 )
 
 // kindsMidiasFaltantes são os kinds de arte de NÍVEL DE OBRA que o job
@@ -53,6 +57,15 @@ var kindsMidiasFaltantes = []string{kindPoster, kindFanart, kindBanner, kindLogo
 // ligado). Season aparecer aqui NÃO contradiz a guarda de
 // gravarNFOSeFaltante (season não tem NFO próprio) -- só passa a
 // materializar arte de nível de temporada.
+// ContarMediaFilesEmEstadoMissing devolve quantos media_file estao em estado
+// 'missing' no momento da chamada (briefing 0128, Caso A) -- wrapper fino
+// sobre a query sqlc, consumido pelo resumo do job midias_faltantes
+// (internal/job/midiasfaltantes) para tornar visivel um sinal de
+// instabilidade do mount remoto que hoje nao aparece em lugar nenhum.
+func (s *Server) ContarMediaFilesEmEstadoMissing(ctx context.Context) (int64, error) {
+	return s.leitura().ContarMediaFilesEmEstadoMissing(ctx)
+}
+
 func (s *Server) ListarEntitiesComMediaFilePresente(ctx context.Context) ([]string, error) {
 	diretos, err := s.leitura().ListarEntityIDsComMediaFilePresente(ctx)
 	if err != nil {
@@ -147,16 +160,7 @@ func (s *Server) materializarKindVencedor(ctx context.Context, ent sqlcgen.Entit
 			return false, err
 		}
 		if vencedor.IsLocalInLibrary {
-			// briefing 0127: a coluna do banco diz "já materializado", mas o
-			// arquivo pode ter sumido fisicamente (mount remoto rclone/gdrive,
-			// exclusão externa) -- reconfirma via os.Stat antes de pular.
-			if arquivoLocalAindaExiste(asset.LocalPath.String) {
-				return false, nil // já materializado, nada a fazer
-			}
-			if _, err := s.regravarBinarioAssetNoLocalPathExistente(ctx, asset); err != nil {
-				return false, err
-			}
-			return true, nil // autocura: regravado no mesmo local_path
+			return s.reconfirmarAssetLocalNaLibrary(ctx, ent, asset)
 		}
 		return s.materializarAssetOuCache(ctx, ent, asset)
 	}
@@ -174,6 +178,91 @@ func (s *Server) materializarKindVencedor(ctx context.Context, ent sqlcgen.Entit
 		return false, err
 	}
 	return s.materializarAssetOuCache(ctx, ent, asset)
+}
+
+// reconfirmarAssetLocalNaLibrary trata o caso "o banco diz que o vencedor já
+// está materializado na pasta real" (vencedor.IsLocalInLibrary) -- extraído
+// de materializarKindVencedor para manter a complexidade ciclomática baixa.
+// Quando o asset já É o principal do kind, delega a convergirNomeCanonico
+// (briefing 0128, Caso B: DIRETÓRIO + nome podem ter mudado desde a
+// materialização, ex.: local_path legado pré-briefing-0081 apontando pra
+// dentro de "Season 01" em vez da raiz da série) -- persiste o novo
+// local_path quando o destino muda. Deliberadamente NÃO reusa
+// renomearParaBare (usado por PUT .../prefer): aquela função preserva o
+// DIRETÓRIO atual do asset por design (só resolve bare-vs-rotacionado
+// dentro da pasta já correta) -- aqui o próprio diretório pode estar errado.
+// Um asset local NÃO-principal (edge case: nenhum asset do kind é principal)
+// só recebe o self-heal simples do briefing 0127 (regravar in-place se o
+// arquivo sumiu) -- recalcular o nome bare pra ele colidiria com o nome que
+// o verdadeiro principal deveria ocupar (ver briefing 0128 §6).
+func (s *Server) reconfirmarAssetLocalNaLibrary(ctx context.Context, ent sqlcgen.Entity, asset sqlcgen.Asset) (bool, error) {
+	if asset.IsPrincipal != 0 {
+		haviaSumido := !arquivoLocalAindaExiste(asset.LocalPath.String)
+		destino, err := s.convergirNomeCanonico(ctx, ent, asset)
+		if err != nil {
+			return false, err
+		}
+		if destino == asset.LocalPath.String {
+			return haviaSumido, nil // sem drift de nome; convergirNomeCanonico já cobre o self-heal do 0127 (regravado in-place se o arquivo tinha sumido)
+		}
+		if err := sqlcgen.New(s.db.Write).AtualizarAssetLocalPath(ctx, sqlcgen.AtualizarAssetLocalPathParams{
+			LocalPath: sql.NullString{String: destino, Valid: true},
+			ID:        asset.ID,
+		}); err != nil {
+			return false, err
+		}
+		return true, nil // convergência: arquivo renomeado pro destino canônico atual
+	}
+
+	// briefing 0127: a coluna do banco diz "já materializado", mas o arquivo
+	// pode ter sumido fisicamente (mount remoto rclone/gdrive, exclusão
+	// externa) -- reconfirma via os.Stat antes de pular.
+	if arquivoLocalAindaExiste(asset.LocalPath.String) {
+		return false, nil // já materializado, nada a fazer
+	}
+	if _, err := s.regravarBinarioAssetNoLocalPathExistente(ctx, asset); err != nil {
+		return false, err
+	}
+	return true, nil // autocura: regravado no mesmo local_path
+}
+
+// convergirNomeCanonico recalcula o destino canônico ATUAL (DIRETÓRIO + nome
+// bare) de um asset já local via resolverDestino, e RENOMEIA (rename, nunca
+// recopia bytes) o arquivo físico se divergir do local_path registrado --
+// briefing 0128, Caso B. Diferente de renomearParaBare
+// (localmedia_handlers.go, usado por PUT .../prefer): aquela função só
+// resolve bare-vs-rotacionado MANTENDO o diretório atual (`filepath.Dir`)
+// por design, porque no fluxo de troca de principal o asset já está na pasta
+// certa; aqui o próprio DIRETÓRIO pode estar errado (naming legado
+// pré-briefing-0081, ex.: asset gravado dentro de "Season 01" quando deveria
+// estar na raiz da série) -- recalcular só o nome sem recalcular o
+// diretório NÃO fecharia esse gap. Quando o destino recalculado é igual ao
+// atual, cai no MESMO self-heal do briefing 0127 (regrava in-place se o
+// arquivo tiver sumido do disco).
+func (s *Server) convergirNomeCanonico(ctx context.Context, ent sqlcgen.Entity, alvo sqlcgen.Asset) (string, error) {
+	dir, nomeBaseVideo, pastaExclusiva, ok, err := s.resolverDestino(ctx, ent)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", errSemDestino
+	}
+	ext := filepath.Ext(alvo.LocalPath.String)
+	kind, nomeBase := s.kindNomeEBase(ctx, ent, alvo.Kind, nomeBaseVideo)
+	destino := filepath.Join(dir, localmedia.NomeArquivoArte(kind, true, 0, pastaExclusiva, nomeBase, ext))
+	if destino == alvo.LocalPath.String {
+		if arquivoLocalAindaExiste(alvo.LocalPath.String) {
+			return destino, nil
+		}
+		if _, err := s.regravarBinarioAssetNoLocalPathExistente(ctx, alvo); err != nil {
+			return "", err
+		}
+		return destino, nil
+	}
+	if err := localmedia.RenomearArquivo(alvo.LocalPath.String, destino); err != nil {
+		return "", err
+	}
+	return destino, nil
 }
 
 // materializarAssetOuCache chama materializarAsset (grava na pasta REAL da biblioteca) e
@@ -281,6 +370,23 @@ func (s *Server) dispararTrailerTemaAutomaticoSeLigado(ctx context.Context, enti
 	}()
 }
 
+// nfoJaConvergenteNoDisco decide se o nfo_path já registrado (nfoPathAntigo)
+// ainda é o destino canônico ATUAL e o arquivo continua presente -- usado
+// por gravarNFOSeFaltante (briefing 0128, Caso B) para só pular a
+// regravação quando NADA mudou (nem o destino recalculado via
+// resolverDestino, nem a presença física do arquivo, briefing 0127).
+// Extraída para manter a complexidade ciclomática de gravarNFOSeFaltante
+// baixa. Falha ao recalcular o destino (banco/disco) degrada para o guard
+// simples do 0127 (arquivo sumiu?), nunca bloqueia o self-heal já existente.
+func (s *Server) nfoJaConvergenteNoDisco(ctx context.Context, ent sqlcgen.Entity, nfoPathAntigo string) bool {
+	dir, nomeBaseVideo, _, ok, err := s.resolverDestino(ctx, ent)
+	if err != nil || !ok {
+		return arquivoLocalAindaExiste(nfoPathAntigo)
+	}
+	destinoAtual := filepath.Join(dir, localmedia.NomeArquivoNFO(ent.Type, nomeBaseVideo))
+	return destinoAtual == nfoPathAntigo && arquivoLocalAindaExiste(nfoPathAntigo)
+}
+
 // gravarNFOSeFaltante gera o NFO da entity (mesma função gravarNFO do 0062)
 // quando ainda não existe (entity.nfo_path nulo). season nunca tem NFO
 // próprio (mesma guarda de writeEntityNfo) -- desde o briefing 0081, season
@@ -293,16 +399,20 @@ func (s *Server) dispararTrailerTemaAutomaticoSeLigado(ctx context.Context, enti
 // (errSemDestino -- entity sem media_file present, nunca deveria acontecer
 // aqui, mas defensivo) degrada para (false, nil).
 func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity) (bool, error) {
-	// briefing 0127: a coluna do banco diz "já tem NFO", mas o arquivo pode
-	// ter sumido fisicamente do disco (mount remoto rclone/gdrive, exclusão
-	// externa) -- reconfirma via os.Stat antes de pular; se sumiu, cai para o
-	// fluxo normal abaixo (gravarNFO já regrava do zero e é idempotente).
-	if ent.NfoPath.Valid && ent.NfoPath.String != "" && arquivoLocalAindaExiste(ent.NfoPath.String) {
-		return false, nil
-	}
 	if ent.Type == tipoEntTemporada {
 		return false, nil
 	}
+
+	nfoPathAntigo := ent.NfoPath.String
+	temNfoRegistrado := ent.NfoPath.Valid && nfoPathAntigo != ""
+
+	if temNfoRegistrado && s.nfoJaConvergenteNoDisco(ctx, ent, nfoPathAntigo) {
+		return false, nil
+	}
+	// sem NFO registrado, OU destino divergente (naming legado), OU destino
+	// certo mas arquivo sumido -- cai no fluxo normal abaixo, que sempre
+	// grava no destino recém-calculado (gravarNFO é idempotente por
+	// conteúdo; briefings 0062/0127/0128).
 
 	resolvida, encontrada, err := s.resolverEntity(ctx, ent.ID, "", false)
 	if err != nil {
@@ -311,11 +421,29 @@ func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity) (b
 	if !encontrada {
 		return false, nil
 	}
-	if _, err := s.gravarNFO(ctx, ent, resolvida); err != nil {
+	resultado, err := s.gravarNFO(ctx, ent, resolvida)
+	if err != nil {
 		if errors.Is(err, errSemDestino) {
 			return false, nil
 		}
 		return false, err
 	}
+	removerNfoOrfaoSeMudou(temNfoRegistrado, nfoPathAntigo, resultado.NfoPath)
 	return true, nil
+}
+
+// removerNfoOrfaoSeMudou remove (best-effort) o .nfo antigo quando
+// gravarNFOSeFaltante regravou num destino DIFERENTE do registrado
+// (naming legado, briefing 0128 Caso B) -- sem isso, o .nfo errado fica
+// órfão ao lado do novo, no lugar certo, e Kodi/Emby podem escanear os
+// dois. Seguro remover: NFO é sempre exportação one-way do sistema, nunca
+// editado pelo dono fora do fluxo do MyMediaDB (AGENTS.md). No-op quando
+// não havia nfo_path registrado antes, ou quando o destino não mudou.
+func removerNfoOrfaoSeMudou(temNfoRegistrado bool, nfoPathAntigo, novoPath string) {
+	if !temNfoRegistrado || nfoPathAntigo == novoPath {
+		return
+	}
+	if rerr := os.Remove(nfoPathAntigo); rerr != nil && !os.IsNotExist(rerr) {
+		log.Printf("gravarNFOSeFaltante: falha ao remover NFO legado orfao %q (best-effort, ignorado): %v", nfoPathAntigo, rerr)
+	}
 }
