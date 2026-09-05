@@ -142,12 +142,21 @@ func (s *Server) materializarKindVencedor(ctx context.Context, ent sqlcgen.Entit
 	vencedor := candidatos[0]
 
 	if vencedor.IsLocal {
-		if vencedor.IsLocalInLibrary {
-			return false, nil // já materializado, nada a fazer
-		}
 		asset, err := s.leitura().ObterAsset(ctx, vencedor.AssetID)
 		if err != nil {
 			return false, err
+		}
+		if vencedor.IsLocalInLibrary {
+			// briefing 0127: a coluna do banco diz "já materializado", mas o
+			// arquivo pode ter sumido fisicamente (mount remoto rclone/gdrive,
+			// exclusão externa) -- reconfirma via os.Stat antes de pular.
+			if arquivoLocalAindaExiste(asset.LocalPath.String) {
+				return false, nil // já materializado, nada a fazer
+			}
+			if _, err := s.regravarBinarioAssetNoLocalPathExistente(ctx, asset); err != nil {
+				return false, err
+			}
+			return true, nil // autocura: regravado no mesmo local_path
 		}
 		return s.materializarAssetOuCache(ctx, ent, asset)
 	}
@@ -284,7 +293,11 @@ func (s *Server) dispararTrailerTemaAutomaticoSeLigado(ctx context.Context, enti
 // (errSemDestino -- entity sem media_file present, nunca deveria acontecer
 // aqui, mas defensivo) degrada para (false, nil).
 func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity) (bool, error) {
-	if ent.NfoPath.Valid && ent.NfoPath.String != "" {
+	// briefing 0127: a coluna do banco diz "já tem NFO", mas o arquivo pode
+	// ter sumido fisicamente do disco (mount remoto rclone/gdrive, exclusão
+	// externa) -- reconfirma via os.Stat antes de pular; se sumiu, cai para o
+	// fluxo normal abaixo (gravarNFO já regrava do zero e é idempotente).
+	if ent.NfoPath.Valid && ent.NfoPath.String != "" && arquivoLocalAindaExiste(ent.NfoPath.String) {
 		return false, nil
 	}
 	if ent.Type == tipoEntTemporada {

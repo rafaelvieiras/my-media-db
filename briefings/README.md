@@ -272,3 +272,9 @@ e serve, explicitamente, de base técnica para o futuro sistema de plugins
 | [0122](0122-forcar-reconciliacao-manual-por-entity.md) | Forçar reconciliação manual de UMA entity (faixa/série em rascunho), ignorando o throttle de 1x/dia da reconciliação automática | feature | done | 0059, 0120 |
 | [0123](0123-musicbrainz-reprova-releases-que-falharam-de-rede.md) | MusicBrainz dá uma segunda chance a releases que falharam só de rede (503 transitório) ao buscar a faixa-alvo, com log de diagnóstico por tentativa (caso real: Bomfunk MC's/Freestyler) | fix | done | 0121, 0122 |
 | [0124](0124-desempate-de-titulo-por-duracao-na-faixa-alvo.md) | Desempate por duração quando 2+ faixas da mesma release empatam no score de título (regressão real da rodada 2 do 0121: release com 2 faixas "Freestyler" escolhia a errada e o gate de duração rejeitava a release inteira) | fix | done | 0121, 0123 |
+
+### Transversal — Infraestrutura operacional (continuação)
+
+| ID | Briefing | Tipo | Status | Depende de |
+|---|---|---|---|---|
+| [0127](0127-revalidacao-arte-nfo-materializados-no-disco.md) | Revalidação de arte/NFO materializados contra o disco real (self-heal): `os.Stat` antes de tratar `local_path`/`nfo_path` como "já materializado" — corrige caso real em produção (arte apagada externamente do mount rclone/gdrive fica presa como "salvo na pasta" para sempre) | fix | done | 0062, 0064, 0081 |

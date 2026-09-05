@@ -531,6 +531,189 @@ func TestMaterializeFalhaIOSemOrfaoELocalPath(t *testing.T) {
 	}
 }
 
+// ── Self-heal de arte/NFO materializados (briefing 0127) ─────────────────
+
+// TestArquivoLocalAindaExisteArquivoPresente cobre o caso feliz do helper:
+// arquivo existente -> true.
+func TestArquivoLocalAindaExisteArquivoPresente(t *testing.T) {
+	dir := t.TempDir()
+	caminho := filepath.Join(dir, "existe.png")
+	if err := os.WriteFile(caminho, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if !arquivoLocalAindaExiste(caminho) {
+		t.Error("arquivoLocalAindaExiste = false para arquivo existente, quero true")
+	}
+}
+
+// TestArquivoLocalAindaExisteArquivoAusente cobre o gatilho do self-heal:
+// arquivo inexistente (os.IsNotExist) -> false.
+func TestArquivoLocalAindaExisteArquivoAusente(t *testing.T) {
+	dir := t.TempDir()
+	caminho := filepath.Join(dir, "sumiu.png")
+	if arquivoLocalAindaExiste(caminho) {
+		t.Error("arquivoLocalAindaExiste = true para arquivo inexistente, quero false")
+	}
+}
+
+// TestArquivoLocalAindaExistePathVazio cobre o caso defensivo: path vazio
+// nunca é tratado como "existe".
+func TestArquivoLocalAindaExistePathVazio(t *testing.T) {
+	if arquivoLocalAindaExiste("") {
+		t.Error(`arquivoLocalAindaExiste("") = true, quero false`)
+	}
+}
+
+// TestArquivoLocalAindaExisteErroNaoENOENTAssumePresente cobre o critério de
+// aceite do briefing 0127: um erro de os.Stat que NÃO seja "não existe"
+// (aqui, ENOTDIR -- o componente pai do caminho é um arquivo comum, não um
+// diretório) é tratado como "assume que existe" -- best-effort, não dispara
+// reescrita em cima de um glitch transitório do mount remoto.
+func TestArquivoLocalAindaExisteErroNaoENOENTAssumePresente(t *testing.T) {
+	dir := t.TempDir()
+	arquivoComum := filepath.Join(dir, "isto-e-um-arquivo-nao-diretorio")
+	if err := os.WriteFile(arquivoComum, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	// Um path cujo componente PAI é um arquivo comum produz ENOTDIR no
+	// os.Stat -- erro diferente de "não existe".
+	caminho := filepath.Join(arquivoComum, "sub", "poster.png")
+	if !arquivoLocalAindaExiste(caminho) {
+		t.Error("arquivoLocalAindaExiste = false para erro ENOTDIR, quero true (assume presente)")
+	}
+}
+
+// TestMaterializeArquivoSumidoRegravaMesmoPath cobre o critério de aceite do
+// briefing 0127 via POST .../materialize: um asset já materializado
+// (local_path preenchido) cujo arquivo físico sumiu do disco (mount remoto,
+// exclusão externa) -- uma nova chamada regrava o binário do CACHE no MESMO
+// local_path, sem rotacionar (poster.png continua bare, nunca vira
+// poster1.png).
+func TestMaterializeArquivoSumidoRegravaMesmoPath(t *testing.T) {
+	h, d, _ := setupAssetsServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+
+	a := decodeAsset(t, postAsset(t, h, "e1", "poster", pngPayload(64)))
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e1/assets/"+a.ID+"/materialize", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("1a materialize status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	quero := filepath.Join(libDir, "poster.png")
+	got := decodeAsset(t, rec)
+	if got.LocalPath == nil || *got.LocalPath != quero {
+		t.Fatalf("local_path = %v, quero %q", got.LocalPath, quero)
+	}
+
+	// Simula o arquivo sumindo fisicamente do disco (mount remoto, exclusão
+	// externa) -- o banco continua achando que está lá.
+	if err := os.Remove(quero); err != nil {
+		t.Fatalf("os.Remove (simular sumiço): %v", err)
+	}
+
+	rec2 := do(t, h, http.MethodPost, "/api/v1/entities/e1/assets/"+a.ID+"/materialize", nil)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("2a materialize (self-heal) status = %d, quero 200 (corpo=%s)", rec2.Code, rec2.Body.String())
+	}
+	got2 := decodeAsset(t, rec2)
+	if got2.LocalPath == nil || *got2.LocalPath != quero {
+		t.Errorf("local_path após self-heal = %v, quero %q (MESMO caminho, sem rotacionar)", got2.LocalPath, quero)
+	}
+	if _, err := os.Stat(quero); err != nil {
+		t.Errorf("arquivo não regravado em %s: %v", quero, err)
+	}
+	if _, err := os.Stat(filepath.Join(libDir, "poster1.png")); err == nil {
+		t.Error("arquivo rotacionado (poster1.png) encontrado -- self-heal deveria regravar no MESMO nome bare")
+	}
+}
+
+// TestPreferArquivoSumidoRegravaMesmoPath cobre o mesmo critério via PUT
+// .../prefer: um asset já principal (sem nenhuma rotação a fazer, chamado de
+// novo sobre si mesmo) cujo arquivo sumiu do disco -- regrava no mesmo
+// local_path.
+func TestPreferArquivoSumidoRegravaMesmoPath(t *testing.T) {
+	h, d, _ := setupAssetsServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+
+	a := decodeAsset(t, postAsset(t, h, "e1", "poster", pngPayload(64)))
+	rec := do(t, h, http.MethodPut, "/api/v1/entities/e1/assets/"+a.ID+"/prefer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("1o prefer status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	quero := filepath.Join(libDir, "poster.png")
+	got := decodeAsset(t, rec)
+	if got.LocalPath == nil || *got.LocalPath != quero || !got.IsPrincipal {
+		t.Fatalf("após 1o prefer: local_path=%v is_principal=%v, quero %q/true", got.LocalPath, got.IsPrincipal, quero)
+	}
+
+	if err := os.Remove(quero); err != nil {
+		t.Fatalf("os.Remove (simular sumiço): %v", err)
+	}
+
+	rec2 := do(t, h, http.MethodPut, "/api/v1/entities/e1/assets/"+a.ID+"/prefer", nil)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("2o prefer (self-heal) status = %d, quero 200 (corpo=%s)", rec2.Code, rec2.Body.String())
+	}
+	got2 := decodeAsset(t, rec2)
+	if got2.LocalPath == nil || *got2.LocalPath != quero {
+		t.Errorf("local_path após self-heal = %v, quero %q", got2.LocalPath, quero)
+	}
+	if _, err := os.Stat(quero); err != nil {
+		t.Errorf("arquivo não regravado em %s: %v", quero, err)
+	}
+}
+
+// TestMaterializeArquivoPresenteNaoRegravaCache cobre o critério de
+// performance do briefing 0127: quando o arquivo físico já está presente,
+// uma nova chamada a POST .../materialize NÃO lê o cache nem reescreve o
+// arquivo. Comprovado apagando o binário do CACHE interno após a 1a
+// materialização: se lerBinarioAssetDoCache fosse chamado de novo, a 2a
+// chamada teria que falhar (o cache não existe mais); ela precisa continuar
+// tendo sucesso, e o mtime do arquivo na pasta real não pode mudar.
+func TestMaterializeArquivoPresenteNaoRegravaCache(t *testing.T) {
+	h, d, _ := setupAssetsServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+
+	a := decodeAsset(t, postAsset(t, h, "e1", "poster", pngPayload(64)))
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e1/assets/"+a.ID+"/materialize", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("1a materialize status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	quero := filepath.Join(libDir, "poster.png")
+
+	assetRow, err := escrita(t, d).ObterAsset(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("ObterAsset: %v", err)
+	}
+	if err := os.Remove(assetRow.PathOrUri); err != nil {
+		t.Fatalf("os.Remove (cache): %v", err)
+	}
+
+	antes, err := os.Stat(quero)
+	if err != nil {
+		t.Fatalf("Stat antes: %v", err)
+	}
+
+	rec2 := do(t, h, http.MethodPost, "/api/v1/entities/e1/assets/"+a.ID+"/materialize", nil)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("2a materialize (arquivo presente, cache ausente) status = %d, quero 200 -- se falhou, o código tentou reler o cache indevidamente (corpo=%s)", rec2.Code, rec2.Body.String())
+	}
+	got2 := decodeAsset(t, rec2)
+	if got2.LocalPath == nil || *got2.LocalPath != quero {
+		t.Errorf("local_path = %v, quero %q (inalterado)", got2.LocalPath, quero)
+	}
+
+	depois, err := os.Stat(quero)
+	if err != nil {
+		t.Fatalf("Stat depois: %v", err)
+	}
+	if !antes.ModTime().Equal(depois.ModTime()) {
+		t.Errorf("mtime do arquivo mudou (antes=%v depois=%v) -- indica reescrita desnecessária", antes.ModTime(), depois.ModTime())
+	}
+}
+
 // ── GET /entities/{id}/theme (briefing 0082) ─────────────────────────────
 
 // TestGetEntityThemeMp3Encontrado cobre o caso feliz: theme.mp3 na raiz

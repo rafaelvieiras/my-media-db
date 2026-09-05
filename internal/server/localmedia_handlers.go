@@ -155,7 +155,10 @@ func respondErroLocalmedia(w http.ResponseWriter, err error) {
 // (nome rotacionado, is_principal=0) — só o PUT /prefer troca o principal.
 func (s *Server) materializarAsset(ctx context.Context, ent sqlcgen.Entity, asset sqlcgen.Asset) (sqlcgen.Asset, error) {
 	if asset.LocalPath.Valid && asset.LocalPath.String != "" {
-		return asset, nil
+		if arquivoLocalAindaExiste(asset.LocalPath.String) {
+			return asset, nil
+		}
+		return s.regravarBinarioAssetNoLocalPathExistente(ctx, asset)
 	}
 	jaTemPrincipal, err := s.kindJaTemPrincipal(ctx, ent.ID, asset.Kind)
 	if err != nil {
@@ -187,6 +190,44 @@ func (s *Server) materializarAsset(ctx context.Context, ent sqlcgen.Entity, asse
 			return sqlcgen.Asset{}, err
 		}
 		asset.IsPrincipal = 1
+	}
+	return asset, nil
+}
+
+// arquivoLocalAindaExiste confirma via os.Stat se o caminho fisicamente
+// registrado ainda existe. Erros que NAO sejam "nao existe" (permissao,
+// mount FUSE/rclone temporariamente indisponivel) sao tratados como
+// "assume que existe" -- best-effort, evita reescrever em cima de um
+// glitch transitorio do mount remoto (AGENTS.md ja documenta que esse
+// mount nao emite evento de mudanca; aqui vale o mesmo cuidado: silencio
+// do stat != certeza de que sumiu). Ver briefing 0127.
+func arquivoLocalAindaExiste(path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil || !os.IsNotExist(err)
+}
+
+// regravarBinarioAssetNoLocalPathExistente relê o binário do asset do CACHE
+// interno (lerBinarioAssetDoCache) e regrava atomicamente NO MESMO
+// asset.LocalPath.String já registrado -- usado (briefing 0127) quando o
+// arquivo materializado sumiu fisicamente do disco (mount remoto rclone/
+// gdrive, exclusão externa) mas o banco ainda aponta pra ele. NUNCA recalcula
+// nome/índice/rotação via gravarAssetNaPastaReal: o asset regravado aqui já
+// pode ser is_principal=1, e recalcular trataria erroneamente esse asset
+// como "ainda não-principal" (ele conta a si mesmo em kindJaTemPrincipal),
+// produzindo um nome ROTACIONADO diferente do bare original (ver nota de
+// risco no briefing 0127 §6). Não reescreve local_path no banco (o valor não
+// muda) -- devolve o asset inalterado, mesma assinatura de retorno de
+// materializarAsset.
+func (s *Server) regravarBinarioAssetNoLocalPathExistente(ctx context.Context, asset sqlcgen.Asset) (sqlcgen.Asset, error) {
+	dados, err := s.lerBinarioAssetDoCache(ctx, asset)
+	if err != nil {
+		return sqlcgen.Asset{}, err
+	}
+	if err := localmedia.EscreverArquivoAtomico(asset.LocalPath.String, dados); err != nil {
+		return sqlcgen.Asset{}, err
 	}
 	return asset, nil
 }
@@ -637,6 +678,14 @@ func (s *Server) assumirNomeBare(ctx context.Context, ent sqlcgen.Entity, alvo s
 // renomearParaBare renomeia o arquivo JÁ materializado do alvo para o nome
 // bare do seu kind (RENAME, nunca recopia bytes) — idempotente: se o arquivo
 // já é o bare, no-op (devolve o mesmo caminho).
+//
+// briefing 0127: quando o alvo já é o bare (destino == local_path atual —
+// caso comum de PUT .../prefer chamado de novo sobre o asset que já é
+// principal, sem nenhuma rotação a fazer), esse "no-op" é exatamente o outro
+// ponto do sistema que decide "já materializado, nada a fazer" olhando só a
+// coluna do banco — reconfirma via arquivoLocalAindaExiste e regrava
+// in-place (regravarBinarioAssetNoLocalPathExistente) se o arquivo sumiu do
+// disco, em vez de devolver o caminho como se nada tivesse mudado.
 func (s *Server) renomearParaBare(ctx context.Context, ent sqlcgen.Entity, alvo sqlcgen.Asset) (string, error) {
 	dir := filepath.Dir(alvo.LocalPath.String)
 	ext := filepath.Ext(alvo.LocalPath.String)
@@ -650,6 +699,12 @@ func (s *Server) renomearParaBare(ctx context.Context, ent sqlcgen.Entity, alvo 
 	kind, nomeBase := s.kindNomeEBase(ctx, ent, alvo.Kind, nomeBaseVideo)
 	destino := filepath.Join(dir, localmedia.NomeArquivoArte(kind, true, 0, pastaExclusiva, nomeBase, ext))
 	if destino == alvo.LocalPath.String {
+		if arquivoLocalAindaExiste(alvo.LocalPath.String) {
+			return destino, nil
+		}
+		if _, err := s.regravarBinarioAssetNoLocalPathExistente(ctx, alvo); err != nil {
+			return "", err
+		}
 		return destino, nil
 	}
 	if err := localmedia.RenomearArquivo(alvo.LocalPath.String, destino); err != nil {

@@ -264,6 +264,120 @@ func TestMaterializarMidiasFaltantesSemCandidatoNaoFalha(t *testing.T) {
 	}
 }
 
+// ── Self-heal de arte/NFO materializados (briefing 0127) ─────────────────
+
+// TestMaterializarMidiasFaltantesArquivoSumidoRegravaMesmoPath cobre o
+// critério de aceite do briefing 0127: um poster já materializado
+// (local_path preenchido) cujo arquivo físico sumiu do disco (mount remoto,
+// exclusão externa) -- rodar MaterializarMidiasFaltantes de novo regrava o
+// binário no MESMO local_path, sem rotacionar, e reporta a autocura em
+// artesBaixadas.
+func TestMaterializarMidiasFaltantesArquivoSumidoRegravaMesmoPath(t *testing.T) {
+	srv, h, d := setupMidiasFaltantesServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+
+	postAsset(t, h, "e1", "poster", pngPayload(64))
+	artes, _, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1")
+	if err != nil {
+		t.Fatalf("1a chamada: %v", err)
+	}
+	if len(artes) != 1 || artes[0] != "poster" {
+		t.Fatalf("1a chamada artesBaixadas = %v, quero [poster]", artes)
+	}
+	posterPath := filepath.Join(libDir, "poster.png")
+	if _, err := os.Stat(posterPath); err != nil {
+		t.Fatalf("poster não materializado em %s: %v", posterPath, err)
+	}
+
+	// Simula o arquivo sumindo fisicamente (mount remoto, exclusão externa).
+	if err := os.Remove(posterPath); err != nil {
+		t.Fatalf("os.Remove (simular sumiço): %v", err)
+	}
+
+	artes2, _, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1")
+	if err != nil {
+		t.Fatalf("2a chamada (self-heal): %v", err)
+	}
+	achouPoster := false
+	for _, k := range artes2 {
+		if k == "poster" {
+			achouPoster = true
+		}
+	}
+	if !achouPoster {
+		t.Errorf("2a chamada artesBaixadas = %v, quero conter poster (autocura reportada)", artes2)
+	}
+	if _, err := os.Stat(posterPath); err != nil {
+		t.Errorf("poster não regravado em disco após self-heal (%s): %v", posterPath, err)
+	}
+	if _, err := os.Stat(filepath.Join(libDir, "poster1.png")); err == nil {
+		t.Error("arquivo rotacionado (poster1.png) encontrado -- self-heal deveria regravar no MESMO nome bare")
+	}
+}
+
+// TestMaterializarMidiasFaltantesArquivoPresenteNaoRebaixaNaoRegrava cobre a
+// contrapartida: quando o arquivo já materializado está presente no disco, a
+// 2a chamada não reporta a arte como "baixada" de novo (mesmo comportamento
+// idempotente de antes do briefing 0127 -- self-heal não deve virar
+// reescrita incondicional a cada rodada do job).
+func TestMaterializarMidiasFaltantesArquivoPresenteNaoRebaixaNaoRegrava(t *testing.T) {
+	srv, h, d := setupMidiasFaltantesServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+
+	postAsset(t, h, "e1", "poster", pngPayload(64))
+	if _, _, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1"); err != nil {
+		t.Fatalf("1a chamada: %v", err)
+	}
+
+	artes2, _, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1")
+	if err != nil {
+		t.Fatalf("2a chamada: %v", err)
+	}
+	if len(artes2) != 0 {
+		t.Errorf("2a chamada artesBaixadas = %v, quero [] (arquivo presente, nada a fazer)", artes2)
+	}
+}
+
+// TestMaterializarMidiasFaltantesNfoSumidoRegravaDoZero cobre o critério de
+// aceite do briefing 0127 para o NFO: entity.nfo_path preenchido cujo
+// arquivo .nfo sumiu do disco -- rodar MaterializarMidiasFaltantes de novo
+// regrava o .nfo do zero (gravarNFO já é idempotente por conteúdo, sem a
+// armadilha de rotação que asset tem).
+func TestMaterializarMidiasFaltantesNfoSumidoRegravaDoZero(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+
+	_, nfoGravado, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1")
+	if err != nil {
+		t.Fatalf("1a chamada: %v", err)
+	}
+	if !nfoGravado {
+		t.Fatal("1a chamada nfoGravado = false, quero true")
+	}
+	nfoPath := filepath.Join(libDir, "Matrix.1999.nfo")
+	if _, err := os.Stat(nfoPath); err != nil {
+		t.Fatalf("nfo não gravado em %s: %v", nfoPath, err)
+	}
+
+	if err := os.Remove(nfoPath); err != nil {
+		t.Fatalf("os.Remove (simular sumiço do nfo): %v", err)
+	}
+
+	_, nfoGravado2, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1")
+	if err != nil {
+		t.Fatalf("2a chamada (self-heal): %v", err)
+	}
+	if !nfoGravado2 {
+		t.Error("2a chamada nfoGravado = false, quero true (self-heal: nfo sumiu, precisa regravar)")
+	}
+	if _, err := os.Stat(nfoPath); err != nil {
+		t.Errorf("nfo não regravado após self-heal (%s): %v", nfoPath, err)
+	}
+}
+
 // ── Música (briefing 0116): álbum/artista entram no universo do job e ganham "poster" ──
 
 // semearArvoreMusica monta artista->album->faixa (entity_relation) com UM media_file
