@@ -14,7 +14,7 @@
 | **ID** | 0128 |
 | **Tipo** | fix |
 | **Fase (roadmap)** | Transversal — Infraestrutura operacional |
-| **Status** | in-progress (implementado e validado localmente; falta commit/push e validação em produção) |
+| **Status** | done (implementado, commitado `823a7b6`, deployado e validado em produção em 05/09/2026 — Chapolin idempotente, MIB convergiu poster/fanart para a raiz e regravou o NFO) |
 | **Docs relacionadas** | [08-artwork-e-assets](../docs/08-artwork-e-assets.md) |
 | **Depende de** | 0127, 0081, 0064 |
 
