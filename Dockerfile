@@ -43,7 +43,7 @@ RUN npm run build
 # plataforma do estágio. Versão do Go pinada em 1.26.6 (patch exato, mesma
 # versão fixada no CI por vuln de stdlib/determinismo do build).
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine AS builder-go
+FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine AS builder-go
 WORKDIR /app
 
 # Camada de dependências Go.
