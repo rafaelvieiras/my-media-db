@@ -15,16 +15,21 @@ package e2e
 // rascunho; um nome que ele NÃO reconhece (ex. "Mystery Show", usado no
 // teste de recasar) nunca resolve, nem na reconciliação (mesmo catálogo).
 // Para provar SUCESSO de ponta a ponta, o wrapper abaixo faz o
-// fake.Provider FALHAR nas duas primeiras chamadas de Buscar(tipo="tv",
-// nome=fixture): a do scan manual (esperarScan) E a do RE-SCAN interno que o
-// próprio job saude_biblioteca dispara para TODA library_source cadastrada
-// ANTES do passo de reconciliação (ver libraryhealth.Handler.Executar ->
-// escanearTodas, que roda ANTES de rodarReconciliacaoFilhosOrfaos) -- falhar
-// só a primeira vez deixaria esse RE-SCAN resolver a série pelo caminho
-// normal do scan (tentarImportarSerie dentro de resolverSerieMiss), sem
-// nunca exercitar ReconciliarSerieDraft/ReconciliarFilhosOrfaos de verdade.
-// Só na TERCEIRA chamada em diante (a da reconciliação em si) o wrapper
-// deixa passar para o fake real.
+// fake.Provider FALHAR nas TRES primeiras chamadas de Buscar(tipo="tv",
+// nome=fixture), uma para cada passo que roda ANTES da reconciliação em si
+// (ver libraryhealth.Handler.Executar):
+//
+//  1. o scan manual (esperarScan, via ImportarSeriePorNome);
+//  2. o RE-SCAN interno que o próprio job saude_biblioteca dispara para TODA
+//     library_source cadastrada (escanearTodas, também via
+//     ImportarSeriePorNome);
+//  3. o AUTO-MATCH que o job roda em seguida: desde o briefing 0129 ele
+//     deriva o termo da PASTA da série (título limpo, score 100) em vez do
+//     nome do arquivo de episódio, então resolve o rascunho NO LUGAR
+//     (mesclarBuscas) e a reconciliação nunca teria o que fazer.
+//
+// Só na QUARTA chamada em diante (a da reconciliação, tentarImportarSerie com
+// o título da entity) o wrapper deixa passar para o fake real.
 
 import (
 	"context"
@@ -41,11 +46,11 @@ import (
 
 // serieProviderFalhaDuasVezes embute *fake.Provider (herda BuscarSerieArvore/
 // BuscarDetalhe/MapearDetalhe/Nome por promoção de método) e sobrescreve só
-// Buscar: as duas primeiras chamadas com tipo="tv" e nome==nomeAlvo devolvem
-// "sem candidatos" (simulando uma falha transitória de match); da terceira
+// Buscar: as TRES primeiras chamadas com tipo="tv" e nome==nomeAlvo devolvem
+// "sem candidatos" (simulando uma falha transitória de match); da quarta
 // chamada em diante para esse nome/tipo -- e SEMPRE para qualquer outro
 // nome/tipo -- cai no fake real. Ver o comentário de topo do arquivo sobre o
-// motivo de precisar de 2 falhas, não 1.
+// motivo de precisar de 3 falhas (scan, re-scan e auto-match do job), não 1.
 type serieProviderFalhaDuasVezes struct {
 	*fake.Provider
 	nomeAlvo string
@@ -55,7 +60,7 @@ type serieProviderFalhaDuasVezes struct {
 func (p *serieProviderFalhaDuasVezes) Buscar(ctx context.Context, query, tipo, lang string) ([]provider.ResultadoExterno, error) {
 	if tipo == "tv" && strings.EqualFold(query, p.nomeAlvo) {
 		p.chamadas++
-		if p.chamadas <= 2 {
+		if p.chamadas <= 3 {
 			return nil, nil
 		}
 	}
@@ -127,13 +132,15 @@ func TestJornadaReconciliacaoAutomaticaSerieDraft(t *testing.T) {
 	}
 
 	// (3) DIFERENTE do teste de recasar (onde /correct aplica a identidade IN
-	// PLACE na mesma entity draft): ReconciliarSerieDraft importa a série via
-	// ImportarSeriePorNome, que cria/acha a série pela IDENTIDADE do
-	// provider -- uma entity NOVA, distinta do rascunho original -- e só
-	// REPONTEIA media_file.entity_id para ela (religarArquivoSerie). O
-	// rascunho original (serieID) fica órfão, sem media_file algum (não é
-	// apagado -- principio 5, não-destrutivo). Para achar a série resolvida
-	// sem adivinhar o id, reusa o mesmo caminho INTERNO-FIRST de sempre:
+	// PLACE na mesma entity draft) e do auto-match do próprio job (que também
+	// resolveria no lugar se o provider respondesse): ReconciliarSerieDraft
+	// importa a série via ImportarSeriePorNome, que cria/acha a série pela
+	// IDENTIDADE do provider -- uma entity NOVA, distinta do rascunho
+	// original -- e só REPONTEIA media_file.entity_id para ela
+	// (religarArquivoSerie). O rascunho original (serieID) fica órfão, sem
+	// media_file algum (não é apagado -- principio 5, não-destrutivo). Para
+	// achar a série resolvida sem adivinhar o id, reusa o mesmo caminho
+	// INTERNO-FIRST de sempre:
 	// POST /import com a MESMA fonte/source_id é idempotente (find-or-create)
 	// e devolve 200 com o id que a reconciliação já criou.
 	resolvida := c.obj(http.MethodPost, "/api/v1/import",
