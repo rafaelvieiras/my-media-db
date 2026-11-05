@@ -8,7 +8,7 @@
 | **ID** | 0129 |
 | **Tipo** | fix |
 | **Fase (roadmap)** | Fase 4 — Enriquecimento (auto-match e revisão) |
-| **Status** | in-progress |
+| **Status** | done |
 | **Docs relacionadas** | [03-arquitetura](../docs/03-arquitetura.md), [07-enriquecimento-providers](../docs/07-enriquecimento-providers.md) |
 | **Depende de** | 0050 (auto-match), 0060 (prévia de candidato), 0084 (títulos alternativos) |
 

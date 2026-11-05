@@ -7,7 +7,7 @@
 | **ID** | 0130 |
 | **Tipo** | fix |
 | **Fase (roadmap)** | Fase 1 — Esqueleto do container único (empacotamento) |
-| **Status** | in-progress |
+| **Status** | done |
 | **Docs relacionadas** | [03-arquitetura](../docs/03-arquitetura.md) |
 | **Depende de** | — |
 
