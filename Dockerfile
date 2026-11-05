@@ -130,7 +130,10 @@ EXPOSE 8080
 
 # Healthcheck usando o wget do busybox (presente no alpine). start-period folgado
 # mas curto o suficiente para virar healthy rápido no teste.
+# A porta vem de PORT (com o default 8080 da aplicação) porque a forma shell do
+# HEALTHCHECK expande variável: fixar 8080 deixava o container eternamente
+# 'unhealthy' em qualquer ambiente que rodasse em outra porta (briefing 0130).
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget -q --spider http://localhost:8080/api/v1/health || exit 1
+    CMD wget -q --spider "http://localhost:${PORT:-8080}/api/v1/health" || exit 1
 
 ENTRYPOINT ["/mymediadb"]
