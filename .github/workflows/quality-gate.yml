@@ -36,7 +36,7 @@ jobs:
           # stdlib ja corrigida no pin atual, e o govulncheck marca como
           # bloqueante. Pin tambem garante cobertura deterministica no
           # ratchet. Bumpar junto com o toolchain do go.mod.
-          go-version: '1.26.6'
+          go-version: '1.26.10'
           cache: true
 
       - name: Setup Node.js

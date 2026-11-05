@@ -47,12 +47,12 @@ baseline do gate.
 - `go.mod`: `toolchain go1.26.6` → `go1.26.10`.
 - `Dockerfile`: `FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine` →
   `golang:1.26.10-alpine`.
+- `.github/workflows/quality-gate.yml` e `e2e.yml`: `go-version: '1.26.6'` →
+  `'1.26.10'`. O pin é **exato** de propósito (comentário no próprio workflow) e
+  `GOTOOLCHAIN=local` é default do runner — sem o bump, o `govulncheck` do CI
+  roda na 1.26.6 e acusa as mesmas 11 (aconteceu no primeiro push).
 
 **Fora (explicitamente):**
-- Trocar o pin `go-version` dos workflows: com `GOTOOLCHAIN=auto` (default), o
-  `go` instalado pelo `setup-go` baixa sozinho o toolchain do `go.mod` — o pin
-  virou só a versão *mínima instalada*, e mexer em
-  `.github/workflows/*` força o lado **web** do gate a rodar (ver §7).
 - Subir o `go` (versão mínima exigida) de `1.26.4` — quem compila com 1.26.4 já
   é aceito; só o toolchain *preferido* e os pins de build sobem.
 - Atualizar dependências de terceiros (`go get -u`).
@@ -62,21 +62,21 @@ baseline do gate.
 
 ### Empacotamento
 - A imagem final continua `alpine:3.22`; muda só o estágio `builder-go`.
-- O `toolchain` do `go.mod` é a fonte única da versão: o CI instala o piso do
-  `go-version` e o `go` promove para o toolchain declarado; o estágio
-  `builder-go` da imagem usa a mesma versão cravada. Assim o resultado do
-  `govulncheck` não depende de onde roda.
+- As três pontas ficam na MESMA patch: `toolchain` do `go.mod`, `go-version`
+  dos workflows e o estágio `builder-go` da imagem. O runner do GitHub define
+  `GOTOOLCHAIN=local`, então o `go` **não** promove sozinho para o toolchain do
+  `go.mod`: a versão instalada pelo `setup-go` é a que roda o `govulncheck`.
 
 ### Arquivos afetados
-- `go.mod`, `Dockerfile`
+- `go.mod`, `Dockerfile`, `.github/workflows/quality-gate.yml`,
+  `.github/workflows/e2e.yml`
 
 ## 5. Critérios de aceite
 
 - [ ] `govulncheck ./...` não reporta nenhuma vulnerabilidade que afete o
       código.
 - [ ] `make gate-local` passa (tabela sem regressão bloqueante).
-- [ ] CI verde (`quality-gate`, `e2e`) usando o toolchain 1.26.10 promovido
-      pelo `go.mod`.
+- [ ] CI verde (`quality-gate`, `e2e`) com `go-version: '1.26.10'`.
 - [ ] `docker build` da imagem passa no estágio `builder-go`.
 
 ## 6. Notas de implementação / decisões
@@ -89,16 +89,9 @@ baseline do gate.
 
 ## 7. Fora deste briefing / follow-ups
 
-- **Dívida do lado web do gate, exposta por este briefing.** Qualquer mudança
-  em `.github/workflows/*` (ou `scripts/quality-gate.mjs`, `Makefile`,
-  `baseline.json`, `lefthook.yml`) faz o gate rodar **os dois lados**
-  (`isGateInfraFile`). O lado web nunca foi ratcheado desde que o filtro por
-  diff existe, e hoje ele reprova no `master` intocado: **2 vulns critical**
-  (`proxy-addr` 1.1.0-2.0.7, `seroval` <=1.6.9, `web_audit_critical` é
-  `blocking: 'zero'`) e **duplicação 4.08 %** contra baseline 0.37 %
-  (`web_duplicate_percent`, `blocking: true`). Consequência prática: hoje
-  nenhuma mudança de infra do gate consegue ser empurrada sem antes zerar as
-  critical e reduzir a duplicação. Um briefing próprio (refresh de
-  dependências do `web/` + dedup) resolve os dois.
+- **Efeito colateral conhecido:** mexer em `.github/workflows/*` faz o gate
+  rodar os DOIS lados (`isGateInfraFile`), e o lado web estava com dívida antiga
+  de lockfile — resolvido no [0132](0132-web-dependencias-sem-critical.md), que
+  precisou entrar junto para o push passar.
 - Ver se o gate deve tratar achado **somente na stdlib** como aviso quando a
   correção exige trocar o toolchain (hoje ele bloqueia igual).
