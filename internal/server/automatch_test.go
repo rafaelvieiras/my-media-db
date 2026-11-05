@@ -26,11 +26,15 @@ type automatchProvider struct {
 	resultados []provider.ResultadoExterno
 	raw        json.RawMessage
 	campos     map[string]any
+	// termos guarda cada termo de busca recebido, para os testes que olham
+	// QUAL string foi consultada (briefing 0129), não só o resultado.
+	termos []string
 }
 
 func (p *automatchProvider) Nome() string { return "tmdb" }
 
-func (p *automatchProvider) Buscar(context.Context, string, string, string) ([]provider.ResultadoExterno, error) {
+func (p *automatchProvider) Buscar(_ context.Context, termo, _, _ string) ([]provider.ResultadoExterno, error) {
+	p.termos = append(p.termos, termo)
 	return p.resultados, nil
 }
 
@@ -454,5 +458,115 @@ func TestTentarAutoMatchFilmeErroDeInfraPropaga(t *testing.T) {
 	s := New("v-teste", d)
 	if _, err := s.TentarAutoMatchFilme(context.Background(), "e-draft"); err == nil {
 		t.Fatal("TentarAutoMatchFilme com pool de leitura fechado: quero erro, veio nil")
+	}
+}
+
+// setupAutoMatchServerComBusca é o setupAutoMatchServer devolvendo o provider
+// fake, para os testes que olham o TERMO consultado (briefing 0129), não só o
+// candidato devolvido.
+func setupAutoMatchServerComBusca(t *testing.T, resultados []provider.ResultadoExterno) (http.Handler, *db.DB, *automatchProvider) {
+	t.Helper()
+	prov := &automatchProvider{
+		resultados: resultados,
+		raw:        json.RawMessage(`{"title":"Gárgulas"}`),
+		campos:     map[string]any{"title": "Gárgulas"},
+	}
+	h, d := setupSearchServer(t, WithSearchProvider(prov), WithAssetsDir(t.TempDir()))
+	return h, d, prov
+}
+
+// ── 0129: título de série desce da pasta, não do arquivo de episódio ────────
+
+// TestAutoMatchDeSerieConsultaAPastaDaSerie cobre o critério central do
+// briefing 0129: numa série, o termo levado ao provider é o nome da PASTA da
+// série ("Os Gárgulas (1994)" -> "Os Gárgulas"), nunca o do arquivo de episódio
+// ("Os gárgulas - S03E08 - Genesis Undone"), que dava similaridade 58 contra
+// "Gárgulas" e não devolvia candidato nenhum.
+func TestAutoMatchDeSerieConsultaAPastaDaSerie(t *testing.T) {
+	ano := "1994"
+	resultados := []provider.ResultadoExterno{
+		{Source: "tmdb", SourceID: "1719", Type: "tv", Title: "Gárgulas", Year: &ano},
+	}
+	h, d, prov := setupAutoMatchServerComBusca(t, resultados)
+	semearSource(t, d, "src-series", "/lib/Series Infantis")
+	semearEntity(t, d, "e-serie", "tv", "Os Gárgulas")
+	definirStatus(t, d, "e-serie", "draft")
+	semearFileComFonte(t, d, "f-serie", "e-serie",
+		"/lib/Series Infantis/Os Gárgulas (1994)/Season 03/Os gárgulas - S03E08 - Genesis Undone.mkv",
+		"present", 0, "src-series")
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/e-serie/match-preview", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if len(prov.termos) == 0 {
+		t.Fatal("o provider não foi consultado: a série não deveria cair em found:false")
+	}
+	if prov.termos[0] != "Os Gárgulas" {
+		t.Errorf("termo consultado = %q, quero %q (nome da pasta da série)", prov.termos[0], "Os Gárgulas")
+	}
+	got := decodeMatchPreview(t, rec)
+	if !got.Found || got.Method != "external" {
+		t.Fatalf("preview = %+v, quero found:true method:external", got)
+	}
+	if got.Target == nil || got.Target.SourceID == nil || *got.Target.SourceID != "1719" {
+		t.Errorf("target = %+v, quero source_id 1719", got.Target)
+	}
+	if !got.MeetsAutoThreshold {
+		t.Errorf("meets_auto_threshold = false (score %v), quero true: título da pasta + ano casando", got.Score)
+	}
+}
+
+// TestAutoMatchDeSerieNaRaizDaFonteUsaTituloDaEntity cobre a guarda do briefing
+// 0129: arquivo solto na raiz da fonte não pode virar consulta com o nome da
+// fonte ("Series") -- a entity tem título legível e é ele que vai à busca.
+func TestAutoMatchDeSerieNaRaizDaFonteUsaTituloDaEntity(t *testing.T) {
+	ano := "2007"
+	resultados := []provider.ResultadoExterno{
+		{Source: "tmdb", SourceID: "4607", Type: "tv", Title: "Chuck", Year: &ano},
+	}
+	h, d, prov := setupAutoMatchServerComBusca(t, resultados)
+	semearSource(t, d, "src-series", "/lib/Series")
+	semearEntity(t, d, "e-chuck", "tv", "Chuck")
+	definirStatus(t, d, "e-chuck", "draft")
+	semearFileComFonte(t, d, "f-chuck", "e-chuck",
+		"/lib/Series/Chuck - S01E01.mkv", "present", 0, "src-series")
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/e-chuck/match-preview", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if len(prov.termos) == 0 {
+		t.Fatal("o provider não foi consultado")
+	}
+	if prov.termos[0] != "Chuck" {
+		t.Errorf("termo consultado = %q, quero %q (título da entity, nunca o nome da fonte)", prov.termos[0], "Chuck")
+	}
+}
+
+// TestAutoMatchDeFilmeContinuaPeloNomeDoArquivo é a regressão do briefing 0129:
+// a derivação por pasta vale SÓ para tv; filme continua usando o nome do
+// arquivo, como sempre.
+func TestAutoMatchDeFilmeContinuaPeloNomeDoArquivo(t *testing.T) {
+	ano := "2021"
+	resultados := []provider.ResultadoExterno{
+		{Source: "tmdb", SourceID: "438631", Type: "movie", Title: "Dune", Year: &ano},
+	}
+	h, d, prov := setupAutoMatchServerComBusca(t, resultados)
+	semearSource(t, d, "src-filmes", "/lib/Filmes")
+	semearEntity(t, d, "e-dune", "movie", "Draft")
+	definirStatus(t, d, "e-dune", "draft")
+	semearFileComFonte(t, d, "f-dune", "e-dune",
+		"/lib/Filmes/Dune (2021)/Dune (2021).mkv", "present", 0, "src-filmes")
+
+	rec := do(t, h, http.MethodGet, "/api/v1/entities/e-dune/match-preview", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	if len(prov.termos) == 0 {
+		t.Fatal("o provider não foi consultado")
+	}
+	if prov.termos[0] != "Dune" {
+		t.Errorf("termo consultado = %q, quero %q (nome do arquivo, comportamento antigo)", prov.termos[0], "Dune")
 	}
 }

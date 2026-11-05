@@ -211,7 +211,7 @@ func (s *Server) AutoMatchElegiveis(ctx context.Context) (resolved, pending int,
 // segurança do 0051) não deve ser aplicada às cegas pelo auto-match — o item
 // fica pendente na fila, como qualquer candidato que não bateu o limiar.
 func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoMatchResultDTO, error) {
-	titulo, ano, ok, err := s.tituloAnoDoArquivo(ctx, ent.ID)
+	titulo, ano, ok, err := s.tituloAnoDoArquivo(ctx, ent)
 	if err != nil {
 		return autoMatchResultDTO{}, err
 	}
@@ -314,13 +314,25 @@ func (s *Server) aplicarCandidatoExterno(ctx context.Context, ent sqlcgen.Entity
 // entity.title bruto de um draft. ok=false (sem err) quando a entity não tem
 // nenhum arquivo, ou o nome não rende título nenhum (ex.: "2160p.mkv"): nesses
 // casos não há o que buscar, e isso NÃO é uma falha do auto-match.
-func (s *Server) tituloAnoDoArquivo(ctx context.Context, entityID string) (titulo string, ano int, ok bool, err error) {
-	files, err := s.leitura().ListarMediaFilesPorEntity(ctx, entityID)
+//
+// SÉRIE é o caso especial (briefing 0129): o primeiro arquivo de uma série é um
+// EPISÓDIO, e o nome dele carrega SxxEyy e o título do episódio -- "Os gárgulas
+// - S03E08 - Genesis Undone" vira consulta de similaridade 58 contra "Gárgulas",
+// muito abaixo do LimiarAutoMatch, e o provider sequer devolve candidato. O
+// título que a busca precisa está na PASTA da série ("Os Gárgulas (1994)"), que
+// é a mesma string que o scan usou para nomear a entity, só que com o ano.
+func (s *Server) tituloAnoDoArquivo(ctx context.Context, ent sqlcgen.Entity) (titulo string, ano int, ok bool, err error) {
+	files, err := s.leitura().ListarMediaFilesPorEntity(ctx, ent.ID)
 	if err != nil {
 		return "", 0, false, err
 	}
 	if len(files) == 0 {
 		return "", 0, false, nil
+	}
+	if ent.Type == tipoEntSerie {
+		if t, a, achou := s.tituloAnoDaPastaDaSerie(ctx, ent, files[0]); achou {
+			return t, a, true, nil
+		}
 	}
 	nome := strings.TrimSuffix(filepath.Base(files[0].Path), filepath.Ext(files[0].Path))
 	info := naming.Parse(nome)
@@ -328,6 +340,43 @@ func (s *Server) tituloAnoDoArquivo(ctx context.Context, entityID string) (titul
 		return "", 0, false, nil
 	}
 	return info.Title, info.Year, true, nil
+}
+
+// tituloAnoDaPastaDaSerie deriva título/ano do nome da PASTA da série (briefing
+// 0129), subindo um nível quando o arquivo está numa pasta de temporada
+// (naming.PastaDaSerie). achou=false quando a pasta derivada é a RAIZ da fonte
+// (arquivo solto na biblioteca: consultar o provider com o nome da fonte, tipo
+// "Series", casaria com o título errado) e a entity também não dá um título --
+// nesse caso o chamador segue para a derivação pelo nome do arquivo, como
+// sempre foi.
+func (s *Server) tituloAnoDaPastaDaSerie(ctx context.Context, ent sqlcgen.Entity, arquivo sqlcgen.MediaFile) (titulo string, ano int, achou bool) {
+	pasta := naming.PastaDaSerie(arquivo.Path)
+	if !s.ehRaizDaFonte(ctx, arquivo, pasta) {
+		if info := naming.Parse(filepath.Base(pasta)); info.Title != "" {
+			return info.Title, info.Year, true
+		}
+	}
+	// Sem pasta utilizável: o título que o scan deu à série ainda serve (sem
+	// ano), e é melhor que consultar o provider com o nome do episódio.
+	if t := strings.TrimSpace(ent.Title); t != "" {
+		return t, anoDeReleaseDate(ent.ReleaseDate), true
+	}
+	return "", 0, false
+}
+
+// ehRaizDaFonte diz se `pasta` é a raiz da library_source do arquivo -- o caso
+// "arquivo solto na biblioteca", em que a pasta não identifica série nenhuma.
+// Sem library_source_id (arquivo legado) ou falha de leitura degradam para
+// "não é raiz": o pior caso é consultar a pasta imediata, como já se fazia.
+func (s *Server) ehRaizDaFonte(ctx context.Context, arquivo sqlcgen.MediaFile, pasta string) bool {
+	if !arquivo.LibrarySourceID.Valid {
+		return false
+	}
+	src, err := s.leitura().ObterLibrarySource(ctx, arquivo.LibrarySourceID.String)
+	if err != nil {
+		return false
+	}
+	return filepath.Clean(src.Path) == filepath.Clean(pasta)
 }
 
 // candidatoPontuado é o melhor candidato local encontrado, já com o score

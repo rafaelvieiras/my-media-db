@@ -60,21 +60,6 @@ func TestPreferredLangDaFonte(t *testing.T) {
 	}
 }
 
-// TestEhPastaTemporada cobre os reconhecimentos de pasta de temporada (incluindo os
-// specials/temporada 0) e a rejeicao de nomes que sao a propria serie.
-func TestEhPastaTemporada(t *testing.T) {
-	for _, s := range []string{"Season 01", "Temporada 1", "S01", "specials", "Especiais"} {
-		if !ehPastaTemporada(s) {
-			t.Errorf("%q deveria ser pasta de temporada", s)
-		}
-	}
-	for _, s := range []string{"Springfield Tales", "extras", ""} {
-		if ehPastaTemporada(s) {
-			t.Errorf("%q NAO deveria ser pasta de temporada", s)
-		}
-	}
-}
-
 // ── infraestrutura de série ──────────────────────────────────────────────────
 
 // criarSourceSerie cadastra um datasource marcado content_type='series' (o serviço

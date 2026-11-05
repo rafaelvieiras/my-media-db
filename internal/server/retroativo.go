@@ -189,7 +189,7 @@ func (s *Server) termoBuscaRetroativo(ctx context.Context, ent sqlcgen.Entity) (
 	if ent.Type == tipoEntArtista {
 		return ent.Title, 0, ent.Title != "", nil
 	}
-	return s.tituloAnoDoArquivo(ctx, ent.ID)
+	return s.tituloAnoDoArquivo(ctx, ent)
 }
 
 // tentarEnriquecerOuSinalizar tenta enriquecer UMA entity elegível: deriva

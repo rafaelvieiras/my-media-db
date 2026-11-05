@@ -25,8 +25,6 @@ import (
 	"errors"
 	"log"
 	"path/filepath"
-	"regexp"
-	"strings"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
@@ -55,11 +53,6 @@ const (
 	confSerieEp      = 90
 	confRevisaoSerie = 40
 )
-
-// reSeasonFolder reconhece a pasta de temporada (Kodi/Jellyfin/Plex): "Season 01",
-// "Temporada 1", "S01". Usada só para SUBIR à pasta da série; a temporada real do
-// episódio vem do nome do arquivo (ParseEpisode), não daqui.
-var reSeasonFolder = regexp.MustCompile(`(?i)^(season|temporada|s)[ ._-]*\d{1,4}$`)
 
 // serieResolvida é o resultado (cacheado por série no scan) de resolver a entity de
 // uma série e carregar sua árvore de episódios. emRevisao marca a série que não pôde
@@ -112,7 +105,7 @@ func (r *scanRun) factsSerie(ctx context.Context, path string) fileFacts {
 func derivarSerie(root, path string) (serieFolder, serieNome string, info naming.Info) {
 	dir := filepath.Dir(path)
 	base := filepath.Base(dir)
-	if dir != root && ehPastaTemporada(base) {
+	if dir != root && naming.EhPastaTemporada(base) {
 		if parent := filepath.Dir(dir); parent != "." && parent != string(filepath.Separator) {
 			serieFolder = parent
 		} else {
@@ -132,16 +125,6 @@ func derivarSerie(root, path string) (serieFolder, serieNome string, info naming
 		serieNome = nomeBase
 	}
 	return serieFolder, serieNome, info
-}
-
-// ehPastaTemporada diz se o nome de pasta é uma pasta de temporada (para subir à
-// pasta da série). Inclui os specials (temporada 0).
-func ehPastaTemporada(nome string) bool {
-	l := strings.ToLower(strings.TrimSpace(nome))
-	if l == "specials" || l == "especiais" {
-		return true
-	}
-	return reSeasonFolder.MatchString(nome)
 }
 
 // resolverSerie devolve a resolução da série, do cache do scan quando já vista. Chave

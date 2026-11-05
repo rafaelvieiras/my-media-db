@@ -96,7 +96,7 @@ func (s *Server) matchPreview(w http.ResponseWriter, r *http.Request) {
 // diretamente (nenhuma duplicação de lógica de ranking). err é só erro real
 // de banco/infra; "nenhum candidato" nunca é err.
 func (s *Server) montarMatchPreview(ctx context.Context, ent sqlcgen.Entity) (matchPreviewDTO, error) {
-	titulo, ano, ok, err := s.tituloAnoDoArquivo(ctx, ent.ID)
+	titulo, ano, ok, err := s.tituloAnoDoArquivo(ctx, ent)
 	if err != nil {
 		return matchPreviewDTO{}, err
 	}
