@@ -574,6 +574,9 @@ func TestScanSerieEpisodioProvisorioQuandoNumeroForaDaArvore(t *testing.T) {
 		Scan(&titulo, &ext); err != nil {
 		t.Fatalf("ler episódio provisório: %v", err)
 	}
+	if titulo != "Episódio 99" {
+		t.Errorf("título do provisório = %q, quero %q (mesmo padrão do enriquecimento)", titulo, "Episódio 99")
+	}
 	if !strings.Contains(ext, `"season":1`) || !strings.Contains(ext, `"number":99`) {
 		t.Errorf("extension_data sem a numeração do arquivo: %s", ext)
 	}

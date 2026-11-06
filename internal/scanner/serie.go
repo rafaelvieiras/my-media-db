@@ -481,7 +481,7 @@ type provisorioEpisodio struct {
 // temporada confiável (arquivo solto na raiz, pasta que não é de temporada).
 func provisorioDe(path, base string) *provisorioEpisodio {
 	if ep, ok := naming.ParseEpisode(base); ok && len(ep.Episodes) > 0 && !ep.IsAbsolute {
-		return &provisorioEpisodio{season: ep.Season, numeros: ep.Episodes, titulo: base}
+		return &provisorioEpisodio{season: ep.Season, numeros: ep.Episodes, titulo: tituloDoArquivo(base)}
 	}
 	if pareceExtra(base) {
 		// Extras (featurette, sample, trailer...) moram nas pastas de temporada e
@@ -489,9 +489,21 @@ func provisorioDe(path, base string) *provisorioEpisodio {
 		return nil
 	}
 	if n, ok := naming.NumeroDaPastaTemporada(filepath.Base(filepath.Dir(path))); ok {
-		return &provisorioEpisodio{season: n, titulo: base}
+		return &provisorioEpisodio{season: n, titulo: tituloDoArquivo(base)}
 	}
 	return nil
+}
+
+// tituloDoArquivo limpa o nome do arquivo para servir de título do provisório
+// (remove tokens técnicos como resolução e fonte). O número do episódio, quando
+// existe, entra no título pelo chamador ("Episódio N"), o mesmo padrão que o
+// enriquecimento usa quando a fonte não dá título — o nome cru do arquivo fica
+// no media_file.path de qualquer forma.
+func tituloDoArquivo(base string) string {
+	if t := naming.Parse(base).Title; t != "" {
+		return t
+	}
+	return base
 }
 
 // palavrasDeExtra são os nomes que marcam material extra dentro de uma pasta de
@@ -532,7 +544,7 @@ func (r *scanRun) acharOuCriarProvisorios(ctx context.Context, q *sqlcgen.Querie
 	}
 	ids := make([]string, 0, len(prov.numeros))
 	for _, n := range prov.numeros {
-		id, err := r.acharOuCriarEpisodioProvisorio(ctx, q, tempID, prov.season, n, true, prov.titulo)
+		id, err := r.acharOuCriarEpisodioProvisorio(ctx, q, tempID, prov.season, n, true, fmt.Sprintf("Episódio %d", n))
 		if err != nil {
 			return nil, err
 		}
@@ -590,6 +602,7 @@ func (r *scanRun) acharOuCriarEpisodioProvisorio(ctx context.Context, q *sqlcgen
 		}
 		if comNumero {
 			if rel.SortIndex.Valid && int(rel.SortIndex.Int64) == number {
+				r.atualizarTituloDoProvisorio(ctx, q, rel.ChildID, titulo)
 				return rel.ChildID, nil
 			}
 			continue
@@ -630,6 +643,29 @@ func (r *scanRun) acharOuCriarEpisodioProvisorio(ctx context.Context, q *sqlcgen
 	}
 	log.Printf("scanner: episódio provisório %q -> S%02dE%02d (a árvore externa não tem esse episódio)", titulo, season, number)
 	return id, nil
+}
+
+// atualizarTituloDoProvisorio mantém o título de um provisório já criado em dia
+// com a regra atual, sem tocar em episódio vindo da fonte (a marca
+// `provisorio` no extension_data é o que distingue os dois). Erro é logado e
+// ignorado: título defasado não pode derrubar o scan.
+func (r *scanRun) atualizarTituloDoProvisorio(ctx context.Context, q *sqlcgen.Queries, epID, titulo string) {
+	ep, err := q.ObterEntity(ctx, epID)
+	if err != nil || ep.Title == titulo {
+		return
+	}
+	if !strings.Contains(ep.ExtensionDataJson.String, `"provisorio"`) {
+		return
+	}
+	if _, err := q.AtualizarEntity(ctx, sqlcgen.AtualizarEntityParams{
+		ID:                epID,
+		Type:              ep.Type,
+		Title:             titulo,
+		Status:            ep.Status,
+		ExtensionDataJson: ep.ExtensionDataJson,
+	}); err != nil {
+		log.Printf("scanner: falha ao atualizar o título do episódio provisório %q: %v", epID, err)
+	}
 }
 
 // tituloTemporadaProvisoria nomeia a temporada criada pelo scanner com a mesma

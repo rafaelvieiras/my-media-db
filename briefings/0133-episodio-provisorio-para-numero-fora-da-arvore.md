@@ -94,9 +94,11 @@ banco, mesmo sem correspondência externa.
   ```
   A chave `provisorio` é o marcador — nenhum outro fluxo a escreve, e o
   `enrich` a ignora (ele grava só `numbering`/`still_url`).
-- Título: o nome do arquivo sem extensão e sem o lixo de release
-  (`naming.Parse`/`semExtensao`, já usados pelo scanner). Sem numeração
-  (`Season 00` com `Groovies.mkv`), o título é o nome do arquivo.
+- Título: com número, `Episódio N` — o mesmo padrão que o enriquecimento usa
+  quando a fonte não dá título, e o que o resto do banco já mostra. Sem
+  numeração (`Season 00` com `Groovies.mkv`), o título é o nome do arquivo
+  limpo por `naming.Parse` (fallback: o nome cru). O nome original nunca se
+  perde: ele é o `media_file.path`.
 - Temporada provisória: título `Temporada N` (ou `Especiais` para N = 0),
   `sort_index` = N, criada só se não existir filho `tv_season` com aquele
   `sort_index`.
