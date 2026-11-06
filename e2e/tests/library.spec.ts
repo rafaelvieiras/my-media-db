@@ -1,4 +1,4 @@
-import { mkdtempSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '../fixtures'
@@ -255,4 +255,39 @@ test('editar caminho de datasource cadastrado recasca sem novo scan', async ({
   await page.getByRole('link', { name: 'Ver Todos' }).click()
   await expect(page).toHaveURL('/library/movies')
   await expect(page.getByRole('link', { name: /Matrix/ }).first()).toBeVisible()
+})
+
+test('arquivo com numero fora da arvore externa vira episodio provisorio', async ({ request }) => {
+  // Briefing 0133: a arvore do provider fake tem S01E01..E03; o arquivo S01E99
+  // nao existe la. Antes ele ficava sem episodio (sem NFO, sem sinopse na
+  // biblioteca consumidora); agora nasce um episodio provisorio na temporada
+  // certa, com o padrao de titulo do enriquecimento.
+  const dir = mkdtempSync(join(tmpdir(), 'mmdb-e2e-serie-'))
+  pastas.push(dir)
+  mkdirSync(join(dir, 'Springfield Tales', 'Season 01'), { recursive: true })
+  writeFileSync(
+    join(dir, 'Springfield Tales', 'Season 01', 'Springfield Tales S01E99.mkv'),
+    Buffer.alloc(2048, 7),
+  )
+
+  const res = await request.post('/api/v1/library', {
+    data: { path: dir, type: 'tv', content_type: 'series' },
+  })
+  expect(res.status()).toBe(201)
+  const ds = await res.json()
+
+  expect((await request.post(`/api/v1/library/${ds.id}/scan`)).status()).toBe(202)
+  await expect
+    .poll(
+      async () => (await (await request.get(`/api/v1/library/${ds.id}/scan`)).json()).running,
+      { timeout: 30_000 },
+    )
+    .toBe(false)
+
+  // O episodio provisorio existe, na temporada 1, com numero 99.
+  const eps = await (await request.get('/api/v1/entities?type=episode&limit=50')).json()
+  const provisorio = (eps.items ?? []).find(
+    (e: { title?: string }) => e.title === 'Episódio 99',
+  )
+  expect(provisorio).toBeTruthy()
 })
