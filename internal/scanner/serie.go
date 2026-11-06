@@ -474,6 +474,7 @@ type provisorioEpisodio struct {
 	season  int
 	numeros []int
 	titulo  string
+	arquivo string // nome do arquivo sem extensão: chave de dedup quando não há número
 }
 
 // provisorioDe monta o provisório a partir do parse do nome do arquivo ou, sem
@@ -481,7 +482,7 @@ type provisorioEpisodio struct {
 // temporada confiável (arquivo solto na raiz, pasta que não é de temporada).
 func provisorioDe(path, base string) *provisorioEpisodio {
 	if ep, ok := naming.ParseEpisode(base); ok && len(ep.Episodes) > 0 && !ep.IsAbsolute {
-		return &provisorioEpisodio{season: ep.Season, numeros: ep.Episodes, titulo: tituloDoArquivo(base)}
+		return &provisorioEpisodio{season: ep.Season, numeros: ep.Episodes, titulo: tituloDoArquivo(base), arquivo: base}
 	}
 	if pareceExtra(base) {
 		// Extras (featurette, sample, trailer...) moram nas pastas de temporada e
@@ -489,7 +490,7 @@ func provisorioDe(path, base string) *provisorioEpisodio {
 		return nil
 	}
 	if n, ok := naming.NumeroDaPastaTemporada(filepath.Base(filepath.Dir(path))); ok {
-		return &provisorioEpisodio{season: n, titulo: tituloDoArquivo(base)}
+		return &provisorioEpisodio{season: n, titulo: tituloDoArquivo(base), arquivo: base}
 	}
 	return nil
 }
@@ -536,7 +537,7 @@ func (r *scanRun) acharOuCriarProvisorios(ctx context.Context, q *sqlcgen.Querie
 		return nil, err
 	}
 	if len(prov.numeros) == 0 {
-		id, err := r.acharOuCriarEpisodioProvisorio(ctx, q, tempID, prov.season, 0, false, prov.titulo)
+		id, err := r.acharOuCriarEpisodioProvisorio(ctx, q, tempID, prov.season, 0, false, prov.titulo, prov.arquivo)
 		if err != nil {
 			return nil, err
 		}
@@ -544,7 +545,7 @@ func (r *scanRun) acharOuCriarProvisorios(ctx context.Context, q *sqlcgen.Querie
 	}
 	ids := make([]string, 0, len(prov.numeros))
 	for _, n := range prov.numeros {
-		id, err := r.acharOuCriarEpisodioProvisorio(ctx, q, tempID, prov.season, n, true, fmt.Sprintf("Episódio %d", n))
+		id, err := r.acharOuCriarEpisodioProvisorio(ctx, q, tempID, prov.season, n, true, fmt.Sprintf("Episódio %d", n), prov.arquivo)
 		if err != nil {
 			return nil, err
 		}
@@ -591,7 +592,7 @@ func (r *scanRun) acharOuCriarTemporadaProvisoria(ctx context.Context, q *sqlcge
 // número, é o título exato dentro da temporada. O provisório nasce
 // status='draft' e marca a origem no extension_data, para a UI e a
 // reconciliação (briefing 0120) saberem que o número veio do arquivo.
-func (r *scanRun) acharOuCriarEpisodioProvisorio(ctx context.Context, q *sqlcgen.Queries, tempID string, season, number int, comNumero bool, titulo string) (string, error) {
+func (r *scanRun) acharOuCriarEpisodioProvisorio(ctx context.Context, q *sqlcgen.Queries, tempID string, season, number int, comNumero bool, titulo, arquivo string) (string, error) {
 	rels, err := q.ListarRelacoesFilhas(ctx, tempID)
 	if err != nil {
 		return "", err
@@ -607,8 +608,11 @@ func (r *scanRun) acharOuCriarEpisodioProvisorio(ctx context.Context, q *sqlcgen
 			}
 			continue
 		}
+		// Sem número a chave é o NOME DO ARQUIVO gravado no extension_data, não
+		// o título: o título é regra de apresentação e pode mudar de uma versão
+		// para outra (foi o que criou provisório duplicado na primeira rodada).
 		existente, oerr := q.ObterEntity(ctx, rel.ChildID)
-		if oerr == nil && existente.Title == titulo {
+		if oerr == nil && strings.Contains(existente.ExtensionDataJson.String, `"arquivo":"`+arquivo+`"`) {
 			return rel.ChildID, nil
 		}
 	}
@@ -617,7 +621,7 @@ func (r *scanRun) acharOuCriarEpisodioProvisorio(ctx context.Context, q *sqlcgen
 		ID:                id,
 		Type:              tipoEntEpisodio,
 		Title:             titulo,
-		ExtensionDataJson: nsBytes(extensionProvisorio(season, number, comNumero, titulo)),
+		ExtensionDataJson: nsBytes(extensionProvisorio(season, number, comNumero, arquivo)),
 	}); err != nil {
 		return "", err
 	}
@@ -628,7 +632,7 @@ func (r *scanRun) acharOuCriarEpisodioProvisorio(ctx context.Context, q *sqlcgen
 		Type:              tipoEntEpisodio,
 		Title:             titulo,
 		Status:            statusRascunho,
-		ExtensionDataJson: nsBytes(extensionProvisorio(season, number, comNumero, titulo)),
+		ExtensionDataJson: nsBytes(extensionProvisorio(season, number, comNumero, arquivo)),
 	}); err != nil {
 		return "", err
 	}

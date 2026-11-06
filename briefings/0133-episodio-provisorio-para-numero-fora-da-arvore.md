@@ -149,10 +149,12 @@ banco, mesmo sem correspondência externa.
   entity. O provisório é a menor peça que devolve o arquivo ao fluxo normal.
 - **Por que `status='draft'`**: é o mesmo marcador que a série em revisão usa, a
   UI já o conhece, e ele diz a verdade — o dado veio do disco, não da fonte.
-- **Por que o dedup do caso sem número é por título**: sem número não existe
-  chave natural; o título provisório é o nome do arquivo, que é estável entre
-  scans. Dois arquivos com o mesmo nome na mesma temporada são o mesmo episódio
-  por definição do Kodi.
+- **Por que o dedup do caso sem número é pelo NOME DO ARQUIVO gravado no
+  `extension_data`, não pelo título**: o título é regra de apresentação e pode
+  mudar de uma versão para outra. A primeira rodada em produção provou isso —
+  a regra de título mudou e o re-scan criou um provisório a mais para o mesmo
+  arquivo ("Especial de Natal - Que Natal Que Nada" e "Especial de Natal Que
+  Natal Que Nada"). O nome do arquivo é a chave estável.
 - **Extras não viram episódio**: nome com `featurette`, `sample`, `trailer`,
   `bonus`, `deleted`, `bloopers`, `interview`, `making of` (e afins) dentro de
   pasta de temporada continua indo para a revisão sem vínculo — criar episódio

@@ -652,3 +652,56 @@ func TestScanSerieEpisodioProvisorioSemNumeroUsaPastaDaTemporada(t *testing.T) {
 		t.Errorf("episódios provisórios depois do re-scan = %d, quero 1", n)
 	}
 }
+
+// TestScanSerieProvisorioSemNumeroNaoDuplicaQuandoOTituloMuda cobre a
+// idempotência do provisório SEM número com a chave certa: o dedup é pelo NOME
+// DO ARQUIVO gravado no extension_data, não pelo título. Na primeira rodada em
+// produção o título do provisório mudou de regra e o re-scan criou um segundo
+// episódio para o mesmo arquivo ("Especial de Natal - Que Natal Que Nada" e
+// "Especial de Natal Que Natal Que Nada").
+func TestScanSerieProvisorioSemNumeroNaoDuplicaQuandoOTituloMuda(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	escrever(t, filepath.Join(root, "Springfield Tales", "Season 03", "Especial de Natal - Que Natal Que Nada.mkv"))
+
+	m := managerSerieAutoImport(t, d)
+	src := criarSourceSerie(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	// Simula o título gravado por uma versão anterior (regra antiga), mantendo
+	// o extension_data como aquela versão gravava.
+	ep, err := sqlcgen.New(d.Write).ObterEntity(context.Background(), idDoProvisorio(t, d))
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	if _, err := sqlcgen.New(d.Write).AtualizarEntity(context.Background(), sqlcgen.AtualizarEntityParams{
+		ID:                ep.ID,
+		Type:              ep.Type,
+		Title:             "Especial de Natal Que Natal Que Nada",
+		Status:            ep.Status,
+		ExtensionDataJson: ep.ExtensionDataJson,
+	}); err != nil {
+		t.Fatalf("renomear provisório: %v", err)
+	}
+
+	// Re-scan com o arquivo "novo" (mtime diferente força o reprocessamento).
+	escrever(t, filepath.Join(root, "Springfield Tales", "Season 03", "Especial de Natal - Que Natal Que Nada.mkv"))
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("re-scan: %v", err)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='episode' AND status='draft'"); n != 1 {
+		t.Errorf("provisórios depois do re-scan = %d, quero 1 (chave é o arquivo, não o título)", n)
+	}
+}
+
+// idDoProvisorio devolve o id do único episódio provisório do banco de teste.
+func idDoProvisorio(t *testing.T, d *db.DB) string {
+	t.Helper()
+	var id string
+	if err := d.Read.QueryRowContext(context.Background(),
+		"SELECT id FROM entity WHERE type='episode' AND status='draft'").Scan(&id); err != nil {
+		t.Fatalf("idDoProvisorio: %v", err)
+	}
+	return id
+}
