@@ -22,9 +22,12 @@ package scanner
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
@@ -52,6 +55,11 @@ const (
 	// front (70), o que joga o media_file para a fila de revisão.
 	confSerieEp      = 90
 	confRevisaoSerie = 40
+	// tipoEntTemporada/tipoEntEpisodio/statusRascunho: valores do banco usados
+	// só pelo caminho do episódio provisório (briefing 0133).
+	tipoEntTemporada = "season"
+	tipoEntEpisodio  = "episode"
+	statusRascunho   = "draft"
 )
 
 // serieResolvida é o resultado (cacheado por série no scan) de resolver a entity de
@@ -84,6 +92,12 @@ func (r *scanRun) factsSerie(ctx context.Context, path string) fileFacts {
 	ep, ok := naming.ParseEpisode(base)
 	if !ok {
 		log.Printf("scanner: %q sem padrão de episódio reconhecível; vai para revisão", path)
+		if !res.emRevisao && res.index != nil {
+			// Sem SxxEyy no nome, mas a pasta pode dizer a temporada: o arquivo
+			// ainda vira episódio provisório (briefing 0133).
+			f.prov = provisorioDe(path, base)
+			f.serieConf = res.conf
+		}
 		return f
 	}
 	if res.emRevisao || res.index == nil {
@@ -91,7 +105,9 @@ func (r *scanRun) factsSerie(ctx context.Context, path string) fileFacts {
 	}
 	ids, matched := tvmatch.Casar(res.index, ep)
 	if !matched {
-		log.Printf("scanner: episódio de %q não casou (revisão): %+v", path, ep)
+		log.Printf("scanner: episódio de %q não casou na árvore externa; criando provisório: %+v", path, ep)
+		f.prov = provisorioDe(path, base)
+		f.serieConf = res.conf
 		return f
 	}
 	f.episodeIDs = ids
@@ -365,6 +381,17 @@ func (r *scanRun) gravarArquivoSerie(ctx context.Context, q *sqlcgen.Queries, f 
 		return nil
 	}
 
+	// A árvore externa não tinha o episódio, mas o arquivo declara a numeração:
+	// cria o provisório e segue como um vínculo normal (briefing 0133).
+	if len(f.episodeIDs) == 0 && f.prov != nil {
+		ids, perr := r.acharOuCriarProvisorios(ctx, q, f.serieID, *f.prov)
+		if perr != nil {
+			log.Printf("scanner: falha ao criar o episódio provisório de %q (fica em revisão): %v", f.path, perr)
+		} else {
+			f.episodeIDs = ids
+		}
+	}
+
 	matchConf := float64(confRevisaoSerie)
 	if len(f.episodeIDs) > 0 {
 		matchConf = f.serieConf
@@ -437,4 +464,199 @@ func (r *scanRun) upsertMediaFileSerie(ctx context.Context, q *sqlcgen.Queries, 
 // server no 0039); mantido como nome local pela clareza dos chamadores do scanner.
 func extrairTVNS(raw sql.NullString) map[string]any {
 	return tvext.Namespace(raw, nsTV)
+}
+
+// provisorioEpisodio é a numeração que o ARQUIVO declara e a árvore externa
+// não tem (briefing 0133): temporada + números lidos do nome, ou só a
+// temporada da pasta quando o nome não traz SxxEyy. titulo é o nome do arquivo
+// sem extensão, usado como título do episódio provisório.
+type provisorioEpisodio struct {
+	season  int
+	numeros []int
+	titulo  string
+}
+
+// provisorioDe monta o provisório a partir do parse do nome do arquivo ou, sem
+// SxxEyy, da pasta de temporada em que ele vive. Devolve nil quando não há
+// temporada confiável (arquivo solto na raiz, pasta que não é de temporada).
+func provisorioDe(path, base string) *provisorioEpisodio {
+	if ep, ok := naming.ParseEpisode(base); ok && len(ep.Episodes) > 0 && !ep.IsAbsolute {
+		return &provisorioEpisodio{season: ep.Season, numeros: ep.Episodes, titulo: base}
+	}
+	if pareceExtra(base) {
+		// Extras (featurette, sample, trailer...) moram nas pastas de temporada e
+		// não são episódios: viram provisório só quando o nome diz o número.
+		return nil
+	}
+	if n, ok := naming.NumeroDaPastaTemporada(filepath.Base(filepath.Dir(path))); ok {
+		return &provisorioEpisodio{season: n, titulo: base}
+	}
+	return nil
+}
+
+// palavrasDeExtra são os nomes que marcam material extra dentro de uma pasta de
+// temporada. Sem elas, um "Season 01/featurette bonus.mkv" viraria episódio
+// provisório — o que seria mentira sobre a biblioteca.
+var palavrasDeExtra = []string{
+	"featurette", "sample", "trailer", "teaser", "extras", "bonus", "deleted",
+	"behind the scenes", "behind-the-scenes", "bloopers", "outtakes", "interview",
+	"making of", "making-of", "promo", "recap",
+}
+
+// pareceExtra diz se o nome do arquivo marca material extra.
+func pareceExtra(base string) bool {
+	l := strings.ToLower(base)
+	for _, p := range palavrasDeExtra {
+		if strings.Contains(l, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// acharOuCriarProvisorios devolve os ids dos episódios provisórios para o
+// arquivo: um por número lido do nome, ou um só sem numeração (dedup por
+// título dentro da temporada). Cria a temporada quando ela também não existe
+// na série. Idempotente: re-scan acha o que já foi criado.
+func (r *scanRun) acharOuCriarProvisorios(ctx context.Context, q *sqlcgen.Queries, serieID string, prov provisorioEpisodio) ([]string, error) {
+	tempID, err := r.acharOuCriarTemporadaProvisoria(ctx, q, serieID, prov.season)
+	if err != nil {
+		return nil, err
+	}
+	if len(prov.numeros) == 0 {
+		id, err := r.acharOuCriarEpisodioProvisorio(ctx, q, tempID, prov.season, 0, false, prov.titulo)
+		if err != nil {
+			return nil, err
+		}
+		return []string{id}, nil
+	}
+	ids := make([]string, 0, len(prov.numeros))
+	for _, n := range prov.numeros {
+		id, err := r.acharOuCriarEpisodioProvisorio(ctx, q, tempID, prov.season, n, true, prov.titulo)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// acharOuCriarTemporadaProvisoria faz o find-or-create da temporada pelo
+// sort_index dentro da série (mesma chave que o enrich usa em
+// acharOuCriarTemporada, sem id de fonte).
+func (r *scanRun) acharOuCriarTemporadaProvisoria(ctx context.Context, q *sqlcgen.Queries, serieID string, season int) (string, error) {
+	rels, err := q.ListarRelacoesFilhas(ctx, serieID)
+	if err != nil {
+		return "", err
+	}
+	for _, rel := range rels {
+		if rel.Kind == kindRelTemporada && rel.SortIndex.Valid && int(rel.SortIndex.Int64) == season {
+			return rel.ChildID, nil
+		}
+	}
+	id := r.m.novoID()
+	if _, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{
+		ID:    id,
+		Type:  tipoEntTemporada,
+		Title: tituloTemporadaProvisoria(season),
+	}); err != nil {
+		return "", err
+	}
+	if _, err := q.CriarEntityRelation(ctx, sqlcgen.CriarEntityRelationParams{
+		ID:        r.m.novoID(),
+		ParentID:  serieID,
+		ChildID:   id,
+		Kind:      kindRelTemporada,
+		SortIndex: sql.NullInt64{Int64: int64(season), Valid: true},
+	}); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// acharOuCriarEpisodioProvisorio faz o find-or-create do episódio na temporada:
+// com número, a chave é o sort_index da relação (como o enrich liga); sem
+// número, é o título exato dentro da temporada. O provisório nasce
+// status='draft' e marca a origem no extension_data, para a UI e a
+// reconciliação (briefing 0120) saberem que o número veio do arquivo.
+func (r *scanRun) acharOuCriarEpisodioProvisorio(ctx context.Context, q *sqlcgen.Queries, tempID string, season, number int, comNumero bool, titulo string) (string, error) {
+	rels, err := q.ListarRelacoesFilhas(ctx, tempID)
+	if err != nil {
+		return "", err
+	}
+	for _, rel := range rels {
+		if rel.Kind != kindVinculoEpisodio {
+			continue
+		}
+		if comNumero {
+			if rel.SortIndex.Valid && int(rel.SortIndex.Int64) == number {
+				return rel.ChildID, nil
+			}
+			continue
+		}
+		existente, oerr := q.ObterEntity(ctx, rel.ChildID)
+		if oerr == nil && existente.Title == titulo {
+			return rel.ChildID, nil
+		}
+	}
+	id := r.m.novoID()
+	if _, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{
+		ID:                id,
+		Type:              tipoEntEpisodio,
+		Title:             titulo,
+		ExtensionDataJson: nsBytes(extensionProvisorio(season, number, comNumero, titulo)),
+	}); err != nil {
+		return "", err
+	}
+	// CriarEntity não recebe status; o provisório nasce 'draft' num UPDATE, o
+	// mesmo caminho que a faixa rascunho da música usa (musica.go).
+	if _, err := q.AtualizarEntity(ctx, sqlcgen.AtualizarEntityParams{
+		ID:                id,
+		Type:              tipoEntEpisodio,
+		Title:             titulo,
+		Status:            statusRascunho,
+		ExtensionDataJson: nsBytes(extensionProvisorio(season, number, comNumero, titulo)),
+	}); err != nil {
+		return "", err
+	}
+	if _, err := q.CriarEntityRelation(ctx, sqlcgen.CriarEntityRelationParams{
+		ID:        r.m.novoID(),
+		ParentID:  tempID,
+		ChildID:   id,
+		Kind:      kindVinculoEpisodio,
+		SortIndex: sql.NullInt64{Int64: int64(number), Valid: true},
+	}); err != nil {
+		return "", err
+	}
+	log.Printf("scanner: episódio provisório %q -> S%02dE%02d (a árvore externa não tem esse episódio)", titulo, season, number)
+	return id, nil
+}
+
+// tituloTemporadaProvisoria nomeia a temporada criada pelo scanner com a mesma
+// convenção do enrich ("Especiais" para a 0).
+func tituloTemporadaProvisoria(season int) string {
+	if season == 0 {
+		return "Especiais"
+	}
+	return fmt.Sprintf("Temporada %d", season)
+}
+
+// extensionProvisorio monta o core.tv@1 do episódio provisório: a numeração
+// oficial e a marca de que ela veio do arquivo, não da fonte externa.
+func extensionProvisorio(season, number int, comNumero bool, arquivo string) []byte {
+	numero := map[string]any{"season": season}
+	if comNumero {
+		numero["number"] = number
+	}
+	doc := map[string]any{
+		nsTV: map[string]any{
+			"numbering":  map[string]any{"official": numero},
+			"provisorio": map[string]any{"origem": "arquivo", "arquivo": arquivo},
+		},
+	}
+	b, err := json.Marshal(doc)
+	if err != nil {
+		return nil
+	}
+	return b
 }

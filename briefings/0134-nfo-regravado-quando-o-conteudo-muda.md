@@ -8,7 +8,7 @@
 | **ID** | 0134 |
 | **Tipo** | fix |
 | **Fase (roadmap)** | Fase 2 — Biblioteca e scan |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [08-artwork-e-assets](../docs/08-artwork-e-assets.md), [0127](0127-revalidacao-arte-nfo-materializados-no-disco.md), [0128](0128-convergencia-local-path-nfo-e-job-midias-faltantes-honesto.md) |
 | **Depende de** | — |
 

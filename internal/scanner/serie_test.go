@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
@@ -540,5 +541,111 @@ func TestScanSerieAncoraNoID(t *testing.T) {
 	}
 	if depois != ep101 {
 		t.Errorf("vínculo mudou após re-projeção: %q -> %q (deveria ser id-ancorado)", antes, depois)
+	}
+}
+
+// ── Episódio provisório (briefing 0133) ─────────────────────────────────────
+
+// TestScanSerieEpisodioProvisorioQuandoNumeroForaDaArvore cobre o caso real do
+// catálogo da sala: o arquivo declara S01E99, a árvore importada tem só o 1..3.
+// Antes o arquivo ficava sem episódio (media_file pendurado na série, confiança
+// de revisão, sem NFO e sem sinopse na biblioteca consumidora); agora vira
+// episódio provisório na temporada certa, marcado como rascunho.
+func TestScanSerieEpisodioProvisorioQuandoNumeroForaDaArvore(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	escrever(t, filepath.Join(root, "Springfield Tales", "Season 01", "Springfield Tales S01E99.mkv"))
+
+	m := managerSerieAutoImport(t, d)
+	src := criarSourceSerie(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	if n := contarVinculos(t, d); n != 1 {
+		t.Fatalf("vínculos tv_episode = %d, quero 1 (provisório)", n)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='episode' AND status='draft'"); n != 1 {
+		t.Errorf("episódios draft = %d, quero 1", n)
+	}
+	var titulo, ext string
+	if err := d.Read.QueryRowContext(context.Background(),
+		"SELECT title, coalesce(extension_data_json,'') FROM entity WHERE type='episode' AND status='draft'").
+		Scan(&titulo, &ext); err != nil {
+		t.Fatalf("ler episódio provisório: %v", err)
+	}
+	if !strings.Contains(ext, `"season":1`) || !strings.Contains(ext, `"number":99`) {
+		t.Errorf("extension_data sem a numeração do arquivo: %s", ext)
+	}
+	if !strings.Contains(ext, `"provisorio"`) {
+		t.Errorf("extension_data sem a marca de provisório: %s", ext)
+	}
+	// O vínculo saiu da revisão: o media_file deixou de ter confiança 40.
+	var conf float64
+	if err := d.Read.QueryRowContext(context.Background(),
+		"SELECT coalesce(match_confidence,0) FROM media_file").Scan(&conf); err != nil {
+		t.Fatalf("ler match_confidence: %v", err)
+	}
+	if conf < confSerieEp {
+		t.Errorf("match_confidence = %v, quero >= %d (casado pelo número do arquivo)", conf, confSerieEp)
+	}
+
+	// Idempotência: re-scan não cria um segundo provisório.
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("re-scan: %v", err)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='episode' AND status='draft'"); n != 1 {
+		t.Errorf("episódios draft depois do re-scan = %d, quero 1", n)
+	}
+	if n := contarVinculos(t, d); n != 1 {
+		t.Errorf("vínculos depois do re-scan = %d, quero 1", n)
+	}
+}
+
+// TestScanSerieEpisodioProvisorioSemNumeroUsaPastaDaTemporada cobre o outro
+// caso real (Du, Dudu e Edu/Season 00): o nome do arquivo não traz SxxEyy, mas
+// a pasta diz a temporada. O provisório nasce sem número, com o título do
+// arquivo, numa temporada que o scanner cria quando ela também não existe.
+func TestScanSerieEpisodioProvisorioSemNumeroUsaPastaDaTemporada(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	escrever(t, filepath.Join(root, "Springfield Tales", "Season 03", "Groovies.mkv"))
+
+	m := managerSerieAutoImport(t, d)
+	src := criarSourceSerie(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	// A árvore importada traz 2 temporadas e 6 episódios; o provisório é o
+	// sétimo episódio, na temporada 3 que o scanner teve de criar.
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='season'"); n != 3 {
+		t.Errorf("temporadas = %d, quero 3 (2 importadas + a do arquivo)", n)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='episode' AND status='draft'"); n != 1 {
+		t.Fatalf("episódios provisórios = %d, quero 1", n)
+	}
+	var titulo string
+	if err := d.Read.QueryRowContext(context.Background(),
+		"SELECT title FROM entity WHERE type='episode' AND status='draft'").Scan(&titulo); err != nil {
+		t.Fatalf("ler episódio: %v", err)
+	}
+	if titulo != "Groovies" {
+		t.Errorf("título do provisório = %q, quero %q (nome do arquivo)", titulo, "Groovies")
+	}
+	// A temporada criada tem de ser a 3 (pasta "Season 03") e o provisório
+	// pendurado nela.
+	if n := contar(t, d, `SELECT count(*) FROM entity_relation rs
+		JOIN entity_relation re ON re.parent_id=rs.child_id
+		JOIN entity e ON e.id=re.child_id
+		WHERE rs.kind='tv_season' AND rs.sort_index=3 AND e.status='draft'`); n != 1 {
+		t.Errorf("provisório fora da temporada 3: %d", n)
+	}
+
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("re-scan: %v", err)
+	}
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='episode' AND status='draft'"); n != 1 {
+		t.Errorf("episódios provisórios depois do re-scan = %d, quero 1", n)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db"
@@ -809,5 +810,132 @@ func TestMaterializarSeAutoDownloadLigadoToggleLigadoMaterializa(t *testing.T) {
 	posterPath := filepath.Join(libDir, "poster.png")
 	if _, err := os.Stat(posterPath); err != nil {
 		t.Errorf("poster não materializado em disco (%s) com o toggle ligado: %v", posterPath, err)
+	}
+}
+
+// ── Reconvergência por conteúdo do NFO (briefing 0134) ───────────────────
+
+// lerNFO devolve o conteúdo do .nfo no destino canônico da entity.
+func lerNFO(t *testing.T, libDir, nomeBase string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(libDir, nomeBase+".nfo"))
+	if err != nil {
+		t.Fatalf("ler nfo: %v", err)
+	}
+	return string(b)
+}
+
+// TestMaterializarMidiasFaltantesNfoVazioRegrava cobre o caso extremo do
+// briefing 0134: o .nfo existe no destino certo, mas está vazio (0 byte). Até
+// o 0133 o job só olhava caminho+presença e nunca mais tocava no arquivo, então
+// um .nfo vazio ficava vazio para sempre -- a biblioteca consumidora lia um
+// episódio sem nada dentro.
+func TestMaterializarMidiasFaltantesNfoVazioRegrava(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+
+	if _, _, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1"); err != nil {
+		t.Fatalf("1a chamada: %v", err)
+	}
+	nfoPath := filepath.Join(libDir, "Matrix.1999.nfo")
+	if err := os.WriteFile(nfoPath, nil, 0o644); err != nil {
+		t.Fatalf("truncar nfo: %v", err)
+	}
+
+	_, nfoGravado, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1")
+	if err != nil {
+		t.Fatalf("2a chamada: %v", err)
+	}
+	if !nfoGravado {
+		t.Error("2a chamada nfoGravado = false, quero true (nfo vazio precisa ser regravado)")
+	}
+	if corpo := lerNFO(t, libDir, "Matrix.1999"); len(corpo) == 0 {
+		t.Error("nfo continua vazio depois da 2a chamada")
+	}
+}
+
+// TestMaterializarMidiasFaltantesNfoDesatualizadoRegrava cobre o caso normal
+// do 0134: o banco ganhou sinopse DEPOIS da primeira gravação. O .nfo do disco
+// tem que ser reescrito com o dado novo, mesmo com nfo_path preenchido e o
+// arquivo presente.
+func TestMaterializarMidiasFaltantesNfoDesatualizadoRegrava(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+
+	if _, _, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1"); err != nil {
+		t.Fatalf("1a chamada: %v", err)
+	}
+	if corpo := lerNFO(t, libDir, "Matrix.1999"); strings.Contains(corpo, "sinopse nova") {
+		t.Fatal("nfo já tinha a sinopse nova antes de o banco mudar (teste inválido)")
+	}
+
+	ent, err := escrita(t, d).ObterEntity(context.Background(), "e1")
+	if err != nil {
+		t.Fatalf("ObterEntity: %v", err)
+	}
+	if _, err := escrita(t, d).AtualizarEntity(context.Background(), sqlcgen.AtualizarEntityParams{
+		Type:              ent.Type,
+		Title:             ent.Title,
+		OriginalTitle:     ent.OriginalTitle,
+		Description:       nsOf("Uma sinopse nova, escrita depois da primeira gravação."),
+		ReleaseDate:       ent.ReleaseDate,
+		Status:            ent.Status,
+		TagsJson:          ent.TagsJson,
+		ExternalIdsJson:   ent.ExternalIdsJson,
+		ExtensionDataJson: ent.ExtensionDataJson,
+		ID:                ent.ID,
+	}); err != nil {
+		t.Fatalf("AtualizarEntity: %v", err)
+	}
+
+	_, nfoGravado, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1")
+	if err != nil {
+		t.Fatalf("2a chamada: %v", err)
+	}
+	if !nfoGravado {
+		t.Error("2a chamada nfoGravado = false, quero true (banco mudou, nfo precisa acompanhar)")
+	}
+	if corpo := lerNFO(t, libDir, "Matrix.1999"); !strings.Contains(corpo, "sinopse nova") {
+		t.Errorf("nfo não foi reescrito com a sinopse nova; conteúdo: %q", corpo)
+	}
+}
+
+// TestMaterializarMidiasFaltantesNfoIgualNaoRegrava é o lado oposto: banco e
+// disco em dia, nada a fazer. O arquivo não pode ser tocado (nem o mtime muda),
+// senão o job vira churn de escrita no mount remoto e o mtime deixa de sinalizar
+// mudança real.
+func TestMaterializarMidiasFaltantesNfoIgualNaoRegrava(t *testing.T) {
+	srv, _, d := setupMidiasFaltantesServer(t)
+	semearEntity(t, d, "e1", "movie", "Matrix")
+	libDir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
+
+	if _, _, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1"); err != nil {
+		t.Fatalf("1a chamada: %v", err)
+	}
+	nfoPath := filepath.Join(libDir, "Matrix.1999.nfo")
+	antes, err := os.Stat(nfoPath)
+	if err != nil {
+		t.Fatalf("stat nfo: %v", err)
+	}
+	corpoAntes := lerNFO(t, libDir, "Matrix.1999")
+
+	_, nfoGravado, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1")
+	if err != nil {
+		t.Fatalf("2a chamada: %v", err)
+	}
+	if nfoGravado {
+		t.Error("2a chamada nfoGravado = true, quero false (conteúdo já convergente)")
+	}
+	depois, err := os.Stat(nfoPath)
+	if err != nil {
+		t.Fatalf("stat nfo (2): %v", err)
+	}
+	if !depois.ModTime().Equal(antes.ModTime()) {
+		t.Errorf("mtime do nfo mudou sem conteúdo novo (%v -> %v)", antes.ModTime(), depois.ModTime())
+	}
+	if corpo := lerNFO(t, libDir, "Matrix.1999"); corpo != corpoAntes {
+		t.Error("conteúdo do nfo mudou sem o banco mudar")
 	}
 }

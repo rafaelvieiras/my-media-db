@@ -10,7 +10,7 @@
 | **ID** | 0133 |
 | **Tipo** | fix |
 | **Fase (roadmap)** | Fase 2 — Biblioteca e scan |
-| **Status** | ready |
+| **Status** | done |
 | **Docs relacionadas** | [04-modelo-de-dados](../docs/04-modelo-de-dados.md), [06-biblioteca-e-scan](../docs/06-biblioteca-e-scan.md), [08-artwork-e-assets](../docs/08-artwork-e-assets.md), [0120](0120-reconciliacao-de-filhos-orfaos-musica-serie.md) |
 | **Depende de** | — |
 
@@ -151,6 +151,11 @@ banco, mesmo sem correspondência externa.
   chave natural; o título provisório é o nome do arquivo, que é estável entre
   scans. Dois arquivos com o mesmo nome na mesma temporada são o mesmo episódio
   por definição do Kodi.
+- **Extras não viram episódio**: nome com `featurette`, `sample`, `trailer`,
+  `bonus`, `deleted`, `bloopers`, `interview`, `making of` (e afins) dentro de
+  pasta de temporada continua indo para a revisão sem vínculo — criar episódio
+  para material extra seria mentir sobre a biblioteca. Vale só para o caso SEM
+  número; um `S01E05 - trailer.mkv` com número é episódio.
 - **Precedente**: a música já faz exatamente isso — `criar faixa rascunho`
   (`internal/scanner/musica.go`) quando o match falha, e a reconciliação do 0120
   religa depois. Este briefing aplica o mesmo padrão à vertical de série.

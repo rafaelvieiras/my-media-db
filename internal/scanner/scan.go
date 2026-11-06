@@ -101,6 +101,10 @@ type fileFacts struct {
 	serieID    string   // entity da SÉRIE (a "obra"); o media_file aponta para ela
 	serieConf  float64  // confiança da resolução da série (100 por id externo, 90 por título/import)
 	episodeIDs []string // episódios casados, em ordem (define o ordinal do vínculo)
+	// prov guarda a numeração LIDA DO ARQUIVO quando o casamento contra a
+	// árvore externa não achou correspondente: é o que permite criar o
+	// episódio provisório (briefing 0133). nil quando não há o que criar.
+	prov *provisorioEpisodio
 
 	// Campos do caminho de MÚSICA (0107), preenchidos só quando content_type='music'.
 	isMusica  bool    // marca o fluxo de música (ramifica gravarArquivo)

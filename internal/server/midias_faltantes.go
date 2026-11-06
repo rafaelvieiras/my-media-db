@@ -11,6 +11,7 @@ package server
 // auto-selecionar quando NADA foi resolvido ainda).
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/localmedia"
+	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 )
 
 // kindsMidiasFaltantes são os kinds de arte de NÍVEL DE OBRA que o job
@@ -370,21 +372,42 @@ func (s *Server) dispararTrailerTemaAutomaticoSeLigado(ctx context.Context, enti
 	}()
 }
 
-// nfoJaConvergenteNoDisco decide se o nfo_path já registrado (nfoPathAntigo)
-// ainda é o destino canônico ATUAL e o arquivo continua presente -- usado
-// por gravarNFOSeFaltante (briefing 0128, Caso B) para só pular a
-// regravação quando NADA mudou (nem o destino recalculado via
-// resolverDestino, nem a presença física do arquivo, briefing 0127).
-// Extraída para manter a complexidade ciclomática de gravarNFOSeFaltante
-// baixa. Falha ao recalcular o destino (banco/disco) degrada para o guard
-// simples do 0127 (arquivo sumiu?), nunca bloqueia o self-heal já existente.
-func (s *Server) nfoJaConvergenteNoDisco(ctx context.Context, ent sqlcgen.Entity, nfoPathAntigo string) bool {
+// nfoConvergenteNoDisco decide se o nfo_path já registrado (nfoPathAntigo)
+// está no destino canônico ATUAL e com o CONTEÚDO que o banco produziria
+// agora -- usado por gravarNFOSeFaltante para só pular a regravação quando
+// nada mudou (briefings 0127/0128 e 0134).
+//
+// Até o briefing 0134 esta checagem olhava só o caminho e a presença do
+// arquivo: como entity.nfo_path nunca volta a nulo, um .nfo gravado uma vez
+// ficava congelado para sempre, inclusive um .nfo de 0 byte. Agora monta o
+// XML esperado (MESMO resolverEntity + MontarNFO de gravarNFO, com os campos
+// locais do Kodi/Emby do arquivo em disco preservados) e compara byte a byte.
+//
+// Degradação: falha ao recalcular o destino, ao resolver a entity ou ao ler o
+// arquivo não derruba o job -- cai no guard antigo do 0127 (arquivo existe ⇒
+// convergente) e o chamador loga. err só vem de resolverDestino, que é erro
+// real de banco/disco.
+func (s *Server) nfoConvergenteNoDisco(ctx context.Context, ent sqlcgen.Entity, resolvida resolver.Entidade, nfoPathAntigo string) (bool, error) {
 	dir, nomeBaseVideo, _, ok, err := s.resolverDestino(ctx, ent)
-	if err != nil || !ok {
-		return arquivoLocalAindaExiste(nfoPathAntigo)
+	if err != nil {
+		return arquivoLocalAindaExiste(nfoPathAntigo), err
+	}
+	if !ok {
+		return arquivoLocalAindaExiste(nfoPathAntigo), nil
 	}
 	destinoAtual := filepath.Join(dir, localmedia.NomeArquivoNFO(ent.Type, nomeBaseVideo))
-	return destinoAtual == nfoPathAntigo && arquivoLocalAindaExiste(nfoPathAntigo)
+	if destinoAtual != nfoPathAntigo {
+		return false, nil // destino divergente: o fluxo normal regrava (0128)
+	}
+	existente, err := os.ReadFile(nfoPathAntigo)
+	if err != nil {
+		return false, nil // sumiu ou ilegível: regrava do zero (0127)
+	}
+	esperado, err := localmedia.MontarNFO(resolvida, localmedia.ExtrairCamposUsuario(existente))
+	if err != nil {
+		return true, nil // não sabe montar o esperado: mantém o comportamento antigo
+	}
+	return bytes.Equal(esperado, existente), nil
 }
 
 // gravarNFOSeFaltante gera o NFO da entity (mesma função gravarNFO do 0062)
@@ -406,14 +429,6 @@ func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity) (b
 	nfoPathAntigo := ent.NfoPath.String
 	temNfoRegistrado := ent.NfoPath.Valid && nfoPathAntigo != ""
 
-	if temNfoRegistrado && s.nfoJaConvergenteNoDisco(ctx, ent, nfoPathAntigo) {
-		return false, nil
-	}
-	// sem NFO registrado, OU destino divergente (naming legado), OU destino
-	// certo mas arquivo sumido -- cai no fluxo normal abaixo, que sempre
-	// grava no destino recém-calculado (gravarNFO é idempotente por
-	// conteúdo; briefings 0062/0127/0128).
-
 	resolvida, encontrada, err := s.resolverEntity(ctx, ent.ID, "", false)
 	if err != nil {
 		return false, err
@@ -421,6 +436,19 @@ func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity) (b
 	if !encontrada {
 		return false, nil
 	}
+
+	if temNfoRegistrado {
+		if convergente, cerr := s.nfoConvergenteNoDisco(ctx, ent, resolvida, nfoPathAntigo); cerr != nil {
+			log.Printf("gravarNFOSeFaltante: falha ao conferir a convergencia do NFO da entity %q (assumindo o guard de presenca): %v", ent.ID, cerr)
+		} else if convergente {
+			return false, nil
+		}
+	}
+	// sem NFO registrado, OU conteudo/destino divergente (naming legado ou
+	// banco atualizado depois da gravacao, briefing 0134), OU destino certo
+	// mas arquivo sumido -- cai no fluxo normal abaixo, que sempre grava no
+	// destino recém-calculado (gravarNFO é idempotente por conteúdo;
+	// briefings 0062/0127/0128/0134).
 	resultado, err := s.gravarNFO(ctx, ent, resolvida)
 	if err != nil {
 		if errors.Is(err, errSemDestino) {
