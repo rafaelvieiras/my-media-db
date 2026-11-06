@@ -284,10 +284,17 @@ test('arquivo com numero fora da arvore externa vira episodio provisorio', async
     )
     .toBe(false)
 
-  // O episodio provisorio existe, na temporada 1, com numero 99.
-  const eps = await (await request.get('/api/v1/entities?type=episode&limit=50')).json()
-  const provisorio = (eps.items ?? []).find(
-    (e: { title?: string }) => e.title === 'Episódio 99',
+  // A serie foi importada do provider fake e o episodio provisorio esta na
+  // arvore dela, na temporada 1, com o padrao de titulo do enriquecimento.
+  // (/api/v1/entities lista obras: o episodio se le pela arvore da serie.)
+  const series = await (await request.get('/api/v1/entities?type=tv&limit=20')).json()
+  const serie = (series.items ?? []).find((e: { title?: string }) =>
+    (e.title ?? '').includes('Springfield'),
   )
-  expect(provisorio).toBeTruthy()
+  expect(serie).toBeTruthy()
+  const arvore = await (await request.get(`/api/v1/entities/${serie.id}/episodes`)).json()
+  const titulos = (arvore.groups ?? []).flatMap(
+    (g: { episodes?: { title?: string }[] }) => (g.episodes ?? []).map((e) => e.title),
+  )
+  expect(titulos).toContain('Episódio 99')
 })
