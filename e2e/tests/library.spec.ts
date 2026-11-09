@@ -165,8 +165,10 @@ test("scan de arquivo nao-identificado vira draft e a correcao o tira da revisao
   await expect(page.getByText(/não identificado/).first()).toBeVisible();
 
   // Abre a seção (grupo) e a linha do item: a prévia/ações só existem abertas.
-  await page.locator('button[aria-expanded="false"]').first().click();
-  await page.getByRole("button", { name: "Ver candidato" }).first().click();
+  // data-testid (e não aria-expanded solto): o dropdown da navbar também é um
+  // button com aria-expanded e viria primeiro no DOM.
+  await page.getByTestId("review-grupo").first().click();
+  await page.getByTestId("review-linha").first().click();
 
   // Corrigir: expande o painel, busca "matrix" (fonte externa fake) e usa o 1o.
   await page.getByRole("button", { name: "Corrigir" }).click();

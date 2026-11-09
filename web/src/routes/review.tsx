@@ -263,6 +263,7 @@ function SecaoRevisao({ grupo }: { grupo: GrupoRevisao }) {
     <li className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
       <button
         type="button"
+        data-testid="review-grupo"
         aria-expanded={aberto}
         onClick={() => setAberto((v) => !v)}
         className="flex w-full items-center gap-2 p-3 text-left hover:bg-muted/40"
@@ -429,6 +430,7 @@ function ReviewRow({ card }: { card: EntityCard }) {
         <Button
           size="sm"
           variant="ghost"
+          data-testid="review-linha"
           aria-expanded={expandido}
           onClick={() => setExpandido((v) => !v)}
         >
