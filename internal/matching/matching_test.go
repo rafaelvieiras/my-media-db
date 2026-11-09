@@ -158,8 +158,23 @@ func TestNormalizarNome(t *testing.T) {
 		{"The Fat of the Land - Expanded Edition", "The Fat of the Land"},
 		{"Twilight Original Motion Picture Soundtrack (International Special Edition)", "Twilight Original Motion Picture Soundtrack"},
 		{"Emergency on Planet Earth (Remastered)", "Emergency on Planet Earth"},
-		// preservados: qualificador que muda a obra, álbum sem qualificador, e
-		// nome que viraria vazio (fallback para o original).
+		// briefings 0139: RÓTULO de versão da MESMA gravação (o segmento termina em
+		// palavra de versão e não tem diferenciadora) -- o caso das trilhas, que
+		// sozinho eram 20 das 37 faixas que sobravam em rascunho.
+		{"Full Moon (Twilight Soundtrack Version)", "Full Moon"},
+		{"Spotlight (Twilight Soundtrack Version)", "Spotlight"},
+		{"Love Is Worth The Fall (Twilight Version)", "Love Is Worth The Fall"},
+		{"The Prisoner (Original 7\" Version)", "The Prisoner"},
+		{"Pale Shelter (2nd single version)", "Pale Shelter"},
+		{"Change (Radio Edit)", "Change (Radio Edit)"},
+		{"Ideas As Opiates (Alternate Version)", "Ideas As Opiates"},
+		// preservados: qualificador que muda a obra (OUTRA gravação), álbum sem
+		// qualificador, e nome que viraria vazio (fallback para o original).
+		{"Papercut (Live at BBC1)", "Papercut (Live at BBC1)"},
+		{"Full Moon (Appleblim & Komonazmuk Remix)", "Full Moon (Appleblim & Komonazmuk Remix)"},
+		{"Suffer The Children (Demo)", "Suffer The Children (Demo)"},
+		{"Take On Me (2017 Acoustic)", "Take On Me (2017 Acoustic)"},
+		{"Notorious (Extended Version)", "Notorious (Extended Version)"},
 		{"Unplugged (Live)", "Unplugged (Live)"},
 		{"Goodbye Country (Hello Nightclub)", "Goodbye Country (Hello Nightclub)"},
 		{"Born to Be Alive (The Original)", "Born to Be Alive (The Original)"},

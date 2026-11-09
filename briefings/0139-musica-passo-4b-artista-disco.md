@@ -97,10 +97,42 @@ Medição com as tags reais das 51 faixas em rascunho (MusicBrainz ao vivo), ant
 | Flume/Chet Faker — Lockjaw | 3 homônimos de outros artistas | resolve |
 | Tears for Fears — The Hurting disco 2 | empate de título | resolve (Prisoner, Suffer the Children) |
 | Scott Pilgrim (trilha) | não achava | resolve |
-| Various Artists — Twilight | não achava | ainda falha (sufixo de versão) |
+| Various Artists — Twilight (4 faixas) | não achava | resolve (vocabulário de versão) |
+
+## Segunda rodada: vocabulário de versão (`matching`)
+
+Depois do escopo por artista, a maior família restante era o RÓTULO de versão no
+título: a tag traz "Full Moon (Twilight Soundtrack Version)" e a fonte tem "Full
+Moon". A regra do 0136 só descarta o segmento quando **todas** as palavras são de
+edição -- e "twilight" não é, então o segmento ficava. Regra nova, em
+`internal/matching`:
+
+- o segmento é descartado quando **termina** em palavra de versão
+  (`version`/`versao`/`versão`) e **não** tem nenhuma palavra diferenciadora;
+- `palavrasDiferenciadoras` = ao vivo, acústico, demo, remix, instrumental,
+  karaoke, cover, unplugged, session, rehearsal, extended, reprise, medley,
+  mashup. Com qualquer uma delas o segmento é PRESERVADO: é outra gravação, não
+  a mesma com rótulo. "(Suffer The Children (Demo))" e "(Full Moon (Appleblim &
+  Komonazmuk Remix))" continuam intactos.
+- `edit`/`edição` **ficam de fora** de propósito: um radio edit é outra gravação
+  (mais curta) e aceitá-la como a mesma faixa fazia o match parar na release
+  errada -- dois testes de seleção de release existentes pegaram isso
+  (`TestBuscarFaixasComAlvoTentaOutraReleaseQuandoOfficialNaoTemAFaixa`,
+  `...SemFalhaDeRedeNaoFazSegundaPassada`).
+
+Efeito medido no MusicBrainz ao vivo, 12 casos da família: as 4 faixas do Twilight
+com "(Twilight Soundtrack Version)", "The Prisoner (Original 7\" Version)",
+"Ideas As Opiates (Alternate Version)" e "Pale Shelter" do Rule The World passaram
+a resolver; "Suffer The Children (Demo)" e "(Appleblim & Komonazmuk Remix)"
+continuam fora, de propósito.
 
 ## Follow-ups (não feitos aqui)
 
+- **Crédito de artista com vários nomes.** "Like Minds" é creditado a cinco
+  artistas separados por "&" na tag; a cláusula `artistname` com a string inteira
+  não acha nada e a busca cai no modo sem artista (que traz homônimos). A
+  alternativa hoje só cobre a barra ("Flume/Chet Faker"); estender para "&" e ","
+  (tentar o primeiro artista) resolve essa família.
 - **O veto por duração descarta faixa certa.** "In the End" (Hybrid Theory): o
   arquivo tem 216,8s e o MusicBrainz diz 231,6s para o MESMO título único no
   álbum do mesmo artista; a diferença de 15s passa da

@@ -261,11 +261,40 @@ func cortarSufixoDeEdicao(s string) (string, bool) {
 	return strings.TrimSpace(s[:i]), true
 }
 
+// palavrasDeVersao são os finais que ROTULAM a versão de uma mesma gravação sem
+// trocá-la: "(Twilight Soundtrack Version)", "(Album Version)", "(2nd single
+// version)", "(Alternate Version)". Um segmento assim não é
+// edição pura (tem o nome da trilha/o número da edição antes), então a regra de
+// "todas as palavras na lista" do 0136 não pegava -- medido no briefing 0139: 20
+// das 37 faixas que sobravam em produção caíam exatamente aqui.
+var palavrasDeVersao = map[string]bool{
+	"version": true, "versao": true, "versão": true,
+}
+
+// palavrasDiferenciadoras marcam segmento que é OUTRA gravação, não outra versão
+// da mesma: ao vivo, acústico, demo, remix, instrumental. Com qualquer uma delas
+// o segmento é PRESERVADO mesmo terminando em palavra de versão -- "Full Moon
+// (Appleblim & Komonazmuk Remix)" é outra faixa, não a mesma com rótulo.
+var palavrasDiferenciadoras = map[string]bool{
+	"live": true, "vivo": true, "vivO": true, "acoustic": true, "acustico": true,
+	"acústico": true, "demo": true, "remix": true, "remixed": true,
+	"instrumental": true, "karaoke": true, "cover": true, "unplugged": true,
+	"session": true, "sessions": true, "rehearsal": true, "extended": true,
+	"reprise": true, "medley": true, "mashup": true, "aovivo": true,
+}
+
 // ehSegmentoDeEdicao diz se o conteúdo de um segmento é só palavra(s) de
 // edição/versão e/ou um ano (4 dígitos) -- "Bonus Edition", "Remastered 2011",
-// "1984", "Deluxe". Qualquer outra palavra ("Ao Vivo", "Live in Rio") faz o
-// segmento ser PRESERVADO.
+// "1984", "Deluxe" -- ou se é um RÓTULO de versão da mesma gravação terminando em
+// palavra de versão sem nenhuma diferenciadora ("Twilight Soundtrack Version").
+// "edit"/"edição" NÃO entram em palavrasDeVersao de propósito: um radio edit é
+// OUTRA gravação (mais curta) e aceitá-la como a mesma faixa faria o match parar
+// na release errada -- dois testes de release-selection existentes pegam isso.
+// Qualquer outra palavra ("Ao Vivo", "Live in Rio") faz o segmento ser PRESERVADO.
 func ehSegmentoDeEdicao(segmento string) bool {
+	if ehRotuloDeVersao(segmento) {
+		return true
+	}
 	palavras := strings.FieldsFunc(strings.ToLower(segmento), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	})
@@ -287,6 +316,38 @@ func ehSegmentoDeEdicao(segmento string) bool {
 		}
 	}
 	return true
+}
+
+// ehRotuloDeVersao reconhece o segmento que TERMINA em palavra de versão e não
+// tem nenhuma diferenciadora ("Twilight Soundtrack Version" sim, "Live at BBC1"
+// não, "Suffer the Children (Demo)" não).
+func ehRotuloDeVersao(segmento string) bool {
+	palavras := palavrasDoSegmento(segmento)
+	if len(palavras) == 0 {
+		return false
+	}
+	for _, palavra := range palavras {
+		if palavrasDiferenciadoras[palavra] {
+			return false
+		}
+	}
+	return palavrasDeVersao[palavras[len(palavras)-1]]
+}
+
+// palavrasDoSegmento quebra o conteúdo de um segmento em palavras minúsculas,
+// ignorando separadores e fragmentos de uma letra (resto de apóstrofo).
+func palavrasDoSegmento(segmento string) []string {
+	brutas := strings.FieldsFunc(strings.ToLower(segmento), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	out := make([]string, 0, len(brutas))
+	for _, palavra := range brutas {
+		if len([]rune(palavra)) == 1 {
+			continue
+		}
+		out = append(out, palavra)
+	}
+	return out
 }
 
 // ehAno diz se a palavra é um ano de 4 dígitos (1900-2099).
