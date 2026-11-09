@@ -81,10 +81,13 @@ func TestReconciliarFaixaDraftReligaComSucesso(t *testing.T) {
 	if tipo != tipoFaixa || titulo != "Track One" || status != "cataloged" {
 		t.Errorf("faixa resolvida = {%q %q %q}, quero {faixa Track One cataloged}", tipo, titulo, status)
 	}
-	// A faixa draft antiga é PRESERVADA (princípio 5, não-destrutivo), só
-	// sem media_file (posse cai a zero).
-	if n := contar(t, d, "SELECT count(*) FROM entity WHERE id=?", draftID); n != 1 {
-		t.Errorf("faixa draft antiga = %d, quero 1 (preservada, não apagada)", n)
+	// Briefing 0138: a faixa draft antiga é PURGADA. Ela nasceu do próprio
+	// matcher (título derivado do arquivo, sem external id, sem override), e o
+	// princípio 5 protege o que o DONO escreveu -- não um casco vazio. Sem a
+	// purga, ela ficava para sempre na fila de revisão como "sem arquivo" (114
+	// casos medidos em produção).
+	if n := contar(t, d, "SELECT count(*) FROM entity WHERE id=?", draftID); n != 0 {
+		t.Errorf("faixa draft substituída = %d, quero 0 (purgada)", n)
 	}
 	if n := contar(t, d, "SELECT count(*) FROM media_file WHERE entity_id=?", draftID); n != 0 {
 		t.Errorf("media_file ainda apontando pro draft antigo = %d, quero 0", n)

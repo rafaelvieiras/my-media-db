@@ -272,17 +272,22 @@ ORDER BY
     e.id
 LIMIT sqlc.arg('limite');
 
--- == Pos-scan por biblioteca (briefing 0135, ADR-0031) ==
+-- == Pos-scan por biblioteca (briefing 0135/0138, ADR-0031) ==
 -- As tres queries abaixo sao as versoes ESCOPADAS POR library_source das queries
--- de reconciliacao acima e NAO aplicam o throttle de dias
--- (retroactive_enrichment_days/dias_global): o pos-scan e o retry do scan que o
--- dono acabou de pedir, nao uma varredura periodica do catalogo. O limite de
--- itens por execucao continua (caps do scanner).
+-- de reconciliacao acima. O throttle de dias do catalogo
+-- (retroactive_enrichment_days/dias_global) NAO se aplica -- o pos-scan e o retry
+-- do scan que o dono acabou de pedir --, mas ha um piso proprio de horas
+-- (briefing 0138): sem ele, todo scan tentava de novo as MESMAS 200 faixas que
+-- acabaram de falhar (medido: 45+ min de MusicBrainz por scan, sem resolver
+-- nada de novo). A ordem tambem passou a ser a de quem NUNCA foi tentado
+-- primeiro, para a fila avancar a cada scan mesmo com o teto de itens/horas.
 
 -- name: ListarFaixasDraftOrfasPorSource :many
 -- Faixas type='faixa' status='draft' com media_file present DA FONTE informada e
 -- sem entity_relation como filha de album (mesmo universo de
--- ListarFaixasDraftOrfas, sem throttle).
+-- ListarFaixasDraftOrfas). Throttle proprio do pos-scan: pula quem ja foi
+-- tentado nas ultimas sqlc.arg('horas_minimas') horas (briefing 0138); a ordem
+-- e "nunca tentado primeiro" para a fila avancar a cada scan.
 SELECT e.id, e.type
 FROM entity e
 WHERE e.type = 'faixa'
@@ -295,12 +300,17 @@ WHERE e.type = 'faixa'
   AND NOT EXISTS (
         SELECT 1 FROM entity_relation er WHERE er.child_id = e.id
       )
-ORDER BY e.id
+  AND (
+        e.last_external_match_attempt_at IS NULL
+        OR e.last_external_match_attempt_at < datetime('now', '-' || CAST(sqlc.arg('horas_minimas') AS INTEGER) || ' hours')
+      )
+ORDER BY (e.last_external_match_attempt_at IS NULL) DESC, e.last_external_match_attempt_at ASC, e.id
 LIMIT sqlc.arg('limite');
 
 -- name: ListarSeriesDraftPorSource :many
 -- Series type='tv' status='draft' com media_file present DA FONTE informada
--- (mesmo universo de ListarSeriesDraftComArquivo, sem throttle).
+-- (mesmo universo de ListarSeriesDraftComArquivo, com o throttle de horas e a
+-- ordem do pos-scan, briefing 0138).
 SELECT e.id, e.type
 FROM entity e
 WHERE e.type = 'tv'
@@ -310,7 +320,11 @@ WHERE e.type = 'tv'
         WHERE m.entity_id = e.id AND m.state = 'present'
           AND m.library_source_id = sqlc.arg('source_id')
       )
-ORDER BY e.id
+  AND (
+        e.last_external_match_attempt_at IS NULL
+        OR e.last_external_match_attempt_at < datetime('now', '-' || CAST(sqlc.arg('horas_minimas') AS INTEGER) || ' hours')
+      )
+ORDER BY (e.last_external_match_attempt_at IS NULL) DESC, e.last_external_match_attempt_at ASC, e.id
 LIMIT sqlc.arg('limite');
 
 -- name: ListarFilmesPendentesPorSource :many

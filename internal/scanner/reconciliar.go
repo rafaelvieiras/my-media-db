@@ -63,7 +63,22 @@ func (m *Manager) ReconciliarFaixaDraft(ctx context.Context, entityID string, la
 	}); err != nil {
 		return false, err
 	}
+	m.purgarRascunhoSubstituido(ctx, entityID)
 	return true, nil
+}
+
+// purgarRascunhoSubstituido descarta o rascunho que acabou de perder o arquivo
+// para a entity definitiva (briefing 0138). Sem isto o rascunho ficava para
+// sempre na fila de revisao como "sem arquivo": 114 casos medidos em producao
+// em 08/nov/2026, e a fila nunca diminuia mesmo com a reconciliacao
+// funcionando. Best-effort (o vinculo novo ja esta gravado): falha so loga.
+func (m *Manager) purgarRascunhoSubstituido(ctx context.Context, entityID string) {
+	if entityID == "" {
+		return
+	}
+	if _, err := sqlcgen.New(m.db.Write).ApagarRascunhoVazio(ctx, entityID); err != nil {
+		log.Printf("scanner: purga do rascunho substituido %q falhou (ignorado): %v", entityID, err)
+	}
 }
 
 // ReconciliarSerieDraft tenta reimportar uma série DRAFT com o título da
@@ -109,6 +124,13 @@ func (m *Manager) ReconciliarSerieDraft(ctx context.Context, entityID string, la
 			return religados > 0, err
 		}
 		religados++
+	}
+	if religados > 0 {
+		// Mesma purga do caso da faixa (briefing 0138): a serie-rascunho que
+		// perdeu todos os arquivos sai da fila. A query nao apaga serie com
+		// episodio ligado (checa vinculo como pai), entao o que sai aqui e o
+		// casco vazio de verdade.
+		m.purgarRascunhoSubstituido(ctx, entityID)
 	}
 	return religados > 0, nil
 }

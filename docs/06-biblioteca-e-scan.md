@@ -96,7 +96,18 @@ uma etapa FINAL, executada depois do último lote commitado:
   reconcilía as faixas e séries que ficaram em rascunho **dela** e retenta o
   auto-match dos filmes pendentes dela — com cap por execução
   (`scanner.CapReconciliacao*`), sem o throttle de dias do job periódico (este é
-  o retry do scan que o dono acabou de pedir).
+  o retry do scan que o dono acabou de pedir), mas com **piso de 12h** por item
+  (`scanner.PosScanHorasMinimas`) e **teto de 4 min** de tempo de parede
+  (`posScanBudget`): sem eles, todo scan re-tentava as mesmas 200 faixas e
+  gastava 45+ min de chamadas externas sem resolver nada novo
+  ([briefing 0138](../briefings/0138-revisao-sem-cascos-e-pos-scan-com-teto.md)).
+  A lista vem ordenada por "nunca tentado primeiro", então a fila avança a cada
+  scan mesmo com os dois tetos.
+- **Purga do rascunho substituído.** A reconciliação que religa um arquivo à
+  entity definitiva apaga o rascunho que sobrou sem arquivo, sem vínculo e sem
+  override — ele ficava na fila de revisão para sempre como "sem arquivo" (114
+  cascos medidos em produção). Rascunho com arquivo, com filho ligado ou com
+  override do dono nunca é tocado.
 - **Materialização opcional** (`materializar_artes_automaticamente`) do que
   passou a ter identidade nessa etapa.
 

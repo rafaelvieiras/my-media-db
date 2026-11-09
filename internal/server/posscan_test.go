@@ -116,3 +116,90 @@ func TestPosScanSemFonteNaoVarreNada(t *testing.T) {
 		t.Fatalf("ProcessarPosScan sem scanner: %v", err)
 	}
 }
+
+// marcarDraft põe a entity em status 'draft' (CriarEntity usa o default do
+// schema, que é cataloged).
+func marcarDraft(t *testing.T, d *db.DB, entityID string) {
+	t.Helper()
+	if _, err := d.Write.ExecContext(context.Background(),
+		`UPDATE entity SET status = 'draft' WHERE id = ?`, entityID); err != nil {
+		t.Fatalf("marcar draft %q: %v", entityID, err)
+	}
+}
+
+// TestPosScanPurgaRascunhoVazio cobre o briefing 0138: rascunho SEM arquivo e
+// sem vínculo (o casco que a reconciliação deixava para trás) sai da base ao fim
+// do pós-scan. É o que fazia a fila de revisão nunca diminuir, mesmo com a
+// reconciliação resolvendo faixas -- 114 cascos medidos em produção.
+func TestPosScanPurgaRascunhoVazio(t *testing.T) {
+	s, d := setupReconciliarOrfaosServer(t, &fakeMusicaProviderOrfaos{}, nil)
+	src := criarSourceTeste(t, d, filepath.Join(t.TempDir(), "musica"), "music")
+
+	// Casco: draft sem media_file, sem vínculo, sem override.
+	semearEntity(t, d, "fx-casco", "faixa", "Crawling")
+	marcarDraft(t, d, "fx-casco")
+
+	if err := s.ProcessarPosScan(context.Background(), src); err != nil {
+		t.Fatalf("ProcessarPosScan: %v", err)
+	}
+	if n := contarLinhas(t, d, "SELECT count(*) FROM entity WHERE id = 'fx-casco'"); n != 0 {
+		t.Fatalf("casco ainda na base = %d, quero 0 (purgado)", n)
+	}
+}
+
+// TestPosScanNaoPurgaRascunhoComVinculo garante a trava da purga: o rascunho que
+// ainda tem arquivo ou filho ligado NÃO é apagado (uma série-rascunho com
+// episódios, um filme que ainda está na fila de revisão de verdade).
+func TestPosScanNaoPurgaRascunhoComVinculo(t *testing.T) {
+	s, d := setupReconciliarOrfaosServer(t, &fakeMusicaProviderOrfaos{}, nil)
+	src := criarSourceTeste(t, d, filepath.Join(t.TempDir(), "musica"), "music")
+
+	// Rascunho na fila de revisão de verdade: tem arquivo.
+	semearFaixaDraftOrfa(t, d, "fx-na-fila", "Track One", "/lib/musica/aha/01 - Track One.mp3")
+
+	// Série-rascunho com episódio ligado (filho), sem arquivo próprio.
+	semearEntity(t, d, "tv-casco", "tv", "Serie Desconhecida")
+	marcarDraft(t, d, "tv-casco")
+	semearEntity(t, d, "ep-filho", "episode", "Episodio Um")
+	if _, err := d.Write.ExecContext(context.Background(),
+		`INSERT INTO entity_relation (id, parent_id, child_id, kind)
+		 VALUES ('rel-casco', 'tv-casco', 'ep-filho', 'episode')`); err != nil {
+		t.Fatalf("criar relação: %v", err)
+	}
+
+	if err := s.ProcessarPosScan(context.Background(), src); err != nil {
+		t.Fatalf("ProcessarPosScan: %v", err)
+	}
+	if n := contarLinhas(t, d, "SELECT count(*) FROM entity WHERE id = 'fx-na-fila'"); n != 1 {
+		t.Error("rascunho com arquivo foi purgado -- a trava do media_file falhou")
+	}
+	if n := contarLinhas(t, d, "SELECT count(*) FROM entity WHERE id = 'tv-casco'"); n != 1 {
+		t.Error("rascunho com vínculo de filho foi purgado -- a trava de relação falhou")
+	}
+}
+
+// TestPosScanPulaItemTentadoRecentemente cobre o throttle do briefing 0138: o
+// item carimbado há pouco NÃO volta para a fila do pós-scan (sem este piso, todo
+// scan re-tentava as mesmas 200 faixas e gastava 45+ min de chamadas externas).
+func TestPosScanPulaItemTentadoRecentemente(t *testing.T) {
+	musica := &fakeMusicaProviderOrfaos{}
+	path := "/lib/musica/aha/01 - Track One.mp3"
+	s, d := setupReconciliarOrfaosServer(t, musica, map[string]mediainfo.AudioTags{
+		path: {AlbumArtist: "Fake Band", Album: "Fake Album", Title: "Track One", TrackNumber: 1},
+	})
+	src := criarSourceTeste(t, d, filepath.Join(t.TempDir(), "musica"), "music")
+
+	semearFaixaDraftOrfa(t, d, "fx-recente", "Track One", path)
+	apontarMediaFileParaFonte(t, d, "mf-fx-recente", src)
+	if _, err := d.Write.ExecContext(context.Background(),
+		`UPDATE entity SET last_external_match_attempt_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = 'fx-recente'`); err != nil {
+		t.Fatalf("carimbar tentativa: %v", err)
+	}
+
+	if err := s.ProcessarPosScan(context.Background(), src); err != nil {
+		t.Fatalf("ProcessarPosScan: %v", err)
+	}
+	if got := mediaFileEntityID(t, d, path); got != "fx-recente" {
+		t.Fatalf("faixa tentada agora foi reconciliada de novo (%s): o piso de horas não valeu", got)
+	}
+}

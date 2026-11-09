@@ -206,12 +206,11 @@ func TestReconciliarFilhosOrfaosFaixaReligaComSucesso(t *testing.T) {
 		t.Fatalf("reconciliados = %d, quero 1", reconciliados)
 	}
 
-	ent, err := escrita(t, d).ObterEntity(context.Background(), "fx-draft")
-	if err != nil {
-		t.Fatalf("ObterEntity: %v", err)
-	}
-	if !ent.LastExternalMatchAttemptAt.Valid {
-		t.Error("last_external_match_attempt_at deveria ter sido carimbado")
+	// Briefing 0138: o draft que perdeu o arquivo é PURGADO (ele ficava para
+	// sempre na fila de revisão como "sem arquivo"). O carimbo de tentativa vive
+	// nele, então some junto -- o que importa é o vínculo novo.
+	if _, err := escrita(t, d).ObterEntity(context.Background(), "fx-draft"); err == nil {
+		t.Error("faixa draft substituída deveria ter sido purgada")
 	}
 
 	entityID := mediaFileEntityID(t, d, path)

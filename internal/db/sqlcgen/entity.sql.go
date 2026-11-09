@@ -23,6 +23,55 @@ func (q *Queries) ApagarEntity(ctx context.Context, id string) error {
 	return err
 }
 
+const apagarRascunhoVazio = `-- name: ApagarRascunhoVazio :execrows
+DELETE FROM entity
+WHERE entity.id = ?1
+  AND entity.status = 'draft'
+  AND NOT EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = entity.id)
+  AND NOT EXISTS (SELECT 1 FROM entity_relation r WHERE r.child_id = entity.id)
+  AND NOT EXISTS (SELECT 1 FROM entity_relation r WHERE r.parent_id = entity.id)
+  AND NOT EXISTS (SELECT 1 FROM media_override o WHERE o.entity_id = entity.id)
+`
+
+// Purga do rascunho SUBSTITUIDO (briefing 0138). A reconciliacao religa o
+// media_file a entity definitiva e a entity-rascunho antiga ficava para tras sem
+// arquivo e sem vinculo -- ela continuava aparecendo na fila de revisao para
+// sempre (114 casos medidos em producao em 08/nov/2026, grupo "sem arquivo").
+// As quatro condicoes sao a trava de seguranca: so sai o rascunho que nao tem
+// arquivo, nao tem vinculo nenhum (nem como filha, nem como pai -- uma serie
+// rascunho com episodios ligados fica) e nao tem override do dono. O rascunho
+// que a reconciliacao substitui e criado pelo PROPRIO matcher (titulo derivado do
+// arquivo, sem external id) -- nao ha dado do dono ali, ao contrario do
+// principio 5, que protege o que o dono escreveu. Idempotente: 0 linhas quando
+// nada casa.
+func (q *Queries) ApagarRascunhoVazio(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, apagarRascunhoVazio, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const apagarRascunhosVazios = `-- name: ApagarRascunhosVazios :execrows
+DELETE FROM entity
+WHERE entity.status = 'draft'
+  AND NOT EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = entity.id)
+  AND NOT EXISTS (SELECT 1 FROM entity_relation r WHERE r.child_id = entity.id)
+  AND NOT EXISTS (SELECT 1 FROM entity_relation r WHERE r.parent_id = entity.id)
+  AND NOT EXISTS (SELECT 1 FROM media_override o WHERE o.entity_id = entity.id)
+`
+
+// Versao em lote da purga acima, para a varredura do pos-scan (briefing 0138):
+// limpa o estoque de rascunhos vazios que a reconciliacao deixou antes desta
+// correcao. Mesmas travas, sem id.
+func (q *Queries) ApagarRascunhosVazios(ctx context.Context) (int64, error) {
+	result, err := q.db.ExecContext(ctx, apagarRascunhosVazios)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const atualizarEntity = `-- name: AtualizarEntity :one
 UPDATE entity
 SET type = ?,

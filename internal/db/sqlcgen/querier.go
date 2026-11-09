@@ -31,6 +31,22 @@ type Querier interface {
 	// Remove o override da entity (volta ao valor da base editorial/arquivo).
 	ApagarMediaOverride(ctx context.Context, entityID string) error
 	ApagarQueueItem(ctx context.Context, id string) error
+	// Purga do rascunho SUBSTITUIDO (briefing 0138). A reconciliacao religa o
+	// media_file a entity definitiva e a entity-rascunho antiga ficava para tras sem
+	// arquivo e sem vinculo -- ela continuava aparecendo na fila de revisao para
+	// sempre (114 casos medidos em producao em 08/nov/2026, grupo "sem arquivo").
+	// As quatro condicoes sao a trava de seguranca: so sai o rascunho que nao tem
+	// arquivo, nao tem vinculo nenhum (nem como filha, nem como pai -- uma serie
+	// rascunho com episodios ligados fica) e nao tem override do dono. O rascunho
+	// que a reconciliacao substitui e criado pelo PROPRIO matcher (titulo derivado do
+	// arquivo, sem external id) -- nao ha dado do dono ali, ao contrario do
+	// principio 5, que protege o que o dono escreveu. Idempotente: 0 linhas quando
+	// nada casa.
+	ApagarRascunhoVazio(ctx context.Context, id string) (int64, error)
+	// Versao em lote da purga acima, para a varredura do pos-scan (briefing 0138):
+	// limpa o estoque de rascunhos vazios que a reconciliacao deixou antes desta
+	// correcao. Mesmas travas, sem id.
+	ApagarRascunhosVazios(ctx context.Context) (int64, error)
 	// Grava o caminho FISICO materializado na pasta real da biblioteca (briefing
 	// 0062): coluna ortogonal a path_or_uri (cache interno/URL externa) -- so
 	// preenchida quando a arte tambem foi copiada para dentro da pasta do item.
@@ -505,15 +521,20 @@ type Querier interface {
 	// library_source.retroactive_enrichment_days com fallback pro dias_global,
 	// mesma logica de ListarElegiveisReprocessamentoArtes.
 	ListarFaixasDraftOrfas(ctx context.Context, arg ListarFaixasDraftOrfasParams) ([]ListarFaixasDraftOrfasRow, error)
-	// == Pos-scan por biblioteca (briefing 0135, ADR-0031) ==
+	// == Pos-scan por biblioteca (briefing 0135/0138, ADR-0031) ==
 	// As tres queries abaixo sao as versoes ESCOPADAS POR library_source das queries
-	// de reconciliacao acima e NAO aplicam o throttle de dias
-	// (retroactive_enrichment_days/dias_global): o pos-scan e o retry do scan que o
-	// dono acabou de pedir, nao uma varredura periodica do catalogo. O limite de
-	// itens por execucao continua (caps do scanner).
+	// de reconciliacao acima. O throttle de dias do catalogo
+	// (retroactive_enrichment_days/dias_global) NAO se aplica -- o pos-scan e o retry
+	// do scan que o dono acabou de pedir --, mas ha um piso proprio de horas
+	// (briefing 0138): sem ele, todo scan tentava de novo as MESMAS 200 faixas que
+	// acabaram de falhar (medido: 45+ min de MusicBrainz por scan, sem resolver
+	// nada de novo). A ordem tambem passou a ser a de quem NUNCA foi tentado
+	// primeiro, para a fila avancar a cada scan mesmo com o teto de itens/horas.
 	// Faixas type='faixa' status='draft' com media_file present DA FONTE informada e
 	// sem entity_relation como filha de album (mesmo universo de
-	// ListarFaixasDraftOrfas, sem throttle).
+	// ListarFaixasDraftOrfas). Throttle proprio do pos-scan: pula quem ja foi
+	// tentado nas ultimas sqlc.arg('horas_minimas') horas (briefing 0138); a ordem
+	// e "nunca tentado primeiro" para a fila avancar a cada scan.
 	ListarFaixasDraftOrfasPorSource(ctx context.Context, arg ListarFaixasDraftOrfasPorSourceParams) ([]ListarFaixasDraftOrfasPorSourceRow, error)
 	// Filmes (type='movie') DA FONTE informada que nao tem identidade externa ainda
 	// e cujo melhor match ficou abaixo do limiar de baixa confianca -- o universo que
@@ -626,7 +647,8 @@ type Querier interface {
 	// throttle da query irma acima.
 	ListarSeriesDraftComArquivo(ctx context.Context, arg ListarSeriesDraftComArquivoParams) ([]ListarSeriesDraftComArquivoRow, error)
 	// Series type='tv' status='draft' com media_file present DA FONTE informada
-	// (mesmo universo de ListarSeriesDraftComArquivo, sem throttle).
+	// (mesmo universo de ListarSeriesDraftComArquivo, com o throttle de horas e a
+	// ordem do pos-scan, briefing 0138).
 	ListarSeriesDraftPorSource(ctx context.Context, arg ListarSeriesDraftPorSourceParams) ([]ListarSeriesDraftPorSourceRow, error)
 	// Tipos de entity DISTINTOS com pelo menos 1 item CATALOGADO (status !=
 	// 'draft'), para a home (0109) e o dropdown da navbar (0110) descobrirem

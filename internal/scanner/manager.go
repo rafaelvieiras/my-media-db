@@ -507,6 +507,12 @@ type PosScan interface {
 // grande não pode virar uma cascata de chamadas externas. NÃO são o throttle de
 // dias do enriquecimento retroativo (esse continua no job periódico): aqui é o
 // retry do scan que o dono acabou de pedir.
+//
+// Briefing 0138 (medido em produção, 08/nov/2026): sem piso de horas, TODO scan
+// re-tentava as mesmas 200 faixas que tinham acabado de falhar -- 45+ min de
+// MusicBrainz por scan e nenhum item novo resolvido. O piso abaixo é o do
+// pós-scan (não o de dias do job periódico) e a ordem das queries é "nunca
+// tentado primeiro", para a fila andar a cada scan.
 const (
 	// CapReconciliacaoFaixas é o teto de faixas em rascunho reconciliadas por scan.
 	CapReconciliacaoFaixas = 200
@@ -514,6 +520,10 @@ const (
 	CapReconciliacaoSeries = 50
 	// CapAutoMatchPendentes é o teto de filmes/episódios pendentes re-tentados por scan.
 	CapAutoMatchPendentes = 50
+	// PosScanHorasMinimas é o piso de horas antes de o pós-scan re-tentar o MESMO
+	// item (briefing 0138). 12h: uma biblioteca escaneada de manhã e de novo à
+	// noite continua avançando a fila, sem repetir o que acabou de falhar.
+	PosScanHorasMinimas = 12
 )
 
 // ConfigurarPosScan injeta o pós-scan por biblioteca (briefing 0135). Sem isto o

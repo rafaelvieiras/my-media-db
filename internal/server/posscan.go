@@ -23,10 +23,21 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 )
+
+// posScanBudget é o teto de TEMPO de parede do pós-scan de UM scan (briefing
+// 0138). Cada tentativa de faixa custa chamadas externas a 1 req/s; sem teto, um
+// scan com 200 faixas em rascunho bloqueou a fila de scans por 45+ min (medido
+// em produção). Estourou: para onde está e deixa o resto para o próximo scan --
+// as queries já ordenam por "nunca tentado primeiro", então a fila avança.
+const posScanBudget = 4 * time.Minute
+
+// esgotou diz se o orçamento de tempo do pós-scan acabou (ver posScanBudget).
+func esgotou(limite time.Time) bool { return time.Now().After(limite) }
 
 // ProcessarPosScan satisfaz scanner.PosScan (briefing 0135): reconcilía os
 // rascunhos e retenta os pendentes DA FONTE `sourceID`. Devolve erro só em falha
@@ -43,9 +54,12 @@ func (s *Server) ProcessarPosScan(ctx context.Context, sourceID string) error {
 		return err
 	}
 
+	limite := time.Now().Add(posScanBudget)
+
 	faixas, err := s.leitura().ListarFaixasDraftOrfasPorSource(ctx, sqlcgen.ListarFaixasDraftOrfasPorSourceParams{
-		SourceID: sql.NullString{String: sourceID, Valid: true},
-		Limite:   scanner.CapReconciliacaoFaixas,
+		SourceID:     sql.NullString{String: sourceID, Valid: true},
+		HorasMinimas: scanner.PosScanHorasMinimas,
+		Limite:       scanner.CapReconciliacaoFaixas,
 	})
 	if err != nil {
 		return err
@@ -53,8 +67,8 @@ func (s *Server) ProcessarPosScan(ctx context.Context, sourceID string) error {
 	albumMaterializar := make(map[string]bool)
 	faixasOk := 0
 	for _, row := range faixas {
-		if ctx.Err() != nil {
-			return nil
+		if ctx.Err() != nil || esgotou(limite) {
+			break
 		}
 		if !s.reconciliarECarimbar(ctx, row.ID, langCfg.Allowed, "faixa", s.scanner.ReconciliarFaixaDraft) {
 			continue
@@ -74,16 +88,17 @@ func (s *Server) ProcessarPosScan(ctx context.Context, sourceID string) error {
 	}
 
 	series, err := s.leitura().ListarSeriesDraftPorSource(ctx, sqlcgen.ListarSeriesDraftPorSourceParams{
-		SourceID: sql.NullString{String: sourceID, Valid: true},
-		Limite:   scanner.CapReconciliacaoSeries,
+		SourceID:     sql.NullString{String: sourceID, Valid: true},
+		HorasMinimas: scanner.PosScanHorasMinimas,
+		Limite:       scanner.CapReconciliacaoSeries,
 	})
 	if err != nil {
 		return err
 	}
 	seriesOk := 0
 	for _, row := range series {
-		if ctx.Err() != nil {
-			return nil
+		if ctx.Err() != nil || esgotou(limite) {
+			break
 		}
 		if s.reconciliarECarimbar(ctx, row.ID, langCfg.Allowed, "série", s.scanner.ReconciliarSerieDraft) {
 			seriesOk++
@@ -99,17 +114,27 @@ func (s *Server) ProcessarPosScan(ctx context.Context, sourceID string) error {
 	}
 	filmesOk := 0
 	for _, row := range filmes {
-		if ctx.Err() != nil {
-			return nil
+		if ctx.Err() != nil || esgotou(limite) {
+			break
 		}
 		if s.autoMatchPendentePosScan(ctx, row.ID) {
 			filmesOk++
 		}
 	}
 
-	if faixasOk+seriesOk+filmesOk > 0 {
-		log.Printf("pos-scan: biblioteca %q -- %d faixa(s), %d série(s), %d filme(s) resolvidos depois do scan",
-			sourceID, faixasOk, seriesOk, filmesOk)
+	// Purga do estoque (briefing 0138): os rascunhos que perderam o arquivo para
+	// a entity definitiva ficavam para sempre na fila de revisão como "sem
+	// arquivo". Idempotente -- 0 quando não há nada a limpar.
+	purgados := int64(0)
+	if n, err := sqlcgen.New(s.db.Write).ApagarRascunhosVazios(ctx); err != nil {
+		log.Printf("pos-scan: purga de rascunhos vazios falhou (best-effort, ignorado): %v", err)
+	} else {
+		purgados = n
+	}
+
+	if faixasOk+seriesOk+filmesOk > 0 || purgados > 0 {
+		log.Printf("pos-scan: biblioteca %q -- %d faixa(s), %d série(s), %d filme(s) resolvidos depois do scan, %d rascunho(s) vazio(s) purgado(s)",
+			sourceID, faixasOk, seriesOk, filmesOk, purgados)
 	}
 	return nil
 }

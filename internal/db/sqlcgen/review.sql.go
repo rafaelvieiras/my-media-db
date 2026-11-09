@@ -331,13 +331,18 @@ WHERE e.type = 'faixa'
   AND NOT EXISTS (
         SELECT 1 FROM entity_relation er WHERE er.child_id = e.id
       )
-ORDER BY e.id
-LIMIT ?2
+  AND (
+        e.last_external_match_attempt_at IS NULL
+        OR e.last_external_match_attempt_at < datetime('now', '-' || CAST(?2 AS INTEGER) || ' hours')
+      )
+ORDER BY (e.last_external_match_attempt_at IS NULL) DESC, e.last_external_match_attempt_at ASC, e.id
+LIMIT ?3
 `
 
 type ListarFaixasDraftOrfasPorSourceParams struct {
-	SourceID sql.NullString
-	Limite   int64
+	SourceID     sql.NullString
+	HorasMinimas int64
+	Limite       int64
 }
 
 type ListarFaixasDraftOrfasPorSourceRow struct {
@@ -345,17 +350,22 @@ type ListarFaixasDraftOrfasPorSourceRow struct {
 	Type string
 }
 
-// == Pos-scan por biblioteca (briefing 0135, ADR-0031) ==
+// == Pos-scan por biblioteca (briefing 0135/0138, ADR-0031) ==
 // As tres queries abaixo sao as versoes ESCOPADAS POR library_source das queries
-// de reconciliacao acima e NAO aplicam o throttle de dias
-// (retroactive_enrichment_days/dias_global): o pos-scan e o retry do scan que o
-// dono acabou de pedir, nao uma varredura periodica do catalogo. O limite de
-// itens por execucao continua (caps do scanner).
+// de reconciliacao acima. O throttle de dias do catalogo
+// (retroactive_enrichment_days/dias_global) NAO se aplica -- o pos-scan e o retry
+// do scan que o dono acabou de pedir --, mas ha um piso proprio de horas
+// (briefing 0138): sem ele, todo scan tentava de novo as MESMAS 200 faixas que
+// acabaram de falhar (medido: 45+ min de MusicBrainz por scan, sem resolver
+// nada de novo). A ordem tambem passou a ser a de quem NUNCA foi tentado
+// primeiro, para a fila avancar a cada scan mesmo com o teto de itens/horas.
 // Faixas type='faixa' status='draft' com media_file present DA FONTE informada e
 // sem entity_relation como filha de album (mesmo universo de
-// ListarFaixasDraftOrfas, sem throttle).
+// ListarFaixasDraftOrfas). Throttle proprio do pos-scan: pula quem ja foi
+// tentado nas ultimas sqlc.arg('horas_minimas') horas (briefing 0138); a ordem
+// e "nunca tentado primeiro" para a fila avancar a cada scan.
 func (q *Queries) ListarFaixasDraftOrfasPorSource(ctx context.Context, arg ListarFaixasDraftOrfasPorSourceParams) ([]ListarFaixasDraftOrfasPorSourceRow, error) {
-	rows, err := q.db.QueryContext(ctx, listarFaixasDraftOrfasPorSource, arg.SourceID, arg.Limite)
+	rows, err := q.db.QueryContext(ctx, listarFaixasDraftOrfasPorSource, arg.SourceID, arg.HorasMinimas, arg.Limite)
 	if err != nil {
 		return nil, err
 	}
@@ -648,13 +658,18 @@ WHERE e.type = 'tv'
         WHERE m.entity_id = e.id AND m.state = 'present'
           AND m.library_source_id = ?1
       )
-ORDER BY e.id
-LIMIT ?2
+  AND (
+        e.last_external_match_attempt_at IS NULL
+        OR e.last_external_match_attempt_at < datetime('now', '-' || CAST(?2 AS INTEGER) || ' hours')
+      )
+ORDER BY (e.last_external_match_attempt_at IS NULL) DESC, e.last_external_match_attempt_at ASC, e.id
+LIMIT ?3
 `
 
 type ListarSeriesDraftPorSourceParams struct {
-	SourceID sql.NullString
-	Limite   int64
+	SourceID     sql.NullString
+	HorasMinimas int64
+	Limite       int64
 }
 
 type ListarSeriesDraftPorSourceRow struct {
@@ -663,9 +678,10 @@ type ListarSeriesDraftPorSourceRow struct {
 }
 
 // Series type='tv' status='draft' com media_file present DA FONTE informada
-// (mesmo universo de ListarSeriesDraftComArquivo, sem throttle).
+// (mesmo universo de ListarSeriesDraftComArquivo, com o throttle de horas e a
+// ordem do pos-scan, briefing 0138).
 func (q *Queries) ListarSeriesDraftPorSource(ctx context.Context, arg ListarSeriesDraftPorSourceParams) ([]ListarSeriesDraftPorSourceRow, error) {
-	rows, err := q.db.QueryContext(ctx, listarSeriesDraftPorSource, arg.SourceID, arg.Limite)
+	rows, err := q.db.QueryContext(ctx, listarSeriesDraftPorSource, arg.SourceID, arg.HorasMinimas, arg.Limite)
 	if err != nil {
 		return nil, err
 	}

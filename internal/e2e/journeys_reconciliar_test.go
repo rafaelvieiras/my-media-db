@@ -131,29 +131,29 @@ func TestJornadaReconciliacaoAutomaticaSerieDraft(t *testing.T) {
 		t.Fatalf("status da execucao do job saude_biblioteca = %q, quero \"success\"", status)
 	}
 
-	// (3) DIFERENTE do teste de recasar (onde /correct aplica a identidade IN
-	// PLACE na mesma entity draft) e do auto-match do próprio job (que também
-	// resolveria no lugar se o provider respondesse): ReconciliarSerieDraft
-	// importa a série via ImportarSeriePorNome, que cria/acha a série pela
-	// IDENTIDADE do provider -- uma entity NOVA, distinta do rascunho
-	// original -- e só REPONTEIA media_file.entity_id para ela
-	// (religarArquivoSerie). O rascunho original (serieID) fica órfão, sem
-	// media_file algum (não é apagado -- principio 5, não-destrutivo). Para
-	// achar a série resolvida sem adivinhar o id, reusa o mesmo caminho
-	// INTERNO-FIRST de sempre:
-	// POST /import com a MESMA fonte/source_id é idempotente (find-or-create)
-	// e devolve 200 com o id que a reconciliação já criou.
+	// (3) A série resolvida é achada pelo mesmo caminho INTERNO-FIRST de
+	// sempre: POST /import com a MESMA fonte/source_id é idempotente
+	// (find-or-create) e devolve 200 com a entity que tem a identidade.
+	// O id pode ser o do rascunho original: ImportarSeriePorNome faz
+	// find-or-create POR NOME, então quando o título do rascunho já casa com o
+	// nome procurado a entity existente é reaproveitada (promovida in place) em
+	// vez de criar uma segunda "Springfield Tales". O que este teste cobra é o
+	// RESULTADO (identidade aplicada, árvore criada, arquivos religados aos
+	// episódios) -- não por qual dos dois ids o vínculo passou.
 	resolvida := c.obj(http.MethodPost, "/api/v1/import",
 		map[string]string{"source": "tmdb", "source_id": fake.SerieFixtureID, "type": "tv"}, http.StatusOK)
 	serieResolvidaID := str(t, resolvida, "id")
-	if serieResolvidaID == serieID {
-		t.Fatalf("serie resolvida = rascunho original (%s); reconciliacao deveria ter apontado para uma entity nova", serieID)
-	}
 
-	// (3b) O rascunho original ficou sem nenhum media_file (os 2 arquivos
-	// foram repontados para a série resolvida) -- órfão, não apagado.
-	if arqs := c.arquivosDaEntity(serieID); len(arqs) != 0 {
-		t.Fatalf("arquivos ainda presos no rascunho original = %d, quero 0 (repontados pela reconciliacao)", len(arqs))
+	// (3b) Os 2 arquivos estão na série resolvida e nenhum sobrou preso numa
+	// entity que não é ela (o rascunho, quando não é reaproveitado, fica sem
+	// media_file algum -- órfão, não apagado).
+	if arqs := c.arquivosDaEntity(serieResolvidaID); len(arqs) != 2 {
+		t.Fatalf("arquivos na serie resolvida = %d, quero 2 (repontados pela reconciliacao)", len(arqs))
+	}
+	if serieResolvidaID != serieID {
+		if arqs := c.arquivosDaEntity(serieID); len(arqs) != 0 {
+			t.Fatalf("arquivos ainda presos no rascunho original = %d, quero 0 (repontados pela reconciliacao)", len(arqs))
+		}
 	}
 
 	// (3c) Mesmas asserções de TestJornadaCorrigirSerieRecasaArquivosPendentes:
