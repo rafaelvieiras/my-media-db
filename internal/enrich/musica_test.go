@@ -554,7 +554,7 @@ func TestMelhorFaixaPorTituloGateDuracaoRejeitaDivergencia(t *testing.T) {
 	}
 	// alvo com 10s de diferença (> ToleranciaDuracaoSegundos, 3s) do candidato.
 	duracaoAlvoSegundos := 200 + matching.ToleranciaDuracaoSegundos + 7
-	if _, ok := melhorFaixaPorTitulo("Track One", faixas, duracaoAlvoSegundos); ok {
+	if _, ok := melhorFaixaPorTitulo(FaixaAlvo{FaixaTitulo: "Track One", DuracaoSegundos: duracaoAlvoSegundos}, faixas); ok {
 		t.Error("esperava rejeicao pelo gate de duracao (divergencia > tolerancia), mas aceitou")
 	}
 }
@@ -567,7 +567,7 @@ func TestMelhorFaixaPorTituloGateDuracaoAceitaDentroDaTolerancia(t *testing.T) {
 		{Title: "Track One", MBID: mbidFaixa1Fixture, DuracaoMs: 200000}, // 200s
 	}
 	duracaoAlvoSegundos := 200 + matching.ToleranciaDuracaoSegundos - 1
-	fx, ok := melhorFaixaPorTitulo("Track One", faixas, duracaoAlvoSegundos)
+	fx, ok := melhorFaixaPorTitulo(FaixaAlvo{FaixaTitulo: "Track One", DuracaoSegundos: duracaoAlvoSegundos}, faixas)
 	if !ok {
 		t.Fatal("esperava aceitar (divergencia dentro da tolerancia), mas rejeitou")
 	}
@@ -585,7 +585,7 @@ func TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoAlvoDesconhecida(t *testing.
 	faixas := []provider.FaixaExterna{
 		{Title: "Track One", MBID: mbidFaixa1Fixture, DuracaoMs: 200000}, // 200s
 	}
-	fx, ok := melhorFaixaPorTitulo("Track One", faixas, 0)
+	fx, ok := melhorFaixaPorTitulo(FaixaAlvo{FaixaTitulo: "Track One", DuracaoSegundos: 0}, faixas)
 	if !ok {
 		t.Fatal("esperava aceitar (gate pulado com duracaoAlvoSegundos=0), mas rejeitou")
 	}
@@ -602,7 +602,7 @@ func TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoCandidatoDesconhecida(t *tes
 	faixas := []provider.FaixaExterna{
 		{Title: "Track One", MBID: mbidFaixa1Fixture}, // DuracaoMs=0
 	}
-	fx, ok := melhorFaixaPorTitulo("Track One", faixas, 200)
+	fx, ok := melhorFaixaPorTitulo(FaixaAlvo{FaixaTitulo: "Track One", DuracaoSegundos: 200}, faixas)
 	if !ok {
 		t.Fatal("esperava aceitar (gate pulado com DuracaoMs do candidato=0), mas rejeitou")
 	}
@@ -623,7 +623,7 @@ func TestMelhorFaixaPorTituloDesempataPorDuracaoQuandoTituloEmpata(t *testing.T)
 	}
 	duracaoAlvoSegundos := 306.364 // diff = 364ms << 3s de tolerancia
 
-	fx, ok := melhorFaixaPorTitulo("Freestyler", faixas, duracaoAlvoSegundos)
+	fx, ok := melhorFaixaPorTitulo(FaixaAlvo{FaixaTitulo: "Freestyler", DuracaoSegundos: duracaoAlvoSegundos}, faixas)
 	if !ok {
 		t.Fatal("esperava aceitar (duracao deveria desempatar as duas faixas 'Freestyler'), mas rejeitou")
 	}
@@ -642,7 +642,7 @@ func TestMelhorFaixaPorTituloNaoDesempataQuandoDuracaoDoAlvoDesconhecida(t *test
 		{Title: "Freestyler", MBID: mbidFaixa2Fixture, DuracaoMs: 306_000},
 	}
 
-	if _, ok := melhorFaixaPorTitulo("Freestyler", faixas, 0); ok {
+	if _, ok := melhorFaixaPorTitulo(FaixaAlvo{FaixaTitulo: "Freestyler", DuracaoSegundos: 0}, faixas); ok {
 		t.Fatal("esperava rejeicao (duracao do alvo desconhecida nao pode desempatar titulo duplicado), mas aceitou")
 	}
 }
@@ -657,7 +657,44 @@ func TestMelhorFaixaPorTituloNaoDesempataQuandoAmbasCompativeis(t *testing.T) {
 	}
 	duracaoAlvoSegundos := 306.5
 
-	if _, ok := melhorFaixaPorTitulo("Freestyler", faixas, duracaoAlvoSegundos); ok {
+	if _, ok := melhorFaixaPorTitulo(FaixaAlvo{FaixaTitulo: "Freestyler", DuracaoSegundos: duracaoAlvoSegundos}, faixas); ok {
 		t.Fatal("esperava rejeicao (ambas as faixas empatadas ficam dentro da tolerancia, continua ambiguo), mas aceitou")
+	}
+}
+
+// TestMelhorFaixaPorTituloDesempataPorDiscoEFaixa cobre o desempate novo do
+// briefing 0138: reedição com a MESMA faixa no disco 1 e no disco 2 (títulos
+// idênticos, durações idênticas). A posição (disco, faixa) do arquivo é o único
+// sinal que diz qual das duas ele é -- sem ela o caso ficava ambíguo e caía no
+// rascunho.
+func TestMelhorFaixaPorTituloDesempataPorDiscoEFaixa(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Pale Shelter", MBID: "rec-d1", TrackNumber: 2, DiscNumber: 1, DiscTotal: 2, DuracaoMs: 261000},
+		{Title: "Pale Shelter", MBID: "rec-d2", TrackNumber: 1, DiscNumber: 2, DiscTotal: 2, DuracaoMs: 261000},
+	}
+	fx, ok := melhorFaixaPorTitulo(FaixaAlvo{FaixaTitulo: "Pale Shelter", FaixaDisco: 2, FaixaNumero: 1, DuracaoSegundos: 261}, faixas)
+	if !ok {
+		t.Fatal("esperava resolver por (disco, faixa), mas rejeitou")
+	}
+	if fx.MBID != "rec-d2" {
+		t.Errorf("MBID = %q, esperava rec-d2 (disco 2, faixa 1)", fx.MBID)
+	}
+
+	// Sem a posição, o empate continua ambiguo: rejeita (nunca aplica um "parecido").
+	if _, ok := melhorFaixaPorTitulo(FaixaAlvo{FaixaTitulo: "Pale Shelter", DuracaoSegundos: 261}, faixas); ok {
+		t.Error("aceitou sem posicao: empate de titulo e duracao deveria rejeitar")
+	}
+}
+
+// TestMelhorFaixaPorTituloDiscoErradoNaoCasa confirma que a posição não é um passe
+// livre: se o disco/faixa do arquivo não existe no release, o empate volta a ser
+// ambíguo e a faixa é rejeitada (nada de aplicar a do disco errado).
+func TestMelhorFaixaPorTituloDiscoErradoNaoCasa(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Pale Shelter", MBID: "rec-d1", TrackNumber: 2, DiscNumber: 1, DuracaoMs: 261000},
+		{Title: "Pale Shelter", MBID: "rec-d2", TrackNumber: 1, DiscNumber: 2, DuracaoMs: 261000},
+	}
+	if _, ok := melhorFaixaPorTitulo(FaixaAlvo{FaixaTitulo: "Pale Shelter", FaixaDisco: 3, FaixaNumero: 1, DuracaoSegundos: 261}, faixas); ok {
+		t.Error("aceitou com disco 3 (inexistente): deveria rejeitar por ambiguidade")
 	}
 }

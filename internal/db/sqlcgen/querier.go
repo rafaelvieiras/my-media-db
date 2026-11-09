@@ -635,6 +635,15 @@ type Querier interface {
 	// O LIMIAR entra como parametro (sqlc.arg('limiar')): fonte unica no backend
 	// (espelha o LIMIAR_BAIXA_CONFIANCA=70 do front). Ordena por confianca ASCENDENTE
 	// (pior primeiro); drafts/sem confianca vao ao fim (match_confidence IS NULL = 1).
+	// Arquivos de UMA entity: os que apontam para ela (obra) MAIS os ligados pela
+	// juncao media_file_entity (episodio de serie -- o arquivo mora na SERIE, o
+	// vinculo com o episodio e a juncao). Mesmo idioma de ObterEntityCard/ListarEntityCards
+	// (0034): UNION ALL + COUNT(DISTINCT ...) na juncao, sem dupla contagem (o vinculo
+	// direto e o da juncao apontam entities diferentes). Sem isso, TODO episodio vinha
+	// com file_count 0 e path vazio, e caia no grupo "sem arquivo" da UI mesmo com o
+	// arquivo presente -- 19 episodios medidos em producao (briefing 0138).
+	// match_confidence continua so do arquivo DIRETO (paridade com o card: nao muda a
+	// ordenacao da fila).
 	ListarRevisao(ctx context.Context, limiar sql.NullFloat64) ([]ListarRevisaoRow, error)
 	// Temporadas elegiveis para o job `midias_faltantes` (briefing 0081): toda
 	// season com ao menos um episodio DESCENDENTE com media_file 'present'. O

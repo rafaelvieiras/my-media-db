@@ -492,6 +492,17 @@ type AlvoFaixaAlbum struct {
 	RecordingMBID string
 	FaixaTitulo   string
 	FaixaNumero   int
+	// FaixaDisco é o número do disco da faixa no ARQUIVO (tag disc_number), quando
+	// conhecido; 0 = desconhecido. Entra SÓ como desempate, quando duas ou mais
+	// faixas do álbum empatam em título (reedição que repete a mesma faixa em discos
+	// diferentes -- o caso real "The Hurting (Deluxe Edition)").
+	FaixaDisco int
+	// ArtistaNome é o artista do ÁLBUM (album_artist da tag, com fallback para
+	// artist). Escopa a busca de álbum por TÍTULO -- sem ele, um título comum
+	// ("Love Songs", "Lockjaw") devolve homônimos de outros artistas e o álbum certo
+	// fica fora do topo (achado em produção, briefing 0138). Compilação
+	// (album_artist "Various Artists") não escopa: ali o título é o único sinal.
+	ArtistaNome string
 	// DuracaoMs é a duração conhecida do arquivo local, em milissegundos,
 	// quando disponível (briefing 0121 §8); 0 = não informada. Usada como
 	// sinal de CONFIRMAÇÃO adicional ao título, nunca de busca.

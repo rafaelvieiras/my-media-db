@@ -531,3 +531,48 @@ func TestCuradoriaSemBanco503(t *testing.T) {
 		}
 	}
 }
+
+// TestReviewEpisodioContaArquivoDaJuncao cobre o bug de produção medido no briefing
+// 0138: 19 episódios em rascunho apareciam na fila como "sem arquivo" (file_count 0,
+// path vazio) mesmo com o arquivo presente, porque o arquivo de episódio aponta para
+// a SERIE e o vínculo com o episódio é a junção media_file_entity. A fila de revisão
+// passa a contar/agrupar por ela, igual ao card (0034).
+func TestReviewEpisodioContaArquivoDaJuncao(t *testing.T) {
+	h, d := setupEntitiesServer(t)
+	semearEntity(t, d, "s1", "tv", "Serie")
+	semearEntity(t, d, "se1", "season", "Temporada 2")
+	semearEntity(t, d, "ep1", "episode", "Ep provisorio")
+	ligarFilhoOrdenado(t, d, "r-se1", "s1", "se1", "tv_season", 2)
+	ligarFilhoOrdenado(t, d, "r-ep1", "se1", "ep1", "tv_episode", 6)
+	// Rascunho (provisório nasce draft) com o arquivo na SERIE e a junção no episódio.
+	semearFile(t, d, "mf1", "s1", "/lib/serie/Season 02/ep s02e06.mkv", "present", 0.9, "")
+	if _, err := escrita(t, d).AtualizarEntity(context.Background(), sqlcgen.AtualizarEntityParams{
+		ID: "ep1", Type: "episode", Title: "Ep provisorio", Status: "draft",
+	}); err != nil {
+		t.Fatalf("AtualizarEntity: %v", err)
+	}
+	if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
+		MediaFileID: "mf1", EntityID: "ep1", Kind: "tv_episode", Ordinal: 0,
+	}); err != nil {
+		t.Fatalf("CriarVinculoEntidade: %v", err)
+	}
+
+	rec := do(t, h, http.MethodGet, "/api/v1/review", nil)
+	cards := decodeCards(t, rec)
+	var ep1 *entityCardDTO
+	for i := range cards {
+		if cards[i].ID == "ep1" {
+			ep1 = &cards[i]
+		}
+	}
+	if ep1 == nil {
+		t.Fatalf("ep1 fora da fila de revisao: %+v", cards)
+	}
+	eq(t, "ep1 owned", ep1.Owned, true)
+	eq(t, "ep1 file_count", ep1.FileCount, 1)
+	// O grupo sai do caminho: com o path vindo da juncao, o episódio deixa de cair
+	// em "Sem arquivo" e passa a agrupar pela pasta da série.
+	if ep1.ReviewGroup == nil || ep1.ReviewGroup.Kind == "sem_arquivo" {
+		t.Fatalf("review_group = %+v, quero agrupado pela pasta (nao 'sem arquivo')", ep1.ReviewGroup)
+	}
+}

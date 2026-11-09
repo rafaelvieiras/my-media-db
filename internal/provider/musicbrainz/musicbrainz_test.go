@@ -1661,3 +1661,127 @@ func TestBuscarAlbumPorNomeNormalizaEdicao(t *testing.T) {
 		t.Fatalf("album = %+v (achou=%v), quero rg-1", album, achou)
 	}
 }
+
+// TestBuscarAlbumPorTituloEscopaPorArtista cobre o achado de produção do briefing
+// 0138: a busca por título sem artista devolvia homônimos de OUTROS artistas e o
+// álbum certo ficava fora do topo (caso real: "Rio (Collector's Edition)" trazia dez
+// release-groups chamados "Collector's Edition"). A cláusula vira
+// `releasegroup:"<normalizado>" AND artistname:"<álbum-artista>"`.
+func TestBuscarAlbumPorTituloEscopaPorArtista(t *testing.T) {
+	var queries []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("query")
+		queries = append(queries, q)
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(q, "artistname:") {
+			_, _ = w.Write([]byte(`{"release-groups": [
+				{"id": "rg-rio", "title": "Rio", "artist-credit": [{"name": "Duran Duran", "artist": {"id": "artist-dd", "name": "Duran Duran"}}]}
+			]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"release-groups": []}`))
+	}))
+	defer srv.Close()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/release-group/rg-rio", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"title": "Rio", "releases": [{"id": "rel-rio", "status": "Official"}]}`))
+	})
+	_ = mux
+
+	c := novoClientDeTeste(srv.URL, "")
+	ac, achou, err := c.BuscarAlbumPorTitulo(context.Background(), "Rio (Collector's Edition)",
+		provider.AlvoFaixaAlbum{FaixaTitulo: "Lonely in Your Nightmare", FaixaDisco: 1, FaixaNumero: 3, ArtistaNome: "Duran Duran"}, nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumPorTitulo: %v", err)
+	}
+	if len(queries) == 0 {
+		t.Fatal("nenhuma busca foi feita")
+	}
+	primeira := queries[0]
+	if !strings.Contains(primeira, `releasegroup:"Rio"`) {
+		t.Fatalf("query = %q, quero a frase normalizada releasegroup:\"Rio\" (a tag trazia \"(Collector's Edition)\")", primeira)
+	}
+	if !strings.Contains(primeira, `AND artistname:"Duran Duran"`) {
+		t.Fatalf("query = %q, quero a clausula artistname escopando o album-artista", primeira)
+	}
+	_ = achou
+	_ = ac
+}
+
+// TestBuscarAlbumPorTituloSemArtistaEmCompilacao confirma que compilação NÃO
+// escopa por artista: o credit genérico ("Various Artists") não identifica nada e o
+// título é o único sinal (o caminho que o briefing 0136 criou para trilha).
+func TestBuscarAlbumPorTituloSemArtistaEmCompilacao(t *testing.T) {
+	var queries []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queries = append(queries, r.URL.Query().Get("query"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"release-groups": [
+			{"id": "rg-tw", "title": "Twilight: Original Motion Picture Soundtrack", "artist-credit": [{"name": "Various Artists", "artist": {"id": "artist-va", "name": "Various Artists"}}]}
+		]}`))
+	}))
+	defer srv.Close()
+
+	c := novoClientDeTeste(srv.URL, "")
+	// A tracklist não é o alvo aqui: o teste só olha a query enviada.
+	_, _, _ = c.BuscarAlbumPorTitulo(context.Background(), "Twilight Original Motion Picture Soundtrack (International Special Edition)",
+		provider.AlvoFaixaAlbum{FaixaTitulo: "Decode", ArtistaNome: "Разные исполнители"}, nil)
+	if len(queries) == 0 {
+		t.Fatal("nenhuma busca foi feita")
+	}
+	if strings.Contains(queries[0], "artistname:") {
+		t.Fatalf("query = %q, nao quero clausula de artista para compilacao", queries[0])
+	}
+}
+
+// TestBuscarAlbumPorTituloCaiParaBuscaSemArtista cobre a degradação: quando a busca
+// escopada por artista não devolve nada (o credit da fonte difere da tag), a busca
+// repetida sem o artista ainda resolve o álbum -- sem erro e sem perder o caso.
+func TestBuscarAlbumPorTituloCaiParaBuscaSemArtista(t *testing.T) {
+	var queries []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("query")
+		queries = append(queries, q)
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(q, "artistname:") {
+			_, _ = w.Write([]byte(`{"release-groups": []}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"release-groups": [
+			{"id": "rg-1", "title": "The Hurting", "artist-credit": [{"name": "Tears for Fears", "artist": {"id": "artist-tff", "name": "Tears for Fears"}}]}
+		]}`))
+	}))
+	defer srv.Close()
+
+	c := novoClientDeTeste(srv.URL, "")
+	if _, _, err := c.BuscarAlbumPorTitulo(context.Background(), "The Hurting (Deluxe Edition)",
+		provider.AlvoFaixaAlbum{FaixaTitulo: "Mad World", ArtistaNome: "Tears for Fears"}, nil); err != nil {
+		t.Fatalf("BuscarAlbumPorTitulo: %v", err)
+	}
+	if len(queries) < 2 {
+		t.Fatalf("queries = %v, quero a 2a tentativa sem artista", queries)
+	}
+	if strings.Contains(queries[1], "artistname:") {
+		t.Fatalf("2a query = %q, quero SEM artista", queries[1])
+	}
+}
+
+// TestReleaseContemFaixaAlvoDesempataPorDisco cobre o desempate novo (briefing
+// 0138): a mesma faixa aparece no disco 1 e no disco 2 de uma reedição, com títulos
+// idênticos; a posição (disco, faixa) do arquivo escolhe a certa.
+func TestReleaseContemFaixaAlvoDesempataPorDisco(t *testing.T) {
+	faixas := []provider.FaixaExterna{
+		{Title: "Pale Shelter", MBID: "rec-d1", TrackNumber: 2, DiscNumber: 1, DiscTotal: 2, DuracaoMs: 261_000},
+		{Title: "Pale Shelter", MBID: "rec-d2", TrackNumber: 1, DiscNumber: 2, DiscTotal: 2, DuracaoMs: 261_000},
+	}
+	alvo := provider.AlvoFaixaAlbum{FaixaTitulo: "Pale Shelter", FaixaDisco: 2, FaixaNumero: 1}
+	if !releaseContemFaixaAlvo(faixas, alvo) {
+		t.Fatal("releaseContemFaixaAlvo = false, esperava true (a posicao disco 2 / faixa 1 existe)")
+	}
+	// Sem a posição, o empate continua sem solução: rejeita (nunca aplica um
+	// "parecido").
+	if releaseContemFaixaAlvo(faixas, provider.AlvoFaixaAlbum{FaixaTitulo: "Pale Shelter"}) {
+		t.Fatal("releaseContemFaixaAlvo = true sem posicao, esperava false (empate ambiguo)")
+	}
+}

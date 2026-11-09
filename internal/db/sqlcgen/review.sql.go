@@ -509,16 +509,29 @@ const listarRevisao = `-- name: ListarRevisao :many
 
 SELECT
     e.id, e.type, e.title, e.status,
-    EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
-    (SELECT COUNT(*) FROM media_file m WHERE m.entity_id = e.id) AS file_count,
+    EXISTS (
+        SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present'
+        UNION ALL
+        SELECT 1 FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
+            WHERE mfe.entity_id = e.id AND mf.state = 'present'
+    ) AS owned,
+    (SELECT COUNT(*) FROM (
+        SELECT m.id FROM media_file m WHERE m.entity_id = e.id
+        UNION ALL
+        SELECT DISTINCT mfe.media_file_id FROM media_file_entity mfe WHERE mfe.entity_id = e.id
+    )) AS file_count,
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
     EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster,
-    -- path: caminho de UM arquivo da entity ('present' vem antes de 'missing'
-    -- no ORDER BY DESC), usado so para agrupar a fila na UI (briefing 0137) --
-    -- anotacao no server, nao muda o predicado da fila. NULL para entity sem
-    -- arquivo (item importado).
-    CAST(COALESCE((SELECT m.path FROM media_file m WHERE m.entity_id = e.id
-      ORDER BY m.state DESC, m.path LIMIT 1), '') AS TEXT) AS path
+    -- path: caminho de UM arquivo da entity ('present' vem antes de 'missing' no
+    -- ORDER BY DESC), usado so para agrupar a fila na UI (briefing 0137) --
+    -- anotacao no server, nao muda o predicado da fila. String vazia para entity
+    -- sem arquivo nenhum (item importado).
+    CAST(COALESCE((SELECT p FROM (
+        SELECT m.path AS p, m.state AS st FROM media_file m WHERE m.entity_id = e.id
+        UNION ALL
+        SELECT mf.path, mf.state FROM media_file_entity mfe JOIN media_file mf ON mf.id = mfe.media_file_id
+            WHERE mfe.entity_id = e.id
+    ) ORDER BY st DESC, p LIMIT 1), '') AS TEXT) AS path
 FROM entity e
 WHERE e.status = 'draft'
    OR EXISTS (
@@ -556,6 +569,15 @@ type ListarRevisaoRow struct {
 // O LIMIAR entra como parametro (sqlc.arg('limiar')): fonte unica no backend
 // (espelha o LIMIAR_BAIXA_CONFIANCA=70 do front). Ordena por confianca ASCENDENTE
 // (pior primeiro); drafts/sem confianca vao ao fim (match_confidence IS NULL = 1).
+// Arquivos de UMA entity: os que apontam para ela (obra) MAIS os ligados pela
+// juncao media_file_entity (episodio de serie -- o arquivo mora na SERIE, o
+// vinculo com o episodio e a juncao). Mesmo idioma de ObterEntityCard/ListarEntityCards
+// (0034): UNION ALL + COUNT(DISTINCT ...) na juncao, sem dupla contagem (o vinculo
+// direto e o da juncao apontam entities diferentes). Sem isso, TODO episodio vinha
+// com file_count 0 e path vazio, e caia no grupo "sem arquivo" da UI mesmo com o
+// arquivo presente -- 19 episodios medidos em producao (briefing 0138).
+// match_confidence continua so do arquivo DIRETO (paridade com o card: nao muda a
+// ordenacao da fila).
 func (q *Queries) ListarRevisao(ctx context.Context, limiar sql.NullFloat64) ([]ListarRevisaoRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarRevisao, limiar)
 	if err != nil {

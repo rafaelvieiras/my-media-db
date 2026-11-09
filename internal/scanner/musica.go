@@ -261,7 +261,14 @@ func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTag
 	if tags.Album == "" {
 		return "", false
 	}
-	alvo := enrich.FaixaAlvo{AlbumNome: tags.Album, FaixaTitulo: tags.Title, FaixaNumero: tags.TrackNumber, DuracaoSegundos: duracaoSegundos}
+	alvo := enrich.FaixaAlvo{
+		AlbumNome:       tags.Album,
+		FaixaTitulo:     tags.Title,
+		FaixaNumero:     tags.TrackNumber,
+		FaixaDisco:      tags.DiscNumber,
+		ArtistaNome:     nomeArtistaDoAlbum(tags),
+		DuracaoSegundos: duracaoSegundos,
+	}
 
 	if id, ok := m.matchPorArtista(ctx, tags, alvo, langs); ok {
 		return id, true
@@ -273,6 +280,16 @@ func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTag
 	return m.matchPorTituloDeAlbum(ctx, alvo, langs)
 }
 
+// nomeArtistaDoAlbum é o artista do ÁLBUM na tag: album_artist (o correto para
+// álbum/compilação) com fallback para artist. É o mesmo nome usado para escopar a
+// busca de álbum por título (briefing 0138).
+func nomeArtistaDoAlbum(tags mediainfo.AudioTags) string {
+	if tags.AlbumArtist != "" {
+		return tags.AlbumArtist
+	}
+	return tags.Artist
+}
+
 // matchPorArtista é o passo 4 clássico (briefing 0115/0136): busca o ARTISTA por
 // nome e, para CADA candidato forte o bastante (os empatados no topo, até
 // maxCandidatosArtista), tenta o import escopado com o álbum da tag. O primeiro
@@ -280,10 +297,7 @@ func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTag
 // resolvido por EVIDÊNCIA (o álbum que contém a faixa), sem aplicar nada às
 // cegas: se nenhum candidato contiver o álbum, cai para o passo seguinte.
 func (m *Manager) matchPorArtista(ctx context.Context, tags mediainfo.AudioTags, alvo enrich.FaixaAlvo, langs []string) (string, bool) {
-	nomeArtista := tags.AlbumArtist
-	if nomeArtista == "" {
-		nomeArtista = tags.Artist
-	}
+	nomeArtista := nomeArtistaDoAlbum(tags)
 	if nomeArtista == "" {
 		return "", false
 	}

@@ -36,6 +36,10 @@ type fakeProviderEmpateCompilacao struct {
 	albumNomeN   int
 	albumTituloN int
 	possuidaN    int
+	// ultimoAlvoTitulo guarda o alvo recebido por BuscarAlbumPorTitulo, para o
+	// teste conferir o que o scanner MANDA no caminho por título (briefing 0138:
+	// artista do álbum e disco da faixa).
+	ultimoAlvoTitulo provider.AlvoFaixaAlbum
 }
 
 func (p *fakeProviderEmpateCompilacao) Nome() string { return sourceMusicBrainz }
@@ -87,8 +91,9 @@ func (p *fakeProviderEmpateCompilacao) BuscarAlbumPorMbid(context.Context, strin
 
 // BuscarAlbumPorTitulo é a capacidade nova (briefing 0136): trilha compilada,
 // sem artista local -- o artist-credit vem da fonte.
-func (p *fakeProviderEmpateCompilacao) BuscarAlbumPorTitulo(_ context.Context, nomeAlbum string, _ provider.AlvoFaixaAlbum, _ []string) (provider.AlbumComArtista, bool, error) {
+func (p *fakeProviderEmpateCompilacao) BuscarAlbumPorTitulo(_ context.Context, nomeAlbum string, alvo provider.AlvoFaixaAlbum, _ []string) (provider.AlbumComArtista, bool, error) {
 	p.albumTituloN++
+	p.ultimoAlvoTitulo = alvo
 	if nomeAlbum != "Trilha do Filme" {
 		return provider.AlbumComArtista{}, false, nil
 	}
@@ -205,5 +210,36 @@ func TestScanMusicaCompilacaoResolvePorTituloDoAlbum(t *testing.T) {
 	}
 	if len(artistas) != 1 || artistas[0] == "" {
 		t.Fatalf("artistas = %v, quero exatamente 1 (o do artist-credit da fonte)", artistas)
+	}
+}
+
+// TestScanMusicaPassaArtistaEDiscoAoTituloDoAlbum cobre o plumbing do briefing
+// 0138: o caminho por TÍTULO de álbum passa a receber o artista do álbum (para a
+// busca escopar) e o disco da faixa (para desempatar reedição). Sem isso, a busca
+// devolvia homônimos de outros artistas e a faixa do disco 2 caía no rascunho.
+func TestScanMusicaPassaArtistaEDiscoAoTituloDoAlbum(t *testing.T) {
+	d := abrirDB(t)
+	root := t.TempDir()
+	arq := filepath.Join(root, "02 - Tema Principal.mp3")
+	escrever(t, arq)
+
+	prov := &fakeProviderEmpateCompilacao{}
+	// AlbumArtist é um artista REAL (não compilação) cujo álbum "Trilha do Filme"
+	// não existe pelo caminho do artista -- força o passo 4b.
+	m := managerEmpateCompilacao(t, d, map[string]mediainfo.AudioTags{
+		arq: {AlbumArtist: "Tie Artist", Artist: "Tie Artist", Album: "Trilha do Filme", Title: "Tema Principal", TrackNumber: 2, DiscNumber: 2},
+	}, prov)
+	src := criarSourceMusica(t, d, root)
+	if err := scanSync(t, m, src); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if prov.albumTituloN != 1 {
+		t.Fatalf("BuscarAlbumPorTitulo chamado %d vez(es), quero 1 (passo 4b)", prov.albumTituloN)
+	}
+	if prov.ultimoAlvoTitulo.ArtistaNome != "Tie Artist" {
+		t.Errorf("ArtistaNome = %q, quero %q (album_artist da tag)", prov.ultimoAlvoTitulo.ArtistaNome, "Tie Artist")
+	}
+	if prov.ultimoAlvoTitulo.FaixaDisco != 2 {
+		t.Errorf("FaixaDisco = %d, quero 2 (disc_number da tag)", prov.ultimoAlvoTitulo.FaixaDisco)
 	}
 }

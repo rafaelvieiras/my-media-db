@@ -610,6 +610,57 @@ func releaseContemRecordingMBID(faixas []provider.FaixaExterna, recordingMBID st
 	return false
 }
 
+// desempatePorDiscoEFaixa devolve a ÚNICA faixa da lista cuja posição (disco,
+// faixa) casa com a do arquivo. ok=false quando a posição é desconhecida de um dos
+// lados ou quando nenhuma/mais de uma faixa casa -- quem chama então decide por
+// outro sinal. Disco 0 do alvo vale como "desconhecido" e casa com disco 1 da
+// fonte (arquivo sem tag de disco numa release de disco único).
+func desempatePorDiscoEFaixa(faixas []provider.FaixaExterna, disco, numero int) (provider.FaixaExterna, bool) {
+	// 1a tentativa: posição EXATA (disco, faixa). Sem tag de disco, disco 1 é o
+	// default seguro (release de disco único também informa 1).
+	if numero > 0 {
+		alvoDisco := disco
+		if alvoDisco <= 0 {
+			alvoDisco = 1
+		}
+		var porPosicao []provider.FaixaExterna
+		for _, fx := range faixas {
+			if fx.TrackNumber == numero && discoDe(fx) == alvoDisco {
+				porPosicao = append(porPosicao, fx)
+			}
+		}
+		if len(porPosicao) == 1 {
+			return porPosicao[0], true
+		}
+	}
+	// 2a tentativa: só o DISCO, e só quando o ARQUIVO declarou qual é. A numeração
+	// do arquivo vem de tags/pasta e pode não casar com a ordem do release, mas o
+	// disco costuma casar -- e é o que separa a faixa do disco 1 da MESMA faixa no
+	// disco 2 de uma reedição.
+	if disco <= 0 {
+		return provider.FaixaExterna{}, false
+	}
+	var porDisco []provider.FaixaExterna
+	for _, fx := range faixas {
+		if discoDe(fx) == disco {
+			porDisco = append(porDisco, fx)
+		}
+	}
+	if len(porDisco) == 1 {
+		return porDisco[0], true
+	}
+	return provider.FaixaExterna{}, false
+}
+
+// discoDe é o disco da faixa na fonte, com 0 tratado como disco 1 (arquivo/release
+// de disco único).
+func discoDe(fx provider.FaixaExterna) int {
+	if fx.DiscNumber <= 0 {
+		return 1
+	}
+	return fx.DiscNumber
+}
+
 // releaseContemFaixaPorTitulo escolhe a faixa de MELHOR score de similaridade de
 // título contra alvo.FaixaTitulo; aceita quando o score bate matching.LimiarAutoMatch
 // E, adicionalmente, quando o gate de duração (briefing 0121 §8) confirma (ou é
@@ -640,7 +691,14 @@ func releaseContemFaixaPorTitulo(faixas []provider.FaixaExterna, alvo provider.A
 	if len(empatados) == 1 {
 		return duracoesCompativeis(alvo.DuracaoMs, empatados[0].DuracaoMs)
 	}
-	// 2+ empatados no topo: a duração desempata, não confirma. Sem duração do
+	// 2+ empatados no topo. (disco, faixa) do ARQUIVO desempata primeiro: numa
+	// reedição a MESMA faixa aparece no disco 1 e no disco 2, e a posição é o que
+	// diz qual das duas o arquivo é (briefing 0138, caso real "The Hurting
+	// (Deluxe Edition)"). Só depois entra a duração.
+	if unico, ok := desempatePorDiscoEFaixa(empatados, alvo.FaixaDisco, alvo.FaixaNumero); ok {
+		return duracoesCompativeis(alvo.DuracaoMs, unico.DuracaoMs)
+	}
+	// Sem posição utilizável: a duração desempata, não confirma. Sem duração do
 	// alvo não há sinal para decidir -- rejeita (mesmo comportamento seguro de
 	// quando não há duração).
 	if alvo.DuracaoMs <= 0 {
@@ -1117,36 +1175,38 @@ func (c *Client) BuscarAlbumPorTitulo(ctx context.Context, nomeAlbum string, alv
 	if nomeAlbum == "" {
 		return provider.AlbumComArtista{}, false, fmt.Errorf("musicbrainz: nome de album vazio")
 	}
-	params := url.Values{}
-	params.Set("query", "releasegroup:"+escaparLucene(nomeAlbum))
-	params.Set("limit", "10")
-	body, err := c.getMB(ctx, "/release-group", params)
-	if err != nil {
-		return provider.AlbumComArtista{}, false, err
-	}
-	var resp respBuscaReleaseGroup
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return provider.AlbumComArtista{}, false, fmt.Errorf("musicbrainz: busca de release-group invalida: %w", err)
-	}
-
-	candidatos := make([]rgBuscado, 0, len(resp.ReleaseGroups))
-	for _, rg := range resp.ReleaseGroups {
-		if rg.ID == "" || rg.Title == "" {
+	var ultimoErr error
+	for _, consulta := range c.consultasDeBuscaDoAlbum(nomeAlbum, alvo.ArtistaNome) {
+		if err := ctx.Err(); err != nil {
+			return provider.AlbumComArtista{}, false, err
+		}
+		rgs, err := c.buscarReleaseGroups(ctx, consulta)
+		if err != nil {
+			ultimoErr = err
 			continue
 		}
-		candidatos = append(candidatos, rgBuscado{
-			rg:    rg,
-			score: matching.SimilaridadeNormalizada(nomeAlbum, rg.Title),
-		})
+		candidatos := ordenarCandidatosDeAlbum(rgs, nomeAlbum)
+		if len(candidatos) == 0 {
+			continue
+		}
+		ac, achou, err := c.tentarCandidatosDeAlbum(ctx, candidatos, alvo)
+		if err != nil {
+			return provider.AlbumComArtista{}, false, err
+		}
+		if achou {
+			return ac, true, nil
+		}
 	}
-	sort.SliceStable(candidatos, func(i, j int) bool { return candidatos[i].score > candidatos[j].score })
+	return provider.AlbumComArtista{}, false, ultimoErr
+}
 
+// tentarCandidatosDeAlbum tenta até maxReleaseGroupsPorTitulo candidatos (os de
+// maior similaridade de título, acima do limiar) e devolve o primeiro cujo
+// release contenha a faixa-alvo.
+func (c *Client) tentarCandidatosDeAlbum(ctx context.Context, candidatos []rgBuscado, alvo provider.AlvoFaixaAlbum) (provider.AlbumComArtista, bool, error) {
 	tentados := 0
 	for _, cand := range candidatos {
 		if tentados >= maxReleaseGroupsPorTitulo {
-			break
-		}
-		if cand.score < matching.LimiarAutoMatch {
 			break
 		}
 		if err := ctx.Err(); err != nil {
@@ -1165,6 +1225,121 @@ func (c *Client) BuscarAlbumPorTitulo(ctx context.Context, nomeAlbum string, alv
 		return out, true, nil
 	}
 	return provider.AlbumComArtista{}, false, nil
+}
+
+// ordenarCandidatosDeAlbum calcula o score de similaridade de cada release-group
+// devolvido contra o nome consultado e ordena do melhor para o pior.
+func ordenarCandidatosDeAlbum(rgs []respReleaseGroupBusca, nomeAlbum string) []rgBuscado {
+	candidatos := make([]rgBuscado, 0, len(rgs))
+	for _, rg := range rgs {
+		if rg.ID == "" || rg.Title == "" {
+			continue
+		}
+		candidatos = append(candidatos, rgBuscado{
+			rg:    rg,
+			score: matching.SimilaridadeNormalizada(nomeAlbum, rg.Title),
+		})
+	}
+	sort.SliceStable(candidatos, func(i, j int) bool { return candidatos[i].score > candidatos[j].score })
+	return candidatos
+}
+
+// consultasDeBuscaDoAlbum monta, em ORDEM de preferência, as buscas textuais do
+// caminho por TÍTULO (briefing 0138). As duas primeiras variantes comparam com o
+// nome NORMALIZADO porque a tag carrega sufixo de edição que o título canônico da
+// fonte não tem; a última usa o nome CRU, porque há edição que é um release-group
+// PRÓPRIO na fonte ("Hybrid Theory (Bonus Edition)", "Notorious (Deluxe
+// Edition)") -- nesses casos a frase normalizada nunca devolve o release-group
+// certo, e é essa variante que o encontra.
+//
+// O artista do álbum escopa as variantes normalizadas: sem ele a busca por um
+// título comum devolve homônimos de outros artistas e o álbum certo fica fora do
+// topo (caso real: "Rio (Collector's Edition)" trazia dez release-groups chamados
+// "Collector's Edition"). Compilação não escopa (o crédito genérico não filtra
+// nada). A segunda variante de artista usa só o PRIMEIRO nome quando a tag traz
+// mais de um separado por "/" ("Flume/Chet Faker" não é crédito da fonte, que usa
+// "&"/"and").
+func (c *Client) consultasDeBuscaDoAlbum(nomeAlbum, artista string) []string {
+	normalizado := matching.NormalizarNome(nomeAlbum)
+	consultas := make([]string, 0, 4)
+	if !artistaDeCompilacao(artista) {
+		for _, alt := range alternativasDeArtista(artista) {
+			consultas = append(consultas, fraseReleaseGroup(normalizado)+` AND artistname:`+fraseArtista(alt))
+		}
+	}
+	consultas = append(consultas, fraseReleaseGroup(normalizado))
+	if normalizado != nomeAlbum {
+		consultas = append(consultas, fraseReleaseGroup(nomeAlbum))
+	}
+	return consultas
+}
+
+// alternativasDeArtista devolve o nome do artista do álbum como veio e, quando a
+// tag junta mais de um artista com "/", só o primeiro -- o crédito da fonte usa
+// "&"/"and"/", ", nunca a barra (caso real "Flume/Chet Faker").
+func alternativasDeArtista(artista string) []string {
+	artista = strings.TrimSpace(artista)
+	if artista == "" {
+		return nil
+	}
+	out := []string{artista}
+	if i := strings.IndexAny(artista, "/"); i > 0 {
+		if primeiro := strings.TrimSpace(artista[:i]); primeiro != "" && primeiro != artista {
+			out = append(out, primeiro)
+		}
+	}
+	return out
+}
+
+// buscarReleaseGroups executa UMA busca textual de release-group.
+func (c *Client) buscarReleaseGroups(ctx context.Context, query string) ([]respReleaseGroupBusca, error) {
+	params := url.Values{}
+	params.Set("query", query)
+	params.Set("limit", "10")
+	body, err := c.getMB(ctx, "/release-group", params)
+	if err != nil {
+		return nil, err
+	}
+	var resp respBuscaReleaseGroup
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("musicbrainz: busca de release-group invalida: %w", err)
+	}
+	return resp.ReleaseGroups, nil
+}
+
+// fraseReleaseGroup monta a cláusula de título como FRASE (entre aspas): sem as
+// aspas o Lucene trata cada palavra como termo independente e um sufixo de edição
+// ("Deluxe Edition") acaba pesando mais que o nome do álbum.
+func fraseReleaseGroup(nome string) string {
+	return `releasegroup:"` + colapsarEspacos(escaparLucene(nome)) + `"`
+}
+
+// fraseArtista monta a cláusula de artista como frase.
+func fraseArtista(nome string) string {
+	return `"` + colapsarEspacos(escaparLucene(nome)) + `"`
+}
+
+// colapsarEspacos junta espaços repetidos: escaparLucene troca cada pontuação por
+// um espaço, e uma frase do Lucene com espaço duplo deixa de casar (medido:
+// releasegroup:"Rule The World  The Greatest Hits" devolve 1, mas com
+// artistname junto devolve 0).
+func colapsarEspacos(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// artistaDeCompilacao diz se o nome é o rótulo genérico de compilação -- nesse
+// caso a busca de álbum por título NÃO escopa por artista, porque o credit da
+// fonte é justamente o genérico e o título é o único sinal disponível.
+func artistaDeCompilacao(nome string) bool {
+	cru := strings.ToLower(strings.TrimSpace(nome))
+	switch cru {
+	case "various artists", "various", "va", "varios artistas", "vários artistas",
+		"artistas variados", "compilation", "compilacao", "compilação",
+		"разные исполнители", "исполнители разные":
+		return true
+	}
+	norm := matching.NormalizarNome(cru)
+	return norm == "various artists" || norm == "varios artistas" || norm == "various"
 }
 
 // rgBuscado é um release-group da busca textual com o score já calculado contra

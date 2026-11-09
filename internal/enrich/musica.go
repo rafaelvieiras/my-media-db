@@ -281,6 +281,12 @@ type FaixaAlvo struct {
 	FaixaTitulo string
 	// FaixaNumero é o track_number (tag), desempate quando FaixaTitulo está vazio.
 	FaixaNumero int
+	// FaixaDisco é o disc_number (tag) da faixa no arquivo; 0 = desconhecido. Só
+	// desempata título repetido entre discos de uma reedição (briefing 0138).
+	FaixaDisco int
+	// ArtistaNome é o artista do álbum (album_artist da tag, com fallback para
+	// artist) -- escopa a busca de álbum por título no caminho de compilação/trilha.
+	ArtistaNome string
 	// DuracaoSegundos é a duração conhecida do arquivo local, em segundos (tag/
 	// probe), quando disponível (briefing 0121 §8); 0 = desconhecida. Usada só
 	// como sinal de CONFIRMAÇÃO adicional ao título já escolhido por
@@ -344,6 +350,8 @@ func (s *Servico) ImportarFaixaPorTituloDeAlbum(ctx context.Context, source stri
 		RecordingMBID: alvo.RecordingMBID,
 		FaixaTitulo:   alvo.FaixaTitulo,
 		FaixaNumero:   alvo.FaixaNumero,
+		FaixaDisco:    alvo.FaixaDisco,
+		ArtistaNome:   alvo.ArtistaNome,
 		DuracaoMs:     int(alvo.DuracaoSegundos * 1000),
 	}, langs)
 	if err != nil {
@@ -452,6 +460,69 @@ func (s *Servico) buscarAlbumAlvo(ctx context.Context, ap provider.MusicaAlbumPr
 	return alb, nil
 }
 
+// desempatePorDiscoEFaixa devolve a ÚNICA faixa empatada cuja posição (disco,
+// faixa) casa com a do arquivo; ok=false quando a posição é desconhecida ou
+// ambígua dos dois lados (briefing 0138).
+func desempatePorDiscoEFaixa(faixas []provider.FaixaExterna, disco, numero int) (provider.FaixaExterna, bool) {
+	// 1a tentativa: posição EXATA (disco, faixa). Sem tag de disco, disco 1 é o
+	// default seguro (release de disco único também informa 1).
+	if numero > 0 {
+		alvoDisco := disco
+		if alvoDisco <= 0 {
+			alvoDisco = 1
+		}
+		var porPosicao []provider.FaixaExterna
+		for _, fx := range faixas {
+			if fx.TrackNumber == numero && discoDe(fx) == alvoDisco {
+				porPosicao = append(porPosicao, fx)
+			}
+		}
+		if len(porPosicao) == 1 {
+			return porPosicao[0], true
+		}
+	}
+	// 2a tentativa: só o DISCO, e só quando o ARQUIVO declarou qual é. A numeração
+	// do arquivo vem de tags/pasta e pode não casar com a ordem do release, mas o
+	// disco costuma casar -- e é o que separa a faixa do disco 1 da MESMA faixa no
+	// disco 2 de uma reedição.
+	if disco <= 0 {
+		return provider.FaixaExterna{}, false
+	}
+	var porDisco []provider.FaixaExterna
+	for _, fx := range faixas {
+		if discoDe(fx) == disco {
+			porDisco = append(porDisco, fx)
+		}
+	}
+	if len(porDisco) == 1 {
+		return porDisco[0], true
+	}
+	return provider.FaixaExterna{}, false
+}
+
+// discoDe é o disco da faixa na fonte, com 0 tratado como disco 1 (arquivo/release
+// de disco único).
+func discoDe(fx provider.FaixaExterna) int {
+	if fx.DiscNumber <= 0 {
+		return 1
+	}
+	return fx.DiscNumber
+}
+
+// duracoesCompativeis diz se a duração do arquivo bate com a da fonte dentro da
+// tolerância de confirmação (briefing 0121 §8). Duração desconhecida de qualquer
+// dos lados não reprova: o sinal simplesmente não existe.
+func duracoesCompativeis(alvoSegundos float64, fonteMs int) bool {
+	if alvoSegundos <= 0 || fonteMs <= 0 {
+		return true
+	}
+	diff := alvoSegundos*1000 - float64(fonteMs)
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff <= matching.ToleranciaDuracaoSegundos*1000
+}
+
 // escolherFaixaAlvo localiza, dentro de `faixas` (as do ÚNICO álbum já resolvido), a
 // faixa que corresponde a `alvo`: por MBID EXATO quando alvo.RecordingMBID está
 // presente (o caminho preciso, sem ambiguidade possível); por título mais próximo
@@ -468,7 +539,7 @@ func escolherFaixaAlvo(faixas []provider.FaixaExterna, alvo FaixaAlvo) (provider
 		return provider.FaixaExterna{}, false
 	}
 	if alvo.FaixaTitulo != "" {
-		return melhorFaixaPorTitulo(alvo.FaixaTitulo, faixas, alvo.DuracaoSegundos)
+		return melhorFaixaPorTitulo(alvo, faixas)
 	}
 	if alvo.FaixaNumero > 0 {
 		for _, fx := range faixas {
@@ -564,11 +635,11 @@ func (s *Servico) artistaPrincipalDoAlbum(ctx context.Context, albumID string) s
 // duração conhecida E dentro da tolerância; sem duração do alvo, ou com 0/2+
 // candidatos plausíveis, continua ambíguo -- (zero,false), nunca escolhe
 // arbitrariamente pela ordem de iteração.
-func melhorFaixaPorTitulo(alvo string, faixas []provider.FaixaExterna, duracaoAlvoSegundos float64) (provider.FaixaExterna, bool) {
+func melhorFaixaPorTitulo(alvo FaixaAlvo, faixas []provider.FaixaExterna) (provider.FaixaExterna, bool) {
 	melhorScore := -1.0
 	var empatados []provider.FaixaExterna
 	for _, fx := range faixas {
-		score := matching.SimilaridadeNormalizada(alvo, fx.Title)
+		score := matching.SimilaridadeNormalizada(alvo.FaixaTitulo, fx.Title)
 		switch {
 		case score > melhorScore:
 			melhorScore = score
@@ -582,8 +653,8 @@ func melhorFaixaPorTitulo(alvo string, faixas []provider.FaixaExterna, duracaoAl
 	}
 	if len(empatados) == 1 {
 		melhor := empatados[0]
-		if duracaoAlvoSegundos > 0 && melhor.DuracaoMs > 0 {
-			diffMs := duracaoAlvoSegundos*1000 - float64(melhor.DuracaoMs)
+		if alvo.DuracaoSegundos > 0 && melhor.DuracaoMs > 0 {
+			diffMs := alvo.DuracaoSegundos*1000 - float64(melhor.DuracaoMs)
 			if diffMs < 0 {
 				diffMs = -diffMs
 			}
@@ -593,13 +664,20 @@ func melhorFaixaPorTitulo(alvo string, faixas []provider.FaixaExterna, duracaoAl
 		}
 		return melhor, true
 	}
-	// 2+ empatados no topo: a duração desempata, não confirma. Sem duração do
+	// 2+ empatados no topo. (disco, faixa) do ARQUIVO desempata primeiro: numa
+	// reedição a mesma faixa aparece em mais de um disco e a posição é o único
+	// sinal que diz qual delas o arquivo é (briefing 0138, caso real "The Hurting
+	// (Deluxe Edition)": disco 2 não existe no release simples).
+	if unica, ok := desempatePorDiscoEFaixa(empatados, alvo.FaixaDisco, alvo.FaixaNumero); ok {
+		return unica, duracoesCompativeis(alvo.DuracaoSegundos, unica.DuracaoMs)
+	}
+	// Sem posição utilizável: a duração desempata, não confirma. Sem duração do
 	// alvo não há sinal para decidir -- rejeita (mesmo comportamento seguro de
 	// quando não há duração).
-	if duracaoAlvoSegundos <= 0 {
+	if alvo.DuracaoSegundos <= 0 {
 		return provider.FaixaExterna{}, false
 	}
-	duracaoAlvoMs := duracaoAlvoSegundos * 1000
+	duracaoAlvoMs := alvo.DuracaoSegundos * 1000
 	var unico provider.FaixaExterna
 	compativeis := 0
 	for _, fx := range empatados {
