@@ -1642,6 +1642,23 @@ export interface components {
       /** @description Placeholder opcional do input. */
       placeholder?: string | null
     }
+    /** @description Grupo de itens da fila de revisão (briefing 0137). A chave é o caminho (relativo à raiz da biblioteca) já sem o segmento de disco/temporada; o rótulo é o que a UI mostra no cabeçalho da seção. */
+    ReviewGroup: {
+      /**
+       * @description Contexto do arquivo: `album` (type=faixa), `serie` (type=episode), `pasta` (qualquer outro tipo com arquivo) e `sem_arquivo` (item importado, sem media_file).
+       * @enum {string}
+       */
+      kind: 'album' | 'serie' | 'pasta' | 'sem_arquivo'
+      /** @description Chave estável do grupo (usada para agrupar no frontend). */
+      key: string
+      /** @description Rótulo legível — ex. "Duran Duran — Notorious (Deluxe Edition)". */
+      label: string
+      /**
+       * Format: int64
+       * @description Quantos itens da fila estão neste grupo.
+       */
+      size: number
+    }
     EntityCard: {
       id: string
       /**
@@ -1669,6 +1686,8 @@ export interface components {
       poster_url: string | null
       /** @description Posse AGREGADA do card na árvore de séries (0036): episódios possuídos sobre o total. OPCIONAL — presente só nos cards `season` (e opcionalmente `tv`) de GET /entities/{id}/members; ausente/`null` para movie/episode/ collection (que usam a posse simples de `owned`). Anotado no server pós-listagem, sem mudar a query do card. */
       ownership?: components['schemas']['OwnershipInfo'] | null
+      /** @description Grupo da fila de revisão (briefing 0137): o contexto do ARQUIVO que explica por que o item está aqui — álbum (faixas, ignorando `Disc N`), série (episódios, ignorando `Season N`) ou pasta (filme). Anotado no server, a partir do `media_file.path` relativizado contra a raiz da biblioteca; NÃO vem da query do card. `omitempty`: presente só em GET /api/v1/review. */
+      review_group?: components['schemas']['ReviewGroup'] | null
       /** @description Numeração REAL do episódio (0039): `season`/`number` projetados na ordenação da temporada-pai e o `absolute_number` quando houver. Reflete o número CATALOGADO (S02E05), não a posição na lista — biblioteca com E01+E05 mostra E01 e E05. OPCIONAL: presente só nos cards `episode` de GET /entities/{id}/members; ausente/`null` para os demais tipos e para episódio sem numbering (draft), que cai no rótulo neutro. Anotado no server pós-listagem, sem mudar a query do card. */
       numbering?: components['schemas']['EpisodeNumbering'] | null
       /** @description URL CRUA do still (frame 16:9) do episódio (0042), como veio do provider — artwork NEUTRO de idioma, gravada no import SEM baixar a imagem. OPCIONAL: presente só nos cards `episode` com still; ausente/`null` para os demais tipos e para episódio sem still (cai no placeholder). O front a serve pelo image proxy (GET /images?src=), que busca+cacheia sob demanda na 1a exibição. */

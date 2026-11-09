@@ -62,6 +62,11 @@ type entityCardDTO struct {
 	// que não seja `episode` e para episódio sem numbering (draft) — a UI cai no rótulo
 	// neutro, sem inventar posição. Substitui a antiga posição ordinal do card.
 	Numbering *episodeNumberingDTO `json:"numbering,omitempty"`
+	// ReviewGroup é o GRUPO da fila de revisão (briefing 0137): kind+chave+rótulo
+	// derivados do `media_file.path` da entity. Anotado no server SÓ em
+	// GET /api/v1/review (como Ownership/Numbering, fora da query do card).
+	// `omitempty`: ausente em qualquer outra listagem de cards.
+	ReviewGroup *reviewGroupDTO `json:"review_group,omitempty"`
 	// StillURL é a URL CRUA do still (frame 16:9) do episódio (0042), lida do
 	// extension_data core.tv@1 (still_url) — artwork NEUTRO de idioma, gravado no import
 	// sem baixar a imagem. O front a serve pelo image proxy (busca+cacheia sob demanda).

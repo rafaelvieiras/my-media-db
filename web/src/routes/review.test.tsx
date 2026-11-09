@@ -44,6 +44,13 @@ const draftCard: EntityCard = {
   match_confidence: null,
   poster_url: null,
   catalog_completeness: null,
+  // Grupo anotado pelo backend (0137): pasta do filme.
+  review_group: {
+    kind: 'pasta',
+    key: 'pasta:/Filmes/Fita Sem Nome',
+    label: 'Pasta Fita Sem Nome',
+    size: 1,
+  },
 }
 
 const baixaCard: EntityCard = {
@@ -56,6 +63,12 @@ const baixaCard: EntityCard = {
   match_confidence: 40,
   poster_url: null,
   catalog_completeness: null,
+  review_group: {
+    kind: 'serie',
+    key: 'serie:/Series/Palpite',
+    label: 'Série de Teste',
+    size: 1,
+  },
 }
 
 const externo: ExternalResult = {
@@ -142,7 +155,7 @@ interface Espioes {
   onConfirmCandidate: ReturnType<
     typeof vi.fn<(id: string, body: unknown) => void>
   >
-  onAutoMatchLote: ReturnType<typeof vi.fn<() => void>>
+  onAutoMatchLote: ReturnType<typeof vi.fn<(body: unknown) => void>>
 }
 
 // Handler de rotas da tela de revisão: GET /review (a fila), GET /search (a
@@ -211,7 +224,9 @@ function montarFetch(opts: Opcoes, espioes: Espioes) {
         : okJson(baseEntity({ id: confirmCandidate[1] }))
     }
     if (path === '/api/v1/review/auto-match' && method === 'POST') {
-      espioes.onAutoMatchLote()
+      espioes.onAutoMatchLote(
+        init?.body ? JSON.parse(String(init.body)) : undefined,
+      )
       return okJson(
         opts.autoMatchLoteResultado ?? {
           resolved_count: 0,
@@ -229,23 +244,43 @@ function renderReview(opts: Opcoes = {}) {
     onConfirm: vi.fn<(id: string) => void>(),
     onCorrect: vi.fn<(id: string, body: unknown) => void>(),
     onConfirmCandidate: vi.fn<(id: string, body: unknown) => void>(),
-    onAutoMatchLote: vi.fn<() => void>(),
+    onAutoMatchLote: vi.fn<(body: unknown) => void>(),
   }
   vi.stubGlobal('fetch', montarFetch(opts, espioes))
   return { espioes, ...renderComEspioes(<ReviewScreen />) }
 }
 
+// abrirGrupo clica no cabeçalho da SEÇÃO (0137) e espera as linhas aparecerem.
+// A fila abre fechada de propósito: a prévia de candidato só é buscada quando o
+// dono abre a LINHA ("Ver candidato"), então os casos que checam prévia/ações
+// passam por aqui e por `abrirLinha`.
+async function abrirGrupo(
+  user: ReturnType<typeof userEvent.setup>,
+  rotulo: string,
+  tituloLinha: string,
+) {
+  const cabecalho = await screen.findByRole('button', {
+    name: new RegExp(rotulo),
+  })
+  await user.click(cabecalho)
+  await waitFor(() => expect(screen.getByText(tituloLinha)).toBeInTheDocument())
+}
+
+// abrirLinha expande a LINHA do item, que é o que dispara GET match-preview.
+async function abrirLinha(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /Ver candidato/ }))
+}
+
 // Cenário base de um card de baixa confiança já renderizado (o setup comum dos
-// casos de confirmar/corrigir): monta o fetch, renderiza e espera o card. Por
-// padrão a prévia (0060) não acha candidato (`previewVazia`) — o mesmo
-// comportamento "sem metadados externos" de antes do briefing 0060 — a menos
-// que o cenário informe outra.
+// casos de confirmar/corrigir): monta o fetch, renderiza, abre a seção e a linha
+// (0137). Por padrão a prévia (0060) não acha candidato (`previewVazia`) — o
+// mesmo comportamento "sem metadados externos" de antes do briefing 0060 — a
+// menos que o cenário informe outra.
 async function renderBaixa(opts: Opcoes = { fila: [baixaCard] }) {
   const user = userEvent.setup()
   const r = renderReview(opts)
-  await waitFor(() =>
-    expect(screen.getByText('Palpite Fraco')).toBeInTheDocument(),
-  )
+  await abrirGrupo(user, 'Série de Teste', 'Palpite Fraco')
+  await abrirLinha(user)
   return { user, ...r }
 }
 
@@ -254,15 +289,48 @@ afterEach(() => {
 })
 
 describe('ReviewScreen — fila de revisão (0018)', () => {
-  it('lista draft e baixa confiança com o motivo certo (§5: draft + baixa confiança)', async () => {
+  it('mostra uma SEÇÃO por grupo, com contagem e motivo, fechada por padrão (0137)', async () => {
     renderReview({ fila: [draftCard, baixaCard] })
 
     await waitFor(() =>
-      expect(screen.getByText('Fita Sem Nome')).toBeInTheDocument(),
+      expect(screen.getByText('Série de Teste')).toBeInTheDocument(),
     )
-    expect(screen.getByText('não identificado')).toBeInTheDocument()
+    expect(screen.getByText('Pasta Fita Sem Nome')).toBeInTheDocument()
+    // resumo do cabeçalho: quantidade + motivo dominante
+    expect(screen.getByText('1 item · não identificado')).toBeInTheDocument()
+    expect(
+      screen.getByText('1 item · baixa confiança (40%)'),
+    ).toBeInTheDocument()
+    // a linha em si só aparece com a seção aberta
+    expect(screen.queryByText('Palpite Fraco')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Série de Teste/ }),
+    ).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('NÃO busca prévia de candidato com a fila fechada (sem N+1; 0137)', async () => {
+    renderReview({ fila: [draftCard, baixaCard] })
+    await waitFor(() =>
+      expect(screen.getByText('Série de Teste')).toBeInTheDocument(),
+    )
+    // Nenhuma chamada de match-preview: a query só existe ao expandir a linha.
+    const chamadas = (
+      globalThis.fetch as unknown as { mock: { calls: Array<[string]> } }
+    ).mock.calls
+    expect(
+      chamadas.filter(([url]) => String(url).includes('/match-preview')),
+    ).toHaveLength(0)
+  })
+
+  it('abrir a seção mostra as linhas compactas e o botão do grupo', async () => {
+    const user = userEvent.setup()
+    renderReview({ fila: [draftCard, baixaCard] })
+    await abrirGrupo(user, 'Série de Teste', 'Palpite Fraco')
+
     expect(screen.getByText('Palpite Fraco')).toBeInTheDocument()
-    expect(screen.getByText('baixa confiança (40%)')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Auto-sincronizar este grupo/ }),
+    ).toBeInTheDocument()
   })
 
   it('mostra o estado vazio "Nada para revisar" (§5: estados vazio)', async () => {
@@ -505,7 +573,7 @@ describe('ReviewScreen — auto-match em lote (0050)', () => {
       },
     })
     await waitFor(() =>
-      expect(screen.getByText('Palpite Fraco')).toBeInTheDocument(),
+      expect(screen.getByText('Série de Teste')).toBeInTheDocument(),
     )
 
     await user.click(
@@ -521,5 +589,36 @@ describe('ReviewScreen — auto-match em lote (0050)', () => {
       ).toBeInTheDocument(),
     )
     await esperarChaves(invalidateSpy, ['["review"]', '["entities"]'])
+  })
+})
+
+describe('ReviewScreen — auto-match do grupo (0137)', () => {
+  it('"Auto-sincronizar este grupo" envia os ids do grupo e mostra o resumo', async () => {
+    const user = userEvent.setup()
+    const { espioes } = renderReview({
+      fila: [baixaCard, { ...baixaCard, id: 'e-baixa-2', title: 'Outro' }],
+      preview: previewVazia,
+      autoMatchLoteResultado: {
+        resolved_count: 1,
+        pending_count: 1,
+        items: [{ id: 'e-baixa', resolved: true, method: 'local', score: 96 }],
+      },
+    })
+    await abrirGrupo(user, 'Série de Teste', 'Palpite Fraco')
+
+    await user.click(
+      screen.getByRole('button', { name: /Auto-sincronizar este grupo/ }),
+    )
+
+    await waitFor(() =>
+      expect(espioes.onAutoMatchLote).toHaveBeenCalledWith({
+        ids: ['e-baixa', 'e-baixa-2'],
+      }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByText('1 resolvido(s) · 1 ainda pendente(s)'),
+      ).toBeInTheDocument(),
+    )
   })
 })

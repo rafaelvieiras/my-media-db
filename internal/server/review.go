@@ -69,13 +69,19 @@ func (s *Server) listReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items := make([]entityCardDTO, 0, len(rows))
+	caminhos := make([]string, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, cardDTO(sqlcgen.ListarEntityCardsRow{
 			ID: row.ID, Type: row.Type, Title: row.Title, Status: row.Status,
 			Owned: row.Owned, FileCount: row.FileCount,
 			MatchConfidence: row.MatchConfidence, HasPoster: row.HasPoster,
 		}))
+		caminhos = append(caminhos, row.Path)
 	}
+	// Agrupamento (briefing 0137): anotação por item, sem mudar o predicado da
+	// fila. As raízes das bibliotecas entram só para o rótulo ficar curto
+	// (caminho relativo à fonte); erro ao listar degrada para rótulos longos.
+	anotarGruposRevisao(items, caminhos, s.raizesDeBiblioteca(r.Context()))
 	writeJSON(w, http.StatusOK, items)
 }
 

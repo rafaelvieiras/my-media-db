@@ -100,3 +100,12 @@ usa o mesmo envelope:
 
 > **Fechadas:** contrato **OpenAPI gerado** e política de `/api/tmdb`
 > (**passthrough + cache, nunca 404**) — ver acima e ADR-0014/0015.
+
+## `review_group` no `EntityCard` (briefing 0137)
+
+`GET /api/v1/review` anota cada card com `review_group`
+(`{kind, key, label, size}`): o contexto do **arquivo** que explica aquele item
+estar na fila — `album` (faixas, ignorando `Disc N`), `serie` (episódios,
+ignorando `Season N`), `pasta` (filmes) ou `sem_arquivo` (item importado). É
+anotação de apresentação, no mesmo molde de `ownership`/`numbering`: **não** muda
+o predicado da fila (0018) nem aparece em outras listagens de cards.
