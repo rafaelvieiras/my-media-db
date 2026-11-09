@@ -55,6 +55,11 @@ override continua intocado.
   `ListarSeriesDraftPorSource` passam a pular quem foi tentado nas últimas 12h. É o
   mesmo espírito do `last_external_match_attempt_at` que o job periódico já usa, com
   janela muito menor (o job usa dias; aqui é o retry que o dono pediu ao escanear).
+- O carimbo (`last_external_match_attempt_at`) é gravado em ISO com `T` e `Z`, e o
+  cutoff é `datetime('now', ...)` com espaço: comparar as duas **strings cruas**
+  erra, porque `'T'` (0x54) é maior que `' '` (0x20) — um item tentado às 3h de
+  hoje ficava de fora do retry das 20h. As duas queries embrulham a coluna em
+  `datetime(...)`, que normaliza os dois lados.
 - Ordem `nunca tentado primeiro` (`last_external_match_attempt_at IS NULL DESC`): com
   teto de itens e de horas, a fila **avança** a cada scan em vez de re-tentar sempre o
   mesmo começo de lista.

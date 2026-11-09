@@ -333,7 +333,7 @@ WHERE e.type = 'faixa'
       )
   AND (
         e.last_external_match_attempt_at IS NULL
-        OR e.last_external_match_attempt_at < datetime('now', '-' || CAST(?2 AS INTEGER) || ' hours')
+        OR datetime(e.last_external_match_attempt_at) < datetime('now', '-' || CAST(?2 AS INTEGER) || ' hours')
       )
 ORDER BY (e.last_external_match_attempt_at IS NULL) DESC, e.last_external_match_attempt_at ASC, e.id
 LIMIT ?3
@@ -359,6 +359,10 @@ type ListarFaixasDraftOrfasPorSourceRow struct {
 // acabaram de falhar (medido: 45+ min de MusicBrainz por scan, sem resolver
 // nada de novo). A ordem tambem passou a ser a de quem NUNCA foi tentado
 // primeiro, para a fila avancar a cada scan mesmo com o teto de itens/horas.
+// O carimbo e gravado em ISO com 'T' e 'Z' (strftime '%Y-%m-%dT%H:%M:%fZ') e o
+// cutoff e datetime() com espaco; comparar as duas strings cruas erra por causa
+// do 'T' (0x54 > 0x20), entao a coluna vai embrulhada em datetime() -- que
+// normaliza as duas para o mesmo formato.
 // Faixas type='faixa' status='draft' com media_file present DA FONTE informada e
 // sem entity_relation como filha de album (mesmo universo de
 // ListarFaixasDraftOrfas). Throttle proprio do pos-scan: pula quem ja foi
@@ -660,7 +664,7 @@ WHERE e.type = 'tv'
       )
   AND (
         e.last_external_match_attempt_at IS NULL
-        OR e.last_external_match_attempt_at < datetime('now', '-' || CAST(?2 AS INTEGER) || ' hours')
+        OR datetime(e.last_external_match_attempt_at) < datetime('now', '-' || CAST(?2 AS INTEGER) || ' hours')
       )
 ORDER BY (e.last_external_match_attempt_at IS NULL) DESC, e.last_external_match_attempt_at ASC, e.id
 LIMIT ?3

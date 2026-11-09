@@ -530,6 +530,10 @@ type Querier interface {
 	// acabaram de falhar (medido: 45+ min de MusicBrainz por scan, sem resolver
 	// nada de novo). A ordem tambem passou a ser a de quem NUNCA foi tentado
 	// primeiro, para a fila avancar a cada scan mesmo com o teto de itens/horas.
+	// O carimbo e gravado em ISO com 'T' e 'Z' (strftime '%Y-%m-%dT%H:%M:%fZ') e o
+	// cutoff e datetime() com espaco; comparar as duas strings cruas erra por causa
+	// do 'T' (0x54 > 0x20), entao a coluna vai embrulhada em datetime() -- que
+	// normaliza as duas para o mesmo formato.
 	// Faixas type='faixa' status='draft' com media_file present DA FONTE informada e
 	// sem entity_relation como filha de album (mesmo universo de
 	// ListarFaixasDraftOrfas). Throttle proprio do pos-scan: pula quem ja foi
