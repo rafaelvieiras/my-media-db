@@ -24,11 +24,11 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/rafaelvieiras/my-media-db/internal/matching"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
-	"github.com/rafaelvieiras/my-media-db/internal/textsim"
 )
 
 const (
@@ -420,7 +420,7 @@ func melhorReleaseGroupPorTitulo(alvo string, rgs []respReleaseGroupBreve) (resp
 		if rg.ID == "" {
 			continue
 		}
-		score := textsim.Similaridade(alvo, rg.Title) * 100
+		score := matching.SimilaridadeNormalizada(alvo, rg.Title)
 		switch {
 		case score > melhorScore:
 			melhorScore, melhor, empate = score, rg, false
@@ -582,7 +582,7 @@ func ordenarReleasesPorPrioridade(releases []respReleaseResumo) []string {
 // (provider não pode depender de enrich, que já depende de provider); é uma cópia
 // funcional MÍNIMA, mesma fórmula/limiar, não uma abstração compartilhada nova.
 // Mesma prioridade de AlvoFaixaAlbum: MBID exato > título por similaridade
-// (textsim.Similaridade, melhor score entre as faixas, limiar
+// (matching.SimilaridadeNormalizada, melhor score entre as faixas, limiar
 // matching.LimiarAutoMatch) > track_number exato. Sem nenhum critério aplicável
 // (todos os campos de `alvo` vazios/zero), devolve false -- nunca aplica um
 // "parecido" à toa.
@@ -625,7 +625,7 @@ func releaseContemFaixaPorTitulo(faixas []provider.FaixaExterna, alvo provider.A
 	melhorScore := -1.0
 	var empatados []provider.FaixaExterna
 	for _, fx := range faixas {
-		score := textsim.Similaridade(alvo.FaixaTitulo, fx.Title) * 100
+		score := matching.SimilaridadeNormalizada(alvo.FaixaTitulo, fx.Title)
 		switch {
 		case score > melhorScore:
 			melhorScore = score
@@ -1091,4 +1091,145 @@ type respCoverArt struct {
 		Back  bool   `json:"back"`
 		Image string `json:"image"`
 	} `json:"images"`
+}
+
+// ── Busca de álbum por TÍTULO (briefing 0136, compilações) ───────────────────
+
+// maxReleaseGroupsPorTitulo é o teto de release-groups montados por tentativa em
+// BuscarAlbumPorTitulo: a busca textual devolve muitos homônimos, e cada um custa
+// 1 requisição (rate-limit de 1 req/s) + a busca de tracklist. Só os melhores
+// colocados por similaridade de título entram.
+const maxReleaseGroupsPorTitulo = 3
+
+// BuscarAlbumPorTitulo implementa provider.MusicaAlbumPorTituloProvider
+// (briefing 0136): resolve UM álbum pelo TÍTULO, sem partir de um artista --
+// caminho necessário para compilações/trilhas, onde `album_artist` é "Various
+// Artists" e a busca de artista do pipeline normal não devolve identidade única.
+//
+// Faz UMA busca de release-group (`/release-group?query=releasegroup:"..."`),
+// ordena os candidatos por matching.SimilaridadeNormalizada (mesmo motor/limiar
+// do resto do matching de música) e monta até maxReleaseGroupsPorTitulo deles,
+// aceitando o primeiro cuja tracklist contenha a faixa-alvo (releaseContemFaixaAlvo).
+// Devolve também o artist-credit do release-group vencedor -- é dele que sai o
+// artista principal (ADR-0029 item 2) quando a compilação é importada.
+func (c *Client) BuscarAlbumPorTitulo(ctx context.Context, nomeAlbum string, alvo provider.AlvoFaixaAlbum, langs []string) (provider.AlbumComArtista, bool, error) {
+	_ = langs
+	if nomeAlbum == "" {
+		return provider.AlbumComArtista{}, false, fmt.Errorf("musicbrainz: nome de album vazio")
+	}
+	params := url.Values{}
+	params.Set("query", "releasegroup:"+escaparLucene(nomeAlbum))
+	params.Set("limit", "10")
+	body, err := c.getMB(ctx, "/release-group", params)
+	if err != nil {
+		return provider.AlbumComArtista{}, false, err
+	}
+	var resp respBuscaReleaseGroup
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return provider.AlbumComArtista{}, false, fmt.Errorf("musicbrainz: busca de release-group invalida: %w", err)
+	}
+
+	candidatos := make([]rgBuscado, 0, len(resp.ReleaseGroups))
+	for _, rg := range resp.ReleaseGroups {
+		if rg.ID == "" || rg.Title == "" {
+			continue
+		}
+		candidatos = append(candidatos, rgBuscado{
+			rg:    rg,
+			score: matching.SimilaridadeNormalizada(nomeAlbum, rg.Title),
+		})
+	}
+	sort.SliceStable(candidatos, func(i, j int) bool { return candidatos[i].score > candidatos[j].score })
+
+	tentados := 0
+	for _, cand := range candidatos {
+		if tentados >= maxReleaseGroupsPorTitulo {
+			break
+		}
+		if cand.score < matching.LimiarAutoMatch {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return provider.AlbumComArtista{}, false, err
+		}
+		tentados++
+		album := c.montarAlbum(ctx, cand.rg.ID, cand.rg.Title, cand.rg.FirstReleaseDate, alvo)
+		if !releaseContemFaixaAlvo(album.Faixas, alvo) {
+			continue
+		}
+		out := provider.AlbumComArtista{Album: album}
+		if artista, ok := artistaPrincipalDoReleaseGroup(cand.rg); ok {
+			out.ArtistaMBID = artista.MBID
+			out.ArtistaNome = artista.Nome
+		}
+		return out, true, nil
+	}
+	return provider.AlbumComArtista{}, false, nil
+}
+
+// rgBuscado é um release-group da busca textual com o score já calculado contra
+// o nome consultado.
+type rgBuscado struct {
+	rg    respReleaseGroupBusca
+	score float64
+}
+
+// artistaPrincipalDoReleaseGroup extrai o PRIMEIRO artist-credit do
+// release-group (o "artist" do álbum na fonte) -- no MusicBrainz, compilação tem
+// artist-credit único "Various Artists". ok=false quando a busca não trouxe
+// artist-credit (dado incompleto na fonte).
+func artistaPrincipalDoReleaseGroup(rg respReleaseGroupBusca) (provider.ArtistaExterno, bool) {
+	for _, credito := range rg.ArtistCredit {
+		if credito.Artist.ID != "" {
+			nome := credito.Artist.Name
+			if nome == "" {
+				nome = credito.Name
+			}
+			return provider.ArtistaExterno{MBID: credito.Artist.ID, Nome: nome}, true
+		}
+	}
+	return provider.ArtistaExterno{}, false
+}
+
+// escaparLucene neutraliza os caracteres que a sintaxe de busca do MusicBrainz
+// (Lucene) trata como operador, evitando que um título real ("Right Here, Right
+// Now", "Muse - Live") vire uma query malformada. Só o subconjunto que aparece
+// em títulos reais é tratado; aspas e barra invertida saem, o resto vira espaço.
+func escaparLucene(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch r {
+		case '"', '\\':
+			b.WriteRune(' ')
+		case '+', '-', '&', '|', '!', '(', ')', '{', '}', '[', ']', '^', '~', '*', '?', ':':
+			b.WriteRune(' ')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// respBuscaReleaseGroup é a resposta de GET /release-group?query=...&fmt=json
+// (busca textual de release-group, usada só por BuscarAlbumPorTitulo).
+type respBuscaReleaseGroup struct {
+	ReleaseGroups []respReleaseGroupBusca `json:"release-groups"`
+}
+
+// respReleaseGroupBusca é um release-group da BUSCA (não do detalhe): traz o
+// score da própria fonte, a data de lançamento e o artist-credit com o id/nome do
+// artista -- é desse crédito que sai o artista principal de uma compilação.
+type respReleaseGroupBusca struct {
+	ID               string `json:"id"`
+	Title            string `json:"title"`
+	FirstReleaseDate string `json:"first-release-date"`
+	Score            int    `json:"score"`
+	ArtistCredit     []struct {
+		Name   string `json:"name"`
+		Artist struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"artist"`
+	} `json:"artist-credit"`
 }

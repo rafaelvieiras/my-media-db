@@ -606,3 +606,39 @@ type ResultadoExterno struct {
 	// Saved indica se o item já existe no catálogo. Na busca é sempre false.
 	Saved bool
 }
+
+// AlbumComArtista é o resultado de uma busca de álbum por TÍTULO (briefing 0136,
+// capacidade MusicaAlbumPorTituloProvider): o álbum montado da fonte MAIS a
+// identidade do artista principal que a própria fonte atribui a ele -- é dela que
+// sai o artista de uma compilação/trilha, onde não existe `album_artist` local
+// confiável ("Various Artists").
+type AlbumComArtista struct {
+	Album AlbumExterno
+	// ArtistaMBID é o id do artista no artist-credit do álbum. Vazio quando a
+	// fonte não trouxe o crédito (o chamador degrada: sem artista, sem import).
+	ArtistaMBID string
+	// ArtistaNome é o nome do artista no mesmo crédito.
+	ArtistaNome string
+}
+
+// ArtistaExterno é a identidade mínima de um artista vinda de um crédito da
+// fonte (MBID + nome de exibição).
+type ArtistaExterno struct {
+	MBID string
+	Nome string
+}
+
+// MusicaAlbumPorTituloProvider é uma CAPACIDADE OPCIONAL de um Provider
+// (briefing 0136): resolver UM álbum pelo TÍTULO, sem partir de um artista.
+// Existe porque o pipeline textual normal começa pela busca do artista -- e
+// compilações/trilhas reais têm `album_artist = "Various Artists"`, que não
+// devolve identidade única. Opcional pelo mesmo motivo de MusicaAlbumProvider:
+// nem toda fonte modela essa busca; quem não implementa degrada em silêncio
+// (a faixa continua em rascunho).
+type MusicaAlbumPorTituloProvider interface {
+	// BuscarAlbumPorTitulo monta o álbum cuja tracklist CONTÉM a faixa descrita
+	// por `alvo` (título/número/MBID), entre os release-groups mais parecidos
+	// com `nomeAlbum` (limiar matching.LimiarAutoMatch). ok=false quando nenhum
+	// candidato passa do limiar ou nenhum contém a faixa -- nunca um "parecido".
+	BuscarAlbumPorTitulo(ctx context.Context, nomeAlbum string, alvo AlvoFaixaAlbum, langs []string) (AlbumComArtista, bool, error)
+}

@@ -2852,6 +2852,32 @@ components:
         placeholder:
           type: [string, "null"]
           description: Placeholder opcional do input.
+    ReviewGroup:
+      type: object
+      description: >
+        Grupo de itens da fila de revisão (briefing 0137). A chave é o caminho
+        (relativo à raiz da biblioteca) já sem o segmento de disco/temporada; o
+        rótulo é o que a UI mostra no cabeçalho da seção.
+      required: [kind, key, label, size]
+      properties:
+        kind:
+          type: string
+          enum: [album, serie, pasta, sem_arquivo]
+          description: >
+            Contexto do arquivo: `album` (type=faixa), `serie` (type=episode),
+            `pasta` (qualquer outro tipo com arquivo) e `sem_arquivo` (item
+            importado, sem media_file).
+        key:
+          type: string
+          description: Chave estável do grupo (usada para agrupar no frontend).
+        label:
+          type: string
+          description: 'Rótulo legível — ex. "Duran Duran — Notorious (Deluxe Edition)".'
+        size:
+          type: integer
+          format: int64
+          description: Quantos itens da fila estão neste grupo.
+
     EntityCard:
       type: object
       required:
@@ -2901,6 +2927,17 @@ components:
             pós-listagem, sem mudar a query do card.
           oneOf:
             - $ref: "#/components/schemas/OwnershipInfo"
+            - type: "null"
+        review_group:
+          description: >
+            Grupo da fila de revisão (briefing 0137): o contexto do ARQUIVO que
+            explica por que o item está aqui — álbum (faixas, ignorando
+            `Disc N`), série (episódios, ignorando `Season N`) ou pasta (filme).
+            Anotado no server, a partir do `media_file.path` relativizado contra
+            a raiz da biblioteca; NÃO vem da query do card. `omitempty`: presente
+            só em GET /api/v1/review.
+          oneOf:
+            - $ref: "#/components/schemas/ReviewGroup"
             - type: "null"
         numbering:
           description: >

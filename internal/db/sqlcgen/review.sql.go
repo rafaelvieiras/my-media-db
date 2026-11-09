@@ -317,6 +317,117 @@ func (q *Queries) ListarFaixasDraftOrfas(ctx context.Context, arg ListarFaixasDr
 	return items, nil
 }
 
+const listarFaixasDraftOrfasPorSource = `-- name: ListarFaixasDraftOrfasPorSource :many
+
+SELECT e.id, e.type
+FROM entity e
+WHERE e.type = 'faixa'
+  AND e.status = 'draft'
+  AND EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id AND m.state = 'present'
+          AND m.library_source_id = ?1
+      )
+  AND NOT EXISTS (
+        SELECT 1 FROM entity_relation er WHERE er.child_id = e.id
+      )
+ORDER BY e.id
+LIMIT ?2
+`
+
+type ListarFaixasDraftOrfasPorSourceParams struct {
+	SourceID sql.NullString
+	Limite   int64
+}
+
+type ListarFaixasDraftOrfasPorSourceRow struct {
+	ID   string
+	Type string
+}
+
+// == Pos-scan por biblioteca (briefing 0135, ADR-0031) ==
+// As tres queries abaixo sao as versoes ESCOPADAS POR library_source das queries
+// de reconciliacao acima e NAO aplicam o throttle de dias
+// (retroactive_enrichment_days/dias_global): o pos-scan e o retry do scan que o
+// dono acabou de pedir, nao uma varredura periodica do catalogo. O limite de
+// itens por execucao continua (caps do scanner).
+// Faixas type='faixa' status='draft' com media_file present DA FONTE informada e
+// sem entity_relation como filha de album (mesmo universo de
+// ListarFaixasDraftOrfas, sem throttle).
+func (q *Queries) ListarFaixasDraftOrfasPorSource(ctx context.Context, arg ListarFaixasDraftOrfasPorSourceParams) ([]ListarFaixasDraftOrfasPorSourceRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarFaixasDraftOrfasPorSource, arg.SourceID, arg.Limite)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarFaixasDraftOrfasPorSourceRow{}
+	for rows.Next() {
+		var i ListarFaixasDraftOrfasPorSourceRow
+		if err := rows.Scan(&i.ID, &i.Type); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listarFilmesPendentesPorSource = `-- name: ListarFilmesPendentesPorSource :many
+SELECT e.id, e.type
+FROM entity e
+WHERE e.type = 'movie'
+  AND (e.external_ids_json IS NULL OR e.external_ids_json NOT LIKE '%tmdb%')
+  AND EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id AND m.state = 'present'
+          AND m.library_source_id = ?1
+      )
+ORDER BY e.id
+LIMIT ?2
+`
+
+type ListarFilmesPendentesPorSourceParams struct {
+	SourceID sql.NullString
+	Limite   int64
+}
+
+type ListarFilmesPendentesPorSourceRow struct {
+	ID   string
+	Type string
+}
+
+// Filmes (type='movie') DA FONTE informada que nao tem identidade externa ainda
+// e cujo melhor match ficou abaixo do limiar de baixa confianca -- o universo que
+// o auto-match do pos-scan tenta de novo (caso real: item que entrou cru por
+// causa do bug do 0089, 08/nov/2026).
+func (q *Queries) ListarFilmesPendentesPorSource(ctx context.Context, arg ListarFilmesPendentesPorSourceParams) ([]ListarFilmesPendentesPorSourceRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarFilmesPendentesPorSource, arg.SourceID, arg.Limite)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarFilmesPendentesPorSourceRow{}
+	for rows.Next() {
+		var i ListarFilmesPendentesPorSourceRow
+		if err := rows.Scan(&i.ID, &i.Type); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listarOrfas = `-- name: ListarOrfas :many
 SELECT
     e.id, e.type, e.title, e.status,
@@ -387,7 +498,13 @@ SELECT
     EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
     (SELECT COUNT(*) FROM media_file m WHERE m.entity_id = e.id) AS file_count,
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
-    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster,
+    -- path: caminho de UM arquivo da entity ('present' vem antes de 'missing'
+    -- no ORDER BY DESC), usado so para agrupar a fila na UI (briefing 0137) --
+    -- anotacao no server, nao muda o predicado da fila. NULL para entity sem
+    -- arquivo (item importado).
+    CAST(COALESCE((SELECT m.path FROM media_file m WHERE m.entity_id = e.id
+      ORDER BY m.state DESC, m.path LIMIT 1), '') AS TEXT) AS path
 FROM entity e
 WHERE e.status = 'draft'
    OR EXISTS (
@@ -409,6 +526,7 @@ type ListarRevisaoRow struct {
 	FileCount       int64
 	MatchConfidence interface{}
 	HasPoster       bool
+	Path            string
 }
 
 // Queries das FILAS DE CURADORIA (briefing 0018): revisao, orfas e as escritas de
@@ -442,6 +560,7 @@ func (q *Queries) ListarRevisao(ctx context.Context, limiar sql.NullFloat64) ([]
 			&i.FileCount,
 			&i.MatchConfidence,
 			&i.HasPoster,
+			&i.Path,
 		); err != nil {
 			return nil, err
 		}
@@ -505,6 +624,55 @@ func (q *Queries) ListarSeriesDraftComArquivo(ctx context.Context, arg ListarSer
 	items := []ListarSeriesDraftComArquivoRow{}
 	for rows.Next() {
 		var i ListarSeriesDraftComArquivoRow
+		if err := rows.Scan(&i.ID, &i.Type); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listarSeriesDraftPorSource = `-- name: ListarSeriesDraftPorSource :many
+SELECT e.id, e.type
+FROM entity e
+WHERE e.type = 'tv'
+  AND e.status = 'draft'
+  AND EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id AND m.state = 'present'
+          AND m.library_source_id = ?1
+      )
+ORDER BY e.id
+LIMIT ?2
+`
+
+type ListarSeriesDraftPorSourceParams struct {
+	SourceID sql.NullString
+	Limite   int64
+}
+
+type ListarSeriesDraftPorSourceRow struct {
+	ID   string
+	Type string
+}
+
+// Series type='tv' status='draft' com media_file present DA FONTE informada
+// (mesmo universo de ListarSeriesDraftComArquivo, sem throttle).
+func (q *Queries) ListarSeriesDraftPorSource(ctx context.Context, arg ListarSeriesDraftPorSourceParams) ([]ListarSeriesDraftPorSourceRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarSeriesDraftPorSource, arg.SourceID, arg.Limite)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListarSeriesDraftPorSourceRow{}
+	for rows.Next() {
+		var i ListarSeriesDraftPorSourceRow
 		if err := rows.Scan(&i.ID, &i.Type); err != nil {
 			return nil, err
 		}

@@ -71,13 +71,48 @@ type scanRun struct {
 	progresso  execqueue.ProgressoFunc
 	filesSeen  int
 	filesTotal int
+
+	// novos acumula as entities CRIADAS nesta passada de scan, por tipo, para o
+	// pós-import (auto-match de filme, materialização opcional) rodar DEPOIS do
+	// commit do lote -- briefing 0135/ADR-0031. Antes, o gatilho era chamado de
+	// dentro de gravarArquivo, isto é, dentro da transação: o auto-match lia a
+	// entity pelo pool de LEITURA e recebia `sql: no rows in result set` (a linha
+	// não commitada não existe para ele) e, se tentasse escrever, travaria na
+	// conexão ÚNICA de escrita (ADR-0010) -- deadlock. Ver despacharNovos.
+	novos []entidadeNova
+}
+
+// entidadeNova é uma entity criada por este scan, com o tipo e a confiança já
+// resolvidos -- o que despacharNovos precisa para decidir qual gancho chamar.
+type entidadeNova struct {
+	id   string
+	tipo string
+	conf float64
+}
+
+// registrarNovo guarda uma entity criada nesta passada (dedup por id, porque o
+// fluxo de música pode resolver o mesmo álbum para várias faixas).
+func (r *scanRun) registrarNovo(e entidadeNova) {
+	for _, existente := range r.novos {
+		if existente.id == e.id {
+			return
+		}
+	}
+	r.novos = append(r.novos, e)
 }
 
 // reportarProgresso chama o callback de progresso (se houver) com o estado
 // atual de filesSeen/filesTotal desta execução.
 func (r *scanRun) reportarProgresso() {
+	r.reportarProgressoMSG("")
+}
+
+// reportarProgressoMSG é reportarProgresso com uma mensagem livre (usado pela
+// etapa de pós-scan, briefing 0135, para o dono ver o que está acontecendo sem
+// inventar contagem de arquivos).
+func (r *scanRun) reportarProgressoMSG(msg string) {
 	if r.progresso != nil {
-		r.progresso(r.filesSeen, r.filesTotal, "")
+		r.progresso(r.filesSeen, r.filesTotal, msg)
 	}
 }
 
@@ -153,7 +188,16 @@ func (m *Manager) executarScan(ctx context.Context, source library.Source, progr
 		return err
 	}
 
-	return r.finalizarCicloVida(ctx)
+	if err := r.finalizarCicloVida(ctx); err != nil {
+		return err
+	}
+
+	// Pós-scan (briefing 0135/ADR-0031): FECHADO o ciclo de vida, a própria
+	// biblioteca reconcilía o que ficou em rascunho e retenta o que está
+	// pendente -- sem esperar o cron diário. Best-effort: nunca derruba o scan
+	// (o catálogo já está gravado e o last_scan já foi carimbado).
+	r.posScan(ctx)
+	return nil
 }
 
 // processarLotes pré-computa os fatos de cada arquivo (I/O e ffprobe, fora da
@@ -343,7 +387,15 @@ func (r *scanRun) escreverLote(ctx context.Context, fatos []fileFacts) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// DEPOIS do commit (briefing 0135/ADR-0031): os ganchos de enriquecimento
+	// (auto-match, materialização) precisam da linha visível para o pool de
+	// leitura E da conexão de escrita livre. Chamá-los dentro da transação é
+	// bug -- foi a causa real do item novo sair cru em produção (08/nov/2026).
+	r.despacharNovos(ctx)
+	return nil
 }
 
 // finalizarCicloVida fecha o scan (fonte acessível): carimba library_source
@@ -513,4 +565,22 @@ func hashDoArquivo(path string, size int64) (string, error) {
 	}
 	defer func() { _ = f.Close() }()
 	return contentHash(f, size)
+}
+
+// posScan chama o gancho de pós-scan (briefing 0135/ADR-0031) ao fim de
+// executarScan: reconciliação dos rascunhos e retry dos pendentes DAQUELA
+// biblioteca. Reporta a etapa como mensagem de progresso (o contador continua
+// sendo de ARQUIVOS -- a etapa não infla files_total). Best-effort: erro só
+// loga, nunca derruba um scan que já gravou e carimbou tudo.
+func (r *scanRun) posScan(ctx context.Context) {
+	if r.m.posScan == nil {
+		return
+	}
+	if err := ctx.Err(); err != nil {
+		return
+	}
+	r.reportarProgressoMSG("reconciliando pendentes da biblioteca")
+	if err := r.m.posScan.ProcessarPosScan(ctx, r.source.ID); err != nil {
+		log.Printf("scanner: pós-scan da biblioteca %q falhou (scan concluído mesmo assim): %v", r.source.ID, err)
+	}
 }

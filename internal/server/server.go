@@ -500,6 +500,13 @@ func (s *Server) montarServicos(database *db.DB) {
 	if s.scanner != nil {
 		s.scanner.ConfigurarMaterializacao(s)
 	}
+	// Liga o PÓS-SCAN por biblioteca (briefing 0135, ADR-0031): ao fim do scan de
+	// uma fonte, o próprio server reconcilía os rascunhos e retenta os pendentes
+	// DAQUELA fonte, materializando a arte de quem passou a ter identidade quando
+	// o toggle acima está ligado. nil-safe: sem isto o scan termina como antes.
+	if s.scanner != nil {
+		s.scanner.ConfigurarPosScan(s)
+	}
 	// O Manager de jobs (briefing 0052) só precisa de banco -- diferente de
 	// enrich/externalDetail, não depende de provider nem assetsDir (o job
 	// semente backup_vacuum não usa fonte externa). WithJobHandlers pode já

@@ -44,3 +44,4 @@ achatada de "decisões abertas" por um registro rastreável, um arquivo por deci
 | [0024](0024-cache-externo-sobrevive-sem-provider-vivo.md) | Cache externo sobrevive sem provider vivo (parse puro ≠ busca ao vivo) | PR1 | Aceita |
 | [0025](0025-trailer-tema-musical-ytdlp-themerrdb.md) | Trailer e música-tema: yt-dlp aceito (binário dinâmico + path custom) + ThemerrDB | TR1–TR2 | Aceita |
 | [0026](0026-trailer-tema-job-e-gatilho-automatico-no-scan.md) | Trailer/tema: job periódico + gatilho automático no scan (opt-in) | TR3 | Aceita |
+| [0031](0031-pos-scan-por-biblioteca.md) | Pós-scan por biblioteca: o scan fecha o próprio ciclo (e nada de enriquecimento dentro da transação) | SCAN-POS | Aceita |

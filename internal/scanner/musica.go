@@ -54,13 +54,13 @@ import (
 	"errors"
 	"log"
 	"path/filepath"
+	"sort"
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 	"github.com/rafaelvieiras/my-media-db/internal/enrich"
 	"github.com/rafaelvieiras/my-media-db/internal/matching"
 	"github.com/rafaelvieiras/my-media-db/internal/mediainfo"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
-	"github.com/rafaelvieiras/my-media-db/internal/textsim"
 )
 
 const (
@@ -258,32 +258,71 @@ func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTag
 	if m.musicaProvider == nil || m.musicaImportador == nil {
 		return "", false
 	}
+	if tags.Album == "" {
+		return "", false
+	}
+	alvo := enrich.FaixaAlvo{AlbumNome: tags.Album, FaixaTitulo: tags.Title, FaixaNumero: tags.TrackNumber, DuracaoSegundos: duracaoSegundos}
+
+	if id, ok := m.matchPorArtista(ctx, tags, alvo, langs); ok {
+		return id, true
+	}
+	// Passo 4b (briefing 0136): o caminho por ARTISTA não resolveu (nome ausente,
+	// empate sem evidência, artista homônimo sem esse álbum). Tenta o álbum pelo
+	// TÍTULO -- o caminho de compilação/trilha, onde `album_artist` é "Various
+	// Artists" e a busca de artista nunca devolve identidade única.
+	return m.matchPorTituloDeAlbum(ctx, alvo, langs)
+}
+
+// matchPorArtista é o passo 4 clássico (briefing 0115/0136): busca o ARTISTA por
+// nome e, para CADA candidato forte o bastante (os empatados no topo, até
+// maxCandidatosArtista), tenta o import escopado com o álbum da tag. O primeiro
+// que funcionar vence -- o empate deixa de ser desistência e passa a ser
+// resolvido por EVIDÊNCIA (o álbum que contém a faixa), sem aplicar nada às
+// cegas: se nenhum candidato contiver o álbum, cai para o passo seguinte.
+func (m *Manager) matchPorArtista(ctx context.Context, tags mediainfo.AudioTags, alvo enrich.FaixaAlvo, langs []string) (string, bool) {
 	nomeArtista := tags.AlbumArtist
 	if nomeArtista == "" {
 		nomeArtista = tags.Artist
 	}
-	if nomeArtista == "" || tags.Album == "" {
+	if nomeArtista == "" {
 		return "", false
 	}
-
 	resultados, err := m.musicaProvider.Buscar(ctx, nomeArtista, "artista", "")
 	if err != nil {
 		log.Printf("scanner: busca textual do artista %q falhou: %v", nomeArtista, err)
 		return "", false
 	}
-	var candidatos []candidatoTexto
+	candidatos := make([]candidatoTexto, 0, len(resultados))
 	for _, res := range resultados {
 		candidatos = append(candidatos, candidatoTexto{id: res.SourceID, titulo: res.Title})
 	}
-	artistaMBID, ok := melhorCandidatoTexto(nomeArtista, candidatos)
-	if !ok {
+	artistas := melhoresCandidatosTexto(nomeArtista, candidatos)
+	if len(artistas) == 0 {
 		return "", false
 	}
+	for _, artistaMBID := range artistas {
+		if err := ctx.Err(); err != nil {
+			return "", false
+		}
+		faixaID, _, err := m.musicaImportador.ImportarFaixaPossuida(ctx, sourceMusicBrainz, artistaMBID, alvo, langs)
+		if err != nil {
+			log.Printf("scanner: import escopado (artista %s, album %q) falhou: %v", artistaMBID, tags.Album, err)
+			continue
+		}
+		if faixaID != "" {
+			return faixaID, true
+		}
+	}
+	return "", false
+}
 
-	alvo := enrich.FaixaAlvo{AlbumNome: tags.Album, FaixaTitulo: tags.Title, FaixaNumero: tags.TrackNumber, DuracaoSegundos: duracaoSegundos}
-	faixaID, _, err := m.musicaImportador.ImportarFaixaPossuida(ctx, sourceMusicBrainz, artistaMBID, alvo, langs)
+// matchPorTituloDeAlbum é o passo 4b (briefing 0136): resolve o álbum pelo TÍTULO
+// na fonte e usa o artist-credit dela (compilações/trilhas). Degradação silenciosa
+// quando a fonte não implementa a capacidade -- o chamador segue para o passo 4.5.
+func (m *Manager) matchPorTituloDeAlbum(ctx context.Context, alvo enrich.FaixaAlvo, langs []string) (string, bool) {
+	faixaID, _, err := m.musicaImportador.ImportarFaixaPorTituloDeAlbum(ctx, sourceMusicBrainz, alvo, langs)
 	if err != nil {
-		log.Printf("scanner: import escopado (busca textual artista %q album %q) falhou: %v", nomeArtista, tags.Album, err)
+		log.Printf("scanner: import escopado por titulo de album %q falhou: %v", alvo.AlbumNome, err)
 		return "", false
 	}
 	return faixaID, faixaID != ""
@@ -298,33 +337,52 @@ type candidatoTexto struct {
 	titulo string
 }
 
-// melhorCandidatoTexto escolhe, entre `candidatos`, o de título mais próximo
-// de `alvo` (Jaro-Winkler via internal/textsim -- o MESMO motor de
-// similaridade que o auto-match de filme/série já usa, internal/matching),
-// exigindo o mesmo limiar de matching.LimiarAutoMatch (92%, escala 0-100) e
-// NENHUM empate no topo (>1 candidato igualmente forte é ambíguo, não um
-// match). Limiar deliberadamente estrito e sem fuzzy adicional: o objetivo é
-// nunca criar um vínculo errado em silêncio -- um nome ambíguo ou
-// não-identificado cai para o draft (correção manual), o que é seguro; um
-// match "parecido o bastante" aplicado errado contamina a árvore inteira do
-// artista, o que não é.
-func melhorCandidatoTexto(alvo string, candidatos []candidatoTexto) (string, bool) {
-	melhorScore := -1.0
-	melhorID := ""
-	empate := false
+// maxCandidatosArtista é o teto de artistas EMPATADOS que o pipeline tenta por
+// faixa (briefing 0136). Cada tentativa custa chamadas ao MusicBrainz (1 req/s),
+// então o teto existe para o pior caso ficar previsível; na prática o empate é
+// raro (ex.: dois "Linkin Park" no catálogo da fonte) e 2 ou 3 já cobre.
+const maxCandidatosArtista = 3
+
+// melhoresCandidatosTexto devolve os candidatos cujo título bate o limiar de
+// matching.LimiarAutoMatch (92%, escala 0-100, via
+// matching.SimilaridadeNormalizada -- o MESMO motor do auto-match de
+// filme/série, agora tolerante a qualificador de edição/versão), do melhor para
+// o pior, limitado a maxCandidatosArtista.
+//
+// MUDANÇA do briefing 0136: antes, um EMPATE no topo era tratado como "ambíguo,
+// desiste" -- o que jogava em rascunho bibliotecas inteiras quando a fonte tem
+// dois artistas com o mesmo nome (caso real: "Linkin Park", score 100 em dois
+// candidatos). Agora o empate vira EVIDÊNCIA a testar (o álbum da faixa existe
+// em qual deles?), nunca aplicação às cegas: quem não contiver o álbum
+// simplesmente não resolve e o pipeline segue. O limiar continua estrito.
+func melhoresCandidatosTexto(alvo string, candidatos []candidatoTexto) []string {
+	type pontuado struct {
+		id    string
+		score float64
+	}
+	var ordenados []pontuado
 	for _, c := range candidatos {
-		score := textsim.Similaridade(alvo, c.titulo) * 100
-		switch {
-		case score > melhorScore:
-			melhorScore, melhorID, empate = score, c.id, false
-		case score == melhorScore:
-			empate = true
+		score := matching.SimilaridadeNormalizada(alvo, c.titulo)
+		if score < matching.LimiarAutoMatch {
+			continue
+		}
+		ordenados = append(ordenados, pontuado{id: c.id, score: score})
+	}
+	sort.SliceStable(ordenados, func(i, j int) bool { return ordenados[i].score > ordenados[j].score })
+
+	out := make([]string, 0, maxCandidatosArtista)
+	vistos := make(map[string]bool, len(ordenados))
+	for _, p := range ordenados {
+		if vistos[p.id] {
+			continue
+		}
+		vistos[p.id] = true
+		out = append(out, p.id)
+		if len(out) == maxCandidatosArtista {
+			break
 		}
 	}
-	if empate || melhorScore < matching.LimiarAutoMatch {
-		return "", false
-	}
-	return melhorID, true
+	return out
 }
 
 // matchPorFingerprint é o passo 4.5 (briefing 0126): ÚLTIMO fallback antes
@@ -449,5 +507,12 @@ func (r *scanRun) gravarArquivoMusica(ctx context.Context, q *sqlcgen.Queries, f
 		LastSeen:        nsOpt(r.scanTS),
 		LibrarySourceID: nsOpt(r.source.ID),
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	// Faixa nova nesta passada: registra para o pós-commit materializar a capa
+	// do álbum resolvido, quando o toggle está ligado (briefing 0135). Rascunho
+	// (conf 0) não tem álbum pai, então entra mesmo assim e o despacho filtra.
+	r.registrarNovo(entidadeNova{id: f.faixaID, tipo: tipoFaixa, conf: f.faixaConf})
+	return nil
 }

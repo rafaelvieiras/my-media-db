@@ -20,7 +20,6 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/matching"
 	"github.com/rafaelvieiras/my-media-db/internal/musicext"
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
-	"github.com/rafaelvieiras/my-media-db/internal/textsim"
 )
 
 const (
@@ -309,6 +308,61 @@ func (s *Servico) ImportarFaixaPossuida(ctx context.Context, source, artistaMBID
 		return "", false, fmt.Errorf("enrich: fonte %q nao suporta album seletivo de musica", source)
 	}
 
+	alb, err := s.buscarAlbumAlvo(ctx, ap, artistaMBID, alvo, langs)
+	if err != nil {
+		return "", false, err
+	}
+	return s.importarFaixaComAlbum(ctx, prov, artistaMBID, alb, alvo, langs)
+}
+
+// ImportarFaixaPorTituloDeAlbum é o caminho de COMPILAÇÃO/TRILHA do import
+// escopado (briefing 0136): resolve o álbum pelo TÍTULO (capacidade opcional
+// provider.MusicaAlbumPorTituloProvider) e usa o artist-credit que a FONTE
+// atribui a ele como artista principal -- em compilação é "Various Artists", que
+// a busca de artista do caminho normal não resolve. Depois disso, o resto é o
+// MESMO import escopado do ADR-0029 (artista + álbum + a faixa possuída; nunca a
+// discografia inteira).
+//
+// Degradação SILENCIOSA (ok=false, err=nil) quando: o alvo não tem nome de álbum,
+// a fonte não implementa a capacidade, nenhum release-group passa do limiar, ou o
+// release-group não trouxe artist-credit. O scanner então segue o pipeline (passo
+// 4.5/fingerprint ou rascunho) sem log de erro -- mesma semântica de qualquer
+// capacidade opcional do projeto.
+func (s *Servico) ImportarFaixaPorTituloDeAlbum(ctx context.Context, source string, alvo FaixaAlvo, langs []string) (string, bool, error) {
+	if alvo.AlbumNome == "" {
+		return "", false, nil
+	}
+	prov, ok := s.provFonte(source)
+	if !ok {
+		return "", false, nil
+	}
+	tp, ok := prov.(provider.MusicaAlbumPorTituloProvider)
+	if !ok {
+		return "", false, nil
+	}
+	ac, achou, err := tp.BuscarAlbumPorTitulo(ctx, alvo.AlbumNome, provider.AlvoFaixaAlbum{
+		RecordingMBID: alvo.RecordingMBID,
+		FaixaTitulo:   alvo.FaixaTitulo,
+		FaixaNumero:   alvo.FaixaNumero,
+		DuracaoMs:     int(alvo.DuracaoSegundos * 1000),
+	}, langs)
+	if err != nil {
+		return "", false, err
+	}
+	if !achou || ac.ArtistaMBID == "" {
+		return "", false, nil
+	}
+	return s.importarFaixaComAlbum(ctx, prov, ac.ArtistaMBID, ac.Album, alvo, langs)
+}
+
+// importarFaixaComAlbum é o corpo comum do import escopado (ADR-0029), extraído
+// no briefing 0136 para ser reusado pelos DOIS caminhos de resolução do álbum
+// (por artista + nome do álbum, e por título do álbum em compilações): garante o
+// artista (identidade + inventário de artes), o álbum (find-or-create + artes +
+// vínculo artista→álbum) e a faixa possuída (find-or-create + vínculo
+// álbum→faixa). Nenhuma lógica nova: é exatamente a sequência que
+// ImportarFaixaPossuida já executava, agora sem o "qual álbum" no meio.
+func (s *Servico) importarFaixaComAlbum(ctx context.Context, prov provider.Provider, artistaMBID string, alb provider.AlbumExterno, alvo FaixaAlvo, langs []string) (string, bool, error) {
 	artistaID, _, err := s.acharOuCriarArtistaIdentidade(ctx, prov, artistaMBID, langs)
 	if err != nil {
 		return "", false, err
@@ -316,11 +370,6 @@ func (s *Servico) ImportarFaixaPossuida(ctx context.Context, source, artistaMBID
 	// Inventário de artes do ARTISTA (fanart.tv, briefing 0116) — mesmo gatilho
 	// best-effort do álbum abaixo, ver nota longa em importarArtista.
 	s.enriquecerArtes(ctx, artistaID, tipoArtista, langs)
-
-	alb, err := s.buscarAlbumAlvo(ctx, ap, artistaMBID, alvo, langs)
-	if err != nil {
-		return "", false, err
-	}
 
 	albumID, _, err := s.acharOuCriarAlbum(ctx, alb)
 	if err != nil {
@@ -519,7 +568,7 @@ func melhorFaixaPorTitulo(alvo string, faixas []provider.FaixaExterna, duracaoAl
 	melhorScore := -1.0
 	var empatados []provider.FaixaExterna
 	for _, fx := range faixas {
-		score := textsim.Similaridade(alvo, fx.Title) * 100
+		score := matching.SimilaridadeNormalizada(alvo, fx.Title)
 		switch {
 		case score > melhorScore:
 			melhorScore = score

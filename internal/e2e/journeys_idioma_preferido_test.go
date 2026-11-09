@@ -40,6 +40,27 @@ func acharRevisaoMovie(t *testing.T, c *cliente, titulo string) string {
 	return ""
 }
 
+// acharMoviePorTitulo acha o id de um movie na LISTA de entities (não na fila de
+// revisão) por qualquer dos títulos aceitos. Desde o briefing 0135/ADR-0031 o
+// auto-match roda de verdade no scan, então o item que antes ficava em rascunho
+// já sai RESOLVIDO (com o título no idioma principal) -- a jornada não pode mais
+// depender de encontrá-lo na fila.
+func acharMoviePorTitulo(t *testing.T, c *cliente, titulos ...string) string {
+	t.Helper()
+	resposta := c.obj(http.MethodGet, "/api/v1/entities?type=movie&limit=1000", nil, http.StatusOK)
+	itens, _ := resposta["items"].([]any)
+	for _, item := range itens {
+		m, _ := item.(map[string]any)
+		for _, alvo := range titulos {
+			if str(t, m, "title") == alvo {
+				return str(t, m, "id")
+			}
+		}
+	}
+	t.Fatalf("nenhum movie com titulo em %v na lista de entities: %v", titulos, itens)
+	return ""
+}
+
 // ultimoIdioma devolve o ÚLTIMO idioma registrado em c.prov.IdiomasBuscados()
 // (a chamada Buscar mais recente) -- usado para provar qual idioma efetivamente
 // chegou ao provider numa jornada com múltiplas buscas em sequência.
@@ -64,9 +85,11 @@ func ultimoIdioma(t *testing.T, c *cliente) string {
 func TestJornadaIdiomaPreferidoBibliotecaNaBusca(t *testing.T) {
 	c := novoHarness(t)
 
-	// Biblioteca 1: preferred_language="en" explícito.
+	// Biblioteca 1: preferred_language="en" explícito. Título SEM fixture no
+	// catálogo fake -- o item fica em rascunho (é o que a prévia do rascunho
+	// exercita aqui; com fixture, o auto-match do próprio scan já o resolveria).
 	rootEN := t.TempDir()
-	escreverVideo(t, filepath.Join(rootEN, "Matrix.mkv"))
+	escreverVideo(t, filepath.Join(rootEN, "Alien Anos Oitenta.mkv"))
 	srcEN := c.obj(http.MethodPost, "/api/v1/library",
 		map[string]string{"path": rootEN, "type": "movie", "preferred_language": "en"}, http.StatusCreated)
 	if got := str(t, srcEN, "preferred_language"); got != "en" {
@@ -75,7 +98,7 @@ func TestJornadaIdiomaPreferidoBibliotecaNaBusca(t *testing.T) {
 	srcENID := str(t, srcEN, "id")
 	c.esperarScan(srcENID)
 
-	idEN := acharRevisaoMovie(t, c, "Matrix")
+	idEN := acharRevisaoMovie(t, c, "Alien Anos Oitenta")
 	c.obj(http.MethodGet, "/api/v1/entities/"+idEN+"/match-preview", nil, http.StatusOK)
 	if got := ultimoIdioma(t, c); got != "en" {
 		t.Errorf("idioma buscado (biblioteca com preferred_language=en) = %q, quero \"en\"", got)
@@ -84,7 +107,7 @@ func TestJornadaIdiomaPreferidoBibliotecaNaBusca(t *testing.T) {
 	// Biblioteca 2: SEM preferred_language -- deve cair no idioma global (primary
 	// "pt-BR", default de app_settings), NUNCA mais em "" cego (briefing 0084 §1).
 	rootGlobal := t.TempDir()
-	escreverVideo(t, filepath.Join(rootGlobal, "Alien Anos Oitenta.mkv"))
+	escreverVideo(t, filepath.Join(rootGlobal, "Filme Sem Catalogo Nenhum.mkv"))
 	srcGlobal := c.obj(http.MethodPost, "/api/v1/library",
 		map[string]string{"path": rootGlobal, "type": "movie"}, http.StatusCreated)
 	if srcGlobal["preferred_language"] != nil {
@@ -93,7 +116,7 @@ func TestJornadaIdiomaPreferidoBibliotecaNaBusca(t *testing.T) {
 	srcGlobalID := str(t, srcGlobal, "id")
 	c.esperarScan(srcGlobalID)
 
-	idGlobal := acharRevisaoMovie(t, c, "Alien Anos Oitenta")
+	idGlobal := acharRevisaoMovie(t, c, "Filme Sem Catalogo Nenhum")
 	c.obj(http.MethodGet, "/api/v1/entities/"+idGlobal+"/match-preview", nil, http.StatusOK)
 	if got := ultimoIdioma(t, c); got != "pt-BR" {
 		t.Errorf("idioma buscado (biblioteca sem preferencia) = %q, quero \"pt-BR\" (global primary, nunca \"\")", got)
@@ -114,11 +137,9 @@ func TestJornadaIdiomaPreferidoBibliotecaNaExibicao(t *testing.T) {
 	srcID := str(t, src, "id")
 	c.esperarScan(srcID)
 
-	id := acharRevisaoMovie(t, c, "Matrix")
-	// Confirma a identidade externa (603, "The Matrix"/"Matrix" no catalogo fake):
-	// liga o media_file da biblioteca "en" a uma entity multi-idioma de verdade.
-	c.obj(http.MethodPost, "/api/v1/entities/"+id+"/confirm-candidate",
-		map[string]string{"method": "external", "source": "tmdb", "source_id": "603"}, http.StatusOK)
+	// Desde o 0135 o auto-match roda no próprio scan: a entity já sai identificada
+	// com a fixture 603 ("The Matrix"/"Matrix"), multi-idioma, sem clique nenhum.
+	id := acharMoviePorTitulo(t, c, "Matrix", "The Matrix")
 
 	// SEM ?lang=: cai no idioma preferido da biblioteca (en) -- "The Matrix", não
 	// o "Matrix" do idioma global (pt-BR).
@@ -156,7 +177,7 @@ func TestJornadaTituloAlternativoVenceNoScore(t *testing.T) {
 		map[string]string{"path": rootAlt, "type": "movie"}, http.StatusCreated)
 	c.esperarScan(str(t, srcAlt, "id"))
 
-	idAlt := acharRevisaoMovie(t, c, "A Pantera Cor-De-Rosa")
+	idAlt := acharMoviePorTitulo(t, c, "O Perseguidor Rosa", "A Pantera Cor-De-Rosa", "The Rose Prowler")
 	previewAlt := c.obj(http.MethodGet, "/api/v1/entities/"+idAlt+"/match-preview", nil, http.StatusOK)
 	if got := str(t, previewAlt, "method"); got != "external" {
 		t.Fatalf("method = %q, quero \"external\" (so a fixture 605 casa por titulo)", got)
@@ -185,7 +206,7 @@ func TestJornadaTituloAlternativoVenceNoScore(t *testing.T) {
 		map[string]string{"path": rootPrincipal, "type": "movie"}, http.StatusCreated)
 	c.esperarScan(str(t, srcPrincipal, "id"))
 
-	idPrincipal := acharRevisaoMovie(t, c, "The Matrix")
+	idPrincipal := acharMoviePorTitulo(t, c, "Matrix", "The Matrix")
 	previewPrincipal := c.obj(http.MethodGet, "/api/v1/entities/"+idPrincipal+"/match-preview", nil, http.StatusOK)
 	if got := str(t, previewPrincipal, "method"); got != "external" {
 		t.Fatalf("method = %q, quero \"external\"", got)

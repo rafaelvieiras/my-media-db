@@ -18,7 +18,13 @@ SELECT
     EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = e.id AND m.state = 'present') AS owned,
     (SELECT COUNT(*) FROM media_file m WHERE m.entity_id = e.id) AS file_count,
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
-    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster
+    EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster,
+    -- path: caminho de UM arquivo da entity ('present' vem antes de 'missing'
+    -- no ORDER BY DESC), usado so para agrupar a fila na UI (briefing 0137) --
+    -- anotacao no server, nao muda o predicado da fila. NULL para entity sem
+    -- arquivo (item importado).
+    CAST(COALESCE((SELECT m.path FROM media_file m WHERE m.entity_id = e.id
+      ORDER BY m.state DESC, m.path LIMIT 1), '') AS TEXT) AS path
 FROM entity e
 WHERE e.status = 'draft'
    OR EXISTS (
@@ -264,4 +270,62 @@ ORDER BY
     (e.last_external_match_attempt_at IS NULL) DESC,
     e.last_external_match_attempt_at ASC,
     e.id
+LIMIT sqlc.arg('limite');
+
+-- == Pos-scan por biblioteca (briefing 0135, ADR-0031) ==
+-- As tres queries abaixo sao as versoes ESCOPADAS POR library_source das queries
+-- de reconciliacao acima e NAO aplicam o throttle de dias
+-- (retroactive_enrichment_days/dias_global): o pos-scan e o retry do scan que o
+-- dono acabou de pedir, nao uma varredura periodica do catalogo. O limite de
+-- itens por execucao continua (caps do scanner).
+
+-- name: ListarFaixasDraftOrfasPorSource :many
+-- Faixas type='faixa' status='draft' com media_file present DA FONTE informada e
+-- sem entity_relation como filha de album (mesmo universo de
+-- ListarFaixasDraftOrfas, sem throttle).
+SELECT e.id, e.type
+FROM entity e
+WHERE e.type = 'faixa'
+  AND e.status = 'draft'
+  AND EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id AND m.state = 'present'
+          AND m.library_source_id = sqlc.arg('source_id')
+      )
+  AND NOT EXISTS (
+        SELECT 1 FROM entity_relation er WHERE er.child_id = e.id
+      )
+ORDER BY e.id
+LIMIT sqlc.arg('limite');
+
+-- name: ListarSeriesDraftPorSource :many
+-- Series type='tv' status='draft' com media_file present DA FONTE informada
+-- (mesmo universo de ListarSeriesDraftComArquivo, sem throttle).
+SELECT e.id, e.type
+FROM entity e
+WHERE e.type = 'tv'
+  AND e.status = 'draft'
+  AND EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id AND m.state = 'present'
+          AND m.library_source_id = sqlc.arg('source_id')
+      )
+ORDER BY e.id
+LIMIT sqlc.arg('limite');
+
+-- name: ListarFilmesPendentesPorSource :many
+-- Filmes (type='movie') DA FONTE informada que nao tem identidade externa ainda
+-- e cujo melhor match ficou abaixo do limiar de baixa confianca -- o universo que
+-- o auto-match do pos-scan tenta de novo (caso real: item que entrou cru por
+-- causa do bug do 0089, 08/nov/2026).
+SELECT e.id, e.type
+FROM entity e
+WHERE e.type = 'movie'
+  AND (e.external_ids_json IS NULL OR e.external_ids_json NOT LIKE '%tmdb%')
+  AND EXISTS (
+        SELECT 1 FROM media_file m
+        WHERE m.entity_id = e.id AND m.state = 'present'
+          AND m.library_source_id = sqlc.arg('source_id')
+      )
+ORDER BY e.id
 LIMIT sqlc.arg('limite');

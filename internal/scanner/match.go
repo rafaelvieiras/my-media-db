@@ -15,6 +15,11 @@ import (
 // id embutido casa 100%; título+ano é palpite alto; título sem ano é baixo
 // (sinalizado); sem título vira draft não-identificado.
 const (
+	// tipoFilme é o entity.type do caminho de FILME (o default do scanner: ver
+	// montarFacts/resolverEntity, que grava Type "movie") -- usado pelo despacho
+	// pós-commit (briefing 0135) para escolher o gancho de enriquecimento.
+	tipoFilme = "movie"
+
 	confIDExterno   = 100
 	confTituloAno   = 70
 	confTituloSoNom = 40
@@ -75,33 +80,103 @@ func (r *scanRun) gravarArquivo(ctx context.Context, q *sqlcgen.Queries, f fileF
 		return err
 	}
 	if criada {
-		r.dispararAutoMatchFilme(ctx, entityID)
+		// Só REGISTRA aqui: o gatilho (auto-match + materialização) roda depois do
+		// commit do lote, em despacharNovos (briefing 0135/ADR-0031) -- dentro da
+		// transação ele leria a entity pelo pool de LEITURA (`sql: no rows in result
+		// set`) e, ao escrever, travaria na conexão única de escrita (ADR-0010).
+		r.registrarNovo(entidadeNova{id: entityID, tipo: tipoFilme})
 	}
 	return nil
 }
 
-// dispararAutoMatchFilme é o gatilho best-effort do auto-match imediato de
-// filme (0089): roda só para entity NOVA nesta passada de scan, DEPOIS do
-// media_file já gravado (o auto-match lê título/ano via media_file) -- uma
-// falha aqui nunca desfaz a gravação do arquivo. Achando candidato forte o
-// bastante e com "materializar artes automaticamente" ligado, materializa na
-// hora; sem candidato ou toggle desligado, a entity segue pendente na fila de
-// Revisão (ou só enriquecida, sem materializar), como hoje.
-func (r *scanRun) dispararAutoMatchFilme(ctx context.Context, entityID string) {
-	if r.m.filmeImportador == nil {
+// despacharNovos roda o pós-import das entities criadas na passada de scan, JÁ
+// FORA da transação de escrita (briefing 0135/ADR-0031) -- é o gatilho que antes
+// vivia dentro de gravarArquivo (dispararAutoMatchFilme) e por isso nunca
+// funcionou em produção:
+//
+//   - filme: tenta casar+enriquecer (TentarAutoMatchFilme, 0089) e, casando,
+//     materializa na hora as artes descobertas quando o toggle está ligado;
+//   - faixa: materializa a arte do ÁLBUM recém-resolvido (o cover mora no
+//     álbum, ADR-0027) quando o toggle está ligado -- a faixa só entra aqui
+//     quando o match passou do rascunho (conf > confDraft);
+//   - série: o gatilho já acontece na fase de FATOS (tentarImportarSerie, que
+//     roda fora de qualquer transação) -- nada a fazer aqui.
+//
+// Tudo best-effort: uma falha nunca desfaz a gravação do arquivo nem aborta o
+// scan (mesma semântica de antes, agora no lugar certo).
+func (r *scanRun) despacharNovos(ctx context.Context) {
+	if len(r.novos) == 0 {
 		return
+	}
+	novos := r.novos
+	r.novos = nil
+
+	materializados := make(map[string]bool, len(novos))
+	for _, n := range novos {
+		if err := ctx.Err(); err != nil {
+			return
+		}
+		switch n.tipo {
+		case tipoFilme:
+			matched := r.dispararAutoMatchFilme(ctx, n.id)
+			if matched {
+				r.materializar(ctx, n.id, materializados)
+			}
+		case tipoFaixa:
+			if n.conf <= confDraft {
+				continue
+			}
+			for _, albumID := range r.albumsDaFaixa(ctx, n.id) {
+				r.materializar(ctx, albumID, materializados)
+			}
+		}
+	}
+}
+
+// materializar chama o gancho de materialização opcional (0089) uma única vez
+// por entity nesta passada -- várias faixas do mesmo álbum não disparam o mesmo
+// download/escrita N vezes.
+func (r *scanRun) materializar(ctx context.Context, entityID string, feitos map[string]bool) {
+	if r.m.materializador == nil || feitos[entityID] {
+		return
+	}
+	feitos[entityID] = true
+	if err := r.m.materializador.MaterializarSeAutoDownloadLigado(ctx, entityID); err != nil {
+		log.Printf("scanner: materialização automática da entity %q falhou (%v)", entityID, err)
+	}
+}
+
+// albumsDaFaixa devolve os álbuns (pais, kind do vínculo de música) de uma faixa
+// recém-resolvida -- leitura pelo pool de LEITURA, agora seguro (pós-commit).
+// Vazio quando a faixa ainda não tem álbum ligado (match parcial).
+func (r *scanRun) albumsDaFaixa(ctx context.Context, faixaID string) []string {
+	relacoes, err := sqlcgen.New(r.m.db.Read).ListarRelacoesPais(ctx, faixaID)
+	if err != nil {
+		return nil
+	}
+	ids := make([]string, 0, len(relacoes))
+	for _, rel := range relacoes {
+		if rel.ParentID != "" {
+			ids = append(ids, rel.ParentID)
+		}
+	}
+	return ids
+}
+
+// dispararAutoMatchFilme é o gatilho best-effort do auto-match imediato de
+// filme (0089): chamado DEPOIS do commit do lote (despacharNovos), nunca mais
+// de dentro da transação (briefing 0135). Devolve matched=true só quando um
+// candidato forte foi de fato aplicado.
+func (r *scanRun) dispararAutoMatchFilme(ctx context.Context, entityID string) bool {
+	if r.m.filmeImportador == nil {
+		return false
 	}
 	matched, err := r.m.filmeImportador.TentarAutoMatchFilme(ctx, entityID)
 	if err != nil {
 		log.Printf("scanner: auto-match imediato do filme %q falhou (%v) -- entity permanece pendente na fila de Revisão", entityID, err)
-		return
+		return false
 	}
-	if !matched || r.m.materializador == nil {
-		return
-	}
-	if err := r.m.materializador.MaterializarSeAutoDownloadLigado(ctx, entityID); err != nil {
-		log.Printf("scanner: materialização automática do filme %q falhou (%v)", entityID, err)
-	}
+	return matched
 }
 
 // reencontrar trata um arquivo já conhecido pelo content_hash: atualiza o path

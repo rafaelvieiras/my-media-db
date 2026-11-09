@@ -505,6 +505,21 @@ type Querier interface {
 	// library_source.retroactive_enrichment_days com fallback pro dias_global,
 	// mesma logica de ListarElegiveisReprocessamentoArtes.
 	ListarFaixasDraftOrfas(ctx context.Context, arg ListarFaixasDraftOrfasParams) ([]ListarFaixasDraftOrfasRow, error)
+	// == Pos-scan por biblioteca (briefing 0135, ADR-0031) ==
+	// As tres queries abaixo sao as versoes ESCOPADAS POR library_source das queries
+	// de reconciliacao acima e NAO aplicam o throttle de dias
+	// (retroactive_enrichment_days/dias_global): o pos-scan e o retry do scan que o
+	// dono acabou de pedir, nao uma varredura periodica do catalogo. O limite de
+	// itens por execucao continua (caps do scanner).
+	// Faixas type='faixa' status='draft' com media_file present DA FONTE informada e
+	// sem entity_relation como filha de album (mesmo universo de
+	// ListarFaixasDraftOrfas, sem throttle).
+	ListarFaixasDraftOrfasPorSource(ctx context.Context, arg ListarFaixasDraftOrfasPorSourceParams) ([]ListarFaixasDraftOrfasPorSourceRow, error)
+	// Filmes (type='movie') DA FONTE informada que nao tem identidade externa ainda
+	// e cujo melhor match ficou abaixo do limiar de baixa confianca -- o universo que
+	// o auto-match do pos-scan tenta de novo (caso real: item que entrou cru por
+	// causa do bug do 0089, 08/nov/2026).
+	ListarFilmesPendentesPorSource(ctx context.Context, arg ListarFilmesPendentesPorSourceParams) ([]ListarFilmesPendentesPorSourceRow, error)
 	// Filmografia da pessoa (briefing 0029 Fase D, interno-first): as obras do catalogo
 	// que a creditam, elenco OU equipe (credito de produtora nao tem person_id, sai
 	// naturalmente do WHERE). Junta credit com entity para trazer o papel (kind/
@@ -610,6 +625,9 @@ type Querier interface {
 	// serie.id, gravarArquivoSerie sempre grava assim, mesmo em revisao). Mesmo
 	// throttle da query irma acima.
 	ListarSeriesDraftComArquivo(ctx context.Context, arg ListarSeriesDraftComArquivoParams) ([]ListarSeriesDraftComArquivoRow, error)
+	// Series type='tv' status='draft' com media_file present DA FONTE informada
+	// (mesmo universo de ListarSeriesDraftComArquivo, sem throttle).
+	ListarSeriesDraftPorSource(ctx context.Context, arg ListarSeriesDraftPorSourceParams) ([]ListarSeriesDraftPorSourceRow, error)
 	// Tipos de entity DISTINTOS com pelo menos 1 item CATALOGADO (status !=
 	// 'draft'), para a home (0109) e o dropdown da navbar (0110) descobrirem
 	// quais schemas mostrar sem hardcode de lista fixa no frontend -- cobre

@@ -1,6 +1,10 @@
 package matching
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/rafaelvieiras/my-media-db/internal/textsim"
+)
 
 // Testes migrados de internal/server/automatch_test.go (TestPontuarCandidato_*)
 // quando a pontuação foi extraída para este pacote (briefing 0054) — mesmas
@@ -128,6 +132,76 @@ func TestAnoDeReleaseDate(t *testing.T) {
 	for entrada, esperado := range casos {
 		if got := AnoDeReleaseDate(entrada); got != esperado {
 			t.Errorf("AnoDeReleaseDate(%q) = %v, quero %v", entrada, got, esperado)
+		}
+	}
+}
+
+// ── Normalização de nome de obra (briefing 0136) ─────────────────────────────
+
+// TestNormalizarNome cobre os casos REAIS medidos no catálogo do dono (08/nov/
+// 2026): os álbuns que caíram em rascunho por causa do qualificador de edição na
+// tag, e os que NÃO devem ser tocados (qualificador que muda a obra, ou nome sem
+// qualificador nenhum).
+func TestNormalizarNome(t *testing.T) {
+	casos := []struct{ entrada, quero string }{
+		{"Hybrid Theory (Bonus Edition)", "Hybrid Theory"},
+		{"Rio (Collector's Edition)", "Rio"},
+		{"The Singles (Expanded)", "The Singles"},
+		{"Notorious (Deluxe Edition)", "Notorious"},
+		{"Notorious (1984)", "Notorious"},
+		{"The Hurting (Deluxe Edition)", "The Hurting"},
+		{"Hunting High and Low (Deluxe Edition)", "Hunting High and Low"},
+		{"Songs From The Big Chair (Deluxe)", "Songs From The Big Chair"},
+		{"Right Here, Right Now (EP)", "Right Here, Right Now"},
+		{"Alright (Remastered)", "Alright"},
+		{"Question And Answer (Album Version)", "Question And Answer"},
+		{"The Fat of the Land - Expanded Edition", "The Fat of the Land"},
+		{"Twilight Original Motion Picture Soundtrack (International Special Edition)", "Twilight Original Motion Picture Soundtrack"},
+		{"Emergency on Planet Earth (Remastered)", "Emergency on Planet Earth"},
+		// preservados: qualificador que muda a obra, álbum sem qualificador, e
+		// nome que viraria vazio (fallback para o original).
+		{"Unplugged (Live)", "Unplugged (Live)"},
+		{"Goodbye Country (Hello Nightclub)", "Goodbye Country (Hello Nightclub)"},
+		{"Born to Be Alive (The Original)", "Born to Be Alive (The Original)"},
+		{"Summer Songs", "Summer Songs"},
+		{"(Deluxe)", "(Deluxe)"},
+		{"", ""},
+	}
+	for _, c := range casos {
+		if got := NormalizarNome(c.entrada); got != c.quero {
+			t.Errorf("NormalizarNome(%q) = %q, quero %q", c.entrada, got, c.quero)
+		}
+	}
+}
+
+// TestSimilaridadeNormalizadaPassaDoLimiar trava o efeito prático: os pares que
+// hoje ficam ABAIXO do limiar de auto-match passam a bater (>= 92), sem que nomes
+// de obras diferentes passem a casar.
+func TestSimilaridadeNormalizadaPassaDoLimiar(t *testing.T) {
+	pares := [][2]string{
+		{"Hybrid Theory (Bonus Edition)", "Hybrid Theory"},
+		{"Rio (Collector's Edition)", "Rio"},
+		{"The Singles (Expanded)", "The Singles"},
+		{"Alright (Remastered)", "Alright"},
+		{"Question And Answer (Album Version)", "Question And Answer"},
+	}
+	for _, par := range pares {
+		if crua := textsim.Similaridade(par[0], par[1]) * 100; crua >= LimiarAutoMatch {
+			t.Fatalf("par de teste inválido: %q e %q já casavam cru (%.1f)", par[0], par[1], crua)
+		}
+		if got := SimilaridadeNormalizada(par[0], par[1]); got < LimiarAutoMatch {
+			t.Errorf("SimilaridadeNormalizada(%q, %q) = %.1f, quero >= %.1f", par[0], par[1], got, LimiarAutoMatch)
+		}
+	}
+
+	diferentes := [][2]string{
+		{"The Hurting (Deluxe Edition)", "Songs From The Big Chair"},
+		{"Hybrid Theory (Bonus Edition)", "Meteora"},
+		{"Alright (Remastered)", "Alright Already"},
+	}
+	for _, par := range diferentes {
+		if got := SimilaridadeNormalizada(par[0], par[1]); got >= LimiarAutoMatch {
+			t.Errorf("obras diferentes passaram a casar: %q x %q = %.1f", par[0], par[1], got)
 		}
 	}
 }

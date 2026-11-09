@@ -82,6 +82,28 @@ schema nem no resolver**:
 - **Videoclipe** → provider **IMVDB** (ex.: namespace `core.musicvideo@1`).
 - **Quadrinhos** → `ComicInfo.xml` / ecossistema Komga-Kavita.
 
+## Pós-scan: o scan fecha o próprio ciclo
+
+Desde o [briefing 0135](../briefings/0135-auto-match-fora-da-transacao-e-pos-scan.md)
+/ [ADR-0031](adr/0031-pos-scan-por-biblioteca.md), o scan de uma biblioteca tem
+uma etapa FINAL, executada depois do último lote commitado:
+
+- **Nada de enriquecimento dentro da transação.** O auto-match do item novo
+  (0089) e a materialização opcional rodam **depois do `Commit`** — dentro da
+  transação o auto-match não enxerga a linha (pool de leitura) e travaria o scan
+  na conexão única de escrita (ADR-0010).
+- **Reconciliação da própria biblioteca.** Ao terminar, a fonte escaneada
+  reconcilía as faixas e séries que ficaram em rascunho **dela** e retenta o
+  auto-match dos filmes pendentes dela — com cap por execução
+  (`scanner.CapReconciliacao*`), sem o throttle de dias do job periódico (este é
+  o retry do scan que o dono acabou de pedir).
+- **Materialização opcional** (`materializar_artes_automaticamente`) do que
+  passou a ter identidade nessa etapa.
+
+A etapa é best-effort e cancelável pelo mesmo contexto do item `scan` da fila;
+ela reporta o próprio andamento como **mensagem** de progresso (o contador
+continua sendo de arquivos).
+
 ## Ciclo de vida do arquivo: `missing` e datasource offline
 
 O scan é **não-destrutivo também na ausência**: sumiço nunca apaga registro.

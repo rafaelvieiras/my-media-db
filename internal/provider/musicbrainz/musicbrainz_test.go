@@ -75,6 +75,43 @@ func servidorMBFake(t *testing.T) *httptest.Server {
 		http.NotFound(w, r)
 	})
 
+	// busca TEXTUAL de release-group (briefing 0136, BuscarAlbumPorTitulo): devolve
+	// "Album One" (rg-1, do artist-1) e um homônimo de OUTRO artista que NÃO contém a
+	// faixa-alvo -- prova que o caminho por título escolhe por evidência da tracklist.
+	mux.HandleFunc("/release-group", func(w http.ResponseWriter, r *http.Request) {
+		if q := r.URL.Query().Get("query"); !strings.HasPrefix(q, "releasegroup:") {
+			t.Errorf("query = %q, quero prefixo releasegroup:", q)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"release-groups": [
+				{"id": "rg-1", "title": "Album One", "first-release-date": "1999-05-01",
+				 "artist-credit": [{"name": "Test Artist", "artist": {"id": "artist-1", "name": "Test Artist"}}]},
+				{"id": "rg-9", "title": "Album One", "first-release-date": "2010-01-01",
+				 "artist-credit": [{"name": "Other Artist", "artist": {"id": "artist-9", "name": "Other Artist"}}]}
+			]
+		}`))
+	})
+
+	mux.HandleFunc("/release-group/rg-9", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"title": "Album One",
+			"first-release-date": "2010-01-01",
+			"releases": [{"id": "rel-9", "status": "Official"}]
+		}`))
+	})
+
+	mux.HandleFunc("/release/rel-9", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"media": [{"position": 1, "tracks": [
+				{"position": 1, "title": "Nada A Ver",
+				 "recording": {"id": "rec-9", "title": "Nada A Ver"}}
+			]}]
+		}`))
+	})
+
 	mux.HandleFunc("/release-group/rg-1", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -1566,5 +1603,61 @@ func TestReleaseContemFaixaAlvoNaoDesempataQuandoAmbasCompativeis(t *testing.T) 
 
 	if releaseContemFaixaAlvo(faixas, alvo) {
 		t.Fatal("releaseContemFaixaAlvo = true, esperava false (ambas as faixas empatadas ficam dentro da tolerancia, continua ambiguo)")
+	}
+}
+
+// TestBuscarAlbumPorTitulo cobre o caminho de COMPILAÇÃO/TRILHA (briefing 0136):
+// resolve o álbum pelo título (dentre homônimos de artistas diferentes), confirma a
+// faixa-alvo na tracklist e devolve o artist-credit da fonte.
+func TestBuscarAlbumPorTitulo(t *testing.T) {
+	mb := servidorMBFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	// "Album One (Deluxe Edition)" é o nome que a TAG traz; o release-group canônico
+	// é "Album One" -- a normalização do briefing 0136 é o que faz esse caminho casar.
+	ac, achou, err := c.BuscarAlbumPorTitulo(context.Background(), "Album One (Deluxe Edition)", provider.AlvoFaixaAlbum{FaixaTitulo: "Track A"}, nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumPorTitulo: %v", err)
+	}
+	if !achou {
+		t.Fatal("achou = false, esperava true")
+	}
+	if ac.Album.MBID != "rg-1" || len(ac.Album.Faixas) != 2 {
+		t.Fatalf("album inesperado: %+v", ac.Album)
+	}
+	if ac.ArtistaMBID != "artist-1" || ac.ArtistaNome != "Test Artist" {
+		t.Fatalf("artist-credit = (%q,%q), quero (artist-1, Test Artist)", ac.ArtistaMBID, ac.ArtistaNome)
+	}
+}
+
+// TestBuscarAlbumPorTituloSemFaixaNaTracklist cobre a exigência de EVIDÊNCIA: um
+// release-group com o título certo mas SEM a faixa-alvo não é aceito (o candidato
+// homônimo rg-9 é montado e descartado, e o resultado é ok=false).
+func TestBuscarAlbumPorTituloSemFaixaNaTracklist(t *testing.T) {
+	mb := servidorMBFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	if _, achou, err := c.BuscarAlbumPorTitulo(context.Background(), "Album One", provider.AlvoFaixaAlbum{FaixaTitulo: "Musica Que Nao Existe"}, nil); err != nil {
+		t.Fatalf("BuscarAlbumPorTitulo: %v", err)
+	} else if achou {
+		t.Fatal("achou = true, esperava false (nenhuma release contém a faixa-alvo)")
+	}
+}
+
+// TestBuscarAlbumPorNomeNormalizaEdicao cobre a normalização do briefing 0136 no
+// caminho por ARTISTA: a tag traz "(Deluxe Edition)" e o release-group canônico não.
+func TestBuscarAlbumPorNomeNormalizaEdicao(t *testing.T) {
+	mb := servidorMBFake(t)
+	defer mb.Close()
+	c := novoClientDeTeste(mb.URL, "")
+
+	album, achou, err := c.BuscarAlbumPorNome(context.Background(), "artist-1", "Album One (Deluxe Edition)", provider.AlvoFaixaAlbum{}, nil)
+	if err != nil {
+		t.Fatalf("BuscarAlbumPorNome: %v", err)
+	}
+	if !achou || album.MBID != "rg-1" {
+		t.Fatalf("album = %+v (achou=%v), quero rg-1", album, achou)
 	}
 }

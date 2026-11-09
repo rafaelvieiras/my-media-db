@@ -133,6 +133,11 @@ type Materializador interface {
 type MusicaImportador interface {
 	Importar(ctx context.Context, source, sourceID, tipo string, langs []string) (id string, criada bool, err error)
 	ImportarFaixaPossuida(ctx context.Context, source, artistaMBID string, alvo enrich.FaixaAlvo, langs []string) (faixaID string, criada bool, err error)
+	// ImportarFaixaPorTituloDeAlbum é o caminho de COMPILAÇÃO/TRILHA (briefing
+	// 0136): resolve o álbum pelo título e usa o artist-credit que a fonte
+	// atribui a ele. Degrada em silêncio (ok=false) quando a fonte não
+	// implementa a capacidade -- ver enrich.ImportarFaixaPorTituloDeAlbum.
+	ImportarFaixaPorTituloDeAlbum(ctx context.Context, source string, alvo enrich.FaixaAlvo, langs []string) (faixaID string, criada bool, err error)
 }
 
 // LibraryGetter é o subconjunto de library.Service que o scanner consome
@@ -207,6 +212,12 @@ type Manager struct {
 	// ou série) do scan. nil = no-op, igual ao comportamento pré-0089.
 	// Configurado via ConfigurarMaterializacao.
 	materializador Materializador
+
+	// posScan é o gancho OPCIONAL de fim de scan (briefing 0135/ADR-0031):
+	// reconcilía os rascunhos e retenta os pendentes DA BIBLIOTECA que acabou de
+	// ser varrida. nil = comportamento pré-0135 (scan termina no ciclo de vida).
+	// Configurado via ConfigurarPosScan.
+	posScan PosScan
 
 	// musicaImportador/musicaProvider alimentam o caminho de MÚSICA (0107): o
 	// import por MBID (idempotente, via MusicaImportador) e o provider
@@ -476,4 +487,39 @@ func acessivel(path string) bool {
 	}
 	_ = f.Close()
 	return true
+}
+
+// ── Pós-scan por biblioteca (briefing 0135, ADR-0031) ───────────────────────
+
+// PosScan é o gancho OPCIONAL chamado ao FIM do scan de uma biblioteca, depois
+// do commit de todos os lotes e do fechamento do ciclo de vida (missing +
+// last_scan): a própria biblioteca reconcilía o que ficou em rascunho e retenta
+// o auto-match dos pendentes DELA, sem esperar o cron do job saude_biblioteca.
+// Implementado por *Server (internal/server/posscan.go), que reusa
+// ReconciliarFaixaDraft/ReconciliarSerieDraft/TentarAutoMatchFilme -- nenhuma
+// lógica de match nova aqui. Best-effort: erro é logado e engolido pelo scanner.
+type PosScan interface {
+	ProcessarPosScan(ctx context.Context, sourceID string) error
+}
+
+// Caps do pós-scan (briefing 0135 §4): quantos itens de cada tipo UMA execução de
+// scan tenta reconciliar/retentar. Throttling de custo/rate-limit -- um scan
+// grande não pode virar uma cascata de chamadas externas. NÃO são o throttle de
+// dias do enriquecimento retroativo (esse continua no job periódico): aqui é o
+// retry do scan que o dono acabou de pedir.
+const (
+	// CapReconciliacaoFaixas é o teto de faixas em rascunho reconciliadas por scan.
+	CapReconciliacaoFaixas = 200
+	// CapReconciliacaoSeries é o teto de séries em rascunho reconciliadas por scan.
+	CapReconciliacaoSeries = 50
+	// CapAutoMatchPendentes é o teto de filmes/episódios pendentes re-tentados por scan.
+	CapAutoMatchPendentes = 50
+)
+
+// ConfigurarPosScan injeta o pós-scan por biblioteca (briefing 0135). Sem isto o
+// scan termina como antes deste briefing (nenhuma reconciliação ao fim); o
+// gatilho de auto-match de filme (0089) e a materialização opcional continuam
+// funcionando, porque não dependem deste gancho.
+func (m *Manager) ConfigurarPosScan(p PosScan) {
+	m.posScan = p
 }

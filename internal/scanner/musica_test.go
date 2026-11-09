@@ -219,6 +219,13 @@ func (s *spyMusicaImportador) ImportarFaixaPossuida(_ context.Context, _, _ stri
 	return s.faixaID, true, nil
 }
 
+// ImportarFaixaPorTituloDeAlbum (briefing 0136) degrada em silêncio neste spy:
+// ele só existe para os testes do caminho por ARTISTA, e o passo 4b não pode
+// interferir neles.
+func (s *spyMusicaImportador) ImportarFaixaPorTituloDeAlbum(context.Context, string, enrich.FaixaAlvo, []string) (string, bool, error) {
+	return "", false, nil
+}
+
 // preSemearFaixaSpy cria a entity `faixa` que spyMusicaImportador vai devolver
 // (satisfaz a FK de media_file.entity_id -- spyMusicaImportador, ao contrário
 // do enrich real, não cria a entity sozinho).
