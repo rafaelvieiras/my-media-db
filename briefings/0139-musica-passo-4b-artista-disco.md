@@ -99,6 +99,20 @@ Medição com as tags reais das 51 faixas em rascunho (MusicBrainz ao vivo), ant
 | Scott Pilgrim (trilha) | não achava | resolve |
 | Various Artists — Twilight (4 faixas) | não achava | resolve (vocabulário de versão) |
 
+Medição completa das 51 faixas em rascunho (MusicBrainz ao vivo, mesmas tags do
+banco): **21 resolvem**, contra 14 antes do vocabulário de versão e 0 antes do
+escopo por artista. Os 30 restantes se dividem em: 4 álbuns que não existem na
+fonte (compilação caseira, tag corrompida), ~13 empates que nem posição nem
+duração separam (mesma faixa em N versões) e o resto é a família de crédito
+múltiplo + diferencial de gravação (demo/remix/ao vivo), tratada abaixo.
+
+**Custo por scan:** o pós-scan tem teto de 4 min (0138) e cada faixa que falha
+gasta ~15s (até 3 release-groups × até 15 releases), então um scan resolve/avança
+~15 itens. Medido em produção: um scan logo depois de limpar o carimbo de 12h
+levou a fila de 64 para 62, e o restante continua avançando a cada scan — é o
+comportamento desenhado (ordem "nunca tentado primeiro"), mas significa que
+consertar o matcher não drena a fila de uma vez.
+
 ## Segunda rodada: vocabulário de versão (`matching`)
 
 Depois do escopo por artista, a maior família restante era o RÓTULO de versão no
