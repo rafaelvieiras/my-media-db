@@ -12,10 +12,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// detalheFilmeRico e um payload de /movie/{id} com os blocos do DETALHE RICO (0022):
-// tagline (top + por idioma nas translations), backdrop, nota, runtime, coleção,
-// vídeos, keywords, classificação por região (release_dates), external_ids e
-// recommendations (0091 — trocado de `similar`, ver tmdb.go).
+// detalheFilmeRico is a /movie/{id} payload with the blocks of the RICH DETAIL:
+// tagline (top + per language in the translations), backdrop, score, runtime,
+// collection, videos, keywords, rating by region (release_dates), external_ids and
+// recommendations (switched from `similar`, see tmdb.go).
 const detalheFilmeRico = `{
   "id": 603,
   "original_language": "en",
@@ -52,8 +52,8 @@ const detalheFilmeRico = `{
   ]}
 }`
 
-// servidorRico responde /movie/603 com o payload rico e as listas de genero; captura
-// a ULTIMA requisicao a /movie/603 (para o teste do append_to_response).
+// servidorRico answers /movie/603 with the rich payload and the genre lists; it captures
+// the LAST request to /movie/603 (for the append_to_response test).
 func servidorRico(t *testing.T, capturar *http.Request) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -75,9 +75,9 @@ func servidorRico(t *testing.T, capturar *http.Request) *httptest.Server {
 	return srv
 }
 
-// TestBuscarDetalheAppendRico garante que o append_to_response pede os blocos ricos
-// (videos/keywords/release_dates/content_ratings/external_ids/recommendations) numa
-// so ida. `recommendations` substitui `similar` desde o briefing 0091.
+// TestBuscarDetalheAppendRico guarantees that append_to_response requests the rich blocks
+// (videos/keywords/release_dates/content_ratings/external_ids/recommendations) in a
+// single round trip. `recommendations` replaces `similar`.
 func TestBuscarDetalheAppendRico(t *testing.T) {
 	var req http.Request
 	srv := servidorRico(t, &req)
@@ -94,7 +94,7 @@ func TestBuscarDetalheAppendRico(t *testing.T) {
 	}
 }
 
-// mapearRico faz BuscarDetalhe + MapearDetalhe do filme rico e devolve o canonico.
+// mapearRico does BuscarDetalhe + MapearDetalhe of the rich movie and returns the canonical.
 func mapearRico(t *testing.T) map[string]any {
 	t.Helper()
 	srv := servidorRico(t, nil)
@@ -110,8 +110,8 @@ func mapearRico(t *testing.T) map[string]any {
 	return campos
 }
 
-// TestMapearDetalheRicoTraduziveis cobre os campos ricos TRADUZIVEIS: tagline (map por
-// idioma) e keywords (sob o idioma original, nao localizadas pelo TMDB).
+// TestMapearDetalheRicoTraduziveis covers the TRANSLATABLE rich fields: tagline (map by
+// language) and keywords (under the original language, not localized by TMDB).
 func TestMapearDetalheRicoTraduziveis(t *testing.T) {
 	campos := mapearRico(t)
 	eqIdioma(t, campos, "tagline", "pt-BR", "Bem-vindo ao mundo real.")
@@ -124,11 +124,11 @@ func TestMapearDetalheRicoTraduziveis(t *testing.T) {
 	eqLista(t, "keywords[en]", asLista(kw["en"]), []string{"dystopia", "hacker"})
 }
 
-// TestMapearDetalheRicoNeutros cobre os campos ricos NEUTROS: runtime, nota, backdrop,
-// classificacao por regiao, videos, colecao e links. Os SIMILARES (0091) deixaram de
-// ser cobertos aqui: MapearDetalhe/enriquecerNeutrosRico nao preenche mais out["similar"]
-// -- essa responsabilidade migrou para o metodo Similares (provider.SimilarProvider),
-// coberto pelos testes TestSimilares* mais abaixo.
+// TestMapearDetalheRicoNeutros covers the NEUTRAL rich fields: runtime, score, backdrop,
+// rating by region, videos, collection and links. The SIMILAR ones are no longer covered
+// here: MapearDetalhe/enriquecerNeutrosRico no longer fills in out["similar"] -- that
+// responsibility migrated to the Similares method (provider.SimilarProvider), covered by
+// the TestSimilares* tests further below.
 func TestMapearDetalheRicoNeutros(t *testing.T) {
 	campos := mapearRico(t)
 
@@ -140,18 +140,18 @@ func TestMapearDetalheRicoNeutros(t *testing.T) {
 	}
 	eqCampo(t, campos, "backdrop_url", "https://image.tmdb.org/t/p/w780/bg.jpg")
 
-	// Classificacao por regiao: BR do release_dates, US pega a 1a nao-vazia (R).
+	// Rating by region: BR from release_dates, US takes the 1st non-empty one (R).
 	eqMapa(t, campos, "certification_by_region", "BR", "14")
 	eqMapa(t, campos, "certification_by_region", "US", "R")
 
-	// Videos: so o que tem chave; URL do YouTube montada.
+	// Videos: only the ones with a key; the YouTube URL is assembled.
 	vids, ok := campos["videos"].([]any)
 	if !ok || len(vids) != 1 {
 		t.Fatalf("videos = %v, quero 1 item (com chave)", campos["videos"])
 	}
 	eqMapaItem(t, vids[0], "url", "https://www.youtube.com/watch?v=abc123")
 
-	// Colecao.
+	// Collection.
 	col, _ := campos["collection"].(map[string]any)
 	eqMapaItem(t, col, "source_id", "2344")
 	eqMapaItem(t, col, "name", "The Matrix Collection")
@@ -160,12 +160,12 @@ func TestMapearDetalheRicoNeutros(t *testing.T) {
 		t.Errorf("campos[\"similar\"] presente = %v, MapearDetalhe nao deve mais preencher essa chave (0091)", campos["similar"])
 	}
 
-	// Links externos (imdb do external_ids).
+	// External links (imdb from external_ids).
 	links, _ := campos["external_links"].(map[string]any)
 	eqMapaItem(t, links, "imdb", "https://www.imdb.com/title/tt0133093")
 }
 
-// eqMapa checa campos[campo][chave] == want (mapa aninhado no canonico).
+// eqMapa checks campos[field][key] == want (nested map in the canonical).
 func eqMapa(t *testing.T, campos map[string]any, campo, chave, want string) {
 	t.Helper()
 	m, ok := campos[campo].(map[string]any)
@@ -175,7 +175,7 @@ func eqMapa(t *testing.T, campos map[string]any, campo, chave, want string) {
 	eqMapaItem(t, m, chave, want)
 }
 
-// eqMapaItem checa m[chave] == want num map[string]any dinamico (any de teste).
+// eqMapaItem checks m[key] == want in a dynamic map[string]any (test any).
 func eqMapaItem(t *testing.T, m any, chave, want string) {
 	t.Helper()
 	obj, ok := m.(map[string]any)
@@ -187,8 +187,9 @@ func eqMapaItem(t *testing.T, m any, chave, want string) {
 	}
 }
 
-// TestBuscarDetalheNaoEncontrado prova que um 404 da fonte vira o sentinela
-// ErrNaoEncontrado (o handler o traduz em 404, distinto do 502 de falha real).
+// TestBuscarDetalheNaoEncontrado proves that a 404 from the source becomes the sentinel
+// ErrNaoEncontrado (the handler translates it into 404, distinct from the 502 of a real
+// failure).
 func TestBuscarDetalheNaoEncontrado(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "nao encontrado", http.StatusNotFound)
@@ -202,7 +203,7 @@ func TestBuscarDetalheNaoEncontrado(t *testing.T) {
 	}
 }
 
-// asLista converte um valor dinamico ([]string) numa fatia — helper local do teste.
+// asLista converts a dynamic value ([]string) into a slice -- a local test helper.
 func asLista(v any) []string {
 	if s, ok := v.([]string); ok {
 		return s
@@ -210,9 +211,10 @@ func asLista(v any) []string {
 	return nil
 }
 
-// TestTvdbIDDoDetalheSerieDoEnvelope (0087): o append external_ids de serie ja traz
-// tvdb_id de graca; TvdbIDDoDetalheSerie extrai do envelope AUMENTADO (o mesmo raw
-// devolvido por BuscarDetalhe/PayloadFresco), sem ida extra a rede.
+// TestTvdbIDDoDetalheSerieDoEnvelope: the external_ids append of a series already brings
+// tvdb_id for free; TvdbIDDoDetalheSerie extracts it from the AUGMENTED envelope (the same
+// raw returned by BuscarDetalhe/PayloadFresco), without an extra round trip to the
+// network.
 func TestTvdbIDDoDetalheSerieDoEnvelope(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -245,9 +247,9 @@ func TestTvdbIDDoDetalheSerieDoEnvelope(t *testing.T) {
 	}
 }
 
-// TestTvdbIDDoDetalheSeriePayloadLegado prova que o metodo tambem aceita o detalhe cru
-// SEM envelope (payload legado do 0015, sem {detail,tags_by_lang}) -- nao assume que
-// PayloadFresco sempre devolve o envelope aumentado.
+// TestTvdbIDDoDetalheSeriePayloadLegado proves that the method also accepts the raw detail
+// WITHOUT an envelope (legacy payload, without {detail,tags_by_lang}) -- it does not
+// assume that PayloadFresco always returns the augmented envelope.
 func TestTvdbIDDoDetalheSeriePayloadLegado(t *testing.T) {
 	c := New(Credencial{Token: "tok"}, nil, "")
 	raw := json.RawMessage(`{"id":1396,"external_ids":{"tvdb_id":"81189"}}`)
@@ -257,8 +259,9 @@ func TestTvdbIDDoDetalheSeriePayloadLegado(t *testing.T) {
 	}
 }
 
-// TestTvdbIDDoDetalheSerieSemMatch cobre a degradacao silenciosa (0087): sem tvdb_id no
-// external_ids, ou payload ilegivel, ok=false -- nunca panico/erro propagado.
+// TestTvdbIDDoDetalheSerieSemMatch covers the silent degradation: without a tvdb_id in
+// the external_ids, or with an unreadable payload, ok=false -- never a panic/propagated
+// error.
 func TestTvdbIDDoDetalheSerieSemMatch(t *testing.T) {
 	c := New(Credencial{Token: "tok"}, nil, "")
 	if id, ok := c.TvdbIDDoDetalheSerie(json.RawMessage(`{"detail":{"external_ids":{"imdb_id":"tt1"}}}`)); ok || id != "" {
@@ -269,10 +272,10 @@ func TestTvdbIDDoDetalheSerieSemMatch(t *testing.T) {
 	}
 }
 
-// TestTvdbIDDoDetalheSerieNumerico (0090) prova que o tvdb_id numerico (o TMDB e
-// inconsistente entre titulos: as vezes string, as vezes numero JSON) e aceito e
-// normalizado para string -- antes do fix, o Unmarshal falhava e o metodo devolvia
-// ("",false) mesmo com o tvdb_id presente.
+// TestTvdbIDDoDetalheSerieNumerico proves that a numeric tvdb_id (TMDB is inconsistent
+// between titles: sometimes a string, sometimes a JSON number) is accepted and
+// normalized to a string -- before the fix, the Unmarshal failed and the method returned
+// ("",false) even with the tvdb_id present.
 func TestTvdbIDDoDetalheSerieNumerico(t *testing.T) {
 	c := New(Credencial{Token: "tok"}, nil, "")
 	raw := json.RawMessage(`{"detail":{"external_ids":{"imdb_id":"tt0229888","tvdb_id":212601}}}`)
@@ -282,10 +285,10 @@ func TestTvdbIDDoDetalheSerieNumerico(t *testing.T) {
 	}
 }
 
-// TestSimilaresFiltraAdultoEVotoBaixo (0091): um item adulto e um item com
-// vote_count abaixo do limiar (votoMinimoSimilar=20) nunca aparecem na lista de
-// similares, mesmo com sobreposicao de genero e nota altas; so o item valido
-// (nao-adulto, vote_count no limiar) sobrevive.
+// TestSimilaresFiltraAdultoEVotoBaixo: an adult item and an item with a vote_count below
+// the threshold (votoMinimoSimilar=20) never appear in the list of similars, even with a
+// high genre overlap and score; only the valid item (non-adult, vote_count at the
+// threshold) survives.
 func TestSimilaresFiltraAdultoEVotoBaixo(t *testing.T) {
 	c := New(Credencial{Token: "tok"}, nil, "")
 	raw := json.RawMessage(`{
@@ -305,9 +308,9 @@ func TestSimilaresFiltraAdultoEVotoBaixo(t *testing.T) {
 	}
 }
 
-// TestSimilaresOrdenaPorSobreposicaoDeGenero (0091): entre dois itens com o MESMO
-// vote_count acima do limiar, o que tem mais generos em comum com o item de ORIGEM
-// (d.Genres) aparece antes -- mesmo com nota (vote_average) menor.
+// TestSimilaresOrdenaPorSobreposicaoDeGenero: between two items with the SAME vote_count
+// above the threshold, the one with more genres in common with the ORIGIN item
+// (d.Genres) appears first -- even with a lower score (vote_average).
 func TestSimilaresOrdenaPorSobreposicaoDeGenero(t *testing.T) {
 	c := New(Credencial{Token: "tok"}, nil, "")
 	raw := json.RawMessage(`{
@@ -327,7 +330,7 @@ func TestSimilaresOrdenaPorSobreposicaoDeGenero(t *testing.T) {
 	}
 }
 
-// TestSimilaresDesempataPorNota (0091): em sobreposicao de genero IGUAL, a nota
+// TestSimilaresDesempataPorNota: on an EQUAL genre overlap, the score (vote_average) breaks the tie -- highest first.
 // (vote_average) desempata -- maior primeiro.
 func TestSimilaresDesempataPorNota(t *testing.T) {
 	c := New(Credencial{Token: "tok"}, nil, "")
@@ -347,10 +350,10 @@ func TestSimilaresDesempataPorNota(t *testing.T) {
 	}
 }
 
-// TestSimilaresEnvelopeEPayloadLegado (0091) prova que Similares aceita tanto o
-// payload LEGADO (detalhe cru sem envelope, formato do 0015) quanto o envelope
-// AUMENTADO {detail,tags_by_lang} (0020) -- via detalheBrutoDoRaw, a mesma deteccao
-// que MapearDetalhe/TvdbIDDoDetalheSerie ja usam (0091 nao duplica esse parsing).
+// TestSimilaresEnvelopeEPayloadLegado proves that Similares accepts both the LEGACY
+// payload (raw detail without envelope) and the AUGMENTED envelope {detail,tags_by_lang}
+// -- via detalheBrutoDoRaw, the same detection that MapearDetalhe/TvdbIDDoDetalheSerie
+// already use (no duplicated parsing).
 func TestSimilaresEnvelopeEPayloadLegado(t *testing.T) {
 	const detalhe = `{"id": 603, "title": "The Matrix", "genres": [{"id": 28, "name": "Action"}], "recommendations": {"results": [{"id": 50, "title": "Recomendado", "genre_ids": [28], "vote_average": 7, "vote_count": 100}]}}`
 	c := New(Credencial{Token: "tok"}, nil, "")

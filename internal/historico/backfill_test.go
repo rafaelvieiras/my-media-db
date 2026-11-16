@@ -12,7 +12,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// setupDB sobe um banco temporário migrado (mesmo padrão de
+// setupDB brings up a migrated temporary database (same pattern as
 // internal/enrich/enrich_test.go / internal/server/entities_test.go).
 func setupDB(t *testing.T) *db.DB {
 	t.Helper()
@@ -27,7 +27,7 @@ func setupDB(t *testing.T) *db.DB {
 	return database
 }
 
-// criarEntity semeia uma entity mínima.
+// criarEntity seeds a minimal entity.
 func criarEntity(t *testing.T, q *sqlcgen.Queries, id, tipo, titulo string) {
 	t.Helper()
 	if _, err := q.CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
@@ -37,7 +37,7 @@ func criarEntity(t *testing.T, q *sqlcgen.Queries, id, tipo, titulo string) {
 	}
 }
 
-// criarOrfao semeia um evento órfão (entity_id NULL) com os raw ids dados.
+// criarOrfao seeds an orphan event (entity_id NULL) with the given raw ids.
 func criarOrfao(t *testing.T, q *sqlcgen.Queries, tmdb, imdb, tvdb string) sqlcgen.HistoricoEvento {
 	t.Helper()
 	ev, err := q.CriarHistoricoEventoOrfao(context.Background(), sqlcgen.CriarHistoricoEventoOrfaoParams{
@@ -65,8 +65,8 @@ func entityIDDoEvento(t *testing.T, q *sqlcgen.Queries, eventoID string) sql.Nul
 	return row.EntityID
 }
 
-// TestVincularOrfaosPorTmdb cobre o caso principal: um evento órfão cujo
-// raw_tmdb_id bate com o id da entity é vinculado (entity_id preenchido).
+// TestVincularOrfaosPorTmdb covers the main case: an orphan event whose
+// raw_tmdb_id matches the id of the entity is linked (entity_id filled in).
 func TestVincularOrfaosPorTmdb(t *testing.T) {
 	d := setupDB(t)
 	q := sqlcgen.New(d.Write)
@@ -86,8 +86,8 @@ func TestVincularOrfaosPorTmdb(t *testing.T) {
 	}
 }
 
-// TestVincularOrfaosSemBater cobre o caso negativo: nenhum id bate, nada é
-// tocado (entity_id continua NULL).
+// TestVincularOrfaosSemBater covers the negative case: no id matches, nothing
+// is touched (entity_id stays NULL).
 func TestVincularOrfaosSemBater(t *testing.T) {
 	d := setupDB(t)
 	q := sqlcgen.New(d.Write)
@@ -107,10 +107,10 @@ func TestVincularOrfaosSemBater(t *testing.T) {
 	}
 }
 
-// TestVincularOrfaosDuasFontesMesmaEntity cobre o critério de aceite "não é
-// primeiro a chegar, único a ganhar": dois eventos órfãos com fontes
-// DIFERENTES (tmdb e imdb) batendo com a MESMA entity são ambos vinculados
-// numa única chamada.
+// TestVincularOrfaosDuasFontesMesmaEntity covers the acceptance criterion "it
+// is not the first to arrive, the only one to win": two orphan events with
+// DIFFERENT sources (tmdb and imdb) matching the SAME entity are both linked in
+// a single call.
 func TestVincularOrfaosDuasFontesMesmaEntity(t *testing.T) {
 	d := setupDB(t)
 	q := sqlcgen.New(d.Write)
@@ -136,9 +136,9 @@ func TestVincularOrfaosDuasFontesMesmaEntity(t *testing.T) {
 	}
 }
 
-// TestVincularOrfaosIgnoraFonteDesconhecida cobre a decisão de que chaves
-// fora de tmdb/imdb/tvdb são ignoradas (sem erro, sem chamar query nenhuma
-// para elas) -- backfill só cobre as mesmas 3 fontes do casamento do webhook.
+// TestVincularOrfaosIgnoraFonteDesconhecida covers the decision that keys
+// outside tmdb/imdb/tvdb are ignored (no error, no query called for them) --
+// the backfill only covers the same 3 sources as the webhook matching.
 func TestVincularOrfaosIgnoraFonteDesconhecida(t *testing.T) {
 	d := setupDB(t)
 	q := sqlcgen.New(d.Write)

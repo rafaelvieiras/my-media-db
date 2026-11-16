@@ -7,37 +7,34 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Este arquivo implementa o REPROCESSAMENTO DE ARTES FALTANTES (briefing
-// 0118), complemento do enriquecimento retroativo (0056/0116/0117): uma
-// entity que JÁ tem external_ids (identidade resolvida, direto no import ou
-// via retroativo) pode mesmo assim nunca ter ganhado o inventário de arte de
-// nenhum ArteProvider (fanart.tv etc, briefing 0048) -- o caso real que
-// motivou este briefing: o provider foi configurado (chave de API cadastrada)
-// DEPOIS que a maioria dos artistas/filmes/séries já tinha sido importada, e
-// não existia nenhum mecanismo automático para voltar e tentar de novo (só o
-// botão manual "Baixar Artes Faltantes" por item, briefing 0088). Este passo
-// fecha esse gap em lote, com o MESMO throttle/dias do enriquecimento
-// retroativo.
+// This file implements the REPROCESSING OF MISSING ARTWORK, a complement to the
+// retroactive enrichment: an entity that ALREADY has external_ids (resolved identity,
+// straight at import or via retroactive) may still never have gained the artwork
+// inventory of any ArteProvider (fanart.tv etc.) -- the real case that motivated this:
+// the provider was configured (API key registered) AFTER most artists/movies/series had
+// already been imported, and there was no automatic mechanism to go back and try again
+// (only the manual "Download Missing Artwork" button per item). This step closes that
+// gap in batch, with the SAME throttle/days of the retroactive enrichment.
 
-// limiteReprocessamentoArtesPorExecucao é o teto de itens verificados por
-// execução do job -- mesmo raciocínio/valor de
-// limiteEnriquecimentoRetroativoPorExecucao (retroativo.go): throttling de
-// custo/rate-limit do(s) ArteProvider(s) numa biblioteca com backlog grande na
-// primeira vez que este briefing roda.
+// limiteReprocessamentoArtesPorExecucao is the ceiling of items checked per
+// job run -- same reasoning/value as
+// limiteEnriquecimentoRetroativoPorExecucao (retroativo.go): throttling of
+// cost/rate-limit of the ArteProvider(s) in a library with a large backlog on
+// the first time this runs.
 const limiteReprocessamentoArtesPorExecucao = 15
 
-// ReprocessarArtesFaltantes varre o lote de entities JÁ IDENTIFICADAS (tipos de
-// topo, com posse, respeitando o throttle por item) cujo inventário de arte
-// nunca foi verificado e tenta buscar de novo em todo ArteProvider registrado
-// (AtualizarInventarioArtes -- best-effort, nunca falha por si só: sem
-// ArteProvider, sem id utilizável ou sem match, degrada em silêncio). Satisfaz
-// libraryhealth.Matcher (chamado pelo job saude_biblioteca, DEPOIS do
-// enriquecimento retroativo). err é SÓ erro real de banco na LISTAGEM; falha
-// num item individual é absorvida (best-effort, loga e segue).
+// ReprocessarArtesFaltantes sweeps the batch of ALREADY IDENTIFIED entities (top
+// types, with ownership, respecting the per-item throttle) whose artwork inventory
+// has never been checked and tries to fetch it again across every registered ArteProvider
+// (AtualizarInventarioArtes -- best-effort, it never fails by itself: without an
+// ArteProvider, without a usable id or without a match, it degrades silently). It satisfies
+// libraryhealth.Matcher (called by the saude_biblioteca job, AFTER the
+// retroactive enrichment). err is ONLY a real database error in the LISTING; a failure
+// in an individual item is absorbed (best-effort, it logs and moves on).
 func (s *Server) ReprocessarArtesFaltantes(ctx context.Context) (processados int, err error) {
-	// Sem enrich configurado, AtualizarInventarioArtes nem existiria para
-	// chamar -- mesma guarda de EnriquecerRetroativo, evita carimbar
-	// last_external_match_attempt_at de itens nunca de fato verificados.
+	// Without enrich configured, AtualizarInventarioArtes would not even exist to
+	// call -- same guard as EnriquecerRetroativo, it avoids stamping
+	// last_external_match_attempt_at on items never actually checked.
 	if s.enrich == nil {
 		return 0, nil
 	}
@@ -62,10 +59,10 @@ func (s *Server) ReprocessarArtesFaltantes(ctx context.Context) (processados int
 		if err := s.enrich.AtualizarInventarioArtes(ctx, row.ID, row.Type, langCfg.Allowed); err != nil {
 			log.Printf("saude_biblioteca: reprocessamento de artes falhou para %s (best-effort, ignorado): %v", row.ID, err)
 		}
-		// Carimba SEMPRE (mesmo padrão de EnriquecerRetroativo/
-		// carimbarTentativaExterna): o item foi de fato verificado nesta
-		// execução, mesmo sem nenhum ArteProvider ter achado nada -- senão o
-		// próximo lote tentaria de novo no dia seguinte, sem respeitar o
+		// Always STAMPED (same pattern as EnriquecerRetroativo/
+		// carimbarTentativaExterna): the item was actually checked in this
+		// run, even if no ArteProvider found anything -- otherwise the
+		// next batch would try again the next day, without respecting the
 		// throttle.
 		if werr := s.carimbarTentativaExterna(ctx, row.ID); werr != nil {
 			log.Printf("saude_biblioteca: gravar tentativa de reprocessamento de artes falhou para %s: %v", row.ID, werr)

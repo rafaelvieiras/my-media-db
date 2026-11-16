@@ -1,16 +1,16 @@
 package server
 
-// artwork_select.go implementa POST /api/v1/entities/{id}/artwork/select (briefing 0048):
-// a AÇÃO da decisão "listar no import, baixar SÓ a selecionada". Uma arte do inventário
-// (fanart.tv/TMDB) é só uma URL até aqui; este endpoint recebe a url escolhida pelo dono,
-// BAIXA o binário e o materializa como asset origin='external' do `kind`, guardando a url
-// de origem no meta_json (rastreio + idempotência por url+kind). Se `prefer=true`, marca-a
-// como preferida (reusa marcarPreferida). É a ponte do inventário lazy para o disco.
+// artwork_select.go implements POST /api/v1/entities/{id}/artwork/select:
+// the ACTION of the decision "list at import, download ONLY the selected one". An artwork of the
+// inventory (fanart.tv/TMDB) is only a URL up to here; this endpoint receives the url chosen by the owner,
+// DOWNLOADS the binary and materializes it as an asset with origin='external' of the `kind`, storing the
+// origin url in meta_json (traceability + idempotency by url+kind). If `prefer=true`, it marks it
+// as preferred (reuses marcarPreferida). It is the bridge from the lazy inventory to disk.
 //
-// Segurança (anti-SSRF): o corpo é do usuário, então o HOST da url é validado contra a
-// MESMA allowlist do proxy de imagem (urlImagemPermitida) — host fora → 422, jamais
-// baixamos de host arbitrário. O binário baixado ainda é FAREJADO (magic bytes) e só
-// jpg/png/webp são aceitos, como no upload do dono.
+// Security (anti-SSRF): the body comes from the user, so the HOST of the url is validated against the
+// SAME allowlist as the image proxy (urlImagemPermitida) — host outside → 422, we never
+// download from an arbitrary host. The downloaded binary is still SNIFFED (magic bytes) and only
+// jpg/png/webp are accepted, as in the owner's upload.
 
 import (
 	"context"
@@ -29,21 +29,21 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// selectArtworkBody é o corpo do POST .../artwork/select: qual arte do inventário
-// (url num host da allowlist) materializar como asset origin='external' do `kind`, e
-// se deve marcá-la como preferida.
+// selectArtworkBody is the body of POST .../artwork/select: which artwork of the
+// inventory (url on an allowlisted host) to materialize as an asset with origin='external' of the `kind`, and
+// whether it should be marked as preferred.
 type selectArtworkBody struct {
 	Kind   string `json:"kind"`
 	URL    string `json:"url"`
 	Prefer bool   `json:"prefer"`
 }
 
-// selectArtwork trata POST /api/v1/entities/{id}/artwork/select: baixa a arte escolhida
-// (url do inventário) e cria um asset origin='external' do `kind`, com a url no meta_json.
-// Idempotente: se já existe asset external com a mesma url+kind, reusa sem rebaixar. Com
-// prefer=true, marca-a como preferida. 200 com o asset; 404 entity inexistente; 422 kind
-// fora do conjunto ou host fora da allowlist (anti-SSRF); 502 se o download falhar; 503
-// sem diretório de assets.
+// selectArtwork handles POST /api/v1/entities/{id}/artwork/select: it downloads the chosen artwork
+// (url from the inventory) and creates an asset with origin='external' of the `kind`, with the url in meta_json.
+// Idempotent: if an external asset with the same url+kind already exists, it reuses it without re-downloading. With
+// prefer=true, it marks it as preferred. 200 with the asset; 404 entity does not exist; 422 kind
+// outside the set or host outside the allowlist (anti-SSRF); 502 if the download fails; 503
+// without an assets directory.
 func (s *Server) selectArtwork(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -81,10 +81,10 @@ func (s *Server) selectArtwork(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, assetToDTO(alvo))
 }
 
-// parseSelectArtwork decodifica e valida o corpo: kind contra o registro kindsValidos
-// (422 fora) e o HOST da url contra a allowlist do proxy (urlImagemPermitida — 422 host
-// não permitido, a defesa anti-SSRF). Já escreve o erro e devolve ok=false. A url volta
-// CANÔNICA (a mesma forma que o proxy usaria).
+// parseSelectArtwork decodes and validates the body: kind against the kindsValidos registry
+// (422 outside) and the HOST of the url against the proxy allowlist (urlImagemPermitida — 422 host
+// not allowed, the anti-SSRF defense). It already writes the error and returns ok=false. The url comes back
+// CANONICAL (the same form the proxy would use).
 func (s *Server) parseSelectArtwork(w http.ResponseWriter, r *http.Request) (kind, urlCanon string, prefer, ok bool) {
 	var body selectArtworkBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -105,9 +105,9 @@ func (s *Server) parseSelectArtwork(w http.ResponseWriter, r *http.Request) (kin
 	return body.Kind, canon, body.Prefer, true
 }
 
-// arteExternaPorURL procura um asset origin='external' do `kind` cuja url de origem
-// (meta.source_url) seja `url` — o alvo idempotente do select. Devolve (asset, true, nil)
-// quando encontra; (_, false, nil) quando não há; erro só no acesso ao banco.
+// arteExternaPorURL looks for an asset with origin='external' of the `kind` whose origin url
+// (meta.source_url) is `url` — the idempotent target of select. It returns (asset, true, nil)
+// when it finds one; (_, false, nil) when there is none; an error only on database access.
 func (s *Server) arteExternaPorURL(ctx context.Context, id, url, kind string) (sqlcgen.Asset, bool, error) {
 	assets, err := s.leitura().ListarAssetsPorEntity(ctx, id)
 	if err != nil {
@@ -121,10 +121,10 @@ func (s *Server) arteExternaPorURL(ctx context.Context, id, url, kind string) (s
 	return sqlcgen.Asset{}, false, nil
 }
 
-// baixarEMaterializarArte baixa o binário de `url` (host já validado), grava-o
-// atomicamente sob {assetsDir}/{entityID}/ e cria o asset origin='external' do `kind`
-// com a url no meta_json. Erro de download (rede/status/tipo) vem embrulhado em
-// errBaixarArte para o handler mapear a 502; erro de disco/banco é interno (500).
+// baixarEMaterializarArte downloads the binary of `url` (host already validated), writes it
+// atomically under {assetsDir}/{entityID}/ and creates the asset with origin='external' of the `kind`
+// with the url in meta_json. A download error (network/status/type) comes wrapped in
+// errBaixarArte so the handler can map it to 502; a disk/database error is internal (500).
 func (s *Server) baixarEMaterializarArte(ctx context.Context, id, url, kind string) (sqlcgen.Asset, error) {
 	dados, ext, err := s.baixarArte(ctx, url)
 	if err != nil {
@@ -148,16 +148,16 @@ func (s *Server) baixarEMaterializarArte(ctx context.Context, id, url, kind stri
 		MetaJson:  metaComSourceURL(url),
 	})
 	if err != nil {
-		_ = os.Remove(destino) // best-effort: nao deixa binario orfao se o INSERT falhar
+		_ = os.Remove(destino) // best-effort: do not leave an orphan binary if the INSERT fails
 		return sqlcgen.Asset{}, err
 	}
 	return asset, nil
 }
 
-// baixarArte faz o GET da arte (timeout do httpImagem + teto de bytes), exige 200 e um
-// binário que FAREJE como jpg/png/webp (magic bytes — nunca o header do servidor),
-// devolvendo os bytes e a extensão canônica. Status != 200, I/O, tamanho ou tipo
-// inválido é erro (o handler degrada com 502).
+// baixarArte performs the GET of the artwork (httpImagem timeout + byte ceiling), requires 200 and a
+// binary that SNIFFS as jpg/png/webp (magic bytes — never the server header),
+// returning the bytes and the canonical extension. Status != 200, I/O, size or an invalid type
+// is an error (the handler degrades with 502).
 func (s *Server) baixarArte(ctx context.Context, url string) ([]byte, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -185,8 +185,9 @@ func (s *Server) baixarArte(ctx context.Context, url string) ([]byte, string, er
 	return dados, ext, nil
 }
 
-// preferirArte marca `alvo` como preferida do seu kind (reusa marcarPreferida: limpa a
-// flag dos outros do mesmo (entity, kind) e devolve o alvo com o meta atualizado).
+// preferirArte marks `alvo` as preferred of its kind (reuses marcarPreferida: it clears the
+// flag of the others of the same (entity, kind) and returns the target with the updated
+// meta).
 func (s *Server) preferirArte(ctx context.Context, id string, alvo sqlcgen.Asset) (sqlcgen.Asset, error) {
 	assets, err := s.leitura().ListarAssetsPorEntity(ctx, id)
 	if err != nil {
@@ -195,12 +196,12 @@ func (s *Server) preferirArte(ctx context.Context, id string, alvo sqlcgen.Asset
 	return s.marcarPreferida(ctx, assets, alvo)
 }
 
-// errBaixarArte marca a falha de DOWNLOAD da arte (rede/status/tipo) para o handler
-// diferenciar do erro de disco/banco e responder 502 em vez de 500.
+// errBaixarArte marks the DOWNLOAD failure of the artwork (network/status/type) so the handler
+// can tell it apart from a disk/database error and respond 502 instead of 500.
 var errBaixarArte = fmt.Errorf("select: falha ao baixar a arte")
 
-// respondErroBaixarArte responde 502 quando o download da arte falhou (errBaixarArte)
-// e 500 para qualquer outra falha (disco/banco).
+// respondErroBaixarArte responds 502 when the artwork download failed (errBaixarArte)
+// and 500 for any other failure (disk/database).
 func respondErroBaixarArte(w http.ResponseWriter, err error) {
 	if errors.Is(err, errBaixarArte) {
 		writeError(w, http.StatusBadGateway, "external_source_error",
@@ -210,8 +211,8 @@ func respondErroBaixarArte(w http.ResponseWriter, err error) {
 	respondErroInterno(w)
 }
 
-// metaComSourceURL monta o meta_json de um asset external do select: guarda a url de
-// origem (source_url) para a idempotência (arteExternaPorURL) e o rastreio.
+// metaComSourceURL builds the meta_json of an external asset from select: it stores the origin
+// url (source_url) for idempotency (arteExternaPorURL) and for traceability.
 func metaComSourceURL(url string) sql.NullString {
 	b, err := json.Marshal(map[string]string{"source_url": url})
 	if err != nil {
@@ -220,8 +221,8 @@ func metaComSourceURL(url string) sql.NullString {
 	return sql.NullString{String: string(b), Valid: true}
 }
 
-// metaSourceURL lê a url de origem (source_url) de um meta_json cru; "" quando NULL/
-// vazio/malformado ou ausente.
+// metaSourceURL reads the origin url (source_url) from a raw meta_json; "" when NULL/
+// empty/malformed or absent.
 func metaSourceURL(ns sql.NullString) string {
 	if !ns.Valid || ns.String == "" {
 		return ""

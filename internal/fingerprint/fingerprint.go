@@ -1,15 +1,15 @@
-// Package fingerprint é o wrapper do fpcalc (Chromaprint, briefing 0126):
-// roda o binário como subprocesso com saída JSON e devolve a impressão
-// digital acústica + a duração do arquivo, para consulta ao AcoustID
-// (internal/provider/acoustid) — o passo 4.5 do pipeline de matching de
-// música (internal/scanner/musica.go), disparado só quando MBID embutido e
-// busca textual já falharam.
+// Package fingerprint is the fpcalc wrapper (Chromaprint): it runs the binary
+// as a subprocess with JSON output and returns the acoustic fingerprint plus the
+// duration of the file, for a query to AcoustID
+// (internal/provider/acoustid) — step 4.5 of the music matching pipeline
+// (internal/scanner/musica.go), triggered only when the embedded MBID and the
+// textual search have already failed.
 //
-// fpcalc é dependência de RUNTIME, não de build (mesmo padrão de
-// internal/mediainfo para o ffprobe, ADR-0014/ADR-0025): a presença é
-// checada no boot; a ausência DEGRADA (scanner pula o passo 4.5, loga um
-// aviso), nunca derruba o scan. O caminho do binário e a função de execução
-// são injetáveis para permitir testes sem o fpcalc real.
+// fpcalc is a RUNTIME dependency, not a build one (same pattern as
+// internal/mediainfo for ffprobe, ADR-0014/ADR-0025): its presence is checked at
+// boot; absence DEGRADES (the scanner skips step 4.5 and logs a warning), it
+// never takes the scan down. The binary path and the execution function are
+// injectable to allow tests without the real fpcalc.
 package fingerprint
 
 import (
@@ -20,37 +20,38 @@ import (
 	"strings"
 )
 
-// runner executa um comando e devolve o stdout. Injetável para testes (mesmo
-// molde de internal/mediainfo.runner).
+// runner runs a command and returns stdout. Injectable for tests (same mold as
+// internal/mediainfo.runner).
 type runner func(ctx context.Context, name string, args ...string) ([]byte, error)
 
-// Calculador roda o fpcalc. Zero-value inútil: use NewCalculador. Binary e
-// run são injetáveis (NewCalculadorComRunner) para testar sem o fpcalc real.
+// Calculador runs fpcalc. Useless zero value: use NewCalculador. Binary and run
+// are injectable (NewCalculadorComRunner) to test without the real fpcalc.
 type Calculador struct {
 	binary string
 	run    runner
 }
 
-// NewCalculador cria um Calculador que chama o "fpcalc" do PATH via os/exec.
+// NewCalculador creates a Calculador that calls the "fpcalc" from PATH through
+// os/exec.
 func NewCalculador() *Calculador {
 	return NewCalculadorComRunner("fpcalc", execRunner)
 }
 
-// NewCalculadorComRunner cria um Calculador com binário e runner explícitos
-// (testes).
+// NewCalculadorComRunner creates a Calculador with an explicit binary and
+// runner (tests).
 func NewCalculadorComRunner(binary string, run runner) *Calculador {
 	return &Calculador{binary: binary, run: run}
 }
 
-// execRunner é o runner de produção: roda o comando e captura o stdout.
+// execRunner is the production runner: it runs the command and captures stdout.
 func execRunner(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).Output()
 }
 
-// Disponivel diz se o binário do fpcalc está no PATH. O boot (e o scanner,
-// indiretamente via provider registrado condicionalmente) usa isso para
-// logar um aviso e degradar (capacidade FingerprintProvider não registrada)
-// em vez de falhar.
+// Disponivel tells whether the fpcalc binary is in the PATH. The boot (and the
+// scanner, indirectly through the conditionally registered provider) uses it to
+// log a warning and degrade (FingerprintProvider capability not registered)
+// instead of failing.
 func (c *Calculador) Disponivel() bool {
 	if _, err := exec.LookPath(c.binary); err != nil {
 		return false
@@ -58,13 +59,13 @@ func (c *Calculador) Disponivel() bool {
 	return true
 }
 
-// CalcularFingerprint roda o fpcalc no arquivo `path` e devolve a impressão
-// digital acústica (base64, formato Chromaprint compact) e a duração em
-// segundos que o PRÓPRIO fpcalc mediu (independente do mediainfo/ffprobe —
-// o AcoustID exige a duração REPORTADA JUNTO do fingerprint, não uma de
-// outra fonte). Erro se o subprocesso ou o parse falharem — o chamador
-// (scanner) decide degradar (cai para o passo de draft) em vez de abortar o
-// scan inteiro.
+// CalcularFingerprint runs fpcalc on the file `path` and returns the acoustic
+// fingerprint (base64, Chromaprint compact format) and the duration in seconds
+// that fpcalc ITSELF measured (independent of mediainfo/ffprobe — AcoustID
+// requires the duration REPORTED ALONGSIDE the fingerprint, not one from another
+// source). It errors if the subprocess or the parse fails — the caller (scanner)
+// decides to degrade (falling back to the draft step) instead of aborting the
+// whole scan.
 func (c *Calculador) CalcularFingerprint(ctx context.Context, path string) (fingerprintStr string, duracaoSegundos float64, err error) {
 	out, err := c.run(ctx, c.binary, "-json", path)
 	if err != nil {
@@ -80,8 +81,8 @@ func (c *Calculador) CalcularFingerprint(ctx context.Context, path string) (fing
 	return resp.Fingerprint, resp.Duration, nil
 }
 
-// fpcalcJSON é a saída crua de `fpcalc -json` — só os dois campos usados
-// (a ferramenta não devolve mais nada de relevante para este pacote).
+// fpcalcJSON is the raw output of `fpcalc -json` — only the two fields used
+// (the tool returns nothing else relevant to this package).
 type fpcalcJSON struct {
 	Duration    float64 `json:"duration"`
 	Fingerprint string  `json:"fingerprint"`

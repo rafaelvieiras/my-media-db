@@ -12,7 +12,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 )
 
-// libraryFake e um LibraryLister fake, sem tocar filesystem.
+// libraryFake is a fake LibraryLister, without touching the filesystem.
 type libraryFake struct {
 	sources []library.Source
 	err     error
@@ -22,12 +22,12 @@ func (f *libraryFake) Listar(context.Context) ([]library.Source, error) {
 	return f.sources, f.err
 }
 
-// scanFake e um ScanRunner fake (briefing 0108, CAMADA 3: Executar roda
-// SÍNCRONO, sem fila -- ver o comentário em ScanRunner sobre o deadlock que
-// isso evita). startErr[sourceID] forca Executar a falhar IMEDIATAMENTE para
-// aquela fonte (equivalente ao antigo Start() falhando); runErr[sourceID]
-// forca Executar a falhar DEPOIS de `duracao` (equivalente ao antigo
-// LastError de um scan que rodou e terminou com erro).
+// scanFake is a fake ScanRunner (LAYER 3: Executar runs SYNCHRONOUSLY, with no
+// queue -- see the comment on ScanRunner about the deadlock that avoids).
+// startErr[sourceID] forces Executar to fail IMMEDIATELY for that source
+// (equivalent to the old Start() failing); runErr[sourceID] forces Executar to
+// fail AFTER `duracao` (equivalent to the old LastError of a scan that ran and
+// ended with an error).
 type scanFake struct {
 	startErr map[string]error
 	runErr   map[string]error
@@ -45,9 +45,9 @@ func newScanFake() *scanFake {
 	}
 }
 
-// StorageNaoVideo satisfaz ScanRunner (briefing 0063): devolve o valor
-// configurado em `storage` para a fonte, ou ok=false se ausente -- mesma
-// semântica de "nunca houve scan" do scanner.Manager real.
+// StorageNaoVideo satisfies ScanRunner: it returns the value configured in
+// `storage` for the source, or ok=false when absent -- the same "there has never
+// been a scan" semantics as the real scanner.Manager.
 func (f *scanFake) StorageNaoVideo(sourceID string) (managedBytes, unmanagedBytes int64, ok bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -58,9 +58,9 @@ func (f *scanFake) StorageNaoVideo(sourceID string) (managedBytes, unmanagedByte
 	return v[0], v[1], true
 }
 
-// Executar simula o scan síncrono de UMA fonte: falha imediatamente se
-// startErr estiver configurado; senão "roda" por `duracao` (respeitando
-// ctx.Done) e falha com runErr, se configurado, ao final.
+// Executar simulates the synchronous scan of ONE source: it fails immediately if
+// startErr is configured; otherwise it "runs" for `duracao` (honoring ctx.Done)
+// and fails with runErr, if configured, at the end.
 func (f *scanFake) Executar(ctx context.Context, refID, _ string, _ execqueue.ProgressoFunc) (string, error) {
 	if err := f.startErr[refID]; err != nil {
 		return "", err
@@ -78,7 +78,7 @@ func (f *scanFake) Executar(ctx context.Context, refID, _ string, _ execqueue.Pr
 	return "", nil
 }
 
-// contadorFake e um Contador fake com valores fixos (ou erro).
+// contadorFake is a fake Contador with fixed values (or an error).
 type contadorFake struct {
 	revisao, orfas int
 	err            error
@@ -87,12 +87,11 @@ type contadorFake struct {
 func (c *contadorFake) ContarRevisao(context.Context) (int, error) { return c.revisao, c.err }
 func (c *contadorFake) ContarOrfas(context.Context) (int, error)   { return c.orfas, c.err }
 
-// matcherFake e um Matcher fake (briefing 0054/0056): valores fixos de
-// resolved/pending (auto-match) e aplicados/sinalizados (enriquecimento
-// retroativo), ou erro para exercitar o caminho best-effort do job. Os dois
-// metodos tem contadores de chamada separados (chamadasAutoMatch/
-// chamadasRetroativo) para os testes provarem que cada um roda EXATAMENTE
-// uma vez por execucao.
+// matcherFake is a fake Matcher: fixed values of resolved/pending (auto-match)
+// and aplicados/sinalizados (retroactive enrichment), or an error to exercise
+// the best-effort path of the job. The two methods have separate call counters
+// (chamadasAutoMatch/chamadasRetroativo) so the tests can prove that each one
+// runs EXACTLY once per execution.
 type matcherFake struct {
 	resolved, pending int
 	err               error
@@ -140,10 +139,10 @@ func (m *matcherFake) ReconciliarFilhosOrfaos(context.Context) (int, error) {
 	return m.reconciliados, m.errReconciliar
 }
 
-// completenessFake e um CompletenessRecalculator fake (briefing 0058):
-// valores fixos de avaliados/incompletos, ou erro para exercitar o caminho
-// best-effort do job. chamadas conta quantas vezes o metodo rodou, para os
-// testes provarem que roda EXATAMENTE uma vez por execucao.
+// completenessFake is a fake CompletenessRecalculator: fixed values of
+// avaliados/incompletos, or an error to exercise the best-effort path of the
+// job. chamadas counts how many times the method ran, so the tests can prove it
+// runs EXACTLY once per execution.
 type completenessFake struct {
 	avaliados, incompletos int
 	err                    error
@@ -155,11 +154,11 @@ func (c *completenessFake) RecalcularCompletudeCatalogacao(context.Context) (int
 	return c.avaliados, c.incompletos, c.err
 }
 
-// contadorSequencialFake devolve um valor de ContarRevisao por chamada, na
-// ordem de revisaoValores (a última chamada extra repete o último valor) --
-// usado para provar que o job RECONTA a fila DEPOIS do auto-match (briefing
-// 0054), refletindo a queda de itens (contadorFake, com valor fixo, não
-// consegue distinguir "recontou" de "não recontou").
+// contadorSequencialFake returns one ContarRevisao value per call, in the order
+// of revisaoValores (the last extra call repeats the last value) -- used to
+// prove that the job RECOUNTS the queue AFTER the auto-match, reflecting the
+// drop in items (contadorFake, with a fixed value, cannot distinguish
+// "recounted" from "did not recount").
 type contadorSequencialFake struct {
 	revisaoValores []int
 	orfas          int
@@ -183,8 +182,8 @@ func TestNome(t *testing.T) {
 	}
 }
 
-// TestExecutarSemFontes prova que zero library_source cadastradas nao e erro
-// -- so uma mensagem informativa + as contagens atuais.
+// TestExecutarSemFontes proves that zero registered library_source is not an
+// error -- only an informative message plus the current counts.
 func TestExecutarSemFontes(t *testing.T) {
 	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 3, orfas: 2}, &matcherFake{}, nil)
 
@@ -198,10 +197,10 @@ func TestExecutarSemFontes(t *testing.T) {
 	}
 }
 
-// TestExecutarTodasSucesso prova o caminho feliz: dispara o scan de cada
-// fonte, ESPERA cada uma terminar antes de contar as filas (a asserção real
-// é indireta -- se o Handler não esperasse, o teste seria não-determinístico
-// e falharia esporadicamente sob -race/-count=10).
+// TestExecutarTodasSucesso proves the happy path: it triggers the scan of each
+// source, WAITS for each one to finish before counting the queues (the real
+// assertion is indirect -- if the Handler did not wait, the test would be
+// non-deterministic and would fail sporadically under -race/-count=10).
 func TestExecutarTodasSucesso(t *testing.T) {
 	scn := newScanFake()
 	scn.duracao = 30 * time.Millisecond
@@ -222,8 +221,8 @@ func TestExecutarTodasSucesso(t *testing.T) {
 	}
 }
 
-// TestExecutarFalhaParcial prova que uma fonte offline (Start falha) nao
-// aborta a outra, e a mensagem final reporta a falha parcial.
+// TestExecutarFalhaParcial proves that an offline source (Start fails) does not
+// abort the other one, and the final message reports the partial failure.
 func TestExecutarFalhaParcial(t *testing.T) {
 	scn := newScanFake()
 	scn.startErr["s-offline"] = errors.New("datasource inacessível (offline)")
@@ -244,9 +243,9 @@ func TestExecutarFalhaParcial(t *testing.T) {
 	}
 }
 
-// TestExecutarErroDeScanNoMeio prova que um scan que INICIA mas termina com
-// erro (LastError) também conta como falha daquela fonte, sem abortar as
-// outras.
+// TestExecutarErroDeScanNoMeio proves that a scan that STARTS but ends with an
+// error (LastError) also counts as a failure of that source, without aborting
+// the others.
 func TestExecutarErroDeScanNoMeio(t *testing.T) {
 	scn := newScanFake()
 	scn.runErr["s-quebra"] = errors.New("permissão negada")
@@ -269,8 +268,8 @@ func TestExecutarErroDeScanNoMeio(t *testing.T) {
 	}
 }
 
-// TestExecutarTodasFalham prova o critério: se TODAS as fontes falharem, o
-// job devolve ERRO (não sucesso mentiroso).
+// TestExecutarTodasFalham proves the criterion: if ALL sources fail, the job
+// returns an ERROR (not a lying success).
 func TestExecutarTodasFalham(t *testing.T) {
 	scn := newScanFake()
 	scn.startErr["s1"] = errors.New("offline")
@@ -287,8 +286,8 @@ func TestExecutarTodasFalham(t *testing.T) {
 	}
 }
 
-// TestExecutarErroListarFontes prova que erro ao listar as fontes aborta
-// imediatamente (nada para escanear).
+// TestExecutarErroListarFontes proves that an error listing the sources aborts
+// immediately (nothing to scan).
 func TestExecutarErroListarFontes(t *testing.T) {
 	lib := &libraryFake{err: errors.New("banco indisponível")}
 	h := New(lib, newScanFake(), &contadorFake{}, &matcherFake{}, nil)
@@ -298,12 +297,12 @@ func TestExecutarErroListarFontes(t *testing.T) {
 	}
 }
 
-// TestExecutarAguardaAntesDeContar e o teste mais importante do briefing
-// 0053: prova que o Handler REALMENTE espera o scan terminar (via polling de
-// Status) antes de contar as filas -- se ele não esperasse, a contagem abaixo
-// seria capturada ANTES do scanFake marcar running=false, mas como o duracao
-// é maior que o tempo de uma chamada síncrona, qualquer implementação que não
-// espere passaria por sorte; repetir com -count=10 no CI pega regressão.
+// TestExecutarAguardaAntesDeContar is the most important test of this Handler:
+// it proves that the Handler REALLY waits for the scan to finish before
+// counting the queues -- if it did not wait, the count below would be captured
+// BEFORE scanFake marks running=false, but as the duration is longer than a
+// synchronous call, any implementation that did not wait would pass by luck;
+// repeating it with -count=10 in CI catches the regression.
 func TestExecutarAguardaAntesDeContar(t *testing.T) {
 	scn := newScanFake()
 	scn.duracao = 50 * time.Millisecond
@@ -320,8 +319,9 @@ func TestExecutarAguardaAntesDeContar(t *testing.T) {
 	}
 }
 
-// TestExecutarContagemFalha prova que erro ao contar as filas não vira erro
-// do job (o scan em si funcionou) -- a mensagem reporta o problema.
+// TestExecutarContagemFalha proves that an error counting the queues does not
+// become a job error (the scan itself worked) -- the message reports the
+// problem.
 func TestExecutarContagemFalha(t *testing.T) {
 	h := New(&libraryFake{}, newScanFake(), &contadorFake{err: fmt.Errorf("banco indisponível")}, &matcherFake{}, nil)
 
@@ -334,11 +334,11 @@ func TestExecutarContagemFalha(t *testing.T) {
 	}
 }
 
-// TestExecutarAcionaAutoMatchEReflete cobre o critério central do briefing
-// 0054: depois de contar revisão/órfãs, o job aciona o Matcher e a mensagem
-// final reflete "<M> resolvidos automaticamente" -- com a contagem de revisão
-// RECONTADA após o auto-match (3, não os 5 de antes de rodar), provando que o
-// job não usa a contagem obsoleta.
+// TestExecutarAcionaAutoMatchEReflete covers the central criterion of the
+// auto-match: after counting review/orphans, the job calls the Matcher and the
+// final message reflects "<M> resolvidos automaticamente" -- with the review
+// count RECOUNTED after the auto-match (3, not the 5 from before it ran),
+// proving that the job does not use the stale count.
 func TestExecutarAcionaAutoMatchEReflete(t *testing.T) {
 	cont := &contadorSequencialFake{revisaoValores: []int{5, 3}, orfas: 1}
 	matcher := &matcherFake{resolved: 2, pending: 3}
@@ -357,9 +357,10 @@ func TestExecutarAcionaAutoMatchEReflete(t *testing.T) {
 	}
 }
 
-// TestExecutarFalhaDoAutoMatchNaoAbortaJob cobre o critério best-effort: uma
-// falha do Matcher não derruba o job -- o resumo de scan/contagem original
-// (sem "resolvidos automaticamente", já que nada foi resolvido) ainda sai.
+// TestExecutarFalhaDoAutoMatchNaoAbortaJob covers the best-effort criterion: a
+// failure of the Matcher does not bring the job down -- the original
+// scan/count summary (without "resolvidos automaticamente", since nothing was
+// resolved) still comes out.
 func TestExecutarFalhaDoAutoMatchNaoAbortaJob(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{err: errors.New("erro simulado no auto-match")}
@@ -375,13 +376,13 @@ func TestExecutarFalhaDoAutoMatchNaoAbortaJob(t *testing.T) {
 	}
 }
 
-// TestExecutarAcionaEnriquecimentoRetroativoEReflete cobre o critério central
-// do briefing 0056: depois do auto-match em lote, o job aciona
-// EnriquecerRetroativo e a mensagem final ganha a cláusula "enriquecimento
-// retroativo: <A> aplicado(s), <S> sinalizado(s) para revisão" -- com a
-// contagem de revisão RECONTADA de novo após este passo (3, não os 5 de
-// antes), provando que o job reflete o estado FINAL (itens sinalizados
-// entraram na fila).
+// TestExecutarAcionaEnriquecimentoRetroativoEReflete covers the central
+// criterion of the retroactive enrichment: after the batch auto-match, the job
+// calls EnriquecerRetroativo and the final message gains the clause
+// "enriquecimento retroativo: <A> aplicado(s), <S> sinalizado(s) para revisão"
+// -- with the review count RECOUNTED again after this step (3, not the 5 from
+// before), proving that the job reflects the FINAL state (flagged items entered
+// the queue).
 func TestExecutarAcionaEnriquecimentoRetroativoEReflete(t *testing.T) {
 	cont := &contadorSequencialFake{revisaoValores: []int{5, 3}, orfas: 1}
 	matcher := &matcherFake{aplicados: 3, sinalizados: 2}
@@ -400,10 +401,10 @@ func TestExecutarAcionaEnriquecimentoRetroativoEReflete(t *testing.T) {
 	}
 }
 
-// TestExecutarEnriquecimentoRetroativoOmiteClausulaQuandoZero cobre o
-// critério de omissão: sem nada aplicado nem sinalizado, a mensagem final
-// NÃO ganha a cláusula extra (mesmo espírito da omissão de "resolvidos
-// automaticamente" quando resolvidos==0).
+// TestExecutarEnriquecimentoRetroativoOmiteClausulaQuandoZero covers the
+// omission criterion: with nothing applied or flagged, the final message does
+// NOT gain the extra clause (same spirit as omitting "resolvidos
+// automaticamente" when resolvidos==0).
 func TestExecutarEnriquecimentoRetroativoOmiteClausulaQuandoZero(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{}
@@ -419,9 +420,9 @@ func TestExecutarEnriquecimentoRetroativoOmiteClausulaQuandoZero(t *testing.T) {
 	}
 }
 
-// TestExecutarFalhaDoEnriquecimentoRetroativoNaoAbortaJob cobre o critério
-// best-effort: uma falha do Matcher no passo retroativo não derruba o job --
-// o resumo original (sem a cláusula extra) ainda sai.
+// TestExecutarFalhaDoEnriquecimentoRetroativoNaoAbortaJob covers the best-effort
+// criterion: a failure of the Matcher in the retroactive step does not bring the
+// job down -- the original summary (without the extra clause) still comes out.
 func TestExecutarFalhaDoEnriquecimentoRetroativoNaoAbortaJob(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{errRetroativo: errors.New("erro simulado no enriquecimento retroativo")}
@@ -437,9 +438,9 @@ func TestExecutarFalhaDoEnriquecimentoRetroativoNaoAbortaJob(t *testing.T) {
 	}
 }
 
-// TestExecutarSemMatcherNaoRodaEnriquecimentoRetroativo cobre a guarda
-// matcher==nil (mesma guarda de rodarAutoMatch): sem Matcher injetado, o
-// passo retroativo degrada para (0, 0) sem panicar.
+// TestExecutarSemMatcherNaoRodaEnriquecimentoRetroativo covers the matcher==nil
+// guard (the same guard as rodarAutoMatch): with no Matcher injected, the
+// retroactive step degrades to (0, 0) without panicking.
 func TestExecutarSemMatcherNaoRodaEnriquecimentoRetroativo(t *testing.T) {
 	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, nil, nil)
 
@@ -453,9 +454,9 @@ func TestExecutarSemMatcherNaoRodaEnriquecimentoRetroativo(t *testing.T) {
 	}
 }
 
-// TestExecutarAcionaReprocessamentoArtesEReflete cobre o critério central do
-// briefing 0118: depois do enriquecimento retroativo, o job aciona
-// ReprocessarArtesFaltantes e a mensagem final ganha a cláusula "<N>
+// TestExecutarAcionaReprocessamentoArtesEReflete covers the central criterion of
+// the art reprocessing: after the retroactive enrichment, the job calls
+// ReprocessarArtesFaltantes and the final message gains the clause "<N>
 // entity(ies) com inventário de arte reprocessado".
 func TestExecutarAcionaReprocessamentoArtesEReflete(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
@@ -475,9 +476,9 @@ func TestExecutarAcionaReprocessamentoArtesEReflete(t *testing.T) {
 	}
 }
 
-// TestExecutarReprocessamentoArtesOmiteClausulaQuandoZero cobre o critério de
-// omissão: sem nenhuma entity reprocessada, a mensagem final NÃO ganha a
-// cláusula extra.
+// TestExecutarReprocessamentoArtesOmiteClausulaQuandoZero covers the omission
+// criterion: with no entity reprocessed, the final message does NOT gain the
+// extra clause.
 func TestExecutarReprocessamentoArtesOmiteClausulaQuandoZero(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{}
@@ -493,9 +494,9 @@ func TestExecutarReprocessamentoArtesOmiteClausulaQuandoZero(t *testing.T) {
 	}
 }
 
-// TestExecutarFalhaDoReprocessamentoArtesNaoAbortaJob cobre o critério
-// best-effort: uma falha do Matcher neste passo não derruba o job -- o
-// resumo original (sem a cláusula extra) ainda sai.
+// TestExecutarFalhaDoReprocessamentoArtesNaoAbortaJob covers the best-effort
+// criterion: a failure of the Matcher in this step does not bring the job
+// down -- the original summary (without the extra clause) still comes out.
 func TestExecutarFalhaDoReprocessamentoArtesNaoAbortaJob(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{errArtes: errors.New("erro simulado no reprocessamento de artes")}
@@ -511,9 +512,10 @@ func TestExecutarFalhaDoReprocessamentoArtesNaoAbortaJob(t *testing.T) {
 	}
 }
 
-// TestExecutarSemMatcherNaoRodaReprocessamentoArtes cobre a guarda
-// matcher==nil (mesma guarda de rodarAutoMatch/rodarEnriquecimentoRetroativo):
-// sem Matcher injetado, o passo degrada para 0 sem panicar.
+// TestExecutarSemMatcherNaoRodaReprocessamentoArtes covers the matcher==nil
+// guard (the same guard as
+// rodarAutoMatch/rodarEnriquecimentoRetroativo): with no Matcher injected, the
+// step degrades to 0 without panicking.
 func TestExecutarSemMatcherNaoRodaReprocessamentoArtes(t *testing.T) {
 	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, nil, nil)
 
@@ -527,10 +529,10 @@ func TestExecutarSemMatcherNaoRodaReprocessamentoArtes(t *testing.T) {
 	}
 }
 
-// TestExecutarAcionaDescobertaArteLocalMusicaEReflete cobre o critério central
-// do briefing 0119: depois do reprocessamento de artes, o job aciona
-// DescobrirArteLocalMusica e a mensagem final ganha a cláusula "<N>
-// entity(ies) de música com pôster local encontrado".
+// TestExecutarAcionaDescobertaArteLocalMusicaEReflete covers the central
+// criterion of the local music art discovery: after the art reprocessing, the
+// job calls DescobrirArteLocalMusica and the final message gains the clause
+// "<N> entity(ies) de música com pôster local encontrado".
 func TestExecutarAcionaDescobertaArteLocalMusicaEReflete(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{arteLocalEncontrada: 3}
@@ -549,9 +551,9 @@ func TestExecutarAcionaDescobertaArteLocalMusicaEReflete(t *testing.T) {
 	}
 }
 
-// TestExecutarDescobertaArteLocalMusicaOmiteClausulaQuandoZero cobre o
-// critério de omissão: sem nenhum pôster local encontrado, a mensagem final
-// NÃO ganha a cláusula extra.
+// TestExecutarDescobertaArteLocalMusicaOmiteClausulaQuandoZero covers the
+// omission criterion: with no local poster found, the final message does NOT
+// gain the extra clause.
 func TestExecutarDescobertaArteLocalMusicaOmiteClausulaQuandoZero(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{}
@@ -567,9 +569,9 @@ func TestExecutarDescobertaArteLocalMusicaOmiteClausulaQuandoZero(t *testing.T) 
 	}
 }
 
-// TestExecutarFalhaDaDescobertaArteLocalMusicaNaoAbortaJob cobre o critério
-// best-effort: uma falha do Matcher neste passo não derruba o job -- o
-// resumo original (sem a cláusula extra) ainda sai.
+// TestExecutarFalhaDaDescobertaArteLocalMusicaNaoAbortaJob covers the best-effort
+// criterion: a failure of the Matcher in this step does not bring the job
+// down -- the original summary (without the extra clause) still comes out.
 func TestExecutarFalhaDaDescobertaArteLocalMusicaNaoAbortaJob(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{errArteLocal: errors.New("erro simulado na descoberta de arte local")}
@@ -585,8 +587,8 @@ func TestExecutarFalhaDaDescobertaArteLocalMusicaNaoAbortaJob(t *testing.T) {
 	}
 }
 
-// TestExecutarSemMatcherNaoRodaDescobertaArteLocalMusica cobre a guarda
-// matcher==nil: sem Matcher injetado, o passo degrada para 0 sem panicar.
+// TestExecutarSemMatcherNaoRodaDescobertaArteLocalMusica covers the matcher==nil
+// guard: with no Matcher injected, the step degrades to 0 without panicking.
 func TestExecutarSemMatcherNaoRodaDescobertaArteLocalMusica(t *testing.T) {
 	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, nil, nil)
 
@@ -600,12 +602,12 @@ func TestExecutarSemMatcherNaoRodaDescobertaArteLocalMusica(t *testing.T) {
 	}
 }
 
-// TestExecutarAcionaReconciliacaoFilhosOrfaosEReflete cobre o critério
-// central do briefing 0120: depois da descoberta de arte local de música, o
-// job aciona ReconciliarFilhosOrfaos e a mensagem final ganha a cláusula
-// "<N> faixa(s)/episódio(s) religado(s) à árvore" -- com a contagem de
-// revisão RECONTADA de novo após este passo (3, não os 5 de antes), provando
-// que a reconciliação de fato tira itens da fila.
+// TestExecutarAcionaReconciliacaoFilhosOrfaosEReflete covers the central
+// criterion of the reconciliation of orphan children: after the local music art
+// discovery, the job calls ReconciliarFilhosOrfaos and the final message gains
+// the clause "<N> faixa(s)/episódio(s) religado(s) à árvore" -- with the review
+// count RECOUNTED again after this step (3, not the 5 from before), proving that
+// the reconciliation really removes items from the queue.
 func TestExecutarAcionaReconciliacaoFilhosOrfaosEReflete(t *testing.T) {
 	cont := &contadorSequencialFake{revisaoValores: []int{5, 3}, orfas: 1}
 	matcher := &matcherFake{reconciliados: 2}
@@ -624,9 +626,9 @@ func TestExecutarAcionaReconciliacaoFilhosOrfaosEReflete(t *testing.T) {
 	}
 }
 
-// TestExecutarReconciliacaoFilhosOrfaosOmiteClausulaQuandoZero cobre o
-// critério de omissão: sem nenhum item religado, a mensagem final NÃO ganha
-// a cláusula extra.
+// TestExecutarReconciliacaoFilhosOrfaosOmiteClausulaQuandoZero covers the
+// omission criterion: with no item re-linked, the final message does NOT gain
+// the extra clause.
 func TestExecutarReconciliacaoFilhosOrfaosOmiteClausulaQuandoZero(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{}
@@ -642,9 +644,9 @@ func TestExecutarReconciliacaoFilhosOrfaosOmiteClausulaQuandoZero(t *testing.T) 
 	}
 }
 
-// TestExecutarFalhaDaReconciliacaoFilhosOrfaosNaoAbortaJob cobre o critério
-// best-effort: uma falha do Matcher neste passo não derruba o job -- o
-// resumo original (sem a cláusula extra) ainda sai.
+// TestExecutarFalhaDaReconciliacaoFilhosOrfaosNaoAbortaJob covers the best-effort
+// criterion: a failure of the Matcher in this step does not bring the job
+// down -- the original summary (without the extra clause) still comes out.
 func TestExecutarFalhaDaReconciliacaoFilhosOrfaosNaoAbortaJob(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	matcher := &matcherFake{errReconciliar: errors.New("erro simulado na reconciliação de filhos órfãos")}
@@ -660,8 +662,8 @@ func TestExecutarFalhaDaReconciliacaoFilhosOrfaosNaoAbortaJob(t *testing.T) {
 	}
 }
 
-// TestExecutarSemMatcherNaoRodaReconciliacaoFilhosOrfaos cobre a guarda
-// matcher==nil: sem Matcher injetado, o passo degrada para 0 sem panicar.
+// TestExecutarSemMatcherNaoRodaReconciliacaoFilhosOrfaos covers the matcher==nil
+// guard: with no Matcher injected, the step degrades to 0 without panicking.
 func TestExecutarSemMatcherNaoRodaReconciliacaoFilhosOrfaos(t *testing.T) {
 	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, nil, nil)
 
@@ -675,9 +677,9 @@ func TestExecutarSemMatcherNaoRodaReconciliacaoFilhosOrfaos(t *testing.T) {
 	}
 }
 
-// TestExecutarAcionaRecalculoCompletudeEReflete cobre o critério central do
-// briefing 0058: depois do enriquecimento retroativo, o job aciona
-// RecalcularCompletudeCatalogacao e a mensagem final ganha a cláusula
+// TestExecutarAcionaRecalculoCompletudeEReflete covers the central criterion of
+// the completeness recalculation: after the retroactive enrichment, the job
+// calls RecalcularCompletudeCatalogacao and the final message gains the clause
 // "<N> itens avaliados, <M> incompletos em catalogação".
 func TestExecutarAcionaRecalculoCompletudeEReflete(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
@@ -697,10 +699,10 @@ func TestExecutarAcionaRecalculoCompletudeEReflete(t *testing.T) {
 	}
 }
 
-// TestExecutarRecalculoCompletudeClausulaComZeroIncompletos prova que a
-// cláusula aparece mesmo com incompletos==0, desde que avaliados>0 (0
-// incompletos é informação positiva relevante — diferente de
-// aplicados/sinalizados==0, que só significa "nada a fazer").
+// TestExecutarRecalculoCompletudeClausulaComZeroIncompletos proves that the
+// clause appears even with incompletos==0, as long as avaliados>0 (0 incompletos
+// is relevant positive information — unlike aplicados/sinalizados==0, which only
+// means "nothing to do").
 func TestExecutarRecalculoCompletudeClausulaComZeroIncompletos(t *testing.T) {
 	cont := &contadorFake{revisao: 0, orfas: 0}
 	completeness := &completenessFake{avaliados: 5, incompletos: 0}
@@ -716,9 +718,9 @@ func TestExecutarRecalculoCompletudeClausulaComZeroIncompletos(t *testing.T) {
 	}
 }
 
-// TestExecutarFalhaDoRecalculoCompletudeNaoAbortaJob cobre o critério
-// best-effort: uma falha do CompletenessRecalculator não derruba o job -- o
-// resumo original (sem a cláusula extra) ainda sai.
+// TestExecutarFalhaDoRecalculoCompletudeNaoAbortaJob covers the best-effort
+// criterion: a failure of the CompletenessRecalculator does not bring the job
+// down -- the original summary (without the extra clause) still comes out.
 func TestExecutarFalhaDoRecalculoCompletudeNaoAbortaJob(t *testing.T) {
 	cont := &contadorFake{revisao: 4, orfas: 2}
 	completeness := &completenessFake{err: errors.New("erro simulado no recalculo de completude")}
@@ -734,10 +736,10 @@ func TestExecutarFalhaDoRecalculoCompletudeNaoAbortaJob(t *testing.T) {
 	}
 }
 
-// TestExecutarSemCompletenessRecalculatorNaoRecalcula cobre a guarda
-// completeness==nil (mesma guarda de rodarAutoMatch/
-// rodarEnriquecimentoRetroativo): sem CompletenessRecalculator injetado, o
-// passo degrada para (0, 0) sem panicar e sem a cláusula extra.
+// TestExecutarSemCompletenessRecalculatorNaoRecalcula covers the
+// completeness==nil guard (the same guard as rodarAutoMatch/
+// rodarEnriquecimentoRetroativo): with no CompletenessRecalculator injected, the
+// step degrades to (0, 0) without panicking and without the extra clause.
 func TestExecutarSemCompletenessRecalculatorNaoRecalcula(t *testing.T) {
 	h := New(&libraryFake{}, newScanFake(), &contadorFake{revisao: 1, orfas: 0}, &matcherFake{}, nil)
 
@@ -751,11 +753,11 @@ func TestExecutarSemCompletenessRecalculatorNaoRecalcula(t *testing.T) {
 	}
 }
 
-// ── Storage diferenciado (briefing 0063) ─────────────────────────────────────
+// ── Differentiated storage ───────────────────────────────────────────────────
 
-// TestExecutarAgregaStorageNaoVideoDeTodasAsFontes prova que, apos uma
-// execucao bem-sucedida, UltimoResultadoStorage soma managed/unmanaged de
-// TODAS as fontes cadastradas.
+// TestExecutarAgregaStorageNaoVideoDeTodasAsFontes proves that, after a
+// successful execution, UltimoResultadoStorage adds up managed/unmanaged from
+// ALL registered sources.
 func TestExecutarAgregaStorageNaoVideoDeTodasAsFontes(t *testing.T) {
 	scn := newScanFake()
 	scn.storage["s1"] = [2]int64{100, 10}
@@ -785,10 +787,10 @@ func TestExecutarAgregaStorageNaoVideoDeTodasAsFontes(t *testing.T) {
 	}
 }
 
-// TestUltimoResultadoStorageAntesDeExecutarDevolveOkFalse prova que, antes de
-// QUALQUER execucao, o Handler recem-criado nao tem resultado de storage
-// (processo recem-iniciado, job ainda nao rodou) -- o chamador
-// (health_system) deve tratar isso como "sem dado", nao como zero.
+// TestUltimoResultadoStorageAntesDeExecutarDevolveOkFalse proves that, before
+// ANY execution, the freshly created Handler has no storage result (freshly
+// started process, the job has not run yet) -- the caller (health_system) must
+// treat that as "no data", not as zero.
 func TestUltimoResultadoStorageAntesDeExecutarDevolveOkFalse(t *testing.T) {
 	h := New(&libraryFake{}, newScanFake(), &contadorFake{}, &matcherFake{}, nil)
 	if _, _, _, ok := h.UltimoResultadoStorage(); ok {
@@ -796,18 +798,18 @@ func TestUltimoResultadoStorageAntesDeExecutarDevolveOkFalse(t *testing.T) {
 	}
 }
 
-// TestExecutarStorageMantemUltimoValorDeFonteOffline prova a política do
-// briefing 0063 §3/§6: uma fonte que falha NESTA rodada (offline) mantém o
-// ÚLTIMO valor conhecido (já presente no scanner.Manager de uma rodada
-// anterior bem-sucedida) em vez de zerar -- sem nenhuma lógica extra de
-// "offline" neste pacote, é consequência direta de Start() nunca sobrescrever
-// o storage quando falha (mesmo espírito de UsoDisco/Statfs do briefing
-// 0055).
+// TestExecutarStorageMantemUltimoValorDeFonteOffline proves the
+// "keeps the last calculated value" policy: a source that fails in THIS run
+// (offline) keeps the LAST known value (already present in the scanner.Manager
+// from a previous successful run) instead of zeroing it -- with no extra
+// "offline" logic in this package, it is a direct consequence of Start() never
+// overwriting the storage when it fails (same spirit as the disk usage/Statfs
+// reading).
 func TestExecutarStorageMantemUltimoValorDeFonteOffline(t *testing.T) {
 	scn := newScanFake()
-	// s-offline já tem um valor de uma rodada anterior bem-sucedida -- Start()
-	// vai falhar nesta rodada, mas scn.storage não é tocado (mesmo
-	// comportamento do scanner.Manager real).
+	// s-offline already has a value from a previous successful run -- Start()
+	// will fail in this run, but scn.storage is not touched (the same behavior
+	// as the real scanner.Manager).
 	scn.storage["s-offline"] = [2]int64{500, 50}
 	scn.startErr["s-offline"] = errors.New("datasource inacessível (offline)")
 	scn.storage["s-ok"] = [2]int64{100, 10}

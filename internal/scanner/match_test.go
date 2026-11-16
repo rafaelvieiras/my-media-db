@@ -1,12 +1,11 @@
 package scanner
 
-// Testes do auto-match imediato de FILME e da materialização automática
-// opcional (briefing 0089): filme novo detectado no scan dispara
-// FilmeImportador.TentarAutoMatchFilme exatamente uma vez por entity NOVA
-// (nunca para entity já existente reencontrada); matched=true aciona o
-// Materializador OPCIONAL quando configurado. Ambas as interfaces são
-// consumidas via fakes locais -- a implementação real (*Server) é de outro
-// pacote/agente.
+// Tests of the immediate MOVIE auto-match and of the optional automatic
+// materialization: a new movie detected in the scan fires
+// FilmeImportador.TentarAutoMatchFilme exactly once per NEW entity (never for an
+// already existing entity found again); matched=true triggers the OPTIONAL
+// Materializador when it is configured. Both interfaces are consumed through local
+// fakes -- the real implementation (*Server) belongs to another package/agent.
 
 import (
 	"context"
@@ -15,9 +14,9 @@ import (
 	"testing"
 )
 
-// filmeImportadorFake é um fake de teste do FilmeImportador (0089): conta as
-// chamadas, registra os entityID recebidos (na ordem) e devolve um resultado
-// fixo configurável.
+// filmeImportadorFake is a test fake of FilmeImportador: it counts the calls,
+// records the entityIDs received (in order) and returns a configurable fixed
+// result.
 type filmeImportadorFake struct {
 	matched   bool
 	err       error
@@ -31,8 +30,8 @@ func (f *filmeImportadorFake) TentarAutoMatchFilme(_ context.Context, entityID s
 	return f.matched, f.err
 }
 
-// materializadorFake é um fake de teste do Materializador (0089): conta as
-// chamadas e registra os entityID recebidos.
+// materializadorFake is a test fake of Materializador: it counts the calls and
+// records the entityIDs received.
 type materializadorFake struct {
 	err       error
 	chamadas  int
@@ -45,9 +44,8 @@ func (m *materializadorFake) MaterializarSeAutoDownloadLigado(_ context.Context,
 	return m.err
 }
 
-// TestScanFilmeNovoDisparaAutoMatchUmaVez cobre o critério central: uma
-// entity de filme NOVA criada pelo scan dispara TentarAutoMatchFilme
-// exatamente uma vez.
+// TestScanFilmeNovoDisparaAutoMatchUmaVez covers the central criterion: a NEW movie
+// entity created by the scan fires TentarAutoMatchFilme exactly once.
 func TestScanFilmeNovoDisparaAutoMatchUmaVez(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -67,10 +65,9 @@ func TestScanFilmeNovoDisparaAutoMatchUmaVez(t *testing.T) {
 	}
 }
 
-// TestScanFilmeDuasVersoesMesmaEntityDisparaUmaSoVez cobre o mesmo critério
-// quando duas qualidades do MESMO filme (mesma pasta) resultam numa única
-// entity (cache do scan) -- o auto-match não deve disparar duas vezes para a
-// mesma entity nova.
+// TestScanFilmeDuasVersoesMesmaEntityDisparaUmaSoVez covers the same criterion when
+// two qualities of the SAME movie (same folder) result in a single entity (scan
+// cache) -- the auto-match must not fire twice for the same new entity.
 func TestScanFilmeDuasVersoesMesmaEntityDisparaUmaSoVez(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -94,10 +91,10 @@ func TestScanFilmeDuasVersoesMesmaEntityDisparaUmaSoVez(t *testing.T) {
 	}
 }
 
-// TestScanFilmeReencontradoNaoDisparaAutoMatchDeNovo cobre: entity JÁ
-// EXISTENTE, reencontrada por content_hash num re-scan (arquivo inalterado),
-// NÃO dispara TentarAutoMatchFilme de novo -- só entity recém-criada nesta
-// passada de scan aciona o auto-match.
+// TestScanFilmeReencontradoNaoDisparaAutoMatchDeNovo covers: an ALREADY EXISTING
+// entity, found again by content_hash in a re-scan (unchanged file), does NOT fire
+// TentarAutoMatchFilme again -- only an entity newly created in this scan pass
+// triggers the auto-match.
 func TestScanFilmeReencontradoNaoDisparaAutoMatchDeNovo(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -117,8 +114,8 @@ func TestScanFilmeReencontradoNaoDisparaAutoMatchDeNovo(t *testing.T) {
 		t.Fatalf("scan 1: TentarAutoMatchFilme chamado %d vez(es), quero 1 (entity nova)", fake.chamadas)
 	}
 
-	// Re-scan sem tocar no arquivo: dedup por content_hash (reencontrar),
-	// nunca passa por resolverEntity/criarEntity de novo.
+	// Re-scan without touching the file: dedup by content_hash (reencontrar), it
+	// never goes through resolverEntity/criarEntity again.
 	if err := scanSync(t, m, src); err != nil {
 		t.Fatalf("scan 2: %v", err)
 	}
@@ -127,9 +124,9 @@ func TestScanFilmeReencontradoNaoDisparaAutoMatchDeNovo(t *testing.T) {
 	}
 }
 
-// TestScanFilmeAutoMatchErroNaoAbortaGravacao cobre: TentarAutoMatchFilme
-// devolvendo erro é best-effort -- o media_file/entity já gravados
-// permanecem, o scan não propaga o erro nem entra em pânico.
+// TestScanFilmeAutoMatchErroNaoAbortaGravacao covers: TentarAutoMatchFilme
+// returning an error is best-effort -- the media_file/entity already stored remain,
+// the scan neither propagates the error nor panics.
 func TestScanFilmeAutoMatchErroNaoAbortaGravacao(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -155,9 +152,9 @@ func TestScanFilmeAutoMatchErroNaoAbortaGravacao(t *testing.T) {
 	}
 }
 
-// TestScanFilmeMaterializaQuandoAutoMatchAcerta cobre: matched=true +
-// Materializador configurado -> MaterializarSeAutoDownloadLigado chamado uma
-// vez com o entityID auto-importado.
+// TestScanFilmeMaterializaQuandoAutoMatchAcerta covers: matched=true + Materializador
+// configured -> MaterializarSeAutoDownloadLigado called once with the auto-imported
+// entityID.
 func TestScanFilmeMaterializaQuandoAutoMatchAcerta(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -182,9 +179,9 @@ func TestScanFilmeMaterializaQuandoAutoMatchAcerta(t *testing.T) {
 	}
 }
 
-// TestScanFilmeNaoMaterializaQuandoAutoMatchNaoAcerta cobre: matched=false
-// (sem candidato forte o bastante) -> MaterializarSeAutoDownloadLigado NÃO é
-// chamado, mesmo com Materializador configurado.
+// TestScanFilmeNaoMaterializaQuandoAutoMatchNaoAcerta covers: matched=false (no
+// strong enough candidate) -> MaterializarSeAutoDownloadLigado is NOT called, even
+// with Materializador configured.
 func TestScanFilmeNaoMaterializaQuandoAutoMatchNaoAcerta(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -206,10 +203,9 @@ func TestScanFilmeNaoMaterializaQuandoAutoMatchNaoAcerta(t *testing.T) {
 	}
 }
 
-// TestScanFilmeSemFilmeImportadorNemMaterializadorNaoQuebra cobre a
-// degradação: sem ConfigurarFilmes/ConfigurarMaterializacao (ambos nil,
-// modo pré-0089), o scan de filme continua funcionando normalmente, sem
-// pânico.
+// TestScanFilmeSemFilmeImportadorNemMaterializadorNaoQuebra covers the degradation:
+// without ConfigurarFilmes/ConfigurarMaterializacao (both nil, the mode prior to the
+// auto-match), the movie scan keeps working normally, without panicking.
 func TestScanFilmeSemFilmeImportadorNemMaterializadorNaoQuebra(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()

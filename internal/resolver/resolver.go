@@ -1,14 +1,14 @@
-// Package resolver compõe a visão RESOLVIDA de uma entity a partir das camadas
-// disponíveis. A precedência é `override ⟵ externo ⟵ arquivo`: o override do dono
-// vence tudo, a camada externa (enriquecimento) vence o arquivo, e o arquivo/núcleo
-// é a base sempre presente. A composição é campo a campo, guiada por um REGISTRO
-// declarativo de origem (mapa `campo → {base, kind}`) que o motor ITERA — nada de
-// `switch` por nome de campo (ADR-0001). Adicionar uma vertical/campo é trocar o
-// registro (dado), não o código.
+// Package resolver composes the RESOLVED view of an entity from the available
+// layers. The precedence is `override ⟵ externo ⟵ arquivo`: the owner's override
+// wins over everything, the external (enrichment) layer wins over the file, and
+// the file/core is the always-present base. The composition is field by field,
+// guided by a declarative REGISTRY of origin (map `campo → {base, kind}`) that
+// the engine ITERATES — no `switch` on the field name (ADR-0001). Adding a
+// vertical/field means changing the registry (data), not the code.
 //
-// A forma da resposta (Entidade) é a DEFINITIVA (doc 04/03) e a assinatura pública
-// `Resolver(Camadas) Entidade` NÃO muda quando camadas chegam — só o conteúdo. Por
-// isso a UI (briefing 0011) não sente a Fase 3.
+// The shape of the response (Entidade) is the DEFINITIVE one (docs 04/03) and the
+// public signature `Resolver(Camadas) Entidade` does NOT change when layers
+// arrive — only the content does. That is why the UI does not feel Phase 3.
 package resolver
 
 import (
@@ -20,73 +20,77 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
 
-// CamadaExterna é UMA fonte externa já na forma CANÔNICA: `Campos` usa OS NOSSOS
-// nomes de campo (ex.: "title", "description", "tags", "extension_data"), não o
-// shape cru do provider. O mapeamento raw→canônico é do provider (0014/0015); o
-// resolver NÃO conhece o TMDB. As camadas chegam já ORDENADAS pela lista de
-// prioridade (R2): a primeira com valor para um campo forma a base externa dele.
+// CamadaExterna is ONE external source already in CANONICAL form: `Campos` uses
+// OUR field names (e.g.: "title", "description", "tags", "extension_data"),
+// not the provider's raw shape. The raw→canonical mapping belongs to the
+// provider; the resolver does NOT know TMDB. The layers arrive already ORDERED
+// by the priority list (R2): the first one with a value for a field forms its
+// external base.
 type CamadaExterna struct {
-	// Fonte identifica o provedor (ex.: "tmdb"); hoje só informativo.
+	// Fonte identifies the provider (e.g.: "tmdb"); today only informative.
 	Fonte string
-	// Campos são os valores canônicos daquela fonte (nomes dos nossos campos).
+	// Campos are the canonical values of that source (names of our fields).
 	Campos map[string]any
 }
 
-// Camadas agrega as CAMADAS que o resolver compõe: o arquivo/núcleo (base, sempre
-// presente), as fontes externas e o patch de override do dono. Quem chama passa o
-// que tiver; a assinatura de Resolver não muda.
+// Camadas aggregates the LAYERS that the resolver composes: the file/core (base,
+// always present), the external sources and the owner's override patch. Callers
+// pass whatever they have; the Resolver signature does not change.
 type Camadas struct {
-	// Entity é a linha de núcleo (camada base ARQUIVO, sempre presente).
+	// Entity is the core row (FILE layer, always present).
 	Entity sqlcgen.Entity
-	// Files são os media_file da entity (posse derivada e contagem saem daqui).
+	// Files are the entity's media_file rows (derived ownership and count come
+	// from here).
 	Files []sqlcgen.MediaFile
-	// PosterURL é a referência (relativa) do endpoint que serve o pôster local,
-	// ou nil quando a entity não tem pôster. O chamador a monta (é um link de
-	// API, não um dado de domínio), o resolver apenas a coloca no shape final.
+	// PosterURL is the (relative) reference of the endpoint that serves the local
+	// poster, or nil when the entity has no poster. The caller builds it (it is an
+	// API link, not domain data); the resolver only places it in the final shape.
 	PosterURL *string
-	// BackdropURL é a referência do endpoint que serve o FUNDO (fanart/backdrop)
-	// local, quando cacheado (0015). Quando nil, o resolver cai na URL direta da
-	// fonte (backdrop_url do canônico externo) — o mesmo campo, servido do disco
-	// quando disponível.
+	// BackdropURL is the reference of the endpoint that serves the local
+	// BACKGROUND (fanart/backdrop), when cached. When nil, the resolver
+	// falls back to the source's direct URL (backdrop_url of the external
+	// canonical) — the same field, served from disk when available.
 	BackdropURL *string
 
-	// Externo são as camadas EXTERNAS canônicas, ordenadas por prioridade (R2).
-	// Vazio = sem enriquecimento (comportamento do 0010 preservado).
+	// Externo are the canonical EXTERNAL layers, ordered by priority (R2).
+	// Empty = no enrichment (pre-enrichment behavior preserved).
 	Externo []CamadaExterna
-	// Override é o patch esparso CRU de media_override.override_json: presença da
-	// chave = override ativo, mesmo com valor `null` (R6/ADR-0006). Nil = sem
+	// Override is the RAW sparse patch of media_override.override_json: presence of
+	// the key = active override, even with a `null` value (R6/ADR-0006). Nil = no
 	// override.
 	Override map[string]json.RawMessage
 
-	// LangPedido é o idioma resolvido do pedido (default = principal das settings).
-	// Ecoado no shape resolvido; vazio quando não há contexto de idioma (o motor
-	// então preserva o comportamento pré-multi-idioma do 0013).
+	// LangPedido is the resolved language of the request (default = the main one
+	// from the settings). Echoed in the resolved shape; empty when there is no
+	// language context (the engine then preserves the pre-multilanguage
+	// behavior).
 	LangPedido string
-	// Cadeia é a ordem de fallback já derivada das settings (ADR-0019):
-	// `[pedido, fallback, original_language?]` deduplicada, terminando
-	// IMPLICITAMENTE na base neutra (arquivo) — o motor cai no arquivo quando
-	// nenhum idioma da cadeia tem valor. VAZIA = sem contexto de idioma: campos
-	// traduzíveis compõem como no 0013 (sem consultar a cadeia).
+	// Cadeia is the fallback order already derived from the settings (ADR-0019):
+	// `[pedido, fallback, original_language?]` deduplicated, ending IMPLICITLY at
+	// the neutral base (file) — the engine falls back to the file when no language
+	// in the chain has a value. EMPTY = no language context: translatable fields
+	// compose as in the pre-multilanguage model (without consulting the chain).
 	Cadeia []string
-	// IdiomaPrincipal é o idioma PRINCIPAL das settings. Serve para interpretar o
-	// externo/override LEGADO (formato do 0015, um valor escalar/lista sem chave de
-	// idioma): esse valor é tratado como pertencente ao principal (ADR-0018, nota
-	// de tolerância do 0019). Vazio ⇒ usa o primeiro idioma da cadeia.
+	// IdiomaPrincipal is the MAIN language of the settings. It is used to
+	// interpret the LEGACY external/override (legacy format, a scalar/list value
+	// with no language key): that value is treated as belonging to the main one
+	// (ADR-0018, tolerance note of ADR-0019). Empty ⇒ uses the first language of
+	// the chain.
 	IdiomaPrincipal string
 }
 
-// RatingFonte é a nota (vote_average) de UMA fonte específica — ao contrário
-// de VoteAverage (mesclado por prioridade, 1 valor só), aqui é 1 entrada POR
-// fonte que modela o campo, para a UI mostrar lado a lado (briefing 0086).
+// RatingFonte is the rating (vote_average) of ONE specific source — unlike
+// VoteAverage (merged by priority, a single value), here there is 1 entry PER
+// source that models the field, so the UI can show them side by side.
 type RatingFonte struct {
 	Source string  `json:"source"`
 	Value  float64 `json:"value"`
 }
 
-// Entidade é a visão RESOLVIDA — o shape final servido em
-// GET /api/v1/entities/{id}. Os ponteiros saem como `null` no JSON quando
-// ausentes; `tags`/`external_ids`/`extension_data` saem sempre como
-// lista/objeto (nunca null) para simplificar o consumo no front.
+// Entidade is the RESOLVED view — the final shape served at
+// GET /api/v1/entities/{id}. The pointers come out as `null` in JSON when absent;
+// `tags`/`external_ids`/`extension_data` always come out as a list/object (never
+// null) to simplify consumption in the front end.
 type Entidade struct {
 	ID            string            `json:"id"`
 	Type          string            `json:"type"`
@@ -102,29 +106,34 @@ type Entidade struct {
 	PosterURL     *string           `json:"poster_url"`
 	ExtensionData map[string]any    `json:"extension_data"`
 
-	// ── Campos RICOS (paridade com o detalhe do externo, briefings 0022/0023) ──
-	// São READ-ONLY: vêm só da camada EXTERNA (o dono não os edita por override
-	// nesta fase). Os traduzíveis (Tagline/Keywords) compõem por idioma como
-	// title/description; os neutros/estruturados são extraídos direto do canônico
-	// externo via internal/richfields (o MESMO shape do detalhe do externo).
-	// Genres NÃO tem campo próprio: são os `tags` (que já carregam os gêneros).
+	// ── RICH fields (parity with the external detail) ──
+	// They are READ-ONLY: they come only from the EXTERNAL layer (the owner does
+	// not edit them by override in this phase). The translatable ones
+	// (Tagline/Keywords) compose per language like title/description; the
+	// neutral/structured ones are extracted straight from the external canonical
+	// via internal/richfields (the SAME shape as the external detail).
+	// Genres have NO field of their own: they are the `tags` (which already carry
+	// the genres).
 	Tagline  *string  `json:"tagline"`
 	Keywords []string `json:"keywords"`
-	// AiringStatus é a SITUAÇÃO de exibição de uma SÉRIE (0045): string CRUA da fonte,
-	// exposta VERBATIM (TMDB: "Returning Series"|"Ended"|"Canceled"|"In Production"|
-	// "Planned"; TVDB: status.name) — a tradução p/ pt-BR é na UI. É NEUTRA (não
-	// traduzível) e READ-ONLY (o dono não a edita). NÃO confundir com o `Status` de
-	// CATÁLOGO acima (owned/cataloged, intenção do dono): são campos distintos. Ausente
-	// (omitempty) quando a fonte não a informa (filme, ou série só-TVDB sem match).
+	// AiringStatus is the AIRING situation of a SERIES: the RAW string
+	// from the source, exposed VERBATIM (TMDB: "Returning Series"|"Ended"|
+	// "Canceled"|"In Production"|"Planned"; TVDB: status.name) — the translation
+	// to pt-BR happens in the UI. It is NEUTRAL (not translatable) and READ-ONLY
+	// (the owner does not edit it). Do NOT confuse it with the CATALOG `Status`
+	// above (owned/cataloged, the owner's intent): they are distinct fields.
+	// Absent (omitempty) when the source does not report it (movie, or TVDB-only
+	// series with no match).
 	AiringStatus  *string  `json:"airing_status,omitempty"`
 	Runtime       *int     `json:"runtime"`
 	Certification *string  `json:"certification"`
 	VoteAverage   *float64 `json:"vote_average"`
-	// LocalRating é a NOTA LOCAL do dono (0–10, ADR-0012): a avaliação PRÓPRIA,
-	// gravada na camada de OVERRIDE, que COMPLEMENTA/SOBREPÕE a nota da fonte
-	// (VoteAverage). null quando o dono não avaliou — a UI então mostra a nota da
-	// fonte (limpar a nota local é NÃO-DESTRUTIVO). Diferente dos demais campos ricos
-	// (read-only), esta é EDITÁVEL por override: entra no registro como kindNumero.
+	// LocalRating is the owner's LOCAL RATING (0–10, ADR-0012): the OWN evaluation,
+	// stored in the OVERRIDE layer, which COMPLEMENTS/OVERRIDES the source rating
+	// (VoteAverage). null when the owner has not rated it — the UI then shows the
+	// source rating (clearing the local rating is NON-DESTRUCTIVE). Unlike the
+	// other rich fields (read-only), this one is EDITABLE by override: it enters
+	// the registry as kindNumero.
 	LocalRating   *float64               `json:"local_rating"`
 	BackdropURL   *string                `json:"backdrop_url"`
 	Videos        []richfields.Video     `json:"videos"`
@@ -132,128 +141,133 @@ type Entidade struct {
 	Similar       []richfields.Similar   `json:"similar"`
 	ExternalLinks map[string]string      `json:"external_links"`
 
-	// Cast/Crew/Companies são os CRÉDITOS (elenco, equipe, produtoras — briefing
-	// 0029 Fase B): paridade com o detalhe do externo, mesmo shape (via richfields,
-	// fonte única). READ-ONLY nesta rodada (sem editor — Fase C). Sempre `[]` (nunca
-	// null) quando ausentes. ProfileURL/LogoURL saem com a URL DIRETA do provider
-	// (richfields é puro); o server os reescreve para o proxy local pós-resolução
-	// (mesma fronteira de Ancestors/Ownership).
+	// Cast/Crew/Companies are the CREDITS (cast, crew, production companies —
+	// ADR-0013): parity with the external detail, same shape (via richfields,
+	// single source). READ-ONLY in this round (no editor — Phase C). Always `[]`
+	// (never null) when absent. ProfileURL/LogoURL come out with the provider's
+	// DIRECT URL (richfields is pure); the server rewrites them to the local proxy
+	// after resolution (same boundary as Ancestors/Ownership).
 	Cast      []richfields.Cast    `json:"cast"`
 	Crew      []richfields.Crew    `json:"crew"`
 	Companies []richfields.Company `json:"companies"`
 
-	// Ratings (0086) são as notas POR FONTE (vote_average de cada camada externa
-	// que o modela), ao lado de VoteAverage (o valor único já mesclado por
-	// prioridade) — permite a UI comparar notas de fontes diferentes lado a lado.
-	// Sempre `[]` (nunca null); fonte que não modela o campo não aparece.
+	// Ratings are the ratings PER SOURCE (vote_average of each external layer that
+	// models the field), next to VoteAverage (the single value already merged by
+	// priority) — it lets the UI compare ratings from different sources side by
+	// side. Always `[]` (never null); a source that does not model the field does
+	// not appear.
 	Ratings []RatingFonte `json:"ratings"`
 
-	// Lang é o eco do idioma pedido (ADR-0019). Vazio quando não há contexto de
-	// idioma (comportamento do 0013).
+	// Lang is the echo of the requested language (ADR-0019). Empty when there is no
+	// language context (ADR-0019 behavior).
 	Lang string `json:"lang"`
-	// OriginalLanguage é o código NEUTRO do idioma original da obra (âncora do
-	// fallback), ou null quando a fonte não o informou.
+	// OriginalLanguage is the NEUTRAL code of the work's original language (anchor
+	// of the fallback), or null when the source did not report it.
 	OriginalLanguage *string `json:"original_language"`
-	// ResolvedLanguages é a PROVENIÊNCIA DE IDIOMA (ADR-0019): campo traduzível →
-	// idioma efetivo que serviu o valor (`""` = base neutra/arquivo). Mapa lateral
-	// que NÃO muda os campos (o shape segue plano). Sempre não-nil (vazio quando
-	// não há contexto de idioma).
+	// ResolvedLanguages is the LANGUAGE PROVENANCE (ADR-0019): translatable field →
+	// effective language that served the value (`""` = neutral/file base). A side
+	// map that does NOT change the fields (the shape stays flat). Always non-nil
+	// (empty when there is no language context).
 	ResolvedLanguages map[string]string `json:"resolved_languages"`
 
-	// Ancestors é a trilha RAIZ→PAI (breadcrumb, 0032) da entity na árvore de
-	// séries: episódio → [série, temporada]; temporada → [série]; obra de topo
-	// (movie/tv/collection) → []. Sempre não-nil (`[]`, nunca null). NÃO vem do
-	// resolver puro — é anotada no server pós-resolução (subindo por
-	// ListarRelacoesPais), mesma fronteira dos internal_id (0026/0031).
+	// Ancestors is the ROOT→PARENT trail (breadcrumb) of the entity in the
+	// series tree: episode → [series, season]; season → [series]; top-level work
+	// (movie/tv/collection) → []. Always non-nil (`[]`, never null). It does NOT
+	// come from the pure resolver — it is annotated in the server after resolution
+	// (walking up through ListarRelacoesPais), the same boundary as the
+	// internal_id.
 	Ancestors []AncestorRef `json:"ancestors"`
 
-	// Ownership é a POSSE AGREGADA de uma entity-pai da árvore de séries (0034):
-	// quantos episódios são possuídos de quantos no total. Presente (não-null) só
-	// para `tv` (soma across temporadas) e `season` (episódios diretos); null para
-	// movie/episódio/coleção (posse simples via `owned`). NÃO vem do resolver puro —
-	// é anotada no server pós-resolução (mesma fronteira de Ancestors), porque a
-	// agregação percorre entity_relation.
+	// Ownership is the AGGREGATED ownership of a parent entity of the series tree:
+	// how many episodes are owned out of the total. Present (non-null)
+	// only for `tv` (sum across seasons) and `season` (direct episodes); null for
+	// movie/episode/collection (simple ownership via `owned`). It does NOT come
+	// from the pure resolver — it is annotated in the server after resolution (same
+	// boundary as Ancestors), because the aggregation walks entity_relation.
 	Ownership *OwnershipInfo `json:"ownership"`
 
-	// Orderings são as ordens de exibição de episódios disponíveis de uma SÉRIE
-	// (0040): a `default` (o default_season_type gravado no import) e a lista
-	// `available` (união das chaves de `numbering` dos episódios + `absolute` quando
-	// há absolute_number), com o default primeiro. Presente (não-null) só para `tv`
-	// com ao menos uma ordem; `omitempty` (ausente) para os demais tipos e para série
-	// sem numbering — a UI então esconde o seletor. Anotada no server pós-resolução
-	// (mesma fronteira de Ancestors/Ownership), porque varre a árvore de episódios.
+	// Orderings are the available episode display orders of a SERIES:
+	// the `default` (the default_season_type recorded on import) and the `available`
+	// list (union of the `numbering` keys of the episodes + `absolute` when there is
+	// an absolute_number), with the default first. Present (non-null) only for `tv`
+	// with at least one order; `omitempty` (absent) for the other types and for a
+	// series with no numbering — the UI then hides the selector. Annotated in the
+	// server after resolution (same boundary as Ancestors/Ownership), because it
+	// scans the episode tree.
 	Orderings *OrderingsInfo `json:"orderings,omitempty"`
 
-	// StillURL é a URL CRUA do still (frame 16:9) do EPISÓDIO (0042): artwork NEUTRO de
-	// idioma, lido do extension_data core.tv@1 (still_url). Presente (não-null) só para
-	// `episode` com still; `omitempty` (ausente) para os demais tipos e para episódio sem
-	// still — a UI cai no placeholder. Anotada no server pós-resolução (o resolver é puro,
-	// não conhece core.tv), e servida pelo image proxy (busca+cacheia sob demanda) no
-	// front. Não é baixada no import: só a URL é persistida.
+	// StillURL is the RAW URL of the EPISODE's still (16:9 frame):
+	// language-NEUTRAL artwork, read from extension_data core.tv@1 (still_url).
+	// Present (non-null) only for `episode` with a still; `omitempty` (absent) for
+	// the other types and for an episode without a still — the UI falls back to the
+	// placeholder. Annotated in the server after resolution (the resolver is pure
+	// and does not know core.tv), and served by the image proxy (fetch+cache on
+	// demand) in the front end. It is not downloaded on import: only the URL is
+	// persisted.
 	StillURL *string `json:"still_url,omitempty"`
 
-	// CatalogCompleteness é a completude de CATALOGAÇÃO do item (briefing 0058)
-	// contra a régua configurada em /settings (0057), calculada AO VIVO a cada
-	// request pelo server (anotarCompletudeCatalogacao, entities.go) —
-	// reaproveita os dados que este mesmo resolverEntity já monta, sem query
-	// extra. NÃO vem do resolver puro (mesma fronteira de Ancestors/Ownership/
-	// StillURL). `null` somente quando o item é draft (nunca casado) — não faz
-	// sentido avaliar metadados que ainda não existem; para item não-draft
-	// nunca é nil aqui (diferente de EntityCard.catalog_completeness na
-	// listagem, que lê de um cache em lote recalculado pelo job e pode ficar
-	// nil até a primeira execução). Distinto de completude de POSSE
-	// (web/src/lib/entity-badges.ts, briefings 0036/0037).
+	// CatalogCompleteness is the item's CATALOG completeness against the scale
+	// configured in /settings, computed LIVE on every request by the server
+	// (anotarCompletudeCatalogacao, entities.go) — it reuses the data that this very
+	// resolverEntity already builds, with no extra query. It does NOT come from the
+	// pure resolver (same boundary as Ancestors/Ownership/StillURL). `null` only
+	// when the item is a draft (never matched) — there is no point in evaluating
+	// metadata that does not exist yet; for a non-draft item it is never nil here
+	// (unlike EntityCard.catalog_completeness in the listing, which reads from a
+	// batch cache recalculated by the job and may stay nil until the first run).
+	// Distinct from OWNERSHIP completeness (web/src/lib/entity-badges.ts).
 	CatalogCompleteness *CatalogCompleteness `json:"catalog_completeness"`
 }
 
-// CatalogCompleteness é o resultado da avaliação de completude de
-// CATALOGAÇÃO (briefing 0058) de um item contra a régua por tipo configurada
-// em /settings (0057, internal/server/catalog_completeness.go). Vive no
-// pacote resolver (não em internal/server) para poder ser um CAMPO do shape
-// final (Entidade), serializado direto por GET /entities/{id} — o pacote
-// server usa este MESMO tipo (via alias `resultadoCompletude`,
-// internal/server/completeness.go) para não duplicar a definição nem exigir
-// conversão ao preencher o campo.
+// CatalogCompleteness is the result of evaluating the CATALOG completeness of an
+// item against the per-type scale configured in /settings
+// (internal/server/catalog_completeness.go). It lives in the resolver package (not
+// in internal/server) so that it can be a FIELD of the final shape (Entidade),
+// serialized directly by GET /entities/{id} — the server package uses this SAME
+// type (through the alias `resultadoCompletude`,
+// internal/server/completeness.go) so as not to duplicate the definition nor
+// require a conversion when filling the field.
 type CatalogCompleteness struct {
-	// Complete é true quando o item atende a régua inteira, ou quando o tipo
-	// não tem entrada na config (tipo sem régua nunca é incompleto).
+	// Complete is true when the item meets the whole scale, or when the type has
+	// no entry in the config (a type with no scale is never incomplete).
 	Complete bool `json:"complete"`
-	// Missing são as chaves ESTÁVEIS do que falta, em ordem fixa (description,
-	// runtime, certification, keywords, cast, media_file, artwork:<kind>...).
-	// `[]` (nunca nil) quando Complete é true.
+	// Missing are the STABLE keys of what is missing, in a fixed order
+	// (description, runtime, certification, keywords, cast, media_file,
+	// artwork:<kind>...). `[]` (never nil) when Complete is true.
 	Missing []string `json:"missing"`
 }
 
-// OrderingsInfo descreve as ordens de exibição de episódios de uma série (0040):
-// `Default` é a ordem inicial (o default_season_type da série) e `Available` a lista
-// de ordens oferecidas ao seletor (o default primeiro, `absolute` ao fim quando há
-// número absoluto). A UI só mostra o seletor quando `Available` tem mais de um item.
+// OrderingsInfo describes the episode display orders of a series:
+// `Default` is the initial order (the series' default_season_type) and `Available`
+// the list of orders offered to the selector (the default first, `absolute` last
+// when there is an absolute number). The UI only shows the selector when
+// `Available` has more than one item.
 type OrderingsInfo struct {
 	Default   string   `json:"default"`
 	Available []string `json:"available"`
 }
 
-// OwnershipInfo é a posse agregada de uma temporada/série (0034): episódios
-// possuídos (`owned_count`) sobre o total de episódios (`total_count`). A UI
-// renderiza o badge "possui 12/13". Contagens derivadas dos vínculos
-// media_file_entity (kind='tv_episode') + a árvore entity_relation.
+// OwnershipInfo is the aggregated ownership of a season/series: owned episodes
+// (`owned_count`) over the total number of episodes (`total_count`). The UI
+// renders the badge "possui 12/13". Counts derived from the media_file_entity
+// links (kind='tv_episode') + the entity_relation tree.
 type OwnershipInfo struct {
 	OwnedCount int `json:"owned_count"`
 	TotalCount int `json:"total_count"`
 }
 
-// AncestorRef é um nó ancestral na trilha do breadcrumb (0032): o mínimo para
-// renderizar e NAVEGAR a um nível-pai (id + título + type). Montado no server.
+// AncestorRef is an ancestor node in the breadcrumb trail: the minimum to render
+// and NAVIGATE to a parent level (id + title + type). Built in the server.
 type AncestorRef struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
 	Type  string `json:"type"`
 }
 
-// baseOrigem diz de onde vem a BASE de um campo antes do override: `externo`
-// (enriquecimento sobrepõe o arquivo), `arquivo` (arquivo é autoritativo; externo
-// não é consultado) ou `nenhuma` (só o override fala). O motor lê a etiqueta, não
-// o nome do campo.
+// baseOrigem says where the BASE of a field comes from before the override:
+// `externo` (enrichment overrides the file), `arquivo` (the file is authoritative;
+// the external is not consulted) or `nenhuma` (only the override speaks). The
+// engine reads the label, not the field name.
 type baseOrigem int
 
 const (
@@ -262,50 +276,51 @@ const (
 	baseNenhuma
 )
 
-// kindCampo classifica a forma de composição do campo (escalar, lista por
-// operações, ou extensão por namespace/chave). O motor despacha por kind — uma
-// classe de comportamento —, jamais por nome de campo.
+// kindCampo classifies the composition form of the field (scalar, list by
+// operations, or extension by namespace/key). The engine dispatches by kind — a
+// behavior class —, never by field name.
 type kindCampo int
 
 const (
 	kindEscalar kindCampo = iota
 	kindLista
 	kindExtensao
-	// kindNumero é um escalar NUMÉRICO (*float64) — ex.: a nota local do dono. Compõe
-	// como o escalar (override vence; `null` apaga), mas o valor é um número, não uma
-	// string. É uma classe própria para o motor despachar sem `switch` por nome.
+	// kindNumero is a NUMERIC scalar (*float64) — e.g.: the owner's local rating. It
+	// composes like the scalar (override wins; `null` erases), but the value is a
+	// number, not a string. It is a class of its own so the engine dispatches without
+	// a `switch` on the name.
 	kindNumero
-	// kindCreditos é o crédito (elenco/equipe/produtoras, briefing 0029 Fase C):
-	// base SEMPRE externa (mesclada por prioridade, sem base-arquivo), override é um
-	// PATCH segregado por sub-kind (cast/crew/companies) com operações
-	// reorder/remove/edit/add — não um escalar/lista/extensão comum. Ver
-	// comporCreditos.
+	// kindCreditos is the credit (cast/crew/production companies, ADR-0013):
+	// base ALWAYS external (merged by priority, no file-base), the override is a
+	// PATCH segregated by sub-kind (cast/crew/companies) with
+	// reorder/remove/edit/add operations — not a common
+	// scalar/list/extension. See comporCreditos.
 	kindCreditos
 )
 
-// origemCampo é a etiqueta declarativa de um campo editorial. `traduzivel` marca
-// os campos que compõem POR IDIOMA (ADR-0018): quando há contexto de idioma
-// (cadeia não-vazia), o motor os resolve na dimensão idioma × camada; os NEUTROS
-// (traduzivel=false) nunca consultam a cadeia. É etiqueta no registro, não `switch`
-// por nome de campo (R1/ADR-0001).
+// origemCampo is the declarative label of an editorial field. `traduzivel` marks
+// the fields that compose BY LANGUAGE (ADR-0018): when there is a language context
+// (non-empty chain), the engine resolves them in the language × layer dimension;
+// the NEUTRAL ones (traduzivel=false) never consult the chain. It is a label in the
+// registry, not a `switch` on the field name (R1/ADR-0001).
 type origemCampo struct {
 	base       baseOrigem
 	kind       kindCampo
 	traduzivel bool
-	// soLeitura marca campos que o motor RESOLVE (compõe da camada externa) mas que
-	// NÃO são editáveis pelo dono via override (0016): ficam de fora de
-	// CamposEditaveis. São os campos RICOS de paridade com o externo (tagline,
-	// keywords) — display, não edição. A composição os trata como qualquer campo;
-	// a etiqueta só governa a superfície de EDIÇÃO.
+	// soLeitura marks fields that the engine RESOLVES (composes from the external
+	// layer) but that are NOT editable by the owner through an override: they stay
+	// out of CamposEditaveis. They are the RICH fields of parity with the external
+	// (tagline, keywords) — display, not edition. The composition treats them like
+	// any field; the label only governs the EDITING surface.
 	soLeitura bool
 }
 
-// registroOrigem é o METADADO de origem por campo (ADR-0001): o motor itera este
-// mapa para compor. Só campos EDITORIAIS entram aqui. Ficam de FORA (não passam
-// pela composição de camadas): id/type/created_at/updated_at (sistema), status
-// (intenção do dono), owned/file_count (derivados), poster_url (link de API) e
-// external_ids (identidade autoritativa, MD4 — segue do núcleo). Trocar este mapa
-// (dado) adiciona/muda campos sem tocar o motor.
+// registroOrigem is the origin METADATA per field (ADR-0001): the engine iterates
+// this map to compose. Only EDITORIAL fields enter here. They stay OUT (they do not
+// go through the layer composition): id/type/created_at/updated_at (system), status
+// (the owner's intent), owned/file_count (derived), poster_url (API link) and
+// external_ids (authoritative identity, MD4 — comes from the core). Changing this
+// map (data) adds/changes fields without touching the engine.
 var registroOrigem = map[string]origemCampo{
 	"title":          {base: baseExterno, kind: kindEscalar, traduzivel: true},
 	"original_title": {base: baseExterno, kind: kindEscalar},
@@ -313,65 +328,70 @@ var registroOrigem = map[string]origemCampo{
 	"release_date":   {base: baseExterno, kind: kindEscalar},
 	"tags":           {base: baseExterno, kind: kindLista, traduzivel: true},
 	"extension_data": {base: baseExterno, kind: kindExtensao},
-	// Campos RICOS traduzíveis, READ-ONLY (paridade com o externo, 0022/0023): o
-	// motor compõe por idioma (como title/tags), mas ficam FORA da edição por
-	// override — soLeitura os exclui de CamposEditaveis. Os neutros ricos (runtime,
-	// vote_average, backdrop_url, certification, videos, collection, similar) não
-	// entram no registro: são extraídos direto do externo em Resolver (via richfields).
+	// Translatable RICH fields, READ-ONLY (parity with the external): the engine
+	// composes them per language (like title/tags), but they stay OUT of the
+	// override editing — soLeitura excludes them from CamposEditaveis. The rich
+	// neutral ones (runtime, vote_average, backdrop_url, certification, videos,
+	// collection, similar) do not enter the registry: they are extracted straight
+	// from the external in Resolver (via richfields).
 	"tagline":  {base: baseExterno, kind: kindEscalar, traduzivel: true, soLeitura: true},
 	"keywords": {base: baseExterno, kind: kindLista, traduzivel: true, soLeitura: true},
-	// Situação de exibição da SÉRIE (0045): escalar NEUTRO (verbatim, não traduzível) e
-	// READ-ONLY. Base externa (vem do canônico do provider); soLeitura o exclui de
-	// CamposEditaveis (display, não edição), como tagline/keywords.
+	// SERIES airing situation: NEUTRAL scalar (verbatim, not translatable) and
+	// READ-ONLY. External base (it comes from the provider's canonical); soLeitura
+	// excludes it from CamposEditaveis (display, not edition), like
+	// tagline/keywords.
 	"airing_status": {base: baseExterno, kind: kindEscalar, soLeitura: true},
-	// Nota LOCAL do dono (ADR-0012): número NEUTRO, base NENHUMA (só o override fala —
-	// arquivo e externo não a têm; a nota da fonte é o vote_average, campo distinto).
-	// EDITÁVEL (não soLeitura): entra em CamposEditaveis para o editor de override.
+	// Owner's LOCAL rating (ADR-0012): NEUTRAL number, NO base (only the override
+	// speaks — the file and the external do not have it; the source rating is the
+	// vote_average, a distinct field). EDITABLE (not soLeitura): it enters
+	// CamposEditaveis for the override editor.
 	"local_rating": {base: baseNenhuma, kind: kindNumero},
-	// Créditos (elenco/equipe/produtoras, briefing 0029 Fase C): base externa
-	// (mesclada por prioridade, igual aos campos ricos), NEUTRO (não traduzível —
-	// character/job/department não compõem por idioma nesta fase, decisão travada
-	// no §6.5) e EDITÁVEL (o dono reordena/remove/edita/adiciona créditos sem
-	// destruir a base do provider).
+	// Credits (cast/crew/production companies, ADR-0013): external base
+	// (merged by priority, like the rich fields), NEUTRAL (not translatable —
+	// character/job/department do not compose per language in this phase, a decision
+	// settled in §6.5) and EDITABLE (the owner reorders/removes/edits/adds credits
+	// without destroying the provider's base).
 	"credits": {base: baseExterno, kind: kindCreditos},
 }
 
-// ── Superfície pública do registro (R1, briefing 0016) ───────────────────────
+// ── Public surface of the registry (R1) ─────────────────────────────────────
 //
-// O editor de override (0016) precisa saber quais campos são EDITÁVEIS e quais
-// compõem POR IDIOMA para montar/validar o patch — SEM redigitar a lista (que
-// viraria uma segunda fonte de verdade). Estes helpers só LEEM o registroOrigem;
-// não mudam a composição nem a assinatura de Resolver.
+// The override editor needs to know which fields are EDITABLE and which compose
+// BY LANGUAGE in order to build/validate the patch — WITHOUT retyping the list
+// (which would become a second source of truth). These helpers only READ
+// registroOrigem; they change neither the composition nor the Resolver
+// signature.
 
-// Kind é a CLASSE de composição de um campo editorial, exposta para o editor de
-// override validar a FORMA do patch (escalar aceita string|null; lista aceita
-// array|{add,remove}|null; extensão aceita objeto|null).
+// Kind is the COMPOSITION CLASS of an editorial field, exposed for the override
+// editor to validate the SHAPE of the patch (scalar accepts string|null;
+// list accepts array|{add,remove}|null; extension accepts object|null).
 type Kind string
 
 const (
-	// KindEscalar é um campo de valor único (title/original_title/description/
+	// KindEscalar is a single-value field (title/original_title/description/
 	// release_date).
 	KindEscalar Kind = "escalar"
-	// KindLista é um campo-lista por operações (tags).
+	// KindLista is a list field by operations (tags).
 	KindLista Kind = "lista"
-	// KindExtensao é o mapa de verticais por namespace/chave (extension_data).
+	// KindExtensao is the map of verticals by namespace/key (extension_data).
 	KindExtensao Kind = "extensao"
-	// KindNumero é um campo escalar NUMÉRICO (nota local): aceita número|null.
+	// KindNumero is a NUMERIC scalar field (local rating): accepts number|null.
 	KindNumero Kind = "numero"
-	// KindCreditos é o crédito (elenco/equipe/produtoras): aceita `null` (apaga
-	// tudo) ou um objeto `{cast?,crew?,companies?}` com as operações
-	// reorder/remove/edit/add por sub-kind (briefing 0029 Fase C).
+	// KindCreditos is the credit (cast/crew/production companies): accepts `null`
+	// (erases everything) or an object `{cast?,crew?,companies?}` with the
+	// reorder/remove/edit/add operations per sub-kind (ADR-0013).
 	KindCreditos Kind = "creditos"
 )
 
-// CampoInfo é a etiqueta PÚBLICA de um campo editorial, derivada do registroOrigem:
-// se compõe por idioma (Traduzivel) e sua classe de composição (Kind).
+// CampoInfo is the PUBLIC label of an editorial field, derived from
+// registroOrigem: whether it composes by language (Traduzivel) and its composition
+// class (Kind).
 type CampoInfo struct {
 	Traduzivel bool
 	Kind       Kind
 }
 
-// kindPublico traduz a etiqueta interna de kind na pública.
+// kindPublico translates the internal kind label into the public one.
 func kindPublico(k kindCampo) Kind {
 	switch k {
 	case kindLista:
@@ -387,27 +407,29 @@ func kindPublico(k kindCampo) Kind {
 	}
 }
 
-// CamposEditaveis devolve o mapa campo→CampoInfo dos campos EDITORIAIS (os que
-// passam pela composição de camadas), derivado do registroOrigem. Uma cópia nova a
-// cada chamada — o registro interno permanece imutável de fora. É a fonte única que
-// o server consulta para saber quais chaves de override são válidas (R1/ADR-0001).
+// CamposEditaveis returns the field→CampoInfo map of the EDITORIAL fields (the ones
+// that go through the layer composition), derived from registroOrigem. A fresh copy
+// on every call — the internal registry remains immutable from the outside. It is
+// the single source that the server consults to know which override keys are valid
+// (R1/ADR-0001).
 func CamposEditaveis() map[string]CampoInfo {
 	out := make(map[string]CampoInfo, len(registroOrigem))
 	for campo, orig := range registroOrigem {
 		if orig.soLeitura {
-			continue // campo rico read-only: resolve, mas não é editável (0016).
+			continue // rich read-only field: it resolves, but is not editable.
 		}
 		out[campo] = CampoInfo{Traduzivel: orig.traduzivel, Kind: kindPublico(orig.kind)}
 	}
 	return out
 }
 
-// MapaIdiomaDoOverride normaliza o override CRU de um campo TRADUZÍVEL num mapa
-// idioma→valor pronto para o MERGE DE 2 NÍVEIS do editor (0016). Se o valor já está
-// no formato POR IDIOMA, devolve uma cópia; se está no formato LEGADO (0015, sem
-// chave de idioma), embrulha-o sob `principal` (mesma tolerância da leitura). Usa a
-// MESMA classificação que a composição (parseIdiomaMap), preservando a fonte única.
-// Para um campo não traduzível ou inexistente devolve nil.
+// MapaIdiomaDoOverride normalizes the RAW override of a TRANSLATABLE field into a
+// language→value map ready for the editor's 2-LEVEL MERGE. If the value is already
+// in the BY LANGUAGE format, it returns a copy; if it is in the LEGACY format (no
+// language key), it wraps it under `principal` (the same tolerance as the read
+// path). It uses the SAME classification as the composition (parseIdiomaMap),
+// preserving the single source. For a non-translatable or nonexistent field it
+// returns nil.
 func MapaIdiomaDoOverride(campo string, raw json.RawMessage, principal string) map[string]json.RawMessage {
 	orig, ok := registroOrigem[campo]
 	if !ok || !orig.traduzivel {
@@ -425,12 +447,13 @@ func MapaIdiomaDoOverride(campo string, raw json.RawMessage, principal string) m
 	return out
 }
 
-// Resolver compõe a Entidade resolvida a partir das camadas. É o PONTO ÚNICO onde
-// a precedência `override ⟵ externo ⟵ arquivo` é aplicada. O motor monta a base
-// ARQUIVO como valores canônicos, itera o registro compondo campo a campo, e
-// assembla o shape final. Campos fora do registro vêm diretos do núcleo.
+// Resolver composes the resolved Entidade from the layers. It is the SINGLE POINT
+// where the precedence `override ⟵ externo ⟵ arquivo` is applied. The engine builds
+// the FILE base as canonical values, iterates the registry composing field by
+// field, and assembles the final shape. Fields outside the registry come straight
+// from the core.
 func Resolver(c Camadas) Entidade {
-	// Base ARQUIVO em valores canônicos (mesmos nomes/tipos que a composição usa).
+	// FILE base in canonical values (same names/types that the composition uses).
 	baseArquivoVals := map[string]any{
 		"title":          strPtr(c.Entity.Title),
 		"original_title": nsPtr(c.Entity.OriginalTitle),
@@ -438,24 +461,27 @@ func Resolver(c Camadas) Entidade {
 		"release_date":   nsPtr(c.Entity.ReleaseDate),
 		"tags":           parseTags(c.Entity.TagsJson),
 		"extension_data": parseExtensionData(c.Entity.ExtensionDataJson),
-		// Nota local não tem base de arquivo (só o override a define): a base é nil.
+		// The local rating has no file base (only the override defines it): the base is
+		// nil.
 		"local_rating": (*float64)(nil),
-		// Créditos não têm base de arquivo (só externo+override falam) — igual ao
-		// padrão do extension_data, cuja base-arquivo é sempre um mapa vazio.
+		// Credits have no file base (only external+override speak) — the same as the
+		// extension_data pattern, whose file base is always an empty map.
 		"credits": map[string]any{},
 	}
 
-	// Modo IDIOMA: só quando há cadeia derivada das settings. Sem cadeia, o motor
-	// preserva integralmente o comportamento do 0013 (composição sem idioma).
+	// LANGUAGE mode: only when there is a chain derived from the settings. Without a
+	// chain, the engine fully preserves the pre-multilanguage behavior (composition
+	// with no language).
 	langMode := len(c.Cadeia) > 0
 	principal := c.IdiomaPrincipal
 	if principal == "" && langMode {
 		principal = c.Cadeia[0]
 	}
 
-	// Composição genérica: itera o registro, despacha por kind, compõe. Para campos
-	// TRADUZÍVEIS em modo idioma, compõe na dimensão idioma × camada e registra a
-	// proveniência de idioma; os demais seguem a composição neutra.
+	// Generic composition: iterates the registry, dispatches by kind, composes. For
+	// TRANSLATABLE fields in language mode, it composes in the language × layer
+	// dimension and records the language provenance; the others follow the neutral
+	// composition.
 	resolvido := make(map[string]any, len(registroOrigem))
 	resolvedLangs := map[string]string{}
 	for campo, orig := range registroOrigem {
@@ -468,21 +494,23 @@ func Resolver(c Camadas) Entidade {
 		resolvido[campo] = comporCampo(campo, orig, baseArquivoVals[campo], c.Externo, c.Override)
 	}
 
-	// Campos RICOS neutros/estruturados: NÃO passam pela composição de camadas (não
-	// têm base arquivo nem override) — vêm direto do canônico externo, na prioridade
-	// R2 (primeira fonte com valor). Reusa richfields (compartilhado com o /external),
-	// garantindo o MESMO shape do detalhe do externo.
+	// RICH neutral/structured fields: they do NOT go through the layer composition
+	// (they have neither file base nor override) — they come straight from the
+	// external canonical, in the R2 priority (first source with a value). It reuses
+	// richfields (shared with /external), guaranteeing the SAME shape as the external
+	// detail.
 	rico := camposExternosMesclados(c.Externo)
 	externalIDs := parseExternalIDs(c.Entity.ExternalIdsJson)
 
-	// Créditos (0029 Fase C): a ENTRADA de richfields.CastDe/CrewDe/CompaniesDe deixa
-	// de ser o `rico` cru e passa a ser o resultado da COMPOSIÇÃO (resolvido["credits"],
-	// já com override aplicado) — os extratores em si não mudam (reaproveita 100% do
-	// parsing existente).
+	// Credits (ADR-0013): the INPUT of richfields.CastDe/CrewDe/CompaniesDe is no
+	// longer the raw `rico` and becomes the result of the COMPOSITION
+	// (resolvido["credits"], already with the override applied) — the extractors
+	// themselves do not change (100% reuse of the existing parsing).
 	creditos := asObjMap(resolvido["credits"])
 
-	// Backdrop: prefere o FUNDO cacheado localmente (rota do chamador); sem cache,
-	// cai na URL direta da fonte (canônico externo). Mesmo campo, origem diferente.
+	// Backdrop: prefers the locally cached BACKGROUND (the caller's route); without a
+	// cache, it falls back to the source's direct URL (external canonical). Same
+	// field, different origin.
 	backdrop := c.BackdropURL
 	if backdrop == nil {
 		backdrop = richfields.StrPtrDe(rico, "backdrop_url")
@@ -524,10 +552,10 @@ func Resolver(c Camadas) Entidade {
 	}
 }
 
-// camposExternosMesclados achata as camadas externas numa visão canônica única
-// para os campos ricos NEUTROS: para cada chave, o valor da fonte de MAIOR
-// prioridade que a tem (índice 0 = mais alta, R2). Itera do fim para o começo para
-// a de índice 0 prevalecer. Só valores não-nil entram.
+// camposExternosMesclados flattens the external layers into a single canonical
+// view for the NEUTRAL rich fields: for each key, the value of the HIGHEST
+// priority source that has it (index 0 = highest, R2). It iterates from the end to
+// the beginning so the index-0 one prevails. Only non-nil values enter.
 func camposExternosMesclados(externo []CamadaExterna) map[string]any {
 	out := map[string]any{}
 	for i := len(externo) - 1; i >= 0; i-- {
@@ -540,10 +568,10 @@ func camposExternosMesclados(externo []CamadaExterna) map[string]any {
 	return out
 }
 
-// ratingsPorFonte (0086) coleta a nota de CADA camada externa que modela
-// vote_average, em vez do valor único mesclado por prioridade — permite a UI
-// mostrar notas de fontes diferentes lado a lado. Fonte que não modela o
-// campo simplesmente não aparece (degradação silenciosa, AGENTS.md §6).
+// ratingsPorFonte collects the rating of EACH external layer that models
+// vote_average, instead of the single value merged by priority — it lets the UI
+// show ratings from different sources side by side. A source that does not model
+// the field simply does not appear (silent degradation, AGENTS.md §6).
 func ratingsPorFonte(externo []CamadaExterna) []RatingFonte {
 	out := []RatingFonte{}
 	for _, cam := range externo {
@@ -554,9 +582,9 @@ func ratingsPorFonte(externo []CamadaExterna) []RatingFonte {
 	return out
 }
 
-// comporCampo despacha a composição de um campo pela sua CLASSE (kind) — nunca
-// pelo nome. É aqui que o motor permanece genérico: novos campos só precisam de
-// uma entrada no registro com um dos kinds já suportados.
+// comporCampo dispatches the composition of a field by its CLASS (kind) — never by
+// the name. This is where the engine stays generic: new fields only need an entry
+// in the registry with one of the already supported kinds.
 func comporCampo(campo string, orig origemCampo, arquivo any, externo []CamadaExterna, override map[string]json.RawMessage) any {
 	switch orig.kind {
 	case kindLista:
@@ -572,14 +600,15 @@ func comporCampo(campo string, orig origemCampo, arquivo any, externo []CamadaEx
 	}
 }
 
-// comporNumero aplica a precedência a um campo escalar NUMÉRICO (nota local): o
-// override vence (chave presente, mesmo `null` → apaga com nil); senão, se a base é
-// externa, o primeiro valor numérico das fontes; senão a base arquivo. Devolve
-// sempre um *float64. Espelha comporEscalar, trocando string por número.
+// comporNumero applies the precedence to a NUMERIC scalar field (local rating):
+// the override wins (key present, even `null` → erases with nil); otherwise, if the
+// base is external, the first numeric value of the sources; otherwise the file
+// base. It always returns a *float64. It mirrors comporEscalar, swapping string for
+// number.
 func comporNumero(campo string, orig origemCampo, arquivo any, externo []CamadaExterna, override map[string]json.RawMessage) *float64 {
 	if raw, ok := override[campo]; ok {
-		// Presença da chave decide o override; `null` → nil (apaga); número → &n;
-		// qualquer outra forma degrada a nil.
+		// Presence of the key decides the override; `null` → nil (erases); number → &n;
+		// any other form degrades to nil.
 		var v *float64
 		_ = json.Unmarshal(raw, &v)
 		return v
@@ -594,19 +623,20 @@ func comporNumero(campo string, orig origemCampo, arquivo any, externo []CamadaE
 	return asFloatPtr(arquivo)
 }
 
-// ── Créditos (elenco/equipe/produtoras, briefing 0029 Fase C) ───────────────
+// ── Credits (cast/crew/production companies, ADR-0013) ──────────────────────
 
-// creditosKinds são os 3 sub-kinds de crédito, na ordem em que a forma canônica do
-// patch os declara (briefing 0029 §6.5 / openapi.yaml OverridePatch).
+// creditosKinds are the 3 credit sub-kinds, in the order in which the canonical
+// form of the patch declares them (openapi.yaml OverridePatch).
 var creditosKinds = [...]string{"cast", "crew", "companies"}
 
-// comporCreditos compõe o campo `credits`: a BASE é sempre a camada externa
-// mesclada por prioridade (as mesmas 3 chaves que os campos ricos read-only da
-// Fase B já usavam), SEM base-arquivo. Sem override, devolve a base tal qual
-// (chaves ausentes quando a fonte não trouxe). `override["credits"] == null`
-// apaga TUDO (mapa vazio). Um patch presente decodifica por sub-kind
-// (cast/crew/companies) e aplica remove→edit→add→reorder — sub-chave ausente no
-// patch herda a base daquele sub-kind intacta. Devolve sempre um mapa não-nil.
+// comporCreditos composes the `credits` field: the BASE is always the external
+// layer merged by priority (the same 3 keys that the read-only rich fields
+// already used), with NO file base. Without an override, it returns the base as
+// is (keys absent when the source did not bring them). `override["credits"] ==
+// null` erases EVERYTHING (empty map). A present patch is decoded per sub-kind
+// (cast/crew/companies) and applies remove→edit→add→reorder — a sub-key absent
+// from the patch inherits that sub-kind's base intact. It always returns a non-nil
+// map.
 func comporCreditos(campo string, externo []CamadaExterna, override map[string]json.RawMessage) map[string]any {
 	rico := camposExternosMesclados(externo)
 	base := map[string]any{}
@@ -626,8 +656,8 @@ func comporCreditos(campo string, externo []CamadaExterna, override map[string]j
 
 	var patch map[string]json.RawMessage
 	if json.Unmarshal(raw, &patch) != nil {
-		// Forma inválida (já barrada na escrita pelo server): degrada para a base
-		// intacta em vez de propagar um erro de um resolver que é puro.
+		// Invalid form (already blocked on write by the server): degrades to the
+		// intact base instead of propagating an error from a resolver that is pure.
 		return base
 	}
 
@@ -638,7 +668,7 @@ func comporCreditos(campo string, externo []CamadaExterna, override map[string]j
 	for _, kind := range creditosKinds {
 		rawKind, ok := patch[kind]
 		if !ok {
-			continue // sub-chave ausente: herda a base daquele sub-kind intacta.
+			continue // sub-key absent: inherits that sub-kind's base intact.
 		}
 		if ehNull(rawKind) {
 			out[kind] = []any{}
@@ -651,9 +681,9 @@ func comporCreditos(campo string, externo []CamadaExterna, override map[string]j
 	return out
 }
 
-// patchCredito é a forma canônica de UM sub-bloco do patch de créditos (briefing
-// 0029 §6.5): as 4 operações, todas opcionais. Edit é chave→patch de campos
-// (map[string]any tolera qualquer valor; a validação de forma já rodou no
+// patchCredito is the canonical form of ONE sub-block of the credits patch: the 4
+// operations, all optional. Edit is key→field patch
+// (map[string]any tolerates any value; the shape validation already ran in the
 // server).
 type patchCredito struct {
 	Reorder []string                  `json:"reorder"`
@@ -662,14 +692,14 @@ type patchCredito struct {
 	Add     []map[string]any          `json:"add"`
 }
 
-// aplicarPatchCredito aplica as 4 operações de UM sub-kind NA ORDEM travada:
-// remove → edit → add → reorder. Para `cast`, reescreve o campo `order` de cada
-// item ao final (índice 0-based), mantendo richfields.Cast.Order coerente com a
-// lista resultante (crew/companies não têm campo `order`).
+// aplicarPatchCredito applies the 4 operations of ONE sub-kind IN the settled
+// ORDER: remove → edit → add → reorder. For `cast`, it rewrites the `order` field
+// of each item at the end (0-based index), keeping richfields.Cast.Order coherent
+// with the resulting list (crew/companies have no `order` field).
 func aplicarPatchCredito(kind string, itens []map[string]any, raw json.RawMessage) []map[string]any {
 	var ops patchCredito
 	if json.Unmarshal(raw, &ops) != nil {
-		return itens // forma inválida: degrada para os itens intactos.
+		return itens // invalid form: degrades to the intact items.
 	}
 
 	if len(ops.Remove) > 0 {
@@ -686,11 +716,11 @@ func aplicarPatchCredito(kind string, itens []map[string]any, raw json.RawMessag
 		itens = filtrados
 	}
 
-	// Chaves ANTES do edit: para crew, a chave inclui `job` — um campo que o
-	// próprio `edit` pode mudar. Se o `reorder` (montado pelo front com a chave
-	// ANTIGA) casasse com a chave PÓS-edit, o item editado "sumiria" do reorder e
-	// seria empurrado ao fim da lista só por ter sido editado. Fixar as chaves
-	// aqui, antes da mutação, mantém `edit` e `reorder` na MESMA chave.
+	// Keys BEFORE the edit: for crew, the key includes `job` — a field that `edit`
+	// itself can change. If the `reorder` (built by the front end with the OLD key)
+	// matched the POST-edit key, the edited item would "vanish" from the reorder and
+	// be pushed to the end of the list just for having been edited. Fixing the keys
+	// here, before the mutation, keeps `edit` and `reorder` on the SAME key.
 	chaves := make([]string, len(itens))
 	for i, it := range itens {
 		chaves[i] = chaveCredito(kind, it)
@@ -722,11 +752,11 @@ func aplicarPatchCredito(kind string, itens []map[string]any, raw json.RawMessag
 	return itens
 }
 
-// reordenarCreditos move os itens cujas chaves (pré-edit, `chaves[i]` casa com
-// `itens[i]`) aparecem em `reorder` para a posição correspondente, NA ORDEM
-// dada; os itens restantes (não mencionados) vêm depois, na ordem relativa
-// original. Chaves em `reorder` que não existem (mais) são ignoradas
-// silenciosamente.
+// reordenarCreditos moves the items whose keys (pre-edit, `chaves[i]` matches
+// `itens[i]`) appear in `reorder` to the corresponding position, IN the given
+// ORDER; the remaining items (not mentioned) come afterwards, in the original
+// relative order. Keys in `reorder` that do not exist (anymore) are silently
+// ignored.
 func reordenarCreditos(itens []map[string]any, chaves []string, reorder []string) []map[string]any {
 	idx := make(map[string]int, len(itens))
 	for i, k := range chaves {
@@ -750,11 +780,11 @@ func reordenarCreditos(itens []map[string]any, chaves []string, reorder []string
 	return out
 }
 
-// chaveCredito é a CHAVE do crédito para reorder/remove/edit (briefing 0029
-// §6.5): `source_id` para cast/companies; `source_id + "|" + job` para crew — a
-// MESMA chave que equipeSimples/equipeAgregada (tmdb_creditos.go) já usam para
-// dedup, porque um membro de equipe pode ter dois cargos com o mesmo source_id.
-// `job` ausente (ex.: crédito custom incompleto) trata como "".
+// chaveCredito is the KEY of the credit for reorder/remove/edit: `source_id` for
+// cast/companies; `source_id + "|" + job` for crew — the SAME key that
+// equipeSimples/equipeAgregada (tmdb_creditos.go) already use for dedup, because a
+// crew member can hold two jobs with the same source_id. An absent `job` (e.g.:
+// incomplete custom credit) is treated as "".
 func chaveCredito(kind string, item map[string]any) string {
 	sourceID, _ := item["source_id"].(string)
 	if kind != "crew" {
@@ -764,10 +794,10 @@ func chaveCredito(kind string, item map[string]any) string {
 	return sourceID + "|" + job
 }
 
-// clonarListaCreditos converte a base de um sub-kind (uma []any de
-// map[string]any, o mesmo shape que os itens de rico["cast"] etc já têm) numa
-// []map[string]any de CÓPIAS RASAS — para o patch (edit/reorder de `order`) não
-// mutar os mapas da camada externa original.
+// clonarListaCreditos converts the base of a sub-kind (an []any of map[string]any,
+// the same shape that the items of rico["cast"] etc. already have) into a
+// []map[string]any of SHALLOW COPIES — so the patch (edit/reorder of `order`) does
+// not mutate the maps of the original external layer.
 func clonarListaCreditos(v any) []map[string]any {
 	itensAny, _ := v.([]any)
 	out := make([]map[string]any, 0, len(itensAny))
@@ -779,7 +809,7 @@ func clonarListaCreditos(v any) []map[string]any {
 	return out
 }
 
-// clonarCredito faz uma cópia rasa de um item de crédito.
+// clonarCredito makes a shallow copy of a credit item.
 func clonarCredito(m map[string]any) map[string]any {
 	out := make(map[string]any, len(m))
 	for k, v := range m {
@@ -788,8 +818,8 @@ func clonarCredito(m map[string]any) map[string]any {
 	return out
 }
 
-// creditosParaAny converte a []map[string]any de volta para []any — o shape que
-// richfields.CastDe/CrewDe/CompaniesDe (via comoListaAny) esperam.
+// creditosParaAny converts the []map[string]any back into []any — the shape that
+// richfields.CastDe/CrewDe/CompaniesDe (through comoListaAny) expect.
 func creditosParaAny(itens []map[string]any) []any {
 	out := make([]any, len(itens))
 	for i, it := range itens {
@@ -798,15 +828,16 @@ func creditosParaAny(itens []map[string]any) []any {
 	return out
 }
 
-// ── Composição por idioma (traduzíveis) ─────────────────────────────────────
+// ── Per-language composition (translatables) ────────────────────────────────
 
-// comporTraduzivel compõe um campo TRADUZÍVEL na dimensão idioma × camada
-// (ADR-0019). Percorre a `cadeia` (`pedido → fallback → original → …`); para cada
-// idioma tenta `override[campo][idioma]` (presença decide; `null` apaga E
-// INTERROMPE o fallback — R6 por idioma) e senão `externo[campo][idioma]` (primeira
-// fonte com valor); a PRIMEIRA etapa com presença define o valor e a PROVENIÊNCIA
-// (idioma efetivo). Nenhum idioma da cadeia com valor cai na base ARQUIVO (neutra),
-// proveniência `""`. Devolve (valor, idioma efetivo).
+// comporTraduzivel composes a TRANSLATABLE field in the language × layer
+// dimension (ADR-0019). It walks the `cadeia` (`pedido → fallback → original → …`);
+// for each language it tries `override[campo][idioma]` (presence decides; `null`
+// erases AND INTERRUPTS the fallback — R6 per language) and otherwise
+// `externo[campo][idioma]` (first source with a value); the FIRST step with
+// presence defines the value and the PROVENANCE (effective language). No language
+// of the chain with a value falls back to the FILE base (neutral), provenance
+// `""`. Returns (value, effective language).
 func comporTraduzivel(campo string, orig origemCampo, arquivo any, cadeia []string, principal string, externo []CamadaExterna, override map[string]json.RawMessage) (any, string) {
 	if orig.kind == kindLista {
 		return comporListaIdioma(campo, arquivo, cadeia, principal, externo, override)
@@ -814,34 +845,36 @@ func comporTraduzivel(campo string, orig origemCampo, arquivo any, cadeia []stri
 	return comporEscalarIdioma(campo, arquivo, cadeia, principal, externo, override)
 }
 
-// comporEscalarIdioma resolve title/description por idioma. Ver comporTraduzivel.
+// comporEscalarIdioma resolves title/description per language. See
+// comporTraduzivel.
 func comporEscalarIdioma(campo string, arquivo any, cadeia []string, principal string, externo []CamadaExterna, override map[string]json.RawMessage) (*string, string) {
 	rawOv, temOv := override[campo]
 	idiomaMap, ehMap := parseIdiomaMap(rawOv, temOv, kindEscalar)
 	for _, idioma := range cadeia {
-		// OVERRIDE do idioma: presença decide (null apaga e interrompe).
+		// OVERRIDE of the language: presence decides (null erases and interrupts).
 		if temOv {
 			if ehMap {
 				if r, ok := idiomaMap[idioma]; ok {
 					return escalarDeRaw(r), idioma
 				}
 			} else if idioma == principal {
-				// Legado (0015): override sem chave de idioma vale sob o principal.
+				// Legacy: an override with no language key applies under the main one.
 				return escalarDeRaw(rawOv), idioma
 			}
 		}
-		// EXTERNO do idioma: primeira fonte com valor.
+		// EXTERNAL of the language: first source with a value.
 		if v, ok := externoEscalarIdioma(externo, campo, idioma, principal); ok {
 			return v, idioma
 		}
 	}
-	// Base ARQUIVO (neutra): último recurso da cadeia.
+	// FILE base (neutral): last resort of the chain.
 	return asStrPtr(arquivo), ""
 }
 
-// comporListaIdioma resolve tags por idioma: dentro do idioma escolhido, o override
-// `{add,remove}`/array/null faz o MERGE sobre a base externa daquele idioma (ou a
-// base arquivo quando a fonte não tem valor para ele) — R3 por idioma.
+// comporListaIdioma resolves tags per language: inside the chosen language, the
+// `{add,remove}`/array/null override does the MERGE over the external base of that
+// language (or the file base when the source has no value for it) — R3 per
+// language.
 func comporListaIdioma(campo string, arquivo any, cadeia []string, principal string, externo []CamadaExterna, override map[string]json.RawMessage) ([]string, string) {
 	arquivoTags := asStrSlice(arquivo)
 	rawOv, temOv := override[campo]
@@ -868,33 +901,34 @@ func comporListaIdioma(campo string, arquivo any, cadeia []string, principal str
 	return dedup(arquivoTags), ""
 }
 
-// parseIdiomaMap decide se o override CRU de um campo traduzível está no formato
-// POR IDIOMA (`{"pt-BR": …, "en": …}`) ou no formato LEGADO (escalar/array/objeto de
-// operações do 0015, sem chave de idioma). Só um OBJETO JSON pode ser mapa por
-// idioma; para listas, um objeto de operações `{add,remove}` é legado, não idioma.
-// Devolve (mapa idioma→raw, ehMap). Quando ehMap=false, o chamador trata o override
-// inteiro como valor do idioma principal.
+// parseIdiomaMap decides whether the RAW override of a translatable field is in the
+// BY LANGUAGE format (`{"pt-BR": …, "en": …}`) or in the LEGACY format
+// (scalar/array/operations object, with no language key). Only a JSON OBJECT can be
+// a per-language map; for lists, an operations object `{add,remove}` is legacy, not
+// language. Returns (language→raw map, ehMap). When ehMap=false, the caller treats
+// the whole override as the value of the main language.
 func parseIdiomaMap(raw json.RawMessage, temOv bool, kind kindCampo) (map[string]json.RawMessage, bool) {
 	if !temOv {
 		return nil, false
 	}
 	t := bytes.TrimSpace(raw)
 	if len(t) == 0 || t[0] != '{' {
-		return nil, false // escalar, array ou null → legado
+		return nil, false // scalar, array or null → legacy
 	}
 	var m map[string]json.RawMessage
 	if json.Unmarshal(raw, &m) != nil {
 		return nil, false
 	}
 	if kind == kindLista && apenasChavesDeOperacao(m) {
-		return nil, false // {add,remove} → operação legada, não mapa por idioma
+		return nil, false // {add,remove} → legacy operation, not a per-language map
 	}
 	return m, true
 }
 
-// apenasChavesDeOperacao diz se todas as chaves do objeto são de OPERAÇÃO de lista
-// (`add`/`remove`) — o que caracteriza o override-lista legado (não um mapa por
-// idioma). Objeto vazio conta como operação (merge vazio sobre a base).
+// apenasChavesDeOperacao says whether all keys of the object are list OPERATION
+// (`add`/`remove`) keys — which characterizes the legacy list override (not a
+// per-language map). An empty object counts as an operation (empty merge over the
+// base).
 func apenasChavesDeOperacao(m map[string]json.RawMessage) bool {
 	for k := range m {
 		if k != "add" && k != "remove" {
@@ -904,18 +938,19 @@ func apenasChavesDeOperacao(m map[string]json.RawMessage) bool {
 	return true
 }
 
-// escalarDeRaw decodifica um valor escalar de override cru num *string: `null` → nil
-// (apaga), `"s"` → &s, outra forma degrada a nil. Espelha comporEscalar.
+// escalarDeRaw decodes a raw override scalar value into a *string: `null` → nil
+// (erases), `"s"` → &s, another form degrades to nil. It mirrors comporEscalar.
 func escalarDeRaw(raw json.RawMessage) *string {
 	var v *string
 	_ = json.Unmarshal(raw, &v)
 	return v
 }
 
-// externoEscalarIdioma busca, na ordem de prioridade das fontes, o primeiro valor
-// escalar do campo para o idioma pedido. O externo do campo pode vir como
-// `map[idioma]valor` (formato do 0020) OU como escalar simples (formato LEGADO do
-// 0015) — o legado só casa quando o idioma pedido é o principal (ADR-0018).
+// externoEscalarIdioma searches, in the source priority order, the first scalar
+// value of the field for the requested language. The field's external may come as
+// `map[idioma]valor` (the per-language format) OR as a plain scalar (the LEGACY
+// format) — the legacy one only matches when the requested language is the main one
+// (ADR-0018).
 func externoEscalarIdioma(externo []CamadaExterna, campo, idioma, principal string) (*string, bool) {
 	for _, cam := range externo {
 		v, ok := cam.Campos[campo]
@@ -939,8 +974,9 @@ func externoEscalarIdioma(externo []CamadaExterna, campo, idioma, principal stri
 	return nil, false
 }
 
-// externoListaIdioma busca a lista do campo para o idioma pedido, com a mesma
-// tolerância ao legado de externoEscalarIdioma (lista simples = principal).
+// externoListaIdioma searches the field's list for the requested language, with the
+// same tolerance to the legacy format as externoEscalarIdioma (plain list = main
+// language).
 func externoListaIdioma(externo []CamadaExterna, campo, idioma, principal string) ([]string, bool) {
 	for _, cam := range externo {
 		v, ok := cam.Campos[campo]
@@ -960,13 +996,13 @@ func externoListaIdioma(externo []CamadaExterna, campo, idioma, principal string
 	return nil, false
 }
 
-// comporEscalar aplica a precedência a um campo escalar: override (chave presente,
-// mesmo `null` → vence, apagando com nil) ⟶ senão externo (primeira fonte com
-// valor, se a base for externo) ⟶ senão arquivo. Devolve sempre um *string.
+// comporEscalar applies the precedence to a scalar field: override (key present,
+// even `null` → wins, erasing with nil) ⟶ otherwise external (first source with a
+// value, if the base is external) ⟶ otherwise file. It always returns a *string.
 func comporEscalar(campo string, orig origemCampo, arquivo any, externo []CamadaExterna, override map[string]json.RawMessage) *string {
 	if raw, ok := override[campo]; ok {
-		// Presença da chave decide o override; o valor decide o conteúdo:
-		// `null` → nil (apaga); "s" → &s; qualquer outra forma degrada a nil.
+		// Presence of the key decides the override; the value decides the content:
+		// `null` → nil (erases); "s" → &s; any other form degrades to nil.
 		var v *string
 		_ = json.Unmarshal(raw, &v)
 		return v
@@ -979,8 +1015,8 @@ func comporEscalar(campo string, orig origemCampo, arquivo any, externo []Camada
 	return asStrPtr(arquivo)
 }
 
-// primeiroExternoEscalar devolve o valor da PRIMEIRA fonte (na ordem de
-// prioridade) cujo Campos[campo] existe e é uma string — a base externa do campo.
+// primeiroExternoEscalar returns the value of the FIRST source (in priority order)
+// whose Campos[campo] exists and is a string — the external base of the field.
 func primeiroExternoEscalar(externo []CamadaExterna, campo string) (*string, bool) {
 	for _, cam := range externo {
 		if v, ok := cam.Campos[campo]; ok && v != nil {
@@ -992,10 +1028,11 @@ func primeiroExternoEscalar(externo []CamadaExterna, campo string) (*string, boo
 	return nil, false
 }
 
-// comporLista compõe um campo-lista por MERGE DE OPERAÇÕES (R3/ADR-0003). A base é
-// a lista externa (primeira fonte com valor) ou a do arquivo; o override
-// `{add, remove}` reescreve sobre ela. Ordem: base, remoções por valor, adições ao
-// fim, dedup. Um override array puro é substituição total; `null` apaga a base.
+// comporLista composes a list field by MERGE OF OPERATIONS (R3/ADR-0003). The base
+// is the external list (first source with a value) or the file one; the
+// `{add, remove}` override rewrites over it. Order: base, removals by value,
+// additions at the end, dedup. A plain array override is a total replacement;
+// `null` erases the base.
 func comporLista(campo string, orig origemCampo, arquivo any, externo []CamadaExterna, override map[string]json.RawMessage) []string {
 	base := asStrSlice(arquivo)
 	if orig.base == baseExterno {
@@ -1009,7 +1046,8 @@ func comporLista(campo string, orig origemCampo, arquivo any, externo []CamadaEx
 	return dedup(base)
 }
 
-// primeiroExternoLista devolve a lista da PRIMEIRA fonte com valor para o campo.
+// primeiroExternoLista returns the list of the FIRST source with a value for the
+// field.
 func primeiroExternoLista(externo []CamadaExterna, campo string) ([]string, bool) {
 	for _, cam := range externo {
 		if v, ok := cam.Campos[campo]; ok && v != nil {
@@ -1019,20 +1057,20 @@ func primeiroExternoLista(externo []CamadaExterna, campo string) ([]string, bool
 	return nil, false
 }
 
-// aplicarOverrideLista interpreta o override de um campo-lista: `null` apaga a
-// base; um array puro substitui a base; um objeto `{add, remove}` faz o merge de
-// operações. Forma canônica = `{add, remove}` (ADR-0003); array é atalho de
-// substituição total. Qualquer outra forma degrada para a base intacta.
+// aplicarOverrideLista interprets the override of a list field: `null` erases the
+// base; a plain array replaces the base; an `{add, remove}` object does the merge of
+// operations. Canonical form = `{add, remove}` (ADR-0003); an array is the shortcut
+// for total replacement. Any other form degrades to the intact base.
 func aplicarOverrideLista(base []string, raw json.RawMessage) []string {
 	if ehNull(raw) {
 		return []string{}
 	}
-	// Substituição total (array puro).
+	// Total replacement (plain array).
 	var arr []string
 	if err := json.Unmarshal(raw, &arr); err == nil {
 		return dedup(arr)
 	}
-	// Merge por operações (forma canônica).
+	// Merge by operations (canonical form).
 	var ops struct {
 		Add    []string `json:"add"`
 		Remove []string `json:"remove"`
@@ -1043,8 +1081,9 @@ func aplicarOverrideLista(base []string, raw json.RawMessage) []string {
 	return dedup(base)
 }
 
-// mesclarLista aplica as operações sobre a base: remove por valor, acrescenta as
-// adições ao fim, e dedupa preservando a primeira ocorrência (ordem estável).
+// mesclarLista applies the operations over the base: removal by value, the
+// additions appended at the end, and dedup preserving the first occurrence (stable
+// order).
 func mesclarLista(base, add, remove []string) []string {
 	remover := make(map[string]struct{}, len(remove))
 	for _, r := range remove {
@@ -1060,16 +1099,16 @@ func mesclarLista(base, add, remove []string) []string {
 	return dedup(out)
 }
 
-// comporExtensao compõe extension_data por NAMESPACE e por CHAVE interna com a
-// mesma precedência (R5/ADR-0005): arquivo é a base, cada fonte externa sobrepõe
-// (a de maior prioridade vence), e o override reescreve por cima — com `null`
-// apagando o namespace inteiro ou uma chave. Composição recursiva rasa
-// (namespace → objeto de campos). Sempre devolve um mapa não-nil.
+// comporExtensao composes extension_data by NAMESPACE and by inner KEY with the same
+// precedence (R5/ADR-0005): the file is the base, each external source overrides it
+// (the highest priority one wins), and the override rewrites on top — with `null`
+// erasing the whole namespace or a key. Shallow recursive composition
+// (namespace → object of fields). It always returns a non-nil map.
 func comporExtensao(campo string, arquivo any, externo []CamadaExterna, override map[string]json.RawMessage) map[string]any {
 	merged := clonarExt(asObjMap(arquivo))
 
-	// Externo: index 0 é a prioridade mais ALTA. Aplica do fim para o começo para
-	// a fonte de maior prioridade prevalecer por namespace/chave.
+	// Externo: index 0 is the HIGHEST priority. It applies from the end to the
+	// beginning so the highest priority source prevails per namespace/key.
 	for i := len(externo) - 1; i >= 0; i-- {
 		mesclarExt(merged, asObjMap(externo[i].Campos[campo]))
 	}
@@ -1080,8 +1119,8 @@ func comporExtensao(campo string, arquivo any, externo []CamadaExterna, override
 	return merged
 }
 
-// mesclarExt sobrepõe `src` em `dst` por namespace/chave: cada chave de src vence
-// a de dst; namespaces novos entram inteiros.
+// mesclarExt overlays `src` onto `dst` per namespace/key: each key of src wins over
+// the one in dst; new namespaces enter whole.
 func mesclarExt(dst, src map[string]any) {
 	for ns, obj := range src {
 		alvo := asObjMap(dst[ns])
@@ -1092,10 +1131,10 @@ func mesclarExt(dst, src map[string]any) {
 	}
 }
 
-// aplicarOverrideExt reescreve o extension_data composto com o patch do dono. Um
-// `null` no topo apaga tudo; `null` num namespace apaga o namespace; `null` numa
-// chave apaga a chave; qualquer outro valor sobrepõe. Chave/namespace ausente
-// herda a base.
+// aplicarOverrideExt rewrites the composed extension_data with the owner's patch. A
+// top-level `null` erases everything; `null` in a namespace erases the namespace;
+// `null` in a key erases the key; any other value overrides. An absent
+// key/namespace inherits the base.
 func aplicarOverrideExt(merged map[string]any, raw json.RawMessage) {
 	if ehNull(raw) {
 		for ns := range merged {
@@ -1133,8 +1172,8 @@ func aplicarOverrideExt(merged map[string]any, raw json.RawMessage) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-// temPosse aplica a POSSE DERIVADA (ADR-0009) sobre os arquivos já carregados:
-// verdadeiro se, e só se, existe ao menos um media_file com state='present'.
+// temPosse applies the DERIVED OWNERSHIP (ADR-0009) over the already loaded files:
+// true if, and only if, there is at least one media_file with state='present'.
 func temPosse(files []sqlcgen.MediaFile) bool {
 	for _, f := range files {
 		if f.State == "present" {
@@ -1144,9 +1183,9 @@ func temPosse(files []sqlcgen.MediaFile) bool {
 	return false
 }
 
-// parseTags decodifica tags_json (um array JSON de strings) numa fatia. Sempre
-// devolve uma fatia não-nil (vazia quando ausente/inválido) para o JSON sair
-// como `[]` em vez de `null`.
+// parseTags decodes tags_json (a JSON array of strings) into a slice. It always
+// returns a non-nil slice (empty when absent/invalid) so the JSON comes out as
+// `[]` instead of `null`.
 func parseTags(raw sql.NullString) []string {
 	out := []string{}
 	if !raw.Valid || raw.String == "" {
@@ -1159,9 +1198,9 @@ func parseTags(raw sql.NullString) []string {
 	return out
 }
 
-// parseExtensionData decodifica extension_data_json (objeto JSON namespace→objeto)
-// num mapa. Sempre devolve um mapa não-nil (vazio quando ausente/inválido) para o
-// JSON sair como `{}` em vez de `null`.
+// parseExtensionData decodes extension_data_json (a JSON object namespace→object)
+// into a map. It always returns a non-nil map (empty when absent/invalid) so the
+// JSON comes out as `{}` instead of `null`.
 func parseExtensionData(raw sql.NullString) map[string]any {
 	out := map[string]any{}
 	if !raw.Valid || raw.String == "" {
@@ -1174,8 +1213,8 @@ func parseExtensionData(raw sql.NullString) map[string]any {
 	return out
 }
 
-// parseExternalIDs decodifica external_ids_json (objeto JSON string->string).
-// Valores não-string são ignorados. Sempre devolve um mapa não-nil.
+// parseExternalIDs decodes external_ids_json (a JSON object string->string).
+// Non-string values are ignored. It always returns a non-nil map.
 func parseExternalIDs(raw sql.NullString) map[string]string {
 	out := map[string]string{}
 	if !raw.Valid || raw.String == "" {
@@ -1193,8 +1232,8 @@ func parseExternalIDs(raw sql.NullString) map[string]string {
 	return out
 }
 
-// nsPtr converte um sql.NullString em *string (nil quando NULL) para o campo
-// sair como `null` no JSON.
+// nsPtr converts a sql.NullString into a *string (nil when NULL) so the field comes
+// out as `null` in the JSON.
 func nsPtr(ns sql.NullString) *string {
 	if !ns.Valid {
 		return nil
@@ -1203,12 +1242,12 @@ func nsPtr(ns sql.NullString) *string {
 	return &v
 }
 
-// strPtr embrulha uma string num *string (a base arquivo dos escalares é sempre
-// um ponteiro, para uniformizar a composição).
+// strPtr wraps a string in a *string (the file base of the scalars is always a
+// pointer, to uniformize the composition).
 func strPtr(s string) *string { return &s }
 
-// asStrPtr extrai um *string de um valor dinâmico da composição (nil quando o
-// valor não é *string).
+// asStrPtr extracts a *string from a dynamic value of the composition (nil when the
+// value is not a *string).
 func asStrPtr(v any) *string {
 	if p, ok := v.(*string); ok {
 		return p
@@ -1216,8 +1255,8 @@ func asStrPtr(v any) *string {
 	return nil
 }
 
-// asFloatPtr extrai um *float64 de um valor dinâmico da composição (nil quando o
-// valor não é *float64) — usado pelo campo numérico (nota local).
+// asFloatPtr extracts a *float64 from a dynamic value of the composition (nil when
+// the value is not a *float64) — used by the numeric field (local rating).
 func asFloatPtr(v any) *float64 {
 	if p, ok := v.(*float64); ok {
 		return p
@@ -1225,8 +1264,8 @@ func asFloatPtr(v any) *float64 {
 	return nil
 }
 
-// derefStr deref um *string dinâmico para string ("" quando nil) — usado no campo
-// title, que é não-nulável no shape.
+// derefStr dereferences a dynamic *string into a string ("" when nil) — used in the
+// title field, which is non-nullable in the shape.
 func derefStr(v any) string {
 	if p, ok := v.(*string); ok && p != nil {
 		return *p
@@ -1234,8 +1273,8 @@ func derefStr(v any) string {
 	return ""
 }
 
-// asStrSlice converte um valor dinâmico numa fatia de strings não-nil. Aceita
-// []string e []any (com elementos string), ignorando o que não for string.
+// asStrSlice converts a dynamic value into a non-nil slice of strings. It accepts
+// []string and []any (with string elements), ignoring whatever is not a string.
 func asStrSlice(v any) []string {
 	switch s := v.(type) {
 	case []string:
@@ -1256,7 +1295,7 @@ func asStrSlice(v any) []string {
 	}
 }
 
-// asObjMap converte um valor dinâmico num objeto (map[string]any) não-nil.
+// asObjMap converts a dynamic value into a non-nil object (map[string]any).
 func asObjMap(v any) map[string]any {
 	if m, ok := v.(map[string]any); ok && m != nil {
 		return m
@@ -1264,8 +1303,8 @@ func asObjMap(v any) map[string]any {
 	return map[string]any{}
 }
 
-// clonarExt faz uma cópia rasa-por-namespace do extension_data (nível namespace e
-// nível chave), para a composição não mutar a base arquivo original.
+// clonarExt makes a shallow-per-namespace copy of extension_data (namespace level
+// and key level), so the composition does not mutate the original file base.
 func clonarExt(src map[string]any) map[string]any {
 	out := make(map[string]any, len(src))
 	for ns, obj := range src {
@@ -1278,8 +1317,8 @@ func clonarExt(src map[string]any) map[string]any {
 	return out
 }
 
-// dedup remove duplicatas preservando a primeira ocorrência; devolve fatia
-// não-nil.
+// dedup removes duplicates preserving the first occurrence; it returns a non-nil
+// slice.
 func dedup(in []string) []string {
 	visto := make(map[string]struct{}, len(in))
 	out := make([]string, 0, len(in))
@@ -1293,8 +1332,8 @@ func dedup(in []string) []string {
 	return out
 }
 
-// ehNull diz se o JSON cru é o literal `null` (após aparar espaços) — o sinal de
-// APAGAR na presença-da-chave (R6).
+// ehNull says whether the raw JSON is the literal `null` (after trimming spaces) —
+// the ERASE signal in the presence-of-the-key rule (R6).
 func ehNull(raw json.RawMessage) bool {
 	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 }

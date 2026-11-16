@@ -1,8 +1,9 @@
-// Package e2e hospeda o harness BLACK-BOX da Camada 1 (briefing 0028): sobe o
-// Server REAL (httptest.NewServer) com o provider fake de fixtures, banco temporário
-// migrado do zero e um servidor de imagem local, e exercita JORNADAS de API inteiras
-// por HTTP — as mesmas que antes eram smoke tests manuais via curl. Determinístico,
-// sem rede, sem segredo, e entra na catraca (métrica e2e_coverage_lines via -coverpkg).
+// Package e2e hosts the BLACK-BOX harness of Layer 1: it starts the REAL
+// Server (httptest.NewServer) with the fake fixtures provider, a temporary database
+// migrated from scratch and a local image server, and exercises whole API JOURNEYS
+// over HTTP — the same ones that used to be manual smoke tests through curl.
+// Deterministic, with no network, no secret, and it enters the ratchet
+// (e2e_coverage_lines metric via -coverpkg).
 package e2e
 
 import (
@@ -22,8 +23,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/server"
 )
 
-// pngFixture é um PNG 1x1 mínimo válido, servido para QUALQUER caminho de imagem: o
-// enrich baixa e cacheia o pôster sem tocar CDN. Bytes fixos = determinismo.
+// pngFixture is a minimal valid 1x1 PNG, served for ANY image path: the enrich
+// downloads and caches the poster without touching a CDN. Fixed bytes = determinism.
 var pngFixture = []byte{
 	0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a,
 	0x00, 0x00, 0x00, 0x0d, 'I', 'H', 'D', 'R',
@@ -35,11 +36,12 @@ var pngFixture = []byte{
 	0x00, 0x00, 'I', 'E', 'N', 'D', 0xae, 0x42, 0x60, 0x82,
 }
 
-// cliente é o driver HTTP do harness: fala com o Server real por sua URL pública.
-// `prov` é o MESMO *fake.Provider injetado no Server (briefing 0084): o harness
-// continua black-box pela API, mas alguns efeitos (ex.: qual idioma chegou ao
-// provider numa busca) não aparecem no corpo HTTP de nenhum endpoint -- só ali dá
-// pra confirmar sem instrumentar rede real. Ver fake.Provider.IdiomasBuscados.
+// cliente is the HTTP driver of the harness: it talks to the real Server through its public URL.
+// `prov` is the SAME *fake.Provider injected into the Server: the harness keeps being
+// black-box through the API, but some effects (e.g. which language reached the
+// provider in a search) do not show up in the HTTP body of any endpoint -- that is the
+// only place to confirm them without instrumenting the real network. See
+// fake.Provider.IdiomasBuscados.
 type cliente struct {
 	t    *testing.T
 	base string
@@ -47,18 +49,18 @@ type cliente struct {
 	prov *fake.Provider
 }
 
-// novoHarness sobe tudo o que uma jornada precisa e devolve um cliente HTTP. Fecha
-// os servidores e o banco no Cleanup do teste.
+// novoHarness starts everything a journey needs and returns an HTTP client. It closes
+// the servers and the database in the test Cleanup.
 func novoHarness(t *testing.T) *cliente {
 	t.Helper()
 	return novoHarnessComOpcoes(t)
 }
 
-// novoHarnessComOpcoes é a base de novoHarness: monta banco+imagem+Server reais,
-// aceitando `extra` server.Option ADICIONAIS por cima do par
-// WithSearchProvider/WithAssetsDir sempre presente -- usado por
-// novoHarnessComYtdlp (journeys_trailer_tema_test.go, briefings 0101/0102/0103)
-// para injetar um ytdlp.Gerenciador sem duplicar o boot inteiro do harness.
+// novoHarnessComOpcoes is the base of novoHarness: it assembles real
+// database+image+Server, accepting `extra` ADDITIONAL server.Option on top of the
+// always present WithSearchProvider/WithAssetsDir pair -- used by
+// novoHarnessComYtdlp (journeys_trailer_tema_test.go, ADR-0025) to inject a
+// ytdlp.Gerenciador without duplicating the whole harness boot.
 func novoHarnessComOpcoes(t *testing.T, extra ...server.Option) *cliente {
 	t.Helper()
 
@@ -81,13 +83,13 @@ func novoHarnessComOpcoes(t *testing.T, extra ...server.Option) *cliente {
 	}
 
 	prov := fake.New(img.URL)
-	// A fila de execução unificada (briefing 0108, ADR-0028) é exigida pelo
-	// scanner desde que ele parou de disparar sua própria goroutine --
-	// Start() só enfileira; sem um worker rodando, POST .../scan nunca sai
-	// do estado 'queued'. Em produção quem sobe isto é cmd/mymediadb/main.go
-	// (camada seguinte, fora do escopo do scanner em si); aqui o harness
-	// E2E sobe e roda seu PRÓPRIO execqueue.Manager de teste, exatamente
-	// como faria o boot real.
+	// The unified execution queue (ADR-0028) is required by the scanner ever
+	// since it stopped firing its own goroutine -- Start() only enqueues; with
+	// no worker running, POST .../scan never leaves the 'queued' state. In
+	// production the one that starts this is cmd/mymediadb/main.go (the next
+	// layer, outside the scope of the scanner itself); here the E2E harness
+	// starts and runs its OWN test execqueue.Manager, exactly as the real boot
+	// would do.
 	fila := execqueue.NewManager(database)
 	filaCtx, filaCancel := context.WithCancel(context.Background())
 	filaDone := make(chan struct{})
@@ -106,12 +108,12 @@ func novoHarnessComOpcoes(t *testing.T, extra ...server.Option) *cliente {
 		server.WithExecQueue(fila),
 	}, extra...)
 	srv := server.New("e2e", database, opts...)
-	// Liga o sistema de jobs (internal/job) à MESMA fila unificada, espelhando
-	// srv.Jobs().ConfigurarFila(fila) de cmd/mymediadb/main.go -- sem isto,
-	// POST /jobs/{id}/run enfileira mas NENHUM worker jamais roda o Handler
-	// (nenhuma jornada usava jobs até o briefing 0120/journeys_reconciliar_test.go
-	// ser a primeira). Nula quando nenhuma option de job (ex.: WithLibraryHealthJob)
-	// foi aplicada -- srv.Jobs() devolve nil nesse caso.
+	// Wires the jobs system (internal/job) to the SAME unified queue, mirroring
+	// srv.Jobs().ConfigurarFila(fila) from cmd/mymediadb/main.go -- without this,
+	// POST /jobs/{id}/run enqueues but NO worker ever runs the Handler (no
+	// journey used jobs until journeys_reconciliar_test.go became the first
+	// one). Nil when no job option (e.g. WithLibraryHealthJob) was applied --
+	// srv.Jobs() returns nil in that case.
 	if jobs := srv.Jobs(); jobs != nil {
 		jobs.ConfigurarFila(fila)
 	}
@@ -125,7 +127,7 @@ func novoHarnessComOpcoes(t *testing.T, extra ...server.Option) *cliente {
 	return &cliente{t: t, base: pub.URL, hc: pub.Client(), prov: prov}
 }
 
-// bruto envia uma requisição e devolve status + corpo cru. body nil => sem corpo.
+// bruto sends a request and returns the status + raw body. body nil => no body.
 func (c *cliente) bruto(method, path string, body any) (int, []byte) {
 	c.t.Helper()
 	var r io.Reader
@@ -155,7 +157,7 @@ func (c *cliente) bruto(method, path string, body any) (int, []byte) {
 	return resp.StatusCode, raw
 }
 
-// obj envia a requisição, exige o status esperado e decodifica o corpo num objeto.
+// obj sends the request, requires the expected status and decodes the body into an object.
 func (c *cliente) obj(method, path string, body any, statusEsperado int) map[string]any {
 	c.t.Helper()
 	status, raw := c.bruto(method, path, body)
@@ -171,7 +173,7 @@ func (c *cliente) obj(method, path string, body any, statusEsperado int) map[str
 	return m
 }
 
-// arr é como obj, mas o corpo é um array (ex.: GET members).
+// arr is like obj, but the body is an array (e.g. GET members).
 func (c *cliente) arr(method, path string, body any, statusEsperado int) []any {
 	c.t.Helper()
 	status, raw := c.bruto(method, path, body)
@@ -185,7 +187,7 @@ func (c *cliente) arr(method, path string, body any, statusEsperado int) []any {
 	return a
 }
 
-// --- acessores de asserção sobre o JSON decodificado (map[string]any) ---
+// --- assertion accessors over the decoded JSON (map[string]any) ---
 
 func str(t *testing.T, m map[string]any, chave string) string {
 	t.Helper()
@@ -196,7 +198,7 @@ func str(t *testing.T, m map[string]any, chave string) string {
 	return v
 }
 
-// strs devolve um []string de um campo array de strings (tags etc.).
+// strs returns a []string from an array-of-strings field (tags etc.).
 func strs(t *testing.T, m map[string]any, chave string) []string {
 	t.Helper()
 	bruto, ok := m[chave].([]any)
@@ -212,10 +214,10 @@ func strs(t *testing.T, m map[string]any, chave string) []string {
 	return out
 }
 
-// objs converte um array JSON já decodificado ([]any, ex.: devolvido por
-// cliente.arr ou por um campo array dentro de um objeto) para []map[string]any,
-// falhando alto se algum elemento não for objeto — evita repetir o type-assert
-// em cada jornada que itera sobre members/tracks/etc.
+// objs converts an already decoded JSON array ([]any, e.g. returned by
+// cliente.arr or by an array field inside an object) to []map[string]any,
+// failing loudly if any element is not an object — it avoids repeating the
+// type-assert in every journey that iterates over members/tracks/etc.
 func objs(t *testing.T, xs []any) []map[string]any {
 	t.Helper()
 	out := make([]map[string]any, len(xs))

@@ -13,26 +13,25 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// TestMain encurta pollInterval pra TODOS os testes deste pacote: com o
-// default de produção (500ms) os testes que dependem do worker dormindo
-// entre itens (fila vazia) ficariam desnecessariamente lentos. Mesmo padrão
-// de internal/job (reatribui a var de pacote, nunca em código fora de
-// teste).
+// TestMain shortens pollInterval for ALL tests in this package: with the
+// production default (500ms) the tests that depend on the worker sleeping
+// between items (empty queue) would be unnecessarily slow. Same pattern as
+// internal/job (reassigns the package var, never in code outside tests).
 func TestMain(m *testing.M) {
 	pollInterval = 10 * time.Millisecond
 	os.Exit(m.Run())
 }
 
-// runnerFunc adapta uma func solta ao contrato Runner -- fake mínimo para os
-// testes deste pacote (mesmo espírito de handlerFake em internal/job).
+// runnerFunc adapts a bare func to the Runner contract -- a minimal fake for
+// the tests in this package (same spirit as handlerFake in internal/job).
 type runnerFunc func(ctx context.Context, refID, trigger string, progresso ProgressoFunc) (string, error)
 
 func (f runnerFunc) Executar(ctx context.Context, refID, trigger string, progresso ProgressoFunc) (string, error) {
 	return f(ctx, refID, trigger, progresso)
 }
 
-// setupManager sobe um Manager com banco migrado (TempDir, mesmo padrão de
-// internal/job.setupManager/internal/scanner).
+// setupManager brings up a Manager with a migrated database (TempDir, same
+// pattern as internal/job.setupManager/internal/scanner).
 func setupManager(t *testing.T) *Manager {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "execqueue.sqlite")
@@ -47,8 +46,8 @@ func setupManager(t *testing.T) *Manager {
 	return NewManager(database)
 }
 
-// aguardarStatus faz polling de Status até o campo Status bater com `quer`
-// ou estoura o prazo -- necessário porque Run roda em goroutine própria.
+// aguardarStatus polls Status until the Status field matches `quer` or the
+// deadline expires -- necessary because Run runs in its own goroutine.
 func aguardarStatus(t *testing.T, m *Manager, kind, refID, quer string) *QueueItemStatus {
 	t.Helper()
 	prazo := time.Now().Add(5 * time.Second)
@@ -66,8 +65,8 @@ func aguardarStatus(t *testing.T, m *Manager, kind, refID, quer string) *QueueIt
 	return nil
 }
 
-// aguardarProgresso faz polling até ProgressCurrent/ProgressTotal baterem
-// com os valores esperados.
+// aguardarProgresso polls until ProgressCurrent/ProgressTotal match the
+// expected values.
 func aguardarProgresso(t *testing.T, m *Manager, kind, refID string, current, total int) {
 	t.Helper()
 	prazo := time.Now().Add(5 * time.Second)
@@ -156,14 +155,14 @@ func TestStatusSemItemNenhum(t *testing.T) {
 	}
 }
 
-// TestRunProcessaSequencialmente prova o critério central da ADR-0028:
-// itens de referências DIFERENTES coexistem na fila, mas o worker nunca roda
-// dois ao mesmo tempo -- enquanto um deles está bloqueado em Executar, o
-// outro continua 'queued'. Não assume QUAL dos dois o worker processa
-// primeiro: ProximoQueueItemPendente desempata por `id` (uuid) quando os dois
-// itens são enfileirados dentro do mesmo milissegundo (resolução de
-// enqueued_at), então a ordem não é garantida a esse nível -- só a exclusão
-// mútua é.
+// TestRunProcessaSequencialmente proves the central criterion of ADR-0028:
+// items of DIFFERENT references coexist in the queue, but the worker never
+// runs two at the same time -- while one of them is blocked in Executar, the
+// other stays 'queued'. It does not assume WHICH of the two the worker
+// processes first: ProximoQueueItemPendente breaks the tie by `id` (uuid) when
+// both items are enqueued within the same millisecond (enqueued_at
+// resolution), so the order is not guaranteed at that level -- only mutual
+// exclusion is.
 func TestRunProcessaSequencialmente(t *testing.T) {
 	m := setupManager(t)
 	ctx := context.Background()
@@ -218,9 +217,9 @@ func TestRunProcessaSequencialmente(t *testing.T) {
 		t.Fatalf("%s status = %q, quero queued (nao deveria rodar enquanto %s esta running)", segundo, stSegundo.Status, primeiro)
 	}
 
-	// Libera o primeiro e espera terminar ANTES de conferir a entrada do
-	// segundo -- prova que o worker so avanca depois que Executar retorna
-	// (exclusão mútua, não só coincidência de timing).
+	// Release the first one and wait for it to finish BEFORE checking that the
+	// second one started -- proof that the worker only moves on after Executar
+	// returns (mutual exclusion, not just a timing coincidence).
 	liberar <- struct{}{}
 	aguardarStatus(t, m, KindScan, primeiro, StatusSuccess)
 
@@ -239,8 +238,8 @@ func TestRunProcessaSequencialmente(t *testing.T) {
 	<-done
 }
 
-// TestProgressoIntermediarioReflete prova que Status reflete valores
-// intermediários de progresso reportados via callback, não só o final.
+// TestProgressoIntermediarioReflete proves that Status reflects intermediate
+// progress values reported through the callback, not only the final one.
 func TestProgressoIntermediarioReflete(t *testing.T) {
 	m := setupManager(t)
 	ctx := context.Background()
@@ -285,9 +284,9 @@ func TestProgressoIntermediarioReflete(t *testing.T) {
 	<-done
 }
 
-// TestRunnerAusenteFinalizaComErroSemTravar prova que um kind sem Runner
-// registrado termina em 'error' com mensagem clara, e que o worker CONTINUA
-// processando os itens seguintes (não trava).
+// TestRunnerAusenteFinalizaComErroSemTravar proves that a kind with no
+// registered Runner ends in 'error' with a clear message, and that the worker
+// KEEPS processing the following items (it does not hang).
 func TestRunnerAusenteFinalizaComErroSemTravar(t *testing.T) {
 	m := setupManager(t)
 	ctx := context.Background()
@@ -327,9 +326,9 @@ func TestRunnerAusenteFinalizaComErroSemTravar(t *testing.T) {
 	<-done
 }
 
-// TestRunRecuperaItemRunningOrfaoNoBoot prova que um item que ficou
-// 'running' de uma execução anterior (processo caiu no meio) é finalizado
-// como 'error' assim que o worker sobe de novo.
+// TestRunRecuperaItemRunningOrfaoNoBoot proves that an item left 'running' by
+// a previous execution (the process died mid-run) is finalized as 'error' as
+// soon as the worker comes back up.
 func TestRunRecuperaItemRunningOrfaoNoBoot(t *testing.T) {
 	m := setupManager(t)
 	ctx := context.Background()

@@ -2,20 +2,24 @@ package provider
 
 import "encoding/json"
 
-// Este arquivo define o PAYLOAD media_external do EPISODIO (briefing 0041): o episodio
-// reusa o MESMO trilho multi-idioma do filme (media_external + resolver de 3 camadas),
-// guardando title/overview POR IDIOMA no payload_json em vez de so o escalar default.
-// O helper e compartilhado (enrich escreve, os providers leem) para NAO duplicar o
-// marshaling/decode do envelope entre fontes (evita colisao no detector de copia).
+// This file defines the media_external PAYLOAD of the EPISODE: the episode reuses
+// the SAME multi-language track of the movie (media_external + 3-layer resolver),
+// storing title/overview PER LANGUAGE in payload_json instead of only the default
+// scalar. The helper is shared (enrich writes, the providers read) so as NOT to
+// duplicate the marshaling/decode of the envelope between sources (avoids a
+// collision in the copy detector).
 
-// KindEpisodio e o DISCRIMINADOR gravado em EnvelopeEpisodio.EntityKind: isola o payload
-// de episodio do de serie/filme da MESMA fonte (ex.: "tvdb") no MapearDetalhe do provider.
+// KindEpisodio is the DISCRIMINATOR stored in EnvelopeEpisodio.EntityKind: it
+// isolates the episode payload from the series/movie one of the SAME source
+// (e.g. "tvdb") in the provider's MapearDetalhe.
 const KindEpisodio = "episode"
 
-// EnvelopeEpisodio e o payload media_external de um episodio: os mapas idioma->valor de
-// title/overview (crus do EpisodioExterno, sem descartar idiomas) mais o discriminador
-// e, opcionalmente, o idioma original (ancora do fallback). Sem original_language a cadeia
-// do resolver funciona como [lang, fallback] (0041 documenta a denormalizacao como opcional).
+// EnvelopeEpisodio is the media_external payload of an episode: the
+// language->value maps of title/overview (raw from EpisodioExterno, without
+// discarding languages) plus the discriminator and, optionally, the original
+// language (anchor of the fallback). Without original_language the resolver
+// chain works as [lang, fallback] (the denormalization is documented as
+// optional).
 type EnvelopeEpisodio struct {
 	EntityKind       string            `json:"entity_kind"`
 	Title            map[string]string `json:"title,omitempty"`
@@ -23,9 +27,10 @@ type EnvelopeEpisodio struct {
 	OriginalLanguage string            `json:"original_language,omitempty"`
 }
 
-// MontarEnvelopeEpisodio serializa o payload media_external do episodio a partir dos
-// mapas per-idioma crus do EpisodioExterno. originalLanguage vazio e simplesmente
-// omitido. Usado pelo enrich no (re)import — idempotente por (entity_id, source).
+// MontarEnvelopeEpisodio serializes the media_external payload of the episode
+// from the raw per-language maps of EpisodioExterno. An empty originalLanguage is
+// simply omitted. Used by enrich on (re)import -- idempotent by (entity_id,
+// source).
 func MontarEnvelopeEpisodio(ep EpisodioExterno, originalLanguage string) (json.RawMessage, error) {
 	env := EnvelopeEpisodio{
 		EntityKind:       KindEpisodio,
@@ -40,11 +45,13 @@ func MontarEnvelopeEpisodio(ep EpisodioExterno, originalLanguage string) (json.R
 	return json.RawMessage(b), nil
 }
 
-// MapearEpisodio reconhece o payload de EPISODIO (pelo discriminador entity_kind) e o
-// mapeia para o mapa CANONICO do resolver: title/description como map[idioma]any e o
-// original_language escalar. ok=false quando o payload NAO e de episodio (o provider
-// segue para o ramo de serie/filme) OU quando o JSON e invalido — nunca entra em panico,
-// entao um payload legado sem discriminador degrada gracioso (a fonte e pulada a montante).
+// MapearEpisodio recognizes the EPISODE payload (through the entity_kind
+// discriminator) and maps it to the CANONICAL map of the resolver:
+// title/description as map[language]any and the scalar original_language.
+// ok=false when the payload is NOT an episode one (the provider goes on to the
+// series/movie branch) OR when the JSON is invalid -- it never panics, so a
+// legacy payload without a discriminator degrades gracefully (the source is
+// skipped upstream).
 func MapearEpisodio(raw json.RawMessage) (map[string]any, bool) {
 	var env EnvelopeEpisodio
 	if err := json.Unmarshal(raw, &env); err != nil || env.EntityKind != KindEpisodio {
@@ -63,8 +70,8 @@ func MapearEpisodio(raw json.RawMessage) (map[string]any, bool) {
 	return out, true
 }
 
-// mapaIdiomaAny copia um map[idioma]string para map[idioma]any — o tipo que os
-// containers traduziveis do resolver exigem. nil quando o mapa e vazio.
+// mapaIdiomaAny copies a map[language]string to map[language]any -- the type the
+// translatable containers of the resolver require. nil when the map is empty.
 func mapaIdiomaAny(m map[string]string) map[string]any {
 	if len(m) == 0 {
 		return nil

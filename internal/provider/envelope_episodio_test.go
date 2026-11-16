@@ -5,9 +5,10 @@ import (
 	"testing"
 )
 
-// TestMontarEMapearEpisodioRoundtrip: o envelope montado (mapas por idioma +
-// original_language) volta ao mapa canônico do resolver — title/description como
-// map[idioma]any e original_language escalar, com o discriminador reconhecido.
+// TestMontarEMapearEpisodioRoundtrip: the envelope that was built (maps per language +
+// original_language) comes back to the canonical map of the resolver -- title/description
+// as map[language]any and original_language as a scalar, with the discriminator
+// recognized.
 func TestMontarEMapearEpisodioRoundtrip(t *testing.T) {
 	ep := EpisodioExterno{
 		SourceID: "9103",
@@ -35,8 +36,8 @@ func TestMontarEMapearEpisodioRoundtrip(t *testing.T) {
 	}
 }
 
-// TestMapearEpisodioSemOriginalLanguage: sem original_language o campo é omitido do
-// canônico (a cadeia do resolver funciona como [lang, fallback]).
+// TestMapearEpisodioSemOriginalLanguage: without original_language the field is omitted
+// from the canonical (the resolver chain works as [lang, fallback]).
 func TestMapearEpisodioSemOriginalLanguage(t *testing.T) {
 	raw, err := MontarEnvelopeEpisodio(EpisodioExterno{Title: map[string]string{"en": "T"}}, "")
 	if err != nil {
@@ -51,9 +52,9 @@ func TestMapearEpisodioSemOriginalLanguage(t *testing.T) {
 	}
 }
 
-// TestMapearEpisodioNaoEpisodio: um payload SEM o discriminador (ex.: detalhe de série
-// ou JSON qualquer) devolve ok=false SEM panic — o provider segue para o ramo de
-// série/filme e o payload legado degrada gracioso.
+// TestMapearEpisodioNaoEpisodio: a payload WITHOUT the discriminator (e.g. a series
+// detail or any JSON) returns ok=false WITHOUT a panic -- the provider goes on to the
+// series/movie branch and the legacy payload degrades gracefully.
 func TestMapearEpisodioNaoEpisodio(t *testing.T) {
 	casos := map[string]json.RawMessage{
 		"serie":         json.RawMessage(`{"detail":{"data":{"name":"X"}}}`),

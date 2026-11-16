@@ -1,10 +1,9 @@
 package server
 
-// Testes de ReprocessarArtesFaltantes (briefing 0118): entities JÁ
-// identificadas (com external_ids) cujo inventário de arte nunca foi
-// verificado -- mesmo fakeArteProviderServer de
-// materialize_missing_media_test.go, mesmos helpers semearEntity/
-// ligarFilhoOrdenado/semearFile de retroativo_test.go.
+// Tests of ReprocessarArtesFaltantes: entities ALREADY identified (with external_ids) whose
+// artwork inventory was never verified -- the same fakeArteProviderServer of
+// materialize_missing_media_test.go, the same semearEntity/ligarFilhoOrdenado/semearFile
+// helpers of retroativo_test.go.
 
 import (
 	"context"
@@ -17,10 +16,9 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// semearEntityComMbid cria uma entity com external_ids_json={"mbid":mbid} --
-// a âncora que AtualizarInventarioArtes/idsExternosDe precisa para cruzar com
-// um ArteProvider de música (espelha semearEntityComTmdb, de
-// materialize_missing_media_test.go, para a fonte mbid).
+// semearEntityComMbid creates an entity with external_ids_json={"mbid":mbid} -- the anchor that
+// AtualizarInventarioArtes/idsExternosDe need to cross with a music ArteProvider (it mirrors
+// semearEntityComTmdb, from materialize_missing_media_test.go, for the mbid source).
 func semearEntityComMbid(t *testing.T, d *db.DB, id, tipo, titulo, mbid string) {
 	t.Helper()
 	extIDs, err := json.Marshal(map[string]string{"mbid": mbid})
@@ -34,9 +32,9 @@ func semearEntityComMbid(t *testing.T, d *db.DB, id, tipo, titulo, mbid string) 
 	}
 }
 
-// setupReprocessarArtesServer sobe um Server com o fakeArteProviderServer
-// registrado (liga s.enrich), sem allowlist de imagem (não exercitada aqui --
-// o teste olha só o envelope de inventário, não o binário materializado).
+// setupReprocessarArtesServer starts a Server with the fakeArteProviderServer registered (which
+// enables s.enrich), without an image allowlist (not exercised here -- the test looks only at
+// the inventory envelope, not at the materialized binary).
 func setupReprocessarArtesServer(t *testing.T, arte *fakeArteProviderServer) (*Server, *db.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "reprocessar-artes.sqlite")
@@ -51,11 +49,10 @@ func setupReprocessarArtesServer(t *testing.T, arte *fakeArteProviderServer) (*S
 	return New("v-teste", database, WithAssetsDir(t.TempDir()), WithSearchProvider(arte)), database
 }
 
-// TestReprocessarArtesFaltantesArtistaJaIdentificado cobre o critério central
-// do briefing 0118: um artista que JÁ tem external_ids (mbid) mas nunca teve
-// o inventário de arte verificado (ex.: o ArteProvider foi configurado DEPOIS
-// do import) ganha o inventário na próxima passada deste método -- sem
-// precisar do botão manual "Baixar Artes Faltantes" por item.
+// TestReprocessarArtesFaltantesArtistaJaIdentificado covers the central criterion: an artist that
+// ALREADY has external_ids (mbid) but never had its artwork inventory verified (e.g. the
+// ArteProvider was configured AFTER the import) gets the inventory on the next run of this
+// method -- without needing the manual "Baixar Artes Faltantes" button per item.
 func TestReprocessarArtesFaltantesArtistaJaIdentificado(t *testing.T) {
 	arte := &fakeArteProviderServer{artes: []provider.Arte{
 		{Kind: "artistthumb", URL: "https://assets.fanart.tv/thumb.jpg"},
@@ -99,11 +96,10 @@ func TestReprocessarArtesFaltantesArtistaJaIdentificado(t *testing.T) {
 	}
 }
 
-// TestReprocessarArtesFaltantesRespeitaThrottle cobre o throttle: um artista
-// já verificado recentemente (last_external_match_attempt_at carimbado nesta
-// mesma execução de teste, dentro da janela de retryDays) NÃO é reprocessado
-// de novo -- senão o job bateria no(s) ArteProvider(s) a cada execução, sem
-// respeitar retroactive_enrichment_days.
+// TestReprocessarArtesFaltantesRespeitaThrottle covers the throttle: an artist already verified
+// recently (last_external_match_attempt_at stamped in this same test run, within the retryDays
+// window) is NOT reprocessed again -- otherwise the job would hit the ArteProvider(s) on every
+// run, without respecting retroactive_enrichment_days.
 func TestReprocessarArtesFaltantesRespeitaThrottle(t *testing.T) {
 	arte := &fakeArteProviderServer{artes: []provider.Arte{
 		{Kind: "artistthumb", URL: "https://assets.fanart.tv/thumb.jpg"},
@@ -133,9 +129,9 @@ func TestReprocessarArtesFaltantesRespeitaThrottle(t *testing.T) {
 	}
 }
 
-// TestReprocessarArtesFaltantesSemEnrichDegradaSemErro cobre a guarda
-// s.enrich==nil (mesma guarda de EnriquecerRetroativo): sem NENHUM provider
-// de busca externa registrado, degrada para (0, nil) sem tocar o banco.
+// TestReprocessarArtesFaltantesSemEnrichDegradaSemErro covers the s.enrich==nil guard (the same
+// guard as EnriquecerRetroativo): without ANY external search provider registered, it degrades
+// to (0, nil) without touching the database.
 func TestReprocessarArtesFaltantesSemEnrichDegradaSemErro(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "reprocessar-artes-sem-enrich.sqlite")
 	database, err := db.Open(db.Config{Path: dbPath})
@@ -146,7 +142,7 @@ func TestReprocessarArtesFaltantesSemEnrichDegradaSemErro(t *testing.T) {
 	if err := database.Migrate(context.Background()); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	s := New("v-teste", database) // sem WithSearchProvider: s.enrich fica nil
+	s := New("v-teste", database) // without WithSearchProvider: s.enrich stays nil
 
 	processados, err := s.ReprocessarArtesFaltantes(context.Background())
 	if err != nil {

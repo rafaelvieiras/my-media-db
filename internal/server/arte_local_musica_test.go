@@ -1,11 +1,11 @@
 package server
 
-// Testes de DescobrirArteLocalMusica (briefing 0119): um artista/album de música
-// com faixa possuída ganha um asset origin='local' quando a pasta derivada (album =
-// dir do arquivo da faixa; artista = um nível acima) tem poster.jpg/folder.jpg --
-// mesmo mecanismo já usado por filme/série (scanner.RefreshLocalAsset), só que a
-// pasta é DERIVADA da árvore em vez de vir direto do media_file da própria entity
-// (artista/album nunca tem media_file direto, ADR-0027).
+// Tests of DescobrirArteLocalMusica: a music artist/album
+// with an owned track gains an asset with origin='local' when the derived folder (album =
+// dir of the track file; artist = one level above) has poster.jpg/folder.jpg --
+// the same mechanism already used by movie/series (scanner.RefreshLocalAsset), except
+// that the folder is DERIVED from the tree instead of coming straight from the entity's
+// own media_file (artist/album never have a direct media_file, ADR-0027).
 
 import (
 	"context"
@@ -84,8 +84,8 @@ func TestDescobrirArteLocalMusicaAlbumEArtista(t *testing.T) {
 	}
 }
 
-// TestDescobrirArteLocalMusicaSemPasta cobre o caso sem nenhum poster.jpg/folder.jpg
-// nas pastas: nada é criado, sem erro.
+// TestDescobrirArteLocalMusicaSemPasta covers the case without any poster.jpg/folder.jpg
+// in the folders: nothing is created, without an error.
 func TestDescobrirArteLocalMusicaSemPasta(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "arte-local-musica-vazia.sqlite")
 	database, err := db.Open(db.Config{Path: dbPath})

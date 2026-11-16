@@ -1,12 +1,13 @@
 package tmdb
 
-// Este arquivo implementa o ENRIQUECIMENTO RICO DO NÓ SÉRIE (briefing 0045, rota C):
-// o TMDB não modela a árvore de série (isso é do TVDB), mas tem os campos ricos que o
-// TVDB não dá — slogan, gêneros, classificação, palavras-chave, similares e SITUAÇÃO.
-// O caminho: cruzar o id TVDB da série para o id TMDB via /find, puxar o /tv/{id} rico
-// e mapeá-lo REUSANDO os helpers do detalhe rico de filme (tmdb_rico.go). Devolve SÓ as
-// chaves ricas — nunca title/overview/original_language — para a composição de camadas
-// não clobbar a identidade da árvore TVDB. É a capacidade provider.SerieRicoProvider.
+// This file implements the RICH ENRICHMENT OF THE SERIES NODE (route C): TMDB does
+// not model the series tree (that is TVDB's job), but it has the rich fields that
+// TVDB does not give -- tagline, genres, rating, keywords, similar and STATUS. The
+// path: cross the TVDB id of the series to the TMDB id via /find, pull the rich
+// /tv/{id} and map it REUSING the helpers of the rich movie detail (tmdb_rico.go).
+// It returns ONLY the rich keys -- never title/overview/original_language -- so that
+// the layer composition does not clobber the identity of the TVDB tree. It is the
+// provider.SerieRicoProvider capability.
 
 import (
 	"context"
@@ -18,11 +19,11 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// BuscarSerieDetalheRico cruza o `tvdbID` da série para o id de série do TMDB
-// (/find?external_source=tvdb_id) e, havendo match, puxa o /tv/{id} rico e o mapeia
-// para o canônico RICO (só as chaves ricas). ok=false sem match (graça, sem erro);
-// erro real (rede/status) propaga para o enrich logar e seguir só-TVDB. Satisfaz
-// provider.SerieRicoProvider.
+// BuscarSerieDetalheRico crosses the `tvdbID` of the series to the TMDB series id
+// (/find?external_source=tvdb_id) and, if there is a match, pulls the rich /tv/{id}
+// and maps it to the RICH canonical (only the rich keys). ok=false without a match
+// (gracefully, without error); a real error (network/status) propagates so that
+// enrich can log it and go on TVDB-only. Satisfies provider.SerieRicoProvider.
 func (c *Client) BuscarSerieDetalheRico(ctx context.Context, tvdbID string, langs []string) (map[string]any, bool, error) {
 	if tvdbID == "" {
 		return nil, false, nil
@@ -32,7 +33,7 @@ func (c *Client) BuscarSerieDetalheRico(ctx context.Context, tvdbID string, lang
 		return nil, false, err
 	}
 	if !ok {
-		return nil, false, nil // sem match no TMDB: graca (so-TVDB)
+		return nil, false, nil // no match in TMDB: gracefully (TVDB-only)
 	}
 	d, err := c.buscarDetalheSerieTMDB(ctx, tmdbID, langs)
 	if err != nil {
@@ -41,14 +42,14 @@ func (c *Client) BuscarSerieDetalheRico(ctx context.Context, tvdbID string, lang
 	return c.mapearSerieRicoCanonico(ctx, d, langs), true, nil
 }
 
-// acharSeriePorTvdb resolve o id de série do TMDB a partir do id TVDB via
-// /find/{tvdbID}?external_source=tvdb_id (o primeiro tv_results vence). ok=false quando
-// o TMDB não conhece aquele id TVDB (tv_results vazio) — série exclusiva do TVDB.
+// acharSeriePorTvdb resolves the TMDB series id from the TVDB id via
+// /find/{tvdbID}?external_source=tvdb_id (the first tv_results wins). ok=false when
+// TMDB does not know that TVDB id (empty tv_results) -- a TVDB-exclusive series.
 func (c *Client) acharSeriePorTvdb(ctx context.Context, tvdbID string) (string, bool, error) {
 	body, err := c.getBytes(ctx, "/find/"+url.PathEscape(tvdbID), url.Values{"external_source": {"tvdb_id"}})
 	if err != nil {
 		if errors.Is(err, provider.ErrNaoEncontrado) {
-			return "", false, nil // id desconhecido no TMDB: graca
+			return "", false, nil // id unknown in TMDB: gracefully
 		}
 		return "", false, err
 	}
@@ -66,11 +67,11 @@ func (c *Client) acharSeriePorTvdb(ctx context.Context, tvdbID string) (string, 
 	return itoa(resp.TVResults[0].ID), true, nil
 }
 
-// buscarDetalheSerieTMDB puxa o /tv/{id} com o append_to_response dos blocos ricos de
-// série (content_ratings = classificação; keywords; translations = slogan por idioma;
-// recommendations (0091, ver tmdb.go); external_ids = imdb) no idioma principal. Reusa
-// o mesmo cliente/auth/base do filme (getBytes/novoGet). O `status` (situação) já vem
-// no corpo do /tv, sem append.
+// buscarDetalheSerieTMDB pulls /tv/{id} with the append_to_response of the rich
+// series blocks (content_ratings = rating; keywords; translations = tagline per
+// language; recommendations (see tmdb.go); external_ids = imdb) in the main
+// language. It reuses the same client/auth/base of the movie (getBytes/novoGet). The
+// `status` (situation) already comes in the body of /tv, without append.
 func (c *Client) buscarDetalheSerieTMDB(ctx context.Context, tmdbID string, langs []string) (detalheTMDB, error) {
 	params := url.Values{"append_to_response": {"content_ratings,keywords,translations,recommendations,external_ids,aggregate_credits"}}
 	if len(langs) > 0 && langs[0] != "" {
@@ -87,12 +88,14 @@ func (c *Client) buscarDetalheSerieTMDB(ctx context.Context, tmdbID string, lang
 	return d, nil
 }
 
-// mapearSerieRicoCanonico mapeia o /tv rico para o canônico, REUSANDO enriquecerCanonicoRico
-// (tagline/keywords/certification_by_region/backdrop_url/similar/runtime/vote_average/
-// external_links) e tagsPorIdioma (gêneros → tags/tags_by_lang, com as listas de gênero
-// localizadas cacheadas). Acrescenta a SITUAÇÃO (airing_status, valor CRU do TMDB). NÃO
-// grava title/overview/original_language/poster_url/release_date — a identidade e a arte
-// da série seguem da árvore TVDB (aditivo, não clobba a composição de camadas).
+// mapearSerieRicoCanonico maps the rich /tv to the canonical, REUSING
+// enriquecerCanonicoRico (tagline/keywords/certification_by_region/backdrop_url/
+// similar/runtime/vote_average/external_links) and tagsPorIdioma (genres →
+// tags/tags_by_lang, with the localized genre lists cached). It adds the SITUATION
+// (airing_status, the RAW TMDB value). It does NOT write
+// title/overview/original_language/poster_url/release_date -- the identity and the
+// art of the series come from the TVDB tree (additive, it does not clobber the
+// layer composition).
 func (c *Client) mapearSerieRicoCanonico(ctx context.Context, d detalheTMDB, langs []string) map[string]any {
 	out := map[string]any{}
 	enriquecerCanonicoRico(out, d)

@@ -1,10 +1,10 @@
 package enrich
 
-// serie_tvdb_cruzado_test.go cobre a causa 2 do briefing 0087: quando a arvore de uma
-// serie vem SO do TMDB (sem TVDB configurado, o cenario de independencia de provider do
-// 0046), o cross-id tvdb do append external_ids (que o TMDB ja busca no detalhe rico)
-// deve ser capturado e mesclado em entity.external_ids_json -- o que destrava o
-// ArteProvider fanart.tv na TV (exige tvdb_id exclusivamente). Ver mesclarTvdbCruzado em
+// serie_tvdb_cruzado_test.go covers cause 2: when the tree of a
+// series comes ONLY from TMDB (no TVDB configured, the provider-independence scenario),
+// the tvdb cross-id from the external_ids append (which TMDB already fetches in the rich detail)
+// must be captured and merged into entity.external_ids_json -- which unlocks the
+// fanart.tv ArteProvider on TV (it requires tvdb_id exclusively). See mesclarTvdbCruzado in
 // serie.go.
 
 import (
@@ -16,11 +16,11 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// tmdbBaseComTvdbFake e a fonte-base da arvore com Nome()="tmdb" (cenario 0046: sem TVDB
-// registrado, o TMDB e o SerieProvider) que TAMBEM implementa provider.TvdbCruzadoProvider
-// -- o BuscarDetalhe devolve um payload com external_ids.tvdb_id, no MESMO formato do
-// append real do TMDB (external_ids: {tvdb_id: "..."}), e TvdbIDDoDetalheSerie o extrai
-// SEM rede, espelhando o metodo real do client tmdb.
+// tmdbBaseComTvdbFake is the base source of the tree with Nome()="tmdb" (the scenario with no TVDB
+// registered, where TMDB is the SerieProvider) that ALSO implements provider.TvdbCruzadoProvider
+// -- BuscarDetalhe returns a payload with external_ids.tvdb_id, in the SAME format as the real
+// TMDB append (external_ids: {tvdb_id: "..."}), and TvdbIDDoDetalheSerie extracts it
+// with NO network, mirroring the real method of the tmdb client.
 type tmdbBaseComTvdbFake struct {
 	imgURL string
 	tvdbID string
@@ -58,10 +58,10 @@ func (f tmdbBaseComTvdbFake) TvdbIDDoDetalheSerie(raw json.RawMessage) (string, 
 	return d.ExternalIds.TvdbID, d.ExternalIds.TvdbID != ""
 }
 
-// TestEnriquecerSerieSemTvdbCapturaCrossId (0087): uma serie cuja arvore vem SO do TMDB
-// (sem TVDB configurado) ganha "tvdb" em external_ids_json apos o enriquecimento, com o
-// valor batendo o tvdb_id do append external_ids do TMDB -- e o inventario fanart.tv
-// passa a ser gravado (o ArteProvider recebe o tvdb recem-capturado, destravando
+// TestEnriquecerSerieSemTvdbCapturaCrossId: a series whose tree comes ONLY from TMDB
+// (no TVDB configured) gains "tvdb" in external_ids_json after the enrichment, with the
+// value matching the tvdb_id of the TMDB external_ids append -- and the fanart.tv
+// inventory starts to be written (the ArteProvider receives the freshly captured tvdb, unlocking
 // rotaETabela case "tv").
 func TestEnriquecerSerieSemTvdbCapturaCrossId(t *testing.T) {
 	database := setupDB(t)
@@ -90,18 +90,18 @@ func TestEnriquecerSerieSemTvdbCapturaCrossId(t *testing.T) {
 	if ent.ExternalIDTvdb.String != "81189" {
 		t.Errorf("external_id_tvdb = %q, quero 81189 (capturado do append external_ids do TMDB)", ent.ExternalIDTvdb.String)
 	}
-	// O ArteProvider recebeu o tvdb recem-capturado NA MESMA passada (idsExternosDe leu o
-	// external_ids_json JA mesclado antes de enriquecerArtes da serie rodar).
+	// The ArteProvider received the freshly captured tvdb IN THE SAME pass (idsExternosDe read the
+	// external_ids_json ALREADY merged before enriquecerArtes of the series ran).
 	if arte.recebeu.Tvdb != "81189" {
 		t.Errorf("BuscarArtes recebeu Tvdb=%q, quero 81189", arte.recebeu.Tvdb)
 	}
-	// Inventario fanart.tv gravado (antes do fix, rotaETabela degradava em silencio por
-	// falta de tvdb_id -- ObterMediaExternalPorFonte e :one, erraria se ausente/duplicado).
+	// fanart.tv inventory written (before the fix, rotaETabela degraded silently for
+	// lack of tvdb_id -- ObterMediaExternalPorFonte is :one, it would fail if absent/duplicated).
 	lerInventario(t, r, "s1")
 }
 
-// TestEnriquecerSerieSemTvdbIdempotente: repetir o enriquecimento nao duplica nem quebra
-// -- a mescla e sempre um ACRESCIMO idempotente (mesclarExternalIdSeAusente).
+// TestEnriquecerSerieSemTvdbIdempotente: repeating the enrichment neither duplicates nor breaks
+// -- the merge is always an idempotent ADDITION (mesclarExternalIdSeAusente).
 func TestEnriquecerSerieSemTvdbIdempotente(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -127,10 +127,10 @@ func TestEnriquecerSerieSemTvdbIdempotente(t *testing.T) {
 	}
 }
 
-// TestSerieComTvdbConfiguradoNaoRegride (0087, criterio de nao-regressao): quando a
-// fonte-base da arvore JA E' o TVDB (o client tvdb nao implementa TvdbCruzadoProvider),
-// mesclarTvdbCruzado e' um no-op -- o tvdb continua vindo, como sempre veio, de
-// mesclarExternalIds(source="tvdb"). O inventario fanart.tv segue gravado normalmente.
+// TestSerieComTvdbConfiguradoNaoRegride (non-regression criterion): when the
+// base source of the tree IS ALREADY TVDB (the tvdb client does not implement TvdbCruzadoProvider),
+// mesclarTvdbCruzado is a no-op -- the tvdb keeps coming, as it always came, from
+// mesclarExternalIds(source="tvdb"). The fanart.tv inventory is still written normally.
 func TestSerieComTvdbConfiguradoNaoRegride(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()

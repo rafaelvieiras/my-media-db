@@ -1,14 +1,12 @@
 package server
 
-// Testes de ReconciliarFilhosOrfaos (briefing 0120): faixas/séries que
-// ficaram presas em rascunho (draft) porque o match falhou na hora do scan
-// são retentadas contra a árvore de identidade já resolvida (ou que veio a
-// se resolver depois). Reusa Manager.ReconciliarFaixaDraft/
-// ReconciliarSerieDraft (já implementados/testados em internal/scanner) por
-// trás de um *scanner.Manager real com Prober fake -- mesmo padrão de
-// scan_test.go/TestPostScanEmAndamento409 (s.scanner substituído
-// diretamente, re-ligando música/série manualmente porque a troca de
-// instância perde a config que montarServicos fez na original).
+// Tests of ReconciliarFilhosOrfaos: tracks/series that got stuck in draft because the match
+// failed at scan time are retried against the identity tree already resolved (or that came to
+// be resolved later). It reuses Manager.ReconciliarFaixaDraft/ReconciliarSerieDraft (already
+// implemented/tested in internal/scanner) behind a real *scanner.Manager with a fake Prober --
+// the same pattern as scan_test.go/TestPostScanEmAndamento409 (s.scanner replaced directly,
+// rewiring music/series by hand because swapping the instance drops the config montarServicos
+// applied to the original).
 
 import (
 	"context"
@@ -27,10 +25,9 @@ import (
 
 // ── fakes ────────────────────────────────────────────────────────────────
 
-// reconciliarProberFake serve tags de áudio pré-configuradas por path, sem
-// tocar ffprobe/disco de verdade -- mesmo papel de proberComTags (scanner/
-// musica_test.go), reimplementado aqui por ser um tipo de teste não
-// exportado do outro pacote.
+// reconciliarProberFake serves audio tags pre-configured per path, without touching
+// ffprobe/disk for real -- the same role as proberComTags (scanner/musica_test.go),
+// reimplemented here because it is a non-exported test type of the other package.
 type reconciliarProberFake struct {
 	porPath map[string]mediainfo.AudioTags
 }
@@ -45,13 +42,12 @@ func (p reconciliarProberFake) Probe(_ context.Context, path string) ([]byte, er
 	return json.Marshal(info)
 }
 
-// fakeMusicaProviderOrfaos implementa o core provider.Provider +
-// provider.MusicaAlbumProvider (o mínimo que matchTextualFaixa/
-// enrich.ImportarFaixaPossuida exigem para o caminho TEXTUAL), sob
-// Nome()="musicbrainz" -- registra um único artista/álbum/faixa fake
-// ("Fake Band"/"Fake Album"/"Track One") para provar o caminho feliz da
-// reconciliação de faixa. chamadasBuscar conta as buscas de artista, para os
-// testes provarem que o throttle de fato pulou a chamada ao provider.
+// fakeMusicaProviderOrfaos implements the core provider.Provider +
+// provider.MusicaAlbumProvider (the minimum matchTextualFaixa/enrich.ImportarFaixaPossuida
+// require for the TEXTUAL path), under Nome()="musicbrainz" -- it registers a single fake
+// artist/album/track ("Fake Band"/"Fake Album"/"Track One") to prove the happy path of the
+// track reconciliation. chamadasBuscar counts the artist searches, so the tests can prove that
+// the throttle really skipped the provider call.
 type fakeMusicaProviderOrfaos struct {
 	chamadasBuscar int
 }
@@ -102,11 +98,10 @@ func (p *fakeMusicaProviderOrfaos) BuscarAlbumPorMbid(_ context.Context, _ strin
 	return provider.AlbumExterno{}, provider.ErrNaoEncontrado
 }
 
-// setupReconciliarOrfaosServer sobe um Server com o musica/série fake
-// registrados (liga s.enrich) e substitui s.scanner por um com Prober
-// controlável -- re-ligando ConfigurarMusica/ConfigurarSeries manualmente
-// (a troca de instância descarta a config que montarServicos fez na
-// original, mesmo padrão de scan_test.go).
+// setupReconciliarOrfaosServer starts a Server with the fake music/series providers registered
+// (which enables s.enrich) and replaces s.scanner with one that has a controllable Prober --
+// rewiring ConfigurarMusica/ConfigurarSeries by hand (swapping the instance drops the config
+// montarServicos applied to the original, the same pattern as scan_test.go).
 func setupReconciliarOrfaosServer(t *testing.T, musica *fakeMusicaProviderOrfaos, tags map[string]mediainfo.AudioTags) (*Server, *db.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "reconciliar-orfaos.sqlite")
@@ -126,11 +121,10 @@ func setupReconciliarOrfaosServer(t *testing.T, musica *fakeMusicaProviderOrfaos
 	return s, database
 }
 
-// rebaixarParaDraft marca uma entity já criada (semearEntity) como
-// status='draft' -- CriarEntity não aceita status na criação (default
-// 'cataloged'), então precisa de um AtualizarEntity extra, mesmo padrão de
-// criarFaixaDraftOrfa/criarSerieDraft (internal/scanner/reconciliar_test.go/
-// serie_test.go).
+// rebaixarParaDraft marks an already created entity (semearEntity) as status='draft' --
+// CriarEntity does not accept a status at creation (default 'cataloged'), so it needs an extra
+// AtualizarEntity, the same pattern as criarFaixaDraftOrfa/criarSerieDraft
+// (internal/scanner/reconciliar_test.go/serie_test.go).
 func rebaixarParaDraft(t *testing.T, d *db.DB, id, tipo, titulo string) {
 	t.Helper()
 	if _, err := escrita(t, d).AtualizarEntity(context.Background(), sqlcgen.AtualizarEntityParams{
@@ -140,9 +134,9 @@ func rebaixarParaDraft(t *testing.T, d *db.DB, id, tipo, titulo string) {
 	}
 }
 
-// semearFaixaDraftOrfa cria uma entity type=faixa status=draft com um
-// media_file 'present' apontando pra ela -- simula o resultado do passo 5 do
-// pipeline de música (criarFaixaDraft) sem depender de um scan de verdade.
+// semearFaixaDraftOrfa creates a type=faixa status=draft entity with a 'present' media_file
+// pointing at it -- it simulates the outcome of step 5 of the music pipeline (criarFaixaDraft)
+// without depending on a real scan.
 func semearFaixaDraftOrfa(t *testing.T, d *db.DB, id, titulo, path string) {
 	t.Helper()
 	semearEntity(t, d, id, tipoEntFaixa, titulo)
@@ -150,9 +144,8 @@ func semearFaixaDraftOrfa(t *testing.T, d *db.DB, id, titulo, path string) {
 	semearFile(t, d, "mf-"+id, id, path, "present", 0.4, "")
 }
 
-// semearSerieDraftComArquivo cria uma entity type=tv status=draft com um
-// media_file 'present' apontando direto pra ela (gravarArquivoSerie sempre
-// grava assim, mesmo em revisão).
+// semearSerieDraftComArquivo creates a type=tv status=draft entity with a 'present' media_file
+// pointing straight at it (gravarArquivoSerie always writes it like that, even in review).
 func semearSerieDraftComArquivo(t *testing.T, d *db.DB, id, titulo, path string) {
 	t.Helper()
 	semearEntity(t, d, id, tipoEntSerie, titulo)
@@ -160,9 +153,8 @@ func semearSerieDraftComArquivo(t *testing.T, d *db.DB, id, titulo, path string)
 	semearFile(t, d, "mf-"+id, id, path, "present", 0.4, "")
 }
 
-// mediaFileEntityID lê o entity_id do media_file de um path (helper de
-// asserção local -- valorUnico/contar de internal/scanner não são
-// exportados/reusáveis aqui).
+// mediaFileEntityID reads the entity_id of the media_file of a path (a local assertion helper --
+// valorUnico/contar of internal/scanner are not exported/reusable here).
 func mediaFileEntityID(t *testing.T, d *db.DB, path string) string {
 	t.Helper()
 	var id string
@@ -173,7 +165,7 @@ func mediaFileEntityID(t *testing.T, d *db.DB, path string) string {
 	return id
 }
 
-// contarMediaFilePorEntity conta quantos media_file apontam pra uma entity.
+// contarMediaFilePorEntity counts how many media_file rows point at an entity.
 func contarMediaFilePorEntity(t *testing.T, d *db.DB, entityID string) int {
 	t.Helper()
 	var n int
@@ -184,11 +176,10 @@ func contarMediaFilePorEntity(t *testing.T, d *db.DB, entityID string) int {
 	return n
 }
 
-// TestReconciliarFilhosOrfaosFaixaReligaComSucesso cobre o critério central
-// do briefing 0120 para música: uma faixa draft órfã com arquivo presente,
-// quando o artista/álbum resolvem via busca textual, é religada (some da
-// revisão, media_file passa a apontar pra faixa resolvida) e a tentativa
-// fica carimbada.
+// TestReconciliarFilhosOrfaosFaixaReligaComSucesso covers the central criterion for music: an
+// orphan draft track with a present file, when the artist/album resolve through a textual
+// search, is re-linked (it leaves the review, the media_file starts pointing at the resolved
+// track) and the attempt is stamped.
 func TestReconciliarFilhosOrfaosFaixaReligaComSucesso(t *testing.T) {
 	musica := &fakeMusicaProviderOrfaos{}
 	path := "/lib/musica/aha/01 - Track One.mp3"
@@ -206,9 +197,9 @@ func TestReconciliarFilhosOrfaosFaixaReligaComSucesso(t *testing.T) {
 		t.Fatalf("reconciliados = %d, quero 1", reconciliados)
 	}
 
-	// Briefing 0138: o draft que perdeu o arquivo é PURGADO (ele ficava para
-	// sempre na fila de revisão como "sem arquivo"). O carimbo de tentativa vive
-	// nele, então some junto -- o que importa é o vínculo novo.
+	// The draft that lost its file is PURGED (it used to stay in the review queue forever as
+	// "sem arquivo"). The attempt stamp lives on it, so it goes away with it -- what matters is
+	// the new link.
 	if _, err := escrita(t, d).ObterEntity(context.Background(), "fx-draft"); err == nil {
 		t.Error("faixa draft substituída deveria ter sido purgada")
 	}
@@ -222,11 +213,10 @@ func TestReconciliarFilhosOrfaosFaixaReligaComSucesso(t *testing.T) {
 	}
 }
 
-// TestReconciliarFilhosOrfaosSerieSemMatchAindaCarimba cobre o critério de
-// throttle mesmo em falha: uma série draft com arquivo cujo título não casa
-// com nenhuma fixture do provider (ImportarSeriePorNome não encontra
-// candidato) não é religada (linked=false, sem erro) -- mas a tentativa é
-// carimbada mesmo assim, para o job não martelar o mesmo item todo ciclo.
+// TestReconciliarFilhosOrfaosSerieSemMatchAindaCarimba covers the throttle criterion even on
+// failure: a draft series with a file whose title matches no provider fixture
+// (ImportarSeriePorNome finds no candidate) is not re-linked (linked=false, no error) -- but the
+// attempt is stamped anyway, so the job does not hammer the same item every cycle.
 func TestReconciliarFilhosOrfaosSerieSemMatchAindaCarimba(t *testing.T) {
 	musica := &fakeMusicaProviderOrfaos{}
 	path := "/lib/series/desconhecida/Desconhecida S01E01.mkv"
@@ -255,10 +245,9 @@ func TestReconciliarFilhosOrfaosSerieSemMatchAindaCarimba(t *testing.T) {
 	}
 }
 
-// TestReconciliarFilhosOrfaosRespeitaThrottle cobre o throttle: um item já
-// verificado recentemente (last_external_match_attempt_at carimbado nesta
-// mesma execução de teste, dentro da janela de retryDays) não aparece na
-// lista elegível -- o provider de música nem chega a ser chamado de novo.
+// TestReconciliarFilhosOrfaosRespeitaThrottle covers the throttle: an item verified recently
+// (last_external_match_attempt_at stamped in this same test run, within the retryDays window)
+// does not show up in the eligible list -- the music provider is not even called again.
 func TestReconciliarFilhosOrfaosRespeitaThrottle(t *testing.T) {
 	musica := &fakeMusicaProviderOrfaos{}
 	path := "/lib/musica/aha/01 - Track One.mp3"
@@ -283,9 +272,9 @@ func TestReconciliarFilhosOrfaosRespeitaThrottle(t *testing.T) {
 	}
 }
 
-// TestReconciliarFilhosOrfaosSemScannerDegradaSemErro cobre a guarda
-// s.scanner==nil: sem scanner, os métodos de reconciliação nem existiriam
-// para chamar -- degrada para (0, nil) sem tocar o banco.
+// TestReconciliarFilhosOrfaosSemScannerDegradaSemErro covers the s.scanner==nil guard: without
+// a scanner, the reconciliation methods would not even exist to call -- it degrades to (0, nil)
+// without touching the database.
 func TestReconciliarFilhosOrfaosSemScannerDegradaSemErro(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "reconciliar-orfaos-sem-scanner.sqlite")
 	database, err := db.Open(db.Config{Path: dbPath})

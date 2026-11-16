@@ -1,19 +1,19 @@
 package scanner
 
-// reconciliar.go implementa a RECONCILIAÇÃO de filhos órfãos (briefing 0120):
-// uma faixa/série que ficou presa em rascunho (draft) porque o match falhou
-// na hora do scan (ou a árvore pai ainda não existia) nunca é retentada pelo
-// scan em si -- o pipeline de match roda uma ÚNICA vez, por arquivo, no
-// momento do scan (ver o comentário de pacote de musica.go/serie.go). Os dois
-// métodos exportados aqui são chamados de FORA do pacote scanner (camada
-// server/job, análogo a RefreshLocalAsset em recheck.go) para retentar essa
-// resolução mais tarde, sem re-varrer o datasource inteiro: reusam a MESMA
-// lógica de matching do scan (Manager.matchTextualFaixa, Manager.
-// tentarImportarSerie) fora do contexto de um scanRun.
+// reconciliar.go implements the RECONCILIATION of orphan children: a track/series
+// that got stuck in draft because the match failed at scan time (or the parent
+// tree did not exist yet) is never retried by the scan itself -- the match
+// pipeline runs a SINGLE time, per file, at scan time (see the package comment of
+// musica.go/serie.go). The two methods exported here are called from OUTSIDE the
+// scanner package (server/job layer, analogous to RefreshLocalAsset in
+// recheck.go) to retry that resolution later, without re-walking the whole
+// datasource: they reuse the SAME matching logic of the scan
+// (Manager.matchTextualFaixa, Manager.tentarImportarSerie) outside the context of
+// a scanRun.
 //
-// Nenhum dos dois apaga a entity-rascunho (princípio 5, não-destrutivo): ela
-// só fica sem media_file (posse derivada cai a zero) e some da fila de
-// revisão pelo mecanismo já existente.
+// Neither of them deletes the draft entity (non-destructive principle): it simply
+// ends up with no media_file (derived ownership drops to zero) and leaves the
+// review queue through the mechanism that already exists.
 
 import (
 	"context"
@@ -29,14 +29,14 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/tvmatch"
 )
 
-// ReconciliarFaixaDraft tenta religar uma faixa DRAFT órfã (sem
-// entity_relation como filha de nenhum álbum) contra a árvore de identidade
-// já resolvida, re-extraindo as tags do arquivo (o media_file dela) e
-// rodando o MESMO matchTextualFaixa do scan. Sucesso: repontea
-// media_file.entity_id da faixa draft pra faixa recém-resolvida. linked=false
-// sem erro é degradação normal (sem provider/importador, sem media_file,
-// tags não extraíveis, ou sem match -- nunca um erro de negócio, só erro real
-// de banco/io sobe em err).
+// ReconciliarFaixaDraft tries to relink an orphan DRAFT track (without an
+// entity_relation as the child of any album) against the identity tree that is
+// already resolved, re-extracting the tags of the file (its media_file) and
+// running the SAME matchTextualFaixa of the scan. Success: it repoints
+// media_file.entity_id of the draft track to the newly resolved track.
+// linked=false without an error is normal degradation (no provider/importer, no
+// media_file, tags not extractable, or no match -- never a business error, only a
+// real database/io error rises in err).
 func (m *Manager) ReconciliarFaixaDraft(ctx context.Context, entityID string, langs []string) (linked bool, err error) {
 	mf, ok, err := m.mediaFilePresentePorEntity(ctx, entityID)
 	if err != nil {
@@ -67,11 +67,11 @@ func (m *Manager) ReconciliarFaixaDraft(ctx context.Context, entityID string, la
 	return true, nil
 }
 
-// purgarRascunhoSubstituido descarta o rascunho que acabou de perder o arquivo
-// para a entity definitiva (briefing 0138). Sem isto o rascunho ficava para
-// sempre na fila de revisao como "sem arquivo": 114 casos medidos em producao
-// em 08/nov/2026, e a fila nunca diminuia mesmo com a reconciliacao
-// funcionando. Best-effort (o vinculo novo ja esta gravado): falha so loga.
+// purgarRascunhoSubstituido discards the draft that has just lost the file to the
+// definitive entity. Without this the draft stayed in the review queue forever as
+// "sem arquivo": 114 cases measured in production on Nov 8, 2026, and the queue
+// never shrank even with the reconciliation working. Best-effort (the new link is
+// already written): a failure only logs.
 func (m *Manager) purgarRascunhoSubstituido(ctx context.Context, entityID string) {
 	if entityID == "" {
 		return
@@ -81,21 +81,21 @@ func (m *Manager) purgarRascunhoSubstituido(ctx context.Context, entityID string
 	}
 }
 
-// ReconciliarSerieDraft tenta reimportar uma série DRAFT com o título da
-// entity via tentarImportarSerie; sucesso: para cada media_file hoje
-// apontando pra essa série-rascunho, re-deriva o número do episódio
-// (naming.ParseEpisode no basename do path) e casa via tvmatch.Casar contra o
-// índice da série recém-importada, repontando media_file.entity_id pra série
-// real e criando os vínculos media_file_entity (mesmo padrão de
-// gravarArquivoSerie: RemoverVinculosDoArquivoPorKind + CriarVinculoEntidade,
-// kind=kindVinculoEpisodio). Media_file sem episódio casável fica apontando
-// pra série real mesmo assim (só sem vínculo de episódio -- cai na fila de
-// revisão dela, não mais na fila da série inteira). linked=true só quando
-// pelo menos 1 media_file foi religado. preferredLang é sempre "" aqui (sem
-// preferência de fonte específica -- a reconciliação não tem uma
-// library_source de origem clara por arquivo; o importer cai pro idioma
-// global, mesmo comportamento de preferredLangDaFonte quando não há
-// preferência).
+// ReconciliarSerieDraft tries to reimport a DRAFT series using the title of the
+// entity via tentarImportarSerie; success: for each media_file currently pointing
+// to that draft series, it re-derives the episode number (naming.ParseEpisode on
+// the basename of the path) and matches via tvmatch.Casar against the index of
+// the newly imported series, repointing media_file.entity_id to the real series
+// and creating the media_file_entity links (same pattern as gravarArquivoSerie:
+// RemoverVinculosDoArquivoPorKind + CriarVinculoEntidade,
+// kind=kindVinculoEpisodio). A media_file with no matchable episode keeps pointing
+// to the real series anyway (just without an episode link -- it falls into the
+// review queue of the series, no longer into the queue of the whole series).
+// linked=true only when at least 1 media_file was relinked. preferredLang is
+// always "" here (no preference for a specific source -- the reconciliation has no
+// clear originating library_source per file; the importer falls back to the global
+// language, the same behavior of preferredLangDaFonte when there is no
+// preference).
 func (m *Manager) ReconciliarSerieDraft(ctx context.Context, entityID string, langs []string) (linked bool, err error) {
 	entity, err := sqlcgen.New(m.db.Read).ObterEntity(ctx, entityID)
 	if err != nil {
@@ -126,21 +126,22 @@ func (m *Manager) ReconciliarSerieDraft(ctx context.Context, entityID string, la
 		religados++
 	}
 	if religados > 0 {
-		// Mesma purga do caso da faixa (briefing 0138): a serie-rascunho que
-		// perdeu todos os arquivos sai da fila. A query nao apaga serie com
-		// episodio ligado (checa vinculo como pai), entao o que sai aqui e o
-		// casco vazio de verdade.
+		// Same purge as the track case: the draft series that lost every file
+		// leaves the queue. The query does not delete a series with a linked
+		// episode (it checks the link as parent), so what leaves here is the truly
+		// empty shell.
 		m.purgarRascunhoSubstituido(ctx, entityID)
 	}
 	return religados > 0, nil
 }
 
-// religarArquivoSerie repontea UM media_file da série-rascunho pra série
-// real (res.serieID), casando o episódio quando possível (mesmo padrão de
-// gravarArquivoSerie em serie.go): re-deriva o número do episódio do
-// basename do path e casa contra o índice já carregado em `res`. Sem
-// episódio casável, o arquivo ainda assim é repontado pra série real, só sem
-// vínculo (cai na fila de revisão da série real, não mais na da rascunho).
+// religarArquivoSerie repoints ONE media_file of the draft series to the real
+// series (res.serieID), matching the episode when possible (same pattern as
+// gravarArquivoSerie in serie.go): it re-derives the episode number from the
+// basename of the path and matches against the index already loaded in `res`.
+// Without a matchable episode, the file is still repointed to the real series,
+// only without a link (it falls into the review queue of the real series, no
+// longer into the draft one).
 func (m *Manager) religarArquivoSerie(ctx context.Context, mf sqlcgen.MediaFile, res serieResolvida) error {
 	confianca := float64(confRevisaoSerie)
 	var episodeIDs []string
@@ -186,9 +187,9 @@ func (m *Manager) religarArquivoSerie(ctx context.Context, mf sqlcgen.MediaFile,
 	return nil
 }
 
-// mediaFilePresentePorEntity devolve o PRIMEIRO media_file 'present' de uma
-// entity (ADR-0027: 1:1 faixa-arquivo, mas defensivo contra mais de um).
-// ok=false sem erro quando a entity não tem nenhum media_file present.
+// mediaFilePresentePorEntity returns the FIRST 'present' media_file of an entity
+// (ADR-0027: 1:1 track-file, but defensive against more than one). ok=false
+// without an error when the entity has no present media_file.
 func (m *Manager) mediaFilePresentePorEntity(ctx context.Context, entityID string) (sqlcgen.MediaFile, bool, error) {
 	arquivos, err := sqlcgen.New(m.db.Read).ListarMediaFilesPorEntity(ctx, entityID)
 	if err != nil {
@@ -202,13 +203,13 @@ func (m *Manager) mediaFilePresentePorEntity(ctx context.Context, entityID strin
 	return sqlcgen.MediaFile{}, false, nil
 }
 
-// probarTags re-extrai as tags de áudio (e a duração do container,
-// info.General.Duration -- 0 quando indisponível) de um path via o Prober já
-// injetado no Manager (mesmo caminho de factsMusica, musica.go). ok=false sem
-// erro quando o probe falha, devolve vazio, ou o JSON não desserializa --
-// nunca um erro de negócio (a reconciliação apenas não consegue tentar de
-// novo agora); duração 0 nesse caso, tratada como "desconhecida" pelo
-// enrich/provider (briefing 0121 §8), sem regressão.
+// probarTags re-extracts the audio tags (and the container duration,
+// info.General.Duration -- 0 when unavailable) of a path through the Prober
+// already injected in the Manager (same path as factsMusica, musica.go). ok=false
+// without an error when the probe fails, returns empty, or the JSON does not
+// unmarshal -- never a business error (the reconciliation simply cannot try again
+// right now); duration 0 in that case, treated as "unknown" by the
+// enrich/provider, with no regression.
 func (m *Manager) probarTags(ctx context.Context, path string) (mediainfo.AudioTags, float64, bool) {
 	mi, err := m.prober.Probe(ctx, path)
 	if err != nil || len(mi) == 0 {

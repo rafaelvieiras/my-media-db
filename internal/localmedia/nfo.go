@@ -1,11 +1,11 @@
 package localmedia
 
-// nfo.go monta o XML do .nfo (briefing 0062 §4) a partir de resolver.Entidade
-// — o MESMO objeto que (s *Server) resolverEntity(ctx, id, lang) já produz
-// (o handler reusa, nunca duplica a resolução). Mapeamento campo a campo
-// exato conforme a tabela do briefing; ver MontarNFO. Puro: encoding/xml da
-// stdlib, sem I/O (a escrita atômica em disco é EscreverArquivoAtomico, em
-// naming.go).
+// nfo.go builds the .nfo XML (see doc 09) from resolver.Entidade — the SAME
+// object that (s *Server) resolverEntity(ctx, id, lang) already produces (the
+// handler reuses it, never duplicating the resolution). The field-by-field
+// mapping is exact according to the NFO mapping table; see MontarNFO. Pure:
+// encoding/xml from the stdlib, no I/O (the atomic write to disk is
+// EscreverArquivoAtomico, in naming.go).
 
 import (
 	"encoding/xml"
@@ -15,7 +15,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
 
-// nfoActor é um <actor> do elenco.
+// nfoActor is a cast <actor>.
 type nfoActor struct {
 	Name  string `xml:"name"`
 	Role  string `xml:"role"`
@@ -23,20 +23,20 @@ type nfoActor struct {
 	Thumb string `xml:"thumb,omitempty"`
 }
 
-// nfoUniqueID é <uniqueid type="..." default="true">valor</uniqueid>.
+// nfoUniqueID is <uniqueid type="..." default="true">value</uniqueid>.
 type nfoUniqueID struct {
 	Type    string `xml:"type,attr"`
 	Default string `xml:"default,attr,omitempty"`
 	Value   string `xml:",chardata"`
 }
 
-// nfoRatings é o wrapper <ratings> (Kodi atual) em volta de uma ou mais
+// nfoRatings is the <ratings> wrapper (current Kodi) around one or more
 // <rating>.
 type nfoRatings struct {
 	Ratings []nfoRating `xml:"rating"`
 }
 
-// nfoRating é <rating name="tmdb" max="10" default="true"><value>X</value></rating>.
+// nfoRating is <rating name="tmdb" max="10" default="true"><value>X</value></rating>.
 type nfoRating struct {
 	Name    string  `xml:"name,attr"`
 	Max     int     `xml:"max,attr"`
@@ -44,49 +44,50 @@ type nfoRating struct {
 	Value   float64 `xml:"value"`
 }
 
-// nfoFanart embrulha o fallback de fundo: <fanart><thumb>url</thumb></fanart>
-// (convenção Kodi).
+// nfoFanart wraps the backdrop fallback: <fanart><thumb>url</thumb></fanart>
+// (Kodi convention).
 type nfoFanart struct {
 	Thumb string `xml:"thumb"`
 }
 
-// nfoResume é <resume><position>seg</position><total>seg</total></resume> —
-// ponto de retomada de reprodução (convenção Kodi, NFO_files/Templates).
+// nfoResume is <resume><position>sec</position><total>sec</total></resume> —
+// playback resume point (Kodi convention, NFO_files/Templates).
 type nfoResume struct {
 	Position float64 `xml:"position"`
 	Total    float64 `xml:"total"`
 }
 
-// xmlElementoBruto captura um elemento XML de nivel superior que nfoDoc nao
-// conhece -- nome, atributos e conteudo interno exatamente como estava no
-// arquivo anterior, para reembutir sem interpretar (briefing 0065 SS4).
+// xmlElementoBruto captures a top-level XML element that nfoDoc does not know
+// -- name, attributes and inner content exactly as they were in the previous
+// file, to be re-embedded without interpretation (doc 09, §4).
 type xmlElementoBruto struct {
 	XMLName xml.Name
 	Attrs   []xml.Attr `xml:",any,attr"`
 	Inner   string     `xml:",innerxml"`
 }
 
-// nfoDoc é o corpo comum de movie.nfo/tvshow.nfo/<episódio>.nfo — o XMLName
-// muda por tipo (nomeRaizNFO), os campos são os mesmos (Kodi tolera
-// elementos vazios/ausentes num tipo que não os usa). Status só é preenchido
-// para type=tv (tvshow.nfo); os demais tipos deixam Status="" (omitido).
+// nfoDoc is the body shared by movie.nfo/tvshow.nfo/<episode>.nfo — the
+// XMLName changes per type (nomeRaizNFO), the fields are the same (Kodi
+// tolerates empty/absent elements of a type that does not use them). Status is
+// only filled for type=tv (tvshow.nfo); the other types leave Status=""
+// (omitted).
 //
-// UserRating/PlayCount/Watched/LastPlayed/DateAdded/Resume são os campos
-// LOCAIS do Kodi/Emby/Jellyfin (NFO_files/Templates, jellyfin.org/docs
-// .../metadata/nfo) -- avaliação pessoal, estado/contagem de assistido,
-// última reprodução, data de adição à biblioteca e ponto de retomada.
-// MontarNFO NUNCA os preenche a partir de resolver.Entidade (não fazem parte
-// do nosso modelo de dados) -- eles só chegam aqui via CamposUsuarioNFO,
-// extraídos do .nfo anterior por ExtrairCamposUsuario, para SOBREVIVER a
-// uma regravação (ver gravarNFO/internal/server/localmedia_handlers.go).
+// UserRating/PlayCount/Watched/LastPlayed/DateAdded/Resume are the LOCAL
+// fields of Kodi/Emby/Jellyfin (NFO_files/Templates, jellyfin.org/docs
+// .../metadata/nfo) -- personal rating, watched state/count, last playback,
+// date added to the library and resume point. MontarNFO NEVER fills them from
+// resolver.Entidade (they are not part of our data model) -- they only get
+// here through CamposUsuarioNFO, extracted from the previous .nfo by
+// ExtrairCamposUsuario, so that they SURVIVE a rewrite (see
+// gravarNFO/internal/server/localmedia_handlers.go).
 //
-// Extras é o catch-all genérico (briefing 0065): qualquer elemento de nível
-// superior do .nfo anterior que NENHUM campo acima modela (ex. <tag>, <set>,
-// <fileinfo>) cai aqui via xml:",any" e sobrevive à regravação tal como
-// estava, sem o MyMediaDB precisar conhecer o nome da tag de antemão. É um
-// superconjunto dos seis campos nomeados -- eles continuam explícitos acima
-// (mais legível, testes já existentes) e nunca duplicam em Extras porque já
-// bateram com um campo nomeado antes do catch-all entrar em ação.
+// Extras is the generic catch-all (doc 09, §4): any top-level element of the
+// previous .nfo that NONE of the fields above models (e.g. <tag>, <set>,
+// <fileinfo>) lands here through xml:",any" and survives the rewrite exactly
+// as it was, without MyMediaDB needing to know the tag name in advance. It is
+// a superset of the six named fields -- they stay explicit above (more
+// readable, existing tests) and never duplicate into Extras because they
+// already matched a named field before the catch-all comes into play.
 type nfoDoc struct {
 	XMLName       xml.Name
 	Title         string      `xml:"title"`
@@ -97,15 +98,16 @@ type nfoDoc struct {
 	MPAA          string      `xml:"mpaa,omitempty"`
 	Premiered     string      `xml:"premiered,omitempty"`
 	Ratings       *nfoRatings `xml:"ratings,omitempty"`
-	// RatingLegacy reconhece o <rating> de NIVEL SUPERIOR do formato
-	// pre-0066 (ex.: <rating name="tmdb">6.21</rating>, direto sob
-	// <movie>/<tvshow> -- nao confundir com o <rating> ANINHADO dentro
-	// de <ratings> acima, que e outro nivel e nao bate com este campo).
-	// Nunca e lido nem reemitido por MontarNFO -- existe so para
-	// "reivindicar" o nome da tag e impedir que caia no catch-all
-	// Extras (xml:",any", briefing 0065): sem isto, um .nfo escrito
-	// antes do 0066 teria a tag antiga preservada para sempre lado a
-	// lado com a nova <ratings>, duplicando a nota a cada regravacao.
+	// RatingLegacy recognizes the TOP-LEVEL <rating> of the format used
+	// before the move to <ratings> (e.g. <rating name="tmdb">6.21</rating>,
+	// directly under <movie>/<tvshow> -- not to be confused with the
+	// <rating> NESTED inside <ratings> above, which is another level and
+	// does not match this field). It is never read nor re-emitted by
+	// MontarNFO -- it exists only to "claim" the tag name and prevent it
+	// from falling into the Extras catch-all (xml:",any", doc 09, §4):
+	// without this, a .nfo written before that format change would have the
+	// old tag preserved forever alongside the new <ratings>, duplicating the
+	// score on every rewrite.
 	RatingLegacy *xmlElementoBruto  `xml:"rating,omitempty"`
 	UniqueIDs    []nfoUniqueID      `xml:"uniqueid,omitempty"`
 	Actors       []nfoActor         `xml:"actor,omitempty"`
@@ -124,10 +126,10 @@ type nfoDoc struct {
 	Extras       []xmlElementoBruto `xml:",any"`
 }
 
-// CamposUsuarioNFO agrupa os campos LOCAIS do .nfo (ver nfoDoc) que só o
-// usuário/Kodi/Emby/Jellyfin editam depois que o arquivo já existe --
-// MontarNFO os copia tal como vieram, nunca os inventa nem os apaga. Extras é
-// o catch-all genérico do briefing 0065 (ver comentário em nfoDoc).
+// CamposUsuarioNFO groups the LOCAL fields of the .nfo (see nfoDoc) that only
+// the user/Kodi/Emby/Jellyfin edit after the file already exists -- MontarNFO
+// copies them as they came, never inventing nor erasing them. Extras is the
+// generic catch-all (see the comment in nfoDoc).
 type CamposUsuarioNFO struct {
 	UserRating *float64
 	PlayCount  *int
@@ -138,11 +140,11 @@ type CamposUsuarioNFO struct {
 	Extras     []xmlElementoBruto
 }
 
-// ExtrairCamposUsuario lê os campos de usuário de um .nfo já existente
-// (bytes lidos do disco pelo chamador, se houver). Best-effort: arquivo
-// ausente (bytes vazios) ou XML que não parseia devolve zero-value -- a
-// gravação de um NFO nunca deve falhar por causa de um arquivo anterior
-// corrompido ou editado à mão fora do padrão.
+// ExtrairCamposUsuario reads the user fields of an already existing .nfo
+// (bytes read from disk by the caller, if any). Best-effort: a missing file
+// (empty bytes) or XML that does not parse returns the zero-value -- writing
+// an NFO must never fail because of a previous file that is corrupted or was
+// hand-edited out of the pattern.
 func ExtrairCamposUsuario(existente []byte) CamposUsuarioNFO {
 	if len(existente) == 0 {
 		return CamposUsuarioNFO{}
@@ -165,17 +167,17 @@ func ExtrairCamposUsuario(existente []byte) CamposUsuarioNFO {
 	return out
 }
 
-// Elementos raiz do XML por tipo (convenção Kodi/Emby).
+// Root elements of the XML per type (Kodi/Emby convention).
 const (
 	raizMovie   = "movie"
 	raizTVShow  = "tvshow"
 	raizEpisode = "episodedetails"
 )
 
-// nomeRaizNFO decide o elemento raiz XML pelo type da entity: tv->tvshow,
-// episode->episodedetails, os demais (movie e qualquer type futuro) ->movie
-// (o mais genérico/seguro — só filme/episódio/série são cobertos pelo
-// briefing 0062, ver NomeArquivoNFO/handler para as demais entities).
+// nomeRaizNFO decides the XML root element by the entity type: tv->tvshow,
+// episode->episodedetails, the others (movie and any future type) ->movie (the
+// most generic/safe one — only movie/episode/series are covered by the NFO
+// mapping of doc 09; see NomeArquivoNFO/handler for the other entities).
 func nomeRaizNFO(entityType string) string {
 	switch entityType {
 	case TipoSerie:
@@ -187,25 +189,25 @@ func nomeRaizNFO(entityType string) string {
 	}
 }
 
-// ordemUniqueIDDefault é a prioridade de default quando tmdb está ausente
-// (briefing 0062 §4: "o de type=tmdb recebe default=true quando presente,
-// senão o primeiro na ordem tmdb, imdb, tvdb").
+// ordemUniqueIDDefault is the default priority when tmdb is absent (see doc 09,
+// §4: "the type=tmdb one receives default=true when present, otherwise the
+// first in the order tmdb, imdb, tvdb").
 var ordemUniqueIDDefault = []string{"tmdb", "imdb", "tvdb"}
 
-// MontarNFO monta o XML do .nfo a partir da Entidade JÁ RESOLVIDA
-// (resolver.Entidade) e dos campos locais preservados de uma gravação
-// anterior (CamposUsuarioNFO -- zero-value quando não há .nfo anterior, ver
-// ExtrairCamposUsuario). Devolve os bytes prontos para gravar (cabeçalho XML
-// + indentação + newline final).
+// MontarNFO builds the .nfo XML from the ALREADY RESOLVED Entity
+// (resolver.Entidade) and the local fields preserved from a previous write
+// (CamposUsuarioNFO -- zero-value when there is no previous .nfo, see
+// ExtrairCamposUsuario). It returns the bytes ready to be written (XML header
+// + indentation + trailing newline).
 //
-// Pôster/fundo (Thumb/Fanart de nfoDoc) NUNCA são preenchidos a partir de
-// e.PosterURL/e.BackdropURL (briefing 0066): quem chama MontarNFO
-// (gravarNFO) já materializa o arquivo físico na pasta real ANTES de montar
-// o XML, e o Kodi/Jellyfin descobrem essa arte sozinhos pela convenção de
-// nome de arquivo (poster.jpg/fanart.jpg) -- sem precisar de <thumb>/
-// <fanart> nenhum. Os campos continuam existindo em nfoDoc só para
-// reconhecer esses elementos como NOMEADOS (não caírem em Extras) caso um
-// .nfo anterior os tenha.
+// Poster/backdrop (Thumb/Fanart of nfoDoc) are NEVER filled from
+// e.PosterURL/e.BackdropURL (see doc 09): whoever calls MontarNFO (gravarNFO)
+// already materializes the physical file in the real folder BEFORE building
+// the XML, and Kodi/Jellyfin discover that artwork on their own through the
+// file naming convention (poster.jpg/fanart.jpg) -- with no need for any
+// <thumb>/<fanart>. The fields keep existing in nfoDoc only to recognize those
+// elements as NAMED (so they do not fall into Extras) in case a previous .nfo
+// has them.
 func MontarNFO(e resolver.Entidade, usuario CamposUsuarioNFO) ([]byte, error) {
 	doc := nfoDoc{
 		XMLName:       xml.Name{Local: nomeRaizNFO(e.Type)},
@@ -249,7 +251,7 @@ func MontarNFO(e resolver.Entidade, usuario CamposUsuarioNFO) ([]byte, error) {
 	return saida, nil
 }
 
-// derefStr deref um *string ("" quando nil).
+// derefStr dereferences a *string ("" when nil).
 func derefStr(p *string) string {
 	if p == nil {
 		return ""
@@ -257,9 +259,9 @@ func derefStr(p *string) string {
 	return *p
 }
 
-// uniqueIDsDe converte o mapa ExternalIDs (source->id) numa lista ORDENADA
-// (chave alfabética, determinismo) de <uniqueid>, marcando default="true" na
-// chave escolhida por escolherDefaultUniqueID.
+// uniqueIDsDe converts the ExternalIDs map (source->id) into a SORTED list
+// (alphabetic key, determinism) of <uniqueid>, marking default="true" on the
+// key chosen by escolherDefaultUniqueID.
 func uniqueIDsDe(ids map[string]string) []nfoUniqueID {
 	if len(ids) == 0 {
 		return nil
@@ -281,8 +283,8 @@ func uniqueIDsDe(ids map[string]string) []nfoUniqueID {
 	return out
 }
 
-// escolherDefaultUniqueID: tmdb se presente; senão o primeiro em
-// [tmdb,imdb,tvdb] que exista; senão "" (nenhum default marcado).
+// escolherDefaultUniqueID: tmdb if present; otherwise the first of
+// [tmdb,imdb,tvdb] that exists; otherwise "" (no default marked).
 func escolherDefaultUniqueID(ids map[string]string) string {
 	for _, k := range ordemUniqueIDDefault {
 		if _, ok := ids[k]; ok {
@@ -292,7 +294,7 @@ func escolherDefaultUniqueID(ids map[string]string) string {
 	return ""
 }
 
-// actorsDe converte o elenco (richfields.Cast) em <actor>.
+// actorsDe converts the cast (richfields.Cast) into <actor>.
 func actorsDe(cast []richfields.Cast) []nfoActor {
 	out := make([]nfoActor, 0, len(cast))
 	for _, c := range cast {
@@ -306,7 +308,7 @@ func actorsDe(cast []richfields.Cast) []nfoActor {
 	return out
 }
 
-// diretoresDe filtra a equipe (richfields.Crew) pelos diretores
+// diretoresDe filters the crew (richfields.Crew) by directors
 // (Department=="Directing" && Job=="Director").
 func diretoresDe(crew []richfields.Crew) []string {
 	var out []string
@@ -318,8 +320,8 @@ func diretoresDe(crew []richfields.Crew) []string {
 	return out
 }
 
-// creditosDe filtra a equipe pelos roteiristas (Department=="Writing") —
-// mapeados para <credits> (briefing 0062 §4).
+// creditosDe filters the crew by writers (Department=="Writing") — mapped to
+// <credits> (see doc 09, §4).
 func creditosDe(crew []richfields.Crew) []string {
 	var out []string
 	for _, c := range crew {
@@ -330,7 +332,8 @@ func creditosDe(crew []richfields.Crew) []string {
 	return out
 }
 
-// nomesDeCompanies extrai os nomes das produtoras/estúdios para <studio>.
+// nomesDeCompanies extracts the names of the production companies/studios for
+// <studio>.
 func nomesDeCompanies(companies []richfields.Company) []string {
 	out := make([]string, 0, len(companies))
 	for _, c := range companies {

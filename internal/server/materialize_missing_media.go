@@ -1,21 +1,19 @@
 package server
 
-// materialize_missing_media.go implementa POST
-// /api/v1/entities/{id}/materialize-missing-media (briefing 0088, menu
-// Gerenciar > "Baixar Artes Faltantes"): ação SEMPRE visível (não depende de
-// catalog_completeness) que primeiro força uma NOVA consulta ao(s)
-// ArteProvider(s) registrado(s) (hoje: fanart.tv) para atualizar o
-// inventário de artes da entity (media_external(source='fanarttv')) e, em
-// seguida, reaproveita SEM ALTERAR a mesma materialização do job periódico
-// midias_faltantes (MaterializarMidiasFaltantes, midias_faltantes.go,
-// briefing 0064) para gravar na pasta real da biblioteca a arte hoje
-// VENCEDORA de cada kind ainda sem local_path, e o .nfo quando ausente.
+// materialize_missing_media.go implements POST
+// /api/v1/entities/{id}/materialize-missing-media (Manage menu > "Baixar Artes Faltantes"):
+// an action ALWAYS visible (it does not depend on catalog_completeness) that first forces a
+// NEW query to the registered ArteProvider(s) (today: fanart.tv) to refresh the entity's
+// artwork inventory (media_external(source='fanarttv')) and then reuses WITHOUT CHANGING the
+// same materialization of the periodic midias_faltantes job
+// (MaterializarMidiasFaltantes, midias_faltantes.go) to write into the library's real folder
+// the artwork currently WINNING for each kind still without a local_path, and the .nfo when
+// it is missing.
 //
-// A atualização do inventário é BEST-EFFORT (degradação silenciosa,
-// AGENTS.md §6): sem s.enrich configurado (nenhuma fonte externa com
-// credencial) ou sem match no(s) provider(s) de arte, o passo é pulado/loga
-// e a materialização roda do mesmo jeito sobre o inventário que já existir
-// — nunca torna o request inteiro um erro.
+// The inventory refresh is BEST-EFFORT (silent degradation, AGENTS.md §6): without s.enrich
+// configured (no external source with a credential) or without a match in the artwork
+// provider(s), the step is skipped/logged and the materialization runs the same way over
+// whatever inventory already exists — it never turns the whole request into an error.
 
 import (
 	"log"
@@ -24,11 +22,11 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// materializeMissingMediaEntity trata POST
-// /api/v1/entities/{id}/materialize-missing-media. 404 se a entity não
-// existe; 200 sempre depois disso (MaterializeMissingMediaResult, mesmo
-// shape que MaterializarMidiasFaltantes já devolve) — cada subetapa é
-// best-effort, nunca 5xx só por "o provider de arte não achou nada novo".
+// materializeMissingMediaEntity handles POST
+// /api/v1/entities/{id}/materialize-missing-media. 404 if the entity does not exist; 200
+// always after that (MaterializeMissingMediaResult, the same shape
+// MaterializarMidiasFaltantes already returns) — each sub-step is best-effort, never a 5xx
+// just because "the artwork provider found nothing new".
 func (s *Server) materializeMissingMediaEntity(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -40,11 +38,10 @@ func (s *Server) materializeMissingMediaEntity(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// (1) Nova consulta ao(s) ArteProvider(s) registrado(s) para atualizar o
-	// inventário de artes da entity — best-effort: sem s.enrich (sem fonte
-	// externa configurada) ou sem capacidade/match no provider, apenas segue
-	// para materializar sobre o inventário que já existir (degradação
-	// silenciosa, AGENTS.md §6).
+	// (1) New query to the registered ArteProvider(s) to refresh the entity's artwork
+	// inventory — best-effort: without s.enrich (no external source configured) or without
+	// capability/match in the provider, it just goes on to materialize over whatever inventory
+	// already exists (silent degradation, AGENTS.md §6).
 	if s.enrich != nil {
 		langs, err := s.idiomasPermitidos(ctx, w)
 		if err != nil {
@@ -55,9 +52,9 @@ func (s *Server) materializeMissingMediaEntity(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	// (2) MESMA materialização do job midias_faltantes, sem alterar sua
-	// lógica: grava na pasta real a arte hoje vencedora de cada kind ainda
-	// sem local_path, e o .nfo quando ausente.
+	// (2) The SAME materialization of the midias_faltantes job, without changing its logic: it
+	// writes into the real folder the artwork currently winning for each kind still without a
+	// local_path, and the .nfo when it is missing.
 	artesBaixadas, nfoGravado, err := s.MaterializarMidiasFaltantes(ctx, id)
 	if err != nil {
 		respondErroInterno(w)
@@ -70,16 +67,16 @@ func (s *Server) materializeMissingMediaEntity(w http.ResponseWriter, r *http.Re
 	})
 }
 
-// materializeMissingMediaResultDTO é a resposta de POST
-// /entities/{id}/materialize-missing-media (MaterializeMissingMediaResult no
-// contrato, openapi.yaml) — espelha o retorno de MaterializarMidiasFaltantes.
+// materializeMissingMediaResultDTO is the response of POST
+// /entities/{id}/materialize-missing-media (MaterializeMissingMediaResult in the contract,
+// openapi.yaml) — it mirrors the return of MaterializarMidiasFaltantes.
 type materializeMissingMediaResultDTO struct {
 	ArtesBaixadas []string `json:"artes_baixadas"`
 	NfoGravado    bool     `json:"nfo_gravado"`
 }
 
-// artesBaixadasOuVazio devolve um slice NUNCA nil (serializa `[]`, não
-// `null`), mesmo padrão de downloadMissingArtworkResultDTO.
+// artesBaixadasOuVazio returns a slice that is NEVER nil (it serializes `[]`, not `null`),
+// the same pattern as downloadMissingArtworkResultDTO.
 func artesBaixadasOuVazio(artes []string) []string {
 	if artes == nil {
 		return []string{}

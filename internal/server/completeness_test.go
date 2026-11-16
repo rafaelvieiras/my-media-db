@@ -9,16 +9,15 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Testes da AVALIAÇÃO DE COMPLETUDE DE CATALOGAÇÃO por item (briefing 0058):
-// avaliarCompletude isolado (sem banco) e os dois caminhos que a consomem —
-// ao vivo no detalhe (GET /entities/{id}) e o cache em lote (completeness_
-// recalc_test.go). Ver a nota longa em completeness.go sobre por que os dois
-// caminhos existem.
+// Tests of the CATALOG COMPLETENESS EVALUATION per item: avaliarCompletude in
+// isolation (no database) and the two paths that consume it — live on the detail page
+// (GET /entities/{id}) and the batch cache (completeness_recalc_test.go). See the long
+// note in completeness.go on why the two paths exist.
 
-// ── avaliarCompletude (pura, sem banco) ─────────────────────────────────────
+// ── avaliarCompletude (pure, no database) ───────────────────────────────────
 
-// TestAvaliarCompletudeTipoAusenteNaConfig cobre a regra central do 0057/0058:
-// tipo sem entrada na config nunca é incompleto, mesmo sem nenhum dado.
+// TestAvaliarCompletudeTipoAusenteNaConfig covers the central rule: a type without an
+// entry in the config is never incomplete, even with no data at all.
 func TestAvaliarCompletudeTipoAusenteNaConfig(t *testing.T) {
 	got := avaliarCompletude(tipoCompletenessConfig{Description: true}, false, dadosCompletude{})
 	if !got.Complete {
@@ -29,8 +28,8 @@ func TestAvaliarCompletudeTipoAusenteNaConfig(t *testing.T) {
 	}
 }
 
-// TestAvaliarCompletudeCadaBool cobre cada bool de tipoCompletenessConfig,
-// isolado: ausente -> aparece em Missing; presente -> não aparece.
+// TestAvaliarCompletudeCadaBool covers each bool of tipoCompletenessConfig in
+// isolation: absent -> it shows up in Missing; present -> it does not show up.
 func TestAvaliarCompletudeCadaBool(t *testing.T) {
 	desc := "uma sinopse"
 	descVazia := "   "
@@ -71,9 +70,9 @@ func TestAvaliarCompletudeCadaBool(t *testing.T) {
 	}
 }
 
-// TestAvaliarCompletudeArtwork cobre cada kind de artwork isolado: só os
-// kinds AUSENTES de ArtesPresentes entram em Missing (um item por kind, não
-// um "artwork" agregado), na ordem de cfg.Artwork.
+// TestAvaliarCompletudeArtwork covers each artwork kind in isolation: only the kinds
+// MISSING from ArtesPresentes enter Missing (one item per kind, not an aggregated
+// "artwork"), in the order of cfg.Artwork.
 func TestAvaliarCompletudeArtwork(t *testing.T) {
 	cfg := tipoCompletenessConfig{Artwork: []string{"poster", "fanart", "logo"}}
 	dados := dadosCompletude{ArtesPresentes: map[string]bool{"fanart": true}}
@@ -88,8 +87,8 @@ func TestAvaliarCompletudeArtwork(t *testing.T) {
 	}
 }
 
-// TestAvaliarCompletudeArtworkTodasPresentes cobre o caso completo de
-// artwork: todas as kinds configuradas presentes -> nenhuma entrada.
+// TestAvaliarCompletudeArtworkTodasPresentes covers the complete artwork case: every
+// configured kind present -> no entry.
 func TestAvaliarCompletudeArtworkTodasPresentes(t *testing.T) {
 	cfg := tipoCompletenessConfig{Artwork: []string{"poster", "fanart"}}
 	dados := dadosCompletude{ArtesPresentes: map[string]bool{"poster": true, "fanart": true}}
@@ -100,9 +99,9 @@ func TestAvaliarCompletudeArtworkTodasPresentes(t *testing.T) {
 	}
 }
 
-// TestAvaliarCompletudeOrdemFixa cobre a ordem ESTÁVEL de Missing (briefing
-// 0058 §4): description, runtime, certification, keywords, cast, media_file,
-// artwork:<kind...> (na ordem de cfg.Artwork, não alfabética).
+// TestAvaliarCompletudeOrdemFixa covers the STABLE order of Missing: description,
+// runtime, certification, keywords, cast, media_file, artwork:<kind...> (in the order of
+// cfg.Artwork, not alphabetical).
 func TestAvaliarCompletudeOrdemFixa(t *testing.T) {
 	cfg := tipoCompletenessConfig{
 		Description: true, Runtime: true, Certification: true, Keywords: true,
@@ -121,8 +120,8 @@ func TestAvaliarCompletudeOrdemFixa(t *testing.T) {
 	}
 }
 
-// TestAvaliarCompletudeTudoPresenteEhCompleto prova o caso feliz: todos os
-// campos/artes exigidos presentes -> {true, []}.
+// TestAvaliarCompletudeTudoPresenteEhCompleto proves the happy case: every required
+// field/artwork present -> {true, []}.
 func TestAvaliarCompletudeTudoPresenteEhCompleto(t *testing.T) {
 	desc, cert := "sinopse", "L"
 	runtime := 120
@@ -141,11 +140,11 @@ func TestAvaliarCompletudeTudoPresenteEhCompleto(t *testing.T) {
 	}
 }
 
-// ── caminho ao vivo (detalhe, GET /entities/{id}) ───────────────────────────
+// ── live path (detail, GET /entities/{id}) ──────────────────────────────────
 
-// TestDetalheItemNaoDraftCalculaCompletudeAoVivo cobre o critério central do
-// 0058: o detalhe calcula NA HORA, refletindo o estado ATUAL sem depender do
-// job — preencher o que falta muda o PRÓXIMO GET, sem recálculo em lote.
+// TestDetalheItemNaoDraftCalculaCompletudeAoVivo covers the central criterion: the
+// detail page computes ON THE SPOT, reflecting the CURRENT state without depending on the
+// job — filling in what is missing changes the NEXT GET, with no batch recalculation.
 func TestDetalheItemNaoDraftCalculaCompletudeAoVivo(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	corpo := catalogCompletenessSettings{
@@ -172,7 +171,7 @@ func TestDetalheItemNaoDraftCalculaCompletudeAoVivo(t *testing.T) {
 		t.Errorf("missing = %v, quero %v", ent.CatalogCompleteness.Missing, quero)
 	}
 
-	// Preenche o que falta -- o PRÓXIMO GET reflete ao vivo, sem rodar job.
+	// Fills in what is missing -- the NEXT GET reflects it live, without running the job.
 	if _, err := escrita(t, d).AtualizarEntity(context.Background(), sqlcgen.AtualizarEntityParams{
 		ID: "m1", Type: "movie", Title: "Filme", Status: "cataloged",
 		Description: nsOf("Uma sinopse qualquer"),
@@ -191,8 +190,8 @@ func TestDetalheItemNaoDraftCalculaCompletudeAoVivo(t *testing.T) {
 	}
 }
 
-// TestDetalheItemDraftCatalogCompletenessNil cobre o critério: item draft
-// (nunca casado) nunca tem completude avaliada -- o campo fica null.
+// TestDetalheItemDraftCatalogCompletenessNil covers the criterion: a draft item (never
+// matched) never has its completeness evaluated -- the field stays null.
 func TestDetalheItemDraftCatalogCompletenessNil(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "d1", "movie", "Draft")
@@ -208,12 +207,12 @@ func TestDetalheItemDraftCatalogCompletenessNil(t *testing.T) {
 	}
 }
 
-// TestDetalheTipoAusenteDaConfigEhCompleto cobre a regra "tipo sem régua
-// nunca é incompleto" também no caminho ao vivo (não só na função pura).
+// TestDetalheTipoAusenteDaConfigEhCompleto covers the rule "a type without a ruler is
+// never incomplete" on the live path too (not only in the pure function).
 func TestDetalheTipoAusenteDaConfigEhCompleto(t *testing.T) {
 	h, d := setupEntitiesServer(t)
-	// "collection" não tem entrada na config (default de fábrica só cobre
-	// movie/tv, briefing 0057 §6) -- nada foi exigido.
+	// "collection" has no entry in the config (the factory default only covers
+	// movie/tv) -- nothing was required.
 	semearEntity(t, d, "col1", "collection", "Coleção")
 
 	rec := do(t, h, http.MethodGet, "/api/v1/entities/col1", nil)

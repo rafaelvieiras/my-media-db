@@ -1,17 +1,18 @@
 package server
 
-// Este arquivo implementa GET /api/v1/images?src=<url>: um PROXY READ-THROUGH de
-// imagem para a tela de DETALHE DO EXTERNO (pré-import, briefing 0022). O pôster e o
-// fundo (backdrop) de um item externo eram servidos direto do CDN da fonte (TMDB); o
-// proxy baixa a imagem UMA vez, cacheia em disco sob {assetsDir}/_proxy/<sha256(src)>
-// e serve do cache nas próximas — a UI deixa de depender do CDN da fonte em runtime,
-// como o pôster/fanart cacheados da ENTITY (0015). Diferença: aqui NÃO há entity para
-// anexar um asset, então o cache é POR URL, compartilhado entre itens/visitas.
+// This file implements GET /api/v1/images?src=<url>: a READ-THROUGH image PROXY for the
+// EXTERNAL DETAIL screen (pre-import). The poster and the background (backdrop) of an
+// external item used to be served straight from the source CDN (TMDB); the proxy
+// downloads the image ONCE, caches it on disk under {assetsDir}/_proxy/<sha256(src)> and
+// serves from the cache on the following ones — the UI stops depending on the source CDN
+// at runtime, like the cached poster/fanart of the ENTITY. Difference: here there is NO
+// entity to attach an asset to, so the cache is PER URL, shared between items/visits.
 //
-// Segurança: o `src` é validado contra uma ALLOWLIST de hosts (defesa central contra
-// SSRF — jamais buscamos host arbitrário) e a resposta só é cacheada/servida se for
-// 200 image/*. O nome do arquivo é o sha256 hex da URL: determinístico e imune a
-// path-traversal (é só hex), então dispensa a guarda de raízes do servirBinarioAsset.
+// Security: `src` is validated against an ALLOWLIST of hosts (the central defense against
+// SSRF — we never fetch an arbitrary host) and the response is only cached/served if it
+// is 200 image/*. The file name is the sha256 hex of the URL: deterministic and immune to
+// path-traversal (it is hex only), so it does without the roots guard of
+// servirBinarioAsset.
 
 import (
 	"context"
@@ -30,38 +31,39 @@ import (
 )
 
 const (
-	// subdirProxyImagem é o subdiretório do cache do proxy sob assetsDir. O prefixo "_"
-	// o mantém FORA do espaço de nomes das entities (dirs = UUID), sem colisão.
+	// subdirProxyImagem is the proxy cache subdirectory under assetsDir. The "_" prefix
+	// keeps it OUTSIDE the entity namespace (dirs = UUID), with no collision.
 	subdirProxyImagem = "_proxy"
-	// timeoutProxyImagem limita o download de UMA imagem; estouro vira 502.
+	// timeoutProxyImagem limits the download of ONE image; a timeout becomes 502.
 	timeoutProxyImagem = 15 * time.Second
-	// tamanhoMaxProxyImagem é o teto de bytes de uma imagem (guarda contra fonte
-	// hostil/gigante); 20 MiB cobre com folga um backdrop w780.
+	// tamanhoMaxProxyImagem is the byte ceiling of an image (a guard against a
+	// hostile/giant source); 20 MiB comfortably covers a w780 backdrop.
 	tamanhoMaxProxyImagem = 20 << 20
-	// rotaProxyImagem é o prefixo da rota que o DTO do detalhe externo emite quando
-	// reescreve uma URL de imagem proxyável para o cache local.
+	// rotaProxyImagem is the route prefix that the external detail DTO emits when it
+	// rewrites a proxyable image URL to the local cache.
 	rotaProxyImagem = "/api/v1/images"
 )
 
-// hostsImagemPadrao é a allowlist do proxy (anti-SSRF): só CDNs de imagem confiáveis.
-// O do TMDB (pôster/backdrop do detalhe externo, 0015/0024) e o do TheTVDB
-// (artworks.thetvdb.com — o still de episódio servido sob demanda, 0042). Ampliar aqui
-// ao entrar outra fonte. É a base do campo Server.hostsImagem (injetável em teste).
+// hostsImagemPadrao is the allowlist of the proxy (anti-SSRF): trusted image CDNs only.
+// The TMDB one (poster/backdrop of the external detail) and the TheTVDB one
+// (artworks.thetvdb.com — the episode still served on demand). Widen it here when another
+// source comes in. It is the basis of the Server.hostsImagem field (injectable in
+// tests).
 var hostsImagemPadrao = map[string]bool{
 	"image.tmdb.org":       true,
 	"artworks.thetvdb.com": true,
-	// fanart.tv (briefing 0048): as URLs de arte do inventario (poster/logo/clearart/...)
-	// vem deste host; o /artwork as serve ja via proxy.
+	// fanart.tv: the inventory artwork URLs (poster/logo/clearart/...) come from this
+	// host; /artwork already serves them through the proxy.
 	"assets.fanart.tv": true,
 }
 
-// clienteImagemPadrao é o http.Client do proxy (timeout curto). Fica aqui para manter
-// server.go sem dependência de "time"; New o injeta em Server.httpImagem.
+// clienteImagemPadrao is the proxy's http.Client (short timeout). It lives here to keep
+// server.go free of a "time" dependency; New injects it into Server.httpImagem.
 func clienteImagemPadrao() *http.Client { return &http.Client{Timeout: timeoutProxyImagem} }
 
-// getImageProxy trata GET /api/v1/images?src=<url>. 503 sem assetsDir; 400 src
-// ausente/inválida ou host fora da allowlist; 502 se a fonte falhar; 200 com o binário
-// (cacheado). Ver o cabeçalho do arquivo para o desenho e as garantias de segurança.
+// getImageProxy handles GET /api/v1/images?src=<url>. 503 without assetsDir; 400 missing
+// or invalid src, or a host outside the allowlist; 502 if the source fails; 200 with the
+// (cached) binary. See the file header for the design and the security guarantees.
 func (s *Server) getImageProxy(w http.ResponseWriter, r *http.Request) {
 	if s.assetsDir == "" {
 		writeError(w, http.StatusServiceUnavailable, "image_proxy_unavailable",
@@ -87,9 +89,10 @@ func (s *Server) getImageProxy(w http.ResponseWriter, r *http.Request) {
 	s.servirBinarioProxy(w, r, caminho)
 }
 
-// urlImagemPermitida valida o `src`: precisa ser URL absoluta http(s) com host EXATO
-// na allowlist (a defesa central contra SSRF). O host inclui a porta, então
-// `image.tmdb.org:9000` não casa `image.tmdb.org` — proposital. Devolve a URL canônica.
+// urlImagemPermitida validates `src`: it must be an absolute http(s) URL with the EXACT
+// host in the allowlist (the central defense against SSRF). The host includes the port, so
+// `image.tmdb.org:9000` does not match `image.tmdb.org` — deliberately. It returns the
+// canonical URL.
 func (s *Server) urlImagemPermitida(raw string) (string, bool) {
 	if raw == "" {
 		return "", false
@@ -107,10 +110,11 @@ func (s *Server) urlImagemPermitida(raw string) (string, bool) {
 	return u.String(), true
 }
 
-// urlImagemServida decide como a UI recebe uma URL de imagem do detalhe externo: com
-// assetsDir E host proxyável, reescreve para a rota do PROXY LOCAL (cacheia e serve do
-// disco, decoplando do CDN da fonte); senão devolve a URL DIRETA (degradação: sem
-// assetsDir ou host desconhecido, a UI ainda renderiza da fonte). nil/vazia → intacta.
+// urlImagemServida decides how the UI receives an image URL of the external detail: with
+// assetsDir AND a proxyable host, it rewrites to the LOCAL PROXY route (caches and serves
+// from disk, decoupling from the source CDN); otherwise it returns the DIRECT URL
+// (degradation: without assetsDir or with an unknown host, the UI still renders from the
+// source). nil/empty → untouched.
 func (s *Server) urlImagemServida(direta *string) *string {
 	if direta == nil || *direta == "" {
 		return direta
@@ -125,12 +129,12 @@ func (s *Server) urlImagemServida(direta *string) *string {
 	return &rota
 }
 
-// proxyarCreditos reescreve profile_url/logo_url dos CRÉDITOS (elenco/equipe/
-// produtoras, briefing 0029) para a rota do proxy local, quando aplicável — a MESMA
-// conversão que o pôster/backdrop já fazem (urlImagemServida). richfields.CastDe/
-// CrewDe/CompaniesDe montam a URL DIRETA (puras, sem acesso ao proxy); este é o único
-// lugar com o host/base para decidir, reusado pelo detalhe externo e pelo resolver da
-// entity (mesmo shape, paridade). Muta as fatias em memória (in place).
+// proxyarCreditos rewrites profile_url/logo_url of the CREDITS (cast/crew/production
+// companies) to the local proxy route, when applicable — the SAME conversion the
+// poster/backdrop already do (urlImagemServida). richfields.CastDe/
+// CrewDe/CompaniesDe build the DIRECT URL (pure, with no access to the proxy); this is
+// the only place with the host/base to decide, reused by the external detail and by the
+// entity resolver (same shape, parity). It mutates the slices in memory (in place).
 func (s *Server) proxyarCreditos(cast []richfields.Cast, crew []richfields.Crew, comps []richfields.Company) {
 	for i := range cast {
 		cast[i].ProfileURL = s.urlImagemServida(cast[i].ProfileURL)
@@ -143,9 +147,9 @@ func (s *Server) proxyarCreditos(cast []richfields.Cast, crew []richfields.Crew,
 	}
 }
 
-// caminhoCacheProxy devolve o caminho do binário cacheado de `alvo`: sob
-// {assetsDir}/_proxy, nome = sha256 hex da URL (determinístico, sem colisão de nome
-// nem traversal). Cria o diretório na primeira vez.
+// caminhoCacheProxy returns the path of the cached binary of `alvo`: under
+// {assetsDir}/_proxy, name = sha256 hex of the URL (deterministic, with no name collision
+// nor traversal). It creates the directory the first time.
 func (s *Server) caminhoCacheProxy(alvo string) (string, error) {
 	dir := filepath.Join(s.assetsDir, subdirProxyImagem)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -155,9 +159,10 @@ func (s *Server) caminhoCacheProxy(alvo string) (string, error) {
 	return filepath.Join(dir, hex.EncodeToString(soma[:])), nil
 }
 
-// baixarParaCache baixa `alvo` (timeout + teto de bytes) e grava ATOMICAMENTE no cache,
-// só se a resposta for 200 e image/* (evita cachear página de erro como imagem). A
-// escrita atômica (temp + rename) impede servir binário parcial sob concorrência.
+// baixarParaCache downloads `alvo` (timeout + byte ceiling) and writes it ATOMICALLY into
+// the cache, only if the response is 200 and image/* (it avoids caching an error page as
+// an image). The atomic write (temp + rename) prevents serving a partial binary under
+// concurrency.
 func (s *Server) baixarParaCache(ctx context.Context, alvo, destino string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, alvo, nil)
 	if err != nil {
@@ -181,8 +186,8 @@ func (s *Server) baixarParaCache(ctx context.Context, alvo, destino string) erro
 	return escreverAtomico(destino, dados)
 }
 
-// escreverAtomico grava `dados` em `destino` via temp + rename no mesmo diretório
-// (rename é atômico no mesmo filesystem): leitores nunca veem escrita parcial.
+// escreverAtomico writes `dados` into `destino` via temp + rename in the same directory
+// (rename is atomic within the same filesystem): readers never see a partial write.
 func escreverAtomico(destino string, dados []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(destino), filepath.Base(destino)+".tmp-*")
 	if err != nil {
@@ -201,12 +206,12 @@ func escreverAtomico(destino string, dados []byte) error {
 	return os.Rename(nome, destino)
 }
 
-// servirBinarioProxy serve o binário cacheado. O caminho é montado por nós de um hash
-// hex sob assetsDir — sem traversal —, então dispensa a guarda de raízes. Content-type
-// por farejo (o arquivo do cache não tem extensão). Cache-Control deixa o browser
-// reusar sem rebater no backend.
+// servirBinarioProxy serves the cached binary. The path is built by us from a hex hash
+// under assetsDir — no traversal —, so it does without the roots guard. Content-type by
+// sniffing (the cache file has no extension). Cache-Control lets the browser reuse it
+// without hitting the backend again.
 func (s *Server) servirBinarioProxy(w http.ResponseWriter, r *http.Request, caminho string) {
-	f, err := os.Open(caminho) //nolint:gosec // caminho = assetsDir/_proxy/<sha256>, sem traversal
+	f, err := os.Open(caminho) //nolint:gosec // path = assetsDir/_proxy/<sha256>, no traversal
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not_found", "imagem indisponivel")
 		return

@@ -12,8 +12,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// setupBanco sobe um banco de teste migrado, isolado por teste -- mesmo
-// padrao de internal/curation/curation_test.go.
+// setupBanco brings up a migrated test database, isolated per test -- same
+// pattern as internal/curation/curation_test.go.
 func setupBanco(t *testing.T) *db.DB {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "telemetry.sqlite")
@@ -60,10 +60,9 @@ func semearLibrarySource(t *testing.T, d *db.DB, id, path string) {
 	}
 }
 
-// semearJobExecucao insere um item de historico de job diretamente em
-// queue_item (kind='job') -- desde o briefing 0108/ADR-0028 (CAMADA 3),
-// ContarJobExecutions conta queue_item, não mais job_execution (derrubada
-// pela migration 0025).
+// semearJobExecucao inserts a job history item directly into queue_item
+// (kind='job') -- since ADR-0028 (LAYER 3), ContarJobExecutions counts
+// queue_item, no longer job_execution (dropped by migration 0025).
 func semearJobExecucao(t *testing.T, d *db.DB, id, jobID string) {
 	t.Helper()
 	if _, err := sqlcgen.New(d.Write).CriarQueueItem(context.Background(), sqlcgen.CriarQueueItemParams{
@@ -73,9 +72,9 @@ func semearJobExecucao(t *testing.T, d *db.DB, id, jobID string) {
 	}
 }
 
-// contadorFake e um fake de Contador injetavel em teste, sem depender de
-// internal/curation (evita import ciclico e permite controlar os numeros e o
-// erro devolvido).
+// contadorFake is a fake of Contador injectable in tests, without depending on
+// internal/curation (avoids an import cycle and allows controlling the numbers
+// and the error returned).
 type contadorFake struct {
 	revisao    int
 	orfas      int
@@ -97,9 +96,8 @@ func (c *contadorFake) ContarOrfas(ctx context.Context) (int, error) {
 	return c.orfas, nil
 }
 
-// TestTamanhoBancoBateComPragma prova que DatabaseSize.SizeBytes == page_count
-// * page_size lidos diretamente por PRAGMA (critério de aceite do briefing
-// 0055).
+// TestTamanhoBancoBateComPragma proves that DatabaseSize.SizeBytes == page_count
+// * page_size read directly by PRAGMA.
 func TestTamanhoBancoBateComPragma(t *testing.T) {
 	d := setupBanco(t)
 	s := New(d, nil, time.Now())
@@ -129,10 +127,10 @@ func TestTamanhoBancoBateComPragma(t *testing.T) {
 	}
 }
 
-// TestContagensUsoReflete prova que EntitiesByType/MediaFiles refletem
-// exatamente o fixture semeado (movie/season/episode/collection misturados,
-// present+missing) e que revisao/orfas vem do Contador injetado -- sem
-// duplicar o predicado (critérios de aceite do briefing 0055).
+// TestContagensUsoReflete proves that EntitiesByType/MediaFiles reflect exactly
+// the seeded fixture (movie/season/episode/collection mixed, present+missing)
+// and that revisao/orfas come from the injected Contador -- without
+// duplicating the predicate.
 func TestContagensUsoReflete(t *testing.T) {
 	d := setupBanco(t)
 	ctx := context.Background()
@@ -187,8 +185,8 @@ func TestContagensUsoReflete(t *testing.T) {
 	}
 }
 
-// TestContagensUsoContadorNil prova que um Contador nil degrada para 0/0 em
-// vez de entrar em panico (colaborador opcional, mesmo espirito defensivo de
+// TestContagensUsoContadorNil proves that a nil Contador degrades to 0/0
+// instead of panicking (optional collaborator, the same defensive spirit of
 // libraryhealth.Handler.rodarAutoMatch).
 func TestContagensUsoContadorNil(t *testing.T) {
 	d := setupBanco(t)
@@ -203,9 +201,9 @@ func TestContagensUsoContadorNil(t *testing.T) {
 	}
 }
 
-// TestContagensUsoErroDoContadorPropaga prova que uma falha do Contador
-// injetado propaga como erro (o handler decide degradar para 503, este
-// pacote so nao esconde o problema).
+// TestContagensUsoErroDoContadorPropaga proves that a failure of the injected
+// Contador propagates as an error (the handler decides to degrade to 503, this
+// package simply does not hide the problem).
 func TestContagensUsoErroDoContadorPropaga(t *testing.T) {
 	d := setupBanco(t)
 	fake := &contadorFake{errRevisao: errors.New("falha simulada")}
@@ -216,9 +214,9 @@ func TestContagensUsoErroDoContadorPropaga(t *testing.T) {
 	}
 }
 
-// TestUsoDiscoSomaSoPresenteDaFonte prova que UsoDisco soma
-// SOMENTE media_file.size com state='present' filtrado por
-// library_source_id, ignorando arquivos de outra fonte ou missing.
+// TestUsoDiscoSomaSoPresenteDaFonte proves that UsoDisco adds up ONLY
+// media_file.size with state='present' filtered by library_source_id,
+// ignoring files of another source or missing.
 func TestUsoDiscoSomaSoPresenteDaFonte(t *testing.T) {
 	d := setupBanco(t)
 	ctx := context.Background()
@@ -232,8 +230,8 @@ func TestUsoDiscoSomaSoPresenteDaFonte(t *testing.T) {
 	semearEntity(t, d, "e3", "movie", "Filme B1")
 
 	semearFile(t, d, "f1", "e1", "/mnt/a/f1.mkv", "present", 1000, "src-a")
-	semearFile(t, d, "f2", "e2", "/mnt/a/f2.mkv", "missing", 5000, "src-a") // missing: nao soma
-	semearFile(t, d, "f3", "e3", "/mnt/b/f3.mkv", "present", 2000, "src-b") // outra fonte: nao soma
+	semearFile(t, d, "f2", "e2", "/mnt/a/f2.mkv", "missing", 5000, "src-a") // missing: not added up
+	semearFile(t, d, "f3", "e3", "/mnt/b/f3.mkv", "present", 2000, "src-b") // another source: not added up
 
 	total, err := s.UsoDisco(ctx, "src-a")
 	if err != nil {
@@ -244,8 +242,8 @@ func TestUsoDiscoSomaSoPresenteDaFonte(t *testing.T) {
 	}
 }
 
-// TestUsoDiscoFonteSemArquivo prova que uma fonte sem nenhum media_file
-// devolve 0 (COALESCE), nao erro/NULL.
+// TestUsoDiscoFonteSemArquivo proves that a source without any media_file
+// returns 0 (COALESCE), not an error/NULL.
 func TestUsoDiscoFonteSemArquivo(t *testing.T) {
 	d := setupBanco(t)
 	s := New(d, nil, time.Now())
@@ -259,17 +257,17 @@ func TestUsoDiscoFonteSemArquivo(t *testing.T) {
 	}
 }
 
-// TestEstatisticasFilesystemPathInexistenteDevolveErro prova que um path
-// inacessivel devolve erro (nao panic, nao valor inventado) -- o chamador
-// (handler) usa isso para marcar offline:true/filesystem:null.
+// TestEstatisticasFilesystemPathInexistenteDevolveErro proves that an
+// inaccessible path returns an error (no panic, no invented value) -- the
+// caller (handler) uses it to mark offline:true/filesystem:null.
 func TestEstatisticasFilesystemPathInexistenteDevolveErro(t *testing.T) {
 	if _, err := EstatisticasFilesystem("/caminho/que/definitivamente/nao/existe/xyz123"); err == nil {
 		t.Fatal("EstatisticasFilesystem deveria devolver erro para path inexistente")
 	}
 }
 
-// TestEstatisticasFilesystemPathValido prova o caminho feliz: um path que
-// existe (t.TempDir()) devolve free/total > 0.
+// TestEstatisticasFilesystemPathValido proves the happy path: a path that
+// exists (t.TempDir()) returns free/total > 0.
 func TestEstatisticasFilesystemPathValido(t *testing.T) {
 	fs, err := EstatisticasFilesystem(t.TempDir())
 	if err != nil {
@@ -280,9 +278,9 @@ func TestEstatisticasFilesystemPathValido(t *testing.T) {
 	}
 }
 
-// TestSnapshotComputedAtAvanca prova que duas chamadas sucessivas a Snapshot
-// (sem cache -- o cache e responsabilidade do internal/server) produzem
-// ComputedAt distintos (cada chamada calcula na hora).
+// TestSnapshotComputedAtAvanca proves that two successive calls to Snapshot
+// (no cache -- caching is the responsibility of internal/server) produce
+// distinct ComputedAt values (each call computes on the spot).
 func TestSnapshotComputedAtAvanca(t *testing.T) {
 	d := setupBanco(t)
 	s := New(d, &contadorFake{}, time.Now())
@@ -302,9 +300,9 @@ func TestSnapshotComputedAtAvanca(t *testing.T) {
 	}
 }
 
-// TestContarJobExecutions prova que a contagem de queue_item (kind='job')
-// bate com o numero de linhas inseridas (alem dos seeds de job_definition,
-// que nao contam aqui -- so o historico de execucao).
+// TestContarJobExecutions proves that the count of queue_item (kind='job')
+// matches the number of inserted rows (beyond the job_definition seeds, which
+// do not count here -- only the execution history).
 func TestContarJobExecutions(t *testing.T) {
 	d := setupBanco(t)
 	s := New(d, nil, time.Now())

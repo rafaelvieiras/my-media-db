@@ -1,11 +1,12 @@
 package scanner
 
-// Testes do briefing 0135/ADR-0031: o pós-import do scan (auto-match de filme e
-// materialização opcional) roda DEPOIS do commit do lote, nunca dentro da
-// transação. Antes da correção, o gatilho lia a entity pelo pool de LEITURA
-// (linha ainda não commitada) e recebia `sql: no rows in result set` -- caso real
-// em produção (08/nov/2026) -- e, se tentasse escrever, travava na conexão única
-// de escrita (ADR-0010), deadlock que o primeiro teste abaixo reproduz.
+// Tests of the post-import of the scan (movie auto-match and optional
+// materialization): it runs AFTER the commit of the batch, never inside the
+// transaction (ADR-0031). Before the fix, the trigger read the entity through the
+// READ pool (row not committed yet) and got `sql: no rows in result set` -- a real
+// case in production (Nov 8, 2026) -- and, if it tried to write, it blocked on the
+// single write connection (ADR-0010), a deadlock that the first test below
+// reproduces.
 
 import (
 	"context"
@@ -18,14 +19,14 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// importadorQueLeEEscreve simula o *server.Server (TentarAutoMatchFilme): ele LÊ
-// a entity (o enrich faz isso por s.leitura().ObterEntity) e ESCREVE pela
-// conexão de escrita (enrich.Enriquecer). Dentro da transação do lote, a leitura
-// devolve sql.ErrNoRows e a escrita trava -- é exatamente esse par que este
-// teste trava contra regressão.
+// importadorQueLeEEscreve simulates the *server.Server (TentarAutoMatchFilme): it
+// READS the entity (the enrich does that through s.leitura().ObterEntity) and
+// WRITES through the write connection (enrich.Enriquecer). Inside the batch
+// transaction, the read returns sql.ErrNoRows and the write blocks -- it is exactly
+// that pair this test guards against regression.
 type importadorQueLeEEscreve struct {
 	d        *db.DB
-	vistos   []string // ids em que a LEITURA funcionou
+	vistos   []string // ids on which the READ worked
 	escritas int
 }
 
@@ -43,9 +44,10 @@ func (i *importadorQueLeEEscreve) TentarAutoMatchFilme(ctx context.Context, enti
 	return true, nil
 }
 
-// TestScanFilmeNovoAutoMatchRodaAposCommit cobre o critério central do 0135:
-// quando o auto-match é chamado, a entity JÁ é visível ao pool de leitura e a
-// conexão de escrita está livre -- e uma escrita do importador não trava o scan.
+// TestScanFilmeNovoAutoMatchRodaAposCommit covers the central criterion of the
+// post-commit dispatch: by the time the auto-match is called, the entity IS already
+// visible to the read pool and the write connection is free -- and a write by the
+// importer does not block the scan.
 func TestScanFilmeNovoAutoMatchRodaAposCommit(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -57,8 +59,8 @@ func TestScanFilmeNovoAutoMatchRodaAposCommit(t *testing.T) {
 	m.ConfigurarFilmes(imp)
 	src := criarSource(t, d, root)
 
-	// Guarda de tempo: se o gatilho voltar para dentro da transação, o teste
-	// falha por deadlock em vez de pendurar a suíte.
+	// Time guard: if the trigger goes back inside the transaction, the test fails
+	// by deadlock instead of hanging the suite.
 	done := make(chan error, 1)
 	go func() { done <- scanSync(t, m, src) }()
 	select {
@@ -78,8 +80,9 @@ func TestScanFilmeNovoAutoMatchRodaAposCommit(t *testing.T) {
 	}
 }
 
-// TestScanFilmeNovoMaterializaAposAutoMatch preserva o comportamento do 0089
-// (materialização opcional só quando o auto-match casou) agora no lugar certo.
+// TestScanFilmeNovoMaterializaAposAutoMatch preserves the behavior of the
+// optional materialization (only when the auto-match matched) now in the right
+// place.
 func TestScanFilmeNovoMaterializaAposAutoMatch(t *testing.T) {
 	casos := []struct {
 		nome        string

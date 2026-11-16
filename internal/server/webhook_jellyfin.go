@@ -19,32 +19,31 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/webhook"
 )
 
-// Este arquivo implementa o RECEPTOR do webhook de reprodução do Jellyfin
-// (briefing 0093, ADR-0022, depende do 0092): normaliza cada notificação de
-// play/pause/stop do plugin `jellyfin-plugin-webhook` num `historico_evento`,
-// casando o item pelos ids externos que o próprio payload já carrega. O
-// parser tolerante (NotificationType/ItemType/Provider_*/ticks) vive em
-// internal/webhook (sem banco/HTTP); aqui só a fiação HTTP + o casamento por
-// id externo + a config do token via app_settings.
+// This file implements the RECEIVER of the Jellyfin playback webhook (ADR-0022, which depends
+// on the consumption history foundation): it normalizes each play/pause/stop notification from
+// the `jellyfin-plugin-webhook` plugin into a `historico_evento`, matching the item by the
+// external ids the payload already carries. The tolerant parser
+// (NotificationType/ItemType/Provider_*/ticks) lives in internal/webhook (no database/HTTP);
+// here there is only the HTTP wiring + the match by external id + the token config through
+// app_settings.
 
-// appSettingWebhookJellyfinToken é a chave da config do token do webhook do
-// Jellyfin em app_settings (briefing 0093), valor {"token": "..."}.
+// appSettingWebhookJellyfinToken is the key of the Jellyfin webhook token config in
+// app_settings, value {"token": "..."}.
 const appSettingWebhookJellyfinToken = "webhook_jellyfin_token"
 
-// tamanhoTokenBytes é o tamanho (em bytes, antes de hex-encode) do token
-// gerado -- 32 bytes = 64 chars hex, mesmo espírito de uma chave de API.
+// tamanhoTokenBytes is the size (in bytes, before hex-encode) of the generated token -- 32 bytes
+// = 64 hex chars, the same spirit as an API key.
 const tamanhoTokenBytes = 32
 
-// jellyfinWebhookTokenSettings é a config do token, serializada como
-// value_json da chave webhook_jellyfin_token. É também o corpo de
-// POST/GET .../webhooks/jellyfin/token.
+// jellyfinWebhookTokenSettings is the token config, serialized as the value_json of the
+// webhook_jellyfin_token key. It is also the body of POST/GET .../webhooks/jellyfin/token.
 type jellyfinWebhookTokenSettings struct {
 	Token string `json:"token"`
 }
 
-// obterJellyfinWebhookToken lê o token atual de app_settings pela conexão de
-// LEITURA. sql.ErrNoRows (nenhum token gerado ainda) é propagado tal como
-// veio -- o GET/o handler do webhook decidem o que fazer (404/401).
+// obterJellyfinWebhookToken reads the current token from app_settings through the READ
+// connection. sql.ErrNoRows (no token generated yet) is propagated as it came -- the GET/the
+// webhook handler decide what to do (404/401).
 func (s *Server) obterJellyfinWebhookToken(ctx context.Context) (string, error) {
 	row, err := s.leitura().ObterAppSetting(ctx, appSettingWebhookJellyfinToken)
 	if err != nil {
@@ -60,8 +59,8 @@ func (s *Server) obterJellyfinWebhookToken(ctx context.Context) (string, error) 
 	return cfg.Token, nil
 }
 
-// gerarTokenAleatorio gera um token hex de tamanhoTokenBytes bytes via
-// crypto/rand (nunca math/rand -- token de autenticação).
+// gerarTokenAleatorio generates a hex token of tamanhoTokenBytes bytes through crypto/rand
+// (never math/rand -- an authentication token).
 func gerarTokenAleatorio() (string, error) {
 	b := make([]byte, tamanhoTokenBytes)
 	if _, err := rand.Read(b); err != nil {
@@ -70,11 +69,10 @@ func gerarTokenAleatorio() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// regenerateJellyfinWebhookToken trata POST /api/v1/webhooks/jellyfin/token
-// (briefing 0093): gera um token novo e SUBSTITUI o anterior (upsert em
-// app_settings) -- chamadas subsequentes ao webhook com o token antigo
-// deixam de funcionar. 200 com o token novo; 500 em erro real (geração ou
-// gravação).
+// regenerateJellyfinWebhookToken handles POST /api/v1/webhooks/jellyfin/token: it generates a
+// new token and REPLACES the previous one (upsert in app_settings) -- subsequent calls to the
+// webhook with the old token stop working. 200 with the new token; 500 on a real error
+// (generation or write).
 func (s *Server) regenerateJellyfinWebhookToken(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -101,9 +99,8 @@ func (s *Server) regenerateJellyfinWebhookToken(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, cfg)
 }
 
-// getJellyfinWebhookToken trata GET /api/v1/webhooks/jellyfin/token
-// (briefing 0093): devolve o token vigente. 404 se nenhum token foi gerado
-// ainda (o dono deve chamar POST primeiro).
+// getJellyfinWebhookToken handles GET /api/v1/webhooks/jellyfin/token: it returns the current
+// token. 404 if no token was generated yet (the owner must call POST first).
 func (s *Server) getJellyfinWebhookToken(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -121,14 +118,12 @@ func (s *Server) getJellyfinWebhookToken(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, jellyfinWebhookTokenSettings{Token: token})
 }
 
-// receiveJellyfinWebhook trata POST /api/v1/webhooks/jellyfin?token=
-// (briefing 0093): autentica por token (comparação em TEMPO CONSTANTE),
-// parseia o payload best-effort, casa o item por id externo e persiste um
-// historico_evento. SEMPRE 204 quando o token bate -- inclusive payload não
-// reconhecível/sem match/ItemType não suportado (para não fazer o Jellyfin
-// retentar, ver briefing 0093 §3/§6); 401 quando o token falta ou não bate.
-// Nunca 500 por causa do CORPO do payload (parse/match degradam para
-// "descartado e logado").
+// receiveJellyfinWebhook handles POST /api/v1/webhooks/jellyfin?token=: it authenticates by
+// token (CONSTANT-TIME comparison), parses the payload best-effort, matches the item by external
+// id and persists a historico_evento. ALWAYS 204 when the token matches -- including an
+// unrecognizable payload / no match / unsupported ItemType (so Jellyfin does not retry); 401 when
+// the token is missing or does not match. Never a 500 because of the payload BODY (parse/match
+// degrade to "discarded and logged").
 func (s *Server) receiveJellyfinWebhook(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -165,12 +160,11 @@ func (s *Server) receiveJellyfinWebhook(w http.ResponseWriter, r *http.Request) 
 
 	entityID, ok := s.casarEntityJellyfin(ctx, ev)
 	if !ok {
-		// Sem match (briefing 0099): NAO descarta mais -- grava um evento
-		// ORFAO (entity_id NULL) com os IDs/titulo/ano brutos do payload,
-		// para permitir backfill retroativo quando uma entity ganhar aquele
-		// id externo (import futuro, correcao/confirmacao de match). Erro na
-		// gravacao so loga -- mesmo espirito "nunca falha para o Jellyfin"
-		// do caminho com match logo abaixo.
+		// No match: it NO LONGER discards -- it writes an ORPHAN event (entity_id NULL) with the
+		// raw IDs/title/year of the payload, to allow a retroactive backfill when an entity
+		// gains that external id (future import, match correction/confirmation). A write error
+		// only logs -- the same "never fail for Jellyfin" spirit as the matching path right
+		// below.
 		if _, err := sqlcgen.New(s.db.Write).CriarHistoricoEventoOrfao(ctx, sqlcgen.CriarHistoricoEventoOrfaoParams{
 			ID:              uuid.NewString(),
 			Kind:            webhook.Kind,
@@ -208,19 +202,18 @@ func (s *Server) receiveJellyfinWebhook(w http.ResponseWriter, r *http.Request) 
 		PayloadJson:     sql.NullString{String: string(body), Valid: true},
 	})
 	if err != nil {
-		// Erro real de banco ao gravar: loga mas ainda responde 204 -- o
-		// Jellyfin não deve retentar por causa de uma falha interna nossa
-		// (o dono investiga pelo log; retry não resolveria).
+		// Real database error on write: it logs but still answers 204 -- Jellyfin must not retry
+		// because of an internal failure of ours (the owner investigates through the log; a retry
+		// would not help).
 		log.Printf("webhook jellyfin: falha ao gravar historico_evento (entity=%s): %v", entityID, err)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// autenticarJellyfinWebhook valida o `?token=` da query contra o configurado
-// em app_settings, já escrevendo a resposta de erro (401/500) quando falha.
-// Extraído do handler principal só pra manter a complexidade ciclomática
-// baixa (mesmo padrão de exigirEntity) — `false` significa "já respondido,
-// pare aqui".
+// autenticarJellyfinWebhook validates the query `?token=` against the one configured in
+// app_settings, already writing the error response (401/500) when it fails. Extracted from the
+// main handler only to keep the cyclomatic complexity low (the same pattern as exigirEntity) —
+// `false` means "already answered, stop here".
 func (s *Server) autenticarJellyfinWebhook(w http.ResponseWriter, r *http.Request) bool {
 	tokenEsperado, err := s.obterJellyfinWebhookToken(r.Context())
 	if err != nil {
@@ -239,9 +232,9 @@ func (s *Server) autenticarJellyfinWebhook(w http.ResponseWriter, r *http.Reques
 	return true
 }
 
-// tokenValido compara o token recebido com o esperado em TEMPO CONSTANTE
-// (crypto/subtle -- evita timing attack, mesmo sendo um endpoint de baixo
-// risco, briefing 0093 §4). "" nunca bate (evita comparar dois vazios).
+// tokenValido compares the received token with the expected one in CONSTANT TIME
+// (crypto/subtle -- it avoids a timing attack, even being a low-risk endpoint). "" never
+// matches (it avoids comparing two empty values).
 func tokenValido(recebido, esperado string) bool {
 	if recebido == "" || esperado == "" {
 		return false
@@ -249,11 +242,10 @@ func tokenValido(recebido, esperado string) bool {
 	return subtle.ConstantTimeCompare([]byte(recebido), []byte(esperado)) == 1
 }
 
-// casarEntityJellyfin tenta casar o item do Jellyfin com uma entity
-// catalogada pelos ids externos presentes no payload, na ordem
-// tmdb -> imdb -> tvdb (briefing 0093 §3), parando no primeiro que bater.
-// Devolve (id, false) sem nenhum id presente ou nenhum bater -- nunca cria
-// entity nova a partir de um webhook.
+// casarEntityJellyfin tries to match the Jellyfin item with a cataloged entity through the
+// external ids present in the payload, in the order tmdb -> imdb -> tvdb, stopping at the first
+// one that matches. It returns (id, false) with no id present or none matching -- it never
+// creates a new entity from a webhook.
 func (s *Server) casarEntityJellyfin(ctx context.Context, ev webhook.Evento) (string, bool) {
 	if ev.TmdbID != "" {
 		if ent, err := s.leitura().ObterEntityPorTmdb(ctx, sql.NullString{String: ev.TmdbID, Valid: true}); err == nil {

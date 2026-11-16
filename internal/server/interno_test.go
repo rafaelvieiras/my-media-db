@@ -10,12 +10,12 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
 
-// Testes da resolução externo→interno (briefing 0026): os helpers idInternoItem/
-// idInternoColecao e a exposição do internal_id nos DTOs externos (página da coleção
-// e banda de coleção do detalhe externo/entity).
+// Tests of the external→internal resolution: the helpers idInternoItem/
+// idInternoColecao and the exposure of internal_id in the external DTOs (collection page
+// and collection band of the external detail/entity).
 
-// semearColecaoTmdb cria uma entity type='collection' com o external_id tmdb dado,
-// para os lookups de dedup a acharem (ObterColecaoPorTmdb).
+// semearColecaoTmdb creates a type='collection' entity with the given tmdb external_id,
+// so the dedup lookups find it (ObterColecaoPorTmdb).
 func semearColecaoTmdb(t *testing.T, d *db.DB, id, tmdbID, titulo string) {
 	t.Helper()
 	_, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
@@ -29,7 +29,8 @@ func semearColecaoTmdb(t *testing.T, d *db.DB, id, tmdbID, titulo string) {
 	}
 }
 
-// semearFilmeTmdb cria uma entity movie com o external_id tmdb dado (ObterEntityPorTmdb).
+// semearFilmeTmdb creates a movie entity with the given tmdb external_id
+// (ObterEntityPorTmdb).
 func semearFilmeTmdb(t *testing.T, d *db.DB, id, tmdbID, titulo string) {
 	t.Helper()
 	_, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
@@ -43,9 +44,9 @@ func semearFilmeTmdb(t *testing.T, d *db.DB, id, tmdbID, titulo string) {
 	}
 }
 
-// semearSerieTmdb cria uma entity type='tv' com o external_id tmdb dado, para o
-// interno-first dos similares de série (0045) casar por id tmdb (ObterEntityPorTmdb
-// não restringe por tipo — série casa como filme casa).
+// semearSerieTmdb creates a type='tv' entity with the given tmdb external_id, so the
+// interno-first of the series similar items matches by tmdb id (ObterEntityPorTmdb
+// does not restrict by type — a series matches like a movie does).
 func semearSerieTmdb(t *testing.T, d *db.DB, id, tmdbID, titulo string) {
 	t.Helper()
 	_, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
@@ -59,11 +60,11 @@ func semearSerieTmdb(t *testing.T, d *db.DB, id, tmdbID, titulo string) {
 	}
 }
 
-// TestSerieSimilarInternalId: os SIMILARES de uma SÉRIE (0045) ganham internal_id
-// quando o similar (id tmdb, vindo da rota C do TMDB) já está na biblioteca — o mesmo
-// pós-processo interno-first (anotarInternos) que já serve filme/coleção casa série,
-// pois idInternoItem resolve por id tmdb independentemente do tipo. Similar não
-// importado fica nil.
+// TestSerieSimilarInternalId: the SIMILAR ITEMS of a SERIES gain internal_id
+// when the similar item (tmdb id, coming from TMDB route C) is already in the library —
+// the same interno-first post-process (anotarInternos) that already serves
+// movie/collection matches a series, because idInternoItem resolves by tmdb id regardless
+// of the type. A similar item that was not imported stays nil.
 func TestSerieSimilarInternalId(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	semearSerieTmdb(t, d, "serie-1399", "1399", "A Guerra dos Tronos")
@@ -86,9 +87,9 @@ func TestSerieSimilarInternalId(t *testing.T) {
 	}
 }
 
-// TestIdInternoResolveExterno: idInternoItem/idInternoColecao acham a entity existente
-// (por id tmdb), devolvem nil para id inexistente e nil para fonte != tmdb (só o tmdb
-// deduplica hoje).
+// TestIdInternoResolveExterno: idInternoItem/idInternoColecao find the existing entity
+// (by tmdb id), return nil for a nonexistent id and nil for a source != tmdb (only tmdb
+// deduplicates today).
 func TestIdInternoResolveExterno(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	semearFilmeTmdb(t, d, "ent-603", "603", "Matrix")
@@ -111,18 +112,20 @@ func TestIdInternoResolveExterno(t *testing.T) {
 	if got := s.idInternoColecao(ctx, "tmdb", "999"); got != nil {
 		t.Errorf("idInternoColecao(tmdb,999) = %v, quero nil", got)
 	}
-	// Um filme (603) NÃO deve casar como coleção (a query é restrita a type='collection').
+	// A movie (603) must NOT match as a collection (the query is restricted to
+	// type='collection').
 	if got := s.idInternoColecao(ctx, "tmdb", "603"); got != nil {
 		t.Errorf("idInternoColecao(tmdb,603) = %v, quero nil (603 e filme, nao colecao)", got)
 	}
 }
 
-// TestExternalCollectionInternalId: a página da coleção externa anota o internal_id da
-// coleção e das partes JÁ importadas; parte não importada fica com internal_id nil.
+// TestExternalCollectionInternalId: the external collection page annotates the internal_id
+// of the collection and of the ALREADY imported parts; a part that was not imported stays
+// with internal_id nil.
 func TestExternalCollectionInternalId(t *testing.T) {
 	h, d := setupColecaoServer(t)
 	semearColecaoTmdb(t, d, "col-int", "2344", "Colecao Matrix")
-	semearFilmeTmdb(t, d, "filme-603", "603", "Matrix") // parte 603 importada; 604 nao
+	semearFilmeTmdb(t, d, "filme-603", "603", "Matrix") // part 603 imported; 604 not
 	dto := obterColecao(t, h)
 
 	if dto.InternalID == nil || *dto.InternalID != "col-int" {
@@ -140,8 +143,9 @@ func TestExternalCollectionInternalId(t *testing.T) {
 	}
 }
 
-// TestExternalCollectionInternalIdNulaSemImport: sem nada importado, todos os
-// internal_id (coleção e partes) saem nil — não há centralização a fazer.
+// TestExternalCollectionInternalIdNulaSemImport: with nothing imported, all the
+// internal_ids (collection and parts) come out nil — there is no centralization to
+// do.
 func TestExternalCollectionInternalIdNulaSemImport(t *testing.T) {
 	dto := obterColecao(t, mustFirst(setupColecaoServer(t)))
 	if dto.InternalID != nil {
@@ -154,8 +158,9 @@ func TestExternalCollectionInternalIdNulaSemImport(t *testing.T) {
 	}
 }
 
-// TestExternalDetailBandInternalId: a banda de coleção do detalhe EXTERNO (movie 603,
-// que pertence à coleção 2344) traz o internal_id quando a coleção já é entity.
+// TestExternalDetailBandInternalId: the collection band of the EXTERNAL detail (movie 603,
+// which belongs to collection 2344) brings the internal_id when the collection is already
+// an entity.
 func TestExternalDetailBandInternalId(t *testing.T) {
 	h, d := setupExternalServer(t, nil)
 	semearColecaoTmdb(t, d, "col-band", "2344", "Colecao Matrix")

@@ -1,9 +1,9 @@
 package enrich
 
-// serie_reenrich_test.go cobre o briefing 0043: re-importar uma série já no catálogo
-// ATUALIZA a base das temporadas e episódios existentes (numbering/still_url, título,
-// sinopse, data, external_ids) — antes o reuse retornava cedo sem reescrever — SEM tocar
-// status/tags nem o media_override do dono, e sem re-baixar pôster de temporada já presente.
+// serie_reenrich_test.go covers the re-enrichment of a series: re-importing a series that is already
+// in the catalog UPDATES the base of the existing seasons and episodes (numbering/still_url, title,
+// synopsis, date, external_ids) — before, the reuse returned early without rewriting — WITHOUT touching
+// status/tags nor the owner's media_override, and without re-downloading a season poster already present.
 
 import (
 	"context"
@@ -18,10 +18,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
-// TestReimportarSerieAtualizaEpisodioBase (0043): um episódio importado ANTES do 0042
-// (sem still_url no extension_data e com título/sinopse/data/ids defasados) passa a
-// refletir os dados atuais do provider no re-import — em especial o still_url e o
-// numbering, que só o create gravava.
+// TestReimportarSerieAtualizaEpisodioBase: an episode imported BEFORE the still_url support
+// (with no still_url in the extension_data and with a stale title/synopsis/date/ids) starts to
+// reflect the current provider data on re-import — in particular the still_url and the
+// numbering, which only the create used to write.
 func TestReimportarSerieAtualizaEpisodioBase(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
@@ -32,7 +32,7 @@ func TestReimportarSerieAtualizaEpisodioBase(t *testing.T) {
 	r := sqlcgen.New(database.Read)
 	epID := idPorTmdb(t, r, "103")
 
-	// Simula o estado "pre-0042": base defasada e extension_data SEM still_url/numbering.
+	// Simulates the "pre still_url" state: stale base and extension_data WITHOUT still_url/numbering.
 	w := sqlcgen.New(database.Write)
 	if err := w.AtualizarEpisodioBase(ctx, sqlcgen.AtualizarEpisodioBaseParams{
 		Title:             "TITULO VELHO",
@@ -52,9 +52,9 @@ func TestReimportarSerieAtualizaEpisodioBase(t *testing.T) {
 	exigirEpisodio103Refrescado(t, r, epID)
 }
 
-// exigirEpisodio103Refrescado confere que a base do ep103 reflete os dados atuais do
-// provider apos o re-import: titulo/sinopse/data/ids e o extension_data (still_url +
-// numbering) que so o create gravava.
+// exigirEpisodio103Refrescado checks that the base of ep103 reflects the current provider data
+// after the re-import: title/synopsis/date/ids and the extension_data (still_url +
+// numbering) that only the create used to write.
 func exigirEpisodio103Refrescado(t *testing.T, r *sqlcgen.Queries, epID string) {
 	t.Helper()
 	ep, err := r.ObterEntity(context.Background(), epID)
@@ -82,8 +82,8 @@ func exigirEpisodio103Refrescado(t *testing.T, r *sqlcgen.Queries, epID string) 
 	}
 }
 
-// TestReimportarSerieAtualizaTemporadaBase (0043): uma temporada com base defasada volta
-// a refletir título/ano/extension_data do provider no re-import.
+// TestReimportarSerieAtualizaTemporadaBase: a season with a stale base goes back to
+// reflecting the title/year/extension_data of the provider on re-import.
 func TestReimportarSerieAtualizaTemporadaBase(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
@@ -125,11 +125,11 @@ func TestReimportarSerieAtualizaTemporadaBase(t *testing.T) {
 	}
 }
 
-// TestReimportarPreservaOverride (0043): o re-import refresca a BASE (a resolução aplica
-// override ⟵ externo ⟵ arquivo), mas NUNCA toca media_override. Aqui o dono grava um
-// override; após o re-import a linha de override permanece byte-idêntica enquanto a base
-// muda — provando que a base pode ser reescrita com segurança (o override segue vencendo
-// na resolução; a precedência em si é coberta pelo resolver_test).
+// TestReimportarPreservaOverride: the re-import refreshes the BASE (the resolution applies
+// override ⟵ external ⟵ file), but it NEVER touches media_override. Here the owner writes an
+// override; after the re-import the override row stays byte-identical while the base
+// changes — proving that the base can be rewritten safely (the override still wins
+// in the resolution; the precedence itself is covered by resolver_test).
 func TestReimportarPreservaOverride(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
@@ -148,7 +148,7 @@ func TestReimportarPreservaOverride(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("UpsertMediaOverride: %v", err)
 	}
-	// Defasa a base para garantir que o re-import de fato reescreve.
+	// Ages the base to guarantee that the re-import really rewrites.
 	if err := w.AtualizarEpisodioBase(ctx, sqlcgen.AtualizarEpisodioBaseParams{
 		Title: "TITULO VELHO", Description: nsOrNull(""), ReleaseDate: nsOrNull(""),
 		ExternalIdsJson: nsValid(`{"tmdb":"103"}`), ExtensionDataJson: nsValid("{}"), ID: epID,
@@ -172,8 +172,8 @@ func TestReimportarPreservaOverride(t *testing.T) {
 	}
 }
 
-// TestReimportarNaoAlteraStatusTags (0043): o re-import escreve só os campos de fonte;
-// status e tags (curadoria do dono, fora das queries de refresh) ficam intocados.
+// TestReimportarNaoAlteraStatusTags: the re-import writes only the source fields;
+// status and tags (curation by the owner, outside the refresh queries) stay untouched.
 func TestReimportarNaoAlteraStatusTags(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
@@ -184,7 +184,7 @@ func TestReimportarNaoAlteraStatusTags(t *testing.T) {
 	r := sqlcgen.New(database.Read)
 	epID := idPorTmdb(t, r, "103")
 
-	// Curadoria do dono direto na linha (fora das queries de fonte).
+	// Curation by the owner directly on the row (outside the source queries).
 	const status, tags = "wanted", `["favorito"]`
 	if _, err := database.Write.ExecContext(ctx,
 		"UPDATE entity SET status = ?, tags_json = ? WHERE id = ?", status, tags, epID); err != nil {
@@ -207,8 +207,8 @@ func TestReimportarNaoAlteraStatusTags(t *testing.T) {
 	}
 }
 
-// TestReimportarPosterTemporadaSoSeAusente (0043): o pôster de temporada é baixado no 1o
-// import; no re-import, já presente, NÃO é re-baixado (só-se-ausente) — idempotência barata.
+// TestReimportarPosterTemporadaSoSeAusente: the season poster is downloaded on the 1st
+// import; on the re-import, being already present, it is NOT re-downloaded (only-if-absent) — cheap idempotence.
 func TestReimportarPosterTemporadaSoSeAusente(t *testing.T) {
 	ctx := context.Background()
 	database := setupDB(t)
@@ -231,7 +231,7 @@ func TestReimportarPosterTemporadaSoSeAusente(t *testing.T) {
 	}
 }
 
-// idPorTmdb resolve o id interno de uma entity pelo seu id externo tmdb.
+// idPorTmdb resolves the internal id of an entity through its tmdb external id.
 func idPorTmdb(t *testing.T, r *sqlcgen.Queries, tmdbID string) string {
 	t.Helper()
 	ent, err := r.ObterEntityPorTmdb(context.Background(), nsValid(tmdbID))
@@ -241,7 +241,7 @@ func idPorTmdb(t *testing.T, r *sqlcgen.Queries, tmdbID string) string {
 	return ent.ID
 }
 
-// contadorHits conta as requisições de imagem por categoria de caminho.
+// contadorHits counts the image requests per path category.
 type contadorHits struct {
 	mu     sync.Mutex
 	season int
@@ -253,8 +253,8 @@ func (c *contadorHits) paraSeason() int {
 	return c.season
 }
 
-// servidorImagemContado serve PNGs fake e conta os GETs de pôster de temporada
-// (/season-*.png), para provar o só-se-ausente sem depender do pôster do nó série.
+// servidorImagemContado serves fake PNGs and counts the GETs of the season poster
+// (/season-*.png), to prove the only-if-absent behaviour without depending on the poster of the series node.
 func servidorImagemContado(t *testing.T) (*httptest.Server, *contadorHits) {
 	t.Helper()
 	hits := &contadorHits{}

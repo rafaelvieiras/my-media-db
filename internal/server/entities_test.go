@@ -14,9 +14,9 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 )
 
-// setupEntitiesServer sobe um Server com banco temporário migrado e devolve o
-// handler raiz E o *db.DB, para os testes semearem dados direto pelas queries
-// sqlc (pela conexão de escrita) e exercitarem as rotas de leitura.
+// setupEntitiesServer starts a Server with a migrated temporary database and returns the
+// root handler AND the *db.DB, so the tests can seed data straight through the sqlc
+// queries (via the write connection) and exercise the read routes.
 func setupEntitiesServer(t *testing.T) (http.Handler, *db.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "entities.sqlite")
@@ -26,7 +26,7 @@ func setupEntitiesServer(t *testing.T) (http.Handler, *db.DB) {
 	}
 	t.Cleanup(func() {
 		if err := database.Close(); err != nil {
-			// Close pode já ter sido fechado por um teste específico; ignora.
+			// Close may already have been called by a specific test; ignore it.
 			_ = err
 		}
 	})
@@ -40,16 +40,16 @@ func setupEntitiesServer(t *testing.T) (http.Handler, *db.DB) {
 	return h, database
 }
 
-// escrita devolve os Queries no pool de ESCRITA para semear os testes.
+// escrita returns the Queries on the WRITE pool, to seed the tests.
 func escrita(t *testing.T, d *db.DB) *sqlcgen.Queries {
 	t.Helper()
 	return sqlcgen.New(d.Write)
 }
 
-// nsOf embrulha uma string num sql.NullString válido.
+// nsOf wraps a string in a valid sql.NullString.
 func nsOf(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }
 
-// semearEntity cria uma entity mínima e devolve seu id.
+// semearEntity creates a minimal entity and returns its id.
 func semearEntity(t *testing.T, d *db.DB, id, tipo, titulo string) string {
 	t.Helper()
 	_, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
@@ -63,7 +63,7 @@ func semearEntity(t *testing.T, d *db.DB, id, tipo, titulo string) string {
 	return id
 }
 
-// semearFile cria um media_file para a entity com o state e a confiança dados.
+// semearFile creates a media_file for the entity with the given state and confidence.
 func semearFile(t *testing.T, d *db.DB, id, entityID, path, state string, conf float64, mediainfo string) {
 	t.Helper()
 	p := sqlcgen.CriarMediaFileParams{
@@ -81,7 +81,7 @@ func semearFile(t *testing.T, d *db.DB, id, entityID, path, state string, conf f
 	}
 }
 
-// semearAsset cria um asset (ex.: poster) para a entity.
+// semearAsset creates an asset (e.g. poster) for the entity.
 func semearAsset(t *testing.T, d *db.DB, id, entityID, kind, path string) {
 	t.Helper()
 	_, err := escrita(t, d).CriarAsset(context.Background(), sqlcgen.CriarAssetParams{
@@ -96,7 +96,7 @@ func semearAsset(t *testing.T, d *db.DB, id, entityID, kind, path string) {
 	}
 }
 
-// semearSource cria um library_source apontando para path.
+// semearSource creates a library_source pointing at path.
 func semearSource(t *testing.T, d *db.DB, id, path string) {
 	t.Helper()
 	_, err := escrita(t, d).CriarLibrarySource(context.Background(), sqlcgen.CriarLibrarySourceParams{
@@ -109,10 +109,10 @@ func semearSource(t *testing.T, d *db.DB, id, path string) {
 	}
 }
 
-// definirCreatedAt sobrescreve created_at direto no banco (CriarEntity nasce
-// sempre com o timestamp do DEFAULT, sem parâmetro dedicado) -- usado pelos
-// testes de sort=-created_at (0109/0110) para garantir uma ordem
-// determinística entre entities criadas na mesma janela de milissegundos.
+// definirCreatedAt overwrites created_at straight in the database (CriarEntity is always
+// born with the DEFAULT timestamp, with no dedicated parameter) -- used by the
+// sort=-created_at tests to guarantee a deterministic order between entities created
+// within the same millisecond window.
 func definirCreatedAt(t *testing.T, d *db.DB, id, createdAt string) {
 	t.Helper()
 	if _, err := d.Write.ExecContext(context.Background(),
@@ -121,7 +121,7 @@ func definirCreatedAt(t *testing.T, d *db.DB, id, createdAt string) {
 	}
 }
 
-// decodeList decodifica a resposta paginada de GET /api/v1/entities.
+// decodeList decodes the paged response of GET /api/v1/entities.
 func decodeList(t *testing.T, body []byte) entityListDTO {
 	t.Helper()
 	var out entityListDTO
@@ -131,8 +131,8 @@ func decodeList(t *testing.T, body []byte) entityListDTO {
 	return out
 }
 
-// eq compara valores comparáveis; mantém as funções de teste lineares (baixa
-// complexidade ciclomática) ao tirar cada asserção do corpo do teste.
+// eq compares comparable values; it keeps the test functions linear (low cyclomatic
+// complexity) by moving each assertion out of the test body.
 func eq[T comparable](t *testing.T, name string, got, want T) {
 	t.Helper()
 	if got != want {
@@ -140,7 +140,7 @@ func eq[T comparable](t *testing.T, name string, got, want T) {
 	}
 }
 
-// eqPtr compara um ponteiro com um valor esperado (nil falha).
+// eqPtr compares a pointer with an expected value (nil fails).
 func eqPtr[T comparable](t *testing.T, name string, got *T, want T) {
 	t.Helper()
 	if got == nil {
@@ -153,14 +153,14 @@ func eqPtr[T comparable](t *testing.T, name string, got *T, want T) {
 func TestListEntitiesPosseEContagem(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 
-	// A: filme com 2 arquivos, um present -> owned, file_count=2.
+	// A: movie with 2 files, one present -> owned, file_count=2.
 	semearEntity(t, d, "a", "movie", "Alfa")
 	semearFile(t, d, "a1", "a", "/lib/a1.mkv", "present", 0.9, "")
 	semearFile(t, d, "a2", "a", "/lib/a2.mkv", "missing", 0.5, "")
-	// B: filme com 1 arquivo missing -> NÃO owned, file_count=1.
+	// B: movie with 1 missing file -> NOT owned, file_count=1.
 	semearEntity(t, d, "b", "movie", "Beta")
 	semearFile(t, d, "b1", "b", "/lib/b1.mkv", "missing", 0.3, "")
-	// C: série sem arquivos -> NÃO owned, file_count=0.
+	// C: series with no files -> NOT owned, file_count=0.
 	semearEntity(t, d, "c", "tv", "Gama")
 
 	rec := do(t, h, http.MethodGet, "/api/v1/entities", nil)
@@ -181,7 +181,7 @@ func TestListEntitiesPosseEContagem(t *testing.T) {
 	eq(t, "B.file_count", byID["b"].FileCount, 1)
 	eq(t, "C.owned", byID["c"].Owned, false)
 	eq(t, "C.file_count", byID["c"].FileCount, 0)
-	// match_confidence = MAX das confianças de A (0.9).
+	// match_confidence = MAX of the confidences of A (0.9).
 	eqPtr(t, "A.match_confidence", byID["a"].MatchConfidence, 0.9)
 }
 
@@ -223,15 +223,15 @@ func TestListEntitiesFiltroOwned(t *testing.T) {
 	}
 }
 
-// TestListEntitiesOwnedViaArvore (briefing 0116): `owned` de um artista/album de música
-// SEMPRE seria false num check direto (só a faixa liga a media_file, ADR-0027) -- essa
-// checagem estrita deixava o carrossel "adicionados recentemente" de artista sempre vazio
-// e a "Posse" de /library/artists sempre zerada, mesmo com faixas realmente possuídas.
-// Monta a arvore artista->album->faixa via entity_relation (mesmo shape que
-// enrich.ImportarFaixaPossuida grava) com um media_file present só na FAIXA, e exige que
-// tanto o artista quanto o álbum apareçam como owned=true (rollup pela árvore), e que o
-// filtro `owned=true` os traga de volta. Um segundo artista SEM nenhuma faixa possuída
-// prova que o rollup não é sempre true (owned=false continua funcionando).
+// TestListEntitiesOwnedViaArvore: the `owned` of a music artist/album would ALWAYS be
+// false in a direct check (only the track links to the media_file, ADR-0027) -- that
+// strict check left the artist "recently added" carousel always empty and the
+// "Ownership" of /library/artists always zeroed, even with tracks really owned. It
+// builds the artist->album->track tree through entity_relation (the same shape
+// enrich.ImportarFaixaPossuida writes) with a present media_file only on the TRACK, and
+// requires that both the artist and the album show up as owned=true (rollup through the
+// tree), and that the `owned=true` filter brings them back. A second artist WITHOUT any
+// owned track proves that the rollup is not always true (owned=false keeps working).
 func TestListEntitiesOwnedViaArvore(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "art1", "artista", "Duran Duran")
@@ -275,9 +275,9 @@ func TestListEntitiesOwnedViaArvore(t *testing.T) {
 		t.Fatalf("type=artista&owned=true: total=%d, quero só art1", outFiltro.Total)
 	}
 
-	// sort=-created_at&owned=true é EXATAMENTE a query do carrossel "adicionados
-	// recentemente" da home (RecentlyAddedRail) -- sem o rollup pela árvore, o
-	// carrossel de artista fica sempre vazio mesmo com faixas possuídas.
+	// sort=-created_at&owned=true is EXACTLY the query of the home "recently added"
+	// carousel (RecentlyAddedRail) -- without the rollup through the tree, the artist
+	// carousel stays always empty even with owned tracks.
 	recRail := do(t, h, http.MethodGet, "/api/v1/entities?type=artista&owned=true&sort=-created_at&limit=10", nil)
 	outRail := decodeList(t, recRail.Body.Bytes())
 	if outRail.Total != 1 || outRail.Items[0].ID != "art1" {
@@ -285,12 +285,12 @@ func TestListEntitiesOwnedViaArvore(t *testing.T) {
 	}
 }
 
-// TestGetEntityOwnedViaArvore cobre o MESMO bug de TestListEntitiesOwnedViaArvore, mas no
-// DETALHE ÚNICO (GET /api/v1/entities/{id}), que usa um caminho de cálculo SEPARADO das
-// listagens (resolver.Entidade.Owned via listarFilesDaEntity/temPosse -- só olha
-// media_file.entity_id DIRETO, nunca desce a árvore de entity_relation). Sem
-// completarOwnedViaArvore (briefing 0116, entities.go), artista/album de música sempre
-// mostravam owned=false no detalhe único mesmo já corrigido nas listagens.
+// TestGetEntityOwnedViaArvore covers the SAME bug of TestListEntitiesOwnedViaArvore, but
+// on the SINGLE DETAIL (GET /api/v1/entities/{id}), which uses a computation path
+// SEPARATE from the listings (resolver.Entidade.Owned via listarFilesDaEntity/temPosse --
+// it only looks at media_file.entity_id DIRECTLY, never descends the entity_relation
+// tree). Without completarOwnedViaArvore (entities.go), a music artist/album always
+// showed owned=false on the single detail even after the listings were fixed.
 func TestGetEntityOwnedViaArvore(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "art1", "artista", "Duran Duran")
@@ -330,12 +330,12 @@ func TestGetEntityOwnedViaArvore(t *testing.T) {
 
 func TestListEntitiesPaginacaoEOrdenacao(t *testing.T) {
 	h, d := setupEntitiesServer(t)
-	// Títulos fora de ordem para provar a ordenação por título.
+	// Titles out of order, to prove the ordering by title.
 	semearEntity(t, d, "id-c", "movie", "Charlie")
 	semearEntity(t, d, "id-a", "movie", "Alfa")
 	semearEntity(t, d, "id-b", "movie", "Bravo")
 
-	// Ascendente, página 1 (limit=2): Alfa, Bravo.
+	// Ascending, page 1 (limit=2): Alfa, Bravo.
 	rec := do(t, h, http.MethodGet, "/api/v1/entities?sort=title&limit=2&offset=0", nil)
 	out := decodeList(t, rec.Body.Bytes())
 	if out.Total != 3 || len(out.Items) != 2 {
@@ -344,13 +344,13 @@ func TestListEntitiesPaginacaoEOrdenacao(t *testing.T) {
 	if out.Items[0].Title != "Alfa" || out.Items[1].Title != "Bravo" {
 		t.Errorf("asc pg1 = [%s,%s], quero [Alfa,Bravo]", out.Items[0].Title, out.Items[1].Title)
 	}
-	// Ascendente, página 2 (offset=2): Charlie.
+	// Ascending, page 2 (offset=2): Charlie.
 	rec2 := do(t, h, http.MethodGet, "/api/v1/entities?sort=title&limit=2&offset=2", nil)
 	out2 := decodeList(t, rec2.Body.Bytes())
 	if len(out2.Items) != 1 || out2.Items[0].Title != "Charlie" {
 		t.Fatalf("asc pg2 = %+v, quero [Charlie]", out2.Items)
 	}
-	// Descendente: Charlie, Bravo, Alfa.
+	// Descending: Charlie, Bravo, Alfa.
 	recD := do(t, h, http.MethodGet, "/api/v1/entities?sort=-title", nil)
 	outD := decodeList(t, recD.Body.Bytes())
 	if len(outD.Items) != 3 || outD.Items[0].Title != "Charlie" || outD.Items[2].Title != "Alfa" {
@@ -369,11 +369,10 @@ func TestListEntitiesQueryInvalida(t *testing.T) {
 	}
 }
 
-// TestListEntitiesSortCreatedAtDesc cobre sort=-created_at (briefing 0109): a
-// home usa esta ordem para o carrossel "adicionados recentemente". A ordem de
-// CRIAÇÃO na semeadura é deliberadamente diferente da ordem de created_at
-// forçada abaixo, para provar que a ordenação é por created_at e não por
-// ordem de inserção/id.
+// TestListEntitiesSortCreatedAtDesc covers sort=-created_at: the home uses this order for
+// the "recently added" carousel. The CREATION order at seeding is deliberately different
+// from the created_at order forced below, to prove that the ordering is by created_at and
+// not by insertion order/id.
 func TestListEntitiesSortCreatedAtDesc(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "id-x", "movie", "Xeque")
@@ -392,14 +391,14 @@ func TestListEntitiesSortCreatedAtDesc(t *testing.T) {
 		t.Fatalf("items = %d, quero 3", len(out.Items))
 	}
 	gotIDs := []string{out.Items[0].ID, out.Items[1].ID, out.Items[2].ID}
-	wantIDs := []string{"id-y", "id-z", "id-x"} // mar > fev > jan
+	wantIDs := []string{"id-y", "id-z", "id-x"} // mar > feb > jan
 	for i := range wantIDs {
 		if gotIDs[i] != wantIDs[i] {
 			t.Fatalf("ordem = %v, quero %v", gotIDs, wantIDs)
 		}
 	}
 
-	// limit pequeno (uso real do carrossel): só os 2 mais recentes.
+	// Small limit (the carousel's real use): only the 2 most recent ones.
 	recLim := do(t, h, http.MethodGet, "/api/v1/entities?sort=-created_at&limit=2", nil)
 	outLim := decodeList(t, recLim.Body.Bytes())
 	if len(outLim.Items) != 2 || outLim.Items[0].ID != "id-y" || outLim.Items[1].ID != "id-z" {
@@ -407,13 +406,12 @@ func TestListEntitiesSortCreatedAtDesc(t *testing.T) {
 	}
 }
 
-// TestListEntityTypes cobre GET /entities/types (briefings 0109/0110/0112):
-// tipos DE TOPO distintos catalogados (status != 'draft') com a contagem
-// certa -- sem lista fixa hardcoded no frontend. Um item 'wanted' conta
-// (catalogado, ainda que sem arquivo); um item 'draft' NÃO conta. album/
-// faixa são SUB-NÓS (tiposSubNo, ADR-0030/0112) e NUNCA aparecem, mesmo
-// catalogados -- regressão do achado em produção (nenhuma das duas exclusões
-// hardcoded antigas cobria música).
+// TestListEntityTypes covers GET /entities/types: distinct TOP-LEVEL types in the
+// catalog (status != 'draft') with the right count -- with no list hardcoded in the
+// frontend. A 'wanted' item counts (cataloged, even without a file); a 'draft' item does
+// NOT count. album/track are SUB-NODES (tiposSubNo, ADR-0030) and NEVER show up, even
+// when cataloged -- a regression of the finding in production (neither of the two old
+// hardcoded exclusions covered music).
 func TestListEntityTypes(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "m1", "movie", "M1")
@@ -452,11 +450,11 @@ func TestListEntityTypes(t *testing.T) {
 	}
 }
 
-// TestListEntityTypesNaoColideComGetPorId garante que a rota estática
-// /entities/types não é capturada pelo wildcard /entities/{id} (briefing
-// 0109/0110): sem uma entity literal de id "types" no banco, o handler de
-// tipos responde 200 com a lista -- se a colisão existisse, cairia no
-// getEntity e devolveria 404 "entidade não encontrada".
+// TestListEntityTypesNaoColideComGetPorId ensures that the static route
+// /entities/types is not captured by the /entities/{id} wildcard: without a literal
+// entity with id "types" in the database, the types handler answers 200 with the list --
+// if the collision existed, it would fall into getEntity and return 404 "entidade não
+// encontrada".
 func TestListEntityTypesNaoColideComGetPorId(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "m1", "movie", "M1")
@@ -473,9 +471,9 @@ func TestListEntityTypesNaoColideComGetPorId(t *testing.T) {
 		t.Fatalf("out = %+v, quero [{movie 1}]", out)
 	}
 
-	// Um id literal "types" nunca existiu -- GET /entities/{id} normal para um
-	// id qualquer que não seja "types" segue 404, provando que a rota estática
-	// não "roubou" o wildcard para outros ids.
+	// A literal id "types" never existed -- a regular GET /entities/{id} for any id
+	// other than "types" still answers 404, proving that the static route did not
+	// "steal" the wildcard for other ids.
 	rec404 := do(t, h, http.MethodGet, "/api/v1/entities/inexistente", nil)
 	if rec404.Code != http.StatusNotFound {
 		t.Errorf("GET /entities/inexistente: status = %d, quero 404", rec404.Code)
@@ -484,7 +482,7 @@ func TestListEntityTypesNaoColideComGetPorId(t *testing.T) {
 
 func TestGetEntityResolvido(t *testing.T) {
 	h, d := setupEntitiesServer(t)
-	// Entity com títulos, tags e external_ids, um arquivo present e um poster.
+	// Entity with titles, tags and external_ids, one present file and one poster.
 	_, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
 		ID:              "x",
 		Type:            "movie",
@@ -520,10 +518,10 @@ func TestGetEntityResolvido(t *testing.T) {
 	eqPtr(t, "poster_url", ent.PosterURL, "/api/v1/entities/x/assets/poster")
 }
 
-// TestGetEntityOverrideComposto cobre a fiação ponta a ponta do override no
-// handler: grava uma linha em media_override (via UPSERT do 0012) e confere que
-// GET /{id} reflete o valor composto — título sobreposto — e que extension_data
-// aparece como objeto composto.
+// TestGetEntityOverrideComposto covers the end-to-end wiring of the override in the
+// handler: it writes a row into media_override (through the UPSERT) and checks that
+// GET /{id} reflects the composed value — the overridden title — and that extension_data
+// shows up as a composed object.
 func TestGetEntityOverrideComposto(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	_, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
@@ -536,7 +534,7 @@ func TestGetEntityOverrideComposto(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CriarEntity: %v", err)
 	}
-	// Patch do dono: sobrepõe o título, remove a tag "a" e ajusta o bpm.
+	// Owner's patch: overrides the title, removes the tag "a" and adjusts the bpm.
 	_, err = escrita(t, d).UpsertMediaOverride(context.Background(), sqlcgen.UpsertMediaOverrideParams{
 		EntityID:     "x",
 		OverrideJson: nsOf(`{"title":"Título do Dono","tags":{"remove":["a"]},"extension_data":{"music_video":{"bpm":128}}}`),
@@ -554,7 +552,7 @@ func TestGetEntityOverrideComposto(t *testing.T) {
 		t.Fatalf("decodificar Entidade: %v (corpo=%s)", err, rec.Body.String())
 	}
 	eq(t, "title", ent.Title, "Título do Dono")
-	// tags: base [a,b], remove a → [b].
+	// tags: base [a,b], removing a → [b].
 	if len(ent.Tags) != 1 || ent.Tags[0] != "b" {
 		t.Errorf("tags = %v, quero [b]", ent.Tags)
 	}
@@ -567,8 +565,8 @@ func TestGetEntityOverrideComposto(t *testing.T) {
 	}
 }
 
-// TestGetEntitySemOverrideExtensionDataVazio garante que, sem override, o shape
-// resolvido traz extension_data como objeto (nunca null).
+// TestGetEntitySemOverrideExtensionDataVazio ensures that, without an override, the
+// resolved shape brings extension_data as an object (never null).
 func TestGetEntitySemOverrideExtensionDataVazio(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e", "movie", "Filme")
@@ -601,7 +599,7 @@ func TestGetEntityFiles(t *testing.T) {
 	mi := `{"general":{"format":"matroska","duration_seconds":120.5,"size_bytes":1024,"bitrate":800},` +
 		`"video":[{"codec":"hevc","width":3840,"height":2160,"hdr":"HDR10"}],` +
 		`"audio":[{"codec":"eac3","channels":6,"language":"por"}]}`
-	// Arquivo com edition/part_no e mediainfo.
+	// File with edition/part_no and mediainfo.
 	_, err := escrita(t, d).CriarMediaFile(context.Background(), sqlcgen.CriarMediaFileParams{
 		ID:            "f1",
 		EntityID:      "e",
@@ -631,7 +629,7 @@ func TestGetEntityFiles(t *testing.T) {
 	eqPtr(t, "edition", f.Edition, "Director's Cut")
 	eqPtr(t, "part_no", f.PartNo, int64(1))
 	eqPtr(t, "size", f.Size, int64(1024))
-	// Mediainfo repassado: precisa conter os fatos técnicos (codec/resolução/HDR).
+	// Mediainfo forwarded: it must carry the technical facts (codec/resolution/HDR).
 	var parsed map[string]any
 	if err := json.Unmarshal(f.Mediainfo, &parsed); err != nil {
 		t.Fatalf("mediainfo não é JSON válido: %v (%s)", err, f.Mediainfo)
@@ -641,8 +639,8 @@ func TestGetEntityFiles(t *testing.T) {
 	}
 }
 
-// obterResolvida faz GET /entities/{id} e decodifica o ResolvedEntity (helper local
-// para os testes de leitura da arvore de series).
+// obterResolvida GETs /entities/{id} and decodes the ResolvedEntity (a local helper for
+// the series tree read tests).
 func obterResolvida(t *testing.T, h http.Handler, id string) resolver.Entidade {
 	t.Helper()
 	rec := do(t, h, http.MethodGet, "/api/v1/entities/"+id, nil)
@@ -656,13 +654,14 @@ func obterResolvida(t *testing.T, h http.Handler, id string) resolver.Entidade {
 	return ent
 }
 
-// TestSerieLeituraPosseEArquivosDeEpisodio cobre a LEITURA do 0034 (Passo 3):
-//   - o arquivo de serie tem media_file.entity_id = SERIE, e o vinculo por episodio
-//     vive em media_file_entity (kind='tv_episode'); o detalhe/arquivos do EPISODIO
-//     vem da juncao, nao de media_file.entity_id;
-//   - temporada expoe posse agregada (episodios possuidos / total dos filhos diretos);
-//   - serie soma across temporadas (a query direta contaria zero);
-//   - filme nao tem ownership (null).
+// TestSerieLeituraPosseEArquivosDeEpisodio covers the READ side of the series tree:
+//   - the series file has media_file.entity_id = SERIES, and the per-episode link lives
+//     in media_file_entity (kind='tv_episode'); the EPISODE's detail/files come from the
+//     join, not from media_file.entity_id;
+//   - a season exposes aggregate ownership (owned episodes / total of the direct
+//     children);
+//   - a series sums across seasons (the direct query would count zero);
+//   - a movie has no ownership (null).
 func TestSerieLeituraPosseEArquivosDeEpisodio(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "s1", "tv", "Serie")
@@ -674,7 +673,7 @@ func TestSerieLeituraPosseEArquivosDeEpisodio(t *testing.T) {
 	ligarFilhoOrdenado(t, d, "r-ep1", "se1", "ep1", "tv_episode", 1)
 	ligarFilhoOrdenado(t, d, "r-ep2", "se1", "ep2", "tv_episode", 2)
 	ligarFilhoOrdenado(t, d, "r-ep3", "se1", "ep3", "tv_episode", 3)
-	// Arquivo de serie: entity_id = SERIE (a obra), vinculado ao episodio 1 pela juncao.
+	// Series file: entity_id = SERIES (the work), linked to episode 1 through the join.
 	semearFile(t, d, "mf1", "s1", "/lib/serie/s01e01.mkv", "present", 0.9, "")
 	if err := escrita(t, d).CriarVinculoEntidade(context.Background(), sqlcgen.CriarVinculoEntidadeParams{
 		MediaFileID: "mf1", EntityID: "ep1", Kind: "tv_episode", Ordinal: 0,
@@ -682,7 +681,8 @@ func TestSerieLeituraPosseEArquivosDeEpisodio(t *testing.T) {
 		t.Fatalf("CriarVinculoEntidade: %v", err)
 	}
 
-	// Episodio 1: /files traz o arquivo via juncao, mesmo com entity_id apontando a serie.
+	// Episode 1: /files brings the file through the join, even with entity_id pointing at
+	// the series.
 	rec := do(t, h, http.MethodGet, "/api/v1/entities/ep1/files", nil)
 	var files filesListDTO
 	if err := json.Unmarshal(rec.Body.Bytes(), &files); err != nil {
@@ -698,12 +698,12 @@ func TestSerieLeituraPosseEArquivosDeEpisodio(t *testing.T) {
 		t.Errorf("ep1 ownership = %+v, quero nil (episodio nao agrega)", ep1.Ownership)
 	}
 
-	// Episodio 2: sem arquivo vinculado.
+	// Episode 2: no linked file.
 	ep2 := obterResolvida(t, h, "ep2")
 	eq(t, "ep2 owned", ep2.Owned, false)
 	eq(t, "ep2 file_count", ep2.FileCount, 0)
 
-	// Temporada: 1 de 3 episodios possuidos.
+	// Season: 1 of 3 episodes owned.
 	se1 := obterResolvida(t, h, "se1")
 	if se1.Ownership == nil {
 		t.Fatalf("se1 ownership = nil, quero {1,3}")
@@ -711,7 +711,7 @@ func TestSerieLeituraPosseEArquivosDeEpisodio(t *testing.T) {
 	eq(t, "se1 owned_count", se1.Ownership.OwnedCount, 1)
 	eq(t, "se1 total_count", se1.Ownership.TotalCount, 3)
 
-	// Serie: soma across temporadas (a query direta contaria zero) -> 1 de 3.
+	// Series: sums across seasons (the direct query would count zero) -> 1 of 3.
 	s1 := obterResolvida(t, h, "s1")
 	if s1.Ownership == nil {
 		t.Fatalf("s1 ownership = nil, quero {1,3}")
@@ -719,7 +719,7 @@ func TestSerieLeituraPosseEArquivosDeEpisodio(t *testing.T) {
 	eq(t, "s1 owned_count", s1.Ownership.OwnedCount, 1)
 	eq(t, "s1 total_count", s1.Ownership.TotalCount, 3)
 
-	// Filme: sem agregacao de posse (ownership null).
+	// Movie: no ownership aggregation (ownership null).
 	semearEntity(t, d, "m1", "movie", "Filme")
 	m1 := obterResolvida(t, h, "m1")
 	if m1.Ownership != nil {
@@ -738,10 +738,10 @@ func TestGetEntityFilesEntityNaoEncontrada(t *testing.T) {
 
 func TestGetPosterServeComContentType(t *testing.T) {
 	h, d := setupEntitiesServer(t)
-	// Datasource real no disco; poster dentro dele.
+	// Real datasource on disk; poster inside it.
 	root := t.TempDir()
 	posterPath := filepath.Join(root, "poster.png")
-	// Assinatura PNG + bytes arbitrários (o content-type sai da extensão).
+	// PNG signature + arbitrary bytes (the content-type comes from the extension).
 	conteudo := append([]byte("\x89PNG\r\n\x1a\n"), []byte("dados-do-poster")...)
 	if err := os.WriteFile(posterPath, conteudo, 0o644); err != nil {
 		t.Fatalf("WriteFile poster: %v", err)
@@ -793,8 +793,8 @@ func TestGetEntityFanartAusente404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestResolveBackdropLocalQuandoHaFanart: com asset fanart, GET /{id} serve o
-// backdrop_url como a rota LOCAL (não a URL direta da fonte).
+// TestResolveBackdropLocalQuandoHaFanart: with a fanart asset, GET /{id} serves
+// backdrop_url as the LOCAL route (not the source's direct URL).
 func TestResolveBackdropLocalQuandoHaFanart(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e", "movie", "ComFundo")
@@ -813,11 +813,11 @@ func TestResolveBackdropLocalQuandoHaFanart(t *testing.T) {
 
 func TestGetPosterBloqueiaPathTraversal(t *testing.T) {
 	h, d := setupEntitiesServer(t)
-	// Datasource registrado.
+	// Registered datasource.
 	root := t.TempDir()
 	semearSource(t, d, "src", root)
 
-	// (1) Arquivo FORA de qualquer datasource (outro tempdir não registrado).
+	// (1) File OUTSIDE any datasource (another, unregistered tempdir).
 	fora := t.TempDir()
 	arqFora := filepath.Join(fora, "segredo.png")
 	if err := os.WriteFile(arqFora, []byte("secreto"), 0o644); err != nil {
@@ -831,7 +831,7 @@ func TestGetPosterBloqueiaPathTraversal(t *testing.T) {
 	}
 	checkErrorShape(t, rec1, "forbidden")
 
-	// (2) Caminho com '..' escapando do datasource: root/../<algo>/etc-fake.
+	// (2) Path with '..' escaping the datasource: root/../<something>/etc-fake.
 	escapa := filepath.Join(root, "..", "escapa.png")
 	semearEntity(t, d, "e2", "movie", "Escapa")
 	semearAsset(t, d, "a2", "e2", "poster", escapa)
@@ -852,9 +852,9 @@ func TestGetPosterAusente404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestLeiturasNaoUsamConexaoDeEscrita prova que TODAS as rotas de leitura usam só
-// o pool de leitura: após semear, fechamos o pool de ESCRITA e as leituras
-// seguem respondendo 200. Se algum handler tocasse d.Write, quebraria aqui.
+// TestLeiturasNaoUsamConexaoDeEscrita proves that ALL the read routes use only the read
+// pool: after seeding, we close the WRITE pool and the reads keep answering 200. If any
+// handler touched d.Write, it would break here.
 func TestLeiturasNaoUsamConexaoDeEscrita(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	root := t.TempDir()
@@ -867,7 +867,7 @@ func TestLeiturasNaoUsamConexaoDeEscrita(t *testing.T) {
 	semearFile(t, d, "f", "e", "/lib/f.mkv", "present", 1, "")
 	semearAsset(t, d, "pa", "e", "poster", posterPath)
 
-	// Fecha SÓ o pool de escrita; o de leitura continua vivo.
+	// Closes ONLY the write pool; the read one stays alive.
 	if err := d.Write.Close(); err != nil {
 		t.Fatalf("fechar Write: %v", err)
 	}
@@ -886,7 +886,7 @@ func TestLeiturasNaoUsamConexaoDeEscrita(t *testing.T) {
 	}
 }
 
-// bytesEqual compara dois slices de bytes (evita dependência extra).
+// bytesEqual compares two byte slices (avoids an extra dependency).
 func bytesEqual(a, b []byte) bool {
 	if len(a) != len(b) {
 		return false

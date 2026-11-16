@@ -15,20 +15,21 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
 
-// Este arquivo implementa GET /api/v1/person/{id} (briefing 0029 Fase D): a página da
-// PESSOA (ator/membro de equipe) deduplicada no catálogo mais DUAS seções de
-// filmografia. `filmography` são as obras JÁ IMPORTADAS que a creditam (só o banco,
-// funciona sem provider) — é o destino interno-first do card de elenco/equipe (quando o
-// crédito traz `person_id`, ver creditos_interno.go). `filmography_external` (segunda
-// seção, "ainda não importados") são os trabalhos da pessoa NO PROVIDER da sua fonte
-// que ainda NÃO estão no catálogo: pega o provider de `pessoa.Source`, faz type-assert
-// para provider.PessoaProvider (capacidade OPCIONAL) e DEGRADA para `[]` sem provider,
-// sem a capacidade, ou se a fonte falhar (loga, a página não cai) — mesmo padrão do
-// detalhe externo (external_detail.go). Read-only nesta fase — a pessoa não é
-// catalogada como entity própria (sem edição, sem enrich dedicado). 404 quando o id não
-// existe no catálogo.
+// This file implements GET /api/v1/person/{id}: the page of the PERSON
+// (actor/crew member) deduplicated in the catalog plus TWO filmography
+// sections. `filmography` are the works ALREADY IMPORTED that credit them (the database
+// only, it works without a provider) — it is the interno-first destination of the cast/crew
+// card (when the credit carries `person_id`, see creditos_interno.go).
+// `filmography_external` (second section, "not imported yet") are the person's works
+// IN THE PROVIDER of their source that are NOT in the catalog yet: it takes the provider of
+// `pessoa.Source`, type-asserts to provider.PessoaProvider (an OPTIONAL capability) and
+// DEGRADES to `[]` without a provider, without the capability, or if the source fails
+// (it logs, the page does not fall over) — same pattern as the external detail
+// (external_detail.go). Read-only at this stage — the person is not cataloged as its own
+// entity (no editing, no dedicated enrich). 404 when the id does not exist in the
+// catalog.
 
-// personDTO é a resposta de GET /person/{id}.
+// personDTO is the response of GET /person/{id}.
 type personDTO struct {
 	ID          string            `json:"id"`
 	Name        string            `json:"name"`
@@ -36,15 +37,15 @@ type personDTO struct {
 	Source      string            `json:"source"`
 	SourceID    string            `json:"source_id"`
 	Filmography []personCreditDTO `json:"filmography"`
-	// FilmographyExternal é a segunda seção ("ainda não importados"), ver o cabeçalho
-	// do arquivo. Nunca nil (sempre `[]` quando vazia/indisponível).
+	// FilmographyExternal is the second section ("not imported yet"), see the file
+	// header. Never nil (always `[]` when empty/unavailable).
 	FilmographyExternal []personExternalCreditDTO `json:"filmography_external"`
 }
 
-// personExternalCreditDTO é uma obra da filmografia EXTERNA (ainda não importada):
-// espelha personCreditDTO, mas com a identidade EXTERNA (source/source_id/type) em vez
-// de entity_id — a UI navega ao detalhe externo para ver/importar. Sem Department (o
-// contrato do provider já junta os cargos distintos em Job).
+// personExternalCreditDTO is a work of the EXTERNAL filmography (not imported yet):
+// it mirrors personCreditDTO, but with the EXTERNAL identity (source/source_id/type) instead
+// of entity_id — the UI navigates to the external detail to view/import it. No Department (the
+// provider contract already joins the distinct roles into Job).
 type personExternalCreditDTO struct {
 	Source    string  `json:"source"`
 	SourceID  string  `json:"source_id"`
@@ -57,9 +58,9 @@ type personExternalCreditDTO struct {
 	Job       *string `json:"job"`
 }
 
-// personCreditDTO é uma obra da filmografia: a entity do catálogo (card mínimo) mais o
-// papel/cargo da pessoa naquela obra. `character` só faz sentido em kind=cast;
-// `job`/`department` em kind=crew — o outro par fica nil (sem inventar vazio).
+// personCreditDTO is a work of the filmography: the catalog entity (minimal card) plus
+// the person's role/job in that work. `character` only makes sense in kind=cast;
+// `job`/`department` in kind=crew — the other pair stays nil (no inventing empty).
 type personCreditDTO struct {
 	EntityID   string  `json:"entity_id"`
 	Type       string  `json:"type"`
@@ -72,13 +73,13 @@ type personCreditDTO struct {
 	Department *string `json:"department"`
 }
 
-// personImagemBaseURL é a base da foto de perfil da pessoa do TMDB — mesma constante
-// (não-exportada) de richfields.creditoImagemBaseURL; replicada aqui porque só o
-// server tem acesso ao proxy (urlImagemServida) para decidir a URL final servida.
+// personImagemBaseURL is the base of the person profile picture from TMDB — the same
+// (unexported) constant of richfields.creditoImagemBaseURL; replicated here because only
+// the server has access to the proxy (urlImagemServida) to decide the final served URL.
 const personImagemBaseURL = "https://image.tmdb.org/t/p/w185"
 
-// getPerson trata GET /api/v1/person/{id}: 404 quando a pessoa não existe no
-// catálogo; 200 com a pessoa e a filmografia (`[]` quando nenhuma obra a credita).
+// getPerson handles GET /api/v1/person/{id}: 404 when the person does not exist in the
+// catalog; 200 with the person and the filmography (`[]` when no work credits them).
 func (s *Server) getPerson(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -113,14 +114,14 @@ func (s *Server) getPerson(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// montarFilmografiaExternaDaPessoa monta a segunda seção da página (0029 Fase D): a
-// filmografia da pessoa NO PROVIDER da sua fonte que AINDA NÃO está no catálogo. Pega o
-// provider de `pessoa.Source` (mesmo mecanismo do detalhe externo, ver
-// provedorDetalhe) e faz type-assert para a capacidade OPCIONAL provider.PessoaProvider
-// — sem provider, sem a capacidade, ou se a busca falhar (erro real ou
-// ErrNaoEncontrado), DEGRADA para `[]` (loga a falha; a filmografia importada, que já
-// rodou, segue de pé). O idioma é o PRINCIPAL das settings (a rota não tem `?lang=`).
-// Cada crédito cuja obra já está no catálogo é EXCLUÍDO (já aparece em `filmography`).
+// montarFilmografiaExternaDaPessoa assembles the second section of the page: the
+// person's filmography IN THE PROVIDER of their source that is NOT in the catalog YET. It takes
+// the provider of `pessoa.Source` (same mechanism as the external detail, see
+// provedorDetalhe) and type-asserts to the OPTIONAL provider.PessoaProvider capability
+// — without a provider, without the capability, or if the search fails (real error or
+// ErrNaoEncontrado), it DEGRADES to `[]` (it logs the failure; the imported filmography, which
+// already ran, stays up). The language is the PRIMARY one from the settings (the route has no `?lang=`).
+// Every credit whose work is already in the catalog is EXCLUDED (it already appears in `filmography`).
 func (s *Server) montarFilmografiaExternaDaPessoa(ctx context.Context, pessoa sqlcgen.Person) []personExternalCreditDTO {
 	prov, ok := s.providers.Get(pessoa.Source)
 	if !ok {
@@ -146,7 +147,7 @@ func (s *Server) montarFilmografiaExternaDaPessoa(ctx context.Context, pessoa sq
 	out := make([]personExternalCreditDTO, 0, len(creditos))
 	for _, c := range creditos {
 		if s.idInternoItem(ctx, c.Source, c.SourceID) != nil {
-			continue // ja importado: aparece na secao 1 (filmography), nao repete aqui
+			continue // already imported: it appears in section 1 (filmography), not repeated here
 		}
 		out = append(out, personExternalCreditDTO{
 			Source:    c.Source,
@@ -163,8 +164,8 @@ func (s *Server) montarFilmografiaExternaDaPessoa(ctx context.Context, pessoa sq
 	return out
 }
 
-// urlPerfilPessoa monta a URL da foto de perfil (proxyada, quando aplicável) a partir
-// do fragmento cru gravado em person.profile_path, ou nil quando ausente.
+// urlPerfilPessoa builds the URL of the profile picture (proxied, when applicable) from
+// the raw fragment stored in person.profile_path, or nil when absent.
 func (s *Server) urlPerfilPessoa(profilePath sql.NullString) *string {
 	if !profilePath.Valid || profilePath.String == "" {
 		return nil
@@ -173,20 +174,21 @@ func (s *Server) urlPerfilPessoa(profilePath sql.NullString) *string {
 	return s.urlImagemServida(&direta)
 }
 
-// montarFilmografia lê os créditos da pessoa (ListarFilmografiaDaPessoa) e monta um
-// card por OBRA, reusando ObterEntityCard/cardDTODeMembro — a MESMA resolução de
-// title/poster_url da lista e dos membros (sem reinventar). AGRUPA por entity: uma
-// pessoa com vários créditos na mesma obra (ex.: um diretor que também roteiriza e
-// produz) vira UM card com os papéis reunidos (mesclarCreditoFilmografia), em vez de a
-// obra se repetir. Uma linha cuja entity foi purgada no meio é ignorada (degrada, não
-// derruba a filmografia). Preserva a ordem da query (type/ordering). Nunca nil.
+// montarFilmografia reads the person's credits (ListarFilmografiaDaPessoa) and builds one
+// card per WORK, reusing ObterEntityCard/cardDTODeMembro — the SAME title/poster_url
+// resolution of the list and of the members (no reinventing). It GROUPS by entity: a
+// person with several credits in the same work (e.g.: a director who also writes and
+// produces) becomes ONE card with the roles brought together (mesclarCreditoFilmografia),
+// instead of the work repeating itself. A row whose entity was purged in the middle is ignored
+// (it degrades, it does not take the filmography down). It preserves the query order
+// (type/ordering). Never nil.
 func (s *Server) montarFilmografia(ctx context.Context, personID string) ([]personCreditDTO, error) {
 	linhas, err := s.leitura().ListarFilmografiaDaPessoa(ctx, sql.NullString{String: personID, Valid: true})
 	if err != nil {
 		return nil, err
 	}
 	out := make([]personCreditDTO, 0, len(linhas))
-	indice := make(map[string]int, len(linhas)) // entity_id -> posicao em out (agrupa a obra)
+	indice := make(map[string]int, len(linhas)) // entity_id -> position in out (groups the work)
 	for _, linha := range linhas {
 		if pos, ok := indice[linha.EntityID]; ok {
 			mesclarCreditoFilmografia(&out[pos], linha)
@@ -195,7 +197,7 @@ func (s *Server) montarFilmografia(ctx context.Context, personID string) ([]pers
 		row, err := s.leitura().ObterEntityCard(ctx, linha.EntityID)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				continue // entity purgada no meio: ignora (o credit some junto por CASCADE)
+				continue // entity purged in the middle: ignore it (the credit goes away with the CASCADE)
 			}
 			return nil, err
 		}
@@ -206,11 +208,11 @@ func (s *Server) montarFilmografia(ctx context.Context, personID string) ([]pers
 	return out, nil
 }
 
-// mesclarCreditoFilmografia funde um crédito ADICIONAL da mesma obra no card já criado:
-// junta cargos de equipe distintos (" · "), preenche o personagem se ainda vazio e
-// promove o kind para "cast" quando a pessoa também atuou na obra (ator+equipe, ex.: um
-// diretor que atua) — assim uma obra aparece UMA vez, com todos os papéis reunidos. Um
-// crédito pode então trazer character E job juntos (a UI mostra o que houver).
+// mesclarCreditoFilmografia merges an ADDITIONAL credit of the same work into the card already
+// created: it joins distinct crew jobs (" · "), fills the character if still empty and
+// promotes the kind to "cast" when the person also acted in the work (actor+crew, e.g.: a
+// director who acts) — so a work appears ONCE, with all the roles brought together. A
+// credit may then bring character AND job together (the UI shows whatever there is).
 func mesclarCreditoFilmografia(dto *personCreditDTO, linha sqlcgen.ListarFilmografiaDaPessoaRow) {
 	if linha.Kind == kindCastCredito {
 		dto.Kind = kindCastCredito
@@ -228,9 +230,9 @@ func mesclarCreditoFilmografia(dto *personCreditDTO, linha sqlcgen.ListarFilmogr
 	}
 }
 
-// juntarCargo acrescenta um cargo à lista " · "-separada de dto.Job, sem duplicar (a
-// mesma pessoa pode ter o mesmo job em créditos distintos da obra) e preservando a ordem
-// de chegada (bilhagem/ordering da query).
+// juntarCargo appends a job to the " · "-separated list of dto.Job, without duplicating (the
+// same person may have the same job in distinct credits of the work) and preserving the
+// arrival order (billing/ordering of the query).
 func juntarCargo(atual *string, novo string) *string {
 	if atual == nil || *atual == "" {
 		return &novo
@@ -244,10 +246,10 @@ func juntarCargo(atual *string, novo string) *string {
 	return &junto
 }
 
-// personCreditDTOde monta o item da filmografia a partir do card (title/poster_url),
-// do release_date bruto (para o ano) e da linha de crédito (kind/character/job/
-// department). character só sai em kind=cast; job/department só em kind=crew — evita
-// exibir um par que não faz sentido para aquele kind.
+// personCreditDTOde builds the filmography item from the card (title/poster_url),
+// from the raw release_date (for the year) and from the credit row (kind/character/job/
+// department). character only comes out in kind=cast; job/department only in kind=crew — it avoids
+// showing a pair that makes no sense for that kind.
 func personCreditDTOde(card entityCardDTO, row sqlcgen.ObterEntityCardRow, linha sqlcgen.ListarFilmografiaDaPessoaRow) personCreditDTO {
 	dto := personCreditDTO{
 		EntityID:  card.ID,
@@ -269,15 +271,15 @@ func personCreditDTOde(card entityCardDTO, row sqlcgen.ObterEntityCardRow, linha
 	return dto
 }
 
-// kindCastCredito/kindCrewCredito espelham as constantes kindCast/kindCrew de
-// internal/enrich/creditos.go (pacote diferente, mesmo valor gravado em credit.kind) —
-// evita importar o pacote enrich só por duas strings.
+// kindCastCredito/kindCrewCredito mirror the kindCast/kindCrew constants of
+// internal/enrich/creditos.go (different package, same value written in credit.kind) —
+// it avoids importing the enrich package just for two strings.
 const (
 	kindCastCredito = "cast"
 	kindCrewCredito = "crew"
 )
 
-// nsPtrOuNil converte um sql.NullString em *string (nil quando NULL/inválido).
+// nsPtrOuNil converts a sql.NullString into *string (nil when NULL/invalid).
 func nsPtrOuNil(s sql.NullString) *string {
 	if !s.Valid {
 		return nil

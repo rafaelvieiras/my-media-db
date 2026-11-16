@@ -1,16 +1,16 @@
-// Musicbrainz é um provider DETERMINÍSTICO de fixtures pra vertical de MÚSICA
-// (briefing 0115), companheiro de `Provider` (que serve a fixture de
-// filme/série sob Nome()="tmdb"): implementa só o que o import de artista
-// (0106, provider.MusicaProvider) e a tela externa de "faixas faltando" do
-// álbum (0115 Parte 2, provider.MusicaAlbumProvider) exigem, SEM rede/segredo.
-// Registrado sob Nome()="musicbrainz" — nome real da fonte, mesma convenção
-// de `Provider` usar "tmdb" (as colunas geradas `external_id_mbid`
-// deduplicam certo, interno-first funciona igual à fonte real).
+// Musicbrainz is a DETERMINISTIC fixture provider for the MUSIC vertical,
+// companion of `Provider` (which serves the movie/series fixture under
+// Nome()="tmdb"): it implements only what the artist import (provider.MusicaProvider)
+// and the external screen of "missing tracks" of the album
+// (provider.MusicaAlbumProvider) require, WITHOUT network/secret. Registered
+// under Nome()="musicbrainz" -- the real name of the source, the same
+// convention of `Provider` using "tmdb" (the generated columns `external_id_mbid`
+// deduplicate correctly, internal-first works the same as with the real source).
 //
-// Ligado no binário por MYMEDIADB_FAKE_PROVIDER=1 (cmd/mymediadb,
-// opcoesBusca) ao lado do fake de filme/série — usado pelos testes E2E de
-// AMBAS as camadas: Camada 1 (internal/e2e) injeta direto no harness; Camada
-// 2 (Playwright) o alcança via o binário real.
+// Wired into the binary by MYMEDIADB_FAKE_PROVIDER=1 (cmd/mymediadb,
+// opcoesBusca) next to the movie/series fake -- used by the E2E tests of BOTH
+// layers: Layer 1 (internal/e2e) injects it straight into the harness; Layer 2
+// (Playwright) reaches it through the real binary.
 package fake
 
 import (
@@ -20,11 +20,11 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Ids fixos da discografia fake: um artista, um álbum com 2 faixas OFICIAIS
-// no release — mas a ÁRVORE do artista (BuscarArtistaArvore, o que POST
-// /import type=artista traz) só inclui a 1ª, de propósito: prova o caminho
-// de "faixa faltando do álbum" sem precisar de um scan real (o harness E2E
-// não sobe o scanner).
+// Fixed ids of the fake discography: one artist, one album with 2 OFFICIAL
+// tracks in the release -- but the ARTIST tree (BuscarArtistaArvore, what POST
+// /import type=artista brings) deliberately includes only the 1st one: it proves
+// the "album track missing" path without needing a real scan (the E2E harness
+// does not bring up the scanner).
 const (
 	MusicbrainzArtistaID = "artista-fake-1"
 	MusicbrainzAlbumID   = "album-fake-1"
@@ -32,29 +32,28 @@ const (
 	MusicbrainzFaixa2ID  = "faixa-fake-2"
 )
 
-// Asserção de interface: Musicbrainz é um Provider core + as duas
-// capacidades de música (árvore completa + álbum seletivo).
+// Interface assertion: Musicbrainz is a core Provider + the two music
+// capabilities (full tree + selective album).
 var (
 	_ provider.Provider            = (*Musicbrainz)(nil)
 	_ provider.MusicaProvider      = (*Musicbrainz)(nil)
 	_ provider.MusicaAlbumProvider = (*Musicbrainz)(nil)
 )
 
-// Musicbrainz é o fake — imutável, sem estado mutável, seguro para
-// concorrência (mesmo espírito de Provider).
+// Musicbrainz is the fake -- immutable, with no mutable state, safe for
+// concurrency (same spirit as Provider).
 type Musicbrainz struct{}
 
-// NewMusicbrainz constrói o fake de música. Sem parâmetros: a fixture não
-// serve imagem (Cover Art Archive fica fora deste fake, best-effort no
-// enrich real).
+// NewMusicbrainz builds the music fake. Without parameters: the fixture does not
+// serve images (Cover Art Archive stays out of this fake, best-effort in the real
+// enrich).
 func NewMusicbrainz() *Musicbrainz { return &Musicbrainz{} }
 
 func (m *Musicbrainz) Nome() string { return "musicbrainz" }
 
-// Buscar/BuscarDetalhe/MapearDetalhe não são exercitados pelo import de
-// música (que sempre resolve por id explícito, nunca por busca textual/
-// enrich de detalhe genérico) — stubs inertes, só para satisfazer o core
-// provider.Provider.
+// Buscar/BuscarDetalhe/MapearDetalhe are not exercised by the music import (which
+// always resolves by explicit id, never by textual search/generic detail enrich)
+// -- inert stubs, only to satisfy the core provider.Provider.
 func (m *Musicbrainz) Buscar(_ context.Context, _, _, _ string) ([]provider.ResultadoExterno, error) {
 	return nil, nil
 }
@@ -67,9 +66,8 @@ func (m *Musicbrainz) MapearDetalhe(_ json.RawMessage) (map[string]any, error) {
 	return map[string]any{}, nil
 }
 
-// BuscarArtistaArvore (provider.MusicaProvider): a árvore que POST /import
-// type=artista importa por inteiro — só a faixa 1 (ver comentário do
-// pacote).
+// BuscarArtistaArvore (provider.MusicaProvider): the tree that POST /import
+// type=artista imports as a whole -- only track 1 (see the package comment).
 func (m *Musicbrainz) BuscarArtistaArvore(_ context.Context, _ string, _ []string) (provider.ArtistaArvore, error) {
 	return provider.ArtistaArvore{
 		Name: "Artista Fake",
@@ -88,10 +86,10 @@ func (m *Musicbrainz) BuscarArtistaArvore(_ context.Context, _ string, _ []strin
 	}, nil
 }
 
-// BuscarAlbumDaFaixa/BuscarAlbumPorNome (provider.MusicaAlbumProvider,
-// caminhos por faixa/nome do import ESCOPADO do scanner) não são
-// exercitados pelos testes E2E (nenhuma das duas camadas sobe o scanner
-// real) — stubs sem match (graça).
+// BuscarAlbumDaFaixa/BuscarAlbumPorNome (provider.MusicaAlbumProvider, the
+// by-track/by-name paths of the SCOPED import of the scanner) are not exercised
+// by the E2E tests (neither layer brings up the real scanner) -- stubs without a
+// match (gracefully).
 func (m *Musicbrainz) BuscarAlbumDaFaixa(_ context.Context, _ string, _ []string) (provider.AlbumExterno, bool, error) {
 	return provider.AlbumExterno{}, false, nil
 }
@@ -100,10 +98,10 @@ func (m *Musicbrainz) BuscarAlbumPorNome(_ context.Context, _, _ string, _ provi
 	return provider.AlbumExterno{}, false, nil
 }
 
-// BuscarAlbumPorMbid (provider.MusicaAlbumProvider): o caminho DIRETO por
-// MBID de release-group, usado por GET /external/musicbrainz/album/{mbid} e
-// por ImportarFaixaAvulsa (POST /import type=faixa) — devolve o release
-// OFICIAL com as 2 faixas (a 2ª nunca entrou pela árvore do artista).
+// BuscarAlbumPorMbid (provider.MusicaAlbumProvider): the DIRECT path by
+// release-group MBID, used by GET /external/musicbrainz/album/{mbid} and by
+// ImportarFaixaAvulsa (POST /import type=faixa) -- it returns the OFFICIAL
+// release with the 2 tracks (the 2nd one never came in through the artist tree).
 func (m *Musicbrainz) BuscarAlbumPorMbid(_ context.Context, albumMBID string, _ []string) (provider.AlbumExterno, error) {
 	if albumMBID != MusicbrainzAlbumID {
 		return provider.AlbumExterno{}, provider.ErrNaoEncontrado

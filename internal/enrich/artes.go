@@ -1,13 +1,13 @@
 package enrich
 
-// artes.go é o ramo do enrich que povoa o INVENTÁRIO DE ARTES (briefing 0048): após o
-// import/enrich primário, itera os providers que implementam provider.ArteProvider (a
-// fanart.tv), busca a lista de artes do item pelos ids externos e PERSISTE o inventário
-// como uma camada media_external por fonte de arte — SEM baixar binários (lazy: o
-// download real é só da arte selecionada, via cachearArte). É idempotente (UPSERT por
-// UNIQUE(entity_id, source)) e best-effort: sem a chave configurada, sem id ou sem match,
-// degrada em silêncio (regressão zero). As artes de temporada (Season) são roteadas à
-// entity da temporada correspondente.
+// artes.go is the enrich branch that populates the ARTWORK INVENTORY: after the
+// primary import/enrich, it iterates the providers that implement provider.ArteProvider
+// (fanart.tv), fetches the list of artworks of the item by the external ids and PERSISTS
+// the inventory as a media_external layer per artwork source — WITHOUT downloading
+// binaries (lazy: the real download is only of the selected artwork, through cachearArte).
+// It is idempotent (UPSERT by UNIQUE(entity_id, source)) and best-effort: with no
+// configured key, no id or no match, it degrades silently (zero regression). The season
+// artworks (Season) are routed to the entity of the matching season.
 
 import (
 	"context"
@@ -19,28 +19,30 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// AtualizarInventarioArtes é o wrapper PÚBLICO de enriquecerArtes (briefing 0088, ação
-// "Baixar Artes Faltantes" do menu Gerenciar): permite ao chamador (o handler HTTP de
-// POST /entities/{id}/materialize-missing-media) disparar uma nova consulta ao(s)
-// ArteProvider(s) registrado(s) SEM passar por todo o Enriquecer (que também re-puxaria
-// metadados/árvore). Delega inteiramente à função já existente — sem duplicar lógica.
-// Best-effort por natureza (mesmo contrato de enriquecerArtes): nunca retorna erro, já
-// que a ausência de id externo/capacidade/match é degradação silenciosa esperada
-// (AGENTS.md §6). O `error` de retorno existe só para uma assinatura estável caso um
-// erro real (ex.: banco fora do ar) precise propagar no futuro; hoje é sempre nil.
+// AtualizarInventarioArtes is the PUBLIC wrapper of enriquecerArtes (the "Baixar Artes
+// Faltantes" action of the Gerenciar menu): it allows the caller (the HTTP handler of
+// POST /entities/{id}/materialize-missing-media) to trigger a new query to the
+// registered ArteProvider(s) WITHOUT going through the whole Enriquecer (which would also
+// re-pull metadata/tree). It delegates entirely to the existing function — without
+// duplicating logic. Best-effort by nature (same contract as enriquecerArtes): it never
+// returns an error, since the absence of an external id/capability/match is the expected
+// silent degradation (AGENTS.md §6). The returned `error` exists only for a stable
+// signature in case a real error (e.g.: database down) needs to propagate in the future;
+// today it is always nil.
 func (s *Servico) AtualizarInventarioArtes(ctx context.Context, entityID, tipo string, langs []string) error {
 	s.enriquecerArtes(ctx, entityID, tipo, langs)
 	return nil
 }
 
-// enriquecerArtes busca e persiste o inventário de artes de `entityID` (tipo movie|tv)
-// em cada provider com a capacidade ArteProvider. Best-effort: erro/ausência degrada em
-// silêncio. Chamado após o import primário do filme e após a árvore da série (quando as
-// temporadas já existem, para rotear as artes de temporada).
+// enriquecerArtes fetches and persists the artwork inventory of `entityID` (type
+// movie|tv) in each provider with the ArteProvider capability. Best-effort: an
+// error/absence degrades silently. It is called after the primary import of the movie and
+// after the series tree (when the seasons already exist, so that the season artworks can
+// be routed).
 func (s *Servico) enriquecerArtes(ctx context.Context, entityID, tipo string, langs []string) {
 	ids, ok := s.idsExternosDe(ctx, entityID)
 	if !ok {
-		return // sem nenhum id externo: nada a cruzar
+		return // no external id at all: nothing to cross
 	}
 	for _, prov := range s.providers.All() {
 		ap, ok := prov.(provider.ArteProvider)
@@ -61,8 +63,9 @@ func (s *Servico) enriquecerArtes(ctx context.Context, entityID, tipo string, la
 	}
 }
 
-// idsExternosDe lê o external_ids da entity e monta o provider.ExternalIDs (tmdb/imdb/
-// tvdb). ok=false quando não há NENHUM id útil (o ArteProvider não teria como cruzar).
+// idsExternosDe reads the external_ids of the entity and builds the provider.ExternalIDs
+// (tmdb/imdb/tvdb). ok=false when there is NO useful id at all (the ArteProvider would
+// have nothing to cross).
 func (s *Servico) idsExternosDe(ctx context.Context, entityID string) (provider.ExternalIDs, bool) {
 	ent, err := s.leitura().ObterEntity(ctx, entityID)
 	if err != nil {
@@ -75,10 +78,10 @@ func (s *Servico) idsExternosDe(ctx context.Context, entityID string) (provider.
 			ids.Tmdb = comoString(bruto["tmdb"])
 			ids.Imdb = comoString(bruto["imdb"])
 			ids.Tvdb = comoString(bruto["tvdb"])
-			// Mbid (briefing 0106, ADR-0027 item 6): MBID de MusicBrainz do item de
-			// musica (artista/album/faixa) -- sem isto o ArteProvider MusicBrainz
-			// (Cover Art Archive) nunca recebe o id de que precisa para cruzar a
-			// capa do album.
+			// Mbid (ADR-0027 item 6): MusicBrainz MBID of the music item
+			// (artist/album/track) -- without it the MusicBrainz ArteProvider
+			// (Cover Art Archive) never receives the id it needs to cross the
+			// album cover.
 			ids.Mbid = comoString(bruto["mbid"])
 		}
 	}
@@ -88,10 +91,10 @@ func (s *Servico) idsExternosDe(ctx context.Context, entityID string) (provider.
 	return ids, true
 }
 
-// persistirInventarioArtes agrupa as artes por entity ALVO (a própria entity para as
-// artes gerais e "all"; a entity da temporada para as artes com Season numérica) e grava
-// um envelope de inventário por alvo, sob a fonte de arte `source`. Idempotente por
-// (entity_id, source).
+// persistirInventarioArtes groups the artworks by TARGET entity (the entity itself for
+// the general and "all" artworks; the season entity for the artworks with a numeric
+// Season) and writes one inventory envelope per target, under the artwork source
+// `source`. Idempotent by (entity_id, source).
 func (s *Servico) persistirInventarioArtes(ctx context.Context, entityID, source string, artes []provider.Arte) error {
 	porAlvo := s.agruparArtesPorAlvo(ctx, entityID, artes)
 	for alvo, lista := range porAlvo {
@@ -114,10 +117,11 @@ func (s *Servico) persistirInventarioArtes(ctx context.Context, entityID, source
 	return nil
 }
 
-// agruparArtesPorAlvo mapeia cada arte à entity ALVO: a arte SEM Season (ou Season="all")
-// vai à própria entity; a arte com Season NUMÉRICA vai à entity da temporada cujo
-// season_number casa. Uma temporada ausente (arte de temporada não importada) faz a arte
-// ser DESCARTADA (não há onde anexar) — degradação silenciosa. Devolve alvo→[]Arte.
+// agruparArtesPorAlvo maps each artwork to the TARGET entity: an artwork WITHOUT Season
+// (or with Season="all") goes to the entity itself; an artwork with a NUMERIC Season goes
+// to the entity of the season whose season_number matches. A missing season (season
+// artwork not imported) makes the artwork be DISCARDED (there is nowhere to attach it) —
+// silent degradation. It returns target→[]Arte.
 func (s *Servico) agruparArtesPorAlvo(ctx context.Context, entityID string, artes []provider.Arte) map[string][]provider.Arte {
 	temporadas := s.temporadasPorNumero(ctx, entityID)
 	out := map[string][]provider.Arte{}
@@ -131,27 +135,27 @@ func (s *Servico) agruparArtesPorAlvo(ctx context.Context, entityID string, arte
 	return out
 }
 
-// alvoDaArte resolve a entity alvo de UMA arte. Season vazia ou "all" → a própria entity
-// (`entityID`); Season numérica → a temporada correspondente (ok=false quando ela não foi
-// importada). Season não-numérica desconhecida → a própria entity (defensivo).
+// alvoDaArte resolves the target entity of ONE artwork. Empty Season or "all" → the
+// entity itself (`entityID`); numeric Season → the matching season (ok=false when it was
+// not imported). Unknown non-numeric Season → the entity itself (defensive).
 func alvoDaArte(entityID string, a provider.Arte, temporadas map[int]string) (string, bool) {
 	if a.Season == "" || a.Season == "all" {
 		return entityID, true
 	}
 	n, err := strconv.Atoi(a.Season)
 	if err != nil {
-		return entityID, true // valor inesperado: não perde a arte, anexa à entity
+		return entityID, true // unexpected value: do not lose the artwork, attach it to the entity
 	}
 	tempID, ok := temporadas[n]
 	if !ok {
-		return "", false // temporada não importada: descarta a arte
+		return "", false // season not imported: discard the artwork
 	}
 	return tempID, true
 }
 
-// temporadasPorNumero mapeia season_number → id da entity temporada, lido das relações
-// filhas (kind=tv_season, sort_index=season_number). Vazio para filme (sem temporadas) —
-// nesse caso nenhuma arte tem Season, então o mapa nem é consultado.
+// temporadasPorNumero maps season_number → id of the season entity, read from the child
+// relations (kind=tv_season, sort_index=season_number). Empty for a movie (no seasons) —
+// in that case no artwork has a Season, so the map is not even consulted.
 func (s *Servico) temporadasPorNumero(ctx context.Context, entityID string) map[int]string {
 	out := map[int]string{}
 	rels, err := s.leitura().ListarRelacoesFilhas(ctx, entityID)
@@ -166,9 +170,10 @@ func (s *Servico) temporadasPorNumero(ctx context.Context, entityID string) map[
 	return out
 }
 
-// inventarioPorKind converte a lista de artes num mapa kind→[]ArteInventario (o corpo do
-// envelope). Preserva lang/likes/disc/season de todas (o /artwork filtra depois; o
-// multi-idioma é fundacional). A ordem dentro de cada kind segue a da fonte.
+// inventarioPorKind converts the list of artworks into a kind→[]ArteInventario map (the
+// body of the envelope). It preserves lang/likes/disc/season of all of them (the /artwork
+// endpoint filters later; multi-language is foundational). The order within each kind
+// follows the source.
 func inventarioPorKind(artes []provider.Arte) map[string][]provider.ArteInventario {
 	out := map[string][]provider.ArteInventario{}
 	for _, a := range artes {

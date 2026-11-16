@@ -12,8 +12,8 @@ import (
 	_ "modernc.org/sqlite" // registra o driver "sqlite" (sem CGO)
 )
 
-// abrirBancoTeste cria um sqlite de teste com uma tabela/linha (para o VACUUM
-// INTO ter algo de fato para copiar) e devolve a conexão.
+// abrirBancoTeste creates a test sqlite with a table/row (so VACUUM INTO
+// actually has something to copy) and returns the connection.
 func abrirBancoTeste(t *testing.T) *sql.DB {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "origem.sqlite")
@@ -38,8 +38,8 @@ func TestNome(t *testing.T) {
 	}
 }
 
-// TestExecutarCriaArquivoSqlite prova o criterio de aceite: o job produz de
-// fato um arquivo .sqlite via VACUUM INTO no diretorio configurado.
+// TestExecutarCriaArquivoSqlite proves the acceptance criterion: the job does
+// produce a .sqlite file via VACUUM INTO in the configured directory.
 func TestExecutarCriaArquivoSqlite(t *testing.T) {
 	dir := t.TempDir()
 	h := New(abrirBancoTeste(t), dir)
@@ -57,8 +57,8 @@ func TestExecutarCriaArquivoSqlite(t *testing.T) {
 		t.Fatalf("arquivos no dir = %v, quero exatamente 1", arquivos)
 	}
 
-	// O arquivo gerado precisa ser um sqlite valido e consistente (a linha
-	// inserida no banco de origem deve estar la).
+	// The generated file must be a valid and consistent sqlite (the row inserted
+	// into the source database must be there).
 	copia, err := sql.Open("sqlite", filepath.Join(dir, arquivos[0]))
 	if err != nil {
 		t.Fatalf("abrir copia: %v", err)
@@ -73,7 +73,7 @@ func TestExecutarCriaArquivoSqlite(t *testing.T) {
 	}
 }
 
-// TestExecutarMensagem confere o formato da mensagem de sucesso.
+// TestExecutarMensagem checks the format of the success message.
 func TestExecutarMensagem(t *testing.T) {
 	dir := t.TempDir()
 	h := New(abrirBancoTeste(t), dir)
@@ -89,8 +89,8 @@ func TestExecutarMensagem(t *testing.T) {
 	}
 }
 
-// TestRotacaoMantemKeep prova o criterio de aceite da rotacao: mantem so os
-// `keep` mais recentes (do config_json, default 7).
+// TestRotacaoMantemKeep proves the acceptance criterion of rotation: it keeps
+// only the `keep` most recent ones (from config_json, default 7).
 func TestRotacaoMantemKeep(t *testing.T) {
 	dir := t.TempDir()
 	h := New(abrirBancoTeste(t), dir)
@@ -109,8 +109,8 @@ func TestRotacaoMantemKeep(t *testing.T) {
 	if len(arquivos) != 3 {
 		t.Fatalf("arquivos mantidos = %d, quero 3 (%v)", len(arquivos), arquivos)
 	}
-	// Os 3 mais recentes (dias 2,3,4) devem sobreviver -- os dias 0 e 1 foram
-	// rotacionados para fora.
+	// The 3 most recent ones (days 2,3,4) must survive -- days 0 and 1 were
+	// rotated out.
 	for _, indesejado := range []string{"mymediadb-20260101-030000.sqlite", "mymediadb-20260102-030000.sqlite"} {
 		if _, err := os.Stat(filepath.Join(dir, indesejado)); err == nil {
 			t.Fatalf("%q deveria ter sido removido pela rotacao", indesejado)
@@ -118,8 +118,8 @@ func TestRotacaoMantemKeep(t *testing.T) {
 	}
 }
 
-// TestKeepDefaultSemConfig prova o default de 7 quando config_json esta
-// ausente/vazio.
+// TestKeepDefaultSemConfig proves the default of 7 when config_json is
+// absent/empty.
 func TestKeepDefaultSemConfig(t *testing.T) {
 	if got := parseKeep(nil); got != keepPadrao {
 		t.Fatalf("parseKeep(nil) = %d, quero %d", got, keepPadrao)

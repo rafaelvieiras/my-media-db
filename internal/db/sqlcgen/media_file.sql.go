@@ -25,9 +25,9 @@ DELETE FROM media_file
 WHERE library_source_id = ?
 `
 
-// Apaga todos os arquivos de uma fonte (usada ao remover o datasource, 0035).
-// O cascade de media_file_entity (migration 0009, ON DELETE CASCADE em
-// media_file_id) limpa os vinculos junto; a entity do catalogo e preservada.
+// Deletes all files of a source (used when removing the datasource, 0035).
+// The media_file_entity cascade (migration 0009, ON DELETE CASCADE on
+// media_file_id) cleans the links along; the catalog entity is preserved.
 func (q *Queries) ApagarMediaFilesPorFonte(ctx context.Context, librarySourceID sql.NullString) error {
 	_, err := q.db.ExecContext(ctx, apagarMediaFilesPorFonte, librarySourceID)
 	return err
@@ -64,15 +64,15 @@ type AtualizarMediaFileConteudoMudouParams struct {
 	ID              string
 }
 
-// O path ja tinha uma linha, mas o content_hash recem-calculado NAO bate com
-// ela (arquivo substituido/reencodado no lugar, ou mtime/size do provedor
-// (ex.: rclone/Drive) sofreram drift o bastante para invalidar o
-// short-circuit de ObterMediaFilePorPath -- ver mediaFileInalteradoPorPath em
-// internal/scanner/scan.go). Sem esta query, gravarArquivo cairia num INSERT
-// que bate no UNIQUE(path) da linha ja existente. Atualiza TODOS os campos
-// derivados do conteudo (hash/tamanho/mtime/mediainfo/edicao/parte/
-// confianca), preservando id/entity_id -- mesmo espirito de
-// AtualizarMediaFileVisto, mas o gatilho aqui e o PATH bater, nao o hash.
+// The path already had a row, but the freshly computed content_hash does NOT match
+// it (file replaced/re-encoded in place, or the provider mtime/size
+// (e.g. rclone/Drive) drifted enough to invalidate the
+// short-circuit of ObterMediaFilePorPath -- see mediaFileInalteradoPorPath in
+// internal/scanner/scan.go). Without this query, gravarArquivo would fall into an INSERT
+// that hits the UNIQUE(path) of the existing row. Updates ALL the
+// fields derived from the content (hash/size/mtime/mediainfo/edition/part/
+// confidence), preserving id/entity_id -- same spirit as
+// AtualizarMediaFileVisto, but the trigger here is the PATH matching, not the hash.
 func (q *Queries) AtualizarMediaFileConteudoMudou(ctx context.Context, arg AtualizarMediaFileConteudoMudouParams) (MediaFile, error) {
 	row := q.db.QueryRowContext(ctx, atualizarMediaFileConteudoMudou,
 		arg.ContentHash,
@@ -121,11 +121,11 @@ type AtualizarMediaFileEntityIDParams struct {
 	ID              string
 }
 
-// Repontamento do briefing 0120 (reconciliacao de filhos orfaos): move um
-// media_file de uma entity RASCUNHO/orfa para a entity de verdade resolvida
-// depois (faixa ou serie), atualizando tambem o match_confidence do match
-// que resolveu. A entity antiga fica sem media_file (posse cai pra nao,
-// derivada) e some da fila de revisao sem ser apagada (principio 5).
+// Repointing of orphan children: moves a
+// media_file from a DRAFT/orphan entity to the entity actually resolved
+// afterwards (track or series), also updating the match_confidence of the match
+// that resolved it. The old entity stays without media_file (ownership drops to
+// false, derived) and leaves the review queue without being deleted (principle 5).
 func (q *Queries) AtualizarMediaFileEntityID(ctx context.Context, arg AtualizarMediaFileEntityIDParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarMediaFileEntityID, arg.EntityID, arg.MatchConfidence, arg.ID)
 	return err
@@ -143,9 +143,9 @@ type AtualizarMediaFilePathParams struct {
 	ID   string
 }
 
-// Grava o path ja recascado (calculado em Go) de UM media_file. Nao toca o
-// resto da linha (content_hash/entity_id/state seguem intactos -- o arquivo
-// fisico e o MESMO, so mudou de onde e montado).
+// Writes the already rebased path (computed in Go) of ONE media_file. Does not touch
+// the rest of the row (content_hash/entity_id/state stay intact -- the physical file
+// is the SAME, only where it is mounted changed).
 func (q *Queries) AtualizarMediaFilePath(ctx context.Context, arg AtualizarMediaFilePathParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarMediaFilePath, arg.Path, arg.ID)
 	return err
@@ -167,7 +167,7 @@ type AtualizarMediaFileStateParams struct {
 	ID       string
 }
 
-// Transicao de ciclo de vida: marca present/missing e carimba last_seen.
+// Lifecycle transition: marks present/missing and stamps last_seen.
 func (q *Queries) AtualizarMediaFileState(ctx context.Context, arg AtualizarMediaFileStateParams) (MediaFile, error) {
 	row := q.db.QueryRowContext(ctx, atualizarMediaFileState, arg.State, arg.LastSeen, arg.ID)
 	var i MediaFile
@@ -214,10 +214,10 @@ type AtualizarMediaFileVistoParams struct {
 	ID              string
 }
 
-// Reencontro num scan: o arquivo foi achado pelo content_hash. Atualiza o path
-// (cobre rename/move -- idempotente, nao cria outra linha), o size/mtime, volta
-// para present e carimba last_seen com o timestamp do scan (usado depois para
-// decidir quem virou missing). Fixa tambem a fonte de origem.
+// Re-find on a scan: the file was found by content_hash. Updates the path
+// (covers rename/move -- idempotent, does not create another row), the size/mtime,
+// goes back to present and stamps last_seen with the scan timestamp (used later to
+// decide who became missing). It also pins the origin source.
 func (q *Queries) AtualizarMediaFileVisto(ctx context.Context, arg AtualizarMediaFileVistoParams) (MediaFile, error) {
 	row := q.db.QueryRowContext(ctx, atualizarMediaFileVisto,
 		arg.Path,
@@ -252,11 +252,11 @@ const contarMediaFilesEmEstadoMissing = `-- name: ContarMediaFilesEmEstadoMissin
 SELECT COUNT(*) FROM media_file WHERE state = 'missing'
 `
 
-// Contagem informativa para o resumo do job midias_faltantes (briefing
-// 0128): media_file 'missing' e um sinal de instabilidade do mount remoto
-// (rclone/gdrive) que pode ter excluido silenciosamente alguma entity do
-// universo elegivel daquela execucao (ListarEntityIDsComMediaFilePresente
-// exige state='present'). So leitura, nao muda nenhum comportamento.
+// Informative count for the midias_faltantes job summary: a 'missing'
+// media_file is a sign of instability of the remote mount
+// (rclone/gdrive), which may have silently excluded some entity from
+// the eligible universe of that execution (ListarEntityIDsComMediaFilePresente
+// requires state='present'). Read only, it changes no behavior.
 func (q *Queries) ContarMediaFilesEmEstadoMissing(ctx context.Context) (int64, error) {
 	row := q.db.QueryRowContext(ctx, contarMediaFilesEmEstadoMissing)
 	var count int64
@@ -292,10 +292,10 @@ type CriarMediaFileParams struct {
 	LibrarySourceID sql.NullString
 }
 
-// CRUD de media_file + a query de POSSE DERIVADA (ADR-0009) + as queries do
-// scanner (briefing 0009): dedup por content_hash, reencontro (rename/move) e
-// marcacao de missing por datasource.
-// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+// CRUD for media_file + the DERIVED OWNERSHIP query (ADR-0009) + the
+// scanner queries: content_hash dedupe, re-find (rename/move) and
+// missing marking per datasource.
+// Comments in ASCII and explicit columns -- see the note in entity.sql.
 func (q *Queries) CriarMediaFile(ctx context.Context, arg CriarMediaFileParams) (MediaFile, error) {
 	row := q.db.QueryRowContext(ctx, criarMediaFile,
 		arg.ID,
@@ -340,9 +340,9 @@ SELECT EXISTS (
 ) AS tem_posse
 `
 
-// POSSE DERIVADA (ADR-0009): verdadeiro se, e so se, existe ao menos um
-// media_file 'present' para a entity. Posse NAO e coluna (uma coluna gerada nao
-// enxerga outra tabela) -- e computada aqui.
+// DERIVED OWNERSHIP (ADR-0009): true if, and only if, there is at least one
+// 'present' media_file for the entity. Ownership is NOT a column (a generated column
+// cannot see another table) -- it is computed here.
 func (q *Queries) EntityTemPosse(ctx context.Context, entityID string) (bool, error) {
 	row := q.db.QueryRowContext(ctx, entityTemPosse, entityID)
 	var tem_posse bool
@@ -365,17 +365,17 @@ FROM entity e
 WHERE e.id = ?
 `
 
-// POSSE DERIVADA na ARVORE de descendentes (briefing 0116): verdadeiro se existe
-// media_file 'present' em QUALQUER descendente desta entity via entity_relation, a
-// qualquer profundidade -- cobre artista->album->faixa (ADR-0027: media_file.entity_id
-// so aponta pra faixa, nunca pro album/artista). Mesma CTE de fecho transitivo ja usada
-// pelas listagens (entity.sql, ObterEntityCard/ListarEntityCards*), aqui isolada porque
-// cada query sqlc compila a propria WITH RECURSIVE. Usada pelo detalhe unico
-// (resolverEntity, internal/server/entities.go) para completar o Owned do resolver
-// quando EntityTemPosse (arquivo DIRETO) e false -- sem isso, artista/album de musica
-// sempre mostravam posse=false no detalhe mesmo com faixa possuida (as listagens ja
-// foram corrigidas antes; o detalhe usava um caminho separado, ListarMediaFilesPorEntity,
-// que nunca desce a arvore).
+// DERIVED OWNERSHIP in the DESCENDANT tree: true if there is a
+// 'present' media_file in ANY descendant of this entity via entity_relation, at
+// any depth -- covers artist->album->track (ADR-0027: media_file.entity_id
+// only points at the track, never at the album/artist). Same transitive closure CTE
+// already used by the listings (entity.sql, ObterEntityCard/ListarEntityCards*), here
+// isolated because each sqlc query compiles its own WITH RECURSIVE. Used by the single
+// detail (resolverEntity, internal/server/entities.go) to complete the resolver's Owned
+// when EntityTemPosse (DIRECT file) is false -- without this, music artist/album
+// always showed owned=false in the detail even with a track owned (the listings had
+// already been fixed before; the detail used a separate path, ListarMediaFilesPorEntity,
+// which never descends the tree).
 func (q *Queries) EntityTemPosseNaArvore(ctx context.Context, id string) (bool, error) {
 	row := q.db.QueryRowContext(ctx, entityTemPosseNaArvore, id)
 	var tem_posse bool
@@ -397,14 +397,15 @@ WHERE e.type IN ('artista', 'album')
 ORDER BY entity_id
 `
 
-// Universo elegivel do job `midias_faltantes` PARA MUSICA (briefing 0116): toda entity
-// artista/album com ao menos um descendente (faixa, via artista->album->faixa ou
-// album->faixa direto) com media_file 'present'. media_file.entity_id de musica aponta
-// SEMPRE pra faixa (ADR-0027), nunca pro album/artista -- ListarEntityIDsComMediaFilePresente
-// acima nunca alcanca artista/album, entao precisa da MESMA arvore recursiva de
-// entity_relation ja usada pelo campo `owned` das listagens (entity.sql, WITH RECURSIVE
-// arvore) e por EntityTemPosseNaArvore acima. Sem isso, capa de album/foto de artista
-// nunca eram materializadas pelo job/toggle de auto-download (so cobriam movie/tv).
+// Eligible universe of the `midias_faltantes` job FOR MUSIC: every entity
+// artist/album with at least one descendant (track, via artist->album->track or
+// album->track directly) with a 'present' media_file. For music, media_file.entity_id
+// ALWAYS points at the track (ADR-0027), never at the album/artist --
+// ListarEntityIDsComMediaFilePresente above never reaches artist/album, so it needs
+// the SAME recursive entity_relation tree already used by the `owned` field of the
+// listings (entity.sql, WITH RECURSIVE arvore) and by EntityTemPosseNaArvore above.
+// Without it, album cover/artist photo were never materialized by the job/toggle
+// of auto-download (they only covered movie/tv).
 func (q *Queries) ListarEntitiesMusicaComFaixaPossuida(ctx context.Context) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listarEntitiesMusicaComFaixaPossuida)
 	if err != nil {
@@ -435,18 +436,18 @@ WHERE state = 'present'
 ORDER BY entity_id
 `
 
-// Universo elegivel do job `midias_faltantes` (briefing 0064) PARA MOVIE/TV
-// DIRETO: toda entity que possui ao menos um media_file 'present' apontando
-// entity_id pra ela. Para SERIE, media_file.entity_id aponta pra SERIE (nunca
-// season/episodio, ver internal/scanner/serie.go gravarArquivoSerie) -- entao
-// esta query sozinha nao alcanca season/episodio (o vinculo deles e via a
-// juncao media_file_entity, kind='tv_episode'). Desde o briefing 0081, o
-// chamador (ListarEntitiesComMediaFilePresente, internal/server/midias_
-// faltantes.go) combina o resultado desta query com
+// Eligible universe of the `midias_faltantes` job FOR MOVIE/TV
+// DIRECT: every entity that has at least one 'present' media_file pointing
+// its entity_id at it. For a SERIES, media_file.entity_id points at the SERIES (never
+// season/episode, see internal/scanner/serie.go gravarArquivoSerie) -- so
+// this query alone does not reach season/episode (their link is through the
+// media_file_entity junction, kind='tv_episode'). The caller
+// (ListarEntitiesComMediaFilePresente, internal/server/midias_
+// faltantes.go) combines the result of this query with
 // ListarSeasonIDsComEpisodioPresente/ListarEpisodeIDsComMediaFilePresente
-// abaixo -- season continua sem NFO proprio (guarda em gravarNFOSeFaltante),
-// mas episodio passa a ser elegivel (NFO) e season tambem (poster de
-// temporada).
+// below -- season still has no NFO of its own (stored in gravarNFOSeFaltante),
+// but episode became eligible (NFO) and season too (season
+// poster).
 func (q *Queries) ListarEntityIDsComMediaFilePresente(ctx context.Context) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listarEntityIDsComMediaFilePresente)
 	if err != nil {
@@ -478,14 +479,14 @@ WHERE mfe.kind = 'tv_episode' AND mf.state = 'present'
 ORDER BY mfe.entity_id
 `
 
-// Episodios elegiveis para o job `midias_faltantes` (briefing 0081): todo
-// episodio com media_file 'present' vinculado via a juncao generica
-// media_file_entity (kind='tv_episode') -- media_file.entity_id aponta pra
-// SERIE, nunca pro episodio (ver ListarEntityIDsComMediaFilePresente acima),
-// entao esta query cobre o caminho que a outra nao alcanca. Habilita o job a
-// gravar o NFO do episodio (kind ja suportado por nomeRaizNFO/raizEpisode,
-// so nunca era alcancado); arte de episodio (still) continua FORA
-// (kindsMidiasFaltantes nao ganha still -- lazy/manual, briefing 0044).
+// Episodes eligible for the `midias_faltantes` job: every
+// episode with a 'present' media_file linked through the generic
+// media_file_entity junction (kind='tv_episode') -- media_file.entity_id points at
+// the SERIES, never at the episode (see ListarEntityIDsComMediaFilePresente above),
+// so this query covers the path the other one does not reach. It enables the job to
+// write the episode NFO (kind already supported by nomeRaizNFO/raizEpisode,
+// it was just never reached); episode artwork (still) stays OUT
+// (kindsMidiasFaltantes does not gain still -- lazy/manual).
 func (q *Queries) ListarEpisodeIDsComMediaFilePresente(ctx context.Context) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listarEpisodeIDsComMediaFilePresente)
 	if err != nil {
@@ -520,10 +521,10 @@ type ListarMediaFilePathsPorFonteRow struct {
 	Path string
 }
 
-// Recasco de path do datasource (briefing 0070): so as duas colunas que o
-// rename precisa (o resto da linha nao muda). O chamador troca o PREFIXO em
-// Go (strings.TrimPrefix) -- nunca SUBSTR/REPLACE no SQL, que divergiria em
-// paths com acento (SQLite conta codepoint, Go conta byte).
+// Datasource path rebase: only the two columns the rename
+// needs (the rest of the row does not change). The caller swaps the PREFIX in
+// Go (strings.TrimPrefix) -- never SUBSTR/REPLACE in SQL, which would diverge on
+// paths with accents (SQLite counts codepoints, Go counts bytes).
 func (q *Queries) ListarMediaFilePathsPorFonte(ctx context.Context, librarySourceID sql.NullString) ([]ListarMediaFilePathsPorFonteRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarMediaFilePathsPorFonte, librarySourceID)
 	if err != nil {
@@ -607,10 +608,10 @@ type ListarMediaFilesPresentesRow struct {
 	State    string
 }
 
-// Todos os media_file 'present' (de QUALQUER entity) -- usada por
-// EhPastaExclusiva (internal/localmedia, briefing 0062) para decidir se uma
-// pasta tem 1 unico video (nome de arte bare) ou varios (nome prefixado).
-// Biblioteca self-hosted: full scan tolerado (mesmo espirito de
+// All 'present' media_file (of ANY entity) -- used by
+// EhPastaExclusiva (internal/localmedia) to decide whether a
+// folder has a single video (bare art name) or several (prefixed name).
+// Self-hosted library: full scan tolerated (same spirit as
 // montarPosseAgregada, internal/server/entities.go).
 func (q *Queries) ListarMediaFilesPresentes(ctx context.Context) ([]ListarMediaFilesPresentesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarMediaFilesPresentes)
@@ -655,14 +656,14 @@ WHERE er.kind = 'tv_episode'
 ORDER BY entity_id
 `
 
-// Temporadas elegiveis para o job `midias_faltantes` (briefing 0081): toda
-// season com ao menos um episodio DESCENDENTE com media_file 'present'. O
-// vinculo serie->season->episodio e entity_relation (kind='tv_episode', ver
+// Seasons eligible for the `midias_faltantes` job: every
+// season with at least one DESCENDANT episode with a 'present' media_file. The
+// series->season->episode link is entity_relation (kind='tv_episode', see
 // internal/enrich/serie.go relacaoEpisodio -- er.parent_id=season,
-// er.child_id=episodio); o vinculo episodio<->arquivo e a juncao generica
-// media_file_entity (mesmo kind, ADR-0021). Season continua sem NFO proprio
-// (guarda em gravarNFOSeFaltante) -- esta query so habilita o job a
-// materializar o POSTER de temporada (season0N-poster.jpg) na raiz da serie.
+// er.child_id=episode); the episode<->file link is the generic
+// media_file_entity junction (same kind, ADR-0021). Season still has no NFO of its own
+// (stored in gravarNFOSeFaltante) -- this query only enables the job to
+// materialize the season POSTER (season0N-poster.jpg) at the series root.
 func (q *Queries) ListarSeasonIDsComEpisodioPresente(ctx context.Context) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listarSeasonIDsComEpisodioPresente)
 	if err != nil {
@@ -700,11 +701,11 @@ type MarcarMediaFilesNaoVistosMissingParams struct {
 	LastSeen        sql.NullString
 }
 
-// Fecho do ciclo de vida (ADR-0012): ao concluir um scan COMPLETO com a fonte
-// acessivel, todo media_file 'present' daquela fonte cujo last_seen NAO e o
-// carimbo deste scan (ou seja, nao foi revisto) passa a 'missing'. A entity e
-// preservada; a posse cai. Escopo por library_source_id garante que um datasource
-// offline (que nem chega aqui) nao afete arquivos de outras fontes.
+// Lifecycle closure (ADR-0012): when a COMPLETE scan finishes with the source
+// reachable, every 'present' media_file of that source whose last_seen is NOT the
+// stamp of this scan (that is, it was not reviewed) becomes 'missing'. The entity is
+// preserved; ownership drops. Scoping by library_source_id guarantees that an offline
+// datasource (which does not even reach here) does not affect files of other sources.
 func (q *Queries) MarcarMediaFilesNaoVistosMissing(ctx context.Context, arg MarcarMediaFilesNaoVistosMissingParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, marcarMediaFilesNaoVistosMissing, arg.LibrarySourceID, arg.LastSeen)
 	if err != nil {
@@ -727,14 +728,14 @@ WHERE e.id = ?1
 LIMIT 1
 `
 
-// Devolve o path de UM media_file 'present' qualquer, descendente (via a MESMA
-// arvore de entity_relation) da entity `entity_id` -- usado pelo briefing 0119
-// (descoberta de arte LOCAL de artista/album de musica: a pasta canonica de um
-// album e o diretorio do arquivo da faixa; a do artista, um nivel acima). Artista/
-// album NUNCA tem media_file DIRETO (ADR-0027, so a faixa liga), entao so a arvore
-// alcanca. sql.ErrNoRows quando a entity nao tem nenhum descendente possuido (nao
-// deveria acontecer para quem passou por ListarEntitiesMusicaComFaixaPossuida, mas
-// o chamador trata como "nada a fazer", nao erro).
+// Returns the path of ANY 'present' media_file that is a descendant (via the SAME
+// entity_relation tree) of the `entity_id` entity -- used by the discovery
+// of LOCAL artist/album artwork for music: the canonical folder of an
+// album is the directory of the track file; the artist's, one level up. Artist/
+// album NEVER has a DIRECT media_file (ADR-0027, only the track links), so only the
+// tree reaches it. sql.ErrNoRows when the entity has no owned descendant at all (it
+// should not happen for whoever came through ListarEntitiesMusicaComFaixaPossuida,
+// but the caller treats it as "nothing to do", not an error).
 func (q *Queries) ObterCaminhoDescendentePresente(ctx context.Context, entityID string) (string, error) {
 	row := q.db.QueryRowContext(ctx, obterCaminhoDescendentePresente, entityID)
 	var path string
@@ -780,9 +781,9 @@ WHERE content_hash = ?
 LIMIT 1
 `
 
-// Dedup do scanner: acha o arquivo pelo hash de conteudo (estavel a rename/move).
-// content_hash NAO e UNIQUE (colisao real e astronomica com o hash parcial), por
-// isso LIMIT 1. Se achar, o scanner atualiza o path em vez de criar outra linha.
+// Scanner dedupe: finds the file by content hash (stable across rename/move).
+// content_hash is NOT UNIQUE (a real collision is astronomical with the partial
+// hash), hence LIMIT 1. If found, the scanner updates the path instead of a new row.
 func (q *Queries) ObterMediaFilePorContentHash(ctx context.Context, contentHash sql.NullString) (MediaFile, error) {
 	row := q.db.QueryRowContext(ctx, obterMediaFilePorContentHash, contentHash)
 	var i MediaFile
@@ -813,11 +814,11 @@ FROM media_file
 WHERE path = ?
 `
 
-// Scan incremental (briefing 0064): busca o media_file ja gravado para este
-// MESMO path (UNIQUE, indexado) ANTES de re-hashear/re-extrair mediainfo --
-// se mtime+size baterem com o que ja esta aqui, o scanner reusa content_hash/
-// mediainfo_json em vez de reabrir o arquivo. sql.ErrNoRows para arquivo novo
-// (nunca visto neste path).
+// Incremental scan: looks up the media_file already stored for this
+// SAME path (UNIQUE, indexed) BEFORE re-hashing/re-extracting mediainfo --
+// if mtime+size match what is already here, the scanner reuses content_hash/
+// mediainfo_json instead of reopening the file. sql.ErrNoRows for a new file
+// (never seen at this path).
 func (q *Queries) ObterMediaFilePorPath(ctx context.Context, path string) (MediaFile, error) {
 	row := q.db.QueryRowContext(ctx, obterMediaFilePorPath, path)
 	var i MediaFile

@@ -1,15 +1,15 @@
-// Package ytdlp gerencia o ciclo de vida do binário yt-dlp usado para baixar
-// trailer (briefing 0102) e música-tema (briefing 0103) do YouTube — decisão
-// fechada na ADR-0025 (TR1). Este pacote entrega SÓ a fundação: como o
-// binário chega até o container (download dinâmico em runtime, sem entrar na
-// imagem Docker) e como o admin pode assumir controle via path customizado.
-// Nenhum download de trailer/tema acontece aqui — só a resolução/gestão do
-// binário e a função genérica `Baixar` que 0102/0103 reaproveitam.
+// Package ytdlp manages the lifecycle of the yt-dlp binary used to download
+// trailers and theme music from YouTube — a decision closed in ADR-0025 (TR1).
+// This package delivers ONLY the foundation: how the binary reaches the
+// container (dynamic download at runtime, without entering the Docker image) and
+// how the admin can take control through a custom path. No trailer/theme
+// download happens here — only the resolution/management of the binary and the
+// generic `Baixar` function that the trailer and theme download flows reuse.
 //
-// Sem dependência de internal/server (mesmo princípio de internal/localmedia),
-// para não criar ciclo de import — o pacote recebe o diretório de dados e o
-// path de env JÁ RESOLVIDOS pelo chamador (cmd/mymediadb/main.go), nunca lê
-// os.Getenv sozinho (mantém o pacote testável).
+// No dependency on internal/server (same principle as internal/localmedia), to
+// avoid an import cycle — the package receives the data directory and the env
+// path ALREADY RESOLVED by the caller (cmd/mymediadb/main.go), it never reads
+// os.Getenv on its own (keeps the package testable).
 package ytdlp
 
 import (
@@ -27,72 +27,72 @@ import (
 	"time"
 )
 
-// nomeBinario é o nome do arquivo do binário baixado dinamicamente, gravado
-// em <dir>/nomeBinario (briefing 0101: "<diretório-de-dados>/bin/yt-dlp").
+// nomeBinario is the file name of the dynamically downloaded binary, written to
+// <dir>/nomeBinario ("<data-directory>/bin/yt-dlp").
 const nomeBinario = "yt-dlp"
 
-// releaseAPIURLPadrao é o endpoint oficial da release mais recente do yt-dlp
-// (briefing 0101). Injetável via ComReleaseAPIURL só para teste.
+// releaseAPIURLPadrao is the official endpoint of the latest yt-dlp release.
+// Injectable via ComReleaseAPIURL for tests only.
 const releaseAPIURLPadrao = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
 
-// httpTimeoutPadrao cobre tanto a consulta à API de release quanto o download
-// do binário em si (pode ser lento em conexões ruins; generoso de propósito).
+// httpTimeoutPadrao covers both the query to the release API and the download of
+// the binary itself (it can be slow on bad connections; generous on purpose).
 const httpTimeoutPadrao = 2 * time.Minute
 
-// Gerenciador resolve e mantém o binário yt-dlp utilizável pelo processo,
-// seguindo a ordem de precedência da ADR-0025: path customizado (banco →
-// env) → binário já baixado no cache local → baixa agora (só na 1ª
-// necessidade) → falha. Zero-value não é utilizável — construa com Novo.
-// Seguro para uso concorrente (mu serializa leituras/escritas de estado e
-// também o download, evitando baixar duas vezes em paralelo).
+// Gerenciador resolves and keeps the yt-dlp binary usable by the process,
+// following the precedence order of ADR-0025: custom path (database → env) →
+// binary already downloaded in the local cache → download now (only on the 1st
+// need) → failure. The zero value is not usable — build it with Novo. Safe for
+// concurrent use (mu serializes state reads/writes and also the download,
+// preventing a double parallel download).
 type Gerenciador struct {
 	mu sync.Mutex
 
-	// dir é o diretório de dados onde o binário baixado é gravado/lido (cache
-	// local entre reinícios do processo) -- resolvido pelo chamador (main.go,
-	// resolveYtdlpDir), mesmo padrão de resolveAssetsDir/resolveBackupDir.
+	// dir is the data directory where the downloaded binary is written/read (local
+	// cache across process restarts) -- resolved by the caller (main.go,
+	// resolveYtdlpDir), same pattern as resolveAssetsDir/resolveBackupDir.
 	dir string
-	// envPath é o path customizado vindo da env var MYMEDIADB_YTDLP_PATH,
-	// resolvido UMA VEZ no boot (imutável depois de Novo) -- o chamador
-	// resolve o env, este pacote só recebe o valor pronto.
+	// envPath is the custom path coming from the MYMEDIADB_YTDLP_PATH env var,
+	// resolved ONCE at boot (immutable after Novo) -- the caller resolves the env,
+	// this package only receives the ready value.
 	envPath string
-	// dbPath é o path customizado vindo de app_settings (banco), setável em
-	// RUNTIME via SetCustomPath -- tem PRECEDÊNCIA sobre envPath (ADR-0023).
+	// dbPath is the custom path coming from app_settings (database), settable at
+	// RUNTIME via SetCustomPath -- it takes PRECEDENCE over envPath (ADR-0023).
 	dbPath string
 
-	// baixado memoiza o path do binário já validado NESTA execução, para
-	// Resolver não re-stat/re-baixar a cada chamada depois do sucesso.
+	// baixado memoizes the path of the binary already validated in THIS execution, so
+	// that Resolver does not re-stat/re-download on every call after success.
 	baixado string
-	// ultimoErro guarda o detalhe do último erro de download/validação, só
-	// para diagnóstico -- Status sempre recalcula o estado atual, nunca serve
-	// este campo "stale" como fonte de verdade.
+	// ultimoErro stores the detail of the last download/validation error, for
+	// diagnosis only -- Status always recomputes the current state, it never serves
+	// this "stale" field as the source of truth.
 	ultimoErro string
 
 	httpClient    *http.Client
 	releaseAPIURL string
 }
 
-// Opcao configura o Gerenciador na construção -- hoje só usada em teste, para
-// apontar a API de release/HTTP client a um servidor fake local (nunca bate
-// na internet real nos testes automatizados).
+// Opcao configures the Gerenciador at construction -- today only used in tests,
+// to point the release/HTTP client API at a local fake server (the automated
+// tests never hit the real internet).
 type Opcao func(*Gerenciador)
 
-// ComReleaseAPIURL sobrescreve o endpoint da API de release do yt-dlp
-// (default releaseAPIURLPadrao). Uso exclusivo de teste.
+// ComReleaseAPIURL overrides the yt-dlp release API endpoint (default
+// releaseAPIURLPadrao). Tests only.
 func ComReleaseAPIURL(url string) Opcao {
 	return func(g *Gerenciador) { g.releaseAPIURL = url }
 }
 
-// ComHTTPClient sobrescreve o cliente HTTP usado tanto para consultar a API
-// de release quanto para baixar o binário. Uso exclusivo de teste (timeout
-// curto evita testes lentos em cenário de falha de rede simulada).
+// ComHTTPClient overrides the HTTP client used both to query the release API and
+// to download the binary. Tests only (a short timeout avoids slow tests in a
+// simulated network failure scenario).
 func ComHTTPClient(c *http.Client) Opcao {
 	return func(g *Gerenciador) { g.httpClient = c }
 }
 
-// Novo constrói o Gerenciador. dir é o diretório de dados (já resolvido pelo
-// chamador, ver resolveYtdlpDir em cmd/mymediadb/main.go); envPath é o path
-// customizado da env var MYMEDIADB_YTDLP_PATH ("" quando não configurada).
+// Novo builds the Gerenciador. dir is the data directory (already resolved by the
+// caller, see resolveYtdlpDir in cmd/mymediadb/main.go); envPath is the custom
+// path from the MYMEDIADB_YTDLP_PATH env var ("" when not configured).
 func Novo(dir, envPath string, opcoes ...Opcao) *Gerenciador {
 	g := &Gerenciador{
 		dir:           dir,
@@ -106,19 +106,19 @@ func Novo(dir, envPath string, opcoes ...Opcao) *Gerenciador {
 	return g
 }
 
-// SetCustomPath grava (ou limpa, com "") o path customizado vindo do banco --
-// chamado pela camada de settings (internal/server) sempre que o dono grava/
-// limpa `custom_binary_path` via PUT /settings/ytdlp, ou no boot para
-// sincronizar um valor já persistido de uma execução anterior. Aplica em
-// RUNTIME, sem reiniciar o processo.
+// SetCustomPath writes (or clears, with "") the custom path coming from the
+// database -- called by the settings layer (internal/server) whenever the owner
+// writes/clears `custom_binary_path` via PUT /settings/ytdlp, or at boot to
+// synchronize a value already persisted from a previous run. It applies at
+// RUNTIME, without restarting the process.
 func (g *Gerenciador) SetCustomPath(path string) {
 	g.mu.Lock()
 	g.dbPath = path
 	g.mu.Unlock()
 }
 
-// customPathLocked devolve o path customizado efetivo (banco vence sobre
-// env), ou "" quando nenhum dos dois está configurado. Chamador já segura mu.
+// customPathLocked returns the effective custom path (database wins over env), or
+// "" when neither is configured. The caller already holds mu.
 func (g *Gerenciador) customPathLocked() string {
 	if g.dbPath != "" {
 		return g.dbPath
@@ -126,12 +126,12 @@ func (g *Gerenciador) customPathLocked() string {
 	return g.envPath
 }
 
-// Resolver devolve o path do binário yt-dlp UTILIZÁVEL, na ordem de
-// precedência da ADR-0025: path customizado (banco → env, sem validar
-// existência -- o admin assume o controle) → binário já baixado (memória ou
-// disco, de uma execução anterior) → baixa agora (só a 1ª vez; chamadas
-// seguintes reusam o resultado em memória). Erro só quando nenhuma opção
-// funciona (sem customizado E download falhou).
+// Resolver returns the path of the USABLE yt-dlp binary, in the precedence order
+// of ADR-0025: custom path (database → env, without validating existence -- the
+// admin takes control) → binary already downloaded (memory or disk, from a
+// previous run) → download now (only the 1st time; the following calls reuse the
+// result in memory). An error only when no option works (no custom path AND the
+// download failed).
 func (g *Gerenciador) Resolver(ctx context.Context) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -160,16 +160,16 @@ func (g *Gerenciador) Resolver(ctx context.Context) (string, error) {
 	return destino, nil
 }
 
-// Status devolve o estado ATUAL de disponibilidade do yt-dlp, calculado na
-// hora (nunca serve um estado "cacheado" desatualizado): disponivel diz se
-// há um binário utilizável agora; origem é "custom" (path do admin, banco ou
-// env), "baixado" (cache dinâmico) ou "nenhum" (indisponível); detalhe carrega
-// o motivo quando disponivel=false. Usado tanto pelo endpoint de config
-// (GET/PUT /settings/ytdlp) quanto pelos endpoints de download dos briefings
-// seguintes (que checam ANTES de tentar, respondendo 503 sem yt-dlp, nunca
-// 500). Quando ainda não há binário em cache, dispara o download agora (mesma
-// resolução de Resolver) -- é assim que o admin descobre se o download
-// automático falhou (ex.: sem rede) sem precisar chamar Baixar primeiro.
+// Status returns the CURRENT availability state of yt-dlp, computed on the spot
+// (it never serves an outdated "cached" state): disponivel says whether there is a
+// usable binary right now; origem is "custom" (admin path, database or env),
+// "baixado" (dynamic cache) or "nenhum" (unavailable); detalhe carries the reason
+// when disponivel=false. Used both by the config endpoint (GET/PUT
+// /settings/ytdlp) and by the download endpoints of the following features (which
+// check BEFORE trying, answering 503 without yt-dlp, never 500). When there is no
+// binary in the cache yet, it triggers the download now (the same resolution as
+// Resolver) -- that is how the admin finds out whether the automatic download
+// failed (e.g.: no network) without having to call Baixar first.
 func (g *Gerenciador) Status(ctx context.Context) (disponivel bool, origem string, detalhe string) {
 	g.mu.Lock()
 	custom := g.customPathLocked()
@@ -188,10 +188,10 @@ func (g *Gerenciador) Status(ctx context.Context) (disponivel bool, origem strin
 	return true, "baixado", ""
 }
 
-// Baixar executa o yt-dlp resolvido (path customizado ou baixado
-// dinamicamente) para baixar `urlOrigem` em `destino`. Função GENÉRICA, sem
-// saber se é trailer ou tema -- 0102/0103 chamam esta MESMA função. Resolve
-// (e baixa, se necessário) o binário do yt-dlp em si antes de tentar.
+// Baixar runs the resolved yt-dlp (custom path or dynamically downloaded) to
+// download `urlOrigem` into `destino`. A GENERIC function, unaware of whether it
+// is a trailer or a theme -- the trailer and theme flows call this SAME function.
+// It resolves (and downloads, if needed) the yt-dlp binary itself before trying.
 func (g *Gerenciador) Baixar(ctx context.Context, urlOrigem, destino string) error {
 	bin, err := g.Resolver(ctx)
 	if err != nil {
@@ -205,11 +205,11 @@ func (g *Gerenciador) Baixar(ctx context.Context, urlOrigem, destino string) err
 	return nil
 }
 
-// baixarBinarioLocked baixa a release oficial do yt-dlp mais recente para
-// `destino`, valida com `--version` antes de aceitar como bom. Chamador já
-// segura mu (Resolver). Escreve num arquivo temporário e só promove (rename)
-// depois de validar -- nunca deixa um binário quebrado "meio baixado" no
-// cache, que ficaria preso lá para sempre em Resolver (checa via os.Stat).
+// baixarBinarioLocked downloads the latest official yt-dlp release into `destino`,
+// validates it with `--version` before accepting it as good. The caller already
+// holds mu (Resolver). It writes to a temporary file and only promotes it (rename)
+// after validating -- it never leaves a broken "half downloaded" binary in the
+// cache, which would stay stuck there forever in Resolver (checked via os.Stat).
 func (g *Gerenciador) baixarBinarioLocked(ctx context.Context, destino string) error {
 	nomeAsset, ok := nomeAssetPlataforma()
 	if !ok {
@@ -247,9 +247,9 @@ func (g *Gerenciador) baixarBinarioLocked(ctx context.Context, destino string) e
 	return nil
 }
 
-// releaseAPIResponse é o subconjunto do payload de
-// GET /repos/yt-dlp/yt-dlp/releases/latest que interessa: só os assets (nome +
-// URL de download direto).
+// releaseAPIResponse is the subset of the payload of
+// GET /repos/yt-dlp/yt-dlp/releases/latest that matters: only the assets (name +
+// direct download URL).
 type releaseAPIResponse struct {
 	Assets []struct {
 		Name               string `json:"name"`
@@ -257,8 +257,8 @@ type releaseAPIResponse struct {
 	} `json:"assets"`
 }
 
-// resolverURLAsset consulta a API de release e devolve a browser_download_url
-// do asset cujo nome bate com `nomeAsset` (ex.: "yt-dlp_linux").
+// resolverURLAsset queries the release API and returns the browser_download_url of
+// the asset whose name matches `nomeAsset` (e.g.: "yt-dlp_linux").
 func (g *Gerenciador) resolverURLAsset(ctx context.Context, nomeAsset string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, g.releaseAPIURL, nil)
 	if err != nil {
@@ -285,8 +285,8 @@ func (g *Gerenciador) resolverURLAsset(ctx context.Context, nomeAsset string) (s
 	return "", fmt.Errorf("nenhum asset %q encontrado na release mais recente", nomeAsset)
 }
 
-// baixarArquivo baixa `url` para `destino` via streaming (sem carregar o
-// binário inteiro em memória).
+// baixarArquivo downloads `url` into `destino` by streaming (without loading the
+// whole binary into memory).
 func (g *Gerenciador) baixarArquivo(ctx context.Context, url, destino string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -312,9 +312,9 @@ func (g *Gerenciador) baixarArquivo(ctx context.Context, url, destino string) er
 	return nil
 }
 
-// validarBinario roda `<path> --version` e devolve erro se o processo falhar
-// -- o piso de validação desta entrega (checksum/assinatura fica como
-// hardening futuro, ver §3 do briefing 0101).
+// validarBinario runs `<path> --version` and returns an error if the process fails
+// -- the validation floor of this delivery (checksum/signature is left as future
+// hardening).
 func validarBinario(ctx context.Context, path string) error {
 	cmd := exec.CommandContext(ctx, path, "--version")
 	var buf bytes.Buffer
@@ -326,24 +326,25 @@ func validarBinario(ctx context.Context, path string) error {
 	return nil
 }
 
-// nomeAssetPlataforma devolve o nome do asset a baixar da release do yt-dlp.
-// SEMPRE "yt-dlp" -- o zipapp Python PLATAFORMA-INDEPENDENTE (roda via shebang
-// `#!/usr/bin/env python3`), não os binários standalone por SO/arquitetura
-// (`yt-dlp_linux` etc., build PyInstaller). Decisão pós-achado de produção
-// (briefing 0101 §6): o standalone Linux é ligado a glibc e a imagem final do
-// projeto é Alpine/musl -- falha em runtime com "no such file or directory"
-// (o kernel não acha o linker dinâmico glibc embutido no ELF; `gcompat`
-// TAMBÉM não resolve, falha mais adiante por símbolo glibc ausente na libpython
-// embutida). O zipapp evita o problema na raiz: precisa só de `python3` no
-// PATH (já garantido pelo Dockerfile, `apk add python3`), sem depender de
-// qual glibc/musl a imagem usa. ok sempre true -- existe só pra manter a
-// assinatura extensível caso uma exceção real apareça no futuro.
+// nomeAssetPlataforma returns the name of the asset to download from the yt-dlp
+// release. ALWAYS "yt-dlp" -- the PLATFORM-INDEPENDENT Python zipapp (it runs via
+// the `#!/usr/bin/env python3` shebang), not the standalone binaries per
+// OS/architecture (`yt-dlp_linux` etc., PyInstaller build). Decision after a
+// production finding: the Linux standalone is linked against glibc and the
+// project's final image is Alpine/musl -- it fails at runtime with "no such file
+// or directory" (the kernel does not find the glibc dynamic linker embedded in the
+// ELF; `gcompat` does NOT solve it either, it fails further ahead because of a
+// glibc symbol missing in the embedded libpython). The zipapp avoids the problem at
+// its root: it only needs `python3` on the PATH (already guaranteed by the
+// Dockerfile, `apk add python3`), with no dependency on which glibc/musl the image
+// uses. ok is always true -- it exists only to keep the signature extensible in
+// case a real exception shows up in the future.
 func nomeAssetPlataforma() (string, bool) {
 	return "yt-dlp", true
 }
 
-// truncar corta `s` em `n` bytes, com reticências -- evita mensagens de erro
-// gigantes quando a saída de um processo externo vem grande.
+// truncar cuts `s` at `n` bytes, with an ellipsis -- it avoids gigantic error
+// messages when the output of an external process comes back large.
 func truncar(s string, n int) string {
 	if len(s) <= n {
 		return s

@@ -11,12 +11,13 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Testes do briefing 0047 (robustez de fonte-default): sem `source` explícito, a fonte
-// é resolvida DINAMICAMENTE por capacidade — nunca assume "tmdb". E o interno-first casa
-// itens de QUALQUER fonte com coluna gerada (tvdb inclusive), não só tmdb.
+// Tests of default-source robustness: without an explicit `source`, the source is
+// resolved DYNAMICALLY by capability — it never assumes "tmdb". And the internal-first
+// matches items from ANY source with a generated column (tvdb included), not only
+// tmdb.
 
-// provNaoTmdb é um provider de teste com Nome() CONFIGURÁVEL (≠ "tmdb") e um detalhe
-// fixo — exercita o caminho de import por uma fonte que não é o TMDB.
+// provNaoTmdb is a test provider with a CONFIGURABLE Nome() (≠ "tmdb") and a fixed
+// detail — it exercises the import path through a source that is not TMDB.
 type provNaoTmdb struct{ nome string }
 
 func (p *provNaoTmdb) Nome() string { return p.nome }
@@ -33,16 +34,18 @@ func (p *provNaoTmdb) MapearDetalhe(json.RawMessage) (map[string]any, error) {
 	return map[string]any{"title": "Item Externo"}, nil
 }
 
-// provSerieNaoTmdb estende provNaoTmdb com a capacidade SerieProvider (árvore vazia
-// basta ao type-assert de capacidade — o conteúdo não importa para a seleção de fonte).
+// provSerieNaoTmdb extends provNaoTmdb with the SerieProvider capability (an empty tree
+// is enough for the capability type-assert — the content does not matter for the source
+// selection).
 type provSerieNaoTmdb struct{ provNaoTmdb }
 
 func (p *provSerieNaoTmdb) BuscarSerieArvore(context.Context, string, []string) (provider.SerieArvore, error) {
 	return provider.SerieArvore{}, nil
 }
 
-// provBuscaFonte devolve resultados de busca FIXOS sob um Nome() configurável, para o
-// interno-first casar a fonte real do resultado (r.Source) contra a biblioteca.
+// provBuscaFonte returns FIXED search results under a configurable Nome(), so the
+// internal-first matches the real source of the result (r.Source) against the
+// library.
 type provBuscaFonte struct {
 	nome string
 	res  []provider.ResultadoExterno
@@ -62,13 +65,14 @@ func (p *provBuscaFonte) MapearDetalhe(json.RawMessage) (map[string]any, error) 
 	return map[string]any{}, nil
 }
 
-// TestFonteDefaultResolveDinamicamente: fonteDefault escolhe o primeiro provider CAPAZ do
-// tipo (por prioridade), sem assumir "tmdb". Um SerieProvider não-tmdb resolve 'movie' E
-// 'tv'; um provider core-only (sem SerieProvider) resolve 'movie' mas NÃO 'tv'.
+// TestFonteDefaultResolveDinamicamente: fonteDefault picks the first provider CAPABLE of
+// the type (by priority), without assuming "tmdb". A non-tmdb SerieProvider resolves
+// 'movie' AND 'tv'; a core-only provider (without SerieProvider) resolves 'movie' but NOT
+// 'tv'.
 func TestFonteDefaultResolveDinamicamente(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 
-	// Só um provider capaz de série, chamado "tvdb" (não-tmdb).
+	// Only one provider capable of series, called "tvdb" (not tmdb).
 	sCapaz := New("v-teste", d, WithSearchProvider(&provSerieNaoTmdb{provNaoTmdb{nome: "tvdb"}}))
 	if src, ok := sCapaz.fonteDefault("movie"); !ok || src != "tvdb" {
 		t.Errorf("fonteDefault(movie) = (%q,%v), quero (tvdb,true)", src, ok)
@@ -77,7 +81,7 @@ func TestFonteDefaultResolveDinamicamente(t *testing.T) {
 		t.Errorf("fonteDefault(tv) = (%q,%v), quero (tvdb,true)", src, ok)
 	}
 
-	// Só um provider core-only ("letterboxd"): resolve movie, mas não série.
+	// Only a core-only provider ("letterboxd"): it resolves movie, but not series.
 	sCore := New("v-teste", d, WithSearchProvider(&provNaoTmdb{nome: "letterboxd"}))
 	if src, ok := sCore.fonteDefault("movie"); !ok || src != "letterboxd" {
 		t.Errorf("fonteDefault(movie) core = (%q,%v), quero (letterboxd,true)", src, ok)
@@ -86,16 +90,17 @@ func TestFonteDefaultResolveDinamicamente(t *testing.T) {
 		t.Errorf("fonteDefault(tv) core = (%q,%v), quero (\"\",false) sem SerieProvider", src, ok)
 	}
 
-	// Sem provider algum: nenhuma fonte para nenhum tipo.
+	// No provider at all: no source for any type.
 	sVazio := New("v-teste", d)
 	if src, ok := sVazio.fonteDefault("movie"); ok {
 		t.Errorf("fonteDefault(movie) vazio = (%q,%v), quero (\"\",false)", src, ok)
 	}
 }
 
-// TestImportSemSourceUsaFonteNaoTmdb: um ambiente com SÓ um provider não-tmdb ("tvdb")
-// importa um filme SEM `source` explícito pela fonte realmente registrada — NÃO cai em
-// 502 por assumir "tmdb". A identidade externa gravada é a da fonte escolhida.
+// TestImportSemSourceUsaFonteNaoTmdb: an environment with ONLY a non-tmdb provider
+// ("tvdb") imports a movie WITHOUT an explicit `source` through the source actually
+// registered — it does NOT fall into 502 for assuming "tmdb". The external identity
+// written is that of the chosen source.
 func TestImportSemSourceUsaFonteNaoTmdb(t *testing.T) {
 	h, _ := setupSearchServer(t, WithSearchProvider(&provNaoTmdb{nome: "tvdb"}), WithAssetsDir(t.TempDir()))
 
@@ -110,9 +115,9 @@ func TestImportSemSourceUsaFonteNaoTmdb(t *testing.T) {
 	}
 }
 
-// TestImportTvSemFonteCapaz422: import de série SEM `source` num ambiente cujo único
-// provider é core-only (sem SerieProvider) responde 422 SEMÂNTICO ("nenhuma fonte
-// disponível para tv"), NÃO o 502 genérico de fonte indisponível.
+// TestImportTvSemFonteCapaz422: a series import WITHOUT `source` in an environment whose
+// only provider is core-only (without SerieProvider) answers a SEMANTIC 422 ("nenhuma
+// fonte disponível para tv"), NOT the generic 502 of unavailable source.
 func TestImportTvSemFonteCapaz422(t *testing.T) {
 	h, _ := setupSearchServer(t, WithSearchProvider(&provNaoTmdb{nome: "letterboxd"}), WithAssetsDir(t.TempDir()))
 
@@ -123,12 +128,13 @@ func TestImportTvSemFonteCapaz422(t *testing.T) {
 	checkErrorShape(t, rec, "no_source_for_type")
 }
 
-// provMusicaNaoTmdb estende provNaoTmdb com as capacidades de música (MusicaProvider +
-// MusicaAlbumProvider, ADR-0027) -- exercita provedorCapaz("artista"/"album"/"faixa"),
-// achado ao validar o botão "Baixar Metadados" pra artista/álbum em produção: sem essas
-// capacidades explícitas em provedorCapaz, o `default: true` aceitava QUALQUER provider
-// registrado (inclusive um "tmdb" sem nada a ver com música) como capaz de 'artista'/
-// 'album', e fonteDefault o escolhia por prioridade mesmo sem saber servir o tipo.
+// provMusicaNaoTmdb extends provNaoTmdb with the music capabilities (MusicaProvider +
+// MusicaAlbumProvider, ADR-0027) -- it exercises provedorCapaz("artista"/"album"/
+// "faixa"), found while validating the "Baixar Metadados" button for artist/album in
+// production: without those explicit capabilities in provedorCapaz, the `default: true`
+// accepted ANY registered provider (including a "tmdb" with nothing to do with music) as
+// capable of 'artista'/'album', and fonteDefault picked it by priority even without
+// knowing how to serve the type.
 type provMusicaNaoTmdb struct{ provNaoTmdb }
 
 func (p *provMusicaNaoTmdb) BuscarArtistaArvore(context.Context, string, []string) (provider.ArtistaArvore, error) {
@@ -147,10 +153,11 @@ func (p *provMusicaNaoTmdb) BuscarAlbumPorMbid(context.Context, string, []string
 	return provider.AlbumExterno{}, nil
 }
 
-// TestFonteDefaultMusicaNaoEscolheProviderSemCapacidade: com um provider SEM música
-// registrado ANTES (maior prioridade) de um provider DE música, fonteDefault('artista'/
-// 'album'/'faixa') pula o primeiro e escolhe o musical -- nunca assume "o primeiro
-// registrado serve" para os tipos de música (regressão do bug relatado acima).
+// TestFonteDefaultMusicaNaoEscolheProviderSemCapacidade: with a provider WITHOUT music
+// registered BEFORE (higher priority) a provider OF music, fonteDefault('artista'/
+// 'album'/'faixa') skips the first one and picks the music one -- it never assumes "the
+// first registered one serves" for the music types (a regression of the bug reported
+// above).
 func TestFonteDefaultMusicaNaoEscolheProviderSemCapacidade(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 
@@ -166,10 +173,10 @@ func TestFonteDefaultMusicaNaoEscolheProviderSemCapacidade(t *testing.T) {
 	}
 }
 
-// TestFonteDefaultMusicaSemProviderCapaz422: um ambiente cujo único provider registrado
-// não modela música (core-only, tipo "tmdb") não tem fonte-default para 'artista'/
-// 'album'/'faixa' -- 422 semântico, nunca um 502/422 "sem source_id" por escolher uma
-// fonte incapaz.
+// TestFonteDefaultMusicaSemProviderCapaz422: an environment whose only registered
+// provider does not model music (core-only, kind "tmdb") has no default source for
+// 'artista'/'album'/'faixa' -- a semantic 422, never a 502/422 "sem source_id" for
+// picking an incapable source.
 func TestFonteDefaultMusicaSemProviderCapaz422(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	s := New("v-teste", d, WithSearchProvider(&provNaoTmdb{nome: "tmdb"}))
@@ -181,8 +188,9 @@ func TestFonteDefaultMusicaSemProviderCapaz422(t *testing.T) {
 	}
 }
 
-// TestIdInternoItemFonteTvdb: o interno-first resolve um item importado de fonte NÃO-tmdb
-// (tvdb, via coluna gerada external_id_tvdb) — não só tmdb. Fonte sem coluna sai nil.
+// TestIdInternoItemFonteTvdb: the internal-first resolves an item imported from a
+// NON-tmdb source (tvdb, through the generated column external_id_tvdb) — not only tmdb.
+// A source without a column comes out nil.
 func TestIdInternoItemFonteTvdb(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	_, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
@@ -208,8 +216,9 @@ func TestIdInternoItemFonteTvdb(t *testing.T) {
 	}
 }
 
-// TestSearchInternoFirstFonteTvdb: um resultado de busca de fonte tvdb, cujo item já está
-// na biblioteca, ganha internal_id ("na biblioteca") — o interno-first não é mais só-tmdb.
+// TestSearchInternoFirstFonteTvdb: a search result from the tvdb source, whose item is
+// already in the library, gets internal_id ("na biblioteca") — the internal-first is no
+// longer tmdb-only.
 func TestSearchInternoFirstFonteTvdb(t *testing.T) {
 	prov := &provBuscaFonte{
 		nome: "tvdb",

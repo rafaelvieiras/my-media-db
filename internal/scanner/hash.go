@@ -9,22 +9,22 @@ import (
 	"os"
 )
 
-// blocoHash é o tamanho de cada bloco amostrado no content_hash parcial: 1 MiB.
+// blocoHash is the size of each block sampled in the partial content_hash: 1 MiB.
 const blocoHash int64 = 1 << 20
 
-// prefixoHash versiona o esquema do content_hash. Se o esquema mudar, o prefixo
-// muda junto e um re-scan recalcula sem colidir com hashes antigos.
+// prefixoHash versions the content_hash scheme. If the scheme changes, the prefix
+// changes with it and a re-scan recomputes without colliding with old hashes.
 const prefixoHash = "p1:"
 
-// contentHash calcula o content_hash PARCIAL/AMOSTRADO (decisão travada do
-// briefing 0009 §6), estável a rename/move e rápido em arquivos de TB:
+// contentHash computes the PARTIAL/SAMPLED content_hash (the locked decision of
+// the hash scheme), stable across rename/move and fast on TB-sized files:
 //
-//	sha256( size(8 bytes LE) || head(1 MiB) || tail(1 MiB) ), com prefixo "p1:".
+//	sha256( size(8 bytes LE) || head(1 MiB) || tail(1 MiB) ), with the "p1:" prefix.
 //
-// O `size` entra no hash para separar arquivos que compartilhem os mesmos blocos
-// mas tenham tamanhos diferentes. Arquivos com até 2 blocos (<= 2 MiB) são
-// lidos por inteiro (head cobre tudo; não há tail separado). Full-SHA foi
-// descartado (I/O proibitivo); path+mtime foi descartado (quebra no move).
+// The `size` enters the hash to separate files that share the same blocks but have
+// different sizes. Files with up to 2 blocks (<= 2 MiB) are read in full (head
+// covers everything; there is no separate tail). Full-SHA was discarded
+// (prohibitive I/O); path+mtime was discarded (it breaks on move).
 func contentHash(f *os.File, size int64) (string, error) {
 	h := sha256.New()
 	var buf [8]byte
@@ -38,11 +38,11 @@ func contentHash(f *os.File, size int64) (string, error) {
 		return prefixoHash + hex.EncodeToString(h.Sum(nil)), nil
 	}
 
-	// Bloco inicial.
+	// First block.
 	if _, err := io.CopyN(h, f, blocoHash); err != nil {
 		return "", fmt.Errorf("scanner: hash do bloco inicial: %w", err)
 	}
-	// Bloco final.
+	// Last block.
 	if _, err := f.Seek(size-blocoHash, io.SeekStart); err != nil {
 		return "", fmt.Errorf("scanner: seek para o bloco final: %w", err)
 	}

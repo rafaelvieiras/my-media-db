@@ -11,9 +11,9 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// tvdbArvoreFake e a fonte da ARVORE de serie (source="tvdb"): implementa SerieProvider.
-// MapearDetalhe devolve a identidade (title/description/original_language) + poster, que
-// o enrich rico NAO pode clobbar. Arvore minima (sem temporadas) — o foco e o no serie.
+// tvdbArvoreFake is the series TREE source (source="tvdb"): it implements SerieProvider.
+// MapearDetalhe returns the identity (title/description/original_language) + poster, which
+// the rich enrichment must NOT clobber. Minimal tree (no seasons) — the focus is the series node.
 type tvdbArvoreFake struct{ imgURL string }
 
 func (tvdbArvoreFake) Nome() string { return "tvdb" }
@@ -35,8 +35,8 @@ func (tvdbArvoreFake) BuscarSerieArvore(context.Context, string, []string) (prov
 	return provider.SerieArvore{DefaultSeasonType: "official", SeasonTypes: []string{"official"}}, nil
 }
 
-// tmdbRicoFake e o provider "tmdb" que expoe SO a capacidade rica de serie (0045): NAO e
-// a fonte da arvore. Devolve o canonico rico (so as chaves ricas) para o tvdbID esperado.
+// tmdbRicoFake is the "tmdb" provider that exposes ONLY the series rich capability: it is NOT
+// the source of the tree. It returns the rich canonical (only the rich keys) for the expected tvdbID.
 type tmdbRicoFake struct {
 	backdropURL string
 	chamadas    int
@@ -70,8 +70,8 @@ func (f *tmdbRicoFake) BuscarSerieDetalheRico(_ context.Context, tvdbID string, 
 	}, true, nil
 }
 
-// svcSerieRico monta o Servico com a arvore TVDB + o enriquecedor rico TMDB e um servidor
-// de imagem (poster do TVDB e fanart do TMDB baixam dele).
+// svcSerieRico builds the Servico with the TVDB tree + the TMDB rich enricher and an image server
+// (the TVDB poster and the TMDB fanart are downloaded from it).
 func svcSerieRico(t *testing.T) (*Servico, *db.DB, *tmdbRicoFake) {
 	t.Helper()
 	database := setupDB(t)
@@ -81,9 +81,9 @@ func svcSerieRico(t *testing.T) (*Servico, *db.DB, *tmdbRicoFake) {
 	return svc, database, rico
 }
 
-// TestImportarSerieMesclaRicoTMDB (0045): importar a serie do TVDB grava, ALEM da camada
-// TVDB, a camada media_external "tmdb" com o canonico rico (tagline/keywords/similar/
-// classificacao/tags/situacao/backdrop) SEM clobbar a identidade TVDB, e baixa a fanart.
+// TestImportarSerieMesclaRicoTMDB: importing the series from TVDB writes, BESIDES the
+// TVDB layer, the media_external layer "tmdb" with the rich canonical (tagline/keywords/similar/
+// rating/tags/status/backdrop) WITHOUT clobbering the TVDB identity, and downloads the fanart.
 func TestImportarSerieMesclaRicoTMDB(t *testing.T) {
 	svc, database, rico := svcSerieRico(t)
 	ctx := context.Background()
@@ -97,7 +97,7 @@ func TestImportarSerieMesclaRicoTMDB(t *testing.T) {
 	}
 
 	r := sqlcgen.New(database.Read)
-	// Identidade da arvore TVDB intacta (nao clobbada pelo rico).
+	// TVDB tree identity intact (not clobbered by the rich layer).
 	if serie, err := r.ObterEntity(ctx, serieID); err != nil || serie.Title != "The Simpsons" {
 		t.Fatalf("serie.title = %q err=%v, quero The Simpsons (TVDB)", serie.Title, err)
 	}
@@ -105,16 +105,16 @@ func TestImportarSerieMesclaRicoTMDB(t *testing.T) {
 	exigirCamadaRica(t, serieRicoPersistido(t, database, serieID))
 	exigirArtesSerie(t, r, serieID)
 
-	// Idempotente (0043): re-importar reescreve a MESMA linha (sem duplicar).
+	// Idempotent: re-importing rewrites the SAME row (without duplicating).
 	if _, _, err := svc.Importar(ctx, "tvdb", "71663", "tv", []string{"en"}); err != nil {
 		t.Fatalf("reimport: %v", err)
 	}
-	_ = serieRicoPersistido(t, database, serieID) // ObterMediaExternalPorFonte e :one — erraria se duplicasse
+	_ = serieRicoPersistido(t, database, serieID) // ObterMediaExternalPorFonte is :one — it would fail if it duplicated
 }
 
-// arvoreGenericaFake e uma fonte-base de arvore com Nome ARBITRARIO (nao "tvdb"): prova
-// que a selecao da fonte-base e da rica e agnostica de nome (briefing 0046). MapearDetalhe
-// da a identidade (nao clobbavel). Arvore minima (sem temporadas).
+// arvoreGenericaFake is a tree base source with an ARBITRARY name (not "tvdb"): it proves
+// that the selection of the base and of the rich source is name-agnostic. MapearDetalhe
+// gives the identity (not clobberable). Minimal tree (no seasons).
 type arvoreGenericaFake struct{ nome string }
 
 func (f arvoreGenericaFake) Nome() string { return f.nome }
@@ -131,9 +131,9 @@ func (arvoreGenericaFake) BuscarSerieArvore(context.Context, string, []string) (
 	return provider.SerieArvore{DefaultSeasonType: "official", SeasonTypes: []string{"official"}}, nil
 }
 
-// ricoGenericoFake e um enriquecedor rico com Nome ARBITRARIO (nao "tmdb"). Captura o id
-// externo que recebeu — deve ser o sourceID da fonte-base, provando idExternoDaSerie
-// generico. NAO devolve backdrop (sem download de arte no teste).
+// ricoGenericoFake is a rich enricher with an ARBITRARY name (not "tmdb"). It captures the
+// external id it received — it must be the sourceID of the base source, proving that idExternoDaSerie
+// is generic. It returns NO backdrop (no artwork download in the test).
 type ricoGenericoFake struct {
 	nome     string
 	chamadas int
@@ -156,10 +156,10 @@ func (f *ricoGenericoFake) BuscarSerieDetalheRico(_ context.Context, id string, 
 	return map[string]any{"tagline": map[string]any{"en": "Slogan generico"}, "airing_status": "Ended"}, true, nil
 }
 
-// TestEnriquecerSerieRicoAgnostico (0046): com fontes de nomes ARBITRARIOS, a arvore vem
-// da fonte-base e o OUTRO provider (o rico) enriquece o no serie, cruzando o sourceID da
-// fonte-base. Prova que nao ha hardcode de "tmdb"/"tvdb": a camada rica e gravada sob o
-// nome da fonte rica e o rico recebeu o id da fonte-base.
+// TestEnriquecerSerieRicoAgnostico: with sources of ARBITRARY names, the tree comes
+// from the base source and the OTHER provider (the rich one) enriches the series node, crossing the
+// sourceID of the base source. It proves that there is no hardcode of "tmdb"/"tvdb": the rich layer
+// is written under the name of the rich source and the rich one received the id of the base source.
 func TestEnriquecerSerieRicoAgnostico(t *testing.T) {
 	database := setupDB(t)
 	rico := &ricoGenericoFake{nome: "beta"}
@@ -173,7 +173,7 @@ func TestEnriquecerSerieRicoAgnostico(t *testing.T) {
 	if rico.chamadas != 1 || rico.ultimoID != "555" {
 		t.Fatalf("rico chamadas=%d id=%q, quero 1 chamada com o sourceID da fonte-base (555)", rico.chamadas, rico.ultimoID)
 	}
-	// A camada rica foi gravada sob o NOME da fonte rica ("beta"), nao "tmdb".
+	// The rich layer was written under the NAME of the rich source ("beta"), not "tmdb".
 	row, err := sqlcgen.New(database.Read).ObterMediaExternalPorFonte(ctx, sqlcgen.ObterMediaExternalPorFonteParams{
 		EntityID: serieID,
 		Source:   "beta",
@@ -190,9 +190,9 @@ func TestEnriquecerSerieRicoAgnostico(t *testing.T) {
 	}
 }
 
-// TestImportarSerieSoTMDBSemRico (0046): com SO a fonte-base registrada (sem outro provider
-// rico), a arvore importa normalmente e NENHUMA camada rica e gravada — sem panico, sem
-// erro (a serie fica so com a arvore). Cobre o caminho "so-um-provider".
+// TestImportarSerieSoTMDBSemRico: with ONLY the base source registered (no other rich
+// provider), the tree imports normally and NO rich layer is written — no panic, no
+// error (the series stays with the tree only). It covers the "single-provider" path.
 func TestImportarSerieSoTMDBSemRico(t *testing.T) {
 	database := setupDB(t)
 	svc := New(database, provider.NovaRegistry(arvoreGenericaFake{nome: "alfa"}), t.TempDir())
@@ -202,7 +202,7 @@ func TestImportarSerieSoTMDBSemRico(t *testing.T) {
 	if err != nil || !criada {
 		t.Fatalf("Importar serie so-fonte-base: id=%s criada=%v err=%v", serieID, criada, err)
 	}
-	// Nao ha OUTRO provider rico: nenhuma camada media_external de enriquecimento cruzado.
+	// There is no OTHER rich provider: no media_external layer of cross enrichment.
 	if _, err := sqlcgen.New(database.Read).ObterMediaExternalPorFonte(ctx, sqlcgen.ObterMediaExternalPorFonteParams{
 		EntityID: serieID,
 		Source:   "beta",
@@ -211,8 +211,8 @@ func TestImportarSerieSoTMDBSemRico(t *testing.T) {
 	}
 }
 
-// exigirCamadaRica confere que o canonico rico persistido carrega AS chaves do contrato
-// e a situacao crua, e NAO carrega title/description/original_language (clobbaria a arvore).
+// exigirCamadaRica checks that the persisted rich canonical carries THE contract keys
+// and the raw status, and does NOT carry title/description/original_language (it would clobber the tree).
 func exigirCamadaRica(t *testing.T, rico map[string]any) {
 	t.Helper()
 	for _, chave := range []string{"tagline", "keywords", "certification_by_region", "tags", "similar", "backdrop_url", "airing_status"} {
@@ -230,8 +230,8 @@ func exigirCamadaRica(t *testing.T, rico map[string]any) {
 	}
 }
 
-// exigirArtesSerie confere que a FANART foi baixada do backdrop_url (fecha o buraco do
-// 0044) e que o POSTER do TVDB coexiste (as duas artes convivem).
+// exigirArtesSerie checks that the FANART was downloaded from backdrop_url (closing the
+// gap) and that the TVDB POSTER coexists (the two artworks live together).
 func exigirArtesSerie(t *testing.T, r *sqlcgen.Queries, serieID string) {
 	t.Helper()
 	ctx := context.Background()
@@ -247,8 +247,8 @@ func exigirArtesSerie(t *testing.T, r *sqlcgen.Queries, serieID string) {
 	}
 }
 
-// serieRicoPersistido le a camada media_external "tmdb" do no serie e desembrulha o
-// canonico rico do envelope ChaveEnvelopeSerieRico.
+// serieRicoPersistido reads the media_external layer "tmdb" of the series node and unwraps the
+// rich canonical from the ChaveEnvelopeSerieRico envelope.
 func serieRicoPersistido(t *testing.T, database *db.DB, serieID string) map[string]any {
 	t.Helper()
 	row, err := sqlcgen.New(database.Read).ObterMediaExternalPorFonte(context.Background(), sqlcgen.ObterMediaExternalPorFonteParams{

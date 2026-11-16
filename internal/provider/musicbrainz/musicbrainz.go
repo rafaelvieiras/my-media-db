@@ -1,18 +1,19 @@
-// Package musicbrainz implementa o provider BASE da vertical música (briefing 0106,
-// ADR-0027 item 6): busca de artista, montagem da árvore artista→álbuns→faixas via a API
-// pública do MusicBrainz (https://musicbrainz.org/ws/2/, sem chave), e arte de capa de
-// álbum via o Cover Art Archive (https://coverartarchive.org/, mesmo grupo de projetos,
-// host separado). Segue o mesmo padrão de internal/provider/themerrdb (o único outro
-// provider sem credencial hoje): o Client implementa o core provider.Provider com
-// Buscar/BuscarDetalhe/MapearDetalhe MÍNIMOS (só o suficiente para busca/import de
-// artista), e as capacidades reais são provider.MusicaProvider (árvore) e
-// provider.ArteProvider (capa via CAA).
+// Package musicbrainz implements the BASE provider of the music vertical (ADR-0027 item
+// 6): artist search, assembly of the artist→albums→tracks tree through the public
+// MusicBrainz API (https://musicbrainz.org/ws/2/, without a key), and album cover art
+// through the Cover Art Archive (https://coverartarchive.org/, same group of projects, a
+// separate host). It follows the same pattern as internal/provider/themerrdb (the only
+// other provider without a credential today): the Client implements the core
+// provider.Provider with MINIMAL Buscar/BuscarDetalhe/MapearDetalhe (only enough for
+// artist search/import), and the real capabilities are provider.MusicaProvider (tree) and
+// provider.ArteProvider (cover through the CAA).
 //
-// O MusicBrainz exige <= 1 requisição/s por IP e um User-Agent identificando a aplicação
-// — sem isso bloqueia por abuso (https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting).
-// Todo GET a musicbrainz.org passa pelo limitador em ratelimit.go; o Cover Art Archive não
-// documenta limite equivalente, então NÃO é limitado aqui (só ganha o mesmo User-Agent,
-// por boa prática).
+// MusicBrainz requires <= 1 request/s per IP and a User-Agent identifying the application
+// -- without that it blocks for abuse
+// (https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting). Every GET to musicbrainz.org
+// goes through the limiter in ratelimit.go; the Cover Art Archive does not document an
+// equivalent limit, so it is NOT limited here (it only gets the same User-Agent, as good
+// practice).
 package musicbrainz
 
 import (
@@ -32,33 +33,32 @@ import (
 )
 
 const (
-	// baseURLPadrao é a base estável da API v2 do MusicBrainz (JSON via ?fmt=json).
+	// baseURLPadrao is the stable base of the MusicBrainz v2 API (JSON through ?fmt=json).
 	baseURLPadrao = "https://musicbrainz.org/ws/2"
-	// caaBaseURLPadrao é a base do Cover Art Archive — host SEPARADO do MusicBrainz
-	// (mesmo grupo de projetos, infra distinta). Não é parâmetro de New() por
-	// simplicidade (nenhum outro provider do repo precisou de 2 bases até hoje); os
-	// testes injetam um valor de teste diretamente no campo `caaBaseURL` do Client
-	// (mesmo pacote, sem API pública para isso — ver musicbrainz_test.go).
+	// caaBaseURLPadrao is the base of the Cover Art Archive -- a host SEPARATE from
+	// MusicBrainz (same group of projects, distinct infrastructure). It is not a parameter of
+	// New() for simplicity (no other provider of the repo needed 2 bases so far); the tests
+	// inject a test value directly into the `caaBaseURL` field of the Client (same package,
+	// without a public API for that -- see musicbrainz_test.go).
 	caaBaseURLPadrao = "https://coverartarchive.org"
-	// timeoutPadrao limita cada requisição; estouro vira erro (o enrich degrada).
+	// timeoutPadrao bounds each request; an overrun becomes an error (enrich degrades).
 	timeoutPadrao = 8 * time.Second
-	// intervaloRateLimit é o intervalo mínimo entre duas requisições a musicbrainz.org
-	// (briefing 0106 §3: "MusicBrainz exige <= 1 requisição/s").
+	// intervaloRateLimit is the minimum interval between two requests to musicbrainz.org
+	// ("MusicBrainz requires <= 1 request/s").
 	intervaloRateLimit = time.Second
-	// nomeFonte é o Nome() da fonte (também o source em entity/media_external).
+	// nomeFonte is the Nome() of the source (also the source in entity/media_external).
 	nomeFonte = "musicbrainz"
-	// userAgent é o header OBRIGATÓRIO em toda chamada ao MusicBrainz — a API bloqueia
-	// por abuso sem um User-Agent identificando a aplicação e um contato. O wiring de
-	// produção (cmd/mymediadb/main.go, fora deste briefing) poderia futuramente
-	// substituir a versão fixa por main.version; por ora um valor estável é suficiente
-	// (o requisito da API é IDENTIFICAR a app de forma consistente, não versionar à
-	// risca) — ver nota no README do briefing 0106.
+	// userAgent is the MANDATORY header in every call to MusicBrainz -- the API blocks for
+	// abuse without a User-Agent identifying the application and a contact. The production
+	// wiring (cmd/mymediadb/main.go, outside this package) could in the future replace the fixed
+	// version with main.version; for now a stable value is enough (the requirement of the API is
+	// to IDENTIFY the app consistently, not to version it strictly).
 	userAgent = "MyMediaDB/dev (+https://github.com/rafaelvieiras/my-media-db)"
 )
 
-// Client é o provider MusicBrainz + Cover Art Archive. httpClient e baseURL são
-// injetáveis para teste (apontar a um httptest.Server sem rede real); caaBaseURL só é
-// injetável internamente (mesmo pacote) — ver comentário de caaBaseURLPadrao.
+// Client is the MusicBrainz + Cover Art Archive provider. httpClient and baseURL are
+// injectable for testing (point at an httptest.Server without the real network); caaBaseURL
+// is only injectable internally (same package) -- see the comment of caaBaseURLPadrao.
 type Client struct {
 	httpClient *http.Client
 	baseURL    string
@@ -66,9 +66,10 @@ type Client struct {
 	lim        *limitador
 }
 
-// New cria o client. httpClient nil usa um default com timeout; baseURL vazio usa a base
-// pública do MusicBrainz. Sem credencial: pode ser sempre registrado (cmd/mymediadb/main.go,
-// provedoresReais — mesmo padrão de internal/provider/themerrdb.New).
+// New creates the client. A nil httpClient uses a default with timeout; an empty baseURL uses
+// the public MusicBrainz base. Without a credential: it can always be registered
+// (cmd/mymediadb/main.go, provedoresReais -- the same pattern as
+// internal/provider/themerrdb.New).
 func New(httpClient *http.Client, baseURL string) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: timeoutPadrao}
@@ -84,13 +85,13 @@ func New(httpClient *http.Client, baseURL string) *Client {
 	}
 }
 
-// Nome identifica a fonte.
+// Nome identifies the source.
 func (c *Client) Nome() string { return nomeFonte }
 
-// Buscar consulta o MusicBrainz por artista (capacidade core provider.Provider). Só
-// responde a `tipo=="artista"` (ou vazio) — outros tipos devolvem vazio, sem poluir a
-// busca de filme/série. `lang` é ignorado: a busca textual do MusicBrainz não filtra por
-// idioma.
+// Buscar queries MusicBrainz by artist (core provider.Provider capability). It only answers to
+// `tipo=="artista"` (or empty) -- other types return empty, without polluting the
+// movie/series search. `lang` is ignored: the textual search of MusicBrainz does not filter by
+// language.
 func (c *Client) Buscar(ctx context.Context, query, tipo, lang string) ([]provider.ResultadoExterno, error) {
 	_ = lang
 	if tipo != "" && tipo != "artista" {
@@ -124,9 +125,9 @@ func (c *Client) Buscar(ctx context.Context, query, tipo, lang string) ([]provid
 			Title:    a.Name,
 			Saved:    false,
 		}
-		// Disambiguation (ex.: "English rock band") ajuda o dono a escolher entre
-		// artistas homônimos (briefing 0106 §6); reaproveitamos Overview, o único
-		// campo de texto livre do shape genérico sem semântica conflitante.
+		// Disambiguation (e.g. "English rock band") helps the owner choose between homonym
+		// artists; we reuse Overview, the only free-text field of the generic shape without a
+		// conflicting semantics.
 		if a.Disambiguation != "" {
 			d := a.Disambiguation
 			r.Overview = &d
@@ -136,19 +137,19 @@ func (c *Client) Buscar(ctx context.Context, query, tipo, lang string) ([]provid
 	return out, nil
 }
 
-// BuscarDetalhe puxa o detalhe CRU (capacidade core provider.Provider, usada pelo
-// "Baixar Metadados" genérico via internal/enrich e por importarItemBase). Despacha por
-// `tipo` para o endpoint correto — /artist para artista, /release-group para album,
-// /recording para faixa (os MESMOS que montarAlbumOuErro/BuscarAlbumDaFaixa já usam) —
-// achado real na validação em produção de 20/08/2026: antes disso, SEMPRE chamava
-// /artist/{sourceID} não importa o tipo, e sourceID pra album/faixa é o MBID de
-// release-group/recording (não de artista), então batia em 404/502 nesses dois tipos.
-// `langs` não tem efeito: o MusicBrainz não é multi-idioma. Para album/faixa, o corpo
-// passa por remapParaNome antes de devolver: release-group/recording expõem o título na
-// chave "title" (não "name"), então sem esse remap MapearDetalhe (abaixo) não encontraria
-// nada — normalizar aqui evita mudar a assinatura de MapearDetalhe (que não recebe
-// `tipo`), uma mudança que seria BREAKING em todo Provider registrado (tmdb/tvdb/
-// fanarttv/themerrdb), para resolver um problema que é só do MusicBrainz.
+// BuscarDetalhe pulls the RAW detail (core provider.Provider capability, used by the generic
+// "Download Metadata" through internal/enrich and by importarItemBase). It dispatches by
+// `tipo` to the correct endpoint -- /artist for artist, /release-group for album, /recording
+// for track (the SAME ones that montarAlbumOuErro/BuscarAlbumDaFaixa already use) -- a real
+// finding in the production validation: before that, it ALWAYS called /artist/{sourceID} no
+// matter the type, and sourceID for album/track is the MBID of release-group/recording (not
+// of artist), so it hit 404/502 on those two types. `langs` has no effect: MusicBrainz is not
+// multi-language. For album/track, the body goes through remapParaNome before returning:
+// release-group/recording expose the title in the "title" key (not "name"), so without that
+// remap MapearDetalhe (below) would not find anything -- normalizing here avoids changing the
+// signature of MapearDetalhe (which does not receive `tipo`), a change that would be
+// BREAKING in every registered Provider (tmdb/tvdb/fanarttv/themerrdb), to solve a problem
+// that belongs only to MusicBrainz.
 func (c *Client) BuscarDetalhe(ctx context.Context, sourceID, tipo string, langs []string) (json.RawMessage, error) {
 	_ = langs
 	switch tipo {
@@ -173,9 +174,10 @@ func (c *Client) BuscarDetalhe(ctx context.Context, sourceID, tipo string, langs
 	}
 }
 
-// remapParaNome reescreve o `"title"` de um release-group/recording cru para `"name"` —
-// o campo que MapearDetalhe sabe ler (mesma chave que o shape de artista já usa). Ver
-// comentário de BuscarDetalhe para o porquê deste desvio em vez de mudar MapearDetalhe.
+// remapParaNome rewrites the `"title"` of a raw release-group/recording to `"name"` -- the
+// field that MapearDetalhe knows how to read (the same key that the artist shape already
+// uses). See the comment of BuscarDetalhe for why this detour instead of changing
+// MapearDetalhe.
 func remapParaNome(body []byte) (json.RawMessage, error) {
 	var t respTitulo
 	if err := json.Unmarshal(body, &t); err != nil {
@@ -190,16 +192,16 @@ func remapParaNome(body []byte) (json.RawMessage, error) {
 	return json.RawMessage(out), nil
 }
 
-// respTitulo é o shape mínimo comum a /release-group/{id} e /recording/{id}: ambos
-// expõem o título do recurso na chave "title" (atributo core, sempre presente).
+// respTitulo is the minimal shape common to /release-group/{id} and /recording/{id}: both
+// expose the title of the resource in the "title" key (core attribute, always present).
 type respTitulo struct {
 	Title string `json:"title"`
 }
 
-// MapearDetalhe extrai só o nome (artista) ou o título já remapeado (album/faixa, ver
-// BuscarDetalhe) para o shape canônico — o suficiente para o import/enrich genérico
-// (0015) dar título à entity; o resto da árvore (álbuns/faixas) entra por importarArtista
-// (internal/enrich/musica.go, fora deste pacote).
+// MapearDetalhe extracts only the name (artist) or the already remapped title (album/track,
+// see BuscarDetalhe) into the canonical shape -- enough for the generic import/enrich to give
+// a title to the entity; the rest of the tree (albums/tracks) comes in through importarArtista
+// (internal/enrich/musica.go, outside this package).
 func (c *Client) MapearDetalhe(raw json.RawMessage) (map[string]any, error) {
 	var d struct {
 		Name string `json:"name"`
@@ -214,14 +216,14 @@ func (c *Client) MapearDetalhe(raw json.RawMessage) (map[string]any, error) {
 	return out, nil
 }
 
-// BuscarArtistaArvore monta a árvore completa do artista (capacidade
-// provider.MusicaProvider): 1 chamada para o artista+release-groups, e por álbum, 1
-// chamada para escolher a release "oficial" (release-group?inc=releases+genres, que já
-// traz o gênero de maior contagem numa tacada só) + 1 chamada para as faixas dessa release
-// (release?inc=recordings+artist-credits+isrcs). Custo: ~1+2N requisições para N álbuns, a
-// <= 1 req/s (briefing 0106 §6: aceitável, é operação explícita/assíncrona do dono).
+// BuscarArtistaArvore assembles the complete tree of the artist (capability
+// provider.MusicaProvider): 1 call for the artist+release-groups, and per album, 1 call to
+// choose the "official" release (release-group?inc=releases+genres, which already brings the
+// genre with the highest count in a single shot) + 1 call for the tracks of that release
+// (release?inc=recordings+artist-credits+isrcs). Cost: ~1+2N requests for N albums, at <= 1
+// req/s (acceptable, it is an explicit/async operation of the owner).
 func (c *Client) BuscarArtistaArvore(ctx context.Context, sourceID string, langs []string) (provider.ArtistaArvore, error) {
-	_ = langs // MusicBrainz nao e multi-idioma (ver doc da interface); reservado
+	_ = langs // MusicBrainz is not multi-language (see the interface docs); reserved
 
 	body, err := c.getMB(ctx, "/artist/"+url.PathEscape(sourceID), url.Values{"inc": {"release-groups+annotation"}})
 	if err != nil {
@@ -241,32 +243,31 @@ func (c *Client) BuscarArtistaArvore(ctx context.Context, sourceID string, langs
 		if rg.ID == "" {
 			continue
 		}
-		// QUALQUER erro (não só 404) degrada este ÁLBUM pra um shell sem faixas, nunca
-		// aborta a árvore inteira -- achado real na validação em produção: o servidor
-		// público do MusicBrainz é instável o bastante (503 em ~1/3 das chamadas) que,
-		// numa árvore de dezenas de álbuns (1+2N chamadas), mesmo com retry (getMB) a
-		// chance de UMA chamada específica esgotar as tentativas não é desprezível. Um
-		// artista com discografia grande é bem mais útil parcialmente importado (álbuns
-		// sem faixa, corrigível depois via reimport) do que falhando por inteiro.
+		// ANY error (not only a 404) degrades THIS ALBUM to a shell without tracks, it never
+		// aborts the whole tree -- a real finding in the production validation: the public
+		// MusicBrainz server is unstable enough (503 in ~1/3 of the calls) that, in a tree of
+		// dozens of albums (1+2N calls), even with retry (getMB) the chance of ONE specific call
+		// exhausting the attempts is not negligible. An artist with a large discography is much
+		// more useful partially imported (albums without tracks, fixable later through a
+		// reimport) than failing entirely.
 		album := c.montarAlbum(ctx, rg.ID, rg.Title, rg.FirstReleaseDate, provider.AlvoFaixaAlbum{})
 		arvore.Albuns = append(arvore.Albuns, album)
 	}
 	return arvore, nil
 }
 
-// montarAlbum busca o release-group (releases+genres, 1 chamada), escolhe a(s)
-// release(s) a representar o álbum conforme `alvoFaixa` (ver buscarFaixasComAlvo), e
-// busca as faixas. NUNCA devolve erro: release-group sem nenhuma release, 404
-// pontual, ou esgotamento do retry de getMB (instabilidade do servidor público) todos
-// degradam pro mesmo shell -- álbum com nome/MBID/ano mas sem faixas -- em vez de
-// derrubar a árvore inteira (ver BuscarArtistaArvore). Faixas ausentes por causa disso
-// são corrigíveis num reimport posterior (find-or-create por MBID, idempotente).
-// `title`/`firstReleaseDate` são OPCIONAIS (briefing 0115): quando vazios (chamador
-// não os tem de antemão, ver BuscarAlbumDaFaixa), usa o título/data que o PRÓPRIO
-// release-group devolve (rg.Title/rg.FirstReleaseDate) -- o chamador que já os tem
-// (BuscarArtistaArvore, a partir do browse de release-groups do artista) evita essa
-// dependência do 2º campo. `alvoFaixa` (briefing 0121) é zero value nos caminhos que
-// não precisam dela (BuscarArtistaArvore/BuscarAlbumPorMbid).
+// montarAlbum fetches the release-group (releases+genres, 1 call), chooses the release(s) to
+// represent the album according to `alvoFaixa` (see buscarFaixasComAlvo), and fetches the
+// tracks. It NEVER returns an error: a release-group without any release, a one-off 404, or
+// the retry of getMB being exhausted (instability of the public server) all degrade to the
+// same shell -- an album with name/MBID/year but without tracks -- instead of taking down the
+// whole tree (see BuscarArtistaArvore). Tracks missing because of that are fixable in a later
+// reimport (find-or-create by MBID, idempotent). `title`/`firstReleaseDate` are OPTIONAL: when
+// empty (the caller does not have them beforehand, see BuscarAlbumDaFaixa), it uses the
+// title/date that the release-group ITSELF returns (rg.Title/rg.FirstReleaseDate) -- the
+// caller that already has them (BuscarArtistaArvore, from the browse of the release-groups of
+// the artist) avoids that dependency on the 2nd field. `alvoFaixa` is the zero value in the
+// paths that do not need it (BuscarArtistaArvore/BuscarAlbumPorMbid).
 func (c *Client) montarAlbum(ctx context.Context, rgID, title, firstReleaseDate string, alvoFaixa provider.AlvoFaixaAlbum) provider.AlbumExterno {
 	album, err := c.montarAlbumOuErro(ctx, rgID, title, firstReleaseDate, alvoFaixa)
 	if err != nil {
@@ -275,16 +276,15 @@ func (c *Client) montarAlbum(ctx context.Context, rgID, title, firstReleaseDate 
 	return album
 }
 
-// montarAlbumOuErro é o corpo de montarAlbum que PROPAGA o erro da 1ª chamada
-// (busca do release-group) em vez de degradar para o shell -- extraído para
-// BuscarAlbumPorMbid (briefing 0115 Parte 2), o único caminho de
-// MusicaAlbumProvider que não tem uma resolução prévia confirmando que o
-// release-group existe, então precisa saber se a falha foi "não encontrado"
-// (→ ErrNaoEncontrado, 404) ou outra coisa. A falha da chamada de FAIXAS
-// (buscarFaixasComAlvo) continua degradando em silêncio (mesma semântica de sempre):
-// o release-group já foi confirmado nesta mesma chamada, então uma
-// instabilidade pontual na(s) ida(s) seguinte(s) vale mais como álbum parcial (sem
-// faixas, corrigível num reimport) do que como erro pro chamador.
+// montarAlbumOuErro is the body of montarAlbum that PROPAGATES the error of the 1st call
+// (fetch of the release-group) instead of degrading to the shell -- extracted for
+// BuscarAlbumPorMbid, the only path of MusicaAlbumProvider that has no previous resolution
+// confirming that the release-group exists, so it needs to know whether the failure was "not
+// found" (→ ErrNaoEncontrado, 404) or something else. The failure of the TRACKS call
+// (buscarFaixasComAlvo) keeps degrading silently (the same semantics as always): the
+// release-group was already confirmed in this very call, so a one-off instability in the
+// following round trip(s) is worth more as a partial album (without tracks, fixable in a
+// reimport) than as an error to the caller.
 func (c *Client) montarAlbumOuErro(ctx context.Context, rgID, title, firstReleaseDate string, alvoFaixa provider.AlvoFaixaAlbum) (provider.AlbumExterno, error) {
 	body, err := c.getMB(ctx, "/release-group/"+url.PathEscape(rgID), url.Values{"inc": {"releases+genres"}})
 	if err != nil {
@@ -306,19 +306,19 @@ func (c *Client) montarAlbumOuErro(ctx context.Context, rgID, title, firstReleas
 
 	faixas, err := c.buscarFaixasComAlvo(ctx, rg.Releases, alvoFaixa)
 	if err != nil {
-		return album, nil // nenhuma release respondeu (404/retry esgotado): degrada sem faixas
+		return album, nil // no release answered (404/retry exhausted): degrades without tracks
 	}
 	album.Faixas = faixas
 	return album, nil
 }
 
-// BuscarAlbumPorMbid é a capacidade provider.MusicaAlbumProvider (ADR-0029 item 6,
-// briefing 0115 Parte 2), caminho DIRETO: o MBID já é o do release-group -- usado
-// pela tela externa de álbum (GET /external/musicbrainz/album/{mbid}) e pelo import
-// de faixa avulsa (ambos partem do external_ids["mbid"] já gravado na entity álbum
-// interna). Ao contrário de montarAlbum (usado só DEPOIS de resolvido por outro
-// caminho), aqui a existência do release-group é validada nesta própria chamada via
-// montarAlbumOuErro -- 404 vira provider.ErrNaoEncontrado (errors.Is).
+// BuscarAlbumPorMbid is the provider.MusicaAlbumProvider capability (ADR-0029 item 6), the
+// DIRECT path: the MBID already is the one of the release-group -- used by the external album
+// screen (GET /external/musicbrainz/album/{mbid}) and by the single-track import (both start
+// from the external_ids["mbid"] already stored in the internal album entity). Unlike
+// montarAlbum (used only AFTER being resolved by another path), here the existence of the
+// release-group is validated in this very call through montarAlbumOuErro -- a 404 becomes
+// provider.ErrNaoEncontrado (errors.Is).
 func (c *Client) BuscarAlbumPorMbid(ctx context.Context, albumMBID string, langs []string) (provider.AlbumExterno, error) {
 	_ = langs
 	if albumMBID == "" {
@@ -327,18 +327,18 @@ func (c *Client) BuscarAlbumPorMbid(ctx context.Context, albumMBID string, langs
 	return c.montarAlbumOuErro(ctx, albumMBID, "", "", provider.AlvoFaixaAlbum{})
 }
 
-// BuscarAlbumDaFaixa é a capacidade provider.MusicaAlbumProvider (ADR-0029 item 6,
-// briefing 0115), caminho PRECISO: resolve o release-group que contém o recording
-// `recordingMBID` (1 chamada, /recording/{id}?inc=releases+release-groups -- cada
-// release do recording já vem com seu release-group aninhado, sem chamada extra) e
-// monta ESSE único álbum via montarAlbum (mais 1+N chamadas) -- nunca a discografia
-// inteira. Entre as releases do recording, prefere a de status "Official" (mesmo
-// critério de escolherRelease); sem nenhuma, a primeira com release-group presente.
-// Passa `provider.AlvoFaixaAlbum{RecordingMBID: recordingMBID}` a montarAlbum
-// (briefing 0121): a release "Official" do release-group pode NÃO ser a mesma que
-// contém este recording especificamente (escolherReleaseGroupDoRecording só resolve
-// o release-group, não garante que montarAlbum escolha a release certa dentro dele)
-// -- sem o alvo, o caminho PRECISO tinha o mesmo gap estrutural do textual.
+// BuscarAlbumDaFaixa is the provider.MusicaAlbumProvider capability (ADR-0029 item 6), the
+// PRECISE path: it resolves the release-group that contains the recording `recordingMBID` (1
+// call, /recording/{id}?inc=releases+release-groups -- each release of the recording already
+// comes with its release-group nested, without an extra call) and assembles THAT single album
+// through montarAlbum (plus 1+N calls) -- never the whole discography. Among the releases of
+// the recording, it prefers the one with status "Official" (the same criterion as
+// escolherRelease); without any, the first one with a release-group present. It passes
+// `provider.AlvoFaixaAlbum{RecordingMBID: recordingMBID}` to montarAlbum: the "Official"
+// release of the release-group may NOT be the same one that contains this recording
+// specifically (escolherReleaseGroupDoRecording only resolves the release-group, it does not
+// guarantee that montarAlbum chooses the right release inside it) -- without the target, the
+// PRECISE path had the same structural gap as the textual one.
 func (c *Client) BuscarAlbumDaFaixa(ctx context.Context, recordingMBID string, langs []string) (provider.AlbumExterno, bool, error) {
 	_ = langs
 	if recordingMBID == "" {
@@ -359,11 +359,11 @@ func (c *Client) BuscarAlbumDaFaixa(ctx context.Context, recordingMBID string, l
 	return c.montarAlbum(ctx, rgID, "", "", provider.AlvoFaixaAlbum{RecordingMBID: recordingMBID}), true, nil
 }
 
-// escolherReleaseGroupDoRecording escolhe, entre as releases do recording, o
-// release-group da PRIMEIRA de status "Official" (mesmo critério de
-// escolherRelease); sem nenhuma oficial, o release-group da primeira que tiver um
-// (algumas releases podem vir sem release-group aninhado -- dado incompleto na
-// fonte). ok=false sem NENHUMA release com release-group utilizável.
+// escolherReleaseGroupDoRecording chooses, among the releases of the recording, the
+// release-group of the FIRST one with status "Official" (the same criterion as
+// escolherRelease); without any official one, the release-group of the first one that has
+// one (some releases may come without a nested release-group -- incomplete data in the
+// source). ok=false without ANY release with a usable release-group.
 func escolherReleaseGroupDoRecording(releases []respReleaseComGrupo) (string, bool) {
 	for _, r := range releases {
 		if r.Status == "Official" && r.ReleaseGroup.ID != "" {
@@ -378,16 +378,16 @@ func escolherReleaseGroupDoRecording(releases []respReleaseComGrupo) (string, bo
 	return "", false
 }
 
-// BuscarAlbumPorNome é a capacidade provider.MusicaAlbumProvider (ADR-0029 item 6,
-// briefing 0115), caminho TEXTUAL: lista os release-groups do artista `artistaMBID`
-// (1 chamada barata -- /artist/{id}?inc=release-groups, só ids/títulos, o MESMO
-// 1º request que BuscarArtistaArvore já faz), escolhe o de título mais próximo de
-// `nomeAlbum` (Jaro-Winkler via internal/textsim, limiar matching.LimiarAutoMatch --
-// mesmo motor/número que o scanner usa para o match textual de artista, ver
-// internal/scanner/musica.go melhorCandidatoTexto) e monta SÓ esse álbum via
-// montarAlbum -- nunca os demais release-groups listados. `alvoFaixa` (briefing
-// 0121) é só repassado a montarAlbum, sem lógica extra própria aqui -- quem decide
-// QUAIS releases tentar dentro do release-group escolhido é buscarFaixasComAlvo.
+// BuscarAlbumPorNome is the provider.MusicaAlbumProvider capability (ADR-0029 item 6), the
+// TEXTUAL path: it lists the release-groups of the artist `artistaMBID` (1 cheap call --
+// /artist/{id}?inc=release-groups, ids/titles only, the SAME 1st request that
+// BuscarArtistaArvore already makes), chooses the one whose title is closest to `nomeAlbum`
+// (Jaro-Winkler through internal/textsim, matching.LimiarAutoMatch threshold -- the same
+// engine/number that the scanner uses for the textual artist match, see
+// internal/scanner/musica.go melhorCandidatoTexto) and assembles ONLY that album through
+// montarAlbum -- never the other listed release-groups. `alvoFaixa` is only forwarded to
+// montarAlbum, without extra logic of its own here -- whoever decides WHICH releases to try
+// inside the chosen release-group is buscarFaixasComAlvo.
 func (c *Client) BuscarAlbumPorNome(ctx context.Context, artistaMBID, nomeAlbum string, alvoFaixa provider.AlvoFaixaAlbum, langs []string) (provider.AlbumExterno, bool, error) {
 	_ = langs
 	if artistaMBID == "" || nomeAlbum == "" {
@@ -408,10 +408,10 @@ func (c *Client) BuscarAlbumPorNome(ctx context.Context, artistaMBID, nomeAlbum 
 	return c.montarAlbum(ctx, rg.ID, rg.Title, rg.FirstReleaseDate, alvoFaixa), true, nil
 }
 
-// melhorReleaseGroupPorTitulo escolhe, entre `rgs`, o de título mais próximo de
-// `alvo` -- mesmo critério de melhorCandidatoTexto do scanner (Jaro-Winkler,
-// matching.LimiarAutoMatch, SEM empate no topo): um nome ambíguo ou fraco demais
-// nunca aplica um match "parecido", cai para (zero,false).
+// melhorReleaseGroupPorTitulo chooses, among `rgs`, the one whose title is closest to `alvo` --
+// the same criterion as melhorCandidatoTexto of the scanner (Jaro-Winkler,
+// matching.LimiarAutoMatch, WITHOUT a tie at the top): an ambiguous or too weak name never
+// applies a "similar" match, it falls back to (zero,false).
 func melhorReleaseGroupPorTitulo(alvo string, rgs []respReleaseGroupBreve) (respReleaseGroupBreve, bool) {
 	melhorScore := -1.0
 	var melhor respReleaseGroupBreve
@@ -434,11 +434,11 @@ func melhorReleaseGroupPorTitulo(alvo string, rgs []respReleaseGroupBreve) (resp
 	return melhor, true
 }
 
-// escolherRelease escolhe QUAL release representa o álbum para efeito de tracklist,
-// dentre as várias pressings/edições que um release-group tipicamente tem (no mundo real,
-// dezenas — reedições, países, remasters). Prefere a primeira com status "Official"
-// (convenção do próprio MusicBrainz para a edição "canônica"); sem nenhuma oficial, cai na
-// primeira da lista. ok=false só quando a lista está vazia.
+// escolherRelease chooses WHICH release represents the album for tracklist purposes, among the
+// several pressings/editions that a release-group typically has (in the real world, dozens --
+// reissues, countries, remasters). It prefers the first one with status "Official" (the
+// convention of MusicBrainz itself for the "canonical" edition); without any official one, it
+// falls back to the first of the list. ok=false only when the list is empty.
 func escolherRelease(releases []respReleaseResumo) (string, bool) {
 	for _, r := range releases {
 		if r.Status == "Official" {
@@ -451,49 +451,46 @@ func escolherRelease(releases []respReleaseResumo) (string, bool) {
 	return "", false
 }
 
-// maxReleasesTentadosPorAlvo é o TETO de releases tentadas por buscarFaixasComAlvo
-// quando há um alvoFaixa a satisfazer (briefing 0121) -- um release-group real pode
-// ter dezenas de releases (reedições, países, remasters); sem teto, uma faixa
-// genuinamente ausente do MusicBrainz inteiro geraria dezenas de chamadas HTTP por
-// tentativa de import/reconciliação, a <= 1 req/s (rate limit já apertado). Subido de
-// 5 para 15 na rodada 2 (briefing 0121 §8): validação em produção achou um outlier
-// real de 13 releases (Bomfunk MC's "Freestyler") cuja release certa cai em ~10º
-// lugar na ordem Official-primeiro -- 15 cobre esse caso com folga, custo continua
-// desprezível (só entra em jogo quando a 1ª tentativa falha).
+// maxReleasesTentadosPorAlvo is the CEILING of releases tried by buscarFaixasComAlvo when
+// there is an alvoFaixa to satisfy -- a real release-group may have dozens of releases
+// (reissues, countries, remasters); without a ceiling, a track genuinely absent from the whole
+// of MusicBrainz would generate dozens of HTTP calls per import/reconciliation attempt, at <= 1
+// req/s (an already tight rate limit). Raised from 5 to 15 in round 2: the production
+// validation found a real outlier of 13 releases (Bomfunk MC's "Freestyler") whose right
+// release falls around the ~10th place in the Official-first order -- 15 covers that case with
+// room to spare, the cost stays negligible (it only comes into play when the 1st attempt
+// fails).
 const maxReleasesTentadosPorAlvo = 15
 
-// buscarFaixasComAlvo busca as faixas do release-group representado por `releases`,
-// tentando 1 ou mais releases conforme `alvoFaixa` (briefing 0121, achado real:
-// Bomfunk MC's "Freestyler" não está na release "Official" escolhida por
-// escolherRelease, mas existe noutra release do MESMO release-group). Com
-// `alvoFaixa` no ZERO VALUE, preserva o comportamento HISTÓRICO exato de antes deste
-// briefing: escolhe 1 única release (escolherRelease) e faz 1 única chamada a
-// buscarFaixas -- ZERO regressão de custo/nº de chamadas HTTP para quem nunca
-// precisou de uma faixa específica (BuscarArtistaArvore/BuscarAlbumPorMbid). Com
-// `alvoFaixa` preenchido: tenta as releases em ordem de prioridade
-// (ordenarReleasesPorPrioridade) até achar uma cujas faixas satisfaçam o alvo
-// (releaseContemFaixaAlvo) -- para no primeiro sucesso -- ou esgotar
-// maxReleasesTentadosPorAlvo tentativas, o que vier primeiro. Sem nenhuma bater
-// dentro do teto, devolve as faixas da ÚLTIMA release que respondeu com sucesso
-// (mesma degradação silenciosa de sempre -- quem decide se a faixa certa foi
-// encontrada continua sendo escolherFaixaAlvo em internal/enrich/musica.go, esta
-// função só melhora as CANDIDATAS oferecidas). O erro só é propagado quando TODAS as
-// tentativas (das DUAS passadas, ver tentarReleases) falharam de rede (nenhuma faixa
-// obtida em nenhuma tentativa) -- uma falha pontual no meio do laço não aborta a
-// tentativa da próxima release.
+// buscarFaixasComAlvo fetches the tracks of the release-group represented by `releases`,
+// trying 1 or more releases according to `alvoFaixa` (a real finding: Bomfunk MC's
+// "Freestyler" is not in the "Official" release chosen by escolherRelease, but exists in
+// another release of the SAME release-group). With `alvoFaixa` at the ZERO VALUE, it
+// preserves the exact HISTORICAL behavior from before this feature: it chooses a single
+// buscarFaixas -- ZERO cost/HTTP-call regression for whoever never needed a specific track
+// (BuscarArtistaArvore/BuscarAlbumPorMbid). With `alvoFaixa` filled in: it tries the releases in
+// priority order (ordenarReleasesPorPrioridade) until it finds one whose tracks satisfy the
+// target (releaseContemFaixaAlvo) -- it stops at the first success -- or exhausts
+// maxReleasesTentadosPorAlvo attempts, whichever comes first. If none matches within the
+// ceiling, it returns the tracks of the LAST release that answered successfully (the same
+// silent degradation as always -- whoever decides whether the right track was found is still
+// escolherFaixaAlvo in internal/enrich/musica.go, this function only improves the CANDIDATES
+// offered). The error is only propagated when ALL the attempts (of BOTH passes, see
+// tentarReleases) failed on the network (no track obtained in any attempt) -- a one-off failure
+// in the middle of the loop does not abort the attempt of the next release.
 //
-// Achado real em produção (briefing 0123): uma release ESPECÍFICA que esgota o retry
-// de rede de getMB (3 tentativas, 503 "currently busy" transitório do servidor
-// público) era descartada PARA SEMPRE nesta função -- mesmo que fosse justo a release
-// com a faixa-alvo. Por isso, quando a 1ª passada não bate o alvo e ao menos uma
-// release falhou de REDE (não por não bater o match), há uma 2ª passada só sobre
-// essas -- cada uma ganha um ciclo NOVO e completo de tentativas (503 é
-// instabilidade transitória: a mesma release pode responder segundos depois).
+// A real finding in production: a SPECIFIC release that exhausts the network retry of getMB (3
+// attempts, transient 503 "currently busy" from the public server) used to be discarded FOREVER
+// in this function -- even if it was exactly the release with the target track. That is why,
+// when the 1st pass does not match the target and at least one release failed on the NETWORK
+// (not on not matching), there is a 2nd pass only over those -- each one gets a NEW and complete
+// cycle of attempts (a 503 is transient instability: the same release may answer seconds
+// later).
 func (c *Client) buscarFaixasComAlvo(ctx context.Context, releases []respReleaseResumo, alvoFaixa provider.AlvoFaixaAlbum) ([]provider.FaixaExterna, error) {
 	if alvoFaixa == (provider.AlvoFaixaAlbum{}) {
 		releaseID, ok := escolherRelease(releases)
 		if !ok {
-			return nil, nil // release-group sem nenhuma release: sem faixas, sem erro
+			return nil, nil // release-group without any release: no tracks, no error
 		}
 		return c.buscarFaixas(ctx, releaseID)
 	}
@@ -508,36 +505,35 @@ func (c *Client) buscarFaixasComAlvo(ctx context.Context, releases []respRelease
 		return ultimaObtida, nil
 	}
 	if len(falhadas) > 0 {
-		// 2a passada: só sobre as releases que falharam de REDE na 1a -- economiza a
-		// chamada extra quando tudo já respondeu e só não bateu por matching mesmo.
+		// 2nd pass: only over the releases that failed on the NETWORK in the 1st one -- it saves the
+		// extra call when everything already answered and simply did not match.
 		match2, ultimaObtida2, obtevesAlgumaVez2, _, ultimoErr2 := c.tentarReleases(ctx, falhadas, alvoFaixa)
 		if match2 {
 			return ultimaObtida2, nil
 		}
 		if obtevesAlgumaVez2 {
-			ultimaObtida = ultimaObtida2 // a mais recente sucedida, entre as duas passadas
+			ultimaObtida = ultimaObtida2 // the most recent one that succeeded, between the two passes
 			obtevesAlgumaVez = true
 		}
 		ultimoErr = ultimoErr2
 	}
 	if !obtevesAlgumaVez {
-		return nil, ultimoErr // TODAS as tentativas (das duas passadas) falharam de rede
+		return nil, ultimoErr // ALL the attempts (of the two passes) failed on the network
 	}
-	return ultimaObtida, nil // nenhuma bateu dentro do teto: degrada com a ULTIMA obtida
+	return ultimaObtida, nil // none matched within the ceiling: it degrades with the LAST obtained one
 }
 
-// tentarReleases tenta, em ordem, buscar as faixas de cada release em `ids`, parando no
-// primeiro sucesso que satisfaça `alvoFaixa` (releaseContemFaixaAlvo) -- corpo do loop
-// extraído de buscarFaixasComAlvo (briefing 0123) para ser reusado por uma 2ª passada
-// (ver ali). Cada falha de `buscarFaixas` (erro de REDE, não "respondeu mas não bateu o
-// match") é logada com o releaseID e o erro, e acumulada em `falhadas` -- antes deste
-// briefing essas releases eram descartadas para sempre e em silêncio. Devolve: `match`
-// (achou uma release que satisfaz o alvo -- `ultimaObtida` já são as faixas dela),
-// `ultimaObtida` (as faixas da ÚLTIMA release que respondeu com sucesso, para o
-// fallback de degradação de buscarFaixasComAlvo quando nada bate), `obtevesAlgumaVez`
-// (true se QUALQUER release desta passada respondeu com sucesso), `falhadas`
-// (releaseIDs que falharam de rede nesta passada) e `ultimoErr` (o erro da última
-// falha de rede desta passada, só relevante quando `obtevesAlgumaVez` for false).
+// tentarReleases tries, in order, to fetch the tracks of each release in `ids`, stopping at the
+// first success that satisfies `alvoFaixa` (releaseContemFaixaAlvo) -- the body of the loop
+// extracted from buscarFaixasComAlvo to be reused by a 2nd pass (see there). Each failure of
+// `buscarFaixas` (a NETWORK error, not "it answered but did not match") is logged with the
+// releaseID and the error, and accumulated in `falhadas` -- before this, those releases were
+// discarded forever and silently. It returns: `match` (it found a release that satisfies the
+// target -- `ultimaObtida` already are its tracks), `ultimaObtida` (the tracks of the LAST
+// release that answered successfully, for the degradation fallback of buscarFaixasComAlvo when
+// nothing matches), `obtevesAlgumaVez` (true if ANY release of this pass answered successfully),
+// `falhadas` (releaseIDs that failed on the network in this pass) and `ultimoErr` (the error of
+// the last network failure of this pass, only relevant when `obtevesAlgumaVez` is false).
 func (c *Client) tentarReleases(ctx context.Context, ids []string, alvoFaixa provider.AlvoFaixaAlbum) (match bool, ultimaObtida []provider.FaixaExterna, obtevesAlgumaVez bool, falhadas []string, ultimoErr error) {
 	for _, releaseID := range ids {
 		fx, err := c.buscarFaixas(ctx, releaseID)
@@ -556,11 +552,11 @@ func (c *Client) tentarReleases(ctx context.Context, ids []string, alvoFaixa pro
 	return false, ultimaObtida, obtevesAlgumaVez, falhadas, ultimoErr
 }
 
-// ordenarReleasesPorPrioridade ordena os IDs de `releases` por prioridade -- MESMO
-// critério de escolherRelease (status=="Official" primeiro, na ordem original entre
-// si; depois as demais, também na ordem original entre si), mas devolvendo a LISTA
-// INTEIRA em vez de parar na primeira -- usada por buscarFaixasComAlvo para tentar
-// múltiplas releases do mesmo release-group quando há um alvoFaixa a satisfazer.
+// ordenarReleasesPorPrioridade sorts the IDs of `releases` by priority -- the SAME criterion as
+// escolherRelease (status=="Official" first, in the original order among themselves; then the
+// others, also in the original order among themselves), but returning the WHOLE LIST instead of
+// stopping at the first one -- used by buscarFaixasComAlvo to try multiple releases of the same
+// release-group when there is an alvoFaixa to satisfy.
 func ordenarReleasesPorPrioridade(releases []respReleaseResumo) []string {
 	ids := make([]string, 0, len(releases))
 	for _, r := range releases {
@@ -576,16 +572,15 @@ func ordenarReleasesPorPrioridade(releases []respReleaseResumo) []string {
 	return ids
 }
 
-// releaseContemFaixaAlvo diz se `faixas` (as de UMA release já buscada) contêm a
-// faixa que `alvo` descreve. AUTOCONTIDO neste pacote (briefing 0121) -- NÃO reusa
-// escolherFaixaAlvo/melhorFaixaPorTitulo de internal/enrich por import cycle
-// (provider não pode depender de enrich, que já depende de provider); é uma cópia
-// funcional MÍNIMA, mesma fórmula/limiar, não uma abstração compartilhada nova.
-// Mesma prioridade de AlvoFaixaAlbum: MBID exato > título por similaridade
-// (matching.SimilaridadeNormalizada, melhor score entre as faixas, limiar
-// matching.LimiarAutoMatch) > track_number exato. Sem nenhum critério aplicável
-// (todos os campos de `alvo` vazios/zero), devolve false -- nunca aplica um
-// "parecido" à toa.
+// releaseContemFaixaAlvo reports whether `faixas` (the ones of ONE already fetched release)
+// contain the track that `alvo` describes. SELF-CONTAINED in this package -- it does NOT reuse
+// escolherFaixaAlvo/melhorFaixaPorTitulo from internal/enrich because of an import cycle (the
+// provider cannot depend on enrich, which already depends on provider); it is a MINIMAL
+// functional copy, the same formula/threshold, not a new shared abstraction. The same priority of
+// AlvoFaixaAlbum: exact MBID > title by similarity (matching.SimilaridadeNormalizada, best score
+// among the tracks, matching.LimiarAutoMatch threshold) > exact track_number. Without any
+// applicable criterion (all fields of `alvo` empty/zero), it returns false -- it never applies a
+// "similar one" for nothing.
 func releaseContemFaixaAlvo(faixas []provider.FaixaExterna, alvo provider.AlvoFaixaAlbum) bool {
 	if alvo.RecordingMBID != "" {
 		return releaseContemRecordingMBID(faixas, alvo.RecordingMBID)
@@ -599,8 +594,8 @@ func releaseContemFaixaAlvo(faixas []provider.FaixaExterna, alvo provider.AlvoFa
 	return false
 }
 
-// releaseContemRecordingMBID é o critério de maior prioridade de
-// releaseContemFaixaAlvo: MBID exato de recording.
+// releaseContemRecordingMBID is the highest-priority criterion of releaseContemFaixaAlvo: the
+// exact recording MBID.
 func releaseContemRecordingMBID(faixas []provider.FaixaExterna, recordingMBID string) bool {
 	for _, fx := range faixas {
 		if fx.MBID == recordingMBID {
@@ -610,14 +605,14 @@ func releaseContemRecordingMBID(faixas []provider.FaixaExterna, recordingMBID st
 	return false
 }
 
-// desempatePorDiscoEFaixa devolve a ÚNICA faixa da lista cuja posição (disco,
-// faixa) casa com a do arquivo. ok=false quando a posição é desconhecida de um dos
-// lados ou quando nenhuma/mais de uma faixa casa -- quem chama então decide por
-// outro sinal. Disco 0 do alvo vale como "desconhecido" e casa com disco 1 da
-// fonte (arquivo sem tag de disco numa release de disco único).
+// desempatePorDiscoEFaixa returns the SINGLE track of the list whose position (disc, track)
+// matches the one of the file. ok=false when the position is unknown on one of the sides or when
+// none/more than one track matches -- the caller then decides by another signal. Disc 0 of the
+// target counts as "unknown" and matches disc 1 of the source (a file without a disc tag in a
+// single-disc release).
 func desempatePorDiscoEFaixa(faixas []provider.FaixaExterna, disco, numero int) (provider.FaixaExterna, bool) {
-	// 1a tentativa: posição EXATA (disco, faixa). Sem tag de disco, disco 1 é o
-	// default seguro (release de disco único também informa 1).
+	// 1st attempt: the EXACT position (disc, track). Without a disc tag, disc 1 is the safe
+	// default (a single-disc release also reports 1).
 	if numero > 0 {
 		alvoDisco := disco
 		if alvoDisco <= 0 {
@@ -633,10 +628,10 @@ func desempatePorDiscoEFaixa(faixas []provider.FaixaExterna, disco, numero int) 
 			return porPosicao[0], true
 		}
 	}
-	// 2a tentativa: só o DISCO, e só quando o ARQUIVO declarou qual é. A numeração
-	// do arquivo vem de tags/pasta e pode não casar com a ordem do release, mas o
-	// disco costuma casar -- e é o que separa a faixa do disco 1 da MESMA faixa no
-	// disco 2 de uma reedição.
+	// 2nd attempt: only the DISC, and only when the FILE declared which one it is. The numbering
+	// of the file comes from tags/folder and may not match the order of the release, but the disc
+	// usually does match -- and it is what separates the track of disc 1 from the SAME track on
+	// disc 2 of a reissue.
 	if disco <= 0 {
 		return provider.FaixaExterna{}, false
 	}
@@ -652,8 +647,8 @@ func desempatePorDiscoEFaixa(faixas []provider.FaixaExterna, disco, numero int) 
 	return provider.FaixaExterna{}, false
 }
 
-// discoDe é o disco da faixa na fonte, com 0 tratado como disco 1 (arquivo/release
-// de disco único).
+// discoDe is the disc of the track in the source, with 0 treated as disc 1 (a file/single-disc
+// release).
 func discoDe(fx provider.FaixaExterna) int {
 	if fx.DiscNumber <= 0 {
 		return 1
@@ -661,17 +656,16 @@ func discoDe(fx provider.FaixaExterna) int {
 	return fx.DiscNumber
 }
 
-// releaseContemFaixaPorTitulo escolhe a faixa de MELHOR score de similaridade de
-// título contra alvo.FaixaTitulo; aceita quando o score bate matching.LimiarAutoMatch
-// E, adicionalmente, quando o gate de duração (briefing 0121 §8) confirma (ou é
-// pulado por duração desconhecida de um dos lados, via duracoesCompativeis).
+// releaseContemFaixaPorTitulo chooses the track with the BEST title similarity score against
+// alvo.FaixaTitulo; it accepts when the score reaches matching.LimiarAutoMatch AND, in addition,
+// when the duration gate confirms it (or is skipped because the duration is unknown on one of
+// the sides, via duracoesCompativeis).
 //
-// Briefing 0124: releases reais podem ter 2+ faixas com o MESMO título (ex.:
-// remix/edit que ficou com o título "limpo" no MusicBrainz) -- todas empatam no
-// maior score. Nesse caso a duração vira critério de DESEMPATE (não só
-// confirmação): entre os empatados, só aceita quando exatamente 1 tem duração
-// conhecida E dentro da tolerância; 0 ou 2+ candidatos plausíveis continua
-// ambíguo e rejeita (nunca escolhe arbitrariamente pela ordem de iteração).
+// Real releases may have 2+ tracks with the SAME title (e.g.: a remix/edit that kept the "clean"
+// title in MusicBrainz) -- all of them tie on the highest score. In that case the duration
+// becomes a TIEBREAK criterion (not only confirmation): among the tied ones, it only accepts
+// when exactly 1 has a known duration AND inside the tolerance; 0 or 2+ plausible candidates
+// keeps it ambiguous and rejects (it never chooses arbitrarily by iteration order).
 func releaseContemFaixaPorTitulo(faixas []provider.FaixaExterna, alvo provider.AlvoFaixaAlbum) bool {
 	melhorScore := -1.0
 	var empatados []provider.FaixaExterna
@@ -691,16 +685,16 @@ func releaseContemFaixaPorTitulo(faixas []provider.FaixaExterna, alvo provider.A
 	if len(empatados) == 1 {
 		return duracoesCompativeis(alvo.DuracaoMs, empatados[0].DuracaoMs)
 	}
-	// 2+ empatados no topo. (disco, faixa) do ARQUIVO desempata primeiro: numa
-	// reedição a MESMA faixa aparece no disco 1 e no disco 2, e a posição é o que
-	// diz qual das duas o arquivo é (briefing 0138, caso real "The Hurting
-	// (Deluxe Edition)"). Só depois entra a duração.
+	// 2+ tied at the top. The (disc, track) of the FILE breaks the tie first: in a reissue the
+	// SAME track appears on disc 1 and on disc 2, and the position is what tells which of the two
+	// the file is (the real case "The Hurting (Deluxe Edition)"). Only then does the duration come
+	// in.
 	if unico, ok := desempatePorDiscoEFaixa(empatados, alvo.FaixaDisco, alvo.FaixaNumero); ok {
 		return duracoesCompativeis(alvo.DuracaoMs, unico.DuracaoMs)
 	}
-	// Sem posição utilizável: a duração desempata, não confirma. Sem duração do
-	// alvo não há sinal para decidir -- rejeita (mesmo comportamento seguro de
-	// quando não há duração).
+	// Without a usable position: the duration breaks the tie, it does not confirm. Without a
+	// duration of the target there is no signal to decide -- it rejects (the same safe behavior as
+	// when there is no duration).
 	if alvo.DuracaoMs <= 0 {
 		return false
 	}
@@ -713,8 +707,8 @@ func releaseContemFaixaPorTitulo(faixas []provider.FaixaExterna, alvo provider.A
 	return compativeis == 1
 }
 
-// releaseContemFaixaPorNumero é o critério de menor prioridade de
-// releaseContemFaixaAlvo: track_number exato.
+// releaseContemFaixaPorNumero is the lowest-priority criterion of releaseContemFaixaAlvo: exact
+// track_number.
 func releaseContemFaixaPorNumero(faixas []provider.FaixaExterna, faixaNumero int) bool {
 	for _, fx := range faixas {
 		if fx.TrackNumber == faixaNumero {
@@ -724,12 +718,11 @@ func releaseContemFaixaPorNumero(faixas []provider.FaixaExterna, faixaNumero int
 	return false
 }
 
-// duracoesCompativeis aplica o gate de duração da rodada 2 (briefing 0121 §8):
-// CONFIRMAÇÃO adicional ao match de título, nunca torna o match mais permissivo.
-// Só aplica quando AMBOS os lados informam duração conhecida (> 0 nos dois) --
-// qualquer um dos dois em 0 (desconhecida) pula o gate e devolve true, preservando o
-// comportamento de antes desta mudança (sem regressão para arquivos/dados sem
-// duração confiável).
+// duracoesCompativeis applies the duration gate of round 2: an additional CONFIRMATION to the
+// title match, it never makes the match more lenient. It only applies when BOTH sides report a
+// known duration (> 0 on both) -- either one at 0 (unknown) skips the gate and returns true,
+// preserving the behavior from before this change (no regression for files/data without a
+// reliable duration).
 func duracoesCompativeis(duracaoAlvoMs, duracaoCandidatoMs int) bool {
 	if duracaoAlvoMs <= 0 || duracaoCandidatoMs <= 0 {
 		return true
@@ -741,9 +734,9 @@ func duracoesCompativeis(duracaoAlvoMs, duracaoCandidatoMs int) bool {
 	return diff <= int(matching.ToleranciaDuracaoSegundos*1000)
 }
 
-// duracaoMsDaFaixa escolhe a duração (ms) a usar para uma faixa (briefing 0121 §8):
-// prioriza o `length` do TRACK dentro da release; sem esse (<= 0), cai para o
-// `length` do RECORDING aninhado; sem nenhum dos dois (ou negativo), 0 (desconhecida).
+// duracaoMsDaFaixa chooses the duration (ms) to use for a track: it prioritizes the `length` of
+// the TRACK inside the release; without it (<= 0), it falls back to the `length` of the nested
+// RECORDING; without either (or negative), 0 (unknown).
 func duracaoMsDaFaixa(trackLength, recordingLength int) int {
 	duracaoMs := trackLength
 	if duracaoMs <= 0 {
@@ -755,8 +748,8 @@ func duracaoMsDaFaixa(trackLength, recordingLength int) int {
 	return duracaoMs
 }
 
-// buscarFaixas busca a release escolhida com as faixas (recordings), o artist-credit de
-// cada uma (para detectar divergência do artista do álbum, ADR-0027 item 4) e os ISRCs.
+// buscarFaixas fetches the chosen release with its tracks (recordings), the artist-credit of each
+// one (to detect a divergence from the album artist, ADR-0027 item 4) and the ISRCs.
 func (c *Client) buscarFaixas(ctx context.Context, releaseID string) ([]provider.FaixaExterna, error) {
 	body, err := c.getMB(ctx, "/release/"+url.PathEscape(releaseID), url.Values{"inc": {"recordings+artist-credits+isrcs"}})
 	if err != nil {
@@ -773,7 +766,7 @@ func (c *Client) buscarFaixas(ctx context.Context, releaseID string) ([]provider
 		for _, tr := range media.Tracks {
 			credito := tr.Recording.ArtistCredit
 			if len(credito) == 0 {
-				credito = tr.ArtistCredit // defensivo: fonte raramente omite no recording
+				credito = tr.ArtistCredit // defensive: the source rarely omits it on the recording
 			}
 			var creditoNome, creditoMBID string
 			if len(credito) > 0 {
@@ -805,8 +798,8 @@ func (c *Client) buscarFaixas(ctx context.Context, releaseID string) ([]provider
 	return faixas, nil
 }
 
-// anoDe extrai os 4 primeiros dígitos de uma data "YYYY-MM-DD"/"YYYY-MM"/"YYYY" do
-// MusicBrainz. Devolve "" para datas curtas demais ou ausentes.
+// anoDe extracts the first 4 digits of a "YYYY-MM-DD"/"YYYY-MM"/"YYYY" date from
+// MusicBrainz. It returns "" for dates that are too short or absent.
 func anoDe(data string) string {
 	if len(data) < 4 {
 		return ""
@@ -814,9 +807,10 @@ func anoDe(data string) string {
 	return data[:4]
 }
 
-// generoPrincipal escolhe o gênero de MAIOR contagem (voto) da lista que o MusicBrainz
-// devolve (ADR-0027 item 7: um único gênero por álbum, não por faixa). Empate: mantém a
-// ordem em que a fonte listou (sort.SliceStable). Lista vazia devolve "".
+// generoPrincipal chooses the genre with the HIGHEST count (vote) from the list that
+// MusicBrainz returns (ADR-0027 item 7: a single genre per album, not per track). On a tie: it
+// keeps the order in which the source listed them (sort.SliceStable). An empty list returns
+// "".
 func generoPrincipal(generos []generoMB) string {
 	if len(generos) == 0 {
 		return ""
@@ -827,14 +821,14 @@ func generoPrincipal(generos []generoMB) string {
 	return ordenados[0].Name
 }
 
-// BuscarArtes lista a capa do álbum via Cover Art Archive (capacidade
-// provider.ArteProvider). Só responde a `tipo=="album"` (outros tipos são território de
-// fanart.tv/TMDB). Usa ids.Mbid, que é o MBID de RELEASE-GROUP (o mesmo gravado na entity
-// `album` — ver comentário de ExternalIDs.Mbid em internal/provider/provider.go), contra o
-// endpoint /release-group/{mbid} do CAA — que a documentação oficial confirma devolver o
-// MESMO shape JSON de /release/{mbid}, agregando a arte de qualquer release do grupo, sem
-// exigir que o chamador escolha uma release específica. Sem id ou sem match (404): (nil,
-// nil), graça. Erro real propaga.
+// BuscarArtes lists the album cover through the Cover Art Archive (capability
+// provider.ArteProvider). It only answers to `tipo=="album"` (other types are the territory of
+// fanart.tv/TMDB). It uses ids.Mbid, which is the RELEASE-GROUP MBID (the same one stored in the
+// `album` entity -- see the comment of ExternalIDs.Mbid in internal/provider/provider.go),
+// against the /release-group/{mbid} endpoint of the CAA -- which the official documentation
+// confirms returns the SAME JSON shape as /release/{mbid}, aggregating the art of any release of
+// the group, without requiring the caller to choose a specific release. Without an id or without
+// a match (404): (nil, nil), gracefully. A real error propagates.
 func (c *Client) BuscarArtes(ctx context.Context, ids provider.ExternalIDs, tipo string, langs []string) ([]provider.Arte, error) {
 	_ = langs
 	if tipo != "album" || ids.Mbid == "" {
@@ -867,14 +861,13 @@ func (c *Client) BuscarArtes(ctx context.Context, ids provider.ExternalIDs, tipo
 	return out, nil
 }
 
-// ResolverArtistaDaFaixa resolve o MBID do artista a partir do MBID de RECORDING
-// (capacidade provider.FaixaResolverProvider, briefing 0107): cobre o caminho em que
-// o arquivo só tem o MBID de faixa embutido pelo tagueador (sem o MBID de artista),
-// comum o bastante para justificar esta 2ª ida à fonte. Usa o mesmo rate-limiter e
-// User-Agent de getMB (1 chamada, sem custo extra de N álbuns como
-// BuscarArtistaArvore). ErrNaoEncontrado quando o recording não existe; um recording
-// existente mas sem NENHUM artist-credit (dado incompleto na fonte, raríssimo) é um
-// erro genérico -- não há artista nenhum para devolver.
+// ResolverArtistaDaFaixa resolves the artist MBID from the RECORDING MBID (capability
+// provider.FaixaResolverProvider): it covers the path in which the file only has the track MBID
+// embedded by the tagger (without the artist MBID), common enough to justify this 2nd round trip
+// to the source. It uses the same rate limiter and User-Agent of getMB (1 call, without the
+// extra cost of N albums as in BuscarArtistaArvore). ErrNaoEncontrado when the recording does not
+// exist; a recording that exists but without ANY artist-credit (incomplete data in the source,
+// extremely rare) is a generic error -- there is no artist at all to return.
 func (c *Client) ResolverArtistaDaFaixa(ctx context.Context, recordingMBID string) (string, error) {
 	body, err := c.getMB(ctx, "/recording/"+url.PathEscape(recordingMBID), url.Values{"inc": {"artist-credits"}})
 	if err != nil {
@@ -892,23 +885,23 @@ func (c *Client) ResolverArtistaDaFaixa(ctx context.Context, recordingMBID strin
 	return rec.ArtistCredit[0].Artist.ID, nil
 }
 
-// tentativasMB é o número MÁXIMO de tentativas de getMB por chamada -- o servidor
-// público do MusicBrainz devolve 503 "currently busy" com frequência real observada
-// em produção (~1 em 3 chamadas na validação deste briefing), e uma árvore de artista
-// inteira faz 1+2N requisições sequenciais (N álbuns): sem retry, a probabilidade de
-// TODA a sequência dar certo cai pra perto de zero num artista com discografia grande.
+// tentativasMB is the MAXIMUM number of attempts of getMB per call -- the public MusicBrainz
+// server returns 503 "currently busy" with a real frequency observed in production (~1 in 3
+// calls in the validation of this vertical), and a whole artist tree makes 1+2N sequential
+// requests (N albums): without retry, the probability of the WHOLE sequence working drops close
+// to zero for an artist with a large discography.
 const tentativasMB = 3
 
-// backoffMB é o atraso entre tentativas em cima de um 502/503/504 -- multiplicado pelo
-// número da tentativa (1ª retry espera backoffMB, 2ª espera 2×backoffMB).
+// backoffMB is the delay between attempts on top of a 502/503/504 -- multiplied by the attempt
+// number (the 1st retry waits backoffMB, the 2nd waits 2×backoffMB).
 const backoffMB = 500 * time.Millisecond
 
-// getMB faz um GET RATE-LIMITADO (1 req/s) a musicbrainz.org com o User-Agent obrigatório
-// e `fmt=json` sempre presente. 404 vira erro-sentinela provider.ErrNaoEncontrado
-// (errors.Is), sem retry (não é transitório). 502/503/504 (instabilidade documentada do
-// servidor público) tenta de novo até tentativasMB vezes, com backoff crescente; outro
-// status != 200 é erro genérico sem retry. I/O propaga sem retry (rede local instável não
-// é o problema que este retry resolve).
+// getMB performs a RATE-LIMITED GET (1 req/s) to musicbrainz.org with the mandatory User-Agent
+// and `fmt=json` always present. A 404 becomes the sentinel error provider.ErrNaoEncontrado
+// (errors.Is), without retry (it is not transient). 502/503/504 (documented instability of the
+// public server) try again up to tentativasMB times, with a growing backoff; any other status !=
+// 200 is a generic error without retry. I/O errors propagate without retry (an unstable local
+// network is not the problem this retry solves).
 func (c *Client) getMB(ctx context.Context, path string, params url.Values) ([]byte, error) {
 	var ultimoErr error
 	for tentativa := 1; tentativa <= tentativasMB; tentativa++ {
@@ -936,15 +929,16 @@ func (c *Client) getMB(ctx context.Context, path string, params url.Values) ([]b
 	return nil, fmt.Errorf("musicbrainz: %s: esgotou %d tentativas: %w", path, tentativasMB, ultimoErr)
 }
 
-// transitorioMB diz se `status` é o tipo de instabilidade do servidor público do
-// MusicBrainz que vale a pena tentar de novo (502/503/504) -- nunca 4xx, que é erro do
-// pedido em si e não some numa segunda tentativa.
+// transitorioMB reports whether `status` is the kind of instability of the public MusicBrainz
+// server that is worth retrying (502/503/504) -- never a 4xx, which is an error of the request
+// itself and does not go away on a second attempt.
 func transitorioMB(status int) bool {
 	return status == http.StatusBadGateway || status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
 }
 
-// tentarGetMB faz UMA tentativa de GET (sem retry) e devolve o status bruto pro chamador
-// decidir -- separado de getMB só para isolar o loop de retry da montagem do request.
+// tentarGetMB makes ONE attempt of the GET (without retry) and returns the raw status for the
+// caller to decide -- separate from getMB only to isolate the retry loop from the assembly of
+// the request.
 func (c *Client) tentarGetMB(ctx context.Context, path string, params url.Values) ([]byte, int, error) {
 	c.lim.esperar()
 
@@ -973,8 +967,8 @@ func (c *Client) tentarGetMB(ctx context.Context, path string, params url.Values
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		// Corpo de erro não nos interessa (a mensagem já é genérica o bastante nos dois
-		// status tratados por getMB), mas precisa ser drenado para o keep-alive da conexão.
+		// An error body does not interest us (the message is already generic enough in the two
+		// statuses handled by getMB), but it must be drained for the keep-alive of the connection.
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, resp.StatusCode, nil
 	}
@@ -985,14 +979,15 @@ func (c *Client) tentarGetMB(ctx context.Context, path string, params url.Values
 	return body, resp.StatusCode, nil
 }
 
-// getCAA faz um GET ao Cover Art Archive — SEM rate-limit (a fonte não documenta um
-// limite; ver comentário do package), mas com o mesmo User-Agent por boa prática. ok=false
-// num 404 (release/release-group sem arte, ou mbid inexistente — a própria CAA não
-// distingue os dois casos; não é erro). Status != 200/404 tenta de novo (retry, ver
-// tentarGetCAA) -- achado real na validação em produção: o redirect do CAA pra
-// archive.org (dnNNNNNN.ca.archive.org, CDN distribuída) deu "context deadline exceeded"
-// em boa parte das chamadas de uma importação de 25 álbuns, sem padrão de status HTTP (é
-// timeout de rede, não um 5xx) -- diferente do 503 "busy" do MusicBrainz em getMB.
+// getCAA performs a GET to the Cover Art Archive -- WITHOUT rate limiting (the source does not
+// document a limit; see the package comment), but with the same User-Agent as good practice.
+// ok=false on a 404 (release/release-group without art, or a nonexistent mbid -- the CAA itself
+// does not distinguish the two cases; it is not an error). A status != 200/404 tries again
+// (retry, see tentarGetCAA) -- a real finding in the production validation: the redirect of the
+// CAA to archive.org (dnNNNNNN.ca.archive.org, a distributed CDN) gave "context deadline
+// exceeded" in a good part of the calls of a 25-album import, without a pattern of HTTP status
+// (it is a network timeout, not a 5xx) -- different from the "busy" 503 of MusicBrainz in
+// getMB.
 func (c *Client) getCAA(ctx context.Context, path string) ([]byte, bool, error) {
 	var ultimoErr error
 	for tentativa := 1; tentativa <= tentativasMB; tentativa++ {
@@ -1011,7 +1006,7 @@ func (c *Client) getCAA(ctx context.Context, path string) ([]byte, bool, error) 
 	return nil, false, fmt.Errorf("musicbrainz: %s: esgotou %d tentativas (cover art archive): %w", path, tentativasMB, ultimoErr)
 }
 
-// tentarGetCAA faz UMA tentativa de GET ao Cover Art Archive (sem retry).
+// tentarGetCAA makes ONE attempt of the GET to the Cover Art Archive (without retry).
 func (c *Client) tentarGetCAA(ctx context.Context, path string) ([]byte, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.caaBaseURL+path, nil)
 	if err != nil {
@@ -1040,7 +1035,7 @@ func (c *Client) tentarGetCAA(ctx context.Context, path string) ([]byte, bool, e
 	return body, true, nil
 }
 
-// respBuscaArtista é a resposta de GET /artist?query=...&fmt=json (só os campos usados).
+// respBuscaArtista is the response of GET /artist?query=...&fmt=json (only the fields used).
 type respBuscaArtista struct {
 	Artists []struct {
 		ID             string `json:"id"`
@@ -1049,28 +1044,28 @@ type respBuscaArtista struct {
 	} `json:"artists"`
 }
 
-// respArtistaArvore é a resposta de GET /artist/{id}?inc=release-groups+annotation&fmt=json
-// (BuscarArtistaArvore) OU GET /artist/{id}?inc=release-groups&fmt=json (BuscarAlbumPorNome
-// -- annotation não é pedido nesse caminho, o campo fica zero-value, sem problema).
+// respArtistaArvore is the response of GET /artist/{id}?inc=release-groups+annotation&fmt=json
+// (BuscarArtistaArvore) OR GET /artist/{id}?inc=release-groups&fmt=json (BuscarAlbumPorNome --
+// annotation is not requested on that path, the field stays zero-value, no problem).
 type respArtistaArvore struct {
 	Name          string                  `json:"name"`
 	Annotation    string                  `json:"annotation"`
 	ReleaseGroups []respReleaseGroupBreve `json:"release-groups"`
 }
 
-// respReleaseGroupBreve é um release-group RESUMIDO, como listado dentro da árvore do
-// artista (inc=release-groups) -- ids/títulos, sem faixas (BuscarArtistaArvore itera e
-// monta cada um via montarAlbum; BuscarAlbumPorNome escolhe UM por título e só monta
-// esse, ver melhorReleaseGroupPorTitulo).
+// respReleaseGroupBreve is a SUMMARIZED release-group, as listed inside the artist tree
+// (inc=release-groups) -- ids/titles, without tracks (BuscarArtistaArvore iterates and assembles
+// each one through montarAlbum; BuscarAlbumPorNome chooses ONE by title and assembles only that
+// one, see melhorReleaseGroupPorTitulo).
 type respReleaseGroupBreve struct {
 	ID               string `json:"id"`
 	Title            string `json:"title"`
 	FirstReleaseDate string `json:"first-release-date"`
 }
 
-// respReleaseComGrupo é uma release do recording (inc=releases+release-groups), com o
-// release-group ANINHADO -- usada só por BuscarAlbumDaFaixa/escolherReleaseGroupDoRecording
-// para resolver o álbum de um recording sem uma 2ª ida por release.
+// respReleaseComGrupo is a release of the recording (inc=releases+release-groups), with the
+// release-group NESTED -- used only by BuscarAlbumDaFaixa/escolherReleaseGroupDoRecording to
+// resolve the album of a recording without a 2nd round trip per release.
 type respReleaseComGrupo struct {
 	ID           string `json:"id"`
 	Status       string `json:"status"`
@@ -1079,30 +1074,30 @@ type respReleaseComGrupo struct {
 	} `json:"release-group"`
 }
 
-// respRecordingReleases é a resposta de GET /recording/{id}?inc=releases+release-groups&fmt=json
-// (só o campo usado por BuscarAlbumDaFaixa).
+// respRecordingReleases is the response of GET /recording/{id}?inc=releases+release-groups&fmt=json
+// (only the field used by BuscarAlbumDaFaixa).
 type respRecordingReleases struct {
 	Releases []respReleaseComGrupo `json:"releases"`
 }
 
-// generoMB é um gênero com sua contagem (voto), como o MusicBrainz devolve em `inc=genres`.
+// generoMB is a genre with its count (vote), as MusicBrainz returns it in `inc=genres`.
 type generoMB struct {
 	Name  string `json:"name"`
 	Count int    `json:"count"`
 }
 
-// respReleaseResumo é uma release resumida, como listada dentro de um release-group
-// (inc=releases) — só o suficiente para escolherRelease.
+// respReleaseResumo is a summarized release, as listed inside a release-group (inc=releases) --
+// just enough for escolherRelease.
 type respReleaseResumo struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
 }
 
-// respReleaseGroup é a resposta de GET /release-group/{id}?inc=releases+genres&fmt=json.
-// Title/FirstReleaseDate são atributos CORE do release-group (a fonte sempre os devolve,
-// mesmo sem pedir via inc) -- usados por montarAlbum como fallback quando o chamador não
-// os tem de antemão (briefing 0115, BuscarAlbumDaFaixa não faz o browse do artista
-// antes).
+// respReleaseGroup is the response of GET /release-group/{id}?inc=releases+genres&fmt=json.
+// Title/FirstReleaseDate are CORE attributes of the release-group (the source always returns
+// them, even without requesting them through inc) -- used by montarAlbum as a fallback when the
+// caller does not have them beforehand (BuscarAlbumDaFaixa does not browse the artist
+// first).
 type respReleaseGroup struct {
 	Title            string              `json:"title"`
 	FirstReleaseDate string              `json:"first-release-date"`
@@ -1110,8 +1105,8 @@ type respReleaseGroup struct {
 	Releases         []respReleaseResumo `json:"releases"`
 }
 
-// creditoMB é uma entrada de artist-credit (a MusicBrainz modela como lista, para juntar
-// vários artistas com joinphrase; usamos só o primeiro — o artista principal creditado).
+// creditoMB is an artist-credit entry (MusicBrainz models it as a list, to join several artists
+// with joinphrase; we use only the first one -- the main credited artist).
 type creditoMB struct {
 	Artist struct {
 		ID   string `json:"id"`
@@ -1119,7 +1114,7 @@ type creditoMB struct {
 	} `json:"artist"`
 }
 
-// respRelease é a resposta de GET /release/{id}?inc=recordings+artist-credits+isrcs&fmt=json.
+// respRelease is the response of GET /release/{id}?inc=recordings+artist-credits+isrcs&fmt=json.
 type respRelease struct {
 	Media []struct {
 		Position int `json:"position"`
@@ -1139,10 +1134,10 @@ type respRelease struct {
 	} `json:"media"`
 }
 
-// respCoverArt é a resposta de GET /release-group/{id} (ou /release/{id}) no Cover Art
-// Archive: só os campos usados (front/back/image) — thumbnails/approved/comment/edit/id
-// ignorados (a URL de tamanho completo em `image` é o que os demais ArteProvider do repo
-// também expõem).
+// respCoverArt is the response of GET /release-group/{id} (or /release/{id}) on the Cover Art
+// Archive: only the fields used (front/back/image) -- thumbnails/approved/comment/edit/id are
+// ignored (the full-size URL in `image` is what the other ArteProvider of the repo also
+// expose).
 type respCoverArt struct {
 	Images []struct {
 		Front bool   `json:"front"`
@@ -1151,25 +1146,25 @@ type respCoverArt struct {
 	} `json:"images"`
 }
 
-// ── Busca de álbum por TÍTULO (briefing 0136, compilações) ───────────────────
+// ── Album search by TITLE (compilations) ──────────────────────────────────────
 
-// maxReleaseGroupsPorTitulo é o teto de release-groups montados por tentativa em
-// BuscarAlbumPorTitulo: a busca textual devolve muitos homônimos, e cada um custa
-// 1 requisição (rate-limit de 1 req/s) + a busca de tracklist. Só os melhores
-// colocados por similaridade de título entram.
+// maxReleaseGroupsPorTitulo is the ceiling of release-groups assembled per attempt in
+// BuscarAlbumPorTitulo: the textual search returns many homonyms, and each one costs 1 request
+// (rate limit of 1 req/s) + the tracklist search. Only the best placed by title similarity get
+// in.
 const maxReleaseGroupsPorTitulo = 3
 
-// BuscarAlbumPorTitulo implementa provider.MusicaAlbumPorTituloProvider
-// (briefing 0136): resolve UM álbum pelo TÍTULO, sem partir de um artista --
-// caminho necessário para compilações/trilhas, onde `album_artist` é "Various
-// Artists" e a busca de artista do pipeline normal não devolve identidade única.
+// BuscarAlbumPorTitulo implements provider.MusicaAlbumPorTituloProvider: it resolves ONE album
+// by its TITLE, without starting from an artist -- the path needed by compilations/soundtracks,
+// where `album_artist` is "Various Artists" and the artist search of the normal pipeline does not
+// return a unique identity.
 //
-// Faz UMA busca de release-group (`/release-group?query=releasegroup:"..."`),
-// ordena os candidatos por matching.SimilaridadeNormalizada (mesmo motor/limiar
-// do resto do matching de música) e monta até maxReleaseGroupsPorTitulo deles,
-// aceitando o primeiro cuja tracklist contenha a faixa-alvo (releaseContemFaixaAlvo).
-// Devolve também o artist-credit do release-group vencedor -- é dele que sai o
-// artista principal (ADR-0029 item 2) quando a compilação é importada.
+// It makes ONE release-group search (`/release-group?query=releasegroup:"..."`), sorts the
+// candidates by matching.SimilaridadeNormalizada (the same engine/threshold as the rest of the
+// music matching) and assembles up to maxReleaseGroupsPorTitulo of them, accepting the first one
+// whose tracklist contains the target track (releaseContemFaixaAlvo). It also returns the
+// artist-credit of the winning release-group -- it is from that credit that the main artist comes
+// (ADR-0029 item 2) when the compilation is imported.
 func (c *Client) BuscarAlbumPorTitulo(ctx context.Context, nomeAlbum string, alvo provider.AlvoFaixaAlbum, langs []string) (provider.AlbumComArtista, bool, error) {
 	_ = langs
 	if nomeAlbum == "" {
@@ -1200,9 +1195,9 @@ func (c *Client) BuscarAlbumPorTitulo(ctx context.Context, nomeAlbum string, alv
 	return provider.AlbumComArtista{}, false, ultimoErr
 }
 
-// tentarCandidatosDeAlbum tenta até maxReleaseGroupsPorTitulo candidatos (os de
-// maior similaridade de título, acima do limiar) e devolve o primeiro cujo
-// release contenha a faixa-alvo.
+// tentarCandidatosDeAlbum tries up to maxReleaseGroupsPorTitulo candidates (the ones with the
+// highest title similarity, above the threshold) and returns the first one whose release contains
+// the target track.
 func (c *Client) tentarCandidatosDeAlbum(ctx context.Context, candidatos []rgBuscado, alvo provider.AlvoFaixaAlbum) (provider.AlbumComArtista, bool, error) {
 	tentados := 0
 	for _, cand := range candidatos {
@@ -1227,8 +1222,8 @@ func (c *Client) tentarCandidatosDeAlbum(ctx context.Context, candidatos []rgBus
 	return provider.AlbumComArtista{}, false, nil
 }
 
-// ordenarCandidatosDeAlbum calcula o score de similaridade de cada release-group
-// devolvido contra o nome consultado e ordena do melhor para o pior.
+// ordenarCandidatosDeAlbum computes the similarity score of each returned release-group against
+// the queried name and sorts from best to worst.
 func ordenarCandidatosDeAlbum(rgs []respReleaseGroupBusca, nomeAlbum string) []rgBuscado {
 	candidatos := make([]rgBuscado, 0, len(rgs))
 	for _, rg := range rgs {
@@ -1244,21 +1239,19 @@ func ordenarCandidatosDeAlbum(rgs []respReleaseGroupBusca, nomeAlbum string) []r
 	return candidatos
 }
 
-// consultasDeBuscaDoAlbum monta, em ORDEM de preferência, as buscas textuais do
-// caminho por TÍTULO (briefing 0138). As duas primeiras variantes comparam com o
-// nome NORMALIZADO porque a tag carrega sufixo de edição que o título canônico da
-// fonte não tem; a última usa o nome CRU, porque há edição que é um release-group
-// PRÓPRIO na fonte ("Hybrid Theory (Bonus Edition)", "Notorious (Deluxe
-// Edition)") -- nesses casos a frase normalizada nunca devolve o release-group
-// certo, e é essa variante que o encontra.
+// consultasDeBuscaDoAlbum builds, in ORDER of preference, the textual searches of the path by
+// TITLE. The first two variants compare with the NORMALIZED name because the tag carries an
+// edition suffix that the canonical title of the source does not have; the last one uses the RAW
+// name, because there are editions that are a release-group of their OWN in the source ("Hybrid
+// Theory (Bonus Edition)", "Notorious (Deluxe Edition)") -- in those cases the normalized phrase
+// never returns the right release-group, and it is this variant that finds it.
 //
-// O artista do álbum escopa as variantes normalizadas: sem ele a busca por um
-// título comum devolve homônimos de outros artistas e o álbum certo fica fora do
-// topo (caso real: "Rio (Collector's Edition)" trazia dez release-groups chamados
-// "Collector's Edition"). Compilação não escopa (o crédito genérico não filtra
-// nada). A segunda variante de artista usa só o PRIMEIRO nome quando a tag traz
-// mais de um separado por "/" ("Flume/Chet Faker" não é crédito da fonte, que usa
-// "&"/"and").
+// The artist of the album scopes the normalized variants: without it, the search for a common
+// title returns homonyms of other artists and the right album stays out of the top (a real case:
+// "Rio (Collector's Edition)" brought ten release-groups called "Collector's Edition"). A
+// compilation is not scoped (the generic credit filters nothing). The second artist variant uses
+// only the FIRST name when the tag brings more than one separated by "/" ("Flume/Chet Faker" is
+// not a credit of the source, which uses "&"/"and").
 func (c *Client) consultasDeBuscaDoAlbum(nomeAlbum, artista string) []string {
 	normalizado := matching.NormalizarNome(nomeAlbum)
 	consultas := make([]string, 0, 4)
@@ -1274,9 +1267,9 @@ func (c *Client) consultasDeBuscaDoAlbum(nomeAlbum, artista string) []string {
 	return consultas
 }
 
-// alternativasDeArtista devolve o nome do artista do álbum como veio e, quando a
-// tag junta mais de um artista com "/", só o primeiro -- o crédito da fonte usa
-// "&"/"and"/", ", nunca a barra (caso real "Flume/Chet Faker").
+// alternativasDeArtista returns the name of the artist of the album as it came and, when the tag
+// joins more than one artist with "/", only the first one -- the credit of the source uses
+// "&"/"and"/", ", never the slash (a real case "Flume/Chet Faker").
 func alternativasDeArtista(artista string) []string {
 	artista = strings.TrimSpace(artista)
 	if artista == "" {
@@ -1291,7 +1284,7 @@ func alternativasDeArtista(artista string) []string {
 	return out
 }
 
-// buscarReleaseGroups executa UMA busca textual de release-group.
+// buscarReleaseGroups executes ONE textual search of release-group.
 func (c *Client) buscarReleaseGroups(ctx context.Context, query string) ([]respReleaseGroupBusca, error) {
 	params := url.Values{}
 	params.Set("query", query)
@@ -1307,29 +1300,29 @@ func (c *Client) buscarReleaseGroups(ctx context.Context, query string) ([]respR
 	return resp.ReleaseGroups, nil
 }
 
-// fraseReleaseGroup monta a cláusula de título como FRASE (entre aspas): sem as
-// aspas o Lucene trata cada palavra como termo independente e um sufixo de edição
-// ("Deluxe Edition") acaba pesando mais que o nome do álbum.
+// fraseReleaseGroup builds the title clause as a PHRASE (in quotes): without the quotes Lucene
+// treats each word as an independent term and an edition suffix ("Deluxe Edition") ends up
+// weighing more than the name of the album.
 func fraseReleaseGroup(nome string) string {
 	return `releasegroup:"` + colapsarEspacos(escaparLucene(nome)) + `"`
 }
 
-// fraseArtista monta a cláusula de artista como frase.
+// fraseArtista builds the artist clause as a phrase.
 func fraseArtista(nome string) string {
 	return `"` + colapsarEspacos(escaparLucene(nome)) + `"`
 }
 
-// colapsarEspacos junta espaços repetidos: escaparLucene troca cada pontuação por
-// um espaço, e uma frase do Lucene com espaço duplo deixa de casar (medido:
-// releasegroup:"Rule The World  The Greatest Hits" devolve 1, mas com
-// artistname junto devolve 0).
+// colapsarEspacos joins repeated spaces: escaparLucene replaces each punctuation mark with a
+// space, and a Lucene phrase with a double space stops matching (measured:
+// releasegroup:"Rule The World  The Greatest Hits" returns 1, but with artistname together it
+// returns 0).
 func colapsarEspacos(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
-// artistaDeCompilacao diz se o nome é o rótulo genérico de compilação -- nesse
-// caso a busca de álbum por título NÃO escopa por artista, porque o credit da
-// fonte é justamente o genérico e o título é o único sinal disponível.
+// artistaDeCompilacao reports whether the name is the generic compilation label -- in that case
+// the album search by title does NOT scope by artist, because the credit of the source is exactly
+// the generic one and the title is the only available signal.
 func artistaDeCompilacao(nome string) bool {
 	cru := strings.ToLower(strings.TrimSpace(nome))
 	switch cru {
@@ -1342,17 +1335,17 @@ func artistaDeCompilacao(nome string) bool {
 	return norm == "various artists" || norm == "varios artistas" || norm == "various"
 }
 
-// rgBuscado é um release-group da busca textual com o score já calculado contra
-// o nome consultado.
+// rgBuscado is a release-group from the textual search with the score already computed against
+// the queried name.
 type rgBuscado struct {
 	rg    respReleaseGroupBusca
 	score float64
 }
 
-// artistaPrincipalDoReleaseGroup extrai o PRIMEIRO artist-credit do
-// release-group (o "artist" do álbum na fonte) -- no MusicBrainz, compilação tem
-// artist-credit único "Various Artists". ok=false quando a busca não trouxe
-// artist-credit (dado incompleto na fonte).
+// artistaPrincipalDoReleaseGroup extracts the FIRST artist-credit of the release-group (the
+// "artist" of the album in the source) -- in MusicBrainz, a compilation has the single
+// artist-credit "Various Artists". ok=false when the search did not bring an artist-credit
+// (incomplete data in the source).
 func artistaPrincipalDoReleaseGroup(rg respReleaseGroupBusca) (provider.ArtistaExterno, bool) {
 	for _, credito := range rg.ArtistCredit {
 		if credito.Artist.ID != "" {
@@ -1366,10 +1359,10 @@ func artistaPrincipalDoReleaseGroup(rg respReleaseGroupBusca) (provider.ArtistaE
 	return provider.ArtistaExterno{}, false
 }
 
-// escaparLucene neutraliza os caracteres que a sintaxe de busca do MusicBrainz
-// (Lucene) trata como operador, evitando que um título real ("Right Here, Right
-// Now", "Muse - Live") vire uma query malformada. Só o subconjunto que aparece
-// em títulos reais é tratado; aspas e barra invertida saem, o resto vira espaço.
+// escaparLucene neutralizes the characters that the search syntax of MusicBrainz (Lucene) treats
+// as an operator, preventing a real title ("Right Here, Right Now", "Muse - Live") from becoming
+// a malformed query. Only the subset that appears in real titles is handled; quotes and backslash
+// are removed, the rest becomes a space.
 func escaparLucene(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -1386,15 +1379,15 @@ func escaparLucene(s string) string {
 	return strings.TrimSpace(b.String())
 }
 
-// respBuscaReleaseGroup é a resposta de GET /release-group?query=...&fmt=json
-// (busca textual de release-group, usada só por BuscarAlbumPorTitulo).
+// respBuscaReleaseGroup is the response of GET /release-group?query=...&fmt=json (textual search
+// of release-group, used only by BuscarAlbumPorTitulo).
 type respBuscaReleaseGroup struct {
 	ReleaseGroups []respReleaseGroupBusca `json:"release-groups"`
 }
 
-// respReleaseGroupBusca é um release-group da BUSCA (não do detalhe): traz o
-// score da própria fonte, a data de lançamento e o artist-credit com o id/nome do
-// artista -- é desse crédito que sai o artista principal de uma compilação.
+// respReleaseGroupBusca is a release-group from the SEARCH (not from the detail): it brings the
+// score of the source itself, the release date and the artist-credit with the id/name of the
+// artist -- it is from that credit that the main artist of a compilation comes.
 type respReleaseGroupBusca struct {
 	ID               string `json:"id"`
 	Title            string `json:"title"`

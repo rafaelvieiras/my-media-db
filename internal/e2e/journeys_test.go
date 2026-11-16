@@ -9,11 +9,11 @@ import (
 	"time"
 )
 
-// Jornadas E2E da Camada 1 (briefing 0028 §7). Cada teste sobe um harness próprio
-// (banco limpo, migrado do zero) e dirige o Server real por HTTP, cobrindo o mesmo
-// que antes era validado à mão via curl. Idioma default: pt-BR (fallback en).
+// Layer 1 E2E journeys. Each test starts its own harness (clean database, migrated
+// from scratch) and drives the real Server over HTTP, covering the same thing that
+// used to be validated by hand through curl. Default language: pt-BR (fallback en).
 
-// idExterno lê external_ids[fonte] da entity resolvida.
+// idExterno reads external_ids[fonte] from the resolved entity.
 func idExterno(t *testing.T, ent map[string]any, fonte string) string {
 	t.Helper()
 	m, ok := ent["external_ids"].(map[string]any)
@@ -24,8 +24,8 @@ func idExterno(t *testing.T, ent map[string]any, fonte string) string {
 	return s
 }
 
-// TestJornadaImportarFilme: importar um filme (tmdb) resolve título/ano/pôster e
-// grava a identidade externa; reimportar o mesmo id REUSA (dedup), não duplica.
+// TestJornadaImportarFilme: importing a movie (tmdb) resolves title/year/poster and
+// writes the external identity; reimporting the same id REUSES it (dedup), it does not duplicate.
 func TestJornadaImportarFilme(t *testing.T) {
 	c := novoHarness(t)
 
@@ -46,13 +46,13 @@ func TestJornadaImportarFilme(t *testing.T) {
 	}
 	id := str(t, ent, "id")
 
-	// Mesmo id em inglês serve o título en (resolução por idioma).
+	// The same id in English serves the en title (resolution by language).
 	en := c.obj(http.MethodGet, "/api/v1/entities/"+id+"?lang=en", nil, http.StatusOK)
 	if got := str(t, en, "title"); got != "The Matrix" {
 		t.Errorf("title(en) = %q, quero \"The Matrix\"", got)
 	}
 
-	// Reimportar reusa (200) a MESMA entity.
+	// Reimporting reuses (200) the SAME entity.
 	reuso := c.obj(http.MethodPost, "/api/v1/import",
 		map[string]string{"source": "tmdb", "source_id": "603", "type": "movie"}, http.StatusOK)
 	if str(t, reuso, "id") != id {
@@ -60,8 +60,8 @@ func TestJornadaImportarFilme(t *testing.T) {
 	}
 }
 
-// TestJornadaImportarColecao: importar uma coleção cria a entity `collection` e
-// LIGA os filmes membros, que voltam ordenados por ano no GET /members.
+// TestJornadaImportarColecao: importing a collection creates the `collection` entity
+// and LINKS the member movies, which come back ordered by year in GET /members.
 func TestJornadaImportarColecao(t *testing.T) {
 	c := novoHarness(t)
 
@@ -76,7 +76,7 @@ func TestJornadaImportarColecao(t *testing.T) {
 	if len(membros) != 2 {
 		t.Fatalf("membros = %d, quero 2 (Matrix + Reloaded)", len(membros))
 	}
-	// Ordenados por ano: Matrix (1999) antes de Reloaded (2003).
+	// Ordered by year: Matrix (1999) before Reloaded (2003).
 	primeiro, _ := membros[0].(map[string]any)
 	segundo, _ := membros[1].(map[string]any)
 	if t0, _ := primeiro["title"].(string); t0 != "Matrix" {
@@ -87,15 +87,16 @@ func TestJornadaImportarColecao(t *testing.T) {
 	}
 }
 
-// TestJornadaImportarSerie: importar uma serie (type=tv) cria a arvore
-// serie->temporada->episodio (entities tv/season/episode, briefing 0031/ADR-0021) e
-// GET /members devolve os filhos ordenados por sort_index — as temporadas na serie e
-// os episodios na temporada. Exercita o provider fake como SerieProvider (arvore
-// canned), o import da arvore no enrich e a ramificacao de montarMembros por tipo.
+// TestJornadaImportarSerie: importing a series (type=tv) creates the tree
+// series->season->episode (entities tv/season/episode, ADR-0021) and GET /members
+// returns the children ordered by sort_index — the seasons in the series and the
+// episodes in the season. It exercises the fake provider as SerieProvider (canned
+// tree), the import of the tree in the enrich and the branching of montarMembros by
+// type.
 func TestJornadaImportarSerie(t *testing.T) {
 	c := novoHarness(t)
 
-	// A serie fixture do fake tem id 71663 (2 temporadas de 3 episodios).
+	// The fake series fixture has id 71663 (2 seasons of 3 episodes).
 	serie := c.obj(http.MethodPost, "/api/v1/import",
 		map[string]string{"source": "tmdb", "source_id": "71663", "type": "tv"}, http.StatusCreated)
 	if got := str(t, serie, "type"); got != "tv" {
@@ -103,7 +104,7 @@ func TestJornadaImportarSerie(t *testing.T) {
 	}
 	serieID := str(t, serie, "id")
 
-	// Temporadas: 2, ordenadas por sort_index (season_number 1 antes de 2).
+	// Seasons: 2, ordered by sort_index (season_number 1 before 2).
 	temporadas := c.arr(http.MethodGet, "/api/v1/entities/"+serieID+"/members", nil, http.StatusOK)
 	if len(temporadas) != 2 {
 		t.Fatalf("temporadas = %d, quero 2", len(temporadas))
@@ -113,7 +114,7 @@ func TestJornadaImportarSerie(t *testing.T) {
 	if tp := str(t, t1, "type"); tp != "season" {
 		t.Errorf("1a temporada type = %q, quero \"season\"", tp)
 	}
-	// Temporada 1 sem Name na fonte -> titulo gerado "Temporada 1" (independe de idioma).
+	// Season 1 with no Name in the source -> generated title "Temporada 1" (language independent).
 	if got := str(t, t1, "title"); got != "Temporada 1" {
 		t.Errorf("1a temporada title = %q, quero \"Temporada 1\"", got)
 	}
@@ -121,7 +122,7 @@ func TestJornadaImportarSerie(t *testing.T) {
 		t.Errorf("2a temporada type = %q, quero \"season\"", tp)
 	}
 
-	// Episodios da 1a temporada: 3, ordenados por numero (official 101,102,103).
+	// Episodes of the 1st season: 3, ordered by number (official 101,102,103).
 	seasonID := str(t, t1, "id")
 	eps := c.arr(http.MethodGet, "/api/v1/entities/"+seasonID+"/members", nil, http.StatusOK)
 	if len(eps) != 3 {
@@ -132,17 +133,18 @@ func TestJornadaImportarSerie(t *testing.T) {
 		if tp := str(t, m, "type"); tp != "episode" {
 			t.Errorf("episodio[%d] type = %q, quero \"episode\"", i, tp)
 		}
-		// Titulo depende do idioma (pt-BR "Episodio NNN"); asserta o numero, robusto a idioma.
+		// The title depends on the language (pt-BR "Episodio NNN"); it asserts the number, robust to language.
 		if got := str(t, m, "title"); !strings.Contains(got, numero) {
 			t.Errorf("episodio[%d] title = %q, quero conter %q (ordem por numero)", i, got, numero)
 		}
 	}
 }
 
-// TestJornadaItemManualSincroniza: criar um item LOCAL sem fonte, marcar uma tag do
-// dono, fixar o id externo (tmdb) e RE-ENRIQUECER puxa os dados da fonte pelo id
-// fixado — o título neutro cede ao externo e as tags NOVAS da fonte entram, SEM
-// apagar a tag do dono. Fecha o ciclo de sincronização do briefing 0027.
+// TestJornadaItemManualSincroniza: creating a LOCAL item with no source, marking an
+// owner tag, pinning the external id (tmdb) and RE-ENRICHING pulls the source data
+// through the pinned id — the neutral title yields to the external one and the NEW
+// tags from the source come in, WITHOUT deleting the owner tag. It closes the
+// synchronization cycle.
 func TestJornadaItemManualSincroniza(t *testing.T) {
 	c := novoHarness(t)
 
@@ -150,11 +152,11 @@ func TestJornadaItemManualSincroniza(t *testing.T) {
 		map[string]string{"type": "movie", "title": "Meu Filme Local"}, http.StatusCreated)
 	id := str(t, item, "id")
 
-	// O dono marca uma tag própria (delta add) no idioma de leitura.
+	// The owner marks their own tag (delta add) in the reading language.
 	c.obj(http.MethodPatch, "/api/v1/entities/"+id+"/override?lang=pt-BR",
 		map[string]any{"tags": map[string]any{"add": []string{"MinhaTag"}, "remove": []string{}}}, http.StatusOK)
 
-	// Fixa a identidade tmdb e re-enriquece (o enrich lê external_ids[tmdb]).
+	// Pins the tmdb identity and re-enriches (the enrich reads external_ids[tmdb]).
 	c.obj(http.MethodPut, "/api/v1/entities/"+id+"/external-ids",
 		map[string]any{"external_ids": map[string]string{"tmdb": "603"}}, http.StatusOK)
 	c.obj(http.MethodPost, "/api/v1/entities/"+id+"/enrich", map[string]any{}, http.StatusOK)
@@ -172,10 +174,10 @@ func TestJornadaItemManualSincroniza(t *testing.T) {
 	}
 }
 
-// TestJornadaEnrichNaoDestrutivo: o coração do ADR-0012. Editar o título (override)
-// e as tags (delta add/remove) e depois RE-ENRIQUECER: o título editado PERMANECE, a
-// tag removida NÃO volta, a tag adicionada fica, e as tags externas intocadas seguem
-// vivas por baixo. Codifica a garantia do resolver de 3 camadas.
+// TestJornadaEnrichNaoDestrutivo: the heart of ADR-0012. Edit the title (override)
+// and the tags (delta add/remove) and then RE-ENRICH: the edited title REMAINS, the
+// removed tag does NOT come back, the added tag stays, and the untouched external
+// tags stay alive underneath. It encodes the guarantee of the 3-layer resolver.
 func TestJornadaEnrichNaoDestrutivo(t *testing.T) {
 	c := novoHarness(t)
 
@@ -183,13 +185,14 @@ func TestJornadaEnrichNaoDestrutivo(t *testing.T) {
 		map[string]string{"source": "tmdb", "source_id": "603", "type": "movie"}, http.StatusCreated)
 	id := str(t, ent, "id")
 
-	// Edita o título (override vence tudo) e as tags (add Favorito, remove Acao).
+	// Edits the title (the override wins over everything) and the tags (add Favorito,
+	// remove Acao).
 	c.obj(http.MethodPatch, "/api/v1/entities/"+id+"/override?lang=pt-BR",
 		map[string]any{"title": "Matrix EDITADO"}, http.StatusOK)
 	c.obj(http.MethodPatch, "/api/v1/entities/"+id+"/override?lang=pt-BR",
 		map[string]any{"tags": map[string]any{"add": []string{"Favorito"}, "remove": []string{"Acao"}}}, http.StatusOK)
 
-	// Re-enriquece a MESMA fonte: nada do que o dono editou pode mudar.
+	// Re-enriches from the SAME source: nothing the owner edited may change.
 	c.obj(http.MethodPost, "/api/v1/entities/"+id+"/enrich", map[string]any{}, http.StatusOK)
 
 	got := c.obj(http.MethodGet, "/api/v1/entities/"+id+"?lang=pt-BR", nil, http.StatusOK)
@@ -208,10 +211,11 @@ func TestJornadaEnrichNaoDestrutivo(t *testing.T) {
 	}
 }
 
-// TestJornadaNotaLocal: a NOTA LOCAL do dono (ADR-0012). Importar um filme traz a
-// nota da FONTE (vote_average); gravar a nota local via override a expõe em
-// local_rating SEM tocar a da fonte; re-enriquecer não a apaga (override congela);
-// LIMPAR a nota (DELETE do campo) volta local_rating a null, e a da fonte segue lá.
+// TestJornadaNotaLocal: the owner's LOCAL RATING (ADR-0012). Importing a movie brings
+// the SOURCE rating (vote_average); writing the local rating through the override
+// exposes it in local_rating WITHOUT touching the source one; re-enriching does not
+// erase it (the override freezes); CLEARING the rating (DELETE of the field) brings
+// local_rating back to null, and the source one stays there.
 func TestJornadaNotaLocal(t *testing.T) {
 	c := novoHarness(t)
 
@@ -219,18 +223,19 @@ func TestJornadaNotaLocal(t *testing.T) {
 		map[string]string{"source": "tmdb", "source_id": "603", "type": "movie"}, http.StatusCreated)
 	id := str(t, ent, "id")
 
-	// A nota local ainda não existe (o dono não avaliou). O DTO carrega o campo
-	// `vote_average` (nota da FONTE), distinto — capturamos seu valor para provar que
-	// a nota local não o toca (a nota local é NÃO-DESTRUTIVA, ADR-0012).
+	// The local rating does not exist yet (the owner has not rated it). The DTO carries
+	// the `vote_average` field (SOURCE rating), distinct — we capture its value to
+	// prove that the local rating does not touch it (the local rating is
+	// NON-DESTRUCTIVE, ADR-0012).
 	if ent["local_rating"] != nil {
 		t.Errorf("local_rating = %v, quero null antes de o dono avaliar", ent["local_rating"])
 	}
 	if _, temCampo := ent["vote_average"]; !temCampo {
 		t.Fatalf("DTO sem o campo vote_average (nota da fonte): %v", ent)
 	}
-	fonte := ent["vote_average"] // valor da fonte, seja ele qual for (pode ser null)
+	fonte := ent["vote_average"] // the source value, whatever it is (it may be null)
 
-	// O dono grava a nota local (campo neutro do override).
+	// The owner writes the local rating (neutral override field).
 	c.obj(http.MethodPatch, "/api/v1/entities/"+id+"/override?lang=pt-BR",
 		map[string]any{"local_rating": 9.5}, http.StatusOK)
 
@@ -238,19 +243,20 @@ func TestJornadaNotaLocal(t *testing.T) {
 	if nl, _ := comNota["local_rating"].(float64); nl != 9.5 {
 		t.Errorf("local_rating = %v, quero 9.5 (nota do dono)", comNota["local_rating"])
 	}
-	// A nota da FONTE não muda ao definir a nota local (campos distintos).
+	// The SOURCE rating does not change when the local rating is set (distinct fields).
 	if comNota["vote_average"] != fonte {
 		t.Errorf("vote_average = %v, quero %v (a nota da fonte segue intacta)", comNota["vote_average"], fonte)
 	}
 
-	// Re-enriquecer nao apaga a nota do dono (override congela, ADR-0012).
+	// Re-enriching does not erase the owner rating (the override freezes, ADR-0012).
 	c.obj(http.MethodPost, "/api/v1/entities/"+id+"/enrich", map[string]any{}, http.StatusOK)
 	posEnrich := c.obj(http.MethodGet, "/api/v1/entities/"+id+"?lang=pt-BR", nil, http.StatusOK)
 	if nl, _ := posEnrich["local_rating"].(float64); nl != 9.5 {
 		t.Errorf("local_rating pos-enrich = %v, quero 9.5 (override congela)", posEnrich["local_rating"])
 	}
 
-	// LIMPAR a nota local (DELETE do campo): volta a null; a da fonte permanece.
+	// CLEARING the local rating (DELETE of the field): it goes back to null; the source
+	// one remains.
 	c.obj(http.MethodDelete, "/api/v1/entities/"+id+"/override/local_rating", nil, http.StatusOK)
 	limpa := c.obj(http.MethodGet, "/api/v1/entities/"+id+"?lang=pt-BR", nil, http.StatusOK)
 	if limpa["local_rating"] != nil {
@@ -261,9 +267,10 @@ func TestJornadaNotaLocal(t *testing.T) {
 	}
 }
 
-// TestJornadaInternoFirstNaBusca: um item já importado aparece na busca externa com
-// internal_id apontando ao interno; um não-importado vem com internal_id nulo. É a
-// base do interno-first (0026/0027): a UI mostra "na biblioteca" e linka ao interno.
+// TestJornadaInternoFirstNaBusca: an already imported item shows up in the external
+// search with internal_id pointing at the internal one; a non-imported one comes with
+// a null internal_id. It is the base of internal-first: the UI shows "na biblioteca"
+// and links to the internal item.
 func TestJornadaInternoFirstNaBusca(t *testing.T) {
 	c := novoHarness(t)
 
@@ -298,7 +305,7 @@ func TestJornadaInternoFirstNaBusca(t *testing.T) {
 	}
 }
 
-// tipos coleta o campo `type` de cada item de uma lista de objetos JSON.
+// tipos collects the `type` field of each item of a list of JSON objects.
 func tipos(itens []any) []string {
 	out := make([]string, 0, len(itens))
 	for _, it := range itens {
@@ -310,11 +317,11 @@ func tipos(itens []any) []string {
 	return out
 }
 
-// TestJornadaArvoreSeriesTopoBreadcrumb: o briefing 0032. Depois de importar a arvore
-// da serie (tv + 2 temporadas + 6 episodios), a HOME e a BUSCA local so mostram OBRAS
-// DE TOPO (a serie tv), nunca season/episode; e GET /entities/{id} traz os ANCESTRAIS
-// (breadcrumb raiz->pai): episodio -> [serie, temporada]; temporada -> [serie]; serie
-// -> [] (sem pai).
+// TestJornadaArvoreSeriesTopoBreadcrumb: ADR-0030. After importing the series tree
+// (tv + 2 seasons + 6 episodes), the HOME and the local SEARCH only show TOP-LEVEL
+// WORKS (the tv series), never season/episode; and GET /entities/{id} brings the
+// ANCESTORS (root->parent breadcrumb): episode -> [series, season]; season -> [series];
+// series -> [] (no parent).
 func TestJornadaArvoreSeriesTopoBreadcrumb(t *testing.T) {
 	c := novoHarness(t)
 
@@ -322,19 +329,20 @@ func TestJornadaArvoreSeriesTopoBreadcrumb(t *testing.T) {
 		map[string]string{"source": "tmdb", "source_id": "71663", "type": "tv"}, http.StatusCreated)
 	serieID := str(t, serie, "id")
 
-	// (a) HOME/biblioteca: so a serie tv aparece; nada de season/episode.
+	// (a) HOME/library: only the tv series shows up; no season/episode.
 	home := c.obj(http.MethodGet, "/api/v1/entities", nil, http.StatusOK)
 	assertHomeSoSerie(t, home, serieID)
 
-	// (b) BUSCA local DEFAULT: "Episodio" casaria os 6 episodios se indexados; sub-nos
-	// ficam de fora por padrao -> 0 (0033 preserva o so-topo do 0032 no default).
+	// (b) DEFAULT local SEARCH: "Episodio" would match the 6 episodes if they were
+	// indexed; sub-nodes are left out by default -> 0 (the default preserves the
+	// top-level-only behavior).
 	resp := c.obj(http.MethodGet, "/api/v1/search?q=Episodio", nil, http.StatusOK)
 	locais, _ := resp["local"].([]any)
 	if len(locais) != 0 {
 		t.Errorf("busca default por \"Episodio\" trouxe %d locais, quero 0 (sub-nos fora). tipos=%v",
 			len(locais), tipos(locais))
 	}
-	// A serie de topo segue encontravel pela busca.
+	// The top-level series is still findable through the search.
 	respSerie := c.obj(http.MethodGet, "/api/v1/search?q=Contos", nil, http.StatusOK)
 	locaisSerie, _ := respSerie["local"].([]any)
 	semSubNos(t, locaisSerie)
@@ -342,8 +350,9 @@ func TestJornadaArvoreSeriesTopoBreadcrumb(t *testing.T) {
 		t.Errorf("busca por \"Contos\" = %v, quero 1 resultado (a serie)", tipos(locaisSerie))
 	}
 
-	// (b2) include=episode RELIGA os 6 episodios numa secao propria (0033), todos type
-	// episode — sem misturar com a serie (a busca por "Episodio" nao casa "Contos").
+	// (b2) include=episode RELINKS the 6 episodes into their own section, all of type
+	// episode — without mixing with the series (the search for "Episodio" does not match
+	// "Contos").
 	respEp := c.obj(http.MethodGet, "/api/v1/search?q=Episodio&include=episode", nil, http.StatusOK)
 	locaisEp, _ := respEp["local"].([]any)
 	if len(locaisEp) != 6 {
@@ -352,8 +361,8 @@ func TestJornadaArvoreSeriesTopoBreadcrumb(t *testing.T) {
 	}
 	assertTodosTipo(t, locaisEp, "episode")
 
-	// (b3) include=season religa as temporadas: a temporada 1 ("Temporada 1") casa e
-	// vem como sub-no season; tudo que retorna e season (nunca serie/episodio).
+	// (b3) include=season relinks the seasons: season 1 ("Temporada 1") matches and
+	// comes as a season sub-node; everything that returns is season (never series/episode).
 	respTemp := c.obj(http.MethodGet, "/api/v1/search?q=Temporada&include=season", nil, http.StatusOK)
 	locaisTemp, _ := respTemp["local"].([]any)
 	if len(locaisTemp) == 0 {
@@ -361,13 +370,13 @@ func TestJornadaArvoreSeriesTopoBreadcrumb(t *testing.T) {
 	}
 	assertTodosTipo(t, locaisTemp, "season")
 
-	// (c) ANCESTRAIS (breadcrumb raiz->pai).
-	// Serie (topo): ancestors vazio (mas presente, nunca null).
+	// (c) ANCESTORS (root->parent breadcrumb).
+	// Series (top-level): empty ancestors (but present, never null).
 	if anc := ancestrais(t, serie); len(anc) != 0 {
 		t.Errorf("serie ancestors = %v, quero [] (obra de topo)", anc)
 	}
 
-	// Temporada 1: ancestors = [serie].
+	// Season 1: ancestors = [series].
 	temporadas := c.arr(http.MethodGet, "/api/v1/entities/"+serieID+"/members", nil, http.StatusOK)
 	tempID := str(t, temporadas[0].(map[string]any), "id")
 	tempResolvida := c.obj(http.MethodGet, "/api/v1/entities/"+tempID, nil, http.StatusOK)
@@ -377,7 +386,7 @@ func TestJornadaArvoreSeriesTopoBreadcrumb(t *testing.T) {
 	}
 	assertAncestor(t, ancTemp[0], serieID, "tv", "temporada->raiz")
 
-	// Episodio 1 da temporada 1: ancestors = [serie, temporada] (raiz->pai).
+	// Episode 1 of season 1: ancestors = [series, season] (root->parent).
 	eps := c.arr(http.MethodGet, "/api/v1/entities/"+tempID+"/members", nil, http.StatusOK)
 	epID := str(t, eps[0].(map[string]any), "id")
 	epResolvido := c.obj(http.MethodGet, "/api/v1/entities/"+epID, nil, http.StatusOK)
@@ -389,8 +398,8 @@ func TestJornadaArvoreSeriesTopoBreadcrumb(t *testing.T) {
 	assertAncestor(t, ancEp[1], tempID, "season", "episodio->pai")
 }
 
-// assertHomeSoSerie afirma que a home lista SO a serie de topo (`serieID`), sem
-// nenhum sub-no (season/episode), e que o total da paginacao bate com a pagina.
+// assertHomeSoSerie asserts that the home lists ONLY the top-level series (`serieID`),
+// without any sub-node (season/episode), and that the pagination total matches the page.
 func assertHomeSoSerie(t *testing.T, home map[string]any, serieID string) {
 	t.Helper()
 	itens, _ := home["items"].([]any)
@@ -403,8 +412,8 @@ func assertHomeSoSerie(t *testing.T, home map[string]any, serieID string) {
 	}
 }
 
-// assertTodosTipo afirma que TODOS os itens da lista tem o type esperado (usado para
-// provar que uma secao de sub-no religado por include= nao mistura outros tipos).
+// assertTodosTipo asserts that ALL items of the list have the expected type (used to
+// prove that a sub-node section relinked by include= does not mix other types).
 func assertTodosTipo(t *testing.T, itens []any, want string) {
 	t.Helper()
 	for _, tp := range tipos(itens) {
@@ -414,7 +423,7 @@ func assertTodosTipo(t *testing.T, itens []any, want string) {
 	}
 }
 
-// semSubNos afirma que nenhum item da lista e season/episode (so obras de topo).
+// semSubNos asserts that no item of the list is season/episode (only top-level works).
 func semSubNos(t *testing.T, itens []any) {
 	t.Helper()
 	for _, tp := range tipos(itens) {
@@ -424,7 +433,7 @@ func semSubNos(t *testing.T, itens []any) {
 	}
 }
 
-// assertAncestor afirma o id e o type de um no ancestral do breadcrumb.
+// assertAncestor asserts the id and the type of an ancestor node of the breadcrumb.
 func assertAncestor(t *testing.T, node map[string]any, wantID, wantType, rotulo string) {
 	t.Helper()
 	if id := str(t, node, "id"); id != wantID {
@@ -435,8 +444,8 @@ func assertAncestor(t *testing.T, node map[string]any, wantID, wantType, rotulo 
 	}
 }
 
-// ancestrais extrai o array `ancestors` de uma entity resolvida como []map (exige
-// presenca do campo — nunca null, por contrato do 0032).
+// ancestrais extracts the `ancestors` array of a resolved entity as []map (it requires
+// the field to be present — never null, by contract).
 func ancestrais(t *testing.T, ent map[string]any) []map[string]any {
 	t.Helper()
 	bruto, ok := ent["ancestors"].([]any)
@@ -451,10 +460,11 @@ func ancestrais(t *testing.T, ent map[string]any) []map[string]any {
 	return out
 }
 
-// escreverVideo cria um arquivo de video de conteudo unico (o proprio caminho), como
-// o escrever() do pacote scanner: extensao de video reconhecida (.mkv) e content_hash
-// distinto por arquivo. O conteudo nao e um video real; o ffprobe (se presente) falha
-// de forma graciosa e o mediainfo fica vazio — o caminho de match nao depende dele.
+// escreverVideo creates a video file with unique content (the path itself), like
+// escrever() of the scanner package: a recognized video extension (.mkv) and a
+// distinct content_hash per file. The content is not a real video; ffprobe (if
+// present) fails gracefully and the mediainfo stays empty — the match path does not
+// depend on it.
 func escreverVideo(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -465,9 +475,10 @@ func escreverVideo(t *testing.T, path string) {
 	}
 }
 
-// esperarScan dispara o scan de um datasource (POST .../scan, 202) e aguarda concluir.
-// O scan roda em background (goroutine): o sinal DEFINITIVO de conclusao com sucesso e
-// o `last_scan` do datasource, carimbado so em finalizarCicloVida. Faz polling curto.
+// esperarScan fires the scan of a datasource (POST .../scan, 202) and waits for it to
+// finish. The scan runs in the background (goroutine): the DEFINITIVE signal of
+// successful completion is the datasource `last_scan`, stamped only in
+// finalizarCicloVida. It does a short poll.
 func (c *cliente) esperarScan(id string) {
 	c.t.Helper()
 	c.obj(http.MethodPost, "/api/v1/library/"+id+"/scan", nil, http.StatusAccepted)
@@ -482,9 +493,9 @@ func (c *cliente) esperarScan(id string) {
 	c.t.Fatalf("scan de %s nao concluiu no prazo", id)
 }
 
-// arquivosDaEntity lista os arquivos de uma entity (GET .../files) como []map. Para
-// EPISODIO, vem dos vinculos N:M (media_file_entity, kind='tv_episode') — a prova de
-// que o scanner ligou arquivo->episodio pelo id (0034).
+// arquivosDaEntity lists the files of an entity (GET .../files) as []map. For an
+// EPISODE, they come from the N:M links (media_file_entity, kind='tv_episode') — the
+// proof that the scanner linked file->episode by id.
 func (c *cliente) arquivosDaEntity(id string) []map[string]any {
 	c.t.Helper()
 	resp := c.obj(http.MethodGet, "/api/v1/entities/"+id+"/files", nil, http.StatusOK)
@@ -497,8 +508,9 @@ func (c *cliente) arquivosDaEntity(id string) []map[string]any {
 	return out
 }
 
-// posse extrai o objeto `ownership` {owned_count, total_count} de uma entity resolvida
-// (temporada/serie, 0034). Exige presenca do campo (nunca ausente para tv/season).
+// posse extracts the `ownership` object {owned_count, total_count} from a resolved
+// entity (season/series). It requires the field to be present (never absent for
+// tv/season).
 func posse(t *testing.T, ent map[string]any) (owned, total int) {
 	t.Helper()
 	o, ok := ent["ownership"].(map[string]any)
@@ -510,7 +522,7 @@ func posse(t *testing.T, ent map[string]any) (owned, total int) {
 	return int(oc), int(tc)
 }
 
-// idsDosMembros devolve os ids dos filhos (GET .../members) de uma entity, em ordem.
+// idsDosMembros returns the ids of the children (GET .../members) of an entity, in order.
 func (c *cliente) idsDosMembros(id string) []string {
 	c.t.Helper()
 	membros := c.arr(http.MethodGet, "/api/v1/entities/"+id+"/members", nil, http.StatusOK)
@@ -522,25 +534,25 @@ func (c *cliente) idsDosMembros(id string) []string {
 	return out
 }
 
-// TestJornadaScanSerie: a jornada ponta-a-ponta do SCANNER DE SERIES (briefing 0034,
-// Fase 2). Uma pasta de serie NAO importada, marcada content_type='series', e varrida:
-// o scanner auto-importa a arvore do provider (fake, "Springfield Tales"/71663), casa
-// cada arquivo ao(s) episodio(s) pelo numero e grava os vinculos N:M ancorados no id.
-// Cobre: (a) auto-import; (b) arquivo unico -> 1 vinculo; (c) RANGE S02E01-E03 -> 3
-// episodios ligados ao MESMO arquivo; (d) arquivos por episodio via a juncao; (e)
-// posse agregada coerente (owned<=total) na temporada e na serie.
+// TestJornadaScanSerie: the end-to-end journey of the SERIES SCANNER (ADR-0021,
+// Phase 2). A NON-imported series folder, marked content_type='series', is swept: the
+// scanner auto-imports the provider tree (fake, "Springfield Tales"/71663), matches
+// each file to the episode(s) by number and writes the N:M links anchored on the id.
+// Covers: (a) auto-import; (b) single file -> 1 link; (c) RANGE S02E01-E03 -> 3
+// episodes linked to the SAME file; (d) files per episode through the junction; (e)
+// coherent aggregate ownership (owned<=total) on the season and on the series.
 func TestJornadaScanSerie(t *testing.T) {
 	c := novoHarness(t)
 
-	// Estrutura de disco: pasta da serie, temporada, 2 episodios avulsos na T1 e um
-	// arquivo de RANGE cobrindo os 3 episodios da T2 (official S02E01..E03).
+	// Disk structure: series folder, season, 2 standalone episodes in S1 and a RANGE
+	// file covering the 3 episodes of S2 (official S02E01..E03).
 	root := t.TempDir()
 	base := filepath.Join(root, "Springfield Tales")
 	escreverVideo(t, filepath.Join(base, "Season 01", "Springfield Tales S01E01.mkv"))
 	escreverVideo(t, filepath.Join(base, "Season 01", "Springfield Tales S01E02.mkv"))
 	escreverVideo(t, filepath.Join(base, "Season 02", "Springfield Tales S02E01-E03.mkv"))
 
-	// (2) Cadastra o datasource marcado como serie e (3) dispara+aguarda o scan.
+	// (2) Registers the datasource marked as a series and (3) fires+awaits the scan.
 	src := c.obj(http.MethodPost, "/api/v1/library",
 		map[string]string{"path": root, "type": "tv", "content_type": "series"}, http.StatusCreated)
 	if got := str(t, src, "content_type"); got != "series" {
@@ -549,7 +561,7 @@ func TestJornadaScanSerie(t *testing.T) {
 	srcID := str(t, src, "id")
 	c.esperarScan(srcID)
 
-	// (4a) A serie foi AUTO-IMPORTADA: a home lista exatamente 1 obra de topo, a tv.
+	// (4a) The series was AUTO-IMPORTED: the home lists exactly 1 top-level work, the tv one.
 	home := c.obj(http.MethodGet, "/api/v1/entities", nil, http.StatusOK)
 	itens, _ := home["items"].([]any)
 	if len(itens) != 1 {
@@ -561,7 +573,7 @@ func TestJornadaScanSerie(t *testing.T) {
 	}
 	serieID := str(t, serie, "id")
 
-	// Estrutura importada: 2 temporadas; T1 com eps [101,102,103], T2 com [201,202,203].
+	// Imported structure: 2 seasons; S1 with eps [101,102,103], S2 with [201,202,203].
 	temporadas := c.idsDosMembros(serieID)
 	if len(temporadas) != 2 {
 		t.Fatalf("temporadas = %d, quero 2", len(temporadas))
@@ -572,25 +584,25 @@ func TestJornadaScanSerie(t *testing.T) {
 		t.Fatalf("episodios = T1:%d T2:%d, quero 3 e 3", len(epsT1), len(epsT2))
 	}
 
-	// (4b) Arquivos avulsos viraram vinculos: ep 101 e 102 possuidos (1 arquivo cada),
-	// ep 103 NAO possuido (nenhum arquivo cobriu S01E03).
+	// (4b) Standalone files became links: eps 101 and 102 owned (1 file each), ep 103
+	// NOT owned (no file covered S01E03).
 	assertFileCount(t, c, epsT1[0], 1) // S01E01 -> ep 101
 	assertFileCount(t, c, epsT1[1], 1) // S01E02 -> ep 102
-	assertFileCount(t, c, epsT1[2], 0) // S01E03 sem arquivo
+	assertFileCount(t, c, epsT1[2], 0) // S01E03 with no file
 
-	// (4c) RANGE: o unico arquivo S02E01-E03 gerou 3 vinculos, um por episodio da T2,
-	// TODOS apontando para o MESMO media_file (1 arquivo -> N episodios, ancorado no id).
+	// (4c) RANGE: the single S02E01-E03 file generated 3 links, one per episode of S2,
+	// ALL of them pointing at the SAME media_file (1 file -> N episodes, anchored on the id).
 	assertRangeUmArquivoTresEps(t, c, epsT2, "S02E01-E03")
 
-	// (4d/4e) Posse agregada coerente (owned<=total): T1 possui 2/3; T2 possui 3/3; a
-	// serie agrega 5/6 (nunca owned>total).
+	// (4d/4e) Coherent aggregate ownership (owned<=total): S1 owns 2/3; S2 owns 3/3; the
+	// series aggregates 5/6 (never owned>total).
 	assertPosse(t, c, temporadas[0], 2, 3)
 	assertPosse(t, c, temporadas[1], 3, 3)
 	assertPosse(t, c, serieID, 5, 6)
 }
 
-// assertFileCount afirma o file_count de um episodio resolvido (GET /entities/{id}) —
-// os arquivos do episodio vem dos vinculos N:M (0034), nao de media_file.entity_id.
+// assertFileCount asserts the file_count of a resolved episode (GET /entities/{id}) —
+// the episode files come from the N:M links, not from media_file.entity_id.
 func assertFileCount(t *testing.T, c *cliente, epID string, quero int) {
 	t.Helper()
 	ent := c.obj(http.MethodGet, "/api/v1/entities/"+epID, nil, http.StatusOK)
@@ -600,9 +612,9 @@ func assertFileCount(t *testing.T, c *cliente, epID string, quero int) {
 	}
 }
 
-// assertRangeUmArquivoTresEps afirma que TODOS os episodios recebem exatamente 1
-// arquivo, que seu path contem o marcador do range, e que e o MESMO media_file (id)
-// para todos — a prova ponta-a-ponta de 1 arquivo -> N episodios (vinculos N:M).
+// assertRangeUmArquivoTresEps asserts that ALL episodes receive exactly 1 file, that
+// its path contains the range marker, and that it is the SAME media_file (id) for all
+// of them — the end-to-end proof of 1 file -> N episodes (N:M links).
 func assertRangeUmArquivoTresEps(t *testing.T, c *cliente, eps []string, marcador string) {
 	t.Helper()
 	var idRange string
@@ -623,8 +635,8 @@ func assertRangeUmArquivoTresEps(t *testing.T, c *cliente, eps []string, marcado
 	}
 }
 
-// assertPosse afirma a posse agregada (owned/total) de uma entity-pai (temporada/serie)
-// e a coerencia owned<=total (0034).
+// assertPosse asserts the aggregate ownership (owned/total) of a parent entity
+// (season/series) and the owned<=total coherence.
 func assertPosse(t *testing.T, c *cliente, id string, owned, total int) {
 	t.Helper()
 	ent := c.obj(http.MethodGet, "/api/v1/entities/"+id, nil, http.StatusOK)
@@ -637,11 +649,11 @@ func assertPosse(t *testing.T, c *cliente, id string, owned, total int) {
 	}
 }
 
-// TestJornadaHealthSystem: GET /api/v1/health/system devolve o snapshot de
-// telemetria (banco+uso+armazenamento) refletindo o catálogo real -- prova
-// ponta-a-ponta de internal/telemetry + internal/server/health_system.go
-// (briefing 0055) contra o MESMO Server real do harness. Também confere que
-// a segunda chamada imediata bate no cache TTL (telemetry_cache.go).
+// TestJornadaHealthSystem: GET /api/v1/health/system returns the telemetry snapshot
+// (database+usage+storage) reflecting the real catalog -- an end-to-end proof of
+// internal/telemetry + internal/server/health_system.go against the SAME real Server
+// of the harness. It also checks that the immediate second call hits the TTL cache
+// (telemetry_cache.go).
 func TestJornadaHealthSystem(t *testing.T) {
 	c := novoHarness(t)
 
@@ -681,7 +693,7 @@ func TestJornadaHealthSystem(t *testing.T) {
 		t.Fatalf("storage ausente ou não-objeto em %v", body)
 	}
 
-	// Segunda chamada imediata deve bater no cache TTL (mesmo computed_at).
+	// The immediate second call must hit the TTL cache (same computed_at).
 	again := c.obj(http.MethodGet, "/api/v1/health/system", nil, http.StatusOK)
 	if str(t, again, "computed_at") != str(t, body, "computed_at") {
 		t.Error("segunda chamada imediata deveria vir do cache (mesmo computed_at)")

@@ -2,7 +2,7 @@ package richfields
 
 import "testing"
 
-// Helpers lineares (baixa complexidade ciclomática) para asserções ponteiro/valor.
+// Linear helpers (low cyclomatic complexity) for pointer/value assertions.
 func eqStr(t *testing.T, nome string, got *string, want string) {
 	t.Helper()
 	if got == nil {
@@ -27,25 +27,26 @@ func TestResolverEscalarTraduzivel(t *testing.T) {
 		"legado": "Valor Legado",
 		"vazio":  "",
 	}
-	// Cadeia acha o pt-BR.
+	// The chain finds pt-BR.
 	v, prov := ResolverEscalarTraduzivel(campos, "title", []string{"pt-BR", "en"})
 	eqStr(t, "title", v, "Duna")
 	if prov != "pt-BR" {
 		t.Errorf("prov = %q, quero pt-BR", prov)
 	}
-	// Cadeia sem o idioma cai em "qualquer presente" (ordem estável: en).
+	// A chain without the language falls back to "any present one" (stable order:
+	// en).
 	v, prov = ResolverEscalarTraduzivel(campos, "title", []string{"ja"})
 	eqStr(t, "title fallback", v, "Dune")
 	if prov != "en" {
 		t.Errorf("prov fallback = %q, quero en", prov)
 	}
-	// Escalar simples (legado): proveniência "".
+	// Plain scalar (legacy): provenance "".
 	v, prov = ResolverEscalarTraduzivel(campos, "legado", []string{"pt-BR"})
 	eqStr(t, "legado", v, "Valor Legado")
 	if prov != "" {
 		t.Errorf("prov legado = %q, quero vazio", prov)
 	}
-	// Ausente e vazio → nil.
+	// Absent and empty → nil.
 	v, _ = ResolverEscalarTraduzivel(campos, "ausente", []string{"pt-BR"})
 	nilStr(t, "ausente", v)
 	v, _ = ResolverEscalarTraduzivel(campos, "vazio", []string{"pt-BR"})
@@ -76,11 +77,11 @@ func TestCertificacaoDaRegiao(t *testing.T) {
 		"certification_by_region": map[string]any{"BR": "14", "US": "R"},
 	}
 	eqStr(t, "pt-BR", CertificacaoDaRegiao(campos, "pt-BR"), "14")
-	// en não tem região → cai em US.
+	// en has no region → falls back to US.
 	eqStr(t, "en→US", CertificacaoDaRegiao(campos, "en"), "R")
-	// Região inexistente na fonte (fr-FR → FR ausente) → US.
+	// Region missing at the source (fr-FR → FR absent) → US.
 	eqStr(t, "fr→US", CertificacaoDaRegiao(campos, "fr-FR"), "R")
-	// Sem o mapa → nil.
+	// Without the map → nil.
 	nilStr(t, "sem mapa", CertificacaoDaRegiao(map[string]any{}, "pt-BR"))
 }
 
@@ -109,16 +110,16 @@ func TestVideosDe(t *testing.T) {
 	if vs[1].URL != nil {
 		t.Errorf("video[1].URL = %v, quero nil (site desconhecido)", *vs[1].URL)
 	}
-	// Sem a chave → fatia vazia (não-nil).
+	// Without the key → empty slice (non-nil).
 	if v := VideosDe(map[string]any{}); v == nil || len(v) != 0 {
 		t.Errorf("videos vazio = %v, quero []", v)
 	}
 }
 
-// TestPrimeiroTrailerYoutube cobre o critério do briefing 0102: acha o
-// primeiro vídeo type=="Trailer" && site=="YouTube" com key, ignorando
-// Teaser/Clip e vídeos de outro site (MESMO critério de `primeiroTrailer`
-// do frontend, rich-detail-view.tsx).
+// TestPrimeiroTrailerYoutube covers the ADR-0025 criterion: it finds the first
+// video with type=="Trailer" && site=="YouTube" that has a key, ignoring
+// Teaser/Clip and videos from another site (the SAME criterion as
+// `primeiroTrailer` in the frontend, rich-detail-view.tsx).
 func TestPrimeiroTrailerYoutube(t *testing.T) {
 	videos := []Video{
 		{Name: "Teaser", Key: "t1", Site: "YouTube", Type: "Teaser"},
@@ -169,7 +170,7 @@ func TestSimilaresDe(t *testing.T) {
 
 func TestLinksExternos(t *testing.T) {
 	campos := map[string]any{"external_links": map[string]any{"imdb": "https://imdb/x", "vazio": ""}}
-	// Com id TMDB → acrescenta o link do TMDB; ignora entradas vazias.
+	// With a TMDB id → it adds the TMDB link; empty entries are ignored.
 	links := LinksExternos(campos, "movie", "603", "", "")
 	if links["imdb"] != "https://imdb/x" || links["tmdb"] != "https://www.themoviedb.org/movie/603" {
 		t.Errorf("links = %v", links)
@@ -177,18 +178,19 @@ func TestLinksExternos(t *testing.T) {
 	if _, ok := links["vazio"]; ok {
 		t.Error("entrada vazia não deveria entrar")
 	}
-	// Sem id TMDB → sem link do TMDB.
+	// Without a TMDB id → no TMDB link.
 	links = LinksExternos(campos, "", "", "", "")
 	if _, ok := links["tmdb"]; ok {
 		t.Error("sem id TMDB, não deveria ter link tmdb")
 	}
 }
 
-// TestLinksExternosImdbTvdb (0086) cobre os ids crus de imdb/tvdb: preenchem o mapa
-// quando a fonte não os modelou em `external_links`, mas NUNCA sobrescrevem o que a
-// fonte já mandou (precedência do canônico sobre o id cru).
+// TestLinksExternosImdbTvdb covers the raw imdb/tvdb ids: they fill in the map
+// when the source did not model them in `external_links`, but they NEVER
+// overwrite what the source already sent (precedence of the canonical value over
+// the raw id).
 func TestLinksExternosImdbTvdb(t *testing.T) {
-	// Sem external_links algum: imdb/tvdb crus montam as URLs canônicas.
+	// Without any external_links: the raw imdb/tvdb build the canonical URLs.
 	links := LinksExternos(map[string]any{}, "tv", "1399", "tt0944947", "121361")
 	if links["tmdb"] != "https://www.themoviedb.org/tv/1399" {
 		t.Errorf("tmdb = %q", links["tmdb"])
@@ -200,19 +202,21 @@ func TestLinksExternosImdbTvdb(t *testing.T) {
 		t.Errorf("tvdb = %q", links["tvdb"])
 	}
 
-	// external_links já tem um imdb (mais específico) → o id cru NÃO sobrescreve.
+	// external_links already has an imdb entry (more specific) → the raw id does
+	// NOT overwrite it.
 	campos := map[string]any{"external_links": map[string]any{"imdb": "https://imdb/da-fonte"}}
 	links = LinksExternos(campos, "tv", "1399", "tt0944947", "121361")
 	if links["imdb"] != "https://imdb/da-fonte" {
 		t.Errorf("imdb deveria preservar o valor da fonte, veio %q", links["imdb"])
 	}
-	// tvdb ainda entra (a fonte não modelou esse).
+	// tvdb still goes in (the source did not model that one).
 	if links["tvdb"] != "https://www.thetvdb.com/dereferrer/series/121361" {
 		t.Errorf("tvdb = %q", links["tvdb"])
 	}
 }
 
-// intPtr/floatPtr asseveram um ponteiro numérico esperado (linear p/ baixa cyclo).
+// intPtr/floatPtr assert an expected numeric pointer (linear, for low
+// complexity).
 func intPtr(t *testing.T, nome string, got *int, want int) {
 	t.Helper()
 	if got == nil || *got != want {
@@ -273,10 +277,10 @@ func TestConversoresStringELista(t *testing.T) {
 	nilStr(t, "AnoDePtr curto", AnoDePtr(&curto))
 }
 
-// ── Créditos (0029) ──────────────────────────────────────────────────────────
+// ── Credits (MD6, ADR-0013) ─────────────────────────────────────────────────
 
-// TestCastDeFilme cobre o shape de FILME: sem episode_count, foto quando presente,
-// nil quando ausente, e o não-mapa (lixo) ignorado.
+// TestCastDeFilme covers the MOVIE shape: no episode_count, photo when present,
+// nil when absent, and the non-map (junk) ignored.
 func TestCastDeFilme(t *testing.T) {
 	campos := map[string]any{"cast": []any{
 		map[string]any{"source_id": "6384", "name": "Keanu Reeves", "character": "Neo", "order": 0, "profile_path": "/keanu.jpg"},
@@ -299,8 +303,9 @@ func TestCastDeFilme(t *testing.T) {
 	}
 }
 
-// TestCastDeSerieEAusente cobre o shape de SÉRIE (episode_count do papel agregado) e
-// a fatia vazia (não-nil) quando a chave `cast` está ausente do canônico.
+// TestCastDeSerieEAusente covers the SERIES shape (episode_count of the
+// aggregated role) and the empty (non-nil) slice when the `cast` key is absent
+// from the canonical map.
 func TestCastDeSerieEAusente(t *testing.T) {
 	campos := map[string]any{"cast": []any{
 		map[string]any{"source_id": "1", "name": "Ator Serie", "character": "Peter / Brian", "order": 0, "episode_count": 42, "profile_path": "/a.jpg"},
@@ -310,7 +315,7 @@ func TestCastDeSerieEAusente(t *testing.T) {
 		t.Fatalf("cast serie = %d itens, quero 1", len(cast))
 	}
 	intPtr(t, "cast[0].EpisodeCount", cast[0].EpisodeCount, 42)
-	// Ausente → fatia vazia não-nil.
+	// Absent → non-nil empty slice.
 	if v := CastDe(map[string]any{}); v == nil || len(v) != 0 {
 		t.Errorf("cast ausente = %v, quero []", v)
 	}
@@ -331,7 +336,7 @@ func TestCrewDe(t *testing.T) {
 	if crew[0].EpisodeCount != nil {
 		t.Errorf("crew[0].EpisodeCount = %v, quero nil (filme)", *crew[0].EpisodeCount)
 	}
-	// Série: com episode_count (cargo agregado por episódios).
+	// Series: with episode_count (role aggregated over episodes).
 	campos = map[string]any{"crew": []any{
 		map[string]any{"source_id": "2", "name": "Roteirista Serie", "department": "Writing", "job": "Writer", "episode_count": 10},
 	}}

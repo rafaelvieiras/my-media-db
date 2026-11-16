@@ -1,11 +1,12 @@
 package server
 
-// Este arquivo implementa GET /api/v1/external/{source}/collection/{id} (briefing 0024,
-// follow-up do 0023): a COLEÇÃO externa como página própria — nome/sinopse/artes do
-// conjunto e a lista das PARTES (filmes) navegáveis ao detalhe externo. A fonte é
-// consultada via a capacidade OPCIONAL provider.ColecaoProvider (type-assert); fontes
-// sem coleção degradam com 503. Mono-idioma pragmático (idioma ativo), sem cache
-// re-componível — o multi-idioma pleno da coleção fica como follow-up.
+// This file implements GET /api/v1/external/{source}/collection/{id}: the external
+// COLLECTION as its own page — name/synopsis/artwork of the set and the list of the
+// PARTS (movies) navigable to the external detail. The source is queried through the
+// OPTIONAL capability provider.ColecaoProvider (type-assert); sources without collections
+// degrade with 503. Pragmatically single-language (the active language), with no
+// re-composable cache — full multi-language support for collections is left as a
+// follow-up.
 
 import (
 	"context"
@@ -17,10 +18,11 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// colecaoExternaDTO é a resposta de GET /external/{source}/collection/{id}: os
-// metadados da coleção e suas partes. As artes do HERO (pôster/fundo) passam pelo
-// proxy local (0024); as miniaturas das partes seguem DIRETAS (consistente com
-// similares/coleção do detalhe externo). `parts` sai sempre como `[]` (nunca null).
+// colecaoExternaDTO is the response of GET /external/{source}/collection/{id}: the
+// collection metadata and its parts. The HERO artwork (poster/background) goes through
+// the local proxy; the part thumbnails stay DIRECT (consistent with the
+// similars/collection of the external detail). `parts` always comes out as `[]` (never
+// null).
 type colecaoExternaDTO struct {
 	Source      string  `json:"source"`
 	SourceID    string  `json:"source_id"`
@@ -28,15 +30,15 @@ type colecaoExternaDTO struct {
 	Overview    *string `json:"overview"`
 	PosterURL   *string `json:"poster_url"`
 	BackdropURL *string `json:"backdrop_url"`
-	// InternalID é o id da entity coleção interna quando esta coleção JÁ foi
-	// importada (0025/0026); nil caso contrário. A UI então troca "Importar coleção"
-	// por "Ver coleção" (link ao destino interno).
+	// InternalID is the id of the internal collection entity when this collection was
+	// ALREADY imported; nil otherwise. The UI then swaps "Importar coleção" for
+	// "Ver coleção" (a link to the internal destination).
 	InternalID *string           `json:"internal_id"`
 	Parts      []parteColecaoDTO `json:"parts"`
 }
 
-// parteColecaoDTO é um item da coleção (mesmo shape enxuto de um resultado de busca):
-// id na fonte, tipo, título, ano, sinopse e a miniatura direta.
+// parteColecaoDTO is a collection item (the same lean shape as a search result): id at
+// the source, type, title, year, synopsis and the direct thumbnail.
 type parteColecaoDTO struct {
 	SourceID  string  `json:"source_id"`
 	Type      string  `json:"type"`
@@ -44,15 +46,16 @@ type parteColecaoDTO struct {
 	Year      *string `json:"year"`
 	Overview  *string `json:"overview"`
 	PosterURL *string `json:"poster_url"`
-	// InternalID é o id da entity interna desta parte quando ela JÁ foi importada
-	// (0026); nil caso contrário. A UI então mostra "na biblioteca" e linka ao
-	// destino interno em vez de oferecer Importar.
+	// InternalID is the id of the internal entity of this part when it was ALREADY
+	// imported; nil otherwise. The UI then shows "na biblioteca" and links to the
+	// internal destination instead of offering Importar.
 	InternalID *string `json:"internal_id"`
 }
 
-// getExternalCollection trata GET /api/v1/external/{source}/collection/{id}?lang=. 503
-// sem fonte externa (ou fonte sem a capacidade de coleção); 400 lang fora dos
-// permitidos; 404 coleção inexistente na fonte; 502 fonte falhou; 200 com a coleção.
+// getExternalCollection handles GET /api/v1/external/{source}/collection/{id}?lang=. 503
+// without an external source (or a source without the collection capability); 400 lang
+// outside the allowed ones; 404 collection that does not exist in the source; 502 the
+// source failed; 200 with the collection.
 func (s *Server) getExternalCollection(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -97,9 +100,10 @@ func (s *Server) getExternalCollection(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.montarColecaoExterna(ctx, source, col))
 }
 
-// montarColecaoExterna compõe o DTO da coleção: reescreve as artes do hero pelo proxy
-// local (urlImagemServida), anota o id interno da coleção e de cada parte já
-// importada (interno-first, 0026) e copia as partes com a miniatura direta.
+// montarColecaoExterna composes the collection DTO: it rewrites the hero artwork through
+// the local proxy (urlImagemServida), annotates the internal id of the collection and of
+// each already imported part (internal-first) and copies the parts with the direct
+// thumbnail.
 func (s *Server) montarColecaoExterna(ctx context.Context, source string, col provider.Colecao) colecaoExternaDTO {
 	partes := make([]parteColecaoDTO, 0, len(col.Parts))
 	for _, p := range col.Parts {

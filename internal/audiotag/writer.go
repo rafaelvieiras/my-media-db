@@ -16,64 +16,66 @@ import (
 	"time"
 )
 
-// ErrFormatoNaoSuportado é devolvido por Escrever quando a extensão do
-// arquivo não é .mp3/.flac/.ogg (briefing 0125 §3: só esses 3 formatos).
+// ErrFormatoNaoSuportado is returned by Escrever when the extension of the
+// file is not .mp3/.flac/.ogg (only those 3 formats are supported).
 var ErrFormatoNaoSuportado = errors.New("audiotag: formato de audio nao suportado (use mp3, flac ou ogg)")
 
-// timeoutFfmpeg é o teto de UMA chamada de ffmpeg — um processo travado (ex.:
-// arquivo corrompido) não deve prender para sempre uma cascata álbum→faixas
-// (best-effort: a falha por timeout de UMA faixa não aborta as demais, ver
+// timeoutFfmpeg is the ceiling of ONE ffmpeg call — a stuck process (e.g.: a
+// corrupted file) must not hold an album→tracks cascade forever (best-effort:
+// a timeout failure of ONE track does not abort the others, see
 // internal/server/audio_tags.go).
 const timeoutFfmpeg = 60 * time.Second
 
-// runner executa um comando e devolve a saída COMBINADA (stdout+stderr) — o
-// ffmpeg escreve o log de erro no stderr; capturar os dois é o que dá um
-// erro útil ao chamador quando o subprocesso falha. Injetável para testes
-// (mesmo padrão de internal/mediainfo.runner).
+// runner runs a command and returns the COMBINED output (stdout+stderr) —
+// ffmpeg writes its error log to stderr; capturing both is what gives the
+// caller a useful error when the subprocess fails. Injectable for tests (same
+// pattern as internal/mediainfo.runner).
 type runner func(ctx context.Context, name string, args ...string) ([]byte, error)
 
-// Writer regrava a tag de áudio via ffmpeg. Zero-value inútil: use NewWriter.
-// Binary e run são injetáveis (NewWriterComRunner) para testar sem o ffmpeg
-// real (mesmo padrão de internal/mediainfo.Prober).
+// Writer rewrites the audio tag through ffmpeg. Useless zero value: use
+// NewWriter. Binary and run are injectable (NewWriterComRunner) to test
+// without the real ffmpeg (same pattern as internal/mediainfo.Prober).
 type Writer struct {
 	binary string
 	run    runner
 }
 
-// NewWriter cria um Writer que chama o "ffmpeg" do PATH via os/exec.
+// NewWriter creates a Writer that calls the "ffmpeg" from PATH through
+// os/exec.
 func NewWriter() *Writer {
 	return NewWriterComRunner("ffmpeg", execRunner)
 }
 
-// NewWriterComRunner cria um Writer com binário e runner explícitos (testes).
+// NewWriterComRunner creates a Writer with an explicit binary and runner
+// (tests).
 func NewWriterComRunner(binary string, run runner) *Writer {
 	return &Writer{binary: binary, run: run}
 }
 
-// execRunner é o runner de produção: roda o comando e captura stdout+stderr.
+// execRunner is the production runner: it runs the command and captures
+// stdout+stderr.
 func execRunner(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
 }
 
-// Disponivel diz se o binário do ffmpeg está no PATH. O chamador usa isso
-// para degradar com 503 em vez de tentar e falhar por processo (mesmo padrão
-// de mediainfo.Prober.Disponivel).
+// Disponivel tells whether the ffmpeg binary is in the PATH. The caller uses it
+// to degrade with a 503 instead of trying and failing per process (same pattern
+// as mediainfo.Prober.Disponivel).
 func (w *Writer) Disponivel() bool {
 	_, err := exec.LookPath(w.binary)
 	return err == nil
 }
 
-// Escrever regrava a tag de UM arquivo de áudio com o Metadado dado,
-// despachando pelo FORMATO (extensão do path): ID3v2 para .mp3, Vorbis
-// comment para .flac/.ogg. A escrita é sempre uma SUBSTITUIÇÃO TOTAL da tag
-// anterior (-map_metadata -1: descarta qualquer tag antiga antes de aplicar
-// o Metadado — inclusive uma capa preexistente, quando Metadado.CoverPath ==
-// ""), nunca um merge — coerente com "o valor resolvido é a fonte de
-// verdade" (briefing 0125 §6). O áudio em si NUNCA é recodificado (-c:a
-// copy): só o container/tag muda, sem perda de qualidade nem custo de CPU de
-// um reencode. Grava num arquivo temporário no MESMO diretório e troca por
-// rename atômico — o arquivo original só é substituído se o ffmpeg terminar
-// com sucesso.
+// Escrever rewrites the tag of ONE audio file with the given Metadado,
+// dispatching by FORMAT (extension of the path): ID3v2 for .mp3, Vorbis comment
+// for .flac/.ogg. The write is always a TOTAL REPLACEMENT of the previous tag
+// (-map_metadata -1: it discards any old tag before applying the Metadado —
+// including a pre-existing cover, when Metadado.CoverPath == ""), never a merge
+// — consistent with "the resolved value is the source of truth". The audio
+// itself is NEVER re-encoded (-c:a copy): only the container/tag changes, with
+// no quality loss and no CPU cost of a reencode. It writes to a temporary file
+// in the SAME directory and swaps it with an atomic rename — the original file
+// is only replaced if ffmpeg finishes successfully.
 func (w *Writer) Escrever(ctx context.Context, path string, m Metadado) error {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
@@ -86,13 +88,12 @@ func (w *Writer) Escrever(ctx context.Context, path string, m Metadado) error {
 	}
 }
 
-// escreverID3 monta os args do ffmpeg para MP3 (ID3v2): quando há capa, um
-// 2º input (a imagem) é mapeado como stream de vídeo MJPEG com
-// -disposition:v attached_pic — o jeito real do ffmpeg gerar um frame APIC
-// (validado empiricamente: ffprobe -show_streams devolve o stream de volta
-// com disposition.attached_pic=1). -id3v2_version 3 fixa ID3v2.3 (mais
-// compatível com players antigos que 2.4; ambos são lidos pelo ecossistema
-// alvo do briefing 0125).
+// escreverID3 builds the ffmpeg args for MP3 (ID3v2): when there is a cover, a
+// 2nd input (the image) is mapped as an MJPEG video stream with
+// -disposition:v attached_pic — the real way for ffmpeg to produce an APIC
+// frame (validated empirically: ffprobe -show_streams returns the stream back
+// with disposition.attached_pic=1). -id3v2_version 3 pins ID3v2.3 (more
+// compatible with old players than 2.4; both are read by the target ecosystem).
 func (w *Writer) escreverID3(ctx context.Context, path string, m Metadado) error {
 	temCapa := m.CoverPath != ""
 	args := []string{"-hide_banner", "-loglevel", "error", "-y", "-i", path}
@@ -109,16 +110,16 @@ func (w *Writer) escreverID3(ctx context.Context, path string, m Metadado) error
 	return w.regravar(ctx, path, args)
 }
 
-// escreverVorbis monta os args do ffmpeg para FLAC/OGG (Vorbis comment): a
-// capa (quando houver) NÃO entra como input de vídeo -- o container ogg
-// recusa mux de um stream mjpeg (validado empiricamente: "Unsupported codec
-// id in stream 1") e mesmo o FLAC, que aceita, ganharia um stream de vídeo
-// "de verdade" em vez do bloco METADATA_BLOCK_PICTURE que players esperam.
-// Em vez disso, blocoCapaBase64 monta o bloco binário da spec do FLAC e o
-// injeta como o VALOR de um comentário Vorbis comum (METADATA_BLOCK_PICTURE)
-// -- funciona identicamente em .flac e .ogg (validado com ffprobe
-// -show_streams, que decodifica o bloco de volta como um stream de vídeo
-// sintético nos dois formatos).
+// escreverVorbis builds the ffmpeg args for FLAC/OGG (Vorbis comment): the
+// cover (when present) does NOT go in as a video input -- the ogg container
+// refuses to mux an mjpeg stream (validated empirically: "Unsupported codec
+// id in stream 1") and even FLAC, which accepts it, would gain a "real" video
+// stream instead of the METADATA_BLOCK_PICTURE block that players expect.
+// Instead, blocoCapaBase64 builds the binary block from the FLAC spec and
+// injects it as the VALUE of an ordinary Vorbis comment
+// (METADATA_BLOCK_PICTURE) -- it works identically in .flac and .ogg (validated
+// with ffprobe -show_streams, which decodes the block back as a synthetic
+// video stream in both formats).
 func (w *Writer) escreverVorbis(ctx context.Context, path string, m Metadado) error {
 	args := []string{"-hide_banner", "-loglevel", "error", "-y", "-i", path,
 		"-map", "0:a", "-c:a", "copy", "-map_metadata", "-1"}
@@ -130,10 +131,10 @@ func (w *Writer) escreverVorbis(ctx context.Context, path string, m Metadado) er
 	return w.regravar(ctx, path, args)
 }
 
-// regravar completa `args` com o path de saída (um temporário no MESMO
-// diretório do original), roda o ffmpeg, e substitui o arquivo original por
-// rename atômico só em caso de sucesso — o original nunca fica num estado
-// parcial/corrompido se o ffmpeg falhar no meio.
+// regravar completes `args` with the output path (a temporary file in the SAME
+// directory as the original), runs ffmpeg, and replaces the original file with
+// an atomic rename only on success — the original never ends up in a
+// partial/corrupted state if ffmpeg fails halfway.
 func (w *Writer) regravar(ctx context.Context, path string, args []string) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "audiotag-*"+filepath.Ext(path))
@@ -142,7 +143,7 @@ func (w *Writer) regravar(ctx context.Context, path string, args []string) error
 	}
 	tmpPath := tmp.Name()
 	_ = tmp.Close()
-	defer func() { _ = os.Remove(tmpPath) }() // best-effort: some o temporario se o rename nao rolar
+	defer func() { _ = os.Remove(tmpPath) }() // best-effort: the temporary file goes away if the rename does not happen
 
 	ctxComTimeout, cancel := context.WithTimeout(ctx, timeoutFfmpeg)
 	defer cancel()
@@ -158,8 +159,8 @@ func (w *Writer) regravar(ctx context.Context, path string, args []string) error
 	return nil
 }
 
-// truncar limita a saída do ffmpeg embutida na mensagem de erro (evita um
-// erro gigante quando o ffmpeg despeja um log grande antes de falhar).
+// truncar limits the ffmpeg output embedded in the error message (it avoids a
+// gigantic error when ffmpeg dumps a large log before failing).
 func truncar(out []byte) string {
 	const limite = 2000
 	if len(out) <= limite {
@@ -168,17 +169,17 @@ func truncar(out []byte) string {
 	return string(out[:limite]) + "... (truncado)"
 }
 
-// metadataID3 monta os pares -metadata para MP3 na convenção Picard/ID3v2
-// (validada empiricamente contra o ffmpeg real: "title"/"artist"/
-// "album_artist"/"album"/"date"/"genre"/"track"/"disc" mapeiam para os
-// frames nativos TIT2/TPE1/TPE2/TALB/TYER/TCON/TRCK/TPOS; qualquer OUTRA
-// chave -- os MusicBrainz IDs -- vira um frame TXXX com essa chave como
-// DESCRIÇÃO, a mesma convenção que o Picard usa ("MusicBrainz Track Id" etc.)
-// -- e "TSRC" bate direto no frame nativo de 4 letras do ISRC). track/disc
-// usam o formato "N/T" quando o total é conhecido (TRCK/TPOS aceitam essa
-// forma). Não há MBID de RELEASE distinto no nosso modelo (ADR-0027 só
-// persiste release-group) -- "MusicBrainz Album Id" reusa o MESMO valor de
-// release-group, documentado aqui em vez de inventar um MBID que não temos.
+// metadataID3 builds the -metadata pairs for MP3 in the Picard/ID3v2 convention
+// (validated empirically against the real ffmpeg: "title"/"artist"/
+// "album_artist"/"album"/"date"/"genre"/"track"/"disc" map to the native
+// frames TIT2/TPE1/TPE2/TALB/TYER/TCON/TRCK/TPOS; any OTHER key -- the
+// MusicBrainz IDs -- becomes a TXXX frame with that key as the DESCRIPTION, the
+// same convention Picard uses ("MusicBrainz Track Id" etc.) -- and "TSRC" hits
+// the native 4-letter ISRC frame directly). track/disc use the "N/T" format
+// when the total is known (TRCK/TPOS accept that form). There is no distinct
+// RELEASE MBID in our model (ADR-0027 only persists release-group) --
+// "MusicBrainz Album Id" reuses the SAME release-group value, documented here
+// instead of inventing an MBID we do not have.
 func metadataID3(m Metadado) []string {
 	var out []string
 	add := func(chave, valor string) {
@@ -201,23 +202,23 @@ func metadataID3(m Metadado) []string {
 	add("MusicBrainz Album Artist Id", m.MBAlbumArtistID)
 	add("TSRC", m.ISRC)
 	if m.Compilation {
-		// Best-effort: o ffmpeg não mapeia "compilation" para o frame
-		// binário TCMP do iTunes -- vira TXXX:compilation (validado
-		// empiricamente). Suficiente pro caso de uso (marcar visualmente/
-		// via tag de texto); TCMP de verdade ficaria para outra rodada se
-		// algum consumidor real do dono precisar dele especificamente.
+		// Best-effort: ffmpeg does not map "compilation" to the iTunes
+		// binary TCMP frame -- it becomes TXXX:compilation (validated
+		// empirically). Good enough for the use case (flagging it visually/
+		// through a text tag); a real TCMP would be left for another round if
+		// some real consumer of the owner actually needs it specifically.
 		out = append(out, "-metadata", "compilation=1")
 	}
 	return out
 }
 
-// metadataVorbis monta os pares -metadata para FLAC/OGG na convenção
-// Vorbis comment/Picard (TITLE/ARTIST/ALBUMARTIST/ALBUM/DATE/GENRE/
+// metadataVorbis builds the -metadata pairs for FLAC/OGG in the Vorbis
+// comment/Picard convention (TITLE/ARTIST/ALBUMARTIST/ALBUM/DATE/GENRE/
 // TRACKNUMBER/TRACKTOTAL/DISCNUMBER/DISCTOTAL/MUSICBRAINZ_*/ISRC/
-// COMPILATION, todas validadas empiricamente contra o ffmpeg real —
-// diferente do MP3, aqui TRACKNUMBER/DISCNUMBER são campos separados de
-// TRACKTOTAL/DISCTOTAL, não "N/T" — e adiciona METADATA_BLOCK_PICTURE
-// quando há capa (ver blocoCapaBase64/escreverVorbis).
+// COMPILATION, all validated empirically against the real ffmpeg — unlike MP3,
+// here TRACKNUMBER/DISCNUMBER are separate fields from TRACKTOTAL/DISCTOTAL,
+// not "N/T" — and it adds METADATA_BLOCK_PICTURE when there is a cover (see
+// blocoCapaBase64/escreverVorbis).
 func metadataVorbis(m Metadado) ([]string, error) {
 	var out []string
 	add := func(chave, valor string) {
@@ -259,9 +260,9 @@ func metadataVorbis(m Metadado) ([]string, error) {
 	return out, nil
 }
 
-// numeroETotal formata "N" ou "N/T" (quando total > 0) para os frames
-// TRCK/TPOS do ID3v2, que aceitam esse formato combinado. n <= 0 devolve ""
-// (o chamador (add) não escreve o campo).
+// numeroETotal formats "N" or "N/T" (when total > 0) for the TRCK/TPOS frames
+// of ID3v2, which accept that combined format. n <= 0 returns "" (the caller
+// (add) does not write the field).
 func numeroETotal(n, total int) string {
 	if n <= 0 {
 		return ""
@@ -272,15 +273,14 @@ func numeroETotal(n, total int) string {
 	return strconv.Itoa(n)
 }
 
-// blocoCapaBase64 lê a imagem em coverPath e monta o bloco
-// METADATA_BLOCK_PICTURE (spec do FLAC, reusada pelo Vorbis comment de
-// qualquer container -- inclusive OGG, validado empiricamente) codificado em
-// base64, pronto para virar o VALOR de um comentário Vorbis. O mime é
-// farejado pelos magic bytes (mesmo mecanismo de
-// internal/server/assets.go:lerArquivoValidado, nunca a extensão do
-// arquivo).
+// blocoCapaBase64 reads the image at coverPath and builds the
+// METADATA_BLOCK_PICTURE block (FLAC spec, reused by the Vorbis comment of any
+// container -- including OGG, validated empirically) encoded in base64, ready to
+// become the VALUE of a Vorbis comment. The mime is sniffed from the magic
+// bytes (same mechanism as internal/server/assets.go:lerArquivoValidado, never
+// the extension of the file).
 func blocoCapaBase64(coverPath string) (string, error) {
-	dados, err := os.ReadFile(coverPath) //nolint:gosec // path resolvido/validado pelo chamador (server)
+	dados, err := os.ReadFile(coverPath) //nolint:gosec // path resolved/validated by the caller (server)
 	if err != nil {
 		return "", fmt.Errorf("audiotag: ler capa %q: %w", coverPath, err)
 	}
@@ -288,22 +288,21 @@ func blocoCapaBase64(coverPath string) (string, error) {
 	return montarBlocoImagem(mime, dados), nil
 }
 
-// montarBlocoImagem serializa o bloco binário METADATA_BLOCK_PICTURE (spec
-// do FLAC, campos big-endian): tipo 3 = capa frontal (front cover, mesma
-// convenção do APIC embutido no MP3); descrição vazia; largura/altura/
-// profundidade de cor/nº de cores todos 0 -- a spec permite 0 para
-// "desconhecido/não informado" e um leitor real decodifica a imagem pelos
-// bytes dela mesma, não por esses campos (validado empiricamente: ffprobe
-// devolve as dimensões REAIS mesmo com os campos declarados em 0).
+// montarBlocoImagem serializes the METADATA_BLOCK_PICTURE binary block (FLAC
+// spec, big-endian fields): type 3 = front cover (same convention as the APIC
+// embedded in MP3); empty description; width/height/color depth/number of colors
+// all 0 -- the spec allows 0 for "unknown/not informed" and a real reader decodes
+// the image from its own bytes, not from those fields (validated empirically:
+// ffprobe returns the REAL dimensions even with the fields declared as 0).
 func montarBlocoImagem(mime string, dados []byte) string {
 	var buf bytes.Buffer
-	escreverUint32(&buf, 3) // tipo: capa frontal
+	escreverUint32(&buf, 3) // type: front cover
 	escreverString32(&buf, mime)
-	escreverString32(&buf, "") // descricao
-	escreverUint32(&buf, 0)    // largura (desconhecida)
-	escreverUint32(&buf, 0)    // altura (desconhecida)
-	escreverUint32(&buf, 0)    // profundidade de cor (desconhecida)
-	escreverUint32(&buf, 0)    // numero de cores (0 = nao indexado)
+	escreverString32(&buf, "") // description
+	escreverUint32(&buf, 0)    // width (unknown)
+	escreverUint32(&buf, 0)    // height (unknown)
+	escreverUint32(&buf, 0)    // color depth (unknown)
+	escreverUint32(&buf, 0)    // number of colors (0 = not indexed)
 	escreverUint32(&buf, uint32(len(dados)))
 	buf.Write(dados)
 	return base64.StdEncoding.EncodeToString(buf.Bytes())

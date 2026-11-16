@@ -1,11 +1,11 @@
 package scanner
 
-// Testes do SCAN INCREMENTAL (briefing 0064): o scan para de re-hashear TODO
-// arquivo de vídeo em TODA execução -- só re-hasheia quando mtime OU size
-// divergem do media_file já gravado para aquele path (ver hashEMediainfo/
-// mediaFileInalteradoPorPath, scan.go). Instrumenta hashDoArquivoFn (a
-// indireção só-de-teste) para CONTAR quantas vezes o hash de verdade rodou --
-// o critério de aceite explícito do briefing.
+// SCAN INCREMENTAL tests: the scan stops re-hashing EVERY video file on EVERY
+// execution -- it only re-hashes when mtime OR size diverge from the media_file
+// already stored for that path (see hashEMediainfo/mediaFileInalteradoPorPath,
+// scan.go). It instruments hashDoArquivoFn (the test-only indirection) to COUNT how
+// many times the real hash ran -- the explicit acceptance criterion of the
+// incrementality change.
 
 import (
 	"os"
@@ -14,10 +14,10 @@ import (
 	"time"
 )
 
-// instrumentarHash substitui hashDoArquivoFn por um contador que ainda chama
-// o hash real por baixo (o teste continua exercitando o pipeline de verdade),
-// e devolve um ponteiro para o contador + a função de restauração (via
-// t.Cleanup, chamada automaticamente).
+// instrumentarHash replaces hashDoArquivoFn with a counter that still calls the
+// real hash underneath (the test keeps exercising the real pipeline), and returns a
+// pointer to the counter + the restore function (via t.Cleanup, called
+// automatically).
 func instrumentarHash(t *testing.T) *int {
 	t.Helper()
 	original := hashDoArquivoFn
@@ -30,9 +30,9 @@ func instrumentarHash(t *testing.T) *int {
 	return &chamadas
 }
 
-// TestScanIncrementalPulaReHashSemMudanca cobre o critério central: rodar o
-// scan duas vezes seguidas sem tocar no arquivo NÃO recalcula content_hash na
-// segunda rodada.
+// TestScanIncrementalPulaReHashSemMudanca covers the central criterion: running
+// the scan twice in a row without touching the file does NOT recompute content_hash
+// on the second run.
 func TestScanIncrementalPulaReHashSemMudanca(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -59,15 +59,15 @@ func TestScanIncrementalPulaReHashSemMudanca(t *testing.T) {
 		t.Errorf("scan 2 (sem mudança no arquivo): hashDoArquivoFn total=%d, quero 1 -- scan incremental deveria pular o re-hash", *chamadas)
 	}
 
-	// O media_file continua íntegro (content_hash reusado, não perdido).
+	// The media_file stays intact (content_hash reused, not lost).
 	if n := contar(t, d, "SELECT count(*) FROM media_file WHERE content_hash IS NOT NULL AND content_hash != ''"); n != 1 {
 		t.Errorf("media_file com content_hash preenchido = %d, quero 1", n)
 	}
 }
 
-// TestScanIncrementalReHasheiaQuandoMtimeMuda cobre o segundo critério: mudar
-// o mtime de um arquivo já indexado (mesmo conteúdo) faz o PRÓXIMO scan
-// re-hashear aquele arquivo especificamente.
+// TestScanIncrementalReHasheiaQuandoMtimeMuda covers the second criterion:
+// changing the mtime of an already indexed file (same content) makes the NEXT scan
+// re-hash that file specifically.
 func TestScanIncrementalReHasheiaQuandoMtimeMuda(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -87,8 +87,8 @@ func TestScanIncrementalReHasheiaQuandoMtimeMuda(t *testing.T) {
 		t.Fatalf("scan 1: hashDoArquivoFn chamado %d vez(es), quero 1", *chamadas)
 	}
 
-	// Muda só o mtime (mesmo conteúdo/tamanho) -- o próximo scan deve
-	// re-hashear ESTE arquivo especificamente.
+	// It changes only the mtime (same content/size) -- the next scan must re-hash
+	// THIS file specifically.
 	novoMtime := time.Now().Add(2 * time.Hour)
 	if err := os.Chtimes(arq, novoMtime, novoMtime); err != nil {
 		t.Fatal(err)
@@ -102,13 +102,13 @@ func TestScanIncrementalReHasheiaQuandoMtimeMuda(t *testing.T) {
 	}
 }
 
-// Nota: um terceiro teste espelhando este para o sinal de SIZE (sobrescrever
-// o arquivo com conteúdo de outro tamanho no MESMO path, recarimbando o mtime
-// antigo de propósito) foi cogitado e removido -- ele esbarra num gap
-// PRÉ-EXISTENTE e ortogonal a este briefing: o dedup do scanner (gravarArquivo,
-// match.go) só reencontra pelo content_hash antigo; uma reescrita in-place que
-// MUDA o hash no mesmo path cai no caminho de "arquivo novo" e colide com o
-// UNIQUE de media_file.path (a linha antiga ainda aponta pra ele). Esse
-// comportamento já existia antes da migration 0064 (nunca foi exercitado por
-// nenhum teste anterior) -- corrigi-lo é fora do escopo deste briefing
-// (scan incremental por mtime/size), não uma decisão deste código.
+// Note: a third test mirroring this one for the SIZE signal (overwriting the file
+// with content of another size at the SAME path, restamping the old mtime on
+// purpose) was considered and removed -- it runs into a PRE-EXISTING gap orthogonal
+// to the incrementality work: the scanner dedup (gravarArquivo, match.go) only finds
+// the file again by the old content_hash; an in-place rewrite that CHANGES the hash
+// at the same path falls into the "new file" path and collides with the UNIQUE of
+// media_file.path (the old row still points to it). That behavior already existed
+// before the incremental scan (it was never exercised by any previous test) --
+// fixing it is out of scope here (incremental scan by mtime/size), not a decision of
+// this code.

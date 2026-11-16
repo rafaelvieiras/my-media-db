@@ -14,23 +14,23 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/job"
 )
 
-// Este arquivo implementa a superfície HTTP do SISTEMA DE JOBS (briefing
-// 0052): GET /jobs (lista + estado), PATCH /jobs/{id} (config), POST
-// /jobs/{id}/run (execução manual) e GET /jobs/{id}/executions (histórico
-// paginado). Toda a orquestração (registry, execução, agendador) vive em
-// internal/job; aqui só mapeia HTTP <-> Manager, no mesmo espírito de scan.go
-// (server chama scanner.Manager e traduz os erros sentinela ao envelope
-// padrão).
+// This file implements the HTTP surface of the JOB SYSTEM:
+// GET /jobs (list + state), PATCH /jobs/{id} (config), POST
+// /jobs/{id}/run (manual run) and GET /jobs/{id}/executions (paginated
+// history). All the orchestration (registry, execution, scheduler) lives in
+// internal/job; here it only maps HTTP <-> Manager, in the same spirit as scan.go
+// (the server calls scanner.Manager and translates the sentinel errors to the standard
+// envelope).
 
-// jobLimitPadrao/jobLimitMaximo são os defaults de paginação de
-// GET .../executions (briefing 0052, §4: "?limit= default 20, máx. 100").
+// jobLimitPadrao/jobLimitMaximo are the pagination defaults of
+// GET .../executions ("?limit= default 20, max. 100").
 const (
 	jobLimitPadrao = 20
 	jobLimitMaximo = 100
 )
 
-// jobsUnavailable escreve 503 quando o Manager de jobs não existe (sem banco
-// injetado) e devolve true nesse caso — guarda comum dos 4 handlers.
+// jobsUnavailable writes 503 when the jobs Manager does not exist (no database
+// injected) and returns true in that case — common guard of the 4 handlers.
 func (s *Server) jobsUnavailable(w http.ResponseWriter) bool {
 	if s.jobs == nil {
 		writeError(w, http.StatusServiceUnavailable, "jobs_unavailable",
@@ -40,8 +40,8 @@ func (s *Server) jobsUnavailable(w http.ResponseWriter) bool {
 	return false
 }
 
-// jobDTO é o shape de UM item de GET /jobs: espelha job_definition +
-// `running` (estado em memória do Manager, efêmero por design).
+// jobDTO is the shape of ONE item of GET /jobs: it mirrors job_definition +
+// `running` (in-memory state of the Manager, ephemeral by design).
 type jobDTO struct {
 	ID           string  `json:"id"`
 	Nome         string  `json:"nome"`
@@ -55,12 +55,12 @@ type jobDTO struct {
 	Running      bool    `json:"running"`
 }
 
-// jobListDTO é o corpo de GET /jobs.
+// jobListDTO is the body of GET /jobs.
 type jobListDTO struct {
 	Items []jobDTO `json:"items"`
 }
 
-// jobExecutionDTO é o shape de UMA execução (histórico).
+// jobExecutionDTO is the shape of ONE execution (history).
 type jobExecutionDTO struct {
 	ID         string  `json:"id"`
 	JobID      string  `json:"job_id"`
@@ -71,18 +71,18 @@ type jobExecutionDTO struct {
 	Message    *string `json:"message"`
 }
 
-// jobExecutionListDTO é o corpo de GET /jobs/{id}/executions.
+// jobExecutionListDTO is the body of GET /jobs/{id}/executions.
 type jobExecutionListDTO struct {
 	Items []jobExecutionDTO `json:"items"`
 }
 
-// runJobResponse é o corpo do 202 de POST /jobs/{id}/run.
+// runJobResponse is the body of the 202 of POST /jobs/{id}/run.
 type runJobResponse struct {
 	ExecutionID string `json:"execution_id"`
 }
 
-// listJobs trata GET /api/v1/jobs: todos os job_definition + `running` do
-// Manager. Nunca vazio após a migration 0011 (sempre tem o seed
+// listJobs handles GET /api/v1/jobs: every job_definition + the Manager's
+// `running`. Never empty after migration 0011 (there is always the seed
 // backup_vacuum).
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 	if s.jobsUnavailable(w) {
@@ -101,22 +101,22 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, jobListDTO{Items: items})
 }
 
-// patchJob trata PATCH /api/v1/jobs/{id}: edita enabled/schedule_cron
-// (parcial). 200 com o recurso atualizado; 404 id desconhecido; 422
-// schedule_cron que não parseia como cron válido (estado anterior
-// preservado).
+// patchJob handles PATCH /api/v1/jobs/{id}: it edits enabled/schedule_cron
+// (partially). 200 with the updated resource; 404 unknown id; 422
+// schedule_cron that does not parse as a valid cron (previous state
+// preserved).
 func (s *Server) patchJob(w http.ResponseWriter, r *http.Request) {
 	if s.jobsUnavailable(w) {
 		return
 	}
 	id := chi.URLParam(r, "id")
 
-	// Decodifica num mapa CRU (não numa struct de ponteiros): é a única forma
-	// de distinguir "campo ausente" de "campo presente com valor null" — um
-	// *json.RawMessage numa struct NÃO preserva essa distinção (o encoding/json
-	// zera o ponteiro pra nil em JSON null ANTES de despachar pro
-	// json.Unmarshaler de RawMessage, então "ausente" e "null" ficam
-	// indistinguíveis). Mesmo padrão de patchOverride (override.go).
+	// Decodes into a RAW map (not a struct of pointers): it is the only way
+	// to distinguish "absent field" from "field present with a null value" — a
+	// *json.RawMessage in a struct does NOT preserve that distinction (encoding/json
+	// zeroes the pointer to nil on a JSON null BEFORE dispatching to
+	// the json.Unmarshaler of RawMessage, so "absent" and "null" become
+	// indistinguishable). Same pattern as patchOverride (override.go).
 	var raw map[string]json.RawMessage
 	if r.Body != nil {
 		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil && !errors.Is(err, io.EOF) {
@@ -138,9 +138,9 @@ func (s *Server) patchJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, jobToDTO(def, s.jobs.Rodando()[def.ID]))
 }
 
-// parseJobConfigPatch interpreta o mapa CRU do corpo de PATCH /jobs/{id} num
-// job.JobConfigPatch, escrevendo 422 (ok=false) num valor de forma inválida
-// para `enabled`/`schedule_cron`.
+// parseJobConfigPatch interprets the RAW map of the PATCH /jobs/{id} body into a
+// job.JobConfigPatch, writing 422 (ok=false) on an invalid-shaped value
+// for `enabled`/`schedule_cron`.
 func parseJobConfigPatch(w http.ResponseWriter, raw map[string]json.RawMessage) (job.JobConfigPatch, bool) {
 	var patch job.JobConfigPatch
 	if v, ok := raw["enabled"]; ok {
@@ -166,9 +166,9 @@ func parseJobConfigPatch(w http.ResponseWriter, raw map[string]json.RawMessage) 
 	return patch, true
 }
 
-// runJob trata POST /api/v1/jobs/{id}/run: dispara execução manual,
-// independente de enabled. 202 {execution_id}; 404 id desconhecido; 409 já em
-// execução; 503 sem Handler registrado.
+// runJob handles POST /api/v1/jobs/{id}/run: it triggers a manual execution,
+// regardless of enabled. 202 {execution_id}; 404 unknown id; 409 already
+// running; 503 no Handler registered.
 func (s *Server) runJob(w http.ResponseWriter, r *http.Request) {
 	if s.jobsUnavailable(w) {
 		return
@@ -182,9 +182,9 @@ func (s *Server) runJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, runJobResponse{ExecutionID: execID})
 }
 
-// listJobExecutions trata GET /api/v1/jobs/{id}/executions: histórico
-// paginado, mais recente primeiro. ?limit= (default 20, máx. 100); ?before=
-// (cursor por started_at). 404 id desconhecido.
+// listJobExecutions handles GET /api/v1/jobs/{id}/executions: paginated
+// history, most recent first. ?limit= (default 20, max. 100); ?before=
+// (cursor by started_at). 404 unknown id.
 func (s *Server) listJobExecutions(w http.ResponseWriter, r *http.Request) {
 	if s.jobsUnavailable(w) {
 		return
@@ -212,10 +212,10 @@ func (s *Server) listJobExecutions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, jobExecutionListDTO{Items: items})
 }
 
-// ── Mapeamento de erro ────────────────────────────────────────────────────
+// ── Error mapping ──────────────────────────────────────────────────────────
 
-// respondJobError mapeia os erros sentinela do internal/job ao envelope
-// padrão (briefing 0052, §4/§5).
+// respondJobError maps the sentinel errors of internal/job to the standard
+// envelope.
 func respondJobError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, job.ErrJobNaoEncontrado):
@@ -232,10 +232,10 @@ func respondJobError(w http.ResponseWriter, err error) {
 	}
 }
 
-// ── Parse dos parâmetros de query ────────────────────────────────────────────
+// ── Query parameter parsing ──────────────────────────────────────────────────
 
-// parseJobLimit lê ?limit= com default jobLimitPadrao e teto jobLimitMaximo.
-// Valor não-numérico ou negativo responde 400 (ok=false).
+// parseJobLimit reads ?limit= with the jobLimitPadrao default and the jobLimitMaximo
+// ceiling. A non-numeric or negative value responds 400 (ok=false).
 func parseJobLimit(w http.ResponseWriter, q url.Values) (int, bool) {
 	limit := jobLimitPadrao
 	if v := q.Get("limit"); v != "" {
@@ -255,7 +255,7 @@ func parseJobLimit(w http.ResponseWriter, q url.Values) (int, bool) {
 	return limit, true
 }
 
-// ── Conversão para DTO ────────────────────────────────────────────────────
+// ── Conversion to DTO ──────────────────────────────────────────────────────
 
 func jobToDTO(def sqlcgen.JobDefinition, running bool) jobDTO {
 	return jobDTO{
@@ -272,21 +272,21 @@ func jobToDTO(def sqlcgen.JobDefinition, running bool) jobDTO {
 	}
 }
 
-// execToDTO converte um sqlcgen.QueueItem (kind='job') no shape de sempre de
-// UMA execução (jobExecutionDTO) -- desde o briefing 0108/ADR-0028 (CAMADA
-// 3), o histórico de job vem de queue_item, não mais de sqlcgen.JobExecution
-// (job_execution foi derrubada, migration 0025); o shape JSON exposto por
-// GET /jobs/{id}/executions permanece IDÊNTICO.
+// execToDTO converts a sqlcgen.QueueItem (kind='job') into the usual shape of
+// ONE execution (jobExecutionDTO) -- since ADR-0028 (LAYER 3), the job history
+// comes from queue_item, no longer from sqlcgen.JobExecution
+// (job_execution was dropped, migration 0025); the JSON shape exposed by
+// GET /jobs/{id}/executions remains IDENTICAL.
 //
-// StartedAt no DTO é string NÃO-nullable, mas queue_item.started_at PODE ser
-// NULL (item ainda 'queued', nunca chegou a rodar -- teoricamente raro pra
-// job, já que a fila é concorrência 1, mas pode acontecer se outro item
-// -- scan ou job -- estiver rodando quando este foi enfileirado). Aplica o
-// MESMO fallback que a Camada 2 já aplicou pro scanner, pela MESMA razão de
-// consistência (ver o comentário em internal/scanner/manager.go, função
-// Status: "started_at: vazio enquanto o item ainda está 'queued' ... cai
-// para enqueued_at quando started_at ainda não existe"): usa
-// queue_item.enqueued_at como fallback quando started_at for NULL.
+// StartedAt in the DTO is a NON-nullable string, but queue_item.started_at MAY be
+// NULL (item still 'queued', it never got to run -- theoretically rare for a
+// job, since the queue is concurrency 1, but it can happen if another item
+// -- scan or job -- was running when this one was enqueued). It applies the
+// SAME fallback that Layer 2 already applied for the scanner, for the SAME
+// consistency reason (see the comment in internal/scanner/manager.go, function
+// Status: "started_at: empty while the item is still 'queued' ... falls
+// back to enqueued_at when started_at does not exist yet"): it uses
+// queue_item.enqueued_at as the fallback when started_at is NULL.
 func execToDTO(e sqlcgen.QueueItem) jobExecutionDTO {
 	startedAt := e.EnqueuedAt
 	if e.StartedAt.Valid {
@@ -303,7 +303,7 @@ func execToDTO(e sqlcgen.QueueItem) jobExecutionDTO {
 	}
 }
 
-// isJSONNull diz se o JSON cru é o literal `null`.
+// isJSONNull says whether the raw JSON is the literal `null`.
 func isJSONNull(raw json.RawMessage) bool {
 	var v any
 	return json.Unmarshal(raw, &v) == nil && v == nil

@@ -11,940 +11,945 @@ import (
 
 type Querier interface {
 	ApagarAsset(ctx context.Context, id string) error
-	// Apaga todos os creditos de uma entity vindos de UMA fonte, antes de repopular no
-	// re-enriquecimento. Por fonte (nao total) para nao apagar creditos de outra source
-	// que enriqueceu a mesma obra (ex.: serie com arvore TVDB + elenco TMDB).
+	// Deletes all credits of an entity coming from ONE source, before repopulating on
+	// re-enrichment. Per source (not total) so it does not delete credits from another
+	// source that enriched the same work (e.g. series with a TVDB tree + TMDB cast).
 	ApagarCreditosDaEntityFonte(ctx context.Context, arg ApagarCreditosDaEntityFonteParams) error
-	// Purga explicita: remove a entity e, por ON DELETE CASCADE, seus media_file,
-	// asset e entity_relation.
+	// Explicit purge: removes the entity and, via ON DELETE CASCADE, its media_file,
+	// asset and entity_relation.
 	ApagarEntity(ctx context.Context, id string) error
 	ApagarEntityRelation(ctx context.Context, id string) error
 	ApagarHistoricoEvento(ctx context.Context, id string) error
 	ApagarLibrarySource(ctx context.Context, id string) error
-	// Remove uma linha de cache pelo seu id (ex.: invalidar uma fonte).
+	// Removes a cache row by its id (e.g. invalidate a source).
 	ApagarMediaExternal(ctx context.Context, id string) error
 	ApagarMediaFile(ctx context.Context, id string) error
-	// Apaga todos os arquivos de uma fonte (usada ao remover o datasource, 0035).
-	// O cascade de media_file_entity (migration 0009, ON DELETE CASCADE em
-	// media_file_id) limpa os vinculos junto; a entity do catalogo e preservada.
+	// Deletes all files of a source (used when removing the datasource, 0035).
+	// The media_file_entity cascade (migration 0009, ON DELETE CASCADE on
+	// media_file_id) cleans the links along; the catalog entity is preserved.
 	ApagarMediaFilesPorFonte(ctx context.Context, librarySourceID sql.NullString) error
-	// Remove o override da entity (volta ao valor da base editorial/arquivo).
+	// Removes the entity override (falls back to the value from the editorial/file base).
 	ApagarMediaOverride(ctx context.Context, entityID string) error
 	ApagarQueueItem(ctx context.Context, id string) error
-	// Purga do rascunho SUBSTITUIDO (briefing 0138). A reconciliacao religa o
-	// media_file a entity definitiva e a entity-rascunho antiga ficava para tras sem
-	// arquivo e sem vinculo -- ela continuava aparecendo na fila de revisao para
-	// sempre (114 casos medidos em producao em 08/nov/2026, grupo "sem arquivo").
-	// As quatro condicoes sao a trava de seguranca: so sai o rascunho que nao tem
-	// arquivo, nao tem vinculo nenhum (nem como filha, nem como pai -- uma serie
-	// rascunho com episodios ligados fica) e nao tem override do dono. O rascunho
-	// que a reconciliacao substitui e criado pelo PROPRIO matcher (titulo derivado do
-	// arquivo, sem external id) -- nao ha dado do dono ali, ao contrario do
-	// principio 5, que protege o que o dono escreveu. Idempotente: 0 linhas quando
-	// nada casa.
+	// Purge of the REPLACED draft. The reconciliation re-links the
+	// media_file to the definitive entity and the old draft entity was left behind without
+	// a file and without a link -- it kept showing up in the review queue
+	// forever (114 cases measured in production on Nov 8, 2026, group "no file").
+	// The four conditions are the safety lock: only the draft that has no
+	// file, has no link at all (neither as a child nor as a parent -- a draft
+	// series with episodes linked stays) and has no owner override leaves. The draft
+	// that the reconciliation replaces is created by the matcher ITSELF (title derived from the
+	// file, without an external id) -- there is no owner data there, unlike
+	// principle 5, which protects what the owner wrote. Idempotent: 0 rows when
+	// nothing matches.
 	ApagarRascunhoVazio(ctx context.Context, id string) (int64, error)
-	// Versao em lote da purga acima, para a varredura do pos-scan (briefing 0138):
-	// limpa o estoque de rascunhos vazios que a reconciliacao deixou antes desta
-	// correcao. Mesmas travas, sem id.
+	// Batch version of the purge above, for the post-scan sweep:
+	// it cleans the stock of empty drafts that the reconciliation left before this
+	// fix. Same locks, without an id.
 	ApagarRascunhosVazios(ctx context.Context) (int64, error)
-	// Grava o caminho FISICO materializado na pasta real da biblioteca (briefing
-	// 0062): coluna ortogonal a path_or_uri (cache interno/URL externa) -- so
-	// preenchida quando a arte tambem foi copiada para dentro da pasta do item.
+	// Writes the materialized PHYSICAL path in the library's real folder:
+	// a column orthogonal to path_or_uri (internal cache/external URL) -- only
+	// filled when the art was also copied into the item folder.
 	AtualizarAssetLocalPath(ctx context.Context, arg AtualizarAssetLocalPathParams) error
-	// Atualiza SO o meta_json de um asset (marca/desmarca a preferida do dono,
-	// briefing 0017). Nao toca entity_id/kind/origin/path_or_uri. Usada ao (des)marcar
-	// preferida: o merge preservando as demais chaves do meta_json e feito em Go.
+	// Updates ONLY the meta_json of an asset (flags/unflags the owner's preferred one).
+	// Does not touch entity_id/kind/origin/path_or_uri. Used when (un)flagging a
+	// preferred one: the merge preserving the other meta_json keys is done in Go.
 	AtualizarAssetMeta(ctx context.Context, arg AtualizarAssetMetaParams) error
-	// Atualiza o caminho/binario de um asset ja existente (dedup do cache externo:
-	// re-baixar o poster reaproveita a mesma linha). Nao muda entity_id/kind/origin.
+	// Updates the path/binary of an existing asset (external cache dedupe:
+	// downloading the poster again reuses the same row). Does not change entity_id/kind/origin.
 	AtualizarAssetPath(ctx context.Context, arg AtualizarAssetPathParams) error
-	// Confirmar (briefing 0018): o dono diz que o palpite esta certo. Sobe a confianca
-	// de TODOS os media_file da entity para o valor dado (100 = autoridade do dono),
-	// fazendo o item sair da fila de revisao. Nao toca override/arte.
+	// Confirm: the owner says the guess is right. Raises the confidence
+	// of ALL media_file of the entity to the given value (100 = owner authority),
+	// making the item leave the review queue. Does not touch override/artwork.
 	AtualizarConfidencePorEntity(ctx context.Context, arg AtualizarConfidencePorEntityParams) error
 	AtualizarEntity(ctx context.Context, arg AtualizarEntityParams) (Entity, error)
-	// Grava o caminho do .nfo exportado por ultimo + o timestamp da escrita
-	// (briefing 0062). Chamado a cada POST /entities/{id}/nfo, mesmo idempotente
-	// em conteudo (nfo_written_at muda sempre).
+	// Writes the path of the last exported .nfo + the write timestamp.
+	// Called on every POST /entities/{id}/nfo, even when idempotent
+	// in content (nfo_written_at always changes).
 	AtualizarEntityNfo(ctx context.Context, arg AtualizarEntityNfoParams) error
-	// Recasca SO o caminho do .nfo ja exportado (briefing 0070, editar path do
-	// datasource): diferente de AtualizarEntityNfo, NAO toca nfo_written_at --
-	// isto nao e uma nova exportacao, so o prefixo do path mudou de lugar no
-	// disco (o mount/HD trocou, o conteudo e o mesmo).
+	// Rebases ONLY the path of the already exported .nfo (editing the
+	// datasource path): unlike AtualizarEntityNfo, it does NOT touch nfo_written_at --
+	// this is not a new export, only the path prefix moved location on
+	// the disk (the mount/HD changed, the content is the same).
 	AtualizarEntityNfoPath(ctx context.Context, arg AtualizarEntityNfoPathParams) error
-	// Reescreve a BASE do episodio no re-import (briefing 0043): o find-or-create por id
-	// externo reusa a linha, mas antes so o create gravava estes campos, entao still_url/
-	// numbering novos (extension_data) e titulo/sinopse/data/ids atualizados do provider
-	// nunca chegavam a um episodio ja importado. Aqui reafirmamos os fatos da fonte na
-	// linha-base. NAO toca status/tags/original_title nem media_override: a resolucao
-	// aplica override por cima, entao refrescar a base e seguro (o override segue vencendo).
+	// Rewrites the episode BASE on re-import: the find-or-create by
+	// external id reuses the row, but before only create wrote these fields, so new still_url/
+	// numbering (extension_data) and updated title/synopsis/date/ids from the provider
+	// never reached an already imported episode. Here we reassert the source facts on the
+	// base row. It does NOT touch status/tags/original_title nor media_override: the resolution
+	// applies the override on top, so refreshing the base is safe (the override still wins).
 	AtualizarEpisodioBase(ctx context.Context, arg AtualizarEpisodioBaseParams) error
-	// Grava o extension_data_json (mapa namespace->objeto) de uma entity, sem tocar o
-	// resto. Usado pelo import de series (briefing 0031): a serie e criada/enriquecida
-	// como um item comum (importarItem) e recebe aqui o namespace core.tv@1 (season
-	// types). Temporada/episodio ja nascem com o extension_data no proprio CriarEntity;
-	// a serie precisa deste UPDATE porque nasce pelo caminho de item. So esta coluna e o
-	// updated_at mudam; nao toca override/externo.
+	// Writes the extension_data_json (namespace->object map) of an entity, without touching the
+	// rest. Used by the series import: the series is created/enriched
+	// as a common item (importarItem) and receives here the core.tv@1 namespace (season
+	// types). Season/episode are already born with the extension_data in CriarEntity itself;
+	// the series needs this UPDATE because it is born through the item path. Only this
+	// column and updated_at change; it does not touch override/external.
 	AtualizarExtensionData(ctx context.Context, arg AtualizarExtensionDataParams) error
-	// Mescla a identidade externa (MD4): a app le external_ids_json, junta
-	// {source: source_id} e grava aqui, sem tocar o resto da entity. As colunas
-	// geradas external_id_tmdb/imdb re-derivam sozinhas do novo JSON. Usado pelo
-	// enrich/import (briefing 0015) -- media_external e cache subordinado a isto.
+	// Merges the external identity (MD4): the app reads external_ids_json, joins
+	// {source: source_id} and writes it here, without touching the rest of the entity. The
+	// generated columns external_id_tmdb/imdb re-derive on their own from the new JSON.
+	// Used by enrich/import -- media_external is a cache subordinated to it.
 	AtualizarExternalIds(ctx context.Context, arg AtualizarExternalIdsParams) error
-	// PATCH .../jobs/{id}: grava enabled/schedule_cron/next_run_at ja MESCLADOS
-	// pelo Go (o patch e parcial na API, mas esta query sempre grava as 3 colunas
-	// -- o chamador computa o valor final antes de chamar, mesmo padrao de
+	// PATCH .../jobs/{id}: writes enabled/schedule_cron/next_run_at already MERGED
+	// by Go (the patch is partial in the API, but this query always writes the 3
+	// columns -- the caller computes the final value before calling, same pattern as
 	// AtualizarLibrarySource).
 	AtualizarJobConfig(ctx context.Context, arg AtualizarJobConfigParams) (JobDefinition, error)
-	// Atualiza o estado da varredura: carimbo do ultimo scan e online/offline.
+	// Updates the scan state: timestamp of the last scan and online/offline.
 	AtualizarLibrarySource(ctx context.Context, arg AtualizarLibrarySourceParams) (LibrarySource, error)
-	// PATCH /api/v1/library/{id} (briefing 0070): reaponta o datasource para um
-	// novo caminho (ex.: o disco/mount mudou de lugar). O CHAMADOR recasca em
-	// cascata media_file.path/asset.local_path/entity.nfo_path NA MESMA
-	// transacao, logo apos este UPDATE (mesmo padrao de Apagar). Nao mexe em
-	// `state`: e sempre reavaliado na leitura (avaliarState), nunca lido desta
-	// coluna.
+	// PATCH /api/v1/library/{id}: repoints the datasource to a
+	// new path (e.g. the disk/mount moved). The CALLER rebases in
+	// cascade media_file.path/asset.local_path/entity.nfo_path IN THE SAME
+	// transaction, right after this UPDATE (same pattern as Apagar). It does not touch
+	// `state`: it is always re-evaluated on read (avaliarState), never read from this
+	// column.
 	AtualizarLibrarySourcePath(ctx context.Context, arg AtualizarLibrarySourcePathParams) (LibrarySource, error)
-	// PATCH /api/v1/library/{id} (briefing 0084): define ou limpa o idioma
-	// preferido de busca/exibicao da fonte. NULL explicito limpa (volta a usar o
-	// idioma global). O HANDLER (internal/server/library.go) ja validou o codigo
-	// contra app_settings.languages.allowed antes de chamar esta query.
+	// PATCH /api/v1/library/{id}: sets or clears the preferred
+	// search/display language of the source. An explicit NULL clears it (back to the
+	// global language). The HANDLER (internal/server/library.go) has already validated
+	// the code against app_settings.languages.allowed before calling this query.
 	AtualizarLibrarySourcePreferredLanguage(ctx context.Context, arg AtualizarLibrarySourcePreferredLanguageParams) (LibrarySource, error)
-	// PATCH /api/v1/library/{id} (briefing 0085): define ou limpa o override de
-	// intervalo de reentativa do enriquecimento retroativo da fonte. NULL
-	// explicito limpa (volta a usar o valor global). O HANDLER
-	// (internal/server/library.go) ja validou o intervalo (1-365) antes de
-	// chamar esta query.
+	// PATCH /api/v1/library/{id}: sets or clears the retry
+	// interval override for the source's retroactive enrichment. An explicit
+	// NULL clears it (back to the global value). The HANDLER
+	// (internal/server/library.go) has already validated the interval (1-365) before
+	// calling this query.
 	AtualizarLibrarySourceRetroactiveEnrichmentDays(ctx context.Context, arg AtualizarLibrarySourceRetroactiveEnrichmentDaysParams) (LibrarySource, error)
-	// PATCH /api/v1/library/{id} (briefing 0064): liga/desliga watch_enabled. O
-	// handler chama a rotina de registro/desregistro do watcher fsnotify LOGO
-	// APOS este UPDATE (aplicado a quente, sem restart -- ver internal/watch).
+	// PATCH /api/v1/library/{id}: turns watch_enabled on/off. The
+	// handler calls the fsnotify watcher register/unregister routine RIGHT
+	// AFTER this UPDATE (applied hot, without restart -- see internal/watch).
 	AtualizarLibrarySourceWatch(ctx context.Context, arg AtualizarLibrarySourceWatchParams) (LibrarySource, error)
-	// O path ja tinha uma linha, mas o content_hash recem-calculado NAO bate com
-	// ela (arquivo substituido/reencodado no lugar, ou mtime/size do provedor
-	// (ex.: rclone/Drive) sofreram drift o bastante para invalidar o
-	// short-circuit de ObterMediaFilePorPath -- ver mediaFileInalteradoPorPath em
-	// internal/scanner/scan.go). Sem esta query, gravarArquivo cairia num INSERT
-	// que bate no UNIQUE(path) da linha ja existente. Atualiza TODOS os campos
-	// derivados do conteudo (hash/tamanho/mtime/mediainfo/edicao/parte/
-	// confianca), preservando id/entity_id -- mesmo espirito de
-	// AtualizarMediaFileVisto, mas o gatilho aqui e o PATH bater, nao o hash.
+	// The path already had a row, but the freshly computed content_hash does NOT match
+	// it (file replaced/re-encoded in place, or the provider mtime/size
+	// (e.g. rclone/Drive) drifted enough to invalidate the
+	// short-circuit of ObterMediaFilePorPath -- see mediaFileInalteradoPorPath in
+	// internal/scanner/scan.go). Without this query, gravarArquivo would fall into an INSERT
+	// that hits the UNIQUE(path) of the existing row. Updates ALL the
+	// fields derived from the content (hash/size/mtime/mediainfo/edition/part/
+	// confidence), preserving id/entity_id -- same spirit as
+	// AtualizarMediaFileVisto, but the trigger here is the PATH matching, not the hash.
 	AtualizarMediaFileConteudoMudou(ctx context.Context, arg AtualizarMediaFileConteudoMudouParams) (MediaFile, error)
-	// Repontamento do briefing 0120 (reconciliacao de filhos orfaos): move um
-	// media_file de uma entity RASCUNHO/orfa para a entity de verdade resolvida
-	// depois (faixa ou serie), atualizando tambem o match_confidence do match
-	// que resolveu. A entity antiga fica sem media_file (posse cai pra nao,
-	// derivada) e some da fila de revisao sem ser apagada (principio 5).
+	// Repointing of orphan children: moves a
+	// media_file from a DRAFT/orphan entity to the entity actually resolved
+	// afterwards (track or series), also updating the match_confidence of the match
+	// that resolved it. The old entity stays without media_file (ownership drops to
+	// false, derived) and leaves the review queue without being deleted (principle 5).
 	AtualizarMediaFileEntityID(ctx context.Context, arg AtualizarMediaFileEntityIDParams) error
-	// Grava o path ja recascado (calculado em Go) de UM media_file. Nao toca o
-	// resto da linha (content_hash/entity_id/state seguem intactos -- o arquivo
-	// fisico e o MESMO, so mudou de onde e montado).
+	// Writes the already rebased path (computed in Go) of ONE media_file. Does not touch
+	// the rest of the row (content_hash/entity_id/state stay intact -- the physical file
+	// is the SAME, only where it is mounted changed).
 	AtualizarMediaFilePath(ctx context.Context, arg AtualizarMediaFilePathParams) error
-	// Transicao de ciclo de vida: marca present/missing e carimba last_seen.
+	// Lifecycle transition: marks present/missing and stamps last_seen.
 	AtualizarMediaFileState(ctx context.Context, arg AtualizarMediaFileStateParams) (MediaFile, error)
-	// Reencontro num scan: o arquivo foi achado pelo content_hash. Atualiza o path
-	// (cobre rename/move -- idempotente, nao cria outra linha), o size/mtime, volta
-	// para present e carimba last_seen com o timestamp do scan (usado depois para
-	// decidir quem virou missing). Fixa tambem a fonte de origem.
+	// Re-find on a scan: the file was found by content_hash. Updates the path
+	// (covers rename/move -- idempotent, does not create another row), the size/mtime,
+	// goes back to present and stamps last_seen with the scan timestamp (used later to
+	// decide who became missing). It also pins the origin source.
 	AtualizarMediaFileVisto(ctx context.Context, arg AtualizarMediaFileVistoParams) (MediaFile, error)
-	// Grava a ANCORA do fallback por idioma (briefing 0020): o codigo NEUTRO do idioma
-	// original da obra, obtido do detalhe da fonte no enrich/import. Nao-destrutivo: e
-	// um fato da fonte, nao dado do dono; re-enriquecer apenas o reafirma. So esta
-	// coluna e o updated_at mudam.
+	// Writes the ANCHOR of the per-language fallback: the NEUTRAL code of the
+	// original language of the work, obtained from the source detail on enrich/import.
+	// Non-destructive: it is a fact from the source, not the owner's data; re-enriching only
+	// reasserts it. Only this column and updated_at change.
 	AtualizarOriginalLanguage(ctx context.Context, arg AtualizarOriginalLanguageParams) error
-	// Grava progress_current/progress_total/message a cada report do callback de
-	// progresso durante Runner.Executar (ADR-0028: "atualiza progress_current/
-	// message via callback durante a execucao -- nao so no fim"). Sem throttle:
-	// grava a cada chamada, decisao documentada em
-	// internal/execqueue/manager.go (simples e correta; otimizar so se virar
-	// problema real de I/O).
+	// Writes progress_current/progress_total/message on every report from the
+	// progress callback during Runner.Executar (ADR-0028: "updates progress_current/
+	// message via callback during the execution -- not only at the end"). No throttle:
+	// it writes on every call, a decision documented in
+	// internal/execqueue/manager.go (simple and correct; optimize only if it becomes
+	// a real I/O problem).
 	AtualizarProgressoQueueItem(ctx context.Context, arg AtualizarProgressoQueueItemParams) error
-	// Grava a DATA DE LANCAMENTO neutra da obra, obtida do detalhe da fonte no enrich/
-	// import (mesmo tratamento de AtualizarOriginalLanguage: fato da fonte, nao dado do
-	// dono; re-enriquecer reafirma). Denormaliza a coluna base para ordenacao/listagem
-	// baratas (ex.: ordenar os membros de uma colecao por ano) sem precisar resolver cada
-	// item. So esta coluna e o updated_at mudam; a resolucao segue com base=externo.
+	// Writes the neutral RELEASE DATE of the work, obtained from the source detail on enrich/
+	// import (same handling as AtualizarOriginalLanguage: a fact of the source, not the
+	// owner's data; re-enriching reasserts it). Denormalizes the base column for cheap
+	// sorting/listing (e.g. ordering the members of a collection by year) without resolving
+	// each item. Only this column and updated_at change; resolution still uses base=external.
 	AtualizarReleaseDate(ctx context.Context, arg AtualizarReleaseDateParams) error
-	// Reescreve a BASE da temporada no re-import (briefing 0043): titulo, data e o
-	// extension_data core.tv@1 (ordering + season_number + year). Simetrica a
-	// AtualizarEpisodioBase, sem description (temporada nao guarda sinopse na linha). NAO
-	// toca status/tags/original_title nem media_override -- a resolucao aplica override por
-	// cima; refrescar a base e seguro.
+	// Rewrites the season BASE on re-import: title, date and the
+	// extension_data core.tv@1 (ordering + season_number + year). Symmetric to
+	// AtualizarEpisodioBase, without description (a season keeps no synopsis on the
+	// row). It does NOT touch status/tags/original_title nor media_override -- the
+	// resolution applies the override on top; refreshing the base is safe.
 	AtualizarTemporadaBase(ctx context.Context, arg AtualizarTemporadaBaseParams) error
-	// Registra que o item FOI verificado nesta execucao (aplicado, sinalizado
-	// ou sem candidato) -- throttle do briefing 0056: o proximo lote so volta a
-	// considerar este id depois de sqlc.arg('desde') (acima) ter passado.
+	// Records that the item WAS verified in this execution (applied, flagged
+	// or with no candidate) -- the throttle: the next batch only comes back to
+	// consider this id after sqlc.arg('desde') (above) has passed.
 	AtualizarTentativaMatchExterno(ctx context.Context, id string) error
-	// Repara o titulo base de um item auto-criado/importado quando ele ficou como o
-	// fallback numerico (id da fonte) -- a regressao do "numero no lugar do nome". So o
-	// titulo e o updated_at mudam; nao toca override/externo (a autoridade do dono
-	// segue vencendo na resolucao). Chamada pelo enrich (auto-cura) sob condicao
-	// estrita (titulo == sourceID), nunca sobre um titulo ja legivel.
+	// Repairs the base title of an auto-created/imported item when it stayed as the
+	// numeric fallback (source id) -- the regression of the "number instead of the name". Only
+	// the title and updated_at change; it does not touch override/external (the owner's
+	// authority still wins in the resolution). Called by enrich (self-healing) under a strict
+	// condition (title == sourceID), never over an already readable title.
 	AtualizarTitulo(ctx context.Context, arg AtualizarTituloParams) error
 	BuscarHistoricoEventoPorID(ctx context.Context, id string) (BuscarHistoricoEventoPorIDRow, error)
-	// Posse agregada BASICA: quantos FILHOS DIRETOS de parent_id (via entity_relation)
-	// tem, no kind dado, ao menos um arquivo 'present' vinculado. Serve direto para a
-	// TEMPORADA (cujos filhos diretos sao episodios: "possui 12 de 13"). Para a SERIE
-	// (dois niveis: serie->temporada->episodio) isto conta zero, porque os filhos
-	// diretos sao temporadas, sem vinculo proprio -- a agregacao recursiva por serie
-	// fica pro Passo 3 (leitura), que refina a posse agregada. NAO recebe o total
-	// aqui (o total = numero de filhos, calculado por quem chama a partir das
-	// relacoes).
+	// BASIC aggregate ownership: how many DIRECT CHILDREN of parent_id (via
+	// entity_relation) have, in the given kind, at least one 'present' file linked.
+	// Serves the SEASON directly (whose direct children are episodes: "owns 12 of 13").
+	// For the SERIES (two levels: series->season->episode) this counts zero, because
+	// the direct children are seasons, without a link of their own -- the recursive
+	// aggregation per series is left for Step 3 (reading), which refines the aggregate
+	// ownership. It does NOT receive the total here (the total = number of children,
+	// computed by the caller from the relations).
 	ContarEntidadesComPosse(ctx context.Context, arg ContarEntidadesComPosseParams) (int64, error)
-	// Leituras agregadas para GET /api/v1/health/system (briefing 0055): tamanho
-	// do banco via PRAGMA (fora deste arquivo, roda direto pelo Go -- ver
-	// internal/telemetry/telemetry.go) + contagens de uso + soma de disco por
-	// fonte. Nenhuma tabela nova. Comentarios em ASCII (sem acento) -- mesmo
-	// cuidado de entity.sql/job.sql contra o bug de corrupcao do sqlc v1.31 com
-	// .sql de query acentuado.
+	// Aggregate reads for GET /api/v1/health/system: database
+	// size via PRAGMA (outside this file, it runs straight from Go -- see
+	// internal/telemetry/telemetry.go) + usage counts + on-disk sum per
+	// source. No new table. Comments in ASCII (no accent) -- the same
+	// care as in entity.sql/job.sql against the sqlc v1.31 corruption bug with an
+	// accented query .sql.
 	ContarEntitiesPorTipo(ctx context.Context) ([]ContarEntitiesPorTipoRow, error)
-	// Total de itens que casam os filtros (para o campo `total` da paginacao). Mesma
-	// clausula WHERE da ListarEntityCards -- sem LIMIT/OFFSET/ORDER BY. Inclui a mesma
-	// exclusao de sub-nos (season/episode) para o total bater com a pagina (0032).
+	// Total of items matching the filters (for the `total` field of the pagination). Same
+	// WHERE clause as ListarEntityCards -- without LIMIT/OFFSET/ORDER BY. It includes the same
+	// sub-node exclusion (season/episode) so the total matches the page (0032).
 	ContarEntityCards(ctx context.Context, arg ContarEntityCardsParams) (int64, error)
-	// Total de eventos orfaos, para o campo "total" da paginacao acima.
+	// Total orphan events, for the "total" field of the pagination above.
 	ContarHistoricoEventoOrfaos(ctx context.Context) (int64, error)
-	// Desde o briefing 0108/ADR-0028 (CAMADA 3): job_execution foi derrubada
-	// (migration 0025); o historico de execucao de job vive em queue_item
-	// (kind='job') -- ver internal/db/queries/queue_item.sql.
+	// Since ADR-0028 (LAYER 3): job_execution was dropped
+	// (migration 0025); the job execution history lives in queue_item
+	// (kind='job') -- see internal/db/queries/queue_item.sql.
 	ContarJobExecutions(ctx context.Context) (int64, error)
 	ContarLibrarySources(ctx context.Context) (int64, error)
-	// Contagem informativa para o resumo do job midias_faltantes (briefing
-	// 0128): media_file 'missing' e um sinal de instabilidade do mount remoto
-	// (rclone/gdrive) que pode ter excluido silenciosamente alguma entity do
-	// universo elegivel daquela execucao (ListarEntityIDsComMediaFilePresente
-	// exige state='present'). So leitura, nao muda nenhum comportamento.
+	// Informative count for the midias_faltantes job summary: a 'missing'
+	// media_file is a sign of instability of the remote mount
+	// (rclone/gdrive), which may have silently excluded some entity from
+	// the eligible universe of that execution (ListarEntityIDsComMediaFilePresente
+	// requires state='present'). Read only, it changes no behavior.
 	ContarMediaFilesEmEstadoMissing(ctx context.Context) (int64, error)
 	ContarMediaFilesPorState(ctx context.Context) ([]ContarMediaFilesPorStateRow, error)
-	// CRUD de asset (poster/fanart/... referenciados por uma entity).
-	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+	// CRUD for asset (poster/fanart/... referenced by an entity).
+	// Comments in ASCII and explicit columns -- see the note in entity.sql.
 	CriarAsset(ctx context.Context, arg CriarAssetParams) (Asset, error)
-	// Acesso a tabela credit (briefing 0029, migration 0010): a aresta obra<->pessoa/
-	// empresa, cache re-componivel do payload externo. O re-enriquecimento apaga os
-	// creditos de (entity_id, source) e os repopula (idempotente, sem duplicar). O dado do
-	// dono nunca vive aqui. Comentarios em ASCII e colunas explicitas -- ver a nota em
-	// entity.sql (o sqlc v1.31 corrompe SQL de query com acento).
-	// Insere um credito ligado a entity. person_id (cast/crew) OU company_id (company) e
-	// preenchido, o outro fica NULL. ordering carrega a ordem de bilhagem do elenco;
-	// character/department/job/episode_count sao os atributos da aresta.
+	// Access to the credit table (migration 0010): the work<->person/
+	// company edge, re-composable cache of the external payload. Re-enrichment deletes the
+	// credits of (entity_id, source) and repopulates them (idempotent, no duplication). The
+	// owner's data never lives here. Comments in ASCII and explicit columns -- see the
+	// note in entity.sql (sqlc v1.31 corrupts query SQL with an accent).
+	// Inserts a credit linked to the entity. person_id (cast/crew) OR company_id (company)
+	// is filled in, the other stays NULL. ordering carries the cast billing order;
+	// character/department/job/episode_count are the attributes of the edge.
 	CriarCredito(ctx context.Context, arg CriarCreditoParams) error
-	// CRUD minimo da entity base.
+	// Minimal CRUD for the base entity.
 	//
-	// IMPORTANTE (sqlc + ASCII): os comentarios deste arquivo .sql sao ASCII (sem
-	// acentos) DE PROPOSITO. O sqlc v1.31 fatia o texto de cada query por offset de
-	// BYTE, mas as posicoes dos tokens vem em offset de RUNE; qualquer caractere
-	// multi-byte (acento pt-BR) num arquivo de query desloca o corte e CORROMPE o
-	// SQL gerado (some o '?' final, troca 'AS x' por 'A', etc.). As migrations NAO
-	// sofrem disso (sao parseadas por estrutura, nao guardadas como texto), entao la
-	// os comentarios seguem em pt-BR acentuado. Aqui, ASCII. Regra geral: colunas
-	// sempre EXPLICITAS, nunca '*'/'RETURNING *' (a expansao de '*' tem o mesmo bug
-	// de offset). As colunas geradas (external_id_tmdb/imdb/tvdb/mbid) derivam de
-	// external_ids_json e NAO entram no INSERT/UPDATE, mas aparecem no
-	// RETURNING/SELECT para espelhar o modelo (migration 0007 somou tvdb; a
-	// migration 0023/briefing 0106 somou mbid -- ATENCAO: 0023 tinha ficado sem
-	// regenerar o sqlc por um tempo, corrigido junto com este briefing).
-	// status NAO entra no INSERT: usa o DEFAULT 'cataloged' (item auto-criado nasce
-	// catalogado; a curadoria muda depois via AtualizarEntity). ADR-0009.
+	// IMPORTANT (sqlc + ASCII): the comments in this .sql file are ASCII (no
+	// accents) ON PURPOSE. sqlc v1.31 slices the text of each query by BYTE
+	// offset, but token positions come as RUNE offsets; any multi-byte
+	// character (pt-BR accent) in a query file shifts the cut and CORRUPTS the
+	// generated SQL (the trailing '?' disappears, 'AS x' becomes 'A', etc.). Migrations do NOT
+	// suffer from this (they are parsed by structure, not stored as text), so there the
+	// comments stay in accented pt-BR. Here, ASCII. General rule: columns
+	// always EXPLICIT, never '*'/'RETURNING *' (the '*' expansion has the same
+	// offset bug). The generated columns (external_id_tmdb/imdb/tvdb/mbid) derive from
+	// external_ids_json and do NOT enter the INSERT/UPDATE, but they do appear in the
+	// RETURNING/SELECT to mirror the model (migration 0007 added tvdb;
+	// migration 0023 added mbid -- NOTE: 0023 had been left without
+	// regenerating sqlc for a while, fixed along with this change).
+	// status does NOT enter the INSERT: it uses DEFAULT 'cataloged' (an auto-created item is
+	// born cataloged; curation changes it later via AtualizarEntity). ADR-0009.
 	CriarEntity(ctx context.Context, arg CriarEntityParams) (Entity, error)
-	// CRUD de entity_relation (serie<->temporada<->episodio, colecao<->filme).
-	// Criada agora; populada so pelos tipos que o scanner tratar (fase posterior).
-	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
-	// sort_index e NULLABLE: colecao passa NULL (ordena por id, como antes); serie/
-	// temporada passam o numero (temporada dentro da serie, episodio dentro da
-	// temporada) para a ordenacao estavel de ListarRelacoesFilhas.
+	// CRUD for entity_relation (series<->season<->episode, collection<->movie).
+	// Created now; populated only by the types the scanner handles (later phase).
+	// Comments in ASCII and explicit columns -- see the note in entity.sql.
+	// sort_index is NULLABLE: collection passes NULL (orders by id, as before); series/
+	// season pass the number (season within the series, episode within the
+	// season) for the stable ordering of ListarRelacoesFilhas.
 	CriarEntityRelation(ctx context.Context, arg CriarEntityRelationParams) (EntityRelation, error)
-	// CRUD de historico_evento (briefing 0092, ADR-0022): eventos de consumo
-	// genericos (assistir/ouvir/jogar/etc.), append-only, filhos de entity.
-	// Comentarios em ASCII -- ver a nota em entity.sql (sqlc v1.31 corrompe SQL
-	// de query com acento).
+	// CRUD for historico_evento (ADR-0022): consumption events,
+	// generic (watch/listen/play/etc.), append-only, children of entity.
+	// Comments in ASCII -- see the note in entity.sql (sqlc v1.31 corrupts
+	// query SQL with an accent).
 	CriarHistoricoEvento(ctx context.Context, arg CriarHistoricoEventoParams) (CriarHistoricoEventoRow, error)
-	// Grava um evento sem entity casada (briefing 0099): entity_id fica NULL
-	// implicitamente (nao e parametro). Guarda os IDs/titulo/ano brutos do
-	// payload para permitir localizar o evento como candidato a backfill
-	// quando uma entity ganhar aquele ID externo no futuro.
+	// Writes an event with no matched entity: entity_id stays NULL
+	// implicitly (it is not a parameter). Stores the raw IDs/title/year from the
+	// payload to allow locating the event as a backfill candidate
+	// when an entity gains that external ID in the future.
 	CriarHistoricoEventoOrfao(ctx context.Context, arg CriarHistoricoEventoOrfaoParams) (HistoricoEvento, error)
-	// CRUD de library_source (raizes de varredura).
-	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
-	// state e last_scan ficam de fora do INSERT: uma fonte nova nasce 'online'
-	// (DEFAULT) e sem last_scan; o scan preenche depois via AtualizarLibrarySource.
-	// content_type entra explicito (0034): 'movie' | 'series' -- o scanner ramifica
-	// por este valor; o servico normaliza vazio para 'movie' (compat). watch_enabled
-	// fica de fora do INSERT tambem: nasce 0 (DEFAULT, briefing 0064) -- o dono liga
-	// depois via PATCH. preferred_language (0084) entra explicito, NULLABLE -- o
-	// servico passa NULL quando o dono nao escolheu idioma preferido no cadastro.
-	// retroactive_enrichment_days (0085) entra explicito, NULLABLE -- o servico
-	// passa NULL quando o dono nao definiu override de reentativa no cadastro.
+	// CRUD for library_source (scan roots).
+	// Comments in ASCII and explicit columns -- see the note in entity.sql.
+	// state and last_scan stay out of the INSERT: a new source is born 'online'
+	// (DEFAULT) and without last_scan; the scan fills it later via AtualizarLibrarySource.
+	// content_type goes in explicitly (0034): 'movie' | 'series' -- the scanner branches
+	// on this value; the service normalizes empty to 'movie' (compat). watch_enabled
+	// stays out of the INSERT too: it is born 0 (DEFAULT) -- the owner turns it on
+	// later via PATCH. preferred_language (0084) goes in explicitly, NULLABLE -- the
+	// service passes NULL when the owner did not pick a preferred language at registration.
+	// retroactive_enrichment_days (0085) goes in explicitly, NULLABLE -- the service
+	// passes NULL when the owner did not set a retry override at registration.
 	CriarLibrarySource(ctx context.Context, arg CriarLibrarySourceParams) (LibrarySource, error)
-	// CRUD de media_file + a query de POSSE DERIVADA (ADR-0009) + as queries do
-	// scanner (briefing 0009): dedup por content_hash, reencontro (rename/move) e
-	// marcacao de missing por datasource.
-	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+	// CRUD for media_file + the DERIVED OWNERSHIP query (ADR-0009) + the
+	// scanner queries: content_hash dedupe, re-find (rename/move) and
+	// missing marking per datasource.
+	// Comments in ASCII and explicit columns -- see the note in entity.sql.
 	CriarMediaFile(ctx context.Context, arg CriarMediaFileParams) (MediaFile, error)
-	// Acesso a queue_item (briefing 0108, ADR-0028): fila de execucao unificada
-	// para scan e job. Comentarios em ASCII e colunas explicitas -- ver a nota em
-	// entity.sql (bug de offset do sqlc v1.31 com acentos/'*' em .sql de query).
-	// Enfileira um item novo em status 'queued' (Manager.Enqueue, DEPOIS do guard
-	// de dedup ja ter confirmado que nao ha item ativo para a mesma referencia).
+	// Access to queue_item (ADR-0028): unified execution queue
+	// for scan and job. Comments in ASCII and explicit columns -- see the note in
+	// entity.sql (sqlc v1.31 offset bug with accents/'*' in a query .sql file).
+	// Enqueues a new item with status 'queued' (Manager.Enqueue, AFTER the
+	// dedupe guard has already confirmed there is no active item for the same reference).
 	CriarQueueItem(ctx context.Context, arg CriarQueueItemParams) (QueueItem, error)
-	// Queries da juncao N:M GENERICA arquivo<->entidade (briefing 0034, migration
-	// 0009). Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql (o
-	// sqlc v1.31 corrompe SQL de query com acento). O vinculo e ancorado no entity_id
-	// (ADR-0021): renumerar a serie nao mexe em nenhuma linha daqui. O `kind`
-	// discrimina o papel do vinculo (ex.: 'tv_episode'), deixando a tabela reusavel
-	// por outros tipos de midia sem migration nova.
-	// Upsert idempotente por PK (media_file_id, entity_id, kind): re-scan do mesmo
-	// arquivo so atualiza o ordinal, nunca duplica o vinculo. Mesmo padrao de
-	// ON CONFLICT ... DO UPDATE SET usado em app_settings/media_external.
+	// Queries for the GENERIC N:M junction file<->entity (migration
+	// 0009). Comments in ASCII and explicit columns -- see the note in entity.sql
+	// (sqlc v1.31 corrupts query SQL with an accent). The link is anchored on the
+	// entity_id (ADR-0021): renumbering the series touches no row here. The `kind`
+	// discriminates the role of the link (e.g. 'tv_episode'), leaving the table
+	// reusable by other media types without a new migration.
+	// Idempotent upsert by PK (media_file_id, entity_id, kind): re-scan of the same
+	// file only updates the ordinal, never duplicates the link. Same pattern of
+	// ON CONFLICT ... DO UPDATE SET used in app_settings/media_external.
 	CriarVinculoEntidade(ctx context.Context, arg CriarVinculoEntidadeParams) error
-	// Zera is_principal de TODOS os assets do (entity,kind) -- aplica a
-	// invariante "no maximo um principal por kind" (briefing 0062) em codigo:
-	// sempre chamada ANTES de MarcarAssetPrincipal, na mesma sequencia de
-	// escrita (pool de escritor unico, ADR-0010 -- sem concorrencia entre as
-	// duas chamadas).
+	// Zeroes is_principal on ALL assets of the (entity,kind) -- enforces the
+	// invariant "at most one principal per kind" in code:
+	// always called BEFORE MarcarAssetPrincipal, in the same write
+	// sequence (single-writer pool, ADR-0010 -- no concurrency between the
+	// two calls).
 	DesmarcarAssetsPrincipalPorKind(ctx context.Context, arg DesmarcarAssetsPrincipalPorKindParams) error
-	// POSSE DERIVADA da entidade num papel (analogo ao EntityTemPosse de filme):
-	// verdadeiro se, e so se, existe ao menos um arquivo 'present' vinculado aquela
-	// entity naquele kind.
+	// DERIVED OWNERSHIP of the entity in a role (analogous to EntityTemPosse for a movie):
+	// true if, and only if, there is at least one 'present' file linked to that
+	// entity in that kind.
 	EntidadeTemPosse(ctx context.Context, arg EntidadeTemPosseParams) (bool, error)
-	// Queries do FUNDIR DE DUPLICATA por conflito de external_id (briefing 0051):
-	// quando o dono grava um id externo que ja pertence a OUTRA entity (do mesmo
-	// tipo), em vez de deixar duas entities com a mesma identidade, o sistema funde
-	// a "perdedora" (a que ja tinha o id) na "sobrevivente" (a que esta sendo
-	// editada) -- SE a perdedora nao tiver investimento do dono (mesmo predicado da
-	// fila de orfas, ver review.sql). Comentarios em ASCII e colunas explicitas --
-	// ver a nota em entity.sql.
+	// Queries for the DUPLICATE MERGE on external_id conflict:
+	// when the owner writes an external id that already belongs to ANOTHER entity (of the
+	// same type), instead of leaving two entities with the same identity, the system merges
+	// the "loser" (the one that already had the id) into the "survivor" (the one being
+	// edited) -- IF the loser has no owner investment (same predicate as the
+	// orphan queue, see review.sql). Comments in ASCII and explicit columns --
+	// see the note in entity.sql.
 	//
-	// O parser SQL do sqlc (engine sqlite) nao aceita alias na tabela-alvo de um
-	// UPDATE nem correlated subquery contra ela (self-join ambiguo) -- por isso as
-	// queries daqui sao deliberadamente SIMPLES (update por PK/id, sem subquery); a
-	// decisao "ja existe uma linha equivalente na sobrevivente?" e feita em GO (o
-	// chamador lista as linhas dos dois lados com ListarXPorEntity/ParaEntity e so
-	// move o que nao colide), no mesmo espirito do resto do codebase (ex.: purga em
-	// lote itera ids em vez de SQL em massa).
-	// Mesmo predicado de "investimento do dono" da fila de orfas (0018/review.sql):
-	// existe override OU asset custom (origin='user'). Decide se uma colisao de
-	// external_id pode ser fundida automaticamente (sem investimento) ou exige
-	// conflito reportado ao dono (com investimento).
+	// The sqlc SQL parser (sqlite engine) does not accept an alias on the target table of an
+	// UPDATE nor a correlated subquery against it (ambiguous self-join) -- hence the
+	// queries here are deliberately SIMPLE (update by PK/id, no subquery); the
+	// decision "does an equivalent row already exist on the survivor?" is made in GO (the
+	// caller lists the rows on both sides with ListarXPorEntity/ParaEntity and only
+	// moves what does not collide), in the same spirit as the rest of the codebase (e.g.
+	// batch purge iterates ids instead of bulk SQL).
+	// Same "owner investment" predicate as the orphan queue (review.sql):
+	// there is an override OR a custom asset (origin='user'). Decides whether an
+	// external_id collision can be merged automatically (no investment) or requires
+	// a conflict reported to the owner (with investment).
 	EntityTemInvestimentoDono(ctx context.Context, arg EntityTemInvestimentoDonoParams) (sql.NullBool, error)
-	// POSSE DERIVADA (ADR-0009): verdadeiro se, e so se, existe ao menos um
-	// media_file 'present' para a entity. Posse NAO e coluna (uma coluna gerada nao
-	// enxerga outra tabela) -- e computada aqui.
+	// DERIVED OWNERSHIP (ADR-0009): true if, and only if, there is at least one
+	// 'present' media_file for the entity. Ownership is NOT a column (a generated column
+	// cannot see another table) -- it is computed here.
 	EntityTemPosse(ctx context.Context, entityID string) (bool, error)
-	// POSSE DERIVADA na ARVORE de descendentes (briefing 0116): verdadeiro se existe
-	// media_file 'present' em QUALQUER descendente desta entity via entity_relation, a
-	// qualquer profundidade -- cobre artista->album->faixa (ADR-0027: media_file.entity_id
-	// so aponta pra faixa, nunca pro album/artista). Mesma CTE de fecho transitivo ja usada
-	// pelas listagens (entity.sql, ObterEntityCard/ListarEntityCards*), aqui isolada porque
-	// cada query sqlc compila a propria WITH RECURSIVE. Usada pelo detalhe unico
-	// (resolverEntity, internal/server/entities.go) para completar o Owned do resolver
-	// quando EntityTemPosse (arquivo DIRETO) e false -- sem isso, artista/album de musica
-	// sempre mostravam posse=false no detalhe mesmo com faixa possuida (as listagens ja
-	// foram corrigidas antes; o detalhe usava um caminho separado, ListarMediaFilesPorEntity,
-	// que nunca desce a arvore).
+	// DERIVED OWNERSHIP in the DESCENDANT tree: true if there is a
+	// 'present' media_file in ANY descendant of this entity via entity_relation, at
+	// any depth -- covers artist->album->track (ADR-0027: media_file.entity_id
+	// only points at the track, never at the album/artist). Same transitive closure CTE
+	// already used by the listings (entity.sql, ObterEntityCard/ListarEntityCards*), here
+	// isolated because each sqlc query compiles its own WITH RECURSIVE. Used by the single
+	// detail (resolverEntity, internal/server/entities.go) to complete the resolver's Owned
+	// when EntityTemPosse (DIRECT file) is false -- without this, music artist/album
+	// always showed owned=false in the detail even with a track owned (the listings had
+	// already been fixed before; the detail used a separate path, ListarMediaFilesPorEntity,
+	// which never descends the tree).
 	EntityTemPosseNaArvore(ctx context.Context, id string) (bool, error)
-	// Ao fim de uma execucao (Manager.Executar): espelha o resultado em
-	// job_definition (redundancia de leitura, evita JOIN na listagem) e recalcula
-	// next_run_at (nil quando desabilitado ou sem schedule_cron -- computado em
-	// Go via cron.ParseStandard(...).Next(agora)).
+	// At the end of an execution (Manager.Executar): mirrors the result into
+	// job_definition (read redundancy, avoids a JOIN on the listing) and recomputes
+	// next_run_at (nil when disabled or without schedule_cron -- computed in
+	// Go via cron.ParseStandard(...).Next(now)).
 	FinalizarJobDefinicao(ctx context.Context, arg FinalizarJobDefinicaoParams) (JobDefinition, error)
-	// Transicao running -> success|error, ao FIM do processamento (ou quando nao
-	// ha Runner registrado para o kind).
+	// running -> success|error transition, at the END of processing (or when there
+	// is no Runner registered for the kind).
 	FinalizarQueueItem(ctx context.Context, arg FinalizarQueueItemParams) (QueueItem, error)
-	// Transicao queued -> running, no INICIO do processamento pelo worker.
+	// queued -> running transition, at the START of processing by the worker.
 	IniciarQueueItem(ctx context.Context, id string) (QueueItem, error)
-	// Os arquivos de UMA entidade num dado papel (detalhe do episodio: mediainfo,
-	// caminho, estado). Filtra por entity_id + kind e faz join com media_file para
-	// trazer a linha do arquivo. Ordena por ordinal e depois pela criacao, estavel.
+	// The files of ONE entity in a given role (episode detail: mediainfo,
+	// path, state). Filters by entity_id + kind and joins with media_file to
+	// bring the file row. Orders by ordinal and then by creation, stable.
 	ListarArquivosDaEntidade(ctx context.Context, arg ListarArquivosDaEntidadeParams) ([]ListarArquivosDaEntidadeRow, error)
 	ListarAssetsPorEntity(ctx context.Context, entityID string) ([]Asset, error)
-	// Todos os creditos de uma obra, para o detalhe. Ordena por kind, ordem de bilhagem e
-	// id (estavel).
+	// All credits of a work, for the detail. Orders by kind, billing order and
+	// id (stable).
 	ListarCreditosDaEntity(ctx context.Context, entityID string) ([]Credit, error)
-	// Complemento do WHERE de ListarRevisao, restrito a tipos DE TOPO (ADR-0030):
-	// entities SEM nenhum external_id (external_ids_json IS NULL) que NAO estao
-	// na fila de Revisao (status != 'draft', sem media_file de baixa confianca)
-	// E que tem ao menos um media_file 'present' -- direto (movie/tv/qualquer
-	// tipo com arquivo proprio) OU via arvore de entity_relation (musica:
-	// artista nunca liga media_file direto, ADR-0027 -- so a faixa liga; mesmo
-	// padrao WITH RECURSIVE ja usado por ListarEntitiesMusicaComFaixaPossuida,
-	// media_file.sql). O type NOT IN abaixo e a lista LITERAL dos mesmos valores
-	// de tiposSubNo (ADR-0030/briefing 0112, internal/server/entities.go) --
-	// sqlc.slice('sub_nos') foi tentado (briefing 0116) e descartado: sqlc, no
-	// dialeto sqlite, nao combina sqlc.slice com outros sqlc.arg no MESMO
-	// statement -- a expansao dinamica de `?` do slice desalinha a numeracao dos
-	// placeholders nomeados (?N) dos demais args, causando erro de bind em
-	// runtime ("missing named argument"/"datatype mismatch"), mesmo com cada arg
-	// referenciado uma unica vez. TestListaSubNosSincronizadaComQuery
-	// (retroativo_test.go) trava a lista literal contra tiposSubNo -- se um tipo
-	// novo entrar ali, o teste falha ate esta query ser atualizada a mao.
-	// Throttle: nunca tentado (NULL) tem prioridade, depois o mais antigo
-	// tentado primeiro; sqlc.arg('dias_global') e o intervalo GLOBAL em dias
-	// (briefing 0085), usado como fallback quando nenhum media_file 'present' da
-	// entity vem de uma biblioteca com override (a subquery de override so olha
-	// media_file DIRETO -- para artista isso sempre cai no fallback global, ver
-	// briefing 0116 secao 3 "Fora"); sqlc.arg('limite') poda o lote por execucao.
+	// Complement of the WHERE of ListarRevisao, restricted to TOP-LEVEL types (ADR-0030):
+	// entities WITHOUT any external_id (external_ids_json IS NULL) that are NOT
+	// in the Review queue (status != 'draft', without a low-confidence media_file)
+	// AND that have at least one 'present' media_file -- directly (movie/tv/any
+	// type with a file of its own) OR through the entity_relation tree (music:
+	// the artist never links media_file directly, ADR-0027 -- only the track does; same
+	// WITH RECURSIVE pattern already used by ListarEntitiesMusicaComFaixaPossuida,
+	// media_file.sql). The type NOT IN below is the LITERAL list of the same values
+	// as tiposSubNo (ADR-0030, internal/server/entities.go) --
+	// sqlc.slice('sub_nos') was tried and discarded: sqlc, in the sqlite
+	// dialect, does not combine sqlc.slice with other sqlc.arg in the SAME
+	// statement -- the dynamic expansion of the slice's `?` misaligns the numbering of
+	// the named placeholders (?N) of the other args, causing a bind error at
+	// runtime ("missing named argument"/"datatype mismatch"), even with each arg
+	// referenced a single time. TestListaSubNosSincronizadaComQuery
+	// (retroativo_test.go) locks the literal list against tiposSubNo -- if a new type
+	// enters it, the test fails until this query is updated by hand.
+	// Throttle: never attempted (NULL) has priority, then the one attempted longest ago
+	// first; sqlc.arg('dias_global') is the GLOBAL interval in days,
+	// used as a fallback when no 'present' media_file of the entity
+	// comes from a library with an override (the override subquery only looks at
+	// DIRECT media_file -- for an artist this always falls back to the global value,
+	// see the "Out of scope" section of ADR-0027); sqlc.arg('limite') prunes the batch
+	// per execution.
 	ListarElegiveisEnriquecimentoRetroativo(ctx context.Context, arg ListarElegiveisEnriquecimentoRetroativoParams) ([]ListarElegiveisEnriquecimentoRetroativoRow, error)
-	// Complemento de ListarElegiveisEnriquecimentoRetroativo (briefing 0118): em vez
-	// de entities SEM identidade, aqui sao as JA IDENTIFICADAS (external_ids_json
-	// NOT NULL) cujo inventario de arte (fanart.tv etc, briefing 0048) nunca foi
-	// (re)verificado -- fecha o gap de uma entity que ganhou a identidade ANTES de
-	// um ArteProvider existir/ser configurado no sistema (ou cuja busca de arte na
-	// epoca nao achou nada e nunca foi reprocessada): sem este passo ela fica sem
-	// arte extra para sempre, so alcancavel pelo botao manual "Baixar Artes
-	// Faltantes" por item (briefing 0088). Reusa last_external_match_attempt_at --
-	// LIVRE para estas entities, ja que a query irma (acima) so olha entities com
-	// external_ids_json IS NULL -- so que aqui o carimbo significa "ultima vez que
-	// o inventario de arte foi verificado", nao "ultima tentativa de match". Mesmo
-	// throttle/dias (retroactive_enrichment_days) e mesma lista literal de tipos
-	// de topo (sub_nos EXCLUIDOS, ADR-0030/0112 -- TestListaSubNosSincronizadaComQuery
-	// trava as DUAS queries contra tiposSubNo) e posse via arvore de entity_relation
-	// (musica: artista nunca liga media_file direto, ADR-0027) que a query irma ja
-	// usa.
+	// Complement of ListarElegiveisEnriquecimentoRetroativo: instead of entities
+	// WITHOUT identity, here they are the ALREADY IDENTIFIED ones (external_ids_json
+	// NOT NULL) whose art inventory (fanart.tv etc.) was never
+	// (re)verified -- closes the gap of an entity that gained its identity BEFORE
+	// an ArteProvider existed/was configured in the system (or whose art search at
+	// the time found nothing and was never reprocessed): without this step it stays without
+	// extra art forever, only reachable through the manual "Download Missing Artwork"
+	// button per item. Reuses last_external_match_attempt_at --
+	// FREE for these entities, since the sibling query (above) only looks at entities with
+	// external_ids_json IS NULL -- except that here the timestamp means "the last time the
+	// art inventory was verified", not "the last match attempt". Same
+	// throttle/days (retroactive_enrichment_days) and same literal list of top-level
+	// types (sub_nos EXCLUDED, ADR-0030 -- TestListaSubNosSincronizadaComQuery
+	// locks BOTH queries against tiposSubNo) and ownership through the entity_relation tree
+	// (music: the artist never links media_file directly, ADR-0027) that the sibling query
+	// already uses.
 	ListarElegiveisReprocessamentoArtes(ctx context.Context, arg ListarElegiveisReprocessamentoArtesParams) ([]ListarElegiveisReprocessamentoArtesRow, error)
 	ListarEntities(ctx context.Context, arg ListarEntitiesParams) ([]Entity, error)
-	// Universo elegivel do job `midias_faltantes` PARA MUSICA (briefing 0116): toda entity
-	// artista/album com ao menos um descendente (faixa, via artista->album->faixa ou
-	// album->faixa direto) com media_file 'present'. media_file.entity_id de musica aponta
-	// SEMPRE pra faixa (ADR-0027), nunca pro album/artista -- ListarEntityIDsComMediaFilePresente
-	// acima nunca alcanca artista/album, entao precisa da MESMA arvore recursiva de
-	// entity_relation ja usada pelo campo `owned` das listagens (entity.sql, WITH RECURSIVE
-	// arvore) e por EntityTemPosseNaArvore acima. Sem isso, capa de album/foto de artista
-	// nunca eram materializadas pelo job/toggle de auto-download (so cobriam movie/tv).
+	// Eligible universe of the `midias_faltantes` job FOR MUSIC: every entity
+	// artist/album with at least one descendant (track, via artist->album->track or
+	// album->track directly) with a 'present' media_file. For music, media_file.entity_id
+	// ALWAYS points at the track (ADR-0027), never at the album/artist --
+	// ListarEntityIDsComMediaFilePresente above never reaches artist/album, so it needs
+	// the SAME recursive entity_relation tree already used by the `owned` field of the
+	// listings (entity.sql, WITH RECURSIVE arvore) and by EntityTemPosseNaArvore above.
+	// Without it, album cover/artist photo were never materialized by the job/toggle
+	// of auto-download (they only covered movie/tv).
 	ListarEntitiesMusicaComFaixaPossuida(ctx context.Context) ([]string, error)
-	// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte imdb.
+	// Mirrors ListarEntitiesPorTmdbExcetoId, for the imdb source.
 	ListarEntitiesPorImdbExcetoId(ctx context.Context, arg ListarEntitiesPorImdbExcetoIdParams) ([]Entity, error)
-	// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte mbid (MusicBrainz) -- usada por
-	// acharColisaoExterna quando o auto-match/retroativo aplica um candidato musicbrainz a
-	// uma entity `artista` (briefing 0116/0119): sem esta query, o dedup de colisao ficava
-	// restrito a tmdb/imdb/tvdb e um artista ja catalogado por outra via (import de arvore,
-	// scan de faixa) podia ganhar uma SEGUNDA entity para o mesmo MBID.
+	// Mirrors ListarEntitiesPorTmdbExcetoId, for the mbid source (MusicBrainz) -- used by
+	// acharColisaoExterna when auto-match/backfill applies a musicbrainz candidate to
+	// an `artista` entity (music vertical, ADR-0027): without this query, collision
+	// dedupe stayed limited to tmdb/imdb/tvdb and an artist already cataloged another
+	// way (tree import, track scan) could get a SECOND entity for the same MBID.
 	ListarEntitiesPorMbidExcetoId(ctx context.Context, arg ListarEntitiesPorMbidExcetoIdParams) ([]Entity, error)
-	// Espelha ObterEntityPorTmdb, mas devolve TODAS as entities com aquele id (menos
-	// alvo_id) em vez de :one -- corrige o bug do briefing 0051 em que um dado ja
-	// corrompido (duas entities com o MESMO external_id_tmdb, pre-existente antes da
-	// fusao automatica) fazia o :one devolver a propria entity-alvo (sem ORDER BY
-	// garantido) e mascarar a outra duplicata. Exclui alvo_id na propria SQL, entao
-	// o chamador nao depende de "no maximo um resultado no total".
+	// Mirrors ObterEntityPorTmdb, but returns ALL entities with that id (except
+	// alvo_id) instead of :one -- fixes the bug where already corrupted data
+	// (two entities with the SAME external_id_tmdb, pre-existing before the
+	// automatic merge) made :one return the target entity itself (with no guaranteed
+	// ORDER BY) and mask the other duplicate. It excludes alvo_id in the SQL itself, so
+	// the caller does not rely on "at most one result in total".
 	ListarEntitiesPorTmdbExcetoId(ctx context.Context, arg ListarEntitiesPorTmdbExcetoIdParams) ([]Entity, error)
-	// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte tvdb.
+	// Mirrors ListarEntitiesPorTmdbExcetoId, for the tvdb source.
 	ListarEntitiesPorTvdbExcetoId(ctx context.Context, arg ListarEntitiesPorTvdbExcetoIdParams) ([]Entity, error)
-	// Lista de CARDS para a UI (briefing 0010), ordenada por titulo ASCENDENTE. Uma
-	// unica query com agregacao por subselect correlacionado -- evita o N+1 (nada de
-	// uma query de posse/contagem por item). Colunas derivadas:
-	//   owned            POSSE DERIVADA (ADR-0009): EXISTS media_file present
-	//                    DIRETO (media_file.entity_id = e.id) OU via a juncao
-	//                    media_file_entity (ver abaixo).
-	//   file_count       total de media_file da entity: os DIRETOS (present + missing)
-	//                    MAIS os ligados pela juncao media_file_entity.
-	//   match_confidence maior confianca de match entre os arquivos (badge de revisao).
-	//   has_poster       EXISTS de um asset kind='poster' (a UI decide o poster_url).
-	// Posse GENERICA pela juncao (0034): um arquivo de episodio tem media_file.entity_id
-	// apontando a SERIE (a obra) e liga ao EPISODIO so por media_file_entity. Se a posse
-	// do card olhasse so o entity_id direto, o episodio apareceria owned=false/file_count=0
-	// enquanto o detalhe e a posse agregada (que ja leem a juncao) mostram possuido --
-	// inconsistente. Por isso owned/file_count somam TAMBEM a juncao. E agnostico ao kind
-	// (qualquer entity ligada por media_file_entity conta; futuro 'track' de musica idem).
-	// NAO duplica: o vinculo direto e o da juncao apontam entities e.id DIFERENTES (a
-	// serie leva o arquivo pelo entity_id; o episodio leva pela juncao) -- num mesmo card
-	// so um dos dois caminhos casa e.id. Para o filme, sem linhas na juncao, o comportamento
-	// fica inalterado. COUNT(DISTINCT media_file_id) na juncao evita contar duas vezes um
-	// arquivo ligado a mesma entity em kinds diferentes.
-	// So OBRAS DE TOPO entram: season/episode sao nos internos da arvore de series
-	// (0032), alcancados so pela arvore do pai (GET /members); ficam FORA da home e
-	// da busca via `type NOT IN ('season','episode')`. movie/tv/collection seguem.
-	// Filtros opcionais (NULL = sem filtro) via sqlc.narg: type e owned. A ordenacao
-	// por titulo em ordem DESC vive numa query irma (ListarEntityCardsDesc) porque o
-	// sqlc nao liga parametros dentro de expressoes de ORDER BY -- direcao dinamica
-	// num unico statement nao e suportada; o handler escolhe qual query rodar.
-	// completeness_complete/completeness_missing_json vem do CACHE persistido
-	// entity_catalog_completeness (briefing 0058, recalculado em lote pelo job
-	// saude_biblioteca) via LEFT JOIN -- NULL quando o item ainda nao foi
-	// avaliado (item novo, ou draft). E um JOIN simples (nao precisa de
-	// agregacao): a linha do cache ja vem pronta, 1:1 com a entity.
-	// Posse via ARVORE (entity_relation, briefing 0116) somada tanto na coluna `owned`
-	// quanto no FILTRO `owned` -- ver nota longa na versao ASC/ObterEntityCard.
+	// List of CARDS for the UI, ordered by title ASCENDING. A
+	// single query with correlated-subselect aggregation -- avoids N+1 (no
+	// per-item ownership/count query). Derived columns:
+	//   owned            DERIVED OWNERSHIP (ADR-0009): media_file present EXISTS
+	//                    DIRECTLY (media_file.entity_id = e.id) OR through the
+	//                    media_file_entity junction (see below).
+	//   file_count       total media_file of the entity: the DIRECT ones (present + missing)
+	//                    PLUS those linked through the media_file_entity junction.
+	//     match_confidence highest match confidence among the files (review badge).
+	//     has_poster       EXISTS of an asset kind='poster' (the UI decides the poster_url).
+	// GENERIC ownership through the junction (0034): an episode file has
+	// media_file.entity_id pointing at the SERIES (the work) and links to the EPISODE only
+	// through media_file_entity. If the card ownership looked only at the direct entity_id,
+	// the episode would show up as owned=false/file_count=0 while the detail and the
+	// aggregated ownership (which already read the junction) show it owned -- inconsistent.
+	// That is why owned/file_count ALSO count the junction. It is agnostic to kind
+	// (any entity linked through media_file_entity counts; a future music 'track' likewise).
+	// It does NOT duplicate: the direct link and the junction one point at DIFFERENT
+	// entity ids (the series carries the file through entity_id; the episode carries it
+	// through the junction) -- in a single card only one of the two paths matches e.id.
+	// For the movie, nothing changes. COUNT(DISTINCT media_file_id) avoids double counting.
+	// Only TOP-LEVEL WORKS come in: season/episode are internal nodes of the series
+	// tree (0032), reached only through the parent tree (GET /members); they stay OUT of
+	// the home/search via `type NOT IN ('season','episode')`. movie/tv/collection too.
+	// Optional filters (NULL = no filter) via sqlc.narg: type and owned. The ordering
+	// by title in DESC order lives in a sibling query (ListarEntityCardsDesc) because
+	// sqlc does not bind parameters inside ORDER BY expressions -- dynamic direction
+	// in a single statement is not supported; the handler chooses which query to run.
+	// completeness_complete/completeness_missing_json come from the persisted CACHE
+	// entity_catalog_completeness (recomputed in batch by the
+	// saude_biblioteca job) via LEFT JOIN -- NULL when the item has not been
+	// evaluated yet (new item, or draft). It is a simple JOIN (no
+	// aggregation needed): the cache row already comes ready, 1:1 with the entity.
+	// Tree ownership (entity_relation) added both to the `owned` column
+	// and to the `owned` FILTER -- see the long note in the ASC version/ObterEntityCard.
 	ListarEntityCards(ctx context.Context, arg ListarEntityCardsParams) ([]ListarEntityCardsRow, error)
-	// Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title). owned/
-	// file_count somam a juncao media_file_entity do mesmo jeito -- ver a nota longa acima.
-	// Posse via ARVORE (entity_relation, briefing 0116) somada tanto na coluna `owned`
-	// quanto no FILTRO `owned` -- ver nota longa na versao ASC/ObterEntityCard.
+	// Same as ListarEntityCards, but orders by title DESCENDING (sort=-title). owned/
+	// file_count add the media_file_entity junction the same way -- see the long note above.
+	// Tree ownership (entity_relation) added both to the `owned` column
+	// and to the `owned` FILTER -- see the long note in the ASC version/ObterEntityCard.
 	ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCardsDescParams) ([]ListarEntityCardsDescRow, error)
-	// Igual a ListarEntityCards, mas ordena por created_at DESCENDENTE
-	// (sort=-created_at, briefings 0109/0110): "adicionados recentemente" na
-	// home. owned/file_count somam a juncao media_file_entity do mesmo jeito --
-	// ver a nota longa em ListarEntityCards. So a variante DESC existe (mais
-	// recente primeiro); nao ha pedido de "mais antigo primeiro". Mesmo shape de
-	// paginacao LIMIT/OFFSET das irmas por titulo -- o consumidor real (carrossel
-	// da home) sempre usa limit pequeno (ex. 10), sem necessidade de um shape de
-	// paginacao dedicado.
-	// Posse via ARVORE (entity_relation, briefing 0116) somada tanto na coluna `owned`
-	// quanto no FILTRO `owned` -- ver nota longa na versao ASC/ObterEntityCard. E o
-	// que faz o carrossel "adicionados recentemente" de artista (owned=true) trazer
-	// resultado mesmo o artista nunca tendo media_file DIRETO nem via juncao.
+	// Same as ListarEntityCards, but orders by created_at DESCENDING
+	// (sort=-created_at): "recently added" on the
+	// home. owned/file_count add the media_file_entity junction the same way --
+	// see the long note in ListarEntityCards. Only the DESC variant exists (most
+	// recent first); there is no request for "oldest first". Same LIMIT/OFFSET
+	// pagination shape as the title siblings -- the real consumer (home
+	// carousel) always uses a small limit (e.g. 10), with no need for a
+	// dedicated pagination shape.
+	// Tree ownership (entity_relation) added both to the `owned` column
+	// and to the `owned` FILTER -- see the long note in the ASC version/ObterEntityCard. It is
+	// what makes the artist "recently added" carousel (owned=true) return
+	// results even when the artist never had a DIRECT media_file nor one through the junction.
 	ListarEntityCardsRecentes(ctx context.Context, arg ListarEntityCardsRecentesParams) ([]ListarEntityCardsRecentesRow, error)
-	// Universo elegivel do job `midias_faltantes` (briefing 0064) PARA MOVIE/TV
-	// DIRETO: toda entity que possui ao menos um media_file 'present' apontando
-	// entity_id pra ela. Para SERIE, media_file.entity_id aponta pra SERIE (nunca
-	// season/episodio, ver internal/scanner/serie.go gravarArquivoSerie) -- entao
-	// esta query sozinha nao alcanca season/episodio (o vinculo deles e via a
-	// juncao media_file_entity, kind='tv_episode'). Desde o briefing 0081, o
-	// chamador (ListarEntitiesComMediaFilePresente, internal/server/midias_
-	// faltantes.go) combina o resultado desta query com
+	// Eligible universe of the `midias_faltantes` job FOR MOVIE/TV
+	// DIRECT: every entity that has at least one 'present' media_file pointing
+	// its entity_id at it. For a SERIES, media_file.entity_id points at the SERIES (never
+	// season/episode, see internal/scanner/serie.go gravarArquivoSerie) -- so
+	// this query alone does not reach season/episode (their link is through the
+	// media_file_entity junction, kind='tv_episode'). The caller
+	// (ListarEntitiesComMediaFilePresente, internal/server/midias_
+	// faltantes.go) combines the result of this query with
 	// ListarSeasonIDsComEpisodioPresente/ListarEpisodeIDsComMediaFilePresente
-	// abaixo -- season continua sem NFO proprio (guarda em gravarNFOSeFaltante),
-	// mas episodio passa a ser elegivel (NFO) e season tambem (poster de
-	// temporada).
+	// below -- season still has no NFO of its own (stored in gravarNFOSeFaltante),
+	// but episode became eligible (NFO) and season too (season
+	// poster).
 	ListarEntityIDsComMediaFilePresente(ctx context.Context) ([]string, error)
-	// Entities alcancadas pelos media_file de UMA fonte (briefing 0070, recasco de
-	// path do datasource): direto (media_file.entity_id -- caso do filme, ou da
-	// SERIE no caso de TV) UNION via a juncao generica (media_file_entity.entity_id
-	// -- caso do EPISODIO, ligado ao arquivo so pela juncao, nunca pelo entity_id
-	// direto). Usada para saber em quais entities checar/recascar
-	// asset.local_path e entity.nfo_path apos trocar library_source.path. O mesmo
-	// parametro (library_source_id) aparece nas duas metades da UNION.
+	// Entities reached by the media_file of ONE source (datasource path
+	// rebase): directly (media_file.entity_id -- the movie case, or the
+	// SERIES in the TV case) UNION through the generic junction
+	// (media_file_entity.entity_id -- the EPISODE case, linked to the file only
+	// through the junction, never through entity_id directly). Used to know which
+	// entities to check/rebase asset.local_path and entity.nfo_path after swapping
+	// library_source.path. The same parameter (library_source_id) appears in both
+	// halves of the UNION.
 	ListarEntityIDsPorFonte(ctx context.Context, librarySourceID sql.NullString) ([]string, error)
-	// Episodios elegiveis para o job `midias_faltantes` (briefing 0081): todo
-	// episodio com media_file 'present' vinculado via a juncao generica
-	// media_file_entity (kind='tv_episode') -- media_file.entity_id aponta pra
-	// SERIE, nunca pro episodio (ver ListarEntityIDsComMediaFilePresente acima),
-	// entao esta query cobre o caminho que a outra nao alcanca. Habilita o job a
-	// gravar o NFO do episodio (kind ja suportado por nomeRaizNFO/raizEpisode,
-	// so nunca era alcancado); arte de episodio (still) continua FORA
-	// (kindsMidiasFaltantes nao ganha still -- lazy/manual, briefing 0044).
+	// Episodes eligible for the `midias_faltantes` job: every
+	// episode with a 'present' media_file linked through the generic
+	// media_file_entity junction (kind='tv_episode') -- media_file.entity_id points at
+	// the SERIES, never at the episode (see ListarEntityIDsComMediaFilePresente above),
+	// so this query covers the path the other one does not reach. It enables the job to
+	// write the episode NFO (kind already supported by nomeRaizNFO/raizEpisode,
+	// it was just never reached); episode artwork (still) stays OUT
+	// (kindsMidiasFaltantes does not gain still -- lazy/manual).
 	ListarEpisodeIDsComMediaFilePresente(ctx context.Context) ([]string, error)
-	// Complemento de ListarElegiveisReprocessamentoArtes (briefing 0120): faixas
-	// type='faixa' status='draft' com media_file present (entity_id aponta
-	// direto, ADR-0027 e 1:1) SEM entity_relation como filha de nenhum album (NOT
-	// EXISTS child_id) -- diferente das outras queries de elegibilidade deste
-	// arquivo, aqui faixa/tv NAO sao excluidos como "sub_nos": sao exatamente o
-	// universo que este briefing cobre. Mesmo throttle por
-	// library_source.retroactive_enrichment_days com fallback pro dias_global,
-	// mesma logica de ListarElegiveisReprocessamentoArtes.
+	// Complement of ListarElegiveisReprocessamentoArtes: tracks
+	// type='faixa' status='draft' with a present media_file (entity_id points
+	// directly, ADR-0027 is 1:1) WITHOUT entity_relation as a child of any album (NOT
+	// EXISTS child_id) -- unlike the other eligibility queries in this
+	// file, here faixa/tv are NOT excluded as "sub_nos": they are exactly the
+	// universe this query covers. Same throttle by
+	// library_source.retroactive_enrichment_days with a fallback to dias_global,
+	// same logic as ListarElegiveisReprocessamentoArtes.
 	ListarFaixasDraftOrfas(ctx context.Context, arg ListarFaixasDraftOrfasParams) ([]ListarFaixasDraftOrfasRow, error)
-	// == Pos-scan por biblioteca (briefing 0135/0138, ADR-0031) ==
-	// As tres queries abaixo sao as versoes ESCOPADAS POR library_source das queries
-	// de reconciliacao acima. O throttle de dias do catalogo
-	// (retroactive_enrichment_days/dias_global) NAO se aplica -- o pos-scan e o retry
-	// do scan que o dono acabou de pedir --, mas ha um piso proprio de horas
-	// (briefing 0138): sem ele, todo scan tentava de novo as MESMAS 200 faixas que
-	// acabaram de falhar (medido: 45+ min de MusicBrainz por scan, sem resolver
-	// nada de novo). A ordem tambem passou a ser a de quem NUNCA foi tentado
-	// primeiro, para a fila avancar a cada scan mesmo com o teto de itens/horas.
-	// O carimbo e gravado em ISO com 'T' e 'Z' (strftime '%Y-%m-%dT%H:%M:%fZ') e o
-	// cutoff e datetime() com espaco; comparar as duas strings cruas erra por causa
-	// do 'T' (0x54 > 0x20), entao a coluna vai embrulhada em datetime() -- que
-	// normaliza as duas para o mesmo formato.
-	// Faixas type='faixa' status='draft' com media_file present DA FONTE informada e
-	// sem entity_relation como filha de album (mesmo universo de
-	// ListarFaixasDraftOrfas). Throttle proprio do pos-scan: pula quem ja foi
-	// tentado nas ultimas sqlc.arg('horas_minimas') horas (briefing 0138); a ordem
-	// e "nunca tentado primeiro" para a fila avancar a cada scan.
+	// == Post-scan per library (ADR-0031) ==
+	// The three queries below are the PER-library_source versions of the
+	// reconciliation queries above. The catalog day throttle
+	// (retroactive_enrichment_days/dias_global) does NOT apply -- the post-scan is the retry
+	// of the scan the owner has just asked for --, but there is a floor of its own, in
+	// hours: without it, every scan retried the SAME 200 tracks that
+	// had just failed (measured: 45+ min of MusicBrainz per scan, without resolving
+	// anything new). The order also became the one of those NEVER attempted
+	// first, so the queue moves forward on every scan even with the item/hour ceiling.
+	// The timestamp is written in ISO with 'T' and 'Z' (strftime '%Y-%m-%dT%H:%M:%fZ') and
+	// the cutoff is datetime() with a space; comparing the two raw strings is wrong because
+	// of the 'T' (0x54 > 0x20), so the column goes wrapped in datetime() -- which
+	// normalizes both to the same format.
+	// Tracks type='faixa' status='draft' with a present media_file FROM the given SOURCE
+	// and without entity_relation as a child of an album (same universe as
+	// ListarFaixasDraftOrfas). Post-scan throttle of its own: it skips those already
+	// attempted in the last sqlc.arg('horas_minimas') hours; the order
+	// is "never attempted first" so the queue moves forward on every scan.
 	ListarFaixasDraftOrfasPorSource(ctx context.Context, arg ListarFaixasDraftOrfasPorSourceParams) ([]ListarFaixasDraftOrfasPorSourceRow, error)
-	// Filmes (type='movie') DA FONTE informada que nao tem identidade externa ainda
-	// e cujo melhor match ficou abaixo do limiar de baixa confianca -- o universo que
-	// o auto-match do pos-scan tenta de novo (caso real: item que entrou cru por
-	// causa do bug do 0089, 08/nov/2026).
+	// Movies (type='movie') FROM the given SOURCE that have no external identity yet
+	// and whose best match stayed below the low-confidence threshold -- the universe that
+	// the post-scan auto-match retries (real case: an item that came in raw because
+	// of the 0089 bug, Nov 8, 2026).
 	ListarFilmesPendentesPorSource(ctx context.Context, arg ListarFilmesPendentesPorSourceParams) ([]ListarFilmesPendentesPorSourceRow, error)
-	// Filmografia da pessoa (briefing 0029 Fase D, interno-first): as obras do catalogo
-	// que a creditam, elenco OU equipe (credito de produtora nao tem person_id, sai
-	// naturalmente do WHERE). Junta credit com entity para trazer o papel (kind/
-	// character/job/department/ordering) daquele credito naquela obra; o handler busca
-	// titulo/poster/ano de cada entity via ObterEntityCard (mesmo card da lista, sem
-	// reinventar resolucao). Ordena por tipo, ordem de bilhagem e id (estavel).
+	// Person filmography (internal-first): the works in the catalog
+	// that credit them, cast OR crew (a production company credit has no person_id, it
+	// drops out of the WHERE naturally). Joins credit with entity to bring the role (kind/
+	// character/job/department/ordering) of that credit in that work; the handler fetches
+	// title/poster/year of each entity via ObterEntityCard (same card as the list,
+	// without reinventing resolution). Orders by type, billing order and id (stable).
 	ListarFilmografiaDaPessoa(ctx context.Context, personID sql.NullString) ([]ListarFilmografiaDaPessoaRow, error)
-	// Lista paginada dos eventos ainda sem entity (entity_id IS NULL), mesmo
-	// padrao de paginacao de outras listas do projeto (limit/offset).
+	// Paginated list of the events still without an entity (entity_id IS NULL), same
+	// pagination pattern as other lists in the project (limit/offset).
 	ListarHistoricoEventoOrfaos(ctx context.Context, arg ListarHistoricoEventoOrfaosParams) ([]HistoricoEvento, error)
-	// Lista os eventos de uma entity em ordem cronologica reversa. kind e
-	// filtro opcional via sqlc.narg -- NULL = sem filtro (todos os kinds).
+	// Lists the events of an entity in reverse chronological order. kind is an
+	// optional filter via sqlc.narg -- NULL = no filter (all kinds).
 	ListarHistoricoEventoPorEntity(ctx context.Context, arg ListarHistoricoEventoPorEntityParams) ([]ListarHistoricoEventoPorEntityRow, error)
-	// Acesso a job_definition (briefing 0052): fundacao do sistema de jobs
-	// (registro dinamico + agendador embutido). Comentarios em ASCII e colunas
-	// explicitas -- ver a nota em entity.sql (bug de offset do sqlc v1.31 com
-	// acentos/'*' em .sql de query).
+	// Access to job_definition: foundation of the job system
+	// (dynamic registry + embedded scheduler). Comments in ASCII and explicit
+	// columns -- see the note in entity.sql (sqlc v1.31 offset bug with
+	// accents/'*' in a query .sql file).
 	//
-	// job_execution (historico de execucao) NAO vive mais aqui desde o briefing
-	// 0108/ADR-0028 (CAMADA 3): internal/job/manager.go passou a enfileirar via
-	// internal/execqueue, cujo queue_item (kind='job') e a fonte unica de
-	// historico -- ver internal/db/queries/queue_item.sql. A tabela job_execution
-	// em si foi derrubada pela migration 0025.
-	// Lista todos os jobs conhecidos (sempre tem ao menos o seed backup_vacuum),
-	// ordem estavel por created_at.
+	// job_execution (execution history) no longer lives here since
+	// ADR-0028 (LAYER 3): internal/job/manager.go now enqueues through
+	// internal/execqueue, whose queue_item (kind='job') is the single source of
+	// history -- see internal/db/queries/queue_item.sql. The job_execution table
+	// itself was dropped by migration 0025.
+	// Lists all known jobs (there is always at least the backup_vacuum seed),
+	// stable order by created_at.
 	ListarJobDefinitions(ctx context.Context) ([]JobDefinition, error)
-	// Consulta do agendador (Manager.RunScheduler): jobs habilitados, com
-	// agendamento configurado, cujo proximo horario ja passou. O Go filtra os que
-	// ja estao "running" em memoria antes de disparar (nao ha essa informacao no
-	// banco).
+	// Scheduler query (Manager.RunScheduler): enabled jobs, with a
+	// schedule configured, whose next run time has already passed. Go filters out the ones
+	// already "running" in memory before firing (that information is not in the
+	// database).
 	ListarJobDefinitionsAgendaveis(ctx context.Context, nextRunAt sql.NullString) ([]JobDefinition, error)
 	ListarLibrarySources(ctx context.Context) ([]LibrarySource, error)
-	// Usada no BOOT do servidor (briefing 0064) para registrar o watcher fsnotify
-	// de cada fonte com watch_enabled=1 -- evita listar/filtrar em Go sobre TODAS
-	// as fontes so para achar as poucas com watch ligado.
+	// Used at server BOOT to register the fsnotify watcher
+	// for each source with watch_enabled=1 -- avoids listing/filtering in Go over ALL
+	// the sources just to find the few with watch turned on.
 	ListarLibrarySourcesComWatchHabilitado(ctx context.Context) ([]LibrarySource, error)
-	// Todas as camadas externas cacheadas de uma entity (uma por fonte buscada).
+	// All external layers cached for an entity (one per fetched source).
 	ListarMediaExternalPorEntity(ctx context.Context, entityID string) ([]MediaExternal, error)
-	// Recasco de path do datasource (briefing 0070): so as duas colunas que o
-	// rename precisa (o resto da linha nao muda). O chamador troca o PREFIXO em
-	// Go (strings.TrimPrefix) -- nunca SUBSTR/REPLACE no SQL, que divergiria em
-	// paths com acento (SQLite conta codepoint, Go conta byte).
+	// Datasource path rebase: only the two columns the rename
+	// needs (the rest of the row does not change). The caller swaps the PREFIX in
+	// Go (strings.TrimPrefix) -- never SUBSTR/REPLACE in SQL, which would diverge on
+	// paths with accents (SQLite counts codepoints, Go counts bytes).
 	ListarMediaFilePathsPorFonte(ctx context.Context, librarySourceID sql.NullString) ([]ListarMediaFilePathsPorFonteRow, error)
 	ListarMediaFilesPorEntity(ctx context.Context, entityID string) ([]MediaFile, error)
-	// Todos os media_file 'present' (de QUALQUER entity) -- usada por
-	// EhPastaExclusiva (internal/localmedia, briefing 0062) para decidir se uma
-	// pasta tem 1 unico video (nome de arte bare) ou varios (nome prefixado).
-	// Biblioteca self-hosted: full scan tolerado (mesmo espirito de
+	// All 'present' media_file (of ANY entity) -- used by
+	// EhPastaExclusiva (internal/localmedia) to decide whether a
+	// folder has a single video (bare art name) or several (prefixed name).
+	// Self-hosted library: full scan tolerated (same spirit as
 	// montarPosseAgregada, internal/server/entities.go).
 	ListarMediaFilesPresentes(ctx context.Context) ([]ListarMediaFilesPresentesRow, error)
-	// Fila de ORFAS: entities auto-criadas pelo scanner (status='cataloged') que TEM ao
-	// menos um media_file, com NENHUM 'present' (todos 'missing'), e SEM investimento do
-	// dono -- sem linha em media_override e sem asset origin='user'. Uma entity SO
-	// importada (sem media_file) NAO e orfa. owned e sempre falso aqui (nenhum present).
+	// ORPHAN queue: entities auto-created by the scanner (status='cataloged') that HAVE at
+	// least one media_file, with NONE 'present' (all 'missing'), and NO owner
+	// investment -- no row in media_override and no asset origin='user'. An entity only
+	// imported (without media_file) is NOT an orphan. owned is always false here (no present).
 	ListarOrfas(ctx context.Context) ([]ListarOrfasRow, error)
-	// Retencao do historico (mesmo padrao de ListarJobExecucaoIdsExcedentes em
-	// job.sql): ids do excedente mais antigo alem das N mais recentes DAQUELA
-	// (kind, ref_id) -- poda aplicada em Go, um DELETE por id.
+	// History retention (same pattern as ListarJobExecucaoIdsExcedentes in
+	// job.sql): ids of the oldest surplus beyond the N most recent OF THAT
+	// (kind, ref_id) -- pruning applied in Go, one DELETE per id.
 	ListarQueueItemsExcedentesPorRef(ctx context.Context, arg ListarQueueItemsExcedentesPorRefParams) ([]string, error)
-	// Historico paginado de UMA referencia (kind, ref_id), mais recente primeiro
-	// por enqueued_at -- substitui a antiga ListarJobExecucoes (job.sql) numa
-	// camada futura; as colunas ja cobrem o shape que GET /jobs/{id}/executions e
-	// GET /library/{id}/scan precisam.
+	// Paginated history of ONE reference (kind, ref_id), newest first
+	// by enqueued_at -- replaces the old ListarJobExecucoes (job.sql) in a
+	// future layer; the columns already cover the shape that GET /jobs/{id}/executions
+	// and GET /library/{id}/scan need.
 	ListarQueueItemsPorKindRef(ctx context.Context, arg ListarQueueItemsPorKindRefParams) ([]QueueItem, error)
-	// Usado no BOOT do worker (Manager.Run, antes do loop comecar): qualquer item
-	// 'running' encontrado aqui e orfao de uma execucao anterior que nao
-	// terminou (o processo caiu no meio) -- o Manager finaliza cada um como
-	// 'error' antes de comecar a processar a fila normalmente.
+	// Used at worker BOOT (Manager.Run, before the loop starts): any item
+	// 'running' found here is an orphan from a previous execution that did not
+	// finish (the process died in the middle) -- the Manager finishes each one as
+	// 'error' before starting to process the queue normally.
 	ListarQueueItemsRunning(ctx context.Context) ([]QueueItem, error)
-	// Relacoes onde a entity e o pai (ex.: as temporadas de uma serie). Ordena por
-	// sort_index (numero estavel do filho) e cai para id quando ele e NULL. A forma
-	// `sort_index IS NULL, sort_index, id` empurra os NULL para o fim sem depender de
-	// NULLS LAST (portavel entre SQLite/modernc); colecao (sort_index todo NULL)
-	// mantem a ordenacao por id de antes.
+	// Relations where the entity is the parent (e.g. the seasons of a series). Orders by
+	// sort_index (stable number of the child) and falls back to id when it is NULL. The form
+	// `sort_index IS NULL, sort_index, id` pushes the NULLs to the end without relying on
+	// NULLS LAST (portable across SQLite/modernc); collection (sort_index all NULL)
+	// keeps the previous ordering by id.
 	ListarRelacoesFilhas(ctx context.Context, parentID string) ([]EntityRelation, error)
-	// Relacoes onde a entity e o filho (ex.: a serie de uma temporada).
+	// Relations where the entity is the child (e.g. the series of a season).
 	ListarRelacoesPais(ctx context.Context, childID string) ([]EntityRelation, error)
-	// Queries das FILAS DE CURADORIA (briefing 0018): revisao, orfas e as escritas de
-	// confirmar/purgar. Sem tabela nova -- as filas sao QUERY sobre entity/media_file/
-	// media_override/asset (ADR-0012). Comentarios em ASCII e colunas explicitas -- ver
-	// a nota em entity.sql.
+	// Queries for the CURATION QUEUES: review, orphans and the
+	// confirm/purge writes. No new table -- the queues are QUERIES over entity/media_file/
+	// media_override/asset (ADR-0012). Comments in ASCII and explicit columns -- see
+	// the note in entity.sql.
 	//
-	// As duas listas devolvem o MESMO shape de card que ListarEntityCards (id, type,
-	// title, status, owned, file_count, match_confidence, has_poster): o handler
-	// converte a linha para o tipo de card comum e reusa o mesmo DTO da lista.
-	// Fila de REVISAO: entities status='draft' (nao-identificado) OU que tem um
-	// media_file 'present' cuja match_confidence esta em (0, LIMIAR) -- baixa confianca.
-	// O LIMIAR entra como parametro (sqlc.arg('limiar')): fonte unica no backend
-	// (espelha o LIMIAR_BAIXA_CONFIANCA=70 do front). Ordena por confianca ASCENDENTE
-	// (pior primeiro); drafts/sem confianca vao ao fim (match_confidence IS NULL = 1).
-	// Arquivos de UMA entity: os que apontam para ela (obra) MAIS os ligados pela
-	// juncao media_file_entity (episodio de serie -- o arquivo mora na SERIE, o
-	// vinculo com o episodio e a juncao). Mesmo idioma de ObterEntityCard/ListarEntityCards
-	// (0034): UNION ALL + COUNT(DISTINCT ...) na juncao, sem dupla contagem (o vinculo
-	// direto e o da juncao apontam entities diferentes). Sem isso, TODO episodio vinha
-	// com file_count 0 e path vazio, e caia no grupo "sem arquivo" da UI mesmo com o
-	// arquivo presente -- 19 episodios medidos em producao (briefing 0138).
-	// match_confidence continua so do arquivo DIRETO (paridade com o card: nao muda a
-	// ordenacao da fila).
+	// Both lists return the SAME card shape as ListarEntityCards (id, type,
+	// title, status, owned, file_count, match_confidence, has_poster): the handler
+	// converts the row to the common card type and reuses the same DTO as the list.
+	// REVIEW queue: entities with status='draft' (unidentified) OR that have a
+	// media_file 'present' whose match_confidence is in (0, THRESHOLD) -- low confidence.
+	// The THRESHOLD comes in as a parameter (sqlc.arg('limiar')): a single source in the
+	// backend (it mirrors LIMIAR_BAIXA_CONFIANCA=70 in the front end). Orders by
+	// confidence ASCENDING (worst first); drafts/without confidence go last
+	// (match_confidence IS NULL = 1). Files of ONE entity: the ones pointing at it (work)
+	// PLUS those linked through the media_file_entity junction (series episode -- the
+	// file lives on the SERIES, the link with the episode is the junction). Same idiom as
+	// ObterEntityCard/ListarEntityCards (0034): UNION ALL + COUNT(DISTINCT ...) on the
+	// junction, with no double counting (the direct link and the junction one point at
+	// different entities). Without this, EVERY episode came with file_count 0 and an empty
+	// path, and fell into the "no file" group of the UI even with the file present --
+	// 19 episodes measured in production. match_confidence still comes only from the
+	// DIRECT file (parity with the card: it does not change the queue ordering).
 	ListarRevisao(ctx context.Context, limiar sql.NullFloat64) ([]ListarRevisaoRow, error)
-	// Temporadas elegiveis para o job `midias_faltantes` (briefing 0081): toda
-	// season com ao menos um episodio DESCENDENTE com media_file 'present'. O
-	// vinculo serie->season->episodio e entity_relation (kind='tv_episode', ver
+	// Seasons eligible for the `midias_faltantes` job: every
+	// season with at least one DESCENDANT episode with a 'present' media_file. The
+	// series->season->episode link is entity_relation (kind='tv_episode', see
 	// internal/enrich/serie.go relacaoEpisodio -- er.parent_id=season,
-	// er.child_id=episodio); o vinculo episodio<->arquivo e a juncao generica
-	// media_file_entity (mesmo kind, ADR-0021). Season continua sem NFO proprio
-	// (guarda em gravarNFOSeFaltante) -- esta query so habilita o job a
-	// materializar o POSTER de temporada (season0N-poster.jpg) na raiz da serie.
+	// er.child_id=episode); the episode<->file link is the generic
+	// media_file_entity junction (same kind, ADR-0021). Season still has no NFO of its own
+	// (stored in gravarNFOSeFaltante) -- this query only enables the job to
+	// materialize the season POSTER (season0N-poster.jpg) at the series root.
 	ListarSeasonIDsComEpisodioPresente(ctx context.Context) ([]string, error)
-	// Complemento de ListarFaixasDraftOrfas (briefing 0120): series type='tv'
-	// status='draft' com media_file present apontando direto (entity_id =
-	// serie.id, gravarArquivoSerie sempre grava assim, mesmo em revisao). Mesmo
-	// throttle da query irma acima.
+	// Complement of ListarFaixasDraftOrfas: series type='tv'
+	// status='draft' with a present media_file pointing directly (entity_id =
+	// serie.id, gravarArquivoSerie always writes it that way, even under review). Same
+	// throttle as the sibling query above.
 	ListarSeriesDraftComArquivo(ctx context.Context, arg ListarSeriesDraftComArquivoParams) ([]ListarSeriesDraftComArquivoRow, error)
-	// Series type='tv' status='draft' com media_file present DA FONTE informada
-	// (mesmo universo de ListarSeriesDraftComArquivo, com o throttle de horas e a
-	// ordem do pos-scan, briefing 0138).
+	// Series type='tv' status='draft' with a present media_file FROM the given SOURCE
+	// (same universe as ListarSeriesDraftComArquivo, with the hour throttle and the
+	// post-scan order).
 	ListarSeriesDraftPorSource(ctx context.Context, arg ListarSeriesDraftPorSourceParams) ([]ListarSeriesDraftPorSourceRow, error)
-	// Tipos de entity DISTINTOS com pelo menos 1 item CATALOGADO (status !=
-	// 'draft'), para a home (0109) e o dropdown da navbar (0110) descobrirem
-	// quais schemas mostrar sem hardcode de lista fixa no frontend -- cobre
-	// album/artista/faixa (0105-0107) junto de movie/tv sem exigir mudanca aqui a
-	// cada vertical nova. Criterio = "status != 'draft'" (o MESMO da fila de
-	// revisao em review.sql: um item 'draft' e so um resultado de busca ainda nao
-	// comprometido ao catalogo) -- DELIBERADAMENTE distinto de "owned"
-	// (ContarEntityCards/ListarEntityCards: posse FISICA de arquivo). Um item
-	// 'wanted'/'unreleased' catalogado mas sem arquivo em disco ainda conta --
-	// coerente com AGENTS.md #2 ("o banco e maior que a biblioteca": cataloga o
-	// que se tem E o que ainda nao se tem). Exclui os SUB-NOS (nos internos da
-	// arvore de series/musica, ver ListarEntityCards/0032) recebidos via
-	// sub_nos -- o CHAMADOR passa a lista unica tiposSubNo (ADR-0030, briefing
-	// 0112, internal/server/entities.go), nao mais um literal fixo aqui.
-	// Ordenado por count DESCENDENTE (schema mais populoso primeiro) e type
-	// ASCENDENTE como desempate estavel.
+	// DISTINCT entity types with at least 1 CATALOGED item (status !=
+	// 'draft'), so the home (0109) and the navbar dropdown (0110) discover
+	// which schemas to show without hardcoding a fixed list in the frontend -- covers
+	// album/artista/faixa (0105-0107) along with movie/tv without requiring a change here for
+	// each new vertical. Criterion = "status != 'draft'" (the SAME one of the review
+	// queue in review.sql: a 'draft' item is just a search result not yet
+	// committed to the catalog) -- DELIBERATELY distinct from "owned"
+	// (ContarEntityCards/ListarEntityCards: PHYSICAL file ownership). An item
+	// 'wanted'/'unreleased' cataloged but without a file on disk still counts --
+	// consistent with AGENTS.md #2 ("the database is bigger than the library": it catalogs
+	// what you have AND what you do not have yet). It excludes the SUB-NODES (internal nodes of
+	// the series/music tree, see ListarEntityCards/0032) received via
+	// sub_nos -- the CALLER passes the single list tiposSubNo (ADR-0030,
+	// internal/server/entities.go), no longer a fixed literal here.
+	// Ordered by count DESCENDING (most populated schema first) and type
+	// ASCENDING as a stable tiebreaker.
 	ListarTiposComContagem(ctx context.Context, subNos []string) ([]ListarTiposComContagemRow, error)
-	// Base da projecao de "estado atual" (GET .../historico/estado): todos os
-	// eventos da entity, mesma ordem cronologica reversa da listagem acima --
-	// o agrupamento por kind (pegar so o primeiro de cada kind, ja que a
-	// ordenacao e occurred_at DESC) fica para a camada Go, conforme o
-	// briefing 0092 autoriza (volume baixo por entity, nao compensa SQL
-	// avancado).
+	// Base of the "current state" projection (GET .../historico/estado): all the
+	// events of the entity, same reverse chronological order as the listing above --
+	// the grouping by kind (keeping only the first of each kind, since the
+	// ordering is occurred_at DESC) is left to the Go layer, as
+	// ADR-0022 documents it (low volume per entity, advanced SQL is not
+	// worth it).
 	ListarUltimoHistoricoEventoPorKind(ctx context.Context, entityID sql.NullString) ([]ListarUltimoHistoricoEventoPorKindRow, error)
-	// As entidades vinculadas a UM arquivo, na ordem local (ordinal) -- cobre o range
-	// (E01-E03 vira 3 linhas com ordinal 0/1/2 sob o mesmo media_file). Sem filtro de
-	// kind: o detalhe do arquivo mostra todos os papeis.
+	// The entities linked to ONE file, in local order (ordinal) -- covers the range
+	// (E01-E03 becomes 3 rows with ordinal 0/1/2 under the same media_file). No kind
+	// filter: the file detail shows every role.
 	ListarVinculosPorArquivo(ctx context.Context, mediaFileID string) ([]MediaFileEntity, error)
-	// Vinculos media_file_entity (N:M de serie, 0034) de UMA entidade, para o
-	// chamador comparar (media_file_id, kind) da perdedora contra os da
-	// sobrevivente antes de mover (evita violar a PK composta).
+	// media_file_entity links (series N:M, 0034) of ONE entity, so the
+	// caller can compare (media_file_id, kind) of the loser against those of the
+	// survivor before moving (avoids violating the composite PK).
 	ListarVinculosPorEntidade(ctx context.Context, entityID string) ([]MediaFileEntity, error)
-	// Seta is_principal=1 no asset (fonte de verdade em coluna, briefing 0062).
-	// O chamador ZERA o antigo principal do mesmo (entity,kind) numa query
-	// separada (DesmarcarAssetsPrincipalPorKind) antes de chamar esta.
+	// Sets is_principal=1 on the asset (source of truth in a column).
+	// The caller ZEROES the previous principal of the same (entity,kind) in a
+	// separate query (DesmarcarAssetsPrincipalPorKind) before calling this one.
 	MarcarAssetPrincipal(ctx context.Context, id string) error
-	// Fecho do ciclo de vida (ADR-0012): ao concluir um scan COMPLETO com a fonte
-	// acessivel, todo media_file 'present' daquela fonte cujo last_seen NAO e o
-	// carimbo deste scan (ou seja, nao foi revisto) passa a 'missing'. A entity e
-	// preservada; a posse cai. Escopo por library_source_id garante que um datasource
-	// offline (que nem chega aqui) nao afete arquivos de outras fontes.
+	// Lifecycle closure (ADR-0012): when a COMPLETE scan finishes with the source
+	// reachable, every 'present' media_file of that source whose last_seen is NOT the
+	// stamp of this scan (that is, it was not reviewed) becomes 'missing'. The entity is
+	// preserved; ownership drops. Scoping by library_source_id guarantees that an offline
+	// datasource (which does not even reach here) does not affect files of other sources.
 	MarcarMediaFilesNaoVistosMissing(ctx context.Context, arg MarcarMediaFilesNaoVistosMissingParams) (int64, error)
-	// Move UM asset (por id) para a entity sobrevivente. Chamado so quando a
-	// sobrevivente ainda nao tem asset daquele kind (evita empilhar duplicata,
-	// ex.: dois posteres).
+	// Moves ONE asset (by id) to the survivor entity. Called only when the
+	// survivor has no asset of that kind yet (avoids stacking a duplicate,
+	// e.g. two posters).
 	MoverAssetLinha(ctx context.Context, arg MoverAssetLinhaParams) error
-	// Espelha a de cima, para o lado FILHO (ex.: filme membro de colecao).
+	// Mirrors the one above, for the CHILD side (e.g. movie member of a collection).
 	MoverEntityRelationChildLinha(ctx context.Context, arg MoverEntityRelationChildLinhaParams) error
-	// Move UMA relacao (por id) reatribuindo o lado PAI (ex.: colecao->filme) para a
-	// sobrevivente. Chamado so quando o Go ja confirmou que a sobrevivente nao tem a
-	// mesma (parent,child,kind) ainda (evita violar a UNIQUE).
+	// Moves ONE relation (by id) reassigning the PARENT side (e.g. collection->movie)
+	// to the survivor. Called only when Go has already confirmed the survivor does
+	// not have the same (parent,child,kind) yet (avoids violating the UNIQUE).
 	MoverEntityRelationParentLinha(ctx context.Context, arg MoverEntityRelationParentLinhaParams) error
-	// Move UMA linha de cache externo (por id) para a entity sobrevivente. Chamado
-	// so quando a sobrevivente ainda nao tem cache daquela fonte (evita violar
+	// Moves ONE external cache row (by id) to the survivor entity. Called
+	// only when the survivor has no cache for that source yet (avoids violating
 	// UNIQUE(entity_id, source)).
 	MoverMediaExternalLinha(ctx context.Context, arg MoverMediaExternalLinhaParams) error
-	// Move UMA linha (identificada pela PK antiga) para a entity sobrevivente.
-	// Chamado so quando o Go ja confirmou que a sobrevivente nao tem esse
-	// (media_file_id, kind) ainda.
+	// Moves ONE row (identified by the old PK) to the survivor entity.
+	// Called only when Go has already confirmed the survivor does not have that
+	// (media_file_id, kind) yet.
 	MoverMediaFileEntityLinha(ctx context.Context, arg MoverMediaFileEntityLinhaParams) error
-	// media_file nao tem UNIQUE em entity_id (varios arquivos por obra) -- bulk
-	// UPDATE direto, sem risco de colisao.
+	// media_file has no UNIQUE on entity_id (several files per work) -- bulk
+	// UPDATE straight away, with no collision risk.
 	MoverMediaFileParaEntity(ctx context.Context, arg MoverMediaFileParaEntityParams) error
-	// Move TODOS os creditos da perdedora para a sobrevivente -- chamado so quando
-	// o Go ja confirmou que a sobrevivente ainda nao tem NENHUM (evita misturar
-	// dois elencos); o resto fica para o ON DELETE CASCADE.
+	// Moves ALL credits of the loser to the survivor -- called only when
+	// Go has already confirmed the survivor has NONE yet (avoids mixing
+	// two casts); the rest is left to ON DELETE CASCADE.
 	MoverTodosCreditsParaEntity(ctx context.Context, arg MoverTodosCreditsParaEntityParams) error
-	// Acesso a app_settings (briefing 0019): configs da aplicacao em pares key->JSON.
-	// A primeira chave e "languages" = {primary, fallback, allowed[]}. Comentarios em
-	// ASCII e colunas explicitas -- ver a nota em entity.sql (bug de offset do sqlc
-	// v1.31 com acentos/'*' em .sql de query).
-	// Le uma config pela chave (sql.ErrNoRows quando a chave nao existe -- o helper
-	// cai no default seguro).
+	// Access to app_settings: application configs stored as key->JSON pairs.
+	// The first key is "languages" = {primary, fallback, allowed[]}. Comments in
+	// ASCII and explicit columns -- see the note in entity.sql (the sqlc v1.31
+	// offset bug with accents/'*' in a query .sql file).
+	// Reads a config by key (sql.ErrNoRows when the key does not exist -- the helper
+	// falls back to the safe default).
 	ObterAppSetting(ctx context.Context, key string) (AppSetting, error)
 	ObterAsset(ctx context.Context, id string) (Asset, error)
-	// Asset de UMA origem especifica (ex.: kind='poster', origin='external'), para o
-	// dedup do cache de imagem (briefing 0015): reusa/atualiza o asset em vez de
-	// duplicar. Filtrar por origin garante que o cache externo NUNCA case um asset
-	// origin='user' (arte do dono, intocavel). Sem linha -> sql.ErrNoRows.
+	// Asset from ONE specific origin (e.g. kind='poster', origin='external'), for the
+	// image cache dedupe: reuse/update the asset instead of duplicating
+	// it. Filtering by origin guarantees the external cache NEVER matches an asset
+	// origin='user' (the owner's art, untouchable). No row -> sql.ErrNoRows.
 	ObterAssetPorEntityKindOrigin(ctx context.Context, arg ObterAssetPorEntityKindOriginParams) (Asset, error)
-	// Poster local da entity (briefing 0010): o primeiro asset kind='poster'. Usado
-	// pelo endpoint que serve o binario. Sem poster -> sql.ErrNoRows -> 404 na API.
+	// Local poster of the entity: the first asset kind='poster'. Used
+	// by the endpoint that serves the binary. No poster -> sql.ErrNoRows -> 404 in the API.
 	ObterAssetPosterPorEntity(ctx context.Context, entityID string) (Asset, error)
-	// Devolve o path de UM media_file 'present' qualquer, descendente (via a MESMA
-	// arvore de entity_relation) da entity `entity_id` -- usado pelo briefing 0119
-	// (descoberta de arte LOCAL de artista/album de musica: a pasta canonica de um
-	// album e o diretorio do arquivo da faixa; a do artista, um nivel acima). Artista/
-	// album NUNCA tem media_file DIRETO (ADR-0027, so a faixa liga), entao so a arvore
-	// alcanca. sql.ErrNoRows quando a entity nao tem nenhum descendente possuido (nao
-	// deveria acontecer para quem passou por ListarEntitiesMusicaComFaixaPossuida, mas
-	// o chamador trata como "nada a fazer", nao erro).
+	// Returns the path of ANY 'present' media_file that is a descendant (via the SAME
+	// entity_relation tree) of the `entity_id` entity -- used by the discovery
+	// of LOCAL artist/album artwork for music: the canonical folder of an
+	// album is the directory of the track file; the artist's, one level up. Artist/
+	// album NEVER has a DIRECT media_file (ADR-0027, only the track links), so only the
+	// tree reaches it. sql.ErrNoRows when the entity has no owned descendant at all (it
+	// should not happen for whoever came through ListarEntitiesMusicaComFaixaPossuida,
+	// but the caller treats it as "nothing to do", not an error).
 	ObterCaminhoDescendentePresente(ctx context.Context, entityID string) (string, error)
-	// Dedup da entity COLECAO por id tmdb (briefing 0025): reusa a coluna gerada
-	// external_id_tmdb, mas RESTRITA a type='collection'. O namespace de id de colecao
-	// e distinto do de filme, porem a coluna gerada e compartilhada; o filtro por type
-	// evita casar um filme homonimo de mesmo id numerico. Mantem o re-import idempotente.
+	// Dedupe of the COLLECTION entity by tmdb id: reuses the generated column
+	// external_id_tmdb, but RESTRICTED to type='collection'. The collection id
+	// namespace differs from the movie one, yet the generated column is shared; the type filter
+	// avoids matching a same-named movie of the same numeric id. Re-import stays idempotent.
 	ObterColecaoPorTmdb(ctx context.Context, externalIDTmdb sql.NullString) (Entity, error)
-	// Le a produtora por (source, source_id) -- a chave logica de dedup.
+	// Reads the production company by (source, source_id) -- the logical dedupe key.
 	ObterCompanyPorFonte(ctx context.Context, arg ObterCompanyPorFonteParams) (Company, error)
 	ObterEntity(ctx context.Context, id string) (Entity, error)
-	// CARD de UMA entity (mesmas colunas derivadas de ListarEntityCards) + release_date
-	// para ordenar. Usado pelos MEMBROS de uma colecao (briefing 0025) e pelos episodios
-	// de uma temporada (0034): a lista de filhos vem de entity_relation e cada filho vira
-	// card por aqui (N pequeno). As colunas derivadas espelham ListarEntityCards
-	// (owned/file_count/match_confidence/has_poster), entao o mapeamento reusa o cardDTO.
-	// owned/file_count contam TAMBEM a juncao media_file_entity -- ver a nota longa em
-	// ListarEntityCards (o card do episodio possui arquivo so pela juncao).
-	// completeness_complete/completeness_missing_json vem do CACHE persistido
-	// entity_catalog_completeness (briefing 0058, recalculado em lote pelo job
-	// saude_biblioteca) via LEFT JOIN -- NULL quando o item ainda nao foi
-	// avaliado (item novo, ou draft).
-	// Posse via ARVORE (entity_relation, briefing 0116): alem do arquivo DIRETO e da
-	// juncao media_file_entity (posse de IRMAO, ver nota longa em ListarEntityCards),
-	// soma tambem qualquer DESCENDENTE na arvore de entity_relation (CTE recursiva
-	// parent_id->child_id) que possua um media_file 'present' -- cobre artista/album
-	// de musica (ADR-0027/0029), cujo unico vinculo com o arquivo fica na FAIXA, dois
-	// niveis abaixo, sem NUNCA usar media_file_entity para faixa. Generico a qualquer
-	// profundidade e a qualquer kind de relacao (nao hardcoded a musica).
+	// CARD for ONE entity (same derived columns as ListarEntityCards) + release_date
+	// for ordering. Used by the MEMBERS of a collection and by the episodes
+	// of a season (0034): the child list comes from entity_relation and each child becomes
+	// a card through here (small N). The derived columns mirror ListarEntityCards
+	// (owned/file_count/match_confidence/has_poster), so the mapping reuses the cardDTO.
+	// owned/file_count ALSO count the media_file_entity junction -- see the long note in
+	// ListarEntityCards (the episode card owns a file only through the junction).
+	// completeness_complete/completeness_missing_json come from the persisted CACHE
+	// entity_catalog_completeness (recomputed in batch by the
+	// saude_biblioteca job) via LEFT JOIN -- NULL when the item has not been
+	// evaluated yet (new item, or draft).
+	// Tree ownership (entity_relation): beyond the DIRECT file and the
+	// media_file_entity junction (SIBLING ownership, see the long note in ListarEntityCards),
+	// it also adds any DESCENDANT in the entity_relation tree (recursive CTE
+	// parent_id->child_id) that has a 'present' media_file -- covers music
+	// artist/album (ADR-0027/0029), whose only link to the file lives in the TRACK, two
+	// levels below, without EVER using media_file_entity for a track. Generic to any
+	// depth and to any relation kind (not hardcoded to music).
 	ObterEntityCard(ctx context.Context, id string) (ObterEntityCardRow, error)
 	ObterEntityPorImdb(ctx context.Context, externalIDImdb sql.NullString) (Entity, error)
-	// Lookup por id externo mbid (MusicBrainz) via coluna gerada + indice (briefing 0106,
-	// ADR-0027 item 6). Espelha ObterEntityPorTmdb: usado pelo import da vertical de musica
-	// para o dedup idempotente de artista/album/faixa por MBID.
+	// Lookup by external mbid (MusicBrainz) via generated column + index (ADR-0027
+	// item 6). Mirrors ObterEntityPorTmdb: used by the music vertical import
+	// for idempotent dedupe of artist/album/track by MBID.
 	ObterEntityPorMbid(ctx context.Context, externalIDMbid sql.NullString) (Entity, error)
-	// Dedup do scanner sem id externo (briefing 0009): reusa a MESMA entity para o
-	// mesmo (type, title, release_date). Usa `IS` (nao `=`) para casar release_date
-	// NULO quando o nome nao traz ano. Mantem o re-scan idempotente para obras sem
-	// id embutido no nome (nao duplica a entity).
+	// Scanner dedupe without an external id: reuses the SAME entity for the
+	// same (type, title, release_date). Uses `IS` (not `=`) to match a NULL
+	// release_date when the name carries no year. Keeps the re-scan idempotent for works
+	// without an id embedded in the name (does not duplicate the entity).
 	ObterEntityPorTituloAno(ctx context.Context, arg ObterEntityPorTituloAnoParams) (Entity, error)
-	// Lookup do scanner de series (briefing 0034): a serie ja no catalogo pelo par
-	// (type, title), ignorando release_date. Usada quando a pasta da serie nao traz id
-	// externo embutido, para reusar a serie ja importada e evitar um novo round-trip ao
-	// provider a cada scan. Primeira por created_at (estavel).
+	// Series scanner lookup: the series already in the catalog by the
+	// (type, title) pair, ignoring release_date. Used when the series folder carries no
+	// embedded external id, to reuse the already imported series and avoid a new
+	// round-trip to the provider on every scan. First by created_at (stable).
 	ObterEntityPorTituloTipo(ctx context.Context, arg ObterEntityPorTituloTipoParams) (Entity, error)
-	// Lookup por id externo tmdb via coluna gerada + indice (doc 04, busca sem GIN).
+	// Lookup by external tmdb id via generated column + index (doc 04, search without GIN).
 	ObterEntityPorTmdb(ctx context.Context, externalIDTmdb sql.NullString) (Entity, error)
-	// Lookup por id externo tvdb via coluna gerada + indice (migration 0007, ADR-0021).
-	// Espelha ObterEntityPorTmdb: series exclusivas do TheTVDB (sem contraparte tmdb/
-	// imdb, ex.: Looney Tunes) deduplicam por este caminho no import.
+	// Lookup by external tvdb id via generated column + index (migration 0007, ADR-0021).
+	// Mirrors ObterEntityPorTmdb: series exclusive to TheTVDB (no tmdb/
+	// imdb counterpart, e.g. Looney Tunes) dedupe through this path on import.
 	ObterEntityPorTvdb(ctx context.Context, externalIDTvdb sql.NullString) (Entity, error)
 	ObterEntityRelation(ctx context.Context, id string) (EntityRelation, error)
-	// Le o cache de UM item externo pela chave logica (source, source_id). fetched_at e
-	// langs_json alimentam a decisao de refresh (TTL + conjunto de idiomas) na app.
+	// Reads the cache of ONE external item by the logical key (source, source_id).
+	// fetched_at and langs_json feed the refresh decision (TTL + language set) in the app.
 	ObterExternalDetail(ctx context.Context, arg ObterExternalDetailParams) (ExternalDetail, error)
-	// Acesso a integration_config (briefing 0095): registro generico de config de
-	// integracao (credenciais/parametros de provider), com precedencia BANCO >
-	// env var calculada pelo Resolver (internal/integration). Comentarios em
-	// ASCII e colunas explicitas -- mesma nota do sqlc v1.31 corrompendo acento
-	// em .sql de query (ver entity.sql).
-	// Le a config de uma integracao pelo slug (sql.ErrNoRows quando o slug nunca
-	// foi gravado -- o Resolver cai para a env var nesse caso).
+	// Access to integration_config: generic registry of integration config
+	// (provider credentials/parameters), with precedence DATABASE >
+	// env var computed by the Resolver (internal/integration). Comments in
+	// ASCII and explicit columns -- same sqlc v1.31 note about corrupting an accent
+	// in a query .sql file (see entity.sql).
+	// Reads the config of an integration by slug (sql.ErrNoRows when the slug was
+	// never written -- the Resolver falls back to the env var in that case).
 	ObterIntegrationConfig(ctx context.Context, slug string) (IntegrationConfig, error)
 	ObterJobDefinition(ctx context.Context, id string) (JobDefinition, error)
 	ObterLibrarySource(ctx context.Context, id string) (LibrarySource, error)
-	// Usada pelo handler POST para detectar path duplicado (ja normalizado) antes
-	// do INSERT e responder 409 com mensagem clara em vez de estourar o UNIQUE.
+	// Used by the POST handler to detect a duplicate path (already normalized) before
+	// the INSERT and answer 409 with a clear message instead of blowing up on the UNIQUE.
 	ObterLibrarySourcePorPath(ctx context.Context, path string) (LibrarySource, error)
-	// Le o cache de UMA fonte especifica da entity (a chave logica do cache).
+	// Reads the cache of ONE specific source of the entity (the logical cache key).
 	ObterMediaExternalPorFonte(ctx context.Context, arg ObterMediaExternalPorFonteParams) (MediaExternal, error)
 	ObterMediaFile(ctx context.Context, id string) (MediaFile, error)
-	// Dedup do scanner: acha o arquivo pelo hash de conteudo (estavel a rename/move).
-	// content_hash NAO e UNIQUE (colisao real e astronomica com o hash parcial), por
-	// isso LIMIT 1. Se achar, o scanner atualiza o path em vez de criar outra linha.
+	// Scanner dedupe: finds the file by content hash (stable across rename/move).
+	// content_hash is NOT UNIQUE (a real collision is astronomical with the partial
+	// hash), hence LIMIT 1. If found, the scanner updates the path instead of a new row.
 	ObterMediaFilePorContentHash(ctx context.Context, contentHash sql.NullString) (MediaFile, error)
-	// Scan incremental (briefing 0064): busca o media_file ja gravado para este
-	// MESMO path (UNIQUE, indexado) ANTES de re-hashear/re-extrair mediainfo --
-	// se mtime+size baterem com o que ja esta aqui, o scanner reusa content_hash/
-	// mediainfo_json em vez de reabrir o arquivo. sql.ErrNoRows para arquivo novo
-	// (nunca visto neste path).
+	// Incremental scan: looks up the media_file already stored for this
+	// SAME path (UNIQUE, indexed) BEFORE re-hashing/re-extracting mediainfo --
+	// if mtime+size match what is already here, the scanner reuses content_hash/
+	// mediainfo_json instead of reopening the file. sql.ErrNoRows for a new file
+	// (never seen at this path).
 	ObterMediaFilePorPath(ctx context.Context, path string) (MediaFile, error)
-	// Le o override da entity (sql.ErrNoRows quando nao ha override ativo).
+	// Reads the entity override (sql.ErrNoRows when there is no active override).
 	ObterMediaOverride(ctx context.Context, entityID string) (MediaOverride, error)
-	// Le a pessoa por (source, source_id) -- a chave logica de dedup.
+	// Reads the person by (source, source_id) -- the logical dedupe key.
 	ObterPersonPorFonte(ctx context.Context, arg ObterPersonPorFonteParams) (Person, error)
-	// Le a pessoa pelo id local (person.id) -- para a pagina da pessoa (briefing 0029
-	// Fase D, GET /person/{id}).
+	// Reads the person by local id (person.id) -- for the person page
+	// (GET /person/{id}).
 	ObterPersonPorID(ctx context.Context, id string) (Person, error)
-	// Guard de dedup (Manager.Enqueue): existe algum item queued/running para
-	// esta MESMA referencia (kind, ref_id)? sql.ErrNoRows = nao existe, pode
-	// enfileirar. O mais recente primeiro (ORDER BY enqueued_at DESC) nao importa
-	// de verdade aqui (so pode existir UM ativo por referencia, ja que o proprio
-	// guard impede um segundo), mas mantem a query deterministica.
+	// Dedupe guard (Manager.Enqueue): is there any queued/running item for
+	// this SAME reference (kind, ref_id)? sql.ErrNoRows = there is none, it may
+	// be enqueued. Newest first (ORDER BY enqueued_at DESC) does not really
+	// matter here (there can be only ONE active item per reference, since the guard
+	// itself prevents a second one), but it keeps the query deterministic.
 	ObterQueueItemAtivo(ctx context.Context, arg ObterQueueItemAtivoParams) (QueueItem, error)
-	// Usado por Manager.Status(kind, refID): o item ATIVO (queued/running) mais
-	// recente da referencia, se houver -- Status cai para
-	// ObterUltimoQueueItemPorKindRef quando esta query devolve sql.ErrNoRows (sem
-	// item ativo, mostra o ultimo resultado finalizado).
+	// Used by Manager.Status(kind, refID): the most recent ACTIVE item
+	// (queued/running) of the reference, if any -- Status falls back to
+	// ObterUltimoQueueItemPorKindRef when this query returns sql.ErrNoRows (with no
+	// active item, it shows the last finished result).
 	ObterQueueItemAtivoPorKindRef(ctx context.Context, arg ObterQueueItemAtivoPorKindRefParams) (QueueItem, error)
 	ObterQueueItemPorId(ctx context.Context, id string) (QueueItem, error)
-	// Complemento de ObterQueueItemAtivoPorKindRef: o item mais recente (QUALQUER
-	// status) de uma referencia -- usado por Manager.Status quando nao ha item
-	// ativo, para devolver o resultado da ULTIMA execucao (sql.ErrNoRows = nunca
-	// houve item nenhum para esta referencia).
+	// Complement of ObterQueueItemAtivoPorKindRef: the most recent item (ANY
+	// status) of a reference -- used by Manager.Status when there is no active
+	// item, to return the result of the LAST execution (sql.ErrNoRows = there never
+	// was any item for this reference).
 	ObterUltimoQueueItemPorKindRef(ctx context.Context, arg ObterUltimoQueueItemPorKindRefParams) (QueueItem, error)
-	// Preenche os campos LOCAIS de reproducao (briefing 0088) SO onde ainda
-	// estao NULL (COALESCE) -- nunca sobrescreve um valor ja presente (mesmo
-	// espirito de "override do dono vence"/"nao-destrutivo", AGENTS.md). Chamada
-	// pelo endpoint POST /entities/{id}/refresh-files apos ler o .nfo em disco
-	// (internal/localmedia.ExtrairCamposUsuario); parametros ausentes no .nfo
-	// entram como NULL/zero-value, o COALESCE cuida do resto.
+	// Fills the LOCAL playback fields ONLY where they are still
+	// NULL (COALESCE) -- never overwrites an already present value (same
+	// spirit of "the owner's override wins"/"non-destructive", AGENTS.md). Called
+	// by the endpoint POST /entities/{id}/refresh-files after reading the .nfo on disk
+	// (internal/localmedia.ExtrairCamposUsuario); parameters absent from the .nfo
+	// come in as NULL/zero-value, the COALESCE takes care of the rest.
 	PreencherCamposLocaisReproducaoSeAusentes(ctx context.Context, arg PreencherCamposLocaisReproducaoSeAusentesParams) error
-	// Curadoria (briefing 0018): um draft (nao-identificado) que o dono CONFIRMA ou
-	// CORRIGE deixa de ser rascunho -- vira 'cataloged' e sai da fila de revisao pelo
-	// ramo do status (senao a confianca sobe a 100 mas o item fica preso como draft).
-	// Guardada por status='draft': no-op idempotente em qualquer outro estado (nao
-	// rebaixa 'wanted'/'unreleased' nem mexe em item ja catalogado).
+	// Curation: a draft (unidentified) that the owner CONFIRMS or
+	// CORRECTS stops being a draft -- it becomes 'cataloged' and leaves the review queue
+	// through the status branch (otherwise the confidence rises to 100 but the item stays
+	// stuck as a draft). Guarded by status='draft': idempotent no-op in any other state (it
+	// does not demote 'wanted'/'unreleased' nor touch an already cataloged item).
 	PromoverDeDraft(ctx context.Context, id string) error
-	// O worker usa isso para achar o proximo item 'queued' mais antigo (FIFO por
-	// enqueued_at; id como desempate estavel quando enqueued_at colide).
-	// sql.ErrNoRows = fila vazia, o worker dorme um intervalo curto.
+	// The worker uses this to find the oldest 'queued' item (FIFO by
+	// enqueued_at; id as a stable tiebreaker when enqueued_at collides).
+	// sql.ErrNoRows = empty queue, the worker sleeps for a short interval.
 	ProximoQueueItemPendente(ctx context.Context) (QueueItem, error)
-	// Re-scan limpo TOTAL: apaga todos os vinculos de um arquivo, de qualquer kind.
-	// Use com cuidado: se o arquivo tem papeis de tipos diferentes, prefira a
-	// variante por kind abaixo para nao apagar vinculo de outro plugin.
+	// FULL clean re-scan: deletes every link of a file, of any kind.
+	// Use with care: if the file has roles of different types, prefer the
+	// per-kind variant below so a link from another plugin is not deleted.
 	RemoverVinculosDoArquivo(ctx context.Context, mediaFileID string) error
-	// Re-scan limpo POR KIND: apaga so os vinculos de um kind daquele arquivo, antes
-	// de recria-los. Preferida no re-scan de um tipo especifico (ex.: o scanner de TV
-	// so mexe nos 'tv_episode', sem tocar vinculos de outros tipos).
+	// PER-KIND clean re-scan: deletes only the links of one kind for that file,
+	// before recreating them. Preferred on the re-scan of a specific type (e.g. the
+	// TV scanner only touches the 'tv_episode' ones, without touching other kinds).
 	RemoverVinculosDoArquivoPorKind(ctx context.Context, arg RemoverVinculosDoArquivoPorKindParams) error
 	SomarTamanhoMediaFilePorFonte(ctx context.Context, librarySourceID sql.NullString) (int64, error)
-	// Grava (ou substitui) uma config. Conflito na PK (key) atualiza value_json e
-	// recarimba updated_at -- nunca cria uma segunda linha para a mesma chave.
+	// Writes (or replaces) a config. A conflict on the PK (key) updates value_json and
+	// restamps updated_at -- it never creates a second row for the same key.
 	UpsertAppSetting(ctx context.Context, arg UpsertAppSettingParams) (AppSetting, error)
-	// Acesso a tabela company (briefing 0029, migration 0010): a produtora/estudio
-	// deduplicada por (source, source_id). Cache re-componivel. Comentarios em ASCII e
-	// colunas explicitas -- ver a nota em entity.sql.
-	// Grava (ou atualiza) a produtora deduplicada por (source, source_id). Conflito na
-	// UNIQUE reusa a linha e atualiza name/logo_path/payload_json, devolvendo o id
-	// existente. `id` so e usado na primeira insercao.
+	// Access to the company table (migration 0010): the production company/studio
+	// deduplicated by (source, source_id). Re-composable cache. Comments in ASCII and
+	// explicit columns -- see the note in entity.sql.
+	// Writes (or updates) the production company deduplicated by (source, source_id).
+	// A conflict on the UNIQUE constraint reuses the row and updates
+	// name/logo_path/payload_json, returning the id; `id` only counts on the first insert.
 	UpsertCompany(ctx context.Context, arg UpsertCompanyParams) (string, error)
-	// Grava (ou substitui) o resultado da avaliacao de completude de CATALOGACAO
-	// (briefing 0058) de UM item -- chamada pelo recalculo em lote
-	// (RecalcularCompletudeCatalogacao, job saude_biblioteca). Conflito na PK
-	// (entity_id) atualiza complete/missing_json e recarimba evaluated_at --
-	// nunca cria uma segunda linha para a mesma entity (1:1, mesmo padrao de
+	// Writes (or replaces) the result of the CATALOG completeness evaluation
+	// of ONE item -- called by the batch recalculation
+	// (RecalcularCompletudeCatalogacao, saude_biblioteca job). A conflict on the PK
+	// (entity_id) updates complete/missing_json and restamps evaluated_at --
+	// never creates a second row for the same entity (1:1, same pattern as
 	// UpsertAppSetting).
 	UpsertEntityCatalogCompleteness(ctx context.Context, arg UpsertEntityCatalogCompletenessParams) error
-	// Acesso ao CACHE do detalhe externo rico (external_detail, briefing 0022): uma linha
-	// por (source, source_id). A primeira consulta faz UPSERT; as proximas LEEM daqui,
-	// com a app decidindo servir do cache ou re-puxar (TTL + gatilho por idiomas).
-	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
-	// Grava (ou atualiza) o cache de UM item externo. Conflito na PK (source, source_id)
-	// atualiza o payload/langs/type e recarimba fetched_at, sem duplicar a linha. E
-	// best-effort na app: uma falha aqui nao impede a leitura (a proxima visita re-tenta).
+	// Access to the CACHE of the rich external detail (external_detail): one row
+	// per (source, source_id). The first lookup does an UPSERT; the next ones READ from
+	// here, with the app deciding whether to serve from the cache or fetch again
+	// (TTL + trigger by languages). Comments in ASCII and explicit columns -- see the
+	// note in entity.sql.
+	// Writes (or updates) the cache of ONE external item. A conflict on the PK (source,
+	// source_id) updates the payload/langs/type and restamps fetched_at, without
+	// duplicating the row. It is best-effort in the app: a failure here does not block
 	UpsertExternalDetail(ctx context.Context, arg UpsertExternalDetailParams) error
-	// Grava (ou substitui) o values_json inteiro de um slug. Conflito na PK
-	// (slug) atualiza values_json e recarimba updated_at -- nunca cria uma
-	// segunda linha para o mesmo slug. O PUT parcial (merge campo a campo,
-	// null remove a chave) e responsabilidade do handler HTTP, que le o valor
-	// atual, mescla em memoria e chama este upsert com o objeto ja completo.
+	// Writes (or replaces) the whole values_json of a slug. A conflict on the PK
+	// (slug) updates values_json and restamps updated_at -- it never creates a
+	// second row for the same slug. The partial PUT (merge field by field, null
+	// removes the key) is the HTTP handler's responsibility: it reads the current
+	// value, merges it in memory and calls this upsert with the object already
+	// complete.
 	UpsertIntegrationConfig(ctx context.Context, arg UpsertIntegrationConfigParams) (IntegrationConfig, error)
-	// Acesso ao cache da camada EXTERNA (media_external): uma linha de payload cru por
-	// (entity_id, source). O re-enriquecimento faz UPSERT por essa chave (ADR-0011).
-	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
-	// Grava (ou atualiza) o cache de UMA fonte para a entity. Conflito na UNIQUE
-	// (entity_id, source) atualiza source_id/payload_json e recarimba fetched_at, sem
-	// duplicar a linha. `id` so e usado na primeira insercao (fica estavel no update).
+	// Access to the cache of the EXTERNAL layer (media_external): one raw payload row per
+	// (entity_id, source). Re-enrichment does an UPSERT on that key (ADR-0011).
+	// Comments in ASCII and explicit columns -- see the note in entity.sql.
+	// Writes (or updates) the cache of ONE source for the entity. A conflict on the UNIQUE
+	// (entity_id, source) updates source_id/payload_json and restamps fetched_at, without
+	// duplicating the row. `id` is only used on the first insert (it stays stable on update).
 	UpsertMediaExternal(ctx context.Context, arg UpsertMediaExternalParams) (MediaExternal, error)
-	// Acesso a camada de OVERRIDE (media_override): patch esparso do dono, 1:1 com a
-	// entity (PK = entity_id). O editor de override (0016) grava aqui via UPSERT.
-	// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
-	// Grava (ou substitui) o override da entity. Conflito na PK (entity_id) atualiza
-	// override_json e recarimba updated_at -- 1:1, nunca cria uma segunda linha.
+	// Access to the OVERRIDE layer (media_override): the owner's sparse patch, 1:1 with
+	// the entity (PK = entity_id). The override editor writes here through an UPSERT.
+	// Comments in ASCII and explicit columns -- see the note in entity.sql.
+	// Writes (or replaces) the entity override. A conflict on the PK (entity_id)
+	// updates override_json and restamps updated_at -- 1:1, never a second row.
 	UpsertMediaOverride(ctx context.Context, arg UpsertMediaOverrideParams) (MediaOverride, error)
-	// Acesso a tabela person (briefing 0029, migration 0010): a pessoa deduplicada por
-	// (source, source_id). Cache re-componivel do payload externo -- o dado do dono nunca
-	// vive aqui. Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql (o
-	// sqlc v1.31 corrompe SQL de query com acento).
-	// Grava (ou atualiza) a pessoa deduplicada por (source, source_id). Conflito na UNIQUE
-	// reusa a linha e atualiza name/profile_path/payload_json, devolvendo o id existente --
-	// assim dois creditos da mesma pessoa apontam para UMA linha. `id` so e usado na
-	// primeira insercao (fica estavel no update).
+	// Access to the person table (migration 0010): the person deduplicated by
+	// (source, source_id). Re-composable cache of the external payload -- the owner's data
+	// never lives here. Comments in ASCII and explicit columns -- see the note in
+	// entity.sql (sqlc v1.31 corrupts query SQL with an accent).
+	// Writes (or updates) the person deduplicated by (source, source_id). A conflict on the
+	// UNIQUE constraint reuses the row and updates name/profile_path/payload_json, returning
+	// the existing id -- so two credits of the same person point at ONE row. `id` is only
+	// used on the first insert (it stays stable on update).
 	UpsertPerson(ctx context.Context, arg UpsertPersonParams) (string, error)
-	// Le um valor da tabela de metadados pela chave. Serve de query-semente para
-	// provar o wiring do sqlc de ponta a ponta; queries de dominio chegam no 0007.
-	// (Comentario em ASCII: o sqlc corrompe o SQL gerado com acentos no .sql de
-	// query -- ver a nota em entity.sql.)
+	// Reads a value from the metadata table by key. It serves as the seed query that
+	// proves the sqlc wiring end to end; domain queries arrive in 0007.
+	// (Comment in ASCII: sqlc corrupts the generated SQL when the query .sql has
+	// accents -- see the note in entity.sql.)
 	ValorMeta(ctx context.Context, chave string) (string, error)
 	VincularHistoricoEventoOrfaoPorImdb(ctx context.Context, arg VincularHistoricoEventoOrfaoPorImdbParams) (int64, error)
-	// Backfill retroativo (briefing 0099): vincula todo evento orfao cujo
-	// raw_tmdb_id bate com o ID que a entity acabou de ganhar. :execrows para o
-	// chamador saber quantas linhas foram vinculadas (log opcional).
+	// Retroactive backfill: links every orphan event whose
+	// raw_tmdb_id matches the ID the entity has just gained. :execrows so the
+	// caller knows how many rows were linked (optional log).
 	VincularHistoricoEventoOrfaoPorTmdb(ctx context.Context, arg VincularHistoricoEventoOrfaoPorTmdbParams) (int64, error)
 	VincularHistoricoEventoOrfaoPorTvdb(ctx context.Context, arg VincularHistoricoEventoOrfaoPorTvdbParams) (int64, error)
 }

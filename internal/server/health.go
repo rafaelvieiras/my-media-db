@@ -5,24 +5,24 @@ import (
 	"net/http"
 )
 
-// healthResponse é o corpo JSON retornado por GET /api/v1/health.
+// healthResponse is the JSON body returned by GET /api/v1/health.
 type healthResponse struct {
 	Status  string   `json:"status"`
 	Version string   `json:"version"`
 	DB      dbHealth `json:"db"`
 }
 
-// dbHealth reporta o estado da fundação de persistência: se o ping respondeu e
-// qual a versão de schema aplicada (goose). Campo adicionado no briefing 0006,
-// sem alterar os campos existentes (status/version) do contrato do 0001.
+// dbHealth reports the state of the persistence foundation: whether the ping answered and
+// which schema version is applied (goose). The field was added without changing the
+// existing ones (status/version) of the health contract.
 type dbHealth struct {
 	OK     bool  `json:"ok"`
 	Schema int64 `json:"schema"`
 }
 
-// healthHandler responde ao endpoint de saúde com 200 e um JSON contendo o
-// status, a versão do binário (injetada em build via -ldflags) e o estado do
-// banco (ping + versão de schema).
+// healthHandler answers the health endpoint with 200 and a JSON containing the status,
+// the binary version (injected at build time via -ldflags) and the database state (ping +
+// schema version).
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	resp := healthResponse{
 		Status:  "ok",
@@ -35,8 +35,8 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// checkDB faz o ping ao banco e lê a versão de schema. Nunca entra em pânico:
-// se não há banco injetado ou o ping falha, devolve ok=false.
+// checkDB pings the database and reads the schema version. It never panics: if no
+// database is injected or the ping fails, it returns ok=false.
 func (s *Server) checkDB(r *http.Request) dbHealth {
 	if s.db == nil {
 		return dbHealth{OK: false, Schema: 0}

@@ -2,9 +2,9 @@ package localmedia
 
 import "testing"
 
-// TestEhArquivoGerenciadoCasosConhecidos cobre os critérios de aceite do
-// briefing 0063 (§5): nomes canônicos do 0062 são reconhecidos como
-// gerenciados; lixo/arquivo estranho não.
+// TestEhArquivoGerenciadoCasosConhecidos covers the acceptance criteria of the
+// artwork classification (see doc 08, §5): canonical names are recognized as
+// managed; junk/a foreign file is not.
 func TestEhArquivoGerenciadoCasosConhecidos(t *testing.T) {
 	videos := []string{"Matrix.1999"}
 
@@ -30,15 +30,15 @@ func TestEhArquivoGerenciadoCasosConhecidos(t *testing.T) {
 		{"season01-poster1.jpg", true},
 		{"season12-poster.png", true},
 
-		// Não identificado: lixo, legenda solta, nfo de outra ferramenta com
-		// nome que não bate com nenhum vídeo da pasta, extensão desconhecida.
+		// Not identified: junk, a loose subtitle, an nfo of another tool whose
+		// name does not match any video in the folder, an unknown extension.
 		{"sample.txt", false},
 		{"Legenda.Portugues.srt", false},
 		{"OutroFilme.nfo", false},
 		{"posterinho.jpg", false},
 		{"posterX.jpg", false},
 		{"random.jpg", false},
-		{"season1-poster.jpg", false}, // NN precisa ter 2 dígitos
+		{"season1-poster.jpg", false}, // NN must have 2 digits
 		{"seasonAB-poster.jpg", false},
 	}
 	for _, c := range casos {
@@ -49,9 +49,10 @@ func TestEhArquivoGerenciadoCasosConhecidos(t *testing.T) {
 	}
 }
 
-// TestEhArquivoGerenciadoSemVideoNaPasta prova que os nomes BARE (arte de
-// pasta exclusiva, tvshow.nfo, season poster) continuam reconhecidos mesmo
-// sem nenhum vídeo na lista (pasta só de temporada/série, sem vídeo próprio).
+// TestEhArquivoGerenciadoSemVideoNaPasta proves that the BARE names (artwork
+// of an exclusive folder, tvshow.nfo, season poster) are still recognized even
+// with no video in the list (a season/series-only folder, with no video of its
+// own).
 func TestEhArquivoGerenciadoSemVideoNaPasta(t *testing.T) {
 	if !EhArquivoGerenciado("poster.jpg", nil) {
 		t.Error("poster.jpg bare deveria ser gerenciado mesmo sem vídeos na pasta")

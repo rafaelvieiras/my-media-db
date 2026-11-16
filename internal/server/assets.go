@@ -17,58 +17,59 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Este arquivo implementa a ARTE CUSTOM do dono (briefing 0017): upload de
-// poster/fanart proprios (origin='user'), a galeria, o servico do binario de um
-// asset e a preferencia (flag em meta_json, uma por (entity, kind)). A decisao de
-// design: a escolha do dono VENCE — a precedencia de servico do poster passa a ser
+// This file implements the owner's CUSTOM ARTWORK: upload of his own
+// poster/fanart (origin='user'), the gallery, the serving of an asset's binary and the
+// preference (a flag in meta_json, one per (entity, kind)). The design decision: the
+// owner's choice WINS — the poster serving precedence becomes
 //
-//	preferida (meta.preferred) -> origin='user' (mais recente) -> origin='local'
-//	(pasta/arquivo no disco, briefing 0119) -> origin='external' -> 404
+//	preferred (meta.preferred) -> origin='user' (most recent) -> origin='local'
+//	(folder/file on disk) -> origin='external' -> 404
 //
-// calculada EM GO (escolherAssetServido) sobre ListarAssetsPorEntity, mantendo a
-// guarda de path-traversal do 0010. O cache externo (0015) casa so origin='external',
-// entao re-enriquecer NUNCA toca a arte do dono (nao-destrutivo, ADR-0012). As
-// escritas passam pelo pool de escrita (ADR-0010). origin='local' (0119) vence
-// origin='external': uma imagem que o dono JA TEM na pasta (folder.jpg/poster.jpg,
-// scanner.descobrirPoster) e tratada como decisao dele -- nao clobra nada do dono
-// (still fica abaixo de user/preferida), mas nao deve perder pra um provider externo.
+// computed IN GO (escolherAssetServido) over ListarAssetsPorEntity, keeping the
+// path-traversal guard. The external cache matches origin='external' only, so
+// re-enriching NEVER touches the owner's artwork (non-destructive, ADR-0012). Writes
+// go through the write pool (ADR-0010). origin='local' wins over origin='external': an
+// image the owner ALREADY HAS in the folder (folder.jpg/poster.jpg,
+// scanner.descobrirPoster) is treated as his decision -- it clobbers nothing of the
+// owner's (still stays below user/preferred), but it must not lose to an external
+// provider.
 const (
-	// kindPoster/kindFanart/kindStill sao os kinds de arte que o dono pode subir;
-	// originUser/originExternal/originLocal etiquetam a proveniencia (dono x cache
-	// externo x arquivo achado no disco pelo scanner). O still (frame 16:9 do
-	// episodio, 0044) e o unico still que vira asset: o still do provider segue lazy
-	// em extension_data (0042), so o custom do dono e arquivo.
+	// kindPoster/kindFanart/kindStill are the artwork kinds the owner can upload;
+	// originUser/originExternal/originLocal label the provenance (owner x external cache
+	// x file found on disk by the scanner). The still (16:9 frame of the episode) is the
+	// only still that becomes an asset: the provider's still stays lazy in
+	// extension_data, only the owner's custom one is a file.
 	kindPoster     = "poster"
 	kindFanart     = "fanart"
 	kindStill      = "still"
 	originUser     = "user"
 	originExternal = "external"
-	// originLocal etiqueta o asset achado pelo SCANNER na pasta da obra (poster.jpg/
-	// folder.jpg, briefing 0088/0119) -- distinto de originUser (upload explicito
-	// pela UI) e originExternal (cache de provider). Mesmo literal "local" que
-	// internal/scanner/match.go e recheck.go ja gravam (pacotes sem import cruzado
-	// -- so uma coincidencia de valor, sem const compartilhada).
+	// originLocal labels the asset found by the SCANNER in the work's folder (poster.jpg/
+	// folder.jpg) -- distinct from originUser (explicit upload through the UI) and
+	// originExternal (provider cache). The same literal "local" that
+	// internal/scanner/match.go and recheck.go already write (packages without a cross
+	// import -- just a coincidence of value, no shared const).
 	originLocal = "local"
-	// kindLogo/kindClearart/kindDisc/kindBanner/kindThumb/kindCharacterart sao os
-	// kinds de arte EXPANDIDOS (briefing 0048): a fanart.tv traz logo, clearart, disc,
-	// banner, thumb e characterart alem de poster/fanart/still. O kind e TEXT livre no
-	// banco; parseKind valida a ENTRADA de upload contra o conjunto abaixo.
+	// kindLogo/kindClearart/kindDisc/kindBanner/kindThumb/kindCharacterart are the
+	// EXPANDED artwork kinds: fanart.tv brings logo, clearart, disc, banner, thumb and
+	// characterart besides poster/fanart/still. The kind stays free TEXT in the
+	// database; parseKind validates the upload INPUT against the set below.
 	kindLogo         = "logo"
 	kindClearart     = "clearart"
 	kindDisc         = "disc"
 	kindBanner       = "banner"
 	kindThumb        = "thumb"
 	kindCharacterart = "characterart"
-	// tamanhoMaxAsset e o teto de bytes de um upload (espelha enrich.tamanhoMaxImagem):
-	// 20 MiB cobre com folga um poster/fanart em alta resolucao.
+	// tamanhoMaxAsset is the byte ceiling of an upload (mirrors enrich.tamanhoMaxImagem):
+	// 20 MiB comfortably covers a high-resolution poster/fanart.
 	tamanhoMaxAsset = 20 << 20
 )
 
-// assetDTO e um item da galeria (GET /assets) e o corpo devolvido por upload/
-// prefer/materialize: os campos publicos do asset mais a flag preferred (lida do
-// meta_json, compat) e a url do binario (a rota do /file). Desde o briefing 0062:
-// IsPrincipal (fonte de verdade em coluna, distinta de Preferred/meta_json) e
-// LocalPath (caminho na pasta REAL da biblioteca, null quando so no cache interno).
+// assetDTO is one gallery item (GET /assets) and the body returned by upload/
+// prefer/materialize: the asset's public fields plus the preferred flag (read from
+// meta_json, compat) and the binary url (the /file route). IsPrincipal (source of truth
+// in a column, distinct from Preferred/meta_json) and LocalPath (path in the library's
+// REAL folder, null when only in the internal cache).
 type assetDTO struct {
 	ID          string  `json:"id"`
 	Kind        string  `json:"kind"`
@@ -79,14 +80,14 @@ type assetDTO struct {
 	URL         string  `json:"url"`
 }
 
-// assetFilePath monta a rota que serve o binario de um asset especifico (miniaturas
-// da galeria). Fonte unica do template.
+// assetFilePath builds the route that serves the binary of a specific asset (gallery
+// thumbnails). Single source of the template.
 func assetFilePath(entityID, assetID string) string {
 	return "/api/v1/entities/" + entityID + "/assets/" + assetID + "/file"
 }
 
-// assetToDTO converte um asset no DTO da API, derivando preferred do meta_json e a
-// url do binario. IsPrincipal/LocalPath vem direto das colunas novas (0062).
+// assetToDTO converts an asset into the API DTO, deriving preferred from meta_json and
+// the binary url. IsPrincipal/LocalPath come straight from the columns.
 func assetToDTO(a sqlcgen.Asset) assetDTO {
 	var localPath *string
 	if a.LocalPath.Valid && a.LocalPath.String != "" {
@@ -104,11 +105,11 @@ func assetToDTO(a sqlcgen.Asset) assetDTO {
 	}
 }
 
-// uploadAsset trata POST /api/v1/entities/{id}/assets: recebe um multipart/form-data
-// (campo `file` + campo `kind`, default poster), valida o mime pelos MAGIC BYTES e o
-// tamanho, grava o binario atomicamente sob {assetsDir}/{entityID}/ e cria o asset
-// origin='user'. 201 com o asset; 404 entity inexistente; 415 tipo nao suportado;
-// 413 grande demais; 422 corpo malformado/sem arquivo.
+// uploadAsset handles POST /api/v1/entities/{id}/assets: receives a multipart/form-data
+// (`file` field + `kind` field, default poster), validates the mime by the MAGIC BYTES
+// and the size, writes the binary atomically under {assetsDir}/{entityID}/ and creates
+// the origin='user' asset. 201 with the asset; 404 unknown entity; 415 unsupported type;
+// 413 too large; 422 malformed body / no file.
 func (s *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -123,8 +124,8 @@ func (s *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ParseMultipartForm mantem ate tamanhoMaxAsset em memoria e transborda o resto
-	// para arquivo temporario; o teto REAL de bytes e reforcado em lerArquivoValidado.
+	// ParseMultipartForm keeps up to tamanhoMaxAsset in memory and spills the rest to a
+	// temporary file; the REAL byte ceiling is enforced in lerArquivoValidado.
 	if err := r.ParseMultipartForm(tamanhoMaxAsset); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "corpo multipart invalido")
 		return
@@ -153,16 +154,16 @@ func (s *Server) uploadAsset(w http.ResponseWriter, r *http.Request) {
 		PathOrUri: caminho,
 	})
 	if err != nil {
-		_ = os.Remove(caminho) // best-effort: nao deixa binario orfao se o INSERT falhar
+		_ = os.Remove(caminho) // best-effort: leaves no orphan binary if the INSERT fails
 		respondErroInterno(w)
 		return
 	}
 	writeJSON(w, http.StatusCreated, assetToDTO(asset))
 }
 
-// kindsValidos e o REGISTRO de kinds de arte aceitos (briefing 0048): poster/fanart/
-// still (0017/0044) mais os da fanart.tv (logo/clearart/disc/banner/thumb/characterart).
-// O kind no banco continua TEXT livre; este conjunto so valida a ENTRADA de upload.
+// kindsValidos is the REGISTRY of accepted artwork kinds: poster/fanart/still plus the
+// fanart.tv ones (logo/clearart/disc/banner/thumb/characterart). The kind in the
+// database remains free TEXT; this set only validates the upload INPUT.
 var kindsValidos = map[string]bool{
 	kindPoster:       true,
 	kindFanart:       true,
@@ -175,8 +176,8 @@ var kindsValidos = map[string]bool{
 	kindCharacterart: true,
 }
 
-// parseKind le o campo `kind` do multipart (default poster) e o valida contra o registro
-// kindsValidos. 422 quando fora do conjunto (comportamento preservado do 0017/0044).
+// parseKind reads the `kind` field of the multipart form (default poster) and validates
+// it against the kindsValidos registry. 422 when outside the set (behavior preserved).
 func parseKind(w http.ResponseWriter, r *http.Request) (string, bool) {
 	kind := r.FormValue("kind")
 	if kind == "" {
@@ -190,10 +191,10 @@ func parseKind(w http.ResponseWriter, r *http.Request) (string, bool) {
 	return kind, true
 }
 
-// lerArquivoValidado le o campo `file`, aplica o teto de tamanho e detecta o mime
-// pelos MAGIC BYTES (http.DetectContentType — nunca a extensao nem o header do
-// cliente). Devolve os bytes e a extensao canonica. 422 sem arquivo/vazio; 413
-// grande demais; 415 tipo nao suportado.
+// lerArquivoValidado reads the `file` field, applies the size ceiling and detects the
+// mime by the MAGIC BYTES (http.DetectContentType — never the extension nor the
+// client's header). Returns the bytes and the canonical extension. 422 without
+// file/empty; 413 too large; 415 unsupported type.
 func lerArquivoValidado(w http.ResponseWriter, r *http.Request) ([]byte, string, bool) {
 	file, _, err := r.FormFile("file")
 	if err != nil {
@@ -202,8 +203,8 @@ func lerArquivoValidado(w http.ResponseWriter, r *http.Request) ([]byte, string,
 	}
 	defer func() { _ = file.Close() }()
 
-	// Le ate o teto + 1 byte: se sobrar, estourou o limite. O LimitReader impede
-	// carregar um arquivo hostil inteiro na memoria.
+	// Reads up to the ceiling + 1 byte: if there is anything left, the limit was exceeded.
+	// The LimitReader prevents loading a whole hostile file into memory.
 	dados, err := io.ReadAll(io.LimitReader(file, tamanhoMaxAsset+1))
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "falha ao ler o arquivo")
@@ -227,8 +228,8 @@ func lerArquivoValidado(w http.ResponseWriter, r *http.Request) ([]byte, string,
 	return dados, ext, true
 }
 
-// extAssetSuportado mapeia o content-type FAREJADO nos primeiros bytes para a
-// extensao canonica. So image/jpeg|png|webp sao aceitos.
+// extAssetSuportado maps the content-type SNIFFED from the first bytes to the canonical
+// extension. Only image/jpeg|png|webp are accepted.
 func extAssetSuportado(contentType string) (string, bool) {
 	switch {
 	case strings.HasPrefix(contentType, "image/jpeg"):
@@ -242,9 +243,9 @@ func extAssetSuportado(contentType string) (string, bool) {
 	}
 }
 
-// gravarBinarioAsset grava o binario ATOMICAMENTE: escreve num arquivo temporario no
-// MESMO diretorio e o renomeia (os.Rename e atomico dentro do mesmo filesystem, sem
-// meio-arquivo visivel). Layout: {assetsDir}/{entityID}/user-{assetID}.{ext}.
+// gravarBinarioAsset writes the binary ATOMICALLY: writes to a temporary file in the SAME
+// directory and renames it (os.Rename is atomic within the same filesystem, no half
+// file ever visible). Layout: {assetsDir}/{entityID}/user-{assetID}.{ext}.
 func (s *Server) gravarBinarioAsset(entityID, assetID, ext string, dados []byte) (string, error) {
 	dir := filepath.Join(s.assetsDir, entityID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -272,9 +273,9 @@ func (s *Server) gravarBinarioAsset(entityID, assetID, ext string, dados []byte)
 	return destino, nil
 }
 
-// listAssets trata GET /api/v1/entities/{id}/assets: a galeria — lista JSON dos
-// assets da entity (id, kind, origin, preferred, url). 200 ([] se nenhum); 404
-// entity inexistente.
+// listAssets handles GET /api/v1/entities/{id}/assets: the gallery — JSON list of the
+// entity's assets (id, kind, origin, preferred, url). 200 ([] when none); 404 unknown
+// entity.
 func (s *Server) listAssets(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -296,10 +297,10 @@ func (s *Server) listAssets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// getAssetFile trata GET /api/v1/entities/{id}/assets/{assetId}/file: serve o
-// binario de UM asset com o content-type correto e a MESMA guarda de path-traversal
-// do poster. 404 se o asset nao existe/nao e da entity/binario sumiu; 403 fora das
-// raizes confiaveis.
+// getAssetFile handles GET /api/v1/entities/{id}/assets/{assetId}/file: serves the binary
+// of ONE asset with the correct content-type and the SAME path-traversal guard as the
+// poster. 404 if the asset does not exist / is not from the entity / the binary is
+// gone; 403 outside the trusted roots.
 func (s *Server) getAssetFile(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -315,19 +316,18 @@ func (s *Server) getAssetFile(w http.ResponseWriter, r *http.Request) {
 	s.servirBinarioAsset(w, r, ctx, asset)
 }
 
-// preferAsset trata PUT /api/v1/entities/{id}/assets/{assetId}/prefer: marca o asset
-// como preferido do seu kind (meta.preferred=true) e LIMPA a flag dos outros do
-// mesmo (entity, kind), preservando as demais chaves do meta_json. Desde o
-// briefing 0062: também materializa fisicamente o alvo (se ainda não tiver
-// local_path) e RENOMEIA os arquivos do mesmo (entity,kind) para refletir a
-// nova ordem (o antigo principal vira o próximo índice de rotação livre; o
-// novo assume o nome bare), setando is_principal=1 nele (e 0 no antigo) — a
-// fonte de verdade em coluna, mantida em SINCRONIA com meta.preferred (lido
-// por escolherAssetServido/artesLocais em todo o resto do sistema, ainda a
-// fonte de verdade PARA A SERVIÇO do binário). 200 com o asset; 404 asset/
-// entity inexistente OU entity sem media_file presente (sem pasta de
-// destino); 502/503 nunca aqui (download já aconteceu no upload/select — ver
-// nota em materializarAsset); 503 sem assetsDir configurado.
+// preferAsset handles PUT /api/v1/entities/{id}/assets/{assetId}/prefer: marks the asset
+// as preferred for its kind (meta.preferred=true) and CLEARS the flag on the others of
+// the same (entity, kind), preserving the other keys of meta_json. It also materializes
+// the target physically (if it has no local_path yet) and RENAMES the files of the same
+// (entity,kind) to reflect the new order (the former principal becomes the next free
+// rotation index; the new one takes the bare name), setting is_principal=1 on it (and 0
+// on the former one) — the source of truth in a column, kept IN SYNC with
+// meta.preferred (read by escolherAssetServido/artesLocais everywhere else, still the
+// source of truth FOR SERVING the binary). 200 with the asset; 404 unknown asset/entity
+// OR entity without a present media_file (no destination folder); 502/503 never here
+// (the download already happened at upload/select — see the note in materializarAsset);
+// 503 without assetsDir configured.
 func (s *Server) preferAsset(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -358,9 +358,9 @@ func (s *Server) preferAsset(w http.ResponseWriter, r *http.Request) {
 		respondErroLocalmedia(w, err)
 		return
 	}
-	// Recarrega: a rotação pode ter mudado o local_path de OUTRO asset do
-	// mesmo kind (o antigo principal) — marcarPreferida só mexe em
-	// meta_json, mas a lista precisa refletir o local_path físico atual.
+	// Reload: the rotation may have changed the local_path of ANOTHER asset of the
+	// same kind (the former principal) — marcarPreferida only touches meta_json, but
+	// the list has to reflect the current physical local_path.
 	assets, err = s.leitura().ListarAssetsPorEntity(ctx, id)
 	if err != nil {
 		respondErroInterno(w)
@@ -375,9 +375,10 @@ func (s *Server) preferAsset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, assetToDTO(atualizado))
 }
 
-// marcarPreferida seta preferred=true no alvo e remove a flag dos demais assets do
-// MESMO kind (merge preservando as outras chaves do meta_json de cada), gravando so
-// as linhas que realmente mudam. Devolve o alvo ja com o meta_json atualizado.
+// marcarPreferida sets preferred=true on the target and removes the flag from the other
+// assets of the SAME kind (merge preserving the other keys of each meta_json), writing
+// only the rows that actually change. Returns the target with its meta_json already
+// updated.
 func (s *Server) marcarPreferida(ctx context.Context, assets []sqlcgen.Asset, alvo sqlcgen.Asset) (sqlcgen.Asset, error) {
 	esc := sqlcgen.New(s.db.Write)
 	for _, a := range assets {
@@ -386,7 +387,7 @@ func (s *Server) marcarPreferida(ctx context.Context, assets []sqlcgen.Asset, al
 		}
 		querPref := a.ID == alvo.ID
 		if metaPreferred(a.MetaJson) == querPref {
-			continue // ja no estado desejado: nada a gravar
+			continue // already in the desired state: nothing to write
 		}
 		nova, err := comPreferred(a.MetaJson, querPref)
 		if err != nil {
@@ -405,10 +406,11 @@ func (s *Server) marcarPreferida(ctx context.Context, assets []sqlcgen.Asset, al
 	return alvo, nil
 }
 
-// deleteAsset trata DELETE /api/v1/entities/{id}/assets/{assetId}: remove uma arte
-// origin='user' (apaga a linha + o binario best-effort). Recusa (422) apagar
-// origin='external' — cache re-puxavel que some no re-enrich (nao-destrutivo,
-// ADR-0012). 200 com o asset removido; 404 se nao existe/nao e da entity.
+// deleteAsset handles DELETE /api/v1/entities/{id}/assets/{assetId}: removes an
+// origin='user' artwork (deletes the row + the binary best-effort). Refuses (422) to
+// delete origin='external' — a re-fetchable cache that disappears on re-enrich
+// (non-destructive, ADR-0012). 200 with the removed asset; 404 if it does not exist /
+// is not from the entity.
 func (s *Server) deleteAsset(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -430,15 +432,15 @@ func (s *Server) deleteAsset(w http.ResponseWriter, r *http.Request) {
 		respondErroInterno(w)
 		return
 	}
-	_ = os.Remove(asset.PathOrUri) // best-effort: some o binario do disco
+	_ = os.Remove(asset.PathOrUri) // best-effort: the binary is removed from disk
 	writeJSON(w, http.StatusOK, assetToDTO(asset))
 }
 
-// ── Helpers compartilhados ───────────────────────────────────────────────────
+// ── Shared helpers ───────────────────────────────────────────────────────────
 
-// obterAssetDaEntity carrega um asset exigindo que ele EXISTA e pertenca a `id`
-// (404 quando ausente ou de outra entity — nao vaza binario por id cruzado). Guarda
-// comum de file/prefer/delete.
+// obterAssetDaEntity loads an asset requiring that it EXISTS and belongs to `id`
+// (404 when absent or from another entity — never leaks a binary through a crossed id).
+// Common guard of file/prefer/delete.
 func (s *Server) obterAssetDaEntity(w http.ResponseWriter, ctx context.Context, id, assetID string) (sqlcgen.Asset, bool) {
 	asset, err := s.leitura().ObterAsset(ctx, assetID)
 	if err != nil {
@@ -456,10 +458,10 @@ func (s *Server) obterAssetDaEntity(w http.ResponseWriter, ctx context.Context, 
 	return asset, true
 }
 
-// servirBinarioAsset serve o binario de um asset (poster ou galeria) com a guarda de
-// PATH-TRAVERSAL (caminhoSobRaizes/raizesConfiaveis) e o content-type correto. 403
-// quando o caminho escapou das raizes confiaveis; 404 quando o binario sumiu do
-// disco. Caminho unico compartilhado por getEntityPoster e getAssetFile.
+// servirBinarioAsset serves the binary of an asset (poster or gallery) with the
+// PATH-TRAVERSAL guard (caminhoSobRaizes/raizesConfiaveis) and the correct content-type.
+// 403 when the path escaped the trusted roots; 404 when the binary is gone from disk.
+// Single path shared by getEntityPoster and getAssetFile.
 func (s *Server) servirBinarioAsset(w http.ResponseWriter, r *http.Request, ctx context.Context, asset sqlcgen.Asset) {
 	raizes, err := s.raizesConfiaveis(ctx)
 	if err != nil {
@@ -472,7 +474,7 @@ func (s *Server) servirBinarioAsset(w http.ResponseWriter, r *http.Request, ctx 
 		return
 	}
 	limpo := filepath.Clean(asset.PathOrUri)
-	f, err := os.Open(limpo) //nolint:gosec // caminho validado por caminhoSobRaizes acima
+	f, err := os.Open(limpo) //nolint:gosec // path validated by caminhoSobRaizes above
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not_found", "arquivo do asset indisponivel")
 		return
@@ -488,14 +490,14 @@ func (s *Server) servirBinarioAsset(w http.ResponseWriter, r *http.Request, ctx 
 	http.ServeContent(w, r, filepath.Base(limpo), info.ModTime(), f)
 }
 
-// escolherAssetServido aplica a PRECEDENCIA DE SERVICO do briefing 0017 (mais o
-// briefing 0119) sobre os assets de um kind: preferida (meta.preferred) ->
-// origin='user' (mais recente) -> origin='local' (primeiro, arquivo achado pelo
-// scanner na pasta) -> origin='external' (primeiro) -> qualquer outro (base) ->
-// nada. `assets` vem de ListarAssetsPorEntity (ordenado por created_at asc), entao
-// "mais recente" = o ultimo do slice e "primeiro" = o primeiro. Helper PURO —
-// testado isoladamente. Subir arte ja a faz vencer a local/externa (o upload e a
-// intencao); marcar preferida so desempata entre varias do dono.
+// escolherAssetServido applies the SERVING PRECEDENCE over the assets of one kind:
+// preferred (meta.preferred) -> origin='user' (most recent) -> origin='local' (first,
+// file found by the scanner in the folder) -> origin='external' (first) -> any other
+// (base) -> nothing. `assets` comes from ListarAssetsPorEntity (ordered by created_at
+// asc), so "most recent" = the last of the slice and "first" = the first one. PURE
+// helper — tested in isolation. Uploading artwork already makes it beat the local /
+// external one (the upload is the intention); marking it preferred only breaks ties
+// between several of the owner's own.
 func escolherAssetServido(assets []sqlcgen.Asset, kind string) (sqlcgen.Asset, bool) {
 	c := coletarCandidatos(assets, kind)
 	switch {
@@ -514,15 +516,15 @@ func escolherAssetServido(assets []sqlcgen.Asset, kind string) (sqlcgen.Asset, b
 	}
 }
 
-// candidatosAsset guarda os candidatos por camada de precedencia enquanto o slice e
-// varrido uma vez (ver escolherAssetServido/coletarCandidatos).
+// candidatosAsset keeps the candidates per precedence layer while the slice is swept
+// once (see escolherAssetServido/coletarCandidatos).
 type candidatosAsset struct {
 	preferida, user, local, external, base sqlcgen.Asset
 	temP, temU, temL, temE, temBase        bool
 }
 
-// coletarCandidatos varre os assets do kind uma vez e preenche cada camada da
-// precedencia (preferida/user/local/external/base).
+// coletarCandidatos sweeps the assets of the kind once and fills each layer of the
+// precedence (preferida/user/local/external/base).
 func coletarCandidatos(assets []sqlcgen.Asset, kind string) candidatosAsset {
 	var c candidatosAsset
 	for _, a := range assets {
@@ -533,32 +535,32 @@ func coletarCandidatos(assets []sqlcgen.Asset, kind string) candidatosAsset {
 	return c
 }
 
-// considerar classifica UM asset nas camadas: base = o primeiro de qualquer origem
-// (ultima defesa antes do 404); preferida = ultima marcada; user = a mais recente;
-// local = a primeira (briefing 0119); external = a primeira.
+// considerar classifies ONE asset into the layers: base = the first one of any origin
+// (last defense before the 404); preferida = the last marked one; user = the most
+// recent; local = the first; external = the first.
 func (c *candidatosAsset) considerar(a sqlcgen.Asset) {
 	if !c.temBase {
 		c.base, c.temBase = a, true
 	}
 	if metaPreferred(a.MetaJson) {
-		c.preferida, c.temP = a, true // ultima preferida (defensivo: deveria haver so uma)
+		c.preferida, c.temP = a, true // last preferred (defensive: there should be only one)
 	}
 	switch a.Origin {
 	case originUser:
-		c.user, c.temU = a, true // ultimo = mais recente
+		c.user, c.temU = a, true // last = most recent
 	case originLocal:
 		if !c.temL {
-			c.local, c.temL = a, true // primeiro local
+			c.local, c.temL = a, true // first local
 		}
 	case originExternal:
 		if !c.temE {
-			c.external, c.temE = a, true // primeiro external
+			c.external, c.temE = a, true // first external
 		}
 	}
 }
 
-// metaPreferred le a flag `preferred` de um meta_json cru (false quando NULL/vazio/
-// malformado ou ausente).
+// metaPreferred reads the `preferred` flag from a raw meta_json (false when NULL/empty/
+// malformed or absent).
 func metaPreferred(ns sql.NullString) bool {
 	if !ns.Valid || ns.String == "" {
 		return false
@@ -576,9 +578,9 @@ func metaPreferred(ns sql.NullString) bool {
 	return b
 }
 
-// comPreferred devolve o meta_json com a flag `preferred` setada ou removida,
-// PRESERVANDO as demais chaves. Quando o mapa esvazia, devolve um NULL (sem meta) em
-// vez de guardar um "{}" inocuo.
+// comPreferred returns the meta_json with the `preferred` flag set or removed,
+// PRESERVING the other keys. When the map empties out, it returns a NULL (no meta)
+// instead of keeping a harmless "{}".
 func comPreferred(ns sql.NullString, preferred bool) (sql.NullString, error) {
 	m := map[string]json.RawMessage{}
 	if ns.Valid && ns.String != "" {
@@ -599,8 +601,8 @@ func comPreferred(ns sql.NullString, preferred bool) (sql.NullString, error) {
 	return sql.NullString{String: string(b), Valid: true}, nil
 }
 
-// assetsIndisponivel responde 503 quando nao ha diretorio de assets configurado
-// (WithAssetsDir) — nao ha onde gravar o binario do upload. Protege o POST.
+// assetsIndisponivel answers 503 when there is no assets directory configured
+// (WithAssetsDir) — there is nowhere to write the upload binary. Protects the POST.
 func (s *Server) assetsIndisponivel(w http.ResponseWriter) bool {
 	if s.assetsDir == "" {
 		writeError(w, http.StatusServiceUnavailable, "assets_unavailable",

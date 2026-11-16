@@ -12,9 +12,9 @@ import (
 	"testing"
 )
 
-// pngAsset é um PNG mínimo válido, distinto do pngFixture do harness só pelo byte
-// marcador (índice 15) — usado para diferenciar dois uploads de poster no mesmo
-// teste (o conteúdo em si é irrelevante, só precisa ser um PNG válido).
+// pngAsset is a minimal valid PNG, different from the harness pngFixture only by the
+// marker byte (index 15) — used to tell two poster uploads apart in the same test
+// (the content itself is irrelevant, it only has to be a valid PNG).
 func pngAsset(marker byte) []byte {
 	b := make([]byte, 16)
 	copy(b, []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a})
@@ -22,11 +22,11 @@ func pngAsset(marker byte) []byte {
 	return b
 }
 
-// uploadAsset envia um multipart/form-data (campo `file` + `kind`) para POST
-// /entities/{id}/assets, espelhando postAsset (internal/server/assets_test.go) —
-// pacotes distintos (server vs e2e) exigem uma cópia local do helper multipart,
-// já que o harness só fala HTTP com o Server real (nenhum acesso direto aos
-// handlers). Exige 201 e devolve o assetDTO decodificado.
+// uploadAsset sends a multipart/form-data (`file` field + `kind`) to POST
+// /entities/{id}/assets, mirroring postAsset (internal/server/assets_test.go) —
+// distinct packages (server vs e2e) require a local copy of the multipart helper,
+// since the harness only speaks HTTP with the real Server (no direct access to the
+// handlers). It requires 201 and returns the decoded assetDTO.
 func (c *cliente) uploadAsset(entityID, kind string, content []byte) map[string]any {
 	c.t.Helper()
 	var buf bytes.Buffer
@@ -70,36 +70,37 @@ func (c *cliente) uploadAsset(entityID, kind string, content []byte) map[string]
 	return m
 }
 
-// TestJornadaMidiasLocais: a jornada ponta-a-ponta do briefing 0062 (materializar
-// arte + NFO na pasta REAL da biblioteca, no padrão Kodi/Emby). Cobre: (1) obter um
-// media_file state=present ligado a uma entity já importada; (2) upload de um poster
-// (fica só no cache interno); (3) POST .../materialize grava o binário fisicamente
-// (nome bare — pasta exclusiva de um único vídeo — e vira principal automaticamente,
-// por ser o primeiro poster do kind); (4) um segundo poster + PUT .../prefer troca o
-// principal, ROTACIONANDO o arquivo físico antigo (poster.<ext> -> poster1.<ext>) sem
-// recopiar bytes, refletido na ordenação de GET /artwork (principal primeiro,
-// is_local_in_library=true); (5) POST .../nfo grava o .nfo com o título resolvido,
-// de forma IDEMPOTENTE (2a chamada sobrescreve o mesmo caminho).
+// TestJornadaMidiasLocais: the end-to-end journey of materializing artwork + NFO
+// into the REAL library folder, following the Kodi/Emby standard. Covers: (1)
+// getting a media_file state=present linked to an already imported entity; (2) the
+// upload of a poster (it stays only in the internal cache); (3) POST .../materialize
+// writes the binary physically (bare name — folder exclusive to a single video — and
+// it becomes principal automatically, being the first poster of the kind); (4) a
+// second poster + PUT .../prefer swaps the principal, ROTATING the old physical file
+// (poster.<ext> -> poster1.<ext>) without recopying bytes, reflected in the ordering
+// of GET /artwork (principal first, is_local_in_library=true); (5) POST .../nfo writes
+// the .nfo with the resolved title, IDEMPOTENTLY (the 2nd call overwrites the same
+// path).
 //
-// Caminho escolhido para o passo (1) (documentado conforme pedido): importar o
-// filme via /api/v1/import (tmdb 603, cria a entity com external_ids.tmdb=603) e
-// DEPOIS escanear uma pasta cujo arquivo de vídeo embute o MESMO id
-// ([tmdbid-603], convenção Jellyfin que internal/naming já reconhece — ver
-// naming_test.go). O scanner casa pelo ID EXTERNO (resolverEntity/
-// acharPorIDExterno em internal/scanner/match.go, prioridade máxima sobre
-// título+ano, confIDExterno=100) e REUSA a mesma entity em vez de criar uma
-// nova — determinístico, sem depender de score de fuzzy-match por título.
+// Path chosen for step (1) (documented as requested): import the movie through
+// /api/v1/import (tmdb 603, creating the entity with external_ids.tmdb=603) and THEN
+// scan a folder whose video file embeds the SAME id ([tmdbid-603], the Jellyfin
+// convention that internal/naming already recognizes — see naming_test.go). The
+// scanner matches by the EXTERNAL ID (resolverEntity/acharPorIDExterno in
+// internal/scanner/match.go, maximum priority over title+year, confIDExterno=100) and
+// REUSES the same entity instead of creating a new one — deterministic, without
+// depending on a fuzzy-match score by title.
 func TestJornadaMidiasLocais(t *testing.T) {
 	c := novoHarness(t)
 
-	// (1a) Importa o filme: entity com external_ids.tmdb=603.
+	// (1a) Imports the movie: entity with external_ids.tmdb=603.
 	ent := c.obj(http.MethodPost, "/api/v1/import",
 		map[string]string{"source": "tmdb", "source_id": "603", "type": "movie"}, http.StatusCreated)
 	id := str(t, ent, "id")
 
-	// (1b) Pasta EXCLUSIVA (um único vídeo): o nome de arte materializada sai
-	// bare (poster.<ext>, extensão real do binário — aqui .png, o mesmo
-	// pngFixture do harness), conforme critério de aceite do briefing 0062.
+	// (1b) EXCLUSIVE folder (a single video): the materialized artwork name comes
+	// out bare (poster.<ext>, the real extension of the binary — here .png, the same
+	// pngFixture of the harness), as the acceptance criterion requires.
 	root := t.TempDir()
 	videoPath := filepath.Join(root, "Matrix (1999) [tmdbid-603].mkv")
 	escreverVideo(t, videoPath)
@@ -109,22 +110,22 @@ func TestJornadaMidiasLocais(t *testing.T) {
 	srcID := str(t, src, "id")
 	c.esperarScan(srcID)
 
-	// O scan casou pelo id embutido: a MESMA entity importada (nao uma nova)
-	// ganhou o media_file present.
+	// The scan matched by the embedded id: the SAME imported entity (not a new one)
+	// got the present media_file.
 	entPosScan := c.obj(http.MethodGet, "/api/v1/entities/"+id, nil, http.StatusOK)
 	if fc, _ := entPosScan["file_count"].(float64); int(fc) != 1 {
 		t.Fatalf("file_count pos-scan = %v, quero 1 (scan devia ligar o arquivo a entity importada, nao criar outra)", entPosScan["file_count"])
 	}
 
-	// (2) Upload do primeiro poster: fica só no cache interno (local_path nil).
+	// (2) Upload of the first poster: it stays only in the internal cache (local_path nil).
 	posterA := c.uploadAsset(id, "poster", pngFixture)
 	assetAID := str(t, posterA, "id")
 	if posterA["local_path"] != nil {
 		t.Fatalf("local_path do upload = %v, quero nil (so no cache ate materializar)", posterA["local_path"])
 	}
 
-	// (3) Materializa: grava fisicamente na pasta real com nome bare e vira
-	// principal automaticamente (primeiro poster do kind).
+	// (3) Materializes: it writes physically into the real folder with a bare name and
+	// becomes principal automatically (first poster of the kind).
 	materializado := c.obj(http.MethodPost,
 		"/api/v1/entities/"+id+"/assets/"+assetAID+"/materialize", nil, http.StatusOK)
 	localA, ok := materializado["local_path"].(string)
@@ -141,8 +142,8 @@ func TestJornadaMidiasLocais(t *testing.T) {
 		t.Errorf("is_principal pos-materialize = %v, quero true (primeiro poster do kind)", materializado["is_principal"])
 	}
 
-	// (4) Segundo poster + PUT /prefer: materializa e assume o nome bare; o
-	// antigo principal é ROTACIONADO fisicamente (renomeado, nao recopiado).
+	// (4) Second poster + PUT /prefer: it materializes and takes the bare name; the
+	// old principal is ROTATED physically (renamed, not recopied).
 	posterB := c.uploadAsset(id, "poster", pngAsset(0x42))
 	assetBID := str(t, posterB, "id")
 
@@ -152,10 +153,10 @@ func TestJornadaMidiasLocais(t *testing.T) {
 	if filepath.Base(localB) != "poster.png" {
 		t.Errorf("nome do novo principal = %q, quero \"poster.png\"", filepath.Base(localB))
 	}
-	// O nome bare é REUSADO pelo novo principal (mesmo diretório/kind): o
-	// antigo conteúdo que estava em localA foi RENOMEADO para poster1.png
-	// (abaixo) antes de localB assumir o mesmo caminho bare com o conteúdo
-	// NOVO — por isso localB == localA (mesmo path, dono trocado).
+	// The bare name is REUSED by the new principal (same directory/kind): the old
+	// content that was in localA was RENAMED to poster1.png (below) before localB
+	// took over the same bare path with the NEW content — that is why
+	// localB == localA (same path, different owner).
 	if localB != localA {
 		t.Errorf("local_path do novo principal = %q, quero igual ao antigo bare %q (nome reusado)", localB, localA)
 	}
@@ -163,8 +164,8 @@ func TestJornadaMidiasLocais(t *testing.T) {
 		t.Errorf("is_principal do novo principal = %v, quero true", preferido["is_principal"])
 	}
 
-	// O CONTEÚDO antigo (posterA) foi preservado, só RENOMEADO para o próximo
-	// índice livre (poster1.png) — nunca apagado nem recopiado.
+	// The old CONTENT (posterA) was preserved, only RENAMED to the next free index
+	// (poster1.png) — never deleted nor recopied.
 	rotacionado := filepath.Join(filepath.Dir(localA), "poster1.png")
 	rotacionadoBytes, err := os.ReadFile(rotacionado)
 	if err != nil {
@@ -173,7 +174,7 @@ func TestJornadaMidiasLocais(t *testing.T) {
 	if !bytes.Equal(rotacionadoBytes, pngFixture) {
 		t.Errorf("conteudo de poster1.png nao bate com o do posterA original (rename deveria preservar bytes)")
 	}
-	// localA/localB (mesmo caminho) agora tem o conteúdo do NOVO principal (posterB).
+	// localA/localB (same path) now hold the content of the NEW principal (posterB).
 	novoConteudo, err := os.ReadFile(localB)
 	if err != nil {
 		t.Fatalf("novo principal nao existe em disco (%s): %v", localB, err)
@@ -182,8 +183,8 @@ func TestJornadaMidiasLocais(t *testing.T) {
 		t.Errorf("conteudo de %s ainda e o do posterA: a materializacao do novo principal deveria ter sobrescrito", localB)
 	}
 
-	// GET /artwork confirma a ordenacao (principal primeiro) e os selos novos
-	// (is_local_in_library/is_principal, briefing 0062 §4).
+	// GET /artwork confirms the ordering (principal first) and the new flags
+	// (is_local_in_library/is_principal).
 	artwork := c.obj(http.MethodGet, "/api/v1/entities/"+id+"/artwork", nil, http.StatusOK)
 	posters, ok := artwork["poster"].([]any)
 	if !ok || len(posters) < 2 {
@@ -200,8 +201,8 @@ func TestJornadaMidiasLocais(t *testing.T) {
 		t.Errorf("is_local_in_library do 1o poster de /artwork = %v, quero true", primeiro["is_local_in_library"])
 	}
 
-	// (5) NFO: grava o .nfo na pasta real, com o titulo resolvido (pt-BR
-	// default: "Matrix", TestJornadaImportarFilme ja prova essa resolucao).
+	// (5) NFO: it writes the .nfo into the real folder, with the resolved title (pt-BR
+	// default: "Matrix", TestJornadaImportarFilme already proves that resolution).
 	nfo := c.obj(http.MethodPost, "/api/v1/entities/"+id+"/nfo", nil, http.StatusOK)
 	nfoPath := str(t, nfo, "nfo_path")
 	if filepath.Base(nfoPath) != "Matrix (1999) [tmdbid-603].nfo" {
@@ -215,7 +216,7 @@ func TestJornadaMidiasLocais(t *testing.T) {
 		t.Errorf("conteudo do nfo nao contem <title>Matrix</title>: %s", corpo)
 	}
 
-	// Idempotente: chamar de novo sobrescreve o MESMO caminho, sem duplicar.
+	// Idempotent: calling it again overwrites the SAME path, without duplicating.
 	nfo2 := c.obj(http.MethodPost, "/api/v1/entities/"+id+"/nfo", nil, http.StatusOK)
 	if got := str(t, nfo2, "nfo_path"); got != nfoPath {
 		t.Errorf("2a chamada de /nfo mudou o caminho: %q != %q (deveria ser idempotente)", got, nfoPath)

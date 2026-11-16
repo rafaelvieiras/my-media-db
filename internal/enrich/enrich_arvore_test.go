@@ -1,9 +1,9 @@
 package enrich
 
-// enrich_arvore_test.go cobre o briefing 0067: Enriquecer (usado por Corrigir,
-// Confirmar candidato, auto-match e o retroativo/enrich-missing) passa a sincronizar
-// a árvore de temporada/episódio sempre que tipo=='tv', em vez de só POST /import
-// (importarSerie) fazer isso.
+// enrich_arvore_test.go covers the tree sync on Enriquecer: Enriquecer (used by Corrigir,
+// Confirmar candidato, auto-match and retroactive/enrich-missing) now syncs
+// the season/episode tree whenever tipo=='tv', instead of only POST /import
+// (importarSerie) doing that.
 
 import (
 	"context"
@@ -15,10 +15,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
-// TestEnriquecerSerieSincronizaArvore: Enriquecer sobre uma entity type='tv' JÁ
-// EXISTENTE (sem árvore ainda, como uma série draft do scanner que ganhou id externo
-// via Corrigir/auto-match) constrói a árvore de temporada/episódio, exatamente como
-// importarSerie (POST /import) já construía.
+// TestEnriquecerSerieSincronizaArvore: Enriquecer on an ALREADY EXISTING entity with
+// type='tv' (without a tree yet, like a draft series from the scanner that gained an external id
+// through Corrigir/auto-match) builds the season/episode tree, exactly as
+// importarSerie (POST /import) already built it.
 func TestEnriquecerSerieSincronizaArvore(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -55,10 +55,10 @@ func TestEnriquecerSerieSincronizaArvore(t *testing.T) {
 	}
 }
 
-// TestEnriquecerSerieArvoreFalhaDegrada: quando a busca da arvore falha (fonte sem
-// suporte a SerieProvider, ex.: provider indisponivel/degradado), Enriquecer NAO
-// retorna erro -- a identidade/titulo/poster continuam aplicados normalmente, so a
-// arvore fica ausente (best-effort, so loga).
+// TestEnriquecerSerieArvoreFalhaDegrada: when the tree fetch fails (source without
+// SerieProvider support, e.g.: provider unavailable/degraded), Enriquecer does NOT
+// return an error -- the identity/title/poster are still applied normally, only the
+// tree is missing (best-effort, it only logs).
 func TestEnriquecerSerieArvoreFalhaDegrada(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -68,9 +68,9 @@ func TestEnriquecerSerieArvoreFalhaDegrada(t *testing.T) {
 	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "s1", Type: tipoSerie, Title: "s1"}); err != nil {
 		t.Fatalf("CriarEntity: %v", err)
 	}
-	// fakeProvider (definido em enrich_test.go) NAO implementa provider.SerieProvider:
-	// arvoreDaSerie falha na asserção de capacidade, exatamente como um provider que
-	// nunca suportou série.
+	// fakeProvider (defined in enrich_test.go) does NOT implement provider.SerieProvider:
+	// arvoreDaSerie fails on the capability assertion, exactly like a provider that
+	// never supported series.
 	fk := &fakeProvider{
 		raw:    json.RawMessage(`{"title":"Serie X"}`),
 		campos: map[string]any{"title": "Serie X", "poster_url": img.URL + "/p.jpg"},
@@ -97,10 +97,10 @@ func TestEnriquecerSerieArvoreFalhaDegrada(t *testing.T) {
 	}
 }
 
-// provSerieContavel embrulha o fake.Provider (que implementa provider.SerieProvider)
-// contando as chamadas a BuscarSerieArvore -- usado para provar que Enriquecer sobre
-// movie/collection NUNCA tenta sincronizar arvore (o parametro sincronizarArvore de
-// enriquecerBase e um no-op fora de tipo=='tv').
+// provSerieContavel wraps the fake.Provider (which implements provider.SerieProvider)
+// counting the calls to BuscarSerieArvore -- used to prove that Enriquecer on
+// movie/collection NEVER tries to sync a tree (the sincronizarArvore parameter of
+// enriquecerBase is a no-op outside tipo=='tv').
 type provSerieContavel struct {
 	*fake.Provider
 	chamadasArvore int
@@ -111,9 +111,9 @@ func (p *provSerieContavel) BuscarSerieArvore(ctx context.Context, sourceID stri
 	return p.Provider.BuscarSerieArvore(ctx, sourceID, langs)
 }
 
-// TestEnriquecerMovieNaoSincronizaArvore: Enriquecer sobre um movie continua se
-// comportando exatamente como antes do 0067 -- em especial, NUNCA tenta buscar a
-// arvore de serie (o fake conta as chamadas a BuscarSerieArvore).
+// TestEnriquecerMovieNaoSincronizaArvore: Enriquecer on a movie keeps behaving
+// exactly as before -- in particular, it NEVER tries to fetch the
+// series tree (the fake counts the calls to BuscarSerieArvore).
 func TestEnriquecerMovieNaoSincronizaArvore(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()

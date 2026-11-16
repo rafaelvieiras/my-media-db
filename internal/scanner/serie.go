@@ -1,23 +1,24 @@
 package scanner
 
-// serie.go é o núcleo do scanner de SÉRIES (briefing 0034): quando a biblioteca é
-// `content_type='series'`, cada arquivo de vídeo é um (ou mais) episódio(s). O fluxo,
-// por arquivo:
+// serie.go is the core of the SERIES scanner: when the library is
+// `content_type='series'`, every video file is one (or more) episode(s). The flow,
+// per file:
 //
-//  1. deriva a IDENTIDADE da série do nome da PASTA da série (a pasta acima de
-//     `Season NN/` quando houver);
-//  2. RESOLVE a entity da série — id externo embutido → catálogo por título →
-//     auto-import do provider (enrich). Ambíguo/não encontrado ⇒ rascunho de revisão;
-//  3. carrega a árvore de episódios da série UMA VEZ (cache por série) e casa o
-//     número do arquivo ao `episode_id` EM MEMÓRIA (ordenação default, com fallback
-//     às demais e ao absoluto);
-//  4. persiste o media_file apontando para a SÉRIE e os vínculos N:M por episódio
-//     (`media_file_entity`, kind='tv_episode'), ANCORADOS no id (ADR-0021): trocar a
-//     ordenação depois re-projeta números sem tocar vínculo nenhum.
+//  1. it derives the IDENTITY of the series from the name of the series FOLDER
+//     (the folder above `Season NN/` when there is one);
+//  2. it RESOLVES the entity of the series — embedded external id → catalog by
+//     title → provider auto-import (enrich). Ambiguous/not found ⇒ review draft;
+//  3. it loads the episode tree of the series ONCE (cache per series) and matches
+//     the number of the file to the `episode_id` IN MEMORY (default ordering, with
+//     a fallback to the others and to the absolute one);
+//  4. it persists the media_file pointing to the SERIES and the N:M links per
+//     episode (`media_file_entity`, kind='tv_episode'), ANCHORED on the id
+//     (ADR-0021): changing the ordering later re-projects numbers without touching
+//     any link.
 //
-// Tudo o que ESCREVE fora da junção (o auto-import, o rascunho de revisão) roda na
-// fase de fatos, fora da transação de escrita do lote — o import do enrich usa a
-// própria conexão de escrita, então não há transação aninhada.
+// Everything that WRITES outside the junction (the auto-import, the review draft)
+// runs in the facts phase, outside the write transaction of the batch — the enrich
+// import uses its own write connection, so there is no nested transaction.
 
 import (
 	"context"
@@ -37,34 +38,38 @@ import (
 )
 
 const (
-	// contentTypeSeries é o valor de library_source.content_type que liga o fluxo de
-	// série (o resto — inclusive o default "movie" — segue o caminho de filme).
+	// contentTypeSeries is the value of library_source.content_type that turns on
+	// the series flow (everything else — including the "movie" default — follows
+	// the movie path).
 	contentTypeSeries = "series"
-	// tipoSerieTV é o entity.type da série (espelha enrich.tipoSerie).
+	// tipoSerieTV is the entity.type of the series (it mirrors enrich.tipoSerie).
 	tipoSerieTV = "tv"
-	// kindRelTemporada/kindVinculoEpisodio: o kind de entity_relation série→temporada
-	// e temporada→episódio (enrich) e o kind do vínculo arquivo↔episódio na junção
-	// media_file_entity. Mesmo rótulo "tv_episode" nos dois papéis, de propósito.
+	// kindRelTemporada/kindVinculoEpisodio: the kind of entity_relation
+	// series→season and season→episode (enrich) and the kind of the
+	// file↔episode link in the media_file_entity junction. The same "tv_episode"
+	// label in both roles, on purpose.
 	kindRelTemporada    = "tv_season"
 	kindVinculoEpisodio = "tv_episode"
-	// nsTV é o namespace do extension_data da vertical de séries (espelha enrich.nsTV).
+	// nsTV is the namespace of the extension_data of the series vertical (it
+	// mirrors enrich.nsTV).
 	nsTV = "core.tv@1"
-	// Confiança do caminho de série (escala 0–100 do confianca()): número casado sem
-	// ambiguidade ≈ 90; série resolvida por id externo embutido = confIDExterno (100).
-	// Sem episódio casado (revisão) cai para confRevisaoSerie, abaixo do limiar do
-	// front (70), o que joga o media_file para a fila de revisão.
+	// Confidence of the series path (0–100 scale of confianca()): a number matched
+	// without ambiguity ≈ 90; a series resolved by an embedded external id =
+	// confIDExterno (100). Without a matched episode (review) it falls to
+	// confRevisaoSerie, below the front threshold (70), which throws the media_file
+	// into the review queue.
 	confSerieEp      = 90
 	confRevisaoSerie = 40
-	// tipoEntTemporada/tipoEntEpisodio/statusRascunho: valores do banco usados
-	// só pelo caminho do episódio provisório (briefing 0133).
+	// tipoEntTemporada/tipoEntEpisodio/statusRascunho: database values used only by
+	// the provisional episode path.
 	tipoEntTemporada = "season"
 	tipoEntEpisodio  = "episode"
 	statusRascunho   = "draft"
 )
 
-// serieResolvida é o resultado (cacheado por série no scan) de resolver a entity de
-// uma série e carregar sua árvore de episódios. emRevisao marca a série que não pôde
-// ser identificada (ambígua/não encontrada) — um rascunho, sem árvore.
+// serieResolvida is the result (cached per series in the scan) of resolving the
+// entity of a series and loading its episode tree. emRevisao marks the series that
+// could not be identified (ambiguous/not found) — a draft, without a tree.
 type serieResolvida struct {
 	serieID   string
 	index     *tvmatch.Index
@@ -72,9 +77,10 @@ type serieResolvida struct {
 	emRevisao bool
 }
 
-// factsSerie monta os fatos de um arquivo de série: deriva a pasta/nome da série,
-// resolve a entity da série (cacheada) e casa o número do arquivo aos episódios. Não
-// escreve o media_file/vínculo (isso é da transação do lote) — só resolve e casa.
+// factsSerie assembles the facts of a series file: it derives the folder/name of
+// the series, resolves the entity of the series (cached) and matches the number of
+// the file to the episodes. It does not write the media_file/link (that belongs to
+// the batch transaction) — it only resolves and matches.
 func (r *scanRun) factsSerie(ctx context.Context, path string) fileFacts {
 	base := semExtensao(filepath.Base(path))
 	f := fileFacts{path: path, isSerie: true, folderDir: filepath.Dir(path)}
@@ -86,22 +92,22 @@ func (r *scanRun) factsSerie(ctx context.Context, path string) fileFacts {
 	f.serieID = res.serieID
 	f.serieConf = res.conf
 	if res.serieID == "" {
-		return f // resolução falhou por completo (sem entity): o gravador pula o arquivo
+		return f // the resolution failed completely (no entity): the writer skips the file
 	}
 
 	ep, ok := naming.ParseEpisode(base)
 	if !ok {
 		log.Printf("scanner: %q sem padrão de episódio reconhecível; vai para revisão", path)
 		if !res.emRevisao && res.index != nil {
-			// Sem SxxEyy no nome, mas a pasta pode dizer a temporada: o arquivo
-			// ainda vira episódio provisório (briefing 0133).
+			// Without SxxEyy in the name, but the folder may tell the season: the
+			// file still becomes a provisional episode.
 			f.prov = provisorioDe(path, base)
 			f.serieConf = res.conf
 		}
 		return f
 	}
 	if res.emRevisao || res.index == nil {
-		return f // série em revisão: media_file fica pendente, sem vínculo
+		return f // series under review: the media_file stays pending, without a link
 	}
 	ids, matched := tvmatch.Casar(res.index, ep)
 	if !matched {
@@ -114,10 +120,11 @@ func (r *scanRun) factsSerie(ctx context.Context, path string) fileFacts {
 	return f
 }
 
-// derivarSerie decide a pasta e o nome da série de um arquivo. Se o arquivo está
-// numa pasta de temporada ("Season 01"), a série é a pasta ACIMA; senão é a pasta
-// imediata. O nome sai do naming.Parse (título limpo + id externo embutido). Arquivo
-// solto na raiz cai no nome do próprio arquivo (série mal identificada → revisão).
+// derivarSerie decides the folder and the name of the series of a file. If the
+// file is in a season folder ("Season 01"), the series is the folder ABOVE it;
+// otherwise it is the immediate folder. The name comes from naming.Parse (clean
+// title + embedded external id). A file loose at the root falls back to its own
+// file name (a poorly identified series → review).
 func derivarSerie(root, path string) (serieFolder, serieNome string, info naming.Info) {
 	dir := filepath.Dir(path)
 	base := filepath.Base(dir)
@@ -143,9 +150,9 @@ func derivarSerie(root, path string) (serieFolder, serieNome string, info naming
 	return serieFolder, serieNome, info
 }
 
-// resolverSerie devolve a resolução da série, do cache do scan quando já vista. Chave
-// = pasta da série, para que todos os arquivos daquela série reusem a mesma entity e
-// o mesmo índice sem re-buscar/re-importar.
+// resolverSerie returns the resolution of the series, from the scan cache when
+// already seen. Key = folder of the series, so that every file of that series
+// reuses the same entity and the same index without re-fetching/re-importing.
 func (r *scanRun) resolverSerie(ctx context.Context, serieFolder, serieNome string, folderInfo naming.Info) serieResolvida {
 	if v, ok := r.serieCache[serieFolder]; ok {
 		return v
@@ -155,10 +162,10 @@ func (r *scanRun) resolverSerie(ctx context.Context, serieFolder, serieNome stri
 	return res
 }
 
-// resolverSerieMiss resolve a série ausente do cache. Ordem (0034 §C.3): id externo
-// embutido (type=tv) → catálogo por título (type=tv) → auto-import pelo nome. Sucesso
-// carrega o índice de episódios. Ambíguo/não encontrado/import desligado → rascunho
-// de revisão (find-or-create por título), SEM árvore.
+// resolverSerieMiss resolves a series missing from the cache. Order: embedded
+// external id (type=tv) → catalog by title (type=tv) → auto-import by name.
+// Success loads the episode index. Ambiguous/not found/import off → review draft
+// (find-or-create by title), WITHOUT a tree.
 func (r *scanRun) resolverSerieMiss(ctx context.Context, serieNome string, folderInfo naming.Info) serieResolvida {
 	q := sqlcgen.New(r.m.db.Read)
 
@@ -176,15 +183,14 @@ func (r *scanRun) resolverSerieMiss(ctx context.Context, serieNome string, folde
 	return serieResolvida{serieID: r.acharOuCriarDraftSerie(ctx, serieNome), conf: confRevisaoSerie, emRevisao: true}
 }
 
-// tentarImportarSerie tenta o auto-import de uma série pelo NOME (0034):
-// extraído de resolverSerieMiss (briefing 0120) para ser reutilizável pela
-// reconciliação de séries-rascunho (reconciliar.go), que precisa da MESMA
-// tentativa de import fora do contexto de um scanRun. ok=false em qualquer
-// degradação/falha -- sem SerieImporter configurado, nome vazio, ou o import
-// falhou (ambíguo/não encontrado/erro de rede) -- com os MESMOS 3 logs de
-// sempre. Sucesso: dispara a materialização automática opcional (best-effort,
-// nunca aborta a resolução) e devolve a serieResolvida já com o índice de
-// episódios carregado.
+// tentarImportarSerie tries the auto-import of a series by NAME: extracted from
+// resolverSerieMiss so it can be reused by the reconciliation of draft series
+// (reconciliar.go), which needs the SAME import attempt outside the context of a
+// scanRun. ok=false on any degradation/failure -- no SerieImporter configured,
+// an empty name, or the import failed (ambiguous/not found/network error) -- with
+// the SAME 3 logs as always. Success: it fires the optional automatic
+// materialization (best-effort, it never aborts the resolution) and returns the
+// serieResolvida already with the episode index loaded.
 func (m *Manager) tentarImportarSerie(ctx context.Context, serieNome string, langs []string, preferredLang string) (serieResolvida, bool) {
 	if m.serieImporter == nil || serieNome == "" {
 		return serieResolvida{}, false
@@ -200,8 +206,8 @@ func (m *Manager) tentarImportarSerie(ctx context.Context, serieNome string, lan
 		}
 		return serieResolvida{}, false
 	}
-	// Materialização automática opcional (0089): best-effort, nunca
-	// aborta a resolução -- a série já foi importada com sucesso.
+	// Optional automatic materialization (0089): best-effort, it never aborts the
+	// resolution -- the series was already imported successfully.
 	if m.materializador != nil {
 		if merr := m.materializador.MaterializarSeAutoDownloadLigado(ctx, id); merr != nil {
 			log.Printf("scanner: materialização automática da série %q falhou (%v)", serieNome, merr)
@@ -210,8 +216,9 @@ func (m *Manager) tentarImportarSerie(ctx context.Context, serieNome string, lan
 	return serieResolvida{serieID: id, index: m.carregarIndex(ctx, id), conf: confSerieEp}, true
 }
 
-// langsPermitidos devolve os idiomas permitidos (settings) para o auto-import, ou nil
-// quando o scanner opera sem essa fonte (o provider cai no idioma default).
+// langsPermitidos returns the allowed languages (settings) for the auto-import, or
+// nil when the scanner runs without that source (the provider falls back to the
+// default language).
 func (r *scanRun) langsPermitidos(ctx context.Context) []string {
 	if r.m.idiomas == nil {
 		return nil
@@ -219,11 +226,10 @@ func (r *scanRun) langsPermitidos(ctx context.Context) []string {
 	return r.m.idiomas(ctx)
 }
 
-// preferredLangDaFonte devolve o idioma preferido da library_source que
-// disparou este scan (briefing 0084), ou "" quando a fonte não tem
-// preferência definida -- nesse caso o SerieImporter cai no idioma global
-// (langsPermitidos/Manager.idiomas), mesmo comportamento de antes deste
-// briefing.
+// preferredLangDaFonte returns the preferred language of the library_source that
+// triggered this scan, or "" when the source has no defined preference -- in that
+// case the SerieImporter falls back to the global language
+// (langsPermitidos/Manager.idiomas), the same behavior as before.
 func (r *scanRun) preferredLangDaFonte() string {
 	if r.source.PreferredLanguage == nil {
 		return ""
@@ -231,9 +237,9 @@ func (r *scanRun) preferredLangDaFonte() string {
 	return *r.source.PreferredLanguage
 }
 
-// acharSeriePorIDExterno procura a série pelo id embutido no nome da pasta (tmdb tem
-// prioridade sobre imdb), FILTRANDO type='tv' — um id numérico igual ao de um filme
-// não deve casar a série.
+// acharSeriePorIDExterno looks the series up by the id embedded in the folder name
+// (tmdb has priority over imdb), FILTERING type='tv' — a numeric id equal to that
+// of a movie must not match the series.
 func acharSeriePorIDExterno(ctx context.Context, q *sqlcgen.Queries, info naming.Info) (string, bool) {
 	if info.TMDBID != "" {
 		if e, err := q.ObterEntityPorTmdb(ctx, nsOpt(info.TMDBID)); err == nil && e.Type == tipoSerieTV {
@@ -248,14 +254,13 @@ func acharSeriePorIDExterno(ctx context.Context, q *sqlcgen.Queries, info naming
 	return "", false
 }
 
-// acharSeriePorTitulo procura a série já no catálogo pelo par (type='tv', título),
-// para reusar uma série importada num scan anterior sem novo round-trip ao provider.
-// SEM filtro de status, de propósito: usada EXCLUSIVAMENTE por
-// acharOuCriarDraftSerie (find-or-create do rascunho de revisão), que precisa
-// continuar reencontrando o MESMO draft já criado para não duplicá-lo a cada
-// scan. O caminho de RESOLUÇÃO (resolverSerieMiss) usa
-// acharSerieResolvidaPorTitulo abaixo, que filtra rascunho -- NÃO reuse esta
-// função ali (briefing 0120).
+// acharSeriePorTitulo looks the series up in the catalog by the pair (type='tv',
+// title), to reuse a series imported in a previous scan without a new round-trip to
+// the provider. WITHOUT a status filter, on purpose: it is used EXCLUSIVELY by
+// acharOuCriarDraftSerie (find-or-create of the review draft), which needs to keep
+// finding the SAME draft already created so as not to duplicate it on every scan.
+// The RESOLUTION path (resolverSerieMiss) uses acharSerieResolvidaPorTitulo below,
+// which filters drafts out -- do NOT reuse this function there.
 func acharSeriePorTitulo(ctx context.Context, q *sqlcgen.Queries, nome string) (string, bool) {
 	if nome == "" {
 		return "", false
@@ -267,15 +272,14 @@ func acharSeriePorTitulo(ctx context.Context, q *sqlcgen.Queries, nome string) (
 	return "", false
 }
 
-// acharSerieResolvidaPorTitulo procura a série já RESOLVIDA de verdade
-// (type='tv', título, qualquer status DIFERENTE de 'draft') -- usada SÓ pelo
-// caminho de RESOLUÇÃO (resolverSerieMiss). Bug corrigido no briefing 0120: um
-// rascunho de revisão (status='draft', criado por acharOuCriarDraftSerie)
-// nunca deve ser reencontrado aqui como se fosse identidade resolvida --
-// antes deste fix, isso bloqueava PERMANENTEMENTE a tentativa de auto-import
-// real (tentarImportarSerie nunca era alcançado de novo depois que o
-// rascunho existia). "", false tanto para "não achou" quanto para "achou,
-// mas é rascunho".
+// acharSerieResolvidaPorTitulo looks up the series that is really RESOLVED
+// (type='tv', title, any status DIFFERENT from 'draft') -- used ONLY by the
+// RESOLUTION path (resolverSerieMiss). Bug fixed: a review draft (status='draft',
+// created by acharOuCriarDraftSerie) must never be found here as if it were a
+// resolved identity -- before this fix, that PERMANENTLY blocked the real
+// auto-import attempt (tentarImportarSerie was never reached again once the draft
+// existed). "", false both for "did not find it" and for "found it, but it is a
+// draft".
 func acharSerieResolvidaPorTitulo(ctx context.Context, q *sqlcgen.Queries, nome string) (string, bool) {
 	if nome == "" {
 		return "", false
@@ -287,11 +291,12 @@ func acharSerieResolvidaPorTitulo(ctx context.Context, q *sqlcgen.Queries, nome 
 	return e.ID, true
 }
 
-// acharOuCriarDraftSerie é o FALLBACK de revisão: reusa (find) a série rascunho pelo
-// título ou cria uma entity type='tv' status='draft' (não-identificada, visível na
-// fila de revisão/órfãs — 0018). É a âncora NOT NULL do media_file quando a série não
-// pôde ser resolvida; NÃO é uma série "fantasma" com episódios inventados. "" só
-// quando nem isso pôde ser criado (o gravador então pula o arquivo).
+// acharOuCriarDraftSerie is the review FALLBACK: it reuses (find) the draft series
+// by title or creates an entity type='tv' status='draft' (unidentified, visible in
+// the review/orphan queue — 0018). It is the NOT NULL anchor of the media_file when
+// the series could not be resolved; it is NOT a "ghost" series with invented
+// episodes. "" only when not even that could be created (the writer then skips the
+// file).
 func (r *scanRun) acharOuCriarDraftSerie(ctx context.Context, nome string) string {
 	if id, ok := acharSeriePorTitulo(ctx, sqlcgen.New(r.m.db.Read), nome); ok {
 		return id
@@ -314,12 +319,12 @@ func (r *scanRun) acharOuCriarDraftSerie(ctx context.Context, nome string) strin
 	return id
 }
 
-// carregarIndex monta o índice número→episode_id de uma série, lendo a série (para as
-// ordenações) e cada episódio (numbering + absolute_number no extension_data). É a
-// leitura ÚNICA por série do scan; o casamento em memória (internal/tvmatch) vem
-// depois, sem SQL. Método de Manager (não scanRun, briefing 0120) para ser
-// reutilizável fora de um scan (reconciliar.go, tentarImportarSerie) -- não usa
-// nenhum estado específico de scanRun.
+// carregarIndex assembles the number→episode_id index of a series, reading the
+// series (for the orderings) and each episode (numbering + absolute_number in the
+// extension_data). It is the SINGLE read per series of the scan; the in-memory
+// matching (internal/tvmatch) comes after, without SQL. A Manager method (not
+// scanRun) so it can be reused outside a scan (reconciliar.go,
+// tentarImportarSerie) -- it uses no scanRun-specific state.
 func (m *Manager) carregarIndex(ctx context.Context, serieID string) *tvmatch.Index {
 	q := sqlcgen.New(m.db.Read)
 	idx := tvmatch.NovoIndex()
@@ -345,8 +350,9 @@ func (m *Manager) carregarIndex(ctx context.Context, serieID string) *tvmatch.In
 	return idx
 }
 
-// indexarTemporada percorre os episódios de UMA temporada e os insere no índice.
-// Temporada ilegível é pulada (degrada sem derrubar o resto do índice).
+// indexarTemporada walks the episodes of ONE season and inserts them into the
+// index. An unreadable season is skipped (it degrades without taking down the rest
+// of the index).
 func (m *Manager) indexarTemporada(ctx context.Context, q *sqlcgen.Queries, idx *tvmatch.Index, tempID string) {
 	eps, err := q.ListarRelacoesFilhas(ctx, tempID)
 	if err != nil {
@@ -360,8 +366,9 @@ func (m *Manager) indexarTemporada(ctx context.Context, q *sqlcgen.Queries, idx 
 	}
 }
 
-// indexarEpisodio lê o extension_data de um episódio e delega a montagem em memória
-// (numbering + absolute_number) ao internal/tvmatch. Episódio ilegível é pulado.
+// indexarEpisodio reads the extension_data of an episode and delegates the in-memory
+// assembly (numbering + absolute_number) to internal/tvmatch. An unreadable episode
+// is skipped.
 func (m *Manager) indexarEpisodio(ctx context.Context, q *sqlcgen.Queries, idx *tvmatch.Index, epID string) {
 	ent, err := q.ObterEntity(ctx, epID)
 	if err != nil {
@@ -370,19 +377,20 @@ func (m *Manager) indexarEpisodio(ctx context.Context, q *sqlcgen.Queries, idx *
 	idx.IndexarEpisodio(epID, extrairTVNS(ent.ExtensionDataJson))
 }
 
-// gravarArquivoSerie persiste o arquivo de série: o media_file aponta para a SÉRIE (a
-// obra), e os vínculos por episódio vivem na junção N:M. Idempotente: dedup por
-// content_hash (rename/move) e re-scan limpo dos vínculos por kind antes de recriar
-// — os ids re-projetados no scan atual, nunca números. Sem episódio casado, o
-// media_file entra com confiança de revisão (aparece pendente na fila).
+// gravarArquivoSerie persists the series file: the media_file points to the SERIES
+// (the work), and the per-episode links live in the N:M junction. Idempotent: dedup
+// by content_hash (rename/move) and a clean re-scan of the links by kind before
+// recreating — the ids re-projected in the current scan, never numbers. Without a
+// matched episode, the media_file enters with review confidence (it shows up as
+// pending in the queue).
 func (r *scanRun) gravarArquivoSerie(ctx context.Context, q *sqlcgen.Queries, f fileFacts) error {
 	if f.serieID == "" {
 		log.Printf("scanner: pulando %q: série não resolvível e sem rascunho", f.path)
 		return nil
 	}
 
-	// A árvore externa não tinha o episódio, mas o arquivo declara a numeração:
-	// cria o provisório e segue como um vínculo normal (briefing 0133).
+	// The external tree did not have the episode, but the file declares the
+	// numbering: it creates the provisional one and continues as a normal link.
 	if len(f.episodeIDs) == 0 && f.prov != nil {
 		ids, perr := r.acharOuCriarProvisorios(ctx, q, f.serieID, *f.prov)
 		if perr != nil {
@@ -402,8 +410,8 @@ func (r *scanRun) gravarArquivoSerie(ctx context.Context, q *sqlcgen.Queries, f 
 		return err
 	}
 
-	// Re-scan limpo dos vínculos de episódio deste arquivo (não toca outros kinds) e
-	// recria pelos ids casados agora — a âncora do ADR-0021.
+	// Clean re-scan of the episode links of this file (it does not touch other
+	// kinds) and recreation from the ids matched now — the ADR-0021 anchor.
 	if err := q.RemoverVinculosDoArquivoPorKind(ctx, sqlcgen.RemoverVinculosDoArquivoPorKindParams{
 		MediaFileID: mediaFileID,
 		Kind:        kindVinculoEpisodio,
@@ -423,8 +431,8 @@ func (r *scanRun) gravarArquivoSerie(ctx context.Context, q *sqlcgen.Queries, f 
 	return nil
 }
 
-// upsertMediaFileSerie cria o media_file (ou reencontra pelo content_hash e atualiza
-// o path/estado). Devolve o id do media_file para os vínculos.
+// upsertMediaFileSerie creates the media_file (or finds it again by content_hash
+// and updates the path/state). It returns the media_file id for the links.
 func (r *scanRun) upsertMediaFileSerie(ctx context.Context, q *sqlcgen.Queries, f fileFacts, matchConf float64) (string, error) {
 	existente, err := q.ObterMediaFilePorContentHash(ctx, nsOpt(f.hash))
 	if err == nil {
@@ -458,35 +466,37 @@ func (r *scanRun) upsertMediaFileSerie(ctx context.Context, q *sqlcgen.Queries, 
 	return id, cerr
 }
 
-// extrairTVNS extrai o objeto do namespace core.tv@1 do extension_data. nil quando
-// ausente/ilegível (o chamador degrada — série/episódio sem numeração não indexa).
-// Delega ao parser único de tvext (mesmo envelope namespace→objeto reusado pelo
-// server no 0039); mantido como nome local pela clareza dos chamadores do scanner.
+// extrairTVNS extracts the object of the core.tv@1 namespace from the
+// extension_data. nil when absent/unreadable (the caller degrades — a series/episode
+// without numbering is not indexed). It delegates to the single parser of tvext (the
+// same namespace→object envelope reused by the server); kept as a local name for the
+// clarity of the scanner callers.
 func extrairTVNS(raw sql.NullString) map[string]any {
 	return tvext.Namespace(raw, nsTV)
 }
 
-// provisorioEpisodio é a numeração que o ARQUIVO declara e a árvore externa
-// não tem (briefing 0133): temporada + números lidos do nome, ou só a
-// temporada da pasta quando o nome não traz SxxEyy. titulo é o nome do arquivo
-// sem extensão, usado como título do episódio provisório.
+// provisorioEpisodio is the numbering that the FILE declares and the external tree
+// does not have: season + numbers read from the name, or only the season of the
+// folder when the name does not carry SxxEyy. titulo is the file name without
+// extension, used as the title of the provisional episode.
 type provisorioEpisodio struct {
 	season  int
 	numeros []int
 	titulo  string
-	arquivo string // nome do arquivo sem extensão: chave de dedup quando não há número
+	arquivo string // file name without extension: dedup key when there is no number
 }
 
-// provisorioDe monta o provisório a partir do parse do nome do arquivo ou, sem
-// SxxEyy, da pasta de temporada em que ele vive. Devolve nil quando não há
-// temporada confiável (arquivo solto na raiz, pasta que não é de temporada).
+// provisorioDe assembles the provisional one from the parse of the file name or,
+// without SxxEyy, from the season folder it lives in. It returns nil when there is
+// no reliable season (a file loose at the root, a folder that is not a season one).
 func provisorioDe(path, base string) *provisorioEpisodio {
 	if ep, ok := naming.ParseEpisode(base); ok && len(ep.Episodes) > 0 && !ep.IsAbsolute {
 		return &provisorioEpisodio{season: ep.Season, numeros: ep.Episodes, titulo: tituloDoArquivo(base), arquivo: base}
 	}
 	if pareceExtra(base) {
-		// Extras (featurette, sample, trailer...) moram nas pastas de temporada e
-		// não são episódios: viram provisório só quando o nome diz o número.
+		// Extras (featurette, sample, trailer...) live in the season folders and
+		// are not episodes: they only become provisional when the name states the
+		// number.
 		return nil
 	}
 	if n, ok := naming.NumeroDaPastaTemporada(filepath.Base(filepath.Dir(path))); ok {
@@ -495,11 +505,11 @@ func provisorioDe(path, base string) *provisorioEpisodio {
 	return nil
 }
 
-// tituloDoArquivo limpa o nome do arquivo para servir de título do provisório
-// (remove tokens técnicos como resolução e fonte). O número do episódio, quando
-// existe, entra no título pelo chamador ("Episódio N"), o mesmo padrão que o
-// enriquecimento usa quando a fonte não dá título — o nome cru do arquivo fica
-// no media_file.path de qualquer forma.
+// tituloDoArquivo cleans the file name so it can serve as the title of the
+// provisional episode (it removes technical tokens such as resolution and source).
+// The episode number, when it exists, enters the title through the caller
+// ("Episódio N"), the same pattern the enrichment uses when the source gives no
+// title — the raw file name stays in media_file.path anyway.
 func tituloDoArquivo(base string) string {
 	if t := naming.Parse(base).Title; t != "" {
 		return t
@@ -507,16 +517,16 @@ func tituloDoArquivo(base string) string {
 	return base
 }
 
-// palavrasDeExtra são os nomes que marcam material extra dentro de uma pasta de
-// temporada. Sem elas, um "Season 01/featurette bonus.mkv" viraria episódio
-// provisório — o que seria mentira sobre a biblioteca.
+// palavrasDeExtra are the names that mark extra material inside a season folder.
+// Without them, a "Season 01/featurette bonus.mkv" would become a provisional
+// episode — which would be a lie about the library.
 var palavrasDeExtra = []string{
 	"featurette", "sample", "trailer", "teaser", "extras", "bonus", "deleted",
 	"behind the scenes", "behind-the-scenes", "bloopers", "outtakes", "interview",
 	"making of", "making-of", "promo", "recap",
 }
 
-// pareceExtra diz se o nome do arquivo marca material extra.
+// pareceExtra tells whether the file name marks extra material.
 func pareceExtra(base string) bool {
 	l := strings.ToLower(base)
 	for _, p := range palavrasDeExtra {
@@ -527,10 +537,10 @@ func pareceExtra(base string) bool {
 	return false
 }
 
-// acharOuCriarProvisorios devolve os ids dos episódios provisórios para o
-// arquivo: um por número lido do nome, ou um só sem numeração (dedup por
-// título dentro da temporada). Cria a temporada quando ela também não existe
-// na série. Idempotente: re-scan acha o que já foi criado.
+// acharOuCriarProvisorios returns the ids of the provisional episodes for the file:
+// one per number read from the name, or a single one without numbering (dedup by
+// title inside the season). It creates the season when it does not exist in the
+// series either. Idempotent: a re-scan finds what was already created.
 func (r *scanRun) acharOuCriarProvisorios(ctx context.Context, q *sqlcgen.Queries, serieID string, prov provisorioEpisodio) ([]string, error) {
 	tempID, err := r.acharOuCriarTemporadaProvisoria(ctx, q, serieID, prov.season)
 	if err != nil {
@@ -554,9 +564,9 @@ func (r *scanRun) acharOuCriarProvisorios(ctx context.Context, q *sqlcgen.Querie
 	return ids, nil
 }
 
-// acharOuCriarTemporadaProvisoria faz o find-or-create da temporada pelo
-// sort_index dentro da série (mesma chave que o enrich usa em
-// acharOuCriarTemporada, sem id de fonte).
+// acharOuCriarTemporadaProvisoria does the find-or-create of the season by
+// sort_index inside the series (the same key the enrich uses in
+// acharOuCriarTemporada, without a source id).
 func (r *scanRun) acharOuCriarTemporadaProvisoria(ctx context.Context, q *sqlcgen.Queries, serieID string, season int) (string, error) {
 	rels, err := q.ListarRelacoesFilhas(ctx, serieID)
 	if err != nil {
@@ -587,11 +597,11 @@ func (r *scanRun) acharOuCriarTemporadaProvisoria(ctx context.Context, q *sqlcge
 	return id, nil
 }
 
-// acharOuCriarEpisodioProvisorio faz o find-or-create do episódio na temporada:
-// com número, a chave é o sort_index da relação (como o enrich liga); sem
-// número, é o título exato dentro da temporada. O provisório nasce
-// status='draft' e marca a origem no extension_data, para a UI e a
-// reconciliação (briefing 0120) saberem que o número veio do arquivo.
+// acharOuCriarEpisodioProvisorio does the find-or-create of the episode in the
+// season: with a number, the key is the sort_index of the relation (the way the
+// enrich links); without a number, it is the exact title inside the season. The
+// provisional one is born status='draft' and marks the origin in the extension_data,
+// so the UI and the reconciliation know that the number came from the file.
 func (r *scanRun) acharOuCriarEpisodioProvisorio(ctx context.Context, q *sqlcgen.Queries, tempID string, season, number int, comNumero bool, titulo, arquivo string) (string, error) {
 	rels, err := q.ListarRelacoesFilhas(ctx, tempID)
 	if err != nil {
@@ -608,9 +618,10 @@ func (r *scanRun) acharOuCriarEpisodioProvisorio(ctx context.Context, q *sqlcgen
 			}
 			continue
 		}
-		// Sem número a chave é o NOME DO ARQUIVO gravado no extension_data, não
-		// o título: o título é regra de apresentação e pode mudar de uma versão
-		// para outra (foi o que criou provisório duplicado na primeira rodada).
+		// Without a number the key is the FILE NAME stored in the extension_data,
+		// not the title: the title is a presentation rule and may change from one
+		// version to another (that was what created duplicate provisional episodes
+		// in the first round).
 		existente, oerr := q.ObterEntity(ctx, rel.ChildID)
 		if oerr == nil && strings.Contains(existente.ExtensionDataJson.String, `"arquivo":"`+arquivo+`"`) {
 			return rel.ChildID, nil
@@ -625,8 +636,8 @@ func (r *scanRun) acharOuCriarEpisodioProvisorio(ctx context.Context, q *sqlcgen
 	}); err != nil {
 		return "", err
 	}
-	// CriarEntity não recebe status; o provisório nasce 'draft' num UPDATE, o
-	// mesmo caminho que a faixa rascunho da música usa (musica.go).
+	// CriarEntity does not take a status; the provisional one is born 'draft' in an
+	// UPDATE, the same path the music draft track uses (musica.go).
 	if _, err := q.AtualizarEntity(ctx, sqlcgen.AtualizarEntityParams{
 		ID:                id,
 		Type:              tipoEntEpisodio,
@@ -649,10 +660,10 @@ func (r *scanRun) acharOuCriarEpisodioProvisorio(ctx context.Context, q *sqlcgen
 	return id, nil
 }
 
-// atualizarTituloDoProvisorio mantém o título de um provisório já criado em dia
-// com a regra atual, sem tocar em episódio vindo da fonte (a marca
-// `provisorio` no extension_data é o que distingue os dois). Erro é logado e
-// ignorado: título defasado não pode derrubar o scan.
+// atualizarTituloDoProvisorio keeps the title of an already created provisional
+// episode up to date with the current rule, without touching an episode that came
+// from the source (the `provisorio` mark in the extension_data is what distinguishes
+// the two). An error is logged and ignored: a stale title cannot take the scan down.
 func (r *scanRun) atualizarTituloDoProvisorio(ctx context.Context, q *sqlcgen.Queries, epID, titulo string) {
 	ep, err := q.ObterEntity(ctx, epID)
 	if err != nil || ep.Title == titulo {
@@ -672,8 +683,8 @@ func (r *scanRun) atualizarTituloDoProvisorio(ctx context.Context, q *sqlcgen.Qu
 	}
 }
 
-// tituloTemporadaProvisoria nomeia a temporada criada pelo scanner com a mesma
-// convenção do enrich ("Especiais" para a 0).
+// tituloTemporadaProvisoria names the season created by the scanner with the same
+// convention as the enrich ("Especiais" for 0).
 func tituloTemporadaProvisoria(season int) string {
 	if season == 0 {
 		return "Especiais"
@@ -681,8 +692,9 @@ func tituloTemporadaProvisoria(season int) string {
 	return fmt.Sprintf("Temporada %d", season)
 }
 
-// extensionProvisorio monta o core.tv@1 do episódio provisório: a numeração
-// oficial e a marca de que ela veio do arquivo, não da fonte externa.
+// extensionProvisorio assembles the core.tv@1 of the provisional episode: the
+// official numbering and the mark that it came from the file, not from the external
+// source.
 func extensionProvisorio(season, number int, comNumero bool, arquivo string) []byte {
 	numero := map[string]any{"season": season}
 	if comNumero {

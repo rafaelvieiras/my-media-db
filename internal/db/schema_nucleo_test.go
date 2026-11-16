@@ -9,8 +9,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// setupNucleo abre um banco temporário, aplica as migrations (schema 4 após o
-// 0004) e devolve o DB junto de um *Queries no pool de ESCRITA.
+// setupNucleo opens a temporary database, applies the migrations (schema 4 after
+// 0004) and returns the DB together with a *Queries on the WRITE pool.
 func setupNucleo(t *testing.T) (*DB, *sqlcgen.Queries) {
 	t.Helper()
 	d := openTest(t)
@@ -20,11 +20,11 @@ func setupNucleo(t *testing.T) (*DB, *sqlcgen.Queries) {
 	return d, sqlcgen.New(d.Write)
 }
 
-// ns embrulha uma string num sql.NullString válido (não-nulo).
+// ns wraps a string in a valid (non-null) sql.NullString.
 func ns(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }
 
-// check falha o teste se err for não-nulo. Concentra o `if err != nil` num
-// helper para manter as funções de teste simples (baixa complexidade).
+// check fails the test if err is non-nil. It concentrates the `if err != nil` in a
+// helper to keep the test functions simple (low complexity).
 func check(t *testing.T, err error, ctx string) {
 	t.Helper()
 	if err != nil {
@@ -32,8 +32,8 @@ func check(t *testing.T, err error, ctx string) {
 	}
 }
 
-// criarEntity insere uma entity mínima e devolve a linha criada. `externalIDs` é
-// o JSON cru de external_ids (pode ser "" para nulo).
+// criarEntity inserts a minimal entity and returns the created row. `externalIDs` is
+// the raw external_ids JSON (may be "" for null).
 func criarEntity(t *testing.T, q *sqlcgen.Queries, id, title, externalIDs string) sqlcgen.Entity {
 	t.Helper()
 	ext := sql.NullString{}
@@ -50,7 +50,7 @@ func criarEntity(t *testing.T, q *sqlcgen.Queries, id, title, externalIDs string
 	return e
 }
 
-// assertTabelasExistem confere que cada nome está no sqlite_master.
+// assertTabelasExistem checks that each name is in sqlite_master.
 func assertTabelasExistem(t *testing.T, d *DB, tabelas ...string) {
 	t.Helper()
 	for _, tab := range tabelas {
@@ -63,8 +63,8 @@ func assertTabelasExistem(t *testing.T, d *DB, tabelas ...string) {
 	}
 }
 
-// populaGrafoMinimo cria entity + media_file + asset + uma segunda entity ligada
-// por entity_relation, para exercitar as FKs.
+// populaGrafoMinimo creates entity + media_file + asset + a second entity linked
+// through entity_relation, to exercise the FKs.
 func populaGrafoMinimo(t *testing.T, q *sqlcgen.Queries) {
 	t.Helper()
 	ctx := context.Background()
@@ -84,8 +84,8 @@ func populaGrafoMinimo(t *testing.T, q *sqlcgen.Queries) {
 	check(t, err, "CriarEntityRelation")
 }
 
-// TestMigrationNucleoCriaTabelas prova que o 0002 cria todas as tabelas do
-// escopo, que o foreign_key_check fica limpo com dados, e que o Down as remove.
+// TestMigrationNucleoCriaTabelas proves that 0002 creates every table of the
+// scope, that foreign_key_check stays clean with data, and that Down removes them.
 func TestMigrationNucleoCriaTabelas(t *testing.T) {
 	d, q := setupNucleo(t)
 	ctx := context.Background()
@@ -99,7 +99,7 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 
 	populaGrafoMinimo(t, q)
 
-	// Integridade referencial limpa após popular o grafo.
+	// Clean referential integrity after populating the graph.
 	rows, err := d.Read.QueryContext(ctx, "PRAGMA foreign_key_check")
 	check(t, err, "foreign_key_check")
 	temViolacao := rows.Next()
@@ -108,32 +108,30 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 		t.Error("foreign_key_check retornou violações, quero nenhuma")
 	}
 
-	// Down reverte, um por um, o 0027 (cron default do job midias_faltantes,
-	// briefing 0128), o 0026 (integration_config, fundação de
-	// integrações configuráveis via UI, briefing 0095/ADR-0023), o 0025 (recria job_execution -- só o schema,
-	// sem dados; CAMADA 3 da mesma ADR: internal/job/manager.go passou a
-	// enfileirar via execqueue, então job_execution vira fonte de verdade
-	// redundante e é derrubada), o 0024 (queue_item, fila de execucao
-	// unificada, briefing 0108/ADR-0028 -- job_execution nao e tocada nesta
-	// camada), o 0023 (entity.external_id_mbid, fundação da
-	// vertical música, briefing 0105), o 0022 (seed do job
-	// trailer_tema_faltantes, briefing 0104), o 0021 (historico_evento.entity_id nullable +
-	// raw_* para eventos órfãos, briefing 0099), o 0020 (historico_evento,
-	// briefing 0092), o 0019 (campos locais de reprodução em
-	// entity, briefing 0088), o 0018 (library_source.retroactive_enrichment_days,
-	// briefing 0085), o 0017 (library_source.preferred_language,
-	// briefing 0084), o 0016 (library_source.watch_enabled + seed do job
-	// midias_faltantes, briefing 0064), o 0015 (asset.local_path/
-	// is_principal + entity.nfo_path/nfo_written_at, briefing 0062), o 0014
-	// (entity_catalog_completeness, briefing 0058), o 0013
-	// (entity.last_external_match_attempt_at, briefing 0056), o 0012 (seed do
-	// job saude_biblioteca), o 0011 (job_definition/job_execution), o 0010
-	// (person/company/credit), o 0009 (juncao media_file_entity), o 0008
-	// (library_source.content_type), o 0007 (sort_index + external_id_tvdb),
-	// o 0006 (external_detail), o 0005 (settings + coluna
-	// original_language), o 0004 (camadas externo/override), o 0003 (coluna
-	// library_source_id) e depois o 0002 (schema do núcleo, volta ao 0001).
-	// Cada passo deve deixar a versão no valor esperado.
+	// Down reverts, one by one, 0027 (default cron of the midias_faltantes job),
+	// 0026 (integration_config, foundation of the integrations configurable
+	// through the UI, ADR-0023), 0025 (recreates job_execution -- schema only,
+	// no data; LAYER 3 of the same ADR: internal/job/manager.go now
+	// enqueues through execqueue, so job_execution becomes a redundant source
+	// of truth and is dropped), 0024 (queue_item, unified execution queue,
+	// ADR-0028 -- job_execution is not touched in this layer), 0023
+	// (entity.external_id_mbid, foundation of the music vertical), 0022 (seed
+	// of the trailer_tema_faltantes job), 0021 (historico_evento.entity_id
+	// nullable + raw_* for orphan events), 0020 (historico_evento), 0019
+	// (local playback fields on entity), 0018
+	// (library_source.retroactive_enrichment_days), 0017
+	// (library_source.preferred_language), 0016 (library_source.watch_enabled
+	// + seed of the midias_faltantes job), 0015 (asset.local_path/
+	// is_principal + entity.nfo_path/nfo_written_at), 0014
+	// (entity_catalog_completeness), 0013
+	// (entity.last_external_match_attempt_at), 0012 (seed of the
+	// saude_biblioteca job), 0011 (job_definition/job_execution), 0010
+	// (person/company/credit), 0009 (media_file_entity junction), 0008
+	// (library_source.content_type), 0007 (sort_index + external_id_tvdb),
+	// 0006 (external_detail), 0005 (settings + original_language column), 0004
+	// (external/override layers), 0003 (library_source_id column) and then
+	// 0002 (core schema, back to 0001). Each step must leave the version at
+	// the expected value.
 	for _, esperada := range []int64{26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1} {
 		downEChecaVersao(t, d, esperada)
 	}
@@ -142,8 +140,8 @@ func TestMigrationNucleoCriaTabelas(t *testing.T) {
 	}
 }
 
-// downEChecaVersao aplica um MigrateDown e confere que a versão de schema resultante
-// bate com a esperada (falha o teste caso contrário).
+// downEChecaVersao applies a MigrateDown and checks that the resulting schema version
+// matches the expected one (it fails the test otherwise).
 func downEChecaVersao(t *testing.T, d *DB, esperada int64) {
 	t.Helper()
 	check(t, d.MigrateDown(context.Background()), "MigrateDown")
@@ -152,7 +150,7 @@ func downEChecaVersao(t *testing.T, d *DB, esperada int64) {
 	}
 }
 
-// TestStatusDefaultECheck prova o default 'cataloged' e o CHECK do conjunto.
+// TestStatusDefaultECheck proves the 'cataloged' default and the CHECK of the set.
 func TestStatusDefaultECheck(t *testing.T) {
 	d, q := setupNucleo(t)
 	ctx := context.Background()
@@ -162,7 +160,7 @@ func TestStatusDefaultECheck(t *testing.T) {
 		t.Errorf("status default = %q, quero \"cataloged\"", e.Status)
 	}
 
-	// Um status fora do conjunto deve ser rejeitado pelo CHECK.
+	// A status outside the set must be rejected by the CHECK.
 	_, err := d.Write.ExecContext(ctx,
 		"INSERT INTO entity (id, type, title, status) VALUES ('x', 'movie', 'T', 'invalido')")
 	if err == nil {
@@ -170,21 +168,21 @@ func TestStatusDefaultECheck(t *testing.T) {
 	}
 }
 
-// TestMediaFileConstraints prova o CHECK de state, o UNIQUE de path e o índice
-// de content_hash.
+// TestMediaFileConstraints proves the state CHECK, the path UNIQUE and the
+// content_hash index.
 func TestMediaFileConstraints(t *testing.T) {
 	d, q := setupNucleo(t)
 	ctx := context.Background()
 	e := criarEntity(t, q, "ent-1", "T", "")
 
-	// state fora de {present,missing} é rejeitado.
+	// a state outside {present,missing} is rejected.
 	if _, err := d.Write.ExecContext(ctx,
 		"INSERT INTO media_file (id, entity_id, path, state) VALUES ('m1', ?, '/a', 'bogus')",
 		e.ID); err == nil {
 		t.Error("INSERT com state inválido deveria falhar (CHECK)")
 	}
 
-	// path é UNIQUE.
+	// path is UNIQUE.
 	_, err := q.CriarMediaFile(ctx, sqlcgen.CriarMediaFileParams{
 		ID: "m2", EntityID: e.ID, Path: "/dup.mkv", State: "present",
 	})
@@ -195,20 +193,20 @@ func TestMediaFileConstraints(t *testing.T) {
 		t.Error("segundo media_file com o mesmo path deveria falhar (UNIQUE)")
 	}
 
-	// content_hash é indexado: o plano de uma busca por hash usa o índice.
+	// content_hash is indexed: the plan of a search by hash uses the index.
 	detalhe := explicaPlano(t, d, "SELECT id FROM media_file WHERE content_hash = ?", "abc")
 	if !strings.Contains(detalhe, "idx_media_file_content_hash") {
 		t.Errorf("plano por content_hash = %q, quero mencionar idx_media_file_content_hash", detalhe)
 	}
 }
 
-// TestLookupTmdbUsaIndice prova o critério 4: o lookup por id externo tmdb (via
-// coluna gerada) usa o índice, não uma varredura de tabela.
+// TestLookupTmdbUsaIndice proves criterion 4: the lookup by external tmdb id (via
+// generated column) uses the index, not a table scan.
 func TestLookupTmdbUsaIndice(t *testing.T) {
 	d, q := setupNucleo(t)
 	criarEntity(t, q, "ent-1", "Matrix", `{"tmdb":"603"}`)
 
-	// A coluna gerada expõe o valor de $.tmdb e o lookup pela query gerada acha.
+	// The generated column exposes the value of $.tmdb and the lookup through the generated query finds it.
 	got, err := q.ObterEntityPorTmdb(context.Background(), ns("603"))
 	check(t, err, "ObterEntityPorTmdb")
 	if got.ID != "ent-1" {
@@ -221,9 +219,9 @@ func TestLookupTmdbUsaIndice(t *testing.T) {
 	}
 }
 
-// TestFTSSincroniza prova o critério 5: insert/update/delete de entity mantêm o
-// entity_fts em sincronia (busca via `entity_fts MATCH`, feita à mão pois o sqlc
-// não modela o MATCH sobre o nome da tabela virtual).
+// TestFTSSincroniza proves criterion 5: insert/update/delete of an entity keep
+// entity_fts in sync (search via `entity_fts MATCH`, done by hand because sqlc
+// does not model MATCH over the name of the virtual table).
 func TestFTSSincroniza(t *testing.T) {
 	d, q := setupNucleo(t)
 	ctx := context.Background()
@@ -233,7 +231,7 @@ func TestFTSSincroniza(t *testing.T) {
 		t.Errorf("busca após insert = %q, quero ent-1", got)
 	}
 
-	// Após o UPDATE do título, a busca antiga não acha e a nova acha.
+	// After the title UPDATE, the old search finds nothing and the new one finds it.
 	_, err := q.AtualizarEntity(ctx, sqlcgen.AtualizarEntityParams{
 		ID: e.ID, Type: "movie", Title: "Inception", Status: "cataloged",
 	})
@@ -245,15 +243,15 @@ func TestFTSSincroniza(t *testing.T) {
 		t.Errorf("busca por título novo após update = %q, quero ent-1", got)
 	}
 
-	// Após o DELETE, nada é encontrado.
+	// After the DELETE, nothing is found.
 	check(t, q.ApagarEntity(ctx, e.ID), "ApagarEntity")
 	if got := buscaFTS(t, d, "Inception"); got != "" {
 		t.Errorf("busca após delete = %q, quero vazio", got)
 	}
 }
 
-// TestFTSIndexaTags prova que as tags entram na FTS (a coluna `tags` recebe o
-// tags_json cru; o tokenizer quebra nos sinais do JSON e indexa os valores).
+// TestFTSIndexaTags proves that the tags enter the FTS (the `tags` column receives the
+// raw tags_json; the tokenizer splits on the JSON punctuation and indexes the values).
 func TestFTSIndexaTags(t *testing.T) {
 	d, q := setupNucleo(t)
 	_, err := q.CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
@@ -265,8 +263,8 @@ func TestFTSIndexaTags(t *testing.T) {
 	}
 }
 
-// TestPosseDerivada prova o critério 6: posse é verdadeira só quando há ao menos
-// um media_file 'present'.
+// TestPosseDerivada proves criterion 6: ownership is true only when there is at least
+// one 'present' media_file.
 func TestPosseDerivada(t *testing.T) {
 	_, q := setupNucleo(t)
 	ctx := context.Background()
@@ -276,7 +274,7 @@ func TestPosseDerivada(t *testing.T) {
 		t.Error("posse sem media_file = true, quero false")
 	}
 
-	// Um arquivo 'missing' não confere posse.
+	// A 'missing' file does not confer ownership.
 	mf, err := q.CriarMediaFile(ctx, sqlcgen.CriarMediaFileParams{
 		ID: "mf-1", EntityID: e.ID, Path: "/a.mkv", State: "missing",
 	})
@@ -285,7 +283,7 @@ func TestPosseDerivada(t *testing.T) {
 		t.Error("posse só com media_file missing = true, quero false")
 	}
 
-	// Marcar o arquivo como 'present' confere posse.
+	// Marking the file as 'present' confers ownership.
 	_, err = q.AtualizarMediaFileState(ctx, sqlcgen.AtualizarMediaFileStateParams{
 		ID: mf.ID, State: "present", LastSeen: ns("2026-07-09T00:00:00Z"),
 	})
@@ -295,7 +293,7 @@ func TestPosseDerivada(t *testing.T) {
 	}
 }
 
-// TestApagarEntityCascata prova que a purga da entity remove os filhos (FK
+// TestApagarEntityCascata proves that purging the entity removes the children (FK
 // ON DELETE CASCADE).
 func TestApagarEntityCascata(t *testing.T) {
 	d, q := setupNucleo(t)
@@ -316,7 +314,7 @@ func TestApagarEntityCascata(t *testing.T) {
 	}
 }
 
-// TestLibrarySourceState prova o default 'online' e o CHECK do conjunto.
+// TestLibrarySourceState proves the 'online' default and the CHECK of the set.
 func TestLibrarySourceState(t *testing.T) {
 	d, q := setupNucleo(t)
 	ctx := context.Background()
@@ -333,14 +331,14 @@ func TestLibrarySourceState(t *testing.T) {
 	}
 }
 
-// (O exercício completo de CRUD de cada query gerada vive em
-// internal/db/sqlcgen/crud_test.go, para que a cobertura seja atribuída ao
-// próprio pacote sqlcgen no perfil do go test.)
+// (The complete CRUD exercise of each generated query lives in
+// internal/db/sqlcgen/crud_test.go, so that the coverage is attributed to the
+// sqlcgen package itself in the go test profile.)
 
-// ── helpers de leitura ──────────────────────────────────────────────────────
+// ── read helpers ───────────────────────────────────────────────────────────
 
-// explicaPlano roda EXPLAIN QUERY PLAN e concatena a coluna `detail` de todas as
-// linhas, para asserção sobre uso de índice.
+// explicaPlano runs EXPLAIN QUERY PLAN and concatenates the `detail` column of all
+// rows, for assertions about index usage.
 func explicaPlano(t *testing.T, d *DB, query string, args ...any) string {
 	t.Helper()
 	rows, err := d.Read.QueryContext(context.Background(), "EXPLAIN QUERY PLAN "+query, args...)
@@ -356,9 +354,9 @@ func explicaPlano(t *testing.T, d *DB, query string, args ...any) string {
 	return strings.Join(partes, " | ")
 }
 
-// buscaFTS busca na entity_fts pelo termo e devolve o entity_id do primeiro hit
-// (ou "" se nenhum). Feita à mão com database/sql porque o sqlc não modela o
-// MATCH sobre o nome da tabela virtual.
+// buscaFTS searches entity_fts for the term and returns the entity_id of the first hit
+// (or "" if none). Done by hand with database/sql because sqlc does not model
+// MATCH over the name of the virtual table.
 func buscaFTS(t *testing.T, d *DB, termo string) string {
 	t.Helper()
 	var id string
@@ -371,7 +369,7 @@ func buscaFTS(t *testing.T, d *DB, termo string) string {
 	return id
 }
 
-// posse chama a query gerada de posse derivada.
+// posse calls the generated derived ownership query.
 func posse(t *testing.T, q *sqlcgen.Queries, entityID string) bool {
 	t.Helper()
 	tem, err := q.EntityTemPosse(context.Background(), entityID)

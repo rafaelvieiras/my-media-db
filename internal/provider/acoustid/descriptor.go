@@ -2,33 +2,33 @@ package acoustid
 
 import "github.com/rafaelvieiras/my-media-db/internal/integration"
 
-// descriptorIntegracao implementa integration.Descriptor para o AcoustID
-// (briefing 0126, mesmo padrão de internal/provider/tmdb.descriptorIntegracao
-// -- primeiro consumidor foi o TMDB, briefing 0095). Só descreve o SCHEMA de
-// campos (um único campo, a client key) e delega Configurada à MESMA regra
-// que Credencial.Configurada já usa -- não duplica a lógica.
+// descriptorIntegracao implements integration.Descriptor for AcoustID (the same
+// pattern as internal/provider/tmdb.descriptorIntegracao -- TMDB was the first
+// consumer). It only describes the SCHEMA of the fields (a single field, the
+// client key) and delegates Configurada to the SAME rule that
+// Credencial.Configurada already uses -- it does not duplicate the logic.
 type descriptorIntegracao struct{}
 
-// NovoDescriptorIntegracao cria o integration.Descriptor do AcoustID.
-// Registrado em cmd/mymediadb/main.go via server.WithIntegrations.
+// NovoDescriptorIntegracao creates the AcoustID integration.Descriptor.
+// Registered in cmd/mymediadb/main.go through server.WithIntegrations.
 func NovoDescriptorIntegracao() integration.Descriptor {
 	return descriptorIntegracao{}
 }
 
-// Slug é a chave estável de URL/registro -- "acoustid".
+// Slug is the stable URL/registry key -- "acoustid".
 func (descriptorIntegracao) Slug() string { return "acoustid" }
 
-// Nome é o rótulo amigável para a UI (briefing 0096).
+// Nome is the friendly label for the UI.
 func (descriptorIntegracao) Nome() string { return "AcoustID" }
 
-// Descricao é o texto curto de apoio da UI.
+// Descricao is the short supporting text for the UI.
 func (descriptorIntegracao) Descricao() string {
 	return "Fingerprint acustico (Chromaprint) como ultimo fallback do matching de faixa de musica -- consulta o AcoustID para identificar audio sem tag confiavel."
 }
 
-// Campos descreve a client key -- a única credencial que o LOOKUP exige (a
-// "user key" pessoal, usada só para SUBMETER fingerprints, está fora de
-// escopo deste briefing).
+// Campos describes the client key -- the only credential the LOOKUP requires
+// (the personal "user key", used only to SUBMIT fingerprints, is out of scope
+// here).
 func (descriptorIntegracao) Campos() []integration.Campo {
 	return []integration.Campo{
 		{
@@ -41,8 +41,8 @@ func (descriptorIntegracao) Campos() []integration.Campo {
 	}
 }
 
-// Configurada delega à MESMA regra que Credencial.Configurada() já usa hoje
-// (client_key preenchida) -- reusa em vez de duplicar.
+// Configurada delegates to the SAME rule that Credencial.Configurada() already
+// uses today (client_key filled in) -- reuse instead of duplication.
 func (descriptorIntegracao) Configurada(efetivos map[string]string) bool {
 	return Credencial{ClientKey: efetivos["client_key"]}.Configurada()
 }

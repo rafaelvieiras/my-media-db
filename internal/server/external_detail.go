@@ -12,23 +12,24 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
 
-// Este arquivo implementa GET /api/v1/external/{source}/{type}/{id} (briefing 0022):
-// o DETALHE EXTERNO RICO que o dono vê ANTES de importar (como o TMDB). Puxa o item
-// completo da fonte, PERSISTE na 1ª chamada (cache external_detail, via o serviço
-// externaldetail) e serve do cache nas seguintes. Resolve os campos TRADUZÍVEIS
-// (título, sinopse, slogan, gêneros, keywords) no idioma ATIVO pela cadeia de fallback
-// das settings; os NEUTROS (duração, classificação, backdrop, vídeos, coleção,
-// similares, nota, links) vêm uma vez. Ver o externo NUNCA cria entity.
+// This file implements GET /api/v1/external/{source}/{type}/{id}: the RICH EXTERNAL
+// DETAIL the owner sees BEFORE importing (like TMDB). It pulls the complete item from
+// the source, PERSISTS on the 1st call (external_detail cache, through the
+// externaldetail service) and serves from the cache on the following ones. It resolves
+// the TRANSLATABLE fields (title, synopsis, tagline, genres, keywords) in the ACTIVE
+// language through the settings fallback chain; the NEUTRAL ones (runtime,
+// certification, backdrop, videos, collection, similars, rating, links) come once.
+// Viewing the external item NEVER creates an entity.
 //
-// A resolução/tipos dos campos ricos vive em internal/richfields — COMPARTILHADA com
-// o resolver da entity (GET /entities/{id}), para as duas telas terem o MESMO shape.
-// A classificação indicativa é por REGIÃO (decisão da revisão): região do idioma ativo
-// (pt-BR→BR), com FALLBACK US quando o idioma não carrega região ou a fonte não a traz.
+// The resolution/types of the rich fields live in internal/richfields — SHARED with the
+// entity resolver (GET /entities/{id}), so both screens have the SAME shape. The age
+// rating is per REGION: the region of the active language (pt-BR→BR), with a US FALLBACK
+// when the language carries no region or the source does not provide one.
 
-// detalheExternoDTO é a resposta de GET /external/{source}/{type}/{id}: o conjunto
-// rico do TMDB, resolvido no idioma ativo. Listas saem sempre como `[]` (nunca null)
-// para simplificar o front; ponteiros saem como null quando ausentes. SEM créditos
-// (MD6) nem nota local — decisão explícita, cada um vira briefing próprio.
+// detalheExternoDTO is the response of GET /external/{source}/{type}/{id}: the rich
+// TMDB set, resolved in the active language. Lists always come out as `[]` (never null)
+// to simplify the frontend; pointers come out as null when absent. WITHOUT credits nor a
+// local rating — an explicit decision, each one being tracked separately.
 type detalheExternoDTO struct {
 	Source        string  `json:"source"`
 	SourceID      string  `json:"source_id"`
@@ -42,9 +43,9 @@ type detalheExternoDTO struct {
 	Year          *string `json:"year"`
 	Runtime       *int    `json:"runtime"`
 	Certification *string `json:"certification"`
-	// AiringStatus é a SITUAÇÃO de exibição da série (0045): string CRUA da fonte,
-	// verbatim (paridade com o preview interno; a UI traduz p/ pt-BR). omitempty/ausente
-	// para filme ou quando a fonte não a informa.
+	// AiringStatus is the series' AIRING situation: string RAW from the source, verbatim
+	// (parity with the internal preview; the UI translates it to pt-BR). omitempty/absent
+	// for a movie or when the source does not report it.
 	AiringStatus     *string  `json:"airing_status,omitempty"`
 	OriginalLanguage *string  `json:"original_language"`
 	VoteAverage      *float64 `json:"vote_average"`
@@ -63,18 +64,19 @@ type detalheExternoDTO struct {
 	Companies     []richfields.Company   `json:"companies"`
 	ExternalLinks map[string]string      `json:"external_links"`
 
-	// ResolvedLanguages é a proveniência de idioma dos campos traduzíveis (ADR-0019),
-	// `""` = sem idioma efetivo. Espelha o mesmo campo do detalhe da entity.
+	// ResolvedLanguages is the language provenance of the translatable fields
+	// (ADR-0019), `""` = no effective language. It mirrors the same field of the entity
+	// detail.
 	ResolvedLanguages map[string]string `json:"resolved_languages"`
 }
 
-// provedorDetalhe resolve o provider de PARSE (codecPara, briefing 0100/ADR-0024) da
-// FONTE da rota para o detalhe externo. Escreve 503 e devolve ok=false quando o
-// detalhe está desligado (sem banco) OU a fonte é totalmente desconhecida do binário
-// (nem em `codecs` nem em `providers`) -- nesses casos PayloadFresco nem seria chamado
-// com proveito. Diferente de antes, NÃO gateia mais em busca ao vivo registrada: uma
-// fonte sem credencial ainda pode servir payload já cacheado (PayloadFresco decide
-// sozinho fresh/stale/erro).
+// provedorDetalhe resolves the PARSE provider (codecPara, ADR-0024) of the route's
+// SOURCE for the external detail. It writes 503 and returns ok=false when the detail is
+// turned off (no database) OR the source is totally unknown to the binary (neither in
+// `codecs` nor in `providers`) -- in those cases PayloadFresco would not even be called
+// with any benefit. Unlike before, it NO LONGER gates on a registered live search: a
+// source without a credential can still serve an already cached payload (PayloadFresco
+// decides fresh/stale/error on its own).
 func (s *Server) provedorDetalhe(w http.ResponseWriter, source string) (provider.Provider, bool) {
 	if s.externalDetail != nil {
 		if prov, ok := s.codecPara(source); ok {
@@ -86,9 +88,10 @@ func (s *Server) provedorDetalhe(w http.ResponseWriter, source string) (provider
 	return nil, false
 }
 
-// getExternalDetail trata GET /api/v1/external/{source}/{type}/{id}?lang=. 503 sem
-// fonte externa; 422 type fora de movie|tv; 400 lang fora dos permitidos; 404 item
-// inexistente na fonte; 502 fonte falhou; 200 com o detalhe rico resolvido.
+// getExternalDetail handles GET /api/v1/external/{source}/{type}/{id}?lang=. 503 without
+// an external source; 422 type outside movie|tv; 400 lang outside the allowed ones; 404
+// item that does not exist in the source; 502 the source failed; 200 with the rich
+// detail resolved.
 func (s *Server) getExternalDetail(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -116,8 +119,8 @@ func (s *Server) getExternalDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Puxa (ou serve do cache) TODAS as traduções permitidas numa só ida (0020); a
-	// resolução por idioma acontece aqui, no read-time.
+	// Pulls (or serves from the cache) ALL the allowed translations in a single round
+	// trip; the per-language resolution happens here, at read-time.
 	raw, err := s.externalDetail.PayloadFresco(ctx, source, id, tipo, cfg.Allowed, false)
 	if err != nil {
 		if errors.Is(err, provider.ErrNaoEncontrado) {
@@ -130,7 +133,7 @@ func (s *Server) getExternalDetail(w http.ResponseWriter, r *http.Request) {
 
 	campos, err := prov.MapearDetalhe(raw)
 	if err != nil {
-		// Payload cru inválido: trata como falha da fonte (o cache re-tenta na próxima).
+		// Invalid raw payload: treated as a source failure (the cache retries next time).
 		respondFonteIndisponivel(w)
 		return
 	}
@@ -140,10 +143,11 @@ func (s *Server) getExternalDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, dto)
 }
 
-// montarDetalheExterno compõe o DTO rico a partir do mapa canônico: resolve os
-// traduzíveis pela cadeia de fallback (ancorada no original_language do item) e extrai
-// os neutros via richfields (compartilhado com o resolver da entity). A certificação
-// usa a região do idioma ativo com fallback US.
+// montarDetalheExterno composes the rich DTO from the canonical map: it resolves the
+// translatable fields through the fallback chain (anchored on the item's
+// original_language) and extracts the neutral ones through richfields (shared with the
+// entity resolver). The certification uses the region of the active language with a US
+// fallback.
 func (s *Server) montarDetalheExterno(ctx context.Context, source, id, tipo, lang string, cfg languageSettings, campos map[string]any) detalheExternoDTO {
 	original := richfields.ComoStringMapa(campos, "original_language")
 	cadeia := cfg.cadeiaDeIdiomas(lang, nsDe(original))
@@ -156,35 +160,37 @@ func (s *Server) montarDetalheExterno(ctx context.Context, source, id, tipo, lan
 
 	releaseDate := richfields.StrPtrDe(campos, "release_date")
 
-	// Coleção da banda: quando existe e já foi importada, anota o id interno (0026)
-	// para a UI linkar ao destino interno em vez da página externa. ColecaoDe é pura
-	// (deixa InternalID nil); o preenchimento com DB é aqui.
+	// Franchise collection: when it exists and was already imported, it annotates the
+	// internal id so the UI links to the internal destination instead of the external page.
+	// ColecaoDe is pure (it leaves InternalID nil); the DB fill-in happens here.
 	colecao := richfields.ColecaoDe(campos)
 	if colecao != nil {
 		colecao.InternalID = s.idInternoColecao(ctx, source, colecao.SourceID)
 	}
 
-	// Similares interno-aware (0027): cada similar já importado ganha o id interno,
-	// para a UI linkar ao destino interno (/entities/{id}) em vez de reabrir o externo.
-	// SimilaresDe é pura (InternalID nil); o preenchimento com DB é aqui. N é pequeno
-	// (a fonte limita os similares) e o lookup é indexado — ok para self-hosted.
+	// Internal-aware similars: each already imported similar gets the internal id, so the
+	// UI links to the internal destination (/entities/{id}) instead of reopening the
+	// external one. SimilaresDe is pure (InternalID nil); the DB fill-in happens here. N
+	// is small (the source limits the similars) and the lookup is indexed — fine for
+	// self-hosted.
 	similares := richfields.SimilaresDe(campos)
 	for i := range similares {
 		similares[i].InternalID = s.idInternoItem(ctx, source, similares[i].SourceID)
 	}
 
-	// Créditos (elenco/equipe/produtoras, 0029): extraídos puros via richfields (mesmo
-	// shape do resolver da entity). O interno-first (0029 Fase D) anota o person_id de
-	// cada crédito já catalogado por ALGUM import — a fonte é a da própria rota (o
-	// canônico veio de UMA chamada a esta fonte). Depois proxya profile_url/logo_url,
-	// como o pôster/backdrop — richfields não tem acesso ao proxy.
+	// Credits (cast/crew/production companies): extracted pure through richfields (the same
+	// shape as the entity resolver). The internal-first logic annotates the person_id of
+	// each credit already cataloged by SOME import — the source is that of the route itself
+	// (the canonical map came from ONE call to this source). Then it proxies
+	// profile_url/logo_url, like the poster/backdrop — richfields has no access to the
+	// proxy.
 	cast := richfields.CastDe(campos)
 	crew := richfields.CrewDe(campos)
 	companies := richfields.CompaniesDe(campos)
 	s.anotarCreditosInternos(ctx, source, cast, crew)
 	s.proxyarCreditos(cast, crew, companies)
 
-	// Link do TMDB só quando a fonte é o próprio TMDB (o handler tem tipo+id da rota).
+	// TMDB link only when the source is TMDB itself (the handler has the route's type+id).
 	tmdbTipo, tmdbID := "", ""
 	if source == "tmdb" {
 		tmdbTipo, tmdbID = tipo, id
@@ -208,10 +214,11 @@ func (s *Server) montarDetalheExterno(ctx context.Context, source, id, tipo, lan
 		VoteAverage:      richfields.FloatPtrDe(campos, "vote_average"),
 		Genres:           richfields.OuListaVazia(generos),
 		Keywords:         richfields.OuListaVazia(keywords),
-		// As artes do HERO (pôster/fundo) passam pelo proxy local quando há assetsDir
-		// e o host é proxyável (0024): a UI as serve do cache, sem bater no CDN da
-		// fonte. Sem isso, saem como a URL direta (degradação). Similares/coleção
-		// (muitas miniaturas) seguem diretas de propósito — evita rajada de proxy.
+		// The HERO artwork (poster/background) goes through the local proxy when there is an
+		// assetsDir and the host is proxyable: the UI serves them from the cache, without
+		// hitting the source CDN. Without that, they come out as the direct URL
+		// (degradation). Similars/collection (many thumbnails) stay direct on purpose — it
+		// avoids a burst of proxying.
 		PosterURL:   s.urlImagemServida(richfields.StrPtrDe(campos, "poster_url")),
 		BackdropURL: s.urlImagemServida(richfields.StrPtrDe(campos, "backdrop_url")),
 		Videos:      richfields.VideosDe(campos),
@@ -220,9 +227,9 @@ func (s *Server) montarDetalheExterno(ctx context.Context, source, id, tipo, lan
 		Cast:        cast,
 		Crew:        crew,
 		Companies:   companies,
-		// imdb/tvdb vazios (0086): o detalhe do EXTERNO (item ainda não importado)
-		// não tem IDs cross-fonte resolvidos como o resolver tem (só o que a própria
-		// fonte já mapeou em `external_links` aparece aqui).
+		// empty imdb/tvdb: the EXTERNAL detail (an item not yet imported) has no
+		// cross-source IDs resolved the way the resolver has (only what the source itself
+		// already mapped into `external_links` shows up here).
 		ExternalLinks: richfields.LinksExternos(campos, tmdbTipo, tmdbID, "", ""),
 		ResolvedLanguages: map[string]string{
 			"title":       provTitulo,
@@ -234,8 +241,8 @@ func (s *Server) montarDetalheExterno(ctx context.Context, source, id, tipo, lan
 	}
 }
 
-// nsDe embrulha uma string num sql.NullString (inválido quando vazia) — para a cadeia
-// de idiomas ignorar a âncora ausente. Fica no server (depende de database/sql).
+// nsDe wraps a string in a sql.NullString (invalid when empty) — so the language chain
+// ignores the absent anchor. It lives in the server (it depends on database/sql).
 func nsDe(s string) sql.NullString {
 	if s == "" {
 		return sql.NullString{}

@@ -13,17 +13,17 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
-// Testes da PRÉVIA de candidato + aplicação supervisionada (briefing 0060):
-// GET /entities/{id}/match-preview (dry-run) e POST
-// /entities/{id}/confirm-candidate (aplica mesmo abaixo de LimiarAutoMatch).
-// As pontuações usadas abaixo (título consulta vs. título candidato, SEM ano
-// em nenhum lado para não sofrer o ajuste de +5 de matching.Pontuar) foram
-// calculadas com internal/matching.Pontuar diretamente: "The Matrix" vs. "The
-// Matrix Reloaded" ~90.5 (< 92, mas > 0) e "Dune" vs. "Dune Part Two" ~86.2 (<
-// 92) -- ambos abaixo do LimiarAutoMatch (92) para exercitar exatamente o
-// caso que este briefing destrava (prévia/confirmação abaixo do limiar).
+// Tests of the candidate PREVIEW + supervised application:
+// GET /entities/{id}/match-preview (dry-run) and POST
+// /entities/{id}/confirm-candidate (it applies even below LimiarAutoMatch).
+// The scores used below (query title vs. candidate title, WITHOUT a year
+// on either side so as not to suffer the +5 adjustment of matching.Pontuar) were
+// calculated with internal/matching.Pontuar directly: "The Matrix" vs. "The
+// Matrix Reloaded" ~90.5 (< 92, but > 0) and "Dune" vs. "Dune Part Two" ~86.2 (<
+// 92) -- both below LimiarAutoMatch (92) to exercise exactly the
+// case this feature unblocks (preview/confirmation below the threshold).
 
-// decodeMatchPreview decodifica a resposta de GET .../match-preview.
+// decodeMatchPreview decodes the response of GET .../match-preview.
 func decodeMatchPreview(t *testing.T, rec *httptest.ResponseRecorder) matchPreviewDTO {
 	t.Helper()
 	var out matchPreviewDTO
@@ -33,8 +33,9 @@ func decodeMatchPreview(t *testing.T, rec *httptest.ResponseRecorder) matchPrevi
 	return out
 }
 
-// semearAssetPoster grava um asset kind=poster para a entity, para validar
-// que o poster_url da prévia vem de graça (sem chamada de rede extra).
+// semearAssetPoster writes an asset kind=poster for the entity, to validate
+// that the poster_url of the preview comes for free (without an extra network
+// call).
 func semearAssetPoster(t *testing.T, d *db.DB, id, entityID string) {
 	t.Helper()
 	if _, err := escrita(t, d).CriarAsset(context.Background(), sqlcgen.CriarAssetParams{
@@ -46,8 +47,8 @@ func semearAssetPoster(t *testing.T, d *db.DB, id, entityID string) {
 
 // ── GET /entities/{id}/match-preview ─────────────────────────────────────────
 
-// TestMatchPreviewSemCandidato cobre found:false quando não há candidato em
-// nenhuma fonte (catálogo vazio, sem provider configurado) -- 200, nunca erro.
+// TestMatchPreviewSemCandidato covers found:false when there is no candidate in
+// any source (empty catalog, no provider configured) -- 200, never an error.
 func TestMatchPreviewSemCandidato(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e-draft", "movie", "Draft")
@@ -64,10 +65,10 @@ func TestMatchPreviewSemCandidato(t *testing.T) {
 	}
 }
 
-// TestMatchPreviewLocalAbaixoDoLimiar cobre o critério central do briefing: a
-// prévia devolve o candidato local mesmo com score < LimiarAutoMatch (92),
-// marcando meets_auto_threshold:false -- e o poster_url vem de graça (mesmo
-// asset já lido pela busca local, nenhuma chamada de rede extra).
+// TestMatchPreviewLocalAbaixoDoLimiar covers the central criterion: the
+// preview returns the local candidate even with score < LimiarAutoMatch (92),
+// marking meets_auto_threshold:false -- and the poster_url comes for free (the same
+// asset already read by the local search, no extra network call).
 func TestMatchPreviewLocalAbaixoDoLimiar(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e-target", "movie", "The Matrix Reloaded")
@@ -104,16 +105,16 @@ func TestMatchPreviewLocalAbaixoDoLimiar(t *testing.T) {
 		t.Errorf("target.poster_url = %v, quero %q (de graça, sem chamada extra)", got.Target.PosterURL, wantPoster)
 	}
 
-	// Dry-run: nada foi aplicado -- e-draft continua intacta, e-target não
-	// ganhou o arquivo.
+	// Dry-run: nothing was applied -- e-draft remains intact, e-target did not
+	// receive the file.
 	if _, err := escrita(t, d).ObterEntity(context.Background(), "e-draft"); err != nil {
 		t.Errorf("e-draft deveria continuar intacta (dry-run): %v", err)
 	}
 }
 
-// TestMatchPreviewExterno cobre o ramo externo da prévia (sem candidato
-// local): score abaixo do limiar, poster_url cru do provider, source/
-// source_id preenchidos e local_id nil.
+// TestMatchPreviewExterno covers the external branch of the preview (without a local
+// candidate): score below the threshold, raw poster_url from the provider, source/
+// source_id filled and local_id nil.
 func TestMatchPreviewExterno(t *testing.T) {
 	posterURL := "https://image.tmdb.org/dune-part-two.jpg"
 	resultados := []provider.ResultadoExterno{
@@ -154,7 +155,7 @@ func TestMatchPreviewExterno(t *testing.T) {
 		t.Errorf("target.poster_url = %v, quero %q (URL crua do provider)", got.Target.PosterURL, posterURL)
 	}
 
-	// Dry-run: nenhuma identidade foi gravada.
+	// Dry-run: no identity was written.
 	ent, err := escrita(t, d).ObterEntity(context.Background(), "e-draft")
 	if err != nil {
 		t.Fatalf("ObterEntity: %v", err)
@@ -164,7 +165,8 @@ func TestMatchPreviewExterno(t *testing.T) {
 	}
 }
 
-// TestMatchPreviewInexistente404 cobre o 404 quando a entity não existe.
+// TestMatchPreviewInexistente404 covers the 404 when the entity does not
+// exist.
 func TestMatchPreviewInexistente404(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/entities/naoexiste/match-preview", nil)
@@ -176,9 +178,9 @@ func TestMatchPreviewInexistente404(t *testing.T) {
 
 // ── POST /entities/{id}/confirm-candidate ────────────────────────────────────
 
-// TestConfirmCandidateLocalAbaixoDoLimiar cobre o critério central: aplica o
-// candidato LOCAL (funde) mesmo com score abaixo de LimiarAutoMatch -- sem
-// checagem de limiar neste endpoint (decisão humana informada).
+// TestConfirmCandidateLocalAbaixoDoLimiar covers the central criterion: it applies the
+// LOCAL candidate (merges) even with a score below LimiarAutoMatch -- without a
+// threshold check in this endpoint (informed human decision).
 func TestConfirmCandidateLocalAbaixoDoLimiar(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e-target", "movie", "The Matrix Reloaded")
@@ -186,8 +188,8 @@ func TestConfirmCandidateLocalAbaixoDoLimiar(t *testing.T) {
 	definirStatus(t, d, "e-draft", "draft")
 	semearFile(t, d, "f-draft", "e-draft", "/lib/The Matrix/The Matrix.mkv", "present", 0, "")
 
-	// Confirma que a prévia, de fato, mostraria esse candidato ABAIXO do
-	// limiar antes de aplicar (ancora o cenário do teste no comportamento real).
+	// Confirms that the preview would, in fact, show this candidate BELOW the
+	// threshold before applying (it anchors the test scenario in the real behavior).
 	previewRec := do(t, h, http.MethodGet, "/api/v1/entities/e-draft/match-preview", nil)
 	preview := decodeMatchPreview(t, previewRec)
 	if !preview.Found || preview.MeetsAutoThreshold {
@@ -204,7 +206,7 @@ func TestConfirmCandidateLocalAbaixoDoLimiar(t *testing.T) {
 		t.Errorf("entity resolvida id = %q, quero e-target (sobrevivente da fusão)", got.ID)
 	}
 
-	// e-draft (perdedora) foi apagada; o arquivo migrou para e-target.
+	// e-draft (the loser) was deleted; the file moved to e-target.
 	if _, err := escrita(t, d).ObterEntity(context.Background(), "e-draft"); err == nil {
 		t.Error("e-draft ainda existe após confirm-candidate local, quero fundida/apagada")
 	}
@@ -217,9 +219,9 @@ func TestConfirmCandidateLocalAbaixoDoLimiar(t *testing.T) {
 	}
 }
 
-// TestConfirmCandidateExternoAbaixoDoLimiar cobre o ramo externo: aplica
-// (grava identidade + re-enriquece + sobe confiança) mesmo com score abaixo
-// do limiar -- mesma sequência de correctEntity, via aplicarIdentidadeExterna.
+// TestConfirmCandidateExternoAbaixoDoLimiar covers the external branch: it applies
+// (writes identity + re-enriches + raises confidence) even with a score below
+// the threshold -- same sequence as correctEntity, via aplicarIdentidadeExterna.
 func TestConfirmCandidateExternoAbaixoDoLimiar(t *testing.T) {
 	resultados := []provider.ResultadoExterno{
 		{Source: "tmdb", SourceID: "438631", Type: "movie", Title: "Dune Part Two"},
@@ -257,12 +259,12 @@ func TestConfirmCandidateExternoAbaixoDoLimiar(t *testing.T) {
 	}
 }
 
-// TestConfirmCandidateExternoSerieConstroiArvore cobre o briefing 0067: o branch
-// EXTERNO de confirm-candidate (aplicarIdentidadeExterna -> s.enrich.Enriquecer) sobre
-// uma entity type='tv' constroi temporada/episodio, exatamente como POST /import ja
-// construia -- GET /entities/{id}/members deixa de vir vazio. Usa o fixture canned de
-// fake.Provider (mesma arvore de internal/enrich/enrich_arvore_test.go: 2 temporadas
-// de 3 episodios).
+// TestConfirmCandidateExternoSerieConstroiArvore covers series trees: the
+// EXTERNAL branch of confirm-candidate (aplicarIdentidadeExterna -> s.enrich.Enriquecer)
+// on a type='tv' entity builds season/episode, exactly as POST /import already
+// built it -- GET /entities/{id}/members stops coming back empty. It uses the canned
+// fixture of fake.Provider (same tree of internal/enrich/enrich_arvore_test.go: 2 seasons
+// of 3 episodes).
 func TestConfirmCandidateExternoSerieConstroiArvore(t *testing.T) {
 	img := servidorImagemArvoreSerie(t)
 	h, d := setupSearchServer(t, WithSearchProvider(fake.New(img.URL)), WithAssetsDir(t.TempDir()))
@@ -288,9 +290,9 @@ func TestConfirmCandidateExternoSerieConstroiArvore(t *testing.T) {
 	}
 }
 
-// TestConfirmCandidate422CorpoIncompleto cobre o 422 quando o corpo não bate
-// o `method` (local sem local_id, external sem source/source_id, method
-// inválido).
+// TestConfirmCandidate422CorpoIncompleto covers the 422 when the body does not match
+// the `method` (local without local_id, external without source/source_id, invalid
+// method).
 func TestConfirmCandidate422CorpoIncompleto(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e-draft", "movie", "Draft")
@@ -316,16 +318,17 @@ func TestConfirmCandidate422CorpoIncompleto(t *testing.T) {
 	}
 }
 
-// TestConfirmCandidateExterno409ColisaoReal cobre o critério mais importante
-// do branch externo: uma colisão de identidade com investimento do dono
-// responde 409 DE VERDADE na requisição (não degrada silenciosamente como o
-// auto-match em lote faz via capturaResposta).
+// TestConfirmCandidateExterno409ColisaoReal covers the most important criterion
+// of the external branch: an identity collision with the owner's investment
+// responds a REAL 409 on the request (it does not degrade silently as the
+// batch auto-match does via capturaResposta).
 func TestConfirmCandidateExterno409ColisaoReal(t *testing.T) {
 	h, d, _, _, _ := setupEnrichServer(t)
 	ctx := context.Background()
 	w := sqlcgen.New(d.Write)
 
-	// Entity já importada com o id externo, COM investimento do dono (override).
+	// Entity already imported with the external id, WITH the owner's investment
+	// (override).
 	rec := do(t, h, http.MethodPost, "/api/v1/import", map[string]string{
 		"source": "tmdb", "source_id": "999", "type": "movie",
 	})
@@ -340,8 +343,8 @@ func TestConfirmCandidateExterno409ColisaoReal(t *testing.T) {
 		t.Fatalf("UpsertMediaOverride: %v", err)
 	}
 
-	// Item da fila, diferente da entity importada, tentando confirmar o MESMO
-	// id externo que já pertence à entity com investimento do dono.
+	// Queue item, different from the imported entity, trying to confirm the SAME
+	// external id that already belongs to the entity with the owner's investment.
 	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{
 		ID: "e-draft", Type: "movie", Title: "Draft",
 	}); err != nil {
@@ -356,8 +359,8 @@ func TestConfirmCandidateExterno409ColisaoReal(t *testing.T) {
 	}
 	checkErrorShape(t, rec2, "conflict_duplicate_identity")
 
-	// Nada foi gravado: e-draft continua sem identidade, a importada continua
-	// existindo intacta.
+	// Nothing was written: e-draft still has no identity, the imported one still
+	// exists intact.
 	entDraft, err := w.ObterEntity(ctx, "e-draft")
 	if err != nil {
 		t.Fatalf("ObterEntity e-draft: %v", err)
@@ -370,7 +373,8 @@ func TestConfirmCandidateExterno409ColisaoReal(t *testing.T) {
 	}
 }
 
-// TestConfirmCandidateInexistente404 cobre o 404 quando a entity não existe.
+// TestConfirmCandidateInexistente404 covers the 404 when the entity does not
+// exist.
 func TestConfirmCandidateInexistente404(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/entities/naoexiste/confirm-candidate",

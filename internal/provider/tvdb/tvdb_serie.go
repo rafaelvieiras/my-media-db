@@ -11,19 +11,20 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Este arquivo implementa a capacidade provider.SerieProvider (ADR-0021): a ÁRVORE da
-// série — temporadas (só da ordenação default) + episódios de grão fino ancorados no
-// episode.id, cada um com a numeração de TODAS as ordens (Numbering).
+// This file implements the provider.SerieProvider capability (ADR-0021): the TREE of
+// the series -- seasons (only of the default ordering) + fine-grained episodes anchored
+// on episode.id, each one with the numbering of ALL orders (Numbering).
 //
-// CAMINHO EFICIENTE (invariante 1): NÃO se busca cada episódio (N chamadas). Puxa-se
-// a LISTA de episódios por ordem — /series/{id}/episodes/{ordem} (paginada 500/pág) —
-// uma vez por ordem, e mescla-se por episode.id. Custo = 1 (extended) + Σ páginas por
-// ordem + Σ páginas por idioma pedido. As numerações por ordem NÃO vêm no seasons[]
-// da lista (vem vazio); por isso a fusão é por endpoint-de-ordem, não por episódio.
+// EFFICIENT PATH (invariant 1): it does NOT fetch each episode (N calls). It pulls the
+// LIST of episodes per order -- /series/{id}/episodes/{order} (paginated 500/page) --
+// once per order, and merges by episode.id. Cost = 1 (extended) + Σ pages per order +
+// Σ pages per requested language. The numberings per order do NOT come in the seasons[]
+// of the list (it comes empty); that is why the merge is by order-endpoint, not by
+// episode.
 
-// BuscarSerieArvore cumpre provider.SerieProvider: devolve a árvore da série `sourceID`
-// nos idiomas `langs` (com fallback). Só as temporadas da ordenação DEFAULT são
-// materializadas; as demais ordens viram numeração nos episódios.
+// BuscarSerieArvore satisfies provider.SerieProvider: it returns the tree of the series
+// `sourceID` in the `langs` languages (with fallback). Only the seasons of the DEFAULT
+// ordering are materialized; the other orders become numbering in the episodes.
 func (c *Client) BuscarSerieArvore(ctx context.Context, sourceID string, langs []string) (provider.SerieArvore, error) {
 	if sourceID == "" {
 		return provider.SerieArvore{}, fmt.Errorf("tvdb: sourceID vazio")
@@ -58,8 +59,8 @@ func (c *Client) BuscarSerieArvore(ctx context.Context, sourceID string, langs [
 	}, nil
 }
 
-// serieExtended busca e parseia /series/{id}/extended (reusado pela árvore e pelo
-// detalhe). ErrNaoEncontrado quando a série não existe.
+// serieExtended fetches and parses /series/{id}/extended (reused by the tree and by the
+// detail). ErrNaoEncontrado when the series does not exist.
 func (c *Client) serieExtended(ctx context.Context, sourceID string) (serieData, error) {
 	body, err := c.getBytes(ctx, "/series/"+url.PathEscape(sourceID)+"/extended", nil)
 	if err != nil {
@@ -72,8 +73,8 @@ func (c *Client) serieExtended(ctx context.Context, sourceID string) (serieData,
 	return resp.Data, nil
 }
 
-// ordensDaSerie devolve as ordenações (season types) que a série usa, na ordem do
-// extended (ex.: ["official","dvd","absolute"]).
+// ordensDaSerie returns the orderings (season types) that the series uses, in the order of
+// the extended (e.g. ["official","dvd","absolute"]).
 func ordensDaSerie(d serieData) []string {
 	out := make([]string, 0, len(d.SeasonTypes))
 	for _, st := range d.SeasonTypes {
@@ -84,8 +85,9 @@ func ordensDaSerie(d serieData) []string {
 	return out
 }
 
-// ordemDefault resolve a ordenação default da série: casa defaultSeasonType (id) com o
-// type em seasonTypes[]. Cai em "official" (ou na primeira ordem) se não achar.
+// ordemDefault resolves the default ordering of the series: it matches defaultSeasonType
+// (id) with the type in seasonTypes[]. It falls back to "official" (or to the first
+// order) when it does not find it.
 func ordemDefault(d serieData, ordens []string) string {
 	for _, st := range d.SeasonTypes {
 		if st.ID == d.DefaultSeasonType && st.Type != "" {
@@ -98,8 +100,9 @@ func ordemDefault(d serieData, ordens []string) string {
 	return "official"
 }
 
-// episodeRec espelha o EpisodeBaseRecord da lista /series/{id}/episodes/{ordem} (só os
-// campos usados). name/overview vêm no idioma pedido (null quando não há tradução).
+// episodeRec mirrors the EpisodeBaseRecord of the /series/{id}/episodes/{order} list (only
+// the fields used). name/overview come in the requested language (null when there is no
+// translation).
 type episodeRec struct {
 	ID             int64  `json:"id"`
 	Name           string `json:"name"`
@@ -112,7 +115,7 @@ type episodeRec struct {
 	Image          string `json:"image"`
 }
 
-// respEpisodios envelopa a resposta da lista de episódios ({data:{episodes[]}, links}).
+// respEpisodios wraps the response of the episode list ({data:{episodes[]}, links}).
 type respEpisodios struct {
 	Data struct {
 		Episodes []episodeRec `json:"episodes"`
@@ -122,9 +125,9 @@ type respEpisodios struct {
 	} `json:"links"`
 }
 
-// buscarEpisodios puxa TODOS os episódios de uma ordem (paginando 500/pág via
-// links.next). `lang` vazio traz o idioma base; um código TheTVDB traz a tradução
-// daquela ordem (name/overview null quando falta). Erro de rede propaga.
+// buscarEpisodios pulls ALL the episodes of an order (paginating 500/page through
+// links.next). An empty `lang` brings the base language; a TheTVDB code brings the
+// translation of that order (name/overview null when missing). Network errors propagate.
 func (c *Client) buscarEpisodios(ctx context.Context, sourceID, ordem, lang string) ([]episodeRec, error) {
 	path := "/series/" + url.PathEscape(sourceID) + "/episodes/" + url.PathEscape(ordem)
 	if lang != "" {
@@ -147,10 +150,10 @@ func (c *Client) buscarEpisodios(ctx context.Context, sourceID, ordem, lang stri
 	}
 }
 
-// montarEpisodios cria os EpisodioExterno da ordenação default (a âncora), preservando
-// a ordem da fonte, e devolve também o índice id→*episódio (para as fusões seguintes).
-// A numeração da ordem default já entra em Numbering; o conteúdo base vai sob o idioma
-// original da série.
+// montarEpisodios creates the EpisodioExterno of the default ordering (the anchor),
+// preserving the order of the source, and also returns the id→*episode index (for the
+// following merges). The numbering of the default order already enters Numbering; the
+// base content goes under the original language of the series.
 func montarEpisodios(base []episodeRec, ordemDef, origLang string) ([]*provider.EpisodioExterno, map[int64]*provider.EpisodioExterno) {
 	episodios := make([]*provider.EpisodioExterno, 0, len(base))
 	indice := make(map[int64]*provider.EpisodioExterno, len(base))
@@ -180,9 +183,9 @@ func montarEpisodios(base []episodeRec, ordemDef, origLang string) ([]*provider.
 	return episodios, indice
 }
 
-// mesclarNumeracao busca os episódios de uma ordem ALTERNATIVA e injeta a numeração
-// daquela ordem no MESMO episódio (por id). Episódios fora da ordem default são
-// ignorados (as ordens são subconjunto do superconjunto default — ADR-0021).
+// mesclarNumeracao fetches the episodes of an ALTERNATIVE order and injects the numbering
+// of that order into the SAME episode (by id). Episodes outside the default order are
+// ignored (the orders are a subset of the default superset -- ADR-0021).
 func (c *Client) mesclarNumeracao(ctx context.Context, sourceID, ordem string, indice map[int64]*provider.EpisodioExterno) error {
 	recs, err := c.buscarEpisodios(ctx, sourceID, ordem, "")
 	if err != nil {
@@ -196,10 +199,10 @@ func (c *Client) mesclarNumeracao(ctx context.Context, sourceID, ordem string, i
 	return nil
 }
 
-// mesclarTraducoes sobrepõe título/sinopse por idioma pedido, usando a LISTA traduzida
-// da ordem default (/episodes/{ordem}/{code}) — sem N chamadas por episódio. É
-// best-effort: o idioma original é pulado (já é a base) e um idioma que falhe degrada
-// (fallback: o episódio fica sem aquele idioma no mapa).
+// mesclarTraducoes overlays title/overview per requested language, using the TRANSLATED
+// LIST of the default order (/episodes/{order}/{code}) -- without N calls per episode. It
+// is best-effort: the original language is skipped (it already is the base) and a language
+// that fails degrades (fallback: the episode stays without that language in the map).
 func (c *Client) mesclarTraducoes(ctx context.Context, sourceID, ordemDef string, langs []string, origTvdb string, indice map[int64]*provider.EpisodioExterno) {
 	vistos := map[string]bool{origTvdb: true}
 	for _, lang := range langs {
@@ -216,8 +219,8 @@ func (c *Client) mesclarTraducoes(ctx context.Context, sourceID, ordemDef string
 	}
 }
 
-// aplicarTraducao grava name/overview não-vazios de cada episódio traduzido sob as
-// chaves de idioma do app (combinado + base).
+// aplicarTraducao writes the non-empty name/overview of each translated episode under the
+// app language keys (combined + base).
 func aplicarTraducao(recs []episodeRec, chaves []string, indice map[int64]*provider.EpisodioExterno) {
 	for _, r := range recs {
 		ep, ok := indice[r.ID]
@@ -231,10 +234,10 @@ func aplicarTraducao(recs []episodeRec, chaves []string, indice map[int64]*provi
 	}
 }
 
-// montarTemporadas cria as TemporadaExterna SÓ da ordenação default (invariante 2), a
-// partir do extended.seasons[] (número, ano, pôster), anexando os episódios agrupados
-// pelo seu número de temporada NA ordem default. Uma temporada presente nos episódios
-// mas ausente do seasons[] (raro) é sintetizada para não perder episódios.
+// montarTemporadas creates the TemporadaExterna ONLY of the default ordering (invariant
+// 2), from extended.seasons[] (number, year, poster), attaching the episodes grouped by
+// their season number IN the default order. A season present in the episodes but absent
+// from seasons[] (rare) is synthesized so as not to lose episodes.
 func montarTemporadas(d serieData, ordemDef string, episodios []*provider.EpisodioExterno) []provider.TemporadaExterna {
 	porTemp := map[int][]provider.EpisodioExterno{}
 	for _, ep := range episodios {
@@ -265,7 +268,7 @@ func montarTemporadas(d serieData, ordemDef string, episodios []*provider.Episod
 	return temps
 }
 
-// setSeAusente grava valor não-vazio em chave não-vazia só se ainda não existe.
+// setSeAusente writes a non-empty value under a non-empty key only if it does not exist yet.
 func setSeAusente(m map[string]string, chave, valor string) {
 	if chave == "" || valor == "" {
 		return

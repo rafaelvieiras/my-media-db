@@ -10,16 +10,15 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Testes do THROTTLE CONFIGURÁVEL do enriquecimento retroativo (briefing
-// 0085): override opcional por library_source (retroactive_enrichment_days)
-// sobre o valor global (app_settings.enrichment_retroativo.retry_days), a
-// regra de ambiguidade (MENOR valor entre bibliotecas, ao contrário do
-// idioma que cai pro global) e o resolvedor diasReentativaRetroativa.
+// Tests of the CONFIGURABLE THROTTLE of the retroactive enrichment: an optional override per
+// library_source (retroactive_enrichment_days) on top of the global value
+// (app_settings.enrichment_retroativo.retry_days), the ambiguity rule (the LOWEST value among
+// libraries, unlike the language one, which falls back to the global) and the
+// diasReentativaRetroativa resolver.
 
-// semearLibrarySourceComRetroDays insere uma library_source com
-// retroactive_enrichment_days (nil = sem override), bypassando
-// library.Service.Criar -- mesmo espírito de semearLibrarySourceComIdioma
-// (idioma_biblioteca_test.go).
+// semearLibrarySourceComRetroDays inserts a library_source with retroactive_enrichment_days
+// (nil = no override), bypassing library.Service.Criar -- the same spirit as
+// semearLibrarySourceComIdioma (idioma_biblioteca_test.go).
 func semearLibrarySourceComRetroDays(t *testing.T, d *db.DB, id, path string, dias *int) {
 	t.Helper()
 	var ni sql.NullInt64
@@ -33,9 +32,9 @@ func semearLibrarySourceComRetroDays(t *testing.T, d *db.DB, id, path string, di
 	}
 }
 
-// semearFilePresenteComFonteEConfianca cria um media_file 'present' com
-// match_confidence=70 (confTituloAno do scanner -- o alvo típico do
-// enriquecimento retroativo) vinculado a uma library_source específica.
+// semearFilePresenteComFonteEConfianca creates a 'present' media_file with
+// match_confidence=70 (the scanner's confTituloAno -- the typical target of the retroactive
+// enrichment) linked to a specific library_source.
 func semearFilePresenteComFonteEConfianca(t *testing.T, d *db.DB, id, entityID, path, sourceID string) {
 	t.Helper()
 	if _, err := sqlcgen.New(d.Write).CriarMediaFile(context.Background(), sqlcgen.CriarMediaFileParams{
@@ -50,12 +49,12 @@ func semearFilePresenteComFonteEConfianca(t *testing.T, d *db.DB, id, entityID, 
 	}
 }
 
-// ── ListarElegiveisEnriquecimentoRetroativo: override por biblioteca ───────
+// ── ListarElegiveisEnriquecimentoRetroativo: per-library override ─────────
 
-// TestListarElegiveis_OverrideMenorAntecipaElegibilidade cobre o critério
-// §5: item cujo ÚNICO media_file pertence a uma biblioteca com override de 3
-// dias E last_external_match_attempt_at há 4 dias aparece como elegível,
-// mesmo com o global bem maior (30) -- o override vence.
+// TestListarElegiveis_OverrideMenorAntecipaElegibilidade covers criterion §5: an item whose
+// ONLY media_file belongs to a library with a 3-day override AND
+// last_external_match_attempt_at 4 days ago shows up as eligible, even with the global much
+// larger (30) -- the override wins.
 func TestListarElegiveis_OverrideMenorAntecipaElegibilidade(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	tres := 3
@@ -79,9 +78,9 @@ func TestListarElegiveis_OverrideMenorAntecipaElegibilidade(t *testing.T) {
 	}
 }
 
-// TestListarElegiveis_SemOverrideRespeitaGlobal cobre o critério §5: item de
-// biblioteca SEM override, com last_external_match_attempt_at há MENOS dias
-// que o global configurado, NÃO aparece como elegível.
+// TestListarElegiveis_SemOverrideRespeitaGlobal covers criterion §5: an item from a library
+// WITHOUT an override, with last_external_match_attempt_at FEWER days ago than the configured
+// global, does NOT show up as eligible.
 func TestListarElegiveis_SemOverrideRespeitaGlobal(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	semearLibrarySourceComRetroDays(t, d, "src-sem-override", "/lib/sem", nil)
@@ -104,11 +103,10 @@ func TestListarElegiveis_SemOverrideRespeitaGlobal(t *testing.T) {
 	}
 }
 
-// TestListarElegiveis_AmbiguidadeUsaMenorValor cobre o critério §5: entity
-// com media_file de DUAS bibliotecas com overrides DIFERENTES (3 e 10 dias)
-// fica elegível a partir de 3 dias -- usa o MENOR (ao contrário do idioma,
-// que em ambiguidade cai pro global; aqui usar o menor nunca causa dano, ver
-// §6 do briefing 0085).
+// TestListarElegiveis_AmbiguidadeUsaMenorValor covers criterion §5: an entity with media_file
+// rows from TWO libraries with DIFFERENT overrides (3 and 10 days) becomes eligible from 3 days
+// on -- it uses the LOWEST one (unlike the language, which falls back to the global on
+// ambiguity; here using the lowest never causes harm).
 func TestListarElegiveis_AmbiguidadeUsaMenorValor(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	tres, dez := 3, 10
@@ -118,8 +116,9 @@ func TestListarElegiveis_AmbiguidadeUsaMenorValor(t *testing.T) {
 	semearEntity(t, d, "e-ambiguo", "movie", "Ambiguo")
 	semearFilePresenteComFonteEConfianca(t, d, "f-ambiguo-1", "e-ambiguo", "/lib/3d/f1.mkv", "src-3d")
 	semearFilePresenteComFonteEConfianca(t, d, "f-ambiguo-2", "e-ambiguo", "/lib/10d/f2.mkv", "src-10d")
-	// Tentado há 5 dias: > 3 (elegível pelo menor) mas < 10 (NÃO elegível
-	// pelo maior) -- prova que a query usa o MENOR, não o maior nem o global.
+	// Attempted 5 days ago: > 3 (eligible through the lowest) but < 10 (NOT eligible through
+	// the highest) -- it proves that the query uses the LOWEST, neither the highest nor the
+	// global.
 	carimbarTentativa(t, d, "e-ambiguo", time.Now().Add(-5*24*time.Hour))
 
 	rows, err := escrita(t, d).ListarElegiveisEnriquecimentoRetroativo(context.Background(),
@@ -136,10 +135,10 @@ func TestListarElegiveis_AmbiguidadeUsaMenorValor(t *testing.T) {
 	}
 }
 
-// ── diasReentativaRetroativa (o resolvedor Go) ──────────────────────────────
+// ── diasReentativaRetroativa (the Go resolver) ─────────────────────────────
 
-// TestDiasReentativaRetroativa_SemArquivoCaiPraGlobal cobre entity sem
-// media_file algum: cai direto no global (default 15, sem PUT prévio).
+// TestDiasReentativaRetroativa_SemArquivoCaiPraGlobal covers an entity without any
+// media_file: it falls straight back to the global (default 15, with no prior PUT).
 func TestDiasReentativaRetroativa_SemArquivoCaiPraGlobal(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e1", "movie", "Sem Arquivo")
@@ -154,9 +153,8 @@ func TestDiasReentativaRetroativa_SemArquivoCaiPraGlobal(t *testing.T) {
 	}
 }
 
-// TestDiasReentativaRetroativa_OverrideUnicoVence cobre o caso central: um
-// único media_file present, cuja library_source tem override -> usa esse
-// valor, não o global.
+// TestDiasReentativaRetroativa_OverrideUnicoVence covers the central case: a single present
+// media_file whose library_source has an override -> it uses that value, not the global.
 func TestDiasReentativaRetroativa_OverrideUnicoVence(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	cinco := 5
@@ -174,9 +172,9 @@ func TestDiasReentativaRetroativa_OverrideUnicoVence(t *testing.T) {
 	}
 }
 
-// TestDiasReentativaRetroativa_AmbiguidadeUsaMenor cobre a regra de
-// ambiguidade: DUAS bibliotecas com overrides DIFERENTES -> usa o MENOR
-// (diferente de idiomaDeBusca, que cairia pro global).
+// TestDiasReentativaRetroativa_AmbiguidadeUsaMenor covers the ambiguity rule: TWO libraries
+// with DIFFERENT overrides -> it uses the LOWEST one (unlike idiomaDeBusca, which would fall
+// back to the global).
 func TestDiasReentativaRetroativa_AmbiguidadeUsaMenor(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	tres, dez := 3, 10
@@ -196,9 +194,9 @@ func TestDiasReentativaRetroativa_AmbiguidadeUsaMenor(t *testing.T) {
 	}
 }
 
-// TestDiasReentativaRetroativa_SemOverrideCaiPraGlobal cobre uma fonte SEM
-// override: usa o global configurado via PUT /settings/enrichment-retroativo
-// (cache invalidado, sem reiniciar o servidor).
+// TestDiasReentativaRetroativa_SemOverrideCaiPraGlobal covers a source WITHOUT an override: it
+// uses the global configured through PUT /settings/enrichment-retroativo (cache invalidated,
+// without restarting the server).
 func TestDiasReentativaRetroativa_SemOverrideCaiPraGlobal(t *testing.T) {
 	dbPath := t.TempDir() + "/retro-dias.sqlite"
 	database, err := db.Open(db.Config{Path: dbPath})
@@ -219,8 +217,8 @@ func TestDiasReentativaRetroativa_SemOverrideCaiPraGlobal(t *testing.T) {
 	semearEntity(t, database, "e1", "movie", "Filme")
 	semearFilePresenteComFonteEConfianca(t, database, "f1", "e1", "/lib/sem/f1.mkv", "src-sem")
 
-	// Muda o global via PUT para provar que o resolvedor lê a config atual
-	// (cache invalidado), não um valor hardcoded.
+	// Changes the global through PUT to prove that the resolver reads the current config (cache
+	// invalidated), not a hardcoded value.
 	rec := do(t, h, "PUT", "/api/v1/settings/enrichment-retroativo", retroactiveEnrichmentSettings{RetryDays: 20})
 	if rec.Code != 200 {
 		t.Fatalf("PUT settings: status = %d, corpo=%s", rec.Code, rec.Body.String())

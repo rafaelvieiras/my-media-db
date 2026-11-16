@@ -2,10 +2,10 @@ package scanner
 
 import "database/sql"
 
-// Helpers de conversão para os tipos nuláveis do sqlc. Concentrados aqui para
-// manter as funções de escrita legíveis e de baixa complexidade.
+// Conversion helpers for the nullable types of sqlc. Concentrated here to keep the
+// write functions readable and of low complexity.
 
-// nsOpt embrulha uma string num sql.NullString, tratando "" como NULO.
+// nsOpt wraps a string in a sql.NullString, treating "" as NULL.
 func nsOpt(s string) sql.NullString {
 	if s == "" {
 		return sql.NullString{}
@@ -13,7 +13,7 @@ func nsOpt(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: true}
 }
 
-// nsBytes embrulha um []byte (JSON) num sql.NullString, tratando nil/vazio como NULO.
+// nsBytes wraps a []byte (JSON) in a sql.NullString, treating nil/empty as NULL.
 func nsBytes(b []byte) sql.NullString {
 	if len(b) == 0 {
 		return sql.NullString{}
@@ -21,12 +21,12 @@ func nsBytes(b []byte) sql.NullString {
 	return sql.NullString{String: string(b), Valid: true}
 }
 
-// niInt embrulha um int64 num sql.NullInt64 válido.
+// niInt wraps an int64 in a valid sql.NullInt64.
 func niInt(v int64) sql.NullInt64 {
 	return sql.NullInt64{Int64: v, Valid: true}
 }
 
-// niOptInt embrulha um int como sql.NullInt64, tratando 0 como NULO (ausente).
+// niOptInt wraps an int in a sql.NullInt64, treating 0 as NULL (absent).
 func niOptInt(v int) sql.NullInt64 {
 	if v == 0 {
 		return sql.NullInt64{}
@@ -34,7 +34,7 @@ func niOptInt(v int) sql.NullInt64 {
 	return sql.NullInt64{Int64: int64(v), Valid: true}
 }
 
-// nfFloat embrulha um float64 num sql.NullFloat64 válido.
+// nfFloat wraps a float64 in a valid sql.NullFloat64.
 func nfFloat(v float64) sql.NullFloat64 {
 	return sql.NullFloat64{Float64: v, Valid: true}
 }

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// hashDePath é um atalho de teste: abre o arquivo e calcula o content_hash.
+// hashDePath is a test shorthand: it opens the file and computes the content_hash.
 func hashDePath(t *testing.T, path string) string {
 	t.Helper()
 	info, err := os.Stat(path)
@@ -21,14 +21,14 @@ func hashDePath(t *testing.T, path string) string {
 	return h
 }
 
-// TestContentHashEstavelEDistinto prova as duas propriedades do content_hash: o
-// mesmo conteúdo (mesmo em outro caminho — rename/move) dá o MESMO hash; conteúdo
-// diferente dá hash diferente. E o prefixo do esquema está presente.
+// TestContentHashEstavelEDistinto proves the two properties of the content_hash:
+// the same content (even at another path — rename/move) gives the SAME hash;
+// different content gives a different hash. And the scheme prefix is present.
 func TestContentHashEstavelEDistinto(t *testing.T) {
 	dir := t.TempDir()
 	a := filepath.Join(dir, "a.mkv")
-	b := filepath.Join(dir, "b.mkv") // mesmo conteúdo de a, outro nome (move)
-	c := filepath.Join(dir, "c.mkv") // conteúdo diferente
+	b := filepath.Join(dir, "b.mkv") // same content as a, another name (move)
+	c := filepath.Join(dir, "c.mkv") // different content
 
 	conteudo := []byte("conteudo de video sintetico xyz")
 	if err := os.WriteFile(a, conteudo, 0o644); err != nil {
@@ -53,16 +53,16 @@ func TestContentHashEstavelEDistinto(t *testing.T) {
 	}
 }
 
-// TestContentHashArquivoGrande exercita o caminho head+tail (> 2 blocos): dois
-// arquivos com o mesmo início e fim mas MEIO diferente têm hashes diferentes só
-// se o tamanho mudar; com o mesmo tamanho, o hash parcial pode coincidir (é o
-// trade-off documentado). Aqui garantimos que tamanhos diferentes separam.
+// TestContentHashArquivoGrande exercises the head+tail path (> 2 blocks): two files
+// with the same beginning and end but a different MIDDLE only have different hashes
+// if the size changes; with the same size, the partial hash may coincide (it is the
+// documented trade-off). Here we guarantee that different sizes separate them.
 func TestContentHashArquivoGrande(t *testing.T) {
 	dir := t.TempDir()
 	grande := filepath.Join(dir, "grande.mkv")
 	maior := filepath.Join(dir, "maior.mkv")
 
-	buf := make([]byte, 2*blocoHash+1024) // > 2 blocos: usa head+tail
+	buf := make([]byte, 2*blocoHash+1024) // > 2 blocks: uses head+tail
 	for i := range buf {
 		buf[i] = byte(i % 251)
 	}

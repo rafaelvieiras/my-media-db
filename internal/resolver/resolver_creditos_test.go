@@ -5,16 +5,18 @@ import (
 	"testing"
 )
 
-// Testes do OVERRIDE DE CRÉDITOS (elenco/equipe/produtoras, briefing 0029 Fase
-// C): a MESMA garantia não-destrutiva dos demais campos editáveis
-// (title/tags/local_rating) — override ⟵ externo, nunca perde a base do
-// provider, `null` apaga sem destruir o registro (é reversível: basta limpar o
-// override). Usa entRica() (entity com id TMDB) e uma camada externa própria com
-// vários créditos, para exercitar reorder/remove/edit/add.
+// Tests of the CREDITS OVERRIDE (cast/crew/production companies, ADR-0013): the
+// SAME non-destructive guarantee as the other editable fields
+// (title/tags/local_rating) — override ⟵ externo, never loses the provider's base,
+// `null` erases without destroying the record (it is reversible: clearing the
+// override is enough). It uses entRica() (entity with a TMDB id) and an external
+// layer of its own with several credits, to exercise
+// reorder/remove/edit/add.
 
-// camadaCreditosMulti devolve uma camada externa canônica com 3 créditos de
-// elenco, 3 de equipe (dois do MESMO source_id "10" com jobs diferentes —
-// Diretor+Roteirista, o caso que justifica a chave composta) e 1 produtora.
+// camadaCreditosMulti returns a canonical external layer with 3 cast credits,
+// 3 crew credits (two of the SAME source_id "10" with different jobs —
+// Director+Writer, the case that justifies the composite key) and 1 production
+// company.
 func camadaCreditosMulti() []CamadaExterna {
 	return []CamadaExterna{{Fonte: "tmdb", Campos: map[string]any{
 		"cast": []any{
@@ -33,8 +35,8 @@ func camadaCreditosMulti() []CamadaExterna {
 	}}}
 }
 
-// resolverComCreditos monta a Entidade resolvida com a camada multi-crédito e o
-// override informado (nil = sem override).
+// resolverComCreditos builds the resolved Entidade with the multi-credit layer and
+// the given override (nil = no override).
 func resolverComCreditos(t *testing.T, override map[string]json.RawMessage) Entidade {
 	t.Helper()
 	return Resolver(Camadas{
@@ -47,9 +49,9 @@ func resolverComCreditos(t *testing.T, override map[string]json.RawMessage) Enti
 	})
 }
 
-// TestCreditosSemOverridePreservaBaseExterna: sem override, cast/crew/companies
-// vêm INTEGRALMENTE da base externa — paridade com o comportamento read-only da
-// Fase B (não regride).
+// TestCreditosSemOverridePreservaBaseExterna: with no override, cast/crew/companies
+// come ENTIRELY from the external base — parity with the read-only behavior of
+// Phase B (no regression).
 func TestCreditosSemOverridePreservaBaseExterna(t *testing.T) {
 	got := resolverComCreditos(t, nil)
 
@@ -64,8 +66,8 @@ func TestCreditosSemOverridePreservaBaseExterna(t *testing.T) {
 	}
 }
 
-// TestCreditosOverrideReorderCastReescreveOrder: reorder no cast reflete na
-// ordem final da lista E no campo Order (0-based) de cada item.
+// TestCreditosOverrideReorderCastReescreveOrder: a cast reorder is reflected in the
+// final order of the list AND in the Order field (0-based) of each item.
 func TestCreditosOverrideReorderCastReescreveOrder(t *testing.T) {
 	got := resolverComCreditos(t, ov(map[string]string{
 		"credits": `{"cast":{"reorder":["3","1"]}}`,
@@ -74,7 +76,7 @@ func TestCreditosOverrideReorderCastReescreveOrder(t *testing.T) {
 	if len(got.Cast) != 3 {
 		t.Fatalf("cast = %+v, quero 3 creditos", got.Cast)
 	}
-	// Reorder: 3, 1 primeiro (na ordem dada); 2 (nao mencionado) vem depois.
+	// Reorder: 3, 1 first (in the given order); 2 (not mentioned) comes afterwards.
 	quero := []struct {
 		sourceID string
 		order    int
@@ -87,15 +89,16 @@ func TestCreditosOverrideReorderCastReescreveOrder(t *testing.T) {
 			t.Errorf("cast[%d].Order = %d, quero %d", i, got.Cast[i].Order, w.order)
 		}
 	}
-	// crew/companies nao tocados: seguem intactos (sub-chave ausente herda base).
+	// crew/companies untouched: they stay intact (a sub-key absent from the patch
+	// inherits the base).
 	if len(got.Crew) != 3 || len(got.Companies) != 1 {
 		t.Errorf("crew/companies deveriam seguir intactos: crew=%+v companies=%+v", got.Crew, got.Companies)
 	}
 }
 
-// TestCreditosOverrideRemoveCrewChaveComposta: remove no crew usa a chave
-// composta source_id|job — remove só aquele credito, preservando os demais do
-// MESMO source_id com job diferente (o caso Diretor+Roteirista).
+// TestCreditosOverrideRemoveCrewChaveComposta: a crew remove uses the composite key
+// source_id|job — it removes only that credit, preserving the others of the
+// SAME source_id with a different job (the Director+Writer case).
 func TestCreditosOverrideRemoveCrewChaveComposta(t *testing.T) {
 	got := resolverComCreditos(t, ov(map[string]string{
 		"credits": `{"crew":{"remove":["10|Director"]}}`,
@@ -118,8 +121,8 @@ func TestCreditosOverrideRemoveCrewChaveComposta(t *testing.T) {
 	}
 }
 
-// TestCreditosOverrideEditPreservaDemaisCampos: edit corrige um campo do
-// credito (character) preservando os demais (name/order) intactos.
+// TestCreditosOverrideEditPreservaDemaisCampos: edit fixes one field of the
+// credit (character) preserving the others (name/order) intact.
 func TestCreditosOverrideEditPreservaDemaisCampos(t *testing.T) {
 	got := resolverComCreditos(t, ov(map[string]string{
 		"credits": `{"cast":{"edit":{"2":{"character":"Antagonista Revisado"}}}}`,
@@ -147,8 +150,8 @@ func TestCreditosOverrideEditPreservaDemaisCampos(t *testing.T) {
 	eq(t, "order preservado", alvo.Order, 1)
 }
 
-// TestCreditosOverrideAddCreditoCustom: add acrescenta um credito CUSTOM (sem
-// provider, id escolhido pelo dono) ao resultado.
+// TestCreditosOverrideAddCreditoCustom: add appends a CUSTOM credit (no provider, an
+// id chosen by the owner) to the result.
 func TestCreditosOverrideAddCreditoCustom(t *testing.T) {
 	got := resolverComCreditos(t, ov(map[string]string{
 		"credits": `{"crew":{"add":[{"source_id":"custom-1","name":"Fulano de Tal","department":"Direcao","job":"Assistente de Direcao"}]}}`,
@@ -171,10 +174,10 @@ func TestCreditosOverrideAddCreditoCustom(t *testing.T) {
 	}
 }
 
-// TestCreditosOverrideNullApagaTudo: `credits: null` apaga TODOS os creditos
-// (cast/crew/companies saem vazios []), mas NAO destroi a base externa
-// permanentemente — e reversivel (limpar o override volta a heranca, testado
-// via Resolver sem override no mesmo teste).
+// TestCreditosOverrideNullApagaTudo: `credits: null` erases ALL credits
+// (cast/crew/companies come out as empty []), but does NOT destroy the external
+// base permanently — it is reversible (clearing the override returns to the
+// inheritance, tested through a Resolver with no override in the same test).
 func TestCreditosOverrideNullApagaTudo(t *testing.T) {
 	got := resolverComCreditos(t, ov(map[string]string{
 		"credits": `null`,
@@ -187,8 +190,8 @@ func TestCreditosOverrideNullApagaTudo(t *testing.T) {
 		t.Error("cast/crew/companies devem ser [] (nao nil) mesmo com credits=null")
 	}
 
-	// Nao-destrutivo: sem override, a base externa segue viva (o dono nao perdeu
-	// os creditos do provider so por ter zerado o override antes).
+	// Non-destructive: with no override, the external base remains alive (the owner
+	// did not lose the provider credits just for having zeroed the override before).
 	semOverride := resolverComCreditos(t, nil)
 	if len(semOverride.Cast) != 3 || len(semOverride.Crew) != 3 || len(semOverride.Companies) != 1 {
 		t.Fatalf("base externa deveria seguir intacta para outra resolucao sem override, veio cast=%d crew=%d companies=%d",
@@ -196,8 +199,8 @@ func TestCreditosOverrideNullApagaTudo(t *testing.T) {
 	}
 }
 
-// TestCreditosSubChaveAusenteHerdaBase: um patch so com `crew` deixa
-// cast/companies INTOCADOS (herdam a base externa integralmente).
+// TestCreditosSubChaveAusenteHerdaBase: a patch with only `crew` leaves
+// cast/companies UNTOUCHED (they inherit the external base entirely).
 func TestCreditosSubChaveAusenteHerdaBase(t *testing.T) {
 	got := resolverComCreditos(t, ov(map[string]string{
 		"credits": `{"crew":{"remove":["20|Producer"]}}`,
@@ -214,13 +217,13 @@ func TestCreditosSubChaveAusenteHerdaBase(t *testing.T) {
 	}
 }
 
-// TestCreditosEditCrewMudaJobNaoQuebraReorder: editar o `job` de um credito de
-// equipe (campo que PARTICIPA da propria chave composta source_id|job) nao pode
-// "perder" o item do reorder so por ter mudado de chave no meio do patch -- o
-// reorder deve casar com a chave ANTES do edit (a mesma que o front calculou ao
-// montar o patch), senao o item editado seria empurrado para o fim da lista so
-// por ter sido editado (bug corrigido: reordenarCreditos recebia a chave
-// POS-edit, que nao batia com o reorder do front).
+// TestCreditosEditCrewMudaJobNaoQuebraReorder: editing the `job` of a crew credit
+// (a field that PARTICIPATES in the composite key source_id|job itself) must not
+// "lose" the item from the reorder just for having changed key in the middle of the
+// patch -- the reorder must match the key BEFORE the edit (the same one the front
+// end computed when building the patch), otherwise the edited item would be pushed
+// to the end of the list just for having been edited (bug fixed: reordenarCreditos
+// used to receive the POST-edit key, which did not match the front end's reorder).
 func TestCreditosEditCrewMudaJobNaoQuebraReorder(t *testing.T) {
 	got := resolverComCreditos(t, ov(map[string]string{
 		"credits": `{"crew":{
@@ -244,10 +247,10 @@ func TestCreditosEditCrewMudaJobNaoQuebraReorder(t *testing.T) {
 	}
 }
 
-// TestCamposEditaveisIncluiCredits: credits E editavel (entra em
-// CamposEditaveis, PATCH/DELETE aceitam a chave), NEUTRO (nao traduzivel — a
-// edicao de character/job/department nao compoe por idioma nesta fase) e da
-// classe KindCreditos.
+// TestCamposEditaveisIncluiCredits: credits IS editable (it enters
+// CamposEditaveis, PATCH/DELETE accept the key), NEUTRAL (not translatable — editing
+// character/job/department does not compose per language in this phase) and of the
+// KindCreditos class.
 func TestCamposEditaveisIncluiCredits(t *testing.T) {
 	info, ok := CamposEditaveis()["credits"]
 	if !ok {

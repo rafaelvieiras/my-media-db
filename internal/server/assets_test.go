@@ -17,13 +17,13 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Testes da ARTE CUSTOM (briefing 0017): upload origin='user', validacao de mime
-// (magic bytes) e tamanho, precedencia de servico (helper puro + endpoint de
-// poster), preferencia (uma por kind), remocao (recusa external), regressao
-// nao-destrutiva do re-enrich e a guarda de path-traversal.
+// Tests of the CUSTOM ARTWORK: upload origin='user', mime validation
+// (magic bytes) and size, serving precedence (pure helper + poster
+// endpoint), preference (one per kind), removal (refuses external), non-destructive
+// regression of re-enrich and the path-traversal guard.
 
-// setupAssetsServer sobe um Server com banco migrado e um assetsDir temporario
-// (WithAssetsDir), devolvendo tambem o dir para as assercoes de disco.
+// setupAssetsServer starts a Server with a migrated database and a temporary assetsDir
+// (WithAssetsDir), also returning the dir for the disk assertions.
 func setupAssetsServer(t *testing.T) (http.Handler, *db.DB, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -31,18 +31,18 @@ func setupAssetsServer(t *testing.T) (http.Handler, *db.DB, string) {
 	return h, d, dir
 }
 
-// pngSig e a assinatura magic-byte de um PNG; jpgSig de um JPEG; webpBytes monta um
-// contêiner RIFF/WEBP minimo — o que http.DetectContentType fareja.
+// pngSig is the magic-byte signature of a PNG; jpgSig of a JPEG; webpBytes builds a
+// minimal RIFF/WEBP container — what http.DetectContentType sniffs.
 var (
 	pngSig = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
 	jpgSig = []byte{0xff, 0xd8, 0xff, 0xe0}
 )
 
-// pngPayload devolve n bytes comecando pela assinatura PNG (magic bytes validos).
+// pngPayload returns n bytes starting with the PNG signature (valid magic bytes).
 func pngPayload(n int) []byte { return pngPayloadMark(n, 0) }
 
-// pngPayloadMark e um PNG valido com um byte marcador (indice 10) para diferenciar
-// conteudos servidos sem quebrar a assinatura.
+// pngPayloadMark is a valid PNG with a marker byte (index 10) to differentiate
+// served contents without breaking the signature.
 func pngPayloadMark(n int, marker byte) []byte {
 	b := make([]byte, n)
 	copy(b, pngSig)
@@ -52,14 +52,14 @@ func pngPayloadMark(n int, marker byte) []byte {
 	return b
 }
 
-// jpgPayload devolve um JPEG valido (assinatura magic-byte).
+// jpgPayload returns a valid JPEG (magic-byte signature).
 func jpgPayload(n int) []byte {
 	b := make([]byte, n)
 	copy(b, jpgSig)
 	return b
 }
 
-// webpPayload monta "RIFF????WEBPVP..." — o que o sniff de http reconhece.
+// webpPayload builds "RIFF????WEBPVP..." — what the http sniff recognizes.
 func webpPayload(n int) []byte {
 	b := make([]byte, n)
 	copy(b, []byte("RIFF"))
@@ -67,8 +67,8 @@ func webpPayload(n int) []byte {
 	return b
 }
 
-// postAsset envia um multipart/form-data (campo `file` + `kind` opcional) para o
-// upload e devolve o recorder.
+// postAsset sends a multipart/form-data (field `file` + optional `kind`) to the
+// upload and returns the recorder.
 func postAsset(t *testing.T, h http.Handler, entityID, kind string, content []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	var buf bytes.Buffer
@@ -95,7 +95,8 @@ func postAsset(t *testing.T, h http.Handler, entityID, kind string, content []by
 	return rec
 }
 
-// postSemArquivo envia um multipart SEM o campo `file` (so `kind`) — corpo malformado.
+// postSemArquivo sends a multipart WITHOUT the `file` field (only `kind`) — malformed
+// body.
 func postSemArquivo(t *testing.T, h http.Handler, entityID string) *httptest.ResponseRecorder {
 	t.Helper()
 	var buf bytes.Buffer
@@ -127,7 +128,7 @@ func decodeAssets(t *testing.T, rec *httptest.ResponseRecorder) []assetDTO {
 	return a
 }
 
-// acharAsset devolve o assetDTO de id na lista (t.Fatalf se ausente).
+// acharAsset returns the assetDTO of id in the list (t.Fatalf if absent).
 func acharAsset(t *testing.T, lista []assetDTO, id string) assetDTO {
 	t.Helper()
 	for _, a := range lista {
@@ -139,10 +140,10 @@ func acharAsset(t *testing.T, lista []assetDTO, id string) assetDTO {
 	return assetDTO{}
 }
 
-// ── Upload: cria asset user + valida mime e tamanho (criterio 5.1) ───────────
+// ── Upload: creates a user asset + validates mime and size (criterion 5.1) ───────────
 
-// TestUploadCriaAssetUserComBinario cobre o criterio 5.1: upload cria asset
-// origin=user com o binario em disco (layout {assetsDir}/{entityID}/user-{id}.ext).
+// TestUploadCriaAssetUserComBinario covers the criterion 5.1: the upload creates an asset
+// origin=user with the binary on disk (layout {assetsDir}/{entityID}/user-{id}.ext).
 func TestUploadCriaAssetUserComBinario(t *testing.T) {
 	h, d, dir := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
@@ -157,12 +158,12 @@ func TestUploadCriaAssetUserComBinario(t *testing.T) {
 	eq(t, "preferred", a.Preferred, false)
 	eq(t, "url", a.URL, "/api/v1/entities/e1/assets/"+a.ID+"/file")
 
-	// O binario mora sob {assetsDir}/e1/user-{id}.png.
+	// The binary lives under {assetsDir}/e1/user-{id}.png.
 	bin := filepath.Join(dir, "e1", "user-"+a.ID+".png")
 	if _, err := os.Stat(bin); err != nil {
 		t.Fatalf("binario ausente em %s: %v", bin, err)
 	}
-	// Linha origin='user' persistida.
+	// origin='user' row persisted.
 	got, err := escrita(t, d).ObterAsset(context.Background(), a.ID)
 	if err != nil {
 		t.Fatalf("ObterAsset: %v", err)
@@ -170,9 +171,9 @@ func TestUploadCriaAssetUserComBinario(t *testing.T) {
 	eq(t, "db.origin", got.Origin, "user")
 }
 
-// TestUploadDetectaMimePorMagicBytes cobre o criterio 5.1: mime validado pelos
-// magic bytes — jpeg/png/webp aceitos (201), text/plain rejeitado (415), mesmo com
-// o multipart declarando outra coisa.
+// TestUploadDetectaMimePorMagicBytes covers the criterion 5.1: mime validated by the
+// magic bytes — jpeg/png/webp accepted (201), text/plain rejected (415), even with
+// the multipart declaring something else.
 func TestUploadDetectaMimePorMagicBytes(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
@@ -200,8 +201,8 @@ func TestUploadDetectaMimePorMagicBytes(t *testing.T) {
 	}
 }
 
-// TestUploadRejeitaGrandeDemais cobre o criterio 5.1: tamanho validado — um arquivo
-// acima de 20 MiB responde 413.
+// TestUploadRejeitaGrandeDemais covers the criterion 5.1: size validated — a file
+// above 20 MiB responds 413.
 func TestUploadRejeitaGrandeDemais(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
@@ -213,7 +214,8 @@ func TestUploadRejeitaGrandeDemais(t *testing.T) {
 	checkErrorShape(t, rec, "payload_too_large")
 }
 
-// TestUploadCorpoMalformado cobre o 422: sem o campo `file` no multipart.
+// TestUploadCorpoMalformado covers the 422: without the `file` field in the
+// multipart.
 func TestUploadCorpoMalformado(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
@@ -225,7 +227,7 @@ func TestUploadCorpoMalformado(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestUploadEntityInexistente404 cobre o 404 do upload.
+// TestUploadEntityInexistente404 covers the 404 of the upload.
 func TestUploadEntityInexistente404(t *testing.T) {
 	h, _, _ := setupAssetsServer(t)
 	rec := postAsset(t, h, "naoexiste", "poster", pngPayload(64))
@@ -235,8 +237,8 @@ func TestUploadEntityInexistente404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestUploadKindInvalido cobre o 422 de kind FORA do conjunto valido expandido (0048):
-// banner/logo/disc/... passaram a ser aceitos, entao usa um kind inexistente ('cdart').
+// TestUploadKindInvalido covers the 422 of a kind OUTSIDE the expanded valid set:
+// banner/logo/disc/... started being accepted, so it uses a nonexistent kind ('cdart').
 func TestUploadKindInvalido(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
@@ -247,7 +249,7 @@ func TestUploadKindInvalido(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestUploadAceitaKindsExpandidos: os kinds da fanart.tv (0048) sao aceitos no upload.
+// TestUploadAceitaKindsExpandidos: the fanart.tv kinds are accepted in the upload.
 func TestUploadAceitaKindsExpandidos(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
@@ -259,9 +261,9 @@ func TestUploadAceitaKindsExpandidos(t *testing.T) {
 	}
 }
 
-// ── Precedencia: helper puro (criterio 5.2) ──────────────────────────────────
+// ── Precedence: pure helper (criterion 5.2) ──────────────────────────────────
 
-// mkAsset monta um sqlcgen.Asset em memoria (para o teste do helper puro).
+// mkAsset builds an in-memory sqlcgen.Asset (for the pure helper test).
 func mkAsset(id, kind, origin string, preferred bool) sqlcgen.Asset {
 	a := sqlcgen.Asset{ID: id, EntityID: "e", Kind: kind, Origin: origin}
 	if preferred {
@@ -270,11 +272,11 @@ func mkAsset(id, kind, origin string, preferred bool) sqlcgen.Asset {
 	return a
 }
 
-// TestEscolherAssetServido cobre o criterio 5.2 (mais o 0119) no helper PURO:
-// preferida vence user vence local (arquivo achado pelo scanner na pasta) vence
-// external vence base; sem nenhum dos quatro cai na base (proveniencia
-// desconhecida/futura); nada quando vazio; o kind filtra. `quer` vazio significa
-// ok=false.
+// TestEscolherAssetServido covers the criterion 5.2 (plus the local-artwork decision) in the
+// PURE helper: preferred beats user beats local (file found by the scanner in the folder)
+// beats external beats base; with none of the four it falls back to base
+// (unknown/future provenance); nothing when empty; the kind filters. An empty `quer`
+// means ok=false.
 func TestEscolherAssetServido(t *testing.T) {
 	casos := []struct {
 		nome   string
@@ -297,7 +299,7 @@ func TestEscolherAssetServido(t *testing.T) {
 			mkAsset("u1", "poster", "user", false),
 			mkAsset("u2", "poster", "user", false),
 		}, "u2"},
-		{"local (pasta) vence external (briefing 0119)", []sqlcgen.Asset{
+		{"local (pasta) vence external", []sqlcgen.Asset{
 			mkAsset("loc", "poster", "local", false),
 			mkAsset("ext", "poster", "external", false),
 		}, "loc"},
@@ -334,13 +336,13 @@ func TestEscolherAssetServido(t *testing.T) {
 	}
 }
 
-// TestPosterServeArteDoDono cobre o criterio 5.2 ponta a ponta: com arte external e
-// arte do dono, GET /assets/poster serve a do dono.
+// TestPosterServeArteDoDono covers the criterion 5.2 end to end: with external artwork and
+// the owner's artwork, GET /assets/poster serves the owner's.
 func TestPosterServeArteDoDono(t *testing.T) {
 	h, d, dir := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
 
-	// Arte external cacheada em disco (sob o assetsDir confiavel).
+	// External artwork cached on disk (under the trusted assetsDir).
 	extContent := pngPayloadMark(64, 0xAA)
 	extPath := filepath.Join(dir, "e1", "poster.png")
 	if err := os.MkdirAll(filepath.Dir(extPath), 0o755); err != nil {
@@ -355,7 +357,7 @@ func TestPosterServeArteDoDono(t *testing.T) {
 		t.Fatalf("CriarAsset external: %v", err)
 	}
 
-	// Arte do dono (upload).
+	// Owner's artwork (upload).
 	userContent := pngPayloadMark(64, 0xBB)
 	if rec := postAsset(t, h, "e1", "poster", userContent); rec.Code != http.StatusCreated {
 		t.Fatalf("upload status = %d, quero 201 (corpo=%s)", rec.Code, rec.Body.String())
@@ -370,12 +372,12 @@ func TestPosterServeArteDoDono(t *testing.T) {
 	}
 }
 
-// ── Preferencia: uma por kind, limpa as outras (criterio 5.2) ────────────────
+// ── Preference: one per kind, clears the others (criterion 5.2) ──────────────
 
-// TestPreferLimpaOutrasDoMesmoKind cobre o criterio 5.2: marcar preferida seta a
-// flag no alvo e LIMPA a dos outros do MESMO kind, sem tocar outro kind. Desde o
-// briefing 0062, PUT /prefer também materializa/rotaciona fisicamente — por isso a
-// entity precisa de um media_file present (pasta de destino), senão 404.
+// TestPreferLimpaOutrasDoMesmoKind covers the criterion 5.2: marking as preferred sets the
+// flag on the target and CLEARS it on the others of the SAME kind, without touching another
+// kind. Since a later delivery, PUT /prefer also materializes/rotates physically — that is
+// why the entity needs a present media_file (destination folder), otherwise 404.
 func TestPreferLimpaOutrasDoMesmoKind(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
@@ -385,7 +387,7 @@ func TestPreferLimpaOutrasDoMesmoKind(t *testing.T) {
 	a2 := decodeAsset(t, postAsset(t, h, "e1", "poster", pngPayload(64)))
 	af := decodeAsset(t, postAsset(t, h, "e1", "fanart", pngPayload(64)))
 
-	// Prefere a1.
+	// Prefers a1.
 	p := do(t, h, http.MethodPut, "/api/v1/entities/e1/assets/"+a1.ID+"/prefer", nil)
 	if p.Code != http.StatusOK {
 		t.Fatalf("prefer a1 status = %d, quero 200 (corpo=%s)", p.Code, p.Body.String())
@@ -397,7 +399,7 @@ func TestPreferLimpaOutrasDoMesmoKind(t *testing.T) {
 	eq(t, "a1.preferred", acharAsset(t, lista, a1.ID).Preferred, true)
 	eq(t, "a2.preferred", acharAsset(t, lista, a2.ID).Preferred, false)
 
-	// Prefere a2: a1 e limpa, a2 marcada (uma por kind).
+	// Prefers a2: a1 is cleared, a2 is marked (one per kind).
 	if p2 := do(t, h, http.MethodPut, "/api/v1/entities/e1/assets/"+a2.ID+"/prefer", nil); p2.Code != http.StatusOK {
 		t.Fatalf("prefer a2 status = %d, quero 200", p2.Code)
 	}
@@ -405,7 +407,7 @@ func TestPreferLimpaOutrasDoMesmoKind(t *testing.T) {
 	eq(t, "a1.preferred(depois)", acharAsset(t, lista2, a1.ID).Preferred, false)
 	eq(t, "a2.preferred(depois)", acharAsset(t, lista2, a2.ID).Preferred, true)
 
-	// Preferir o fanart nao afeta a preferida de poster (uma por kind).
+	// Preferring the fanart does not affect the preferred poster (one per kind).
 	if pf := do(t, h, http.MethodPut, "/api/v1/entities/e1/assets/"+af.ID+"/prefer", nil); pf.Code != http.StatusOK {
 		t.Fatalf("prefer fanart status = %d, quero 200", pf.Code)
 	}
@@ -414,7 +416,7 @@ func TestPreferLimpaOutrasDoMesmoKind(t *testing.T) {
 	eq(t, "a2.preferred(kind poster intacto)", acharAsset(t, lista3, a2.ID).Preferred, true)
 }
 
-// TestPreferAssetInexistente404 cobre o 404 do prefer.
+// TestPreferAssetInexistente404 covers the 404 of prefer.
 func TestPreferAssetInexistente404(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
@@ -425,10 +427,10 @@ func TestPreferAssetInexistente404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// ── Remocao: remove user, recusa external (criterio 5.4) ─────────────────────
+// ── Removal: removes user, refuses external (criterion 5.4) ─────────────────
 
-// TestDeleteRemoveUserRecusaExternal cobre o criterio 5.4: DELETE apaga arte do dono
-// (linha + binario) e recusa apagar arte external (422).
+// TestDeleteRemoveUserRecusaExternal covers the criterion 5.4: DELETE removes the owner's
+// artwork (row + binary) and refuses to delete external artwork (422).
 func TestDeleteRemoveUserRecusaExternal(t *testing.T) {
 	h, d, dir := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
@@ -448,7 +450,7 @@ func TestDeleteRemoveUserRecusaExternal(t *testing.T) {
 		t.Errorf("binario ainda existe apos DELETE: %v", err)
 	}
 
-	// Arte external: DELETE recusa (422), a linha permanece.
+	// External artwork: DELETE refuses (422), the row remains.
 	if _, err := escrita(t, d).CriarAsset(ctx, sqlcgen.CriarAssetParams{
 		ID: "ext1", EntityID: "e1", Kind: "poster", Origin: "external", PathOrUri: filepath.Join(dir, "e1", "poster.png"),
 	}); err != nil {
@@ -464,11 +466,11 @@ func TestDeleteRemoveUserRecusaExternal(t *testing.T) {
 	}
 }
 
-// ── Regressao nao-destrutiva: re-enrich nao remove arte user (criterio 5.3) ──
+// ── Non-destructive regression: re-enrich does not remove user artwork (criterion 5.3) ──
 
-// TestReEnrichNaoRemoveArteUser cobre o criterio 5.3: apos subir arte do dono,
-// re-enriquecer (que re-cacheia a arte external por dedup de origin) NUNCA remove a
-// arte origin='user', e o poster segue servindo a do dono.
+// TestReEnrichNaoRemoveArteUser covers the criterion 5.3: after uploading the owner's
+// artwork, re-enriching (which re-caches the external artwork by origin dedup) NEVER removes
+// the origin='user' artwork, and the poster keeps serving the owner's.
 func TestReEnrichNaoRemoveArteUser(t *testing.T) {
 	h, d, _, _, _ := setupEnrichServer(t)
 	ctx := context.Background()
@@ -482,18 +484,18 @@ func TestReEnrichNaoRemoveArteUser(t *testing.T) {
 	userContent := pngPayloadMark(64, 0xCC)
 	ua := decodeAsset(t, postAsset(t, h, id, "poster", userContent))
 
-	// O poster passa a servir a arte do dono (vence a external cacheada).
+	// The poster starts serving the owner's artwork (it beats the cached external one).
 	p1 := do(t, h, http.MethodGet, "/api/v1/entities/"+id+"/assets/poster", nil)
 	if !bytes.Equal(p1.Body.Bytes(), userContent) {
 		t.Fatalf("poster nao serve a arte do dono apos upload")
 	}
 
-	// Re-enriquece: usa external_ids[tmdb]=777; re-cacheia so a external.
+	// Re-enriches: uses external_ids[tmdb]=777; re-caches only the external one.
 	if en := do(t, h, http.MethodPost, "/api/v1/entities/"+id+"/enrich", nil); en.Code != http.StatusOK {
 		t.Fatalf("re-enrich status = %d, quero 200 (corpo=%s)", en.Code, en.Body.String())
 	}
 
-	// A arte do dono continua existindo e sendo servida.
+	// The owner's artwork keeps existing and being served.
 	if _, err := escrita(t, d).ObterAsset(ctx, ua.ID); err != nil {
 		t.Errorf("arte do dono removida pelo re-enrich: err=%v", err)
 	}
@@ -516,10 +518,10 @@ func TestReEnrichNaoRemoveArteUser(t *testing.T) {
 	}
 }
 
-// ── Galeria + guarda de path-traversal (criterio 5.5) ────────────────────────
+// ── Gallery + path-traversal guard (criterion 5.5) ──────────────────────────
 
-// TestListAssetsVazioE404 cobre a galeria: [] quando nao ha assets; 404 para entity
-// inexistente.
+// TestListAssetsVazioE404 covers the gallery: [] when there is no asset; 404 for a
+// nonexistent entity.
 func TestListAssetsVazioE404(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
@@ -536,9 +538,9 @@ func TestListAssetsVazioE404(t *testing.T) {
 	}
 }
 
-// TestGetAssetFileForaDasRaizes403 cobre o criterio 5.5: o servico do binario mantem
-// a guarda de path-traversal — um asset apontando para fora das raizes confiaveis
-// responde 403.
+// TestGetAssetFileForaDasRaizes403 covers the criterion 5.5: the binary service keeps
+// the path-traversal guard — an asset pointing outside the trusted roots
+// responds 403.
 func TestGetAssetFileForaDasRaizes403(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
@@ -554,8 +556,8 @@ func TestGetAssetFileForaDasRaizes403(t *testing.T) {
 	checkErrorShape(t, rec, "forbidden")
 }
 
-// TestGetAssetFileServeBinario cobre o /file feliz: serve o binario do asset da
-// entity; 404 quando o assetId e de outra entity.
+// TestGetAssetFileServeBinario covers the happy /file: it serves the entity's asset
+// binary; 404 when the assetId belongs to another entity.
 func TestGetAssetFileServeBinario(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
@@ -571,7 +573,7 @@ func TestGetAssetFileServeBinario(t *testing.T) {
 	if !bytes.Equal(ok.Body.Bytes(), content) {
 		t.Errorf("binario servido diverge do enviado")
 	}
-	// assetId de e1 pedido sob e2 -> 404 (nao vaza por id cruzado).
+	// assetId of e1 requested under e2 -> 404 (it does not leak across ids).
 	cross := do(t, h, http.MethodGet, "/api/v1/entities/e2/assets/"+a.ID+"/file", nil)
 	if cross.Code != http.StatusNotFound {
 		t.Errorf("id cruzado: status = %d, quero 404", cross.Code)

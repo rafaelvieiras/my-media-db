@@ -10,19 +10,20 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Este arquivo cobre o DETALHE canônico da SÉRIE (o análogo de BuscarDetalhe/
-// MapearDetalhe do tmdb para o tipo "tv"): puxa /series/{id}/extended + as traduções
-// permitidas (por/…, com fallback) num PAYLOAD AUMENTADO (envelope re-componível,
-// ADR-0011) e o mapeia — PURO, sem rede — para o mapa canônico com nossos nomes de
-// campo. remoteIds viram external_ids/external_links (cruzamento com TMDB/IMDB).
+// This file covers the canonical DETAIL of the SERIES (the analogue of
+// BuscarDetalhe/MapearDetalhe of tmdb for the "tv" type): it pulls
+// /series/{id}/extended + the allowed translations (por/…, with fallback) into an
+// AUGMENTED PAYLOAD (re-composable envelope, ADR-0011) and maps it -- PURE, without
+// network -- to the canonical map with our field names. remoteIds become
+// external_ids/external_links (crossing with TMDB/IMDB).
 
-// respSerie envelopa a resposta de /series/{id}/extended ({status, data}).
+// respSerie wraps the response of /series/{id}/extended ({status, data}).
 type respSerie struct {
 	Data serieData `json:"data"`
 }
 
-// serieData espelha o SeriesExtendedRecord (só os campos usados). seasonTypes[] e
-// seasons[] alimentam a árvore (tvdb_serie.go); remoteIds o cruzamento de ids.
+// serieData mirrors the SeriesExtendedRecord (only the fields used). seasonTypes[] and
+// seasons[] feed the tree (tvdb_serie.go); remoteIds the id crossing.
 type serieData struct {
 	ID                int64           `json:"id"`
 	Name              string          `json:"name"`
@@ -38,37 +39,37 @@ type serieData struct {
 	SeasonTypes       []seasonTypeRec `json:"seasonTypes"`
 	Seasons           []seasonRec     `json:"seasons"`
 
-	// Status/Genres do /series/{id}/extended: o FALLBACK do 0045 quando não há match
-	// no TMDB. status.name é a SITUAÇÃO crua (ex.: "Continuing"|"Ended"); genres[] são
-	// os gêneros (nome). O TVDB não tem tagline/keywords/similar — ausência graciosa.
+	// Status/Genres of /series/{id}/extended: the FALLBACK when there is no match in
+	// TMDB. status.name is the raw SITUATION (e.g. "Continuing"|"Ended"); genres[] are the
+	// genres (name). TVDB has no tagline/keywords/similar -- graceful absence.
 	Status struct {
 		Name string `json:"name"`
 	} `json:"status"`
 	Genres []generoSerie `json:"genres"`
 }
 
-// generoSerie é um gênero do /series/{id}/extended (só o nome nos interessa como tag).
+// generoSerie is a genre of /series/{id}/extended (only the name interests us as a tag).
 type generoSerie struct {
 	Name string `json:"name"`
 }
 
-// remoteID é um id do item em outra fonte (remoteIds[]): id + sourceName (o nome é
-// mais estável que o `type` numérico para mapear tvdb/imdb/tmdb).
+// remoteID is an id of the item in another source (remoteIds[]): id + sourceName (the
+// name is more stable than the numeric `type` to map tvdb/imdb/tmdb).
 type remoteID struct {
 	ID         string `json:"id"`
 	Type       int    `json:"type"`
 	SourceName string `json:"sourceName"`
 }
 
-// seasonTypeRec é uma ordenação que a série usa (SeasonType): id + type (ex.: "official").
+// seasonTypeRec is an ordering that the series uses (SeasonType): id + type (e.g. "official").
 type seasonTypeRec struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
 	Type string `json:"type"`
 }
 
-// seasonRec é uma temporada do extended.seasons[] (SeasonBaseRecord + type embutido).
-// number pode ser ano/0/índice — não assumir 1..N. type.type diz a ordenação.
+// seasonRec is a season of extended.seasons[] (SeasonBaseRecord + embedded type). number
+// can be a year/0/index -- do not assume 1..N. type.type tells the ordering.
 type seasonRec struct {
 	ID     int64  `json:"id"`
 	Number int    `json:"number"`
@@ -80,24 +81,25 @@ type seasonRec struct {
 	} `json:"type"`
 }
 
-// traducaoSerie são os campos traduzíveis de uma tradução de série (name/overview).
+// traducaoSerie are the translatable fields of a series translation (name/overview).
 type traducaoSerie struct {
 	Name     string `json:"name"`
 	Overview string `json:"overview"`
 }
 
-// envelopeSerie é o PAYLOAD AUMENTADO gravado em media_external: o detalhe cru do
-// /series/{id}/extended (`data`) mais as traduções por idioma do app (derivadas no
-// enrich, que faz rede — o read-time é puro). Detail vazio ⇒ payload LEGADO (mono-idioma).
+// envelopeSerie is the AUGMENTED PAYLOAD written to media_external: the raw detail of
+// /series/{id}/extended (`data`) plus the translations per app language (derived in enrich,
+// which does network -- read-time is pure). Empty Detail ⇒ LEGACY payload (mono-language).
 type envelopeSerie struct {
 	Detail      json.RawMessage          `json:"detail"`
 	TransByLang map[string]traducaoSerie `json:"trans_by_lang"`
 }
 
-// BuscarDetalhe puxa o detalhe da SÉRIE já MULTI-IDIOMA (0020): /series/{id}/extended
-// mais /series/{id}/translations/{code} para cada idioma permitido (com FALLBACK —
-// idioma sem tradução é pulado, não quebra). Devolve o envelope re-componível
-// {detail, trans_by_lang}. `tipo` deve ser "tv" (a fonte só cobre séries). Erro propaga.
+// BuscarDetalhe pulls the detail of the SERIES already MULTI-LANGUAGE:
+// /series/{id}/extended plus /series/{id}/translations/{code} for each allowed language
+// (with FALLBACK -- a language without a translation is skipped, it does not break). It
+// returns the re-composable envelope {detail, trans_by_lang}. `tipo` must be "tv" (the
+// source only covers series). Error propagates.
 func (c *Client) BuscarDetalhe(ctx context.Context, sourceID, tipo string, langs []string) (json.RawMessage, error) {
 	if sourceID == "" {
 		return nil, fmt.Errorf("tvdb: sourceID vazio")
@@ -124,8 +126,8 @@ func (c *Client) BuscarDetalhe(ctx context.Context, sourceID, tipo string, langs
 	return json.RawMessage(body), nil
 }
 
-// traducoesSerie busca a tradução da série em cada idioma permitido (dedup por código
-// TheTVDB), pulando os ausentes (fallback). Chaveia pelo código do app pedido.
+// traducoesSerie fetches the series translation in each allowed language (dedup by TheTVDB
+// code), skipping the absent ones (fallback). It keys by the requested app code.
 func (c *Client) traducoesSerie(ctx context.Context, sourceID string, langs []string) map[string]traducaoSerie {
 	out := map[string]traducaoSerie{}
 	vistos := map[string]bool{}
@@ -146,8 +148,8 @@ func (c *Client) traducoesSerie(ctx context.Context, sourceID string, langs []st
 	return out
 }
 
-// traducaoSerie busca UMA tradução de série; ok=false quando ausente (404 → fallback)
-// ou vazia. Erros de rede também degradam para ok=false (a tradução é best-effort).
+// traducaoSerie fetches ONE series translation; ok=false when absent (404 → fallback) or
+// empty. Network errors also degrade to ok=false (the translation is best-effort).
 func (c *Client) traducaoSerie(ctx context.Context, sourceID, code string) (traducaoSerie, bool) {
 	body, err := c.getBytes(ctx, "/series/"+url.PathEscape(sourceID)+"/translations/"+url.PathEscape(code), nil)
 	if err != nil {
@@ -165,13 +167,14 @@ func (c *Client) traducaoSerie(ctx context.Context, sourceID, code string) (trad
 	return resp.Data, true
 }
 
-// MapearDetalhe traduz o payload do TheTVDB para o mapa CANÔNICO (nossos nomes). É PURO
-// (sem rede): detecta o ENVELOPE (0020) vs o LEGADO (extended cru) e mapeia conforme. Só
-// inclui as chaves que a fonte trouxe. SEM elenco/equipe (MD6).
+// MapearDetalhe translates the TheTVDB payload to the CANONICAL map (our names). It is PURE
+// (no network): it detects the ENVELOPE vs the LEGACY one (raw extended) and maps
+// accordingly. It only includes the keys that the source brought. WITHOUT cast/crew (MD6).
 func (c *Client) MapearDetalhe(raw json.RawMessage) (map[string]any, error) {
-	// EPISODIO (0041): payload com discriminador entity_kind — title/description por
-	// idioma. Vem ANTES do ramo de serie (a mesma fonte "tvdb" serve os dois shapes);
-	// um payload sem o discriminador cai adiante, sem quebrar o mapeamento de serie.
+	// EPISODE: payload with the entity_kind discriminator -- title/description per
+	// language. It comes BEFORE the series branch (the same "tvdb" source serves both
+	// shapes); a payload without the discriminator falls through below, without breaking
+	// the series mapping.
 	if campos, ok := provider.MapearEpisodio(raw); ok {
 		return campos, nil
 	}
@@ -182,14 +185,15 @@ func (c *Client) MapearDetalhe(raw json.RawMessage) (map[string]any, error) {
 	return mapearDetailBruto(raw, nil)
 }
 
-// mapearEnvelopeSerie mapeia o payload aumentado: title/description por idioma (do
-// detalhe + traduções) e os neutros/escalares.
+// mapearEnvelopeSerie maps the augmented payload: title/description per language (from
+// the detail + translations) and the neutral/scalar ones.
 func mapearEnvelopeSerie(env envelopeSerie) (map[string]any, error) {
 	return mapearDetailBruto(env.Detail, env.TransByLang)
 }
 
-// mapearDetailBruto mapeia o /series/{id}/extended cru (`data` ou envelope-response) e
-// as traduções por idioma no mapa canônico. `trans` nil degrada ao mono-idioma.
+// mapearDetailBruto maps the raw /series/{id}/extended (`data` or envelope-response) and
+// the translations per language into the canonical map. A nil `trans` degrades to
+// mono-language.
 func mapearDetailBruto(detail json.RawMessage, trans map[string]traducaoSerie) (map[string]any, error) {
 	var resp respSerie
 	if err := json.Unmarshal(detail, &resp); err != nil {
@@ -208,9 +212,10 @@ func mapearDetailBruto(detail json.RawMessage, trans map[string]traducaoSerie) (
 	return out, nil
 }
 
-// traduzidosSerie monta os mapas idioma→título e idioma→descrição: ancora o idioma
-// ORIGINAL com o name/overview do topo (garantidamente no idioma original) e sobrepõe
-// cada tradução permitida, chaveada pelo código do app (combinado + base).
+// traduzidosSerie builds the language→title and language→description maps: it anchors the
+// ORIGINAL language with the name/overview of the top (guaranteed to be in the original
+// language) and overlays each allowed translation, keyed by the app code (combined +
+// base).
 func traduzidosSerie(d serieData, trans map[string]traducaoSerie) (titulos, descricoes map[string]any) {
 	titulos = map[string]any{}
 	descricoes = map[string]any{}
@@ -227,8 +232,9 @@ func traduzidosSerie(d serieData, trans map[string]traducaoSerie) (titulos, desc
 	return titulos, descricoes
 }
 
-// enriquecerNeutrosSerie grava os campos NEUTROS/escalares do detalhe (title original,
-// idioma original, data, pôster, duração) e os ids externos (external_ids/links).
+// enriquecerNeutrosSerie writes the NEUTRAL/scalar fields of the detail (original title,
+// original language, date, poster, duration) and the external ids
+// (external_ids/links).
 func enriquecerNeutrosSerie(out map[string]any, d serieData) {
 	if d.Name != "" {
 		out["original_title"] = d.Name
@@ -254,11 +260,12 @@ func enriquecerNeutrosSerie(out map[string]any, d serieData) {
 	enriquecerFallbackRico(out, d)
 }
 
-// enriquecerFallbackRico emite os campos ricos que o TVDB tem e o 0045 antes descartava,
-// usados como FALLBACK quando não há match no TMDB para o nó série: a SITUAÇÃO crua
-// (airing_status, escalar neutro) e os gêneros do /extended como tags ancoradas no idioma
-// ORIGINAL (o TVDB não os localiza) — espelha keywordsPorIdioma do TMDB, mesma dimensão
-// idioma×camada que tags usa. Tagline/keywords/similar o TVDB não tem (ausência graciosa).
+// enriquecerFallbackRico emits the rich fields that TVDB has and that used to be discarded,
+// used as a FALLBACK when there is no match in TMDB for the series node: the raw SITUATION
+// (airing_status, neutral scalar) and the genres of /extended as tags anchored in the
+// ORIGINAL language (TVDB does not localize them) -- it mirrors keywordsPorIdioma of TMDB,
+// the same language×layer dimension that tags uses. Tagline/keywords/similar do not exist
+// in TVDB (graceful absence).
 func enriquecerFallbackRico(out map[string]any, d serieData) {
 	if d.Status.Name != "" {
 		out["airing_status"] = d.Status.Name
@@ -270,8 +277,8 @@ func enriquecerFallbackRico(out map[string]any, d serieData) {
 	}
 }
 
-// nomesGeneros extrai os nomes dos gêneros do /extended como lista de tags (descarta
-// os vazios). Ordem estável = ordem da fonte.
+// nomesGeneros extracts the genre names of /extended as a tag list (discarding the empty
+// ones). Stable order = order of the source.
 func nomesGeneros(gs []generoSerie) []string {
 	out := make([]string, 0, len(gs))
 	for _, g := range gs {
@@ -282,9 +289,9 @@ func nomesGeneros(gs []generoSerie) []string {
 	return out
 }
 
-// idsExternos monta o mapa fonte→id a partir dos remoteIds (sempre inclui tvdb=id da
-// série). O mapeamento é por sourceName (mais estável que o `type` numérico). Séries
-// exclusivas (Looney Tunes) só terão tvdb — sem tmdb/imdb (ADR-0021).
+// idsExternos builds the source→id map from the remoteIds (it always includes tvdb=id of
+// the series). The mapping is by sourceName (more stable than the numeric `type`).
+// Exclusive series (Looney Tunes) will only have tvdb -- without tmdb/imdb (ADR-0021).
 func idsExternos(d serieData) map[string]any {
 	out := map[string]any{"tvdb": strconv.FormatInt(d.ID, 10)}
 	for _, r := range d.RemoteIds {
@@ -297,8 +304,8 @@ func idsExternos(d serieData) map[string]any {
 	return out
 }
 
-// chaveFonte normaliza o sourceName do remoteId para a nossa chave canônica. Só as
-// fontes que nos interessam para cruzar identidade; as demais são ignoradas.
+// chaveFonte normalizes the sourceName of the remoteId to our canonical key. Only the
+// sources that interest us for crossing identity; the others are ignored.
 func chaveFonte(sourceName string) string {
 	switch sourceName {
 	case "TheMovieDB.com":
@@ -314,8 +321,8 @@ func chaveFonte(sourceName string) string {
 	}
 }
 
-// linksExternos monta os links para páginas externas a partir dos ids cruzados (hoje
-// imdb e tmdb). Reusa idsExternos para não reparsear os remoteIds.
+// linksExternos builds the links to external pages from the crossed ids (today imdb and
+// tmdb). It reuses idsExternos to avoid reparsing the remoteIds.
 func linksExternos(d serieData) map[string]any {
 	ids := idsExternos(d)
 	out := map[string]any{}
@@ -328,8 +335,8 @@ func linksExternos(d serieData) map[string]any {
 	return out
 }
 
-// porSeAusente grava valor não-vazio em chave não-vazia só se a chave ainda não existe
-// (a primeira ocorrência por idioma vence).
+// porSeAusente writes a non-empty value under a non-empty key only if the key does not
+// exist yet (the first occurrence per language wins).
 func porSeAusente(m map[string]any, chave, valor string) {
 	if chave == "" || valor == "" {
 		return

@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// relogioFake é um relógio determinístico e avançável manualmente -- mesmo
-// padrão de internal/provider/musicbrainz/ratelimit_test.go.
+// relogioFake is a deterministic clock that can be advanced by hand -- the same
+// pattern as internal/provider/musicbrainz/ratelimit_test.go.
 type relogioFake struct{ agora time.Time }
 
 func (r *relogioFake) now() time.Time          { return r.agora }
@@ -60,8 +60,8 @@ func TestLimitador_TresChamadasRespeitamTresPorSegundo(t *testing.T) {
 	if len(dorm) != 2 {
 		t.Fatalf("esperava 2 esperas (so a 1a chamada eh gratis), houve %d", len(dorm))
 	}
-	// 3 chamadas devem ocupar >= 2 x intervalo no relogio -- ou seja, no maximo
-	// 3 requisicoes por segundo, nunca mais.
+	// 3 calls must occupy >= 2 x interval on the clock -- that is, at most 3 requests per
+	// second, never more.
 	total := dorm[0] + dorm[1]
 	minimoEsperado := 2 * intervaloRateLimit
 	if total < minimoEsperado {

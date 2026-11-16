@@ -10,7 +10,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/integration"
 )
 
-// setupBancoTeste sobe um banco de teste migrado, isolado por teste.
+// setupBancoTeste starts a migrated test database, isolated per test.
 func setupBancoTeste(t *testing.T) *db.DB {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "mymediadb.sqlite")
@@ -25,10 +25,10 @@ func setupBancoTeste(t *testing.T) *db.DB {
 	return database
 }
 
-// TestProvedoresReaisSemCredencialNenhumTmdb cobre o caso base: sem banco
-// populado e sem env var, provedoresReais não inclui o TMDB (os demais
-// providers incondicionais, como musicbrainz, continuam presentes -- não é
-// alvo desta entrega).
+// TestProvedoresReaisSemCredencialNenhumTmdb covers the base case: with no populated
+// database and no env var, provedoresReais does not include TMDB (the other
+// unconditional providers, such as musicbrainz, are still present -- that is not
+// the target of this delivery).
 func TestProvedoresReaisSemCredencialNenhumTmdb(t *testing.T) {
 	database := setupBancoTeste(t)
 	resolver := integration.NovoResolver(database)
@@ -43,13 +43,13 @@ func TestProvedoresReaisSemCredencialNenhumTmdb(t *testing.T) {
 	}
 }
 
-// TestProvedoresReaisUsaCredencialDoBanco cobre o critério de aceite central
-// do briefing 0095: um valor gravado em integration_config (via
-// UpsertIntegrationConfig, o mesmo caminho que o PUT /integrations/tmdb usa)
-// faz provedoresReais registrar o provider TMDB -- SEM depender de nenhuma
-// env var estar setada. É o "teste de integração construindo o
-// provedoresReais()-equivalente contra um banco com integration_config
-// populado" pedido pelo briefing.
+// TestProvedoresReaisUsaCredencialDoBanco covers the central acceptance criterion
+// of ADR-0023: a value stored in integration_config (through
+// UpsertIntegrationConfig, the same path that PUT /integrations/tmdb uses)
+// makes provedoresReais register the TMDB provider -- WITHOUT depending on any
+// env var being set. It is the "integration test building the
+// provedoresReais()-equivalent against a database with integration_config
+// populated" that the ADR called for.
 func TestProvedoresReaisUsaCredencialDoBanco(t *testing.T) {
 	database := setupBancoTeste(t)
 	ctx := context.Background()
@@ -73,11 +73,11 @@ func TestProvedoresReaisUsaCredencialDoBanco(t *testing.T) {
 	}
 }
 
-// TestProvedoresReaisBancoTemPrecedenciaSobreEnv cobre a precedência
-// banco > env var (ADR-0023): mesmo com a env var TAMBÉM setada, o provider
-// segue habilitado via banco (o teste central acima já prova que funciona
-// SEM env var; este prova que a presença da env var não muda o resultado
-// nem quebra a leitura do banco).
+// TestProvedoresReaisBancoTemPrecedenciaSobreEnv covers the database > env var
+// precedence (ADR-0023): even with the env var ALSO set, the provider stays
+// enabled through the database (the central test above already proves that it
+// works WITHOUT an env var; this one proves that the presence of the env var
+// changes neither the result nor the database read).
 func TestProvedoresReaisBancoTemPrecedenciaSobreEnv(t *testing.T) {
 	database := setupBancoTeste(t)
 	ctx := context.Background()

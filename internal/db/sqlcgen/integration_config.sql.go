@@ -16,13 +16,13 @@ FROM integration_config
 WHERE slug = ?
 `
 
-// Acesso a integration_config (briefing 0095): registro generico de config de
-// integracao (credenciais/parametros de provider), com precedencia BANCO >
-// env var calculada pelo Resolver (internal/integration). Comentarios em
-// ASCII e colunas explicitas -- mesma nota do sqlc v1.31 corrompendo acento
-// em .sql de query (ver entity.sql).
-// Le a config de uma integracao pelo slug (sql.ErrNoRows quando o slug nunca
-// foi gravado -- o Resolver cai para a env var nesse caso).
+// Access to integration_config: generic registry of integration config
+// (provider credentials/parameters), with precedence DATABASE >
+// env var computed by the Resolver (internal/integration). Comments in
+// ASCII and explicit columns -- same sqlc v1.31 note about corrupting an accent
+// in a query .sql file (see entity.sql).
+// Reads the config of an integration by slug (sql.ErrNoRows when the slug was
+// never written -- the Resolver falls back to the env var in that case).
 func (q *Queries) ObterIntegrationConfig(ctx context.Context, slug string) (IntegrationConfig, error) {
 	row := q.db.QueryRowContext(ctx, obterIntegrationConfig, slug)
 	var i IntegrationConfig
@@ -47,11 +47,12 @@ type UpsertIntegrationConfigParams struct {
 	ValuesJson string
 }
 
-// Grava (ou substitui) o values_json inteiro de um slug. Conflito na PK
-// (slug) atualiza values_json e recarimba updated_at -- nunca cria uma
-// segunda linha para o mesmo slug. O PUT parcial (merge campo a campo,
-// null remove a chave) e responsabilidade do handler HTTP, que le o valor
-// atual, mescla em memoria e chama este upsert com o objeto ja completo.
+// Writes (or replaces) the whole values_json of a slug. A conflict on the PK
+// (slug) updates values_json and restamps updated_at -- it never creates a
+// second row for the same slug. The partial PUT (merge field by field, null
+// removes the key) is the HTTP handler's responsibility: it reads the current
+// value, merges it in memory and calls this upsert with the object already
+// complete.
 func (q *Queries) UpsertIntegrationConfig(ctx context.Context, arg UpsertIntegrationConfigParams) (IntegrationConfig, error) {
 	row := q.db.QueryRowContext(ctx, upsertIntegrationConfig, arg.Slug, arg.ValuesJson)
 	var i IntegrationConfig

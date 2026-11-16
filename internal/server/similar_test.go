@@ -11,19 +11,17 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Estes testes cobrem a CAMADA 2 do briefing 0091: a fiação da capacidade opcional
-// provider.SimilarProvider nos dois pontos de consumo — o detalhe da entity (GET
-// /entities/{id}, via camadasDaFonte) e o detalhe externo (GET
-// /external/{source}/{type}/{id}, via getExternalDetail). A camada 1 (extração/
-// filtro/ordenação em si) já é coberta em internal/provider/tmdb; aqui só provamos
-// que os dois handlers CHAMAM a capacidade quando presente, degradam em silêncio
-// quando ausente, e sobrevivem a um erro de Similares sem derrubar a resposta.
+// These tests cover the wiring of the OPTIONAL capability provider.SimilarProvider at the two
+// consumption points — the entity detail (GET /entities/{id}, via camadasDaFonte) and the
+// external detail (GET /external/{source}/{type}/{id}, via getExternalDetail). The
+// extraction/filter/ordering itself is already covered in internal/provider/tmdb; here we only
+// prove that the two handlers CALL the capability when it is present, degrade silently when it
+// is absent, and survive a Similares error without bringing the response down.
 
-// fakeProviderSimilar é um provider.Provider mínimo (sem rede) para exercitar a
-// fiação do SimilarProvider: Nome() fixo (para casar com media_external.source e
-// prioridadeFontes), MapearDetalhe devolve um mapa vazio (a fiação escreve
-// "similar" nele por referência) e BuscarDetalhe devolve um payload cru vazio (o
-// detalhe externo precisa dele no cache-miss).
+// fakeProviderSimilar is a minimal provider.Provider (no network) to exercise the
+// SimilarProvider wiring: a fixed Nome() (to match media_external.source and prioridadeFontes),
+// MapearDetalhe returns an empty map (the wiring writes "similar" into it by reference) and
+// BuscarDetalhe returns an empty raw payload (the external detail needs it on a cache-miss).
 type fakeProviderSimilar struct {
 	nome string
 }
@@ -42,8 +40,8 @@ func (f *fakeProviderSimilar) MapearDetalhe(json.RawMessage) (map[string]any, er
 	return map[string]any{}, nil
 }
 
-// fakeProviderComSimilar embrulha fakeProviderSimilar e IMPLEMENTA
-// provider.SimilarProvider — sims/err controlam o retorno fixo de Similares.
+// fakeProviderComSimilar wraps fakeProviderSimilar and IMPLEMENTS provider.SimilarProvider —
+// sims/err control the fixed return of Similares.
 type fakeProviderComSimilar struct {
 	fakeProviderSimilar
 	sims []provider.Similar
@@ -54,7 +52,7 @@ func (f *fakeProviderComSimilar) Similares(json.RawMessage) ([]provider.Similar,
 	return f.sims, f.err
 }
 
-// simSims é a lista fixa devolvida pelos fakes "com similar" destes testes.
+// simSims is the fixed list returned by the "with similar" fakes of these tests.
 func simSims() []provider.Similar {
 	return []provider.Similar{
 		{
@@ -67,9 +65,9 @@ func simSims() []provider.Similar {
 	}
 }
 
-// TestEntitySimilaresComSimilarProvider: com um provider que implementa
-// SimilarProvider, GET /entities/{id} traz "similar" preenchido a partir do que
-// Similares(raw) devolveu, convertido para o formato canônico esperado.
+// TestEntitySimilaresComSimilarProvider: with a provider that implements SimilarProvider,
+// GET /entities/{id} brings "similar" filled in from what Similares(raw) returned, converted to
+// the expected canonical format.
 func TestEntitySimilaresComSimilarProvider(t *testing.T) {
 	prov := &fakeProviderComSimilar{
 		fakeProviderSimilar: fakeProviderSimilar{nome: "tmdb"},
@@ -94,9 +92,9 @@ func TestEntitySimilaresComSimilarProvider(t *testing.T) {
 	eqPtr(t, "similar.year", ent.Similar[0].Year, "2003")
 }
 
-// TestEntitySimilaresSemSimilarProvider: um provider que NÃO implementa
-// SimilarProvider (o fakeProviderSimilar "puro") deixa "similar" ausente — sem
-// erro, sem 500 — igual ao comportamento de hoje quando a fonte não modela o campo.
+// TestEntitySimilaresSemSimilarProvider: a provider that does NOT implement SimilarProvider
+// (the "pure" fakeProviderSimilar) leaves "similar" absent — no error, no 500 — like the
+// behavior when the source does not model the field.
 func TestEntitySimilaresSemSimilarProvider(t *testing.T) {
 	prov := &fakeProviderSimilar{nome: "tmdb"}
 	h, d := setupSearchServer(t, WithSearchProvider(prov))
@@ -118,8 +116,8 @@ func TestEntitySimilaresSemSimilarProvider(t *testing.T) {
 	}
 }
 
-// TestEntitySimilaresErroDegradaSemDerrubar: quando Similares devolve erro, a
-// entity continua sendo montada normalmente (200), só sem similares.
+// TestEntitySimilaresErroDegradaSemDerrubar: when Similares returns an error, the entity is
+// still built normally (200), only without similars.
 func TestEntitySimilaresErroDegradaSemDerrubar(t *testing.T) {
 	prov := &fakeProviderComSimilar{
 		fakeProviderSimilar: fakeProviderSimilar{nome: "tmdb"},
@@ -144,8 +142,8 @@ func TestEntitySimilaresErroDegradaSemDerrubar(t *testing.T) {
 	}
 }
 
-// TestExternalDetailSimilaresComSimilarProvider: o MESMO wiring no detalhe externo
-// (GET /external/{source}/{type}/{id}) — provider com SimilarProvider preenche
+// TestExternalDetailSimilaresComSimilarProvider: the SAME wiring on the external detail
+// (GET /external/{source}/{type}/{id}) — a provider with SimilarProvider fills in
 // detalheExternoDTO.Similar.
 func TestExternalDetailSimilaresComSimilarProvider(t *testing.T) {
 	prov := &fakeProviderComSimilar{
@@ -165,8 +163,8 @@ func TestExternalDetailSimilaresComSimilarProvider(t *testing.T) {
 	eq(t, "similar.source_id", d.Similar[0].SourceID, "604")
 }
 
-// TestExternalDetailSimilaresSemSimilarProvider: sem a capacidade, o detalhe
-// externo segue 200 com "similar" vazio.
+// TestExternalDetailSimilaresSemSimilarProvider: without the capability, the external detail
+// stays 200 with an empty "similar".
 func TestExternalDetailSimilaresSemSimilarProvider(t *testing.T) {
 	prov := &fakeProviderSimilar{nome: "tmdb"}
 	h, _ := setupSearchServer(t, WithSearchProvider(prov))
@@ -181,8 +179,8 @@ func TestExternalDetailSimilaresSemSimilarProvider(t *testing.T) {
 	}
 }
 
-// TestExternalDetailSimilaresErroDegradaSemDerrubar: Similares em erro não derruba
-// o detalhe externo (continua 200, só sem similares).
+// TestExternalDetailSimilaresErroDegradaSemDerrubar: Similares in error does not bring the
+// external detail down (it stays 200, only without similars).
 func TestExternalDetailSimilaresErroDegradaSemDerrubar(t *testing.T) {
 	prov := &fakeProviderComSimilar{
 		fakeProviderSimilar: fakeProviderSimilar{nome: "tmdb"},

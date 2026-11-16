@@ -5,18 +5,17 @@ import (
 	"time"
 )
 
-// ttlTelemetria é o TTL do cache de GET /api/v1/health/system (briefing
-// 0055): fresco o bastante para refletir uma mudança recente (ex. acabou de
-// rodar um scan), sem recalcular a cada reload/foco de janela do TanStack
-// Query. Constante de código, não preferência exposta na UI — mesmo espírito
-// de ttlCacheExterno (internal/server/search.go).
+// ttlTelemetria is the TTL of the GET /api/v1/health/system cache: fresh
+// enough to reflect a recent change (e.g. a scan just ran), without recalculating
+// on every reload/window focus of TanStack Query. A code constant, not a preference
+// exposed in the UI — same spirit as ttlCacheExterno (internal/server/search.go).
 const ttlTelemetria = 60 * time.Second
 
-// telemetryCache é um cache em memória, protegido por mutex, do snapshot de
-// telemetria JÁ SERIALIZADO (systemHealthResponse), com expiração por TTL.
-// Mesmo desenho de cacheExterno, mas SINGLETON (uma única entrada): este
-// endpoint não tem parâmetro variável, diferente da busca externa que
-// cacheia por (query,tipo).
+// telemetryCache is an in-memory cache, protected by a mutex, of the ALREADY
+// SERIALIZED telemetry snapshot (systemHealthResponse), with TTL expiration.
+// Same design as cacheExterno, but SINGLETON (a single entry): this
+// endpoint has no variable parameter, unlike the external search which
+// caches per (query,type).
 type telemetryCache struct {
 	mu     sync.Mutex
 	ttl    time.Duration
@@ -25,13 +24,13 @@ type telemetryCache struct {
 	agora  func() time.Time
 }
 
-// novoTelemetryCache cria um cache vazio com o TTL dado.
+// novoTelemetryCache creates an empty cache with the given TTL.
 func novoTelemetryCache(ttl time.Duration) *telemetryCache {
 	return &telemetryCache{ttl: ttl, agora: time.Now}
 }
 
-// obter devolve o snapshot cacheado e true quando existe e ainda não
-// expirou; caso contrário (systemHealthResponse{}, false).
+// obter returns the cached snapshot and true when it exists and has not
+// expired yet; otherwise (systemHealthResponse{}, false).
 func (c *telemetryCache) obter() (systemHealthResponse, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -41,7 +40,7 @@ func (c *telemetryCache) obter() (systemHealthResponse, bool) {
 	return *c.item, true
 }
 
-// guardar grava (ou sobrescreve) o snapshot com nova expiração.
+// guardar writes (or overwrites) the snapshot with a new expiration.
 func (c *telemetryCache) guardar(resp systemHealthResponse) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

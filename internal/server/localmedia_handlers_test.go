@@ -14,7 +14,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// decodeInto decodifica o corpo da resposta em v (t.Fatal em erro).
+// decodeInto decodes the response body into v (t.Fatal on error).
 func decodeInto(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 	t.Helper()
 	if err := json.Unmarshal(rec.Body.Bytes(), v); err != nil {
@@ -22,14 +22,14 @@ func decodeInto(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 	}
 }
 
-// Testes de integração do briefing 0062 (mídias locais: NFO + artes na pasta):
-// materialização física de arte, rotação ao trocar a principal (PUT /prefer
-// estendido), geração de .nfo, ordenação de GET /artwork e as falhas
-// esperadas (404 sem media_file, sem .tmp-* órfão em falha de I/O).
+// Integration tests of local media (NFO + artwork in the folder):
+// physical materialization of artwork, rotation when swapping the principal (extended
+// PUT /prefer), .nfo generation, GET /artwork ordering and the expected
+// failures (404 without media_file, no orphan .tmp-* on an I/O failure).
 
-// libDirComVideo cria um diretório de biblioteca (distinto do assetsDir de
-// cache) e semeia um media_file 'present' apontando para ele — a pasta de
-// destino da materialização/NFO.
+// libDirComVideo creates a library directory (distinct from the cache assetsDir) and seeds
+// a 'present' media_file pointing at it — the destination folder of the
+// materialization/NFO.
 func libDirComVideo(t *testing.T, d *db.DB, entityID, mfID, nomeVideo string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -39,8 +39,8 @@ func libDirComVideo(t *testing.T, d *db.DB, entityID, mfID, nomeVideo string) st
 
 // ── POST .../assets/{assetId}/materialize ────────────────────────────────
 
-// TestMaterializePastaExclusivaGravaBare cobre o criterio 5.1: pasta com um
-// unico video -> "salvar na pasta" de um poster grava poster.jpg (bare).
+// TestMaterializePastaExclusivaGravaBare covers the criterion 5.1: a folder with a
+// single video -> "save to folder" of a poster writes poster.jpg (bare).
 func TestMaterializePastaExclusivaGravaBare(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -70,7 +70,7 @@ func TestMaterializePastaExclusivaGravaBare(t *testing.T) {
 		t.Errorf("arquivo fisico ausente em %s: %v", quero, err)
 	}
 
-	// Idempotente: 2a chamada devolve o mesmo local_path sem regravar.
+	// Idempotent: the 2nd call returns the same local_path without rewriting.
 	rec2 := do(t, h, http.MethodPost, "/api/v1/entities/e1/assets/"+a.ID+"/materialize", nil)
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("2a chamada status = %d, quero 200", rec2.Code)
@@ -81,14 +81,15 @@ func TestMaterializePastaExclusivaGravaBare(t *testing.T) {
 	}
 }
 
-// TestMaterializePastaNaoExclusivaPrefixaVideo cobre o criterio 5.1: pasta
-// com dois videos -> nome prefixado <nome-do-video>-poster.jpg.
+// TestMaterializePastaNaoExclusivaPrefixaVideo covers the criterion 5.1: a folder
+// with two videos -> prefixed name <video-name>-poster.jpg.
 func TestMaterializePastaNaoExclusivaPrefixaVideo(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
 	dir := t.TempDir()
 	semearFile(t, d, "mf1", "e1", filepath.Join(dir, "Matrix.1999.EXTENDED.mkv"), "present", 1.0, "")
-	// Segundo video na MESMA pasta (outra entity) -- pasta deixa de ser exclusiva.
+	// Second video in the SAME folder (another entity) -- the folder is no longer
+	// exclusive.
 	semearEntity(t, d, "e2", "movie", "Outra Edicao")
 	semearFile(t, d, "mf2", "e2", filepath.Join(dir, "Matrix.1999.mkv"), "present", 1.0, "")
 
@@ -104,8 +105,8 @@ func TestMaterializePastaNaoExclusivaPrefixaVideo(t *testing.T) {
 	}
 }
 
-// TestMaterializeSemMediaFile404 cobre o criterio 5.5: entity sem media_file
-// present -> 404, nada e escrito.
+// TestMaterializeSemMediaFile404 covers the criterion 5.5: entity without a present
+// media_file -> 404, nothing is written.
 func TestMaterializeSemMediaFile404(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "Sem Arquivo")
@@ -118,7 +119,8 @@ func TestMaterializeSemMediaFile404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestMaterializeAssetInexistente404 cobre o 404 de asset/entity inexistente.
+// TestMaterializeAssetInexistente404 covers the 404 of a nonexistent
+// asset/entity.
 func TestMaterializeAssetInexistente404(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
@@ -132,10 +134,10 @@ func TestMaterializeAssetInexistente404(t *testing.T) {
 	}
 }
 
-// ── PUT .../assets/{assetId}/prefer (rotacao, briefing 0062) ────────────────
+// ── PUT .../assets/{assetId}/prefer (rotation) ────────────────
 
-// TestPreferRotacao3xSemColisao cobre o criterio 5.3: marcar principal 3x
-// produz sufixos crescentes sem colisao.
+// TestPreferRotacao3xSemColisao covers the criterion 5.3: marking as principal 3x
+// produces increasing suffixes without collision.
 func TestPreferRotacao3xSemColisao(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -155,8 +157,8 @@ func TestPreferRotacao3xSemColisao(t *testing.T) {
 		return decodeAsset(t, rec)
 	}
 
-	// a1 vira principal (materializa direto no clique unico -- ainda nao
-	// estava salvo na pasta).
+	// a1 becomes principal (it materializes straight on the single click -- it was
+	// not saved in the folder yet).
 	p1 := prefer(a1.ID)
 	quero := filepath.Join(libDir, "poster.png")
 	if p1.LocalPath == nil || *p1.LocalPath != quero {
@@ -166,7 +168,7 @@ func TestPreferRotacao3xSemColisao(t *testing.T) {
 		t.Fatal("a1.is_principal = false, quero true")
 	}
 
-	// a2 vira principal: a1 e rotacionado para poster1.jpg.
+	// a2 becomes principal: a1 is rotated to poster1.jpg.
 	p2 := prefer(a2.ID)
 	if p2.LocalPath == nil || *p2.LocalPath != quero {
 		t.Fatalf("a2.local_path = %v, quero %q (bare)", p2.LocalPath, quero)
@@ -180,8 +182,8 @@ func TestPreferRotacao3xSemColisao(t *testing.T) {
 		t.Error("a1.is_principal apos rotacao = true, quero false")
 	}
 
-	// a3 vira principal: a2 rotaciona para o PROXIMO indice livre (2, nao
-	// reaproveita o 1 que a1 ja usa).
+	// a3 becomes principal: a2 rotates to the NEXT free index (2, it does not
+	// reuse the 1 that a1 already uses).
 	prefer(a3.ID)
 	lista = decodeAssets(t, do(t, h, http.MethodGet, "/api/v1/entities/e1/assets", nil))
 	a2Depois := acharAsset(t, lista, a2.ID)
@@ -189,7 +191,8 @@ func TestPreferRotacao3xSemColisao(t *testing.T) {
 		t.Errorf("a2.local_path apos 2a rotacao = %v, quero poster2.jpg", a2Depois.LocalPath)
 	}
 
-	// a4 vira principal: a3 rotaciona para o indice 3 -- crescente, sem colisao.
+	// a4 becomes principal: a3 rotates to index 3 -- increasing, without
+	// collision.
 	prefer(a4.ID)
 	lista = decodeAssets(t, do(t, h, http.MethodGet, "/api/v1/entities/e1/assets", nil))
 	a3Depois := acharAsset(t, lista, a3.ID)
@@ -204,7 +207,7 @@ func TestPreferRotacao3xSemColisao(t *testing.T) {
 		t.Error("a4.is_principal = false, quero true (principal atual)")
 	}
 
-	// So um principal por kind.
+	// Only one principal per kind.
 	principais := 0
 	for _, x := range lista {
 		if x.Kind == "poster" && x.IsPrincipal {
@@ -215,7 +218,7 @@ func TestPreferRotacao3xSemColisao(t *testing.T) {
 		t.Errorf("assets is_principal=true do kind poster = %d, quero 1", principais)
 	}
 
-	// Todos os arquivos fisicos coexistem sem colisao.
+	// All the physical files coexist without collision.
 	entradas, err := os.ReadDir(libDir)
 	if err != nil {
 		t.Fatalf("ReadDir: %v", err)
@@ -231,8 +234,8 @@ func TestPreferRotacao3xSemColisao(t *testing.T) {
 	}
 }
 
-// TestPreferSemMediaFile404 cobre a extensao do 0062: prefer numa entity sem
-// media_file present -> 404 (sem pasta de destino).
+// TestPreferSemMediaFile404 covers the extension: prefer on an entity without a
+// present media_file -> 404 (no destination folder).
 func TestPreferSemMediaFile404(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "Sem Arquivo")
@@ -247,8 +250,9 @@ func TestPreferSemMediaFile404(t *testing.T) {
 
 // ── POST /entities/{id}/nfo ──────────────────────────────────────────────
 
-// TestWriteEntityNfoMovieHappyPath: POST /nfo grava movie.nfo no diretorio do
-// video, e a 2a chamada e idempotente (sobrescreve, nao duplica).
+// TestWriteEntityNfoMovieHappyPath: POST /nfo writes movie.nfo in the video
+// directory, and the 2nd call is idempotent (it overwrites, it does not
+// duplicate).
 func TestWriteEntityNfoMovieHappyPath(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -275,7 +279,7 @@ func TestWriteEntityNfoMovieHappyPath(t *testing.T) {
 		t.Errorf("conteudo do nfo nao bate: %s", conteudo1)
 	}
 
-	// entity.nfo_path/nfo_written_at persistidos.
+	// entity.nfo_path/nfo_written_at persisted.
 	ent, err := escrita(t, d).ObterEntity(context.Background(), "e1")
 	if err != nil {
 		t.Fatalf("ObterEntity: %v", err)
@@ -284,8 +288,8 @@ func TestWriteEntityNfoMovieHappyPath(t *testing.T) {
 		t.Errorf("entity.nfo_path = %v, quero %q", ent.NfoPath, queroPath)
 	}
 
-	// 2a chamada: idempotente -- sobrescreve por completo, mesmo arquivo,
-	// timestamp atualizado.
+	// 2nd call: idempotent -- it overwrites completely, same file,
+	// timestamp updated.
 	rec2 := do(t, h, http.MethodPost, "/api/v1/entities/e1/nfo", nil)
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("2a chamada status = %d, quero 200", rec2.Code)
@@ -299,18 +303,18 @@ func TestWriteEntityNfoMovieHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ler nfo (2a vez): %v", err)
 	}
-	// Sem duplicacao de conteudo -- o title aparece so uma vez.
+	// No content duplication -- the title appears only once.
 	if strings.Count(string(conteudo2), "<title>Matrix</title>") != 1 {
 		t.Errorf("conteudo duplicado apos 2a escrita: %s", conteudo2)
 	}
 }
 
-// TestWriteEntityNfoPreservaCamposDoUsuario: uma regravacao (2a chamada de
-// POST .../nfo, ou o job midias_faltantes reescrevendo por qualquer motivo)
-// NUNCA pode apagar avaliacao/assistido/contagem/ultima-reproducao que o
-// usuario (ou o proprio Kodi/Emby/Jellyfin) tenha gravado no arquivo entre a
-// 1a e a 2a chamada -- so os campos que vem do resolver.Entidade (titulo,
-// plot, etc.) devem ser atualizados.
+// TestWriteEntityNfoPreservaCamposDoUsuario: a rewrite (2nd call of
+// POST .../nfo, or the midias_faltantes job rewriting for any reason)
+// can NEVER erase rating/watched/count/last-played that the
+// user (or Kodi/Emby/Jellyfin itself) wrote into the file between the
+// 1st and the 2nd call -- only the fields that come from resolver.Entidade (title,
+// plot, etc.) should be updated.
 func TestWriteEntityNfoPreservaCamposDoUsuario(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -322,8 +326,8 @@ func TestWriteEntityNfoPreservaCamposDoUsuario(t *testing.T) {
 	}
 	queroPath := filepath.Join(libDir, "Matrix.1999.nfo")
 
-	// Simula o Kodi (ou o usuario a mao) editando o arquivo que acabamos de
-	// gravar: avalia, marca como assistido 2x e grava um ponto de retomada.
+	// Simulates Kodi (or the user by hand) editing the file we just
+	// wrote: rate it, mark it as watched 2x and write a resume point.
 	editado := strings.Replace(
 		string(mustReadFile(t, queroPath)),
 		"</movie>",
@@ -334,7 +338,7 @@ func TestWriteEntityNfoPreservaCamposDoUsuario(t *testing.T) {
 		t.Fatalf("simular edicao do usuario: %v", err)
 	}
 
-	// 2a chamada: regrava (ex.: metadado foi atualizado no resolver).
+	// 2nd call: rewrites (e.g.: the metadata was updated in the resolver).
 	rec2 := do(t, h, http.MethodPost, "/api/v1/entities/e1/nfo", nil)
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("2a chamada status = %d, quero 200", rec2.Code)
@@ -352,14 +356,15 @@ func TestWriteEntityNfoPreservaCamposDoUsuario(t *testing.T) {
 			t.Errorf("2a gravacao apagou campo do usuario, nao encontrei %q:\n%s", esperado, conteudo2)
 		}
 	}
-	// O title, por outro lado, segue vindo do resolver (nao e um campo local).
+	// The title, on the other hand, keeps coming from the resolver (it is not a local
+	// field).
 	if strings.Count(conteudo2, "<title>Matrix</title>") != 1 {
 		t.Errorf("title nao regravado corretamente: %s", conteudo2)
 	}
 }
 
-// mustReadFile le um arquivo ou falha o teste -- helper local so para deixar
-// TestWriteEntityNfoPreservaCamposDoUsuario legivel.
+// mustReadFile reads a file or fails the test -- a local helper only to keep
+// TestWriteEntityNfoPreservaCamposDoUsuario readable.
 func mustReadFile(t *testing.T, path string) []byte {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -369,7 +374,7 @@ func mustReadFile(t *testing.T, path string) []byte {
 	return b
 }
 
-// TestWriteEntityNfoTVShow: serie grava tvshow.nfo (nao <video>.nfo).
+// TestWriteEntityNfoTVShow: a series writes tvshow.nfo (not <video>.nfo).
 func TestWriteEntityNfoTVShow(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "s1", "tv", "Show")
@@ -387,10 +392,10 @@ func TestWriteEntityNfoTVShow(t *testing.T) {
 	}
 }
 
-// TestWriteEntityNfoSeasonNao404: uma TEMPORADA não tem NFO próprio neste
-// briefing (evita colidir com o tvshow.nfo/NFO de episódio na raiz da
-// série) — POST /nfo numa season devolve 404, tratado como "sem pasta de
-// destino".
+// TestWriteEntityNfoSeasonNao404: a SEASON has no NFO of its own at this point
+// (it avoids colliding with tvshow.nfo/episode NFO at the series
+// root) — POST /nfo on a season returns 404, treated as "no destination
+// folder".
 func TestWriteEntityNfoSeasonNao404(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "s1", "tv", "Show")
@@ -409,8 +414,8 @@ func TestWriteEntityNfoSeasonNao404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestWriteEntityNfoSemMediaFile404 cobre o criterio 5.5: entity sem
-// media_file present -> 404, nada e escrito.
+// TestWriteEntityNfoSemMediaFile404 covers the criterion 5.5: entity without a
+// present media_file -> 404, nothing is written.
 func TestWriteEntityNfoSemMediaFile404(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "Sem Arquivo")
@@ -430,7 +435,8 @@ func TestWriteEntityNfoSemMediaFile404(t *testing.T) {
 	}
 }
 
-// TestWriteEntityNfoEntidadeInexistente404 cobre o 404 de entity inexistente.
+// TestWriteEntityNfoEntidadeInexistente404 covers the 404 of a nonexistent
+// entity.
 func TestWriteEntityNfoEntidadeInexistente404(t *testing.T) {
 	h, _, _ := setupAssetsServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/entities/naoexiste/nfo", nil)
@@ -439,16 +445,16 @@ func TestWriteEntityNfoEntidadeInexistente404(t *testing.T) {
 	}
 }
 
-// ── GET /artwork: ordenacao (briefing 0062) ──────────────────────────────
+// ── GET /artwork: ordering ──────────────────────────────
 
-// TestArtworkOrdenaPrincipalLocalExterno cobre o criterio 5.4: a lista de um
-// kind sai ordenada principal -> local -> externo.
+// TestArtworkOrdenaPrincipalLocalExterno covers the criterion 5.4: the list of a
+// kind comes out sorted principal -> local -> external.
 func TestArtworkOrdenaPrincipalLocalExterno(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
 	libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
 
-	// external cacheado (is_local=true, mas nao materializado na pasta real).
+	// cached external (is_local=true, but not materialized in the real folder).
 	extID := "ext1"
 	if _, err := escrita(t, d).CriarAsset(context.Background(), sqlcgen.CriarAssetParams{
 		ID: extID, EntityID: "e1", Kind: "poster", Origin: "external", PathOrUri: "/tmp/nao-importa.png",
@@ -456,7 +462,7 @@ func TestArtworkOrdenaPrincipalLocalExterno(t *testing.T) {
 		t.Fatalf("CriarAsset external: %v", err)
 	}
 
-	// user, materializado na pasta real e marcado principal via /prefer.
+	// user, materialized in the real folder and marked principal via /prefer.
 	userAsset := decodeAsset(t, postAsset(t, h, "e1", "poster", pngPayload(64)))
 	if rec := do(t, h, http.MethodPut, "/api/v1/entities/e1/assets/"+userAsset.ID+"/prefer", nil); rec.Code != http.StatusOK {
 		t.Fatalf("prefer status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
@@ -483,11 +489,11 @@ func TestArtworkOrdenaPrincipalLocalExterno(t *testing.T) {
 	}
 }
 
-// ── Falha de I/O: sem .tmp-* orfao (briefing 0062) ───────────────────────
+// ── I/O failure: no orphan .tmp-* ───────────────────────
 
-// TestMaterializeFalhaIOSemOrfaoELocalPath cobre o criterio 5.5: falha de
-// I/O ao gravar (diretorio sem permissao de escrita) nao deixa .tmp-* orfao
-// nem local_path inconsistente com o disco.
+// TestMaterializeFalhaIOSemOrfaoELocalPath covers the criterion 5.5: an I/O failure
+// when writing (directory without write permission) leaves neither an orphan .tmp-*
+// nor a local_path inconsistent with the disk.
 func TestMaterializeFalhaIOSemOrfaoELocalPath(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root ignora permissao de diretorio (CI/containers como root)")
@@ -498,8 +504,8 @@ func TestMaterializeFalhaIOSemOrfaoELocalPath(t *testing.T) {
 	videoPath := filepath.Join(dir, "sub", "Matrix.1999.mkv")
 	semearFile(t, d, "mf1", "e1", videoPath, "present", 1.0, "")
 
-	// A pasta de destino (dir/sub) nao existe ainda -- cria-a SEM permissao
-	// de escrita, forcando EscreverArquivoAtomico a falhar no CreateTemp.
+	// The destination folder (dir/sub) does not exist yet -- create it WITHOUT write
+	// permission, forcing EscreverArquivoAtomico to fail on CreateTemp.
 	destDir := filepath.Join(dir, "sub")
 	if err := os.MkdirAll(destDir, 0o555); err != nil {
 		t.Fatalf("MkdirAll (somente leitura): %v", err)
@@ -531,10 +537,10 @@ func TestMaterializeFalhaIOSemOrfaoELocalPath(t *testing.T) {
 	}
 }
 
-// ── Self-heal de arte/NFO materializados (briefing 0127) ─────────────────
+// ── Self-heal of materialized artwork/NFO ─────────────────
 
-// TestArquivoLocalAindaExisteArquivoPresente cobre o caso feliz do helper:
-// arquivo existente -> true.
+// TestArquivoLocalAindaExisteArquivoPresente covers the happy case of the helper:
+// an existing file -> true.
 func TestArquivoLocalAindaExisteArquivoPresente(t *testing.T) {
 	dir := t.TempDir()
 	caminho := filepath.Join(dir, "existe.png")
@@ -546,8 +552,8 @@ func TestArquivoLocalAindaExisteArquivoPresente(t *testing.T) {
 	}
 }
 
-// TestArquivoLocalAindaExisteArquivoAusente cobre o gatilho do self-heal:
-// arquivo inexistente (os.IsNotExist) -> false.
+// TestArquivoLocalAindaExisteArquivoAusente covers the self-heal trigger:
+// a nonexistent file (os.IsNotExist) -> false.
 func TestArquivoLocalAindaExisteArquivoAusente(t *testing.T) {
 	dir := t.TempDir()
 	caminho := filepath.Join(dir, "sumiu.png")
@@ -556,38 +562,38 @@ func TestArquivoLocalAindaExisteArquivoAusente(t *testing.T) {
 	}
 }
 
-// TestArquivoLocalAindaExistePathVazio cobre o caso defensivo: path vazio
-// nunca é tratado como "existe".
+// TestArquivoLocalAindaExistePathVazio covers the defensive case: an empty path
+// is never treated as "exists".
 func TestArquivoLocalAindaExistePathVazio(t *testing.T) {
 	if arquivoLocalAindaExiste("") {
 		t.Error(`arquivoLocalAindaExiste("") = true, quero false`)
 	}
 }
 
-// TestArquivoLocalAindaExisteErroNaoENOENTAssumePresente cobre o critério de
-// aceite do briefing 0127: um erro de os.Stat que NÃO seja "não existe"
-// (aqui, ENOTDIR -- o componente pai do caminho é um arquivo comum, não um
-// diretório) é tratado como "assume que existe" -- best-effort, não dispara
-// reescrita em cima de um glitch transitório do mount remoto.
+// TestArquivoLocalAindaExisteErroNaoENOENTAssumePresente covers the
+// acceptance criterion: an os.Stat error that is NOT "does not exist"
+// (here, ENOTDIR -- the parent component of the path is a regular file, not a
+// directory) is treated as "assume it exists" -- best-effort, it does not trigger a
+// rewrite on top of a transient glitch of the remote mount.
 func TestArquivoLocalAindaExisteErroNaoENOENTAssumePresente(t *testing.T) {
 	dir := t.TempDir()
 	arquivoComum := filepath.Join(dir, "isto-e-um-arquivo-nao-diretorio")
 	if err := os.WriteFile(arquivoComum, []byte("x"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	// Um path cujo componente PAI é um arquivo comum produz ENOTDIR no
-	// os.Stat -- erro diferente de "não existe".
+	// A path whose PARENT component is a regular file produces ENOTDIR in
+	// os.Stat -- an error different from "does not exist".
 	caminho := filepath.Join(arquivoComum, "sub", "poster.png")
 	if !arquivoLocalAindaExiste(caminho) {
 		t.Error("arquivoLocalAindaExiste = false para erro ENOTDIR, quero true (assume presente)")
 	}
 }
 
-// TestMaterializeArquivoSumidoRegravaMesmoPath cobre o critério de aceite do
-// briefing 0127 via POST .../materialize: um asset já materializado
-// (local_path preenchido) cujo arquivo físico sumiu do disco (mount remoto,
-// exclusão externa) -- uma nova chamada regrava o binário do CACHE no MESMO
-// local_path, sem rotacionar (poster.png continua bare, nunca vira
+// TestMaterializeArquivoSumidoRegravaMesmoPath covers the acceptance criterion
+// through POST .../materialize: an already materialized asset
+// (local_path filled) whose physical file disappeared from disk (remote mount,
+// external deletion) -- a new call rewrites the CACHE binary into the SAME
+// local_path, without rotating (poster.png stays bare, it never becomes
 // poster1.png).
 func TestMaterializeArquivoSumidoRegravaMesmoPath(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
@@ -605,8 +611,8 @@ func TestMaterializeArquivoSumidoRegravaMesmoPath(t *testing.T) {
 		t.Fatalf("local_path = %v, quero %q", got.LocalPath, quero)
 	}
 
-	// Simula o arquivo sumindo fisicamente do disco (mount remoto, exclusão
-	// externa) -- o banco continua achando que está lá.
+	// Simulates the file physically disappearing from disk (remote mount, external
+	// deletion) -- the database still thinks it is there.
 	if err := os.Remove(quero); err != nil {
 		t.Fatalf("os.Remove (simular sumiço): %v", err)
 	}
@@ -627,9 +633,9 @@ func TestMaterializeArquivoSumidoRegravaMesmoPath(t *testing.T) {
 	}
 }
 
-// TestPreferArquivoSumidoRegravaMesmoPath cobre o mesmo critério via PUT
-// .../prefer: um asset já principal (sem nenhuma rotação a fazer, chamado de
-// novo sobre si mesmo) cujo arquivo sumiu do disco -- regrava no mesmo
+// TestPreferArquivoSumidoRegravaMesmoPath covers the same criterion via PUT
+// .../prefer: an already principal asset (no rotation to do, called again
+// over itself) whose file disappeared from disk -- it rewrites at the same
 // local_path.
 func TestPreferArquivoSumidoRegravaMesmoPath(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
@@ -664,13 +670,13 @@ func TestPreferArquivoSumidoRegravaMesmoPath(t *testing.T) {
 	}
 }
 
-// TestMaterializeArquivoPresenteNaoRegravaCache cobre o critério de
-// performance do briefing 0127: quando o arquivo físico já está presente,
-// uma nova chamada a POST .../materialize NÃO lê o cache nem reescreve o
-// arquivo. Comprovado apagando o binário do CACHE interno após a 1a
-// materialização: se lerBinarioAssetDoCache fosse chamado de novo, a 2a
-// chamada teria que falhar (o cache não existe mais); ela precisa continuar
-// tendo sucesso, e o mtime do arquivo na pasta real não pode mudar.
+// TestMaterializeArquivoPresenteNaoRegravaCache covers the performance
+// criterion: when the physical file is already present,
+// a new call to POST .../materialize does NOT read the cache nor rewrite the
+// file. Proven by deleting the internal CACHE binary after the 1st
+// materialization: if lerBinarioAssetDoCache were called again, the 2nd
+// call would have to fail (the cache does not exist anymore); it must keep
+// succeeding, and the mtime of the file in the real folder cannot change.
 func TestMaterializeArquivoPresenteNaoRegravaCache(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -714,10 +720,10 @@ func TestMaterializeArquivoPresenteNaoRegravaCache(t *testing.T) {
 	}
 }
 
-// ── GET /entities/{id}/theme (briefing 0082) ─────────────────────────────
+// ── GET /entities/{id}/theme ─────────────────────────────
 
-// TestGetEntityThemeMp3Encontrado cobre o caso feliz: theme.mp3 na raiz
-// resolvida por DiretorioDestino e servido com o content-type correto.
+// TestGetEntityThemeMp3Encontrado covers the happy case: theme.mp3 at the root
+// resolved by DiretorioDestino and served with the correct content-type.
 func TestGetEntityThemeMp3Encontrado(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -740,7 +746,7 @@ func TestGetEntityThemeMp3Encontrado(t *testing.T) {
 	}
 }
 
-// TestGetEntityThemeOggEFlac cobre as extensoes alternativas aceitas.
+// TestGetEntityThemeOggEFlac covers the alternative accepted extensions.
 func TestGetEntityThemeOggEFlac(t *testing.T) {
 	for _, tc := range []struct {
 		arquivo   string
@@ -767,9 +773,9 @@ func TestGetEntityThemeOggEFlac(t *testing.T) {
 	}
 }
 
-// TestGetEntityThemeSemArquivo404 cobre a degradacao graciosa: pasta
-// resolvida existe (media_file present), mas sem nenhum theme.* -> 404, sem
-// erro 500.
+// TestGetEntityThemeSemArquivo404 covers the graceful degradation: the resolved
+// folder exists (present media_file), but without any theme.* -> 404, without
+// a 500 error.
 func TestGetEntityThemeSemArquivo404(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -782,9 +788,9 @@ func TestGetEntityThemeSemArquivo404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestGetEntityThemeSemMediaFile404 cobre o criterio "sem storage local
-// associado": entity sem nenhum media_file present -> 404, mesma condicao
-// de sem pasta de destino que materialize/nfo ja tratam.
+// TestGetEntityThemeSemMediaFile404 covers the "no associated local storage"
+// criterion: entity without any present media_file -> 404, the same condition
+// of no destination folder that materialize/nfo already handle.
 func TestGetEntityThemeSemMediaFile404(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "Sem Arquivo")
@@ -796,9 +802,9 @@ func TestGetEntityThemeSemMediaFile404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestGetEntityThemeHead cobre o HEAD (o front confere existência sem baixar
-// o binário inteiro antes de renderizar o player): 200 sem corpo quando há
-// tema, 404 quando não há.
+// TestGetEntityThemeHead covers HEAD (the front end checks existence without downloading
+// the whole binary before rendering the player): 200 without body when there is a
+// theme, 404 when there is none.
 func TestGetEntityThemeHead(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -821,7 +827,8 @@ func TestGetEntityThemeHead(t *testing.T) {
 	}
 }
 
-// TestGetEntityThemeEntidadeInexistente404 cobre o 404 de entity inexistente.
+// TestGetEntityThemeEntidadeInexistente404 covers the 404 of a nonexistent
+// entity.
 func TestGetEntityThemeEntidadeInexistente404(t *testing.T) {
 	h, _, _ := setupAssetsServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/entities/naoexiste/theme", nil)
@@ -831,10 +838,10 @@ func TestGetEntityThemeEntidadeInexistente404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestGetEntityThemeSerieUsaRaizDaSerie cobre o item "raiz da série": tema
-// na raiz da SERIE (nao numa subpasta de temporada) e encontrado quando o
-// endpoint e chamado com o id da serie -- mesma resolucao de DiretorioDestino
-// usada por materialize/nfo (briefing 0081).
+// TestGetEntityThemeSerieUsaRaizDaSerie covers the "series root" item: a theme
+// at the SERIES root (not in a season subfolder) is found when the
+// endpoint is called with the series id -- same DiretorioDestino resolution
+// used by materialize/nfo.
 func TestGetEntityThemeSerieUsaRaizDaSerie(t *testing.T) {
 	h, d, _ := setupAssetsServer(t)
 	semearEntity(t, d, "serie1", "tv", "Serie")
@@ -846,8 +853,8 @@ func TestGetEntityThemeSerieUsaRaizDaSerie(t *testing.T) {
 	}
 
 	raiz := t.TempDir()
-	// Duas pastas de temporada IRMAS sob a raiz -- o prefixo comum cai na
-	// raiz da serie (briefing 0081), sem precisar do fallback de subir nivel.
+	// Two SIBLING season folders under the root -- the common prefix falls on the
+	// series root, without needing the fallback of going up a level.
 	semearFile(t, d, "mf1", "serie1", filepath.Join(raiz, "Season 01", "s01e01.mkv"), "present", 1.0, "")
 	semearFile(t, d, "mf2", "serie1", filepath.Join(raiz, "Season 02", "s02e01.mkv"), "present", 1.0, "")
 

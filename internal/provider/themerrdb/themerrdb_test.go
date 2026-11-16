@@ -9,9 +9,9 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// servidorThemerrdb responde só as rotas conhecidas com fixtures fixas e
-// devolve 404 para qualquer outra (mesmo comportamento real da ThemerrDB
-// para um id sem entrada curada).
+// servidorThemerrdb answers only the known routes with fixed fixtures and
+// returns 404 for any other one (the same real behavior of ThemerrDB for an id
+// without a curated entry).
 func servidorThemerrdb(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -48,9 +48,9 @@ func TestBuscarTemaMusicalFilmeComMatchTmdb(t *testing.T) {
 	}
 }
 
-// TestBuscarTemaMusicalFilmeCaiParaImdb cobre a regra "tenta tmdb, senão
-// imdb": tmdb sem match (404) mas imdb com match -> devolve o candidato do
-// imdb, sem erro.
+// TestBuscarTemaMusicalFilmeCaiParaImdb covers the rule "try tmdb, otherwise
+// imdb": tmdb without a match (404) but imdb with a match -> it returns the
+// imdb candidate, without an error.
 func TestBuscarTemaMusicalFilmeCaiParaImdb(t *testing.T) {
 	srv := servidorThemerrdb(t)
 	defer srv.Close()
@@ -68,8 +68,8 @@ func TestBuscarTemaMusicalFilmeCaiParaImdb(t *testing.T) {
 	}
 }
 
-// TestBuscarTemaMusicalSemMatchDevolveGraca cobre o critério de aceite §5:
-// id desconhecido -> (_, false, nil), NUNCA erro.
+// TestBuscarTemaMusicalSemMatchDevolveGraca covers the acceptance criterion:
+// unknown id -> (_, false, nil), NEVER an error.
 func TestBuscarTemaMusicalSemMatchDevolveGraca(t *testing.T) {
 	srv := servidorThemerrdb(t)
 	defer srv.Close()
@@ -101,9 +101,10 @@ func TestBuscarTemaMusicalSerieComMatch(t *testing.T) {
 	}
 }
 
-// TestBuscarTemaMusicalSerieSemTmdbDevolveGraca cobre a regra "série só via
-// TMDB": sem id tmdb (só imdb, que a ThemerrDB não indexa pra série), a lista
-// de rotas fica vazia -> sem match, sem erro, sem bater na rede.
+// TestBuscarTemaMusicalSerieSemTmdbDevolveGraca covers the rule "series only
+// through TMDB": without a tmdb id (only imdb, which ThemerrDB does not index for
+// series), the route list stays empty -> no match, no error, without hitting the
+// network.
 func TestBuscarTemaMusicalSerieSemTmdbDevolveGraca(t *testing.T) {
 	c := New(nil, "http://nao-deveria-ser-chamado.invalid")
 
@@ -116,7 +117,7 @@ func TestBuscarTemaMusicalSerieSemTmdbDevolveGraca(t *testing.T) {
 	}
 }
 
-// TestBuscarTemaMusicalSemIDUtilizavel cobre filme sem nenhum id conhecido.
+// TestBuscarTemaMusicalSemIDUtilizavel covers a movie without any known id.
 func TestBuscarTemaMusicalSemIDUtilizavel(t *testing.T) {
 	c := New(nil, "http://nao-deveria-ser-chamado.invalid")
 
@@ -129,8 +130,8 @@ func TestBuscarTemaMusicalSemIDUtilizavel(t *testing.T) {
 	}
 }
 
-// TestBuscarTemaMusicalStatusInesperadoPropaga cobre erro real (5xx) da
-// fonte: propaga, não é graça.
+// TestBuscarTemaMusicalStatusInesperadoPropaga covers a real error (5xx) from
+// the source: it propagates, it is not graceful.
 func TestBuscarTemaMusicalStatusInesperadoPropaga(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)

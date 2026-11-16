@@ -1,20 +1,20 @@
-// Package scanner orquestra a varredura de um datasource (briefing 0009): faz o
-// fs walk filtrando extensões de vídeo, calcula o content_hash parcial, extrai
-// os fatos técnicos via ffprobe (internal/mediainfo), associa cada arquivo a uma
-// Entity pela convenção Kodi/Jellyfin (internal/naming) e descobre a arte local
-// — tudo em background, não-destrutivo e honrando o ciclo de vida `missing`
-// (ADR-0012). As escritas serializam pela conexão única, em lotes curtos
-// (ADR-0010); o parser e o hash são puros e paralelizáveis.
+// Package scanner orchestrates the scan of a datasource: it walks the fs
+// filtering video extensions, computes the partial content_hash, extracts the
+// technical facts via ffprobe (internal/mediainfo), associates each file with an
+// Entity through the Kodi/Jellyfin convention (internal/naming) and discovers
+// the local artwork -- all in the background, non-destructive and honoring the
+// `missing` lifecycle (ADR-0012). Writes serialize through the single
+// connection, in short batches (ADR-0010); the parser and the hash are pure and
+// parallelizable.
 //
-// Orquestração (briefing 0108, ADR-0028): o scanner NÃO dispara mais sua
-// própria goroutine nem guarda estado de execução em memória (running/
-// filesSeen/filesTotal/startedAt/lastError) — isso vive na fila unificada
-// (internal/execqueue). Start() só enfileira (ConfigurarFila); o trabalho de
-// scan em si roda depois, quando o worker sequencial da fila chama de volta
-// o Manager como um execqueue.Runner (Executar) — ver ConfigurarFila/
-// ConfigurarLibrary abaixo. O único estado que continua vivendo no Manager é
-// StorageNaoVideo (briefing 0063), que é específico do domínio scan e não
-// pertence à fila genérica.
+// Orchestration (ADR-0028): the scanner no longer fires its own goroutine nor
+// keeps execution state in memory (running/filesSeen/filesTotal/startedAt/
+// lastError) -- that lives in the unified queue (internal/execqueue). Start()
+// only enqueues (ConfigurarFila); the scan work itself runs later, when the
+// queue's sequential worker calls the Manager back as an execqueue.Runner
+// (Executar) -- see ConfigurarFila/ConfigurarLibrary below. The only state that
+// still lives in the Manager is StorageNaoVideo, which is specific to the scan
+// domain and does not belong to the generic queue.
 package scanner
 
 import (
@@ -34,125 +34,128 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// carimboFormato é o formato do timestamp de last_seen usado pelo ciclo de vida.
-// A precisão de nanossegundos torna o carimbo de cada scan praticamente único,
-// o que a marcação de `missing` usa como sentinela ("visto neste scan?").
+// carimboFormato is the format of the last_seen timestamp used by the lifecycle.
+// Nanosecond precision makes each scan's stamp practically unique, which the
+// `missing` marking uses as a sentinel ("seen in this scan?").
 const carimboFormato = "2006-01-02T15:04:05.000000000Z"
 
-// loteEscrita é o tamanho do lote curto de escrita (ADR-0010): a cada N arquivos
-// a transação é commitada, para que uma interrupção preserve o já gravado.
+// loteEscrita is the size of the short write batch (ADR-0010): every N files the
+// transaction is committed, so that an interruption preserves what was already
+// written.
 const loteEscrita = 25
 
-// Triggers conhecidos de Start — espelham execqueue.TriggerManual/Schedule/
-// Watch (briefing 0108), mas DEFINIDOS AQUI (não como alias) para que
-// pacotes que só dependem de scanner (watch, libraryhealth) não precisem
-// importar internal/execqueue só para ter a constante — ver mapTrigger.
+// Known triggers of Start -- they mirror execqueue.TriggerManual/Schedule/
+// Watch, but are DEFINED HERE (not as an alias) so that packages that depend
+// only on scanner (watch, libraryhealth) do not need to import
+// internal/execqueue just to have the constant -- see mapTrigger.
 const (
 	TriggerManual   = "manual"
 	TriggerSchedule = "schedule"
 	TriggerWatch    = "watch"
 )
 
-// Erros de orquestração; sentinelas para o handler mapear ao envelope de erro.
+// Orchestration errors; sentinels so the handler can map them to the error
+// envelope.
 var (
-	// ErrScanEmAndamento: já há um scan rodando (ou enfileirado) para este
-	// datasource. -> 409. Espelha execqueue.ErrJaEnfileirado na superfície
-	// pública do scanner (Start mapeia um para o outro).
+	// ErrScanEmAndamento: there is already a scan running (or enqueued) for
+	// this datasource. -> 409. Mirrors execqueue.ErrJaEnfileirado on the
+	// scanner's public surface (Start maps one to the other).
 	ErrScanEmAndamento = errors.New("já existe um scan em andamento para este datasource")
-	// ErrSourceOffline: o datasource está inacessível (não dá para varrer). -> 409
+	// ErrSourceOffline: the datasource is unreachable (it cannot be walked). -> 409
 	ErrSourceOffline = errors.New("datasource inacessível (offline)")
-	// ErrFilaNaoConfigurada: Start chamado antes de ConfigurarFila -- todo
-	// caminho de produção configura a fila no boot (cmd/mymediadb/main.go);
-	// isto só deveria aparecer em teste/uso incompleto do pacote.
+	// ErrFilaNaoConfigurada: Start called before ConfigurarFila -- every
+	// production path configures the queue at boot (cmd/mymediadb/main.go);
+	// this should only show up in a test/incomplete use of the package.
 	ErrFilaNaoConfigurada = errors.New("scanner: fila de execução não configurada (ConfigurarFila)")
 )
 
-// Prober é a dependência de mediainfo que o scanner consome (ffprobe). Interface
-// para permitir injeção nos testes.
+// Prober is the mediainfo dependency the scanner consumes (ffprobe). Interface
+// to allow injection in tests.
 type Prober interface {
 	Disponivel() bool
 	Probe(ctx context.Context, path string) ([]byte, error)
 }
 
-// FingerprintCalculador é a dependência de fingerprint acústico (fpcalc/
-// Chromaprint, briefing 0126) que o passo 4.5 do matching de música consome
-// -- MESMO MOLDE de Prober acima (Disponivel + operação), implementada em
-// produção por *internal/fingerprint.Calculador e injetável para testes sem
-// o fpcalc real. Disponivel()=false ou erro em CalcularFingerprint DEGRADAM
-// o passo 4.5 (cai para o draft, passo 5), nunca derrubam o scan.
+// FingerprintCalculador is the acoustic fingerprint dependency (fpcalc/
+// Chromaprint) that step 4.5 of the music matching consumes -- SAME SHAPE as
+// Prober above (Disponivel + operation), implemented in production by
+// *internal/fingerprint.Calculador and injectable for tests without the real
+// fpcalc. Disponivel()=false or an error in CalcularFingerprint DEGRADE step
+// 4.5 (it falls back to the draft, step 5), never take the scan down.
 type FingerprintCalculador interface {
 	Disponivel() bool
 	CalcularFingerprint(ctx context.Context, path string) (fingerprint string, duracaoSegundos float64, err error)
 }
 
-// SerieImporter é o ponto de AUTO-IMPORT que o scanner de séries (0034) consome
-// quando a série de uma pasta ainda não está no catálogo: busca pelo nome no
-// provider, escolhe o match exato e único e importa a árvore (reusa o enrich da Fase
-// 1). Interface para injetar sem acoplar o scanner ao enrich e para testar com um
-// stub. Implementado por *enrich.Servico. preferredLang (briefing 0084) é o
-// idioma preferido da library_source que disparou o import (vazio = sem
-// preferência, usa o idioma global resolvido por `idiomas`).
+// SerieImporter is the AUTO-IMPORT point that the series scanner (0034)
+// consumes when the series of a folder is not in the catalog yet: it searches
+// the provider by name, picks the exact and unique match and imports the tree
+// (it reuses the Phase 1 enrich). Interface to inject without coupling the
+// scanner to enrich and to test with a stub. Implemented by *enrich.Servico.
+// preferredLang is the preferred language of the library_source that
+// triggered the import (empty = no preference, it uses the global language
+// resolved by `idiomas`).
 type SerieImporter interface {
 	ImportarSeriePorNome(ctx context.Context, nome string, langs []string, preferredLang string) (string, error)
 }
 
-// FilmeImportador é o ponto de AUTO-MATCH que o scanner de filme consome
-// logo após criar uma entity NOVA: tenta casar+enriquecer (metadados +
-// inventário de artes) contra os providers configurados, reusando o MESMO
-// limiar de confiança do auto-match em lote (LimiarAutoMatch, saude_biblioteca).
-// Sem candidato forte o bastante, a entity permanece cataloged/draft,
-// pendente na fila de Revisão -- igual hoje. Interface para não acoplar o
-// scanner ao pacote server. Implementado por *Server.
+// FilmeImportador is the AUTO-MATCH point that the movie scanner consumes right
+// after creating a NEW entity: it tries to match+enrich (metadata + artwork
+// inventory) against the configured providers, reusing the SAME confidence
+// threshold of the batch auto-match (LimiarAutoMatch, saude_biblioteca). With no
+// strong enough candidate, the entity stays cataloged/draft, pending in the
+// Review queue -- like today. Interface so as not to couple the scanner to the
+// server package. Implemented by *Server.
 type FilmeImportador interface {
-	// TentarAutoMatchFilme tenta casar+enriquecer a entity; matched=true só
-	// quando um candidato >= LimiarAutoMatch foi de fato aplicado.
+	// TentarAutoMatchFilme tries to match+enrich the entity; matched=true only
+	// when a candidate >= LimiarAutoMatch was actually applied.
 	TentarAutoMatchFilme(ctx context.Context, entityID string) (matched bool, err error)
 }
 
-// Materializador é o ponto OPCIONAL que o scanner consome depois de
-// QUALQUER auto-import bem-sucedido (filme ou série) para, se o dono tiver
-// ligado "materializar artes automaticamente" (app_settings), materializar
-// na hora as artes que o enrich acabou de descobrir -- sem esperar o job
-// periódico midias_faltantes. Toggle desligado (default) = no-op.
-// Implementado por *Server.
+// Materializador is the OPTIONAL point that the scanner consumes after ANY
+// successful auto-import (movie or series) so that, if the owner has turned on
+// "materializar artes automaticamente" (app_settings), it materializes right
+// away the artwork the enrich has just discovered -- without waiting for the
+// periodic midias_faltantes job. Toggle off (default) = no-op.
+// Implemented by *Server.
 type Materializador interface {
 	MaterializarSeAutoDownloadLigado(ctx context.Context, entityID string) error
 }
 
-// MusicaImportador é o ponto de IMPORT da vertical de música que o scanner
-// consome. Importar (briefing 0107/ADR-0027) é o método genérico que toda
-// vertical já usa (0015/0031/0106) -- hoje só usado pelo import MANUAL
-// deliberado (busca → importar artista, dispatcher type="artista"), que traz
-// a discografia inteira e PERMANECE intocado. ImportarFaixaPossuida (ADR-0029,
-// briefing 0115) é o import ESCOPADO que o gatilho AUTOMÁTICO do scan usa
-// desde então: uma faixa possuída traz só o artista (identidade) + o ÁLBUM
-// daquela faixa + a própria faixa, nunca a árvore inteira. Interface estreita
-// (mesmo padrão de SerieImporter/FilmeImportador) para não acoplar o scanner
-// ao pacote enrich inteiro (só o tipo FaixaAlvo é exposto). Implementado por
+// MusicaImportador is the IMPORT point of the music vertical that the scanner
+// consumes. Importar (ADR-0027) is the generic method every vertical already
+// uses (0015/0031/0106) -- today only used by the deliberate MANUAL import
+// (search → import artist, dispatcher type="artista"), which brings the whole
+// discography and REMAINS untouched. ImportarFaixaPossuida (ADR-0029) is the
+// SCOPED import that the scanner's AUTOMATIC trigger has used since then: an
+// owned track brings only the artist (identity) + the ALBUM of that track + the
+// track itself, never the whole tree. Narrow interface (same pattern as
+// SerieImporter/FilmeImportador) so as not to couple the scanner to the whole
+// enrich package (only the FaixaAlvo type is exposed). Implemented by
 // *enrich.Servico.
 type MusicaImportador interface {
 	Importar(ctx context.Context, source, sourceID, tipo string, langs []string) (id string, criada bool, err error)
 	ImportarFaixaPossuida(ctx context.Context, source, artistaMBID string, alvo enrich.FaixaAlvo, langs []string) (faixaID string, criada bool, err error)
-	// ImportarFaixaPorTituloDeAlbum é o caminho de COMPILAÇÃO/TRILHA (briefing
-	// 0136): resolve o álbum pelo título e usa o artist-credit que a fonte
-	// atribui a ele. Degrada em silêncio (ok=false) quando a fonte não
-	// implementa a capacidade -- ver enrich.ImportarFaixaPorTituloDeAlbum.
+	// ImportarFaixaPorTituloDeAlbum is the COMPILATION/SOUNDTRACK path: it
+	// resolves the album by title and uses the artist-credit the source
+	// assigns to it. It degrades silently (ok=false) when the source does not
+	// implement the capability -- see enrich.ImportarFaixaPorTituloDeAlbum.
 	ImportarFaixaPorTituloDeAlbum(ctx context.Context, source string, alvo enrich.FaixaAlvo, langs []string) (faixaID string, criada bool, err error)
 }
 
-// LibraryGetter é o subconjunto de library.Service que o scanner consome
-// para RE-RESOLVER um library.Source a partir só do id (briefing 0108): o
-// worker da fila chama Manager.Executar bem depois do Enqueue original, só
-// com o refID (string) em mãos -- precisa buscar de novo o Source completo
-// (path, content_type) para poder escanear. *library.Service satisfaz isto
-// estruturalmente (mesma assinatura usada em internal/server/scan.go).
+// LibraryGetter is the subset of library.Service the scanner consumes to
+// RE-RESOLVE a library.Source from the id alone: the queue worker calls
+// Manager.Executar well after the original Enqueue, with only the refID (string)
+// in hand -- it needs to fetch the complete Source again (path, content_type) in
+// order to scan. *library.Service satisfies this structurally (same signature
+// used in internal/server/scan.go).
 type LibraryGetter interface {
 	Obter(ctx context.Context, id string) (library.Source, error)
 }
 
-// Status é a fotografia consultável de um scan (superfície da API GET .../scan).
+// Status is the queryable snapshot of a scan (surface of the GET .../scan API).
 type Status struct {
-	// Existe é falso quando nunca houve scan para o datasource.
+	// Existe is false when there has never been a scan for the datasource.
 	Existe     bool
 	Running    bool
 	FilesSeen  int
@@ -161,169 +164,167 @@ type Status struct {
 	LastError  string
 }
 
-// storageResultado é o resultado da classificação de arquivo NÃO-vídeo
-// (briefing 0063) da ÚLTIMA passada de WalkDir de UMA fonte -- dado
-// específico do domínio scan (não pertence à fila genérica execqueue),
-// mantido em memória no próprio Manager, DESACOPLADO do ciclo de vida do
-// item de fila (sobrevive mesmo que o histórico do item em si já tenha sido
-// consultado/rotacionado).
+// storageResultado is the result of the NON-video file classification of the
+// LAST WalkDir pass of ONE source -- data specific to the scan domain (it does
+// not belong to the generic execqueue), kept in memory in the Manager itself,
+// DECOUPLED from the queue item lifecycle (it survives even if the history of
+// the item itself has already been queried/rotated).
 type storageResultado struct {
 	managedBytes   int64
 	unmanagedBytes int64
 }
 
-// Manager guarda as dependências do scan e o pequeno estado de storage em
-// memória (StorageNaoVideo). A orquestração de execução (fila, concorrência,
-// progresso, histórico) vive em internal/execqueue -- ver ConfigurarFila. As
-// escritas de banco usam sempre o pool de escrita (db.Write) — o escritor
-// único da ADR-0010.
+// Manager holds the scan dependencies and the small storage state in memory
+// (StorageNaoVideo). The execution orchestration (queue, concurrency, progress,
+// history) lives in internal/execqueue -- see ConfigurarFila. Database writes
+// always use the write pool (db.Write) — the single writer of ADR-0010.
 type Manager struct {
 	db     *db.DB
 	prober Prober
 	novoID func() string
 	agora  func() time.Time
 
-	// fila é a fila de execução unificada (briefing 0108): Start enfileira
-	// nela em vez de disparar uma goroutine própria. nil só em uso
-	// incompleto do pacote (todo caminho de produção chama ConfigurarFila no
-	// boot) -- Start devolve ErrFilaNaoConfigurada nesse caso.
+	// fila is the unified execution queue: Start enqueues into it instead of
+	// firing its own goroutine. nil only in an incomplete use of the package
+	// (every production path calls ConfigurarFila at boot) -- Start returns
+	// ErrFilaNaoConfigurada in that case.
 	fila *execqueue.Manager
-	// library resolve library.Source por id -- necessário porque Executar
-	// (chamado pelo worker da fila) só recebe o refID, não o Source inteiro.
+	// library resolves library.Source by id -- needed because Executar
+	// (called by the queue worker) only receives the refID, not the whole
+	// Source.
 	library LibraryGetter
 
-	// serieImporter e idiomas alimentam o caminho de SÉRIE (0034): auto-import da
-	// árvore pelo nome e os idiomas permitidos das settings. Ambos nil quando o
-	// enrich está desligado — sem eles, uma série ausente do catálogo cai na fila de
-	// revisão (rascunho) em vez de ser importada. Configurados via ConfigurarSeries.
+	// serieImporter and idiomas feed the SERIES path (0034): auto-import of the
+	// tree by name and the allowed languages from the settings. Both nil when
+	// enrich is off — without them, a series missing from the catalog falls into
+	// the review queue (draft) instead of being imported. Configured via
+	// ConfigurarSeries.
 	serieImporter SerieImporter
 	idiomas       func(ctx context.Context) []string
 
-	// filmeImportador alimenta o caminho de FILME (0089): auto-match imediato
-	// disparado logo após o scanner criar uma entity nova. nil quando o
-	// enrich está desligado -- sem ele, o filme fica cataloged/draft até um
-	// job periódico ou ação manual (comportamento pré-0089). Configurado via
-	// ConfigurarFilmes.
+	// filmeImportador feeds the MOVIE path (0089): immediate auto-match fired
+	// right after the scanner creates a new entity. nil when enrich is off --
+	// without it, the movie stays cataloged/draft until a periodic job or a
+	// manual action (behavior prior to 0089). Configured via ConfigurarFilmes.
 	filmeImportador FilmeImportador
 
-	// materializador é OPCIONAL (0089): quando configurado e o toggle
-	// "materializar_artes_automaticamente" está ligado, materializa as
-	// artes recém-descobertas logo após um auto-import bem-sucedido (filme
-	// ou série) do scan. nil = no-op, igual ao comportamento pré-0089.
-	// Configurado via ConfigurarMaterializacao.
+	// materializador is OPTIONAL (0089): when configured and the
+	// "materializar_artes_automaticamente" toggle is on, it materializes the
+	// newly discovered artwork right after a successful auto-import (movie or
+	// series) of the scan. nil = no-op, same as the behavior prior to 0089.
+	// Configured via ConfigurarMaterializacao.
 	materializador Materializador
 
-	// posScan é o gancho OPCIONAL de fim de scan (briefing 0135/ADR-0031):
-	// reconcilía os rascunhos e retenta os pendentes DA BIBLIOTECA que acabou de
-	// ser varrida. nil = comportamento pré-0135 (scan termina no ciclo de vida).
-	// Configurado via ConfigurarPosScan.
+	// posScan is the OPTIONAL end-of-scan hook (ADR-0031): it reconciles the
+	// drafts and retries the pendings OF THE LIBRARY that has just been walked.
+	// nil = behavior prior to the hook (the scan ends at the lifecycle).
+	// Configured via ConfigurarPosScan.
 	posScan PosScan
 
-	// musicaImportador/musicaProvider alimentam o caminho de MÚSICA (0107): o
-	// import por MBID (idempotente, via MusicaImportador) e o provider
-	// MusicBrainz em si (para a busca textual no fallback sem MBID embutido,
-	// Provider.Buscar, e a capacidade opcional provider.FaixaResolverProvider
-	// -- resolução reversa faixa→artista). Ambos nil = scanner de música opera
-	// em modo degradado (toda faixa vira draft, sem tentar casar) -- mesmo
-	// padrão de nil-safe de serieImporter/filmeImportador. Configurados via
-	// ConfigurarMusica.
+	// musicaImportador/musicaProvider feed the MUSIC path (0107): the import by
+	// MBID (idempotent, via MusicaImportador) and the MusicBrainz provider
+	// itself (for the textual search in the fallback without an embedded MBID,
+	// Provider.Buscar, and the optional capability
+	// provider.FaixaResolverProvider -- reverse resolution track→artist). Both
+	// nil = the music scanner runs in degraded mode (every track becomes a
+	// draft, without trying to match) -- same nil-safe pattern of
+	// serieImporter/filmeImportador. Configured via ConfigurarMusica.
 	musicaImportador MusicaImportador
 	musicaProvider   provider.Provider
 
-	// fingerprintCalculador/fingerprintProvider alimentam o passo 4.5 de
-	// FINGERPRINT ACÚSTICO (briefing 0126): último fallback do pipeline de
-	// música, disparado só depois que o passo 4 (busca textual) já falhou.
-	// fingerprintProvider é um provider DISTINTO de musicaProvider (hoje:
-	// internal/provider/acoustid, nunca o MusicBrainz) -- a capacidade real
-	// (provider.FingerprintProvider) é descoberta por type-assert em
-	// matchPorFingerprint (musica.go), não aqui. Ambos nil = passo 4.5
-	// degrada em silêncio (mesmo padrão nil-safe de musicaImportador/
-	// musicaProvider) -- sem fpcalc disponível OU sem um provider com a
-	// capacidade, o scan cai direto para o draft (passo 5). Configurados via
-	// ConfigurarFingerprint.
+	// fingerprintCalculador/fingerprintProvider feed the ACOUSTIC FINGERPRINT
+	// step 4.5: the last fallback of the music pipeline, fired only after step
+	// 4 (textual search) has already failed. fingerprintProvider is a DISTINCT
+	// provider from musicaProvider (today: internal/provider/acoustid, never
+	// MusicBrainz) -- the real capability (provider.FingerprintProvider) is
+	// discovered by type-assert in matchPorFingerprint (musica.go), not here.
+	// Both nil = step 4.5 degrades silently (same nil-safe pattern of
+	// musicaImportador/musicaProvider) -- without fpcalc available OR without a
+	// provider carrying the capability, the scan falls straight through to the
+	// draft (step 5). Configured via ConfigurarFingerprint.
 	fingerprintCalculador FingerprintCalculador
 	fingerprintProvider   provider.Provider
 
-	// muStorage protege storageNaoVideo -- pequeno estado em memória, POR
-	// FONTE, do resultado da classificação managed/unmanaged do briefing
-	// 0063 (ver StorageNaoVideo). Mutex próprio, separado de qualquer
-	// orquestração de execução (que agora vive no execqueue).
+	// muStorage protects storageNaoVideo -- small state in memory, PER SOURCE,
+	// of the result of the managed/unmanaged classification (see
+	// StorageNaoVideo). Its own mutex, separate from any execution
+	// orchestration (which now lives in the execqueue).
 	muStorage       sync.Mutex
 	storageNaoVideo map[string]storageResultado
 }
 
-// ConfigurarFila injeta a fila de execução unificada (briefing 0108,
-// ADR-0028) e registra o próprio Manager como o execqueue.Runner do kind
-// "scan" -- chamado pelo boot do processo (cmd/mymediadb/main.go). Sem isto,
-// Start devolve ErrFilaNaoConfigurada.
+// ConfigurarFila injects the unified execution queue (ADR-0028) and registers
+// the Manager itself as the execqueue.Runner of kind "scan" -- called by the
+// process boot (cmd/mymediadb/main.go). Without this, Start returns
+// ErrFilaNaoConfigurada.
 func (m *Manager) ConfigurarFila(fila *execqueue.Manager) {
 	m.fila = fila
 	fila.RegistrarRunner(execqueue.KindScan, m)
 }
 
-// ConfigurarLibrary injeta o resolvedor de library.Source por id (briefing
-// 0108) -- chamado pelo boot do processo. Sem isto, Executar (chamado pelo
-// worker da fila) falha ao tentar re-resolver o Source do refID.
+// ConfigurarLibrary injects the resolver of library.Source by id -- called by
+// the process boot. Without this, Executar (called by the queue worker) fails
+// when trying to re-resolve the Source from the refID.
 func (m *Manager) ConfigurarLibrary(lister LibraryGetter) {
 	m.library = lister
 }
 
-// ConfigurarSeries injeta o auto-import de séries (0034): o importador por nome e a
-// fonte dos idiomas permitidos. Chamado pelo server após montar o enrich; sem isso o
-// scanner de séries opera em modo degradado (não importa, só casa o que já existe e
-// manda o resto para revisão).
+// ConfigurarSeries injects the series auto-import (0034): the importer by name and
+// the source of the allowed languages. Called by the server after assembling enrich;
+// without it the series scanner runs in degraded mode (it does not import, it only
+// matches what already exists and sends the rest to review).
 func (m *Manager) ConfigurarSeries(imp SerieImporter, idiomas func(ctx context.Context) []string) {
 	m.serieImporter = imp
 	m.idiomas = idiomas
 }
 
-// ConfigurarFilmes injeta o auto-match imediato de filme (0089): chamado pelo
-// server após montar o enrich; sem isso o scanner de filme opera em modo
-// degradado (não tenta auto-match no scan, só cria a entity cataloged/draft
-// como antes deste briefing).
+// ConfigurarFilmes injects the immediate movie auto-match (0089): called by the
+// server after assembling enrich; without it the movie scanner runs in degraded
+// mode (it does not try an auto-match in the scan, it only creates the
+// cataloged/draft entity as before).
 func (m *Manager) ConfigurarFilmes(imp FilmeImportador) {
 	m.filmeImportador = imp
 }
 
-// ConfigurarMaterializacao injeta a materialização automática opcional
-// (0089), consumida depois de qualquer auto-import bem-sucedido do scan
-// (filme ou série). Sem chamar isto, o scan nunca materializa artes
-// automaticamente, mesmo com o toggle de settings ligado.
+// ConfigurarMaterializacao injects the optional automatic materialization
+// (0089), consumed after any successful auto-import of the scan (movie or
+// series). Without calling this, the scan never materializes artwork
+// automatically, even with the settings toggle on.
 func (m *Manager) ConfigurarMaterializacao(mat Materializador) {
 	m.materializador = mat
 }
 
-// ConfigurarMusica injeta a vertical de música (0107): o importador por MBID
-// (find-or-create idempotente da árvore inteira, via *enrich.Servico.Importar)
-// e o provider MusicBrainz em si (busca textual + resolução reversa
-// faixa→artista, quando o provider implementar provider.FaixaResolverProvider
-// -- ver internal/scanner/musica.go). Sem chamar isto, o scanner de música
-// opera em modo degradado: todo arquivo de áudio vira uma entity `faixa`
-// rascunho, sem tentar casar contra a fonte (mesmo padrão de
-// ConfigurarSeries/ConfigurarFilmes).
+// ConfigurarMusica injects the music vertical (0107): the importer by MBID
+// (idempotent find-or-create of the whole tree, via
+// *enrich.Servico.Importar) and the MusicBrainz provider itself (textual search
+// + reverse resolution track→artist, when the provider implements
+// provider.FaixaResolverProvider -- see internal/scanner/musica.go). Without
+// calling this, the music scanner runs in degraded mode: every audio file
+// becomes a draft `faixa` entity, without trying to match against the source
+// (same pattern as ConfigurarSeries/ConfigurarFilmes).
 func (m *Manager) ConfigurarMusica(imp MusicaImportador, prov provider.Provider) {
 	m.musicaImportador = imp
 	m.musicaProvider = prov
 }
 
-// ConfigurarFingerprint injeta o passo 4.5 de fingerprint acústico (briefing
-// 0126): o calculador da impressão digital (fpcalc, internal/fingerprint) e
-// o provider capaz de consultá-la (hoje só internal/provider/acoustid, via
-// a capacidade opcional provider.FingerprintProvider -- o type-assert
-// acontece em matchPorFingerprint, não aqui). Sem chamar isto, o passo 4.5
-// degrada para no-op e todo arquivo sem match textual cai direto no draft
-// (passo 5) -- mesmo comportamento pré-0126.
+// ConfigurarFingerprint injects the acoustic fingerprint step 4.5: the
+// fingerprint calculator (fpcalc, internal/fingerprint) and the provider able to
+// query it (today only internal/provider/acoustid, via the optional capability
+// provider.FingerprintProvider -- the type-assert happens in
+// matchPorFingerprint, not here). Without calling this, step 4.5 degrades to a
+// no-op and every file without a textual match falls straight into the draft
+// (step 5) -- the behavior prior to the fingerprint step.
 func (m *Manager) ConfigurarFingerprint(calc FingerprintCalculador, prov provider.Provider) {
 	m.fingerprintCalculador = calc
 	m.fingerprintProvider = prov
 }
 
-// NewManager cria um Manager com o ffprobe real do PATH.
+// NewManager creates a Manager with the real ffprobe from PATH.
 func NewManager(database *db.DB) *Manager {
 	return NewManagerComProber(database, mediainfo.NewProber())
 }
 
-// NewManagerComProber cria um Manager com um Prober explícito (testes).
+// NewManagerComProber creates a Manager with an explicit Prober (tests).
 func NewManagerComProber(database *db.DB, prober Prober) *Manager {
 	return &Manager{
 		db:              database,
@@ -334,14 +335,14 @@ func NewManagerComProber(database *db.DB, prober Prober) *Manager {
 	}
 }
 
-// Start enfileira o scan de um datasource (briefing 0108: não dispara mais
-// goroutine própria) e devolve o id do item de fila (202 na API).
-// ErrSourceOffline se o datasource estiver inacessível — nesse caso o estado
-// offline é PERSISTIDO e nada é marcado missing (ADR-0012); essa checagem
-// continua SÍNCRONA (stat barato, não precisa de fila). ErrScanEmAndamento
-// se já houver um item queued/running para esta fonte (dedup do execqueue,
-// mapeado para o erro sentinela público de sempre). ErrFilaNaoConfigurada se
-// ConfigurarFila nunca foi chamado.
+// Start enqueues the scan of a datasource (it no longer fires its own
+// goroutine) and returns the id of the queue item (202 in the API).
+// ErrSourceOffline if the datasource is unreachable -- in that case the offline
+// state is PERSISTED and nothing is marked missing (ADR-0012); that check
+// remains SYNCHRONOUS (a cheap stat, it does not need the queue).
+// ErrScanEmAndamento if there is already a queued/running item for this source
+// (execqueue dedup, mapped to the usual public sentinel error).
+// ErrFilaNaoConfigurada if ConfigurarFila was never called.
 func (m *Manager) Start(source library.Source, trigger string) (string, error) {
 	if !acessivel(source.Path) {
 		m.persistirEstado(context.Background(), source, "offline")
@@ -361,12 +362,12 @@ func (m *Manager) Start(source library.Source, trigger string) (string, error) {
 	return id, nil
 }
 
-// mapTrigger traduz um scanner.TriggerX para o execqueue.TriggerX
-// equivalente -- valores string IGUAIS hoje, mas mapeados explicitamente
-// (não por alias/const compartilhada) para que scanner.TriggerX continue
-// definido neste pacote sem depender da representação interna do execqueue.
-// Um trigger fora do conjunto conhecido é repassado como está -- Enqueue
-// devolve ErrTriggerInvalido, que sobe como erro normal de Start.
+// mapTrigger translates a scanner.TriggerX into the equivalent
+// execqueue.TriggerX -- the string values are EQUAL today, but they are mapped
+// explicitly (not by alias/shared const) so that scanner.TriggerX remains
+// defined in this package without depending on the internal representation of
+// the execqueue. A trigger outside the known set is passed through as is --
+// Enqueue returns ErrTriggerInvalido, which surfaces as a normal Start error.
 func mapTrigger(trigger string) string {
 	switch trigger {
 	case TriggerManual:
@@ -380,13 +381,13 @@ func mapTrigger(trigger string) string {
 	}
 }
 
-// Executar implementa execqueue.Runner: é chamado pelo worker sequencial da
-// fila (bem depois do Enqueue original de Start), com só o refID
-// (library_source.id) em mãos -- re-resolve o Source completo via
-// LibraryGetter e roda o pipeline de scan de sempre, síncrono (o worker JÁ É
-// a goroutine de background; o scanner não precisa mais da própria). Pânico
-// dentro do pipeline é recuperado pelo PRÓPRIO execqueue
-// (executarComRecover) -- não duplicamos recover aqui.
+// Executar implements execqueue.Runner: it is called by the queue's sequential
+// worker (well after the original Enqueue of Start), with only the refID
+// (library_source.id) in hand -- it re-resolves the complete Source via
+// LibraryGetter and runs the usual scan pipeline, synchronous (the worker IS
+// the background goroutine already; the scanner no longer needs its own). A
+// panic inside the pipeline is recovered by the execqueue ITSELF
+// (executarComRecover) -- we do not duplicate recover here.
 func (m *Manager) Executar(ctx context.Context, refID string, _ string, progresso execqueue.ProgressoFunc) (string, error) {
 	if m.library == nil {
 		return "", errors.New("scanner: library getter não configurado (ConfigurarLibrary)")
@@ -401,10 +402,11 @@ func (m *Manager) Executar(ctx context.Context, refID string, _ string, progress
 	return "", nil
 }
 
-// Status devolve a fotografia do scan do datasource (Existe=false se nunca
-// houve item de fila para esta fonte), traduzindo execqueue.QueueItemStatus
-// para o shape público de sempre -- ver internal/server/scan.go, que
-// continua consumindo isto sem mudança de contrato JSON.
+// Status returns the snapshot of the datasource scan (Existe=false if there has
+// never been a queue item for this source), translating
+// execqueue.QueueItemStatus into the usual public shape -- see
+// internal/server/scan.go, which keeps consuming this with no change to the
+// JSON contract.
 func (m *Manager) Status(sourceID string) Status {
 	if m.fila == nil {
 		return Status{}
@@ -416,22 +418,22 @@ func (m *Manager) Status(sourceID string) Status {
 
 	st := Status{
 		Existe: true,
-		// Running=true tanto para 'queued' quanto 'running': um item recém
-		// enfileirado pode não ter sido pego pelo worker ainda (algo mais
-		// rodando), mas o chamador (libraryhealth.aguardarConclusao) não deve
-		// ver Running=false prematuramente só por causa disso -- preserva o
-		// comportamento observável de antes (Start() criava o job síncrono
-		// já com running=true).
+		// Running=true both for 'queued' and 'running': a freshly enqueued
+		// item may not have been picked up by the worker yet (something else
+		// is running), but the caller (libraryhealth.aguardarConclusao) must
+		// not see Running=false prematurely just because of that -- it
+		// preserves the observable behavior from before (Start() created the
+		// synchronous job already with running=true).
 		Running:    qis.Status == execqueue.StatusQueued || qis.Status == execqueue.StatusRunning,
 		FilesSeen:  qis.ProgressCurrent,
 		FilesTotal: qis.ProgressTotal,
 	}
 
-	// started_at: vazio enquanto o item ainda está 'queued' (nunca começou a
-	// rodar de verdade). O job antigo sempre tinha startedAt setado desde a
-	// CRIAÇÃO -- para preservar essa garantia (Existe=true nunca teve
-	// started_at zero antes), cai para enqueued_at quando started_at ainda
-	// não existe.
+	// started_at: empty while the item is still 'queued' (it never really
+	// started running). The old job always had startedAt set from CREATION --
+	// to preserve that guarantee (Existe=true never had a zero started_at
+	// before), it falls back to enqueued_at when started_at does not exist
+	// yet.
 	ts := qis.StartedAt
 	if ts == "" {
 		ts = qis.EnqueuedAt
@@ -440,31 +442,31 @@ func (m *Manager) Status(sourceID string) Status {
 		st.StartedAt = t
 	}
 
-	// LastError só em erro -- não vaza qis.Message de uma finalização com
-	// sucesso (o campo Message também carrega a mensagem final de sucesso,
-	// que aqui é sempre "" pelo Runner, mas defensivamente checamos o
-	// status mesmo assim).
+	// LastError only on error -- it does not leak qis.Message from a
+	// successful completion (the Message field also carries the final success
+	// message, which here is always "" from the Runner, but we check the
+	// status defensively anyway).
 	if qis.Status == execqueue.StatusError {
 		st.LastError = qis.Message
 	}
 	return st
 }
 
-// setStorageNaoVideo grava o resultado da classificação managed/unmanaged de
-// arquivo NÃO-vídeo (briefing 0063) desta passada de WalkDir, sob muStorage.
+// setStorageNaoVideo records the result of the managed/unmanaged classification
+// of NON-video files from this WalkDir pass, under muStorage.
 func (m *Manager) setStorageNaoVideo(sourceID string, managedBytes, unmanagedBytes int64) {
 	m.muStorage.Lock()
 	m.storageNaoVideo[sourceID] = storageResultado{managedBytes: managedBytes, unmanagedBytes: unmanagedBytes}
 	m.muStorage.Unlock()
 }
 
-// StorageNaoVideo devolve os bytes de arquivo NÃO-vídeo classificados como
-// managed (nome casa com um padrão canônico do briefing 0062) e unmanaged
-// (resto) na ÚLTIMA varredura completa desta fonte -- briefing 0063, sem
-// varrer o disco de novo (o valor já foi calculado DENTRO de executarScan,
-// na MESMA passada de WalkDir que coletarArquivos já fazia). ok=false quando
-// nunca houve scan para esta fonte -- o chamador (libraryhealth.Handler)
-// trata isso como "sem dado ainda", não como zero.
+// StorageNaoVideo returns the bytes of NON-video files classified as managed
+// (the name matches a canonical naming pattern) and unmanaged (the rest) in the
+// LAST full walk of this source -- without walking the disk again (the value was
+// already computed INSIDE executarScan, in the SAME WalkDir pass that
+// coletarArquivos already did). ok=false when there has never been a scan for
+// this source -- the caller (libraryhealth.Handler) treats that as "no data
+// yet", not as zero.
 func (m *Manager) StorageNaoVideo(sourceID string) (managedBytes, unmanagedBytes int64, ok bool) {
 	m.muStorage.Lock()
 	defer m.muStorage.Unlock()
@@ -475,7 +477,8 @@ func (m *Manager) StorageNaoVideo(sourceID string) (managedBytes, unmanagedBytes
 	return res.managedBytes, res.unmanagedBytes, true
 }
 
-// acessivel diz se um caminho existe, é diretório e é legível (stat barato).
+// acessivel tells whether a path exists, is a directory and is readable (a cheap
+// stat).
 func acessivel(path string) bool {
 	info, err := os.Stat(path)
 	if err != nil || !info.IsDir() {
@@ -489,47 +492,48 @@ func acessivel(path string) bool {
 	return true
 }
 
-// ── Pós-scan por biblioteca (briefing 0135, ADR-0031) ───────────────────────
+// ── Post-scan per library (see ADR-0031) ────────────────────────────────────
 
-// PosScan é o gancho OPCIONAL chamado ao FIM do scan de uma biblioteca, depois
-// do commit de todos os lotes e do fechamento do ciclo de vida (missing +
-// last_scan): a própria biblioteca reconcilía o que ficou em rascunho e retenta
-// o auto-match dos pendentes DELA, sem esperar o cron do job saude_biblioteca.
-// Implementado por *Server (internal/server/posscan.go), que reusa
-// ReconciliarFaixaDraft/ReconciliarSerieDraft/TentarAutoMatchFilme -- nenhuma
-// lógica de match nova aqui. Best-effort: erro é logado e engolido pelo scanner.
+// PosScan is the OPTIONAL hook called at the END of the scan of a library, after
+// the commit of every batch and the closing of the lifecycle (missing +
+// last_scan): the library itself reconciles whatever stayed as a draft and
+// retries the auto-match of ITS pendings, without waiting for the cron of the
+// saude_biblioteca job. Implemented by *Server (internal/server/posscan.go),
+// which reuses ReconciliarFaixaDraft/ReconciliarSerieDraft/TentarAutoMatchFilme
+// -- no new match logic here. Best-effort: an error is logged and swallowed by
+// the scanner.
 type PosScan interface {
 	ProcessarPosScan(ctx context.Context, sourceID string) error
 }
 
-// Caps do pós-scan (briefing 0135 §4): quantos itens de cada tipo UMA execução de
-// scan tenta reconciliar/retentar. Throttling de custo/rate-limit -- um scan
-// grande não pode virar uma cascata de chamadas externas. NÃO são o throttle de
-// dias do enriquecimento retroativo (esse continua no job periódico): aqui é o
-// retry do scan que o dono acabou de pedir.
+// Caps of the post-scan: how many items of each kind ONE scan execution tries to
+// reconcile/retry. Cost/rate-limit throttling -- a large scan cannot turn into a
+// cascade of external calls. They are NOT the days throttle of the retroactive
+// enrichment (that one stays in the periodic job): here it is the retry of the
+// scan the owner has just requested.
 //
-// Briefing 0138 (medido em produção, 08/nov/2026): sem piso de horas, TODO scan
-// re-tentava as mesmas 200 faixas que tinham acabado de falhar -- 45+ min de
-// MusicBrainz por scan e nenhum item novo resolvido. O piso abaixo é o do
-// pós-scan (não o de dias do job periódico) e a ordem das queries é "nunca
-// tentado primeiro", para a fila andar a cada scan.
+// Measured in production (Nov 8, 2026; see ADR-0031): without an hour floor,
+// EVERY scan retried the same 200 tracks that had just failed -- 45+ min of
+// MusicBrainz per scan and no new item resolved. The floor below is the
+// post-scan one (not the days one of the periodic job) and the query order is
+// "never attempted first", so the queue moves forward on every scan.
 const (
-	// CapReconciliacaoFaixas é o teto de faixas em rascunho reconciliadas por scan.
+	// CapReconciliacaoFaixas is the ceiling of draft tracks reconciled per scan.
 	CapReconciliacaoFaixas = 200
-	// CapReconciliacaoSeries é o teto de séries em rascunho reconciliadas por scan.
+	// CapReconciliacaoSeries is the ceiling of draft series reconciled per scan.
 	CapReconciliacaoSeries = 50
-	// CapAutoMatchPendentes é o teto de filmes/episódios pendentes re-tentados por scan.
+	// CapAutoMatchPendentes is the ceiling of pending movies/episodes retried per scan.
 	CapAutoMatchPendentes = 50
-	// PosScanHorasMinimas é o piso de horas antes de o pós-scan re-tentar o MESMO
-	// item (briefing 0138). 12h: uma biblioteca escaneada de manhã e de novo à
-	// noite continua avançando a fila, sem repetir o que acabou de falhar.
+	// PosScanHorasMinimas is the hour floor before the post-scan retries the SAME
+	// item. 12h: a library scanned in the morning and again at night keeps moving
+	// the queue forward, without repeating what has just failed.
 	PosScanHorasMinimas = 12
 )
 
-// ConfigurarPosScan injeta o pós-scan por biblioteca (briefing 0135). Sem isto o
-// scan termina como antes deste briefing (nenhuma reconciliação ao fim); o
-// gatilho de auto-match de filme (0089) e a materialização opcional continuam
-// funcionando, porque não dependem deste gancho.
+// ConfigurarPosScan injects the post-scan per library. Without it the scan ends
+// as before the hook (no reconciliation at the end); the movie auto-match
+// trigger (0089) and the optional materialization keep working, because they do
+// not depend on this hook.
 func (m *Manager) ConfigurarPosScan(p PosScan) {
 	m.posScan = p
 }

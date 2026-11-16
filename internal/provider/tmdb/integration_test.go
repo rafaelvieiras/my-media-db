@@ -2,7 +2,7 @@ package tmdb
 
 import "testing"
 
-// TestDescriptorIntegracaoSlugENome cobre o shape básico do Descriptor.
+// TestDescriptorIntegracaoSlugENome covers the basic shape of the Descriptor.
 func TestDescriptorIntegracaoSlugENome(t *testing.T) {
 	d := NovoDescriptorIntegracao()
 	if d.Slug() != "tmdb" {
@@ -16,8 +16,8 @@ func TestDescriptorIntegracaoSlugENome(t *testing.T) {
 	}
 }
 
-// TestDescriptorIntegracaoCampos cobre os dois campos esperados (token e
-// api_key), cada um secreto com sua própria env var.
+// TestDescriptorIntegracaoCampos covers the two expected fields (token and
+// api_key), each one secret with its own env var.
 func TestDescriptorIntegracaoCampos(t *testing.T) {
 	campos := NovoDescriptorIntegracao().Campos()
 	if len(campos) != 2 {
@@ -38,8 +38,8 @@ func TestDescriptorIntegracaoCampos(t *testing.T) {
 	}
 }
 
-// TestDescriptorIntegracaoConfigurada cobre a regra "token OU api_key" (a
-// MESMA que Credencial.Configurada já usa), incluindo o caso vazio.
+// TestDescriptorIntegracaoConfigurada covers the rule "token OR api_key" (the SAME
+// one Credencial.Configurada already uses), including the empty case.
 func TestDescriptorIntegracaoConfigurada(t *testing.T) {
 	d := NovoDescriptorIntegracao()
 

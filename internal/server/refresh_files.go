@@ -1,23 +1,22 @@
 package server
 
-// refresh_files.go implementa POST /api/v1/entities/{id}/refresh-files
-// (briefing 0088, menu Gerenciar > "Verificar Atualizações de Arquivos"):
-// ação SEMPRE visível (não depende de catalog_completeness, ao contrário de
-// /download-missing-artwork) que reconfere, para a entity aberta no
-// detalhe: (1) força re-hash/mediainfo dos media_file 'present' da entity,
-// ignorando o short-circuit do scan incremental
-// (scanner.Manager.RecheckEntityFiles); (2) reconfere a pasta de cada
-// media_file em busca de um asset local novo/atualizado
-// (scanner.Manager.RefreshLocalAsset — cobre o caso hoje quebrado de a
-// entity já existir no catálogo, já que descobrirPoster só roda dentro de
-// criarEntity na 1ª varredura); (3) se houver `.nfo` em entity.nfo_path, lê
-// os campos LOCAIS de reprodução (internal/localmedia.ExtrairCamposUsuario,
-// MESMO parsing já reusado por gravarNFO/localmedia_handlers.go) e preenche
-// no banco só os que ainda estiverem NULL
-// (PreencherCamposLocaisReproducaoSeAusentes — COALESCE, nunca sobrescreve).
-// Best-effort por natureza (mesmo espírito do resto do sistema de jobs):
-// falha pontual numa subetapa é logada, nunca aborta a chamada — sempre 200
-// depois do 404 de entity inexistente.
+// refresh_files.go implements POST /api/v1/entities/{id}/refresh-files
+// (Manage menu > "Check for File Updates"): an ALWAYS visible action (it does
+// not depend on catalog_completeness, unlike /download-missing-artwork) that
+// rechecks, for the entity open in the detail: (1) it forces a re-hash/mediainfo of
+// the entity's 'present' media_file rows, ignoring the short-circuit of the incremental
+// scan (scanner.Manager.RecheckEntityFiles); (2) it rechecks the folder of each
+// media_file looking for a new/updated local asset
+// (scanner.Manager.RefreshLocalAsset — it covers the case that is broken today where
+// the entity already exists in the catalog, since descobrirPoster only runs inside
+// criarEntity on the 1st sweep); (3) if there is an `.nfo` in entity.nfo_path, it reads
+// the LOCAL playback fields (internal/localmedia.ExtrairCamposUsuario,
+// the SAME parsing already reused by gravarNFO/localmedia_handlers.go) and fills in
+// the database only the ones still NULL
+// (PreencherCamposLocaisReproducaoSeAusentes — COALESCE, never overwrites).
+// Best-effort by nature (same spirit as the rest of the job system):
+// a punctual failure in a substep is logged, it never aborts the call — always
+// 200 after the 404 of a nonexistent entity.
 
 import (
 	"context"
@@ -32,19 +31,19 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/localmedia"
 )
 
-// refreshFilesResultDTO é a resposta de POST /entities/{id}/refresh-files
-// (RefreshFilesResult no contrato, openapi.yaml) — resumo informativo, não é
-// um contrato rígido para outra integração consumir.
+// refreshFilesResultDTO is the response of POST /entities/{id}/refresh-files
+// (RefreshFilesResult in the contract, openapi.yaml) — an informational summary, not
+// a rigid contract for another integration to consume.
 type refreshFilesResultDTO struct {
 	FilesRechecked       int      `json:"files_rechecked"`
 	AssetsFound          int      `json:"assets_found"`
 	PlaybackFieldsFilled []string `json:"playback_fields_filled"`
 }
 
-// refreshEntityFiles trata POST /api/v1/entities/{id}/refresh-files. 404 se
-// a entity não existe; 200 sempre depois disso — cada subetapa é
-// best-effort (mesmo padrão de enrichMissing/downloadMissingArtwork), nunca
-// 5xx só por "não achou nada para reconferir".
+// refreshEntityFiles handles POST /api/v1/entities/{id}/refresh-files. 404 if
+// the entity does not exist; 200 always after that — each substep is
+// best-effort (same pattern as enrichMissing/downloadMissingArtwork), never
+// 5xx just because "nothing was found to recheck".
 func (s *Server) refreshEntityFiles(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -85,14 +84,13 @@ func (s *Server) refreshEntityFiles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, dto)
 }
 
-// recheckEntityFilesPorFonte agrupa os media_file 'present' por
-// library_source (uma entity pode, em teoria, ter arquivos de fontes
-// diferentes) e chama scanner.RecheckEntityFiles uma vez por grupo — mesmo
-// padrão de resolução de library_source de um media_file usado em
-// internal/server/retroativo.go (idiomaDeBusca/diasReentativaRetroativa).
-// Best-effort: fonte que sumiu ou falha de recheck é logada e pulada, nunca
-// aborta a chamada (a ação é sempre 200). Devolve o total de arquivos
-// efetivamente re-hasheados nesta chamada.
+// recheckEntityFilesPorFonte groups the 'present' media_file rows by
+// library_source (an entity may, in theory, have files from different sources) and
+// calls scanner.RecheckEntityFiles once per group — same library_source resolution
+// pattern of a media_file used in internal/server/retroativo.go
+// (idiomaDeBusca/diasReentativaRetroativa). Best-effort: a source that vanished or a
+// recheck failure is logged and skipped, it never aborts the call (the action is
+// always 200). It returns the total number of files actually re-hashed in this call.
 func (s *Server) recheckEntityFilesPorFonte(ctx context.Context, files []sqlcgen.MediaFile) int {
 	porFonte := make(map[string][]string)
 	for _, f := range files {
@@ -118,15 +116,14 @@ func (s *Server) recheckEntityFilesPorFonte(ctx context.Context, files []sqlcgen
 	return total
 }
 
-// preencherCamposLocaisDoNFO lê os campos LOCAIS de reprodução do `.nfo` já
-// em disco (entity.nfo_path) e preenche no banco só os que ainda estiverem
-// vazios (PreencherCamposLocaisReproducaoSeAusentes — COALESCE, nunca
-// sobrescreve, briefing 0088). Devolve os nomes dos campos que estavam
-// vazios no banco (`ent`, capturado ANTES desta chamada) E o `.nfo` trazia
-// valor — a resposta reflete o que MUDOU, não o que o `.nfo` continha.
-// Best-effort: sem nfo_path, arquivo ausente/ilegível ou XML que não
-// parseia (ExtrairCamposUsuario já degrada para zero-value) devolvem lista
-// vazia, nunca falham a chamada.
+// preencherCamposLocaisDoNFO reads the LOCAL playback fields from the `.nfo` already
+// on disk (entity.nfo_path) and fills in the database only the ones still empty
+// (PreencherCamposLocaisReproducaoSeAusentes — COALESCE, never overwrites). It returns
+// the names of the fields that were empty in the database (`ent`, captured BEFORE this
+// call) AND that the `.nfo` had a value for — the response reflects what CHANGED, not
+// what the `.nfo` contained. Best-effort: no nfo_path, a missing/unreadable file or XML
+// that does not parse (ExtrairCamposUsuario already degrades to a zero value) return an
+// empty list, they never fail the call.
 func (s *Server) preencherCamposLocaisDoNFO(ctx context.Context, ent sqlcgen.Entity) []string {
 	preenchidos := []string{}
 	if !ent.NfoPath.Valid || ent.NfoPath.String == "" {
@@ -182,9 +179,9 @@ func (s *Server) preencherCamposLocaisDoNFO(ctx context.Context, ent sqlcgen.Ent
 		}
 	}
 
-	// Chama sempre que o .nfo trouxe ALGO (mesmo que já estivesse tudo
-	// preenchido no banco -- COALESCE é idempotente/no-op nesse caso; mais
-	// simples que decidir aqui se vale a pena persistir).
+	// Called whenever the .nfo brought SOMETHING (even if everything was already
+	// filled in the database -- COALESCE is idempotent/no-op in that case; simpler than
+	// deciding here whether it is worth persisting).
 	if err := sqlcgen.New(s.db.Write).PreencherCamposLocaisReproducaoSeAusentes(ctx, params); err != nil {
 		log.Printf("refresh-files: preencher campos locais de reproducao da entity %q falhou (best-effort, ignorado): %v", ent.ID, err)
 		return []string{}

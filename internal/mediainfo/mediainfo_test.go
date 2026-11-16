@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// saidaFake imita o JSON do ffprobe para um clipe com 1 vídeo + 1 áudio.
+// saidaFake mimics the ffprobe JSON for a clip with 1 video + 1 audio.
 const saidaFake = `{
   "streams": [
     {"codec_type":"video","codec_name":"h264","width":1920,"height":1080,"color_transfer":"smpte2084"},
@@ -17,8 +17,8 @@ const saidaFake = `{
   "format": {"format_name":"matroska,webm","duration":"1.5","size":"12503","bit_rate":"97775"}
 }`
 
-// eq falha o teste se got != want. Concentra a ramificação num helper para
-// manter as funções de teste com baixa complexidade ciclomática.
+// eq fails the test if got != want. It concentrates the branching in a helper to
+// keep the test functions with low cyclomatic complexity.
 func eq[T comparable](t *testing.T, nome string, got, want T) {
 	t.Helper()
 	if got != want {
@@ -26,8 +26,8 @@ func eq[T comparable](t *testing.T, nome string, got, want T) {
 	}
 }
 
-// TestProbeMapeiaComRunnerInjetado exercita o mapeamento sem depender do ffprobe
-// real: injeta um runner que devolve um JSON fixo.
+// TestProbeMapeiaComRunnerInjetado exercises the mapping without depending on
+// the real ffprobe: it injects a runner that returns a fixed JSON.
 func TestProbeMapeiaComRunnerInjetado(t *testing.T) {
 	run := func(_ context.Context, _ string, _ ...string) ([]byte, error) {
 		return []byte(saidaFake), nil
@@ -55,11 +55,11 @@ func TestProbeMapeiaComRunnerInjetado(t *testing.T) {
 	eq(t, "subtitle.language", got.Subtitle[0].Language, "por")
 }
 
-// saidaFakeAudio imita o JSON do ffprobe para um arquivo de ÁUDIO (briefing
-// 0107): format.tags com grafias VARIADAS de propósito (título/artista em
-// minúsculas comuns, MusicBrainz Track/Artist Id em formas diferentes de
-// separador/case, ISRC via TSRC maiúsculo, track/disc com barra "N/M") para
-// provar que extrairAudioTags normaliza a chave e não só o caso óbvio.
+// saidaFakeAudio mimics the ffprobe JSON for an AUDIO file (ADR-0027):
+// format.tags with DELIBERATELY varied spellings (title/artist in the usual
+// lowercase, MusicBrainz Track/Artist Id in different separator/case forms, ISRC
+// through the uppercase TSRC, track/disc with the "N/M" slash) to prove that
+// extrairAudioTags normalizes the key and not only the obvious case.
 const saidaFakeAudio = `{
   "streams": [
     {"codec_type":"audio","codec_name":"flac","channels":2}
@@ -84,11 +84,11 @@ const saidaFakeAudio = `{
   }
 }`
 
-// TestProbeMapeiaTagsDeAudioComRunnerInjetado cobre o campo NOVO Info.Tags
-// (briefing 0107, mediainfo): artist/album/album_artist/title/genre/track/disc
-// (com barra "N/M") e os dois MBIDs (faixa/artista) com grafias de tag
-// diferentes das outras — a prova de que extrairAudioTags normaliza a CHAVE,
-// não depende de o arquivo usar exatamente "musicbrainz_trackid".
+// TestProbeMapeiaTagsDeAudioComRunnerInjetado covers the NEW Info.Tags field
+// (ADR-0027, mediainfo): artist/album/album_artist/title/genre/track/disc (with
+// the "N/M" slash) and the two MBIDs (track/artist) with tag spellings different
+// from the others — the proof that extrairAudioTags normalizes the KEY and does
+// not depend on the file using exactly "musicbrainz_trackid".
 func TestProbeMapeiaTagsDeAudioComRunnerInjetado(t *testing.T) {
 	run := func(_ context.Context, _ string, _ ...string) ([]byte, error) {
 		return []byte(saidaFakeAudio), nil
@@ -116,14 +116,14 @@ func TestProbeMapeiaTagsDeAudioComRunnerInjetado(t *testing.T) {
 	eq(t, "tags.isrc", got.Tags.ISRC, "US1234500001")
 	eq(t, "tags.musicbrainz_track_id", got.Tags.MusicBrainzTrackID, "cccccccc-0000-0000-0000-000000000001")
 	eq(t, "tags.musicbrainz_artist_id", got.Tags.MusicBrainzArtistID, "aaaaaaaa-0000-0000-0000-000000000001")
-	// Consumidor pré-existente de General/Video/Audio: nada quebrou.
+	// Pre-existing consumer of General/Video/Audio: nothing broke.
 	eq(t, "general.duration", got.General.Duration, 210.5)
 	eq(t, "len(audio)", len(got.Audio), 1)
 }
 
-// TestProbeSemTagsDeFormatoDevolveTagsNil cobre a compatibilidade retroativa:
-// um arquivo de VÍDEO comum, sem format.tags, não deve ganhar um
-// Info.Tags{} vazio (poluição do JSON persistido) — deve continuar nil.
+// TestProbeSemTagsDeFormatoDevolveTagsNil covers backward compatibility: a
+// regular VIDEO file, without format.tags, must not gain an empty Info.Tags{}
+// (pollution of the persisted JSON) — it must stay nil.
 func TestProbeSemTagsDeFormatoDevolveTagsNil(t *testing.T) {
 	run := func(_ context.Context, _ string, _ ...string) ([]byte, error) {
 		return []byte(saidaFake), nil
@@ -142,10 +142,9 @@ func TestProbeSemTagsDeFormatoDevolveTagsNil(t *testing.T) {
 	}
 }
 
-// TestProbeRealFfprobeAudioTags roda o ffprobe DE VERDADE contra um .mp3
-// sintético gerado pelo ffmpeg com -metadata (mesmo padrão de
-// TestProbeRealFfprobe, mas para tags de áudio). Skip se ffmpeg/ffprobe
-// faltarem no ambiente.
+// TestProbeRealFfprobeAudioTags runs the REAL ffprobe against a synthetic .mp3
+// generated by ffmpeg with -metadata (the same pattern as TestProbeRealFfprobe,
+// but for audio tags). Skip if ffmpeg/ffprobe are missing from the environment.
 func TestProbeRealFfprobeAudioTags(t *testing.T) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg ausente; pulando o teste de integração de tags de áudio")
@@ -190,9 +189,9 @@ func TestProbeRealFfprobeAudioTags(t *testing.T) {
 	eq(t, "tags.genre real", got.Tags.Genre, "Rock")
 }
 
-// TestProbeRealFfprobe roda o ffprobe DE VERDADE contra um clipe sintético
-// gerado pelo ffmpeg. Se qualquer um dos binários faltar no ambiente, faz Skip
-// (não falha).
+// TestProbeRealFfprobe runs the REAL ffprobe against a synthetic clip generated
+// by ffmpeg. If either of the binaries is missing from the environment, it Skips
+// (it does not fail).
 func TestProbeRealFfprobe(t *testing.T) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg ausente; pulando o teste de integração do ffprobe")

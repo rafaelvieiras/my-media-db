@@ -15,35 +15,38 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/tvext"
 )
 
-// Este arquivo implementa o SELETOR DE ORDENAÇÃO de episódios (briefing 0040): a
-// descoberta das ordens disponíveis de uma série (anotada no detalhe, `orderings`) e
-// o endpoint GET /entities/{id}/episodes?ordering=X, que devolve TODOS os episódios
-// da série AGRUPADOS e ordenados pela ordem X — projetados na LEITURA a partir do
-// `numbering` (ADR-0021: ordens alternativas NÃO viram entidade de temporada; são
-// agrupadas aqui no server). Reusa a projeção do 0039 (entradaNumbering) e a varredura
-// série→temporada→episódio das relações existentes. Nada aqui escreve (pool de leitura).
+// This file implements the EPISODE ORDERING SELECTOR: the discovery of a series'
+// available orders (annotated on the detail page, `orderings`) and the endpoint
+// GET /entities/{id}/episodes?ordering=X, which returns ALL the series episodes GROUPED
+// and sorted by order X — projected ON READ from `numbering` (ADR-0021: alternative
+// orders do NOT become season entities; they are grouped here in the server). It reuses
+// the projection of the episode numbering (entradaNumbering) and the
+// series→season→episode sweep of the existing relations. Nothing here writes (read
+// pool).
 
-// episodeGroupsDTO é a resposta de GET /entities/{id}/episodes: a ordem efetivamente
-// aplicada (`ordering`, já resolvida contra as disponíveis) e os grupos de episódios.
+// episodeGroupsDTO is the response of GET /entities/{id}/episodes: the order actually
+// applied (`ordering`, already resolved against the available ones) and the episode
+// groups.
 type episodeGroupsDTO struct {
 	Ordering string            `json:"ordering"`
 	Groups   []episodeGroupDTO `json:"groups"`
 }
 
-// episodeGroupDTO é um grupo (temporada da ORDEM pedida) com seu rótulo NÃO-navegável
-// e os cards de episódio já com `numbering` projetado naquela ordem. Para `absolute` há
-// um único grupo corrido (`season` 0, label "Episódios").
+// episodeGroupDTO is a group (season of the REQUESTED order) with its NON-navigable
+// label and the episode cards already carrying `numbering` projected onto that order. For
+// `absolute` there is a single continuous group (`season` 0, label "Episódios").
 type episodeGroupDTO struct {
 	Season   int             `json:"season"`
 	Label    string          `json:"label"`
 	Episodes []entityCardDTO `json:"episodes"`
 }
 
-// getEntityEpisodes trata GET /api/v1/entities/{id}/episodes?ordering=X: os episódios
-// da SÉRIE agrupados/ordenados pela ordem X, projetados do `numbering` (0040). `ordering`
-// ausente/inválido cai no default da série; `absolute` é uma ordem válida especial. 404
-// quando a entity não existe; para uma entity que não é série, devolve grupos vazios (o
-// endpoint é da série). O `?lang=` é aceito para paridade (o card usa o título base).
+// getEntityEpisodes handles GET /api/v1/entities/{id}/episodes?ordering=X: the SERIES
+// episodes grouped/sorted by order X, projected from `numbering`. An absent/invalid
+// `ordering` falls back to the series default; `absolute` is a special valid order. 404
+// when the entity does not exist; for an entity that is not a series, it returns empty
+// groups (the endpoint belongs to the series). `?lang=` is accepted for parity (the card
+// uses the base title).
 func (s *Server) getEntityEpisodes(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -71,10 +74,10 @@ func (s *Server) getEntityEpisodes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, episodeGroupsDTO{Ordering: ordering, Groups: groups})
 }
 
-// escolherOrdering resolve a ordem pedida contra as disponíveis da série: devolve o
-// param quando ele é uma ordem válida; senão (ausente/inválido) cai no default. Sem
-// `orderings` (entity que não é série ou sem numbering) devolve o próprio param (os
-// grupos sairão vazios de qualquer forma).
+// escolherOrdering resolves the requested order against the series' available ones: it
+// returns the param when it is a valid order; otherwise (absent/invalid) it falls back to
+// the default. Without `orderings` (an entity that is not a series, or without numbering)
+// it returns the param itself (the groups will come out empty anyway).
 func escolherOrdering(param string, o *resolver.OrderingsInfo) string {
 	if o == nil {
 		return param
@@ -87,13 +90,13 @@ func escolherOrdering(param string, o *resolver.OrderingsInfo) string {
 	return o.Default
 }
 
-// montarOrderings descobre as ordens de exibição de uma SÉRIE (0040): varre os
-// episódios descendentes, coleta as chaves de `numbering` e a presença de
-// `absolute_number`, e lê o `default_season_type` da série (gravado no import,
-// enrich/serie.go, e finalmente CONSUMIDO aqui). Devolve nil para não-`tv`, em falha
-// de leitura, ou quando a série não tem nenhuma ordem (a UI então esconde o seletor).
-// `Available` sai com o default PRIMEIRO, o resto em ordem alfabética e `absolute` ao
-// fim; o default é o declarado quando presente, senão a primeira ordem encontrada.
+// montarOrderings discovers the display orders of a SERIES: it sweeps the descendant
+// episodes, collects the `numbering` keys and the presence of `absolute_number`, and
+// reads the series' `default_season_type` (written at import, enrich/serie.go, and
+// finally CONSUMED here). It returns nil for a non-`tv` entity, on a read failure, or
+// when the series has no order at all (the UI then hides the selector). `Available` comes
+// out with the default FIRST, the rest in alphabetical order and `absolute` at the end;
+// the default is the declared one when present, otherwise the first order found.
 func (s *Server) montarOrderings(ctx context.Context, ent sqlcgen.Entity) *resolver.OrderingsInfo {
 	if ent.Type != tipoEntSerie {
 		return nil
@@ -125,16 +128,18 @@ func (s *Server) montarOrderings(ctx context.Context, ent sqlcgen.Entity) *resol
 	return &resolver.OrderingsInfo{Default: available[0], Available: available}
 }
 
-// ordensDisponiveis monta a lista estável de ordens: as chaves de numbering em ordem
-// alfabética + `absolute` ao fim (quando há absoluto), e então o DEFAULT movido para a
-// primeira posição. O default é o declarado (`def`) quando ele é uma ordem real;
-// senão a primeira ordem da lista (a série sempre tem um default coerente com a árvore).
-// Lista vazia quando não há nenhuma ordem (série sem numbering).
+// ordensDisponiveis builds the stable list of orders: the numbering keys in alphabetical
+// order + `absolute` at the end (when there is an absolute one), and then the DEFAULT
+// moved to the first position. The default is the declared one (`def`) when it is a real
+// order; otherwise the first order of the list (a series always has a default coherent
+// with the tree). Empty list when there is no order at all (a series without
+// numbering).
 func ordensDisponiveis(chaves map[string]bool, temAbsoluto bool, def string) []string {
 	ordens := make([]string, 0, len(chaves)+1)
 	for k := range chaves {
-		// `numbering.absolute` (TheTVDB) e o campo `absolute_number` sao o MESMO eixo
-		// absoluto: dobra na flag temAbsoluto para nao duplicar `absolute` na lista.
+		// `numbering.absolute` (TheTVDB) and the `absolute_number` field are the SAME
+		// absolute axis: it folds into the temAbsoluto flag so `absolute` is not duplicated
+		// in the list.
 		if k == orderingAbsoluto {
 			temAbsoluto = true
 			continue
@@ -161,7 +166,7 @@ func ordensDisponiveis(chaves map[string]bool, temAbsoluto bool, def string) []s
 	return out
 }
 
-// contemOrdem diz se `alvo` está na lista de ordens.
+// contemOrdem tells whether `alvo` is in the list of orders.
 func contemOrdem(ordens []string, alvo string) bool {
 	for _, o := range ordens {
 		if o == alvo {
@@ -171,9 +176,10 @@ func contemOrdem(ordens []string, alvo string) bool {
 	return false
 }
 
-// defaultSeasonType lê o `default_season_type` do extension_data da série (core.tv@1),
-// gravado no import (enrich/serie.go extensaoSerie) mas até o 0040 nunca consumido.
-// "" quando a série não tem o namespace ou o campo (o caller cai na 1ª ordem).
+// defaultSeasonType reads the `default_season_type` from the series extension_data
+// (core.tv@1), written at import (enrich/serie.go extensaoSerie) but never consumed
+// until now. "" when the series has neither the namespace nor the field (the caller
+// falls back to the 1st order).
 func defaultSeasonType(ent sqlcgen.Entity) string {
 	ns := tvext.Namespace(ent.ExtensionDataJson, nsTVCore)
 	if ns == nil {
@@ -185,12 +191,13 @@ func defaultSeasonType(ent sqlcgen.Entity) string {
 	return ""
 }
 
-// episodiosDaSerie varre a árvore série→temporadas→episódios via as relações já
-// existentes (ListarRelacoesFilhas) e devolve as entities dos episódios (com o
-// extension_data, para projetar o numbering). É a varredura N+1 nas relações — aceitável
-// para a escala atual (centenas de episódios/série, self-hosted); TODO: query agregada
-// única se a biblioteca crescer (0040 §7, mesmo precedente do 0037/0039). Reusada pela
-// descoberta de ordens e pelo agrupamento. Pula um episódio purgado no meio (NoRows).
+// episodiosDaSerie sweeps the series→seasons→episodes tree through the existing
+// relations (ListarRelacoesFilhas) and returns the episode entities (with the
+// extension_data, to project the numbering). It is the N+1 sweep over the relations —
+// acceptable at the current scale (hundreds of episodes/series, self-hosted); TODO: a
+// single aggregate query if the library grows (the same precedent as the earlier
+// episode/* sweeps). Reused by the order discovery and by the grouping. It skips an
+// episode purged in the middle (NoRows).
 func (s *Server) episodiosDaSerie(ctx context.Context, serieID string) ([]sqlcgen.Entity, error) {
 	temporadas, err := s.leitura().ListarRelacoesFilhas(ctx, serieID)
 	if err != nil {
@@ -222,19 +229,20 @@ func (s *Server) episodiosDaSerie(ctx context.Context, serieID string) ([]sqlcge
 	return eps, nil
 }
 
-// episodioProjetado é um card de episódio já com a numeração da ordem pedida, guardado
-// junto do próprio numbering para ordenar por (season, number) antes de agrupar.
+// episodioProjetado is an episode card already carrying the requested-order numbering,
+// kept together with that numbering to sort by (season, number) before grouping.
 type episodioProjetado struct {
 	card entityCardDTO
 	num  *episodeNumberingDTO
 }
 
-// agruparEpisodios monta os grupos de episódios da série na ordem pedida (0040):
-// projeta cada episódio na ordem (estrita para official/dvd, absoluta para `absolute`),
-// ordena os numerados por (season, number) e agrupa por season. Episódio SEM numeração
-// naquela ordem (draft, ou ordem que a fonte não catalogou) vai num grupo "Sem
-// numeração" ao FINAL — presente mas separado, para o dono ver que existe sem inventar
-// posição. `absolute` colapsa num único grupo corrido ("Episódios").
+// agruparEpisodios builds the episode groups of the series in the requested order: it
+// projects each episode onto the order (strict for official/dvd, absolute for
+// `absolute`), sorts the numbered ones by (season, number) and groups by season. An
+// episode WITHOUT numbering in that order (a draft, or an order the source did not
+// catalog) goes into a "Sem numeração" group at the END — present but separate, so the
+// owner sees that it exists without a made-up position. `absolute` collapses into a
+// single continuous group ("Episódios").
 func (s *Server) agruparEpisodios(ctx context.Context, ent sqlcgen.Entity, ordering string) ([]episodeGroupDTO, error) {
 	eps, err := s.episodiosDaSerie(ctx, ent.ID)
 	if err != nil {
@@ -249,10 +257,10 @@ func (s *Server) agruparEpisodios(ctx context.Context, ent sqlcgen.Entity, order
 			return nil, err
 		}
 		if !ok {
-			continue // episódio purgado no meio
+			continue // episode purged in the middle
 		}
-		// Uma única leitura do namespace serve numbering (0040) E still (0042): o still
-		// ganha carona no walk já existente, sem multiplicar consultas ao extension_data.
+		// A single read of the namespace serves both numbering and still: the still gets a
+		// ride on the existing walk, without multiplying queries against extension_data.
 		ns := tvext.Namespace(ep.ExtensionDataJson, nsTVCore)
 		card.StillURL = stillDoNS(ns)
 		num := projetarParaOrdem(ns, ordering)
@@ -271,8 +279,9 @@ func (s *Server) agruparEpisodios(ctx context.Context, ent sqlcgen.Entity, order
 	return groups, nil
 }
 
-// antesNaOrdem ordena por (season, number): temporada primeiro, número em seguida. No
-// absoluto todos têm season 0, então cai no número (o próprio absolute_number).
+// antesNaOrdem sorts by (season, number): season first, then the number. In the absolute
+// order everyone has season 0, so it falls back to the number (the absolute_number
+// itself).
 func antesNaOrdem(a, b *episodeNumberingDTO) bool {
 	if a.Season != b.Season {
 		return a.Season < b.Season
@@ -280,9 +289,9 @@ func antesNaOrdem(a, b *episodeNumberingDTO) bool {
 	return a.Number < b.Number
 }
 
-// agruparPorSeason quebra a lista JÁ ordenada em grupos por season, com o rótulo
-// não-navegável de cada grupo (0040): "Temporada N" na ordem normal, "Episódios" no
-// absoluto (grupo único). Assume a entrada ordenada por (season, number).
+// agruparPorSeason breaks the ALREADY sorted list into groups per season, with the
+// non-navigable label of each group: "Temporada N" in the normal order, "Episódios" in
+// the absolute one (a single group). It assumes the input sorted by (season, number).
 func agruparPorSeason(itens []episodioProjetado, absoluto bool) []episodeGroupDTO {
 	var groups []episodeGroupDTO
 	for _, it := range itens {
@@ -296,8 +305,8 @@ func agruparPorSeason(itens []episodioProjetado, absoluto bool) []episodeGroupDT
 	return groups
 }
 
-// labelDoGrupo devolve o rótulo NÃO-navegável do cabeçalho do grupo: "Episódios" no
-// absoluto (lista corrida única) e "Temporada N" na ordem por temporada.
+// labelDoGrupo returns the NON-navigable label of the group header: "Episódios" in the
+// absolute one (a single continuous list) and "Temporada N" in the per-season order.
 func labelDoGrupo(season int, absoluto bool) string {
 	if absoluto {
 		return "Episódios"
@@ -305,9 +314,10 @@ func labelDoGrupo(season int, absoluto bool) string {
 	return "Temporada " + strconv.Itoa(season)
 }
 
-// cardDeEpisodio carrega o card de um episódio (o MESMO shape de /members) a partir de
-// ObterEntityCard. ok=false quando o episódio foi purgado no meio (NoRows) — o caller
-// pula. Sem posse agregada (episódio é folha; a posse vem do `owned` do próprio card).
+// cardDeEpisodio loads the card of an episode (the SAME shape as /members) from
+// ObterEntityCard. ok=false when the episode was purged in the middle (NoRows) — the
+// caller skips it. No aggregate ownership (an episode is a leaf; the ownership comes from
+// the card's own `owned`).
 func (s *Server) cardDeEpisodio(ctx context.Context, id string) (entityCardDTO, bool, error) {
 	row, err := s.leitura().ObterEntityCard(ctx, id)
 	if err != nil {

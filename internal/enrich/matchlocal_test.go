@@ -9,15 +9,15 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Este arquivo cobre o casamento por nome no import manual (briefing 0054):
-// TestImportarCasaComDraftLocalPorNome reproduz o bug relatado ("O Foragido")
-// -- draft com arquivo, sem external_ids + import do mesmo titulo/ano por id
-// externo diferente deve enriquecer O MESMO draft, nunca criar uma segunda
-// entity. Os demais testes cobrem os 3 "nao casa" do criterio de aceite.
+// This file covers the name matching on manual import:
+// TestImportarCasaComDraftLocalPorNome reproduces the reported bug ("O Foragido")
+// -- a draft with a file, without external_ids + the import of the same title/year by a
+// different external id must enrich THE SAME draft, never create a second
+// entity. The other tests cover the 3 "does not match" cases of the acceptance criteria.
 
-// criarDraftComArquivo cria uma entity DRAFT PURA (sem external_ids) com um
-// media_file 'present' ligado -- o shape exato do bug relatado (scanner achou
-// o arquivo, ainda sem metadados).
+// criarDraftComArquivo creates a PURE DRAFT entity (without external_ids) with a
+// 'present' media_file linked to it -- the exact shape of the reported bug (the scanner found
+// the file, still without metadata).
 func criarDraftComArquivo(t *testing.T, database *db.DB, id, titulo, releaseDate string) {
 	t.Helper()
 	ctx := context.Background()
@@ -34,7 +34,7 @@ func criarDraftComArquivo(t *testing.T, database *db.DB, id, titulo, releaseDate
 	}
 }
 
-// contarEntities devolve o total de entities no banco (dedup check).
+// contarEntities returns the total number of entities in the database (dedup check).
 func contarEntities(t *testing.T, database *db.DB) int {
 	t.Helper()
 	r := sqlcgen.New(database.Read)
@@ -45,10 +45,10 @@ func contarEntities(t *testing.T, database *db.DB) int {
 	return len(todas)
 }
 
-// TestImportarCasaComDraftLocalPorNome reproduz o bug relatado no 0054: um
-// draft local (arquivo presente, sem external_ids) + import do MESMO
-// titulo/ano por um id externo que o draft nao tem ainda -> UMA entity so, com
-// arquivo E metadados; nenhuma orfa criada.
+// TestImportarCasaComDraftLocalPorNome reproduces the reported bug: a local
+// draft (file present, without external_ids) + the import of the SAME
+// title/year under an external id the draft does not have yet -> ONE entity only, with
+// both the file AND the metadata; no orphan created.
 func TestImportarCasaComDraftLocalPorNome(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -87,22 +87,22 @@ func TestImportarCasaComDraftLocalPorNome(t *testing.T) {
 	if ent.ExternalIDTmdb.String != "9909" {
 		t.Errorf("external_id_tmdb = %q, quero 9909 (draft ganhou a identidade)", ent.ExternalIDTmdb.String)
 	}
-	// O arquivo do draft continua ligado -- o ponto inteiro do bug (draft com
-	// arquivo + importado com metadados viravam DUAS entities).
+	// The draft's file stays linked -- the whole point of the bug (a draft with a
+	// file + an imported item with metadata turned into TWO entities).
 	files, err := r.ListarMediaFilesPorEntity(ctx, "e1")
 	if err != nil || len(files) != 1 {
 		t.Errorf("media_file de e1 = %v (err=%v), quero 1 (o arquivo do draft preservado)", files, err)
 	}
-	// media_external (payload cru) foi persistido no MESMO id.
+	// media_external (raw payload) was persisted under the SAME id.
 	if _, err := r.ObterMediaExternalPorFonte(ctx, sqlcgen.ObterMediaExternalPorFonteParams{EntityID: "e1", Source: "tmdb"}); err != nil {
 		t.Errorf("media_external ausente em e1: %v", err)
 	}
 }
 
-// TestImportarSemCandidatoLocalCriaEntityNova garante que o caminho comum
-// (sem draft correspondente) continua criando uma entity nova, exatamente
-// como antes do 0054 -- nenhuma regressao. Ha um draft no banco, mas de titulo
-// bem diferente: o FTS nem deveria trazê-lo como candidato.
+// TestImportarSemCandidatoLocalCriaEntityNova guarantees that the common path
+// (with no matching draft) keeps creating a new entity, exactly
+// as before -- no regression. There is a draft in the database, but with a very
+// different title: FTS should not even bring it as a candidate.
 func TestImportarSemCandidatoLocalCriaEntityNova(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -138,9 +138,9 @@ func TestImportarSemCandidatoLocalCriaEntityNova(t *testing.T) {
 	}
 }
 
-// TestImportarAnoDivergenteNaoCasa cobre a regra do 0050 herdada pelo import:
-// candidato com o MESMO titulo mas ano divergindo em mais de 1 ano nunca casa
-// (remake/refilmagem) -- cria entity nova, o draft fica intacto na fila.
+// TestImportarAnoDivergenteNaoCasa covers the scoring rule inherited by the import:
+// a candidate with the SAME title but a year differing by more than 1 year never matches
+// (remake) -- it creates a new entity, the draft stays intact in the queue.
 func TestImportarAnoDivergenteNaoCasa(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -176,10 +176,10 @@ func TestImportarAnoDivergenteNaoCasa(t *testing.T) {
 	}
 }
 
-// TestImportarDraftComExternalIdExistenteNuncaCasa cobre a restricao central
-// do 0054: uma entity que JA tem QUALQUER external_id (de OUTRA fonte) nunca e
-// candidata do casamento por nome, mesmo com titulo/ano identicos -- so
-// drafts PUROS entram no FTS filtrado. Import cria entity nova.
+// TestImportarDraftComExternalIdExistenteNuncaCasa covers the central restriction
+// of the name matching: an entity that ALREADY has ANY external_id (from ANOTHER source) is never
+// a candidate of the name matching, even with identical title/year -- only
+// PURE drafts enter the filtered FTS. Import creates a new entity.
 func TestImportarDraftComExternalIdExistenteNuncaCasa(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()

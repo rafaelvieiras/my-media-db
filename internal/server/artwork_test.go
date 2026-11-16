@@ -12,8 +12,9 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// provTmdbArte e um provider Nome "tmdb" cujo MapearDetalhe devolve poster_url + backdrop_url
-// (hosts proxyaveis), para o /artwork extrair o poster/fundo da camada externa.
+// provTmdbArte is a provider named "tmdb" whose MapearDetalhe returns poster_url +
+// backdrop_url (proxyable hosts), so /artwork can extract the poster/background of the
+// external layer.
 type provTmdbArte struct{}
 
 func (p *provTmdbArte) Nome() string { return "tmdb" }
@@ -30,7 +31,7 @@ func (p *provTmdbArte) MapearDetalhe(json.RawMessage) (map[string]any, error) {
 	}, nil
 }
 
-// semearMediaExternal grava uma camada media_external crua para a entity.
+// semearMediaExternal writes a raw media_external layer for the entity.
 func semearMediaExternal(t *testing.T, d *db.DB, id, entityID, source, payload string) {
 	t.Helper()
 	if _, err := escrita(t, d).UpsertMediaExternal(context.Background(), sqlcgen.UpsertMediaExternalParams{
@@ -40,7 +41,8 @@ func semearMediaExternal(t *testing.T, d *db.DB, id, entityID, source, payload s
 	}
 }
 
-// semearAssetOrigin cria um asset com origin/meta explicitos (para exercitar dedup e preferida).
+// semearAssetOrigin creates an asset with explicit origin/meta (to exercise dedup and
+// preferred).
 func semearAssetOrigin(t *testing.T, d *db.DB, id, entityID, kind, origin, path, meta string) {
 	t.Helper()
 	p := sqlcgen.CriarAssetParams{ID: id, EntityID: entityID, Kind: kind, Origin: origin, PathOrUri: path}
@@ -52,7 +54,7 @@ func semearAssetOrigin(t *testing.T, d *db.DB, id, entityID, kind, origin, path,
 	}
 }
 
-// respostaArtwork decodifica a resposta do /artwork em (grupos por kind, available).
+// respostaArtwork decodes the /artwork response into (groups by kind, available).
 func respostaArtwork(t *testing.T, body []byte) (map[string][]artworkItem, map[string]int) {
 	t.Helper()
 	var bruto map[string]json.RawMessage
@@ -75,18 +77,20 @@ func respostaArtwork(t *testing.T, body []byte) (map[string][]artworkItem, map[s
 	return grupos, available
 }
 
-// TestArtworkAgrupaMesclaProxyaEDedup: o /artwork mescla assets locais + poster/fundo do
-// TMDB + inventario fanart.tv, agrupa por kind, proxya as URLs, deduplica o poster do TMDB
-// contra o cache local origin=external e emite `available:{kind:count}`.
+// TestArtworkAgrupaMesclaProxyaEDedup: /artwork merges local assets + TMDB
+// poster/background + fanart.tv inventory, groups by kind, proxies the URLs, dedupes the
+// TMDB poster against the local origin=external cache and emits
+// `available:{kind:count}`.
 func TestArtworkAgrupaMesclaProxyaEDedup(t *testing.T) {
 	h, d := setupSearchServer(t, WithSearchProvider(&provTmdbArte{}), WithAssetsDir(t.TempDir()))
 	semearEntity(t, d, "e1", "movie", "Matrix")
 
-	// Cache local do poster do TMDB (origin=external, preferido) -> deduplica o poster do TMDB.
+	// Local cache of the TMDB poster (origin=external, preferred) -> dedupes the TMDB
+	// poster.
 	semearAssetOrigin(t, d, "a1", "e1", "poster", "external", "/x/poster.jpg", `{"preferred":true}`)
-	// Camada TMDB crua (o MapearDetalhe do provTmdbArte da poster+backdrop).
+	// Raw TMDB layer (the MapearDetalhe of provTmdbArte gives poster+backdrop).
 	semearMediaExternal(t, d, "me-tmdb", "e1", "tmdb", `{}`)
-	// Inventario fanart.tv: 2 posters + 1 logo.
+	// fanart.tv inventory: 2 posters + 1 logo.
 	inv, _ := json.Marshal(map[string]any{
 		provider.ChaveEnvelopeInventarioArtes: map[string]any{
 			"poster": []provider.ArteInventario{
@@ -104,15 +108,15 @@ func TestArtworkAgrupaMesclaProxyaEDedup(t *testing.T) {
 	}
 	grupos, available := respostaArtwork(t, rec.Body.Bytes())
 
-	// poster: 1 local (external) + 2 fanart.tv = 3; o poster do TMDB e DEDUPLICADO.
+	// poster: 1 local (external) + 2 fanart.tv = 3; the TMDB poster is DEDUPLICATED.
 	if available["poster"] != 3 {
 		t.Errorf("available.poster = %d, quero 3 (1 local + 2 fanarttv, TMDB deduplicado)", available["poster"])
 	}
-	// fanart: so o backdrop do TMDB (nao ha fanart local nem fanart.tv).
+	// fanart: only the TMDB backdrop (there is no local fanart nor fanart.tv).
 	if available["fanart"] != 1 {
 		t.Errorf("available.fanart = %d, quero 1 (backdrop TMDB)", available["fanart"])
 	}
-	// logo: 1 do inventario fanart.tv.
+	// logo: 1 from the fanart.tv inventory.
 	if available["logo"] != 1 {
 		t.Errorf("available.logo = %d, quero 1", available["logo"])
 	}
@@ -122,7 +126,8 @@ func TestArtworkAgrupaMesclaProxyaEDedup(t *testing.T) {
 	exigirBackdropProxyado(t, grupos["fanart"])
 }
 
-// exigirLocalPreferido: ha um item local do dono (rota /assets/.../file), marcado preferido.
+// exigirLocalPreferido: there is a local item from the owner (route /assets/.../file),
+// marked preferred.
 func exigirLocalPreferido(t *testing.T, itens []artworkItem) {
 	t.Helper()
 	for _, it := range itens {
@@ -139,7 +144,8 @@ func exigirLocalPreferido(t *testing.T, itens []artworkItem) {
 	t.Error("nenhum item local no grupo poster")
 }
 
-// exigirProxyFanart: os posters da fanart.tv saem proxyados e preservam lang/likes.
+// exigirProxyFanart: the fanart.tv posters come out proxied and preserve
+// lang/likes.
 func exigirProxyFanart(t *testing.T, itens []artworkItem) {
 	t.Helper()
 	var achou bool
@@ -160,7 +166,7 @@ func exigirProxyFanart(t *testing.T, itens []artworkItem) {
 	}
 }
 
-// exigirBackdropProxyado: o fundo do TMDB sai proxyado sob source=tmdb.
+// exigirBackdropProxyado: the TMDB background comes out proxied under source=tmdb.
 func exigirBackdropProxyado(t *testing.T, itens []artworkItem) {
 	t.Helper()
 	if len(itens) != 1 {
@@ -172,12 +178,12 @@ func exigirBackdropProxyado(t *testing.T, itens []artworkItem) {
 	}
 }
 
-// TestArtworkInventarioMultiplasFontes (briefing 0116): o /artwork mescla o inventario de
-// QUALQUER fonte cacheada em media_external, nao so 'fanarttv' -- regressao real achada em
-// producao onde o inventario do MusicBrainz/Cover Art Archive (source='musicbrainz', capa
-// de album) era gravado com sucesso mas NUNCA aparecia no /artwork porque a leitura estava
-// hardcoded a source='fanarttv' (briefing 0048, antes de existir uma 2a fonte de arte).
-// Semeia inventario sob DUAS fontes diferentes e exige que ambas apareçam mescladas.
+// TestArtworkInventarioMultiplasFontes: /artwork merges the inventory of
+// ANY source cached in media_external, not just 'fanarttv' -- a real regression found
+// in production where the MusicBrainz/Cover Art Archive inventory (source='musicbrainz',
+// album cover) was written successfully but NEVER appeared in /artwork because the read
+// was hardcoded to source='fanarttv' (before a 2nd artwork source existed). It seeds the
+// inventory under TWO different sources and requires both to appear merged.
 func TestArtworkInventarioMultiplasFontes(t *testing.T) {
 	h, d := setupSearchServer(t, WithAssetsDir(t.TempDir()))
 	semearEntity(t, d, "alb1", "album", "Collected")
@@ -220,15 +226,15 @@ func TestArtworkInventarioMultiplasFontes(t *testing.T) {
 	}
 }
 
-// TestArtworkInventarioDedupeContraMaterializado: uma arte do inventario fanart.tv cujo
-// url ja foi materializado (asset origin=external com meta.source_url igual) NAO aparece
-// de novo como candidato -- so a versao local conta (briefing 0072).
+// TestArtworkInventarioDedupeContraMaterializado: a fanart.tv inventory artwork whose
+// url has already been materialized (asset origin=external with meta.source_url equal)
+// does NOT appear again as a candidate -- only the local version counts.
 func TestArtworkInventarioDedupeContraMaterializado(t *testing.T) {
 	h, d := setupSearchServer(t, WithAssetsDir(t.TempDir()))
 	semearEntity(t, d, "e1", "movie", "Matrix")
 
-	// Ja materializado via POST /artwork/select: asset external com o source_url apontando
-	// para a MESMA url que ainda esta no inventario fanart.tv.
+	// Already materialized via POST /artwork/select: external asset with source_url
+	// pointing to the SAME url still in the fanart.tv inventory.
 	semearAssetOrigin(t, d, "a1", "e1", "poster", "external", "/x/poster.jpg",
 		`{"source_url":"https://assets.fanart.tv/p-en.jpg"}`)
 
@@ -248,8 +254,9 @@ func TestArtworkInventarioDedupeContraMaterializado(t *testing.T) {
 	}
 	grupos, available := respostaArtwork(t, rec.Body.Bytes())
 
-	// poster: 1 local (ja materializado) + 1 candidato restante do inventario (p-textless) = 2.
-	// Sem o dedupe seria 3 (o p-en apareceria duas vezes: local E candidato).
+	// poster: 1 local (already materialized) + 1 remaining candidate from the inventory
+	// (p-textless) = 2. Without the dedupe it would be 3 (p-en would appear twice: local
+	// AND candidate).
 	if available["poster"] != 2 {
 		t.Errorf("available.poster = %d, quero 2 (dedupe do candidato ja materializado)", available["poster"])
 	}
@@ -267,7 +274,7 @@ func TestArtworkInventarioDedupeContraMaterializado(t *testing.T) {
 	}
 }
 
-// TestArtworkEntidadeInexistente: 404 para entity que nao existe.
+// TestArtworkEntidadeInexistente: 404 for an entity that does not exist.
 func TestArtworkEntidadeInexistente(t *testing.T) {
 	h, _ := setupSearchServer(t, WithSearchProvider(&provTmdbArte{}), WithAssetsDir(t.TempDir()))
 	rec := do(t, h, http.MethodGet, "/api/v1/entities/naoexiste/artwork", nil)
@@ -276,8 +283,8 @@ func TestArtworkEntidadeInexistente(t *testing.T) {
 	}
 }
 
-// TestArtworkSemFanartFunciona: sem inventario fanart.tv nem camada externa, o /artwork
-// ainda responde 200 com os assets locais (regressao zero).
+// TestArtworkSemFanartFunciona: without a fanart.tv inventory nor an external layer,
+// /artwork still responds 200 with the local assets (zero regression).
 func TestArtworkSemFanartFunciona(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e2", "movie", "Item")
@@ -293,9 +300,10 @@ func TestArtworkSemFanartFunciona(t *testing.T) {
 	}
 }
 
-// TestArtworkOrdenaPorIdiomaPreferido (briefing 0089): /artwork sem nenhuma
-// configuracao explicita de idioma cai no default pt-BR (defaultLanguageSettings);
-// com pt/en/textless disponiveis no inventario fanart.tv, o item em pt vem primeiro.
+// TestArtworkOrdenaPorIdiomaPreferido: /artwork without any
+// explicit language configuration falls back to the pt-BR default
+// (defaultLanguageSettings); with pt/en/textless available in the fanart.tv inventory, the
+// pt item comes first.
 func TestArtworkOrdenaPorIdiomaPreferido(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e3", "movie", "Item")
@@ -325,11 +333,11 @@ func TestArtworkOrdenaPorIdiomaPreferido(t *testing.T) {
 	}
 }
 
-// --- Testes unitarios de ordenarGruposArtwork/idiomaBase/rankIdiomaArte (briefing 0089) ---
+// --- Unit tests of ordenarGruposArtwork/idiomaBase/rankIdiomaArte ---
 
-// TestIdiomaBaseNormalizaLocale: idiomaBase extrai o ISO 639-1 de um locale completo
-// (formato de app_settings.languages/idiomaDeBusca) para bater com o `lang` puro do
-// inventario fanart.tv.
+// TestIdiomaBaseNormalizaLocale: idiomaBase extracts the ISO 639-1 from a complete locale
+// (format of app_settings.languages/idiomaDeBusca) to match the pure `lang` of the
+// fanart.tv inventory.
 func TestIdiomaBaseNormalizaLocale(t *testing.T) {
 	casos := []struct{ entrada, quero string }{
 		{"pt-BR", "pt"},
@@ -345,8 +353,8 @@ func TestIdiomaBaseNormalizaLocale(t *testing.T) {
 	}
 }
 
-// TestRankIdiomaArte: idioma preferido normalizado sempre rank 0; textless rank 1;
-// ingles rank 2; qualquer outro rank 3.
+// TestRankIdiomaArte: a normalized preferred language is always rank 0; textless rank 1;
+// english rank 2; any other rank 3.
 func TestRankIdiomaArte(t *testing.T) {
 	casos := []struct {
 		lang, preferidoBase string
@@ -356,9 +364,9 @@ func TestRankIdiomaArte(t *testing.T) {
 		{"", "pt", 1},
 		{"en", "pt", 2},
 		{"fr", "pt", 3},
-		{"", "", 1},   // sem preferencia: textless ainda vence ingles/outro
-		{"en", "", 2}, // sem preferencia: ingles vence "qualquer outro"
-		{"pt", "", 3}, // sem preferencia (base vazia): pt cai em "qualquer outro"
+		{"", "", 1},   // no preference: textless still beats english/other
+		{"en", "", 2}, // no preference: english beats "any other"
+		{"pt", "", 3}, // no preference (empty base): pt falls into "any other"
 	}
 	for _, c := range casos {
 		if got := rankIdiomaArte(c.lang, c.preferidoBase); got != c.quero {
@@ -367,9 +375,9 @@ func TestRankIdiomaArte(t *testing.T) {
 	}
 }
 
-// TestOrdenarGruposArtworkPrioridadeIdioma: com pt/en/textless disponiveis e idioma
-// preferido "pt-BR", a arte pt vem primeiro (precisa normalizar via idiomaBase -- uma
-// comparacao direta "pt-BR" == "pt" nunca bateria).
+// TestOrdenarGruposArtworkPrioridadeIdioma: with pt/en/textless available and preferred
+// language "pt-BR", the pt artwork comes first (it has to normalize via idiomaBase -- a
+// direct comparison "pt-BR" == "pt" would never match).
 func TestOrdenarGruposArtworkPrioridadeIdioma(t *testing.T) {
 	grupos := map[string][]artworkItem{
 		"poster": {
@@ -384,8 +392,8 @@ func TestOrdenarGruposArtworkPrioridadeIdioma(t *testing.T) {
 	}
 }
 
-// TestOrdenarGruposArtworkSemPtCaiParaTextless: sem nenhuma arte no idioma preferido,
-// a textless (lang=="") vem antes da en e de qualquer outro idioma.
+// TestOrdenarGruposArtworkSemPtCaiParaTextless: without any artwork in the preferred
+// language, the textless one (lang=="") comes before en and any other language.
 func TestOrdenarGruposArtworkSemPtCaiParaTextless(t *testing.T) {
 	grupos := map[string][]artworkItem{
 		"poster": {
@@ -407,9 +415,9 @@ func TestOrdenarGruposArtworkSemPtCaiParaTextless(t *testing.T) {
 	}
 }
 
-// TestOrdenarGruposArtworkIsPrincipalVenceIdioma: uma arte ja marcada is_principal num
-// idioma "pior" (fr, quando o preferido e pt) continua vencendo -- a prioridade de idioma
-// nunca derruba is_principal/is_local_in_library.
+// TestOrdenarGruposArtworkIsPrincipalVenceIdioma: an artwork already marked is_principal
+// in a "worse" language (fr, when the preferred one is pt) keeps winning -- the language
+// priority never overrides is_principal/is_local_in_library.
 func TestOrdenarGruposArtworkIsPrincipalVenceIdioma(t *testing.T) {
 	grupos := map[string][]artworkItem{
 		"poster": {
@@ -434,8 +442,8 @@ func TestOrdenarGruposArtworkIsPrincipalVenceIdioma(t *testing.T) {
 	}
 }
 
-// TestOrdenarGruposArtworkEmpateMantemOrdemOriginal: mesmo rank de idioma, mesmo
-// is_principal, mesmo is_local_in_library -- a ordem original de chegada e preservada
+// TestOrdenarGruposArtworkEmpateMantemOrdemOriginal: same language rank, same
+// is_principal, same is_local_in_library -- the original arrival order is preserved
 // (sort.SliceStable).
 func TestOrdenarGruposArtworkEmpateMantemOrdemOriginal(t *testing.T) {
 	grupos := map[string][]artworkItem{

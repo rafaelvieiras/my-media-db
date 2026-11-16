@@ -9,35 +9,35 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Resolver calcula o valor EFETIVO de um Campo (briefing 0095, ADR-0023):
-// banco (tabela integration_config) → env var de bootstrap/fallback do Campo
-// → ausente. Segue o MESMO padrão de internal/curation.Servico: guarda o
-// *db.DB e usa o pool de LEITURA (ADR-0010) — o Resolver nunca escreve; o PUT
-// HTTP grava direto via sqlcgen (internal/server/integrations.go), o mesmo
-// padrão do resto de internal/server/settings.go.
+// Resolver computes the EFFECTIVE value of a Campo (ADR-0023): database (table
+// integration_config) → the Campo's bootstrap/fallback env var → absent. It
+// follows the SAME pattern as internal/curation.Servico: it holds the *db.DB and
+// uses the READ pool (ADR-0010) — the Resolver never writes; the HTTP PUT writes
+// directly via sqlcgen (internal/server/integrations.go), the same pattern as
+// the rest of internal/server/settings.go.
 //
-// Efetivo/Valores não devolvem erro de propósito (mesma assinatura do
-// briefing): uma falha real de leitura no banco (não apenas "slug nunca
-// gravado") degrada em silêncio para a env var, em vez de propagar — reflete
-// o princípio de nunca bloquear a integração inteira por uma leitura opcional
-// (AGENTS.md §6). O zero-value (*Resolver)(nil) também é seguro: Efetivo
-// degrada direto para a env var quando não há banco (ex.: testes de rota sem
-// banco injetado).
+// Efetivo/Valores do not return an error on purpose (the same signature the
+// decision prescribes): a real read failure in the database (not merely "slug
+// never written") degrades silently to the env var, instead of propagating — it
+// reflects the principle of never blocking the whole integration because of an
+// optional read (AGENTS.md §6). The zero-value (*Resolver)(nil) is also safe:
+// Efetivo degrades straight to the env var when there is no database (e.g.:
+// route tests with no injected database).
 type Resolver struct {
 	database *db.DB
 }
 
-// NovoResolver cria o Resolver a partir do pool de banco.
+// NovoResolver creates the Resolver from the database pool.
 func NovoResolver(database *db.DB) *Resolver {
 	return &Resolver{database: database}
 }
 
 func (r *Resolver) leitura() *sqlcgen.Queries { return sqlcgen.New(r.database.Read) }
 
-// Efetivo calcula o valor efetivo de UM campo de UMA integração: lê
-// integration_config pelo slug, checa a chave campo.Nome no values_json; se
-// ausente (linha inexistente, JSON corrompido ou chave não presente), cai em
-// os.Getenv(campo.EnvVar) quando EnvVar != ""; se nenhum dos dois, ok=false e
+// Efetivo computes the effective value of ONE field of ONE integration: it reads
+// integration_config by slug and checks the campo.Nome key in values_json; if
+// absent (missing row, corrupted JSON or key not present), it falls back to
+// os.Getenv(campo.EnvVar) when EnvVar != ""; if neither has it, ok=false and
 // origem="nenhum".
 func (r *Resolver) Efetivo(ctx context.Context, slug string, campo Campo) (valor, origem string, ok bool) {
 	if r != nil && r.database != nil {
@@ -53,10 +53,10 @@ func (r *Resolver) Efetivo(ctx context.Context, slug string, campo Campo) (valor
 	return "", "nenhum", false
 }
 
-// doBanco lê integration_config e devolve o valor gravado do campo `nome`,
-// se presente. Qualquer erro de leitura (linha ausente, JSON corrompido) é
-// tratado como "não achou no banco" — o chamador cai para a env var, nunca
-// propaga erro (ver comentário do Resolver).
+// doBanco reads integration_config and returns the stored value of the `nome`
+// field, if present. Any read error (missing row, corrupted JSON) is treated as
+// "not found in the database" — the caller falls back to the env var and never
+// propagates an error (see the Resolver comment).
 func (r *Resolver) doBanco(ctx context.Context, slug, nome string) (string, bool) {
 	row, err := r.leitura().ObterIntegrationConfig(ctx, slug)
 	if err != nil {
@@ -76,9 +76,9 @@ func (r *Resolver) doBanco(ctx context.Context, slug, nome string) (string, bool
 	return v, true
 }
 
-// Valores agrega Efetivo para TODOS os campos de um Descriptor de uma vez —
-// o formato consumido por Descriptor.Configurada. Campos sem valor efetivo
-// (ok=false) ficam de fora do mapa.
+// Valores aggregates Efetivo for ALL fields of a Descriptor at once — the format
+// consumed by Descriptor.Configurada. Fields with no effective value (ok=false)
+// stay out of the map.
 func (r *Resolver) Valores(ctx context.Context, slug string, campos []Campo) map[string]string {
 	out := make(map[string]string, len(campos))
 	for _, c := range campos {

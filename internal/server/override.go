@@ -13,27 +13,27 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 )
 
-// Este arquivo implementa o EDITOR DE OVERRIDE por idioma (briefing 0016): a
-// superfície pela qual o dono ESCREVE o patch esparso que vence tudo.
+// This file implements the PER-LANGUAGE override EDITOR: the surface through which
+// the owner WRITES the sparse patch that wins over everything.
 //
-//   PATCH  /entities/{id}/override?lang=<code>        — merge esparso de 2 níveis
-//   DELETE /entities/{id}/override/{campo}?lang=<code> — limpar override (por idioma)
-//   DELETE /entities/{id}/override                     — reset (apaga o override)
-//   GET    /entities/{id}/override                     — devolve o blob CRU
+//   PATCH  /entities/{id}/override?lang=<code>        — sparse merge of 2 levels
+//   DELETE /entities/{id}/override/{campo}?lang=<code> — clear the override (per language)
+//   DELETE /entities/{id}/override                     — reset (deletes the override)
+//   GET    /entities/{id}/override                     — returns the RAW blob
 //
-// O endpoint NÃO inventa semântica: só mescla o patch no blob (preservando o
-// RawMessage cru) e devolve a entity RESOLVIDA — o resolver (0019) interpreta os
-// valores na LEITURA. Quais campos são editáveis/traduzíveis vem do resolver
-// (resolver.CamposEditaveis — R1, fonte única). As escritas passam pelo pool de
-// ESCRITA (ADR-0010).
+// The endpoint does NOT invent semantics: it only merges the patch into the blob
+// (preserving the raw RawMessage) and returns the RESOLVED entity — the resolver
+// interprets the values at READ time. Which fields are editable/translatable comes from
+// the resolver (resolver.CamposEditaveis — R1, single source). The writes go through the
+// WRITE pool (ADR-0010).
 
-// patchOverride trata PATCH /api/v1/entities/{id}/override?lang=<code>: funde as
-// chaves do corpo no override_json. Traduzível → override[campo][lang] (deep-merge
-// preservando os outros idiomas; migra escalar legado → {principal: legado});
-// neutro → override[campo] escalar (lang ignorado). `null` no idioma é valor válido
-// (definir vazio). 404 entity inexistente; 400 lang fora dos permitidos; 422 patch
-// malformado (chave não-editorial ou forma inválida). 200 com a entity resolvida no
-// lang.
+// patchOverride handles PATCH /api/v1/entities/{id}/override?lang=<code>: it merges the
+// body keys into override_json. Translatable → override[campo][lang] (deep-merge
+// preserving the other languages; migrates a legacy scalar → {primary: legacy});
+// neutral → override[campo] scalar (lang ignored). `null` in the language is a valid
+// value (define empty). 404 entity does not exist; 400 lang outside the allowed ones; 422
+// malformed patch (non-editorial key or invalid shape). 200 with the entity resolved in
+// the lang.
 func (s *Server) patchOverride(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -83,12 +83,12 @@ func (s *Server) patchOverride(w http.ResponseWriter, r *http.Request) {
 	s.responderOverride(w, ctx, id, lang)
 }
 
-// deleteOverrideCampo trata DELETE /api/v1/entities/{id}/override/{campo}?lang=:
-// LIMPAR override. Traduzível COM lang remove só override[campo][lang] (e a chave
-// campo se o mapa esvaziar); traduzível SEM lang ou campo NEUTRO remove a chave
-// campo inteira. Remover chave ausente é idempotente (200). 422 se {campo} não é
-// editorial; 400 se lang presente fora dos permitidos; 404 entity inexistente. Se o
-// blob esvaziar, a linha de override é removida.
+// deleteOverrideCampo handles DELETE /api/v1/entities/{id}/override/{campo}?lang=:
+// CLEAR override. Translatable WITH lang removes only override[campo][lang] (and the
+// campo key if the map empties); translatable WITHOUT lang or a NEUTRAL field removes the
+// whole campo key. Removing an absent key is idempotent (200). 422 if {campo} is not
+// editorial; 400 if lang present outside the allowed ones; 404 entity does not exist. If the
+// blob empties, the override row is removed.
 func (s *Server) deleteOverrideCampo(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -113,8 +113,9 @@ func (s *Server) deleteOverrideCampo(w http.ResponseWriter, r *http.Request) {
 		respondErroInterno(w)
 		return
 	}
-	// A PRESENÇA do ?lang= decide o escopo (por idioma × campo inteiro), então lemos
-	// o parâmetro cru; se presente, validamos contra os permitidos (400 quando fora).
+	// The PRESENCE of ?lang= decides the scope (per language × whole field), so we read
+	// the raw parameter; if present, we validate it against the allowed ones (400 when
+	// outside).
 	langRaw := r.URL.Query().Get("lang")
 	if !s.validarLangOpcional(w, cfg, langRaw) {
 		return
@@ -139,8 +140,8 @@ func (s *Server) deleteOverrideCampo(w http.ResponseWriter, r *http.Request) {
 	s.responderOverride(w, ctx, id, ouPrincipal(langRaw, cfg.Primary))
 }
 
-// deleteOverride trata DELETE /api/v1/entities/{id}/override: RESET — apaga o
-// override inteiro. 404 entity inexistente; 200 com a entity resolvida (na base).
+// deleteOverride handles DELETE /api/v1/entities/{id}/override: RESET — deletes the
+// whole override. 404 entity does not exist; 200 with the resolved entity (at the base).
 func (s *Server) deleteOverride(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -164,9 +165,9 @@ func (s *Server) deleteOverride(w http.ResponseWriter, r *http.Request) {
 	s.responderOverride(w, ctx, id, lang)
 }
 
-// getOverride trata GET /api/v1/entities/{id}/override: devolve o BLOB CRU guardado
-// ({} se nenhum), para a UI distinguir "overridado" de "herdado" por campo e por
-// idioma. 200 (entity existente); 404 se a entity nao existe.
+// getOverride handles GET /api/v1/entities/{id}/override: it returns the RAW BLOB stored
+// ({} if none), so the UI can tell "overridden" from "inherited" per field and per
+// language. 200 (entity exists); 404 if the entity does not exist.
 func (s *Server) getOverride(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -191,17 +192,17 @@ func (s *Server) getOverride(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, json.RawMessage("{}"))
 		return
 	}
-	// Blob CRU, tal como guardado — sem reinterpretar (o resolver interpreta na
-	// leitura da entity).
+	// RAW blob, just as stored — without reinterpreting (the resolver interprets it when
+	// reading the entity).
 	writeJSON(w, http.StatusOK, json.RawMessage(ov.OverrideJson.String))
 }
 
-// ── Helpers do editor de override ────────────────────────────────────────────
+// ── Override editor helpers ──────────────────────────────────────────────────
 
-// exigirEntity carrega a entity (pool de leitura) exigindo que ela EXISTA: 404 no
-// envelope padrão quando ausente, 500 em erro real de banco. Guarda comum dos
-// handlers de override (a linha de override tem FK para entity — escrever para uma
-// entity inexistente violaria a integridade).
+// exigirEntity loads the entity (read pool) requiring that it EXISTS: 404 in the
+// standard envelope when absent, 500 on a real database error. Common guard of the
+// override handlers (the override row has an FK to entity — writing to a
+// nonexistent entity would violate integrity).
 func (s *Server) exigirEntity(w http.ResponseWriter, ctx context.Context, id string) (sqlcgen.Entity, bool) {
 	ent, err := s.leitura().ObterEntity(ctx, id)
 	if err != nil {
@@ -215,9 +216,9 @@ func (s *Server) exigirEntity(w http.ResponseWriter, ctx context.Context, id str
 	return ent, true
 }
 
-// cfgELang carrega as settings e resolve o ?lang= com a semântica default (ausente
-// = principal; fora dos permitidos → 400). Já escreve o erro (500/400) e devolve
-// ok=false quando falha. Guarda comum de PATCH/DELETE-reset.
+// cfgELang loads the settings and resolves the ?lang= with the default semantics (absent
+// = primary; outside the allowed ones → 400). It already writes the error (500/400) and
+// returns ok=false when it fails. Common guard of PATCH/DELETE-reset.
 func (s *Server) cfgELang(w http.ResponseWriter, ctx context.Context, langParam string) (languageSettings, string, bool) {
 	cfg, err := s.obterLanguageSettings(ctx)
 	if err != nil {
@@ -231,9 +232,9 @@ func (s *Server) cfgELang(w http.ResponseWriter, ctx context.Context, langParam 
 	return cfg, lang, true
 }
 
-// validarLangOpcional valida um ?lang= cuja PRESENÇA é significativa (DELETE de
-// campo): ausente = ok (escopo campo inteiro); presente valida contra os permitidos
-// (400 quando fora, já escrito).
+// validarLangOpcional validates a ?lang= whose PRESENCE is meaningful (DELETE of a
+// field): absent = ok (whole-field scope); present validates against the allowed ones
+// (400 when outside, already written).
 func (s *Server) validarLangOpcional(w http.ResponseWriter, cfg languageSettings, langRaw string) bool {
 	if langRaw == "" {
 		return true
@@ -242,8 +243,8 @@ func (s *Server) validarLangOpcional(w http.ResponseWriter, cfg languageSettings
 	return ok
 }
 
-// ouPrincipal devolve langRaw quando não vazio, senão o principal — o idioma em que
-// a resposta resolvida é servida quando o DELETE não foi escopado por idioma.
+// ouPrincipal returns langRaw when non-empty, otherwise the primary — the language in which
+// the resolved response is served when the DELETE was not scoped by language.
 func ouPrincipal(langRaw, principal string) string {
 	if langRaw == "" {
 		return principal
@@ -251,9 +252,9 @@ func ouPrincipal(langRaw, principal string) string {
 	return langRaw
 }
 
-// carregarBlobBruto lê o override_json atual como o mapa CRU esparso (sempre
-// não-nil, mutável) que o merge do editor manipula. Reusa carregarOverride
-// (ausência/malformado → mapa vazio).
+// carregarBlobBruto reads the current override_json as the sparse RAW map (always
+// non-nil, mutable) that the editor merge manipulates. It reuses carregarOverride
+// (absent/malformed → empty map).
 func (s *Server) carregarBlobBruto(ctx context.Context, id string) (map[string]json.RawMessage, error) {
 	m, err := s.carregarOverride(ctx, id)
 	if err != nil {
@@ -265,9 +266,9 @@ func (s *Server) carregarBlobBruto(ctx context.Context, id string) (map[string]j
 	return m, nil
 }
 
-// gravarBlob persiste o blob de override pelo pool de ESCRITA. Blob vazio ({}) ⇒
-// remove a linha (ApagarMediaOverride) em vez de guardar um patch inócuo — o
-// resolver volta a herdar a base.
+// gravarBlob persists the override blob through the WRITE pool. An empty blob ({}) ⇒
+// it removes the row (ApagarMediaOverride) instead of storing an innocuous patch — the
+// resolver goes back to inheriting the base.
 func (s *Server) gravarBlob(ctx context.Context, id string, blob map[string]json.RawMessage) error {
 	esc := sqlcgen.New(s.db.Write)
 	if len(blob) == 0 {
@@ -284,10 +285,10 @@ func (s *Server) gravarBlob(ctx context.Context, id string, blob map[string]json
 	return err
 }
 
-// mesclarCampo devolve o novo valor CRU de um campo após o merge do patch: para um
-// TRADUZÍVEL, funde `raw` em `blob[campo][lang]` (deep-merge de 2 níveis, migrando
-// escalar legado → {principal:…}); para um NEUTRO, devolve `raw` direto (lang
-// ignorado). Preserva os RawMessage crus — não reinterpreta os valores.
+// mesclarCampo returns the new RAW value of a field after the patch merge: for a
+// TRANSLATABLE one, it merges `raw` into `blob[campo][lang]` (deep-merge of 2 levels, migrating a
+// legacy scalar → {primary:…}); for a NEUTRAL one, it returns `raw` directly (lang
+// ignored). It preserves the raw RawMessages — it does not reinterpret the values.
 func mesclarCampo(info resolver.CampoInfo, blob map[string]json.RawMessage, campo string, raw json.RawMessage, lang, principal string) (json.RawMessage, error) {
 	if !info.Traduzivel {
 		return raw, nil
@@ -300,10 +301,10 @@ func mesclarCampo(info resolver.CampoInfo, blob map[string]json.RawMessage, camp
 	return json.Marshal(mapa)
 }
 
-// removerCampo aplica a remoção de LIMPAR sobre o blob (in-place): traduzível COM
-// lang remove só `blob[campo][langRaw]` (e a chave campo se o mapa esvaziar);
-// traduzível SEM lang ou campo NEUTRO remove a chave campo inteira. Remover o que
-// não existe é no-op (idempotente).
+// removerCampo applies the CLEAR removal to the blob (in place): translatable WITH
+// lang removes only `blob[campo][langRaw]` (and the campo key if the map empties);
+// translatable WITHOUT lang or a NEUTRAL field removes the whole campo key. Removing what
+// does not exist is a no-op (idempotent).
 func removerCampo(info resolver.CampoInfo, blob map[string]json.RawMessage, campo, langRaw, principal string) error {
 	if !info.Traduzivel || langRaw == "" {
 		delete(blob, campo)
@@ -327,9 +328,9 @@ func removerCampo(info resolver.CampoInfo, blob map[string]json.RawMessage, camp
 	return nil
 }
 
-// responderOverride resolve a entity no lang informado e responde 200 (a UI
-// reflete o valor resolvido na hora). 404 se a entity sumiu no meio; 500 em erro
-// de banco.
+// responderOverride resolves the entity in the given lang and responds 200 (the UI
+// reflects the resolved value right away). 404 if the entity vanished in the middle; 500 on
+// a database error.
 func (s *Server) responderOverride(w http.ResponseWriter, ctx context.Context, id, lang string) {
 	resolvida, encontrada, err := s.resolverEntity(ctx, id, lang, true)
 	if err != nil {
@@ -343,8 +344,8 @@ func (s *Server) responderOverride(w http.ResponseWriter, ctx context.Context, i
 	writeJSON(w, http.StatusOK, resolvida)
 }
 
-// validarPatch rejeita (422) qualquer chave não-editorial ou com forma inválida
-// para o kind do campo. Devolve false já tendo escrito o erro.
+// validarPatch rejects (422) any non-editorial key or one with an invalid shape
+// for the field kind. It returns false having already written the error.
 func validarPatch(w http.ResponseWriter, campos map[string]resolver.CampoInfo, patch map[string]json.RawMessage) bool {
 	for campo, raw := range patch {
 		info, editorial := campos[campo]
@@ -362,9 +363,9 @@ func validarPatch(w http.ResponseWriter, campos map[string]resolver.CampoInfo, p
 	return true
 }
 
-// formaValida valida a FORMA do valor de patch pela classe do campo: escalar
-// aceita string|null; lista aceita array de strings, {add?,remove?} ou null;
-// extensão aceita objeto ou null.
+// formaValida validates the SHAPE of the patch value by the field class: scalar
+// accepts string|null; list accepts an array of strings, {add?,remove?} or null;
+// extension accepts an object or null.
 func formaValida(info resolver.CampoInfo, raw json.RawMessage) bool {
 	switch info.Kind {
 	case resolver.KindLista:
@@ -380,13 +381,13 @@ func formaValida(info resolver.CampoInfo, raw json.RawMessage) bool {
 	}
 }
 
-// formaCreditos valida a forma do patch de créditos (briefing 0029 §6.5): `null`
-// (apaga tudo) ou um objeto cujas chaves ⊆ {cast,crew,companies}; cada sub-bloco
-// presente é `null` ou um objeto cujas chaves ⊆ {reorder,remove,edit,add}, com
-// `reorder`/`remove` como array de string, `edit` como objeto raso
-// string→(string→string), e `add` como array de objeto exigindo `source_id`+
-// `name` string (demais chaves, se presentes, também string). Qualquer forma
-// fora disso é 422.
+// formaCreditos validates the shape of the credits patch: `null`
+// (deletes everything) or an object whose keys ⊆ {cast,crew,companies}; each present
+// sub-block is `null` or an object whose keys ⊆ {reorder,remove,edit,add}, with
+// `reorder`/`remove` as an array of strings, `edit` as a shallow object
+// string→(string→string), and `add` as an array of objects requiring `source_id`+
+// `name` string (the other keys, if present, also strings). Any shape
+// outside that is 422.
 func formaCreditos(raw json.RawMessage) bool {
 	if ehNullRaw(raw) {
 		return true
@@ -406,8 +407,8 @@ func formaCreditos(raw json.RawMessage) bool {
 	return true
 }
 
-// formaBlocoCredito valida UM sub-bloco (cast/crew/companies) do patch de
-// créditos: `null` ou objeto com chaves ⊆ {reorder,remove,edit,add}.
+// formaBlocoCredito validates ONE sub-block (cast/crew/companies) of the credits
+// patch: `null` or an object with keys ⊆ {reorder,remove,edit,add}.
 func formaBlocoCredito(raw json.RawMessage) bool {
 	if ehNullRaw(raw) {
 		return true
@@ -438,9 +439,9 @@ func formaBlocoCredito(raw json.RawMessage) bool {
 	return true
 }
 
-// formaEditCredito valida `edit`: objeto RASO chave→(campo→valor), com os
-// valores dos campos sempre string (character/job/department/name são NEUTROS,
-// sem sub-mapa por idioma nesta fase).
+// formaEditCredito validates `edit`: a SHALLOW object key→(field→value), with the
+// field values always strings (character/job/department/name are NEUTRAL,
+// without a per-language sub-map at this stage).
 func formaEditCredito(raw json.RawMessage) bool {
 	var m map[string]map[string]json.RawMessage
 	if json.Unmarshal(raw, &m) != nil {
@@ -457,9 +458,9 @@ func formaEditCredito(raw json.RawMessage) bool {
 	return true
 }
 
-// formaAddCredito valida `add`: array de objeto exigindo `source_id`+`name`
-// como string (escolhidos pelo DONO — o resolver é puro, não gera id); demais
-// chaves, se presentes, também devem ser string.
+// formaAddCredito validates `add`: an array of objects requiring `source_id`+`name`
+// as strings (chosen by the OWNER — the resolver is pure, it does not generate an id); the
+// other keys, if present, must also be strings.
 func formaAddCredito(raw json.RawMessage) bool {
 	var arr []map[string]json.RawMessage
 	if json.Unmarshal(raw, &arr) != nil {
@@ -479,7 +480,7 @@ func formaAddCredito(raw json.RawMessage) bool {
 	return true
 }
 
-// presenteComoString diz se `chave` está presente no objeto e é uma string.
+// presenteComoString says whether `chave` is present in the object and is a string.
 func presenteComoString(item map[string]json.RawMessage, chave string) bool {
 	raw, ok := item[chave]
 	if !ok {
@@ -489,8 +490,9 @@ func presenteComoString(item map[string]json.RawMessage, chave string) bool {
 	return json.Unmarshal(raw, &s) == nil
 }
 
-// formaNumero aceita `null` (definir/limpar a nota) ou um número na escala 0–10 (a
-// nota local casa com o vote_average da fonte). Fora da faixa ou não-número: inválido.
+// formaNumero accepts `null` (set/clear the rating) or a number on the 0–10 scale (the
+// local rating matches the vote_average of the source). Out of range or not a number:
+// invalid.
 func formaNumero(raw json.RawMessage) bool {
 	if ehNullRaw(raw) {
 		return true
@@ -502,8 +504,8 @@ func formaNumero(raw json.RawMessage) bool {
 	return n >= 0 && n <= 10
 }
 
-// formaLista aceita `null`, um array de strings (substituição), ou um objeto de
-// operações `{add?,remove?}` cujos valores são arrays de strings.
+// formaLista accepts `null`, an array of strings (replacement), or an object of
+// operations `{add?,remove?}` whose values are arrays of strings.
 func formaLista(raw json.RawMessage) bool {
 	if ehNullRaw(raw) {
 		return true
@@ -528,19 +530,21 @@ func formaLista(raw json.RawMessage) bool {
 	return true
 }
 
-// ehNullRaw diz se o JSON cru é o literal `null` (valor válido = definir vazio).
+// ehNullRaw says whether the raw JSON is the literal `null` (a valid value = define
+// empty).
 func ehNullRaw(raw json.RawMessage) bool {
 	var v any
 	return json.Unmarshal(raw, &v) == nil && v == nil
 }
 
-// ehString diz se o JSON cru é uma string.
+// ehString says whether the raw JSON is a string.
 func ehString(raw json.RawMessage) bool {
 	var s string
 	return json.Unmarshal(raw, &s) == nil
 }
 
-// ehObjeto diz se o JSON cru é um objeto (não array, não escalar, não null).
+// ehObjeto says whether the raw JSON is an object (not an array, not a scalar, not
+// null).
 func ehObjeto(raw json.RawMessage) bool {
 	var m map[string]json.RawMessage
 	return json.Unmarshal(raw, &m) == nil && m != nil

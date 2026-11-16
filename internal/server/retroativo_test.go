@@ -15,15 +15,15 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
-// Testes do ENRIQUECIMENTO EXTERNO RETROATIVO (briefing 0056): a query nova
-// (quatro quadrantes + throttle + limite/prioridade) e a orquestração
-// EnriquecerRetroativo/tentarEnriquecerOuSinalizar (aplicar local/externo,
-// sinalizar, só registrar tentativa, guarda sem enrich). Cobre os critérios
-// §5 testáveis sem HTTP real (não há endpoint novo — ver §3 "Fora").
+// Tests of the RETROACTIVE EXTERNAL ENRICHMENT: the new query (four quadrants + throttle +
+// limit/priority) and the EnriquecerRetroativo/tentarEnriquecerOuSinalizar orchestration (apply
+// local/external, flag, only record the attempt, guard without enrich). It covers the criteria
+// testable without real HTTP (there is no new endpoint — see the "Out" section of the
+// design).
 
-// carimbarTentativa grava last_external_match_attempt_at direto no banco,
-// com um valor CONTROLADO (fixture), nunca time.Now() real -- é o que prova
-// o throttle de forma determinística (mesmo espírito de definirStatus).
+// carimbarTentativa writes last_external_match_attempt_at straight into the database, with a
+// CONTROLLED value (fixture), never a real time.Now() -- that is what proves the throttle
+// deterministically (the same spirit as definirStatus).
 func carimbarTentativa(t *testing.T, d *db.DB, id string, quando time.Time) {
 	t.Helper()
 	ts := quando.UTC().Format(carimboRetroativoFormato)
@@ -33,11 +33,10 @@ func carimbarTentativa(t *testing.T, d *db.DB, id string, quando time.Time) {
 	}
 }
 
-// setupRetroativoServer sobe um *Server (não só o http.Handler -- os testes
-// aqui chamam EnriquecerRetroativo diretamente, mesmo padrão de
-// TestAutoMatchElegiveis em automatch_test.go) com o automatchProvider
-// (fonte "tmdb") e assetsDir, para o ramo externo funcionar de ponta a
-// ponta. resultados nil é válido (só exercita o ramo local).
+// setupRetroativoServer starts a *Server (not only the http.Handler -- the tests here call
+// EnriquecerRetroativo directly, the same pattern as TestAutoMatchElegiveis in
+// automatch_test.go) with the automatchProvider (source "tmdb") and assetsDir, so the external
+// branch works end-to-end. resultados nil is valid (it only exercises the local branch).
 func setupRetroativoServer(t *testing.T, resultados []provider.ResultadoExterno) (*Server, *db.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "retroativo.sqlite")
@@ -58,32 +57,32 @@ func setupRetroativoServer(t *testing.T, resultados []provider.ResultadoExterno)
 	return s, database
 }
 
-// ── ListarElegiveisEnriquecimentoRetroativo (a query) ───────────────────────
+// ── ListarElegiveisEnriquecimentoRetroativo (the query) ────────────────────
 
-// TestListarElegiveisEnriquecimentoRetroativoQuadrantes cobre o critério
-// central §5.1: a query é o complemento EXATO (De Morgan) de ListarRevisao,
-// provado nos quatro quadrantes de status/confiança/identidade.
+// TestListarElegiveisEnriquecimentoRetroativoQuadrantes covers the central criterion §5.1: the
+// query is the EXACT complement (De Morgan) of ListarRevisao, proven on the four quadrants of
+// status/confidence/identity.
 func TestListarElegiveisEnriquecimentoRetroativoQuadrantes(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	ctx := context.Background()
 
-	// Quadrante A: draft -- já está na fila de Revisão, fora de escopo aqui.
+	// Quadrant A: draft -- already in the Review queue, out of scope here.
 	semearEntity(t, d, "e-draft", "movie", "Draft")
 	definirStatus(t, d, "e-draft", "draft")
 	semearFile(t, d, "f-draft", "e-draft", "/lib/draft.mkv", "present", 0, "")
 
-	// Quadrante B: baixa confiança (0<conf<70), sem id -- já está na fila de
-	// Revisão, também fora de escopo.
+	// Quadrant B: low confidence (0<conf<70), without an id -- already in the Review queue,
+	// also out of scope.
 	semearEntity(t, d, "e-baixa", "movie", "Baixa")
 	semearFile(t, d, "f-baixa", "e-baixa", "/lib/baixa.mkv", "present", 60, "")
 
-	// Quadrante C: confiança=70 (confTituloAno do scanner), SEM id externo --
-	// o GAP real deste briefing (nunca verificado contra provider nenhum).
+	// Quadrant C: confidence=70 (the scanner's confTituloAno), WITHOUT an external id -- the real
+	// GAP this feature closes (never verified against any provider).
 	semearEntity(t, d, "e-gap", "movie", "Gap")
 	semearFile(t, d, "f-gap", "e-gap", "/lib/gap.mkv", "present", 70, "")
 
-	// Quadrante D: confiança=70, COM id externo -- já tem identidade, fora do
-	// escopo (external_ids_json IS NULL ancora a query).
+	// Quadrant D: confidence=70, WITH an external id -- it already has an identity, out of scope
+	// (external_ids_json IS NULL anchors the query).
 	semearEntity(t, d, "e-comid", "movie", "ComId")
 	semearFile(t, d, "f-comid", "e-comid", "/lib/comid.mkv", "present", 70, "")
 	if err := escrita(t, d).AtualizarExternalIds(ctx, sqlcgen.AtualizarExternalIdsParams{
@@ -108,31 +107,30 @@ func TestListarElegiveisEnriquecimentoRetroativoQuadrantes(t *testing.T) {
 	}
 }
 
-// TestListarElegiveisEnriquecimentoRetroativoRestricoesDeEscopo cobre as
-// restrições adicionais do §4: qualquer type DE TOPO (ADR-0030/briefing 0116
-// -- NOT IN sub-nós, não mais só IN (movie, tv)) e só entities com ao menos
-// um media_file 'present' (direto ou via árvore).
+// TestListarElegiveisEnriquecimentoRetroativoRestricoesDeEscopo covers the additional
+// restrictions of §4: any TOP-LEVEL type (ADR-0030 -- NOT IN sub-nodes, no longer only IN
+// (movie, tv)) and only entities with at least one 'present' media_file (direct or through the
+// tree).
 func TestListarElegiveisEnriquecimentoRetroativoRestricoesDeEscopo(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 
-	// collection É tipo de topo (não está em tiposSubNo) -- desde o briefing
-	// 0116, elegível como qualquer outro tipo de topo com media_file próprio
-	// (a restrição antiga "só movie/tv" era um escopo herdado do 0050, não
-	// uma regra de negócio permanente -- ver §6 do briefing 0116).
+	// collection IS a top-level type (it is not in tiposSubNo) -- it is eligible like any other
+	// top-level type with a media_file of its own (the old "only movie/tv" restriction was a
+	// scope inherited from the original review-queue work, not a permanent business rule).
 	semearEntity(t, d, "e-colecao", "collection", "Coleção")
 	semearFile(t, d, "f-colecao", "e-colecao", "/lib/colecao.mkv", "present", 70, "")
 
-	// season é SUB-NÓ (tiposSubNo) -- nunca elegível, mesmo com media_file
-	// 'present' direto (cenário artificial só para provar a exclusão por
-	// tipo, já que season normalmente não liga media_file direto).
+	// season is a SUB-NODE (tiposSubNo) -- never eligible, even with a direct 'present'
+	// media_file (an artificial scenario only to prove the exclusion by type, since a season
+	// usually does not link a media_file directly).
 	semearEntity(t, d, "e-temporada", "season", "Temporada 1")
 	semearFile(t, d, "f-temporada", "e-temporada", "/lib/temporada.mkv", "present", 70, "")
 
-	// Sem NENHUM media_file present (todos missing) -- fora de escopo.
+	// Without ANY present media_file (all missing) -- out of scope.
 	semearEntity(t, d, "e-missing", "movie", "Missing")
 	semearFile(t, d, "f-missing", "e-missing", "/lib/missing.mkv", "missing", 70, "")
 
-	// tv com confiança 70, present -- DEVE ser elegível (mesmo escopo de movie).
+	// tv with confidence 70, present -- it MUST be eligible (the same scope as movie).
 	semearEntity(t, d, "e-tv", "tv", "Serie")
 	semearFile(t, d, "f-tv", "e-tv", "/lib/serie.mkv", "present", 70, "")
 
@@ -151,16 +149,16 @@ func TestListarElegiveisEnriquecimentoRetroativoRestricoesDeEscopo(t *testing.T)
 	}
 }
 
-// TestListarElegiveisEnriquecimentoRetroativoThrottle cobre o critério §5.5:
-// item tentado há MENOS do que o throttle configurado (30 dias, neste teste) não volta;
-// nunca tentado e tentado há MAIS tempo voltam. A query resolve o cutoff via
-// datetime('now', ...) dentro do SQLite (briefing 0085), então os carimbos de
-// fixture são ancorados no tempo REAL (time.Now()), nunca numa data fixa.
+// TestListarElegiveisEnriquecimentoRetroativoThrottle covers criterion §5.5: an item attempted
+// FEWER days ago than the configured throttle (30 days, in this test) does not come back; never
+// attempted and attempted LONGER ago do come back. The query resolves the cutoff through
+// datetime('now', ...) inside SQLite, so the fixture stamps are anchored on the REAL time
+// (time.Now()), never on a fixed date.
 func TestListarElegiveisEnriquecimentoRetroativoThrottle(t *testing.T) {
 	_, d := setupEntitiesServer(t)
-	// Relógio de teste ancora no tempo REAL (nunca em data fixa): a query
-	// agora resolve o cutoff via datetime('now', ...) dentro do próprio
-	// SQLite (briefing 0085), não mais um `desde` pré-formatado em Go.
+	// The test clock anchors on the REAL time (never a fixed date): the query now resolves the
+	// cutoff through datetime('now', ...) inside SQLite itself, no longer a `desde`
+	// pre-formatted in Go.
 	agora := time.Now()
 
 	semearEntity(t, d, "e-nunca", "movie", "Nunca Tentado")
@@ -195,13 +193,12 @@ func TestListarElegiveisEnriquecimentoRetroativoThrottle(t *testing.T) {
 	}
 }
 
-// TestListarElegiveisEnriquecimentoRetroativoLimiteEPrioridade cobre o
-// critério §5.6: nunca processa mais que o limite, e nunca-tentados vêm
-// ANTES de tentados-há-muito-tempo (mais antigo primeiro entre estes).
+// TestListarElegiveisEnriquecimentoRetroativoLimiteEPrioridade covers criterion §5.6: it never
+// processes more than the limit, and never-attempted items come BEFORE long-ago-attempted ones
+// (oldest first among those).
 func TestListarElegiveisEnriquecimentoRetroativoLimiteEPrioridade(t *testing.T) {
 	_, d := setupEntitiesServer(t)
-	// Relógio de teste ancora no tempo REAL -- ver nota do teste de Throttle
-	// acima.
+	// The test clock anchors on the REAL time -- see the note in the Throttle test above.
 	agora := time.Now()
 
 	semearEntity(t, d, "e-nulo-b", "movie", "Nulo B")
@@ -237,11 +234,10 @@ func TestListarElegiveisEnriquecimentoRetroativoLimiteEPrioridade(t *testing.T) 
 	}
 }
 
-// TestListarElegiveisEnriquecimentoRetroativoArtistaViaArvore cobre o
-// critério §5.1/§5.2 do briefing 0116: artista SEM media_file direto
-// (ADR-0027 -- só a faixa liga) é elegível quando tem uma faixa descendente
-// 'present' na árvore de entity_relation; album/faixa NUNCA aparecem, mesmo
-// nas mesmas condições (sub-nós, ADR-0030).
+// TestListarElegiveisEnriquecimentoRetroativoArtistaViaArvore covers criteria §5.1/§5.2: an
+// artist WITHOUT a direct media_file (ADR-0027 -- only the track links) is eligible when it has
+// a 'present' descendant track in the entity_relation tree; album/track NEVER show up, even
+// under the same conditions (sub-nodes, ADR-0030).
 func TestListarElegiveisEnriquecimentoRetroativoArtistaViaArvore(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 
@@ -252,8 +248,8 @@ func TestListarElegiveisEnriquecimentoRetroativoArtistaViaArvore(t *testing.T) {
 	ligarFilhoOrdenado(t, d, "r2", "alb1", "fx1", "music_album", 1)
 	semearFile(t, d, "f1", "fx1", "/lib/musica/rio/01.flac", "present", 1, "")
 
-	// Artista sem NENHUMA faixa possuída na árvore: fora de escopo (nada a
-	// verificar contra provider nenhum).
+	// Artist without ANY owned track in the tree: out of scope (nothing to verify against any
+	// provider).
 	semearEntity(t, d, "art-sem-posse", "artista", "Sem Posse")
 
 	got := idsDeRetroativo(listarElegiveisTeste(t, d, 100))
@@ -271,13 +267,11 @@ func TestListarElegiveisEnriquecimentoRetroativoArtistaViaArvore(t *testing.T) {
 	}
 }
 
-// TestListaSubNosSincronizadaComQuery trava a lista literal de tipos
-// excluídos em ListarElegiveisEnriquecimentoRetroativo E em
-// ListarElegiveisReprocessamentoArtes (review.sql, briefing 0118 -- mesma
-// lista literal, copiada da primeira) contra tiposSubNo (ADR-0030/briefing
-// 0112) -- sqlc.slice não pôde ser usado aqui (ver nota de implementação do
-// briefing 0116), então a lista é literal; este teste é a rede de segurança
-// contra as três divergirem no futuro.
+// TestListaSubNosSincronizadaComQuery pins the literal list of excluded types in
+// ListarElegiveisEnriquecimentoRetroativo AND in ListarElegiveisReprocessamentoArtes
+// (review.sql -- the same literal list, copied from the first one) against tiposSubNo
+// (ADR-0030) -- sqlc.slice could not be used here, so the list is literal; this test is the
+// safety net against the three of them diverging in the future.
 func TestListaSubNosSincronizadaComQuery(t *testing.T) {
 	esperado := map[string]bool{}
 	for _, tipo := range tiposSubNo {
@@ -294,11 +288,10 @@ func TestListaSubNosSincronizadaComQuery(t *testing.T) {
 	}
 }
 
-// listarElegiveisTeste chama a query com um DiasGlobal irrelevante (os
-// fixtures usados pelos chamadores desta função NUNCA carimbam
-// last_external_match_attempt_at, então a condição IS NULL já basta -- o
-// valor do throttle não entra em jogo) e um limite alto -- usado pelos
-// testes que não exercitam o throttle/limite em si.
+// listarElegiveisTeste calls the query with an irrelevant DiasGlobal (the fixtures used by the
+// callers of this function NEVER stamp last_external_match_attempt_at, so the IS NULL condition
+// is enough -- the throttle value does not come into play) and a high limit -- used by the tests
+// that do not exercise the throttle/limit themselves.
 func listarElegiveisTeste(t *testing.T, d *db.DB, limite int64) []sqlcgen.ListarElegiveisEnriquecimentoRetroativoRow {
 	t.Helper()
 	rows, err := escrita(t, d).ListarElegiveisEnriquecimentoRetroativo(context.Background(),
@@ -321,17 +314,17 @@ func idsDeRetroativo(rows []sqlcgen.ListarElegiveisEnriquecimentoRetroativoRow) 
 	return m
 }
 
-// ── EnriquecerRetroativo / tentarEnriquecerOuSinalizar (a orquestração) ─────
+// ── EnriquecerRetroativo / tentarEnriquecerOuSinalizar (the orchestration) ─
 
-// TestEnriquecerRetroativoSemEnrich cobre o critério §5.7: sem s.enrich
-// (sem provider/assetsDir), devolve (0,0,nil) SEM tocar
-// last_external_match_attempt_at -- o item mantém prioridade máxima.
+// TestEnriquecerRetroativoSemEnrich covers criterion §5.7: without s.enrich (no
+// provider/assetsDir), it returns (0,0,nil) WITHOUT touching
+// last_external_match_attempt_at -- the item keeps maximum priority.
 func TestEnriquecerRetroativoSemEnrich(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e-gap", "movie", "Gap")
 	semearFile(t, d, "f-gap", "e-gap", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 70, "")
 
-	s := New("v-teste", d) // sem WithSearchProvider/WithAssetsDir => s.enrich nil
+	s := New("v-teste", d) // without WithSearchProvider/WithAssetsDir => s.enrich nil
 	aplicados, sinalizados, err := s.EnriquecerRetroativo(context.Background())
 	if err != nil {
 		t.Fatalf("EnriquecerRetroativo: %v", err)
@@ -349,12 +342,11 @@ func TestEnriquecerRetroativoSemEnrich(t *testing.T) {
 	}
 }
 
-// TestEnriquecerRetroativoAplicaLocal cobre o critério §5.2 pelo ramo LOCAL:
-// candidato local com score >= LimiarAutoMatch aplica sozinho via
-// fundirEntities -- o item some da população elegível (ganhou identidade
-// local, ainda que sem external_ids).
+// TestEnriquecerRetroativoAplicaLocal covers criterion §5.2 through the LOCAL branch: a local
+// candidate with score >= LimiarAutoMatch applies on its own through fundirEntities -- the item
+// leaves the eligible population (it gained a local identity, even without external_ids).
 func TestEnriquecerRetroativoAplicaLocal(t *testing.T) {
-	s, d := setupRetroativoServer(t, nil) // sem candidatos externos
+	s, d := setupRetroativoServer(t, nil) // no external candidates
 	semearEntityComAno(t, d, "e-target", "movie", "The Matrix", "1999-03-31")
 	semearEntity(t, d, "e-gap", "movie", "Gap")
 	semearFile(t, d, "f-gap", "e-gap", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 70, "")
@@ -370,7 +362,7 @@ func TestEnriquecerRetroativoAplicaLocal(t *testing.T) {
 		t.Errorf("sinalizados = %d, quero 0", sinalizados)
 	}
 
-	// e-gap (perdedora) foi fundida em e-target; o arquivo migrou.
+	// e-gap (loser) was merged into e-target; the file migrated.
 	if _, err := escrita(t, d).ObterEntity(context.Background(), "e-gap"); err == nil {
 		t.Error("e-gap ainda existe após aplicar local, quero fundida/apagada")
 	}
@@ -383,10 +375,9 @@ func TestEnriquecerRetroativoAplicaLocal(t *testing.T) {
 	}
 }
 
-// TestEnriquecerRetroativoAplicaExterno cobre o critério §5.2 pelo ramo
-// EXTERNO: sem candidato local, mas com um candidato externo forte, aplica
-// pela sequência do "Corrigir" (aplicarCandidatoExterno) -- e carimba a
-// tentativa.
+// TestEnriquecerRetroativoAplicaExterno covers criterion §5.2 through the EXTERNAL branch:
+// without a local candidate, but with a strong external one, it applies through the "Corrigir"
+// sequence (aplicarCandidatoExterno) -- and stamps the attempt.
 func TestEnriquecerRetroativoAplicaExterno(t *testing.T) {
 	resultados := []provider.ResultadoExterno{
 		{Source: "tmdb", SourceID: "335984", Type: "movie", Title: "Blade Runner 2049", Year: strp("2017")},
@@ -418,18 +409,16 @@ func TestEnriquecerRetroativoAplicaExterno(t *testing.T) {
 	}
 }
 
-// TestEnriquecerRetroativoSinaliza cobre o critério §5.3: candidato entre
-// limiarSinalizacaoRetroativa (50) e LimiarAutoMatch (92) NUNCA é aplicado
-// sozinho -- só sinaliza (AtualizarConfidencePorEntity), com o TETO
-// min(score, limiarBaixaConfianca-1) = 69, fazendo o item aparecer em
-// GET /review.
+// TestEnriquecerRetroativoSinaliza covers criterion §5.3: a candidate between
+// limiarSinalizacaoRetroativa (50) and LimiarAutoMatch (92) is NEVER applied on its own -- it
+// only flags it (AtualizarConfidencePorEntity), with the CEILING
+// min(score, limiarBaixaConfianca-1) = 69, making the item show up in GET /review.
 func TestEnriquecerRetroativoSinaliza(t *testing.T) {
 	s, d := setupRetroativoServer(t, nil)
-	// "The Matrix Reloaded" (candidato) vs "The Matrix" (consulta): casa
-	// parcialmente -- score plausível (~90) mas abaixo de 92. Sem release_date
-	// no candidato (evita o bônus de ano, mantendo o score sob controle); o
-	// título do candidato PRECISA conter as mesmas palavras da consulta como
-	// prefixo (busca local é FTS5 com AND implícito entre termos).
+	// "The Matrix Reloaded" (candidate) vs "The Matrix" (query): it matches partially -- a
+	// plausible score (~90) but below 92. No release_date on the candidate (it avoids the year
+	// bonus, keeping the score under control); the candidate title MUST contain the same words as
+	// the query as a prefix (the local search is FTS5 with an implicit AND between terms).
 	semearEntity(t, d, "e-candidato", "movie", "The Matrix Reloaded")
 	semearEntity(t, d, "e-gap", "movie", "Gap")
 	semearFile(t, d, "f-gap", "e-gap", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 70, "")
@@ -445,7 +434,7 @@ func TestEnriquecerRetroativoSinaliza(t *testing.T) {
 		t.Fatalf("sinalizados = %d, quero 1", sinalizados)
 	}
 
-	// external_ids continua NULO -- nada foi aplicado.
+	// external_ids stays NULL -- nothing was applied.
 	ent, err := escrita(t, d).ObterEntity(context.Background(), "e-gap")
 	if err != nil {
 		t.Fatalf("ObterEntity: %v", err)
@@ -466,7 +455,7 @@ func TestEnriquecerRetroativoSinaliza(t *testing.T) {
 			arquivo.MatchConfidence, limiarBaixaConfianca-1)
 	}
 
-	// O item agora aparece na fila de Revisão (mesmo mecanismo já existente).
+	// The item now shows up in the Review queue (the same mechanism as before).
 	h, err := s.Handler()
 	if err != nil {
 		t.Fatalf("Handler: %v", err)
@@ -476,9 +465,9 @@ func TestEnriquecerRetroativoSinaliza(t *testing.T) {
 	}
 }
 
-// TestEnriquecerRetroativoSemCandidatoSoCarimba cobre o critério §5.4: sem
-// candidato plausível em nenhuma fonte (abaixo do piso de sinalização), o
-// item NÃO muda -- só a tentativa é registrada (throttle).
+// TestEnriquecerRetroativoSemCandidatoSoCarimba covers criterion §5.4: without a plausible
+// candidate in any source (below the flagging floor), the item does NOT change -- only the
+// attempt is recorded (throttle).
 func TestEnriquecerRetroativoSemCandidatoSoCarimba(t *testing.T) {
 	s, d := setupRetroativoServer(t, nil)
 	semearEntityComAno(t, d, "e-outro", "movie", "Xyzzy Plugh Quux", "2005-01-01")
@@ -510,26 +499,25 @@ func TestEnriquecerRetroativoSemCandidatoSoCarimba(t *testing.T) {
 	}
 }
 
-// TestEnriquecerRetroativoLoteMisto cobre o critério §5.8 (best-effort): um
-// lote com resultados DIFERENTES por item (aplicado, sinalizado, sem
-// candidato) processa todos -- nenhum item afeta o resultado dos outros, e
-// TODOS têm a tentativa carimbada.
+// TestEnriquecerRetroativoLoteMisto covers criterion §5.8 (best-effort): a batch with
+// DIFFERENT results per item (applied, flagged, no candidate) processes all of them -- no item
+// affects the result of the others, and ALL of them have the attempt stamped.
 func TestEnriquecerRetroativoLoteMisto(t *testing.T) {
 	s, d := setupRetroativoServer(t, nil)
 
-	// Aplica sozinho (score alto).
+	// Applies on its own (high score).
 	semearEntityComAno(t, d, "e-target", "movie", "The Matrix", "1999-03-31")
 	semearEntity(t, d, "e-aplica", "movie", "Aplica")
 	semearFile(t, d, "f-aplica", "e-aplica", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 70, "")
 
-	// Sinaliza (score médio; candidato contém as mesmas palavras da consulta
-	// como prefixo, para casar na busca local FTS5, mas com título longo o
-	// bastante para o score ficar abaixo de LimiarAutoMatch).
+	// Flags (medium score; the candidate contains the same words as the query as a prefix, to
+	// match in the local FTS5 search, but with a title long enough for the score to stay below
+	// LimiarAutoMatch).
 	semearEntity(t, d, "e-candidato-fraco", "movie", "Blade Runner Black Lotus Animated Series")
 	semearEntity(t, d, "e-sinaliza", "movie", "Sinaliza")
 	semearFile(t, d, "f-sinaliza", "e-sinaliza", "/lib/Blade Runner (2017)/Blade Runner (2017).mkv", "present", 70, "")
 
-	// Sem candidato nenhum.
+	// No candidate at all.
 	semearEntity(t, d, "e-nada", "movie", "Nada")
 	semearFile(t, d, "f-nada", "e-nada", "/lib/Xyzzy Plugh Quux (2010)/Xyzzy Plugh Quux (2010).mkv", "present", 70, "")
 
@@ -544,7 +532,7 @@ func TestEnriquecerRetroativoLoteMisto(t *testing.T) {
 		t.Errorf("sinalizados = %d, quero 1", sinalizados)
 	}
 
-	// Os TRÊS itens (mesmo o que não mudou) têm a tentativa carimbada.
+	// ALL THREE items (even the one that did not change) have the attempt stamped.
 	for _, id := range []string{"e-sinaliza", "e-nada"} {
 		ent, err := escrita(t, d).ObterEntity(context.Background(), id)
 		if err != nil {
@@ -556,13 +544,12 @@ func TestEnriquecerRetroativoLoteMisto(t *testing.T) {
 	}
 }
 
-// ── termoBuscaRetroativo / música (briefing 0116) ───────────────────────────
+// ── termoBuscaRetroativo / music ────────────────────────────────────────────
 
-// TestTermoBuscaRetroativoArtista cobre o critério §5.4: artista devolve o
-// próprio título catalogado, sem ano, SEM exigir media_file algum (ADR-0027 --
-// artista nunca liga direto). movie continua delegando a tituloAnoDoArquivo
-// sem mudança (ok=false quando a entity não tem arquivo, mesmo comportamento
-// de sempre).
+// TestTermoBuscaRetroativoArtista covers criterion §5.4: an artist returns its own cataloged
+// title, without a year, WITHOUT requiring any media_file (ADR-0027 -- an artist never links
+// directly). movie keeps delegating to tituloAnoDoArquivo unchanged (ok=false when the entity
+// has no file, the same behavior as always).
 func TestTermoBuscaRetroativoArtista(t *testing.T) {
 	s, d := setupRetroativoServer(t, nil)
 	ctx := context.Background()
@@ -594,10 +581,10 @@ func TestTermoBuscaRetroativoArtista(t *testing.T) {
 	}
 }
 
-// automatchProviderMusica é o mesmo fake de automatchProvider, registrado
-// sob "musicbrainz" -- usado pelos testes de EnriquecerRetroativo para
-// artista (buscarLocal/buscarExterno/Enriquecer só precisam do core
-// provider.Provider, não das capacidades MusicaProvider/MusicaAlbumProvider).
+// automatchProviderMusica is the same fake as automatchProvider, registered under
+// "musicbrainz" -- used by the EnriquecerRetroativo tests for artists
+// (buscarLocal/buscarExterno/Enriquecer only need the core provider.Provider, not the
+// MusicaProvider/MusicaAlbumProvider capabilities).
 type automatchProviderMusica struct {
 	resultados []provider.ResultadoExterno
 	raw        json.RawMessage
@@ -618,8 +605,8 @@ func (p *automatchProviderMusica) MapearDetalhe(json.RawMessage) (map[string]any
 	return p.campos, nil
 }
 
-// setupRetroativoServerMusica é o mesmo molde de setupRetroativoServer, mas
-// registra automatchProviderMusica (fonte "musicbrainz") em vez de "tmdb".
+// setupRetroativoServerMusica is the same mold as setupRetroativoServer, but it registers
+// automatchProviderMusica (source "musicbrainz") instead of "tmdb".
 func setupRetroativoServerMusica(t *testing.T, resultados []provider.ResultadoExterno) (*Server, *db.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "retroativo-musica.sqlite")
@@ -640,12 +627,11 @@ func setupRetroativoServerMusica(t *testing.T, resultados []provider.ResultadoEx
 	return s, database
 }
 
-// TestEnriquecerRetroativoArtistaAplicaExterno cobre o critério §5.4/§5.5 do
-// briefing 0116 fim-a-fim: um artista elegível via árvore (faixa possuída,
-// sem external_ids) com candidato externo forte é aplicado sozinho, mesma
-// orquestração de sempre (aplicarCandidatoExterno) -- prova que
-// termoBuscaRetroativo/a query nova se encaixam no fluxo real sem exigir
-// nada especial de EnriquecerRetroativo.
+// TestEnriquecerRetroativoArtistaAplicaExterno covers criteria §5.4/§5.5 end-to-end: an artist
+// eligible through the tree (owned track, without external_ids) with a strong external
+// candidate is applied on its own, the same orchestration as always
+// (aplicarCandidatoExterno) -- it proves that termoBuscaRetroativo/the new query fit into the
+// real flow without demanding anything special from EnriquecerRetroativo.
 func TestEnriquecerRetroativoArtistaAplicaExterno(t *testing.T) {
 	resultados := []provider.ResultadoExterno{
 		{Source: "musicbrainz", SourceID: "mbid-1", Type: "artista", Title: "Duran Duran"},
@@ -679,9 +665,9 @@ func TestEnriquecerRetroativoArtistaAplicaExterno(t *testing.T) {
 	}
 }
 
-// ── POST /entities/{id}/enrich-missing (briefing 0059) ─────────────────────
+// ── POST /entities/{id}/enrich-missing ─────────────────────────────────────
 
-// decodeEnrichMissing decodifica a resposta do enrich-missing.
+// decodeEnrichMissing decodes the enrich-missing response.
 func decodeEnrichMissing(t *testing.T, body []byte) enrichMissingResultDTO {
 	t.Helper()
 	var out enrichMissingResultDTO
@@ -691,11 +677,11 @@ func decodeEnrichMissing(t *testing.T, body []byte) enrichMissingResultDTO {
 	return out
 }
 
-// TestEnrichMissingAplicaLocal cobre o critério §5: candidato local com score
-// >= LimiarAutoMatch aplica sozinho (outcome=applied, method=local) via UM
-// POST individual -- mesma asserção do critério equivalente do 0056
-// (TestEnriquecerRetroativoAplicaLocal), só que disparado pelo endpoint HTTP
-// para UM item.
+// TestEnrichMissingAplicaLocal covers the criterion: a local candidate with score >=
+// LimiarAutoMatch applies on its own (outcome=applied, method=local) through ONE individual
+// POST -- the same assertion as the equivalent criterion of the batch flow
+// (TestEnriquecerRetroativoAplicaLocal), only triggered through the HTTP endpoint for ONE
+// item.
 func TestEnrichMissingAplicaLocal(t *testing.T) {
 	s, d := setupRetroativoServer(t, nil)
 	semearEntityComAno(t, d, "e-target", "movie", "The Matrix", "1999-03-31")
@@ -721,16 +707,16 @@ func TestEnrichMissingAplicaLocal(t *testing.T) {
 		t.Errorf("score = %v, quero >= %v", resultado.Score, LimiarAutoMatch)
 	}
 
-	// e-gap (perdedora) foi fundida em e-target -- mesma prova de aplicação
-	// do teste em lote equivalente.
+	// e-gap (loser) was merged into e-target -- the same application proof as the equivalent
+	// batch test.
 	if _, err := escrita(t, d).ObterEntity(context.Background(), "e-gap"); err == nil {
 		t.Error("e-gap ainda existe após aplicar local, quero fundida/apagada")
 	}
 }
 
-// TestEnrichMissingAplicaExterno cobre o critério §5 pelo ramo EXTERNO:
-// candidato externo forte aplica via a sequência do "Corrigir"
-// (aplicarCandidatoExterno) e o corpo traz method=external.
+// TestEnrichMissingAplicaExterno covers the criterion through the EXTERNAL branch: a strong
+// external candidate applies through the "Corrigir" sequence (aplicarCandidatoExterno) and the
+// body carries method=external.
 func TestEnrichMissingAplicaExterno(t *testing.T) {
 	resultados := []provider.ResultadoExterno{
 		{Source: "tmdb", SourceID: "335984", Type: "movie", Title: "Blade Runner 2049", Year: strp("2017")},
@@ -761,12 +747,11 @@ func TestEnrichMissingAplicaExterno(t *testing.T) {
 	}
 }
 
-// TestEnrichMissingSerieConstroiArvore cobre o briefing 0067: o retroativo/
-// enrich-missing individual (tentarEnriquecerOuSinalizar -> aplicarCandidatoExterno ->
-// s.enrich.Enriquecer) sobre uma entity type='tv' constroi temporada/episodio,
-// exatamente como POST /import ja construia -- GET /entities/{id}/members deixa de vir
-// vazio. Usa o fixture canned de fake.Provider (mesma arvore de internal/enrich/
-// enrich_arvore_test.go: 2 temporadas de 3 episodios).
+// TestEnrichMissingSerieConstroiArvore covers the series tree: the retroactive/individual
+// enrich-missing (tentarEnriquecerOuSinalizar -> aplicarCandidatoExterno -> s.enrich.Enriquecer)
+// on a type='tv' entity builds season/episode, exactly as POST /import already did --
+// GET /entities/{id}/members stops coming out empty. It uses the canned fake.Provider fixture
+// (the same tree as internal/enrich/enrich_arvore_test.go: 2 seasons of 3 episodes).
 func TestEnrichMissingSerieConstroiArvore(t *testing.T) {
 	img := servidorImagemArvoreSerie(t)
 	h, d := setupSearchServer(t, WithSearchProvider(fake.New(img.URL)), WithAssetsDir(t.TempDir()))
@@ -795,10 +780,9 @@ func TestEnrichMissingSerieConstroiArvore(t *testing.T) {
 	}
 }
 
-// TestEnrichMissingSinaliza cobre o critério §5: candidato médio (score
-// entre limiarSinalizacaoRetroativa e LimiarAutoMatch) sinaliza
-// (outcome=flagged, com score mas SEM method) -- e o item passa a aparecer
-// em GET /review.
+// TestEnrichMissingSinaliza covers the criterion: a medium candidate (score between
+// limiarSinalizacaoRetroativa and LimiarAutoMatch) flags (outcome=flagged, with a score but
+// WITHOUT method) -- and the item starts showing up in GET /review.
 func TestEnrichMissingSinaliza(t *testing.T) {
 	s, d := setupRetroativoServer(t, nil)
 	semearEntity(t, d, "e-candidato", "movie", "The Matrix Reloaded")
@@ -829,9 +813,8 @@ func TestEnrichMissingSinaliza(t *testing.T) {
 	}
 }
 
-// TestEnrichMissingSemCandidato cobre o critério §5: sem candidato plausível
-// em nenhuma fonte, outcome=none (sem method/score), 200, e a tentativa AINDA
-// é carimbada.
+// TestEnrichMissingSemCandidato covers the criterion: without a plausible candidate in any
+// source, outcome=none (no method/score), 200, and the attempt is STILL stamped.
 func TestEnrichMissingSemCandidato(t *testing.T) {
 	s, d := setupRetroativoServer(t, nil)
 	semearEntityComAno(t, d, "e-outro", "movie", "Xyzzy Plugh Quux", "2005-01-01")
@@ -860,13 +843,11 @@ func TestEnrichMissingSemCandidato(t *testing.T) {
 	}
 }
 
-// TestEnrichMissingIgnoraThrottle cobre o critério §5: o endpoint individual
-// FUNCIONA mesmo quando last_external_match_attempt_at foi carimbado há
-// MENOS do que o intervalo de throttle configurado (30 dias, neste teste) -- diferente do job em
-// lote (EnriquecerRetroativo), que nunca chegaria a chamar
-// tentarEnriquecerOuSinalizar para este item (filtrado pela query). O
-// endpoint não faz NENHUMA checagem de throttle antes de chamar a
-// orquestração.
+// TestEnrichMissingIgnoraThrottle covers the criterion: the individual endpoint WORKS even when
+// last_external_match_attempt_at was stamped FEWER days ago than the configured throttle
+// interval (30 days, in this test) -- unlike the batch job (EnriquecerRetroativo), which would
+// never get to call tentarEnriquecerOuSinalizar for this item (filtered out by the query). The
+// endpoint does NO throttle check at all before calling the orchestration.
 func TestEnrichMissingIgnoraThrottle(t *testing.T) {
 	resultados := []provider.ResultadoExterno{
 		{Source: "tmdb", SourceID: "335984", Type: "movie", Title: "Blade Runner 2049", Year: strp("2017")},
@@ -874,7 +855,7 @@ func TestEnrichMissingIgnoraThrottle(t *testing.T) {
 	s, d := setupRetroativoServer(t, resultados)
 	semearEntity(t, d, "e-gap", "movie", "Gap")
 	semearFile(t, d, "f-gap", "e-gap", "/lib/Blade Runner 2049 (2017)/Blade Runner 2049 (2017).mkv", "present", 70, "")
-	// Carimba uma tentativa BEM recente -- um throttle de lote bloquearia.
+	// Stamps a VERY recent attempt -- a batch throttle would block it.
 	carimbarTentativa(t, d, "e-gap", time.Now().Add(-1*time.Hour))
 
 	h, err := s.Handler()
@@ -891,7 +872,7 @@ func TestEnrichMissingIgnoraThrottle(t *testing.T) {
 	}
 }
 
-// TestEnrichMissingEntidadeInexistente: 404 para entity que não existe.
+// TestEnrichMissingEntidadeInexistente: 404 for an entity that does not exist.
 func TestEnrichMissingEntidadeInexistente(t *testing.T) {
 	s, _ := setupRetroativoServer(t, nil)
 	h, err := s.Handler()

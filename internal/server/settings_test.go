@@ -14,7 +14,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/ytdlp"
 )
 
-// decodeLangs decodifica o corpo de GET/PUT /settings/languages.
+// decodeLangs decodes the body of GET/PUT /settings/languages.
 func decodeLangs(t *testing.T, body []byte) languageSettings {
 	t.Helper()
 	var out languageSettings
@@ -24,8 +24,8 @@ func decodeLangs(t *testing.T, body []byte) languageSettings {
 	return out
 }
 
-// TestGetLanguageSettingsDefault cobre §5: sem linha em app_settings, o GET devolve
-// o default seguro (pt-BR / en / [pt-BR, en]).
+// TestGetLanguageSettingsDefault covers: without a row in app_settings, the GET returns
+// the safe default (pt-BR / en / [pt-BR, en]).
 func TestGetLanguageSettingsDefault(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/settings/languages", nil)
@@ -40,8 +40,8 @@ func TestGetLanguageSettingsDefault(t *testing.T) {
 	}
 }
 
-// TestPutLanguageSettingsPersiste cobre §5: PUT válido grava e o GET seguinte
-// reflete (cache invalidado).
+// TestPutLanguageSettingsPersiste covers: a valid PUT writes it and the following GET
+// reflects it (cache invalidated).
 func TestPutLanguageSettingsPersiste(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	corpo := languageSettings{Primary: "pt-BR", Fallback: "en", Allowed: []string{"pt-BR", "en", "es"}}
@@ -49,7 +49,7 @@ func TestPutLanguageSettingsPersiste(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PUT status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
 	}
-	// GET reflete o novo allowed (persistiu + cache invalidado).
+	// GET reflects the new allowed (persisted + cache invalidated).
 	recGet := do(t, h, http.MethodGet, "/api/v1/settings/languages", nil)
 	got := decodeLangs(t, recGet.Body.Bytes())
 	if len(got.Allowed) != 3 || got.Allowed[2] != "es" {
@@ -57,15 +57,15 @@ func TestPutLanguageSettingsPersiste(t *testing.T) {
 	}
 }
 
-// TestPutLanguageSettingsInvalida cobre §5: validação (principal/fallback ⊆
-// permitidos; códigos não-vazios) responde 422 no envelope padrão.
+// TestPutLanguageSettingsInvalida covers: validation (primary/fallback ⊆
+// allowed; non-empty codes) responds 422 in the standard envelope.
 func TestPutLanguageSettingsInvalida(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	casos := []languageSettings{
-		{Primary: "fr", Fallback: "en", Allowed: []string{"pt-BR", "en"}},    // principal fora
-		{Primary: "pt-BR", Fallback: "fr", Allowed: []string{"pt-BR", "en"}}, // fallback fora
-		{Primary: "pt-BR", Fallback: "en", Allowed: []string{}},              // sem permitidos
-		{Primary: "", Fallback: "en", Allowed: []string{"pt-BR", "en", ""}},  // código vazio
+		{Primary: "fr", Fallback: "en", Allowed: []string{"pt-BR", "en"}},    // primary outside
+		{Primary: "pt-BR", Fallback: "fr", Allowed: []string{"pt-BR", "en"}}, // fallback outside
+		{Primary: "pt-BR", Fallback: "en", Allowed: []string{}},              // no allowed
+		{Primary: "", Fallback: "en", Allowed: []string{"pt-BR", "en", ""}},  // empty code
 	}
 	for i, c := range casos {
 		rec := do(t, h, http.MethodPut, "/api/v1/settings/languages", c)
@@ -76,9 +76,9 @@ func TestPutLanguageSettingsInvalida(t *testing.T) {
 	}
 }
 
-// ── Enriquecimento retroativo (briefing 0085) ───────────────────────────────
+// ── Retroactive enrichment ───────────────────────────────
 
-// decodeRetro decodifica o corpo de GET/PUT /settings/enrichment-retroativo.
+// decodeRetro decodes the body of GET/PUT /settings/enrichment-retroativo.
 func decodeRetro(t *testing.T, body []byte) retroactiveEnrichmentSettings {
 	t.Helper()
 	var out retroactiveEnrichmentSettings
@@ -88,8 +88,8 @@ func decodeRetro(t *testing.T, body []byte) retroactiveEnrichmentSettings {
 	return out
 }
 
-// TestGetEnrichmentRetroativoSettingsDefault cobre o critério §5: sem linha
-// em app_settings, o GET devolve o default seguro {retry_days: 15}.
+// TestGetEnrichmentRetroativoSettingsDefault covers the criterion: without a row
+// in app_settings, the GET returns the safe default {retry_days: 15}.
 func TestGetEnrichmentRetroativoSettingsDefault(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/settings/enrichment-retroativo", nil)
@@ -102,8 +102,9 @@ func TestGetEnrichmentRetroativoSettingsDefault(t *testing.T) {
 	}
 }
 
-// TestPutEnrichmentRetroativoSettingsPersiste cobre o critério §5: PUT válido
-// grava e o GET seguinte reflete (cache invalidado, sem reiniciar o servidor).
+// TestPutEnrichmentRetroativoSettingsPersiste covers the criterion: a valid PUT
+// writes it and the following GET reflects it (cache invalidated, without restarting the
+// server).
 func TestPutEnrichmentRetroativoSettingsPersiste(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	corpo := retroactiveEnrichmentSettings{RetryDays: 7}
@@ -118,8 +119,8 @@ func TestPutEnrichmentRetroativoSettingsPersiste(t *testing.T) {
 	}
 }
 
-// TestPutEnrichmentRetroativoSettingsInvalida cobre o critério §5: retry_days
-// fora de [1, 365] → 422 invalid_body, valor anterior preservado.
+// TestPutEnrichmentRetroativoSettingsInvalida covers the criterion: retry_days
+// outside [1, 365] → 422 invalid_body, previous value preserved.
 func TestPutEnrichmentRetroativoSettingsInvalida(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	casos := []retroactiveEnrichmentSettings{
@@ -135,8 +136,8 @@ func TestPutEnrichmentRetroativoSettingsInvalida(t *testing.T) {
 		checkErrorShape(t, rec, "invalid_body")
 	}
 
-	// Valor anterior (default 15) preservado -- nenhum PUT inválido acima
-	// deveria ter gravado nada.
+	// Previous value (default 15) preserved -- no invalid PUT above
+	// should have written anything.
 	recGet := do(t, h, http.MethodGet, "/api/v1/settings/enrichment-retroativo", nil)
 	got := decodeRetro(t, recGet.Body.Bytes())
 	if got.RetryDays != 15 {
@@ -144,8 +145,8 @@ func TestPutEnrichmentRetroativoSettingsInvalida(t *testing.T) {
 	}
 }
 
-// TestPutEnrichmentRetroativoSettingsCorpoMalformado cobre o critério §5:
-// corpo JSON inválido → 400 invalid_body.
+// TestPutEnrichmentRetroativoSettingsCorpoMalformado covers the criterion:
+// invalid JSON body → 400 invalid_body.
 func TestPutEnrichmentRetroativoSettingsCorpoMalformado(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodPut, "/api/v1/settings/enrichment-retroativo", []byte(`{`))
@@ -155,9 +156,9 @@ func TestPutEnrichmentRetroativoSettingsCorpoMalformado(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// ── Materialização automática de artes (briefing 0089) ──────────────────────
+// ── Automatic artwork materialization ──────────────────────
 
-// decodeAutoMaterialize decodifica o corpo de GET/PUT
+// decodeAutoMaterialize decodes the body of GET/PUT
 // /settings/auto-materialize-artwork.
 func decodeAutoMaterialize(t *testing.T, body []byte) autoMaterializeArtworkSettings {
 	t.Helper()
@@ -168,8 +169,8 @@ func decodeAutoMaterialize(t *testing.T, body []byte) autoMaterializeArtworkSett
 	return out
 }
 
-// TestGetAutoMaterializeArtworkSettingsDefault cobre o critério §5: sem linha
-// em app_settings, o GET devolve o default seguro {enabled:false}.
+// TestGetAutoMaterializeArtworkSettingsDefault covers the criterion: without a row
+// in app_settings, the GET returns the safe default {enabled:false}.
 func TestGetAutoMaterializeArtworkSettingsDefault(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/settings/auto-materialize-artwork", nil)
@@ -182,8 +183,8 @@ func TestGetAutoMaterializeArtworkSettingsDefault(t *testing.T) {
 	}
 }
 
-// TestPutAutoMaterializeArtworkSettingsPersiste cobre o critério §5: PUT
-// grava e o GET seguinte reflete (cache invalidado).
+// TestPutAutoMaterializeArtworkSettingsPersiste covers the criterion: the PUT
+// writes it and the following GET reflects it (cache invalidated).
 func TestPutAutoMaterializeArtworkSettingsPersiste(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	corpo := autoMaterializeArtworkSettings{Enabled: true}
@@ -203,8 +204,8 @@ func TestPutAutoMaterializeArtworkSettingsPersiste(t *testing.T) {
 	}
 }
 
-// TestPutAutoMaterializeArtworkSettingsCorpoMalformado cobre o critério §5:
-// corpo JSON inválido → 400 invalid_body.
+// TestPutAutoMaterializeArtworkSettingsCorpoMalformado covers the criterion:
+// invalid JSON body → 400 invalid_body.
 func TestPutAutoMaterializeArtworkSettingsCorpoMalformado(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodPut, "/api/v1/settings/auto-materialize-artwork", []byte(`{`))
@@ -214,7 +215,8 @@ func TestPutAutoMaterializeArtworkSettingsCorpoMalformado(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestGetEntityLangInvalido cobre §5: ?lang= fora dos permitidos → 400 invalid_query.
+// TestGetEntityLangInvalido covers: ?lang= outside the allowed ones → 400
+// invalid_query.
 func TestGetEntityLangInvalido(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e", "movie", "Filme")
@@ -225,7 +227,7 @@ func TestGetEntityLangInvalido(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_query")
 }
 
-// TestListEntitiesLangInvalido cobre §5: ?lang= inválido na lista → 400.
+// TestListEntitiesLangInvalido covers: invalid ?lang= in the list → 400.
 func TestListEntitiesLangInvalido(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/entities?lang=fr", nil)
@@ -235,8 +237,9 @@ func TestListEntitiesLangInvalido(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_query")
 }
 
-// TestGetEntityResolvedLanguages cobre §5: o detalhe traz resolved_languages com o
-// idioma efetivo por campo e o shape segue plano (title é string, não objeto).
+// TestGetEntityResolvedLanguages covers: the detail brings resolved_languages with the
+// effective language per field and the shape stays flat (title is a string, not an
+// object).
 func TestGetEntityResolvedLanguages(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e", "movie", "Filme")
@@ -245,7 +248,7 @@ func TestGetEntityResolvedLanguages(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
 	}
-	// Shape plano: title é string.
+	// Flat shape: title is a string.
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
 		t.Fatalf("decodificar: %v", err)
@@ -262,18 +265,19 @@ func TestGetEntityResolvedLanguages(t *testing.T) {
 	if ent.ResolvedLanguages == nil {
 		t.Fatal("resolved_languages ausente, quero presente")
 	}
-	// title cai na base arquivo (neutra) → proveniência "".
+	// title falls back to the file base (neutral) → provenance "".
 	if prov, ok := ent.ResolvedLanguages["title"]; !ok || prov != "" {
 		t.Errorf("resolved_languages[title] = %q (ok=%v), quero \"\"", prov, ok)
 	}
 }
 
-// TestGetEntityFallbackNoBanco cobre a fiação ponta a ponta: com settings pt-BR/en e
-// external em en, o pedido pt-BR cai no fallback en (proveniência en).
+// TestGetEntityFallbackNoBanco covers the end-to-end wiring: with pt-BR/en settings and
+// the external one in en, the pt-BR request falls back to en (en provenance).
 func TestGetEntityFallbackNoBanco(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e", "movie", "Titulo Arquivo")
-	// Override com título só em inglês (formato por idioma); pt-BR ausente → cai no en.
+	// Override with a title only in english (per-language format); pt-BR absent → falls
+	// back to en.
 	_, err := escrita(t, d).UpsertMediaOverride(context.Background(), sqlcgen.UpsertMediaOverrideParams{
 		EntityID:     "e",
 		OverrideJson: nsOf(`{"title":{"en":"English Title"}}`),
@@ -294,12 +298,12 @@ func TestGetEntityFallbackNoBanco(t *testing.T) {
 	eq(t, "prov title", ent.ResolvedLanguages["title"], "en")
 }
 
-// ── yt-dlp (briefing 0101, ADR-0025) ────────────────────────────────────────
+// ── yt-dlp ────────────────────────────────────────
 
-// escreverScriptExecutavel grava um arquivo executável mínimo em `path` --
-// os testes de settings.go só precisam que o arquivo EXISTA (Status faz
-// os.Stat no path customizado, sem rodar --version); a validação de conteúdo
-// já é coberta pelos testes do próprio pacote internal/ytdlp.
+// escreverScriptExecutavel writes a minimal executable file at `path` --
+// the settings.go tests only need the file to EXIST (Status performs
+// os.Stat on the custom path, without running --version); content validation
+// is already covered by the tests of the internal/ytdlp package itself.
 func escreverScriptExecutavel(t *testing.T, path string) string {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -311,10 +315,10 @@ func escreverScriptExecutavel(t *testing.T, path string) string {
 	return path
 }
 
-// setupYtdlpServer sobe um Server com banco temporário migrado e um
-// ytdlp.Gerenciador injetado (envPath já resolvido, como main.go faria com
-// MYMEDIADB_YTDLP_PATH), para exercitar GET/PUT /settings/ytdlp ponta a
-// ponta.
+// setupYtdlpServer starts a Server with a temporary migrated database and a
+// ytdlp.Gerenciador injected (envPath already resolved, as main.go would do with
+// MYMEDIADB_YTDLP_PATH), to exercise GET/PUT /settings/ytdlp end to
+// end.
 func setupYtdlpServer(t *testing.T, envPath string) (http.Handler, *db.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "ytdlp.sqlite")
@@ -334,7 +338,7 @@ func setupYtdlpServer(t *testing.T, envPath string) (http.Handler, *db.DB) {
 	return h, database
 }
 
-// decodeYtdlp decodifica o corpo de GET/PUT /settings/ytdlp.
+// decodeYtdlp decodes the body of GET/PUT /settings/ytdlp.
 func decodeYtdlp(t *testing.T, body []byte) ytdlpStatusResponse {
 	t.Helper()
 	var out ytdlpStatusResponse
@@ -344,10 +348,10 @@ func decodeYtdlp(t *testing.T, body []byte) ytdlpStatusResponse {
 	return out
 }
 
-// TestGetYtdlpSettingsSemGerenciador cobre o caso defensivo: sem
-// ytdlp.Gerenciador injetado (setupEntitiesServer não injeta), GET
-// /settings/ytdlp degrada para indisponível/"nenhum" em vez de panicar --
-// nenhum outro endpoint do produto quebra por causa disso.
+// TestGetYtdlpSettingsSemGerenciador covers the defensive case: without a
+// ytdlp.Gerenciador injected (setupEntitiesServer does not inject one), GET
+// /settings/ytdlp degrades to unavailable/"none" instead of panicking --
+// no other endpoint of the product breaks because of it.
 func TestGetYtdlpSettingsSemGerenciador(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/settings/ytdlp", nil)
@@ -366,10 +370,10 @@ func TestGetYtdlpSettingsSemGerenciador(t *testing.T) {
 	}
 }
 
-// TestGetYtdlpSettingsOrigemEnv cobre o critério §5: com MYMEDIADB_YTDLP_PATH
-// setado (env, aqui já resolvido e passado ao Gerenciador em WithYtdlp),
-// GET /settings/ytdlp reporta origem="custom" usando esse path, sem
-// custom_binary_path (banco vazio).
+// TestGetYtdlpSettingsOrigemEnv covers the criterion: with MYMEDIADB_YTDLP_PATH
+// set (env, here already resolved and passed to the Gerenciador in WithYtdlp),
+// GET /settings/ytdlp reports origem="custom" using that path, without
+// custom_binary_path (empty database).
 func TestGetYtdlpSettingsOrigemEnv(t *testing.T) {
 	envPath := escreverScriptExecutavel(t, filepath.Join(t.TempDir(), "env-yt-dlp"))
 	h, _ := setupYtdlpServer(t, envPath)
@@ -387,17 +391,17 @@ func TestGetYtdlpSettingsOrigemEnv(t *testing.T) {
 	}
 }
 
-// TestPutYtdlpSettingsBancoVenceSobreEnv cobre o critério §5: com
-// custom_binary_path gravado via PUT /settings/ytdlp (banco), esse path vence
-// sobre a env var -- aqui provado apontando a env var para um arquivo
-// INEXISTENTE (indisponível antes do PUT) e o banco para um arquivo real
-// (disponível depois do PUT), com efeito IMEDIATO (mesma execução do
-// processo, sem reiniciar).
+// TestPutYtdlpSettingsBancoVenceSobreEnv covers the criterion: with
+// custom_binary_path written via PUT /settings/ytdlp (database), that path wins
+// over the env var -- proven here by pointing the env var at a NONEXISTENT file
+// (unavailable before the PUT) and the database at a real file
+// (available after the PUT), with IMMEDIATE effect (same execution of the
+// process, without restarting).
 func TestPutYtdlpSettingsBancoVenceSobreEnv(t *testing.T) {
 	envPath := filepath.Join(t.TempDir(), "nao-existe-env")
 	h, _ := setupYtdlpServer(t, envPath)
 
-	// Antes do PUT: só a env var (inexistente) está configurada -> indisponível.
+	// Before the PUT: only the env var (nonexistent) is configured -> unavailable.
 	recAntes := do(t, h, http.MethodGet, "/api/v1/settings/ytdlp", nil)
 	gotAntes := decodeYtdlp(t, recAntes.Body.Bytes())
 	if gotAntes.Disponivel {
@@ -417,7 +421,7 @@ func TestPutYtdlpSettingsBancoVenceSobreEnv(t *testing.T) {
 		t.Errorf("custom_binary_path = %v, quero %q", got.CustomBinaryPath, dbPath)
 	}
 
-	// GET seguinte reflete o mesmo estado (persistiu + cache invalidado).
+	// The following GET reflects the same state (persisted + cache invalidated).
 	recGet := do(t, h, http.MethodGet, "/api/v1/settings/ytdlp", nil)
 	gotGet := decodeYtdlp(t, recGet.Body.Bytes())
 	if !gotGet.Disponivel || gotGet.CustomBinaryPath == nil || *gotGet.CustomBinaryPath != dbPath {
@@ -425,10 +429,10 @@ func TestPutYtdlpSettingsBancoVenceSobreEnv(t *testing.T) {
 	}
 }
 
-// TestPutYtdlpSettingsLimpaVoltaParaEnv cobre o critério §5 (limpeza do
-// override): PUT com custom_binary_path=null apaga o path do banco e devolve
-// o controle para a env var -- aqui provado voltando a ficar indisponível
-// (env aponta pra um arquivo inexistente).
+// TestPutYtdlpSettingsLimpaVoltaParaEnv covers the criterion (clearing the
+// override): PUT with custom_binary_path=null deletes the path from the database and
+// gives control back to the env var -- proven here by becoming unavailable again
+// (the env points at a nonexistent file).
 func TestPutYtdlpSettingsLimpaVoltaParaEnv(t *testing.T) {
 	envPath := filepath.Join(t.TempDir(), "nao-existe-env")
 	h, _ := setupYtdlpServer(t, envPath)
@@ -449,9 +453,9 @@ func TestPutYtdlpSettingsLimpaVoltaParaEnv(t *testing.T) {
 	}
 }
 
-// TestPutYtdlpSettingsStringVaziaLimpaComoNull cobre a normalização do PUT:
-// string vazia tem o MESMO efeito de null (limpa o override), conforme o
-// contrato do briefing 0101 (§4).
+// TestPutYtdlpSettingsStringVaziaLimpaComoNull covers the PUT normalization:
+// an empty string has the SAME effect as null (it clears the override), according to the
+// contract.
 func TestPutYtdlpSettingsStringVaziaLimpaComoNull(t *testing.T) {
 	envPath := escreverScriptExecutavel(t, filepath.Join(t.TempDir(), "env-yt-dlp"))
 	h, _ := setupYtdlpServer(t, envPath)
@@ -467,8 +471,8 @@ func TestPutYtdlpSettingsStringVaziaLimpaComoNull(t *testing.T) {
 	}
 }
 
-// TestPutYtdlpSettingsCorpoMalformado cobre o critério §5: corpo JSON
-// inválido → 400 invalid_body, mesmo contrato de erro dos outros
+// TestPutYtdlpSettingsCorpoMalformado covers the criterion: invalid JSON
+// body → 400 invalid_body, same error contract as the other
 // /settings/*.
 func TestPutYtdlpSettingsCorpoMalformado(t *testing.T) {
 	h, _ := setupYtdlpServer(t, "")

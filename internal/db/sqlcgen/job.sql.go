@@ -28,9 +28,9 @@ type AtualizarJobConfigParams struct {
 	ID           string
 }
 
-// PATCH .../jobs/{id}: grava enabled/schedule_cron/next_run_at ja MESCLADOS
-// pelo Go (o patch e parcial na API, mas esta query sempre grava as 3 colunas
-// -- o chamador computa o valor final antes de chamar, mesmo padrao de
+// PATCH .../jobs/{id}: writes enabled/schedule_cron/next_run_at already MERGED
+// by Go (the patch is partial in the API, but this query always writes the 3
+// columns -- the caller computes the final value before calling, same pattern as
 // AtualizarLibrarySource).
 func (q *Queries) AtualizarJobConfig(ctx context.Context, arg AtualizarJobConfigParams) (JobDefinition, error) {
 	row := q.db.QueryRowContext(ctx, atualizarJobConfig,
@@ -77,10 +77,10 @@ type FinalizarJobDefinicaoParams struct {
 	ID          string
 }
 
-// Ao fim de uma execucao (Manager.Executar): espelha o resultado em
-// job_definition (redundancia de leitura, evita JOIN na listagem) e recalcula
-// next_run_at (nil quando desabilitado ou sem schedule_cron -- computado em
-// Go via cron.ParseStandard(...).Next(agora)).
+// At the end of an execution (Manager.Executar): mirrors the result into
+// job_definition (read redundancy, avoids a JOIN on the listing) and recomputes
+// next_run_at (nil when disabled or without schedule_cron -- computed in
+// Go via cron.ParseStandard(...).Next(now)).
 func (q *Queries) FinalizarJobDefinicao(ctx context.Context, arg FinalizarJobDefinicaoParams) (JobDefinition, error) {
 	row := q.db.QueryRowContext(ctx, finalizarJobDefinicao,
 		arg.LastRunAt,
@@ -115,18 +115,18 @@ FROM job_definition
 ORDER BY created_at, id
 `
 
-// Acesso a job_definition (briefing 0052): fundacao do sistema de jobs
-// (registro dinamico + agendador embutido). Comentarios em ASCII e colunas
-// explicitas -- ver a nota em entity.sql (bug de offset do sqlc v1.31 com
-// acentos/'*' em .sql de query).
+// Access to job_definition: foundation of the job system
+// (dynamic registry + embedded scheduler). Comments in ASCII and explicit
+// columns -- see the note in entity.sql (sqlc v1.31 offset bug with
+// accents/'*' in a query .sql file).
 //
-// job_execution (historico de execucao) NAO vive mais aqui desde o briefing
-// 0108/ADR-0028 (CAMADA 3): internal/job/manager.go passou a enfileirar via
-// internal/execqueue, cujo queue_item (kind='job') e a fonte unica de
-// historico -- ver internal/db/queries/queue_item.sql. A tabela job_execution
-// em si foi derrubada pela migration 0025.
-// Lista todos os jobs conhecidos (sempre tem ao menos o seed backup_vacuum),
-// ordem estavel por created_at.
+// job_execution (execution history) no longer lives here since
+// ADR-0028 (LAYER 3): internal/job/manager.go now enqueues through
+// internal/execqueue, whose queue_item (kind='job') is the single source of
+// history -- see internal/db/queries/queue_item.sql. The job_execution table
+// itself was dropped by migration 0025.
+// Lists all known jobs (there is always at least the backup_vacuum seed),
+// stable order by created_at.
 func (q *Queries) ListarJobDefinitions(ctx context.Context) ([]JobDefinition, error) {
 	rows, err := q.db.QueryContext(ctx, listarJobDefinitions)
 	if err != nil {
@@ -173,10 +173,10 @@ WHERE enabled = 1
   AND next_run_at <= ?
 `
 
-// Consulta do agendador (Manager.RunScheduler): jobs habilitados, com
-// agendamento configurado, cujo proximo horario ja passou. O Go filtra os que
-// ja estao "running" em memoria antes de disparar (nao ha essa informacao no
-// banco).
+// Scheduler query (Manager.RunScheduler): enabled jobs, with a
+// schedule configured, whose next run time has already passed. Go filters out the ones
+// already "running" in memory before firing (that information is not in the
+// database).
 func (q *Queries) ListarJobDefinitionsAgendaveis(ctx context.Context, nextRunAt sql.NullString) ([]JobDefinition, error) {
 	rows, err := q.db.QueryContext(ctx, listarJobDefinitionsAgendaveis, nextRunAt)
 	if err != nil {

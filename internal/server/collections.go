@@ -14,30 +14,33 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Este arquivo implementa a Fase B do briefing 0025 (coleção como entity interna):
-// a CRIAÇÃO manual de uma coleção LOCAL (sem fonte externa) e a EDIÇÃO de seus
-// membros (ligar/desligar itens da biblioteca). É a contraparte de escrita da leitura
-// de membros (getEntityMembers, em entities.go). Todas as escritas passam pelo pool de
-// ESCRITA (ADR-0010) — como não há fonte externa, não passam pelo enrich. Não houve
-// migração nem sqlc novo: o schema já suporta `entity type='collection'` (type é TEXT
-// livre) e a ligação por entity_relation(kind='collection'), cujo CRUD já existia.
+// This file implements Phase B of collections as an internal entity:
+// the manual CREATION of a LOCAL collection (no external source) and the EDITING of its
+// members (linking/unlinking library items). It is the write counterpart of the member
+// read (getEntityMembers, in entities.go). Every write goes through the
+// WRITE pool (ADR-0010) — since there is no external source, they do not go through enrich.
+// There was no migration nor new sqlc: the schema already supports `entity type='collection'`
+// (type is free TEXT) and the link through entity_relation(kind='collection'), whose CRUD
+// already existed.
 
-// createCollectionBody é o corpo de POST /api/v1/collections: o título (obrigatório) e a
-// descrição (opcional) de uma coleção montada do zero pelo dono.
+// createCollectionBody is the body of POST /api/v1/collections: the title (required) and the
+// description (optional) of a collection assembled from scratch by the owner.
 type createCollectionBody struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 }
 
-// addMemberBody é o corpo de POST /api/v1/entities/{id}/members: o id do item a ligar.
+// addMemberBody is the body of POST /api/v1/entities/{id}/members: the id of the item to
+// link.
 type addMemberBody struct {
 	ChildID string `json:"child_id"`
 }
 
-// createCollection trata POST /api/v1/collections: cria uma entity `type='collection'`
-// LOCAL (sem external_ids) com o título/descrição do dono e responde 201 com a entity
-// resolvida (o mesmo shape do detalhe). O status usa o DEFAULT do schema ('cataloged').
-// 400 corpo JSON inválido; 422 título vazio (só espaços conta como vazio).
+// createCollection handles POST /api/v1/collections: it creates a LOCAL
+// `type='collection'` entity (no external_ids) with the owner's title/description and responds
+// 201 with the resolved entity (the same shape as the detail). The status uses the schema
+// DEFAULT ('cataloged'). 400 invalid JSON body; 422 empty title (whitespace only counts as
+// empty).
 func (s *Server) createCollection(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -68,12 +71,12 @@ func (s *Server) createCollection(w http.ResponseWriter, r *http.Request) {
 	s.responderResolvida(w, ctx, id, http.StatusCreated)
 }
 
-// addMember trata POST /api/v1/entities/{id}/members: liga um item (child_id) à coleção
-// como membro (entity_relation kind='collection'). Valida que o pai EXISTE e é uma
-// coleção, e que o filho existe, não é ele mesmo e não é outra coleção (sem
-// aninhamento). É idempotente: religar um item já ligado é no-op (o UNIQUE também
-// protege de corrida). Responde 200 com a lista de membros ATUALIZADA (mesmo shape/
-// ordenação de GET .../members) — a UI reflete sem uma segunda ida.
+// addMember handles POST /api/v1/entities/{id}/members: it links an item (child_id) to the collection
+// as a member (entity_relation kind='collection'). It validates that the parent EXISTS and is a
+// collection, and that the child exists, is not itself and is not another collection (no
+// nesting). It is idempotent: relinking an already linked item is a no-op (the UNIQUE also
+// protects against a race). It responds 200 with the UPDATED member list (same shape/
+// ordering as GET .../members) — the UI reflects it without a second round trip.
 func (s *Server) addMember(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -102,9 +105,9 @@ func (s *Server) addMember(w http.ResponseWriter, r *http.Request) {
 	s.responderMembros(w, ctx, id)
 }
 
-// removeMember trata DELETE /api/v1/entities/{id}/members/{childId}: desliga o membro da
-// coleção. Idempotente: se o item não está ligado, é no-op (200 mesmo assim). 404 quando
-// a coleção não existe. Responde 200 com a lista de membros atualizada.
+// removeMember handles DELETE /api/v1/entities/{id}/members/{childId}: it unlinks the member from the
+// collection. Idempotent: if the item is not linked, it is a no-op (200 anyway). 404 when
+// the collection does not exist. It responds 200 with the updated member list.
 func (s *Server) removeMember(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -133,15 +136,15 @@ func (s *Server) removeMember(w http.ResponseWriter, r *http.Request) {
 				respondErroInterno(w)
 				return
 			}
-			break // UNIQUE(parent,child,kind) garante no máximo uma relação a apagar
+			break // UNIQUE(parent,child,kind) guarantees at most one relation to delete
 		}
 	}
 	s.responderMembros(w, ctx, id)
 }
 
-// exigirColecao valida que a entity {id} EXISTE e é uma coleção; escreve 404/422 e
-// devolve false quando não. Guarda comum das mutações de membros (o pai precisa ser
-// coleção para receber membros).
+// exigirColecao validates that the {id} entity EXISTS and is a collection; it writes 404/422 and
+// returns false otherwise. Common guard of the member mutations (the parent must be a
+// collection to receive members).
 func (s *Server) exigirColecao(w http.ResponseWriter, ctx context.Context, id string) bool {
 	parent, err := s.leitura().ObterEntity(ctx, id)
 	if err != nil {
@@ -159,9 +162,9 @@ func (s *Server) exigirColecao(w http.ResponseWriter, ctx context.Context, id st
 	return true
 }
 
-// validarFilho valida o child_id de addMember: não-vazio, distinto do próprio pai,
-// existente e não-coleção (sem aninhar coleções). Escreve o 422 apropriado e devolve
-// false quando alguma regra falha.
+// validarFilho validates the child_id of addMember: non-empty, distinct from the parent itself,
+// existing and not a collection (no nested collections). It writes the appropriate 422 and returns
+// false when any rule fails.
 func (s *Server) validarFilho(w http.ResponseWriter, ctx context.Context, id, childID string) bool {
 	if childID == "" {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "child_id é obrigatório")
@@ -187,9 +190,10 @@ func (s *Server) validarFilho(w http.ResponseWriter, ctx context.Context, id, ch
 	return true
 }
 
-// ligarMembroColecao cria a relação pai->filho (kind='collection') de forma IDEMPOTENTE:
-// carrega os já-ligados e pula quando o filho já é membro (o UNIQUE ainda protege de
-// corrida). Espelha o ligarMembros do enrich, mas para a edição manual da Fase B.
+// ligarMembroColecao creates the parent->child relation (kind='collection') IDEMPOTENTLY:
+// it loads the already linked ones and skips when the child is already a member (the UNIQUE still
+// protects against a race). It mirrors the ligarMembros of enrich, but for the manual editing of
+// Phase B.
 func (s *Server) ligarMembroColecao(ctx context.Context, id, childID string) error {
 	rels, err := s.leitura().ListarRelacoesFilhas(ctx, id)
 	if err != nil {
@@ -197,7 +201,7 @@ func (s *Server) ligarMembroColecao(ctx context.Context, id, childID string) err
 	}
 	for _, rel := range rels {
 		if rel.Kind == kindColecao && rel.ChildID == childID {
-			return nil // já ligado: no-op
+			return nil // already linked: no-op
 		}
 	}
 	_, err = sqlcgen.New(s.db.Write).CriarEntityRelation(ctx, sqlcgen.CriarEntityRelationParams{
@@ -209,11 +213,11 @@ func (s *Server) ligarMembroColecao(ctx context.Context, id, childID string) err
 	return err
 }
 
-// responderMembros monta e escreve a lista de membros atualizada (200) — a resposta
-// comum de add/removeMember. 500 em erro de banco.
+// responderMembros builds and writes the updated member list (200) — the common
+// response of add/removeMember. 500 on a database error.
 func (s *Server) responderMembros(w http.ResponseWriter, ctx context.Context, id string) {
-	// add/removeMember são operações de COLEÇÃO; a lista devolvida é sempre de membros
-	// por ano (kindColecao), independente de outros tipos de pai.
+	// add/removeMember are COLLECTION operations; the list returned is always of members
+	// by year (kindColecao), regardless of other parent types.
 	out, err := s.montarMembros(ctx, id, "collection")
 	if err != nil {
 		respondErroInterno(w)
@@ -222,9 +226,9 @@ func (s *Server) responderMembros(w http.ResponseWriter, ctx context.Context, id
 	writeJSON(w, http.StatusOK, out)
 }
 
-// descricaoOpcional embrulha a descrição num sql.NullString VÁLIDO só quando ela não é
-// vazia (após trim); vazia vira NULL. Alias de nsOpcional (items.go), mantido pelo nome
-// no ponto de chamada do createCollection.
+// descricaoOpcional wraps the description in a VALID sql.NullString only when it is not
+// empty (after trim); empty becomes NULL. Alias of nsOpcional (items.go), kept by name
+// at the call site of createCollection.
 func descricaoOpcional(desc string) sql.NullString {
 	return nsOpcional(desc)
 }

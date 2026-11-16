@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-// handlerFake (o Handler fake compartilhado com os testes de Manager) vive em
+// handlerFake (the fake Handler shared with the Manager tests) lives in
 // manager_test.go.
 
 func TestRegistryZeroValueUtilizavel(t *testing.T) {
@@ -50,7 +50,7 @@ func TestRegistryUltimoRegistroVence(t *testing.T) {
 	if got != Handler(h2) {
 		t.Fatal("o último a registrar deveria vencer")
 	}
-	// A ordem (primeira aparição) é preservada mesmo com substituição.
+	// The order (first appearance) is preserved even with a replacement.
 	if nomes := r.Nomes(); len(nomes) != 1 || nomes[0] != "a" {
 		t.Fatalf("Nomes() = %v, quero [a] (sem duplicar por substituição)", nomes)
 	}

@@ -11,136 +11,128 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Este arquivo implementa a config de IDIOMA em app_settings (briefing 0019):
-//   GET  /api/v1/settings/languages  — devolve {primary, fallback, allowed}
-//   PUT  /api/v1/settings/languages  — valida e persiste (upsert), invalida o cache
-// Além disso deriva a CADEIA de fallback consumida pelo resolver (ADR-0019) e faz o
-// parse/validação do ?lang= dos handlers de entities. A leitura tem cache leve em
-// memória (mutex, como o cacheExterno da busca), invalidado no PUT.
+// This file implements the LANGUAGE config in app_settings:
+//   GET  /api/v1/settings/languages  — returns {primary, fallback, allowed}
+//   PUT  /api/v1/settings/languages  — validates and persists (upsert), invalidates the cache
+// It also derives the fallback CHAIN consumed by the resolver (ADR-0019) and does the
+// parse/validation of the ?lang= of the entities handlers. The read has a light in-memory cache
+// (mutex, like the cacheExterno of the search), invalidated on the PUT.
 
-// appSettingLanguages é a chave da config de idioma em app_settings.
+// appSettingLanguages is the key of the language config in app_settings.
 const appSettingLanguages = "languages"
 
-// appSettingEnrichmentRetroativo é a chave da config de throttle do
-// enriquecimento retroativo em app_settings (briefing 0085).
+// appSettingEnrichmentRetroativo is the key of the throttle config of the retroactive
+// enrichment in app_settings.
 const appSettingEnrichmentRetroativo = "enrichment_retroativo"
 
-// appSettingAutoMaterializeArtwork é a chave do toggle de materialização
-// automática de artes em app_settings (briefing 0089).
+// appSettingAutoMaterializeArtwork is the key of the automatic artwork materialization toggle
+// in app_settings.
 const appSettingAutoMaterializeArtwork = "materializar_artes_automaticamente"
 
-// appSettingYtdlp é a chave do path customizado do binário yt-dlp em
-// app_settings (briefing 0101, ADR-0025).
+// appSettingYtdlp is the key of the customized path of the yt-dlp binary in app_settings
+// (ADR-0025).
 const appSettingYtdlp = "ytdlp"
 
-// appSettingAutoDownloadTrailerTema é a chave do toggle de download
-// automático de trailer/tema musical em app_settings (briefing 0104,
-// ADR-0026).
+// appSettingAutoDownloadTrailerTema is the key of the automatic trailer/theme song download
+// toggle in app_settings (ADR-0026).
 const appSettingAutoDownloadTrailerTema = "baixar_trailer_tema_automaticamente"
 
-// retryDaysPadrao/retryDaysMinimo/retryDaysMaximo são o default (quando nunca
-// configurado) e o intervalo válido do throttle de reentativa (briefing
-// 0085): antes uma constante fixa de 30 dias em retroativo.go, agora
-// configurável pelo dono, com default de 15 dias.
+// retryDaysPadrao/retryDaysMinimo/retryDaysMaximo are the default (when never configured) and
+// the valid range of the retry throttle: once a fixed 30-day constant in retroativo.go, now
+// configurable by the owner, with a 15-day default.
 const (
 	retryDaysPadrao = 15
 	retryDaysMinimo = 1
 	retryDaysMaximo = 365
 )
 
-// languageSettings é a config de idioma canônica (ADR-0018): idioma principal,
-// fallback e o conjunto de permitidos. Serializada como value_json da chave
-// `languages`. É também o corpo do PUT e a resposta do GET.
+// languageSettings is the canonical language config (ADR-0018): primary language, fallback and
+// the set of allowed ones. Serialized as the value_json of the `languages` key. It is also the
+// PUT body and the GET response.
 type languageSettings struct {
 	Primary  string   `json:"primary"`
 	Fallback string   `json:"fallback"`
 	Allowed  []string `json:"allowed"`
 }
 
-// defaultLanguageSettings é o DEFAULT SEGURO usado quando a linha `languages` não
-// existe (ou está corrompida): principal pt-BR, fallback en, permitidos [pt-BR, en].
-// Assim a resolução funciona de ponta a ponta antes de qualquer configuração.
+// defaultLanguageSettings is the SAFE DEFAULT used when the `languages` row does not exist (or
+// is corrupted): primary pt-BR, fallback en, allowed [pt-BR, en]. That way the resolution works
+// end-to-end before any configuration.
 func defaultLanguageSettings() languageSettings {
 	return languageSettings{Primary: "pt-BR", Fallback: "en", Allowed: []string{"pt-BR", "en"}}
 }
 
-// retroactiveEnrichmentSettings é a config de throttle do enriquecimento
-// retroativo (briefing 0085): intervalo mínimo, em dias, entre duas
-// tentativas do MESMO item sem provider. Serializada como value_json da
-// chave `enrichment_retroativo`. É também o corpo do PUT e a resposta do GET.
+// retroactiveEnrichmentSettings is the throttle config of the retroactive enrichment: the
+// minimum interval, in days, between two attempts of the SAME item without a provider.
+// Serialized as the value_json of the `enrichment_retroativo` key. It is also the PUT body and
+// the GET response.
 type retroactiveEnrichmentSettings struct {
 	RetryDays int `json:"retry_days"`
 }
 
-// defaultRetroactiveEnrichmentSettings é o DEFAULT SEGURO usado quando a linha
-// `enrichment_retroativo` não existe (ou está corrompida): 15 dias.
+// defaultRetroactiveEnrichmentSettings is the SAFE DEFAULT used when the
+// `enrichment_retroativo` row does not exist (or is corrupted): 15 days.
 func defaultRetroactiveEnrichmentSettings() retroactiveEnrichmentSettings {
 	return retroactiveEnrichmentSettings{RetryDays: retryDaysPadrao}
 }
 
-// autoMaterializeArtworkSettings é o toggle de materialização automática de
-// artes (briefing 0089): quando Enabled, todo auto-import bem-sucedido do
-// scan (filme ou série) já materializa na hora as artes do inventário na
-// pasta real da biblioteca, sem esperar o job periódico midias_faltantes nem
-// clique manual. Serializado como value_json da chave
-// `materializar_artes_automaticamente`. É também o corpo do PUT e a resposta
-// do GET.
+// autoMaterializeArtworkSettings is the automatic artwork materialization toggle: when Enabled,
+// every successful auto-import of the scan (movie or series) already materializes the inventory
+// artwork into the library's real folder right away, without waiting for the periodic
+// midias_faltantes job nor a manual click. Serialized as the value_json of the
+// `materializar_artes_automaticamente` key. It is also the PUT body and the GET response.
 type autoMaterializeArtworkSettings struct {
 	Enabled bool `json:"enabled"`
 }
 
-// defaultAutoMaterializeArtworkSettings é o DEFAULT SEGURO usado quando a
-// linha `materializar_artes_automaticamente` não existe (ou está corrompida):
-// desligado -- materialização automática é opt-in (o dono liga quando quiser).
+// defaultAutoMaterializeArtworkSettings is the SAFE DEFAULT used when the
+// `materializar_artes_automaticamente` row does not exist (or is corrupted): off -- automatic
+// materialization is opt-in (the owner turns it on when he wants).
 func defaultAutoMaterializeArtworkSettings() autoMaterializeArtworkSettings {
 	return autoMaterializeArtworkSettings{Enabled: false}
 }
 
-// autoDownloadTrailerTemaSettings é o toggle de download automático de
-// trailer/tema musical (briefing 0104, ADR-0026): quando Enabled, os dois
-// mecanismos compartilham o MESMO toggle (ver ADR-0026 item 5) --
-// (a) o job periódico `trailer_tema_faltantes` continua sempre registrado/
-// agendável independente deste toggle; (b) todo auto-import bem-sucedido do
-// scan (filme ou série) dispara, em goroutine best-effort, uma tentativa de
-// baixar trailer/tema para o item novo, sem esperar o job periódico nem
-// clique manual. Serializado como value_json da chave
-// `baixar_trailer_tema_automaticamente`. É também o corpo do PUT e a
-// resposta do GET.
+// autoDownloadTrailerTemaSettings is the automatic trailer/theme song download toggle
+// (ADR-0026): when Enabled, both mechanisms share the SAME toggle (see ADR-0026 item 5) --
+// (a) the periodic `trailer_tema_faltantes` job stays always registered/schedulable regardless
+// of this toggle; (b) every successful auto-import of the scan (movie or series) fires, in a
+// best-effort goroutine, an attempt to download trailer/theme for the new item, without waiting
+// for the periodic job nor a manual click. Serialized as the value_json of the
+// `baixar_trailer_tema_automaticamente` key. It is also the PUT body and the GET response.
 type autoDownloadTrailerTemaSettings struct {
 	Enabled bool `json:"enabled"`
 }
 
-// defaultAutoDownloadTrailerTemaSettings é o DEFAULT SEGURO usado quando a
-// linha `baixar_trailer_tema_automaticamente` não existe (ou está
-// corrompida): desligado -- download automático é opt-in (o dono liga
-// quando quiser).
+// defaultAutoDownloadTrailerTemaSettings is the SAFE DEFAULT used when the
+// `baixar_trailer_tema_automaticamente` row does not exist (or is corrupted): off -- automatic
+// download is opt-in (the owner turns it on when he wants).
 func defaultAutoDownloadTrailerTemaSettings() autoDownloadTrailerTemaSettings {
 	return autoDownloadTrailerTemaSettings{Enabled: false}
 }
 
-// ytdlpPathSettings é o path customizado do binário yt-dlp configurado pelo
-// dono (briefing 0101, ADR-0025): {"custom_binary_path": string|null}.
-// Serializado como value_json da chave `ytdlp`. É o corpo do PUT (o GET devolve
-// o shape mais rico ytdlpStatusResponse, abaixo). Tem PRECEDÊNCIA sobre a env
-// var MYMEDIADB_YTDLP_PATH (mesmo espírito do ADR-0023) -- aplicada em runtime
-// via ytdlp.Gerenciador.SetCustomPath, sem reiniciar o processo.
+// ytdlpPathSettings is the customized path of the yt-dlp binary configured by the owner
+// (ADR-0025): {"custom_binary_path": string|null}. Serialized as the value_json of the `ytdlp`
+// key. It is the PUT body (the GET returns the richer shape ytdlpStatusResponse, below). It
+// takes PRECEDENCE over the MYMEDIADB_YTDLP_PATH env var (the same spirit as ADR-0023) --
+// applied at runtime through ytdlp.Gerenciador.SetCustomPath, without restarting the
+// process.
 type ytdlpPathSettings struct {
 	CustomBinaryPath *string `json:"custom_binary_path"`
 }
 
-// defaultYtdlpPathSettings é o DEFAULT SEGURO usado quando a linha `ytdlp`
-// não existe (ou está corrompida): nenhum path customizado -- o Gerenciador
-// cai para a env var (se houver) ou o download automático.
+// defaultYtdlpPathSettings is the SAFE DEFAULT used when the `ytdlp` row does not exist (or is
+// corrupted): no customized path -- the Gerenciador falls back to the env var (if any) or the
+// automatic download.
 func defaultYtdlpPathSettings() ytdlpPathSettings {
 	return ytdlpPathSettings{CustomBinaryPath: nil}
 }
 
-// ytdlpStatusResponse é o corpo devolvido por GET/PUT /settings/ytdlp: o
-// status EFETIVO do Gerenciador (disponível/origem/detalhe, calculado por
-// ytdlp.Gerenciador.Status) mais o path customizado atualmente gravado no
-// banco. `origem` não distingue se um path "custom" veio do banco ou da env
-// var (o contrato só expõe custom_binary_path do BANCO -- a env var nunca é
-// ecoada por API, mesmo espírito de nunca expor segredo/config de boot).
+// ytdlpStatusResponse is the body returned by GET/PUT /settings/ytdlp: the EFFECTIVE status of
+// the Gerenciador (available/origin/detail, computed by ytdlp.Gerenciador.Status) plus the
+// customized path currently stored in the database. `origem` does not distinguish whether a
+// "custom" path came from the database or from the env var (the contract only exposes the
+// custom_binary_path of the DATABASE -- the env var is never echoed by the API, the same spirit
+// of never exposing a secret/boot config).
 type ytdlpStatusResponse struct {
 	Disponivel       bool    `json:"disponivel"`
 	Origem           string  `json:"origem"`
@@ -148,10 +140,10 @@ type ytdlpStatusResponse struct {
 	Detalhe          *string `json:"detalhe"`
 }
 
-// settingsCache guarda em memória a config de idioma e a de throttle do
-// enriquecimento retroativo já decodificadas, protegidas pelo MESMO mutex.
-// `carregado`/`retroCarregado` distinguem "ainda não lido" de "lido" (o valor
-// pode ser o default). Invalidados no PUT correspondente.
+// settingsCache keeps the already decoded language config and retroactive enrichment throttle
+// config in memory, protected by the SAME mutex. `carregado`/`retroCarregado` distinguish "not
+// read yet" from "read" (the value may be the default). Invalidated on the corresponding
+// PUT.
 type settingsCache struct {
 	mu        sync.Mutex
 	carregado bool
@@ -170,9 +162,9 @@ type settingsCache struct {
 	ytdlpPath      ytdlpPathSettings
 }
 
-// obterLanguageSettings devolve a config de idioma, do cache quando já carregada,
-// senão lendo app_settings pela conexão de LEITURA. Linha ausente ou JSON inválido
-// ⇒ default seguro (nunca erro por isso). Só um erro real de banco é propagado.
+// obterLanguageSettings returns the language config, from the cache when already loaded,
+// otherwise reading app_settings through the READ connection. Missing row or invalid JSON ⇒
+// safe default (never an error for that). Only a real database error is propagated.
 func (s *Server) obterLanguageSettings(ctx context.Context) (languageSettings, error) {
 	s.settings.mu.Lock()
 	defer s.settings.mu.Unlock()
@@ -200,11 +192,10 @@ func (s *Server) obterLanguageSettings(ctx context.Context) (languageSettings, e
 	return langs, nil
 }
 
-// obterRetroactiveEnrichmentSettings devolve a config de throttle do
-// enriquecimento retroativo, do cache quando já carregada, senão lendo
-// app_settings pela conexão de LEITURA. Linha ausente ou JSON inválido ⇒
-// default seguro (nunca erro por isso). Só um erro real de banco é propagado.
-// Espelha obterLanguageSettings linha a linha (briefing 0085).
+// obterRetroactiveEnrichmentSettings returns the throttle config of the retroactive enrichment,
+// from the cache when already loaded, otherwise reading app_settings through the READ
+// connection. Missing row or invalid JSON ⇒ safe default (never an error for that). Only a real
+// database error is propagated. It mirrors obterLanguageSettings line by line.
 func (s *Server) obterRetroactiveEnrichmentSettings(ctx context.Context) (retroactiveEnrichmentSettings, error) {
 	s.settings.mu.Lock()
 	defer s.settings.mu.Unlock()
@@ -232,12 +223,11 @@ func (s *Server) obterRetroactiveEnrichmentSettings(ctx context.Context) (retroa
 	return retro, nil
 }
 
-// obterAutoMaterializeArtworkSettings devolve o toggle de materialização
-// automática de artes, do cache quando já carregado, senão lendo
-// app_settings pela conexão de LEITURA. Linha ausente ou JSON inválido ⇒
-// default seguro (desligado, nunca erro por isso). Só um erro real de banco
-// é propagado. Espelha obterLanguageSettings/obterRetroactiveEnrichmentSettings
-// linha a linha (briefing 0089).
+// obterAutoMaterializeArtworkSettings returns the automatic artwork materialization toggle, from
+// the cache when already loaded, otherwise reading app_settings through the READ connection.
+// Missing row or invalid JSON ⇒ safe default (off, never an error for that). Only a real
+// database error is propagated. It mirrors
+// obterLanguageSettings/obterRetroactiveEnrichmentSettings line by line.
 func (s *Server) obterAutoMaterializeArtworkSettings(ctx context.Context) (autoMaterializeArtworkSettings, error) {
 	s.settings.mu.Lock()
 	defer s.settings.mu.Unlock()
@@ -265,12 +255,11 @@ func (s *Server) obterAutoMaterializeArtworkSettings(ctx context.Context) (autoM
 	return cfg, nil
 }
 
-// obterAutoDownloadTrailerTemaSettings devolve o toggle de download
-// automático de trailer/tema musical, do cache quando já carregado, senão
-// lendo app_settings pela conexão de LEITURA. Linha ausente ou JSON
-// inválido ⇒ default seguro (desligado, nunca erro por isso). Só um erro
-// real de banco é propagado. Espelha obterAutoMaterializeArtworkSettings
-// linha a linha (briefing 0104).
+// obterAutoDownloadTrailerTemaSettings returns the automatic trailer/theme song download toggle,
+// from the cache when already loaded, otherwise reading app_settings through the READ
+// connection. Missing row or invalid JSON ⇒ safe default (off, never an error for that). Only a
+// real database error is propagated. It mirrors obterAutoMaterializeArtworkSettings line by
+// line.
 func (s *Server) obterAutoDownloadTrailerTemaSettings(ctx context.Context) (autoDownloadTrailerTemaSettings, error) {
 	s.settings.mu.Lock()
 	defer s.settings.mu.Unlock()
@@ -298,16 +287,14 @@ func (s *Server) obterAutoDownloadTrailerTemaSettings(ctx context.Context) (auto
 	return cfg, nil
 }
 
-// obterYtdlpPathSettings devolve o path customizado do yt-dlp gravado no
-// banco, do cache quando já carregado, senão lendo app_settings pela conexão
-// de LEITURA. Linha ausente ou JSON inválido ⇒ default seguro (nenhum path
-// customizado). Só um erro real de banco é propagado. Ao (re)carregar,
-// sincroniza o valor no ytdlp.Gerenciador (s.ytdlp.SetCustomPath) -- é assim
-// que o override persistido passa a valer, tanto no boot (chamado uma vez em
-// montarServicos) quanto depois de um PUT (invalidarSettings zera o cache,
-// forçando esta releitura na próxima chamada). Sem s.ytdlp injetado, só
-// devolve a config (sem sincronizar nada) -- cenário defensivo de teste de
-// rota sem Gerenciador.
+// obterYtdlpPathSettings returns the customized yt-dlp path stored in the database, from the
+// cache when already loaded, otherwise reading app_settings through the READ connection. Missing
+// row or invalid JSON ⇒ safe default (no customized path). Only a real database error is
+// propagated. On (re)load it synchronizes the value into ytdlp.Gerenciador
+// (s.ytdlp.SetCustomPath) -- that is how the persisted override starts to apply, both at boot
+// (called once in montarServicos) and after a PUT (invalidarSettings zeroes the cache, forcing
+// this re-read on the next call). Without s.ytdlp injected, it only returns the config (without
+// synchronizing anything) -- a defensive scenario of route test without a Gerenciador.
 func (s *Server) obterYtdlpPathSettings(ctx context.Context) (ytdlpPathSettings, error) {
 	s.settings.mu.Lock()
 	defer s.settings.mu.Unlock()
@@ -338,11 +325,11 @@ func (s *Server) obterYtdlpPathSettings(ctx context.Context) (ytdlpPathSettings,
 	return cfg, nil
 }
 
-// montarYtdlpStatusResponse monta o corpo de GET/PUT /settings/ytdlp: o
-// status efetivo (via s.ytdlp.Status) mais o path customizado gravado no
-// banco. Sem s.ytdlp injetado, degrada para indisponível/"nenhum" em vez de
-// consultar um Gerenciador inexistente (cenário defensivo, não deveria
-// ocorrer em produção -- main.go sempre injeta via WithYtdlp).
+// montarYtdlpStatusResponse builds the body of GET/PUT /settings/ytdlp: the effective status
+// (through s.ytdlp.Status) plus the customized path stored in the database. Without s.ytdlp
+// injected, it degrades to unavailable/"none" instead of querying an inexistent Gerenciador (a
+// defensive scenario, it should not happen in production -- main.go always injects it through
+// WithYtdlp).
 func (s *Server) montarYtdlpStatusResponse(ctx context.Context, pathCfg ytdlpPathSettings) ytdlpStatusResponse {
 	if s.ytdlp == nil {
 		detalhe := "yt-dlp nao configurado neste servidor"
@@ -365,7 +352,7 @@ func (s *Server) montarYtdlpStatusResponse(ctx context.Context, pathCfg ytdlpPat
 	return resp
 }
 
-// invalidarSettings zera o cache (chamado após o PUT gravar).
+// invalidarSettings zeroes the cache (called after the PUT writes).
 func (s *Server) invalidarSettings() {
 	s.settings.mu.Lock()
 	s.settings.carregado = false
@@ -376,9 +363,9 @@ func (s *Server) invalidarSettings() {
 	s.settings.mu.Unlock()
 }
 
-// valida diz se a config é internamente consistente (ADR-0018): principal e fallback
-// não-vazios e ∈ allowed; ao menos um permitido, todos não-vazios. É a regra do PUT
-// e o guarda contra um value_json corrompido no banco.
+// valida tells whether the config is internally consistent (ADR-0018): primary and fallback
+// non-empty and ∈ allowed; at least one allowed, all of them non-empty. It is the PUT rule and
+// the guard against a corrupted value_json in the database.
 func (l languageSettings) valida() bool {
 	if l.Primary == "" || l.Fallback == "" || len(l.Allowed) == 0 {
 		return false
@@ -391,14 +378,14 @@ func (l languageSettings) valida() bool {
 	return l.permite(l.Primary) && l.permite(l.Fallback)
 }
 
-// valida diz se a config de throttle é internamente consistente (briefing
-// 0085): retry_days dentro de [retryDaysMinimo, retryDaysMaximo]. É a regra
-// do PUT e o guarda contra um value_json corrompido no banco.
+// valida tells whether the throttle config is internally consistent: retry_days within
+// [retryDaysMinimo, retryDaysMaximo]. It is the PUT rule and the guard against a corrupted
+// value_json in the database.
 func (r retroactiveEnrichmentSettings) valida() bool {
 	return r.RetryDays >= retryDaysMinimo && r.RetryDays <= retryDaysMaximo
 }
 
-// permite diz se o código está no conjunto de permitidos.
+// permite tells whether the code is in the allowed set.
 func (l languageSettings) permite(codigo string) bool {
 	for _, a := range l.Allowed {
 		if a == codigo {
@@ -408,10 +395,10 @@ func (l languageSettings) permite(codigo string) bool {
 	return false
 }
 
-// cadeiaDeIdiomas deriva a cadeia de fallback para um `lang` pedido (ADR-0019):
-// `[lang, fallback, original_language?]` DEDUPLICADA, terminando implicitamente na
-// base neutra (arquivo — o resolver cai nela quando a cadeia se esgota). Entradas
-// vazias são descartadas.
+// cadeiaDeIdiomas derives the fallback chain for a requested `lang` (ADR-0019):
+// `[lang, fallback, original_language?]` DEDUPLICATED, ending implicitly at the neutral base
+// (the file — the resolver falls back to it when the chain runs out). Empty entries are
+// discarded.
 func (l languageSettings) cadeiaDeIdiomas(lang string, originalLanguage sql.NullString) []string {
 	bruta := []string{lang, l.Fallback}
 	if originalLanguage.Valid && originalLanguage.String != "" {
@@ -432,8 +419,8 @@ func (l languageSettings) cadeiaDeIdiomas(lang string, originalLanguage sql.Null
 	return cadeia
 }
 
-// parseLang lê o ?lang= validando contra os permitidos. Ausente ⇒ principal
-// (default). Presente mas fora dos permitidos ⇒ 400 invalid_query (ok=false).
+// parseLang reads the ?lang= validating it against the allowed ones. Absent ⇒ primary (default).
+// Present but outside the allowed ones ⇒ 400 invalid_query (ok=false).
 func (s *Server) parseLang(w http.ResponseWriter, cfg languageSettings, lang string) (string, bool) {
 	if lang == "" {
 		return cfg.Primary, true
@@ -446,8 +433,8 @@ func (s *Server) parseLang(w http.ResponseWriter, cfg languageSettings, lang str
 	return lang, true
 }
 
-// getLanguageSettings trata GET /api/v1/settings/languages: devolve a config atual
-// (ou o default seguro quando ausente).
+// getLanguageSettings handles GET /api/v1/settings/languages: it returns the current config (or
+// the safe default when absent).
 func (s *Server) getLanguageSettings(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -460,9 +447,9 @@ func (s *Server) getLanguageSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, cfg)
 }
 
-// putLanguageSettings trata PUT /api/v1/settings/languages: valida (principal e
-// fallback ⊆ permitidos, códigos não-vazios) e faz upsert, invalidando o cache.
-// Corpo malformado ⇒ 400; inválido ⇒ 422; sucesso ⇒ 200 com a config gravada.
+// putLanguageSettings handles PUT /api/v1/settings/languages: it validates (primary and fallback
+// ⊆ allowed, non-empty codes) and upserts, invalidating the cache. Malformed body ⇒ 400; invalid
+// ⇒ 422; success ⇒ 200 with the written config.
 func (s *Server) putLanguageSettings(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -495,9 +482,8 @@ func (s *Server) putLanguageSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, body)
 }
 
-// getAutoMaterializeArtworkSettings trata GET
-// /api/v1/settings/auto-materialize-artwork (briefing 0089): devolve o
-// toggle atual (ou o default seguro {enabled:false} quando ausente). Espelha
+// getAutoMaterializeArtworkSettings handles GET /api/v1/settings/auto-materialize-artwork: it
+// returns the current toggle (or the safe default {enabled:false} when absent). It mirrors
 // getLanguageSettings/getEnrichmentRetroativoSettings.
 func (s *Server) getAutoMaterializeArtworkSettings(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
@@ -511,12 +497,10 @@ func (s *Server) getAutoMaterializeArtworkSettings(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, cfg)
 }
 
-// putAutoMaterializeArtworkSettings trata PUT
-// /api/v1/settings/auto-materialize-artwork (briefing 0089): faz upsert do
-// toggle, invalidando o cache. Corpo malformado ⇒ 400 invalid_body; sucesso
-// ⇒ 200 com o valor gravado. Espelha putLanguageSettings/
-// putEnrichmentRetroativoSettings (sem etapa de validação semântica: um bool
-// não tem estado inválido além de "não decodificou").
+// putAutoMaterializeArtworkSettings handles PUT /api/v1/settings/auto-materialize-artwork: it
+// upserts the toggle, invalidating the cache. Malformed body ⇒ 400 invalid_body; success ⇒ 200
+// with the written value. It mirrors putLanguageSettings/putEnrichmentRetroativoSettings (with
+// no semantic validation step: a bool has no invalid state beyond "it did not decode").
 func (s *Server) putAutoMaterializeArtworkSettings(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -544,9 +528,8 @@ func (s *Server) putAutoMaterializeArtworkSettings(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, body)
 }
 
-// getAutoDownloadTrailerTemaSettings trata GET
-// /api/v1/settings/auto-download-trailer-tema (briefing 0104): devolve o
-// toggle atual (ou o default seguro {enabled:false} quando ausente). Espelha
+// getAutoDownloadTrailerTemaSettings handles GET /api/v1/settings/auto-download-trailer-tema: it
+// returns the current toggle (or the safe default {enabled:false} when absent). It mirrors
 // getAutoMaterializeArtworkSettings.
 func (s *Server) getAutoDownloadTrailerTemaSettings(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
@@ -560,12 +543,10 @@ func (s *Server) getAutoDownloadTrailerTemaSettings(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, cfg)
 }
 
-// putAutoDownloadTrailerTemaSettings trata PUT
-// /api/v1/settings/auto-download-trailer-tema (briefing 0104): faz upsert do
-// toggle, invalidando o cache. Corpo malformado ⇒ 400 invalid_body; sucesso
-// ⇒ 200 com o valor gravado. Espelha putAutoMaterializeArtworkSettings (sem
-// etapa de validação semântica: um bool não tem estado inválido além de
-// "não decodificou").
+// putAutoDownloadTrailerTemaSettings handles PUT /api/v1/settings/auto-download-trailer-tema: it
+// upserts the toggle, invalidating the cache. Malformed body ⇒ 400 invalid_body; success ⇒ 200
+// with the written value. It mirrors putAutoMaterializeArtworkSettings (with no semantic
+// validation step: a bool has no invalid state beyond "it did not decode").
 func (s *Server) putAutoDownloadTrailerTemaSettings(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -593,9 +574,9 @@ func (s *Server) putAutoDownloadTrailerTemaSettings(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, body)
 }
 
-// getEnrichmentRetroativoSettings trata GET /api/v1/settings/enrichment-retroativo
-// (briefing 0085): devolve a config atual (ou o default seguro {retry_days:15}
-// quando ausente). Espelha getLanguageSettings.
+// getEnrichmentRetroativoSettings handles GET /api/v1/settings/enrichment-retroativo: it returns
+// the current config (or the safe default {retry_days:15} when absent). It mirrors
+// getLanguageSettings.
 func (s *Server) getEnrichmentRetroativoSettings(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -608,10 +589,9 @@ func (s *Server) getEnrichmentRetroativoSettings(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, cfg)
 }
 
-// putEnrichmentRetroativoSettings trata PUT /api/v1/settings/enrichment-retroativo
-// (briefing 0085): valida (retry_days ∈ [1, 365]) e faz upsert, invalidando o
-// cache. Corpo malformado ⇒ 400; inválido ⇒ 422; sucesso ⇒ 200 com a config
-// gravada. Espelha putLanguageSettings.
+// putEnrichmentRetroativoSettings handles PUT /api/v1/settings/enrichment-retroativo: it validates
+// (retry_days ∈ [1, 365]) and upserts, invalidating the cache. Malformed body ⇒ 400; invalid ⇒
+// 422; success ⇒ 200 with the written config. It mirrors putLanguageSettings.
 func (s *Server) putEnrichmentRetroativoSettings(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -644,12 +624,11 @@ func (s *Server) putEnrichmentRetroativoSettings(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, body)
 }
 
-// getYtdlpSettings trata GET /api/v1/settings/ytdlp (briefing 0101,
-// ADR-0025): devolve o status EFETIVO do binário yt-dlp (path customizado do
-// banco vence sobre a env var MYMEDIADB_YTDLP_PATH, que vence sobre o
-// binário baixado dinamicamente) mais o path customizado gravado no banco.
-// Nunca 500 por falta de yt-dlp -- indisponibilidade é um ESTADO normal do
-// corpo (disponivel=false + detalhe), não um erro HTTP.
+// getYtdlpSettings handles GET /api/v1/settings/ytdlp (ADR-0025): it returns the EFFECTIVE
+// status of the yt-dlp binary (the customized path from the database wins over the
+// MYMEDIADB_YTDLP_PATH env var, which wins over the dynamically downloaded binary) plus the
+// customized path stored in the database. Never a 500 for lack of yt-dlp -- unavailability is a
+// normal STATE of the body (disponivel=false + detail), not an HTTP error.
 func (s *Server) getYtdlpSettings(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -662,13 +641,12 @@ func (s *Server) getYtdlpSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.montarYtdlpStatusResponse(r.Context(), pathCfg))
 }
 
-// putYtdlpSettings trata PUT /api/v1/settings/ytdlp (briefing 0101,
-// ADR-0025): grava (ou limpa, quando null/string vazia) o path customizado
-// no banco e sincroniza IMEDIATAMENTE o ytdlp.Gerenciador (SetCustomPath) --
-// efeito em runtime, sem reiniciar o processo (diferente do TMDB do 0095:
-// aqui não há credencial de provider envolvida no boot, só um path de
-// binário). Corpo malformado ⇒ 400 invalid_body; sucesso ⇒ 200 com o status
-// efetivo recalculado (mesmo shape do GET).
+// putYtdlpSettings handles PUT /api/v1/settings/ytdlp (ADR-0025): it writes (or clears, when
+// null/empty string) the customized path in the database and synchronizes the
+// ytdlp.Gerenciador (SetCustomPath) IMMEDIATELY -- a runtime effect, without restarting the
+// process (unlike the TMDB integration: here no provider credential is involved at boot, only a
+// binary path). Malformed body ⇒ 400 invalid_body; success ⇒ 200 with the effective status
+// recomputed (the same shape as the GET).
 func (s *Server) putYtdlpSettings(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -678,8 +656,8 @@ func (s *Server) putYtdlpSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "corpo JSON inválido")
 		return
 	}
-	// string vazia == null: ambos limpam o override (voltam a herdar a env
-	// var/download automático).
+	// empty string == null: both clear the override (they go back to inheriting the env
+	// var/automatic download).
 	if body.CustomBinaryPath != nil && *body.CustomBinaryPath == "" {
 		body.CustomBinaryPath = nil
 	}

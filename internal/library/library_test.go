@@ -1,6 +1,7 @@
-// Testes do serviço de datasources. Ficam no pacote externo library_test e
-// exercitam o serviço contra um banco real e o sistema de arquivos real, para
-// que a cobertura das funções do pacote library seja atribuída a ele próprio.
+// Tests of the datasource service. They live in the external library_test
+// package and exercise the service against a real database and the real
+// filesystem, so that the coverage of the library package functions is
+// attributed to it.
 package library_test
 
 import (
@@ -16,7 +17,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 )
 
-// novoServico abre um banco temporário migrado e devolve o serviço pronto.
+// novoServico opens a temporary migrated database and returns the ready
+// service.
 func novoServico(t *testing.T) *library.Service {
 	t.Helper()
 	d, err := db.Open(db.Config{Path: filepath.Join(t.TempDir(), "lib.sqlite")})
@@ -34,8 +36,9 @@ func novoServico(t *testing.T) *library.Service {
 	return library.New(d)
 }
 
-// abrirDBMigrado abre um banco temporário migrado e devolve o *db.DB cru (para os
-// testes que precisam semear pela conexão de escrita, além do serviço).
+// abrirDBMigrado opens a temporary migrated database and returns the raw *db.DB
+// (for the tests that need to seed through the write connection, besides the
+// service).
 func abrirDBMigrado(t *testing.T) *db.DB {
 	t.Helper()
 	d, err := db.Open(db.Config{Path: filepath.Join(t.TempDir(), "lib.sqlite")})
@@ -53,9 +56,10 @@ func abrirDBMigrado(t *testing.T) *db.DB {
 	return d
 }
 
-// semearFonteComArquivo cria entity + media_file (vinculado à fonte) + vínculo pela
-// conexão de escrita (mesmo caminho do scanner) e devolve a entity e o arquivo. A
-// entity precisa existir antes: o media_file referencia entity(id) NOT NULL.
+// semearFonteComArquivo creates entity + media_file (linked to the source) +
+// link through the write connection (the same path the scanner takes) and
+// returns the entity and the file. The entity must exist first: the media_file
+// references entity(id) NOT NULL.
 func semearFonteComArquivo(t *testing.T, d *db.DB, src library.Source) (sqlcgen.Entity, sqlcgen.MediaFile) {
 	t.Helper()
 	ctx := context.Background()
@@ -236,13 +240,13 @@ func TestObterInexistente(t *testing.T) {
 	}
 }
 
-// TestContentType cobre o campo content_type (0034): vazio normaliza para "movie"
-// (compat), e "series" persiste e volta na leitura.
+// TestContentType covers the content_type field (ADR-0021): empty normalizes to
+// "movie" (compatibility), and "series" persists and comes back on read.
 func TestContentType(t *testing.T) {
 	s := novoServico(t)
 	ctx := context.Background()
 
-	// Omitido => "movie".
+	// Omitted => "movie".
 	filme, err := s.Criar(ctx, t.TempDir(), "movie", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar filme: %v", err)
@@ -251,7 +255,7 @@ func TestContentType(t *testing.T) {
 		t.Errorf("content_type (omitido) = %q, quero movie", filme.ContentType)
 	}
 
-	// "series" persiste e volta no Obter.
+	// "series" persists and comes back in Obter.
 	serie, err := s.Criar(ctx, t.TempDir(), "tv", "series", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar serie: %v", err)
@@ -283,20 +287,21 @@ func TestApagar(t *testing.T) {
 	if _, err := s.Obter(ctx, src.ID); !errors.Is(err, library.ErrNaoEncontrado) {
 		t.Errorf("após Apagar, Obter erro = %v, quero ErrNaoEncontrado", err)
 	}
-	// Apagar inexistente -> ErrNaoEncontrado.
+	// Deleting a nonexistent one -> ErrNaoEncontrado.
 	if err := s.Apagar(ctx, "nada"); !errors.Is(err, library.ErrNaoEncontrado) {
 		t.Errorf("Apagar inexistente erro = %v, quero ErrNaoEncontrado", err)
 	}
 }
 
-// TestAtualizarPathRecascaCascata cobre o núcleo do briefing 0070: trocar o
-// path de uma fonte recasca em cascata media_file.path (direto e via
-// media_file_entity), asset.local_path e entity.nfo_path, preservando id/
-// content_hash/vínculos -- sem re-scan. Cobre os dois caminhos de alcance de
-// entity: DIRETO (media_file.entity_id, caso do filme) e via JUNÇÃO
-// (media_file_entity, caso do episódio, cujo arquivo aponta para a SÉRIE).
-// Um dos subcaminhos usa acento (pt-BR) no nome da pasta para validar que o
-// TrimPrefix em Go (byte-safe) não diverge do SQLite (que conta codepoint).
+// TestAtualizarPathRecascaCascata covers the core of the datasource repoint (see
+// doc 06): changing the path of a source cascades the re-prefixing to
+// media_file.path (directly and through media_file_entity), asset.local_path and
+// entity.nfo_path, preserving id/content_hash/links -- with no re-scan. It
+// covers both ways of reaching an entity: DIRECT (media_file.entity_id, the
+// movie case) and through a JOIN (media_file_entity, the episode case, whose
+// file points at the SERIES). One of the sub-paths uses an accent (pt-BR) in the
+// folder name to validate that TrimPrefix in Go (byte-safe) does not diverge
+// from SQLite (which counts codepoints).
 func TestAtualizarPathRecascaCascata(t *testing.T) {
 	ctx := context.Background()
 	d := abrirDBMigrado(t)
@@ -309,9 +314,9 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 		t.Fatalf("Criar: %v", err)
 	}
 
-	// Caso 1 (via JUNÇÃO): media_file aponta para a SÉRIE; o EPISÓDIO só é
-	// alcançado por media_file_entity (ADR-0021). Subpasta acentuada de
-	// propósito.
+	// Case 1 (through a JOIN): media_file points at the SERIES; the EPISODE is
+	// only reached through media_file_entity (ADR-0021). Accented subfolder on
+	// purpose.
 	serie, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "serie-1", Type: "tv", Title: "Série"})
 	if err != nil {
 		t.Fatalf("CriarEntity serie: %v", err)
@@ -349,7 +354,7 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 		t.Fatalf("AtualizarAssetLocalPath episodio: %v", err)
 	}
 
-	// nfo_path da SÉRIE (alcançada DIRETO por media_file.entity_id).
+	// nfo_path of the SERIES (reached DIRECTLY through media_file.entity_id).
 	nfoPathAntigoSerie := filepath.Join(dirAntigo, "tvshow.nfo")
 	if err := q.AtualizarEntityNfo(ctx, sqlcgen.AtualizarEntityNfoParams{
 		NfoPath:      sql.NullString{String: nfoPathAntigoSerie, Valid: true},
@@ -359,8 +364,8 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 		t.Fatalf("AtualizarEntityNfo serie: %v", err)
 	}
 
-	// Caso 2 (DIRETO): filme, media_file.entity_id aponta direto para a
-	// entity (sem junção), na MESMA fonte.
+	// Case 2 (DIRECT): movie, media_file.entity_id points straight at the
+	// entity (no join), in the SAME source.
 	filme, err := q.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "filme-1", Type: "movie", Title: "Filme"})
 	if err != nil {
 		t.Fatalf("CriarEntity filme: %v", err)
@@ -387,8 +392,9 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AtualizarAssetLocalPath filme: %v", err)
 	}
-	// asset SEM local_path (arte nunca materializada em disco): a cascata
-	// deve ignorá-lo (sem erro), sem tentar recascar um valor nulo.
+	// asset WITHOUT local_path (artwork never materialized on disk): the
+	// cascade must ignore it (without an error), without trying to re-prefix a
+	// null value.
 	assetSemLocal, err := q.CriarAsset(ctx, sqlcgen.CriarAssetParams{
 		ID: "asset-filme-sem-local", EntityID: filme.ID, Kind: "fanart", Origin: "external", PathOrUri: "/cache/fanart.jpg",
 	})
@@ -396,10 +402,11 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 		t.Fatalf("CriarAsset sem local_path: %v", err)
 	}
 
-	// Caso 3 (DEFENSIVO, §6 do briefing): media_file com library_source_id
-	// da fonte, mas path que NÃO começa com o prefixo antigo (situação
-	// patológica que não deveria ocorrer na prática). A cascata deve pular
-	// esta linha sem tocar nela e sem quebrar o resto da transação.
+	// Case 3 (DEFENSIVE, §6 of the repoint design): media_file with the
+	// library_source_id of the source, but a path that does NOT start with the
+	// old prefix (a pathological situation that should not occur in practice).
+	// The cascade must skip this row without touching it and without breaking
+	// the rest of the transaction.
 	pathEstranho := filepath.Join(t.TempDir(), "fora-do-prefixo.mkv")
 	mfEstranho, err := q.CriarMediaFile(ctx, sqlcgen.CriarMediaFileParams{
 		ID: "mf-estranho-1", EntityID: filme.ID, Path: pathEstranho,
@@ -427,8 +434,8 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 
 	r := sqlcgen.New(d.Read)
 
-	// media_file do episódio: MESMO id, MESMO content_hash implícito (não
-	// setado aqui, mas o restante da linha preservado), path recascado.
+	// media_file of the episode: SAME id, SAME implicit content_hash (not set
+	// here, but the rest of the row preserved), path re-prefixed.
 	gotMfEp, err := r.ObterMediaFile(ctx, mfEp.ID)
 	if err != nil {
 		t.Fatalf("ObterMediaFile episodio: %v", err)
@@ -441,7 +448,7 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 		t.Errorf("media_file(episodio).entity_id mudou: %q, quero %q", gotMfEp.EntityID, serie.ID)
 	}
 
-	// media_file do filme: id/content_hash preservados, path recascado.
+	// media_file of the movie: id/content_hash preserved, path re-prefixed.
 	gotMfFilme, err := r.ObterMediaFile(ctx, mfFilme.ID)
 	if err != nil {
 		t.Fatalf("ObterMediaFile filme: %v", err)
@@ -454,7 +461,7 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 		t.Errorf("content_hash do filme não preservado: %+v", gotMfFilme.ContentHash)
 	}
 
-	// asset.local_path do episódio (entity alcançada via JUNÇÃO) recascado.
+	// asset.local_path of the episode (entity reached through a JOIN) re-prefixed.
 	gotAssetEp, err := r.ObterAsset(ctx, assetEp.ID)
 	if err != nil {
 		t.Fatalf("ObterAsset episodio: %v", err)
@@ -464,7 +471,7 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 		t.Errorf("asset(episodio).local_path = %+v, quero %q", gotAssetEp.LocalPath, queroAssetEp)
 	}
 
-	// asset.local_path do filme (entity alcançada DIRETO) recascado.
+	// asset.local_path of the movie (entity reached DIRECTLY) re-prefixed.
 	gotAssetFilme, err := r.ObterAsset(ctx, assetFilme.ID)
 	if err != nil {
 		t.Fatalf("ObterAsset filme: %v", err)
@@ -474,8 +481,8 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 		t.Errorf("asset(filme).local_path = %+v, quero %q", gotAssetFilme.LocalPath, queroAssetFilme)
 	}
 
-	// entity.nfo_path da série recascado; nfo_written_at PRESERVADO (não é
-	// uma nova exportação, só o prefixo mudou de lugar).
+	// entity.nfo_path of the series re-prefixed; nfo_written_at PRESERVED (this
+	// is not a new export, only the prefix moved).
 	gotSerie, err := r.ObterEntity(ctx, serie.ID)
 	if err != nil {
 		t.Fatalf("ObterEntity serie: %v", err)
@@ -488,7 +495,7 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 		t.Errorf("entity(serie).nfo_written_at mudou: %+v, quero preservado", gotSerie.NfoWrittenAt)
 	}
 
-	// asset sem local_path: cascata não quebra nem inventa um valor.
+	// asset without local_path: the cascade neither breaks nor invents a value.
 	gotAssetSemLocal, err := r.ObterAsset(ctx, assetSemLocal.ID)
 	if err != nil {
 		t.Fatalf("ObterAsset sem local_path: %v", err)
@@ -497,8 +504,9 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 		t.Errorf("asset sem local_path ganhou um valor: %+v", gotAssetSemLocal.LocalPath)
 	}
 
-	// media_file "estranho" (path fora do prefixo antigo, caso defensivo do
-	// §6): permanece INTOCADO -- a cascata não corrompe um path que não bate.
+	// "foreign" media_file (path outside the old prefix, the defensive case of
+	// §6): it stays UNTOUCHED -- the cascade does not corrupt a path that does
+	// not match.
 	gotMfEstranho, err := r.ObterMediaFile(ctx, mfEstranho.ID)
 	if err != nil {
 		t.Fatalf("ObterMediaFile estranho: %v", err)
@@ -507,7 +515,7 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 		t.Errorf("media_file estranho foi tocado: path = %q, quero %q intacto", gotMfEstranho.Path, pathEstranho)
 	}
 
-	// library_source.path persistido (relido do zero).
+	// library_source.path persisted (read back from scratch).
 	relido, err := s.Obter(ctx, src.ID)
 	if err != nil {
 		t.Fatalf("Obter apos AtualizarPath: %v", err)
@@ -517,8 +525,8 @@ func TestAtualizarPathRecascaCascata(t *testing.T) {
 	}
 }
 
-// TestAtualizarPathNoOp cobre o no-op: path novo IGUAL ao atual não toca o
-// banco, devolve 200 com a fonte como está.
+// TestAtualizarPathNoOp covers the no-op: a new path EQUAL to the current one
+// does not touch the database and returns 200 with the source as it is.
 func TestAtualizarPathNoOp(t *testing.T) {
 	s := novoServico(t)
 	ctx := context.Background()
@@ -540,7 +548,8 @@ func TestAtualizarPathNoOp(t *testing.T) {
 	}
 }
 
-// TestAtualizarPathDuplicado cobre a colisão com OUTRA fonte já cadastrada.
+// TestAtualizarPathDuplicado covers the collision with ANOTHER source already
+// registered.
 func TestAtualizarPathDuplicado(t *testing.T) {
 	s := novoServico(t)
 	ctx := context.Background()
@@ -559,7 +568,7 @@ func TestAtualizarPathDuplicado(t *testing.T) {
 	if !errors.Is(err, library.ErrPathDuplicado) {
 		t.Errorf("erro = %v, quero ErrPathDuplicado", err)
 	}
-	// A fonte A não deve ter sido tocada.
+	// Source A must not have been touched.
 	relido, err := s.Obter(ctx, srcA.ID)
 	if err != nil {
 		t.Fatalf("Obter A: %v", err)
@@ -569,8 +578,8 @@ func TestAtualizarPathDuplicado(t *testing.T) {
 	}
 }
 
-// TestAtualizarPathErrosDeValidacao cobre os mesmos erros 422/400 de Criar,
-// agora via AtualizarPath.
+// TestAtualizarPathErrosDeValidacao covers the same 422/400 errors of Criar,
+// now through AtualizarPath.
 func TestAtualizarPathErrosDeValidacao(t *testing.T) {
 	s := novoServico(t)
 	ctx := context.Background()
@@ -640,16 +649,17 @@ func TestAtualizarPathIdInexistente(t *testing.T) {
 	}
 }
 
-// TestApagarComArquivos cobre o fix 0035: apagar uma fonte que já escaneou
-// arquivos deve funcionar (antes dava 500 pela FK sem ON DELETE). Verifica que,
-// na mesma transação, os media_file da fonte e seus vínculos media_file_entity
-// somem (cascade da migration 0009), enquanto a entity do catálogo PERMANECE.
+// TestApagarComArquivos covers the fix: deleting a source that already scanned
+// files must work (it used to return 500 because of the FK without ON DELETE).
+// It verifies that, in the same transaction, the media_file of the source and
+// their media_file_entity links disappear (cascade of migration 0009), while the
+// catalog entity REMAINS.
 func TestApagarComArquivos(t *testing.T) {
 	ctx := context.Background()
 	d := abrirDBMigrado(t)
 	s := library.New(d)
 
-	// Fonte de séries com um episódio escaneado.
+	// Series source with one scanned episode.
 	src, err := s.Criar(ctx, t.TempDir(), "tv", "series", nil, nil)
 	if err != nil {
 		t.Fatalf("Criar: %v", err)
@@ -657,21 +667,21 @@ func TestApagarComArquivos(t *testing.T) {
 
 	ent, mf := semearFonteComArquivo(t, d, src)
 
-	// Apaga a fonte: não pode explodir mesmo com arquivos vinculados.
+	// Deletes the source: it must not blow up even with linked files.
 	if err := s.Apagar(ctx, src.ID); err != nil {
 		t.Fatalf("Apagar com arquivos: %v", err)
 	}
 
-	// Fonte sumiu.
+	// The source is gone.
 	if _, err := s.Obter(ctx, src.ID); !errors.Is(err, library.ErrNaoEncontrado) {
 		t.Errorf("após Apagar, Obter erro = %v, quero ErrNaoEncontrado", err)
 	}
-	// media_file sumiu.
+	// The media_file is gone.
 	r := sqlcgen.New(d.Read)
 	if _, err := r.ObterMediaFile(ctx, mf.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("media_file ainda existe (erro = %v), quero sql.ErrNoRows", err)
 	}
-	// Vínculo media_file_entity cascateou.
+	// The media_file_entity link cascaded.
 	vinculos, err := r.ListarVinculosPorArquivo(ctx, mf.ID)
 	if err != nil {
 		t.Fatalf("ListarVinculosPorArquivo: %v", err)
@@ -679,7 +689,7 @@ func TestApagarComArquivos(t *testing.T) {
 	if len(vinculos) != 0 {
 		t.Errorf("vínculos = %d, quero 0 (cascade)", len(vinculos))
 	}
-	// Entity do catálogo PERMANECE (não purgamos entities -- 0008 §6).
+	// The catalog entity REMAINS (entities are not purged -- API decision, §6).
 	if _, err := r.ObterEntity(ctx, ent.ID); err != nil {
 		t.Errorf("entity deveria permanecer, mas ObterEntity = %v", err)
 	}

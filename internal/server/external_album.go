@@ -1,18 +1,18 @@
 package server
 
-// Este arquivo implementa GET /api/v1/external/{source}/album/{id} (briefing 0115
-// Parte 2, ADR-0029): a tela de "faixas faltando" do álbum -- molde ESTRUTURAL de
-// external_colecao.go (GET .../collection/{id}), adaptado à vertical de música: em
-// vez de coleção→filmes, é álbum→faixas oficiais do release. A fonte é consultada
-// via a capacidade OPCIONAL provider.MusicaAlbumProvider (BuscarAlbumPorMbid, o
-// caminho DIRETO por MBID de release-group -- a entity `album` interna já grava
-// esse MBID em external_ids); fontes sem essa capacidade degradam com 503.
-// `internal_id` (interno-first, 0026) é preenchido tanto no álbum quanto em cada
-// faixa já catalogada, casando por MBID (idInternoPorMbid, interno.go) -- o mesmo
-// MBID que ImportarFaixaPossuida/importarFaixa/ImportarFaixaAvulsa gravam em
-// external_ids ao criar a faixa. O segmento estático "album" tem precedência sobre
-// o {type} de GET /external/{source}/{type}/{id} no chi (mesmo mecanismo do
-// segmento "collection", ver server.go).
+// This file implements GET /api/v1/external/{source}/album/{id} (ADR-0029): the album's
+// "missing tracks" screen -- a STRUCTURAL mold of external_colecao.go
+// (GET .../collection/{id}), adapted to the music vertical: instead of
+// collection→movies, it is album→official tracks of the release. The source is queried
+// through the OPTIONAL capability provider.MusicaAlbumProvider (BuscarAlbumPorMbid, the
+// DIRECT path by release-group MBID -- the internal `album` entity already stores that
+// MBID in external_ids); sources without that capability degrade with 503. `internal_id`
+// (internal-first) is filled in both on the album and on each already cataloged track,
+// matching by MBID (idInternoPorMbid, interno.go) -- the same MBID that
+// ImportarFaixaPossuida/importarFaixa/ImportarFaixaAvulsa write into external_ids when
+// creating the track. The static "album" segment takes precedence over the {type} of
+// GET /external/{source}/{type}/{id} in chi (the same mechanism as the "collection"
+// segment, see server.go).
 
 import (
 	"context"
@@ -24,39 +24,40 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// albumExternoDTO é a resposta de GET /external/{source}/album/{id}: os metadados
-// do álbum e suas faixas oficiais (release escolhido pelo provider). `tracks` sai
-// sempre como `[]` (nunca null).
+// albumExternoDTO is the response of GET /external/{source}/album/{id}: the album
+// metadata and its official tracks (the release chosen by the provider). `tracks` always
+// comes out as `[]` (never null).
 type albumExternoDTO struct {
 	Source   string  `json:"source"`
 	SourceID string  `json:"source_id"`
 	Name     string  `json:"name"`
 	Year     *string `json:"year"`
 	Genre    *string `json:"genre"`
-	// InternalID é o id da entity álbum interna quando este álbum JÁ foi
-	// importado; nil caso contrário. Na prática esta tela só é alcançada a partir
-	// de um álbum já interno (link da TracklistAlbum), mas o campo segue o mesmo
-	// contrato de coleção/série (interno-first, 0026).
+	// InternalID is the id of the internal album entity when this album was ALREADY
+	// imported; nil otherwise. In practice this screen is only reached from an album that
+	// is already internal (the TracklistAlbum link), but the field follows the same
+	// collection/series contract (internal-first).
 	InternalID *string           `json:"internal_id"`
 	Tracks     []faixaExternaDTO `json:"tracks"`
 }
 
-// faixaExternaDTO é uma faixa oficial do release (recording do MusicBrainz).
+// faixaExternaDTO is an official track of the release (a MusicBrainz recording).
 type faixaExternaDTO struct {
 	SourceID    string  `json:"source_id"`
 	Title       string  `json:"title"`
 	TrackNumber int     `json:"track_number"`
 	DiscNumber  int     `json:"disc_number"`
 	ISRC        *string `json:"isrc"`
-	// InternalID é o id da entity faixa interna quando esta faixa JÁ foi
-	// importada (ligada ao álbum via entity_relation kind=music_album); nil caso
-	// contrário -- a UI então oferece "Importar" para essa faixa.
+	// InternalID is the id of the internal track entity when this track was ALREADY
+	// imported (linked to the album through entity_relation kind=music_album); nil
+	// otherwise -- the UI then offers "Importar" for that track.
 	InternalID *string `json:"internal_id"`
 }
 
-// getExternalAlbum trata GET /api/v1/external/{source}/album/{id}?lang=. 503 sem
-// fonte externa (ou fonte sem a capacidade seletiva de álbum); 404 álbum
-// inexistente na fonte; 502 fonte falhou; 200 com o álbum e suas faixas.
+// getExternalAlbum handles GET /api/v1/external/{source}/album/{id}?lang=. 503 without an
+// external source (or a source without the selective album capability); 404 album that
+// does not exist in the source; 502 the source failed; 200 with the album and its
+// tracks.
 func (s *Server) getExternalAlbum(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -96,8 +97,8 @@ func (s *Server) getExternalAlbum(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.montarAlbumExterno(ctx, source, alb))
 }
 
-// montarAlbumExterno compõe o DTO do álbum: anota o id interno do álbum e de cada
-// faixa já importada (interno-first, 0026), casando por MBID.
+// montarAlbumExterno composes the album DTO: it annotates the internal id of the album
+// and of each already imported track (internal-first), matching by MBID.
 func (s *Server) montarAlbumExterno(ctx context.Context, source string, alb provider.AlbumExterno) albumExternoDTO {
 	faixas := make([]faixaExternaDTO, 0, len(alb.Faixas))
 	for _, fx := range alb.Faixas {
@@ -121,9 +122,9 @@ func (s *Server) montarAlbumExterno(ctx context.Context, source string, alb prov
 	}
 }
 
-// strOuNil converte uma string vazia (campo ausente na fonte) em nil, para o JSON
-// sair `null` em vez de `""` -- mesmo contrato de ponteiro opcional que
-// AlbumExterno.Year/Genre e FaixaExterna.ISRC usam.
+// strOuNil converts an empty string (a field absent from the source) into nil, so the
+// JSON comes out as `null` instead of `""` -- the same optional-pointer contract that
+// AlbumExterno.Year/Genre and FaixaExterna.ISRC use.
 func strOuNil(s string) *string {
 	if s == "" {
 		return nil

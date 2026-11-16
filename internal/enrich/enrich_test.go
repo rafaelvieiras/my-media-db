@@ -16,16 +16,16 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// fakeProvider implementa provider.Provider sem rede real: BuscarDetalhe devolve um
-// raw fixo (ou erro); MapearDetalhe devolve campos canonicos fixos (com o
-// poster_url apontando para um httptest de imagem). Nome()="tmdb" para casar o
-// find-or-create por external_id_tmdb.
+// fakeProvider implements provider.Provider without a real network: BuscarDetalhe returns a
+// fixed raw (or an error); MapearDetalhe returns fixed canonical fields (with
+// poster_url pointing at an image httptest). Nome()="tmdb" to match the
+// find-or-create by external_id_tmdb.
 type fakeProvider struct {
 	raw      json.RawMessage
 	campos   map[string]any
 	erro     error
 	chamadas int
-	langs    []string // últimos idiomas recebidos por BuscarDetalhe (0020)
+	langs    []string // last languages received by BuscarDetalhe
 }
 
 func (f *fakeProvider) Nome() string { return "tmdb" }
@@ -47,7 +47,7 @@ func (f *fakeProvider) MapearDetalhe(json.RawMessage) (map[string]any, error) {
 	return f.campos, nil
 }
 
-// setupDB sobe um banco temporario migrado.
+// setupDB starts a temporary migrated database.
 func setupDB(t *testing.T) *db.DB {
 	t.Helper()
 	database, err := db.Open(db.Config{Path: filepath.Join(t.TempDir(), "enrich.sqlite")})
@@ -61,7 +61,7 @@ func setupDB(t *testing.T) *db.DB {
 	return database
 }
 
-// servidorImagem serve um binario de imagem fake com o content-type dado.
+// servidorImagem serves a fake image binary with the given content-type.
 func servidorImagem(t *testing.T, contentType string, corpo []byte) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -72,7 +72,7 @@ func servidorImagem(t *testing.T, contentType string, corpo []byte) *httptest.Se
 	return srv
 }
 
-// novoServico monta o Servico com um assetsDir temporario e o provider fake.
+// novoServico builds the Servico with a temporary assetsDir and the fake provider.
 func novoServico(t *testing.T, database *db.DB, prov provider.Provider) (*Servico, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -85,7 +85,7 @@ func TestEnriquecerGravaExternalIDsEPoster(t *testing.T) {
 	imgBytes := []byte("BYTES-DA-IMAGEM-FAKE")
 	img := servidorImagem(t, "image/jpeg", imgBytes)
 
-	// Entity pobre pre-existente (ex.: draft do scanner).
+	// Pre-existing poor entity (e.g.: draft from the scanner).
 	w := sqlcgen.New(database.Write)
 	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "e1", Type: "movie", Title: "arquivo.mkv"}); err != nil {
 		t.Fatalf("CriarEntity: %v", err)
@@ -100,7 +100,7 @@ func TestEnriquecerGravaExternalIDsEPoster(t *testing.T) {
 	}
 
 	r := sqlcgen.New(database.Read)
-	// media_external guarda o RAW.
+	// media_external stores the RAW.
 	ext, err := r.ObterMediaExternalPorFonte(ctx, sqlcgen.ObterMediaExternalPorFonteParams{EntityID: "e1", Source: "tmdb"})
 	if err != nil {
 		t.Fatalf("ObterMediaExternalPorFonte: %v", err)
@@ -111,17 +111,17 @@ func TestEnriquecerGravaExternalIDsEPoster(t *testing.T) {
 	if ext.SourceID.String != "603" {
 		t.Errorf("source_id = %q, quero 603", ext.SourceID.String)
 	}
-	// external_ids atualizado (identidade MD4).
+	// external_ids updated (MD4 identity).
 	ent, _ := r.ObterEntity(ctx, "e1")
 	if ent.ExternalIDTmdb.String != "603" {
 		t.Errorf("external_id_tmdb = %q, quero 603 (external_ids=%q)", ent.ExternalIDTmdb.String, ent.ExternalIdsJson.String)
 	}
-	// asset poster origin=external com binario em disco.
+	// poster asset with origin=external and the binary on disk.
 	verificarPosterExterno(t, r, "e1", dir, imgBytes)
 }
 
-// TestEnriquecerCacheiaBackdrop confere que o enrich cacheia o FUNDO (backdrop)
-// como asset fanart origin=external, como o poster (paridade da tela rica).
+// TestEnriquecerCacheiaBackdrop checks that the enrich caches the BACKGROUND (backdrop)
+// as a fanart asset with origin=external, like the poster (parity of the rich screen).
 func TestEnriquecerCacheiaBackdrop(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -143,7 +143,7 @@ func TestEnriquecerCacheiaBackdrop(t *testing.T) {
 	}
 
 	r := sqlcgen.New(database.Read)
-	// asset fanart origin=external com o binario do backdrop em disco, sob assetsDir.
+	// fanart asset with origin=external holding the backdrop binary on disk, under assetsDir.
 	asset, err := r.ObterAssetPorEntityKindOrigin(ctx, sqlcgen.ObterAssetPorEntityKindOriginParams{EntityID: "e1", Kind: "fanart", Origin: "external"})
 	if err != nil {
 		t.Fatalf("asset fanart ausente: %v", err)
@@ -158,14 +158,14 @@ func TestEnriquecerCacheiaBackdrop(t *testing.T) {
 	if string(gravado) != "BACKDROP-BYTES" {
 		t.Errorf("binario do fanart diverge do baixado")
 	}
-	// Poster e fanart convivem (os dois kinds cacheados).
+	// Poster and fanart coexist (both kinds cached).
 	if _, err := r.ObterAssetPorEntityKindOrigin(ctx, sqlcgen.ObterAssetPorEntityKindOriginParams{EntityID: "e1", Kind: "poster", Origin: "external"}); err != nil {
 		t.Errorf("poster deveria coexistir com o fanart: %v", err)
 	}
 }
 
-// verificarPosterExterno confere que existe um asset poster origin=external, sob o
-// assetsDir, e que seu binario em disco bate com o esperado.
+// verificarPosterExterno checks that a poster asset with origin=external exists, under the
+// assetsDir, and that its binary on disk matches the expected one.
 func verificarPosterExterno(t *testing.T, r *sqlcgen.Queries, entityID, dir string, want []byte) {
 	t.Helper()
 	asset, err := r.ObterAssetPorEntityKindOrigin(context.Background(), sqlcgen.ObterAssetPorEntityKindOriginParams{EntityID: entityID, Kind: "poster", Origin: "external"})
@@ -193,7 +193,7 @@ func TestReEnriquecerNaoDestruvivo(t *testing.T) {
 	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "e1", Type: "movie", Title: "t"}); err != nil {
 		t.Fatalf("CriarEntity: %v", err)
 	}
-	// Override do dono e arte origin=user pre-existentes: NAO podem ser tocados.
+	// The owner's override and the origin=user artwork are pre-existing: they must NOT be touched.
 	if _, err := w.UpsertMediaOverride(ctx, sqlcgen.UpsertMediaOverrideParams{EntityID: "e1", OverrideJson: nsValid(`{"title":"Titulo do Dono"}`)}); err != nil {
 		t.Fatalf("UpsertMediaOverride: %v", err)
 	}
@@ -212,14 +212,14 @@ func TestReEnriquecerNaoDestruvivo(t *testing.T) {
 
 	r := sqlcgen.New(database.Read)
 	verificarNaoDestrutivo(t, r, "e1")
-	// Dedup: exatamente 1 asset origin=external (re-enrich reusa, nao duplica).
+	// Dedup: exactly 1 asset with origin=external (re-enrich reuses, does not duplicate).
 	if n := contarAssetsExternos(t, r, "e1"); n != 1 {
 		t.Errorf("assets origin=external = %d, quero 1 (dedup)", n)
 	}
 }
 
-// verificarNaoDestrutivo confere que o override do dono e a arte origin=user
-// seguem intactos apos o (re-)enriquecimento.
+// verificarNaoDestrutivo checks that the owner's override and the origin=user artwork
+// remain intact after the (re-)enrichment.
 func verificarNaoDestrutivo(t *testing.T, r *sqlcgen.Queries, entityID string) {
 	t.Helper()
 	ctx := context.Background()
@@ -233,7 +233,7 @@ func verificarNaoDestrutivo(t *testing.T, r *sqlcgen.Queries, entityID string) {
 	}
 }
 
-// contarAssetsExternos conta os assets origin=external de uma entity.
+// contarAssetsExternos counts the assets with origin=external of an entity.
 func contarAssetsExternos(t *testing.T, r *sqlcgen.Queries, entityID string) int {
 	t.Helper()
 	assets, _ := r.ListarAssetsPorEntity(context.Background(), entityID)
@@ -246,9 +246,9 @@ func contarAssetsExternos(t *testing.T, r *sqlcgen.Queries, entityID string) int
 	return n
 }
 
-// TestEnriquecerGravaOriginalLanguage prova que o enrich grava a ancora do fallback
-// (entity.original_language) a partir do campo do detalhe (0020), passa os idiomas
-// permitidos ao provider, e que re-enriquecer NAO destroi o override do dono.
+// TestEnriquecerGravaOriginalLanguage proves that the enrich writes the fallback anchor
+// (entity.original_language) from the detail field, passes the allowed languages
+// to the provider, and that re-enriching does NOT destroy the owner's override.
 func TestEnriquecerGravaOriginalLanguage(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -257,7 +257,7 @@ func TestEnriquecerGravaOriginalLanguage(t *testing.T) {
 	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "e1", Type: "movie", Title: "t"}); err != nil {
 		t.Fatalf("CriarEntity: %v", err)
 	}
-	// Override do dono pre-existente: re-enrich nao pode toca-lo.
+	// Pre-existing owner override: re-enrich must not touch it.
 	if _, err := w.UpsertMediaOverride(ctx, sqlcgen.UpsertMediaOverrideParams{EntityID: "e1", OverrideJson: nsValid(`{"title":"Dono"}`)}); err != nil {
 		t.Fatalf("UpsertMediaOverride: %v", err)
 	}
@@ -278,10 +278,10 @@ func TestEnriquecerGravaOriginalLanguage(t *testing.T) {
 	if ent.OriginalLanguage.String != "ja" {
 		t.Errorf("original_language = %q, quero 'ja' (ancora do fallback)", ent.OriginalLanguage.String)
 	}
-	// Os idiomas permitidos foram repassados ao provider.
+	// The allowed languages were forwarded to the provider.
 	eqLista(t, "langs repassados", fake.langs, permitidos)
 
-	// Re-enrich: override do dono intacto.
+	// Re-enrich: the owner's override is intact.
 	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", permitidos, false); err != nil {
 		t.Fatalf("re-Enriquecer: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestEnriquecerGravaOriginalLanguage(t *testing.T) {
 	}
 }
 
-// eqLista compara duas listas de string em ordem (helper de teste).
+// eqLista compares two string lists in order (test helper).
 func eqLista(t *testing.T, name string, got, want []string) {
 	t.Helper()
 	if len(got) != len(want) {
@@ -309,7 +309,7 @@ func eqLista(t *testing.T, name string, got, want []string) {
 func TestEnriquecerFalhaImagemDegrada(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
-	// Servidor de imagem que sempre falha (500).
+	// Image server that always fails (500).
 	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))
@@ -322,7 +322,7 @@ func TestEnriquecerFalhaImagemDegrada(t *testing.T) {
 	fake := &fakeProvider{raw: json.RawMessage(`{"title":"X"}`), campos: map[string]any{"title": "X", "poster_url": bad.URL + "/p.jpg"}}
 	svc, _ := novoServico(t, database, fake)
 
-	// Enrich NAO quebra por causa da imagem.
+	// The enrich does NOT break because of the image.
 	if err := svc.Enriquecer(ctx, "e1", "tmdb", "603", "movie", []string{"pt-BR", "en"}, false); err != nil {
 		t.Fatalf("Enriquecer nao deveria falhar por imagem: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestEnriquecerFalhaImagemDegrada(t *testing.T) {
 	if _, err := r.ObterMediaExternalPorFonte(ctx, sqlcgen.ObterMediaExternalPorFonteParams{EntityID: "e1", Source: "tmdb"}); err != nil {
 		t.Errorf("media_external deveria existir mesmo sem poster: %v", err)
 	}
-	// Sem asset externo (imagem falhou).
+	// No external asset (the image failed).
 	if _, err := r.ObterAssetPorEntityKindOrigin(ctx, sqlcgen.ObterAssetPorEntityKindOriginParams{EntityID: "e1", Kind: "poster", Origin: "external"}); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("nao deveria haver asset externo apos falha de imagem (err=%v)", err)
 	}
@@ -360,7 +360,7 @@ func TestImportarCriaDepoisReusa(t *testing.T) {
 		t.Errorf("status = %q, quero cataloged (default)", ent.Status)
 	}
 
-	// Segundo import com o mesmo id externo: reusa (dedup MD4), nao cria outra.
+	// Second import with the same external id: reuse (MD4 dedup), it does not create another.
 	id2, criada2, err := svc.Importar(ctx, "tmdb", "777", "movie", []string{"pt-BR", "en"})
 	if err != nil {
 		t.Fatalf("Importar #2: %v", err)
@@ -377,11 +377,11 @@ func TestImportarCriaDepoisReusa(t *testing.T) {
 	}
 }
 
-// TestImportarTituloDeMapaPorIdioma cobre a REGRESSAO do 0020: quando o provider
-// devolve "title" como map[idioma]valor (envelope multi-idioma), o titulo inicial
-// gravado na entity tem de ser o do idioma PRINCIPAL (langs[0]) -- nao o sourceID.
-// Antes, a assercao `.(string)` falhava no map e a entity nascia com o id numerico
-// como titulo (o "numero no lugar do nome" na lista).
+// TestImportarTituloDeMapaPorIdioma covers the REGRESSION of the multi-language model:
+// when the provider returns "title" as map[language]value (the multi-language envelope), the
+// initial title written on the entity has to be the one of the PRIMARY language (langs[0]) --
+// not the sourceID. Before, the `.(string)` assertion failed on the map and the entity was born
+// with the numeric id as its title (the "number instead of the name" in the list).
 func TestImportarTituloDeMapaPorIdioma(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -404,14 +404,14 @@ func TestImportarTituloDeMapaPorIdioma(t *testing.T) {
 	}
 }
 
-// TestEnriquecerCuraTituloNumerico cobre a AUTO-CURA: uma entity que ficou com o
-// titulo == sourceID (item importado ANTES do conserto) tem o titulo recomputado do
-// detalhe ao ser re-enriquecida. Um titulo ja legivel NAO e tocado.
+// TestEnriquecerCuraTituloNumerico covers the AUTO-HEALING: an entity that ended up with
+// the title == sourceID (an item imported BEFORE the fix) has its title recomputed from the
+// detail when it is re-enriched. An already readable title is NOT touched.
 func TestEnriquecerCuraTituloNumerico(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
 	w := sqlcgen.New(database.Write)
-	// Entity "quebrada": titulo == id da fonte (o fallback numerico pre-fix).
+	// "Broken" entity: title == id of the source (the numeric fallback from before the fix).
 	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "e1", Type: "movie", Title: "438631"}); err != nil {
 		t.Fatalf("CriarEntity: %v", err)
 	}
@@ -430,8 +430,8 @@ func TestEnriquecerCuraTituloNumerico(t *testing.T) {
 	}
 }
 
-// TestEnriquecerNaoTocaTituloLegivel garante que a cura e ESTRITA: um titulo que ja
-// e legivel (diferente do sourceID) permanece intacto no re-enriquecimento.
+// TestEnriquecerNaoTocaTituloLegivel guarantees that the healing is STRICT: a title that is
+// already readable (different from the sourceID) remains intact on re-enrichment.
 func TestEnriquecerNaoTocaTituloLegivel(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -454,8 +454,8 @@ func TestEnriquecerNaoTocaTituloLegivel(t *testing.T) {
 	}
 }
 
-// TestImportarTituloCaiNoSourceID garante o fallback final: sem nenhum titulo no
-// mapa canonico, a entity usa o sourceID (comportamento defensivo preservado).
+// TestImportarTituloCaiNoSourceID guarantees the final fallback: with no title at all in the
+// canonical map, the entity uses the sourceID (defensive behaviour preserved).
 func TestImportarTituloCaiNoSourceID(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()

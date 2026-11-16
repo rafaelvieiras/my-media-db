@@ -1,13 +1,13 @@
-// Package libraryhealth implementa o Handler do job `saude_biblioteca`
-// (briefing 0053, follow-up explicito do 0052): a fila de revisao (/review) e
-// a de orfas (/orphans) sao QUERY AO VIVO sobre entity/media_file (briefing
-// 0018) -- so refletem a realidade do disco depois que ALGUEM roda um scan
-// manual daquela library_source. Se um arquivo some do disco sem ninguem
-// re-escanear, a entity continua 'present' para sempre. Este job fecha essa
-// lacuna: dispara um re-scan de TODA fonte cadastrada, espera cada um
-// terminar e resume o estado das filas de curadoria ao final -- prova de
-// extensibilidade do sistema de jobs (0052 §5): so um novo Handler + uma
-// linha de seed, sem tocar o schema/endpoints de job.
+// Package libraryhealth implements the Handler of the `saude_biblioteca` job
+// (an explicit follow-up of the job system foundation): the review queue
+// (/review) and the orphans queue (/orphans) are LIVE QUERIES over
+// entity/media_file -- they only reflect the reality of the disk after SOMEONE
+// runs a manual scan of that library_source. If a file disappears from the disk
+// without anyone re-scanning, the entity stays 'present' forever. This job
+// closes that gap: it triggers a re-scan of EVERY registered source, waits for
+// each one to finish and summarizes the state of the curation queues at the end
+// -- a proof of extensibility of the job system: just a new Handler plus a seed
+// row, without touching the job schema/endpoints.
 package libraryhealth
 
 import (
@@ -24,118 +24,114 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 )
 
-// nomeJob e o Handler.Nome() -- casa com o slug seedado em job_definition
-// pela migration 0012.
+// nomeJob is the Handler.Nome() -- it matches the slug seeded in job_definition
+// by migration 0012.
 const nomeJob = "saude_biblioteca"
 
-// LibraryLister e o subconjunto de library.Service que o Handler consome:
-// listar as fontes cadastradas. Interface para injetar um fake em teste sem
-// depender de filesystem real.
+// LibraryLister is the subset of library.Service that the Handler consumes:
+// listing the registered sources. An interface so a fake can be injected in a
+// test without depending on a real filesystem.
 type LibraryLister interface {
 	Listar(ctx context.Context) ([]library.Source, error)
 }
 
-// ScanRunner e o subconjunto de scanner.Manager que o Handler consome: rodar
-// o pipeline de scan de UMA fonte, SÍNCRONA E DIRETAMENTE, sem passar pela
-// fila unificada (internal/execqueue).
+// ScanRunner is the subset of scanner.Manager that the Handler consumes: run
+// the scan pipeline of ONE source, SYNCHRONOUSLY AND DIRECTLY, without going
+// through the unified queue (internal/execqueue).
 //
-// Desde o briefing 0108/ADR-0028 (CAMADA 3): job.Manager também roda sobre o
-// MESMO worker sequencial (concorrência 1) que o scanner -- se este Handler
-// (que já está executando DENTRO desse worker, chamado por
-// job.Manager.executarViaRunner) enfileirasse um scan e esperasse ele
-// terminar (o padrão antigo, Start()+polling de Status()), o worker
-// deadlockaria contra si mesmo: o único worker estaria ocupado rodando ESTE
-// job, então nunca chegaria a pegar o item de scan que o próprio job
-// acabou de enfileirar (achado real ao validar esta camada -- os testes de
-// storage_snapshot_test.go/TestWithLibraryHealthJobWiring travavam até o
-// timeout do teste). Executar (o MESMO método que scanner.Manager expõe
-// como execqueue.Runner) roda o pipeline de scan INLINE, no mesmo goroutine
-// deste Handler, sem tocar a fila -- exatamente como o worker faria, só que
-// chamado diretamente em vez de agendado.
+// Since ADR-0028 (LAYER 3): job.Manager also runs on the SAME sequential worker
+// (concurrency 1) as the scanner -- if this Handler (which is already executing
+// INSIDE that worker, called by job.Manager.executarViaRunner) enqueued a scan
+// and waited for it to finish (the old pattern, Start()+polling Status()), the
+// worker would deadlock against itself: the single worker would be busy running
+// THIS job, so it would never get to pick up the scan item the job itself had
+// just enqueued (a real finding while validating this layer -- the
+// storage_snapshot_test.go/TestWithLibraryHealthJobWiring tests hung until the
+// test timeout). Executar (the SAME method scanner.Manager exposes as
+// execqueue.Runner) runs the scan pipeline INLINE, on the same goroutine as
+// this Handler, without touching the queue -- exactly as the worker would do,
+// only called directly instead of scheduled.
 type ScanRunner interface {
 	Executar(ctx context.Context, refID, trigger string, progresso execqueue.ProgressoFunc) (mensagem string, err error)
-	// StorageNaoVideo devolve os bytes de arquivo NÃO-vídeo classificados
-	// como managed/unmanaged (briefing 0063) na última varredura completa da
-	// fonte -- ok=false se nunca houve scan. Calculado DENTRO da mesma
-	// passada de WalkDir que Executar já dispara (scanner.coletarArquivos);
-	// este pacote não varre o disco de novo, só lê o resultado em memória.
+	// StorageNaoVideo returns the bytes of NON-video files classified as
+	// managed/unmanaged on the last full sweep of the source -- ok=false if
+	// there has never been a scan. Calculated INSIDE the same WalkDir pass that
+	// Executar already triggers (scanner.coletarArquivos); this package does not
+	// sweep the disk again, it only reads the in-memory result.
 	StorageNaoVideo(sourceID string) (managedBytes, unmanagedBytes int64, ok bool)
 }
 
-// Contador e o subconjunto de curation.Servico que o Handler consome: as
-// contagens das filas de curadoria (briefing 0018), reusando as MESMAS
-// queries sqlc do GET /review e GET /orphans -- este pacote nao reimplementa
-// nenhum predicado SQL.
+// Contador is the subset of curation.Servico that the Handler consumes: the
+// counts of the curation queues, reusing the SAME sqlc queries as GET /review
+// and GET /orphans -- this package does not reimplement any SQL predicate.
 type Contador interface {
 	ContarRevisao(ctx context.Context) (int, error)
 	ContarOrfas(ctx context.Context) (int, error)
 }
 
-// Matcher e o subconjunto de *server.Server que o Handler consome para rodar
-// o auto-match em lote sobre os itens elegiveis da fila de Revisao (briefing
-// 0054, follow-up do 0050/0053): resolve os de alta confianca sozinho, sem
-// precisar de clique manual. Satisfeita estruturalmente por *server.Server
-// (mesmo padrao de LibraryLister/ScanRunner/Contador) -- este pacote nunca
-// importa internal/server (evita ciclo, ja que server.Handler e construido
-// DE DENTRO do server, ver server.WithLibraryHealthJob).
+// Matcher is the subset of *server.Server that the Handler consumes to run the
+// batch auto-match over the eligible items of the review queue (a follow-up of
+// the auto-match foundation): it resolves the high-confidence ones on its own,
+// without needing a manual click. Structurally satisfied by *server.Server (the
+// same pattern as LibraryLister/ScanRunner/Contador) -- this package never
+// imports internal/server (it avoids a cycle, since server.Handler is built
+// FROM INSIDE the server, see server.WithLibraryHealthJob).
 type Matcher interface {
 	AutoMatchElegiveis(ctx context.Context) (resolved, pending int, err error)
-	// EnriquecerRetroativo varre o complemento de ListarRevisao restrito a
-	// itens locais puros (sem external_ids, nunca verificados contra
-	// provider nenhum) e tenta enriquecer um lote pequeno, throttled por
-	// item (briefing 0056, follow-up do 0053/0054): aplica sozinho com alta
-	// confiança, ou sinaliza para a fila de Revisão quando achou algo
-	// plausível mas não confiável o bastante.
+	// EnriquecerRetroativo sweeps the complement of ListarRevisao restricted to
+	// pure local items (no external_ids, never checked against any provider) and
+	// tries to enrich a small batch, throttled per item (a follow-up of the
+	// auto-match): it applies on its own with high confidence, or flags it for
+	// the review queue when it found something plausible but not trustworthy
+	// enough.
 	EnriquecerRetroativo(ctx context.Context) (aplicados, sinalizados int, err error)
-	// ReprocessarArtesFaltantes varre entities JÁ identificadas (com
-	// external_ids) cujo inventário de arte (fanart.tv etc.) nunca foi
-	// verificado -- e tenta de novo, em lote pequeno, throttled por item
-	// (briefing 0118, complemento do 0056/0117): fecha o gap de uma entity
-	// que ganhou a identidade ANTES de um ArteProvider existir/ser
-	// configurado no sistema.
+	// ReprocessarArtesFaltantes sweeps entities ALREADY identified (with
+	// external_ids) whose art inventory (fanart.tv etc.) was never verified --
+	// and tries again, in a small batch, throttled per item (a complement of the
+	// retroactive enrichment): it closes the gap of an entity that gained its
+	// identity BEFORE an ArteProvider existed/was configured in the system.
 	ReprocessarArtesFaltantes(ctx context.Context) (processados int, err error)
-	// DescobrirArteLocalMusica varre artista/album de música com faixa
-	// possuída em busca de um pôster local (poster.jpg/folder.jpg) na pasta
-	// derivada dos arquivos das faixas -- mesmo mecanismo que filme/série já
-	// tinham (briefing 0119, complemento do 0117/0118): a imagem que o dono
-	// já tem na pasta passa a valer como fonte de arte, junto de MusicBrainz/
-	// fanart.tv.
+	// DescobrirArteLocalMusica sweeps music artist/album with an owned track
+	// looking for a local poster (poster.jpg/folder.jpg) in the folder derived
+	// from the track files -- the same mechanism movie/series already had (a
+	// complement of the art reprocessing): the image the owner already has in the
+	// folder becomes a valid art source, alongside MusicBrainz/fanart.tv.
 	DescobrirArteLocalMusica(ctx context.Context) (encontrados int, err error)
-	// ReconciliarFilhosOrfaos tenta religar faixa/episodio DRAFT orfao (com
-	// arquivo presente, mas nunca vinculado a arvore pai) contra a
-	// identidade/arvore ja resolvida -- ou que veio a se resolver depois
-	// (briefing 0120, fecha o gap descoberto ao investigar o 0119 em
-	// producao: um match que falhou uma vez no scan fica preso pra sempre
-	// sem isso).
+	// ReconciliarFilhosOrfaos tries to re-link an orphan DRAFT track/episode
+	// (with a file present, but never linked to a parent tree) against the
+	// identity/tree already resolved -- or one that came to be resolved later
+	// (it closes the gap found while investigating the local music art discovery
+	// in production: a match that failed once during the scan stays stuck forever
+	// without this).
 	ReconciliarFilhosOrfaos(ctx context.Context) (reconciliados int, err error)
 }
 
-// CompletenessRecalculator e o subconjunto de *server.Server que o Handler
-// consome para recalcular o CACHE de completude de catalogacao (briefing
-// 0058, follow-up do 0053/0057): reavalia TODA entity nao-draft contra a
-// regua configurada em /settings e grava entity_catalog_completeness, que a
-// listagem/`/members` leem (a listagem NAO calcula ao vivo -- ver a nota
-// longa em internal/server/completeness.go/completeness_recalc.go sobre por
-// que). Interface pequena, mesmo padrao de Matcher/Contador: satisfeita
-// estruturalmente por *server.Server, sem este pacote importar
-// internal/server (evita ciclo, ja que server.Handler e construido DE DENTRO
-// do server, ver server.WithLibraryHealthJob).
+// CompletenessRecalculator is the subset of *server.Server that the Handler
+// consumes to recalculate the catalog completeness CACHE (a follow-up of the
+// retroactive enrichment work): it re-evaluates EVERY non-draft entity against
+// the ruler configured in /settings and writes entity_catalog_completeness,
+// which the listing/`/members` read (the listing does NOT calculate it live --
+// see the long note in internal/server/completeness.go/completeness_recalc.go
+// about why). A small interface, same pattern as Matcher/Contador: structurally
+// satisfied by *server.Server, without this package importing internal/server
+// (it avoids a cycle, since server.Handler is built FROM INSIDE the server, see
+// server.WithLibraryHealthJob).
 type CompletenessRecalculator interface {
 	RecalcularCompletudeCatalogacao(ctx context.Context) (avaliados, incompletos int, err error)
 }
 
-// resultadoStorage e o agregado managed/unmanaged de arquivo NÃO-vídeo
-// (briefing 0063) da ÚLTIMA execução do job que rodou pelo menos uma
-// fonte -- espelha o mesmo padrão de "resposta calculada sob demanda, sem
-// cache de longa duração no banco" do briefing 0055 (Statfs): fica só em
-// memória, recalculado a cada rodada do job saude_biblioteca.
+// resultadoStorage is the managed/unmanaged aggregate of NON-video files from
+// the LAST execution of the job that ran at least one source -- it mirrors the
+// same pattern of "response calculated on demand, with no long-lived cache in
+// the database" used by the disk usage reading (Statfs): it stays only in
+// memory, recalculated on every run of the saude_biblioteca job.
 type resultadoStorage struct {
 	managedBytes   int64
 	unmanagedBytes int64
 	computadoEm    time.Time
 }
 
-// Handler e o Handler do job saude_biblioteca.
+// Handler is the Handler of the saude_biblioteca job.
 type Handler struct {
 	library      LibraryLister
 	scanner      ScanRunner
@@ -148,31 +144,29 @@ type Handler struct {
 	storageOK bool
 }
 
-// New cria o Handler a partir do servico de datasources, do gerenciador de
-// scan, do contador das filas de curadoria, do Matcher de auto-match e do
-// CompletenessRecalculator (briefing 0058) -- injetados pelo chamador
-// (server.WithLibraryHealthJob), mesmo padrao de enrich.Servico/
-// scanner.Manager serem construidos com suas dependencias na hora do
-// registro. `completeness` e OPCIONAL: nil degrada para "nao recalcula"
-// (mesmo padrao de matcher == nil em rodarAutoMatch/
-// rodarEnriquecimentoRetroativo), util para testes que nao precisam
-// exercitar este passo.
+// New creates the Handler from the datasources service, the scan manager, the
+// curation queue counter, the auto-match Matcher and the
+// CompletenessRecalculator -- injected by the caller
+// (server.WithLibraryHealthJob), the same pattern as enrich.Servico/
+// scanner.Manager being built with their dependencies at registration time.
+// `completeness` is OPTIONAL: nil degrades to "do not recalculate" (same
+// pattern as matcher == nil in rodarAutoMatch/rodarEnriquecimentoRetroativo),
+// useful for tests that do not need to exercise this step.
 func New(lib LibraryLister, scn ScanRunner, cont Contador, matcher Matcher, completeness CompletenessRecalculator) *Handler {
 	return &Handler{library: lib, scanner: scn, contador: cont, matcher: matcher, completeness: completeness}
 }
 
-// Nome devolve o slug estavel do job.
+// Nome returns the stable slug of the job.
 func (h *Handler) Nome() string { return nomeJob }
 
-// Executar re-escaneia TODA library_source cadastrada (sequencialmente,
-// aguardando cada scan terminar antes de seguir para o proximo -- nao ha
-// config de paralelismo, ver notas do briefing 0053) e resume o resultado:
-// quantas fontes escaneadas com sucesso, quantas falharam, quantos itens em
-// revisao e quantas orfas ao final. cfg nao e usado (sem parametros hoje).
+// Executar re-scans EVERY registered library_source (sequentially, waiting for
+// each scan to finish before moving on to the next -- there is no parallelism
+// config) and summarizes the result: how many sources scanned successfully, how
+// many failed, how many items in review and how many orphans at the end. cfg is
+// not used (no parameters today).
 //
-// Erro de UMA fonte nao aborta as outras (mesmo espirito best-effort do
-// RunScheduler, briefing 0052); erro e devolvido apenas se TODAS as fontes
-// falharem.
+// An error on ONE source does not abort the others (the same best-effort spirit
+// as RunScheduler); an error is only returned if ALL sources fail.
 func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, error) {
 	sources, err := h.library.Listar(ctx)
 	if err != nil {
@@ -197,9 +191,10 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 
 	resolvidos := h.rodarAutoMatch(ctx)
 	if resolvidos > 0 {
-		// Recontagem: o auto-match pode ter tirado itens da fila -- reflete o
-		// estado FINAL, nao o de antes de rodar. Erro aqui degrada para a
-		// contagem ja obtida acima (best-effort, nao esconde o resto do resumo).
+		// Recount: the auto-match may have removed items from the queue -- reflect
+		// the FINAL state, not the one from before it ran. An error here degrades
+		// to the count already obtained above (best-effort, it does not hide the
+		// rest of the summary).
 		if recontado, err := h.contador.ContarRevisao(ctx); err == nil {
 			revisao = recontado
 		}
@@ -207,10 +202,9 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 
 	aplicados, sinalizados := h.rodarEnriquecimentoRetroativo(ctx)
 	if sinalizados > 0 {
-		// Recontagem de novo (briefing 0056): itens sinalizados por este
-		// passo passam a aparecer na fila de Revisao -- o resumo final
-		// precisa refletir o estado depois DESTE passo tambem, nao so do
-		// auto-match acima.
+		// Recount again: items flagged by this step start appearing in the review
+		// queue -- the final summary must also reflect the state after THIS step,
+		// not only after the auto-match above.
 		if recontado, err := h.contador.ContarRevisao(ctx); err == nil {
 			revisao = recontado
 		}
@@ -221,10 +215,9 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 
 	reconciliados := h.rodarReconciliacaoFilhosOrfaos(ctx)
 	if reconciliados > 0 {
-		// Recontagem (briefing 0120, mesmo espirito de resolvidos/sinalizados
-		// acima): reconciliar tira faixa/serie draft da fila de revisao, o
-		// resumo final precisa refletir o estado FINAL, nao o de antes deste
-		// passo.
+		// Recount (same spirit as the resolvidos/sinalizados above): reconciling
+		// removes draft tracks/series from the review queue, so the final summary
+		// must reflect the FINAL state, not the one from before this step.
 		if recontado, err := h.contador.ContarRevisao(ctx); err == nil {
 			revisao = recontado
 		}
@@ -235,10 +228,10 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 	return montarMensagem(len(sources), escaneadas, falhas, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, arteLocalMusica, reconciliados, avaliados, incompletos), nil
 }
 
-// rodarAutoMatch chama o Matcher (auto-match em lote sobre os elegiveis da
-// fila de Revisao, briefing 0054) e devolve quantos itens foram resolvidos
-// automaticamente. Best-effort: uma falha aqui NAO aborta o job -- so loga e
-// devolve 0, para o resumo original de scan/contagem ainda sair.
+// rodarAutoMatch calls the Matcher (batch auto-match over the eligible items of
+// the review queue) and returns how many items were resolved automatically.
+// Best-effort: a failure here does NOT abort the job -- it only logs and returns
+// 0, so the original scan/count summary still comes out.
 func (h *Handler) rodarAutoMatch(ctx context.Context) int {
 	if h.matcher == nil {
 		return 0
@@ -251,12 +244,12 @@ func (h *Handler) rodarAutoMatch(ctx context.Context) int {
 	return resolved
 }
 
-// rodarEnriquecimentoRetroativo chama o Matcher (enriquecimento externo
-// retroativo, briefing 0056) e devolve quantos itens foram aplicados
-// sozinhos e quantos foram sinalizados para a fila de Revisao. Best-effort:
-// uma falha aqui NAO aborta o job -- so loga e devolve (0, 0), para o resumo
-// original ainda sair. Chamado DEPOIS de rodarAutoMatch (mesma ordem do
-// briefing: re-scan -> auto-match em lote -> enriquecimento retroativo).
+// rodarEnriquecimentoRetroativo calls the Matcher (retroactive external
+// enrichment) and returns how many items were applied on their own and how many
+// were flagged for the review queue. Best-effort: a failure here does NOT abort
+// the job -- it only logs and returns (0, 0), so the original summary still
+// comes out. Called AFTER rodarAutoMatch (same order as the pipeline design:
+// re-scan -> batch auto-match -> retroactive enrichment).
 func (h *Handler) rodarEnriquecimentoRetroativo(ctx context.Context) (aplicados, sinalizados int) {
 	if h.matcher == nil {
 		return 0, 0
@@ -269,12 +262,11 @@ func (h *Handler) rodarEnriquecimentoRetroativo(ctx context.Context) (aplicados,
 	return aplicados, sinalizados
 }
 
-// rodarReprocessamentoArtes chama o Matcher (reprocessamento de artes
-// faltantes, briefing 0118) e devolve quantos itens foram verificados de
-// novo. Best-effort: uma falha aqui NAO aborta o job -- so loga e devolve 0,
-// para o resumo original ainda sair. Chamado DEPOIS de
-// rodarEnriquecimentoRetroativo (mesma familia de passo best-effort de
-// enriquecimento) e ANTES do recalculo de completude.
+// rodarReprocessamentoArtes calls the Matcher (reprocessing of missing art) and
+// returns how many items were verified again. Best-effort: a failure here does
+// NOT abort the job -- it only logs and returns 0, so the original summary still
+// comes out. Called AFTER rodarEnriquecimentoRetroativo (same family of
+// best-effort enrichment steps) and BEFORE the completeness recalculation.
 func (h *Handler) rodarReprocessamentoArtes(ctx context.Context) int {
 	if h.matcher == nil {
 		return 0
@@ -287,11 +279,11 @@ func (h *Handler) rodarReprocessamentoArtes(ctx context.Context) int {
 	return processados
 }
 
-// rodarDescobertaArteLocalMusica chama o Matcher (descoberta de arte local de
-// música, briefing 0119) e devolve quantas entities ganharam/atualizaram um
-// pôster local. Best-effort: uma falha aqui NAO aborta o job -- so loga e
-// devolve 0. Chamado logo depois de rodarReprocessamentoArtes (mesma familia
-// de passo de arte) e ANTES do recalculo de completude.
+// rodarDescobertaArteLocalMusica calls the Matcher (local music art discovery)
+// and returns how many entities gained/updated a local poster. Best-effort: a
+// failure here does NOT abort the job -- it only logs and returns 0. Called
+// right after rodarReprocessamentoArtes (same family of art steps) and BEFORE
+// the completeness recalculation.
 func (h *Handler) rodarDescobertaArteLocalMusica(ctx context.Context) int {
 	if h.matcher == nil {
 		return 0
@@ -304,12 +296,12 @@ func (h *Handler) rodarDescobertaArteLocalMusica(ctx context.Context) int {
 	return encontrados
 }
 
-// rodarReconciliacaoFilhosOrfaos chama o Matcher (reconciliacao de filhos
-// orfaos -- faixa/episodio draft com arquivo mas nunca vinculado a arvore
-// pai, briefing 0120) e devolve quantos itens foram de fato religados.
-// Best-effort: uma falha aqui NAO aborta o job -- so loga e devolve 0.
-// Chamado logo depois de rodarDescobertaArteLocalMusica e ANTES do
-// recalculo de completude.
+// rodarReconciliacaoFilhosOrfaos calls the Matcher (reconciliation of orphan
+// children -- draft track/episode with a file but never linked to a parent
+// tree) and returns how many items were actually re-linked. Best-effort: a
+// failure here does NOT abort the job -- it only logs and returns 0. Called
+// right after rodarDescobertaArteLocalMusica and BEFORE the completeness
+// recalculation.
 func (h *Handler) rodarReconciliacaoFilhosOrfaos(ctx context.Context) int {
 	if h.matcher == nil {
 		return 0
@@ -322,13 +314,13 @@ func (h *Handler) rodarReconciliacaoFilhosOrfaos(ctx context.Context) int {
 	return reconciliados
 }
 
-// rodarRecalculoCompletude chama o CompletenessRecalculator (recalculo em
-// lote do cache de completude de catalogacao, briefing 0058) e devolve
-// quantos itens foram avaliados e quantos ficaram incompletos. Best-effort:
-// uma falha aqui NAO aborta o job -- so loga e devolve (0, 0), para o resumo
-// original ainda sair. Chamado por ULTIMO (depois do re-scan, auto-match e
-// enriquecimento retroativo): a completude reflete o estado FINAL da
-// execucao, apos os passos anteriores poderem ter mudado dados resolvidos.
+// rodarRecalculoCompletude calls the CompletenessRecalculator (batch
+// recalculation of the catalog completeness cache) and returns how many items
+// were evaluated and how many stayed incomplete. Best-effort: a failure here
+// does NOT abort the job -- it only logs and returns (0, 0), so the original
+// summary still comes out. Called LAST (after the re-scan, auto-match and
+// retroactive enrichment): completeness reflects the FINAL state of the
+// execution, after the previous steps may have changed resolved data.
 func (h *Handler) rodarRecalculoCompletude(ctx context.Context) (avaliados, incompletos int) {
 	if h.completeness == nil {
 		return 0, 0
@@ -341,16 +333,15 @@ func (h *Handler) rodarRecalculoCompletude(ctx context.Context) (avaliados, inco
 	return avaliados, incompletos
 }
 
-// atualizarStorage soma, por TODA fonte cadastrada (não só as escaneadas com
-// sucesso NESTA rodada), os buckets managed/unmanaged de arquivo NÃO-vídeo
-// que o scanner.Manager guarda em memória (briefing 0063), e grava o
-// agregado para internal/server/health_system.go ler via
-// UltimoResultadoStorage. Uma fonte offline nesta rodada simplesmente NÃO
-// atualiza seu bucket no scanner.Manager (Executar falha antes de tocar o
-// estado de storage) -- então o valor somado aqui automaticamente reflete a
-// política "mantém o último valor calculado" do briefing 0063 §3/§6, sem
-// nenhuma lógica extra de offline neste pacote (mesma política de
-// UsoDisco/Statfs do briefing 0055). Best-effort: nunca falha o job.
+// atualizarStorage adds up, for EVERY registered source (not only the ones
+// scanned successfully in THIS run), the managed/unmanaged buckets of NON-video
+// files that scanner.Manager keeps in memory, and stores the aggregate for
+// internal/server/health_system.go to read via UltimoResultadoStorage. A source
+// offline in this run simply does NOT update its bucket in the scanner.Manager
+// (Executar fails before touching the storage state) -- so the value added up
+// here automatically reflects the "keeps the last calculated value" policy,
+// without any extra offline logic in this package (same policy as the disk
+// usage/Statfs reading). Best-effort: it never fails the job.
 func (h *Handler) atualizarStorage(sources []library.Source) {
 	var managed, unmanaged int64
 	for _, src := range sources {
@@ -367,21 +358,22 @@ func (h *Handler) atualizarStorage(sources []library.Source) {
 	h.muStorage.Unlock()
 }
 
-// UltimoResultadoStorage devolve o agregado managed/unmanaged de arquivo
-// NÃO-vídeo (briefing 0063) da ÚLTIMA execução do job saude_biblioteca --
-// lido por internal/server/health_system.go para montar
-// storage.managed_media_bytes (somado ao vídeo indexado)/
-// storage.unmanaged_bytes. ok=false antes da primeira execução (processo
-// recém-iniciado, job ainda não rodou nenhuma vez).
+// UltimoResultadoStorage returns the managed/unmanaged aggregate of NON-video
+// files from the LAST execution of the saude_biblioteca job -- read by
+// internal/server/health_system.go to compose
+// storage.managed_media_bytes (added to the indexed video)/
+// storage.unmanaged_bytes. ok=false before the first execution (freshly started
+// process, the job has not run even once yet).
 func (h *Handler) UltimoResultadoStorage() (managedBytes, unmanagedBytes int64, computadoEm time.Time, ok bool) {
 	h.muStorage.Lock()
 	defer h.muStorage.Unlock()
 	return h.storage.managedBytes, h.storage.unmanagedBytes, h.storage.computadoEm, h.storageOK
 }
 
-// escanearTodas dispara e aguarda o scan de cada fonte, sequencialmente.
-// Devolve quantas terminaram com sucesso e as mensagens de falha das demais
-// (fonte + motivo). Best-effort: uma falha nao interrompe as seguintes.
+// escanearTodas triggers and waits for the scan of each source, sequentially.
+// It returns how many finished successfully and the failure messages of the
+// others (source + reason). Best-effort: a failure does not interrupt the
+// following ones.
 func (h *Handler) escanearTodas(ctx context.Context, sources []library.Source) (int, []string) {
 	escaneadas := 0
 	var falhas []string
@@ -395,42 +387,40 @@ func (h *Handler) escanearTodas(ctx context.Context, sources []library.Source) (
 	return escaneadas, falhas
 }
 
-// escanearEAguardar roda o scan da fonte SÍNCRONA E DIRETAMENTE (via
-// ScanRunner.Executar, que bypassa a fila unificada -- ver o comentário
-// longo em ScanRunner sobre por que: enfileirar+esperar aqui deadlockaria
-// contra o próprio worker que está executando este job). Não há mais
-// polling: Executar só devolve quando o scan de fato terminou.
+// escanearEAguardar runs the scan of the source SYNCHRONOUSLY AND DIRECTLY (via
+// ScanRunner.Executar, which bypasses the unified queue -- see the long comment
+// on ScanRunner for why: enqueueing+waiting here would deadlock against the very
+// worker that is executing this job). There is no more polling: Executar only
+// returns when the scan has actually finished.
 func (h *Handler) escanearEAguardar(ctx context.Context, src library.Source) error {
-	// TriggerSchedule é a aproximação razoável (briefing 0108): o
-	// job.Handler.Executar não recebe hoje se foi disparado manual ou por
-	// schedule (job.Handler{Nome, Executar} não carrega esse dado, e mudar
-	// essa interface é fora do escopo desta camada) -- "schedule" é sempre
-	// verdade no sentido de ser um disparo SISTÊMICO, nunca literalmente "o
-	// dono clicou em escanear ESTA fonte".
+	// TriggerSchedule is the reasonable approximation: job.Handler.Executar does
+	// not receive today whether it was triggered manually or by schedule
+	// (job.Handler{Nome, Executar} does not carry that datum, and changing that
+	// interface is out of scope for this layer) -- "schedule" is always true in
+	// the sense of being a SYSTEMIC trigger, never literally "the owner clicked
+	// to scan THIS source".
 	_, err := h.scanner.Executar(ctx, src.ID, scanner.TriggerSchedule, nil)
 	return err
 }
 
-// montarMensagem compoe o resumo final de sucesso: quantas fontes
-// escaneadas (com o detalhe das falhas parciais, se houver) + as contagens
-// atuais das filas de curadoria. resolvidos (briefing 0054) e o resultado do
-// auto-match em lote; 0 omite o parenteses para nao poluir a mensagem em
-// operacao normal, quando nao havia nada a resolver. aplicados/sinalizados
-// (briefing 0056) sao o resultado do enriquecimento retroativo; a clausula
-// extra e omitida quando os dois sao zero (mesmo espirito da omissao de
-// resolvidos==0 acima). artesReprocessadas (briefing 0118) e quantas entities
-// JA identificadas tiveram o inventario de arte reverificado; clausula
-// omitida quando zero (mesmo espirito). arteLocalMusica (briefing 0119) e
-// quantas entities artista/album ganharam/atualizaram um poster local;
-// clausula omitida quando zero. reconciliados (briefing 0120) e quantas
-// faixas/episodios draft orfaos foram religados de volta a arvore pai
-// (artista/album, serie); clausula omitida quando zero (mesmo espirito).
-// avaliados/incompletos (briefing 0058) sao o resultado do recalculo de
-// completude de catalogacao; a clausula extra e omitida quando nao houve
-// NENHUM item avaliado (h.completeness == nil ou a biblioteca vazia) -- com
-// pelo menos um avaliado, a clausula aparece mesmo com incompletos==0 (0
-// incompletos e uma informacao positiva relevante, diferente de
-// aplicados/sinalizados==0 que so significa "nada a fazer").
+// montarMensagem composes the final success summary: how many sources scanned
+// (with the detail of partial failures, if any) + the current counts of the
+// curation queues. resolvidos is the result of the batch auto-match; 0 omits the
+// parentheses so the message is not polluted in normal operation, when there was
+// nothing to resolve. aplicados/sinalizados are the result of the retroactive
+// enrichment; the extra clause is omitted when both are zero (same spirit as
+// omitting resolvidos==0 above). artesReprocessadas is how many entities ALREADY
+// identified had their art inventory re-verified; the clause is omitted when
+// zero (same spirit). arteLocalMusica is how many artist/album entities
+// gained/updated a local poster; the clause is omitted when zero. reconciliados
+// is how many orphan draft tracks/episodes were re-linked back to the parent
+// tree (artist/album, series); the clause is omitted when zero (same spirit).
+// avaliados/incompletos are the result of the catalog completeness
+// recalculation; the extra clause is omitted when NO item was evaluated
+// (h.completeness == nil or an empty library) -- with at least one evaluated,
+// the clause appears even with incompletos==0 (0 incompletos is relevant
+// positive information, unlike aplicados/sinalizados==0 which only means
+// "nothing to do").
 func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, resolvidos, aplicados, sinalizados, artesReprocessadas, arteLocalMusica, reconciliados, avaliados, incompletos int) string {
 	base := fmt.Sprintf("%s; %d em revisão, %d órfã(s)", resumoScans(total, escaneadas, falhas), revisao, orfas)
 	if resolvidos > 0 {
@@ -456,14 +446,14 @@ func montarMensagem(total, escaneadas int, falhas []string, revisao, orfas, reso
 	return base
 }
 
-// montarMensagemSemContagem e usada quando os scans terminaram mas a
-// contagem das filas falhou -- ainda assim reflete o que rodou de fato (o
-// scan em si nao falhou por causa disto).
+// montarMensagemSemContagem is used when the scans finished but the count of the
+// queues failed -- it still reflects what actually ran (the scan itself did not
+// fail because of this).
 func montarMensagemSemContagem(total, escaneadas int, falhas []string, contErr error) string {
 	return fmt.Sprintf("%s; erro ao contar filas de curadoria: %v", resumoScans(total, escaneadas, falhas), contErr)
 }
 
-// resumoScans descreve quantas fontes foram escaneadas com sucesso.
+// resumoScans describes how many sources were scanned successfully.
 func resumoScans(total, escaneadas int, falhas []string) string {
 	switch {
 	case total == 0:

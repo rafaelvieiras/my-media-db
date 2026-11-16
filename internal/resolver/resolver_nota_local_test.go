@@ -5,14 +5,15 @@ import (
 	"testing"
 )
 
-// Testes da NOTA LOCAL do dono (ADR-0012): a avaliação PRÓPRIA, gravada na camada de
-// OVERRIDE como número neutro (kindNumero), que COMPLEMENTA/SOBREPÕE a nota da fonte
-// (vote_average) sem destruí-la. Limpar (override ausente ou `null`) volta a nil — a
-// UI então mostra a nota da fonte.
+// Tests of the owner's LOCAL RATING (ADR-0012): the OWN evaluation, stored in the
+// OVERRIDE layer as a neutral number (kindNumero), which COMPLEMENTS/OVERRIDES the
+// source rating (vote_average) without destroying it. Clearing it (absent override
+// or `null`) goes back to nil — the UI then shows the source rating.
 
-// TestResolverNotaLocalOverride: sem override, sem nota local (nil) mesmo com a nota
-// da fonte presente; com override numérico, a nota do dono aparece e a da fonte segue
-// intacta; com `null`, a nota local volta a nil (limpar é não-destrutivo).
+// TestResolverNotaLocalOverride: with no override, no local rating (nil) even with
+// the source rating present; with a numeric override, the owner's rating appears and
+// the source one stays intact; with `null`, the local rating goes back to nil
+// (clearing is non-destructive).
 func TestResolverNotaLocalOverride(t *testing.T) {
 	base := Resolver(Camadas{
 		Entity:          entRica(),
@@ -35,7 +36,7 @@ func TestResolverNotaLocalOverride(t *testing.T) {
 		Override:        map[string]json.RawMessage{"local_rating": json.RawMessage("9.5")},
 	})
 	eqPtr(t, "LocalRating do dono", comNota.LocalRating, 9.5)
-	// A nota da fonte NÃO é destruída pela nota local (campos distintos).
+	// The source rating is NOT destroyed by the local rating (distinct fields).
 	eqPtr(t, "vote_average intacto", comNota.VoteAverage, 8.2)
 
 	limpa := Resolver(Camadas{
@@ -51,7 +52,8 @@ func TestResolverNotaLocalOverride(t *testing.T) {
 	}
 }
 
-// TestResolverNotaLocalZero: a nota 0 é um valor VÁLIDO (não confundir com ausência).
+// TestResolverNotaLocalZero: the rating 0 is a VALID value (do not confuse it with
+// absence).
 func TestResolverNotaLocalZero(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity:     entRica(),
@@ -62,8 +64,9 @@ func TestResolverNotaLocalZero(t *testing.T) {
 	eqPtr(t, "LocalRating zero", got.LocalRating, 0)
 }
 
-// TestCamposEditaveisIncluiNotaLocal: a nota local É editável por override (entra em
-// CamposEditaveis), é NEUTRA (não traduzível) e da classe numérica.
+// TestCamposEditaveisIncluiNotaLocal: the local rating IS editable by override (it
+// enters CamposEditaveis), it is NEUTRAL (not translatable) and of the numeric
+// class.
 func TestCamposEditaveisIncluiNotaLocal(t *testing.T) {
 	info, ok := CamposEditaveis()["local_rating"]
 	if !ok {

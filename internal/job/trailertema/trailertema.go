@@ -1,15 +1,14 @@
-// Package trailertema implementa o Handler do job `trailer_tema_faltantes`
-// (briefing 0104, ADR-0026): periódico, best-effort, varre toda a
-// biblioteca (mesmo universo elegível de midias_faltantes,
-// ListarEntitiesComMediaFilePresente) baixando trailer/tema musical faltante
-// -- reaproveita 100% da lógica de download já existente
-// (server.BaixarTrailerEntity/BaixarTemaEntity, extraídas dos botões manuais
-// 0102/0103), nunca escolhe um candidato diferente do que já está cacheado
-// (media_external, source=tmdb/tvdb/themerrdb). Mesmo padrão de interfaces
-// pequenas injetadas do internal/job/midiasfaltantes -- evita ciclo de
-// import (o Handler é construído DE DENTRO do server, via
-// server.WithTrailerTemaJob, com o próprio *server.Server satisfazendo as
-// duas interfaces abaixo estruturalmente).
+// Package trailertema implements the Handler of the `trailer_tema_faltantes`
+// job (ADR-0026): periodic, best-effort, it sweeps the whole library (the same
+// eligible universe as midiasfaltantes, ListarEntitiesComMediaFilePresente)
+// downloading missing trailer/theme music -- it reuses 100% of the download
+// logic that already exists
+// (server.BaixarTrailerEntity/BaixarTemaEntity, extracted from the manual
+// buttons), and never picks a different candidate from the one already cached
+// (media_external, source=tmdb/tvdb/themerrdb). Same pattern of small injected
+// interfaces as internal/job/midiasfaltantes -- it avoids an import cycle (the
+// Handler is built FROM INSIDE the server, via server.WithTrailerTemaJob, with
+// *server.Server itself structurally satisfying the two interfaces below).
 package trailertema
 
 import (
@@ -19,64 +18,63 @@ import (
 	"log"
 )
 
-// nomeJob é o Handler.Nome() -- casa com o slug seedado em job_definition
-// pela migration deste briefing.
+// nomeJob is the Handler.Nome() -- it matches the slug seeded in job_definition
+// by this job's migration.
 const nomeJob = "trailer_tema_faltantes"
 
-// EntityLister é o subconjunto de *server.Server que o Handler consome: o
-// universo elegível (toda entity com pelo menos um media_file 'present',
-// mesmo critério de midiasfaltantes.EntityLister). Interface pequena para
-// permitir um fake em teste sem banco real.
+// EntityLister is the subset of *server.Server that the Handler consumes: the
+// eligible universe (every entity with at least one 'present' media_file, the
+// same criterion as midiasfaltantes.EntityLister). A small interface so a fake
+// can be used in a test without a real database.
 type EntityLister interface {
 	ListarEntitiesComMediaFilePresente(ctx context.Context) ([]string, error)
 }
 
-// YtdlpDisponivel é checado UMA VEZ no início de Executar (não por entity,
-// briefing 0104 §4) -- evita golpear o binário yt-dlp (--version) uma vez
-// por entity da biblioteca quando ele está simplesmente indisponível.
-// disponivel=false não é falha do job: Executar encerra cedo com mensagem
-// informativa, sem tentar baixar nada.
+// YtdlpDisponivel is checked ONCE at the start of Executar (not per entity) --
+// it avoids hitting the yt-dlp binary (--version) once per library entity when
+// it is simply unavailable. disponivel=false is not a job failure: Executar ends
+// early with an informative message, without trying to download anything.
 type YtdlpDisponivel interface {
 	YtdlpDisponivel(ctx context.Context) (disponivel bool, detalhe string)
 }
 
-// TrailerTemaBaixador é o subconjunto de *server.Server que o Handler
-// consome: baixar (best-effort) trailer/tema para UMA entity -- reaproveita
-// as MESMAS funções puras extraídas dos botões manuais (0102/0103) pelo
-// briefing 0104, sem escolher um candidato diferente do que a UI/o botão
-// manual já usaria. baixado=false, err=nil cobre TODOS os casos de "nada a
-// fazer" (sem candidato, já existe local, sem destino, yt-dlp indisponível);
-// err só carrega falha real (rede, banco).
+// TrailerTemaBaixador is the subset of *server.Server that the Handler consumes:
+// download (best-effort) trailer/theme for ONE entity -- it reuses the SAME pure
+// functions extracted from the manual buttons, without picking a different
+// candidate from the one the UI/the manual button would already use.
+// baixado=false, err=nil covers ALL the "nothing to do" cases (no candidate,
+// already available locally, no destination, yt-dlp unavailable); err only
+// carries a real failure (network, database).
 type TrailerTemaBaixador interface {
 	YtdlpDisponivel
 	BaixarTrailerEntity(ctx context.Context, entityID string) (baixado bool, err error)
 	BaixarTemaEntity(ctx context.Context, entityID string) (baixado bool, err error)
 }
 
-// Handler é o Handler do job trailer_tema_faltantes.
+// Handler is the Handler of the trailer_tema_faltantes job.
 type Handler struct {
 	entities EntityLister
 	baixador TrailerTemaBaixador
 }
 
-// New cria o Handler a partir do listador de entities elegíveis e do
-// baixador -- injetados pelo chamador (server.WithTrailerTemaJob), mesmo
-// padrão de midiasfaltantes.New.
+// New creates the Handler from the lister of eligible entities and the
+// downloader -- injected by the caller (server.WithTrailerTemaJob), the same
+// pattern as midiasfaltantes.New.
 func New(entities EntityLister, baixador TrailerTemaBaixador) *Handler {
 	return &Handler{entities: entities, baixador: baixador}
 }
 
-// Nome devolve o slug estável do job.
+// Nome returns the stable slug of the job.
 func (h *Handler) Nome() string { return nomeJob }
 
-// Executar processa TODA entity elegível numa única execução, best-effort
-// por entity (erro numa não aborta as outras -- mesmo espírito do
-// midias_faltantes/0053/0054/0056), e resume quantos trailers/temas foram
-// baixados. O status do yt-dlp é checado UMA VEZ no início (não por
-// entity) -- se indisponível, a execução encerra cedo com mensagem
-// informativa, sem tentar nada (nem contar como falha). Erro só é devolvido
-// se a PRÓPRIA listagem de entities elegíveis falhar (sem universo, não há
-// o que processar).
+// Executar processes EVERY eligible entity in a single execution, best-effort
+// per entity (an error on one does not abort the others -- same spirit as
+// midias_faltantes), and summarizes how many trailers/themes were downloaded.
+// The yt-dlp status is checked ONCE at the start (not per entity) -- if it is
+// unavailable, the execution ends early with an informative message, without
+// trying anything (and without counting it as a failure). An error is only
+// returned if the listing of eligible entities itself fails (with no universe
+// there is nothing to process).
 func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, error) {
 	if disponivel, detalhe := h.baixador.YtdlpDisponivel(ctx); !disponivel {
 		msg := "yt-dlp indisponivel"
@@ -111,8 +109,8 @@ func (h *Handler) Executar(ctx context.Context, _ json.RawMessage) (string, erro
 	return montarMensagem(len(ids), trailersBaixados, temasBaixados, falhas), nil
 }
 
-// montarMensagem compõe o resumo final: quantas entities elegíveis, quantos
-// trailers e quantos temas baixados no total.
+// montarMensagem composes the final summary: how many eligible entities, how
+// many trailers and how many themes downloaded in total.
 func montarMensagem(total, trailersBaixados, temasBaixados, falhas int) string {
 	base := fmt.Sprintf("%d entity(ies) elegível(is), %d trailer(s) baixado(s), %d tema(s) musical(is) baixado(s)",
 		total, trailersBaixados, temasBaixados)

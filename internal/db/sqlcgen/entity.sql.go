@@ -16,8 +16,8 @@ DELETE FROM entity
 WHERE id = ?
 `
 
-// Purga explicita: remove a entity e, por ON DELETE CASCADE, seus media_file,
-// asset e entity_relation.
+// Explicit purge: removes the entity and, via ON DELETE CASCADE, its media_file,
+// asset and entity_relation.
 func (q *Queries) ApagarEntity(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, apagarEntity, id)
 	return err
@@ -33,17 +33,17 @@ WHERE entity.id = ?1
   AND NOT EXISTS (SELECT 1 FROM media_override o WHERE o.entity_id = entity.id)
 `
 
-// Purga do rascunho SUBSTITUIDO (briefing 0138). A reconciliacao religa o
-// media_file a entity definitiva e a entity-rascunho antiga ficava para tras sem
-// arquivo e sem vinculo -- ela continuava aparecendo na fila de revisao para
-// sempre (114 casos medidos em producao em 08/nov/2026, grupo "sem arquivo").
-// As quatro condicoes sao a trava de seguranca: so sai o rascunho que nao tem
-// arquivo, nao tem vinculo nenhum (nem como filha, nem como pai -- uma serie
-// rascunho com episodios ligados fica) e nao tem override do dono. O rascunho
-// que a reconciliacao substitui e criado pelo PROPRIO matcher (titulo derivado do
-// arquivo, sem external id) -- nao ha dado do dono ali, ao contrario do
-// principio 5, que protege o que o dono escreveu. Idempotente: 0 linhas quando
-// nada casa.
+// Purge of the REPLACED draft. The reconciliation re-links the
+// media_file to the definitive entity and the old draft entity was left behind without
+// a file and without a link -- it kept showing up in the review queue
+// forever (114 cases measured in production on Nov 8, 2026, group "no file").
+// The four conditions are the safety lock: only the draft that has no
+// file, has no link at all (neither as a child nor as a parent -- a draft
+// series with episodes linked stays) and has no owner override leaves. The draft
+// that the reconciliation replaces is created by the matcher ITSELF (title derived from the
+// file, without an external id) -- there is no owner data there, unlike
+// principle 5, which protects what the owner wrote. Idempotent: 0 rows when
+// nothing matches.
 func (q *Queries) ApagarRascunhoVazio(ctx context.Context, id string) (int64, error) {
 	result, err := q.db.ExecContext(ctx, apagarRascunhoVazio, id)
 	if err != nil {
@@ -61,9 +61,9 @@ WHERE entity.status = 'draft'
   AND NOT EXISTS (SELECT 1 FROM media_override o WHERE o.entity_id = entity.id)
 `
 
-// Versao em lote da purga acima, para a varredura do pos-scan (briefing 0138):
-// limpa o estoque de rascunhos vazios que a reconciliacao deixou antes desta
-// correcao. Mesmas travas, sem id.
+// Batch version of the purge above, for the post-scan sweep:
+// it cleans the stock of empty drafts that the reconciliation left before this
+// fix. Same locks, without an id.
 func (q *Queries) ApagarRascunhosVazios(ctx context.Context) (int64, error) {
 	result, err := q.db.ExecContext(ctx, apagarRascunhosVazios)
 	if err != nil {
@@ -162,9 +162,9 @@ type AtualizarEntityNfoParams struct {
 	ID           string
 }
 
-// Grava o caminho do .nfo exportado por ultimo + o timestamp da escrita
-// (briefing 0062). Chamado a cada POST /entities/{id}/nfo, mesmo idempotente
-// em conteudo (nfo_written_at muda sempre).
+// Writes the path of the last exported .nfo + the write timestamp.
+// Called on every POST /entities/{id}/nfo, even when idempotent
+// in content (nfo_written_at always changes).
 func (q *Queries) AtualizarEntityNfo(ctx context.Context, arg AtualizarEntityNfoParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarEntityNfo, arg.NfoPath, arg.NfoWrittenAt, arg.ID)
 	return err
@@ -181,10 +181,10 @@ type AtualizarEntityNfoPathParams struct {
 	ID      string
 }
 
-// Recasca SO o caminho do .nfo ja exportado (briefing 0070, editar path do
-// datasource): diferente de AtualizarEntityNfo, NAO toca nfo_written_at --
-// isto nao e uma nova exportacao, so o prefixo do path mudou de lugar no
-// disco (o mount/HD trocou, o conteudo e o mesmo).
+// Rebases ONLY the path of the already exported .nfo (editing the
+// datasource path): unlike AtualizarEntityNfo, it does NOT touch nfo_written_at --
+// this is not a new export, only the path prefix moved location on
+// the disk (the mount/HD changed, the content is the same).
 func (q *Queries) AtualizarEntityNfoPath(ctx context.Context, arg AtualizarEntityNfoPathParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarEntityNfoPath, arg.NfoPath, arg.ID)
 	return err
@@ -210,12 +210,12 @@ type AtualizarEpisodioBaseParams struct {
 	ID                string
 }
 
-// Reescreve a BASE do episodio no re-import (briefing 0043): o find-or-create por id
-// externo reusa a linha, mas antes so o create gravava estes campos, entao still_url/
-// numbering novos (extension_data) e titulo/sinopse/data/ids atualizados do provider
-// nunca chegavam a um episodio ja importado. Aqui reafirmamos os fatos da fonte na
-// linha-base. NAO toca status/tags/original_title nem media_override: a resolucao
-// aplica override por cima, entao refrescar a base e seguro (o override segue vencendo).
+// Rewrites the episode BASE on re-import: the find-or-create by
+// external id reuses the row, but before only create wrote these fields, so new still_url/
+// numbering (extension_data) and updated title/synopsis/date/ids from the provider
+// never reached an already imported episode. Here we reassert the source facts on the
+// base row. It does NOT touch status/tags/original_title nor media_override: the resolution
+// applies the override on top, so refreshing the base is safe (the override still wins).
 func (q *Queries) AtualizarEpisodioBase(ctx context.Context, arg AtualizarEpisodioBaseParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarEpisodioBase,
 		arg.Title,
@@ -240,12 +240,12 @@ type AtualizarExtensionDataParams struct {
 	ID                string
 }
 
-// Grava o extension_data_json (mapa namespace->objeto) de uma entity, sem tocar o
-// resto. Usado pelo import de series (briefing 0031): a serie e criada/enriquecida
-// como um item comum (importarItem) e recebe aqui o namespace core.tv@1 (season
-// types). Temporada/episodio ja nascem com o extension_data no proprio CriarEntity;
-// a serie precisa deste UPDATE porque nasce pelo caminho de item. So esta coluna e o
-// updated_at mudam; nao toca override/externo.
+// Writes the extension_data_json (namespace->object map) of an entity, without touching the
+// rest. Used by the series import: the series is created/enriched
+// as a common item (importarItem) and receives here the core.tv@1 namespace (season
+// types). Season/episode are already born with the extension_data in CriarEntity itself;
+// the series needs this UPDATE because it is born through the item path. Only this
+// column and updated_at change; it does not touch override/external.
 func (q *Queries) AtualizarExtensionData(ctx context.Context, arg AtualizarExtensionDataParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarExtensionData, arg.ExtensionDataJson, arg.ID)
 	return err
@@ -263,10 +263,10 @@ type AtualizarExternalIdsParams struct {
 	ID              string
 }
 
-// Mescla a identidade externa (MD4): a app le external_ids_json, junta
-// {source: source_id} e grava aqui, sem tocar o resto da entity. As colunas
-// geradas external_id_tmdb/imdb re-derivam sozinhas do novo JSON. Usado pelo
-// enrich/import (briefing 0015) -- media_external e cache subordinado a isto.
+// Merges the external identity (MD4): the app reads external_ids_json, joins
+// {source: source_id} and writes it here, without touching the rest of the entity. The
+// generated columns external_id_tmdb/imdb re-derive on their own from the new JSON.
+// Used by enrich/import -- media_external is a cache subordinated to it.
 func (q *Queries) AtualizarExternalIds(ctx context.Context, arg AtualizarExternalIdsParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarExternalIds, arg.ExternalIdsJson, arg.ID)
 	return err
@@ -284,10 +284,10 @@ type AtualizarOriginalLanguageParams struct {
 	ID               string
 }
 
-// Grava a ANCORA do fallback por idioma (briefing 0020): o codigo NEUTRO do idioma
-// original da obra, obtido do detalhe da fonte no enrich/import. Nao-destrutivo: e
-// um fato da fonte, nao dado do dono; re-enriquecer apenas o reafirma. So esta
-// coluna e o updated_at mudam.
+// Writes the ANCHOR of the per-language fallback: the NEUTRAL code of the
+// original language of the work, obtained from the source detail on enrich/import.
+// Non-destructive: it is a fact from the source, not the owner's data; re-enriching only
+// reasserts it. Only this column and updated_at change.
 func (q *Queries) AtualizarOriginalLanguage(ctx context.Context, arg AtualizarOriginalLanguageParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarOriginalLanguage, arg.OriginalLanguage, arg.ID)
 	return err
@@ -305,11 +305,11 @@ type AtualizarReleaseDateParams struct {
 	ID          string
 }
 
-// Grava a DATA DE LANCAMENTO neutra da obra, obtida do detalhe da fonte no enrich/
-// import (mesmo tratamento de AtualizarOriginalLanguage: fato da fonte, nao dado do
-// dono; re-enriquecer reafirma). Denormaliza a coluna base para ordenacao/listagem
-// baratas (ex.: ordenar os membros de uma colecao por ano) sem precisar resolver cada
-// item. So esta coluna e o updated_at mudam; a resolucao segue com base=externo.
+// Writes the neutral RELEASE DATE of the work, obtained from the source detail on enrich/
+// import (same handling as AtualizarOriginalLanguage: a fact of the source, not the
+// owner's data; re-enriching reasserts it). Denormalizes the base column for cheap
+// sorting/listing (e.g. ordering the members of a collection by year) without resolving
+// each item. Only this column and updated_at change; resolution still uses base=external.
 func (q *Queries) AtualizarReleaseDate(ctx context.Context, arg AtualizarReleaseDateParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarReleaseDate, arg.ReleaseDate, arg.ID)
 	return err
@@ -331,11 +331,11 @@ type AtualizarTemporadaBaseParams struct {
 	ID                string
 }
 
-// Reescreve a BASE da temporada no re-import (briefing 0043): titulo, data e o
-// extension_data core.tv@1 (ordering + season_number + year). Simetrica a
-// AtualizarEpisodioBase, sem description (temporada nao guarda sinopse na linha). NAO
-// toca status/tags/original_title nem media_override -- a resolucao aplica override por
-// cima; refrescar a base e seguro.
+// Rewrites the season BASE on re-import: title, date and the
+// extension_data core.tv@1 (ordering + season_number + year). Symmetric to
+// AtualizarEpisodioBase, without description (a season keeps no synopsis on the
+// row). It does NOT touch status/tags/original_title nor media_override -- the
+// resolution applies the override on top; refreshing the base is safe.
 func (q *Queries) AtualizarTemporadaBase(ctx context.Context, arg AtualizarTemporadaBaseParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarTemporadaBase,
 		arg.Title,
@@ -358,11 +358,11 @@ type AtualizarTituloParams struct {
 	ID    string
 }
 
-// Repara o titulo base de um item auto-criado/importado quando ele ficou como o
-// fallback numerico (id da fonte) -- a regressao do "numero no lugar do nome". So o
-// titulo e o updated_at mudam; nao toca override/externo (a autoridade do dono
-// segue vencendo na resolucao). Chamada pelo enrich (auto-cura) sob condicao
-// estrita (titulo == sourceID), nunca sobre um titulo ja legivel.
+// Repairs the base title of an auto-created/imported item when it stayed as the
+// numeric fallback (source id) -- the regression of the "number instead of the name". Only
+// the title and updated_at change; it does not touch override/external (the owner's
+// authority still wins in the resolution). Called by enrich (self-healing) under a strict
+// condition (title == sourceID), never over an already readable title.
 func (q *Queries) AtualizarTitulo(ctx context.Context, arg AtualizarTituloParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarTitulo, arg.Title, arg.ID)
 	return err
@@ -391,9 +391,9 @@ type ContarEntityCardsParams struct {
 	Owned interface{}
 }
 
-// Total de itens que casam os filtros (para o campo `total` da paginacao). Mesma
-// clausula WHERE da ListarEntityCards -- sem LIMIT/OFFSET/ORDER BY. Inclui a mesma
-// exclusao de sub-nos (season/episode) para o total bater com a pagina (0032).
+// Total of items matching the filters (for the `total` field of the pagination). Same
+// WHERE clause as ListarEntityCards -- without LIMIT/OFFSET/ORDER BY. It includes the same
+// sub-node exclusion (season/episode) so the total matches the page (0032).
 func (q *Queries) ContarEntityCards(ctx context.Context, arg ContarEntityCardsParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, contarEntityCards, arg.Type, arg.Owned)
 	var total int64
@@ -427,23 +427,23 @@ type CriarEntityParams struct {
 	ExtensionDataJson sql.NullString
 }
 
-// CRUD minimo da entity base.
+// Minimal CRUD for the base entity.
 //
-// IMPORTANTE (sqlc + ASCII): os comentarios deste arquivo .sql sao ASCII (sem
-// acentos) DE PROPOSITO. O sqlc v1.31 fatia o texto de cada query por offset de
-// BYTE, mas as posicoes dos tokens vem em offset de RUNE; qualquer caractere
-// multi-byte (acento pt-BR) num arquivo de query desloca o corte e CORROMPE o
-// SQL gerado (some o '?' final, troca 'AS x' por 'A', etc.). As migrations NAO
-// sofrem disso (sao parseadas por estrutura, nao guardadas como texto), entao la
-// os comentarios seguem em pt-BR acentuado. Aqui, ASCII. Regra geral: colunas
-// sempre EXPLICITAS, nunca '*'/'RETURNING *' (a expansao de '*' tem o mesmo bug
-// de offset). As colunas geradas (external_id_tmdb/imdb/tvdb/mbid) derivam de
-// external_ids_json e NAO entram no INSERT/UPDATE, mas aparecem no
-// RETURNING/SELECT para espelhar o modelo (migration 0007 somou tvdb; a
-// migration 0023/briefing 0106 somou mbid -- ATENCAO: 0023 tinha ficado sem
-// regenerar o sqlc por um tempo, corrigido junto com este briefing).
-// status NAO entra no INSERT: usa o DEFAULT 'cataloged' (item auto-criado nasce
-// catalogado; a curadoria muda depois via AtualizarEntity). ADR-0009.
+// IMPORTANT (sqlc + ASCII): the comments in this .sql file are ASCII (no
+// accents) ON PURPOSE. sqlc v1.31 slices the text of each query by BYTE
+// offset, but token positions come as RUNE offsets; any multi-byte
+// character (pt-BR accent) in a query file shifts the cut and CORRUPTS the
+// generated SQL (the trailing '?' disappears, 'AS x' becomes 'A', etc.). Migrations do NOT
+// suffer from this (they are parsed by structure, not stored as text), so there the
+// comments stay in accented pt-BR. Here, ASCII. General rule: columns
+// always EXPLICIT, never '*'/'RETURNING *' (the '*' expansion has the same
+// offset bug). The generated columns (external_id_tmdb/imdb/tvdb/mbid) derive from
+// external_ids_json and do NOT enter the INSERT/UPDATE, but they do appear in the
+// RETURNING/SELECT to mirror the model (migration 0007 added tvdb;
+// migration 0023 added mbid -- NOTE: 0023 had been left without
+// regenerating sqlc for a while, fixed along with this change).
+// status does NOT enter the INSERT: it uses DEFAULT 'cataloged' (an auto-created item is
+// born cataloged; curation changes it later via AtualizarEntity). ADR-0009.
 func (q *Queries) CriarEntity(ctx context.Context, arg CriarEntityParams) (Entity, error) {
 	row := q.db.QueryRowContext(ctx, criarEntity,
 		arg.ID,
@@ -567,7 +567,7 @@ type ListarEntitiesPorImdbExcetoIdParams struct {
 	AlvoID string
 }
 
-// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte imdb.
+// Mirrors ListarEntitiesPorTmdbExcetoId, for the imdb source.
 func (q *Queries) ListarEntitiesPorImdbExcetoId(ctx context.Context, arg ListarEntitiesPorImdbExcetoIdParams) ([]Entity, error) {
 	rows, err := q.db.QueryContext(ctx, listarEntitiesPorImdbExcetoId, arg.ImdbID, arg.AlvoID)
 	if err != nil {
@@ -632,11 +632,11 @@ type ListarEntitiesPorMbidExcetoIdParams struct {
 	AlvoID string
 }
 
-// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte mbid (MusicBrainz) -- usada por
-// acharColisaoExterna quando o auto-match/retroativo aplica um candidato musicbrainz a
-// uma entity `artista` (briefing 0116/0119): sem esta query, o dedup de colisao ficava
-// restrito a tmdb/imdb/tvdb e um artista ja catalogado por outra via (import de arvore,
-// scan de faixa) podia ganhar uma SEGUNDA entity para o mesmo MBID.
+// Mirrors ListarEntitiesPorTmdbExcetoId, for the mbid source (MusicBrainz) -- used by
+// acharColisaoExterna when auto-match/backfill applies a musicbrainz candidate to
+// an `artista` entity (music vertical, ADR-0027): without this query, collision
+// dedupe stayed limited to tmdb/imdb/tvdb and an artist already cataloged another
+// way (tree import, track scan) could get a SECOND entity for the same MBID.
 func (q *Queries) ListarEntitiesPorMbidExcetoId(ctx context.Context, arg ListarEntitiesPorMbidExcetoIdParams) ([]Entity, error) {
 	rows, err := q.db.QueryContext(ctx, listarEntitiesPorMbidExcetoId, arg.MbidID, arg.AlvoID)
 	if err != nil {
@@ -701,12 +701,12 @@ type ListarEntitiesPorTmdbExcetoIdParams struct {
 	AlvoID string
 }
 
-// Espelha ObterEntityPorTmdb, mas devolve TODAS as entities com aquele id (menos
-// alvo_id) em vez de :one -- corrige o bug do briefing 0051 em que um dado ja
-// corrompido (duas entities com o MESMO external_id_tmdb, pre-existente antes da
-// fusao automatica) fazia o :one devolver a propria entity-alvo (sem ORDER BY
-// garantido) e mascarar a outra duplicata. Exclui alvo_id na propria SQL, entao
-// o chamador nao depende de "no maximo um resultado no total".
+// Mirrors ObterEntityPorTmdb, but returns ALL entities with that id (except
+// alvo_id) instead of :one -- fixes the bug where already corrupted data
+// (two entities with the SAME external_id_tmdb, pre-existing before the
+// automatic merge) made :one return the target entity itself (with no guaranteed
+// ORDER BY) and mask the other duplicate. It excludes alvo_id in the SQL itself, so
+// the caller does not rely on "at most one result in total".
 func (q *Queries) ListarEntitiesPorTmdbExcetoId(ctx context.Context, arg ListarEntitiesPorTmdbExcetoIdParams) ([]Entity, error) {
 	rows, err := q.db.QueryContext(ctx, listarEntitiesPorTmdbExcetoId, arg.TmdbID, arg.AlvoID)
 	if err != nil {
@@ -771,7 +771,7 @@ type ListarEntitiesPorTvdbExcetoIdParams struct {
 	AlvoID string
 }
 
-// Espelha ListarEntitiesPorTmdbExcetoId, para a fonte tvdb.
+// Mirrors ListarEntitiesPorTmdbExcetoId, for the tvdb source.
 func (q *Queries) ListarEntitiesPorTvdbExcetoId(ctx context.Context, arg ListarEntitiesPorTvdbExcetoIdParams) ([]Entity, error) {
 	rows, err := q.db.QueryContext(ctx, listarEntitiesPorTvdbExcetoId, arg.TvdbID, arg.AlvoID)
 	if err != nil {
@@ -882,43 +882,43 @@ type ListarEntityCardsRow struct {
 	CompletenessMissingJson sql.NullString
 }
 
-// Lista de CARDS para a UI (briefing 0010), ordenada por titulo ASCENDENTE. Uma
-// unica query com agregacao por subselect correlacionado -- evita o N+1 (nada de
-// uma query de posse/contagem por item). Colunas derivadas:
+// List of CARDS for the UI, ordered by title ASCENDING. A
+// single query with correlated-subselect aggregation -- avoids N+1 (no
+// per-item ownership/count query). Derived columns:
 //
-//	owned            POSSE DERIVADA (ADR-0009): EXISTS media_file present
-//	                 DIRETO (media_file.entity_id = e.id) OU via a juncao
-//	                 media_file_entity (ver abaixo).
-//	file_count       total de media_file da entity: os DIRETOS (present + missing)
-//	                 MAIS os ligados pela juncao media_file_entity.
-//	match_confidence maior confianca de match entre os arquivos (badge de revisao).
-//	has_poster       EXISTS de um asset kind='poster' (a UI decide o poster_url).
+//	owned            DERIVED OWNERSHIP (ADR-0009): media_file present EXISTS
+//	                 DIRECTLY (media_file.entity_id = e.id) OR through the
+//	                 media_file_entity junction (see below).
+//	file_count       total media_file of the entity: the DIRECT ones (present + missing)
+//	                 PLUS those linked through the media_file_entity junction.
+//	  match_confidence highest match confidence among the files (review badge).
+//	  has_poster       EXISTS of an asset kind='poster' (the UI decides the poster_url).
 //
-// Posse GENERICA pela juncao (0034): um arquivo de episodio tem media_file.entity_id
-// apontando a SERIE (a obra) e liga ao EPISODIO so por media_file_entity. Se a posse
-// do card olhasse so o entity_id direto, o episodio apareceria owned=false/file_count=0
-// enquanto o detalhe e a posse agregada (que ja leem a juncao) mostram possuido --
-// inconsistente. Por isso owned/file_count somam TAMBEM a juncao. E agnostico ao kind
-// (qualquer entity ligada por media_file_entity conta; futuro 'track' de musica idem).
-// NAO duplica: o vinculo direto e o da juncao apontam entities e.id DIFERENTES (a
-// serie leva o arquivo pelo entity_id; o episodio leva pela juncao) -- num mesmo card
-// so um dos dois caminhos casa e.id. Para o filme, sem linhas na juncao, o comportamento
-// fica inalterado. COUNT(DISTINCT media_file_id) na juncao evita contar duas vezes um
-// arquivo ligado a mesma entity em kinds diferentes.
-// So OBRAS DE TOPO entram: season/episode sao nos internos da arvore de series
-// (0032), alcancados so pela arvore do pai (GET /members); ficam FORA da home e
-// da busca via `type NOT IN ('season','episode')`. movie/tv/collection seguem.
-// Filtros opcionais (NULL = sem filtro) via sqlc.narg: type e owned. A ordenacao
-// por titulo em ordem DESC vive numa query irma (ListarEntityCardsDesc) porque o
-// sqlc nao liga parametros dentro de expressoes de ORDER BY -- direcao dinamica
-// num unico statement nao e suportada; o handler escolhe qual query rodar.
-// completeness_complete/completeness_missing_json vem do CACHE persistido
-// entity_catalog_completeness (briefing 0058, recalculado em lote pelo job
-// saude_biblioteca) via LEFT JOIN -- NULL quando o item ainda nao foi
-// avaliado (item novo, ou draft). E um JOIN simples (nao precisa de
-// agregacao): a linha do cache ja vem pronta, 1:1 com a entity.
-// Posse via ARVORE (entity_relation, briefing 0116) somada tanto na coluna `owned`
-// quanto no FILTRO `owned` -- ver nota longa na versao ASC/ObterEntityCard.
+// GENERIC ownership through the junction (0034): an episode file has
+// media_file.entity_id pointing at the SERIES (the work) and links to the EPISODE only
+// through media_file_entity. If the card ownership looked only at the direct entity_id,
+// the episode would show up as owned=false/file_count=0 while the detail and the
+// aggregated ownership (which already read the junction) show it owned -- inconsistent.
+// That is why owned/file_count ALSO count the junction. It is agnostic to kind
+// (any entity linked through media_file_entity counts; a future music 'track' likewise).
+// It does NOT duplicate: the direct link and the junction one point at DIFFERENT
+// entity ids (the series carries the file through entity_id; the episode carries it
+// through the junction) -- in a single card only one of the two paths matches e.id.
+// For the movie, nothing changes. COUNT(DISTINCT media_file_id) avoids double counting.
+// Only TOP-LEVEL WORKS come in: season/episode are internal nodes of the series
+// tree (0032), reached only through the parent tree (GET /members); they stay OUT of
+// the home/search via `type NOT IN ('season','episode')`. movie/tv/collection too.
+// Optional filters (NULL = no filter) via sqlc.narg: type and owned. The ordering
+// by title in DESC order lives in a sibling query (ListarEntityCardsDesc) because
+// sqlc does not bind parameters inside ORDER BY expressions -- dynamic direction
+// in a single statement is not supported; the handler chooses which query to run.
+// completeness_complete/completeness_missing_json come from the persisted CACHE
+// entity_catalog_completeness (recomputed in batch by the
+// saude_biblioteca job) via LEFT JOIN -- NULL when the item has not been
+// evaluated yet (new item, or draft). It is a simple JOIN (no
+// aggregation needed): the cache row already comes ready, 1:1 with the entity.
+// Tree ownership (entity_relation) added both to the `owned` column
+// and to the `owned` FILTER -- see the long note in the ASC version/ObterEntityCard.
 func (q *Queries) ListarEntityCards(ctx context.Context, arg ListarEntityCardsParams) ([]ListarEntityCardsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarEntityCards,
 		arg.Type,
@@ -1018,10 +1018,10 @@ type ListarEntityCardsDescRow struct {
 	CompletenessMissingJson sql.NullString
 }
 
-// Igual a ListarEntityCards, mas ordena por titulo DESCENDENTE (sort=-title). owned/
-// file_count somam a juncao media_file_entity do mesmo jeito -- ver a nota longa acima.
-// Posse via ARVORE (entity_relation, briefing 0116) somada tanto na coluna `owned`
-// quanto no FILTRO `owned` -- ver nota longa na versao ASC/ObterEntityCard.
+// Same as ListarEntityCards, but orders by title DESCENDING (sort=-title). owned/
+// file_count add the media_file_entity junction the same way -- see the long note above.
+// Tree ownership (entity_relation) added both to the `owned` column
+// and to the `owned` FILTER -- see the long note in the ASC version/ObterEntityCard.
 func (q *Queries) ListarEntityCardsDesc(ctx context.Context, arg ListarEntityCardsDescParams) ([]ListarEntityCardsDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarEntityCardsDesc,
 		arg.Type,
@@ -1121,18 +1121,18 @@ type ListarEntityCardsRecentesRow struct {
 	CompletenessMissingJson sql.NullString
 }
 
-// Igual a ListarEntityCards, mas ordena por created_at DESCENDENTE
-// (sort=-created_at, briefings 0109/0110): "adicionados recentemente" na
-// home. owned/file_count somam a juncao media_file_entity do mesmo jeito --
-// ver a nota longa em ListarEntityCards. So a variante DESC existe (mais
-// recente primeiro); nao ha pedido de "mais antigo primeiro". Mesmo shape de
-// paginacao LIMIT/OFFSET das irmas por titulo -- o consumidor real (carrossel
-// da home) sempre usa limit pequeno (ex. 10), sem necessidade de um shape de
-// paginacao dedicado.
-// Posse via ARVORE (entity_relation, briefing 0116) somada tanto na coluna `owned`
-// quanto no FILTRO `owned` -- ver nota longa na versao ASC/ObterEntityCard. E o
-// que faz o carrossel "adicionados recentemente" de artista (owned=true) trazer
-// resultado mesmo o artista nunca tendo media_file DIRETO nem via juncao.
+// Same as ListarEntityCards, but orders by created_at DESCENDING
+// (sort=-created_at): "recently added" on the
+// home. owned/file_count add the media_file_entity junction the same way --
+// see the long note in ListarEntityCards. Only the DESC variant exists (most
+// recent first); there is no request for "oldest first". Same LIMIT/OFFSET
+// pagination shape as the title siblings -- the real consumer (home
+// carousel) always uses a small limit (e.g. 10), with no need for a
+// dedicated pagination shape.
+// Tree ownership (entity_relation) added both to the `owned` column
+// and to the `owned` FILTER -- see the long note in the ASC version/ObterEntityCard. It is
+// what makes the artist "recently added" carousel (owned=true) return
+// results even when the artist never had a DIRECT media_file nor one through the junction.
 func (q *Queries) ListarEntityCardsRecentes(ctx context.Context, arg ListarEntityCardsRecentesParams) ([]ListarEntityCardsRecentesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarEntityCardsRecentes,
 		arg.Type,
@@ -1186,22 +1186,22 @@ type ListarTiposComContagemRow struct {
 	Count int64
 }
 
-// Tipos de entity DISTINTOS com pelo menos 1 item CATALOGADO (status !=
-// 'draft'), para a home (0109) e o dropdown da navbar (0110) descobrirem
-// quais schemas mostrar sem hardcode de lista fixa no frontend -- cobre
-// album/artista/faixa (0105-0107) junto de movie/tv sem exigir mudanca aqui a
-// cada vertical nova. Criterio = "status != 'draft'" (o MESMO da fila de
-// revisao em review.sql: um item 'draft' e so um resultado de busca ainda nao
-// comprometido ao catalogo) -- DELIBERADAMENTE distinto de "owned"
-// (ContarEntityCards/ListarEntityCards: posse FISICA de arquivo). Um item
-// 'wanted'/'unreleased' catalogado mas sem arquivo em disco ainda conta --
-// coerente com AGENTS.md #2 ("o banco e maior que a biblioteca": cataloga o
-// que se tem E o que ainda nao se tem). Exclui os SUB-NOS (nos internos da
-// arvore de series/musica, ver ListarEntityCards/0032) recebidos via
-// sub_nos -- o CHAMADOR passa a lista unica tiposSubNo (ADR-0030, briefing
-// 0112, internal/server/entities.go), nao mais um literal fixo aqui.
-// Ordenado por count DESCENDENTE (schema mais populoso primeiro) e type
-// ASCENDENTE como desempate estavel.
+// DISTINCT entity types with at least 1 CATALOGED item (status !=
+// 'draft'), so the home (0109) and the navbar dropdown (0110) discover
+// which schemas to show without hardcoding a fixed list in the frontend -- covers
+// album/artista/faixa (0105-0107) along with movie/tv without requiring a change here for
+// each new vertical. Criterion = "status != 'draft'" (the SAME one of the review
+// queue in review.sql: a 'draft' item is just a search result not yet
+// committed to the catalog) -- DELIBERATELY distinct from "owned"
+// (ContarEntityCards/ListarEntityCards: PHYSICAL file ownership). An item
+// 'wanted'/'unreleased' cataloged but without a file on disk still counts --
+// consistent with AGENTS.md #2 ("the database is bigger than the library": it catalogs
+// what you have AND what you do not have yet). It excludes the SUB-NODES (internal nodes of
+// the series/music tree, see ListarEntityCards/0032) received via
+// sub_nos -- the CALLER passes the single list tiposSubNo (ADR-0030,
+// internal/server/entities.go), no longer a fixed literal here.
+// Ordered by count DESCENDING (most populated schema first) and type
+// ASCENDING as a stable tiebreaker.
 func (q *Queries) ListarTiposComContagem(ctx context.Context, subNos []string) ([]ListarTiposComContagemRow, error) {
 	query := listarTiposComContagem
 	var queryParams []interface{}
@@ -1245,10 +1245,10 @@ WHERE type = 'collection' AND external_id_tmdb = ?
 LIMIT 1
 `
 
-// Dedup da entity COLECAO por id tmdb (briefing 0025): reusa a coluna gerada
-// external_id_tmdb, mas RESTRITA a type='collection'. O namespace de id de colecao
-// e distinto do de filme, porem a coluna gerada e compartilhada; o filtro por type
-// evita casar um filme homonimo de mesmo id numerico. Mantem o re-import idempotente.
+// Dedupe of the COLLECTION entity by tmdb id: reuses the generated column
+// external_id_tmdb, but RESTRICTED to type='collection'. The collection id
+// namespace differs from the movie one, yet the generated column is shared; the type filter
+// avoids matching a same-named movie of the same numeric id. Re-import stays idempotent.
 func (q *Queries) ObterColecaoPorTmdb(ctx context.Context, externalIDTmdb sql.NullString) (Entity, error) {
 	row := q.db.QueryRowContext(ctx, obterColecaoPorTmdb, externalIDTmdb)
 	var i Entity
@@ -1371,24 +1371,24 @@ type ObterEntityCardRow struct {
 	CompletenessMissingJson sql.NullString
 }
 
-// CARD de UMA entity (mesmas colunas derivadas de ListarEntityCards) + release_date
-// para ordenar. Usado pelos MEMBROS de uma colecao (briefing 0025) e pelos episodios
-// de uma temporada (0034): a lista de filhos vem de entity_relation e cada filho vira
-// card por aqui (N pequeno). As colunas derivadas espelham ListarEntityCards
-// (owned/file_count/match_confidence/has_poster), entao o mapeamento reusa o cardDTO.
-// owned/file_count contam TAMBEM a juncao media_file_entity -- ver a nota longa em
-// ListarEntityCards (o card do episodio possui arquivo so pela juncao).
-// completeness_complete/completeness_missing_json vem do CACHE persistido
-// entity_catalog_completeness (briefing 0058, recalculado em lote pelo job
-// saude_biblioteca) via LEFT JOIN -- NULL quando o item ainda nao foi
-// avaliado (item novo, ou draft).
-// Posse via ARVORE (entity_relation, briefing 0116): alem do arquivo DIRETO e da
-// juncao media_file_entity (posse de IRMAO, ver nota longa em ListarEntityCards),
-// soma tambem qualquer DESCENDENTE na arvore de entity_relation (CTE recursiva
-// parent_id->child_id) que possua um media_file 'present' -- cobre artista/album
-// de musica (ADR-0027/0029), cujo unico vinculo com o arquivo fica na FAIXA, dois
-// niveis abaixo, sem NUNCA usar media_file_entity para faixa. Generico a qualquer
-// profundidade e a qualquer kind de relacao (nao hardcoded a musica).
+// CARD for ONE entity (same derived columns as ListarEntityCards) + release_date
+// for ordering. Used by the MEMBERS of a collection and by the episodes
+// of a season (0034): the child list comes from entity_relation and each child becomes
+// a card through here (small N). The derived columns mirror ListarEntityCards
+// (owned/file_count/match_confidence/has_poster), so the mapping reuses the cardDTO.
+// owned/file_count ALSO count the media_file_entity junction -- see the long note in
+// ListarEntityCards (the episode card owns a file only through the junction).
+// completeness_complete/completeness_missing_json come from the persisted CACHE
+// entity_catalog_completeness (recomputed in batch by the
+// saude_biblioteca job) via LEFT JOIN -- NULL when the item has not been
+// evaluated yet (new item, or draft).
+// Tree ownership (entity_relation): beyond the DIRECT file and the
+// media_file_entity junction (SIBLING ownership, see the long note in ListarEntityCards),
+// it also adds any DESCENDANT in the entity_relation tree (recursive CTE
+// parent_id->child_id) that has a 'present' media_file -- covers music
+// artist/album (ADR-0027/0029), whose only link to the file lives in the TRACK, two
+// levels below, without EVER using media_file_entity for a track. Generic to any
+// depth and to any relation kind (not hardcoded to music).
 func (q *Queries) ObterEntityCard(ctx context.Context, id string) (ObterEntityCardRow, error) {
 	row := q.db.QueryRowContext(ctx, obterEntityCard, id)
 	var i ObterEntityCardRow
@@ -1460,9 +1460,9 @@ FROM entity
 WHERE external_id_mbid = ?
 `
 
-// Lookup por id externo mbid (MusicBrainz) via coluna gerada + indice (briefing 0106,
-// ADR-0027 item 6). Espelha ObterEntityPorTmdb: usado pelo import da vertical de musica
-// para o dedup idempotente de artista/album/faixa por MBID.
+// Lookup by external mbid (MusicBrainz) via generated column + index (ADR-0027
+// item 6). Mirrors ObterEntityPorTmdb: used by the music vertical import
+// for idempotent dedupe of artist/album/track by MBID.
 func (q *Queries) ObterEntityPorMbid(ctx context.Context, externalIDMbid sql.NullString) (Entity, error) {
 	row := q.db.QueryRowContext(ctx, obterEntityPorMbid, externalIDMbid)
 	var i Entity
@@ -1513,10 +1513,10 @@ type ObterEntityPorTituloAnoParams struct {
 	ReleaseDate sql.NullString
 }
 
-// Dedup do scanner sem id externo (briefing 0009): reusa a MESMA entity para o
-// mesmo (type, title, release_date). Usa `IS` (nao `=`) para casar release_date
-// NULO quando o nome nao traz ano. Mantem o re-scan idempotente para obras sem
-// id embutido no nome (nao duplica a entity).
+// Scanner dedupe without an external id: reuses the SAME entity for the
+// same (type, title, release_date). Uses `IS` (not `=`) to match a NULL
+// release_date when the name carries no year. Keeps the re-scan idempotent for works
+// without an id embedded in the name (does not duplicate the entity).
 func (q *Queries) ObterEntityPorTituloAno(ctx context.Context, arg ObterEntityPorTituloAnoParams) (Entity, error) {
 	row := q.db.QueryRowContext(ctx, obterEntityPorTituloAno, arg.Type, arg.Title, arg.ReleaseDate)
 	var i Entity
@@ -1567,10 +1567,10 @@ type ObterEntityPorTituloTipoParams struct {
 	Title string
 }
 
-// Lookup do scanner de series (briefing 0034): a serie ja no catalogo pelo par
-// (type, title), ignorando release_date. Usada quando a pasta da serie nao traz id
-// externo embutido, para reusar a serie ja importada e evitar um novo round-trip ao
-// provider a cada scan. Primeira por created_at (estavel).
+// Series scanner lookup: the series already in the catalog by the
+// (type, title) pair, ignoring release_date. Used when the series folder carries no
+// embedded external id, to reuse the already imported series and avoid a new
+// round-trip to the provider on every scan. First by created_at (stable).
 func (q *Queries) ObterEntityPorTituloTipo(ctx context.Context, arg ObterEntityPorTituloTipoParams) (Entity, error) {
 	row := q.db.QueryRowContext(ctx, obterEntityPorTituloTipo, arg.Type, arg.Title)
 	var i Entity
@@ -1614,7 +1614,7 @@ FROM entity
 WHERE external_id_tmdb = ?
 `
 
-// Lookup por id externo tmdb via coluna gerada + indice (doc 04, busca sem GIN).
+// Lookup by external tmdb id via generated column + index (doc 04, search without GIN).
 func (q *Queries) ObterEntityPorTmdb(ctx context.Context, externalIDTmdb sql.NullString) (Entity, error) {
 	row := q.db.QueryRowContext(ctx, obterEntityPorTmdb, externalIDTmdb)
 	var i Entity
@@ -1658,9 +1658,9 @@ FROM entity
 WHERE external_id_tvdb = ?
 `
 
-// Lookup por id externo tvdb via coluna gerada + indice (migration 0007, ADR-0021).
-// Espelha ObterEntityPorTmdb: series exclusivas do TheTVDB (sem contraparte tmdb/
-// imdb, ex.: Looney Tunes) deduplicam por este caminho no import.
+// Lookup by external tvdb id via generated column + index (migration 0007, ADR-0021).
+// Mirrors ObterEntityPorTmdb: series exclusive to TheTVDB (no tmdb/
+// imdb counterpart, e.g. Looney Tunes) dedupe through this path on import.
 func (q *Queries) ObterEntityPorTvdb(ctx context.Context, externalIDTvdb sql.NullString) (Entity, error) {
 	row := q.db.QueryRowContext(ctx, obterEntityPorTvdb, externalIDTvdb)
 	var i Entity
@@ -1716,12 +1716,12 @@ type PreencherCamposLocaisReproducaoSeAusentesParams struct {
 	ID                    string
 }
 
-// Preenche os campos LOCAIS de reproducao (briefing 0088) SO onde ainda
-// estao NULL (COALESCE) -- nunca sobrescreve um valor ja presente (mesmo
-// espirito de "override do dono vence"/"nao-destrutivo", AGENTS.md). Chamada
-// pelo endpoint POST /entities/{id}/refresh-files apos ler o .nfo em disco
-// (internal/localmedia.ExtrairCamposUsuario); parametros ausentes no .nfo
-// entram como NULL/zero-value, o COALESCE cuida do resto.
+// Fills the LOCAL playback fields ONLY where they are still
+// NULL (COALESCE) -- never overwrites an already present value (same
+// spirit of "the owner's override wins"/"non-destructive", AGENTS.md). Called
+// by the endpoint POST /entities/{id}/refresh-files after reading the .nfo on disk
+// (internal/localmedia.ExtrairCamposUsuario); parameters absent from the .nfo
+// come in as NULL/zero-value, the COALESCE takes care of the rest.
 func (q *Queries) PreencherCamposLocaisReproducaoSeAusentes(ctx context.Context, arg PreencherCamposLocaisReproducaoSeAusentesParams) error {
 	_, err := q.db.ExecContext(ctx, preencherCamposLocaisReproducaoSeAusentes,
 		arg.Watched,
@@ -1753,11 +1753,11 @@ type UpsertEntityCatalogCompletenessParams struct {
 	MissingJson string
 }
 
-// Grava (ou substitui) o resultado da avaliacao de completude de CATALOGACAO
-// (briefing 0058) de UM item -- chamada pelo recalculo em lote
-// (RecalcularCompletudeCatalogacao, job saude_biblioteca). Conflito na PK
-// (entity_id) atualiza complete/missing_json e recarimba evaluated_at --
-// nunca cria uma segunda linha para a mesma entity (1:1, mesmo padrao de
+// Writes (or replaces) the result of the CATALOG completeness evaluation
+// of ONE item -- called by the batch recalculation
+// (RecalcularCompletudeCatalogacao, saude_biblioteca job). A conflict on the PK
+// (entity_id) updates complete/missing_json and restamps evaluated_at --
+// never creates a second row for the same entity (1:1, same pattern as
 // UpsertAppSetting).
 func (q *Queries) UpsertEntityCatalogCompleteness(ctx context.Context, arg UpsertEntityCatalogCompletenessParams) error {
 	_, err := q.db.ExecContext(ctx, upsertEntityCatalogCompleteness, arg.EntityID, arg.Complete, arg.MissingJson)

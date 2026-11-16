@@ -11,11 +11,11 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// combinedCreditsFixoJSON e um payload de /person/6384?append_to_response=
-// combined_credits com: um credito de CAST movie (603, "The Matrix", com poster), um
-// credito de CAST tv SEM poster (1396, "Breaking Bad"), e a obra 604 ("The Matrix
-// Reloaded") com DOIS creditos de CREW (Writer + Director, para provar a juncao de
-// cargos) e um credito de CREW da MESMA obra 603 (para provar que cast vence).
+// combinedCreditsFixoJSON is a /person/6384?append_to_response=combined_credits
+// payload with: a CAST movie credit (603, "The Matrix", with poster), a CAST tv credit
+// WITHOUT poster (1396, "Breaking Bad"), and the work 604 ("The Matrix Reloaded") with
+// TWO CREW credits (Writer + Director, to prove the joining of jobs) plus a CREW credit
+// of the SAME work 603 (to prove that cast wins).
 const combinedCreditsFixoJSON = `{
   "id": 6384,
   "combined_credits": {
@@ -31,8 +31,8 @@ const combinedCreditsFixoJSON = `{
   }
 }`
 
-// servidorPessoa sobe um httptest.Server que serve /person/6384 com o payload fixo e
-// 404 em /person/000 (pessoa inexistente).
+// servidorPessoa starts an httptest.Server that serves /person/6384 with the fixed
+// payload and 404 on /person/000 (nonexistent person).
 func servidorPessoa(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -50,10 +50,11 @@ func servidorPessoa(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// TestBuscarFilmografiaMapeiaDedupOrdena prova o mapeamento (source/source_id/type/
-// title/year/poster_url/kind/character/job), o dedup por obra (603 aparece em cast E
-// crew -> vence cast, sem job), a juncao de cargos distintos da MESMA obra so-crew (604:
-// "Writer · Director") e a ordenacao por ano DECRESCENTE (2008, 2003, 1999).
+// TestBuscarFilmografiaMapeiaDedupOrdena proves the mapping
+// (source/source_id/type/title/year/poster_url/kind/character/job), the dedup by work
+// (603 appears in cast AND crew -> cast wins, without job), the joining of distinct jobs
+// of the SAME crew-only work (604: "Writer · Director") and the DESCENDING year ordering
+// (2008, 2003, 1999).
 func TestBuscarFilmografiaMapeiaDedupOrdena(t *testing.T) {
 	srv := servidorPessoa(t)
 	c := New(Credencial{Token: "tok"}, srv.Client(), srv.URL)
@@ -66,7 +67,7 @@ func TestBuscarFilmografiaMapeiaDedupOrdena(t *testing.T) {
 		t.Fatalf("len(res) = %d, quero 3 (603 dedup, 604, 1396) — res=%+v", len(res), res)
 	}
 
-	serie := res[0] // 1396, 2008, cast, sem poster
+	serie := res[0] // 1396, 2008, cast, without poster
 	eqS(t, "serie.source", serie.Source, "tmdb")
 	eqS(t, "serie.source_id", serie.SourceID, "1396")
 	eqS(t, "serie.type", serie.Type, "tv")
@@ -81,7 +82,7 @@ func TestBuscarFilmografiaMapeiaDedupOrdena(t *testing.T) {
 		t.Errorf("serie.job = %v, quero nil (kind=cast)", *serie.Job)
 	}
 
-	reloaded := res[1] // 604, 2003, crew, dois cargos juntados
+	reloaded := res[1] // 604, 2003, crew, two jobs joined
 	eqS(t, "reloaded.source_id", reloaded.SourceID, "604")
 	eqS(t, "reloaded.type", reloaded.Type, "movie")
 	eqSPtr(t, "reloaded.year", reloaded.Year, "2003")
@@ -92,7 +93,7 @@ func TestBuscarFilmografiaMapeiaDedupOrdena(t *testing.T) {
 		t.Errorf("reloaded.character = %v, quero nil (kind=crew)", *reloaded.Character)
 	}
 
-	matrix := res[2] // 603, 1999, cast VENCE sobre o crew da mesma obra
+	matrix := res[2] // 603, 1999, cast WINS over the crew of the same work
 	eqS(t, "matrix.source_id", matrix.SourceID, "603")
 	eqS(t, "matrix.kind", matrix.Kind, "cast")
 	eqSPtr(t, "matrix.character", matrix.Character, "Neo")
@@ -102,8 +103,9 @@ func TestBuscarFilmografiaMapeiaDedupOrdena(t *testing.T) {
 	}
 }
 
-// TestBuscarFilmografiaNaoEncontrada prova que 404 do TMDB vira
-// provider.ErrNaoEncontrado (o handler o trata degradando para filmography_external=[]).
+// TestBuscarFilmografiaNaoEncontrada proves that a 404 from TMDB becomes
+// provider.ErrNaoEncontrado (the handler treats it by degrading to
+// filmography_external=[]).
 func TestBuscarFilmografiaNaoEncontrada(t *testing.T) {
 	srv := servidorPessoa(t)
 	c := New(Credencial{Token: "tok"}, srv.Client(), srv.URL)
@@ -114,15 +116,15 @@ func TestBuscarFilmografiaNaoEncontrada(t *testing.T) {
 	}
 }
 
-// TestMontarFilmografiaExternaCorta40 prova o TETO: 45 obras de anos distintos
-// (decrescentes) mapeadas so-cast devolvem so as 40 mais RECENTES, na ordem certa.
-// Chama montarFilmografiaExterna diretamente (funcao PURA) para nao montar um payload
-// httptest gigante.
+// TestMontarFilmografiaExternaCorta40 proves the CEILING: 45 works of distinct
+// (descending) years mapped as cast-only return only the 40 most RECENT ones, in the
+// right order. It calls montarFilmografiaExterna directly (a PURE function) to avoid
+// assembling a giant httptest payload.
 func TestMontarFilmografiaExternaCorta40(t *testing.T) {
 	const n = 45
 	cast := make([]creditoCombinadoTMDB, 0, n)
 	for i := 0; i < n; i++ {
-		ano := 2020 - i // anos decrescentes: 2020, 2019, ..., 1976
+		ano := 2020 - i // descending years: 2020, 2019, ..., 1976
 		cast = append(cast, creditoCombinadoTMDB{
 			ID:          int64(1000 + i),
 			MediaType:   "movie",
@@ -140,9 +142,9 @@ func TestMontarFilmografiaExternaCorta40(t *testing.T) {
 	eqSPtr(t, "out[39].year (ultimo dentro do teto)", out[tetoFilmografiaExterna-1].Year, "1981")
 }
 
-// TestChaveObraExternaDescartaMediaTypeDesconhecido prova que um media_type fora de
-// movie|tv (ex.: eventual ruido de "person" nao previsto para credito) e' descartado
-// silenciosamente pelo dedup, nunca aparecendo no resultado.
+// TestChaveObraExternaDescartaMediaTypeDesconhecido proves that a media_type outside
+// movie|tv (e.g. eventual noise of "person" not foreseen for a credit) is silently
+// discarded by the dedup, never appearing in the result.
 func TestChaveObraExternaDescartaMediaTypeDesconhecido(t *testing.T) {
 	out := montarFilmografiaExterna(combinedCreditsTMDB{
 		Cast: []creditoCombinadoTMDB{

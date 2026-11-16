@@ -1,12 +1,12 @@
 package scanner
 
-// Testes do briefing 0088 (menu Gerenciar > "Verificar Atualizações de
-// Arquivos"): RecheckEntityFiles força o re-hash mesmo sem mudança de
-// mtime/size (ignora de propósito o short-circuit do scan incremental,
-// briefing 0064 -- ver scan_incremental_test.go para o comportamento
-// OPOSTO, que continua intacto); RefreshLocalAsset descobre/atualiza um
-// asset origin='local' para uma entity JÁ CATALOGADA (gap que hoje só é
-// coberto na 1ª varredura da pasta, dentro de criarEntity, match.go).
+// Tests of the forced file recheck (Manage menu > "Verificar Atualizações de
+// Arquivos"): RecheckEntityFiles forces the re-hash even without a change in
+// mtime/size (it deliberately ignores the incremental scan short-circuit -- see
+// scan_incremental_test.go for the OPPOSITE behavior, which stays intact);
+// RefreshLocalAsset discovers/updates an asset origin='local' for an entity ALREADY
+// CATALOGED (a gap that today is only covered in the first walk of the folder,
+// inside criarEntity, match.go).
 
 import (
 	"context"
@@ -15,10 +15,10 @@ import (
 	"testing"
 )
 
-// TestRecheckEntityFilesForcaReHashMesmoSemMudanca cobre o critério central
-// do briefing 0088: um path cujo mtime/size BATEM com o media_file já
-// gravado (o scan normal pularia o re-hash, ver scan_incremental_test.go)
-// tem hashDoArquivoFn chamado de novo quando passa por RecheckEntityFiles.
+// TestRecheckEntityFilesForcaReHashMesmoSemMudanca covers the central criterion of
+// the forced recheck: a path whose mtime/size MATCH the media_file already stored
+// (the normal scan would skip the re-hash, see scan_incremental_test.go) has
+// hashDoArquivoFn called again when it goes through RecheckEntityFiles.
 func TestRecheckEntityFilesForcaReHashMesmoSemMudanca(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -38,9 +38,9 @@ func TestRecheckEntityFilesForcaReHashMesmoSemMudanca(t *testing.T) {
 		t.Fatalf("scan inicial: hashDoArquivoFn chamado %d vez(es), quero 1", *chamadas)
 	}
 
-	// Nenhuma mudança no arquivo -- um scan normal pularia o re-hash (ver
-	// TestScanIncrementalPulaReHashSemMudanca). RecheckEntityFiles deve
-	// IGNORAR esse short-circuit de propósito.
+	// No change to the file -- a normal scan would skip the re-hash (see
+	// TestScanIncrementalPulaReHashSemMudanca). RecheckEntityFiles must IGNORE that
+	// short-circuit on purpose.
 	ctx := context.Background()
 	n, err := m.RecheckEntityFiles(ctx, src, []string{arq})
 	if err != nil {
@@ -53,8 +53,8 @@ func TestRecheckEntityFilesForcaReHashMesmoSemMudanca(t *testing.T) {
 		t.Errorf("hashDoArquivoFn total=%d, quero 2 (RecheckEntityFiles deveria forçar o re-hash)", *chamadas)
 	}
 
-	// media_file segue único (atualiza a linha existente, não duplica) e
-	// present.
+	// media_file stays unique (it updates the existing row, it does not duplicate)
+	// and present.
 	if cnt := contar(t, d, "SELECT count(*) FROM media_file"); cnt != 1 {
 		t.Errorf("media_file após recheck = %d, quero 1 (sem duplicar)", cnt)
 	}
@@ -63,9 +63,9 @@ func TestRecheckEntityFilesForcaReHashMesmoSemMudanca(t *testing.T) {
 	}
 }
 
-// TestRecheckEntityFilesPathDesconhecidoNaoFalha cobre o caso defensivo: um
-// path sem media_file gravado (ex.: sumiu entre a listagem do chamador e a
-// chamada) é ignorado, sem erro.
+// TestRecheckEntityFilesPathDesconhecidoNaoFalha covers the defensive case: a path
+// without a stored media_file (e.g. it disappeared between the caller's listing and
+// the call) is ignored, without an error.
 func TestRecheckEntityFilesPathDesconhecidoNaoFalha(t *testing.T) {
 	d := abrirDB(t)
 	m := managerFake(t, d)
@@ -81,12 +81,11 @@ func TestRecheckEntityFilesPathDesconhecidoNaoFalha(t *testing.T) {
 	}
 }
 
-// TestRefreshLocalAssetDescobrePosterEmEntityJaCatalogada cobre o gap
-// investigado no briefing 0088: descobrirPoster só roda dentro de
-// criarEntity (match.go), ou seja, só na 1ª varredura da pasta. Um poster
-// colocado DEPOIS que a entity já existe nunca é pego por um re-scan normal
-// -- RefreshLocalAsset é o caminho novo e isolado que cobre isso sob
-// demanda.
+// TestRefreshLocalAssetDescobrePosterEmEntityJaCatalogada covers the gap
+// investigated for RefreshLocalAsset: descobrirPoster only runs inside criarEntity
+// (match.go), that is, only in the first walk of the folder. A poster placed AFTER
+// the entity already exists is never picked up by a normal re-scan --
+// RefreshLocalAsset is the new, isolated path that covers that on demand.
 func TestRefreshLocalAssetDescobrePosterEmEntityJaCatalogada(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -99,7 +98,7 @@ func TestRefreshLocalAssetDescobrePosterEmEntityJaCatalogada(t *testing.T) {
 	if err := scanSync(t, m, src); err != nil {
 		t.Fatalf("scan inicial: %v", err)
 	}
-	// Sem poster.jpg ainda -- a 1ª varredura não registrou asset nenhum.
+	// No poster.jpg yet -- the first walk registered no asset at all.
 	if cnt := contar(t, d, "SELECT count(*) FROM asset WHERE kind='poster' AND origin='local'"); cnt != 0 {
 		t.Fatalf("asset poster local após scan inicial = %d, quero 0 (sem poster.jpg na pasta)", cnt)
 	}
@@ -109,7 +108,7 @@ func TestRefreshLocalAssetDescobrePosterEmEntityJaCatalogada(t *testing.T) {
 		t.Fatalf("entity_id do media_file: %v", err)
 	}
 
-	// O dono coloca um poster.jpg na pasta DEPOIS que a entity já existe.
+	// The owner places a poster.jpg in the folder AFTER the entity already exists.
 	posterPath := filepath.Join(pasta, "poster.jpg")
 	if err := os.WriteFile(posterPath, []byte("fake-poster"), 0o644); err != nil {
 		t.Fatal(err)
@@ -127,8 +126,8 @@ func TestRefreshLocalAssetDescobrePosterEmEntityJaCatalogada(t *testing.T) {
 		t.Errorf("asset poster local = %d, quero 1", cnt)
 	}
 
-	// Rodar de novo sem mudança nenhuma: idempotente, não duplica nem
-	// reporta found.
+	// Running it again with no change at all: idempotent, it neither duplicates nor
+	// reports found.
 	found2, err := m.RefreshLocalAsset(ctx, entityID, []string{arq})
 	if err != nil {
 		t.Fatalf("RefreshLocalAsset (2a chamada): %v", err)
@@ -140,9 +139,8 @@ func TestRefreshLocalAssetDescobrePosterEmEntityJaCatalogada(t *testing.T) {
 		t.Errorf("asset poster local após 2a chamada = %d, quero 1 (sem duplicar)", cnt)
 	}
 
-	// Trocar o poster local (novo arquivo, convenção folder.jpg) -- a
-	// PRÓXIMA chamada deve ATUALIZAR o path_or_uri da MESMA linha, não
-	// criar uma segunda.
+	// Swap the local poster (new file, folder.jpg convention) -- the NEXT call must
+	// UPDATE the path_or_uri of the SAME row, not create a second one.
 	if err := os.Remove(posterPath); err != nil {
 		t.Fatal(err)
 	}

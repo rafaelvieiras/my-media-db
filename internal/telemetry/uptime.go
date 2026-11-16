@@ -2,9 +2,10 @@ package telemetry
 
 import "time"
 
-// UptimeSegundos devolve ha quantos segundos o processo esta no ar, a partir
-// do instante injetado em New (iniciadoEm) -- ver doc de New sobre a escolha
-// de injecao (em vez de captura num init() global) para testabilidade.
+// UptimeSegundos returns how many seconds the process has been up, counted
+// from the instant injected in New (iniciadoEm) -- see the New doc about the
+// choice of injection (instead of capturing it in a global init()) for
+// testability.
 func (s *Servico) UptimeSegundos() int64 {
 	return int64(time.Since(s.iniciadoEm).Seconds())
 }

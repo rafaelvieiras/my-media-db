@@ -6,12 +6,12 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Testes da COMPOSIÇÃO POR IDIOMA (briefing 0019 / ADR-0019). As camadas são
-// injetadas direto no motor, com a Cadeia já derivada — o mesmo contrato que o
-// handler monta a partir das settings.
+// Tests of the PER-LANGUAGE COMPOSITION (ADR-0019). The layers are injected
+// straight into the engine, with the Cadeia already derived — the same contract
+// that the handler builds from the settings.
 
-// entIdioma é uma entity de núcleo com título/descrição/tags de arquivo (base
-// neutra) e um idioma original, reutilizada pelos testes de idioma.
+// entIdioma is a core entity with file title/description/tags (neutral base) and an
+// original language, reused by the language tests.
 func entIdioma() sqlcgen.Entity {
 	return sqlcgen.Entity{
 		ID:               "x",
@@ -24,18 +24,18 @@ func entIdioma() sqlcgen.Entity {
 	}
 }
 
-// externoMapa monta uma camada externa cujo campo é um mapa idioma→valor (o
-// formato do futuro 0020).
+// externoMapa builds an external layer whose field is a language→value map (the
+// per-language format).
 func externoMapa(campo string, porIdioma map[string]any) []CamadaExterna {
 	return []CamadaExterna{{Fonte: "tmdb", Campos: map[string]any{campo: porIdioma}}}
 }
 
-// TestCadeiaFallbackOrdem cobre §5: pedido → fallback → original → arquivo, na
-// ordem, escolhendo a PRIMEIRA etapa com valor e registrando a proveniência.
+// TestCadeiaFallbackOrdem covers §5: pedido → fallback → original → arquivo, in
+// order, choosing the FIRST step with a value and recording the provenance.
 func TestCadeiaFallbackOrdem(t *testing.T) {
 	cadeia := []string{"pt-BR", "en", "ja"} // pedido, fallback, original
 
-	// (1) pedido tem valor → vence.
+	// (1) the requested one has a value → wins.
 	got := Resolver(Camadas{
 		Entity: entIdioma(), Cadeia: cadeia, LangPedido: "pt-BR", IdiomaPrincipal: "pt-BR",
 		Externo: externoMapa("title", map[string]any{"pt-BR": "PT", "en": "EN", "ja": "JA"}),
@@ -45,7 +45,7 @@ func TestCadeiaFallbackOrdem(t *testing.T) {
 	eq(t, "lang eco", got.Lang, "pt-BR")
 	eqPtr(t, "original_language", got.OriginalLanguage, "ja")
 
-	// (2) sem pedido → cai no fallback en.
+	// (2) no value for the requested one → falls back to en.
 	got = Resolver(Camadas{
 		Entity: entIdioma(), Cadeia: cadeia, LangPedido: "pt-BR", IdiomaPrincipal: "pt-BR",
 		Externo: externoMapa("title", map[string]any{"en": "EN", "ja": "JA"}),
@@ -53,7 +53,7 @@ func TestCadeiaFallbackOrdem(t *testing.T) {
 	eq(t, "title(fallback)", got.Title, "EN")
 	eq(t, "prov title(fallback)", got.ResolvedLanguages["title"], "en")
 
-	// (3) sem pedido nem fallback → cai no original (ja).
+	// (3) neither requested nor fallback → falls back to the original (ja).
 	got = Resolver(Camadas{
 		Entity: entIdioma(), Cadeia: cadeia, LangPedido: "pt-BR", IdiomaPrincipal: "pt-BR",
 		Externo: externoMapa("title", map[string]any{"ja": "JA"}),
@@ -61,7 +61,7 @@ func TestCadeiaFallbackOrdem(t *testing.T) {
 	eq(t, "title(original)", got.Title, "JA")
 	eq(t, "prov title(original)", got.ResolvedLanguages["title"], "ja")
 
-	// (4) nenhum idioma da cadeia → base arquivo (neutra), proveniência "".
+	// (4) no language of the chain → file base (neutral), provenance "".
 	got = Resolver(Camadas{
 		Entity: entIdioma(), Cadeia: cadeia, LangPedido: "pt-BR", IdiomaPrincipal: "pt-BR",
 		Externo: externoMapa("title", map[string]any{"xx": "XX"}),
@@ -70,12 +70,13 @@ func TestCadeiaFallbackOrdem(t *testing.T) {
 	eq(t, "prov title(arquivo)", got.ResolvedLanguages["title"], "")
 }
 
-// TestNullPorIdiomaApagaEInterrompe cobre §5/R6: override null no idioma pedido
-// apaga o campo e NÃO cai no fallback; chave ausente segue a cadeia.
+// TestNullPorIdiomaApagaEInterrompe covers §5/R6: a null override in the requested
+// language erases the field and does NOT fall back; an absent key follows the
+// chain.
 func TestNullPorIdiomaApagaEInterrompe(t *testing.T) {
 	cadeia := []string{"pt-BR", "en"}
 
-	// null em pt-BR apaga e interrompe: NÃO usa o "EN" do externo.
+	// null in pt-BR erases and interrupts: does NOT use the external's "EN".
 	got := Resolver(Camadas{
 		Entity: entIdioma(), Cadeia: cadeia, LangPedido: "pt-BR", IdiomaPrincipal: "pt-BR",
 		Externo:  externoMapa("description", map[string]any{"en": "EN"}),
@@ -86,7 +87,8 @@ func TestNullPorIdiomaApagaEInterrompe(t *testing.T) {
 	}
 	eq(t, "prov description(null)", got.ResolvedLanguages["description"], "pt-BR")
 
-	// chave ausente em pt-BR (override só tem en): segue a cadeia e usa o externo pt-BR.
+	// the key is absent in pt-BR (the override only has en): follows the chain and
+	// uses the external pt-BR.
 	got = Resolver(Camadas{
 		Entity: entIdioma(), Cadeia: cadeia, LangPedido: "pt-BR", IdiomaPrincipal: "pt-BR",
 		Externo:  externoMapa("description", map[string]any{"pt-BR": "PT"}),
@@ -96,8 +98,8 @@ func TestNullPorIdiomaApagaEInterrompe(t *testing.T) {
 	eq(t, "prov description(cadeia)", got.ResolvedLanguages["description"], "pt-BR")
 }
 
-// TestOverrideVenceExternoNoIdioma cobre a precedência override ⟵ externo DENTRO do
-// idioma: no fallback en, o override en vence o externo en.
+// TestOverrideVenceExternoNoIdioma covers the override ⟵ externo precedence WITHIN
+// the language: in the en fallback, the en override wins over the en external.
 func TestOverrideVenceExternoNoIdioma(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity: entIdioma(), Cadeia: []string{"pt-BR", "en"}, LangPedido: "pt-BR", IdiomaPrincipal: "pt-BR",
@@ -108,10 +110,10 @@ func TestOverrideVenceExternoNoIdioma(t *testing.T) {
 	eq(t, "prov title", got.ResolvedLanguages["title"], "en")
 }
 
-// TestTagsMergePorIdioma cobre §5/R3 por idioma: o merge {add,remove} do override é
-// aplicado sobre a base externa DAQUELE idioma.
+// TestTagsMergePorIdioma covers §5/R3 per language: the override's {add,remove}
+// merge is applied over the external base of THAT language.
 func TestTagsMergePorIdioma(t *testing.T) {
-	// pt-BR: base ext [a,b]; remove a, add c → [b,c].
+	// pt-BR: ext base [a,b]; remove a, add c → [b,c].
 	got := Resolver(Camadas{
 		Entity: entIdioma(), Cadeia: []string{"pt-BR", "en"}, LangPedido: "pt-BR", IdiomaPrincipal: "pt-BR",
 		Externo:  externoMapa("tags", map[string]any{"pt-BR": []any{"a", "b"}, "en": []any{"x"}}),
@@ -123,7 +125,8 @@ func TestTagsMergePorIdioma(t *testing.T) {
 	}
 	eq(t, "prov tags", got.ResolvedLanguages["tags"], "pt-BR")
 
-	// Sem pt-BR (nem ext nem override): cai no fallback en, usando o externo en.
+	// Without pt-BR (neither ext nor override): falls back to en, using the en
+	// external.
 	got = Resolver(Camadas{
 		Entity: entIdioma(), Cadeia: []string{"pt-BR", "en"}, LangPedido: "pt-BR", IdiomaPrincipal: "pt-BR",
 		Externo: externoMapa("tags", map[string]any{"en": []any{"x", "y"}}),
@@ -134,15 +137,16 @@ func TestTagsMergePorIdioma(t *testing.T) {
 	eq(t, "prov tags(fallback)", got.ResolvedLanguages["tags"], "en")
 }
 
-// TestExternoLegadoSobPrincipal cobre a REGRESSÃO do 0015: um externo escalar/lista
-// SIMPLES (sem chave de idioma) é tratado como valor do idioma PRINCIPAL.
+// TestExternoLegadoSobPrincipal covers the LEGACY external REGRESSION: a SIMPLE
+// scalar/list external (with no language key) is treated as a value of the MAIN
+// language.
 func TestExternoLegadoSobPrincipal(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity: entIdioma(), Cadeia: []string{"pt-BR", "en"}, LangPedido: "pt-BR", IdiomaPrincipal: "pt-BR",
 		Externo: []CamadaExterna{{Fonte: "tmdb", Campos: map[string]any{
-			"title":       "Titulo Legado",         // escalar simples (0015)
-			"description": "Sinopse Legada",        // escalar simples (0015)
-			"tags":        []any{"leg-1", "leg-2"}, // lista simples (0015)
+			"title":       "Titulo Legado",         // plain scalar (legacy)
+			"description": "Sinopse Legada",        // plain scalar (legacy)
+			"tags":        []any{"leg-1", "leg-2"}, // plain list (legacy)
 		}}},
 	})
 	eq(t, "title legado", got.Title, "Titulo Legado")
@@ -153,32 +157,33 @@ func TestExternoLegadoSobPrincipal(t *testing.T) {
 	}
 }
 
-// TestOverrideLegadoSobPrincipal cobre a tolerância a override LEGADO (formato plano
-// do 0016 pré-idioma) em modo idioma: aplica-se ao principal.
+// TestOverrideLegadoSobPrincipal covers the tolerance to a LEGACY override (the flat
+// pre-language format) in language mode: it applies to the main language.
 func TestOverrideLegadoSobPrincipal(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity: entIdioma(), Cadeia: []string{"pt-BR", "en"}, LangPedido: "pt-BR", IdiomaPrincipal: "pt-BR",
 		Override: ov(map[string]string{
-			"title": `"Titulo do Dono"`,     // escalar plano → principal
-			"tags":  `{"remove":["arq-a"]}`, // operação plana → principal, base arquivo
+			"title": `"Titulo do Dono"`,     // flat scalar → main language
+			"tags":  `{"remove":["arq-a"]}`, // flat operation → main language, file base
 		}),
 	})
 	eq(t, "title override legado", got.Title, "Titulo do Dono")
 	eq(t, "prov title", got.ResolvedLanguages["title"], "pt-BR")
-	// base arquivo [arq-a, arq-b], remove arq-a → [arq-b].
+	// file base [arq-a, arq-b], removes arq-a → [arq-b].
 	if len(got.Tags) != 1 || got.Tags[0] != "arq-b" {
 		t.Errorf("tags = %v, quero [arq-b]", got.Tags)
 	}
 }
 
-// TestSemCadeiaPreserva0013 cobre §5: sem contexto de idioma (Cadeia vazia), a
-// composição é exatamente a do 0013 e resolved_languages sai vazio (não-nil).
+// TestSemCadeiaPreserva0013 covers §5: with no language context (empty Cadeia), the
+// composition is exactly the pre-multilanguage one and resolved_languages comes out
+// empty (non-nil).
 func TestSemCadeiaPreserva0013(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity:  entIdioma(),
 		Externo: []CamadaExterna{{Fonte: "tmdb", Campos: map[string]any{"title": "Externo 0013"}}},
 	})
-	eq(t, "title", got.Title, "Externo 0013") // externo escalar como no 0013
+	eq(t, "title", got.Title, "Externo 0013") // scalar external as in the pre-multilanguage model
 	eq(t, "lang vazio", got.Lang, "")
 	if got.ResolvedLanguages == nil {
 		t.Error("resolved_languages nil, quero mapa vazio não-nil")

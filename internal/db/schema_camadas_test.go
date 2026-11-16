@@ -8,8 +8,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// contaLinhas conta as linhas de uma tabela filtrando por uma coluna = valor.
-// Concentra o SELECT count(*) num helper para manter os testes simples.
+// contaLinhas counts the rows of a table filtering by a column = value.
+// It concentrates the SELECT count(*) in a helper to keep the tests simple.
 func contaLinhas(t *testing.T, d *DB, query string, args ...any) int {
 	t.Helper()
 	var n int
@@ -18,9 +18,9 @@ func contaLinhas(t *testing.T, d *DB, query string, args ...any) int {
 	return n
 }
 
-// TestMediaExternalIndiceLookup prova que o lookup por (source, source_id) usa o
-// índice idx_media_external_source (SEARCH, não SCAN) — o caminho de reconciliar
-// identidade pelo id externo cacheado.
+// TestMediaExternalIndiceLookup proves that the lookup by (source, source_id) uses the
+// idx_media_external_source index (SEARCH, not SCAN) -- the path for reconciling
+// identity through the cached external id.
 func TestMediaExternalIndiceLookup(t *testing.T) {
 	d, _ := setupNucleo(t)
 	detalhe := explicaPlano(t, d,
@@ -30,9 +30,9 @@ func TestMediaExternalIndiceLookup(t *testing.T) {
 	}
 }
 
-// TestMediaExternalUpsertUnique prova a UNIQUE(entity_id, source): um segundo
-// upsert com a mesma (entity, source) ATUALIZA a linha (payload + source_id), não
-// duplica; uma fonte diferente cria uma segunda linha.
+// TestMediaExternalUpsertUnique proves the UNIQUE(entity_id, source): a second
+// upsert with the same (entity, source) UPDATES the row (payload + source_id), it does not
+// duplicate it; a different source creates a second row.
 func TestMediaExternalUpsertUnique(t *testing.T) {
 	d, q := setupNucleo(t)
 	ctx := context.Background()
@@ -44,8 +44,8 @@ func TestMediaExternalUpsertUnique(t *testing.T) {
 	})
 	check(t, err, "UpsertMediaExternal 1")
 
-	// Mesma (entity, source), id diferente: o ON CONFLICT atualiza a linha
-	// existente (id preservado) em vez de inserir outra.
+	// Same (entity, source), different id: the ON CONFLICT updates the
+	// existing row (id preserved) instead of inserting another one.
 	segunda, err := q.UpsertMediaExternal(ctx, sqlcgen.UpsertMediaExternalParams{
 		ID: "ext-OUTRO", EntityID: e.ID, Source: "tmdb",
 		SourceID: ns("603-v2"), PayloadJson: ns(`{"a":2}`),
@@ -61,7 +61,7 @@ func TestMediaExternalUpsertUnique(t *testing.T) {
 		t.Errorf("linhas de media_external para a entity = %d, quero 1 (upsert nao duplica)", n)
 	}
 
-	// Fonte diferente: cria uma segunda linha.
+	// Different source: creates a second row.
 	_, err = q.UpsertMediaExternal(ctx, sqlcgen.UpsertMediaExternalParams{
 		ID: "ext-2", EntityID: e.ID, Source: "imdb", SourceID: ns("tt0133093"),
 	})
@@ -71,8 +71,8 @@ func TestMediaExternalUpsertUnique(t *testing.T) {
 	}
 }
 
-// TestMediaOverride1a1 prova que media_override e 1:1 (PK = entity_id): um segundo
-// upsert na mesma entity SUBSTITUI o override, nao cria segunda linha.
+// TestMediaOverride1a1 proves that media_override is 1:1 (PK = entity_id): a second
+// upsert on the same entity REPLACES the override, it does not create a second row.
 func TestMediaOverride1a1(t *testing.T) {
 	d, q := setupNucleo(t)
 	ctx := context.Background()
@@ -94,8 +94,8 @@ func TestMediaOverride1a1(t *testing.T) {
 	}
 }
 
-// TestCamadasCascata prova as FKs ON DELETE CASCADE: purgar a entity remove as
-// linhas de media_external e media_override daquela entity.
+// TestCamadasCascata proves the ON DELETE CASCADE FKs: purging the entity removes the
+// media_external and media_override rows of that entity.
 func TestCamadasCascata(t *testing.T) {
 	d, q := setupNucleo(t)
 	ctx := context.Background()

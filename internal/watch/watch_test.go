@@ -11,10 +11,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 )
 
-// fakeScanner é um ScanStarter injetável: registra CADA chamada de Start
-// (source.ID) para os testes assertarem que o debounce disparou o scan da
-// fonte certa, sem varrer disco de verdade (mesmo espírito do fakeAdder
-// abaixo e dos fakes de internal/job/libraryhealth).
+// fakeScanner is an injectable ScanStarter: it records EVERY Start call
+// (source.ID) so the tests can assert that the debounce triggered the scan of the
+// right source, without really sweeping the disk (the same spirit as the
+// fakeAdder below and the fakes of internal/job/libraryhealth).
 type fakeScanner struct {
 	mu      sync.Mutex
 	started []string
@@ -33,8 +33,8 @@ func (f *fakeScanner) contagem() int {
 	return len(f.started)
 }
 
-// esperarContagem faz polling até `want` chamadas de Start ou até o timeout,
-// para o teste não depender de um sleep fixo mais longo que o necessário.
+// esperarContagem polls until `want` Start calls or until the timeout, so the
+// test does not depend on a fixed sleep longer than necessary.
 func esperarContagem(t *testing.T, f *fakeScanner, want int, timeout time.Duration) {
 	t.Helper()
 	prazo := time.Now().Add(timeout)
@@ -47,10 +47,10 @@ func esperarContagem(t *testing.T, f *fakeScanner, want int, timeout time.Durati
 	t.Fatalf("scanner.Start chamado %d vez(es), quero >= %d dentro de %s", f.contagem(), want, timeout)
 }
 
-// TestRegistrarFonteDisparaScanAposEvento cobre o critério de aceite central:
-// criar um arquivo novo numa pasta com watch ligado dispara um scan daquela
-// fonte após o debounce (aqui encurtado para o teste não esperar 15s de
-// verdade -- o valor de produção é DebounceDefault).
+// TestRegistrarFonteDisparaScanAposEvento covers the central acceptance
+// criterion: creating a new file in a folder with watch enabled triggers a scan
+// of that source after the debounce (shortened here so the test does not wait a
+// real 15s -- the production value is DebounceDefault).
 func TestRegistrarFonteDisparaScanAposEvento(t *testing.T) {
 	root := t.TempDir()
 	scanner := &fakeScanner{}
@@ -72,9 +72,9 @@ func TestRegistrarFonteDisparaScanAposEvento(t *testing.T) {
 	}
 }
 
-// TestRegistrarFonteRajadaColesceNumUnicoScan prova o DEBOUNCE: vários
-// eventos em rajada (vários arquivos criados em sequência rápida) disparam
-// UM único scan, não um por evento.
+// TestRegistrarFonteRajadaColesceNumUnicoScan proves the DEBOUNCE: several burst
+// events (several files created in quick succession) trigger ONE single scan, not
+// one per event.
 func TestRegistrarFonteRajadaColesceNumUnicoScan(t *testing.T) {
 	root := t.TempDir()
 	scanner := &fakeScanner{}
@@ -94,17 +94,17 @@ func TestRegistrarFonteRajadaColesceNumUnicoScan(t *testing.T) {
 	}
 
 	esperarContagem(t, scanner, 1, 2*time.Second)
-	// Espera um pouco mais além do debounce pra garantir que NENHUM segundo
-	// scan foi agendado pelos eventos da rajada.
+	// Wait a bit longer than the debounce to guarantee that NO second scan was
+	// scheduled by the burst events.
 	time.Sleep(150 * time.Millisecond)
 	if n := scanner.contagem(); n != 1 {
 		t.Errorf("scans disparados = %d, quero exatamente 1 (rajada coalescida pelo debounce)", n)
 	}
 }
 
-// TestDesregistrarFonteParaDeDispararScan prova que, após DesregistrarFonte
-// (mesma rotina do handler PATCH desligando watch_enabled), novos eventos na
-// pasta NÃO disparam mais scan.
+// TestDesregistrarFonteParaDeDispararScan proves that, after DesregistrarFonte
+// (the same routine as the PATCH handler turning watch_enabled off), new events
+// in the folder NO LONGER trigger a scan.
 func TestDesregistrarFonteParaDeDispararScan(t *testing.T) {
 	root := t.TempDir()
 	scanner := &fakeScanner{}
@@ -121,16 +121,17 @@ func TestDesregistrarFonteParaDeDispararScan(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Espera mais que o debounce -- se algo disparasse, teria disparado aqui.
+	// Wait longer than the debounce -- if anything were going to trigger, it would
+	// have triggered here.
 	time.Sleep(200 * time.Millisecond)
 	if n := scanner.contagem(); n != 0 {
 		t.Errorf("scans disparados apos DesregistrarFonte = %d, quero 0", n)
 	}
 }
 
-// TestPastaNovaGanhaWatchDinamico prova que uma SUBPASTA criada depois do
-// registro inicial também passa a ser observada (Add() dinâmico no Create de
-// diretório) -- um arquivo criado DENTRO dela ainda dispara o scan.
+// TestPastaNovaGanhaWatchDinamico proves that a SUBFOLDER created after the
+// initial registration also starts being observed (dynamic Add() on directory
+// Create) -- a file created INSIDE it still triggers the scan.
 func TestPastaNovaGanhaWatchDinamico(t *testing.T) {
 	root := t.TempDir()
 	scanner := &fakeScanner{}
@@ -146,8 +147,8 @@ func TestPastaNovaGanhaWatchDinamico(t *testing.T) {
 	if err := os.Mkdir(subpasta, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Dá tempo do evento Create do diretório ser processado (Add dinâmico)
-	// antes de criar o arquivo dentro dela.
+	// Give the directory Create event time to be processed (dynamic Add) before
+	// creating the file inside it.
 	time.Sleep(100 * time.Millisecond)
 	if err := os.WriteFile(filepath.Join(subpasta, "filme.mkv"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
@@ -156,9 +157,9 @@ func TestPastaNovaGanhaWatchDinamico(t *testing.T) {
 	esperarContagem(t, scanner, 1, 2*time.Second)
 }
 
-// fakeAdder simula fsnotify.Watcher.Add falhando para caminhos específicos --
-// usado por TestRegistrarSubdiretoriosBestEffort para provar que uma falha
-// de Add() num subdiretório NÃO impede o registro dos demais.
+// fakeAdder simulates fsnotify.Watcher.Add failing for specific paths -- used by
+// TestRegistrarSubdiretoriosBestEffort to prove that an Add() failure on one
+// subdirectory does NOT prevent the registration of the others.
 type fakeAdder struct {
 	falhaEm map[string]bool
 	added   []string
@@ -172,10 +173,11 @@ func (f *fakeAdder) Add(name string) error {
 	return nil
 }
 
-// TestRegistrarSubdiretoriosBestEffort cobre o critério de aceite: "falha
-// simulada de watcher.Add() (ex. path removido entre o walk e o add) não
-// impede o registro das demais subpastas nem derruba o boot". Aqui simulada
-// injetando um adder que falha SÓ para uma subpasta específica.
+// TestRegistrarSubdiretoriosBestEffort covers the acceptance criterion: "a
+// simulated watcher.Add() failure (e.g. a path removed between the walk and the
+// add) does not prevent the registration of the remaining subfolders nor brings
+// the boot down". Here it is simulated by injecting an adder that fails ONLY for
+// one specific subfolder.
 func TestRegistrarSubdiretoriosBestEffort(t *testing.T) {
 	root := t.TempDir()
 	sub1 := filepath.Join(root, "sub1")
@@ -189,8 +191,8 @@ func TestRegistrarSubdiretoriosBestEffort(t *testing.T) {
 
 	fake := &fakeAdder{falhaEm: map[string]bool{sub2: true}}
 
-	// Não deve entrar em pânico nem abortar por causa da falha simulada em
-	// sub2 -- registrarSubdiretorios é best-effort por subdiretório.
+	// It must not panic nor abort because of the simulated failure on sub2 --
+	// registrarSubdiretorios is best-effort per subdirectory.
 	registrarSubdiretorios(fake, root)
 
 	quer := map[string]bool{root: true, sub1: true, sub3: true}
@@ -208,10 +210,10 @@ func TestRegistrarSubdiretoriosBestEffort(t *testing.T) {
 	}
 }
 
-// TestCloseFechaTodasAsFontes prova que Close() encerra todos os watchers
-// registrados -- eventos posteriores (mesmo que o teste não consiga mais
-// gerá-los pós-Close) não disparam scan, e um novo RegistrarFonte após Close
-// ainda funciona normalmente (Close não deixa o Watcher inutilizável).
+// TestCloseFechaTodasAsFontes proves that Close() ends all the registered
+// watchers -- later events (even if the test can no longer generate them after
+// Close) do not trigger a scan, and a new RegistrarFonte after Close still works
+// normally (Close does not leave the Watcher unusable).
 func TestCloseFechaTodasAsFontes(t *testing.T) {
 	root1 := t.TempDir()
 	root2 := t.TempDir()

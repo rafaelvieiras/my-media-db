@@ -1,15 +1,14 @@
-// Package watch implementa o WATCH de filesystem opcional por library_source
-// (briefing 0064): fsnotify (sem recursão nativa) registrado manualmente por
-// subdiretório, com DEBOUNCE por fonte coalescendo rajadas de eventos numa
-// única disparada de scan DIRECIONADO (scanner.Manager.Start só daquela
-// fonte) -- nunca o pipeline completo do job saude_biblioteca (0053). É
-// "aceleração" pura: nunca substitui o job periódico -- mounts remotos
-// (rclone/gdrive, o deploy real do projeto) não emitem evento nenhum via
-// fsnotify para mudanças originadas do lado remoto (limitação de
-// kernel/libfuse, issues rclone/rclone #4381 e #2882 -- ver AGENTS.md).
-// Estado fica TODO em memória (mapa source_id -> watcher+timer de debounce),
-// reconstruído no boot pelo chamador (internal/server) a partir de
-// library_source.watch_enabled -- nenhuma tabela nova neste briefing.
+// Package watch implements the optional filesystem WATCH per library_source:
+// fsnotify (no native recursion) registered manually per subdirectory, with a
+// per-source DEBOUNCE coalescing bursts of events into a single TARGETED scan
+// trigger (scanner.Manager.Start for that source only) -- never the full
+// pipeline of the saude_biblioteca job. It is pure "acceleration": it never
+// replaces the periodic job -- remote mounts (rclone/gdrive, the project's real
+// deployment) emit no event at all via fsnotify for changes originated on the
+// remote side (a kernel/libfuse limitation, rclone/rclone issues #4381 and
+// #2882 -- see AGENTS.md). All the state stays in memory (map source_id ->
+// watcher + debounce timer), rebuilt at boot by the caller (internal/server)
+// from library_source.watch_enabled -- no new table for this.
 package watch
 
 import (
@@ -26,40 +25,39 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 )
 
-// DebounceDefault é o intervalo de debounce por fonte (briefing 0064 §6):
-// curto o bastante pra "sentir" rápido, longo o bastante pra coalescer uma
-// rajada típica (cópia de vários arquivos de uma vez).
+// DebounceDefault is the debounce interval per source: short enough to "feel"
+// fast, long enough to coalesce a typical burst (copying several files at once).
 const DebounceDefault = 15 * time.Second
 
-// ScanStarter é o subconjunto de scanner.Manager que o Watcher consome:
-// disparar um scan DIRECIONADO de UMA fonte. Interface pequena (mesmo padrão
-// de libraryhealth.ScanRunner) para permitir um fake em teste sem varrer
-// disco de verdade, e para este pacote nunca importar internal/scanner
-// diretamente (evita acoplar o watch ao pipeline completo do scan).
+// ScanStarter is the subset of scanner.Manager that the Watcher consumes: trigger
+// a TARGETED scan of ONE source. A small interface (same pattern as
+// libraryhealth.ScanRunner) so a fake can be used in a test without really
+// sweeping the disk, and so this package never imports internal/scanner directly
+// (it avoids coupling the watch to the full scan pipeline).
 type ScanStarter interface {
 	Start(source library.Source, trigger string) (string, error)
 }
 
-// adder é o subconjunto de *fsnotify.Watcher usado por registrarSubdiretorios
-// -- interface pequena só para o teste poder injetar falhas de Add()
-// determinísticas (critério de aceite: "falha simulada de watcher.Add() não
-// impede o registro das demais subpastas").
+// adder is the subset of *fsnotify.Watcher used by registrarSubdiretorios -- a
+// small interface only so the test can inject deterministic Add() failures
+// (acceptance criterion: "a simulated watcher.Add() failure does not prevent the
+// registration of the remaining subfolders").
 type adder interface {
 	Add(name string) error
 }
 
-// fonteAtiva é o estado em memória de UMA library_source com watch ligado: o
-// *fsnotify.Watcher dedicado + o timer de debounce corrente (nil até o
-// primeiro evento chegar).
+// fonteAtiva is the in-memory state of ONE library_source with watch enabled:
+// the dedicated *fsnotify.Watcher plus the current debounce timer (nil until the
+// first event arrives).
 type fonteAtiva struct {
 	fsw   *fsnotify.Watcher
 	timer *time.Timer
 }
 
-// Watcher orquestra o watch fsnotify de TODAS as fontes com watch_enabled=1:
-// um *fsnotify.Watcher e um timer de debounce POR FONTE (nunca um watcher
-// global) -- RegistrarFonte/DesregistrarFonte de uma fonte nunca afeta as
-// demais.
+// Watcher orchestrates the fsnotify watch of EVERY source with watch_enabled=1:
+// one *fsnotify.Watcher and one debounce timer PER SOURCE (never a global
+// watcher) -- RegistrarFonte/DesregistrarFonte on one source never affects the
+// others.
 type Watcher struct {
 	scanner  ScanStarter
 	debounce time.Duration
@@ -68,9 +66,8 @@ type Watcher struct {
 	fontes map[string]*fonteAtiva // source_id -> estado
 }
 
-// New cria o Watcher. debounce<=0 usa DebounceDefault (o chamador de
-// produção nunca passa <=0; testes encurtam para não esperar 15s de
-// verdade).
+// New creates the Watcher. debounce<=0 uses DebounceDefault (the production
+// caller never passes <=0; tests shorten it to avoid waiting a real 15s).
 func New(scanner ScanStarter, debounce time.Duration) *Watcher {
 	if debounce <= 0 {
 		debounce = DebounceDefault
@@ -78,14 +75,13 @@ func New(scanner ScanStarter, debounce time.Duration) *Watcher {
 	return &Watcher{scanner: scanner, debounce: debounce, fontes: make(map[string]*fonteAtiva)}
 }
 
-// RegistrarFonte inicia (ou REINICIA, se já havia um watcher desta fonte) o
-// watch fsnotify de UMA library_source: WalkDir uma vez, Add() em cada
-// subdiretório (falha de Add() de UM subdiretório é logada e IGNORADA -- não
-// aborta a fonte nem o boot, briefing 0064 §4). Chamado tanto no boot do
-// servidor (para cada fonte com watch_enabled=1) quanto pelo handler PATCH
-// /api/v1/library/{id} quando liga watch_enabled de false->true numa fonte já
-// em execução -- a MESMA rotina, SEM restart do servidor (briefing 0064,
-// critério de aceite do toggle).
+// RegistrarFonte starts (or RESTARTS, if there already was a watcher for this
+// source) the fsnotify watch of ONE library_source: WalkDir once, Add() on every
+// subdirectory (an Add() failure on ONE subdirectory is logged and IGNORED -- it
+// does not abort the source nor the boot). Called both at server boot (for every
+// source with watch_enabled=1) and by the PATCH /api/v1/library/{id} handler when
+// it turns watch_enabled from false to true on a source already running -- the
+// SAME routine, with NO server restart (the acceptance criterion of the toggle).
 func (w *Watcher) RegistrarFonte(source library.Source) error {
 	fsw, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -105,10 +101,10 @@ func (w *Watcher) RegistrarFonte(source library.Source) error {
 	return nil
 }
 
-// DesregistrarFonte fecha o watcher e o timer de debounce (se houver) de UMA
-// fonte e remove sua entrada do mapa em memória -- chamado pelo handler PATCH
-// quando desliga watch_enabled de true->false (briefing 0064, SEM restart do
-// servidor). No-op silencioso se a fonte não tinha watch registrado.
+// DesregistrarFonte closes the watcher and the debounce timer (if any) of ONE
+// source and removes its entry from the in-memory map -- called by the PATCH
+// handler when it turns watch_enabled from true to false (WITHOUT restarting the
+// server). A silent no-op if the source had no watch registered.
 func (w *Watcher) DesregistrarFonte(sourceID string) {
 	w.mu.Lock()
 	fa, ok := w.fontes[sourceID]
@@ -121,9 +117,9 @@ func (w *Watcher) DesregistrarFonte(sourceID string) {
 	}
 }
 
-// Close fecha TODOS os watchers/timers registrados -- chamado no shutdown
-// gracioso do servidor (mesmo padrão de lifecycle dos demais componentes
-// long-running).
+// Close closes ALL registered watchers/timers -- called on the graceful shutdown
+// of the server (the same lifecycle pattern as the other long-running
+// components).
 func (w *Watcher) Close() {
 	w.mu.Lock()
 	fontes := w.fontes
@@ -134,9 +130,9 @@ func (w *Watcher) Close() {
 	}
 }
 
-// fecharFonte fecha o *fsnotify.Watcher (o que também encerra a goroutine
-// escutar, via os canais Events/Errors fechando) e para o timer de debounce
-// corrente, se houver.
+// fecharFonte closes the *fsnotify.Watcher (which also ends the escutar
+// goroutine, as the Events/Errors channels close) and stops the current debounce
+// timer, if any.
 func fecharFonte(fa *fonteAtiva) {
 	if fa.timer != nil {
 		fa.timer.Stop()
@@ -146,13 +142,13 @@ func fecharFonte(fa *fonteAtiva) {
 	}
 }
 
-// registrarSubdiretorios percorre root UMA VEZ (WalkDir) e chama Add() em
-// CADA subdiretório (fsnotify não observa recursão nativa -- confirmado em
-// pesquisa, briefing 0064 §4). Erro de Add() num subdiretório específico
-// (ex.: fs.inotify.max_user_watches, permissão, path removido entre o walk e
-// o add) é LOGADO e IGNORADO -- continua para os demais, nunca aborta o
-// registro da fonte inteira. Erro ao LISTAR um subdiretório (ilegível) pula
-// aquela subárvore (fs.SkipDir), mesmo padrão de coletarArquivos
+// registrarSubdiretorios walks root ONCE (WalkDir) and calls Add() on EVERY
+// subdirectory (fsnotify has no native recursion -- confirmed in research). An
+// Add() error on a specific subdirectory (e.g. fs.inotify.max_user_watches,
+// permissions, a path removed between the walk and the add) is LOGGED and
+// IGNORED -- it carries on with the rest and never aborts the registration of
+// the whole source. An error LISTING a subdirectory (unreadable) skips that
+// subtree (fs.SkipDir), the same pattern as coletarArquivos
 // (internal/scanner/scan.go).
 func registrarSubdiretorios(fsw adder, root string) {
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -173,14 +169,14 @@ func registrarSubdiretorios(fsw adder, root string) {
 	})
 }
 
-// escutar é o loop de eventos de UMA fonte: roda até fsw.Events/Errors
-// fecharem (fecharFonte -> fsw.Close()). Pastas novas (Create de diretório)
-// ganham Add() dinâmico (cobre pastas criadas depois do boot/registro);
-// QUALQUER evento (Create/Write/Remove/Rename) reinicia o timer de debounce
-// da fonte. Erros do canal Errors são logados -- o watch NUNCA para o
-// servidor nem tenta se auto-recuperar em loop; a fonte simplesmente segue
-// recebendo eventos dos watches ainda válidos (ou passa a depender só do
-// polling periódico, se o watcher morreu de vez).
+// escutar is the event loop of ONE source: it runs until fsw.Events/Errors
+// close (fecharFonte -> fsw.Close()). New folders (directory Create) get a
+// dynamic Add() (it covers folders created after boot/registration); ANY event
+// (Create/Write/Remove/Rename) restarts the debounce timer of the source. Errors
+// from the Errors channel are logged -- the watch NEVER stops the server nor
+// tries to recover itself in a loop; the source simply keeps receiving events
+// from the watches still valid (or starts relying only on periodic polling, if
+// the watcher died for good).
 func (w *Watcher) escutar(source library.Source, fa *fonteAtiva) {
 	for {
 		select {
@@ -205,18 +201,18 @@ func (w *Watcher) escutar(source library.Source, fa *fonteAtiva) {
 	}
 }
 
-// agendarScan reinicia o timer de debounce da fonte (coalescendo rajadas de
-// eventos numa única disparada, briefing 0064 §4/§6). Ao expirar, dispara
-// scanner.Manager.Start(source) SÓ daquela fonte (nunca o pipeline completo
-// do job saude_biblioteca) -- falha é logada, best-effort (o watch nunca
-// derruba nada; a fonte continua dependendo do polling periódico).
+// agendarScan restarts the debounce timer of the source (coalescing bursts of
+// events into a single trigger). When it expires, it triggers
+// scanner.Manager.Start(source) for THAT source only (never the full pipeline of
+// the saude_biblioteca job) -- a failure is logged, best-effort (the watch never
+// brings anything down; the source keeps relying on periodic polling).
 func (w *Watcher) agendarScan(source library.Source, fa *fonteAtiva) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	// A fonte pode ter sido desregistrada (ou re-registrada, virando outra
-	// *fonteAtiva) entre o evento chegar e este lock -- corrida benigna: se
-	// não é mais a instância corrente do mapa, não reagenda nada (o watcher
-	// antigo já está sendo fechado/foi substituído).
+	// The source may have been unregistered (or re-registered, becoming another
+	// *fonteAtiva) between the event arriving and this lock -- a benign race: if
+	// it is no longer the current instance in the map, do not reschedule anything
+	// (the old watcher is already being closed/was replaced).
 	if atual, ok := w.fontes[source.ID]; !ok || atual != fa {
 		return
 	}

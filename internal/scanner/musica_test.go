@@ -17,12 +17,13 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// ── fixtures/fakes de música ──────────────────────────────────────────────────
+// ── music fixtures/fakes ─────────────────────────────────────────────────────
 //
-// Mesmos MBIDs sintéticos de internal/enrich/musica_test.go (UUIDs fictícios, não
-// reais): 1 artista, 1 álbum com 2 faixas -- a 2ª com artist-credit DIVERGENTE
-// (feat.) do artista do álbum, cobrindo o mesmo caso do ADR-0027 item 4 (já
-// validado em 0106; aqui só provamos que o SCANNER dispara o import certo).
+// The same synthetic MBIDs of internal/enrich/musica_test.go (fictitious UUIDs, not
+// real ones): 1 artist, 1 album with 2 tracks -- the 2nd one with an artist-credit
+// DIVERGENT from the artist of the album (feat.), covering the same case as ADR-0027
+// item 4 (already validated in the enrich layer; here we only prove that the SCANNER
+// fires the right import).
 
 const (
 	mbidArtistaFixture = "aaaaaaaa-0000-0000-0000-000000000001"
@@ -32,25 +33,24 @@ const (
 	mbidFeatFixture    = "dddddddd-0000-0000-0000-000000000001"
 )
 
-// fakeMusicaProvider implementa o core provider.Provider + provider.MusicaProvider
-// (árvore, capacidade legada -- só usada pelo import MANUAL/dispatcher, não pelo
-// scanner desde o briefing 0115) + provider.MusicaAlbumProvider (capacidade
-// SELETIVA, briefing 0115 -- a que o scanner efetivamente usa) +
-// provider.FaixaResolverProvider, sem rede real. Conta as chamadas (buscarN/
-// arvoreN/resolverN/albumFaixaN/albumNomeN) para os testes provarem tanto a
-// seletividade (nenhuma árvore inteira) quanto que um re-scan sem mudança NÃO
-// rechama a fonte (briefing 0107 §5, incrementalidade).
+// fakeMusicaProvider implements the core provider.Provider + provider.MusicaProvider
+// (tree, legacy capability -- only used by the MANUAL import/dispatcher, not by the
+// scanner anymore) + provider.MusicaAlbumProvider (SELECTIVE capability -- the one
+// the scanner effectively uses) + provider.FaixaResolverProvider, without a real
+// network. It counts the calls (buscarN/arvoreN/resolverN/albumFaixaN/albumNomeN) so
+// the tests prove both the selectivity (no whole tree) and that a re-scan without
+// change does NOT call the source again (incrementality).
 type fakeMusicaProvider struct {
 	buscarN, arvoreN, resolverN, albumFaixaN, albumNomeN int
 }
 
 func (p *fakeMusicaProvider) Nome() string { return sourceMusicBrainz }
 
-// albumFixture é o ÚNICO álbum da discografia fake: "Fake Album", 2 faixas -- a 2ª
-// (Track Two) com artist-credit DIVERGENTE (feat.) do artista principal, cobrindo o
-// mesmo caso do ADR-0027 item 4 / ADR-0029 item 4. Reaproveitado por
-// BuscarArtistaArvore (árvore, legado) e pelas capacidades seletivas novas
-// (BuscarAlbumDaFaixa/BuscarAlbumPorNome) para não divergir os dois caminhos.
+// albumFixture is the ONLY album of the fake discography: "Fake Album", 2 tracks --
+// the 2nd one (Track Two) with an artist-credit DIVERGENT from the main artist
+// (feat.), covering the same case as ADR-0027 item 4 / ADR-0029 item 4. Reused by
+// BuscarArtistaArvore (tree, legacy) and by the new selective capabilities
+// (BuscarAlbumDaFaixa/BuscarAlbumPorNome) so as not to diverge the two paths.
 func albumFixture() provider.AlbumExterno {
 	return provider.AlbumExterno{
 		Name: "Fake Album",
@@ -79,9 +79,9 @@ func albumFixture() provider.AlbumExterno {
 	}
 }
 
-// Buscar responde por NOME exato (normalizado) de artista: "Fake Band" -> 1
-// candidato único (mbidArtistaFixture); "Artista Ambiguo" -> 2 candidatos
-// empatados no topo (ambiguidade proposital); qualquer outra coisa -> vazio.
+// Buscar answers by exact (normalized) artist NAME: "Fake Band" -> 1 single
+// candidate (mbidArtistaFixture); "Artista Ambiguo" -> 2 candidates tied at the top
+// (intentional ambiguity); anything else -> empty.
 func (p *fakeMusicaProvider) Buscar(_ context.Context, query, tipo, _ string) ([]provider.ResultadoExterno, error) {
 	p.buscarN++
 	if tipo != "" && tipo != "artista" {
@@ -120,8 +120,8 @@ func (p *fakeMusicaProvider) BuscarArtistaArvore(_ context.Context, sourceID str
 	}, nil
 }
 
-// ResolverArtistaDaFaixa só resolve mbidFaixa1Fixture -> mbidArtistaFixture
-// (o caso "só o MBID de faixa está embutido, sem o de artista").
+// ResolverArtistaDaFaixa only resolves mbidFaixa1Fixture -> mbidArtistaFixture
+// (the case "only the track MBID is embedded, without the artist one").
 func (p *fakeMusicaProvider) ResolverArtistaDaFaixa(_ context.Context, recordingMBID string) (string, error) {
 	p.resolverN++
 	if recordingMBID != mbidFaixa1Fixture {
@@ -130,9 +130,9 @@ func (p *fakeMusicaProvider) ResolverArtistaDaFaixa(_ context.Context, recording
 	return mbidArtistaFixture, nil
 }
 
-// BuscarAlbumDaFaixa é a capacidade SELETIVA (provider.MusicaAlbumProvider,
-// briefing 0115) que o scanner efetivamente usa no caminho por MBID: monta SÓ o
-// álbum que contém `recordingMBID`, nunca a árvore inteira.
+// BuscarAlbumDaFaixa is the SELECTIVE capability (provider.MusicaAlbumProvider) that
+// the scanner effectively uses on the path by MBID: it assembles ONLY the album that
+// contains `recordingMBID`, never the whole tree.
 func (p *fakeMusicaProvider) BuscarAlbumDaFaixa(_ context.Context, recordingMBID string, _ []string) (provider.AlbumExterno, bool, error) {
 	p.albumFaixaN++
 	alb := albumFixture()
@@ -144,9 +144,9 @@ func (p *fakeMusicaProvider) BuscarAlbumDaFaixa(_ context.Context, recordingMBID
 	return provider.AlbumExterno{}, false, nil
 }
 
-// BuscarAlbumPorNome é a capacidade SELETIVA (provider.MusicaAlbumProvider,
-// briefing 0115) que o scanner usa no caminho textual: monta SÓ o álbum
-// `nomeAlbum` do artista `artistaMBID`, nunca a árvore inteira.
+// BuscarAlbumPorNome is the SELECTIVE capability (provider.MusicaAlbumProvider) that
+// the scanner uses on the textual path: it assembles ONLY the album `nomeAlbum` of
+// the artist `artistaMBID`, never the whole tree.
 func (p *fakeMusicaProvider) BuscarAlbumPorNome(_ context.Context, artistaMBID, nomeAlbum string, _ provider.AlvoFaixaAlbum, _ []string) (provider.AlbumExterno, bool, error) {
 	p.albumNomeN++
 	alb := albumFixture()
@@ -156,11 +156,10 @@ func (p *fakeMusicaProvider) BuscarAlbumPorNome(_ context.Context, artistaMBID, 
 	return alb, true, nil
 }
 
-// BuscarAlbumPorMbid é a capacidade SELETIVA (provider.MusicaAlbumProvider,
-// briefing 0115 Parte 2) que o scanner NÃO chama (é a tela externa de álbum/
-// import de faixa avulsa que usa) -- só precisa satisfazer a interface para o
-// type-assert de MusicaAlbumProvider nos testes deste pacote continuar
-// bem-sucedido.
+// BuscarAlbumPorMbid is the SELECTIVE capability (provider.MusicaAlbumProvider, part
+// 2) that the scanner does NOT call (the external album screen / single-track import
+// uses it) -- it only needs to satisfy the interface so that the type-assert of
+// MusicaAlbumProvider keeps succeeding in the tests of this package.
 func (p *fakeMusicaProvider) BuscarAlbumPorMbid(_ context.Context, albumMBID string, _ []string) (provider.AlbumExterno, error) {
 	alb := albumFixture()
 	if albumMBID != alb.MBID {
@@ -169,14 +168,14 @@ func (p *fakeMusicaProvider) BuscarAlbumPorMbid(_ context.Context, albumMBID str
 	return alb, nil
 }
 
-// proberComTags é um Prober fake (0107): devolve um mediainfo_json cujo campo
-// Tags vem do mapa `porPath` (chaveado pelo path do arquivo) -- permite
-// exercitar o pipeline de matching sem depender de ffmpeg/ffprobe reais (mesmo
-// espírito de proberVazio, mas com tags controláveis). duracaoPorPath
-// (opcional, briefing 0121 §8) povoa info.General.Duration por path -- um
-// path ausente do mapa (ou o mapa nil, o caso de todos os testes anteriores a
-// este briefing) deixa Duration no zero-value, o mesmo "desconhecida" que o
-// ffprobe real devolveria para um arquivo sem essa informação.
+// proberComTags is a fake Prober: it returns a mediainfo_json whose Tags field comes
+// from the `porPath` map (keyed by the file path) -- it allows exercising the matching
+// pipeline without depending on a real ffmpeg/ffprobe (the same spirit as proberVazio,
+// but with controllable tags). duracaoPorPath (optional) populates
+// info.General.Duration per path -- a path absent from the map (or the nil map, the
+// case of every test written before the duration signal) leaves Duration at the
+// zero-value, the same "unknown" the real ffprobe would return for a file without that
+// information.
 type proberComTags struct {
 	porPath        map[string]mediainfo.AudioTags
 	duracaoPorPath map[string]float64
@@ -195,14 +194,13 @@ func (p proberComTags) Probe(_ context.Context, path string) ([]byte, error) {
 	return json.Marshal(info)
 }
 
-// spyMusicaImportador é um MusicaImportador fake que NÃO faz nenhum match
-// real: só grava o ÚLTIMO enrich.FaixaAlvo recebido por ImportarFaixaPossuida
-// e devolve sempre o mesmo faixaID pré-configurado (a entity correspondente
-// deve ser pré-semeada pelo teste, já que este fake não cria nada -- ver
-// preSemearFaixaSpy). Usado para provar, isolado da lógica de match do enrich
-// real, que o SCANNER propaga corretamente a duração do arquivo local até o
-// FaixaAlvo (briefing 0121 §8) nos dois pontos onde ele é construído
-// (importarEAcharPorMbid/matchTextualFaixa, musica.go).
+// spyMusicaImportador is a fake MusicaImportador that does NO real matching: it only
+// records the LAST enrich.FaixaAlvo received by ImportarFaixaPossuida and always
+// returns the same pre-configured faixaID (the corresponding entity must be pre-seeded
+// by the test, since this fake creates nothing -- see preSemearFaixaSpy). It is used to
+// prove, isolated from the match logic of the real enrich, that the SCANNER correctly
+// propagates the duration of the local file down to the FaixaAlvo on the two points
+// where it is built (importarEAcharPorMbid/matchTextualFaixa, musica.go).
 type spyMusicaImportador struct {
 	faixaID    string
 	ultimoAlvo enrich.FaixaAlvo
@@ -219,16 +217,15 @@ func (s *spyMusicaImportador) ImportarFaixaPossuida(_ context.Context, _, _ stri
 	return s.faixaID, true, nil
 }
 
-// ImportarFaixaPorTituloDeAlbum (briefing 0136) degrada em silêncio neste spy:
-// ele só existe para os testes do caminho por ARTISTA, e o passo 4b não pode
-// interferir neles.
+// ImportarFaixaPorTituloDeAlbum degrades silently in this spy: it only exists for the
+// tests of the path by ARTIST, and step 4b must not interfere with them.
 func (s *spyMusicaImportador) ImportarFaixaPorTituloDeAlbum(context.Context, string, enrich.FaixaAlvo, []string) (string, bool, error) {
 	return "", false, nil
 }
 
-// preSemearFaixaSpy cria a entity `faixa` que spyMusicaImportador vai devolver
-// (satisfaz a FK de media_file.entity_id -- spyMusicaImportador, ao contrário
-// do enrich real, não cria a entity sozinho).
+// preSemearFaixaSpy creates the `faixa` entity that spyMusicaImportador will return
+// (it satisfies the FK of media_file.entity_id -- spyMusicaImportador, unlike the real
+// enrich, does not create the entity by itself).
 func preSemearFaixaSpy(t *testing.T, d *db.DB, id, titulo string) {
 	t.Helper()
 	if _, err := sqlcgen.New(d.Write).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
@@ -238,9 +235,9 @@ func preSemearFaixaSpy(t *testing.T, d *db.DB, id, titulo string) {
 	}
 }
 
-// criarSourceMusica cadastra um datasource content_type='music' (0107; o campo
-// já é aceito diretamente por library.Criar, ao contrário do content_type de
-// série quando aquele teste foi escrito).
+// criarSourceMusica registers a content_type='music' datasource (the field is
+// already accepted directly by library.Criar, unlike the series content_type when that
+// test was written).
 func criarSourceMusica(t *testing.T, d *db.DB, dir string) library.Source {
 	t.Helper()
 	src, err := library.New(d).Criar(context.Background(), dir, "movie", "music", nil, nil)
@@ -250,10 +247,9 @@ func criarSourceMusica(t *testing.T, d *db.DB, dir string) library.Source {
 	return src
 }
 
-// managerMusica monta um Manager com o prober de tags dado e a vertical de
-// música configurada de ponta a ponta: enrich.Servico real (find-or-create
-// idempotente por MBID, 0106) sobre o fakeMusicaProvider (busca textual +
-// árvore + resolução reversa).
+// managerMusica assembles a Manager with the given tag prober and the music vertical
+// configured end to end: real enrich.Servico (idempotent find-or-create by MBID) on
+// top of fakeMusicaProvider (textual search + tree + reverse resolution).
 func managerMusica(t *testing.T, d *db.DB, porPath map[string]mediainfo.AudioTags, prov *fakeMusicaProvider) *Manager {
 	t.Helper()
 	m := NewManagerComProber(d, proberComTags{porPath: porPath})
@@ -264,20 +260,18 @@ func managerMusica(t *testing.T, d *db.DB, porPath map[string]mediainfo.AudioTag
 	return m
 }
 
-// ── fixtures/fakes de FINGERPRINT ACÚSTICO (briefing 0126) ────────────────
+// ── ACOUSTIC FINGERPRINT fixtures/fakes ───────────────────────────────────
 //
-// Cobrem o passo 4.5 SEM fpcalc/rede real, no MESMO universo de fixtures do
-// resto do arquivo (mbidFaixa1Fixture/mbidArtistaFixture, resolvíveis pelo
-// fakeMusicaProvider já existente via ResolverArtistaDaFaixa/
-// BuscarAlbumDaFaixa) -- assim um teste de fingerprint acima do limiar
-// encadeia até o MESMO import escopado que os testes de passo 2/3 já
-// provam, sem precisar de um segundo conjunto de fixtures.
+// They cover step 4.5 WITHOUT real fpcalc/network, in the SAME fixture universe of
+// the rest of the file (mbidFaixa1Fixture/mbidArtistaFixture, resolvable by the
+// existing fakeMusicaProvider via ResolverArtistaDaFaixa/BuscarAlbumDaFaixa) -- this
+// way a fingerprint test above the threshold chains into the SAME scoped import the
+// tests of steps 2/3 already prove, without needing a second fixture set.
 
-// fakeFingerprintCalculador é um scanner.FingerprintCalculador fake: devolve
-// um fingerprint/duração/erro pré-configurados, sem tocar fpcalc real.
-// calcularN conta as chamadas -- os testes de ORDEM (0126, critério de
-// aceite "só chamado depois do textual falhar") provam ZERO chamadas quando
-// o passo 4 já resolveu.
+// fakeFingerprintCalculador is a fake scanner.FingerprintCalculador: it returns a
+// pre-configured fingerprint/duration/error, without touching the real fpcalc.
+// calcularN counts the calls -- the ORDER tests (acceptance criterion "only called
+// after the textual step fails") prove ZERO calls when step 4 already resolved.
 type fakeFingerprintCalculador struct {
 	disponivel  bool
 	fingerprint string
@@ -296,10 +290,10 @@ func (f *fakeFingerprintCalculador) CalcularFingerprint(_ context.Context, _ str
 	return f.fingerprint, f.duracao, nil
 }
 
-// fakeFingerprintProvider implementa o core provider.Provider (stubs NO-OP,
-// mesmo espírito de internal/provider/acoustid.Client) + a capacidade
-// provider.FingerprintProvider (briefing 0126), sem rede real.
-// identificarN conta as chamadas pelo mesmo motivo de calcularN acima.
+// fakeFingerprintProvider implements the core provider.Provider (NO-OP stubs, the same
+// spirit as internal/provider/acoustid.Client) + the capability
+// provider.FingerprintProvider, without a real network. identificarN counts the calls
+// for the same reason as calcularN above.
 type fakeFingerprintProvider struct {
 	candidato    provider.RecordingCandidato
 	ok           bool
@@ -334,9 +328,9 @@ var (
 	_ provider.FingerprintProvider = (*fakeFingerprintProvider)(nil)
 )
 
-// managerMusicaComFingerprint monta o mesmo Manager de managerMusica, mas
-// também liga o passo 4.5 (ConfigurarFingerprint) com o calculador/provider
-// fake dados -- helper dos testes de fingerprint abaixo.
+// managerMusicaComFingerprint assembles the same Manager as managerMusica, but it also
+// wires step 4.5 (ConfigurarFingerprint) with the given fake calculator/provider -- a
+// helper for the fingerprint tests below.
 func managerMusicaComFingerprint(t *testing.T, d *db.DB, porPath map[string]mediainfo.AudioTags, prov *fakeMusicaProvider, calc *fakeFingerprintCalculador, fpProv provider.Provider) *Manager {
 	t.Helper()
 	m := managerMusica(t, d, porPath, prov)
@@ -344,7 +338,7 @@ func managerMusicaComFingerprint(t *testing.T, d *db.DB, porPath map[string]medi
 	return m
 }
 
-// entityDe le type/title/status de uma entity pelo id (helper de asserção).
+// entityDe reads type/title/status of an entity by id (assertion helper).
 func entityDe(t *testing.T, d *db.DB, id string) (tipo, titulo, status string) {
 	t.Helper()
 	if err := d.Read.QueryRowContext(context.Background(),
@@ -354,7 +348,7 @@ func entityDe(t *testing.T, d *db.DB, id string) (tipo, titulo, status string) {
 	return tipo, titulo, status
 }
 
-// mediaFileDe le entity_id/match_confidence do media_file de um path.
+// mediaFileDe reads entity_id/match_confidence of the media_file of a path.
 func mediaFileDe(t *testing.T, d *db.DB, path string) (entityID string, conf float64) {
 	t.Helper()
 	if err := d.Read.QueryRowContext(context.Background(),
@@ -364,20 +358,21 @@ func mediaFileDe(t *testing.T, d *db.DB, path string) (entityID string, conf flo
 	return entityID, conf
 }
 
-// ── testes ───────────────────────────────────────────────────────────────────
+// ── tests ────────────────────────────────────────────────────────────────────
 
-// TestScanMusicaMbidFaixaFastPath cobre o passo 1 do pipeline (0107 §4): a
-// faixa JÁ EXISTE no catálogo por MBID (ex.: outra faixa do mesmo álbum já
-// importou a árvore, ou o arquivo já foi catalogado antes) -- lookup PURO, sem
-// nenhuma chamada à fonte. Vínculo 1:1: media_file.entity_id aponta DIRETO
-// pra ela, confiança 100.
+// TestScanMusicaMbidFaixaFastPath covers step 1 of the pipeline: the track ALREADY
+// EXISTS in the catalog by MBID (e.g. another track of the same album already imported
+// the tree, or the file was already cataloged before) -- a PURE lookup, without any
+// call to the source. 1:1 link: media_file.entity_id points DIRECTLY to it, confidence
+// 100.
 func TestScanMusicaMbidFaixaFastPath(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
 	arq := filepath.Join(root, "faixa.mp3")
 	escrever(t, arq)
 
-	// Pré-semeia a faixa por MBID (find-or-create já resolvido antes deste scan).
+	// It pre-seeds the track by MBID (find-or-create already resolved before this
+	// scan).
 	faixaID := "faixa-preexistente"
 	extIDs := fmt.Sprintf(`{"mbid":%q}`, mbidFaixa1Fixture)
 	if _, err := sqlcgen.New(d.Write).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
@@ -410,12 +405,11 @@ func TestScanMusicaMbidFaixaFastPath(t *testing.T) {
 	}
 }
 
-// TestScanMusicaMbidFaixaEArtistaImportaEscopado cobre o passo 2 (ADR-0029,
-// briefing 0115): MBID de faixa SEM match ainda, mas a tag TAMBÉM tem o MBID
-// do artista -- dispara o import ESCOPADO (artista + ALBUM DAQUELA FAIXA +
-// a própria faixa), NUNCA a árvore inteira. A faixa 2 do mesmo álbum (Track
-// Two, feat.) NÃO é tocada só por estar no mesmo release: nem ela nem o
-// artista feat (Guest Artist) viram entity.
+// TestScanMusicaMbidFaixaEArtistaImportaEscopado covers step 2 (ADR-0029): track MBID
+// with NO match yet, but the tag ALSO has the artist MBID -- it fires the SCOPED
+// import (artist + ALBUM OF THAT TRACK + the track itself), NEVER the whole tree. Track
+// 2 of the same album (Track Two, feat.) is NOT touched just for being in the same
+// release: neither it nor the feat artist (Guest Artist) become an entity.
 func TestScanMusicaMbidFaixaEArtistaImportaEscopado(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -448,9 +442,9 @@ func TestScanMusicaMbidFaixaEArtistaImportaEscopado(t *testing.T) {
 	if prov.albumFaixaN != 1 {
 		t.Errorf("BuscarAlbumDaFaixa chamado %d vez(es), quero 1", prov.albumFaixaN)
 	}
-	// ADR-0029 item 1/3: só o artista + O ÁLBUM DAQUELA FAIXA + a própria faixa
-	// entram no catálogo -- nenhum outro release, nenhuma outra faixa do MESMO
-	// álbum (Track Two) e nenhum artista feat são auto-criados.
+	// ADR-0029 items 1/3: only the artist + THE ALBUM OF THAT TRACK + the track itself
+	// enter the catalog -- no other release, no other track of the SAME album (Track
+	// Two) and no feat artist are auto-created.
 	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='artista'"); n != 1 {
 		t.Errorf("artistas = %d, quero 1 (só o principal; feat NÃO auto-cria entity)", n)
 	}
@@ -465,9 +459,9 @@ func TestScanMusicaMbidFaixaEArtistaImportaEscopado(t *testing.T) {
 	}
 }
 
-// TestScanMusicaResolucaoReversaFaixaSemArtista cobre o passo 3: só o MBID de
-// faixa está embutido (sem o de artista) -- a resolução reversa
-// (FaixaResolverProvider) acha o artista, e o resto segue igual ao passo 2.
+// TestScanMusicaResolucaoReversaFaixaSemArtista covers step 3: only the track MBID is
+// embedded (without the artist one) -- the reverse resolution (FaixaResolverProvider)
+// finds the artist, and the rest follows the same as step 2.
 func TestScanMusicaResolucaoReversaFaixaSemArtista(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -476,7 +470,7 @@ func TestScanMusicaResolucaoReversaFaixaSemArtista(t *testing.T) {
 
 	prov := &fakeMusicaProvider{}
 	m := managerMusica(t, d, map[string]mediainfo.AudioTags{
-		arq: {MusicBrainzTrackID: mbidFaixa1Fixture}, // SEM MusicBrainzArtistID
+		arq: {MusicBrainzTrackID: mbidFaixa1Fixture}, // WITHOUT MusicBrainzArtistID
 	}, prov)
 	src := criarSourceMusica(t, d, root)
 	if err := scanSync(t, m, src); err != nil {
@@ -502,11 +496,10 @@ func TestScanMusicaResolucaoReversaFaixaSemArtista(t *testing.T) {
 	}
 }
 
-// TestScanMusicaBuscaTextual cobre o passo 4 (caso DOMINANTE nos arquivos
-// reais do dono): sem NENHUM MBID embutido, casamento por nome do artista
-// (album_artist) + import ESCOPADO pelo caminho TEXTUAL (álbum por nome via
-// BuscarAlbumPorNome, faixa por título dentro dele) -- ADR-0029/briefing 0115,
-// nunca a árvore inteira.
+// TestScanMusicaBuscaTextual covers step 4 (the DOMINANT case in the owner's real
+// files): without ANY embedded MBID, matching by artist name (album_artist) + SCOPED
+// import through the TEXTUAL path (album by name via BuscarAlbumPorNome, track by
+// title inside it) -- ADR-0029, never the whole tree.
 func TestScanMusicaBuscaTextual(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -544,9 +537,8 @@ func TestScanMusicaBuscaTextual(t *testing.T) {
 	}
 }
 
-// TestScanMusicaBuscaTextualAmbiguaViraDraft cobre a ambiguidade (>1
-// candidato empatado no topo): NUNCA aplica um match "parecido" -- cai para o
-// draft (passo 5).
+// TestScanMusicaBuscaTextualAmbiguaViraDraft covers ambiguity (>1 candidate tied at
+// the top): it NEVER applies a "similar" match -- it falls to the draft (step 5).
 func TestScanMusicaBuscaTextualAmbiguaViraDraft(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -578,10 +570,9 @@ func TestScanMusicaBuscaTextualAmbiguaViraDraft(t *testing.T) {
 	}
 }
 
-// TestScanMusicaSemTagsViraDraftComNomeDoArquivo cobre o passo 5 raso: sem
-// NENHUMA tag legível (ffprobe indisponível/tag vazia), a faixa vira draft
-// com o NOME DO ARQUIVO como título (mesma filosofia de filme/série -- visível,
-// não perdido).
+// TestScanMusicaSemTagsViraDraftComNomeDoArquivo covers the shallow step 5: without
+// ANY readable tag (ffprobe unavailable/empty tag), the track becomes a draft with the
+// FILE NAME as title (the same movie/series philosophy -- visible, not lost).
 func TestScanMusicaSemTagsViraDraftComNomeDoArquivo(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -589,7 +580,7 @@ func TestScanMusicaSemTagsViraDraftComNomeDoArquivo(t *testing.T) {
 	escrever(t, arq)
 
 	prov := &fakeMusicaProvider{}
-	m := managerMusica(t, d, map[string]mediainfo.AudioTags{}, prov) // sem entrada = sem tags
+	m := managerMusica(t, d, map[string]mediainfo.AudioTags{}, prov) // no entry = no tags
 	src := criarSourceMusica(t, d, root)
 	if err := scanSync(t, m, src); err != nil {
 		t.Fatalf("scan: %v", err)
@@ -608,10 +599,10 @@ func TestScanMusicaSemTagsViraDraftComNomeDoArquivo(t *testing.T) {
 	}
 }
 
-// TestScanMusicaReescaneioNaoRechamaImportarNemDuplica cobre a
-// incrementalidade (briefing 0107 §5): reescanear o MESMO arquivo (mtime/size
-// inalterados) reusa o entity_id já gravado sem rechamar Importar/Buscar/
-// ResolverArtistaDaFaixa, e sem duplicar entity nem media_file.
+// TestScanMusicaReescaneioNaoRechamaImportarNemDuplica covers the incrementality:
+// re-scanning the SAME file (unchanged mtime/size) reuses the entity_id already stored
+// without calling Importar/Buscar/ResolverArtistaDaFaixa again, and without duplicating
+// entity or media_file.
 func TestScanMusicaReescaneioNaoRechamaImportarNemDuplica(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -652,23 +643,23 @@ func TestScanMusicaReescaneioNaoRechamaImportarNemDuplica(t *testing.T) {
 	if n := contar(t, d, "SELECT count(*) FROM media_file"); n != 1 {
 		t.Errorf("media_file apos re-scan = %d, quero 1 (nao duplicou)", n)
 	}
-	// Vinculo 1:1: nunca a juncao N:M de serie.
+	// 1:1 link: never the N:M junction of series.
 	if n := contar(t, d, "SELECT count(*) FROM media_file_entity"); n != 0 {
 		t.Errorf("media_file_entity = %d, quero 0 (musica e 1:1, media_file.entity_id direto)", n)
 	}
 }
 
-// ── duração local como sinal de confirmação (briefing 0121 §8) ──────────────
+// ── local duration as a confirmation signal ─────────────────────────────────
 //
-// As três testes abaixo usam spyMusicaImportador (não o enrich real) para
-// isolar UMA coisa: que o SCANNER propaga corretamente a duração extraída de
-// mediainfo.Info (info.General.Duration) até o enrich.FaixaAlvo, nos DOIS
-// pontos onde ele é construído (importarEAcharPorMbid/matchTextualFaixa,
-// musica.go) -- o uso dessa duração para confirmar/desambiguar já foi
-// validado nas camadas enrich/provider/matching (rodada 1 da extensão).
+// The three tests below use spyMusicaImportador (not the real enrich) to isolate ONE
+// thing: that the SCANNER correctly propagates the duration extracted from
+// mediainfo.Info (info.General.Duration) down to the enrich.FaixaAlvo, on the TWO
+// points where it is built (importarEAcharPorMbid/matchTextualFaixa, musica.go) -- the
+// use of that duration to confirm/disambiguate was already validated in the
+// enrich/provider/matching layers.
 
-// TestScanMusicaMbidPropagaDuracaoDoArquivo cobre o caminho por MBID (passo
-// 2): a duração do arquivo local chega intacta até o FaixaAlvo construído em
+// TestScanMusicaMbidPropagaDuracaoDoArquivo covers the path by MBID (step 2): the
+// duration of the local file arrives intact at the FaixaAlvo built in
 // importarEAcharPorMbid.
 func TestScanMusicaMbidPropagaDuracaoDoArquivo(t *testing.T) {
 	d := abrirDB(t)
@@ -703,9 +694,9 @@ func TestScanMusicaMbidPropagaDuracaoDoArquivo(t *testing.T) {
 	}
 }
 
-// TestScanMusicaBuscaTextualPropagaDuracaoDoArquivo cobre o caminho TEXTUAL
-// (passo 4, caso dominante): a duração do arquivo local chega intacta até o
-// FaixaAlvo construído em matchTextualFaixa.
+// TestScanMusicaBuscaTextualPropagaDuracaoDoArquivo covers the TEXTUAL path (step 4,
+// the dominant case): the duration of the local file arrives intact at the FaixaAlvo
+// built in matchTextualFaixa.
 func TestScanMusicaBuscaTextualPropagaDuracaoDoArquivo(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -739,10 +730,10 @@ func TestScanMusicaBuscaTextualPropagaDuracaoDoArquivo(t *testing.T) {
 	}
 }
 
-// TestScanMusicaSemDuracaoNoMediainfoChegaZero cobre a degradação segura: sem
-// info.General.Duration disponível (probe parcial/degradado), o FaixaAlvo
-// chega com DuracaoSegundos=0 ("desconhecida" para enrich/provider) -- sem
-// quebrar o import escopado.
+// TestScanMusicaSemDuracaoNoMediainfoChegaZero covers the safe degradation: without
+// info.General.Duration available (partial/degraded probe), the FaixaAlvo arrives with
+// DuracaoSegundos=0 ("unknown" for the enrich/provider) -- without breaking the scoped
+// import.
 func TestScanMusicaSemDuracaoNoMediainfoChegaZero(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -752,8 +743,8 @@ func TestScanMusicaSemDuracaoNoMediainfoChegaZero(t *testing.T) {
 	spy := &spyMusicaImportador{faixaID: "faixa-spy-sem-duracao"}
 	preSemearFaixaSpy(t, d, spy.faixaID, "Track One")
 
-	// duracaoPorPath deliberadamente OMITIDO (nil) -- simula um mediainfo sem
-	// General.Duration disponível.
+	// duracaoPorPath deliberately OMITTED (nil) -- it simulates a mediainfo without
+	// General.Duration available.
 	m := NewManagerComProber(d, proberComTags{
 		porPath: map[string]mediainfo.AudioTags{arq: {AlbumArtist: "Fake Band", Album: "Fake Album", Title: "Track One", TrackNumber: 1}},
 	})
@@ -774,12 +765,12 @@ func TestScanMusicaSemDuracaoNoMediainfoChegaZero(t *testing.T) {
 	}
 }
 
-// ── passo 4.5: fingerprint acústico (briefing 0126) ─────────────────────────
+// ── step 4.5: acoustic fingerprint ──────────────────────────────────────────
 
-// TestScanMusicaFingerprintNaoChamadoQuandoTextualResolve cobre o critério de
-// aceite central do briefing 0126: o passo 4.5 NUNCA roda quando o passo 4
-// (textual) já resolveu -- zero chamadas ao calculador/provider de
-// fingerprint, mesmo com os dois configurados e prontos para responder.
+// TestScanMusicaFingerprintNaoChamadoQuandoTextualResolve covers the central
+// acceptance criterion of the fingerprint step: step 4.5 NEVER runs when step 4
+// (textual) has already resolved -- zero calls to the fingerprint calculator/provider,
+// even with both configured and ready to answer.
 func TestScanMusicaFingerprintNaoChamadoQuandoTextualResolve(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -809,12 +800,12 @@ func TestScanMusicaFingerprintNaoChamadoQuandoTextualResolve(t *testing.T) {
 	}
 }
 
-// TestScanMusicaFingerprintAcimaDoLimiarImportaEscopado cobre o caminho feliz
-// do passo 4.5: sem MBID embutido e sem match textual (tag sem artista
-// utilizável), um candidato de fingerprint ACIMA do limiar
-// (matching.LimiarConfiancaFingerprint) dispara o MESMO import ESCOPADO dos
-// passos 2/3 (ADR-0029) -- só o artista + o álbum daquela faixa + a própria
-// faixa, NUNCA a discografia inteira.
+// TestScanMusicaFingerprintAcimaDoLimiarImportaEscopado covers the happy path of step
+// 4.5: without an embedded MBID and without a textual match (tag without a usable
+// artist), a fingerprint candidate ABOVE the threshold
+// (matching.LimiarConfiancaFingerprint) fires the SAME SCOPED import of steps 2/3
+// (ADR-0029) -- only the artist + the album of that track + the track itself, NEVER the
+// whole discography.
 func TestScanMusicaFingerprintAcimaDoLimiarImportaEscopado(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -824,8 +815,8 @@ func TestScanMusicaFingerprintAcimaDoLimiarImportaEscopado(t *testing.T) {
 	prov := &fakeMusicaProvider{}
 	calc := &fakeFingerprintCalculador{disponivel: true, fingerprint: "fp-conhecido", duracao: 214.8}
 	fpProv := &fakeFingerprintProvider{ok: true, candidato: provider.RecordingCandidato{RecordingMBID: mbidFaixa1Fixture, Confianca: 0.9}}
-	// Sem tags utilizáveis (nem MBID, nem artista/album) -- passos 1-4 falham
-	// todos, só resta o passo 4.5.
+	// Without usable tags (no MBID, no artist/album) -- steps 1-4 all fail, only step
+	// 4.5 is left.
 	m := managerMusicaComFingerprint(t, d, map[string]mediainfo.AudioTags{}, prov, calc, fpProv)
 	src := criarSourceMusica(t, d, root)
 	if err := scanSync(t, m, src); err != nil {
@@ -858,8 +849,8 @@ func TestScanMusicaFingerprintAcimaDoLimiarImportaEscopado(t *testing.T) {
 	if prov.arvoreN != 0 {
 		t.Errorf("BuscarArtistaArvore chamado %d vez(es), quero 0 (import escopado, nunca a arvore inteira)", prov.arvoreN)
 	}
-	// ADR-0029: só o artista + O ÁLBUM DAQUELA FAIXA + a própria faixa --
-	// nenhuma outra faixa do mesmo álbum (Track Two) nem o artista feat.
+	// ADR-0029: only the artist + THE ALBUM OF THAT TRACK + the track itself -- no
+	// other track of the same album (Track Two) nor the feat artist.
 	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='artista'"); n != 1 {
 		t.Errorf("artistas = %d, quero 1", n)
 	}
@@ -871,10 +862,9 @@ func TestScanMusicaFingerprintAcimaDoLimiarImportaEscopado(t *testing.T) {
 	}
 }
 
-// TestScanMusicaFingerprintIndisponivelViraDraft cobre a degradação quando o
-// fpcalc não está disponível (Disponivel()=false): o passo 4.5 nem tenta
-// calcular nem consultar o provider -- cai direto para o draft (passo 5),
-// sem erro fatal.
+// TestScanMusicaFingerprintIndisponivelViraDraft covers the degradation when fpcalc is
+// not available (Disponivel()=false): step 4.5 neither tries to calculate nor to query
+// the provider -- it falls straight to the draft (step 5), without a fatal error.
 func TestScanMusicaFingerprintIndisponivelViraDraft(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -903,10 +893,10 @@ func TestScanMusicaFingerprintIndisponivelViraDraft(t *testing.T) {
 	}
 }
 
-// TestScanMusicaSemProviderFingerprintViraDraft cobre a degradação quando o
-// provider registrado NÃO implementa provider.FingerprintProvider (ex.:
-// AcoustID nunca configurado/registrado) -- mesmo com fpcalc disponível, o
-// scanner faz o type-assert, não encontra a capacidade, e cai para o draft.
+// TestScanMusicaSemProviderFingerprintViraDraft covers the degradation when the
+// registered provider does NOT implement provider.FingerprintProvider (e.g. AcoustID
+// never configured/registered) -- even with fpcalc available, the scanner does the
+// type-assert, finds no capability, and falls to the draft.
 func TestScanMusicaSemProviderFingerprintViraDraft(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -915,8 +905,8 @@ func TestScanMusicaSemProviderFingerprintViraDraft(t *testing.T) {
 
 	prov := &fakeMusicaProvider{}
 	calc := &fakeFingerprintCalculador{disponivel: true, fingerprint: "fp-qualquer"}
-	// fakeMusicaProvider NÃO implementa provider.FingerprintProvider -- o
-	// mesmo cenário de "provider ativo sem a capacidade".
+	// fakeMusicaProvider does NOT implement provider.FingerprintProvider -- the same
+	// scenario of "active provider without the capability".
 	m := managerMusicaComFingerprint(t, d, map[string]mediainfo.AudioTags{}, prov, calc, prov)
 	src := criarSourceMusica(t, d, root)
 	if err := scanSync(t, m, src); err != nil {
@@ -933,10 +923,9 @@ func TestScanMusicaSemProviderFingerprintViraDraft(t *testing.T) {
 	}
 }
 
-// TestScanMusicaFingerprintAbaixoDoLimiarViraDraft cobre o critério de
-// aceite de confiança: um candidato com Confianca ABAIXO de
-// matching.LimiarConfiancaFingerprint não é aceito -- cai para o draft, sem
-// disparar import nenhum.
+// TestScanMusicaFingerprintAbaixoDoLimiarViraDraft covers the confidence acceptance
+// criterion: a candidate with Confianca BELOW matching.LimiarConfiancaFingerprint is not
+// accepted -- it falls to the draft, without firing any import.
 func TestScanMusicaFingerprintAbaixoDoLimiarViraDraft(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()

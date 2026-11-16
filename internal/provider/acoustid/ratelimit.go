@@ -5,16 +5,15 @@ import (
 	"time"
 )
 
-// limitador é um limitador de taxa CLIENT-SIDE simples: mutex + timestamp da
-// última chamada liberada — MESMA ideia de
-// internal/provider/musicbrainz/ratelimit.go (AGENTS.md: "local-first e
-// leve", sem dependência nova tipo golang.org/x/time/rate), com um intervalo
-// DIFERENTE: o AcoustID documenta no máximo 3 requisições/segundo (briefing
-// 0126), contra <= 1 req/s do MusicBrainz.
+// limitador is a simple CLIENT-SIDE rate limiter: mutex + timestamp of the last
+// released call -- the SAME idea as internal/provider/musicbrainz/ratelimit.go
+// (AGENTS.md: "local-first and lightweight", with no new dependency such as
+// golang.org/x/time/rate), with a DIFFERENT interval: AcoustID documents at most
+// 3 requests per second, against the <= 1 req/s of MusicBrainz.
 //
-// `agora`/`dormir` são injetáveis para permitir um teste DETERMINÍSTICO e
-// RÁPIDO (sem depender de um time.Sleep real): nil usa time.Now/time.Sleep
-// reais.
+// `agora`/`dormir` are injectable to allow a DETERMINISTIC and FAST test
+// (without depending on a real time.Sleep): nil uses the real
+// time.Now/time.Sleep.
 type limitador struct {
 	mu        sync.Mutex
 	ultima    time.Time
@@ -23,16 +22,15 @@ type limitador struct {
 	dormir    func(time.Duration)
 }
 
-// novoLimitador cria um limitador que garante pelo menos `intervalo` entre
-// duas chamadas liberadas por esperar().
+// novoLimitador creates a limiter that guarantees at least `intervalo` between
+// two calls released by esperar().
 func novoLimitador(intervalo time.Duration) *limitador {
 	return &limitador{intervalo: intervalo}
 }
 
-// esperar BLOQUEIA até que `intervalo` tenha passado desde a última chamada
-// liberada (a primeira chamada nunca espera). Serializado por mutex:
-// chamadas concorrentes esperam a vez, cada uma vendo a `ultima` atualizada
-// pela anterior.
+// esperar BLOCKS until `intervalo` has elapsed since the last released call
+// (the first call never waits). Serialized by mutex: concurrent calls wait for
+// their turn, each one seeing the `ultima` updated by the previous one.
 func (l *limitador) esperar() {
 	l.mu.Lock()
 	defer l.mu.Unlock()

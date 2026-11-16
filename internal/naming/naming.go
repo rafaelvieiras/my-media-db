@@ -1,16 +1,17 @@
-// Package naming lê nomes de pasta e de arquivo pela convenção Kodi/Jellyfin
-// (ADR-0008) e extrai os fatos de identidade: título, ano, id externo embutido
-// (`[tmdbid-N]`/`{tmdb-N}`/`tt...`), rótulo de edição e número de parte
-// (stacking). É um LEITOR puro, sem I/O e sem estado: nunca renomeia nada, nunca
-// toca o disco. É o coração do matching e, por ser puro, o mais testável.
+// Package naming reads folder and file names through the Kodi/Jellyfin
+// convention (ADR-0008) and extracts the identity facts: title, year, embedded
+// external id (`[tmdbid-N]`/`{tmdb-N}`/`tt...`), edition label and part number
+// (stacking). It is a PURE READER, without I/O and without state: it never
+// renames anything, it never touches the disk. It is the heart of matching and,
+// being pure, the most testable part.
 //
-// Escopo do MVP (briefing 0009): FILMES (pasta = filme = uma Entity; os arquivos
-// da pasta são versões/edições da MESMA obra). A hierarquia de TV
-// (série↔temporada↔episódio) é follow-up explícito — o design não a impede, mas
-// este parser ainda não a trata.
+// MVP scope (ADR-0008): MOVIES (folder = movie = one Entity; the files in the
+// folder are versions/editions of the SAME work). The TV hierarchy
+// (series↔season↔episode) is an explicit follow-up — the design does not prevent
+// it, but this parser does not handle it yet.
 //
-// Os limiares e regex são conservadores de propósito (tuning, não modelo): é
-// melhor deixar de reconhecer um rótulo do que inventar um. Ampliar é seguro.
+// The thresholds and regexes are conservative on purpose (tuning, not model): it
+// is better to miss a label than to invent one. Extending them is safe.
 package naming
 
 import (
@@ -19,70 +20,70 @@ import (
 	"strings"
 )
 
-// Info é o resultado de ler um nome. Campos vazios/zero significam "ausente".
+// Info is the result of reading a name. Empty/zero fields mean "absent".
 type Info struct {
-	// Title é o título limpo (separadores normalizados, tokens técnicos
-	// removidos). Vazio quando não sobra nada de útil (ex.: um arquivo cujo
-	// nome é só "2160p") — o scanner trata isso como não-identificado (draft).
+	// Title is the clean title (normalized separators, technical tokens
+	// removed). Empty when nothing useful is left (e.g.: a file whose name is
+	// only "2160p") — the scanner treats that as unidentified (draft).
 	Title string
-	// Year é o ano de lançamento entre parênteses ("(2017)"); 0 se ausente.
+	// Year is the release year in parentheses ("(2017)"); 0 if absent.
 	Year int
-	// TMDBID é o id TMDB embutido ("[tmdbid-335984]" ou "{tmdb-335984}"); "" se ausente.
+	// TMDBID is the embedded TMDB id ("[tmdbid-335984]" or "{tmdb-335984}"); "" if absent.
 	TMDBID string
-	// IMDBID é o id IMDb embutido ("tt0133093", com ou sem colchetes); "" se ausente.
+	// IMDBID is the embedded IMDb id ("tt0133093", with or without brackets); "" if absent.
 	IMDBID string
-	// Edition é o rótulo de edição ("Directors Cut", "Extended"...); "" se ausente.
+	// Edition is the edition label ("Directors Cut", "Extended"...); "" if absent.
 	Edition string
-	// PartNo é a parte no stacking (-cd1/-part1/-disc1); 0 se ausente.
+	// PartNo is the part in the stacking (-cd1/-part1/-disc1); 0 if absent.
 	PartNo int
 }
 
 var (
-	// Id TMDB estilo Jellyfin ("[tmdbid-N]") e Kodi ("{tmdb-N}").
+	// TMDB id, Jellyfin style ("[tmdbid-N]") and Kodi style ("{tmdb-N}").
 	reTMDB = regexp.MustCompile(`(?i)[\[{]tmdb(?:id)?-(\d+)[\]}]`)
-	// Id IMDb entre colchetes/chaves ("[imdbid-tt...]"/"{imdb-tt...}").
+	// IMDb id between brackets/braces ("[imdbid-tt...]"/"{imdb-tt...}").
 	reIMDBBracket = regexp.MustCompile(`(?i)[\[{]imdb(?:id)?-(tt\d+)[\]}]`)
-	// Id IMDb "pelado" no nome ("tt0133093").
+	// "Bare" IMDb id in the name ("tt0133093").
 	reIMDBBare = regexp.MustCompile(`(?i)\b(tt\d{6,9})\b`)
-	// Ano SÓ entre parênteses (conservador: um "2049" solto no título de
-	// "Blade Runner 2049" NÃO é ano). O grupo captura os 4 dígitos.
+	// Year ONLY in parentheses (conservative: a loose "2049" in the title of
+	// "Blade Runner 2049" is NOT a year). The group captures the 4 digits.
 	reYearParen = regexp.MustCompile(`\(((?:19|20)\d{2})\)`)
-	// Edição estilo Kodi: "{edition-Directors Cut}".
+	// Kodi-style edition: "{edition-Directors Cut}".
 	reEditionKodi = regexp.MustCompile(`(?i)\{edition-([^}]+)\}`)
-	// Edição por palavra-chave conhecida (conjunto conservador).
+	// Edition by known keyword (a conservative set).
 	reEditionKw = regexp.MustCompile(`(?i)\b(director'?s cut|extended(?: cut| edition)?|unrated|theatrical(?: cut)?|remastered|special edition|ultimate edition|final cut|imax)\b`)
-	// Parte no stacking: -cd1 / -part 1 / -disc1 / -pt1 / -disk1.
+	// Part in the stacking: -cd1 / -part 1 / -disc1 / -pt1 / -disk1.
 	rePart = regexp.MustCompile(`(?i)(?:^|[-_. ])(?:cd|part|pt|disc|disk)[-_ ]?(\d{1,2})(?:$|[-_. \]])`)
-	// Grupos entre colchetes/chaves/parênteses removidos ao limpar o título.
+	// Groups between brackets/braces/parentheses removed when cleaning the title.
 	reBrackets = regexp.MustCompile(`[\[({][^\])}]*[\])}]`)
-	// Colapso de espaços em branco.
+	// Collapse of whitespace.
 	reSpaces = regexp.MustCompile(`\s+`)
 )
 
-// tokensTecnicos são palavras técnicas (resolução, fonte, codec, áudio, HDR) que
-// não fazem parte do título e são descartadas na limpeza. Comparadas em
-// minúsculas, token a token.
+// tokensTecnicos are technical words (resolution, source, codec, audio, HDR) that
+// are not part of the title and are discarded during the cleanup. Compared in
+// lowercase, token by token.
 var tokensTecnicos = map[string]bool{
-	// resolução
+	// resolution
 	"480p": true, "576p": true, "720p": true, "1080p": true, "1440p": true,
 	"2160p": true, "4k": true, "8k": true,
-	// fonte
+	// source
 	"bluray": true, "blu-ray": true, "remux": true, "webdl": true, "web-dl": true,
 	"webrip": true, "web": true, "hdtv": true, "dvdrip": true, "dvd": true,
 	"bdrip": true, "brrip": true, "hdrip": true,
-	// codec de vídeo
+	// video codec
 	"x264": true, "x265": true, "h264": true, "h265": true, "hevc": true,
 	"avc": true, "xvid": true, "divx": true,
-	// áudio
+	// audio
 	"aac": true, "ac3": true, "eac3": true, "dts": true, "truehd": true,
 	"flac": true, "mp3": true, "atmos": true,
-	// HDR / profundidade
+	// HDR / depth
 	"hdr": true, "hdr10": true, "dv": true, "dovi": true, "hlg": true,
 	"10bit": true, "8bit": true,
 }
 
-// Parse lê um nome (de pasta OU de arquivo já SEM extensão) e extrai a Info. É
-// idempotente e livre de efeitos colaterais.
+// Parse reads a name (of a folder OR of a file already WITHOUT extension) and
+// extracts the Info. It is idempotent and free of side effects.
 func Parse(name string) Info {
 	var info Info
 
@@ -101,8 +102,8 @@ func Parse(name string) Info {
 	return info
 }
 
-// extrairIMDB devolve o id IMDb (colchetes têm prioridade sobre a forma pelada);
-// "" se ausente.
+// extrairIMDB returns the IMDb id (brackets take priority over the bare form);
+// "" if absent.
 func extrairIMDB(name string) string {
 	if m := reIMDBBracket.FindStringSubmatch(name); m != nil {
 		return strings.ToLower(m[1])
@@ -113,8 +114,8 @@ func extrairIMDB(name string) string {
 	return ""
 }
 
-// extrairEdition devolve o rótulo de edição; "" se ausente. O bloco Kodi
-// "{edition-...}" tem prioridade sobre a busca por palavra-chave.
+// extrairEdition returns the edition label; "" if absent. The Kodi block
+// "{edition-...}" takes priority over the keyword search.
 func extrairEdition(name string) string {
 	if m := reEditionKodi.FindStringSubmatch(name); m != nil {
 		return strings.TrimSpace(m[1])
@@ -125,9 +126,10 @@ func extrairEdition(name string) string {
 	return ""
 }
 
-// extrairTitulo isola e limpa o título: corta no "(ano)" quando existe, remove
-// os grupos entre colchetes/chaves/parênteses, normaliza separadores e descarta
-// os tokens técnicos remanescentes. Devolve "" se nada útil sobrar.
+// extrairTitulo isolates and cleans the title: it cuts at the "(year)" when there
+// is one, removes the groups between brackets/braces/parentheses, normalizes the
+// separators and discards the remaining technical tokens. It returns "" if
+// nothing useful is left.
 func extrairTitulo(name string) string {
 	base := name
 	if loc := reYearParen.FindStringIndex(name); loc != nil {
@@ -139,8 +141,8 @@ func extrairTitulo(name string) string {
 	return descartarTokensTecnicos(base)
 }
 
-// descartarTokensTecnicos remove, palavra a palavra, os tokens puramente
-// técnicos (resolução/codec/fonte/HDR) e devolve o restante colado por espaços.
+// descartarTokensTecnicos removes, word by word, the purely technical tokens
+// (resolution/codec/source/HDR) and returns the rest joined by spaces.
 func descartarTokensTecnicos(s string) string {
 	campos := strings.Fields(s)
 	mantidos := make([]string, 0, len(campos))
@@ -154,87 +156,93 @@ func descartarTokensTecnicos(s string) string {
 	return strings.TrimSpace(strings.Join(mantidos, " "))
 }
 
-// normalizarEspacos colapsa espaços e apara as pontas.
+// normalizarEspacos collapses whitespace and trims the edges.
 func normalizarEspacos(s string) string {
 	return strings.TrimSpace(reSpaces.ReplaceAllString(s, " "))
 }
 
-// ─── Parser de TV (episódios) ────────────────────────────────────────────────
+// ─── TV parser (episodes) ────────────────────────────────────────────────────
 //
-// ParseEpisode reconhece os padrões de nome de EPISÓDIO das convenções
-// Kodi/Jellyfin/Plex/Sonarr e do fansub de anime (absoluto). É um leitor puro,
-// independente do Parse de filme (que fica intacto): o scanner de séries decide
-// qual chamar pelo content_type da biblioteca. Conservador de propósito — na
-// dúvida devolve (zero, false) e o item vai para a fila de revisão, em vez de
-// inventar um número errado (briefing 0034 §2.4).
+// ParseEpisode recognizes the EPISODE name patterns of the
+// Kodi/Jellyfin/Plex/Sonarr conventions and of anime fansub (absolute). It is a
+// pure reader, independent from the movie Parse (which stays intact): the series
+// scanner decides which one to call based on the content_type of the library.
+// Conservative on purpose — when in doubt it returns (zero, false) and the item
+// goes to the review queue, instead of inventing a wrong number (ADR-0021,
+// §2.4).
 
-// maxEpisodiosNoRange é o teto de episódios que um range/combinado num único
-// arquivo pode expandir. Ranges maiores que isto (ex.: "S01E01-E99") são quase
-// sempre erro de parse (um "99" que era outra coisa) — melhor mandar para
-// revisão do que criar dezenas de vínculos espúrios.
+// maxEpisodiosNoRange is the ceiling of episodes that a range/combined set in a
+// single file may expand into. Ranges larger than this (e.g.: "S01E01-E99") are
+// almost always a parse error (a "99" that was something else) — better to send
+// it to review than to create dozens of spurious links.
 const maxEpisodiosNoRange = 24
 
-// EpisodeInfo é o resultado de ler um nome de episódio. Zero-value + false
-// significa "não reconhecido".
+// EpisodeInfo is the result of reading an episode name. Zero-value + false means
+// "not recognized".
 type EpisodeInfo struct {
-	// Season é o número da temporada. Pode ser 0 (specials) e NÃO é
-	// necessariamente 1..N (box-set, ano). Fica 0 no caminho absoluto.
+	// Season is the season number. It may be 0 (specials) and is NOT
+	// necessarily 1..N (box-set, year). It stays 0 on the absolute path.
 	Season int
-	// Episodes são os episódios daquela temporada, já expandidos (um range
-	// "E01-E03" vira [1,2,3]; "E01E02" vira [1,2]). Vazio no caminho absoluto.
+	// Episodes are the episodes of that season, already expanded (a range
+	// "E01-E03" becomes [1,2,3]; "E01E02" becomes [1,2]). Empty on the absolute
+	// path.
 	Episodes []int
-	// Absolute são os números absolutos (anime), já expandidos. Vazio fora do
-	// caminho absoluto.
+	// Absolute are the absolute numbers (anime), already expanded. Empty outside
+	// the absolute path.
 	Absolute []int
-	// IsAbsolute marca que o reconhecimento veio do padrão absoluto (sem SxxEyy):
-	// o scanner casa contra o absolute_number, não contra (season, number).
+	// IsAbsolute marks that the recognition came from the absolute pattern
+	// (without SxxEyy): the scanner matches against absolute_number, not against
+	// (season, number).
 	IsAbsolute bool
 }
 
 var (
-	// SxxEyy com temporada explícita, capturando o restante da string a partir
-	// do primeiro Eyy para as extensões (ranges com hífen e episódios colados).
-	// Ex.: "S01E05", "s1e5", "S01E01-E03", "S01E01E02". O grupo 1 é a temporada,
-	// o grupo 2 o primeiro episódio, o grupo 3 a "cauda" (extensões).
+	// SxxEyy with an explicit season, capturing the rest of the string from the
+	// first Eyy onward for the extensions (hyphen ranges and glued episodes).
+	// E.g.: "S01E05", "s1e5", "S01E01-E03", "S01E01E02". Group 1 is the season,
+	// group 2 the first episode, group 3 the "tail" (extensions).
 	//
-	// A cauda só aceita tokens de episódio ESTREITAMENTE colados ao Eyy: "Edd"
-	// (colado, Kodi "E01E02"), "-Edd" ou "-dd" (range com hífen). NÃO aceita
-	// separador de espaço/ponto/underscore — senão um "S01E05 1080p" arrastaria
-	// "1080" como se fosse outro episódio (bug clássico). Tokens de qualidade
-	// vêm separados por espaço/ponto e por isso ficam de fora.
+	// The tail only accepts episode tokens TIGHTLY glued to the Eyy: "Edd"
+	// (glued, Kodi "E01E02"), "-Edd" or "-dd" (hyphen range). It does NOT accept
+	// a space/dot/underscore separator — otherwise an "S01E05 1080p" would drag
+	// "1080" along as if it were another episode (a classic bug). Quality tokens
+	// come separated by a space/dot and therefore stay out.
 	reEpSeason = regexp.MustCompile(`(?i)\bs(\d{1,4})[ ._-]?e(\d{1,4})((?:-?e\d{1,4}|-\d{1,4})*)`)
-	// Cauda de range/combinado: cada ocorrência é um número de episódio (com ou
-	// sem "E", com ou sem hífen). Usada para expandir "-E03"/"E02"/"-03".
+	// Tail of a range/combined set: each occurrence is an episode number (with or
+	// without "E", with or without a hyphen). Used to expand "-E03"/"E02"/"-03".
 	reEpTailNum = regexp.MustCompile(`(?i)e?(\d{1,4})`)
-	// Absoluto de anime: separador " - " (espaço-hífen-espaço) seguido de 1..4
-	// dígitos e, opcionalmente, um range "-NNN". Conservador: EXIGE o separador
-	// " - " para não confundir com título; o filtro reAbsoluteVeto rejeita ano,
-	// resolução, codec etc. logo depois. Ex.: "Show - 013", "Show - 013-015".
+	// Anime absolute: separator " - " (space-hyphen-space) followed by 1..4
+	// digits and, optionally, a range "-NNN". Conservative: it REQUIRES the
+	// " - " separator so as not to be confused with the title; the
+	// reAbsoluteVeto filter rejects year, resolution, codec etc. right after.
+	// E.g.: "Show - 013", "Show - 013-015".
 	reAbsolute = regexp.MustCompile(`(?i)(?:^|\s)-\s+(\d{1,4})(?:-(\d{1,4}))?(?:\s|$|[._\[(])`)
-	// Veto do absoluto: se logo após o número vier um token que o desqualifica
-	// (p de "1080p", "x264" já é filtrado por não casar dígitos puros), tratamos
-	// como não-episódio. Aqui pegamos o sufixo "p"/"i" colado (resolução) e "x"
-	// (codec) que sobreviveriam ao \d{1,4}. Simples e conservador.
+	// Absolute veto: if right after the number comes a token that disqualifies it
+	// (the p of "1080p", "x264" is already filtered out for not matching pure
+	// digits), we treat it as a non-episode. Here we catch the glued "p"/"i"
+	// suffix (resolution) and "x" (codec) that would survive the \d{1,4}. Simple
+	// and conservative.
 	reAbsoluteVetoSuffix = regexp.MustCompile(`(?i)^\s*-\s+\d{1,4}[pikx]`)
 )
 
-// ParseEpisode lê um nome de arquivo (SEM extensão) e devolve os episódios que
-// ele expressa. Retorna (EpisodeInfo, true) quando reconhece um padrão de
-// episódio; (zero, false) caso contrário. É idempotente e sem efeitos colaterais.
+// ParseEpisode reads a file name (WITHOUT extension) and returns the episodes it
+// expresses. It returns (EpisodeInfo, true) when it recognizes an episode
+// pattern; (zero, false) otherwise. It is idempotent and free of side effects.
 //
-// Ordem de tentativa: primeiro o padrão com temporada (SxxEyy e suas extensões,
-// que é o mais específico e menos ambíguo); só se ele não casar tentamos o
-// absoluto (anime), que é mais arriscado e por isso mais restrito.
+// Attempt order: first the pattern with a season (SxxEyy and its extensions,
+// which is the most specific and least ambiguous one); only if it does not match
+// do we try the absolute (anime) one, which is riskier and therefore more
+// restricted.
 //
-// Limites conhecidos (documentados de propósito — casos duvidosos → false, o
-// scanner manda para revisão em vez de errar):
-//   - Não trata o padrão "1x05" (Kodi antigo) — pode colidir com resolução/relação
-//     de aspecto; fica de fora até haver demanda.
-//   - Absoluto EXIGE o separador " - " (espaço-hífen-espaço). "Show 013" (sem
-//     hífen) NÃO é reconhecido: "013" solto é ambíguo demais (parte, faixa, ano
-//     curto). Preferimos revisão a um palpite.
-//   - Ranges são expandidos só quando crescentes e dentro de maxEpisodiosNoRange;
-//     range invertido (E05-E03) ou gigante → false.
+// Known limits (documented on purpose — doubtful cases → false, the scanner sends
+// them to review instead of getting them wrong):
+//   - It does not handle the "1x05" pattern (old Kodi) — it can collide with
+//     resolution/aspect ratio; it stays out until there is demand.
+//   - Absolute REQUIRES the " - " separator (space-hyphen-space). "Show 013"
+//     (without a hyphen) is NOT recognized: a loose "013" is too ambiguous (part,
+//     track, short year). We prefer review over a guess.
+//   - Ranges are expanded only when increasing and within maxEpisodiosNoRange; an
+//     inverted range (E05-E03) or a giant one → false.
 func ParseEpisode(name string) (EpisodeInfo, bool) {
 	if info, ok := parseEpisodeSeason(name); ok {
 		return info, true
@@ -242,9 +250,9 @@ func ParseEpisode(name string) (EpisodeInfo, bool) {
 	return parseEpisodeAbsolute(name)
 }
 
-// parseEpisodeSeason cobre SxxEyy e as extensões de múltiplos episódios num
-// arquivo: range com hífen ("S01E01-E03", "S01E01-03") e episódios colados
-// estilo Kodi ("S01E01E02E03").
+// parseEpisodeSeason covers SxxEyy and the multi-episode-in-one-file extensions:
+// hyphen range ("S01E01-E03", "S01E01-03") and Kodi-style glued episodes
+// ("S01E01E02E03").
 func parseEpisodeSeason(name string) (EpisodeInfo, bool) {
 	m := reEpSeason.FindStringSubmatch(name)
 	if m == nil {
@@ -259,9 +267,10 @@ func parseEpisodeSeason(name string) (EpisodeInfo, bool) {
 		return EpisodeInfo{}, false
 	}
 
-	// A cauda (m[3]) traz os episódios adicionais (range ou colados). Coletamos
-	// todos os números — o primeiro deles, quando existe, define se é range
-	// (dois números = extremos) ou lista colada (>=2 já explícitos).
+	// The tail (m[3]) brings the additional episodes (range or glued ones). We
+	// collect every number — the first of them, when it exists, defines whether
+	// it is a range (two numbers = extremes) or a glued list (>=2 already
+	// explicit).
 	var cauda []int
 	for _, t := range reEpTailNum.FindAllStringSubmatch(m[3], -1) {
 		n, err := strconv.Atoi(t[1])
@@ -278,21 +287,21 @@ func parseEpisodeSeason(name string) (EpisodeInfo, bool) {
 	return EpisodeInfo{Season: season, Episodes: episodios}, true
 }
 
-// montarEpisodios decide, a partir da forma da cauda, se ela é um RANGE (um
-// único número após um hífen → expandir do primeiro até ele) ou uma LISTA colada
-// (episódios já explícitos, estilo "E01E02E03"). Devolve a lista final expandida
-// e ordenada por ocorrência, ou false se algo for incoerente (range invertido,
-// grande demais, duplicado fora de ordem).
+// montarEpisodios decides, from the shape of the tail, whether it is a RANGE (a
+// single number after a hyphen → expand from the first one up to it) or a GLUED
+// LIST (already explicit episodes, "E01E02E03" style). It returns the final list,
+// expanded and ordered by occurrence, or false if anything is incoherent
+// (inverted range, too large, duplicate out of order).
 func montarEpisodios(caudaRaw string, primeiro int, cauda []int) ([]int, bool) {
 	if len(cauda) == 0 {
 		return []int{primeiro}, true
 	}
 
-	// Range com hífen e um único número na cauda: "E01-E03" / "E01-03".
+	// Hyphen range with a single number in the tail: "E01-E03" / "E01-03".
 	if strings.Contains(caudaRaw, "-") && len(cauda) == 1 {
 		fim := cauda[0]
 		if fim <= primeiro || fim-primeiro+1 > maxEpisodiosNoRange {
-			return nil, false // invertido, degenerado ou grande demais → revisão.
+			return nil, false // inverted, degenerate or too large → review.
 		}
 		out := make([]int, 0, fim-primeiro+1)
 		for n := primeiro; n <= fim; n++ {
@@ -301,15 +310,15 @@ func montarEpisodios(caudaRaw string, primeiro int, cauda []int) ([]int, bool) {
 		return out, true
 	}
 
-	// Lista colada estilo Kodi: "E01E02E03" (ou com hífens entre pares). Cada
-	// número é um episódio explícito; exigimos estritamente crescente para não
-	// aceitar sequências absurdas, e respeitamos o teto.
+	// Kodi-style glued list: "E01E02E03" (or with hyphens between pairs). Each
+	// number is an explicit episode; we strictly require it to be increasing so
+	// as not to accept absurd sequences, and we respect the ceiling.
 	out := make([]int, 0, len(cauda)+1)
 	out = append(out, primeiro)
 	anterior := primeiro
 	for _, n := range cauda {
 		if n <= anterior {
-			return nil, false // não-crescente/duplicado → revisão.
+			return nil, false // non-increasing/duplicate → review.
 		}
 		out = append(out, n)
 		anterior = n
@@ -320,10 +329,10 @@ func montarEpisodios(caudaRaw string, primeiro int, cauda []int) ([]int, bool) {
 	return out, true
 }
 
-// parseEpisodeAbsolute cobre o padrão absoluto de anime ("Show - 013",
-// "[Group] Show - 013", "Show - 013-015"). É o caminho mais arriscado: exige o
-// separador " - " e veta sufixos técnicos (resolução/codec) que sobreviveriam ao
-// casamento de dígitos.
+// parseEpisodeAbsolute covers the anime absolute pattern ("Show - 013",
+// "[Group] Show - 013", "Show - 013-015"). It is the riskiest path: it requires
+// the " - " separator and vetoes technical suffixes (resolution/codec) that would
+// survive the digit matching.
 func parseEpisodeAbsolute(name string) (EpisodeInfo, bool) {
 	ini, m, ok := absolutoInicial(name)
 	if !ok {
@@ -343,17 +352,17 @@ func parseEpisodeAbsolute(name string) (EpisodeInfo, bool) {
 	return EpisodeInfo{Absolute: out, IsAbsolute: true}, true
 }
 
-// absolutoInicial reconhece o primeiro número absoluto e aplica os vetos
-// conservadores (sufixo técnico, número zero, ano solto). Devolve o número
-// inicial e o match completo (m[2] guarda o fim opcional do range); ok=false
-// quando o trecho não é um episódio absoluto legítimo.
+// absolutoInicial recognizes the first absolute number and applies the
+// conservative vetoes (technical suffix, number zero, loose year). It returns the
+// initial number and the full match (m[2] holds the optional end of the range);
+// ok=false when the excerpt is not a legitimate absolute episode.
 func absolutoInicial(name string) (int, []string, bool) {
 	loc := reAbsolute.FindStringSubmatchIndex(name)
 	if loc == nil {
 		return 0, nil, false
 	}
-	// Veto: o trecho a partir do hífen parece "- 1080p"/"- 720p"/"- 264x"? Então
-	// não é episódio absoluto, é qualidade/codec.
+	// Veto: does the excerpt starting at the hyphen look like "- 1080p"/"- 720p"/
+	// "- 264x"? Then it is not an absolute episode, it is quality/codec.
 	if reAbsoluteVetoSuffix.MatchString(name[loc[0]:]) {
 		return 0, nil, false
 	}
@@ -362,16 +371,17 @@ func absolutoInicial(name string) (int, []string, bool) {
 	if err != nil || ini == 0 {
 		return 0, nil, false
 	}
-	// Ano entre 1900 e 2099 solto após " - " é quase sempre ano, não episódio
-	// absoluto — conservador, mandamos para revisão.
+	// A loose year between 1900 and 2099 after " - " is almost always a year, not
+	// an absolute episode — conservative, we send it to review.
 	if ini >= 1900 && ini <= 2099 {
 		return 0, nil, false
 	}
 	return ini, m, true
 }
 
-// expandirAbsoluto expande o range absoluto [ini..fim] (inclusive); (nil,false)
-// se o range for invertido/degenerado ou passar do teto maxEpisodiosNoRange.
+// expandirAbsoluto expands the absolute range [ini..fim] (inclusive); (nil,false)
+// if the range is inverted/degenerate or goes past the maxEpisodiosNoRange
+// ceiling.
 func expandirAbsoluto(ini, fim int) ([]int, bool) {
 	if fim <= ini || fim-ini+1 > maxEpisodiosNoRange {
 		return nil, false

@@ -11,7 +11,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/musicext"
 )
 
-// semearMembro cria um filme com release_date (para a ordenacao por ano dos membros).
+// semearMembro creates a movie with a release_date (for the year ordering of the members).
 func semearMembro(t *testing.T, d *db.DB, id, titulo, ano string) {
 	t.Helper()
 	p := sqlcgen.CriarEntityParams{ID: id, Type: "movie", Title: titulo}
@@ -23,7 +23,7 @@ func semearMembro(t *testing.T, d *db.DB, id, titulo, ano string) {
 	}
 }
 
-// ligarMembro liga parent->child por entity_relation(kind='collection').
+// ligarMembro links parent->child through entity_relation(kind='collection').
 func ligarMembro(t *testing.T, d *db.DB, id, parent, child string) {
 	t.Helper()
 	if _, err := escrita(t, d).CriarEntityRelation(context.Background(), sqlcgen.CriarEntityRelationParams{
@@ -33,7 +33,7 @@ func ligarMembro(t *testing.T, d *db.DB, id, parent, child string) {
 	}
 }
 
-// TestMembersOrdenaPorAno: os membros saem como cards ordenados por ano ascendente.
+// TestMembersOrdenaPorAno: the members come out as cards ordered by ascending year.
 func TestMembersOrdenaPorAno(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "col", "collection", "Matrix Colecao")
@@ -59,7 +59,8 @@ func TestMembersOrdenaPorAno(t *testing.T) {
 	}
 }
 
-// TestMembersNaoColecaoVazio: /members de uma entity que nao e colecao (sem filhos) e [].
+// TestMembersNaoColecaoVazio: /members of an entity that is not a collection (no children)
+// is [].
 func TestMembersNaoColecaoVazio(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "filme", "movie", "Um Filme")
@@ -72,8 +73,8 @@ func TestMembersNaoColecaoVazio(t *testing.T) {
 	}
 }
 
-// TestMembersFiltraKindDiferente: so relacoes kind='collection' viram membros; um filho
-// ligado por OUTRO kind (ex.: 'season') fica de fora.
+// TestMembersFiltraKindDiferente: only kind='collection' relations become members; a child
+// linked by ANOTHER kind (e.g. 'season') is left out.
 func TestMembersFiltraKindDiferente(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "col", "collection", "Colecao")
@@ -81,7 +82,7 @@ func TestMembersFiltraKindDiferente(t *testing.T) {
 	semearMembro(t, d, "m2", "Nao-membro", "2002-01-01")
 	ligarMembro(t, d, "r1", "col", "m1") // kind='collection'
 	if _, err := escrita(t, d).CriarEntityRelation(context.Background(), sqlcgen.CriarEntityRelationParams{
-		ID: "r2", ParentID: "col", ChildID: "m2", Kind: "season", // kind diferente -> ignorado
+		ID: "r2", ParentID: "col", ChildID: "m2", Kind: "season", // different kind -> ignored
 	}); err != nil {
 		t.Fatalf("CriarEntityRelation season: %v", err)
 	}
@@ -95,7 +96,7 @@ func TestMembersFiltraKindDiferente(t *testing.T) {
 	}
 }
 
-// TestMembers404: /members de uma entity inexistente e 404.
+// TestMembers404: /members of an entity that does not exist is 404.
 func TestMembers404(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/entities/naoexiste/members", nil)
@@ -104,9 +105,9 @@ func TestMembers404(t *testing.T) {
 	}
 }
 
-// TestMembersAlbumTracklistPorSortIndex: /members de um album (briefing 0111) devolve
-// as faixas (kind=music_album) na ordem de sort_index (track_number) -- NAO por ano,
-// ao contrario de colecao.
+// TestMembersAlbumTracklistPorSortIndex: /members of an album returns the tracks
+// (kind=music_album) in sort_index order (track_number) -- NOT by year, unlike a
+// collection.
 func TestMembersAlbumTracklistPorSortIndex(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "alb1", "album", "Rio")
@@ -135,10 +136,10 @@ func TestMembersAlbumTracklistPorSortIndex(t *testing.T) {
 	eq(t, "2a faixa por track_number", cards[1].ID, "fx2")
 }
 
-// TestMembersArtistaDiscografiaPorAno: /members de um artista (briefing 0111) devolve
-// os filhos ligados por music_artista_principal, ordenados por ano (mesma logica de
-// colecao) -- inclui album e faixa de colaboracao divergente, filtro por type fica a
-// cargo do consumidor (DiscografiaArtista, no front).
+// TestMembersArtistaDiscografiaPorAno: /members of an artist returns the children linked by
+// music_artista_principal, ordered by year (the same logic as a collection) -- it includes
+// album and divergent collaboration track, the filter by type being the consumer's job
+// (DiscografiaArtista, in the frontend).
 func TestMembersArtistaDiscografiaPorAno(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "art1", "artista", "Duran Duran")

@@ -16,9 +16,9 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 )
 
-// handlerFake é um Handler mínimo/determinístico para os testes de Manager;
-// thread-safe (Executar roda em goroutine própria — os testes leem o estado
-// via Chamadas()/CfgRecebida() para o race detector ficar satisfeito).
+// handlerFake is a minimal/deterministic Handler for the Manager tests;
+// thread-safe (Executar runs in its own goroutine -- the tests read the state
+// through Chamadas()/CfgRecebida() to keep the race detector satisfied).
 type handlerFake struct {
 	nome     string
 	mensagem string
@@ -45,8 +45,8 @@ func (h *handlerFake) Chamadas() int {
 	return h.chamadas
 }
 
-// handlerBloqueante trava em Executar até o canal `liberar` fechar — usado
-// para exercitar o 409 (ErrJobEmExecucao) de forma determinística.
+// handlerBloqueante blocks in Executar until the `liberar` channel closes -- used
+// to exercise the 409 (ErrJobEmExecucao) deterministically.
 type handlerBloqueante struct {
 	nome    string
 	liberar chan struct{}
@@ -63,11 +63,11 @@ func (h *handlerBloqueante) Executar(ctx context.Context, _ json.RawMessage) (st
 	}
 }
 
-// setupManager sobe um Manager com banco migrado (a migration 0011 já semeia
-// backup_vacuum desabilitado, sem agendamento inicial no next_run_at) e já
-// ligado a uma fila de execução unificada de teste (ver configurarFilaDeTeste)
-// -- necessário desde o briefing 0108/ADR-0028 (CAMADA 3): Executar só
-// enfileira, quem roda o Handler de verdade é o worker da fila.
+// setupManager brings up a Manager with a migrated database (migration 0011
+// already seeds backup_vacuum disabled, with no initial schedule in next_run_at)
+// and already wired to a test unified execution queue (see
+// configurarFilaDeTeste) -- necessary since ADR-0028 (LAYER 3): Executar only
+// enqueues, it is the queue worker that really runs the Handler.
 func setupManager(t *testing.T) *Manager {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "job.sqlite")
@@ -84,11 +84,11 @@ func setupManager(t *testing.T) *Manager {
 	return m
 }
 
-// configurarFilaDeTeste sobe um execqueue.Manager de teste, liga `m` nele
-// (ConfigurarFila) e roda o worker sequencial em background até o teste
-// terminar -- mesmo padrão de internal/scanner/execqueue_test.go e
-// internal/server/scan_test.go (configurarFilaDeTeste), aplicado aqui para
-// o kind "job".
+// configurarFilaDeTeste brings up a test execqueue.Manager, wires `m` to it
+// (ConfigurarFila) and runs the sequential worker in the background until the
+// test ends -- the same pattern as internal/scanner/execqueue_test.go and
+// internal/server/scan_test.go (configurarFilaDeTeste), applied here for the
+// "job" kind.
 func configurarFilaDeTeste(t *testing.T, m *Manager) {
 	t.Helper()
 	fila := execqueue.NewManager(m.db)
@@ -297,9 +297,9 @@ func TestAtualizarConfigLimpaSchedule(t *testing.T) {
 	}
 }
 
-// TestPodarHistoricoMantemLimite semeia execuções diretamente em queue_item
-// (kind='job') -- desde o briefing 0108/ADR-0028 (CAMADA 3), o histórico de
-// job vive lá, não mais em job_execution (derrubada pela migration 0025).
+// TestPodarHistoricoMantemLimite seeds executions directly into queue_item
+// (kind='job') -- since ADR-0028 (LAYER 3), the job history lives there, no
+// longer in job_execution (dropped by migration 0025).
 func TestPodarHistoricoMantemLimite(t *testing.T) {
 	m := setupManager(t)
 	ctx := context.Background()
@@ -325,12 +325,11 @@ func TestPodarHistoricoMantemLimite(t *testing.T) {
 	}
 }
 
-// TestHistoricoPaginacaoComBefore prova a paginação por cursor de
-// Manager.Historico -- desde o briefing 0108/ADR-0028 (CAMADA 3), o cursor
-// filtra por enqueued_at (não mais started_at: ListarQueueItemsPorKindRef,
-// camada 1, não tem suporte nativo a cursor, então o filtro roda em Go sobre
-// enqueued_at, o mesmo campo do ORDER BY da query -- ver o comentário de
-// Historico).
+// TestHistoricoPaginacaoComBefore proves the cursor pagination of
+// Manager.Historico -- since ADR-0028 (LAYER 3), the cursor filters by
+// enqueued_at (no longer started_at: ListarQueueItemsPorKindRef, layer 1, has no
+// native cursor support, so the filter runs in Go over enqueued_at, the same
+// field as the ORDER BY of the query -- see the comment on Historico).
 func TestHistoricoPaginacaoComBefore(t *testing.T) {
 	m := setupManager(t)
 	ctx := context.Background()
@@ -364,13 +363,13 @@ func TestHistoricoPaginacaoComBefore(t *testing.T) {
 	}
 }
 
-// TestExecutarDoisJobsDiferentesRespeitaConcorrenciaGlobal prova a decisão
-// central da ADR-0028: a fila unificada tem concorrência 1 GLOBAL -- dois
-// jobs DIFERENTES podem coexistir na fila (dedup é por referência, não pela
-// fila inteira), mas NUNCA rodam ao mesmo tempo. É uma mudança de
-// comportamento REAL frente ao sistema pré-0108 (onde jobs diferentes
-// rodavam livremente em paralelo) -- não é um bug, é a decisão deliberada
-// documentada na ADR.
+// TestExecutarDoisJobsDiferentesRespeitaConcorrenciaGlobal proves the central
+// decision of ADR-0028: the unified queue has GLOBAL concurrency 1 -- two
+// DIFFERENT jobs can coexist in the queue (dedup is per reference, not across
+// the whole queue), but they NEVER run at the same time. It is a REAL behavior
+// change against the pre-ADR-0028 system (where different jobs ran freely in
+// parallel) -- it is not a bug, it is the deliberate decision documented in the
+// ADR.
 func TestExecutarDoisJobsDiferentesRespeitaConcorrenciaGlobal(t *testing.T) {
 	m := setupManager(t)
 	liberar := make(chan struct{})
@@ -384,16 +383,16 @@ func TestExecutarDoisJobsDiferentesRespeitaConcorrenciaGlobal(t *testing.T) {
 	}
 	aguardarRodando(t, m, "backup_vacuum", true)
 
-	// saude_biblioteca é uma referência DIFERENTE -- Enqueue não rejeita
-	// (dedup é por (kind, ref_id), não pela fila inteira), mas o item fica
-	// 'queued' atrás de backup_vacuum até ele liberar.
+	// saude_biblioteca is a DIFFERENT reference -- Enqueue does not reject it
+	// (dedup is by (kind, ref_id), not across the whole queue), but the item
+	// stays 'queued' behind backup_vacuum until it releases.
 	if _, err := m.Executar(context.Background(), "saude_biblioteca", "manual"); err != nil {
 		t.Fatalf("Executar saude_biblioteca: %v", err)
 	}
 
-	// De propósito: um curto intervalo confirma que saude_biblioteca AINDA
-	// não rodou enquanto backup_vacuum segue bloqueado -- prova que a fila é
-	// sequencial de verdade (concorrência 1), não dois workers paralelos.
+	// On purpose: a short interval confirms that saude_biblioteca has STILL not
+	// run while backup_vacuum remains blocked -- proof that the queue is really
+	// sequential (concurrency 1), not two parallel workers.
 	time.Sleep(100 * time.Millisecond)
 	if h2.Chamadas() != 0 {
 		t.Fatal("saude_biblioteca rodou mesmo com backup_vacuum ainda bloqueando a fila (concorrência deveria ser 1)")
@@ -418,9 +417,10 @@ func TestHistoricoJobNaoEncontrado(t *testing.T) {
 	}
 }
 
-// TestSchedulerDisparaJobVencido prova o critério de aceite do agendador
-// embutido: um job enabled cujo next_run_at já passou é disparado sem
-// intervenção manual, e o next_run_at é recalculado para o futuro.
+// TestSchedulerDisparaJobVencido proves the acceptance criterion of the
+// built-in scheduler: an enabled job whose next_run_at has already passed is
+// triggered without manual intervention, and next_run_at is recalculated to the
+// future.
 func TestSchedulerDisparaJobVencido(t *testing.T) {
 	m := setupManager(t)
 	h := &handlerFake{nome: "backup_vacuum", mensagem: "agendado ok"}
@@ -461,8 +461,9 @@ func TestSchedulerDisparaJobVencido(t *testing.T) {
 	}
 }
 
-// TestRunSchedulerViaTicker prova que o loop RunScheduler (goroutine + ticker)
-// dispara sozinho, encurtando pollInterval para o teste não esperar 30s.
+// TestRunSchedulerViaTicker proves that the RunScheduler loop (goroutine +
+// ticker) triggers on its own, shortening pollInterval so the test does not wait
+// 30s.
 func TestRunSchedulerViaTicker(t *testing.T) {
 	m := setupManager(t)
 	h := &handlerFake{nome: "backup_vacuum"}
@@ -494,10 +495,10 @@ func TestRunSchedulerViaTicker(t *testing.T) {
 	for h.Chamadas() == 0 && time.Now().Before(prazo) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	// Espera a execucao disparada terminar (running volta a false) ANTES de
-	// cancelar/fechar o banco -- evita a corrida benigna (mas ruidosa nos
-	// logs) entre a goroutine de finalizacao (context.Background(), sobrevive
-	// ao cancel) e o Cleanup do teste fechando o *sql.DB.
+	// Wait for the triggered execution to finish (running back to false) BEFORE
+	// canceling/closing the database -- it avoids the benign (but noisy in the
+	// logs) race between the finishing goroutine (context.Background(), which
+	// survives the cancel) and the test Cleanup closing the *sql.DB.
 	aguardarRodando(t, m, "backup_vacuum", false)
 	cancel()
 	<-done

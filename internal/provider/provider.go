@@ -1,10 +1,10 @@
-// Package provider define a abstração de FONTE EXTERNA de metadados (briefing
-// 0014). Um Provider sabe buscar títulos numa fonte (TMDB, TVDB, MusicBrainz…) e
-// devolver resultados no tipo canônico ResultadoExterno — sem NUNCA persistir
-// nada (a busca é local-first; só o import do 0015 escreve).
+// Package provider defines the abstraction of EXTERNAL metadata SOURCE. A Provider knows
+// how to search for titles in a source (TMDB, TVDB, MusicBrainz…) and return results in
+// the canonical type ResultadoExterno -- without EVER persisting anything (the search is
+// local-first; only the import writes).
 //
-// A interface é o ponto de plugabilidade multi-vertical: trocar ou adicionar um
-// provider não toca o handler de busca, que fala só com esta abstração.
+// The interface is the multi-vertical pluggability point: replacing or adding a provider
+// does not touch the search handler, which talks only to this abstraction.
 package provider
 
 import (
@@ -13,285 +13,285 @@ import (
 	"errors"
 )
 
-// ErrNaoEncontrado é o erro SENTINELA que um provider devolve quando o item NÃO
-// EXISTE na fonte (ex.: 404 do TMDB), distinto de uma falha de comunicação. O
-// handler do detalhe externo (briefing 0022) o traduz em 404 (id inexistente),
-// reservando o 502 para falhas reais da fonte (timeout/5xx). Compare com
+// ErrNaoEncontrado is the SENTINEL error that a provider returns when the item does NOT
+// EXIST in the source (e.g. a 404 from TMDB), distinct from a communication failure. The
+// external detail handler translates it into 404 (nonexistent id), reserving the 502 for
+// real failures of the source (timeout/5xx). Compare with
 // errors.Is(err, provider.ErrNaoEncontrado).
 var ErrNaoEncontrado = errors.New("provider: item nao encontrado na fonte")
 
-// Provider é uma fonte externa de metadados. Implementações são injetadas no
-// server via option; nil significa "busca externa desligada" (degrada para só
-// resultados locais, sem erro).
+// Provider is an external metadata source. Implementations are injected into the server
+// through an option; nil means "external search off" (it degrades to local results only,
+// without an error).
 type Provider interface {
-	// Nome identifica a fonte (ex.: "tmdb"). Usado em logs/diagnóstico.
+	// Nome identifies the source (e.g. "tmdb"). Used in logs/diagnostics.
 	Nome() string
-	// Buscar consulta a fonte por `query`, filtrando opcionalmente por `tipo`
-	// (""|"movie"|"tv"). `lang` é o idioma de leitura ATIVO (0019/0021): a fonte
-	// devolve títulos/sinopses nele quando houver (sem `lang`, cai no default da
-	// fonte). É um único idioma (a busca mostra resultados diretos, sem a cadeia de
-	// fallback do resolver). Erro/timeout é responsabilidade do chamador degradar —
-	// o provider apenas o propaga.
+	// Buscar queries the source by `query`, optionally filtering by `tipo`
+	// (""|"movie"|"tv"). `lang` is the ACTIVE reading language: the source returns
+	// titles/overviews in it when available (without `lang`, it falls back to the default
+	// of the source). It is a single language (the search shows direct results, without
+	// the fallback chain of the resolver). Error/timeout is the caller's responsibility to
+	// degrade -- the provider only propagates it.
 	Buscar(ctx context.Context, query, tipo, lang string) ([]ResultadoExterno, error)
-	// BuscarDetalhe puxa o DETALHE (payload da fonte) de um item pelo seu
-	// `sourceID` e `tipo` ("movie"|"tv"), para o import/enrich (briefing 0015). Os
-	// `langs` são os idiomas PERMITIDOS das settings (0019): a fonte multi-idioma
-	// (0020) puxa TODAS as traduções permitidas numa só ida e devolve um PAYLOAD
-	// AUMENTADO ({detail, tags_by_lang}) — ainda um cache re-componível (ADR-0011).
-	// Sem `langs` degrada ao comportamento mono-idioma. O mapeamento canônico é de
-	// MapearDetalhe (PURO, sem rede). Erro/timeout propaga.
+	// BuscarDetalhe pulls the DETAIL (payload of the source) of an item by its `sourceID`
+	// and `tipo` ("movie"|"tv"), for the import/enrich. The `langs` are the ALLOWED
+	// languages of the settings: the multi-language source pulls ALL the allowed
+	// translations in a single round trip and returns an AUGMENTED PAYLOAD
+	// ({detail, tags_by_lang}) -- still a re-composable cache (ADR-0011). Without `langs`
+	// it degrades to the mono-language behavior. The canonical mapping is MapearDetalhe's
+	// (PURE, without network). Error/timeout propagates.
 	BuscarDetalhe(ctx context.Context, sourceID, tipo string, langs []string) (json.RawMessage, error)
-	// MapearDetalhe traduz o payload de BuscarDetalhe para o mapa CANÔNICO com OS
-	// NOSSOS nomes de campo, consumido pelo resolver (raw→canônico é do provider; o
-	// resolver não conhece o TMDB). É PURO (roda em tempo de leitura, sem rede). Os
-	// campos TRADUZÍVEIS (title, description, tags) saem como `map[idioma]valor`; os
-	// NEUTROS (original_title, release_date, poster_url) como escalares. Expõe também
-	// `original_language` (o enrich o grava em entity.original_language). Um payload
-	// LEGADO (detalhe cru do 0015, sem envelope) degrada para escalares sob o idioma
-	// principal. Só inclui as chaves que a fonte trouxe. SEM elenco/equipe (MD6).
+	// MapearDetalhe translates the payload of BuscarDetalhe into the CANONICAL map with
+	// OUR field names, consumed by the resolver (raw→canonical belongs to the provider; the
+	// resolver does not know TMDB). It is PURE (it runs at read time, without network). The
+	// TRANSLATABLE fields (title, description, tags) come out as `map[language]value`; the
+	// NEUTRAL ones (original_title, release_date, poster_url) as scalars. It also exposes
+	// `original_language` (enrich writes it to entity.original_language). A LEGACY payload
+	// (raw detail, without envelope) degrades to scalars under the main language. It only
+	// includes the keys that the source brought. WITHOUT cast/crew (MD6).
 	MapearDetalhe(raw json.RawMessage) (map[string]any, error)
 }
 
-// ColecaoProvider é uma CAPACIDADE OPCIONAL de um Provider: buscar uma coleção
-// (belongs_to_collection do TMDB — um conjunto de filmes, ≠ playlist) com suas
-// partes, para a PÁGINA de coleção (0024, follow-up do 0023). É opcional porque nem
-// toda fonte tem coleções; o handler faz type-assert do Provider para esta interface
-// e degrada com 503 quando a fonte não a implementa. Diferente do detalhe (0022),
-// NÃO há cache re-componível multi-idioma aqui: a coleção é buscada no idioma ATIVO
-// (mono-idioma pragmático); o multi-idioma pleno fica como follow-up.
+// ColecaoProvider is an OPTIONAL CAPABILITY of a Provider: searching for a collection
+// (belongs_to_collection of TMDB -- a set of movies, ≠ playlist) with its parts, for the
+// collection PAGE. It is optional because not every source has collections; the handler
+// type-asserts the Provider to this interface and degrades with 503 when the source does
+// not implement it. Unlike the detail, there is NO re-composable multi-language cache
+// here: the collection is fetched in the ACTIVE language (pragmatic mono-language); the
+// full multi-language stays a follow-up.
 type ColecaoProvider interface {
-	// BuscarColecao puxa a coleção pelo seu `colecaoID` na fonte, localizada em
-	// `lang` (idioma de leitura ativo; vazio cai no default da fonte). ErrNaoEncontrado
-	// quando a coleção não existe (→ 404); demais erros propagam (→ 502).
+	// BuscarColecao pulls the collection by its `colecaoID` from the source, localized in
+	// `lang` (active reading language; empty falls back to the default of the source).
+	// ErrNaoEncontrado when the collection does not exist (→ 404); the other errors
+	// propagate (→ 502).
 	BuscarColecao(ctx context.Context, colecaoID, lang string) (Colecao, error)
 }
 
-// Colecao é uma coleção canônica: os metadados do conjunto (nome/sinopse/artes) e
-// suas PARTES, cada uma um ResultadoExterno (o mesmo shape de um item de busca —
-// reuso proposital, a parte é um filme navegável ao detalhe externo). Os ponteiros
-// são opcionais (nil quando a fonte não trouxe o campo).
+// Colecao is a canonical collection: the metadata of the set (name/overview/art) and its
+// PARTS, each one a ResultadoExterno (the same shape of a search item -- deliberate
+// reuse, the part is a movie navigable to the external detail). The pointers are
+// optional (nil when the source did not bring the field).
 type Colecao struct {
-	// Source é o nome da fonte (ex.: "tmdb").
+	// Source is the name of the source (e.g. "tmdb").
 	Source string
-	// SourceID é o id da coleção NA FONTE (como string).
+	// SourceID is the id of the collection IN THE SOURCE (as a string).
 	SourceID string
-	// Name é o nome exibível da coleção.
+	// Name is the displayable name of the collection.
 	Name string
-	// Overview é a sinopse da coleção, quando houver.
+	// Overview is the overview of the collection, when available.
 	Overview *string
-	// PosterURL/BackdropURL são as artes DIRETAS da coleção na fonte, quando houver
-	// (o handler pode reescrevê-las para o proxy local — 0024).
+	// PosterURL/BackdropURL are the DIRECT art URLs of the collection in the source, when
+	// available (the handler may rewrite them to the local proxy).
 	PosterURL   *string
 	BackdropURL *string
-	// Parts são os itens da coleção, em ordem da fonte.
+	// Parts are the items of the collection, in the order of the source.
 	Parts []ResultadoExterno
 }
 
-// TituloAlternativoProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing
-// 0084, análoga a ColecaoProvider): trazer os TÍTULOS ALTERNATIVOS/TRADUZIDOS
-// que a fonte conhece de um item, para a pontuação de candidato
-// (matching.PontuarComAlternativos) comparar contra o LEQUE de títulos que a
-// fonte já tem, não só o título no idioma consultado. É opcional porque nem
-// toda fonte expõe traduções de título de forma barata; o finder de candidato
-// (melhorCandidatoExterno, internal/server/automatch.go) faz type-assert do
-// Provider para esta interface e degrada para o score de título único quando
-// ausente -- NUNCA bloqueia a pontuação.
+// TituloAlternativoProvider is an OPTIONAL CAPABILITY of a Provider (analogous to
+// ColecaoProvider): bringing the ALTERNATIVE/TRANSLATED TITLES that the source knows for
+// an item, so that the candidate score (matching.PontuarComAlternativos) compares against
+// the RANGE of titles the source already has, not only the title in the queried language.
+// It is optional because not every source exposes title translations cheaply; the
+// candidate finder (melhorCandidatoExterno, internal/server/automatch.go) type-asserts
+// the Provider to this interface and degrades to the single-title score when absent -- it
+// NEVER blocks the scoring.
 type TituloAlternativoProvider interface {
-	// BuscarTitulosAlternativos lista os títulos alternativos/traduzidos que a
-	// fonte conhece do item `sourceID` (tipo "movie"|"tv"). A lista pode conter
-	// duplicatas ou strings vazias -- o chamador não exige dedupe perfeito.
-	// Erro/timeout propaga; o chamador degrada (best-effort, loga e segue sem
-	// alternativos para aquele candidato).
+	// BuscarTitulosAlternativos lists the alternative/translated titles that the source
+	// knows for the item `sourceID` (tipo "movie"|"tv"). The list may contain duplicates or
+	// empty strings -- the caller does not require perfect dedupe. Error/timeout propagates;
+	// the caller degrades (best-effort, it logs and goes on without alternatives for that
+	// candidate).
 	BuscarTitulosAlternativos(ctx context.Context, tipo, sourceID string) ([]string, error)
 }
 
-// SerieProvider é uma CAPACIDADE OPCIONAL de um Provider (análoga a ColecaoProvider,
-// briefing 0031 / ADR-0021): trazer a HIERARQUIA de uma série — temporadas +
-// episódios + as ordenações (season types) que ela usa. É opcional porque nem toda
-// fonte modela séries com ordens (o TMDB não expõe season types); o handler faz
-// type-assert do Provider para esta interface e DEGRADA (503) quando a fonte não a
-// implementa. Como o detalhe (0022), os idiomas são resolvidos com FALLBACK e os
-// campos traduzíveis saem por idioma; os neutros como escalares.
+// SerieProvider is an OPTIONAL CAPABILITY of a Provider (analogous to ColecaoProvider,
+// ADR-0021): bringing the HIERARCHY of a series -- seasons + episodes + the orderings
+// (season types) it uses. It is optional because not every source models series with
+// orders (TMDB does not expose season types); the handler type-asserts the Provider to
+// this interface and DEGRADES (503) when the source does not implement it. Like the
+// detail, the languages are resolved with FALLBACK and the translatable fields come out
+// per language; the neutral ones as scalars.
 type SerieProvider interface {
-	// BuscarSerieArvore puxa a árvore da série `sourceID` na fonte, localizada nos
-	// idiomas PERMITIDOS `langs` (0019; vazio cai no idioma da fonte). Devolve SÓ as
-	// temporadas da ordenação DEFAULT (TV2 — enxuto); as demais ordens existem apenas
-	// como numeração nos episódios (Numbering). ErrNaoEncontrado quando a série não
-	// existe (→ 404); demais erros propagam (→ 502).
+	// BuscarSerieArvore pulls the tree of the series `sourceID` from the source, localized
+	// in the ALLOWED languages `langs` (empty falls back to the language of the source). It
+	// returns ONLY the seasons of the DEFAULT ordering (lean); the other orders exist only
+	// as numbering in the episodes (Numbering). ErrNaoEncontrado when the series does not
+	// exist (→ 404); the other errors propagate (→ 502).
 	BuscarSerieArvore(ctx context.Context, sourceID string, langs []string) (SerieArvore, error)
 }
 
-// SerieRicoProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0045, rota C):
-// ENRIQUECER o NÓ SÉRIE com os campos ricos que a fonte da árvore (TVDB) não dá —
-// slogan, gêneros, classificação, palavras-chave, similares e SITUAÇÃO. É separada de
-// SerieProvider (a árvore) de propósito: quem tem a árvore (TVDB) não tem os ricos, e
-// quem tem os ricos (TMDB) não modela a árvore com ordens. O enrich faz o type-assert
-// do provider "tmdb" para esta interface e DEGRADA em silêncio quando ausente (série
-// só-TVDB fica com os campos vazios, nunca erro).
+// SerieRicoProvider is an OPTIONAL CAPABILITY of a Provider (route C): ENRICHING THE
+// SERIES NODE with the rich fields that the source of the tree (TVDB) does not provide --
+// tagline, genres, rating, keywords, similar and SITUATION. It is separated from
+// SerieProvider (the tree) on purpose: whoever has the tree (TVDB) does not have the rich
+// fields, and whoever has the rich fields (TMDB) does not model the tree with orders. The
+// enrich type-asserts the "tmdb" provider to this interface and DEGRADES silently when
+// absent (a TVDB-only series stays with empty fields, never an error).
 type SerieRicoProvider interface {
-	// BuscarSerieDetalheRico cruza o `tvdbID` da série para o id da fonte rica e
-	// devolve o canônico RICO já mapeado (SÓ as chaves ricas — nunca title/overview/
-	// original_language, para não clobbar a identidade da árvore TVDB na composição de
-	// camadas). ok=false sem match (graça, sem erro); erro real (rede) propaga para o
-	// enrich logar e seguir só-TVDB. `langs` são os idiomas permitidos (0020): tagline e
-	// gêneros saem por idioma.
+	// BuscarSerieDetalheRico crosses the `tvdbID` of the series to the id of the rich
+	// source and returns the RICH canonical already mapped (ONLY the rich keys -- never
+	// title/overview/original_language, so as not to clobber the identity of the TVDB tree
+	// in the layer composition). ok=false without a match (gracefully, without error); a
+	// real error (network) propagates so enrich can log it and go on TVDB-only. `langs` are
+	// the allowed languages: tagline and genres come out per language.
 	BuscarSerieDetalheRico(ctx context.Context, tvdbID string, langs []string) (map[string]any, bool, error)
 }
 
-// ChaveEnvelopeSerieRico é a chave do envelope de media_external que carrega o canônico
-// RICO de série JÁ MAPEADO (rota C do 0045). O enrich grava o payload
-// {ChaveEnvelopeSerieRico: <canônico rico>} sob a fonte "tmdb" do nó série, e o
-// MapearDetalhe do provider TMDB o reconhece e devolve o mapa como está — assim os
-// campos ricos entram na composição de camadas (montarExterno) reusando a maquinaria do
-// filme, SEM clobbar título/idioma da árvore TVDB (o envelope não os carrega).
+// ChaveEnvelopeSerieRico is the key of the media_external envelope that carries the RICH
+// canonical of a series ALREADY MAPPED. The enrich writes the payload
+// {ChaveEnvelopeSerieRico: <rich canonical>} under the "tmdb" source of the series node,
+// and the MapearDetalhe of the TMDB provider recognizes it and returns the map as it is --
+// that way the rich fields enter the layer composition (montarExterno) reusing the movie
+// machinery, WITHOUT clobbering title/language of the TVDB tree (the envelope does not
+// carry them).
 const ChaveEnvelopeSerieRico = "tmdb_serie_rico"
 
-// TvdbCruzadoProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0087): extrair
-// o cross-id TVDB de um payload de detalhe de SÉRIE já buscado (sem ida extra à rede) —
-// fecha a lacuna que deixava toda série cuja árvore vem só do TMDB (sem TVDB configurado,
-// o cenário do briefing 0046, independência de provider) sem id utilizável para o
-// ArteProvider fanart.tv, que na TV exige tvdb_id exclusivamente (fanarttv.rotaETabela,
-// case "tv" — sem fallback para tmdb/imdb, ao contrário do case "movie"). Só o client
-// TMDB a implementa hoje (o append `external_ids` que o TMDB já busca no detalhe rico traz
-// `tvdb_id` de graça, mas o mapeamento canônico só extraía o `imdb_id` até aqui). O
-// enrich faz type-assert do provider da FONTE-BASE da árvore para esta interface e
-// degrada em silêncio quando ausente (fonte-base != TMDB) ou sem match no payload.
+// TvdbCruzadoProvider is an OPTIONAL CAPABILITY of a Provider: extracting the TVDB
+// cross-id from a series detail payload already fetched (without an extra round trip to
+// the network) -- it closes the gap that left every series whose tree comes only from TMDB
+// (without TVDB configured, the provider-independence scenario) without a usable id for
+// the fanart.tv ArteProvider, which for TV requires tvdb_id exclusively
+// (fanarttv.rotaETabela, case "tv" -- without a fallback to tmdb/imdb, unlike the "movie"
+// case). Only the TMDB client implements it today (the `external_ids` append that TMDB
+// already fetches in the rich detail brings `tvdb_id` for free, but the canonical mapping
+// only extracted the `imdb_id` until now). The enrich type-asserts the provider of the
+// BASE SOURCE of the tree to this interface and degrades silently when absent (base source
+// != TMDB) or without a match in the payload.
 type TvdbCruzadoProvider interface {
-	// TvdbIDDoDetalheSerie extrai o tvdb_id de um payload de detalhe de série JÁ
-	// buscado (o mesmo raw devolvido por BuscarDetalhe/PayloadFresco) — PURO, sem rede.
-	// ok=false quando o payload não traz um tvdb_id utilizável.
+	// TvdbIDDoDetalheSerie extracts the tvdb_id from a series detail payload ALREADY
+	// fetched (the same raw returned by BuscarDetalhe/PayloadFresco) -- PURE, without
+	// network. ok=false when the payload does not bring a usable tvdb_id.
 	TvdbIDDoDetalheSerie(raw json.RawMessage) (string, bool)
 }
 
-// Similar é um item similar/recomendado canônico (briefing 0091), já filtrado
-// (sem adulto, sem volume de voto irrelevante) e ORDENADO por afinidade com o
-// item de origem — o consumidor não reprocessa nota/gênero/adulto, só exibe.
+// Similar is a canonical similar/recommended item, already filtered (no adult, no
+// irrelevant vote volume) and SORTED by affinity with the origin item -- the consumer does
+// not reprocess score/genre/adult, it only displays.
 type Similar struct {
-	// SourceID é o id do item NA FONTE (ex.: id numérico do TMDB, como string).
+	// SourceID is the id of the item IN THE SOURCE (e.g. the numeric TMDB id, as a string).
 	SourceID string
-	// Type é o nosso tipo canônico ("movie"|"tv"), herdado do item de origem.
+	// Type is our canonical type ("movie"|"tv"), inherited from the origin item.
 	Type string
-	// Title é o título exibível do item.
+	// Title is the displayable title of the item.
 	Title string
-	// Year são os 4 primeiros dígitos da data de lançamento/estreia, quando houver.
+	// Year are the first 4 digits of the release/first-air date, when available.
 	Year *string
-	// PosterURL é a URL DIRETA do pôster do item na fonte, quando houver.
+	// PosterURL is the DIRECT poster URL of the item in the source, when available.
 	PosterURL *string
 }
 
-// SimilarProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0091):
-// extrai os itens SIMILARES/recomendados a partir do payload de detalhe JÁ
-// buscado por BuscarDetalhe (sem ida extra à rede — mesmo padrão de
-// TvdbCruzadoProvider), já filtrados por qualidade (sem adulto, sem volume de
-// voto irrelevante) e ORDENADOS por afinidade real com o item de origem. É
-// opcional porque nem toda fonte modela recomendação (o TVDB não tem); o
-// chamador (entities.go/external_detail.go) faz type-assert do Provider para
-// esta interface e degrada para lista vazia (sem erro, sem 500) quando ausente.
+// SimilarProvider is an OPTIONAL CAPABILITY of a Provider: it extracts the
+// SIMILAR/recommended items from the detail payload ALREADY fetched by BuscarDetalhe
+// (without an extra round trip to the network -- the same pattern as TvdbCruzadoProvider),
+// already filtered by quality (no adult, no irrelevant vote volume) and SORTED by real
+// affinity with the origin item. It is optional because not every source models
+// recommendations (TVDB does not); the caller (entities.go/external_detail.go)
+// type-asserts the Provider to this interface and degrades to an empty list (without
+// error, without 500) when absent.
 type SimilarProvider interface {
-	// Similares extrai os itens similares/recomendados do payload `raw` (o
-	// mesmo devolvido por BuscarDetalhe) — PURO, sem rede. Erro real (payload
-	// ilegível) propaga; o chamador loga e segue sem similares daquela camada.
+	// Similares extracts the similar/recommended items from the `raw` payload (the same
+	// one returned by BuscarDetalhe) -- PURE, without network. A real error (unreadable
+	// payload) propagates; the caller logs it and goes on without similars from that layer.
 	Similares(raw json.RawMessage) ([]Similar, error)
 }
 
-// ArteProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0048): buscar o
-// INVENTÁRIO de artes de um item por seu id externo — pôster, fanart, logo, clearart,
-// disc, banner, thumb, characterart e artes de temporada. É a capacidade da fanart.tv
-// (fonte DEDICADA a arte que o TMDB/TVDB não cobrem bem). É opcional porque nem toda
-// fonte tem arte extra; o enrich faz type-assert do Provider para esta interface e
-// DEGRADA em silêncio quando ausente (sem a chave configurada, regressão zero). O
-// resultado é um INVENTÁRIO (lista de URLs + metadados), NUNCA binários baixados — o
-// download real é lazy (só a arte selecionada, via cachearArte).
+// ArteProvider is an OPTIONAL CAPABILITY of a Provider: searching the INVENTORY of arts
+// of an item by its external id -- poster, fanart, logo, clearart, disc, banner, thumb,
+// characterart and season arts. It is the capability of fanart.tv (a source DEDICATED to
+// art that TMDB/TVDB do not cover well). It is optional because not every source has extra
+// art; the enrich type-asserts the Provider to this interface and DEGRADES silently when
+// absent (without the configured key, zero regression). The result is an INVENTORY (list
+// of URLs + metadata), NEVER downloaded binaries -- the real download is lazy (only the
+// selected art, via cachearArte).
 type ArteProvider interface {
-	// BuscarArtes lista as artes do item pelos ids externos que ele tiver (`ids`),
-	// filtrando por `tipo` ("movie"|"tv"; desde o briefing 0106, também "album" para a
-	// capa via Cover Art Archive/MusicBrainz). `langs` são os idiomas permitidos (0020),
-	// para a escolha da arte servida por padrão; o inventário PRESERVA o `lang` de todas.
-	// Sem id utilizável para a fonte, ou sem match, devolve (nil, nil) — graça. Erro real
-	// (rede/status) propaga para o enrich logar e seguir.
+	// BuscarArtes lists the arts of the item by the external ids it has (`ids`), filtering
+	// by `tipo` ("movie"|"tv"; since the music vertical, also "album" for the cover through
+	// Cover Art Archive/MusicBrainz). `langs` are the allowed languages, for choosing the art
+	// served by default; the inventory PRESERVES the `lang` of all of them. Without a usable id
+	// for the source, or without a match, it returns (nil, nil) -- gracefully. A real error
+	// (network/status) propagates so enrich can log it and go on.
 	BuscarArtes(ctx context.Context, ids ExternalIDs, tipo string, langs []string) ([]Arte, error)
 }
 
-// TemaMusicalProvider é uma CAPACIDADE OPCIONAL (briefing 0103): busca um
-// candidato de música-tema (link de vídeo, nunca binário) pelos ids
-// externos que o item tiver. É opcional porque nem toda fonte modela tema
-// musical (só ThemerrDB hoje); o chamador faz type-assert e degrada em
-// silêncio (sem candidato) quando ausente ou sem match.
+// TemaMusicalProvider is an OPTIONAL CAPABILITY: it searches a musical-theme candidate
+// (video link, never a binary) by the external ids that the item has. It is optional because
+// not every source models a musical theme (only ThemerrDB today); the caller type-asserts it
+// and degrades silently (without a candidate) when absent or without a match.
 type TemaMusicalProvider interface {
-	// BuscarTemaMusical procura um tema pelos ids externos (`ids`), filtrando
-	// por `tipo` ("movie"|"tv"). Sem id utilizável ou sem match:
-	// (TemaMusical{}, false, nil) — graça, não erro. Erro real (rede/status)
-	// propaga.
+	// BuscarTemaMusical looks up a theme by the external ids (`ids`), filtering by `tipo`
+	// ("movie"|"tv"). Without a usable id or without a match: (TemaMusical{}, false, nil) --
+	// gracefully, not an error. A real error (network/status) propagates.
 	BuscarTemaMusical(ctx context.Context, ids ExternalIDs, tipo string) (TemaMusical, bool, error)
 }
 
-// TemaMusical é um candidato de tema musical (ThemerrDB): a URL do vídeo na
-// fonte (YouTube) — NUNCA o binário; download real é lazy via yt-dlp (0101).
+// TemaMusical is a musical theme candidate (ThemerrDB): the URL of the video in the source
+// (YouTube) -- NEVER the binary; the real download is lazy through yt-dlp.
 type TemaMusical struct {
 	URL string
 }
 
-// ChaveEnvelopeTemaMusical é a chave do envelope de media_external que carrega
-// o CANDIDATO de tema musical de uma fonte (ThemerrDB, briefing 0103) — mesma
-// técnica de ChaveEnvelopeInventarioArtes, mas mais simples (um candidato só,
-// não um mapa por kind). O enrich grava {ChaveEnvelopeTemaMusical: <url>} sob
-// a fonte "themerrdb" quando há match; sem match, grava um envelope vazio (a
-// consulta já foi feita, sem re-bater na API a cada GET). É uma camada de
-// candidato PURA: NUNCA entra na composição de camadas do resolver.
+// ChaveEnvelopeTemaMusical is the key of the media_external envelope that carries the
+// CANDIDATE of musical theme from a source (ThemerrDB) -- the same technique of
+// ChaveEnvelopeInventarioArtes, but simpler (a single candidate, not a map per kind). The
+// enrich writes {ChaveEnvelopeTemaMusical: <url>} under the "themerrdb" source when there is
+// a match; without a match, it writes an empty envelope (the query was already made, without
+// hitting the API again on every GET). It is a PURE candidate layer: it NEVER enters the
+// layer composition of the resolver.
 const ChaveEnvelopeTemaMusical = "themerrdb_tema"
 
-// PessoaProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0029 Fase D,
-// segunda seção): trazer a FILMOGRAFIA de uma PESSOA na fonte — os trabalhos dela
-// (cast/crew) que AINDA NÃO estão no catálogo, para a página da pessoa mostrar "ainda
-// não importados" ao lado da filmografia já importada (que vem só do banco, sem
-// depender de provider). É opcional porque nem toda fonte modela pessoa; o handler faz
-// type-assert do Provider para esta interface e DEGRADA para `[]` (sem erro) quando a
-// fonte não a implementa.
+// PessoaProvider is an OPTIONAL CAPABILITY of a Provider (second section): bringing the
+// FILMOGRAPHY of a PERSON in the source -- their works (cast/crew) that are NOT YET in the
+// catalog, so the person page can show "not yet imported" next to the already imported
+// filmography (which comes only from the database, without depending on a provider). It is
+// optional because not every source models a person; the handler type-asserts the Provider
+// to this interface and DEGRADES to `[]` (without error) when the source does not implement
+// it.
 type PessoaProvider interface {
-	// BuscarFilmografia puxa os trabalhos da pessoa `sourceID` na fonte, localizados em
-	// `lang` (idioma de leitura ativo; vazio cai no default da fonte). A implementação
-	// decide teto/ordenação/dedup (cada fonte tem sua própria noção de "filmografia
-	// grande demais"). ErrNaoEncontrado quando a pessoa não existe na fonte (o handler
-	// degrada do mesmo jeito de um erro real: loga e devolve `[]`, a página não cai).
-	// (nil, nil) é graça (pessoa existe, sem créditos).
+	// BuscarFilmografia pulls the works of the person `sourceID` from the source, localized
+	// in `lang` (active reading language; empty falls back to the default of the source). The
+	// implementation decides the ceiling/sorting/dedup (each source has its own notion of "too
+	// large a filmography"). ErrNaoEncontrado when the person does not exist in the source (the
+	// handler degrades the same way as a real error: it logs and returns `[]`, the page does not
+	// go down). (nil, nil) is graceful (the person exists, without credits).
 	BuscarFilmografia(ctx context.Context, sourceID, lang string) ([]CreditoFilmografia, error)
 }
 
-// CreditoFilmografia é um trabalho canônico da filmografia EXTERNA de uma pessoa (ainda
-// não importado): a identidade do item (source/source_id/type) mais o papel da pessoa
-// nele (kind/character/job — o par que não se aplica ao kind fica nil). Espelha
-// ResultadoExterno na identidade do item, mas carrega também o papel (que
-// ResultadoExterno não tem, por não ser sobre pessoa).
+// CreditoFilmografia is a canonical work of the EXTERNAL filmography of a person (not yet
+// imported): the identity of the item (source/source_id/type) plus the role of the person in
+// it (kind/character/job -- the pair that does not apply to the kind stays nil). It mirrors
+// ResultadoExterno on the identity of the item, but also carries the role (which
+// ResultadoExterno does not have, as it is not about a person).
 type CreditoFilmografia struct {
-	// Source é o nome da fonte (ex.: "tmdb").
+	// Source is the name of the source (e.g. "tmdb").
 	Source string
-	// SourceID é o id do item (obra) NA FONTE.
+	// SourceID is the id of the item (work) IN THE SOURCE.
 	SourceID string
-	// Type é o nosso tipo canônico do item ("movie"|"tv").
+	// Type is our canonical type of the item ("movie"|"tv").
 	Type string
-	// Title é o título exibível do item.
+	// Title is the displayable title of the item.
 	Title string
-	// Year são os 4 primeiros dígitos da data de lançamento/estreia, quando houver.
+	// Year are the first 4 digits of the release/first-air date, when available.
 	Year *string
-	// PosterURL é a URL DIRETA do pôster do item na fonte, quando houver (o handler
-	// proxya, como os demais campos de imagem externos).
+	// PosterURL is the DIRECT poster URL of the item in the source, when available (the
+	// handler proxies it, like the other external image fields).
 	PosterURL *string
-	// Kind é o papel da pessoa NESTE item: "cast" (atuação) ou "crew" (equipe).
+	// Kind is the role of the person IN THIS item: "cast" (acting) or "crew" (crew).
 	Kind string
-	// Character é o personagem, só quando Kind="cast" (nil em Kind="crew").
+	// Character is the character, only when Kind="cast" (nil in Kind="crew").
 	Character *string
-	// Job é o(s) cargo(s) de equipe, só quando Kind="crew" (nil em Kind="cast"); pode
-	// juntar vários cargos distintos da MESMA obra (a fonte pode creditar mais de um).
+	// Job is the crew job(s), only when Kind="crew" (nil in Kind="cast"); it may join
+	// several distinct jobs of the SAME work (the source may credit more than one).
 	Job *string
 }
 
-// ExternalIDs carrega os ids externos que um item possui (o que a identidade MD4 tiver).
-// A fanart.tv usa Tmdb/Imdb para filme e Tvdb para série; cada ArteProvider escolhe o
-// que sabe consumir e degrada quando o id de que precisa está vazio. Mbid (briefing 0106,
-// ADR-0027 item 6) é o MBID MusicBrainz do item de música — para álbum, é o MBID de
-// RELEASE-GROUP (o mesmo gravado em external_id_mbid da entity `album`, ADR-0027 item 2),
-// não o de uma release/pressing específica; o Cover Art Archive aceita esse mbid
-// diretamente no endpoint /release-group/{mbid}.
+// ExternalIDs carries the external ids that an item has (whatever the identity has).
+// fanart.tv uses Tmdb/Imdb for a movie and Tvdb for a series; each ArteProvider chooses what
+// it knows how to consume and degrades when the id it needs is empty. Mbid is the
+// MusicBrainz MBID of the music item -- for an album, it is the MBID of the RELEASE-GROUP
+// (the same one stored in external_id_mbid of the `album` entity, ADR-0027 item 2), not the
+// one of a specific release/pressing; the Cover Art Archive accepts that mbid directly in the
+// /release-group/{mbid} endpoint.
 type ExternalIDs struct {
 	Tmdb string
 	Imdb string
@@ -299,12 +299,12 @@ type ExternalIDs struct {
 	Mbid string
 }
 
-// Arte é uma arte canônica do inventário de um ArteProvider (briefing 0048). Kind é o
-// nosso kind normalizado (poster/fanart/logo/clearart/disc/banner/thumb/characterart);
-// URL é a arte DIRETA na fonte (servida via proxy de imagem). Lang é o idioma (2 letras
-// ou ""=textless). Likes é a popularidade (para ordenar). DiscType/Disc só valem para
-// disc; Season (nº, "all" ou "0") só para arte de temporada — roteia a arte à entity da
-// temporada correspondente.
+// Arte is a canonical art of the inventory of an ArteProvider. Kind is our normalized kind
+// (poster/fanart/logo/clearart/disc/banner/thumb/characterart); URL is the DIRECT art in the
+// source (served through the image proxy). Lang is the language (2 letters or ""=textless).
+// Likes is the popularity (for sorting). DiscType/Disc only apply to disc; Season (number,
+// "all" or "0") only to season art -- it routes the art to the entity of the corresponding
+// season.
 type Arte struct {
 	Kind     string
 	URL      string
@@ -315,16 +315,17 @@ type Arte struct {
 	Season   string
 }
 
-// ChaveEnvelopeInventarioArtes é a chave do envelope de media_external que carrega o
-// INVENTÁRIO de artes de uma fonte de arte (fanart.tv). O enrich grava
-// {ChaveEnvelopeInventarioArtes: {kind: [ArteInventario...]}} sob a fonte da arte
-// (source="fanarttv"), SEM baixar binários; o endpoint /artwork o lê para agrupar as
-// artes disponíveis por kind. É uma camada de inventário PURA: o MapearDetalhe da fonte
-// de arte é no-op (não polui a composição de camadas do resolver).
+// ChaveEnvelopeInventarioArtes is the key of the media_external envelope that carries the
+// INVENTORY of arts of an art source (fanart.tv). The enrich writes
+// {ChaveEnvelopeInventarioArtes: {kind: [ArteInventario...]}} under the art source
+// (source="fanarttv"), WITHOUT downloading binaries; the /artwork endpoint reads it to group
+// the available arts by kind. It is a PURE inventory layer: the MapearDetalhe of the art
+// source is a no-op (it does not pollute the layer composition of the resolver).
 const ChaveEnvelopeInventarioArtes = "fanarttv_inventory"
 
-// ArteInventario é uma arte serializada no envelope de inventário (media_external). É o
-// espelho persistível de Arte SEM o Kind (que vira a chave do mapa por kind no envelope).
+// ArteInventario is an art serialized in the inventory envelope (media_external). It is the
+// persistable mirror of Arte WITHOUT the Kind (which becomes the key of the per-kind map in
+// the envelope).
 type ArteInventario struct {
 	URL      string `json:"url"`
 	Lang     string `json:"lang,omitempty"`
@@ -334,322 +335,315 @@ type ArteInventario struct {
 	Season   string `json:"season,omitempty"`
 }
 
-// SerieArvore é a hierarquia canônica de uma série: a ordenação default, a lista de
-// ordenações que a série usa, e as temporadas SÓ da ordenação default. Cada episódio
-// (grão fino, ancorado no id da fonte) carrega a numeração de TODAS as ordens.
+// SerieArvore is the canonical hierarchy of a series: the default ordering, the list of
+// orderings the series uses, and the seasons ONLY of the default ordering. Each episode
+// (fine-grained, anchored on the id of the source) carries the numbering of ALL orders.
 type SerieArvore struct {
-	// DefaultSeasonType é a ordenação default da série (ex.: "official"); é a única
-	// materializada em Temporadas.
+	// DefaultSeasonType is the default ordering of the series (e.g. "official"); it is the
+	// only one materialized in Temporadas.
 	DefaultSeasonType string
-	// SeasonTypes são as ordenações que a série usa (ex.: ["official","dvd","absolute"]).
+	// SeasonTypes are the orderings that the series uses (e.g. ["official","dvd","absolute"]).
 	SeasonTypes []string
-	// Temporadas são as temporadas SÓ da ordenação default (ADR-0021: as alternativas
-	// não viram temporada — só numeração nos episódios).
+	// Temporadas are the seasons ONLY of the default ordering (ADR-0021: the alternatives do
+	// not become a season -- only numbering in the episodes).
 	Temporadas []TemporadaExterna
 }
 
-// TemporadaExterna é uma temporada canônica da ordenação default, com seus episódios.
+// TemporadaExterna is a canonical season of the default ordering, with its episodes.
 type TemporadaExterna struct {
-	// Ordering é a ordenação a que a temporada pertence (sempre a default aqui).
+	// Ordering is the ordering the season belongs to (always the default one here).
 	Ordering string
-	// SeasonNumber é o número da temporada NAQUELA ordem (pode ser ano civil, 0 para
-	// specials, índice de box-set — não assumir 1..N; ADR-0021).
+	// SeasonNumber is the number of the season IN THAT order (it may be a calendar year, 0
+	// for specials, a box-set index -- do not assume 1..N; ADR-0021).
 	SeasonNumber int
-	// Name é o nome exibível por idioma (pode ser vazio: temporadas raramente têm nome).
+	// Name is the displayable name per language (it may be empty: seasons rarely have a name).
 	Name map[string]string
-	// Year é o ano da temporada, quando a fonte informou.
+	// Year is the year of the season, when the source provided it.
 	Year string
-	// PosterURL é a arte DIRETA da temporada na fonte, quando houver.
+	// PosterURL is the DIRECT art of the season in the source, when available.
 	PosterURL string
-	// Episodios são os episódios desta temporada (na ordenação default), em ordem.
+	// Episodios are the episodes of this season (in the default ordering), in order.
 	Episodios []EpisodioExterno
 }
 
-// EpisodioExterno é um episódio canônico de grão fino, ancorado no id da fonte. A
-// numeração de TODAS as ordens vive em Numbering; a identidade NUNCA é o (season,
-// number), que muda por ordem (ADR-0021).
+// EpisodioExterno is a canonical fine-grained episode, anchored on the id of the source.
+// The numbering of ALL orders lives in Numbering; the identity is NEVER the (season, number),
+// which changes per order (ADR-0021).
 type EpisodioExterno struct {
-	// SourceID é o episode.id na fonte — a ÂNCORA canônica (nunca o número).
+	// SourceID is the episode.id in the source -- the canonical ANCHOR (never the number).
 	SourceID string
-	// ExternalIDs são os ids do episódio em outras fontes ({tvdb, imdb, tmdb} quando
-	// houver). Do tree só vem {tvdb} (o cruzamento por episódio exige o extended, N
-	// chamadas — deferido); o cruzamento forte é no nível da SÉRIE.
+	// ExternalIDs are the ids of the episode in other sources ({tvdb, imdb, tmdb} when
+	// available). From the tree only {tvdb} comes (the crossing per episode requires the
+	// extended, N calls -- deferred); the strong crossing is at the SERIES level.
 	ExternalIDs map[string]string
-	// Title é o título por idioma, COM FALLBACK (o idioma sem tradução simplesmente não
-	// aparece no mapa — o resolver cai na cadeia). Pode conter só o idioma original.
+	// Title is the title per language, WITH FALLBACK (the language without a translation
+	// simply does not appear in the map -- the resolver falls back through the chain). It may
+	// contain only the original language.
 	Title map[string]string
-	// Overview é a sinopse por idioma (mesma semântica de Title).
+	// Overview is the overview per language (same semantics as Title).
 	Overview map[string]string
-	// AbsoluteNumber é a numeração linear canônica (estável entre ordens), quando houver.
+	// AbsoluteNumber is the canonical linear numbering (stable between orders), when available.
 	AbsoluteNumber *int
-	// Numbering traz a numeração do MESMO episódio em TODAS as ordens que a série usa
-	// (ex.: {"official":{1933,16}, "dvd":{23,5}, "absolute":{1,373}}).
+	// Numbering brings the numbering of the SAME episode in ALL the orders that the series uses
+	// (e.g.: {"official":{1933,16}, "dvd":{23,5}, "absolute":{1,373}}).
 	Numbering map[string]Numero
-	// AirDate é a data de exibição (YYYY-MM-DD), quando houver.
+	// AirDate is the air date (YYYY-MM-DD), when available.
 	AirDate string
-	// Runtime é a duração em minutos, quando a fonte informou.
+	// Runtime is the duration in minutes, when the source provided it.
 	Runtime *int
-	// StillURL é o frame/screencap do episódio, quando houver.
+	// StillURL is the frame/screencap of the episode, when available.
 	StillURL string
 }
 
-// Numero é o par (temporada, número) de um episódio NUMA ordenação. Não é chave: o
-// mesmo episódio tem Numero diferente por ordem (ADR-0021).
+// Numero is the (season, number) pair of an episode IN an ordering. It is not a key: the
+// same episode has a different Numero per order (ADR-0021).
 type Numero struct {
 	Season int
 	Number int
 }
 
-// MusicaProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0106, ADR-0027 item
-// 6, molde de SerieProvider): trazer a HIERARQUIA de um ARTISTA — discografia (álbuns) e
-// faixas, com o artista REAL de cada faixa (artist-credit do recording), que pode
-// divergir do artista do álbum (feat./colaboração — ADR-0027 item 4). É opcional porque
-// nem toda fonte modela música (só o MusicBrainz hoje); o chamador (enrich) faz
-// type-assert do Provider para esta interface e degrada quando ausente.
+// MusicaProvider is an OPTIONAL CAPABILITY of a Provider (the mould of SerieProvider):
+// bringing the HIERARCHY of an ARTIST -- discography (albums) and tracks, with the REAL
+// artist of each track (artist-credit of the recording), which may diverge from the artist of
+// the album (feat./collaboration -- ADR-0027 item 4). It is optional because not every source
+// models music (only MusicBrainz today); the caller (enrich) type-asserts the Provider to this
+// interface and degrades when absent.
 type MusicaProvider interface {
-	// BuscarArtistaArvore puxa a árvore do artista `sourceID` (MBID) na fonte, com todos
-	// os álbuns (release-groups) e faixas (recordings). `langs` é mantido na assinatura
-	// por paridade com SerieProvider/BuscarSerieArvore; o MusicBrainz não é multi-idioma
-	// como TMDB/TVDB (os campos textuais saem no idioma nativo cadastrado na fonte), então
-	// a implementação atual o ignora — reservado para uma fonte futura que o use.
-	// ErrNaoEncontrado quando o artista não existe na fonte (→ 404); demais erros
-	// propagam (→ 502).
+	// BuscarArtistaArvore pulls the tree of the artist `sourceID` (MBID) from the source, with
+	// all the albums (release-groups) and tracks (recordings). `langs` is kept in the signature
+	// for parity with SerieProvider/BuscarSerieArvore; MusicBrainz is not multi-language like
+	// TMDB/TVDB (the textual fields come out in the native language registered in the source),
+	// so the current implementation ignores it -- reserved for a future source that uses it.
+	// ErrNaoEncontrado when the artist does not exist in the source (→ 404); the other errors
+	// propagate (→ 502).
 	BuscarArtistaArvore(ctx context.Context, sourceID string, langs []string) (ArtistaArvore, error)
 }
 
-// ArtistaArvore é a hierarquia canônica de um artista: identidade + bio (quando a fonte
-// tiver) + discografia (álbuns, cada um já com suas faixas).
+// ArtistaArvore is the canonical hierarchy of an artist: identity + bio (when the source has
+// one) + discography (albums, each one already with its tracks).
 type ArtistaArvore struct {
-	// Name é o nome exibível do artista.
+	// Name is the displayable name of the artist.
 	Name string
-	// MBID é o id do artista na fonte (MusicBrainz) — a âncora canônica (ADR-0027 item 6).
+	// MBID is the id of the artist in the source (MusicBrainz) -- the canonical anchor.
 	MBID string
-	// Bio é a biografia/anotação do artista, quando a fonte tiver (MusicBrainz raramente
-	// tem; vazio é o caso comum, não um erro).
+	// Bio is the biography/annotation of the artist, when the source has one (MusicBrainz
+	// rarely does; empty is the common case, not an error).
 	Bio string
-	// Albuns são os álbuns (release-groups) do artista, na ordem em que a fonte os lista.
+	// Albuns are the albums (release-groups) of the artist, in the order the source lists them.
 	Albuns []AlbumExterno
 }
 
-// AlbumExterno é um álbum canônico (release-group do MusicBrainz, ADR-0027 item 2) com
-// suas faixas. O artista do álbum é implicitamente a raiz de ArtistaArvore (inclusive
-// quando é "Various Artists" — ADR-0027 item 5, sem caso especial).
+// AlbumExterno is a canonical album (release-group of MusicBrainz) with its tracks. The
+// artist of the album is implicitly the root of ArtistaArvore (including when it is "Various
+// Artists" -- ADR-0027 item 5, without a special case).
 type AlbumExterno struct {
-	// Name é o título do álbum.
+	// Name is the title of the album.
 	Name string
-	// MBID é o id do release-group na fonte — a âncora canônica do álbum (o mesmo gravado
-	// em external_id_mbid da entity `album`; usado também por ExternalIDs.Mbid para a
-	// busca de arte via Cover Art Archive, endpoint /release-group/{mbid}).
+	// MBID is the id of the release-group in the source -- the canonical anchor of the album
+	// (the same one stored in external_id_mbid of the `album` entity; also used by
+	// ExternalIDs.Mbid for the art lookup through the Cover Art Archive,
+	// /release-group/{mbid} endpoint).
 	MBID string
-	// Year são os 4 primeiros dígitos da data de lançamento do release-group, quando houver.
+	// Year are the first 4 digits of the release date of the release-group, when available.
 	Year string
-	// Genre é o gênero de maior contagem (voto) que a fonte associa ao álbum, quando
-	// houver (ADR-0027 item 7: gênero vive no nível de álbum/artista, não por faixa).
+	// Genre is the genre with the highest count (vote) that the source associates with the
+	// album, when available (ADR-0027 item 7: the genre lives at the album/artist level, not per
+	// track).
 	Genre string
-	// Faixas são as faixas do álbum (da release "oficial" escolhida — ver comentário em
-	// escolherRelease no client musicbrainz), em ordem de disco+posição.
+	// Faixas are the tracks of the album (of the "official" release chosen -- see the comment
+	// in escolherRelease of the musicbrainz client), in disc+position order.
 	Faixas []FaixaExterna
 }
 
-// FaixaExterna é uma faixa canônica (recording do MusicBrainz), ancorada no MBID de
-// RECORDING — nunca em número/posição (ADR-0027 item 1, espelha EpisodioExterno).
+// FaixaExterna is a canonical track (recording of MusicBrainz), anchored on the MBID of the
+// RECORDING -- never on a number/position (ADR-0027 item 1, it mirrors EpisodioExterno).
 type FaixaExterna struct {
-	// Title é o título da faixa.
+	// Title is the title of the track.
 	Title string
-	// MBID é o id do recording na fonte — a âncora canônica da faixa.
+	// MBID is the id of the recording in the source -- the canonical anchor of the track.
 	MBID string
-	// TrackNumber é a posição da faixa dentro do disco (1-based).
+	// TrackNumber is the position of the track inside the disc (1-based).
 	TrackNumber int
-	// DiscNumber é o número do disco/mídia dentro da release (1-based).
+	// DiscNumber is the number of the disc/medium inside the release (1-based).
 	DiscNumber int
-	// DiscTotal é o total de discos/mídias da release.
+	// DiscTotal is the total of discs/media of the release.
 	DiscTotal int
-	// ISRC é o identificador auxiliar de faixa (ADR-0027 item 6), quando a fonte tiver;
-	// pode haver mais de um ISRC por recording — carregamos só o primeiro.
+	// ISRC is the auxiliary identifier of the track, when the source has one; there may be
+	// more than one ISRC per recording -- we carry only the first one.
 	ISRC string
-	// ArtistaCreditoNome é o nome do artista REAL creditado nesta faixa (artist-credit do
-	// recording) — pode divergir do artista do álbum (feat./colaboração, ADR-0027 item 4).
+	// ArtistaCreditoNome is the name of the REAL artist credited on this track (artist-credit
+	// of the recording) -- it may diverge from the artist of the album (feat./collaboration,
+	// ADR-0027 item 4).
 	ArtistaCreditoNome string
-	// ArtistaCreditoMBID é o MBID do artista REAL creditado nesta faixa.
+	// ArtistaCreditoMBID is the MBID of the REAL artist credited on this track.
 	ArtistaCreditoMBID string
-	// DuracaoMs é a duração da faixa em milissegundos, quando a fonte informar
-	// (briefing 0121 §8); 0 = desconhecida.
+	// DuracaoMs is the duration of the track in milliseconds, when the source provides it;
+	// 0 = unknown.
 	DuracaoMs int
 }
 
-// AlvoFaixaAlbum identifica, opcionalmente, UMA faixa específica que o chamador
-// precisa encontrar dentro do álbum resolvido -- permite ao provider tentar
-// releases alternativas do mesmo release-group quando a escolhida por padrão
-// (ex.: "Official") não contém essa faixa (briefing 0121, achado real: Bomfunk
-// MC's "Freestyler" existe só num álbum completo do release-group, não na
-// edição "Official" — um maxi-single com faixas remixadas). Zero value (todos
-// os campos vazios) preserva o comportamento de sempre escolher só 1 release,
-// sem nenhuma tentativa adicional. Prioridade quando mais de um campo é
-// preenchido: RecordingMBID > FaixaTitulo > FaixaNumero (mesma ordem de
-// enrich.FaixaAlvo/escolherFaixaAlvo — duplicação mínima e proposital, ver
-// nota do briefing 0121: provider não pode depender de enrich).
+// AlvoFaixaAlbum optionally identifies ONE specific track that the caller needs to find
+// inside the resolved album -- it allows the provider to try alternative releases of the same
+// release-group when the one chosen by default (e.g. "Official") does not contain that track
+// (a real finding: Bomfunk MC's "Freestyler" exists only in a complete album of the
+// release-group, not in the "Official" edition -- a maxi-single with remixed tracks). The zero
+// value (all fields empty) preserves the usual behavior of choosing only 1 release, without
+// any additional attempt. Priority when more than one field is filled in: RecordingMBID >
+// FaixaTitulo > FaixaNumero (the same order as enrich.FaixaAlvo/escolherFaixaAlvo -- minimal
+// and deliberate duplication: the provider cannot depend on enrich).
 type AlvoFaixaAlbum struct {
 	RecordingMBID string
 	FaixaTitulo   string
 	FaixaNumero   int
-	// FaixaDisco é o número do disco da faixa no ARQUIVO (tag disc_number), quando
-	// conhecido; 0 = desconhecido. Entra SÓ como desempate, quando duas ou mais
-	// faixas do álbum empatam em título (reedição que repete a mesma faixa em discos
-	// diferentes -- o caso real "The Hurting (Deluxe Edition)").
+	// FaixaDisco is the disc number of the track in the FILE (tag disc_number), when known; 0 =
+	// unknown. It enters ONLY as a tiebreaker, when two or more tracks of the album tie on the
+	// title (a reissue that repeats the same track on different discs -- the real case "The
+	// Hurting (Deluxe Edition)").
 	FaixaDisco int
-	// ArtistaNome é o artista do ÁLBUM (album_artist da tag, com fallback para
-	// artist). Escopa a busca de álbum por TÍTULO -- sem ele, um título comum
-	// ("Love Songs", "Lockjaw") devolve homônimos de outros artistas e o álbum certo
-	// fica fora do topo (achado em produção, briefing 0138). Compilação
-	// (album_artist "Various Artists") não escopa: ali o título é o único sinal.
+	// ArtistaNome is the artist of the ALBUM (album_artist of the tag, with a fallback to
+	// artist). It scopes the album search by TITLE -- without it, a common title ("Love Songs",
+	// "Lockjaw") returns homonyms of other artists and the right album stays out of the top (a
+	// finding in production). A compilation (album_artist "Various Artists") is not scoped:
+	// there the title is the only signal.
 	ArtistaNome string
-	// DuracaoMs é a duração conhecida do arquivo local, em milissegundos,
-	// quando disponível (briefing 0121 §8); 0 = não informada. Usada como
-	// sinal de CONFIRMAÇÃO adicional ao título, nunca de busca.
+	// DuracaoMs is the known duration of the local file, in milliseconds, when available; 0 =
+	// not provided. It is used as a signal of additional CONFIRMATION to the title, never of
+	// search.
 	DuracaoMs int
 }
 
-// MusicaAlbumProvider é uma CAPACIDADE OPCIONAL de um Provider (ADR-0029 item 6,
-// briefing 0115): buscar/montar UM release (álbum) específico do artista, SEM
-// enumerar a discografia inteira -- o contraponto SELETIVO de MusicaProvider (a
-// árvore completa), usado pelo import LOCAL-FIRST do scanner (uma faixa possuída
-// só traz o artista + o ÁLBUM DAQUELA faixa, nunca os demais releases -- ver
-// enrich.ImportarFaixaPossuida). É opcional porque nem toda fonte de música
-// modela essa busca seletiva (só o MusicBrainz hoje); o enrich faz type-assert
-// do Provider para esta interface e devolve erro (o scanner degrada, loga e cai
-// para o próximo passo do pipeline/draft) quando a fonte não a implementa.
+// MusicaAlbumProvider is an OPTIONAL CAPABILITY of a Provider (ADR-0029 item 6): searching/
+// assembling ONE specific release (album) of the artist, WITHOUT enumerating the whole
+// discography -- the SELECTIVE counterpart of MusicaProvider (the complete tree), used by the
+// LOCAL-FIRST import of the scanner (an owned track brings only the artist + the ALBUM OF THAT
+// track, never the other releases -- see enrich.ImportarFaixaPossuida). It is optional because
+// not every music source models this selective search (only MusicBrainz today); the enrich
+// type-asserts the Provider to this interface and returns an error (the scanner degrades, logs
+// and falls to the next step of the pipeline/draft) when the source does not implement it.
 type MusicaAlbumProvider interface {
-	// BuscarAlbumDaFaixa resolve, a partir do MBID de RECORDING `recordingMBID`, o
-	// release (álbum) que o contém, e monta ESSE único álbum (nome/ano/gênero/
-	// faixas) -- o caminho PRECISO, usado quando o arquivo tem o MBID de faixa
-	// embutido. Nunca enumera a discografia inteira do artista. ok=false quando o
-	// recording não tem NENHUMA release associada (dado incompleto na fonte,
-	// raríssimo) -- graça, não erro; erro real (rede, MBID inexistente) propaga.
+	// BuscarAlbumDaFaixa resolves, from the MBID of the RECORDING `recordingMBID`, the release
+	// (album) that contains it, and assembles THAT single album (name/year/genre/tracks) -- the
+	// PRECISE path, used when the file has the track MBID embedded. It never enumerates the whole
+	// discography of the artist. ok=false when the recording has NO associated release
+	// (incomplete data in the source, extremely rare) -- gracefully, not an error; a real error
+	// (network, nonexistent MBID) propagates.
 	BuscarAlbumDaFaixa(ctx context.Context, recordingMBID string, langs []string) (AlbumExterno, bool, error)
 
-	// BuscarAlbumPorNome localiza, entre os release-groups do artista
-	// `artistaMBID`, o de título mais próximo de `nomeAlbum` (mesmo motor/limiar
-	// de similaridade que o scanner já usa no match textual --
-	// internal/matching.LimiarAutoMatch) e monta ESSE único álbum -- o caminho
-	// TEXTUAL, usado quando o arquivo não tem MBID de faixa embutido (fallback).
-	// A implementação pode precisar de 1 chamada barata (só ids/títulos) para
-	// listar os release-groups do artista e escolher o candidato, mas monta --
-	// faixas incluídas -- só o escolhido, nunca os demais. `alvoFaixa` (briefing
-	// 0121), quando preenchido, permite à implementação tentar releases
-	// alternativas do MESMO release-group escolhido quando a release padrão não
-	// contém essa faixa (zero value preserva o comportamento de sempre 1
-	// release só). ok=false sem candidato plausível (empate no topo ou abaixo do
-	// limiar) -- graça; erro real propaga.
+	// BuscarAlbumPorNome locates, among the release-groups of the artist `artistaMBID`, the one
+	// whose title is closest to `nomeAlbum` (the same similarity engine/threshold that the scanner
+	// already uses in the textual match -- internal/matching.LimiarAutoMatch) and assembles THAT
+	// single album -- the TEXTUAL path, used when the file has no embedded track MBID (fallback).
+	// The implementation may need 1 cheap call (ids/titles only) to list the release-groups of the
+	// artist and choose the candidate, but it assembles -- tracks included -- only the chosen one,
+	// never the others. `alvoFaixa`, when filled in, allows the implementation to try alternative
+	// releases of the SAME chosen release-group when the default release does not contain that
+	// track (the zero value preserves the usual behavior of always a single release). ok=false
+	// without a plausible candidate (a tie at the top or below the threshold) -- gracefully; a
+	// real error propagates.
 	BuscarAlbumPorNome(ctx context.Context, artistaMBID, nomeAlbum string, alvoFaixa AlvoFaixaAlbum, langs []string) (AlbumExterno, bool, error)
 
-	// BuscarAlbumPorMbid monta o álbum cujo MBID DE RELEASE-GROUP já é conhecido
-	// -- o caminho DIRETO (briefing 0115 Parte 2), usado quando o chamador já tem
-	// o mbid gravado (ex.: a entity `album` interna, via external_ids["mbid"]),
-	// sem precisar de uma faixa nem de um nome de partida. Ao contrário de
-	// BuscarAlbumDaFaixa/BuscarAlbumPorNome (que resolvem o release-group a
-	// partir de outro dado antes de montar), aqui não há passo de resolução
-	// prévio: a EXISTÊNCIA do release-group é validada nesta própria chamada, e
-	// ErrNaoEncontrado propaga (errors.Is) quando `albumMBID` não existe na
-	// fonte -- outros erros de rede/parsing também propagam. Nunca enumera a
-	// discografia do artista.
+	// BuscarAlbumPorMbid assembles the album whose RELEASE-GROUP MBID is already known -- the
+	// DIRECT path, used when the caller already has the mbid stored (e.g. the internal `album`
+	// entity, via external_ids["mbid"]), without needing a track nor a starting name. Unlike
+	// BuscarAlbumDaFaixa/BuscarAlbumPorNome (which resolve the release-group from another datum
+	// before assembling), here there is no previous resolution step: the EXISTENCE of the
+	// release-group is validated in this very call, and ErrNaoEncontrado propagates (errors.Is)
+	// when `albumMBID` does not exist in the source -- other network/parsing errors also
+	// propagate. It never enumerates the discography of the artist.
 	BuscarAlbumPorMbid(ctx context.Context, albumMBID string, langs []string) (AlbumExterno, error)
 }
 
-// FaixaResolverProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing 0107):
-// resolve o MBID do ARTISTA a partir do MBID de uma FAIXA (recording) já conhecida —
-// cobre o caso de um arquivo com o MBID de faixa embutido pelo tagueador mas SEM o
-// MBID de artista (alguns tagueadores só gravam o recording MBID, não o do artista).
-// Sem esta capacidade, o scanner não consegue chamar Importar(artistaMBID, "artista",
-// ...) a partir de só um MBID de faixa. É opcional porque nem toda fonte modela essa
-// resolução reversa (só o MusicBrainz hoje); o scanner (internal/scanner/musica.go)
-// faz type-assert do Provider para esta interface e degrada (cai para busca textual,
-// ou draft) quando ausente ou sem match.
+// FaixaResolverProvider is an OPTIONAL CAPABILITY of a Provider: it resolves the MBID of the
+// ARTIST from the MBID of an already known track (recording) -- it covers the case of a file
+// with the track MBID embedded by the tagger but WITHOUT the artist MBID (some taggers only
+// write the recording MBID, not the artist one). Without this capability, the scanner cannot
+// call Importar(artistaMBID, "artista", ...) from only a track MBID. It is optional because not
+// every source models this reverse resolution (only MusicBrainz today); the scanner
+// (internal/scanner/musica.go) type-asserts the Provider to this interface and degrades (it
+// falls back to the textual search, or to draft) when absent or without a match.
 type FaixaResolverProvider interface {
-	// ResolverArtistaDaFaixa resolve o MBID do artista a partir do MBID do recording
-	// `recordingMBID`, usando o PRIMEIRO artist-credit da faixa na fonte (mesmo
-	// critério de "artista principal" usado em BuscarArtistaArvore/FaixaExterna.
-	// ArtistaCreditoMBID). ErrNaoEncontrado quando a faixa não existe na fonte (→ o
-	// chamador degrada); demais erros (rede, faixa sem nenhum artist-credit) propagam.
+	// ResolverArtistaDaFaixa resolves the MBID of the artist from the MBID of the recording
+	// `recordingMBID`, using the FIRST artist-credit of the track in the source (the same "main
+	// artist" criterion used in BuscarArtistaArvore/FaixaExterna.ArtistaCreditoMBID).
+	// ErrNaoEncontrado when the track does not exist in the source (→ the caller degrades); the
+	// other errors (network, a track without any artist-credit) propagate.
 	ResolverArtistaDaFaixa(ctx context.Context, recordingMBID string) (artistaMBID string, err error)
 }
 
-// FingerprintProvider é uma CAPACIDADE OPCIONAL de um Provider (briefing
-// 0126): identificar uma faixa a partir do FINGERPRINT ACÚSTICO do áudio
-// (não de metadado/nome) -- último fallback do pipeline de matching de
-// música, usado só quando MBID embutido e busca textual já falharam. Nem
-// toda fonte tem essa capacidade (hoje: um client AcoustID dedicado,
-// nunca o MusicaProvider/MusicaAlbumProvider do MusicBrainz -- lookup por
-// fingerprint é um serviço/endpoint DISTINTO da API de metadado); o
-// scanner faz type-assert do Provider para esta interface e degrada em
-// silêncio (cai para o passo de draft) quando ausente.
+// FingerprintProvider is an OPTIONAL CAPABILITY of a Provider: identifying a track from the
+// ACOUSTIC FINGERPRINT of the audio (not from metadata/name) -- the last fallback of the music
+// matching pipeline, used only when the embedded MBID and the textual search have already
+// failed. Not every source has this capability (today: a dedicated AcoustID client, never the
+// MusicaProvider/MusicaAlbumProvider of MusicBrainz -- the lookup by fingerprint is a
+// service/endpoint DISTINCT from the metadata API); the scanner type-asserts the Provider to
+// this interface and degrades silently (it falls back to the draft step) when absent.
 type FingerprintProvider interface {
 	IdentificarPorFingerprint(ctx context.Context, fingerprint string, duracaoSegundos float64) (RecordingCandidato, bool, error)
 }
 
-// RecordingCandidato é o resultado de UM lookup por fingerprint: o MBID
-// de recording mais provável e o escore de confiança devolvido pelo
-// AcoustID (0-1), usado como limiar mínimo de aceite (ver matching.go).
+// RecordingCandidato is the result of ONE lookup by fingerprint: the most probable recording
+// MBID and the confidence score returned by AcoustID (0-1), used as the minimum acceptance
+// threshold (see matching.go).
 type RecordingCandidato struct {
 	RecordingMBID string
 	Confianca     float64
 }
 
-// ResultadoExterno é o resultado canônico de uma busca externa, independente da
-// fonte. Os ponteiros são opcionais (nil quando a fonte não trouxe o campo).
-// Saved é SEMPRE false na busca: um resultado externo nunca é uma entidade do
-// catálogo até o import explícito (0015).
+// ResultadoExterno is the canonical result of an external search, independent of the source.
+// The pointers are optional (nil when the source did not bring the field). Saved is ALWAYS false
+// in the search: an external result is never an entity of the catalog until the explicit
+// import.
 type ResultadoExterno struct {
-	// Source é o nome da fonte (ex.: "tmdb").
+	// Source is the name of the source (e.g. "tmdb").
 	Source string
-	// SourceID é o id do item NA FONTE (ex.: id numérico do TMDB, como string).
+	// SourceID is the id of the item IN THE SOURCE (e.g. the numeric TMDB id, as a string).
 	SourceID string
-	// Type é o nosso tipo canônico ("movie"|"tv").
+	// Type is our canonical type ("movie"|"tv").
 	Type string
-	// Title é o título exibível do item.
+	// Title is the displayable title of the item.
 	Title string
-	// Year são os 4 primeiros dígitos da data de lançamento, quando houver.
+	// Year are the first 4 digits of the release date, when available.
 	Year *string
-	// Overview é a sinopse, quando houver.
+	// Overview is the overview, when available.
 	Overview *string
-	// PosterURL é a URL DIRETA da arte na fonte, quando houver (o proxy/cache de
-	// imagem é do 0015).
+	// PosterURL is the DIRECT art URL in the source, when available (the image proxy/cache is
+	// the import's job).
 	PosterURL *string
-	// Saved indica se o item já existe no catálogo. Na busca é sempre false.
+	// Saved indicates whether the item already exists in the catalog. In the search it is always false.
 	Saved bool
 }
 
-// AlbumComArtista é o resultado de uma busca de álbum por TÍTULO (briefing 0136,
-// capacidade MusicaAlbumPorTituloProvider): o álbum montado da fonte MAIS a
-// identidade do artista principal que a própria fonte atribui a ele -- é dela que
-// sai o artista de uma compilação/trilha, onde não existe `album_artist` local
-// confiável ("Various Artists").
+// AlbumComArtista is the result of an album search by TITLE (capability
+// MusicaAlbumPorTituloProvider): the album assembled from the source PLUS the identity of the
+// main artist that the source itself attributes to it -- it is from that identity that the
+// artist of a compilation/soundtrack comes, where there is no reliable local `album_artist`
+// ("Various Artists").
 type AlbumComArtista struct {
 	Album AlbumExterno
-	// ArtistaMBID é o id do artista no artist-credit do álbum. Vazio quando a
-	// fonte não trouxe o crédito (o chamador degrada: sem artista, sem import).
+	// ArtistaMBID is the id of the artist in the artist-credit of the album. Empty when the
+	// source did not bring the credit (the caller degrades: no artist, no import).
 	ArtistaMBID string
-	// ArtistaNome é o nome do artista no mesmo crédito.
+	// ArtistaNome is the name of the artist in the same credit.
 	ArtistaNome string
 }
 
-// ArtistaExterno é a identidade mínima de um artista vinda de um crédito da
-// fonte (MBID + nome de exibição).
+// ArtistaExterno is the minimum identity of an artist coming from a credit of the source (MBID
+// + display name).
 type ArtistaExterno struct {
 	MBID string
 	Nome string
 }
 
-// MusicaAlbumPorTituloProvider é uma CAPACIDADE OPCIONAL de um Provider
-// (briefing 0136): resolver UM álbum pelo TÍTULO, sem partir de um artista.
-// Existe porque o pipeline textual normal começa pela busca do artista -- e
-// compilações/trilhas reais têm `album_artist = "Various Artists"`, que não
-// devolve identidade única. Opcional pelo mesmo motivo de MusicaAlbumProvider:
-// nem toda fonte modela essa busca; quem não implementa degrada em silêncio
-// (a faixa continua em rascunho).
+// MusicaAlbumPorTituloProvider is an OPTIONAL CAPABILITY of a Provider: resolving ONE album by
+// its TITLE, without starting from an artist. It exists because the normal textual pipeline
+// starts with the artist search -- and real compilations/soundtracks have
+// `album_artist = "Various Artists"`, which does not return a unique identity. Optional for the
+// same reason as MusicaAlbumProvider: not every source models this search; the ones that do not
+// implement it degrade silently (the track stays as a draft).
 type MusicaAlbumPorTituloProvider interface {
-	// BuscarAlbumPorTitulo monta o álbum cuja tracklist CONTÉM a faixa descrita
-	// por `alvo` (título/número/MBID), entre os release-groups mais parecidos
-	// com `nomeAlbum` (limiar matching.LimiarAutoMatch). ok=false quando nenhum
-	// candidato passa do limiar ou nenhum contém a faixa -- nunca um "parecido".
+	// BuscarAlbumPorTitulo assembles the album whose tracklist CONTAINS the track described by
+	// `alvo` (title/number/MBID), among the release-groups most similar to `nomeAlbum`
+	// (matching.LimiarAutoMatch threshold). ok=false when no candidate passes the threshold or
+	// none contains the track -- never a "similar one".
 	BuscarAlbumPorTitulo(ctx context.Context, nomeAlbum string, alvo AlvoFaixaAlbum, langs []string) (AlbumComArtista, bool, error)
 }

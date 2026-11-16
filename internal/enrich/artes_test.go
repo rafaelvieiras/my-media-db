@@ -10,14 +10,14 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
-// fakeArteProvider implementa o core provider.Provider NO-OP (Nome "fanarttv", como a
-// fanart.tv real) MAIS a capacidade provider.ArteProvider, devolvendo artes canned. Grava
-// os ids/tipo recebidos para as assercoes.
+// fakeArteProvider implements the provider.Provider core as a NO-OP (Nome "fanarttv", like
+// the real fanart.tv) PLUS the provider.ArteProvider capability, returning canned artworks. It records
+// the ids/type received for the assertions.
 type fakeArteProvider struct {
 	artes    []provider.Arte
 	recebeu  provider.ExternalIDs
 	tipo     string
-	chamadas int // conta as invocacoes de BuscarArtes (0087: prova ausencia de dupla-chamada)
+	chamadas int // counts the BuscarArtes invocations (proves the absence of a double call)
 }
 
 func (f *fakeArteProvider) Nome() string { return "fanarttv" }
@@ -41,8 +41,8 @@ func (f *fakeArteProvider) BuscarArtes(_ context.Context, ids provider.ExternalI
 	return f.artes, nil
 }
 
-// lerInventario le o envelope de inventario da fanart.tv (media_external source=fanarttv)
-// de uma entity e devolve o mapa kind->[]ArteInventario. Falha o teste se ausente.
+// lerInventario reads the inventory envelope of fanart.tv (media_external source=fanarttv)
+// of an entity and returns the kind->[]ArteInventario map. It fails the test when absent.
 func lerInventario(t *testing.T, database *sqlcgen.Queries, entityID string) map[string][]provider.ArteInventario {
 	t.Helper()
 	row, err := database.ObterMediaExternalPorFonte(context.Background(), sqlcgen.ObterMediaExternalPorFonteParams{
@@ -63,10 +63,10 @@ func lerInventario(t *testing.T, database *sqlcgen.Queries, entityID string) map
 	return inv
 }
 
-// TestImportarFilmePersisteInventarioSemBaixar: importar um filme com um ArteProvider
-// registrado persiste o inventario como media_external source=fanarttv (envelope por
-// kind, com lang/likes), SEM materializar assets das artes de arte (nenhum binario disc/
-// logo baixado). O poster do TMDB (fluxo primario) segue como asset origin=external.
+// TestImportarFilmePersisteInventarioSemBaixar: importing a movie with an ArteProvider
+// registered persists the inventory as media_external source=fanarttv (envelope by
+// kind, with lang/likes), WITHOUT materializing assets of the artworks (no disc/
+// logo binary downloaded). The TMDB poster (primary flow) stays as an asset with origin=external.
 func TestImportarFilmePersisteInventarioSemBaixar(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -88,7 +88,7 @@ func TestImportarFilmePersisteInventarioSemBaixar(t *testing.T) {
 		t.Fatalf("Importar: %v", err)
 	}
 
-	// o ArteProvider recebeu o id externo do item e o tipo movie.
+	// the ArteProvider received the external id of the item and the movie type.
 	if arte.recebeu.Tmdb != "603" || arte.tipo != "movie" {
 		t.Errorf("BuscarArtes recebeu ids=%+v tipo=%q, quero Tmdb=603 tipo=movie", arte.recebeu, arte.tipo)
 	}
@@ -97,7 +97,7 @@ func TestImportarFilmePersisteInventarioSemBaixar(t *testing.T) {
 	inv := lerInventario(t, r, id)
 	assertInventarioFilme(t, inv)
 
-	// LAZY: nenhum asset de logo/disc baixado (so o poster do TMDB vira asset).
+	// LAZY: no logo/disc asset downloaded (only the TMDB poster becomes an asset).
 	assets, err := r.ListarAssetsPorEntity(ctx, id)
 	if err != nil {
 		t.Fatalf("ListarAssetsPorEntity: %v", err)
@@ -105,7 +105,7 @@ func TestImportarFilmePersisteInventarioSemBaixar(t *testing.T) {
 	assertNenhumAssetDeArteLazy(t, assets)
 }
 
-// assertInventarioFilme confere o envelope de inventario (poster/logo/disc) do filme.
+// assertInventarioFilme checks the inventory envelope (poster/logo/disc) of the movie.
 func assertInventarioFilme(t *testing.T, inv map[string][]provider.ArteInventario) {
 	t.Helper()
 	if len(inv["poster"]) != 1 || inv["poster"][0].Lang != "en" || inv["poster"][0].Likes != 10 {
@@ -119,8 +119,8 @@ func assertInventarioFilme(t *testing.T, inv map[string][]provider.ArteInventari
 	}
 }
 
-// assertNenhumAssetDeArteLazy prova que nenhuma arte lazy (logo/disc/clearart) virou
-// asset materializado — só o poster do fluxo primario (TMDB) baixa.
+// assertNenhumAssetDeArteLazy proves that no lazy artwork (logo/disc/clearart) became a
+// materialized asset — only the poster of the primary flow (TMDB) is downloaded.
 func assertNenhumAssetDeArteLazy(t *testing.T, assets []sqlcgen.Asset) {
 	t.Helper()
 	for _, a := range assets {
@@ -130,19 +130,19 @@ func assertNenhumAssetDeArteLazy(t *testing.T, assets []sqlcgen.Asset) {
 	}
 }
 
-// TestImportarSerieRoteiaArtesDeTemporada: importar uma serie com um ArteProvider que
-// devolve artes de temporada roteia cada arte a entity ALVO: Season vazio/"all" -> serie;
-// Season "1" -> temporada 1; Season inexistente -> descartada.
+// TestImportarSerieRoteiaArtesDeTemporada: importing a series with an ArteProvider that
+// returns season artworks routes each artwork to the TARGET entity: Season empty/"all" -> series;
+// Season "1" -> season 1; Season that does not exist -> discarded.
 func TestImportarSerieRoteiaArtesDeTemporada(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
 	img := servidorImagem(t, "image/png", []byte("PNG"))
 
 	arte := &fakeArteProvider{artes: []provider.Arte{
-		{Kind: "poster", URL: "https://assets.fanart.tv/tv.jpg", Lang: "en"},     // serie
-		{Kind: "poster", URL: "https://assets.fanart.tv/all.jpg", Season: "all"}, // serie
-		{Kind: "poster", URL: "https://assets.fanart.tv/s1.jpg", Season: "1"},    // temporada 1
-		{Kind: "poster", URL: "https://assets.fanart.tv/s99.jpg", Season: "99"},  // inexistente -> drop
+		{Kind: "poster", URL: "https://assets.fanart.tv/tv.jpg", Lang: "en"},     // series
+		{Kind: "poster", URL: "https://assets.fanart.tv/all.jpg", Season: "all"}, // series
+		{Kind: "poster", URL: "https://assets.fanart.tv/s1.jpg", Season: "1"},    // season 1
+		{Kind: "poster", URL: "https://assets.fanart.tv/s99.jpg", Season: "99"},  // missing -> drop
 	}}
 	svc := New(database, provider.NovaRegistry(fake.New(img.URL), arte), t.TempDir())
 
@@ -155,13 +155,13 @@ func TestImportarSerieRoteiaArtesDeTemporada(t *testing.T) {
 	}
 
 	r := sqlcgen.New(database.Read)
-	// serie: tv.jpg + all.jpg = 2 posters.
+	// series: tv.jpg + all.jpg = 2 posters.
 	invSerie := lerInventario(t, r, serieID)
 	if len(invSerie["poster"]) != 2 {
 		t.Errorf("poster da serie = %d, quero 2 (tv + all)", len(invSerie["poster"]))
 	}
 
-	// temporada 1: s1.jpg = 1 poster.
+	// season 1: s1.jpg = 1 poster.
 	temp1 := temporadaComSortIndex(t, r, serieID, 1)
 	invTemp := lerInventario(t, r, temp1)
 	if len(invTemp["poster"]) != 1 || invTemp["poster"][0].Season != "1" {
@@ -169,12 +169,12 @@ func TestImportarSerieRoteiaArtesDeTemporada(t *testing.T) {
 	}
 }
 
-// TestEnriquecerFilmeForaDoImportPersisteInventarioArtes (0087, causa 1): um filme
-// enriquecido via Enriquecer (nao Importar -- o caminho de auto-match/retroativo/
-// Corrigir/Confirmar candidato/POST /entities/{id}/enrich) passa a ter o inventario
-// fanart.tv gravado, igual ao import manual. Repetir a chamada nao duplica a linha
-// (UPSERT por entity_id+source; ObterMediaExternalPorFonte e :one -- erraria se
-// duplicasse).
+// TestEnriquecerFilmeForaDoImportPersisteInventarioArtes (cause 1): a movie
+// enriched through Enriquecer (not Importar -- the auto-match/retroactive/
+// Corrigir/Confirmar candidato/POST /entities/{id}/enrich path) now has the fanart.tv
+// inventory written, just like the manual import. Repeating the call does not duplicate the
+// row (UPSERT by entity_id+source; ObterMediaExternalPorFonte is :one -- it would fail if it
+// duplicated).
 func TestEnriquecerFilmeForaDoImportPersisteInventarioArtes(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -201,7 +201,7 @@ func TestEnriquecerFilmeForaDoImportPersisteInventarioArtes(t *testing.T) {
 	}
 
 	r := sqlcgen.New(database.Read)
-	inv := lerInventario(t, r, "e1") // :one -- so passa se nao duplicou
+	inv := lerInventario(t, r, "e1") // :one -- it only passes when it did not duplicate
 	if len(inv["poster"]) != 1 {
 		t.Errorf("poster inventario = %d, quero 1", len(inv["poster"]))
 	}
@@ -210,13 +210,13 @@ func TestEnriquecerFilmeForaDoImportPersisteInventarioArtes(t *testing.T) {
 	}
 }
 
-// TestImportarFilmeNaoDuplicaChamadaDeArtes (0087): o fix da causa 1 reusa o parametro
-// sincronizarArvore para NAO disparar enriquecerArtes de dentro de enriquecerBase quando a
-// chamada vem de importarItemBase (sincronizarArvore=false) -- quem dispara e' o proprio
-// importarItem, explicitamente, uma unica vez por chamada de Importar (seja criando, seja
-// reusando um item existente). Sem essa guarda, o import de um filme JA EXISTENTE
-// chamaria BuscarArtes DUAS vezes (uma da enriquecerBase reusada, outra do gatilho de
-// importarItem).
+// TestImportarFilmeNaoDuplicaChamadaDeArtes: the fix reuses the sincronizarArvore parameter
+// so as NOT to fire enriquecerArtes from inside enriquecerBase when the
+// call comes from importarItemBase (sincronizarArvore=false) -- the one that fires is
+// importarItem itself, explicitly, a single time per Importar call (either creating or
+// reusing an existing item). Without that guard, importing an ALREADY EXISTING movie
+// would call BuscarArtes TWICE (one from the reused enriquecerBase, one from the
+// importarItem trigger).
 func TestImportarFilmeNaoDuplicaChamadaDeArtes(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -231,7 +231,7 @@ func TestImportarFilmeNaoDuplicaChamadaDeArtes(t *testing.T) {
 	}}
 	svc := New(database, provider.NovaRegistry(tmdb, arte), t.TempDir())
 
-	// #1: cria o filme -- BuscarArtes deve ser chamado exatamente 1 vez (nao 0, nao 2).
+	// #1: create the movie -- BuscarArtes must be called exactly 1 time (not 0, not 2).
 	id1, criada1, err := svc.Importar(ctx, "tmdb", "603", "movie", []string{"en"})
 	if err != nil || !criada1 {
 		t.Fatalf("Importar #1: id=%s criada=%v err=%v", id1, criada1, err)
@@ -240,9 +240,9 @@ func TestImportarFilmeNaoDuplicaChamadaDeArtes(t *testing.T) {
 		t.Errorf("chamadas apos import #1 = %d, quero 1", arte.chamadas)
 	}
 
-	// #2: reusa o MESMO filme (dedup por external_id_tmdb) -- passa pelo branch de
-	// reuse de importarItemBase (enriquecerBase com sincronizarArvore=false). Ainda assim
-	// deve somar so +1 chamada (feita pelo gatilho explicito de importarItem), nao +2.
+	// #2: reuse the SAME movie (dedup by external_id_tmdb) -- it goes through the
+	// reuse branch of importarItemBase (enriquecerBase with sincronizarArvore=false). Even so
+	// it must add only +1 call (made by the explicit trigger of importarItem), not +2.
 	id2, criada2, err := svc.Importar(ctx, "tmdb", "603", "movie", []string{"en"})
 	if err != nil || criada2 || id2 != id1 {
 		t.Fatalf("Importar #2: id=%s criada=%v err=%v, quero reuso de %s", id2, criada2, err, id1)
@@ -252,16 +252,16 @@ func TestImportarFilmeNaoDuplicaChamadaDeArtes(t *testing.T) {
 	}
 }
 
-// TestEnriquecerArtistaForaDoImportPersisteInventarioArtesEChaveMbid (briefing 0119):
-// espelha TestEnriquecerFilmeForaDoImportPersisteInventarioArtes para a vertical de
-// musica -- um artista LEGADO (sem external_ids, criado antes do MusicBrainz existir)
-// que ganha a identidade via Enriquecer (o caminho generico de auto-match/retroativo/
-// "Corrigir"/"Confirmar candidato", nunca importarArtista/ImportarFaixaPossuida) passa
-// a ter o inventario fanart.tv gravado, igual ao import de arvore. Tambem prova que a
-// identidade fica sob a chave "mbid" (musicext.ChaveExternalIDMbid) -- nao sob o nome
-// literal da fonte "musicbrainz" -- que e a chave que idsExternosDe/ObterEntityPorMbid
-// realmente leem. Repetir a chamada nao duplica o inventario (mesma prova de
-// TestEnriquecerFilmeForaDoImportPersisteInventarioArtes, ObterMediaExternalPorFonte e
+// TestEnriquecerArtistaForaDoImportPersisteInventarioArtesEChaveMbid:
+// it mirrors TestEnriquecerFilmeForaDoImportPersisteInventarioArtes for the music
+// vertical -- a LEGACY artist (without external_ids, created before MusicBrainz existed)
+// that gains the identity through Enriquecer (the generic path of auto-match/retroactive/
+// "Corrigir"/"Confirmar candidato", never importarArtista/ImportarFaixaPossuida) now
+// has the fanart.tv inventory written, just like the tree import. It also proves that the
+// identity stays under the "mbid" key (musicext.ChaveExternalIDMbid) -- not under the
+// literal source name "musicbrainz" -- which is the key that idsExternosDe/ObterEntityPorMbid
+// really read. Repeating the call does not duplicate the inventory (same proof as
+// TestEnriquecerFilmeForaDoImportPersisteInventarioArtes, ObterMediaExternalPorFonte is
 // :one).
 func TestEnriquecerArtistaForaDoImportPersisteInventarioArtesEChaveMbid(t *testing.T) {
 	database := setupDB(t)
@@ -288,7 +288,7 @@ func TestEnriquecerArtistaForaDoImportPersisteInventarioArtesEChaveMbid(t *testi
 	}
 
 	r := sqlcgen.New(database.Read)
-	inv := lerInventario(t, r, "a1") // :one -- so passa se nao duplicou
+	inv := lerInventario(t, r, "a1") // :one -- it only passes when it did not duplicate
 	if len(inv["artistthumb"]) != 1 {
 		t.Errorf("artistthumb inventario = %d, quero 1", len(inv["artistthumb"]))
 	}
@@ -309,7 +309,7 @@ func TestEnriquecerArtistaForaDoImportPersisteInventarioArtesEChaveMbid(t *testi
 	}
 }
 
-// temporadaComSortIndex acha o id da entity temporada de sort_index dado sob a serie.
+// temporadaComSortIndex finds the id of the season entity with the given sort_index under the series.
 func temporadaComSortIndex(t *testing.T, r *sqlcgen.Queries, serieID string, idx int) string {
 	t.Helper()
 	rels, err := r.ListarRelacoesFilhas(context.Background(), serieID)

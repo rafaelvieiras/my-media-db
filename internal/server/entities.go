@@ -24,22 +24,22 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/tvext"
 )
 
-// Este arquivo implementa a superfície de LEITURA de /api/v1/entities (briefing
-// 0010): lista paginada com posse derivada, detalhe resolvido, arquivos com
-// mediainfo e o serviço do binário do pôster. TODAS as consultas passam pelo
-// pool de LEITURA (ADR-0010) — nada aqui escreve. As respostas de /{id} já têm o
-// shape final do resolver; a Fase 3 só preenche mais camadas.
+// This file implements the READ surface of /api/v1/entities (ADR-0010):
+// paginated list with derived ownership, resolved detail, files with
+// mediainfo and the service that serves the poster binary. ALL queries go
+// through the READ pool — nothing here writes. The /{id} responses already
+// carry the final resolver shape; later phases only fill in more layers.
 
-// Limites de paginação: um default generoso para a UI e um teto para não deixar
-// um cliente pedir a biblioteca inteira de uma vez.
+// Pagination limits: a generous default for the UI and a ceiling so a client
+// cannot ask for the whole library at once.
 const (
 	limitPadrao = 50
 	limitMaximo = 200
 )
 
-// entityCardDTO é um item da lista (GET /api/v1/entities): os campos de card mais
-// a posse derivada, a contagem de arquivos, a confiança de match (badge de
-// revisão) e o link do pôster (só quando há arte local).
+// entityCardDTO is one item of the list (GET /api/v1/entities): the card
+// fields plus derived ownership, the file count, the match confidence (review
+// badge) and the poster link (only when there is local artwork).
 type entityCardDTO struct {
 	ID              string   `json:"id"`
 	Type            string   `json:"type"`
@@ -49,52 +49,56 @@ type entityCardDTO struct {
 	FileCount       int64    `json:"file_count"`
 	MatchConfidence *float64 `json:"match_confidence"`
 	PosterURL       *string  `json:"poster_url"`
-	// Ownership é a POSSE AGREGADA do card quando o tipo tem agregação na árvore de
-	// séries (0036): `season` (episódios diretos) e opcionalmente `tv` (soma across
-	// temporadas). Anotada no server pós-listagem em getEntityMembers — NÃO vem da
-	// query SQL do card (mesma fronteira do 0034/Ancestors). `omitempty`: ausente
-	// (null na UI) para movie/episode/collection, que usam a posse simples de `owned`.
+	// Ownership is the AGGREGATED ownership of the card when the type has
+	// aggregation in the series tree: `season` (direct episodes) and optionally
+	// `tv` (sum across seasons). Annotated on the server after listing in
+	// getEntityMembers — it does NOT come from the card's SQL query (same
+	// boundary as Ancestors). `omitempty`: absent (null in the UI) for
+	// movie/episode/collection, which use the simple ownership of `owned`.
 	Ownership *resolver.OwnershipInfo `json:"ownership,omitempty"`
-	// Numbering é a numeração REAL do episódio (0039): `season`/`number` projetados na
-	// ordenação da temporada-pai (lidos do extension_data core.tv@1 do episódio) e o
-	// `absolute_number` quando houver. Anotado no server em montarMembros — como
-	// Ownership/Ancestors, fora da query do card. `omitempty`: ausente para todo tipo
-	// que não seja `episode` e para episódio sem numbering (draft) — a UI cai no rótulo
-	// neutro, sem inventar posição. Substitui a antiga posição ordinal do card.
+	// Numbering is the REAL numbering of the episode: `season`/`number`
+	// projected onto the ordering of the parent season (read from the episode's
+	// extension_data core.tv@1) plus the `absolute_number` when present.
+	// Annotated on the server in montarMembros — like Ownership/Ancestors,
+	// outside the card query. `omitempty`: absent for every type that is not
+	// `episode` and for an episode without numbering (draft) — the UI falls back
+	// to the neutral label, never inventing a position. Replaces the old ordinal
+	// position of the card.
 	Numbering *episodeNumberingDTO `json:"numbering,omitempty"`
-	// ReviewGroup é o GRUPO da fila de revisão (briefing 0137): kind+chave+rótulo
-	// derivados do `media_file.path` da entity. Anotado no server SÓ em
-	// GET /api/v1/review (como Ownership/Numbering, fora da query do card).
-	// `omitempty`: ausente em qualquer outra listagem de cards.
+	// ReviewGroup is the GROUP of the review queue: kind+key+label derived from
+	// the entity's `media_file.path`. Annotated on the server ONLY in
+	// GET /api/v1/review (like Ownership/Numbering, outside the card query).
+	// `omitempty`: absent in every other card listing.
 	ReviewGroup *reviewGroupDTO `json:"review_group,omitempty"`
-	// StillURL é a URL CRUA do still (frame 16:9) do episódio (0042), lida do
-	// extension_data core.tv@1 (still_url) — artwork NEUTRO de idioma, gravado no import
-	// sem baixar a imagem. O front a serve pelo image proxy (busca+cacheia sob demanda).
-	// Anotada no server junto do Numbering (mesma leitura do extension_data, sem
-	// multiplicar consultas). `omitempty`: ausente para não-`episode` e para episódio sem
-	// still — a UI cai no placeholder.
+	// StillURL is the RAW URL of the episode still (16:9 frame), read from
+	// extension_data core.tv@1 (still_url) — language-NEUTRAL artwork, written at
+	// import without downloading the image. The front end serves it through the
+	// image proxy (fetch+cache on demand). Annotated on the server together with
+	// Numbering (same extension_data read, no extra queries). `omitempty`: absent
+	// for non-`episode` and for an episode without a still — the UI falls back to
+	// the placeholder.
 	StillURL *string `json:"still_url,omitempty"`
-	// CatalogCompleteness é a completude de CATALOGAÇÃO do card (briefing
-	// 0058) contra a régua de /settings (0057), lida do CACHE persistido
-	// entity_catalog_completeness (LEFT JOIN nas queries de card) --
-	// recalculado em lote pelo job saude_biblioteca (0053), NÃO ao vivo (ver
-	// a nota longa de completeness.go/completeness_recalc.go sobre por quê).
-	// `null` quando o item ainda não foi avaliado (item novo ou draft, sem
-	// linha no cache).
+	// CatalogCompleteness is the card's CATALOG completeness against the
+	// /settings ruler, read from the persisted cache entity_catalog_completeness
+	// (LEFT JOIN in the card queries) -- recalculated in batch by the
+	// saude_biblioteca job, NOT live (see the long note in
+	// completeness.go/completeness_recalc.go about why). `null` when the item has
+	// not been evaluated yet (new item or draft, with no row in the cache).
 	CatalogCompleteness *resultadoCompletude `json:"catalog_completeness"`
 }
 
-// episodeNumberingDTO é a numeração real de um episódio no card (0039): `season` e
-// `number` na ordenação da temporada-pai; `absolute_number` (opcional) quando a fonte
-// informou o número absoluto (útil para anime/ordenação contínua). Distinto da POSIÇÃO
-// na lista — reflete o número catalogado, mesmo com buracos na biblioteca.
+// episodeNumberingDTO is the real numbering of an episode in the card:
+// `season` and `number` in the parent season's ordering; `absolute_number`
+// (optional) when the source reported the absolute number (useful for
+// anime/continuous ordering). Distinct from the POSITION in the list — it
+// reflects the cataloged number, even with gaps in the library.
 type episodeNumberingDTO struct {
 	Season         int  `json:"season"`
 	Number         int  `json:"number"`
 	AbsoluteNumber *int `json:"absolute_number,omitempty"`
 }
 
-// entityListDTO é a resposta paginada de GET /api/v1/entities.
+// entityListDTO is the paginated response of GET /api/v1/entities.
 type entityListDTO struct {
 	Items  []entityCardDTO `json:"items"`
 	Total  int64           `json:"total"`
@@ -102,8 +106,9 @@ type entityListDTO struct {
 	Offset int             `json:"offset"`
 }
 
-// mediaFileDTO é um arquivo em GET /api/v1/entities/{id}/files. Mediainfo é o
-// JSON já extraído pelo scanner (ffprobe) repassado cru — `null` quando ausente.
+// mediaFileDTO is one file in GET /api/v1/entities/{id}/files. Mediainfo is
+// the JSON already extracted by the scanner (ffprobe), passed through raw —
+// `null` when absent.
 type mediaFileDTO struct {
 	ID        string          `json:"id"`
 	Path      string          `json:"path"`
@@ -114,13 +119,13 @@ type mediaFileDTO struct {
 	Mediainfo json.RawMessage `json:"mediainfo"`
 }
 
-// filesListDTO é a resposta de GET /api/v1/entities/{id}/files.
+// filesListDTO is the response of GET /api/v1/entities/{id}/files.
 type filesListDTO struct {
 	Items []mediaFileDTO `json:"items"`
 }
 
-// entitiesUnavailable responde 503 quando não há banco injetado (cenários de
-// teste de rota). Espelha libraryUnavailable — protege contra nil deref.
+// entitiesUnavailable responds 503 when no database is injected (route test
+// scenarios). Mirrors libraryUnavailable — protects against a nil deref.
 func (s *Server) entitiesUnavailable(w http.ResponseWriter) bool {
 	if s.db == nil {
 		writeError(w, http.StatusServiceUnavailable, "db_unavailable",
@@ -130,31 +135,35 @@ func (s *Server) entitiesUnavailable(w http.ResponseWriter) bool {
 	return false
 }
 
-// leitura devolve os Queries ligados ao POOL DE LEITURA (ADR-0010). Todas as
-// rotas deste arquivo usam só esta conexão — nenhuma escrita.
+// leitura returns the Queries bound to the READ POOL (ADR-0010). Every route
+// in this file uses only this connection — no writes.
 func (s *Server) leitura() *sqlcgen.Queries { return sqlcgen.New(s.db.Read) }
 
-// posterPath monta a referência (relativa) do endpoint que serve o pôster local
-// de uma entity. Fonte única do template — usada na lista e no detalhe.
+// posterPath builds the (relative) reference of the endpoint that serves the
+// entity's local poster. Single source of the template — used by the list and
+// the detail.
 func posterPath(id string) string {
 	return "/api/v1/entities/" + id + "/assets/poster"
 }
 
-// fanartPath monta a referência do endpoint que serve o FUNDO (fanart/backdrop)
-// local de uma entity — o análogo do pôster para o hero do detalhe rico.
+// fanartPath builds the reference of the endpoint that serves the entity's
+// local BACKGROUND (fanart/backdrop) — the poster's analogue for the rich
+// detail hero.
 func fanartPath(id string) string {
 	return "/api/v1/entities/" + id + "/assets/fanart"
 }
 
-// stillPath monta a referência do endpoint que serve o STILL (frame 16:9) custom
-// do EPISÓDIO (0044) — o análogo do pôster/fanart para o still `user` do dono.
+// stillPath builds the reference of the endpoint that serves the custom STILL
+// (16:9 frame) of the EPISODE — the poster/fanart analogue for the owner's
+// `user` still.
 func stillPath(id string) string {
 	return "/api/v1/entities/" + id + "/assets/still"
 }
 
-// artesLocais devolve as rotas locais do pôster e do FUNDO quando há asset servível
-// daquele kind (precedência preferida→user→external, 0017); nil quando não há. Fonte
-// única para o resolver saber que a entity tem arte local a servir.
+// artesLocais returns the local routes of the poster and the BACKGROUND when
+// there is a servable asset of that kind (precedence preferred→user→external);
+// nil when there is none. Single source so the resolver knows the entity has
+// local artwork to serve.
 func artesLocais(assets []sqlcgen.Asset, id string) (poster, backdrop *string) {
 	if _, ok := escolherAssetServido(assets, kindPoster); ok {
 		u := posterPath(id)
@@ -167,9 +176,9 @@ func artesLocais(assets []sqlcgen.Asset, id string) (poster, backdrop *string) {
 	return poster, backdrop
 }
 
-// listEntities trata GET /api/v1/entities: lista paginada com filtros opcionais
-// (type, owned), ordenação por título (sort=title|-title) e a posse/contagem/
-// confiança derivadas numa ÚNICA query (sem N+1).
+// listEntities handles GET /api/v1/entities: paginated list with optional
+// filters (type, owned), ordering by title (sort=title|-title) and the derived
+// ownership/count/confidence in a SINGLE query (no N+1).
 func (s *Server) listEntities(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -191,9 +200,10 @@ func (s *Server) listEntities(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	// Valida o ?lang= contra os permitidos (400 quando fora). Os cards da lista
-	// servem o título NEUTRO (arquivo) — a resolução por idioma é do detalhe
-	// (/entities/{id}); aqui o lang só é validado para um contrato coerente.
+	// Validates the ?lang= against the allowed ones (400 when outside). The list
+	// cards serve the NEUTRAL (file) title — per-language resolution belongs to
+	// the detail (/entities/{id}); here lang is only validated for a coherent
+	// contract.
 	cfg, err := s.obterLanguageSettings(ctx)
 	if err != nil {
 		respondErroInterno(w)
@@ -220,19 +230,20 @@ func (s *Server) listEntities(w http.ResponseWriter, r *http.Request) {
 	items := make([]entityCardDTO, 0, len(rows))
 	for _, row := range rows {
 		card := cardDTO(row)
-		// Posse RASA por tipo (0036/0037): season→episódios, tv→temporadas. Anotada
-		// pós-listagem (a query SQL do card não muda); degrada para null em falha.
+		// SHALLOW ownership by type: season→episodes, tv→seasons. Annotated after
+		// listing (the card's SQL query does not change); degrades to null on
+		// failure.
 		s.anotarPosseCard(ctx, &card)
 		items = append(items, card)
 	}
 	writeJSON(w, http.StatusOK, entityListDTO{Items: items, Total: total, Limit: limit, Offset: offset})
 }
 
-// listarCards escolhe a query pelo modo de ordenação (o sqlc não liga
-// parâmetro dentro de ORDER BY, então há uma query por modo — título asc,
-// título desc, ou created_at desc desde 0109/0110) e normaliza o resultado
-// para o mesmo tipo de linha (as três queries têm exatamente as mesmas
-// colunas, na mesma ordem — conversão direta de struct).
+// listarCards chooses the query by sorting mode (sqlc cannot bind a parameter
+// inside ORDER BY, so there is one query per mode — title asc, title desc, or
+// created_at desc) and normalizes the result to the same row type (the three
+// queries have exactly the same columns, in the same order — a direct struct
+// conversion).
 func (s *Server) listarCards(ctx context.Context, tipo, owned any, limit, offset int64, modo sortModo) ([]sqlcgen.ListarEntityCardsRow, error) {
 	switch modo {
 	case sortTituloDesc:
@@ -266,8 +277,8 @@ func (s *Server) listarCards(ctx context.Context, tipo, owned any, limit, offset
 	}
 }
 
-// cardDTO converte uma linha da query de cards no DTO da API, montando o
-// poster_url só quando há arte local.
+// cardDTO converts a card query row into the API DTO, building the poster_url
+// only when there is local artwork.
 func cardDTO(row sqlcgen.ListarEntityCardsRow) entityCardDTO {
 	dto := entityCardDTO{
 		ID:                  row.ID,
@@ -286,39 +297,39 @@ func cardDTO(row sqlcgen.ListarEntityCardsRow) entityCardDTO {
 	return dto
 }
 
-// entityTypeDTO é um item de GET /api/v1/entities/types: um `type` de entity
-// com pelo menos 1 item catalogado (briefings 0109/0110) e a contagem
-// correspondente.
+// entityTypeDTO is one item of GET /api/v1/entities/types: an entity `type`
+// with at least 1 cataloged item and the corresponding count.
 type entityTypeDTO struct {
 	Type  string `json:"type"`
 	Count int64  `json:"count"`
 }
 
-// tiposSubNo é o registro ÚNICO (ADR-0030, briefing 0112) dos `type` de
-// entity que são SUB-NÓ: só navegáveis via drill-down do pai (temporada/
-// episódio da série, faixa do álbum, álbum do artista) — NUNCA de topo
-// (home/navbar/`/library`/busca-padrão). É uma lista de EXCLUSÃO, não de
-// inclusão: um schema novo (`entity.type` inédito) nasce "de topo" por
-// padrão sem precisar de entrada aqui — só sub-nós explícitos entram nesta
-// lista. Se o catálogo crescer a ponto de sub-nó virar o caso mais comum,
-// inverter para lista de inclusão é uma mudança localizada aqui.
+// tiposSubNo is the SINGLE registry (ADR-0030) of the entity `type` values
+// that are SUB-NODES: reachable only through the parent's drill-down
+// (season/episode of the series, track of the album, album of the artist) —
+// NEVER top-level (home/navbar/`/library`/default search). It is an EXCLUSION
+// list, not an inclusion one: a new schema (an unprecedented `entity.type`) is
+// born "top-level" by default without needing an entry here — only explicit
+// sub-nodes go into this list. If the catalog grows to the point where
+// sub-nodes become the most common case, flipping to an inclusion list is a
+// localized change right here.
 //
-// Fonte única consumida por dois pontos que antes reimplementavam a mesma
-// exclusão separadamente e divergiam (nenhum cobria album/faixa,
-// achado em produção): ListarTiposComContagem (GET /entities/types, abaixo)
-// e buscarCardsFTSSQL (GET /search, search.go).
+// Single source consumed by two places that used to reimplement the same
+// exclusion separately and drifted apart (neither covered album/faixa, found in
+// production): ListarTiposComContagem (GET /entities/types, below) and
+// buscarCardsFTSSQL (GET /search, search.go).
 var tiposSubNo = []string{tipoEntTemporada, tipoEntEpisodio, tipoEntAlbum, tipoEntFaixa}
 
-// listEntityTypes trata GET /api/v1/entities/types: os `type` distintos com
-// pelo menos 1 entity CATALOGADA (status != 'draft' — ver o comentário longo
-// de ListarTiposComContagem em entity.sql sobre por que este critério, e não
-// "owned"/posse física de arquivo, foi escolhido). Alimenta a home
-// (carrosséis "adicionados recentemente" por schema, 0109) e o dropdown da
-// navbar (0110) sem hardcodar uma lista fixa de tipos no frontend — exclui os
-// sub-nós de tiposSubNo (season/episode/album/faixa) junto de movie/tv sem
-// exigir mudança aqui a cada vertical nova. Rota ESTÁTICA registrada em
-// server.go antes de /entities/{id} (radix tree do chi resolve isso mesmo sem
-// a ordem, mas a posição deixa a intenção explícita — mesmo padrão de
+// listEntityTypes handles GET /api/v1/entities/types: the distinct `type`
+// values with at least 1 CATALOGED entity (status != 'draft' — see the long
+// comment of ListarTiposComContagem in entity.sql about why this criterion, and
+// not "owned"/physical file ownership, was chosen). It feeds the home
+// (carousels of "recently added" per schema) and the navbar dropdown without
+// hardcoding a fixed list of types in the frontend — it excludes the sub-nodes
+// of tiposSubNo (season/episode/album/faixa) together with movie/tv, without
+// requiring a change here for every new vertical. STATIC route registered in
+// server.go before /entities/{id} (chi's radix tree resolves this even without
+// the order, but the position makes the intent explicit — same pattern as
 // /library/browse).
 func (s *Server) listEntityTypes(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
@@ -336,55 +347,58 @@ func (s *Server) listEntityTypes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// kindColecao é o `kind` da entity_relation que liga uma coleção aos seus filmes
-// (briefing 0025). Espelha o relacaoColecao do serviço enrich (fontes distintas, mesmo
-// valor — a ligação nasce lá e é lida aqui).
+// kindColecao is the `kind` of the entity_relation that links a collection to
+// its movies. Mirrors relacaoColecao of the enrich service (distinct sources,
+// same value — the link is born there and read here).
 const kindColecao = "collection"
 
-// Tipos de entity-pai e os kinds de relação dos seus filhos na árvore de séries
-// (briefing 0031 / ADR-0021). A leitura de membros escolhe o kind e a ORDENAÇÃO pelo
-// tipo do pai: coleção ordena por ANO; série/temporada seguem o sort_index (número da
-// temporada/episódio), a ordem que ListarRelacoesFilhas já devolve.
+// Entity-parent types and the relation kinds of their children in the series
+// tree (ADR-0021). The member read picks the kind and the ORDERING from the
+// parent type: a collection orders by YEAR; series/season follow the sort_index
+// (season/episode number), the order ListarRelacoesFilhas already returns.
 const (
 	tipoEntSerie     = "tv"
 	tipoEntTemporada = "season"
 	kindTemporada    = "tv_season"
 	kindEpisodio     = "tv_episode"
-	// tipoEntAlbum/tipoEntArtista: vertical de música (ADR-0027, briefings
-	// 0105-0107/0111). álbum → faixa via musicext.KindAlbum (sort_index =
-	// track_number); artista → álbum/faixa via musicext.KindArtistaPrincipal
-	// (billing principal — inclui faixas em colaboração divergente, filtradas
-	// no front pro grid de discografia mostrar só álbuns, ver
-	// discografia-artista.tsx).
+	// tipoEntAlbum/tipoEntArtista: music vertical (ADR-0027). album → track via
+	// musicext.KindAlbum (sort_index = track_number); artist → album/track via
+	// musicext.KindArtistaPrincipal (main billing — it includes tracks with a
+	// diverging credit, filtered in the front end so the discography grid shows
+	// only albums, see discografia-artista.tsx).
 	tipoEntAlbum   = "album"
 	tipoEntArtista = "artista"
-	// tipoEntFaixa é o `type` da faixa (vertical de música, ADR-0027/0111):
-	// sub-nó do álbum, só acessível via drill-down (nunca de topo — ver
-	// tiposSubNo).
+	// tipoEntFaixa is the `type` of the track (music vertical, ADR-0027):
+	// sub-node of the album, reachable only through drill-down (never top-level —
+	// see tiposSubNo).
 	tipoEntFaixa = "faixa"
-	// nsTVCore é o namespace do extension_data da vertical de séries (core.tv@1): a
-	// temporada guarda `ordering`/`season_number`, o episódio guarda `numbering`
-	// (ordem→{season,number}) + `absolute_number`. Lido aqui para o numbering do card
-	// (0039); a ESCRITA nasce no enrich (mesmo valor, fontes distintas).
+	// nsTVCore is the extension_data namespace of the series vertical
+	// (core.tv@1): the season stores `ordering`/`season_number`, the episode
+	// stores `numbering` (order→{season,number}) + `absolute_number`. Read here
+	// for the card numbering; the WRITE is born in enrich (same value, distinct
+	// sources).
 	nsTVCore = "core.tv@1"
-	// orderingAbsoluto é a ordem VIRTUAL do seletor (0040) que numera os episódios
-	// pelo `absolute_number` (contínuo através das temporadas, anime), num grupo único
-	// — não é uma chave de `numbering`, é derivada da presença de absolute_number.
+	// orderingAbsoluto is the VIRTUAL order of the selector that numbers
+	// episodes by `absolute_number` (continuous across seasons, anime), in a
+	// single group — it is not a `numbering` key, it is derived from the presence
+	// of absolute_number.
 	orderingAbsoluto = "absolute"
 )
 
-// membroCard carrega o card já montado + o release_date do membro, só para ordenar por
-// ano sem vazar o campo no DTO (o card de membro tem o MESMO shape do card da lista).
+// membroCard carries the already-built card + the member's release_date, only
+// to sort by year without leaking the field into the DTO (the member card has
+// the SAME shape as the list card).
 type membroCard struct {
 	dto entityCardDTO
 	ano sql.NullString
 }
 
-// getEntityMembers trata GET /api/v1/entities/{id}/members: os MEMBROS de uma coleção
-// (briefing 0025) como cards (o MESMO shape de GET /entities), ordenados por ANO
-// ascendente (sem ano ao fim). `[]` quando a entity não é coleção ou não tem membros;
-// 404 quando a entity não existe. O `?lang=` é aceito para paridade, mas o card usa o
-// título BASE (como a lista) — a localização por idioma do card é follow-up.
+// getEntityMembers handles GET /api/v1/entities/{id}/members: the MEMBERS of a
+// collection as cards (the SAME shape as GET /entities), ordered by YEAR
+// ascending (items without a year last). `[]` when the entity is not a
+// collection or has no members; 404 when the entity does not exist. `?lang=` is
+// accepted for parity, but the card uses the BASE title (like the list) —
+// per-language localization of the card is a follow-up.
 func (s *Server) getEntityMembers(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -410,21 +424,22 @@ func (s *Server) getEntityMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// montarMembros carrega os FILHOS de uma entity-pai como cards (o MESMO shape de GET
-// /entities). O kind da relação e a ORDENAÇÃO dependem do tipo do pai (kindEOrdemMembros):
-// coleção → membros por ANO; série → temporadas na ordem de sort_index; temporada →
-// episódios numerados na ordem de sort_index (a ordem que ListarRelacoesFilhas já
-// devolve). `[]` quando a entity não tem filhos dessa relação. É o caminho único reusado
-// pela leitura (getEntityMembers) e pelas mutações da Fase B (add/removeMember). Pula um
-// filho purgado no meio (NoRows).
+// montarMembros loads the CHILDREN of an entity-parent as cards (the SAME
+// shape as GET /entities). The relation kind and the ORDERING depend on the
+// parent type (kindEOrdemMembros): collection → members by YEAR; series →
+// seasons in sort_index order; season → episodes numbered in sort_index order
+// (the order ListarRelacoesFilhas already returns). `[]` when the entity has no
+// children for that relation. It is the single path reused by the read
+// (getEntityMembers) and by the Phase B mutations (add/removeMember). It skips
+// a child purged in the middle (NoRows).
 func (s *Server) montarMembros(ctx context.Context, id, tipoPai string) ([]entityCardDTO, error) {
 	rels, err := s.leitura().ListarRelacoesFilhas(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	kind, ordenarPorAno := kindEOrdemMembros(tipoPai)
-	// Quando o pai é uma temporada, os episódios ganham o numbering REAL (0039) projetado
-	// na ordenação da PRÓPRIA temporada — lida uma única vez do extension_data dela.
+	// When the parent is a season, episodes get the REAL numbering projected
+	// onto the ordering of the season ITSELF — read once from its extension_data.
 	ordem, seasonNumber := s.ordenacaoDaTemporada(ctx, id, tipoPai)
 	membros := make([]membroCard, 0, len(rels))
 	for _, rel := range rels {
@@ -434,7 +449,7 @@ func (s *Server) montarMembros(ctx context.Context, id, tipoPai string) ([]entit
 		row, err := s.leitura().ObterEntityCard(ctx, rel.ChildID)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				continue // filho purgado no meio: ignora
+				continue // child purged in the middle: skip it
 			}
 			return nil, err
 		}
@@ -443,8 +458,8 @@ func (s *Server) montarMembros(ctx context.Context, id, tipoPai string) ([]entit
 		s.anotarNumbering(ctx, &card, ordem, seasonNumber)
 		membros = append(membros, membroCard{dto: card, ano: row.ReleaseDate})
 	}
-	// Série/temporada preservam a ordem de sort_index (número); só a coleção reordena por
-	// ano — os episódios devem ficar 1,2,3 e não por data de exibição.
+	// Series/season preserve the sort_index order (number); only a collection is
+	// reordered by year — episodes must stay 1,2,3 and not follow air date.
 	if ordenarPorAno {
 		sort.SliceStable(membros, func(i, j int) bool { return anoAntes(membros[i].ano, membros[j].ano) })
 	}
@@ -456,11 +471,12 @@ func (s *Server) montarMembros(ctx context.Context, id, tipoPai string) ([]entit
 	return out, nil
 }
 
-// ordenacaoDaTemporada devolve a ordenação default (`ordering`) e o `season_number` da
-// temporada-pai, lidos do extension_data dela (core.tv@1, gravado no import por
-// extensaoTemporada). Só faz sentido quando o pai é `season`; para os demais tipos
-// devolve ("",0) e o numbering não é anotado. Degrada silenciosamente ("",0) se a
-// temporada não existir ou não tiver o namespace — o card cai no rótulo neutro.
+// ordenacaoDaTemporada returns the default ordering (`ordering`) and the
+// `season_number` of the parent season, read from its extension_data
+// (core.tv@1, written at import by extensaoTemporada). It only makes sense when
+// the parent is `season`; for the other types it returns ("",0) and the
+// numbering is not annotated. It degrades silently ("",0) if the season does not
+// exist or has no namespace — the card falls back to the neutral label.
 func (s *Server) ordenacaoDaTemporada(ctx context.Context, seasonID, tipoPai string) (ordering string, seasonNumber int) {
 	if tipoPai != tipoEntTemporada {
 		return "", 0
@@ -482,12 +498,13 @@ func (s *Server) ordenacaoDaTemporada(ctx context.Context, seasonID, tipoPai str
 	return ordering, seasonNumber
 }
 
-// anotarNumbering preenche card.Numbering (numeração REAL do episódio, 0039) e
-// card.StillURL (frame 16:9, 0042) a partir do MESMO extension_data do episódio: uma
-// única leitura serve os dois (o still ganhou carona no walk do numbering, sem
-// multiplicar consultas — 0042). Só age em cards `episode` (leitura extra por episódio,
-// escala de dezenas por temporada, aceitável; TODO: query agregada única se pesar, ver
-// 0039 §7). Degrada em qualquer falha (a UI omite número/still, nunca inventa).
+// anotarNumbering fills card.Numbering (REAL numbering of the episode) and
+// card.StillURL (16:9 frame) from the SAME extension_data of the episode: a
+// single read serves both (the still rode along on the numbering walk, without
+// multiplying queries). It only acts on `episode` cards (an extra read per
+// episode, a scale of dozens per season, acceptable; TODO: a single aggregated
+// query if it becomes heavy). It degrades on any failure (the UI omits
+// number/still, never invents).
 func (s *Server) anotarNumbering(ctx context.Context, card *entityCardDTO, ordering string, seasonNumber int) {
 	if card.Type != tipoEntEpisodio {
 		return
@@ -498,15 +515,16 @@ func (s *Server) anotarNumbering(ctx context.Context, card *entityCardDTO, order
 	}
 	ns := tvext.Namespace(ent.ExtensionDataJson, nsTVCore)
 	card.Numbering = projetarNumbering(ns, ordering, seasonNumber)
-	// Precedência do still (0044): still custom (asset `user`) vence o cru do provider.
-	// Leitura extra por episódio (aceitável, mesma escala do numbering — 0042/0039 §7).
+	// Still precedence: the custom still (asset `user`) beats the provider's raw
+	// one. An extra read per episode (acceptable, same scale as the numbering).
 	assets, _ := s.leitura().ListarAssetsPorEntity(ctx, card.ID)
 	card.StillURL = stillDoEpisodio(assets, card.ID, ns)
 }
 
-// stillDoNS extrai a URL CRUA do still (0042) do namespace core.tv@1 do episódio:
-// `still_url` quando é string não-vazia, senão nil (episódio sem still → placeholder na
-// UI). Ponto ÚNICO reusado pelo card (/members e /episodes) e pelo detalhe do episódio.
+// stillDoNS extracts the episode's RAW still URL from the core.tv@1 namespace:
+// `still_url` when it is a non-empty string, otherwise nil (episode without a
+// still → placeholder in the UI). The SINGLE point reused by the card
+// (/members and /episodes) and by the episode detail.
 func stillDoNS(ns map[string]any) *string {
 	if ns == nil {
 		return nil
@@ -517,12 +535,13 @@ func stillDoNS(ns map[string]any) *string {
 	return nil
 }
 
-// projetarNumbering é a projeção PURA do numbering do episódio na ordenação da
-// temporada-pai (0039). Preferência: a entrada ESTRITA `numbering[ordering]` (via
-// entradaNumbering). Fallback (0039): sem entrada para a ordenação, mas com
-// `absolute_number`, usa o absoluto como número (Season = o da temporada-pai). Sem
-// nenhum dos dois (draft) → nil (rótulo neutro na UI). O fallback ao absoluto é o
-// que distingue este da projeção do seletor (0040), que agrupa por ordem ESTRITA.
+// projetarNumbering is the PURE projection of the episode numbering onto the
+// ordering of the parent season. Preference: the STRICT entry
+// `numbering[ordering]` (via entradaNumbering). Fallback: with no entry for the
+// ordering but with an `absolute_number`, it uses the absolute value as the
+// number (Season = the parent season's). With neither (draft) → nil (neutral
+// label in the UI). The fallback to the absolute is what distinguishes this from
+// the selector projection, which groups by STRICT order.
 func projetarNumbering(ns map[string]any, ordering string, seasonNumber int) *episodeNumberingDTO {
 	if dto := entradaNumbering(ns, ordering); dto != nil {
 		return dto
@@ -536,11 +555,12 @@ func projetarNumbering(ns map[string]any, ordering string, seasonNumber int) *ep
 	return nil
 }
 
-// entradaNumbering extrai a numeração ESTRITA do episódio para uma ordenação: a
-// entrada `numbering[ordering]` → {season,number} (+ o absoluto quando houver). nil
-// quando NÃO há entrada para aquela ordem — sem fallback ao absoluto (o caller
-// decide o que fazer com o episódio "sem numeração naquela ordem"). É o núcleo
-// reusado pela projeção do 0039 (com fallback) e pelo seletor do 0040 (estrito).
+// entradaNumbering extracts the STRICT numbering of the episode for an
+// ordering: the entry `numbering[ordering]` → {season,number} (+ the absolute
+// when present). nil when there is NO entry for that order — no fallback to the
+// absolute (the caller decides what to do with an episode "without numbering in
+// that order"). It is the core reused by the projection (with fallback) and by
+// the selector (strict).
 func entradaNumbering(ns map[string]any, ordering string) *episodeNumberingDTO {
 	if ns == nil {
 		return nil
@@ -565,9 +585,10 @@ func entradaNumbering(ns map[string]any, ordering string) *episodeNumberingDTO {
 	return &episodeNumberingDTO{Season: season, Number: number, AbsoluteNumber: abs}
 }
 
-// numeracaoAbsoluta projeta o episódio na ordem ABSOLUTA (0040): number =
-// absolute_number, sem temporada (Season 0 → um grupo único corrido). nil quando o
-// episódio não tem absolute_number (cai no grupo "Sem numeração").
+// numeracaoAbsoluta projects the episode onto the ABSOLUTE order: number =
+// absolute_number, with no season (Season 0 → a single continuous group). nil
+// when the episode has no absolute_number (it falls into the "No numbering"
+// group).
 func numeracaoAbsoluta(ns map[string]any) *episodeNumberingDTO {
 	if ns == nil {
 		return nil
@@ -579,9 +600,10 @@ func numeracaoAbsoluta(ns map[string]any) *episodeNumberingDTO {
 	return &episodeNumberingDTO{Season: 0, Number: a, AbsoluteNumber: &a}
 }
 
-// projetarParaOrdem escolhe a projeção do episódio conforme a ordem pedida: a
-// ABSOLUTA usa numeracaoAbsoluta (grupo único); qualquer outra usa a entrada ESTRITA
-// `numbering[ordering]`. Em ambos os casos nil = episódio "sem numeração nesta ordem".
+// projetarParaOrdem chooses the episode projection according to the requested
+// order: the ABSOLUTE one uses numeracaoAbsoluta (single group); any other uses
+// the STRICT entry `numbering[ordering]`. In both cases nil = episode "without
+// numbering in this order".
 func projetarParaOrdem(ns map[string]any, ordering string) *episodeNumberingDTO {
 	if ordering == orderingAbsoluto {
 		return numeracaoAbsoluta(ns)
@@ -589,12 +611,12 @@ func projetarParaOrdem(ns map[string]any, ordering string) *episodeNumberingDTO 
 	return entradaNumbering(ns, ordering)
 }
 
-// kindEOrdemMembros escolhe o kind de relação dos filhos e se eles são reordenados por
-// ANO, conforme o tipo do pai: série → temporadas (sort_index); temporada → episódios
-// (sort_index); álbum → faixas (sort_index = track_number, briefing 0111); artista →
-// discografia por ano (mesma lógica de coleção); qualquer outro (coleção) → membros por
-// ano. O default preserva o comportamento de coleção para os callers que não são da
-// árvore de séries/música.
+// kindEOrdemMembros chooses the relation kind of the children and whether they
+// are reordered by YEAR, according to the parent type: series → seasons
+// (sort_index); season → episodes (sort_index); album → tracks (sort_index =
+// track_number); artist → discography by year (same logic as a collection); any
+// other (collection) → members by year. The default preserves the collection
+// behavior for the callers that are not part of the series/music tree.
 func kindEOrdemMembros(tipoPai string) (kind string, ordenarPorAno bool) {
 	switch tipoPai {
 	case tipoEntSerie:
@@ -610,8 +632,9 @@ func kindEOrdemMembros(tipoPai string) (kind string, ordenarPorAno bool) {
 	}
 }
 
-// cardDTODeMembro reusa o cardDTO da lista a partir do row de ObterEntityCard (mesmas
-// colunas derivadas + release_date), descartando o release_date (usado só p/ ordenar).
+// cardDTODeMembro reuses the list's cardDTO from the ObterEntityCard row (same
+// derived columns + release_date), discarding release_date (used only to
+// sort).
 func cardDTODeMembro(row sqlcgen.ObterEntityCardRow) entityCardDTO {
 	return cardDTO(sqlcgen.ListarEntityCardsRow{
 		ID:                      row.ID,
@@ -627,16 +650,18 @@ func cardDTODeMembro(row sqlcgen.ObterEntityCardRow) entityCardDTO {
 	})
 }
 
-// anotarPosseCard preenche o card com a posse RASA (1 nível) — "quanto do nível de
-// baixo eu tenho" — quando o tipo tem agregação na árvore de séries:
-//   - `season` (0036): episódios diretos com arquivo / total de episódios.
-//   - `tv` (0037): temporadas COM conteúdo / total de temporadas — NÃO a soma
-//     profunda de episódios. Isso torna o card sempre raso e consistente (glanceável),
-//     enquanto o DETALHE (ResolvedEntity/montarPosseAgregada) permanece PROFUNDO
-//     (episódios, ex. 2/875) e não muda.
+// anotarPosseCard fills the card with the SHALLOW ownership (1 level) — "how
+// much of the level below do I own" — when the type has aggregation in the
+// series tree:
+//   - `season`: direct episodes with a file / total episodes.
+//   - `tv`: seasons WITH content / total seasons — NOT the deep sum of
+//     episodes. That keeps the card always shallow and consistent (glanceable),
+//     while the DETAIL (ResolvedEntity/montarPosseAgregada) remains DEEP
+//     (episodes, e.g. 2/875) and does not change.
 //
-// Cada leitura degrada para nil em qualquer falha: a UI apenas omite o selo, NUNCA
-// derruba a lista. Demais tipos (movie/episode/collection) seguem sem ownership.
+// Every read degrades to nil on any failure: the UI just omits the badge, it
+// NEVER takes the list down. The remaining types (movie/episode/collection)
+// stay without ownership.
 func (s *Server) anotarPosseCard(ctx context.Context, card *entityCardDTO) {
 	switch card.Type {
 	case tipoEntTemporada:
@@ -648,12 +673,14 @@ func (s *Server) anotarPosseCard(ctx context.Context, card *entityCardDTO) {
 	}
 }
 
-// posseRasaDaSerie calcula a posse RASA do card de SÉRIE (0037): total = nº de filhos
-// tv_season; owned = quantas dessas temporadas têm ao menos um episódio na biblioteca
-// (posseDaTemporada().owned > 0). É a contagem GLANCEÁVEL do card ("X/Y temporadas"),
-// distinta da posse PROFUNDA do detalhe (episódios), que segue em montarPosseAgregada
-// e NÃO muda. Custo ~1 + nº de temporadas leituras (self-hosted; follow-up: query
-// agregada única se a biblioteca crescer). Degrada para nil em qualquer falha.
+// posseRasaDaSerie computes the SHALLOW ownership of the SERIES card: total =
+// number of tv_season children; owned = how many of those seasons have at least
+// one episode in the library (posseDaTemporada().owned > 0). It is the
+// GLANCEABLE count of the card ("X/Y seasons"), distinct from the DEEP
+// ownership of the detail (episodes), which stays in montarPosseAgregada and
+// does NOT change. Cost ~1 + number of seasons reads (self-hosted; follow-up: a
+// single aggregated query if the library grows). Degrades to nil on any
+// failure.
 func (s *Server) posseRasaDaSerie(ctx context.Context, serieID string) *resolver.OwnershipInfo {
 	rels, err := s.leitura().ListarRelacoesFilhas(ctx, serieID)
 	if err != nil {
@@ -676,8 +703,8 @@ func (s *Server) posseRasaDaSerie(ctx context.Context, serieID string) *resolver
 	return &resolver.OwnershipInfo{OwnedCount: owned, TotalCount: total}
 }
 
-// anoAntes ordena por release_date ISO ascendente (a string ISO ordena
-// cronologicamente); datas ausentes/vazias vão para o FIM.
+// anoAntes sorts by ISO release_date ascending (the ISO string sorts
+// chronologically); missing/empty dates go to the END.
 func anoAntes(a, b sql.NullString) bool {
 	av := a.Valid && a.String != ""
 	bv := b.Valid && b.String != ""
@@ -687,8 +714,8 @@ func anoAntes(a, b sql.NullString) bool {
 	return a.String < b.String
 }
 
-// getEntity trata GET /api/v1/entities/{id}: devolve a entity RESOLVIDA (todas as
-// camadas: arquivo ⟵ externo ⟵ override) ou 404.
+// getEntity handles GET /api/v1/entities/{id}: it returns the RESOLVED entity
+// (all layers: file ⟵ external ⟵ override) or 404.
 func (s *Server) getEntity(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -702,14 +729,14 @@ func (s *Server) getEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Idioma de EXIBIÇÃO default (briefing 0084): sem `?lang=` explícito na
-	// querystring, o default passa a ser o idioma preferido da biblioteca de
-	// origem do item (que já cai no `primary` global quando não há
-	// preferência, ou em caso de ambiguidade -- s.idiomaDeBusca). Um erro
-	// real ao resolver isso degrada para o `primary` global (best-effort, é
-	// só o DEFAULT -- nunca deveria quebrar a resposta por isso). `?lang=`
-	// explícito SEMPRE vence, sem exceção (comportamento inalterado: valida
-	// contra os permitidos via parseLang).
+	// Default DISPLAY language: without an explicit `?lang=` in the querystring,
+	// the default becomes the preferred language of the item's origin library
+	// (which already falls back to the global `primary` when there is no
+	// preference, or in case of ambiguity -- s.idiomaDeBusca). A real error while
+	// resolving this degrades to the global `primary` (best-effort, it is only the
+	// DEFAULT -- it should never break the response because of this). An explicit
+	// `?lang=` ALWAYS wins, no exception (unchanged behavior: validated against
+	// the allowed ones via parseLang).
 	rawLang := r.URL.Query().Get("lang")
 	var lang string
 	if rawLang == "" {
@@ -737,16 +764,16 @@ func (s *Server) getEntity(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resolvida)
 }
 
-// resolverEntity monta a resposta RESOLVIDA de uma entity a partir de TODAS as
-// camadas (arquivo ⟵ externo ⟵ override) — o caminho único reusado por getEntity,
-// enrich e import. Devolve encontrada=false (sem erro) quando a entity não existe.
-// É AQUI que a camada externa fica viva de ponta a ponta (a fiação adiada do 0013).
-// proxiarImagens controla se s.proxyarCreditos reescreve as URLs de imagem de
-// créditos (cast/crew/companies) para a rota de proxy interna
-// (/api/v1/images?src=...) — pensado para o frontend web decouplar do CDN da
-// fonte. Quando false (gravação de .nfo, briefing 0066), os créditos ficam
-// com a URL DIRETA do provider (ex. TMDB), que é o que um Kodi/Jellyfin lendo
-// o .nfo do disco precisa.
+// resolverEntity builds the RESOLVED response of an entity from ALL layers
+// (file ⟵ external ⟵ override) — the single path reused by getEntity, enrich
+// and import. It returns found=false (without an error) when the entity does not
+// exist. This is WHERE the external layer becomes live end to end (the wiring
+// deferred in ADR-0013). proxiarImagens controls whether s.proxyarCreditos
+// rewrites the image URLs of credits (cast/crew/companies) to the internal proxy
+// route (/api/v1/images?src=...) — meant for the web frontend to decouple from
+// the source's CDN. When false (writing .nfo), credits keep the provider's
+// DIRECT URL (e.g. TMDB), which is what a Kodi/Jellyfin reading the .nfo from
+// disk needs.
 func (s *Server) resolverEntity(ctx context.Context, id, lang string, proxiarImagens bool) (resolver.Entidade, bool, error) {
 	ent, err := s.leitura().ObterEntity(ctx, id)
 	if err != nil {
@@ -756,9 +783,9 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string, proxiarIma
 		return resolver.Entidade{}, false, err
 	}
 
-	// Contexto de IDIOMA (briefing 0019): resolve o lang efetivo (default =
-	// principal) e deriva a cadeia de fallback a partir das settings + a âncora
-	// original_language da entity.
+	// LANGUAGE context: resolves the effective lang (default = primary) and
+	// derives the fallback chain from the settings + the entity's
+	// original_language anchor.
 	cfg, err := s.obterLanguageSettings(ctx)
 	if err != nil {
 		return resolver.Entidade{}, false, err
@@ -773,23 +800,24 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string, proxiarIma
 		return resolver.Entidade{}, false, err
 	}
 
-	// Arte local: pôster e FUNDO (fanart/backdrop) são servidos por rotas locais
-	// quando existe asset (a mesma precedência preferida→user→external do serviço).
+	// Local artwork: poster and BACKGROUND (fanart/backdrop) are served by local
+	// routes when an asset exists (the same preferred→user→external precedence as
+	// the service).
 	assets, err := s.leitura().ListarAssetsPorEntity(ctx, id)
 	if err != nil {
 		return resolver.Entidade{}, false, err
 	}
 	posterURL, backdropURL := artesLocais(assets, id)
 
-	// Camada OVERRIDE: o patch cru do dono (media_override). Ausência de linha não
-	// é erro (sem override, herda a base).
+	// OVERRIDE layer: the owner's raw patch (media_override). A missing row is
+	// not an error (no override, inherits the base).
 	override, err := s.carregarOverride(ctx, id)
 	if err != nil {
 		return resolver.Entidade{}, false, err
 	}
 
-	// Camada EXTERNA (fiação do 0015): mapeia cada media_external raw→canônico via
-	// o provider, ordenada pela prioridade das fontes.
+	// EXTERNAL layer: maps each raw media_external row to the canonical layer
+	// via the provider, ordered by the priority of the sources.
 	externo, err := s.montarExterno(ctx, id)
 	if err != nil {
 		return resolver.Entidade{}, false, err
@@ -807,9 +835,10 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string, proxiarIma
 		IdiomaPrincipal: cfg.Primary,
 	})
 	s.anotarInternos(ctx, &resolvida)
-	// Interno-first dos créditos (0029 Fase D): a fonte que alimentou cast/crew não é
-	// necessariamente a mesma (cada campo vence na fusão por prioridade — R2), então
-	// descobre-se por campo em vez de assumir a fonte de maior prioridade da entity.
+	// Interno-first for credits: the source that fed cast/crew is not
+	// necessarily the same (each field wins in the fusion by priority — R2), so
+	// the source is discovered per field instead of assuming the entity's
+	// highest-priority source.
 	s.anotarCreditosInternos(ctx, fonteDoCampoExterno(externo, "cast"), resolvida.Cast, nil)
 	s.anotarCreditosInternos(ctx, fonteDoCampoExterno(externo, "crew"), nil, resolvida.Crew)
 	if proxiarImagens {
@@ -825,14 +854,16 @@ func (s *Server) resolverEntity(ctx context.Context, id, lang string, proxiarIma
 	return resolvida, true, nil
 }
 
-// completarOwnedViaArvore completa o Owned do detalhe único quando o resolver (via
-// listarFilesDaEntity/temPosse) o deu como false (briefing 0116): listarFilesDaEntity só
-// olha media_file.entity_id DIRETO (ou a junção media_file_entity, pro episódio) — nunca
-// desce a árvore de entity_relation. Para artista/album de música (ADR-0027: só a FAIXA,
-// dois níveis abaixo, liga media_file), isso fazia Owned SEMPRE false no detalhe único,
-// mesmo já corrigido nas listagens (entity.sql, CTE recursiva). Só consulta o banco de
-// novo quando o resolver não achou posse direta (custo extra restrito ao caso que
-// precisa); erro de leitura degrada em silêncio (mantém o Owned que o resolver já deu).
+// completarOwnedViaArvore completes the Owned of the single detail when the
+// resolver (via listarFilesDaEntity/temPosse) gave it as false: listarFilesDaEntity
+// only looks at media_file.entity_id DIRECTLY (or the media_file_entity join,
+// for the episode) — it never walks down the entity_relation tree. For music
+// artist/album (ADR-0027: only the TRACK, two levels below, links media_file),
+// that made Owned ALWAYS false in the single detail, even though it was already
+// fixed in the listings (entity.sql, recursive CTE). It only queries the
+// database again when the resolver found no direct ownership (extra cost
+// restricted to the case that needs it); a read error degrades silently (keeps
+// the Owned the resolver already gave).
 func (s *Server) completarOwnedViaArvore(ctx context.Context, e *resolver.Entidade, id string) {
 	if e.Owned {
 		return
@@ -842,16 +873,16 @@ func (s *Server) completarOwnedViaArvore(ctx context.Context, e *resolver.Entida
 	}
 }
 
-// anotarCompletudeCatalogacao preenche resolvida.CatalogCompleteness (briefing
-// 0058) AO VIVO, a cada request do detalhe: zero queries novas, só um loop
-// sobre bools e a lista de assets já em memória (resolverEntity já paga o
-// custo de montar tudo o mais, com ou sem este briefing). Campo fica `nil`
-// para item draft (ehDraft, completeness.go) -- não faz sentido avaliar
-// metadados que ainda não existem. `assets` é a MESMA lista que
-// resolverEntity já carregou (ListarAssetsPorEntity), reusada aqui sem nova
-// consulta. Falha ao ler a config de completude (0057) degrada para `nil`
-// (mesmo espírito das demais anotações pós-resolução: nunca derruba o
-// detalhe por um passo acessório).
+// anotarCompletudeCatalogacao fills resolvida.CatalogCompleteness LIVE, on every
+// detail request: zero new queries, just a loop over booleans and the list of
+// assets already in memory (resolverEntity already pays the cost of assembling
+// everything else, with or without completeness). The field stays `nil` for a
+// draft item (ehDraft, completeness.go) -- there is no point in evaluating
+// metadata that does not exist yet. `assets` is the SAME list resolverEntity
+// already loaded (ListarAssetsPorEntity), reused here with no new query. A
+// failure to read the completeness config degrades to `nil` (same spirit as the
+// other post-resolution annotations: never take the detail down for an auxiliary
+// step).
 func (s *Server) anotarCompletudeCatalogacao(ctx context.Context, e *resolver.Entidade, ent sqlcgen.Entity, assets []sqlcgen.Asset) {
 	if ehDraft(ent.Status) {
 		return
@@ -866,18 +897,19 @@ func (s *Server) anotarCompletudeCatalogacao(ctx context.Context, e *resolver.En
 	e.CatalogCompleteness = &resultado
 }
 
-// herdarFanartTemporada preenche o BackdropURL de uma TEMPORADA sem fanart própria
-// com a fanart da SÉRIE PAI (herança de DISPLAY do 0044, como o tinyMediaManager):
-// não inventa dado nem baixa nada — reusa o asset já baixado da série. No-op para
-// tipos != season e para a temporada que já tem asset `fanart` servível próprio (aí
-// o artesLocais já preencheu o BackdropURL com a dela). Anotação no server, fora do
-// resolver puro (mesma fronteira de Ancestors/Ownership/still).
+// herdarFanartTemporada fills the BackdropURL of a SEASON without its own fanart
+// with the fanart of the PARENT SERIES (DISPLAY inheritance, like
+// tinyMediaManager): it invents no data and downloads nothing — it reuses the
+// series asset already downloaded. No-op for types != season and for a season
+// that already has its own servable `fanart` asset (in that case artesLocais
+// already filled BackdropURL with it). Annotated on the server, outside the pure
+// resolver (same boundary as Ancestors/Ownership/still).
 func (s *Server) herdarFanartTemporada(ctx context.Context, e *resolver.Entidade, assets []sqlcgen.Asset, ent sqlcgen.Entity) {
 	if ent.Type != tipoEntTemporada {
 		return
 	}
 	if _, ok := escolherAssetServido(assets, kindFanart); ok {
-		return // tem a sua fanart própria: nada a herdar
+		return // it has fanart of its own: nothing to inherit
 	}
 	if serieID, ok := s.fanartDaSeriePai(ctx, ent.ID); ok {
 		u := fanartPath(serieID)
@@ -885,10 +917,11 @@ func (s *Server) herdarFanartTemporada(ctx context.Context, e *resolver.Entidade
 	}
 }
 
-// fanartDaSeriePai sobe da temporada para a SÉRIE PAI (via ListarRelacoesPais — a
-// temporada é filha da série) e devolve o id da série quando ela tem asset `fanart`
-// SERVÍVEL. false quando não há pai, o pai não tem fanart servível, ou em falha de
-// leitura (degrada para "sem herança", nunca inventa). Não baixa nada.
+// fanartDaSeriePai walks up from the season to the PARENT SERIES (via
+// ListarRelacoesPais — the season is a child of the series) and returns the
+// series id when it has a SERVABLE `fanart` asset. false when there is no
+// parent, the parent has no servable fanart, or on a read failure (degrades to
+// "no inheritance", never invents). It downloads nothing.
 func (s *Server) fanartDaSeriePai(ctx context.Context, seasonID string) (string, bool) {
 	pais, err := s.leitura().ListarRelacoesPais(ctx, seasonID)
 	if err != nil || len(pais) == 0 {
@@ -905,11 +938,12 @@ func (s *Server) fanartDaSeriePai(ctx context.Context, seasonID string) (string,
 	return serieID, true
 }
 
-// stillDaEntity devolve a URL do still do episódio para o detalhe, com a PRECEDÊNCIA
-// do 0044: still `user` (rota local /assets/still) VENCE o still_url cru do provider
-// (extension_data core.tv@1, 0042). Só para `episode`, nil para os demais tipos. O
-// resolver é PURO (não conhece core.tv); a anotação vive aqui, na mesma fronteira de
-// Ancestors/Ownership/Orderings. Sem still custom, mantém o cru (front proxya).
+// stillDaEntity returns the episode still URL for the detail, with the still
+// PRECEDENCE: a `user` still (local /assets/still route) BEATS the provider's
+// raw still_url (extension_data core.tv@1). `episode` only, nil for the other
+// types. The resolver is PURE (it does not know core.tv); the annotation lives
+// here, on the same boundary as Ancestors/Ownership/Orderings. Without a custom
+// still it keeps the raw one (the front end proxies it).
 func stillDaEntity(assets []sqlcgen.Asset, ent sqlcgen.Entity) *string {
 	if ent.Type != tipoEntEpisodio {
 		return nil
@@ -917,10 +951,11 @@ func stillDaEntity(assets []sqlcgen.Asset, ent sqlcgen.Entity) *string {
 	return stillDoEpisodio(assets, ent.ID, tvext.Namespace(ent.ExtensionDataJson, nsTVCore))
 }
 
-// stillDoEpisodio aplica a precedência do still (0044): se há asset `still` SERVÍVEL
-// para o episódio, devolve a rota local (/assets/still); senão cai no still_url cru do
-// provider (ns). Ponto ÚNICO reusado pelo detalhe (stillDaEntity) e pelo card
-// (anotarNumbering) — a mesma regra custom→provider dos dois lados.
+// stillDoEpisodio applies the still precedence: if there is a SERVABLE `still`
+// asset for the episode, it returns the local route (/assets/still); otherwise
+// it falls back to the provider's raw still_url (ns). The SINGLE point reused by
+// the detail (stillDaEntity) and by the card (anotarNumbering) — the same
+// custom→provider rule on both sides.
 func stillDoEpisodio(assets []sqlcgen.Asset, id string, ns map[string]any) *string {
 	if _, ok := escolherAssetServido(assets, kindStill); ok {
 		u := stillPath(id)
@@ -929,17 +964,18 @@ func stillDoEpisodio(assets []sqlcgen.Asset, id string, ns map[string]any) *stri
 	return stillDoNS(ns)
 }
 
-// tipoEntEpisodio é o `type` da entity de episódio (grão fino da árvore de séries,
-// 0031/ADR-0021). Um arquivo de série tem `media_file.entity_id` = série, e os
-// vínculos por episódio vivem em media_file_entity (kind='tv_episode'); por isso a
-// área de arquivos do EPISÓDIO vem da junção, não de media_file.entity_id.
+// tipoEntEpisodio is the `type` of the episode entity (fine grain of the series
+// tree, ADR-0021). A series file has `media_file.entity_id` = series, and the
+// per-episode links live in media_file_entity (kind='tv_episode'); that is why
+// the file area of the EPISODE comes from the join, not from
+// media_file.entity_id.
 const tipoEntEpisodio = "episode"
 
-// listarFilesDaEntity carrega os media_file que compõem a POSSE e a lista de
-// arquivos de uma entity. Para EPISÓDIO, os arquivos vêm dos vínculos N:M
-// (media_file_entity, kind='tv_episode') via ListarArquivosDaEntidade — porque o
-// arquivo de série aponta `entity_id` para a SÉRIE, não para o episódio (0034).
-// Para os demais tipos (filme etc.), o caminho clássico media_file.entity_id.
+// listarFilesDaEntity loads the media_file rows that make up the OWNERSHIP and
+// the file list of an entity. For an EPISODE, the files come from the N:M links
+// (media_file_entity, kind='tv_episode') via ListarArquivosDaEntidade — because
+// the series file points `entity_id` at the SERIES, not at the episode. For the
+// other types (movie etc.), the classic media_file.entity_id path.
 func (s *Server) listarFilesDaEntity(ctx context.Context, ent sqlcgen.Entity) ([]sqlcgen.MediaFile, error) {
 	if ent.Type == tipoEntEpisodio {
 		rows, err := s.leitura().ListarArquivosDaEntidade(ctx, sqlcgen.ListarArquivosDaEntidadeParams{
@@ -958,9 +994,10 @@ func (s *Server) listarFilesDaEntity(ctx context.Context, ent sqlcgen.Entity) ([
 	return s.leitura().ListarMediaFilesPorEntity(ctx, ent.ID)
 }
 
-// arquivoDaEntidadeParaMediaFile reprojeta a linha do JOIN (ListarArquivosDaEntidade)
-// no shape sqlcgen.MediaFile, para reusar o MESMO fileDTO/posse do filme. O `ordinal`
-// (ordem do episódio dentro do arquivo, em ranges) não entra no DTO de arquivo.
+// arquivoDaEntidadeParaMediaFile reprojects the JOIN row
+// (ListarArquivosDaEntidade) into the sqlcgen.MediaFile shape, so the SAME
+// fileDTO/ownership of the movie can be reused. The `ordinal` (order of the
+// episode inside the file, in ranges) does not go into the file DTO.
 func arquivoDaEntidadeParaMediaFile(r sqlcgen.ListarArquivosDaEntidadeRow) sqlcgen.MediaFile {
 	return sqlcgen.MediaFile{
 		ID:              r.ID,
@@ -981,16 +1018,20 @@ func arquivoDaEntidadeParaMediaFile(r sqlcgen.ListarArquivosDaEntidadeRow) sqlcg
 	}
 }
 
-// montarPosseAgregada calcula a posse agregada de uma entity-pai da árvore de
-// séries (0034): retorna nil para tipos sem agregação (filme, episódio, coleção).
-//   - TEMPORADA: total = nº de episódios filhos (kind='tv_episode'); owned = quantos
-//     desses têm ao menos um arquivo 'present' vinculado (ContarEntidadesComPosse).
-//   - SÉRIE: soma across temporadas — a query direta só conta filhos DIRETOS (que na
-//     série são temporadas, sem vínculo próprio), então iteramos as temporadas e
-//     somamos total/owned de cada uma. Volume pequeno (self-hosted); N+1 tolerável.
+// montarPosseAgregada computes the aggregated ownership of an entity-parent of
+// the series tree: it returns nil for types without aggregation (movie, episode,
+// collection).
+//   - SEASON: total = number of child episodes (kind='tv_episode'); owned = how
+//     many of those have at least one linked 'present' file
+//     (ContarEntidadesComPosse).
+//   - SERIES: sum across seasons — the direct query only counts DIRECT children
+//     (which for a series are seasons, with no link of their own), so we iterate
+//     the seasons and add up the total/owned of each one. Small volume
+//     (self-hosted); N+1 tolerable.
 //
-// Defensivo: qualquer falha de leitura degrada para nil (a UI só omite o badge), sem
-// derrubar o detalhe — coerente com a montagem pós-resolução de Ancestors.
+// Defensive: any read failure degrades to nil (the UI just omits the badge),
+// without taking the detail down — consistent with the post-resolution assembly
+// of Ancestors.
 func (s *Server) montarPosseAgregada(ctx context.Context, ent sqlcgen.Entity) *resolver.OwnershipInfo {
 	switch ent.Type {
 	case tipoEntTemporada:
@@ -1022,9 +1063,10 @@ func (s *Server) montarPosseAgregada(ctx context.Context, ent sqlcgen.Entity) *r
 	}
 }
 
-// posseDaTemporada devolve (episódios possuídos / total) de UMA temporada: total é o
-// nº de filhos kind='tv_episode'; owned vem de ContarEntidadesComPosse (filhos com
-// arquivo 'present' vinculado). Reusado pela série (soma por temporada).
+// posseDaTemporada returns (owned episodes / total) of ONE season: total is the
+// number of kind='tv_episode' children; owned comes from ContarEntidadesComPosse
+// (children with a linked 'present' file). Reused by the series (sum per
+// season).
 func (s *Server) posseDaTemporada(ctx context.Context, seasonID string) (*resolver.OwnershipInfo, error) {
 	rels, err := s.leitura().ListarRelacoesFilhas(ctx, seasonID)
 	if err != nil {
@@ -1046,18 +1088,20 @@ func (s *Server) posseDaTemporada(ctx context.Context, seasonID string) (*resolv
 	return &resolver.OwnershipInfo{OwnedCount: int(owned), TotalCount: total}, nil
 }
 
-// maxProfundidadeAncestrais limita o walk-up do breadcrumb (0032) para NUNCA laçar
-// num ciclo de entity_relation defeituoso. 8 é folgado: a árvore real tem no máximo
-// 2 níveis (episódio→temporada→série).
+// maxProfundidadeAncestrais limits the breadcrumb walk-up so it NEVER loops on a
+// defective entity_relation cycle. 8 is roomy: the real tree has at most 2
+// levels (episode→season→series).
 const maxProfundidadeAncestrais = 8
 
-// montarAncestrais sobe a árvore de séries a partir de `id`, pegando o PRIMEIRO pai
-// de cada nível (ListarRelacoesPais) até a raiz, e devolve a trilha invertida para
-// RAIZ→PAI — o breadcrumb do 0032. Cada nó traz {id, title, type} com o título BASE
-// da linha (barato; resolver o título por idioma de cada ancestral é follow-up).
-// Sempre não-nil (`[]` para movie/tv/collection, que não têm pai). Defensivo: para na
-// primeira falha/ausência de pai e limita a profundidade (maxProfundidadeAncestrais)
-// para jamais laçar. Montado aqui (server), não no resolver puro (fronteira do 0026/0031).
+// montarAncestrais walks up the series tree from `id`, taking the FIRST parent
+// of each level (ListarRelacoesPais) up to the root, and returns the trail
+// inverted to ROOT→PARENT — the breadcrumb. Each node carries {id, title, type}
+// with the BASE title of the row (cheap; resolving each ancestor's
+// language-specific title is a follow-up). Always non-nil (`[]` for
+// movie/tv/collection, which have no parent). Defensive: it stops at the first
+// failure/missing parent and limits the depth (maxProfundidadeAncestrais) so it
+// never loops. Built here (server), not in the pure resolver (boundary of
+// ADR-0021).
 func (s *Server) montarAncestrais(ctx context.Context, id string) []resolver.AncestorRef {
 	trilha := make([]resolver.AncestorRef, 0)
 	atual := id
@@ -1068,22 +1112,23 @@ func (s *Server) montarAncestrais(ctx context.Context, id string) []resolver.Anc
 		}
 		pai, err := s.leitura().ObterEntity(ctx, pais[0].ParentID)
 		if err != nil {
-			break // pai purgado no meio: para a trilha aqui
+			break // parent purged in the middle: stop the trail here
 		}
 		trilha = append(trilha, resolver.AncestorRef{ID: pai.ID, Title: pai.Title, Type: pai.Type})
 		atual = pai.ID
 	}
-	// Coletamos de baixo para cima (pai, avô, …); inverte para RAIZ→PAI.
+	// We collect bottom-up (parent, grandparent, …); invert to ROOT→PARENT.
 	for i, j := 0, len(trilha)-1; i < j; i, j = i+1, j-1 {
 		trilha[i], trilha[j] = trilha[j], trilha[i]
 	}
 	return trilha
 }
 
-// anotarInternos preenche os `internal_id` da coleção e dos similares (0026/0027): o
-// resolver é PURO (não acessa banco), então a resolução externo→interno é anotada
-// aqui, pós-resolução. Coleção e similares da entity vêm do TMDB (o link externo já
-// assume isso), então a resolução é por id tmdb. Isolado para não inflar o
+// anotarInternos fills the `internal_id` of the collection and of the similar
+// items: the resolver is PURE (it does not touch the database), so the
+// external→internal resolution is annotated here, after resolution. The entity's
+// collection and similar items come from TMDB (the external link already assumes
+// that), so the resolution is by tmdb id. Isolated so as not to bloat
 // resolverEntity (gocyclo).
 func (s *Server) anotarInternos(ctx context.Context, e *resolver.Entidade) {
 	if e.Collection != nil {
@@ -1094,17 +1139,18 @@ func (s *Server) anotarInternos(ctx context.Context, e *resolver.Entidade) {
 	}
 }
 
-// prioridadeFontes é a ordem de precedência global das fontes externas (R2 / ADR-0002):
-// por campo, a PRIMEIRA fonte da lista com valor forma a base externa dele; também dita
-// a ordem determinística da busca-mescla (search.go). É o PONTO ÚNICO da política —
-// tornar configurável (via settings) é follow-up; por ora é o default do briefing 0031.
+// prioridadeFontes is the global precedence order of the external sources
+// (R2 / ADR-0002): per field, the FIRST source in the list with a value forms its
+// external base; it also dictates the deterministic order of the merge search
+// (search.go). It is the SINGLE point of the policy — making it configurable
+// (via settings) is a follow-up; for now it is the default.
 var prioridadeFontes = []string{"tmdb", "tvdb"}
 
-// codecPara resolve o provider usado SÓ para interpretar payload já
-// cacheado (MapearDetalhe/Similares) de uma fonte: primeiro tenta o
-// registro de parse (codecs, sempre populado); cai para o registro de
-// busca ao vivo (providers) quando ausente -- cobre o MYMEDIADB_FAKE_PROVIDER
-// dos testes E2E, que só registra em providers. ADR-0024/briefing 0100.
+// codecPara resolves the provider used ONLY to interpret an already cached
+// payload (MapearDetalhe/Similares) of a source: it first tries the parse
+// registry (codecs, always populated); it falls back to the live search registry
+// (providers) when absent -- this covers the MYMEDIADB_FAKE_PROVIDER of the E2E
+// tests, which only registers in providers. ADR-0024.
 func (s *Server) codecPara(fonte string) (provider.Provider, bool) {
 	if p, ok := s.codecs.Get(fonte); ok {
 		return p, ok
@@ -1112,17 +1158,18 @@ func (s *Server) codecPara(fonte string) (provider.Provider, bool) {
 	return s.providers.Get(fonte)
 }
 
-// montarExterno carrega as linhas de media_external da entity e as converte em
-// camadas canônicas via o provider (raw→canônico é do provider; o resolver não
-// conhece o TMDB). Sem provider configurado devolve nil (comportamento do 0010
-// preservado). Uma linha cujo mapeamento falha é PULADA (degrada aquela fonte),
-// não derruba a leitura. Ordena pela prioridade das fontes.
+// montarExterno loads the media_external rows of the entity and converts them
+// into canonical layers via the provider (raw→canonical belongs to the provider;
+// the resolver does not know TMDB). With no provider configured it returns nil
+// (original behavior preserved). A row whose mapping fails is SKIPPED (that
+// source degrades), it does not take the read down. It orders by the priority of
+// the sources.
 func (s *Server) montarExterno(ctx context.Context, id string) ([]resolver.CamadaExterna, error) {
-	// Só pula a query quando NENHUM dos dois registros (busca ao vivo E
-	// parse) tem nada -- otimização preservada só para uma instalação que
-	// nunca teve nenhum provider. Com `codecs` sempre populado pelo main
-	// (briefing 0100, ADR-0024), esta guarda só dispara de fato em testes
-	// que constroem o Server sem nenhuma option de provider.
+	// It only skips the query when NEITHER registry (live search AND parse) has
+	// anything -- an optimization preserved only for an installation that never had
+	// any provider. With `codecs` always populated by main (ADR-0024), this guard
+	// only actually fires in tests that build the Server without any provider
+	// option.
 	if s.providers.Vazio() && s.codecs.Vazio() {
 		return nil, nil
 	}
@@ -1141,11 +1188,11 @@ func (s *Server) montarExterno(ctx context.Context, id string) ([]resolver.Camad
 	return camadas, nil
 }
 
-// similaresParaCampo converte a lista canônica do provider (provider.Similar,
-// briefing 0091) para o formato de mapa que campos["similar"] já usa há tempos —
-// []any de map[string]any com as chaves que richfields.SimilaresDe espera
-// (source_id/type/title/year/poster_url). Ponteiros nil simplesmente omitem a
-// chave (mesma convenção de similaresCanonicos no provider TMDB).
+// similaresParaCampo converts the provider's canonical list
+// (provider.Similar) to the map format that campos["similar"] has used for a
+// long time — []any of map[string]any with the keys richfields.SimilaresDe
+// expects (source_id/type/title/year/poster_url). Nil pointers simply omit the
+// key (same convention as similaresCanonicos in the TMDB provider).
 func similaresParaCampo(sims []provider.Similar) []any {
 	out := make([]any, 0, len(sims))
 	for _, s := range sims {
@@ -1165,12 +1212,13 @@ func similaresParaCampo(sims []provider.Similar) []any {
 	return out
 }
 
-// preencherSimilares chama a capacidade OPCIONAL SimilarProvider (briefing 0091)
-// quando o provider a implementa e grava o resultado em campos["similar"] no
-// formato que richfields.SimilaresDe espera. Sem a capacidade, não faz nada (a
-// chave "similar" fica ausente, igual a hoje quando a fonte não a modela). Erro
-// real de Similares (payload ilegível) só loga e segue sem similares daquela
-// camada — nunca derruba a linha inteira.
+// preencherSimilares calls the OPTIONAL SimilarProvider capability when the
+// provider implements it and writes the result into campos["similar"] in the
+// format richfields.SimilaresDe expects. Without the capability it does nothing
+// (the "similar" key stays absent, as it is today when the source does not model
+// it). A real error from Similares (unreadable payload) is only logged and
+// carries on without similar items from that layer — it never takes the whole
+// row down.
 func preencherSimilares(prov provider.Provider, raw json.RawMessage, fonte, entityID string, campos map[string]any) {
 	sp, ok := prov.(provider.SimilarProvider)
 	if !ok {
@@ -1187,10 +1235,10 @@ func preencherSimilares(prov provider.Provider, raw json.RawMessage, fonte, enti
 	campos["similar"] = similaresParaCampo(sims)
 }
 
-// camadasDaFonte converte as linhas de UMA fonte em camadas canônicas via o provider
-// DAQUELA fonte (escolhido no registro pelo nome). Devolve nil quando a fonte não tem
-// provider registrado (degrada: camada vazia). Uma linha com payload ausente/inválido
-// é pulada (degrada aquela linha).
+// camadasDaFonte converts the rows of ONE source into canonical layers via THAT
+// source's provider (chosen in the registry by name). It returns nil when the
+// source has no registered provider (degrades: empty layer). A row with a
+// missing/invalid payload is skipped (that row degrades).
 func (s *Server) camadasDaFonte(rows []sqlcgen.MediaExternal, fonte string) []resolver.CamadaExterna {
 	prov, ok := s.codecPara(fonte)
 	if !ok {
@@ -1205,7 +1253,7 @@ func (s *Server) camadasDaFonte(rows []sqlcgen.MediaExternal, fonte string) []re
 		campos, err := prov.MapearDetalhe(raw)
 		if err != nil {
 			log.Printf("entities: mapear detalhe da fonte %q da entity %q falhou (degrada esta fonte): %v", row.Source, row.EntityID, err)
-			continue // payload cru inválido: degrada esta fonte
+			continue // invalid raw payload: this source degrades
 		}
 		preencherSimilares(prov, raw, row.Source, row.EntityID, campos)
 		out = append(out, resolver.CamadaExterna{Fonte: row.Source, Campos: campos})
@@ -1213,10 +1261,10 @@ func (s *Server) camadasDaFonte(rows []sqlcgen.MediaExternal, fonte string) []re
 	return out
 }
 
-// carregarOverride lê o patch de override da entity (media_override) e o decodifica
-// para o mapa esparso cru que o resolver espera. Sem linha (sql.ErrNoRows) ou com
-// override_json vazio/inválido devolve nil (sem override, herda a base) — apenas um
-// erro real de banco é propagado.
+// carregarOverride reads the entity's override patch (media_override) and
+// decodes it into the raw sparse map the resolver expects. With no row
+// (sql.ErrNoRows) or with an empty/invalid override_json it returns nil (no
+// override, inherits the base) — only a real database error is propagated.
 func (s *Server) carregarOverride(ctx context.Context, id string) (map[string]json.RawMessage, error) {
 	ov, err := s.leitura().ObterMediaOverride(ctx, id)
 	if err != nil {
@@ -1230,15 +1278,16 @@ func (s *Server) carregarOverride(ctx context.Context, id string) (map[string]js
 	}
 	var patch map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(ov.OverrideJson.String), &patch); err != nil {
-		// Override malformado degrada para "sem override" em vez de derrubar a
-		// leitura (a base editorial/arquivo segue servível).
+		// A malformed override degrades to "no override" instead of taking the read
+		// down (the editorial/file base remains servable).
 		return nil, nil
 	}
 	return patch, nil
 }
 
-// getEntityFiles trata GET /api/v1/entities/{id}/files: lista os media_file com
-// os fatos técnicos do mediainfo. 404 se a entity não existir.
+// getEntityFiles handles GET /api/v1/entities/{id}/files: it lists the
+// media_file rows with the technical facts of the mediainfo. 404 if the entity
+// does not exist.
 func (s *Server) getEntityFiles(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -1256,9 +1305,9 @@ func (s *Server) getEntityFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Episódio: arquivos vêm dos vínculos N:M (o arquivo aponta entity_id para a
-	// série); demais tipos: o caminho clássico media_file.entity_id (mesmo helper
-	// usado na resolução, fonte única).
+	// Episode: the files come from the N:M links (the file points entity_id at
+	// the series); other types: the classic media_file.entity_id path (same helper
+	// used in resolution, single source).
 	files, err := s.listarFilesDaEntity(ctx, ent)
 	if err != nil {
 		respondErroInterno(w)
@@ -1271,8 +1320,8 @@ func (s *Server) getEntityFiles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, filesListDTO{Items: items})
 }
 
-// fileDTO converte um media_file no DTO de arquivo, repassando o mediainfo_json
-// cru (ou `null`).
+// fileDTO converts a media_file into the file DTO, passing the raw
+// mediainfo_json through (or `null`).
 func fileDTO(f sqlcgen.MediaFile) mediaFileDTO {
 	dto := mediaFileDTO{
 		ID:      f.ID,
@@ -1288,13 +1337,13 @@ func fileDTO(f sqlcgen.MediaFile) mediaFileDTO {
 	return dto
 }
 
-// getEntityPoster trata GET /api/v1/entities/{id}/assets/poster: serve o binário do
-// pôster local com o content-type correto, aplicando a PRECEDÊNCIA de serviço do
-// briefing 0017 (preferida → user → external → 404) sobre a lista de assets do kind
-// 'poster'. 404 quando não há pôster (a UI cai no placeholder); 403 quando o caminho
-// gravado NÃO está sob um datasource conhecido (guarda de PATH-TRAVERSAL: jamais
-// servimos caminho arbitrário). A escolha do dono vence — vale inclusive para o que
-// o Jellyfin consome deste endpoint.
+// getEntityPoster handles GET /api/v1/entities/{id}/assets/poster: it serves
+// the local poster binary with the correct content-type, applying the serving
+// PRECEDENCE (preferred → user → external → 404) over the list of assets of kind
+// 'poster'. 404 when there is no poster (the UI falls back to the placeholder);
+// 403 when the stored path is NOT under a known datasource (PATH-TRAVERSAL
+// guard: we never serve an arbitrary path). The owner's choice wins — it also
+// applies to what Jellyfin consumes from this endpoint.
 func (s *Server) getEntityPoster(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -1315,10 +1364,11 @@ func (s *Server) getEntityPoster(w http.ResponseWriter, r *http.Request) {
 	s.servirBinarioAsset(w, r, ctx, asset)
 }
 
-// getEntityFanart trata GET /api/v1/entities/{id}/assets/fanart: serve o binário do
-// FUNDO (backdrop) local — o análogo de getEntityPoster para o kind 'fanart', com a
-// MESMA precedência de serviço (preferida → user → external → 404) e a mesma guarda
-// de path-traversal. 404 quando não há fundo (a UI cai na URL direta/placeholder).
+// getEntityFanart handles GET /api/v1/entities/{id}/assets/fanart: it serves
+// the local BACKGROUND (backdrop) binary — the analogue of getEntityPoster for
+// the 'fanart' kind, with the SAME serving precedence (preferred → user →
+// external → 404) and the same path-traversal guard. 404 when there is no
+// background (the UI falls back to the direct URL/placeholder).
 func (s *Server) getEntityFanart(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -1339,11 +1389,12 @@ func (s *Server) getEntityFanart(w http.ResponseWriter, r *http.Request) {
 	s.servirBinarioAsset(w, r, ctx, asset)
 }
 
-// getEntityStill trata GET /api/v1/entities/{id}/assets/still: serve o binário do
-// STILL custom (frame 16:9) do episódio — o análogo de getEntityPoster/Fanart para o
-// kind 'still' (0044), com a MESMA precedência de serviço (preferida → user →
-// external → 404) e a mesma guarda de path-traversal. 404 quando não há still custom
-// (o detalhe cai no still_url cru do provider — 0042).
+// getEntityStill handles GET /api/v1/entities/{id}/assets/still: it serves the
+// custom STILL (16:9 frame) binary of the episode — the analogue of
+// getEntityPoster/Fanart for the 'still' kind, with the SAME serving precedence
+// (preferred → user → external → 404) and the same path-traversal guard. 404
+// when there is no custom still (the detail falls back to the provider's raw
+// still_url).
 func (s *Server) getEntityStill(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -1364,10 +1415,10 @@ func (s *Server) getEntityStill(w http.ResponseWriter, r *http.Request) {
 	s.servirBinarioAsset(w, r, ctx, asset)
 }
 
-// raizesConfiaveis é a lista de diretórios sob os quais um pôster PODE ser
-// servido: as raízes dos datasources (arte local do scanner) mais o diretório de
-// assets (cache de imagem externo, briefing 0015), quando configurado. É a base da
-// guarda de path-traversal do endpoint de pôster.
+// raizesConfiaveis is the list of directories under which a poster MAY be
+// served: the roots of the datasources (local artwork from the scanner) plus the
+// assets directory (external image cache), when configured. It is the basis of
+// the path-traversal guard of the poster endpoint.
 func (s *Server) raizesConfiaveis(ctx context.Context) ([]string, error) {
 	fontes, err := s.leitura().ListarLibrarySources(ctx)
 	if err != nil {
@@ -1383,10 +1434,10 @@ func (s *Server) raizesConfiaveis(ctx context.Context) ([]string, error) {
 	return raizes, nil
 }
 
-// contentTypeImagem determina o content-type do pôster: primeiro pela extensão
-// (barato e preciso para os formatos comuns); se não resolver para image/*,
-// fareja os primeiros bytes. Volta o ponteiro do arquivo ao início para o
-// ServeContent reenviar do zero.
+// contentTypeImagem determines the poster content-type: first by extension
+// (cheap and accurate for the common formats); if that does not resolve to
+// image/*, it sniffs the first bytes. It rewinds the file pointer to the start so
+// ServeContent resends from scratch.
 func contentTypeImagem(path string, f *os.File) string {
 	ct := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
 	if strings.HasPrefix(ct, "image/") {
@@ -1398,10 +1449,10 @@ func contentTypeImagem(path string, f *os.File) string {
 	return http.DetectContentType(buf[:n])
 }
 
-// caminhoSobRaizes diz se `alvo` está contido em ALGUMA das raízes, comparando
-// caminhos LIMPOS e ABSOLUTOS via filepath.Rel — o caminho relativo não pode
-// começar por ".." nem ser absoluto para estar contido. É a checagem central da
-// guarda de path-traversal.
+// caminhoSobRaizes says whether `alvo` is contained in ANY of the roots,
+// comparing CLEAN and ABSOLUTE paths via filepath.Rel — the relative path cannot
+// start with ".." nor be absolute for it to be contained. It is the central
+// check of the path-traversal guard.
 func caminhoSobRaizes(alvo string, raizes []string) bool {
 	ap, err := filepath.Abs(filepath.Clean(alvo))
 	if err != nil {
@@ -1426,10 +1477,10 @@ func caminhoSobRaizes(alvo string, raizes []string) bool {
 	return false
 }
 
-// ── Parse dos parâmetros de query ────────────────────────────────────────────
+// ── Query parameter parsing ──────────────────────────────────────────────────
 
-// parsePaginacao lê limit/offset com defaults e teto. Valores não-numéricos ou
-// negativos respondem 400 invalid_query (e ok=false).
+// parsePaginacao reads limit/offset with defaults and a ceiling. Non-numeric or
+// negative values respond 400 invalid_query (and ok=false).
 func parsePaginacao(w http.ResponseWriter, q url.Values) (limit, offset int, ok bool) {
 	limit = limitPadrao
 	offset = 0
@@ -1455,8 +1506,8 @@ func parsePaginacao(w http.ResponseWriter, q url.Values) (limit, offset int, ok 
 	return limit, offset, true
 }
 
-// parseTipoFiltro devolve o filtro de type como valor para o sqlc (string) ou
-// nil quando ausente (sem filtro).
+// parseTipoFiltro returns the type filter as a value for sqlc (string) or nil
+// when absent (no filter).
 func parseTipoFiltro(q url.Values) any {
 	if v := q.Get("type"); v != "" {
 		return v
@@ -1464,8 +1515,9 @@ func parseTipoFiltro(q url.Values) any {
 	return nil
 }
 
-// parseOwnedFiltro traduz owned=true|false|1|0 no inteiro 1/0 que a query
-// compara ao EXISTS. Ausente => nil (sem filtro). Valor inválido => 400.
+// parseOwnedFiltro translates owned=true|false|1|0 into the integer 1/0 that
+// the query compares to EXISTS. Absent => nil (no filter). Invalid value =>
+// 400.
 func parseOwnedFiltro(w http.ResponseWriter, q url.Values) (any, bool) {
 	v := q.Get("owned")
 	if v == "" {
@@ -1482,22 +1534,22 @@ func parseOwnedFiltro(w http.ResponseWriter, q url.Values) (any, bool) {
 	return int64(0), true
 }
 
-// sortModo enumera os valores aceitos de ?sort= em GET /api/v1/entities: os
-// dois históricos por título (briefing 0010) mais o `-created_at` do
-// briefing 0109/0110 ("adicionados recentemente"). Cada modo mapeia para UMA
-// query sqlc em listarCards (o sqlc não liga parâmetro dentro de ORDER BY).
+// sortModo enumerates the accepted values of ?sort= in GET /api/v1/entities:
+// the two historical orderings by title plus the `-created_at` ("recently
+// added"). Each mode maps to ONE sqlc query in listarCards (sqlc cannot bind a
+// parameter inside ORDER BY).
 type sortModo int
 
 const (
-	sortTituloAsc   sortModo = iota // default: sort ausente, "title" ou "title_asc"
-	sortTituloDesc                  // "-title" ou "title_desc"
-	sortCriacaoDesc                 // "-created_at" (0109): só a direção DESC é pedida
+	sortTituloAsc   sortModo = iota // default: sort absent, "title" or "title_asc"
+	sortTituloDesc                  // "-title" or "title_desc"
+	sortCriacaoDesc                 // "-created_at": only the DESC direction is requested
 )
 
-// parseSort lê sort=title|-title|-created_at. Default (ausente/"title") é
-// título ascendente; "-title"/"title_desc" é título descendente;
-// "-created_at" (briefing 0109) é criação descendente — não há variante
-// ascendente ("mais antigo primeiro" não foi pedida). Outro valor => 400.
+// parseSort reads sort=title|-title|-created_at. The default (absent/"title")
+// is title ascending; "-title"/"title_desc" is title descending; "-created_at"
+// is creation descending — there is no ascending variant ("oldest first" was not
+// requested). Any other value => 400.
 func parseSort(w http.ResponseWriter, q url.Values) (sortModo, bool) {
 	switch q.Get("sort") {
 	case "", "title", "title_asc":
@@ -1512,16 +1564,17 @@ func parseSort(w http.ResponseWriter, q url.Values) (sortModo, bool) {
 	}
 }
 
-// ── Helpers de conversão ─────────────────────────────────────────────────────
+// ── Conversion helpers ───────────────────────────────────────────────────────
 
-// respondErroInterno responde 500 no shape padrão sem vazar o detalhe interno.
+// respondErroInterno responds 500 in the standard shape without leaking the
+// internal detail.
 func respondErroInterno(w http.ResponseWriter) {
 	writeError(w, http.StatusInternalServerError, "internal_error",
 		"erro interno ao processar a requisição")
 }
 
-// floatPtr extrai um *float64 do valor dinâmico do MAX(match_confidence) (REAL
-// ou NULL). Sem match => nil.
+// floatPtr extracts a *float64 from the dynamic value of MAX(match_confidence)
+// (REAL or NULL). No match => nil.
 func floatPtr(v any) *float64 {
 	switch x := v.(type) {
 	case float64:
@@ -1534,7 +1587,7 @@ func floatPtr(v any) *float64 {
 	}
 }
 
-// nsPtr converte sql.NullString em *string (nil quando NULL).
+// nsPtr converts sql.NullString into *string (nil when NULL).
 func nsPtr(ns sql.NullString) *string {
 	if !ns.Valid {
 		return nil
@@ -1543,7 +1596,7 @@ func nsPtr(ns sql.NullString) *string {
 	return &v
 }
 
-// ni64Ptr converte sql.NullInt64 em *int64 (nil quando NULL).
+// ni64Ptr converts sql.NullInt64 into *int64 (nil when NULL).
 func ni64Ptr(ni sql.NullInt64) *int64 {
 	if !ni.Valid {
 		return nil

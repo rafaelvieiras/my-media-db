@@ -10,21 +10,21 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/webui"
 )
 
-// spaHandler serve os arquivos estáticos do SPA embutido e implementa o
-// fallback de rota: quando o caminho requisitado não corresponde a um arquivo
-// existente no FS embutido, devolve o index.html para que o roteamento
-// client-side (deep-links) funcione.
+// spaHandler serves the static files of the embedded SPA and implements the route
+// fallback: when the requested path does not correspond to an existing file
+// in the embedded FS, it returns index.html so that the client-side routing
+// (deep links) works.
 //
-// Importante: este handler é registrado apenas para rotas NÃO-/api. As rotas
-// sob /api são tratadas por handlers próprios (ou pelo 404 JSON), de modo que
-// um erro de API nunca seja mascarado pelo index.html.
+// Important: this handler is registered only for NON-/api routes. The routes
+// under /api are handled by their own handlers (or by the JSON 404), so that
+// an API error is never masked by index.html.
 type spaHandler struct {
 	fsys      fs.FS
 	fileSrv   http.Handler
 	indexHTML []byte
 }
 
-// newSPAHandler constrói o handler a partir do FS embutido do pacote webui.
+// newSPAHandler builds the handler from the embedded FS of the webui package.
 func newSPAHandler() (*spaHandler, error) {
 	index, err := fs.ReadFile(webui.Dist, "index.html")
 	if err != nil {
@@ -38,31 +38,31 @@ func newSPAHandler() (*spaHandler, error) {
 }
 
 func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Normaliza o caminho e remove a barra inicial para consultar o fs.FS,
-	// cujos nomes não começam com "/".
+	// Normalizes the path and removes the leading slash to query the fs.FS,
+	// whose names do not start with "/".
 	name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 
 	if name != "" {
 		if f, err := h.fsys.Open(name); err == nil {
 			info, statErr := f.Stat()
 			_ = f.Close()
-			// Se for um arquivo regular existente, delega ao FileServer.
+			// If it is an existing regular file, delegate to the FileServer.
 			if statErr == nil && !info.IsDir() {
 				h.fileSrv.ServeHTTP(w, r)
 				return
 			}
 		} else if !errors.Is(err, fs.ErrNotExist) {
-			// Erro inesperado ao abrir (ex.: caminho inválido) — trata como 404
-			// do SPA caindo no fallback abaixo.
+			// Unexpected error when opening (e.g.: invalid path) — treat it as a SPA
+			// 404 falling back below.
 			_ = err
 		}
 	}
 
-	// Fallback do SPA: entrega o index.html com 200 e Content-Type HTML.
+	// SPA fallback: deliver index.html with 200 and HTML Content-Type.
 	h.serveIndex(w)
 }
 
-// serveIndex escreve o index.html embutido como resposta 200 text/html.
+// serveIndex writes the embedded index.html as a 200 text/html response.
 func (h *spaHandler) serveIndex(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)

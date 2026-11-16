@@ -14,21 +14,20 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Este arquivo implementa a FUNDAÇÃO do histórico de consumo (briefing 0092,
-// ADR-0022): os 4 endpoints REST sobre `historico_evento` (registrar, listar,
-// estado derivado, apagar). Segue o mesmo padrão de validação/404/shape de
-// resposta já usado em assets.go/creditos_interno.go — nada de padrão novo.
-// `kind`/`status`/`source` são TEXT livre (princípio 3 do AGENTS.md): a
-// validação aqui é só "não-vazio", nunca um enum fechado. A derivação de
-// "estado atual" (GET .../historico/estado) agrupa em GO sobre
-// ListarUltimoHistoricoEventoPorKind (autorizado pelo briefing — volume
-// baixo por entity, não compensa SQL avançado).
+// This file implements the FOUNDATION of the consumption history (ADR-0022): the 4 REST
+// endpoints over `historico_evento` (record, list, derived state, delete). It follows the
+// same validation/404/response-shape pattern already used in
+// assets.go/creditos_interno.go — no new pattern.
+// `kind`/`status`/`source` are free TEXT (principle 3 of AGENTS.md): the validation here
+// is only "non-empty", never a closed enum. The derivation of the "current state"
+// (GET .../historico/estado) groups IN GO over ListarUltimoHistoricoEventoPorKind (an
+// authorized trade-off — low volume per entity, so advanced SQL is not worth it).
 
-// historicoSourcePadrao é o valor de `source` quando o corpo do POST não
-// informa nenhum (default "manual" — o briefing 0093 usa "jellyfin-webhook").
+// historicoSourcePadrao is the value of `source` when the POST body informs none
+// (default "manual" — the Jellyfin webhook uses "jellyfin-webhook").
 const historicoSourcePadrao = "manual"
 
-// createHistoricoEventoRequest é o corpo de POST /entities/{id}/historico.
+// createHistoricoEventoRequest is the body of POST /entities/{id}/historico.
 type createHistoricoEventoRequest struct {
 	Kind            string           `json:"kind"`
 	Status          string           `json:"status"`
@@ -39,7 +38,7 @@ type createHistoricoEventoRequest struct {
 	Payload         *json.RawMessage `json:"payload"`
 }
 
-// historicoEventoDTO é o shape público de um evento (POST 201 e itens do
+// historicoEventoDTO is the public shape of an event (POST 201 and the items of
 // GET .../historico).
 type historicoEventoDTO struct {
 	ID              string           `json:"id"`
@@ -53,13 +52,13 @@ type historicoEventoDTO struct {
 	CreatedAt       string           `json:"created_at"`
 }
 
-// historicoEventoListDTO é a resposta de GET /entities/{id}/historico.
+// historicoEventoListDTO is the response of GET /entities/{id}/historico.
 type historicoEventoListDTO struct {
 	Eventos []historicoEventoDTO `json:"eventos"`
 }
 
-// historicoEstadoItemDTO é a projeção do evento mais recente de UM kind
-// (GET .../historico/estado) — sem id/payload, só o resumo usado pela UI.
+// historicoEstadoItemDTO is the projection of the most recent event of ONE kind
+// (GET .../historico/estado) — no id/payload, only the summary used by the UI.
 type historicoEstadoItemDTO struct {
 	Status          string   `json:"status"`
 	ProgressPercent *float64 `json:"progress_percent"`
@@ -68,14 +67,14 @@ type historicoEstadoItemDTO struct {
 	Source          string   `json:"source"`
 }
 
-// historicoEstadoDTO é a resposta de GET .../historico/estado: um item por
-// kind distinto já visto no histórico da entity.
+// historicoEstadoDTO is the response of GET .../historico/estado: one item per distinct
+// kind already seen in the entity's history.
 type historicoEstadoDTO struct {
 	Estado map[string]historicoEstadoItemDTO `json:"estado"`
 }
 
-// historicoEventoToDTO converte a linha do banco no shape público, decodificando
-// payload_json (quando presente) de volta para objeto.
+// historicoEventoToDTO converts the database row into the public shape, decoding
+// payload_json (when present) back into an object.
 func historicoEventoToDTO(e sqlcgen.HistoricoEvento) historicoEventoDTO {
 	dto := historicoEventoDTO{
 		ID:              e.ID,
@@ -94,16 +93,14 @@ func historicoEventoToDTO(e sqlcgen.HistoricoEvento) historicoEventoDTO {
 	return dto
 }
 
-// Os helpers *ParaEvento abaixo existem porque o sqlc só reusa o model
-// sqlcgen.HistoricoEvento (SELECT *) quando a query seleciona TODAS as
-// colunas da tabela; desde o briefing 0099 (colunas raw_tmdb_id/raw_imdb_id/
-// raw_tvdb_id/raw_title/raw_year), as queries que não as selecionam
-// (CriarHistoricoEvento, ListarHistoricoEventoPorEntity,
-// ListarUltimoHistoricoEventoPorKind, BuscarHistoricoEventoPorID) ganharam
-// cada uma seu próprio Row type -- estruturalmente igual a HistoricoEvento
-// menos os campos raw_*/EntityID nunca usados por esses handlers. Converte
-// para o shape comum em vez de duplicar historicoEventoToDTO/
-// derivarHistoricoEstado por Row type.
+// The *ParaEvento helpers below exist because sqlc only reuses the
+// sqlcgen.HistoricoEvento model (SELECT *) when the query selects ALL the columns of the
+// table; with the raw_tmdb_id/raw_imdb_id/raw_tvdb_id/raw_title/raw_year columns, the
+// queries that do not select them (CriarHistoricoEvento, ListarHistoricoEventoPorEntity,
+// ListarUltimoHistoricoEventoPorKind, BuscarHistoricoEventoPorID) each got their own Row
+// type -- structurally equal to HistoricoEvento minus the raw_*/EntityID fields never used
+// by these handlers. It converts to the common shape instead of duplicating
+// historicoEventoToDTO/derivarHistoricoEstado per Row type.
 
 func criarRowParaEvento(r sqlcgen.CriarHistoricoEventoRow) sqlcgen.HistoricoEvento {
 	return sqlcgen.HistoricoEvento{
@@ -141,7 +138,7 @@ func buscarPorIDRowParaEvento(r sqlcgen.BuscarHistoricoEventoPorIDRow) sqlcgen.H
 	}
 }
 
-// nf64Ptr converte sql.NullFloat64 em *float64 (nil quando NULL).
+// nf64Ptr converts sql.NullFloat64 into *float64 (nil when NULL).
 func nf64Ptr(nf sql.NullFloat64) *float64 {
 	if !nf.Valid {
 		return nil
@@ -150,11 +147,10 @@ func nf64Ptr(nf sql.NullFloat64) *float64 {
 	return &v
 }
 
-// createHistoricoEvento trata POST /api/v1/entities/{id}/historico: cria um
-// historico_evento genérico. `source` ausente -> "manual"; `occurred_at`
-// ausente -> timestamp do servidor no momento da chamada. 201 com o evento
-// criado; 404 entity inexistente; 422 kind/status vazios ou progress_percent
-// fora de [0,100] ou occurred_at malformado.
+// createHistoricoEvento handles POST /api/v1/entities/{id}/historico: it creates a
+// generic historico_evento. `source` absent -> "manual"; `occurred_at` absent -> the
+// server timestamp at call time. 201 with the created event; 404 unknown entity; 422
+// empty kind/status or progress_percent outside [0,100] or a malformed occurred_at.
 func (s *Server) createHistoricoEvento(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -199,11 +195,11 @@ func (s *Server) createHistoricoEvento(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, historicoEventoToDTO(criarRowParaEvento(evento)))
 }
 
-// validarCreateHistoricoEvento valida o corpo de POST .../historico e devolve
-// `occurred_at`/`source` já normalizados (default aplicado). Extraído do
-// handler só para manter a complexidade ciclomática baixa (mesmo padrão de
-// exigirEntity/obterAssetDaEntity) — `ok=false` traz o código/mensagem
-// prontos pro `writeError` do chamador.
+// validarCreateHistoricoEvento validates the body of POST .../historico and returns
+// `occurred_at`/`source` already normalized (default applied). Extracted from the handler
+// only to keep the cyclomatic complexity low (the same pattern as
+// exigirEntity/obterAssetDaEntity) — `ok=false` carries the code/message ready for the
+// caller's `writeError`.
 func validarCreateHistoricoEvento(body createHistoricoEventoRequest) (occurredAt, source, code, msg string, ok bool) {
 	if body.Kind == "" || body.Status == "" {
 		return "", "", "invalid_body", "kind e status sao obrigatorios e nao podem ser vazios", false
@@ -228,7 +224,7 @@ func validarCreateHistoricoEvento(body createHistoricoEventoRequest) (occurredAt
 	return occurredAt, source, "", "", true
 }
 
-// f64ToNull converte *float64 em sql.NullFloat64 (NULL quando nil).
+// f64ToNull converts *float64 into sql.NullFloat64 (NULL when nil).
 func f64ToNull(v *float64) sql.NullFloat64 {
 	if v == nil {
 		return sql.NullFloat64{}
@@ -236,9 +232,9 @@ func f64ToNull(v *float64) sql.NullFloat64 {
 	return sql.NullFloat64{Float64: *v, Valid: true}
 }
 
-// listHistoricoEventos trata GET /api/v1/entities/{id}/historico: lista os
-// eventos da entity em ordem occurred_at DESC, com filtro opcional ?kind=.
-// 200 ({"eventos":[]} quando nao ha nenhum); 404 entity inexistente.
+// listHistoricoEventos handles GET /api/v1/entities/{id}/historico: it lists the
+// entity's events in occurred_at DESC order, with an optional ?kind= filter.
+// 200 ({"eventos":[]} when there is none); 404 unknown entity.
 func (s *Server) listHistoricoEventos(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -268,15 +264,13 @@ func (s *Server) listHistoricoEventos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, historicoEventoListDTO{Eventos: out})
 }
 
-// getHistoricoEstado trata GET /api/v1/entities/{id}/historico/estado:
-// resumo derivado — um item por kind distinto, com o evento de occurred_at
-// mais recente daquele kind. O agrupamento acontece AQUI EM GO (autorizado
-// pelo briefing 0092: volume baixo por entity, nao compensa SQL avancado)
-// sobre ListarUltimoHistoricoEventoPorKind, que ja vem ordenado
-// occurred_at DESC, id DESC — o primeiro evento de cada kind visto na
-// varredura e o mais recente daquele kind, mesmo com kinds intercalados
-// fora de ordem de insercao. {} quando nao ha historico; 404 entity
-// inexistente.
+// getHistoricoEstado handles GET /api/v1/entities/{id}/historico/estado: the derived
+// summary — one item per distinct kind, with the most recent occurred_at event of that
+// kind. The grouping happens HERE IN GO (low volume per entity, so advanced SQL is not
+// worth it) over ListarUltimoHistoricoEventoPorKind, which already comes ordered
+// occurred_at DESC, id DESC — the first event of each kind seen in the sweep is the most
+// recent one of that kind, even with kinds interleaved out of insertion order. {} when
+// there is no history; 404 unknown entity.
 func (s *Server) getHistoricoEstado(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -299,9 +293,9 @@ func (s *Server) getHistoricoEstado(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, historicoEstadoDTO{Estado: derivarHistoricoEstado(convertidos)})
 }
 
-// derivarHistoricoEstado agrupa eventos (ja ordenados occurred_at DESC, id
-// DESC) por kind, mantendo so o PRIMEIRO visto de cada kind (o mais
-// recente). Helper PURO, testado isoladamente.
+// derivarHistoricoEstado groups events (already ordered occurred_at DESC, id DESC) by
+// kind, keeping only the FIRST seen of each kind (the most recent one). PURE helper,
+// tested in isolation.
 func derivarHistoricoEstado(eventos []sqlcgen.HistoricoEvento) map[string]historicoEstadoItemDTO {
 	estado := make(map[string]historicoEstadoItemDTO)
 	for _, e := range eventos {
@@ -319,10 +313,10 @@ func derivarHistoricoEstado(eventos []sqlcgen.HistoricoEvento) map[string]histor
 	return estado
 }
 
-// deleteHistoricoEvento trata DELETE /api/v1/entities/{id}/historico/{eventoId}:
-// remove um evento pontual (correcao do dono, principio 5 do AGENTS.md
-// preservado -- nao e purga em massa). 204 sucesso; 404 entity/evento
-// inexistente ou evento de outra entity.
+// deleteHistoricoEvento handles DELETE /api/v1/entities/{id}/historico/{eventoId}: it
+// removes a single event (the owner's correction, principle 5 of AGENTS.md preserved --
+// it is not a mass purge). 204 on success; 404 unknown entity/event or an event from
+// another entity.
 func (s *Server) deleteHistoricoEvento(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -345,9 +339,9 @@ func (s *Server) deleteHistoricoEvento(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// obterHistoricoEventoDaEntity carrega um evento exigindo que ele EXISTA e
-// pertenca a `id` (404 quando ausente ou de outra entity). Guarda comum do
-// DELETE (espelha obterAssetDaEntity em assets.go).
+// obterHistoricoEventoDaEntity loads an event requiring that it EXISTS and belongs to
+// `id` (404 when absent or from another entity). The common guard of the DELETE (it
+// mirrors obterAssetDaEntity in assets.go).
 func (s *Server) obterHistoricoEventoDaEntity(w http.ResponseWriter, ctx context.Context, id, eventoID string) (sqlcgen.HistoricoEvento, bool) {
 	row, err := s.leitura().BuscarHistoricoEventoPorID(ctx, eventoID)
 	if err != nil {
@@ -366,21 +360,21 @@ func (s *Server) obterHistoricoEventoDaEntity(w http.ResponseWriter, ctx context
 	return evento, true
 }
 
-// ── Eventos órfãos (briefing 0099) ──────────────────────────────────────────
+// ── Orphan events ───────────────────────────────────────────────────────────
 
-// historicoRawExternalIdsDTO é o `raw_external_ids` de historicoEventoOrfaoDTO
-// -- só as chaves presentes no evento aparecem no JSON (omitempty), espelhando
-// "Ausente = não informado pelo evento" do openapi.yaml.
+// historicoRawExternalIdsDTO is the `raw_external_ids` of historicoEventoOrfaoDTO -- only
+// the keys present in the event show up in the JSON (omitempty), mirroring "Absent = not
+// informed by the event" from openapi.yaml.
 type historicoRawExternalIdsDTO struct {
 	Tmdb string `json:"tmdb,omitempty"`
 	Imdb string `json:"imdb,omitempty"`
 	Tvdb string `json:"tvdb,omitempty"`
 }
 
-// historicoEventoOrfaoDTO é o shape de um item de GET /historico/orfaos --
-// sem payload/created_at (não fazem parte do schema HistoricoEventoOrfao do
-// openapi.yaml), com os campos raw_* de proveniência em vez de entity_id
-// (que é sempre NULL para um órfão, por definição).
+// historicoEventoOrfaoDTO is the shape of an item of GET /historico/orfaos -- without
+// payload/created_at (they are not part of the HistoricoEventoOrfao schema of
+// openapi.yaml), with the raw_* provenance fields instead of entity_id (which is always
+// NULL for an orphan, by definition).
 type historicoEventoOrfaoDTO struct {
 	ID              string                     `json:"id"`
 	Kind            string                     `json:"kind"`
@@ -394,8 +388,8 @@ type historicoEventoOrfaoDTO struct {
 	RawExternalIDs  historicoRawExternalIdsDTO `json:"raw_external_ids"`
 }
 
-// historicoEventoOrfaoListDTO é a resposta de GET /historico/orfaos -- mesmo
-// envelope de paginação de GET /entities (items/total/limit/offset).
+// historicoEventoOrfaoListDTO is the response of GET /historico/orfaos -- the same
+// pagination envelope as GET /entities (items/total/limit/offset).
 type historicoEventoOrfaoListDTO struct {
 	Items  []historicoEventoOrfaoDTO `json:"items"`
 	Total  int64                     `json:"total"`
@@ -403,8 +397,8 @@ type historicoEventoOrfaoListDTO struct {
 	Offset int                       `json:"offset"`
 }
 
-// historicoEventoOrfaoToDTO converte a linha do banco (sqlcgen.HistoricoEvento,
-// já com entity_id NULL) no shape público de órfão.
+// historicoEventoOrfaoToDTO converts the database row (sqlcgen.HistoricoEvento, already
+// with entity_id NULL) into the public orphan shape.
 func historicoEventoOrfaoToDTO(e sqlcgen.HistoricoEvento) historicoEventoOrfaoDTO {
 	return historicoEventoOrfaoDTO{
 		ID:              e.ID,
@@ -424,10 +418,10 @@ func historicoEventoOrfaoToDTO(e sqlcgen.HistoricoEvento) historicoEventoOrfaoDT
 	}
 }
 
-// listHistoricoOrfaos trata GET /api/v1/historico/orfaos (briefing 0099):
-// lista paginada dos eventos ainda sem entity, ordem occurred_at DESC. 200
-// sempre (lista vazia é estado normal, não erro); 400 limit/offset inválidos
-// (mesmo parsePaginacao de GET /entities).
+// listHistoricoOrfaos handles GET /api/v1/historico/orfaos: the paged list of the events
+// still without an entity, occurred_at DESC order. 200 always (an empty list is a normal
+// state, not an error); 400 invalid limit/offset (the same parsePaginacao as
+// GET /entities).
 func (s *Server) listHistoricoOrfaos(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return

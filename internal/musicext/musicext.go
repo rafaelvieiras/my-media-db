@@ -1,8 +1,8 @@
-// Package musicext concentra a LEITURA do extension_data da vertical de
-// música (namespace core.music@1, ADR-0027, briefing 0105): extrair o objeto
-// do namespace e coagir os números de JSON — mesmo molde do internal/tvext
-// (série). Também guarda os `kind` de entity_relation e o MBID canônico de
-// "Various Artists" usados para amarrar a hierarquia artista→álbum→faixa.
+// Package musicext concentrates the READING of the extension_data of the music
+// vertical (namespace core.music@1, ADR-0027): extract the namespace object and
+// coerce the JSON numbers — the same mold as internal/tvext (series). It also
+// keeps the entity_relation `kind`s and the canonical MBID of "Various Artists"
+// used to tie the artist→album→track hierarchy.
 package musicext
 
 import (
@@ -10,65 +10,69 @@ import (
 	"encoding/json"
 )
 
-// Namespace do extension_data desta vertical.
+// Namespace of the extension_data of this vertical.
 const Namespace = "core.music@1"
 
-// Kinds de entity_relation que amarram a hierarquia (ADR-0027 §2/§4).
+// entity_relation kinds that tie the hierarchy (ADR-0027 §2/§4).
 const (
-	// KindAlbum liga álbum (parent) → faixa (child); sort_index = track_number.
+	// KindAlbum connects album (parent) → track (child); sort_index = track_number.
 	KindAlbum = "music_album"
-	// KindArtistaPrincipal liga artista (parent) → álbum ou faixa (child);
-	// sort_index = ordem de billing.
+	// KindArtistaPrincipal connects artist (parent) → album or track (child);
+	// sort_index = billing order.
 	KindArtistaPrincipal = "music_artista_principal"
-	// KindArtistaFeat liga artista (parent) → faixa (child): colaboração
-	// pontual, quando o artista da faixa diverge do artista principal do álbum.
+	// KindArtistaFeat connects artist (parent) → track (child): one-off
+	// collaboration, when the artist of the track diverges from the main artist
+	// of the album.
 	KindArtistaFeat = "music_artista_feat"
 )
 
-// Chaves do extension_data core.music@1 que guardam o nome/MBID BRUTO da
-// colaboração (feat.) de uma faixa, quando o artist-credit dela diverge do
-// artista PRINCIPAL do álbum (ADR-0027 item 4, ADR-0029 item 4, briefing 0115).
-// São METADADO de leitura só -- gravadas pelo import ESCOPADO (local-first, uma
-// faixa possuída por vez, internal/enrich/musica.go ImportarFaixaPossuida) SEM
-// criar entity/entity_relation(kind=music_artista_feat) automaticamente; o
-// import de ÁRVORE completa (importarArtista, pull explícito do dono) continua
-// criando a entity+relação como antes (ADR-0029 item 5) e também grava estas
-// mesmas chaves (redundante com a relação, mas sem custo e sem contradição).
+// Keys of the core.music@1 extension_data that hold the RAW name/MBID of the
+// collaboration (feat.) of a track, when its artist-credit diverges from the
+// MAIN artist of the album (ADR-0027 item 4, ADR-0029 item 4). They are
+// READ-ONLY metadata -- written by the SCOPED import (local-first, one owned
+// track at a time, internal/enrich/musica.go ImportarFaixaPossuida) WITHOUT
+// creating entity/entity_relation(kind=music_artista_feat) automatically; the
+// import of the complete TREE (importarArtista, an explicit pull by the owner)
+// keeps creating the entity+relation as before (ADR-0029 item 5) and also writes
+// these same keys (redundant with the relation, but with no cost and no
+// contradiction).
 const (
-	// FeatArtistNameKey é o nome exibível do artista colaborador, quando a fonte
-	// o trouxe. Ausente do payload quando não há divergência de artist-credit.
+	// FeatArtistNameKey is the display name of the collaborating artist, when the
+	// source brought it. Absent from the payload when there is no artist-credit
+	// divergence.
 	FeatArtistNameKey = "feat_artist_name"
-	// FeatArtistMbidKey é o MBID do artista colaborador na fonte. Sempre presente
-	// junto de FeatArtistNameKey (a divergência só é detectável com o MBID).
+	// FeatArtistMbidKey is the MBID of the collaborating artist at the source.
+	// Always present together with FeatArtistNameKey (the divergence is only
+	// detectable with the MBID).
 	FeatArtistMbidKey = "feat_artist_mbid"
 )
 
-// MBIDVariousArtists é o MBID canônico que a própria MusicBrainz usa para o
-// artista de agrupamento de compilações/trilhas sonoras. Usar este valor ao
-// ligar um álbum de compilação a "Various Artists" — não é caso especial de
-// código, é o id certo (ADR-0027 §3/MU4).
+// MBIDVariousArtists is the canonical MBID that MusicBrainz itself uses for the
+// grouping artist of compilations/soundtracks. Use this value when linking a
+// compilation album to "Various Artists" — it is not a code special case, it is
+// the right id (ADR-0027 §3/MU4).
 const MBIDVariousArtists = "89ad4ac3-39f7-470e-963a-56509c546377"
 
-// FonteMusicBrainz/ChaveExternalIDMbid documentam a ÚNICA exceção à convenção
-// "chave do external_ids == Provider.Nome()" que tmdb/imdb/tvdb seguem em todo
-// o resto do sistema: o id de MusicBrainz sempre vive sob a chave "mbid"
-// (ADR-0027 item 6, coluna gerada external_id_mbid + índice), nunca sob o nome
-// literal da fonte "musicbrainz" — Nome() só identifica a FONTE (media_external
-// .source, rastreio de crédito), não a chave de identidade. acharOuCriarArtista/
-// Album/Faixa (musica.go) já gravam direto sob "mbid"; o gap fechado no
-// briefing 0119 é o caminho GENÉRICO de enriquecimento (mesclarExternalIds,
-// acharColisaoExterna) que, sem este mapeamento, gravaria/consultaria sob
-// "musicbrainz" — chave que idsExternosDe (enrich/artes.go) e a coluna gerada
-// nunca leem.
+// FonteMusicBrainz/ChaveExternalIDMbid document the ONLY exception to the
+// "external_ids key == Provider.Nome()" convention that tmdb/imdb/tvdb follow in
+// the rest of the system: the MusicBrainz id always lives under the "mbid" key
+// (ADR-0027 item 6, generated column external_id_mbid + index), never under the
+// literal source name "musicbrainz" — Nome() only identifies the SOURCE
+// (media_external.source, credit tracking), not the identity key.
+// acharOuCriarArtista/Album/Faixa (musica.go) already write straight under
+// "mbid"; the gap this mapping closes is in the GENERIC enrichment path
+// (mesclarExternalIds, acharColisaoExterna) which, without it, would
+// write/query under "musicbrainz" — a key that idsExternosDe (enrich/artes.go)
+// and the generated column never read.
 const (
 	FonteMusicBrainz    = "musicbrainz"
 	ChaveExternalIDMbid = "mbid"
 )
 
-// ExtractNamespace extrai o objeto do namespace (ex.: "core.music@1") de um
-// extension_data_json (envelope namespace→objeto). Devolve nil quando o raw é
-// NULL/vazio, ilegível, ou não contém o namespace — o chamador degrada (a
-// entity sem aquele namespace simplesmente não tem os dados).
+// ExtractNamespace extracts the namespace object (e.g. "core.music@1") from an
+// extension_data_json (namespace→object envelope). It returns nil when the raw
+// is NULL/empty, unreadable, or does not contain the namespace — the caller
+// degrades (the entity without that namespace simply does not have the data).
 func ExtractNamespace(raw sql.NullString, ns string) map[string]any {
 	if !raw.Valid || raw.String == "" {
 		return nil
@@ -88,8 +92,8 @@ func ExtractNamespace(raw sql.NullString, ns string) map[string]any {
 	return m
 }
 
-// AsInt coage um valor decodificado de JSON para int (números de JSON viram
-// float64 no unmarshal genérico). (0,false) quando não é número.
+// AsInt coerces a JSON-decoded value to int (JSON numbers become float64 in the
+// generic unmarshal). (0,false) when it is not a number.
 func AsInt(v any) (int, bool) {
 	switch n := v.(type) {
 	case float64:
@@ -102,8 +106,8 @@ func AsInt(v any) (int, bool) {
 	return 0, false
 }
 
-// AsString coage um valor decodificado de JSON para string. ("",false) quando
-// não é string (ex.: isrc).
+// AsString coerces a JSON-decoded value to string. ("",false) when it is not a
+// string (e.g.: isrc).
 func AsString(v any) (string, bool) {
 	s, ok := v.(string)
 	return s, ok

@@ -15,22 +15,19 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/ytdlp"
 )
 
-// Testes de integração do briefing 0103 (tema musical automático via
-// ThemerrDB + yt-dlp, ADR-0025): GET .../theme/candidato e POST
-// .../theme/download. O candidato NUNCA é buscado ao vivo por estes
-// handlers -- é lido só de media_external (gravado pelo enrich,
-// internal/enrich/tema_musical.go), então os testes semeiam a linha
-// diretamente, sem precisar de um provider.Provider fake registrado (ao
-// contrário de trailer_test.go, que precisa do fake pra alimentar `videos`).
-// Reaproveita escreverYtdlpFakeDownload de trailer_test.go (mesmo pacote) pro
-// "yt-dlp" fake via script shell.
+// Integration tests of the automatic theme song (ThemerrDB + yt-dlp, ADR-0025):
+// GET .../theme/candidato and POST .../theme/download. The candidate is NEVER fetched live by
+// these handlers -- it is read only from media_external (written by enrich,
+// internal/enrich/tema_musical.go), so the tests seed the row directly, without needing a
+// registered fake provider.Provider (unlike trailer_test.go, which needs the fake to feed
+// `videos`). It reuses escreverYtdlpFakeDownload from trailer_test.go (same package) for the
+// fake "yt-dlp" through a shell script.
 
-// setupThemeServer sobe um Server sem NENHUM provider registrado (não é
-// necessário: o candidato já cacheado é lido direto do banco) e, quando
-// ytdlpBin != "", injeta um ytdlp.Gerenciador com esse path customizado --
-// mesmo padrão de setupTrailerServer (trailer_test.go), incluindo a mesma
-// ressalva de aplicar SetCustomPath só DEPOIS de Handler() (o boot sincroniza
-// e limparia um valor setado antes).
+// setupThemeServer starts a Server with NO provider registered (it is not needed: the already
+// cached candidate is read straight from the database) and, when ytdlpBin != "", injects a
+// ytdlp.Gerenciador with that customized path -- the same pattern as setupTrailerServer
+// (trailer_test.go), including the same caveat of applying SetCustomPath only AFTER Handler()
+// (the boot synchronizes and would clear a value set before).
 func setupThemeServer(t *testing.T, ytdlpBin string) (http.Handler, *db.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "theme.sqlite")
@@ -58,11 +55,10 @@ func setupThemeServer(t *testing.T, ytdlpBin string) (http.Handler, *db.DB) {
 	return h, database
 }
 
-// semearCandidatoTema grava o envelope de candidato de tema musical em
-// media_external(source=themerrdb) -- MESMO shape que
-// enrich.persistirCandidatoTema grava (provider.ChaveEnvelopeTemaMusical →
-// URL). semMatch=true grava o envelope VAZIO (candidato consultado, sem
-// match encontrado -- o enrich grava assim mesmo sem achar, briefing §3).
+// semearCandidatoTema writes the theme song candidate envelope into
+// media_external(source=themerrdb) -- the SAME shape enrich.persistirCandidatoTema writes
+// (provider.ChaveEnvelopeTemaMusical → URL). semMatch=true writes the EMPTY envelope (the
+// candidate was queried, no match found -- enrich writes it even without finding one).
 func semearCandidatoTema(t *testing.T, d *db.DB, entityID, url string, semMatch bool) {
 	t.Helper()
 	corpo := map[string]any{}
@@ -83,7 +79,7 @@ func semearCandidatoTema(t *testing.T, d *db.DB, entityID, url string, semMatch 
 
 // ── GET .../theme/candidato ──────────────────────────────────────────────
 
-// TestGetThemeCandidatoEntidadeInexistente404 cobre a entity ausente.
+// TestGetThemeCandidatoEntidadeInexistente404 covers the missing entity.
 func TestGetThemeCandidatoEntidadeInexistente404(t *testing.T) {
 	h, _ := setupThemeServer(t, "")
 
@@ -93,9 +89,9 @@ func TestGetThemeCandidatoEntidadeInexistente404(t *testing.T) {
 	}
 }
 
-// TestGetThemeCandidatoSemCandidatoNemArquivo cobre o caso comum (cobertura
-// do ThemerrDB é parcial, briefing §6): sem linha media_external nenhuma ->
-// disponivel=false, ja_tem_local=false, sem erro.
+// TestGetThemeCandidatoSemCandidatoNemArquivo covers the common case (ThemerrDB coverage is
+// partial): with no media_external row at all -> disponivel=false, ja_tem_local=false, no
+// error.
 func TestGetThemeCandidatoSemCandidatoNemArquivo(t *testing.T) {
 	h, d := setupThemeServer(t, "")
 	semearEntity(t, d, "e1", "movie", "Sem Tema")
@@ -115,9 +111,8 @@ func TestGetThemeCandidatoSemCandidatoNemArquivo(t *testing.T) {
 	}
 }
 
-// TestGetThemeCandidatoEnvelopeSemMatchNaoConfundeComDisponivel cobre o
-// envelope "consultado, sem match" (gravado pelo enrich mesmo sem achar,
-// briefing §3): disponivel continua false.
+// TestGetThemeCandidatoEnvelopeSemMatchNaoConfundeComDisponivel covers the "queried, no match"
+// envelope (written by enrich even without finding one): disponivel stays false.
 func TestGetThemeCandidatoEnvelopeSemMatchNaoConfundeComDisponivel(t *testing.T) {
 	h, d := setupThemeServer(t, "")
 	semearEntity(t, d, "e1", "movie", "Sem Match")
@@ -132,9 +127,9 @@ func TestGetThemeCandidatoEnvelopeSemMatchNaoConfundeComDisponivel(t *testing.T)
 	}
 }
 
-// TestGetThemeCandidatoDisponivelSemVazarURL cobre o critério §6: candidato
-// presente -> disponivel=true, mas a URL do YouTube NUNCA aparece no corpo da
-// resposta (o download acontece server-side).
+// TestGetThemeCandidatoDisponivelSemVazarURL covers criterion §6: candidate present ->
+// disponivel=true, but the YouTube URL NEVER appears in the response body (the download happens
+// server-side).
 func TestGetThemeCandidatoDisponivelSemVazarURL(t *testing.T) {
 	h, d := setupThemeServer(t, "")
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -158,8 +153,8 @@ func TestGetThemeCandidatoDisponivelSemVazarURL(t *testing.T) {
 	}
 }
 
-// TestGetThemeCandidatoJaTemLocalTrue cobre um theme.mp3 já presente (dono OU
-// download anterior): ja_tem_local=true independente de haver candidato.
+// TestGetThemeCandidatoJaTemLocalTrue covers an already present theme.mp3 (owner OR a previous
+// download): ja_tem_local=true regardless of there being a candidate.
 func TestGetThemeCandidatoJaTemLocalTrue(t *testing.T) {
 	h, d := setupThemeServer(t, "")
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -178,8 +173,8 @@ func TestGetThemeCandidatoJaTemLocalTrue(t *testing.T) {
 
 // ── POST .../theme/download ──────────────────────────────────────────────
 
-// TestPostThemeDownloadSemCandidato422 cobre o critério §5: sem candidato
-// (nenhuma linha media_external) -> 422, nada escrito no disco.
+// TestPostThemeDownloadSemCandidato422 covers criterion §5: without a candidate (no
+// media_external row) -> 422, nothing written to disk.
 func TestPostThemeDownloadSemCandidato422(t *testing.T) {
 	ytBin := escreverYtdlpFakeDownload(t, filepath.Join(t.TempDir(), "yt-dlp"))
 	h, d := setupThemeServer(t, ytBin)
@@ -195,8 +190,8 @@ func TestPostThemeDownloadSemCandidato422(t *testing.T) {
 	}
 }
 
-// TestPostThemeDownloadSemYtdlp503 cobre o critério §5: sem yt-dlp disponível
-// -> 503, nada escrito no disco, mesmo com candidato presente.
+// TestPostThemeDownloadSemYtdlp503 covers criterion §5: without yt-dlp available -> 503, nothing
+// written to disk, even with a candidate present.
 func TestPostThemeDownloadSemYtdlp503(t *testing.T) {
 	h, d := setupThemeServer(t, "")
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -212,9 +207,9 @@ func TestPostThemeDownloadSemYtdlp503(t *testing.T) {
 	}
 }
 
-// TestPostThemeDownloadSucessoEGravaThemeMp3 cobre o critério §5: sucesso
-// grava theme.mp3 na raiz da pasta -- o MESMO path que GET .../theme já
-// serve (0082) -- sem deixar .tmp órfão.
+// TestPostThemeDownloadSucessoEGravaThemeMp3 covers criterion §5: success writes theme.mp3 at
+// the root of the folder -- the SAME path that GET .../theme already serves -- without leaving an
+// orphan .tmp.
 func TestPostThemeDownloadSucessoEGravaThemeMp3(t *testing.T) {
 	ytBin := escreverYtdlpFakeDownload(t, filepath.Join(t.TempDir(), "yt-dlp"))
 	h, d := setupThemeServer(t, ytBin)
@@ -244,10 +239,10 @@ func TestPostThemeDownloadSucessoEGravaThemeMp3(t *testing.T) {
 	}
 }
 
-// TestPostThemeDownloadJaExisteLocalSemForce409 cobre o critério §5: um
-// theme.mp3 já presente (baixado antes OU colocado à mão pelo dono) -> 409,
-// arquivo original intacto byte-a-byte. Este endpoint NÃO tem `force`
-// (briefing §6): a única forma de re-baixar é o dono apagar o arquivo antes.
+// TestPostThemeDownloadJaExisteLocalSemForce409 covers criterion §5: an already present
+// theme.mp3 (downloaded before OR placed by hand by the owner) -> 409, the original file intact
+// byte by byte. This endpoint has NO `force`: the only way to re-download is the owner deleting
+// the file beforehand.
 func TestPostThemeDownloadJaExisteLocalSemForce409(t *testing.T) {
 	ytBin := escreverYtdlpFakeDownload(t, filepath.Join(t.TempDir(), "yt-dlp"))
 	h, d := setupThemeServer(t, ytBin)
@@ -273,14 +268,14 @@ func TestPostThemeDownloadJaExisteLocalSemForce409(t *testing.T) {
 	}
 }
 
-// TestPostThemeDownloadFalhaDeRede502 cobre a falha do próprio download
-// (rede, vídeo removido): nada escrito com o nome canônico, sem .tmp órfão.
+// TestPostThemeDownloadFalhaDeRede502 covers the failure of the download itself (network, video
+// removed): nothing written under the canonical name, without an orphan .tmp.
 func TestPostThemeDownloadFalhaDeRede502(t *testing.T) {
 	ytBin := escreverYtdlpFakeDownload(t, filepath.Join(t.TempDir(), "yt-dlp"))
 	h, d := setupThemeServer(t, ytBin)
 	semearEntity(t, d, "e1", "movie", "Matrix")
-	// URL contendo "falha" dispara a saida de erro do script fake (mesmo
-	// truque de trailer_test.go).
+	// A URL containing "falha" triggers the error output of the fake script (the same trick as
+	// trailer_test.go).
 	semearCandidatoTema(t, d, "e1", "https://www.youtube.com/watch?v=falha", false)
 	dir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
 
@@ -296,7 +291,7 @@ func TestPostThemeDownloadFalhaDeRede502(t *testing.T) {
 	}
 }
 
-// TestPostThemeDownloadEntidadeInexistente404 cobre a entity ausente.
+// TestPostThemeDownloadEntidadeInexistente404 covers the missing entity.
 func TestPostThemeDownloadEntidadeInexistente404(t *testing.T) {
 	ytBin := escreverYtdlpFakeDownload(t, filepath.Join(t.TempDir(), "yt-dlp"))
 	h, _ := setupThemeServer(t, ytBin)
@@ -307,14 +302,13 @@ func TestPostThemeDownloadEntidadeInexistente404(t *testing.T) {
 	}
 }
 
-// ── Regressão: GET /entities/{id}/theme (briefing 0082) ─────────────────
+// ── Regression: GET /entities/{id}/theme ─────────────────────────────────
 
-// TestGetEntityThemeContratoInalteradoAposDownloadAutomatico é o teste de
-// regressão EXPLÍCITO pedido pelo briefing 0103 §5: depois que o download
-// automático via ThemerrDB grava theme.mp3, o endpoint ANTIGO (0082) --
-// GET /entities/{id}/theme -- continua servindo o binário exatamente como
-// serviria um theme.mp3 colocado à mão, com o MESMO content-type e sem
-// nenhuma mudança de contrato (nenhum campo novo, nenhum redirecionamento).
+// TestGetEntityThemeContratoInalteradoAposDownloadAutomatico is the EXPLICIT regression test
+// requested by the automatic theme design: after the automatic download through ThemerrDB writes
+// theme.mp3, the OLD endpoint -- GET /entities/{id}/theme -- keeps serving the binary exactly as
+// it would serve a theme.mp3 placed by hand, with the SAME content-type and with no contract
+// change (no new field, no redirect).
 func TestGetEntityThemeContratoInalteradoAposDownloadAutomatico(t *testing.T) {
 	ytBin := escreverYtdlpFakeDownload(t, filepath.Join(t.TempDir(), "yt-dlp"))
 	h, d := setupThemeServer(t, ytBin)
@@ -338,8 +332,8 @@ func TestGetEntityThemeContratoInalteradoAposDownloadAutomatico(t *testing.T) {
 		t.Errorf("corpo = %q, quero %q", rec.Body.String(), "fake-mp4-bytes")
 	}
 
-	// HEAD continua funcionando (0082) -- checagem de existência sem baixar
-	// o binário inteiro, contrato que o front usa hoje.
+	// HEAD keeps working -- an existence check without downloading the whole binary, a contract
+	// the frontend uses today.
 	recHead := do(t, h, http.MethodHead, "/api/v1/entities/e1/theme", nil)
 	if recHead.Code != http.StatusOK {
 		t.Fatalf("HEAD /theme status = %d, quero 200", recHead.Code)

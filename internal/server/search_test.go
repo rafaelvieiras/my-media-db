@@ -14,8 +14,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// fakeProvider implementa provider.Provider sem rede: devolve resultados fixos
-// (ou um erro), para exercitar o handler de busca de forma determinista.
+// fakeProvider implements provider.Provider without network: it returns fixed results (or an
+// error), to exercise the search handler deterministically.
 type fakeProvider struct {
 	resultados []provider.ResultadoExterno
 	err        error
@@ -24,8 +24,8 @@ type fakeProvider struct {
 
 func (f *fakeProvider) Nome() string { return "fake" }
 
-// BuscarDetalhe/MapearDetalhe não são exercitados nos testes de busca (0014);
-// stubs só para satisfazer a interface Provider estendida no 0015.
+// BuscarDetalhe/MapearDetalhe are not exercised in the search tests; they are stubs only to
+// satisfy the extended Provider interface.
 func (f *fakeProvider) BuscarDetalhe(_ context.Context, _, _ string, _ []string) (json.RawMessage, error) {
 	return nil, errors.New("não implementado")
 }
@@ -51,7 +51,7 @@ func (f *fakeProvider) Buscar(_ context.Context, _, tipo, _ string) ([]provider.
 	return out, nil
 }
 
-// setupSearchServer sobe um Server com banco migrado e as options dadas.
+// setupSearchServer starts a Server with a migrated database and the given options.
 func setupSearchServer(t *testing.T, opts ...Option) (http.Handler, *db.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "search.sqlite")
@@ -70,10 +70,10 @@ func setupSearchServer(t *testing.T, opts ...Option) (http.Handler, *db.DB) {
 	return h, database
 }
 
-// ptr devolve o endereco de um valor (para *string nos resultados fake).
+// ptr returns the address of a value (for *string in the fake results).
 func ptr[T any](v T) *T { return &v }
 
-// decodeSearch decodifica a resposta de GET /api/v1/search.
+// decodeSearch decodes the response of GET /api/v1/search.
 func decodeSearch(t *testing.T, body []byte) searchResponseDTO {
 	t.Helper()
 	var out searchResponseDTO
@@ -95,7 +95,7 @@ func TestSearchQObrigatorio(t *testing.T) {
 }
 
 func TestSearchLocalFTS(t *testing.T) {
-	h, d := setupSearchServer(t) // sem provider
+	h, d := setupSearchServer(t) // no provider
 	semearEntity(t, d, "m", "movie", "The Matrix")
 	semearFile(t, d, "mf", "m", "/lib/matrix.mkv", "present", 0.8, "")
 	semearEntity(t, d, "o", "movie", "Outro Filme")
@@ -109,10 +109,10 @@ func TestSearchLocalFTS(t *testing.T) {
 	if len(out.Local) != 1 || out.Local[0].ID != "m" {
 		t.Fatalf("local = %+v, quero so o Matrix", out.Local)
 	}
-	// Card com posse/contagem derivadas (mesmo shape da lista).
+	// Card with derived ownership/count (the same shape as the list).
 	eq(t, "local[0].owned", out.Local[0].Owned, true)
 	eq(t, "local[0].file_count", out.Local[0].FileCount, 1)
-	// Sem provider: externo indisponivel, lista vazia (nunca null).
+	// No provider: external unavailable, empty list (never null).
 	eq(t, "external_available", out.ExternalAvailable, false)
 	if out.External == nil || len(out.External) != 0 {
 		t.Errorf("external = %v, quero [] nao-null", out.External)
@@ -121,7 +121,7 @@ func TestSearchLocalFTS(t *testing.T) {
 
 func TestSearchLocalCasaOriginalTitleETags(t *testing.T) {
 	h, d := setupSearchServer(t)
-	// original_title e tags diferentes do title, para provar a busca multi-coluna.
+	// original_title and tags different from the title, to prove the multi-column search.
 	_, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
 		ID:            "x",
 		Type:          "movie",
@@ -133,13 +133,13 @@ func TestSearchLocalCasaOriginalTitleETags(t *testing.T) {
 		t.Fatalf("CriarEntity: %v", err)
 	}
 
-	// Casa por original_title.
+	// It matches by original_title.
 	rec := do(t, h, http.MethodGet, "/api/v1/search?q=city", nil)
 	out := decodeSearch(t, rec.Body.Bytes())
 	if len(out.Local) != 1 || out.Local[0].ID != "x" {
 		t.Errorf("busca por original_title: local = %+v, quero x", out.Local)
 	}
-	// Casa por tag.
+	// It matches by tag.
 	rec2 := do(t, h, http.MethodGet, "/api/v1/search?q=favela", nil)
 	out2 := decodeSearch(t, rec2.Body.Bytes())
 	if len(out2.Local) != 1 || out2.Local[0].ID != "x" {
@@ -159,9 +159,9 @@ func TestSearchFiltroType(t *testing.T) {
 	}
 }
 
-// TestSearchCardSerieOwnershipRaso (0037): o card de SERIE na BUSCA carrega o mesmo
-// ownership RASO da listagem (temporadas com conteudo / total de temporadas). Serie
-// com 2 temporadas, so a se1 com episodio possuido -> {1,2}. Reusa anotarPosseCard.
+// TestSearchCardSerieOwnershipRaso: the SERIES card in the SEARCH carries the same SHALLOW
+// ownership as the listing (seasons with content / total of seasons). A series with 2 seasons,
+// only se1 with an owned episode -> {1,2}. It reuses anotarPosseCard.
 func TestSearchCardSerieOwnershipRaso(t *testing.T) {
 	h, d := setupSearchServer(t)
 	semearEntity(t, d, "s", "tv", "Alfa Serie")
@@ -191,81 +191,80 @@ func TestSearchCardSerieOwnershipRaso(t *testing.T) {
 	eq(t, "busca s total (temporadas)", out.Local[0].Ownership.TotalCount, 2)
 }
 
-// TestSearchSubNosDefaultForaEIncluidos: por padrao a busca so traz obras de topo
-// (0033) — season/episode ficam de fora; o parametro include=season/episode religa
-// cada sub-no numa consulta so, sem misturar (a UI separa por type).
+// TestSearchSubNosDefaultForaEIncluidos: by default the search only brings top-level works —
+// season/episode are left out; the include=season/episode parameter wires each sub-node back in
+// a single query, without mixing them (the UI separates by type).
 func TestSearchSubNosDefaultForaEIncluidos(t *testing.T) {
 	h, d := setupSearchServer(t)
 	semearEntity(t, d, "serie", "tv", "Simpsons Serie")
 	semearEntity(t, d, "temp", "season", "Simpsons Temporada 1")
 	semearEntity(t, d, "ep", "episode", "Simpsons Episodio 1")
 
-	// (a) Default: so a serie de topo; nada de season/episode.
+	// (a) Default: only the top-level series; no season/episode.
 	out := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Simpsons", nil).Body.Bytes())
 	if ids := idsLocais(out); len(ids) != 1 || ids[0] != "serie" {
 		t.Fatalf("default: local = %v, quero so [serie] (sub-nos fora)", ids)
 	}
 
-	// (b) include=season: serie + temporada, sem episodio.
+	// (b) include=season: series + season, without episode.
 	outS := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Simpsons&include=season", nil).Body.Bytes())
 	if ids := idsLocais(outS); !contemTodos(ids, "serie", "temp") || contem(ids, "ep") {
 		t.Fatalf("include=season: local = %v, quero [serie, temp] sem ep", ids)
 	}
 
-	// (c) include=episode: serie + episodio, sem temporada.
+	// (c) include=episode: series + episode, without season.
 	outE := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Simpsons&include=episode", nil).Body.Bytes())
 	if ids := idsLocais(outE); !contemTodos(ids, "serie", "ep") || contem(ids, "temp") {
 		t.Fatalf("include=episode: local = %v, quero [serie, ep] sem temp", ids)
 	}
 
-	// (d) include=season,episode (CSV): traz os tres.
+	// (d) include=season,episode (CSV): brings all three.
 	outAll := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Simpsons&include=season,episode", nil).Body.Bytes())
 	if ids := idsLocais(outAll); !contemTodos(ids, "serie", "temp", "ep") {
 		t.Fatalf("include=season,episode: local = %v, quero os tres", ids)
 	}
 
-	// (e) Valor invalido no include e ignorado (comportamento = default).
+	// (e) An invalid value in include is ignored (behavior = default).
 	outInv := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Simpsons&include=movie,lixo", nil).Body.Bytes())
 	if ids := idsLocais(outInv); len(ids) != 1 || ids[0] != "serie" {
 		t.Fatalf("include invalido: local = %v, quero so [serie]", ids)
 	}
 }
 
-// TestSearchAlbumFaixaSubNoDefaultForaEIncluidos: mesma garantia de
-// TestSearchSubNosDefaultForaEIncluidos, mas para os sub-nós da vertical de
-// música (ADR-0027/0030, briefing 0112) -- album/faixa NUNCA aparecem por
-// padrão na busca (regressão do achado em produção: nenhuma das duas
-// exclusões antigas cobria música), e o `include` generalizado (não mais só
-// season/episode) os religa.
+// TestSearchAlbumFaixaSubNoDefaultForaEIncluidos: the same guarantee as
+// TestSearchSubNosDefaultForaEIncluidos, but for the sub-nodes of the music vertical
+// (ADR-0027/ADR-0030) -- album/track NEVER show up by default in the search (a regression of
+// the finding in production: neither of the two old exclusions covered music), and the
+// generalized `include` (no longer only season/episode) wires them back.
 func TestSearchAlbumFaixaSubNoDefaultForaEIncluidos(t *testing.T) {
 	h, d := setupSearchServer(t)
 	semearEntity(t, d, "artista", "artista", "Zeze Musico")
 	semearEntity(t, d, "album", "album", "Zeze Album")
 	semearEntity(t, d, "faixa", "faixa", "Zeze Faixa")
 
-	// (a) Default: so o artista de topo; nada de album/faixa.
+	// (a) Default: only the top-level artist; no album/track.
 	out := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Zeze", nil).Body.Bytes())
 	if ids := idsLocais(out); len(ids) != 1 || ids[0] != "artista" {
 		t.Fatalf("default: local = %v, quero so [artista] (sub-nos fora)", ids)
 	}
 
-	// (b) include=album: artista + album, sem faixa.
+	// (b) include=album: artist + album, without track.
 	outA := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Zeze&include=album", nil).Body.Bytes())
 	if ids := idsLocais(outA); !contemTodos(ids, "artista", "album") || contem(ids, "faixa") {
 		t.Fatalf("include=album: local = %v, quero [artista, album] sem faixa", ids)
 	}
 
-	// (c) include=album,faixa (CSV): traz os tres.
+	// (c) include=album,faixa (CSV): brings all three.
 	outAll := decodeSearch(t, do(t, h, http.MethodGet, "/api/v1/search?q=Zeze&include=album,faixa", nil).Body.Bytes())
 	if ids := idsLocais(outAll); !contemTodos(ids, "artista", "album", "faixa") {
 		t.Fatalf("include=album,faixa: local = %v, quero os tres", ids)
 	}
 }
 
-// TestSearchEpisodioPossuidoPelaJuncao: com include=episode, o card do episodio na
-// busca marca a posse vinda da juncao media_file_entity (0034) -- o arquivo tem
-// entity_id=SERIE e liga ao episodio so pela juncao. Sem a extensao, viria
-// owned=false/file_count=0, divergindo do detalhe. Consistente com ListarEntityCards.
+// TestSearchEpisodioPossuidoPelaJuncao: with include=episode, the episode card in the search
+// marks the ownership coming from the media_file_entity join -- the file has entity_id=SERIES
+// and links to the episode only through the join. Without the extension it would come out
+// owned=false/file_count=0, diverging from the detail. Consistent with ListarEntityCards.
 func TestSearchEpisodioPossuidoPelaJuncao(t *testing.T) {
 	h, d := setupSearchServer(t)
 	semearEntity(t, d, "serie", "tv", "Simpsons Serie")
@@ -291,8 +290,8 @@ func TestSearchEpisodioPossuidoPelaJuncao(t *testing.T) {
 	eq(t, "ep busca file_count", epCard.FileCount, 1)
 }
 
-// TestSearchTypeSubNoComInclude: type=season combinado com include=season traz a
-// temporada (antes o NOT IN dura a mataria); type=season sozinho continua vazio.
+// TestSearchTypeSubNoComInclude: type=season combined with include=season brings the season
+// (before, the hard NOT IN would kill it); type=season alone stays empty.
 func TestSearchTypeSubNoComInclude(t *testing.T) {
 	h, d := setupSearchServer(t)
 	semearEntity(t, d, "serie", "tv", "Simpsons Serie")
@@ -309,7 +308,7 @@ func TestSearchTypeSubNoComInclude(t *testing.T) {
 	}
 }
 
-// idsLocais coleta os ids dos cards locais da resposta de busca.
+// idsLocais collects the ids of the local cards of the search response.
 func idsLocais(out searchResponseDTO) []string {
 	ids := make([]string, 0, len(out.Local))
 	for _, c := range out.Local {
@@ -318,7 +317,7 @@ func idsLocais(out searchResponseDTO) []string {
 	return ids
 }
 
-// contem diz se a fatia tem o valor.
+// contem tells whether the slice has the value.
 func contem(xs []string, v string) bool {
 	for _, x := range xs {
 		if x == v {
@@ -328,7 +327,7 @@ func contem(xs []string, v string) bool {
 	return false
 }
 
-// contemTodos diz se a fatia tem TODOS os valores dados.
+// contemTodos tells whether the slice has ALL the given values.
 func contemTodos(xs []string, vs ...string) bool {
 	for _, v := range vs {
 		if !contem(xs, v) {
@@ -338,8 +337,8 @@ func contemTodos(xs []string, vs ...string) bool {
 	return true
 }
 
-// TestSearchInputMalicioso garante que aspas/parenteses/operadores do FTS5 no
-// input NAO quebram a rota (nada de 5xx) — a sanitizacao os neutraliza.
+// TestSearchInputMalicioso ensures that quotes/parentheses/FTS5 operators in the input do NOT
+// break the route (no 5xx) — the sanitization neutralizes them.
 func TestSearchInputMalicioso(t *testing.T) {
 	h, d := setupSearchServer(t)
 	semearEntity(t, d, "m", "movie", "The Matrix")
@@ -380,7 +379,7 @@ func TestSearchExternoFakeDisponivel(t *testing.T) {
 	ext := out.External[0]
 	eq(t, "external[0].source", ext.Source, "tmdb")
 	eq(t, "external[0].source_id", ext.SourceID, "603")
-	// saved FORCADO a false mesmo que o provider devolva true.
+	// saved FORCED to false even if the provider returns true.
 	eq(t, "external[0].saved", ext.Saved, false)
 	eqPtr(t, "external[0].year", ext.Year, "1999")
 }
@@ -408,7 +407,7 @@ func TestSearchExternoErroDegrada(t *testing.T) {
 	semearEntity(t, d, "m", "movie", "The Matrix")
 
 	rec := do(t, h, http.MethodGet, "/api/v1/search?q=matrix", nil)
-	// Erro no externo NUNCA vira 5xx.
+	// An error in the external one NEVER becomes a 5xx.
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, quero 200 mesmo com externo falho (corpo=%s)", rec.Code, rec.Body.String())
 	}
@@ -417,13 +416,13 @@ func TestSearchExternoErroDegrada(t *testing.T) {
 	if len(out.External) != 0 {
 		t.Errorf("external = %+v, quero []", out.External)
 	}
-	// Local segue respondendo.
+	// Local keeps answering.
 	if len(out.Local) != 1 || out.Local[0].ID != "m" {
 		t.Errorf("local = %+v, quero o Matrix", out.Local)
 	}
 }
 
-// encodeQuery escapa um valor para uso em query string de teste.
+// encodeQuery escapes a value for use in a test query string.
 func encodeQuery(v string) string {
 	return url.QueryEscape(v)
 }

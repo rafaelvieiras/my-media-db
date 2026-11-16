@@ -9,9 +9,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// respostaFilme e uma resposta de /movies/{id} com varios tipos: poster, background
-// (fanart, textless), logos (hd + normal), clearart (hd + movieart), disc (bluray, com
-// disc/disc_type), banner e thumb. Numeros como STRING (como a fanart.tv serializa).
+// respostaFilme is a /movies/{id} response with several types: poster,
+// background (fanart, textless), logos (hd + normal), clearart (hd + movieart),
+// disc (bluray, with disc/disc_type), banner and thumb. Numbers as STRING (as
+// fanart.tv serializes them).
 const respostaFilme = `{
   "name": "The Matrix",
   "tmdb_id": "603",
@@ -46,8 +47,8 @@ const respostaFilme = `{
   ]
 }`
 
-// respostaTV e uma resposta de /tv/{id} com show background, poster, logo, characterart e
-// artes de TEMPORADA (seasonposter com season "1" e "all").
+// respostaTV is a /tv/{id} response with show background, poster, logo,
+// characterart and SEASON arts (seasonposter with season "1" and "all").
 const respostaTV = `{
   "name": "The Simpsons",
   "thetvdb_id": "71663",
@@ -69,8 +70,9 @@ const respostaTV = `{
   ]
 }`
 
-// servidorFanart responde /movies/{id} e /tv/{id} com as fixtures, exige a api_key na
-// query e devolve 404 para um id desconhecido. capturado guarda a ultima URL.
+// servidorFanart answers /movies/{id} and /tv/{id} with the fixtures, requires
+// the api_key in the query and returns 404 for an unknown id. capturado stores
+// the last URL.
 func servidorFanart(t *testing.T, capturado *string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +102,7 @@ func TestNomeECore(t *testing.T) {
 	if c.Nome() != "fanarttv" {
 		t.Errorf("Nome = %q, quero fanarttv", c.Nome())
 	}
-	// Buscar/BuscarDetalhe sao no-op (fanart.tv nao e fonte de busca).
+	// Buscar/BuscarDetalhe are no-op (fanart.tv is not a search source).
 	if res, err := c.Buscar(context.Background(), "matrix", "movie", "en"); err != nil || res != nil {
 		t.Errorf("Buscar no-op = (%v,%v), quero (nil,nil)", res, err)
 	}
@@ -130,7 +132,8 @@ func TestBuscarArtesFilme(t *testing.T) {
 	}
 }
 
-// assertContagemPorKindFilme confere a quantidade de artes por kind da fixture de filme.
+// assertContagemPorKindFilme checks the number of arts per kind of the movie
+// fixture.
 func assertContagemPorKindFilme(t *testing.T, porKind map[string][]provider.Arte) {
 	t.Helper()
 	// poster: 2 (en + pt), preservando lang e likes.
@@ -151,8 +154,8 @@ func assertContagemPorKindFilme(t *testing.T, porKind map[string][]provider.Arte
 	}
 }
 
-// assertDetalhesArteFilme confere os detalhes das artes (fanart textless, disc parseado,
-// likes convertidos de string) da fixture de filme.
+// assertDetalhesArteFilme checks the details of the arts (textless fanart, disc
+// parsed, likes converted from string) of the movie fixture.
 func assertDetalhesArteFilme(t *testing.T, porKind map[string][]provider.Arte) {
 	t.Helper()
 	// fanart: textless (lang vazio).
@@ -177,7 +180,7 @@ func TestBuscarArtesFilmePreferTmdbSenaoImdb(t *testing.T) {
 	srv := servidorFanart(t, &capturado)
 	c := New(Credencial{APIKey: "k"}, srv.Client(), srv.URL)
 
-	// Sem TMDB, cai no IMDB no path.
+	// Without TMDB, it falls back to IMDB in the path.
 	if _, err := c.BuscarArtes(context.Background(), provider.ExternalIDs{Imdb: "tt0133093"}, "movie", nil); err != nil {
 		t.Fatalf("BuscarArtes imdb: %v", err)
 	}
@@ -225,13 +228,13 @@ func TestBuscarArtesSemIdOuSemMatch(t *testing.T) {
 	if artes, err := c.BuscarArtes(ctx, provider.ExternalIDs{Tmdb: "603"}, "tv", nil); err != nil || artes != nil {
 		t.Errorf("tv sem tvdb = (%v,%v), quero (nil,nil)", artes, err)
 	}
-	// movie com id desconhecido: 404 -> (nil,nil), degrada em silencio.
+	// movie with an unknown id: 404 -> (nil,nil), it degrades silently.
 	if artes, err := c.BuscarArtes(ctx, provider.ExternalIDs{Tmdb: "999"}, "movie", nil); err != nil || artes != nil {
 		t.Errorf("movie 404 = (%v,%v), quero (nil,nil)", artes, err)
 	}
 }
 
-// indexarPorKind agrupa as artes por kind para as assercoes.
+// indexarPorKind groups the arts by kind for the assertions.
 func indexarPorKind(artes []provider.Arte) map[string][]provider.Arte {
 	out := map[string][]provider.Arte{}
 	for _, a := range artes {

@@ -1,14 +1,14 @@
 package server
 
-// grupo_revisao.go anota o GRUPO de cada item da fila de revisão (briefing 0137):
-// a mesma causa/contexto do arquivo, para a tela mostrar ~50 seções em vez de
-// 200 cards soltos. A chave sai do `media_file.path` -- e não das tags -- porque
-// 21 das 185 faixas reais medidas não têm tag nenhuma, e o caminho é o que o dono
-// reconhece na pasta.
+// grupo_revisao.go annotates the GROUP of each review queue item: the same
+// cause/context of the file, so the screen shows ~50 sections instead of 200 loose cards.
+// The key comes from `media_file.path` -- and not from the tags -- because 21 of the 185
+// real tracks measured have no tag at all, and the path is what the owner recognizes in
+// the folder.
 //
-// Nada aqui muda o PREDICADO da fila (quem entra em revisão continua sendo o do
-// briefing 0018): é anotação de apresentação, no mesmo molde de
-// `ownership`/`numbering` no card de entities.
+// Nothing here changes the PREDICATE of the queue (who enters review is still defined by
+// the matching flow): it is a presentation annotation, in the same mold as
+// `ownership`/`numbering` on the entity card.
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"strings"
 )
 
-// Kinds de grupo de revisão (espelham o enum ReviewGroup.kind do openapi.yaml).
+// Review group kinds (they mirror the ReviewGroup.kind enum of openapi.yaml).
 const (
 	grupoRevisaoAlbum      = "album"
 	grupoRevisaoSerie      = "serie"
@@ -24,7 +24,7 @@ const (
 	grupoRevisaoSemArquivo = "sem_arquivo"
 )
 
-// reviewGroupDTO é o grupo anotado em cada item de GET /api/v1/review.
+// reviewGroupDTO is the group annotated on each item of GET /api/v1/review.
 type reviewGroupDTO struct {
 	Kind  string `json:"kind"`
 	Key   string `json:"key"`
@@ -32,24 +32,24 @@ type reviewGroupDTO struct {
 	Size  int64  `json:"size"`
 }
 
-// segmentosDeDisco são os nomes de subpasta que separam DISCO dentro da pasta do
-// álbum -- agrupar por eles fragmentaria o mesmo álbum em N grupos ("Disc 1",
-// "Disc 2"). Comparados com o segmento normalizado (minúsculo, sem espaço).
+// segmentosDeDisco are the subfolder names that separate a DISC inside the album folder --
+// grouping by them would fragment the same album into N groups ("Disc 1", "Disc 2").
+// Compared against the normalized segment (lowercase, no space).
 var segmentosDeDisco = map[string]bool{
 	"disc": true, "disk": true, "cd": true, "vol": true, "volume": true,
 }
 
-// segmentosDeTemporada são os nomes de subpasta que separam TEMPORADA dentro da
-// pasta da série -- mesmo raciocínio do disco: os episódios de uma série
-// pertencem a UM grupo, não um por temporada.
+// segmentosDeTemporada are the subfolder names that separate a SEASON inside the series
+// folder -- the same reasoning as the disc: the episodes of a series belong to ONE group,
+// not one per season.
 var segmentosDeTemporada = map[string]bool{
 	"season": true, "temporada": true, "series": true, "serie": true,
 }
 
-// anotarGruposRevisao preenche ReviewGroup em `items` (na MESMA ordem de
-// `caminhos`) a partir do caminho de arquivo de cada item, relativizado contra a
-// raiz da biblioteca que o contém (`raizes` = caminhos das library_source). O
-// `size` é o número de itens no grupo.
+// anotarGruposRevisao fills ReviewGroup in `items` (in the SAME order as `caminhos`) from
+// the file path of each item, made relative to the library root that contains it
+// (`raizes` = paths of the library_source). The `size` is the number of items in the
+// group.
 func anotarGruposRevisao(items []entityCardDTO, caminhos []string, raizes []string) {
 	tamanhos := make(map[string]int64, len(items))
 	grupos := make([]*reviewGroupDTO, len(items))
@@ -64,8 +64,8 @@ func anotarGruposRevisao(items []entityCardDTO, caminhos []string, raizes []stri
 	}
 }
 
-// grupoDeRevisao devolve o grupo de UM item: kind+chave+rótulo a partir do tipo e
-// do caminho do arquivo. item sem arquivo cai num grupo único "Sem arquivo".
+// grupoDeRevisao returns the group of ONE item: kind+key+label from the type and the file
+// path. An item without a file falls into a single "Sem arquivo" group.
 func grupoDeRevisao(tipo, caminho string, raizes []string) *reviewGroupDTO {
 	if caminho == "" {
 		return &reviewGroupDTO{Kind: grupoRevisaoSemArquivo, Key: grupoRevisaoSemArquivo, Label: "Sem arquivo"}
@@ -97,9 +97,9 @@ func grupoDeRevisao(tipo, caminho string, raizes []string) *reviewGroupDTO {
 	}
 }
 
-// relativizar tira de `caminho` a raiz de biblioteca mais longa que o prefixa --
-// o rótulo fica curto e independente de onde o mount está montado. Sem raiz
-// correspondente devolve o caminho como veio.
+// relativizar strips from `caminho` the longest library root that prefixes it -- the label
+// stays short and independent of where the mount is mounted. Without a matching root it
+// returns the path as it came.
 func relativizar(caminho string, raizes []string) string {
 	melhor := ""
 	for _, raiz := range raizes {
@@ -118,10 +118,9 @@ func relativizar(caminho string, raizes []string) string {
 	return strings.TrimPrefix(strings.TrimPrefix(caminho, melhor), "/")
 }
 
-// semSegmento remove do FIM de `dir` os segmentos que são "de disco"/"de
-// temporada" (com ou sem número: "Disc 1", "CD2", "Season 3", "S03"). Repete
-// enquanto o último segmento casar, para cobrir "Disc 1/CD 2" de edições
-// esquisitas.
+// semSegmento removes from the END of `dir` the segments that are "disc"/"season"
+// ones (with or without a number: "Disc 1", "CD2", "Season 3", "S03"). It repeats
+// while the last segment matches, to cover "Disc 1/CD 2" of weird editions.
 func semSegmento(dir string, vocabulario map[string]bool) string {
 	atual := dir
 	for {
@@ -137,17 +136,16 @@ func semSegmento(dir string, vocabulario map[string]bool) string {
 	}
 }
 
-// ehSegmentoNumerado diz se o segmento é <palavra do vocabulário> + NÚMERO
-// obrigatório ("Disc 1", "CD2", "Season 03", "Temporada 2"), ou o padrão curto
-// "S03". Nunca casa com o nome de uma obra ("Disco Voador", "Season of the
-// Witch") nem com uma PASTA DE BIBLIOTECA chamada "Series"/"Músicas": o número
-// é exigido de propósito.
+// ehSegmentoNumerado tells whether the segment is <vocabulary word> + a mandatory NUMBER
+// ("Disc 1", "CD2", "Season 03", "Temporada 2"), or the short pattern "S03". It
+// never matches the name of a work ("Disco Voador", "Season of the Witch") nor a
+// LIBRARY FOLDER called "Series"/"Músicas": the number is required on purpose.
 func ehSegmentoNumerado(segmento string, vocabulario map[string]bool) bool {
 	limpo := strings.ToLower(strings.TrimSpace(segmento))
 	if limpo == "" {
 		return false
 	}
-	// "S03"/"T02": uma letra + dígitos.
+	// "S03"/"T02": one letter + digits.
 	if len(limpo) > 1 && (limpo[0] == 's' || limpo[0] == 't') {
 		if _, ok := numeroDoSegmento(limpo[1:]); ok {
 			return true
@@ -164,7 +162,7 @@ func ehSegmentoNumerado(segmento string, vocabulario map[string]bool) bool {
 	return ok
 }
 
-// numeroDoSegmento devolve o número de um segmento só-dígitos ("1", "02").
+// numeroDoSegmento returns the number of a digits-only segment ("1", "02").
 func numeroDoSegmento(s string) (int, bool) {
 	if s == "" {
 		return 0, false
@@ -179,9 +177,9 @@ func numeroDoSegmento(s string) (int, bool) {
 	return n, true
 }
 
-// rotuloDe monta o rótulo legível a partir dos últimos `n` segmentos do
-// caminho, unidos por " — " (ex.: "Duran Duran — Notorious (Deluxe Edition)").
-// Sempre devolve algo não vazio (cai no caminho inteiro).
+// rotuloDe builds the readable label from the last `n` segments of the path, joined by
+// " — " (e.g. "Duran Duran — Notorious (Deluxe Edition)"). It always returns something
+// non-empty (it falls back to the whole path).
 func rotuloDe(dir string, n int) string {
 	partes := strings.Split(strings.Trim(dir, "/"), "/")
 	uteis := make([]string, 0, n)
@@ -194,17 +192,17 @@ func rotuloDe(dir string, n int) string {
 	if len(uteis) == 0 {
 		return dir
 	}
-	// inverte para a ordem do caminho (artista antes do álbum)
+	// reverses to the path order (artist before album)
 	for i, j := 0, len(uteis)-1; i < j; i, j = i+1, j-1 {
 		uteis[i], uteis[j] = uteis[j], uteis[i]
 	}
 	return strings.Join(uteis, " — ")
 }
 
-// raizesDeBiblioteca devolve os caminhos das library_source cadastradas -- só
-// para relativizar o rótulo do grupo (caminho curto, independente do mount).
-// Erro de banco degrada para lista vazia (rótulo com o caminho absoluto): o
-// agrupamento continua funcionando, só mais verboso.
+// raizesDeBiblioteca returns the paths of the registered library_source -- only to make
+// the group label relative (short path, independent of the mount). A database error
+// degrades to an empty list (label with the absolute path): the grouping keeps working,
+// just more verbose.
 func (s *Server) raizesDeBiblioteca(ctx context.Context) []string {
 	if s.library == nil {
 		return nil

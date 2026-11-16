@@ -9,32 +9,31 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/musicext"
 )
 
-// Este arquivo implementa a REDE DE SEGURANÇA contra duplicata por conflito de
-// external_id (briefing 0051): os dois pontos de escrita da identidade externa
-// numa entity JÁ EXISTENTE — PUT /entities/{id}/external-ids (0027) e
-// POST /entities/{id}/correct (0018) — hoje só gravam o mapa, sem checar se
-// aquele id já pertence a OUTRA entity. Quando pertence, resolverColisaoExterna
-// decide: sem investimento do dono na outra entity → funde automaticamente
-// (some a duplicata); com investimento → responde 409 sem gravar nada.
+// This file implements the SAFETY NET against duplicates caused by an external_id
+// conflict: the two write points of the external identity on an EXISTING entity — PUT
+// /entities/{id}/external-ids and POST /entities/{id}/correct — would otherwise only
+// write the map, without checking whether that id already belongs to ANOTHER entity.
+// When it does, resolverColisaoExterna decides: without the owner's investment in the
+// other entity → merge automatically (the duplicate goes away); with investment → answer
+// 409 without writing anything.
 //
-// A colisão só é detectável para fontes com coluna gerada indexada
-// (tmdb/imdb/tvdb, ADR-0011/0021; mbid desde o briefing 0119, ADR-0027 item 6)
-// — mesmo escopo do find-or-create do import (enrich.acharPorIDExterno para
-// tmdb/imdb/tvdb; ObterEntityPorMbid para a vertical de música). Fontes sem
-// coluna própria não têm como colidir hoje (o find-or-create do import também
-// não dedupe nelas).
+// The collision is only detectable for sources with an indexed generated column
+// (tmdb/imdb/tvdb, ADR-0011/ADR-0021; mbid too, ADR-0027 item 6) — the same scope as the
+// import's find-or-create (enrich.acharPorIDExterno for tmdb/imdb/tvdb;
+// ObterEntityPorMbid for the music vertical). Sources without a column of their own
+// cannot collide today (the import's find-or-create does not dedupe on them either).
 
-// headerDuplicataFundida é o header de resposta que sinaliza ao frontend que uma
-// duplicata foi fundida (removida) durante esta escrita — o corpo segue sendo a
-// entity resolvida normal (responderResolvida), sem novo campo no DTO.
+// headerDuplicataFundida is the response header that signals to the frontend that a
+// duplicate was merged (removed) during this write — the body remains the usual resolved
+// entity (responderResolvida), with no new field in the DTO.
 const headerDuplicataFundida = "X-Duplicate-Merged-Id"
 
-// resolverColisaoExterna verifica se `source`+`sourceID` já pertence a outra
-// entity do mesmo `tipo` (diferente de `alvoID`). Sem colisão: (false, true) —
-// o chamador segue normalmente. Com colisão sem investimento do dono na outra
-// entity: funde (a outra desaparece) e devolve (true, true) — o chamador deve
-// setar o header headerDuplicataFundida antes de responder. Com investimento:
-// escreve o 409 e devolve (false, false) — o chamador aborta sem gravar nada.
+// resolverColisaoExterna checks whether `source`+`sourceID` already belongs to another
+// entity of the same `tipo` (different from `alvoID`). No collision: (false, true) — the
+// caller goes on normally. Collision without the owner's investment in the other entity:
+// it merges (the other one disappears) and returns (true, true) — the caller must set the
+// headerDuplicataFundida header before answering. With investment: it writes the 409 and
+// returns (false, false) — the caller aborts without writing anything.
 func (s *Server) resolverColisaoExterna(w http.ResponseWriter, ctx context.Context, alvoID, tipo, source, sourceID string) (fundida bool, ok bool) {
 	outroID, outroTitulo, achou, err := s.acharColisaoExterna(ctx, alvoID, tipo, source, sourceID)
 	if err != nil {
@@ -68,18 +67,18 @@ func (s *Server) resolverColisaoExterna(w http.ResponseWriter, ctx context.Conte
 	return true, true
 }
 
-// acharColisaoExterna procura uma entity do mesmo `tipo`, DIFERENTE de `alvoID`,
-// que já tenha `source`=`sourceID` na identidade. achou=false quando a fonte não
-// tem coluna gerada (dedup indisponível) ou ninguém mais tem aquele id.
+// acharColisaoExterna looks for an entity of the same `tipo`, DIFFERENT from `alvoID`,
+// that already has `source`=`sourceID` in its identity. achou=false when the source has
+// no generated column (dedup unavailable) or nobody else has that id.
 //
-// Usa queries :many que JÁ excluem alvoID na própria SQL (ListarEntitiesPor*
-// ExcetoId), em vez de um :one seguido de filtro em Go. Isso importa quando o
-// dado já está corrompido por uma duplicata PRÉ-EXISTENTE (ex.: um conflito
-// gravado antes deste fix existir, quando a coluna gerada external_id_* não é
-// UNIQUE — só indexada): se DUAS entities já compartilham o mesmo id e o dono
-// reenvia esse id na entity que já o tinha, um :one sem ORDER BY pode devolver a
-// PRÓPRIA entity-alvo, e um filtro `ent.ID == alvoID` em Go descartaria esse
-// único resultado sem nunca descobrir a outra — a fusão nunca dispararia.
+// It uses :many queries that ALREADY exclude alvoID in the SQL itself
+// (ListarEntitiesPor*ExcetoId), instead of a :one followed by a filter in Go. That
+// matters when the data is already corrupted by a PRE-EXISTING duplicate (e.g. a
+// conflict written before this fix existed, when the generated column external_id_* is
+// not UNIQUE — only indexed): if TWO entities already share the same id and the owner
+// submits that id again on the entity that already had it, a :one without ORDER BY may
+// return the TARGET entity itself, and an `ent.ID == alvoID` filter in Go would discard
+// that single result without ever finding the other one — the merge would never fire.
 func (s *Server) acharColisaoExterna(ctx context.Context, alvoID, tipo, source, sourceID string) (id, titulo string, achou bool, err error) {
 	r := s.leitura()
 	sid := nsDe(sourceID)
@@ -98,12 +97,12 @@ func (s *Server) acharColisaoExterna(ctx context.Context, alvoID, tipo, source, 
 			TvdbID: sid, AlvoID: alvoID,
 		})
 	case musicext.FonteMusicBrainz, musicext.ChaveExternalIDMbid:
-		// Dois valores de `source` chegam aqui para o MESMO id: aplicarCandidatoExterno/
-		// aplicarIdentidadeExterna passam o Provider.Nome() ("musicbrainz", convencao de
-		// TODO o resto do arquivo), enquanto PUT /entities/{id}/external-ids
-		// (external_ids.go) itera a chave BRUTA que o cliente grava no JSON ("mbid",
-		// convencao de armazenamento -- musicext.ChaveExternalIDMbid). Cobrir só um dos
-		// dois deixaria o outro caminho sem deteccao de colisao (briefing 0119).
+		// Two `source` values reach here for the SAME id: aplicarCandidatoExterno/
+		// aplicarIdentidadeExterna pass the Provider.Nome() ("musicbrainz", the convention
+		// of ALL the rest of the file), while PUT /entities/{id}/external-ids
+		// (external_ids.go) iterates the RAW key the client writes in the JSON ("mbid",
+		// the storage convention -- musicext.ChaveExternalIDMbid). Covering only one of the
+		// two would leave the other path without collision detection.
 		candidatas, err = r.ListarEntitiesPorMbidExcetoId(ctx, sqlcgen.ListarEntitiesPorMbidExcetoIdParams{
 			MbidID: sid, AlvoID: alvoID,
 		})
@@ -121,13 +120,13 @@ func (s *Server) acharColisaoExterna(ctx context.Context, alvoID, tipo, source, 
 	return "", "", false, nil
 }
 
-// fundirEntities funde `perdedoraID` em `sobreviventeID`: reatribui media_file
-// (sempre), media_file_entity/media_external/asset/credit/entity_relation
-// (só a parte que a sobrevivente ainda não tem, para não violar UNIQUE/PK — ver
-// o comentário no topo de duplicata.sql) e por fim apaga a perdedora (o
-// ON DELETE CASCADE limpa o que ficou para trás). A perdedora NUNCA tem
-// media_override (resolverColisaoExterna só chama isto sem investimento do
-// dono), então media_override não entra aqui.
+// fundirEntities merges `perdedoraID` into `sobreviventeID`: it reassigns media_file
+// (always), media_file_entity/media_external/asset/credit/entity_relation (only the part
+// the survivor does not have yet, so UNIQUE/PK is not violated — see the comment at the
+// top of duplicata.sql) and finally deletes the loser (the ON DELETE CASCADE cleans up
+// what was left behind). The loser NEVER has a media_override (resolverColisaoExterna
+// only calls this without the owner's investment), so media_override does not show up
+// here.
 func (s *Server) fundirEntities(ctx context.Context, sobreviventeID, perdedoraID string) error {
 	w := sqlcgen.New(s.db.Write)
 	r := s.leitura()
@@ -167,10 +166,10 @@ func (s *Server) fundirEntities(ctx context.Context, sobreviventeID, perdedoraID
 	return w.ApagarEntity(ctx, perdedoraID)
 }
 
-// moverVinculosSemColisao move os vinculos media_file_entity (N:M de serie,
-// 0034) da perdedora para a sobrevivente, um a um, pulando qualquer
-// (media_file_id, kind) que a sobrevivente ja tenha (evitaria violar a PK
-// composta) -- essas linhas ficam para o CASCADE quando a perdedora for apagada.
+// moverVinculosSemColisao moves the media_file_entity links (the series N:M) from the
+// loser to the survivor, one by one, skipping any (media_file_id, kind) the survivor
+// already has (it would violate the composite PK) -- those rows are left for the CASCADE
+// when the loser is deleted.
 func moverVinculosSemColisao(ctx context.Context, r, w *sqlcgen.Queries, sobreviventeID, perdedoraID string) error {
 	daPerdedora, err := r.ListarVinculosPorEntidade(ctx, perdedoraID)
 	if err != nil || len(daPerdedora) == 0 {
@@ -197,10 +196,9 @@ func moverVinculosSemColisao(ctx context.Context, r, w *sqlcgen.Queries, sobrevi
 	return nil
 }
 
-// moverMediaExternalSemColisao move o cache externo (media_external) da
-// perdedora para a sobrevivente por fonte, pulando fontes que a sobrevivente ja
-// tem cacheadas (evitaria violar UNIQUE(entity_id, source)) -- a duplicada fica
-// para o CASCADE.
+// moverMediaExternalSemColisao moves the external cache (media_external) from the loser
+// to the survivor per source, skipping sources the survivor already has cached (it would
+// violate UNIQUE(entity_id, source)) -- the duplicate is left for the CASCADE.
 func moverMediaExternalSemColisao(ctx context.Context, r, w *sqlcgen.Queries, sobreviventeID, perdedoraID string) error {
 	daPerdedora, err := r.ListarMediaExternalPorEntity(ctx, perdedoraID)
 	if err != nil || len(daPerdedora) == 0 {
@@ -227,9 +225,9 @@ func moverMediaExternalSemColisao(ctx context.Context, r, w *sqlcgen.Queries, so
 	return nil
 }
 
-// moverAssetsSemColisao move os assets (poster/fanart/…) da perdedora para a
-// sobrevivente por kind, pulando kinds que a sobrevivente ja tem (evita
-// empilhar duplicata, ex.: dois posteres) -- o resto fica para o CASCADE.
+// moverAssetsSemColisao moves the assets (poster/fanart/…) from the loser to the
+// survivor per kind, skipping kinds the survivor already has (it avoids stacking a
+// duplicate, e.g. two posters) -- the rest is left for the CASCADE.
 func moverAssetsSemColisao(ctx context.Context, r, w *sqlcgen.Queries, sobreviventeID, perdedoraID string) error {
 	daPerdedora, err := r.ListarAssetsPorEntity(ctx, perdedoraID)
 	if err != nil || len(daPerdedora) == 0 {
@@ -256,10 +254,10 @@ func moverAssetsSemColisao(ctx context.Context, r, w *sqlcgen.Queries, sobrevive
 	return nil
 }
 
-// moverRelacoesSemColisao move as entity_relation (colecao<->filme, serie<->
-// temporada<->episodio) em que a perdedora aparece como pai OU filho, pulando
-// qualquer (parent,child,kind) que a sobrevivente ja tenha (evitaria violar a
-// UNIQUE) -- o resto fica para o CASCADE.
+// moverRelacoesSemColisao moves the entity_relation rows (collection<->movie,
+// series<->season<->episode) in which the loser appears as parent OR child, skipping any
+// (parent,child,kind) the survivor already has (it would violate the UNIQUE) -- the rest
+// is left for the CASCADE.
 func moverRelacoesSemColisao(ctx context.Context, r, w *sqlcgen.Queries, sobreviventeID, perdedoraID string) error {
 	comoPaiPerdedora, err := r.ListarRelacoesFilhas(ctx, perdedoraID)
 	if err != nil {

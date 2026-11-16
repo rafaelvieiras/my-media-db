@@ -13,8 +13,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// lerFixture lê um JSON de testdata/ (fixtures reais RECORTADAS do TheTVDB, sem token
-// nem chave). Falha o teste se o arquivo não existir.
+// lerFixture reads a JSON from testdata/ (real fixtures CROPPED from TheTVDB, without a
+// token or a key). It fails the test if the file does not exist.
 func lerFixture(t *testing.T, nome string) []byte {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("testdata", nome))
@@ -24,9 +24,10 @@ func lerFixture(t *testing.T, nome string) []byte {
 	return b
 }
 
-// servidorTVDB sobe um httptest.Server que fala o dialeto v4: POST /login devolve um
-// token fake e cada GET (com Bearer) é roteado a uma fixture. Um path sem fixture vira
-// 404 (→ ErrNaoEncontrado). Rotas de tradução ausentes (episódio sem `por`) também 404.
+// servidorTVDB starts an httptest.Server that speaks the v4 dialect: POST /login returns a
+// fake token and each GET (with Bearer) is routed to a fixture. A path without a fixture
+// becomes 404 (→ ErrNaoEncontrado). Missing translation routes (an episode without `por`)
+// also 404.
 func servidorTVDB(t *testing.T) *Client {
 	t.Helper()
 	rotas := map[string]string{
@@ -74,15 +75,15 @@ func TestCredencialConfigurada(t *testing.T) {
 	}
 }
 
-// TestBuscarSeries valida a busca: type=series → ResultadoExterno com Type="tv",
-// person descartado, id/ano/pôster mapeados.
+// TestBuscarSeries validates the search: type=series → ResultadoExterno with Type="tv",
+// person discarded, id/year/poster mapped.
 func TestBuscarSeries(t *testing.T) {
 	c := servidorTVDB(t)
 	res, err := c.Buscar(context.Background(), "simpsons", "tv", "pt-BR")
 	if err != nil {
 		t.Fatalf("Buscar: %v", err)
 	}
-	if len(res) != 2 { // person descartado
+	if len(res) != 2 { // person discarded
 		t.Fatalf("len(res) = %d, quero 2", len(res))
 	}
 	r0 := res[0]
@@ -100,8 +101,8 @@ func TestBuscarSeries(t *testing.T) {
 	}
 }
 
-// TestBuscarFilmeVazio garante que a fonte (só séries no MVP) não devolve nada para
-// tipo=movie, sem erro.
+// TestBuscarFilmeVazio guarantees that the source (series only in the MVP) returns nothing
+// for tipo=movie, without an error.
 func TestBuscarFilmeVazio(t *testing.T) {
 	c := servidorTVDB(t)
 	res, err := c.Buscar(context.Background(), "matrix", "movie", "")
@@ -110,8 +111,9 @@ func TestBuscarFilmeVazio(t *testing.T) {
 	}
 }
 
-// TestDetalheSerieMultiIdioma exercita BuscarDetalhe+MapearDetalhe do Simpsons: título/
-// descrição por idioma (original en + tradução por/pt-BR) e os ids externos.
+// TestDetalheSerieMultiIdioma exercises BuscarDetalhe+MapearDetalhe of The Simpsons:
+// title/description per language (original en + por/pt-BR translation) and the external
+// ids.
 func TestDetalheSerieMultiIdioma(t *testing.T) {
 	c := servidorTVDB(t)
 	raw, err := c.BuscarDetalhe(context.Background(), "71663", "tv", []string{"pt-BR", "en"})
@@ -137,8 +139,8 @@ func TestDetalheSerieMultiIdioma(t *testing.T) {
 	}
 }
 
-// TestDetalheIDsExternos valida remoteIds→external_ids: Simpsons COM tmdb 456/imdb;
-// Looney SEM tmdb/imdb (só tvdb).
+// TestDetalheIDsExternos validates remoteIds→external_ids: The Simpsons WITH tmdb
+// 456/imdb; Looney WITHOUT tmdb/imdb (tvdb only).
 func TestDetalheIDsExternos(t *testing.T) {
 	c := servidorTVDB(t)
 	simpsons := idsDoDetalhe(t, c, "71663")
@@ -160,7 +162,7 @@ func TestDetalheIDsExternos(t *testing.T) {
 	}
 }
 
-// TestDetalheNaoEncontrado garante o sentinela ErrNaoEncontrado para série inexistente.
+// TestDetalheNaoEncontrado guarantees the sentinel ErrNaoEncontrado for a nonexistent series.
 func TestDetalheNaoEncontrado(t *testing.T) {
 	c := servidorTVDB(t)
 	_, err := c.BuscarDetalhe(context.Background(), "000", "tv", nil)
@@ -169,14 +171,14 @@ func TestDetalheNaoEncontrado(t *testing.T) {
 	}
 }
 
-// TestCumpreInterfaces garante em compile-time que *Client satisfaz Provider e
-// SerieProvider (o handler faz type-assert por SerieProvider).
+// TestCumpreInterfaces guarantees at compile time that *Client satisfies Provider and
+// SerieProvider (the handler type-asserts SerieProvider).
 func TestCumpreInterfaces(t *testing.T) {
 	var _ provider.Provider = (*Client)(nil)
 	var _ provider.SerieProvider = (*Client)(nil)
 }
 
-// idsDoDetalhe roda BuscarDetalhe+MapearDetalhe e devolve o mapa external_ids.
+// idsDoDetalhe runs BuscarDetalhe+MapearDetalhe and returns the external_ids map.
 func idsDoDetalhe(t *testing.T, c *Client, id string) map[string]string {
 	t.Helper()
 	raw, err := c.BuscarDetalhe(context.Background(), id, "tv", nil)
@@ -190,8 +192,8 @@ func idsDoDetalhe(t *testing.T, c *Client, id string) map[string]string {
 	return mapaStr(t, canon, "external_ids")
 }
 
-// mapaStr extrai canon[chave] como map[string]string (os valores são strings no
-// canônico). Falha se ausente ou de tipo errado.
+// mapaStr extracts canon[key] as map[string]string (the values are strings in the
+// canonical). It fails if absent or of the wrong type.
 func mapaStr(t *testing.T, canon map[string]any, chave string) map[string]string {
 	t.Helper()
 	bruto, ok := canon[chave].(map[string]any)

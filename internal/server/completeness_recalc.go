@@ -10,34 +10,31 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Este arquivo implementa o CAMINHO EM LOTE da completude de catalogação
-// (briefing 0058): RecalcularCompletudeCatalogacao é chamado pelo job
-// `saude_biblioteca` (internal/job/libraryhealth, briefing 0053) ao final de
-// cada execução, e recalcula o CACHE persistido (entity_catalog_completeness)
-// que a listagem/`/members` leem — ver a nota longa em completeness.go/
-// briefing 0058 §6 sobre por que a listagem NÃO calcula ao vivo por item
-// (o detalhe calcula, este arquivo não).
+// This file implements the BATCH PATH of catalog completeness:
+// RecalcularCompletudeCatalogacao is called by the `saude_biblioteca` job
+// (internal/job/libraryhealth) at the end of each run, and recalculates the persisted
+// CACHE (entity_catalog_completeness) that the listing/`/members` read — see the long
+// note in completeness.go on why the listing does NOT compute live per item (the
+// detail page computes, this file does not).
 
-// paginaRecalculoCompletude é o tamanho de página usado ao varrer TODAS as
-// entities (ListarEntities/LIMIT+OFFSET): grande o bastante para poucas
-// idas ao banco, pequeno o bastante para não seguar uma página gigante em
-// memória de uma vez. É um passo de paginação INTERNA do job, por isso não
-// reusa limitMaximo (entities.go) — aquele é um teto de resposta HTTP, este
-// é só o passo do varredor.
+// paginaRecalculoCompletude is the page size used when sweeping ALL the entities
+// (ListarEntities/LIMIT+OFFSET): large enough for few round trips to the database,
+// small enough not to hold a giant page in memory at once. It is an INTERNAL pagination
+// step of the job, which is why it does not reuse limitMaximo (entities.go) — that one
+// is an HTTP response ceiling, this one is just the sweeper step.
 const paginaRecalculoCompletude = 200
 
-// RecalcularCompletudeCatalogacao varre TODAS as entities NÃO-DRAFT em
-// páginas (mesmo padrão de paginação interna do pacote) e grava o resultado
-// da avaliação de completude de catalogação (briefing 0058) em
-// entity_catalog_completeness. Satisfaz libraryhealth.CompletenessRecalculator
-// (injetada em server.WithLibraryHealthJob) para o job `saude_biblioteca`
-// (0053) chamar este passo ao final de cada execução.
+// RecalcularCompletudeCatalogacao sweeps ALL NON-DRAFT entities in pages (same internal
+// pagination pattern as the package) and writes the outcome of the catalog completeness
+// evaluation into entity_catalog_completeness. It satisfies
+// libraryhealth.CompletenessRecalculator (injected in server.WithLibraryHealthJob) so
+// the `saude_biblioteca` job can call this step at the end of each run.
 //
-// Erro de UM item (ex.: sql.ErrNoRows numa entity purgada entre a listagem e
-// o processamento) NÃO aborta os demais — best-effort, mesmo espírito de
-// escanearTodas/autoMatchLote (0053/0054): só loga e segue para o próximo.
-// Só um erro de LISTAGEM (a própria página falhar) interrompe a varredura —
-// aí não há como saber o que mais existe para avaliar.
+// An error on ONE item (e.g. sql.ErrNoRows on an entity purged between the listing and
+// the processing) does NOT abort the others — best-effort, the same spirit as
+// escanearTodas/autoMatchLote: it only logs and moves on to the next one. Only a
+// LISTING error (the page itself failing) interrupts the sweep — at that point there is
+// no way to know what else exists to evaluate.
 func (s *Server) RecalcularCompletudeCatalogacao(ctx context.Context) (avaliados, incompletos int, err error) {
 	cfg, err := s.obterCatalogCompletenessSettings(ctx)
 	if err != nil {
@@ -78,17 +75,17 @@ func (s *Server) RecalcularCompletudeCatalogacao(ctx context.Context) (avaliados
 	return avaliados, incompletos, nil
 }
 
-// avaliarERecalcularUmItem avalia UMA entity não-draft contra a régua `cfg` e
-// grava o resultado (UPSERT) em entity_catalog_completeness.
+// avaliarERecalcularUmItem evaluates ONE non-draft entity against the `cfg` ruler and
+// writes the result (UPSERT) into entity_catalog_completeness.
 //
-// Quando o type de `ent` não está em `cfg`, grava {true,[]} DIRETO, sem
-// chamar o resolver — evita o custo de resolução (files/assets/override/
-// externo/ancestrais/posse) para tipos sem régua nenhuma (briefing 0058 §4).
-// Senão, chama s.resolverEntity com idioma vazio (base neutra — completude
-// depende de PRESENÇA do campo, não de qual idioma o preencheu) e reaproveita
-// resolvida.CatalogCompleteness, que resolverEntity JÁ calcula internamente
-// (anotarCompletudeCatalogacao, entities.go, mesmo caminho do detalhe) — não
-// duplica a extração de rich fields nem a leitura de assets aqui.
+// When the type of `ent` is not in `cfg`, it writes {true,[]} STRAIGHT AWAY, without
+// calling the resolver — it avoids the resolution cost (files/assets/override/
+// external/ancestors/ownership) for types with no ruler at all. Otherwise it calls
+// s.resolverEntity with an empty language (a neutral base — completeness depends on the
+// PRESENCE of the field, not on which language filled it) and reuses
+// resolvida.CatalogCompleteness, which resolverEntity ALREADY computes internally
+// (anotarCompletudeCatalogacao, entities.go, the same path as the detail page) — it does
+// not duplicate the rich-field extraction nor the assets read here.
 func (s *Server) avaliarERecalcularUmItem(ctx context.Context, w *sqlcgen.Queries, cfg catalogCompletenessSettings, ent sqlcgen.Entity) (resultadoCompletude, error) {
 	var resultado resultadoCompletude
 	if _, achou := cfg[ent.Type]; !achou {
@@ -102,9 +99,9 @@ func (s *Server) avaliarERecalcularUmItem(ctx context.Context, w *sqlcgen.Querie
 			return resultadoCompletude{}, sql.ErrNoRows
 		}
 		if resolvida.CatalogCompleteness == nil {
-			// Não deveria acontecer para um item já filtrado como não-draft
-			// (anotarCompletudeCatalogacao só deixa nil para draft) — degrada
-			// com um erro explícito em vez de gravar um zero-value enganoso.
+			// It should not happen for an item already filtered as non-draft
+			// (anotarCompletudeCatalogacao only leaves nil for a draft) — degrade
+			// with an explicit error instead of writing a misleading zero-value.
 			return resultadoCompletude{}, errors.New("resolverEntity não calculou catalog_completeness para item não-draft")
 		}
 		resultado = *resolvida.CatalogCompleteness

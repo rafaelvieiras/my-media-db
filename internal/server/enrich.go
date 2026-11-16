@@ -13,31 +13,31 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Este arquivo implementa as ESCRITAS de enriquecimento (briefing 0015):
-//   POST /api/v1/entities/{id}/enrich  — enriquece uma entity existente
-//   POST /api/v1/import                — find-or-create por id externo + enrich
-// Ambos delegam ao serviço internal/enrich (escreve external, NUNCA override; pelo
-// pool de escrita, ADR-0010) e devolvem a entity RESOLVIDA pelo caminho comum
-// (resolverEntity), então a resposta já reflete os dados externos compostos.
+// This file implements the enrichment WRITES:
+//   POST /api/v1/entities/{id}/enrich  — enriches an existing entity
+//   POST /api/v1/import                — find-or-create by external id + enrich
+// Both delegate to the internal/enrich service (it writes external, NEVER override; through
+// the write pool, ADR-0010) and return the entity RESOLVED by the common path
+// (resolverEntity), so the response already reflects the composed external data.
 
-// enrichBody é o corpo OPCIONAL de POST /entities/{id}/enrich. source/source_id são
-// opcionais: sem source resolve a fonte-default DINAMICAMENTE (fonteDefault, 0047);
-// sem source_id tenta entity.external_ids[source]. force (briefing 0088, default
-// false — o zero-value do bool já cobre "campo ausente") pula o cache de 24h do
-// detalhe externo e busca sempre a versão mais recente do provider.
+// enrichBody is the OPTIONAL body of POST /entities/{id}/enrich. source/source_id are
+// optional: without source it resolves the default source DYNAMICALLY (fonteDefault);
+// without source_id it tries entity.external_ids[source]. force (default
+// false — the bool zero-value already covers "absent field") skips the 24h cache of the
+// external detail and always fetches the latest version from the provider.
 type enrichBody struct {
 	Source   string `json:"source"`
 	SourceID string `json:"source_id"`
 	Force    bool   `json:"force"`
 }
 
-// importBody é o corpo de POST /import. type deve ser movie|tv|collection|artista|
-// faixa e source_id não-vazio (senão 422); sem source a fonte-default é resolvida
-// DINAMICAMENTE por capacidade (fonteDefault, 0047). type='collection' (0025)
-// importa a coleção inteira: cria a entity da coleção e importa/liga os filmes
-// membros. type='faixa' (briefing 0115 Parte 2, faixa avulsa faltando de um álbum
-// já interno) exige ParentID: o id INTERNO do álbum pai a ligar (entity_relation
-// kind=music_album) -- os demais tipos ignoram este campo.
+// importBody is the body of POST /import. type must be movie|tv|collection|artista|
+// faixa and source_id non-empty (otherwise 422); without source the default source is
+// resolved DYNAMICALLY by capability (fonteDefault). type='collection'
+// imports the whole collection: it creates the collection entity and imports/links the
+// member movies. type='faixa' (a SINGLE track missing from an album
+// that is already internal) requires ParentID: the INTERNAL id of the parent album to
+// link (entity_relation kind=music_album) -- the other types ignore this field.
 type importBody struct {
 	Source   string `json:"source"`
 	SourceID string `json:"source_id"`
@@ -45,9 +45,10 @@ type importBody struct {
 	ParentID string `json:"parent_id"`
 }
 
-// enrichEntity trata POST /api/v1/entities/{id}/enrich. 404 se a entity não
-// existe; 422 se não há id externo para usar; 200 com a entity resolvida em
-// sucesso. A fonte da falha (provider) vira 502; a imagem degrada no serviço.
+// enrichEntity handles POST /api/v1/entities/{id}/enrich. 404 if the entity does
+// not exist; 422 if there is no external id to use; 200 with the entity resolved on
+// success. A failure of the source (provider) becomes 502; the image degrades in the
+// service.
 func (s *Server) enrichEntity(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -93,9 +94,10 @@ func (s *Server) enrichEntity(w http.ResponseWriter, r *http.Request) {
 	s.responderResolvida(w, ctx, id, http.StatusOK)
 }
 
-// importar trata POST /api/v1/import: find-or-create por id externo (dedup MD4) e
-// enriquece. 400 corpo inválido; 422 type fora de movie|tv|collection|artista ou
-// source_id vazio; 201 se criou / 200 se já existia, com a entity resolvida.
+// importar handles POST /api/v1/import: find-or-create by external id (MD4 dedup) and
+// enriches. 400 invalid body; 422 type outside movie|tv|collection|artista or
+// empty source_id; 201 if it created / 200 if it already existed, with the resolved
+// entity.
 func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -118,15 +120,15 @@ func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "source_id é obrigatório")
 		return
 	}
-	// type=faixa (briefing 0115 Parte 2) exige o id INTERNO do álbum pai: sem ele
-	// não há como ligar a faixa avulsa (entity_relation kind=music_album) -- os
-	// demais tipos nem chegam a olhar body.ParentID.
+	// type=faixa requires the INTERNAL id of the parent album: without it
+	// there is no way to link the standalone track (entity_relation kind=music_album) --
+	// the other types do not even look at body.ParentID.
 	if body.Type == "faixa" && body.ParentID == "" {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_body", "parent_id é obrigatório para type=faixa")
 		return
 	}
-	// Sem source explícito: escolhe DINAMICAMENTE a fonte-default capaz do tipo (0047),
-	// nunca assume "tmdb". Nenhum provider capaz => 422 semântico (não 502).
+	// Without an explicit source: it DYNAMICALLY chooses the default source capable of the
+	// type, never assuming "tmdb". No capable provider => a semantic 422 (not 502).
 	source, ok := s.resolverFonte(w, body.Type, body.Source)
 	if !ok {
 		return
@@ -136,9 +138,9 @@ func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	// type=faixa foge do dispatcher genérico s.enrich.Importar (que não carrega
-	// contexto de PAI): precisa do álbum interno (body.ParentID) para resolver o
-	// mbid do release e ligar a faixa por entity_relation -- ver
+	// type=faixa bypasses the generic s.enrich.Importar dispatcher (which does not carry
+	// PARENT context): it needs the internal album (body.ParentID) to resolve the
+	// release mbid and link the track by entity_relation -- see
 	// enrich.ImportarFaixaAvulsa.
 	var id string
 	var criada bool
@@ -159,11 +161,11 @@ func (s *Server) importar(w http.ResponseWriter, r *http.Request) {
 	s.responderResolvida(w, ctx, id, status)
 }
 
-// responderResolvida monta e escreve a entity resolvida (caminho comum de
-// enrich/import). 404 se a entity sumiu no meio; 500 em erro de banco.
+// responderResolvida assembles and writes the resolved entity (common path of
+// enrich/import). 404 if the entity vanished in the middle; 500 on a database error.
 func (s *Server) responderResolvida(w http.ResponseWriter, ctx context.Context, id string, status int) {
-	// Idioma default (principal das settings): o enrich/import ainda não recebe
-	// ?lang= — resolverEntity com "" cai no principal.
+	// Default language (primary from the settings): enrich/import does not receive
+	// ?lang= yet — resolverEntity with "" falls back to the primary.
 	resolvida, encontrada, err := s.resolverEntity(ctx, id, "", true)
 	if err != nil {
 		respondErroInterno(w)
@@ -176,10 +178,10 @@ func (s *Server) responderResolvida(w http.ResponseWriter, ctx context.Context, 
 	writeJSON(w, status, resolvida)
 }
 
-// idiomasPermitidos devolve os idiomas PERMITIDOS das settings (0019) para o
-// enrich/import puxar TODAS as traduções permitidas numa só ida (0020). Um erro
-// real de banco vira 500 (err != nil); o chamador aborta. O default seguro cobre a
-// linha ausente, então em operação normal isto nunca falha.
+// idiomasPermitidos returns the ALLOWED languages from the settings for
+// enrich/import to pull ALL the allowed translations in a single round trip. A real
+// database error becomes 500 (err != nil); the caller aborts. The safe default covers the
+// missing row, so in normal operation this never fails.
 func (s *Server) idiomasPermitidos(ctx context.Context, w http.ResponseWriter) ([]string, error) {
 	cfg, err := s.obterLanguageSettings(ctx)
 	if err != nil {
@@ -189,9 +191,9 @@ func (s *Server) idiomasPermitidos(ctx context.Context, w http.ResponseWriter) (
 	return cfg.Allowed, nil
 }
 
-// enrichIndisponivel responde 503 quando o serviço de enrich não está ligado
-// (sem fonte externa/credencial ou sem diretório de assets) — não há o que
-// importar. Protege contra nil deref em s.enrich.
+// enrichIndisponivel responds 503 when the enrich service is not enabled
+// (no external source/credential or no assets directory) — there is nothing to
+// import. Protects against a nil deref on s.enrich.
 func (s *Server) enrichIndisponivel(w http.ResponseWriter) bool {
 	if s.enrich == nil {
 		writeError(w, http.StatusServiceUnavailable, "external_source_unavailable",
@@ -201,27 +203,28 @@ func (s *Server) enrichIndisponivel(w http.ResponseWriter) bool {
 	return false
 }
 
-// respondFonteIndisponivel responde 502 quando a fonte externa falhou ao entregar
-// o detalhe (timeout/erro do provider) — o import não pôde completar.
+// respondFonteIndisponivel responds 502 when the external source failed to deliver
+// the detail (timeout/provider error) — the import could not complete.
 func respondFonteIndisponivel(w http.ResponseWriter) {
 	writeError(w, http.StatusBadGateway, "external_source_error",
 		"a fonte externa falhou ao entregar o detalhe")
 }
 
-// respondSemFonteParaTipo responde 422 quando o request não informou `source` e NENHUM
-// provider registrado é capaz do `tipo` pedido (0047): erro SEMÂNTICO e claro, em vez do
-// antigo 502 que surgia ao assumir "tmdb" num ambiente que não o tem registrado.
+// respondSemFonteParaTipo responds 422 when the request did not inform `source` and NO
+// registered provider is capable of the requested `tipo`: a CLEAR SEMANTIC error, instead of
+// the old 502 that appeared when assuming "tmdb" in an environment that does not have it
+// registered.
 func respondSemFonteParaTipo(w http.ResponseWriter, tipo string) {
 	writeError(w, http.StatusUnprocessableEntity, "no_source_for_type",
 		"nenhuma fonte disponível para "+tipo)
 }
 
-// fonteDefault resolve DINAMICAMENTE a fonte-default de um `tipo` quando o request não
-// informa `source` (0047): devolve o Nome() do PRIMEIRO provider registrado — na ordem de
-// prioridade (providersOrdenados) — CAPAZ do tipo, substituindo o antigo hardcode "tmdb".
-// ok=false quando nenhum provider é capaz: o handler responde 422 semântico, jamais 502
-// por assumir uma fonte ausente. Assim um ambiente só-TVDB (ou qualquer conjunto) importa
-// pela fonte realmente registrada.
+// fonteDefault DYNAMICALLY resolves the default source of a `tipo` when the request does not
+// inform `source`: it returns the Nome() of the FIRST registered provider — in priority
+// order (providersOrdenados) — CAPABLE of the type, replacing the old "tmdb" hardcode.
+// ok=false when no provider is capable: the handler responds a semantic 422, never a 502
+// for assuming an absent source. That way a TVDB-only environment (or any set) imports
+// through the source actually registered.
 func (s *Server) fonteDefault(tipo string) (string, bool) {
 	for _, p := range s.providersOrdenados() {
 		if provedorCapaz(p, tipo) {
@@ -231,10 +234,11 @@ func (s *Server) fonteDefault(tipo string) (string, bool) {
 	return "", false
 }
 
-// resolverFonte devolve a fonte a usar para um `tipo`: a `sourceExplicito` quando o
-// request a informa, senão a fonte-default capaz (fonteDefault, 0047). Quando nenhuma
-// fonte é capaz, responde 422 semântico e devolve ok=false — o handler só precisa de
-// `if !ok { return }`. Centraliza o padrão antes copiado em enrich/import/correct.
+// resolverFonte returns the source to use for a `tipo`: `sourceExplicito` when the
+// request informs it, otherwise the capable default source (fonteDefault). When no
+// source is capable, it responds a semantic 422 and returns ok=false — the handler only needs
+// `if !ok { return }`. It centralizes the pattern previously copied in
+// enrich/import/correct.
 func (s *Server) resolverFonte(w http.ResponseWriter, tipo, sourceExplicito string) (string, bool) {
 	if sourceExplicito != "" {
 		return sourceExplicito, true
@@ -247,19 +251,20 @@ func (s *Server) resolverFonte(w http.ResponseWriter, tipo, sourceExplicito stri
 	return src, true
 }
 
-// tipoImportavel diz se `tipo` pode ser importado via POST /import (find-or-create):
-// movie, tv, collection, artista (briefing 0106, ADR-0027 -- artista importa a
-// discografia inteira via MusicaProvider) ou faixa (briefing 0115 Parte 2 -- faixa
-// AVULSA faltando de um álbum já interno, exige body.ParentID; ver ImportarFaixaAvulsa
-// no importar() acima). Os demais grãos finos (season/episode/album) continuam
-// entrando só pela árvore do provider (série/música), não por import direto.
+// tipoImportavel says whether `tipo` can be imported via POST /import (find-or-create):
+// movie, tv, collection, artista (ADR-0027 -- importing an artist imports the
+// whole discography via MusicaProvider) or faixa (a SINGLE track missing from an album
+// that is already internal, it requires body.ParentID; see ImportarFaixaAvulsa
+// in importar() above). The other fine grains (season/episode/album) keep
+// coming in only through the provider tree (series/music), not through a direct import.
 func tipoImportavel(tipo string) bool {
 	return tipo == "movie" || tipo == "tv" || tipo == "collection" || tipo == "artista" || tipo == "faixa"
 }
 
-// resolverSourceID devolve o source_id a usar: o do corpo (`sourceIDBody`), senão o
-// external_ids[source] da entity (`externalIdsJson`). Responde 422 e devolve ok=false
-// quando nenhum está disponível. Extraído de enrichEntity para manter o handler enxuto.
+// resolverSourceID returns the source_id to use: the one from the body (`sourceIDBody`),
+// otherwise the entity's external_ids[source] (`externalIdsJson`). It responds 422 and
+// returns ok=false when neither is available. Extracted from enrichEntity to keep the
+// handler lean.
 func resolverSourceID(w http.ResponseWriter, source string, externalIdsJson sql.NullString, sourceIDBody string) (string, bool) {
 	sourceID := sourceIDBody
 	if sourceID == "" {
@@ -273,18 +278,18 @@ func resolverSourceID(w http.ResponseWriter, source string, externalIdsJson sql.
 	return sourceID, true
 }
 
-// provedorCapaz diz se o provider `p` sabe importar/enriquecer o `tipo` pedido, via
-// type-assert da capacidade opcional correspondente (0031/0046): 'tv' exige
-// provider.SerieProvider (a árvore), 'collection' exige provider.ColecaoProvider;
-// 'artista'/'album'/'faixa' exigem a capacidade de música (ADR-0027) -- sem isso,
-// um provider registrado que não modela música (ex.: TMDB) era erroneamente aceito
-// pelo `default` abaixo como "capaz", e o /enrich sem `source` explícito escolhia-o
-// como fonte-default para uma entity de música, batendo em 422 "sem source_id" (o
-// external_ids[mbid] da entity não bate com external_ids[tmdb] que o handler
-// procurava) -- achado ao validar o botão "Baixar Metadados" no artista/álbum,
-// gap deixado pré-existente quando o caso "faixa" foi adicionado. Para 'movie' (e
-// demais grãos, como season/episode) basta o core Provider — todo provider
-// registrado o cumpre.
+// provedorCapaz says whether the provider `p` knows how to import/enrich the requested
+// `tipo`, via a type-assert of the corresponding optional capability:
+// 'tv' requires provider.SerieProvider (the tree), 'collection' requires
+// provider.ColecaoProvider; 'artista'/'album'/'faixa' require the music capability
+// (ADR-0027) -- without it, a registered provider that does not model music (e.g.: TMDB)
+// was wrongly accepted by the `default` below as "capable", and /enrich without an explicit
+// `source` chose it as the default source for a music entity, hitting a 422 "no source_id"
+// (the entity's external_ids[mbid] does not match external_ids[tmdb] that the handler
+// was looking for) -- found while validating the "Download Metadata" button on
+// artist/album, a gap left pre-existing when the "faixa" case was added. For 'movie' (and
+// other grains, such as season/episode) the core Provider is enough — every registered
+// provider fulfills it.
 func provedorCapaz(p provider.Provider, tipo string) bool {
 	switch tipo {
 	case "tv":
@@ -304,9 +309,9 @@ func provedorCapaz(p provider.Provider, tipo string) bool {
 	}
 }
 
-// decodeOpcional decodifica um corpo JSON OPCIONAL em v: corpo vazio (EOF) é ok
-// (v fica no zero-value); corpo presente mas malformado responde 422 e devolve
-// false. Usado pelo enrich, cujo body é opcional.
+// decodeOpcional decodes an OPTIONAL JSON body into v: an empty body (EOF) is ok
+// (v stays at the zero value); a present but malformed body responds 422 and returns
+// false. Used by enrich, whose body is optional.
 func decodeOpcional(w http.ResponseWriter, r *http.Request, v any) bool {
 	err := json.NewDecoder(r.Body).Decode(v)
 	if err == nil || errors.Is(err, io.EOF) {
@@ -316,16 +321,17 @@ func decodeOpcional(w http.ResponseWriter, r *http.Request, v any) bool {
 	return false
 }
 
-// externalIDDe extrai external_ids[source] do external_ids_json (string→string).
-// Vazio quando ausente/inválido. Usado quando o enrich não recebe source_id no
-// corpo (item já casado pelo scanner, id na identidade).
+// externalIDDe extracts external_ids[source] from external_ids_json (string→string).
+// Empty when absent/invalid. Used when enrich does not receive source_id in the
+// body (item already matched by the scanner, id in the identity).
 //
-// "musicbrainz" é o único source cuja chave em external_ids diverge do Nome() do
-// provider: ADR-0027 grava o id sob "mbid" (não "musicbrainz") em todo o resto do
-// código (internal/enrich/musica.go, external_ids.mbid no frontend) -- achado ao
-// validar "Baixar Metadados" sem source_id explícito num artista/álbum/faixa já
-// catalogado: sem este desvio, a busca por external_ids["musicbrainz"] nunca acha
-// o id já gravado e o botão sempre bate em 422 "sem source_id".
+// "musicbrainz" is the only source whose key in external_ids diverges from the provider's
+// Nome(): ADR-0027 stores the id under "mbid" (not "musicbrainz") in every other part of
+// the code (internal/enrich/musica.go, external_ids.mbid in the frontend) -- found while
+// validating "Download Metadata" without an explicit source_id on an already
+// cataloged artist/album/track: without this deviation, the lookup of
+// external_ids["musicbrainz"] never finds the already stored id and the button always hits
+// a 422 "no source_id".
 func externalIDDe(ns sql.NullString, source string) string {
 	if !ns.Valid || ns.String == "" {
 		return ""

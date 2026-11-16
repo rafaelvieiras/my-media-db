@@ -11,19 +11,19 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Este arquivo implementa a criação de um ITEM LOCAL manual (briefing 0027): POST
-// /api/v1/entities cria uma entity `type=movie|tv` SEM fonte externa — o dono cataloga
-// algo que a fonte não tem (ou ainda não casou). Combina com a edição de external_ids
-// (external_ids.go): cria-se o item e, depois, fixa-se o id da fonte para uma
-// sincronização futura. É o análogo de POST /collections (Fase B do 0025) para
-// filme/série. Escrita pelo pool de ESCRITA (ADR-0010); sem enrich (não há fonte).
+// This file implements the creation of a manual LOCAL ITEM: POST /api/v1/entities creates
+// an entity `type=movie|tv` WITHOUT an external source — the owner catalogs something the
+// source does not have (or has not matched yet). It combines with the editing of
+// external_ids (external_ids.go): the item is created and, later, the source id is fixed
+// for a future synchronization. It is the analog of POST /collections for movie/series.
+// Written through the WRITE pool (ADR-0010); no enrich (there is no source).
 
-// tiposItemManual são os tipos aceitos na criação manual: coleção tem o seu próprio
-// endpoint (POST /collections), então aqui é só o conteúdo de mídia.
+// tiposItemManual are the types accepted in the manual creation: a collection has its own
+// endpoint (POST /collections), so here it is media content only.
 var tiposItemManual = map[string]bool{"movie": true, "tv": true}
 
-// createItemBody é o corpo de POST /api/v1/entities: type (movie|tv) e título são
-// obrigatórios; os demais campos base são opcionais (vazio = herda/NULL).
+// createItemBody is the body of POST /api/v1/entities: type (movie|tv) and title are
+// required; the other base fields are optional (empty = inherits/NULL).
 type createItemBody struct {
 	Type          string `json:"type"`
 	Title         string `json:"title"`
@@ -32,10 +32,10 @@ type createItemBody struct {
 	ReleaseDate   string `json:"release_date"`
 }
 
-// createItem trata POST /api/v1/entities: cria uma entity LOCAL de mídia (movie|tv) sem
-// external_ids, com o status DEFAULT ('cataloged'). 400 corpo JSON inválido; 422 type
-// fora de movie|tv ou título vazio (só espaços conta como vazio). 201 com a entity
-// resolvida (mesmo shape do detalhe).
+// createItem handles POST /api/v1/entities: it creates a LOCAL media entity (movie|tv)
+// without external_ids, with the DEFAULT status ('cataloged'). 400 invalid JSON body; 422
+// type outside movie|tv or an empty title (whitespace only counts as empty). 201 with the
+// resolved entity (same shape as the detail).
 func (s *Server) createItem(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -72,9 +72,9 @@ func (s *Server) createItem(w http.ResponseWriter, r *http.Request) {
 	s.responderResolvida(w, ctx, id, http.StatusCreated)
 }
 
-// nsOpcional embrulha um campo de texto opcional num sql.NullString VÁLIDO só quando
-// não é vazio (após trim); vazio vira NULL (herda a base, sem gravar string vazia).
-// Compartilhado pelas criações locais (item manual e coleção da Fase B).
+// nsOpcional wraps an optional text field in a VALID sql.NullString only when it is not
+// empty (after trim); empty becomes NULL (it inherits the base, without writing an empty
+// string). Shared by the local creations (manual item and collection).
 func nsOpcional(v string) sql.NullString {
 	limpo := strings.TrimSpace(v)
 	if limpo == "" {

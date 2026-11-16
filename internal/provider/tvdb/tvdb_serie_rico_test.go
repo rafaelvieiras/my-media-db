@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// serieExtendedComStatusGenres e um /series/{id}/extended com o status{name} e os
-// genres[] que o 0045 passa a emitir no FALLBACK (usados quando nao ha match no TMDB).
+// serieExtendedComStatusGenres is a /series/{id}/extended with the status{name} and the
+// genres[] that are now emitted in the FALLBACK (used when there is no match in TMDB).
 const serieExtendedComStatusGenres = `{
   "status": "success",
   "data": {
@@ -20,10 +20,10 @@ const serieExtendedComStatusGenres = `{
   }
 }`
 
-// TestMapearSerieStatusGeneros (fallback do 0045): o MapearDetalhe da serie do TVDB
-// emite airing_status (status.name CRU) e tags (generos ancorados no idioma original)
-// a partir do /extended — hoje descartados. Tagline/keywords/similar o TVDB nao tem
-// (ausencia graciosa: as chaves nem aparecem).
+// TestMapearSerieStatusGeneros (fallback): the MapearDetalhe of the TVDB series emits
+// airing_status (RAW status.name) and tags (genres anchored in the original language) from
+// /extended -- previously discarded. Tagline/keywords/similar do not exist in TVDB
+// (graceful absence: the keys do not even appear).
 func TestMapearSerieStatusGeneros(t *testing.T) {
 	env := envelopeSerie{Detail: json.RawMessage(serieExtendedComStatusGenres)}
 	raw, err := json.Marshal(env)
@@ -44,15 +44,15 @@ func TestMapearSerieStatusGeneros(t *testing.T) {
 	if len(nomes) != 2 || nomes[0] != "Animation" || nomes[1] != "Comedy" {
 		t.Errorf("tags[en] = %v, quero [Animation Comedy] sob o idioma original", tags["en"])
 	}
-	// Ausencia graciosa: o TVDB nao da tagline/keywords/similar.
+	// Graceful absence: TVDB does not provide tagline/keywords/similar.
 	exigirSemChaves(t, campos, "tagline", "keywords", "similar")
-	// A identidade da arvore segue intacta (title do TVDB).
+	// The identity of the tree stays intact (title from TVDB).
 	if _, ok := campos["title"].(map[string]any); !ok {
 		t.Errorf("title deveria seguir do TVDB, tive %T", campos["title"])
 	}
 }
 
-// exigirSemChaves falha se o mapa carrega qualquer uma das chaves dadas.
+// exigirSemChaves fails if the map carries any of the given keys.
 func exigirSemChaves(t *testing.T, m map[string]any, chaves ...string) {
 	t.Helper()
 	for _, k := range chaves {

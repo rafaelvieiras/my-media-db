@@ -34,12 +34,12 @@ type AtualizarProgressoQueueItemParams struct {
 	ID              string
 }
 
-// Grava progress_current/progress_total/message a cada report do callback de
-// progresso durante Runner.Executar (ADR-0028: "atualiza progress_current/
-// message via callback durante a execucao -- nao so no fim"). Sem throttle:
-// grava a cada chamada, decisao documentada em
-// internal/execqueue/manager.go (simples e correta; otimizar so se virar
-// problema real de I/O).
+// Writes progress_current/progress_total/message on every report from the
+// progress callback during Runner.Executar (ADR-0028: "updates progress_current/
+// message via callback during the execution -- not only at the end"). No throttle:
+// it writes on every call, a decision documented in
+// internal/execqueue/manager.go (simple and correct; optimize only if it becomes
+// a real I/O problem).
 func (q *Queries) AtualizarProgressoQueueItem(ctx context.Context, arg AtualizarProgressoQueueItemParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarProgressoQueueItem,
 		arg.ProgressCurrent,
@@ -68,11 +68,11 @@ type CriarQueueItemParams struct {
 	Trigger string
 }
 
-// Acesso a queue_item (briefing 0108, ADR-0028): fila de execucao unificada
-// para scan e job. Comentarios em ASCII e colunas explicitas -- ver a nota em
-// entity.sql (bug de offset do sqlc v1.31 com acentos/'*' em .sql de query).
-// Enfileira um item novo em status 'queued' (Manager.Enqueue, DEPOIS do guard
-// de dedup ja ter confirmado que nao ha item ativo para a mesma referencia).
+// Access to queue_item (ADR-0028): unified execution queue
+// for scan and job. Comments in ASCII and explicit columns -- see the note in
+// entity.sql (sqlc v1.31 offset bug with accents/'*' in a query .sql file).
+// Enqueues a new item with status 'queued' (Manager.Enqueue, AFTER the
+// dedupe guard has already confirmed there is no active item for the same reference).
 func (q *Queries) CriarQueueItem(ctx context.Context, arg CriarQueueItemParams) (QueueItem, error) {
 	row := q.db.QueryRowContext(ctx, criarQueueItem,
 		arg.ID,
@@ -113,8 +113,8 @@ type FinalizarQueueItemParams struct {
 	ID      string
 }
 
-// Transicao running -> success|error, ao FIM do processamento (ou quando nao
-// ha Runner registrado para o kind).
+// running -> success|error transition, at the END of processing (or when there
+// is no Runner registered for the kind).
 func (q *Queries) FinalizarQueueItem(ctx context.Context, arg FinalizarQueueItemParams) (QueueItem, error) {
 	row := q.db.QueryRowContext(ctx, finalizarQueueItem, arg.Status, arg.Message, arg.ID)
 	var i QueueItem
@@ -143,7 +143,7 @@ RETURNING id, kind, ref_id, trigger, status, progress_current, progress_total,
     message, enqueued_at, started_at, finished_at
 `
 
-// Transicao queued -> running, no INICIO do processamento pelo worker.
+// queued -> running transition, at the START of processing by the worker.
 func (q *Queries) IniciarQueueItem(ctx context.Context, id string) (QueueItem, error) {
 	row := q.db.QueryRowContext(ctx, iniciarQueueItem, id)
 	var i QueueItem
@@ -176,9 +176,9 @@ type ListarQueueItemsExcedentesPorRefParams struct {
 	Offset int64
 }
 
-// Retencao do historico (mesmo padrao de ListarJobExecucaoIdsExcedentes em
-// job.sql): ids do excedente mais antigo alem das N mais recentes DAQUELA
-// (kind, ref_id) -- poda aplicada em Go, um DELETE por id.
+// History retention (same pattern as ListarJobExecucaoIdsExcedentes in
+// job.sql): ids of the oldest surplus beyond the N most recent OF THAT
+// (kind, ref_id) -- pruning applied in Go, one DELETE per id.
 func (q *Queries) ListarQueueItemsExcedentesPorRef(ctx context.Context, arg ListarQueueItemsExcedentesPorRefParams) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listarQueueItemsExcedentesPorRef, arg.Kind, arg.RefID, arg.Offset)
 	if err != nil {
@@ -217,10 +217,10 @@ type ListarQueueItemsPorKindRefParams struct {
 	Limit int64
 }
 
-// Historico paginado de UMA referencia (kind, ref_id), mais recente primeiro
-// por enqueued_at -- substitui a antiga ListarJobExecucoes (job.sql) numa
-// camada futura; as colunas ja cobrem o shape que GET /jobs/{id}/executions e
-// GET /library/{id}/scan precisam.
+// Paginated history of ONE reference (kind, ref_id), newest first
+// by enqueued_at -- replaces the old ListarJobExecucoes (job.sql) in a
+// future layer; the columns already cover the shape that GET /jobs/{id}/executions
+// and GET /library/{id}/scan need.
 func (q *Queries) ListarQueueItemsPorKindRef(ctx context.Context, arg ListarQueueItemsPorKindRefParams) ([]QueueItem, error) {
 	rows, err := q.db.QueryContext(ctx, listarQueueItemsPorKindRef, arg.Kind, arg.RefID, arg.Limit)
 	if err != nil {
@@ -263,10 +263,10 @@ FROM queue_item
 WHERE status = 'running'
 `
 
-// Usado no BOOT do worker (Manager.Run, antes do loop comecar): qualquer item
-// 'running' encontrado aqui e orfao de uma execucao anterior que nao
-// terminou (o processo caiu no meio) -- o Manager finaliza cada um como
-// 'error' antes de comecar a processar a fila normalmente.
+// Used at worker BOOT (Manager.Run, before the loop starts): any item
+// 'running' found here is an orphan from a previous execution that did not
+// finish (the process died in the middle) -- the Manager finishes each one as
+// 'error' before starting to process the queue normally.
 func (q *Queries) ListarQueueItemsRunning(ctx context.Context) ([]QueueItem, error) {
 	rows, err := q.db.QueryContext(ctx, listarQueueItemsRunning)
 	if err != nil {
@@ -316,11 +316,11 @@ type ObterQueueItemAtivoParams struct {
 	RefID string
 }
 
-// Guard de dedup (Manager.Enqueue): existe algum item queued/running para
-// esta MESMA referencia (kind, ref_id)? sql.ErrNoRows = nao existe, pode
-// enfileirar. O mais recente primeiro (ORDER BY enqueued_at DESC) nao importa
-// de verdade aqui (so pode existir UM ativo por referencia, ja que o proprio
-// guard impede um segundo), mas mantem a query deterministica.
+// Dedupe guard (Manager.Enqueue): is there any queued/running item for
+// this SAME reference (kind, ref_id)? sql.ErrNoRows = there is none, it may
+// be enqueued. Newest first (ORDER BY enqueued_at DESC) does not really
+// matter here (there can be only ONE active item per reference, since the guard
+// itself prevents a second one), but it keeps the query deterministic.
 func (q *Queries) ObterQueueItemAtivo(ctx context.Context, arg ObterQueueItemAtivoParams) (QueueItem, error) {
 	row := q.db.QueryRowContext(ctx, obterQueueItemAtivo, arg.Kind, arg.RefID)
 	var i QueueItem
@@ -354,10 +354,10 @@ type ObterQueueItemAtivoPorKindRefParams struct {
 	RefID string
 }
 
-// Usado por Manager.Status(kind, refID): o item ATIVO (queued/running) mais
-// recente da referencia, se houver -- Status cai para
-// ObterUltimoQueueItemPorKindRef quando esta query devolve sql.ErrNoRows (sem
-// item ativo, mostra o ultimo resultado finalizado).
+// Used by Manager.Status(kind, refID): the most recent ACTIVE item
+// (queued/running) of the reference, if any -- Status falls back to
+// ObterUltimoQueueItemPorKindRef when this query returns sql.ErrNoRows (with no
+// active item, it shows the last finished result).
 func (q *Queries) ObterQueueItemAtivoPorKindRef(ctx context.Context, arg ObterQueueItemAtivoPorKindRefParams) (QueueItem, error) {
 	row := q.db.QueryRowContext(ctx, obterQueueItemAtivoPorKindRef, arg.Kind, arg.RefID)
 	var i QueueItem
@@ -417,10 +417,10 @@ type ObterUltimoQueueItemPorKindRefParams struct {
 	RefID string
 }
 
-// Complemento de ObterQueueItemAtivoPorKindRef: o item mais recente (QUALQUER
-// status) de uma referencia -- usado por Manager.Status quando nao ha item
-// ativo, para devolver o resultado da ULTIMA execucao (sql.ErrNoRows = nunca
-// houve item nenhum para esta referencia).
+// Complement of ObterQueueItemAtivoPorKindRef: the most recent item (ANY
+// status) of a reference -- used by Manager.Status when there is no active
+// item, to return the result of the LAST execution (sql.ErrNoRows = there never
+// was any item for this reference).
 func (q *Queries) ObterUltimoQueueItemPorKindRef(ctx context.Context, arg ObterUltimoQueueItemPorKindRefParams) (QueueItem, error) {
 	row := q.db.QueryRowContext(ctx, obterUltimoQueueItemPorKindRef, arg.Kind, arg.RefID)
 	var i QueueItem
@@ -449,9 +449,9 @@ ORDER BY enqueued_at, id
 LIMIT 1
 `
 
-// O worker usa isso para achar o proximo item 'queued' mais antigo (FIFO por
-// enqueued_at; id como desempate estavel quando enqueued_at colide).
-// sql.ErrNoRows = fila vazia, o worker dorme um intervalo curto.
+// The worker uses this to find the oldest 'queued' item (FIFO by
+// enqueued_at; id as a stable tiebreaker when enqueued_at collides).
+// sql.ErrNoRows = empty queue, the worker sleeps for a short interval.
 func (q *Queries) ProximoQueueItemPendente(ctx context.Context) (QueueItem, error) {
 	row := q.db.QueryRowContext(ctx, proximoQueueItemPendente)
 	var i QueueItem

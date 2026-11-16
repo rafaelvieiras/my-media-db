@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// entityListerFake é um EntityLister fake, sem tocar banco.
+// entityListerFake is a fake EntityLister, without touching the database.
 type entityListerFake struct {
 	ids []string
 	err error
@@ -17,8 +17,8 @@ func (f *entityListerFake) ListarEntitiesComMediaFilePresente(context.Context) (
 	return f.ids, f.err
 }
 
-// materializadorFake é um Materializador fake: devolve o resultado
-// configurado por entity id, ou um erro para os ids em errPorID.
+// materializadorFake is a fake Materializador: it returns the configured result
+// per entity id, or an error for the ids in errPorID.
 type materializadorFake struct {
 	artesPorID map[string][]string
 	nfoPorID   map[string]bool
@@ -35,7 +35,7 @@ func (f *materializadorFake) MaterializarMidiasFaltantes(_ context.Context, enti
 	return f.artesPorID[entityID], f.nfoPorID[entityID], nil
 }
 
-// contadorMissingFake é um ContadorMissing fake, sem tocar banco.
+// contadorMissingFake is a fake ContadorMissing, without touching the database.
 type contadorMissingFake struct {
 	n   int64
 	err error
@@ -52,8 +52,8 @@ func TestNomeEstavel(t *testing.T) {
 	}
 }
 
-// TestExecutarProcessaTodasEResume cobre o caminho feliz: entities com arte
-// resolvida e sem NFO ganham as duas coisas, o resumo reflete os totais.
+// TestExecutarProcessaTodasEResume covers the happy path: entities with art
+// resolved and no NFO get both things, the summary reflects the totals.
 func TestExecutarProcessaTodasEResume(t *testing.T) {
 	entities := &entityListerFake{ids: []string{"e1", "e2", "e3"}}
 	mat := &materializadorFake{
@@ -81,8 +81,9 @@ func TestExecutarProcessaTodasEResume(t *testing.T) {
 	}
 }
 
-// TestExecutarErroDeUmaEntityNaoAbortaAsDemais: uma falha em UMA entity
-// (rede/disco) não impede o processamento das outras -- best-effort.
+// TestExecutarErroDeUmaEntityNaoAbortaAsDemais: a failure on ONE entity
+// (network/disk) does not prevent the others from being processed --
+// best-effort.
 func TestExecutarErroDeUmaEntityNaoAbortaAsDemais(t *testing.T) {
 	entities := &entityListerFake{ids: []string{"e1", "e2"}}
 	mat := &materializadorFake{
@@ -107,7 +108,7 @@ func TestExecutarErroDeUmaEntityNaoAbortaAsDemais(t *testing.T) {
 	}
 }
 
-// TestExecutarSemEntitiesElegiveis: universo vazio não é erro.
+// TestExecutarSemEntitiesElegiveis: an empty universe is not an error.
 func TestExecutarSemEntitiesElegiveis(t *testing.T) {
 	h := New(&entityListerFake{ids: nil}, &materializadorFake{}, &contadorMissingFake{})
 	msg, err := h.Executar(context.Background(), nil)
@@ -119,8 +120,8 @@ func TestExecutarSemEntitiesElegiveis(t *testing.T) {
 	}
 }
 
-// TestExecutarErroDeListagemPropaga: falha ao listar o universo elegível
-// (banco fora do ar) propaga o erro -- diferente de falha por-entity.
+// TestExecutarErroDeListagemPropaga: a failure to list the eligible universe
+// (database down) propagates the error -- unlike a per-entity failure.
 func TestExecutarErroDeListagemPropaga(t *testing.T) {
 	entities := &entityListerFake{err: errors.New("banco indisponível")}
 	h := New(entities, &materializadorFake{}, &contadorMissingFake{})
@@ -129,10 +130,10 @@ func TestExecutarErroDeListagemPropaga(t *testing.T) {
 	}
 }
 
-// TestExecutarResumoIncluiMissingQuandoMaiorQueZero cobre o briefing 0128
-// (Caso A): quando há media_file(s) 'missing' no momento do scan, o resumo
-// anexa a contagem -- sinal de que o universo elegível desta execução pode
-// ter ficado incompleto por uma corrida com outro job sobre o mesmo mount.
+// TestExecutarResumoIncluiMissingQuandoMaiorQueZero covers the 'missing'
+// media_file case: when there are 'missing' media_file at scan time, the summary
+// appends the count -- a sign that the eligible universe of this execution may
+// have been left incomplete by a race with another job over the same mount.
 func TestExecutarResumoIncluiMissingQuandoMaiorQueZero(t *testing.T) {
 	h := New(&entityListerFake{}, &materializadorFake{}, &contadorMissingFake{n: 3})
 	msg, err := h.Executar(context.Background(), nil)
@@ -144,8 +145,8 @@ func TestExecutarResumoIncluiMissingQuandoMaiorQueZero(t *testing.T) {
 	}
 }
 
-// TestExecutarResumoOmiteMissingQuandoZero cobre a contrapartida: sem
-// nenhum media_file 'missing', o resumo não ganha ruído extra.
+// TestExecutarResumoOmiteMissingQuandoZero covers the counterpart: with no
+// 'missing' media_file, the summary does not gain extra noise.
 func TestExecutarResumoOmiteMissingQuandoZero(t *testing.T) {
 	h := New(&entityListerFake{}, &materializadorFake{}, &contadorMissingFake{n: 0})
 	msg, err := h.Executar(context.Background(), nil)
@@ -157,9 +158,10 @@ func TestExecutarResumoOmiteMissingQuandoZero(t *testing.T) {
 	}
 }
 
-// TestExecutarResumoOmiteMissingQuandoContagemFalha cobre que uma falha
-// best-effort na contagem (banco indisponível no meio da execução) não
-// aborta o job nem propaga erro -- só omite o dado do resumo.
+// TestExecutarResumoOmiteMissingQuandoContagemFalha covers that a best-effort
+// failure in the count (database unavailable in the middle of the execution)
+// neither aborts the job nor propagates an error -- it only omits the datum from
+// the summary.
 func TestExecutarResumoOmiteMissingQuandoContagemFalha(t *testing.T) {
 	h := New(&entityListerFake{}, &materializadorFake{}, &contadorMissingFake{err: errors.New("banco indisponível")})
 	msg, err := h.Executar(context.Background(), nil)

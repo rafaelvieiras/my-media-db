@@ -1,96 +1,99 @@
-// Package audiotag REGRAVA a tag de áudio de um arquivo (.mp3/.flac/.ogg) com
-// o metadado já RESOLVIDO de uma faixa (briefing 0125) — título, artista,
-// álbum, ano, faixa/disco, gênero, MBIDs, ISRC e capa embutida — para que
-// QUALQUER player/servidor que leia tag de áudio (LMS, Navidrome, gonic,
-// Supysonic, clientes Subsonic/OpenSubsonic, Kodi em modo tag-scan, Jellyfin)
-// veja o metadado do MyMediaDB sem depender de NFO.
+// Package audiotag REWRITES the audio tag of a file (.mp3/.flac/.ogg) with the
+// already RESOLVED metadata of a track — title, artist, album, year,
+// track/disc, genre, MBIDs, ISRC and embedded cover — so that ANY
+// player/server that reads audio tags (LMS, Navidrome, gonic, Supysonic,
+// Subsonic/OpenSubsonic clients, Kodi in tag-scan mode, Jellyfin) sees the
+// MyMediaDB metadata without depending on NFO.
 //
-// # Decisão de mecanismo (briefing 0125 §6)
+// # Mechanism decision
 //
-// O projeto hoje só LÊ tag via ffprobe (subprocesso, internal/mediainfo); não
-// havia lib de ESCRITA em uso. O briefing levantou duas opções: (a) libs Go
-// dedicadas de ID3v2 + Vorbis comment; (b) subprocesso ffmpeg. Optou-se por
-// (b): `apk add ffmpeg` no Dockerfile FINAL já instala o binário `ffmpeg`
-// (junto do `ffprobe` que o mediainfo já usa) — ESCREVER via ffmpeg não
-// introduz NENHUMA dependência binária nova, ao contrário de (a), que exigiria
-// duas libs Go separadas (ID3v2 e Vorbis comment/FLAC) para cobrir MP3 e
-// FLAC/OGG. `ffmpeg -map_metadata -1 -c:a copy -metadata k=v ...` reescreve o
-// container SEM recodificar o áudio (lossless, rápido) e resolve os 3
-// formatos com o MESMO mecanismo — só a convenção de NOME de campo muda por
-// formato (ver escreverID3/escreverVorbis).
+// So far the project only READS tags through ffprobe (a subprocess,
+// internal/mediainfo); there was no WRITE library in use. Two options were on
+// the table: (a) dedicated Go libraries for ID3v2 + Vorbis comment; (b) the
+// ffmpeg subprocess. Option (b) prevailed: `apk add ffmpeg` in the FINAL
+// Dockerfile already installs the `ffmpeg` binary (together with the `ffprobe`
+// that mediainfo already uses) — WRITING through ffmpeg introduces NO new
+// binary dependency, unlike (a), which would require two separate Go libraries
+// (ID3v2 and Vorbis comment/FLAC) to cover MP3 and FLAC/OGG. `ffmpeg
+// -map_metadata -1 -c:a copy -metadata k=v ...` rewrites the container WITHOUT
+// re-encoding the audio (lossless, fast) and solves the 3 formats with the SAME
+// mechanism — only the field NAME convention changes per format (see
+// escreverID3/escreverVorbis).
 //
-// Capa embutida: para MP3, a capa entra como um segundo input mapeado como
-// stream de vídeo MJPEG com `-disposition:v attached_pic` (vira o frame APIC
-// do ID3v2 — validado empiricamente: `ffprobe` decodifica de volta um stream
-// video/mjpeg com disposition attached_pic=1). Para FLAC/OGG, o container não
-// aceita um stream de vídeo de verdade (ffmpeg recusa mux de mjpeg em ogg); a
-// capa entra como o valor de UM comentário Vorbis, `METADATA_BLOCK_PICTURE`,
-// contendo o bloco binário da spec do FLAC (tipo+mime+descrição+dimensões
-// [zeradas, a spec permite "desconhecido"]+bytes da imagem) codificado em
-// base64 — montado à mão (montarBlocoImagem) porque o ffmpeg não gera esse
-// bloco sozinho a partir de um input de imagem comum; validado lendo de volta
-// com `ffprobe -show_streams`, que decodifica o bloco corretamente tanto em
-// `.flac` quanto em `.ogg`.
+// Embedded cover: for MP3, the cover goes in as a second input mapped as an
+// MJPEG video stream with `-disposition:v attached_pic` (it becomes the APIC
+// frame of ID3v2 — validated empirically: `ffprobe` decodes back a video/mjpeg
+// stream with disposition attached_pic=1). For FLAC/OGG the container does not
+// accept a real video stream (ffmpeg refuses to mux mjpeg into ogg); the cover
+// goes in as the value of ONE Vorbis comment, `METADATA_BLOCK_PICTURE`,
+// holding the binary block from the FLAC spec (type+mime+description+dimensions
+// [zeroed, the spec allows "unknown"]+image bytes) encoded in base64 — built by
+// hand (montarBlocoImagem) because ffmpeg does not generate that block on its
+// own from an ordinary image input; validated by reading it back with `ffprobe
+// -show_streams`, which decodes the block correctly both in `.flac` and in
+// `.ogg`.
 //
-// Pure em relação ao resolver: este pacote só recebe o metadado JÁ resolvido
-// (Metadado) — não decide precedência override/externo/arquivo, não conhece
-// entity/resolver. Quem monta o Metadado é o chamador (internal/server).
+// Pure with respect to the resolver: this package only receives the metadata
+// ALREADY resolved (Metadado) — it does not decide override/external/file
+// precedence, it does not know entity/resolver. Whoever builds the Metadado is
+// the caller (internal/server).
 package audiotag
 
-// Metadado é o valor JÁ RESOLVIDO (override ⟵ externo ⟵ arquivo, AGENTS.md
-// §1) a gravar na tag de UMA faixa. Todo campo é opcional: string vazia ou
-// número <= 0 simplesmente não é escrito naquele frame/comentário (nunca gera
-// um valor "0"/"" no arquivo). CoverPath vazio = nenhuma capa é embutida (e
-// uma capa preexistente no arquivo é removida na regravação — a escrita é
-// sempre uma substituição TOTAL da tag antiga, nunca um merge, ver
+// Metadado is the ALREADY RESOLVED value (override ⟵ external ⟵ file,
+// AGENTS.md §1) to write into the tag of ONE track. Every field is optional: an
+// empty string or a number <= 0 is simply not written into that frame/comment
+// (it never produces a value "0"/"" in the file). An empty CoverPath = no cover
+// is embedded (and a pre-existing cover in the file is removed on the rewrite —
+// the write is always a TOTAL replacement of the old tag, never a merge, see
 // Writer.Escrever).
 type Metadado struct {
-	// Title/Artist/Album são o título da FAIXA, o artista CREDITADO nesta
-	// faixa (pode divergir do AlbumArtist em faixas feat./colaboração,
-	// ADR-0027 item 4 — quem resolve essa divergência é o CHAMADOR) e o
-	// título do ÁLBUM.
+	// Title/Artist/Album are the title of the TRACK, the artist CREDITED on
+	// this track (it may diverge from AlbumArtist on feat./collaboration
+	// tracks, ADR-0027 item 4 — the CALLER resolves that divergence) and the
+	// title of the ALBUM.
 	Title  string
 	Artist string
 	Album  string
-	// AlbumArtist é o artista PRINCIPAL do álbum (billing principal),
-	// sempre o mesmo em toda faixa do álbum — distinto de Artist quando há
-	// divergência de artist-credit.
+	// AlbumArtist is the MAIN artist of the album (main billing), always the
+	// same across every track of the album — distinct from Artist when the
+	// artist-credit diverges.
 	AlbumArtist string
-	// Date é o ano/data de lançamento do ÁLBUM (não da faixa — a faixa não
-	// tem data própria no modelo, ADR-0027).
+	// Date is the release year/date of the ALBUM (not of the track — the
+	// track has no date of its own in the model, ADR-0027).
 	Date string
-	// Genre é o gênero do ÁLBUM (ADR-0027 item 7: gênero não é por faixa).
+	// Genre is the genre of the ALBUM (ADR-0027 item 7: genre is not per
+	// track).
 	Genre string
-	// TrackNumber/TrackTotal/DiscNumber/DiscTotal são a numeração da faixa
-	// dentro do álbum. TrackTotal é o total de faixas do álbum (derivado
-	// pelo chamador, não faz parte do extension_data da faixa); DiscTotal
-	// vem do extension_data da própria faixa (ADR-0027 item 1). <= 0 = não
-	// escreve aquele campo.
+	// TrackNumber/TrackTotal/DiscNumber/DiscTotal are the numbering of the
+	// track inside the album. TrackTotal is the total number of tracks of the
+	// album (derived by the caller, it is not part of the track's
+	// extension_data); DiscTotal comes from the extension_data of the track
+	// itself (ADR-0027 item 1). <= 0 = that field is not written.
 	TrackNumber int
 	TrackTotal  int
 	DiscNumber  int
 	DiscTotal   int
-	// Compilation marca a flag de compilação (o álbum está ligado ao
-	// artista "Various Artists", musicext.MBIDVariousArtists) — escrito
-	// como um comentário/frame de texto best-effort (ver comentário em
-	// metadataID3; ffmpeg não mapeia para o frame binário TCMP do iTunes).
+	// Compilation sets the compilation flag (the album is tied to the
+	// "Various Artists" artist, musicext.MBIDVariousArtists) — written as a
+	// best-effort text comment/frame (see the comment in metadataID3; ffmpeg
+	// does not map it to the iTunes binary TCMP frame).
 	Compilation bool
-	// ISRC é o identificador auxiliar da FAIXA (ADR-0027 item 6).
+	// ISRC is the auxiliary identifier of the TRACK (ADR-0027 item 6).
 	ISRC string
-	// MBRecordingID/MBReleaseGroupID/MBArtistID/MBAlbumArtistID são os
-	// MusicBrainz IDs conhecidos pelo MyMediaDB (ADR-0027: só rastreamos
-	// recording/release-group/artist — não há um MBID de RELEASE distinto
-	// persistido; ver nota em metadataID3/metadataVorbis sobre reusar o de
-	// release-group também como "Album Id"). MBArtistID é o MBID do
-	// artista CREDITADO nesta faixa (mesma divergência feat. de Artist);
-	// MBAlbumArtistID é sempre o do artista principal do álbum.
+	// MBRecordingID/MBReleaseGroupID/MBArtistID/MBAlbumArtistID are the
+	// MusicBrainz IDs known to MyMediaDB (ADR-0027: we only track
+	// recording/release-group/artist — there is no distinct RELEASE MBID
+	// persisted; see the note in metadataID3/metadataVorbis about reusing the
+	// release-group one as "Album Id" too). MBArtistID is the MBID of the
+	// artist CREDITED on this track (the same feat. divergence as Artist);
+	// MBAlbumArtistID is always the one of the album's main artist.
 	MBRecordingID    string
 	MBReleaseGroupID string
 	MBArtistID       string
 	MBAlbumArtistID  string
-	// CoverPath é o caminho em disco (já resolvido pelo chamador — a
-	// mesma precedência de arte servida do álbum, escolherAssetServido em
-	// internal/server/assets.go) de uma imagem JPEG/PNG a embutir como
-	// capa. "" = nenhuma capa embutida.
+	// CoverPath is the on-disk path (already resolved by the caller — the same
+	// served-art precedence of the album, escolherAssetServido in
+	// internal/server/assets.go) of a JPEG/PNG image to embed as the cover.
+	// "" = no cover embedded.
 	CoverPath string
 }

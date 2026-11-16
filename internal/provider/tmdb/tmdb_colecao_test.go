@@ -10,8 +10,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// colecaoJSON e um payload de /collection/2344 com duas partes (uma sem titulo, que
-// deve ser descartada) para exercitar o mapeamento e o descarte.
+// colecaoJSON is a /collection/2344 payload with two parts (one without a title,
+// which must be discarded) to exercise the mapping and the discard.
 const colecaoJSON = `{
   "id": 2344,
   "name": "Colecao Matrix",
@@ -25,8 +25,8 @@ const colecaoJSON = `{
   ]
 }`
 
-// servidorColecao responde /collection/2344 (rico), 404 em /collection/000 e captura o
-// language pedido quando `capturar` != nil.
+// servidorColecao answers /collection/2344 (rich), 404 on /collection/000 and captures
+// the requested language when `capturar` != nil.
 func servidorColecao(t *testing.T, capturar *http.Request) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,8 +47,9 @@ func servidorColecao(t *testing.T, capturar *http.Request) *httptest.Server {
 	return srv
 }
 
-// buscarColecaoTeste busca /collection/2344 no idioma pt-BR e devolve o canonico,
-// capturando a requisicao (para checar o language). Enxuga os dois testes de mapeamento.
+// buscarColecaoTeste searches /collection/2344 in the pt-BR language and returns the
+// canonical, capturing the request (to check the language). It slims down the two
+// mapping tests.
 func buscarColecaoTeste(t *testing.T, req *http.Request) provider.Colecao {
 	t.Helper()
 	srv := servidorColecao(t, req)
@@ -81,7 +82,7 @@ func TestBuscarColecaoCabecalho(t *testing.T) {
 func TestBuscarColecaoPartes(t *testing.T) {
 	col := buscarColecaoTeste(t, nil)
 
-	if len(col.Parts) != 2 { // a parte sem titulo e descartada
+	if len(col.Parts) != 2 { // the part without a title is discarded
 		t.Fatalf("parts = %d, quero 2", len(col.Parts))
 	}
 	p0 := col.Parts[0]
@@ -109,8 +110,8 @@ func TestBuscarColecaoIDVazio(t *testing.T) {
 	}
 }
 
-// TestClientCumpreColecaoProvider garante em tempo de compilacao que *Client satisfaz
-// a capacidade opcional provider.ColecaoProvider (o handler faz type-assert por ela).
+// TestClientCumpreColecaoProvider guarantees at compile time that *Client satisfies
+// the optional capability provider.ColecaoProvider (the handler type-asserts it).
 func TestClientCumpreColecaoProvider(t *testing.T) {
 	var _ provider.ColecaoProvider = (*Client)(nil)
 }

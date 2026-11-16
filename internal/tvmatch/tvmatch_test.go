@@ -7,13 +7,14 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/naming"
 )
 
-// Testes migrados de internal/scanner/serie_test.go (os que cobrem o casamento
-// PURO por número) quando a lógica foi extraída para este pacote (briefing
-// 0069) — mesmas expectativas, só o símbolo mudou (episodeIndex→Index,
+// Tests migrated from internal/scanner/serie_test.go (the ones covering the PURE
+// number matching) when the logic was extracted into this package — same
+// expectations, only the symbols changed (episodeIndex→Index,
 // casarEpisodios→Casar).
 
-// idxTeste monta um índice sintético: official/dvd divergem no 3º episódio (official
-// {1,3} vs dvd {1,5}), e há absolutos 1..3. "absolute" só existe como número absoluto.
+// idxTeste builds a synthetic index: official/dvd diverge on the 3rd episode
+// (official {1,3} vs dvd {1,5}), and there are absolutes 1..3. "absolute" only
+// exists as an absolute number.
 func idxTeste() *Index {
 	return &Index{
 		defaultType: "official",
@@ -41,7 +42,8 @@ func TestCasarEpisodiosRange(t *testing.T) {
 }
 
 func TestCasarEpisodiosFallbackOrdem(t *testing.T) {
-	// (1,5) não existe em official (default) mas existe em dvd → fallback resolve.
+	// (1,5) does not exist in official (default) but exists in dvd → the fallback
+	// resolves it.
 	ids, ok := Casar(idxTeste(), naming.EpisodeInfo{Season: 1, Episodes: []int{5}})
 	if !ok || !reflect.DeepEqual(ids, []string{"e103"}) {
 		t.Fatalf("fallback: got %v,%v quero [e103],true", ids, ok)
@@ -64,16 +66,17 @@ func TestCasarEpisodiosSemMatch(t *testing.T) {
 	}
 }
 
-// TestCasarEpisodiosAmbiguo: o mesmo número casa episódios DISTINTOS em ordens
-// diferentes (sem default) → revisão (nem tenta vincular parcial).
+// TestCasarEpisodiosAmbiguo: the same number matches DISTINCT episodes in
+// different orderings (no default) → review (it does not even try a partial
+// link).
 func TestCasarEpisodiosAmbiguo(t *testing.T) {
 	idx := &Index{
 		defaultType: "official",
 		orderings:   []string{"official", "a", "b"},
 		byOrdering: map[string]map[[2]int]string{
-			"official": {{1, 1}: "e1"}, // não tem (1,7)
+			"official": {{1, 1}: "e1"}, // does not have (1,7)
 			"a":        {{1, 7}: "eX"},
-			"b":        {{1, 7}: "eY"}, // mesmo número, episódio distinto
+			"b":        {{1, 7}: "eY"}, // same number, distinct episode
 		},
 		byAbsolute: map[int]string{},
 	}
@@ -82,7 +85,8 @@ func TestCasarEpisodiosAmbiguo(t *testing.T) {
 	}
 }
 
-// TestMesmaSequencia cobre os 3 ramos: iguais, tamanhos distintos, conteudo distinto.
+// TestMesmaSequencia covers the 3 branches: equal, different lengths, different
+// content.
 func TestMesmaSequencia(t *testing.T) {
 	if !mesmaSequencia([]string{"a", "b"}, []string{"a", "b"}) {
 		t.Error("sequencias iguais deveriam casar")
@@ -95,9 +99,10 @@ func TestMesmaSequencia(t *testing.T) {
 	}
 }
 
-// TestIndexarEpisodioEPreencherOrdenacoes cobre a montagem em memória: numbering
-// multi-ordem, absolute_number e as ordenações (default_season_type/season_types)
-// lidas do namespace core.tv@1 já extraído (tvext.Namespace fica fora deste pacote).
+// TestIndexarEpisodioEPreencherOrdenacoes covers the in-memory building:
+// multi-ordering numbering, absolute_number and the orderings
+// (default_season_type/season_types) read from the already extracted core.tv@1
+// namespace (tvext.Namespace stays out of this package).
 func TestIndexarEpisodioEPreencherOrdenacoes(t *testing.T) {
 	idx := NovoIndex()
 	idx.PreencherOrdenacoes(map[string]any{

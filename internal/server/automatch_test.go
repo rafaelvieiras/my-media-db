@@ -13,21 +13,22 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
-// Testes do AUTO-MATCH (briefing 0050): os dois endpoints (individual e
-// lote) via httptest, cobrindo os critérios §5. Os testes de pontuação pura
-// (antiga pontuarCandidato) migraram para internal/matching/matching_test.go
-// quando a função foi extraída para lá (briefing 0054).
+// Tests of AUTO-MATCH: the two endpoints (individual and
+// batch) via httptest, covering the criteria. The pure scoring tests
+// (former pontuarCandidato) moved to internal/matching/matching_test.go
+// when the function was extracted there.
 
 // ── setup ─────────────────────────────────────────────────────────────────
 
-// automatchProvider é um provider fake (Nome="tmdb") com Buscar/BuscarDetalhe/
-// MapearDetalhe configuráveis, para exercitar o ramo EXTERNO do auto-match.
+// automatchProvider is a fake provider (Nome="tmdb") with configurable
+// Buscar/BuscarDetalhe/MapearDetalhe, to exercise the EXTERNAL branch of the
+// auto-match.
 type automatchProvider struct {
 	resultados []provider.ResultadoExterno
 	raw        json.RawMessage
 	campos     map[string]any
-	// termos guarda cada termo de busca recebido, para os testes que olham
-	// QUAL string foi consultada (briefing 0129), não só o resultado.
+	// termos stores each search term received, for the tests that look at
+	// WHICH string was queried, not only the result.
 	termos []string
 }
 
@@ -46,8 +47,8 @@ func (p *automatchProvider) MapearDetalhe(json.RawMessage) (map[string]any, erro
 	return p.campos, nil
 }
 
-// setupAutoMatchServer sobe um server com o automatchProvider (fonte "tmdb") e
-// assetsDir, para o ramo externo (enrich) funcionar de ponta a ponta.
+// setupAutoMatchServer starts a server with the automatchProvider (source "tmdb") and
+// assetsDir, so the external branch (enrich) works end to end.
 func setupAutoMatchServer(t *testing.T, resultados []provider.ResultadoExterno) (http.Handler, *db.DB) {
 	t.Helper()
 	prov := &automatchProvider{
@@ -58,15 +59,15 @@ func setupAutoMatchServer(t *testing.T, resultados []provider.ResultadoExterno) 
 	return setupSearchServer(t, WithSearchProvider(prov), WithAssetsDir(t.TempDir()))
 }
 
-// strp devolve o ponteiro de uma string literal (para Year de ResultadoExterno).
+// strp returns the pointer of a string literal (for Year of ResultadoExterno).
 func strp(s string) *string { return &s }
 
-// servidorImagemArvoreSerie sobe um httptest que responde QUALQUER caminho com um PNG
-// valido: usado como ImageBase do internal/provider/fake.Provider (mesma fixture de
-// arvore de serie de internal/enrich/enrich_arvore_test.go, briefing 0067) nos testes
-// que provam que Corrigir/Confirmar candidato/auto-match/retroativo constroem
-// temporada/episodio via GET /members -- a fixture gera varias URLs de poster/still
-// (serie, cada temporada, cada episodio), todas sob o mesmo ImageBase.
+// servidorImagemArvoreSerie starts an httptest that responds to ANY path with a valid
+// PNG: used as the ImageBase of internal/provider/fake.Provider (same series tree
+// fixture of internal/enrich/enrich_arvore_test.go) in the tests that prove that
+// Correct/Confirm candidate/auto-match/retroactive build season/episode via
+// GET /members -- the fixture generates several poster/still URLs
+// (series, each season, each episode), all under the same ImageBase.
 func servidorImagemArvoreSerie(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -77,8 +78,8 @@ func servidorImagemArvoreSerie(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// semearEntityComAno cria uma entity com release_date (para o candidato local
-// entrar no ajuste de ano do score).
+// semearEntityComAno creates an entity with release_date (so the local candidate
+// enters the year adjustment of the score).
 func semearEntityComAno(t *testing.T, d *db.DB, id, tipo, titulo, releaseDate string) {
 	t.Helper()
 	if _, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
@@ -90,9 +91,9 @@ func semearEntityComAno(t *testing.T, d *db.DB, id, tipo, titulo, releaseDate st
 
 // ── POST /entities/{id}/auto-match ───────────────────────────────────────────
 
-// TestAutoMatchLocalFundeSemDuplicar cobre os critérios §5.1/§5.2: um item de
-// baixa confiança cujo arquivo casa (título+ano) com uma entity JÁ catalogada é
-// FUNDIDO nela (fundirEntities) — nunca cria duplicata.
+// TestAutoMatchLocalFundeSemDuplicar covers the criteria: a low-confidence
+// item whose file matches (title+year) an ALREADY cataloged entity is
+// MERGED into it (fundirEntities) — it never creates a duplicate.
 func TestAutoMatchLocalFundeSemDuplicar(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntityComAno(t, d, "e-target", "movie", "The Matrix", "1999-03-31")
@@ -115,7 +116,7 @@ func TestAutoMatchLocalFundeSemDuplicar(t *testing.T) {
 		t.Errorf("score = %v, quero >= %v", got.Score, LimiarAutoMatch)
 	}
 
-	// e-draft (perdedora) foi apagada; o arquivo migrou para e-target.
+	// e-draft (the loser) was deleted; the file moved to e-target.
 	if _, err := escrita(t, d).ObterEntity(context.Background(), "e-draft"); err == nil {
 		t.Error("e-draft ainda existe após o auto-match local, quero fundida/apagada")
 	}
@@ -128,15 +129,15 @@ func TestAutoMatchLocalFundeSemDuplicar(t *testing.T) {
 	}
 }
 
-// TestAutoMatchAnoDivergenteNuncaAplica cobre o critério §5.3: candidato com
-// título idêntico mas ano divergindo em MAIS de 1 ano nunca é aplicado, mesmo
-// sem nenhum provider externo configurado (fica "none").
+// TestAutoMatchAnoDivergenteNuncaAplica covers the criterion: a candidate with an
+// identical title but a year diverging by MORE than 1 year is never applied, even
+// without any external provider configured (it stays "none").
 func TestAutoMatchAnoDivergenteNuncaAplica(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntityComAno(t, d, "e-target", "movie", "The Matrix", "1999-03-31")
 	semearEntity(t, d, "e-draft", "movie", "Draft")
 	definirStatus(t, d, "e-draft", "draft")
-	// Ano do arquivo (2015) diverge de 1999 em mais de 1 ano.
+	// The file's year (2015) diverges from 1999 by more than 1 year.
 	semearFile(t, d, "f-draft", "e-draft", "/lib/The Matrix (2015)/The Matrix (2015).mkv", "present", 0, "")
 
 	rec := do(t, h, http.MethodPost, "/api/v1/entities/e-draft/auto-match", nil)
@@ -147,14 +148,14 @@ func TestAutoMatchAnoDivergenteNuncaAplica(t *testing.T) {
 	if got.Resolved || got.Method != "none" {
 		t.Errorf("resultado = %+v, quero resolved:false method:none (ano divergente > 1)", got)
 	}
-	// e-draft continua intacta na fila.
+	// e-draft remains intact in the queue.
 	if _, err := escrita(t, d).ObterEntity(context.Background(), "e-draft"); err != nil {
 		t.Errorf("e-draft deveria continuar intacta: %v", err)
 	}
 }
 
-// TestAutoMatchSemCandidatoForte cobre o critério §5.4: sem candidato forte em
-// nenhuma fonte, o item fica intacto e o endpoint responde 200 resolved:false.
+// TestAutoMatchSemCandidatoForte covers the criterion: without a strong candidate in
+// any source, the item stays intact and the endpoint responds 200 resolved:false.
 func TestAutoMatchSemCandidatoForte(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntityComAno(t, d, "e-outro", "movie", "Completely Unrelated Title", "2005-01-01")
@@ -172,9 +173,9 @@ func TestAutoMatchSemCandidatoForte(t *testing.T) {
 	}
 }
 
-// TestAutoMatchExterno cobre o critério §5.1 pelo ramo EXTERNO: sem candidato
-// local, mas com um candidato externo forte, aplica pela sequência do
-// "Corrigir" (grava external_ids + re-enriquece + sobe confiança).
+// TestAutoMatchExterno covers the criterion through the EXTERNAL branch: without a
+// local candidate, but with a strong external candidate, it applies through the
+// "Correct" sequence (writes external_ids + re-enriches + raises confidence).
 func TestAutoMatchExterno(t *testing.T) {
 	resultados := []provider.ResultadoExterno{
 		{Source: "tmdb", SourceID: "335984", Type: "movie", Title: "Blade Runner 2049", Year: strp("2017")},
@@ -196,8 +197,8 @@ func TestAutoMatchExterno(t *testing.T) {
 		t.Fatalf("target = %+v, quero id=e-draft (identidade aplicada NA MESMA entity)", got.Target)
 	}
 
-	// Identidade gravada e confiança subiu (saiu da fila) — mesmo contrato do
-	// "Corrigir" (0018).
+	// Identity written and confidence went up (it left the queue) — same contract as
+	// "Correct".
 	ent, err := escrita(t, d).ObterEntity(context.Background(), "e-draft")
 	if err != nil {
 		t.Fatalf("ObterEntity: %v", err)
@@ -210,12 +211,12 @@ func TestAutoMatchExterno(t *testing.T) {
 	}
 }
 
-// TestAutoMatchExternoSerieConstroiArvore cobre o briefing 0067: o auto-match
-// externo sobre uma entity type='tv' (aplicarCandidatoExterno -> s.enrich.Enriquecer)
-// passa a sincronizar a arvore de temporada/episodio tambem, nao so POST /import --
-// GET /entities/{id}/members deixa de vir vazio apos o auto-match resolver sozinho.
-// Usa o fixture canned de fake.Provider (mesma arvore de internal/enrich/
-// enrich_arvore_test.go: 2 temporadas de 3 episodios).
+// TestAutoMatchExternoSerieConstroiArvore covers series trees: the external
+// auto-match over a type='tv' entity (aplicarCandidatoExterno -> s.enrich.Enriquecer)
+// also starts synchronizing the season/episode tree, not only POST /import --
+// GET /entities/{id}/members stops coming back empty after the auto-match resolves by
+// itself. It uses the canned fixture of fake.Provider (same tree of internal/enrich/
+// enrich_arvore_test.go: 2 seasons of 3 episodes).
 func TestAutoMatchExternoSerieConstroiArvore(t *testing.T) {
 	img := servidorImagemArvoreSerie(t)
 	h, d := setupSearchServer(t, WithSearchProvider(fake.New(img.URL)), WithAssetsDir(t.TempDir()))
@@ -245,7 +246,8 @@ func TestAutoMatchExternoSerieConstroiArvore(t *testing.T) {
 	}
 }
 
-// TestAutoMatchInexistente404 cobre o 404 do individual para entity ausente.
+// TestAutoMatchInexistente404 covers the 404 of the individual one for an absent
+// entity.
 func TestAutoMatchInexistente404(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/entities/naoexiste/auto-match", nil)
@@ -255,8 +257,8 @@ func TestAutoMatchInexistente404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestAutoMatchSemArquivoFicaNone cobre o caso sem media_file algum (nada para
-// derivar título/ano): 200 resolved:false, sem tocar a entity.
+// TestAutoMatchSemArquivoFicaNone covers the case without any media_file (nothing to
+// derive title/year from): 200 resolved:false, without touching the entity.
 func TestAutoMatchSemArquivoFicaNone(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e-vazia", "movie", "Sem Arquivo")
@@ -272,18 +274,19 @@ func TestAutoMatchSemArquivoFicaNone(t *testing.T) {
 	}
 }
 
-// ── POST /review/auto-match (lote) ───────────────────────────────────────────
+// ── POST /review/auto-match (batch) ───────────────────────────────────────────
 
-// TestAutoMatchLoteTodosElegiveis cobre o critério §5.5: sem `ids` no corpo,
-// processa TODOS os elegíveis de ListarRevisao e devolve o resumo agregado.
+// TestAutoMatchLoteTodosElegiveis covers the criterion: without `ids` in the body,
+// it processes ALL the eligible ones of ListarRevisao and returns the aggregated
+// summary.
 func TestAutoMatchLoteTodosElegiveis(t *testing.T) {
 	h, d := setupEntitiesServer(t)
-	// Resolve via local: casa com e-target.
+	// Resolves via local: it matches e-target.
 	semearEntityComAno(t, d, "e-target", "movie", "The Matrix", "1999-03-31")
 	semearEntity(t, d, "e-draft-ok", "movie", "Draft OK")
 	definirStatus(t, d, "e-draft-ok", "draft")
 	semearFile(t, d, "f-ok", "e-draft-ok", "/lib/The Matrix (1999)/The Matrix (1999).mkv", "present", 0, "")
-	// Fica pendente: nada bate.
+	// Stays pending: nothing matches.
 	semearEntity(t, d, "e-draft-pendente", "movie", "Draft Pendente")
 	definirStatus(t, d, "e-draft-pendente", "draft")
 	semearFile(t, d, "f-pendente", "e-draft-pendente", "/lib/Totally Unrelated Thing (2015)/x.mkv", "present", 0, "")
@@ -307,8 +310,8 @@ func TestAutoMatchLoteTodosElegiveis(t *testing.T) {
 	}
 }
 
-// TestAutoMatchLoteSubconjuntoIds cobre o corpo `{"ids":[...]}`: processa só o
-// subconjunto informado, ignorando os demais elegíveis.
+// TestAutoMatchLoteSubconjuntoIds covers the `{"ids":[...]}` body: it processes only the
+// informed subset, ignoring the other eligible ones.
 func TestAutoMatchLoteSubconjuntoIds(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntityComAno(t, d, "e-target", "movie", "The Matrix", "1999-03-31")
@@ -331,16 +334,16 @@ func TestAutoMatchLoteSubconjuntoIds(t *testing.T) {
 	if len(got.Items) != 1 || got.Items[0].ID != "e-draft-ok" {
 		t.Fatalf("items = %+v, quero só e-draft-ok", got.Items)
 	}
-	// e-draft-fora não foi processada (fora do subconjunto) -- continua na fila.
+	// e-draft-fora was not processed (outside the subset) -- it remains in the queue.
 	if !idsDe(decodeCards(t, do(t, h, http.MethodGet, "/api/v1/review", nil)))["e-draft-fora"] {
 		t.Error("e-draft-fora deveria continuar na fila (fora do subconjunto ids)")
 	}
 }
 
-// TestAutoMatchElegiveis cobre o método usado pelo job de saúde (briefing
-// 0054): sem `ids` explícito, resolve todos os elegíveis de ListarRevisao e
-// devolve (resolved, pending) -- mesma contagem que POST /review/auto-match
-// devolveria no corpo.
+// TestAutoMatchElegiveis covers the method used by the health job: without an explicit
+// `ids`, it resolves all the eligible ones of ListarRevisao and
+// returns (resolved, pending) -- the same count that POST /review/auto-match
+// would return in the body.
 func TestAutoMatchElegiveis(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	semearEntityComAno(t, d, "e-target", "movie", "The Matrix", "1999-03-31")
@@ -364,8 +367,8 @@ func TestAutoMatchElegiveis(t *testing.T) {
 	}
 }
 
-// TestAutoMatchSemBanco503 cobre a guarda entitiesUnavailable dos dois
-// endpoints quando não há banco injetado.
+// TestAutoMatchSemBanco503 covers the entitiesUnavailable guard of the two
+// endpoints when no database is injected.
 func TestAutoMatchSemBanco503(t *testing.T) {
 	h, err := New("v-teste", nil).Handler()
 	if err != nil {
@@ -383,7 +386,7 @@ func TestAutoMatchSemBanco503(t *testing.T) {
 	}
 }
 
-// decodeAutoMatch decodifica a resposta do auto-match individual.
+// decodeAutoMatch decodes the response of the individual auto-match.
 func decodeAutoMatch(t *testing.T, rec *httptest.ResponseRecorder) autoMatchResultDTO {
 	t.Helper()
 	var out autoMatchResultDTO
@@ -393,11 +396,11 @@ func decodeAutoMatch(t *testing.T, rec *httptest.ResponseRecorder) autoMatchResu
 	return out
 }
 
-// ── TentarAutoMatchFilme (briefing 0089, adaptador de scanner.FilmeImportador) ──
+// ── TentarAutoMatchFilme (adapter of scanner.FilmeImportador) ──
 
-// TestTentarAutoMatchFilmeCandidatoForteAplica cobre o auto-match imediato de
-// filme no scan: candidato local >= LimiarAutoMatch é de fato aplicado
-// (fundirEntities) e o adaptador devolve matched=true, sem erro.
+// TestTentarAutoMatchFilmeCandidatoForteAplica covers the immediate movie auto-match
+// during the scan: a local candidate >= LimiarAutoMatch is actually applied
+// (fundirEntities) and the adapter returns matched=true, without an error.
 func TestTentarAutoMatchFilmeCandidatoForteAplica(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	semearEntityComAno(t, d, "e-target", "movie", "The Matrix", "1999-03-31")
@@ -413,16 +416,17 @@ func TestTentarAutoMatchFilmeCandidatoForteAplica(t *testing.T) {
 	if !matched {
 		t.Fatal("matched = false, quero true (candidato local bate o limiar)")
 	}
-	// e-draft (perdedora) foi fundida em e-target -- mesma garantia do auto-match HTTP.
+	// e-draft (the loser) was merged into e-target -- same guarantee as the HTTP
+	// auto-match.
 	if _, err := escrita(t, d).ObterEntity(context.Background(), "e-draft"); err == nil {
 		t.Error("e-draft ainda existe após o auto-match, quero fundida/apagada")
 	}
 }
 
-// TestTentarAutoMatchFilmeSemCandidatoNaoFalha cobre a degradação em silêncio:
-// sem candidato forte o bastante em nenhuma fonte, matched=false e err=nil --
-// a entity permanece intacta, pendente na fila de Revisão (mesmo espírito de
-// ErrSerieNaoEncontrada para série).
+// TestTentarAutoMatchFilmeSemCandidatoNaoFalha covers the silent degradation:
+// without a strong enough candidate in any source, matched=false and err=nil --
+// the entity remains intact, pending in the Review queue (same spirit as
+// ErrSerieNaoEncontrada for series).
 func TestTentarAutoMatchFilmeSemCandidatoNaoFalha(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	semearEntityComAno(t, d, "e-outro", "movie", "Completely Unrelated Title", "2005-01-01")
@@ -443,9 +447,9 @@ func TestTentarAutoMatchFilmeSemCandidatoNaoFalha(t *testing.T) {
 	}
 }
 
-// TestTentarAutoMatchFilmeErroDeInfraPropaga cobre a outra metade da
-// semântica: uma falha REAL de banco (pool de leitura fechado) propaga como
-// erro, nunca degrada silenciosamente para matched=false.
+// TestTentarAutoMatchFilmeErroDeInfraPropaga covers the other half of the
+// semantics: a REAL database failure (closed read pool) propagates as an
+// error, it never degrades silently to matched=false.
 func TestTentarAutoMatchFilmeErroDeInfraPropaga(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e-draft", "movie", "Draft")
@@ -461,9 +465,9 @@ func TestTentarAutoMatchFilmeErroDeInfraPropaga(t *testing.T) {
 	}
 }
 
-// setupAutoMatchServerComBusca é o setupAutoMatchServer devolvendo o provider
-// fake, para os testes que olham o TERMO consultado (briefing 0129), não só o
-// candidato devolvido.
+// setupAutoMatchServerComBusca is setupAutoMatchServer returning the fake provider,
+// for the tests that look at the QUERIED TERM, not only the
+// returned candidate.
 func setupAutoMatchServerComBusca(t *testing.T, resultados []provider.ResultadoExterno) (http.Handler, *db.DB, *automatchProvider) {
 	t.Helper()
 	prov := &automatchProvider{
@@ -475,13 +479,13 @@ func setupAutoMatchServerComBusca(t *testing.T, resultados []provider.ResultadoE
 	return h, d, prov
 }
 
-// ── 0129: título de série desce da pasta, não do arquivo de episódio ────────
+// ── series title comes from the folder, not from the episode file ────────
 
-// TestAutoMatchDeSerieConsultaAPastaDaSerie cobre o critério central do
-// briefing 0129: numa série, o termo levado ao provider é o nome da PASTA da
-// série ("Os Gárgulas (1994)" -> "Os Gárgulas"), nunca o do arquivo de episódio
-// ("Os gárgulas - S03E08 - Genesis Undone"), que dava similaridade 58 contra
-// "Gárgulas" e não devolvia candidato nenhum.
+// TestAutoMatchDeSerieConsultaAPastaDaSerie covers the central criterion: in a series,
+// the term taken to the provider is the name of the series FOLDER
+// ("Os Gárgulas (1994)" -> "Os Gárgulas"), never the episode file's
+// ("Os gárgulas - S03E08 - Genesis Undone"), which gave similarity 58 against
+// "Gárgulas" and returned no candidate at all.
 func TestAutoMatchDeSerieConsultaAPastaDaSerie(t *testing.T) {
 	ano := "1994"
 	resultados := []provider.ResultadoExterno{
@@ -517,9 +521,9 @@ func TestAutoMatchDeSerieConsultaAPastaDaSerie(t *testing.T) {
 	}
 }
 
-// TestAutoMatchDeSerieNaRaizDaFonteUsaTituloDaEntity cobre a guarda do briefing
-// 0129: arquivo solto na raiz da fonte não pode virar consulta com o nome da
-// fonte ("Series") -- a entity tem título legível e é ele que vai à busca.
+// TestAutoMatchDeSerieNaRaizDaFonteUsaTituloDaEntity covers the guard: a file loose at
+// the source root cannot become a query with the source name ("Series") -- the entity
+// has a readable title and that is what goes to the search.
 func TestAutoMatchDeSerieNaRaizDaFonteUsaTituloDaEntity(t *testing.T) {
 	ano := "2007"
 	resultados := []provider.ResultadoExterno{
@@ -544,9 +548,8 @@ func TestAutoMatchDeSerieNaRaizDaFonteUsaTituloDaEntity(t *testing.T) {
 	}
 }
 
-// TestAutoMatchDeFilmeContinuaPeloNomeDoArquivo é a regressão do briefing 0129:
-// a derivação por pasta vale SÓ para tv; filme continua usando o nome do
-// arquivo, como sempre.
+// TestAutoMatchDeFilmeContinuaPeloNomeDoArquivo is the regression: the derivation by
+// folder applies ONLY to tv; a movie keeps using the file name, as always.
 func TestAutoMatchDeFilmeContinuaPeloNomeDoArquivo(t *testing.T) {
 	ano := "2021"
 	resultados := []provider.ResultadoExterno{

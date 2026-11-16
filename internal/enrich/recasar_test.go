@@ -1,10 +1,10 @@
 package enrich
 
-// recasar_test.go cobre o briefing 0069: arquivos que ja estavam anexados
-// diretamente na entity da SERIE (media_file.entity_id = serieID), sem vinculo
-// tv_episode -- o caso do scanner encontrando a serie ANTES dela ter arvore --
-// ganham o vinculo certo assim que Enriquecer sincroniza a arvore (0067), SEM
-// precisar de um novo scan.
+// recasar_test.go covers the re-matching of pending files: files that were already attached
+// directly to the SERIES entity (media_file.entity_id = serieID), without a
+// tv_episode link -- the case of the scanner finding the series BEFORE it had a tree --
+// get the right link as soon as Enriquecer syncs the tree, with NO
+// need for a new scan.
 
 import (
 	"context"
@@ -16,8 +16,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
-// criarMediaFileSolto cria um media_file "preso" direto na serie (sem vinculo de
-// episodio), como o scanner grava quando a serie ainda esta em revisao/sem arvore
+// criarMediaFileSolto creates a media_file "stuck" directly on the series (with no episode
+// link), the way the scanner writes it when the series is still under review/without a tree
 // (upsertMediaFileSerie, internal/scanner/serie.go).
 func criarMediaFileSolto(t *testing.T, database *db.DB, id, serieID, path string) {
 	t.Helper()
@@ -33,8 +33,8 @@ func criarMediaFileSolto(t *testing.T, database *db.DB, id, serieID, path string
 	}
 }
 
-// vinculosDoArquivo lista os vinculos media_file_entity (kind=tv_episode) de um
-// media_file, na ordem do ordinal.
+// vinculosDoArquivo lists the media_file_entity links (kind=tv_episode) of a
+// media_file, in ordinal order.
 func vinculosDoArquivo(t *testing.T, database *db.DB, mediaFileID string) []sqlcgen.MediaFileEntity {
 	t.Helper()
 	vs, err := sqlcgen.New(database.Read).ListarVinculosPorArquivo(context.Background(), mediaFileID)
@@ -50,8 +50,8 @@ func vinculosDoArquivo(t *testing.T, database *db.DB, mediaFileID string) []sqlc
 	return out
 }
 
-// idDoEpisodioPorTmdb devolve o id da entity episodio pelo external_id_tmdb (mesma
-// fixture do fake usada em serie_test.go: T1 = 101/102/103).
+// idDoEpisodioPorTmdb returns the id of the episode entity by external_id_tmdb (the same
+// fixture of the fake used in serie_test.go: S1 = 101/102/103).
 func idDoEpisodioPorTmdb(t *testing.T, database *db.DB, tmdb string) string {
 	t.Helper()
 	ent, err := sqlcgen.New(database.Read).ObterEntityPorTmdb(context.Background(), nsValid(tmdb))
@@ -61,11 +61,11 @@ func idDoEpisodioPorTmdb(t *testing.T, database *db.DB, tmdb string) string {
 	return ent.ID
 }
 
-// TestRecasarArquivosPendentesAoSincronizarArvore reproduz o cenario do §5 do 0069:
-// uma serie draft com 2 arquivos (S01E01/S01E02) ja anexados a ela SEM vinculo de
-// episodio (simula um scan que rodou ANTES da arvore existir) + Enriquecer (o mesmo
-// caminho que Corrigir/auto-match usam, 0067) -- os dois arquivos devem ganhar o
-// vinculo tv_episode certo, sem nenhum novo scan.
+// TestRecasarArquivosPendentesAoSincronizarArvore reproduces the §5 scenario:
+// a draft series with 2 files (S01E01/S01E02) already attached to it WITHOUT an episode
+// link (simulating a scan that ran BEFORE the tree existed) + Enriquecer (the same
+// path that Corrigir/auto-match use) -- both files must get the right tv_episode
+// link, without any new scan.
 func TestRecasarArquivosPendentesAoSincronizarArvore(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
@@ -94,9 +94,9 @@ func TestRecasarArquivosPendentesAoSincronizarArvore(t *testing.T) {
 	}
 }
 
-// TestRecasarArquivosPendentesSemPadraoOuSemMatchFicaPendente cobre os dois ramos de
-// "nao casa, sem forcar": um arquivo sem padrao de episodio reconhecivel e outro com
-// numero que nao existe na arvore sincronizada -- os DOIS continuam sem vinculo.
+// TestRecasarArquivosPendentesSemPadraoOuSemMatchFicaPendente covers the two branches of
+// "no match, no forcing": one file with no recognizable episode pattern and another with a
+// number that does not exist in the synced tree -- BOTH stay without a link.
 func TestRecasarArquivosPendentesSemPadraoOuSemMatchFicaPendente(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
@@ -120,9 +120,9 @@ func TestRecasarArquivosPendentesSemPadraoOuSemMatchFicaPendente(t *testing.T) {
 	}
 }
 
-// TestRecasarArquivosPendentesNaoReprocessaVinculoExistente: um arquivo que JA tinha
-// vinculo tv_episode (de um scan anterior) nao e' reprocessado nem duplicado -- o
-// vinculo (inclusive um ordinal "estranho", de proposito) permanece intocado.
+// TestRecasarArquivosPendentesNaoReprocessaVinculoExistente: a file that ALREADY had a
+// tv_episode link (from a previous scan) is neither reprocessed nor duplicated -- the
+// link (including a deliberately "odd" ordinal) remains untouched.
 func TestRecasarArquivosPendentesNaoReprocessaVinculoExistente(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
@@ -133,9 +133,9 @@ func TestRecasarArquivosPendentesNaoReprocessaVinculoExistente(t *testing.T) {
 	}
 	criarMediaFileSolto(t, database, "mf1", "s1", "/lib/Springfield Tales/Season 01/Springfield Tales S01E01.mkv")
 
-	// O vinculo aponta pra uma entity SINTETICA (nao a arvore real, que so nasce dentro
-	// do Enriquecer abaixo), com um ordinal que o recasamento normal jamais produziria
-	// (7) -- exatamente pra provar que o vinculo PRE-EXISTENTE nao e mexido.
+	// The link points at a SYNTHETIC entity (not the real tree, which is only born inside
+	// the Enriquecer below), with an ordinal that the normal re-matching would never produce
+	// (7) -- exactly to prove that the PRE-EXISTING link is not touched.
 	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{ID: "ep-preexistente", Type: tipoEpisodio, Title: "Ep pre-existente"}); err != nil {
 		t.Fatalf("CriarEntity (ep pre-existente): %v", err)
 	}
@@ -158,9 +158,9 @@ func TestRecasarArquivosPendentesNaoReprocessaVinculoExistente(t *testing.T) {
 	}
 }
 
-// TestRecasarArquivosPendentesFalhaDegradaSemPanic: uma falha ao LISTAR os arquivos
-// pendentes (conexao de leitura fechada) nao pode derrubar o chamador -- a funcao e
-// void e so loga, exatamente como o resto de aplicarArvoreSerie (0067).
+// TestRecasarArquivosPendentesFalhaDegradaSemPanic: a failure to LIST the pending files
+// (closed read connection) cannot bring down the caller -- the function is
+// void and only logs, exactly like the rest of aplicarArvoreSerie.
 func TestRecasarArquivosPendentesFalhaDegradaSemPanic(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
@@ -173,6 +173,6 @@ func TestRecasarArquivosPendentesFalhaDegradaSemPanic(t *testing.T) {
 		t.Fatalf("fechar conexao de leitura: %v", err)
 	}
 
-	// Nao deve panicar; sem I/O de leitura disponivel, so degrada (loga e retorna).
+	// It must not panic; with no read I/O available, it only degrades (logs and returns).
 	svc.recasarArquivosPendentes(ctx, "s1")
 }

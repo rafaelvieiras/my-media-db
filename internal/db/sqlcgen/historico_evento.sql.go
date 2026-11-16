@@ -62,7 +62,7 @@ const contarHistoricoEventoOrfaos = `-- name: ContarHistoricoEventoOrfaos :one
 SELECT COUNT(*) FROM historico_evento WHERE entity_id IS NULL
 `
 
-// Total de eventos orfaos, para o campo "total" da paginacao acima.
+// Total orphan events, for the "total" field of the pagination above.
 func (q *Queries) ContarHistoricoEventoOrfaos(ctx context.Context) (int64, error) {
 	row := q.db.QueryRowContext(ctx, contarHistoricoEventoOrfaos)
 	var count int64
@@ -108,10 +108,10 @@ type CriarHistoricoEventoRow struct {
 	CreatedAt       string
 }
 
-// CRUD de historico_evento (briefing 0092, ADR-0022): eventos de consumo
-// genericos (assistir/ouvir/jogar/etc.), append-only, filhos de entity.
-// Comentarios em ASCII -- ver a nota em entity.sql (sqlc v1.31 corrompe SQL
-// de query com acento).
+// CRUD for historico_evento (ADR-0022): consumption events,
+// generic (watch/listen/play/etc.), append-only, children of entity.
+// Comments in ASCII -- see the note in entity.sql (sqlc v1.31 corrupts
+// query SQL with an accent).
 func (q *Queries) CriarHistoricoEvento(ctx context.Context, arg CriarHistoricoEventoParams) (CriarHistoricoEventoRow, error) {
 	row := q.db.QueryRowContext(ctx, criarHistoricoEvento,
 		arg.ID,
@@ -171,10 +171,10 @@ type CriarHistoricoEventoOrfaoParams struct {
 	RawYear         sql.NullString
 }
 
-// Grava um evento sem entity casada (briefing 0099): entity_id fica NULL
-// implicitamente (nao e parametro). Guarda os IDs/titulo/ano brutos do
-// payload para permitir localizar o evento como candidato a backfill
-// quando uma entity ganhar aquele ID externo no futuro.
+// Writes an event with no matched entity: entity_id stays NULL
+// implicitly (it is not a parameter). Stores the raw IDs/title/year from the
+// payload to allow locating the event as a backfill candidate
+// when an entity gains that external ID in the future.
 func (q *Queries) CriarHistoricoEventoOrfao(ctx context.Context, arg CriarHistoricoEventoOrfaoParams) (HistoricoEvento, error) {
 	row := q.db.QueryRowContext(ctx, criarHistoricoEventoOrfao,
 		arg.ID,
@@ -227,8 +227,8 @@ type ListarHistoricoEventoOrfaosParams struct {
 	Offset int64
 }
 
-// Lista paginada dos eventos ainda sem entity (entity_id IS NULL), mesmo
-// padrao de paginacao de outras listas do projeto (limit/offset).
+// Paginated list of the events still without an entity (entity_id IS NULL), same
+// pagination pattern as other lists in the project (limit/offset).
 func (q *Queries) ListarHistoricoEventoOrfaos(ctx context.Context, arg ListarHistoricoEventoOrfaosParams) ([]HistoricoEvento, error) {
 	rows, err := q.db.QueryContext(ctx, listarHistoricoEventoOrfaos, arg.Limit, arg.Offset)
 	if err != nil {
@@ -295,8 +295,8 @@ type ListarHistoricoEventoPorEntityRow struct {
 	CreatedAt       string
 }
 
-// Lista os eventos de uma entity em ordem cronologica reversa. kind e
-// filtro opcional via sqlc.narg -- NULL = sem filtro (todos os kinds).
+// Lists the events of an entity in reverse chronological order. kind is an
+// optional filter via sqlc.narg -- NULL = no filter (all kinds).
 func (q *Queries) ListarHistoricoEventoPorEntity(ctx context.Context, arg ListarHistoricoEventoPorEntityParams) ([]ListarHistoricoEventoPorEntityRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarHistoricoEventoPorEntity, arg.EntityID, arg.Kind)
 	if err != nil {
@@ -352,12 +352,12 @@ type ListarUltimoHistoricoEventoPorKindRow struct {
 	CreatedAt       string
 }
 
-// Base da projecao de "estado atual" (GET .../historico/estado): todos os
-// eventos da entity, mesma ordem cronologica reversa da listagem acima --
-// o agrupamento por kind (pegar so o primeiro de cada kind, ja que a
-// ordenacao e occurred_at DESC) fica para a camada Go, conforme o
-// briefing 0092 autoriza (volume baixo por entity, nao compensa SQL
-// avancado).
+// Base of the "current state" projection (GET .../historico/estado): all the
+// events of the entity, same reverse chronological order as the listing above --
+// the grouping by kind (keeping only the first of each kind, since the
+// ordering is occurred_at DESC) is left to the Go layer, as
+// ADR-0022 documents it (low volume per entity, advanced SQL is not
+// worth it).
 func (q *Queries) ListarUltimoHistoricoEventoPorKind(ctx context.Context, entityID sql.NullString) ([]ListarUltimoHistoricoEventoPorKindRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarUltimoHistoricoEventoPorKind, entityID)
 	if err != nil {
@@ -422,9 +422,9 @@ type VincularHistoricoEventoOrfaoPorTmdbParams struct {
 	RawTmdbID sql.NullString
 }
 
-// Backfill retroativo (briefing 0099): vincula todo evento orfao cujo
-// raw_tmdb_id bate com o ID que a entity acabou de ganhar. :execrows para o
-// chamador saber quantas linhas foram vinculadas (log opcional).
+// Retroactive backfill: links every orphan event whose
+// raw_tmdb_id matches the ID the entity has just gained. :execrows so the
+// caller knows how many rows were linked (optional log).
 func (q *Queries) VincularHistoricoEventoOrfaoPorTmdb(ctx context.Context, arg VincularHistoricoEventoOrfaoPorTmdbParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, vincularHistoricoEventoOrfaoPorTmdb, arg.EntityID, arg.RawTmdbID)
 	if err != nil {

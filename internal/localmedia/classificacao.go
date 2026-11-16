@@ -1,13 +1,13 @@
-// classificacao.go implementa a classificação "gerenciado vs. não
-// identificado" do briefing 0063 (extensão do 0062): dado o NOME de um
-// arquivo não-vídeo encontrado dentro de uma pasta rastreada, decide se ele
-// CASA com algum padrão canônico que este pacote sabe gerar (poster.jpg,
-// fanart2.jpg, tvshow.nfo, <vídeo>.nfo, <vídeo>-thumb.jpg,
-// season01-poster.jpg, ...). Reusa as MESMAS tabelas/constantes de
-// naming.go (baseDeKind) -- não reimplementa a lista de kinds. Puro: não
-// acessa disco nem banco: o chamador (internal/scanner, durante a MESMA
-// varredura que já faz para achar vídeo) informa os nomes-base de vídeo
-// (sem extensão) já vistos na mesma pasta.
+// classificacao.go implements the "managed vs. unidentified" classification
+// of the artwork convention (see doc 08): given the NAME of a non-video file
+// found inside a tracked folder, it decides whether it MATCHES some canonical
+// pattern that this package knows how to generate (poster.jpg, fanart2.jpg,
+// tvshow.nfo, <video>.nfo, <video>-thumb.jpg, season01-poster.jpg, ...). It
+// reuses the SAME tables/constants from naming.go (baseDeKind) -- it does not
+// reimplement the list of kinds. Pure: it accesses neither the disk nor the
+// database: the caller (internal/scanner, during the SAME walk it already
+// performs to find videos) provides the video base names (without extension)
+// already seen in the same folder.
 package localmedia
 
 import (
@@ -15,20 +15,20 @@ import (
 	"strings"
 )
 
-// extensoesArteConhecidas cobre os formatos de imagem mais comuns que uma
-// arte materializada pode ter: a extensão real acompanha o binário baixado
-// do provider (ver gravarAssetNaPastaReal em internal/server -- preserva
-// filepath.Ext(asset.PathOrUri)), não só ExtensaoPadrao (.jpg/.png). Chaves
-// em minúsculas.
+// extensoesArteConhecidas covers the most common image formats a materialized
+// artwork can have: the real extension follows the binary downloaded from the
+// provider (see gravarAssetNaPastaReal in internal/server -- it preserves
+// filepath.Ext(asset.PathOrUri)), not only ExtensaoPadrao (.jpg/.png). Keys in
+// lowercase.
 var extensoesArteConhecidas = map[string]bool{
 	".jpg": true, ".jpeg": true, ".png": true, ".webp": true,
 	".gif": true, ".bmp": true, ".tbn": true,
 }
 
-// basesDeArteConhecidas são os nomes-base FIXOS de kind->arquivo (briefing
-// 0062 §4), derivados de baseDeKind (naming.go) sem duplicar a tabela --
-// "fanart"/"backdrop" colapsam na mesma base "fanart", então a lista final
-// tem entradas únicas.
+// basesDeArteConhecidas are the FIXED base names of kind->file (see doc 08),
+// derived from baseDeKind (naming.go) without duplicating the table --
+// "fanart"/"backdrop" collapse into the same "fanart" base, so the final list
+// has unique entries.
 var basesDeArteConhecidas = basesUnicas(baseDeKind)
 
 func basesUnicas(m map[string]string) []string {
@@ -43,16 +43,16 @@ func basesUnicas(m map[string]string) []string {
 	return out
 }
 
-// EhArquivoGerenciado decide se `nome` (sem diretório) casa com algum padrão
-// canônico deste pacote: nome de arte (bare ou prefixado por vídeo, com ou
-// sem sufixo de rotação numérica) ou nome de NFO (tvshow.nfo fixo, ou
-// "<vídeo>.nfo" para algum vídeo já visto na mesma pasta). `nomesBaseVideo`
-// são os nomes-base (sem extensão, ver NomeBaseVideo) dos vídeos JÁ
-// CONHECIDOS na MESMA pasta -- usados para casar as formas prefixadas
-// ("<vídeo>-poster.jpg", "<vídeo>-thumb.jpg") e o NFO por vídeo
-// ("<vídeo>.nfo"). O chamador (internal/scanner) monta essa lista a partir
-// da MESMA varredura que já enumera os vídeos -- este pacote não acessa
-// disco.
+// EhArquivoGerenciado decides whether `nome` (without directory) matches some
+// canonical pattern of this package: an artwork name (bare or prefixed by the
+// video, with or without a numeric rotation suffix) or an NFO name
+// (tvshow.nfo fixed, or "<video>.nfo" for some video already seen in the same
+// folder). `nomesBaseVideo` are the base names (without extension, see
+// NomeBaseVideo) of the videos ALREADY KNOWN in the SAME folder -- used to
+// match the prefixed forms ("<video>-poster.jpg", "<video>-thumb.jpg") and the
+// per-video NFO ("<video>.nfo"). The caller (internal/scanner) builds that
+// list from the SAME walk that already enumerates the videos -- this package
+// does not access the disk.
 func EhArquivoGerenciado(nome string, nomesBaseVideo []string) bool {
 	if nome == "tvshow.nfo" {
 		return true
@@ -96,9 +96,9 @@ func EhArquivoGerenciado(nome string, nomesBaseVideo []string) bool {
 	return false
 }
 
-// ehSeasonPosterSemExt reconhece "season{NN}-poster" + sufixo de rotação
-// numérico opcional (briefing 0062 §4, NomeSeasonBase+KindSeasonPoster) --
-// NN são exatamente 2 dígitos.
+// ehSeasonPosterSemExt recognizes "season{NN}-poster" + an optional numeric
+// rotation suffix (see doc 08, NomeSeasonBase+KindSeasonPoster) -- NN is
+// exactly 2 digits.
 func ehSeasonPosterSemExt(semExt string) bool {
 	const prefixo = "season"
 	const meio = "-poster"
@@ -117,10 +117,10 @@ func ehSeasonPosterSemExt(semExt string) bool {
 	return sufixo == "" || isDigits(sufixo)
 }
 
-// casaBaseComRotacao diz se `semExt` é exatamente `base` (nome bare) ou
-// `base` seguido só de dígitos (sufixo de rotação, ver sufixoRotacao em
-// naming.go -- nunca "0" ou negativo, mas aqui só precisamos reconhecer o
-// PADRÃO, não validar o valor).
+// casaBaseComRotacao says whether `semExt` is exactly `base` (bare name) or
+// `base` followed only by digits (rotation suffix, see sufixoRotacao in
+// naming.go -- never "0" or negative, but here we only need to recognize the
+// PATTERN, not validate the value).
 func casaBaseComRotacao(semExt, base string) bool {
 	if semExt == base {
 		return true
@@ -132,7 +132,7 @@ func casaBaseComRotacao(semExt, base string) bool {
 	return resto != "" && isDigits(resto)
 }
 
-// isDigits diz se `s` é não-vazio e só contém dígitos ASCII.
+// isDigits says whether `s` is non-empty and contains only ASCII digits.
 func isDigits(s string) bool {
 	if s == "" {
 		return false

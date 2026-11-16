@@ -1,14 +1,14 @@
-// Package tvmatch concentra a INDEXAÇÃO e o CASAMENTO por número da árvore de
-// série (briefing 0034), extraído de internal/scanner/serie.go para um pacote
-// FOLHA sem I/O (mesmo padrão do internal/matching extraído no 0054): monta um
-// mapa em memória número→episode_id a partir do extension_data (namespace
-// core.tv@1) e casa o EpisodeInfo de um nome de arquivo contra esse mapa.
+// Package tvmatch concentrates the INDEXING and the NUMBER matching of the
+// series tree (ADR-0021), extracted from internal/scanner/serie.go into a LEAF
+// package without I/O (the same pattern as internal/matching): it builds an
+// in-memory number→episode_id map from the extension_data (namespace core.tv@1)
+// and matches the EpisodeInfo of a file name against that map.
 //
-// É pacote neutro porque internal/scanner já importa internal/enrich (não pode
-// inverter a dependência) e o briefing 0069 precisa da MESMA lógica de
-// casamento dentro de internal/enrich (recasar arquivos presos numa série
-// antes dela ter árvore) — sem duplicar as ~100 linhas de indexação/ordenação/
-// absoluto entre os dois pacotes.
+// It is a neutral package because internal/scanner already imports
+// internal/enrich (it cannot invert the dependency) and internal/enrich needs
+// the SAME matching logic (re-matching files stuck in a series before it had a
+// tree) — without duplicating the ~100 lines of indexing/sorting/absolute
+// numbering between the two packages.
 package tvmatch
 
 import (
@@ -18,10 +18,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/tvext"
 )
 
-// Index é o mapa EM MEMÓRIA número→episode_id de uma série, montado uma vez a
-// partir do extension_data dos episódios. byOrdering casa (ordenação,
-// temporada, número); byAbsolute casa o número absoluto (anime). defaultType
-// é a ordenação default da série; orderings são todas as ordens que ela usa.
+// Index is the IN-MEMORY number→episode_id map of a series, built once from the
+// extension_data of the episodes. byOrdering matches (ordering, season, number);
+// byAbsolute matches the absolute number (anime). defaultType is the default
+// ordering of the series; orderings are all the orderings it uses.
 type Index struct {
 	byOrdering  map[string]map[[2]int]string
 	byAbsolute  map[int]string
@@ -29,15 +29,16 @@ type Index struct {
 	orderings   []string
 }
 
-// NovoIndex devolve um Index vazio, pronto para PreencherOrdenacoes/
+// NovoIndex returns an empty Index, ready for PreencherOrdenacoes/
 // IndexarEpisodio.
 func NovoIndex() *Index {
 	return &Index{byOrdering: map[string]map[[2]int]string{}, byAbsolute: map[int]string{}}
 }
 
-// PreencherOrdenacoes lê a ordenação default e a lista de season_types do
-// namespace core.tv@1 da série e as escreve no índice. Ausência de qualquer
-// campo é degradação silenciosa (índice sem ordenação explícita).
+// PreencherOrdenacoes reads the default ordering and the list of season_types
+// from the core.tv@1 namespace of the series and writes them into the index.
+// Absence of any field is silent degradation (an index without an explicit
+// ordering).
 func (idx *Index) PreencherOrdenacoes(ns map[string]any) {
 	if s, ok := ns["default_season_type"].(string); ok {
 		idx.defaultType = s
@@ -51,10 +52,10 @@ func (idx *Index) PreencherOrdenacoes(ns map[string]any) {
 	}
 }
 
-// IndexarEpisodio insere UM episódio no índice a partir do seu extension_data
-// (namespace core.tv@1, já extraído pelo chamador via tvext.Namespace): cada
-// (ordenação, temporada, número) e o absoluto apontam para o SEU id (a
-// âncora, ADR-0021).
+// IndexarEpisodio inserts ONE episode into the index from its extension_data
+// (namespace core.tv@1, already extracted by the caller through
+// tvext.Namespace): each (ordering, season, number) and the absolute number
+// point to ITS id (the anchor, ADR-0021).
 func (idx *Index) IndexarEpisodio(epID string, ns map[string]any) {
 	if numbering, ok := ns["numbering"].(map[string]any); ok {
 		for ordem, v := range numbering {
@@ -78,11 +79,11 @@ func (idx *Index) IndexarEpisodio(epID string, ns map[string]any) {
 	}
 }
 
-// Casar casa o EpisodeInfo do arquivo aos ids de episódio, em ordem. Passos
-// (0034 §C.4): (1) ordenação default; (2) fallback às demais ordens; (3)
-// absoluto contra absolute_number. Range → lista de ids (ordinal 0,1,2…).
-// Ambíguo (ordens diferentes → episódios distintos) ou número sem match →
-// (nil,false) = revisão/pendente.
+// Casar matches the EpisodeInfo of the file against the episode ids, in order.
+// Steps: (1) default ordering; (2) fallback to the other orderings; (3)
+// absolute number against absolute_number. Range → list of ids (ordinal 0,1,2…).
+// Ambiguous (different orderings → distinct episodes) or a number without a
+// match → (nil,false) = review/pending.
 func Casar(idx *Index, ep naming.EpisodeInfo) ([]string, bool) {
 	if ep.IsAbsolute {
 		return casarAbsoluto(idx, ep.Absolute)
@@ -94,8 +95,9 @@ func Casar(idx *Index, ep naming.EpisodeInfo) ([]string, bool) {
 		}
 	}
 
-	// Fallback: tenta CADA outra ordenação presente. Coleta as resoluções completas;
-	// se todas apontam para a MESMA sequência de episódios, não há ambiguidade real.
+	// Fallback: try EACH other ordering present. Collect the complete resolutions;
+	// if all of them point to the SAME sequence of episodes, there is no real
+	// ambiguity.
 	var achadas [][]string
 	for _, ord := range ordensFallback(idx) {
 		if ids, ok := casarNaOrdem(idx, ord, ep.Season, ep.Episodes); ok {
@@ -108,15 +110,16 @@ func Casar(idx *Index, ep naming.EpisodeInfo) ([]string, bool) {
 	primeira := achadas[0]
 	for _, a := range achadas[1:] {
 		if !mesmaSequencia(primeira, a) {
-			return nil, false // mesmo número casa episódios distintos em ordens diferentes
+			return nil, false // the same number matches distinct episodes in different orderings
 		}
 	}
 	return primeira, true
 }
 
-// ordensFallback devolve as ordenações a tentar no fallback (todas menos a default),
-// em ordem estável. Usa a união de season_types com as chaves realmente presentes no
-// índice (uma série pode numerar numa ordem que não listou em season_types).
+// ordensFallback returns the orderings to try in the fallback (all but the
+// default), in a stable order. It uses the union of season_types with the keys
+// actually present in the index (a series may number in an ordering it did not
+// list in season_types).
 func ordensFallback(idx *Index) []string {
 	visto := map[string]bool{idx.defaultType: true}
 	var out []string
@@ -140,8 +143,8 @@ func ordensFallback(idx *Index) []string {
 	return out
 }
 
-// casarNaOrdem resolve TODOS os episódios de uma temporada numa dada ordenação;
-// (nil,false) se qualquer número faltar (nada de vínculo parcial nesta ordem).
+// casarNaOrdem resolves ALL the episodes of a season in a given ordering;
+// (nil,false) if any number is missing (no partial link in this ordering).
 func casarNaOrdem(idx *Index, ordem string, season int, numeros []int) ([]string, bool) {
 	m, ok := idx.byOrdering[ordem]
 	if !ok {
@@ -158,7 +161,8 @@ func casarNaOrdem(idx *Index, ordem string, season int, numeros []int) ([]string
 	return out, true
 }
 
-// casarAbsoluto resolve TODOS os números absolutos; (nil,false) se algum faltar.
+// casarAbsoluto resolves ALL the absolute numbers; (nil,false) if any is
+// missing.
 func casarAbsoluto(idx *Index, absolutos []int) ([]string, bool) {
 	out := make([]string, 0, len(absolutos))
 	for _, n := range absolutos {
@@ -171,7 +175,8 @@ func casarAbsoluto(idx *Index, absolutos []int) ([]string, bool) {
 	return out, true
 }
 
-// mesmaSequencia diz se duas listas de ids são idênticas em conteúdo e ordem.
+// mesmaSequencia tells whether two lists of ids are identical in content and
+// order.
 func mesmaSequencia(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

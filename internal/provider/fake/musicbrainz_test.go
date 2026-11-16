@@ -8,10 +8,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Testes unitários do fake de música (Musicbrainz): garantem o contrato que o
-// import de artista (0106) e a tela externa de álbum (0115 Parte 2) esperam —
-// mesmo espírito de fake_test.go (código de produção, ligado por
-// MYMEDIADB_FAKE_PROVIDER, mantido coberto pela catraca unitária).
+// Unit tests of the music fake (Musicbrainz): they guarantee the contract that
+// the artist import and the external album screen expect -- the same spirit as
+// fake_test.go (production code, wired in by MYMEDIADB_FAKE_PROVIDER, kept
+// covered by the unit ratchet).
 
 func TestMusicbrainzNome(t *testing.T) {
 	if got := NewMusicbrainz().Nome(); got != "musicbrainz" {
@@ -34,8 +34,8 @@ func TestMusicbrainzBuscarArtistaArvoreSoTrazAPrimeiraFaixa(t *testing.T) {
 	if alb.MBID != MusicbrainzAlbumID {
 		t.Errorf("album.MBID = %q, quero %q", alb.MBID, MusicbrainzAlbumID)
 	}
-	// De propósito: só 1 das 2 faixas oficiais do release — prova o caminho
-	// de "faixa faltando" sem precisar de scan real.
+	// On purpose: only 1 of the 2 official tracks of the release -- it proves the
+	// "missing track" path without needing a real scan.
 	if len(alb.Faixas) != 1 || alb.Faixas[0].MBID != MusicbrainzFaixa1ID {
 		t.Fatalf("faixas da arvore = %+v, quero só [%s]", alb.Faixas, MusicbrainzFaixa1ID)
 	}
@@ -65,12 +65,12 @@ func TestMusicbrainzBuscarAlbumPorMbidNaoEncontrado(t *testing.T) {
 	}
 }
 
-// Os demais métodos (Buscar/BuscarDetalhe/MapearDetalhe/BuscarAlbumDaFaixa/
-// BuscarAlbumPorNome) são stubs inertes — nenhuma jornada real os exercita
-// (nem Camada 1 nem Camada 2 sobem o scanner nem a busca textual de música),
-// mas ainda precisam do contrato certo (nunca panic, shape estável) por
-// satisfazerem as interfaces provider.Provider/MusicaAlbumProvider. Um teste
-// por método (em vez de um só combinado) mantém o gocyclo baixo (AGENTS.md).
+// The remaining methods (Buscar/BuscarDetalhe/MapearDetalhe/BuscarAlbumDaFaixa/
+// BuscarAlbumPorNome) are inert stubs -- no real journey exercises them (neither
+// Layer 1 nor Layer 2 brings up the scanner nor the textual music search), but
+// they still need the right contract (never panic, stable shape) because they
+// satisfy the provider.Provider/MusicaAlbumProvider interfaces. One test per
+// method (instead of a single combined one) keeps gocyclo low (AGENTS.md).
 func TestMusicbrainzBuscarStub(t *testing.T) {
 	res, err := NewMusicbrainz().Buscar(context.Background(), "qualquer", "", "")
 	if err != nil || res != nil {

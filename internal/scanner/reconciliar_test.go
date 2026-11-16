@@ -17,10 +17,10 @@ import (
 
 // ── ReconciliarFaixaDraft ─────────────────────────────────────────────────
 
-// criarFaixaDraftOrfa cria uma entity type='faixa' status='draft' e,
-// opcionalmente, um media_file 'present' apontando pra ela -- simula o
-// resultado do passo 5 do pipeline de música (musica.go, criarFaixaDraft) sem
-// depender do scanner pra chegar nesse estado.
+// criarFaixaDraftOrfa creates an entity type='faixa' status='draft' and,
+// optionally, a 'present' media_file pointing to it -- it simulates the result of
+// step 5 of the music pipeline (musica.go, criarFaixaDraft) without depending on the
+// scanner to reach that state.
 func criarFaixaDraftOrfa(t *testing.T, d *db.DB, id, titulo, path string) {
 	t.Helper()
 	if _, err := sqlcgen.New(d.Write).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
@@ -43,11 +43,11 @@ func criarFaixaDraftOrfa(t *testing.T, d *db.DB, id, titulo, path string) {
 	}
 }
 
-// TestReconciliarFaixaDraftReligaComSucesso cobre o caso feliz (briefing
-// 0120 §5): a faixa draft órfã tem um arquivo real no disco; o provider
-// resolve por busca textual (mesmo caminho de matchTextualFaixa/musica.go) --
-// o media_file some da faixa draft e passa a apontar pra faixa recém
-// resolvida, com match_confidence de busca textual.
+// TestReconciliarFaixaDraftReligaComSucesso covers the happy case: the orphan draft
+// track has a real file on disk; the provider resolves it by textual search (the same
+// path of matchTextualFaixa/musica.go) -- the media_file leaves the draft track and
+// starts pointing to the newly resolved track, with the textual search
+// match_confidence.
 func TestReconciliarFaixaDraftReligaComSucesso(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -81,11 +81,11 @@ func TestReconciliarFaixaDraftReligaComSucesso(t *testing.T) {
 	if tipo != tipoFaixa || titulo != "Track One" || status != "cataloged" {
 		t.Errorf("faixa resolvida = {%q %q %q}, quero {faixa Track One cataloged}", tipo, titulo, status)
 	}
-	// Briefing 0138: a faixa draft antiga é PURGADA. Ela nasceu do próprio
-	// matcher (título derivado do arquivo, sem external id, sem override), e o
-	// princípio 5 protege o que o DONO escreveu -- não um casco vazio. Sem a
-	// purga, ela ficava para sempre na fila de revisão como "sem arquivo" (114
-	// casos medidos em produção).
+	// The old draft track is PURGED. It was born from the matcher itself (title
+	// derived from the file, no external id, no override), and the non-destructive
+	// principle protects what the OWNER wrote -- not an empty shell. Without the
+	// purge, it stayed in the review queue forever as "sem arquivo" (114 cases
+	// measured in production).
 	if n := contar(t, d, "SELECT count(*) FROM entity WHERE id=?", draftID); n != 0 {
 		t.Errorf("faixa draft substituída = %d, quero 0 (purgada)", n)
 	}
@@ -94,10 +94,10 @@ func TestReconciliarFaixaDraftReligaComSucesso(t *testing.T) {
 	}
 }
 
-// TestReconciliarFaixaDraftSemMediaFileNaoLiga cobre a degradação: uma faixa
-// draft sem NENHUM media_file (órfã na acepção mais rasa: a entity existe,
-// mas nada no disco aponta pra ela) não pode ser reconciliada -- linked=false
-// sem erro.
+// TestReconciliarFaixaDraftSemMediaFileNaoLiga covers the degradation: a draft track
+// without ANY media_file (an orphan in the shallowest sense: the entity exists, but
+// nothing on disk points to it) cannot be reconciled -- linked=false without an
+// error.
 func TestReconciliarFaixaDraftSemMediaFileNaoLiga(t *testing.T) {
 	d := abrirDB(t)
 	prov := &fakeMusicaProvider{}
@@ -115,12 +115,11 @@ func TestReconciliarFaixaDraftSemMediaFileNaoLiga(t *testing.T) {
 	}
 }
 
-// TestReconciliarFaixaDraftPropagaDuracaoDoArquivo cobre a extensão do
-// briefing 0121 §8 na reconciliação: a duração do arquivo local extraída por
-// probarTags chega intacta até o enrich.FaixaAlvo construído em
-// matchTextualFaixa -- o MESMO caminho que o scan usa (musica.go). Usa
-// spyMusicaImportador (definido em musica_test.go) em vez do enrich real
-// para observar o FaixaAlvo diretamente.
+// TestReconciliarFaixaDraftPropagaDuracaoDoArquivo covers the duration signal in the
+// reconciliation: the duration of the local file extracted by probarTags arrives
+// intact at the enrich.FaixaAlvo built in matchTextualFaixa -- the SAME path the
+// scan uses (musica.go). It uses spyMusicaImportador (defined in musica_test.go)
+// instead of the real enrich to observe the FaixaAlvo directly.
 func TestReconciliarFaixaDraftPropagaDuracaoDoArquivo(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -154,9 +153,9 @@ func TestReconciliarFaixaDraftPropagaDuracaoDoArquivo(t *testing.T) {
 	}
 }
 
-// TestReconciliarFaixaDraftSemDuracaoChegaZero cobre a degradação segura: sem
-// info.General.Duration disponível na re-extração de tags, o FaixaAlvo chega
-// com DuracaoSegundos=0 -- sem quebrar a reconciliação.
+// TestReconciliarFaixaDraftSemDuracaoChegaZero covers the safe degradation: without
+// info.General.Duration available in the tag re-extraction, the FaixaAlvo arrives with
+// DuracaoSegundos=0 -- without breaking the reconciliation.
 func TestReconciliarFaixaDraftSemDuracaoChegaZero(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -166,7 +165,7 @@ func TestReconciliarFaixaDraftSemDuracaoChegaZero(t *testing.T) {
 	spy := &spyMusicaImportador{faixaID: "faixa-spy-reconciliar-sem-duracao"}
 	preSemearFaixaSpy(t, d, spy.faixaID, "Track One")
 
-	// duracaoPorPath deliberadamente OMITIDO (nil).
+	// duracaoPorPath deliberately OMITTED (nil).
 	m := NewManagerComProber(d, proberComTags{
 		porPath: map[string]mediainfo.AudioTags{arq: {AlbumArtist: "Fake Band", Album: "Fake Album", Title: "Track One", TrackNumber: 1}},
 	})
@@ -189,10 +188,10 @@ func TestReconciliarFaixaDraftSemDuracaoChegaZero(t *testing.T) {
 
 // ── ReconciliarSerieDraft ─────────────────────────────────────────────────
 
-// managerSerieAutoImportReconciliar monta um Manager só com ConfigurarSeries
-// (sem depender de scanRun) -- mesmo provider fake de managerSerieAutoImport,
-// mas sem exigir um scan de verdade para testar ReconciliarSerieDraft
-// diretamente.
+// managerSerieAutoImportReconciliar assembles a Manager with ConfigurarSeries only
+// (without depending on a scanRun) -- the same fake provider of
+// managerSerieAutoImport, but without requiring a real scan to test
+// ReconciliarSerieDraft directly.
 func managerSerieAutoImportReconciliar(t *testing.T, d *db.DB) *Manager {
 	t.Helper()
 	img := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -206,10 +205,10 @@ func managerSerieAutoImportReconciliar(t *testing.T, d *db.DB) *Manager {
 	return m
 }
 
-// TestReconciliarSerieDraftReligaEpisodios cobre o caso feliz (briefing 0120
-// §5): uma série draft com 1+ media_file é reimportada com sucesso
-// (tentarImportarSerie/ImportarSeriePorNome contra o provider fake) e cada
-// media_file é repontado + ganha o vínculo de episódio certo.
+// TestReconciliarSerieDraftReligaEpisodios covers the happy case: a draft series with
+// 1+ media_file is reimported successfully
+// (tentarImportarSerie/ImportarSeriePorNome against the fake provider) and each
+// media_file is repointed + gains the right episode link.
 func TestReconciliarSerieDraftReligaEpisodios(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -249,17 +248,17 @@ func TestReconciliarSerieDraftReligaEpisodios(t *testing.T) {
 	}
 }
 
-// TestReconciliarSerieDraftSemImporterNaoLiga cobre a degradação explícita
-// do briefing 0120: sem SerieImporter configurado (nil, ConfigurarSeries
-// nunca chamado), ReconciliarSerieDraft nunca tenta nada -- linked=false sem
-// erro (tentarImportarSerie já degrada assim, ver serie.go).
+// TestReconciliarSerieDraftSemImporterNaoLiga covers the explicit degradation:
+// without SerieImporter configured (nil, ConfigurarSeries never called),
+// ReconciliarSerieDraft never tries anything -- linked=false without an error
+// (tentarImportarSerie already degrades that way, see serie.go).
 func TestReconciliarSerieDraftSemImporterNaoLiga(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
 	arq := filepath.Join(root, "Some Show S01E01.mkv")
 	escrever(t, arq)
 
-	m := managerFake(t, d) // sem ConfigurarSeries -- serieImporter fica nil
+	m := managerFake(t, d) // no ConfigurarSeries -- serieImporter stays nil
 
 	draftID := "serie-draft-sem-importer"
 	criarSerieDraft(t, d, draftID, "Some Show")
@@ -276,7 +275,7 @@ func TestReconciliarSerieDraftSemImporterNaoLiga(t *testing.T) {
 	if linked {
 		t.Errorf("linked = true, quero false (sem SerieImporter configurado)")
 	}
-	// Nada foi repontado -- o media_file continua na série draft original.
+	// Nothing was repointed -- the media_file stays on the original draft series.
 	entityID := valorUnico(t, d, "SELECT entity_id FROM media_file WHERE path = ?", arq)
 	if entityID != draftID {
 		t.Errorf("media_file.entity_id mudou pra %q sem importer configurado", entityID)

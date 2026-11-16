@@ -12,9 +12,9 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// fakeColProvider estende o fakeProvider com a capacidade OPCIONAL de coleção
-// (provider.ColecaoProvider): BuscarColecao devolve uma coleção fixa. Satisfaz
-// provider.Provider pelos métodos promovidos do fakeProvider embutido.
+// fakeColProvider extends fakeProvider with the OPTIONAL collection capability
+// (provider.ColecaoProvider): BuscarColecao returns a fixed collection. It satisfies
+// provider.Provider through the promoted methods of the embedded fakeProvider.
 type fakeColProvider struct {
 	*fakeProvider
 	col         provider.Colecao
@@ -26,8 +26,8 @@ func (f *fakeColProvider) BuscarColecao(_ context.Context, _, _ string) (provide
 	return f.col, nil
 }
 
-// colDeTeste monta a "Matrix Coleção" com 2 filmes membros; posterURL opcional (nil
-// pula o cache de arte).
+// colDeTeste builds the "Matrix Colecao" with 2 member movies; posterURL optional (nil
+// skips the artwork cache).
 func colDeTeste(posterURL *string) provider.Colecao {
 	return provider.Colecao{
 		Source: "tmdb", SourceID: "2344", Name: "Matrix Colecao", PosterURL: posterURL,
@@ -38,7 +38,7 @@ func colDeTeste(posterURL *string) provider.Colecao {
 	}
 }
 
-// relacoesColecao conta as relações kind='collection' sob um pai.
+// relacoesColecao counts the relations with kind='collection' under a parent.
 func relacoesColecao(t *testing.T, database *db.DB, parentID string) int {
 	t.Helper()
 	rels, err := sqlcgen.New(database.Read).ListarRelacoesFilhas(context.Background(), parentID)
@@ -54,9 +54,9 @@ func relacoesColecao(t *testing.T, database *db.DB, parentID string) int {
 	return n
 }
 
-// TestImportarColecaoCriaEntityERelacoes: importar type=collection cria a entity
-// 'collection', importa os filmes membros (dedup por tmdb id), liga-os por
-// entity_relation(kind='collection') e cacheia o pôster da coleção.
+// TestImportarColecaoCriaEntityERelacoes: importing type=collection creates the
+// 'collection' entity, imports the member movies (dedup by tmdb id), links them through
+// entity_relation(kind='collection') and caches the collection poster.
 func TestImportarColecaoCriaEntityERelacoes(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -78,8 +78,8 @@ func TestImportarColecaoCriaEntityERelacoes(t *testing.T) {
 	exigirColecaoImportada(t, database, colID, dir)
 }
 
-// exigirColecaoImportada verifica a entity coleção (type/title/id), as 2 relações, os 2
-// filmes membros importados e o pôster cacheado sob assetsDir.
+// exigirColecaoImportada verifies the collection entity (type/title/id), the 2 relations, the 2
+// imported member movies and the poster cached under assetsDir.
 func exigirColecaoImportada(t *testing.T, database *db.DB, colID, dir string) {
 	t.Helper()
 	ctx := context.Background()
@@ -111,8 +111,8 @@ func exigirColecaoImportada(t *testing.T, database *db.DB, colID, dir string) {
 	}
 }
 
-// TestReimportarColecaoIdempotente: re-importar a mesma coleção reusa a entity (dedup
-// por tmdb id) e NÃO duplica as relações (guarda de já-ligados + UNIQUE).
+// TestReimportarColecaoIdempotente: re-importing the same collection reuses the entity (dedup
+// by tmdb id) and does NOT duplicate the relations (already-linked guard + UNIQUE).
 func TestReimportarColecaoIdempotente(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -141,8 +141,8 @@ func TestReimportarColecaoIdempotente(t *testing.T) {
 	}
 }
 
-// TestImportarColecaoSemSuporte: uma fonte que NAO implementa provider.ColecaoProvider
-// devolve erro (o handler traduz para 502) -- ver o externo != importar a colecao.
+// TestImportarColecaoSemSuporte: a source that does NOT implement provider.ColecaoProvider
+// returns an error (the handler translates it to 502) -- see the external route != importing the collection.
 func TestImportarColecaoSemSuporte(t *testing.T) {
 	database := setupDB(t)
 	fake := &fakeProvider{raw: json.RawMessage(`{}`), campos: map[string]any{}}
@@ -152,8 +152,8 @@ func TestImportarColecaoSemSuporte(t *testing.T) {
 	}
 }
 
-// TestImportarColecaoParteFalhaDegrada: se o import de UMA parte falha, a colecao ainda
-// e criada (parcial e valida) -- a falha da parte so loga e segue, nao liga a relacao.
+// TestImportarColecaoParteFalhaDegrada: if the import of ONE part fails, the collection is still
+// created (partial and valid) -- the failure of the part only logs and continues, it does not link the relation.
 func TestImportarColecaoParteFalhaDegrada(t *testing.T) {
 	database := setupDB(t)
 	fake := &fakeColProvider{
@@ -170,9 +170,9 @@ func TestImportarColecaoParteFalhaDegrada(t *testing.T) {
 	}
 }
 
-// TestEnrichPersisteReleaseDate: o import de um filme DENORMALIZA a release_date da
-// fonte na coluna base -- o que faz a ordenacao por ano dos membros de colecao (0025)
-// funcionar para itens so-importados (sem arquivo).
+// TestEnrichPersisteReleaseDate: importing a movie DENORMALIZES the release_date of the
+// source into the base column -- which makes the ordering by year of the collection members
+// work for import-only items (without a file).
 func TestEnrichPersisteReleaseDate(t *testing.T) {
 	database := setupDB(t)
 	fake := &fakeProvider{
@@ -193,7 +193,7 @@ func TestEnrichPersisteReleaseDate(t *testing.T) {
 	}
 }
 
-// TestLangPrincipal: o idioma principal e o primeiro da lista; vazio quando nao ha.
+// TestLangPrincipal: the primary language is the first one of the list; empty when there is none.
 func TestLangPrincipal(t *testing.T) {
 	if got := langPrincipal(nil); got != "" {
 		t.Errorf("langPrincipal(nil) = %q, quero vazio", got)

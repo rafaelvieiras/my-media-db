@@ -5,28 +5,28 @@ import (
 	"strings"
 )
 
-// Este arquivo concentra o CANONICO DE CREDITOS do TMDB (briefing 0029, MD6 Fase A):
-// as structs dos blocos de elenco/equipe/produtoras (do append_to_response) e o
-// mapeamento delas para as chaves canonicas `cast`/`crew`/`companies`. E PURO (sem
-// rede) -- roda dentro de MapearDetalhe, reusando a mesma chamada de detalhe que os
-// demais blocos ricos (0022). O FILME traz `credits` (cast/crew planos); a SERIE traz
-// `aggregate_credits` (cast com `roles`, crew com `jobs`, agregados por episodio), que
-// normalizamos ao mesmo formato canonico escalar. `character`/`job` sao STRING escalar
-// (do idioma base da chamada) -- per-idioma e follow-up.
+// This file concentrates the CREDITS CANONICAL of TMDB (MD6 phase A): the structs
+// of the cast/crew/company blocks (from append_to_response) and their mapping to the
+// canonical keys `cast`/`crew`/`companies`. It is PURE (no network) -- it runs inside
+// MapearDetalhe, reusing the same detail call as the other rich blocks. The MOVIE
+// brings `credits` (flat cast/crew); the SERIES brings `aggregate_credits` (cast with
+// `roles`, crew with `jobs`, aggregated per episode), which we normalize to the same
+// scalar canonical format. `character`/`job` are scalar STRING (from the base
+// language of the call) -- per-language is a follow-up.
 
-// tetoElenco e o teto de linhas de ELENCO persistidas por obra (bilhagem): listas
-// enormes (filme 76, serie 781) sao cortadas nos top-N por `order`. Equipe e companies
-// nao tem teto.
+// tetoElenco is the ceiling of CAST rows persisted per work (billing): huge lists
+// (movie 76, series 781) are cut at the top-N by `order`. Crew and companies have no
+// ceiling.
 const tetoElenco = 50
 
-// creditsTMDB e o bloco `credits` do FILME (append em /movie/{id}): cast/crew planos.
+// creditsTMDB is the `credits` block of the MOVIE (append in /movie/{id}): flat cast/crew.
 type creditsTMDB struct {
 	Cast []castMembroTMDB `json:"cast"`
 	Crew []crewMembroTMDB `json:"crew"`
 }
 
-// castMembroTMDB e um ator do elenco de FILME: id, nome, personagem, ordem de bilhagem
-// e foto.
+// castMembroTMDB is an actor of the MOVIE cast: id, name, character, billing order
+// and photo.
 type castMembroTMDB struct {
 	ID          int64  `json:"id"`
 	Name        string `json:"name"`
@@ -35,7 +35,7 @@ type castMembroTMDB struct {
 	ProfilePath string `json:"profile_path"`
 }
 
-// crewMembroTMDB e um membro de equipe de FILME: id, nome, departamento, cargo e foto.
+// crewMembroTMDB is a MOVIE crew member: id, name, department, job and photo.
 type crewMembroTMDB struct {
 	ID          int64  `json:"id"`
 	Name        string `json:"name"`
@@ -44,16 +44,16 @@ type crewMembroTMDB struct {
 	ProfilePath string `json:"profile_path"`
 }
 
-// aggregateCreditsTMDB e o bloco `aggregate_credits` da SERIE (append em /tv/{id}): o
-// TMDB agrega por episodio -- o ator tem varios `roles`, o membro de equipe varios
-// `jobs`, cada um com seu episode_count.
+// aggregateCreditsTMDB is the `aggregate_credits` block of the SERIES (append in
+// /tv/{id}): TMDB aggregates per episode -- the actor has several `roles`, the crew
+// member several `jobs`, each one with its episode_count.
 type aggregateCreditsTMDB struct {
 	Cast []aggCastTMDB `json:"cast"`
 	Crew []aggCrewTMDB `json:"crew"`
 }
 
-// aggCastTMDB e um ator do elenco AGREGADO de serie: os papeis (roles) e o total de
-// episodios (total_episode_count), alem da ordem de bilhagem.
+// aggCastTMDB is an actor of the AGGREGATED series cast: the roles (roles) and the
+// total of episodes (total_episode_count), besides the billing order.
 type aggCastTMDB struct {
 	ID                int64       `json:"id"`
 	Name              string      `json:"name"`
@@ -63,14 +63,14 @@ type aggCastTMDB struct {
 	ProfilePath       string      `json:"profile_path"`
 }
 
-// papelTMDB e um papel de um ator na serie (personagem + em quantos episodios).
+// papelTMDB is a role of an actor in the series (character + in how many episodes).
 type papelTMDB struct {
 	Character    string `json:"character"`
 	EpisodeCount int    `json:"episode_count"`
 }
 
-// aggCrewTMDB e um membro de equipe AGREGADO de serie: os cargos (jobs) e o
-// departamento.
+// aggCrewTMDB is an AGGREGATED series crew member: the jobs (jobs) and the
+// department.
 type aggCrewTMDB struct {
 	ID          int64     `json:"id"`
 	Name        string    `json:"name"`
@@ -79,24 +79,25 @@ type aggCrewTMDB struct {
 	ProfilePath string    `json:"profile_path"`
 }
 
-// jobTMDB e um cargo de um membro de equipe na serie (cargo + em quantos episodios).
+// jobTMDB is a job of a crew member in the series (job + in how many episodes).
 type jobTMDB struct {
 	Job          string `json:"job"`
 	EpisodeCount int    `json:"episode_count"`
 }
 
-// companyTMDB e uma produtora/estudio do detalhe (production_companies, ja vem no
-// /movie e no /tv sem append).
+// companyTMDB is a production company/studio of the detail (production_companies,
+// already comes in /movie and in /tv without append).
 type companyTMDB struct {
 	ID       int64  `json:"id"`
 	Name     string `json:"name"`
 	LogoPath string `json:"logo_path"`
 }
 
-// enriquecerCreditos acrescenta ao canonico as chaves de credito: `cast` (elenco top-N
-// por bilhagem), `crew` (equipe, dedup por pessoa+cargo) e `companies` (produtoras).
-// Prefere o formato AGREGADO (serie) quando presente, caindo no plano (filme). So grava
-// chaves nao-vazias -- o consumidor distingue "ausente" de "vazio".
+// enriquecerCreditos adds the credit keys to the canonical: `cast` (top-N cast by
+// billing), `crew` (crew, dedup by person+job) and `companies` (production
+// companies). It prefers the AGGREGATED format (series) when present, falling back to
+// the flat one (movie). It only writes non-empty keys -- the consumer distinguishes
+// "absent" from "empty".
 func enriquecerCreditos(out map[string]any, d detalheTMDB) {
 	if cast := elencoCanonico(d); len(cast) > 0 {
 		out["cast"] = cast
@@ -109,8 +110,9 @@ func enriquecerCreditos(out map[string]any, d detalheTMDB) {
 	}
 }
 
-// elencoCanonico devolve o elenco canonico: o agregado (serie) quando ha, senao o plano
-// (filme). Em ambos os casos ja vem ordenado por bilhagem e cortado no teto.
+// elencoCanonico returns the canonical cast: the aggregated one (series) when there
+// is one, otherwise the flat one (movie). In both cases it already comes sorted by
+// billing and cut at the ceiling.
 func elencoCanonico(d detalheTMDB) []any {
 	if len(d.AggregateCredits.Cast) > 0 {
 		return elencoAgregado(d.AggregateCredits.Cast)
@@ -118,9 +120,9 @@ func elencoCanonico(d detalheTMDB) []any {
 	return elencoSimples(d.Credits.Cast)
 }
 
-// elencoSimples mapeia o elenco de FILME: ordena por `order` (bilhagem), descarta sem
-// nome e corta no teto. profile_path e episode_count sao opcionais (filme nao tem
-// episode_count).
+// elencoSimples maps the MOVIE cast: it sorts by `order` (billing), discards those
+// without a name and cuts at the ceiling. profile_path and episode_count are optional
+// (a movie has no episode_count).
 func elencoSimples(cast []castMembroTMDB) []any {
 	ordenado := make([]castMembroTMDB, len(cast))
 	copy(ordenado, cast)
@@ -145,9 +147,9 @@ func elencoSimples(cast []castMembroTMDB) []any {
 	return out
 }
 
-// elencoAgregado mapeia o elenco de SERIE (aggregate_credits): normaliza os multiplos
-// `roles` do ator num unico `character` unido por " / " e usa total_episode_count como
-// episode_count. Ordena por bilhagem e corta no teto.
+// elencoAgregado maps the SERIES cast (aggregate_credits): it normalizes the multiple
+// `roles` of the actor into a single `character` joined by " / " and uses
+// total_episode_count as episode_count. It sorts by billing and cuts at the ceiling.
 func elencoAgregado(cast []aggCastTMDB) []any {
 	ordenado := make([]aggCastTMDB, len(cast))
 	copy(ordenado, cast)
@@ -173,8 +175,8 @@ func elencoAgregado(cast []aggCastTMDB) []any {
 	return out
 }
 
-// personagemAgregado une os personagens dos multiplos papeis do mesmo ator com " / "
-// (ex.: "Peter / Brian / Stewie (voz)"), descartando papeis vazios.
+// personagemAgregado joins the characters of the multiple roles of the same actor with
+// " / " (e.g. "Peter / Brian / Stewie (voice)"), discarding empty roles.
 func personagemAgregado(roles []papelTMDB) string {
 	nomes := make([]string, 0, len(roles))
 	for _, r := range roles {
@@ -185,13 +187,14 @@ func personagemAgregado(roles []papelTMDB) string {
 	return strings.Join(nomes, " / ")
 }
 
-// tetoEquipe limita a equipe persistida/exibida (0029): a equipe e MENOS relevante que o
-// elenco e producoes grandes trazem centenas de creditos (Inception: 736). Curamos os
-// cargos-chave e cortamos a cauda longa (assistentes etc.).
+// tetoEquipe bounds the persisted/displayed crew: the crew is LESS relevant than the
+// cast and large productions bring hundreds of credits (Inception: 736). We curate the
+// key jobs and cut the long tail (assistants etc.).
 const tetoEquipe = 40
 
-// rankCargo ordena os cargos por relevancia (menor = mais importante); o TMDB usa os
-// rotulos em ingles. Cargos fora caem no rank do departamento (rankDepartamentoCrew).
+// rankCargo orders the jobs by relevance (lower = more important); TMDB uses the
+// labels in English. Jobs outside fall into the rank of the department
+// (rankDepartamentoCrew).
 var rankCargo = map[string]int{
 	"Director": 0, "Writer": 1, "Screenplay": 1, "Story": 2, "Novel": 2,
 	"Producer": 3, "Executive Producer": 4, "Co-Producer": 5,
@@ -200,15 +203,16 @@ var rankCargo = map[string]int{
 	"Production Design": 9, "Costume Design": 10,
 }
 
-// rankDepartamentoCrew e o rank base por departamento (para cargos fora de rankCargo):
-// os departamentos criativos vem antes; o resto vai para o fim.
+// rankDepartamentoCrew is the base rank per department (for jobs outside rankCargo):
+// the creative departments come first; the rest goes to the end.
 var rankDepartamentoCrew = map[string]int{
 	"Directing": 20, "Writing": 21, "Production": 22, "Camera": 23,
 	"Editing": 24, "Sound": 25, "Art": 26,
 }
 
-// equipeCanonica devolve a equipe canonica curada: a agregada (serie) quando ha, senao a
-// plana (filme), priorizada por cargo/departamento e cortada em tetoEquipe.
+// equipeCanonica returns the curated canonical crew: the aggregated one (series) when
+// there is one, otherwise the flat one (movie), prioritized by job/department and cut
+// at tetoEquipe.
 func equipeCanonica(d detalheTMDB) []any {
 	var crew []any
 	if len(d.AggregateCredits.Crew) > 0 {
@@ -219,8 +223,8 @@ func equipeCanonica(d detalheTMDB) []any {
 	return curarEquipe(crew)
 }
 
-// curarEquipe ordena a equipe por relevancia (cargo-chave, senao departamento) de forma
-// ESTAVEL (preserva a ordem da fonte dentro do mesmo rank) e limita a tetoEquipe.
+// curarEquipe sorts the crew by relevance (key job, otherwise department) STABLY
+// (preserving the source order within the same rank) and limits it to tetoEquipe.
 func curarEquipe(crew []any) []any {
 	rank := func(m any) int {
 		item, _ := m.(map[string]any)
@@ -239,14 +243,14 @@ func curarEquipe(crew []any) []any {
 	return crew
 }
 
-// strTMDB extrai uma string de um valor any do mapa canonico (vazio se ausente/nao-string).
+// strTMDB extracts a string from an any value of the canonical map (empty if absent/not a string).
 func strTMDB(v any) string {
 	s, _ := v.(string)
 	return s
 }
 
-// equipeSimples mapeia a equipe de FILME: dedup por (source_id, job) -- a mesma pessoa
-// pode ter dois cargos, cada um vira uma linha; repeticoes exatas sao descartadas.
+// equipeSimples maps the MOVIE crew: dedup by (source_id, job) -- the same person may
+// have two jobs, each one becomes a row; exact repetitions are discarded.
 func equipeSimples(crew []crewMembroTMDB) []any {
 	vistos := map[string]bool{}
 	out := make([]any, 0, len(crew))
@@ -271,9 +275,9 @@ func equipeSimples(crew []crewMembroTMDB) []any {
 	return out
 }
 
-// equipeAgregada mapeia a equipe de SERIE (aggregate_credits): escolhe, entre os `jobs`
-// do membro, o cargo de MAIOR episode_count (o mais relevante) e o usa como job +
-// episode_count. Dedup por (source_id, job).
+// equipeAgregada maps the SERIES crew (aggregate_credits): it picks, among the `jobs`
+// of the member, the job with the HIGHEST episode_count (the most relevant) and uses
+// it as job + episode_count. Dedup by (source_id, job).
 func equipeAgregada(crew []aggCrewTMDB) []any {
 	vistos := map[string]bool{}
 	out := make([]any, 0, len(crew))
@@ -300,8 +304,8 @@ func equipeAgregada(crew []aggCrewTMDB) []any {
 	return out
 }
 
-// jobPrincipal devolve o cargo de MAIOR episode_count do membro (e esse contador). Lista
-// vazia devolve ("", 0).
+// jobPrincipal returns the job with the HIGHEST episode_count of the member (and that
+// counter). An empty list returns ("", 0).
 func jobPrincipal(jobs []jobTMDB) (string, int) {
 	melhor := ""
 	maxEps := 0
@@ -316,8 +320,8 @@ func jobPrincipal(jobs []jobTMDB) (string, int) {
 	return melhor, maxEps
 }
 
-// produtorasCanonicas mapeia production_companies para o canonico `companies`
-// ({source_id, name, logo_path?}), descartando sem nome.
+// produtorasCanonicas maps production_companies to the canonical `companies`
+// ({source_id, name, logo_path?}), discarding those without a name.
 func produtorasCanonicas(comps []companyTMDB) []any {
 	out := make([]any, 0, len(comps))
 	for _, c := range comps {
@@ -336,8 +340,8 @@ func produtorasCanonicas(comps []companyTMDB) []any {
 	return out
 }
 
-// porFotoSePresente grava profile_path no item de credito so quando nao-vazio (opcional
-// no canonico -- o consumidor distingue ausente de vazio).
+// porFotoSePresente writes profile_path in the credit item only when non-empty
+// (optional in the canonical -- the consumer distinguishes absent from empty).
 func porFotoSePresente(item map[string]any, profilePath string) {
 	if profilePath != "" {
 		item["profile_path"] = profilePath

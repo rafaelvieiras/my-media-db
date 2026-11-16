@@ -12,40 +12,38 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 )
 
-// sourceDTO é a forma de serialização de uma fonte na API (briefing 0008 sec.4):
-// { id, path, type, state, last_scan }. last_scan é null enquanto o scanner
-// (0009) não rodar.
+// sourceDTO is the serialization form of a source in the API:
+// { id, path, type, state, last_scan }. last_scan is null while the scanner
+// has not run.
 type sourceDTO struct {
 	ID   string `json:"id"`
 	Path string `json:"path"`
 	Type string `json:"type"`
-	// ContentType e a natureza da biblioteca (0034): "movie" | "series". O scanner
-	// ramifica o fluxo de match por este valor. Default "movie".
+	// ContentType is the nature of the library: "movie" | "series". The scanner
+	// branches the match flow by this value. Default "movie".
 	ContentType string  `json:"content_type"`
 	State       string  `json:"state"`
 	LastScan    *string `json:"last_scan"`
-	// WatchEnabled liga/desliga o watcher fsnotify desta fonte (briefing
-	// 0064). Default false; editável só via PATCH /api/v1/library/{id}.
+	// WatchEnabled turns the fsnotify watcher of this source on/off.
+	// Default false; editable only via PATCH /api/v1/library/{id}.
 	WatchEnabled bool `json:"watch_enabled"`
-	// PreferredLanguage é o idioma preferido de busca/exibição desta
-	// biblioteca (briefing 0084); nil = sem preferência, usa o idioma
-	// global de app_settings.
+	// PreferredLanguage is the preferred search/display language of this
+	// library; nil = no preference, it uses the global language from
+	// app_settings.
 	PreferredLanguage *string `json:"preferred_language"`
-	// RetroactiveEnrichmentDays é o override OPCIONAL do intervalo de
-	// reentativa do enriquecimento retroativo desta biblioteca (briefing
-	// 0085); nil = sem override, usa o valor global de
-	// app_settings.enrichment_retroativo.
+	// RetroactiveEnrichmentDays is the OPTIONAL override of the retry interval
+	// of this library's retroactive enrichment; nil = no override, it uses the
+	// global value from app_settings.enrichment_retroativo.
 	RetroactiveEnrichmentDays *int `json:"retroactive_enrichment_days"`
 }
 
-// patchSourceRequest é o corpo aceito por PATCH /api/v1/library/{id}
-// (briefing 0064 + 0070 + 0084, PatchSource no contrato): PATCH PARCIAL --
-// campo ausente fica inalterado. Path e watch_enabled podem vir juntos ou
-// cada um sozinho; quando os dois vêm no mesmo corpo, o path é aplicado
-// PRIMEIRO (recasco em cascata) e o watch_enabled depois. PreferredLanguage
-// usa jsonNullable (campo de VALOR, não ponteiro -- ver o tipo) para
-// distinguir as três formas: campo AUSENTE no JSON deixa inalterado; `null`
-// explícito limpa a preferência; uma string define.
+// patchSourceRequest is the body accepted by PATCH /api/v1/library/{id}
+// (PatchSource in the contract): a PARTIAL PATCH -- an absent field stays unchanged.
+// Path and watch_enabled may come together or each on its own; when both come in the
+// same body, the path is applied FIRST (cascading re-root) and watch_enabled
+// afterwards. PreferredLanguage uses jsonNullable (a VALUE field, not a pointer --
+// see the type) to distinguish the three forms: a field ABSENT from the JSON leaves it
+// unchanged; an explicit `null` clears the preference; a string defines it.
 type patchSourceRequest struct {
 	WatchEnabled              *bool           `json:"watch_enabled"`
 	Path                      *string         `json:"path"`
@@ -53,19 +51,18 @@ type patchSourceRequest struct {
 	RetroactiveEnrichmentDays jsonNullableInt `json:"retroactive_enrichment_days"`
 }
 
-// jsonNullable distingue as TRÊS formas de um campo JSON opcional-e-anulável
-// (briefing 0084, preferred_language do patch): ausente / `null` explícito /
-// valor. O CAMPO DA STRUCT PRECISA SER DE VALOR (não `*jsonNullable`): o
-// pacote encoding/json, ao encontrar o literal `null`, zera diretamente um
-// campo cujo TIPO DECLARADO já é ponteiro -- sem sequer chamar UnmarshalJSON
-// (ver encoding/json/decode.go, indirect(): o early-break
-// `decodingNull && v.CanSet()` dispara antes de checar a interface
-// Unmarshaler quando o próprio campo já é um ponteiro). Com o campo de
-// VALOR, o decoder tira o ENDEREÇO dele para satisfazer Unmarshaler --
-// nesse caminho o CanSet() do endereço temporário é false, o early-break não
-// dispara, e UnmarshalJSON É chamado inclusive para `null`. Campo ausente no
-// JSON nunca invoca UnmarshalJSON (o decoder não toca a chave) -- por isso
-// Present nasce false (zero value) e só vira true dentro do método.
+// jsonNullable distinguishes the THREE forms of an optional-and-nullable JSON field
+// (preferred_language of the patch): absent / explicit `null` / value. THE STRUCT FIELD
+// MUST BE A VALUE (not `*jsonNullable`): the encoding/json package, upon finding the
+// literal `null`, zeroes a field whose DECLARED TYPE is already a pointer directly --
+// without even calling UnmarshalJSON (see encoding/json/decode.go, indirect(): the
+// early-break `decodingNull && v.CanSet()` fires before checking the Unmarshaler
+// interface when the field itself is already a pointer). With a VALUE field, the decoder
+// takes its ADDRESS to satisfy Unmarshaler -- on that path CanSet() of the temporary
+// address is false, the early-break does not fire, and UnmarshalJSON IS called even for
+// `null`. A field absent from the JSON never invokes UnmarshalJSON (the decoder does not
+// touch the key) -- which is why Present is born false (zero value) and only becomes
+// true inside the method.
 type jsonNullable struct {
 	Present bool
 	Value   *string
@@ -85,10 +82,10 @@ func (n *jsonNullable) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// jsonNullableInt é o equivalente de jsonNullable para um campo INTEIRO
-// opcional-e-anulável (briefing 0085, retroactive_enrichment_days do patch):
-// ausente / `null` explícito / valor. MESMA técnica (campo de VALOR, não
-// ponteiro) e MESMO motivo -- ver o comentário de jsonNullable acima.
+// jsonNullableInt is the equivalent of jsonNullable for an optional-and-nullable INTEGER
+// field (retroactive_enrichment_days of the patch): absent / explicit `null` / value.
+// SAME technique (a value field, not a pointer) and SAME reason -- see the comment of
+// jsonNullable above.
 type jsonNullableInt struct {
 	Present bool
 	Value   *int
@@ -108,38 +105,38 @@ func (n *jsonNullableInt) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// listDTO é a resposta de GET /api/v1/library.
+// listDTO is the response of GET /api/v1/library.
 type listDTO struct {
 	Items []sourceDTO `json:"items"`
 }
 
-// createRequest é o corpo aceito por POST /api/v1/library.
+// createRequest is the body accepted by POST /api/v1/library.
 type createRequest struct {
 	Path string `json:"path"`
 	Type string `json:"type"`
-	// ContentType e opcional (0034): "movie" | "series". Omitido => "movie" (compat).
+	// ContentType is optional: "movie" | "series". Omitted => "movie" (compat).
 	ContentType string `json:"content_type"`
-	// PreferredLanguage e opcional (0084): idioma preferido de busca/exibicao
-	// desta biblioteca. Omitido/vazio => sem preferencia (usa o idioma global).
+	// PreferredLanguage is optional: preferred search/display language
+	// of this library. Omitted/empty => no preference (uses the global language).
 	PreferredLanguage string `json:"preferred_language"`
-	// RetroactiveEnrichmentDays e opcional (0085): override do intervalo de
-	// reentativa do enriquecimento retroativo desta biblioteca. Omitido/nil
-	// => sem override (usa o valor global). Ponteiro porque 0 nao e um valor
-	// valido (o intervalo minimo e 1) -- diferenciar "ausente" de "0" evita
-	// silenciosamente aceitar um valor invalido como se fosse "sem override".
+	// RetroactiveEnrichmentDays is optional: override of the retry interval of
+	// this library's retroactive enrichment. Omitted/nil
+	// => no override (uses the global value). A pointer because 0 is not a valid
+	// value (the minimum interval is 1) -- distinguishing "absent" from "0" avoids
+	// silently accepting an invalid value as if it were "no override".
 	RetroactiveEnrichmentDays *int `json:"retroactive_enrichment_days"`
 }
 
-// browseEntryDTO é a forma de serialização de uma entrada do navegador de
-// pastas (schema BrowseEntry do openapi.yaml, briefing 0071).
+// browseEntryDTO is the serialization form of a folder browser entry
+// (BrowseEntry schema of openapi.yaml).
 type browseEntryDTO struct {
 	Name     string `json:"name"`
 	Path     string `json:"path"`
 	Readable bool   `json:"readable"`
 }
 
-// browseResultDTO é a resposta de GET /api/v1/library/browse (schema
-// BrowseResult do openapi.yaml, briefing 0071).
+// browseResultDTO is the response of GET /api/v1/library/browse (schema
+// BrowseResult of openapi.yaml).
 type browseResultDTO struct {
 	Path      string           `json:"path"`
 	Parent    *string          `json:"parent"`
@@ -147,7 +144,7 @@ type browseResultDTO struct {
 	Truncated bool             `json:"truncated"`
 }
 
-// toBrowseDTO converte o BrowseResult de domínio para a forma serializável.
+// toBrowseDTO converts the domain BrowseResult into the serializable form.
 func toBrowseDTO(r library.BrowseResult) browseResultDTO {
 	entries := make([]browseEntryDTO, 0, len(r.Entries))
 	for _, e := range r.Entries {
@@ -161,7 +158,7 @@ func toBrowseDTO(r library.BrowseResult) browseResultDTO {
 	}
 }
 
-// toDTO converte a Source de domínio para a forma serializável.
+// toDTO converts the domain Source into the serializable form.
 func toDTO(s library.Source) sourceDTO {
 	return sourceDTO{
 		ID:                        s.ID,
@@ -176,8 +173,8 @@ func toDTO(s library.Source) sourceDTO {
 	}
 }
 
-// mapLibraryError traduz um erro de domínio do pacote library no par
-// (status HTTP, code do envelope). Erros não mapeados viram 500 internal_error.
+// mapLibraryError translates a domain error from the library package into the pair
+// (HTTP status, envelope code). Unmapped errors become 500 internal_error.
 func mapLibraryError(err error) (int, string) {
 	switch {
 	case errors.Is(err, library.ErrPathVazio):
@@ -199,8 +196,8 @@ func mapLibraryError(err error) (int, string) {
 	}
 }
 
-// respondLibraryError escreve o erro de domínio no shape padrão. Para 500
-// oculta o detalhe interno (mensagem genérica), preservando a causa no log via
+// respondLibraryError writes the domain error in the standard shape. For 500 it
+// hides the internal detail (generic message), preserving the cause in the log via
 // middleware.
 func respondLibraryError(w http.ResponseWriter, err error) {
 	status, code := mapLibraryError(err)
@@ -211,8 +208,8 @@ func respondLibraryError(w http.ResponseWriter, err error) {
 	writeError(w, status, code, msg)
 }
 
-// libraryUnavailable responde quando o serviço não foi inicializado (sem banco
-// injetado). Não deve ocorrer em produção; protege cenários de teste de rota.
+// libraryUnavailable responds when the service was not initialized (no database
+// injected). It should not occur in production; it protects route test scenarios.
 func (s *Server) libraryUnavailable(w http.ResponseWriter) bool {
 	if s.library == nil {
 		writeError(w, http.StatusServiceUnavailable, "db_unavailable",
@@ -222,7 +219,7 @@ func (s *Server) libraryUnavailable(w http.ResponseWriter) bool {
 	return false
 }
 
-// createLibrary trata POST /api/v1/library.
+// createLibrary handles POST /api/v1/library.
 func (s *Server) createLibrary(w http.ResponseWriter, r *http.Request) {
 	if s.libraryUnavailable(w) {
 		return
@@ -253,10 +250,9 @@ func (s *Server) createLibrary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, toDTO(src))
 }
 
-// preferredLanguagePtr converte o campo de string plana (JSON, sem
-// distinção de "ausente" x "vazio") para o ponteiro de domínio: string vazia
-// vira nil ("sem preferência"), mesma convenção de content_type vazio =>
-// default em library.Criar.
+// preferredLanguagePtr converts the plain string field (JSON, without distinguishing
+// "absent" x "empty") into the domain pointer: an empty string becomes nil ("no
+// preference"), same convention as empty content_type => default in library.Criar.
 func preferredLanguagePtr(lang string) *string {
 	if lang == "" {
 		return nil
@@ -264,12 +260,12 @@ func preferredLanguagePtr(lang string) *string {
 	return &lang
 }
 
-// validarPreferredLanguageOuErro valida um preferred_language não-vazio
-// contra app_settings.languages.allowed (briefing 0084), escrevendo 422
-// invalid_body quando o código está fora da lista. lang nil/vazio nunca
-// valida nada (sem preferência é sempre válido). ok=false quando a resposta
-// já foi escrita (erro de validação ou erro real de banco) -- o chamador
-// deve retornar imediatamente nesse caso.
+// validarPreferredLanguageOuErro validates a non-empty preferred_language
+// against app_settings.languages.allowed, writing 422
+// invalid_body when the code is outside the list. A nil/empty lang never
+// validates anything (no preference is always valid). ok=false when the response
+// has already been written (validation error or real database error) -- the caller
+// must return immediately in that case.
 func (s *Server) validarPreferredLanguageOuErro(ctx context.Context, w http.ResponseWriter, lang *string) bool {
 	if lang == nil || *lang == "" {
 		return true
@@ -287,12 +283,12 @@ func (s *Server) validarPreferredLanguageOuErro(ctx context.Context, w http.Resp
 	return true
 }
 
-// validarRetroactiveEnrichmentDaysOuErro valida um override não-nil de
-// retroactive_enrichment_days contra o intervalo [retryDaysMinimo,
-// retryDaysMaximo] (briefing 0085), escrevendo 422 invalid_body quando fora
-// da faixa. dias nil nunca valida nada (sem override é sempre válido).
-// ok=false quando a resposta já foi escrita -- o chamador deve retornar
-// imediatamente nesse caso.
+// validarRetroactiveEnrichmentDaysOuErro validates a non-nil override of
+// retroactive_enrichment_days against the range [retryDaysMinimo,
+// retryDaysMaximo], writing 422 invalid_body when outside
+// the range. A nil dias never validates anything (no override is always valid).
+// ok=false when the response has already been written -- the caller must return
+// immediately in that case.
 func validarRetroactiveEnrichmentDaysOuErro(w http.ResponseWriter, dias *int) bool {
 	if dias == nil {
 		return true
@@ -305,7 +301,7 @@ func validarRetroactiveEnrichmentDaysOuErro(w http.ResponseWriter, dias *int) bo
 	return true
 }
 
-// listLibrary trata GET /api/v1/library.
+// listLibrary handles GET /api/v1/library.
 func (s *Server) listLibrary(w http.ResponseWriter, r *http.Request) {
 	if s.libraryUnavailable(w) {
 		return
@@ -322,12 +318,12 @@ func (s *Server) listLibrary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, listDTO{Items: items})
 }
 
-// browseLibraryPath trata GET /api/v1/library/browse (briefing 0071):
-// navegador de pastas do filesystem que o processo da API enxerga, usado
-// pelo formulário de cadastro/edição de datasource para escolher um path
-// clicando em vez de digitar de cor. path ausente/vazio usa "/" como raiz;
-// erros reaproveitam mapLibraryError (422 invalid_path/not_a_directory/
-// path_unreadable), mesmos códigos de createLibrary/patchLibrary.
+// browseLibraryPath handles GET /api/v1/library/browse:
+// folder browser of the filesystem that the API process sees, used
+// by the datasource create/edit form to choose a path by clicking
+// instead of typing it from memory. An absent/empty path uses "/" as the root;
+// errors reuse mapLibraryError (422 invalid_path/not_a_directory/
+// path_unreadable), the same codes as createLibrary/patchLibrary.
 func (s *Server) browseLibraryPath(w http.ResponseWriter, r *http.Request) {
 	if s.libraryUnavailable(w) {
 		return
@@ -341,7 +337,7 @@ func (s *Server) browseLibraryPath(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toBrowseDTO(result))
 }
 
-// getLibrary trata GET /api/v1/library/{id}.
+// getLibrary handles GET /api/v1/library/{id}.
 func (s *Server) getLibrary(w http.ResponseWriter, r *http.Request) {
 	if s.libraryUnavailable(w) {
 		return
@@ -355,7 +351,7 @@ func (s *Server) getLibrary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toDTO(src))
 }
 
-// deleteLibrary trata DELETE /api/v1/library/{id}.
+// deleteLibrary handles DELETE /api/v1/library/{id}.
 func (s *Server) deleteLibrary(w http.ResponseWriter, r *http.Request) {
 	if s.libraryUnavailable(w) {
 		return
@@ -368,18 +364,18 @@ func (s *Server) deleteLibrary(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// patchLibrary trata PATCH /api/v1/library/{id} (briefing 0064 + 0070): PATCH
-// PARCIAL -- aceita path e/ou watch_enabled, cada um sozinho ou os dois
-// juntos. Campo ausente do corpo (ponteiro nil) fica inalterado. Quando os
-// dois vêm juntos, path é aplicado PRIMEIRO (recasco em cascata de
-// media_file/asset/entity para o novo prefixo) e watch_enabled depois, na
-// MESMA resposta final. Mudar watch_enabled aplica A QUENTE, sem restart do
-// servidor (critério de aceite do briefing 0064): false->true chama a MESMA
-// rotina de registro do boot para aquela fonte (s.watch.RegistrarFonte);
-// true->false chama Close() no watcher da fonte e remove sua entrada do mapa
-// em memória (s.watch.DesregistrarFonte). 200 com a fonte atualizada; 404
-// fonte inexistente; 400/422/409 conforme o erro de domínio (path vazio/
-// inválido/duplicado); 422 corpo malformado.
+// patchLibrary handles PATCH /api/v1/library/{id}: a PARTIAL
+// PATCH -- it accepts path and/or watch_enabled, each on its own or both
+// together. A field absent from the body (nil pointer) stays unchanged. When both
+// come together, path is applied FIRST (cascading re-root of
+// media_file/asset/entity to the new prefix) and watch_enabled afterwards, in the
+// SAME final response. Changing watch_enabled applies HOT, without a server restart
+// (acceptance criterion): false->true calls the SAME registration routine as the
+// boot for that source (s.watch.RegistrarFonte);
+// true->false calls Close() on the source's watcher and removes its entry from the
+// in-memory map (s.watch.DesregistrarFonte). 200 with the updated source; 404
+// source does not exist; 400/422/409 according to the domain error (empty/
+// invalid/duplicate path); 422 malformed body.
 func (s *Server) patchLibrary(w http.ResponseWriter, r *http.Request) {
 	if s.libraryUnavailable(w) {
 		return
@@ -411,13 +407,13 @@ func (s *Server) patchLibrary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toDTO(src))
 }
 
-// aplicarPatchLibrary aplica o patch parcial (path e/ou watch_enabled e/ou
-// preferred_language e/ou retroactive_enrichment_days) e devolve a fonte
-// final -- extraído de patchLibrary para manter a complexidade ciclomática
-// baixa. Corpo vazio (nenhum campo presente) só devolve o estado atual, sem
-// tocar nada. path é aplicado PRIMEIRO (recasco em cascata via
-// AtualizarPath); preferred_language e retroactive_enrichment_days depois;
-// watch_enabled por último, aplicado A QUENTE pelo watcher fsnotify
+// aplicarPatchLibrary applies the partial patch (path and/or watch_enabled and/or
+// preferred_language and/or retroactive_enrichment_days) and returns the final
+// source -- extracted from patchLibrary to keep the cyclomatic complexity
+// low. An empty body (no field present) only returns the current state, without
+// touching anything. path is applied FIRST (cascading re-root via
+// AtualizarPath); preferred_language and retroactive_enrichment_days afterwards;
+// watch_enabled last, applied HOT by the fsnotify watcher
 // (aplicarWatchToggle).
 func (s *Server) aplicarPatchLibrary(ctx context.Context, id string, req patchSourceRequest) (library.Source, error) {
 	if req.Path == nil && req.WatchEnabled == nil && !req.PreferredLanguage.Present && !req.RetroactiveEnrichmentDays.Present {
@@ -455,9 +451,9 @@ func (s *Server) aplicarPatchLibrary(ctx context.Context, id string, req patchSo
 	return src, nil
 }
 
-// aplicarPatchPath reaponta a fonte (briefing 0070) quando path foi
-// informado; caso contrário, só relê o estado atual (nenhuma mudança de path
-// pedida -- o corpo trouxe só watch_enabled).
+// aplicarPatchPath re-points the source when path was
+// provided; otherwise, it only re-reads the current state (no path change
+// requested -- the body brought only watch_enabled).
 func (s *Server) aplicarPatchPath(ctx context.Context, id string, path *string) (library.Source, error) {
 	if path == nil {
 		return s.library.Obter(ctx, id)
@@ -465,13 +461,14 @@ func (s *Server) aplicarPatchPath(ctx context.Context, id string, path *string) 
 	return s.library.AtualizarPath(ctx, id, *path)
 }
 
-// aplicarWatchToggle aciona o watcher fsnotify em memória (internal/watch)
-// para refletir a mudança de watch_enabled que ACABOU de ser persistida --
-// sem isso, o toggle só valeria depois de um restart (o que o briefing 0064
-// explicitamente proíbe). s.watch é nil quando o servidor não tem
-// banco/library/scanner (mesma guarda defensiva de WithLibraryHealthJob);
-// nesse caso degrada em silêncio (a coluna já foi persistida, só o efeito em
-// memória não se aplica -- cenário só de teste de rota sem banco real).
+// aplicarWatchToggle triggers the in-memory fsnotify watcher (internal/watch)
+// to reflect the watch_enabled change that was JUST persisted --
+// without this, the toggle would only take effect after a restart (which the
+// documentation explicitly forbids). s.watch is nil when the server has no
+// database/library/scanner (same defensive guard as WithLibraryHealthJob);
+// in that case it degrades silently (the column was already persisted, only the
+// in-memory effect does not apply -- a scenario of route tests only, without a real
+// database).
 func (s *Server) aplicarWatchToggle(src library.Source, enabled bool) {
 	if s.watch == nil {
 		return

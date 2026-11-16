@@ -1,14 +1,13 @@
 package server
 
-// localmedia_handlers.go implementa os endpoints de MATERIALIZAÇÃO física do
-// briefing 0062: POST .../assets/{assetId}/materialize (copia uma arte já
-// cacheada internamente para a pasta REAL da biblioteca, no nome canônico
-// Kodi/Emby) e POST .../entities/{id}/nfo (gera/regrava o .nfo da entity). A
-// extensão do PUT .../assets/{assetId}/prefer (materializar + rotacionar ao
-// trocar a principal) vive em assets.go, ao lado do preferAsset original —
-// reusa as mesmas funções deste arquivo. Todo o cálculo de nome/diretório é
-// delegado a internal/localmedia (pacote puro); aqui só I/O + orquestração
-// de banco.
+// localmedia_handlers.go implements the physical MATERIALIZATION endpoints:
+// POST .../assets/{assetId}/materialize (copies artwork already cached internally into
+// the library's REAL folder, under the canonical Kodi/Emby name) and
+// POST .../entities/{id}/nfo (generates/rewrites the entity's .nfo). The extension of
+// PUT .../assets/{assetId}/prefer (materialize + rotate when switching the principal one)
+// lives in assets.go, next to the original preferAsset — it reuses the same functions of
+// this file. All the name/directory computation is delegated to internal/localmedia (a
+// pure package); here there is only I/O + database orchestration.
 
 import (
 	"context"
@@ -32,30 +31,28 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
 
-// carimboNfoFormato é o layout Go do timestamp gravado em nfo_written_at,
-// mesmo formato de carimboRetroativoFormato (retroativo.go) — espelha
-// strftime('%Y-%m-%dT%H:%M:%fZ', 'now') do SQL (3 dígitos de milissegundo).
+// carimboNfoFormato is the Go layout of the timestamp written into nfo_written_at, the
+// same format as carimboRetroativoFormato (retroativo.go) — it mirrors the SQL
+// strftime('%Y-%m-%dT%H:%M:%fZ', 'now') (3 millisecond digits).
 const carimboNfoFormato = "2006-01-02T15:04:05.000Z"
 
-// nowISO devolve o timestamp UTC agora, no mesmo formato que o SQL
-// strftime(...) grava — usado por AtualizarEntityNfo (nfo_written_at).
+// nowISO returns the current UTC timestamp, in the same format the SQL strftime(...)
+// writes — used by AtualizarEntityNfo (nfo_written_at).
 func nowISO() string {
 	return time.Now().UTC().Format(carimboNfoFormato)
 }
 
-// errSemDestino marca "entity sem media_file present" (sem pasta de destino
-// para materializar arte/NFO) — o handler mapeia para 404, distinto de erro
-// de I/O real (500).
+// errSemDestino marks "entity without a present media_file" (no destination folder to
+// materialize artwork/NFO) — the handler maps it to 404, distinct from a real I/O error
+// (500).
 var errSemDestino = errors.New("localmedia: entity sem media_file presente (sem pasta de destino)")
 
-// Sentinels de "nada a fazer" devolvidos por baixarTrailerEntityComOpcoes/
-// BaixarTemaEntity (briefing 0104) — cada um mapeia para um status HTTP
-// específico em postEntityTrailerDownload/postEntityThemeDownload
-// (respondErroBaixarTrailer/respondErroBaixarTema, via errors.Is) e, ao
-// mesmo tempo, são reconhecidos como "não é falha real" por
-// trailerTemaErroBenigno (usado pelo job trailer_tema_faltantes e pelo
-// gatilho automático do scan, que só querem saber se baixou ou não, sem
-// distinguir o motivo).
+// "Nothing to do" sentinels returned by baixarTrailerEntityComOpcoes/BaixarTemaEntity — each
+// one maps to a specific HTTP status in postEntityTrailerDownload/postEntityThemeDownload
+// (respondErroBaixarTrailer/respondErroBaixarTema, via errors.Is) and, at the same time,
+// are recognized as "not a real failure" by trailerTemaErroBenigno (used by the
+// trailer_tema_faltantes job and by the automatic scan trigger, which only want to know
+// whether it downloaded or not, without distinguishing the reason).
 var (
 	errEntityNaoEncontrada = errors.New("localmedia: entity nao encontrada")
 	errYtdlpIndisponivel   = errors.New("localmedia: yt-dlp indisponivel")
@@ -67,13 +64,12 @@ var (
 	errLangInvalida        = errors.New("localmedia: lang fora dos idiomas permitidos")
 )
 
-// trailerTemaErroBenigno diz se `err` é um dos sentinels de "nada a fazer"
-// (entity sumiu, yt-dlp indisponível, sem candidato disponível, já existe
-// local, sem pasta de destino) -- usado por BaixarTrailerEntity/
-// BaixarTemaEntity (job trailer_tema_faltantes e gatilho automático do
-// scan, briefing 0104/ADR-0026) para NÃO tratar esses casos esperados como
-// falha real (só uma falha de verdade -- rede, banco -- deve virar erro
-// propagado/logado).
+// trailerTemaErroBenigno tells whether `err` is one of the "nothing to do" sentinels
+// (entity vanished, yt-dlp unavailable, no candidate available, already present locally,
+// no destination folder) -- used by BaixarTrailerEntity/BaixarTemaEntity (trailer_tema
+// job and automatic scan trigger, ADR-0026) to NOT treat those expected cases as a real
+// failure (only a genuine failure -- network, database -- should become a propagated or
+// logged error).
 func trailerTemaErroBenigno(err error) bool {
 	for _, sentinela := range []error{
 		errEntityNaoEncontrada,
@@ -91,13 +87,13 @@ func trailerTemaErroBenigno(err error) bool {
 	return false
 }
 
-// materializeAsset trata POST /api/v1/entities/{id}/assets/{assetId}/materialize:
-// copia o binário já cacheado (assetsDir) do asset para a pasta REAL da
-// biblioteca, no nome canônico (internal/localmedia). Idempotente: se o
-// asset já tem local_path, devolve como está (não regrava). 200 com o asset
-// atualizado; 404 asset/entity inexistente OU entity sem media_file
-// presente; 502 nunca aqui (o download para o cache já aconteceu antes, no
-// select/upload — ver nota em materializarAsset); 503 sem assetsDir.
+// materializeAsset handles POST /api/v1/entities/{id}/assets/{assetId}/materialize:
+// it copies the already cached binary (assetsDir) of the asset into the library's REAL
+// folder, under the canonical name (internal/localmedia). Idempotent: if the asset already
+// has a local_path, it returns it as is (no rewrite). 200 with the updated asset; 404
+// unknown asset/entity OR entity without a present media_file; 502 never here (the
+// download into the cache already happened before, at select/upload — see the note in
+// materializarAsset); 503 without assetsDir.
 func (s *Server) materializeAsset(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -126,8 +122,8 @@ func (s *Server) materializeAsset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, assetToDTO(atualizado))
 }
 
-// respondErroLocalmedia mapeia os erros dos helpers deste arquivo para a
-// resposta HTTP: errSemDestino -> 404; qualquer outro -> 500.
+// respondErroLocalmedia maps the errors of this file's helpers to the HTTP response:
+// errSemDestino -> 404; anything else -> 500.
 func respondErroLocalmedia(w http.ResponseWriter, err error) {
 	if errors.Is(err, errSemDestino) {
 		writeError(w, http.StatusNotFound, "not_found",
@@ -137,22 +133,22 @@ func respondErroLocalmedia(w http.ResponseWriter, err error) {
 	respondErroInterno(w)
 }
 
-// materializarAsset lê o binário do asset do CACHE interno (assetsDir,
-// path_or_uri — sempre já local nesta versão: todo asset existente passou
-// por upload/select, que já baixam para o cache antes de criar a linha; a
-// "materialização de download" do contrato é para um futuro candidato que
-// ainda não é asset, e a UI já encadeia select->materialize nesse caso) e
-// grava uma CÓPIA física na pasta real, no nome canônico calculado.
-// Idempotente: asset já materializado devolve como está.
+// materializarAsset reads the asset binary from the internal CACHE (assetsDir,
+// path_or_uri — always local in this version: every existing asset went through
+// upload/select, which already download into the cache before creating the row; the
+// "download materialization" of the contract is for a future candidate that is not yet an
+// asset, and the UI already chains select->materialize in that case) and writes a physical
+// COPY into the real folder, under the computed canonical name. Idempotent: an already
+// materialized asset returns as is.
 //
-// Decisão de implementação (não 100% explícita no briefing): quando NENHUM
-// outro asset do mesmo (entity,kind) já é `is_principal` (o caso comum — a
-// primeira arte daquele kind salva na pasta), este asset se torna o
-// principal automaticamente (nome BARE, is_principal=1) — é o único jeito de
-// satisfazer o critério de aceite "pasta com um único vídeo: salvar na pasta
-// grava poster.jpg (bare)" sem exigir um PUT /prefer explícito logo depois.
-// Quando já existe um principal do kind, o novo materializado NÃO o disputa
-// (nome rotacionado, is_principal=0) — só o PUT /prefer troca o principal.
+// Implementation decision (not 100% explicit in the spec): when NO other asset of the same
+// (entity,kind) is `is_principal` yet (the common case — the first artwork of that kind
+// saved into the folder), this asset becomes the principal automatically (BARE name,
+// is_principal=1) — it is the only way to satisfy the acceptance criterion "folder with a
+// single video: saving into the folder writes poster.jpg (bare)" without requiring an
+// explicit PUT /prefer right after. When a principal of the kind already exists, the newly
+// materialized one does NOT contest it (rotated name, is_principal=0) — only PUT /prefer
+// switches the principal.
 func (s *Server) materializarAsset(ctx context.Context, ent sqlcgen.Entity, asset sqlcgen.Asset) (sqlcgen.Asset, error) {
 	if asset.LocalPath.Valid && asset.LocalPath.String != "" {
 		if arquivoLocalAindaExiste(asset.LocalPath.String) {
@@ -194,13 +190,12 @@ func (s *Server) materializarAsset(ctx context.Context, ent sqlcgen.Entity, asse
 	return asset, nil
 }
 
-// arquivoLocalAindaExiste confirma via os.Stat se o caminho fisicamente
-// registrado ainda existe. Erros que NAO sejam "nao existe" (permissao,
-// mount FUSE/rclone temporariamente indisponivel) sao tratados como
-// "assume que existe" -- best-effort, evita reescrever em cima de um
-// glitch transitorio do mount remoto (AGENTS.md ja documenta que esse
-// mount nao emite evento de mudanca; aqui vale o mesmo cuidado: silencio
-// do stat != certeza de que sumiu). Ver briefing 0127.
+// arquivoLocalAindaExiste confirms through os.Stat whether the physically registered path
+// still exists. Errors that are NOT "does not exist" (permission, temporarily unavailable
+// FUSE/rclone mount) are treated as "assume it exists" -- best-effort, it avoids rewriting
+// on top of a transient glitch of the remote mount (AGENTS.md already documents that this
+// mount emits no change event; the same care applies here: stat silence != certainty that
+// it vanished).
 func arquivoLocalAindaExiste(path string) bool {
 	if path == "" {
 		return false
@@ -209,18 +204,16 @@ func arquivoLocalAindaExiste(path string) bool {
 	return err == nil || !os.IsNotExist(err)
 }
 
-// regravarBinarioAssetNoLocalPathExistente relê o binário do asset do CACHE
-// interno (lerBinarioAssetDoCache) e regrava atomicamente NO MESMO
-// asset.LocalPath.String já registrado -- usado (briefing 0127) quando o
-// arquivo materializado sumiu fisicamente do disco (mount remoto rclone/
-// gdrive, exclusão externa) mas o banco ainda aponta pra ele. NUNCA recalcula
-// nome/índice/rotação via gravarAssetNaPastaReal: o asset regravado aqui já
-// pode ser is_principal=1, e recalcular trataria erroneamente esse asset
-// como "ainda não-principal" (ele conta a si mesmo em kindJaTemPrincipal),
-// produzindo um nome ROTACIONADO diferente do bare original (ver nota de
-// risco no briefing 0127 §6). Não reescreve local_path no banco (o valor não
-// muda) -- devolve o asset inalterado, mesma assinatura de retorno de
-// materializarAsset.
+// regravarBinarioAssetNoLocalPathExistente re-reads the asset binary from the internal
+// CACHE (lerBinarioAssetDoCache) and rewrites it atomically at the SAME
+// asset.LocalPath.String already registered -- used when the materialized file physically
+// vanished from disk (rclone/gdrive remote mount, external deletion) but the database still
+// points at it. It NEVER recomputes name/index/rotation through gravarAssetNaPastaReal: the
+// asset rewritten here may already be is_principal=1, and recomputing would wrongly treat
+// that asset as "still non-principal" (it counts itself in kindJaTemPrincipal), producing a
+// ROTATED name different from the original bare one. It does not rewrite local_path in the
+// database (the value does not change) -- it returns the asset unchanged, the same return
+// signature as materializarAsset.
 func (s *Server) regravarBinarioAssetNoLocalPathExistente(ctx context.Context, asset sqlcgen.Asset) (sqlcgen.Asset, error) {
 	dados, err := s.lerBinarioAssetDoCache(ctx, asset)
 	if err != nil {
@@ -232,7 +225,8 @@ func (s *Server) regravarBinarioAssetNoLocalPathExistente(ctx context.Context, a
 	return asset, nil
 }
 
-// kindJaTemPrincipal diz se algum asset do (entity,kind) já é is_principal=1.
+// kindJaTemPrincipal tells whether some asset of the (entity,kind) is already
+// is_principal=1.
 func (s *Server) kindJaTemPrincipal(ctx context.Context, entityID, kind string) (bool, error) {
 	assets, err := s.leitura().ListarAssetsPorEntity(ctx, entityID)
 	if err != nil {
@@ -246,9 +240,9 @@ func (s *Server) kindJaTemPrincipal(ctx context.Context, entityID, kind string) 
 	return false, nil
 }
 
-// gravarAssetNaPastaReal calcula o diretório/nome canônico do asset (via
-// internal/localmedia) e grava o binário (lido do cache) atomicamente.
-// `principal` decide nome bare vs. rotacionado. Devolve o caminho final.
+// gravarAssetNaPastaReal computes the canonical directory/name of the asset (through
+// internal/localmedia) and writes the binary (read from the cache) atomically. `principal`
+// decides between the bare and the rotated name. It returns the final path.
 func (s *Server) gravarAssetNaPastaReal(ctx context.Context, ent sqlcgen.Entity, asset sqlcgen.Asset, principal bool) (string, error) {
 	dir, nomeBaseVideo, pastaExclusiva, ok, err := s.resolverDestino(ctx, ent)
 	if err != nil {
@@ -279,10 +273,10 @@ func (s *Server) gravarAssetNaPastaReal(ctx context.Context, ent sqlcgen.Entity,
 	return destino, nil
 }
 
-// lerBinarioAssetDoCache lê o binário do asset do CACHE interno
-// (path_or_uri), sob a MESMA guarda de path-traversal do servirBinarioAsset
-// (raizesConfiaveis/caminhoSobRaizes) — o asset já foi validado como
-// pertencente à entity pelo chamador.
+// lerBinarioAssetDoCache reads the asset binary from the internal CACHE (path_or_uri),
+// under the SAME path-traversal guard as servirBinarioAsset
+// (raizesConfiaveis/caminhoSobRaizes) — the asset was already validated as belonging to
+// the entity by the caller.
 func (s *Server) lerBinarioAssetDoCache(ctx context.Context, asset sqlcgen.Asset) ([]byte, error) {
 	raizes, err := s.raizesConfiaveis(ctx)
 	if err != nil {
@@ -291,12 +285,12 @@ func (s *Server) lerBinarioAssetDoCache(ctx context.Context, asset sqlcgen.Asset
 	if !caminhoSobRaizes(asset.PathOrUri, raizes) {
 		return nil, errors.New("localmedia: caminho do asset fora das raizes confiaveis")
 	}
-	return os.ReadFile(filepath.Clean(asset.PathOrUri)) //nolint:gosec // caminho validado por caminhoSobRaizes acima
+	return os.ReadFile(filepath.Clean(asset.PathOrUri)) //nolint:gosec // path validated by caminhoSobRaizes above
 }
 
-// locaisExistentesDoKind lista os `local_path` já usados por OUTROS assets
-// (exceto `excetoID`) do mesmo (entity,kind) — a base do cálculo do índice
-// de rotação livre (localmedia.IndiceRotacaoLivre).
+// locaisExistentesDoKind lists the `local_path` already used by OTHER assets (except
+// `excetoID`) of the same (entity,kind) — the basis for computing the free rotation index
+// (localmedia.IndiceRotacaoLivre).
 func (s *Server) locaisExistentesDoKind(ctx context.Context, entityID, kind, excetoID string) ([]string, error) {
 	assets, err := s.leitura().ListarAssetsPorEntity(ctx, entityID)
 	if err != nil {
@@ -312,25 +306,22 @@ func (s *Server) locaisExistentesDoKind(ctx context.Context, entityID, kind, exc
 	return out, nil
 }
 
-// resolverDestino calcula o diretório de destino, o nome-base do vídeo e se
-// a pasta é EXCLUSIVA (um único vídeo) para uma entity — a base compartilhada
-// por materialize/prefer/nfo. ok=false quando a entity não tem media_file
-// present elegível (sem pasta de destino). O DIRETÓRIO vem de
-// localmedia.DiretorioDestino (raiz real da série, briefing 0081 -- nunca
-// mais uma subpasta de temporada); o nome-base do vídeo continua vindo do
-// media_file mais antigo (ArquivoMaisAntigo), que é quem nomeia o .nfo/still
-// de filme e episódio.
+// resolverDestino computes the destination directory, the video base name and whether the
+// folder is EXCLUSIVE (a single video) for an entity — the basis shared by
+// materialize/prefer/nfo. ok=false when the entity has no eligible present media_file (no
+// destination folder). The DIRECTORY comes from localmedia.DiretorioDestino (the series'
+// real root — never a season subfolder again); the video base name keeps coming from the
+// oldest media_file (ArquivoMaisAntigo), which is what names the .nfo/still of a movie and
+// of an episode.
 //
-// tv/season SEMPRE são "pasta exclusiva" (briefing 0081): a raiz da série
-// nunca tem vídeo diretamente dentro dela (0031/TV1-TV5, os episódios ficam
-// em subpastas de temporada) -- então EhPastaExclusiva (que conta vídeo
-// PRESENTE direto no diretório) sempre devolveria false ali, forçando o
-// pôster/fanart da série a nascer prefixado pelo nome do vídeo mais antigo
-// (exatamente o bug relatado: "poster.jpg salvo como ...-S01E01-...-
-// poster.jpg"). Kodi não tem conceito de "edição"/ambiguidade para arte de
-// NÍVEL DE OBRA de série -- é sempre poster.jpg/fanart.jpg bare (a rotação
-// numérica de múltiplas artes continua via sufixoRotacao, independente desta
-// flag).
+// tv/season are ALWAYS an "exclusive folder": the series root never has a video directly
+// inside it (the episodes live in season subfolders) -- so EhPastaExclusiva (which counts
+// videos PRESENT directly in the directory) would always return false there, forcing the
+// series poster/fanart to be born prefixed by the oldest video name (exactly the reported
+// bug: "poster.jpg saved as ...-S01E01-...-poster.jpg"). Kodi has no concept of
+// "edition"/ambiguity for WORK-LEVEL artwork of a series -- it is always a bare
+// poster.jpg/fanart.jpg (the numeric rotation of multiple artworks still goes through
+// sufixoRotacao, independently of this flag).
 func (s *Server) resolverDestino(ctx context.Context, ent sqlcgen.Entity) (dir, nomeBaseVideo string, pastaExclusiva, ok bool, err error) {
 	localFiles, ancestors, err := s.carregarMediaFilesLocalmedia(ctx, ent)
 	if err != nil {
@@ -363,16 +354,14 @@ func (s *Server) resolverDestino(ctx context.Context, ent sqlcgen.Entity) (dir, 
 	return dir, nomeBaseVideo, pastaExclusiva, true, nil
 }
 
-// carregarMediaFilesLocalmedia devolve (mediaFiles, ancestors) no shape do
-// pacote internal/localmedia para a entity dada: reusa listarFilesDaEntity
-// (que já resolve a complexidade do episódio via junção
-// media_file_entity/ADR-0021) — mas para `season`, que não tem media_file
-// PRÓPRIO (todo arquivo de episódio aponta entity_id para a SÉRIE), resolve
-// primeiro o ancestral "tv" (montarAncestrais) e carrega os arquivos DELE.
-// Cada MediaFile devolvido tem EntityID relabeled para a entity cujos
-// arquivos foram carregados (série para season/tv, a própria para
-// movie/episode) — consistente com o que localmedia.DiretorioDestino espera
-// filtrar.
+// carregarMediaFilesLocalmedia returns (mediaFiles, ancestors) in the shape of the
+// internal/localmedia package for the given entity: it reuses listarFilesDaEntity (which
+// already solves the episode complexity through the media_file_entity join/ADR-0021) — but
+// for `season`, which has no media_file OF ITS OWN (every episode file points its entity_id
+// at the SERIES), it first resolves the "tv" ancestor (montarAncestrais) and loads ITS
+// files. Each returned MediaFile has EntityID relabeled to the entity whose files were
+// loaded (series for season/tv, the entity itself for movie/episode) — consistent with what
+// localmedia.DiretorioDestino expects to filter.
 func (s *Server) carregarMediaFilesLocalmedia(ctx context.Context, ent sqlcgen.Entity) ([]localmedia.MediaFile, []localmedia.Entity, error) {
 	ancestorRefs := s.montarAncestrais(ctx, ent.ID)
 	ancestors := make([]localmedia.Entity, len(ancestorRefs))
@@ -405,10 +394,10 @@ func (s *Server) carregarMediaFilesLocalmedia(ctx context.Context, ent sqlcgen.E
 	return out, ancestors, nil
 }
 
-// serieAncestralID acha o id do ancestral mais próximo do tipo "tv" na
-// trilha RAIZ->PAI — espelha localmedia.serieAncestral (não-exportada), para
-// o server resolver QUAL entity carregar os media_file antes de chamar
-// localmedia (que só faz o filtro puro sobre a lista já carregada).
+// serieAncestralID finds the id of the nearest "tv" ancestor in the ROOT->PARENT trail —
+// it mirrors localmedia.serieAncestral (non-exported), so the server resolves WHICH entity
+// to load the media_file from before calling localmedia (which only does the pure filter
+// over the already loaded list).
 func serieAncestralID(ancestors []localmedia.Entity) (string, bool) {
 	for i := len(ancestors) - 1; i >= 0; i-- {
 		if ancestors[i].Type == localmedia.TipoSerie {
@@ -418,10 +407,9 @@ func serieAncestralID(ancestors []localmedia.Entity) (string, bool) {
 	return "", false
 }
 
-// kindNomeEBase decide o kind/nome-base a passar para
-// localmedia.NomeArquivoArte: pôster de uma TEMPORADA usa o kind sintético
-// KindSeasonPoster + "season{NN}" (nunca o nome do vídeo); os demais casos
-// usam o kind/nome-base do vídeo normalmente.
+// kindNomeEBase decides the kind/base name to pass to localmedia.NomeArquivoArte: the
+// poster of a SEASON uses the synthetic kind KindSeasonPoster + "season{NN}" (never the
+// video name); the other cases use the video's kind/base name as usual.
 func (s *Server) kindNomeEBase(ctx context.Context, ent sqlcgen.Entity, assetKind, nomeBaseVideo string) (kind, nomeBase string) {
 	if ent.Type == tipoEntTemporada && assetKind == kindPoster {
 		return localmedia.KindSeasonPoster, localmedia.NomeSeasonBase(s.numeroDaTemporada(ctx, ent.ID))
@@ -429,9 +417,9 @@ func (s *Server) kindNomeEBase(ctx context.Context, ent sqlcgen.Entity, assetKin
 	return assetKind, nomeBaseVideo
 }
 
-// numeroDaTemporada lê o season_number (entity_relation.sort_index do vínculo
-// série->temporada) de uma entity season. 0 (defensivo) quando ausente/sem
-// pai — degrada para "season00" em vez de falhar a materialização.
+// numeroDaTemporada reads the season_number (entity_relation.sort_index of the
+// series->season link) of a season entity. 0 (defensive) when absent/without a parent — it
+// degrades to "season00" instead of failing the materialization.
 func (s *Server) numeroDaTemporada(ctx context.Context, seasonID string) int {
 	pais, err := s.leitura().ListarRelacoesPais(ctx, seasonID)
 	if err != nil || len(pais) == 0 || !pais[0].SortIndex.Valid {
@@ -442,18 +430,17 @@ func (s *Server) numeroDaTemporada(ctx context.Context, seasonID string) int {
 
 // ── POST /entities/{id}/nfo ──────────────────────────────────────────────
 
-// nfoWriteResult é o corpo de POST /entities/{id}/nfo (NfoWriteResult no
-// contrato): espelha entity.nfo_path/nfo_written_at.
+// nfoWriteResult is the body of POST /entities/{id}/nfo (NfoWriteResult in the contract):
+// it mirrors entity.nfo_path/nfo_written_at.
 type nfoWriteResult struct {
 	NfoPath      string `json:"nfo_path"`
 	NfoWrittenAt string `json:"nfo_written_at"`
 }
 
-// writeEntityNfo trata POST /api/v1/entities/{id}/nfo: (re)gera e grava o
-// .nfo da entity na pasta real, a partir do MESMO resolver.Entidade que
-// resolverEntity já produz. Idempotente (sempre sobrescreve por completo).
-// 200 com {nfo_path,nfo_written_at}; 404 entity inexistente OU sem
-// media_file presente.
+// writeEntityNfo handles POST /api/v1/entities/{id}/nfo: it (re)generates and writes the
+// entity's .nfo into the real folder, from the SAME resolver.Entidade that resolverEntity
+// already produces. Idempotent (it always overwrites completely). 200 with
+// {nfo_path,nfo_written_at}; 404 unknown entity OR without a present media_file.
 func (s *Server) writeEntityNfo(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -485,11 +472,11 @@ func (s *Server) writeEntityNfo(w http.ResponseWriter, r *http.Request) {
 		respondErroInterno(w)
 		return
 	}
-	// season não tem NFO próprio neste briefing (não há media_file nem
-	// convenção de nome-de-vídeo próprios — DiretorioDestino resolveria a
-	// raiz da série, mas o nome de arquivo colidiria com o tvshow.nfo/NFO de
-	// episódio ali gravados). Trata como "sem pasta de destino" (404) — a UI
-	// não deveria expor o botão "Salvar NFO" para uma temporada.
+	// a season has no NFO of its own (there is no media_file nor a video-name convention
+	// of its own -- DiretorioDestino would resolve the series root, but the file name would
+	// collide with the tvshow.nfo/episode NFO written there). It is treated as "no
+	// destination folder" (404) — the UI should not expose the "Salvar NFO" button for a
+	// season.
 	if ent.Type == tipoEntTemporada {
 		respondErroLocalmedia(w, errSemDestino)
 		return
@@ -503,25 +490,23 @@ func (s *Server) writeEntityNfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resultado)
 }
 
-// gravarNFO calcula o destino (DiretorioDestino/NomeArquivoNFO), monta o XML
-// (localmedia.MontarNFO) e grava atomicamente, atualizando
-// entity.nfo_path/nfo_written_at. errSemDestino quando a entity não tem
-// media_file present (sem pasta de destino).
+// gravarNFO computes the destination (DiretorioDestino/NomeArquivoNFO), builds the XML
+// (localmedia.MontarNFO) and writes it atomically, updating
+// entity.nfo_path/nfo_written_at. errSemDestino when the entity has no present media_file
+// (no destination folder).
 //
-// Antes de montar o XML, materializa (best-effort) o pôster e o fundo
-// VENCEDORES na pasta real (mesma lógica de MaterializarMidiasFaltantes,
-// briefing 0064/0066): assim o .nfo nunca precisa de <thumb>/<fanart>
-// apontando para a API interna -- o Kodi/Jellyfin descobrem a arte sozinhos
-// pela convenção de nome de arquivo. Falha de materialização (rede,
-// permissão) é logada e IGNORADA -- nunca impede a gravação do .nfo.
+// Before building the XML, it materializes (best-effort) the WINNING poster and background
+// into the real folder (the same logic as MaterializarMidiasFaltantes): that way the .nfo
+// never needs a <thumb>/<fanart> pointing at the internal API -- Kodi/Jellyfin discover the
+// artwork on their own through the file name convention. A materialization failure
+// (network, permission) is logged and IGNORED -- it never prevents writing the .nfo.
 //
-// Antes de sobrescrever, lê o .nfo que já estiver no destino (se houver) e
-// preserva os campos LOCAIS do Kodi/Emby/Jellyfin -- avaliação do usuário,
-// contagem/estado de assistido, última reprodução, data de adição e ponto de
-// retomada (localmedia.ExtrairCamposUsuario) -- para NÃO destruir edição
-// feita fora do MyMediaDB (à mão ou pelo próprio Kodi) ao regravar. Leitura
-// é best-effort: arquivo ausente ou corrompido não impede a gravação, só
-// resulta em zero-value (nada a preservar).
+// Before overwriting, it reads the .nfo already at the destination (if any) and preserves
+// the LOCAL Kodi/Emby/Jellyfin fields -- user rating, watched count/state, last played,
+// date added and resume point (localmedia.ExtrairCamposUsuario) -- so it does NOT destroy
+// editing done outside MyMediaDB (by hand or by Kodi itself) when rewriting. The read is
+// best-effort: a missing or corrupted file does not prevent the write, it only results in a
+// zero-value (nothing to preserve).
 func (s *Server) gravarNFO(ctx context.Context, ent sqlcgen.Entity, e resolver.Entidade) (nfoWriteResult, error) {
 	dir, nomeBaseVideo, _, ok, err := s.resolverDestino(ctx, ent)
 	if err != nil {
@@ -562,22 +547,22 @@ func (s *Server) gravarNFO(ctx context.Context, ent sqlcgen.Entity, e resolver.E
 	return nfoWriteResult{NfoPath: destino, NfoWrittenAt: agora}, nil
 }
 
-// ── Extensão de PUT /assets/{assetId}/prefer (briefing 0062) ────────────────
+// ── Extension of PUT /assets/{assetId}/prefer ───────────────────────────────
 //
-// A rotação física ao trocar a arte principal: materializarERotacionarPrincipal
-// é chamada por preferAsset (assets.go). A invariante "no máximo um
-// is_principal=1 por (entity,kind)" é aplicada em CÓDIGO — zera o antigo
-// ANTES de setar o novo — sequencialmente no pool de ESCRITOR ÚNICO
-// (SetMaxOpenConns(1), ADR-0010): não há `sql.Tx` explícito porque nenhum
-// outro ponto do codebase usa (o pool já serializa toda escrita, mesmo
-// padrão de marcarPreferida).
+// The physical rotation when switching the principal artwork:
+// materializarERotacionarPrincipal is called by preferAsset (assets.go). The invariant "at
+// most one is_principal=1 per (entity,kind)" is enforced IN CODE — it clears the old one
+// BEFORE setting the new one — sequentially in the SINGLE-WRITER pool
+// (SetMaxOpenConns(1), ADR-0010): there is no explicit `sql.Tx` because no other point of
+// the codebase uses one (the pool already serializes every write, the same pattern as
+// marcarPreferida).
 
-// materializarERotacionarPrincipal materializa fisicamente o alvo (se
-// necessário) e RENOMEIA os arquivos do mesmo (entity,kind) para refletir a
-// nova ordem: o antigo principal (se houver, e != alvo) vira o próximo
-// índice de rotação LIVRE; o alvo assume (ou é renomeado para) o nome bare.
-// Seta is_principal=1 no alvo e 0 no antigo, na coluna nova. Devolve o alvo
-// ATUALIZADO (local_path/is_principal refletidos em memória).
+// materializarERotacionarPrincipal materializes the target physically (if needed) and
+// RENAMES the files of the same (entity,kind) to reflect the new order: the former
+// principal (if any, and != target) becomes the next FREE rotation index; the target takes
+// (or is renamed to) the bare name. It sets is_principal=1 on the target and 0 on the
+// former one, in the column. It returns the UPDATED target (local_path/is_principal
+// reflected in memory).
 func (s *Server) materializarERotacionarPrincipal(ctx context.Context, ent sqlcgen.Entity, assets []sqlcgen.Asset, alvo sqlcgen.Asset) (sqlcgen.Asset, error) {
 	if antigo, ok := principalAtualDoKind(assets, alvo.Kind, alvo.ID); ok {
 		if err := s.rotacionarAntigoPrincipal(ctx, ent, antigo); err != nil {
@@ -606,9 +591,9 @@ func (s *Server) materializarERotacionarPrincipal(ctx context.Context, ent sqlcg
 	return alvo, nil
 }
 
-// principalAtualDoKind acha o asset is_principal=1 do MESMO kind, exceto
-// `excetoID` (o alvo que está virando o novo principal) — o "antigo
-// principal" que precisa ser rotacionado para um índice numérico.
+// principalAtualDoKind finds the is_principal=1 asset of the SAME kind, except `excetoID`
+// (the target that is becoming the new principal) — the "former principal" that needs to
+// be rotated to a numeric index.
 func principalAtualDoKind(assets []sqlcgen.Asset, kind, excetoID string) (sqlcgen.Asset, bool) {
 	for _, a := range assets {
 		if a.Kind == kind && a.ID != excetoID && a.IsPrincipal != 0 {
@@ -618,10 +603,10 @@ func principalAtualDoKind(assets []sqlcgen.Asset, kind, excetoID string) (sqlcge
 	return sqlcgen.Asset{}, false
 }
 
-// rotacionarAntigoPrincipal renomeia o arquivo físico do antigo principal
-// (nome bare) para o próximo índice de rotação LIVRE, e atualiza
-// asset.local_path. No-op quando o antigo não tinha local_path (nunca foi
-// materializado — só a flag is_principal muda, sem arquivo pra renomear).
+// rotacionarAntigoPrincipal renames the physical file of the former principal (bare name)
+// to the next FREE rotation index, and updates asset.local_path. No-op when the former one
+// had no local_path (never materialized — only the is_principal flag changes, with no file
+// to rename).
 func (s *Server) rotacionarAntigoPrincipal(ctx context.Context, ent sqlcgen.Entity, antigo sqlcgen.Asset) error {
 	if !antigo.LocalPath.Valid || antigo.LocalPath.String == "" {
 		return nil
@@ -651,10 +636,10 @@ func (s *Server) rotacionarAntigoPrincipal(ctx context.Context, ent sqlcgen.Enti
 	})
 }
 
-// assumirNomeBare garante que o alvo tenha o nome BARE do seu kind: se já
-// tem local_path (materializado, ainda que rotacionado), RENOMEIA (nunca
-// recopia bytes); senão, materializa do zero direto com o nome bare.
-// Persiste local_path e devolve o caminho final.
+// assumirNomeBare ensures the target has the BARE name of its kind: if it already has a
+// local_path (materialized, even if rotated), it RENAMES it (never recopies bytes);
+// otherwise it materializes from scratch straight with the bare name. It persists
+// local_path and returns the final path.
 func (s *Server) assumirNomeBare(ctx context.Context, ent sqlcgen.Entity, alvo sqlcgen.Asset) (string, error) {
 	var destino string
 	var err error
@@ -675,17 +660,17 @@ func (s *Server) assumirNomeBare(ctx context.Context, ent sqlcgen.Entity, alvo s
 	return destino, nil
 }
 
-// renomearParaBare renomeia o arquivo JÁ materializado do alvo para o nome
-// bare do seu kind (RENAME, nunca recopia bytes) — idempotente: se o arquivo
-// já é o bare, no-op (devolve o mesmo caminho).
+// renomearParaBare renames the ALREADY materialized file of the target to the bare name of
+// its kind (RENAME, never recopies bytes) — idempotent: if the file is already the bare
+// one, no-op (it returns the same path).
 //
-// briefing 0127: quando o alvo já é o bare (destino == local_path atual —
-// caso comum de PUT .../prefer chamado de novo sobre o asset que já é
-// principal, sem nenhuma rotação a fazer), esse "no-op" é exatamente o outro
-// ponto do sistema que decide "já materializado, nada a fazer" olhando só a
-// coluna do banco — reconfirma via arquivoLocalAindaExiste e regrava
-// in-place (regravarBinarioAssetNoLocalPathExistente) se o arquivo sumiu do
-// disco, em vez de devolver o caminho como se nada tivesse mudado.
+// When the target is already the bare one (destination == current local_path — the common
+// case of PUT .../prefer called again on the asset that is already principal, with no
+// rotation to do), that "no-op" is exactly the other point of the system that decides
+// "already materialized, nothing to do" by looking only at the database column — so it
+// reconfirms through arquivoLocalAindaExiste and rewrites in place
+// (regravarBinarioAssetNoLocalPathExistente) if the file vanished from disk, instead of
+// returning the path as if nothing had changed.
 func (s *Server) renomearParaBare(ctx context.Context, ent sqlcgen.Entity, alvo sqlcgen.Asset) (string, error) {
 	dir := filepath.Dir(alvo.LocalPath.String)
 	ext := filepath.Ext(alvo.LocalPath.String)
@@ -713,22 +698,21 @@ func (s *Server) renomearParaBare(ctx context.Context, ent sqlcgen.Entity, alvo 
 	return destino, nil
 }
 
-// ── GET /entities/{id}/theme — tema musical local (briefing 0082) ──────────
+// ── GET /entities/{id}/theme — local theme song ─────────────────────────────
 //
-// Fundação MÍNIMA e LOCAL-ONLY: sem provider (não há fonte confiável
-// integrada de tema musical, ver briefing §3) — o dono coloca manualmente um
-// `theme.{mp3,ogg,flac}` na pasta-raiz do item (mesma raiz de
-// DiretorioDestino, reaproveitada de resolverDestino, já usada por
-// materialize/nfo acima) e este endpoint só DETECTA e serve o binário, sem
-// materializar asset algum.
+// MINIMAL and LOCAL-ONLY foundation: no provider (there is no reliable integrated source of
+// theme songs) — the owner places a `theme.{mp3,ogg,flac}` by hand in the item's root
+// folder (the same root as DiretorioDestino, reused from resolverDestino, already used by
+// materialize/nfo above) and this endpoint only DETECTS and serves the binary, without
+// materializing any asset.
 
-// extensoesTema lista, em ordem de preferência, os formatos de tema aceitos —
-// mp3 primeiro (o caso comum Kodi/Jellyfin), ogg/flac como alternativas. Lista
-// fixa em código (briefing §5: "não exposta como opção").
+// extensoesTema lists, in order of preference, the accepted theme formats — mp3 first (the
+// common Kodi/Jellyfin case), ogg/flac as alternatives. A list fixed in code: it is
+// deliberately not exposed as an option.
 var extensoesTema = []string{".mp3", ".ogg", ".flac"}
 
-// encontrarArquivoTema procura theme.<ext> na raiz `dir`, na ordem de
-// extensoesTema — a primeira que existir (e não for diretório) vence.
+// encontrarArquivoTema looks for theme.<ext> in the root `dir`, in the order of
+// extensoesTema — the first one that exists (and is not a directory) wins.
 func encontrarArquivoTema(dir string) (string, bool) {
 	for _, ext := range extensoesTema {
 		caminho := filepath.Join(dir, "theme"+ext)
@@ -740,9 +724,9 @@ func encontrarArquivoTema(dir string) (string, bool) {
 	return "", false
 }
 
-// contentTypeTema resolve o content-type do tema pela extensão — as três
-// aceitas por encontrarArquivoTema têm content-type conhecido e fixo (sem
-// precisar farejar bytes como contentTypeImagem faz para a arte).
+// contentTypeTema resolves the theme content-type by the extension — the three accepted by
+// encontrarArquivoTema have a known, fixed content-type (no need to sniff bytes the way
+// contentTypeImagem does for artwork).
 func contentTypeTema(caminho string) string {
 	switch strings.ToLower(filepath.Ext(caminho)) {
 	case ".ogg":
@@ -754,13 +738,13 @@ func contentTypeTema(caminho string) string {
 	}
 }
 
-// getEntityTheme trata GET /api/v1/entities/{id}/theme: resolve a pasta-raiz
-// do item (resolverDestino — MESMA resolução de DiretorioDestino usada por
-// materialize/nfo) e serve o binário do theme.{mp3,ogg,flac} encontrado ali,
-// se houver. O caminho nasce 100% da resolução SERVER-SIDE (nunca de input do
-// cliente, que só fornece o id) — sem materializar asset, sem tocar o banco.
-// 404 quando a entity não existe, não tem pasta de destino (sem media_file
-// present) ou não há arquivo de tema na pasta.
+// getEntityTheme handles GET /api/v1/entities/{id}/theme: it resolves the item's root
+// folder (resolverDestino — the SAME DiretorioDestino resolution used by
+// materialize/nfo) and serves the binary of the theme.{mp3,ogg,flac} found there, if any.
+// The path comes 100% from the SERVER-SIDE resolution (never from client input, which only
+// provides the id) — without materializing an asset, without touching the database. 404
+// when the entity does not exist, has no destination folder (no present media_file) or
+// there is no theme file in the folder.
 func (s *Server) getEntityTheme(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -791,7 +775,7 @@ func (s *Server) getEntityTheme(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limpo := filepath.Clean(caminho)
-	f, err := os.Open(limpo) //nolint:gosec // caminho vem so da resolucao server-side (resolverDestino), nunca de input do cliente
+	f, err := os.Open(limpo) //nolint:gosec // path comes only from the server-side resolution (resolverDestino), never from client input
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not_found", "arquivo de tema indisponível")
 		return
@@ -807,29 +791,27 @@ func (s *Server) getEntityTheme(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, filepath.Base(limpo), info.ModTime(), f)
 }
 
-// ── Trailer: materialização em disco via yt-dlp (briefing 0102, ADR-0025) ──
+// ── Trailer: on-disk materialization through yt-dlp (ADR-0025) ────────────
 //
-// GET .../trailer detecta e serve um trailer já materializado (mesmo padrão
-// de getEntityTheme, MESMA pasta-raiz de resolverDestino). POST
-// .../trailer/download BAIXA o primeiro trailer YouTube listado em
-// `videos` (TMDB/TVDB, já extraído via richfields) usando o yt-dlp (0101) e
-// grava no nome canônico Kodi/Jellyfin. Sem tabela `asset` nova -- mesmo
-// precedente de theme.mp3 (0082): detecção por existência de arquivo, sem
-// linha de banco dedicada (vídeo não entra no pipeline de imagem de
-// assets.go/parseKind/galeria).
+// GET .../trailer detects and serves an already materialized trailer (the same pattern as
+// getEntityTheme, the SAME root folder of resolverDestino). POST .../trailer/download
+// DOWNLOADS the first YouTube trailer listed in `videos` (TMDB/TVDB, already extracted
+// through richfields) using yt-dlp and writes it under the canonical Kodi/Jellyfin name. No
+// new `asset` table -- the same precedent as theme.mp3: detection by file existence, with
+// no dedicated database row (a video does not enter the image pipeline of
+// assets.go/parseKind/gallery).
 
-// extensoesTrailer lista, em ordem de checagem, os containers de vídeo que
-// encontrarArquivoTrailer aceita como "trailer já presente": .mp4 é o
-// destino FIXO de todo download feito por este endpoint (extPadraoDeKind);
-// .mkv/.webm cobrem um trailer colocado manualmente pelo dono com outro
-// container -- também precisa ser detectado (princípio 5: nunca sobrescrever
-// sem force), não só o que o download em si produz.
+// extensoesTrailer lists, in checking order, the video containers that encontrarArquivoTrailer
+// accepts as "trailer already present": .mp4 is the FIXED destination of every download made
+// by this endpoint (extPadraoDeKind); .mkv/.webm cover a trailer placed manually by the
+// owner in another container -- it also has to be detected (principle 5: never overwrite
+// without force), not only what the download itself produces.
 var extensoesTrailer = []string{".mp4", ".mkv", ".webm"}
 
-// encontrarArquivoTrailer procura o nome canônico do trailer (internal/
-// localmedia.NomeArquivoArte com KindTrailer) na raiz `dir`, testando cada
-// extensão de extensoesTrailer -- a primeira que existir (e não for
-// diretório) vence.
+// encontrarArquivoTrailer looks for the canonical trailer name
+// (internal/localmedia.NomeArquivoArte with KindTrailer) in the root `dir`, trying each
+// extension of extensoesTrailer -- the first one that exists (and is not a directory)
+// wins.
 func encontrarArquivoTrailer(dir, nomeBaseVideo string, pastaExclusiva bool) (string, bool) {
 	for _, ext := range extensoesTrailer {
 		nome := localmedia.NomeArquivoArte(localmedia.KindTrailer, true, 0, pastaExclusiva, nomeBaseVideo, ext)
@@ -842,9 +824,9 @@ func encontrarArquivoTrailer(dir, nomeBaseVideo string, pastaExclusiva bool) (st
 	return "", false
 }
 
-// contentTypeTrailer resolve o content-type do trailer pela extensão -- as
-// três aceitas por encontrarArquivoTrailer têm content-type conhecido e
-// fixo, mesmo espírito de contentTypeTema.
+// contentTypeTrailer resolves the trailer content-type by the extension -- the three
+// accepted by encontrarArquivoTrailer have a known, fixed content-type, the same spirit as
+// contentTypeTema.
 func contentTypeTrailer(caminho string) string {
 	switch strings.ToLower(filepath.Ext(caminho)) {
 	case ".mkv":
@@ -856,11 +838,11 @@ func contentTypeTrailer(caminho string) string {
 	}
 }
 
-// getEntityTrailer trata GET /api/v1/entities/{id}/trailer: resolve a
-// pasta-raiz do item (resolverDestino, MESMA resolução de materialize/nfo/
-// theme) e serve o binário do trailer encontrado ali, se houver. 404 quando
-// a entity não existe, não tem pasta de destino (sem media_file present) ou
-// não há trailer materializado na pasta.
+// getEntityTrailer handles GET /api/v1/entities/{id}/trailer: it resolves the item's root
+// folder (resolverDestino, the SAME resolution as materialize/nfo/theme) and serves the
+// binary of the trailer found there, if any. 404 when the entity does not exist, has no
+// destination folder (no present media_file) or there is no trailer materialized in the
+// folder.
 func (s *Server) getEntityTrailer(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -891,7 +873,7 @@ func (s *Server) getEntityTrailer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limpo := filepath.Clean(caminho)
-	f, err := os.Open(limpo) //nolint:gosec // caminho vem so da resolucao server-side (resolverDestino+encontrarArquivoTrailer), nunca de input do cliente
+	f, err := os.Open(limpo) //nolint:gosec // path comes only from the server-side resolution (resolverDestino+encontrarArquivoTrailer), never from client input
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not_found", "arquivo de trailer indisponível")
 		return
@@ -907,27 +889,25 @@ func (s *Server) getEntityTrailer(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, filepath.Base(limpo), info.ModTime(), f)
 }
 
-// trailerDownloadRequest é o corpo (opcional) de POST .../trailer/download.
-// Key seleciona um vídeo específico por `key` do YouTube (porta aberta para
-// um seletor futuro no frontend, briefing §3 "fora"); vazio cai no default
-// (primeiro trailer, richfields.PrimeiroTrailerYoutube). Force pede
-// re-download mesmo com um trailer já presente (princípio 5: sem Force, um
-// trailer existente -- baixado antes OU colocado manualmente pelo dono --
-// NUNCA é sobrescrito).
+// trailerDownloadRequest is the (optional) body of POST .../trailer/download. Key selects a
+// specific video by its YouTube `key` (an open door for a future selector in the frontend,
+// explicitly out of scope for now); empty falls back to the default (first trailer,
+// richfields.PrimeiroTrailerYoutube). Force asks for a re-download even with a trailer
+// already present (principle 5: without Force, an existing trailer -- downloaded before OR
+// placed manually by the owner -- is NEVER overwritten).
 type trailerDownloadRequest struct {
 	Key   string `json:"key"`
 	Force bool   `json:"force"`
 }
 
-// trailerDownloadResult é o corpo de sucesso de POST .../trailer/download.
+// trailerDownloadResult is the success body of POST .../trailer/download.
 type trailerDownloadResult struct {
 	LocalPath string `json:"local_path"`
 }
 
-// escolherTrailerYoutube decide QUAL vídeo baixar: com `key` não-vazio, o
-// vídeo do YouTube com essa key exata; vazio cai no default (primeiro
-// trailer reprodutível, MESMO critério do frontend --
-// richfields.PrimeiroTrailerYoutube).
+// escolherTrailerYoutube decides WHICH video to download: with a non-empty `key`, the
+// YouTube video with that exact key; empty falls back to the default (first playable
+// trailer, the SAME criterion as the frontend -- richfields.PrimeiroTrailerYoutube).
 func escolherTrailerYoutube(videos []richfields.Video, key string) (richfields.Video, bool) {
 	if key == "" {
 		return richfields.PrimeiroTrailerYoutube(videos)
@@ -940,21 +920,20 @@ func escolherTrailerYoutube(videos []richfields.Video, key string) (richfields.V
 	return richfields.Video{}, false
 }
 
-// baixarTrailerEntityComOpcoes é a implementação PURA (sem
-// http.ResponseWriter) de "baixar o trailer do YouTube para UMA entity":
-// resolve o vídeo (idioma + richfields.Videos, MESMO shape de GET
-// /entities/{id}), o destino na pasta real da biblioteca e baixa via yt-dlp
-// (s.ytdlp.Baixar, 0101) para um arquivo TEMPORÁRIO, só renomeando para o
-// nome canônico em caso de sucesso (nunca deixa um arquivo parcial com o
-// nome canônico). Reaproveitada por postEntityTrailerDownload (que traduz o
-// erro devolvido em status HTTP via respondErroBaixarTrailer/errors.Is) e
-// por BaixarTrailerEntity (job trailer_tema_faltantes e gatilho automático
-// do scan, briefing 0104). `lang` vazio cai no idioma principal; `key` vazio
-// escolhe o primeiro trailer disponível (richfields.PrimeiroTrailerYoutube);
-// `force` ignora um trailer já presente. Devolve os sentinels
-// errEntityNaoEncontrada/errYtdlpIndisponivel/errSemTrailerYoutube/
-// errSemDestino/errTrailerJaExiste para os casos de "nada a fazer"; qualquer
-// outro erro é falha real (rede, banco).
+// baixarTrailerEntityComOpcoes is the PURE implementation (no http.ResponseWriter) of
+// "download the YouTube trailer for ONE entity": it resolves the video (language +
+// richfields.Videos, the SAME shape as GET /entities/{id}), the destination in the library's
+// real folder and downloads it through yt-dlp (s.ytdlp.Baixar) into a TEMPORARY file, only
+// renaming it to the canonical name on success (it never leaves a partial file with the
+// canonical name). Reused by postEntityTrailerDownload (which translates the returned error
+// into an HTTP status through respondErroBaixarTrailer/errors.Is) and by
+// BaixarTrailerEntity (trailer_tema_faltantes job and automatic scan trigger). An empty
+// `lang` falls back to the primary language; an empty `key` picks the first available
+// trailer (richfields.PrimeiroTrailerYoutube); `force` ignores an already present trailer.
+// It returns the sentinels
+// errEntityNaoEncontrada/errYtdlpIndisponivel/errSemTrailerYoutube/errSemDestino/
+// errTrailerJaExiste for the "nothing to do" cases; any other error is a real failure
+// (network, database).
 func (s *Server) baixarTrailerEntityComOpcoes(ctx context.Context, entityID, lang, key string, force bool) (destino string, err error) {
 	ent, err := s.leitura().ObterEntity(ctx, entityID)
 	if err != nil {
@@ -1015,13 +994,11 @@ func (s *Server) baixarTrailerEntityComOpcoes(ctx context.Context, entityID, lan
 	return dest, nil
 }
 
-// YtdlpDisponivel expõe o status do yt-dlp (s.ytdlp.Status) para o job
-// trailer_tema_faltantes (internal/job/trailertema, briefing 0104) checar
-// UMA VEZ por execução, antes de iterar as entities -- evita golpear o
-// binário (--version) uma vez por entity da biblioteca quando ele está
-// simplesmente indisponível. Sem s.ytdlp injetado, degrada para
-// indisponível (mesmo cenário defensivo de ytdlpDisponivel/
-// montarYtdlpStatusResponse).
+// YtdlpDisponivel exposes the yt-dlp status (s.ytdlp.Status) so the trailer_tema job
+// (internal/job/trailertema) can check it ONCE per run, before iterating the entities -- it
+// avoids hitting the binary (--version) once per library entity when it is simply
+// unavailable. Without s.ytdlp injected, it degrades to unavailable (the same defensive
+// scenario as ytdlpDisponivel/montarYtdlpStatusResponse).
 func (s *Server) YtdlpDisponivel(ctx context.Context) (disponivel bool, detalhe string) {
 	if s.ytdlp == nil {
 		return false, "yt-dlp nao configurado neste servidor"
@@ -1030,14 +1007,13 @@ func (s *Server) YtdlpDisponivel(ctx context.Context) (disponivel bool, detalhe 
 	return disponivel, detalhe
 }
 
-// BaixarTrailerEntity baixa (best-effort) o trailer padrão do YouTube (sem
-// seleção explícita de vídeo, sem force, idioma principal) para `entityID`
-// -- usada pelo job trailer_tema_faltantes (internal/job/trailertema) e pelo
-// gatilho automático do scan (briefing 0104, ADR-0026). Sentinels de "nada a
-// fazer" (sem trailer disponível, já existe local, sem destino, yt-dlp
-// indisponível, entity sumiu) voltam como baixado=false, err=nil -- só uma
-// falha REAL (rede, banco) propaga err, para o chamador (job/goroutine)
-// contar/logar como falha de verdade.
+// BaixarTrailerEntity downloads (best-effort) the default YouTube trailer (no explicit
+// video selection, no force, primary language) for `entityID` -- used by the
+// trailer_tema_faltantes job (internal/job/trailertema) and by the automatic scan trigger
+// (ADR-0026). The "nothing to do" sentinels (no trailer available, already present
+// locally, no destination, yt-dlp unavailable, entity vanished) come back as
+// baixado=false, err=nil -- only a REAL failure (network, database) propagates err, so the
+// caller (job/goroutine) counts and logs it as a genuine failure.
 func (s *Server) BaixarTrailerEntity(ctx context.Context, entityID string) (bool, error) {
 	_, err := s.baixarTrailerEntityComOpcoes(ctx, entityID, "", "", false)
 	if err == nil {
@@ -1049,13 +1025,11 @@ func (s *Server) BaixarTrailerEntity(ctx context.Context, entityID string) (bool
 	return false, err
 }
 
-// respondErroBaixarTrailer mapeia os sentinels de
-// baixarTrailerEntityComOpcoes para o status HTTP do contrato de POST
-// .../trailer/download (briefing 0102, preservado pela extração do 0104):
-// entity ausente -> 404; lang fora dos permitidos -> 400; yt-dlp
-// indisponível -> 503; sem trailer YouTube no item -> 422; sem pasta de
-// destino -> 404; trailer já existe (sem force) -> 409; falha do próprio
-// download -> 502; qualquer outro erro (banco, settings) -> 500.
+// respondErroBaixarTrailer maps the sentinels of baixarTrailerEntityComOpcoes to the HTTP
+// status of the POST .../trailer/download contract: missing entity -> 404; lang outside the
+// allowed ones -> 400; yt-dlp unavailable -> 503; no YouTube trailer on the item -> 422; no
+// destination folder -> 404; trailer already present (without force) -> 409; failure of the
+// download itself -> 502; any other error (database, settings) -> 500.
 func respondErroBaixarTrailer(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, errEntityNaoEncontrada):
@@ -1080,11 +1054,10 @@ func respondErroBaixarTrailer(w http.ResponseWriter, err error) {
 	}
 }
 
-// postEntityTrailerDownload trata POST /api/v1/entities/{id}/trailer/download
-// (briefing 0102, ADR-0025; extraído para baixarTrailerEntityComOpcoes no
-// briefing 0104): só decodifica o corpo opcional e traduz o retorno de
-// baixarTrailerEntityComOpcoes para status HTTP (respondErroBaixarTrailer) —
-// toda a lógica de resolver vídeo/destino/baixar vive na função pura.
+// postEntityTrailerDownload handles POST /api/v1/entities/{id}/trailer/download (ADR-0025):
+// it only decodes the optional body and translates the return of
+// baixarTrailerEntityComOpcoes into an HTTP status (respondErroBaixarTrailer) — all the
+// logic of resolving video/destination/download lives in the pure function.
 func (s *Server) postEntityTrailerDownload(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -1104,13 +1077,12 @@ func (s *Server) postEntityTrailerDownload(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, trailerDownloadResult{LocalPath: destino})
 }
 
-// baixarTrailerAtomico baixa `video` (s.ytdlp.Baixar) para um arquivo
-// TEMPORÁRIO (destino+".tmp", mesmo diretório do destino final) e só
-// RENOMEIA para o nome canônico em caso de sucesso -- nunca deixa um
-// binário parcial com o nome canônico (mesmo princípio de
-// EscreverArquivoAtomico/RenomearArquivo, adaptado: aqui é o yt-dlp que
-// escreve os bytes, não este processo). Falha em qualquer etapa remove o
-// temporário (best-effort) e propaga o erro.
+// baixarTrailerAtomico downloads `video` (s.ytdlp.Baixar) into a TEMPORARY file
+// (destino+".tmp", the same directory as the final destination) and only RENAMES it to the
+// canonical name on success -- it never leaves a partial binary with the canonical name
+// (the same principle as EscreverArquivoAtomico/RenomearArquivo, adapted: here it is yt-dlp
+// that writes the bytes, not this process). A failure at any step removes the temporary
+// file (best-effort) and propagates the error.
 func (s *Server) baixarTrailerAtomico(ctx context.Context, video richfields.Video, destino string) error {
 	urlOrigem := video.URL
 	if urlOrigem == nil || *urlOrigem == "" {
@@ -1129,35 +1101,34 @@ func (s *Server) baixarTrailerAtomico(ctx context.Context, video richfields.Vide
 	return nil
 }
 
-// ── Tema musical automático via ThemerrDB (briefing 0103, ADR-0025) ────────
+// ── Automatic theme song through ThemerrDB (ADR-0025) ──────────────────────
 //
-// GET .../theme/candidato expõe SE há um candidato do ThemerrDB (sem vazar a
-// URL do YouTube ao cliente — decisão conservadora do briefing §6; o download
-// acontece inteiramente no servidor) e se já existe um theme.* local
-// (reaproveita encontrarArquivoTema). POST .../theme/download baixa o
-// candidato via yt-dlp (0101) para theme.mp3 na raiz da pasta — MESMO path
-// que GET /entities/{id}/theme (0082) já serve. SEM `force`: tema é singular
-// por pasta, então um theme.* já presente (baixado antes OU colocado à mão
-// pelo dono) NUNCA é sobrescrito — o dono apaga manualmente antes de
-// re-baixar (briefing §6, ao contrário do trailer).
+// GET .../theme/candidato exposes WHETHER there is a ThemerrDB candidate (without leaking
+// the YouTube URL to the client — a conservative decision; the download happens entirely on
+// the server) and whether a local theme.* already exists (reusing encontrarArquivoTema).
+// POST .../theme/download downloads the candidate through yt-dlp into theme.mp3 at the root
+// of the folder — the SAME path that GET /entities/{id}/theme already serves. WITHOUT
+// `force`: the theme is singular per folder, so an already present theme.* (downloaded
+// before OR placed by hand by the owner) is NEVER overwritten — the owner deletes it
+// manually before re-downloading (unlike the trailer).
 
-// nomeFonteThemerrdb é o `source` hardcoded do envelope de candidato em
-// media_external — hoje só a ThemerrDB implementa provider.TemaMusicalProvider
-// (mesmo precedente de "fanarttv" hardcoded em coletarInventarioFanart,
+// nomeFonteThemerrdb is the hardcoded `source` of the candidate envelope in
+// media_external — today only ThemerrDB implements provider.TemaMusicalProvider (the same
+// precedent as "fanarttv" hardcoded in coletarInventarioFanart,
 // internal/server/artwork.go).
 const nomeFonteThemerrdb = "themerrdb"
 
-// themeCandidatoResult é o corpo de GET .../theme/candidato.
+// themeCandidatoResult is the body of GET .../theme/candidato.
 type themeCandidatoResult struct {
 	Disponivel bool `json:"disponivel"`
 	JaTemLocal bool `json:"ja_tem_local"`
 }
 
-// candidatoTemaURL lê o envelope de candidato de tema musical (media_external,
-// source=themerrdb, chave provider.ChaveEnvelopeTemaMusical) gravado pelo
-// enrich (internal/enrich/tema_musical.go) — NUNCA consulta o ThemerrDB ao
-// vivo. ok=false quando não há linha, o payload é ilegível, ou o envelope não
-// carrega URL (candidato "sem match" gravado do mesmo jeito, best-effort).
+// candidatoTemaURL reads the theme song candidate envelope (media_external,
+// source=themerrdb, key provider.ChaveEnvelopeTemaMusical) written by enrich
+// (internal/enrich/tema_musical.go) — it NEVER queries ThemerrDB live. ok=false when there
+// is no row, the payload is unreadable, or the envelope carries no URL (a "no match"
+// candidate is written anyway, best-effort).
 func (s *Server) candidatoTemaURL(ctx context.Context, entityID string) (string, bool) {
 	row, err := s.leitura().ObterMediaExternalPorFonte(ctx, sqlcgen.ObterMediaExternalPorFonteParams{
 		EntityID: entityID,
@@ -1177,11 +1148,11 @@ func (s *Server) candidatoTemaURL(ctx context.Context, entityID string) (string,
 	return url, true
 }
 
-// getEntityThemeCandidato trata GET /api/v1/entities/{id}/theme/candidato
-// (briefing 0103): diz se há um candidato do ThemerrDB e se já existe um
-// theme.* local. 404 quando a entity não existe. Nunca falha por a entity não
-// ter pasta de destino (media_file ausente) — nesse caso `ja_tem_local`
-// simplesmente vem false, junto do que `disponivel` já indicar.
+// getEntityThemeCandidato handles GET /api/v1/entities/{id}/theme/candidato: it tells
+// whether there is a ThemerrDB candidate and whether a local theme.* already exists. 404
+// when the entity does not exist. It never fails because the entity has no destination
+// folder (missing media_file) — in that case `ja_tem_local` simply comes out false, along
+// with whatever `disponivel` already indicates.
 func (s *Server) getEntityThemeCandidato(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -1207,19 +1178,18 @@ func (s *Server) getEntityThemeCandidato(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// themeDownloadResult é o corpo de sucesso de POST .../theme/download.
+// themeDownloadResult is the success body of POST .../theme/download.
 type themeDownloadResult struct {
 	LocalPath string `json:"local_path"`
 }
 
-// postEntityThemeDownload trata POST /api/v1/entities/{id}/theme/download
-// (briefing 0103, ADR-0025): baixa o candidato cacheado (media_external,
-// source=themerrdb) via yt-dlp para theme.mp3 na raiz da pasta — MESMO path
-// que GET /entities/{id}/theme (0082) já serve. 503 sem yt-dlp disponível;
-// 422 sem candidato; 404 sem pasta de destino (sem media_file present); 409
-// quando já existe um theme.* local (baixado antes OU colocado à mão pelo
-// dono) — SEM parâmetro `force` nesta entrega (briefing §6: tema é singular
-// por pasta); 502 quando o próprio download falha.
+// postEntityThemeDownload handles POST /api/v1/entities/{id}/theme/download (ADR-0025):
+// it downloads the cached candidate (media_external, source=themerrdb) through yt-dlp into
+// theme.mp3 at the root of the folder — the SAME path that GET /entities/{id}/theme already
+// serves. 503 without yt-dlp available; 422 without a candidate; 404 without a destination
+// folder (no present media_file); 409 when a local theme.* already exists (downloaded before
+// OR placed by hand by the owner) — WITHOUT a `force` parameter in this delivery (the theme
+// is singular per folder); 502 when the download itself fails.
 func (s *Server) postEntityThemeDownload(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -1234,16 +1204,15 @@ func (s *Server) postEntityThemeDownload(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, themeDownloadResult{LocalPath: destino})
 }
 
-// baixarTemaEntityComOpcoes é a implementação PURA (sem
-// http.ResponseWriter) de "baixar o tema musical para UMA entity": lê o
-// candidato cacheado (media_external, source=themerrdb — NUNCA consulta o
-// ThemerrDB ao vivo, candidatoTemaURL), resolve a pasta de destino e baixa
-// via yt-dlp para theme.mp3 na raiz da pasta — MESMO path que GET
-// /entities/{id}/theme (0082) já serve. SEM `force`: tema é singular por
-// pasta, um theme.* já presente NUNCA é sobrescrito. Reaproveitada por
-// postEntityThemeDownload (traduz o erro em status HTTP via
-// respondErroBaixarTema/errors.Is) e por BaixarTemaEntity (job
-// trailer_tema_faltantes e gatilho automático do scan, briefing 0104).
+// baixarTemaEntityComOpcoes is the PURE implementation (no http.ResponseWriter) of
+// "download the theme song for ONE entity": it reads the cached candidate (media_external,
+// source=themerrdb — it NEVER queries ThemerrDB live, candidatoTemaURL), resolves the
+// destination folder and downloads through yt-dlp into theme.mp3 at the root of the folder —
+// the SAME path that GET /entities/{id}/theme already serves. WITHOUT `force`: the theme is
+// singular per folder, an already present theme.* is NEVER overwritten. Reused by
+// postEntityThemeDownload (it translates the error into an HTTP status through
+// respondErroBaixarTema/errors.Is) and by BaixarTemaEntity (trailer_tema_faltantes job and
+// automatic scan trigger).
 func (s *Server) baixarTemaEntityComOpcoes(ctx context.Context, entityID string) (destino string, err error) {
 	ent, err := s.leitura().ObterEntity(ctx, entityID)
 	if err != nil {
@@ -1287,12 +1256,11 @@ func (s *Server) baixarTemaEntityComOpcoes(ctx context.Context, entityID string)
 	return dest, nil
 }
 
-// BaixarTemaEntity baixa (best-effort) o tema musical de `entityID` -- usada
-// pelo job trailer_tema_faltantes (internal/job/trailertema) e pelo gatilho
-// automático do scan (briefing 0104, ADR-0026). Sentinels de "nada a fazer"
-// (sem candidato, já existe local, sem destino, yt-dlp indisponível, entity
-// sumiu) voltam como baixado=false, err=nil -- só uma falha REAL (rede,
-// banco) propaga err.
+// BaixarTemaEntity downloads (best-effort) the theme song of `entityID` -- used by the
+// trailer_tema_faltantes job (internal/job/trailertema) and by the automatic scan trigger
+// (ADR-0026). The "nothing to do" sentinels (no candidate, already present locally, no
+// destination, yt-dlp unavailable, entity vanished) come back as baixado=false, err=nil --
+// only a REAL failure (network, database) propagates err.
 func (s *Server) BaixarTemaEntity(ctx context.Context, entityID string) (bool, error) {
 	_, err := s.baixarTemaEntityComOpcoes(ctx, entityID)
 	if err == nil {
@@ -1304,12 +1272,10 @@ func (s *Server) BaixarTemaEntity(ctx context.Context, entityID string) (bool, e
 	return false, err
 }
 
-// respondErroBaixarTema mapeia os sentinels de baixarTemaEntityComOpcoes
-// para o status HTTP do contrato de POST .../theme/download (briefing 0103,
-// preservado pela extração do 0104): entity ausente -> 404; yt-dlp
-// indisponível -> 503; sem candidato -> 422; sem pasta de destino -> 404;
-// tema já existe -> 409; falha do próprio download -> 502; qualquer outro
-// erro (banco) -> 500.
+// respondErroBaixarTema maps the sentinels of baixarTemaEntityComOpcoes to the HTTP status
+// of the POST .../theme/download contract: missing entity -> 404; yt-dlp unavailable -> 503;
+// no candidate -> 422; no destination folder -> 404; theme already present -> 409; failure
+// of the download itself -> 502; any other error (database) -> 500.
 func respondErroBaixarTema(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, errEntityNaoEncontrada):
@@ -1332,11 +1298,10 @@ func respondErroBaixarTema(w http.ResponseWriter, err error) {
 	}
 }
 
-// baixarTemaAtomico baixa `urlOrigem` (s.ytdlp.Baixar) para um arquivo
-// TEMPORÁRIO no mesmo diretório do destino final e só RENOMEIA para o nome
-// canônico em caso de sucesso — mesmo princípio de baixarTrailerAtomico
-// (0102), adaptado: aqui a URL já chega pronta do candidato cacheado, sem
-// richfields.Video envolvido.
+// baixarTemaAtomico downloads `urlOrigem` (s.ytdlp.Baixar) into a TEMPORARY file in the
+// same directory as the final destination and only RENAMES it to the canonical name on
+// success — the same principle as baixarTrailerAtomico, adapted: here the URL already
+// arrives ready from the cached candidate, with no richfields.Video involved.
 func (s *Server) baixarTemaAtomico(ctx context.Context, urlOrigem, destino string) error {
 	destinoTemp := destino + ".tmp"
 	if err := s.ytdlp.Baixar(ctx, urlOrigem, destinoTemp); err != nil {

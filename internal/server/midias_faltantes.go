@@ -1,14 +1,13 @@
 package server
 
-// midias_faltantes.go implementa a materialização "sob demanda" reusada pelo
-// job midias_faltantes (briefing 0064, internal/job/midiasfaltantes): para
-// UMA entity, materializa fisicamente na pasta REAL da biblioteca a arte HOJE
-// VENCEDORA (mesmo agregador da galeria, montarGruposArtwork/artwork.go,
-// 0048) de cada kind relevante, e o .nfo quando ausente (mesma função
-// gravarNFO do 0062, localmedia_handlers.go). Nunca escolhe um candidato
-// diferente do que a UI já mostraria como topo -- só aplica no disco o que já
-// é a escolha vigente (briefing 0064 §3, explicitamente FORA de escopo:
-// auto-selecionar quando NADA foi resolvido ainda).
+// midias_faltantes.go implements the "on demand" materialization reused by the
+// midias_faltantes job: for ONE entity, it physically materializes in the REAL
+// library folder the artwork WINNING TODAY (same aggregator as the gallery,
+// montarGruposArtwork/artwork.go) of each relevant kind, and the .nfo when absent (same
+// gravarNFO function of localmedia_handlers.go). It never chooses a candidate
+// different from the one the UI would already show as top -- it only applies to disk what
+// is already the current choice (explicitly OUT of scope:
+// auto-selecting when NOTHING has been resolved yet).
 
 import (
 	"bytes"
@@ -25,45 +24,39 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 )
 
-// kindsMidiasFaltantes são os kinds de arte de NÍVEL DE OBRA que o job
-// materializa (briefing 0064 §4 cita "poster, fanart, banner, clearlogo,
-// discart, landscape" -- os três últimos usam a NOMENCLATURA DE ARQUIVO do
-// internal/localmedia (KindClearlogo/KindDiscart/KindLandscape), não o
-// vocabulário de asset.kind gravado no banco e agrupado por
-// montarGruposArtwork (assets.go/fanarttv.go: poster, fanart, banner, logo,
-// clearart, disc, thumb, characterart -- "clearlogo"/"discart"/"landscape"
-// NUNCA aparecem como chave desse agregador). Decisão de implementação (não
-// 100% explícita no briefing, resolvendo essa divergência de vocabulário):
-// usamos aqui o vocabulário REAL do agregador, mapeando pela intenção --
-// poster, fanart, banner, logo (equivalente de "clearlogo" na pasta real),
-// disc (equivalente de "discart") e thumb (arte 16:9 de nível de série/filme,
-// o equivalente mais próximo de "landscape" no vocabulário existente:
-// kindsTV mapeia "tvthumb"->"thumb" na fanart.tv). `still` fica de fora --
-// é SEMPRE por EPISÓDIO (briefing 0044), fora do escopo deste job de nível
-// de obra.
+// kindsMidiasFaltantes are the WORK-LEVEL artwork kinds that the job
+// materializes ("poster, fanart, banner, clearlogo, discart, landscape" -- the last
+// three use the FILE NAMING of internal/localmedia
+// (KindClearlogo/KindDiscart/KindLandscape), not the asset.kind vocabulary stored in the
+// database and grouped by montarGruposArtwork (assets.go/fanarttv.go: poster, fanart,
+// banner, logo, clearart, disc, thumb, characterart -- "clearlogo"/"discart"/"landscape"
+// NEVER appear as a key of that aggregator). Implementation decision (not
+// 100% explicit in the docs, resolving this vocabulary divergence):
+// we use here the REAL vocabulary of the aggregator, mapping by intent --
+// poster, fanart, banner, logo (equivalent of "clearlogo" in the real folder),
+// disc (equivalent of "discart") and thumb (16:9 series/movie-level artwork,
+// the closest equivalent of "landscape" in the existing vocabulary:
+// kindsTV maps "tvthumb"->"thumb" in fanart.tv). `still` stays out --
+// it is ALWAYS per EPISODE, outside the scope of this work-level job.
 var kindsMidiasFaltantes = []string{kindPoster, kindFanart, kindBanner, kindLogo, kindDisc, kindThumb}
 
-// ListarEntitiesComMediaFilePresente devolve os ids de TODA entity elegível
-// para o job midias_faltantes (briefing 0064, estendido pelo 0081 e 0116):
-// movie/tv com media_file 'present' direto (ListarEntityIDsComMediaFilePresente --
-// media_file.entity_id aponta pra SÉRIE, nunca season/episódio, ver
-// internal/scanner/serie.go gravarArquivoSerie), MAIS season com ao menos um
-// episódio descendente presente (ListarSeasonIDsComEpisodioPresente --
-// habilita o pôster de temporada) MAIS episódio com media_file presente via
-// a junção media_file_entity (ListarEpisodeIDsComMediaFilePresente --
-// habilita o NFO do episódio) MAIS artista/album de música com ao menos uma
-// FAIXA descendente presente (ListarEntitiesMusicaComFaixaPossuida, briefing
-// 0116 -- media_file.entity_id de música só aponta pra faixa, ADR-0027; sem
-// isso o job nunca alcançava artista/album, então capa de álbum e foto de
-// artista nunca eram materializadas mesmo com o toggle de auto-download
-// ligado). Season aparecer aqui NÃO contradiz a guarda de
-// gravarNFOSeFaltante (season não tem NFO próprio) -- só passa a
-// materializar arte de nível de temporada.
-// ContarMediaFilesEmEstadoMissing devolve quantos media_file estao em estado
-// 'missing' no momento da chamada (briefing 0128, Caso A) -- wrapper fino
-// sobre a query sqlc, consumido pelo resumo do job midias_faltantes
-// (internal/job/midiasfaltantes) para tornar visivel um sinal de
-// instabilidade do mount remoto que hoje nao aparece em lugar nenhum.
+// ListarEntitiesComMediaFilePresente returns the ids of EVERY entity eligible
+// for the midias_faltantes job: movie/tv with a direct 'present' media_file
+// (ListarEntityIDsComMediaFilePresente -- media_file.entity_id points at the SERIES,
+// never season/episode, see internal/scanner/serie.go gravarArquivoSerie), PLUS season
+// with at least one present descendant episode (ListarSeasonIDsComEpisodioPresente -- it
+// enables the season poster) PLUS episode with a present media_file via the
+// media_file_entity join (ListarEpisodeIDsComMediaFilePresente -- it enables the episode
+// NFO) PLUS music artist/album with at least one present descendant TRACK
+// (ListarEntitiesMusicaComFaixaPossuida -- the media_file.entity_id of music only points
+// at the track, ADR-0027; without this the job never reached artist/album, so album cover
+// and artist picture were never materialized even with the auto-download toggle on).
+// Season appearing here does NOT contradict the gravarNFOSeFaltante guard (season has no
+// NFO of its own) -- it only starts materializing season-level artwork.
+// ContarMediaFilesEmEstadoMissing returns how many media_file rows are in the 'missing'
+// state at the time of the call -- a thin wrapper over the sqlc query, consumed by the
+// midias_faltantes job summary to make visible a sign of instability of the remote mount
+// that today does not appear anywhere.
 func (s *Server) ContarMediaFilesEmEstadoMissing(ctx context.Context) (int64, error) {
 	return s.leitura().ContarMediaFilesEmEstadoMissing(ctx)
 }
@@ -93,26 +86,26 @@ func (s *Server) ListarEntitiesComMediaFilePresente(ctx context.Context) ([]stri
 	return ids, nil
 }
 
-// MaterializarMidiasFaltantes materializa, para UMA entity, a arte vencedora
-// (agregador montarGruposArtwork) de cada kind de kindsMidiasFaltantes ainda
-// sem local_path, e o NFO quando entity.nfo_path é nulo -- o corpo do job
-// midias_faltantes (briefing 0064), também chamável isoladamente (não-HTTP,
-// é isso que internal/job/midiasfaltantes.Materializador consome). Erro só
-// propaga em falha real de LEITURA da entity (banco fora do ar); falhas
-// pontuais de download/materialização de UM kind ou do NFO são logadas e
-// puladas (best-effort -- mesmo espírito do resto do sistema de jobs,
-// 0053/0054/0056), nunca abortam as demais.
+// MaterializarMidiasFaltantes materializes, for ONE entity, the winning artwork
+// (montarGruposArtwork aggregator) of each kind of kindsMidiasFaltantes still
+// without local_path, and the NFO when entity.nfo_path is null -- the body of the
+// midias_faltantes job, also callable in isolation (non-HTTP, that is what
+// internal/job/midiasfaltantes.Materializador consumes). An error only
+// propagates on a real READ failure of the entity (database down); punctual failures of
+// download/materialization of ONE kind or of the NFO are logged and
+// skipped (best-effort -- same spirit as the rest of the job system),
+// they never abort the others.
 func (s *Server) MaterializarMidiasFaltantes(ctx context.Context, entityID string) (artesBaixadas []string, nfoGravado bool, err error) {
 	ent, err := s.leitura().ObterEntity(ctx, entityID)
 	if err != nil {
 		return nil, false, err
 	}
 
-	// materializarPosterDeArtista roda ANTES do loop de kindsMidiasFaltantes de propósito:
-	// ela usa o vencedor AINDA-NÃO-MATERIALIZADO do kind `thumb` (com SrcURL, pra baixar) --
-	// se rodasse depois, o próprio loop abaixo (kindsMidiasFaltantes inclui "thumb") já
-	// teria materializado o thumb como asset LOCAL sem SrcURL, e o alias não acharia nada
-	// pra baixar.
+	// materializarPosterDeArtista runs BEFORE the kindsMidiasFaltantes loop on purpose:
+	// it uses the NOT-YET-MATERIALIZED winner of the `thumb` kind (with SrcURL, to
+	// download) -- if it ran later, the loop below itself (kindsMidiasFaltantes includes
+	// "thumb") would already have materialized the thumb as a LOCAL asset without SrcURL,
+	// and the alias would find nothing to download.
 	if ok, kerr := s.materializarPosterDeArtista(ctx, ent); kerr != nil {
 		log.Printf("midias_faltantes: falha ao materializar o poster da entity artista %q (best-effort, ignorado): %v", entityID, kerr)
 	} else if ok {
@@ -121,7 +114,7 @@ func (s *Server) MaterializarMidiasFaltantes(ctx context.Context, entityID strin
 
 	for _, kind := range kindsMidiasFaltantes {
 		if kind == kindPoster && ent.Type == tipoEntArtista {
-			continue // já tratado por materializarPosterDeArtista acima (alias thumb->poster) -- reprocessar aqui contaria a mesma arte duas vezes em artesBaixadas
+			continue // already handled by materializarPosterDeArtista above (thumb->poster alias) -- reprocessing here would count the same artwork twice in artesBaixadas
 		}
 		ok, kerr := s.materializarKindVencedor(ctx, ent, kind)
 		if kerr != nil {
@@ -140,14 +133,14 @@ func (s *Server) MaterializarMidiasFaltantes(ctx context.Context, entityID strin
 	return artesBaixadas, nfoGravado, nil
 }
 
-// materializarKindVencedor pega o PRIMEIRO item do agregador
-// (montarGruposArtwork, MESMA precedência da galeria/0048/0062 --
-// ordenarGruposArtwork já ordena is_principal desc, is_local_in_library desc)
-// para `kind` e materializa fisicamente na pasta real quando ainda faltava --
-// nunca escolhe um candidato diferente do que a UI já mostraria como topo.
-// Devolve ok=false sem erro quando não há candidato para o kind OU o
-// vencedor já está materializado (local_path preenchido) -- ambos "nada a
-// fazer", não é falha.
+// materializarKindVencedor takes the FIRST item of the aggregator
+// (montarGruposArtwork, SAME precedence as the gallery --
+// ordenarGruposArtwork already sorts is_principal desc, is_local_in_library desc)
+// for `kind` and materializes it physically in the real folder when it was still missing --
+// it never chooses a candidate different from the one the UI would already show as top.
+// It returns ok=false without an error when there is no candidate for the kind OR the
+// winner is already materialized (local_path filled) -- both "nothing to
+// do", not a failure.
 func (s *Server) materializarKindVencedor(ctx context.Context, ent sqlcgen.Entity, kind string) (bool, error) {
 	grupos := s.montarGruposArtwork(ctx, ent.ID)
 	candidatos := grupos[kind]
@@ -168,13 +161,13 @@ func (s *Server) materializarKindVencedor(ctx context.Context, ent sqlcgen.Entit
 	}
 
 	if vencedor.SrcURL == "" {
-		return false, nil // sem URL de origem conhecida -- nada a baixar
+		return false, nil // no known origin URL -- nothing to download
 	}
 	asset, err := s.baixarEMaterializarArte(ctx, ent.ID, vencedor.SrcURL, kind)
 	if err != nil {
 		if errors.Is(err, errBaixarArte) {
-			// Falha de DOWNLOAD (rede/status/tipo) -- best-effort, não é erro
-			// de infra (mesmo tratamento de baixarMelhorArteDoKind, 0059).
+			// DOWNLOAD failure (network/status/type) -- best-effort, it is not an
+			// infrastructure error (same treatment as baixarMelhorArteDoKind).
 			return false, nil
 		}
 		return false, err
@@ -182,21 +175,20 @@ func (s *Server) materializarKindVencedor(ctx context.Context, ent sqlcgen.Entit
 	return s.materializarAssetOuCache(ctx, ent, asset)
 }
 
-// reconfirmarAssetLocalNaLibrary trata o caso "o banco diz que o vencedor já
-// está materializado na pasta real" (vencedor.IsLocalInLibrary) -- extraído
-// de materializarKindVencedor para manter a complexidade ciclomática baixa.
-// Quando o asset já É o principal do kind, delega a convergirNomeCanonico
-// (briefing 0128, Caso B: DIRETÓRIO + nome podem ter mudado desde a
-// materialização, ex.: local_path legado pré-briefing-0081 apontando pra
-// dentro de "Season 01" em vez da raiz da série) -- persiste o novo
-// local_path quando o destino muda. Deliberadamente NÃO reusa
-// renomearParaBare (usado por PUT .../prefer): aquela função preserva o
-// DIRETÓRIO atual do asset por design (só resolve bare-vs-rotacionado
-// dentro da pasta já correta) -- aqui o próprio diretório pode estar errado.
-// Um asset local NÃO-principal (edge case: nenhum asset do kind é principal)
-// só recebe o self-heal simples do briefing 0127 (regravar in-place se o
-// arquivo sumiu) -- recalcular o nome bare pra ele colidiria com o nome que
-// o verdadeiro principal deveria ocupar (ver briefing 0128 §6).
+// reconfirmarAssetLocalNaLibrary handles the case "the database says the winner is
+// already materialized in the real folder" (vencedor.IsLocalInLibrary) -- extracted
+// from materializarKindVencedor to keep the cyclomatic complexity low.
+// When the asset already IS the principal of the kind, it delegates to
+// convergirNomeCanonico (the DIRECTORY + name may have changed since the
+// materialization, e.g.: a legacy local_path pointing into "Season 01" instead of the
+// series root) -- it persists the new local_path when the destination changes. It
+// deliberately does NOT reuse renomearParaBare (used by PUT .../prefer): that function
+// preserves the current DIRECTORY of the asset by design (it only resolves
+// bare-vs-rotated inside the already correct folder) -- here the directory itself may be
+// wrong. A NON-principal local asset (edge case: no asset of the kind is principal)
+// only gets the simple self-heal (rewrite in place if the
+// file disappeared) -- recalculating the bare name for it would collide with the name the
+// real principal should occupy.
 func (s *Server) reconfirmarAssetLocalNaLibrary(ctx context.Context, ent sqlcgen.Entity, asset sqlcgen.Asset) (bool, error) {
 	if asset.IsPrincipal != 0 {
 		haviaSumido := !arquivoLocalAindaExiste(asset.LocalPath.String)
@@ -205,7 +197,7 @@ func (s *Server) reconfirmarAssetLocalNaLibrary(ctx context.Context, ent sqlcgen
 			return false, err
 		}
 		if destino == asset.LocalPath.String {
-			return haviaSumido, nil // sem drift de nome; convergirNomeCanonico já cobre o self-heal do 0127 (regravado in-place se o arquivo tinha sumido)
+			return haviaSumido, nil // no name drift; convergirNomeCanonico already covers the self-heal (rewritten in place if the file had disappeared)
 		}
 		if err := sqlcgen.New(s.db.Write).AtualizarAssetLocalPath(ctx, sqlcgen.AtualizarAssetLocalPathParams{
 			LocalPath: sql.NullString{String: destino, Valid: true},
@@ -213,34 +205,34 @@ func (s *Server) reconfirmarAssetLocalNaLibrary(ctx context.Context, ent sqlcgen
 		}); err != nil {
 			return false, err
 		}
-		return true, nil // convergência: arquivo renomeado pro destino canônico atual
+		return true, nil // convergence: file renamed to the current canonical destination
 	}
 
-	// briefing 0127: a coluna do banco diz "já materializado", mas o arquivo
-	// pode ter sumido fisicamente (mount remoto rclone/gdrive, exclusão
-	// externa) -- reconfirma via os.Stat antes de pular.
+	// The database column says "already materialized", but the file
+	// may have physically disappeared (remote rclone/gdrive mount, external
+	// deletion) -- recheck via os.Stat before skipping.
 	if arquivoLocalAindaExiste(asset.LocalPath.String) {
-		return false, nil // já materializado, nada a fazer
+		return false, nil // already materialized, nothing to do
 	}
 	if _, err := s.regravarBinarioAssetNoLocalPathExistente(ctx, asset); err != nil {
 		return false, err
 	}
-	return true, nil // autocura: regravado no mesmo local_path
+	return true, nil // self-heal: rewritten at the same local_path
 }
 
-// convergirNomeCanonico recalcula o destino canônico ATUAL (DIRETÓRIO + nome
-// bare) de um asset já local via resolverDestino, e RENOMEIA (rename, nunca
-// recopia bytes) o arquivo físico se divergir do local_path registrado --
-// briefing 0128, Caso B. Diferente de renomearParaBare
-// (localmedia_handlers.go, usado por PUT .../prefer): aquela função só
-// resolve bare-vs-rotacionado MANTENDO o diretório atual (`filepath.Dir`)
-// por design, porque no fluxo de troca de principal o asset já está na pasta
-// certa; aqui o próprio DIRETÓRIO pode estar errado (naming legado
-// pré-briefing-0081, ex.: asset gravado dentro de "Season 01" quando deveria
-// estar na raiz da série) -- recalcular só o nome sem recalcular o
-// diretório NÃO fecharia esse gap. Quando o destino recalculado é igual ao
-// atual, cai no MESMO self-heal do briefing 0127 (regrava in-place se o
-// arquivo tiver sumido do disco).
+// convergirNomeCanonico recalculates the CURRENT canonical destination (DIRECTORY + bare
+// name) of an already local asset via resolverDestino, and RENAMES (rename, never
+// re-copies bytes) the physical file if it diverges from the registered local_path.
+// Unlike renomearParaBare
+// (localmedia_handlers.go, used by PUT .../prefer): that function only
+// resolves bare-vs-rotated KEEPING the current directory (`filepath.Dir`)
+// by design, because in the principal-swap flow the asset is already in the right
+// folder; here the DIRECTORY itself may be wrong (legacy naming,
+// e.g.: an asset written inside "Season 01" when it should
+// be at the series root) -- recalculating only the name without recalculating the
+// directory would NOT close that gap. When the recalculated destination is equal to the
+// current one, it falls into the SAME self-heal (rewrites in place if the
+// file has disappeared from disk).
 func (s *Server) convergirNomeCanonico(ctx context.Context, ent sqlcgen.Entity, alvo sqlcgen.Asset) (string, error) {
 	dir, nomeBaseVideo, pastaExclusiva, ok, err := s.resolverDestino(ctx, ent)
 	if err != nil {
@@ -267,19 +259,20 @@ func (s *Server) convergirNomeCanonico(ctx context.Context, ent sqlcgen.Entity, 
 	return destino, nil
 }
 
-// materializarAssetOuCache chama materializarAsset (grava na pasta REAL da biblioteca) e
-// trata errSemDestino como sucesso "só cache" (briefing 0116): álbum/artista de música
-// não tem media_file DIRETO (só a faixa, descendente, liga -- ADR-0027), então
-// resolverDestino nunca acha uma pasta pra eles -- gravarAssetNaPastaReal sempre devolveria
-// errSemDestino. Isso não invalida o ganho do fix: o asset já foi criado no CACHE interno
-// por baixarEMaterializarArte (ANTES desta chamada, ou já existia via ObterAsset), que é
-// tudo que has_poster/o card precisam (entity.sql: EXISTS asset do kind, sem exigir
-// local_path). Materializar capa/foto de música na pasta REAL (arquivo ao lado das faixas)
-// fica FORA de escopo aqui -- exigiria resolver um "diretório canônico" de álbum/artista a
-// partir dos arquivos das faixas descendentes, decisão própria não coberta pelo bug
-// relatado (ausência da capa/foto no card). Para movie/tv/season/episódio (que sempre têm
-// destino resolvível, únicos tipos elegíveis antes do 0116) o comportamento não muda --
-// errSemDestino nunca ocorre pra eles aqui.
+// materializarAssetOuCache calls materializarAsset (writes to the REAL library folder) and
+// treats errSemDestino as a "cache only" success: a music album/artist
+// has no DIRECT media_file (only the track, descendant, links -- ADR-0027), so
+// resolverDestino never finds a folder for them -- gravarAssetNaPastaReal would always
+// return errSemDestino. That does not invalidate the gain of the fix: the asset was
+// already created in the internal CACHE by baixarEMaterializarArte (BEFORE this call, or
+// already existed via ObterAsset), which is all that has_poster/the card need
+// (entity.sql: EXISTS asset of the kind, without requiring local_path). Materializing
+// music cover/picture in the REAL folder (a file next to the tracks) is OUT of scope here
+// -- it would require resolving a "canonical directory" for album/artist from the files of
+// the descendant tracks, its own decision not covered by the reported bug (absence of the
+// cover/picture in the card). For movie/tv/season/episode (which always have a resolvable
+// destination, the only eligible types before) the behavior does not change --
+// errSemDestino never occurs for them here.
 func (s *Server) materializarAssetOuCache(ctx context.Context, ent sqlcgen.Entity, asset sqlcgen.Asset) (bool, error) {
 	if _, err := s.materializarAsset(ctx, ent, asset); err != nil {
 		if errors.Is(err, errSemDestino) {
@@ -290,28 +283,29 @@ func (s *Server) materializarAssetOuCache(ctx context.Context, ent sqlcgen.Entit
 	return true, nil
 }
 
-// materializarPosterDeArtista materializa o "poster" de uma entity artista a partir do
-// vencedor do kind `thumb` (briefing 0116): a fanart.tv não modela um kind próprio de
-// pôster para artista de música (kindsArtista, internal/provider/fanarttv/fanarttv.go, só
-// tem thumb/fanart/logo/banner), mas o card/has_poster (internal/db/queries/entity.sql)
-// só enxerga kind='poster' -- sem este passo, artista NUNCA teria has_poster=true mesmo
-// com foto disponível no inventário. No-op (false, nil) para qualquer tipo != artista, se
-// já existe algo no slot `poster` (materializado ou não -- o loop normal de
-// kindsMidiasFaltantes cuida do resto) ou se não há candidato/URL de origem no kind
-// `thumb`. Sempre baixa (nunca reusa um asset local de OUTRO kind): o thumb já
-// materializado não pode virar poster só trocando a linha do banco, porque
-// materializarAsset nomeia o arquivo na pasta real pelo kind.
+// materializarPosterDeArtista materializes the "poster" of an artist entity from the
+// winner of the `thumb` kind: fanart.tv does not model a poster kind of its own
+// for a music artist (kindsArtista, internal/provider/fanarttv/fanarttv.go, only
+// has thumb/fanart/logo/banner), but the card/has_poster
+// (internal/db/queries/entity.sql) only sees kind='poster' -- without this step, an artist
+// would NEVER have has_poster=true even with a picture available in the inventory. No-op
+// (false, nil) for any type != artista, if there is already something in the `poster` slot
+// (materialized or not -- the normal loop of kindsMidiasFaltantes takes care of the rest)
+// or if there is no candidate/origin URL in the `thumb` kind. It always downloads (it never
+// reuses a local asset from ANOTHER kind): the already materialized thumb cannot become a
+// poster just by swapping the database row, because materializarAsset names the file in
+// the real folder by the kind.
 func (s *Server) materializarPosterDeArtista(ctx context.Context, ent sqlcgen.Entity) (bool, error) {
 	if ent.Type != tipoEntArtista {
 		return false, nil
 	}
 	grupos := s.montarGruposArtwork(ctx, ent.ID)
 	if len(grupos[kindPoster]) > 0 {
-		return false, nil // ja tem poster (o loop normal de kindsMidiasFaltantes cuida do resto)
+		return false, nil // it already has a poster (the normal kindsMidiasFaltantes loop takes care of the rest)
 	}
 	candidatos := grupos[kindThumb]
 	if len(candidatos) == 0 || candidatos[0].SrcURL == "" {
-		return false, nil // sem candidato de thumb, ou o vencedor e um asset local (sem SrcURL)
+		return false, nil // no thumb candidate, or the winner is a local asset (no SrcURL)
 	}
 
 	asset, err := s.baixarEMaterializarArte(ctx, ent.ID, candidatos[0].SrcURL, kindPoster)
@@ -324,15 +318,15 @@ func (s *Server) materializarPosterDeArtista(ctx context.Context, ent sqlcgen.En
 	return s.materializarAssetOuCache(ctx, ent, asset)
 }
 
-// MaterializarSeAutoDownloadLigado é o adaptador que satisfaz
-// scanner.Materializador (briefing 0089): chamado pelo scanner logo após
-// QUALQUER auto-import bem-sucedido (filme via TentarAutoMatchFilme, série
-// via ImportarSeriePorNome). Toggle desligado (default) ⇒ no-op, sem tocar o
-// disco -- só quando o dono ligou "materializar artes automaticamente" em
-// Configurações a materialização de fato roda, reusando
-// MaterializarMidiasFaltantes (0064) sem lógica nova. err só propaga em
-// falha real de leitura da config/entity; falhas pontuais de download já são
-// absorvidas (best-effort) dentro de MaterializarMidiasFaltantes.
+// MaterializarSeAutoDownloadLigado is the adapter that satisfies
+// scanner.Materializador: called by the scanner right after
+// ANY successful auto-import (movie via TentarAutoMatchFilme, series
+// via ImportarSeriePorNome). Toggle off (default) ⇒ no-op, without touching the
+// disk -- only when the owner turned on "materialize artwork automatically" in
+// Settings does the materialization actually run, reusing
+// MaterializarMidiasFaltantes without new logic. err only propagates on a real
+// failure reading the config/entity; punctual download failures are already
+// absorbed (best-effort) inside MaterializarMidiasFaltantes.
 func (s *Server) MaterializarSeAutoDownloadLigado(ctx context.Context, entityID string) error {
 	s.dispararTrailerTemaAutomaticoSeLigado(ctx, entityID)
 
@@ -344,17 +338,16 @@ func (s *Server) MaterializarSeAutoDownloadLigado(ctx context.Context, entityID 
 	return err
 }
 
-// dispararTrailerTemaAutomaticoSeLigado dispara, em best-effort e SEM
-// bloquear o chamador, uma tentativa de baixar trailer/tema para `entityID`
-// quando o toggle "baixar_trailer_tema_automaticamente" está ligado
-// (briefing 0104, ADR-0026 item 3). A leitura do toggle é síncrona (settings
-// já ficam em cache, custo desprezível); o download em si roda numa
-// goroutine com contexto PRÓPRIO (context.Background(), NUNCA o do request
-// HTTP do scan -- que morre assim que a resposta é enviada) e timeout
-// generoso, já que baixar vídeo via yt-dlp é ordens de magnitude mais lento
-// que uma imagem (briefing 0102 §6). Falha (rede, sem candidato, yt-dlp
-// indisponível) só é logada -- o job periódico trailer_tema_faltantes cobre
-// depois, se ligado (ADR-0026 item 4).
+// dispararTrailerTemaAutomaticoSeLigado triggers, best-effort and WITHOUT
+// blocking the caller, an attempt to download trailer/theme for `entityID`
+// when the "baixar_trailer_tema_automaticamente" toggle is on (ADR-0026
+// item 3). Reading the toggle is synchronous (settings are already cached,
+// negligible cost); the download itself runs in a goroutine with its OWN context
+// (context.Background(), NEVER the one of the HTTP request of the scan -- which dies as
+// soon as the response is sent) and a generous timeout, since downloading video via
+// yt-dlp is orders of magnitude slower than an image. A failure (network, no candidate,
+// yt-dlp unavailable) is only logged -- the periodic trailer_tema_faltantes job covers it
+// later, if enabled (ADR-0026 item 4).
 func (s *Server) dispararTrailerTemaAutomaticoSeLigado(ctx context.Context, entityID string) {
 	cfg, err := s.obterAutoDownloadTrailerTemaSettings(ctx)
 	if err != nil || !cfg.Enabled {
@@ -372,21 +365,21 @@ func (s *Server) dispararTrailerTemaAutomaticoSeLigado(ctx context.Context, enti
 	}()
 }
 
-// nfoConvergenteNoDisco decide se o nfo_path já registrado (nfoPathAntigo)
-// está no destino canônico ATUAL e com o CONTEÚDO que o banco produziria
-// agora -- usado por gravarNFOSeFaltante para só pular a regravação quando
-// nada mudou (briefings 0127/0128 e 0134).
+// nfoConvergenteNoDisco decides whether the already registered nfo_path
+// (nfoPathAntigo) is at the CURRENT canonical destination and with the CONTENT the
+// database would produce now -- used by gravarNFOSeFaltante to skip the rewrite only when
+// nothing changed.
 //
-// Até o briefing 0134 esta checagem olhava só o caminho e a presença do
-// arquivo: como entity.nfo_path nunca volta a nulo, um .nfo gravado uma vez
-// ficava congelado para sempre, inclusive um .nfo de 0 byte. Agora monta o
-// XML esperado (MESMO resolverEntity + MontarNFO de gravarNFO, com os campos
-// locais do Kodi/Emby do arquivo em disco preservados) e compara byte a byte.
+// Until recently this check looked only at the path and the presence of the
+// file: since entity.nfo_path never goes back to null, an .nfo written once
+// stayed frozen forever, including a 0-byte .nfo. Now it assembles the
+// expected XML (SAME resolverEntity + MontarNFO of gravarNFO, with the
+// local Kodi/Emby fields of the file on disk preserved) and compares byte by byte.
 //
-// Degradação: falha ao recalcular o destino, ao resolver a entity ou ao ler o
-// arquivo não derruba o job -- cai no guard antigo do 0127 (arquivo existe ⇒
-// convergente) e o chamador loga. err só vem de resolverDestino, que é erro
-// real de banco/disco.
+// Degradation: a failure to recalculate the destination, to resolve the entity or to read
+// the file does not take the job down -- it falls back to the old guard (file exists ⇒
+// convergent) and the caller logs it. err only comes from resolverDestino, which is a real
+// database/disk error.
 func (s *Server) nfoConvergenteNoDisco(ctx context.Context, ent sqlcgen.Entity, resolvida resolver.Entidade, nfoPathAntigo string) (bool, error) {
 	dir, nomeBaseVideo, _, ok, err := s.resolverDestino(ctx, ent)
 	if err != nil {
@@ -397,30 +390,30 @@ func (s *Server) nfoConvergenteNoDisco(ctx context.Context, ent sqlcgen.Entity, 
 	}
 	destinoAtual := filepath.Join(dir, localmedia.NomeArquivoNFO(ent.Type, nomeBaseVideo))
 	if destinoAtual != nfoPathAntigo {
-		return false, nil // destino divergente: o fluxo normal regrava (0128)
+		return false, nil // divergent destination: the normal flow rewrites
 	}
 	existente, err := os.ReadFile(nfoPathAntigo)
 	if err != nil {
-		return false, nil // sumiu ou ilegível: regrava do zero (0127)
+		return false, nil // vanished or unreadable: rewrite from scratch
 	}
 	esperado, err := localmedia.MontarNFO(resolvida, localmedia.ExtrairCamposUsuario(existente))
 	if err != nil {
-		return true, nil // não sabe montar o esperado: mantém o comportamento antigo
+		return true, nil // cannot assemble the expected content: keep the old behavior
 	}
 	return bytes.Equal(esperado, existente), nil
 }
 
-// gravarNFOSeFaltante gera o NFO da entity (mesma função gravarNFO do 0062)
-// quando ainda não existe (entity.nfo_path nulo). season nunca tem NFO
-// próprio (mesma guarda de writeEntityNfo) -- desde o briefing 0081, season
-// PASSA a aparecer no universo de ListarEntitiesComMediaFilePresente (para o
-// pôster de temporada), então esta guarda deixou de ser só defensiva: é ela
-// quem impede o job de tentar gravar um NFO de season. Episódio, por outro
-// lado, também passou a aparecer aqui e AGORA ganha NFO normalmente (kind já
-// suportado por nomeRaizNFO/raizEpisode, só nunca era alcançado antes). Erro
-// só propaga em falha real (banco/disco); "sem pasta de destino"
-// (errSemDestino -- entity sem media_file present, nunca deveria acontecer
-// aqui, mas defensivo) degrada para (false, nil).
+// gravarNFOSeFaltante generates the entity NFO (same gravarNFO function)
+// when it does not exist yet (entity.nfo_path null). season never has an NFO
+// of its own (same guard as writeEntityNfo) -- since season
+// STARTS to appear in the universe of ListarEntitiesComMediaFilePresente (for the
+// season poster), this guard stopped being merely defensive: it is what
+// prevents the job from trying to write a season NFO. Episode, on the other
+// hand, also started to appear here and NOW gets an NFO normally (kind already
+// supported by nomeRaizNFO/raizEpisode, it was just never reached before). An error only
+// propagates on a real failure (database/disk); "no destination folder"
+// (errSemDestino -- entity without a present media_file, it should never happen
+// here, but defensive) degrades to (false, nil).
 func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity) (bool, error) {
 	if ent.Type == tipoEntTemporada {
 		return false, nil
@@ -444,11 +437,10 @@ func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity) (b
 			return false, nil
 		}
 	}
-	// sem NFO registrado, OU conteudo/destino divergente (naming legado ou
-	// banco atualizado depois da gravacao, briefing 0134), OU destino certo
-	// mas arquivo sumido -- cai no fluxo normal abaixo, que sempre grava no
-	// destino recém-calculado (gravarNFO é idempotente por conteúdo;
-	// briefings 0062/0127/0128/0134).
+	// no NFO registered, OR divergent content/destination (legacy naming or
+	// database updated after the write), OR the right destination
+	// but the file missing -- it falls into the normal flow below, which always writes at
+	// the freshly calculated destination (gravarNFO is idempotent by content).
 	resultado, err := s.gravarNFO(ctx, ent, resolvida)
 	if err != nil {
 		if errors.Is(err, errSemDestino) {
@@ -460,13 +452,13 @@ func (s *Server) gravarNFOSeFaltante(ctx context.Context, ent sqlcgen.Entity) (b
 	return true, nil
 }
 
-// removerNfoOrfaoSeMudou remove (best-effort) o .nfo antigo quando
-// gravarNFOSeFaltante regravou num destino DIFERENTE do registrado
-// (naming legado, briefing 0128 Caso B) -- sem isso, o .nfo errado fica
-// órfão ao lado do novo, no lugar certo, e Kodi/Emby podem escanear os
-// dois. Seguro remover: NFO é sempre exportação one-way do sistema, nunca
-// editado pelo dono fora do fluxo do MyMediaDB (AGENTS.md). No-op quando
-// não havia nfo_path registrado antes, ou quando o destino não mudou.
+// removerNfoOrfaoSeMudou removes (best-effort) the old .nfo when
+// gravarNFOSeFaltante rewrote it at a DIFFERENT destination from the registered one
+// (legacy naming) -- without this, the wrong .nfo stays orphaned next to the new one, in
+// the right place, and Kodi/Emby may scan both. Safe to remove: an NFO is always a
+// one-way export of the system, never edited by the owner outside the MyMediaDB flow
+// (AGENTS.md). No-op when there was no nfo_path registered before, or when the destination
+// did not change.
 func removerNfoOrfaoSeMudou(temNfoRegistrado bool, nfoPathAntigo, novoPath string) {
 	if !temNfoRegistrado || nfoPathAntigo == novoPath {
 		return

@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// TestParseFilmesConvencao cobre a leitura do padrão Kodi/Jellyfin para filmes:
-// título, ano, id embutido, edição e parte. É a bateria pura do coração do
-// matching (sem I/O).
+// TestParseFilmesConvencao covers reading the Kodi/Jellyfin pattern for movies:
+// title, year, embedded id, edition and part. It is the pure battery of the heart
+// of matching (no I/O).
 func TestParseFilmesConvencao(t *testing.T) {
 	casos := []struct {
 		nome string
@@ -52,7 +52,7 @@ func TestParseFilmesConvencao(t *testing.T) {
 		{
 			nome: "separadores por ponto",
 			in:   "The.Matrix.1999.1080p.x264",
-			want: Info{Title: "The Matrix 1999"}, // sem "(ano)": 1999 fica no título
+			want: Info{Title: "The Matrix 1999"}, // no "(year)": 1999 stays in the title
 		},
 		{
 			nome: "so token tecnico vira titulo vazio (draft)",
@@ -76,8 +76,8 @@ func TestParseFilmesConvencao(t *testing.T) {
 	}
 }
 
-// TestParseIMDBBracketPrioridade garante que o id IMDb entre colchetes vence a
-// forma pelada e é normalizado para minúsculas.
+// TestParseIMDBBracketPrioridade guarantees that the IMDb id between brackets wins
+// over the bare form and is normalized to lowercase.
 func TestParseIMDBBracketPrioridade(t *testing.T) {
 	got := Parse("Filme (2000) [imdbid-TT0111161]")
 	if got.IMDBID != "tt0111161" {
@@ -85,17 +85,17 @@ func TestParseIMDBBracketPrioridade(t *testing.T) {
 	}
 }
 
-// TestParseEpisodeReconhecidos cobre, por padrão, os nomes que DEVEM virar
-// episódio: SxxEyy simples (com variações de caixa/dígitos), ranges com hífen,
-// episódios colados (Kodi) e absoluto de anime (com range). É a bateria mais
-// frágil do parser — tabela exaustiva de propósito.
+// TestParseEpisodeReconhecidos covers, pattern by pattern, the names that MUST
+// become an episode: plain SxxEyy (with case/digit variations), hyphen ranges,
+// glued episodes (Kodi) and the anime absolute (with a range). It is the most
+// fragile battery of the parser — an exhaustive table on purpose.
 func TestParseEpisodeReconhecidos(t *testing.T) {
 	casos := []struct {
 		nome string
 		in   string
 		want EpisodeInfo
 	}{
-		// ── SxxEyy simples ──
+		// ── Plain SxxEyy ──
 		{"S01E05 padrao", "Os Simpsons S01E05", EpisodeInfo{Season: 1, Episodes: []int{5}}},
 		{"minusculo s01e05", "show s01e05", EpisodeInfo{Season: 1, Episodes: []int{5}}},
 		{"um digito S1E5", "Show S1E5", EpisodeInfo{Season: 1, Episodes: []int{5}}},
@@ -104,14 +104,14 @@ func TestParseEpisodeReconhecidos(t *testing.T) {
 		{"com qualidade depois nao arrasta", "Show S01E05 1080p x264", EpisodeInfo{Season: 1, Episodes: []int{5}}},
 		{"separador por ponto no nome", "Show.Name.S02E10.1080p.WEB-DL", EpisodeInfo{Season: 2, Episodes: []int{10}}},
 		{"separador ponto entre S e E", "Show S01.E03", EpisodeInfo{Season: 1, Episodes: []int{3}}},
-		// ── Ranges com hífen ──
+		// ── Hyphen ranges ──
 		{"range E01-E03", "Show S01E01-E03", EpisodeInfo{Season: 1, Episodes: []int{1, 2, 3}}},
 		{"range E01-03 sem E", "Show S01E01-03", EpisodeInfo{Season: 1, Episodes: []int{1, 2, 3}}},
 		{"range minusculo e05-e06", "show s01e05-e06", EpisodeInfo{Season: 1, Episodes: []int{5, 6}}},
-		// ── Colados (Kodi) ──
+		// ── Glued (Kodi) ──
 		{"colado E01E02", "Show S01E01E02", EpisodeInfo{Season: 1, Episodes: []int{1, 2}}},
 		{"colado E01E02E03", "Show S01E01E02E03", EpisodeInfo{Season: 1, Episodes: []int{1, 2, 3}}},
-		// ── Absoluto (anime) ──
+		// ── Absolute (anime) ──
 		{"absoluto Show - 013", "Naruto - 013", EpisodeInfo{Absolute: []int{13}, IsAbsolute: true}},
 		{"absoluto com grupo", "[HorribleSubs] One Piece - 1000 [1080p]", EpisodeInfo{Absolute: []int{1000}, IsAbsolute: true}},
 		{"absoluto range 013-015", "Show - 013-015", EpisodeInfo{Absolute: []int{13, 14, 15}, IsAbsolute: true}},
@@ -131,9 +131,9 @@ func TestParseEpisodeReconhecidos(t *testing.T) {
 	}
 }
 
-// TestParseEpisodeNegativos garante que nomes que NÃO são episódio (filmes,
-// tokens técnicos, ranges inválidos, absolutos ambíguos) retornam false — o
-// scanner manda para revisão em vez de inventar número.
+// TestParseEpisodeNegativos guarantees that names that are NOT an episode (movies,
+// technical tokens, invalid ranges, ambiguous absolutes) return false — the
+// scanner sends them to review instead of inventing a number.
 func TestParseEpisodeNegativos(t *testing.T) {
 	casos := []struct {
 		nome string

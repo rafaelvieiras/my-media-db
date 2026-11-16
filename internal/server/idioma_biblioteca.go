@@ -1,31 +1,29 @@
 package server
 
-// Este arquivo implementa o resolvedor de IDIOMA DE BUSCA por item (briefing
-// 0084): dado um entity.ID, descobre a(s) biblioteca(s) de origem dos seus
-// arquivos PRESENTES e devolve o idioma preferido delas, quando houver um
-// único valor não-ambíguo -- senão cai no idioma PRINCIPAL global
-// (app_settings.languages.primary), o mesmo comportamento de hoje. É o ponto
-// único que substitui os `lang=""` cegos do auto-match (automatch.go), do
-// enriquecimento retroativo (retroativo.go) e da prévia de match
-// (match_preview.go), e também alimenta o default de EXIBIÇÃO de
-// GET /entities/{id} quando `?lang=` não vem explícito (entities.go).
+// This file implements the per-item SEARCH LANGUAGE resolver: given an entity.ID, it
+// finds the origin library(ies) of its PRESENT files and returns their preferred
+// language, when there is a single non-ambiguous value -- otherwise it falls back to the
+// global PRIMARY language (app_settings.languages.primary), the same behavior as before.
+// It is the single point that replaces the blind `lang=""` of the auto-match
+// (automatch.go), of the retroactive enrichment (retroativo.go) and of the match preview
+// (match_preview.go), and it also feeds the DISPLAY default of GET /entities/{id} when
+// `?lang=` does not come explicitly (entities.go).
 
 import "context"
 
-// idiomaDeBusca resolve o idioma-alvo de busca/exibição para `entityID`:
-//  1. cfg = idioma global (fallback final, sempre válido).
-//  2. Lista os media_file da entity (já ordenados por created_at, id),
-//     filtrando só os `state == "present"`.
-//  3. Para cada arquivo present com library_source_id válido, lê a fonte e
-//     coleta seu preferred_language (quando não-vazio).
-//  4. Exatamente UM valor distinto entre as fontes ⇒ usa esse idioma.
-//     ZERO (nenhuma fonte com preferência) ou DOIS-OU-MAIS valores
-//     distintos (ambíguo, entity com arquivos de bibliotecas diferentes que
-//     discordam) ⇒ usa cfg.Primary -- mesmo comportamento de hoje, sem tela
-//     de decisão manual (briefing 0084 §6).
+// idiomaDeBusca resolves the target search/display language for `entityID`:
+//  1. cfg = global language (final fallback, always valid).
+//  2. Lists the entity's media_file rows (already ordered by created_at, id),
+//     filtering only the `state == "present"` ones.
+//  3. For each present file with a valid library_source_id, it reads the source and
+//     collects its preferred_language (when non-empty).
+//  4. Exactly ONE distinct value among the sources ⇒ it uses that language.
+//     ZERO (no source with a preference) or TWO-OR-MORE distinct values
+//     (ambiguous, an entity with files from different libraries that disagree) ⇒ it uses
+//     cfg.Primary -- the same behavior as before, with no manual decision screen.
 //
-// Erro real de banco propaga; entity sem nenhum arquivo present cai direto em
-// cfg.Primary (nunca erro só por isso).
+// A real database error propagates; an entity without any present file falls straight back
+// to cfg.Primary (never an error just for that).
 func (s *Server) idiomaDeBusca(ctx context.Context, entityID string) (string, error) {
 	cfg, err := s.obterLanguageSettings(ctx)
 	if err != nil {
@@ -44,9 +42,9 @@ func (s *Server) idiomaDeBusca(ctx context.Context, entityID string) (string, er
 		}
 		src, err := s.leitura().ObterLibrarySource(ctx, f.LibrarySourceID.String)
 		if err != nil {
-			// Fonte referenciada sumiu (raríssimo -- FK sem CASCADE aqui não
-			// se aplica, mas degrada em silêncio em vez de propagar um erro
-			// que não é real problema de dado desta entity).
+			// The referenced source vanished (extremely rare -- the FK without CASCADE
+			// does not apply here, but it degrades silently instead of propagating an
+			// error that is not a real data problem of this entity).
 			continue
 		}
 		if src.PreferredLanguage.Valid && src.PreferredLanguage.String != "" {

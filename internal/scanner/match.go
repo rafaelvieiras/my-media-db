@@ -11,13 +11,14 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/naming"
 )
 
-// Limiares de confiança (0–100). São TUNING conservador, não modelo (ADR-0008):
-// id embutido casa 100%; título+ano é palpite alto; título sem ano é baixo
-// (sinalizado); sem título vira draft não-identificado.
+// Confidence thresholds (0–100). They are conservative TUNING, not a model
+// (ADR-0008): an embedded id matches 100%; title+year is a high guess; title
+// without a year is low (flagged); without a title it becomes an unidentified
+// draft.
 const (
-	// tipoFilme é o entity.type do caminho de FILME (o default do scanner: ver
-	// montarFacts/resolverEntity, que grava Type "movie") -- usado pelo despacho
-	// pós-commit (briefing 0135) para escolher o gancho de enriquecimento.
+	// tipoFilme is the entity.type of the MOVIE path (the scanner default: see
+	// montarFacts/resolverEntity, which writes Type "movie") -- used by the
+	// post-commit dispatch to pick the enrichment hook.
 	tipoFilme = "movie"
 
 	confIDExterno   = 100
@@ -26,9 +27,9 @@ const (
 	confDraft       = 0
 )
 
-// gravarArquivo aplica o matching e grava/atualiza o media_file. Dedup por
-// content_hash: se o mesmo conteúdo já existe, ATUALIZA o path (cobre
-// rename/move — idempotente) em vez de criar outra linha.
+// gravarArquivo applies the matching and writes/updates the media_file. Dedup by
+// content_hash: if the same content already exists, it UPDATES the path (covers
+// rename/move — idempotent) instead of creating another row.
 func (r *scanRun) gravarArquivo(ctx context.Context, q *sqlcgen.Queries, f fileFacts) error {
 	if f.isSerie {
 		return r.gravarArquivoSerie(ctx, q, f)
@@ -44,11 +45,11 @@ func (r *scanRun) gravarArquivo(ctx context.Context, q *sqlcgen.Queries, f fileF
 		return err
 	}
 
-	// O hash não bateu com nenhuma linha, mas o PATH pode já ter uma (conteúdo
-	// trocado no lugar -- reencode/substituição, ou mtime/size do provedor
-	// sofreram drift o bastante pra invalidar o short-circuit de
-	// mediaFileInalteradoPorPath). Sem esta checagem, o INSERT abaixo bateria no
-	// UNIQUE(path) e abortaria o lote inteiro.
+	// The hash did not match any row, but the PATH may already have one (content
+	// swapped in place -- reencode/replacement, or mtime/size of the provider
+	// drifted enough to invalidate the short-circuit of
+	// mediaFileInalteradoPorPath). Without this check, the INSERT below would hit
+	// the UNIQUE(path) and abort the whole batch.
 	porPath, err := q.ObterMediaFilePorPath(ctx, f.path)
 	if err == nil {
 		return r.atualizarConteudoMudou(ctx, q, porPath, f)
@@ -80,30 +81,32 @@ func (r *scanRun) gravarArquivo(ctx context.Context, q *sqlcgen.Queries, f fileF
 		return err
 	}
 	if criada {
-		// Só REGISTRA aqui: o gatilho (auto-match + materialização) roda depois do
-		// commit do lote, em despacharNovos (briefing 0135/ADR-0031) -- dentro da
-		// transação ele leria a entity pelo pool de LEITURA (`sql: no rows in result
-		// set`) e, ao escrever, travaria na conexão única de escrita (ADR-0010).
+		// It only RECORDS here: the trigger (auto-match + materialization) runs
+		// after the batch commit, in despacharNovos (ADR-0031) -- inside the
+		// transaction it would read the entity through the READ pool (`sql: no
+		// rows in result set`) and, when writing, would block on the single write
+		// connection (ADR-0010).
 		r.registrarNovo(entidadeNova{id: entityID, tipo: tipoFilme})
 	}
 	return nil
 }
 
-// despacharNovos roda o pós-import das entities criadas na passada de scan, JÁ
-// FORA da transação de escrita (briefing 0135/ADR-0031) -- é o gatilho que antes
-// vivia dentro de gravarArquivo (dispararAutoMatchFilme) e por isso nunca
-// funcionou em produção:
+// despacharNovos runs the post-import of the entities created in the scan pass,
+// ALREADY OUTSIDE the write transaction (ADR-0031) -- it is the trigger that
+// used to live inside gravarArquivo (dispararAutoMatchFilme) and therefore never
+// worked in production:
 //
-//   - filme: tenta casar+enriquecer (TentarAutoMatchFilme, 0089) e, casando,
-//     materializa na hora as artes descobertas quando o toggle está ligado;
-//   - faixa: materializa a arte do ÁLBUM recém-resolvido (o cover mora no
-//     álbum, ADR-0027) quando o toggle está ligado -- a faixa só entra aqui
-//     quando o match passou do rascunho (conf > confDraft);
-//   - série: o gatilho já acontece na fase de FATOS (tentarImportarSerie, que
-//     roda fora de qualquer transação) -- nada a fazer aqui.
+//   - movie: it tries to match+enrich (TentarAutoMatchFilme, 0089) and, when it
+//     matches, materializes the discovered artwork right away when the toggle is
+//     on;
+//   - faixa: it materializes the artwork of the newly resolved ALBUM (the cover
+//     lives on the album, ADR-0027) when the toggle is on -- the track only
+//     enters here when the match went past the draft (conf > confDraft);
+//   - series: the trigger already happens in the FACTS phase (tentarImportarSerie,
+//     which runs outside any transaction) -- nothing to do here.
 //
-// Tudo best-effort: uma falha nunca desfaz a gravação do arquivo nem aborta o
-// scan (mesma semântica de antes, agora no lugar certo).
+// Everything is best-effort: a failure never undoes the write of the file nor
+// aborts the scan (same semantics as before, now in the right place).
 func (r *scanRun) despacharNovos(ctx context.Context) {
 	if len(r.novos) == 0 {
 		return
@@ -133,9 +136,9 @@ func (r *scanRun) despacharNovos(ctx context.Context) {
 	}
 }
 
-// materializar chama o gancho de materialização opcional (0089) uma única vez
-// por entity nesta passada -- várias faixas do mesmo álbum não disparam o mesmo
-// download/escrita N vezes.
+// materializar calls the optional materialization hook (0089) a single time per
+// entity in this pass -- several tracks of the same album do not trigger the
+// same download/write N times.
 func (r *scanRun) materializar(ctx context.Context, entityID string, feitos map[string]bool) {
 	if r.m.materializador == nil || feitos[entityID] {
 		return
@@ -146,9 +149,9 @@ func (r *scanRun) materializar(ctx context.Context, entityID string, feitos map[
 	}
 }
 
-// albumsDaFaixa devolve os álbuns (pais, kind do vínculo de música) de uma faixa
-// recém-resolvida -- leitura pelo pool de LEITURA, agora seguro (pós-commit).
-// Vazio quando a faixa ainda não tem álbum ligado (match parcial).
+// albumsDaFaixa returns the albums (parents, kind of the music link) of a newly
+// resolved track -- read through the READ pool, now safe (post-commit). Empty
+// when the track does not have an album linked yet (partial match).
 func (r *scanRun) albumsDaFaixa(ctx context.Context, faixaID string) []string {
 	relacoes, err := sqlcgen.New(r.m.db.Read).ListarRelacoesPais(ctx, faixaID)
 	if err != nil {
@@ -163,10 +166,10 @@ func (r *scanRun) albumsDaFaixa(ctx context.Context, faixaID string) []string {
 	return ids
 }
 
-// dispararAutoMatchFilme é o gatilho best-effort do auto-match imediato de
-// filme (0089): chamado DEPOIS do commit do lote (despacharNovos), nunca mais
-// de dentro da transação (briefing 0135). Devolve matched=true só quando um
-// candidato forte foi de fato aplicado.
+// dispararAutoMatchFilme is the best-effort trigger of the immediate movie
+// auto-match (0089): called AFTER the batch commit (despacharNovos), never again
+// from inside the transaction. It returns matched=true only when a strong
+// candidate was actually applied.
 func (r *scanRun) dispararAutoMatchFilme(ctx context.Context, entityID string) bool {
 	if r.m.filmeImportador == nil {
 		return false
@@ -179,9 +182,10 @@ func (r *scanRun) dispararAutoMatchFilme(ctx context.Context, entityID string) b
 	return matched
 }
 
-// reencontrar trata um arquivo já conhecido pelo content_hash: atualiza o path
-// (rename/move), size/mtime, volta a present e carimba last_seen. Reaproveita a
-// entity existente (mantém o cache coerente para as demais versões da obra).
+// reencontrar handles a file already known by content_hash: it updates the path
+// (rename/move), size/mtime, sets it back to present and stamps last_seen. It
+// reuses the existing entity (keeps the cache coherent for the other versions of
+// the work).
 func (r *scanRun) reencontrar(ctx context.Context, q *sqlcgen.Queries, existente sqlcgen.MediaFile, f fileFacts) error {
 	_, err := q.AtualizarMediaFileVisto(ctx, sqlcgen.AtualizarMediaFileVistoParams{
 		Path:            f.path,
@@ -197,10 +201,10 @@ func (r *scanRun) reencontrar(ctx context.Context, q *sqlcgen.Queries, existente
 	return err
 }
 
-// atualizarConteudoMudou trata um arquivo cujo PATH já era conhecido mas o
-// content_hash recém-calculado diverge da linha existente: o conteúdo foi
-// substituído no lugar (reencode, arquivo trocado). Atualiza todos os campos
-// derivados do conteúdo, preservando id/entity_id (mesma obra, mesmo path).
+// atualizarConteudoMudou handles a file whose PATH was already known but whose
+// newly computed content_hash differs from the existing row: the content was
+// replaced in place (reencode, swapped file). It updates every field derived
+// from the content, preserving id/entity_id (same work, same path).
 func (r *scanRun) atualizarConteudoMudou(ctx context.Context, q *sqlcgen.Queries, existente sqlcgen.MediaFile, f fileFacts) error {
 	_, err := q.AtualizarMediaFileConteudoMudou(ctx, sqlcgen.AtualizarMediaFileConteudoMudouParams{
 		ContentHash:     nsOpt(f.hash),
@@ -220,12 +224,13 @@ func (r *scanRun) atualizarConteudoMudou(ctx context.Context, q *sqlcgen.Queries
 	return err
 }
 
-// resolverEntity acha ou cria a Entity da obra. Ordem: cache do scan → id externo
-// (tmdb/imdb) → título+ano → cria nova. Sem id e sem título vira draft.
-// criada é true SÓ quando o branch que efetivamente criou a entity (criarEntity)
-// foi percorrido -- os demais branches (cache do scan, id externo/título+ano já
-// existentes) devolvem false. Usado por gravarArquivo (0089) para disparar o
-// auto-match imediato só em entity NOVA desta passada de scan.
+// resolverEntity finds or creates the Entity of the work. Order: scan cache →
+// external id (tmdb/imdb) → title+year → create a new one. Without an id and
+// without a title it becomes a draft. criada is true ONLY when the branch that
+// effectively created the entity (criarEntity) was taken -- the other branches
+// (scan cache, external id/title+year that already exist) return false. Used by
+// gravarArquivo (0089) to fire the immediate auto-match only for an entity NEW
+// in this scan pass.
 func (r *scanRun) resolverEntity(ctx context.Context, q *sqlcgen.Queries, f fileFacts) (id string, criada bool, err error) {
 	if id, ok := r.cache[f.folderKey]; ok {
 		return id, false, nil
@@ -253,8 +258,8 @@ func (r *scanRun) resolverEntity(ctx context.Context, q *sqlcgen.Queries, f file
 	return id, true, nil
 }
 
-// acharPorIDExterno procura a entity pelo id embutido no nome (tmdb tem
-// prioridade sobre imdb). achou=false quando não há id ou não existe ainda.
+// acharPorIDExterno looks the entity up by the id embedded in the name (tmdb has
+// priority over imdb). achou=false when there is no id or it does not exist yet.
 func acharPorIDExterno(ctx context.Context, q *sqlcgen.Queries, p naming.Info) (string, bool, error) {
 	if p.TMDBID != "" {
 		e, err := q.ObterEntityPorTmdb(ctx, nsOpt(p.TMDBID))
@@ -277,8 +282,9 @@ func acharPorIDExterno(ctx context.Context, q *sqlcgen.Queries, p naming.Info) (
 	return "", false, nil
 }
 
-// acharPorTituloAno dedup sem id: reusa a mesma entity para (movie, título,
-// release_date). Só quando NÃO há id externo (com id, o lookup acima manda).
+// acharPorTituloAno dedup without an id: it reuses the same entity for (movie,
+// title, release_date). Only when there is NO external id (with an id, the lookup
+// above wins).
 func (r *scanRun) acharPorTituloAno(ctx context.Context, q *sqlcgen.Queries, p naming.Info, titulo string, releaseDate sql.NullString) (string, bool, error) {
 	if titulo == "" || p.TMDBID != "" || p.IMDBID != "" {
 		return "", false, nil
@@ -297,8 +303,8 @@ func (r *scanRun) acharPorTituloAno(ctx context.Context, q *sqlcgen.Queries, p n
 	return "", false, nil
 }
 
-// criarEntity insere a entity nova (draft quando não-identificada) e, sendo obra
-// nova, registra a arte local como asset. Devolve o id criado.
+// criarEntity inserts the new entity (a draft when unidentified) and, being a new
+// work, records the local artwork as an asset. It returns the created id.
 func (r *scanRun) criarEntity(ctx context.Context, q *sqlcgen.Queries, f fileFacts, titulo string, releaseDate sql.NullString, status string) (string, error) {
 	id := r.m.novoID()
 	extJSON := externalIDsJSON(f.entidade)
@@ -311,8 +317,8 @@ func (r *scanRun) criarEntity(ctx context.Context, q *sqlcgen.Queries, f fileFac
 	}); err != nil {
 		return "", err
 	}
-	// CriarEntity nasce 'cataloged' (DEFAULT). Rebaixa para 'draft' quando a obra
-	// não foi identificada (visível, não perdido — ADR-0012).
+	// CriarEntity is born 'cataloged' (DEFAULT). It is lowered to 'draft' when
+	// the work was not identified (visible, not lost — ADR-0012).
 	if status == "draft" {
 		if _, err := q.AtualizarEntity(ctx, sqlcgen.AtualizarEntityParams{
 			ID:              id,
@@ -340,8 +346,9 @@ func (r *scanRun) criarEntity(ctx context.Context, q *sqlcgen.Queries, f fileFac
 	return id, nil
 }
 
-// classificar decide o título de gravação, o release_date e o status. Sem
-// título parseável e sem id, a obra é draft (usa o nome cru como título visível).
+// classificar decides the title to store, the release_date and the status.
+// Without a parseable title and without an id, the work is a draft (it uses the
+// raw name as the visible title).
 func classificar(p naming.Info, rawNome string) (titulo string, releaseDate sql.NullString, status string) {
 	titulo = p.Title
 	status = "cataloged"
@@ -357,7 +364,8 @@ func classificar(p naming.Info, rawNome string) (titulo string, releaseDate sql.
 	return titulo, releaseDate, status
 }
 
-// confianca pontua o match (0–100) conforme os sinais do nome (ADR-0008).
+// confianca scores the match (0–100) according to the signals in the name
+// (ADR-0008).
 func confianca(p naming.Info) float64 {
 	switch {
 	case p.TMDBID != "" || p.IMDBID != "":
@@ -371,8 +379,8 @@ func confianca(p naming.Info) float64 {
 	}
 }
 
-// externalIDsJSON monta o mapa external_ids ({"tmdb":"..","imdb":".."}); "" se
-// não há id embutido. Construído à mão (poucos campos) para não puxar json.
+// externalIDsJSON builds the external_ids map ({"tmdb":"..","imdb":".."}); "" if
+// there is no embedded id. Built by hand (few fields) so as not to pull in json.
 func externalIDsJSON(p naming.Info) string {
 	if p.TMDBID == "" && p.IMDBID == "" {
 		return ""

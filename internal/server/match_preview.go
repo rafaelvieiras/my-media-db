@@ -9,25 +9,22 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Este arquivo implementa a PRÉVIA de candidato de match e a aplicação
-// supervisionada (briefing 0060): antes deste briefing, "Confirmar" na fila
-// de Revisão aceitava cegamente o palpite do scanner sem NUNCA buscar/mostrar
-// um candidato real, e o auto-match (0050) só buscava DEPOIS de clicar, sem
-// detalhe visível quando o score não batia LimiarAutoMatch. Os dois handlers
-// aqui reusam INTEGRALMENTE a busca+pontuação do 0050
+// This file implements the match candidate PREVIEW and the supervised application: before
+// this feature, "Confirmar" in the Review queue blindly accepted the scanner guess without
+// EVER searching/showing a real candidate, and the auto-match only searched AFTER the click,
+// with no visible detail when the score did not reach LimiarAutoMatch. The two handlers here
+// reuse IN FULL the search+scoring of the auto-match
 // (tituloAnoDoArquivo/buscarLocal/buscarExterno/melhorCandidatoLocal/
-// melhorCandidatoExterno, automatch.go) -- a diferença é que os finders, desde
-// a extração deste mesmo briefing, já não cortam por LimiarAutoMatch: quem
-// decide aplicar o corte agora é CADA chamador (tentarAutoMatch corta; a
-// prévia aqui não corta nunca, só marca meets_auto_threshold).
+// melhorCandidatoExterno, automatch.go) -- the difference is that the finders no longer cut
+// by LimiarAutoMatch: who decides to apply the cut now is EACH caller (tentarAutoMatch cuts;
+// the preview here never cuts, it only flags meets_auto_threshold).
 
-// matchPreviewTargetDTO é o candidato mostrado pela prévia -- local OU
-// externo, nunca os dois. `poster_url`: para local, a rota do proxy da
-// própria entity (mesma de EntityCard.poster_url, já vem de graça em
-// entityCardDTO/cardDTO); para externo, a URL CRUA do provider (já vem de
-// graça em provider.ResultadoExterno.PosterURL) -- o front roteia pelo proxy
-// de imagem existente (arteSrc). Nenhum campo aqui exige chamada de rede
-// extra além da busca já feita.
+// matchPreviewTargetDTO is the candidate shown by the preview -- local OR external, never
+// both. `poster_url`: for a local one, the proxy route of the entity itself (the same as
+// EntityCard.poster_url, which comes for free in entityCardDTO/cardDTO); for an external one,
+// the RAW URL of the provider (already free in provider.ResultadoExterno.PosterURL) -- the
+// frontend routes it through the existing image proxy (arteSrc). No field here requires an
+// extra network call beyond the search already made.
 type matchPreviewTargetDTO struct {
 	Title     string  `json:"title"`
 	Year      *int    `json:"year"`
@@ -35,17 +32,16 @@ type matchPreviewTargetDTO struct {
 	LocalID   *string `json:"local_id"`
 	Source    *string `json:"source"`
 	SourceID  *string `json:"source_id"`
-	// MatchedTitle é o título (principal ou alternativo/traduzido) que
-	// efetivamente produziu o score mostrado (briefing 0084) -- omitido
-	// (nil) quando o candidato é local, ou quando o vencedor é o próprio
-	// título principal (nada de alternativo bateu melhor).
+	// MatchedTitle is the title (main or alternative/translated) that actually produced the
+	// score shown -- omitted (nil) when the candidate is local, or when the winner is the
+	// main title itself (no alternative title beat it).
 	MatchedTitle *string `json:"matched_title,omitempty"`
 }
 
-// matchPreviewDTO é a resposta de GET /entities/{id}/match-preview -- SEMPRE
-// 200 (mesmo sem candidato: resultado válido, não erro, mesma convenção do
-// auto-match/0050). `meets_auto_threshold` é puramente informativo: nunca
-// filtra o resultado nem impede confirm-candidate.
+// matchPreviewDTO is the response of GET /entities/{id}/match-preview -- ALWAYS 200 (even
+// without a candidate: a valid result, not an error, the same convention as the auto-match).
+// `meets_auto_threshold` is purely informative: it never filters the result nor prevents
+// confirm-candidate.
 type matchPreviewDTO struct {
 	Found              bool                   `json:"found"`
 	Method             string                 `json:"method"` // "local" | "external" | "none"
@@ -54,13 +50,13 @@ type matchPreviewDTO struct {
 	Target             *matchPreviewTargetDTO `json:"target"`
 }
 
-// matchPreviewNone é o resultado neutro: nenhum candidato em nenhuma fonte
-// (ou não havia o que buscar -- sem arquivo/título derivável).
+// matchPreviewNone is the neutral result: no candidate in any source (or there was nothing
+// to search -- no file/derivable title).
 var matchPreviewNone = matchPreviewDTO{Found: false, Method: "none", Score: 0, MeetsAutoThreshold: false, Target: nil}
 
-// confirmCandidateBody é o corpo de POST /entities/{id}/confirm-candidate:
-// dois formatos conforme `method` -- "local" exige LocalID; "external" exige
-// Source+SourceID. Corpo que não bate o method responde 422.
+// confirmCandidateBody is the body of POST /entities/{id}/confirm-candidate: two formats
+// depending on `method` -- "local" requires LocalID; "external" requires Source+SourceID.
+// A body that does not match the method answers 422.
 type confirmCandidateBody struct {
 	Method   string `json:"method"`
 	LocalID  string `json:"local_id"`
@@ -68,8 +64,8 @@ type confirmCandidateBody struct {
 	SourceID string `json:"source_id"`
 }
 
-// matchPreview trata GET /api/v1/entities/{id}/match-preview: dry-run,
-// read-only, SEM side-effect. 404 se a entity não existe.
+// matchPreview handles GET /api/v1/entities/{id}/match-preview: dry-run, read-only, with NO
+// side-effect. 404 if the entity does not exist.
 func (s *Server) matchPreview(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -90,11 +86,10 @@ func (s *Server) matchPreview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, preview)
 }
 
-// montarMatchPreview deriva título/ano do arquivo e busca local-first, depois
-// externo se o local não achou nada -- MESMA ordem de tentarAutoMatch
-// (automatch.go), mas usando os finders SEM corte de LimiarAutoMatch
-// diretamente (nenhuma duplicação de lógica de ranking). err é só erro real
-// de banco/infra; "nenhum candidato" nunca é err.
+// montarMatchPreview derives title/year from the file and searches local-first, then external
+// if local found nothing -- the SAME order as tentarAutoMatch (automatch.go), but using the
+// finders WITHOUT the LimiarAutoMatch cut directly (no duplication of the ranking logic). err
+// is only a real database/infra error; "no candidate" is never err.
 func (s *Server) montarMatchPreview(ctx context.Context, ent sqlcgen.Entity) (matchPreviewDTO, error) {
 	titulo, ano, ok, err := s.tituloAnoDoArquivo(ctx, ent)
 	if err != nil {
@@ -104,15 +99,15 @@ func (s *Server) montarMatchPreview(ctx context.Context, ent sqlcgen.Entity) (ma
 		return matchPreviewNone, nil
 	}
 
-	// Idioma de busca (briefing 0084): a prévia deve refletir o MESMO idioma
-	// que o auto-match de fato usaria -- mesmo resolvedor dos outros dois
-	// fluxos (automatch.go/retroativo.go).
+	// Search language: the preview must reflect the SAME language the auto-match would
+	// actually use -- the same resolver as the other two flows
+	// (automatch.go/retroativo.go).
 	lang, err := s.idiomaDeBusca(ctx, ent.ID)
 	if err != nil {
 		return matchPreviewDTO{}, err
 	}
 
-	// 1) Local-first (0026): mesma busca do auto-match.
+	// 1) Local-first: the same search as the auto-match.
 	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, nil)
 	if err != nil {
 		return matchPreviewDTO{}, err
@@ -129,8 +124,8 @@ func (s *Server) montarMatchPreview(ctx context.Context, ent sqlcgen.Entity) (ma
 		}, nil
 	}
 
-	// 2) Externo: só quando local não achou nada. Sem enrich ligado (ou sem
-	// provider capaz do tipo), a prévia degrada para "none" -- mesma guarda de
+	// 2) External: only when local found nothing. Without enrich on (or without a provider
+	// capable of the type), the preview degrades to "none" -- the same guard as
 	// tentarAutoMatch.
 	if s.enrich == nil {
 		return matchPreviewNone, nil
@@ -163,15 +158,14 @@ func (s *Server) montarMatchPreview(ctx context.Context, ent sqlcgen.Entity) (ma
 	}, nil
 }
 
-// confirmCandidate trata POST /api/v1/entities/{id}/confirm-candidate: aplica
-// o candidato que a prévia mostrou, SEM checar LimiarAutoMatch (decisão
-// humana informada, não corte automático). 404 se a entity não existe; 422 se
-// o corpo não bate o `method`. Branch `local`: funde a entity da fila
-// (`id`, perdedora) com `local_id` (sobrevivente, o candidato escolhido) via
-// fundirEntities -- sem cenário de colisão aqui, os dois lados já foram
-// escolhidos explicitamente pelo dono. Branch `external`: reusa
-// aplicarIdentidadeExterna (mesma sequência de correctEntity, review.go) com
-// o ResponseWriter REAL da requisição -- uma colisão vira 409 de verdade.
+// confirmCandidate handles POST /api/v1/entities/{id}/confirm-candidate: it applies the
+// candidate the preview showed, WITHOUT checking LimiarAutoMatch (an informed human
+// decision, not an automatic cut). 404 if the entity does not exist; 422 if the body does not
+// match the `method`. Branch `local`: it merges the queue entity (`id`, loser) with
+// `local_id` (survivor, the chosen candidate) through fundirEntities -- no collision scenario
+// here, both sides were explicitly chosen by the owner. Branch `external`: it reuses
+// aplicarIdentidadeExterna (the same sequence as correctEntity, review.go) with the REAL
+// ResponseWriter of the request -- a collision becomes a genuine 409.
 func (s *Server) confirmCandidate(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -195,8 +189,8 @@ func (s *Server) confirmCandidate(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnprocessableEntity, "invalid_body", "local_id é obrigatório para method=local")
 			return
 		}
-		// Sobrevivente é sempre o local_id do corpo (o candidato escolhido);
-		// perdedora é sempre o item da fila (0060 §4).
+		// The survivor is always the local_id of the body (the chosen candidate); the loser
+		// is always the queue item.
 		if err := s.fundirEntities(ctx, body.LocalID, id); err != nil {
 			respondErroInterno(w)
 			return

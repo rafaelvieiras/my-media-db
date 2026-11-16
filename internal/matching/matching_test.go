@@ -6,10 +6,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/textsim"
 )
 
-// Testes migrados de internal/server/automatch_test.go (TestPontuarCandidato_*)
-// quando a pontuação foi extraída para este pacote (briefing 0054) — mesmas
-// expectativas, só o símbolo mudou de pontuarCandidato (privado) para
-// Pontuar (exportado).
+// Tests migrated from internal/server/automatch_test.go (TestPontuarCandidato_*)
+// when the scoring was extracted into this package — same
+// expectations, only the symbol changed from pontuarCandidato (private) to
+// Pontuar (exported).
 
 func TestPontuar_AnosIguaisSomamBonus(t *testing.T) {
 	score, descartado := Pontuar("The Matrix", 1999, "The Matrix", 1999)
@@ -49,10 +49,10 @@ func TestPontuar_AnoAusenteNaoAjustaNemDescarta(t *testing.T) {
 	}
 }
 
-// TestPontuarComAlternativos_AlternativoBateMelhorQueOTituloPrincipal cobre o
-// caso central do briefing 0084: um arquivo "A Pantera Cor-De-Rosa" deve
-// pontuar alto mesmo quando o título PRINCIPAL do candidato é "The Pink
-// Panther" (não-traduzido), porque a lista de alternativos tem a tradução.
+// TestPontuarComAlternativos_AlternativoBateMelhorQueOTituloPrincipal covers the
+// central case: a file "A Pantera Cor-De-Rosa" must
+// score high even when the MAIN title of the candidate is "The Pink
+// Panther" (untranslated), because the list of alternatives has the translation.
 func TestPontuarComAlternativos_AlternativoBateMelhorQueOTituloPrincipal(t *testing.T) {
 	scoreUnico, _ := Pontuar("A Pantera Cor-De-Rosa", 0, "The Pink Panther", 0)
 	scoreAlt, vencedor, descartado := PontuarComAlternativos(
@@ -72,9 +72,9 @@ func TestPontuarComAlternativos_AlternativoBateMelhorQueOTituloPrincipal(t *test
 	}
 }
 
-// TestPontuarComAlternativos_TituloPrincipalJaEOMelhor garante que o vencedor
-// devolvido é o próprio título principal quando nenhum alternativo bate
-// melhor — o chamador usa essa igualdade para decidir se expõe matched_title.
+// TestPontuarComAlternativos_TituloPrincipalJaEOMelhor guarantees that the winner
+// returned is the main title itself when no alternative scores
+// better — the caller uses that equality to decide whether to expose matched_title.
 func TestPontuarComAlternativos_TituloPrincipalJaEOMelhor(t *testing.T) {
 	score, vencedor, descartado := PontuarComAlternativos(
 		"The Matrix", 1999, "The Matrix",
@@ -90,9 +90,9 @@ func TestPontuarComAlternativos_TituloPrincipalJaEOMelhor(t *testing.T) {
 	}
 }
 
-// TestPontuarComAlternativos_ListaVaziaDegradaParaTituloUnico garante que uma
-// lista de alternativos vazia (ou só com strings vazias) se comporta como
-// Pontuar puro, sem pânico nem viés.
+// TestPontuarComAlternativos_ListaVaziaDegradaParaTituloUnico guarantees that an
+// empty list of alternatives (or one with only empty strings) behaves like
+// plain Pontuar, with no panic and no bias.
 func TestPontuarComAlternativos_ListaVaziaDegradaParaTituloUnico(t *testing.T) {
 	scoreUnico, descartadoUnico := Pontuar("The Matrix", 1999, "The Matrix", 1999)
 	score, vencedor, descartado := PontuarComAlternativos("The Matrix", 1999, "The Matrix", nil, 1999)
@@ -111,9 +111,9 @@ func TestPontuarComAlternativos_ListaVaziaDegradaParaTituloUnico(t *testing.T) {
 }
 
 // TestPontuarComAlternativos_AnoDivergenteDescartaIndependenteDoAlternativo
-// garante que a regra de ano (diff>1 descarta) continua valendo mesmo quando
-// um alternativo bateria perfeitamente no título — o ano é decisivo antes da
-// comparação textual importar.
+// guarantees that the year rule (diff>1 discards) still holds even when
+// an alternative would match the title perfectly — the year is decisive before the
+// textual comparison matters.
 func TestPontuarComAlternativos_AnoDivergenteDescartaIndependenteDoAlternativo(t *testing.T) {
 	_, _, descartado := PontuarComAlternativos("The Matrix", 1999, "The Matrix", []string{"The Matrix"}, 2005)
 	if !descartado {
@@ -136,12 +136,12 @@ func TestAnoDeReleaseDate(t *testing.T) {
 	}
 }
 
-// ── Normalização de nome de obra (briefing 0136) ─────────────────────────────
+// ── Normalization of work names ──────────────────────────────────────────────
 
-// TestNormalizarNome cobre os casos REAIS medidos no catálogo do dono (08/nov/
-// 2026): os álbuns que caíram em rascunho por causa do qualificador de edição na
-// tag, e os que NÃO devem ser tocados (qualificador que muda a obra, ou nome sem
-// qualificador nenhum).
+// TestNormalizarNome covers the REAL cases measured in the owner's catalog (08/Nov/
+// 2026): the albums that fell into a draft because of the edition qualifier in
+// the tag, and the ones that must NOT be touched (a qualifier that changes the work, or a name
+// without any qualifier).
 func TestNormalizarNome(t *testing.T) {
 	casos := []struct{ entrada, quero string }{
 		{"Hybrid Theory (Bonus Edition)", "Hybrid Theory"},
@@ -158,9 +158,9 @@ func TestNormalizarNome(t *testing.T) {
 		{"The Fat of the Land - Expanded Edition", "The Fat of the Land"},
 		{"Twilight Original Motion Picture Soundtrack (International Special Edition)", "Twilight Original Motion Picture Soundtrack"},
 		{"Emergency on Planet Earth (Remastered)", "Emergency on Planet Earth"},
-		// briefings 0139: RÓTULO de versão da MESMA gravação (o segmento termina em
-		// palavra de versão e não tem diferenciadora) -- o caso das trilhas, que
-		// sozinho eram 20 das 37 faixas que sobravam em rascunho.
+		// VERSION LABEL of the SAME recording (the segment ends in a
+		// version word and has no differentiator) -- the soundtrack case, which
+		// alone accounted for 20 of the 37 tracks left over in a draft.
 		{"Full Moon (Twilight Soundtrack Version)", "Full Moon"},
 		{"Spotlight (Twilight Soundtrack Version)", "Spotlight"},
 		{"Love Is Worth The Fall (Twilight Version)", "Love Is Worth The Fall"},
@@ -168,8 +168,8 @@ func TestNormalizarNome(t *testing.T) {
 		{"Pale Shelter (2nd single version)", "Pale Shelter"},
 		{"Change (Radio Edit)", "Change (Radio Edit)"},
 		{"Ideas As Opiates (Alternate Version)", "Ideas As Opiates"},
-		// preservados: qualificador que muda a obra (OUTRA gravação), álbum sem
-		// qualificador, e nome que viraria vazio (fallback para o original).
+		// preserved: a qualifier that changes the work (ANOTHER recording), an album without
+		// a qualifier, and a name that would become empty (fallback to the original).
 		{"Papercut (Live at BBC1)", "Papercut (Live at BBC1)"},
 		{"Full Moon (Appleblim & Komonazmuk Remix)", "Full Moon (Appleblim & Komonazmuk Remix)"},
 		{"Suffer The Children (Demo)", "Suffer The Children (Demo)"},
@@ -189,9 +189,9 @@ func TestNormalizarNome(t *testing.T) {
 	}
 }
 
-// TestSimilaridadeNormalizadaPassaDoLimiar trava o efeito prático: os pares que
-// hoje ficam ABAIXO do limiar de auto-match passam a bater (>= 92), sem que nomes
-// de obras diferentes passem a casar.
+// TestSimilaridadeNormalizadaPassaDoLimiar locks in the practical effect: the pairs that
+// today stay BELOW the auto-match threshold now clear it (>= 92), without names
+// of different works starting to match.
 func TestSimilaridadeNormalizadaPassaDoLimiar(t *testing.T) {
 	pares := [][2]string{
 		{"Hybrid Theory (Bonus Edition)", "Hybrid Theory"},

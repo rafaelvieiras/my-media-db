@@ -8,8 +8,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// ov monta um patch de override a partir de pares chave→JSON cru, para os testes
-// injetarem overlays diretamente no motor.
+// ov builds an override patch from key→raw JSON pairs, so the tests can inject
+// overlays straight into the engine.
 func ov(pares map[string]string) map[string]json.RawMessage {
 	if pares == nil {
 		return nil
@@ -23,7 +23,7 @@ func ov(pares map[string]string) map[string]json.RawMessage {
 
 func ns(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }
 
-// eq/eqPtr mantêm os testes lineares (baixa complexidade ciclomática).
+// eq/eqPtr keep the tests linear (low cyclomatic complexity).
 func eq[T comparable](t *testing.T, name string, got, want T) {
 	t.Helper()
 	if got != want {
@@ -40,8 +40,8 @@ func eqPtr[T comparable](t *testing.T, name string, got *T, want T) {
 	eq(t, name, *got, want)
 }
 
-// TestResolverCamadaArquivoCompleta cobre a composição da camada arquivo/núcleo:
-// campos diretos, tags/external_ids parseados, posse derivada e poster.
+// TestResolverCamadaArquivoCompleta covers the composition of the file/core layer:
+// direct fields, parsed tags/external_ids, derived ownership and poster.
 func TestResolverCamadaArquivoCompleta(t *testing.T) {
 	poster := "/api/v1/entities/x/assets/poster"
 	got := Resolver(Camadas{
@@ -75,9 +75,9 @@ func TestResolverCamadaArquivoCompleta(t *testing.T) {
 	eqPtr(t, "poster_url", got.PosterURL, poster)
 }
 
-// TestResolverVazioNaoNula garante nulos/omitidos coerentes: sem arquivos não há
-// posse; tags/external_ids saem como coleções vazias (nunca nil); os *string
-// ausentes ficam nil.
+// TestResolverVazioNaoNula guarantees coherent nulls/omissions: with no files there
+// is no ownership; tags/external_ids come out as empty collections (never nil); the
+// absent *string stay nil.
 func TestResolverVazioNaoNula(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity: sqlcgen.Entity{ID: "y", Type: "tv", Title: "Vazio", Status: "draft"},
@@ -99,8 +99,8 @@ func TestResolverVazioNaoNula(t *testing.T) {
 	eq(t, "poster_url", got.PosterURL, nilStr)
 }
 
-// TestResolverJSONInvalidoDegrada garante que tags/external_ids malformados não
-// derrubam a composição (viram coleção vazia).
+// TestResolverJSONInvalidoDegrada guarantees that malformed tags/external_ids do not
+// bring the composition down (they become an empty collection).
 func TestResolverJSONInvalidoDegrada(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity: sqlcgen.Entity{
@@ -117,7 +117,7 @@ func TestResolverJSONInvalidoDegrada(t *testing.T) {
 	}
 }
 
-// entArquivo é uma Entity de núcleo mínima reutilizada pelos testes de composição.
+// entArquivo is a minimal core Entity reused by the composition tests.
 func entArquivo() sqlcgen.Entity {
 	return sqlcgen.Entity{
 		ID:          "x",
@@ -129,8 +129,8 @@ func entArquivo() sqlcgen.Entity {
 	}
 }
 
-// TestExtensionDataDefaultVazio garante que extension_data sai como objeto vazio
-// (nunca nil/null) quando não há dado — espelho de tags.
+// TestExtensionDataDefaultVazio guarantees that extension_data comes out as an empty
+// object (never nil/null) when there is no data — the mirror of tags.
 func TestExtensionDataDefaultVazio(t *testing.T) {
 	got := Resolver(Camadas{Entity: sqlcgen.Entity{ID: "y", Type: "tv", Title: "Vazio"}})
 	if got.ExtensionData == nil {
@@ -139,8 +139,9 @@ func TestExtensionDataDefaultVazio(t *testing.T) {
 	eq(t, "len(extension_data)", len(got.ExtensionData), 0)
 }
 
-// TestExternoSobrepoeArquivo cobre §5: a camada externa sobrepõe o arquivo campo a
-// campo respeitando a base declarada (todos os editoriais têm base externo).
+// TestExternoSobrepoeArquivo covers §5: the external layer overrides the file field
+// by field respecting the declared base (all editorial fields have an external
+// base).
 func TestExternoSobrepoeArquivo(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity: entArquivo(),
@@ -154,13 +155,14 @@ func TestExternoSobrepoeArquivo(t *testing.T) {
 	})
 	eq(t, "title", got.Title, "Título Externo")
 	eqPtr(t, "description", got.Description, "Sinopse do TMDB.")
-	// Campo sem valor externo herda o arquivo (release_date ausente em ambos → nil).
+	// A field with no external value inherits the file (release_date absent in both →
+	// nil).
 	if got.ReleaseDate != nil {
 		t.Errorf("release_date = %v, quero nil (nem externo nem arquivo)", *got.ReleaseDate)
 	}
 }
 
-// TestOverrideVenceExternoEArquivo cobre §5: override sobrepõe as duas bases.
+// TestOverrideVenceExternoEArquivo covers §5: the override overrides both bases.
 func TestOverrideVenceExternoEArquivo(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity: entArquivo(),
@@ -173,8 +175,8 @@ func TestOverrideVenceExternoEArquivo(t *testing.T) {
 	eq(t, "title", got.Title, "Título do Dono")
 }
 
-// TestOverrideNullApaga cobre §5/R6: chave presente com null apaga a base; chave
-// ausente herda.
+// TestOverrideNullApaga covers §5/R6: a present key with null erases the base; an
+// absent key inherits.
 func TestOverrideNullApaga(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity: entArquivo(),
@@ -187,12 +189,13 @@ func TestOverrideNullApaga(t *testing.T) {
 	if got.Description != nil {
 		t.Errorf("description = %v, quero nil (apagado por override null)", *got.Description)
 	}
-	// title não está no override → herda (arquivo, pois sem externo de title).
+	// title is not in the override → inherits (file, since there is no external for
+	// title).
 	eq(t, "title", got.Title, "Título do Arquivo")
 }
 
-// TestMergeListaAddRemove cobre §5/R3: merge {add, remove} sobre a base externa,
-// com ordem definida, remoção por valor, adição ao fim e dedup.
+// TestMergeListaAddRemove covers §5/R3: {add, remove} merge over the external base,
+// with a defined order, removal by value, addition at the end and dedup.
 func TestMergeListaAddRemove(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity: entArquivo(),
@@ -202,7 +205,7 @@ func TestMergeListaAddRemove(t *testing.T) {
 		}},
 		Override: ov(map[string]string{"tags": `{"add":["novo","ação"],"remove":["drama"]}`}),
 	})
-	// Base externa [ação,drama,b]; remove drama; add [novo,ação]; dedup ação.
+	// External base [ação,drama,b]; remove drama; add [novo,ação]; dedup ação.
 	want := []string{"ação", "b", "novo"}
 	if len(got.Tags) != len(want) {
 		t.Fatalf("tags = %v, quero %v", got.Tags, want)
@@ -212,7 +215,7 @@ func TestMergeListaAddRemove(t *testing.T) {
 	}
 }
 
-// TestListaOverrideNullApaga cobre R6 em campo-lista: null zera a lista.
+// TestListaOverrideNullApaga covers R6 on a list field: null zeroes the list.
 func TestListaOverrideNullApaga(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity:   entArquivo(),
@@ -223,7 +226,7 @@ func TestListaOverrideNullApaga(t *testing.T) {
 	}
 }
 
-// TestListaOverrideSubstituicaoTotal cobre o atalho de array puro (substituição).
+// TestListaOverrideSubstituicaoTotal covers the plain-array shortcut (replacement).
 func TestListaOverrideSubstituicaoTotal(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity:   entArquivo(),
@@ -235,8 +238,8 @@ func TestListaOverrideSubstituicaoTotal(t *testing.T) {
 	}
 }
 
-// TestPrioridadeEntreFontes cobre §5/R2: com duas fontes, vence a primeira da lista
-// de prioridade que tiver valor.
+// TestPrioridadeEntreFontes covers §5/R2: with two sources, the first one in the
+// priority list that has a value wins.
 func TestPrioridadeEntreFontes(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity: entArquivo(),
@@ -246,12 +249,12 @@ func TestPrioridadeEntreFontes(t *testing.T) {
 		},
 	})
 	eq(t, "title", got.Title, "Alta Prioridade")
-	// description só existe na segunda fonte → é a base externa dela.
+	// description only exists in the second source → it is its external base.
 	eqPtr(t, "description", got.Description, "Só a segunda tem.")
 }
 
-// TestExtensionDataComposicao cobre §5/R5: extension_data compõe por namespace e
-// chave com a mesma precedência override ⟵ externo ⟵ arquivo.
+// TestExtensionDataComposicao covers §5/R5: extension_data composes by namespace and
+// key with the same override ⟵ externo ⟵ arquivo precedence.
 func TestExtensionDataComposicao(t *testing.T) {
 	ent := entArquivo()
 	ent.ExtensionDataJson = ns(`{"music_video":{"bpm":120,"artist":"Arquivo"},"filme":{"a":1}}`)
@@ -271,29 +274,30 @@ func TestExtensionDataComposicao(t *testing.T) {
 	if !ok {
 		t.Fatalf("music_video ausente/errado: %#v", got.ExtensionData)
 	}
-	// artist: externo vence arquivo.
+	// artist: the external wins over the file.
 	eq(t, "mv.artist", mv["artist"], any("Externo"))
-	// bpm: override (128) vence.
+	// bpm: the override (128) wins.
 	if bpm, _ := mv["bpm"].(float64); bpm != 128 {
 		t.Errorf("mv.bpm = %v, quero 128 (override)", mv["bpm"])
 	}
-	// label: override null apaga a chave do externo.
+	// label: the null override erases the external's key.
 	if _, existe := mv["label"]; existe {
 		t.Errorf("mv.label ainda presente, quero apagado por null: %v", mv["label"])
 	}
-	// namespace 'filme' herda do arquivo intacto.
+	// the 'filme' namespace inherits from the file intact.
 	filme, _ := got.ExtensionData["filme"].(map[string]any)
 	if filme == nil || filme["a"] == nil {
 		t.Errorf("namespace filme perdido: %#v", got.ExtensionData)
 	}
-	// namespace novo do override entra inteiro.
+	// a new namespace from the override enters whole.
 	novo, _ := got.ExtensionData["novo"].(map[string]any)
 	if novo == nil || novo["k"] != "v" {
 		t.Errorf("namespace novo ausente: %#v", got.ExtensionData)
 	}
 }
 
-// TestRegressaoZeroSoArquivo cobre §5: sem externo/override, a saída é a do 0010.
+// TestRegressaoZeroSoArquivo covers §5: with no external/override, the output is the
+// pre-enrichment one.
 func TestRegressaoZeroSoArquivo(t *testing.T) {
 	got := Resolver(Camadas{Entity: entArquivo()})
 	eq(t, "title", got.Title, "Título do Arquivo")

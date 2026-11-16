@@ -10,7 +10,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// decodeJellyfinToken decodifica o corpo de GET/POST .../webhooks/jellyfin/token.
+// decodeJellyfinToken decodes the body of GET/POST .../webhooks/jellyfin/token.
 func decodeJellyfinToken(t *testing.T, body []byte) jellyfinWebhookTokenSettings {
 	t.Helper()
 	var out jellyfinWebhookTokenSettings
@@ -20,8 +20,8 @@ func decodeJellyfinToken(t *testing.T, body []byte) jellyfinWebhookTokenSettings
 	return out
 }
 
-// gerarTokenTeste chama POST .../webhooks/jellyfin/token e devolve o token
-// gerado.
+// gerarTokenTeste calls POST .../webhooks/jellyfin/token and returns the generated
+// token.
 func gerarTokenTeste(t *testing.T, h http.Handler) string {
 	t.Helper()
 	rec := do(t, h, http.MethodPost, "/api/v1/webhooks/jellyfin/token", nil)
@@ -31,10 +31,10 @@ func gerarTokenTeste(t *testing.T, h http.Handler) string {
 	return decodeJellyfinToken(t, rec.Body.Bytes()).Token
 }
 
-// ── Token de configuração (briefing 0093) ───────────────────────────────────
+// ── Configuration token ───────────────────────────────────
 
-// TestGetJellyfinWebhookTokenSemToken cobre §5: GET antes de qualquer POST
-// devolve 404 (nenhum token gerado ainda).
+// TestGetJellyfinWebhookTokenSemToken covers: GET before any POST
+// returns 404 (no token generated yet).
 func TestGetJellyfinWebhookTokenSemToken(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/webhooks/jellyfin/token", nil)
@@ -44,8 +44,8 @@ func TestGetJellyfinWebhookTokenSemToken(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestRegenerateJellyfinWebhookToken cobre §5: POST gera um token; um
-// segundo POST gera um token DIFERENTE e o antigo deixa de funcionar no
+// TestRegenerateJellyfinWebhookToken covers: POST generates a token; a
+// second POST generates a DIFFERENT token and the old one stops working in the
 // webhook.
 func TestRegenerateJellyfinWebhookToken(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
@@ -68,7 +68,7 @@ func TestRegenerateJellyfinWebhookToken(t *testing.T) {
 		t.Fatal("token novo igual ao antigo")
 	}
 
-	// O token ANTIGO não bate mais no webhook -> 401.
+	// The OLD token no longer matches the webhook -> 401.
 	rec := do(t, h, http.MethodPost, "/api/v1/webhooks/jellyfin?token="+tokenAntigo,
 		map[string]any{"NotificationType": "PlaybackStart", "ItemType": "Movie"})
 	if rec.Code != http.StatusUnauthorized {
@@ -76,10 +76,10 @@ func TestRegenerateJellyfinWebhookToken(t *testing.T) {
 	}
 }
 
-// ── Autenticação do webhook (briefing 0093 §5) ──────────────────────────────
+// ── Webhook authentication ──────────────────────────────
 
-// TestReceiveJellyfinWebhookTokenAusenteOuInvalido cobre §5: sem token ou
-// com token errado -> 401, nenhum evento criado.
+// TestReceiveJellyfinWebhookTokenAusenteOuInvalido covers: without a token or
+// with a wrong token -> 401, no event created.
 func TestReceiveJellyfinWebhookTokenAusenteOuInvalido(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	entID := "e1"
@@ -92,14 +92,14 @@ func TestReceiveJellyfinWebhookTokenAusenteOuInvalido(t *testing.T) {
 		"Provider_tmdb":    "603",
 	}
 
-	// Sem token.
+	// Without a token.
 	rec := do(t, h, http.MethodPost, "/api/v1/webhooks/jellyfin", payload)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("sem token: status = %d, quero 401 (corpo=%s)", rec.Code, rec.Body.String())
 	}
 	checkErrorShape(t, rec, "unauthorized")
 
-	// Token errado.
+	// Wrong token.
 	rec = do(t, h, http.MethodPost, "/api/v1/webhooks/jellyfin?token=errado", payload)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("token errado: status = %d, quero 401 (corpo=%s)", rec.Code, rec.Body.String())
@@ -113,9 +113,9 @@ func TestReceiveJellyfinWebhookTokenAusenteOuInvalido(t *testing.T) {
 	}
 }
 
-// TestReceiveJellyfinWebhookSemTokenConfigurado cobre a robustez do handler
-// quando NENHUM token foi gerado ainda -- 401 (não 500), já que não há
-// token válido possível.
+// TestReceiveJellyfinWebhookSemTokenConfigurado covers the robustness of the handler
+// when NO token has been generated yet -- 401 (not 500), since there is no
+// possible valid token.
 func TestReceiveJellyfinWebhookSemTokenConfigurado(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/webhooks/jellyfin?token=qualquer",
@@ -126,10 +126,10 @@ func TestReceiveJellyfinWebhookSemTokenConfigurado(t *testing.T) {
 	checkErrorShape(t, rec, "unauthorized")
 }
 
-// ── Casamento por id externo (briefing 0093 §5) ─────────────────────────────
+// ── Matching by external id ─────────────────────────────
 
-// TestReceiveJellyfinWebhookCasaPorTmdb cobre §5: Provider_tmdb casando uma
-// entity existente gera um historico_evento correto.
+// TestReceiveJellyfinWebhookCasaPorTmdb covers: Provider_tmdb matching an
+// existing entity generates a correct historico_evento.
 func TestReceiveJellyfinWebhookCasaPorTmdb(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	entID := "e1"
@@ -158,8 +158,8 @@ func TestReceiveJellyfinWebhookCasaPorTmdb(t *testing.T) {
 	eq(t, "source", ev.Source, "jellyfin-webhook")
 }
 
-// TestReceiveJellyfinWebhookCasaPorImdb cobre §5: mesmo teste usando
-// Provider_imdb isoladamente (sem tmdb no payload).
+// TestReceiveJellyfinWebhookCasaPorImdb covers: same test using
+// Provider_imdb alone (without tmdb in the payload).
 func TestReceiveJellyfinWebhookCasaPorImdb(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	entID := "e1"
@@ -181,8 +181,8 @@ func TestReceiveJellyfinWebhookCasaPorImdb(t *testing.T) {
 	}
 }
 
-// TestReceiveJellyfinWebhookCasaPorTvdb cobre §5: mesmo teste usando
-// Provider_tvdb isoladamente (sem tmdb/imdb no payload).
+// TestReceiveJellyfinWebhookCasaPorTvdb covers: same test using
+// Provider_tvdb alone (without tmdb/imdb in the payload).
 func TestReceiveJellyfinWebhookCasaPorTvdb(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	entID := "e1"
@@ -204,9 +204,9 @@ func TestReceiveJellyfinWebhookCasaPorTvdb(t *testing.T) {
 	}
 }
 
-// TestReceiveJellyfinWebhookSemMatch cobre §5: payload sem nenhum id
-// batendo -> 204, nenhum historico_evento criado NA ENTITY (o briefing 0099
-// muda o destino para órfão, testado em TestReceiveJellyfinWebhookSemMatchGravaOrfao).
+// TestReceiveJellyfinWebhookSemMatch covers: a payload without any matching
+// id -> 204, no historico_evento created IN THE ENTITY (the newer behavior changes the
+// destination to orphan, tested in TestReceiveJellyfinWebhookSemMatchGravaOrfao).
 func TestReceiveJellyfinWebhookSemMatch(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	entID := "e1"
@@ -228,10 +228,10 @@ func TestReceiveJellyfinWebhookSemMatch(t *testing.T) {
 	}
 }
 
-// TestReceiveJellyfinWebhookSemMatchGravaOrfao cobre o briefing 0099: um
-// evento sem match NÃO é mais descartado silenciosamente -- vira uma linha
-// histórico_evento com entity_id NULL e os IDs/título/ano brutos do payload,
-// visível em GET /historico/orfaos.
+// TestReceiveJellyfinWebhookSemMatchGravaOrfao covers the orphan behavior: an
+// event without a match is NO longer discarded silently -- it becomes a
+// historico_evento row with entity_id NULL and the raw IDs/title/year of the payload,
+// visible in GET /historico/orfaos.
 func TestReceiveJellyfinWebhookSemMatchGravaOrfao(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	token := gerarTokenTeste(t, h)
@@ -274,8 +274,8 @@ func TestReceiveJellyfinWebhookSemMatchGravaOrfao(t *testing.T) {
 	}
 }
 
-// TestReceiveJellyfinWebhookPlaybackStopLimiar cobre §5: PlaybackStop com
-// PlaybackPercentage >= 80 grava status=completed; < 80 grava status=stopped.
+// TestReceiveJellyfinWebhookPlaybackStopLimiar covers: PlaybackStop with
+// PlaybackPercentage >= 80 writes status=completed; < 80 writes status=stopped.
 func TestReceiveJellyfinWebhookPlaybackStopLimiar(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	token := gerarTokenTeste(t, h)
@@ -311,8 +311,9 @@ func TestReceiveJellyfinWebhookPlaybackStopLimiar(t *testing.T) {
 	}
 }
 
-// TestReceiveJellyfinWebhookPayloadMalformado cobre §5: payload com corpo
-// não-JSON não derruba o handler (sem 500) -- degrada para 204/descartado.
+// TestReceiveJellyfinWebhookPayloadMalformado covers: a payload with a
+// non-JSON body does not take the handler down (no 500) -- it degrades to
+// 204/discarded.
 func TestReceiveJellyfinWebhookPayloadMalformado(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	token := gerarTokenTeste(t, h)
@@ -323,9 +324,9 @@ func TestReceiveJellyfinWebhookPayloadMalformado(t *testing.T) {
 	}
 }
 
-// TestReceiveJellyfinWebhookCamposAusentes cobre §5: payload com campos
-// ausentes (só NotificationType/ItemType, sem nenhum Provider_*) não
-// derruba o handler -- 204, descartado por falta de match.
+// TestReceiveJellyfinWebhookCamposAusentes covers: a payload with missing
+// fields (only NotificationType/ItemType, without any Provider_*) does not
+// take the handler down -- 204, discarded for lack of a match.
 func TestReceiveJellyfinWebhookCamposAusentes(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	token := gerarTokenTeste(t, h)
@@ -339,9 +340,9 @@ func TestReceiveJellyfinWebhookCamposAusentes(t *testing.T) {
 	}
 }
 
-// TestReceiveJellyfinWebhookItemTypeNaoSuportado cobre §3: ItemType fora de
-// Movie/Episode é ignorado (204, nenhum evento criado), mesmo com id
-// batendo.
+// TestReceiveJellyfinWebhookItemTypeNaoSuportado covers: an ItemType outside
+// Movie/Episode is ignored (204, no event created), even with a matching
+// id.
 func TestReceiveJellyfinWebhookItemTypeNaoSuportado(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	entID := "e1"
@@ -363,8 +364,8 @@ func TestReceiveJellyfinWebhookItemTypeNaoSuportado(t *testing.T) {
 	}
 }
 
-// criarEntityComExternalIds cria uma entity com external_ids_json (para o
-// casamento por id externo do webhook), reaproveitando CriarEntity direto.
+// criarEntityComExternalIds creates an entity with external_ids_json (for the
+// matching by external id of the webhook), reusing CriarEntity directly.
 func criarEntityComExternalIds(t *testing.T, d *db.DB, id, tipo, titulo, externalIdsJSON string) {
 	t.Helper()
 	_, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{

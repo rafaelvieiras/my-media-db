@@ -1,9 +1,8 @@
-// Este arquivo implementa o CASAMENTO POR NOME contra drafts locais no import
-// manual (briefing 0054): antes de criar uma entity nova, `importarItemBase`
-// tenta achar um draft PURO (sem NENHUM external_id, mesmo `type`) já
-// escaneado com o mesmo título/ano — reaproveitando a MESMA pontuação do
-// auto-match da fila de Revisão (0050), agora extraída para o pacote leaf
-// `internal/matching` (sem ciclo de import com internal/server).
+// This file implements the NAME MATCHING against local drafts on manual import:
+// before creating a new entity, `importarItemBase` tries to find a PURE draft (with NO
+// external_id, same `type`) already scanned with the same title/year — reusing the SAME
+// scoring of the auto-match of the Revisão queue, now extracted into the leaf package
+// `internal/matching` (no import cycle with internal/server).
 package enrich
 
 import (
@@ -16,26 +15,26 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/matching"
 )
 
-// limiteCandidatosDraft é o teto de candidatos trazidos pelo FTS5 antes da
-// repontuação — pré-filtro generoso o bastante para não perder o candidato
-// certo em bibliotecas grandes, sem trazer a tabela inteira.
+// limiteCandidatosDraft is the ceiling of candidates brought by FTS5 before the
+// re-scoring — a pre-filter generous enough not to lose the right candidate in large
+// libraries, without pulling the whole table.
 const limiteCandidatosDraft = 25
 
-// candidatoDraft é um candidato local ao casamento por nome: apenas os campos
-// que a pontuação (internal/matching.Pontuar) precisa. Year é 0 quando o
-// draft não tem release_date gravada ainda (draft puro, comum).
+// candidatoDraft is a local candidate for the name matching: only the fields that the
+// scoring (internal/matching.Pontuar) needs. Year is 0 when the draft has no release_date
+// recorded yet (a pure draft, the common case).
 type candidatoDraft struct {
 	ID    string
 	Title string
 	Year  int
 }
 
-// buscarDraftsCandidatosSQL é a query do casamento por nome: FTS5 sobre
-// entity_fts, restrita a drafts PUROS (external_ids_json IS NULL) do MESMO
-// type. Deliberadamente enxuta (só id/title/release_date) — não é a mesma
-// query da busca (internal/server/search.go, buscarCardsFTSSQL), que serve o
-// card inteiro; este pacote não tem acesso a entityCardDTO (evita ciclo com
-// internal/server, que já importa internal/enrich).
+// buscarDraftsCandidatosSQL is the name-matching query: FTS5 over entity_fts, restricted
+// to PURE drafts (external_ids_json IS NULL) of the SAME type. Deliberately lean (only
+// id/title/release_date) — it is not the same query as the search
+// (internal/server/search.go, buscarCardsFTSSQL), which serves the whole card; this
+// package has no access to entityCardDTO (avoids a cycle with internal/server, which
+// already imports internal/enrich).
 const buscarDraftsCandidatosSQL = `SELECT
     e.id, e.title, e.release_date
 FROM entity_fts
@@ -46,9 +45,9 @@ WHERE entity_fts MATCH ?
 ORDER BY entity_fts.rank
 LIMIT ?;`
 
-// buscarDraftsCandidatos roda o MATCH FTS5 sanitizado no pool de LEITURA e
-// devolve os candidatos (drafts puros do mesmo type). Título sem nenhum termo
-// pesquisável (só pontuação/operadores) devolve lista vazia sem tocar o banco.
+// buscarDraftsCandidatos runs the sanitized FTS5 MATCH on the READ pool and returns the
+// candidates (pure drafts of the same type). A title with no searchable term (only
+// punctuation/operators) returns an empty list without touching the database.
 func (s *Servico) buscarDraftsCandidatos(ctx context.Context, titulo, tipo string) ([]candidatoDraft, error) {
 	match, ok := sanitizarMatchFTS(titulo)
 	if !ok {
@@ -79,11 +78,10 @@ func (s *Servico) buscarDraftsCandidatos(ctx context.Context, titulo, tipo strin
 	return out, nil
 }
 
-// anoDoPayload extrai o ano de release_date do detalhe CRU do provider (antes
-// de qualquer entity existir — não há coluna gravada para ler ainda, ao
-// contrário de internal/server que lê da entity já persistida). Fonte sem
-// provider, campo ausente/vazio ou não-string devolvem 0 (degrada para "sem
-// ano", igual ao resto do pacote).
+// anoDoPayload extracts the release_date year from the RAW detail of the provider (before
+// any entity exists — there is no written column to read yet, unlike internal/server, which
+// reads from the entity already persisted). A source without a provider, a missing/empty or
+// non-string field return 0 (degrading to "no year", like the rest of the package).
 func (s *Servico) anoDoPayload(source string, raw json.RawMessage) int {
 	prov, ok := s.provFonte(source)
 	if !ok {
@@ -100,13 +98,12 @@ func (s *Servico) anoDoPayload(source string, raw json.RawMessage) int {
 	return matching.AnoDeReleaseDate(rd)
 }
 
-// tentarCasarComDraftLocal busca candidatos locais (drafts puros do mesmo
-// type) e repontua cada um com internal/matching.Pontuar, devolvendo o de
-// MAIOR score que bate LimiarAutoMatch. ok=false quando nenhum candidato
-// qualifica (ou a busca não achou nada) — sem side-effect algum, quem aplica
-// o candidato é o chamador (importarItemBase). Mesmo desenho de
-// melhorCandidatoLocal (internal/server/automatch.go), adaptado ao shape
-// mínimo deste pacote.
+// tentarCasarComDraftLocal looks for local candidates (pure drafts of the same type) and
+// re-scores each one with internal/matching.Pontuar, returning the one with the HIGHEST
+// score that meets LimiarAutoMatch. ok=false when no candidate qualifies (or the search
+// found nothing) — with no side-effect at all, the one that applies the candidate is the
+// caller (importarItemBase). Same design as melhorCandidatoLocal
+// (internal/server/automatch.go), adapted to the minimal shape of this package.
 func (s *Servico) tentarCasarComDraftLocal(ctx context.Context, titulo string, ano int, tipo string) (id string, achou bool, err error) {
 	candidatos, err := s.buscarDraftsCandidatos(ctx, titulo, tipo)
 	if err != nil {
@@ -125,14 +122,13 @@ func (s *Servico) tentarCasarComDraftLocal(ctx context.Context, titulo string, a
 	return id, achou, nil
 }
 
-// sanitizarMatchFTS transforma o texto do usuário numa expressão MATCH SEGURA
-// do FTS5: quebra em termos por espaço, descarta termos sem nenhuma
-// letra/dígito e envolve cada termo restante numa FRASE entre aspas com
-// prefixo (`"termo"*`), evitando que aspas/parênteses/operadores do input
-// quebrem a sintaxe da consulta. Mesma lógica de
-// internal/server/search.go:sanitizarMatchFTS (não importável daqui — este
-// pacote não pode depender de internal/server, ciclo). Devolve ok=false
-// quando não sobra termo pesquisável.
+// sanitizarMatchFTS turns the user text into a SAFE FTS5 MATCH expression: it splits it
+// into terms by whitespace, discards terms with no letter/digit and wraps each remaining
+// term in a quoted PHRASE with a prefix (`"term"*`), preventing quotes/parentheses/operators
+// from the input from breaking the query syntax. Same logic as
+// internal/server/search.go:sanitizarMatchFTS (not importable from here — this package
+// cannot depend on internal/server, cycle). It returns ok=false when no searchable term is
+// left.
 func sanitizarMatchFTS(termo string) (string, bool) {
 	limpo := strings.ReplaceAll(termo, `"`, " ")
 	campos := strings.Fields(limpo)
@@ -149,8 +145,8 @@ func sanitizarMatchFTS(termo string) (string, bool) {
 	return strings.Join(frases, " "), true
 }
 
-// temAlfanumerico diz se a string tem ao menos uma letra ou dígito unicode —
-// garante que a frase FTS5 gerada não seja vazia (evita erro de sintaxe).
+// temAlfanumerico tells whether the string has at least one unicode letter or digit — it
+// ensures the generated FTS5 phrase is not empty (avoids a syntax error).
 func temAlfanumerico(s string) bool {
 	for _, r := range s {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {

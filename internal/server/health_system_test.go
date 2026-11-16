@@ -14,10 +14,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// setupSystemHealthServer sobe um Server com banco temporário migrado,
-// devolvendo o *Server (não só o Handler) — os testes de cache/TTL precisam
-// mexer em s.telemetryCache.agora, um campo não-exportado só acessível de
-// dentro do pacote.
+// setupSystemHealthServer starts a Server with a migrated temporary database, returning
+// the *Server (not only the Handler) — the cache/TTL tests need to touch
+// s.telemetryCache.agora, a non-exported field only reachable from inside the
+// package.
 func setupSystemHealthServer(t *testing.T) (*Server, *db.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "system-health.sqlite")
@@ -32,9 +32,9 @@ func setupSystemHealthServer(t *testing.T) (*Server, *db.DB) {
 	return New("v-teste", database), database
 }
 
-// doSystemHealth chama o handler diretamente (mesmo padrão de doHealth em
-// health_test.go) e devolve o recorder cru — os testes decidem se checam
-// status 200 ou erro.
+// doSystemHealth calls the handler directly (the same pattern as doHealth in
+// health_test.go) and returns the raw recorder — the tests decide whether they check a
+// 200 status or an error.
 func doSystemHealth(t *testing.T, s *Server) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/system", nil)
@@ -43,9 +43,9 @@ func doSystemHealth(t *testing.T, s *Server) *httptest.ResponseRecorder {
 	return rec
 }
 
-// semearLibrarySource insere uma library_source direto pelo sqlc (bypassa a
-// validação de path de library.Service.Criar — permite testar path
-// inacessível sem exercitar aquele fluxo).
+// semearLibrarySource inserts a library_source straight through sqlc (it bypasses the
+// path validation of library.Service.Criar — this allows testing an unreachable path
+// without exercising that flow).
 func semearLibrarySource(t *testing.T, d *db.DB, id, path string) {
 	t.Helper()
 	if _, err := sqlcgen.New(d.Write).CriarLibrarySource(context.Background(), sqlcgen.CriarLibrarySourceParams{
@@ -55,8 +55,8 @@ func semearLibrarySource(t *testing.T, d *db.DB, id, path string) {
 	}
 }
 
-// semearFileComFonte cria um media_file ligado a uma library_source_id (o
-// semearFile de entities_test.go não cobre esse campo).
+// semearFileComFonte creates a media_file linked to a library_source_id (the semearFile of
+// entities_test.go does not cover that field).
 func semearFileComFonte(t *testing.T, d *db.DB, id, entityID, path, state string, size int64, sourceID string) {
 	t.Helper()
 	if _, err := sqlcgen.New(d.Write).CriarMediaFile(context.Background(), sqlcgen.CriarMediaFileParams{
@@ -68,10 +68,9 @@ func semearFileComFonte(t *testing.T, d *db.DB, id, entityID, path, state string
 	}
 }
 
-// TestSystemHealthSemBancoDevolve503 prova que sem banco injetado o endpoint
-// novo degrada com 503 no envelope de erro padrão — e que isso NÃO afeta
-// GET /api/v1/health (código independente, contrato do 0001/0006
-// preservado).
+// TestSystemHealthSemBancoDevolve503 proves that, with no database injected, the new
+// endpoint degrades with 503 in the standard error envelope — and that this does NOT
+// affect GET /api/v1/health (independent code, health contract preserved).
 func TestSystemHealthSemBancoDevolve503(t *testing.T) {
 	s := New("v-teste", nil)
 
@@ -81,17 +80,16 @@ func TestSystemHealthSemBancoDevolve503(t *testing.T) {
 	}
 	checkErrorShape(t, rec, "db_unavailable")
 
-	// GET /health básico continua 200, mesmo sem banco.
+	// The basic GET /health keeps answering 200, even without a database.
 	basico := doHealth(t, s)
 	if basico.Status != "ok" {
 		t.Fatalf("GET /health status = %q, quero \"ok\" mesmo sem banco", basico.Status)
 	}
 }
 
-// TestSystemHealthShapeCompleto prova que, com banco e ao menos uma
-// library_source, o endpoint devolve 200 com banco/uso/armazenamento
-// preenchidos, e que database.size_bytes bate com uma leitura PRAGMA direta
-// no mesmo instante (critérios de aceite do briefing 0055).
+// TestSystemHealthShapeCompleto proves that, with a database and at least one
+// library_source, the endpoint returns 200 with database/usage/storage filled in, and that
+// database.size_bytes matches a direct PRAGMA read at the same instant.
 func TestSystemHealthShapeCompleto(t *testing.T) {
 	s, d := setupSystemHealthServer(t)
 
@@ -141,9 +139,8 @@ func TestSystemHealthShapeCompleto(t *testing.T) {
 	}
 }
 
-// TestSystemHealthEntitiesByType prova que usage.entities.by_type reflete as
-// contagens reais por type de um fixture misto (movie/season/episode/
-// collection) — critério de aceite do briefing 0055.
+// TestSystemHealthEntitiesByType proves that usage.entities.by_type reflects the real
+// counts per type of a mixed fixture (movie/season/episode/collection).
 func TestSystemHealthEntitiesByType(t *testing.T) {
 	s, d := setupSystemHealthServer(t)
 
@@ -176,30 +173,30 @@ func TestSystemHealthEntitiesByType(t *testing.T) {
 	}
 }
 
-// TestSystemHealthFilaBateComReviewEOrphans prova que
-// usage.review_queue_size/orphans_count batem EXATAMENTE com o tamanho que
-// GET /review e GET /orphans devolveriam para o MESMO fixture (mesma
-// garantia que o 0053 já prova para internal/curation).
+// TestSystemHealthFilaBateComReviewEOrphans proves that
+// usage.review_queue_size/orphans_count match EXACTLY the size that GET /review and
+// GET /orphans would return for the SAME fixture (the same guarantee already proven for
+// internal/curation).
 func TestSystemHealthFilaBateComReviewEOrphans(t *testing.T) {
 	s, d := setupSystemHealthServer(t)
 
-	// e-draft: não identificado -> entra em revisão.
+	// e-draft: unidentified -> it enters review.
 	semearEntity(t, d, "e-draft", "movie", "Draft")
 	definirStatus(t, d, "e-draft", "draft")
 
-	// e-baixa: present com confiança 40 (< 70) -> entra em revisão.
+	// e-baixa: present with confidence 40 (< 70) -> it enters review.
 	semearEntity(t, d, "e-baixa", "movie", "Baixa Confianca")
 	semearFile(t, d, "f-baixa", "e-baixa", "/x/baixa.mkv", "present", 40, "")
 
-	// e-alta: present com confiança 95 -> não entra em revisão nem órfãs.
+	// e-alta: present with confidence 95 -> it enters neither review nor orphans.
 	semearEntity(t, d, "e-alta", "movie", "Alta Confianca")
 	semearFile(t, d, "f-alta", "e-alta", "/x/alta.mkv", "present", 95, "")
 
-	// e-orfa: todos os arquivos missing, sem investimento -> órfã.
+	// e-orfa: all files missing, no investment -> orphan.
 	semearEntity(t, d, "e-orfa", "movie", "Orfa")
 	semearFile(t, d, "f-orfa", "e-orfa", "/x/orfa.mkv", "missing", 0, "")
 
-	// Chama /review e /orphans de verdade para comparar com o mesmo fixture.
+	// Calls /review and /orphans for real, to compare against the same fixture.
 	recReview := httptest.NewRecorder()
 	s.listReview(recReview, httptest.NewRequest(http.MethodGet, "/api/v1/review", nil))
 	var review []entityCardDTO
@@ -229,7 +226,7 @@ func TestSystemHealthFilaBateComReviewEOrphans(t *testing.T) {
 	if out.Usage.OrphansCount != len(orphans) {
 		t.Errorf("usage.orphans_count = %d, quero %d (== GET /orphans)", out.Usage.OrphansCount, len(orphans))
 	}
-	// Trava os números concretos também, não só a igualdade cruzada.
+	// It pins the concrete numbers too, not only the cross equality.
 	if len(review) != 2 {
 		t.Errorf("len(review) = %d, quero 2 (draft + baixa confiança)", len(review))
 	}
@@ -238,12 +235,12 @@ func TestSystemHealthFilaBateComReviewEOrphans(t *testing.T) {
 	}
 }
 
-// TestSystemHealthUsedBytesSemWalkDir prova que storage.sources[].used_bytes
-// bate com a soma de media_file.size da fonte com state='present' — o
-// critério "sem WalkDir" é estrutural (UsoDisco só roda SUM sqlc, não há
-// nenhuma chamada a filepath.WalkDir no code path deste endpoint, ver
-// internal/telemetry/telemetry.go); aqui provamos o número batendo mesmo com
-// arquivo missing e de outra fonte misturados.
+// TestSystemHealthUsedBytesSemWalkDir proves that storage.sources[].used_bytes matches the
+// sum of media_file.size of the source with state='present' — the "no WalkDir"
+// criterion is structural (UsoDisco only runs a sqlc SUM, there is no call to
+// filepath.WalkDir in the code path of this endpoint, see
+// internal/telemetry/telemetry.go); here we prove the number matches even with missing
+// files and files from another source mixed in.
 func TestSystemHealthUsedBytesSemWalkDir(t *testing.T) {
 	s, d := setupSystemHealthServer(t)
 
@@ -280,10 +277,9 @@ func TestSystemHealthUsedBytesSemWalkDir(t *testing.T) {
 	}
 }
 
-// TestSystemHealthFonteOfflineNaoAbortaAsDemais prova que uma fonte com Path
-// inacessível aparece com offline:true/filesystem:null (com o campo error
-// preenchido), SEM abortar as demais fontes nem devolver 5xx para o
-// endpoint inteiro — critério de aceite do briefing 0055.
+// TestSystemHealthFonteOfflineNaoAbortaAsDemais proves that a source with an unreachable
+// Path shows up with offline:true/filesystem:null (with the error field filled in),
+// WITHOUT aborting the other sources nor returning 5xx for the whole endpoint.
 func TestSystemHealthFonteOfflineNaoAbortaAsDemais(t *testing.T) {
 	s, d := setupSystemHealthServer(t)
 
@@ -325,15 +321,14 @@ func TestSystemHealthFonteOfflineNaoAbortaAsDemais(t *testing.T) {
 	}
 }
 
-// TestSystemHealthCacheDentroDoTTLNaoRecalcula prova que duas chamadas
-// dentro do TTL devolvem o MESMO computed_at (segundo request não
-// recalculou), e que uma chamada após o TTL expirar devolve um computed_at
-// novo — critério de aceite do briefing 0055.
+// TestSystemHealthCacheDentroDoTTLNaoRecalcula proves that two calls within the TTL return
+// the SAME computed_at (the second request did not recalculate), and that a call after the
+// TTL expires returns a new computed_at.
 func TestSystemHealthCacheDentroDoTTLNaoRecalcula(t *testing.T) {
 	s, d := setupSystemHealthServer(t)
 	semearLibrarySource(t, d, "src-1", t.TempDir())
 
-	// Relógio controlado: o teste avança o tempo manualmente, sem sleep real.
+	// Controlled clock: the test advances the time manually, with no real sleep.
 	agora := time.Now()
 	s.telemetryCache.agora = func() time.Time { return agora }
 
@@ -343,7 +338,7 @@ func TestSystemHealthCacheDentroDoTTLNaoRecalcula(t *testing.T) {
 		t.Fatalf("decodificar 1a chamada: %v", err)
 	}
 
-	// Ainda dentro do TTL (avança bem menos que ttlTelemetria).
+	// Still within the TTL (it advances far less than ttlTelemetria).
 	agora = agora.Add(1 * time.Second)
 	rec2 := doSystemHealth(t, s)
 	var out2 systemHealthResponse
@@ -354,11 +349,11 @@ func TestSystemHealthCacheDentroDoTTLNaoRecalcula(t *testing.T) {
 		t.Errorf("computed_at mudou dentro do TTL: %q -> %q, queria igual (cache hit)", out1.ComputedAt, out2.ComputedAt)
 	}
 
-	// Expira o TTL: nova chamada deve recalcular. ComputedAt vem do RELOGIO
-	// REAL (telemetry.Servico.Snapshot usa time.Now(), independente do agora
-	// mockado do cache, que só controla a expiracao) e é truncado a
-	// milissegundos na serializacao -- um sleep curto real evita a rara
-	// coincidencia de duas chamadas caindo no mesmo milissegundo.
+	// Expires the TTL: a new call must recalculate. ComputedAt comes from the REAL CLOCK
+	// (telemetry.Servico.Snapshot uses time.Now(), independently of the mocked now of the
+	// cache, which only controls the expiration) and is truncated to milliseconds in the
+	// serialization -- a short real sleep avoids the rare coincidence of two calls landing
+	// in the same millisecond.
 	time.Sleep(2 * time.Millisecond)
 	agora = agora.Add(ttlTelemetria + time.Second)
 	rec3 := doSystemHealth(t, s)
@@ -371,10 +366,10 @@ func TestSystemHealthCacheDentroDoTTLNaoRecalcula(t *testing.T) {
 	}
 }
 
-// TestSystemHealthNaoAlteraHealthBasico é uma prova estrutural complementar
-// ao 503 acima: com banco no ar, GET /health continua no shape antigo
-// (status/version/db) mesmo depois de bater em /health/system — os dois
-// handlers não compartilham estado que vaze contrato.
+// TestSystemHealthNaoAlteraHealthBasico is a structural proof complementary to the 503
+// above: with the database up, GET /health keeps the old shape (status/version/db) even
+// after hitting /health/system — the two handlers do not share state that leaks a
+// contract.
 func TestSystemHealthNaoAlteraHealthBasico(t *testing.T) {
 	s, d := setupSystemHealthServer(t)
 	semearLibrarySource(t, d, "src-1", t.TempDir())

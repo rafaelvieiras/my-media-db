@@ -1,11 +1,11 @@
 package e2e
 
-// journeys_recasar_test.go cobre o briefing 0069: quando o scanner encontra uma
-// série ANTES dela ter identidade/árvore (draft, fila de revisão), os arquivos
-// ficam presos direto na entity da série, sem vínculo de episódio. A jornada
-// ponta-a-ponta abaixo prova que "Corrigir" (POST /entities/{id}/correct) — que já
-// sincroniza a árvore desde o 0067 — agora TAMBÉM recasa esses arquivos pendentes
-// no mesmo instante, sem precisar de um novo scan.
+// journeys_recasar_test.go covers the case where the scanner finds a series
+// BEFORE it has an identity/tree (draft, review queue): the files end up stuck
+// directly on the series entity, with no episode link. The end-to-end journey
+// below proves that "Corrigir" (POST /entities/{id}/correct) — which already
+// synchronized the tree — now ALSO re-matches those pending files on the spot,
+// with no need for a new scan.
 
 import (
 	"net/http"
@@ -15,13 +15,13 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
-// TestJornadaCorrigirSerieRecasaArquivosPendentes: uma pasta de série com nome que
-// o provider fake não reconhece ("Mystery Show") é escaneada — os 2 arquivos
-// (S01E01/S01E02) ficam presos numa série RASCUNHO, sem vínculo de episódio (mesmo
-// caminho de revisão do 0034). O dono então Corrige a identidade para a fixture
-// real do fake (Springfield Tales, 71663): Enriquecer sincroniza a árvore (0067) E,
-// no mesmo passo, recasa os 2 arquivos que já estavam presos (0069) — sem precisar
-// de outro scan.
+// TestJornadaCorrigirSerieRecasaArquivosPendentes: a series folder with a name the
+// fake provider does not recognize ("Mystery Show") is scanned — the 2 files
+// (S01E01/S01E02) get stuck in a DRAFT series, with no episode link (the same
+// review path as the series scanner). The owner then Corrects the identity to the
+// fake's real fixture (Springfield Tales, 71663): Enrich synchronizes the tree AND,
+// in the same step, re-matches the 2 files that were already stuck — with no need
+// for another scan.
 func TestJornadaCorrigirSerieRecasaArquivosPendentes(t *testing.T) {
 	c := novoHarness(t)
 
@@ -35,21 +35,22 @@ func TestJornadaCorrigirSerieRecasaArquivosPendentes(t *testing.T) {
 	srcID := str(t, src, "id")
 	c.esperarScan(srcID)
 
-	// (1) O scan não resolveu "Mystery Show" no fake: cai na fila de revisão, uma
-	// série RASCUNHO com os 2 arquivos presos direto nela, sem vínculo de episódio.
+	// (1) The scan did not resolve "Mystery Show" on the fake: it falls into the
+	// review queue, a DRAFT series with the 2 files stuck directly on it, with no
+	// episode link.
 	serieID := acharSerieEmRevisao(t, c)
 	if arqs := c.arquivosDaEntity(serieID); len(arqs) != 2 {
 		t.Fatalf("arquivos presos na serie rascunho = %d, quero 2 (S01E01/S01E02 sem vinculo)", len(arqs))
 	}
 
-	// (2) O dono Corrige a identidade — aplicarIdentidadeExterna chama Enriquecer,
-	// que sincroniza a árvore (0067) e, ao final dela, recasa os pendentes (0069).
+	// (2) The owner Corrects the identity — aplicarIdentidadeExterna calls Enrich,
+	// which synchronizes the tree and, at the end of it, re-matches the pendings.
 	c.obj(http.MethodPost, "/api/v1/entities/"+serieID+"/correct",
 		map[string]string{"source": "tmdb", "source_id": fake.SerieFixtureID}, http.StatusOK)
 
-	// (3) A árvore nasceu (2 temporadas) e os 2 arquivos JÁ ESTAVAM na série — sem
-	// nenhum novo scan — ganharam vínculo aos episódios certos pelo NÚMERO: ep 101
-	// (S01E01) e ep 102 (S01E02); ep 103 (S01E03) continua sem arquivo algum.
+	// (3) The tree was born (2 seasons) and the 2 files that WERE ALREADY in the
+	// series — with no new scan at all — got linked to the right episodes by NUMBER:
+	// ep 101 (S01E01) and ep 102 (S01E02); ep 103 (S01E03) still has no file at all.
 	temporadas := c.idsDosMembros(serieID)
 	if len(temporadas) != 2 {
 		t.Fatalf("temporadas apos corrigir = %d, quero 2 (arvore sincronizada)", len(temporadas))
@@ -58,14 +59,14 @@ func TestJornadaCorrigirSerieRecasaArquivosPendentes(t *testing.T) {
 	if len(epsT1) != 3 {
 		t.Fatalf("episodios T1 = %d, quero 3", len(epsT1))
 	}
-	assertFileCount(t, c, epsT1[0], 1) // S01E01 -> ep 101, recasado sem novo scan
-	assertFileCount(t, c, epsT1[1], 1) // S01E02 -> ep 102, recasado sem novo scan
-	assertFileCount(t, c, epsT1[2], 0) // S01E03: nenhum arquivo cobria esse numero
+	assertFileCount(t, c, epsT1[0], 1) // S01E01 -> ep 101, re-matched with no new scan
+	assertFileCount(t, c, epsT1[1], 1) // S01E02 -> ep 102, re-matched with no new scan
+	assertFileCount(t, c, epsT1[2], 0) // S01E03: no file covered that number
 	assertPosse(t, c, temporadas[0], 2, 3)
 }
 
-// acharSerieEmRevisao devolve o id da (única) série tv na fila de revisão (GET
-// /api/v1/review) — o rascunho que o scanner criou por não resolver o título.
+// acharSerieEmRevisao returns the id of the (only) tv series in the review queue (GET
+// /api/v1/review) — the draft the scanner created because it could not resolve the title.
 func acharSerieEmRevisao(t *testing.T, c *cliente) string {
 	t.Helper()
 	fila := c.arr(http.MethodGet, "/api/v1/review", nil, http.StatusOK)

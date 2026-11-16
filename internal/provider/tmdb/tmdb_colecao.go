@@ -9,14 +9,16 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Este arquivo implementa a CAPACIDADE de coleção do provider (provider.ColecaoProvider,
-// briefing 0024): GET {base}/collection/{id}?language=<lang ativo> e o mapeamento das
-// partes para o canônico. É MONO-IDIOMA pragmático (busca no idioma ativo, sem o cache
-// re-componível all-translations do 0022) — o multi-idioma pleno da coleção fica como
-// follow-up. Sem rede no mapeamento (mapearColecao é PURO).
+// This file implements the COLLECTION capability of the provider
+// (provider.ColecaoProvider): GET {base}/collection/{id}?language=<active lang>
+// and the mapping of the parts to the canonical type. It is pragmatically
+// MONO-LANGUAGE (searched in the active language, without the re-composable
+// all-translations cache of the rich detail) -- the full multi-language support of
+// the collection remains a follow-up. No network in the mapping (mapearColecao is
+// PURE).
 
-// colecaoDetalheTMDB espelha /collection/{id} (só os campos usados). As partes são os
-// filmes da coleção.
+// colecaoDetalheTMDB mirrors /collection/{id} (only the fields used). The parts
+// are the movies of the collection.
 type colecaoDetalheTMDB struct {
 	ID           int64              `json:"id"`
 	Name         string             `json:"name"`
@@ -26,8 +28,9 @@ type colecaoDetalheTMDB struct {
 	Parts        []parteColecaoTMDB `json:"parts"`
 }
 
-// parteColecaoTMDB é um item (parte) da coleção. media_type costuma vir "movie"; os
-// campos title/release_date são de filme (mantemos name/first_air_date por robustez).
+// parteColecaoTMDB is an item (part) of the collection. media_type usually comes
+// as "movie"; the title/release_date fields are movie ones (we keep
+// name/first_air_date for robustness).
 type parteColecaoTMDB struct {
 	ID           int64  `json:"id"`
 	MediaType    string `json:"media_type"`
@@ -39,8 +42,9 @@ type parteColecaoTMDB struct {
 	FirstAirDate string `json:"first_air_date"`
 }
 
-// BuscarColecao puxa a coleção pelo id na fonte, localizada em `lang`. Reusa getBytes
-// (404 → provider.ErrNaoEncontrado; demais status → erro). Cumpre provider.ColecaoProvider.
+// BuscarColecao pulls the collection by id from the source, localized in `lang`.
+// It reuses getBytes (404 → provider.ErrNaoEncontrado; other statuses → error).
+// Satisfies provider.ColecaoProvider.
 func (c *Client) BuscarColecao(ctx context.Context, colecaoID, lang string) (provider.Colecao, error) {
 	if colecaoID == "" {
 		return provider.Colecao{}, fmt.Errorf("tmdb: colecaoID vazio")
@@ -60,8 +64,9 @@ func (c *Client) BuscarColecao(ctx context.Context, colecaoID, lang string) (pro
 	return mapearColecao(d), nil
 }
 
-// mapearColecao converte a coleção crua no tipo canônico. Cada parte vira um
-// ResultadoExterno (filme navegável ao detalhe externo). Descarta partes sem título.
+// mapearColecao converts the raw collection into the canonical type. Each part
+// becomes a ResultadoExterno (a movie navigable to the external detail). It
+// discards parts without a title.
 func mapearColecao(d colecaoDetalheTMDB) provider.Colecao {
 	col := provider.Colecao{
 		Source:      "tmdb",
@@ -90,8 +95,8 @@ func mapearColecao(d colecaoDetalheTMDB) provider.Colecao {
 	return col
 }
 
-// tipoDaParte normaliza o media_type da parte; coleção do TMDB é de filmes, então
-// qualquer valor fora de movie|tv cai em "movie".
+// tipoDaParte normalizes the media_type of the part; a TMDB collection is made of
+// movies, so any value outside movie|tv falls back to "movie".
 func tipoDaParte(mediaType string) string {
 	if mediaType == "tv" {
 		return "tv"
@@ -99,8 +104,8 @@ func tipoDaParte(mediaType string) string {
 	return "movie"
 }
 
-// backdropURL monta a URL direta do fundo (backdrop) da coleção no TMDB, ou nil
-// quando não há backdrop_path. Análogo de posterURL, mas no tamanho de destaque.
+// backdropURL builds the direct URL of the collection backdrop on TMDB, or nil
+// when there is no backdrop_path. An analogue of posterURL, but in the hero size.
 func backdropURL(backdropPath string) *string {
 	if backdropPath == "" {
 		return nil

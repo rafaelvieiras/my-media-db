@@ -1,8 +1,9 @@
 package server
 
-// Testes do agrupamento da fila de revisão (briefing 0137): a chave/rótulo saem
-// do `media_file.path` (não das tags, que 21 das 185 faixas reais não têm), e o
-// agrupamento só ANOTA o card -- o predicado da fila continua o do 0018.
+// Tests of the review queue grouping: the key/label come
+// from `media_file.path` (not from the tags, which 21 of the 185 real tracks do not
+// have), and the grouping only ANNOTATES the card -- the queue predicate stays
+// unchanged.
 
 import (
 	"encoding/json"
@@ -11,7 +12,7 @@ import (
 	"testing"
 )
 
-// TestGrupoDeRevisaoPorTipo cobre os três kinds e o caso sem arquivo.
+// TestGrupoDeRevisaoPorTipo covers the three kinds and the case without a file.
 func TestGrupoDeRevisaoPorTipo(t *testing.T) {
 	raizes := []string{"/media/gdrive-media"}
 
@@ -21,7 +22,7 @@ func TestGrupoDeRevisaoPorTipo(t *testing.T) {
 		caminho     string
 		queroKind   string
 		queroLabel  string
-		queroMesmaK string // chave de comparação: outro caminho que deve cair no MESMO grupo
+		queroMesmaK string // comparison key: another path that must fall into the SAME group
 	}{
 		{
 			nome:        "faixa (disco ignorado)",
@@ -70,13 +71,13 @@ func TestGrupoDeRevisaoPorTipo(t *testing.T) {
 	}
 }
 
-// TestGrupoDeRevisaoNaoCortaNomeDeObra garante que a remoção de segmento de
-// disco/temporada não engole nome de obra que COMEÇA com as mesmas palavras.
+// TestGrupoDeRevisaoNaoCortaNomeDeObra guarantees that the removal of the
+// disc/season segment does not swallow a work name that STARTS with the same words.
 func TestGrupoDeRevisaoNaoCortaNomeDeObra(t *testing.T) {
 	casos := []struct{ tipo, caminho, queroLabel string }{
 		{tipoEntFaixa, "/lib/Musicas/Banda/Disco Voador/01 - faixa.mp3", "Banda — Disco Voador"},
 		{tipoEntFaixa, "/lib/Musicas/Banda/Season of the Witch/01 - faixa.mp3", "Banda — Season of the Witch"},
-		// pasta de biblioteca chamada "Series" não pode ser confundida com temporada
+		// a library folder named "Series" cannot be mistaken for a season
 		{tipoEntEpisodio, "/lib/Series/The Office/S06E25.mkv", "The Office"},
 		{tipoEntEpisodio, "/lib/Videos/Series/Serie/Season 3/S01E01.mkv", "Serie"},
 	}
@@ -87,13 +88,14 @@ func TestGrupoDeRevisaoNaoCortaNomeDeObra(t *testing.T) {
 	}
 }
 
-// TestListReviewAnotaGrupo cobre o contrato HTTP: cada item do GET /review sai
-// com review_group (kind/key/label/size) e o size conta os itens do MESMO grupo.
+// TestListReviewAnotaGrupo covers the HTTP contract: each item of GET /review comes out
+// with review_group (kind/key/label/size) and the size counts the items of the SAME
+// group.
 func TestListReviewAnotaGrupo(t *testing.T) {
 	s, d := setupSystemHealthServer(t)
 	semearLibrarySource(t, d, "src-1", "/media/lib")
 
-	// Duas faixas do MESMO álbum (uma em cada disco) + uma de outro álbum.
+	// Two tracks of the SAME album (one on each disc) + one from another album.
 	faixas := []struct{ id, caminho string }{
 		{"fx-1", "/media/lib/Musicas/Duran Duran/Notorious/Disc 1/01 - A.mp3"},
 		{"fx-2", "/media/lib/Musicas/Duran Duran/Notorious/Disc 2/09 - B.mp3"},

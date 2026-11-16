@@ -2,10 +2,10 @@ package webhook
 
 import "testing"
 
-// TestParsePayloadCamposCompletos cobre §5: um payload com Provider_tmdb (e
-// os demais campos numéricos como number JSON) decodifica corretamente,
-// inclusive a derivação de PositionSeconds/RunTimeSeconds a partir dos
-// ticks (10_000_000 ticks = 1s) e ProgressPercent explícito.
+// TestParsePayloadCamposCompletos covers the complete payload: a payload with
+// Provider_tmdb (and the other numeric fields as JSON numbers) decodes
+// correctly, including the derivation of PositionSeconds/RunTimeSeconds from the
+// ticks (10_000_000 ticks = 1s) and the explicit ProgressPercent.
 func TestParsePayloadCamposCompletos(t *testing.T) {
 	body := []byte(`{
 		"NotificationType": "PlaybackProgress",
@@ -41,9 +41,9 @@ func TestParsePayloadCamposCompletos(t *testing.T) {
 	}
 }
 
-// TestParsePayloadTituloAno cobre o briefing 0099: Name/Year do payload
-// viram Title/Year no Evento -- usados quando o item nao casa nenhuma
-// entity (exibicao na lista de orfaos).
+// TestParsePayloadTituloAno covers the Name/Year capture: Name/Year from the
+// payload become Title/Year in the Evento -- used when the item matches no
+// entity (display in the orphans list).
 func TestParsePayloadTituloAno(t *testing.T) {
 	body := []byte(`{
 		"NotificationType": "PlaybackStart",
@@ -63,8 +63,8 @@ func TestParsePayloadTituloAno(t *testing.T) {
 	}
 }
 
-// TestParsePayloadTituloAnoAusentes cobre o briefing 0099: payload sem
-// Name/Year nao falha o parse -- Title/Year ficam "".
+// TestParsePayloadTituloAnoAusentes covers the tolerant case: a payload without
+// Name/Year does not fail the parse -- Title/Year stay "".
 func TestParsePayloadTituloAnoAusentes(t *testing.T) {
 	ev, err := ParsePayload([]byte(`{"NotificationType":"PlaybackStart","ItemType":"Movie"}`))
 	if err != nil {
@@ -75,9 +75,9 @@ func TestParsePayloadTituloAnoAusentes(t *testing.T) {
 	}
 }
 
-// TestParsePayloadCamposComoString cobre §3/§5: algumas versões do plugin
-// serializam TUDO como string via template Handlebars -- o parser deve
-// tolerar e converter.
+// TestParsePayloadCamposComoString covers the tolerant conversion: some
+// versions of the plugin serialize EVERYTHING as a string through the Handlebars
+// template -- the parser must tolerate and convert.
 func TestParsePayloadCamposComoString(t *testing.T) {
 	body := []byte(`{
 		"NotificationType": "PlaybackStop",
@@ -96,14 +96,15 @@ func TestParsePayloadCamposComoString(t *testing.T) {
 	if ev.PositionSeconds == nil || *ev.PositionSeconds != 8 {
 		t.Errorf("PositionSeconds = %v, quero 8", ev.PositionSeconds)
 	}
-	// Sem PlaybackPercentage explicito: deriva de posicao/duracao (80%).
+	// No explicit PlaybackPercentage: derive it from position/duration (80%).
 	if ev.ProgressPercent == nil || *ev.ProgressPercent != 80 {
 		t.Errorf("ProgressPercent derivado = %v, quero 80", ev.ProgressPercent)
 	}
 }
 
-// TestParsePayloadCamposAusentes cobre §3/§5: payload minimo (so os campos
-// que existem) nao falha o parse -- os ausentes ficam no zero-value.
+// TestParsePayloadCamposAusentes covers the minimal payload: a payload with only
+// the fields that exist does not fail the parse -- the absent ones stay at their
+// zero value.
 func TestParsePayloadCamposAusentes(t *testing.T) {
 	ev, err := ParsePayload([]byte(`{"NotificationType":"PlaybackStart"}`))
 	if err != nil {
@@ -120,7 +121,8 @@ func TestParsePayloadCamposAusentes(t *testing.T) {
 	}
 }
 
-// TestParsePayloadVazio cobre §5: objeto JSON totalmente vazio nao falha.
+// TestParsePayloadVazio covers the empty object: a totally empty JSON object
+// does not fail.
 func TestParsePayloadVazio(t *testing.T) {
 	ev, err := ParsePayload([]byte(`{}`))
 	if err != nil {
@@ -131,8 +133,9 @@ func TestParsePayloadVazio(t *testing.T) {
 	}
 }
 
-// TestParsePayloadNaoJSON cobre §5: corpo que nao e um objeto JSON valido
-// devolve erro (o handler HTTP degrada para 204/log, nunca 500).
+// TestParsePayloadNaoJSON covers an invalid body: a body that is not a valid
+// JSON object returns an error (the HTTP handler degrades to 204/log, never
+// 500).
 func TestParsePayloadNaoJSON(t *testing.T) {
 	if _, err := ParsePayload([]byte(`isto nao e json`)); err == nil {
 		t.Error("esperava erro para corpo nao-JSON")
@@ -142,7 +145,8 @@ func TestParsePayloadNaoJSON(t *testing.T) {
 	}
 }
 
-// TestItemTypeSuportado cobre §3: so Movie/Episode sao suportados.
+// TestItemTypeSuportado covers the restriction: only Movie/Episode are
+// supported.
 func TestItemTypeSuportado(t *testing.T) {
 	casos := map[string]bool{
 		"Movie":   true,
@@ -159,8 +163,8 @@ func TestItemTypeSuportado(t *testing.T) {
 	}
 }
 
-// TestMapStatus cobre §3/§5: o mapeamento NotificationType -> status,
-// inclusive o limiar de 80% em PlaybackStop.
+// TestMapStatus covers the mapping: the NotificationType -> status mapping,
+// including the 80% threshold on PlaybackStop.
 func TestMapStatus(t *testing.T) {
 	pct := func(v float64) *float64 { return &v }
 

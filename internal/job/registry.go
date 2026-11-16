@@ -1,23 +1,22 @@
 package job
 
-// Registry é o REGISTRO de tipos de job (briefing 0052): mapeia o nome do job
-// (Handler.Nome(), ex.: "backup_vacuum") ao Handler correspondente — cópia
-// ESTRUTURAL de internal/provider/registry.go (mesmo padrão, adaptado ao
-// domínio de job). É o ponto de plugabilidade do futuro sistema de plugins: um
-// novo tipo de job só precisa se Registrar aqui, sem tocar o schema nem os
-// endpoints.
+// Registry is the REGISTRY of job types: it maps the job name (Handler.Nome(),
+// e.g. "backup_vacuum") to the corresponding Handler — a STRUCTURAL copy of
+// internal/provider/registry.go (same pattern, adapted to the job domain). It
+// is the pluggability point of the future plugin system: a new job type only
+// has to Register itself here, without touching the schema or the endpoints.
 //
-// O zero-value é utilizável (Registrar cria o mapa preguiçosamente); o Manager
-// o guarda como campo simples (exportado, para WithJobHandlers registrar
-// direto). A ordem de registro é preservada (determinística em All()/Nomes());
-// o último a registrar sob o mesmo nome vence (comportamento previsível).
+// The zero-value is usable (Registrar creates the map lazily); the Manager
+// keeps it as a plain field (exported, so WithJobHandlers can register straight
+// into it). Registration order is preserved (deterministic in All()/Nomes());
+// the last one to register under the same name wins (predictable behavior).
 type Registry struct {
 	porNome map[string]Handler
 	ordem   []string
 }
 
-// Registrar adiciona (ou substitui) um handler sob o seu Nome(). Preserva a
-// ordem de primeira aparição do nome. nil é ignorado.
+// Registrar adds (or replaces) a handler under its Nome(). It preserves the
+// order of the name's first appearance. nil is ignored.
 func (r *Registry) Registrar(h Handler) {
 	if h == nil {
 		return
@@ -32,15 +31,16 @@ func (r *Registry) Registrar(h Handler) {
 	r.porNome[nome] = h
 }
 
-// Get devolve o handler do job `nome` e true quando registrado; (nil,false)
-// caso contrário — o chamador devolve ErrJobDesconhecido (mapeado a 503: job
-// seedado no banco, mas o binário não tem o Handler, ex. downgrade).
+// Get returns the handler of job `nome` and true when it is registered;
+// (nil,false) otherwise — the caller returns ErrJobDesconhecido (mapped to 503:
+// job seeded in the database, but the binary has no Handler for it, e.g. a
+// downgrade).
 func (r Registry) Get(nome string) (Handler, bool) {
 	h, ok := r.porNome[nome]
 	return h, ok
 }
 
-// All devolve os handlers na ORDEM de registro (determinística).
+// All returns the handlers in REGISTRATION order (deterministic).
 func (r Registry) All() []Handler {
 	out := make([]Handler, 0, len(r.ordem))
 	for _, n := range r.ordem {
@@ -49,8 +49,8 @@ func (r Registry) All() []Handler {
 	return out
 }
 
-// Nomes devolve os nomes dos jobs registrados na ORDEM de registro (cópia
-// defensiva).
+// Nomes returns the names of the registered jobs in REGISTRATION order (a
+// defensive copy).
 func (r Registry) Nomes() []string {
 	return append([]string(nil), r.ordem...)
 }

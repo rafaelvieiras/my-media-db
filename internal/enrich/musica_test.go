@@ -12,7 +12,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// MBIDs fixos usados pelo fakeMusicaProvider abaixo. UUIDs sintéticos, não reais.
+// Fixed MBIDs used by the fakeMusicaProvider below. Synthetic UUIDs, not real ones.
 const (
 	mbidArtistaFixture    = "aaaaaaaa-0000-0000-0000-000000000001"
 	mbidAlbumFixture      = "bbbbbbbb-0000-0000-0000-000000000001"
@@ -23,13 +23,13 @@ const (
 	mbidFaixaOutroFixture = "cccccccc-0000-0000-0000-000000000003"
 )
 
-// albumFixture/albumOutroFixture são os DOIS álbuns da discografia fake (briefing
-// 0115): albumFixture é o único usado por BuscarArtistaArvore (árvore, legado --
-// mantido igual ao de sempre para não alterar TestImportarArtistaCriaArvore/
-// TestReimportarArtistaIdempotente); albumOutroFixture só existe para
-// TestImportarFaixaPossuidaCriaSoUmAlbum provar que importar 1 faixa de
-// albumFixture NÃO cria albumOutroFixture (a discografia tem MAIS de 1 álbum,
-// mas o import escopado só toca o pedido).
+// albumFixture/albumOutroFixture are the TWO albums of the fake discography:
+// albumFixture is the only one used by BuscarArtistaArvore (the tree, legacy --
+// kept as it always was so as not to change TestImportarArtistaCriaArvore/
+// TestReimportarArtistaIdempotente); albumOutroFixture exists only so that
+// TestImportarFaixaPossuidaCriaSoUmAlbum can prove that importing 1 track of
+// albumFixture does NOT create albumOutroFixture (the discography has MORE than 1 album,
+// but the scoped import only touches what was asked for).
 func albumFixture() provider.AlbumExterno {
 	return provider.AlbumExterno{
 		Name:  "Fake Album",
@@ -79,10 +79,10 @@ func albumOutroFixture() provider.AlbumExterno {
 	}
 }
 
-// fakeMusicaProvider implementa o core provider.Provider (mínimo) + a capacidade
-// provider.MusicaProvider, sem rede real: BuscarArtistaArvore devolve uma árvore fixa
-// com 1 álbum de 2 faixas — a 2ª faixa com artist-credit DIVERGENTE (feat) do artista
-// principal, cobrindo o caso do ADR-0027 item 4.
+// fakeMusicaProvider implements the (minimal) provider.Provider core + the
+// provider.MusicaProvider capability, without a real network: BuscarArtistaArvore returns a fixed
+// tree with 1 album of 2 tracks — the 2nd track with an artist-credit DIVERGING (feat) from the main
+// artist, covering the case of ADR-0027 item 4.
 type fakeMusicaProvider struct{}
 
 func (fakeMusicaProvider) Nome() string { return "musicbrainz" }
@@ -91,16 +91,16 @@ func (fakeMusicaProvider) Buscar(context.Context, string, string, string) ([]pro
 	return nil, nil
 }
 
-// BuscarDetalhe/MapearDetalhe são o core MÍNIMO (briefing 0115,
-// acharOuCriarArtistaIdentidade): devolvem o nome do artista fixture como
-// "title", o suficiente para o import ESCOPADO criar a entity sem tocar em
-// release-groups. Álbum/faixa (mbidAlbumFixture/mbidFaixa1Fixture) também
-// respondem, imitando o remapParaNome do provider real (achado 20/08/2026:
-// BuscarDetalhe pra esses dois tipos ignorava o tipo/sourceID e sempre
-// buscava artista, quebrando "Baixar Metadados" -- ver
-// TestEnriquecerAlbumEFaixaAtualizaTitulo). Qualquer outro sourceID devolve
-// um payload vazio (título cai no fallback do MBID, comportamento aceitável
-// para os testes que não exercitam esse caminho).
+// BuscarDetalhe/MapearDetalhe are the MINIMAL core
+// (acharOuCriarArtistaIdentidade): they return the name of the fixture artist as
+// "title", enough for the SCOPED import to create the entity without touching
+// release-groups. Album/track (mbidAlbumFixture/mbidFaixa1Fixture) also
+// answer, imitating remapParaNome of the real provider (finding of 20/Aug/2026:
+// BuscarDetalhe for those two types ignored the type/sourceID and always
+// fetched an artist, breaking "Baixar Metadados" -- see
+// TestEnriquecerAlbumEFaixaAtualizaTitulo). Any other sourceID returns
+// an empty payload (the title falls back to the MBID, an acceptable behaviour
+// for the tests that do not exercise that path).
 func (fakeMusicaProvider) BuscarDetalhe(_ context.Context, sourceID, _ string, _ []string) (json.RawMessage, error) {
 	switch sourceID {
 	case mbidArtistaFixture:
@@ -139,11 +139,11 @@ func (fakeMusicaProvider) BuscarArtistaArvore(_ context.Context, sourceID string
 	}, nil
 }
 
-// BuscarAlbumDaFaixa é a capacidade SELETIVA (provider.MusicaAlbumProvider,
-// briefing 0115) usada pelo import ESCOPADO no caminho por MBID: monta SÓ o
-// álbum que contém `recordingMBID` -- procura em AMBOS os álbuns da
-// discografia fake (albumFixture/albumOutroFixture) para provar que o import
-// escopado não precisa "saber" de antemão qual é o álbum certo.
+// BuscarAlbumDaFaixa is the SELECTIVE capability (provider.MusicaAlbumProvider)
+// used by the SCOPED import on the MBID path: it builds ONLY the
+// album that contains `recordingMBID` -- it searches BOTH albums of the fake
+// discography (albumFixture/albumOutroFixture) to prove that the scoped import
+// does not need to "know" beforehand which album is the right one.
 func (fakeMusicaProvider) BuscarAlbumDaFaixa(_ context.Context, recordingMBID string, _ []string) (provider.AlbumExterno, bool, error) {
 	for _, alb := range []provider.AlbumExterno{albumFixture(), albumOutroFixture()} {
 		for _, fx := range alb.Faixas {
@@ -155,9 +155,9 @@ func (fakeMusicaProvider) BuscarAlbumDaFaixa(_ context.Context, recordingMBID st
 	return provider.AlbumExterno{}, false, nil
 }
 
-// BuscarAlbumPorNome é a capacidade SELETIVA (provider.MusicaAlbumProvider,
-// briefing 0115) usada pelo import ESCOPADO no caminho textual: monta SÓ o
-// álbum `nomeAlbum` do artista `artistaMBID`.
+// BuscarAlbumPorNome is the SELECTIVE capability (provider.MusicaAlbumProvider)
+// used by the SCOPED import on the textual path: it builds ONLY the
+// album `nomeAlbum` of the artist `artistaMBID`.
 func (fakeMusicaProvider) BuscarAlbumPorNome(_ context.Context, artistaMBID, nomeAlbum string, _ provider.AlvoFaixaAlbum, _ []string) (provider.AlbumExterno, bool, error) {
 	if artistaMBID != mbidArtistaFixture {
 		return provider.AlbumExterno{}, false, nil
@@ -170,10 +170,10 @@ func (fakeMusicaProvider) BuscarAlbumPorNome(_ context.Context, artistaMBID, nom
 	return provider.AlbumExterno{}, false, nil
 }
 
-// BuscarAlbumPorMbid é a capacidade SELETIVA (provider.MusicaAlbumProvider,
-// briefing 0115 Parte 2) usada pela tela externa de álbum e por
-// ImportarFaixaAvulsa: monta SÓ o álbum `albumMBID`, sem passo de resolução
-// prévio -- ErrNaoEncontrado quando nenhum dos álbuns fixture bate.
+// BuscarAlbumPorMbid is the SELECTIVE capability (provider.MusicaAlbumProvider)
+// used by the external album screen and by
+// ImportarFaixaAvulsa: it builds ONLY the album `albumMBID`, with no prior
+// resolution step -- ErrNaoEncontrado when none of the fixture albums matches.
 func (fakeMusicaProvider) BuscarAlbumPorMbid(_ context.Context, albumMBID string, _ []string) (provider.AlbumExterno, error) {
 	for _, alb := range []provider.AlbumExterno{albumFixture(), albumOutroFixture()} {
 		if alb.MBID == albumMBID {
@@ -183,7 +183,7 @@ func (fakeMusicaProvider) BuscarAlbumPorMbid(_ context.Context, albumMBID string
 	return provider.AlbumExterno{}, provider.ErrNaoEncontrado
 }
 
-// svcMusicaFake monta o Servico com o fakeMusicaProvider registrado sob "musicbrainz".
+// svcMusicaFake builds the Servico with the fakeMusicaProvider registered under "musicbrainz".
 func svcMusicaFake(t *testing.T) (*Servico, *db.DB) {
 	t.Helper()
 	database := setupDB(t)
@@ -191,10 +191,10 @@ func svcMusicaFake(t *testing.T) (*Servico, *db.DB) {
 	return svc, database
 }
 
-// TestImportarArtistaCriaArvore: importar tipo=artista cria o artista + 1 álbum + 2
-// faixas, ligados por entity_relation (music_artista_principal/music_album), e a
-// faixa com artist-credit divergente ganha TAMBÉM music_artista_feat, sem substituir o
-// vínculo music_artista_principal do álbum.
+// TestImportarArtistaCriaArvore: importing tipo=artista creates the artist + 1 album + 2
+// tracks, linked through entity_relation (music_artista_principal/music_album), and the
+// track with a diverging artist-credit ALSO gets music_artista_feat, without replacing the
+// music_artista_principal link of the album.
 func TestImportarArtistaCriaArvore(t *testing.T) {
 	svc, database := svcMusicaFake(t)
 	ctx := context.Background()
@@ -254,14 +254,14 @@ func TestImportarArtistaCriaArvore(t *testing.T) {
 	}
 
 	faixa2ID := faixas[1].ChildID
-	// A faixa 2 NÃO deve ganhar vínculo music_artista_feat com o próprio artista
-	// principal (o teste de divergência é a faixa 2 → artista GUEST, abaixo).
+	// Track 2 must NOT get a music_artista_feat link with the main artist
+	// itself (the divergence test is track 2 → GUEST artist, below).
 	featDoArtistaPrincipal := filhosPorKind(t, database, artistaID, musicext.KindArtistaFeat)
 	if len(featDoArtistaPrincipal) != 0 {
 		t.Errorf("artista principal com vinculo feat = %d, quero 0 (feat e' de OUTRO artista)", len(featDoArtistaPrincipal))
 	}
 
-	// O artista GUEST (feat) foi criado e ligado à faixa 2 por music_artista_feat.
+	// The GUEST (feat) artist was created and linked to track 2 through music_artista_feat.
 	guest, err := r.ObterEntityPorMbid(ctx, nsValid(mbidFeatFixture))
 	if err != nil {
 		t.Fatalf("ObterEntityPorMbid guest: %v", err)
@@ -275,9 +275,9 @@ func TestImportarArtistaCriaArvore(t *testing.T) {
 	}
 }
 
-// TestReimportarArtistaIdempotente: re-importar o mesmo MBID de artista reusa o
-// artista, o álbum, as faixas e o artista feat — sem duplicar nenhuma entity nem
-// entity_relation (ADR-0027/briefing 0106, critério de aceite de idempotência).
+// TestReimportarArtistaIdempotente: re-importing the same artist MBID reuses the
+// artist, the album, the tracks and the feat artist — without duplicating any entity or
+// entity_relation (ADR-0027, idempotence acceptance criterion).
 func TestReimportarArtistaIdempotente(t *testing.T) {
 	svc, database := svcMusicaFake(t)
 	ctx := context.Background()
@@ -316,12 +316,12 @@ func TestReimportarArtistaIdempotente(t *testing.T) {
 	}
 }
 
-// TestImportarFaixaPossuidaCriaSoUmAlbum é o critério de aceite CENTRAL do briefing
-// 0115 (ADR-0029 item 1/3): casar 1 faixa via ImportarFaixaPossuida cria SÓ o
-// artista + O ÁLBUM DAQUELA FAIXA + a própria faixa -- a discografia fake tem um
-// SEGUNDO álbum (albumOutroFixture) que NUNCA é tocado, provando que o import
-// escopado não enumera a discografia inteira (ao contrário de importarArtista,
-// TestImportarArtistaCriaArvore acima, que continua trazendo tudo).
+// TestImportarFaixaPossuidaCriaSoUmAlbum is the CENTRAL acceptance criterion of the
+// scoped import (ADR-0029 items 1/3): matching 1 track through ImportarFaixaPossuida creates ONLY the
+// artist + THE ALBUM OF THAT TRACK + the track itself -- the fake discography has a
+// SECOND album (albumOutroFixture) that is NEVER touched, proving that the scoped
+// import does not enumerate the whole discography (unlike importarArtista,
+// TestImportarArtistaCriaArvore above, which keeps bringing everything).
 func TestImportarFaixaPossuidaCriaSoUmAlbum(t *testing.T) {
 	svc, database := svcMusicaFake(t)
 	ctx := context.Background()
@@ -375,10 +375,10 @@ func TestImportarFaixaPossuidaCriaSoUmAlbum(t *testing.T) {
 	}
 }
 
-// TestImportarFaixaPossuidaFeatGravaMetadadoSemEntity é o 2o critério de aceite
-// central (ADR-0029 item 4): a faixa com artist-credit DIVERGENTE (Track Two,
-// feat. Guest Artist) NÃO cria entity nem entity_relation(kind=music_artista_feat)
-// automaticamente -- só grava o nome/MBID bruto em extension_data.
+// TestImportarFaixaPossuidaFeatGravaMetadadoSemEntity is the 2nd central acceptance
+// criterion (ADR-0029 item 4): the track with a DIVERGING artist-credit (Track Two,
+// feat. Guest Artist) does NOT create an entity nor an entity_relation(kind=music_artista_feat)
+// automatically -- it only writes the raw name/MBID into extension_data.
 func TestImportarFaixaPossuidaFeatGravaMetadadoSemEntity(t *testing.T) {
 	svc, database := svcMusicaFake(t)
 	ctx := context.Background()
@@ -413,10 +413,10 @@ func TestImportarFaixaPossuidaFeatGravaMetadadoSemEntity(t *testing.T) {
 	}
 }
 
-// TestImportarFaixaPossuidaViaNomeTextual cobre o caminho TEXTUAL (sem MBID de
-// recording embutido): resolve o álbum por nome (MusicaAlbumProvider.
-// BuscarAlbumPorNome) e a faixa por título dentro dele -- mesma seletividade do
-// caminho por MBID (só 1 álbum/1 faixa, Other Album continua intocado).
+// TestImportarFaixaPossuidaViaNomeTextual covers the TEXTUAL path (with no embedded
+// recording MBID): it resolves the album by name (MusicaAlbumProvider.
+// BuscarAlbumPorNome) and the track by title inside it -- the same selectivity as the
+// MBID path (only 1 album/1 track, Other Album stays untouched).
 func TestImportarFaixaPossuidaViaNomeTextual(t *testing.T) {
 	svc, database := svcMusicaFake(t)
 	ctx := context.Background()
@@ -446,9 +446,9 @@ func TestImportarFaixaPossuidaViaNomeTextual(t *testing.T) {
 	}
 }
 
-// TestImportarFaixaPossuidaSemSuporte: uma fonte que NAO implementa
-// MusicaAlbumProvider (a capacidade SELETIVA) devolve erro -- o scanner degrada
-// (loga e cai para o próximo passo/draft).
+// TestImportarFaixaPossuidaSemSuporte: a source that does NOT implement
+// MusicaAlbumProvider (the SELECTIVE capability) returns an error -- the scanner degrades
+// (logs and falls back to the next step/draft).
 func TestImportarFaixaPossuidaSemSuporte(t *testing.T) {
 	database := setupDB(t)
 	fakeProv := &fakeProvider{raw: json.RawMessage(`{}`), campos: map[string]any{}}
@@ -459,8 +459,8 @@ func TestImportarFaixaPossuidaSemSuporte(t *testing.T) {
 	}
 }
 
-// TestImportarArtistaSemSuporte: uma fonte que NAO implementa MusicaProvider devolve
-// erro (o handler traduz para 502).
+// TestImportarArtistaSemSuporte: a source that does NOT implement MusicaProvider returns
+// an error (the handler translates it to 502).
 func TestImportarArtistaSemSuporte(t *testing.T) {
 	database := setupDB(t)
 	fakeProv := &fakeProvider{raw: json.RawMessage(`{}`), campos: map[string]any{}}
@@ -470,8 +470,8 @@ func TestImportarArtistaSemSuporte(t *testing.T) {
 	}
 }
 
-// extNSMusica decodifica o extension_data_json e devolve o objeto do namespace
-// core.music@1.
+// extNSMusica decodes extension_data_json and returns the object of the
+// core.music@1 namespace.
 func extNSMusica(t *testing.T, raw string) map[string]any {
 	t.Helper()
 	var envelope map[string]map[string]any
@@ -485,10 +485,10 @@ func extNSMusica(t *testing.T, raw string) map[string]any {
 	return ns
 }
 
-// contarComFiltro roda um SELECT count(*) parametrizado (WHERE simples) contra o
-// banco de teste -- variante de contarLinhas/contarEntities (creditos_test.go/
-// matchlocal_test.go) que aceita filtro, usada pelos testes de seletividade do
-// import escopado (briefing 0115).
+// contarComFiltro runs a parameterized SELECT count(*) (simple WHERE) against the
+// test database -- a variant of contarLinhas/contarEntities (creditos_test.go/
+// matchlocal_test.go) that accepts a filter, used by the selectivity tests of the
+// scoped import.
 func contarComFiltro(t *testing.T, database *db.DB, query string, args ...any) int {
 	t.Helper()
 	var n int
@@ -498,15 +498,15 @@ func contarComFiltro(t *testing.T, database *db.DB, query string, args ...any) i
 	return n
 }
 
-// TestEnriquecerAlbumEFaixaAtualizaTitulo cobre o bug achado na validação em produção
-// de 20/08/2026: "Baixar Metadados" (Enriquecer force=true) pra tipo=album/faixa
-// batia em 404/502 no MusicBrainz real porque BuscarDetalhe ignorava o tipo e sempre
-// buscava /artist/{sourceID} -- sourceID pra esses dois tipos é MBID de
-// release-group/recording, não de artista. fakeMusicaProvider.BuscarDetalhe agora
-// imita o remapParaNome do provider real (título vem em "name") pra mbidAlbumFixture/
-// mbidFaixa1Fixture; entity nasce com Title==sourceID (fallback pré-fix, mesmo molde
-// de TestEnriquecerCuraTituloNumerico em enrich_test.go) pra provar que Enriquecer
-// atualiza o título em vez de falhar.
+// TestEnriquecerAlbumEFaixaAtualizaTitulo covers the bug found in the production validation
+// of 20/Aug/2026: "Baixar Metadados" (Enriquecer force=true) for tipo=album/faixa
+// hit a 404/502 on the real MusicBrainz because BuscarDetalhe ignored the type and always
+// fetched /artist/{sourceID} -- the sourceID for those two types is the MBID of the
+// release-group/recording, not of an artist. fakeMusicaProvider.BuscarDetalhe now
+// imitates remapParaNome of the real provider (the title comes in "name") for mbidAlbumFixture/
+// mbidFaixa1Fixture; the entity is born with Title==sourceID (pre-fix fallback, the same template
+// as TestEnriquecerCuraTituloNumerico in enrich_test.go) to prove that Enriquecer
+// updates the title instead of failing.
 func TestEnriquecerAlbumEFaixaAtualizaTitulo(t *testing.T) {
 	svc, database := svcMusicaFake(t)
 	ctx := context.Background()
@@ -543,25 +543,24 @@ func TestEnriquecerAlbumEFaixaAtualizaTitulo(t *testing.T) {
 	}
 }
 
-// TestMelhorFaixaPorTituloGateDuracaoRejeitaDivergencia: título bate (score >=
-// LimiarAutoMatch, sem empate), mas a duração do arquivo local diverge da do
-// candidato além de matching.ToleranciaDuracaoSegundos, com AMBOS os lados
-// conhecidos — o gate de CONFIRMAÇÃO (briefing 0121 §8) rejeita mesmo com título
-// perfeito.
+// TestMelhorFaixaPorTituloGateDuracaoRejeitaDivergencia: the title matches (score >=
+// LimiarAutoMatch, no tie), but the duration of the local file differs from the one of the
+// candidate beyond matching.ToleranciaDuracaoSegundos, with BOTH sides
+// known — the CONFIRMATION gate rejects even with a perfect title.
 func TestMelhorFaixaPorTituloGateDuracaoRejeitaDivergencia(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Track One", MBID: mbidFaixa1Fixture, DuracaoMs: 200000}, // 200s
 	}
-	// alvo com 10s de diferença (> ToleranciaDuracaoSegundos, 3s) do candidato.
+	// target with a 10s difference (> ToleranciaDuracaoSegundos, 3s) from the candidate.
 	duracaoAlvoSegundos := 200 + matching.ToleranciaDuracaoSegundos + 7
 	if _, ok := melhorFaixaPorTitulo(FaixaAlvo{FaixaTitulo: "Track One", DuracaoSegundos: duracaoAlvoSegundos}, faixas); ok {
 		t.Error("esperava rejeicao pelo gate de duracao (divergencia > tolerancia), mas aceitou")
 	}
 }
 
-// TestMelhorFaixaPorTituloGateDuracaoAceitaDentroDaTolerancia: mesmo cenário
-// acima, mas a divergência fica dentro de matching.ToleranciaDuracaoSegundos —
-// o gate confirma o candidato escolhido por título.
+// TestMelhorFaixaPorTituloGateDuracaoAceitaDentroDaTolerancia: the same scenario as
+// above, but the divergence stays within matching.ToleranciaDuracaoSegundos —
+// the gate confirms the candidate chosen by title.
 func TestMelhorFaixaPorTituloGateDuracaoAceitaDentroDaTolerancia(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Track One", MBID: mbidFaixa1Fixture, DuracaoMs: 200000}, // 200s
@@ -576,11 +575,11 @@ func TestMelhorFaixaPorTituloGateDuracaoAceitaDentroDaTolerancia(t *testing.T) {
 	}
 }
 
-// TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoAlvoDesconhecida: quando
-// duracaoAlvoSegundos é 0 (arquivo local sem duração conhecida), o gate é
-// pulado e o candidato escolhido por título é aceito mesmo com uma duração de
-// candidato bem diferente do que seria uma faixa "real" qualquer — preserva o
-// comportamento anterior ao briefing 0121 §8.
+// TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoAlvoDesconhecida: when
+// duracaoAlvoSegundos is 0 (local file with no known duration), the gate is
+// skipped and the candidate chosen by title is accepted even with a candidate duration
+// quite different from what any "real" track would have — it preserves the
+// behaviour from before the duration gate existed.
 func TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoAlvoDesconhecida(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Track One", MBID: mbidFaixa1Fixture, DuracaoMs: 200000}, // 200s
@@ -594,10 +593,10 @@ func TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoAlvoDesconhecida(t *testing.
 	}
 }
 
-// TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoCandidatoDesconhecida: quando
-// o candidato não informa DuracaoMs (0, fonte não trouxe), o gate também é
-// pulado mesmo com duracaoAlvoSegundos conhecida — só compara quando AMBOS os
-// lados têm o dado.
+// TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoCandidatoDesconhecida: when
+// the candidate does not report DuracaoMs (0, the source brought none), the gate is also
+// skipped even with a known duracaoAlvoSegundos — it only compares when BOTH
+// sides have the data.
 func TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoCandidatoDesconhecida(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Track One", MBID: mbidFaixa1Fixture}, // DuracaoMs=0
@@ -611,17 +610,17 @@ func TestMelhorFaixaPorTituloGateDuracaoPuladoQuandoCandidatoDesconhecida(t *tes
 	}
 }
 
-// TestMelhorFaixaPorTituloDesempataPorDuracaoQuandoTituloEmpata cobre o caso
-// real do briefing 0124 (Bomfunk MC's/Freestyler): duas faixas com o MESMO
-// título empatam no maior score -- uma com duração compatível com o alvo,
-// outra não. A duração deve desempatar e devolver a faixa compatível, em vez
-// de rejeitar (zero,false) só por existir empate.
+// TestMelhorFaixaPorTituloDesempataPorDuracaoQuandoTituloEmpata covers the
+// real case (Bomfunk MC's/Freestyler): two tracks with the SAME
+// title tie at the highest score -- one with a duration compatible with the target,
+// the other not. The duration must break the tie and return the compatible track, instead
+// of rejecting (zero,false) just because a tie exists.
 func TestMelhorFaixaPorTituloDesempataPorDuracaoQuandoTituloEmpata(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Freestyler", MBID: mbidFaixa1Fixture, DuracaoMs: 247_000},
 		{Title: "Freestyler", MBID: mbidFaixa2Fixture, DuracaoMs: 306_000},
 	}
-	duracaoAlvoSegundos := 306.364 // diff = 364ms << 3s de tolerancia
+	duracaoAlvoSegundos := 306.364 // diff = 364ms << 3s of tolerance
 
 	fx, ok := melhorFaixaPorTitulo(FaixaAlvo{FaixaTitulo: "Freestyler", DuracaoSegundos: duracaoAlvoSegundos}, faixas)
 	if !ok {
@@ -632,10 +631,10 @@ func TestMelhorFaixaPorTituloDesempataPorDuracaoQuandoTituloEmpata(t *testing.T)
 	}
 }
 
-// TestMelhorFaixaPorTituloNaoDesempataQuandoDuracaoDoAlvoDesconhecida cobre o
-// mesmo empate de título do teste anterior, mas com duracaoAlvoSegundos == 0
-// (arquivo local sem duração conhecida) -- sem sinal para decidir, rejeita
-// (comportamento seguro, sem regressao).
+// TestMelhorFaixaPorTituloNaoDesempataQuandoDuracaoDoAlvoDesconhecida covers the
+// same title tie of the previous test, but with duracaoAlvoSegundos == 0
+// (local file with no known duration) -- with no signal to decide, it rejects
+// (safe behaviour, no regression).
 func TestMelhorFaixaPorTituloNaoDesempataQuandoDuracaoDoAlvoDesconhecida(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Freestyler", MBID: mbidFaixa1Fixture, DuracaoMs: 247_000},
@@ -647,9 +646,9 @@ func TestMelhorFaixaPorTituloNaoDesempataQuandoDuracaoDoAlvoDesconhecida(t *test
 	}
 }
 
-// TestMelhorFaixaPorTituloNaoDesempataQuandoAmbasCompativeis cobre o empate de
-// título com AMBAS as faixas dentro da tolerância de duração -- continua
-// ambíguo (empate também na duração), nunca escolhe arbitrariamente.
+// TestMelhorFaixaPorTituloNaoDesempataQuandoAmbasCompativeis covers the title
+// tie with BOTH tracks within the duration tolerance -- it stays
+// ambiguous (a tie in the duration as well), it never chooses arbitrarily.
 func TestMelhorFaixaPorTituloNaoDesempataQuandoAmbasCompativeis(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Freestyler", MBID: mbidFaixa1Fixture, DuracaoMs: 306_100},
@@ -662,11 +661,11 @@ func TestMelhorFaixaPorTituloNaoDesempataQuandoAmbasCompativeis(t *testing.T) {
 	}
 }
 
-// TestMelhorFaixaPorTituloDesempataPorDiscoEFaixa cobre o desempate novo do
-// briefing 0138: reedição com a MESMA faixa no disco 1 e no disco 2 (títulos
-// idênticos, durações idênticas). A posição (disco, faixa) do arquivo é o único
-// sinal que diz qual das duas ele é -- sem ela o caso ficava ambíguo e caía no
-// rascunho.
+// TestMelhorFaixaPorTituloDesempataPorDiscoEFaixa covers the new tiebreaker:
+// a reissue with the SAME track on disc 1 and on disc 2 (identical titles,
+// identical durations). The (disc, track) position of the file is the only
+// signal that says which of the two it is -- without it the case stayed ambiguous and fell
+// into a draft.
 func TestMelhorFaixaPorTituloDesempataPorDiscoEFaixa(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Pale Shelter", MBID: "rec-d1", TrackNumber: 2, DiscNumber: 1, DiscTotal: 2, DuracaoMs: 261000},
@@ -680,15 +679,15 @@ func TestMelhorFaixaPorTituloDesempataPorDiscoEFaixa(t *testing.T) {
 		t.Errorf("MBID = %q, esperava rec-d2 (disco 2, faixa 1)", fx.MBID)
 	}
 
-	// Sem a posição, o empate continua ambiguo: rejeita (nunca aplica um "parecido").
+	// Without the position, the tie stays ambiguous: it rejects (it never applies a "similar" one).
 	if _, ok := melhorFaixaPorTitulo(FaixaAlvo{FaixaTitulo: "Pale Shelter", DuracaoSegundos: 261}, faixas); ok {
 		t.Error("aceitou sem posicao: empate de titulo e duracao deveria rejeitar")
 	}
 }
 
-// TestMelhorFaixaPorTituloDiscoErradoNaoCasa confirma que a posição não é um passe
-// livre: se o disco/faixa do arquivo não existe no release, o empate volta a ser
-// ambíguo e a faixa é rejeitada (nada de aplicar a do disco errado).
+// TestMelhorFaixaPorTituloDiscoErradoNaoCasa confirms that the position is not a free
+// pass: if the disc/track of the file does not exist in the release, the tie becomes
+// ambiguous again and the track is rejected (no applying the one from the wrong disc).
 func TestMelhorFaixaPorTituloDiscoErradoNaoCasa(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Pale Shelter", MBID: "rec-d1", TrackNumber: 2, DiscNumber: 1, DuracaoMs: 261000},

@@ -1,10 +1,10 @@
 package scanner
 
-// Testes do briefing 0136 (matching de música): desempate de artista por
-// EVIDÊNCIA (o álbum da tag existe em qual candidato?) e o caminho de
-// COMPILAÇÃO/TRILHA (álbum resolvido pelo título, artista vindo do artist-credit
-// da fonte). Fakes próprios deste arquivo para não mexer nas contagens do
-// fakeMusicaProvider usado pelos testes de 0107/0115/0121.
+// MUSIC matching tests: artist tie-breaking by EVIDENCE (in which candidate does the
+// album of the tag exist?) and the COMPILATION/SOUNDTRACK path (album resolved by
+// title, artist coming from the artist-credit of the source). Fakes of this file own,
+// so as not to disturb the counts of the fakeMusicaProvider used by the other music
+// tests.
 
 import (
 	"context"
@@ -26,19 +26,19 @@ const (
 	mbidAlbumCompil   = "ffffffff-0000-0000-0000-000000000002"
 )
 
-// fakeProviderEmpateCompilacao cobre os dois casos do briefing 0136:
-//   - "Tie Artist" devolve DOIS candidatos com o mesmo nome (ids diferentes) e o
-//     álbum "Tie Album" só existe no segundo -- o pipeline tem que resolver por
-//     evidência, não desistir no empate;
-//   - "Various Artists" NÃO devolve artista; o álbum de trilha só resolve pela
-//     capacidade nova MusicaAlbumPorTituloProvider.
+// fakeProviderEmpateCompilacao covers the two cases of the music matching:
+//   - "Tie Artist" returns TWO candidates with the same name (different ids) and the
+//     album "Tie Album" only exists in the second one -- the pipeline has to resolve
+//     by evidence, not give up on the tie;
+//   - "Various Artists" does NOT return an artist; the soundtrack album only resolves
+//     through the new capability MusicaAlbumPorTituloProvider.
 type fakeProviderEmpateCompilacao struct {
 	albumNomeN   int
 	albumTituloN int
 	possuidaN    int
-	// ultimoAlvoTitulo guarda o alvo recebido por BuscarAlbumPorTitulo, para o
-	// teste conferir o que o scanner MANDA no caminho por título (briefing 0138:
-	// artista do álbum e disco da faixa).
+	// ultimoAlvoTitulo keeps the target received by BuscarAlbumPorTitulo, so the test
+	// can check what the scanner SENDS on the path by title (album artist and track
+	// disc).
 	ultimoAlvoTitulo provider.AlvoFaixaAlbum
 }
 
@@ -54,7 +54,7 @@ func (p *fakeProviderEmpateCompilacao) Buscar(_ context.Context, query, tipo, _ 
 			{Source: sourceMusicBrainz, SourceID: mbidArtistaTie2, Type: "artista", Title: "Tie Artist"},
 		}, nil
 	}
-	// "Various Artists" e qualquer outro nome: sem identidade de artista.
+	// "Various Artists" and any other name: no artist identity.
 	return nil, nil
 }
 
@@ -70,8 +70,8 @@ func (p *fakeProviderEmpateCompilacao) BuscarAlbumDaFaixa(context.Context, strin
 	return provider.AlbumExterno{}, false, nil
 }
 
-// BuscarAlbumPorNome: só o SEGUNDO "Tie Artist" tem "Tie Album" -- é essa a
-// evidência que desempata.
+// BuscarAlbumPorNome: only the SECOND "Tie Artist" has "Tie Album" -- that is the
+// evidence that breaks the tie.
 func (p *fakeProviderEmpateCompilacao) BuscarAlbumPorNome(_ context.Context, artistaMBID, nomeAlbum string, _ provider.AlvoFaixaAlbum, _ []string) (provider.AlbumExterno, bool, error) {
 	p.albumNomeN++
 	if artistaMBID != mbidArtistaTie2 || nomeAlbum != "Tie Album" {
@@ -89,8 +89,8 @@ func (p *fakeProviderEmpateCompilacao) BuscarAlbumPorMbid(context.Context, strin
 	return provider.AlbumExterno{}, provider.ErrNaoEncontrado
 }
 
-// BuscarAlbumPorTitulo é a capacidade nova (briefing 0136): trilha compilada,
-// sem artista local -- o artist-credit vem da fonte.
+// BuscarAlbumPorTitulo is the new capability: a compiled soundtrack, without a local
+// artist -- the artist-credit comes from the source.
 func (p *fakeProviderEmpateCompilacao) BuscarAlbumPorTitulo(_ context.Context, nomeAlbum string, alvo provider.AlvoFaixaAlbum, _ []string) (provider.AlbumComArtista, bool, error) {
 	p.albumTituloN++
 	p.ultimoAlvoTitulo = alvo
@@ -109,16 +109,16 @@ func (p *fakeProviderEmpateCompilacao) BuscarAlbumPorTitulo(_ context.Context, n
 	}, true, nil
 }
 
-// BuscarAlbumPorTituloNaoUsado garante que o fake satisfaça a interface de
-// faixa possuída usada pelo caminho por artista (não é chamado nos testes de
-// compilação, mas o type-assert de MusicaAlbumProvider exige o método).
+// ImportarFaixaPossuida guarantees that the fake satisfies the owned-track interface
+// used by the path by artist (it is not called in the compilation tests, but the
+// type-assert of MusicaAlbumProvider requires the method).
 func (p *fakeProviderEmpateCompilacao) ImportarFaixaPossuida(context.Context, string, string, enrich.FaixaAlvo, []string) (string, bool, error) {
 	p.possuidaN++
 	return "", false, nil
 }
 
-// managerEmpateCompilacao monta o Manager com a vertical de música real
-// (enrich.Servico) sobre o fake acima.
+// managerEmpateCompilacao assembles the Manager with the real music vertical
+// (enrich.Servico) on top of the fake above.
 func managerEmpateCompilacao(t *testing.T, d *db.DB, tags map[string]mediainfo.AudioTags, prov *fakeProviderEmpateCompilacao) *Manager {
 	t.Helper()
 	m := NewManagerComProber(d, proberComTags{porPath: tags})
@@ -129,10 +129,10 @@ func managerEmpateCompilacao(t *testing.T, d *db.DB, tags map[string]mediainfo.A
 	return m
 }
 
-// TestScanMusicaEmpateDeArtistaResolvePorEvidencia cobre o caso "Linkin Park"
-// medido em produção: dois artistas com o MESMO nome (score 100 nos dois). Antes
-// do 0136 isso virava rascunho; agora o pipeline testa os empatados e aplica o
-// que contém o álbum da tag.
+// TestScanMusicaEmpateDeArtistaResolvePorEvidencia covers the "Linkin Park" case
+// measured in production: two artists with the SAME name (score 100 on both). This used
+// to become a draft; now the pipeline tests the tied candidates and applies the one
+// that contains the album of the tag.
 func TestScanMusicaEmpateDeArtistaResolvePorEvidencia(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -156,15 +156,16 @@ func TestScanMusicaEmpateDeArtistaResolvePorEvidencia(t *testing.T) {
 	if conf != confMusicaTextual {
 		t.Errorf("match_confidence = %v, quero %v", conf, confMusicaTextual)
 	}
-	// Tentou os DOIS empatados (o primeiro não tem o álbum, o segundo tem).
+	// It tried BOTH tied candidates (the first one does not have the album, the second
+	// one does).
 	if prov.albumNomeN < 2 {
 		t.Errorf("BuscarAlbumPorNome chamado %d vez(es), quero >= 2 (os dois empatados)", prov.albumNomeN)
 	}
 }
 
-// TestScanMusicaCompilacaoResolvePorTituloDoAlbum cobre o caso "Various Artists"
-// (34 faixas reais): a busca de artista não devolve nada e o álbum só existe pelo
-// título -- o artista principal vem do artist-credit da fonte.
+// TestScanMusicaCompilacaoResolvePorTituloDoAlbum covers the "Various Artists" case
+// (34 real tracks): the artist search returns nothing and the album only exists by
+// title -- the main artist comes from the artist-credit of the source.
 func TestScanMusicaCompilacaoResolvePorTituloDoAlbum(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -192,8 +193,8 @@ func TestScanMusicaCompilacaoResolvePorTituloDoAlbum(t *testing.T) {
 		t.Errorf("BuscarAlbumPorTitulo chamado %d vez(es), quero 1", prov.albumTituloN)
 	}
 
-	// O artista da árvore é o do artist-credit da FONTE (Various Artists), não a
-	// tag local "Banda da Trilhada" do arquivo.
+	// The artist of the tree is the one from the artist-credit of the SOURCE (Various
+	// Artists), not the local tag of the file.
 	var artistas []string
 	rows, err := d.Read.QueryContext(context.Background(),
 		`SELECT e.title FROM entity e WHERE e.type = 'artista'`)
@@ -213,10 +214,10 @@ func TestScanMusicaCompilacaoResolvePorTituloDoAlbum(t *testing.T) {
 	}
 }
 
-// TestScanMusicaPassaArtistaEDiscoAoTituloDoAlbum cobre o plumbing do briefing
-// 0138: o caminho por TÍTULO de álbum passa a receber o artista do álbum (para a
-// busca escopar) e o disco da faixa (para desempatar reedição). Sem isso, a busca
-// devolvia homônimos de outros artistas e a faixa do disco 2 caía no rascunho.
+// TestScanMusicaPassaArtistaEDiscoAoTituloDoAlbum covers the plumbing of the path by
+// album TITLE: it now receives the album artist (so the search can be scoped) and the
+// disc of the track (to break ties between reissues). Without that, the search returned
+// homonyms of other artists and the track from disc 2 fell into the draft.
 func TestScanMusicaPassaArtistaEDiscoAoTituloDoAlbum(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -224,8 +225,8 @@ func TestScanMusicaPassaArtistaEDiscoAoTituloDoAlbum(t *testing.T) {
 	escrever(t, arq)
 
 	prov := &fakeProviderEmpateCompilacao{}
-	// AlbumArtist é um artista REAL (não compilação) cujo álbum "Trilha do Filme"
-	// não existe pelo caminho do artista -- força o passo 4b.
+	// AlbumArtist is a REAL artist (not a compilation) whose album "Trilha do Filme"
+	// does not exist through the path by artist -- it forces step 4b.
 	m := managerEmpateCompilacao(t, d, map[string]mediainfo.AudioTags{
 		arq: {AlbumArtist: "Tie Artist", Artist: "Tie Artist", Album: "Trilha do Filme", Title: "Tema Principal", TrackNumber: 2, DiscNumber: 2},
 	}, prov)

@@ -1,19 +1,19 @@
 package e2e
 
-// Jornada de MÚSICA (briefings 0106/0115): importa um artista pela busca manual
-// (discografia inteira, ADR-0027) e completa o álbum com a faixa que ficou de
-// fora via a tela externa de "faixas faltando" (0115 Parte 2, ADR-0029). Usa o
-// fake.Musicbrainz (internal/provider/fake/musicbrainz.go) — o MESMO fake que
-// o binário real usa quando MYMEDIADB_FAKE_PROVIDER=1 (cmd/mymediadb), pra não
-// duplicar a fixture entre Camada 1 (aqui) e Camada 2 (Playwright). O harness
-// E2E desta camada não sobe o scanner, então o caminho testado é o de import
-// HTTP direto (busca manual → importar artista; tela externa → importar faixa
-// avulsa), não o gatilho automático do scan.
+// MUSIC journey: it imports an artist through the manual search (the whole
+// discography, ADR-0027) and completes the album with the track that was left out,
+// through the external "missing tracks" screen (ADR-0029). It uses
+// fake.Musicbrainz (internal/provider/fake/musicbrainz.go) — the SAME fake the real
+// binary uses when MYMEDIADB_FAKE_PROVIDER=1 (cmd/mymediadb), so the fixture is not
+// duplicated between Layer 1 (here) and Layer 2 (Playwright). The E2E harness of
+// this layer does not start the scanner, so the path under test is the direct HTTP
+// import (manual search → import artist; external screen → import a standalone
+// track), not the automatic scan trigger.
 //
-// As asserções por etapa vivem em helpers próprios (importarArtistaEAlbum/
-// assertMembrosAlbum/assertFaixaFaltando/importarFaixaAvulsa) para manter o
-// gocyclo da função de teste baixo (AGENTS.md) — cada helper cobre 1 branch de
-// verificação, a função principal só encadeia a jornada.
+// The per-step assertions live in their own helpers (importarArtistaEAlbum/
+// assertMembrosAlbum/assertFaixaFaltando/importarFaixaAvulsa) to keep the gocyclo
+// of the test function low (AGENTS.md) — each helper covers 1 verification branch,
+// the main function only chains the journey.
 
 import (
 	"net/http"
@@ -26,28 +26,27 @@ import (
 func TestJornadaMusicaImportArtistaEFaixaFaltando(t *testing.T) {
 	c := novoHarnessComOpcoes(t, server.WithSearchProvider(fake.NewMusicbrainz()))
 
-	// 1) Importa o artista inteiro (busca manual → POST /import type=artista,
-	// 0106): cria artista + o único álbum + a faixa que a árvore fake traz.
+	// 1) Imports the whole artist (manual search → POST /import type=artista):
+	// it creates the artist + the only album + the track the fake tree brings.
 	_, albumID := importarArtistaEAlbum(t, c)
-	assertMembrosAlbum(t, c, albumID, 1) // só a faixa que a árvore trouxe
+	assertMembrosAlbum(t, c, albumID, 1) // only the track the tree brought
 
-	// 2) A tela externa do álbum lista as faixas OFICIAIS do release
-	// (GET /external/musicbrainz/album/{mbid}): a faixa 1 (já importada pela
-	// árvore) sai com internal_id preenchido; a faixa 2 (fora da árvore) sai
-	// faltando — mesmo contrato de interno-first (0026) que coleção/série já
-	// usam.
+	// 2) The external album screen lists the OFFICIAL tracks of the release
+	// (GET /external/musicbrainz/album/{mbid}): track 1 (already imported by the
+	// tree) comes out with internal_id filled; track 2 (outside the tree) comes out
+	// missing — the same internal-first contract that collection/series already use.
 	faixa2SourceID := assertFaixaFaltando(t, c, albumID)
 
-	// 3) Importa a faixa avulsa faltando, ligando-a ao álbum PAI já interno
-	// (POST /import type=faixa + parent_id, 0115 Parte 2).
+	// 3) Imports the missing standalone track, linking it to the already internal
+	// PARENT album (POST /import type=faixa + parent_id).
 	faixa2 := importarFaixaAvulsa(t, c, faixa2SourceID, albumID, http.StatusCreated)
 	if got := str(t, faixa2, "title"); got != "Faixa Dois" {
 		t.Fatalf("title da faixa avulsa = %q, quero %q", got, "Faixa Dois")
 	}
 	assertMembrosAlbum(t, c, albumID, 2)
 
-	// Reimportar a mesma faixa avulsa é IDEMPOTENTE (find-or-create por MBID,
-	// mesmo padrão de movie/collection) — não duplica o vínculo.
+	// Reimporting the same standalone track is IDEMPOTENT (find-or-create by MBID,
+	// the same movie/collection pattern) — it does not duplicate the link.
 	faixa2Denovo := importarFaixaAvulsa(t, c, faixa2SourceID, albumID, http.StatusOK)
 	if str(t, faixa2Denovo, "id") != str(t, faixa2, "id") {
 		t.Fatalf("reimport da faixa avulsa criou outra entity")
@@ -55,8 +54,8 @@ func TestJornadaMusicaImportArtistaEFaixaFaltando(t *testing.T) {
 	assertMembrosAlbum(t, c, albumID, 2)
 }
 
-// importarArtistaEAlbum importa o artista fake (discografia inteira) e devolve
-// (artistaID, albumID) — o álbum é o único membro do artista recém-criado.
+// importarArtistaEAlbum imports the fake artist (the whole discography) and returns
+// (artistaID, albumID) — the album is the only member of the newly created artist.
 func importarArtistaEAlbum(t *testing.T, c *cliente) (artistaID, albumID string) {
 	t.Helper()
 	artista := c.obj("POST", "/api/v1/import", map[string]any{
@@ -75,7 +74,7 @@ func importarArtistaEAlbum(t *testing.T, c *cliente) (artistaID, albumID string)
 	return artistaID, str(t, membros[0], "id")
 }
 
-// assertMembrosAlbum confere a contagem de faixas (members) do álbum.
+// assertMembrosAlbum checks the track (members) count of the album.
 func assertMembrosAlbum(t *testing.T, c *cliente, albumID string, quero int) {
 	t.Helper()
 	membros := c.arr("GET", "/api/v1/entities/"+albumID+"/members", nil, http.StatusOK)
@@ -84,9 +83,9 @@ func assertMembrosAlbum(t *testing.T, c *cliente, albumID string, quero int) {
 	}
 }
 
-// assertFaixaFaltando confere o contrato da tela externa de álbum (2 faixas
-// oficiais, a 1ª já interna e a 2ª faltando) e devolve o source_id MusicBrainz
-// da faixa faltando, para o chamador importá-la em seguida.
+// assertFaixaFaltando checks the contract of the external album screen (2 official
+// tracks, the 1st already internal and the 2nd missing) and returns the MusicBrainz
+// source_id of the missing track, so the caller can import it next.
 func assertFaixaFaltando(t *testing.T, c *cliente, albumID string) string {
 	t.Helper()
 	albumExt := c.obj("GET", "/api/v1/external/musicbrainz/album/"+fake.MusicbrainzAlbumID, nil, http.StatusOK)
@@ -111,9 +110,9 @@ func assertFaixaFaltando(t *testing.T, c *cliente, albumID string) string {
 	return faixa2SourceID
 }
 
-// importarFaixaAvulsa dispara POST /import type=faixa (0115 Parte 2), ligando
-// ao álbum pai já interno, e exige o status HTTP esperado (201 na 1ª vez, 200
-// no reimport idempotente).
+// importarFaixaAvulsa fires POST /import type=faixa, linking to the already
+// internal parent album, and requires the expected HTTP status (201 the first
+// time, 200 on the idempotent reimport).
 func importarFaixaAvulsa(t *testing.T, c *cliente, sourceID, albumID string, statusEsperado int) map[string]any {
 	t.Helper()
 	return c.obj("POST", "/api/v1/import", map[string]any{

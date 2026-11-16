@@ -10,36 +10,34 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Este arquivo implementa a RECONCILIAÇÃO DE FILHOS ÓRFÃOS (briefing 0120),
-// complemento do enriquecimento retroativo (0056/0116/0117/0118): uma
-// faixa/série que ficou presa em rascunho (draft) porque o match textual/de
-// série falhou na hora do scan (ou a árvore pai ainda não existia naquele
-// momento) nunca é retentada pelo scan em si -- o pipeline de match roda uma
-// ÚNICA vez, por arquivo, no momento do scan. Este passo tenta de novo, em
-// lote pequeno throttled por item, reusando Manager.ReconciliarFaixaDraft/
-// Manager.ReconciliarSerieDraft (internal/scanner/reconciliar.go, já
-// implementados).
+// This file implements the RECONCILIATION OF ORPHAN CHILDREN, a complement to the
+// retroactive enrichment: a track/series that got stuck in draft because the textual/
+// series match failed at scan time (or the parent tree did not exist yet at that
+// moment) is never retried by the scan itself -- the match pipeline runs a SINGLE
+// time, per file, at scan time. This step tries again, in a small batch throttled per
+// item, reusing Manager.ReconciliarFaixaDraft/Manager.ReconciliarSerieDraft
+// (internal/scanner/reconciliar.go, already implemented).
 
-// limiteReconciliacaoOrfaosPorExecucao é o teto de itens verificados POR TIPO
-// (faixa e série, separadamente) por execução do job -- mesmo raciocínio/
-// valor de limiteReprocessamentoArtesPorExecucao/
-// limiteEnriquecimentoRetroativoPorExecucao: throttling de custo/rate-limit
-// numa biblioteca com backlog grande na primeira vez que este briefing roda.
+// limiteReconciliacaoOrfaosPorExecucao is the ceiling of items checked PER TYPE
+// (track and series, separately) per job run -- same reasoning/value as
+// limiteReprocessamentoArtesPorExecucao/
+// limiteEnriquecimentoRetroativoPorExecucao: throttling of cost/rate-limit
+// in a library with a large backlog on the first time this runs.
 const limiteReconciliacaoOrfaosPorExecucao = 15
 
-// ReconciliarFilhosOrfaos varre faixas draft órfãs (sem entity_relation como
-// filha de nenhum álbum) e séries draft com arquivo, e tenta religá-las
-// contra a árvore de identidade já resolvida (ou que veio a se resolver
-// depois). Satisfaz libraryhealth.Matcher (chamado pelo job saude_biblioteca,
-// depois de DescobrirArteLocalMusica). err é SÓ erro real de banco na
-// LISTAGEM; falha num item individual é absorvida (best-effort, loga e
-// segue). reconciliados só conta SUCESSO (linked==true) -- diferente de
-// ReprocessarArtesFaltantes/EnriquecerRetroativo, que contam toda tentativa:
-// a mensagem final deste passo precisa dizer quantos itens de fato saíram da
-// fila de revisão, não quantos foram só verificados.
+// ReconciliarFilhosOrfaos sweeps orphan draft tracks (without an entity_relation as
+// a child of any album) and draft series with a file, and tries to relink them
+// against the already resolved identity tree (or one that came to be resolved
+// later). It satisfies libraryhealth.Matcher (called by the saude_biblioteca job,
+// after DescobrirArteLocalMusica). err is ONLY a real database error in the
+// LISTING; a failure in an individual item is absorbed (best-effort, it logs and
+// moves on). reconciliados only counts SUCCESS (linked==true) -- unlike
+// ReprocessarArtesFaltantes/EnriquecerRetroativo, which count every attempt:
+// the final message of this step has to say how many items actually left the
+// review queue, not how many were merely checked.
 func (s *Server) ReconciliarFilhosOrfaos(ctx context.Context) (reconciliados int, err error) {
-	// Sem scanner, ReconciliarFaixaDraft/ReconciliarSerieDraft nem existiriam
-	// para chamar -- mesma guarda de DescobrirArteLocalMusica.
+	// Without a scanner, ReconciliarFaixaDraft/ReconciliarSerieDraft would not even
+	// exist to call -- same guard as DescobrirArteLocalMusica.
 	if s.scanner == nil {
 		return 0, nil
 	}
@@ -82,12 +80,12 @@ func (s *Server) ReconciliarFilhosOrfaos(ctx context.Context) (reconciliados int
 	return reconciliados, nil
 }
 
-// reconciliarECarimbar chama `tentar` (Manager.ReconciliarFaixaDraft ou
-// Manager.ReconciliarSerieDraft) para UM item, loga falha best-effort e
-// carimba a tentativa SEMPRE (mesmo padrão de ReprocessarArtesFaltantes/
-// EnriquecerRetroativo: o item foi verificado nesta execução, mesmo sem ter
-// religado -- senão o próximo lote tentaria de novo no dia seguinte, sem
-// respeitar o throttle). `rotulo` é só para a mensagem de log ("faixa"/
+// reconciliarECarimbar calls `tentar` (Manager.ReconciliarFaixaDraft or
+// Manager.ReconciliarSerieDraft) for ONE item, logs a best-effort failure and
+// always STAMPS the attempt (same pattern as ReprocessarArtesFaltantes/
+// EnriquecerRetroativo: the item was checked in this run, even without having
+// relinked -- otherwise the next batch would try again the next day, without
+// respecting the throttle). `rotulo` is only for the log message ("faixa"/
 // "série").
 func (s *Server) reconciliarECarimbar(ctx context.Context, id string, langs []string, rotulo string, tentar func(context.Context, string, []string) (bool, error)) bool {
 	linked, err := tentar(ctx, id, langs)
@@ -100,31 +98,31 @@ func (s *Server) reconciliarECarimbar(ctx context.Context, id string, langs []st
 	return linked
 }
 
-// forcarReconciliacaoResultDTO é a resposta de POST
-// /entities/{id}/force-reconcile (briefing 0122, openapi.yaml
-// ForceReconcileResult) -- único campo, `linked`, espelhando o retorno de
+// forcarReconciliacaoResultDTO is the response of POST
+// /entities/{id}/force-reconcile (openapi.yaml
+// ForceReconcileResult) -- a single field, `linked`, mirroring the return of
 // ReconciliarFaixaDraft/ReconciliarSerieDraft.
 type forcarReconciliacaoResultDTO struct {
 	Linked bool `json:"linked"`
 }
 
-// forcarReconciliacao trata POST /api/v1/entities/{id}/force-reconcile
-// (briefing 0122): dispara a MESMA reconciliação pai-filho do job em lote
-// (ReconciliarFilhosOrfaos, 0120) para UMA entity, mas IGNORANDO
-// completamente o throttle de last_external_match_attempt_at -- válvula de
-// escape manual para quando o dono quer feedback imediato (ex.: acabou de
-// corrigir uma tag do arquivo, ou sabe que uma correção no backend acabou de
-// ser publicada) sem esperar o próximo ciclo do saude_biblioteca. Dispatch
-// por ent.Type: "faixa" -> ReconciliarFaixaDraft, "tv" ->
-// ReconciliarSerieDraft; qualquer outro tipo é no-op (200, linked=false, SEM
-// carimbar -- não houve tentativa real de nada, mesmo critério de "tipo não
-// aplicável" do §4 do briefing). Nos dois casos aplicáveis, carimba a
-// tentativa SEMPRE ao final (mesmo em erro de tentar), mesma semântica de
-// enrichMissing (retroativo.go): coordena com o PRÓXIMO lote do job para ele
-// não competir pelo item que o dono acabou de resolver manualmente. 404
-// entity inexistente; 500 só em erro real de banco/infra (na reconciliação
-// OU no carimbo) -- nunca por "não achou candidato" (linked=false é
-// resultado válido, não erro).
+// forcarReconciliacao handles POST /api/v1/entities/{id}/force-reconcile:
+// it triggers the SAME parent-child reconciliation of the batch job
+// (ReconciliarFilhosOrfaos) for ONE entity, but IGNORING the
+// last_external_match_attempt_at throttle completely -- a manual escape
+// hatch for when the owner wants immediate feedback (e.g.: they just
+// corrected a file tag, or know that a backend fix was just
+// released) without waiting for the next saude_biblioteca cycle. Dispatch
+// by ent.Type: "faixa" -> ReconciliarFaixaDraft, "tv" ->
+// ReconciliarSerieDraft; any other type is a no-op (200, linked=false, WITHOUT
+// stamping -- there was no real attempt at anything, same "type not
+// applicable" criterion). In both applicable cases, it always stamps the
+// attempt at the end (even on a try error), same semantics as
+// enrichMissing (retroativo.go): it coordinates with the NEXT job batch so it
+// does not compete for the item the owner just resolved manually. 404
+// entity does not exist; 500 only on a real database/infrastructure error (in the
+// reconciliation OR in the stamping) -- never for "no candidate found"
+// (linked=false is a valid result, not an error).
 func (s *Server) forcarReconciliacao(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -136,9 +134,9 @@ func (s *Server) forcarReconciliacao(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sem scanner configurado, ReconciliarFaixaDraft/ReconciliarSerieDraft nem
-	// existiriam para chamar -- mesma guarda de ReconciliarFilhosOrfaos:
-	// degrada (200, linked=false) em vez de 503/500.
+	// Without a scanner configured, ReconciliarFaixaDraft/ReconciliarSerieDraft would
+	// not even exist to call -- same guard as ReconciliarFilhosOrfaos:
+	// it degrades (200, linked=false) instead of 503/500.
 	if s.scanner == nil {
 		writeJSON(w, http.StatusOK, forcarReconciliacaoResultDTO{Linked: false})
 		return
@@ -157,18 +155,18 @@ func (s *Server) forcarReconciliacao(w http.ResponseWriter, r *http.Request) {
 	case tipoEntSerie:
 		tentar = s.scanner.ReconciliarSerieDraft
 	default:
-		// Tipo não aplicável (ex.: movie): no-op, sem carimbar -- não houve
-		// tentativa real de reconciliação pai-filho nenhuma.
+		// Type not applicable (e.g.: movie): no-op, without stamping -- there was no
+		// real parent-child reconciliation attempt at all.
 		writeJSON(w, http.StatusOK, forcarReconciliacaoResultDTO{Linked: false})
 		return
 	}
 
 	linked, tentarErr := tentar(ctx, ent.ID, langCfg.Allowed)
-	// Carimba SEMPRE, mesmo se tentarErr != nil -- o item foi de fato
-	// verificado nesta chamada (mesma semântica de enrichMissing/
-	// EnriquecerRetroativo). Diferente do job em lote (best-effort, loga e
-	// segue), aqui um erro real de banco em QUALQUER um dos dois passos vira
-	// 500 -- é uma chamada HTTP individual, não um lote.
+	// Always STAMPED, even if tentarErr != nil -- the item was actually
+	// checked in this call (same semantics as enrichMissing/
+	// EnriquecerRetroativo). Unlike the batch job (best-effort, logs and
+	// moves on), here a real database error in ANY of the two steps becomes
+	// 500 -- it is an individual HTTP call, not a batch.
 	carimbarErr := s.carimbarTentativaExterna(ctx, ent.ID)
 	if tentarErr != nil || carimbarErr != nil {
 		respondErroInterno(w)

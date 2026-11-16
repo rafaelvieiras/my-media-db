@@ -11,16 +11,14 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Testes de melhorCandidatoExterno com TÍTULOS ALTERNATIVOS (briefing 0084):
-// repontuação dos top-3 candidatos por matching.PontuarComAlternativos,
-// usando um provider fake que também implementa provider.TituloAlternativoProvider
-// e conta as chamadas -- prova o teto de top-3 e o cache TTL sem bater em rede
-// real.
+// Tests of melhorCandidatoExterno with ALTERNATIVE TITLES: the rescoring of the top-3
+// candidates through matching.PontuarComAlternativos, using a fake provider that also
+// implements provider.TituloAlternativoProvider and counts the calls -- it proves the top-3
+// ceiling and the TTL cache without hitting a real network.
 
-// fakeAltProvider é um provider fake (Nome configurável) que implementa
-// provider.TituloAlternativoProvider: devolve os alternativos configurados por
-// sourceID e conta as chamadas por sourceID (para provar o teto do top-3 e o
-// cache).
+// fakeAltProvider is a fake provider (configurable Nome) that implements
+// provider.TituloAlternativoProvider: it returns the alternatives configured per sourceID
+// and counts the calls per sourceID (to prove the top-3 ceiling and the cache).
 type fakeAltProvider struct {
 	nome         string
 	alternativos map[string][]string
@@ -46,11 +44,10 @@ func (p *fakeAltProvider) BuscarTitulosAlternativos(_ context.Context, _, source
 	return p.alternativos[sourceID], nil
 }
 
-// TestMelhorCandidatoExterno_TituloAlternativoDoTop3Vence cobre o critério
-// central do briefing 0084: um candidato com título principal bem diferente
-// da consulta vence quando um dos seus títulos ALTERNATIVOS bate exatamente
-// -- e matched_title (aqui, o tituloVencedor devolvido) reflete a origem do
-// score.
+// TestMelhorCandidatoExterno_TituloAlternativoDoTop3Vence covers the central criterion: a
+// candidate whose main title is quite different from the query wins when one of its
+// ALTERNATIVE titles matches exactly -- and matched_title (here, the returned tituloVencedor)
+// reflects the origin of the score.
 func TestMelhorCandidatoExterno_TituloAlternativoDoTop3Vence(t *testing.T) {
 	titulo := "Blade Runner"
 	candidatos := []provider.ResultadoExterno{
@@ -60,7 +57,7 @@ func TestMelhorCandidatoExterno_TituloAlternativoDoTop3Vence(t *testing.T) {
 	}
 	prov := &fakeAltProvider{
 		nome:         "tmdb",
-		alternativos: map[string][]string{"2": {titulo}}, // título exato, alternativo
+		alternativos: map[string][]string{"2": {titulo}}, // exact title, alternative
 		chamadas:     map[string]int{},
 	}
 	s := New("v-teste", nil, WithSearchProvider(prov))
@@ -80,9 +77,9 @@ func TestMelhorCandidatoExterno_TituloAlternativoDoTop3Vence(t *testing.T) {
 	}
 }
 
-// TestMelhorCandidatoExterno_TituloPrincipalJaOtimoNaoExpoeVencedor cobre o
-// caso "sem ruído": quando o TÍTULO PRINCIPAL do vencedor já é o melhor
-// (nenhum alternativo bate melhor), tituloVencedor volta vazio.
+// TestMelhorCandidatoExterno_TituloPrincipalJaOtimoNaoExpoeVencedor covers the "no noise"
+// case: when the winner's MAIN TITLE is already the best (no alternative beats it),
+// tituloVencedor comes out empty.
 func TestMelhorCandidatoExterno_TituloPrincipalJaOtimoNaoExpoeVencedor(t *testing.T) {
 	titulo := "Blade Runner"
 	candidatos := []provider.ResultadoExterno{
@@ -107,12 +104,11 @@ func TestMelhorCandidatoExterno_TituloPrincipalJaOtimoNaoExpoeVencedor(t *testin
 	}
 }
 
-// TestMelhorCandidatoExterno_ForaDoTop3NuncaDisparaBusca cobre o critério de
-// aceite "só os top-3 candidatos disparam busca de títulos alternativos":
-// monta 5 candidatos com score de título único ESTRITAMENTE decrescente
-// (prefixos cada vez mais curtos do título de consulta -- a fixture confirma
-// a ordem via matching.Pontuar, sem supor o comportamento do textsim) e prova
-// que só os 3 primeiros disparam BuscarTitulosAlternativos.
+// TestMelhorCandidatoExterno_ForaDoTop3NuncaDisparaBusca covers the acceptance criterion
+// "only the top-3 candidates trigger an alternative titles lookup": it builds 5 candidates
+// with STRICTLY decreasing single-title scores (progressively shorter prefixes of the query
+// title -- the fixture confirms the order through matching.Pontuar, without assuming the
+// textsim behavior) and proves that only the first 3 trigger BuscarTitulosAlternativos.
 func TestMelhorCandidatoExterno_ForaDoTop3NuncaDisparaBusca(t *testing.T) {
 	titulo := "Blade Runner"
 	titulos := []string{"Blade Runner", "Blade Runne", "Blade Runn", "Blade Ru", "Bl"}
@@ -123,8 +119,8 @@ func TestMelhorCandidatoExterno_ForaDoTop3NuncaDisparaBusca(t *testing.T) {
 			Source: "tmdb", SourceID: strconv.Itoa(i + 1), Type: "movie", Title: tt,
 		})
 	}
-	// Confirma que a fixture é de fato decrescente por score de título único
-	// -- não assume o comportamento interno do textsim.
+	// Confirms that the fixture really decreases by single-title score -- it does not assume
+	// the internal textsim behavior.
 	for i := 0; i < len(candidatos)-1; i++ {
 		s1, _ := matching.Pontuar(titulo, 0, candidatos[i].Title, 0)
 		s2, _ := matching.Pontuar(titulo, 0, candidatos[i+1].Title, 0)
@@ -156,9 +152,9 @@ func TestMelhorCandidatoExterno_ForaDoTop3NuncaDisparaBusca(t *testing.T) {
 	}
 }
 
-// TestMelhorCandidatoExterno_CacheEvitaSegundaChamadaDentroDoTTL cobre o
-// critério de aceite: duas buscas pelo MESMO candidato dentro do TTL do
-// cache não disparam nova chamada de títulos alternativos.
+// TestMelhorCandidatoExterno_CacheEvitaSegundaChamadaDentroDoTTL covers the acceptance
+// criterion: two lookups of the SAME candidate within the cache TTL do not trigger a new
+// alternative titles call.
 func TestMelhorCandidatoExterno_CacheEvitaSegundaChamadaDentroDoTTL(t *testing.T) {
 	titulo := "Blade Runner"
 	candidatos := []provider.ResultadoExterno{
@@ -175,10 +171,10 @@ func TestMelhorCandidatoExterno_CacheEvitaSegundaChamadaDentroDoTTL(t *testing.T
 	}
 }
 
-// TestMelhorCandidatoExterno_ProviderSemCapacidadeDegrada cobre o degrade
-// gracioso quando a fonte NÃO implementa TituloAlternativoProvider
-// (automatchProvider, o fake padrão dos outros testes de auto-match): o
-// score final é o mesmo de matching.Pontuar puro, sem pânico.
+// TestMelhorCandidatoExterno_ProviderSemCapacidadeDegrada covers the graceful degradation
+// when the source does NOT implement TituloAlternativoProvider (automatchProvider, the
+// default fake of the other auto-match tests): the final score is the same as a pure
+// matching.Pontuar, with no panic.
 func TestMelhorCandidatoExterno_ProviderSemCapacidadeDegrada(t *testing.T) {
 	titulo := "Blade Runner"
 	candidatos := []provider.ResultadoExterno{
@@ -200,11 +196,11 @@ func TestMelhorCandidatoExterno_ProviderSemCapacidadeDegrada(t *testing.T) {
 	}
 }
 
-// TestAutoMatchLocalNuncaDisparaBuscaDeTitulosAlternativos cobre o critério
-// de aceite "candidato LOCAL nunca dispara títulos alternativos": um item que
-// resolve via o catálogo LOCAL (melhorCandidatoLocal) nunca deveria ter
-// tocado o provider externo -- prova end-to-end via o endpoint de auto-match,
-// com um fakeAltProvider que contaria qualquer chamada.
+// TestAutoMatchLocalNuncaDisparaBuscaDeTitulosAlternativos covers the acceptance criterion
+// "a LOCAL candidate never triggers alternative titles": an item that resolves through the
+// LOCAL catalog (melhorCandidatoLocal) should never have touched the external provider --
+// proven end-to-end through the auto-match endpoint, with a fakeAltProvider that would count
+// any call.
 func TestAutoMatchLocalNuncaDisparaBuscaDeTitulosAlternativos(t *testing.T) {
 	prov := &fakeAltProvider{nome: "tmdb", chamadas: map[string]int{}}
 	h, d := setupSearchServer(t, WithSearchProvider(prov), WithAssetsDir(t.TempDir()))

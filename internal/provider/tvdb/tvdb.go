@@ -1,10 +1,10 @@
-// Package tvdb implementa o provider.Provider para o TheTVDB (API v4), o SEGUNDO
-// provider do projeto (briefing 0031 / ADR-0021) e a fonte forte de séries — a única
-// que modela conteúdo como Looney Tunes (curtas antigos) e que expõe as ORDENAÇÕES
-// (season types). Além do Provider (busca + detalhe de série), o Client cumpre a
-// capacidade opcional provider.SerieProvider (a árvore temporadas+episódios, em
-// tvdb_serie.go). A credencial (apikey) é lida no boot (main) e injetada aqui —
-// NUNCA hardcoded, NUNCA logada; o token JWT (~1 mês) é cacheado e re-obtido sob 401.
+// Package tvdb implements provider.Provider for TheTVDB (API v4), the SECOND provider
+// of the project (ADR-0021) and the strong source for series -- the only one that models
+// content like Looney Tunes (old shorts) and that exposes the ORDERINGS (season types).
+// Besides the Provider (search + series detail), the Client satisfies the optional
+// capability provider.SerieProvider (the seasons+episodes tree, in tvdb_serie.go). The
+// credential (apikey) is read at boot (main) and injected here -- NEVER hardcoded, NEVER
+// logged; the JWT token (~1 month) is cached and re-obtained under a 401.
 package tvdb
 
 import (
@@ -22,39 +22,39 @@ import (
 )
 
 const (
-	// baseURLPadrao é a base estável da API v4 do TheTVDB.
+	// baseURLPadrao is the stable base of TheTVDB v4 API.
 	baseURLPadrao = "https://api4.thetvdb.com/v4"
-	// timeoutPadrao limita cada requisição; estouro vira erro (o handler degrada).
+	// timeoutPadrao bounds each request; an overrun becomes an error (the handler degrades).
 	timeoutPadrao = 12 * time.Second
 )
 
-// Credencial é a credencial resolvida do TheTVDB: a project-supported apikey basta
-// sozinha (o pin só é exigido para user-supported keys, fora do escopo). Quem lê o
-// env (MYMEDIADB_TTDB_API_KEY) é o main; aqui já chega resolvida.
+// Credencial is the resolved TheTVDB credential: the project-supported apikey is enough
+// on its own (the pin is only required for user-supported keys, out of scope). Whoever
+// reads the env (MYMEDIADB_TTDB_API_KEY) is main; here it already arrives resolved.
 type Credencial struct {
-	// APIKey é a chave do projeto usada no login (POST /login {"apikey":...}).
+	// APIKey is the project key used in the login (POST /login {"apikey":...}).
 	APIKey string
 }
 
-// Configurada diz se há credencial preenchida. Sem ela, o main nem cria o provider
-// (busca externa da fonte desligada — não é erro).
+// Configurada reports whether a credential is filled in. Without it, main does not even
+// create the provider (external search of the source off -- not an error).
 func (c Credencial) Configurada() bool { return c.APIKey != "" }
 
-// Client é o provider TheTVDB. httpClient e baseURL são injetáveis para teste (apontar
-// a um httptest.Server sem rede real). O token JWT é cacheado sob tokenMu.
+// Client is the TheTVDB provider. httpClient and baseURL are injectable for testing (point
+// at an httptest.Server without the real network). The JWT token is cached under tokenMu.
 type Client struct {
 	cred       Credencial
 	httpClient *http.Client
 	baseURL    string
 
-	// tokenMu protege o token JWT cacheado (~1 mês de validade). É re-obtido sob 401
-	// (getBytes limpa e re-loga uma vez), não a cada request.
+	// tokenMu protects the cached JWT token (~1 month of validity). It is re-obtained under
+	// a 401 (getBytes clears it and logs in again once), not on every request.
 	tokenMu sync.Mutex
 	token   string
 }
 
-// New cria o client TheTVDB. httpClient nil usa um default com timeout; baseURL vazio
-// usa a base pública v4.
+// New creates the TheTVDB client. A nil httpClient uses a default with timeout; an empty
+// baseURL uses the public v4 base.
 func New(cred Credencial, httpClient *http.Client, baseURL string) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: timeoutPadrao}
@@ -65,12 +65,12 @@ func New(cred Credencial, httpClient *http.Client, baseURL string) *Client {
 	return &Client{cred: cred, httpClient: httpClient, baseURL: baseURL}
 }
 
-// Nome identifica a fonte.
+// Nome identifies the source.
 func (c *Client) Nome() string { return "tvdb" }
 
-// obterToken devolve o token JWT cacheado ou faz o login (POST /login {"apikey":...})
-// e o cacheia. A apikey e o token NUNCA são logados. Erro de credencial ausente é
-// sinalizado aqui (o main não deveria ter criado o client sem ela).
+// obterToken returns the cached JWT token or performs the login (POST /login
+// {"apikey":...}) and caches it. The apikey and the token are NEVER logged. A missing
+// credential error is signaled here (main should not have created the client without it).
 func (c *Client) obterToken(ctx context.Context) (string, error) {
 	c.tokenMu.Lock()
 	defer c.tokenMu.Unlock()
@@ -88,7 +88,7 @@ func (c *Client) obterToken(ctx context.Context) (string, error) {
 	return tok, nil
 }
 
-// login faz POST /login e devolve o token; nunca ecoa a apikey/token.
+// login performs POST /login and returns the token; it never echoes the apikey/token.
 func (c *Client) login(ctx context.Context) (string, error) {
 	corpo, err := json.Marshal(map[string]string{"apikey": c.cred.APIKey})
 	if err != nil {
@@ -122,9 +122,10 @@ func (c *Client) login(ctx context.Context) (string, error) {
 	return out.Data.Token, nil
 }
 
-// getBytes faz um GET autenticado a `path` (relativo à base) com os `params` e devolve
-// o corpo. Trata 404 como provider.ErrNaoEncontrado (item inexistente → 404 no handler)
-// e re-loga UMA vez sob 401 (token expirado). Ponto único de I/O de leitura.
+// getBytes performs an authenticated GET to `path` (relative to the base) with the
+// `params` and returns the body. It treats 404 as provider.ErrNaoEncontrado (nonexistent
+// item → 404 in the handler) and logs in again ONCE under a 401 (expired token). The
+// single reading I/O point.
 func (c *Client) getBytes(ctx context.Context, path string, params url.Values) ([]byte, error) {
 	body, status, err := c.tentarGet(ctx, path, params)
 	if err != nil {
@@ -147,8 +148,9 @@ func (c *Client) getBytes(ctx context.Context, path string, params url.Values) (
 	}
 }
 
-// tentarGet monta e executa um GET autenticado, devolvendo corpo e status (sem
-// interpretar). Separado de getBytes para permitir o retry sob 401 sem duplicar I/O.
+// tentarGet assembles and executes an authenticated GET, returning the body and the status
+// (without interpreting it). Separate from getBytes to allow the retry under a 401 without
+// duplicating I/O.
 func (c *Client) tentarGet(ctx context.Context, path string, params url.Values) ([]byte, int, error) {
 	tok, err := c.obterToken(ctx)
 	if err != nil {
@@ -179,20 +181,21 @@ func (c *Client) tentarGet(ctx context.Context, path string, params url.Values) 
 	return body, resp.StatusCode, nil
 }
 
-// limparToken descarta o token cacheado (força re-login na próxima chamada).
+// limparToken discards the cached token (forcing a re-login on the next call).
 func (c *Client) limparToken() {
 	c.tokenMu.Lock()
 	c.token = ""
 	c.tokenMu.Unlock()
 }
 
-// respostaBusca espelha /search (só os campos usados). O type discrimina series/movie/
-// person; só series nos interessa aqui (a busca já filtra type=series).
+// respostaBusca mirrors /search (only the fields used). The type discriminates
+// series/movie/person; only series interest us here (the search already filters
+// type=series).
 type respostaBusca struct {
 	Data []itemBusca `json:"data"`
 }
 
-// itemBusca é um resultado cru de /search. tvdb_id é o id numérico (como string).
+// itemBusca is a raw result of /search. tvdb_id is the numeric id (as a string).
 type itemBusca struct {
 	TvdbID   string `json:"tvdb_id"`
 	Name     string `json:"name"`
@@ -202,16 +205,16 @@ type itemBusca struct {
 	ImageURL string `json:"image_url"`
 }
 
-// Buscar consulta /search?query=&type=series e mapeia os resultados para
-// ResultadoExterno com Type="tv" (o nosso tipo canônico de série). O TheTVDB só é
-// fonte de séries no MVP, então descartamos qualquer type != "series". `tipo` restringe
-// a busca: se for "movie" (a fonte não cobre filmes aqui), devolve vazio sem erro.
+// Buscar queries /search?query=&type=series and maps the results to ResultadoExterno
+// with Type="tv" (our canonical series type). TheTVDB is only a series source in the MVP,
+// so we discard any type != "series". `tipo` restricts the search: if it is "movie" (the
+// source does not cover movies here), it returns empty without an error.
 func (c *Client) Buscar(ctx context.Context, query, tipo, lang string) ([]provider.ResultadoExterno, error) {
 	if query == "" {
 		return nil, nil
 	}
 	if tipo == "movie" {
-		return nil, nil // TheTVDB é fonte de séries no MVP
+		return nil, nil // TheTVDB is a series source in the MVP
 	}
 	params := url.Values{"query": {query}, "type": {"series"}}
 	body, err := c.getBytes(ctx, "/search", params)
@@ -241,7 +244,7 @@ func (c *Client) Buscar(ctx context.Context, query, tipo, lang string) ([]provid
 	return out, nil
 }
 
-// anoPtr devolve os 4 primeiros dígitos de um ano (o /search já entrega "year"), ou nil.
+// anoPtr returns the first 4 digits of a year (the /search already delivers "year"), or nil.
 func anoPtr(year string) *string {
 	if len(year) < 4 {
 		return nil
@@ -250,7 +253,7 @@ func anoPtr(year string) *string {
 	return &a
 }
 
-// ptrNaoVazio devolve *string para uma string, ou nil quando ela é vazia.
+// ptrNaoVazio returns *string for a string, or nil when it is empty.
 func ptrNaoVazio(s string) *string {
 	if s == "" {
 		return nil

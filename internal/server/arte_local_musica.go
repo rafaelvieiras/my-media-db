@@ -1,18 +1,18 @@
 package server
 
-// arte_local_musica.go implementa a DESCOBERTA DE ARTE LOCAL para artista/album de
-// música (briefing 0119): o mesmo mecanismo que filme/série já têm (poster.jpg/
-// folder.jpg na pasta da obra, scanner.descobrirPoster/RefreshLocalAsset,
-// asset origin='local') nunca tinha sido ligado à vertical de música -- artista/album
-// NUNCA têm media_file DIRETO (ADR-0027, só a faixa liga), então a pasta "da obra"
-// precisa ser DERIVADA do arquivo de uma faixa descendente: a pasta do ÁLBUM é o
-// diretório do arquivo da faixa; a pasta do ARTISTA é um nível acima (o pai da pasta
-// do álbum). Cada requisição de fonte de arte agora tem TRÊS fontes possíveis, todas
-// se complementando (nenhuma delas exclusiva) -- local (esta), MusicBrainz/Cover Art
-// Archive e fanart.tv (enriquecerArtes, 0048/0106/0117) -- e origin='local' VENCE
-// origin='external' na precedência de serviço (escolherAssetServido, assets.go): uma
-// imagem que o dono já tem na pasta é tratada como decisão dele, não clobrada por
-// nenhum provider.
+// arte_local_musica.go implements LOCAL ARTWORK DISCOVERY for music artist/album:
+// the same mechanism movie/series already have (poster.jpg/folder.jpg in the work's
+// folder, scanner.descobrirPoster/RefreshLocalAsset, asset origin='local') had never
+// been wired into the music vertical -- artist/album NEVER have a media_file
+// DIRECTLY (ADR-0027, only the track links), so the "work's" folder has to be
+// DERIVED from the file of a descendant track: the ALBUM folder is the directory of
+// the track file; the ARTIST folder is one level up (the parent of the album
+// folder). Each artwork source request now has THREE possible sources, all of them
+// complementing each other (none of them exclusive) -- local (this one),
+// MusicBrainz/Cover Art Archive and fanart.tv (enriquecerArtes) -- and origin='local'
+// WINS over origin='external' in the serving precedence (escolherAssetServido,
+// assets.go): an image the owner already has in the folder is treated as his
+// decision, not clobbered by any provider.
 
 import (
 	"context"
@@ -20,13 +20,13 @@ import (
 	"path/filepath"
 )
 
-// DescobrirArteLocalMusica varre TODA entity artista/album com ao menos uma faixa
-// descendente possuída (ListarEntitiesMusicaComFaixaPossuida, mesmo universo do job
-// midias_faltantes/0116) e reconfere a pasta correspondente em busca de um pôster
-// local (scanner.RefreshLocalAsset, mesmo mecanismo de filme/série -- 0088).
-// Idempotente (RefreshLocalAsset faz UPSERT por (entity,kind,origin)) e best-effort:
-// falha pontual numa entity é logada e pulada, nunca aborta o lote. err só propaga em
-// falha real de LISTAGEM (banco fora do ar).
+// DescobrirArteLocalMusica sweeps EVERY artist/album entity with at least one owned
+// descendant track (ListarEntitiesMusicaComFaixaPossuida, the same universe as the
+// midias_faltantes job) and rechecks the corresponding folder looking for a local
+// poster (scanner.RefreshLocalAsset, the same mechanism as movie/series).
+// Idempotent (RefreshLocalAsset does an UPSERT by (entity,kind,origin)) and
+// best-effort: a one-off failure on an entity is logged and skipped, never aborts
+// the batch. err only propagates on a real LISTING failure (database down).
 func (s *Server) DescobrirArteLocalMusica(ctx context.Context) (encontrados int, err error) {
 	if s.scanner == nil {
 		return 0, nil
@@ -48,15 +48,16 @@ func (s *Server) DescobrirArteLocalMusica(ctx context.Context) (encontrados int,
 	return encontrados, nil
 }
 
-// descobrirArteLocalMusicaDe resolve a pasta canônica de UMA entity (artista/album)
-// a partir do path de uma faixa descendente qualquer (ObterCaminhoDescendentePresente)
-// e delega a scanner.RefreshLocalAsset -- que já sabe procurar poster.jpg/folder.jpg
-// na pasta e fazer o UPSERT do asset origin='local'. `p` é construído para que
-// filepath.Dir(p) resolva exatamente à pasta certa: para álbum, o path DA FAIXA (seu
-// dir já É a pasta do álbum); para artista, o path da PASTA DO ÁLBUM (um nível acima
-// dela é a pasta do artista) -- RefreshLocalAsset sempre aplica filepath.Dir(p)
-// internamente, então "p" aqui é só um vetor pra chegar na pasta certa, nunca um
-// arquivo real que precise existir.
+// descobrirArteLocalMusicaDe resolves the canonical folder of ONE entity
+// (artist/album) from the path of any descendant track
+// (ObterCaminhoDescendentePresente) and delegates to scanner.RefreshLocalAsset --
+// which already knows how to look for poster.jpg/folder.jpg in the folder and do the
+// UPSERT of the origin='local' asset. `p` is built so that filepath.Dir(p) resolves
+// exactly to the right folder: for an album, the path OF THE TRACK (its dir already
+// IS the album folder); for an artist, the path of the ALBUM FOLDER (one level above
+// it is the artist folder) -- RefreshLocalAsset always applies filepath.Dir(p)
+// internally, so "p" here is only a vector to reach the right folder, never a real
+// file that has to exist.
 func (s *Server) descobrirArteLocalMusicaDe(ctx context.Context, entityID string) (bool, error) {
 	ent, err := s.leitura().ObterEntity(ctx, entityID)
 	if err != nil {
@@ -64,15 +65,15 @@ func (s *Server) descobrirArteLocalMusicaDe(ctx context.Context, entityID string
 	}
 	faixaPath, err := s.leitura().ObterCaminhoDescendentePresente(ctx, entityID)
 	if err != nil {
-		return false, nil // sem descendente possuido (defensivo -- nao deveria acontecer aqui)
+		return false, nil // no owned descendant (defensive -- should not happen here)
 	}
 
 	var p string
 	switch ent.Type {
 	case tipoEntAlbum:
-		p = faixaPath // filepath.Dir(faixaPath) = pasta do album
+		p = faixaPath // filepath.Dir(faixaPath) = album folder
 	case tipoEntArtista:
-		p = filepath.Dir(faixaPath) // filepath.Dir(pasta do album) = pasta do artista
+		p = filepath.Dir(faixaPath) // filepath.Dir(album folder) = artist folder
 	default:
 		return false, nil
 	}

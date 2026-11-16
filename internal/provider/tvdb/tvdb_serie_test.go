@@ -7,7 +7,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// arvoreLooney busca a árvore do Looney Tunes (72514) no idioma pt-BR (com fallback).
+// arvoreLooney fetches the tree of Looney Tunes (72514) in the pt-BR language (with fallback).
 func arvoreLooney(t *testing.T) provider.SerieArvore {
 	t.Helper()
 	c := servidorTVDB(t)
@@ -18,7 +18,7 @@ func arvoreLooney(t *testing.T) provider.SerieArvore {
 	return arv
 }
 
-// acharEp encontra um episódio na árvore pelo SourceID (varre as temporadas).
+// acharEp finds an episode in the tree by SourceID (it scans the seasons).
 func acharEp(arv provider.SerieArvore, sourceID string) *provider.EpisodioExterno {
 	for i := range arv.Temporadas {
 		for j := range arv.Temporadas[i].Episodios {
@@ -30,7 +30,7 @@ func acharEp(arv provider.SerieArvore, sourceID string) *provider.EpisodioExtern
 	return nil
 }
 
-// TestArvoreOrdenacoes valida a ordenação default e a lista de season types.
+// TestArvoreOrdenacoes validates the default ordering and the list of season types.
 func TestArvoreOrdenacoes(t *testing.T) {
 	arv := arvoreLooney(t)
 	if arv.DefaultSeasonType != "official" {
@@ -41,7 +41,7 @@ func TestArvoreOrdenacoes(t *testing.T) {
 	}
 }
 
-// numsTemporadas coleta os números das temporadas da árvore (num→presente).
+// numsTemporadas collects the season numbers of the tree (num→present).
 func numsTemporadas(arv provider.SerieArvore) map[int]bool {
 	nums := map[int]bool{}
 	for _, tp := range arv.Temporadas {
@@ -50,8 +50,8 @@ func numsTemporadas(arv provider.SerieArvore) map[int]bool {
 	return nums
 }
 
-// TestArvoreTemporadasSoDefault garante que SÓ as temporadas da ordem default viram
-// TemporadaExterna (a temporada de DVD no seasons[] NÃO deve aparecer) — invariante 2.
+// TestArvoreTemporadasSoDefault guarantees that ONLY the seasons of the default order
+// become TemporadaExterna (the DVD season in seasons[] must NOT appear) -- invariant 2.
 func TestArvoreTemporadasSoDefault(t *testing.T) {
 	arv := arvoreLooney(t)
 	for _, tp := range arv.Temporadas {
@@ -59,7 +59,7 @@ func TestArvoreTemporadasSoDefault(t *testing.T) {
 			t.Errorf("temporada %d com ordering %q, quero official", tp.SeasonNumber, tp.Ordering)
 		}
 	}
-	// As temporadas default do fixture: 0, 1933, 1938 (a DVD 23 nao entra).
+	// The default seasons of the fixture: 0, 1933, 1938 (the DVD 23 does not enter).
 	nums := numsTemporadas(arv)
 	for _, quero := range []int{0, 1933, 1938} {
 		if !nums[quero] {
@@ -71,8 +71,8 @@ func TestArvoreTemporadasSoDefault(t *testing.T) {
 	}
 }
 
-// TestArvoreTemporadaPosterAno confirma que a temporada default 1933 traz pôster e ano
-// (vindos do extended.seasons[]).
+// TestArvoreTemporadaPosterAno confirms that the default season 1933 brings a poster and a
+// year (coming from extended.seasons[]).
 func TestArvoreTemporadaPosterAno(t *testing.T) {
 	arv := arvoreLooney(t)
 	for _, tp := range arv.Temporadas {
@@ -85,8 +85,8 @@ func TestArvoreTemporadaPosterAno(t *testing.T) {
 	}
 }
 
-// TestArvoreEpisodioAncoradoNoID + Numbering multi-ordem: o MESMO episódio (id 4113194)
-// carrega official/dvd/absolute com (season,number) diferentes e absoluteNumber estável.
+// TestArvoreEpisodioAncoradoNoID + multi-order Numbering: the SAME episode (id 4113194)
+// carries official/dvd/absolute with different (season,number) and a stable absoluteNumber.
 func TestArvoreNumberingMultiOrdem(t *testing.T) {
 	arv := arvoreLooney(t)
 	ep := acharEp(arv, "4113194") // Bosko's Picture Show
@@ -106,19 +106,20 @@ func TestArvoreNumberingMultiOrdem(t *testing.T) {
 	if ep.AbsoluteNumber == nil || *ep.AbsoluteNumber != 373 {
 		t.Errorf("absoluteNumber = %v, quero 373", ep.AbsoluteNumber)
 	}
-	// A âncora é o id, não o par (season,number): o episódio aparece SÓ uma vez, na
-	// temporada da ordem default (1933), não na 23 nem na 1.
+	// The anchor is the id, not the (season,number) pair: the episode appears ONLY once, in
+	// the season of the default order (1933), not in 23 nor in 1.
 	if ep.Numbering["official"].Season != 1933 {
 		t.Errorf("episodio deveria estar ancorado na temporada default 1933")
 	}
 }
 
-// TestArvoreFallbackIdioma: o episódio COM tradução por tem Title[pt-BR]; o SEM tradução
-// não tem pt-BR no mapa (o resolver cai no idioma original en) — invariante 3.
+// TestArvoreFallbackIdioma: the episode WITH a por translation has Title[pt-BR]; the one
+// WITHOUT a translation has no pt-BR in the map (the resolver falls back to the original
+// language en) -- invariant 3.
 func TestArvoreFallbackIdioma(t *testing.T) {
 	arv := arvoreLooney(t)
-	comPor := acharEp(arv, "4113194") // tem "por"
-	semPor := acharEp(arv, "4113285") // sem "por"
+	comPor := acharEp(arv, "4113194") // has "por"
+	semPor := acharEp(arv, "4113285") // no "por"
 	if comPor == nil || semPor == nil {
 		t.Fatal("episodios de fallback nao encontrados")
 	}
@@ -136,8 +137,8 @@ func TestArvoreFallbackIdioma(t *testing.T) {
 	}
 }
 
-// TestArvoreExternalIDsEpisodio: do tree, o episódio traz {tvdb: id} (o cruzamento
-// tmdb/imdb por episódio exige o extended, deferido).
+// TestArvoreExternalIDsEpisodio: from the tree, the episode brings {tvdb: id} (the
+// tmdb/imdb crossing per episode requires the extended, deferred).
 func TestArvoreExternalIDsEpisodio(t *testing.T) {
 	arv := arvoreLooney(t)
 	ep := acharEp(arv, "4113194")
@@ -146,7 +147,7 @@ func TestArvoreExternalIDsEpisodio(t *testing.T) {
 	}
 }
 
-// TestArvoreSerieInexistente propaga ErrNaoEncontrado.
+// TestArvoreSerieInexistente propagates ErrNaoEncontrado.
 func TestArvoreSerieInexistente(t *testing.T) {
 	c := servidorTVDB(t)
 	_, err := c.BuscarSerieArvore(context.Background(), "000", nil)

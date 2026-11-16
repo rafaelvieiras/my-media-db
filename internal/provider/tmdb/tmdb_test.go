@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// respostaFixa é um payload de /search/multi com um filme, uma serie e uma
-// pessoa (esta ultima deve ser descartada pelo filtro de media_type).
+// respostaFixa is a /search/multi payload with a movie, a series and a person (the last
+// one must be discarded by the media_type filter).
 const respostaFixa = `{
   "results": [
     {
@@ -37,8 +37,8 @@ const respostaFixa = `{
   ]
 }`
 
-// servidorFixo sobe um httptest.Server que responde /search/multi com o payload
-// fixo e captura a ultima requisicao recebida (para asserts de auth).
+// servidorFixo starts an httptest.Server that answers /search/multi with the fixed
+// payload and captures the last request received (for auth asserts).
 func servidorFixo(t *testing.T, capturar *http.Request) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -56,8 +56,8 @@ func servidorFixo(t *testing.T, capturar *http.Request) *httptest.Server {
 	return srv
 }
 
-// eqS compara uma string; eqSPtr compara um *string com um valor esperado (nil
-// falha). Mantêm os testes lineares (baixa complexidade ciclomática).
+// eqS compares a string; eqSPtr compares a *string with an expected value (nil fails).
+// They keep the tests linear (low cyclomatic complexity).
 func eqS(t *testing.T, name, got, want string) {
 	t.Helper()
 	if got != want {
@@ -82,7 +82,7 @@ func TestBuscarMapeiaEFiltra(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Buscar: %v", err)
 	}
-	// person descartado -> 2 resultados (movie + tv).
+	// person discarded -> 2 results (movie + tv).
 	if len(res) != 2 {
 		t.Fatalf("len(res) = %d, quero 2 (person descartado)", len(res))
 	}
@@ -119,9 +119,10 @@ func TestBuscarFiltraPorTipo(t *testing.T) {
 	}
 }
 
-// TestBuscarEnviaLanguage cobre o idioma na busca (regressao): com lang, a
-// requisicao ao /search/multi leva language=<lang>; sem lang, o parametro nao vai
-// (a fonte cai no default). Antes, a busca ignorava o idioma ativo da UI.
+// TestBuscarEnviaLanguage covers the language in the search (regression): with lang, the
+// request to /search/multi carries language=<lang>; without lang, the parameter is not
+// sent (the source falls back to the default). Before, the search ignored the active
+// language of the UI.
 func TestBuscarEnviaLanguage(t *testing.T) {
 	var comLang, semLang http.Request
 	srv1 := servidorFixo(t, &comLang)
@@ -187,11 +188,11 @@ func TestBuscarStatusErroPropaga(t *testing.T) {
 	}
 }
 
-// detalheFilme e detalheSerie sao payloads crus de /movie/{id} e /tv/{id} com
-// append_to_response=translations (0020). Filme usa title/release_date + data.title
-// nas traducoes; serie usa name/first_air_date + data.name. original_language e a
-// ancora do fallback. genres traz ids (os nomes localizados vem das listas por
-// idioma). Traducoes: en (iso_3166_1=US) e pt (iso_3166_1=BR).
+// detalheFilme and detalheSerie are raw payloads of /movie/{id} and /tv/{id} with
+// append_to_response=translations. The movie uses title/release_date + data.title in the
+// translations; the series uses name/first_air_date + data.name. original_language is the
+// anchor of the fallback. genres brings ids (the localized names come from the per-language
+// lists). Translations: en (iso_3166_1=US) and pt (iso_3166_1=BR).
 const detalheFilme = `{
   "id": 603,
   "original_language": "en",
@@ -228,8 +229,8 @@ const detalheSerie = `{
   }
 }`
 
-// generosFilme e generosSerie sao as listas de genero localizadas (GET
-// /genre/{movie|tv}/list?language=), por idioma. Os ids casam os do detalhe.
+// generosFilme and generosSerie are the localized genre lists (GET
+// /genre/{movie|tv}/list?language=), per language. The ids match the ones of the detail.
 var generosFilme = map[string]string{
 	"pt-BR": `{"genres":[{"id":28,"name":"Acao"},{"id":878,"name":"Ficcao cientifica"}]}`,
 	"en":    `{"genres":[{"id":28,"name":"Action"},{"id":878,"name":"Science Fiction"}]}`,
@@ -240,9 +241,9 @@ var generosSerie = map[string]string{
 	"en":    `{"genres":[{"id":18,"name":"Drama"}]}`,
 }
 
-// servidorDetalhe sobe um httptest.Server que responde /movie/{id}, /tv/{id} (com
-// as traducoes) e /genre/{movie|tv}/list?language= (as listas localizadas). Conta
-// as chamadas por path (para o teste de cache de generos).
+// servidorDetalhe starts an httptest.Server that answers /movie/{id}, /tv/{id} (with the
+// translations) and /genre/{movie|tv}/list?language= (the localized lists). It counts the
+// calls per path (for the genre cache test).
 func servidorDetalhe(t *testing.T, chamadas map[string]int) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -276,7 +277,7 @@ func TestBuscarDetalheEnvelopeFilme(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuscarDetalhe: %v", err)
 	}
-	// O payload aumentado tem detail + tags_by_lang (generos localizados).
+	// The augmented payload has detail + tags_by_lang (localized genres).
 	var env envelopeTMDB
 	if err := json.Unmarshal(raw, &env); err != nil {
 		t.Fatalf("payload aumentado invalido: %v", err)
@@ -291,15 +292,15 @@ func TestBuscarDetalheEnvelopeFilme(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MapearDetalhe: %v", err)
 	}
-	// title/description por idioma.
+	// title/description per language.
 	eqIdioma(t, campos, "title", "pt-BR", "Matrix")
 	eqIdioma(t, campos, "title", "en", "The Matrix")
 	eqIdioma(t, campos, "description", "pt-BR", "Neo descobre a verdade.")
 	eqIdioma(t, campos, "description", "en", "Neo learns the truth.")
-	// tags por idioma.
+	// tags per language.
 	eqIdiomaLista(t, campos, "tags", "pt-BR", []string{"Acao", "Ficcao cientifica"})
 	eqIdiomaLista(t, campos, "tags", "en", []string{"Action", "Science Fiction"})
-	// Neutros escalares + ancora.
+	// Neutral scalars + anchor.
 	eqCampo(t, campos, "original_title", "The Matrix")
 	eqCampo(t, campos, "release_date", "1999-03-31")
 	eqCampo(t, campos, "poster_url", "https://image.tmdb.org/t/p/w342/matrix.jpg")
@@ -318,7 +319,7 @@ func TestBuscarDetalheEnvelopeSerie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MapearDetalhe: %v", err)
 	}
-	// Serie: data.name -> title; first_air_date -> release_date.
+	// Series: data.name -> title; first_air_date -> release_date.
 	eqIdioma(t, campos, "title", "en", "Breaking Bad")
 	eqIdioma(t, campos, "description", "pt-BR", "Um professor vira quimico do crime.")
 	eqIdiomaLista(t, campos, "tags", "pt-BR", []string{"Drama"})
@@ -327,12 +328,12 @@ func TestBuscarDetalheEnvelopeSerie(t *testing.T) {
 	eqCampo(t, campos, "original_language", "en")
 }
 
-// TestMapearDetalheEnvelopeSerieComTvdbIdNumerico (0090) reproduz o bug real de
-// producao: o TMDB as vezes devolve external_ids.tvdb_id como NUMERO JSON (nao
-// string). Antes do fix, isso derrubava o Unmarshal do detalhe INTEIRO -- nao so o
-// tvdb_id, mas title/description/tags tambem sumiam. Aqui confirmamos que o
-// mapeamento completo continua funcionando com tvdb_id numerico, com o mesmo
-// payload-base ja usado por TestBuscarDetalheEnvelopeSerie (detalheSerie).
+// TestMapearDetalheEnvelopeSerieComTvdbIdNumerico reproduces the real production bug:
+// TMDB sometimes returns external_ids.tvdb_id as a JSON NUMBER (not a string). Before the
+// fix, that brought down the Unmarshal of the WHOLE detail -- not only the tvdb_id, but
+// title/description/tags vanished as well. Here we confirm that the complete mapping keeps
+// working with a numeric tvdb_id, with the same base payload already used by
+// TestBuscarDetalheEnvelopeSerie (detalheSerie).
 func TestMapearDetalheEnvelopeSerieComTvdbIdNumerico(t *testing.T) {
 	c := New(Credencial{Token: "tok"}, nil, "")
 	detalheComTvdbNumerico := strings.Replace(
@@ -355,8 +356,8 @@ func TestMapearDetalheEnvelopeSerieComTvdbIdNumerico(t *testing.T) {
 	}
 }
 
-// TestListaGenerosCache prova que as listas de genero por idioma sao cacheadas: dois
-// BuscarDetalhe (mesmo tipo) batem UMA vez por idioma em /genre/movie/list, nao duas.
+// TestListaGenerosCache proves that the genre lists per language are cached: two
+// BuscarDetalhe calls (same type) hit /genre/movie/list ONCE per language, not twice.
 func TestListaGenerosCache(t *testing.T) {
 	chamadas := map[string]int{}
 	srv := servidorDetalhe(t, chamadas)
@@ -373,14 +374,14 @@ func TestListaGenerosCache(t *testing.T) {
 	if n := chamadas["/genre/movie/list?language=en"]; n != 1 {
 		t.Errorf("/genre/movie/list?language=en chamado %d vezes, quero 1 (cache)", n)
 	}
-	// O detalhe NAO e cacheado (2 chamadas); so as listas de genero sao.
+	// The detail is NOT cached (2 calls); only the genre lists are.
 	if n := chamadas["/movie/603?language=pt-BR"]; n != 2 {
 		t.Errorf("/movie/603 chamado %d vezes, quero 2 (detalhe nao e cacheado)", n)
 	}
 }
 
-// TestBuscarTitulosAlternativos cobre a capacidade provider.TituloAlternativoProvider
-// (briefing 0084): extrai title (filme) / name (série) de translations.translations[].data.
+// TestBuscarTitulosAlternativos covers the provider.TituloAlternativoProvider capability:
+// it extracts title (movie) / name (series) from translations.translations[].data.
 func TestBuscarTitulosAlternativos(t *testing.T) {
 	srv := servidorDetalhe(t, nil)
 	c := New(Credencial{Token: "tok"}, srv.Client(), srv.URL)
@@ -400,8 +401,9 @@ func TestBuscarTitulosAlternativos(t *testing.T) {
 	}
 }
 
-// TestBuscarTitulosAlternativosUsaAppendMaisLeve prova que a chamada NÃO pede os
-// appends pesados de BuscarDetalhe (credits/keywords/similar/etc) -- só translations.
+// TestBuscarTitulosAlternativosUsaAppendMaisLeve proves that the call does NOT request
+// the heavy appends of BuscarDetalhe (credits/keywords/similar/etc) -- only
+// translations.
 func TestBuscarTitulosAlternativosUsaAppendMaisLeve(t *testing.T) {
 	var appendRecebido string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -440,8 +442,8 @@ func TestBuscarDetalheTipoInvalido(t *testing.T) {
 	}
 }
 
-// TestMapearDetalheLegado prova a COMPATIBILIDADE: um payload ANTIGO (detalhe cru do
-// 0015, sem envelope) mapeia para ESCALARES; o resolver os trata como do principal.
+// TestMapearDetalheLegado proves COMPATIBILITY: an OLD payload (raw detail, without
+// envelope) maps to SCALARS; the resolver treats them as belonging to the main language.
 func TestMapearDetalheLegado(t *testing.T) {
 	c := New(Credencial{Token: "tok"}, nil, "")
 	legado := []byte(`{
@@ -456,7 +458,7 @@ func TestMapearDetalheLegado(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MapearDetalhe: %v", err)
 	}
-	// Escalares (nao map[idioma]valor).
+	// Scalars (not map[language]value).
 	eqCampo(t, campos, "title", "The Matrix")
 	eqCampo(t, campos, "description", "Neo descobre a verdade.")
 	eqCampo(t, campos, "release_date", "1999-03-31")
@@ -467,8 +469,8 @@ func TestMapearDetalheLegado(t *testing.T) {
 	}
 }
 
-// MapearDetalhe so inclui chaves que a fonte trouxe: um payload minimo (legado) nao
-// deve gerar poster_url/tags.
+// MapearDetalhe only includes keys that the source brought: a minimal payload (legacy)
+// must not produce poster_url/tags.
 func TestMapearDetalheOmiteAusentes(t *testing.T) {
 	c := New(Credencial{Token: "tok"}, nil, "")
 	campos, err := c.MapearDetalhe([]byte(`{"title":"So Titulo"}`))
@@ -484,7 +486,7 @@ func TestMapearDetalheOmiteAusentes(t *testing.T) {
 	}
 }
 
-// eqCampo confere um campo string escalar do mapa canonico.
+// eqCampo checks a scalar string field of the canonical map.
 func eqCampo(t *testing.T, m map[string]any, chave, want string) {
 	t.Helper()
 	got, ok := m[chave].(string)
@@ -497,7 +499,7 @@ func eqCampo(t *testing.T, m map[string]any, chave, want string) {
 	}
 }
 
-// eqIdioma confere m[chave][idioma] == want (campo traduzivel escalar).
+// eqIdioma checks m[key][language] == want (translatable scalar field).
 func eqIdioma(t *testing.T, m map[string]any, chave, idioma, want string) {
 	t.Helper()
 	porIdioma, ok := m[chave].(map[string]any)
@@ -515,7 +517,7 @@ func eqIdioma(t *testing.T, m map[string]any, chave, idioma, want string) {
 	}
 }
 
-// eqIdiomaLista confere m[chave][idioma] == want (campo-lista traduzivel).
+// eqIdiomaLista checks m[key][language] == want (translatable list field).
 func eqIdiomaLista(t *testing.T, m map[string]any, chave, idioma string, want []string) {
 	t.Helper()
 	porIdioma, ok := m[chave].(map[string]any)
@@ -527,7 +529,7 @@ func eqIdiomaLista(t *testing.T, m map[string]any, chave, idioma string, want []
 	eqLista(t, chave+"["+idioma+"]", got, want)
 }
 
-// eqLista compara duas listas de string em ordem.
+// eqLista compares two string lists in order.
 func eqLista(t *testing.T, name string, got, want []string) {
 	t.Helper()
 	if len(got) != len(want) {

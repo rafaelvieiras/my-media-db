@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// TestBuscarDetalheAppendCreditos garante que o append_to_response pede os blocos de
-// credito (credits do filme + aggregate_credits da serie) numa so ida.
+// TestBuscarDetalheAppendCreditos guarantees that append_to_response requests the credit
+// blocks (credits of the movie + aggregate_credits of the series) in a single round trip.
 func TestBuscarDetalheAppendCreditos(t *testing.T) {
 	var req http.Request
 	srv := servidorRico(t, &req)
@@ -25,8 +25,8 @@ func TestBuscarDetalheAppendCreditos(t *testing.T) {
 	}
 }
 
-// TestMapearCreditosFilme cobre o canonico de FILME via BuscarDetalhe+MapearDetalhe: o
-// elenco vem ordenado por bilhagem, a equipe com departamento/cargo e as produtoras.
+// TestMapearCreditosFilme covers the MOVIE canonical via BuscarDetalhe+MapearDetalhe: the
+// cast comes sorted by billing, the crew with department/job and the production companies.
 func TestMapearCreditosFilme(t *testing.T) {
 	srv := servidorCreditosFilme(t)
 	c := New(Credencial{Token: "tok"}, srv.Client(), srv.URL)
@@ -43,7 +43,7 @@ func TestMapearCreditosFilme(t *testing.T) {
 	if len(cast) != 2 {
 		t.Fatalf("cast tem %d itens, quero 2", len(cast))
 	}
-	// Ordenado por `order`: Keanu (0) antes de Laurence (1), apesar da ordem crua invertida.
+	// Sorted by `order`: Keanu (0) before Laurence (1), despite the inverted raw order.
 	eqStr(t, cast[0], "name", "Keanu Reeves")
 	eqStr(t, cast[0], "character", "Neo")
 	eqStr(t, cast[0], "source_id", "6384")
@@ -66,9 +66,10 @@ func TestMapearCreditosFilme(t *testing.T) {
 	eqStr(t, comps[0], "logo_path", "/wb.png")
 }
 
-// TestMapearCreditosSerieNormalizaRoles cobre o canonico AGREGADO de serie: multiplos
-// `roles` de um ator viram UM `character` unido por " / " com total_episode_count; e
-// multiplos `jobs` de um membro de equipe escolhem o de maior episode_count.
+// TestMapearCreditosSerieNormalizaRoles covers the AGGREGATED canonical of a series:
+// multiple `roles` of an actor become ONE `character` joined by " / " with
+// total_episode_count; and multiple `jobs` of a crew member choose the one with the
+// highest episode_count.
 func TestMapearCreditosSerieNormalizaRoles(t *testing.T) {
 	d := detalheTMDB{AggregateCredits: aggregateCreditsTMDB{
 		Cast: []aggCastTMDB{{
@@ -111,11 +112,11 @@ func TestMapearCreditosSerieNormalizaRoles(t *testing.T) {
 	}
 }
 
-// TestElencoTop50 prova o teto: um elenco de 60 e cortado nos 50 primeiros POR
-// bilhagem (order), independente da ordem crua.
+// TestElencoTop50 proves the ceiling: a cast of 60 is cut at the first 50 BY billing
+// (order), regardless of the raw order.
 func TestElencoTop50(t *testing.T) {
 	cast := make([]castMembroTMDB, 0, 60)
-	// Insere em ordem DECRESCENTE de `order` (59..0) para forcar a ordenacao a agir.
+	// Inserts in DECREASING `order` (59..0) to force the sorting to act.
 	for i := 59; i >= 0; i-- {
 		cast = append(cast, castMembroTMDB{ID: int64(i), Name: "Ator", Order: i})
 	}
@@ -127,7 +128,7 @@ func TestElencoTop50(t *testing.T) {
 	if len(lista) != 50 {
 		t.Fatalf("cast cortado tem %d, quero 50", len(lista))
 	}
-	// O primeiro deve ser o order=0 (menor bilhagem) e o ultimo o order=49.
+	// The first one must be order=0 (lowest billing) and the last one order=49.
 	if o := lista[0].(map[string]any)["order"].(int); o != 0 {
 		t.Errorf("primeiro order = %d, quero 0", o)
 	}
@@ -136,8 +137,8 @@ func TestElencoTop50(t *testing.T) {
 	}
 }
 
-// TestCreditosAusentesNaoGravam garante que sem elenco/equipe/produtoras as chaves nao
-// aparecem no canonico (o consumidor distingue ausente de vazio).
+// TestCreditosAusentesNaoGravam guarantees that without cast/crew/companies the keys do
+// not appear in the canonical (the consumer distinguishes absent from empty).
 func TestCreditosAusentesNaoGravam(t *testing.T) {
 	out := map[string]any{}
 	enriquecerCreditos(out, detalheTMDB{})
@@ -148,7 +149,7 @@ func TestCreditosAusentesNaoGravam(t *testing.T) {
 	}
 }
 
-// --- payload e helpers do teste ---
+// --- payload and test helpers ---
 
 const detalheCreditosFilme = `{
   "id": 603,
@@ -170,7 +171,7 @@ const detalheCreditosFilme = `{
   ]
 }`
 
-// servidorCreditosFilme responde /movie/603 com o payload de creditos de filme.
+// servidorCreditosFilme answers /movie/603 with the movie credits payload.
 func servidorCreditosFilme(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +186,7 @@ func servidorCreditosFilme(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// listaDeMapaTest extrai campos[chave] como []map[string]any (helper de teste).
+// listaDeMapaTest extracts campos[key] as []map[string]any (test helper).
 func listaDeMapaTest(t *testing.T, campos map[string]any, chave string) []map[string]any {
 	t.Helper()
 	lista, ok := campos[chave].([]any)
@@ -203,7 +204,7 @@ func listaDeMapaTest(t *testing.T, campos map[string]any, chave string) []map[st
 	return out
 }
 
-// eqStr checa m[chave] == want (string) num map dinamico do canonico.
+// eqStr checks m[key] == want (string) in a dynamic canonical map.
 func eqStr(t *testing.T, m map[string]any, chave, want string) {
 	t.Helper()
 	if got, _ := m[chave].(string); got != want {

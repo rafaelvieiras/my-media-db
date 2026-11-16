@@ -1,10 +1,9 @@
-// Package matching concentra a PONTUAÇÃO de candidato do auto-match (briefing
-// 0050): dado um título/ano de consulta e um título/ano de candidato, decide o
-// score final (0-100) e se o candidato deve ser descartado por divergência de
-// ano. É um pacote FOLHA (só depende de internal/textsim) para poder ser
-// consumido tanto por internal/server (fila de Revisão, endpoints de
-// auto-match) quanto por internal/enrich (casamento por nome no import manual,
-// briefing 0054) sem criar ciclo de import entre os dois.
+// Package matching concentrates the candidate SCORING of the auto-match: given a
+// query title/year and a candidate title/year, it decides the final score (0-100) and
+// whether the candidate must be discarded for a year mismatch. It is a LEAF package (it
+// only depends on internal/textsim) so that it can be consumed both by internal/server
+// (Revisão queue, auto-match endpoints) and by internal/enrich (name matching on manual
+// import) without creating an import cycle between the two.
 package matching
 
 import (
@@ -15,60 +14,60 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/textsim"
 )
 
-// LimiarAutoMatch é o corte de score (escala 0-100, igual à de
-// match_confidence) acima do qual o auto-match aplica o candidato SOZINHO.
-// Deliberadamente bem acima do limiar de baixa confiança da fila de Revisão
-// (70, internal/server/review.go): o custo de um falso-positivo (contamina o
-// catálogo em silêncio) é muito maior que o de um falso-negativo (item que já
-// estava visível na fila/órfãos continua lá).
+// LimiarAutoMatch is the score cut (0-100 scale, the same as match_confidence) above
+// which the auto-match applies the candidate ON ITS OWN.
+// Deliberately well above the low-confidence threshold of the Revisão queue
+// (70, internal/server/review.go): the cost of a false positive (it silently contaminates the
+// catalog) is much higher than that of a false negative (an item that was already
+// visible in the queue/orphans stays there).
 const LimiarAutoMatch = 92.0
 
-// ToleranciaDuracaoSegundos é a folga (em segundos) usada como CONFIRMAÇÃO
-// adicional de match de faixa de música quando duas durações (arquivo local
-// vs. candidato externo) são comparadas (briefing 0121 §8). O MusicBrainz
-// Picard usa 2s como padrão para esse mesmo gate; aqui um pouco mais folgado
-// (3s) para absorver a imprecisão de duração de CONTAINER que o ffprobe
-// reporta (via mediainfo) frente à decodificação exata do áudio.
+// ToleranciaDuracaoSegundos is the slack (in seconds) used as an additional
+// CONFIRMATION of a music track match when two durations (local file
+// vs. external candidate) are compared. MusicBrainz
+// Picard uses 2s as the default for that same gate; here a little more slack
+// (3s) to absorb the imprecision of the CONTAINER duration that ffprobe
+// reports (through mediainfo) compared to the exact decoding of the audio.
 const ToleranciaDuracaoSegundos = 3.0
 
-// LimiarConfiancaFingerprint é o corte mínimo (escala 0-1, a MESMA do escore
-// que o AcoustID devolve) para aceitar um RecordingCandidato do passo 4.5 de
-// fingerprint acústico (briefing 0126) como match válido. O AcoustID já
-// filtra internamente por similaridade de duração antes de devolver um
-// candidato, então o escore aqui reflete majoritariamente a qualidade do
-// próprio fingerprint (ruído/qualidade de captura, não ambiguidade de
-// metadado) -- por isso um corte mais permissivo que LimiarAutoMatch (que
-// mede similaridade de TEXTO, sujeita a nomes parecidos de itens
-// diferentes) é aceitável. 0.6 é o meio do intervalo "bom o bastante"
-// documentado pela própria AcoustID/Picard (candidatos < 0.5 costumam ser
-// ruído; >= 0.8 é alta confiança) -- valor calibrável depois com dados reais
-// de produção, sem mudar o contrato desta constante.
+// LimiarConfiancaFingerprint is the minimum cut (0-1 scale, the SAME as the score
+// that AcoustID returns) to accept a RecordingCandidato from the acoustic fingerprint step
+// 4.5 as a valid match. AcoustID already
+// filters internally by duration similarity before returning a
+// candidate, so the score here mostly reflects the quality of the
+// fingerprint itself (noise/capture quality, not metadata
+// ambiguity) -- which is why a more permissive cut than LimiarAutoMatch (which
+// measures TEXT similarity, subject to similar names of different
+// items) is acceptable. 0.6 is the middle of the "good enough" range
+// documented by AcoustID/Picard itself (candidates < 0.5 are usually
+// noise; >= 0.8 is high confidence) -- a value calibratable later with real
+// production data, without changing the contract of this constant.
 const LimiarConfiancaFingerprint = 0.6
 
-// Pontuar calcula o score final [0,100] do briefing 0050 §4: similaridade
-// Jaro-Winkler do título (textsim) em escala 0-100, ajustada pelo ano.
-// descartado=true quando os DOIS anos existem e divergem em MAIS de 1 ano
-// (remake/refilmagem não deve colar, mesmo com título idêntico) — o candidato
-// nunca entra no ranking nesse caso. Anos iguais somam +5 (cap em 100);
-// diferença de exatamente 1 ano não ajusta (tolerância a erro comum de
-// catalogação); qualquer ano ausente também não ajusta (nada para comparar).
+// Pontuar computes the final score [0,100]: Jaro-Winkler similarity
+// of the title (textsim) on a 0-100 scale, adjusted by the year.
+// descartado=true when BOTH years exist and differ by MORE than 1 year
+// (a remake must not stick, even with an identical title) — the candidate
+// never enters the ranking in that case. Equal years add +5 (capped at 100);
+// a difference of exactly 1 year does not adjust (tolerance for a common
+// cataloguing mistake); any missing year does not adjust either (nothing to compare).
 func Pontuar(tituloConsulta string, anoConsulta int, tituloCandidato string, anoCandidato int) (score float64, descartado bool) {
 	base := textsim.Similaridade(tituloConsulta, tituloCandidato) * 100
 	score, descartado = ajustarPorAno(base, anoConsulta, anoCandidato)
 	return score, descartado
 }
 
-// PontuarComAlternativos é a variante de Pontuar (briefing 0084) que também
-// considera os TÍTULOS ALTERNATIVOS/TRADUZIDOS que o provedor conhece do
-// candidato -- não só o título no idioma consultado. A similaridade textual
-// usa o MAIOR score entre `tituloCandidato` e cada item de
-// `titulosAlternativos`; tituloVencedor devolve QUAL string produziu esse
-// score (para a UI explicar a origem do palpite — "via título alternativo").
-// tituloVencedor é sempre um dos títulos comparados (nunca vazio), mesmo
-// quando o vencedor foi o próprio título principal -- cabe ao CHAMADOR decidir
-// se deve exibir isso (ex.: matched_title só sai preenchido quando o vencedor
-// difere do título principal). A regra de ano é a MESMA de Pontuar
-// (compartilhada via ajustarPorAno, sem duplicar a lógica de diff).
+// PontuarComAlternativos is the variant of Pontuar that also
+// considers the ALTERNATIVE/TRANSLATED TITLES the provider knows for the
+// candidate -- not only the title in the queried language. The textual similarity
+// uses the HIGHEST score between `tituloCandidato` and each item of
+// `titulosAlternativos`; tituloVencedor returns WHICH string produced that
+// score (so the UI can explain the origin of the guess — "via alternative title").
+// tituloVencedor is always one of the compared titles (never empty), even
+// when the winner was the main title itself -- it is up to the CALLER to decide
+// whether to display that (e.g.: matched_title is only filled when the winner
+// differs from the main title). The year rule is the SAME as Pontuar
+// (shared through ajustarPorAno, without duplicating the diff logic).
 func PontuarComAlternativos(tituloConsulta string, anoConsulta int, tituloCandidato string, titulosAlternativos []string, anoCandidato int) (score float64, tituloVencedor string, descartado bool) {
 	melhorTitulo := tituloCandidato
 	melhorSim := textsim.Similaridade(tituloConsulta, tituloCandidato)
@@ -85,12 +84,12 @@ func PontuarComAlternativos(tituloConsulta string, anoConsulta int, tituloCandid
 	return score, melhorTitulo, descartado
 }
 
-// ajustarPorAno aplica o ajuste de ano do briefing 0050 §4 a um score base de
-// similaridade textual (0-100): descarta (score 0, descartado=true) quando os
-// DOIS anos existem e divergem em MAIS de 1 ano; soma +5 (cap em 100) quando
-// os anos batem exatamente; não ajusta em qualquer outro caso (diferença de 1
-// ano, ou ano ausente de um dos lados). Extraído para ser compartilhado por
-// Pontuar e PontuarComAlternativos, sem duplicar a regra em dois lugares.
+// ajustarPorAno applies the year adjustment to a base score of
+// textual similarity (0-100): discards (score 0, descartado=true) when
+// BOTH years exist and differ by MORE than 1 year; adds +5 (capped at 100) when
+// the years match exactly; does not adjust in any other case (a difference of 1
+// year, or a year missing on one side). Extracted to be shared by
+// Pontuar and PontuarComAlternativos, without duplicating the rule in two places.
 func ajustarPorAno(scoreBase float64, anoConsulta, anoCandidato int) (score float64, descartado bool) {
 	if anoConsulta <= 0 || anoCandidato <= 0 {
 		return scoreBase, false
@@ -111,10 +110,10 @@ func ajustarPorAno(scoreBase float64, anoConsulta, anoCandidato int) (score floa
 	return scoreBase, false
 }
 
-// AnoDeReleaseDate extrai o ano dos 4 primeiros dígitos de um release_date
-// "YYYY-MM-DD" (ou "YYYY"); 0 quando ausente/curto/inválido. Compartilhado
-// entre internal/server (lê da coluna já gravada) e internal/enrich (lê do
-// mapa canônico do detalhe, antes da entity existir).
+// AnoDeReleaseDate extracts the year from the first 4 digits of a release_date
+// "YYYY-MM-DD" (or "YYYY"); 0 when absent/short/invalid. Shared
+// between internal/server (reads from the column already written) and internal/enrich (reads
+// from the canonical map of the detail, before the entity exists).
 func AnoDeReleaseDate(rd string) int {
 	if len(rd) < 4 {
 		return 0
@@ -126,14 +125,14 @@ func AnoDeReleaseDate(rd string) int {
 	return ano
 }
 
-// ── Normalização de nome de OBRA (briefing 0136) ─────────────────────────────
+// ── Normalization of WORK names ──────────────────────────────────────────────
 
-// tokensEdicao são os qualificadores que um TAGUEADOR grava no nome do álbum/
-// faixa e que o MusicBrainz normalmente NÃO carrega no título canônico do
-// release-group/faixa: "(Deluxe Edition)", "(Bonus Edition)", "(Remastered)",
+// tokensEdicao are the qualifiers that a TAGGER writes into the album/
+// track name and that MusicBrainz normally does NOT carry in the canonical title of the
+// release-group/track: "(Deluxe Edition)", "(Bonus Edition)", "(Remastered)",
 // "(Expanded)", "(Collector's Edition)", " - Remastered 2011", "[Explicit]".
-// Comparados contra o conteúdo de um segmento entre parênteses/colchetes (ou um
-// sufixo " - ..."), em minúsculas e já reduzido a palavras.
+// Compared against the content of a segment between parentheses/brackets (or a
+// " - ..." suffix), lowercased and already reduced to words.
 var tokensEdicao = map[string]bool{
 	"deluxe": true, "bonus": true, "expanded": true, "remaster": true,
 	"remastered": true, "remasterizado": true, "remasterizada": true,
@@ -146,17 +145,17 @@ var tokensEdicao = map[string]bool{
 	"album": true, "original": true,
 }
 
-// NormalizarNome remove de `s` os segmentos de EDIÇÃO/VERSÃO -- entre
-// parênteses, colchetes ou após um " - " final -- cujo conteúdo é só palavra(s)
-// de tokensEdicao (ou um ano isolado). É a preparação para comparar nome de tag
-// com título canônico da fonte, e NUNCA devolve vazio: se a limpeza zerar a
-// string, devolve o original (nunca pior que comparar cru).
+// NormalizarNome removes from `s` the EDITION/VERSION segments -- between
+// parentheses, brackets or after a trailing " - " -- whose content is only the word(s)
+// of tokensEdicao (or an isolated year). It is the preparation for comparing a tag name
+// with the canonical title of the source, and it NEVER returns empty: if the cleanup zeroes the
+// string, it returns the original (never worse than comparing raw).
 //
-// Exemplos: "Hybrid Theory (Bonus Edition)" → "Hybrid Theory";
+// Examples: "Hybrid Theory (Bonus Edition)" → "Hybrid Theory";
 // "Rio (Collector's Edition)" → "Rio"; "The Singles (Expanded)" → "The Singles";
 // "Notorious (1984)" → "Notorious"; "Alright (Remastered)" → "Alright".
-// NÃO toca em qualificadores que mudam a OBRA (ex.: "(Ao Vivo)", "(Live)",
-// "(Acoustic)"): só edição/versão entram na lista.
+// It does NOT touch qualifiers that change the WORK (e.g.: "(Ao Vivo)", "(Live)",
+// "(Acoustic)"): only edition/version enter the list.
 func NormalizarNome(s string) string {
 	if s == "" {
 		return s
@@ -169,8 +168,8 @@ func NormalizarNome(s string) string {
 	return limpo
 }
 
-// apenasSeparadores diz se a string não tem nenhuma letra/dígito (só espaço,
-// hífen, dois-pontos...) -- nesse caso a normalização não trouxe valor.
+// apenasSeparadores tells whether the string has no letter/digit at all (only spaces,
+// hyphens, colons...) -- in that case the normalization brought no value.
 func apenasSeparadores(s string) bool {
 	for _, r := range s {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
@@ -180,9 +179,9 @@ func apenasSeparadores(s string) bool {
 	return true
 }
 
-// removerSegmentosDeEdicao é o corpo de NormalizarNome: percorre a string uma
-// vez, descartando os grupos (...) [...] {...} cujo CONTEÚDO seja só de
-// edição/ano, e depois o sufixo " - <edição>" do fim (repetidamente, para
+// removerSegmentosDeEdicao is the body of NormalizarNome: it walks the string once,
+// discarding the groups (...) [...] {...} whose CONTENT is only
+// edition/year, and then the " - <edition>" suffix of the end (repeatedly, for
 // " - Remastered 2011 - Deluxe").
 func removerSegmentosDeEdicao(s string) string {
 	var b strings.Builder
@@ -201,8 +200,8 @@ func removerSegmentosDeEdicao(s string) string {
 				profundidade--
 				if profundidade == 0 {
 					if ehSegmentoDeEdicao(segmento.String()) {
-						// descarta o grupo inteiro; o espaço em volta é
-						// colapsado no fim
+						// discards the whole group; the surrounding space is
+						// collapsed at the end
 						continue
 					}
 					abre := ' '
@@ -231,8 +230,8 @@ func removerSegmentosDeEdicao(s string) string {
 		}
 		b.WriteRune(r)
 	}
-	// Grupo aberto sem fechamento: devolve o resto como estava (nunca "come" o
-	// texto por causa de um parêntese solto).
+	// Open group without a close: return the rest as it was (never "eat" the
+	// text because of a stray parenthesis).
 	if profundidade > 0 {
 		b.WriteRune('(')
 		b.WriteString(segmento.String())
@@ -249,7 +248,7 @@ func removerSegmentosDeEdicao(s string) string {
 	return out
 }
 
-// cortarSufixoDeEdicao remove um " - <segmento de edição>" do FIM da string.
+// cortarSufixoDeEdicao removes a " - <edition segment>" from the END of the string.
 func cortarSufixoDeEdicao(s string) (string, bool) {
 	i := strings.LastIndex(s, " - ")
 	if i <= 0 {
@@ -261,20 +260,20 @@ func cortarSufixoDeEdicao(s string) (string, bool) {
 	return strings.TrimSpace(s[:i]), true
 }
 
-// palavrasDeVersao são os finais que ROTULAM a versão de uma mesma gravação sem
-// trocá-la: "(Twilight Soundtrack Version)", "(Album Version)", "(2nd single
-// version)", "(Alternate Version)". Um segmento assim não é
-// edição pura (tem o nome da trilha/o número da edição antes), então a regra de
-// "todas as palavras na lista" do 0136 não pegava -- medido no briefing 0139: 20
-// das 37 faixas que sobravam em produção caíam exatamente aqui.
+// palavrasDeVersao are the endings that LABEL the version of the same recording without
+// changing it: "(Twilight Soundtrack Version)", "(Album Version)", "(2nd single
+// version)", "(Alternate Version)". Such a segment is not
+// pure edition (it has the soundtrack name/the edition number before it), so the
+// "all words in the list" rule did not catch it -- as measured in production: 20
+// of the 37 tracks that were left over fell exactly here.
 var palavrasDeVersao = map[string]bool{
 	"version": true, "versao": true, "versão": true,
 }
 
-// palavrasDiferenciadoras marcam segmento que é OUTRA gravação, não outra versão
-// da mesma: ao vivo, acústico, demo, remix, instrumental. Com qualquer uma delas
-// o segmento é PRESERVADO mesmo terminando em palavra de versão -- "Full Moon
-// (Appleblim & Komonazmuk Remix)" é outra faixa, não a mesma com rótulo.
+// palavrasDiferenciadoras mark a segment that is ANOTHER recording, not another version
+// of the same one: live, acoustic, demo, remix, instrumental. With any of them
+// the segment is PRESERVED even when it ends in a version word -- "Full Moon
+// (Appleblim & Komonazmuk Remix)" is another track, not the same one with a label.
 var palavrasDiferenciadoras = map[string]bool{
 	"live": true, "vivo": true, "vivO": true, "acoustic": true, "acustico": true,
 	"acústico": true, "demo": true, "remix": true, "remixed": true,
@@ -283,14 +282,14 @@ var palavrasDiferenciadoras = map[string]bool{
 	"reprise": true, "medley": true, "mashup": true, "aovivo": true,
 }
 
-// ehSegmentoDeEdicao diz se o conteúdo de um segmento é só palavra(s) de
-// edição/versão e/ou um ano (4 dígitos) -- "Bonus Edition", "Remastered 2011",
-// "1984", "Deluxe" -- ou se é um RÓTULO de versão da mesma gravação terminando em
-// palavra de versão sem nenhuma diferenciadora ("Twilight Soundtrack Version").
-// "edit"/"edição" NÃO entram em palavrasDeVersao de propósito: um radio edit é
-// OUTRA gravação (mais curta) e aceitá-la como a mesma faixa faria o match parar
-// na release errada -- dois testes de release-selection existentes pegam isso.
-// Qualquer outra palavra ("Ao Vivo", "Live in Rio") faz o segmento ser PRESERVADO.
+// ehSegmentoDeEdicao tells whether the content of a segment is only edition/version
+// word(s) and/or a year (4 digits) -- "Bonus Edition", "Remastered 2011",
+// "1984", "Deluxe" -- or whether it is a VERSION LABEL of the same recording ending in
+// a version word with no differentiator ("Twilight Soundtrack Version").
+// "edit"/"edição" are NOT in palavrasDeVersao on purpose: a radio edit is
+// ANOTHER recording (shorter) and accepting it as the same track would make the match stop
+// at the wrong release -- two existing release-selection tests catch this.
+// Any other word ("Ao Vivo", "Live in Rio") makes the segment be PRESERVED.
 func ehSegmentoDeEdicao(segmento string) bool {
 	if ehRotuloDeVersao(segmento) {
 		return true
@@ -305,9 +304,9 @@ func ehSegmentoDeEdicao(segmento string) bool {
 		if ehAno(palavra) {
 			continue
 		}
-		// Fragmento de uma letra só é resto de apóstrofo/contração
-		// ("Collector's" -> "collector" + "s"): ignora, senão a limpeza nunca
-		// acontece nas tags reais.
+		// A single-letter fragment is a leftover of an apostrophe/contraction
+		// ("Collector's" -> "collector" + "s"): ignore it, otherwise the cleanup never
+		// happens on real tags.
 		if len([]rune(palavra)) == 1 {
 			continue
 		}
@@ -318,9 +317,9 @@ func ehSegmentoDeEdicao(segmento string) bool {
 	return true
 }
 
-// ehRotuloDeVersao reconhece o segmento que TERMINA em palavra de versão e não
-// tem nenhuma diferenciadora ("Twilight Soundtrack Version" sim, "Live at BBC1"
-// não, "Suffer the Children (Demo)" não).
+// ehRotuloDeVersao recognizes the segment that ENDS in a version word and has
+// no differentiator ("Twilight Soundtrack Version" yes, "Live at BBC1"
+// no, "Suffer the Children (Demo)" no).
 func ehRotuloDeVersao(segmento string) bool {
 	palavras := palavrasDoSegmento(segmento)
 	if len(palavras) == 0 {
@@ -334,8 +333,8 @@ func ehRotuloDeVersao(segmento string) bool {
 	return palavrasDeVersao[palavras[len(palavras)-1]]
 }
 
-// palavrasDoSegmento quebra o conteúdo de um segmento em palavras minúsculas,
-// ignorando separadores e fragmentos de uma letra (resto de apóstrofo).
+// palavrasDoSegmento splits the content of a segment into lowercase words,
+// ignoring separators and single-letter fragments (leftover of an apostrophe).
 func palavrasDoSegmento(segmento string) []string {
 	brutas := strings.FieldsFunc(strings.ToLower(segmento), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
@@ -350,7 +349,7 @@ func palavrasDoSegmento(segmento string) []string {
 	return out
 }
 
-// ehAno diz se a palavra é um ano de 4 dígitos (1900-2099).
+// ehAno tells whether the word is a 4-digit year (1900-2099).
 func ehAno(p string) bool {
 	if len(p) != 4 {
 		return false
@@ -359,8 +358,8 @@ func ehAno(p string) bool {
 	return err == nil && ano >= 1900 && ano <= 2099
 }
 
-// colapsarEspacos reduz sequências de espaço em branco a um espaço e apara as
-// pontas -- inclusive os espaços que sobraram onde um segmento foi removido.
+// colapsarEspacos reduces runs of whitespace to one space and trims the ends --
+// including the spaces left over where a segment was removed.
 func colapsarEspacos(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -379,11 +378,11 @@ func colapsarEspacos(s string) string {
 	return strings.TrimSpace(b.String())
 }
 
-// SimilaridadeNormalizada compara `a` e `b` no MELHOR dos dois mundos: o
-// máximo entre a similaridade crua (comportamento de sempre) e a dos nomes
-// normalizados por NormalizarNome, em escala 0-100 (mesma de
-// LimiarAutoMatch). Nunca pior que comparar cru -- o qualificador de edição
-// só pode AJUDAR a passar do limiar, jamais atrapalhar um nome que já casava.
+// SimilaridadeNormalizada compares `a` and `b` at the BEST of both worlds: the
+// maximum between the raw similarity (the usual behaviour) and the similarity of the names
+// normalized by NormalizarNome, on a 0-100 scale (the same as
+// LimiarAutoMatch). Never worse than comparing raw -- the edition qualifier
+// can only HELP to clear the threshold, never hurt a name that already matched.
 func SimilaridadeNormalizada(a, b string) float64 {
 	crua := textsim.Similaridade(a, b) * 100
 	normalizada := textsim.Similaridade(NormalizarNome(a), NormalizarNome(b)) * 100

@@ -8,10 +8,10 @@ import (
 	"testing"
 )
 
-// detalheSerieRico e um payload de /tv/{id} com os blocos ricos de SERIE (0045): status
-// (situacao), genres, tagline (top + por idioma), backdrop, content_ratings (classificacao
-// de serie), keywords (results), recommendations (0091 — name/first_air_date, trocado de
-// `similar`, ver tmdb.go) e external_ids.
+// detalheSerieRico is a /tv/{id} payload with the rich SERIES blocks: status
+// (situation), genres, tagline (top + per language), backdrop, content_ratings (series
+// rating), keywords (results), recommendations (name/first_air_date, switched from
+// `similar`, see tmdb.go) and external_ids.
 const detalheSerieRico = `{
   "id": 456,
   "original_language": "en",
@@ -44,16 +44,16 @@ const detalheSerieRico = `{
   ]}
 }`
 
-// generosSerieRico sao as listas de genero de SERIE localizadas por idioma (/genre/tv/list),
-// para o mapeamento genres->tags por idioma (0020).
+// generosSerieRico are the SERIES genre lists localized per language (/genre/tv/list),
+// for the genres->tags mapping per language.
 var generosSerieRico = map[string]string{
 	"pt-BR": `{"genres": [{"id": 16, "name": "Animacao"}, {"id": 35, "name": "Comedia"}]}`,
 	"en":    `{"genres": [{"id": 16, "name": "Animation"}, {"id": 35, "name": "Comedy"}]}`,
 	"":      `{"genres": [{"id": 16, "name": "Animation"}, {"id": 35, "name": "Comedy"}]}`,
 }
 
-// servidorSerieRico responde /find (cruzamento tvdb->tmdb), /tv/456 (detalhe rico) e
-// /genre/tv/list (generos localizados). capturarTV guarda a ULTIMA requisicao a /tv/456.
+// servidorSerieRico answers /find (tvdb->tmdb crossing), /tv/456 (rich detail) and
+// /genre/tv/list (localized genres). capturarTV stores the LAST request to /tv/456.
 func servidorSerieRico(t *testing.T, capturarTV, capturarFind *http.Request) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -80,8 +80,8 @@ func servidorSerieRico(t *testing.T, capturarTV, capturarFind *http.Request) *ht
 	return srv
 }
 
-// TestBuscarSerieDetalheRicoAppend garante o cruzamento /find?external_source=tvdb_id e
-// o append_to_response dos blocos ricos de serie numa so ida ao /tv.
+// TestBuscarSerieDetalheRicoAppend guarantees the /find?external_source=tvdb_id crossing
+// and the append_to_response of the rich series blocks in a single round trip to /tv.
 func TestBuscarSerieDetalheRicoAppend(t *testing.T) {
 	var reqTV, reqFind http.Request
 	srv := servidorSerieRico(t, &reqTV, &reqFind)
@@ -101,7 +101,7 @@ func TestBuscarSerieDetalheRicoAppend(t *testing.T) {
 	}
 }
 
-// mapearSerieRicoTeste faz o cruzamento + mapeamento e devolve o canonico rico.
+// mapearSerieRicoTeste performs the crossing + mapping and returns the rich canonical.
 func mapearSerieRicoTeste(t *testing.T) map[string]any {
 	t.Helper()
 	srv := servidorSerieRico(t, nil, nil)
@@ -113,8 +113,8 @@ func mapearSerieRicoTeste(t *testing.T) map[string]any {
 	return campos
 }
 
-// TestSerieRicoTraduziveis cobre os campos ricos TRADUZIVEIS do contrato do 0045:
-// tagline (por idioma), keywords e tags (generos localizados por idioma).
+// TestSerieRicoTraduziveis covers the TRANSLATABLE rich fields of the contract: tagline
+// (per language), keywords and tags (genres localized per language).
 func TestSerieRicoTraduziveis(t *testing.T) {
 	campos := mapearSerieRicoTeste(t)
 
@@ -128,13 +128,13 @@ func TestSerieRicoTraduziveis(t *testing.T) {
 	eqIdiomaLista(t, campos, "tags", "en", []string{"Animation", "Comedy"})
 }
 
-// TestSerieRicoNeutros cobre os campos ricos NEUTROS do contrato: classificacao por
-// regiao, backdrop_url e airing_status (cru) — e a NAO-inclusao de
-// title/overview/original_language/poster (que clobbariam a arvore TVDB). Os
-// SIMILARES (0091) deixaram de ser cobertos aqui: o mapeamento canonico rico de serie
-// (mapearSerieRicoCanonico -> enriquecerCanonicoRico -> enriquecerNeutrosRico) nao
-// preenche mais campos["similar"] -- essa responsabilidade migrou para o metodo
-// Similares (provider.SimilarProvider), coberto pelos testes TestSimilares* em
+// TestSerieRicoNeutros covers the NEUTRAL rich fields of the contract: rating by
+// region, backdrop_url and airing_status (raw) -- and the NON-inclusion of
+// title/overview/original_language/poster (which would clobber the TVDB tree). The
+// SIMILAR ones are no longer covered here: the rich canonical mapping of a series
+// (mapearSerieRicoCanonico -> enriquecerCanonicoRico -> enriquecerNeutrosRico) no longer
+// fills in campos["similar"] -- that responsibility migrated to the Similares method
+// (provider.SimilarProvider), covered by the TestSimilares* tests in
 // tmdb_rico_test.go.
 func TestSerieRicoNeutros(t *testing.T) {
 	campos := mapearSerieRicoTeste(t)
@@ -157,7 +157,7 @@ func TestSerieRicoNeutros(t *testing.T) {
 	exigirSemChavesTMDB(t, campos, "title", "description", "original_language", "poster_url", "release_date")
 }
 
-// exigirSemChavesTMDB falha se o mapa carrega qualquer uma das chaves dadas.
+// exigirSemChavesTMDB fails if the map carries any of the given keys.
 func exigirSemChavesTMDB(t *testing.T, m map[string]any, chaves ...string) {
 	t.Helper()
 	for _, k := range chaves {
@@ -167,8 +167,8 @@ func exigirSemChavesTMDB(t *testing.T, m map[string]any, chaves ...string) {
 	}
 }
 
-// TestSerieRicoSemMatch: /find sem tv_results devolve (nil,false,nil) — graca (so-TVDB),
-// nunca erro.
+// TestSerieRicoSemMatch: /find without tv_results returns (nil,false,nil) -- gracefully
+// (TVDB-only), never an error.
 func TestSerieRicoSemMatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

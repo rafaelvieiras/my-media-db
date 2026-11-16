@@ -1,12 +1,12 @@
 package enrich
 
-// creditos.go persiste o ELENCO/EQUIPE/PRODUTORAS (briefing 0029, MD6 Fase A) a partir
-// do canonico do provider (chaves cast/crew/companies). E CACHE RE-COMPONIVEL: o dado
-// do dono nunca vive aqui (vive no override). Idempotente no re-enriquecimento: apaga os
-// creditos de (entity, source) e os repopula, sem duplicar. person/company sao
-// deduplicadas por (source, source_id) via upsert -- a mesma pessoa em duas obras tem
-// UMA linha. Tudo best-effort: falha de uma parte degrada (loga e segue), nunca aborta
-// o enrich.
+// creditos.go persists the CAST/CREW/STUDIOS (MD6 Phase A) from the provider's
+// canonical (keys cast/crew/companies). It is a RE-COMPOSABLE CACHE: the owner's data
+// never lives here (it lives in the override). Idempotent on re-enrichment: it deletes the
+// credits of (entity, source) and repopulates them, without duplicating. person/company are
+// deduplicated by (source, source_id) through an upsert -- the same person in two works has
+// ONE row. Everything is best-effort: the failure of one part degrades (logs and continues),
+// it never aborts the enrich.
 
 import (
 	"context"
@@ -18,14 +18,14 @@ import (
 )
 
 const (
-	// kindCast/kindCrew/kindCompany discriminam o papel do credito (coluna credit.kind).
+	// kindCast/kindCrew/kindCompany discriminate the role of the credit (credit.kind column).
 	kindCast    = "cast"
 	kindCrew    = "crew"
 	kindCompany = "company"
 )
 
-// dadosCredito agrega os campos de um credito para criarCredito -- um so ponto de
-// insercao (cast/crew/company preenchem os campos que lhes cabem, o resto fica NULL).
+// dadosCredito aggregates the fields of a credit for criarCredito -- a single insertion
+// point (cast/crew/company fill the fields that belong to them, the rest stays NULL).
 type dadosCredito struct {
 	entityID     string
 	personID     sql.NullString
@@ -40,10 +40,11 @@ type dadosCredito struct {
 	sourceID     sql.NullString
 }
 
-// persistirCreditos apaga os creditos de (entityID, source) e repopula elenco/equipe/
-// produtoras a partir do canonico. Best-effort: a falha do apagar aborta so este bloco
-// (nao o enrich); as demais degradam por item. Chamado no import/enrich de FILME e no no
-// SERIE (o elenco agregado e da serie inteira).
+// persistirCreditos deletes the credits of (entityID, source) and repopulates
+// cast/crew/studios from the canonical. Best-effort: a failure of the delete aborts only
+// this block (not the enrich); the others degrade per item. It is called on the
+// import/enrich of a MOVIE and on the SERIES node (the aggregate cast belongs to the whole
+// series).
 func (s *Servico) persistirCreditos(ctx context.Context, entityID, source string, campos map[string]any) {
 	if err := s.escrita().ApagarCreditosDaEntityFonte(ctx, sqlcgen.ApagarCreditosDaEntityFonteParams{
 		EntityID: entityID,
@@ -57,8 +58,8 @@ func (s *Servico) persistirCreditos(ctx context.Context, entityID, source string
 	s.persistirProdutoras(ctx, entityID, source, listaDeMapas(campos["companies"]))
 }
 
-// persistirElenco cria os creditos de ELENCO (kind='cast'), cada um ligado a person
-// deduplicada. Itens sem person (sem source_id/nome) sao pulados.
+// persistirElenco creates the CAST credits (kind='cast'), each one linked to a deduplicated
+// person. Items without a person (no source_id/name) are skipped.
 func (s *Servico) persistirElenco(ctx context.Context, entityID, source string, itens []map[string]any) {
 	for _, it := range itens {
 		personID, ok := s.upsertPessoa(ctx, source, it)
@@ -78,8 +79,8 @@ func (s *Servico) persistirElenco(ctx context.Context, entityID, source string, 
 	}
 }
 
-// persistirEquipe cria os creditos de EQUIPE (kind='crew'), cada um ligado a person
-// deduplicada.
+// persistirEquipe creates the CREW credits (kind='crew'), each one linked to a
+// deduplicated person.
 func (s *Servico) persistirEquipe(ctx context.Context, entityID, source string, itens []map[string]any) {
 	for _, it := range itens {
 		personID, ok := s.upsertPessoa(ctx, source, it)
@@ -99,8 +100,8 @@ func (s *Servico) persistirEquipe(ctx context.Context, entityID, source string, 
 	}
 }
 
-// persistirProdutoras cria os creditos de PRODUTORA (kind='company'), cada um ligado a
-// company deduplicada.
+// persistirProdutoras creates the STUDIO credits (kind='company'), each one linked to a
+// deduplicated company.
 func (s *Servico) persistirProdutoras(ctx context.Context, entityID, source string, itens []map[string]any) {
 	for _, it := range itens {
 		companyID, ok := s.upsertProdutora(ctx, source, it)
@@ -117,9 +118,9 @@ func (s *Servico) persistirProdutoras(ctx context.Context, entityID, source stri
 	}
 }
 
-// upsertPessoa deduplica a pessoa por (source, source_id) e devolve o id da linha
-// (existente ou nova). ok=false quando o item nao tem source_id/nome (nada a ligar) ou o
-// upsert falha (degrada, loga).
+// upsertPessoa deduplicates the person by (source, source_id) and returns the row id
+// (existing or new). ok=false when the item has no source_id/name (nothing to link) or the
+// upsert fails (degrades, logs).
 func (s *Servico) upsertPessoa(ctx context.Context, source string, it map[string]any) (string, bool) {
 	sourceID := comoString(it["source_id"])
 	nome := comoString(it["name"])
@@ -142,8 +143,8 @@ func (s *Servico) upsertPessoa(ctx context.Context, source string, it map[string
 	return id, true
 }
 
-// upsertProdutora deduplica a produtora por (source, source_id) e devolve o id da linha.
-// ok=false quando falta source_id/nome ou o upsert falha.
+// upsertProdutora deduplicates the company by (source, source_id) and returns the row id.
+// ok=false when source_id/name is missing or the upsert fails.
 func (s *Servico) upsertProdutora(ctx context.Context, source string, it map[string]any) (string, bool) {
 	sourceID := comoString(it["source_id"])
 	nome := comoString(it["name"])
@@ -166,8 +167,8 @@ func (s *Servico) upsertProdutora(ctx context.Context, source string, it map[str
 	return id, true
 }
 
-// criarCredito insere UM credito. Best-effort: falha degrada (loga e segue) -- um
-// credito perdido nao derruba os outros nem o enrich.
+// criarCredito inserts ONE credit. Best-effort: a failure degrades (logs and continues) --
+// one lost credit brings down neither the others nor the enrich.
 func (s *Servico) criarCredito(ctx context.Context, d dadosCredito) {
 	if err := s.escrita().CriarCredito(ctx, sqlcgen.CriarCreditoParams{
 		ID:           s.novoID(),
@@ -187,8 +188,9 @@ func (s *Servico) criarCredito(ctx context.Context, d dadosCredito) {
 	}
 }
 
-// listaDeMapas converte um valor do canonico ([]any de map[string]any) na fatia de
-// mapas. Tolera o valor ausente/de outro tipo devolvendo nil (o consumidor itera vazio).
+// listaDeMapas converts a canonical value ([]any of map[string]any) into the slice of maps.
+// It tolerates a missing/other-typed value by returning nil (the consumer iterates over
+// nothing).
 func listaDeMapas(v any) []map[string]any {
 	lista, ok := v.([]any)
 	if !ok {
@@ -203,8 +205,9 @@ func listaDeMapas(v any) []map[string]any {
 	return out
 }
 
-// comoInt devolve o valor como int64, tolerando int/int64/float64 (o `order` vem int do
-// mapeamento em processo, mas float64 quando o canonico passou por JSON). 0 nos demais.
+// comoInt returns the value as int64, tolerating int/int64/float64 (`order` comes as int
+// from the in-process mapping, but as float64 when the canonical went through JSON). 0 for
+// anything else.
 func comoInt(v any) int64 {
 	switch n := v.(type) {
 	case int:
@@ -217,8 +220,8 @@ func comoInt(v any) int64 {
 	return 0
 }
 
-// comoNullInt devolve o valor como sql.NullInt64 valido (int/int64/float64) ou NULL
-// (ausente/outro tipo) -- para o episode_count opcional (so serie).
+// comoNullInt returns the value as a valid sql.NullInt64 (int/int64/float64) or NULL
+// (missing/other type) -- for the optional episode_count (series only).
 func comoNullInt(v any) sql.NullInt64 {
 	switch n := v.(type) {
 	case int:

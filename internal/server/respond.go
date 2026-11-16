@@ -5,36 +5,36 @@ import (
 	"net/http"
 )
 
-// Este arquivo define o shape de resposta padrão de TODA a API /api/v1,
-// conforme o briefing 0008 (sec.4). É a referência que o gerador OpenAPI do
-// 0010 formaliza. Sucesso: o corpo do recurso direto. Erro: sempre o envelope
+// This file defines the standard response shape of the WHOLE /api/v1 API.
+// It is the reference that the OpenAPI generator formalizes. Success: the resource
+// body directly. Error: always the envelope
 //
-//	{ "error": { "code": "<slug estável>", "message": "<humano>" } }
+//	{ "error": { "code": "<stable slug>", "message": "<human>" } }
 //
-// O `code` é um slug estável (não localizado) para o cliente ramificar; a
-// `message` é o texto legível (pt-BR).
+// The `code` is a stable (non-localized) slug for the client to branch on; the
+// `message` is the readable text (pt-BR).
 
-// errorBody é o envelope de erro padrão.
+// errorBody is the standard error envelope.
 type errorBody struct {
 	Error errorDetail `json:"error"`
 }
 
-// errorDetail carrega o code (slug estável) e a message (humana).
+// errorDetail carries the code (stable slug) and the message (human).
 type errorDetail struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
 
-// writeJSON serializa v como JSON com o status informado. Uso interno dos
-// handlers para respostas de sucesso.
+// writeJSON serializes v as JSON with the given status. Internal use of the
+// handlers for success responses.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// writeError escreve o envelope de erro padrão com o status, code e message
-// informados.
+// writeError writes the standard error envelope with the given status, code and
+// message.
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, errorBody{Error: errorDetail{Code: code, Message: message}})
 }

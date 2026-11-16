@@ -1,18 +1,16 @@
 package scanner
 
-// Testes da CAMADA 2 (briefing 0108, ADR-0028): scanner.Manager passa a
-// enfileirar em vez de rodar sua própria goroutine. Este arquivo cobre dois
-// ângulos complementares:
-//   - TestExecutarReportaProgressoPorArquivo: a LÓGICA de progresso (opção
-//     "a" das notas de teste do briefing) -- chama Manager.Executar
-//     DIRETO, bypassando a fila por completo, para uma asserção
-//     determinística de que o callback é chamado uma vez POR ARQUIVO (não
-//     por lote de 25).
-//   - TestOrquestracaoViaFilaStartStatusEDedup: o CONTRATO de orquestração
-//     (opção "b") -- sobe um execqueue.Manager de verdade, registra o
-//     scanner como Runner (ConfigurarFila) e roda o worker de verdade,
-//     provando que Start/Status/dedup continuam com o MESMO comportamento
-//     observável de antes na superfície pública do scanner.
+// Tests of the ORCHESTRATION layer (ADR-0028): scanner.Manager now enqueues
+// instead of running its own goroutine. This file covers two complementary angles:
+//   - TestExecutarReportaProgressoPorArquivo: the progress LOGIC (option "a" of the
+//     test notes) -- it calls Manager.Executar DIRECTLY, bypassing the queue
+//     entirely, for a deterministic assertion that the callback is called once PER
+//     FILE (not per batch of 25).
+//   - TestOrquestracaoViaFilaStartStatusEDedup: the orchestration CONTRACT (option
+//     "b") -- it spins up a real execqueue.Manager, registers the scanner as a
+//     Runner (ConfigurarFila) and runs the real worker, proving that
+//     Start/Status/dedup keep the SAME observable behavior as before on the public
+//     surface of the scanner.
 
 import (
 	"context"
@@ -26,11 +24,11 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 )
 
-// TestExecutarReportaProgressoPorArquivo prova o critério central do
-// briefing 0108: o callback de progresso é chamado UMA VEZ POR ARQUIVO
-// processado (current crescendo 1, 2, 3...), não uma única vez no fim do
-// lote de 25 -- era isso que fazia files_seen parecer travado em scans de
-// música lentos (achado real na validação em produção do briefing 0107).
+// TestExecutarReportaProgressoPorArquivo proves the central criterion of the
+// unified queue: the progress callback is called ONCE PER FILE processed (current
+// growing 1, 2, 3...), not a single time at the end of the batch of 25 -- that was
+// what made files_seen look stuck on slow music scans (a real finding from the
+// production validation of the music vertical).
 func TestExecutarReportaProgressoPorArquivo(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -58,9 +56,9 @@ func TestExecutarReportaProgressoPorArquivo(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	// A primeira chamada é o reporte do total (0/nArquivos), logo após
-	// coletarArquivos -- ver executarScan. As nArquivos chamadas seguintes
-	// são uma por arquivo processado.
+	// The first call is the report of the total (0/nArquivos), right after
+	// coletarArquivos -- see executarScan. The following nArquivos calls are one per
+	// file processed.
 	if len(chamadas) != nArquivos+1 {
 		t.Fatalf("progresso chamado %d vez(es), quero %d (1 do total + 1 por arquivo)", len(chamadas), nArquivos+1)
 	}
@@ -75,13 +73,12 @@ func TestExecutarReportaProgressoPorArquivo(t *testing.T) {
 	}
 }
 
-// TestOrquestracaoViaFilaStartStatusEDedup sobe um execqueue.Manager de
-// verdade (mesmo padrão de internal/execqueue/manager_test.go), liga o
-// scanner nele via ConfigurarFila/ConfigurarLibrary e roda o worker de
-// verdade -- prova que, por fora do pacote scanner, Start/Status continuam
-// se comportando como antes: 202 com um id, 409 (ErrScanEmAndamento) em
-// dedup, e Status refletindo o resultado final (running=false, sem erro,
-// contagens corretas) depois que o worker processa o item.
+// TestOrquestracaoViaFilaStartStatusEDedup spins up a real execqueue.Manager (the
+// same pattern of internal/execqueue/manager_test.go), wires the scanner into it
+// via ConfigurarFila/ConfigurarLibrary and runs the real worker -- it proves that,
+// from outside the scanner package, Start/Status keep behaving as before: 202 with
+// an id, 409 (ErrScanEmAndamento) on dedup, and Status reflecting the final result
+// (running=false, no error, correct counts) after the worker processes the item.
 func TestOrquestracaoViaFilaStartStatusEDedup(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -115,10 +112,10 @@ func TestOrquestracaoViaFilaStartStatusEDedup(t *testing.T) {
 		t.Fatal("Start devolveu id vazio")
 	}
 
-	// Dedup: um segundo Start para a MESMA fonte, enquanto o item anterior
-	// ainda está queued/running na fila, devolve o MESMO erro sentinela
-	// público de sempre (ErrScanEmAndamento) -- o contrato HTTP 409 de
-	// internal/server/scan.go depende disto.
+	// Dedup: a second Start for the SAME source, while the previous item is still
+	// queued/running in the queue, returns the SAME public sentinel error as always
+	// (ErrScanEmAndamento) -- the HTTP 409 contract of internal/server/scan.go
+	// depends on it.
 	if _, err := m.Start(src, TriggerManual); err != ErrScanEmAndamento {
 		t.Fatalf("2o Start err = %v, quero ErrScanEmAndamento", err)
 	}
@@ -143,16 +140,16 @@ func TestOrquestracaoViaFilaStartStatusEDedup(t *testing.T) {
 		t.Errorf("entities = %d, quero 1 (scan disparado via fila casou o arquivo)", n)
 	}
 
-	// StorageNaoVideo continua acessível pelo caminho novo (worker da fila),
-	// sem precisar re-varrer o disco.
+	// StorageNaoVideo is still reachable through the new path (queue worker),
+	// without having to walk the disk again.
 	if _, _, ok := m.StorageNaoVideo(src.ID); !ok {
 		t.Error("StorageNaoVideo ok=false depois de um scan concluído via fila")
 	}
 }
 
-// aguardarScanConcluido faz polling de Manager.Status até Existe=true e
-// Running=false, ou estoura o prazo -- necessário porque o worker da fila
-// roda em goroutine própria.
+// aguardarScanConcluido polls Manager.Status until Existe=true and Running=false,
+// or the deadline expires -- necessary because the queue worker runs in its own
+// goroutine.
 func aguardarScanConcluido(t *testing.T, m *Manager, sourceID string) Status {
 	t.Helper()
 	prazo := time.Now().Add(5 * time.Second)

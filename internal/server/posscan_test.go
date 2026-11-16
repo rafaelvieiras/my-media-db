@@ -1,9 +1,8 @@
 package server
 
-// Testes do pós-scan por biblioteca (briefing 0135, ADR-0031): ao fim do scan
-// de UMA fonte, o server reconcilía os rascunhos DAQUELA fonte (sem o throttle
-// de dias do job periódico) e retenta o auto-match dos filmes pendentes dela --
-// sem tocar nas outras bibliotecas.
+// Tests of the per-library post-scan (ADR-0031): at the end of the scan of ONE source, the
+// server reconciles the drafts OF THAT source (without the day throttle of the periodic job)
+// and retries the auto-match of its pending movies -- without touching the other libraries.
 
 import (
 	"context"
@@ -18,8 +17,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/mediainfo"
 )
 
-// criarSourceTeste cadastra um library_source real (diretório de verdade, o
-// serviço valida que existe) e devolve o id.
+// criarSourceTeste registers a real library_source (a real directory, the service validates
+// that it exists) and returns the id.
 func criarSourceTeste(t *testing.T, d *db.DB, path, contentType string) string {
 	t.Helper()
 	if err := os.MkdirAll(path, 0o755); err != nil {
@@ -32,8 +31,8 @@ func criarSourceTeste(t *testing.T, d *db.DB, path, contentType string) string {
 	return src.ID
 }
 
-// apontarMediaFileParaFonte grava library_source_id no media_file (o helper
-// semearFile não conhece fonte -- a coluna é opcional no schema).
+// apontarMediaFileParaFonte writes library_source_id into the media_file (the semearFile helper
+// does not know about sources -- the column is optional in the schema).
 func apontarMediaFileParaFonte(t *testing.T, d *db.DB, mediaFileID, sourceID string) {
 	t.Helper()
 	if _, err := d.Write.ExecContext(context.Background(),
@@ -42,8 +41,8 @@ func apontarMediaFileParaFonte(t *testing.T, d *db.DB, mediaFileID, sourceID str
 	}
 }
 
-// TestPosScanReconciliaSomenteAFonteDoScan cobre o recorte central: faixa em
-// rascunho da fonte escaneada é reconciliada; a de OUTRA fonte não é tocada.
+// TestPosScanReconciliaSomenteAFonteDoScan covers the central scoping: a draft track of the
+// scanned source is reconciled; the one from ANOTHER source is not touched.
 func TestPosScanReconciliaSomenteAFonteDoScan(t *testing.T) {
 	musica := &fakeMusicaProviderOrfaos{}
 	pathAlvo := "/lib/musica/aha/01 - Track One.mp3"
@@ -73,9 +72,9 @@ func TestPosScanReconciliaSomenteAFonteDoScan(t *testing.T) {
 	}
 }
 
-// TestPosScanIgnoraFilmeComIdentidadeExterna cobre o filtro do retry de filme:
-// só entra no auto-match do pós-scan o filme que ainda NÃO tem identidade
-// externa (tmdb) -- nada de re-enriquecer o que já foi casado.
+// TestPosScanIgnoraFilmeComIdentidadeExterna covers the movie retry filter: only the movie that
+// does NOT have an external identity (tmdb) yet enters the post-scan auto-match -- no
+// re-enriching of what was already matched.
 func TestPosScanIgnoraFilmeComIdentidadeExterna(t *testing.T) {
 	s, d := setupReconciliarOrfaosServer(t, &fakeMusicaProviderOrfaos{}, nil)
 	src := criarSourceTeste(t, d, filepath.Join(t.TempDir(), "filmes"), "movie")
@@ -104,8 +103,8 @@ func TestPosScanIgnoraFilmeComIdentidadeExterna(t *testing.T) {
 	}
 }
 
-// TestPosScanSemFonteNaoVarreNada garante a saída barata: sem sourceID (ou sem
-// scanner) o pós-scan é no-op, nunca um erro.
+// TestPosScanSemFonteNaoVarreNada ensures the cheap exit: without a sourceID (or without a
+// scanner) the post-scan is a no-op, never an error.
 func TestPosScanSemFonteNaoVarreNada(t *testing.T) {
 	s, _ := setupReconciliarOrfaosServer(t, &fakeMusicaProviderOrfaos{}, nil)
 	if err := s.ProcessarPosScan(context.Background(), ""); err != nil {
@@ -117,8 +116,8 @@ func TestPosScanSemFonteNaoVarreNada(t *testing.T) {
 	}
 }
 
-// marcarDraft põe a entity em status 'draft' (CriarEntity usa o default do
-// schema, que é cataloged).
+// marcarDraft puts the entity in the 'draft' status (CriarEntity uses the schema default,
+// which is cataloged).
 func marcarDraft(t *testing.T, d *db.DB, entityID string) {
 	t.Helper()
 	if _, err := d.Write.ExecContext(context.Background(),
@@ -127,15 +126,15 @@ func marcarDraft(t *testing.T, d *db.DB, entityID string) {
 	}
 }
 
-// TestPosScanPurgaRascunhoVazio cobre o briefing 0138: rascunho SEM arquivo e
-// sem vínculo (o casco que a reconciliação deixava para trás) sai da base ao fim
-// do pós-scan. É o que fazia a fila de revisão nunca diminuir, mesmo com a
-// reconciliação resolvendo faixas -- 114 cascos medidos em produção.
+// TestPosScanPurgaRascunhoVazio covers the empty-shell purge: a draft WITHOUT a file and
+// without a link (the shell the reconciliation left behind) leaves the database at the end of
+// the post-scan. That is what kept the review queue from ever shrinking, even with the
+// reconciliation resolving tracks -- 114 shells measured in production.
 func TestPosScanPurgaRascunhoVazio(t *testing.T) {
 	s, d := setupReconciliarOrfaosServer(t, &fakeMusicaProviderOrfaos{}, nil)
 	src := criarSourceTeste(t, d, filepath.Join(t.TempDir(), "musica"), "music")
 
-	// Casco: draft sem media_file, sem vínculo, sem override.
+	// Shell: a draft without media_file, without a link, without an override.
 	semearEntity(t, d, "fx-casco", "faixa", "Crawling")
 	marcarDraft(t, d, "fx-casco")
 
@@ -147,17 +146,17 @@ func TestPosScanPurgaRascunhoVazio(t *testing.T) {
 	}
 }
 
-// TestPosScanNaoPurgaRascunhoComVinculo garante a trava da purga: o rascunho que
-// ainda tem arquivo ou filho ligado NÃO é apagado (uma série-rascunho com
-// episódios, um filme que ainda está na fila de revisão de verdade).
+// TestPosScanNaoPurgaRascunhoComVinculo ensures the purge lock: a draft that still has a file
+// or a linked child is NOT deleted (a draft series with episodes, a movie that is really still
+// in the review queue).
 func TestPosScanNaoPurgaRascunhoComVinculo(t *testing.T) {
 	s, d := setupReconciliarOrfaosServer(t, &fakeMusicaProviderOrfaos{}, nil)
 	src := criarSourceTeste(t, d, filepath.Join(t.TempDir(), "musica"), "music")
 
-	// Rascunho na fila de revisão de verdade: tem arquivo.
+	// A draft really in the review queue: it has a file.
 	semearFaixaDraftOrfa(t, d, "fx-na-fila", "Track One", "/lib/musica/aha/01 - Track One.mp3")
 
-	// Série-rascunho com episódio ligado (filho), sem arquivo próprio.
+	// Draft series with a linked episode (child), without a file of its own.
 	semearEntity(t, d, "tv-casco", "tv", "Serie Desconhecida")
 	marcarDraft(t, d, "tv-casco")
 	semearEntity(t, d, "ep-filho", "episode", "Episodio Um")
@@ -178,9 +177,9 @@ func TestPosScanNaoPurgaRascunhoComVinculo(t *testing.T) {
 	}
 }
 
-// TestPosScanPulaItemTentadoRecentemente cobre o throttle do briefing 0138: o
-// item carimbado há pouco NÃO volta para a fila do pós-scan (sem este piso, todo
-// scan re-tentava as mesmas 200 faixas e gastava 45+ min de chamadas externas).
+// TestPosScanPulaItemTentadoRecentemente covers the post-scan throttle: an item stamped a
+// moment ago does NOT come back to the post-scan queue (without this floor, every scan retried
+// the same 200 tracks and spent 45+ min of external calls).
 func TestPosScanPulaItemTentadoRecentemente(t *testing.T) {
 	musica := &fakeMusicaProviderOrfaos{}
 	path := "/lib/musica/aha/01 - Track One.mp3"

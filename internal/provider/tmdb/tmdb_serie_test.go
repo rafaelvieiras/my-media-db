@@ -10,12 +10,12 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Asserção de compilação (briefing 0046): o Client do TMDB passa a satisfazer a
-// capacidade SerieProvider — a árvore de série deixa de ser exclusiva do TheTVDB.
+// Compile-time assertion: the TMDB Client now satisfies the SerieProvider capability --
+// the series tree is no longer exclusive to TheTVDB.
 var _ provider.SerieProvider = (*Client)(nil)
 
-// detalheTVArvore é o /tv/{id} que lista as temporadas (seasons[]) da árvore, incluindo a
-// 0 (especiais) — o idioma original é "en".
+// detalheTVArvore is the /tv/{id} that lists the seasons (seasons[]) of the tree,
+// including season 0 (specials) -- the original language is "en".
 const detalheTVArvore = `{
   "id": 456,
   "original_language": "en",
@@ -26,8 +26,8 @@ const detalheTVArvore = `{
   ]
 }`
 
-// season1EN/season1PT são o /tv/456/season/1 nos idiomas en (base) e pt-BR (tradução): o
-// mesmo episode.id, com name/overview localizados.
+// season1EN/season1PT are /tv/456/season/1 in the en (base) and pt-BR (translation)
+// languages: the same episode.id, with localized name/overview.
 const season1EN = `{
   "name": "Season 1",
   "air_date": "1989-12-17",
@@ -54,7 +54,7 @@ const season0EN = `{
   ]
 }`
 
-// servidorArvoreTMDB responde /tv/456 e /tv/456/season/{0,1} conforme o ?language=.
+// servidorArvoreTMDB answers /tv/456 and /tv/456/season/{0,1} according to ?language=.
 func servidorArvoreTMDB(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,9 +77,9 @@ func servidorArvoreTMDB(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// TestBuscarSerieArvoreTMDB: a árvore vem do TMDB (independência de provider) com a ordem
-// "official", 2 temporadas (0 e 1), episódios numerados/ancorados no id, still e i18n
-// (base en + tradução pt-BR mesclada por episode.id).
+// TestBuscarSerieArvoreTMDB: the tree comes from TMDB (provider independence) with the
+// "official" order, 2 seasons (0 and 1), episodes numbered/anchored on the id, still and
+// i18n (en base + pt-BR translation merged by episode.id).
 func TestBuscarSerieArvoreTMDB(t *testing.T) {
 	srv := servidorArvoreTMDB(t)
 	c := New(Credencial{Token: "tok"}, srv.Client(), srv.URL)
@@ -102,7 +102,7 @@ func TestBuscarSerieArvoreTMDB(t *testing.T) {
 	assertEpisodio1I18n(t, t1.Episodios[0])
 }
 
-// assertOrdensArvore confere a ordem default e o conjunto de ordens da árvore.
+// assertOrdensArvore checks the default order and the set of orders of the tree.
 func assertOrdensArvore(t *testing.T, arvore provider.SerieArvore) {
 	t.Helper()
 	if arvore.DefaultSeasonType != "official" || len(arvore.SeasonTypes) != 1 {
@@ -110,7 +110,7 @@ func assertOrdensArvore(t *testing.T, arvore provider.SerieArvore) {
 	}
 }
 
-// assertTemporada1 confere poster, ano e nomes localizados da temporada 1.
+// assertTemporada1 checks the poster, the year and the localized names of season 1.
 func assertTemporada1(t *testing.T, t1 provider.TemporadaExterna) {
 	t.Helper()
 	if t1.PosterURL == "" || !strings.Contains(t1.PosterURL, "/s1.jpg") {
@@ -124,7 +124,7 @@ func assertTemporada1(t *testing.T, t1 provider.TemporadaExterna) {
 	}
 }
 
-// assertEpisodio1Ident confere identidade (id/external), numbering e still do ep1.
+// assertEpisodio1Ident checks the identity (id/external), numbering and still of ep1.
 func assertEpisodio1Ident(t *testing.T, ep provider.EpisodioExterno) {
 	t.Helper()
 	if ep.SourceID != "1001" || ep.ExternalIDs["tmdb"] != "1001" {
@@ -138,7 +138,7 @@ func assertEpisodio1Ident(t *testing.T, ep provider.EpisodioExterno) {
 	}
 }
 
-// assertEpisodio1I18n confere runtime e os campos localizados (title/overview) do ep1.
+// assertEpisodio1I18n checks the runtime and the localized fields (title/overview) of ep1.
 func assertEpisodio1I18n(t *testing.T, ep provider.EpisodioExterno) {
 	t.Helper()
 	if ep.Runtime == nil || *ep.Runtime != 23 {
@@ -152,7 +152,7 @@ func assertEpisodio1I18n(t *testing.T, ep provider.EpisodioExterno) {
 	}
 }
 
-// TestBuscarSerieArvoreTMDBSourceVazio: sourceID vazio erra sem tocar a rede.
+// TestBuscarSerieArvoreTMDBSourceVazio: an empty sourceID fails without touching the network.
 func TestBuscarSerieArvoreTMDBSourceVazio(t *testing.T) {
 	c := New(Credencial{Token: "tok"}, nil, "http://nao-usar.invalid")
 	if _, err := c.BuscarSerieArvore(context.Background(), "", []string{"en"}); err == nil {
@@ -160,7 +160,7 @@ func TestBuscarSerieArvoreTMDBSourceVazio(t *testing.T) {
 	}
 }
 
-// temporadaPorNumero acha a TemporadaExterna de um season_number (falha se ausente).
+// temporadaPorNumero finds the TemporadaExterna of a season_number (it fails if absent).
 func temporadaPorNumero(t *testing.T, a provider.SerieArvore, n int) provider.TemporadaExterna {
 	t.Helper()
 	for _, temp := range a.Temporadas {

@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// TestNamespace cobre a extracao do objeto do namespace core.tv@1: presente,
-// NULL/vazio, JSON invalido e namespace ausente (todos degradando para nil, menos o
-// caso feliz).
+// TestNamespace covers the extraction of the core.tv@1 namespace object:
+// present, NULL/empty, invalid JSON and absent namespace (all degrading to nil,
+// except the happy case).
 func TestNamespace(t *testing.T) {
 	casos := []struct {
 		nome    string
@@ -36,7 +36,8 @@ func TestNamespace(t *testing.T) {
 	}
 }
 
-// TestAsInt cobre a coercao de numeros de JSON (float64) e o rejeito de nao-numeros.
+// TestAsInt covers the coercion of JSON numbers (float64) and the rejection of
+// non-numbers.
 func TestAsInt(t *testing.T) {
 	if n, ok := AsInt(float64(5)); !ok || n != 5 {
 		t.Errorf("AsInt(float64(5)) = %d,%v; quero 5,true", n, ok)

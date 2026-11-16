@@ -1,22 +1,22 @@
 package server
 
-// posscan.go implementa o PÓS-SCAN por biblioteca (briefing 0135, ADR-0031):
-// o gancho que o scanner chama ao fim do scan de UMA fonte, depois de todos os
-// lotes commitados. Ele existe porque o pipeline de match roda UMA única vez por
-// arquivo: o que falhou na hora (rede, árvore do artista que ainda não existia,
-// import de série que chegou depois dos episódios) ficava esperando o cron do job
-// saude_biblioteca -- 15 itens por tipo, throttle de 15 dias.
+// posscan.go implements the POST-SCAN per library (ADR-0031):
+// the hook the scanner calls at the end of the scan of ONE source, after all
+// batches are committed. It exists because the match pipeline runs a single time per
+// file: whatever failed on the spot (network, the artist tree that did not exist yet,
+// a series import that arrived after the episodes) stayed waiting for the cron of the
+// saude_biblioteca job -- 15 items per type, 15-day throttle.
 //
-// Aqui NÃO há lógica de matching nova: cada item reusa o caminho já existente
+// There is NO new matching logic here: each item reuses the existing path
 // (scanner.ReconciliarFaixaDraft / scanner.ReconciliarSerieDraft /
-// Server.TentarAutoMatchFilme). O que este arquivo acrescenta é (1) o recorte por
-// library_source, (2) a ausência do throttle de dias (é o retry do scan que o
-// dono acabou de pedir) e (3) a materialização opcional de quem passou a ter
-// identidade, quando o toggle de auto-download está ligado.
+// Server.TentarAutoMatchFilme). What this file adds is (1) the slice per
+// library_source, (2) the absence of the day throttle (it is the scan retry the
+// owner just asked for) and (3) the optional materialization of whoever gained an
+// identity, when the auto-download toggle is on.
 //
-// Best-effort do começo ao fim: erro de banco na LISTAGEM propaga (o scanner só
-// loga); erro num item individual é absorvido e logado -- um item ruim nunca
-// aborta a reconciliação dos demais.
+// Best-effort from start to finish: a database error in the LISTING propagates (the scanner only
+// logs it); an error in an individual item is absorbed and logged -- a bad item never
+// aborts the reconciliation of the others.
 
 import (
 	"context"
@@ -29,23 +29,23 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 )
 
-// posScanBudget é o teto de TEMPO de parede do pós-scan de UM scan (briefing
-// 0138). Cada tentativa de faixa custa chamadas externas a 1 req/s; sem teto, um
-// scan com 200 faixas em rascunho bloqueou a fila de scans por 45+ min (medido
-// em produção). Estourou: para onde está e deixa o resto para o próximo scan --
-// as queries já ordenam por "nunca tentado primeiro", então a fila avança.
+// posScanBudget is the WALL-clock ceiling of the post-scan of ONE scan.
+// Each track attempt costs external calls at 1 req/s; without a ceiling, a
+// scan with 200 tracks in draft blocked the scan queue for 45+ min (measured
+// in production). It blew up: it stops where it is and leaves the rest for the next scan --
+// the queries already sort by "never tried first", so the queue advances.
 const posScanBudget = 4 * time.Minute
 
-// esgotou diz se o orçamento de tempo do pós-scan acabou (ver posScanBudget).
+// esgotou says whether the post-scan time budget is over (see posScanBudget).
 func esgotou(limite time.Time) bool { return time.Now().After(limite) }
 
-// ProcessarPosScan satisfaz scanner.PosScan (briefing 0135): reconcilía os
-// rascunhos e retenta os pendentes DA FONTE `sourceID`. Devolve erro só em falha
-// real de LEITURA (banco/config); o resto é best-effort.
+// ProcessarPosScan satisfies scanner.PosScan: it reconciles the
+// drafts and retries the pending items OF THE SOURCE `sourceID`. It returns an error only on a real
+// READ failure (database/config); the rest is best-effort.
 func (s *Server) ProcessarPosScan(ctx context.Context, sourceID string) error {
-	// Sem scanner ou sem provider/importador não há o que reconciliar: os dois
-	// reconcilers e o auto-match degradam sozinhos, mas evitamos a varredura de
-	// banco inteira nesse caso.
+	// Without a scanner or without a provider/importer there is nothing to reconcile: the two
+	// reconcilers and auto-match degrade on their own, but we avoid the whole database
+	// sweep in that case.
 	if s.scanner == nil || sourceID == "" {
 		return nil
 	}
@@ -74,8 +74,8 @@ func (s *Server) ProcessarPosScan(ctx context.Context, sourceID string) error {
 			continue
 		}
 		faixasOk++
-		// A capa mora no ÁLBUM (ADR-0027) -- materializa o pai da faixa
-		// recém-ligada, uma vez por álbum nesta passada.
+		// The cover lives in the ALBUM (ADR-0027) -- it materializes the parent of the track
+		// just linked, once per album in this pass.
 		for _, albumID := range s.albumsDaEntity(ctx, row.ID) {
 			if albumMaterializar[albumID] {
 				continue
@@ -122,9 +122,9 @@ func (s *Server) ProcessarPosScan(ctx context.Context, sourceID string) error {
 		}
 	}
 
-	// Purga do estoque (briefing 0138): os rascunhos que perderam o arquivo para
-	// a entity definitiva ficavam para sempre na fila de revisão como "sem
-	// arquivo". Idempotente -- 0 quando não há nada a limpar.
+	// Stock purge: the drafts that lost the file to the
+	// definitive entity stayed forever in the review queue as "no file". Idempotent --
+	// 0 when there is nothing to clean.
 	purgados := int64(0)
 	if n, err := sqlcgen.New(s.db.Write).ApagarRascunhosVazios(ctx); err != nil {
 		log.Printf("pos-scan: purga de rascunhos vazios falhou (best-effort, ignorado): %v", err)
@@ -139,10 +139,10 @@ func (s *Server) ProcessarPosScan(ctx context.Context, sourceID string) error {
 	return nil
 }
 
-// autoMatchPendentePosScan tenta casar+enriquecer UM filme pendente e, casando,
-// materializa as artes quando o toggle está ligado -- mesmo par que o scan usa
-// para item novo (dispararAutoMatchFilme + MaterializarSeAutoDownloadLigado),
-// agora para o que ficou para trás.
+// autoMatchPendentePosScan tries to match+enrich ONE pending movie and, on a match,
+// materializes the artwork when the toggle is on -- the same pair the scan uses
+// for a new item (dispararAutoMatchFilme + MaterializarSeAutoDownloadLigado),
+// now for what was left behind.
 func (s *Server) autoMatchPendentePosScan(ctx context.Context, entityID string) bool {
 	matched, err := s.TentarAutoMatchFilme(ctx, entityID)
 	if err != nil {
@@ -158,9 +158,9 @@ func (s *Server) autoMatchPendentePosScan(ctx context.Context, entityID string) 
 	return true
 }
 
-// albumsDaEntity devolve os pais (álbuns) de uma faixa -- leitura simples da
-// árvore de relations; vazio quando não há vínculo ou o banco falha (a
-// materialização é opcional, nunca vale abortar por isso).
+// albumsDaEntity returns the parents (albums) of a track -- a simple read of
+// the relations tree; empty when there is no link or the database fails (the
+// materialization is optional, it is never worth aborting because of it).
 func (s *Server) albumsDaEntity(ctx context.Context, entityID string) []string {
 	rels, err := s.leitura().ListarRelacoesPais(ctx, entityID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {

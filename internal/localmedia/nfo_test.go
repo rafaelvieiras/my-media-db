@@ -13,9 +13,9 @@ import (
 func strPtr(s string) *string     { return &s }
 func floatPtr(f float64) *float64 { return &f }
 
-// fixtureEntidadeCompleta monta um resolver.Entidade "completo" (todos os
-// campos do mapeamento do briefing 0062 SS4 preenchidos) para o teste de
-// movie.nfo bater campo a campo.
+// fixtureEntidadeCompleta builds a "complete" resolver.Entidade (every field of
+// the NFO mapping table, §4, filled in) so that the movie.nfo test can check it
+// field by field.
 func fixtureEntidadeCompleta() resolver.Entidade {
 	return resolver.Entidade{
 		ID:            "e1",
@@ -39,7 +39,7 @@ func fixtureEntidadeCompleta() resolver.Entidade {
 			{Name: "Lana Wachowski", Department: "Directing", Job: "Director"},
 			{Name: "Lilly Wachowski", Department: "Directing", Job: "Director"},
 			{Name: "Lana Wachowski", Department: "Writing", Job: "Writer"},
-			{Name: "Joel Silver", Department: "Production", Job: "Producer"}, // nao entra em director nem credits
+			{Name: "Joel Silver", Department: "Production", Job: "Producer"}, // does not enter director nor credits
 		},
 		Companies: []richfields.Company{
 			{Name: "Warner Bros. Pictures"},
@@ -48,8 +48,8 @@ func fixtureEntidadeCompleta() resolver.Entidade {
 	}
 }
 
-// TestMontarNFOMovieCampoACampo: XML de movie.nfo bate campo a campo com a
-// tabela de mapeamento do briefing 0062 SS4 (criterio de aceite SS5).
+// TestMontarNFOMovieCampoACampo: the movie.nfo XML matches the NFO mapping
+// table field by field (acceptance criterion §5).
 func TestMontarNFOMovieCampoACampo(t *testing.T) {
 	e := fixtureEntidadeCompleta()
 	out, err := MontarNFO(e, CamposUsuarioNFO{})
@@ -90,18 +90,19 @@ func TestMontarNFOMovieCampoACampo(t *testing.T) {
 			t.Errorf("XML nao contem %q\n--- XML completo ---\n%s", esperado, xmlStr)
 		}
 	}
-	// Producer NAO deve aparecer nem como director nem como credits (so
-	// Directing/Director e Writing entram).
+	// Producer must NOT appear as director or as credits (only
+	// Directing/Director and Writing get in).
 	if strings.Contains(xmlStr, "Joel Silver") {
 		t.Error("XML contem Joel Silver (Producer), mas so director/writer deveriam entrar")
 	}
-	// Filme NAO tem <status> (so tvshow.nfo).
+	// A movie does NOT have <status> (only tvshow.nfo does).
 	if strings.Contains(xmlStr, "<status>") {
 		t.Error("movie.nfo contem <status>, mas status e exclusivo de tvshow.nfo")
 	}
-	// Pôster/fundo (nível de filme) NUNCA são escritos a partir de
-	// e.PosterURL/e.BackdropURL (briefing 0066) -- a arte materializada na
-	// pasta real já é descoberta pelo Kodi/Jellyfin via convenção de nome.
+	// Poster/backdrop (movie level) are NEVER written from
+	// e.PosterURL/e.BackdropURL (doc 09) -- the artwork materialized in the
+	// real folder is already discovered by Kodi/Jellyfin through the naming
+	// convention.
 	if strings.Contains(xmlStr, "/api/v1/entities/e1/assets/poster") {
 		t.Errorf("XML contem a URL do poster (e.PosterURL) -- <thumb> de nivel de filme nunca deveria ser escrito a partir do resolver:\n%s", xmlStr)
 	}
@@ -110,8 +111,8 @@ func TestMontarNFOMovieCampoACampo(t *testing.T) {
 	}
 }
 
-// TestMontarNFOTVShowIncluiStatus: tvshow.nfo inclui <status> a partir de
-// AiringStatus; filme (testado acima) nao inclui (briefing 0062 SS5).
+// TestMontarNFOTVShowIncluiStatus: tvshow.nfo includes <status> from
+// AiringStatus; a movie (tested above) does not (§5 of the NFO mapping).
 func TestMontarNFOTVShowIncluiStatus(t *testing.T) {
 	e := resolver.Entidade{
 		ID:           "s1",
@@ -132,8 +133,8 @@ func TestMontarNFOTVShowIncluiStatus(t *testing.T) {
 	}
 }
 
-// TestMontarNFOUniqueIDFallbackImdb: sem tmdb, o default cai para imdb (ordem
-// tmdb, imdb, tvdb -- briefing 0062 SS5).
+// TestMontarNFOUniqueIDFallbackImdb: without tmdb, the default falls to imdb
+// (order tmdb, imdb, tvdb -- §5 of the NFO mapping).
 func TestMontarNFOUniqueIDFallbackImdb(t *testing.T) {
 	e := resolver.Entidade{
 		ID:          "e2",
@@ -154,26 +155,26 @@ func TestMontarNFOUniqueIDFallbackImdb(t *testing.T) {
 	}
 }
 
-// TestMontarNFOThumbFanartNuncaEscritosDoResolver prova a garantia do
-// briefing 0066: <thumb>/<fanart> a nível de filme/série NUNCA são escritos
-// por MontarNFO a partir de e.PosterURL/e.BackdropURL -- independente do que
-// esses campos contenham (mesmo apontando para uma URL absoluta "válida"),
-// já que o parâmetro InsumosArte não existe mais. Quem materializa a arte na
-// pasta real (e portanto decide se poster/fanart "existem" para o
-// Kodi/Jellyfin) é gravarNFO, ANTES de chamar MontarNFO -- este pacote é
-// puro e não sabe nada sobre o disco.
+// TestMontarNFOThumbFanartNuncaEscritosDoResolver proves the guarantee of the
+// NFO design (doc 09): movie/series-level <thumb>/<fanart> are NEVER written by
+// MontarNFO from e.PosterURL/e.BackdropURL -- regardless of what those fields
+// contain (even when pointing to a "valid" absolute URL), since the InsumosArte
+// parameter no longer exists. Whoever materializes the artwork in the
+// real folder (and therefore decides whether poster/fanart "exist" for
+// Kodi/Jellyfin) is gravarNFO, BEFORE calling MontarNFO -- this package is
+// pure and knows nothing about the disk.
 func TestMontarNFOThumbFanartNuncaEscritosDoResolver(t *testing.T) {
 	e := fixtureEntidadeCompleta()
-	// e.PosterURL/e.BackdropURL (fixtureEntidadeCompleta) sao URLs "validas"
-	// (uma de rota interna, outra absoluta) -- mesmo assim nao devem
-	// vazar para o XML.
+	// e.PosterURL/e.BackdropURL (fixtureEntidadeCompleta) are "valid" URLs
+	// (one an internal route, the other absolute) -- even so they must not
+	// leak into the XML.
 	out, err := MontarNFO(e, CamposUsuarioNFO{})
 	if err != nil {
 		t.Fatalf("MontarNFO: %v", err)
 	}
 	xmlStr := string(out)
-	// So o <thumb> do ATOR (foto de perfil) pode sobrar -- o <thumb> de
-	// nivel superior (poster) e o <fanart> nunca devem aparecer.
+	// Only the ACTOR <thumb> (profile picture) may remain -- the top-level
+	// <thumb> (poster) and the <fanart> must never appear.
 	if strings.Contains(xmlStr, "/api/v1/entities/e1/assets/poster") {
 		t.Errorf("XML contem a URL do poster (e.PosterURL) -- nunca deveria ser escrita:\n%s", xmlStr)
 	}
@@ -182,7 +183,7 @@ func TestMontarNFOThumbFanartNuncaEscritosDoResolver(t *testing.T) {
 	}
 }
 
-// TestMontarNFOSemRating: VoteAverage nil omite <rating> por completo.
+// TestMontarNFOSemRating: a nil VoteAverage omits <rating> entirely.
 func TestMontarNFOSemRating(t *testing.T) {
 	e := resolver.Entidade{ID: "e3", Type: "movie", Title: "Sem nota"}
 	out, err := MontarNFO(e, CamposUsuarioNFO{})
@@ -194,13 +195,12 @@ func TestMontarNFOSemRating(t *testing.T) {
 	}
 }
 
-// TestExtrairCamposUsuarioDescartaRatingLegado prova a correcao do briefing
-// 0066: um .nfo escrito ANTES da migracao para <ratings> (formato antigo,
-// <rating name="tmdb">N</rating> direto sob <movie>) nao pode ficar
-// preservado para sempre pelo catch-all Extras (0065) so porque a tag
-// deixou de ser um campo NOMEADO -- isso duplicaria a nota (a antiga E a
-// nova <ratings>) a cada regravacao futura. RatingLegacy reivindica a tag
-// antiga e a descarta silenciosamente.
+// TestExtrairCamposUsuarioDescartaRatingLegado proves the fix: an .nfo written
+// BEFORE the migration to <ratings> (old format, <rating name="tmdb">N</rating>
+// directly under <movie>) cannot stay preserved forever by the Extras catch-all
+// just because the tag stopped being a NAMED field -- that would duplicate the
+// score (the old one AND the new <ratings>) on every future rewrite.
+// RatingLegacy claims the old tag and silently discards it.
 func TestExtrairCamposUsuarioDescartaRatingLegado(t *testing.T) {
 	anterior := []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <movie>
@@ -230,12 +230,12 @@ func TestExtrairCamposUsuarioDescartaRatingLegado(t *testing.T) {
 	}
 }
 
-// TestExtrairCamposUsuarioRoundTrip prova que os campos LOCAIS (avaliacao do
-// usuario, assistido/contagem, ultima reproducao, data de adicao e ponto de
-// retomada -- convencao Kodi/Emby/Jellyfin) sobrevivem a um round-trip
-// ExtrairCamposUsuario -> MontarNFO: e exatamente o que gravarNFO
-// (internal/server/localmedia_handlers.go) faz antes de sobrescrever um .nfo
-// ja existente, para nao apagar edicao feita fora do MyMediaDB.
+// TestExtrairCamposUsuarioRoundTrip proves that the LOCAL fields (user rating,
+// watched/count, last playback, date added and resume point -- Kodi/Emby/
+// Jellyfin convention) survive a round-trip ExtrairCamposUsuario -> MontarNFO:
+// that is exactly what gravarNFO (internal/server/localmedia_handlers.go) does
+// before overwriting an existing .nfo, so that an edit made outside MyMediaDB
+// is not erased.
 func TestExtrairCamposUsuarioRoundTrip(t *testing.T) {
 	anterior := []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <movie>
@@ -290,19 +290,19 @@ func TestExtrairCamposUsuarioRoundTrip(t *testing.T) {
 			t.Errorf("XML regravado nao contem %q (campo local do usuario deveria ter sido preservado):\n%s", esperado, xmlStr)
 		}
 	}
-	// O titulo, porem, DEVE ter sido atualizado com o valor novo -- so os
-	// campos locais sao preservados, o resto do NFO sempre reflete o dado
-	// atual do resolver.Entidade.
+	// The title, however, MUST have been updated with the new value -- only
+	// the local fields are preserved; the rest of the NFO always reflects the
+	// current data of resolver.Entidade.
 	if !strings.Contains(xmlStr, "<title>Matrix</title>") {
 		t.Errorf("titulo nao foi atualizado para o valor atual da entity:\n%s", xmlStr)
 	}
 }
 
-// TestExtrairCamposUsuarioPreservaTagDesconhecidaRepetida prova o catch-all
-// genérico (briefing 0065): uma tag repetida que nfoDoc NUNCA modelou
-// (<tag>) sobrevive a um round-trip ExtrairCamposUsuario -> MontarNFO, na
-// mesma ordem em que apareceu no arquivo anterior -- sem precisar de uma
-// nova entrada na lista fechada de campos nomeados.
+// TestExtrairCamposUsuarioPreservaTagDesconhecidaRepetida proves the generic
+// catch-all (doc 09, §4): a repeated tag that nfoDoc NEVER modeled (<tag>)
+// survives a round-trip ExtrairCamposUsuario -> MontarNFO, in the same order in
+// which it appeared in the previous file -- without needing a new entry in the
+// closed list of named fields.
 func TestExtrairCamposUsuarioPreservaTagDesconhecidaRepetida(t *testing.T) {
 	anterior := []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <movie>
@@ -328,8 +328,8 @@ func TestExtrairCamposUsuarioPreservaTagDesconhecidaRepetida(t *testing.T) {
 	}
 	xmlStr := string(out)
 
-	// As duas tags devem sobreviver, na mesma ordem relativa (Sci-Fi antes
-	// de Cult).
+	// Both tags must survive, in the same relative order (Sci-Fi before
+	// Cult).
 	idxSciFi := strings.Index(xmlStr, "<tag>Sci-Fi</tag>")
 	idxCult := strings.Index(xmlStr, "<tag>Cult</tag>")
 	if idxSciFi == -1 || idxCult == -1 {
@@ -340,10 +340,10 @@ func TestExtrairCamposUsuarioPreservaTagDesconhecidaRepetida(t *testing.T) {
 	}
 }
 
-// TestExtrairCamposUsuarioPreservaBlocoAninhadoDesconhecido prova que um
-// bloco aninhado que nfoDoc não modela (ex. <fileinfo><streamdetails>...,
-// que o próprio Kodi escreve após identificar codecs) sobrevive INTACTO --
-// mesma estrutura interna -- a uma regravação (briefing 0065 SS5).
+// TestExtrairCamposUsuarioPreservaBlocoAninhadoDesconhecido proves that a
+// nested block that nfoDoc does not model (e.g. <fileinfo><streamdetails>...,
+// which Kodi itself writes after identifying the codecs) survives INTACT --
+// same inner structure -- through a rewrite (doc 09, §5).
 func TestExtrairCamposUsuarioPreservaBlocoAninhadoDesconhecido(t *testing.T) {
 	blocoInterno := "<streamdetails><video><codec>h264</codec><width>1920</width></video></streamdetails>"
 	anterior := []byte(`<?xml version="1.0" encoding="UTF-8"?>
@@ -374,12 +374,12 @@ func TestExtrairCamposUsuarioPreservaBlocoAninhadoDesconhecido(t *testing.T) {
 	}
 }
 
-// TestMontarNFOCamposManagedNuncaVemDoArquivoAntigo prova que campos
-// MANAGED pelo MyMediaDB (title, plot etc.) NUNCA são herdados do .nfo
-// anterior mesmo com o catch-all genérico ativo -- eles batem com um campo
-// NOMEADO de nfoDoc (title/plot), então nunca caem em Extras, e MontarNFO
-// sempre os preenche a partir de resolver.Entidade (banco = unica fonte de
-// verdade, briefing 0065 SS3/SS5).
+// TestMontarNFOCamposManagedNuncaVemDoArquivoAntigo proves that fields MANAGED
+// by MyMediaDB (title, plot etc.) are NEVER inherited from the previous .nfo
+// even with the generic catch-all active -- they match a NAMED field of nfoDoc
+// (title/plot), so they never fall into Extras, and MontarNFO always fills them
+// from resolver.Entidade (database = single source of truth, doc 09,
+// §3/§5).
 func TestMontarNFOCamposManagedNuncaVemDoArquivoAntigo(t *testing.T) {
 	anterior := []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <movie>
@@ -391,8 +391,8 @@ func TestMontarNFOCamposManagedNuncaVemDoArquivoAntigo(t *testing.T) {
 
 	usuario := ExtrairCamposUsuario(anterior)
 
-	// title/plot/genre sao campos nomeados de nfoDoc -- nao devem aparecer em
-	// Extras (so a tag verdadeiramente desconhecida deve).
+	// title/plot/genre are named fields of nfoDoc -- they must not appear in
+	// Extras (only the truly unknown tag should).
 	for _, e := range usuario.Extras {
 		if e.XMLName.Local == "title" || e.XMLName.Local == "plot" || e.XMLName.Local == "genre" {
 			t.Errorf("Extras contem elemento MANAGED %q -- deveria ter sido capturado pelo campo nomeado, nao pelo catch-all", e.XMLName.Local)
@@ -421,21 +421,21 @@ func TestMontarNFOCamposManagedNuncaVemDoArquivoAntigo(t *testing.T) {
 	if !strings.Contains(xmlStr, "<plot>Um hacker descobre a verdade.</plot>") {
 		t.Errorf("XML regravado nao reflete o plot atual do banco:\n%s", xmlStr)
 	}
-	// A tag verdadeiramente desconhecida (nao MANAGED), por outro lado, DEVE
-	// sobreviver -- e o proprio objetivo deste briefing.
+	// The truly unknown tag (not MANAGED), on the other hand, MUST survive --
+	// that is the whole point of the catch-all.
 	if !strings.Contains(xmlStr, "<tag>Sci-Fi</tag>") {
 		t.Errorf("XML regravado deveria preservar a tag desconhecida <tag>Sci-Fi</tag>:\n%s", xmlStr)
 	}
 }
 
-// TestMontarNFOSemElementosDesconhecidosNaoGeraExtrasFantasma prova que um
-// .nfo sem nenhum elemento desconhecido (caso comum, CamposUsuarioNFO.Extras
-// nil) continua gerando o mesmo XML de antes -- sem nenhum elemento
-// "<extras>" ou wrapper fantasma aparecendo. Isso e uma garantia estrutural
-// do encoding/xml (um campo ",any" com slice nil nao emite nada ao
-// marshalizar, e o nome do campo Go "Extras" nunca vira uma tag XML, so os
-// elementos individuais dentro dele importariam), mas o teste documenta essa
-// garantia explicitamente como criterio de aceite (briefing 0065 SS5).
+// TestMontarNFOSemElementosDesconhecidosNaoGeraExtrasFantasma proves that an
+// .nfo with no unknown element (the common case, CamposUsuarioNFO.Extras nil)
+// keeps generating the same XML as before -- with no "<extras>" element or
+// phantom wrapper showing up. This is a structural guarantee of encoding/xml (a
+// ",any" field with a nil slice emits nothing when marshaling, and the Go field
+// name "Extras" never becomes an XML tag, only the individual elements inside
+// it would matter), but the test documents that guarantee explicitly as an
+// acceptance criterion (doc 09, §5).
 func TestMontarNFOSemElementosDesconhecidosNaoGeraExtrasFantasma(t *testing.T) {
 	e := fixtureEntidadeCompleta()
 	out, err := MontarNFO(e, CamposUsuarioNFO{})
@@ -448,14 +448,14 @@ func TestMontarNFOSemElementosDesconhecidosNaoGeraExtrasFantasma(t *testing.T) {
 	}
 }
 
-// TestExtrairCamposUsuarioArquivoAusenteOuInvalido cobre os dois casos
-// degradados (best-effort): sem arquivo anterior (bytes vazio) e XML
-// corrompido -- ambos devolvem zero-value, nunca erro (a gravacao do NFO
-// nao pode falhar por causa disso).
+// TestExtrairCamposUsuarioArquivoAusenteOuInvalido covers the two degraded
+// cases (best-effort): no previous file (empty bytes) and corrupted XML --
+// both return the zero-value, never an error (writing the NFO must not fail
+// because of that).
 //
-// Usa reflect.DeepEqual (nao == / !=) porque CamposUsuarioNFO ganhou o campo
-// Extras []xmlElementoBruto (briefing 0065) -- um slice torna o struct
-// nao-comparavel por igualdade nativa.
+// It uses reflect.DeepEqual (not == / !=) because CamposUsuarioNFO gained the
+// field Extras []xmlElementoBruto (doc 09, §4) -- a slice makes the struct
+// non-comparable through native equality.
 func TestExtrairCamposUsuarioArquivoAusenteOuInvalido(t *testing.T) {
 	if usuario := ExtrairCamposUsuario(nil); !reflect.DeepEqual(usuario, CamposUsuarioNFO{}) {
 		t.Errorf("bytes nil = %+v, quero zero-value", usuario)

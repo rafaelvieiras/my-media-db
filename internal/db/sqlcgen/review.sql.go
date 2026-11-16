@@ -22,9 +22,9 @@ type AtualizarConfidencePorEntityParams struct {
 	EntityID        string
 }
 
-// Confirmar (briefing 0018): o dono diz que o palpite esta certo. Sobe a confianca
-// de TODOS os media_file da entity para o valor dado (100 = autoridade do dono),
-// fazendo o item sair da fila de revisao. Nao toca override/arte.
+// Confirm: the owner says the guess is right. Raises the confidence
+// of ALL media_file of the entity to the given value (100 = owner authority),
+// making the item leave the review queue. Does not touch override/artwork.
 func (q *Queries) AtualizarConfidencePorEntity(ctx context.Context, arg AtualizarConfidencePorEntityParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarConfidencePorEntity, arg.MatchConfidence, arg.EntityID)
 	return err
@@ -37,9 +37,9 @@ SET last_external_match_attempt_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
 WHERE id = ?1
 `
 
-// Registra que o item FOI verificado nesta execucao (aplicado, sinalizado
-// ou sem candidato) -- throttle do briefing 0056: o proximo lote so volta a
-// considerar este id depois de sqlc.arg('desde') (acima) ter passado.
+// Records that the item WAS verified in this execution (applied, flagged
+// or with no candidate) -- the throttle: the next batch only comes back to
+// consider this id after sqlc.arg('desde') (above) has passed.
 func (q *Queries) AtualizarTentativaMatchExterno(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, atualizarTentativaMatchExterno, id)
 	return err
@@ -103,29 +103,30 @@ type ListarElegiveisEnriquecimentoRetroativoRow struct {
 	LastExternalMatchAttemptAt sql.NullString
 }
 
-// Complemento do WHERE de ListarRevisao, restrito a tipos DE TOPO (ADR-0030):
-// entities SEM nenhum external_id (external_ids_json IS NULL) que NAO estao
-// na fila de Revisao (status != 'draft', sem media_file de baixa confianca)
-// E que tem ao menos um media_file 'present' -- direto (movie/tv/qualquer
-// tipo com arquivo proprio) OU via arvore de entity_relation (musica:
-// artista nunca liga media_file direto, ADR-0027 -- so a faixa liga; mesmo
-// padrao WITH RECURSIVE ja usado por ListarEntitiesMusicaComFaixaPossuida,
-// media_file.sql). O type NOT IN abaixo e a lista LITERAL dos mesmos valores
-// de tiposSubNo (ADR-0030/briefing 0112, internal/server/entities.go) --
-// sqlc.slice('sub_nos') foi tentado (briefing 0116) e descartado: sqlc, no
-// dialeto sqlite, nao combina sqlc.slice com outros sqlc.arg no MESMO
-// statement -- a expansao dinamica de `?` do slice desalinha a numeracao dos
-// placeholders nomeados (?N) dos demais args, causando erro de bind em
-// runtime ("missing named argument"/"datatype mismatch"), mesmo com cada arg
-// referenciado uma unica vez. TestListaSubNosSincronizadaComQuery
-// (retroativo_test.go) trava a lista literal contra tiposSubNo -- se um tipo
-// novo entrar ali, o teste falha ate esta query ser atualizada a mao.
-// Throttle: nunca tentado (NULL) tem prioridade, depois o mais antigo
-// tentado primeiro; sqlc.arg('dias_global') e o intervalo GLOBAL em dias
-// (briefing 0085), usado como fallback quando nenhum media_file 'present' da
-// entity vem de uma biblioteca com override (a subquery de override so olha
-// media_file DIRETO -- para artista isso sempre cai no fallback global, ver
-// briefing 0116 secao 3 "Fora"); sqlc.arg('limite') poda o lote por execucao.
+// Complement of the WHERE of ListarRevisao, restricted to TOP-LEVEL types (ADR-0030):
+// entities WITHOUT any external_id (external_ids_json IS NULL) that are NOT
+// in the Review queue (status != 'draft', without a low-confidence media_file)
+// AND that have at least one 'present' media_file -- directly (movie/tv/any
+// type with a file of its own) OR through the entity_relation tree (music:
+// the artist never links media_file directly, ADR-0027 -- only the track does; same
+// WITH RECURSIVE pattern already used by ListarEntitiesMusicaComFaixaPossuida,
+// media_file.sql). The type NOT IN below is the LITERAL list of the same values
+// as tiposSubNo (ADR-0030, internal/server/entities.go) --
+// sqlc.slice('sub_nos') was tried and discarded: sqlc, in the sqlite
+// dialect, does not combine sqlc.slice with other sqlc.arg in the SAME
+// statement -- the dynamic expansion of the slice's `?` misaligns the numbering of
+// the named placeholders (?N) of the other args, causing a bind error at
+// runtime ("missing named argument"/"datatype mismatch"), even with each arg
+// referenced a single time. TestListaSubNosSincronizadaComQuery
+// (retroativo_test.go) locks the literal list against tiposSubNo -- if a new type
+// enters it, the test fails until this query is updated by hand.
+// Throttle: never attempted (NULL) has priority, then the one attempted longest ago
+// first; sqlc.arg('dias_global') is the GLOBAL interval in days,
+// used as a fallback when no 'present' media_file of the entity
+// comes from a library with an override (the override subquery only looks at
+// DIRECT media_file -- for an artist this always falls back to the global value,
+// see the "Out of scope" section of ADR-0027); sqlc.arg('limite') prunes the batch
+// per execution.
 func (q *Queries) ListarElegiveisEnriquecimentoRetroativo(ctx context.Context, arg ListarElegiveisEnriquecimentoRetroativoParams) ([]ListarElegiveisEnriquecimentoRetroativoRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarElegiveisEnriquecimentoRetroativo, arg.Limiar, arg.DiasGlobal, arg.Limite)
 	if err != nil {
@@ -203,22 +204,22 @@ type ListarElegiveisReprocessamentoArtesRow struct {
 	Title string
 }
 
-// Complemento de ListarElegiveisEnriquecimentoRetroativo (briefing 0118): em vez
-// de entities SEM identidade, aqui sao as JA IDENTIFICADAS (external_ids_json
-// NOT NULL) cujo inventario de arte (fanart.tv etc, briefing 0048) nunca foi
-// (re)verificado -- fecha o gap de uma entity que ganhou a identidade ANTES de
-// um ArteProvider existir/ser configurado no sistema (ou cuja busca de arte na
-// epoca nao achou nada e nunca foi reprocessada): sem este passo ela fica sem
-// arte extra para sempre, so alcancavel pelo botao manual "Baixar Artes
-// Faltantes" por item (briefing 0088). Reusa last_external_match_attempt_at --
-// LIVRE para estas entities, ja que a query irma (acima) so olha entities com
-// external_ids_json IS NULL -- so que aqui o carimbo significa "ultima vez que
-// o inventario de arte foi verificado", nao "ultima tentativa de match". Mesmo
-// throttle/dias (retroactive_enrichment_days) e mesma lista literal de tipos
-// de topo (sub_nos EXCLUIDOS, ADR-0030/0112 -- TestListaSubNosSincronizadaComQuery
-// trava as DUAS queries contra tiposSubNo) e posse via arvore de entity_relation
-// (musica: artista nunca liga media_file direto, ADR-0027) que a query irma ja
-// usa.
+// Complement of ListarElegiveisEnriquecimentoRetroativo: instead of entities
+// WITHOUT identity, here they are the ALREADY IDENTIFIED ones (external_ids_json
+// NOT NULL) whose art inventory (fanart.tv etc.) was never
+// (re)verified -- closes the gap of an entity that gained its identity BEFORE
+// an ArteProvider existed/was configured in the system (or whose art search at
+// the time found nothing and was never reprocessed): without this step it stays without
+// extra art forever, only reachable through the manual "Download Missing Artwork"
+// button per item. Reuses last_external_match_attempt_at --
+// FREE for these entities, since the sibling query (above) only looks at entities with
+// external_ids_json IS NULL -- except that here the timestamp means "the last time the
+// art inventory was verified", not "the last match attempt". Same
+// throttle/days (retroactive_enrichment_days) and same literal list of top-level
+// types (sub_nos EXCLUDED, ADR-0030 -- TestListaSubNosSincronizadaComQuery
+// locks BOTH queries against tiposSubNo) and ownership through the entity_relation tree
+// (music: the artist never links media_file directly, ADR-0027) that the sibling query
+// already uses.
 func (q *Queries) ListarElegiveisReprocessamentoArtes(ctx context.Context, arg ListarElegiveisReprocessamentoArtesParams) ([]ListarElegiveisReprocessamentoArtesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarElegiveisReprocessamentoArtes, arg.DiasGlobal, arg.Limite)
 	if err != nil {
@@ -286,14 +287,14 @@ type ListarFaixasDraftOrfasRow struct {
 	Type string
 }
 
-// Complemento de ListarElegiveisReprocessamentoArtes (briefing 0120): faixas
-// type='faixa' status='draft' com media_file present (entity_id aponta
-// direto, ADR-0027 e 1:1) SEM entity_relation como filha de nenhum album (NOT
-// EXISTS child_id) -- diferente das outras queries de elegibilidade deste
-// arquivo, aqui faixa/tv NAO sao excluidos como "sub_nos": sao exatamente o
-// universo que este briefing cobre. Mesmo throttle por
-// library_source.retroactive_enrichment_days com fallback pro dias_global,
-// mesma logica de ListarElegiveisReprocessamentoArtes.
+// Complement of ListarElegiveisReprocessamentoArtes: tracks
+// type='faixa' status='draft' with a present media_file (entity_id points
+// directly, ADR-0027 is 1:1) WITHOUT entity_relation as a child of any album (NOT
+// EXISTS child_id) -- unlike the other eligibility queries in this
+// file, here faixa/tv are NOT excluded as "sub_nos": they are exactly the
+// universe this query covers. Same throttle by
+// library_source.retroactive_enrichment_days with a fallback to dias_global,
+// same logic as ListarElegiveisReprocessamentoArtes.
 func (q *Queries) ListarFaixasDraftOrfas(ctx context.Context, arg ListarFaixasDraftOrfasParams) ([]ListarFaixasDraftOrfasRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarFaixasDraftOrfas, arg.DiasGlobal, arg.Limite)
 	if err != nil {
@@ -350,24 +351,24 @@ type ListarFaixasDraftOrfasPorSourceRow struct {
 	Type string
 }
 
-// == Pos-scan por biblioteca (briefing 0135/0138, ADR-0031) ==
-// As tres queries abaixo sao as versoes ESCOPADAS POR library_source das queries
-// de reconciliacao acima. O throttle de dias do catalogo
-// (retroactive_enrichment_days/dias_global) NAO se aplica -- o pos-scan e o retry
-// do scan que o dono acabou de pedir --, mas ha um piso proprio de horas
-// (briefing 0138): sem ele, todo scan tentava de novo as MESMAS 200 faixas que
-// acabaram de falhar (medido: 45+ min de MusicBrainz por scan, sem resolver
-// nada de novo). A ordem tambem passou a ser a de quem NUNCA foi tentado
-// primeiro, para a fila avancar a cada scan mesmo com o teto de itens/horas.
-// O carimbo e gravado em ISO com 'T' e 'Z' (strftime '%Y-%m-%dT%H:%M:%fZ') e o
-// cutoff e datetime() com espaco; comparar as duas strings cruas erra por causa
-// do 'T' (0x54 > 0x20), entao a coluna vai embrulhada em datetime() -- que
-// normaliza as duas para o mesmo formato.
-// Faixas type='faixa' status='draft' com media_file present DA FONTE informada e
-// sem entity_relation como filha de album (mesmo universo de
-// ListarFaixasDraftOrfas). Throttle proprio do pos-scan: pula quem ja foi
-// tentado nas ultimas sqlc.arg('horas_minimas') horas (briefing 0138); a ordem
-// e "nunca tentado primeiro" para a fila avancar a cada scan.
+// == Post-scan per library (ADR-0031) ==
+// The three queries below are the PER-library_source versions of the
+// reconciliation queries above. The catalog day throttle
+// (retroactive_enrichment_days/dias_global) does NOT apply -- the post-scan is the retry
+// of the scan the owner has just asked for --, but there is a floor of its own, in
+// hours: without it, every scan retried the SAME 200 tracks that
+// had just failed (measured: 45+ min of MusicBrainz per scan, without resolving
+// anything new). The order also became the one of those NEVER attempted
+// first, so the queue moves forward on every scan even with the item/hour ceiling.
+// The timestamp is written in ISO with 'T' and 'Z' (strftime '%Y-%m-%dT%H:%M:%fZ') and
+// the cutoff is datetime() with a space; comparing the two raw strings is wrong because
+// of the 'T' (0x54 > 0x20), so the column goes wrapped in datetime() -- which
+// normalizes both to the same format.
+// Tracks type='faixa' status='draft' with a present media_file FROM the given SOURCE
+// and without entity_relation as a child of an album (same universe as
+// ListarFaixasDraftOrfas). Post-scan throttle of its own: it skips those already
+// attempted in the last sqlc.arg('horas_minimas') hours; the order
+// is "never attempted first" so the queue moves forward on every scan.
 func (q *Queries) ListarFaixasDraftOrfasPorSource(ctx context.Context, arg ListarFaixasDraftOrfasPorSourceParams) ([]ListarFaixasDraftOrfasPorSourceRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarFaixasDraftOrfasPorSource, arg.SourceID, arg.HorasMinimas, arg.Limite)
 	if err != nil {
@@ -415,10 +416,10 @@ type ListarFilmesPendentesPorSourceRow struct {
 	Type string
 }
 
-// Filmes (type='movie') DA FONTE informada que nao tem identidade externa ainda
-// e cujo melhor match ficou abaixo do limiar de baixa confianca -- o universo que
-// o auto-match do pos-scan tenta de novo (caso real: item que entrou cru por
-// causa do bug do 0089, 08/nov/2026).
+// Movies (type='movie') FROM the given SOURCE that have no external identity yet
+// and whose best match stayed below the low-confidence threshold -- the universe that
+// the post-scan auto-match retries (real case: an item that came in raw because
+// of the 0089 bug, Nov 8, 2026).
 func (q *Queries) ListarFilmesPendentesPorSource(ctx context.Context, arg ListarFilmesPendentesPorSourceParams) ([]ListarFilmesPendentesPorSourceRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarFilmesPendentesPorSource, arg.SourceID, arg.Limite)
 	if err != nil {
@@ -469,10 +470,10 @@ type ListarOrfasRow struct {
 	HasPoster       bool
 }
 
-// Fila de ORFAS: entities auto-criadas pelo scanner (status='cataloged') que TEM ao
-// menos um media_file, com NENHUM 'present' (todos 'missing'), e SEM investimento do
-// dono -- sem linha em media_override e sem asset origin='user'. Uma entity SO
-// importada (sem media_file) NAO e orfa. owned e sempre falso aqui (nenhum present).
+// ORPHAN queue: entities auto-created by the scanner (status='cataloged') that HAVE at
+// least one media_file, with NONE 'present' (all 'missing'), and NO owner
+// investment -- no row in media_override and no asset origin='user'. An entity only
+// imported (without media_file) is NOT an orphan. owned is always false here (no present).
 func (q *Queries) ListarOrfas(ctx context.Context) ([]ListarOrfasRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarOrfas)
 	if err != nil {
@@ -522,10 +523,10 @@ SELECT
     )) AS file_count,
     (SELECT MAX(m.match_confidence) FROM media_file m WHERE m.entity_id = e.id) AS match_confidence,
     EXISTS (SELECT 1 FROM asset a WHERE a.entity_id = e.id AND a.kind = 'poster') AS has_poster,
-    -- path: caminho de UM arquivo da entity ('present' vem antes de 'missing' no
-    -- ORDER BY DESC), usado so para agrupar a fila na UI (briefing 0137) --
-    -- anotacao no server, nao muda o predicado da fila. String vazia para entity
-    -- sem arquivo nenhum (item importado).
+    -- path: path of ONE file of the entity ('present' comes before 'missing' in the
+    -- ORDER BY DESC), used only to group the queue in the UI -- an annotation on the
+    -- server, it does not change the queue predicate. Empty string for an entity
+    -- with no file at all (imported item).
     CAST(COALESCE((SELECT p FROM (
         SELECT m.path AS p, m.state AS st FROM media_file m WHERE m.entity_id = e.id
         UNION ALL
@@ -556,28 +557,28 @@ type ListarRevisaoRow struct {
 	Path            string
 }
 
-// Queries das FILAS DE CURADORIA (briefing 0018): revisao, orfas e as escritas de
-// confirmar/purgar. Sem tabela nova -- as filas sao QUERY sobre entity/media_file/
-// media_override/asset (ADR-0012). Comentarios em ASCII e colunas explicitas -- ver
-// a nota em entity.sql.
+// Queries for the CURATION QUEUES: review, orphans and the
+// confirm/purge writes. No new table -- the queues are QUERIES over entity/media_file/
+// media_override/asset (ADR-0012). Comments in ASCII and explicit columns -- see
+// the note in entity.sql.
 //
-// As duas listas devolvem o MESMO shape de card que ListarEntityCards (id, type,
-// title, status, owned, file_count, match_confidence, has_poster): o handler
-// converte a linha para o tipo de card comum e reusa o mesmo DTO da lista.
-// Fila de REVISAO: entities status='draft' (nao-identificado) OU que tem um
-// media_file 'present' cuja match_confidence esta em (0, LIMIAR) -- baixa confianca.
-// O LIMIAR entra como parametro (sqlc.arg('limiar')): fonte unica no backend
-// (espelha o LIMIAR_BAIXA_CONFIANCA=70 do front). Ordena por confianca ASCENDENTE
-// (pior primeiro); drafts/sem confianca vao ao fim (match_confidence IS NULL = 1).
-// Arquivos de UMA entity: os que apontam para ela (obra) MAIS os ligados pela
-// juncao media_file_entity (episodio de serie -- o arquivo mora na SERIE, o
-// vinculo com o episodio e a juncao). Mesmo idioma de ObterEntityCard/ListarEntityCards
-// (0034): UNION ALL + COUNT(DISTINCT ...) na juncao, sem dupla contagem (o vinculo
-// direto e o da juncao apontam entities diferentes). Sem isso, TODO episodio vinha
-// com file_count 0 e path vazio, e caia no grupo "sem arquivo" da UI mesmo com o
-// arquivo presente -- 19 episodios medidos em producao (briefing 0138).
-// match_confidence continua so do arquivo DIRETO (paridade com o card: nao muda a
-// ordenacao da fila).
+// Both lists return the SAME card shape as ListarEntityCards (id, type,
+// title, status, owned, file_count, match_confidence, has_poster): the handler
+// converts the row to the common card type and reuses the same DTO as the list.
+// REVIEW queue: entities with status='draft' (unidentified) OR that have a
+// media_file 'present' whose match_confidence is in (0, THRESHOLD) -- low confidence.
+// The THRESHOLD comes in as a parameter (sqlc.arg('limiar')): a single source in the
+// backend (it mirrors LIMIAR_BAIXA_CONFIANCA=70 in the front end). Orders by
+// confidence ASCENDING (worst first); drafts/without confidence go last
+// (match_confidence IS NULL = 1). Files of ONE entity: the ones pointing at it (work)
+// PLUS those linked through the media_file_entity junction (series episode -- the
+// file lives on the SERIES, the link with the episode is the junction). Same idiom as
+// ObterEntityCard/ListarEntityCards (0034): UNION ALL + COUNT(DISTINCT ...) on the
+// junction, with no double counting (the direct link and the junction one point at
+// different entities). Without this, EVERY episode came with file_count 0 and an empty
+// path, and fell into the "no file" group of the UI even with the file present --
+// 19 episodes measured in production. match_confidence still comes only from the
+// DIRECT file (parity with the card: it does not change the queue ordering).
 func (q *Queries) ListarRevisao(ctx context.Context, limiar sql.NullFloat64) ([]ListarRevisaoRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarRevisao, limiar)
 	if err != nil {
@@ -647,10 +648,10 @@ type ListarSeriesDraftComArquivoRow struct {
 	Type string
 }
 
-// Complemento de ListarFaixasDraftOrfas (briefing 0120): series type='tv'
-// status='draft' com media_file present apontando direto (entity_id =
-// serie.id, gravarArquivoSerie sempre grava assim, mesmo em revisao). Mesmo
-// throttle da query irma acima.
+// Complement of ListarFaixasDraftOrfas: series type='tv'
+// status='draft' with a present media_file pointing directly (entity_id =
+// serie.id, gravarArquivoSerie always writes it that way, even under review). Same
+// throttle as the sibling query above.
 func (q *Queries) ListarSeriesDraftComArquivo(ctx context.Context, arg ListarSeriesDraftComArquivoParams) ([]ListarSeriesDraftComArquivoRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarSeriesDraftComArquivo, arg.DiasGlobal, arg.Limite)
 	if err != nil {
@@ -703,9 +704,9 @@ type ListarSeriesDraftPorSourceRow struct {
 	Type string
 }
 
-// Series type='tv' status='draft' com media_file present DA FONTE informada
-// (mesmo universo de ListarSeriesDraftComArquivo, com o throttle de horas e a
-// ordem do pos-scan, briefing 0138).
+// Series type='tv' status='draft' with a present media_file FROM the given SOURCE
+// (same universe as ListarSeriesDraftComArquivo, with the hour throttle and the
+// post-scan order).
 func (q *Queries) ListarSeriesDraftPorSource(ctx context.Context, arg ListarSeriesDraftPorSourceParams) ([]ListarSeriesDraftPorSourceRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarSeriesDraftPorSource, arg.SourceID, arg.HorasMinimas, arg.Limite)
 	if err != nil {
@@ -736,11 +737,11 @@ SET status = 'cataloged',
 WHERE id = ?1 AND status = 'draft'
 `
 
-// Curadoria (briefing 0018): um draft (nao-identificado) que o dono CONFIRMA ou
-// CORRIGE deixa de ser rascunho -- vira 'cataloged' e sai da fila de revisao pelo
-// ramo do status (senao a confianca sobe a 100 mas o item fica preso como draft).
-// Guardada por status='draft': no-op idempotente em qualquer outro estado (nao
-// rebaixa 'wanted'/'unreleased' nem mexe em item ja catalogado).
+// Curation: a draft (unidentified) that the owner CONFIRMS or
+// CORRECTS stops being a draft -- it becomes 'cataloged' and leaves the review queue
+// through the status branch (otherwise the confidence rises to 100 but the item stays
+// stuck as a draft). Guarded by status='draft': idempotent no-op in any other state (it
+// does not demote 'wanted'/'unreleased' nor touch an already cataloged item).
 func (q *Queries) PromoverDeDraft(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, promoverDeDraft, id)
 	return err

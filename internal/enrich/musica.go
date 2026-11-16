@@ -1,14 +1,14 @@
 package enrich
 
-// musica.go é o ramo de import da VERTICAL DE MÚSICA do enrich (briefing 0106,
-// ADR-0027): materializa a hierarquia artista→álbum→faixa a partir de um
-// provider.MusicaProvider (MusicBrainz). Molde de serie.go, porém mais raso (sem
-// ordenações concorrentes): artista/álbum/faixa são find-or-create IDEMPOTENTES por
-// MBID (ObterEntityPorMbid), ligados por entity_relation com os kinds de
-// internal/musicext. Reusa ligarFilho (serie.go) para a ligação idempotente
-// pai→filho — mesmo mecanismo de dedup (checa ListarRelacoesFilhas antes de inserir).
-// "Various Artists" (ADR-0027 item 5) não tem nenhum caso especial: cai no mesmo
-// find-or-create por MBID que qualquer outro artista.
+// musica.go is the MUSIC VERTICAL import branch of the enrich (ADR-0027):
+// it materializes the artist→album→track hierarchy from a
+// provider.MusicaProvider (MusicBrainz). A model of serie.go, yet shallower (no
+// competing orderings): artist/album/track are IDEMPOTENT find-or-create by
+// MBID (ObterEntityPorMbid), linked through entity_relation with the kinds of
+// internal/musicext. It reuses ligarFilho (serie.go) for the idempotent
+// parent→child link — the same dedup mechanism (it checks ListarRelacoesFilhas before inserting).
+// "Various Artists" (ADR-0027 item 5) has no special case at all: it falls into the same
+// find-or-create by MBID as any other artist.
 
 import (
 	"context"
@@ -23,18 +23,19 @@ import (
 )
 
 const (
-	// tipoArtista/tipoAlbum/tipoFaixa são os entity.type da árvore de música
-	// (ADR-0027, briefing 0105 — sem CHECK, valores por convenção).
+	// tipoArtista/tipoAlbum/tipoFaixa are the entity.type of the music tree
+	// (ADR-0027 — no CHECK constraint, values by convention).
 	tipoArtista = "artista"
 	tipoAlbum   = "album"
 	tipoFaixa   = "faixa"
 )
 
-// importarArtista importa a ÁRVORE de um artista (discografia inteira): busca a árvore
-// na fonte (capacidade opcional MusicaProvider — erro → 502 quando ausente, mesmo padrão
-// de importarColecao/importarSerie), find-or-create do artista por MBID e, para cada
-// álbum, find-or-create + faixas + arte de capa. A falha de UM álbum/faixa degrada (loga
-// e segue) — a discografia parcial é válida, mesmo espírito de importarSerie.
+// importarArtista imports the TREE of an artist (the whole discography): it fetches the
+// tree from the source (optional MusicaProvider capability — error → 502 when absent, the
+// same pattern as importarColecao/importarSerie), does the find-or-create of the artist by
+// MBID and, for each album, the find-or-create + tracks + cover artwork. The failure of
+// ONE album/track degrades (logs and continues) — the partial discography is valid, in the
+// same spirit as importarSerie.
 func (s *Servico) importarArtista(ctx context.Context, source, sourceID string, langs []string) (string, bool, error) {
 	arvore, err := s.arvoreDoArtista(ctx, source, sourceID, langs)
 	if err != nil {
@@ -44,11 +45,11 @@ func (s *Servico) importarArtista(ctx context.Context, source, sourceID string, 
 	if err != nil {
 		return "", false, err
 	}
-	// Inventário de artes do ARTISTA (fanart.tv, briefing 0116): mesmo gatilho
-	// best-effort já usado pelo álbum (Cover Art Archive) — cruza pelo
-	// external_id_mbid que acharOuCriarArtista acabou de gravar. Cover Art
-	// Archive não modela foto/fundo de artista (só capa de release), por isso
-	// só a fanart.tv (quando configurada) tem chance de responder aqui.
+	// ARTIST artwork inventory (fanart.tv): the same best-effort trigger already used by
+	// the album (Cover Art Archive) — it crosses through the external_id_mbid that
+	// acharOuCriarArtista has just written. Cover Art Archive does not model an
+	// artist photo/background (only release covers), so only fanart.tv (when
+	// configured) has a chance of answering here.
 	s.enriquecerArtes(ctx, artistaID, tipoArtista, langs)
 	for i, alb := range arvore.Albuns {
 		s.importarAlbum(ctx, artistaID, arvore.MBID, alb, i, langs)
@@ -56,8 +57,8 @@ func (s *Servico) importarArtista(ctx context.Context, source, sourceID string, 
 	return artistaID, criada, nil
 }
 
-// arvoreDoArtista valida a capacidade do provider e busca a árvore bruta (álbuns +
-// faixas) na fonte — sem tocar nenhuma entity. Espelha arvoreDaSerie (serie.go).
+// arvoreDoArtista validates the provider capability and fetches the raw tree (albums +
+// tracks) from the source — without touching any entity. It mirrors arvoreDaSerie (serie.go).
 func (s *Servico) arvoreDoArtista(ctx context.Context, source, sourceID string, langs []string) (provider.ArtistaArvore, error) {
 	prov, ok := s.provFonte(source)
 	if !ok {
@@ -70,11 +71,11 @@ func (s *Servico) arvoreDoArtista(ctx context.Context, source, sourceID string, 
 	return mp.BuscarArtistaArvore(ctx, sourceID, langs)
 }
 
-// importarAlbum cria (ou reusa) o álbum, liga-o ao artista principal
-// (kind=music_artista_principal, sort_index=posição na discografia), cacheia a capa
-// (Cover Art Archive, via o mesmo pipeline de artes do filme/série — internal/enrich/
-// artes.go) e importa cada faixa. Isolada para manter o gocyclo baixo; falhas degradam
-// (loga e segue), a discografia parcial é válida.
+// importarAlbum creates (or reuses) the album, links it to the main artist
+// (kind=music_artista_principal, sort_index=position in the discography), caches the cover
+// (Cover Art Archive, through the same artwork pipeline as movie/series — internal/enrich/
+// artes.go) and imports each track. Isolated to keep the gocyclo low; failures degrade
+// (logs and continues), the partial discography is valid.
 func (s *Servico) importarAlbum(ctx context.Context, artistaID, artistaMBID string, alb provider.AlbumExterno, indice int, langs []string) {
 	albumID, _, err := s.acharOuCriarAlbum(ctx, alb)
 	if err != nil {
@@ -82,20 +83,20 @@ func (s *Servico) importarAlbum(ctx context.Context, artistaID, artistaMBID stri
 		return
 	}
 	s.ligarFilho(ctx, artistaID, albumID, musicext.KindArtistaPrincipal, indice)
-	// Inventário de artes (Cover Art Archive): mesmo gatilho best-effort de
-	// enriquecerArtes já usado por filme/série (0048) — cruza pelo external_id_mbid
-	// que acharOuCriarAlbum acabou de gravar.
+	// Artwork inventory (Cover Art Archive): the same best-effort trigger of
+	// enriquecerArtes already used by movie/series — it crosses through the external_id_mbid
+	// that acharOuCriarAlbum has just written.
 	s.enriquecerArtes(ctx, albumID, tipoAlbum, langs)
 	for _, fx := range alb.Faixas {
 		s.importarFaixa(ctx, albumID, artistaMBID, fx)
 	}
 }
 
-// importarFaixa cria (ou reusa) a faixa, liga-a ao álbum (kind=music_album,
-// sort_index=track_number) e, quando o artista REAL da faixa (artist-credit do
-// recording) diverge do artista principal do álbum (feat./colaboração — ADR-0027 item
-// 4), cria/reusa essa outra entity artista e liga ADICIONALMENTE por
-// kind=music_artista_feat (não substitui o vínculo music_artista_principal do álbum).
+// importarFaixa creates (or reuses) the track, links it to the album (kind=music_album,
+// sort_index=track_number) and, when the REAL artist of the track (the artist-credit of
+// the recording) differs from the album's main artist (feat./collaboration — ADR-0027 item
+// 4), creates/reuses that other artist entity and links it ADDITIONALLY through
+// kind=music_artista_feat (it does not replace the album's music_artista_principal link).
 func (s *Servico) importarFaixa(ctx context.Context, albumID, artistaPrincipalMBID string, fx provider.FaixaExterna) {
 	faixaID, _, err := s.acharOuCriarFaixa(ctx, artistaPrincipalMBID, fx)
 	if err != nil {
@@ -105,7 +106,7 @@ func (s *Servico) importarFaixa(ctx context.Context, albumID, artistaPrincipalMB
 	s.ligarFilho(ctx, albumID, faixaID, musicext.KindAlbum, fx.TrackNumber)
 
 	if fx.ArtistaCreditoMBID == "" || fx.ArtistaCreditoMBID == artistaPrincipalMBID {
-		return // artista da faixa == artista do album (o caso comum): sem feat
+		return // the track's artist == the album's artist (the common case): no feat
 	}
 	featID, _, err := s.acharOuCriarArtista(ctx, fx.ArtistaCreditoMBID, fx.ArtistaCreditoNome, "")
 	if err != nil {
@@ -115,12 +116,12 @@ func (s *Servico) importarFaixa(ctx context.Context, albumID, artistaPrincipalMB
 	s.ligarFilho(ctx, featID, faixaID, musicext.KindArtistaFeat, 0)
 }
 
-// acharOuCriarArtista faz o find-or-create IDEMPOTENTE de uma entity `artista` por MBID
-// (ObterEntityPorMbid): reusa a existente ou cria uma nova com o nome/bio atuais. Não
-// reescreve a base no reuse (ao contrário de acharOuCriarTemporada em serie.go) — o
-// escopo deste briefing exige só a idempotência (nunca duplicar), não o refresh de
-// metadados no reimport. "Various Artists" (MBID fixo, ADR-0027 item 5) entra por aqui
-// como qualquer outro artista, sem caso especial.
+// acharOuCriarArtista performs the IDEMPOTENT find-or-create of an `artista` entity by
+// MBID (ObterEntityPorMbid): it reuses the existing one or creates a new one with the
+// current name/bio. It does not rewrite the base on reuse (unlike acharOuCriarTemporada in
+// serie.go) — the scope requires only idempotence (never duplicating), not a metadata
+// refresh on re-import. "Various Artists" (fixed MBID, ADR-0027 item 5) comes in here
+// like any other artist, with no special case.
 func (s *Servico) acharOuCriarArtista(ctx context.Context, mbid, nome, bio string) (string, bool, error) {
 	if existente, err := s.leitura().ObterEntityPorMbid(ctx, nsValid(mbid)); err == nil {
 		return existente.ID, false, nil
@@ -148,10 +149,10 @@ func (s *Servico) acharOuCriarArtista(ctx context.Context, mbid, nome, bio strin
 	return novo, true, nil
 }
 
-// acharOuCriarAlbum faz o find-or-create IDEMPOTENTE de uma entity `album` por MBID
-// (o MBID de RELEASE-GROUP — mesmo id que o Cover Art Archive consome). Grava o ano
-// (release_date) e o extension_data core.music@1 (genre, ADR-0027 item 7 — gênero vive
-// no nível de álbum, não por faixa). Sem refresh no reuse, mesma nota de
+// acharOuCriarAlbum performs the IDEMPOTENT find-or-create of an `album` entity by MBID
+// (the RELEASE-GROUP MBID — the same id Cover Art Archive consumes). It writes the year
+// (release_date) and the core.music@1 extension_data (genre, ADR-0027 item 7 — genre lives
+// at the album level, not per track). No refresh on reuse, same note as
 // acharOuCriarArtista.
 func (s *Servico) acharOuCriarAlbum(ctx context.Context, alb provider.AlbumExterno) (string, bool, error) {
 	if existente, err := s.leitura().ObterEntityPorMbid(ctx, nsValid(alb.MBID)); err == nil {
@@ -181,11 +182,11 @@ func (s *Servico) acharOuCriarAlbum(ctx context.Context, alb provider.AlbumExter
 	return novo, true, nil
 }
 
-// acharOuCriarFaixa faz o find-or-create IDEMPOTENTE de uma entity `faixa` por MBID (o
-// MBID de RECORDING — nunca por número/posição, ADR-0027 item 1). Grava o
-// extension_data core.music@1 (track_number/disc_number/disc_total/isrc + o metadado
-// de feat quando `artistaPrincipalMBID` divergir do artist-credit da faixa, ver
-// extensaoFaixa). Sem refresh no reuse, mesma nota de acharOuCriarArtista.
+// acharOuCriarFaixa performs the IDEMPOTENT find-or-create of a `faixa` entity by MBID
+// (the RECORDING MBID — never by number/position, ADR-0027 item 1). It writes the
+// core.music@1 extension_data (track_number/disc_number/disc_total/isrc + the feat
+// metadata when `artistaPrincipalMBID` differs from the artist-credit of the track, see
+// extensaoFaixa). No refresh on reuse, same note as acharOuCriarArtista.
 func (s *Servico) acharOuCriarFaixa(ctx context.Context, artistaPrincipalMBID string, fx provider.FaixaExterna) (string, bool, error) {
 	if existente, err := s.leitura().ObterEntityPorMbid(ctx, nsValid(fx.MBID)); err == nil {
 		return existente.ID, false, nil
@@ -213,8 +214,8 @@ func (s *Servico) acharOuCriarFaixa(ctx context.Context, artistaPrincipalMBID st
 	return novo, true, nil
 }
 
-// extensaoAlbum monta o extension_data do álbum: genre, só quando a fonte trouxe
-// (ADR-0027 item 7 — gênero é do álbum/artista, nunca duplicado por faixa).
+// extensaoAlbum builds the album extension_data: genre, only when the source brought it
+// (ADR-0027 item 7 — the genre belongs to the album/artist, never duplicated per track).
 func extensaoAlbum(alb provider.AlbumExterno) string {
 	payload := map[string]any{}
 	if alb.Genre != "" {
@@ -223,15 +224,15 @@ func extensaoAlbum(alb provider.AlbumExterno) string {
 	return envelopeMusica(payload)
 }
 
-// extensaoFaixa monta o extension_data da faixa: numeração (track_number/disc_number/
-// disc_total, ADR-0027 item 1) + isrc quando a fonte trouxe (item 6 — identificador
-// auxiliar, não vira coluna). Quando o artist-credit de `fx` DIVERGE do artista
-// principal `artistaPrincipalMBID` (feat./colaboração, ADR-0027 item 4), grava também
-// o nome/MBID BRUTO da colaboração (musicext.FeatArtistNameKey/FeatArtistMbidKey,
-// ADR-0029 item 4, briefing 0115) — METADADO de leitura só, independente de existir ou
-// não uma entity/entity_relation music_artista_feat (que só o import de árvore
-// completa cria, importarFaixa acima; o import escopado de UMA faixa,
-// ImportarFaixaPossuida, NUNCA cria essa entity/relação, só este metadado).
+// extensaoFaixa builds the track extension_data: numbering (track_number/disc_number/
+// disc_total, ADR-0027 item 1) + isrc when the source brought it (item 6 — an auxiliary
+// identifier, it does not become a column). When the artist-credit of `fx` DIFFERS from the
+// main artist `artistaPrincipalMBID` (feat./collaboration, ADR-0027 item 4), it also writes
+// the RAW name/MBID of the collaboration (musicext.FeatArtistNameKey/FeatArtistMbidKey,
+// ADR-0029 item 4) — read-only METADATA, independent of whether an entity/entity_relation
+// music_artista_feat exists (only the full-tree import creates it, importarFaixa above; the
+// scoped import of ONE track, ImportarFaixaPossuida, NEVER creates that entity/relation,
+// only this metadata).
 func extensaoFaixa(artistaPrincipalMBID string, fx provider.FaixaExterna) string {
 	payload := map[string]any{
 		"track_number": fx.TrackNumber,
@@ -250,8 +251,8 @@ func extensaoFaixa(artistaPrincipalMBID string, fx provider.FaixaExterna) string
 	return envelopeMusica(payload)
 }
 
-// envelopeMusica embrulha o payload no namespace core.music@1 (internal/musicext) e
-// serializa. Erro de marshal (inatingível para estes mapas simples) degrada para "{}".
+// envelopeMusica wraps the payload in the core.music@1 namespace (internal/musicext) and
+// serializes it. A marshal error (unreachable for these simple maps) degrades to "{}".
 func envelopeMusica(payload map[string]any) string {
 	b, err := json.Marshal(map[string]any{musicext.Namespace: payload})
 	if err != nil {
@@ -260,50 +261,50 @@ func envelopeMusica(payload map[string]any) string {
 	return string(b)
 }
 
-// FaixaAlvo descreve UMA faixa específica já identificada pelo scanner (ADR-0029,
-// briefing 0115) para o import ESCOPADO de ImportarFaixaPossuida: ou o MBID EXATO do
-// recording (RecordingMBID, o caminho preciso — arquivo com MBID de faixa embutido),
-// ou uma identificação TEXTUAL — AlbumNome (obrigatório neste caminho) + FaixaTitulo/
-// FaixaNumero para localizar a faixa certa dentro do álbum (fallback sem MBID embutido,
-// mesma tag que o scanner já lia para o match textual). RecordingMBID tem prioridade
-// quando presente; exatamente um dos dois caminhos é usado por ImportarFaixaPossuida.
+// FaixaAlvo describes ONE specific track already identified by the scanner (ADR-0029)
+// for the SCOPED import of ImportarFaixaPossuida: either the EXACT MBID of the
+// recording (RecordingMBID, the precise path — a file with the track MBID embedded),
+// or a TEXTUAL identification — AlbumNome (mandatory on this path) + FaixaTitulo/
+// FaixaNumero to locate the right track inside the album (fallback with no embedded MBID,
+// the same tag the scanner already read for the textual match). RecordingMBID takes
+// priority when present; exactly one of the two paths is used by ImportarFaixaPossuida.
 type FaixaAlvo struct {
-	// RecordingMBID é o MBID de RECORDING conhecido (tag do arquivo). Quando presente,
-	// resolve o álbum via MusicaAlbumProvider.BuscarAlbumDaFaixa e localiza a faixa por
-	// MBID EXATO — nenhuma outra faixa é considerada.
+	// RecordingMBID is the known RECORDING MBID (file tag). When present, it
+	// resolves the album through MusicaAlbumProvider.BuscarAlbumDaFaixa and locates the track by
+	// EXACT MBID — no other track is considered.
 	RecordingMBID string
-	// AlbumNome é o nome do álbum (tag), usado só quando RecordingMBID está vazio —
-	// resolve o álbum via MusicaAlbumProvider.BuscarAlbumPorNome.
+	// AlbumNome is the album name (tag), used only when RecordingMBID is empty —
+	// it resolves the album through MusicaAlbumProvider.BuscarAlbumPorNome.
 	AlbumNome string
-	// FaixaTitulo é o título da faixa (tag), para localizar a faixa certa dentro do
-	// álbum já resolvido por AlbumNome (match por similaridade, mesmo limiar do
-	// scanner). Ignorado quando RecordingMBID está presente.
+	// FaixaTitulo is the track title (tag), to locate the right track inside the
+	// album already resolved by AlbumNome (similarity match, the same threshold as the
+	// scanner). Ignored when RecordingMBID is present.
 	FaixaTitulo string
-	// FaixaNumero é o track_number (tag), desempate quando FaixaTitulo está vazio.
+	// FaixaNumero is the track_number (tag), a tiebreaker when FaixaTitulo is empty.
 	FaixaNumero int
-	// FaixaDisco é o disc_number (tag) da faixa no arquivo; 0 = desconhecido. Só
-	// desempata título repetido entre discos de uma reedição (briefing 0138).
+	// FaixaDisco is the disc_number (tag) of the track in the file; 0 = unknown. It only
+	// breaks a tie for a repeated title between discs of a reissue.
 	FaixaDisco int
-	// ArtistaNome é o artista do álbum (album_artist da tag, com fallback para
-	// artist) -- escopa a busca de álbum por título no caminho de compilação/trilha.
+	// ArtistaNome is the album artist (the album_artist tag, with a fallback to
+	// artist) -- it scopes the album search by title on the compilation/soundtrack path.
 	ArtistaNome string
-	// DuracaoSegundos é a duração conhecida do arquivo local, em segundos (tag/
-	// probe), quando disponível (briefing 0121 §8); 0 = desconhecida. Usada só
-	// como sinal de CONFIRMAÇÃO adicional ao título já escolhido por
-	// melhorFaixaPorTitulo, nunca de busca/desempate.
+	// DuracaoSegundos is the known duration of the local file, in seconds (tag/
+	// probe), when available; 0 = unknown. Used only as an additional CONFIRMATION
+	// signal for the title already chosen by melhorFaixaPorTitulo, never for
+	// search/tiebreaking.
 	DuracaoSegundos float64
 }
 
-// ImportarFaixaPossuida é o import ESCOPADO de UMA faixa que o scanner casou contra um
-// arquivo REAL (ADR-0029, briefing 0115): acha-ou-cria só o artista (IDENTIDADE, sem
-// loop de álbuns — acharOuCriarArtistaIdentidade), só o ÁLBUM daquela faixa (via a
-// capacidade seletiva provider.MusicaAlbumProvider, nunca a árvore inteira) e só a
-// PRÓPRIA faixa dentro dele. Ao contrário de importarArtista (árvore inteira, pull
-// EXPLÍCITO do dono via busca manual — PERMANECE intocado, continua sendo o único
-// caminho que o dispatcher genérico Importar(tipo="artista") usa), nenhum outro
-// release do artista é tocado, e nenhuma entity/entity_relation de artista feat é
-// criada automaticamente (o metadado da colaboração fica em extension_data, ver
-// extensaoFaixa) — é o gatilho AUTOMÁTICO do scan, que tem que ser conservador.
+// ImportarFaixaPossuida is the SCOPED import of ONE track that the scanner matched
+// against a REAL file (ADR-0029): it finds-or-creates only the artist (IDENTITY, with no
+// album loop — acharOuCriarArtistaIdentidade), only the ALBUM of that track (through the
+// selective capability provider.MusicaAlbumProvider, never the whole tree) and only the
+// track ITSELF inside it. Unlike importarArtista (whole tree, an EXPLICIT pull by the owner
+// through a manual search — it REMAINS untouched, still the only path the generic dispatcher
+// Importar(tipo="artista") uses), no other release of the artist is touched, and no
+// entity/entity_relation of a featured artist is created automatically (the collaboration
+// metadata stays in extension_data, see extensaoFaixa) — it is the AUTOMATIC trigger of the
+// scan, which has to be conservative.
 func (s *Servico) ImportarFaixaPossuida(ctx context.Context, source, artistaMBID string, alvo FaixaAlvo, langs []string) (string, bool, error) {
 	prov, ok := s.provFonte(source)
 	if !ok {
@@ -321,19 +322,17 @@ func (s *Servico) ImportarFaixaPossuida(ctx context.Context, source, artistaMBID
 	return s.importarFaixaComAlbum(ctx, prov, artistaMBID, alb, alvo, langs)
 }
 
-// ImportarFaixaPorTituloDeAlbum é o caminho de COMPILAÇÃO/TRILHA do import
-// escopado (briefing 0136): resolve o álbum pelo TÍTULO (capacidade opcional
-// provider.MusicaAlbumPorTituloProvider) e usa o artist-credit que a FONTE
-// atribui a ele como artista principal -- em compilação é "Various Artists", que
-// a busca de artista do caminho normal não resolve. Depois disso, o resto é o
-// MESMO import escopado do ADR-0029 (artista + álbum + a faixa possuída; nunca a
-// discografia inteira).
+// ImportarFaixaPorTituloDeAlbum is the COMPILATION/SOUNDTRACK path of the scoped import:
+// it resolves the album by TITLE (optional capability
+// provider.MusicaAlbumPorTituloProvider) and uses the artist-credit that the SOURCE
+// attributes to it as the main artist -- on a compilation that is "Various Artists", which
+// the artist search of the normal path does not resolve. After that, the rest is the SAME
+// scoped import of ADR-0029 (artist + album + the owned track; never the whole discography).
 //
-// Degradação SILENCIOSA (ok=false, err=nil) quando: o alvo não tem nome de álbum,
-// a fonte não implementa a capacidade, nenhum release-group passa do limiar, ou o
-// release-group não trouxe artist-credit. O scanner então segue o pipeline (passo
-// 4.5/fingerprint ou rascunho) sem log de erro -- mesma semântica de qualquer
-// capacidade opcional do projeto.
+// SILENT degradation (ok=false, err=nil) when: the target has no album name, the source does
+// not implement the capability, no release-group passes the threshold, or the release-group
+// brought no artist-credit. The scanner then follows the pipeline (step 4.5/fingerprint or
+// draft) with no error log -- the same semantics as any optional capability of the project.
 func (s *Servico) ImportarFaixaPorTituloDeAlbum(ctx context.Context, source string, alvo FaixaAlvo, langs []string) (string, bool, error) {
 	if alvo.AlbumNome == "" {
 		return "", false, nil
@@ -363,29 +362,28 @@ func (s *Servico) ImportarFaixaPorTituloDeAlbum(ctx context.Context, source stri
 	return s.importarFaixaComAlbum(ctx, prov, ac.ArtistaMBID, ac.Album, alvo, langs)
 }
 
-// importarFaixaComAlbum é o corpo comum do import escopado (ADR-0029), extraído
-// no briefing 0136 para ser reusado pelos DOIS caminhos de resolução do álbum
-// (por artista + nome do álbum, e por título do álbum em compilações): garante o
-// artista (identidade + inventário de artes), o álbum (find-or-create + artes +
-// vínculo artista→álbum) e a faixa possuída (find-or-create + vínculo
-// álbum→faixa). Nenhuma lógica nova: é exatamente a sequência que
-// ImportarFaixaPossuida já executava, agora sem o "qual álbum" no meio.
+// importarFaixaComAlbum is the common body of the scoped import (ADR-0029), extracted
+// so that it can be reused by BOTH album resolution paths (by artist + album name, and by
+// album title on compilations): it guarantees the artist (identity + artwork inventory),
+// the album (find-or-create + artwork + artist→album link) and the owned track
+// (find-or-create + album→track link). No new logic: it is exactly the sequence
+// ImportarFaixaPossuida already executed, now without the "which album" in the middle.
 func (s *Servico) importarFaixaComAlbum(ctx context.Context, prov provider.Provider, artistaMBID string, alb provider.AlbumExterno, alvo FaixaAlvo, langs []string) (string, bool, error) {
 	artistaID, _, err := s.acharOuCriarArtistaIdentidade(ctx, prov, artistaMBID, langs)
 	if err != nil {
 		return "", false, err
 	}
-	// Inventário de artes do ARTISTA (fanart.tv, briefing 0116) — mesmo gatilho
-	// best-effort do álbum abaixo, ver nota longa em importarArtista.
+	// ARTIST artwork inventory (fanart.tv) — the same best-effort trigger as the album
+	// below, see the long note in importarArtista.
 	s.enriquecerArtes(ctx, artistaID, tipoArtista, langs)
 
 	albumID, _, err := s.acharOuCriarAlbum(ctx, alb)
 	if err != nil {
 		return "", false, err
 	}
-	// sort_index=0: import escopado não conhece a posição do álbum na discografia
-	// completa (só a árvore inteira, importarArtista, tem essa ordem) — ligarFilho é
-	// idempotente por (parent,child,kind), reimportar não duplica o vínculo.
+	// sort_index=0: the scoped import does not know the position of the album in the
+	// complete discography (only the whole tree, importarArtista, has that order) — ligarFilho
+	// is idempotent by (parent,child,kind), re-importing does not duplicate the link.
 	s.ligarFilho(ctx, artistaID, albumID, musicext.KindArtistaPrincipal, 0)
 	s.enriquecerArtes(ctx, albumID, tipoAlbum, langs)
 
@@ -401,12 +399,12 @@ func (s *Servico) importarFaixaComAlbum(ctx context.Context, prov provider.Provi
 	return faixaID, criada, nil
 }
 
-// acharOuCriarArtistaIdentidade faz o find-or-create do artista SEM tocar em nenhum
-// álbum (diferente de importarArtista, que exige a árvore inteira via MusicaProvider):
-// reusa a entity existente por MBID (checagem local, sem rede); sem ela, puxa só a
-// IDENTIDADE via o core do Provider (BuscarDetalhe/MapearDetalhe — o mesmo par que
-// qualquer import genérico usa para o título inicial, 1 chamada barata, SEM
-// release-groups) e delega a criação para acharOuCriarArtista.
+// acharOuCriarArtistaIdentidade performs the find-or-create of the artist WITHOUT touching
+// any album (unlike importarArtista, which requires the whole tree through MusicaProvider):
+// it reuses the existing entity by MBID (a local check, no network); without it, it pulls
+// only the IDENTITY through the core of the Provider (BuscarDetalhe/MapearDetalhe — the
+// same pair any generic import uses for the initial title, 1 cheap call, with NO
+// release-groups) and delegates the creation to acharOuCriarArtista.
 func (s *Servico) acharOuCriarArtistaIdentidade(ctx context.Context, prov provider.Provider, mbid string, langs []string) (string, bool, error) {
 	if existente, err := s.leitura().ObterEntityPorMbid(ctx, nsValid(mbid)); err == nil {
 		return existente.ID, false, nil
@@ -425,13 +423,12 @@ func (s *Servico) acharOuCriarArtistaIdentidade(ctx context.Context, prov provid
 	return s.acharOuCriarArtista(ctx, mbid, nome, "")
 }
 
-// buscarAlbumAlvo escolhe entre BuscarAlbumDaFaixa (preferencial, quando o scanner já
-// sabe o MBID de recording) e BuscarAlbumPorNome (fallback textual, quando só há o
-// nome do álbum da tag) — os dois caminhos que FaixaAlvo modela. No caminho textual,
-// repassa FaixaTitulo/FaixaNumero/DuracaoMs (a partir de alvo.DuracaoSegundos) como
-// provider.AlvoFaixaAlbum (briefing 0121 §8) — o provider pode então tentar releases
-// alternativas do mesmo release-group quando a release padrão não contém a faixa que
-// este import está atrás.
+// buscarAlbumAlvo chooses between BuscarAlbumDaFaixa (preferential, when the scanner already
+// knows the recording MBID) and BuscarAlbumPorNome (textual fallback, when only the album
+// name from the tag is available) — the two paths FaixaAlvo models. On the textual path it
+// forwards FaixaTitulo/FaixaNumero/DuracaoMs (from alvo.DuracaoSegundos) as
+// provider.AlvoFaixaAlbum — the provider can then try alternative releases of the same
+// release-group when the default release does not contain the track this import is after.
 func (s *Servico) buscarAlbumAlvo(ctx context.Context, ap provider.MusicaAlbumProvider, artistaMBID string, alvo FaixaAlvo, langs []string) (provider.AlbumExterno, error) {
 	if alvo.RecordingMBID != "" {
 		alb, achou, err := ap.BuscarAlbumDaFaixa(ctx, alvo.RecordingMBID, langs)
@@ -460,12 +457,12 @@ func (s *Servico) buscarAlbumAlvo(ctx context.Context, ap provider.MusicaAlbumPr
 	return alb, nil
 }
 
-// desempatePorDiscoEFaixa devolve a ÚNICA faixa empatada cuja posição (disco,
-// faixa) casa com a do arquivo; ok=false quando a posição é desconhecida ou
-// ambígua dos dois lados (briefing 0138).
+// desempatePorDiscoEFaixa returns the SINGLE tied track whose position (disc,
+// track) matches the one of the file; ok=false when the position is unknown or
+// ambiguous on both sides.
 func desempatePorDiscoEFaixa(faixas []provider.FaixaExterna, disco, numero int) (provider.FaixaExterna, bool) {
-	// 1a tentativa: posição EXATA (disco, faixa). Sem tag de disco, disco 1 é o
-	// default seguro (release de disco único também informa 1).
+	// 1st attempt: EXACT position (disc, track). With no disc tag, disc 1 is the
+	// safe default (a single-disc release also reports 1).
 	if numero > 0 {
 		alvoDisco := disco
 		if alvoDisco <= 0 {
@@ -481,10 +478,10 @@ func desempatePorDiscoEFaixa(faixas []provider.FaixaExterna, disco, numero int) 
 			return porPosicao[0], true
 		}
 	}
-	// 2a tentativa: só o DISCO, e só quando o ARQUIVO declarou qual é. A numeração
-	// do arquivo vem de tags/pasta e pode não casar com a ordem do release, mas o
-	// disco costuma casar -- e é o que separa a faixa do disco 1 da MESMA faixa no
-	// disco 2 de uma reedição.
+	// 2nd attempt: only the DISC, and only when the FILE declared which one it is. The
+	// numbering of the file comes from tags/folder and may not match the order of the
+	// release, but the disc usually does -- and it is what separates the track of disc 1 from the
+	// SAME track on disc 2 of a reissue.
 	if disco <= 0 {
 		return provider.FaixaExterna{}, false
 	}
@@ -500,8 +497,8 @@ func desempatePorDiscoEFaixa(faixas []provider.FaixaExterna, disco, numero int) 
 	return provider.FaixaExterna{}, false
 }
 
-// discoDe é o disco da faixa na fonte, com 0 tratado como disco 1 (arquivo/release
-// de disco único).
+// discoDe is the disc of the track at the source, with 0 treated as disc 1 (file/single-disc
+// release).
 func discoDe(fx provider.FaixaExterna) int {
 	if fx.DiscNumber <= 0 {
 		return 1
@@ -509,9 +506,9 @@ func discoDe(fx provider.FaixaExterna) int {
 	return fx.DiscNumber
 }
 
-// duracoesCompativeis diz se a duração do arquivo bate com a da fonte dentro da
-// tolerância de confirmação (briefing 0121 §8). Duração desconhecida de qualquer
-// dos lados não reprova: o sinal simplesmente não existe.
+// duracoesCompativeis tells whether the duration of the file agrees with the one of the
+// source within the confirmation tolerance. An unknown duration on either side does not
+// reject: the signal simply does not exist.
 func duracoesCompativeis(alvoSegundos float64, fonteMs int) bool {
 	if alvoSegundos <= 0 || fonteMs <= 0 {
 		return true
@@ -523,12 +520,12 @@ func duracoesCompativeis(alvoSegundos float64, fonteMs int) bool {
 	return diff <= matching.ToleranciaDuracaoSegundos*1000
 }
 
-// escolherFaixaAlvo localiza, dentro de `faixas` (as do ÚNICO álbum já resolvido), a
-// faixa que corresponde a `alvo`: por MBID EXATO quando alvo.RecordingMBID está
-// presente (o caminho preciso, sem ambiguidade possível); por título mais próximo
-// (mesmo motor/limiar de matching.LimiarAutoMatch do scanner) quando há FaixaTitulo;
-// por track_number como último desempate. ok=false sem nenhum critério aplicável ou
-// sem match plausível — nunca aplica um "parecido" (mesmo racional do scanner).
+// escolherFaixaAlvo locates, inside `faixas` (those of the SINGLE album already resolved),
+// the track that corresponds to `alvo`: by EXACT MBID when alvo.RecordingMBID is present
+// (the precise path, with no possible ambiguity); by closest title (the same engine/threshold
+// of the scanner's matching.LimiarAutoMatch) when there is a FaixaTitulo; by track_number as
+// a last tiebreaker. ok=false with no applicable criterion or with no plausible match — it
+// never applies a "similar" one (the same rationale as the scanner).
 func escolherFaixaAlvo(faixas []provider.FaixaExterna, alvo FaixaAlvo) (provider.FaixaExterna, bool) {
 	if alvo.RecordingMBID != "" {
 		for _, fx := range faixas {
@@ -551,19 +548,19 @@ func escolherFaixaAlvo(faixas []provider.FaixaExterna, alvo FaixaAlvo) (provider
 	return provider.FaixaExterna{}, false
 }
 
-// ImportarFaixaAvulsa importa UMA faixa FALTANTE de um álbum JÁ INTERNO (briefing
-// 0115 Parte 2, tela externa "faixas faltando" — GET /external/{source}/album/{id}
-// + POST /import type=faixa com parent_id): dado o MBID de RECORDING `recordingMBID`
-// (source_id do item na tela) e o id INTERNO do álbum pai `albumID` (a entity
-// `album` já catalogada, com external_ids["mbid"] gravado), resolve o álbum de novo
-// na fonte via MusicaAlbumProvider.BuscarAlbumPorMbid (reaproveita o mbid do álbum
-// pai — nunca enumera a discografia do artista), localiza a faixa por MBID EXATO
-// entre as faixas do release, e faz find-or-create + liga ao pai (kind=music_album,
-// sort_index=track_number) — mesmo padrão de acharOuCriarFaixa/ligarFilho usado por
-// importarFaixa/ImportarFaixaPossuida. O artista PRINCIPAL do álbum (para a detecção
-// de feat em extensaoFaixa) é resolvido a partir do pai do álbum na árvore
-// (artistaPrincipalDoAlbum) — "" quando ausente degrada em silêncio (a faixa é
-// criada sem o metadado de feat, nunca falha só por isso).
+// ImportarFaixaAvulsa imports ONE MISSING track of an album that is ALREADY INTERNAL (the
+// external "missing tracks" screen — GET /external/{source}/album/{id} + POST /import
+// type=faixa with parent_id): given the RECORDING MBID `recordingMBID` (the item source_id
+// on that screen) and the INTERNAL id of the parent album `albumID` (the `album` entity
+// already catalogued, with external_ids["mbid"] written), it resolves the album again at
+// the source through MusicaAlbumProvider.BuscarAlbumPorMbid (reusing the mbid of the parent
+// album — it never enumerates the artist discography), locates the track by EXACT MBID
+// among the tracks of the release, and does find-or-create + links it to the parent
+// (kind=music_album, sort_index=track_number) — the same pattern of
+// acharOuCriarFaixa/ligarFilho used by importarFaixa/ImportarFaixaPossuida. The MAIN artist
+// of the album (for the feat detection in extensaoFaixa) is resolved from the parent of the
+// album in the tree (artistaPrincipalDoAlbum) — "" when absent degrades silently (the track
+// is created without the feat metadata, it never fails just because of that).
 func (s *Servico) ImportarFaixaAvulsa(ctx context.Context, source, recordingMBID, albumID string, langs []string) (string, bool, error) {
 	prov, ok := s.provFonte(source)
 	if !ok {
@@ -597,11 +594,11 @@ func (s *Servico) ImportarFaixaAvulsa(ctx context.Context, source, recordingMBID
 	return faixaID, criada, nil
 }
 
-// artistaPrincipalDoAlbum resolve o MBID do artista PRINCIPAL do álbum `albumID`
-// (via entity_relation kind=music_artista_principal, pai do álbum) — usado só por
-// ImportarFaixaAvulsa para detectar feat na faixa avulsa importada (extensaoFaixa).
-// "" quando o álbum não tem pai amarrado (não deveria acontecer para um álbum já
-// catalogado, mas degrada em silêncio — nunca falha por isso).
+// artistaPrincipalDoAlbum resolves the MBID of the MAIN artist of the album `albumID`
+// (through the entity_relation kind=music_artista_principal, parent of the album) — used
+// only by ImportarFaixaAvulsa to detect a feat on the imported standalone track
+// (extensaoFaixa). "" when the album has no parent linked (it should not happen for an
+// already catalogued album, but it degrades silently — it never fails because of that).
 func (s *Servico) artistaPrincipalDoAlbum(ctx context.Context, albumID string) string {
 	pais, err := s.leitura().ListarRelacoesPais(ctx, albumID)
 	if err != nil {
@@ -618,23 +615,22 @@ func (s *Servico) artistaPrincipalDoAlbum(ctx context.Context, albumID string) s
 	return ""
 }
 
-// melhorFaixaPorTitulo escolhe, entre `faixas`, a de título mais próximo de `alvo`
-// (Jaro-Winkler via internal/textsim, limiar matching.LimiarAutoMatch — mesmo motor/
-// número do scanner). Abaixo do limiar: (zero,false), nunca um match "parecido".
-// Depois de escolhido o melhor candidato por título, aplica um gate de CONFIRMAÇÃO
-// por duração (briefing 0121 §8, matching.ToleranciaDuracaoSegundos): quando
-// `duracaoAlvoSegundos` e a duração do candidato (FaixaExterna.DuracaoMs) são AMBAS
-// conhecidas e divergem além da tolerância, rejeita mesmo com título batendo. Qualquer
-// um dos dois lados desconhecido (0) pula o gate, preservando o comportamento
-// anterior.
+// melhorFaixaPorTitulo picks, among `faixas`, the one whose title is closest to `alvo`
+// (Jaro-Winkler through internal/textsim, matching.LimiarAutoMatch threshold — the same
+// engine/number as the scanner). Below the threshold: (zero,false), never a "similar" match.
+// Once the best candidate by title is chosen, it applies a CONFIRMATION gate
+// by duration (matching.ToleranciaDuracaoSegundos): when the target duration and the
+// candidate duration (FaixaExterna.DuracaoMs) are BOTH known and differ beyond the
+// tolerance, it rejects even with a matching title. Either side unknown (0) skips the gate,
+// preserving the previous behaviour.
 //
-// Briefing 0124: releases reais podem ter 2+ faixas com o MESMO título (ex.:
-// remix/edit que ficou com o título "limpo" no MusicBrainz) -- todas empatam no
-// maior score. Nesse caso a duração vira critério de DESEMPATE (não só
-// confirmação): entre os empatados, só aceita (e devolve) quando exatamente 1 tem
-// duração conhecida E dentro da tolerância; sem duração do alvo, ou com 0/2+
-// candidatos plausíveis, continua ambíguo -- (zero,false), nunca escolhe
-// arbitrariamente pela ordem de iteração.
+// Real releases may have 2+ tracks with the SAME title (e.g.: a
+// remix/edit that kept the "clean" title on MusicBrainz) -- all of them tie at the
+// highest score. In that case the duration becomes a TIEBREAK criterion (not just a
+// confirmation): among the tied ones, it only accepts (and returns) when exactly 1 has a
+// known duration AND within the tolerance; without a target duration, or with 0/2+
+// plausible candidates, it stays ambiguous -- (zero,false), it never chooses
+// arbitrarily by iteration order.
 func melhorFaixaPorTitulo(alvo FaixaAlvo, faixas []provider.FaixaExterna) (provider.FaixaExterna, bool) {
 	melhorScore := -1.0
 	var empatados []provider.FaixaExterna
@@ -664,16 +660,16 @@ func melhorFaixaPorTitulo(alvo FaixaAlvo, faixas []provider.FaixaExterna) (provi
 		}
 		return melhor, true
 	}
-	// 2+ empatados no topo. (disco, faixa) do ARQUIVO desempata primeiro: numa
-	// reedição a mesma faixa aparece em mais de um disco e a posição é o único
-	// sinal que diz qual delas o arquivo é (briefing 0138, caso real "The Hurting
-	// (Deluxe Edition)": disco 2 não existe no release simples).
+	// 2+ tied at the top. The (disc, track) of the FILE breaks the tie first: on a
+	// reissue the same track appears on more than one disc and the position is the only
+	// signal that says which of them the file is (real case "The Hurting
+	// (Deluxe Edition)": disc 2 does not exist in the single release).
 	if unica, ok := desempatePorDiscoEFaixa(empatados, alvo.FaixaDisco, alvo.FaixaNumero); ok {
 		return unica, duracoesCompativeis(alvo.DuracaoSegundos, unica.DuracaoMs)
 	}
-	// Sem posição utilizável: a duração desempata, não confirma. Sem duração do
-	// alvo não há sinal para decidir -- rejeita (mesmo comportamento seguro de
-	// quando não há duração).
+	// With no usable position: the duration breaks the tie, it does not confirm. Without a
+	// target duration there is no signal to decide -- it rejects (the same safe behaviour as
+	// when there is no duration).
 	if alvo.DuracaoSegundos <= 0 {
 		return provider.FaixaExterna{}, false
 	}

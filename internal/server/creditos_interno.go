@@ -8,18 +8,18 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/richfields"
 )
 
-// Este arquivo resolve o interno-first dos CRÉDITOS (briefing 0029 Fase D): quando a
-// pessoa de um crédito de elenco/equipe já foi catalogada por ALGUM import (person
-// deduplicada por source+source_id, ver internal/enrich/creditos.go), o crédito ganha
-// `person_id` — o sinal que a UI usa para linkar à página da pessoa (GET /person/{id})
-// em vez de deixar o nome não-clicável. Espelha idInternoItem/idInternoColecao
-// (interno.go): mesma resiliência (erro real de banco degrada para nil, sql.ErrNoRows
-// é o caso normal "pessoa não catalogada" e não loga).
+// This file resolves the interno-first of the CREDITS: when the person of a
+// cast/crew credit has already been cataloged by SOME import (person
+// deduplicated by source+source_id, see internal/enrich/creditos.go), the credit gets
+// `person_id` — the signal the UI uses to link to the person page (GET /person/{id})
+// instead of leaving the name unclickable. It mirrors idInternoItem/idInternoColecao
+// (interno.go): same resilience (a real database error degrades to nil, sql.ErrNoRows
+// is the normal "person not cataloged" case and does not log).
 
-// anotarCreditosInternos preenche PersonID de cada crédito de `cast`/`crew` cuja pessoa
-// já está catalogada sob `source`. `source` vazio (fonte não identificada) é no-op —
-// sem fonte não há como montar a chave (source, source_id) do lookup. Muta as fatias em
-// memória (in place), como proxyarCreditos.
+// anotarCreditosInternos fills the PersonID of each `cast`/`crew` credit whose person
+// is already cataloged under `source`. An empty `source` (unidentified source) is a no-op —
+// without a source there is no way to build the (source, source_id) key of the lookup. It mutates the slices
+// in memory (in place), like proxyarCreditos.
 func (s *Server) anotarCreditosInternos(ctx context.Context, source string, cast []richfields.Cast, crew []richfields.Crew) {
 	if source == "" {
 		return
@@ -32,9 +32,9 @@ func (s *Server) anotarCreditosInternos(ctx context.Context, source string, cast
 	}
 }
 
-// idPessoaPorFonte devolve o id local da pessoa catalogada sob (source, sourceID), ou
-// nil quando não existe, sourceID é vazio, ou um erro real de banco degrada a busca
-// (loga; a leitura da tela nunca cai por causa deste enriquecimento opcional).
+// idPessoaPorFonte returns the local id of the person cataloged under (source, sourceID), or
+// nil when it does not exist, sourceID is empty, or a real database error degrades the lookup
+// (it logs; the screen read never falls over because of this optional enrichment).
 func (s *Server) idPessoaPorFonte(ctx context.Context, source, sourceID string) *string {
 	if sourceID == "" {
 		return nil
@@ -50,14 +50,14 @@ func (s *Server) idPessoaPorFonte(ctx context.Context, source, sourceID string) 
 	return &p.ID
 }
 
-// fonteDoCampoExterno descobre qual fonte (CamadaExterna) forneceu o valor NÃO-NIL de
-// `campo` na fusão por prioridade que o resolver faz (mesma regra de
-// camposExternosMesclados em internal/resolver/resolver.go: a PRIMEIRA da lista —
-// índice 0 = maior prioridade — com valor não-nil vence). "" quando nenhuma camada tem
-// o campo. Necessário porque resolver.Resolver já devolve os créditos ACHATADOS (sem
-// proveniência) — mas person.source precisa casar com o `source` que alimentou aquele
-// crédito no enrich (ver internal/enrich/creditos.go: persistirCreditos grava
-// source=fonte do media_external que trouxe o cast/crew daquela chamada).
+// fonteDoCampoExterno finds out which source (CamadaExterna) provided the NON-NIL value
+// of `campo` in the priority fusion the resolver performs (same rule as
+// camposExternosMesclados in internal/resolver/resolver.go: the FIRST of the list —
+// index 0 = highest priority — with a non-nil value wins). "" when no layer has
+// the field. Necessary because resolver.Resolver already returns the credits FLATTENED (without
+// provenance) — but person.source must match the `source` that fed that
+// credit in enrich (see internal/enrich/creditos.go: persistirCreditos writes
+// source=source of the media_external that brought the cast/crew of that call).
 func fonteDoCampoExterno(externo []resolver.CamadaExterna, campo string) string {
 	for _, c := range externo {
 		if v, ok := c.Campos[campo]; ok && v != nil {

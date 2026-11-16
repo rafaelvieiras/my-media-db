@@ -1,9 +1,8 @@
-// Package backup implementa o Handler do job semente `backup_vacuum`
-// (briefing 0052): porta a lógica de scripts/backup.sh para dentro do
-// binário — VACUUM INTO (cópia consistente mesmo com o app no ar sob WAL,
-// ADR-0010, sem downtime) seguido de rotação mantendo os `keep` snapshots
-// mais recentes. É a PROVA de ponta a ponta do sistema de jobs: um Handler
-// real, não um job de exemplo.
+// Package backup implements the Handler of the seed job `backup_vacuum`: it
+// ports the logic of scripts/backup.sh into the binary — VACUUM INTO (a
+// consistent copy even with the app up under WAL, ADR-0010, with no downtime)
+// followed by rotation keeping the `keep` most recent snapshots. It is the
+// end-to-end PROOF of the job system: a real Handler, not a sample job.
 package backup
 
 import (
@@ -18,54 +17,54 @@ import (
 	"time"
 )
 
-// nomeJob é o Handler.Nome() — casa com o slug seedado em job_definition pela
-// migration 0011.
+// nomeJob is the Handler.Nome() — it matches the slug seeded in job_definition
+// by migration 0011.
 const nomeJob = "backup_vacuum"
 
-// keepPadrao é o número de snapshots mantidos quando config_json está
-// ausente/inválido/keep<=0 — espelha o default do scripts/backup.sh
+// keepPadrao is the number of snapshots kept when config_json is
+// absent/invalid/keep<=0 — it mirrors the default of scripts/backup.sh
 // (MMDB_KEEP=7).
 const keepPadrao = 7
 
-// prefixoArquivo/sufixoArquivo compõem o nome do snapshot:
-// mymediadb-<timestamp>.sqlite (mesma convenção do backup.sh).
+// prefixoArquivo/sufixoArquivo make up the snapshot name:
+// mymediadb-<timestamp>.sqlite (the same convention as backup.sh).
 const (
 	prefixoArquivo = "mymediadb-"
 	sufixoArquivo  = ".sqlite"
 )
 
-// carimboFormato é o layout do timestamp no nome do arquivo — sem
-// dois-pontos (compatível com qualquer filesystem) e lexicamente ordenável,
-// mesma nota do backup.sh.
+// carimboFormato is the timestamp layout in the file name — with no colons
+// (compatible with any filesystem) and lexically sortable, the same note as in
+// backup.sh.
 const carimboFormato = "20060102-150405"
 
-// Handler é o Handler do job backup_vacuum. db é o pool de ESCRITA (o
-// escritor único da ADR-0010; VACUUM INTO não bloqueia leitores, mas
-// serializa pela mesma conexão que todo o resto). dir é o diretório de
-// backups já resolvido pelo chamador (env MYMEDIADB_BACKUP_DIR ou
-// dirname(DB)/backups — mesma convenção de resolveAssetsDir no main.go).
+// Handler is the Handler of the backup_vacuum job. db is the WRITE pool (the
+// single writer of ADR-0010; VACUUM INTO does not block readers, but it is
+// serialized through the same connection as everything else). dir is the backup
+// directory already resolved by the caller (env MYMEDIADB_BACKUP_DIR or
+// dirname(DB)/backups — the same convention as resolveAssetsDir in main.go).
 type Handler struct {
 	db  *sql.DB
 	dir string
 	now func() time.Time
 }
 
-// New cria o Handler com o pool de escrita e o diretório de backups.
+// New creates the Handler with the write pool and the backup directory.
 func New(database *sql.DB, dir string) *Handler {
 	return &Handler{db: database, dir: dir, now: func() time.Time { return time.Now().UTC() }}
 }
 
-// Nome devolve o slug estável do job.
+// Nome returns the stable slug of the job.
 func (h *Handler) Nome() string { return nomeJob }
 
-// config é o config_json namespaced do job: {"keep": N}.
+// config is the namespaced config_json of the job: {"keep": N}.
 type config struct {
 	Keep int `json:"keep"`
 }
 
-// Executar grava um snapshot consistente via VACUUM INTO e rotaciona
-// mantendo os `keep` mais recentes (do config_json, default keepPadrao).
-// Devolve uma mensagem curta tipo "backup gravado em <arquivo> (N mantidos)".
+// Executar writes a consistent snapshot via VACUUM INTO and rotates, keeping
+// the `keep` most recent ones (from config_json, default keepPadrao). It
+// returns a short message like "backup gravado em <arquivo> (N mantidos)".
 func (h *Handler) Executar(ctx context.Context, cfg json.RawMessage) (string, error) {
 	keep := parseKeep(cfg)
 
@@ -82,16 +81,16 @@ func (h *Handler) Executar(ctx context.Context, cfg json.RawMessage) (string, er
 
 	mantidos, err := h.rotacionar(keep)
 	if err != nil {
-		// O backup em si foi gravado com sucesso; uma falha na rotação não
-		// deveria mascarar isso, mas o dono precisa saber que a poda falhou.
+		// The backup itself was written successfully; a rotation failure should
+		// not mask that, but the owner needs to know that the pruning failed.
 		return fmt.Sprintf("backup gravado em %s (rotação falhou: %v)", nome, err), nil
 	}
 
 	return fmt.Sprintf("backup gravado em %s (%d mantidos)", nome, mantidos), nil
 }
 
-// parseKeep interpreta config_json; default keepPadrao se ausente, inválido
-// ou keep<=0.
+// parseKeep interprets config_json; default keepPadrao if absent, invalid or
+// keep<=0.
 func parseKeep(cfg json.RawMessage) int {
 	if len(cfg) == 0 {
 		return keepPadrao
@@ -103,9 +102,9 @@ func parseKeep(cfg json.RawMessage) int {
 	return c.Keep
 }
 
-// rotacionar lista os snapshots existentes no diretório (prefixo/sufixo do
-// nome), mais recente primeiro (o carimbo no nome é lexicamente ordenável), e
-// remove o excedente além de `keep`. Devolve quantos ficaram.
+// rotacionar lists the existing snapshots in the directory (prefix/suffix of
+// the name), most recent first (the stamp in the name is lexically sortable),
+// and removes whatever exceeds `keep`. It returns how many were left.
 func (h *Handler) rotacionar(keep int) (int, error) {
 	entradas, err := os.ReadDir(h.dir)
 	if err != nil {

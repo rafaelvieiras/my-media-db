@@ -1,14 +1,15 @@
-// Package localmedia materializa metadado/arte na pasta REAL da biblioteca
-// (briefing 0062), no padrão Kodi/Emby: nomes canônicos de arquivo de arte
-// (poster.jpg, fanartN.jpg, seasonNN-poster.jpg, <vídeo>-thumb.jpg), a
-// rotação numerada sem reindexação ao trocar a arte "principal", e a escrita
-// atômica de arquivo (temp + rename). É um pacote PURO — sem I/O de disco nem
-// SQL — exceto EscreverArquivoAtomico (a única função que toca o disco,
-// isolada para o chamador testar/mocar as demais sem ela). Os tipos Entity/
-// MediaFile aqui são projeções MÍNIMAS de sqlcgen.Entity/sqlcgen.MediaFile
-// (id/type e path/state/created_at/entity_id): o pacote não importa
-// internal/db/sqlcgen para não acoplar a decisão de nomenclatura ao schema —
-// o chamador (internal/server) converte.
+// Package localmedia materializes metadata/artwork into the library's REAL
+// folder (see doc 08), following the Kodi/Emby convention: canonical artwork
+// file names (poster.jpg, fanartN.jpg, seasonNN-poster.jpg,
+// <video>-thumb.jpg), numbered rotation without reindexing when the "main"
+// artwork is replaced, and atomic file writing (temp + rename). It is a PURE
+// package — no disk I/O and no SQL — except EscreverArquivoAtomico (the only
+// function that touches the disk, isolated so the caller can test/mock the
+// others without it). The Entity/MediaFile types here are MINIMAL projections
+// of sqlcgen.Entity/sqlcgen.MediaFile (id/type and
+// path/state/created_at/entity_id): the package does not import
+// internal/db/sqlcgen so that the naming decision is not coupled to the
+// schema — the caller (internal/server) converts.
 package localmedia
 
 import (
@@ -19,73 +20,75 @@ import (
 	"strings"
 )
 
-// Tipos de entity relevantes para DiretorioDestino/NomeArquivoArte — espelham
-// as constantes homônimas de internal/server/entities.go (tipoEntSerie/
-// tipoEntTemporada/tipoEntEpisodio), duplicadas aqui porque este pacote não
-// importa internal/server (evita ciclo — server importa localmedia).
+// Entity types relevant to DiretorioDestino/NomeArquivoArte — they mirror the
+// constants of the same name in internal/server/entities.go (tipoEntSerie/
+// tipoEntTemporada/tipoEntEpisodio), duplicated here because this package does
+// not import internal/server (avoids a cycle — server imports localmedia).
 const (
 	TipoSerie     = "tv"
 	TipoTemporada = "season"
 	TipoEpisodio  = "episode"
 )
 
-// Kinds de arte que a tabela kind->nome-base do briefing 0062 §4 conhece.
-// Espelham (sem importar) as constantes kindX de internal/server/assets.go.
+// Artwork kinds known by the kind->base-name table of the artwork naming
+// convention (see doc 08). They mirror
+// (without importing) the kindX constants of internal/server/assets.go.
 const (
 	KindPoster    = "poster"
 	KindFanart    = "fanart"
-	KindBackdrop  = "backdrop" // sinônimo de ENTRADA de KindFanart (fanart.tv/TMDB usam os dois termos)
+	KindBackdrop  = "backdrop" // INPUT synonym of KindFanart (fanart.tv/TMDB use both terms)
 	KindBanner    = "banner"
 	KindClearlogo = "clearlogo"
 	KindDiscart   = "discart"
 	KindLandscape = "landscape"
-	KindThumb     = "thumb" // still/thumb de EPISÓDIO
-	// KindSeasonPoster é um kind SINTÉTICO — não existe em asset.kind (que
-	// continua 'poster' para uma temporada): sinaliza a NomeArquivoArte/
-	// IndiceRotacaoLivre que o alvo é o PÔSTER DE UMA TEMPORADA (convenção
-	// Kodi season{NN}-poster.jpg, sempre na raiz da série, nunca prefixado
-	// por vídeo). O chamador (handler) usa este kind SÓ quando a entity é
-	// season E o kind do asset é poster; para os demais casos, o kind vem
-	// direto de asset.Kind.
+	KindThumb     = "thumb" // still/thumb of an EPISODE
+	// KindSeasonPoster is a SYNTHETIC kind — it does not exist in asset.kind
+	// (which stays 'poster' for a season): it tells NomeArquivoArte/
+	// IndiceRotacaoLivre that the target is the POSTER OF A SEASON (Kodi
+	// convention season{NN}-poster.jpg, always in the series root, never
+	// prefixed by the video). The caller (handler) uses this kind ONLY when
+	// the entity is a season AND the asset kind is poster; in every other
+	// case the kind comes straight from asset.Kind.
 	KindSeasonPoster = "season_poster"
-	// KindTrailer é o kind do trailer materializado em disco (briefing 0102,
-	// ADR-0025) — NÃO é um kind de `asset` (não entra na tabela `asset`, ver
-	// nota em internal/server/localmedia_handlers.go): kind DESCONHECIDO de
-	// baseDeKind, então baseComPrefixo já cai no fallback `base = kind`
-	// (linha ~100 abaixo), produzindo `<nomeBaseVideo>-trailer.<ext>` (pasta
-	// não-exclusiva) ou `trailer.<ext>` (pasta exclusiva) sem precisar de
-	// nenhuma regra nova.
+	// KindTrailer is the kind of the trailer materialized on disk (ADR-0025)
+	// — it is NOT an `asset` kind (it does not enter the `asset` table, see
+	// the note in internal/server/localmedia_handlers.go): it is an UNKNOWN
+	// kind for baseDeKind, so baseComPrefixo already falls into the
+	// `base = kind` fallback (line ~100 below), producing
+	// `<videoBaseName>-trailer.<ext>` (non-exclusive folder) or
+	// `trailer.<ext>` (exclusive folder) without needing any new rule.
 	KindTrailer = "trailer"
 )
 
-// baseDeKind é a tabela FIXA kind->nome-base do briefing 0062 §4. Os kinds
-// especiais (thumb de episódio, season poster) são tratados à parte em
-// baseComPrefixo — não entram aqui.
+// baseDeKind is the FIXED kind->base-name table of the artwork naming
+// convention (see doc 08). The special
+// kinds (episode thumb, season poster) are handled apart in baseComPrefixo —
+// they do not enter here.
 var baseDeKind = map[string]string{
 	KindPoster:    "poster",
 	KindFanart:    "fanart",
-	KindBackdrop:  "fanart", // sinônimo de entrada
+	KindBackdrop:  "fanart", // input synonym
 	KindBanner:    "banner",
 	KindClearlogo: "clearlogo",
 	KindDiscart:   "discart",
 	KindLandscape: "landscape",
 }
 
-// extPadraoDeKind são as exceções à extensão default .jpg (briefing 0062 §4).
-// KindTrailer (briefing 0102) usa .mp4 como default de VÍDEO — o nome final
-// gravado pelo download em si é sempre este (destino fixo, ver
-// postEntityTrailerDownload); a detecção de um trailer já presente na pasta
-// (encontrarArquivoTrailer) testa extensões adicionais (.mkv/.webm) para o
-// caso de o dono ter colocado o arquivo manualmente com outro container.
+// extPadraoDeKind are the exceptions to the default .jpg extension (see
+// doc 08). KindTrailer (ADR-0025) uses .mp4 as the VIDEO default — the final
+// name written by the download itself is always this one (fixed destination,
+// see postEntityTrailerDownload); detecting a trailer already present in the
+// folder (encontrarArquivoTrailer) tests additional extensions (.mkv/.webm) for
+// the case where the owner put the file there manually with another container.
 var extPadraoDeKind = map[string]string{
 	KindClearlogo: ".png",
 	KindDiscart:   ".png",
 	KindTrailer:   ".mp4",
 }
 
-// ExtensaoPadrao devolve a extensão DEFAULT do kind (.png para clearlogo/
-// discart, .jpg para os demais) — o chamador usa quando ainda não conhece a
-// extensão real do binário (ex.: antes de baixar).
+// ExtensaoPadrao returns the DEFAULT extension of the kind (.png for
+// clearlogo/discart, .jpg for the others) — the caller uses it when it does
+// not know the real extension of the binary yet (e.g.: before downloading).
 func ExtensaoPadrao(kind string) string {
 	if e, ok := extPadraoDeKind[kind]; ok {
 		return e
@@ -93,15 +96,15 @@ func ExtensaoPadrao(kind string) string {
 	return ".jpg"
 }
 
-// baseComPrefixo monta o nome-base (sem sufixo de rotação, sem extensão) de
-// um arquivo de arte, aplicando as regras dos kinds especiais:
-//   - thumb de episódio: SEMPRE prefixado por nomeBaseVideo (sem variante
-//     bare — episódio sempre nomeia pelo vídeo), ignorando pastaExclusiva.
-//   - season poster: SEMPRE "season{NN}-poster" (nomeBaseVideo aqui é o
-//     "season{NN}" pré-formatado pelo chamador — NomeSeasonBase), NUNCA
-//     prefixado por vídeo, ignorando pastaExclusiva.
-//   - demais kinds: pastaExclusiva=true -> nome bare (<base>); senão
-//     prefixado por vídeo (<nomeBaseVideo>-<base>).
+// baseComPrefixo builds the base name (no rotation suffix, no extension) of
+// an artwork file, applying the special-kind rules:
+//   - episode thumb: ALWAYS prefixed by nomeBaseVideo (no bare variant — an
+//     episode is always named after the video), ignoring pastaExclusiva.
+//   - season poster: ALWAYS "season{NN}-poster" (here nomeBaseVideo is the
+//     "season{NN}" pre-formatted by the caller — NomeSeasonBase), NEVER
+//     prefixed by the video, ignoring pastaExclusiva.
+//   - other kinds: pastaExclusiva=true -> bare name (<base>); otherwise
+//     prefixed by the video (<nomeBaseVideo>-<base>).
 func baseComPrefixo(kind string, pastaExclusiva bool, nomeBaseVideo string) string {
 	switch kind {
 	case KindThumb:
@@ -111,7 +114,7 @@ func baseComPrefixo(kind string, pastaExclusiva bool, nomeBaseVideo string) stri
 	}
 	base, ok := baseDeKind[kind]
 	if !ok {
-		base = kind // kind desconhecido (extensível, ex.: futuro "theme"): usa o próprio nome
+		base = kind // unknown kind (extensible, e.g. a future "theme"): use the name itself
 	}
 	if pastaExclusiva {
 		return base
@@ -119,9 +122,9 @@ func baseComPrefixo(kind string, pastaExclusiva bool, nomeBaseVideo string) stri
 	return nomeBaseVideo + "-" + base
 }
 
-// sufixoRotacao devolve o sufixo numérico da rotação: "" quando principal
-// (nome bare), ou o índice quando não-principal (indiceRotacao <= 0 vira 1,
-// defensivo — nunca gera sufixo "0" ou negativo).
+// sufixoRotacao returns the numeric suffix of the rotation: "" when it is the
+// main artwork (bare name), or the index when it is not (indiceRotacao <= 0
+// becomes 1, defensive — it never generates a "0" or negative suffix).
 func sufixoRotacao(principal bool, indiceRotacao int) string {
 	if principal {
 		return ""
@@ -132,15 +135,17 @@ func sufixoRotacao(principal bool, indiceRotacao int) string {
 	return strconv.Itoa(indiceRotacao)
 }
 
-// NomeArquivoArte monta o NOME (sem diretório) do arquivo de arte canônico
-// (briefing 0062 §4). kind é um dos Kind* acima (aceita "backdrop" como
-// sinônimo de KindFanart); ext vazio cai na ExtensaoPadrao do kind.
+// NomeArquivoArte builds the NAME (without directory) of the canonical
+// artwork file (see doc 08). kind is one of
+// the Kind* above (accepts "backdrop" as a synonym of KindFanart); an empty
+// ext falls back to the ExtensaoPadrao of the kind.
 //
-// Regras: thumb de episódio nunca tem variante bare (sempre prefixado pelo
-// vídeo); season poster nunca é prefixado (usa nomeBaseVideo="season{NN}",
-// ver NomeSeasonBase); os demais kinds usam nome bare quando pastaExclusiva
-// E principal, prefixados por nomeBaseVideo quando a pasta não é exclusiva,
-// e sempre com o sufixo de rotação quando não-principal.
+// Rules: episode thumb never has a bare variant (always prefixed by the
+// video); season poster is never prefixed (it uses
+// nomeBaseVideo="season{NN}", see NomeSeasonBase); the other kinds use the
+// bare name when pastaExclusiva AND principal, are prefixed by nomeBaseVideo
+// when the folder is not exclusive, and always carry the rotation suffix when
+// not principal.
 func NomeArquivoArte(kind string, principal bool, indiceRotacao int, pastaExclusiva bool, nomeBaseVideo, ext string) string {
 	if ext == "" {
 		ext = ExtensaoPadrao(kind)
@@ -148,15 +153,16 @@ func NomeArquivoArte(kind string, principal bool, indiceRotacao int, pastaExclus
 	return baseComPrefixo(kind, pastaExclusiva, nomeBaseVideo) + sufixoRotacao(principal, indiceRotacao) + ext
 }
 
-// NomeSeasonBase formata o "season{NN}" (NN = season_number zero-padded a 2
-// dígitos) que NomeArquivoArte espera em nomeBaseVideo quando kind==
-// KindSeasonPoster — fonte única desse formato.
+// NomeSeasonBase formats the "season{NN}" (NN = season_number zero-padded to 2
+// digits) that NomeArquivoArte expects in nomeBaseVideo when kind==
+// KindSeasonPoster — the single source of that format.
 func NomeSeasonBase(seasonNumber int) string {
 	return "season" + pad2(seasonNumber)
 }
 
-// pad2 zero-preenche um inteiro não-negativo a 2 dígitos (season_number costuma
-// ser 0-99; acima disso, transborda sem quebrar — só perde o zero-padding).
+// pad2 zero-pads a non-negative integer to 2 digits (season_number is usually
+// 0-99; above that it overflows without breaking — it just loses the
+// zero-padding).
 func pad2(n int) string {
 	s := strconv.Itoa(n)
 	if len(s) < 2 {
@@ -165,13 +171,14 @@ func pad2(n int) string {
 	return s
 }
 
-// IndiceRotacaoLivre calcula o PRÓXIMO sufixo numérico LIVRE (maior índice já
-// usado entre `caminhosExistentes` mais 1 — NUNCA reindexa/compacta buracos,
-// briefing 0062 §6) para o nome-base+ext do kind dado. `caminhosExistentes`
-// são os `local_path` (ou só o nome do arquivo) dos OUTROS assets já
-// materializados do mesmo (entity,kind) — o chamador os lista do banco, este
-// pacote não acessa o disco nem o banco. Começa em 1 quando nenhum já tem
-// sufixo numérico (bare não conta como índice 0 para este cálculo).
+// IndiceRotacaoLivre computes the NEXT FREE numeric suffix (highest index
+// already used among `caminhosExistentes` plus 1 — it NEVER reindexes/compacts
+// holes, see doc 08) for the base-name+ext of the given kind.
+// `caminhosExistentes` are the `local_path` (or just the file name) of the
+// OTHER assets already materialized for the same (entity,kind) — the caller
+// lists them from the database; this package accesses neither the disk nor the
+// database. It starts at 1 when none of them has a numeric suffix yet (the bare
+// name does not count as index 0 for this calculation).
 func IndiceRotacaoLivre(caminhosExistentes []string, kind string, pastaExclusiva bool, nomeBaseVideo, ext string) int {
 	if ext == "" {
 		ext = ExtensaoPadrao(kind)
@@ -182,7 +189,7 @@ func IndiceRotacaoLivre(caminhosExistentes []string, kind string, pastaExclusiva
 		nome := strings.TrimSuffix(filepath.Base(caminho), ext)
 		sufixo := strings.TrimPrefix(nome, prefixo)
 		if sufixo == "" || sufixo == nome {
-			continue // nome bare (indice 0, nao conta) ou nao casa o prefixo
+			continue // bare name (index 0, does not count) or it does not match the prefix
 		}
 		n, err := strconv.Atoi(sufixo)
 		if err != nil || n <= 0 {
@@ -195,16 +202,17 @@ func IndiceRotacaoLivre(caminhosExistentes []string, kind string, pastaExclusiva
 	return maior + 1
 }
 
-// Entity é a projeção MÍNIMA de sqlcgen.Entity que DiretorioDestino precisa.
+// Entity is the MINIMAL projection of sqlcgen.Entity that DiretorioDestino
+// needs.
 type Entity struct {
 	ID   string
 	Type string
 }
 
-// MediaFile é a projeção MÍNIMA de sqlcgen.MediaFile que DiretorioDestino/
-// EhPastaExclusiva precisam. CreatedAt é o timestamp ISO8601
-// (strftime('%Y-%m-%dT%H:%M:%fZ')) usado pelo resto do banco — comparável
-// lexicograficamente sem parse.
+// MediaFile is the MINIMAL projection of sqlcgen.MediaFile that
+// DiretorioDestino/EhPastaExclusiva need. CreatedAt is the ISO8601 timestamp
+// (strftime('%Y-%m-%dT%H:%M:%fZ')) used by the rest of the database —
+// lexicographically comparable without parsing.
 type MediaFile struct {
 	EntityID  string
 	Path      string
@@ -214,35 +222,37 @@ type MediaFile struct {
 
 const estadoPresente = "present"
 
-// DiretorioDestino calcula o DIRETÓRIO de destino (pasta real da biblioteca)
-// de uma entity, seguindo o briefing 0062 §4 (corrigido pelo 0081 -- a versão
-// anterior usava o diretório do media_file mais antigo, que numa árvore de
-// série com subpastas por temporada cai DENTRO de `Season NN/`, nunca na
-// raiz real):
+// DiretorioDestino computes the DESTINATION DIRECTORY (the library's real
+// folder) of an entity, following the artwork/materialization convention
+// (see doc 08) as corrected by the series root rule (ADR-0021 — the previous
+// version used the directory of the oldest media_file, which in a series tree
+// with per-season subfolders lands INSIDE `Season NN/`, never on the real
+// root):
 //
-//   - resolve o alvo (própria entity, ou o ancestral "tv" para season --
-//     mesma resolução de sempre, ver resolverAlvo) e reúne os diretórios
-//     (filepath.Dir) de TODOS os media_file 'present' desse alvo, sem
-//     duplicar.
-//   - calcula o ANCESTRAL COMUM (common path prefix) desses diretórios --
-//     numa série com 2+ pastas de temporada IRMÃS, o prefixo comum já cai
-//     naturalmente na raiz da série (briefing 0081 §4).
-//   - caso de borda: série com 1 única temporada (ou todo arquivo presente
-//     concentrado numa só subpasta) faz o prefixo comum AINDA cair na
-//     própria pasta de temporada -- detecta pelo NOME da pasta resultante
-//     (regexPastaTemporada, tolerante a "Season 01"/"S01"/etc.) e sobe mais
-//     um nível, repetindo enquanto o nome ainda casar (defensivo contra
-//     aninhamento).
+//   - it resolves the target (the entity itself, or the "tv" ancestor for a
+//     season — the same resolution as always, see resolverAlvo) and gathers
+//     the directories (filepath.Dir) of ALL the 'present' media_file of that
+//     target, without duplicating.
+//   - it computes the COMMON ANCESTOR (common path prefix) of those
+//     directories — in a series with 2+ SIBLING season folders, the common
+//     prefix already falls naturally on the series root (see the series root
+//     rule, ADR-0021).
+//   - edge case: a series with a single season (or every present file
+//     concentrated in one subfolder) still makes the common prefix fall on
+//     the season folder itself — it detects that by the NAME of the resulting
+//     folder (regexPastaTemporada, tolerant of "Season 01"/"S01"/etc.) and
+//     goes up one more level, repeating while the name still matches
+//     (defensive against nesting).
 //
-// ok=false quando não há nenhum media_file present elegível (sem pasta de
-// destino — 404 no handler).
+// ok=false when there is not a single eligible present media_file (no
+// destination folder — 404 in the handler).
 //
-// O fallback "subir mais um nível" (regexPastaTemporada) só se aplica a
-// tv/season -- é a resolução da RAIZ DA SÉRIE que pode colidir com uma
-// subpasta de temporada. Para movie/episode (tipo "de folha"), a pasta de
-// destino LEGITIMAMENTE é uma pasta chamada "Season NN" (convenção Kodi do
-// próprio episódio) -- aplicar o mesmo fallback ali subiria incorretamente
-// para a raiz da série.
+// The "go up one more level" fallback (regexPastaTemporada) only applies to
+// tv/season — it is the resolution of the SERIES ROOT that can collide with a
+// season subfolder. For movie/episode ("leaf" types), the destination folder
+// LEGITIMATELY is a folder named "Season NN" (the Kodi convention of the
+// episode itself) — applying the same fallback there would incorrectly go up
+// to the series root.
 func DiretorioDestino(entity Entity, mediaFiles []MediaFile, ancestors []Entity) (string, bool) {
 	dirs := diretoriosPresentesDoAlvo(entity, mediaFiles, ancestors)
 	if len(dirs) == 0 {
@@ -255,14 +265,15 @@ func DiretorioDestino(entity Entity, mediaFiles []MediaFile, ancestors []Entity)
 	return raiz, true
 }
 
-// regexPastaTemporada casa nomes de pasta de temporada (Kodi/Jellyfin, ver
-// briefing 0081 §2): "Season 1", "Season 01", "season12" (com ou sem espaço)
-// ou a forma curta "S01"/"s1" -- tolerante a variação de zero-padding/caixa.
+// regexPastaTemporada matches season folder names (Kodi/Jellyfin, see the
+// series root rule, ADR-0021): "Season 1", "Season 01", "season12" (with or
+// without a space) or the short form "S01"/"s1" — tolerant of zero-padding
+// and case variation.
 var regexPastaTemporada = regexp.MustCompile(`(?i)^season\s*\d+$|^s\d{1,2}$`)
 
-// diretoriosPresentesDoAlvo reúne, na ordem de aparição e sem duplicar, os
-// diretórios (filepath.Dir) de todo media_file 'present' do alvo resolvido
-// para `entity` (resolverAlvo).
+// diretoriosPresentesDoAlvo gathers, in order of appearance and without
+// duplicating, the directories (filepath.Dir) of every 'present' media_file of
+// the target resolved for `entity` (resolverAlvo).
 func diretoriosPresentesDoAlvo(entity Entity, mediaFiles []MediaFile, ancestors []Entity) []string {
 	alvo := resolverAlvo(entity, ancestors)
 	vistos := make(map[string]bool, len(mediaFiles))
@@ -280,24 +291,23 @@ func diretoriosPresentesDoAlvo(entity Entity, mediaFiles []MediaFile, ancestors 
 	return dirs
 }
 
-// subirEnquantoPastaDeTemporada sobe um nível de `raiz` enquanto o NOME da
-// pasta ainda parecer uma pasta de temporada (regexPastaTemporada) -- ver
-// DiretorioDestino (só chamada para tv/season).
+// subirEnquantoPastaDeTemporada goes up one level from `raiz` while the folder
+// NAME still looks like a season folder (regexPastaTemporada) — see
+// DiretorioDestino (only called for tv/season).
 func subirEnquantoPastaDeTemporada(raiz string) string {
 	for raiz != "" && regexPastaTemporada.MatchString(filepath.Base(raiz)) {
 		pai := filepath.Dir(raiz)
 		if pai == raiz {
-			break // já na raiz do filesystem -- nada mais a subir (defensivo)
+			break // already at the filesystem root -- nothing left to go up (defensive)
 		}
 		raiz = pai
 	}
 	return raiz
 }
 
-// prefixoComumDeDiretorios calcula o prefixo de caminho comum a todos os
-// diretórios de `dirs`, comparando por SEGMENTO de path (nunca por
-// substring bruta, que cortaria nomes de pasta ao meio). Um único diretório
-// devolve ele mesmo.
+// prefixoComumDeDiretorios computes the path prefix common to every directory
+// in `dirs`, comparing by path SEGMENT (never by raw substring, which would
+// cut folder names in half). A single directory returns itself.
 func prefixoComumDeDiretorios(dirs []string) string {
 	if len(dirs) == 0 {
 		return ""
@@ -313,8 +323,8 @@ func prefixoComumDeDiretorios(dirs []string) string {
 	return raiz
 }
 
-// prefixoComumDeSegmentos devolve o prefixo comum de dois slices de
-// segmentos de path (comparação posicional, para no primeiro que diverge).
+// prefixoComumDeSegmentos returns the common prefix of two slices of path
+// segments (positional comparison, stopping at the first divergent one).
 func prefixoComumDeSegmentos(a, b []string) []string {
 	n := len(a)
 	if len(b) < n {
@@ -327,10 +337,10 @@ func prefixoComumDeSegmentos(a, b []string) []string {
 	return a[:i]
 }
 
-// resolverAlvo devolve o id da entity cujos media_file devem ser
-// considerados para DiretorioDestino/ArquivoMaisAntigo: a própria entity,
-// exceto season, que usa o ancestral "tv" (a série não tem media_file
-// próprio -- todo arquivo de episódio aponta entity_id para ELA, ADR-0021).
+// resolverAlvo returns the id of the entity whose media_file must be
+// considered for DiretorioDestino/ArquivoMaisAntigo: the entity itself, except
+// for season, which uses the "tv" ancestor (the series has no media_file of
+// its own — every episode file points entity_id at IT, ADR-0021).
 func resolverAlvo(entity Entity, ancestors []Entity) string {
 	if entity.Type == TipoTemporada {
 		if serieID, ok := serieAncestral(ancestors); ok {
@@ -340,14 +350,14 @@ func resolverAlvo(entity Entity, ancestors []Entity) string {
 	return entity.ID
 }
 
-// ArquivoMaisAntigo devolve o media_file 'present' mais antigo (created_at
-// asc) elegível para a entity (mesma resolução de alvo que DiretorioDestino
-// usa — própria entity, ou o ancestral "tv" para season). ok=false quando
-// nenhum é elegível. Exposta separadamente de DiretorioDestino porque o
-// chamador do NFO/nome de arquivo de vídeo também precisa de UM vídeo
-// representativo (nome-base), não só o diretório -- desde o 0081,
-// DiretorioDestino não usa mais este resultado internamente (a raiz real da
-// série pode não ser o diretório deste arquivo).
+// ArquivoMaisAntigo returns the oldest 'present' media_file (created_at asc)
+// eligible for the entity (the same target resolution that DiretorioDestino
+// uses — the entity itself, or the "tv" ancestor for a season). ok=false when
+// none is eligible. Exposed separately from DiretorioDestino because the
+// caller of the NFO/video file name also needs ONE representative video (base
+// name), not only the directory — since the series root rule, DiretorioDestino
+// no longer uses this result internally (the real series root may not be the
+// directory of this file).
 func ArquivoMaisAntigo(entity Entity, mediaFiles []MediaFile, ancestors []Entity) (MediaFile, bool) {
 	alvo := resolverAlvo(entity, ancestors)
 	var maisAntigo MediaFile
@@ -363,9 +373,10 @@ func ArquivoMaisAntigo(entity Entity, mediaFiles []MediaFile, ancestors []Entity
 	return maisAntigo, achou
 }
 
-// serieAncestral acha o id do ancestral mais próximo do tipo "tv" (a série)
-// na trilha RAIZ->PAI (ancestors). false quando a trilha não tem série
-// (defensivo — season sem série no meio de uma migração incompleta, etc.).
+// serieAncestral finds the id of the closest ancestor of type "tv" (the
+// series) in the ROOT->PARENT trail (ancestors). false when the trail has no
+// series (defensive — a season without a series in the middle of an
+// incomplete migration, etc.).
 func serieAncestral(ancestors []Entity) (string, bool) {
 	for i := len(ancestors) - 1; i >= 0; i-- {
 		if ancestors[i].Type == TipoSerie {
@@ -375,20 +386,21 @@ func serieAncestral(ancestors []Entity) (string, bool) {
 	return "", false
 }
 
-// NomeBaseVideo devolve o nome do arquivo de vídeo SEM extensão (para
-// prefixar artes/NFO): filepath.Base(path) menos filepath.Ext(path).
+// NomeBaseVideo returns the video file name WITHOUT extension (to prefix
+// artwork/NFO): filepath.Base(path) minus filepath.Ext(path).
 func NomeBaseVideo(path string) string {
 	nome := filepath.Base(path)
 	return strings.TrimSuffix(nome, filepath.Ext(nome))
 }
 
-// EhPastaExclusiva diz se `dir` é a pasta de UM ÚNICO vídeo (media_file.path)
-// de QUALQUER entity — pasta com 1 filme/episódio isolado usa nome bare;
-// pasta com 2+ vídeos (múltiplas edições da mesma entity, ou entities
-// distintas na mesma pasta) usa o nome prefixado pelo vídeo. Conta só os
-// media_files state=present (arquivos "fantasma"/missing não ocupam a pasta
-// de verdade). `mediaFiles` é TODA a base relevante (de qualquer entity) que
-// o chamador já carregou — este pacote não consulta o banco.
+// EhPastaExclusiva says whether `dir` is the folder of a SINGLE video
+// (media_file.path) of ANY entity — a folder with 1 isolated movie/episode
+// uses the bare name; a folder with 2+ videos (multiple editions of the same
+// entity, or distinct entities in the same folder) uses the name prefixed by
+// the video. It only counts media_files with state=present ("ghost"/missing
+// files do not really occupy the folder). `mediaFiles` is the WHOLE relevant
+// base (from any entity) that the caller already loaded — this package does
+// not query the database.
 func EhPastaExclusiva(dir string, mediaFiles []MediaFile) bool {
 	n := 0
 	for _, mf := range mediaFiles {
@@ -405,14 +417,14 @@ func EhPastaExclusiva(dir string, mediaFiles []MediaFile) bool {
 	return n == 1
 }
 
-// EscreverArquivoAtomico grava `dados` em `destino` via arquivo temporário no
-// MESMO diretório (sufixo ".tmp-<random>") + os.Rename — o único ponto de
-// I/O deste pacote. Nunca deixa um leitor ver escrita parcial nem um
-// `.tmp-*` órfão em falha (o temporário é removido em qualquer erro antes do
-// rename bem-sucedido, briefing 0062 §5). Cria o diretório de destino se
-// ainda não existir (mesmo padrão de gravarBinarioAsset/escreverAtomico de
-// internal/server, duplicado aqui para o pacote não depender de
-// internal/server).
+// EscreverArquivoAtomico writes `dados` to `destino` through a temporary file
+// in the SAME directory (suffix ".tmp-<random>") + os.Rename — the only I/O
+// point of this package. It never lets a reader see a partial write nor leaves
+// an orphan `.tmp-*` behind on failure (the temporary file is removed on any
+// error before a successful rename, see doc 09). It creates the destination
+// directory if it does not exist yet (same pattern as
+// gravarBinarioAsset/escreverAtomico in internal/server, duplicated here so the
+// package does not depend on internal/server).
 func EscreverArquivoAtomico(destino string, dados []byte) error {
 	dir := filepath.Dir(destino)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -439,18 +451,19 @@ func EscreverArquivoAtomico(destino string, dados []byte) error {
 	return nil
 }
 
-// RenomearArquivo renomeia `origem` para `destino` (mesmo diretório, rotação
-// de arte): sempre os.Rename, nunca copia bytes de novo (briefing 0062 §4).
-// Exposta como função nomeada (em vez de o chamador usar os.Rename direto)
-// só para o pacote concentrar toda a manipulação de arquivo de arte num só
-// lugar.
+// RenomearArquivo renames `origem` to `destino` (same directory, artwork
+// rotation): always os.Rename, never copies the bytes again (see doc 08).
+// Exposed as a named function (instead of the caller using os.Rename directly)
+// only so that the package concentrates every artwork file manipulation in a
+// single place.
 func RenomearArquivo(origem, destino string) error {
 	return os.Rename(origem, destino)
 }
 
-// NomeArquivoNFO decide o NOME do .nfo (briefing 0062 §4): "tvshow.nfo" fixo
-// para série (na raiz da pasta da série); "<nomeBaseVideo>.nfo" para os
-// demais tipos com vídeo próprio (filme/episódio).
+// NomeArquivoNFO decides the NAME of the .nfo (see doc 09): a fixed
+// "tvshow.nfo" for a series (in the root of the series folder);
+// "<nomeBaseVideo>.nfo" for the other types that have a video of their own
+// (movie/episode).
 func NomeArquivoNFO(entityType, nomeBaseVideo string) string {
 	if entityType == TipoSerie {
 		return "tvshow.nfo"

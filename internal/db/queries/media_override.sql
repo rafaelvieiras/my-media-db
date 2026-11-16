@@ -1,10 +1,10 @@
--- Acesso a camada de OVERRIDE (media_override): patch esparso do dono, 1:1 com a
--- entity (PK = entity_id). O editor de override (0016) grava aqui via UPSERT.
--- Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+-- Access to the OVERRIDE layer (media_override): the owner's sparse patch, 1:1 with
+-- the entity (PK = entity_id). The override editor writes here through an UPSERT.
+-- Comments in ASCII and explicit columns -- see the note in entity.sql.
 
 -- name: UpsertMediaOverride :one
--- Grava (ou substitui) o override da entity. Conflito na PK (entity_id) atualiza
--- override_json e recarimba updated_at -- 1:1, nunca cria uma segunda linha.
+-- Writes (or replaces) the entity override. A conflict on the PK (entity_id)
+-- updates override_json and restamps updated_at -- 1:1, never a second row.
 INSERT INTO media_override (
     entity_id, override_json
 ) VALUES (
@@ -16,12 +16,12 @@ ON CONFLICT (entity_id) DO UPDATE SET
 RETURNING entity_id, override_json, updated_at;
 
 -- name: ObterMediaOverride :one
--- Le o override da entity (sql.ErrNoRows quando nao ha override ativo).
+-- Reads the entity override (sql.ErrNoRows when there is no active override).
 SELECT entity_id, override_json, updated_at
 FROM media_override
 WHERE entity_id = ?;
 
 -- name: ApagarMediaOverride :exec
--- Remove o override da entity (volta ao valor da base editorial/arquivo).
+-- Removes the entity override (falls back to the value from the editorial/file base).
 DELETE FROM media_override
 WHERE entity_id = ?;

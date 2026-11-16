@@ -1,18 +1,18 @@
-// Package execqueue é a fila de execução UNIFICADA para scan e jobs
-// (briefing 0108, ADR-0028): substitui os dois sistemas paralelos que
-// reimplementavam o mesmo padrão ("goroutine solta + mapa em memória +
-// mutex") de forma independente e redundante. Uma única tabela persistida
-// (`queue_item`) e um único worker global SEQUENCIAL (concorrência 1,
-// decisão deliberada da ADR-0028 — casa com "local-first e leve",
-// AGENTS.md item 4, e com o fato de o SQLite já ter um único escritor):
-// no máximo um item `running` por vez, processado em FIFO por
-// `enqueued_at`, nunca ocioso enquanto há item `queued`.
+// Package execqueue is the UNIFIED execution queue for scans and jobs
+// (ADR-0028): it replaces the two parallel systems that kept reimplementing
+// the same pattern ("loose goroutine + in-memory map + mutex") independently
+// and redundantly. A single persisted table (`queue_item`) and a single
+// global SEQUENTIAL worker (concurrency 1, a deliberate decision of ADR-0028
+// — it matches "local-first and lightweight", AGENTS.md item 4, and the fact
+// that SQLite already has a single writer): at most one `running` item at a
+// time, processed FIFO by `enqueued_at`, never idle while there is a
+// `queued` item.
 //
-// Enfileirar (Enqueue) não executa — só grava a linha `queued` e devolve.
-// Quem sabe RODAR um `kind` de item é um Runner, registrado via
-// RegistrarRunner ANTES de Run começar (a fundação desta camada não
-// implementa nenhum Runner de verdade — isso é responsabilidade de uma
-// camada seguinte, que liga `internal/scanner` e `internal/job` aqui).
+// Enqueuing (Enqueue) does not execute — it only writes the `queued` row and
+// returns. What knows how to RUN a `kind` of item is a Runner, registered
+// via RegistrarRunner BEFORE Run starts (the foundation of this layer does
+// not implement any real Runner — that is the responsibility of a layer
+// further up, which wires `internal/scanner` and `internal/job` in here).
 package execqueue
 
 import (
@@ -30,26 +30,26 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Kinds conhecidos de queue_item.kind — os únicos valores aceitos pelo CHECK
-// da migration 0024. 'scan' referencia um library_source.id; 'job' referencia
-// um job_definition.id.
+// Known kinds of queue_item.kind — the only values accepted by the CHECK in
+// migration 0024. 'scan' references a library_source.id; 'job' references a
+// job_definition.id.
 const (
 	KindScan = "scan"
 	KindJob  = "job"
 )
 
-// Triggers conhecidos de queue_item.trigger — os únicos valores aceitos pelo
-// CHECK da migration 0024. TriggerWatch é exclusivo de kind=scan (o watcher
-// de filesystem nunca dispara job).
+// Known triggers of queue_item.trigger — the only values accepted by the
+// CHECK in migration 0024. TriggerWatch is exclusive to kind=scan (the
+// filesystem watcher never triggers a job).
 const (
 	TriggerManual   = "manual"
 	TriggerSchedule = "schedule"
 	TriggerWatch    = "watch"
 )
 
-// Status possíveis de queue_item.status — ciclo de vida linear queued ->
-// running -> success|error. Nunca volta para queued (reenfileirar é sempre
-// um item NOVO).
+// Possible statuses of queue_item.status — a linear lifecycle queued ->
+// running -> success|error. It never goes back to queued (re-enqueuing is
+// always a NEW item).
 const (
 	StatusQueued  = "queued"
 	StatusRunning = "running"
@@ -57,76 +57,77 @@ const (
 	StatusError   = "error"
 )
 
-// pollInterval é o intervalo que o worker dorme quando a fila está vazia
-// (ProximoQueueItemPendente devolveu sql.ErrNoRows) antes de tentar de novo.
-// Curto o bastante para não deixar a fila ociosa por muito tempo quando
-// chega trabalho novo, sem ser polling agressivo. `var` (não `const`) para o
-// teste poder encurtar sem esperar o valor de produção — mesmo padrão de
-// internal/job.pollInterval; nenhum código fora de teste deve reatribuí-la.
+// pollInterval is the interval the worker sleeps when the queue is empty
+// (ProximoQueueItemPendente returned sql.ErrNoRows) before trying again.
+// Short enough not to leave the queue idle for long when new work arrives,
+// without being aggressive polling. It is a `var` (not a `const`) so a test
+// can shorten it without waiting for the production value — same pattern as
+// internal/job.pollInterval; no code outside tests should reassign it.
 var pollInterval = 500 * time.Millisecond
 
-// mensagemProcessoReiniciado é a mensagem gravada em queue_item.message
-// quando o boot do worker encontra um item 'running' órfão (o processo caiu
-// no meio de uma execução anterior — ver recuperarOrfaos).
+// mensagemProcessoReiniciado is the message written to queue_item.message
+// when the worker's boot finds an orphan 'running' item (the process died in
+// the middle of a previous execution — see recuperarOrfaos).
 const mensagemProcessoReiniciado = "processo reiniciado durante a execução"
 
-// Erros de orquestração; sentinelas para uma camada futura mapear ao
-// envelope de erro HTTP padrão (mesmo espírito de
-// scanner.ErrScanEmAndamento / job.ErrJobEmExecucao).
+// Orchestration errors; sentinels for a later layer to map onto the standard
+// HTTP error envelope (same spirit as scanner.ErrScanEmAndamento /
+// job.ErrJobEmExecucao).
 var (
-	// ErrKindInvalido: kind fora de {scan, job}.
+	// ErrKindInvalido: kind outside {scan, job}.
 	ErrKindInvalido = errors.New("execqueue: kind inválido")
-	// ErrTriggerInvalido: trigger fora de {manual, schedule, watch}.
+	// ErrTriggerInvalido: trigger outside {manual, schedule, watch}.
 	ErrTriggerInvalido = errors.New("execqueue: trigger inválido")
-	// ErrRefIDVazio: refID vazio (Enqueue precisa saber A QUAL referência o
-	// item pertence).
+	// ErrRefIDVazio: empty refID (Enqueue needs to know WHICH reference the
+	// item belongs to).
 	ErrRefIDVazio = errors.New("execqueue: refID vazio")
-	// ErrJaEnfileirado: já existe um item queued/running para a MESMA
-	// referência (kind, ref_id) — dedup por referência, não por fila
-	// inteira (ADR-0028). -> 409 numa camada futura.
+	// ErrJaEnfileirado: there is already a queued/running item for the SAME
+	// reference (kind, ref_id) — dedup by reference, not by the whole queue
+	// (ADR-0028). -> 409 in a later layer.
 	ErrJaEnfileirado = errors.New("execqueue: já existe um item enfileirado (ou em execução) para esta referência")
 )
 
-// ProgressoFunc é o callback que um Runner chama durante Executar para
-// reportar progresso intermediário — current/total (granularidade decidida
-// pelo próprio Runner: por arquivo processado no caso do scan) e uma
-// mensagem curta opcional. Gravado a cada chamada (sem throttle — ver a nota
-// na query AtualizarProgressoQueueItem).
+// ProgressoFunc is the callback a Runner calls during Executar to report
+// intermediate progress — current/total (granularity decided by the Runner
+// itself: per processed file in the case of a scan) and an optional short
+// message. Written on every call (no throttle — see the note on the
+// AtualizarProgressoQueueItem query).
 type ProgressoFunc func(current, total int, message string)
 
-// Runner é o contrato que QUALQUER kind de item implementa para ser
-// executado pelo worker — quem registra um Runner para "scan" e "job" é uma
-// camada SEGUINTE (esta fundação só define a interface e o registro).
-// Executar deve ser bloqueante (o worker é sequencial por design: só chama o
-// próximo item depois que este retornar) e deve respeitar ctx.Done() para
-// permitir cancelamento no shutdown do processo.
+// Runner is the contract that ANY kind of item implements to be executed by
+// the worker — the one that registers a Runner for "scan" and "job" is a
+// LATER layer (this foundation only defines the interface and the registry).
+// Executar must be blocking (the worker is sequential by design: it only
+// calls the next item after this one returns) and must honor ctx.Done() so it
+// can be canceled on process shutdown.
 type Runner interface {
 	Executar(ctx context.Context, refID string, trigger string, progresso ProgressoFunc) (mensagemFinal string, err error)
 }
 
-// Manager guarda os Runners registrados e orquestra o worker sequencial.
-// Mesmo padrão de acesso a banco de internal/job.Manager/internal/scanner.Manager:
-// leitura pelo pool de leitura (db.Read), escrita sempre pelo pool de
-// escrita — o escritor único da ADR-0010.
+// Manager keeps the registered Runners and orchestrates the sequential
+// worker. Same database access pattern as
+// internal/job.Manager/internal/scanner.Manager: reads go through the read
+// pool (db.Read), writes always through the write pool — the single writer of
+// ADR-0010.
 type Manager struct {
 	db     *db.DB
 	novoID func() string
 	agora  func() time.Time
 
-	// enqueueMu serializa o guard-then-insert de Enqueue DENTRO do processo:
-	// a checagem de dedup (ObterQueueItemAtivo) e o INSERT não formam uma
-	// transação de banco, então sem este mutex duas chamadas concorrentes a
-	// Enqueue para a MESMA referência poderiam intercalar entre a checagem e
-	// o insert de cada uma e criar dois itens ativos. Único escritor do
-	// processo (ADR-0010) + este mutex tornam o guard efetivamente atômico.
+	// enqueueMu serializes the guard-then-insert of Enqueue WITHIN the process:
+	// the dedup check (ObterQueueItemAtivo) and the INSERT do not form a
+	// database transaction, so without this mutex two concurrent calls to
+	// Enqueue for the SAME reference could interleave between their checks and
+	// inserts and create two active items. The single writer of the process
+	// (ADR-0010) plus this mutex make the guard effectively atomic.
 	enqueueMu sync.Mutex
 
 	runnersMu sync.Mutex
 	runners   map[string]Runner
 }
 
-// NewManager cria um Manager pronto para uso; nenhum Runner registrado ainda
-// (RegistrarRunner antes de chamar Run).
+// NewManager creates a Manager ready to use; no Runner registered yet
+// (RegistrarRunner before calling Run).
 func NewManager(database *db.DB) *Manager {
 	return &Manager{
 		db:      database,
@@ -136,12 +137,12 @@ func NewManager(database *db.DB) *Manager {
 	}
 }
 
-// RegistrarRunner associa um Runner a um kind ("scan" ou "job", tipicamente
-// as constantes KindScan/KindJob). Chamar de novo com o mesmo kind substitui
-// o Runner anterior (comportamento previsível, mesmo espírito de
-// job.Registry.Registrar). Deve ser chamado ANTES de Run — o worker resolve
-// o Runner de um item no momento em que o processa, então registrar depois
-// do boot só vale para itens ainda não processados.
+// RegistrarRunner associates a Runner with a kind ("scan" or "job",
+// typically the KindScan/KindJob constants). Calling it again with the same
+// kind replaces the previous Runner (predictable behavior, same spirit as
+// job.Registry.Registrar). It must be called BEFORE Run — the worker resolves
+// an item's Runner at the moment it processes it, so registering after boot
+// only applies to items not yet processed.
 func (m *Manager) RegistrarRunner(kind string, r Runner) {
 	m.runnersMu.Lock()
 	defer m.runnersMu.Unlock()
@@ -158,18 +159,19 @@ func (m *Manager) runner(kind string) (Runner, bool) {
 	return r, ok
 }
 
-// ── Enfileiramento ───────────────────────────────────────────────────────────
+// ── Enqueuing ────────────────────────────────────────────────────────────────
 
-// Enqueue grava um item novo em status 'queued' e devolve o id. Não executa
-// nada — quem consome a fila é o worker (Run), rodando em background.
-// ErrKindInvalido/ErrTriggerInvalido/ErrRefIDVazio em input inválido;
-// ErrJaEnfileirado se já existe um item queued/running para a MESMA
-// referência (kind, ref_id) — dedup por referência, não por fila inteira.
+// Enqueue writes a new item in status 'queued' and returns the id. It does
+// not execute anything — the queue is consumed by the worker (Run), running
+// in the background. ErrKindInvalido/ErrTriggerInvalido/ErrRefIDVazio on
+// invalid input; ErrJaEnfileirado if there is already a queued/running item
+// for the SAME reference (kind, ref_id) — dedup by reference, not by the whole
+// queue.
 //
-// Quem chama Enqueue ainda PRECISA ter registrado (via RegistrarRunner) um
-// Runner para o `kind` antes do worker chegar a processar este item — sem
-// isso, o item é finalizado como 'error' automaticamente (ver
-// processarProximo), o worker não trava.
+// Whoever calls Enqueue still NEEDS to have registered (via RegistrarRunner) a
+// Runner for that `kind` before the worker gets to process this item —
+// otherwise the item is automatically finalized as 'error' (see
+// processarProximo), and the worker does not hang.
 func (m *Manager) Enqueue(ctx context.Context, kind, refID, trigger string) (string, error) {
 	if err := validarKind(kind); err != nil {
 		return "", err
@@ -219,18 +221,20 @@ func validarTrigger(trigger string) error {
 	}
 }
 
-// ── Consulta ─────────────────────────────────────────────────────────────────
+// ── Lookup ───────────────────────────────────────────────────────────────────
 
-// QueueItemStatus é a fotografia consultável do estado mais recente de UMA
-// referência (kind, ref_id) — o item ATIVO (queued/running) se houver, senão
-// o último finalizado (success/error). Pensada para alimentar tanto
-// GET /library/{id}/scan quanto GET /jobs/{id}/executions sem quebrar o
-// contrato JSON atual desses endpoints (camada futura). Os campos de
-// timestamp saem como o texto já gravado no banco (mesmo formato ISO que o
-// resto do server já repassa direto pra JSON, sem re-parse) — vazio quando
-// NULL (ex.: StartedAt vazio enquanto o item ainda está 'queued').
+// QueueItemStatus is the queryable snapshot of the most recent state of ONE
+// reference (kind, ref_id) — the ACTIVE item (queued/running) when there is
+// one, otherwise the last finished one (success/error). Meant to feed both
+// GET /library/{id}/scan and GET /jobs/{id}/executions without breaking the
+// current JSON contract of those endpoints (a later layer). The timestamp
+// fields come out as the text already stored in the database (the same ISO
+// format the rest of the server already forwards straight to JSON, with no
+// re-parse) — empty when NULL (e.g. an empty StartedAt while the item is
+// still 'queued').
 type QueueItemStatus struct {
-	// Existe é falso quando nunca houve item de fila para esta referência.
+	// Existe is false when there has never been a queue item for this
+	// reference.
 	Existe bool
 
 	ID      string
@@ -247,10 +251,10 @@ type QueueItemStatus struct {
 	FinishedAt      string
 }
 
-// Status devolve o estado mais recente da referência (kind, ref_id): o item
-// ATIVO (queued/running) se houver, senão o ÚLTIMO item finalizado —
-// QueueItemStatus{Existe: false} quando nunca houve item nenhum. kind
-// inválido devolve ErrKindInvalido.
+// Status returns the most recent state of the reference (kind, ref_id): the
+// ACTIVE item (queued/running) when there is one, otherwise the LAST finished
+// item — QueueItemStatus{Existe: false} when there has never been any item.
+// An invalid kind returns ErrKindInvalido.
 func (m *Manager) Status(ctx context.Context, kind, refID string) (*QueueItemStatus, error) {
 	if err := validarKind(kind); err != nil {
 		return nil, err
@@ -302,15 +306,15 @@ func nullString(s sql.NullString) string {
 
 // ── Worker ───────────────────────────────────────────────────────────────────
 
-// Run é o loop do worker sequencial: enquanto ctx não é cancelado, busca o
-// próximo item 'queued' mais antigo e processa (bloqueante — concorrência 1
-// por design, ADR-0028); quando a fila está vazia, dorme pollInterval antes
-// de tentar de novo. Antes de entrar no loop, recupera qualquer item
-// 'running' órfão (processo caiu no meio de uma execução anterior).
+// Run is the loop of the sequential worker: while ctx is not canceled, it
+// fetches the oldest 'queued' item and processes it (blocking — concurrency 1
+// by design, ADR-0028); when the queue is empty it sleeps pollInterval before
+// trying again. Before entering the loop it recovers any orphan 'running'
+// item (the process died in the middle of a previous execution).
 //
-// Chamar Run é responsabilidade do boot do processo (cmd/mymediadb/main.go
-// numa camada futura, via `go execQueue.Run(ctx)`) — bloqueia até ctx ser
-// cancelado, então deve rodar em goroutine própria.
+// Calling Run is the responsibility of the process boot (cmd/mymediadb/main.go
+// in a later layer, via `go execQueue.Run(ctx)`) — it blocks until ctx is
+// canceled, so it must run in its own goroutine.
 func (m *Manager) Run(ctx context.Context) {
 	m.recuperarOrfaos(ctx)
 
@@ -337,11 +341,12 @@ func (m *Manager) Run(ctx context.Context) {
 	}
 }
 
-// recuperarOrfaos fecha, no BOOT do worker, qualquer item que já esteja
-// 'running' no banco: sinal de que o processo caiu no meio de uma execução
-// anterior (o normal seria nunca haver 'running' antes do worker começar a
-// processar, já que só este worker transiciona queued->running). Best-effort
-// — erro de um item não impede a recuperação dos demais.
+// recuperarOrfaos closes, at the worker's BOOT, any item already 'running' in
+// the database: a sign that the process died in the middle of a previous
+// execution (the normal case would be never having 'running' before the
+// worker starts processing, since only this worker moves queued->running).
+// Best-effort — an error on one item does not prevent the others from being
+// recovered.
 func (m *Manager) recuperarOrfaos(ctx context.Context) {
 	itens, err := m.leitura().ListarQueueItemsRunning(ctx)
 	if err != nil {
@@ -353,10 +358,11 @@ func (m *Manager) recuperarOrfaos(ctx context.Context) {
 	}
 }
 
-// processarProximo busca o próximo item 'queued' e o processa até o fim
-// (bloqueante). devolve processou=true se havia um item (processado com
-// sucesso, com erro do Runner, ou finalizado imediatamente por falta de
-// Runner) — o chamador (Run) só dorme quando processou=false (fila vazia).
+// processarProximo fetches the next 'queued' item and processes it to the end
+// (blocking). It returns processou=true if there was an item (processed
+// successfully, failed with a Runner error, or finalized immediately for lack
+// of a Runner) — the caller (Run) only sleeps when processou=false (empty
+// queue).
 func (m *Manager) processarProximo(ctx context.Context) (processou bool, err error) {
 	pendente, err := m.leitura().ProximoQueueItemPendente(ctx)
 	if err != nil {
@@ -398,9 +404,9 @@ func (m *Manager) processarProximo(ctx context.Context) (processou bool, err err
 	return true, nil
 }
 
-// executarComRecover chama Runner.Executar recuperando de pânico — nunca
-// deixa um item 'running' preso para sempre por causa de um Runner que
-// entrou em pânico (mesmo padrão de scanner.Manager.run / job.Manager.executar).
+// executarComRecover calls Runner.Executar recovering from a panic — it never
+// leaves an item 'running' stuck forever because a Runner panicked (same
+// pattern as scanner.Manager.run / job.Manager.executar).
 func (m *Manager) executarComRecover(ctx context.Context, runner Runner, item sqlcgen.QueueItem, progresso ProgressoFunc) (mensagem string, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -410,10 +416,10 @@ func (m *Manager) executarComRecover(ctx context.Context, runner Runner, item sq
 	return runner.Executar(ctx, item.RefID, item.Trigger, progresso)
 }
 
-// finalizar transiciona um item para success/error — best-effort (erro só
-// vai pro log; não há mais nada sensato a fazer aqui, o item fica 'running'
-// preso só em caso de falha de banco, que já teria quebrado a execução
-// inteira antes disso).
+// finalizar moves an item to success/error — best-effort (an error only goes
+// to the log; there is nothing sensible left to do here — the item stays stuck
+// as 'running' only on a database failure, which would already have broken the
+// whole execution before this point).
 func (m *Manager) finalizar(ctx context.Context, id, status, message string) {
 	if _, err := m.escrita().FinalizarQueueItem(ctx, sqlcgen.FinalizarQueueItemParams{
 		Status:  status,

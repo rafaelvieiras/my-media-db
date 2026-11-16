@@ -10,10 +10,9 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 )
 
-// setupLibraryHealthServer sobe um Server com banco migrado E a option
-// WithLibraryHealthJob aplicada (briefing 0053) -- o job saude_biblioteca
-// tem Handler registrado, diferente de setupJobsServer (que só cobre
-// backup_vacuum via WithJobHandlers).
+// setupLibraryHealthServer starts a Server with a migrated database AND the
+// WithLibraryHealthJob option applied -- the saude_biblioteca job has a registered Handler,
+// unlike setupJobsServer (which only covers backup_vacuum through WithJobHandlers).
 func setupLibraryHealthServer(t *testing.T) (*Server, http.Handler) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "libhealth.sqlite")
@@ -30,15 +29,15 @@ func setupLibraryHealthServer(t *testing.T) (*Server, http.Handler) {
 	if err != nil {
 		t.Fatalf("Handler: %v", err)
 	}
-	// configurarFilaDeTeste (scan_test.go) liga s.jobs na fila de teste --
-	// necessário desde o briefing 0108/ADR-0028 CAMADA 3 (job.Manager não
-	// dispara mais sua própria goroutine; Executar() só enfileira).
+	// configurarFilaDeTeste (scan_test.go) wires s.jobs into the test queue -- required since
+	// the unified execution queue (ADR-0028 layer 3: job.Manager no longer spawns its own
+	// goroutine; Executar() only enqueues).
 	configurarFilaDeTeste(t, s)
 	return s, h
 }
 
-// dispararRun dispara POST .../run e devolve o corpo decodificado; falha o
-// teste se a resposta não for 202 ou o execution_id vier vazio.
+// dispararRun fires POST .../run and returns the decoded body; it fails the test if the
+// response is not 202 or the execution_id comes empty.
 func dispararRun(t *testing.T, h http.Handler, jobID string) runJobResponse {
 	t.Helper()
 	rec := do(t, h, http.MethodPost, "/api/v1/jobs/"+jobID+"/run", nil)
@@ -55,8 +54,8 @@ func dispararRun(t *testing.T, h http.Handler, jobID string) runJobResponse {
 	return run
 }
 
-// obterJobDaLista busca o item `jobID` em GET /jobs; falha o teste se
-// ausente da lista.
+// obterJobDaLista looks for the `jobID` item in GET /jobs; it fails the test if it is absent
+// from the list.
 func obterJobDaLista(t *testing.T, h http.Handler, jobID string) jobDTO {
 	t.Helper()
 	rec := do(t, h, http.MethodGet, "/api/v1/jobs", nil)
@@ -73,12 +72,11 @@ func obterJobDaLista(t *testing.T, h http.Handler, jobID string) jobDTO {
 	return jobDTO{}
 }
 
-// TestWithLibraryHealthJobWiring prova que server.WithLibraryHealthJob()
-// registra de fato o Handler do job saude_biblioteca (briefing 0053): sem
-// esta option, POST .../run devolveria 503 (job seedado, sem Handler) --
-// exatamente como TestRunJobSemHandler503 prova para backup_vacuum. Com a
-// option, a execução dispara (202), termina com sucesso (nenhuma fonte
-// cadastrada não é erro) e a mensagem reporta as contagens de revisão/órfãs.
+// TestWithLibraryHealthJobWiring proves that server.WithLibraryHealthJob() really registers
+// the Handler of the saude_biblioteca job: without this option, POST .../run would answer 503
+// (seeded job, no Handler) -- exactly as TestRunJobSemHandler503 proves for backup_vacuum.
+// With the option, the execution fires (202), finishes successfully (no source registered is
+// not an error) and the message reports the review/orphan counts.
 func TestWithLibraryHealthJobWiring(t *testing.T) {
 	s, h := setupLibraryHealthServer(t)
 
@@ -94,11 +92,11 @@ func TestWithLibraryHealthJobWiring(t *testing.T) {
 	}
 }
 
-// TestWithoutLibraryHealthJobDevolve503 prova o contraste: SEM a option, o
-// job seedado saude_biblioteca não tem Handler registrado -> 503, mesma
-// semântica de ErrJobDesconhecido documentada no briefing 0052.
+// TestWithoutLibraryHealthJobDevolve503 proves the contrast: WITHOUT the option, the seeded
+// saude_biblioteca job has no registered Handler -> 503, the same semantics of
+// ErrJobDesconhecido.
 func TestWithoutLibraryHealthJobDevolve503(t *testing.T) {
-	_, h := setupJobsServer(t) // não passa WithLibraryHealthJob()
+	_, h := setupJobsServer(t) // does not pass WithLibraryHealthJob()
 	rec := do(t, h, http.MethodPost, "/api/v1/jobs/saude_biblioteca/run", nil)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, quero 503 (corpo=%s)", rec.Code, rec.Body.String())

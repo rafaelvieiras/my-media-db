@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// descFake é um Descriptor mínimo para os testes deste pacote.
+// descFake is a minimal Descriptor for the tests of this package.
 type descFake struct {
 	slug        string
 	nome        string
@@ -22,8 +22,8 @@ func (d descFake) Configurada(map[string]string) bool {
 	return d.configurada
 }
 
-// TestRegistryZeroValueUtilizavel prova que um Registry não inicializado
-// (zero-value) funciona sem panicar — mesmo contrato de provider.Registry.
+// TestRegistryZeroValueUtilizavel proves that an uninitialized Registry
+// (zero-value) works without panicking — same contract as provider.Registry.
 func TestRegistryZeroValueUtilizavel(t *testing.T) {
 	var r Registry
 	if !r.Vazio() {
@@ -40,7 +40,7 @@ func TestRegistryZeroValueUtilizavel(t *testing.T) {
 	}
 }
 
-// TestRegistrarEGet prova que Registrar + Get funcionam pelo Slug().
+// TestRegistrarEGet proves that Registrar + Get work through the Slug().
 func TestRegistrarEGet(t *testing.T) {
 	var r Registry
 	r.Registrar(descFake{slug: "tmdb", nome: "TMDB"})
@@ -57,8 +57,8 @@ func TestRegistrarEGet(t *testing.T) {
 	}
 }
 
-// TestRegistrarNilIgnorado prova que Registrar(nil) não quebra nem some ser
-// contado — mesmo contrato de provider.Registry.Registrar.
+// TestRegistrarNilIgnorado proves that Registrar(nil) neither breaks nor gets
+// counted — same contract as provider.Registry.Registrar.
 func TestRegistrarNilIgnorado(t *testing.T) {
 	var r Registry
 	r.Registrar(nil)
@@ -67,8 +67,8 @@ func TestRegistrarNilIgnorado(t *testing.T) {
 	}
 }
 
-// TestUltimoARegistrarVence prova que registrar duas vezes sob o MESMO slug
-// substitui, mas preserva a posição na ordem — mesmo contrato de
+// TestUltimoARegistrarVence proves that registering twice under the SAME slug
+// replaces but preserves the position in the order — same contract as
 // provider.Registry.
 func TestUltimoARegistrarVence(t *testing.T) {
 	var r Registry
@@ -85,7 +85,7 @@ func TestUltimoARegistrarVence(t *testing.T) {
 	}
 }
 
-// TestAllOrdemDeterministica prova que All() devolve na ordem de registro.
+// TestAllOrdemDeterministica proves that All() returns in registration order.
 func TestAllOrdemDeterministica(t *testing.T) {
 	r := NovaRegistry(
 		descFake{slug: "b", nome: "B"},
@@ -97,8 +97,8 @@ func TestAllOrdemDeterministica(t *testing.T) {
 	}
 }
 
-// TestNomesECopiaDefensiva prova que mutar o slice devolvido por Nomes() não
-// afeta o Registry interno.
+// TestNomesECopiaDefensiva proves that mutating the slice returned by Nomes()
+// does not affect the internal Registry.
 func TestNomesECopiaDefensiva(t *testing.T) {
 	r := NovaRegistry(descFake{slug: "tmdb"})
 	nomes := r.Nomes()

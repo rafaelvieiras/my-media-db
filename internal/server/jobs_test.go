@@ -12,7 +12,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/job"
 )
 
-// jobHandlerFake é um job.Handler mínimo/determinístico para os testes HTTP.
+// jobHandlerFake is a minimal/deterministic job.Handler for the HTTP tests.
 type jobHandlerFake struct {
 	nome     string
 	mensagem string
@@ -25,8 +25,8 @@ func (h *jobHandlerFake) Executar(context.Context, json.RawMessage) (string, err
 	return h.mensagem, h.err
 }
 
-// jobHandlerBloqueante trava em Executar até o canal `liberar` fechar — usado
-// para exercitar o 409 (job_running) de forma determinística.
+// jobHandlerBloqueante blocks in Executar until the `liberar` channel closes — used to
+// exercise the 409 (job_running) deterministically.
 type jobHandlerBloqueante struct {
 	nome    string
 	liberar chan struct{}
@@ -43,10 +43,9 @@ func (h *jobHandlerBloqueante) Executar(ctx context.Context, _ json.RawMessage) 
 	}
 }
 
-// setupJobsServer sobe um Server com banco migrado (o seed backup_vacuum já
-// existe) e registra os handlers dados via WithJobHandlers. Sem handlers, o
-// job seedado fica "desconhecido" (503 ao rodar) — usado pra exercitar esse
-// caso.
+// setupJobsServer starts a Server with a migrated database (the backup_vacuum seed already
+// exists) and registers the given handlers through WithJobHandlers. Without handlers, the
+// seeded job stays "unknown" (503 when running) — used to exercise that case.
 func setupJobsServer(t *testing.T, handlers ...job.Handler) (*Server, http.Handler) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "jobs.sqlite")
@@ -69,11 +68,10 @@ func setupJobsServer(t *testing.T, handlers ...job.Handler) (*Server, http.Handl
 	if err != nil {
 		t.Fatalf("Handler: %v", err)
 	}
-	// configurarFilaDeTeste (scan_test.go) liga TANTO o scanner quanto
-	// s.jobs (quando existe, que é sempre o caso aqui) na MESMA
-	// execqueue.Manager de teste e sobe o worker em background -- necessário
-	// desde o briefing 0108/ADR-0028 CAMADA 3 (job.Manager não dispara mais
-	// sua própria goroutine; Executar() só enfileira).
+	// configurarFilaDeTeste (scan_test.go) wires BOTH the scanner and s.jobs (when it
+	// exists, which is always the case here) into the SAME test execqueue.Manager and brings
+	// up the worker in background -- required since the unified execution queue (ADR-0028
+	// layer 3: job.Manager no longer spawns its own goroutine; Executar() only enqueues).
 	configurarFilaDeTeste(t, s)
 	return s, h
 }
@@ -90,11 +88,10 @@ func aguardarJobEstado(t *testing.T, s *Server, jobID string, rodando bool) {
 	t.Fatalf("timeout esperando running=%v para %q", rodando, jobID)
 }
 
-// assertJobSeedado confere o estado padrão (recém-migrado, nunca rodou) de
-// UM job semeado dentro do mapa id->jobDTO -- extraído para manter
-// TestListJobsSeed com baixa complexidade ciclomática apesar de cobrir os
-// QUATRO jobs semeados hoje (backup_vacuum + saude_biblioteca +
-// midias_faltantes + trailer_tema_faltantes).
+// assertJobSeedado checks the default state (freshly migrated, never run) of ONE seeded job
+// inside the id->jobDTO map -- extracted to keep TestListJobsSeed with low cyclomatic
+// complexity even though it covers the FOUR jobs seeded today (backup_vacuum +
+// saude_biblioteca + midias_faltantes + trailer_tema_faltantes).
 func assertJobSeedado(t *testing.T, byID map[string]jobDTO, id, cron string) {
 	t.Helper()
 	item, ok := byID[id]
@@ -115,13 +112,11 @@ func assertJobSeedado(t *testing.T, byID map[string]jobDTO, id, cron string) {
 	}
 }
 
-// TestListJobsSeed prova o critério de aceite: GET /jobs lista os jobs
-// semeados via migration -- backup_vacuum (0011), saude_biblioteca (0012,
-// briefing 0053), midias_faltantes (0016, briefing 0064) e
-// trailer_tema_faltantes (0022, briefing 0104) -- independente de quais
-// Handlers estão registrados no binário (a linha de job_definition existe
-// pela migration; o Handler só importa na hora de RODAR). Todos
-// desabilitados por padrão, sem execuções ainda.
+// TestListJobsSeed proves the acceptance criterion: GET /jobs lists the jobs seeded through
+// migrations -- backup_vacuum, saude_biblioteca, midias_faltantes and
+// trailer_tema_faltantes -- regardless of which Handlers are registered in the binary (the
+// job_definition row exists through the migration; the Handler only matters when RUNNING).
+// All of them disabled by default, with no executions yet.
 func TestListJobsSeed(t *testing.T) {
 	_, h := setupJobsServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/jobs", nil)
@@ -146,8 +141,8 @@ func TestListJobsSeed(t *testing.T) {
 	assertJobSeedado(t, byID, "trailer_tema_faltantes", "30 4 * * *")
 }
 
-// TestPatchJobHabilitaCalculaNextRunAt prova o critério de aceite do PATCH:
-// enabled=true calcula next_run_at futuro; enabled=false zera.
+// TestPatchJobHabilitaCalculaNextRunAt proves the PATCH acceptance criterion: enabled=true
+// computes a future next_run_at; enabled=false zeroes it.
 func TestPatchJobHabilitaCalculaNextRunAt(t *testing.T) {
 	_, h := setupJobsServer(t)
 
@@ -179,8 +174,8 @@ func TestPatchJobHabilitaCalculaNextRunAt(t *testing.T) {
 	}
 }
 
-// TestPatchJobCronInvalido422 prova o critério de aceite: schedule_cron
-// inválido devolve 422 e NÃO altera o estado anterior.
+// TestPatchJobCronInvalido422 proves the acceptance criterion: an invalid schedule_cron
+// answers 422 and does NOT change the previous state.
 func TestPatchJobCronInvalido422(t *testing.T) {
 	_, h := setupJobsServer(t)
 
@@ -225,9 +220,9 @@ func TestPatchJobNaoEncontrado404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestRunJobEHistorico prova o critério de aceite central: POST .../run
-// dispara mesmo desabilitado, cria running->success com mensagem, atualiza
-// last_run_at/last_status/last_message, e aparece no histórico.
+// TestRunJobEHistorico proves the central acceptance criterion: POST .../run fires even
+// when disabled, creates running->success with a message, updates
+// last_run_at/last_status/last_message, and shows up in the history.
 func TestRunJobEHistorico(t *testing.T) {
 	fake := &jobHandlerFake{nome: "backup_vacuum", mensagem: "ok mensagem"}
 	s, h := setupJobsServer(t, fake)
@@ -275,8 +270,8 @@ func TestRunJobEHistorico(t *testing.T) {
 	}
 }
 
-// TestRunJobConflito409 prova o critério de aceite: uma segunda chamada
-// enquanto a primeira roda devolve 409.
+// TestRunJobConflito409 proves the acceptance criterion: a second call while the first one
+// runs answers 409.
 func TestRunJobConflito409(t *testing.T) {
 	blk := &jobHandlerBloqueante{nome: "backup_vacuum", liberar: make(chan struct{})}
 	s, h := setupJobsServer(t, blk)
@@ -306,10 +301,10 @@ func TestRunJobNaoEncontrado404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestRunJobSemHandler503 prova o critério de aceite: job seedado sem Handler
-// registrado no binário devolve 503.
+// TestRunJobSemHandler503 proves the acceptance criterion: a seeded job without a Handler
+// registered in the binary answers 503.
 func TestRunJobSemHandler503(t *testing.T) {
-	_, h := setupJobsServer(t) // nenhum handler registrado
+	_, h := setupJobsServer(t) // no handler registered
 	rec := do(t, h, http.MethodPost, "/api/v1/jobs/backup_vacuum/run", nil)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, quero 503 (corpo=%s)", rec.Code, rec.Body.String())
@@ -326,7 +321,7 @@ func TestListJobExecutionsNaoEncontrado404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestListJobExecutionsLimit prova a paginação (?limit=) do histórico.
+// TestListJobExecutionsLimit proves the pagination (?limit=) of the history.
 func TestListJobExecutionsLimit(t *testing.T) {
 	fake := &jobHandlerFake{nome: "backup_vacuum", mensagem: "ok"}
 	s, h := setupJobsServer(t, fake)

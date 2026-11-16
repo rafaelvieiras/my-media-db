@@ -8,9 +8,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Testes unitários do provider fake: garantem o contrato (Nome, busca, detalhe
-// canônico, coleção, not-found) e mantêm o pacote coberto pela catraca unitária
-// (ele é código de produção, ligado por MYMEDIADB_FAKE_PROVIDER).
+// Unit tests of the fake provider: they guarantee the contract (Nome, search,
+// canonical detail, collection, not-found) and keep the package covered by the
+// unit ratchet (it is production code, wired in by
+// MYMEDIADB_FAKE_PROVIDER).
 
 func TestNomeEhTmdb(t *testing.T) {
 	if got := New("").Nome(); got != "tmdb" {
@@ -27,7 +28,7 @@ func TestBuscarFiltraPorTituloETipo(t *testing.T) {
 	if len(res) != 2 {
 		t.Fatalf("resultados = %d, quero 2 (603 + 604)", len(res))
 	}
-	// Ordem estável por sourceID.
+	// Stable order by sourceID.
 	if res[0].SourceID != "603" || res[1].SourceID != "604" {
 		t.Errorf("ordem = [%s,%s], quero [603,604]", res[0].SourceID, res[1].SourceID)
 	}
@@ -37,7 +38,7 @@ func TestBuscarFiltraPorTituloETipo(t *testing.T) {
 	if res[0].PosterURL == nil || *res[0].PosterURL != "http://img.local/matrix.png" {
 		t.Errorf("PosterURL[0] = %v, quero http://img.local/matrix.png", res[0].PosterURL)
 	}
-	// Filtro que não casa nada.
+	// Filter that matches nothing.
 	vazio, _ := p.Buscar(context.Background(), "inexistente", "", "")
 	if len(vazio) != 0 {
 		t.Errorf("busca sem match = %d, quero 0", len(vazio))
@@ -54,7 +55,7 @@ func TestDetalheCanonicoMultiIdioma(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MapearDetalhe erro: %v", err)
 	}
-	// Traduzíveis DEVEM ser map[string]any (o resolver exige esse tipo).
+	// Translatable ones MUST be map[string]any (the resolver requires that type).
 	title, ok := campos["title"].(map[string]any)
 	if !ok {
 		t.Fatalf("title nao e map[string]any: %T", campos["title"])
@@ -68,7 +69,7 @@ func TestDetalheCanonicoMultiIdioma(t *testing.T) {
 	if campos["original_language"] != "en" || campos["release_date"] != "1999-03-31" {
 		t.Errorf("neutros errados: lang=%v date=%v", campos["original_language"], campos["release_date"])
 	}
-	// Sem ImageBase => sem poster_url.
+	// Without ImageBase => without poster_url.
 	if _, tem := campos["poster_url"]; tem {
 		t.Errorf("poster_url presente sem ImageBase: %v", campos["poster_url"])
 	}

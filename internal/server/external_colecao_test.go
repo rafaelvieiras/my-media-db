@@ -11,7 +11,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/tmdb"
 )
 
-// colecaoSrvJSON e o payload de /collection/2344 usado nos testes do handler.
+// colecaoSrvJSON is the /collection/2344 payload used in the handler tests.
 const colecaoSrvJSON = `{
   "id": 2344,
   "name": "Colecao Matrix",
@@ -24,8 +24,8 @@ const colecaoSrvJSON = `{
   ]
 }`
 
-// servidorTMDBColecaoSrv sobe um httptest que serve /collection/2344 (rico) e 404 em
-// /collection/000.
+// servidorTMDBColecaoSrv starts an httptest that serves /collection/2344 (rich) and 404
+// on /collection/000.
 func servidorTMDBColecaoSrv(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +43,8 @@ func servidorTMDBColecaoSrv(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// setupColecaoServer sobe um Server com o provider TMDB apontado ao httptest de coleção.
+// setupColecaoServer starts a Server with the TMDB provider pointed at the collection
+// httptest.
 func setupColecaoServer(t *testing.T, opts ...Option) (http.Handler, *db.DB) {
 	t.Helper()
 	srv := servidorTMDBColecaoSrv(t)
@@ -60,7 +61,7 @@ func decodeColecao(t *testing.T, body []byte) colecaoExternaDTO {
 	return out
 }
 
-// obterColecao faz o GET (esperando 200) e devolve o DTO decodificado.
+// obterColecao performs the GET (expecting 200) and returns the decoded DTO.
 func obterColecao(t *testing.T, h http.Handler) colecaoExternaDTO {
 	t.Helper()
 	rec := do(t, h, http.MethodGet, "/api/v1/external/tmdb/collection/2344?lang=pt-BR", nil)
@@ -76,7 +77,8 @@ func TestExternalCollectionCabecalho(t *testing.T) {
 	eq(t, "source", d.Source, "tmdb")
 	eq(t, "source_id", d.SourceID, "2344")
 	eq(t, "name", d.Name, "Colecao Matrix")
-	// Sem assetsDir: artes do hero saem DIRETAS da fonte (degradacao do proxy 0024).
+	// Without assetsDir: the hero artwork comes STRAIGHT from the source (proxy
+	// degradation).
 	eqPtr(t, "backdrop_url", d.BackdropURL, "https://image.tmdb.org/t/p/w780/colbg.jpg")
 }
 
@@ -94,11 +96,11 @@ func TestExternalCollectionPartes(t *testing.T) {
 	eqPtr(t, "parte[0].poster_url", p.PosterURL, "https://image.tmdb.org/t/p/w342/m1.jpg")
 }
 
-// mustFirst descarta o *db.DB do setup quando o teste so precisa do handler.
+// mustFirst discards the *db.DB of the setup when the test only needs the handler.
 func mustFirst(h http.Handler, _ *db.DB) http.Handler { return h }
 
-// TestExternalCollectionProxyReescreveHero: com assetsDir, poster/backdrop do hero
-// viram rota do proxy local; as miniaturas das partes seguem diretas.
+// TestExternalCollectionProxyReescreveHero: with assetsDir, the hero poster/backdrop
+// become the local proxy route; the part thumbnails stay direct.
 func TestExternalCollectionProxyReescreveHero(t *testing.T) {
 	h, _ := setupColecaoServer(t, WithAssetsDir(t.TempDir()))
 	rec := do(t, h, http.MethodGet, "/api/v1/external/tmdb/collection/2344?lang=pt-BR", nil)
@@ -128,7 +130,7 @@ func TestExternalCollection404(t *testing.T) {
 }
 
 func TestExternalCollection503SemProvider(t *testing.T) {
-	h, _ := setupSearchServer(t) // sem provider => sem capacidade de colecao
+	h, _ := setupSearchServer(t) // no provider => no collection capability
 	rec := do(t, h, http.MethodGet, "/api/v1/external/tmdb/collection/2344?lang=pt-BR", nil)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, quero 503", rec.Code)

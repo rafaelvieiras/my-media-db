@@ -1,9 +1,9 @@
-// Acoustid é o fake de provider.FingerprintProvider (briefing 0126),
-// companheiro de `Musicbrainz` (que serve a fixture da árvore/álbum de
-// música): permite ao scanner (e aos testes de internal/scanner) exercitar
-// o passo 4.5 de fingerprint acústico SEM subir fpcalc/rede real. Registrado
-// sob Nome()="acoustid" -- mesma convenção dos demais fakes deste pacote
-// (nome real da fonte).
+// Acoustid is the fake of provider.FingerprintProvider, companion of
+// `Musicbrainz` (which serves the music tree/album fixture): it allows the
+// scanner (and the tests of internal/scanner) to exercise step 4.5 of acoustic
+// fingerprint WITHOUT bringing up fpcalc/real network. Registered under
+// Nome()="acoustid" -- the same convention as the other fakes of this package
+// (the real name of the source).
 package fake
 
 import (
@@ -13,38 +13,38 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// AcoustidRecordingMBID é o MBID de recording que Acoustid devolve para o
-// fingerprint fixture AcoustidFingerprintConhecido -- os testes de scanner
-// usam este valor para montar o candidato esperado (ex.: casando com uma
-// faixa já presente no fake Musicbrainz).
+// AcoustidRecordingMBID is the recording MBID that Acoustid returns for the
+// AcoustidFingerprintConhecido fingerprint fixture -- the scanner tests use this
+// value to build the expected candidate (e.g. matching a track already present
+// in the Musicbrainz fake).
 const (
-	// AcoustidFingerprintConhecido é o fingerprint fixture que Acoustid
-	// RECONHECE (IdentificarPorFingerprint devolve um candidato com
-	// confiança acima de matching.LimiarConfiancaFingerprint).
+	// AcoustidFingerprintConhecido is the fingerprint fixture that Acoustid
+	// RECOGNIZES (IdentificarPorFingerprint returns a candidate with a confidence
+	// above matching.LimiarConfiancaFingerprint).
 	AcoustidFingerprintConhecido = "fp-conhecido-fake"
-	// AcoustidRecordingMBID é o MBID devolvido para AcoustidFingerprintConhecido.
+	// AcoustidRecordingMBID is the MBID returned for AcoustidFingerprintConhecido.
 	AcoustidRecordingMBID = MusicbrainzFaixa1ID
 )
 
-// Asserção de interface: Acoustid é um Provider core (stubs) + a capacidade
-// de fingerprint.
+// Interface assertion: Acoustid is a core Provider (stubs) + the fingerprint
+// capability.
 var (
 	_ provider.Provider            = (*Acoustid)(nil)
 	_ provider.FingerprintProvider = (*Acoustid)(nil)
 )
 
-// Acoustid é o fake -- imutável, sem estado mutável, seguro para
-// concorrência (mesmo espírito de Musicbrainz).
+// Acoustid is the fake -- immutable, with no mutable state, safe for
+// concurrency (same spirit as Musicbrainz).
 type Acoustid struct{}
 
-// NewAcoustid constrói o fake de fingerprint acústico.
+// NewAcoustid builds the acoustic fingerprint fake.
 func NewAcoustid() *Acoustid { return &Acoustid{} }
 
 func (a *Acoustid) Nome() string { return "acoustid" }
 
-// Buscar/BuscarDetalhe/MapearDetalhe são NO-OP: o AcoustID real também só
-// serve a capacidade FingerprintProvider (ver internal/provider/acoustid) --
-// stubs inertes, só para satisfazer o core provider.Provider.
+// Buscar/BuscarDetalhe/MapearDetalhe are NO-OP: the real AcoustID also only
+// serves the FingerprintProvider capability (see internal/provider/acoustid) --
+// inert stubs, only to satisfy the core provider.Provider.
 func (a *Acoustid) Buscar(context.Context, string, string, string) ([]provider.ResultadoExterno, error) {
 	return nil, nil
 }
@@ -57,14 +57,14 @@ func (a *Acoustid) MapearDetalhe(json.RawMessage) (map[string]any, error) {
 	return map[string]any{}, nil
 }
 
-// IdentificarPorFingerprint (provider.FingerprintProvider): reconhece só o
-// fingerprint fixture AcoustidFingerprintConhecido, devolvendo-o com
-// confiança 0.9 (acima de matching.LimiarConfiancaFingerprint) apontando
-// para MusicbrainzFaixa1ID -- assim um teste de scanner pode encadear o
-// passo 4.5 até o MESMO caminho de import escopado que
-// Musicbrainz.BuscarAlbumDaFaixa(MusicbrainzFaixa1ID) já serve. Qualquer
-// outro fingerprint (incluindo "") devolve (zero,false,nil) -- sem match,
-// graça, mesmo contrato do AcoustID real sem resultado algum.
+// IdentificarPorFingerprint (provider.FingerprintProvider): recognizes only the
+// AcoustidFingerprintConhecido fingerprint fixture, returning it with confidence
+// 0.9 (above matching.LimiarConfiancaFingerprint) pointing at
+// MusicbrainzFaixa1ID -- so a scanner test can chain step 4.5 up to the SAME
+// scoped import path that Musicbrainz.BuscarAlbumDaFaixa(MusicbrainzFaixa1ID)
+// already serves. Any other fingerprint (including "") returns
+// (zero,false,nil) -- no match, gracefully, the same contract of the real
+// AcoustID with no result at all.
 func (a *Acoustid) IdentificarPorFingerprint(_ context.Context, fingerprint string, _ float64) (provider.RecordingCandidato, bool, error) {
 	if fingerprint != AcoustidFingerprintConhecido {
 		return provider.RecordingCandidato{}, false, nil

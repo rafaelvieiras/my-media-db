@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// decodeCatalogCompleteness decodifica o corpo de GET/PUT
+// decodeCatalogCompleteness decodes the body of GET/PUT
 // /settings/catalog-completeness.
 func decodeCatalogCompleteness(t *testing.T, body []byte) catalogCompletenessSettings {
 	t.Helper()
@@ -17,9 +17,9 @@ func decodeCatalogCompleteness(t *testing.T, body []byte) catalogCompletenessSet
 	return out
 }
 
-// TestGetCatalogCompletenessSettingsDefault cobre §5 do briefing 0057: sem
-// linha em app_settings, o GET devolve o default de fábrica (description +
-// media_file + artwork:[poster] para movie e tv) sem gravar nada.
+// TestGetCatalogCompletenessSettingsDefault covers: without a row
+// in app_settings, the GET returns the factory default (description + media_file +
+// artwork:[poster] for movie and tv) without writing anything.
 func TestGetCatalogCompletenessSettingsDefault(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/settings/catalog-completeness", nil)
@@ -43,16 +43,16 @@ func TestGetCatalogCompletenessSettingsDefault(t *testing.T) {
 		}
 	}
 
-	// Não deve ter gravado nada em app_settings.
+	// It must not have written anything to app_settings.
 	row, err := escrita(t, d).ObterAppSetting(t.Context(), appSettingCatalogCompleteness)
 	if err == nil {
 		t.Errorf("esperava sql.ErrNoRows (nada gravado), obteve linha: %+v", row)
 	}
 }
 
-// TestPutCatalogCompletenessSettingsPersiste cobre §5: PUT válido grava e o
-// GET seguinte reflete EXATAMENTE o que foi enviado (substituição total, não
-// merge parcial com o default anterior).
+// TestPutCatalogCompletenessSettingsPersiste covers: a valid PUT writes it and the
+// following GET reflects EXACTLY what was sent (total replacement, not
+// partial merge with the previous default).
 func TestPutCatalogCompletenessSettingsPersiste(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	corpo := catalogCompletenessSettings{
@@ -62,7 +62,7 @@ func TestPutCatalogCompletenessSettingsPersiste(t *testing.T) {
 			Cast:        true,
 			Artwork:     []string{"poster", "fanart"},
 		},
-		"tv": {}, // objeto vazio: aceito, "nada exigido".
+		"tv": {}, // empty object: accepted, "nothing required".
 	}
 	rec := do(t, h, http.MethodPut, "/api/v1/settings/catalog-completeness", corpo)
 	if rec.Code != http.StatusOK {
@@ -95,8 +95,8 @@ func TestPutCatalogCompletenessSettingsPersiste(t *testing.T) {
 	}
 }
 
-// TestPutCatalogCompletenessSettingsArtworkInvalido cobre §5: um artwork fora
-// de kindsValidos → 422.
+// TestPutCatalogCompletenessSettingsArtworkInvalido covers: an artwork outside
+// kindsValidos → 422.
 func TestPutCatalogCompletenessSettingsArtworkInvalido(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	corpo := catalogCompletenessSettings{
@@ -109,8 +109,8 @@ func TestPutCatalogCompletenessSettingsArtworkInvalido(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestPutCatalogCompletenessSettingsTipoVazio cobre §5: uma chave de tipo
-// vazia ("") → 422.
+// TestPutCatalogCompletenessSettingsTipoVazio covers: an empty type
+// key ("") → 422.
 func TestPutCatalogCompletenessSettingsTipoVazio(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	corpo := catalogCompletenessSettings{
@@ -123,8 +123,8 @@ func TestPutCatalogCompletenessSettingsTipoVazio(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestPutCatalogCompletenessSettingsCorpoInvalido cobre §5: corpo que não é
-// JSON válido (objeto) → 400.
+// TestPutCatalogCompletenessSettingsCorpoInvalido covers: a body that is not
+// valid JSON (object) → 400.
 func TestPutCatalogCompletenessSettingsCorpoInvalido(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodPut, "/api/v1/settings/catalog-completeness", "isto não é um objeto")
@@ -134,9 +134,9 @@ func TestPutCatalogCompletenessSettingsCorpoInvalido(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestPutCatalogCompletenessSettingsTipoVazioObjeto cobre §5: um tipo com
-// objeto vazio ({}) é aceito (equivale a "nada exigido"), não é o mesmo caso
-// de chave de tipo vazia.
+// TestPutCatalogCompletenessSettingsTipoVazioObjeto covers: a type with an
+// empty object ({}) is accepted (equivalent to "nothing required"), it is not the same
+// case as an empty type key.
 func TestPutCatalogCompletenessSettingsTipoVazioObjeto(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	corpo := catalogCompletenessSettings{

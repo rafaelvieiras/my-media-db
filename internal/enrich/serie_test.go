@@ -12,8 +12,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
-// svcSerieFake monta o Servico com o provider fake (que implementa SerieProvider) e um
-// servidor de imagem para o cache de pôster/still da árvore.
+// svcSerieFake builds the Servico with the fake provider (which implements SerieProvider)
+// and an image server for the poster/still cache of the tree.
 func svcSerieFake(t *testing.T) (*Servico, *db.DB) {
 	t.Helper()
 	database := setupDB(t)
@@ -22,9 +22,9 @@ func svcSerieFake(t *testing.T) (*Servico, *db.DB) {
 	return svc, database
 }
 
-// TestImportarSerieCriaArvore: importar type=tv cria a série (tv) + 2 temporadas
-// (season, sort_index 1..2) + 6 episódios (episode) com numbering multi-ordem e
-// absolute_number, ancorados no id externo.
+// TestImportarSerieCriaArvore: importing type=tv creates the series (tv) + 2 seasons
+// (season, sort_index 1..2) + 6 episodes (episode) with multi-order numbering and
+// absolute_number, anchored on the external id.
 func TestImportarSerieCriaArvore(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
@@ -42,8 +42,8 @@ func TestImportarSerieCriaArvore(t *testing.T) {
 	exigirEpisodioDivergente(t, r)
 }
 
-// exigirSerieRaiz confere a linha-base da serie: type tv, id externo e o extension_data
-// core.tv@1 (default_season_type + season_types).
+// exigirSerieRaiz checks the base row of the series: type tv, external id and the
+// core.tv@1 extension_data (default_season_type + season_types).
 func exigirSerieRaiz(t *testing.T, r *sqlcgen.Queries, serieID string) {
 	t.Helper()
 	serie, err := r.ObterEntity(context.Background(), serieID)
@@ -65,8 +65,8 @@ func exigirSerieRaiz(t *testing.T, r *sqlcgen.Queries, serieID string) {
 	}
 }
 
-// exigirTemporadas confere as 2 temporadas (sort_index 1,2), o titulo fallback
-// "Temporada N" (sem Name), o Name usado (com Name) e o extension_data da temporada.
+// exigirTemporadas checks the 2 seasons (sort_index 1,2), the "Temporada N" fallback
+// title (without a Name), the Name used (with a Name) and the extension_data of the season.
 func exigirTemporadas(t *testing.T, database *db.DB, r *sqlcgen.Queries, serieID string) {
 	t.Helper()
 	ctx := context.Background()
@@ -91,8 +91,8 @@ func exigirTemporadas(t *testing.T, database *db.DB, r *sqlcgen.Queries, serieID
 	exigirEpisodiosOrdenados(t, database, temps[0].ChildID)
 }
 
-// exigirEpisodiosOrdenados confere que a T1 tem 3 episodios com sort_index = numero
-// official 1,2,3.
+// exigirEpisodiosOrdenados checks that S1 has 3 episodes with sort_index = the official
+// number 1,2,3.
 func exigirEpisodiosOrdenados(t *testing.T, database *db.DB, tempID string) {
 	t.Helper()
 	eps := filhosPorKind(t, database, tempID, relacaoEpisodio)
@@ -106,8 +106,8 @@ func exigirEpisodiosOrdenados(t *testing.T, database *db.DB, tempID string) {
 	}
 }
 
-// exigirEpisodioDivergente confere o ep 103: type episode, id externo (tvdb),
-// absolute_number e o numbering DIVERGENTE entre official{1,3} e dvd{1,5}.
+// exigirEpisodioDivergente checks ep 103: type episode, external id (tvdb),
+// absolute_number and the numbering DIVERGING between official{1,3} and dvd{1,5}.
 func exigirEpisodioDivergente(t *testing.T, r *sqlcgen.Queries) {
 	t.Helper()
 	ep, err := r.ObterEntityPorTmdb(context.Background(), nsValid("103"))
@@ -135,10 +135,11 @@ func exigirEpisodioDivergente(t *testing.T, r *sqlcgen.Queries) {
 	}
 }
 
-// TestImportarSerieGravaMediaExternalDoEpisodio (0041): cada episódio da árvore grava
-// UMA linha media_external per-fonte cujo payload carrega os mapas title/overview POR
-// IDIOMA (não só o escalar default) sob o discriminador entity_kind — o trilho i18n do
-// filme aplicado ao episódio. Sem isso o detalhe do episódio não traduziria por ?lang=.
+// TestImportarSerieGravaMediaExternalDoEpisodio: every episode of the tree writes
+// ONE per-source media_external row whose payload carries the PER-LANGUAGE title/overview
+// maps (not only the default scalar) under the entity_kind discriminator — the i18n track
+// of the movie applied to the episode. Without it the episode detail would not translate
+// through ?lang=.
 func TestImportarSerieGravaMediaExternalDoEpisodio(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
@@ -150,8 +151,8 @@ func TestImportarSerieGravaMediaExternalDoEpisodio(t *testing.T) {
 	if env.EntityKind != provider.KindEpisodio {
 		t.Errorf("entity_kind = %q, quero %q", env.EntityKind, provider.KindEpisodio)
 	}
-	// O fake serve title en+pt-BR+pt e overview en+pt-BR para o episódio (idiomas que a
-	// árvore trouxe) — o payload preserva TODOS, não só o idioma default.
+	// The fake serves title en+pt-BR+pt and overview en+pt-BR for the episode (languages that
+	// the tree brought) — the payload preserves ALL of them, not only the default language.
 	if env.Title["en"] != "Episode 103" || env.Title["pt-BR"] != "Episodio 103" || env.Title["pt"] != "Episodio 103" {
 		t.Errorf("title por idioma = %v, quero en/pt-BR/pt preenchidos", env.Title)
 	}
@@ -160,9 +161,9 @@ func TestImportarSerieGravaMediaExternalDoEpisodio(t *testing.T) {
 	}
 }
 
-// TestReimportarEpisodioReescreveMediaExternal (0041): re-importar a série REESCREVE o
-// media_external do episódio já existente (idempotente por (entity_id, source)) — não
-// duplica linha nem retorna cedo sem reescrever (o bug do caminho de reuse).
+// TestReimportarEpisodioReescreveMediaExternal: re-importing the series REWRITES the
+// media_external of the already existing episode (idempotent by (entity_id, source)) — it
+// neither duplicates the row nor returns early without rewriting (the bug of the reuse path).
 func TestReimportarEpisodioReescreveMediaExternal(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
@@ -173,16 +174,16 @@ func TestReimportarEpisodioReescreveMediaExternal(t *testing.T) {
 	if _, _, err := svc.Importar(ctx, "tmdb", fake.SerieFixtureID, "tv", []string{"en"}); err != nil {
 		t.Fatalf("2o import: %v", err)
 	}
-	// A UNIQUE(entity_id, source) garante uma linha só; ObterMediaExternalPorFonte é :one
-	// (erraria se houvesse duplicata) e o payload segue com os mapas per-idioma.
+	// The UNIQUE(entity_id, source) guarantees a single row; ObterMediaExternalPorFonte is :one
+	// (it would fail if there were a duplicate) and the payload keeps the per-language maps.
 	env := envelopeEpisodioDe(t, database, "103")
 	if env.EntityKind != provider.KindEpisodio || env.Title["pt-BR"] != "Episodio 103" {
 		t.Errorf("payload apos reimport = %+v, quero episodio traduzido intacto", env)
 	}
 }
 
-// envelopeEpisodioDe lê o media_external (fonte tmdb) do episódio de tmdbID e decodifica
-// o EnvelopeEpisodio do payload_json.
+// envelopeEpisodioDe reads the media_external (source tmdb) of the episode with tmdbID and
+// decodes the EnvelopeEpisodio of payload_json.
 func envelopeEpisodioDe(t *testing.T, database *db.DB, tmdbID string) provider.EnvelopeEpisodio {
 	t.Helper()
 	r := sqlcgen.New(database.Read)
@@ -204,8 +205,8 @@ func envelopeEpisodioDe(t *testing.T, database *db.DB, tmdbID string) provider.E
 	return env
 }
 
-// TestReimportarSerieIdempotente: re-importar a mesma série reusa a série, as
-// temporadas (dedup por numero) e os episódios (dedup por id externo) — sem duplicar.
+// TestReimportarSerieIdempotente: re-importing the same series reuses the series, the
+// seasons (dedup by number) and the episodes (dedup by external id) — without duplicating.
 func TestReimportarSerieIdempotente(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
@@ -237,8 +238,8 @@ func TestReimportarSerieIdempotente(t *testing.T) {
 	}
 }
 
-// TestImportarSerieSemSuporte: uma fonte que NAO implementa SerieProvider devolve erro
-// (o handler traduz para 502).
+// TestImportarSerieSemSuporte: a source that does NOT implement SerieProvider returns an
+// error (the handler translates it to 502).
 func TestImportarSerieSemSuporte(t *testing.T) {
 	database := setupDB(t)
 	fakeProv := &fakeProvider{raw: json.RawMessage(`{}`), campos: map[string]any{}}
@@ -248,8 +249,8 @@ func TestImportarSerieSemSuporte(t *testing.T) {
 	}
 }
 
-// TestImportarSeriePorNomeCasaExato: o nome exato de uma série no fake resolve para o
-// candidato tv único e importa a árvore (o wiring que o scanner de 0034 consome).
+// TestImportarSeriePorNomeCasaExato: the exact name of a series in the fake resolves to
+// the single tv candidate and imports the tree (the wiring the series scanner consumes).
 func TestImportarSeriePorNomeCasaExato(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()
@@ -266,14 +267,14 @@ func TestImportarSeriePorNomeCasaExato(t *testing.T) {
 	if serie.ExternalIDTmdb.String != fake.SerieFixtureID {
 		t.Errorf("serie external_id_tmdb = %q, quero %s", serie.ExternalIDTmdb.String, fake.SerieFixtureID)
 	}
-	// A árvore veio junto (2 temporadas).
+	// The tree came along (2 seasons).
 	if temps := filhosPorKind(t, database, id, relacaoTemporada); len(temps) != 2 {
 		t.Errorf("temporadas = %d, quero 2 (árvore importada)", len(temps))
 	}
 }
 
-// TestImportarSeriePorNomeNaoEncontrada: um nome sem candidato nenhum devolve o
-// sentinela ErrSerieNaoEncontrada (o scanner roteia para revisão).
+// TestImportarSeriePorNomeNaoEncontrada: a name with no candidate at all returns the
+// ErrSerieNaoEncontrada sentinel (the scanner routes it to review).
 func TestImportarSeriePorNomeNaoEncontrada(t *testing.T) {
 	svc, _ := svcSerieFake(t)
 	_, err := svc.ImportarSeriePorNome(context.Background(), "Serie Inexistente XYZ", []string{"en"}, "")
@@ -282,8 +283,8 @@ func TestImportarSeriePorNomeNaoEncontrada(t *testing.T) {
 	}
 }
 
-// TestImportarSeriePorNomeAmbigua: dois candidatos de título exato na mesma fonte
-// devolvem ErrSerieAmbigua — o scanner NÃO adivinha.
+// TestImportarSeriePorNomeAmbigua: two candidates with an exact title in the same source
+// return ErrSerieAmbigua — the scanner does NOT guess.
 func TestImportarSeriePorNomeAmbigua(t *testing.T) {
 	database := setupDB(t)
 	svc := New(database, provider.NovaRegistry(serieDupla{}), t.TempDir())
@@ -293,8 +294,8 @@ func TestImportarSeriePorNomeAmbigua(t *testing.T) {
 	}
 }
 
-// serieDupla é um provider de teste que devolve DOIS resultados tv de título idêntico
-// para "Dup Show" — o caso ambíguo. Implementa SerieProvider para não ser pulado.
+// serieDupla is a test provider that returns TWO tv results with an identical title
+// for "Dup Show" — the ambiguous case. It implements SerieProvider so that it is not skipped.
 type serieDupla struct{}
 
 func (serieDupla) Nome() string { return "dup" }
@@ -317,9 +318,9 @@ func (serieDupla) BuscarSerieArvore(context.Context, string, []string) (provider
 	return provider.SerieArvore{}, nil
 }
 
-// --- helpers de teste ---
+// --- test helpers ---
 
-// extNS decodifica o extension_data_json e devolve o objeto do namespace core.tv@1.
+// extNS decodes extension_data_json and returns the object of the core.tv@1 namespace.
 func extNS(t *testing.T, raw string) map[string]any {
 	t.Helper()
 	var envelope map[string]map[string]any
@@ -333,7 +334,7 @@ func extNS(t *testing.T, raw string) map[string]any {
 	return ns
 }
 
-// filhosPorKind lista as relações de um pai filtradas por kind, na ordem de
+// filhosPorKind lists the relations of a parent filtered by kind, in the order of
 // ListarRelacoesFilhas (sort_index).
 func filhosPorKind(t *testing.T, database *db.DB, parentID, kind string) []sqlcgen.EntityRelation {
 	t.Helper()
@@ -350,7 +351,7 @@ func filhosPorKind(t *testing.T, database *db.DB, parentID, kind string) []sqlcg
 	return out
 }
 
-// aStrings coage um []any (de JSON) para []string.
+// aStrings coerces a []any (from JSON) into a []string.
 func aStrings(v any) []string {
 	lista, _ := v.([]any)
 	out := make([]string, 0, len(lista))

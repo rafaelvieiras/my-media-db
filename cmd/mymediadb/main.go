@@ -1,6 +1,6 @@
-// Comando mymediadb: entrypoint do servidor HTTP único que serve a API e o SPA
-// embutido no mesmo origin. Lê a porta de env/flag, sobe o servidor e faz
-// graceful shutdown ao receber SIGINT/SIGTERM.
+// Command mymediadb: entrypoint of the single HTTP server that serves the API and
+// the SPA embedded in the same origin. It reads the port from env/flag, starts the
+// server and performs a graceful shutdown on SIGINT/SIGTERM.
 package main
 
 import (
@@ -30,19 +30,19 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/ytdlp"
 )
 
-// defaultDBPath é o caminho padrão do banco em desenvolvimento: dentro de tmp/,
-// ignorado pelo git. Em produção, defina MYMEDIADB_DB_PATH.
+// defaultDBPath is the default database path in development: inside tmp/,
+// ignored by git. In production, set MYMEDIADB_DB_PATH.
 const defaultDBPath = "tmp/mymediadb.sqlite"
 
-// version é a versão do binário. Default "dev"; sobrescrita em build com
-// -ldflags "-X main.version=<v>".
+// version is the binary version. Defaults to "dev"; overridden at build time
+// with -ldflags "-X main.version=<v>".
 var version = "dev"
 
-// shutdownTimeout limita quanto tempo o servidor espera para drenar conexões
-// em voo durante o encerramento.
+// shutdownTimeout caps how long the server waits to drain in-flight connections
+// during shutdown.
 const shutdownTimeout = 10 * time.Second
 
-// migrateTimeout limita quanto tempo as migrations podem levar no boot.
+// migrateTimeout caps how long the migrations may take at boot.
 const migrateTimeout = 30 * time.Second
 
 func main() {
@@ -54,8 +54,8 @@ func main() {
 func run() error {
 	addr := ":" + resolvePort()
 
-	// Abre o banco e aplica as migrations ANTES de aceitar tráfego. Falha de
-	// abertura ou migration aborta o boot (fail-fast — ADR-0017).
+	// Opens the database and applies the migrations BEFORE accepting traffic. A
+	// failure to open or to migrate aborts the boot (fail-fast — ADR-0017).
 	database, err := openAndMigrate()
 	if err != nil {
 		return err
@@ -66,16 +66,16 @@ func run() error {
 		}
 	}()
 
-	// Fila de execução unificada para scan e jobs (briefing 0108, ADR-0028,
-	// CAMADA 3 final): UMA única *execqueue.Manager compartilhada, sobre o
-	// MESMO *db.DB que os demais managers já recebem. Construída ANTES de
-	// server.New (server.WithExecQueue, abaixo, precisa dela para ligar o
-	// scanner) e ANTES de srv.Jobs().ConfigurarFila (liga o job) -- ambas as
-	// ligações (que registram os Runners via RegistrarRunner) precisam
-	// acontecer antes de `go fila.Run(ctx)` começar a processar itens, mais
-	// abaixo, senão um item que chegasse cedo demais cairia no caminho
-	// "nenhum runner registrado" (o execqueue já trata isso sem travar o
-	// worker, mas é desperdício e confunde log).
+	// Unified execution queue for scan and jobs (ADR-0028, the final LAYER 3):
+	// ONE single shared *execqueue.Manager, over the SAME *db.DB the other
+	// managers already receive. Built BEFORE server.New
+	// (server.WithExecQueue, below, needs it to wire the scanner) and BEFORE
+	// srv.Jobs().ConfigurarFila (wires the job) -- both wirings (which register
+	// the Runners through RegistrarRunner) must happen before `go
+	// fila.Run(ctx)` starts processing items, further below, otherwise an item
+	// that arrived too early would hit the "no runner registered" path
+	// (execqueue already handles that without blocking the worker, but it is
+	// wasteful and confuses the log).
 	fila := execqueue.NewManager(database)
 
 	opts, err := opcoesServer(database)
@@ -84,9 +84,9 @@ func run() error {
 	}
 	opts = append(opts, server.WithExecQueue(fila))
 	srv := server.New(version, database, opts...)
-	// srv.Jobs() nunca é nil aqui — database (acima) é sempre não-nil quando
-	// o boot chega a este ponto, e opcoesServer sempre inclui
-	// WithJobHandlers (backup_vacuum), que constrói o Manager de jobs.
+	// srv.Jobs() is never nil here — database (above) is always non-nil when
+	// the boot reaches this point, and opcoesServer always includes
+	// WithJobHandlers (backup_vacuum), which builds the jobs Manager.
 	srv.Jobs().ConfigurarFila(fila)
 
 	handler, err := srv.Handler()
@@ -99,34 +99,35 @@ func run() error {
 		Handler: handler,
 	}
 
-	// Sinal de término (SIGINT/SIGTERM) — o MESMO ctx encerra o worker da
-	// fila (fila.Run, abaixo), o agendador de jobs (RunScheduler) e o
-	// shutdown do HTTP.
+	// Termination signal (SIGINT/SIGTERM) — the SAME ctx stops the queue
+	// worker (fila.Run, below), the jobs scheduler (RunScheduler) and the
+	// HTTP shutdown.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Worker sequencial da fila unificada (briefing 0108, ADR-0028): consome
-	// scan e job em FIFO, concorrência 1. Sobe ANTES do RunScheduler abaixo
-	// (que só ENFILEIRA via job.Manager.Executar desde esta camada -- quem
-	// de fato roda o Handler é este worker) -- ambos os Runners (scan e job)
-	// já foram registrados acima (WithExecQueue / ConfigurarFila), então não
-	// há corrida entre "worker começa a processar" e "runner é registrado".
+	// Sequential worker of the unified queue (ADR-0028): consumes scan and job
+	// in FIFO order, concurrency 1. It starts BEFORE the RunScheduler below
+	// (which only ENQUEUES through job.Manager.Executar from this layer on --
+	// the one that actually runs the Handler is this worker) -- both Runners
+	// (scan and job) were already registered above (WithExecQueue /
+	// ConfigurarFila), so there is no race between "worker starts processing"
+	// and "runner is registered".
 	go fila.Run(ctx)
 
-	// Agendador embutido de jobs (briefing 0052): dispara ANTES do
-	// ListenAndServe, para o boot do HTTP não atrasar o primeiro tick. Sai
-	// sozinho quando ctx é cancelado (mesmo sinal do shutdown do HTTP).
+	// Embedded jobs scheduler: it fires BEFORE ListenAndServe, so the HTTP boot
+	// does not delay the first tick. It exits on its own when ctx is canceled
+	// (the same signal as the HTTP shutdown).
 	go srv.Jobs().RunScheduler(ctx)
 
-	// Watch de filesystem opcional por fonte (briefing 0064): registra o
-	// watcher fsnotify de cada library_source com watch_enabled=1 ANTES do
-	// ListenAndServe (mesmo espírito do RunScheduler acima — não atrasa o
-	// boot do HTTP; best-effort, nunca aborta por causa de UMA fonte).
-	// FecharWatchers no shutdown gracioso, abaixo.
+	// Optional per-source filesystem watch: registers the fsnotify watcher of
+	// each library_source with watch_enabled=1 BEFORE ListenAndServe (the same
+	// spirit as RunScheduler above — it does not delay the HTTP boot;
+	// best-effort, it never aborts because of ONE source).
+	// FecharWatchers on the graceful shutdown, below.
 	srv.IniciarWatchers(context.Background())
 	defer srv.FecharWatchers()
 
-	// Canal para propagar erro de ListenAndServe ao fluxo principal.
+	// Channel to propagate a ListenAndServe error to the main flow.
 	serverErr := make(chan error, 1)
 
 	go func() {
@@ -142,7 +143,7 @@ func run() error {
 	case err := <-serverErr:
 		return err
 	case <-ctx.Done():
-		stop() // restaura comportamento padrão do sinal
+		stop() // restores the default signal behavior
 		log.Printf("mymediadb: sinal recebido, encerrando (graceful shutdown, timeout=%s)", shutdownTimeout)
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
@@ -156,8 +157,8 @@ func run() error {
 	}
 }
 
-// openAndMigrate abre o banco no caminho configurado e aplica as migrations
-// pendentes. Em sucesso, loga a versão de schema. Erro aborta o boot.
+// openAndMigrate opens the database at the configured path and applies the
+// pending migrations. On success, it logs the schema version. An error aborts the boot.
 func openAndMigrate() (*db.DB, error) {
 	database, err := db.Open(db.Config{Path: resolveDBPath()})
 	if err != nil {
@@ -176,31 +177,29 @@ func openAndMigrate() (*db.DB, error) {
 	return database, nil
 }
 
-// opcoesServer monta as options do server: a busca/enrich externa (briefing
-// 0014/0015), o diretório de assets, os jobs semente backup_vacuum
-// (briefing 0052), saude_biblioteca (briefing 0053) e midias_faltantes +
-// watch de filesystem (briefing 0064). Erro só na criação dos diretórios
-// (assets/backups).
+// opcoesServer assembles the server options: the external search/enrich, the
+// assets directory, the seed jobs backup_vacuum, saude_biblioteca and
+// midias_faltantes + filesystem watch. It only errors while creating the
+// directories (assets/backups).
 func opcoesServer(database *db.DB) ([]server.Option, error) {
 	opts := opcoesBusca(database)
 
-	// Fundação de integrações configuráveis via UI/banco (briefing 0095,
-	// ADR-0023): registra o schema de campos do TMDB no Registry consumido
-	// por GET/PUT /api/v1/integrations. Só o TMDB nesta entrega -- TVDB/
-	// fanart.tv seguem via env var direto (fora de escopo, ver briefing).
-	// AcoustID (briefing 0126): registra o schema de campos (client key) no
-	// mesmo Registry -- a UI de Integrações herda a entrada "de graça" via o
-	// formulário dinâmico genérico (briefing 0096), sem código de tela
-	// dedicado.
+	// Foundation of integrations configurable through the UI/database
+	// (ADR-0023): registers the TMDB field schema in the Registry consumed by
+	// GET/PUT /api/v1/integrations. Only TMDB in this delivery -- TVDB/
+	// fanart.tv keep going through the env var directly (out of scope, see the
+	// ADR). AcoustID: registers its field schema (client key) in the same
+	// Registry -- the Integrations UI inherits the entry "for free" through the
+	// generic dynamic form, with no dedicated screen code.
 	opts = append(opts, server.WithIntegrations(tmdb.NovoDescriptorIntegracao(), acoustid.NovoDescriptorIntegracao()))
 
-	// Registro de CODECS (briefing 0100, ADR-0024): sempre populado,
-	// independente de credencial, só habilita a capacidade de INTERPRETAR
-	// payload já cacheado (nunca busca ao vivo), para dado catalogado
-	// sobreviver à ausência/revogação de chave. FORA do modo fake (E2E):
-	// lá o registro de busca (fake.New, em opcoesBusca) já responde por
-	// "tmdb" sozinho -- registrar também o codec real de tmdb aqui faria
-	// codecPara priorizá-lo sobre o fake e quebrar o parse das fixtures.
+	// CODEC registry (ADR-0024): always populated, regardless of credential, it
+	// only enables the capability of INTERPRETING an already cached payload
+	// (never a live search), so that cataloged data survives the absence or
+	// revocation of a key. OUTSIDE fake mode (E2E): there the search registry
+	// (fake.New, in opcoesBusca) already answers for "tmdb" on its own --
+	// registering the real tmdb codec here as well would make codecPara
+	// prioritize it over the fake and break the parsing of the fixtures.
 	if os.Getenv("MYMEDIADB_FAKE_PROVIDER") != "1" {
 		opts = append(opts, server.WithCodecRegistry(provedoresConhecidos()...))
 	}
@@ -219,13 +218,14 @@ func opcoesServer(database *db.DB) ([]server.Option, error) {
 	log.Printf("mymediadb: diretório de backups em %q (job backup_vacuum)", backupDir)
 	opts = append(opts, server.WithJobHandlers(backup.New(database.Write, backupDir)))
 
-	// Gerenciador do binário yt-dlp (briefing 0101, ADR-0025): fundação para
-	// trailer (0102) e música-tema (0103). Diretório de dados no mesmo padrão
-	// de resolveAssetsDir/resolveBackupDir; o path customizado do admin (env
-	// MYMEDIADB_YTDLP_PATH) é resolvido AQUI e passado pronto -- o pacote
-	// internal/ytdlp nunca lê os.Getenv sozinho (mantém-se testável). O
-	// override via banco (app_settings, UI de Integrações) tem precedência e
-	// é sincronizado depois, no boot do Server (montarServicos).
+	// Manager for the yt-dlp binary (ADR-0025): foundation for the trailer and
+	// the theme music. Data directory following the same pattern as
+	// resolveAssetsDir/resolveBackupDir; the admin's custom path (env
+	// MYMEDIADB_YTDLP_PATH) is resolved HERE and passed in ready-made -- the
+	// internal/ytdlp package never reads os.Getenv by itself (it stays
+	// testable). The override through the database (app_settings, Integrations
+	// UI) takes precedence and is synced afterwards, at Server boot
+	// (montarServicos).
 	ytdlpDir, err := resolveYtdlpDir()
 	if err != nil {
 		return nil, err
@@ -233,49 +233,49 @@ func opcoesServer(database *db.DB) ([]server.Option, error) {
 	log.Printf("mymediadb: diretório do yt-dlp em %q", ytdlpDir)
 	opts = append(opts, server.WithYtdlp(ytdlp.Novo(ytdlpDir, os.Getenv("MYMEDIADB_YTDLP_PATH"))))
 
-	// Job saude_biblioteca (briefing 0053): registrado via option DEDICADA
-	// (não WithJobHandlers) porque o Handler precisa do scanner.Manager e do
-	// library.Service, internos ao Server — ver o comentário de
-	// WithLibraryHealthJob em internal/server/server.go.
+	// saude_biblioteca job: registered through a DEDICATED option (not
+	// WithJobHandlers) because the Handler needs scanner.Manager and
+	// library.Service, internal to the Server — see the comment on
+	// WithLibraryHealthJob in internal/server/server.go.
 	opts = append(opts, server.WithLibraryHealthJob())
 
-	// Job midias_faltantes + watch de filesystem opcional por fonte
-	// (briefing 0064): mesmo motivo de option DEDICADA do saude_biblioteca
-	// acima — os dois precisam de dependências internas ao Server. O boot
-	// efetivo do watch (listar fontes com watch_enabled=1 e registrar cada
-	// uma) acontece em srv.IniciarWatchers, chamado em run() depois de
-	// server.New (ver comentário lá).
+	// midias_faltantes job + optional per-source filesystem watch: the same
+	// reason for a DEDICATED option as saude_biblioteca above — both need
+	// dependencies internal to the Server. The effective boot of the watch
+	// (listing the sources with watch_enabled=1 and registering each one)
+	// happens in srv.IniciarWatchers, called from run() after server.New (see
+	// the comment there).
 	opts = append(opts, server.WithMidiasFaltantesJob(), server.WithWatch())
 
-	// Job trailer_tema_faltantes (briefing 0104, ADR-0026): mesmo motivo de
-	// option DEDICADA -- o Handler precisa do próprio *Server como
+	// trailer_tema_faltantes job (ADR-0026): the same reason for a DEDICATED
+	// option -- the Handler needs the *Server itself as
 	// EntityLister/TrailerTemaBaixador.
 	opts = append(opts, server.WithTrailerTemaJob())
 
 	return opts, nil
 }
 
-// opcoesBusca monta a option das fontes externas (briefing 0014/0031): REGISTRA cada
-// provider configurado no registro multi-provider. TMDB e TheTVDB podem COEXISTIR (a
-// busca consulta ambos e mescla; o resto escolhe a fonte por nome).
+// opcoesBusca assembles the option for the external sources: it REGISTERS each
+// configured provider in the multi-provider registry. TMDB and TheTVDB can COEXIST (the
+// search queries both and merges; the rest picks the source by name).
 //
-// - TMDB: MYMEDIADB_TMDB_TOKEN (Read Access Token v4, preferido) ou MYMEDIADB_TMDB_API_KEY (v3).
-// - TheTVDB: MYMEDIADB_TTDB_API_KEY (apikey do projeto, login v4).
+// - TMDB: MYMEDIADB_TMDB_TOKEN (Read Access Token v4, preferred) or MYMEDIADB_TMDB_API_KEY (v3).
+// - TheTVDB: MYMEDIADB_TTDB_API_KEY (project apikey, v4 login).
 //
-// Sem NENHUMA credencial, não registra provider (busca externa desligada — não é erro;
-// enrich/import também ficam off). NUNCA loga o valor da credencial, só ligado/desligado.
+// With NO credential at all, it registers no provider (external search off — not an error;
+// enrich/import are off too). It NEVER logs the credential value, only on/off.
 //
-// MYMEDIADB_FAKE_PROVIDER=1 tem PRECEDÊNCIA e injeta o provider de fixtures
-// determinístico (briefing 0028), EXCLUSIVO: o binário roda o fluxo inteiro sem fonte
-// real nem segredo, para os testes E2E (Camada 2) e inspeção manual. As imagens vêm de
-// MYMEDIADB_FAKE_IMAGE_BASE (um servidor de fixtures); vazio => sem pôster.
+// MYMEDIADB_FAKE_PROVIDER=1 takes PRECEDENCE and injects the deterministic fixtures
+// provider, EXCLUSIVELY: the binary runs the whole flow with no real source and no
+// secret, for the E2E tests (Layer 2) and manual inspection. The images come from
+// MYMEDIADB_FAKE_IMAGE_BASE (a fixtures server); empty => no poster.
 func opcoesBusca(database *db.DB) []server.Option {
 	if os.Getenv("MYMEDIADB_FAKE_PROVIDER") == "1" {
 		log.Printf("mymediadb: PROVIDER FAKE de fixtures habilitado (E2E; sem fonte real)")
-		// O fake de música (0115) roda ao lado do fake de filme/série sob
-		// Nome()="musicbrainz" — mesma fonte de dados fixos que
-		// internal/e2e usa na Camada 1, agora também alcançável pelo
-		// binário real que a Camada 2 (Playwright) dirige.
+		// The music fake runs alongside the movie/series fake under
+		// Nome()="musicbrainz" — the same fixed data source that
+		// internal/e2e uses in Layer 1, now also reachable from the real
+		// binary that Layer 2 (Playwright) drives.
 		return []server.Option{server.WithSearchProvider(
 			fake.New(os.Getenv("MYMEDIADB_FAKE_IMAGE_BASE")),
 			fake.NewMusicbrainz(),
@@ -289,13 +289,13 @@ func opcoesBusca(database *db.DB) []server.Option {
 	return []server.Option{server.WithSearchProvider(provs...)}
 }
 
-// provedoresReais constrói os providers reais cujas credenciais estão
-// configuradas (TMDB e/ou TheTVDB), na ordem de prioridade padrão. Vazio
-// quando nenhuma existe. O TMDB resolve a credencial via integration.Resolver
-// (briefing 0095, ADR-0023): banco (integration_config) tem PRECEDÊNCIA sobre
-// a env var -- mesmo resultado de hoje quando o banco está vazio (cai na env
-// var), mas já lendo pela camada nova. TVDB/fanart.tv NÃO migraram nesta
-// entrega (fora de escopo) -- continuam via os.Getenv direto.
+// provedoresReais builds the real providers whose credentials are configured
+// (TMDB and/or TheTVDB), in the default priority order. Empty when none exists.
+// TMDB resolves the credential through integration.Resolver (ADR-0023): the
+// database (integration_config) takes PRECEDENCE over the env var -- the same
+// result as before when the database is empty (it falls back to the env var),
+// but already reading through the new layer. TVDB/fanart.tv did NOT migrate in
+// this delivery (out of scope) -- they keep going through os.Getenv directly.
 func provedoresReais(ctx context.Context, resolver *integration.Resolver) []provider.Provider {
 	var provs []provider.Provider
 
@@ -316,34 +316,34 @@ func provedoresReais(ctx context.Context, resolver *integration.Resolver) []prov
 		provs = append(provs, tvdb.New(credTvdb, nil, ""))
 	}
 
-	// fanart.tv (briefing 0048): provider DEDICADO A ARTE (nunca fonte de busca). Entra no
-	// registry por capacidade (ArteProvider) quando a chave PESSOAL esta no ambiente; sem
-	// ela, e omitido em silencio (regressao zero). A chave so vem do env, nunca hardcoded.
+	// fanart.tv: provider DEDICATED TO ARTWORK (never a search source). It enters
+	// the registry by capability (ArteProvider) when the PERSONAL key is in the
+	// environment; without it, it is silently omitted (zero regression). The key only
+	// comes from the env, never hardcoded.
 	credFanart := fanarttv.Credencial{APIKey: os.Getenv("MYMEDIADB_FANARTTV_API_KEY")}
 	if credFanart.Configurada() {
 		log.Printf("mymediadb: enriquecimento de arte fanart.tv habilitado")
 		provs = append(provs, fanarttv.New(credFanart, nil, ""))
 	}
 
-	// MusicBrainz + Cover Art Archive (briefing 0106, ADR-0027 item 6): provider BASE
-	// da vertical de musica (busca/import de artista->album->faixa + capa de album),
-	// SEM chave de API -- sempre disponivel, mesmo papel que TheTVDB tem para serie.
-	// Registrado INCONDICIONALMENTE (sem guarda de credencial): o briefing 0106 achou
-	// que o ThemerrDB (mesmo padrao "sem chave", briefing 0103) tinha ficado
-	// implementado mas nunca construido/registrado aqui -- nao repetir esse gap.
+	// MusicBrainz + Cover Art Archive (ADR-0027 item 6): BASE provider of the
+	// music vertical (search/import of artist->album->track + album cover), with NO
+	// API key -- always available, the same role TheTVDB has for series. Registered
+	// UNCONDITIONALLY (no credential guard): the music research found that ThemerrDB
+	// (the same "no key" pattern, ADR-0025) had ended up implemented but never
+	// built/registered here -- do not repeat that gap.
 	log.Printf("mymediadb: provider MusicBrainz (musica) habilitado")
 	provs = append(provs, musicbrainz.New(nil, ""))
 
-	// AcoustID (briefing 0126): provider APENAS da capacidade
-	// FingerprintProvider (fingerprint acustico via Chromaprint/fpcalc),
-	// ultimo fallback do matching de musica (passo 4.5). So entra no
-	// registry quando AS DUAS dependencias estao presentes: a client key
-	// configurada (banco com precedencia sobre env var, mesmo resolver de
-	// sempre) E o binario fpcalc disponivel no container
-	// (fingerprint.Disponivel(), checado aqui no BOOT, nunca em build).
-	// Faltando qualquer uma, DEGRADA (loga um aviso, nao registra a
-	// capacidade) -- nunca derruba o boot; o scan de musica cai direto no
-	// passo 5 (draft) como antes deste briefing.
+	// AcoustID: provider of the FingerprintProvider capability ONLY (acoustic
+	// fingerprint through Chromaprint/fpcalc), the last fallback of the music
+	// matching (step 4.5). It only enters the registry when BOTH dependencies are
+	// present: the configured client key (database taking precedence over the env
+	// var, the same resolver as always) AND the fpcalc binary available in the
+	// container (fingerprint.Disponivel(), checked here at BOOT, never at build
+	// time). If either one is missing, it DEGRADES (logs a warning, does not
+	// register the capability) -- it never takes the boot down; the music scan
+	// falls straight through to step 5 (draft) as before.
 	descAcoustid := acoustid.NovoDescriptorIntegracao()
 	efetivosAcoustid := resolver.Valores(ctx, descAcoustid.Slug(), descAcoustid.Campos())
 	credAcoustid := acoustid.Credencial{ClientKey: efetivosAcoustid["client_key"]}
@@ -360,12 +360,12 @@ func provedoresReais(ctx context.Context, resolver *integration.Resolver) []prov
 	return provs
 }
 
-// provedoresConhecidos constrói TODOS os providers que o binário sabe
-// interpretar (tmdb/tvdb/fanarttv), com credencial VAZIA, INDEPENDENTE de
-// qualquer chave configurada -- usados só para a capacidade de PARSE de
-// payload já cacheado (MapearDetalhe/Similares/TvdbCruzadoProvider), nunca
-// para busca ao vivo. Registrar sempre garante que dado já catalogado
-// sobrevive à ausência/revogação de credencial (ADR-0024/briefing 0100).
+// provedoresConhecidos builds ALL the providers the binary knows how to
+// interpret (tmdb/tvdb/fanarttv), with an EMPTY credential, INDEPENDENT of any
+// configured key -- used only for the PARSE capability of an already cached
+// payload (MapearDetalhe/Similares/TvdbCruzadoProvider), never for a live
+// search. Registering them always guarantees that already cataloged data
+// survives the absence or revocation of a credential (ADR-0024).
 func provedoresConhecidos() []provider.Provider {
 	return []provider.Provider{
 		tmdb.New(tmdb.Credencial{}, nil, ""),
@@ -374,10 +374,10 @@ func provedoresConhecidos() []provider.Provider {
 	}
 }
 
-// resolveAssetsDir determina o diretório do cache de imagem (briefing 0015): env
-// MYMEDIADB_ASSETS_DIR tem prioridade; caso ausente, usa dirname(DB)/assets. Cria
-// o diretório se faltar (o cache grava binários lá; a guarda de path do pôster o
-// aceita como raiz confiável).
+// resolveAssetsDir determines the image cache directory: the env
+// MYMEDIADB_ASSETS_DIR takes priority; when absent, it uses dirname(DB)/assets.
+// It creates the directory if missing (the cache writes binaries there; the poster
+// path guard accepts it as a trusted root).
 func resolveAssetsDir() (string, error) {
 	dir := os.Getenv("MYMEDIADB_ASSETS_DIR")
 	if dir == "" {
@@ -389,10 +389,10 @@ func resolveAssetsDir() (string, error) {
 	return dir, nil
 }
 
-// resolveBackupDir determina o diretório dos snapshots do job backup_vacuum
-// (briefing 0052): env MYMEDIADB_BACKUP_DIR tem prioridade; caso ausente, usa
-// dirname(DB)/backups — mesma convenção de resolveAssetsDir. Cria o diretório
-// se faltar.
+// resolveBackupDir determines the directory of the backup_vacuum job snapshots:
+// the env MYMEDIADB_BACKUP_DIR takes priority; when absent, it uses
+// dirname(DB)/backups — the same convention as resolveAssetsDir. It creates the
+// directory if missing.
 func resolveBackupDir() (string, error) {
 	dir := os.Getenv("MYMEDIADB_BACKUP_DIR")
 	if dir == "" {
@@ -404,11 +404,11 @@ func resolveBackupDir() (string, error) {
 	return dir, nil
 }
 
-// resolveYtdlpDir determina o diretório de dados do binário yt-dlp baixado
-// dinamicamente (briefing 0101, ADR-0025): env MYMEDIADB_YTDLP_DIR tem
-// prioridade; caso ausente, usa dirname(DB)/bin -- mesma convenção de
-// resolveAssetsDir/resolveBackupDir, reaproveitando o volume que já existe
-// hoje (nenhum volume novo a provisionar). Cria o diretório se faltar.
+// resolveYtdlpDir determines the data directory of the yt-dlp binary downloaded
+// dynamically (ADR-0025): the env MYMEDIADB_YTDLP_DIR takes priority; when
+// absent, it uses dirname(DB)/bin -- the same convention as
+// resolveAssetsDir/resolveBackupDir, reusing the volume that already exists
+// today (no new volume to provision). It creates the directory if missing.
 func resolveYtdlpDir() (string, error) {
 	dir := os.Getenv("MYMEDIADB_YTDLP_DIR")
 	if dir == "" {
@@ -420,8 +420,8 @@ func resolveYtdlpDir() (string, error) {
 	return dir, nil
 }
 
-// resolvePort determina a porta de escuta: env PORT tem prioridade; caso
-// ausente, usa o default 8080.
+// resolvePort determines the listening port: the env PORT takes priority; when
+// absent, it uses the default 8080.
 func resolvePort() string {
 	if p := os.Getenv("PORT"); p != "" {
 		return p
@@ -429,8 +429,8 @@ func resolvePort() string {
 	return "8080"
 }
 
-// resolveDBPath determina o caminho do arquivo SQLite: env MYMEDIADB_DB_PATH
-// tem prioridade; caso ausente, usa o default de desenvolvimento em tmp/.
+// resolveDBPath determines the SQLite file path: the env MYMEDIADB_DB_PATH
+// takes priority; when absent, it uses the development default in tmp/.
 func resolveDBPath() string {
 	if p := os.Getenv("MYMEDIADB_DB_PATH"); p != "" {
 		return p

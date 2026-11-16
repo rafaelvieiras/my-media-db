@@ -1,7 +1,7 @@
-// Testes do navegador de pastas (briefing 0071). Fica no pacote interno
-// library (não library_test) porque exercita browse() diretamente, com um
-// limite de corte pequeno injetado, para testar o truncamento sem precisar
-// criar milhares de diretórios reais.
+// Tests of the folder browser (see doc 05). They live in the internal library
+// package (not in library_test) because they exercise browse() directly, with a
+// small injected cutoff limit, to test the truncation without having to create
+// thousands of real directories.
 package library
 
 import (
@@ -32,7 +32,7 @@ func TestBrowseListaSubpastas(t *testing.T) {
 			t.Fatalf("Mkdir %q: %v", nome, err)
 		}
 	}
-	// Um arquivo comum: não deve aparecer em Entries.
+	// A regular file: it must not appear in Entries.
 	if err := os.WriteFile(filepath.Join(dir, "arquivo.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestBrowseListaSubpastas(t *testing.T) {
 	if len(got.Entries) != 3 {
 		t.Fatalf("entries = %d, quero 3 (arquivo comum deve ser ignorado): %+v", len(got.Entries), got.Entries)
 	}
-	// Ordenação alfabética case-insensitive: Abacate, melancia, zebra.
+	// Case-insensitive alphabetic ordering: Abacate, melancia, zebra.
 	quero := []string{"Abacate", "melancia", "zebra"}
 	for i, e := range got.Entries {
 		if e.Name != quero[i] {
@@ -64,7 +64,7 @@ func TestBrowseListaSubpastas(t *testing.T) {
 		}
 	}
 
-	// Parent aponta um nível acima, não-nil (dir não é raiz).
+	// Parent points one level above, non-nil (dir is not the root).
 	if got.Parent == nil {
 		t.Fatal("parent = nil, quero não-nil (dir não é raiz)")
 	}
@@ -102,12 +102,11 @@ func TestBrowsePathNaoDiretorio(t *testing.T) {
 	}
 }
 
-// TestBrowseEntradaSemPermissao cobre readable:false numa entrada filha sem
-// permissão de leitura. Pulado quando o processo roda como root (dentro de
-// container Docker, por exemplo): chmod 0000 não bloqueia leitura para o
-// dono/root, então o teste não conseguiria simular a condição de forma
-// confiável (mesma guarda já usada em TestPostLibrarySemPermissao,
-// internal/server/library_test.go).
+// TestBrowseEntradaSemPermissao covers readable:false on a child entry without
+// read permission. Skipped when the process runs as root (inside a Docker
+// container, for example): chmod 0000 does not block reading for the owner/root,
+// so the test could not simulate the condition reliably (the same guard already
+// used in TestPostLibrarySemPermissao, internal/server/library_test.go).
 func TestBrowseEntradaSemPermissao(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("rodando como root: chmod 0000 não bloqueia leitura para o dono; não dá para simular sem permissão de forma confiável")
@@ -120,7 +119,7 @@ func TestBrowseEntradaSemPermissao(t *testing.T) {
 	if err := os.Chmod(semPermissao, 0o000); err != nil {
 		t.Fatalf("Chmod 0000: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(semPermissao, 0o755) }) // restaura p/ o TempDir limpar
+	t.Cleanup(func() { _ = os.Chmod(semPermissao, 0o755) }) // restores it so TempDir can clean up
 
 	got, err := browse(context.Background(), dir, maxEntradasBrowse)
 	if err != nil {
@@ -137,9 +136,9 @@ func TestBrowseEntradaSemPermissao(t *testing.T) {
 	}
 }
 
-// TestBrowseTruncamento cobre o cap de segurança: com um limite pequeno
-// injetado (3), um diretório com mais subpastas do que o limite vem cortado
-// nas primeiras N (ordem alfabética) e truncated:true.
+// TestBrowseTruncamento covers the safety cap: with a small injected limit (3),
+// a directory with more subfolders than the limit comes back cut at the first N
+// (alphabetic order) and truncated:true.
 func TestBrowseTruncamento(t *testing.T) {
 	dir := t.TempDir()
 	nomes := []string{"a", "b", "c", "d", "e"}
@@ -168,8 +167,8 @@ func TestBrowseTruncamento(t *testing.T) {
 	}
 }
 
-// TestBrowseSemTruncamentoAbaixoDoLimite garante que truncated fica false
-// quando a contagem de entradas é exatamente igual (ou menor) ao limite.
+// TestBrowseSemTruncamentoAbaixoDoLimite guarantees that truncated stays false
+// when the entry count is exactly equal to (or below) the limit.
 func TestBrowseSemTruncamentoAbaixoDoLimite(t *testing.T) {
 	dir := t.TempDir()
 	for _, nome := range []string{"a", "b", "c"} {

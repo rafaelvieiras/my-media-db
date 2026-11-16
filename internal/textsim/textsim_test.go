@@ -28,16 +28,17 @@ func TestSimilaridade_CompletamenteDiferentes(t *testing.T) {
 }
 
 func TestSimilaridade_PrefixoComumPesaMais(t *testing.T) {
-	// Mesmo par de letras trocadas, um caso com prefixo comum e outro sem.
-	comPrefixo := Similaridade("Matrxi", "Matrix") // prefixo "Matr" bate
-	semPrefixo := Similaridade("xirtaM", "Matrix") // nenhum prefixo comum
+	// The same pair of swapped letters, one case with a common prefix and one
+	// without.
+	comPrefixo := Similaridade("Matrxi", "Matrix") // prefix "Matr" matches
+	semPrefixo := Similaridade("xirtaM", "Matrix") // no common prefix
 	if comPrefixo <= semPrefixo {
 		t.Errorf("prefixo comum deveria pesar mais: comPrefixo=%v semPrefixo=%v", comPrefixo, semPrefixo)
 	}
 }
 
 func TestSimilaridade_VetorClassico(t *testing.T) {
-	// Caso canônico de Jaro-Winkler (MARTHA/MARHTA): Jaro=0.944, JW=0.961.
+	// Canonical Jaro-Winkler case (MARTHA/MARHTA): Jaro=0.944, JW=0.961.
 	got := Similaridade("MARTHA", "MARHTA")
 	if got < 0.95 || got > 0.97 {
 		t.Errorf("vetor clássico MARTHA/MARHTA: got %v, want ~0.961", got)

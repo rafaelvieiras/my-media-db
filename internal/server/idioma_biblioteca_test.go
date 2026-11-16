@@ -9,13 +9,14 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Testes do resolvedor de IDIOMA DE BUSCA por item (briefing 0084): §4/§5 do
-// briefing. defaultLanguageSettings() (sem PUT /settings/languages) dá
-// Primary="pt-BR" -- é o fallback esperado nos casos sem preferência/ambíguos.
+// Tests of the per-item SEARCH LANGUAGE resolver.
+// defaultLanguageSettings() (without PUT /settings/languages) gives
+// Primary="pt-BR" -- it is the expected fallback in the cases without
+// preference/ambiguous.
 
-// semearLibrarySourceComIdioma insere uma library_source com preferred_language
-// (nil = sem preferência), bypassando library.Service.Criar (mesmo espírito de
-// semearLibrarySource em health_system_test.go).
+// semearLibrarySourceComIdioma inserts a library_source with preferred_language
+// (nil = no preference), bypassing library.Service.Criar (same spirit as
+// semearLibrarySource in health_system_test.go).
 func semearLibrarySourceComIdioma(t *testing.T, d *db.DB, id, path string, preferredLanguage *string) {
 	t.Helper()
 	var ns sql.NullString
@@ -29,8 +30,8 @@ func semearLibrarySourceComIdioma(t *testing.T, d *db.DB, id, path string, prefe
 	}
 }
 
-// TestIdiomaDeBusca_SemArquivoCaiPraGlobal cobre entity sem media_file algum:
-// cai direto no primary global, sem erro.
+// TestIdiomaDeBusca_SemArquivoCaiPraGlobal covers an entity without any media_file:
+// it falls straight to the global primary, without an error.
 func TestIdiomaDeBusca_SemArquivoCaiPraGlobal(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e1", "movie", "Sem Arquivo")
@@ -45,9 +46,9 @@ func TestIdiomaDeBusca_SemArquivoCaiPraGlobal(t *testing.T) {
 	}
 }
 
-// TestIdiomaDeBusca_UnicaFontePreferidaVence cobre o caso central: um único
-// media_file present, cuja library_source tem preferred_language definido ->
-// usa esse idioma, não o global.
+// TestIdiomaDeBusca_UnicaFontePreferidaVence covers the central case: a single
+// present media_file, whose library_source has a defined preferred_language ->
+// it uses that language, not the global one.
 func TestIdiomaDeBusca_UnicaFontePreferidaVence(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	en := "en"
@@ -65,8 +66,8 @@ func TestIdiomaDeBusca_UnicaFontePreferidaVence(t *testing.T) {
 	}
 }
 
-// TestIdiomaDeBusca_SemPreferenciaCaiPraGlobal cobre uma fonte SEM
-// preferred_language: comportamento idêntico a antes do briefing 0084.
+// TestIdiomaDeBusca_SemPreferenciaCaiPraGlobal covers a source WITHOUT
+// preferred_language: behavior identical to before.
 func TestIdiomaDeBusca_SemPreferenciaCaiPraGlobal(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	semearLibrarySourceComIdioma(t, d, "src-sem-pref", "/lib/sem-pref", nil)
@@ -83,9 +84,9 @@ func TestIdiomaDeBusca_SemPreferenciaCaiPraGlobal(t *testing.T) {
 	}
 }
 
-// TestIdiomaDeBusca_AmbiguidadeCaiPraGlobal cobre uma entity com arquivos de
-// DUAS bibliotecas com preferred_language DIFERENTES entre si: resolve para o
-// global, sem erro nem tela de decisão (briefing 0084 §6).
+// TestIdiomaDeBusca_AmbiguidadeCaiPraGlobal covers an entity with files from
+// TWO libraries with DIFFERENT preferred_language values: it resolves to the
+// global one, without an error nor a decision screen.
 func TestIdiomaDeBusca_AmbiguidadeCaiPraGlobal(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	en, es := "en", "es"
@@ -105,9 +106,9 @@ func TestIdiomaDeBusca_AmbiguidadeCaiPraGlobal(t *testing.T) {
 	}
 }
 
-// TestIdiomaDeBusca_ArquivoMissingIgnorado cobre que só arquivos state=present
-// contam: um arquivo 'missing' de uma fonte com preferência não deve
-// contaminar a resolução.
+// TestIdiomaDeBusca_ArquivoMissingIgnorado covers that only state=present files
+// count: a 'missing' file from a source with a preference must not
+// contaminate the resolution.
 func TestIdiomaDeBusca_ArquivoMissingIgnorado(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	en := "en"
@@ -125,9 +126,9 @@ func TestIdiomaDeBusca_ArquivoMissingIgnorado(t *testing.T) {
 	}
 }
 
-// TestIdiomaDeBusca_MesmaPreferenciaEmDuasFontesNaoEAmbigua cobre que DUAS
-// fontes com o MESMO preferred_language não são tratadas como ambíguas (só
-// um valor distinto entre elas).
+// TestIdiomaDeBusca_MesmaPreferenciaEmDuasFontesNaoEAmbigua covers that TWO
+// sources with the SAME preferred_language are not treated as ambiguous (only
+// a distinct value between them).
 func TestIdiomaDeBusca_MesmaPreferenciaEmDuasFontesNaoEAmbigua(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	en1, en2 := "en", "en"

@@ -22,12 +22,12 @@ type ContarEntitiesPorTipoRow struct {
 	Total int64
 }
 
-// Leituras agregadas para GET /api/v1/health/system (briefing 0055): tamanho
-// do banco via PRAGMA (fora deste arquivo, roda direto pelo Go -- ver
-// internal/telemetry/telemetry.go) + contagens de uso + soma de disco por
-// fonte. Nenhuma tabela nova. Comentarios em ASCII (sem acento) -- mesmo
-// cuidado de entity.sql/job.sql contra o bug de corrupcao do sqlc v1.31 com
-// .sql de query acentuado.
+// Aggregate reads for GET /api/v1/health/system: database
+// size via PRAGMA (outside this file, it runs straight from Go -- see
+// internal/telemetry/telemetry.go) + usage counts + on-disk sum per
+// source. No new table. Comments in ASCII (no accent) -- the same
+// care as in entity.sql/job.sql against the sqlc v1.31 corruption bug with an
+// accented query .sql.
 func (q *Queries) ContarEntitiesPorTipo(ctx context.Context) ([]ContarEntitiesPorTipoRow, error) {
 	rows, err := q.db.QueryContext(ctx, contarEntitiesPorTipo)
 	if err != nil {
@@ -55,9 +55,9 @@ const contarJobExecutions = `-- name: ContarJobExecutions :one
 SELECT COUNT(*) AS total FROM queue_item WHERE kind = 'job'
 `
 
-// Desde o briefing 0108/ADR-0028 (CAMADA 3): job_execution foi derrubada
-// (migration 0025); o historico de execucao de job vive em queue_item
-// (kind='job') -- ver internal/db/queries/queue_item.sql.
+// Since ADR-0028 (LAYER 3): job_execution was dropped
+// (migration 0025); the job execution history lives in queue_item
+// (kind='job') -- see internal/db/queries/queue_item.sql.
 func (q *Queries) ContarJobExecutions(ctx context.Context) (int64, error) {
 	row := q.db.QueryRowContext(ctx, contarJobExecutions)
 	var total int64

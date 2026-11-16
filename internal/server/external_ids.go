@@ -14,27 +14,27 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/historico"
 )
 
-// Este arquivo implementa a EDIÇÃO da identidade externa da entity (briefing 0027):
-// PUT /api/v1/entities/{id}/external-ids grava o mapa `external_ids` (source -> id na
-// fonte). É a identidade AUTORITATIVA (MD4): as colunas geradas external_id_tmdb/imdb
-// re-derivam do JSON gravado, então fixar aqui o id da fonte prepara uma
-// sincronização futura (o dono corrige o id quando a fonte muda/apaga/funde um item).
+// This file implements the EDITING of the entity's external identity:
+// PUT /api/v1/entities/{id}/external-ids writes the `external_ids` map (source -> id at the
+// source). It is the AUTHORITATIVE identity (MD4): the generated columns external_id_tmdb/imdb
+// re-derive from the written JSON, so pinning the source id here prepares a
+// future synchronization (the owner fixes the id when the source changes/deletes/merges an item).
 //
-// NÃO re-enriquece: só fixa a identidade. Para puxar o detalhe pela nova identidade, o
-// dono chama POST /entities/{id}/enrich depois. Escrita pelo pool de ESCRITA (ADR-0010),
-// via a query AtualizarExternalIds já existente (usada também pelo enrich).
+// It does NOT re-enrich: it only pins the identity. To pull the detail through the new identity,
+// the owner calls POST /entities/{id}/enrich afterwards. Written through the WRITE pool (ADR-0010),
+// via the already existing AtualizarExternalIds query (also used by enrich).
 
-// updateExternalIdsBody é o corpo de PUT /entities/{id}/external-ids: o mapa COMPLETO
-// de identidades (source -> id). Substitui o mapa inteiro (semântica de PUT); um par
-// com valor vazio ("") REMOVE aquela fonte (não grava id vazio).
+// updateExternalIdsBody is the body of PUT /entities/{id}/external-ids: the COMPLETE
+// map of identities (source -> id). It replaces the whole map (PUT semantics); a pair
+// with an empty value ("") REMOVES that source (it does not write an empty id).
 type updateExternalIdsBody struct {
 	ExternalIDs map[string]string `json:"external_ids"`
 }
 
-// updateExternalIds trata PUT /api/v1/entities/{id}/external-ids. 503 sem banco; 404
-// entity inexistente; 400 corpo JSON inválido; 422 quando alguma CHAVE (source) é vazia.
-// Pares com valor vazio são descartados (remoção). 200 com a entity RESOLVIDA — a UI
-// reflete a nova identidade na hora.
+// updateExternalIds handles PUT /api/v1/entities/{id}/external-ids. 503 without a database; 404
+// entity does not exist; 400 invalid JSON body; 422 when any KEY (source) is empty.
+// Pairs with an empty value are discarded (removal). 200 with the RESOLVED entity — the UI
+// reflects the new identity right away.
 func (s *Server) updateExternalIds(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -62,9 +62,9 @@ func (s *Server) updateExternalIds(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Rede de seguranca contra duplicata (briefing 0051): cada id novo que ja
-	// pertence a OUTRA entity funde essa outra aqui (sem investimento do dono) ou
-	// aborta com 409 (com investimento) -- antes de gravar qualquer coisa.
+	// Safety net against a duplicate: every new id that already
+	// belongs to ANOTHER entity merges that other one into this one (no investment from the
+	// owner) or aborts with 409 (with investment) -- before writing anything.
 	for source, sourceID := range ids {
 		if _, ok := s.resolverColisaoExterna(w, ctx, id, ent.Type, source, sourceID); !ok {
 			return
@@ -82,19 +82,19 @@ func (s *Server) updateExternalIds(w http.ResponseWriter, r *http.Request) {
 		respondErroInterno(w)
 		return
 	}
-	// Backfill retroativo (briefing 0099): a identidade já foi gravada com
-	// sucesso -- vincular eventos órfãos é um bônus, nunca reverte/bloqueia
-	// a resposta já formada. Erro só loga.
+	// Retroactive backfill: the identity has already been written
+	// successfully -- linking orphan events is a bonus, it never reverts/blocks
+	// the response already formed. An error is only logged.
 	if _, err := historico.VincularOrfaos(ctx, sqlcgen.New(s.db.Write), id, ids); err != nil {
 		log.Printf("external-ids: backfill de eventos orfaos para %s falhou (segue): %v", id, err)
 	}
 	s.responderResolvida(w, ctx, id, http.StatusOK)
 }
 
-// normalizarExternalIds valida e enxuga o mapa: rejeita chave vazia (422) e descarta
-// pares de valor vazio (remoção), aparando espaços de chave e valor. Devolve o mapa
-// limpo e ok=true; em erro escreve o 422 e devolve ok=false. Um mapa nil vira `{}`
-// (limpa todas as identidades — é a semântica de PUT do mapa completo).
+// normalizarExternalIds validates and trims the map: it rejects an empty key (422) and discards
+// pairs with an empty value (removal), trimming spaces from key and value. It returns the
+// clean map and ok=true; on error it writes the 422 and returns ok=false. A nil map becomes `{}`
+// (clears every identity — that is the PUT semantics of the complete map).
 func normalizarExternalIds(w http.ResponseWriter, in map[string]string) (map[string]string, bool) {
 	out := make(map[string]string, len(in))
 	for k, v := range in {
@@ -105,7 +105,7 @@ func normalizarExternalIds(w http.ResponseWriter, in map[string]string) (map[str
 			return nil, false
 		}
 		if valor == "" {
-			continue // valor vazio = remover aquela fonte
+			continue // empty value = remove that source
 		}
 		out[chave] = valor
 	}

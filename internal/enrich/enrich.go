@@ -1,10 +1,10 @@
-// Package enrich é o serviço de ENRIQUECIMENTO (import explícito, briefing 0015):
-// puxa o detalhe de um provider, persiste a base externa (media_external, payload
-// cru — ADR-0011), grava a identidade autoritativa (external_ids, MD4) e cacheia o
-// pôster em disco como asset origin='external'. É NÃO-DESTRUTIVO (ADR-0012): nunca
-// toca media_override nem arte origin='user'. Todas as escritas passam pelo pool de
-// escrita (escritor único, ADR-0010). A falha da IMAGEM degrada (loga, segue sem
-// pôster); a falha da FONTE (BuscarDetalhe) é propagada ao chamador.
+// Package enrich is the ENRICHMENT service (explicit import): it pulls a provider's
+// detail, persists the external base (media_external, raw payload — ADR-0011), writes
+// the authoritative identity (external_ids, MD4) and caches the poster on disk as an
+// asset with origin='external'. It is NON-DESTRUCTIVE (ADR-0012): it never touches
+// media_override nor artwork with origin='user'. All writes go through the write pool
+// (single writer, ADR-0010). An IMAGE failure degrades (logs, continues without a
+// poster); a SOURCE failure (BuscarDetalhe) is propagated to the caller.
 package enrich
 
 import (
@@ -32,47 +32,47 @@ import (
 )
 
 const (
-	// timeoutImagem limita o download de UM pôster; estouro degrada (sem pôster).
+	// timeoutImagem bounds the download of ONE poster; a timeout degrades (no poster).
 	timeoutImagem = 15 * time.Second
-	// tamanhoMaxImagem é o teto de bytes de um pôster baixado (guarda contra uma
-	// fonte hostil/gigante). 20 MiB cobre com folga um w342.
+	// tamanhoMaxImagem is the byte ceiling of a downloaded poster (a guard against a
+	// hostile/oversized source). 20 MiB covers a w342 with room to spare.
 	tamanhoMaxImagem = 20 << 20
-	// kindPoster/kindFanart/originExternal são as etiquetas dos assets cacheados.
-	// fanart = imagem de fundo (backdrop); cacheada localmente como o pôster para
-	// não depender da fonte externa em runtime (mesmo motivo do pôster, 0015).
+	// kindPoster/kindFanart/originExternal are the tags of the cached assets.
+	// fanart = background image (backdrop); cached locally just like the poster so as
+	// not to depend on the external source at runtime (same reason as the poster).
 	kindPoster     = "poster"
 	kindFanart     = "fanart"
 	originExternal = "external"
-	// tipoColecao/relacaoColecao: a coleção é uma entity `type='collection'` (briefing
-	// 0025) e seus filmes ligam-se por entity_relation com kind='collection'.
+	// tipoColecao/relacaoColecao: a collection is an entity `type='collection'` and its
+	// movies are linked through entity_relation with kind='collection'.
 	tipoColecao    = "collection"
 	relacaoColecao = "collection"
-	// tipoFilme é o entity.type do filme — o gatilho do enriquecimento de artes (0048)
-	// no import de item (a série dispara o seu depois da árvore, em importarSerie).
+	// tipoFilme is the movie's entity.type — the trigger for artwork enrichment on
+	// item import (a series fires its own after the tree, in importarSerie).
 	tipoFilme = "movie"
 )
 
-// Servico executa o enriquecimento. Recebe os pools de banco, o REGISTRO multi-
-// provider (a fonte é escolhida por nome, briefing 0031) e o diretório confiável de
-// assets (onde o binário do pôster é gravado).
+// Servico runs the enrichment. It receives the database pools, the multi-provider
+// REGISTRY (the source is chosen by name) and the trusted assets directory (where the
+// poster binary is written).
 type Servico struct {
 	database  *db.DB
 	providers provider.Registry
 	assetsDir string
-	// detalhe resolve o detalhe externo com CACHE-FIRST (external_detail, 0022): o
-	// import/enrich passa a puxar por aqui, reusando o cache do detalhe rico quando
-	// fresco (sem 2ª ida à fonte) e semeando media_external a partir dele.
+	// detalhe resolves the external detail CACHE-FIRST (external_detail): the
+	// import/enrich now pulls through here, reusing the rich-detail cache when it is
+	// fresh (no second trip to the source) and seeding media_external from it.
 	detalhe *externaldetail.Servico
-	// httpImagem baixa o binário do pôster (timeout curto). Injetável em teste.
+	// httpImagem downloads the poster binary (short timeout). Injectable in tests.
 	httpImagem *http.Client
-	// novoID gera ids de linhas novas (media_external/asset). Injetável em teste.
+	// novoID generates ids for new rows (media_external/asset). Injectable in tests.
 	novoID func() string
 }
 
-// New cria o serviço. provider e assetsDir são obrigatórios para operar; o main só
-// constrói o serviço quando ambos existem (sem credencial, enrich fica desligado). O
-// cache do detalhe externo (external_detail, 0022) é construído aqui e compartilha a
-// tabela com o handler GET do detalhe externo (o estado é o banco, não a instância).
+// New creates the service. provider and assetsDir are required to operate; main only
+// builds the service when both exist (without a credential, enrich stays off). The
+// external-detail cache (external_detail) is built here and shares the table with the
+// external-detail GET handler (the state is the database, not the instance).
 func New(database *db.DB, provs provider.Registry, assetsDir string) *Servico {
 	return &Servico{
 		database:   database,
@@ -84,43 +84,42 @@ func New(database *db.DB, provs provider.Registry, assetsDir string) *Servico {
 	}
 }
 
-// provFonte devolve o provider da fonte `source` do registro. Ausente => (nil,false):
-// o chamador degrada (o fluxo normal já garante o provider, pois PayloadFresco falha
-// antes se a fonte não existe).
+// provFonte returns the provider for source `source` from the registry. Missing => (nil,false):
+// the caller degrades (the normal flow already guarantees the provider, since PayloadFresco
+// fails earlier when the source does not exist).
 func (s *Servico) provFonte(source string) (provider.Provider, bool) {
 	return s.providers.Get(source)
 }
 
-// Enriquecer enriquece uma entity JÁ EXISTENTE: puxa o detalhe (nos idiomas
-// permitidos `langs`, briefing 0020), mescla a identidade externa e persiste a base
-// externa + pôster + original_language. A falha da fonte é propagada; a da imagem
-// degrada. Fluxo do POST /entities/{id}/enrich (e de todo chamador que aplica
-// identidade externa a uma entity já existente — Corrigir, Confirmar candidato,
-// auto-match, retroativo/enrich-missing). Wrapper fino de enriquecerBase que sempre
-// tenta sincronizar a árvore de série (0067): aqui é o único ponto além de
-// importarSerie que constrói temporada/episódio. `force` (briefing 0088, ação
-// "Baixar Metadados" do menu Gerenciar) propaga até TODAS as idas a
-// externaldetail.PayloadFresco desta passada (base + enriquecimento rico da série,
-// quando houver), pulando o cache de 24h e indo sempre à rede — a escrita do cache
-// continua acontecendo, então a próxima chamada sem force já serve do resultado
-// fresco.
+// Enriquecer enriches an ALREADY EXISTING entity: it pulls the detail (in the allowed
+// languages `langs`), merges the external identity and persists the external base +
+// poster + original_language. A source failure is propagated; an image failure
+// degrades. Flow of POST /entities/{id}/enrich (and of every caller that applies an
+// external identity to an already existing entity — Corrigir, Confirmar candidato,
+// auto-match, retroactive/enrich-missing). Thin wrapper around enriquecerBase that
+// always tries to sync the series tree: this is the only point besides importarSerie
+// that builds season/episode. `force` (the "Baixar Metadados" action of the Gerenciar
+// menu) propagates to ALL the externaldetail.PayloadFresco calls of this pass (base +
+// rich enrichment of the series, when there is one), skipping the 24h cache and always
+// going to the network — the cache write still happens, so the next call without force
+// already serves the fresh result.
 func (s *Servico) Enriquecer(ctx context.Context, entityID, source, sourceID, tipo string, langs []string, force bool) error {
 	return s.enriquecerBase(ctx, entityID, source, sourceID, tipo, langs, true, force)
 }
 
-// enriquecerBase é o corpo de Enriquecer mais o parâmetro sincronizarArvore (0067):
-// quando tipo==tipoSerie e sincronizarArvore, sincroniza a árvore de temporada/
-// episódio como ÚLTIMO passo, best-effort — loga e degrada, NUNCA propaga o erro
-// para o chamador. Nesse ponto mesclarExternalIds/persistir/curarTitulo já gravaram
-// no banco (external_ids, payload base, pôster, título); uma falha só-da-árvore não
-// pode fazer o chamador HTTP reportar "falhou" sobre uma operação que já mudou o
-// estado da entity, e os chamadores best-effort (aplicarCandidatoExterno no
-// auto-match/retroativo) já tratam erro de Enriquecer como "sem aplicar, fica
-// pendente" — propagar faria uma identidade que já bateu o limiar de confiança nunca
-// ser aplicada, um retrocesso pior que a árvore ausente. `force` (0088) é repassado
-// à ida de PayloadFresco abaixo; os dois call sites internos de importarItemBase
-// sempre passam force=false (item novo/reuse do import já busca fresco por
-// definição, fora do escopo do botão "Baixar Metadados").
+// enriquecerBase is the body of Enriquecer plus the sincronizarArvore parameter:
+// when tipo==tipoSerie and sincronizarArvore, it syncs the season/episode tree as the
+// LAST step, best-effort — it logs and degrades, NEVER propagating the error to the
+// caller. At that point mesclarExternalIds/persistir/curarTitulo have already written to
+// the database (external_ids, base payload, poster, title); a tree-only failure cannot
+// make the HTTP caller report "failed" about an operation that already changed the
+// state of the entity, and the best-effort callers (aplicarCandidatoExterno in the
+// auto-match/retroactive) already treat an Enriquecer error as "not applied, stays
+// pending" — propagating would mean an identity that already crossed the confidence
+// threshold never gets applied, a regression worse than the missing tree. `force` is
+// forwarded to the PayloadFresco call below; the two internal call sites of
+// importarItemBase always pass force=false (a new item/reuse in the import already
+// fetches fresh by definition, outside the scope of the "Baixar Metadados" button).
 func (s *Servico) enriquecerBase(ctx context.Context, entityID, source, sourceID, tipo string, langs []string, sincronizarArvore, force bool) error {
 	raw, err := s.detalhe.PayloadFresco(ctx, source, sourceID, tipo, langs, force)
 	if err != nil {
@@ -135,45 +134,46 @@ func (s *Servico) enriquecerBase(ctx context.Context, entityID, source, sourceID
 	if err := s.curarTitulo(ctx, entityID, source, sourceID, raw, langs); err != nil {
 		return err
 	}
-	// Inventario de artes do fanart.tv (0048) para FILME fora do import explicito (0087):
-	// Importar ja dispara isto via importarItem (linha ~165); ate aqui, o caminho publico
-	// de Enriquecer() (auto-match, retroativo/0085, "Corrigir", "Confirmar candidato",
-	// POST /entities/{id}/enrich) NUNCA chamava enriquecerArtes para filme, deixando a
-	// esmagadora maioria dos filmes novos (que entram via scan, nao busca manual) sem
-	// artes extras do fanart.tv. sincronizarArvore=false nos dois call sites internos de
-	// importarItemBase evita dupla-chamada aqui: esses casos ja sao cobertos pela chamada
-	// explicita de importarItem logo depois.
+	// fanart.tv artwork inventory for MOVIE outside the explicit import:
+	// Importar already triggers it via importarItem (line ~165); until then, the public
+	// path of Enriquecer() (auto-match, retroactive, "Corrigir", "Confirmar candidato",
+	// POST /entities/{id}/enrich) NEVER called enriquecerArtes for a movie, leaving the
+	// overwhelming majority of new movies (which come in through the scan, not through a
+	// manual search) without the extra fanart.tv artwork. sincronizarArvore=false in the
+	// two internal call sites of importarItemBase avoids a double call here: those cases
+	// are already covered by the explicit importarItem call right after.
 	if tipo == tipoFilme && sincronizarArvore {
 		s.enriquecerArtes(ctx, entityID, tipo, langs)
-		// Candidato de tema musical (0103): mesmo gatilho/guarda de
-		// enriquecerArtes acima -- os dois dependem só dos external_ids já
-		// mesclados nesta passada, sem passo próprio.
+		// Theme-music candidate (ADR-0025): same trigger/guard as
+		// enriquecerArtes above -- both depend only on the external_ids already
+		// merged in this pass, with no step of their own.
 		s.enriquecerTemaMusical(ctx, entityID, tipo, langs)
 	}
 	if tipo == tipoArtista && sincronizarArvore {
-		// Inventario de artes do ARTISTA (fanart.tv) fora do import explicito de
-		// arvore (mesma causa do 0087, so que na vertical de musica): importarArtista/
-		// ImportarFaixaPossuida (musica.go) chamam enriquecerArtes na criacao, mas
-		// NUNCA passam por enriquecerBase -- entao um artista pre-existente sem
-		// external_ids (dado legado, de antes do MusicBrainz) que ganha o mbid pelo
-		// caminho generico Enriquecer() (auto-match, retroativo/0116, "Corrigir",
-		// "Confirmar candidato", POST /entities/{id}/enrich) nunca disparava a busca
-		// de arte -- ficava para sempre sem foto/fundo do fanart.tv. Sem risco de
-		// dupla-chamada: nenhum call site de tipo=="artista" passa sincronizarArvore=
-		// false (importarItemBase, que usa a flag para evitar duplicar, nunca e
-		// chamado para este tipo -- Importar despacha artista direto para
+		// ARTIST artwork inventory (fanart.tv) outside the explicit tree import (same
+		// cause as the movie case above, only in the music vertical): importarArtista/
+		// ImportarFaixaPossuida (musica.go) call enriquecerArtes on creation, but they
+		// NEVER go through enriquecerBase -- so a pre-existing artist without
+		// external_ids (legacy data, from before MusicBrainz) that gains the mbid through
+		// the generic Enriquecer() path (auto-match, retroactive, "Corrigir",
+		// "Confirmar candidato", POST /entities/{id}/enrich) never triggered the artwork
+		// search -- it stayed forever without a photo/background from fanart.tv. No risk
+		// of a double call: no call site with tipo=="artista" passes sincronizarArvore=
+		// false (importarItemBase, which uses the flag to avoid duplicating, is never
+		// called for this type -- Importar dispatches an artist straight to
 		// importarArtista).
 		s.enriquecerArtes(ctx, entityID, tipo, langs)
 	}
 	if tipo == tipoSerie {
-		// Cross-id TVDB capturado do detalhe da fonte-base, quando ela suportar a
-		// capacidade opcional (0087; hoje so o client TMDB): fecha a lacuna que deixava
-		// toda serie cuja arvore vem SO do TMDB (sem TVDB configurado, independencia de
-		// provider do 0046) sem id utilizavel para o fanart.tv, que na TV exige tvdb_id
-		// exclusivamente (fanarttv.rotaETabela, case "tv"). Roda ANTES de
-		// sincronizarArvoreSerie/enriquecerArtes (abaixo) para que idsExternosDe ja
-		// enxergue o tvdb novo na MESMA passada. Nao-destrutivo (nunca sobrescreve um
-		// tvdb ja presente) e best-effort (degrada em silencio sem a capacidade/match).
+		// TVDB cross-id captured from the base-source detail, when it supports the
+		// optional capability (today only the TMDB client): it closes the gap that left
+		// every series whose tree comes ONLY from TMDB (with no TVDB configured, the
+		// provider independence) without a usable id for fanart.tv, which on TV requires
+		// tvdb_id exclusively (fanarttv.rotaETabela, case "tv"). It runs BEFORE
+		// sincronizarArvoreSerie/enriquecerArtes (below) so that idsExternosDe already
+		// sees the new tvdb in the SAME pass. Non-destructive (it never overwrites a
+		// tvdb already present) and best-effort (it degrades silently without the
+		// capability/match).
 		s.mesclarTvdbCruzado(ctx, entityID, source, raw)
 	}
 	if tipo == tipoSerie && sincronizarArvore {
@@ -184,10 +184,11 @@ func (s *Servico) enriquecerBase(ctx context.Context, entityID, source, sourceID
 	return nil
 }
 
-// Importar é o find-or-create por id externo (MD4) do POST /import: se já existe
-// uma entity com aquele id na fonte, reusa e re-enriquece (criada=false); senão
-// cria (status DEFAULT 'cataloged', título inicial do detalhe) e enriquece
-// (criada=true). Devolve o id da entity resolvível pelo chamador.
+// Importar is the find-or-create by external id (MD4) of POST /import: if an entity
+// with that id already exists at the source, it reuses and re-enriches it
+// (criada=false); otherwise it creates one (DEFAULT status 'cataloged', initial title
+// from the detail) and enriches it (criada=true). It returns the entity id resolvable
+// by the caller.
 func (s *Servico) Importar(ctx context.Context, source, sourceID, tipo string, langs []string) (id string, criada bool, err error) {
 	switch tipo {
 	case tipoColecao:
@@ -201,52 +202,52 @@ func (s *Servico) Importar(ctx context.Context, source, sourceID, tipo string, l
 	}
 }
 
-// importarItem é o find-or-create de um ITEM único (filme, ou a linha-base de uma
-// série/temporada/episódio): reusa a entity existente (dedup por id externo) e a
-// re-enriquece, ou cria uma nova (título inicial do detalhe) e persiste a base
-// externa + pôster. É o caminho compartilhado por Importar (filme) e importarSerie (a
-// própria série usa este molde para detalhe/pôster/curarTitulo antes da árvore).
+// importarItem is the find-or-create of a single ITEM (movie, or the base row of a
+// series/season/episode): it reuses the existing entity (dedup by external id) and
+// re-enriches it, or creates a new one (initial title from the detail) and persists the
+// external base + poster. It is the path shared by Importar (movie) and importarSerie
+// (the series itself uses this template for detail/poster/curarTitulo before the tree).
 func (s *Servico) importarItem(ctx context.Context, source, sourceID, tipo string, langs []string) (string, bool, error) {
 	id, criada, err := s.importarItemBase(ctx, source, sourceID, tipo, langs)
 	if err != nil {
 		return id, criada, err
 	}
-	// Inventário de artes (0048): só o FILME dispara aqui — a série node também passa por
-	// importarItem (dentro de importarSerie), mas suas artes esperam a árvore (importarSerie
-	// chama enriquecerArtes depois, para rotear as artes de temporada). Best-effort.
+	// Artwork inventory: only the MOVIE triggers here — the series node also goes
+	// through importarItem (inside importarSerie), but its artwork waits for the tree
+	// (importarSerie calls enriquecerArtes later, to route the season artwork).
+	// Best-effort.
 	if tipo == tipoFilme {
 		s.enriquecerArtes(ctx, id, tipo, langs)
-		// Candidato de tema musical (0103): mesmo gatilho de enriquecerArtes
-		// acima -- o caminho de import de FILME dispara os dois juntos.
+		// Theme-music candidate (ADR-0025): same trigger as enriquecerArtes
+		// above -- the MOVIE import path fires both together.
 		s.enriquecerTemaMusical(ctx, id, tipo, langs)
 	}
 	return id, criada, nil
 }
 
-// importarItemSemArvore é a variante de importarItemBase usada por importarSerie
-// (0067) para resolver a entity da série SEM disparar nada relacionado à árvore por
-// conta própria: hoje é importarItemBase diretamente, porque este caminho já não
-// dispara o gatilho de artes do 0048 (fica fora de tipoSerie) nem sincroniza a
-// árvore sozinho (os dois call sites internos de Enriquecer dentro de
-// importarItemBase passam sincronizarArvore=false) — importarSerie sincroniza a
-// árvore explicitamente logo em seguida, exatamente uma vez.
+// importarItemSemArvore is the variant of importarItemBase used by importarSerie to
+// resolve the series entity WITHOUT firing anything tree-related on its own: today it
+// is importarItemBase directly, because this path already does not fire the artwork
+// trigger (it stays outside tipoSerie) nor sync the tree by itself (the two internal
+// call sites of Enriquecer inside importarItemBase pass sincronizarArvore=false) —
+// importarSerie syncs the tree explicitly right after, exactly once.
 func (s *Servico) importarItemSemArvore(ctx context.Context, source, sourceID, tipo string, langs []string) (string, bool, error) {
 	return s.importarItemBase(ctx, source, sourceID, tipo, langs)
 }
 
-// importarItemBase é o find-or-create puro do item (sem o enriquecimento de artes, que
-// importarItem dispara por cima). Separá-lo mantém o gatilho de artes fora do caminho da
-// série node (que reusa este molde) e o gocyclo baixo.
+// importarItemBase is the pure find-or-create of the item (without the artwork
+// enrichment, which importarItem fires on top). Keeping it separate keeps the artwork
+// trigger out of the series node path (which reuses this template) and the gocyclo low.
 //
-// Os dois call sites internos de enriquecerBase abaixo passam sincronizarArvore=false
-// (0067): quando tipo==tipoSerie, o único chamador destes branches é importarSerie
-// (via importarItemSemArvore), que já sincroniza a árvore explicitamente logo depois —
-// sem a flag, o branch de reuse faria DUAS idas ao provider (BuscarSerieArvore aqui
-// dentro do Enriquecer interno, e de novo em importarSerie). Para FILME (0087) a flag
-// TAMBÉM evita a dupla-chamada de enriquecerArtes: com sincronizarArvore=false aqui, o
-// gatilho novo dentro de enriquecerBase não dispara — quem dispara é o próprio
-// importarItem, logo abaixo (ver seu comentário). Deixou de ser "inofensivo" para
-// movie/collection: o parâmetro agora tem efeito real também para filme.
+// The two internal call sites of enriquecerBase below pass sincronizarArvore=false:
+// when tipo==tipoSerie, the only caller of these branches is importarSerie (through
+// importarItemSemArvore), which already syncs the tree explicitly right after — without
+// the flag, the reuse branch would make TWO trips to the provider (BuscarSerieArvore
+// here inside the internal Enriquecer, and again in importarSerie). For MOVIE the flag
+// ALSO avoids the double call to enriquecerArtes: with sincronizarArvore=false here, the
+// new trigger inside enriquecerBase does not fire — the one that fires is importarItem
+// itself, right below (see its comment). It is no longer "harmless" for
+// movie/collection: the parameter now has a real effect for movies too.
 func (s *Servico) importarItemBase(ctx context.Context, source, sourceID, tipo string, langs []string) (string, bool, error) {
 	if existente, ok, err := s.acharPorIDExterno(ctx, source, sourceID); err != nil {
 		return "", false, err
@@ -254,21 +255,22 @@ func (s *Servico) importarItemBase(ctx context.Context, source, sourceID, tipo s
 		return existente, false, s.enriquecerBase(ctx, existente, source, sourceID, tipo, langs, false, false)
 	}
 
-	// Não existe: puxa o detalhe uma vez (para o título inicial) e cria a entity
-	// já com a identidade externa; em seguida persiste a base externa e o pôster. O
-	// detalhe vem do cache-first (external_detail): a 1ª ida grava, próximas reusam.
+	// It does not exist: pull the detail once (for the initial title) and create the
+	// entity already with the external identity; then persist the external base and the
+	// poster. The detail comes from cache-first (external_detail): the first trip writes,
+	// the next ones reuse.
 	raw, err := s.detalhe.PayloadFresco(ctx, source, sourceID, tipo, langs, false)
 	if err != nil {
 		return "", false, fmt.Errorf("enrich: buscar detalhe: %w", err)
 	}
 	titulo := s.tituloInicial(source, raw, sourceID, langs)
 
-	// Casamento por nome contra drafts locais (briefing 0054): antes de criar
-	// uma entity nova, tenta achar um draft PURO (sem NENHUM external_id) do
-	// mesmo type e mesmo título/ano. Alta confiança -> enriquece ESSE draft em
-	// vez de criar uma segunda entity (a órfã "draft com arquivo, sem
-	// metadados" + "importada com metadados, sem arquivo" que motivou este
-	// briefing). Sem candidato: segue o fluxo de criação normal, inalterado.
+	// Name matching against local drafts: before creating a new entity, try to find a
+	// PURE draft (with NO external_id) of the same type and same title/year. High
+	// confidence -> enrich THAT draft instead of creating a second entity (the orphan
+	// "draft with a file, without metadata" + "imported with metadata, without a file"
+	// that motivated this work). No candidate: follow the normal creation flow,
+	// unchanged.
 	if idDraft, achou, err := s.tentarCasarComDraftLocal(ctx, titulo, s.anoDoPayload(source, raw), tipo); err != nil {
 		return "", false, err
 	} else if achou {
@@ -294,13 +296,14 @@ func (s *Servico) importarItemBase(ctx context.Context, source, sourceID, tipo s
 	return novo, true, nil
 }
 
-// importarColecao importa uma COLEÇÃO (briefing 0025) como entity `type='collection'`:
-// find-or-create da coleção (dedup por id tmdb, restrito a type='collection'), cacheia
-// as artes do conjunto (pôster/fundo) e importa CADA filme membro (reusando o Importar
-// de movie, que faz find-or-create + enrich), ligando-o via entity_relation
-// (kind='collection'). É idempotente: re-importar reusa a coleção e só liga membros
-// ainda não ligados. A falha de UMA parte degrada (loga e segue) — a coleção parcial é
-// válida. Requer a capacidade opcional provider.ColecaoProvider (senão erro → 502).
+// importarColecao imports a COLLECTION as an entity `type='collection'`:
+// find-or-create of the collection (dedup by tmdb id, restricted to type='collection'),
+// caches the artwork of the set (poster/background) and imports EACH member movie
+// (reusing the Importar of movie, which does find-or-create + enrich), linking it through
+// entity_relation (kind='collection'). It is idempotent: re-importing reuses the
+// collection and only links members not linked yet. The failure of ONE part degrades
+// (logs and continues) — the partial collection is valid. It requires the optional
+// capability provider.ColecaoProvider (otherwise error → 502).
 func (s *Servico) importarColecao(ctx context.Context, source, sourceID string, langs []string) (string, bool, error) {
 	prov, ok := s.provFonte(source)
 	if !ok {
@@ -326,10 +329,11 @@ func (s *Servico) importarColecao(ctx context.Context, source, sourceID string, 
 	return colID, criada, nil
 }
 
-// ligarMembros importa cada filme membro (find-or-create + enrich) e o liga à coleção
-// por entity_relation(kind='collection'). É idempotente: carrega os já-ligados e pula
-// os que já existem (o UNIQUE ainda protege de corrida). Falha de UMA parte degrada
-// (loga e segue) — a coleção parcial é válida.
+// ligarMembros imports each member movie (find-or-create + enrich) and links it to the
+// collection through entity_relation(kind='collection'). It is idempotent: it loads the
+// already-linked ones and skips those that exist (the UNIQUE still protects against a
+// race). The failure of ONE part degrades (logs and continues) — the partial collection
+// is valid.
 func (s *Servico) ligarMembros(ctx context.Context, colID, source string, parts []provider.ResultadoExterno, langs []string) {
 	ligados := map[string]bool{}
 	if rels, err := s.leitura().ListarRelacoesFilhas(ctx, colID); err == nil {
@@ -358,8 +362,9 @@ func (s *Servico) ligarMembros(ctx context.Context, colID, source string, parts 
 	}
 }
 
-// langPrincipal devolve o primeiro idioma (principal) da lista, ou "" quando vazia —
-// a coleção é mono-idioma pragmático (0025), busca só no idioma principal.
+// langPrincipal returns the first (primary) language of the list, or "" when it is
+// empty — the collection is pragmatically single-language, so it is searched only in the
+// primary language.
 func langPrincipal(langs []string) string {
 	if len(langs) > 0 {
 		return langs[0]
@@ -367,9 +372,10 @@ func langPrincipal(langs []string) string {
 	return ""
 }
 
-// acharOuCriarColecao devolve o id da entity coleção: reusa a existente (dedup por id
-// tmdb + type='collection') ou cria uma nova `type='collection'` com o nome do conjunto
-// e a identidade externa {source: sourceID}. `criada` diz se nasceu agora (para o 201).
+// acharOuCriarColecao returns the id of the collection entity: it reuses the existing
+// one (dedup by tmdb id + type='collection') or creates a new `type='collection'` with
+// the name of the set and the external identity {source: sourceID}. `criada` says whether
+// it was born now (for the 201).
 func (s *Servico) acharOuCriarColecao(ctx context.Context, source, sourceID, nome string) (string, bool, error) {
 	if source == "tmdb" {
 		existente, err := s.leitura().ObterColecaoPorTmdb(ctx, nsValid(sourceID))
@@ -400,10 +406,11 @@ func (s *Servico) acharOuCriarColecao(ctx context.Context, source, sourceID, nom
 	return novo, true, nil
 }
 
-// acharPorIDExterno procura uma entity pelo id na fonte (dedup MD4), escolhendo a
-// query pela FONTE: "tmdb"→external_id_tmdb, "tvdb"→external_id_tvdb (colunas geradas
-// indexadas). Fontes sem coluna própria ainda não deduplicam (find-or-create sempre
-// cria) — segue o escopo. NoRows não é erro (não existe ainda).
+// acharPorIDExterno looks for an entity by its id at the source (MD4 dedup), choosing
+// the query by SOURCE: "tmdb"→external_id_tmdb, "tvdb"→external_id_tvdb (indexed
+// generated columns). Sources without a column of their own do not deduplicate yet
+// (find-or-create always creates) — that is the current scope. NoRows is not an error (it
+// does not exist yet).
 func (s *Servico) acharPorIDExterno(ctx context.Context, source, sourceID string) (string, bool, error) {
 	var ent sqlcgen.Entity
 	var err error
@@ -424,9 +431,9 @@ func (s *Servico) acharPorIDExterno(ctx context.Context, source, sourceID string
 	return ent.ID, true, nil
 }
 
-// persistir grava a base externa (UPSERT do payload cru por entity_id+source) e
-// dispara o cache do pôster. A imagem é best-effort: sua falha é logada e NÃO
-// aborta o enrich (o item fica sem pôster, o import é parcial mas válido).
+// persistir writes the external base (UPSERT of the raw payload by entity_id+source) and
+// triggers the poster cache. The image is best-effort: its failure is logged and does NOT
+// abort the enrich (the item stays without a poster, the import is partial but valid).
 func (s *Servico) persistir(ctx context.Context, entityID, source, sourceID string, raw json.RawMessage) error {
 	if _, err := s.escrita().UpsertMediaExternal(ctx, sqlcgen.UpsertMediaExternalParams{
 		ID:          s.novoID(),
@@ -448,8 +455,8 @@ func (s *Servico) persistir(ctx context.Context, entityID, source, sourceID stri
 		log.Printf("enrich: mapear detalhe de %s falhou (segue sem poster): %v", entityID, err)
 		return nil
 	}
-	// Grava a âncora do fallback (briefing 0020): original_language do detalhe. É um
-	// fato da fonte (não dado do dono), então re-enriquecer apenas o reafirma.
+	// Writes the anchor of the fallback: original_language from the detail. It is a
+	// fact of the source (not data from the owner), so re-enriching only reaffirms it.
 	if ol, ok := campos["original_language"].(string); ok && ol != "" {
 		if err := s.escrita().AtualizarOriginalLanguage(ctx, sqlcgen.AtualizarOriginalLanguageParams{
 			OriginalLanguage: nsValid(ol),
@@ -458,9 +465,10 @@ func (s *Servico) persistir(ctx context.Context, entityID, source, sourceID stri
 			return err
 		}
 	}
-	// Denormaliza a release_date neutra na coluna base (mesmo tratamento de
-	// original_language): fato da fonte, deixa a ordenacao/listagem por ano barata (ex.:
-	// membros de colecao, 0025) sem resolver cada item. Nao muda a resolucao (base=externo).
+	// Denormalizes the neutral release_date into the base column (same treatment as
+	// original_language): a fact of the source, it makes sorting/listing by year cheap (e.g.:
+	// members of a collection) without resolving every item. It does not change the
+	// resolution (base=external).
 	if rd, ok := campos["release_date"].(string); ok && rd != "" {
 		if err := s.escrita().AtualizarReleaseDate(ctx, sqlcgen.AtualizarReleaseDateParams{
 			ReleaseDate: nsValid(rd),
@@ -470,17 +478,18 @@ func (s *Servico) persistir(ctx context.Context, entityID, source, sourceID stri
 		}
 	}
 	s.cachearArtes(ctx, entityID, campos)
-	// Elenco/equipe/produtoras (MD6, 0029): cache re-componivel populado do canonico,
-	// idempotente por (entity, source). So o FILME e o no SERIE chegam aqui (temporada/
-	// episodio nao passam por persistir); o elenco de serie e o agregado da serie inteira.
+	// Cast/crew/studios (MD6): a re-composable cache populated from the canonical,
+	// idempotent by (entity, source). Only the MOVIE and the SERIES node reach here
+	// (season/episode do not go through persistir); the series cast is the aggregate of the
+	// whole series.
 	s.persistirCreditos(ctx, entityID, source, campos)
 	return nil
 }
 
-// cachearArtes cacheia localmente o pôster e o FUNDO (fanart/backdrop) do canônico,
-// cada um best-effort (0015): a tela de detalhe rica serve as duas do disco, sem
-// depender da fonte em runtime. Falha em uma só degrada (sem aquela arte), nunca
-// aborta o enrich.
+// cachearArtes caches locally the poster and the BACKGROUND (fanart/backdrop) of the
+// canonical, each one best-effort: the rich detail screen serves both from disk, without
+// depending on the source at runtime. A failure in one only degrades (without that
+// artwork), it never aborts the enrich.
 func (s *Servico) cachearArtes(ctx context.Context, entityID string, campos map[string]any) {
 	if u, ok := campos["poster_url"].(string); ok && u != "" {
 		if err := s.cachearArte(ctx, entityID, u, kindPoster, "poster"); err != nil {
@@ -494,12 +503,12 @@ func (s *Servico) cachearArtes(ctx context.Context, entityID string, campos map[
 	}
 }
 
-// mesclarExternalIds lê o external_ids atual, junta {chave: sourceID} e grava — a
-// identidade é autoritativa (MD4). Preserva ids de outras fontes; sobrescreve o da
-// própria fonte (re-import sob id corrigido). Valores não-string do JSON legado são
-// descartados (o modelo é string→string). A chave normalmente é o próprio `source`
-// (tmdb/imdb/tvdb); chaveExternalID desvia para "mbid" quando source=="musicbrainz"
-// (briefing 0119 — ver musicext.ChaveExternalIDMbid).
+// mesclarExternalIds reads the current external_ids, joins {key: sourceID} and writes it
+// — the identity is authoritative (MD4). It preserves ids from other sources; it
+// overwrites the one of its own source (re-import under a corrected id). Non-string values
+// of the legacy JSON are discarded (the model is string→string). The key is normally the
+// `source` itself (tmdb/imdb/tvdb); chaveExternalID diverts to "mbid" when
+// source=="musicbrainz" (see musicext.ChaveExternalIDMbid).
 func (s *Servico) mesclarExternalIds(ctx context.Context, entityID, source, sourceID string) error {
 	ent, err := s.leitura().ObterEntity(ctx, entityID)
 	if err != nil {
@@ -527,23 +536,23 @@ func (s *Servico) mesclarExternalIds(ctx context.Context, entityID, source, sour
 	}); err != nil {
 		return err
 	}
-	// Backfill retroativo (briefing 0099): a identidade já foi gravada com
-	// sucesso -- vincular eventos órfãos é best-effort, mesmo tratamento de
-	// degradação já usado em cachearArte/ligarMembros deste arquivo.
+	// Retroactive backfill: the identity has already been written successfully --
+	// linking orphan events is best-effort, the same degradation treatment already used
+	// in cachearArte/ligarMembros of this file.
 	if _, err := historico.VincularOrfaos(ctx, s.escrita(), entityID, ids); err != nil {
 		log.Printf("enrich: backfill de eventos orfaos para %s falhou (segue): %v", entityID, err)
 	}
 	return nil
 }
 
-// chaveExternalID mapeia o nome da FONTE (Provider.Nome(), ex.: "tmdb"/"imdb"/
-// "tvdb"/"musicbrainz") para a chave gravada em external_ids_json. Identidade
-// para todo provider, EXCETO musicbrainz — cujo id sempre vive sob "mbid"
-// (musicext.ChaveExternalIDMbid), a única convenção que o resto do código
-// (idsExternosDe, ObterEntityPorMbid/coluna gerada external_id_mbid) entende.
-// Sem este desvio, o caminho genérico de aplicação externa (auto-match/
-// retroativo, "Corrigir", "Confirmar candidato") gravaria sob "musicbrainz" —
-// chave que nunca é lida em nenhum lugar do sistema (briefing 0119).
+// chaveExternalID maps the name of the SOURCE (Provider.Nome(), e.g.: "tmdb"/"imdb"/
+// "tvdb"/"musicbrainz") to the key written in external_ids_json. Identity for every
+// provider, EXCEPT musicbrainz — whose id always lives under "mbid"
+// (musicext.ChaveExternalIDMbid), the only convention the rest of the code
+// (idsExternosDe, ObterEntityPorMbid/generated column external_id_mbid) understands.
+// Without this diversion, the generic external-application path (auto-match/
+// retroactive, "Corrigir", "Confirmar candidato") would write under "musicbrainz" —
+// a key that is never read anywhere in the system.
 func chaveExternalID(source string) string {
 	if source == musicext.FonteMusicBrainz {
 		return musicext.ChaveExternalIDMbid
@@ -551,13 +560,13 @@ func chaveExternalID(source string) string {
 	return source
 }
 
-// mesclarExternalIdSeAusente mescla {chave: valor} em entity.external_ids_json SOMENTE
-// quando a chave ainda não está presente (ou está vazia) — ao contrário de
-// mesclarExternalIds (que SEMPRE sobrescreve a própria fonte, autoritativa), este é para
-// um CROSS-ID auxiliar (0087: o tvdb capturado do detalhe do TMDB) que nunca deve
-// clobbar um valor autoritativo já gravado por outra via (ex.: a própria árvore TVDB, que
-// grava "tvdb" via mesclarExternalIds quando ELA é a fonte-base). Preserva as demais
-// chaves. valor=="" é no-op. Erro de leitura/escrita propaga ao chamador degradar.
+// mesclarExternalIdSeAusente merges {key: value} into entity.external_ids_json ONLY when
+// the key is not present yet (or is empty) — unlike mesclarExternalIds (which ALWAYS
+// overwrites its own source, authoritative), this one is for an auxiliary CROSS-ID that
+// must never clobber an authoritative value already written by another route (e.g.: the
+// TVDB tree itself, which writes "tvdb" through mesclarExternalIds when IT is the
+// base source). It preserves the other keys. value=="" is a no-op. A read/write error is
+// propagated for the caller to degrade.
 func (s *Servico) mesclarExternalIdSeAusente(ctx context.Context, entityID, chave, valor string) error {
 	if valor == "" {
 		return nil
@@ -578,7 +587,7 @@ func (s *Servico) mesclarExternalIdSeAusente(ctx context.Context, entityID, chav
 		}
 	}
 	if ids[chave] != "" {
-		return nil // ja tem valor autoritativo -- nao sobrescreve (nao-destrutivo)
+		return nil // it already has an authoritative value -- does not overwrite (non-destructive)
 	}
 	ids[chave] = valor
 	b, err := json.Marshal(ids)
@@ -591,21 +600,20 @@ func (s *Servico) mesclarExternalIdSeAusente(ctx context.Context, entityID, chav
 	}); err != nil {
 		return err
 	}
-	// Backfill retroativo (briefing 0099): só a fonte que de fato mudou aqui
-	// (não o mapa inteiro -- evita trabalho redundante já coberto por outra
-	// via quando as demais fontes não mudaram). Best-effort, mesmo padrão de
-	// mesclarExternalIds.
+	// Retroactive backfill: only the source that actually changed here (not the whole
+	// map -- avoids redundant work already covered by another route when the other
+	// sources did not change). Best-effort, same pattern as mesclarExternalIds.
 	if _, err := historico.VincularOrfaos(ctx, s.escrita(), entityID, map[string]string{chave: valor}); err != nil {
 		log.Printf("enrich: backfill de eventos orfaos (chave %s) para %s falhou (segue): %v", chave, entityID, err)
 	}
 	return nil
 }
 
-// cachearArte baixa o binário de uma arte (pôster ou fanart/backdrop), grava em
-// {assetsDir}/{entityID}/{nomeBase}.<ext> e cria (ou reusa, dedup) o asset
-// origin='external' do `kind`. Nunca casa/apaga arte origin='user' (o lookup
-// filtra por origin). Erro é devolvido ao chamador apenas para LOGAR (degrada),
-// nunca abortar o enrich.
+// cachearArte downloads the binary of an artwork (poster or fanart/backdrop), writes it
+// to {assetsDir}/{entityID}/{nomeBase}.<ext> and creates (or reuses, dedup) the asset with
+// origin='external' and the given `kind`. It never matches/deletes artwork with
+// origin='user' (the lookup filters by origin). The error is returned to the caller only
+// to LOG (degrade), never to abort the enrich.
 func (s *Servico) cachearArte(ctx context.Context, entityID, url, kind, nomeBase string) error {
 	dados, contentType, err := s.baixar(ctx, url)
 	if err != nil {
@@ -623,9 +631,9 @@ func (s *Servico) cachearArte(ctx context.Context, entityID, url, kind, nomeBase
 	return s.registrarAsset(ctx, entityID, destino, kind)
 }
 
-// registrarAsset faz o DEDUP do asset externo daquele `kind`: se já existe um
-// (mesma entity, kind, origin='external'), atualiza seu caminho (removendo o
-// binário antigo se a extensão mudou) em vez de duplicar; senão cria um novo.
+// registrarAsset does the DEDUP of the external asset of that `kind`: if one already
+// exists (same entity, kind, origin='external'), it updates its path (removing the old
+// binary when the extension changed) instead of duplicating; otherwise it creates a new one.
 func (s *Servico) registrarAsset(ctx context.Context, entityID, destino, kind string) error {
 	existente, err := s.leitura().ObterAssetPorEntityKindOrigin(ctx, sqlcgen.ObterAssetPorEntityKindOriginParams{
 		EntityID: entityID,
@@ -646,7 +654,7 @@ func (s *Servico) registrarAsset(ctx context.Context, entityID, destino, kind st
 		return err
 	}
 	if existente.PathOrUri != destino {
-		_ = os.Remove(existente.PathOrUri) // best-effort: some o binário antigo (ext diferente)
+		_ = os.Remove(existente.PathOrUri) // best-effort: the old binary goes away (different ext)
 	}
 	return s.escrita().AtualizarAssetPath(ctx, sqlcgen.AtualizarAssetPathParams{
 		PathOrUri: destino,
@@ -655,8 +663,8 @@ func (s *Servico) registrarAsset(ctx context.Context, entityID, destino, kind st
 	})
 }
 
-// baixar faz o GET do pôster com timeout e teto de tamanho. Devolve os bytes e o
-// content-type. Status != 200 ou I/O é erro (o chamador degrada).
+// baixar does the GET of the poster with a timeout and a size ceiling. It returns the
+// bytes and the content-type. Status != 200 or I/O is an error (the caller degrades).
 func (s *Servico) baixar(ctx context.Context, posterURL string) ([]byte, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, posterURL, nil)
 	if err != nil {
@@ -677,9 +685,10 @@ func (s *Servico) baixar(ctx context.Context, posterURL string) ([]byte, string,
 	return dados, resp.Header.Get("Content-Type"), nil
 }
 
-// tituloInicial extrai o título do detalhe cru para o item recém-criado (mapeado
-// pelo provider da FONTE); cai para o sourceID quando o detalhe não traz título
-// (item pobre) ou a fonte não tem provider — nunca vazio (title é NOT NULL).
+// tituloInicial extracts the title from the raw detail for the newly created item
+// (mapped by the provider of the SOURCE); it falls back to the sourceID when the detail
+// carries no title (poor item) or the source has no provider — never empty (title is NOT
+// NULL).
 func (s *Servico) tituloInicial(source string, raw json.RawMessage, sourceID string, langs []string) string {
 	if prov, ok := s.provFonte(source); ok {
 		if campos, err := prov.MapearDetalhe(raw); err == nil {
@@ -691,20 +700,20 @@ func (s *Servico) tituloInicial(source string, raw json.RawMessage, sourceID str
 	return sourceID
 }
 
-// curarTitulo AUTO-CURA o "numero no lugar do nome" nos itens importados ANTES do
-// conserto do tituloInicial: se o titulo base ainda e exatamente o fallback numerico
-// (== sourceID gravado na criacao), recomputa do detalhe (idioma principal). A
-// condicao e ESTRITA (== sourceID) de proposito -- um titulo legivel, mesmo que
-// numerico de verdade ("1917"), nunca casa o id da fonte, entao jamais e sobrescrito.
-// Nao toca override/externo (a resolucao segue dando autoridade ao dono). Degrada em
-// silencio: qualquer tropeco aqui mantem o titulo atual (a cura e best-effort).
+// curarTitulo AUTO-HEALS the "number instead of the name" in items imported BEFORE the
+// tituloInicial fix: if the base title is still exactly the numeric fallback (== the
+// sourceID written at creation), it recomputes it from the detail (primary language). The
+// condition is STRICT (== sourceID) on purpose -- a readable title, even if genuinely
+// numeric ("1917"), never matches the source id, so it is never overwritten. It does not
+// touch override/external (the resolution still gives authority to the owner). It degrades
+// silently: any stumble here keeps the current title (the healing is best-effort).
 func (s *Servico) curarTitulo(ctx context.Context, entityID, source, sourceID string, raw json.RawMessage, langs []string) error {
 	ent, err := s.leitura().ObterEntity(ctx, entityID)
 	if err != nil {
 		return err
 	}
 	if ent.Title != sourceID {
-		return nil // titulo ja e legivel -- nada a curar
+		return nil // title is already readable -- nothing to heal
 	}
 	prov, ok := s.provFonte(source)
 	if !ok {
@@ -721,16 +730,16 @@ func (s *Servico) curarTitulo(ctx context.Context, entityID, source, sourceID st
 	return s.escrita().AtualizarTitulo(ctx, sqlcgen.AtualizarTituloParams{Title: novo, ID: entityID})
 }
 
-// tituloLegivel extrai um titulo exibivel do mapa canonico do provider, tolerando
-// o campo "title" tanto como ESCALAR (payload legado, mono-idioma) quanto como
-// map[idioma]valor (envelope multi-idioma do 0020). Prefere o titulo num dos
-// idiomas permitidos (na ordem -- langs[0] e o principal), cai para o
-// original_title e, por fim, para qualquer titulo presente. Devolve "" so quando
-// nao ha nenhum titulo -- e o chamador entao usa o sourceID.
+// tituloLegivel extracts a displayable title from the provider's canonical map, tolerating
+// the "title" field both as a SCALAR (legacy payload, single-language) and as a
+// map[language]value (the multi-language envelope). It prefers the title in one of the
+// allowed languages (in order -- langs[0] is the primary one), falls back to
+// original_title and, finally, to any title present. It returns "" only when there is
+// no title at all -- and then the caller uses the sourceID.
 //
-// Sem esta tolerancia, a assercao antiga `campos["title"].(string)` falhava para
-// TODO item importado pos-0020 (o title virou map), gravando o id numerico da
-// fonte como entity.title -- o "numero no lugar do nome" na lista.
+// Without this tolerance, the old assertion `campos["title"].(string)` failed for
+// EVERY item imported after the multi-language model (title became a map), writing the
+// numeric source id as entity.title -- the "number instead of the name" in the list.
 func tituloLegivel(campos map[string]any, langs []string) string {
 	switch t := campos["title"].(type) {
 	case string:
@@ -741,9 +750,9 @@ func tituloLegivel(campos map[string]any, langs []string) string {
 	return ""
 }
 
-// tituloDoMapa escolhe um titulo do mapa idioma->valor: o primeiro idioma pedido
-// (na ordem) com valor, senao o original_title, senao qualquer titulo presente. ""
-// se o mapa nao tem nenhum.
+// tituloDoMapa picks a title from the language->value map: the first requested language
+// (in order) that has a value, then the original_title, then any title present. "" if the
+// map has none.
 func tituloDoMapa(porIdioma map[string]any, original string, langs []string) string {
 	for _, l := range langs {
 		if v := comoString(porIdioma[l]); v != "" {
@@ -761,19 +770,19 @@ func tituloDoMapa(porIdioma map[string]any, original string, langs []string) str
 	return ""
 }
 
-// comoString devolve o valor como string quando ele e uma string; "" caso
-// contrario (inclui nil). Enxuga as assercoes de tipo dos titulos canonicos.
+// comoString returns the value as a string when it is a string; "" otherwise (including
+// nil). It trims the type assertions of the canonical titles.
 func comoString(v any) string {
 	s, _ := v.(string)
 	return s
 }
 
-// escrita/leitura devolvem os Queries ligados aos pools de escrita/leitura (ADR-0010).
+// escrita/leitura return the Queries bound to the write/read pools (ADR-0010).
 func (s *Servico) escrita() *sqlcgen.Queries { return sqlcgen.New(s.database.Write) }
 func (s *Servico) leitura() *sqlcgen.Queries { return sqlcgen.New(s.database.Read) }
 
-// extensaoImagem escolhe a extensão do arquivo do pôster: primeiro pelo
-// content-type (o que a fonte declarou), depois pela extensão da URL; default .jpg.
+// extensaoImagem chooses the file extension of the poster: first by the content-type
+// (what the source declared), then by the extension of the URL; default .jpg.
 func extensaoImagem(contentType, u string) string {
 	switch {
 	case strings.Contains(contentType, "png"):
@@ -794,11 +803,11 @@ func extensaoImagem(contentType, u string) string {
 	return ".jpg"
 }
 
-// nsValid embrulha uma string num sql.NullString válido (não-NULL).
+// nsValid wraps a string in a valid (non-NULL) sql.NullString.
 func nsValid(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }
 
-// derefStr desreferencia um *string, devolvendo "" quando nil — para montar o mapa
-// canônico que cachearArtes consome (ele ignora chave vazia).
+// derefStr dereferences a *string, returning "" when nil — to build the canonical map
+// that cachearArtes consumes (it ignores an empty key).
 func derefStr(p *string) string {
 	if p == nil {
 		return ""
@@ -806,5 +815,5 @@ func derefStr(p *string) string {
 	return *p
 }
 
-// isNoRows diz se o erro é o sql.ErrNoRows (linha ausente — não é falha real).
+// isNoRows tells whether the error is sql.ErrNoRows (missing row — not a real failure).
 func isNoRows(err error) bool { return errors.Is(err, sql.ErrNoRows) }

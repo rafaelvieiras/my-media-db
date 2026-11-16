@@ -9,25 +9,24 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/tmdb"
 )
 
-// Estes testes cobrem o briefing 0100 (ADR-0024): a separação entre a
-// capacidade de BUSCA AO VIVO (exige credencial, registro `providers`) e a
-// capacidade de PARSE de payload já cacheado (registro `codecs`, sempre
-// disponível independente de credencial). Um item já catalogado (media_external/
-// external_detail já gravados) deve continuar rico na tela mesmo sem NENHUM
-// provider de busca ao vivo registrado -- só WithCodecRegistry, o que o main.go
-// faz incondicionalmente via provedoresConhecidos().
+// These tests cover ADR-0024: the separation between the LIVE SEARCH capability
+// (requires a credential, `providers` registry) and the ability to PARSE a payload
+// already cached (`codecs` registry, always available regardless of credential). An
+// item already cataloged (media_external/external_detail already written) must stay
+// rich on the screen even without ANY live search provider registered -- only
+// WithCodecRegistry, which main.go does unconditionally through
+// provedoresConhecidos().
 
-// TestEntityRicaComCodecRegistrySemBuscaAoVivo (critério de aceite (a)): uma
-// entity com media_external já cacheado continua trazendo campos ricos (aqui,
-// "similar", que já é fiado via camadasDaFonte/codecPara) quando a fonte só
-// está registrada em WithCodecRegistry -- NENHUM provider de busca ao vivo
-// (WithSearchProvider) está presente.
+// TestEntityRicaComCodecRegistrySemBuscaAoVivo (acceptance criterion (a)): an entity
+// with media_external already cached keeps bringing rich fields (here, "similar",
+// already wired through camadasDaFonte/codecPara) when the source is only registered in
+// WithCodecRegistry -- NO live search provider (WithSearchProvider) is present.
 func TestEntityRicaComCodecRegistrySemBuscaAoVivo(t *testing.T) {
 	prov := &fakeProviderComSimilar{
 		fakeProviderSimilar: fakeProviderSimilar{nome: "tmdb"},
 		sims:                simSims(),
 	}
-	// Só o codec -- prova que a leitura NÃO depende de busca ao vivo.
+	// Codec only -- proves that reading does NOT depend on live search.
 	h, d := setupSearchServer(t, WithCodecRegistry(prov))
 	semearEntity(t, d, "x", "movie", "Matrix")
 	if _, err := escrita(t, d).UpsertMediaExternal(context.Background(), sqlcgen.UpsertMediaExternalParams{
@@ -44,18 +43,18 @@ func TestEntityRicaComCodecRegistrySemBuscaAoVivo(t *testing.T) {
 	eq(t, "similar.source_id", ent.Similar[0].SourceID, "604")
 }
 
-// TestExternalDetailStaleSemBuscaAoVivo (critério de aceite (b)): com um cache
-// external_detail já gravado e EXPIRADO (fetched_at além do TTL), e a fonte só
-// registrada em WithCodecRegistry (sem WithSearchProvider), GET
-// /external/{source}/{type}/{id} serve o payload STALE (200) em vez de
-// 503/404 -- o dado já visitado não some por falta de credencial.
+// TestExternalDetailStaleSemBuscaAoVivo (acceptance criterion (b)): with an
+// external_detail cache already written and EXPIRED (fetched_at beyond the TTL), and the
+// source only registered in WithCodecRegistry (no WithSearchProvider), GET
+// /external/{source}/{type}/{id} serves the STALE payload (200) instead of 503/404 --
+// data already visited does not disappear for lack of a credential.
 func TestExternalDetailStaleSemBuscaAoVivo(t *testing.T) {
-	prov := tmdb.New(tmdb.Credencial{}, nil, "") // sem credencial: só parse (codec)
+	prov := tmdb.New(tmdb.Credencial{}, nil, "") // no credential: parse only (codec)
 	h, d := setupSearchServer(t, WithCodecRegistry(prov))
 
-	// O payload persistido pelo serviço é sempre o ENVELOPE AUMENTADO (0020) que
-	// BuscarDetalhe monta ({detail,tags_by_lang}), não o JSON legado cru -- casa o
-	// formato que MapearDetalhe realmente espera para resolver por idioma.
+	// The payload persisted by the service is always the AUGMENTED ENVELOPE that
+	// BuscarDetalhe builds ({detail,tags_by_lang}), not the raw legacy JSON -- it matches
+	// the format MapearDetalhe really expects to resolve per language.
 	envelope := `{"detail":` + filmeRicoJSON + `,"tags_by_lang":{}}`
 	if err := sqlcgen.New(d.Write).UpsertExternalDetail(context.Background(), sqlcgen.UpsertExternalDetailParams{
 		Source: "tmdb", SourceID: "603", Type: "movie",
@@ -63,7 +62,7 @@ func TestExternalDetailStaleSemBuscaAoVivo(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("UpsertExternalDetail: %v", err)
 	}
-	// Forca o carimbo bem no passado -- além do TTLPadrao de 24h.
+	// Forces the timestamp far into the past -- beyond the 24h TTLPadrao.
 	if _, err := d.Write.ExecContext(context.Background(),
 		`UPDATE external_detail SET fetched_at = '2000-01-01T00:00:00.000Z' WHERE source='tmdb' AND source_id='603'`); err != nil {
 		t.Fatalf("forcar staleness: %v", err)
@@ -77,11 +76,11 @@ func TestExternalDetailStaleSemBuscaAoVivo(t *testing.T) {
 	eq(t, "title", d2.Title, "Matrix")
 }
 
-// TestExternalDetail503FonteTotalmenteDesconhecida garante que uma fonte sem
-// NENHUM registro (nem codecs nem providers) continua 503 -- o comportamento
-// não regride para fontes que o binário nem sabe interpretar.
+// TestExternalDetail503FonteTotalmenteDesconhecida ensures that a source with NO
+// registration at all (neither codecs nor providers) still answers 503 -- the behavior
+// does not regress for sources the binary cannot even interpret.
 func TestExternalDetail503FonteTotalmenteDesconhecida(t *testing.T) {
-	h, _ := setupSearchServer(t) // nem codec, nem busca ao vivo
+	h, _ := setupSearchServer(t) // neither codec nor live search
 	rec := do(t, h, http.MethodGet, "/api/v1/external/tmdb/movie/603?lang=pt-BR", nil)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, quero 503", rec.Code)

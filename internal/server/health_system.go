@@ -9,14 +9,14 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/telemetry"
 )
 
-// Este arquivo implementa GET /api/v1/health/system (briefing 0055): o
-// snapshot de telemetria (tamanho do banco + retrato operacional + uso de
-// disco por fonte), SEPARADO de GET /api/v1/health (health.go) de proposito
-// -- o HEALTHCHECK do Docker bate em /health a cada 10s e nao pode pagar o
-// custo de N syscalls Statfs + agregacoes SQL a cada batida (ver notas do
-// briefing). Cacheado por TTL curto (telemetryCache, telemetry_cache.go).
+// This file implements GET /api/v1/health/system: the telemetry
+// snapshot (database size + operational portrait + disk usage per source),
+// SEPARATE from GET /api/v1/health (health.go) on purpose -- the Docker
+// HEALTHCHECK hits /health every 10s and cannot pay the cost of N syscalls
+// Statfs + SQL aggregations on every hit (see the notes in health.go). Cached
+// for a short TTL (telemetryCache, telemetry_cache.go).
 
-// systemHealthResponse e o corpo de GET /api/v1/health/system.
+// systemHealthResponse is the body of GET /api/v1/health/system.
 type systemHealthResponse struct {
 	ComputedAt string             `json:"computed_at"`
 	Database   databaseHealthDTO  `json:"database"`
@@ -24,8 +24,8 @@ type systemHealthResponse struct {
 	Storage    storageSnapshotDTO `json:"storage"`
 }
 
-// databaseHealthDTO reexpõe o tamanho lógico do arquivo .sqlite (PRAGMA) +
-// schema_version (o MESMO valor de checkDB().Schema).
+// databaseHealthDTO re-exposes the logical size of the .sqlite file (PRAGMA) +
+// schema_version (the SAME value as checkDB().Schema).
 type databaseHealthDTO struct {
 	SizeBytes     int64 `json:"size_bytes"`
 	PageCount     int64 `json:"page_count"`
@@ -33,8 +33,8 @@ type databaseHealthDTO struct {
 	SchemaVersion int64 `json:"schema_version"`
 }
 
-// usageCountsDTO é o retrato operacional: contagens de catálogo + uptime +
-// memória/goroutines do processo.
+// usageCountsDTO is the operational portrait: catalog counts + uptime +
+// process memory/goroutines.
 type usageCountsDTO struct {
 	UptimeSeconds      int64              `json:"uptime_seconds"`
 	Entities           entitiesUsageDTO   `json:"entities"`
@@ -47,9 +47,9 @@ type usageCountsDTO struct {
 	MemAllocBytes      uint64             `json:"mem_alloc_bytes"`
 }
 
-// entitiesUsageDTO.ByType só inclui os tipos que ocorrem (chave ausente =
-// zero, não 0 explícito) — o contrato não fixa uma lista de tipos que já é
-// livre no schema (entity.type é TEXT sem CHECK).
+// entitiesUsageDTO.ByType only includes the types that occur (absent key =
+// zero, not an explicit 0) — the contract does not fix a list of types that is
+// already free in the schema (entity.type is TEXT without CHECK).
 type entitiesUsageDTO struct {
 	Total  int64            `json:"total"`
 	ByType map[string]int64 `json:"by_type"`
@@ -61,11 +61,11 @@ type mediaFilesUsageDTO struct {
 	Missing int64 `json:"missing"`
 }
 
-// storageSnapshotDTO é uma linha por library_source cadastrada + os quatro
-// buckets do briefing 0063 (banco fica em Database, acima; os outros três
-// aqui): mídia gerenciada (vídeo indexado + NFO/arte de nome canônico do
-// 0062), cache interno da app (assetsDir) e não identificado (resto das
-// pastas rastreadas).
+// storageSnapshotDTO is one row per registered library_source + the four
+// buckets (the database lives in Database, above; the other three here):
+// managed media (indexed video + NFO/artwork with the canonical name),
+// internal app cache (assetsDir) and unidentified (the rest of the tracked
+// folders).
 type storageSnapshotDTO struct {
 	Sources           []sourceStorageDTO `json:"sources"`
 	ManagedMediaBytes int64              `json:"managed_media_bytes"`
@@ -73,9 +73,9 @@ type storageSnapshotDTO struct {
 	UnmanagedBytes    int64              `json:"unmanaged_bytes"`
 }
 
-// sourceStorageDTO espelha a semântica de avaliarState já usada em
-// library.Listar: offline/error quando o Path não responde a Statfs.
-// Filesystem é null (ponteiro nil) nesse caso — sem número inventado.
+// sourceStorageDTO mirrors the semantics of avaliarState already used in
+// library.Listar: offline/error when the Path does not answer Statfs.
+// Filesystem is null (nil pointer) in that case — no invented number.
 type sourceStorageDTO struct {
 	SourceID   string              `json:"source_id"`
 	Path       string              `json:"path"`
@@ -90,12 +90,12 @@ type filesystemStatsDTO struct {
 	TotalBytes uint64 `json:"total_bytes"`
 }
 
-// systemHealthHandler trata GET /api/v1/health/system: monta o snapshot de
-// telemetria (banco+uso+armazenamento), aplicando o cache TTL (ver
-// telemetry_cache.go) antes de recalcular. Sem banco (s.telemetry nil) ->
-// 503 com o envelope de erro padrão; erro no cálculo (ex. PRAGMA falhou) ->
-// 503 também. NUNCA deriva GET /api/v1/health (handlers/code paths
-// independentes, ver health.go).
+// systemHealthHandler handles GET /api/v1/health/system: it assembles the telemetry
+// snapshot (database+usage+storage), applying the TTL cache (see
+// telemetry_cache.go) before recalculating. Without a database (s.telemetry nil) ->
+// 503 with the standard error envelope; an error in the calculation (e.g. PRAGMA failed) ->
+// 503 as well. It NEVER affects GET /api/v1/health (independent handlers/code paths,
+// see health.go).
 func (s *Server) systemHealthHandler(w http.ResponseWriter, r *http.Request) {
 	if s.telemetry == nil {
 		writeError(w, http.StatusServiceUnavailable, "db_unavailable",
@@ -119,10 +119,10 @@ func (s *Server) systemHealthHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// montarSystemHealth monta o corpo completo: banco+uso vêm de
-// telemetry.Servico.Snapshot; armazenamento por fonte é montado AQUI (não em
-// internal/telemetry, que não conhece internal/library — ver doc do
-// pacote), iterando s.library.Listar.
+// montarSystemHealth assembles the complete body: database+usage come from
+// telemetry.Servico.Snapshot; the storage per source is assembled HERE (not in
+// internal/telemetry, which does not know internal/library — see the package
+// doc), iterating s.library.Listar.
 func (s *Server) montarSystemHealth(ctx context.Context) (systemHealthResponse, error) {
 	snap, err := s.telemetry.Snapshot(ctx)
 	if err != nil {
@@ -157,12 +157,11 @@ func (s *Server) montarSystemHealth(ctx context.Context) (systemHealthResponse, 
 	}, nil
 }
 
-// montarStorageSnapshot monta o objeto storage completo (briefing 0055 +
-// 0063): a lista por fonte (com o total de vídeo indexado somado ao longo do
-// caminho, sem SUM extra) + os três buckets novos do 0063 — mídia gerenciada
-// (vídeo + NÃO-vídeo canônico do 0062, este último lido do resultado em
-// memória do job saude_biblioteca), cache interno da app (assetsDir) e não
-// identificado.
+// montarStorageSnapshot assembles the complete storage object: the list per
+// source (with the total indexed video added along the way, without an extra SUM) + the
+// three new buckets — managed media (video + canonical NON-video, this last one
+// read from the in-memory result of the saude_biblioteca job), internal app cache
+// (assetsDir) and unidentified.
 func (s *Server) montarStorageSnapshot(ctx context.Context) storageSnapshotDTO {
 	sources, managedVideoBytes := s.montarStorageSources(ctx)
 	managedNaoVideo, unmanaged := s.storageNaoVideoAcumulado()
@@ -174,12 +173,12 @@ func (s *Server) montarStorageSnapshot(ctx context.Context) storageSnapshotDTO {
 	}
 }
 
-// montarStorageSources itera as fontes cadastradas (s.library.Listar) e
-// monta uma linha por fonte, acumulando o total de vídeo indexado (used_bytes
-// somado) para montarStorageSnapshot compor managed_media_bytes sem rodar
-// outra query de agregação. Sem s.library (sem banco — já barrado antes) ou
-// falha ao listar, devolve lista vazia + 0 em vez de abortar o endpoint
-// inteiro (o resto do snapshot já foi calculado com sucesso).
+// montarStorageSources iterates the registered sources (s.library.Listar) and
+// builds one row per source, accumulating the total indexed video (used_bytes
+// added up) so montarStorageSnapshot can compose managed_media_bytes without running
+// another aggregation query. Without s.library (no database — already blocked earlier) or
+// a listing failure, it returns an empty list + 0 instead of aborting the whole
+// endpoint (the rest of the snapshot was already calculated successfully).
 func (s *Server) montarStorageSources(ctx context.Context) ([]sourceStorageDTO, int64) {
 	if s.library == nil {
 		return []sourceStorageDTO{}, 0
@@ -198,12 +197,12 @@ func (s *Server) montarStorageSources(ctx context.Context) ([]sourceStorageDTO, 
 	return out, totalVideo
 }
 
-// storageNaoVideoAcumulado lê o agregado managed/unmanaged de arquivo
-// NÃO-vídeo (briefing 0063) da última execução do job saude_biblioteca
-// (s.libraryHealth.UltimoResultadoStorage) — nunca recalcula por fora, só lê
-// o que o job já apurou na MESMA varredura que ele faz. Sem s.libraryHealth
-// (WithLibraryHealthJob não aplicada) ou antes da primeira execução do job,
-// degrada para (0, 0).
+// storageNaoVideoAcumulado reads the aggregated managed/unmanaged of a NON-video
+// file from the last run of the saude_biblioteca job
+// (s.libraryHealth.UltimoResultadoStorage) — it never recalculates outside, it only reads
+// what the job already computed in the SAME sweep it performs. Without s.libraryHealth
+// (WithLibraryHealthJob not applied) or before the job's first run,
+// it degrades to (0, 0).
 func (s *Server) storageNaoVideoAcumulado() (managedBytes, unmanagedBytes int64) {
 	if s.libraryHealth == nil {
 		return 0, 0
@@ -215,11 +214,11 @@ func (s *Server) storageNaoVideoAcumulado() (managedBytes, unmanagedBytes int64)
 	return managedBytes, unmanagedBytes
 }
 
-// appCacheBytes soma o tamanho de assetsDir (telemetry.TamanhoDiretorio,
-// briefing 0063) — best-effort: erro de leitura (raro; não é "diretório
-// inexistente", que TamanhoDiretorio já trata como 0 sem erro) degrada para
-// 0 em vez de abortar o endpoint inteiro. Sem assetsDir configurado
-// (WithAssetsDir não aplicada), devolve 0 direto.
+// appCacheBytes adds up the size of assetsDir (telemetry.TamanhoDiretorio) —
+// best-effort: a read error (rare; it is not "directory does not exist", which
+// TamanhoDiretorio already treats as 0 without an error) degrades to
+// 0 instead of aborting the whole endpoint. Without assetsDir configured
+// (WithAssetsDir not applied), it returns 0 straight away.
 func (s *Server) appCacheBytes() int64 {
 	if s.assetsDir == "" {
 		return 0
@@ -232,15 +231,15 @@ func (s *Server) appCacheBytes() int64 {
 	return total
 }
 
-// montarSourceStorage monta a linha de UMA fonte: soma de media_file.size
-// (UsoDisco) + estatísticas de filesystem (Statfs). Erro em UMA fonte não
-// aborta as demais (best-effort, mesma filosofia do job saude_biblioteca,
-// 0053): uma fonte offline vira offline:true/filesystem:null/error, as
-// outras continuam normais.
+// montarSourceStorage assembles the row of ONE source: sum of media_file.size
+// (UsoDisco) + filesystem statistics (Statfs). An error in ONE source does not
+// abort the others (best-effort, same philosophy as the saude_biblioteca job):
+// an offline source becomes offline:true/filesystem:null/error, the
+// others stay normal.
 func (s *Server) montarSourceStorage(ctx context.Context, src library.Source) sourceStorageDTO {
-	// UsoDisco é uma leitura agregada sobre o MESMO banco já confirmado no ar
-	// (o Snapshot já rodou com sucesso); uma falha aqui é rara e degrada para 0
-	// em vez de abortar a linha da fonte inteira.
+	// UsoDisco is an aggregated read over the SAME database already confirmed up
+	// (the Snapshot already ran successfully); a failure here is rare and degrades to 0
+	// instead of aborting the whole source row.
 	used, _ := s.telemetry.UsoDisco(ctx, src.ID)
 
 	fs, err := telemetry.EstatisticasFilesystem(src.Path)

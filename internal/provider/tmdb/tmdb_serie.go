@@ -1,17 +1,18 @@
 package tmdb
 
-// Este arquivo implementa a capacidade provider.SerieProvider (ADR-0021 / briefing
-// 0046): a ÁRVORE da série montada a PARTIR DO TMDB — temporadas + episódios de grão
-// fino ancorados no episode.id, cada um com a numeração da ordem "official" (a única
-// que o TMDB modela: ele nao expõe season types como o TheTVDB). Isso garante a
-// INDEPENDÊNCIA DE PROVIDER: com só a chave do TMDB cadastrada, séries ainda importam
-// (o TVDB deixa de ser a fonte obrigatória da árvore).
+// This file implements the provider.SerieProvider capability (ADR-0021): the TREE
+// of the series built FROM TMDB -- seasons + fine-grained episodes anchored on
+// episode.id, each one with the numbering of the "official" order (the only one
+// TMDB models: it does not expose season types like TheTVDB). This guarantees
+// PROVIDER INDEPENDENCE: with only the TMDB key configured, series still import
+// (TVDB stops being the mandatory source of the tree).
 //
-// CAMINHO: /tv/{id} traz a LISTA de temporadas (seasons[]); /tv/{id}/season/{n} traz os
-// episódios daquela temporada. A i18n espelha o TVDB — o conteúdo base sai sob o idioma
-// original da série e cada idioma pedido é buscado com ?language= e mesclado por
-// episode.id (sem N chamadas por episódio). O TMDB aceita nossos códigos de app
-// (pt-BR/en) direto no ?language=, então não há tabela de códigos como no TVDB.
+// PATH: /tv/{id} brings the LIST of seasons (seasons[]); /tv/{id}/season/{n}
+// brings the episodes of that season. The i18n mirrors TVDB -- the base content
+// comes out under the original language of the series and each requested language
+// is fetched with ?language= and merged by episode.id (without N calls per
+// episode). TMDB accepts our app codes (pt-BR/en) straight in ?language=, so there
+// is no code table as in TVDB.
 
 import (
 	"context"
@@ -25,19 +26,21 @@ import (
 )
 
 const (
-	// ordemOficial é a única ordenação (season type) que o TMDB modela: os episódios
-	// numeram por (season_number, episode_number) oficial, sem ordens alternativas.
+	// ordemOficial is the only ordering (season type) that TMDB models: episodes are
+	// numbered by the official (season_number, episode_number), without alternative
+	// orders.
 	ordemOficial = "official"
-	// stillBaseURL é a base dos stills (frame do episódio) do TMDB, num tamanho de
-	// paisagem (w300) — a URL crua vai ao extension_data e o proxy de imagem (0042) a
-	// busca/cacheia sob demanda na 1ª visualização, nunca no import.
+	// stillBaseURL is the base of the TMDB stills (episode frame), in a landscape
+	// size (w300) -- the raw URL goes to extension_data and the image proxy fetches/
+	// caches it on demand on the first view, never during the import.
 	stillBaseURL = "https://image.tmdb.org/t/p/w300"
 )
 
-// BuscarSerieArvore cumpre provider.SerieProvider: devolve a árvore da série `sourceID`
-// nos idiomas `langs` (com fallback). O TMDB só tem a ordem "official", então
-// DefaultSeasonType/SeasonTypes refletem apenas ela; TODAS as temporadas do /tv (inclui
-// a 0/especiais) viram TemporadaExterna. ErrNaoEncontrado (404) e erros de rede propagam.
+// BuscarSerieArvore satisfies provider.SerieProvider: it returns the tree of the
+// series `sourceID` in the `langs` languages (with fallback). TMDB only has the
+// "official" order, so DefaultSeasonType/SeasonTypes reflect only that one; ALL the
+// seasons of /tv (including season 0/specials) become TemporadaExterna.
+// ErrNaoEncontrado (404) and network errors propagate.
 func (c *Client) BuscarSerieArvore(ctx context.Context, sourceID string, langs []string) (provider.SerieArvore, error) {
 	if sourceID == "" {
 		return provider.SerieArvore{}, fmt.Errorf("tmdb: sourceID vazio")
@@ -61,15 +64,16 @@ func (c *Client) BuscarSerieArvore(ctx context.Context, sourceID string, langs [
 	}, nil
 }
 
-// respSerieArvoreTMDB espelha o /tv/{id} para a árvore (só os campos usados): o idioma
-// original (âncora do fallback) e a lista de temporadas (número, nome, ano, pôster).
+// respSerieArvoreTMDB mirrors /tv/{id} for the tree (only the fields used): the
+// original language (anchor of the fallback) and the list of seasons (number, name,
+// year, poster).
 type respSerieArvoreTMDB struct {
 	OriginalLanguage string                `json:"original_language"`
 	Seasons          []temporadaResumoTMDB `json:"seasons"`
 }
 
-// temporadaResumoTMDB é uma temporada como vem no seasons[] do /tv (resumo, sem
-// episódios) — os episódios vêm do /tv/{id}/season/{n}.
+// temporadaResumoTMDB is a season as it comes in the seasons[] of /tv (a summary,
+// without episodes) -- the episodes come from /tv/{id}/season/{n}.
 type temporadaResumoTMDB struct {
 	SeasonNumber int    `json:"season_number"`
 	Name         string `json:"name"`
@@ -77,8 +81,9 @@ type temporadaResumoTMDB struct {
 	PosterPath   string `json:"poster_path"`
 }
 
-// respTemporadaTMDB espelha o /tv/{id}/season/{n}: o nome/ano/pôster localizados da
-// temporada e a lista de episódios (com o conteúdo no idioma pedido em ?language=).
+// respTemporadaTMDB mirrors /tv/{id}/season/{n}: the localized name/year/poster of
+// the season and the list of episodes (with the content in the requested language
+// in ?language=).
 type respTemporadaTMDB struct {
 	Name       string         `json:"name"`
 	AirDate    string         `json:"air_date"`
@@ -86,8 +91,8 @@ type respTemporadaTMDB struct {
 	Episodes   []episodioTMDB `json:"episodes"`
 }
 
-// episodioTMDB é um episódio cru do /season/{n}. name/overview vêm no idioma de
-// ?language= (vazios quando não há tradução naquele idioma).
+// episodioTMDB is a raw episode of /season/{n}. name/overview come in the language
+// of ?language= (empty when there is no translation in that language).
 type episodioTMDB struct {
 	ID            int64  `json:"id"`
 	Name          string `json:"name"`
@@ -99,8 +104,8 @@ type episodioTMDB struct {
 	Runtime       int    `json:"runtime"`
 }
 
-// serieParaArvore puxa o /tv/{id} e devolve a lista de temporadas + idioma original.
-// ErrNaoEncontrado (via getBytes) propaga para o handler responder 404.
+// serieParaArvore pulls /tv/{id} and returns the list of seasons + original
+// language. ErrNaoEncontrado (via getBytes) propagates so the handler answers 404.
 func (c *Client) serieParaArvore(ctx context.Context, sourceID string) (respSerieArvoreTMDB, error) {
 	body, err := c.getBytes(ctx, "/tv/"+url.PathEscape(sourceID), nil)
 	if err != nil {
@@ -113,10 +118,11 @@ func (c *Client) serieParaArvore(ctx context.Context, sourceID string) (respSeri
 	return d, nil
 }
 
-// montarTemporadaTMDB monta uma TemporadaExterna: puxa a temporada no idioma ORIGINAL
-// (a base/âncora), constrói os episódios e mescla as traduções dos idiomas pedidos por
-// episode.id. Erro na temporada-base propaga (a árvore é incompleta sem ela); traduções
-// que falhem degradam (o idioma fica ausente no mapa).
+// montarTemporadaTMDB builds a TemporadaExterna: it pulls the season in the
+// ORIGINAL language (the base/anchor), builds the episodes and merges the
+// translations of the requested languages by episode.id. An error in the base
+// season propagates (the tree is incomplete without it); translations that fail
+// degrade (the language stays absent from the map).
 func (c *Client) montarTemporadaTMDB(ctx context.Context, serieID string, resumo temporadaResumoTMDB, origLang string, langs []string) (provider.TemporadaExterna, error) {
 	base, err := c.buscarTemporadaTMDB(ctx, serieID, resumo.SeasonNumber, origLang)
 	if err != nil {
@@ -136,8 +142,8 @@ func (c *Client) montarTemporadaTMDB(ctx context.Context, serieID string, resumo
 	}, nil
 }
 
-// buscarTemporadaTMDB puxa o /tv/{id}/season/{n} localizado em `lang` (vazio cai no
-// default da fonte). Erro de rede/parse propaga.
+// buscarTemporadaTMDB pulls /tv/{id}/season/{n} localized in `lang` (empty falls
+// back to the default of the source). Network/parse errors propagate.
 func (c *Client) buscarTemporadaTMDB(ctx context.Context, serieID string, n int, lang string) (respTemporadaTMDB, error) {
 	var params url.Values
 	if lang != "" {
@@ -154,13 +160,15 @@ func (c *Client) buscarTemporadaTMDB(ctx context.Context, serieID string, n int,
 	return sd, nil
 }
 
-// montarEpisodiosTMDB cria os EpisodioExterno da temporada, preservando a ordem da
-// fonte, e devolve o índice id→*episódio (para mesclar as traduções). A numeração
-// "official" já entra; o conteúdo base vai sob o idioma original da série.
+// montarEpisodiosTMDB creates the EpisodioExterno of the season, preserving the
+// order of the source, and returns the id→*episode index (to merge the
+// translations). The "official" numbering already comes in; the base content goes
+// under the original language of the series.
 //
-// O índice guarda ponteiros PARA DENTRO do slice `episodios`: isso só é seguro porque a
-// capacidade é reservada em len(eps) e os appends nunca a estouram (sem realocação — os
-// ponteiros permanecem válidos). Manter esse invariante ao mexer aqui.
+// The index stores pointers INTO the `episodios` slice: that is only safe because
+// the capacity is reserved at len(eps) and the appends never exceed it (no
+// reallocation -- the pointers stay valid). Keep that invariant when touching
+// this code.
 func montarEpisodiosTMDB(eps []episodioTMDB, origLang string) ([]provider.EpisodioExterno, map[int64]*provider.EpisodioExterno) {
 	episodios := make([]provider.EpisodioExterno, 0, len(eps))
 	indice := make(map[int64]*provider.EpisodioExterno, len(eps))
@@ -186,9 +194,10 @@ func montarEpisodiosTMDB(eps []episodioTMDB, origLang string) ([]provider.Episod
 	return episodios, indice
 }
 
-// mesclarTemporadaTraduzida busca a temporada em cada idioma pedido (≠ original) e mescla
-// name/overview por episode.id, além do NOME da temporada. Best-effort: idioma que falhe
-// é pulado (fallback = ausente no mapa). Idiomas repetidos e o original são pulados.
+// mesclarTemporadaTraduzida fetches the season in each requested language (≠ the
+// original) and merges name/overview by episode.id, besides the NAME of the season.
+// Best-effort: a language that fails is skipped (fallback = absent from the map).
+// Repeated languages and the original one are skipped.
 func (c *Client) mesclarTemporadaTraduzida(ctx context.Context, serieID string, n int, langs []string, origLang string, indice map[int64]*provider.EpisodioExterno, nomes map[string]string) {
 	vistos := map[string]bool{origLang: true}
 	for _, lang := range langs {
@@ -208,8 +217,8 @@ func (c *Client) mesclarTemporadaTraduzida(ctx context.Context, serieID string, 
 	}
 }
 
-// aplicarTraducaoTMDB grava name/overview não-vazios de cada episódio traduzido sob as
-// chaves de idioma do app (combinado + base).
+// aplicarTraducaoTMDB writes the non-empty name/overview of each translated episode
+// under the app language keys (combined + base).
 func aplicarTraducaoTMDB(eps []episodioTMDB, chaves []string, indice map[int64]*provider.EpisodioExterno) {
 	for _, e := range eps {
 		ep, ok := indice[e.ID]
@@ -223,8 +232,8 @@ func aplicarTraducaoTMDB(eps []episodioTMDB, chaves []string, indice map[int64]*
 	}
 }
 
-// anoTemporada extrai o ano (4 dígitos) do air_date da temporada (do resumo ou do
-// detalhe). "" quando a fonte não informou data.
+// anoTemporada extracts the year (4 digits) from the air_date of the season (from
+// the summary or from the detail). "" when the source did not provide a date.
 func anoTemporada(resumo temporadaResumoTMDB, base respTemporadaTMDB) string {
 	data := primeiroNaoVazio(resumo.AirDate, base.AirDate)
 	if len(data) < 4 {
@@ -233,9 +242,10 @@ func anoTemporada(resumo temporadaResumoTMDB, base respTemporadaTMDB) string {
 	return data[:4]
 }
 
-// codigosAppTMDB devolve as chaves de app sob as quais gravar uma tradução de `lang`:
-// o próprio código (ex.: "pt-BR") e o base (ex.: "pt"), para o resolver casar tanto o
-// combinado quanto o base — mesma convenção do resto do provider.
+// codigosAppTMDB returns the app keys under which to write a translation of `lang`:
+// the code itself (e.g. "pt-BR") and the base one (e.g. "pt"), so the resolver
+// matches both the combined and the base -- the same convention as the rest of the
+// provider.
 func codigosAppTMDB(lang string) []string {
 	if lang == "" {
 		return nil
@@ -247,8 +257,8 @@ func codigosAppTMDB(lang string) []string {
 	return []string{lang, base}
 }
 
-// imagemDireta monta a URL direta de uma imagem do TMDB (base + path), ou "" quando não
-// há path.
+// imagemDireta builds the direct URL of a TMDB image (base + path), or "" when
+// there is no path.
 func imagemDireta(baseURL, path string) string {
 	if path == "" {
 		return ""
@@ -256,7 +266,7 @@ func imagemDireta(baseURL, path string) string {
 	return baseURL + path
 }
 
-// setSeAusenteStr grava valor não-vazio em chave não-vazia só se ainda não existe.
+// setSeAusenteStr writes a non-empty value under a non-empty key only if it does not exist yet.
 func setSeAusenteStr(m map[string]string, chave, valor string) {
 	if chave == "" || valor == "" {
 		return

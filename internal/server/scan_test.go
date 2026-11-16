@@ -14,8 +14,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 )
 
-// setupScanServer sobe um Server com banco migrado e devolve o Server (para
-// injeção do scanner nos testes) e o handler raiz.
+// setupScanServer starts a Server with a migrated database and returns the Server (for the
+// scanner injection in the tests) and the root handler.
 func setupScanServer(t *testing.T) (*Server, http.Handler) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "scan.sqlite")
@@ -36,18 +36,16 @@ func setupScanServer(t *testing.T) (*Server, http.Handler) {
 	return s, h
 }
 
-// configurarFilaDeTeste sobe UMA ÚNICA execqueue.Manager de teste, liga o
-// scanner de `s` nela (ConfigurarFila/ConfigurarLibrary) e, quando `s.jobs`
-// existe, liga o job.Manager na MESMA fila (ConfigurarFila) -- mesma
-// realidade de produção desde o briefing 0108/ADR-0028 CAMADA 3
-// (cmd/mymediadb/main.go: uma única fila compartilhada entre scan e job).
-// Roda o worker sequencial em background até o teste terminar -- necessário
-// porque nem scanner.Manager nem job.Manager disparam mais goroutine
-// própria (Start()/Executar() só enfileiram; quem roda de verdade é este
-// worker). Chamar de novo sempre que `s.scanner` for SUBSTITUÍDO por um novo
-// *scanner.Manager (a configuração de fila/library não sobrevive à troca de
-// instância) -- reconfigura s.jobs na fila NOVA também, nesse caso (inofensivo:
-// o worker antigo é cancelado no Cleanup independente do novo).
+// configurarFilaDeTeste brings up a SINGLE test execqueue.Manager, wires the scanner of `s`
+// into it (ConfigurarFila/ConfigurarLibrary) and, when `s.jobs` exists, wires the job.Manager
+// into the SAME queue (ConfigurarFila) -- the same production reality since the unified
+// execution queue (ADR-0028 layer 3: cmd/mymediadb/main.go has one single queue shared between
+// scan and job). It runs the sequential worker in background until the test ends -- necessary
+// because neither scanner.Manager nor job.Manager spawns its own goroutine anymore
+// (Start()/Executar() only enqueue; the one that really runs is this worker). Call it again
+// whenever `s.scanner` is REPLACED by a new *scanner.Manager (the queue/library configuration
+// does not survive the instance swap) -- in that case it also reconfigures s.jobs into the NEW
+// queue (harmless: the old worker is canceled in the Cleanup regardless of the new one).
 func configurarFilaDeTeste(t *testing.T, s *Server) {
 	t.Helper()
 	fila := execqueue.NewManager(s.db)
@@ -69,7 +67,7 @@ func configurarFilaDeTeste(t *testing.T, s *Server) {
 	})
 }
 
-// criarSourceHTTP cadastra um datasource via a API e devolve seu id.
+// criarSourceHTTP registers a datasource through the API and returns its id.
 func criarSourceHTTP(t *testing.T, h http.Handler, dir string) string {
 	t.Helper()
 	rec := do(t, h, http.MethodPost, "/api/v1/library", map[string]string{"path": dir, "type": "movie"})
@@ -79,8 +77,8 @@ func criarSourceHTTP(t *testing.T, h http.Handler, dir string) string {
 	return decodeSource(t, rec).ID
 }
 
-// proberBloqueante trava no Probe até o canal liberar ser fechado, mantendo o
-// scan "running" para exercitar o 409.
+// proberBloqueante blocks in Probe until the liberar channel is closed, keeping the scan
+// "running" to exercise the 409.
 type proberBloqueante struct{ liberar chan struct{} }
 
 func (proberBloqueante) Disponivel() bool { return true }
@@ -111,8 +109,8 @@ func TestGetScanStatusNaoEncontrado(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestPostScan202EStatus dispara um scan real (arquivo dummy) e acompanha o
-// status até concluir.
+// TestPostScan202EStatus fires a real scan (dummy file) and follows the status until it
+// finishes.
 func TestPostScan202EStatus(t *testing.T) {
 	_, h := setupScanServer(t)
 	dir := t.TempDir()
@@ -131,7 +129,7 @@ func TestPostScan202EStatus(t *testing.T) {
 		t.Error("job_id vazio no 202")
 	}
 
-	// Aguarda o scan concluir consultando o status.
+	// Waits for the scan to finish by polling the status.
 	esperarStatus(t, h, id, func(st scanStatusResponse) bool { return !st.Running })
 
 	final := lerStatus(t, h, id)
@@ -143,17 +141,17 @@ func TestPostScan202EStatus(t *testing.T) {
 	}
 }
 
-// TestPostScanEmAndamento409 prova o 409 quando já há scan rodando, usando um
-// prober que trava o scan.
+// TestPostScanEmAndamento409 proves the 409 when a scan is already running, using a prober
+// that blocks the scan.
 func TestPostScanEmAndamento409(t *testing.T) {
 	s, h := setupScanServer(t)
 	dir := t.TempDir()
 	escreverDummy(t, filepath.Join(dir, "Filme (2000)", "Filme (2000).mkv"))
 	id := criarSourceHTTP(t, h, dir)
 
-	// Substitui o scanner por um que trava no Probe (mantém running) -- a
-	// nova instância não herda a configuração de fila/library, então
-	// reconfigura antes de usar (ver configurarFilaDeTeste).
+	// Replaces the scanner with one that blocks in Probe (it stays running) -- the new instance
+	// does not inherit the queue/library configuration, so it reconfigures before use (see
+	// configurarFilaDeTeste).
 	prober := proberBloqueante{liberar: make(chan struct{})}
 	s.scanner = scanner.NewManagerComProber(s.db, prober)
 	configurarFilaDeTeste(t, s)
@@ -162,7 +160,7 @@ func TestPostScanEmAndamento409(t *testing.T) {
 	if rec1.Code != http.StatusAccepted {
 		t.Fatalf("1º scan status = %d, quero 202", rec1.Code)
 	}
-	// Espera o job aparecer como running.
+	// Waits for the job to show up as running.
 	esperarStatus(t, h, id, func(st scanStatusResponse) bool { return st.Running })
 
 	rec2 := do(t, h, http.MethodPost, "/api/v1/library/"+id+"/scan", nil)
@@ -171,7 +169,7 @@ func TestPostScanEmAndamento409(t *testing.T) {
 	}
 	checkErrorShape(t, rec2, "scan_in_progress")
 
-	// Libera o scan e espera terminar (para não deixar goroutine tocando o db).
+	// Releases the scan and waits for it to finish (so no goroutine is left touching the db).
 	close(prober.liberar)
 	esperarStatus(t, h, id, func(st scanStatusResponse) bool { return !st.Running })
 }
@@ -201,7 +199,7 @@ func lerStatus(t *testing.T, h http.Handler, id string) scanStatusResponse {
 	return st
 }
 
-// esperarStatus consulta o status até a condição valer ou estourar o timeout.
+// esperarStatus polls the status until the condition holds or the timeout expires.
 func esperarStatus(t *testing.T, h http.Handler, id string, cond func(scanStatusResponse) bool) {
 	t.Helper()
 	prazo := time.Now().Add(5 * time.Second)

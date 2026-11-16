@@ -11,11 +11,11 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/integration"
 )
 
-// fakeIntegrationDescritor é um integration.Descriptor mínimo para exercitar
-// a API genérica sem depender do tmdb real (briefing 0095). Dois campos:
-// "token" (secreto, com env var de fallback) e "modo" (texto, sem env var —
-// só pode vir do banco), cobrindo os dois ramos de `valor` no JSON (nunca
-// para secreto; presente para não-secreto quando há valor efetivo).
+// fakeIntegrationDescritor is a minimal integration.Descriptor to exercise
+// the generic API without depending on the real tmdb. Two fields:
+// "token" (secret, with a fallback env var) and "modo" (text, without an env var —
+// it can only come from the database), covering the two branches of `valor` in the JSON
+// (never for a secret; present for a non-secret when there is an effective value).
 type fakeIntegrationDescritor struct{}
 
 func (fakeIntegrationDescritor) Slug() string      { return "fake" }
@@ -31,8 +31,8 @@ func (fakeIntegrationDescritor) Configurada(efetivos map[string]string) bool {
 	return efetivos["token"] != ""
 }
 
-// setupIntegrationsServer sobe um Server com banco temporário migrado e o
-// fakeIntegrationDescritor já registrado sob o slug "fake".
+// setupIntegrationsServer starts a Server with a temporary migrated database and the
+// fakeIntegrationDescritor already registered under the slug "fake".
 func setupIntegrationsServer(t *testing.T) (http.Handler, *db.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "integrations.sqlite")
@@ -51,9 +51,9 @@ func setupIntegrationsServer(t *testing.T) (http.Handler, *db.DB) {
 	return h, database
 }
 
-// campoPorNome acha um item de `campos` (decodificado como []any de
-// map[string]any) pelo `nome` — usado para inspecionar a presença/ausência
-// EXATA da chave `valor` no JSON cru (integrationCampoDTO.Valor é omitempty).
+// campoPorNome finds an item of `campos` (decoded as []any of
+// map[string]any) by `nome` — used to inspect the EXACT presence/absence
+// of the `valor` key in the raw JSON (integrationCampoDTO.Valor is omitempty).
 func campoPorNome(t *testing.T, corpo map[string]any, nome string) map[string]any {
 	t.Helper()
 	campos, ok := corpo["campos"].([]any)
@@ -73,7 +73,7 @@ func campoPorNome(t *testing.T, corpo map[string]any, nome string) map[string]an
 	return nil
 }
 
-// bufferDeBytes é satisfeita por *bytes.Buffer (httptest.ResponseRecorder.Body).
+// bufferDeBytes is satisfied by *bytes.Buffer (httptest.ResponseRecorder.Body).
 type bufferDeBytes interface{ Bytes() []byte }
 
 func decodeMap(t *testing.T, buf bufferDeBytes) map[string]any {
@@ -86,8 +86,8 @@ func decodeMap(t *testing.T, buf bufferDeBytes) map[string]any {
 	return out
 }
 
-// TestListIntegrationsConfiguradaFalseSemNada cobre §5: nem banco nem env var
-// têm valor ⇒ GET /integrations lista "fake" com configurada:false.
+// TestListIntegrationsConfiguradaFalseSemNada covers: neither the database nor an env
+// var has a value ⇒ GET /integrations lists "fake" with configurada:false.
 func TestListIntegrationsConfiguradaFalseSemNada(t *testing.T) {
 	h, _ := setupIntegrationsServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/integrations", nil)
@@ -107,10 +107,10 @@ func TestListIntegrationsConfiguradaFalseSemNada(t *testing.T) {
 	}
 }
 
-// TestGetIntegrationEnvVarOrigemEnv cobre §5: setar a env var (sem tocar o
-// banco) faz GET /integrations devolver configurada:true e GET
-// /integrations/fake devolver o campo token com origem:"env", definido:true,
-// SEM a chave "valor" (é secreto).
+// TestGetIntegrationEnvVarOrigemEnv covers: setting the env var (without touching the
+// database) makes GET /integrations return configurada:true and GET
+// /integrations/fake return the token field with origem:"env", definido:true,
+// WITHOUT the "valor" key (it is secret).
 func TestGetIntegrationEnvVarOrigemEnv(t *testing.T) {
 	t.Setenv("MYMEDIADB_TESTE_FAKE_TOKEN", "do-ambiente")
 	h, _ := setupIntegrationsServer(t)
@@ -141,9 +141,9 @@ func TestGetIntegrationEnvVarOrigemEnv(t *testing.T) {
 	}
 }
 
-// TestPutIntegrationGravaNoBancoComPrecedencia cobre §5: PUT grava no banco;
-// GET subsequente devolve origem:"banco" (a env var segue setada, mas não é
-// mais a fonte efetiva).
+// TestPutIntegrationGravaNoBancoComPrecedencia covers: PUT writes to the database;
+// the following GET returns origem:"banco" (the env var is still set, but it is no
+// longer the effective source).
 func TestPutIntegrationGravaNoBancoComPrecedencia(t *testing.T) {
 	t.Setenv("MYMEDIADB_TESTE_FAKE_TOKEN", "do-ambiente")
 	h, _ := setupIntegrationsServer(t)
@@ -166,9 +166,9 @@ func TestPutIntegrationGravaNoBancoComPrecedencia(t *testing.T) {
 	}
 }
 
-// TestPutIntegrationNullRemoveOverride cobre §5: PUT com {"token":null}
-// remove o override — GET volta a mostrar origem:"env" (a env var segue
-// setada).
+// TestPutIntegrationNullRemoveOverride covers: PUT with {"token":null}
+// removes the override — GET shows origem:"env" again (the env var is still
+// set).
 func TestPutIntegrationNullRemoveOverride(t *testing.T) {
 	t.Setenv("MYMEDIADB_TESTE_FAKE_TOKEN", "do-ambiente")
 	h, _ := setupIntegrationsServer(t)
@@ -188,8 +188,8 @@ func TestPutIntegrationNullRemoveOverride(t *testing.T) {
 	}
 }
 
-// TestPutIntegrationNullSemEnvVoltaParaNenhum cobre a variante do critério
-// acima sem env var setada: remover o override cai em origem:"nenhum".
+// TestPutIntegrationNullSemEnvVoltaParaNenhum covers the variant of the criterion
+// above without an env var set: removing the override falls into origem:"nenhum".
 func TestPutIntegrationNullSemEnvVoltaParaNenhum(t *testing.T) {
 	h, _ := setupIntegrationsServer(t)
 
@@ -206,7 +206,7 @@ func TestPutIntegrationNullSemEnvVoltaParaNenhum(t *testing.T) {
 	}
 }
 
-// TestGetIntegrationInexistente404 cobre §5: GET /integrations/inexistente → 404.
+// TestGetIntegrationInexistente404 covers: GET /integrations/inexistente → 404.
 func TestGetIntegrationInexistente404(t *testing.T) {
 	h, _ := setupIntegrationsServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/integrations/inexistente", nil)
@@ -216,7 +216,7 @@ func TestGetIntegrationInexistente404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestPutIntegrationInexistente404 cobre o mesmo 404 no PUT.
+// TestPutIntegrationInexistente404 covers the same 404 on PUT.
 func TestPutIntegrationInexistente404(t *testing.T) {
 	h, _ := setupIntegrationsServer(t)
 	valor := "x"
@@ -228,7 +228,7 @@ func TestPutIntegrationInexistente404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestPutIntegrationValoresVazio422 cobre §5: PUT {"valores":{}} → 422.
+// TestPutIntegrationValoresVazio422 covers: PUT {"valores":{}} → 422.
 func TestPutIntegrationValoresVazio422(t *testing.T) {
 	h, _ := setupIntegrationsServer(t)
 	rec := do(t, h, http.MethodPut, "/api/v1/integrations/fake",
@@ -239,8 +239,8 @@ func TestPutIntegrationValoresVazio422(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestPutIntegrationCampoDesconhecido422 cobre §5: PUT com uma chave que não
-// é um Campo do Descriptor → 422.
+// TestPutIntegrationCampoDesconhecido422 covers: PUT with a key that is not
+// a Campo of the Descriptor → 422.
 func TestPutIntegrationCampoDesconhecido422(t *testing.T) {
 	h, _ := setupIntegrationsServer(t)
 	valor := "x"
@@ -252,9 +252,9 @@ func TestPutIntegrationCampoDesconhecido422(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestGetIntegrationCampoNaoSecretoMostraValor prova que um campo
-// NÃO-secreto ("modo", sem env var) mostra "valor" no JSON quando há um
-// valor efetivo gravado no banco — só o secreto é mascarado.
+// TestGetIntegrationCampoNaoSecretoMostraValor proves that a
+// NON-secret field ("modo", without an env var) shows "valor" in the JSON when there is an
+// effective value written in the database — only the secret one is masked.
 func TestGetIntegrationCampoNaoSecretoMostraValor(t *testing.T) {
 	h, _ := setupIntegrationsServer(t)
 	valor := "avancado"
@@ -269,8 +269,8 @@ func TestGetIntegrationCampoNaoSecretoMostraValor(t *testing.T) {
 	}
 }
 
-// TestPutIntegrationParcialNaoAfetaOutrosCampos prova que o PUT é PARCIAL:
-// gravar "modo" não apaga um "token" já gravado antes.
+// TestPutIntegrationParcialNaoAfetaOutrosCampos proves that the PUT is PARTIAL:
+// writing "modo" does not erase a "token" written before.
 func TestPutIntegrationParcialNaoAfetaOutrosCampos(t *testing.T) {
 	h, _ := setupIntegrationsServer(t)
 	tokenVal := "abc"

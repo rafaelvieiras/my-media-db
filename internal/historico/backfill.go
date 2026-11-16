@@ -1,15 +1,15 @@
-// Package historico implementa o BACKFILL retroativo de eventos órfãos
-// (briefing 0099, ADR-0022): quando uma entity ganha um id externo
-// (tmdb/imdb/tvdb) — via PUT /entities/{id}/external-ids ou pelo
-// enriquecimento (internal/enrich) — este pacote vincula os eventos de
-// `historico_evento` que ficaram sem entity (entity_id NULL, gravados pelo
-// webhook do Jellyfin quando nenhuma entity casava, ver
-// internal/server/webhook_jellyfin.go) cujos IDs brutos batem com o id novo.
+// Package historico implements the retroactive BACKFILL of orphan events
+// (ADR-0022): when an entity gains an external id (tmdb/imdb/tvdb) -- through
+// PUT /entities/{id}/external-ids or through enrichment (internal/enrich) --
+// this package links the `historico_evento` events that were left without an
+// entity (entity_id NULL, written by the Jellyfin webhook when no entity
+// matched, see internal/server/webhook_jellyfin.go) whose raw IDs match the new
+// id.
 //
-// Pacote pequeno e sem HTTP (mesmo espírito de internal/webhook): só lógica
-// sobre sqlcgen.Queries, importável tanto por internal/server quanto por
-// internal/enrich sem criar ciclo (nenhum dos dois importa este pacote de
-// volta).
+// A small package with no HTTP (same spirit as internal/webhook): only logic
+// over sqlcgen.Queries, importable both by internal/server and by
+// internal/enrich without creating a cycle (neither of them imports this
+// package back).
 package historico
 
 import (
@@ -20,18 +20,18 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// fontesReconhecidas são as únicas fontes que o casamento do webhook usa
-// hoje (internal/server/webhook_jellyfin.go, casarEntityJellyfin) e,
-// portanto, as únicas que um evento órfão pode ter gravado em raw_*_id — o
-// backfill cobre exatamente as mesmas 3. Uma fonte fora deste mapa em
-// `externalIDs` (ex.: um source de arte/trailer que não participa do
-// casamento) é ignorada, não é erro.
+// fontesReconhecidas are the only sources that the webhook matching uses today
+// (internal/server/webhook_jellyfin.go, casarEntityJellyfin) and, therefore,
+// the only ones an orphan event can have written to raw_*_id -- the backfill
+// covers exactly the same 3. A source outside this map in `externalIDs` (e.g.:
+// an artwork/trailer source that does not take part in the matching) is
+// ignored, it is not an error.
 var fontesReconhecidas = map[string]bool{"tmdb": true, "imdb": true, "tvdb": true}
 
-// ns embrulha uma string num sql.NullString válido quando não-vazia (NULL
-// quando ""). Cópia local do helper equivalente em internal/server (nsDe) —
-// este pacote não pode importar internal/server (dependência na direção
-// errada: server importaria historico, não o contrário).
+// ns wraps a string into a valid sql.NullString when non-empty (NULL when
+// ""). Local copy of the equivalent helper in internal/server (nsDe) -- this
+// package cannot import internal/server (dependency in the wrong direction:
+// server would import historico, not the other way around).
 func ns(s string) sql.NullString {
 	if s == "" {
 		return sql.NullString{}
@@ -39,15 +39,17 @@ func ns(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: true}
 }
 
-// VincularOrfaos vincula a entityID todo evento órfão (historico_evento com
-// entity_id IS NULL) cujo id bruto de alguma fonte presente em externalIDs
-// bate (tmdb/imdb/tvdb — as mesmas 3 fontes que o casamento do webhook usa;
-// chaves fora desse conjunto são ignoradas). Roda uma query de backfill por
-// fonte presente e com valor não-vazio; soma as linhas afetadas de todas.
+// VincularOrfaos links to entityID every orphan event (historico_evento with
+// entity_id IS NULL) whose raw id of some source present in externalIDs matches
+// (tmdb/imdb/tvdb -- the same 3 sources that the webhook matching uses; keys
+// outside that set are ignored). It runs one backfill query per source that is
+// present and has a non-empty value; it adds up the affected rows from all of
+// them.
 //
-// Erro de UMA fonte não aborta as demais — acumulado via errors.Join e
-// devolvido ao final (o chamador tipicamente só loga, backfill é um bônus
-// best-effort sobre uma gravação de identidade que já teve sucesso).
+// An error from ONE source does not abort the others -- it is accumulated via
+// errors.Join and returned at the end (the caller typically only logs, the
+// backfill is a best-effort bonus on top of an identity write that already
+// succeeded).
 func VincularOrfaos(ctx context.Context, q *sqlcgen.Queries, entityID string, externalIDs map[string]string) (int64, error) {
 	var total int64
 	var erros error

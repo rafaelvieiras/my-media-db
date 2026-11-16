@@ -17,12 +17,12 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
-// Testes das FILAS DE CURADORIA (briefing 0018): revisão, órfãs, confirmar,
-// corrigir e purga. Semeiam entities/media_files/override/asset direto pelo pool de
-// escrita e exercitam as rotas via httptest. Cobrem os critérios de aceite §5.
+// Tests of the CURATION QUEUES: review, orphans, confirm, correct and purge. They seed
+// entities/media_files/override/asset straight through the write pool and exercise the routes
+// via httptest. They cover the acceptance criteria.
 
-// definirStatus muda o status da entity direto no banco (CriarEntity nasce sempre
-// 'cataloged'; a fila de revisão precisa de 'draft', a de órfã de 'wanted' etc.).
+// definirStatus changes the entity status straight in the database (CriarEntity is always born
+// 'cataloged'; the review queue needs 'draft', the orphan one needs 'wanted', etc.).
 func definirStatus(t *testing.T, d *db.DB, id, status string) {
 	t.Helper()
 	if _, err := d.Write.ExecContext(context.Background(),
@@ -31,8 +31,8 @@ func definirStatus(t *testing.T, d *db.DB, id, status string) {
 	}
 }
 
-// semearOverride grava um override mínimo para a entity (marca "investimento do
-// dono" no predicado de órfã).
+// semearOverride writes a minimal override for the entity (it marks "owner investment" in the
+// orphan predicate).
 func semearOverride(t *testing.T, d *db.DB, entityID, blob string) {
 	t.Helper()
 	if _, err := escrita(t, d).UpsertMediaOverride(context.Background(), sqlcgen.UpsertMediaOverrideParams{
@@ -42,8 +42,8 @@ func semearOverride(t *testing.T, d *db.DB, entityID, blob string) {
 	}
 }
 
-// semearAssetUser grava um asset origin='user' (arte do dono; investimento no
-// predicado de órfã).
+// semearAssetUser writes an origin='user' asset (the owner's artwork; investment in the orphan
+// predicate).
 func semearAssetUser(t *testing.T, d *db.DB, id, entityID, kind, path string) {
 	t.Helper()
 	if _, err := escrita(t, d).CriarAsset(context.Background(), sqlcgen.CriarAssetParams{
@@ -53,7 +53,7 @@ func semearAssetUser(t *testing.T, d *db.DB, id, entityID, kind, path string) {
 	}
 }
 
-// decodeCards decodifica a resposta em ARRAY de cards das filas /review e /orphans.
+// decodeCards decodes the ARRAY-of-cards response of the /review and /orphans queues.
 func decodeCards(t *testing.T, rec *httptest.ResponseRecorder) []entityCardDTO {
 	t.Helper()
 	var out []entityCardDTO
@@ -63,7 +63,7 @@ func decodeCards(t *testing.T, rec *httptest.ResponseRecorder) []entityCardDTO {
 	return out
 }
 
-// idsDe extrai os ids de uma lista de cards, para asserts de pertencimento.
+// idsDe extracts the ids of a list of cards, for membership asserts.
 func idsDe(cards []entityCardDTO) map[string]bool {
 	m := make(map[string]bool, len(cards))
 	for _, c := range cards {
@@ -72,21 +72,21 @@ func idsDe(cards []entityCardDTO) map[string]bool {
 	return m
 }
 
-// TestFilaRevisaoClassifica cobre o critério §5.1 (classificação): a fila lista
-// draft + baixa confiança (present, 0<conf<70) e EXCLUI alta confiança e missing.
+// TestFilaRevisaoClassifica covers criterion §5.1 (classification): the queue lists
+// draft + low confidence (present, 0<conf<70) and EXCLUDES high confidence and missing.
 func TestFilaRevisaoClassifica(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 
-	// draft (não-identificado) — entra por status.
+	// draft (unidentified) — it enters by status.
 	semearEntity(t, d, "e-draft", "movie", "Draft")
 	definirStatus(t, d, "e-draft", "draft")
-	// baixa confiança, arquivo present — entra pelo predicado de confiança.
+	// low confidence, present file — it enters through the confidence predicate.
 	semearEntity(t, d, "e-baixa", "movie", "Baixa")
 	semearFile(t, d, "f-baixa", "e-baixa", "/lib/baixa.mkv", "present", 60, "")
-	// alta confiança present — NÃO entra (>= limiar 70).
+	// high confidence present — it does NOT enter (>= threshold 70).
 	semearEntity(t, d, "e-alta", "movie", "Alta")
 	semearFile(t, d, "f-alta", "e-alta", "/lib/alta.mkv", "present", 90, "")
-	// baixa confiança mas MISSING — NÃO entra (state != present).
+	// low confidence but MISSING — it does NOT enter (state != present).
 	semearEntity(t, d, "e-missing", "movie", "Missing")
 	semearFile(t, d, "f-missing", "e-missing", "/lib/missing.mkv", "missing", 60, "")
 
@@ -106,7 +106,7 @@ func TestFilaRevisaoClassifica(t *testing.T) {
 	}
 }
 
-// TestFilaRevisaoVaziaLista200 cobre o contrato: 200 com [] quando não há nada.
+// TestFilaRevisaoVaziaLista200 covers the contract: 200 with [] when there is nothing.
 func TestFilaRevisaoVaziaLista200(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/review", nil)
@@ -118,14 +118,14 @@ func TestFilaRevisaoVaziaLista200(t *testing.T) {
 	}
 }
 
-// TestConfirmarSobeConfianca cobre o critério §5.1 (confirmar): confirmar sobe a
-// confiança e o item some da fila de revisão. 404 para entity inexistente.
+// TestConfirmarSobeConfianca covers criterion §5.1 (confirm): confirming raises the confidence
+// and the item leaves the review queue. 404 for an unknown entity.
 func TestConfirmarSobeConfianca(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e1", "movie", "Baixa")
 	semearFile(t, d, "f1", "e1", "/lib/x.mkv", "present", 55, "")
 
-	// Antes: está na fila.
+	// Before: it is in the queue.
 	if !idsDe(decodeCards(t, do(t, h, http.MethodGet, "/api/v1/review", nil)))["e1"] {
 		t.Fatal("pré-condição: e1 deveria estar na fila de revisão")
 	}
@@ -135,7 +135,7 @@ func TestConfirmarSobeConfianca(t *testing.T) {
 		t.Fatalf("confirm status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
 	}
 
-	// Depois: sumiu da fila (confiança subiu para 100).
+	// After: it left the queue (the confidence rose to 100).
 	if idsDe(decodeCards(t, do(t, h, http.MethodGet, "/api/v1/review", nil)))["e1"] {
 		t.Error("e1 ainda na fila de revisão após confirmar")
 	}
@@ -148,7 +148,8 @@ func TestConfirmarSobeConfianca(t *testing.T) {
 	}
 }
 
-// statusDe le o status atual da entity direto do banco (para asserts de promocao).
+// statusDe reads the current entity status straight from the database (for promotion
+// asserts).
 func statusDe(t *testing.T, d *db.DB, id string) string {
 	t.Helper()
 	ent, err := escrita(t, d).ObterEntity(context.Background(), id)
@@ -158,9 +159,9 @@ func statusDe(t *testing.T, d *db.DB, id string) string {
 	return ent.Status
 }
 
-// TestConfirmarPromoveDraft cobre o ramo do STATUS: confirmar um draft
-// (nao-identificado) tem de promove-lo a 'cataloged' e tira-lo da fila — senao a
-// confianca sobe a 100 mas o item fica preso como draft (regressao pega ao vivo).
+// TestConfirmarPromoveDraft covers the STATUS branch: confirming a draft (unidentified) must
+// promote it to 'cataloged' and take it out of the queue — otherwise the confidence rises to
+// 100 but the item stays stuck as a draft (a regression caught live).
 func TestConfirmarPromoveDraft(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e-draft", "movie", "Sem Identidade")
@@ -192,12 +193,12 @@ func TestConfirmarInexistente404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestCorrigirGravaExternalIdsEReResolve cobre os critérios §5.1 (corrigir) e §5.4
-// (identidade vence, reflete no resolver): corrige com o provider fake, grava
-// external_ids, re-enriquece (título externo compõe), sobe a confiança e re-resolve.
+// TestCorrigirGravaExternalIdsEReResolve covers criteria §5.1 (correct) and §5.4 (identity
+// wins, reflected in the resolver): it corrects with the fake provider, writes external_ids,
+// re-enriches (the external title composes), raises the confidence and re-resolves.
 func TestCorrigirGravaExternalIdsEReResolve(t *testing.T) {
 	h, d, _, _, _ := setupEnrichServer(t)
-	// Entity casada errado pelo scanner: baixa confiança, sem id externo.
+	// Entity wrongly matched by the scanner: low confidence, without an external id.
 	semearEntity(t, d, "e1", "movie", "Palpite Errado")
 	semearFile(t, d, "f1", "e1", "/lib/x.mkv", "present", 40, "")
 
@@ -207,11 +208,11 @@ func TestCorrigirGravaExternalIdsEReResolve(t *testing.T) {
 		t.Fatalf("correct status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
 	}
 	ent := decodeEntidade(t, rec)
-	// Identidade gravada (source default tmdb) e composição externa refletida.
+	// Identity written (default source tmdb) and the external composition reflected.
 	eq(t, "external_ids.tmdb", ent.ExternalIDs["tmdb"], "555")
 	eq(t, "title(re-resolvido)", ent.Title, "Filme Externo")
 
-	// Confiança subiu → some da fila de revisão.
+	// Confidence rose → it leaves the review queue.
 	if idsDe(decodeCards(t, do(t, h, http.MethodGet, "/api/v1/review", nil)))["e1"] {
 		t.Error("e1 ainda na fila de revisão após corrigir")
 	}
@@ -224,9 +225,9 @@ func TestCorrigirGravaExternalIdsEReResolve(t *testing.T) {
 	}
 }
 
-// TestCorrigirPromoveDraft cobre o ramo do STATUS na correcao: corrigir um draft
-// (o caminho natural de identificar um nao-identificado) grava a identidade,
-// re-enriquece E promove a 'cataloged', tirando-o da fila. Regressao pega ao vivo.
+// TestCorrigirPromoveDraft covers the STATUS branch on correction: correcting a draft (the
+// natural path to identify an unidentified item) writes the identity, re-enriches AND promotes
+// it to 'cataloged', taking it out of the queue. A regression caught live.
 func TestCorrigirPromoveDraft(t *testing.T) {
 	h, d, _, _, _ := setupEnrichServer(t)
 	semearEntity(t, d, "e-draft", "movie", "Sem Identidade")
@@ -246,11 +247,11 @@ func TestCorrigirPromoveDraft(t *testing.T) {
 	}
 }
 
-// TestCorrigirSerieConstroiArvore cobre o briefing 0067: "Corrigir" sobre uma entity
-// type='tv' sem arvore (aplicarIdentidadeExterna -> s.enrich.Enriquecer) constroi
-// temporada/episodio como entity filha, exatamente como POST /import ja construia --
-// GET /entities/{id}/members deixa de vir vazio. Usa o fixture canned de fake.Provider
-// (mesma arvore de internal/enrich/enrich_arvore_test.go: 2 temporadas de 3 episodios).
+// TestCorrigirSerieConstroiArvore covers the series tree: "Corrigir" on a type='tv' entity
+// without a tree (aplicarIdentidadeExterna -> s.enrich.Enriquecer) builds season/episode as
+// child entities, exactly as POST /import already did -- GET /entities/{id}/members stops
+// coming out empty. It uses the canned fake.Provider fixture (the same tree as
+// internal/enrich/enrich_arvore_test.go: 2 seasons of 3 episodes).
 func TestCorrigirSerieConstroiArvore(t *testing.T) {
 	img := servidorImagemArvoreSerie(t)
 	h, d := setupSearchServer(t, WithSearchProvider(fake.New(img.URL)), WithAssetsDir(t.TempDir()))
@@ -297,10 +298,10 @@ func TestCorrigirInexistente404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestCorrigirEnrichDesligado503 cobre a exigência do serviço de enrich ligado: sem
-// provider/assetsDir, corrigir responde 503 (como enrich/import).
+// TestCorrigirEnrichDesligado503 covers the requirement of an enabled enrich service: without a
+// provider/assetsDir, correct answers 503 (like enrich/import).
 func TestCorrigirEnrichDesligado503(t *testing.T) {
-	h, d := setupEntitiesServer(t) // sem WithSearchProvider/WithAssetsDir => enrich nil
+	h, d := setupEntitiesServer(t) // without WithSearchProvider/WithAssetsDir => enrich nil
 	semearEntity(t, d, "e1", "movie", "X")
 	rec := do(t, h, http.MethodPost, "/api/v1/entities/e1/correct",
 		map[string]string{"source_id": "1"})
@@ -310,34 +311,34 @@ func TestCorrigirEnrichDesligado503(t *testing.T) {
 	checkErrorShape(t, rec, "external_source_unavailable")
 }
 
-// TestFilaOrfas cobre o critério §5.2: lista só cataloged + com arquivo(s) + TODOS
-// missing + sem investimento do dono; EXCLUI item com override ou asset user (o
-// teste-chave), com posse, com status de intenção (wanted) e só-importado.
+// TestFilaOrfas covers criterion §5.2: it lists only cataloged + with file(s) + ALL missing +
+// without owner investment; it EXCLUDES an item with an override or a user asset (the key
+// test), with ownership, with an intention status (wanted) and imported-only.
 func TestFilaOrfas(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 
-	// Órfã canônica: cataloged, 1 arquivo missing, sem investimento.
+	// Canonical orphan: cataloged, 1 missing file, no investment.
 	semearEntity(t, d, "orfa", "movie", "Orfa")
 	semearFile(t, d, "f-orfa", "orfa", "/lib/orfa.mkv", "missing", 80, "")
 
-	// Tem posse (arquivo present) — NÃO é órfã.
+	// It has ownership (present file) — it is NOT an orphan.
 	semearEntity(t, d, "com-posse", "movie", "ComPosse")
 	semearFile(t, d, "f-posse", "com-posse", "/lib/posse.mkv", "present", 80, "")
 
-	// wanted (intenção do dono), arquivo missing — NÃO é órfã.
+	// wanted (owner intention), missing file — it is NOT an orphan.
 	semearEntity(t, d, "wanted", "movie", "Wanted")
 	semearFile(t, d, "f-wanted", "wanted", "/lib/wanted.mkv", "missing", 80, "")
 	definirStatus(t, d, "wanted", "wanted")
 
-	// Só importada (sem media_file) — NÃO é órfã.
+	// Imported only (no media_file) — it is NOT an orphan.
 	semearEntity(t, d, "so-import", "movie", "SoImport")
 
-	// Candidata a órfã, MAS com override do dono — NÃO é órfã (investimento).
+	// Orphan candidate, BUT with an owner override — it is NOT an orphan (investment).
 	semearEntity(t, d, "com-override", "movie", "ComOverride")
 	semearFile(t, d, "f-ov", "com-override", "/lib/ov.mkv", "missing", 80, "")
 	semearOverride(t, d, "com-override", `{"title":{"pt-BR":"Meu Titulo"}}`)
 
-	// Candidata a órfã, MAS com asset origin='user' — NÃO é órfã (investimento).
+	// Orphan candidate, BUT with an origin='user' asset — it is NOT an orphan (investment).
 	semearEntity(t, d, "com-asset", "movie", "ComAsset")
 	semearFile(t, d, "f-as", "com-asset", "/lib/as.mkv", "missing", 80, "")
 	semearAssetUser(t, d, "a-user", "com-asset", "poster", "/assets/com-asset/user-a.png")
@@ -353,15 +354,15 @@ func TestFilaOrfas(t *testing.T) {
 	}
 }
 
-// TestPurgaIndividualRemoveDerivados cobre o critério §5.3: DELETE remove a entity e
-// os derivados (media_file/override/asset via CASCADE), sem afetar outras entities.
+// TestPurgaIndividualRemoveDerivados covers criterion §5.3: DELETE removes the entity and its
+// derivatives (media_file/override/asset through CASCADE), without affecting other entities.
 func TestPurgaIndividualRemoveDerivados(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e1", "movie", "Alvo")
 	semearFile(t, d, "f1", "e1", "/lib/x.mkv", "missing", 80, "")
 	semearOverride(t, d, "e1", `{"title":{"pt-BR":"T"}}`)
 	semearAssetUser(t, d, "a1", "e1", "poster", "/assets/e1/user-a.png")
-	// Vizinha que deve SOBREVIVER.
+	// A neighbor that must SURVIVE.
 	semearEntity(t, d, "e2", "movie", "Vizinha")
 	semearFile(t, d, "f2", "e2", "/lib/y.mkv", "present", 80, "")
 
@@ -374,7 +375,7 @@ func TestPurgaIndividualRemoveDerivados(t *testing.T) {
 		t.Fatalf("corpo = %s, quero {purged:true}", rec.Body.String())
 	}
 
-	// Entity e derivados sumiram (CASCADE).
+	// Entity and derivatives are gone (CASCADE).
 	if _, err := escrita(t, d).ObterEntity(context.Background(), "e1"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("ObterEntity(e1) err = %v, quero ErrNoRows", err)
 	}
@@ -387,7 +388,7 @@ func TestPurgaIndividualRemoveDerivados(t *testing.T) {
 	if _, err := escrita(t, d).ObterAsset(context.Background(), "a1"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("asset a1 sobreviveu, quero CASCADE (err=%v)", err)
 	}
-	// Vizinha intacta.
+	// Neighbor intact.
 	if _, err := escrita(t, d).ObterEntity(context.Background(), "e2"); err != nil {
 		t.Errorf("vizinha e2 foi afetada: %v", err)
 	}
@@ -402,8 +403,8 @@ func TestPurgaIndividualInexistente404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestPurgaLote cobre o critério §5.3 (lote): purga os ids do corpo, idempotente
-// por id ausente, e não afeta as demais entities.
+// TestPurgaLote covers criterion §5.3 (batch): it purges the ids of the body, idempotent for an
+// absent id, and does not affect the other entities.
 func TestPurgaLote(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e1", "movie", "Um")
@@ -422,7 +423,7 @@ func TestPurgaLote(t *testing.T) {
 	if body.Removed != 2 {
 		t.Errorf("removed = %d, quero 2 (e1, e3; 'ausente' idempotente)", body.Removed)
 	}
-	// e1/e3 sumiram, e2 sobreviveu.
+	// e1/e3 are gone, e2 survived.
 	for _, id := range []string{"e1", "e3"} {
 		if _, err := escrita(t, d).ObterEntity(context.Background(), id); !errors.Is(err, sql.ErrNoRows) {
 			t.Errorf("%s sobreviveu à purga em lote (err=%v)", id, err)
@@ -442,7 +443,7 @@ func TestPurgaLoteCorpoInvalido422(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestCorrigirCorpoMalformado422 cobre o branch de corpo JSON inválido do correct
+// TestCorrigirCorpoMalformado422 covers the invalid JSON body branch of correct
 // (decodeOpcional): 422 invalid_body.
 func TestCorrigirCorpoMalformado422(t *testing.T) {
 	h, d, _, _, _ := setupEnrichServer(t)
@@ -454,13 +455,13 @@ func TestCorrigirCorpoMalformado422(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestPurgaLimpaBinariosDeAssets cobre a limpeza best-effort do diretório de
-// binários da entity ({assetsDir}/{id}) na purga individual — o caminho do
-// os.RemoveAll com assetsDir configurado (o enrich server tem um).
+// TestPurgaLimpaBinariosDeAssets covers the best-effort cleanup of the entity binary directory
+// ({assetsDir}/{id}) in the individual purge — the os.RemoveAll path with assetsDir configured
+// (the enrich server has one).
 func TestPurgaLimpaBinariosDeAssets(t *testing.T) {
 	h, d, _, _, assetsDir := setupEnrichServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
-	// Cria o diretório de binários da entity com um arquivo dentro.
+	// Creates the entity binary directory with a file inside.
 	dir := filepath.Join(assetsDir, "e1")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
@@ -478,8 +479,8 @@ func TestPurgaLimpaBinariosDeAssets(t *testing.T) {
 	}
 }
 
-// provFalha e um provider cujo BuscarDetalhe SEMPRE falha (Nome tmdb, casa o
-// find-or-create), para exercitar o 502 do correct quando a fonte não entrega.
+// provFalha is a provider whose BuscarDetalhe ALWAYS fails (Nome tmdb, it matches the
+// find-or-create), to exercise the 502 of correct when the source does not deliver.
 type provFalha struct{}
 
 func (*provFalha) Nome() string { return "tmdb" }
@@ -494,8 +495,8 @@ func (*provFalha) BuscarDetalhe(context.Context, string, string, []string) (json
 
 func (*provFalha) MapearDetalhe(json.RawMessage) (map[string]any, error) { return nil, nil }
 
-// TestCorrigirFonteFalha502 cobre o branch de falha da fonte no correct (a fonte
-// não entrega o detalhe): 502 external_source_error.
+// TestCorrigirFonteFalha502 covers the source failure branch of correct (the source does not
+// deliver the detail): 502 external_source_error.
 func TestCorrigirFonteFalha502(t *testing.T) {
 	h, d := setupSearchServer(t, WithSearchProvider(&provFalha{}), WithAssetsDir(t.TempDir()))
 	semearEntity(t, d, "e1", "movie", "X")
@@ -507,8 +508,8 @@ func TestCorrigirFonteFalha502(t *testing.T) {
 	checkErrorShape(t, rec, "external_source_error")
 }
 
-// TestCuradoriaSemBanco503 cobre a guarda entitiesUnavailable de todas as rotas de
-// curadoria quando não há banco injetado (db nil) — degradam com 503.
+// TestCuradoriaSemBanco503 covers the entitiesUnavailable guard of all the curation routes when
+// no database is injected (db nil) — they degrade with 503.
 func TestCuradoriaSemBanco503(t *testing.T) {
 	h, err := New("v-teste", nil).Handler()
 	if err != nil {
@@ -532,11 +533,11 @@ func TestCuradoriaSemBanco503(t *testing.T) {
 	}
 }
 
-// TestReviewEpisodioContaArquivoDaJuncao cobre o bug de produção medido no briefing
-// 0138: 19 episódios em rascunho apareciam na fila como "sem arquivo" (file_count 0,
-// path vazio) mesmo com o arquivo presente, porque o arquivo de episódio aponta para
-// a SERIE e o vínculo com o episódio é a junção media_file_entity. A fila de revisão
-// passa a contar/agrupar por ela, igual ao card (0034).
+// TestReviewEpisodioContaArquivoDaJuncao covers the production bug measured with the review
+// group work: 19 draft episodes showed up in the queue as "sem arquivo" (file_count 0, empty
+// path) even with the file present, because the episode file points at the SERIES and the link
+// to the episode is the media_file_entity join. The review queue now counts/groups through it,
+// like the card does.
 func TestReviewEpisodioContaArquivoDaJuncao(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "s1", "tv", "Serie")
@@ -544,7 +545,8 @@ func TestReviewEpisodioContaArquivoDaJuncao(t *testing.T) {
 	semearEntity(t, d, "ep1", "episode", "Ep provisorio")
 	ligarFilhoOrdenado(t, d, "r-se1", "s1", "se1", "tv_season", 2)
 	ligarFilhoOrdenado(t, d, "r-ep1", "se1", "ep1", "tv_episode", 6)
-	// Rascunho (provisório nasce draft) com o arquivo na SERIE e a junção no episódio.
+	// Draft (a provisional entity is born as draft) with the file on the SERIES and the join on
+	// the episode.
 	semearFile(t, d, "mf1", "s1", "/lib/serie/Season 02/ep s02e06.mkv", "present", 0.9, "")
 	if _, err := escrita(t, d).AtualizarEntity(context.Background(), sqlcgen.AtualizarEntityParams{
 		ID: "ep1", Type: "episode", Title: "Ep provisorio", Status: "draft",
@@ -570,8 +572,8 @@ func TestReviewEpisodioContaArquivoDaJuncao(t *testing.T) {
 	}
 	eq(t, "ep1 owned", ep1.Owned, true)
 	eq(t, "ep1 file_count", ep1.FileCount, 1)
-	// O grupo sai do caminho: com o path vindo da juncao, o episódio deixa de cair
-	// em "Sem arquivo" e passa a agrupar pela pasta da série.
+	// The group comes from the path: with the path coming from the join, the episode stops
+	// falling into "Sem arquivo" and starts grouping by the series folder.
 	if ep1.ReviewGroup == nil || ep1.ReviewGroup.Kind == "sem_arquivo" {
 		t.Fatalf("review_group = %+v, quero agrupado pela pasta (nao 'sem arquivo')", ep1.ReviewGroup)
 	}

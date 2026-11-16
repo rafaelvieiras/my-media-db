@@ -2,33 +2,33 @@ package tmdb
 
 import "github.com/rafaelvieiras/my-media-db/internal/integration"
 
-// descriptorIntegracao implementa integration.Descriptor para o TMDB
-// (briefing 0095, primeiro consumidor da fundação de integrações
-// configuráveis via UI/banco, ADR-0023). Só descreve o SCHEMA de campos
-// (token/api_key) e delega Configurada à MESMA regra que Credencial.
-// Configurada já usa hoje (token OU api_key) -- não duplica a lógica.
+// descriptorIntegracao implements integration.Descriptor for TMDB (the first
+// consumer of the foundation of integrations configurable through the UI/database,
+// ADR-0023). It only describes the SCHEMA of the fields (token/api_key) and
+// delegates Configurada to the SAME rule that Credencial.Configurada already uses
+// today (token OR api_key) -- it does not duplicate the logic.
 type descriptorIntegracao struct{}
 
-// NovoDescriptorIntegracao cria o integration.Descriptor do TMDB. Registrado
-// em cmd/mymediadb/main.go via server.WithIntegrations.
+// NovoDescriptorIntegracao creates the TMDB integration.Descriptor. Registered in
+// cmd/mymediadb/main.go through server.WithIntegrations.
 func NovoDescriptorIntegracao() integration.Descriptor {
 	return descriptorIntegracao{}
 }
 
-// Slug é a chave estável de URL/registro -- "tmdb", nunca "TMDB".
+// Slug is the stable URL/registry key -- "tmdb", never "TMDB".
 func (descriptorIntegracao) Slug() string { return "tmdb" }
 
-// Nome é o rótulo amigável para a UI (briefing 0096).
+// Nome is the friendly label for the UI.
 func (descriptorIntegracao) Nome() string { return "TMDB" }
 
-// Descricao é o texto curto de apoio da UI.
+// Descricao is the short supporting text for the UI.
 func (descriptorIntegracao) Descricao() string {
 	return "The Movie Database -- provider de busca/enriquecimento de filmes e series."
 }
 
-// Campos descreve token (preferido, Read Access Token v4) e api_key
-// (alternativa v3) -- mesmos dois campos de Credencial, cada um com sua
-// própria env var de bootstrap/fallback.
+// Campos describes token (preferred, Read Access Token v4) and api_key
+// (v3 alternative) -- the same two fields of Credencial, each one with its own
+// bootstrap/fallback env var.
 func (descriptorIntegracao) Campos() []integration.Campo {
 	return []integration.Campo{
 		{
@@ -48,8 +48,8 @@ func (descriptorIntegracao) Campos() []integration.Campo {
 	}
 }
 
-// Configurada delega à MESMA regra que Credencial.Configurada() já usa hoje
-// (token OU api_key preenchido) -- reusa em vez de duplicar.
+// Configurada delegates to the SAME rule that Credencial.Configurada() already
+// uses today (token OR api_key filled in) -- reuse instead of duplication.
 func (descriptorIntegracao) Configurada(efetivos map[string]string) bool {
 	return Credencial{Token: efetivos["token"], APIKey: efetivos["api_key"]}.Configurada()
 }

@@ -1,51 +1,53 @@
 package scanner
 
-// musica.go é o núcleo do scanner de MÚSICA (briefing 0107/0115, ADR-0027/ADR-0029):
-// quando a biblioteca é `content_type='music'`, cada arquivo de áudio é UMA faixa. O
-// fluxo, por arquivo, na ordem em que tenta resolver (para na primeira que resolver):
+// musica.go is the core of the MUSIC scanner (ADR-0027/ADR-0029): when the
+// library is `content_type='music'`, every audio file is ONE track. The flow, per
+// file, in the order in which it tries to resolve (it stops at the first one that
+// resolves):
 //
-//  1. MBID de faixa (recording) embutido na tag -> ObterEntityPorMbid direto (o
-//     arquivo já foi catalogado antes, ou outro arquivo do mesmo álbum já trouxe essa
-//     faixa nesta mesma execução ou numa anterior).
-//  2. MBID de faixa SEM match ainda, mas a tag TAMBÉM tem o MBID do artista ->
-//     import ESCOPADO (ADR-0029, enrich.ImportarFaixaPossuida): SÓ o artista
-//     (identidade) + o ÁLBUM daquela faixa + a própria faixa, idempotente -- NUNCA a
-//     discografia inteira -- e tenta o lookup de novo.
-//  3. MBID de faixa SEM MBID de artista na tag -> resolução REVERSA
-//     (provider.FaixaResolverProvider) faixa->artista, depois cai no mesmo caminho
-//     do passo 2.
-//  4. SEM NENHUM MBID embutido (caso DOMINANTE nos arquivos reais do dono -- os
-//     scripts pessoais dele não gravam esse tag): busca textual do artista
-//     (album_artist, com fallback para artist) no provider; candidato único e forte
-//     o bastante dispara o MESMO import escopado do passo 2, mas pelo caminho
-//     TEXTUAL (álbum por nome via MusicaAlbumProvider.BuscarAlbumPorNome, faixa por
-//     título/track_number dentro dele) -- nunca a árvore inteira.
-//  4.5. SEM match textual plausível (briefing 0126): ÚLTIMO fallback antes do
-//     draft. Calcula o fingerprint acústico do ARQUIVO (fpcalc/Chromaprint,
-//     subprocesso -- internal/fingerprint) e consulta a capacidade opcional
-//     provider.FingerprintProvider (hoje só internal/provider/acoustid) --
-//     achando um `recording` MBID com confiança >= matching.
-//     LimiarConfiancaFingerprint, reaproveita o MESMO caminho de import
-//     escopado do passo 2/3 (importarEAcharPorMbid), NUNCA a discografia
-//     inteira. fpcalc ausente, provider sem a capacidade, ou candidato fraco
-//     demais: degrada em silêncio, cai para o passo 5.
-//  5. SEM MATCH PLAUSÍVEL nenhum: cria uma entity `faixa` RASCUNHO (status=draft),
-//     só com os dados da tag (ou o nome do arquivo) -- SEM entity_relation de
-//     artista/álbum, fica solta até correção manual (mesmo espírito de
-//     acharOuCriarDraftSerie, mas sem find-or-create por título: cada arquivo sem
-//     match vira seu próprio draft).
+//  1. Track (recording) MBID embedded in the tag -> ObterEntityPorMbid directly
+//     (the file was already cataloged before, or another file of the same album
+//     already brought this track in this same execution or in a previous one).
+//  2. Track MBID with NO match yet, but the tag ALSO has the artist MBID ->
+//     SCOPED import (ADR-0029, enrich.ImportarFaixaPossuida): ONLY the artist
+//     (identity) + the ALBUM of that track + the track itself, idempotent --
+//     NEVER the whole discography -- and it tries the lookup again.
+//  3. Track MBID WITHOUT an artist MBID in the tag -> REVERSE resolution
+//     (provider.FaixaResolverProvider) track->artist, then it falls into the same
+//     path as step 2.
+//  4. WITHOUT ANY embedded MBID (the DOMINANT case in the owner's real files --
+//     his personal scripts do not write that tag): textual search of the artist
+//     (album_artist, with a fallback to artist) in the provider; a single
+//     candidate strong enough triggers the SAME scoped import of step 2, but
+//     through the TEXTUAL path (album by name via
+//     MusicaAlbumProvider.BuscarAlbumPorNome, track by title/track_number inside
+//     it) -- never the whole tree.
+//  4.5. WITHOUT a plausible textual match: LAST fallback before the draft. It
+//     computes the acoustic fingerprint of the FILE (fpcalc/Chromaprint,
+//     subprocess -- internal/fingerprint) and queries the optional capability
+//     provider.FingerprintProvider (today only internal/provider/acoustid) --
+//     finding a `recording` MBID with confidence >=
+//     matching.LimiarConfiancaFingerprint, it reuses the SAME scoped import path
+//     of steps 2/3 (importarEAcharPorMbid), NEVER the whole discography. fpcalc
+//     missing, a provider without the capability, or a candidate too weak:
+//     degrades silently, falls to step 5.
+//  5. WITHOUT ANY PLAUSIBLE MATCH: it creates a DRAFT `faixa` entity
+//     (status=draft), with only the tag data (or the file name) -- WITHOUT an
+//     artist/album entity_relation, it stays loose until a manual correction (the
+//     same spirit as acharOuCriarDraftSerie, but without find-or-create by title:
+//     every unmatched file becomes its own draft).
 //
-// O import de árvore INTEIRA (discografia completa) continua existindo
-// (enrich.Importar, tipo="artista") mas só é disparado pelo import MANUAL
-// deliberado do dono (busca -> importar artista) -- nunca por este scanner.
+// The import of the WHOLE tree (complete discography) still exists
+// (enrich.Importar, tipo="artista") but it is only triggered by the owner's
+// deliberate MANUAL import (search -> import artist) -- never by this scanner.
 //
-// TUDO isto roda em factsMusica (fase de FATOS, chamada por computarFacts em
-// scan.go), FORA da transação de escrita do lote -- o import do enrich usa a
-// própria conexão de escrita, então nada de transação aninhada (mesmo motivo do
-// caminho de série, ver serie.go). O vínculo arquivo<->faixa é 1:1
-// (media_file.entity_id aponta DIRETO pra faixa, ADR-0027 item 5) -- NUNCA a
-// junção N:M de série (media_file_entity); gravarArquivoMusica (abaixo) espelha
-// gravarArquivo de filme (match.go), não gravarArquivoSerie.
+// ALL of this runs in factsMusica (FACTS phase, called by computarFacts in
+// scan.go), OUTSIDE the write transaction of the batch -- the enrich import uses
+// its own write connection, so no nested transaction (same reason as the series
+// path, see serie.go). The file<->track link is 1:1 (media_file.entity_id points
+// DIRECTLY to the track, ADR-0027 item 5) -- NEVER the N:M junction of series
+// (media_file_entity); gravarArquivoMusica (below) mirrors gravarArquivo of movie
+// (match.go), not gravarArquivoSerie.
 
 import (
 	"context"
@@ -64,46 +66,48 @@ import (
 )
 
 const (
-	// contentTypeMusic é o valor de library_source.content_type que liga o fluxo
-	// de música (espelha contentTypeSeries em serie.go).
+	// contentTypeMusic is the value of library_source.content_type that turns on
+	// the music flow (it mirrors contentTypeSeries in serie.go).
 	contentTypeMusic = "music"
-	// tipoArtista/tipoFaixa são os entity.type da vertical de música que este
-	// arquivo cria/consulta diretamente (ADR-0027; espelham as constantes
-	// privadas equivalentes de internal/enrich/musica.go, que não são
-	// exportadas -- ver AGENTS.md/briefing 0107, "não duplique lógica de
-	// criação", mas os LITERAIS de tipo em si não são lógica).
+	// tipoArtista/tipoFaixa are the entity.type of the music vertical that this
+	// file creates/queries directly (ADR-0027; they mirror the equivalent private
+	// constants of internal/enrich/musica.go, which are not exported -- see
+	// AGENTS.md, "do not duplicate creation logic", but the type LITERALS
+	// themselves are not logic).
 	tipoArtista = "artista"
 	tipoFaixa   = "faixa"
-	// sourceMusicBrainz é o Nome() da fonte usada para o parâmetro `source` de
-	// MusicaImportador.Importar (musicbrainz.go: nomeFonte, mesmo valor).
+	// sourceMusicBrainz is the Nome() of the source used for the `source`
+	// parameter of MusicaImportador.Importar (musicbrainz.go: nomeFonte, same
+	// value).
 	sourceMusicBrainz = "musicbrainz"
-	// confMusicaTextual é a confiança do match por busca textual (passo 4) --
-	// mesmo grau de "palpite alto, não uma prova de identidade" que
-	// confTituloAno tem para filme (match.go): um nome de artista batendo
-	// exato contra a fonte é um bom sinal, mas não é um id embutido.
+	// confMusicaTextual is the confidence of the match by textual search (step 4)
+	// -- the same degree of "high guess, not a proof of identity" that
+	// confTituloAno has for movie (match.go): an artist name matching the source
+	// exactly is a good signal, but it is not an embedded id.
 	confMusicaTextual = confTituloAno
-	// confFingerprint é a confiança do match por fingerprint acústico (passo
-	// 4.5, briefing 0126) -- por princípio, ESTRITAMENTE abaixo de
-	// confMusicaTextual (um escore de similaridade acústica não é uma prova
-	// de identidade tão forte quanto um MBID embutido pelo dono NEM quanto
-	// um nome batendo exato na busca textual) e ACIMA de confDraft (ainda é
-	// um sinal utilizável, não um chute). Reaproveita confTituloSoNom (match
-	// de filme só por nome, sem confirmação de ano) em vez de inventar um
-	// terceiro número mágico -- mesmo espírito de confMusicaTextual acima.
+	// confFingerprint is the confidence of the match by acoustic fingerprint (step
+	// 4.5) -- by principle, STRICTLY below confMusicaTextual (an acoustic
+	// similarity score is not a proof of identity as strong as an MBID embedded
+	// by the owner NOR as a name matching exactly in the textual search) and ABOVE
+	// confDraft (it is still a usable signal, not a guess). It reuses
+	// confTituloSoNom (movie match by name only, without year confirmation)
+	// instead of inventing a third magic number -- the same spirit of
+	// confMusicaTextual above.
 	confFingerprint = confTituloSoNom
 )
 
-// factsMusica monta os fatos de um arquivo de áudio: extrai as tags (via o
-// mediainfo_json já calculado por hashEMediainfo) e resolve a entity FAIXA
-// através do pipeline de matching acima. Não escreve o media_file (isso é da
-// transação do lote, ver gravarArquivoMusica) -- só resolve.
+// factsMusica assembles the facts of an audio file: it extracts the tags (via the
+// mediainfo_json already computed by hashEMediainfo) and resolves the FAIXA entity
+// through the matching pipeline above. It does not write the media_file (that
+// belongs to the batch transaction, see gravarArquivoMusica) -- it only resolves.
 //
-// INCREMENTALIDADE (briefing 0107 §5): quando já existe um media_file para
-// este MESMO path com mtime/size EXATAMENTE iguais aos atuais (o mesmo
-// short-circuit de mediaFileInalteradoPorPath que hashEMediainfo já usa para
-// não re-hashear/re-probar), reusa o entity_id e a confiança JÁ GRAVADOS sem
-// rodar o pipeline de matching de novo -- nunca rechama Importar (rede) nem
-// a busca textual num re-scan sem mudança nenhuma no arquivo.
+// INCREMENTALITY: when a media_file for this SAME path already exists with
+// mtime/size EXACTLY equal to the current ones (the same
+// mediaFileInalteradoPorPath short-circuit that hashEMediainfo already uses so as
+// not to re-hash/re-probe), it reuses the entity_id and the confidence ALREADY
+// STORED without running the matching pipeline again -- it never calls Importar
+// (network) nor the textual search again on a re-scan with no change at all to
+// the file.
 func (r *scanRun) factsMusica(ctx context.Context, path string, mi []byte, size int64, mtime string) fileFacts {
 	f := fileFacts{path: path, isMusica: true, folderDir: filepath.Dir(path), rawNome: semExtensao(filepath.Base(path))}
 
@@ -131,20 +135,19 @@ func (r *scanRun) factsMusica(ctx context.Context, path string, mi []byte, size 
 	return f
 }
 
-// resolverFaixa executa o pipeline de matching descrito no comentário do
-// pacote, na ordem: MBID de faixa direto -> MBID de faixa + import (com ou sem
-// MBID de artista embutido) -> busca textual -> fingerprint acústico ->
-// draft. Sempre devolve um faixaID utilizável (o passo 5 nunca falha, exceto
-// erro de banco -- nesse caso "" e o chamador loga e pula o arquivo, ver
-// gravarArquivoMusica). path é o caminho do arquivo no disco, necessário só
-// pelo passo 4.5 (fpcalc lê o áudio bruto, não as tags já extraídas).
-// duracaoSegundos é a duração do arquivo local extraída pelo probe
-// (info.General.Duration, factsMusica acima), 0 quando desconhecida --
-// repassada como sinal ADICIONAL de CONFIRMAÇÃO por duração (briefing 0121
-// §8, matching.ToleranciaDuracaoSegundos) até o enrich.FaixaAlvo construído
-// nos pontos de import escopado abaixo (importarEAcharPorMbid/
-// matchTextualFaixa/matchPorFingerprint); nunca usada aqui para decidir nada
-// por si só.
+// resolverFaixa runs the matching pipeline described in the package comment, in
+// order: track MBID directly -> track MBID + import (with or without an embedded
+// artist MBID) -> textual search -> acoustic fingerprint -> draft. It always
+// returns a usable faixaID (step 5 never fails, except on a database error -- in
+// that case "" and the caller logs and skips the file, see gravarArquivoMusica).
+// path is the path of the file on disk, needed only by step 4.5 (fpcalc reads the
+// raw audio, not the tags already extracted). duracaoSegundos is the duration of
+// the local file extracted by the probe (info.General.Duration, factsMusica
+// above), 0 when unknown -- passed along as an ADDITIONAL CONFIRMATION signal by
+// duration (matching.ToleranciaDuracaoSegundos) down to the enrich.FaixaAlvo
+// built at the scoped import points below
+// (importarEAcharPorMbid/matchTextualFaixa/matchPorFingerprint); never used here
+// to decide anything on its own.
 func (r *scanRun) resolverFaixa(ctx context.Context, path string, tags mediainfo.AudioTags, duracaoSegundos float64, rawNome string) (string, float64) {
 	langs := r.langsPermitidos(ctx)
 
@@ -168,9 +171,9 @@ func (r *scanRun) resolverFaixa(ctx context.Context, path string, tags mediainfo
 	return r.criarFaixaDraft(ctx, tags, rawNome), confDraft
 }
 
-// acharFaixaPorMbid é o lookup PURO (sem rede) por MBID de recording -- o
-// caminho mais barato: o arquivo já foi catalogado antes, ou o mesmo arquivo
-// (renomeado/movido) já resolveu esta faixa antes nesta mesma execução.
+// acharFaixaPorMbid is the PURE lookup (no network) by recording MBID -- the
+// cheapest path: the file was already cataloged before, or the same file
+// (renamed/moved) already resolved this track before in this same execution.
 func (r *scanRun) acharFaixaPorMbid(ctx context.Context, trackMBID string) (string, bool) {
 	e, err := sqlcgen.New(r.m.db.Read).ObterEntityPorMbid(ctx, nsOpt(trackMBID))
 	if err != nil {
@@ -179,17 +182,17 @@ func (r *scanRun) acharFaixaPorMbid(ctx context.Context, trackMBID string) (stri
 	return e.ID, true
 }
 
-// importarEAcharPorMbid resolve o MBID do ARTISTA (embutido na tag, ou via
-// resolução reversa faixa->artista quando só o MBID de faixa está presente) e
-// dispara o import ESCOPADO (ADR-0029, enrich.ImportarFaixaPossuida): só o
-// artista (identidade) + o ÁLBUM daquela faixa (resolvido pelo MBID de
-// recording via MusicaAlbumProvider.BuscarAlbumDaFaixa) + a própria faixa --
-// NUNCA a discografia inteira. ok=false em qualquer degradação (sem
-// importador configurado, sem MBID de artista resolvível, ou o import
-// escopado falhou -- sem match plausível na fonte, sem suporte à capacidade
-// seletiva, ou erro de rede/banco). duracaoSegundos (0 = desconhecida) é só
-// repassada no enrich.FaixaAlvo como sinal ADICIONAL de confirmação (briefing
-// 0121 §8) -- nunca decide nada por si só neste método.
+// importarEAcharPorMbid resolves the MBID of the ARTIST (embedded in the tag, or
+// via reverse resolution track->artist when only the track MBID is present) and
+// fires the SCOPED import (ADR-0029, enrich.ImportarFaixaPossuida): only the
+// artist (identity) + the ALBUM of that track (resolved by the recording MBID via
+// MusicaAlbumProvider.BuscarAlbumDaFaixa) + the track itself -- NEVER the whole
+// discography. ok=false on any degradation (no importer configured, no resolvable
+// artist MBID, or the scoped import failed -- no plausible match in the source, no
+// support for the selective capability, or a network/database error).
+// duracaoSegundos (0 = unknown) is only passed along in the enrich.FaixaAlvo as
+// an ADDITIONAL confirmation signal -- it never decides anything on its own in
+// this method.
 func (r *scanRun) importarEAcharPorMbid(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, langs []string) (string, bool) {
 	if r.m.musicaImportador == nil {
 		return "", false
@@ -207,10 +210,10 @@ func (r *scanRun) importarEAcharPorMbid(ctx context.Context, tags mediainfo.Audi
 	return faixaID, faixaID != ""
 }
 
-// resolverArtistaMBID devolve o MBID do artista: direto da tag quando
-// presente, ou via a capacidade opcional provider.FaixaResolverProvider
-// (resolução reversa a partir do MBID de faixa) quando ausente -- o caso do
-// passo 3 do pipeline (tagueador só grava o recording MBID).
+// resolverArtistaMBID returns the MBID of the artist: straight from the tag when
+// present, or via the optional capability provider.FaixaResolverProvider (reverse
+// resolution from the track MBID) when absent -- the case of step 3 of the
+// pipeline (a tagger only writes the recording MBID).
 func (r *scanRun) resolverArtistaMBID(ctx context.Context, tags mediainfo.AudioTags) (string, bool) {
 	if tags.MusicBrainzArtistID != "" {
 		return tags.MusicBrainzArtistID, true
@@ -230,30 +233,30 @@ func (r *scanRun) resolverArtistaMBID(ctx context.Context, tags mediainfo.AudioT
 	return mbid, mbid != ""
 }
 
-// matchTextual é o FALLBACK sem MBID embutido (caso dominante nos arquivos
-// reais do dono, ver AGENTS.md/briefing 0107) -- repasse fino para
-// Manager.matchTextualFaixa (briefing 0120), extraído para ser reutilizável
-// pela reconciliação de faixas-rascunho fora de um scanRun (reconciliar.go).
+// matchTextual is the FALLBACK without an embedded MBID (the dominant case in the
+// owner's real files, see AGENTS.md) -- a thin pass-through to
+// Manager.matchTextualFaixa, extracted so it can be reused by the reconciliation
+// of draft tracks outside a scanRun (reconciliar.go).
 func (r *scanRun) matchTextual(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, langs []string) (string, bool) {
 	return r.m.matchTextualFaixa(ctx, tags, duracaoSegundos, langs)
 }
 
-// matchTextualFaixa busca o artista por nome (album_artist, com fallback para
-// artist) no provider e, existindo UM ÚNICO candidato cujo título bate com o
-// limiar de matching.LimiarAutoMatch (92%, o MESMO limiar já usado pelo
-// auto-match de filme -- reaproveitado de propósito para não inventar um
-// segundo número mágico) contra o nome retornado pela fonte, dispara o import
-// ESCOPADO (ADR-0029, briefing 0115: enrich.ImportarFaixaPossuida) pelo
-// caminho TEXTUAL -- álbum localizado por nome (tags.Album, obrigatório aqui)
-// e a faixa por título/track_number dentro dele, NUNCA a árvore inteira.
-// Ambíguo (>1 candidato empatado no topo), sem álbum na tag, ou nenhum
-// candidato forte o bastante: ok=false (cai para o draft, passo 5) -- nunca
-// aplica um match "parecido". Método de Manager (não scanRun, briefing 0120)
-// para ser chamável tanto do scan (matchTextual acima) quanto da
-// reconciliação de faixa-rascunho órfã (reconciliar.go). duracaoSegundos (0 =
-// desconhecida) é a duração do arquivo local, repassada no enrich.FaixaAlvo
-// como sinal ADICIONAL de confirmação (briefing 0121 §8, matching.
-// ToleranciaDuracaoSegundos) -- nunca decide nada por si só neste método.
+// matchTextualFaixa searches the artist by name (album_artist, with a fallback to
+// artist) in the provider and, when there is a SINGLE candidate whose title meets
+// the matching.LimiarAutoMatch threshold (92%, the SAME threshold already used by
+// the movie auto-match -- deliberately reused so as not to invent a second magic
+// number) against the name returned by the source, fires the SCOPED import
+// (ADR-0029: enrich.ImportarFaixaPossuida) through the TEXTUAL path -- album
+// located by name (tags.Album, mandatory here) and the track by
+// title/track_number inside it, NEVER the whole tree. Ambiguous (>1 candidate tied
+// at the top), no album in the tag, or no candidate strong enough: ok=false (it
+// falls to the draft, step 5) -- it never applies a "similar" match. A Manager
+// method (not scanRun) so it can be called both from the scan (matchTextual above)
+// and from the reconciliation of an orphan draft track (reconciliar.go).
+// duracaoSegundos (0 = unknown) is the duration of the local file, passed along
+// in the enrich.FaixaAlvo as an ADDITIONAL confirmation signal
+// (matching.ToleranciaDuracaoSegundos) -- it never decides anything on its own in
+// this method.
 func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTags, duracaoSegundos float64, langs []string) (string, bool) {
 	if m.musicaProvider == nil || m.musicaImportador == nil {
 		return "", false
@@ -273,16 +276,16 @@ func (m *Manager) matchTextualFaixa(ctx context.Context, tags mediainfo.AudioTag
 	if id, ok := m.matchPorArtista(ctx, tags, alvo, langs); ok {
 		return id, true
 	}
-	// Passo 4b (briefing 0136): o caminho por ARTISTA não resolveu (nome ausente,
-	// empate sem evidência, artista homônimo sem esse álbum). Tenta o álbum pelo
-	// TÍTULO -- o caminho de compilação/trilha, onde `album_artist` é "Various
-	// Artists" e a busca de artista nunca devolve identidade única.
+	// Step 4b: the path by ARTIST did not resolve (name missing, tie without
+	// evidence, homonymous artist without this album). It tries the album by
+	// TITLE -- the compilation/soundtrack path, where `album_artist` is "Various
+	// Artists" and the artist search never returns a single identity.
 	return m.matchPorTituloDeAlbum(ctx, alvo, langs)
 }
 
-// nomeArtistaDoAlbum é o artista do ÁLBUM na tag: album_artist (o correto para
-// álbum/compilação) com fallback para artist. É o mesmo nome usado para escopar a
-// busca de álbum por título (briefing 0138).
+// nomeArtistaDoAlbum is the artist of the ALBUM in the tag: album_artist (the
+// correct one for an album/compilation) with a fallback to artist. It is the same
+// name used to scope the album search by title.
 func nomeArtistaDoAlbum(tags mediainfo.AudioTags) string {
 	if tags.AlbumArtist != "" {
 		return tags.AlbumArtist
@@ -290,12 +293,12 @@ func nomeArtistaDoAlbum(tags mediainfo.AudioTags) string {
 	return tags.Artist
 }
 
-// matchPorArtista é o passo 4 clássico (briefing 0115/0136): busca o ARTISTA por
-// nome e, para CADA candidato forte o bastante (os empatados no topo, até
-// maxCandidatosArtista), tenta o import escopado com o álbum da tag. O primeiro
-// que funcionar vence -- o empate deixa de ser desistência e passa a ser
-// resolvido por EVIDÊNCIA (o álbum que contém a faixa), sem aplicar nada às
-// cegas: se nenhum candidato contiver o álbum, cai para o passo seguinte.
+// matchPorArtista is the classic step 4: it searches the ARTIST by name and, for
+// EACH candidate strong enough (the ones tied at the top, up to
+// maxCandidatosArtista), tries the scoped import with the album from the tag. The
+// first one that works wins -- a tie stops being a give-up and starts being
+// resolved by EVIDENCE (the album that contains the track), without applying
+// anything blindly: if no candidate contains the album, it falls to the next step.
 func (m *Manager) matchPorArtista(ctx context.Context, tags mediainfo.AudioTags, alvo enrich.FaixaAlvo, langs []string) (string, bool) {
 	nomeArtista := nomeArtistaDoAlbum(tags)
 	if nomeArtista == "" {
@@ -330,9 +333,9 @@ func (m *Manager) matchPorArtista(ctx context.Context, tags mediainfo.AudioTags,
 	return "", false
 }
 
-// matchPorTituloDeAlbum é o passo 4b (briefing 0136): resolve o álbum pelo TÍTULO
-// na fonte e usa o artist-credit dela (compilações/trilhas). Degradação silenciosa
-// quando a fonte não implementa a capacidade -- o chamador segue para o passo 4.5.
+// matchPorTituloDeAlbum is step 4b: it resolves the album by TITLE in the source
+// and uses its artist-credit (compilations/soundtracks). Silent degradation when
+// the source does not implement the capability -- the caller moves on to step 4.5.
 func (m *Manager) matchPorTituloDeAlbum(ctx context.Context, alvo enrich.FaixaAlvo, langs []string) (string, bool) {
 	faixaID, _, err := m.musicaImportador.ImportarFaixaPorTituloDeAlbum(ctx, sourceMusicBrainz, alvo, langs)
 	if err != nil {
@@ -342,33 +345,34 @@ func (m *Manager) matchPorTituloDeAlbum(ctx context.Context, alvo enrich.FaixaAl
 	return faixaID, faixaID != ""
 }
 
-// candidatoTexto é um par (id,título) candidato a match textual do ARTISTA
-// (resultado de Provider.Buscar) -- o match textual de álbum/faixa dentro do
-// release já resolvido é papel do provider (musicbrainz.melhorReleaseGroupPorTitulo)
-// e do enrich (melhorFaixaPorTitulo), não deste pacote (briefing 0115).
+// candidatoTexto is an (id,title) pair candidate to a textual match of the ARTIST
+// (result of Provider.Buscar) -- the textual match of album/track inside the
+// already resolved release is the job of the provider
+// (musicbrainz.melhorReleaseGroupPorTitulo) and of the enrich
+// (melhorFaixaPorTitulo), not of this package.
 type candidatoTexto struct {
 	id     string
 	titulo string
 }
 
-// maxCandidatosArtista é o teto de artistas EMPATADOS que o pipeline tenta por
-// faixa (briefing 0136). Cada tentativa custa chamadas ao MusicBrainz (1 req/s),
-// então o teto existe para o pior caso ficar previsível; na prática o empate é
-// raro (ex.: dois "Linkin Park" no catálogo da fonte) e 2 ou 3 já cobre.
+// maxCandidatosArtista is the ceiling of TIED artists the pipeline tries per
+// track. Each attempt costs calls to MusicBrainz (1 req/s), so the ceiling exists
+// to make the worst case predictable; in practice a tie is rare (e.g. two
+// "Linkin Park" in the catalog of the source) and 2 or 3 already covers it.
 const maxCandidatosArtista = 3
 
-// melhoresCandidatosTexto devolve os candidatos cujo título bate o limiar de
-// matching.LimiarAutoMatch (92%, escala 0-100, via
-// matching.SimilaridadeNormalizada -- o MESMO motor do auto-match de
-// filme/série, agora tolerante a qualificador de edição/versão), do melhor para
-// o pior, limitado a maxCandidatosArtista.
+// melhoresCandidatosTexto returns the candidates whose title meets the
+// matching.LimiarAutoMatch threshold (92%, 0-100 scale, via
+// matching.SimilaridadeNormalizada -- the SAME engine of the movie/series
+// auto-match, now tolerant to edition/version qualifiers), from best to worst,
+// limited to maxCandidatosArtista.
 //
-// MUDANÇA do briefing 0136: antes, um EMPATE no topo era tratado como "ambíguo,
-// desiste" -- o que jogava em rascunho bibliotecas inteiras quando a fonte tem
-// dois artistas com o mesmo nome (caso real: "Linkin Park", score 100 em dois
-// candidatos). Agora o empate vira EVIDÊNCIA a testar (o álbum da faixa existe
-// em qual deles?), nunca aplicação às cegas: quem não contiver o álbum
-// simplesmente não resolve e o pipeline segue. O limiar continua estrito.
+// CHANGE: before, a TIE at the top was treated as "ambiguous, give up" -- which
+// threw whole libraries into draft when the source has two artists with the same
+// name (a real case: "Linkin Park", score 100 on two candidates). Now the tie
+// becomes EVIDENCE to test (does the album of the track exist in one of them?),
+// never a blind application: whoever does not contain the album simply does not
+// resolve and the pipeline moves on. The threshold remains strict.
 func melhoresCandidatosTexto(alvo string, candidatos []candidatoTexto) []string {
 	type pontuado struct {
 		id    string
@@ -399,24 +403,23 @@ func melhoresCandidatosTexto(alvo string, candidatos []candidatoTexto) []string 
 	return out
 }
 
-// matchPorFingerprint é o passo 4.5 (briefing 0126): ÚLTIMO fallback antes
-// do draft, disparado SÓ quando o passo 4 (textual) já falhou -- nunca
-// antes, nunca em paralelo (o chamador, resolverFaixa, garante a ordem).
-// Calcula o fingerprint acústico do ARQUIVO (fpcalc, subprocesso --
-// internal/fingerprint) e consulta a capacidade opcional
-// provider.FingerprintProvider (hoje só internal/provider/acoustid) contra
-// ele. Qualquer degradação -- calculador/provider não configurados, fpcalc
-// indisponível, erro de cálculo, provider sem a capacidade, sem candidato,
-// ou confiança abaixo de matching.LimiarConfiancaFingerprint -- devolve
-// ok=false SEM erro fatal: o chamador cai para o passo 5 (draft), mesmo
-// contrato de degradação silenciosa de qualquer capacidade opcional do
-// projeto. Achando um candidato plausível, reaproveita o MESMO caminho de
-// import ESCOPADO dos passos 2/3 (importarEAcharPorMbid, ADR-0029): monta
-// uma AudioTags SINTÉTICA só com o MusicBrainzTrackID do candidato -- ZERO
-// lógica de import nova, o fingerprint só produz um RecordingMBID que entra
-// no mesmo cano que o passo 2/3 já usa (resolução reversa artista<-faixa via
-// provider.FaixaResolverProvider, quando necessário, + enrich.
-// ImportarFaixaPossuida).
+// matchPorFingerprint is step 4.5: the LAST fallback before the draft, fired ONLY
+// when step 4 (textual) has already failed -- never before, never in parallel
+// (the caller, resolverFaixa, guarantees the order). It computes the acoustic
+// fingerprint of the FILE (fpcalc, subprocess -- internal/fingerprint) and queries
+// the optional capability provider.FingerprintProvider (today only
+// internal/provider/acoustid) against it. Any degradation -- calculator/provider
+// not configured, fpcalc unavailable, calculation error, provider without the
+// capability, no candidate, or confidence below
+// matching.LimiarConfiancaFingerprint -- returns ok=false WITHOUT a fatal error:
+// the caller falls to step 5 (draft), the same silent degradation contract of any
+// optional capability of the project. Finding a plausible candidate, it reuses the
+// SAME SCOPED import path of steps 2/3 (importarEAcharPorMbid, ADR-0029): it
+// assembles a SYNTHETIC AudioTags with only the MusicBrainzTrackID of the
+// candidate -- ZERO new import logic, the fingerprint only produces a
+// RecordingMBID that enters the same pipe steps 2/3 already use (reverse
+// resolution artist<-track via provider.FaixaResolverProvider, when necessary, +
+// enrich.ImportarFaixaPossuida).
 func (r *scanRun) matchPorFingerprint(ctx context.Context, path string, duracaoSegundos float64, langs []string) (string, bool) {
 	if r.m.fingerprintCalculador == nil || r.m.fingerprintProvider == nil {
 		return "", false
@@ -449,18 +452,17 @@ func (r *scanRun) matchPorFingerprint(ctx context.Context, path string, duracaoS
 	return r.importarEAcharPorMbid(ctx, tagsSinteticas, duracaoSegundos, langs)
 }
 
-// criarFaixaDraft é o FALLBACK final (passo 5): cria a entity `faixa`
-// RASCUNHO (status=draft) só com os dados da tag disponíveis (ou o nome do
-// arquivo, quando a tag de título vier vazia) -- SEM entity_relation de
-// artista/álbum, fica solta até correção manual (0018/0050, a fila de
-// revisão/órfãos genérica já cobre isso, sem tela nova -- ver §3 do
-// briefing). Diferente de acharOuCriarDraftSerie (serie.go), NÃO faz
-// find-or-create por título: uma "faixa" sem match plausível não tem um
-// título único o bastante para dedup seguro (duas faixas de artistas
-// diferentes podem se chamar "Intro") -- cada arquivo sem match vira seu
-// próprio draft. Escreve pela conexão de ESCRITA diretamente (fora da
-// transação do lote), mesmo padrão de acharOuCriarDraftSerie -- roda na fase
-// de fatos, não na de gravação.
+// criarFaixaDraft is the final FALLBACK (step 5): it creates the DRAFT `faixa`
+// entity (status=draft) with only the available tag data (or the file name, when
+// the title tag comes out empty) -- WITHOUT an artist/album entity_relation, it
+// stays loose until a manual correction (the generic review/orphan queue already
+// covers this, without a new screen). Unlike acharOuCriarDraftSerie (serie.go), it
+// does NOT do find-or-create by title: a "track" without a plausible match does
+// not have a title unique enough for a safe dedup (two tracks from different
+// artists may be named "Intro") -- every unmatched file becomes its own draft. It
+// writes through the WRITE connection directly (outside the batch transaction),
+// the same pattern of acharOuCriarDraftSerie -- it runs in the facts phase, not in
+// the writing phase.
 func (r *scanRun) criarFaixaDraft(ctx context.Context, tags mediainfo.AudioTags, rawNome string) string {
 	titulo := tags.Title
 	if titulo == "" {
@@ -480,12 +482,12 @@ func (r *scanRun) criarFaixaDraft(ctx context.Context, tags mediainfo.AudioTags,
 	return id
 }
 
-// gravarArquivoMusica persiste o arquivo de áudio: vínculo 1:1 com a FAIXA já
-// resolvida por factsMusica (media_file.entity_id aponta DIRETO pra ela --
-// ADR-0027 item 5, mesmo padrão de filme, NUNCA a junção N:M de série).
-// Dedup por content_hash (rename/move) e por path (conteúdo trocado no
-// lugar) -- reaproveita reencontrar/atualizarConteudoMudou de match.go, o
-// MESMO mecanismo de filme (nenhuma lógica nova de dedup).
+// gravarArquivoMusica persists the audio file: a 1:1 link with the FAIXA already
+// resolved by factsMusica (media_file.entity_id points DIRECTLY to it -- ADR-0027
+// item 5, same pattern as movie, NEVER the N:M junction of series). Dedup by
+// content_hash (rename/move) and by path (content swapped in place) -- it reuses
+// reencontrar/atualizarConteudoMudou from match.go, the SAME movie mechanism (no
+// new dedup logic).
 func (r *scanRun) gravarArquivoMusica(ctx context.Context, q *sqlcgen.Queries, f fileFacts) error {
 	if f.faixaID == "" {
 		log.Printf("scanner: pulando %q: faixa nao resolvivel (nem rascunho -- provavel falha de escrita)", f.path)
@@ -524,9 +526,9 @@ func (r *scanRun) gravarArquivoMusica(ctx context.Context, q *sqlcgen.Queries, f
 	if err != nil {
 		return err
 	}
-	// Faixa nova nesta passada: registra para o pós-commit materializar a capa
-	// do álbum resolvido, quando o toggle está ligado (briefing 0135). Rascunho
-	// (conf 0) não tem álbum pai, então entra mesmo assim e o despacho filtra.
+	// New track in this pass: it records it so the post-commit can materialize the
+	// cover of the resolved album, when the toggle is on. A draft (conf 0) has no
+	// parent album, so it enters anyway and the dispatch filters it out.
 	r.registrarNovo(entidadeNova{id: f.faixaID, tipo: tipoFaixa, conf: f.faixaConf})
 	return nil
 }

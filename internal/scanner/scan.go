@@ -17,81 +17,85 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/naming"
 )
 
-// extensoesVideo é o filtro de extensões (ponto de partida, doc 06). Minúsculas.
+// extensoesVideo is the extension filter (starting point, see
+// docs/06-library-and-scan.md). Lowercase.
 var extensoesVideo = map[string]bool{
 	".mp4": true, ".mkv": true, ".avi": true, ".mov": true,
 	".wmv": true, ".flv": true, ".webm": true,
 }
 
-// extensoesAudio é o filtro de extensões de ÁUDIO (briefing 0107, molde de
-// extensoesVideo) — usado no lugar de extensoesVideo quando
-// library_source.content_type == contentTypeMusic (ver extensoesPrincipais).
+// extensoesAudio is the AUDIO extension filter (same shape as extensoesVideo) —
+// used instead of extensoesVideo when
+// library_source.content_type == contentTypeMusic (see extensoesPrincipais).
 var extensoesAudio = map[string]bool{
 	".mp3": true, ".flac": true, ".m4a": true,
 	".ogg": true, ".opus": true, ".wav": true,
 }
 
-// nomesPoster são os nomes de arte local de nível de pasta (Kodi/Jellyfin).
+// nomesPoster are the folder-level local artwork names (Kodi/Jellyfin).
 var nomesPoster = []string{"poster.jpg", "poster.png", "folder.jpg", "folder.png"}
 
-// scanRun carrega o contexto de UM scan: evita passar meia dúzia de parâmetros
-// por função e concentra o cache de entidades (folderKey -> entityID) que torna
-// o re-scan idempotente e agrupa as versões da mesma obra.
+// scanRun carries the context of ONE scan: it avoids passing half a dozen
+// parameters around per function and concentrates the entity cache (folderKey ->
+// entityID) that makes the re-scan idempotent and groups the versions of the same
+// work.
 type scanRun struct {
 	m          *Manager
 	source     library.Source
 	scanTS     string
 	probeAtivo bool
 	cache      map[string]string
-	// serieCache guarda a resolução de cada série do scan (chave = pasta da série),
-	// para não re-buscar/re-importar a mesma série a cada arquivo. Análogo ao cache de
-	// folderKey do filme, mas keyed pela pasta da série (0034).
+	// serieCache keeps the resolution of each series of the scan (key = series
+	// folder), so as not to re-fetch/re-import the same series for every file.
+	// Analogous to the movie folderKey cache, but keyed by the series folder
+	// (0034).
 	serieCache map[string]serieResolvida
-	// parcial marca que uma SUBPASTA (não a raiz, já validada por Stat) falhou
-	// ao ser lida durante o WalkDir (ex.: timeout/desconexão transitória de um
-	// mount de rede FUSE/rclone no meio da varredura). Diferente da raiz
-	// inacessível (offline, aborta antes de escrever qualquer coisa), aqui os
-	// arquivos que FORAM vistos continuam sendo gravados normalmente -- só o
-	// fechamento destrutivo do ciclo de vida (marcar `missing` o que não foi
-	// revisto) é pulado, para não desconectar arquivos que só não foram
-	// listados por instabilidade passageira do mount, não porque sumiram de
-	// verdade do disco.
+	// parcial marks that a SUBFOLDER (not the root, already validated by Stat)
+	// failed to be read during the WalkDir (e.g. a transient timeout/disconnection
+	// of a FUSE/rclone network mount in the middle of the walk). Unlike the
+	// unreachable root (offline, it aborts before writing anything), here the
+	// files that WERE seen keep being written normally -- only the destructive
+	// closing of the lifecycle (marking `missing` whatever was not reviewed) is
+	// skipped, so as not to disconnect files that were only not listed because of
+	// a passing mount instability, not because they really disappeared from disk.
 	parcial bool
 
-	// progresso/filesSeen/filesTotal (briefing 0108) são o estado local de
-	// progresso desta ÚNICA execução -- substituem o antigo *job em memória
-	// no Manager (addSeen/setTotal sob m.mu): não precisam mais ser
-	// thread-safe entre execuções concorrentes (a fila garante concorrência
-	// 1), só entre o worker desta execução, que é single-threaded aqui.
-	// progresso pode ser nil (bypass da fila em teste, ver scanner_test.go);
-	// filesSeen incrementa POR ARQUIVO processado (sucesso OU erro/skip),
-	// dentro do loop interno de processarLotes -- não mais por lote de 25
-	// (era isso que fazia o contador parecer travado em scans de música
-	// lentos, achado real na validação em produção do briefing 0107).
+	// progresso/filesSeen/filesTotal are the local progress state of this SINGLE
+	// execution -- they replace the old in-memory *job in the Manager
+	// (addSeen/setTotal under m.mu): they no longer need to be thread-safe across
+	// concurrent executions (the queue guarantees concurrency 1), only across the
+	// worker of this execution, which is single-threaded here. progresso may be
+	// nil (queue bypass in tests, see scanner_test.go); filesSeen increments PER
+	// FILE processed (success OR error/skip), inside the inner loop of
+	// processarLotes -- no longer per batch of 25 (that was what made the counter
+	// look stuck on slow music scans, a real finding from the production
+	// validation of the music vertical).
 	progresso  execqueue.ProgressoFunc
 	filesSeen  int
 	filesTotal int
 
-	// novos acumula as entities CRIADAS nesta passada de scan, por tipo, para o
-	// pós-import (auto-match de filme, materialização opcional) rodar DEPOIS do
-	// commit do lote -- briefing 0135/ADR-0031. Antes, o gatilho era chamado de
-	// dentro de gravarArquivo, isto é, dentro da transação: o auto-match lia a
-	// entity pelo pool de LEITURA e recebia `sql: no rows in result set` (a linha
-	// não commitada não existe para ele) e, se tentasse escrever, travaria na
-	// conexão ÚNICA de escrita (ADR-0010) -- deadlock. Ver despacharNovos.
+	// novos accumulates the entities CREATED in this scan pass, by type, so that
+	// the post-import (movie auto-match, optional materialization) runs AFTER the
+	// batch commit -- see ADR-0031. Before, the trigger was called from inside
+	// gravarArquivo, that is, inside the transaction: the auto-match read the
+	// entity through the READ pool and got `sql: no rows in result set` (the
+	// uncommitted row does not exist for it) and, if it tried to write, it would
+	// block on the SINGLE write connection (ADR-0010) -- deadlock. See
+	// despacharNovos.
 	novos []entidadeNova
 }
 
-// entidadeNova é uma entity criada por este scan, com o tipo e a confiança já
-// resolvidos -- o que despacharNovos precisa para decidir qual gancho chamar.
+// entidadeNova is an entity created by this scan, with the type and the
+// confidence already resolved -- what despacharNovos needs to decide which hook
+// to call.
 type entidadeNova struct {
 	id   string
 	tipo string
 	conf float64
 }
 
-// registrarNovo guarda uma entity criada nesta passada (dedup por id, porque o
-// fluxo de música pode resolver o mesmo álbum para várias faixas).
+// registrarNovo records an entity created in this pass (dedup by id, because the
+// music flow may resolve the same album for several tracks).
 func (r *scanRun) registrarNovo(e entidadeNova) {
 	for _, existente := range r.novos {
 		if existente.id == e.id {
@@ -101,55 +105,55 @@ func (r *scanRun) registrarNovo(e entidadeNova) {
 	r.novos = append(r.novos, e)
 }
 
-// reportarProgresso chama o callback de progresso (se houver) com o estado
-// atual de filesSeen/filesTotal desta execução.
+// reportarProgresso calls the progress callback (if any) with the current state
+// of filesSeen/filesTotal of this execution.
 func (r *scanRun) reportarProgresso() {
 	r.reportarProgressoMSG("")
 }
 
-// reportarProgressoMSG é reportarProgresso com uma mensagem livre (usado pela
-// etapa de pós-scan, briefing 0135, para o dono ver o que está acontecendo sem
-// inventar contagem de arquivos).
+// reportarProgressoMSG is reportarProgresso with a free-form message (used by the
+// post-scan stage so the owner can see what is going on without inventing a file
+// count).
 func (r *scanRun) reportarProgressoMSG(msg string) {
 	if r.progresso != nil {
 		r.progresso(r.filesSeen, r.filesTotal, msg)
 	}
 }
 
-// fileFacts são os fatos pré-computados de um arquivo (fora da transação de
-// escrita): hash, mediainfo e o parse dos nomes.
+// fileFacts are the pre-computed facts of a file (outside the write
+// transaction): hash, mediainfo and the parsing of the names.
 type fileFacts struct {
 	path      string
-	folderKey string      // chave de agrupamento da obra (dir do filme, ou o próprio arquivo se solto)
-	folderDir string      // diretório onde procurar a arte local
-	rawNome   string      // nome base cru (título de fallback para draft)
-	entidade  naming.Info // parse do NOME DA OBRA (pasta ou arquivo solto)
-	arquivo   naming.Info // parse do NOME DO ARQUIVO (edição/parte)
+	folderKey string      // grouping key of the work (the movie dir, or the file itself if loose)
+	folderDir string      // directory where the local artwork is looked up
+	rawNome   string      // raw base name (fallback title for a draft)
+	entidade  naming.Info // parse of the NAME OF THE WORK (folder or loose file)
+	arquivo   naming.Info // parse of the FILE NAME (edition/part)
 	size      int64
 	mtime     string
 	hash      string
 	mediainfo []byte
-	poster    string // caminho da arte local; "" se nenhuma
+	poster    string // path of the local artwork; "" if none
 
-	// Campos do caminho de SÉRIE (0034), preenchidos só quando content_type='series'.
-	isSerie    bool     // marca o fluxo de série (ramifica gravarArquivo)
-	serieID    string   // entity da SÉRIE (a "obra"); o media_file aponta para ela
-	serieConf  float64  // confiança da resolução da série (100 por id externo, 90 por título/import)
-	episodeIDs []string // episódios casados, em ordem (define o ordinal do vínculo)
-	// prov guarda a numeração LIDA DO ARQUIVO quando o casamento contra a
-	// árvore externa não achou correspondente: é o que permite criar o
-	// episódio provisório (briefing 0133). nil quando não há o que criar.
+	// Fields of the SERIES path (0034), filled only when content_type='series'.
+	isSerie    bool     // marks the series flow (branches gravarArquivo)
+	serieID    string   // entity of the SERIES (the "work"); the media_file points to it
+	serieConf  float64  // confidence of the series resolution (100 by external id, 90 by title/import)
+	episodeIDs []string // matched episodes, in order (defines the ordinal of the link)
+	// prov keeps the numbering READ FROM THE FILE when the matching against the
+	// external tree found no counterpart: it is what allows creating the
+	// provisional episode. nil when there is nothing to create.
 	prov *provisorioEpisodio
 
-	// Campos do caminho de MÚSICA (0107), preenchidos só quando content_type='music'.
-	isMusica  bool    // marca o fluxo de música (ramifica gravarArquivo)
-	faixaID   string  // entity FAIXA já resolvida; media_file.entity_id aponta DIRETO pra ela (1:1, ADR-0027 item 5)
-	faixaConf float64 // confiança do vínculo (confIDExterno/confMusicaTextual/confDraft, ver musica.go)
+	// Fields of the MUSIC path (0107), filled only when content_type='music'.
+	isMusica  bool    // marks the music flow (branches gravarArquivo)
+	faixaID   string  // FAIXA entity already resolved; media_file.entity_id points DIRECTLY to it (1:1, ADR-0027 item 5)
+	faixaConf float64 // confidence of the link (confIDExterno/confMusicaTextual/confDraft, see musica.go)
 }
 
-// executarScan roda o pipeline completo de um datasource. progresso (briefing
-// 0108) é o callback do execqueue chamado a cada arquivo processado -- pode
-// ser nil (bypass da fila em teste, ver scanner_test.go).
+// executarScan runs the complete pipeline of a datasource. progresso is the
+// execqueue callback called for each processed file -- it may be nil (queue
+// bypass in tests, see scanner_test.go).
 func (m *Manager) executarScan(ctx context.Context, source library.Source, progresso execqueue.ProgressoFunc) error {
 	r := &scanRun{
 		m:          m,
@@ -166,7 +170,8 @@ func (m *Manager) executarScan(ctx context.Context, source library.Source, progr
 
 	arquivos, naoVideos, parcial, err := coletarArquivos(source.Path, r.extensoesPrincipais())
 	if err != nil {
-		// A raiz ficou inacessível: sinaliza offline e NÃO marca nada missing.
+		// The root became unreachable: it signals offline and does NOT mark
+		// anything missing.
 		m.persistirEstado(ctx, source, "offline")
 		return err
 	}
@@ -176,15 +181,15 @@ func (m *Manager) executarScan(ctx context.Context, source library.Source, progr
 	}
 	r.filesTotal = len(arquivos)
 	r.reportarProgresso()
-	// Classificação de arquivo NÃO-vídeo (briefing 0063, extensão do 0062):
-	// reaproveita a MESMA passada de WalkDir de coletarArquivos acima -- nunca
-	// varre o disco de novo só para isto.
+	// NON-video file classification (an extension of the managed/unmanaged
+	// storage accounting): it reuses the SAME WalkDir pass of coletarArquivos
+	// above -- it never walks the disk again just for this.
 	managed, unmanaged := classificarNaoVideos(arquivos, naoVideos)
 	m.setStorageNaoVideo(source.ID, managed, unmanaged)
 
 	if err := r.processarLotes(ctx, arquivos); err != nil {
-		// Cancelado/erro no meio: lotes já commitados persistem; não fechamos o
-		// ciclo de vida (nada de missing) nem carimbamos last_scan.
+		// Cancelled/error in the middle: batches already committed persist; we do
+		// not close the lifecycle (no missing at all) nor stamp last_scan.
 		return err
 	}
 
@@ -192,21 +197,22 @@ func (m *Manager) executarScan(ctx context.Context, source library.Source, progr
 		return err
 	}
 
-	// Pós-scan (briefing 0135/ADR-0031): FECHADO o ciclo de vida, a própria
-	// biblioteca reconcilía o que ficou em rascunho e retenta o que está
-	// pendente -- sem esperar o cron diário. Best-effort: nunca derruba o scan
-	// (o catálogo já está gravado e o last_scan já foi carimbado).
+	// Post-scan (ADR-0031): with the lifecycle CLOSED, the library itself
+	// reconciles whatever stayed as a draft and retries whatever is pending --
+	// without waiting for the daily cron. Best-effort: it never takes the scan
+	// down (the catalog is already written and the last_scan has already been
+	// stamped).
 	r.posScan(ctx)
 	return nil
 }
 
-// processarLotes pré-computa os fatos de cada arquivo (I/O e ffprobe, fora da
-// transação) e grava em lotes curtos, checando o cancelamento entre lotes. O
-// progresso (briefing 0108) é reportado a cada ARQUIVO processado dentro do
-// loop interno (sucesso OU erro/skip -- o arquivo foi "visto" de qualquer
-// forma, e filesTotal já conta ele) -- o lote de loteEscrita continua
-// existindo só como granularidade de ESCRITA em banco (escreverLote), agora
-// desacoplada do reporte de progresso.
+// processarLotes pre-computes the facts of each file (I/O and ffprobe, outside
+// the transaction) and writes in short batches, checking for cancellation
+// between batches. Progress is reported for each FILE processed inside the inner
+// loop (success OR error/skip -- the file was "seen" either way, and filesTotal
+// already counts it) -- the loteEscrita batch still exists only as the
+// granularity of DATABASE writes (escreverLote), now decoupled from the progress
+// reporting.
 func (r *scanRun) processarLotes(ctx context.Context, arquivos []string) error {
 	for i := 0; i < len(arquivos); i += loteEscrita {
 		if err := ctx.Err(); err != nil {
@@ -236,8 +242,8 @@ func (r *scanRun) processarLotes(ctx context.Context, arquivos []string) error {
 	return nil
 }
 
-// computarFacts calcula hash + mediainfo (ou reusa, ver hashEMediainfo) e faz
-// o parse dos nomes de um arquivo.
+// computarFacts computes hash + mediainfo (or reuses them, see hashEMediainfo)
+// and parses the names of a file.
 func (r *scanRun) computarFacts(ctx context.Context, path string) (fileFacts, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -250,22 +256,22 @@ func (r *scanRun) computarFacts(ctx context.Context, path string) (fileFacts, er
 		return fileFacts{}, err
 	}
 
-	// Ramifica pelo tipo de biblioteca: séries seguem o novo fluxo (0034); filme
-	// (ou default) mantém o caminho de agrupamento por pasta, intacto. A resolução
-	// da série (e o auto-import) acontece AQUI, fora da transação de escrita — o
-	// import do enrich escreve pela própria conexão, então nada de tx aninhada.
-	// Isto roda SEMPRE, mesmo quando hash/mediainfo foram reusados (scan
-	// incremental, briefing 0064): a resolução/vínculo de entity não depende do
-	// conteúdo do arquivo, só do nome/pasta — e o re-scan de vínculos de
-	// episódio precisa rodar a cada execução (ver gravarArquivoSerie).
+	// It branches by library type: series follow the new flow (0034); movie (or
+	// default) keeps the folder-based grouping path, intact. The series
+	// resolution (and the auto-import) happens HERE, outside the write
+	// transaction -- the enrich import writes through its own connection, so no
+	// nested tx. This ALWAYS runs, even when hash/mediainfo were reused
+	// (incremental scan): the entity resolution/link does not depend on the file
+	// content, only on the name/folder -- and the re-scan of episode links needs
+	// to run on every execution (see gravarArquivoSerie).
 	var f fileFacts
 	switch r.source.ContentType {
 	case contentTypeSeries:
 		f = r.factsSerie(ctx, path)
 	case contentTypeMusic:
-		// Música (0107) PRECISA do mediainfo (tags de áudio) para casar --
-		// diferente de série (só nome/pasta), por isso recebe `mi` (e
-		// size/mtime, para o short-circuit de incrementalidade) aqui.
+		// Music (0107) NEEDS the mediainfo (audio tags) in order to match --
+		// unlike series (name/folder only), that is why it receives `mi` (and
+		// size/mtime, for the incrementality short-circuit) here.
 		f = r.factsMusica(ctx, path, mi, info.Size(), mtime)
 	default:
 		f = montarFacts(r.source.Path, path)
@@ -277,23 +283,21 @@ func (r *scanRun) computarFacts(ctx context.Context, path string) (fileFacts, er
 	return f, nil
 }
 
-// hashEMediainfo calcula o content_hash (hashDoArquivoFn, indireto só para
-// instrumentação de teste) e o mediainfo_json de `path`, OU reusa os valores
-// JÁ GRAVADOS quando o media_file existente para este MESMO path (UNIQUE,
-// ObterMediaFilePorPath) tem EXATAMENTE o mesmo mtime e size (scan
-// incremental, briefing 0064) — nesse caso nem abre o arquivo nem chama
-// ffprobe de novo.
+// hashEMediainfo computes the content_hash (hashDoArquivoFn, indirect only for
+// test instrumentation) and the mediainfo_json of `path`, OR reuses the values
+// ALREADY STORED when the existing media_file for this SAME path (UNIQUE,
+// ObterMediaFilePorPath) has EXACTLY the same mtime and size (incremental scan)
+// — in that case it neither opens the file nor calls ffprobe again.
 //
-// Isto é uma HEURÍSTICA de melhor esforço, não uma garantia criptográfica: um
-// arquivo poderia, em teoria, mudar de conteúdo sem que mtime OU size mudem
-// (ex. algum editor exótico que preserva os dois, ou uma janela de
-// sincronização de `rclone --vfs-cache-mode full` onde o mtime local só
-// atualiza depois do upload terminar — rclone/rclone#8894). Aceito
-// conscientemente (briefing 0064 §6): nunca pior que o comportamento antigo
-// que sempre re-hasheava tudo, e hash de conteúdo como fallback anularia o
-// ganho de performance que motivou esta mudança — não reabra esta discussão.
-// Qualquer divergência (arquivo novo, ou mtime/size diferentes) cai no
-// caminho normal (hash + ffprobe completos).
+// This is a BEST-EFFORT HEURISTIC, not a cryptographic guarantee: a file could,
+// in theory, change content without mtime OR size changing (e.g. some exotic
+// editor that preserves both, or a synchronization window of `rclone
+// --vfs-cache-mode full` where the local mtime only updates after the upload
+// finishes — rclone/rclone#8894). Knowingly accepted: never worse than the old
+// behavior that always re-hashed everything, and content hash as a fallback
+// would cancel the performance gain that motivated this change — do not reopen
+// this discussion. Any divergence (new file, or different mtime/size) falls into
+// the normal path (full hash + ffprobe).
 func (r *scanRun) hashEMediainfo(ctx context.Context, path string, size int64, mtime string) (hash string, mediainfo []byte, err error) {
 	if existente, ok := r.mediaFileInalteradoPorPath(ctx, path, size, mtime); ok {
 		return existente.ContentHash.String, []byte(existente.MediainfoJson.String), nil
@@ -301,14 +305,13 @@ func (r *scanRun) hashEMediainfo(ctx context.Context, path string, size int64, m
 	return r.computarHashEMediainfo(ctx, path, size)
 }
 
-// computarHashEMediainfo SEMPRE calcula o content_hash e o mediainfo_json de
-// `path` (SEM checar o short-circuit de mediaFileInalteradoPorPath) — extraído
-// de hashEMediainfo para ser reusado também pelo recheck forçado de paths
-// específicos (RecheckEntityFiles, briefing 0088, ver recheck.go), que
-// precisa ignorar mtime/size DE PROPÓSITO. O caminho normal do scan
-// (hashEMediainfo acima) continua chamando isto só depois que o
-// short-circuit falha — nenhuma mudança de comportamento no scan incremental
-// de datasource inteiro.
+// computarHashEMediainfo ALWAYS computes the content_hash and the mediainfo_json
+// of `path` (WITHOUT checking the mediaFileInalteradoPorPath short-circuit) —
+// extracted from hashEMediainfo so it can also be reused by the forced recheck of
+// specific paths (RecheckEntityFiles, see recheck.go), which needs to ignore
+// mtime/size ON PURPOSE. The normal scan path (hashEMediainfo above) keeps
+// calling this only after the short-circuit fails — no behavior change in the
+// incremental scan of a whole datasource.
 func (r *scanRun) computarHashEMediainfo(ctx context.Context, path string, size int64) (hash string, mediainfo []byte, err error) {
 	hash, err = hashDoArquivoFn(path, size)
 	if err != nil {
@@ -324,13 +327,13 @@ func (r *scanRun) computarHashEMediainfo(ctx context.Context, path string, size 
 	return hash, mediainfo, nil
 }
 
-// mediaFileInalteradoPorPath busca o media_file já gravado para `path` (pela
-// conexão de LEITURA — computarFacts roda fora da transação de escrita) e
-// devolve ok=true só quando ele tem content_hash gravado E mtime E size
-// batem EXATAMENTE com os valores atuais do arquivo no disco — o
-// short-circuit do scan incremental (briefing 0064). Ausente (arquivo novo
-// neste path), sem hash gravado (defensivo) ou qualquer divergência de
-// mtime/size: ok=false, caminho normal (hash + ffprobe completos).
+// mediaFileInalteradoPorPath fetches the media_file already stored for `path`
+// (through the READ connection — computarFacts runs outside the write
+// transaction) and returns ok=true only when it has a stored content_hash AND
+// mtime AND size match EXACTLY the current values of the file on disk — the
+// short-circuit of the incremental scan. Absent (new file at this path), without
+// a stored hash (defensive) or any divergence in mtime/size: ok=false, normal
+// path (full hash + ffprobe).
 func (r *scanRun) mediaFileInalteradoPorPath(ctx context.Context, path string, size int64, mtime string) (sqlcgen.MediaFile, bool) {
 	existente, err := sqlcgen.New(r.m.db.Read).ObterMediaFilePorPath(ctx, path)
 	if err != nil {
@@ -348,8 +351,8 @@ func (r *scanRun) mediaFileInalteradoPorPath(ctx context.Context, path string, s
 	return existente, true
 }
 
-// montarFacts decide o agrupamento (pasta = obra; arquivo solto na raiz = obra
-// própria) e faz os parses de nome.
+// montarFacts decides the grouping (folder = work; a loose file at the root =
+// its own work) and parses the names.
 func montarFacts(root, path string) fileFacts {
 	dir := filepath.Dir(path)
 	base := semExtensao(filepath.Base(path))
@@ -370,8 +373,9 @@ func montarFacts(root, path string) fileFacts {
 	return f
 }
 
-// escreverLote grava um lote de arquivos numa transação curta pela conexão de
-// escrita (ADR-0010). Rollback em qualquer erro; o commit torna o lote durável.
+// escreverLote writes a batch of files in a short transaction through the write
+// connection (ADR-0010). Rollback on any error; the commit makes the batch
+// durable.
 func (r *scanRun) escreverLote(ctx context.Context, fatos []fileFacts) error {
 	if len(fatos) == 0 {
 		return nil
@@ -390,20 +394,20 @@ func (r *scanRun) escreverLote(ctx context.Context, fatos []fileFacts) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	// DEPOIS do commit (briefing 0135/ADR-0031): os ganchos de enriquecimento
-	// (auto-match, materialização) precisam da linha visível para o pool de
-	// leitura E da conexão de escrita livre. Chamá-los dentro da transação é
-	// bug -- foi a causa real do item novo sair cru em produção (08/nov/2026).
+	// AFTER the commit (ADR-0031): the enrichment hooks (auto-match,
+	// materialization) need the row visible to the read pool AND the write
+	// connection free. Calling them inside the transaction is a bug -- it was the
+	// real cause of the new item coming out raw in production (Nov 8, 2026).
 	r.despacharNovos(ctx)
 	return nil
 }
 
-// finalizarCicloVida fecha o scan (fonte acessível): carimba library_source
-// (online + last_scan) e, só quando a varredura foi COMPLETA (r.parcial ==
-// false), marca `missing` os arquivos não-revistos desta fonte. Numa
-// varredura parcial (subpasta ilegível no meio do walk, ver r.parcial), essa
-// marcação é pulada de propósito -- "não vi este arquivo agora" não é prova
-// de que ele sumiu do disco quando nem toda a árvore pôde ser lida.
+// finalizarCicloVida closes the scan (source reachable): it stamps library_source
+// (online + last_scan) and, only when the walk was COMPLETE (r.parcial == false),
+// marks `missing` the files not reviewed in this source. In a partial walk
+// (unreadable subfolder in the middle of the walk, see r.parcial), that marking
+// is skipped on purpose -- "I did not see this file now" is not proof that it
+// disappeared from disk when not even the whole tree could be read.
 func (r *scanRun) finalizarCicloVida(ctx context.Context) error {
 	q := sqlcgen.New(r.m.db.Write)
 	if !r.parcial {
@@ -423,8 +427,8 @@ func (r *scanRun) finalizarCicloVida(ctx context.Context) error {
 	return err
 }
 
-// persistirEstado grava o state do datasource (usado para sinalizar offline),
-// preservando o último last_scan conhecido.
+// persistirEstado writes the state of the datasource (used to signal offline),
+// preserving the last known last_scan.
 func (m *Manager) persistirEstado(ctx context.Context, source library.Source, state string) {
 	var last string
 	if source.LastScan != nil {
@@ -441,20 +445,19 @@ func (m *Manager) persistirEstado(ctx context.Context, source library.Source, st
 	}
 }
 
-// arquivoBruto é um arquivo NÃO-vídeo encontrado durante coletarArquivos,
-// pré-computado (path + tamanho) para a classificação managed/unmanaged do
-// briefing 0063 -- sem reabrir o arquivo depois.
+// arquivoBruto is a NON-video file found during coletarArquivos, pre-computed
+// (path + size) for the managed/unmanaged classification -- without reopening the
+// file afterwards.
 type arquivoBruto struct {
 	Path string
 	Size int64
 }
 
-// extensoesPrincipais devolve o conjunto de extensões tratadas como o
-// CONTEÚDO principal do datasource nesta varredura (0107): extensoesVideo
-// para filme/série (default) ou extensoesAudio quando content_type='music'.
-// coletarArquivos usa isto para decidir o que alimenta o pipeline de
-// matching (vs. o que cai em naoVideos, só para a classificação
-// managed/unmanaged de storage do briefing 0063).
+// extensoesPrincipais returns the set of extensions treated as the MAIN CONTENT
+// of the datasource in this walk (0107): extensoesVideo for movie/series
+// (default) or extensoesAudio when content_type='music'. coletarArquivos uses it
+// to decide what feeds the matching pipeline (vs. what falls into naoVideos, only
+// for the managed/unmanaged storage classification).
 func (r *scanRun) extensoesPrincipais() map[string]bool {
 	if r.source.ContentType == contentTypeMusic {
 		return extensoesAudio
@@ -462,16 +465,15 @@ func (r *scanRun) extensoesPrincipais() map[string]bool {
 	return extensoesVideo
 }
 
-// coletarArquivos percorre a raiz UMA ÚNICA VEZ (WalkDir) e separa o
-// CONTEÚDO principal (`extensoesConteudo` -- vídeo ou áudio, ver
-// extensoesPrincipais) do resto (para a classificação managed/unmanaged do
-// briefing 0063, ver classificarNaoVideos) -- nunca duas passadas de disco.
-// Erro no stat da própria raiz é fatal (fonte offline); diretórios internos
-// ilegíveis são pulados (logados), não derrubam o walk -- mas fazem
-// `parcial` voltar true, para o chamador saber que a lista de arquivos
-// vistos pode estar incompleta (ex.: timeout transitório de um mount de rede
-// FUSE/rclone no meio da varredura) e não tratar "não visto" como "removido"
-// no fechamento do ciclo de vida.
+// coletarArquivos walks the root A SINGLE TIME (WalkDir) and separates the MAIN
+// CONTENT (`extensoesConteudo` -- video or audio, see extensoesPrincipais) from
+// the rest (for the managed/unmanaged classification, see
+// classificarNaoVideos) -- never two disk passes. An error in the stat of the
+// root itself is fatal (offline source); unreadable internal directories are
+// skipped (logged), they do not take the walk down -- but they make `parcial`
+// return true, so the caller knows the file list may be incomplete (e.g. a
+// transient timeout of a FUSE/rclone network mount in the middle of the walk) and
+// does not treat "not seen" as "removed" when closing the lifecycle.
 func coletarArquivos(root string, extensoesConteudo map[string]bool) (videos []string, naoVideos []arquivoBruto, parcial bool, err error) {
 	if _, err := os.Stat(root); err != nil {
 		return nil, nil, false, err
@@ -507,12 +509,12 @@ func coletarArquivos(root string, extensoesConteudo map[string]bool) (videos []s
 	return videos, naoVideos, parcial, nil
 }
 
-// classificarNaoVideos agrupa os vídeos por diretório (nome-base sem
-// extensão, ver localmedia.NomeBaseVideo) e classifica cada arquivo
-// NÃO-vídeo encontrado na MESMA varredura em managed (nome casa com um
-// padrão canônico do briefing 0062, ver localmedia.EhArquivoGerenciado) ou
-// unmanaged (resto) -- soma de bytes por categoria. Puro (não acessa disco):
-// os tamanhos já vieram de coletarArquivos.
+// classificarNaoVideos groups the videos by directory (base name without
+// extension, see localmedia.NomeBaseVideo) and classifies each NON-video file
+// found in the SAME walk as managed (the name matches a canonical naming pattern,
+// see localmedia.EhArquivoGerenciado) or unmanaged (the rest) -- a sum of bytes
+// per category. Pure (it does not touch the disk): the sizes already came from
+// coletarArquivos.
 func classificarNaoVideos(videos []string, naoVideos []arquivoBruto) (managedBytes, unmanagedBytes int64) {
 	basesPorDir := make(map[string][]string, len(videos))
 	for _, v := range videos {
@@ -531,8 +533,9 @@ func classificarNaoVideos(videos []string, naoVideos []arquivoBruto) (managedByt
 	return managedBytes, unmanagedBytes
 }
 
-// descobrirPoster procura a arte local: poster.jpg/folder.jpg no diretório da
-// obra e <nome-do-arquivo>-poster.jpg (convenção Kodi/Jellyfin). "" se nenhuma.
+// descobrirPoster looks for the local artwork: poster.jpg/folder.jpg in the
+// directory of the work and <file-name>-poster.jpg (Kodi/Jellyfin convention).
+// "" if none.
 func descobrirPoster(dir, base string) string {
 	candidatos := append([]string{}, nomesPoster...)
 	candidatos = append(candidatos, base+"-poster.jpg", base+"-poster.png")
@@ -545,19 +548,19 @@ func descobrirPoster(dir, base string) string {
 	return ""
 }
 
-// semExtensao remove a extensão de um nome de arquivo.
+// semExtensao removes the extension of a file name.
 func semExtensao(nome string) string {
 	return strings.TrimSuffix(nome, filepath.Ext(nome))
 }
 
-// hashDoArquivoFn é hashDoArquivo indireto por variável (nunca sobrescrita em
-// produção): existe só para os TESTES do scan incremental (briefing 0064)
-// poderem CONTAR/instrumentar quantas vezes o hash de verdade roda, sem
-// precisar reescrever o pipeline — mesmo espírito de m.agora/m.novoID serem
-// campos função injetáveis.
+// hashDoArquivoFn is hashDoArquivo indirected through a variable (never
+// overwritten in production): it exists only so the incremental scan TESTS can
+// COUNT/instrument how many times the real hash runs, without having to rewrite
+// the pipeline — the same spirit of m.agora/m.novoID being injectable function
+// fields.
 var hashDoArquivoFn = hashDoArquivo
 
-// hashDoArquivo abre o arquivo e calcula o content_hash parcial.
+// hashDoArquivo opens the file and computes the partial content_hash.
 func hashDoArquivo(path string, size int64) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -567,11 +570,11 @@ func hashDoArquivo(path string, size int64) (string, error) {
 	return contentHash(f, size)
 }
 
-// posScan chama o gancho de pós-scan (briefing 0135/ADR-0031) ao fim de
-// executarScan: reconciliação dos rascunhos e retry dos pendentes DAQUELA
-// biblioteca. Reporta a etapa como mensagem de progresso (o contador continua
-// sendo de ARQUIVOS -- a etapa não infla files_total). Best-effort: erro só
-// loga, nunca derruba um scan que já gravou e carimbou tudo.
+// posScan calls the post-scan hook (ADR-0031) at the end of executarScan:
+// reconciliation of the drafts and retry of the pendings OF THAT library. It
+// reports the stage as a progress message (the counter keeps counting FILES --
+// the stage does not inflate files_total). Best-effort: an error only logs, it
+// never takes down a scan that already wrote and stamped everything.
 func (r *scanRun) posScan(ctx context.Context) {
 	if r.m.posScan == nil {
 		return

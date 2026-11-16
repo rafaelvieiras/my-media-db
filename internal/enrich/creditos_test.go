@@ -9,8 +9,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// camposComCreditos e o canonico fixo (elenco/equipe/produtoras) que o fakeProvider
-// devolve nos testes de persistencia. `order` e int (como o mapeamento em processo).
+// camposComCreditos is the fixed canonical (cast/crew/studios) that fakeProvider
+// returns in the persistence tests. `order` is int (like the in-process mapping).
 func camposComCreditos() map[string]any {
 	return map[string]any{
 		"title": "The Matrix",
@@ -27,8 +27,8 @@ func camposComCreditos() map[string]any {
 	}
 }
 
-// TestPersistirCreditosPopula prova que o enrich popula person/company/credit a partir
-// do canonico, com os atributos da aresta (kind/character/ordering).
+// TestPersistirCreditosPopula proves that the enrich populates person/company/credit from
+// the canonical, with the edge attributes (kind/character/ordering).
 func TestPersistirCreditosPopula(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -54,7 +54,7 @@ func TestPersistirCreditosPopula(t *testing.T) {
 	verificarArestas(t, creds)
 }
 
-// verificarDedupExiste confere que a person e a company deduplicadas foram gravadas.
+// verificarDedupExiste checks that the deduplicated person and company were written.
 func verificarDedupExiste(t *testing.T, r *sqlcgen.Queries) {
 	t.Helper()
 	ctx := context.Background()
@@ -66,8 +66,8 @@ func verificarDedupExiste(t *testing.T, r *sqlcgen.Queries) {
 	}
 }
 
-// verificarArestas confere os atributos das arestas: o elenco carrega personagem/ordem;
-// o credito de company liga a company (nao a person).
+// verificarArestas checks the edge attributes: the cast carries character/order;
+// the company credit links to the company (not to a person).
 func verificarArestas(t *testing.T, creds []sqlcgen.Credit) {
 	t.Helper()
 	neo := creditoDe(t, creds, "cast", "6384")
@@ -83,8 +83,8 @@ func verificarArestas(t *testing.T, creds []sqlcgen.Credit) {
 	}
 }
 
-// TestPersistirCreditosDedupPersonEntreObras prova que uma pessoa que aparece em DUAS
-// obras tem UMA unica linha em person (dedup por source_id), com um credito por obra.
+// TestPersistirCreditosDedupPersonEntreObras proves that a person who appears in TWO
+// works has a SINGLE row in person (dedup by source_id), with one credit per work.
 func TestPersistirCreditosDedupPersonEntreObras(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -102,14 +102,14 @@ func TestPersistirCreditosDedupPersonEntreObras(t *testing.T) {
 		}
 	}
 
-	// 3 pessoas distintas (2 cast + 1 crew), nao 6 -- dedup por (source, source_id).
+	// 3 distinct people (2 cast + 1 crew), not 6 -- dedup by (source, source_id).
 	if n := contarLinhas(t, database, "person"); n != 3 {
 		t.Errorf("linhas em person = %d, quero 3 (dedup entre as duas obras)", n)
 	}
 	if n := contarLinhas(t, database, "company"); n != 1 {
 		t.Errorf("linhas em company = %d, quero 1 (dedup)", n)
 	}
-	// Cada obra tem seus 4 creditos (a aresta nao e deduplicada, so a pessoa/empresa).
+	// Each work has its 4 credits (the edge is not deduplicated, only the person/company).
 	r := sqlcgen.New(database.Read)
 	for _, id := range []string{"e1", "e2"} {
 		creds, _ := r.ListarCreditosDaEntity(ctx, id)
@@ -119,8 +119,8 @@ func TestPersistirCreditosDedupPersonEntreObras(t *testing.T) {
 	}
 }
 
-// TestReEnriquecerCreditosIdempotente prova que re-enriquecer APAGA e repopula os
-// creditos de (entity, source) sem duplicar: contagens estaveis apos duas passagens.
+// TestReEnriquecerCreditosIdempotente proves that re-enriching DELETES and repopulates the
+// credits of (entity, source) without duplicating: stable counts after two passes.
 func TestReEnriquecerCreditosIdempotente(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -147,8 +147,8 @@ func TestReEnriquecerCreditosIdempotente(t *testing.T) {
 	}
 }
 
-// TestPersistirCreditosSerieNormalizado prova o caminho de SERIE: o canonico agregado
-// (character unido, episode_count) e persistido no no serie.
+// TestPersistirCreditosSerieNormalizado proves the SERIES path: the aggregated canonical
+// (joined character, episode_count) is persisted on the series node.
 func TestPersistirCreditosSerieNormalizado(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -181,7 +181,7 @@ func TestPersistirCreditosSerieNormalizado(t *testing.T) {
 	}
 }
 
-// creditoDe acha o credito de um kind ligado a uma person/company de source_id dado.
+// creditoDe finds the credit of a kind linked to a person/company with the given source_id.
 func creditoDe(t *testing.T, creds []sqlcgen.Credit, kind, sourceID string) sqlcgen.Credit {
 	t.Helper()
 	for _, c := range creds {
@@ -193,8 +193,8 @@ func creditoDe(t *testing.T, creds []sqlcgen.Credit, kind, sourceID string) sqlc
 	return sqlcgen.Credit{}
 }
 
-// contarLinhas conta as linhas de uma tabela via SQL cru (nao ha query sqlc de contagem
-// global -- e so para o teste de dedup).
+// contarLinhas counts the rows of a table through raw SQL (there is no sqlc query for a
+// global count -- and it is only for the dedup test).
 func contarLinhas(t *testing.T, database *db.DB, tabela string) int {
 	t.Helper()
 	var n int

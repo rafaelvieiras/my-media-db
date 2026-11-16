@@ -1,8 +1,8 @@
-// Package tvext concentra a LEITURA do extension_data da vertical de séries
-// (namespace core.tv@1, ADR-0021): extrair o objeto do namespace e coagir os
-// números de JSON. É o parser ÚNICO reusado pelo scanner (índice de episódios,
-// 0034) e pelo server (numbering real no card, 0039) — para não duplicar a
-// decodificação do envelope namespace→objeto em cada consumidor.
+// Package tvext concentrates the READING of the extension_data of the series
+// vertical (namespace core.tv@1, ADR-0021): extract the namespace object and
+// coerce the JSON numbers. It is the SINGLE parser reused by the scanner
+// (episode index) and by the server (real numbering in the card) — so as not to
+// duplicate the decoding of the namespace→object envelope in every consumer.
 package tvext
 
 import (
@@ -10,10 +10,10 @@ import (
 	"encoding/json"
 )
 
-// Namespace extrai o objeto de um namespace (ex.: "core.tv@1") de um
-// extension_data_json (envelope namespace→objeto). Devolve nil quando o raw é
-// NULL/vazio, ilegível, ou não contém o namespace — o chamador degrada (a
-// entity sem aquele namespace simplesmente não tem os dados).
+// Namespace extracts the object of a namespace (e.g. "core.tv@1") from an
+// extension_data_json (namespace→object envelope). It returns nil when the raw
+// is NULL/empty, unreadable, or does not contain the namespace — the caller
+// degrades (the entity without that namespace simply does not have the data).
 func Namespace(raw sql.NullString, ns string) map[string]any {
 	if !raw.Valid || raw.String == "" {
 		return nil
@@ -33,8 +33,8 @@ func Namespace(raw sql.NullString, ns string) map[string]any {
 	return m
 }
 
-// AsInt coage um valor decodificado de JSON para int (números de JSON viram
-// float64 no unmarshal genérico). (0,false) quando não é número.
+// AsInt coerces a JSON-decoded value to int (JSON numbers become float64 in the
+// generic unmarshal). (0,false) when it is not a number.
 func AsInt(v any) (int, bool) {
 	switch n := v.(type) {
 	case float64:

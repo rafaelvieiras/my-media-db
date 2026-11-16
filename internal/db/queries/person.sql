@@ -1,13 +1,13 @@
--- Acesso a tabela person (briefing 0029, migration 0010): a pessoa deduplicada por
--- (source, source_id). Cache re-componivel do payload externo -- o dado do dono nunca
--- vive aqui. Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql (o
--- sqlc v1.31 corrompe SQL de query com acento).
+-- Access to the person table (migration 0010): the person deduplicated by
+-- (source, source_id). Re-composable cache of the external payload -- the owner's data
+-- never lives here. Comments in ASCII and explicit columns -- see the note in
+-- entity.sql (sqlc v1.31 corrupts query SQL with an accent).
 
 -- name: UpsertPerson :one
--- Grava (ou atualiza) a pessoa deduplicada por (source, source_id). Conflito na UNIQUE
--- reusa a linha e atualiza name/profile_path/payload_json, devolvendo o id existente --
--- assim dois creditos da mesma pessoa apontam para UMA linha. `id` so e usado na
--- primeira insercao (fica estavel no update).
+-- Writes (or updates) the person deduplicated by (source, source_id). A conflict on the
+-- UNIQUE constraint reuses the row and updates name/profile_path/payload_json, returning
+-- the existing id -- so two credits of the same person point at ONE row. `id` is only
+-- used on the first insert (it stays stable on update).
 INSERT INTO person (
     id, source, source_id, name, profile_path, payload_json
 ) VALUES (
@@ -20,14 +20,14 @@ ON CONFLICT (source, source_id) DO UPDATE SET
 RETURNING id;
 
 -- name: ObterPersonPorFonte :one
--- Le a pessoa por (source, source_id) -- a chave logica de dedup.
+-- Reads the person by (source, source_id) -- the logical dedupe key.
 SELECT id, source, source_id, name, profile_path, payload_json
 FROM person
 WHERE source = ? AND source_id = ?;
 
 -- name: ObterPersonPorID :one
--- Le a pessoa pelo id local (person.id) -- para a pagina da pessoa (briefing 0029
--- Fase D, GET /person/{id}).
+-- Reads the person by local id (person.id) -- for the person page
+-- (GET /person/{id}).
 SELECT id, source, source_id, name, profile_path, payload_json
 FROM person
 WHERE id = ?;

@@ -1,8 +1,8 @@
-// Package library é o serviço de domínio dos datasources (library_source): as
-// pastas do servidor que o dono aponta como fonte da biblioteca. Cuida da
-// validação e normalização de path, do CRUD via sqlc e da derivação do estado
-// online/offline na leitura. É a base de dados-de-entrada do scanner (0009) e a
-// primeira superfície nativa /api/v1 de verdade (briefing 0008).
+// Package library is the domain service of the datasources (library_source):
+// the server folders that the owner points at as the source of the library. It
+// handles path validation and normalization, the CRUD through sqlc and the
+// derivation of the online/offline state on read. It is the scanner's input
+// database (see doc 06) and the first real native /api/v1 surface (see doc 05).
 package library
 
 import (
@@ -17,86 +17,90 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Estados possíveis de uma fonte (espelham o CHECK de library_source).
+// Possible states of a source (they mirror the CHECK of library_source).
 const (
 	stateOnline  = "online"
 	stateOffline = "offline"
 )
 
-// tiposValidos são os tipos aceitos no MVP (briefing 0008). Outros valores são
-// rejeitados com ErrTipoInvalido (422).
+// tiposValidos are the types accepted in the MVP (see doc 05). Other values are
+// rejected with ErrTipoInvalido (422).
 var tiposValidos = map[string]bool{
 	"movie": true,
 	"tv":    true,
 }
 
-// Valores de content_type conhecidos pela UI (0034). NAO ha CHECK no schema nem
-// rejeicao no servico: o campo e livre/extensivel (ex.: 'music' no futuro). Este
-// mapa serve so de referencia; a normalizacao abaixo apenas preenche o default.
+// content_type values known by the UI (ADR-0021). There is NO CHECK in the
+// schema and no rejection in the service: the field is free/extensible (e.g.:
+// 'music' in the future). This map is only a reference; the normalization below
+// just fills in the default.
 const (
 	contentTypeMovie  = "movie"
 	contentTypeSeries = "series"
 )
 
-// Erros de domínio. O handler HTTP os mapeia para status + code do shape de
-// erro padrão ({error:{code,message}}). São sentinelas para permitir
-// errors.Is no chamador.
+// Domain errors. The HTTP handler maps them to a status + code of the standard
+// error shape ({error:{code,message}}). They are sentinels so that the caller
+// can use errors.Is.
 var (
-	// ErrPathInexistente: o caminho não existe. -> 422 invalid_path
+	// ErrPathInexistente: the informed path does not exist. -> 422 invalid_path
 	ErrPathInexistente = errors.New("o caminho informado não existe")
-	// ErrNaoDiretorio: o caminho existe mas não é um diretório. -> 422 not_a_directory
+	// ErrNaoDiretorio: the path exists but is not a directory. -> 422 not_a_directory
 	ErrNaoDiretorio = errors.New("o caminho informado não é um diretório")
-	// ErrPathIlegivel: o caminho existe mas não pode ser lido. -> 422 path_unreadable
+	// ErrPathIlegivel: the path exists but cannot be read. -> 422 path_unreadable
 	ErrPathIlegivel = errors.New("o caminho informado não pode ser lido (sem permissão)")
-	// ErrTipoInvalido: type fora de {movie,tv}. -> 422 invalid_type
+	// ErrTipoInvalido: type outside {movie,tv}. -> 422 invalid_type
 	ErrTipoInvalido = errors.New("tipo inválido: use movie ou tv")
-	// ErrPathVazio: campo path ausente/vazio. -> 400 invalid_body
+	// ErrPathVazio: the path field is absent/empty. -> 400 invalid_body
 	ErrPathVazio = errors.New("o campo path é obrigatório")
-	// ErrPathDuplicado: já existe uma fonte com o mesmo path normalizado. -> 409 duplicate_path
+	// ErrPathDuplicado: a source with the same normalized path already exists. -> 409 duplicate_path
 	ErrPathDuplicado = errors.New("já existe uma fonte cadastrada para este caminho")
-	// ErrNaoEncontrado: nenhuma fonte com o id informado. -> 404 not_found
+	// ErrNaoEncontrado: no source with the informed id. -> 404 not_found
 	ErrNaoEncontrado = errors.New("datasource não encontrado")
 )
 
-// Source é a representação de domínio de uma fonte, com o estado já derivado.
-// LastScan é nulo enquanto o scanner (0009) não rodar.
+// Source is the domain representation of a source, with the state already
+// derived. LastScan is null while the scanner has not run yet.
 type Source struct {
 	ID       string
 	Path     string
 	Type     string
 	State    string
 	LastScan *string
-	// ContentType diz se a biblioteca e de filmes ("movie") ou de series ("series")
-	// — o scanner (0034) ramifica o fluxo de match por este valor. Default "movie".
+	// ContentType says whether the library is of movies ("movie") or of series
+	// ("series") — the scanner branches the matching flow on this value
+	// (ADR-0021). Default "movie".
 	ContentType string
-	// WatchEnabled liga/desliga o watcher fsnotify desta fonte (briefing 0064).
-	// Default false no cadastro; editavel so via AtualizarWatch (PATCH
-	// /api/v1/library/{id}), aplicado A QUENTE pelo handler (internal/watch).
+	// WatchEnabled turns the fsnotify watcher of this source on/off (see
+	// doc 06). Default false on creation; editable only through AtualizarWatch
+	// (PATCH /api/v1/library/{id}), applied ON THE FLY by the handler
+	// (internal/watch).
 	WatchEnabled bool
-	// PreferredLanguage e o idioma preferido de busca/exibicao desta biblioteca
-	// (briefing 0084); nil = sem preferencia, usa o idioma global de
-	// app_settings. A VALIDACAO contra os idiomas permitidos e feita pelo
-	// CHAMADOR (internal/server), para este pacote nao importar internal/server
-	// nem conhecer app_settings -- aqui so persiste o que recebe.
+	// PreferredLanguage is the preferred search/display language of this
+	// library (ADR-0018); nil = no preference, it uses the global language of
+	// app_settings. The VALIDATION against the allowed languages is done by the
+	// CALLER (internal/server), so that this package does not import
+	// internal/server nor know about app_settings -- here it only persists what
+	// it receives.
 	PreferredLanguage *string
-	// RetroactiveEnrichmentDays e o override OPCIONAL (briefing 0085) do
-	// intervalo de reentativa do enriquecimento retroativo desta biblioteca;
-	// nil = sem override, usa o valor global de app_settings. A VALIDACAO do
-	// intervalo (1-365) e feita pelo CHAMADOR (internal/server) -- aqui so
-	// persiste o que recebe.
+	// RetroactiveEnrichmentDays is the OPTIONAL override (see doc 07) of the
+	// retry interval of the retroactive enrichment of this library; nil = no
+	// override, it uses the global value of app_settings. The VALIDATION of the
+	// interval (1-365) is done by the CALLER (internal/server) -- here it only
+	// persists what it receives.
 	RetroactiveEnrichmentDays *int
 }
 
-// Service concentra as operações de domínio sobre library_source. Segue a
-// ADR-0010: escritas pela conexão única (db.Write), leituras pelo pool
-// (db.Read).
+// Service concentrates the domain operations on library_source. It follows
+// ADR-0010: writes through the single connection (db.Write), reads through the
+// pool (db.Read).
 type Service struct {
 	database *db.DB
-	// novoID gera o identificador de uma fonte nova; injetável para testes.
+	// novoID generates the identifier of a new source; injectable for tests.
 	novoID func() string
 }
 
-// New cria o serviço a partir dos pools de banco.
+// New creates the service from the database pools.
 func New(database *db.DB) *Service {
 	return &Service{
 		database: database,
@@ -104,24 +108,26 @@ func New(database *db.DB) *Service {
 	}
 }
 
-// escrita devolve os Queries ligados ao pool de escrita (escritor único).
+// escrita returns the Queries bound to the write pool (single writer).
 func (s *Service) escrita() *sqlcgen.Queries { return sqlcgen.New(s.database.Write) }
 
-// leitura devolve os Queries ligados ao pool de leitura.
+// leitura returns the Queries bound to the read pool.
 func (s *Service) leitura() *sqlcgen.Queries { return sqlcgen.New(s.database.Read) }
 
-// Criar valida e cadastra uma nova fonte. Passos: valida o tipo; normaliza o
-// path (absoluto+limpo) ANTES de tudo; valida existência/diretório/legibilidade;
-// checa duplicata pelo path normalizado; insere pela conexão de escrita. A fonte
-// nasce online (acabou de ser validada como legível) e sem last_scan.
-// contentType é a natureza da biblioteca (movie|series, 0034), que o scanner usa
-// para ramificar o fluxo de match. Valor livre (sem CHECK); vazio normaliza para
-// "movie" (compat com o cadastro pré-0034). preferredLanguage é o idioma
-// preferido opcional (briefing 0084); nil = sem preferência. retroactiveEnrichmentDays
-// é o override opcional do intervalo de reentativa (briefing 0085); nil = sem
-// override. A VALIDAÇÃO de ambos (idiomas permitidos, intervalo 1-365) já foi
-// feita pelo CHAMADOR (internal/server) antes desta chamada -- este serviço só
-// persiste o valor recebido.
+// Criar validates and registers a new source. Steps: validates the type;
+// normalizes the path (absolute+clean) BEFORE everything else; validates
+// existence/directory/readability; checks for a duplicate by the normalized
+// path; inserts through the write connection. The source is born online (it has
+// just been validated as readable) and without last_scan.
+// contentType is the nature of the library (movie|series, ADR-0021), which the
+// scanner uses to branch the matching flow. Free value (no CHECK); empty
+// normalizes to "movie" (compatibility with datasources registered before
+// content_type existed). preferredLanguage is the optional preferred language
+// (ADR-0018); nil = no preference. retroactiveEnrichmentDays is the optional
+// override of the retry interval (see doc 07); nil = no override. The
+// VALIDATION of both (allowed languages, interval 1-365) has already been done
+// by the CALLER (internal/server) before this call -- this service only
+// persists the value it receives.
 func (s *Service) Criar(ctx context.Context, rawPath, tipo, contentType string, preferredLanguage *string, retroactiveEnrichmentDays *int) (Source, error) {
 	if !tiposValidos[tipo] {
 		return Source{}, ErrTipoInvalido
@@ -141,8 +147,8 @@ func (s *Service) Criar(ctx context.Context, rawPath, tipo, contentType string, 
 		return Source{}, err
 	}
 
-	// Checa duplicata pelo path JÁ normalizado (o mesmo que grava), para
-	// devolver 409 com mensagem clara antes de esbarrar no UNIQUE.
+	// Checks for a duplicate by the ALREADY normalized path (the same one it
+	// writes), to return 409 with a clear message before hitting the UNIQUE.
 	if _, err := s.leitura().ObterLibrarySourcePorPath(ctx, abs); err == nil {
 		return Source{}, ErrPathDuplicado
 	} else if !errors.Is(err, sql.ErrNoRows) {
@@ -160,13 +166,13 @@ func (s *Service) Criar(ctx context.Context, rawPath, tipo, contentType string, 
 	if err != nil {
 		return Source{}, err
 	}
-	// state vem do DEFAULT 'online'; não reavaliamos aqui (acabou de ser
-	// validado como legível).
+	// state comes from the DEFAULT 'online'; it is not re-evaluated here (it
+	// has just been validated as readable).
 	return toSource(row, row.State), nil
 }
 
-// Listar devolve todas as fontes com o state REAVALIADO na leitura (stat barato
-// do path). Não persiste offline (decisão 0008 sec.6).
+// Listar returns every source with the state RE-EVALUATED on read (cheap stat
+// of the path). It does not persist offline (API decision, §6).
 func (s *Service) Listar(ctx context.Context) ([]Source, error) {
 	rows, err := s.leitura().ListarLibrarySources(ctx)
 	if err != nil {
@@ -179,8 +185,8 @@ func (s *Service) Listar(ctx context.Context) ([]Source, error) {
 	return out, nil
 }
 
-// Obter devolve uma fonte pelo id, com o state reavaliado. ErrNaoEncontrado se
-// não existir.
+// Obter returns a source by id, with the state re-evaluated. ErrNaoEncontrado
+// if it does not exist.
 func (s *Service) Obter(ctx context.Context, id string) (Source, error) {
 	row, err := s.leitura().ObterLibrarySource(ctx, id)
 	if err != nil {
@@ -192,16 +198,17 @@ func (s *Service) Obter(ctx context.Context, id string) (Source, error) {
 	return toSource(row, avaliarState(row.Path)), nil
 }
 
-// Apagar remove o registro da fonte (NÃO purga entities -- decisão 0008 sec.6).
-// Confirma a existência antes para poder responder 404; a remoção passa pela
-// conexão de escrita, numa ÚNICA transação (escritor único, ADR-0010):
-//  1. apaga os media_file da fonte (WHERE library_source_id = ?), o que cascateia
-//     os vínculos media_file_entity (FK ON DELETE CASCADE, migration 0009) e
-//     preserva as entities do catálogo;
-//  2. apaga a library_source.
+// Apagar removes the source record (it does NOT purge entities -- API decision,
+// §6). It confirms the existence first so that it can answer 404; the removal
+// goes through the write connection, in a SINGLE transaction (single writer,
+// ADR-0010):
+//  1. deletes the media_file of the source (WHERE library_source_id = ?), which
+//     cascades the media_file_entity links (FK ON DELETE CASCADE, migration
+//  0009. and preserves the entities of the catalog;
+//  2. deletes the library_source.
 //
-// Tudo ou nada: se qualquer passo falhar, o rollback deixa o banco intacto (sem
-// estado meio-apagado).
+// All or nothing: if any step fails, the rollback leaves the database intact
+// (with no half-deleted state).
 func (s *Service) Apagar(ctx context.Context, id string) error {
 	if _, err := s.leitura().ObterLibrarySource(ctx, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -215,8 +222,9 @@ func (s *Service) Apagar(ctx context.Context, id string) error {
 		return err
 	}
 	q := sqlcgen.New(tx)
-	// library_source_id é NULLABLE no schema; a query tipa o parâmetro como
-	// sql.NullString. Aqui é sempre um id concreto (Valid: true).
+	// library_source_id is NULLABLE in the schema; the query types the
+	// parameter as sql.NullString. Here it is always a concrete id (Valid:
+	// true).
 	if err := q.ApagarMediaFilesPorFonte(ctx, sql.NullString{String: id, Valid: true}); err != nil {
 		_ = tx.Rollback()
 		return err
@@ -228,12 +236,12 @@ func (s *Service) Apagar(ctx context.Context, id string) error {
 	return tx.Commit()
 }
 
-// AtualizarWatch liga/desliga watch_enabled da fonte (briefing 0064, PATCH
-// /api/v1/library/{id}). ErrNaoEncontrado se o id não existir. O CHAMADOR
-// (internal/server) é quem aciona a rotina de registro/desregistro do
-// watcher fsnotify LOGO APÓS esta chamada retornar com sucesso — este
-// serviço só persiste a coluna, não conhece internal/watch (evitaria um
-// ciclo de import, já que watch depende de library.Source).
+// AtualizarWatch turns watch_enabled of the source on/off (see doc 06, PATCH
+// /api/v1/library/{id}). ErrNaoEncontrado if the id does not exist. The CALLER
+// (internal/server) is the one that triggers the registration/unregistration
+// routine of the fsnotify watcher RIGHT AFTER this call returns successfully —
+// this service only persists the column, it does not know internal/watch (it
+// would cause an import cycle, since watch depends on library.Source).
 func (s *Service) AtualizarWatch(ctx context.Context, id string, enabled bool) (Source, error) {
 	if _, err := s.leitura().ObterLibrarySource(ctx, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -251,11 +259,11 @@ func (s *Service) AtualizarWatch(ctx context.Context, id string, enabled bool) (
 	return toSource(row, avaliarState(row.Path)), nil
 }
 
-// AtualizarPreferredLanguage grava (ou limpa, quando lang==nil) o idioma
-// preferido da fonte (briefing 0084, PATCH /api/v1/library/{id}).
-// ErrNaoEncontrado se o id não existir. A VALIDAÇÃO contra os idiomas
-// permitidos já foi feita pelo CHAMADOR (internal/server) antes desta
-// chamada -- este serviço só persiste o valor recebido.
+// AtualizarPreferredLanguage writes (or clears, when lang==nil) the preferred
+// language of the source (ADR-0018, PATCH /api/v1/library/{id}).
+// ErrNaoEncontrado if the id does not exist. The VALIDATION against the allowed
+// languages has already been done by the CALLER (internal/server) before this
+// call -- this service only persists the value it receives.
 func (s *Service) AtualizarPreferredLanguage(ctx context.Context, id string, lang *string) (Source, error) {
 	if _, err := s.leitura().ObterLibrarySource(ctx, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -273,12 +281,12 @@ func (s *Service) AtualizarPreferredLanguage(ctx context.Context, id string, lan
 	return toSource(row, avaliarState(row.Path)), nil
 }
 
-// AtualizarRetroactiveEnrichmentDays grava (ou limpa, quando dias==nil) o
-// override de intervalo de reentativa do enriquecimento retroativo da fonte
-// (briefing 0085, PATCH /api/v1/library/{id}). ErrNaoEncontrado se o id não
-// existir. A VALIDAÇÃO do intervalo (1-365) já foi feita pelo CHAMADOR
-// (internal/server) antes desta chamada -- este serviço só persiste o valor
-// recebido.
+// AtualizarRetroactiveEnrichmentDays writes (or clears, when dias==nil) the
+// retry-interval override of the retroactive enrichment of the source (see
+// doc 07, PATCH /api/v1/library/{id}). ErrNaoEncontrado if the id does not
+// exist. The VALIDATION of the interval (1-365) has already been done by the
+// CALLER (internal/server) before this call -- this service only persists the
+// value it receives.
 func (s *Service) AtualizarRetroactiveEnrichmentDays(ctx context.Context, id string, dias *int) (Source, error) {
 	if _, err := s.leitura().ObterLibrarySource(ctx, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -296,28 +304,29 @@ func (s *Service) AtualizarRetroactiveEnrichmentDays(ctx context.Context, id str
 	return toSource(row, avaliarState(row.Path)), nil
 }
 
-// AtualizarPath reaponta o datasource para um novo caminho (briefing 0070:
-// disco/mount mudou de lugar) e recasca em cascata todos os caminhos
-// absolutos derivados do prefixo antigo -- media_file.path da fonte,
-// asset.local_path e entity.nfo_path das entities alcançadas por esses
-// arquivos -- preservando id/content_hash/matches (NÃO dispara re-scan).
-// Passos:
-//  1. Obtém a fonte atual (404 se não existir).
-//  2. rawNovoPath vazio -> ErrPathVazio (400).
-//  3. Normaliza+valida o novo path (mesmas regras de Criar: existe, é
-//     diretório, é legível -> 422).
-//  4. Path novo IGUAL ao atual -> no-op, devolve a fonte como está, sem abrir
-//     transação.
-//  5. Duplicata contra QUALQUER OUTRA fonte (ignorando a própria) -> 409
+// AtualizarPath repoints the datasource to a new path (the disk/mount moved
+// elsewhere, see doc 06) and cascades the re-prefixing to every absolute path
+// derived from the old prefix -- media_file.path of the source,
+// asset.local_path and entity.nfo_path of the entities reached through those
+// files -- preserving id/content_hash/matches (it does NOT trigger a re-scan).
+// Steps:
+//  1. Gets the current source (404 if it does not exist).
+//  2. Empty rawNovoPath -> ErrPathVazio (400).
+//  3. Normalizes+validates the new path (the same rules as Criar: it exists, is
+//     a directory, is readable -> 422).
+//  4. New path EQUAL to the current one -> no-op, returns the source as it is,
+//     without opening a transaction.
+//  5. Duplicate against ANY OTHER source (ignoring itself) -> 409
 //     ErrPathDuplicado.
-//  6. Transação única de escrita (mesmo padrão de Apagar): atualiza
-//     library_source.path, recasca cada media_file.path por TrimPrefix em Go
-//     (nunca SUBSTR/REPLACE no SQL -- ver nota do briefing sobre codepoint vs
-//     byte em paths acentuados), descobre as entities alcançadas (diretas via
-//     media_file.entity_id + indiretas via media_file_entity) e recasca
-//     asset.local_path/entity.nfo_path de cada uma, SE E SOMENTE SE o valor
-//     gravado começa com o prefixo antigo exato (entity com arquivo em mais
-//     de uma fonte, caso raro, fica sem tocar -- não piora o estado atual).
+//  6. Single write transaction (the same pattern as Apagar): updates
+//     library_source.path, re-prefixes each media_file.path through TrimPrefix
+//     in Go (never SUBSTR/REPLACE in SQL -- see the note about codepoint vs
+//     byte in accented paths), discovers the entities reached (direct ones
+//     through media_file.entity_id + indirect ones through media_file_entity)
+//     and re-prefixes asset.local_path/entity.nfo_path of each one, IF AND ONLY
+//     IF the stored value starts with the exact old prefix (an entity with a
+//     file in more than one source, a rare case, is left untouched -- it does
+//     not make the current state worse).
 func (s *Service) AtualizarPath(ctx context.Context, id, rawNovoPath string) (Source, error) {
 	atual, err := s.leitura().ObterLibrarySource(ctx, id)
 	if err != nil {
@@ -332,8 +341,8 @@ func (s *Service) AtualizarPath(ctx context.Context, id, rawNovoPath string) (So
 		return Source{}, err
 	}
 	if novoAbs == "" {
-		// Sentinela de no-op (path novo igual ao atual): evita transação e
-		// stat desnecessários (briefing 0070 sec.4).
+		// No-op sentinel (new path equal to the current one): avoids an
+		// unnecessary transaction and stat calls (see doc 06, §4).
 		return toSource(atual, avaliarState(atual.Path)), nil
 	}
 
@@ -370,13 +379,13 @@ func (s *Service) AtualizarPath(ctx context.Context, id, rawNovoPath string) (So
 	return toSource(novaRow, avaliarState(novaRow.Path)), nil
 }
 
-// validarNovoPathDeFonte normaliza+valida o novo path de uma fonte (mesmas
-// regras de Criar: existe, é diretório, é legível) e checa duplicata contra
-// QUALQUER OUTRA fonte (ignorando a própria). Extraído de AtualizarPath para
-// manter a complexidade ciclomática baixa. Devolve "" (sem erro) quando o
-// path novo, já normalizado, é IGUAL ao path atual -- sentinela de no-op que
-// o chamador interpreta (nunca ocorre em caso de erro, já que um path
-// absoluto válido nunca é vazio).
+// validarNovoPathDeFonte normalizes+validates the new path of a source (the
+// same rules as Criar: it exists, is a directory, is readable) and checks for a
+// duplicate against ANY OTHER source (ignoring itself). Extracted from
+// AtualizarPath to keep the cyclomatic complexity low. It returns "" (no error)
+// when the new path, once normalized, is EQUAL to the current path -- a no-op
+// sentinel that the caller interprets (it never happens in an error case, since
+// a valid absolute path is never empty).
 func (s *Service) validarNovoPathDeFonte(ctx context.Context, id, pathAtual, rawNovoPath string) (string, error) {
 	if rawNovoPath == "" {
 		return "", ErrPathVazio
@@ -392,8 +401,9 @@ func (s *Service) validarNovoPathDeFonte(ctx context.Context, id, pathAtual, raw
 		return "", nil
 	}
 
-	// Duplicata pelo path JÁ normalizado, ignorando a PRÓPRIA fonte (ela
-	// mesma casaria pelo path antigo antes do UPDATE, o que não é duplicata).
+	// Duplicate by the ALREADY normalized path, ignoring the source ITSELF (it
+	// would match through the old path before the UPDATE, which is not a
+	// duplicate).
 	if outro, err := s.leitura().ObterLibrarySourcePorPath(ctx, novoAbs); err == nil {
 		if outro.ID != id {
 			return "", ErrPathDuplicado
@@ -404,12 +414,12 @@ func (s *Service) validarNovoPathDeFonte(ctx context.Context, id, pathAtual, raw
 	return novoAbs, nil
 }
 
-// recascarMediaFilesDaFonte troca o prefixo de path de todo media_file da
-// fonte (extraído de AtualizarPath para manter a complexidade ciclomática
-// baixa). SE E SOMENTE SE o path gravado começa com o prefixo antigo exato
-// (ver nota defensiva do briefing 0070 §6) -- nunca deveria haver um
-// media_file com library_source_id desta fonte cujo path não bata, mas o
-// código não arrisca corromper um valor inesperado.
+// recascarMediaFilesDaFonte swaps the path prefix of every media_file of the
+// source (extracted from AtualizarPath to keep the cyclomatic complexity low).
+// IF AND ONLY IF the stored path starts with the exact old prefix (see the
+// defensive note in doc 06, §6) -- there should never be a media_file with
+// library_source_id of this source whose path does not match, but the code does
+// not risk corrupting an unexpected value.
 func recascarMediaFilesDaFonte(ctx context.Context, q *sqlcgen.Queries, fonteID sql.NullString, prefixoAntigo, novoPrefixo string) error {
 	arquivos, err := q.ListarMediaFilePathsPorFonte(ctx, fonteID)
 	if err != nil {
@@ -430,10 +440,10 @@ func recascarMediaFilesDaFonte(ctx context.Context, q *sqlcgen.Queries, fonteID 
 	return nil
 }
 
-// recascarEntidadesAlcancadas troca o prefixo de asset.local_path e
-// entity.nfo_path de cada entity alcançada pelos media_file da fonte (direto
-// via media_file.entity_id + indireto via media_file_entity -- ver
-// ListarEntityIDsPorFonte).
+// recascarEntidadesAlcancadas swaps the prefix of asset.local_path and
+// entity.nfo_path of every entity reached by the media_file of the source
+// (directly through media_file.entity_id + indirectly through
+// media_file_entity -- see ListarEntityIDsPorFonte).
 func recascarEntidadesAlcancadas(ctx context.Context, q *sqlcgen.Queries, fonteID sql.NullString, prefixoAntigo, novoPrefixo string) error {
 	entityIDs, err := q.ListarEntityIDsPorFonte(ctx, fonteID)
 	if err != nil {
@@ -450,10 +460,11 @@ func recascarEntidadesAlcancadas(ctx context.Context, q *sqlcgen.Queries, fonteI
 	return nil
 }
 
-// recascarAssetsDaEntidade troca o prefixo de asset.local_path de toda arte
-// da entity CUJO valor gravado começa com o prefixo antigo exato -- assets
-// sem local_path (nunca materializados em disco) ou com um prefixo diferente
-// (entity com arquivo em mais de uma fonte, caso raro do §6) ficam intocados.
+// recascarAssetsDaEntidade swaps the prefix of asset.local_path of every
+// artwork of the entity WHOSE stored value starts with the exact old prefix --
+// assets without local_path (never materialized on disk) or with a different
+// prefix (an entity with a file in more than one source, the rare case of §6)
+// are left untouched.
 func recascarAssetsDaEntidade(ctx context.Context, q *sqlcgen.Queries, entityID, prefixoAntigo, novoPrefixo string) error {
 	assets, err := q.ListarAssetsPorEntity(ctx, entityID)
 	if err != nil {
@@ -474,10 +485,10 @@ func recascarAssetsDaEntidade(ctx context.Context, q *sqlcgen.Queries, entityID,
 	return nil
 }
 
-// recascarNfoDaEntidade troca o prefixo de entity.nfo_path SE o valor gravado
-// começa com o prefixo antigo exato; entity sem .nfo exportado (ou com um
-// prefixo diferente) fica intocada. NÃO toca nfo_written_at (ver
-// AtualizarEntityNfoPath): isto não é uma nova exportação.
+// recascarNfoDaEntidade swaps the prefix of entity.nfo_path IF the stored value
+// starts with the exact old prefix; an entity without an exported .nfo (or with
+// a different prefix) is left untouched. It does NOT touch nfo_written_at (see
+// AtualizarEntityNfoPath): this is not a new export.
 func recascarNfoDaEntidade(ctx context.Context, q *sqlcgen.Queries, entityID, prefixoAntigo, novoPrefixo string) error {
 	ent, err := q.ObterEntity(ctx, entityID)
 	if err != nil {
@@ -493,7 +504,7 @@ func recascarNfoDaEntidade(ctx context.Context, q *sqlcgen.Queries, entityID, pr
 	})
 }
 
-// watchEnabledInt converte o bool de domínio para a coluna INTEGER (CHECK 0/1).
+// watchEnabledInt converts the domain bool into the INTEGER column (CHECK 0/1).
 func watchEnabledInt(enabled bool) int64 {
 	if enabled {
 		return 1
@@ -501,8 +512,8 @@ func watchEnabledInt(enabled bool) int64 {
 	return 0
 }
 
-// toSource converte a linha gerada pelo sqlc na representação de domínio,
-// aplicando o state já derivado pelo chamador.
+// toSource converts the row generated by sqlc into the domain representation,
+// applying the state already derived by the caller.
 func toSource(row sqlcgen.LibrarySource, state string) Source {
 	var lastScan *string
 	if row.LastScan.Valid {
@@ -522,8 +533,8 @@ func toSource(row sqlcgen.LibrarySource, state string) Source {
 	}
 }
 
-// ptrParaNullString converte um *string de domínio (nil = ausente) para o
-// sql.NullString gravável pela coluna NULLABLE preferred_language.
+// ptrParaNullString converts a domain *string (nil = absent) into the
+// sql.NullString writable by the NULLABLE preferred_language column.
 func ptrParaNullString(s *string) sql.NullString {
 	if s == nil {
 		return sql.NullString{}
@@ -531,8 +542,8 @@ func ptrParaNullString(s *string) sql.NullString {
 	return sql.NullString{String: *s, Valid: true}
 }
 
-// nullStringParaPtr converte a coluna NULLABLE lida de volta para *string de
-// domínio (nil quando NULL).
+// nullStringParaPtr converts the NULLABLE column read back into a domain
+// *string (nil when NULL).
 func nullStringParaPtr(ns sql.NullString) *string {
 	if !ns.Valid {
 		return nil
@@ -541,8 +552,8 @@ func nullStringParaPtr(ns sql.NullString) *string {
 	return &v
 }
 
-// ptrParaNullInt64 converte um *int de domínio (nil = ausente) para o
-// sql.NullInt64 gravável pela coluna NULLABLE retroactive_enrichment_days.
+// ptrParaNullInt64 converts a domain *int (nil = absent) into the sql.NullInt64
+// writable by the NULLABLE retroactive_enrichment_days column.
 func ptrParaNullInt64(v *int) sql.NullInt64 {
 	if v == nil {
 		return sql.NullInt64{}
@@ -550,8 +561,8 @@ func ptrParaNullInt64(v *int) sql.NullInt64 {
 	return sql.NullInt64{Int64: int64(*v), Valid: true}
 }
 
-// nullInt64ParaPtr converte a coluna NULLABLE lida de volta para *int de
-// domínio (nil quando NULL).
+// nullInt64ParaPtr converts the NULLABLE column read back into a domain *int
+// (nil when NULL).
 func nullInt64ParaPtr(ni sql.NullInt64) *int {
 	if !ni.Valid {
 		return nil

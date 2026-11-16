@@ -17,47 +17,46 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/execqueue"
 )
 
-// pollInterval é o intervalo do ticker do agendador embutido (briefing 0052):
-// a resolução mínima de cron é 1 minuto, 30s é suficiente pra nunca atrasar
-// mais que isso. É `var` (não `const`) para o teste do agendador poder
-// encurtar o intervalo sem esperar 30s de verdade — nenhum outro código deve
-// reatribuí-la fora de teste.
+// pollInterval is the ticker interval of the built-in scheduler: the minimum
+// cron resolution is 1 minute, so 30s is enough to never lag more than that.
+// It is a `var` (not a `const`) so the scheduler test can shorten the interval
+// without waiting a real 30s — no other code should reassign it outside tests.
 var pollInterval = 30 * time.Second
 
-// manterExecucoes é o cap de retenção do histórico por job (briefing 0052):
-// constante Go, não exposta na API. A cada execução finalizada (item de
-// queue_item, kind='job', desde o briefing 0108/ADR-0028), o excedente além
-// das `manterExecucoes` mais recentes DAQUELE job é apagado (podarHistorico).
+// manterExecucoes is the retention cap of the history per job: a Go constant,
+// not exposed in the API. Every time an execution finishes (a queue_item item,
+// kind='job', since ADR-0028), whatever exceeds the `manterExecucoes` most
+// recent rows OF THAT job is deleted (podarHistorico).
 const manterExecucoes = 100
 
-// carimboFormato é o layout ISO usado para next_run_at/last_run_at — mesmo
-// formato de scan.go (time.RFC3339 em UTC), fixo-largura e lexicamente
-// ordenável (a query do agendador compara next_run_at <= now como TEXTO).
+// carimboFormato is the ISO layout used for next_run_at/last_run_at — the same
+// format as scan.go (time.RFC3339 in UTC), fixed-width and lexically sortable
+// (the scheduler query compares next_run_at <= now as TEXT).
 const carimboFormato = time.RFC3339
 
-// Erros de orquestração; sentinelas para o handler HTTP mapear ao envelope
-// de erro padrão.
+// Orchestration errors; sentinels for the HTTP handler to map onto the
+// standard error envelope.
 var (
-	// ErrJobNaoEncontrado: o id não existe em job_definition. -> 404
+	// ErrJobNaoEncontrado: the id does not exist in job_definition. -> 404
 	ErrJobNaoEncontrado = errors.New("job não encontrado")
-	// ErrCronInvalido: schedule_cron não parseia como cron de 5 campos. -> 422
+	// ErrCronInvalido: schedule_cron does not parse as a 5-field cron. -> 422
 	ErrCronInvalido = errors.New("schedule_cron inválido")
-	// ErrJobEmExecucao: já há uma execução em andamento para este job. -> 409
+	// ErrJobEmExecucao: there is already an execution in progress for this job. -> 409
 	ErrJobEmExecucao = errors.New("já existe uma execução em andamento para este job")
-	// ErrJobDesconhecido: o job existe no banco (seed) mas não há Handler
-	// registrado para ele no binário atual (ex.: downgrade). -> 503
+	// ErrJobDesconhecido: the job exists in the database (seed) but there is no
+	// Handler registered for it in the current binary (e.g. a downgrade). -> 503
 	ErrJobDesconhecido = errors.New("nenhum handler registrado para este job")
 )
 
-// Manager orquestra a execução dos jobs: guarda o Registry de Handlers
-// (exportado — WithJobHandlers registra direto nele) e roda o agendador
-// embutido. Desde o briefing 0108/ADR-0028 (CAMADA 3), Manager NÃO dispara
-// mais sua própria goroutine nem guarda estado de execução em memória
-// (running/job_execution) — isso vive na fila unificada (internal/execqueue).
-// Executar só enfileira (ConfigurarFila); o trabalho de fato roda depois,
-// quando o worker sequencial da fila chama de volta o Manager como um
-// execqueue.Runner (executarViaRunner) — ver ConfigurarFila abaixo. Mesmo
-// espírito de internal/scanner.Manager para o kind "scan".
+// Manager orchestrates job execution: it keeps the Registry of Handlers
+// (exported — WithJobHandlers registers straight into it) and runs the built-in
+// scheduler. Since ADR-0028 (LAYER 3), Manager no longer spawns its own
+// goroutine nor keeps execution state in memory (running/job_execution) — that
+// lives in the unified queue (internal/execqueue). Executar only enqueues
+// (ConfigurarFila); the actual work runs afterwards, when the queue's
+// sequential worker calls the Manager back as an execqueue.Runner
+// (executarViaRunner) — see ConfigurarFila below. Same spirit as
+// internal/scanner.Manager for the "scan" kind.
 type Manager struct {
 	db       *db.DB
 	Registry Registry
@@ -65,21 +64,21 @@ type Manager struct {
 	novoID func() string
 	agora  func() time.Time
 
-	// fila é a fila de execução unificada (briefing 0108): Executar enfileira
-	// nela em vez de disparar uma goroutine própria. nil só em uso
-	// incompleto do pacote (todo caminho de produção chama ConfigurarFila no
-	// boot) -- Executar devolve ErrFilaNaoConfigurada nesse caso.
+	// fila is the unified execution queue: Executar enqueues into it instead of
+	// spawning its own goroutine. nil only on incomplete use of the package
+	// (every production path calls ConfigurarFila at boot) -- Executar returns
+	// ErrFilaNaoConfigurada in that case.
 	fila *execqueue.Manager
 }
 
-// ErrFilaNaoConfigurada: Executar chamado antes de ConfigurarFila -- todo
-// caminho de produção configura a fila no boot (cmd/mymediadb/main.go);
-// isto só deveria aparecer em teste/uso incompleto do pacote.
+// ErrFilaNaoConfigurada: Executar called before ConfigurarFila -- every
+// production path sets up the queue at boot (cmd/mymediadb/main.go); this
+// should only show up in a test/incomplete use of the package.
 var ErrFilaNaoConfigurada = errors.New("job: fila de execução não configurada (ConfigurarFila)")
 
-// NewManager cria um Manager pronto para uso; o Registry começa vazio — os
-// handlers entram via Registry.Registrar (server.WithJobHandlers) antes do
-// primeiro Executar/RunScheduler.
+// NewManager creates a Manager ready to use; the Registry starts empty —
+// handlers come in via Registry.Registrar (server.WithJobHandlers) before the
+// first Executar/RunScheduler.
 func NewManager(database *db.DB) *Manager {
 	return &Manager{
 		db:     database,
@@ -88,39 +87,38 @@ func NewManager(database *db.DB) *Manager {
 	}
 }
 
-// ConfigurarFila injeta a fila de execução unificada (briefing 0108,
-// ADR-0028) e registra o execqueue.Runner do kind "job" -- chamado pelo boot
-// do processo (cmd/mymediadb/main.go). Sem isto, Executar devolve
-// ErrFilaNaoConfigurada. Mesmo padrão de nome de
-// scanner.Manager.ConfigurarFila (consistência de convenção no projeto); o
-// Runner registrado é jobRunner{m} (ver o tipo, abaixo) -- não o próprio
-// *Manager -- por causa do conflito de nome de método Executar (ver a nota
-// em jobRunner).
+// ConfigurarFila injects the unified execution queue (ADR-0028) and registers
+// the execqueue.Runner of the "job" kind -- called by the process boot
+// (cmd/mymediadb/main.go). Without it, Executar returns ErrFilaNaoConfigurada.
+// Same naming pattern as scanner.Manager.ConfigurarFila (convention
+// consistency across the project); the registered Runner is jobRunner{m} (see
+// the type, below) -- not *Manager itself -- because of the Executar method
+// name clash (see the note on jobRunner).
 func (m *Manager) ConfigurarFila(fila *execqueue.Manager) {
 	m.fila = fila
 	fila.RegistrarRunner(execqueue.KindJob, jobRunner{m})
 }
 
-// JobConfigPatch é o patch PARCIAL de PATCH .../jobs/{id}: Enabled nil =
-// inalterado; ScheduleCronSet=false = inalterado; ScheduleCronSet=true com
-// ScheduleCron nil = LIMPA o agendamento (job vira só-manual); com
-// ScheduleCron não-nil = novo valor (validado como cron de 5 campos).
+// JobConfigPatch is the PARTIAL patch of PATCH .../jobs/{id}: Enabled nil =
+// unchanged; ScheduleCronSet=false = unchanged; ScheduleCronSet=true with
+// ScheduleCron nil = CLEARS the schedule (the job becomes manual-only); with a
+// non-nil ScheduleCron = the new value (validated as a 5-field cron).
 type JobConfigPatch struct {
 	Enabled         *bool
 	ScheduleCronSet bool
 	ScheduleCron    *string
 }
 
-// ── Leitura/config ───────────────────────────────────────────────────────────
+// ── Read/config ──────────────────────────────────────────────────────────────
 
-// Listar devolve todos os job_definition (nunca vazio após a migration 0011 —
-// sempre tem o seed backup_vacuum), ordem estável.
+// Listar returns every job_definition (never empty after migration 0011 —
+// there is always the backup_vacuum seed), in a stable order.
 func (m *Manager) Listar(ctx context.Context) ([]sqlcgen.JobDefinition, error) {
 	return m.leitura().ListarJobDefinitions(ctx)
 }
 
-// Obter devolve um job_definition por id. ErrJobNaoEncontrado quando o id não
-// existe.
+// Obter returns a job_definition by id. ErrJobNaoEncontrado when the id does
+// not exist.
 func (m *Manager) Obter(ctx context.Context, id string) (sqlcgen.JobDefinition, error) {
 	def, err := m.leitura().ObterJobDefinition(ctx, id)
 	if err != nil {
@@ -132,11 +130,12 @@ func (m *Manager) Obter(ctx context.Context, id string) (sqlcgen.JobDefinition, 
 	return def, nil
 }
 
-// AtualizarConfig aplica o patch parcial de enabled/schedule_cron, recalcula
-// next_run_at (via ProximaExecucao) e persiste — tudo em UMA linha final (a
-// query sqlc sempre grava as 3 colunas; o merge acontece aqui, em Go).
-// ErrJobNaoEncontrado se o id não existe; ErrCronInvalido se schedule_cron não
-// parseia (o estado anterior NÃO é alterado nesse caso).
+// AtualizarConfig applies the partial patch of enabled/schedule_cron,
+// recalculates next_run_at (via ProximaExecucao) and persists it — all in ONE
+// final row (the sqlc query always writes the 3 columns; the merge happens
+// here, in Go). ErrJobNaoEncontrado if the id does not exist; ErrCronInvalido
+// if schedule_cron does not parse (the previous state is NOT changed in that
+// case).
 func (m *Manager) AtualizarConfig(ctx context.Context, id string, patch JobConfigPatch) (sqlcgen.JobDefinition, error) {
 	atual, err := m.Obter(ctx, id)
 	if err != nil {
@@ -172,19 +171,18 @@ func (m *Manager) AtualizarConfig(ctx context.Context, id string, patch JobConfi
 	})
 }
 
-// Historico devolve a página de queue_item (kind='job') do job `id`, mais
-// recente primeiro por enqueued_at. `before` nil = primeira página; não-nil =
-// pagina para trás (enqueued_at estritamente menor que o cursor).
-// ErrJobNaoEncontrado se o id não existe.
+// Historico returns the page of queue_item (kind='job') for job `id`, most
+// recent first by enqueued_at. `before` nil = first page; non-nil = page
+// backwards (enqueued_at strictly smaller than the cursor).
+// ErrJobNaoEncontrado if the id does not exist.
 //
-// Desde o briefing 0108/ADR-0028 (CAMADA 3): o histórico vive em queue_item,
-// não mais em job_execution. A query ListarQueueItemsPorKindRef (camada 1)
-// não tem suporte NATIVO a cursor (`WHERE enqueued_at < ?`) como
-// ListarJobExecucoes tinha via sqlc.narg('before') -- por isso o filtro do
-// cursor é aplicado AQUI, em Go, sobre a listagem completa (LIMIT -1, sem
-// teto): o cap de retenção (podarHistorico, manterExecucoes=100) garante que
-// isso nunca itera mais que 100 linhas por job, então não é hot-path de
-// performance.
+// Since ADR-0028 (LAYER 3): the history lives in queue_item, no longer in
+// job_execution. The ListarQueueItemsPorKindRef query (layer 1) has no NATIVE
+// cursor support (`WHERE enqueued_at < ?`) the way ListarJobExecucoes did via
+// sqlc.narg('before') -- that is why the cursor filter is applied HERE, in Go,
+// over the full listing (LIMIT -1, no cap): the retention cap (podarHistorico,
+// manterExecucoes=100) guarantees this never iterates more than 100 rows per
+// job, so it is not a performance hot path.
 func (m *Manager) Historico(ctx context.Context, id string, limit int, before *string) ([]sqlcgen.QueueItem, error) {
 	if _, err := m.Obter(ctx, id); err != nil {
 		return nil, err
@@ -210,23 +208,21 @@ func (m *Manager) Historico(ctx context.Context, id string, limit int, before *s
 	return out, nil
 }
 
-// Rodando devolve, para cada job_id com um item ATIVO (queued OU running) na
-// fila unificada, running=true — usado por GET /jobs para compor o campo
-// `running` de cada item. Desde o briefing 0108/ADR-0028 (CAMADA 3), a fonte
-// da verdade de "rodando" é o execqueue, não mais um mapa em memória do
-// próprio Manager.
+// Rodando returns, for each job_id with an ACTIVE item (queued OR running) in
+// the unified queue, running=true — used by GET /jobs to compose the `running`
+// field of each item. Since ADR-0028 (LAYER 3), the source of truth for
+// "running" is execqueue, no longer an in-memory map of the Manager itself.
 //
-// Decisão: para CADA job_definition, consulta execqueue.Manager.Status
-// (camada 1, já pública) em vez de tentar uma query só de "running" -- a
-// lista de jobs nunca é grande (hoje 4 jobs seedados), então N chamadas
-// pequenas não compensam o SQL extra de uma query dedicada
-// (ListarQueueItemsRunningPorKind). Trata queued+running como "rodando"
-// (não SÓ running de fato) -- MESMA leitura de scanner.Manager.Status (ver o
-// comentário lá: "Running=true tanto para 'queued' quanto 'running'"),
-// necessária para o padrão de polling usado nos testes/handlers
-// (aguardarJobEstado/aguardarRodando): um item recém-enfileirado (ainda
-// atrás de outro na fila global de concorrência 1) não pode parecer "já
-// terminou" só porque o worker ainda não pegou ele.
+// Decision: for EACH job_definition it queries execqueue.Manager.Status (layer
+// 1, already public) instead of trying a "running only" query -- the list of
+// jobs is never large (4 seeded jobs today), so N small calls are not worth the
+// extra SQL of a dedicated query (ListarQueueItemsRunningPorKind). It treats
+// queued+running as "running" (not ONLY actually running) -- the SAME reading
+// as scanner.Manager.Status (see the comment there: "Running=true both for
+// 'queued' and 'running'"), which is necessary for the polling pattern used in
+// the tests/handlers (aguardarJobEstado/aguardarRodando): a freshly enqueued
+// item (still behind another one in the global concurrency-1 queue) cannot look
+// like it "already finished" just because the worker has not picked it up yet.
 func (m *Manager) Rodando() map[string]bool {
 	out := make(map[string]bool)
 	if m.fila == nil {
@@ -251,21 +247,23 @@ func (m *Manager) Rodando() map[string]bool {
 	return out
 }
 
-// ── Execução ─────────────────────────────────────────────────────────────────
+// ── Execution ────────────────────────────────────────────────────────────────
 
-// Executar valida SINCRONAMENTE (job existe? Handler registrado?) e então
-// ENFILEIRA a execução do job `jobID` na fila unificada (briefing 0108,
-// ADR-0028) — não roda mais nada em goroutine própria (isso passou a ser
-// responsabilidade do worker de internal/execqueue, que chama de volta este
-// Manager via executarViaRunner, o método que satisfaz execqueue.Runner).
-// trigger é "manual" (POST .../run) ou "schedule" (agendador).
+// Executar validates SYNCHRONOUSLY (does the job exist? is a Handler
+// registered?) and then ENQUEUES the execution of job `jobID` in the unified
+// queue (ADR-0028) — it no longer runs anything in its own goroutine (that
+// became the responsibility of the internal/execqueue worker, which calls this
+// Manager back via executarViaRunner, the method that satisfies
+// execqueue.Runner). trigger is "manual" (POST .../run) or "schedule" (the
+// scheduler).
 //
-// ErrJobNaoEncontrado se o id não existe em job_definition; ErrJobDesconhecido
-// se não há Handler registrado (job seedado, binário sem o handler);
-// ErrJobEmExecucao se já há um item queued/running para este job na fila
-// (execqueue.ErrJaEnfileirado mapeado ao erro sentinela público de sempre —
-// o handler HTTP, respondJobError, já trata isso como 409, sem mudança);
-// ErrFilaNaoConfigurada se ConfigurarFila nunca foi chamado.
+// ErrJobNaoEncontrado if the id does not exist in job_definition;
+// ErrJobDesconhecido if there is no registered Handler (job seeded, binary
+// without the handler); ErrJobEmExecucao if there is already a queued/running
+// item for this job in the queue (execqueue.ErrJaEnfileirado mapped to the same
+// public sentinel error as always — the HTTP handler, respondJobError, already
+// treats that as 409, no change); ErrFilaNaoConfigurada if ConfigurarFila was
+// never called.
 func (m *Manager) Executar(ctx context.Context, jobID, trigger string) (string, error) {
 	if _, err := m.Obter(ctx, jobID); err != nil {
 		return "", err
@@ -287,21 +285,21 @@ func (m *Manager) Executar(ctx context.Context, jobID, trigger string) (string, 
 	return id, nil
 }
 
-// executarViaRunner implementa execqueue.Runner: é chamado pelo worker
-// sequencial da fila (bem depois do Enqueue original de Executar), com só o
-// refID (job_definition.id) e o trigger em mãos. job.Handler.Executar não
-// tem noção de progresso — progresso nunca é reportado aqui (fica 0/0,
-// aceitável: job_execution nunca teve progresso antes deste briefing
-// também). Pânico dentro do Handler é recuperado pelo PRÓPRIO execqueue
-// (executarComRecover) -- não duplicamos recover aqui (mesmo espírito de
+// executarViaRunner implements execqueue.Runner: it is called by the queue's
+// sequential worker (well after the original Enqueue of Executar), with only
+// the refID (job_definition.id) and the trigger at hand. job.Handler.Executar
+// has no notion of progress — progress is never reported here (it stays 0/0,
+// acceptable: job_execution never had progress before this layer either). A
+// panic inside the Handler is recovered by execqueue ITSELF
+// (executarComRecover) -- we do not duplicate recover here (same spirit as
 // scanner.Manager.Executar).
 //
-// Antes de devolver ao execqueue, faz o que é ESPECÍFICO DO DOMÍNIO job (não
-// é responsabilidade do execqueue genérico): espelha o resultado em
-// job_definition (atualizarDefinicaoAoFim, recalcula next_run_at) e poda o
-// histórico (podarHistorico) — SEMPRE, tanto em sucesso quanto erro. O
-// execqueue já cuida de IniciarQueueItem/FinalizarQueueItem ao redor desta
-// chamada; este método só cuida do que é dele.
+// Before returning to execqueue, it does what is SPECIFIC TO THE job DOMAIN
+// (not the responsibility of the generic execqueue): mirrors the result into
+// job_definition (atualizarDefinicaoAoFim, recalculates next_run_at) and prunes
+// the history (podarHistorico) — ALWAYS, on success and on error. execqueue
+// already takes care of IniciarQueueItem/FinalizarQueueItem around this call;
+// this method only handles what is its own.
 func (m *Manager) executarViaRunner(ctx context.Context, refID, _ string, _ execqueue.ProgressoFunc) (string, error) {
 	def, err := m.leitura().ObterJobDefinition(ctx, refID)
 	if err != nil {
@@ -317,8 +315,8 @@ func (m *Manager) executarViaRunner(ctx context.Context, refID, _ string, _ exec
 
 	handler, ok := m.Registry.Get(refID)
 	if !ok {
-		// Caso raro: o Handler sumiu entre o Enqueue e o worker chegar a
-		// processar o item (downgrade do binário no meio do caminho).
+		// Rare case: the Handler disappeared between the Enqueue and the worker
+		// getting to process the item (binary downgrade along the way).
 		err := fmt.Errorf("nenhum handler registrado para o job %q", refID)
 		m.atualizarDefinicaoAoFim(ctx, refID, "error", err.Error())
 		m.podarHistorico(ctx, refID)
@@ -339,27 +337,27 @@ func (m *Manager) executarViaRunner(ctx context.Context, refID, _ string, _ exec
 	return mensagem, execErr
 }
 
-// jobRunner é um adaptador ESTREITO (não expõe estado próprio, só embrulha
-// *Manager) para satisfazer execqueue.Runner: a interface exige um método
-// chamado literalmente `Executar(ctx, refID, trigger string, progresso
-// ProgressoFunc) (string, error)` -- só *Manager* já expõe um `Executar`
-// público com OUTRA assinatura (a API síncrona de enfileiramento acima, `
-// Executar(ctx, jobID, trigger string) (string, error)`), e Go não permite
-// dois métodos com o mesmo nome no mesmo tipo (não é sobrecarga por
-// assinatura). scanner.Manager não precisou deste adaptador porque sua API
-// síncrona se chama Start, não Executar -- job.Manager já nasceu com esse
-// nome (briefing 0052, anterior a este). RegistrarRunner recebe um jobRunner
-// (ver ConfigurarFila), que só repassa para executarViaRunner.
+// jobRunner is a NARROW adapter (it exposes no state of its own, it only wraps
+// *Manager) to satisfy execqueue.Runner: the interface demands a method
+// literally named `Executar(ctx, refID, trigger string, progresso ProgressoFunc)
+// (string, error)` -- *Manager* already exposes a public `Executar` with
+// ANOTHER signature (the synchronous enqueueing API above,
+// `Executar(ctx, jobID, trigger string) (string, error)`), and Go does not allow
+// two methods with the same name on the same type (it is not overloading by
+// signature). scanner.Manager did not need this adapter because its synchronous
+// API is called Start, not Executar -- job.Manager was born with that name
+// (before this layer). RegistrarRunner receives a jobRunner (see
+// ConfigurarFila), which only forwards to executarViaRunner.
 type jobRunner struct{ m *Manager }
 
 func (r jobRunner) Executar(ctx context.Context, refID, trigger string, progresso execqueue.ProgressoFunc) (string, error) {
 	return r.m.executarViaRunner(ctx, refID, trigger, progresso)
 }
 
-// atualizarDefinicaoAoFim espelha o resultado em job_definition e recalcula
-// next_run_at — SEMPRE (independente do trigger): cron.Next(agora) aponta
-// para o próximo horário FUTURO, então uma execução manual nunca "pula" o
-// próximo agendado.
+// atualizarDefinicaoAoFim mirrors the result into job_definition and
+// recalculates next_run_at — ALWAYS (regardless of the trigger): cron.Next(now)
+// points to the next FUTURE time, so a manual execution never "skips" the next
+// scheduled one.
 func (m *Manager) atualizarDefinicaoAoFim(ctx context.Context, jobID, status, msg string) {
 	def, err := m.leitura().ObterJobDefinition(ctx, jobID)
 	if err != nil {
@@ -380,14 +378,14 @@ func (m *Manager) atualizarDefinicaoAoFim(ctx context.Context, jobID, status, ms
 	}
 }
 
-// podarHistorico apaga o excedente de queue_item (kind='job', ref_id=jobID)
-// além de manterExecucoes para o job — best-effort, chamada após cada
-// execução finalizar. Desde o briefing 0108/ADR-0028 (CAMADA 3): antes
-// operava em job_execution (ListarJobExecucaoIdsExcedentes/ApagarJobExecucao,
-// job.sql); agora usa o equivalente de internal/execqueue
-// (ListarQueueItemsExcedentesPorRef/ApagarQueueItem, queue_item.sql, camada
-// 1) -- mesmo padrão de duas queries simples (limitação do sqlc para poda em
-// UMA query DELETE...NOT IN, documentada em queue_item.sql).
+// podarHistorico deletes the excess of queue_item (kind='job', ref_id=jobID)
+// beyond manterExecucoes for the job — best-effort, called after every
+// execution finishes. Since ADR-0028 (LAYER 3) it no longer operates on
+// job_execution (ListarJobExecucaoIdsExcedentes/ApagarJobExecucao, job.sql); it
+// now uses the internal/execqueue equivalent
+// (ListarQueueItemsExcedentesPorRef/ApagarQueueItem, queue_item.sql, layer 1) --
+// the same two-simple-queries pattern (an sqlc limitation for pruning in a
+// single DELETE...NOT IN query, documented in queue_item.sql).
 func (m *Manager) podarHistorico(ctx context.Context, jobID string) {
 	ids, err := m.leitura().ListarQueueItemsExcedentesPorRef(ctx, sqlcgen.ListarQueueItemsExcedentesPorRefParams{
 		Kind: execqueue.KindJob, RefID: jobID, Offset: manterExecucoes,
@@ -404,14 +402,14 @@ func (m *Manager) podarHistorico(ctx context.Context, jobID string) {
 	}
 }
 
-// ── Agendador embutido ───────────────────────────────────────────────────────
+// ── Built-in scheduler ───────────────────────────────────────────────────────
 
-// RunScheduler roda o loop do agendador embutido: a cada pollInterval,
-// dispara (trigger="schedule") os jobs habilitados cujo next_run_at já
-// passou — best-effort (erro de um não impede os outros; ErrJobEmExecucao é
-// esperado e silencioso). Sai quando ctx é cancelado — o MESMO ctx do
-// signal.NotifyContext do main, para parar limpo junto do resto no
-// SIGINT/SIGTERM.
+// RunScheduler runs the loop of the built-in scheduler: every pollInterval it
+// triggers (trigger="schedule") the enabled jobs whose next_run_at has already
+// passed — best-effort (an error on one does not prevent the others;
+// ErrJobEmExecucao is expected and silent). It exits when ctx is canceled — the
+// SAME ctx of main's signal.NotifyContext, so it stops cleanly along with the
+// rest on SIGINT/SIGTERM.
 func (m *Manager) RunScheduler(ctx context.Context) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
@@ -425,9 +423,9 @@ func (m *Manager) RunScheduler(ctx context.Context) {
 	}
 }
 
-// tick consulta os jobs agendáveis vencidos e dispara cada um; chamado a cada
-// tick do ticker de RunScheduler (extraído para o teste poder chamar direto,
-// sem esperar o ticker).
+// tick queries the due schedulable jobs and triggers each of them; called on
+// every tick of the RunScheduler ticker (extracted so the test can call it
+// directly, without waiting for the ticker).
 func (m *Manager) tick(ctx context.Context) {
 	now := m.agora().Format(carimboFormato)
 	defs, err := m.leitura().ListarJobDefinitionsAgendaveis(ctx, sql.NullString{String: now, Valid: true})
@@ -442,11 +440,11 @@ func (m *Manager) tick(ctx context.Context) {
 	}
 }
 
-// ── Cron: validação e cálculo do próximo horário ─────────────────────────────
+// ── Cron: validation and next-time calculation ───────────────────────────────
 
-// ValidarCron valida uma expressão cron de 5 campos; vazia é válida (= sem
-// agendamento, job só-manual). Usada por AtualizarConfig para rejeitar (422)
-// uma expressão malformada ANTES de gravar.
+// ValidarCron validates a 5-field cron expression; empty is valid (= no
+// schedule, manual-only job). Used by AtualizarConfig to reject (422) a
+// malformed expression BEFORE writing it.
 func ValidarCron(expr string) error {
 	if expr == "" {
 		return nil
@@ -455,12 +453,12 @@ func ValidarCron(expr string) error {
 	return err
 }
 
-// ProximaExecucao calcula o próximo horário (UTC) a partir de `agora` quando
-// o job está enabled E tem schedule_cron não-vazio; nil nos demais casos (job
-// só-manual, desabilitado, ou cron inválido — chame ValidarCron antes se a
-// origem não for confiável). Único parser usado: cron.ParseStandard(...)
-// .Next(t) — o loop de disparo é sempre o nosso RunScheduler, nunca o
-// scheduler embutido da lib robfig/cron.
+// ProximaExecucao calculates the next time (UTC) from `agora` when the job is
+// enabled AND has a non-empty schedule_cron; nil in the other cases
+// (manual-only job, disabled, or invalid cron — call ValidarCron first if the
+// origin is not trustworthy). The only parser used is cron.ParseStandard(...)
+// .Next(t) — the triggering loop is always our RunScheduler, never the
+// scheduler built into the robfig/cron lib.
 func ProximaExecucao(enabled bool, scheduleCron string, agora time.Time) *time.Time {
 	if !enabled || scheduleCron == "" {
 		return nil
@@ -473,8 +471,8 @@ func ProximaExecucao(enabled bool, scheduleCron string, agora time.Time) *time.T
 	return &next
 }
 
-// formatarProxima converte o *time.Time de ProximaExecucao no sql.NullString
-// gravável em next_run_at (NULL quando nil).
+// formatarProxima converts the *time.Time from ProximaExecucao into the
+// sql.NullString writable to next_run_at (NULL when nil).
 func formatarProxima(t *time.Time) sql.NullString {
 	if t == nil {
 		return sql.NullString{}

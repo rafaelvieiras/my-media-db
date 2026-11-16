@@ -10,14 +10,14 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/scanner"
 )
 
-// startScanResponse é o corpo do 202 de POST /api/v1/library/{id}/scan.
+// startScanResponse is the body of the 202 of POST /api/v1/library/{id}/scan.
 type startScanResponse struct {
 	JobID  string `json:"job_id"`
 	Status string `json:"status"`
 }
 
-// scanStatusResponse é o corpo de GET /api/v1/library/{id}/scan. StartedAt e
-// LastError são ponteiros para sair como null/omitidos quando ausentes.
+// scanStatusResponse is the body of GET /api/v1/library/{id}/scan. StartedAt and
+// LastError are pointers so they come out as null/omitted when absent.
 type scanStatusResponse struct {
 	Running    bool    `json:"running"`
 	FilesSeen  int     `json:"files_seen"`
@@ -26,9 +26,9 @@ type scanStatusResponse struct {
 	LastError  *string `json:"last_error,omitempty"`
 }
 
-// startScan trata POST /api/v1/library/{id}/scan: dispara o scan em background.
-// 202 com o id do job; 404 se o datasource não existe; 409 se já há scan em
-// andamento ou se o datasource está offline.
+// startScan handles POST /api/v1/library/{id}/scan: it triggers the scan in the
+// background. 202 with the job id; 404 if the datasource does not exist; 409 if there is
+// already a scan running or if the datasource is offline.
 func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 	if s.libraryUnavailable(w) {
 		return
@@ -36,7 +36,7 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	src, err := s.library.Obter(r.Context(), id)
 	if err != nil {
-		respondLibraryError(w, err) // 404 not_found quando o id não existe
+		respondLibraryError(w, err) // 404 not_found when the id does not exist
 		return
 	}
 
@@ -48,8 +48,8 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, startScanResponse{JobID: jobID, Status: "accepted"})
 }
 
-// getScanStatus trata GET /api/v1/library/{id}/scan: devolve o progresso do job.
-// 404 se o datasource não existe.
+// getScanStatus handles GET /api/v1/library/{id}/scan: it returns the job
+// progress. 404 if the datasource does not exist.
 func (s *Server) getScanStatus(w http.ResponseWriter, r *http.Request) {
 	if s.libraryUnavailable(w) {
 		return
@@ -76,7 +76,7 @@ func (s *Server) getScanStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// respondScanError mapeia os erros do scanner ao envelope padrão.
+// respondScanError maps the scanner errors to the standard envelope.
 func respondScanError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, scanner.ErrScanEmAndamento):

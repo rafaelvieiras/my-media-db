@@ -11,11 +11,11 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// novoClientDeTeste monta um Client apontando para um servidor fake
-// (httptest.Server), SEM nenhum sleep real do rate limiter (intervalo=0) --
-// mesmo padrão de internal/provider/musicbrainz/musicbrainz_test.go
-// novoClientDeTeste. O comportamento do rate limiter em si é coberto
-// isoladamente por ratelimit_test.go.
+// novoClientDeTeste builds a Client pointing at a fake server
+// (httptest.Server), WITHOUT any real sleep from the rate limiter (interval=0) --
+// the same pattern as internal/provider/musicbrainz/musicbrainz_test.go
+// novoClientDeTeste. The behavior of the rate limiter itself is covered in
+// isolation by ratelimit_test.go.
 func novoClientDeTeste(baseURL, clientKey string) *Client {
 	return &Client{
 		cred:       Credencial{ClientKey: clientKey},
@@ -240,8 +240,8 @@ func TestCoreProviderStubs_NaoQuebram(t *testing.T) {
 	}
 }
 
-// Confirma que a URL montada de fato usa a base configurada (não a
-// constante padrão), mesmo espírito de outros pacotes que injetam baseURL.
+// Confirms that the assembled URL really uses the configured base (not the
+// default constant), in the same spirit as other packages that inject baseURL.
 func TestGetLookup_UsaBaseURLInjetada(t *testing.T) {
 	var recebida *url.URL
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -260,10 +260,9 @@ func TestGetLookup_UsaBaseURLInjetada(t *testing.T) {
 	}
 }
 
-// Garante que o Client satisfaz mesmo a capacidade provider.FingerprintProvider
-// (contrato exato do briefing 0126) -- redundante em runtime com a asserção
-// de pacote em acoustid.go, mas mantido aqui como documentação executável
-// local ao teste.
+// Guarantees that the Client satisfies the provider.FingerprintProvider
+// capability as well -- redundant at runtime with the package assertion in
+// acoustid.go, but kept here as executable documentation local to the test.
 func TestIdentificarPorFingerprint_TipoDeRetorno(t *testing.T) {
 	var _ provider.FingerprintProvider = (*Client)(nil)
 }

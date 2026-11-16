@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// entityListerFake é um EntityLister fake, sem tocar banco.
+// entityListerFake is a fake EntityLister, without touching the database.
 type entityListerFake struct {
 	ids []string
 	err error
@@ -17,8 +17,8 @@ func (f *entityListerFake) ListarEntitiesComMediaFilePresente(context.Context) (
 	return f.ids, f.err
 }
 
-// baixadorFake é um TrailerTemaBaixador fake: devolve o resultado
-// configurado por entity id, para trailer e tema separadamente.
+// baixadorFake is a fake TrailerTemaBaixador: it returns the configured result
+// per entity id, for trailer and theme separately.
 type baixadorFake struct {
 	ytdlpDisponivel bool
 	ytdlpDetalhe    string
@@ -69,8 +69,8 @@ func TestNomeEstavel(t *testing.T) {
 	}
 }
 
-// TestExecutarProcessaTodasEResume cobre o caminho feliz: trailer/tema
-// baixados em algumas entities, resumo reflete os totais.
+// TestExecutarProcessaTodasEResume covers the happy path: trailer/theme
+// downloaded for some entities, the summary reflects the totals.
 func TestExecutarProcessaTodasEResume(t *testing.T) {
 	entities := &entityListerFake{ids: []string{"e1", "e2", "e3"}}
 	baix := novoBaixadorFakeDisponivel()
@@ -92,8 +92,8 @@ func TestExecutarProcessaTodasEResume(t *testing.T) {
 	}
 }
 
-// TestExecutarErroDeUmaEntityNaoAbortaAsDemais: uma falha REAL (rede/banco)
-// numa entity não impede o processamento das outras -- best-effort.
+// TestExecutarErroDeUmaEntityNaoAbortaAsDemais: a REAL failure (network/database)
+// on one entity does not prevent the others from being processed -- best-effort.
 func TestExecutarErroDeUmaEntityNaoAbortaAsDemais(t *testing.T) {
 	entities := &entityListerFake{ids: []string{"e1", "e2"}}
 	baix := novoBaixadorFakeDisponivel()
@@ -116,7 +116,7 @@ func TestExecutarErroDeUmaEntityNaoAbortaAsDemais(t *testing.T) {
 	}
 }
 
-// TestExecutarSemEntitiesElegiveis: universo vazio não é erro.
+// TestExecutarSemEntitiesElegiveis: an empty universe is not an error.
 func TestExecutarSemEntitiesElegiveis(t *testing.T) {
 	h := New(&entityListerFake{ids: nil}, novoBaixadorFakeDisponivel())
 	msg, err := h.Executar(context.Background(), nil)
@@ -128,8 +128,8 @@ func TestExecutarSemEntitiesElegiveis(t *testing.T) {
 	}
 }
 
-// TestExecutarErroDeListagemPropaga: falha ao listar o universo elegível
-// (banco fora do ar) propaga o erro -- diferente de falha por-entity.
+// TestExecutarErroDeListagemPropaga: a failure to list the eligible universe
+// (database down) propagates the error -- unlike a per-entity failure.
 func TestExecutarErroDeListagemPropaga(t *testing.T) {
 	entities := &entityListerFake{err: errors.New("banco indisponível")}
 	h := New(entities, novoBaixadorFakeDisponivel())
@@ -138,9 +138,9 @@ func TestExecutarErroDeListagemPropaga(t *testing.T) {
 	}
 }
 
-// TestExecutarYtdlpIndisponivelNaoTentaNada cobre o critério do briefing
-// 0104 §4: yt-dlp indisponível é checado UMA VEZ no início -- sem erro
-// fatal, mensagem informativa, NENHUMA entity é sequer listada/tentada.
+// TestExecutarYtdlpIndisponivelNaoTentaNada covers the criterion for the yt-dlp
+// availability check: an unavailable yt-dlp is checked ONCE at the start -- no
+// fatal error, an informative message, and NO entity is even listed/tried.
 func TestExecutarYtdlpIndisponivelNaoTentaNada(t *testing.T) {
 	entities := &entityListerFake{ids: []string{"e1", "e2"}}
 	baix := novoBaixadorFakeDisponivel()

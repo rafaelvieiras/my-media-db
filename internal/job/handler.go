@@ -1,11 +1,11 @@
-// Package job é a fundação do sistema de jobs (briefing 0052): tipos de job
-// registrados em código Go (Handler), configuração dinâmica e histórico
-// genérico persistidos no banco (job_definition/job_execution), agendador
-// embutido (goroutine + ticker, sem depender de cron do SO). É a base
-// explícita do futuro sistema de plugins: um novo tipo de job só precisa
-// registrar seu Handler (Registry) e semear uma linha de job_definition — sem
-// tocar o schema nem os endpoints (ADR-0005: núcleo agnóstico ao formato do
-// config_json de cada tipo).
+// Package job is the foundation of the job system: job types registered in Go
+// code (Handler), dynamic configuration and generic history persisted in the
+// database (job_definition/job_execution), and a built-in scheduler (goroutine
+// + ticker, without depending on the OS cron). It is the explicit basis for the
+// future plugin system: a new job type only has to register its Handler
+// (Registry) and seed a job_definition row — without touching the schema or the
+// endpoints (ADR-0005: a core that is agnostic to the config_json format of
+// each type).
 package job
 
 import (
@@ -13,21 +13,21 @@ import (
 	"encoding/json"
 )
 
-// Handler é o contrato que QUALQUER tipo de job implementa — o job semente
-// backup_vacuum (internal/job/backup), o futuro job de saúde da biblioteca,
-// um eventual plugin de terceiro, etc. Nome() é o slug ESTÁVEL que casa com
-// job_definition.id (dado curado via seed/migration, nunca gerado em
-// runtime — como Handler.Nome() de provider.Provider casa com o nome da
-// fonte).
+// Handler is the contract that ANY job type implements — the seed job
+// backup_vacuum (internal/job/backup), the future library health job, an
+// eventual third-party plugin, and so on. Nome() is the STABLE slug that
+// matches job_definition.id (data curated via seed/migration, never generated
+// at runtime — just as Handler.Nome() of provider.Provider matches the name of
+// the source).
 type Handler interface {
-	// Nome devolve o slug estável do tipo de job (ex.: "backup_vacuum").
+	// Nome returns the stable slug of the job type (e.g. "backup_vacuum").
 	Nome() string
 
-	// Executar roda o trabalho de fato. cfg é o config_json BRUTO da
-	// definição (pode ser vazio/nil quando a config está ausente) — cada
-	// Handler interpreta o seu próprio formato, namespaced, sem o núcleo
-	// conhecê-lo. Em sucesso, mensagem vira job_execution.message (texto
-	// curto, ex.: "backup gravado em ... (7 mantidos)"); em erro, err vira a
-	// mensagem de falha (sem stack trace).
+	// Executar does the actual work. cfg is the RAW config_json of the
+	// definition (it may be empty/nil when the config is absent) — each
+	// Handler interprets its own format, namespaced, without the core knowing
+	// it. On success, mensagem becomes job_execution.message (a short text,
+	// e.g. "backup gravado em ... (7 mantidos)"); on error, err becomes the
+	// failure message (no stack trace).
 	Executar(ctx context.Context, cfg json.RawMessage) (mensagem string, err error)
 }

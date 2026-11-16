@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 )
 
-// normalizarPath transforma um caminho informado pelo usuário em sua forma
-// absoluta e limpa (filepath.Abs já aplica filepath.Clean). Guardar sempre a
-// forma normalizada é o que faz o UNIQUE de library_source (briefing 0007)
-// casar: dois caminhos como "/a/b" e "/a/b/../b" viram a MESMA string e a
-// duplicata não passa mascarada.
+// normalizarPath turns a path informed by the user into its absolute and clean
+// form (filepath.Abs already applies filepath.Clean). Always storing the
+// normalized form is what makes the UNIQUE constraint of library_source match:
+// two paths like "/a/b" and "/a/b/../b" become the SAME string and the
+// duplicate does not slip through disguised.
 func normalizarPath(p string) (string, error) {
 	if p == "" {
 		return "", errors.New("path vazio")
@@ -23,16 +23,16 @@ func normalizarPath(p string) (string, error) {
 	return abs, nil
 }
 
-// validarPath valida que o caminho JÁ normalizado existe, é um diretório e é
-// legível. Devolve o erro de domínio correspondente (mapeado para 422 no
-// handler). A checagem de legibilidade tenta abrir o diretório e ler uma
-// entrada: um diretório com permissão 0000 falha já no os.Open (precisa de
-// leitura para listar), o que cobre o caso "sem permissão".
+// validarPath validates that the ALREADY normalized path exists, is a
+// directory and is readable. It returns the corresponding domain error (mapped
+// to 422 in the handler). The readability check tries to open the directory and
+// read one entry: a directory with mode 0000 already fails at os.Open (it needs
+// read permission to list), which covers the "no permission" case.
 func validarPath(abs string) error {
 	info, err := os.Stat(abs)
 	if err != nil {
-		// Não existe (ou erro de acesso ao próprio stat): tratamos como
-		// caminho inválido/inexistente.
+		// Does not exist (or an error accessing the stat itself): treated as
+		// an invalid/nonexistent path.
 		if os.IsPermission(err) {
 			return ErrPathIlegivel
 		}
@@ -46,17 +46,18 @@ func validarPath(abs string) error {
 		return ErrPathIlegivel
 	}
 	defer func() { _ = f.Close() }()
-	// ReadDir(1) devolve io.EOF para um diretório legível porém vazio; isso
-	// NÃO é falha. Qualquer outro erro (ex.: permissão negada) sim.
+	// ReadDir(1) returns io.EOF for a readable but empty directory; that is
+	// NOT a failure. Any other error (e.g.: permission denied) is.
 	if _, err := f.ReadDir(1); err != nil && !errors.Is(err, io.EOF) {
 		return ErrPathIlegivel
 	}
 	return nil
 }
 
-// avaliarState deriva o estado online/offline de uma fonte por um stat barato
-// do path, SEM persistir (decisão 0008 sec.6: persistir offline é do 0009).
-// online = existe + é diretório + legível; qualquer falha => offline.
+// avaliarState derives the online/offline state of a source through a cheap
+// stat of the path, WITHOUT persisting it (API decision, §6: persisting
+// offline belongs to the scanner). online = exists + is a directory + is
+// readable; any failure => offline.
 func avaliarState(abs string) string {
 	info, err := os.Stat(abs)
 	if err != nil || !info.IsDir() {

@@ -11,15 +11,15 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Testes de POST /entities/{id}/download-missing-artwork (briefing 0059):
-// baixa a melhor arte disponível para os kinds `artwork:<kind>` que aparecem
-// em catalog_completeness.missing (recalculado ao vivo). Sem rede real: o
-// download aponta a um httptest allowlistado, mesmo padrão de
+// Tests for POST /entities/{id}/download-missing-artwork:
+// downloads the best artwork available for the `artwork:<kind>` kinds that show up
+// in catalog_completeness.missing (recalculated live). No real network: the
+// download points at an allowlisted httptest server, the same pattern as
 // artwork_select_test.go.
 
-// setupDownloadMissingServer sobe um Server com assetsDir temporário e a
-// allowlist do proxy restrita ao host informado, devolvendo o handler e o
-// *db.DB para os testes semearem entity/config/inventário.
+// setupDownloadMissingServer starts a Server with a temporary assetsDir and the
+// proxy allowlist restricted to the given host, returning the handler and the
+// *db.DB so the tests can seed entity/config/inventory.
 func setupDownloadMissingServer(t *testing.T, hostPermitido string) (http.Handler, *db.DB) {
 	t.Helper()
 	dir := t.TempDir()
@@ -41,9 +41,9 @@ func setupDownloadMissingServer(t *testing.T, hostPermitido string) (http.Handle
 	return h, database
 }
 
-// configurarCompletudeArtwork faz o PUT de uma config de completude que só
-// exige os kinds de arte dados (movie), sem os demais campos -- para isolar
-// o teste do download de arte de qualquer outro campo faltando.
+// configurarCompletudeArtwork PUTs a completeness config that only requires the
+// given artwork kinds (movie), without the other fields -- to isolate the artwork
+// download test from any other missing field.
 func configurarCompletudeArtwork(t *testing.T, h http.Handler, kinds ...string) {
 	t.Helper()
 	corpo := catalogCompletenessSettings{"movie": {Artwork: kinds}}
@@ -53,8 +53,8 @@ func configurarCompletudeArtwork(t *testing.T, h http.Handler, kinds ...string) 
 	}
 }
 
-// semearInventarioFanart grava o envelope de inventário fanart.tv (mesmo
-// formato de artwork_test.go) para a entity, com os kinds/candidatas dadas.
+// semearInventarioFanart writes the fanart.tv inventory envelope (same format as
+// artwork_test.go) for the entity, with the given kinds/candidates.
 func semearInventarioFanart(t *testing.T, d *db.DB, entityID string, inv map[string][]provider.ArteInventario) {
 	t.Helper()
 	envelope, err := json.Marshal(map[string]any{provider.ChaveEnvelopeInventarioArtes: inv})
@@ -64,7 +64,7 @@ func semearInventarioFanart(t *testing.T, d *db.DB, entityID string, inv map[str
 	semearMediaExternal(t, d, "me-fanart-"+entityID, entityID, "fanarttv", string(envelope))
 }
 
-// decodeDownloadMissingResult decodifica a resposta do endpoint.
+// decodeDownloadMissingResult decodes the endpoint response.
 func decodeDownloadMissingResult(t *testing.T, body []byte) downloadMissingArtworkResultDTO {
 	t.Helper()
 	var out downloadMissingArtworkResultDTO
@@ -74,9 +74,9 @@ func decodeDownloadMissingResult(t *testing.T, body []byte) downloadMissingArtwo
 	return out
 }
 
-// TestDownloadMissingArtworkBaixaMultiplosKinds cobre o critério §5: com
-// inventário fanart.tv disponível para os DOIS kinds faltando (poster,
-// fanart), baixa os dois e materializa dois assets origin=external novos.
+// TestDownloadMissingArtworkBaixaMultiplosKinds covers criterion §5: with a fanart.tv
+// inventory available for BOTH missing kinds (poster, fanart), it downloads both and
+// materializes two new origin=external assets.
 func TestDownloadMissingArtworkBaixaMultiplosKinds(t *testing.T) {
 	srv := servidorImagem(t, nil)
 	h, d := setupDownloadMissingServer(t, hostDe(t, srv.URL))
@@ -113,16 +113,16 @@ func TestDownloadMissingArtworkBaixaMultiplosKinds(t *testing.T) {
 	}
 }
 
-// TestDownloadMissingArtworkKindSemOpcao cobre o critério §5: um kind
-// faltando SEM nenhuma opção nos providers cai em `unavailable`, sem erro; o
-// outro kind (com opção) ainda baixa normalmente.
+// TestDownloadMissingArtworkKindSemOpcao covers criterion §5: a missing kind with NO
+// option in the providers falls into `unavailable`, without an error; the other kind
+// (with an option) still downloads normally.
 func TestDownloadMissingArtworkKindSemOpcao(t *testing.T) {
 	srv := servidorImagem(t, nil)
 	h, d := setupDownloadMissingServer(t, hostDe(t, srv.URL))
 	configurarCompletudeArtwork(t, h, kindPoster, kindClearart)
 	semearEntity(t, d, "e1", "movie", "Filme Obscuro")
-	// Só poster tem candidata no inventário -- clearart não aparece em lugar
-	// nenhum (nem inventário, nem camada externa).
+	// Only poster has a candidate in the inventory -- clearart does not show up
+	// anywhere (neither inventory nor external layer).
 	semearInventarioFanart(t, d, "e1", map[string][]provider.ArteInventario{
 		kindPoster: {{URL: srv.URL + "/img", Likes: 1}},
 	})
@@ -140,17 +140,17 @@ func TestDownloadMissingArtworkKindSemOpcao(t *testing.T) {
 	}
 }
 
-// TestDownloadMissingArtworkItemCompletoNaoTocaNada cobre o critério §5: item
-// já completo (todos os kinds exigidos já têm asset local) devolve as duas
-// listas vazias, sem baixar nada.
+// TestDownloadMissingArtworkItemCompletoNaoTocaNada covers criterion §5: an
+// already complete item (all required kinds already have a local asset) returns both
+// lists empty, without downloading anything.
 func TestDownloadMissingArtworkItemCompletoNaoTocaNada(t *testing.T) {
 	srv := servidorImagem(t, nil)
 	h, d := setupDownloadMissingServer(t, hostDe(t, srv.URL))
 	configurarCompletudeArtwork(t, h, kindPoster)
 	semearEntity(t, d, "e1", "movie", "Ja Completo")
 	semearAsset(t, d, "a1", "e1", kindPoster, "/x/poster.jpg")
-	// Inventário existe (candidata disponível), mas não deveria ser tocado --
-	// o item já está completo antes de chegar no loop de download.
+	// The inventory exists (a candidate is available), but it should not be touched --
+	// the item is already complete before reaching the download loop.
 	semearInventarioFanart(t, d, "e1", map[string][]provider.ArteInventario{
 		kindPoster: {{URL: srv.URL + "/img", Likes: 1}},
 	})
@@ -172,9 +172,9 @@ func TestDownloadMissingArtworkItemCompletoNaoTocaNada(t *testing.T) {
 	}
 }
 
-// TestDownloadMissingArtworkDraftNaoTocaNada cobre o critério §5: item draft
-// (sem catalog_completeness avaliado -- 0058 §3) devolve as duas listas
-// vazias, sem tocar nada.
+// TestDownloadMissingArtworkDraftNaoTocaNada covers criterion §5: a draft item
+// (without an evaluated catalog_completeness) returns both lists empty, without
+// touching anything.
 func TestDownloadMissingArtworkDraftNaoTocaNada(t *testing.T) {
 	srv := servidorImagem(t, nil)
 	h, d := setupDownloadMissingServer(t, hostDe(t, srv.URL))
@@ -195,19 +195,18 @@ func TestDownloadMissingArtworkDraftNaoTocaNada(t *testing.T) {
 	}
 }
 
-// TestDownloadMissingArtworkFalhaTentaProxima cobre o critério §5: a
-// candidata de MAIOR likes falha ao baixar (500 do httptest) -- o kind ainda
-// assim baixa via a PRÓXIMA candidata, best-effort, antes de cair em
-// unavailable.
+// TestDownloadMissingArtworkFalhaTentaProxima covers criterion §5: the candidate with
+// the HIGHEST likes fails to download (500 from the httptest) -- the kind still
+// downloads through the NEXT candidate, best-effort, before falling into unavailable.
 func TestDownloadMissingArtworkFalhaTentaProxima(t *testing.T) {
 	srv := servidorImagem(t, nil)
 	h, d := setupDownloadMissingServer(t, hostDe(t, srv.URL))
 	configurarCompletudeArtwork(t, h, kindPoster)
 	semearEntity(t, d, "e1", "movie", "Com Candidata Ruim")
 	semearInventarioFanart(t, d, "e1", map[string][]provider.ArteInventario{
-		// A candidata de likes MAIOR (10) falha (500); a de likes menor (5)
-		// funciona -- prova que a ordem tenta a de likes maior primeiro E
-		// que uma falha não desiste do kind.
+		// The candidate with the HIGHER likes (10) fails (500); the one with fewer
+		// likes (5) works -- it proves the order tries the higher-likes one first AND
+		// that a failure does not give up on the kind.
 		kindPoster: {
 			{URL: srv.URL + "/erro", Likes: 10},
 			{URL: srv.URL + "/img", Likes: 5},
@@ -234,7 +233,7 @@ func TestDownloadMissingArtworkFalhaTentaProxima(t *testing.T) {
 	}
 }
 
-// TestDownloadMissingArtworkEntidadeInexistente: 404 para entity inexistente.
+// TestDownloadMissingArtworkEntidadeInexistente: 404 for an unknown entity.
 func TestDownloadMissingArtworkEntidadeInexistente(t *testing.T) {
 	h, _ := setupDownloadMissingServer(t, "example.com")
 	rec := do(t, h, http.MethodPost, "/api/v1/entities/naoexiste/download-missing-artwork", nil)
@@ -243,10 +242,10 @@ func TestDownloadMissingArtworkEntidadeInexistente(t *testing.T) {
 	}
 }
 
-// TestDownloadMissingArtworkSemAssetsDir: 503 quando o server não tem
-// assetsDir configurado (mesma guarda de uploadAsset/selectArtwork).
+// TestDownloadMissingArtworkSemAssetsDir: 503 when the server has no assetsDir
+// configured (the same guard as uploadAsset/selectArtwork).
 func TestDownloadMissingArtworkSemAssetsDir(t *testing.T) {
-	h, d := setupEntitiesServer(t) // sem WithAssetsDir
+	h, d := setupEntitiesServer(t) // without WithAssetsDir
 	semearEntity(t, d, "e1", "movie", "Sem AssetsDir")
 	rec := do(t, h, http.MethodPost, "/api/v1/entities/e1/download-missing-artwork", nil)
 	if rec.Code != http.StatusServiceUnavailable {
@@ -254,8 +253,8 @@ func TestDownloadMissingArtworkSemAssetsDir(t *testing.T) {
 	}
 }
 
-// contains diz se `slice` contém `alvo` (helper simples para asserções de
-// ordem-livre nas listas downloaded/unavailable).
+// contains tells whether `slice` contains `alvo` (simple helper for order-free
+// assertions on the downloaded/unavailable lists).
 func contains(slice []string, alvo string) bool {
 	for _, v := range slice {
 		if v == alvo {

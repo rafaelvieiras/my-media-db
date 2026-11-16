@@ -1,35 +1,32 @@
 package e2e
 
-// journeys_reconciliar_test.go cobre o briefing 0120 (reconciliação de
-// filhos órfãos música/série): uma série que ficou presa em RASCUNHO porque
-// o match por nome falhou na hora do scan (arquivos presos direto na
-// entity-rascunho, sem vínculo de episódio) é resolvida SOZINHA pelo job
-// `saude_biblioteca`, sem o dono precisar clicar em nada -- ao contrário de
-// TestJornadaCorrigirSerieRecasaArquivosPendentes (journeys_recasar_test.go),
-// que prova a MESMA situação resolvida manualmente via
-// POST /entities/{id}/correct.
+// journeys_reconciliar_test.go covers the reconciliation of orphan music/series
+// children: a series that got stuck as a DRAFT because the match by name failed at
+// scan time (files stuck directly on the draft entity, with no episode link) is
+// resolved ON ITS OWN by the `saude_biblioteca` job, without the owner having to
+// click anything -- unlike TestJornadaCorrigirSerieRecasaArquivosPendentes
+// (journeys_recasar_test.go), which proves the SAME situation resolved manually
+// through POST /entities/{id}/correct.
 //
-// Desafio (mesmo catálogo estático do fake.Provider dos demais testes E2E):
-// um nome que o fake reconhece de cara (o título exato de uma fixture, ex.
-// "Springfield Tales") resolveria já no PRIMEIRO scan -- nunca viraria
-// rascunho; um nome que ele NÃO reconhece (ex. "Mystery Show", usado no
-// teste de recasar) nunca resolve, nem na reconciliação (mesmo catálogo).
-// Para provar SUCESSO de ponta a ponta, o wrapper abaixo faz o
-// fake.Provider FALHAR nas TRES primeiras chamadas de Buscar(tipo="tv",
-// nome=fixture), uma para cada passo que roda ANTES da reconciliação em si
-// (ver libraryhealth.Handler.Executar):
+// Challenge (the same static fake.Provider catalog as the other E2E tests): a name
+// the fake recognizes right away (the exact title of a fixture, e.g. "Springfield
+// Tales") would resolve on the FIRST scan -- it would never become a draft; a name
+// it does NOT recognize (e.g. "Mystery Show", used in the re-match test) never
+// resolves, not even in the reconciliation (same catalog). To prove SUCCESS end to
+// end, the wrapper below makes the fake.Provider FAIL on the THREE first Buscar
+// calls (tipo="tv", nome=fixture), one for each step that runs BEFORE the
+// reconciliation itself (see libraryhealth.Handler.Executar):
 //
-//  1. o scan manual (esperarScan, via ImportarSeriePorNome);
-//  2. o RE-SCAN interno que o próprio job saude_biblioteca dispara para TODA
-//     library_source cadastrada (escanearTodas, também via
-//     ImportarSeriePorNome);
-//  3. o AUTO-MATCH que o job roda em seguida: desde o briefing 0129 ele
-//     deriva o termo da PASTA da série (título limpo, score 100) em vez do
-//     nome do arquivo de episódio, então resolve o rascunho NO LUGAR
-//     (mesclarBuscas) e a reconciliação nunca teria o que fazer.
+//  1. the manual scan (esperarScan, through ImportarSeriePorNome);
+//  2. the internal RE-SCAN that the saude_biblioteca job itself fires for EVERY
+//     registered library_source (escanearTodas, also through ImportarSeriePorNome);
+//  3. the AUTO-MATCH the job runs next: it derives the term from the series FOLDER
+//     (clean title, score 100) instead of the episode file name, so it resolves the
+//     draft IN PLACE (mesclarBuscas) and the reconciliation would never have
+//     anything to do.
 //
-// Só na QUARTA chamada em diante (a da reconciliação, tentarImportarSerie com
-// o título da entity) o wrapper deixa passar para o fake real.
+// Only from the FOURTH call onward (the reconciliation one, tentarImportarSerie with
+// the entity title) does the wrapper let it through to the real fake.
 
 import (
 	"context"
@@ -44,13 +41,13 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/server"
 )
 
-// serieProviderFalhaDuasVezes embute *fake.Provider (herda BuscarSerieArvore/
-// BuscarDetalhe/MapearDetalhe/Nome por promoção de método) e sobrescreve só
-// Buscar: as TRES primeiras chamadas com tipo="tv" e nome==nomeAlvo devolvem
-// "sem candidatos" (simulando uma falha transitória de match); da quarta
-// chamada em diante para esse nome/tipo -- e SEMPRE para qualquer outro
-// nome/tipo -- cai no fake real. Ver o comentário de topo do arquivo sobre o
-// motivo de precisar de 3 falhas (scan, re-scan e auto-match do job), não 1.
+// serieProviderFalhaDuasVezes embeds *fake.Provider (inheriting BuscarSerieArvore/
+// BuscarDetalhe/MapearDetalhe/Nome through method promotion) and overrides only
+// Buscar: the THREE first calls with tipo="tv" and nome==nomeAlvo return "no
+// candidates" (simulating a transient match failure); from the fourth call onward
+// for that name/type -- and ALWAYS for any other name/type -- it falls back to the
+// real fake. See the top comment of the file about the reason for needing 3
+// failures (scan, re-scan and the auto-match of the job), not 1.
 type serieProviderFalhaDuasVezes struct {
 	*fake.Provider
 	nomeAlvo string
@@ -67,10 +64,10 @@ func (p *serieProviderFalhaDuasVezes) Buscar(ctx context.Context, query, tipo, l
 	return p.Provider.Buscar(ctx, query, tipo, lang)
 }
 
-// esperarJob dispara POST /jobs/{id}/run (202) e faz polling em
-// GET /jobs/{id}/executions?limit=1 até a execução mais recente sair de
-// queued/running. Devolve o status final ("success"/"error"). Mesmo
-// espírito/prazo de esperarScan (journeys_test.go).
+// esperarJob fires POST /jobs/{id}/run (202) and polls
+// GET /jobs/{id}/executions?limit=1 until the most recent execution leaves
+// queued/running. It returns the final status ("success"/"error"). Same
+// spirit/deadline as esperarScan (journeys_test.go).
 func (c *cliente) esperarJob(jobID string) string {
 	c.t.Helper()
 	c.obj(http.MethodPost, "/api/v1/jobs/"+jobID+"/run", nil, http.StatusAccepted)
@@ -91,12 +88,12 @@ func (c *cliente) esperarJob(jobID string) string {
 	return ""
 }
 
-// TestJornadaReconciliacaoAutomaticaSerieDraft prova o briefing 0120 de
-// ponta a ponta: uma pasta de série com o título EXATO da fixture do fake
-// ("Springfield Tales", fake.SerieFixtureID) escaneada quando o provider
-// ainda "não sabe resolver" (as 2 primeiras tentativas falham, ver o wrapper
-// acima) fica presa em rascunho -- e o job `saude_biblioteca` a resolve
-// sozinho, sem nenhum POST /correct.
+// TestJornadaReconciliacaoAutomaticaSerieDraft proves the automatic reconciliation
+// end to end: a series folder with the EXACT fixture title of the fake ("Springfield
+// Tales", fake.SerieFixtureID) scanned when the provider still "does not know how to
+// resolve" it (the 2 first attempts fail, see the wrapper above) gets stuck as a
+// draft -- and the `saude_biblioteca` job resolves it on its own, with no POST
+// /correct at all.
 func TestJornadaReconciliacaoAutomaticaSerieDraft(t *testing.T) {
 	fakeReal := fake.New("")
 	wrapper := &serieProviderFalhaDuasVezes{Provider: fakeReal, nomeAlvo: "Springfield Tales"}
@@ -112,41 +109,40 @@ func TestJornadaReconciliacaoAutomaticaSerieDraft(t *testing.T) {
 	srcID := str(t, src, "id")
 	c.esperarScan(srcID)
 
-	// (1) A 1a chamada de Buscar (dentro do scan manual) falha de propósito:
-	// a série cai na fila de revisão, um rascunho com os 2 arquivos presos
-	// direto nela, sem vínculo de episódio (mesmo estado inicial do teste de
-	// recasar).
+	// (1) The 1st Buscar call (inside the manual scan) fails on purpose: the series
+	// falls into the review queue, a draft with the 2 files stuck directly on it, with
+	// no episode link (the same initial state as the re-match test).
 	serieID := acharSerieEmRevisao(t, c)
 	if arqs := c.arquivosDaEntity(serieID); len(arqs) != 2 {
 		t.Fatalf("arquivos presos na serie rascunho = %d, quero 2 (S01E01/S01E02 sem vinculo)", len(arqs))
 	}
 
-	// (2) Dispara o job saude_biblioteca: internamente ele re-escaneia a
-	// fonte cadastrada (2a chamada de Buscar, ainda falha) e, no passo de
-	// reconciliação de filhos órfãos (0120, depois do re-scan/auto-match/
-	// enriquecimento retroativo), tenta de novo (3a chamada, agora sucede)
-	// via Manager.ReconciliarSerieDraft -- sem o dono clicar em nada.
+	// (2) Fires the saude_biblioteca job: internally it re-scans the registered
+	// source (2nd Buscar call, still failing) and, in the orphan children
+	// reconciliation step (after the re-scan/auto-match/retroactive enrichment),
+	// tries again (3rd call, now succeeding) through Manager.ReconciliarSerieDraft --
+	// without the owner clicking anything.
 	status := c.esperarJob("saude_biblioteca")
 	if status != "success" {
 		t.Fatalf("status da execucao do job saude_biblioteca = %q, quero \"success\"", status)
 	}
 
-	// (3) A série resolvida é achada pelo mesmo caminho INTERNO-FIRST de
-	// sempre: POST /import com a MESMA fonte/source_id é idempotente
-	// (find-or-create) e devolve 200 com a entity que tem a identidade.
-	// O id pode ser o do rascunho original: ImportarSeriePorNome faz
-	// find-or-create POR NOME, então quando o título do rascunho já casa com o
-	// nome procurado a entity existente é reaproveitada (promovida in place) em
-	// vez de criar uma segunda "Springfield Tales". O que este teste cobra é o
-	// RESULTADO (identidade aplicada, árvore criada, arquivos religados aos
-	// episódios) -- não por qual dos dois ids o vínculo passou.
+	// (3) The resolved series is found through the same INTERNAL-FIRST path as
+	// always: POST /import with the SAME source/source_id is idempotent
+	// (find-or-create) and returns 200 with the entity that holds the identity.
+	// The id may be the original draft's: ImportarSeriePorNome does find-or-create BY
+	// NAME, so when the draft title already matches the name being looked up the
+	// existing entity is reused (promoted in place) instead of creating a second
+	// "Springfield Tales". What this test enforces is the RESULT (identity applied,
+	// tree created, files relinked to the episodes) -- not through which of the two
+	// ids the link went.
 	resolvida := c.obj(http.MethodPost, "/api/v1/import",
 		map[string]string{"source": "tmdb", "source_id": fake.SerieFixtureID, "type": "tv"}, http.StatusOK)
 	serieResolvidaID := str(t, resolvida, "id")
 
-	// (3b) Os 2 arquivos estão na série resolvida e nenhum sobrou preso numa
-	// entity que não é ela (o rascunho, quando não é reaproveitado, fica sem
-	// media_file algum -- órfão, não apagado).
+	// (3b) The 2 files are on the resolved series and none was left stuck on an
+	// entity that is not it (the draft, when not reused, ends up with no media_file
+	// at all -- orphan, not deleted).
 	if arqs := c.arquivosDaEntity(serieResolvidaID); len(arqs) != 2 {
 		t.Fatalf("arquivos na serie resolvida = %d, quero 2 (repontados pela reconciliacao)", len(arqs))
 	}
@@ -156,10 +152,10 @@ func TestJornadaReconciliacaoAutomaticaSerieDraft(t *testing.T) {
 		}
 	}
 
-	// (3c) Mesmas asserções de TestJornadaCorrigirSerieRecasaArquivosPendentes:
-	// a árvore nasceu (2 temporadas) e os 2 arquivos que já estavam presos
-	// ganharam vínculo aos episódios certos pelo NÚMERO -- só que chegando lá
-	// pelo job automático, não por /correct.
+	// (3c) The same assertions as TestJornadaCorrigirSerieRecasaArquivosPendentes:
+	// the tree was born (2 seasons) and the 2 files that were already stuck got
+	// linked to the right episodes by NUMBER -- only getting there through the
+	// automatic job, not through /correct.
 	temporadas := c.idsDosMembros(serieResolvidaID)
 	if len(temporadas) != 2 {
 		t.Fatalf("temporadas apos reconciliar = %d, quero 2 (arvore sincronizada)", len(temporadas))
@@ -168,24 +164,23 @@ func TestJornadaReconciliacaoAutomaticaSerieDraft(t *testing.T) {
 	if len(epsT1) != 3 {
 		t.Fatalf("episodios T1 = %d, quero 3", len(epsT1))
 	}
-	assertFileCount(t, c, epsT1[0], 1) // S01E01 -> ep 101, religado pela reconciliacao
-	assertFileCount(t, c, epsT1[1], 1) // S01E02 -> ep 102, religado pela reconciliacao
-	assertFileCount(t, c, epsT1[2], 0) // S01E03: nenhum arquivo cobria esse numero
+	assertFileCount(t, c, epsT1[0], 1) // S01E01 -> ep 101, relinked by the reconciliation
+	assertFileCount(t, c, epsT1[1], 1) // S01E02 -> ep 102, relinked by the reconciliation
+	assertFileCount(t, c, epsT1[2], 0) // S01E03: no file covered that number
 	assertPosse(t, c, temporadas[0], 2, 3)
 
-	// (4) Achado ao rodar esta jornada: DIFERENTE de /correct (que resolve a
-	// MESMA entity in-place e por isso ela some de /review), a reconciliação
-	// deixa o rascunho ORIGINAL (agora órfão, sem media_file) na fila de
-	// revisão para sempre -- ListarRevisao (review.sql) lista TODO
-	// status='draft' incondicionalmente, sem olhar file_count; e
-	// ReconciliarSerieDraft nunca toca o status/existência da entity antiga
-	// (só repontea media_file.entity_id -- não-destrutivo, princípio 5, mas
-	// também não promove/apaga o rascunho vazio). O que a reconciliação
-	// GARANTE -- e o que esta asserção prova -- é que NENHUMA série tv na
-	// fila de revisão ainda tem arquivo preso (owned=true): o problema real
-	// (arquivo grudado numa entity errada, sem vínculo de episódio) está
-	// mesmo resolvido; o rascunho remanescente é só um registro vazio,
-	// esperando o dono apagar/mesclar manualmente se quiser.
+	// (4) Finding from running this journey: UNLIKE /correct (which resolves the
+	// SAME entity in place and therefore makes it disappear from /review), the
+	// reconciliation leaves the ORIGINAL draft (now an orphan, with no media_file) in
+	// the review queue forever -- ListarRevisao (review.sql) lists EVERY
+	// status='draft' unconditionally, without looking at file_count; and
+	// ReconciliarSerieDraft never touches the status/existence of the old entity (it
+	// only repoints media_file.entity_id -- non-destructive, principle 5, but it also
+	// does not promote/delete the empty draft). What the reconciliation GUARANTEES --
+	// and what this assertion proves -- is that NO tv series in the review queue still
+	// has a stuck file (owned=true): the real problem (a file glued to the wrong
+	// entity, with no episode link) is indeed solved; the remaining draft is just an
+	// empty record, waiting for the owner to delete/merge it manually if they want to.
 	fila := c.arr(http.MethodGet, "/api/v1/review", nil, http.StatusOK)
 	for _, item := range fila {
 		m, _ := item.(map[string]any)

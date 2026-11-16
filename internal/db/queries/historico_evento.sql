@@ -1,7 +1,7 @@
--- CRUD de historico_evento (briefing 0092, ADR-0022): eventos de consumo
--- genericos (assistir/ouvir/jogar/etc.), append-only, filhos de entity.
--- Comentarios em ASCII -- ver a nota em entity.sql (sqlc v1.31 corrompe SQL
--- de query com acento).
+-- CRUD for historico_evento (ADR-0022): consumption events,
+-- generic (watch/listen/play/etc.), append-only, children of entity.
+-- Comments in ASCII -- see the note in entity.sql (sqlc v1.31 corrupts
+-- query SQL with an accent).
 
 -- name: CriarHistoricoEvento :one
 INSERT INTO historico_evento (
@@ -15,8 +15,8 @@ RETURNING id, entity_id, kind, status, progress_percent, position_seconds,
     occurred_at, source, payload_json, created_at;
 
 -- name: ListarHistoricoEventoPorEntity :many
--- Lista os eventos de uma entity em ordem cronologica reversa. kind e
--- filtro opcional via sqlc.narg -- NULL = sem filtro (todos os kinds).
+-- Lists the events of an entity in reverse chronological order. kind is an
+-- optional filter via sqlc.narg -- NULL = no filter (all kinds).
 SELECT id, entity_id, kind, status, progress_percent, position_seconds,
     occurred_at, source, payload_json, created_at
 FROM historico_evento
@@ -25,12 +25,12 @@ WHERE entity_id = sqlc.arg('entity_id')
 ORDER BY occurred_at DESC, id DESC;
 
 -- name: ListarUltimoHistoricoEventoPorKind :many
--- Base da projecao de "estado atual" (GET .../historico/estado): todos os
--- eventos da entity, mesma ordem cronologica reversa da listagem acima --
--- o agrupamento por kind (pegar so o primeiro de cada kind, ja que a
--- ordenacao e occurred_at DESC) fica para a camada Go, conforme o
--- briefing 0092 autoriza (volume baixo por entity, nao compensa SQL
--- avancado).
+-- Base of the "current state" projection (GET .../historico/estado): all the
+-- events of the entity, same reverse chronological order as the listing above --
+-- the grouping by kind (keeping only the first of each kind, since the
+-- ordering is occurred_at DESC) is left to the Go layer, as
+-- ADR-0022 documents it (low volume per entity, advanced SQL is not
+-- worth it).
 SELECT id, entity_id, kind, status, progress_percent, position_seconds,
     occurred_at, source, payload_json, created_at
 FROM historico_evento
@@ -48,10 +48,10 @@ DELETE FROM historico_evento
 WHERE id = ?;
 
 -- name: CriarHistoricoEventoOrfao :one
--- Grava um evento sem entity casada (briefing 0099): entity_id fica NULL
--- implicitamente (nao e parametro). Guarda os IDs/titulo/ano brutos do
--- payload para permitir localizar o evento como candidato a backfill
--- quando uma entity ganhar aquele ID externo no futuro.
+-- Writes an event with no matched entity: entity_id stays NULL
+-- implicitly (it is not a parameter). Stores the raw IDs/title/year from the
+-- payload to allow locating the event as a backfill candidate
+-- when an entity gains that external ID in the future.
 INSERT INTO historico_evento (
     id, kind, status, progress_percent, position_seconds,
     occurred_at, source, payload_json, raw_tmdb_id, raw_imdb_id,
@@ -66,8 +66,8 @@ RETURNING id, entity_id, kind, status, progress_percent, position_seconds,
     raw_tvdb_id, raw_title, raw_year, created_at;
 
 -- name: ListarHistoricoEventoOrfaos :many
--- Lista paginada dos eventos ainda sem entity (entity_id IS NULL), mesmo
--- padrao de paginacao de outras listas do projeto (limit/offset).
+-- Paginated list of the events still without an entity (entity_id IS NULL), same
+-- pagination pattern as other lists in the project (limit/offset).
 SELECT id, entity_id, kind, status, progress_percent, position_seconds,
     occurred_at, source, payload_json, raw_tmdb_id, raw_imdb_id,
     raw_tvdb_id, raw_title, raw_year, created_at
@@ -77,13 +77,13 @@ ORDER BY occurred_at DESC, id DESC
 LIMIT ? OFFSET ?;
 
 -- name: ContarHistoricoEventoOrfaos :one
--- Total de eventos orfaos, para o campo "total" da paginacao acima.
+-- Total orphan events, for the "total" field of the pagination above.
 SELECT COUNT(*) FROM historico_evento WHERE entity_id IS NULL;
 
 -- name: VincularHistoricoEventoOrfaoPorTmdb :execrows
--- Backfill retroativo (briefing 0099): vincula todo evento orfao cujo
--- raw_tmdb_id bate com o ID que a entity acabou de ganhar. :execrows para o
--- chamador saber quantas linhas foram vinculadas (log opcional).
+-- Retroactive backfill: links every orphan event whose
+-- raw_tmdb_id matches the ID the entity has just gained. :execrows so the
+-- caller knows how many rows were linked (optional log).
 UPDATE historico_evento
 SET entity_id = ?
 WHERE entity_id IS NULL AND raw_tmdb_id = ?;

@@ -1,14 +1,16 @@
 package fake
 
-// catalogo.go guarda as FIXTURES do provider fake (briefing 0028): dado de
-// compilação, imutável e determinístico. A franquia Matrix serve às jornadas E2E:
-// import de filme, coleção com membros ordenados por ano, interno-first na busca e a
-// não-destrutividade do enrich (título/tag editáveis vs. tags novas da fonte).
+// catalogo.go holds the FIXTURES of the fake provider: compile-time data,
+// immutable and deterministic. The Matrix franchise serves the E2E journeys:
+// movie import, collection with members ordered by year, internal-first in the
+// search and the non-destructiveness of enrich (editable title/tag vs. new tags
+// from the source).
 //
-// Idiomas: cada traduzível traz "en" e "pt-BR" (mais o "pt" base), exercitando a
-// resolução por idioma. Datas reais para a ordenação de membros por ano.
+// Languages: every translatable field carries "en" and "pt-BR" (plus the base
+// "pt"), exercising the per-language resolution. Real dates for the member
+// ordering by year.
 
-// catalogoFilmes é o mapa sourceID -> filme.
+// catalogoFilmes is the sourceID -> filme map.
 func catalogoFilmes() map[string]filme {
 	return map[string]filme{
 		"603": {
@@ -32,10 +34,10 @@ func catalogoFilmes() map[string]filme {
 			releaseDate:      "1999-03-31",
 			posterPath:       "/matrix.png",
 			colecaoID:        "2344",
-			// Alternativo conhecido (aka pt-BR) que NÃO bate melhor que o próprio
-			// título principal para uma busca em "The Matrix" -- prova o caminho
-			// "candidato já é o melhor" de PontuarComAlternativos (matched_title
-			// deve sair vazio mesmo com alternativos disponíveis e consultados).
+			// Known alternative (pt-BR aka) that does NOT beat the main title itself
+			// for a search on "The Matrix" -- it proves the "the candidate already is
+			// the best" path of PontuarComAlternativos (matched_title must come out
+			// empty even with alternatives available and consulted).
 			titulosAlternativos: []string{"Matrix"},
 		},
 		"604": {
@@ -60,9 +62,10 @@ func catalogoFilmes() map[string]filme {
 			posterPath:       "/matrix-reloaded.png",
 			colecaoID:        "2344",
 		},
-		// SÉRIE (tipo "tv"): a linha-base do import da árvore (BuscarSerieArvore serve as
-		// temporadas/episódios; este detalhe dá título/pôster/original_language à série,
-		// como um filme). O id casa fake.SerieFixtureID.
+		// SERIES (tipo "tv"): the baseline row of the tree import (BuscarSerieArvore
+		// serves the seasons/episodes; this detail gives the series its
+		// title/poster/original_language, like a movie). The id matches
+		// fake.SerieFixtureID.
 		"71663": {
 			sourceID: "71663",
 			tipo:     "tv",
@@ -82,16 +85,16 @@ func catalogoFilmes() map[string]filme {
 			releaseDate:      "1989-12-17",
 			posterPath:       "/springfield.png",
 		},
-		// "605" é a fixture do achado colateral #2 do briefing 0084: um candidato cujo
-		// título PRINCIPAL (sempre o "en", ver tituloPreferido) é bem diferente do
-		// título ALTERNATIVO/regional que o provedor só entrega via
-		// BuscarTitulosAlternativos -- análogo ao caso real "The Pink Panther" vs "A
-		// Pantera Cor-De-Rosa" citado no §1 do briefing. originalTitle carrega o termo
-		// de busca (permite Buscar achar o candidato por substring, como qualquer
-		// outra fixture) e coincide de propósito com o único item de
-		// titulosAlternativos: só comparando o arquivo contra o ALTERNATIVO (nunca
-		// contra "The Rose Prowler"/"O Perseguidor Rosa", os títulos "oficiais") o
-		// score sobe o suficiente para provar PontuarComAlternativos.
+		// "605" is the fixture of side finding #2: a candidate whose MAIN title
+		// (always the "en" one, see tituloPreferido) is very different from the
+		// ALTERNATIVE/regional title that the provider only delivers through
+		// BuscarTitulosAlternativos -- analogous to the real case "The Pink Panther"
+		// vs "A Pantera Cor-De-Rosa" from the original real-world case. originalTitle carries the search
+		// term (it lets Buscar find the candidate by substring, like any other
+		// fixture) and deliberately matches the single item of titulosAlternativos:
+		// only by comparing the file against the ALTERNATIVE (never against "The Rose
+		// Prowler"/"O Perseguidor Rosa", the "official" titles) does the score rise
+		// enough to prove PontuarComAlternativos.
 		"605": {
 			sourceID: "605",
 			tipo:     "movie",
@@ -115,8 +118,8 @@ func catalogoFilmes() map[string]filme {
 	}
 }
 
-// catalogoColecoes é o mapa id -> coleção. As partes vêm em ordem cronológica (o
-// server reordena por ano ao montar os membros da entity).
+// catalogoColecoes is the id -> collection map. The parts come in chronological
+// order (the server reorders them by year when it builds the entity members).
 func catalogoColecoes() map[string]colecaoFix {
 	return map[string]colecaoFix{
 		"2344": {

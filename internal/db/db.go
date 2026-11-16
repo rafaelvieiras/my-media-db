@@ -1,9 +1,9 @@
-// Package db é a fundação de persistência do MyMediaDB sobre SQLite. Encapsula
-// a receita de concorrência ratificada na ADR-0010 (WAL + pragmas, pool de
-// leitura com N conexões e escritor único num pool de tamanho 1) e a aplicação
-// das migrations embutidas via goose (ADR-0017), tudo com o driver CGO-free
-// modernc.org/sqlite. Os próximos briefings só precisam adicionar tabelas e
-// queries — o encanamento vive aqui.
+// Package db is the persistence foundation of MyMediaDB on top of SQLite. It
+// encapsulates the concurrency recipe ratified in ADR-0010 (WAL + pragmas, a
+// read pool with N connections and a single writer in a pool of size 1) and the
+// application of the embedded migrations via goose (ADR-0017), all with the
+// CGO-free modernc.org/sqlite driver. Upcoming work only needs to add tables and
+// queries -- the plumbing lives here.
 package db
 
 import (
@@ -16,32 +16,32 @@ import (
 	"sync"
 
 	"github.com/pressly/goose/v3"
-	_ "modernc.org/sqlite" // registra o driver "sqlite" (SQLite puro em Go, sem CGO)
+	_ "modernc.org/sqlite" // registers the "sqlite" driver (pure Go SQLite, no CGO)
 
 	"github.com/rafaelvieiras/my-media-db/internal/db/migrations"
 )
 
-// driverName é o nome sob o qual o modernc.org/sqlite se registra no
-// database/sql. Não confundir com "sqlite3" (esse é o dialeto do goose).
+// driverName is the name under which modernc.org/sqlite registers itself in
+// database/sql. Not to be confused with "sqlite3" (that is the goose dialect).
 const driverName = "sqlite"
 
-// migrationsDir é o nome do diretório dentro do embed.FS de migrations. O goose
-// espera o caminho relativo à raiz do FS embutido.
+// migrationsDir is the directory name inside the migrations embed.FS. goose
+// expects the path relative to the root of the embedded FS.
 const migrationsDir = "."
 
-// defaultMaxReadConns é o tamanho padrão do pool de leitura quando o Config não
-// especifica um valor. Um punhado de leitores concorrentes é suficiente para o
-// uso self-hosted; a escrita é sempre serializada num pool de tamanho 1.
+// defaultMaxReadConns is the default size of the read pool when Config does not
+// specify a value. A handful of concurrent readers is enough for self-hosted
+// use; writes are always serialized in a pool of size 1.
 const defaultMaxReadConns = 4
 
-// pragmas são os PRAGMAs da ADR-0010 aplicados a TODA conexão nova. O driver
-// modernc executa cada `_pragma=...` do DSN a cada conexão aberta pelo pool —
-// por isso valem para o pool inteiro, não uma única vez.
+// pragmas are the ADR-0010 PRAGMAs applied to EVERY new connection. The modernc
+// driver runs each `_pragma=...` of the DSN on every connection opened by the
+// pool -- that is why they hold for the whole pool, not a single time.
 //
-//	journal_mode=WAL   → vários leitores + um escritor sem bloqueio mútuo
-//	busy_timeout=5000  → espera até 5s por um lock em vez de falhar na hora
-//	synchronous=NORMAL → seguro sob WAL; dados de scan são re-deriváveis
-//	foreign_keys=ON    → integridade referencial ativa (default do SQLite é OFF)
+//	journal_mode=WAL   -> several readers + one writer without mutual blocking
+//	busy_timeout=5000  -> waits up to 5s for a lock instead of failing at once
+//	synchronous=NORMAL -> safe under WAL; scan data is re-derivable
+//	foreign_keys=ON    -> referential integrity active (the SQLite default is OFF)
 var pragmas = []string{
 	"_pragma=journal_mode(WAL)",
 	"_pragma=busy_timeout(5000)",
@@ -49,35 +49,35 @@ var pragmas = []string{
 	"_pragma=foreign_keys(ON)",
 }
 
-// Config parametriza a abertura do banco.
+// Config parameterizes the opening of the database.
 type Config struct {
-	// Path é o caminho do arquivo .sqlite. Obrigatório. O diretório pai é
-	// criado se não existir.
+	// Path is the path of the .sqlite file. Required. The parent directory is
+	// created if it does not exist.
 	Path string
-	// MaxReadConns é o número máximo de conexões do pool de leitura. Se <= 0,
-	// usa defaultMaxReadConns.
+	// MaxReadConns is the maximum number of connections in the read pool. If <= 0,
+	// defaultMaxReadConns is used.
 	MaxReadConns int
 }
 
-// DB agrega os dois pools sobre o MESMO arquivo: Read para leituras concorrentes
-// e Write para o escritor único (SetMaxOpenConns(1)). Separar os pools é o que
-// garante, junto do WAL, que uma escrita em curso não gere `database is locked`
-// nas leituras (ADR-0010).
+// DB aggregates the two pools over the SAME file: Read for concurrent reads and
+// Write for the single writer (SetMaxOpenConns(1)). Keeping the pools apart is
+// what guarantees, together with WAL, that a write in progress does not cause
+// `database is locked` on the reads (ADR-0010).
 type DB struct {
-	// Read é o pool de leitura (N conexões).
+	// Read is the read pool (N connections).
 	Read *sql.DB
-	// Write é o pool de escrita (exatamente 1 conexão = escritor único).
+	// Write is the write pool (exactly 1 connection = single writer).
 	Write *sql.DB
 }
 
-// gooseOnce garante que a configuração global do goose (FS embutido + dialeto)
-// seja feita uma única vez por processo, já que a API de biblioteca do goose é
-// baseada em estado global.
+// gooseOnce guarantees that the global goose setup (embedded FS + dialect) is
+// done a single time per process, since the goose library API is based on global
+// state.
 var gooseOnce sync.Once
 var gooseErr error
 
-// setupGoose configura o goose para ler as migrations embutidas com o dialeto
-// SQLite. Idempotente e seguro para concorrência.
+// setupGoose configures goose to read the embedded migrations with the SQLite
+// dialect. Idempotent and safe for concurrent use.
 func setupGoose() error {
 	gooseOnce.Do(func() {
 		goose.SetBaseFS(migrations.FS)
@@ -86,15 +86,15 @@ func setupGoose() error {
 	return gooseErr
 }
 
-// dsn monta o DSN do modernc para um caminho de arquivo, anexando os PRAGMAs da
-// ADR-0010 como parâmetros `_pragma` — aplicados a cada conexão nova do pool.
+// dsn builds the modernc DSN for a file path, appending the ADR-0010 PRAGMAs as
+// `_pragma` parameters -- applied to every new connection of the pool.
 func dsn(path string) string {
 	return path + "?" + strings.Join(pragmas, "&")
 }
 
-// Open abre os dois pools (leitura e escrita) sobre o arquivo de cfg.Path,
-// aplicando os PRAGMAs de concorrência a toda conexão. Cria o diretório pai se
-// necessário. Não roda migrations — chame Migrate em seguida.
+// Open opens both pools (read and write) over the cfg.Path file, applying the
+// concurrency PRAGMAs to every connection. It creates the parent directory if
+// needed. It does not run migrations -- call Migrate next.
 func Open(cfg Config) (*DB, error) {
 	if cfg.Path == "" {
 		return nil, fmt.Errorf("db: Config.Path vazio")
@@ -123,13 +123,13 @@ func Open(cfg Config) (*DB, error) {
 		_ = read.Close()
 		return nil, fmt.Errorf("db: abrir pool de escrita: %w", err)
 	}
-	// Escritor único: no máximo uma conexão de escrita, serializando as
-	// escritas em nível de aplicação (ADR-0010).
+	// Single writer: at most one write connection, serializing the writes at the
+	// application level (ADR-0010).
 	write.SetMaxOpenConns(1)
 
-	// Materializa ao menos uma conexão de cada pool para falhar cedo (e para
-	// que os PRAGMAs — em especial journal_mode=WAL, que é persistido no
-	// arquivo — já valham desde o início).
+	// Materialize at least one connection of each pool to fail early (and so that
+	// the PRAGMAs -- especially journal_mode=WAL, which is persisted in the
+	// file -- already hold from the start).
 	if err := write.Ping(); err != nil {
 		_ = read.Close()
 		_ = write.Close()
@@ -144,8 +144,8 @@ func Open(cfg Config) (*DB, error) {
 	return &DB{Read: read, Write: write}, nil
 }
 
-// Migrate aplica todas as migrations pendentes pela conexão de ESCRITA (o
-// escritor único). Fail-fast: qualquer erro é propagado para abortar o boot.
+// Migrate applies every pending migration through the WRITE connection (the
+// single writer). Fail-fast: any error is propagated to abort the boot.
 func (d *DB) Migrate(ctx context.Context) error {
 	if err := setupGoose(); err != nil {
 		return fmt.Errorf("db: configurar goose: %w", err)
@@ -156,8 +156,8 @@ func (d *DB) Migrate(ctx context.Context) error {
 	return nil
 }
 
-// MigrateDown reverte a última migration aplicada (uso de desenvolvimento; em
-// produção a política é só avançar — ADR-0017).
+// MigrateDown reverts the last applied migration (development use; in
+// production the policy is forward only -- ADR-0017).
 func (d *DB) MigrateDown(ctx context.Context) error {
 	if err := setupGoose(); err != nil {
 		return fmt.Errorf("db: configurar goose: %w", err)
@@ -168,8 +168,8 @@ func (d *DB) MigrateDown(ctx context.Context) error {
 	return nil
 }
 
-// SchemaVersion devolve a versão de schema atual segundo o goose (o maior número
-// de migration já aplicada). Útil para o health e o diagnóstico.
+// SchemaVersion returns the current schema version according to goose (the
+// highest migration number already applied). Useful for health and diagnostics.
 func (d *DB) SchemaVersion(ctx context.Context) (int64, error) {
 	if err := setupGoose(); err != nil {
 		return 0, fmt.Errorf("db: configurar goose: %w", err)
@@ -181,13 +181,13 @@ func (d *DB) SchemaVersion(ctx context.Context) (int64, error) {
 	return v, nil
 }
 
-// Ping verifica a conectividade do pool de leitura.
+// Ping verifies the connectivity of the read pool.
 func (d *DB) Ping(ctx context.Context) error {
 	return d.Read.PingContext(ctx)
 }
 
-// Close fecha os dois pools. Devolve o primeiro erro encontrado, mas tenta
-// fechar ambos de qualquer forma.
+// Close closes both pools. It returns the first error found, but tries to close
+// both anyway.
 func (d *DB) Close() error {
 	var errs []error
 	if d.Read != nil {

@@ -10,11 +10,12 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 )
 
-// Testes das 3 features do briefing 0027: (A) similares e busca externa interno-aware
-// (internal_id), (B) edição de external_ids, (C) criação de item local manual.
+// Tests of the 3 features of manual items and external ids: (A) internal-aware similars
+// and external search (internal_id), (B) editing external_ids, (C) creating a manual
+// local item.
 
-// decodeResolvida decodifica uma resposta de entity resolvida (POST/PUT que devolvem
-// o mesmo shape do detalhe).
+// decodeResolvida decodes a resolved entity response (POST/PUT that return the same
+// shape as the detail).
 func decodeResolvida(t *testing.T, body []byte) resolver.Entidade {
 	t.Helper()
 	var out resolver.Entidade
@@ -24,10 +25,10 @@ func decodeResolvida(t *testing.T, body []byte) resolver.Entidade {
 	return out
 }
 
-// ── Feature A: interno-first em similares e busca ────────────────────────────
+// ── Feature A: internal-first in similars and search ─────────────────────────
 
-// TestSearchExternoInternalId: um resultado externo JÁ importado (por id tmdb) ganha o
-// internal_id apontando para a entity; um não importado fica com nil.
+// TestSearchExternoInternalId: an external result ALREADY imported (by tmdb id) gets the
+// internal_id pointing at the entity; one that is not imported stays nil.
 func TestSearchExternoInternalId(t *testing.T) {
 	fake := &fakeProvider{resultados: []provider.ResultadoExterno{
 		{Source: "tmdb", SourceID: "603", Type: "movie", Title: "The Matrix"},
@@ -53,8 +54,9 @@ func TestSearchExternoInternalId(t *testing.T) {
 	}
 }
 
-// TestExternalDetailSimilarInternalId: a banda de similares do detalhe externo (movie
-// 603 tem o similar 604) anota o internal_id quando o similar já é entity; nil se não.
+// TestExternalDetailSimilarInternalId: the similars band of the external detail (movie
+// 603 has the similar 604) annotates the internal_id when the similar is already an
+// entity; nil otherwise.
 func TestExternalDetailSimilarInternalId(t *testing.T) {
 	h, d := setupExternalServer(t, nil)
 	semearFilmeTmdb(t, d, "ent-604", "604", "Reloaded")
@@ -68,7 +70,8 @@ func TestExternalDetailSimilarInternalId(t *testing.T) {
 	}
 }
 
-// TestExternalDetailSimilarSemImport: sem o similar importado, o internal_id sai nil.
+// TestExternalDetailSimilarSemImport: without the imported similar, the internal_id comes out
+// nil.
 func TestExternalDetailSimilarSemImport(t *testing.T) {
 	h, _ := setupExternalServer(t, nil)
 	dto := obterDetalheExterno(t, h, "/api/v1/external/tmdb/movie/603?lang=pt-BR")
@@ -78,10 +81,10 @@ func TestExternalDetailSimilarSemImport(t *testing.T) {
 	}
 }
 
-// ── Feature B: editar external_ids ───────────────────────────────────────────
+// ── Feature B: editing external_ids ──────────────────────────────────────────
 
-// TestUpdateExternalIdsGrava: PUT grava o mapa; a coluna gerada external_id_tmdb
-// re-deriva (ObterEntityPorTmdb passa a achar a entity).
+// TestUpdateExternalIdsGrava: the PUT writes the map; the generated column
+// external_id_tmdb is re-derived (ObterEntityPorTmdb starts finding the entity).
 func TestUpdateExternalIdsGrava(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Item Local")
@@ -101,8 +104,8 @@ func TestUpdateExternalIdsGrava(t *testing.T) {
 	}
 }
 
-// TestUpdateExternalIdsRemovePorVazio: um valor vazio REMOVE aquela fonte (não grava id
-// vazio); as demais permanecem.
+// TestUpdateExternalIdsRemovePorVazio: an empty value REMOVES that source (it does not
+// write an empty id); the others remain.
 func TestUpdateExternalIdsRemovePorVazio(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Item Local")
@@ -123,7 +126,7 @@ func TestUpdateExternalIdsRemovePorVazio(t *testing.T) {
 	}
 }
 
-// TestUpdateExternalIds404: entity inexistente.
+// TestUpdateExternalIds404: entity that does not exist.
 func TestUpdateExternalIds404(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodPut, "/api/v1/entities/nao-existe/external-ids",
@@ -133,7 +136,7 @@ func TestUpdateExternalIds404(t *testing.T) {
 	}
 }
 
-// TestUpdateExternalIdsChaveVazia: source (chave) vazio → 422.
+// TestUpdateExternalIdsChaveVazia: empty source (key) → 422.
 func TestUpdateExternalIdsChaveVazia(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Item Local")
@@ -144,7 +147,7 @@ func TestUpdateExternalIdsChaveVazia(t *testing.T) {
 	}
 }
 
-// TestUpdateExternalIdsCorpoInvalido: JSON malformado → 400.
+// TestUpdateExternalIdsCorpoInvalido: malformed JSON → 400.
 func TestUpdateExternalIdsCorpoInvalido(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Item Local")
@@ -154,10 +157,10 @@ func TestUpdateExternalIdsCorpoInvalido(t *testing.T) {
 	}
 }
 
-// ── Feature C: criar item local manual ───────────────────────────────────────
+// ── Feature C: creating a manual local item ──────────────────────────────────
 
-// TestCreateItemCria: POST /entities cria a entity movie com os campos base e responde
-// 201 com a entity resolvida (release_date persistido).
+// TestCreateItemCria: POST /entities creates the movie entity with the base fields and
+// answers 201 with the resolved entity (release_date persisted).
 func TestCreateItemCria(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/entities",
@@ -177,7 +180,8 @@ func TestCreateItemCria(t *testing.T) {
 	}
 }
 
-// TestCreateItemTipoInvalido: type fora de movie|tv → 422 (coleção usa /collections).
+// TestCreateItemTipoInvalido: type outside movie|tv → 422 (a collection uses
+// /collections).
 func TestCreateItemTipoInvalido(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	for _, tipo := range []string{"documentary", "collection", ""} {
@@ -188,7 +192,7 @@ func TestCreateItemTipoInvalido(t *testing.T) {
 	}
 }
 
-// TestCreateItemTituloVazio: título vazio (ou só espaços) → 422.
+// TestCreateItemTituloVazio: empty title (or whitespace only) → 422.
 func TestCreateItemTituloVazio(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/entities", map[string]any{"type": "tv", "title": "   "})
@@ -197,7 +201,7 @@ func TestCreateItemTituloVazio(t *testing.T) {
 	}
 }
 
-// TestCreateItemCorpoInvalido: JSON malformado → 400.
+// TestCreateItemCorpoInvalido: malformed JSON → 400.
 func TestCreateItemCorpoInvalido(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/entities", []byte("{"))

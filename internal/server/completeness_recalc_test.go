@@ -8,16 +8,16 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Testes do CAMINHO EM LOTE da completude de catalogação (briefing 0058):
-// RecalcularCompletudeCatalogacao grava o cache (entity_catalog_completeness)
-// que a listagem/`/members` leem -- ver a nota longa em completeness.go sobre
-// por que a listagem não calcula ao vivo.
+// Tests of the BATCH PATH of the catalog completeness:
+// RecalcularCompletudeCatalogacao writes the cache (entity_catalog_completeness)
+// that the listing/`/members` read -- see the long note in completeness.go about
+// why the listing does not compute it live.
 
-// TestRecalcularCompletudeCatalogacaoGravaLinhaPorEntity cobre o critério
-// central do briefing 0058: RecalcularCompletudeCatalogacao grava uma linha
-// por entity NÃO-DRAFT em entity_catalog_completeness (pulando drafts), e a
-// listagem (GET /api/v1/entities) passa a devolver catalog_completeness
-// não-nulo para elas, lido do cache.
+// TestRecalcularCompletudeCatalogacaoGravaLinhaPorEntity covers the central criterion:
+// RecalcularCompletudeCatalogacao writes one row per NON-DRAFT entity in
+// entity_catalog_completeness (skipping drafts), and the listing
+// (GET /api/v1/entities) starts returning a non-null catalog_completeness
+// for them, read from the cache.
 func TestRecalcularCompletudeCatalogacaoGravaLinhaPorEntity(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	corpo := catalogCompletenessSettings{"movie": {Description: true}}
@@ -35,8 +35,8 @@ func TestRecalcularCompletudeCatalogacaoGravaLinhaPorEntity(t *testing.T) {
 	}
 	semearEntity(t, d, "d1", "movie", "Draft")
 	definirStatus(t, d, "d1", "draft")
-	// "collection" não tem entrada na config -- avaliada, sempre completa,
-	// sem chamar o resolver (branch "tipo ausente" do recálculo em lote).
+	// "collection" has no entry in the config -- evaluated, always complete,
+	// without calling the resolver (the "absent type" branch of the batch recalculation).
 	semearEntity(t, d, "col1", "collection", "Coleção")
 
 	s := New("v-teste", d)
@@ -44,8 +44,8 @@ func TestRecalcularCompletudeCatalogacaoGravaLinhaPorEntity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RecalcularCompletudeCatalogacao: %v", err)
 	}
-	// m1 (incompleto) + m2 (completo) + col1 (completo, tipo sem régua) = 3;
-	// d1 (draft) é pulada.
+	// m1 (incomplete) + m2 (complete) + col1 (complete, type without ruler) = 3;
+	// d1 (draft) is skipped.
 	if avaliados != 3 {
 		t.Errorf("avaliados = %d, quero 3 (draft não entra)", avaliados)
 	}
@@ -53,8 +53,8 @@ func TestRecalcularCompletudeCatalogacaoGravaLinhaPorEntity(t *testing.T) {
 		t.Errorf("incompletos = %d, quero 1 (só m1)", incompletos)
 	}
 
-	// A listagem lê do CACHE: catalog_completeness não-nulo para as
-	// não-draft, refletindo o resultado gravado.
+	// The listing reads from the CACHE: non-null catalog_completeness for the
+	// non-draft ones, reflecting the written result.
 	rec := do(t, h, http.MethodGet, "/api/v1/entities", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /entities status = %d (corpo=%s)", rec.Code, rec.Body.String())
@@ -84,12 +84,12 @@ func TestRecalcularCompletudeCatalogacaoGravaLinhaPorEntity(t *testing.T) {
 	}
 }
 
-// TestAvaliarERecalcularUmItemEntityAusenteDevolveErro cobre o critério
-// best-effort do loop: quando uma entity some entre a listagem e o
-// processamento (purga concorrente -- mesmo cenário de
-// autoMatchLote/EnriquecerRetroativo), avaliarERecalcularUmItem devolve um
-// erro (não panica); é esse erro que RecalcularCompletudeCatalogacao apenas
-// loga e segue para o próximo item, sem abortar o lote.
+// TestAvaliarERecalcularUmItemEntityAusenteDevolveErro covers the best-effort
+// criterion of the loop: when an entity disappears between the listing and the
+// processing (concurrent purge -- same scenario as
+// autoMatchLote/EnriquecerRetroativo), avaliarERecalcularUmItem returns an
+// error (it does not panic); it is this error that RecalcularCompletudeCatalogacao only
+// logs and moves on to the next item, without aborting the batch.
 func TestAvaliarERecalcularUmItemEntityAusenteDevolveErro(t *testing.T) {
 	_, d := setupEntitiesServer(t)
 	s := New("v-teste", d)
@@ -102,13 +102,13 @@ func TestAvaliarERecalcularUmItemEntityAusenteDevolveErro(t *testing.T) {
 	}
 }
 
-// TestRecalcularCompletudeCatalogacaoNaoAbortaComItemIsoladoRuim prova, no
-// nível do loop, que UM item que falha (entity referenciada mas ausente do
-// banco -- não pode acontecer via ListarEntities real, mas o loop trata o
-// erro de UM item sem interromper os demais) não impede os OUTROS itens da
-// mesma execução de serem avaliados e gravados: semeia vários itens válidos
-// e confirma que TODOS aparecem no cache ao final, incluindo os que vêm
-// DEPOIS de um item cujo tipo não está na config (branch sem resolver).
+// TestRecalcularCompletudeCatalogacaoNaoAbortaComItemIsoladoRuim proves, at
+// the loop level, that ONE failing item (entity referenced but absent from
+// the database -- it cannot happen via the real ListarEntities, but the loop handles the
+// error of ONE item without interrupting the others) does not prevent the OTHER items of
+// the same run from being evaluated and written: it seeds several valid items
+// and confirms that ALL of them appear in the cache at the end, including the ones that
+// come AFTER an item whose type is not in the config (branch without resolver).
 func TestRecalcularCompletudeCatalogacaoAvaliaTodosOsItensValidos(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	corpo := catalogCompletenessSettings{"movie": {Description: true}}
@@ -139,9 +139,9 @@ func TestRecalcularCompletudeCatalogacaoAvaliaTodosOsItensValidos(t *testing.T) 
 	}
 }
 
-// TestEntityCatalogCompletenessApagadaEmCascataAoPurgarEntity cobre o
-// critério de aceite: a linha do cache some junto quando a entity é purgada
-// (ON DELETE CASCADE da migration 0014) -- sem linha órfã.
+// TestEntityCatalogCompletenessApagadaEmCascataAoPurgarEntity covers the
+// acceptance criterion: the cache row goes away together when the entity is purged
+// (ON DELETE CASCADE of migration 0014) -- no orphan row.
 func TestEntityCatalogCompletenessApagadaEmCascataAoPurgarEntity(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "m1", "movie", "Filme")

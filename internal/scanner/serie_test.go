@@ -17,15 +17,14 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
-// ── testes de unidade dos helpers puros ──────────────────────────────────────
+// ── unit tests of the pure helpers ───────────────────────────────────────────
 //
-// Os testes do casamento por número EM MEMÓRIA (episodeIndex/casarEpisodios e
-// helpers) migraram para internal/tvmatch/tvmatch_test.go quando essa lógica foi
-// extraída para o pacote leaf (briefing 0069) — mesmas expectativas, símbolos
-// exportados (Index/Casar).
+// The tests of the IN-MEMORY number matching (episodeIndex/casarEpisodios and
+// helpers) moved to internal/tvmatch/tvmatch_test.go when that logic was extracted to
+// the leaf package — same expectations, exported symbols (Index/Casar).
 
-// TestExtrairTVNS cobre a extracao do namespace core.tv@1 e os ramos de degradacao
-// (null, vazio, json invalido, ns ausente) que devolvem nil.
+// TestExtrairTVNS covers the extraction of the core.tv@1 namespace and the degradation
+// branches (null, empty, invalid json, absent ns) that return nil.
 func TestExtrairTVNS(t *testing.T) {
 	nulos := []sql.NullString{
 		{},
@@ -44,10 +43,10 @@ func TestExtrairTVNS(t *testing.T) {
 	}
 }
 
-// TestPreferredLangDaFonte cobre o resolvedor do idioma preferido da fonte
-// (briefing 0084) que alimenta o auto-import de série via SerieImporter:
-// fonte com PreferredLanguage devolve o valor; fonte sem preferência (nil)
-// devolve "" (o SerieImporter cai no idioma global de Manager.idiomas).
+// TestPreferredLangDaFonte covers the resolver of the preferred language of the source
+// that feeds the series auto-import via SerieImporter: a source with PreferredLanguage
+// returns the value; a source without a preference (nil) returns "" (the SerieImporter
+// falls back to the global language of Manager.idiomas).
 func TestPreferredLangDaFonte(t *testing.T) {
 	en := "en"
 	comPreferencia := &scanRun{source: library.Source{PreferredLanguage: &en}}
@@ -61,10 +60,11 @@ func TestPreferredLangDaFonte(t *testing.T) {
 	}
 }
 
-// ── infraestrutura de série ──────────────────────────────────────────────────
+// ── series infrastructure ────────────────────────────────────────────────────
 
-// criarSourceSerie cadastra um datasource marcado content_type='series' (o serviço
-// de library ainda não expõe o campo — a API é de outro passo; aqui gravamos direto).
+// criarSourceSerie registers a datasource marked content_type='series' (the library
+// service does not expose the field yet — the API is another step; here we write it
+// directly).
 func criarSourceSerie(t *testing.T, d *db.DB, dir string) library.Source {
 	t.Helper()
 	src, err := library.New(d).Criar(context.Background(), dir, "tv", "", nil, nil)
@@ -82,8 +82,9 @@ func criarSourceSerie(t *testing.T, d *db.DB, dir string) library.Source {
 	return src2
 }
 
-// managerSerieAutoImport monta um Manager com auto-import real: o enrich sobre o
-// provider fake (série canned "Springfield Tales"/71663) e idiomas fixos.
+// managerSerieAutoImport assembles a Manager with a real auto-import: the enrich on
+// top of the fake provider (canned series "Springfield Tales"/71663) and fixed
+// languages.
 func managerSerieAutoImport(t *testing.T, d *db.DB) *Manager {
 	t.Helper()
 	img := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -97,8 +98,8 @@ func managerSerieAutoImport(t *testing.T, d *db.DB) *Manager {
 	return m
 }
 
-// importerStub é um SerieImporter de teste que devolve um resultado fixo (para
-// exercitar o roteamento a revisão sem depender do provider real).
+// importerStub is a test SerieImporter that returns a fixed result (to exercise the
+// routing to review without depending on the real provider).
 type importerStub struct {
 	id  string
 	err error
@@ -108,14 +109,14 @@ func (s importerStub) ImportarSeriePorNome(context.Context, string, []string, st
 	return s.id, s.err
 }
 
-// contarVinculos conta as linhas de media_file_entity (opcionalmente por kind).
+// contarVinculos counts the media_file_entity rows (optionally by kind).
 func contarVinculos(t *testing.T, d *db.DB) int {
 	t.Helper()
 	return contar(t, d, "SELECT count(*) FROM media_file_entity WHERE kind='tv_episode'")
 }
 
-// epIDPorTmdb devolve o id da entity episódio pelo external_id_tmdb (o SourceID da
-// fixture, ex.: "101").
+// epIDPorTmdb returns the id of the episode entity by external_id_tmdb (the SourceID of
+// the fixture, e.g. "101").
 func epIDPorTmdb(t *testing.T, d *db.DB, tmdb string) string {
 	t.Helper()
 	var id string
@@ -126,11 +127,11 @@ func epIDPorTmdb(t *testing.T, d *db.DB, tmdb string) string {
 	return id
 }
 
-// ── testes de integração (auto-import + match) ───────────────────────────────
+// ── integration tests (auto-import + match) ──────────────────────────────────
 
-// TestScanSerieAutoImportaEVincula: uma pasta de série NÃO importada é auto-importada
-// do provider e o arquivo S01E01 é vinculado ao episódio certo (kind='tv_episode'),
-// com o media_file apontando para a SÉRIE (a obra), não para o episódio.
+// TestScanSerieAutoImportaEVincula: a NOT imported series folder is auto-imported from
+// the provider and the S01E01 file is linked to the right episode (kind='tv_episode'),
+// with the media_file pointing to the SERIES (the work), not to the episode.
 func TestScanSerieAutoImportaEVincula(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -151,18 +152,18 @@ func TestScanSerieAutoImportaEVincula(t *testing.T) {
 	if n := contarVinculos(t, d); n != 1 {
 		t.Errorf("vínculos tv_episode = %d, quero 1", n)
 	}
-	// media_file.entity_id aponta para a SÉRIE.
+	// media_file.entity_id points to the SERIES.
 	if n := contar(t, d, `SELECT count(*) FROM media_file mf JOIN entity e ON e.id=mf.entity_id WHERE e.type='tv'`); n != 1 {
 		t.Errorf("media_file não aponta para a série: %d", n)
 	}
-	// o vínculo aponta para o episódio 101.
+	// the link points to episode 101.
 	if n := contar(t, d, "SELECT count(*) FROM media_file_entity WHERE entity_id=?", epIDPorTmdb(t, d, "101")); n != 1 {
 		t.Errorf("vínculo para o ep 101 ausente")
 	}
 }
 
-// TestScanSerieRangeTresVinculos: S01E01-E03 num único arquivo cria 3 linhas em
-// media_file_entity para o MESMO media_file, com ordinal 0/1/2.
+// TestScanSerieRangeTresVinculos: S01E01-E03 in a single file creates 3 rows in
+// media_file_entity for the SAME media_file, with ordinal 0/1/2.
 func TestScanSerieRangeTresVinculos(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -179,7 +180,7 @@ func TestScanSerieRangeTresVinculos(t *testing.T) {
 	if n := contarVinculos(t, d); n != 3 {
 		t.Errorf("vínculos = %d, quero 3 (range)", n)
 	}
-	// ordinais 0,1,2 para o mesmo arquivo, apontando 101,102,103.
+	// ordinals 0,1,2 for the same file, pointing to 101,102,103.
 	for i, tmdb := range []string{"101", "102", "103"} {
 		if n := contar(t, d, "SELECT count(*) FROM media_file_entity WHERE entity_id=? AND ordinal=?",
 			epIDPorTmdb(t, d, tmdb), i); n != 1 {
@@ -188,8 +189,8 @@ func TestScanSerieRangeTresVinculos(t *testing.T) {
 	}
 }
 
-// TestScanSerieAbsoluto: um arquivo estilo anime (" - 004") casa por absolute_number
-// (a fixture 71663 tem absolutos 1..6; o 4 é o ep 201).
+// TestScanSerieAbsoluto: an anime-style file (" - 004") matches by absolute_number (the
+// 71663 fixture has absolutes 1..6; 4 is ep 201).
 func TestScanSerieAbsoluto(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -208,7 +209,7 @@ func TestScanSerieAbsoluto(t *testing.T) {
 	}
 }
 
-// TestScanSerieReScanIdempotente: reescanear não duplica media_file nem vínculos.
+// TestScanSerieReScanIdempotente: re-scanning duplicates neither media_file nor links.
 func TestScanSerieReScanIdempotente(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -230,10 +231,9 @@ func TestScanSerieReScanIdempotente(t *testing.T) {
 	}
 }
 
-// capturingImporterStub é um SerieImporter de teste que grava o preferredLang
-// recebido na ÚLTIMA chamada (briefing 0084) e devolve um erro fixo -- para
-// provar que o scanner passa adiante o PreferredLanguage da fonte, sem
-// depender de um provider real.
+// capturingImporterStub is a test SerieImporter that records the preferredLang received
+// on the LAST call and returns a fixed error -- to prove that the scanner passes along
+// the PreferredLanguage of the source, without depending on a real provider.
 type capturingImporterStub struct {
 	err           error
 	preferredLang string
@@ -244,10 +244,10 @@ func (s *capturingImporterStub) ImportarSeriePorNome(_ context.Context, _ string
 	return "", s.err
 }
 
-// TestScanSerieUsaPreferredLanguageDaFonteNoAutoImport cobre o item 10 do
-// briefing 0084: uma library_source com preferred_language definido ("en")
-// deve prevalecer sobre o idioma GLOBAL injetado via ConfigurarSeries
-// ("pt-BR") na chamada ao SerieImporter.
+// TestScanSerieUsaPreferredLanguageDaFonteNoAutoImport covers the priority of the source
+// preference: a library_source with preferred_language defined ("en") must prevail over
+// the GLOBAL language injected via ConfigurarSeries ("pt-BR") in the call to
+// SerieImporter.
 func TestScanSerieUsaPreferredLanguageDaFonteNoAutoImport(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -279,9 +279,9 @@ func TestScanSerieUsaPreferredLanguageDaFonteNoAutoImport(t *testing.T) {
 	}
 }
 
-// TestScanSerieAmbiguaVaiParaRevisao: quando o import é ambíguo, o arquivo vira um
-// media_file de baixa confiança apontando para uma série RASCUNHO, SEM vínculo de
-// episódio (fila de revisão) — nunca um episódio fantasma.
+// TestScanSerieAmbiguaVaiParaRevisao: when the import is ambiguous, the file becomes a
+// low-confidence media_file pointing to a DRAFT series, WITHOUT an episode link (review
+// queue) — never a ghost episode.
 func TestScanSerieAmbiguaVaiParaRevisao(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -312,8 +312,8 @@ func TestScanSerieAmbiguaVaiParaRevisao(t *testing.T) {
 	}
 }
 
-// TestScanSerieSemPadraoEpisodio: um arquivo sem SxxEyy/absoluto numa série real fica
-// pendente (sem vínculo), mas o media_file existe apontando para a série.
+// TestScanSerieSemPadraoEpisodio: a file without SxxEyy/absolute in a real series stays
+// pending (without a link), but the media_file exists, pointing to the series.
 func TestScanSerieSemPadraoEpisodio(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -332,11 +332,10 @@ func TestScanSerieSemPadraoEpisodio(t *testing.T) {
 	}
 }
 
-// TestScanSerieMaterializaAposAutoImport cobre a materialização automática
-// opcional (0089) no caminho de série: quando ImportarSeriePorNome tem
-// sucesso e um Materializador está configurado,
-// MaterializarSeAutoDownloadLigado é chamado uma vez com o id da série
-// auto-importada.
+// TestScanSerieMaterializaAposAutoImport covers the optional automatic materialization
+// on the series path: when ImportarSeriePorNome succeeds and a Materializador is
+// configured, MaterializarSeAutoDownloadLigado is called once with the id of the
+// auto-imported series.
 func TestScanSerieMaterializaAposAutoImport(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -358,9 +357,9 @@ func TestScanSerieMaterializaAposAutoImport(t *testing.T) {
 	}
 }
 
-// TestScanSerieNaoMaterializaQuandoImportFalha cobre: import ambíguo/erro
-// (sem série auto-importada) NÃO dispara MaterializarSeAutoDownloadLigado,
-// mesmo com Materializador configurado.
+// TestScanSerieNaoMaterializaQuandoImportFalha covers: an ambiguous/error import
+// (without an auto-imported series) does NOT fire MaterializarSeAutoDownloadLigado,
+// even with Materializador configured.
 func TestScanSerieNaoMaterializaQuandoImportFalha(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -379,9 +378,9 @@ func TestScanSerieNaoMaterializaQuandoImportFalha(t *testing.T) {
 	}
 }
 
-// TestScanSerieSemMaterializadorNaoQuebra cobre a degradação: sem
-// ConfigurarMaterializacao (nil, modo pré-0089), o auto-import de série
-// continua funcionando normalmente, sem pânico.
+// TestScanSerieSemMaterializadorNaoQuebra covers the degradation: without
+// ConfigurarMaterializacao (nil, the mode prior to the auto-match), the series
+// auto-import keeps working normally, without panicking.
 func TestScanSerieSemMaterializadorNaoQuebra(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -397,10 +396,10 @@ func TestScanSerieSemMaterializadorNaoQuebra(t *testing.T) {
 	}
 }
 
-// criarSerieDraft cria diretamente uma entity type='tv' status='draft' com o
-// título dado -- simula o resultado de acharOuCriarDraftSerie de um scan
-// ANTERIOR (sem importer configurado, ou import que falhou), sem depender do
-// scanner para chegar nesse estado.
+// criarSerieDraft directly creates an entity type='tv' status='draft' with the given
+// title -- it simulates the result of acharOuCriarDraftSerie from a PREVIOUS scan
+// (without an importer configured, or an import that failed), without depending on the
+// scanner to reach that state.
 func criarSerieDraft(t *testing.T, d *db.DB, id, titulo string) {
 	t.Helper()
 	if _, err := sqlcgen.New(d.Write).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
@@ -415,22 +414,21 @@ func criarSerieDraft(t *testing.T, d *db.DB, id, titulo string) {
 	}
 }
 
-// TestResolverSerieMissIgnoraDraftEResolveDeVerdade cobre o fix do briefing
-// 0120 (bug achado investigando o Bomfunk MC's): uma série JÁ EXISTENTE como
-// rascunho de revisão (status='draft'), com o MESMO título que o auto-import
-// vai casar, NÃO deve travar a resolução para sempre -- resolverSerieMiss
-// deve tentar tentarImportarSerie de novo (o draft é ignorado por
-// acharSerieResolvidaPorTitulo, que só filtra o find-by-título; a entity
-// reaproveitada pelo PRÓPRIO enrich via tentarCasarComDraftLocal, briefing
-// 0054, é um mecanismo de casamento independente deste fix -- pode devolver o
-// MESMO id do draft, e está tudo bem: o que importa é que ImportarSeriePorNome
-// FOI chamado de verdade). Prova disso: SEM o fix, acharSeriePorTitulo (sem
-// filtro) reencontrava o draft ANTES de qualquer tentativa de import --
-// carregarIndex via um draft sem árvore de episódios (entity_relation vazia)
-// nunca casa nenhum episódio, então o arquivo ficaria para sempre sem vínculo
-// e com confiança de revisão (40). COM o fix, o import de verdade roda,
-// popula a árvore de episódios (entity_relation) e o arquivo casa o episódio
-// certo (vínculo + confiança de série, 90).
+// TestResolverSerieMissIgnoraDraftEResolveDeVerdade covers the fix of
+// acharSerieResolvidaPorTitulo (a bug found while investigating the Bomfunk MC's): a
+// series ALREADY EXISTING as a review draft (status='draft'), with the SAME title the
+// auto-import will match, must NOT block the resolution forever -- resolverSerieMiss
+// must try tentarImportarSerie again (the draft is ignored by
+// acharSerieResolvidaPorTitulo, which only filters the find-by-title; the entity reused
+// by the enrich ITSELF via tentarCasarComDraftLocal is a matching mechanism independent
+// of this fix -- it may return the SAME draft id, and that is fine: what matters is that
+// ImportarSeriePorNome WAS really called). Proof of that: WITHOUT the fix,
+// acharSeriePorTitulo (without a filter) found the draft again BEFORE any import
+// attempt -- carregarIndex over a draft without an episode tree (empty entity_relation)
+// never matches any episode, so the file would stay forever without a link and with
+// review confidence (40). WITH the fix, the real import runs, populates the episode tree
+// (entity_relation) and the file matches the right episode (link + series confidence,
+// 90).
 func TestResolverSerieMissIgnoraDraftEResolveDeVerdade(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -447,14 +445,14 @@ func TestResolverSerieMissIgnoraDraftEResolveDeVerdade(t *testing.T) {
 		t.Fatalf("scan: %v", err)
 	}
 
-	// Nenhuma série duplicada -- o import real reconheceu/reaproveitou a
-	// mesma identidade de título (0054), não criou uma segunda entity solta.
+	// No duplicated series -- the real import recognized/reused the same title identity,
+	// it did not create a second loose entity.
 	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='tv'"); n != 1 {
 		t.Errorf("séries type=tv = %d, quero 1 (sem duplicar)", n)
 	}
-	// A prova de que o import de verdade rodou (e não travou no draft achado
-	// por título, sem árvore): o episódio casou, com vínculo e confiança de
-	// série -- um draft nunca importado não tem entity_relation nenhuma.
+	// The proof that the real import ran (and did not get stuck on the draft found by
+	// title, without a tree): the episode matched, with a link and series confidence --
+	// a draft never imported has no entity_relation at all.
 	if n := contarVinculos(t, d); n != 1 {
 		t.Errorf("vínculos tv_episode = %d, quero 1 (prova de import real, não só o draft achado por título)", n)
 	}
@@ -470,12 +468,11 @@ func TestResolverSerieMissIgnoraDraftEResolveDeVerdade(t *testing.T) {
 	}
 }
 
-// TestAcharOuCriarDraftSerieReusaMesmoDraft cobre a preocupação explícita do
-// briefing 0120: o fix de acharSerieResolvidaPorTitulo (usada só pelo
-// caminho de RESOLUÇÃO) NÃO pode mudar o comportamento de
-// acharOuCriarDraftSerie (usada pelo caminho de CRIAÇÃO/reuso de rascunho) --
-// chamado duas vezes pro MESMO título, continua devolvendo o MESMO id
-// (idempotente, sem duplicar o draft a cada scan).
+// TestAcharOuCriarDraftSerieReusaMesmoDraft covers the explicit concern of the fix: the
+// change to acharSerieResolvidaPorTitulo (used only by the RESOLUTION path) must NOT
+// change the behavior of acharOuCriarDraftSerie (used by the draft CREATION/reuse path)
+// -- called twice for the SAME title, it keeps returning the SAME id (idempotent,
+// without duplicating the draft on every scan).
 func TestAcharOuCriarDraftSerieReusaMesmoDraft(t *testing.T) {
 	d := abrirDB(t)
 	m := managerFake(t, d)
@@ -494,8 +491,8 @@ func TestAcharOuCriarDraftSerieReusaMesmoDraft(t *testing.T) {
 	}
 }
 
-// valorUnico lê uma coluna string de uma linha única esperada (helper de
-// asserção enxuto para os testes de materialização).
+// valorUnico reads a string column of an expected single row (a lean assertion helper
+// for the materialization tests).
 func valorUnico(t *testing.T, d *db.DB, query string, args ...any) string {
 	t.Helper()
 	var v string
@@ -505,8 +502,9 @@ func valorUnico(t *testing.T, d *db.DB, query string, args ...any) string {
 	return v
 }
 
-// TestScanSerieAncoraNoID: o vínculo guarda o ID do episódio, não o número. Trocar a
-// ordenação default da série (re-projeção) NÃO altera a linha de media_file_entity.
+// TestScanSerieAncoraNoID: the link keeps the ID of the episode, not the number.
+// Changing the default ordering of the series (re-projection) does NOT change the
+// media_file_entity row.
 func TestScanSerieAncoraNoID(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -528,8 +526,9 @@ func TestScanSerieAncoraNoID(t *testing.T) {
 		t.Fatalf("vínculo = %q, quero o id do ep 101 (%q)", antes, ep101)
 	}
 
-	// Re-projeta a ordenação default da série para "dvd" (simula troca de ordem). O
-	// vínculo é ancorado no id: nada aqui deve reescrever media_file_entity.
+	// It re-projects the default ordering of the series to "dvd" (it simulates an
+	// ordering change). The link is anchored on the id: nothing here should rewrite
+	// media_file_entity.
 	if _, err := d.Write.ExecContext(context.Background(),
 		`UPDATE entity SET extension_data_json=replace(extension_data_json,'"default_season_type":"official"','"default_season_type":"dvd"') WHERE type='tv'`); err != nil {
 		t.Fatalf("re-projetar: %v", err)
@@ -544,13 +543,13 @@ func TestScanSerieAncoraNoID(t *testing.T) {
 	}
 }
 
-// ── Episódio provisório (briefing 0133) ─────────────────────────────────────
+// ── Provisional episode ─────────────────────────────────────────────────────
 
-// TestScanSerieEpisodioProvisorioQuandoNumeroForaDaArvore cobre o caso real do
-// catálogo da sala: o arquivo declara S01E99, a árvore importada tem só o 1..3.
-// Antes o arquivo ficava sem episódio (media_file pendurado na série, confiança
-// de revisão, sem NFO e sem sinopse na biblioteca consumidora); agora vira
-// episódio provisório na temporada certa, marcado como rascunho.
+// TestScanSerieEpisodioProvisorioQuandoNumeroForaDaArvore covers the real case of the
+// living-room catalog: the file declares S01E99, the imported tree only has 1..3. Before,
+// the file stayed without an episode (media_file hanging on the series, review
+// confidence, without NFO and without a synopsis in the consuming library); now it
+// becomes a provisional episode in the right season, marked as draft.
 func TestScanSerieEpisodioProvisorioQuandoNumeroForaDaArvore(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -583,7 +582,7 @@ func TestScanSerieEpisodioProvisorioQuandoNumeroForaDaArvore(t *testing.T) {
 	if !strings.Contains(ext, `"provisorio"`) {
 		t.Errorf("extension_data sem a marca de provisório: %s", ext)
 	}
-	// O vínculo saiu da revisão: o media_file deixou de ter confiança 40.
+	// The link left the review: the media_file no longer has confidence 40.
 	var conf float64
 	if err := d.Read.QueryRowContext(context.Background(),
 		"SELECT coalesce(match_confidence,0) FROM media_file").Scan(&conf); err != nil {
@@ -593,7 +592,7 @@ func TestScanSerieEpisodioProvisorioQuandoNumeroForaDaArvore(t *testing.T) {
 		t.Errorf("match_confidence = %v, quero >= %d (casado pelo número do arquivo)", conf, confSerieEp)
 	}
 
-	// Idempotência: re-scan não cria um segundo provisório.
+	// Idempotency: a re-scan does not create a second provisional episode.
 	if err := scanSync(t, m, src); err != nil {
 		t.Fatalf("re-scan: %v", err)
 	}
@@ -605,10 +604,11 @@ func TestScanSerieEpisodioProvisorioQuandoNumeroForaDaArvore(t *testing.T) {
 	}
 }
 
-// TestScanSerieEpisodioProvisorioSemNumeroUsaPastaDaTemporada cobre o outro
-// caso real (Du, Dudu e Edu/Season 00): o nome do arquivo não traz SxxEyy, mas
-// a pasta diz a temporada. O provisório nasce sem número, com o título do
-// arquivo, numa temporada que o scanner cria quando ela também não existe.
+// TestScanSerieEpisodioProvisorioSemNumeroUsaPastaDaTemporada covers the other real case
+// (an extra/extras folder named "Season 00"): the file name does not carry SxxEyy, but
+// the folder states the season. The provisional episode is born without a number, with
+// the title of the file, in a season the scanner creates when it does not exist
+// either.
 func TestScanSerieEpisodioProvisorioSemNumeroUsaPastaDaTemporada(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -620,8 +620,8 @@ func TestScanSerieEpisodioProvisorioSemNumeroUsaPastaDaTemporada(t *testing.T) {
 		t.Fatalf("scan: %v", err)
 	}
 
-	// A árvore importada traz 2 temporadas e 6 episódios; o provisório é o
-	// sétimo episódio, na temporada 3 que o scanner teve de criar.
+	// The imported tree brings 2 seasons and 6 episodes; the provisional one is the
+	// seventh episode, in season 3 which the scanner had to create.
 	if n := contar(t, d, "SELECT count(*) FROM entity WHERE type='season'"); n != 3 {
 		t.Errorf("temporadas = %d, quero 3 (2 importadas + a do arquivo)", n)
 	}
@@ -636,8 +636,8 @@ func TestScanSerieEpisodioProvisorioSemNumeroUsaPastaDaTemporada(t *testing.T) {
 	if titulo != "Groovies" {
 		t.Errorf("título do provisório = %q, quero %q (nome do arquivo)", titulo, "Groovies")
 	}
-	// A temporada criada tem de ser a 3 (pasta "Season 03") e o provisório
-	// pendurado nela.
+	// The created season must be 3 (folder "Season 03") and the provisional one must
+	// hang from it.
 	if n := contar(t, d, `SELECT count(*) FROM entity_relation rs
 		JOIN entity_relation re ON re.parent_id=rs.child_id
 		JOIN entity e ON e.id=re.child_id
@@ -653,12 +653,12 @@ func TestScanSerieEpisodioProvisorioSemNumeroUsaPastaDaTemporada(t *testing.T) {
 	}
 }
 
-// TestScanSerieProvisorioSemNumeroNaoDuplicaQuandoOTituloMuda cobre a
-// idempotência do provisório SEM número com a chave certa: o dedup é pelo NOME
-// DO ARQUIVO gravado no extension_data, não pelo título. Na primeira rodada em
-// produção o título do provisório mudou de regra e o re-scan criou um segundo
-// episódio para o mesmo arquivo ("Especial de Natal - Que Natal Que Nada" e
-// "Especial de Natal Que Natal Que Nada").
+// TestScanSerieProvisorioSemNumeroNaoDuplicaQuandoOTituloMuda covers the idempotency of
+// the provisional episode WITHOUT a number with the right key: the dedup is by the FILE
+// NAME stored in the extension_data, not by the title. In the first production round the
+// title rule of the provisional episode changed and the re-scan created a second episode
+// for the same file ("Especial de Natal - Que Natal Que Nada" and "Especial de Natal Que
+// Natal Que Nada").
 func TestScanSerieProvisorioSemNumeroNaoDuplicaQuandoOTituloMuda(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -669,8 +669,8 @@ func TestScanSerieProvisorioSemNumeroNaoDuplicaQuandoOTituloMuda(t *testing.T) {
 	if err := scanSync(t, m, src); err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	// Simula o título gravado por uma versão anterior (regra antiga), mantendo
-	// o extension_data como aquela versão gravava.
+	// It simulates the title stored by a previous version (old rule), keeping the
+	// extension_data the way that version wrote it.
 	ep, err := sqlcgen.New(d.Write).ObterEntity(context.Background(), idDoProvisorio(t, d))
 	if err != nil {
 		t.Fatalf("ObterEntity: %v", err)
@@ -685,7 +685,7 @@ func TestScanSerieProvisorioSemNumeroNaoDuplicaQuandoOTituloMuda(t *testing.T) {
 		t.Fatalf("renomear provisório: %v", err)
 	}
 
-	// Re-scan com o arquivo "novo" (mtime diferente força o reprocessamento).
+	// Re-scan with the file "new" (a different mtime forces the reprocessing).
 	escrever(t, filepath.Join(root, "Springfield Tales", "Season 03", "Especial de Natal - Que Natal Que Nada.mkv"))
 	if err := scanSync(t, m, src); err != nil {
 		t.Fatalf("re-scan: %v", err)
@@ -695,7 +695,7 @@ func TestScanSerieProvisorioSemNumeroNaoDuplicaQuandoOTituloMuda(t *testing.T) {
 	}
 }
 
-// idDoProvisorio devolve o id do único episódio provisório do banco de teste.
+// idDoProvisorio returns the id of the only provisional episode of the test database.
 func idDoProvisorio(t *testing.T, d *db.DB) string {
 	t.Helper()
 	var id string

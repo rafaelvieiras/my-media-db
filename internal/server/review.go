@@ -14,50 +14,51 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Este arquivo implementa a CURADORIA da Fase 3 (briefing 0018): as filas de
-// revisao e de orfas (queries), mais as acoes confirmar/corrigir e a PURGA
-// (individual e em lote — a unica porta destrutiva, sempre explicita, ADR-0012).
-// As leituras passam pelo pool de leitura; confirmar/corrigir/purgar escrevem pelo
-// pool de escrita (ADR-0010). Correcao reusa o serviço de enrich (0015) e o
-// resolverEntity, sem nenhum caminho de escrita novo.
+// This file implements the Phase 3 CURATION: the review and orphan queues
+// (queries), plus the confirm/correct actions and the PURGE
+// (individual and in batch — the only destructive door, always explicit, ADR-0012).
+// The reads go through the read pool; confirm/correct/purge write through the
+// write pool (ADR-0010). Correction reuses the enrich service and the
+// resolverEntity, without any new write path.
 
-// limiarBaixaConfianca e o corte de confianca que separa "palpite alto" de "baixa
-// confianca" (escala 0-100 do scanner). ESPELHA o LIMIAR_BAIXA_CONFIANCA=70 do
-// front (web/src/lib/entity-badges.ts): os dois DEVEM casar. Acoplamento anotado —
-// candidato a virar config/endpoint no futuro (fora deste briefing). Fonte unica no
-// backend: a query ListarRevisao o recebe como parametro.
+// limiarBaixaConfianca is the confidence cutoff that separates "high guess" from "low
+// confidence" (0-100 scale of the scanner). It MIRRORS the LIMIAR_BAIXA_CONFIANCA=70 of the
+// front end (web/src/lib/entity-badges.ts): the two MUST match. Annotated coupling —
+// a candidate to become config/endpoint in the future (out of scope here). Single source in
+// the backend: the ListarRevisao query receives it as a parameter.
 const limiarBaixaConfianca = 70
 
-// confiancaConfirmada e o valor de confianca que a acao "confirmar" grava nos
-// media_file da entity: a autoridade do dono (100) tira o item da fila de revisao.
+// confiancaConfirmada is the confidence value that the "confirm" action writes into the
+// entity's media_file rows: the owner's authority (100) takes the item out of the review
+// queue.
 const confiancaConfirmada = 100
 
-// correctBody e o corpo de POST /entities/{id}/correct: a identidade correta que o
-// dono informa. Sem source, a fonte-default e resolvida por capacidade (fonteDefault,
-// 0047); source_id obrigatorio (422 se vazio).
+// correctBody is the body of POST /entities/{id}/correct: the correct identity the
+// owner reports. Without source, the default source is resolved by capability (fonteDefault);
+// source_id is required (422 if empty).
 type correctBody struct {
 	Source   string `json:"source"`
 	SourceID string `json:"source_id"`
 }
 
-// purgeBatchBody e o corpo de POST /entities/purge: os ids a purgar em lote.
+// purgeBatchBody is the body of POST /entities/purge: the ids to purge in batch.
 type purgeBatchBody struct {
 	IDs []string `json:"ids"`
 }
 
-// purgaDTO e a resposta da purga individual (DELETE /entities/{id}).
+// purgaDTO is the response of the individual purge (DELETE /entities/{id}).
 type purgaDTO struct {
 	Purged bool `json:"purged"`
 }
 
-// purgaLoteDTO e a resposta da purga em lote (POST /entities/purge): quantas
-// entities foram de fato removidas (idempotente por id ausente).
+// purgaLoteDTO is the response of the batch purge (POST /entities/purge): how many
+// entities were actually removed (idempotent by absent id).
 type purgaLoteDTO struct {
 	Removed int `json:"removed"`
 }
 
-// listReview trata GET /api/v1/review: a fila de revisao (draft OU baixa confianca)
-// com o mesmo shape de card da lista. 200 com [] quando vazia.
+// listReview handles GET /api/v1/review: the review queue (draft OR low confidence)
+// with the same card shape as the list. 200 with [] when empty.
 func (s *Server) listReview(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -78,15 +79,15 @@ func (s *Server) listReview(w http.ResponseWriter, r *http.Request) {
 		}))
 		caminhos = append(caminhos, row.Path)
 	}
-	// Agrupamento (briefing 0137): anotação por item, sem mudar o predicado da
-	// fila. As raízes das bibliotecas entram só para o rótulo ficar curto
-	// (caminho relativo à fonte); erro ao listar degrada para rótulos longos.
+	// Grouping: annotation per item, without changing the predicate of the
+	// queue. The library roots come in only so the label stays short
+	// (path relative to the source); an error when listing degrades to long labels.
 	anotarGruposRevisao(items, caminhos, s.raizesDeBiblioteca(r.Context()))
 	writeJSON(w, http.StatusOK, items)
 }
 
-// listOrphans trata GET /api/v1/orphans: a fila de orfas (auto-criadas, todas
-// missing, sem investimento do dono). 200 com [] quando vazia.
+// listOrphans handles GET /api/v1/orphans: the orphan queue (auto-created, all
+// missing, no investment from the owner). 200 with [] when empty.
 func (s *Server) listOrphans(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -107,9 +108,9 @@ func (s *Server) listOrphans(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
-// confirmEntity trata POST /api/v1/entities/{id}/confirm: o dono aceita o palpite.
-// Sobe a confianca dos media_file da entity para 100 e responde a entity resolvida.
-// 404 se a entity nao existe.
+// confirmEntity handles POST /api/v1/entities/{id}/confirm: the owner accepts the guess.
+// It raises the confidence of the entity's media_file rows to 100 and responds with the
+// resolved entity. 404 if the entity does not exist.
 func (s *Server) confirmEntity(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -127,12 +128,12 @@ func (s *Server) confirmEntity(w http.ResponseWriter, r *http.Request) {
 	s.responderResolvida(w, ctx, id, http.StatusOK)
 }
 
-// correctEntity trata POST /api/v1/entities/{id}/correct: o dono informa a
-// identidade correta. Grava external_ids[source]=source_id e RE-ENRIQUECE pelo
-// serviço do 0015 (identidade vence, MD4; multi-idioma de graça), depois sobe a
-// confianca para 100. Nao toca override/arte (o enrich e nao-destrutivo). 404 se a
-// entity nao existe; 422 se source_id vazio; 502 se a fonte falhar; 503 se o enrich
-// esta desligado.
+// correctEntity handles POST /api/v1/entities/{id}/correct: the owner reports the
+// correct identity. It writes external_ids[source]=source_id and RE-ENRICHES through
+// the enrich service (identity wins, MD4; multi-language for free), then raises the
+// confidence to 100. It does not touch override/artwork (enrich is non-destructive). 404 if
+// the entity does not exist; 422 if source_id is empty; 502 if the source fails; 503 if
+// enrich is off.
 func (s *Server) correctEntity(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -164,23 +165,23 @@ func (s *Server) correctEntity(w http.ResponseWriter, r *http.Request) {
 	s.aplicarIdentidadeExterna(w, ctx, id, ent.Type, source, body.SourceID)
 }
 
-// aplicarIdentidadeExterna aplica a identidade externa (source/sourceID) numa
-// entity já existente pela sequência canônica de "Corrigir" (0018):
-// resolverColisaoExterna (rede de segurança do 0051 -- funde sem investimento
-// do dono, ou responde 409 real) → idiomasPermitidos → s.enrich.Enriquecer
-// (identidade vence, multi-idioma de graça) → finalizarRevisao (sobe
-// confiança/promove de draft). Extraído de correctEntity (briefing 0060) para
-// ser reusado pelo branch `external` de confirmCandidate, chamado com o MESMO
-// ResponseWriter REAL da requisição nos dois casos -- uma colisão sempre vira
-// um 409 de verdade na resposta, nunca é degradada silenciosamente (esse
-// comportamento "degrada sem responder" é exclusivo do auto-match
-// desatendido, via capturaResposta em aplicarCandidatoExterno). ok=false
-// quando qualquer passo já escreveu uma resposta de erro -- o chamador só
-// precisa `return` sem escrever nada mais.
+// aplicarIdentidadeExterna applies the external identity (source/sourceID) to an
+// already existing entity through the canonical "Correct" sequence:
+// resolverColisaoExterna (safety net -- merges without the owner's
+// investment, or responds a real 409) → idiomasPermitidos → s.enrich.Enriquecer
+// (identity wins, multi-language for free) → finalizarRevisao (raises
+// confidence/promotes from draft). Extracted from correctEntity to
+// be reused by the `external` branch of confirmCandidate, called with the SAME
+// REAL ResponseWriter of the request in both cases -- a collision always becomes
+// a real 409 in the response, it is never degraded silently (that
+// "degrades without responding" behavior is exclusive to the unattended
+// auto-match, via capturaResposta in aplicarCandidatoExterno). ok=false
+// when any step has already written an error response -- the caller only
+// needs to `return` without writing anything else.
 func (s *Server) aplicarIdentidadeExterna(w http.ResponseWriter, ctx context.Context, id, tipo, source, sourceID string) bool {
-	// Rede de seguranca contra duplicata (briefing 0051): a identidade corrigida
-	// pode ja pertencer a outra entity (ex.: importada por engano antes desta
-	// correcao) -- funde sem investimento do dono, ou aborta com 409 com.
+	// Safety net against a duplicate: the corrected identity
+	// may already belong to another entity (e.g.: imported by mistake before this
+	// correction) -- it merges without the owner's investment, or aborts with 409.
 	if _, ok := s.resolverColisaoExterna(w, ctx, id, tipo, source, sourceID); !ok {
 		return false
 	}
@@ -201,10 +202,10 @@ func (s *Server) aplicarIdentidadeExterna(w http.ResponseWriter, ctx context.Con
 	return true
 }
 
-// deleteEntity trata DELETE /api/v1/entities/{id}: PURGA individual. Apaga a entity
-// (ApagarEntity) — o ON DELETE CASCADE leva media_file/media_external/media_override/
-// asset junto — e limpa best-effort o diretorio de binarios de assets da entity.
-// 200 com {purged:true}; 404 se a entity nao existe.
+// deleteEntity handles DELETE /api/v1/entities/{id}: individual PURGE. It deletes the
+// entity (ApagarEntity) — ON DELETE CASCADE takes media_file/media_external/media_override/
+// asset along — and best-effort cleans the entity's assets binary directory.
+// 200 with {purged:true}; 404 if the entity does not exist.
 func (s *Server) deleteEntity(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -223,9 +224,9 @@ func (s *Server) deleteEntity(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, purgaDTO{Purged: true})
 }
 
-// purgeBatch trata POST /api/v1/entities/purge: PURGA em lote. Purga cada id do
-// corpo, ignorando ids ausentes (idempotente), e responde quantas foram removidas.
-// 422 corpo invalido.
+// purgeBatch handles POST /api/v1/entities/purge: PURGE in batch. It purges each id of
+// the body, ignoring absent ids (idempotent), and responds how many were removed.
+// 422 invalid body.
 func (s *Server) purgeBatch(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -252,14 +253,15 @@ func (s *Server) purgeBatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, purgaLoteDTO{Removed: removed})
 }
 
-// ── Helpers da curadoria ─────────────────────────────────────────────────────
+// ── Curation helpers ─────────────────────────────────────────────────────────
 
-// finalizarRevisao e o passo final compartilhado por confirmar e corrigir: tira o
-// item da fila de revisao pelos DOIS ramos do predicado. (1) sobe a confianca dos
-// media_file para 100 (mata o ramo "baixa confianca"); (2) promove um draft a
-// 'cataloged' (mata o ramo "status='draft'"). Sem o (2), um draft confirmado/
-// corrigido subia a confianca mas ficava preso na fila como nao-identificado. As
-// duas escritas vao pelo pool de escrita; PromoverDeDraft e no-op fora de draft.
+// finalizarRevisao is the final step shared by confirm and correct: it takes the
+// item out of the review queue through BOTH branches of the predicate. (1) it raises the
+// confidence of the media_file rows to 100 (kills the "low confidence" branch); (2) it
+// promotes a draft to 'cataloged' (kills the "status='draft'" branch). Without (2), a
+// confirmed/corrected draft raised the confidence but stayed stuck in the queue as
+// unidentified. Both writes go through the write pool; PromoverDeDraft is a no-op outside
+// draft.
 func (s *Server) finalizarRevisao(ctx context.Context, id string) error {
 	q := sqlcgen.New(s.db.Write)
 	if err := q.AtualizarConfidencePorEntity(ctx, sqlcgen.AtualizarConfidencePorEntityParams{
@@ -271,9 +273,9 @@ func (s *Server) finalizarRevisao(ctx context.Context, id string) error {
 	return q.PromoverDeDraft(ctx, id)
 }
 
-// purgarSeExiste apaga a entity e limpa seus binarios SE ela existir; devolve
-// (true, nil) quando removeu, (false, nil) quando ja nao existia (idempotente). Um
-// erro real de banco e propagado.
+// purgarSeExiste deletes the entity and cleans its binaries IF it exists; it returns
+// (true, nil) when it removed it, (false, nil) when it no longer existed (idempotent). A
+// real database error is propagated.
 func (s *Server) purgarSeExiste(ctx context.Context, id string) (bool, error) {
 	if _, err := s.leitura().ObterEntity(ctx, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -288,9 +290,9 @@ func (s *Server) purgarSeExiste(ctx context.Context, id string) (bool, error) {
 	return true, nil
 }
 
-// limparBinariosAsset remove best-effort o diretorio de binarios de assets da
-// entity ({assetsDir}/{id}). Sem assetsDir configurado e no-op; erros sao
-// ignorados (o CASCADE ja removeu as linhas — o disco e so cache).
+// limparBinariosAsset best-effort removes the entity's assets binary directory
+// ({assetsDir}/{id}). Without assetsDir configured it is a no-op; errors are
+// ignored (the CASCADE already removed the rows — the disk is only cache).
 func (s *Server) limparBinariosAsset(id string) {
 	if s.assetsDir == "" {
 		return

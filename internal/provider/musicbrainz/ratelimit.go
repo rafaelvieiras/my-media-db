@@ -5,16 +5,16 @@ import (
 	"time"
 )
 
-// limitador é um limitador de taxa CLIENT-SIDE simples: mutex + timestamp da última
-// chamada liberada, sem dependência nova (AGENTS.md: "local-first e leve" — nada de
-// golang.org/x/time/rate para um caso tão simples). O MusicBrainz exige <= 1
-// requisição/s por IP e bloqueia por abuso quando o limite é excedido (briefing 0106 §3,
-// https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting); o Cover Art Archive NÃO
-// documenta um limite equivalente, então o client só aplica este limitador às chamadas a
-// musicbrainz.org (ver musicbrainz.go).
+// limitador is a simple CLIENT-SIDE rate limiter: mutex + timestamp of the last released
+// call, without a new dependency (AGENTS.md: "local-first and lightweight" -- no
+// golang.org/x/time/rate for such a simple case). MusicBrainz requires <= 1 request/s per
+// IP and blocks for abuse when the limit is exceeded
+// (https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting); the Cover Art Archive does
+// NOT document an equivalent limit, so the client only applies this limiter to the calls
+// to musicbrainz.org (see musicbrainz.go).
 //
-// `agora`/`dormir` são injetáveis para permitir um teste DETERMINÍSTICO e RÁPIDO (sem
-// depender de um time.Sleep real de 1s+): nil usa time.Now/time.Sleep reais.
+// `agora`/`dormir` are injectable to allow a DETERMINISTIC and FAST test (without depending
+// on a real time.Sleep of 1s+): nil uses the real time.Now/time.Sleep.
 type limitador struct {
 	mu        sync.Mutex
 	ultima    time.Time
@@ -23,15 +23,15 @@ type limitador struct {
 	dormir    func(time.Duration)
 }
 
-// novoLimitador cria um limitador que garante pelo menos `intervalo` entre duas chamadas
-// liberadas por esperar().
+// novoLimitador creates a limiter that guarantees at least `intervalo` between two calls
+// released by esperar().
 func novoLimitador(intervalo time.Duration) *limitador {
 	return &limitador{intervalo: intervalo}
 }
 
-// esperar BLOQUEIA até que `intervalo` tenha passado desde a última chamada liberada (a
-// primeira chamada nunca espera). Serializado por mutex: chamadas concorrentes esperam a
-// vez, cada uma vendo a `ultima` atualizada pela anterior.
+// esperar BLOCKS until `intervalo` has elapsed since the last released call (the first call
+// never waits). Serialized by mutex: concurrent calls wait for their turn, each one seeing
+// the `ultima` updated by the previous one.
 func (l *limitador) esperar() {
 	l.mu.Lock()
 	defer l.mu.Unlock()

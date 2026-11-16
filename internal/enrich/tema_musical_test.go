@@ -11,13 +11,13 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
-// errTemaFake simula uma falha real (rede/status) do TemaMusicalProvider.
+// errTemaFake simulates a real failure (network/status) of the TemaMusicalProvider.
 var errTemaFake = errors.New("themerrdb: falha simulada")
 
-// fakeTemaMusicalProvider implementa o core provider.Provider NO-OP (Nome
-// "themerrdb", como a ThemerrDB real) MAIS a capacidade
-// provider.TemaMusicalProvider, devolvendo um candidato canned (ou nenhum,
-// simulando "sem match"). Grava os ids/tipo recebidos para as asserções.
+// fakeTemaMusicalProvider implements the provider.Provider core as a NO-OP (Nome
+// "themerrdb", like the real ThemerrDB) PLUS the
+// provider.TemaMusicalProvider capability, returning a canned candidate (or none,
+// simulating "no match"). It records the ids/type received for the assertions.
 type fakeTemaMusicalProvider struct {
 	tema     provider.TemaMusical
 	achou    bool
@@ -51,9 +51,9 @@ func (f *fakeTemaMusicalProvider) BuscarTemaMusical(_ context.Context, ids provi
 	return f.tema, f.achou, nil
 }
 
-// lerCandidatoTema lê o envelope de candidato de tema musical
-// (media_external, source=themerrdb) de uma entity. ok=false quando a linha
-// não existe.
+// lerCandidatoTema reads the theme-music candidate envelope
+// (media_external, source=themerrdb) of an entity. ok=false when the row
+// does not exist.
 func lerCandidatoTema(t *testing.T, database *sqlcgen.Queries, entityID string) (map[string]any, bool) {
 	t.Helper()
 	row, err := database.ObterMediaExternalPorFonte(context.Background(), sqlcgen.ObterMediaExternalPorFonteParams{
@@ -70,11 +70,11 @@ func lerCandidatoTema(t *testing.T, database *sqlcgen.Queries, entityID string) 
 	return env, true
 }
 
-// TestImportarFilmeComTemaMusicalPersisteCandidato: importar um filme com um
-// TemaMusicalProvider registrado (com match) grava o candidato em
-// media_external source=themerrdb, com a URL sob ChaveEnvelopeTemaMusical --
-// e o provider recebeu o id externo e o tipo corretos (critério §5 do
-// briefing 0103).
+// TestImportarFilmeComTemaMusicalPersisteCandidato: importing a movie with a
+// TemaMusicalProvider registered (with a match) writes the candidate into
+// media_external source=themerrdb, with the URL under ChaveEnvelopeTemaMusical --
+// and the provider received the correct external id and type (acceptance
+// criterion of ADR-0025).
 func TestImportarFilmeComTemaMusicalPersisteCandidato(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -109,11 +109,11 @@ func TestImportarFilmeComTemaMusicalPersisteCandidato(t *testing.T) {
 	}
 }
 
-// TestImportarFilmeSemMatchDeTemaGravaEnvelopeVazioSemQuebrar cobre o
-// critério §5: item enriquecido SEM match no ThemerrDB não quebra o import
-// (best-effort) -- e o envelope gravado não carrega a chave da URL (para
-// diferenciar de "ainda não consultado" só é preciso saber que a linha
-// existe; nenhum consumidor depende de mais que isso nesta entrega).
+// TestImportarFilmeSemMatchDeTemaGravaEnvelopeVazioSemQuebrar covers the other
+// criterion: an item enriched WITHOUT a match in ThemerrDB does not break the import
+// (best-effort) -- and the envelope written does not carry the URL key (to
+// differentiate it from "not queried yet" it is enough to know that the row
+// exists; no consumer depends on more than that in this delivery).
 func TestImportarFilmeSemMatchDeTemaGravaEnvelopeVazioSemQuebrar(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -141,10 +141,10 @@ func TestImportarFilmeSemMatchDeTemaGravaEnvelopeVazioSemQuebrar(t *testing.T) {
 	}
 }
 
-// TestImportarFilmeSemTemaMusicalProviderNaoQuebra cobre a degradação em
-// silêncio quando NENHUM provider registrado implementa TemaMusicalProvider
-// (cenário real sem ThemerrDB registrado): o import segue normalmente, sem
-// linha media_external(source=themerrdb) nenhuma.
+// TestImportarFilmeSemTemaMusicalProviderNaoQuebra covers the silent
+// degradation when NO registered provider implements TemaMusicalProvider
+// (the real scenario with no ThemerrDB registered): the import proceeds normally, without any
+// media_external(source=themerrdb) row.
 func TestImportarFilmeSemTemaMusicalProviderNaoQuebra(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -167,9 +167,9 @@ func TestImportarFilmeSemTemaMusicalProviderNaoQuebra(t *testing.T) {
 	}
 }
 
-// TestImportarFilmeErroDoProviderDeTemaDegradaEmSilencio cobre erro REAL
-// (rede/status) do provider: propaga só ao log (best-effort), não interrompe
-// o import.
+// TestImportarFilmeErroDoProviderDeTemaDegradaEmSilencio covers a REAL error
+// (network/status) of the provider: it propagates only to the log (best-effort), it does not interrupt
+// the import.
 func TestImportarFilmeErroDoProviderDeTemaDegradaEmSilencio(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()
@@ -195,8 +195,8 @@ func TestImportarFilmeErroDoProviderDeTemaDegradaEmSilencio(t *testing.T) {
 	}
 }
 
-// TestEnriquecerSerieComTemaMusicalPersisteCandidato cobre o gatilho de série
-// (serie.go, apos a arvore): a serie recebe o mesmo candidato pelo tipo "tv".
+// TestEnriquecerSerieComTemaMusicalPersisteCandidato covers the series trigger
+// (serie.go, after the tree): the series receives the same candidate with the "tv" type.
 func TestEnriquecerSerieComTemaMusicalPersisteCandidato(t *testing.T) {
 	database := setupDB(t)
 	ctx := context.Background()

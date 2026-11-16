@@ -1,25 +1,23 @@
 package server
 
-// audio_tags.go implementa POST /api/v1/entities/{id}/audio-tags/write
-// (briefing 0125, menu Gerenciar > "Gravar metadados no arquivo"): regrava a
-// PRÓPRIA tag do arquivo de áudio (ID3v2/Vorbis comment, internal/audiotag)
-// com o metadado JÁ RESOLVIDO (override ⟵ externo ⟵ arquivo, o mesmo caminho
-// de resolverEntity que a tela de detalhe usa) — nunca um valor bruto de
-// provider. Para `faixa`, grava só o arquivo dela; para `album`, cascateia
-// para TODAS as faixas POSSUÍDAS (best-effort: uma falha isolada não aborta
-// as demais), respeitando artist-credit divergente (feat., ADR-0027 item 4)
-// na tag de ARTISTA daquela faixa específica — álbum/ano/gênero/capa
-// continuam vindo do álbum. `type=='artista'` (ou qualquer outro) é 422: sem
-// granularidade de "obra" coerente para cascatear (briefing 0125 §3). Ao
-// contrário do padrão "sem cascata automática" do briefing 0088, aqui álbum
-// cascatear é a ÚNICA interpretação coerente da ação (álbum nunca tem
-// arquivo próprio, ADR-0027) — não é uma cascata em massa arbitrária.
+// audio_tags.go implements POST /api/v1/entities/{id}/audio-tags/write
+// (Manage menu > "Write metadata to the file"): rewrites the audio file's OWN tag
+// (ID3v2/Vorbis comment, internal/audiotag) with the ALREADY RESOLVED metadata
+// (override ⟵ external ⟵ file, the same path of resolverEntity that the detail page
+// uses) — never a raw provider value. For `faixa`, it writes only its own file; for
+// `album`, it cascades to ALL OWNED tracks (best-effort: a single failure does not
+// abort the others), honoring a divergent artist-credit (feat., ADR-0027 item 4) in
+// the ARTIST tag of that specific track — album/year/genre/cover keep coming from the
+// album. `type=='artista'` (or any other) is 422: there is no coherent "work"
+// granularity to cascade (ADR-0027). Unlike the "no automatic cascade" pattern used
+// elsewhere, here cascading the album is the ONLY coherent interpretation of the
+// action (an album never has a file of its own, ADR-0027) — it is not an arbitrary
+// mass cascade.
 //
-// Depois de escrever cada faixa, sincroniza media_file.hash/mtime/size
-// reaproveitando recheckEntityFilesPorFonte (a MESMA função que
-// refresh_files.go já usa, briefing 0088) a partir de um NOVO caller — sem
-// query nova, o próximo scan incremental não vê o arquivo regravado como uma
-// "mudança" de surpresa.
+// After writing each track, it synchronizes media_file.hash/mtime/size reusing
+// recheckEntityFilesPorFonte (the SAME function refresh_files.go already uses) from a
+// NEW caller — no new query, so the next incremental scan does not see the rewritten
+// file as a surprise "change".
 
 import (
 	"context"
@@ -36,18 +34,17 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 )
 
-// audioTagsWriteResultDTO é a resposta de POST /entities/{id}/audio-tags/write
-// (briefing 0125 §4): resumo informativo, mesmo espírito solto do 0088 —
-// `falhas` traz "faixaID: motivo" para cada faixa que não regravou.
+// audioTagsWriteResultDTO is the response of POST /entities/{id}/audio-tags/write:
+// an informational summary — `falhas` carries "faixaID: reason" for each track that was
+// not rewritten.
 type audioTagsWriteResultDTO struct {
 	FaixasRegravadas int      `json:"faixas_regravadas"`
 	Falhas           []string `json:"falhas"`
 }
 
-// writeAudioTags trata POST /api/v1/entities/{id}/audio-tags/write. 404 se a
-// entity não existe; 422 se `type` não for `faixa`/`album`; 503 se o ffmpeg
-// (mecanismo de escrita, internal/audiotag) não estiver disponível no
-// ambiente. Sem body.
+// writeAudioTags handles POST /api/v1/entities/{id}/audio-tags/write. 404 if the entity
+// does not exist; 422 if `type` is not `faixa`/`album`; 503 if ffmpeg (the write
+// mechanism, internal/audiotag) is not available in the environment. No body.
 func (s *Server) writeAudioTags(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -99,20 +96,20 @@ func (s *Server) writeAudioTags(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, dto)
 }
 
-// contextoAlbum agrupa o que é comum a TODAS as faixas de um álbum sendo
-// regravadas (evita resolver álbum/artista/contagem de faixas de novo a
-// cada faixa da cascata). AlbumEnt/ArtistaEnt zero-value (ID=="") quando o
-// álbum não foi encontrado ou a faixa não tem álbum-pai (defensivo -- o
-// modelo, ADR-0027, garante que toda faixa tem um álbum-pai).
+// contextoAlbum groups what is common to ALL tracks of an album being rewritten (it
+// avoids resolving album/artist/track count again for each track of the cascade).
+// AlbumEnt/ArtistaEnt are zero-value (ID=="") when the album was not found or the
+// track has no parent album (defensive -- the model, ADR-0027, guarantees every track
+// has a parent album).
 type contextoAlbum struct {
 	albumEnt   resolver.Entidade
 	artistaEnt resolver.Entidade
 	trackTotal int
 }
 
-// albumPaiDaFaixa sobe de uma faixa para o álbum-pai (entity_relation
-// kind=music_album) — "" quando a faixa não tem (não deveria acontecer no
-// modelo, mas degrada em vez de falhar a chamada inteira).
+// albumPaiDaFaixa walks up from a track to the parent album (entity_relation
+// kind=music_album) — "" when the track has none (it should not happen in the model,
+// but it degrades instead of failing the whole call).
 func (s *Server) albumPaiDaFaixa(ctx context.Context, faixaID string) string {
 	pais, err := s.leitura().ListarRelacoesPais(ctx, faixaID)
 	if err != nil {
@@ -126,12 +123,11 @@ func (s *Server) albumPaiDaFaixa(ctx context.Context, faixaID string) string {
 	return ""
 }
 
-// faixasPossuidasDoAlbum lista os ids das faixas-filho (entity_relation
-// kind=music_album, mesma ordem de sort_index=track_number que
-// ListarRelacoesFilhas já devolve) que têm ao menos um media_file 'present'
-// — a cascata do briefing 0125 só grava faixa POSSUÍDA (sem arquivo, não há
-// o que regravar). Erro de leitura degrada para lista vazia (best-effort,
-// mesmo espírito do resto do endpoint).
+// faixasPossuidasDoAlbum lists the ids of the child tracks (entity_relation
+// kind=music_album, same sort_index=track_number order that ListarRelacoesFilhas
+// already returns) that have at least one 'present' media_file — the cascade only writes
+// an OWNED track (without a file, there is nothing to rewrite). A read error degrades
+// to an empty list (best-effort, the same spirit as the rest of the endpoint).
 func (s *Server) faixasPossuidasDoAlbum(ctx context.Context, albumID string) []string {
 	rels, err := s.leitura().ListarRelacoesFilhas(ctx, albumID)
 	if err != nil {
@@ -157,15 +153,14 @@ func (s *Server) faixasPossuidasDoAlbum(ctx context.Context, albumID string) []s
 	return ids
 }
 
-// montarContextoAlbum resolve o álbum (RESOLVIDO, mesmo caminho de
-// resolverEntity) e o artista PRINCIPAL dele (entity_relation
-// kind=music_artista_principal), mais o total de faixas do álbum (contagem
-// de filhos kind=music_album — vira o "total de faixas" da tag, campo que o
-// modelo, ADR-0027, não persiste por faixa). albumID=="" devolve zero-value
-// sem erro (faixa avulsa sem álbum-pai, caso defensivo). Erro só propaga se
-// a PRÓPRIA resolução do álbum falhar de verdade (não NoRows -- esse caso já
-// degrada para zero-value, o álbum pode ter sumido entre a checagem do
-// chamador e agora).
+// montarContextoAlbum resolves the album (RESOLVED, the same path as resolverEntity) and
+// its MAIN artist (entity_relation kind=music_artista_principal), plus the total number
+// of tracks of the album (count of kind=music_album children — it becomes the tag's
+// "total tracks", a field the model, ADR-0027, does not persist per track). albumID==""
+// returns the zero-value without an error (a standalone track without a parent album, a
+// defensive case). The error only propagates if the album's OWN resolution really fails
+// (not NoRows -- that case already degrades to the zero-value, the album may have
+// vanished between the caller's check and now).
 func (s *Server) montarContextoAlbum(ctx context.Context, albumID string) (contextoAlbum, error) {
 	if albumID == "" {
 		return contextoAlbum{}, nil
@@ -203,11 +198,11 @@ func (s *Server) montarContextoAlbum(ctx context.Context, albumID string) (conte
 	return contextoAlbum{albumEnt: albumEnt, artistaEnt: artistaEnt, trackTotal: total}, nil
 }
 
-// gravarTagDaFaixa resolve o arquivo present + o metadado resolvido de UMA
-// faixa e chama o Writer; em caso de sucesso, sincroniza media_file via
-// recheckEntityFilesPorFonte (0088, reaproveitada). Erro devolvido é só
-// dessa faixa (o chamador -- writeAudioTags -- trata best-effort, não aborta
-// a cascata).
+// gravarTagDaFaixa resolves the present file + the resolved metadata of ONE track and
+// calls the Writer; on success, it synchronizes media_file through
+// recheckEntityFilesPorFonte (reused here). The returned error belongs only to that
+// track (the caller -- writeAudioTags -- handles it best-effort, it does not abort the
+// cascade).
 func (s *Server) gravarTagDaFaixa(ctx context.Context, writer *audiotag.Writer, faixaID string, albumCtx contextoAlbum) error {
 	files, err := s.leitura().ListarMediaFilesPorEntity(ctx, faixaID)
 	if err != nil {
@@ -237,19 +232,17 @@ func (s *Server) gravarTagDaFaixa(ctx context.Context, writer *audiotag.Writer, 
 		return err
 	}
 
-	// Sincroniza media_file.hash/mtime/size PÓS-escrita (briefing 0125 §6):
-	// best-effort -- a tag já foi gravada com sucesso; uma falha aqui só
-	// significa que o próximo scan incremental reconfere o arquivo por
-	// conta própria (o comportamento de ANTES deste briefing).
+	// Synchronizes media_file.hash/mtime/size AFTER the write: best-effort -- the tag
+	// was already written successfully; a failure here only means the next incremental
+	// scan rechecks the file on its own (the behavior of BEFORE this endpoint).
 	s.recheckEntityFilesPorFonte(ctx, files)
 	return nil
 }
 
-// musicaNamespace extrai o namespace core.music@1 já RESOLVIDO (map[string]any,
-// veio de resolver.Entidade.ExtensionData -- ao contrário de
-// musicext.ExtractNamespace, que lê o extension_data_json CRU da entity;
-// aqui o valor já passou pela composição override⟵externo⟵arquivo). nil
-// quando a entity não tem o namespace.
+// musicaNamespace extracts the ALREADY RESOLVED core.music@1 namespace (map[string]any,
+// it came from resolver.Entidade.ExtensionData -- unlike musicext.ExtractNamespace, which
+// reads the entity's RAW extension_data_json; here the value already went through the
+// override⟵external⟵file composition). nil when the entity has no such namespace.
 func musicaNamespace(ent resolver.Entidade) map[string]any {
 	if ent.ExtensionData == nil {
 		return nil
@@ -258,10 +251,10 @@ func musicaNamespace(ent resolver.Entidade) map[string]any {
 	return ns
 }
 
-// featCredenciadoPorRelacao sobe de uma faixa para o artista de COLABORAÇÃO
-// (entity_relation kind=music_artista_feat, ADR-0027 item 4) quando existir
-// -- devolve o nome/MBID RESOLVIDOS dele (mesmo caminho de resolverEntity).
-// ("", "") quando não há relação de feat (o caso comum).
+// featCredenciadoPorRelacao walks up from a track to the COLLABORATION artist
+// (entity_relation kind=music_artista_feat, ADR-0027 item 4) when it exists — returning
+// his RESOLVED name/MBID (the same resolverEntity path). ("", "") when there is no feat
+// relation (the common case).
 func (s *Server) featCredenciadoPorRelacao(ctx context.Context, faixaID string) (nome, mbid string) {
 	pais, err := s.leitura().ListarRelacoesPais(ctx, faixaID)
 	if err != nil {
@@ -280,14 +273,12 @@ func (s *Server) featCredenciadoPorRelacao(ctx context.Context, faixaID string) 
 	return "", ""
 }
 
-// montarMetadadoFaixa monta o audiotag.Metadado de UMA faixa a partir da
-// entity RESOLVIDA dela (faixaEnt) + o contexto do álbum já resolvido
-// (albumCtx, compartilhado entre todas as faixas de uma cascata). O artista
-// da tag é o da faixa (respeitando divergência feat., ADR-0027 item 4: a
-// entity_relation kind=music_artista_feat vence, com fallback para as
-// chaves feat_artist_name/feat_artist_mbid do extension_data quando não há
-// relação -- briefing 0125 §4/ADR-0029 item 4); AlbumArtist é sempre o
-// artista PRINCIPAL do álbum.
+// montarMetadadoFaixa builds the audiotag.Metadado of ONE track from its RESOLVED entity
+// (faixaEnt) + the already resolved album context (albumCtx, shared by all the tracks of
+// a cascade). The tag artist is the track's one (honoring a feat. divergence, ADR-0027
+// item 4: the entity_relation kind=music_artista_feat wins, with a fallback to the
+// feat_artist_name/feat_artist_mbid keys of extension_data when there is no relation);
+// AlbumArtist is always the album's MAIN artist.
 func (s *Server) montarMetadadoFaixa(ctx context.Context, faixaEnt resolver.Entidade, albumCtx contextoAlbum) audiotag.Metadado {
 	nsFaixa := musicaNamespace(faixaEnt)
 	nsAlbum := musicaNamespace(albumCtx.albumEnt)
@@ -334,13 +325,12 @@ func (s *Server) montarMetadadoFaixa(ctx context.Context, faixaEnt resolver.Enti
 	}
 }
 
-// capaDoAlbum resolve o path em disco da capa VENCEDORA do álbum (mesma
-// precedência de serviço de arte de internal/server/assets.go,
-// escolherAssetServido -- preferida→user→local→external→base), validado
-// contra as raízes confiáveis (mesma guarda de path-traversal do
-// getAssetFile) e confirmado no disco. "" quando o álbum não tem nenhum
-// poster ou o path não passa na guarda/não existe mais (best-effort: a
-// tag sai sem capa em vez de falhar a faixa inteira).
+// capaDoAlbum resolves the on-disk path of the album's WINNING cover (same artwork
+// serving precedence as internal/server/assets.go, escolherAssetServido --
+// preferred→user→local→external→base), validated against the trusted roots (the same
+// path-traversal guard as getAssetFile) and confirmed on disk. "" when the album has no
+// poster at all or the path fails the guard / no longer exists (best-effort: the tag
+// goes out without a cover instead of failing the whole track).
 func (s *Server) capaDoAlbum(ctx context.Context, albumID string) string {
 	if albumID == "" {
 		return ""
@@ -363,7 +353,7 @@ func (s *Server) capaDoAlbum(ctx context.Context, albumID string) string {
 	return asset.PathOrUri
 }
 
-// primeiroNaoVazio devolve `a` quando não-vazio, senão `b`.
+// primeiroNaoVazio returns `a` when non-empty, otherwise `b`.
 func primeiroNaoVazio(a, b string) string {
 	if a != "" {
 		return a
@@ -371,8 +361,8 @@ func primeiroNaoVazio(a, b string) string {
 	return b
 }
 
-// strOrEmpty deref um *string ("" quando nil) -- o release_date resolvido
-// (resolver.Entidade.ReleaseDate) é *string.
+// strOrEmpty derefs a *string ("" when nil) -- the resolved release_date
+// (resolver.Entidade.ReleaseDate) is *string.
 func strOrEmpty(p *string) string {
 	if p == nil {
 		return ""

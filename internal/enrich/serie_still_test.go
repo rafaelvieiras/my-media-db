@@ -10,9 +10,9 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
-// TestExtensaoEpisodioIncluiStill (0042): extensaoEpisodio grava `still_url` no envelope
-// core.tv@1 QUANDO o provider trouxe um still (StillURL != ""), ao lado do numbering/
-// absolute_number — o still é artwork NEUTRO de idioma, só a URL crua (nada baixado).
+// TestExtensaoEpisodioIncluiStill: extensaoEpisodio writes `still_url` into the
+// core.tv@1 envelope WHEN the provider brought a still (StillURL != ""), alongside the numbering/
+// absolute_number — the still is language-NEUTRAL artwork, only the raw URL (nothing downloaded).
 func TestExtensaoEpisodioIncluiStill(t *testing.T) {
 	ep := provider.EpisodioExterno{
 		SourceID:  "1",
@@ -25,9 +25,9 @@ func TestExtensaoEpisodioIncluiStill(t *testing.T) {
 	}
 }
 
-// TestExtensaoEpisodioSemStill (0042): sem still (StillURL vazio) a chave `still_url`
-// NAO entra no envelope (omitida, nao vazia) — a UI cai no placeholder. O numbering
-// segue presente (o still e opcional, nao substitui o resto do envelope).
+// TestExtensaoEpisodioSemStill: with no still (empty StillURL) the `still_url` key
+// does NOT enter the envelope (omitted, not empty) — the UI falls back to the placeholder. The numbering
+// stays present (the still is optional, it does not replace the rest of the envelope).
 func TestExtensaoEpisodioSemStill(t *testing.T) {
 	ep := provider.EpisodioExterno{
 		SourceID:  "1",
@@ -42,9 +42,9 @@ func TestExtensaoEpisodioSemStill(t *testing.T) {
 	}
 }
 
-// TestImportarSerieGravaStillDoEpisodio (0042): importar a arvore grava o still_url cru
-// do provider no extension_data core.tv@1 de cada episodio com still — SEM baixar a
-// imagem (so a URL). O fake serve /still-<id>.png; conferimos o ep 103.
+// TestImportarSerieGravaStillDoEpisodio: importing the tree writes the raw still_url
+// of the provider into the core.tv@1 extension_data of each episode with a still — WITHOUT downloading the
+// image (only the URL). The fake serves /still-<id>.png; we check ep 103.
 func TestImportarSerieGravaStillDoEpisodio(t *testing.T) {
 	svc, database := svcSerieFake(t)
 	ctx := context.Background()

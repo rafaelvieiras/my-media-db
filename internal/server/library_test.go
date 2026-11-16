@@ -13,8 +13,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 )
 
-// setupLibraryServer sobe um Server com banco temporário migrado e devolve o
-// handler raiz (rotas montadas) para exercitar /api/v1/library ponta a ponta.
+// setupLibraryServer starts a Server with a temporary migrated database and returns the
+// root handler (routes mounted) to exercise /api/v1/library end to end.
 func setupLibraryServer(t *testing.T) http.Handler {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "library.sqlite")
@@ -37,7 +37,7 @@ func setupLibraryServer(t *testing.T) http.Handler {
 	return h
 }
 
-// do executa uma requisição contra o handler e devolve o recorder.
+// do executes a request against the handler and returns the recorder.
 func do(t *testing.T, h http.Handler, method, target string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	var rdr *bytes.Reader
@@ -58,7 +58,8 @@ func do(t *testing.T, h http.Handler, method, target string, body any) *httptest
 	return rec
 }
 
-// criarOK faz POST /api/v1/library esperando 201 e devolve o registro criado.
+// criarOK performs POST /api/v1/library expecting 201 and returns the created
+// record.
 func criarOK(t *testing.T, h http.Handler, path, tipo string) sourceDTO {
 	t.Helper()
 	rec := do(t, h, http.MethodPost, "/api/v1/library", map[string]string{"path": path, "type": tipo})
@@ -68,7 +69,7 @@ func criarOK(t *testing.T, h http.Handler, path, tipo string) sourceDTO {
 	return decodeSource(t, rec)
 }
 
-// decodeSource decodifica um sourceDTO do corpo.
+// decodeSource decodes a sourceDTO from the body.
 func decodeSource(t *testing.T, rec *httptest.ResponseRecorder) sourceDTO {
 	t.Helper()
 	var s sourceDTO
@@ -78,8 +79,8 @@ func decodeSource(t *testing.T, rec *httptest.ResponseRecorder) sourceDTO {
 	return s
 }
 
-// checkErrorShape valida que o corpo segue {error:{code,message}} e que o code
-// bate com o esperado.
+// checkErrorShape validates that the body follows {error:{code,message}} and that the code
+// matches the expected one.
 func checkErrorShape(t *testing.T, rec *httptest.ResponseRecorder, wantCode string) {
 	t.Helper()
 	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
@@ -160,7 +161,7 @@ func TestPostLibrarySemPermissao(t *testing.T) {
 	if err := os.Chmod(dir, 0o000); err != nil {
 		t.Fatalf("Chmod 0000: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) // restaura p/ o TempDir limpar
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) // restore so TempDir can clean up
 
 	rec := do(t, h, http.MethodPost, "/api/v1/library", map[string]string{"path": dir, "type": "movie"})
 	if rec.Code != http.StatusUnprocessableEntity {
@@ -178,8 +179,8 @@ func TestPostLibraryDuplicado(t *testing.T) {
 		t.Fatalf("primeiro POST status = %d, quero 201", rec.Code)
 	}
 
-	// Mesmo caminho por uma forma NÃO-limpa (/dir/.. -> pai; /pai/base -> dir):
-	// após normalização vira o mesmo path e deve colidir.
+	// Same path through a NON-clean form (/dir/.. -> parent; /parent/base -> dir):
+	// after normalization it becomes the same path and must collide.
 	naoLimpo := filepath.Join(dir, "..", filepath.Base(dir))
 	rec2 := do(t, h, http.MethodPost, "/api/v1/library", map[string]string{"path": naoLimpo, "type": "movie"})
 	if rec2.Code != http.StatusConflict {
@@ -202,14 +203,14 @@ func TestPostLibraryTipoInvalido(t *testing.T) {
 func TestPostLibraryCorpoInvalido(t *testing.T) {
 	h := setupLibraryServer(t)
 
-	// path ausente.
+	// absent path.
 	rec := do(t, h, http.MethodPost, "/api/v1/library", map[string]string{"type": "movie"})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("path ausente: status = %d, quero 400", rec.Code)
 	}
 	checkErrorShape(t, rec, "invalid_body")
 
-	// JSON malformado.
+	// Malformed JSON.
 	rec2 := do(t, h, http.MethodPost, "/api/v1/library", []byte("{isto nao e json"))
 	if rec2.Code != http.StatusBadRequest {
 		t.Fatalf("json malformado: status = %d, quero 400", rec2.Code)
@@ -219,7 +220,7 @@ func TestPostLibraryCorpoInvalido(t *testing.T) {
 
 func TestGetLibraryListaComStateReavaliado(t *testing.T) {
 	h := setupLibraryServer(t)
-	// dir que vamos remover para virar offline.
+	// dir that we will remove to become offline.
 	dirRemovido := filepath.Join(t.TempDir(), "some")
 	if err := os.Mkdir(dirRemovido, 0o755); err != nil {
 		t.Fatalf("Mkdir: %v", err)
@@ -229,7 +230,7 @@ func TestGetLibraryListaComStateReavaliado(t *testing.T) {
 	criarOK(t, h, dirRemovido, "movie")
 	criarOK(t, h, dirVivo, "tv")
 
-	// Remove o dir do disco: na leitura seu state deve virar offline.
+	// Removes the dir from disk: on read its state must become offline.
 	if err := os.Remove(dirRemovido); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
@@ -267,7 +268,7 @@ func TestGetLibraryPorID(t *testing.T) {
 	}
 	criado := decodeSource(t, rec)
 
-	// 200 no id existente.
+	// 200 on an existing id.
 	recGet := do(t, h, http.MethodGet, "/api/v1/library/"+criado.ID, nil)
 	if recGet.Code != http.StatusOK {
 		t.Fatalf("GET /{id} status = %d, quero 200", recGet.Code)
@@ -277,7 +278,7 @@ func TestGetLibraryPorID(t *testing.T) {
 		t.Errorf("registro divergente: %+v", got)
 	}
 
-	// 404 em id inexistente.
+	// 404 on a nonexistent id.
 	rec404 := do(t, h, http.MethodGet, "/api/v1/library/nao-existe", nil)
 	if rec404.Code != http.StatusNotFound {
 		t.Fatalf("GET /{id} inexistente status = %d, quero 404", rec404.Code)
@@ -295,7 +296,7 @@ func TestDeleteLibrary(t *testing.T) {
 	}
 	criado := decodeSource(t, rec)
 
-	// DELETE existente -> 204 sem corpo.
+	// DELETE existing -> 204 without body.
 	recDel := do(t, h, http.MethodDelete, "/api/v1/library/"+criado.ID, nil)
 	if recDel.Code != http.StatusNoContent {
 		t.Fatalf("DELETE status = %d, quero 204", recDel.Code)
@@ -304,12 +305,12 @@ func TestDeleteLibrary(t *testing.T) {
 		t.Errorf("corpo do 204 não vazio: %q", recDel.Body.String())
 	}
 
-	// Sumiu: GET agora 404.
+	// It disappeared: GET now 404.
 	if recGet := do(t, h, http.MethodGet, "/api/v1/library/"+criado.ID, nil); recGet.Code != http.StatusNotFound {
 		t.Errorf("GET após DELETE status = %d, quero 404", recGet.Code)
 	}
 
-	// DELETE inexistente -> 404.
+	// DELETE nonexistent -> 404.
 	recDel404 := do(t, h, http.MethodDelete, "/api/v1/library/nao-existe", nil)
 	if recDel404.Code != http.StatusNotFound {
 		t.Fatalf("DELETE inexistente status = %d, quero 404", recDel404.Code)
@@ -317,13 +318,13 @@ func TestDeleteLibrary(t *testing.T) {
 	checkErrorShape(t, recDel404, "not_found")
 }
 
-// TestApiNotFoundShapeNovo garante que o 404 genérico de /api migrou para o
-// shape padrão {error:{code,message}} (antes era {"error":"not found"}).
-// TestPatchLibraryWatchEnabled cobre o toggle do briefing 0064: PATCH liga
-// watch_enabled, persiste (reflete em GET), e desliga de volta -- sem
-// s.watch configurado (setupLibraryServer não usa WithWatch), a rotina de
-// aplicarWatchToggle degrada em silêncio (guarda s.watch==nil), só a
-// persistência é exercitada aqui.
+// TestApiNotFoundShapeNovo guarantees that the generic /api 404 migrated to the
+// standard shape {error:{code,message}} (it used to be {"error":"not found"}).
+// TestPatchLibraryWatchEnabled covers the toggle: PATCH turns watch_enabled on, persists
+// (it reflects in GET), and turns it off again -- without s.watch configured
+// (setupLibraryServer does not use WithWatch), the aplicarWatchToggle routine
+// degrades silently (s.watch==nil guard), only the persistence is exercised
+// here.
 func TestPatchLibraryWatchEnabled(t *testing.T) {
 	h := setupLibraryServer(t)
 	src := criarOK(t, h, t.TempDir(), "movie")
@@ -340,7 +341,7 @@ func TestPatchLibraryWatchEnabled(t *testing.T) {
 		t.Error("watch_enabled na resposta do PATCH = false, quero true")
 	}
 
-	// Reflete em GET (persistiu de verdade, não só na resposta do PATCH).
+	// Reflects in GET (it persisted for real, not only in the PATCH response).
 	get := do(t, h, http.MethodGet, "/api/v1/library/"+src.ID, nil)
 	if got := decodeSource(t, get); !got.WatchEnabled {
 		t.Error("watch_enabled no GET pos-PATCH = false, quero true (persistido)")
@@ -355,8 +356,9 @@ func TestPatchLibraryWatchEnabled(t *testing.T) {
 	}
 }
 
-// TestPatchLibraryCorpoVazioSoDevolveEstado cobre o caso "PATCH sem
-// watch_enabled no corpo": não toca nada, só devolve o estado atual.
+// TestPatchLibraryCorpoVazioSoDevolveEstado covers the case "PATCH without
+// watch_enabled in the body": it touches nothing, it only returns the current
+// state.
 func TestPatchLibraryCorpoVazioSoDevolveEstado(t *testing.T) {
 	h := setupLibraryServer(t)
 	src := criarOK(t, h, t.TempDir(), "movie")
@@ -370,7 +372,7 @@ func TestPatchLibraryCorpoVazioSoDevolveEstado(t *testing.T) {
 	}
 }
 
-// TestPatchLibraryNaoEncontrado cobre o 404 de uma fonte inexistente.
+// TestPatchLibraryNaoEncontrado covers the 404 of a nonexistent source.
 func TestPatchLibraryNaoEncontrado(t *testing.T) {
 	h := setupLibraryServer(t)
 	rec := do(t, h, http.MethodPatch, "/api/v1/library/naoexiste", map[string]any{"watch_enabled": true})
@@ -380,7 +382,8 @@ func TestPatchLibraryNaoEncontrado(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestPatchLibraryCorpoMalformado cobre o 422 de um corpo que não é JSON válido.
+// TestPatchLibraryCorpoMalformado covers the 422 of a body that is not valid
+// JSON.
 func TestPatchLibraryCorpoMalformado(t *testing.T) {
 	h := setupLibraryServer(t)
 	src := criarOK(t, h, t.TempDir(), "movie")
@@ -392,9 +395,9 @@ func TestPatchLibraryCorpoMalformado(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestPostLibraryComPreferredLanguage cobre o cadastro com preferred_language
-// (briefing 0084): "en" está no allowed default (defaultLanguageSettings) e
-// entra sem exigir PUT /settings/languages antes.
+// TestPostLibraryComPreferredLanguage covers the registration with preferred_language:
+// "en" is in the default allowed list (defaultLanguageSettings) and
+// goes in without requiring PUT /settings/languages first.
 func TestPostLibraryComPreferredLanguage(t *testing.T) {
 	h := setupLibraryServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/library",
@@ -408,9 +411,8 @@ func TestPostLibraryComPreferredLanguage(t *testing.T) {
 	}
 }
 
-// TestPostLibrarySemPreferredLanguageFicaNil cobre o default (campo
-// omitido): preferred_language fica nil, comportamento idêntico a antes do
-// briefing 0084.
+// TestPostLibrarySemPreferredLanguageFicaNil covers the default (omitted field):
+// preferred_language stays nil, behavior identical to before.
 func TestPostLibrarySemPreferredLanguageFicaNil(t *testing.T) {
 	h := setupLibraryServer(t)
 	got := criarOK(t, h, t.TempDir(), "movie")
@@ -419,8 +421,8 @@ func TestPostLibrarySemPreferredLanguageFicaNil(t *testing.T) {
 	}
 }
 
-// TestPostLibraryPreferredLanguageInvalido cobre o 422 invalid_body quando o
-// código não está em app_settings.languages.allowed.
+// TestPostLibraryPreferredLanguageInvalido covers the 422 invalid_body when the
+// code is not in app_settings.languages.allowed.
 func TestPostLibraryPreferredLanguageInvalido(t *testing.T) {
 	h := setupLibraryServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/library",
@@ -431,9 +433,9 @@ func TestPostLibraryPreferredLanguageInvalido(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestPatchLibraryPreferredLanguageDefineELimpa cobre o ciclo completo do
-// briefing 0084: PATCH com preferred_language define; `null` explícito
-// limpa; campo AUSENTE deixa inalterado.
+// TestPatchLibraryPreferredLanguageDefineELimpa covers the complete cycle:
+// PATCH with preferred_language defines it; an explicit `null`
+// clears it; an ABSENT field leaves it unchanged.
 func TestPatchLibraryPreferredLanguageDefineELimpa(t *testing.T) {
 	h := setupLibraryServer(t)
 	src := criarOK(t, h, t.TempDir(), "movie")
@@ -446,13 +448,14 @@ func TestPatchLibraryPreferredLanguageDefineELimpa(t *testing.T) {
 		t.Errorf("preferred_language = %v, quero \"en\"", got.PreferredLanguage)
 	}
 
-	// Campo AUSENTE (só outro campo qualquer no corpo) não altera o valor atual.
+	// An ABSENT field (only some other field in the body) does not change the current
+	// value.
 	recInalterado := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"watch_enabled": true})
 	if got := decodeSource(t, recInalterado); got.PreferredLanguage == nil || *got.PreferredLanguage != "en" {
 		t.Errorf("preferred_language após PATCH sem o campo = %v, quero continuar \"en\"", got.PreferredLanguage)
 	}
 
-	// `null` explícito LIMPA a preferência.
+	// An explicit `null` CLEARS the preference.
 	recNull := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, []byte(`{"preferred_language":null}`))
 	if recNull.Code != http.StatusOK {
 		t.Fatalf("PATCH preferred_language=null: status = %d, quero 200 (corpo=%s)", recNull.Code, recNull.Body.String())
@@ -461,14 +464,15 @@ func TestPatchLibraryPreferredLanguageDefineELimpa(t *testing.T) {
 		t.Errorf("preferred_language após null explícito = %v, quero nil", *got.PreferredLanguage)
 	}
 
-	// Reflete em GET (persistiu de verdade).
+	// Reflects in GET (it persisted for real).
 	get := do(t, h, http.MethodGet, "/api/v1/library/"+src.ID, nil)
 	if got := decodeSource(t, get); got.PreferredLanguage != nil {
 		t.Errorf("GET pós-PATCH: preferred_language = %v, quero nil (persistido)", *got.PreferredLanguage)
 	}
 }
 
-// TestPatchLibraryPreferredLanguageInvalido cobre o 422 invalid_body no PATCH.
+// TestPatchLibraryPreferredLanguageInvalido covers the 422 invalid_body on
+// PATCH.
 func TestPatchLibraryPreferredLanguageInvalido(t *testing.T) {
 	h := setupLibraryServer(t)
 	src := criarOK(t, h, t.TempDir(), "movie")
@@ -479,17 +483,17 @@ func TestPatchLibraryPreferredLanguageInvalido(t *testing.T) {
 	}
 	checkErrorShape(t, rec, "invalid_body")
 
-	// Nada foi persistido (a validação falhou antes de tocar o banco).
+	// Nothing was persisted (the validation failed before touching the database).
 	get := do(t, h, http.MethodGet, "/api/v1/library/"+src.ID, nil)
 	if got := decodeSource(t, get); got.PreferredLanguage != nil {
 		t.Errorf("preferred_language após PATCH inválido = %v, quero nil (não persistido)", *got.PreferredLanguage)
 	}
 }
 
-// ── retroactive_enrichment_days (briefing 0085) ─────────────────────────────
+// ── retroactive_enrichment_days ─────────────────────────────
 
-// TestPostLibraryComRetroactiveEnrichmentDays cobre o cadastro com override
-// válido (briefing 0085).
+// TestPostLibraryComRetroactiveEnrichmentDays covers the registration with a valid
+// override.
 func TestPostLibraryComRetroactiveEnrichmentDays(t *testing.T) {
 	h := setupLibraryServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/library",
@@ -503,8 +507,8 @@ func TestPostLibraryComRetroactiveEnrichmentDays(t *testing.T) {
 	}
 }
 
-// TestPostLibrarySemRetroactiveEnrichmentDaysFicaNil cobre o default (campo
-// omitido): retroactive_enrichment_days fica nil (herda o global).
+// TestPostLibrarySemRetroactiveEnrichmentDaysFicaNil covers the default (omitted field):
+// retroactive_enrichment_days stays nil (it inherits the global one).
 func TestPostLibrarySemRetroactiveEnrichmentDaysFicaNil(t *testing.T) {
 	h := setupLibraryServer(t)
 	got := criarOK(t, h, t.TempDir(), "movie")
@@ -513,8 +517,8 @@ func TestPostLibrarySemRetroactiveEnrichmentDaysFicaNil(t *testing.T) {
 	}
 }
 
-// TestPostLibraryRetroactiveEnrichmentDaysInvalido cobre o 422 invalid_body
-// quando o valor está fora de [1, 365].
+// TestPostLibraryRetroactiveEnrichmentDaysInvalido covers the 422 invalid_body
+// when the value is outside [1, 365].
 func TestPostLibraryRetroactiveEnrichmentDaysInvalido(t *testing.T) {
 	h := setupLibraryServer(t)
 	for _, v := range []int{0, 366, -5} {
@@ -527,9 +531,9 @@ func TestPostLibraryRetroactiveEnrichmentDaysInvalido(t *testing.T) {
 	}
 }
 
-// TestPatchLibraryRetroactiveEnrichmentDaysDefineELimpa cobre o ciclo
-// completo do briefing 0085: PATCH com retroactive_enrichment_days define;
-// `null` explícito limpa; campo AUSENTE deixa inalterado.
+// TestPatchLibraryRetroactiveEnrichmentDaysDefineELimpa covers the complete
+// cycle: PATCH with retroactive_enrichment_days defines it; an explicit `null`
+// clears it; an ABSENT field leaves it unchanged.
 func TestPatchLibraryRetroactiveEnrichmentDaysDefineELimpa(t *testing.T) {
 	h := setupLibraryServer(t)
 	src := criarOK(t, h, t.TempDir(), "movie")
@@ -542,13 +546,14 @@ func TestPatchLibraryRetroactiveEnrichmentDaysDefineELimpa(t *testing.T) {
 		t.Errorf("retroactive_enrichment_days = %v, quero 5", got.RetroactiveEnrichmentDays)
 	}
 
-	// Campo AUSENTE (só outro campo qualquer no corpo) não altera o valor atual.
+	// An ABSENT field (only some other field in the body) does not change the current
+	// value.
 	recInalterado := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, map[string]any{"watch_enabled": true})
 	if got := decodeSource(t, recInalterado); got.RetroactiveEnrichmentDays == nil || *got.RetroactiveEnrichmentDays != 5 {
 		t.Errorf("retroactive_enrichment_days após PATCH sem o campo = %v, quero continuar 5", got.RetroactiveEnrichmentDays)
 	}
 
-	// `null` explícito LIMPA o override.
+	// An explicit `null` CLEARS the override.
 	recNull := do(t, h, http.MethodPatch, "/api/v1/library/"+src.ID, []byte(`{"retroactive_enrichment_days":null}`))
 	if recNull.Code != http.StatusOK {
 		t.Fatalf("PATCH retroactive_enrichment_days=null: status = %d, quero 200 (corpo=%s)", recNull.Code, recNull.Body.String())
@@ -557,15 +562,15 @@ func TestPatchLibraryRetroactiveEnrichmentDaysDefineELimpa(t *testing.T) {
 		t.Errorf("retroactive_enrichment_days após null explícito = %v, quero nil", *got.RetroactiveEnrichmentDays)
 	}
 
-	// Reflete em GET (persistiu de verdade).
+	// Reflects in GET (it persisted for real).
 	get := do(t, h, http.MethodGet, "/api/v1/library/"+src.ID, nil)
 	if got := decodeSource(t, get); got.RetroactiveEnrichmentDays != nil {
 		t.Errorf("GET pós-PATCH: retroactive_enrichment_days = %v, quero nil (persistido)", *got.RetroactiveEnrichmentDays)
 	}
 }
 
-// TestPatchLibraryRetroactiveEnrichmentDaysInvalido cobre o 422 invalid_body
-// no PATCH.
+// TestPatchLibraryRetroactiveEnrichmentDaysInvalido covers the 422 invalid_body on
+// PATCH.
 func TestPatchLibraryRetroactiveEnrichmentDaysInvalido(t *testing.T) {
 	h := setupLibraryServer(t)
 	src := criarOK(t, h, t.TempDir(), "movie")
@@ -576,15 +581,15 @@ func TestPatchLibraryRetroactiveEnrichmentDaysInvalido(t *testing.T) {
 	}
 	checkErrorShape(t, rec, "invalid_body")
 
-	// Nada foi persistido (a validação falhou antes de tocar o banco).
+	// Nothing was persisted (the validation failed before touching the database).
 	get := do(t, h, http.MethodGet, "/api/v1/library/"+src.ID, nil)
 	if got := decodeSource(t, get); got.RetroactiveEnrichmentDays != nil {
 		t.Errorf("retroactive_enrichment_days após PATCH inválido = %v, quero nil (não persistido)", *got.RetroactiveEnrichmentDays)
 	}
 }
 
-// TestPatchLibraryPathValido cobre o núcleo do briefing 0070: PATCH com
-// `path` válido reaponta a fonte (200, path novo, state online) sem re-scan.
+// TestPatchLibraryPathValido covers the core: PATCH with a valid `path`
+// re-points the source (200, new path, online state) without a re-scan.
 func TestPatchLibraryPathValido(t *testing.T) {
 	h := setupLibraryServer(t)
 	src := criarOK(t, h, t.TempDir(), "movie")
@@ -602,14 +607,15 @@ func TestPatchLibraryPathValido(t *testing.T) {
 		t.Errorf("state = %q, quero online", got.State)
 	}
 
-	// Reflete em GET (persistiu de verdade).
+	// Reflects in GET (it persisted for real).
 	get := do(t, h, http.MethodGet, "/api/v1/library/"+src.ID, nil)
 	if gotGet := decodeSource(t, get); gotGet.Path != novoDir {
 		t.Errorf("path no GET pos-PATCH = %q, quero %q (persistido)", gotGet.Path, novoDir)
 	}
 }
 
-// TestPatchLibraryPathNoOp cobre o no-op (path novo IGUAL ao atual): 200, nada muda.
+// TestPatchLibraryPathNoOp covers the no-op (new path EQUAL to the current one): 200,
+// nothing changes.
 func TestPatchLibraryPathNoOp(t *testing.T) {
 	h := setupLibraryServer(t)
 	dir := t.TempDir()
@@ -624,7 +630,7 @@ func TestPatchLibraryPathNoOp(t *testing.T) {
 	}
 }
 
-// TestPatchLibraryPathDuplicado cobre o 409 duplicate_path.
+// TestPatchLibraryPathDuplicado covers the 409 duplicate_path.
 func TestPatchLibraryPathDuplicado(t *testing.T) {
 	h := setupLibraryServer(t)
 	srcA := criarOK(t, h, t.TempDir(), "movie")
@@ -638,7 +644,7 @@ func TestPatchLibraryPathDuplicado(t *testing.T) {
 	checkErrorShape(t, rec, "duplicate_path")
 }
 
-// TestPatchLibraryPathInexistente cobre o 422 invalid_path.
+// TestPatchLibraryPathInexistente covers the 422 invalid_path.
 func TestPatchLibraryPathInexistente(t *testing.T) {
 	h := setupLibraryServer(t)
 	src := criarOK(t, h, t.TempDir(), "movie")
@@ -651,7 +657,7 @@ func TestPatchLibraryPathInexistente(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_path")
 }
 
-// TestPatchLibraryPathNaoDiretorio cobre o 422 not_a_directory.
+// TestPatchLibraryPathNaoDiretorio covers the 422 not_a_directory.
 func TestPatchLibraryPathNaoDiretorio(t *testing.T) {
 	h := setupLibraryServer(t)
 	src := criarOK(t, h, t.TempDir(), "movie")
@@ -667,7 +673,7 @@ func TestPatchLibraryPathNaoDiretorio(t *testing.T) {
 	checkErrorShape(t, rec, "not_a_directory")
 }
 
-// TestPatchLibraryPathVazio cobre o 400 invalid_body (path == "").
+// TestPatchLibraryPathVazio covers the 400 invalid_body (path == "").
 func TestPatchLibraryPathVazio(t *testing.T) {
 	h := setupLibraryServer(t)
 	src := criarOK(t, h, t.TempDir(), "movie")
@@ -679,7 +685,7 @@ func TestPatchLibraryPathVazio(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestPatchLibraryPathIdInexistente cobre o 404 de um id inexistente.
+// TestPatchLibraryPathIdInexistente covers the 404 of a nonexistent id.
 func TestPatchLibraryPathIdInexistente(t *testing.T) {
 	h := setupLibraryServer(t)
 	rec := do(t, h, http.MethodPatch, "/api/v1/library/naoexiste", map[string]any{"path": t.TempDir()})
@@ -689,9 +695,9 @@ func TestPatchLibraryPathIdInexistente(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestPatchLibraryPathEWatchEnabledJuntos cobre o PATCH parcial compondo os
-// dois campos no mesmo corpo (briefing 0070): path é aplicado primeiro
-// (recasco), watch_enabled depois -- a resposta final reflete os dois.
+// TestPatchLibraryPathEWatchEnabledJuntos covers the partial PATCH composing the
+// two fields in the same body: path is applied first (re-root), watch_enabled
+// afterwards -- the final response reflects both.
 func TestPatchLibraryPathEWatchEnabledJuntos(t *testing.T) {
 	h := setupLibraryServer(t)
 	src := criarOK(t, h, t.TempDir(), "movie")
@@ -710,7 +716,7 @@ func TestPatchLibraryPathEWatchEnabledJuntos(t *testing.T) {
 		t.Error("watch_enabled = false, quero true")
 	}
 
-	// Persistiu os dois campos.
+	// Persisted both fields.
 	get := do(t, h, http.MethodGet, "/api/v1/library/"+src.ID, nil)
 	gotGet := decodeSource(t, get)
 	if gotGet.Path != novoDir || !gotGet.WatchEnabled {
@@ -718,9 +724,9 @@ func TestPatchLibraryPathEWatchEnabledJuntos(t *testing.T) {
 	}
 }
 
-// TestBrowseLibraryPathListaSubpastas cobre o 200 do navegador de pastas
-// (briefing 0071): lista só diretórios do path pedido, ordenados, com parent
-// não-nil (o tempdir não é raiz).
+// TestBrowseLibraryPathListaSubpastas covers the 200 of the folder browser:
+// it lists only directories of the requested path, sorted, with a non-nil parent
+// (the tempdir is not a root).
 func TestBrowseLibraryPathListaSubpastas(t *testing.T) {
 	h := setupLibraryServer(t)
 	dir := t.TempDir()
@@ -756,7 +762,7 @@ func TestBrowseLibraryPathListaSubpastas(t *testing.T) {
 	}
 }
 
-// TestBrowseLibraryPathRaizDefault cobre path ausente/vazio -> raiz "/".
+// TestBrowseLibraryPathRaizDefault covers an absent/empty path -> root "/".
 func TestBrowseLibraryPathRaizDefault(t *testing.T) {
 	h := setupLibraryServer(t)
 
@@ -776,7 +782,7 @@ func TestBrowseLibraryPathRaizDefault(t *testing.T) {
 	}
 }
 
-// TestBrowseLibraryPathInexistente cobre o 422 invalid_path.
+// TestBrowseLibraryPathInexistente covers the 422 invalid_path.
 func TestBrowseLibraryPathInexistente(t *testing.T) {
 	h := setupLibraryServer(t)
 	inexistente := filepath.Join(t.TempDir(), "nao-existe")
@@ -788,7 +794,7 @@ func TestBrowseLibraryPathInexistente(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_path")
 }
 
-// TestBrowseLibraryPathNaoDiretorio cobre o 422 not_a_directory.
+// TestBrowseLibraryPathNaoDiretorio covers the 422 not_a_directory.
 func TestBrowseLibraryPathNaoDiretorio(t *testing.T) {
 	h := setupLibraryServer(t)
 	arquivo := filepath.Join(t.TempDir(), "f.txt")
@@ -803,9 +809,9 @@ func TestBrowseLibraryPathNaoDiretorio(t *testing.T) {
 	checkErrorShape(t, rec, "not_a_directory")
 }
 
-// TestBrowseLibraryPathRotaEstaticaNaoColideComWildcardID garante que
-// "/browse" cai no handler dedicado, e não em getLibrary com id="browse"
-// (briefing 0071: a rota estática precisa vencer o wildcard "/{id}").
+// TestBrowseLibraryPathRotaEstaticaNaoColideComWildcardID guarantees that
+// "/browse" falls into the dedicated handler, and not into getLibrary with id="browse"
+// (the static route has to beat the "/{id}" wildcard).
 func TestBrowseLibraryPathRotaEstaticaNaoColideComWildcardID(t *testing.T) {
 	h := setupLibraryServer(t)
 

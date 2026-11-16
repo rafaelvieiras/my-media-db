@@ -1,17 +1,17 @@
 package e2e
 
-// TestJornadaAcoesForcadasGerenciar cobre a jornada ponta-a-ponta do briefing
-// 0088 (3 ações sempre visíveis do menu Gerenciar): (1) POST .../refresh-files
-// força o re-hash de um media_file 'present' mesmo sem mudança de
-// mtime/size, importa um asset local novo colocado numa pasta de entity JÁ
-// catalogada (gap antes só coberto na 1a varredura) e, com um .nfo trazendo
-// campos LOCAIS de reprodução, preenche só o que estiver ausente no banco —
-// e NÃO sobrescreve numa segunda chamada; (2) POST .../enrich com
-// {"force": true} busca o detalhe do provider pulando o cache de 24h; (3)
-// POST .../materialize-missing-media atualiza o inventário de artes e
-// materializa na pasta real, reaproveitando MaterializarMidiasFaltantes sem
-// duplicar lógica (0064). As 3 rotas são exercitadas só pela API pública
-// (harness black-box), como as demais jornadas deste pacote.
+// TestJornadaAcoesForcadasGerenciar covers the end-to-end journey of the 3
+// actions that are always visible in the Gerenciar menu: (1) POST .../refresh-files
+// forces the re-hash of a 'present' media_file even with no mtime/size change,
+// imports a new local asset placed in the folder of an ALREADY cataloged entity
+// (a gap previously covered only on the 1st sweep) and, with an .nfo bringing
+// LOCAL playback fields, fills in only what is missing in the database — and does
+// NOT overwrite it on a second call; (2) POST .../enrich with {"force": true}
+// fetches the provider detail skipping the 24h cache; (3) POST
+// .../materialize-missing-media updates the artwork inventory and materializes it
+// into the real folder, reusing MaterializarMidiasFaltantes without duplicating
+// logic. All 3 routes are exercised only through the public API (black-box
+// harness), like the other journeys of this package.
 import (
 	"net/http"
 	"os"
@@ -23,9 +23,9 @@ import (
 func TestJornadaAcoesForcadasGerenciar(t *testing.T) {
 	c := novoHarness(t)
 
-	// (0) Importa o filme (entity com external_ids.tmdb=603) e escaneia uma
-	// pasta cujo vídeo embute o mesmo id, ligando o media_file 'present' à
-	// MESMA entity (mesmo caminho de TestJornadaMidiasLocais).
+	// (0) Imports the movie (entity with external_ids.tmdb=603) and scans a
+	// folder whose video embeds the same id, linking the 'present' media_file to
+	// the SAME entity (the same path as TestJornadaMidiasLocais).
 	ent := c.obj(http.MethodPost, "/api/v1/import",
 		map[string]string{"source": "tmdb", "source_id": "603", "type": "movie"}, http.StatusCreated)
 	id := str(t, ent, "id")
@@ -39,18 +39,18 @@ func TestJornadaAcoesForcadasGerenciar(t *testing.T) {
 	srcID := str(t, src, "id")
 	c.esperarScan(srcID)
 
-	// (1a) "Verificar Atualizações de Arquivos": mesmo sem NENHUMA mudança em
-	// disco desde o scan, o endpoint força o re-hash do media_file 'present'
-	// (ao contrário do scan incremental, que faria short-circuit).
+	// (1a) "Verificar Atualizações de Arquivos": even with NO change on disk
+	// since the scan, the endpoint forces the re-hash of the 'present'
+	// media_file (unlike the incremental scan, which would short-circuit).
 	semMudanca := c.obj(http.MethodPost, "/api/v1/entities/"+id+"/refresh-files", nil, http.StatusOK)
 	if fr, _ := semMudanca["files_rechecked"].(float64); int(fr) != 1 {
 		t.Errorf("files_rechecked (sem mudanca em disco) = %v, quero 1 (refresh-files ignora o short-circuit incremental)", semMudanca["files_rechecked"])
 	}
 
-	// (1b) Asset local colocado DEPOIS da 1a varredura, na entity JÁ
-	// catalogada — o gap que motivou o briefing (descobrirPoster só roda em
-	// criarEntity). O upload multipart é o caminho normal do dono; aqui
-	// simulamos o dono deixando um poster.jpg direto na pasta do vídeo.
+	// (1b) Local asset placed AFTER the 1st sweep, on the ALREADY cataloged
+	// entity — the gap that motivated the change (descobrirPoster only runs in
+	// criarEntity). The multipart upload is the owner's normal path; here we
+	// simulate the owner dropping a poster.jpg straight into the video folder.
 	posterPath := filepath.Join(root, "poster.jpg")
 	if err := os.WriteFile(posterPath, []byte("fake-poster-bytes"), 0o644); err != nil {
 		t.Fatalf("escrever poster.jpg: %v", err)
@@ -72,9 +72,9 @@ func TestJornadaAcoesForcadasGerenciar(t *testing.T) {
 		t.Errorf("artwork[poster] pos-refresh-files = %v, queria um item origin=local (poster.jpg descoberto)", posters)
 	}
 
-	// (1c) Campos LOCAIS de reprodução: escreve um .nfo trazendo
-	// playcount/watched/userrating/resume e confirma que o refresh-files
-	// preenche o que ainda está ausente no banco.
+	// (1c) LOCAL playback fields: writes an .nfo bringing
+	// playcount/watched/userrating/resume and confirms that refresh-files fills
+	// in what is still missing in the database.
 	nfoPath := filepath.Join(root, "Matrix (1999) [tmdbid-603].nfo")
 	nfoConteudo := `<?xml version="1.0" encoding="UTF-8"?>
 <movie>
@@ -91,9 +91,9 @@ func TestJornadaAcoesForcadasGerenciar(t *testing.T) {
 	if err := os.WriteFile(nfoPath, []byte(nfoConteudo), 0o644); err != nil {
 		t.Fatalf("escrever .nfo: %v", err)
 	}
-	// entity.nfo_path só existe apos gravar o NFO oficial (endpoint dedicado,
-	// briefing 0062) — depois sobrescrevemos o CONTEUDO no mesmo caminho com
-	// os campos locais acima, sem mexer no fluxo de geracao do NFO em si.
+	// entity.nfo_path only exists after writing the official NFO (dedicated
+	// endpoint) — afterwards we overwrite the CONTENT at the same path with the
+	// local fields above, without touching the NFO generation flow itself.
 	nfoResp := c.obj(http.MethodPost, "/api/v1/entities/"+id+"/nfo", nil, http.StatusOK)
 	nfoPathReal := str(t, nfoResp, "nfo_path")
 	if err := os.WriteFile(nfoPathReal, []byte(nfoConteudo), 0o644); err != nil {
@@ -108,30 +108,30 @@ func TestJornadaAcoesForcadasGerenciar(t *testing.T) {
 		}
 	}
 
-	// (1d) Não-destrutivo: chamar de novo NÃO reporta os mesmos campos como
-	// "novos" (já estão preenchidos no banco — o COALESCE é no-op).
+	// (1d) Non-destructive: calling it again does NOT report the same fields as
+	// "new" (they are already filled in the database — the COALESCE is a no-op).
 	comCamposDeNovo := c.obj(http.MethodPost, "/api/v1/entities/"+id+"/refresh-files", nil, http.StatusOK)
 	preenchidosDeNovo := strs(t, comCamposDeNovo, "playback_fields_filled")
 	if contem(preenchidosDeNovo, "user_rating") {
 		t.Errorf("2a chamada de refresh-files reportou user_rating como novo: %v (deveria ser no-op, ja preenchido)", preenchidosDeNovo)
 	}
 
-	// (2) "Baixar Metadados": force=true busca o provider mesmo com o cache
-	// de 24h fresco (o import + os refresh-files acima já deixaram o cache
-	// quente para tmdb/603) — sucesso 200 e a entity segue resolvida.
+	// (2) "Baixar Metadados": force=true fetches from the provider even with a
+	// fresh 24h cache (the import + the refresh-files above already left the
+	// cache warm for tmdb/603) — success 200 and the entity stays resolved.
 	forcado := c.obj(http.MethodPost, "/api/v1/entities/"+id+"/enrich",
 		map[string]any{"force": true}, http.StatusOK)
 	if title := str(t, forcado, "title"); !strings.Contains(strings.ToLower(title), "matrix") {
 		t.Errorf("title pos-enrich forcado = %q, queria conter \"matrix\"", title)
 	}
-	// force=false (comportamento default) continua servindo do cache sem
-	// regressão — mesma rota, sem body extra.
+	// force=false (default behavior) keeps serving from the cache with no
+	// regression — same route, no extra body.
 	c.obj(http.MethodPost, "/api/v1/entities/"+id+"/enrich", map[string]any{}, http.StatusOK)
 
-	// (3) "Baixar Artes Faltantes": nova consulta ao(s) ArteProvider(s)
-	// registrado(s) (aqui, nenhum além do fake de busca — degrada em
-	// silêncio, AGENTS.md §6) seguida de MaterializarMidiasFaltantes sobre o
-	// inventário já resolvido (o poster do enrich). Sempre 200.
+	// (3) "Baixar Artes Faltantes": a new query to the registered
+	// ArteProvider(s) (here, none beyond the search fake — it degrades silently,
+	// AGENTS.md §6) followed by MaterializarMidiasFaltantes over the already
+	// resolved inventory (the poster from the enrich). Always 200.
 	materializado := c.obj(http.MethodPost, "/api/v1/entities/"+id+"/materialize-missing-media", nil, http.StatusOK)
 	if _, ok := materializado["artes_baixadas"].([]any); !ok {
 		t.Errorf("artes_baixadas ausente/tipo errado na resposta de materialize-missing-media: %v", materializado["artes_baixadas"])
@@ -140,7 +140,7 @@ func TestJornadaAcoesForcadasGerenciar(t *testing.T) {
 		t.Errorf("nfo_gravado ausente/tipo errado na resposta de materialize-missing-media: %v", materializado["nfo_gravado"])
 	}
 
-	// 404 para entity inexistente nas 3 rotas — guarda comum às 3 ações.
+	// 404 for a nonexistent entity on the 3 routes — a guard shared by the 3 actions.
 	for _, rota := range []string{"/refresh-files", "/materialize-missing-media"} {
 		if status, _ := c.bruto(http.MethodPost, "/api/v1/entities/inexistente"+rota, nil); status != http.StatusNotFound {
 			t.Errorf("POST .../inexistente%s: status = %d, quero 404", rota, status)

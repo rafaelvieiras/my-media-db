@@ -1,20 +1,21 @@
 package e2e
 
-// journeys_idioma_preferido_test.go cobre o briefing 0084: idioma preferido
-// OPCIONAL por library_source (busca E exibição, §4) e a pontuação de candidato
-// contra títulos alternativos/traduzidos (achado colateral #2, §1). Três jornadas:
+// journeys_idioma_preferido_test.go covers the language model (ADR-0018/ADR-0019)
+// in its two per-library_source facets: the OPTIONAL preferred language for the
+// search AND the display, and the candidate scoring against
+// alternative/translated titles (side finding #2). Three journeys:
 //
-//   - TestJornadaIdiomaPreferidoBibliotecaNaBusca: uma biblioteca com
-//     preferred_language definido faz o idioma chegar ao PROVIDER na busca
-//     (match-preview) -- e uma sem preferência continua caindo no idioma global
-//     (primary), nunca mais o lang="" cego de antes deste briefing.
-//   - TestJornadaIdiomaPreferidoBibliotecaNaExibicao: GET /entities/{id} SEM
-//     ?lang= usa o idioma preferido da biblioteca de origem como default de
-//     EXIBIÇÃO; ?lang= explícito continua vencendo sempre.
-//   - TestJornadaTituloAlternativoVenceNoScore: um candidato externo cujo título
-//     ALTERNATIVO bate muito melhor que o principal (caso "The Pink Panther" do
-//     briefing §1) faz matched_title sair preenchido na prévia de match; um
-//     candidato cujo título principal já é o melhor não gera esse ruído.
+//   - TestJornadaIdiomaPreferidoBibliotecaNaBusca: a library with
+//     preferred_language set makes the language reach the PROVIDER on the search
+//     (match-preview) -- and one without a preference keeps falling back to the global
+//     language (primary), never again the blind lang="" of before.
+//   - TestJornadaIdiomaPreferidoBibliotecaNaExibicao: GET /entities/{id} WITHOUT
+//     ?lang= uses the preferred language of the source library as the DISPLAY
+//     default; an explicit ?lang= still always wins.
+//   - TestJornadaTituloAlternativoVenceNoScore: an external candidate whose
+//     ALTERNATIVE title matches much better than the main one (the "The Pink
+//     Panther" case) makes matched_title come out filled in the match preview; a
+//     candidate whose main title is already the best does not generate that noise.
 
 import (
 	"net/http"
@@ -24,9 +25,9 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/server"
 )
 
-// acharRevisaoMovie devolve o id do (único) item type=movie na fila de revisão
-// (GET /api/v1/review) cujo título bate exatamente com `titulo` -- o rascunho que o
-// scanner criou por não ter id externo embutido no arquivo. t.Fatalf se não achar.
+// acharRevisaoMovie returns the id of the (only) type=movie item in the review queue
+// (GET /api/v1/review) whose title matches `titulo` exactly -- the draft the scanner
+// created because the file had no embedded external id. t.Fatalf if not found.
 func acharRevisaoMovie(t *testing.T, c *cliente, titulo string) string {
 	t.Helper()
 	fila := c.arr(http.MethodGet, "/api/v1/review", nil, http.StatusOK)
@@ -40,11 +41,11 @@ func acharRevisaoMovie(t *testing.T, c *cliente, titulo string) string {
 	return ""
 }
 
-// acharMoviePorTitulo acha o id de um movie na LISTA de entities (não na fila de
-// revisão) por qualquer dos títulos aceitos. Desde o briefing 0135/ADR-0031 o
-// auto-match roda de verdade no scan, então o item que antes ficava em rascunho
-// já sai RESOLVIDO (com o título no idioma principal) -- a jornada não pode mais
-// depender de encontrá-lo na fila.
+// acharMoviePorTitulo finds the id of a movie in the list of entities (not in the
+// review queue) by any of the accepted titles. Since ADR-0031 the auto-match really
+// runs in the scan, so the item that used to stay as a draft already comes out
+// RESOLVED (with the title in the primary language) -- the journey can no longer
+// depend on finding it in the queue.
 func acharMoviePorTitulo(t *testing.T, c *cliente, titulos ...string) string {
 	t.Helper()
 	resposta := c.obj(http.MethodGet, "/api/v1/entities?type=movie&limit=1000", nil, http.StatusOK)
@@ -61,9 +62,9 @@ func acharMoviePorTitulo(t *testing.T, c *cliente, titulos ...string) string {
 	return ""
 }
 
-// ultimoIdioma devolve o ÚLTIMO idioma registrado em c.prov.IdiomasBuscados()
-// (a chamada Buscar mais recente) -- usado para provar qual idioma efetivamente
-// chegou ao provider numa jornada com múltiplas buscas em sequência.
+// ultimoIdioma returns the LAST language recorded in c.prov.IdiomasBuscados()
+// (the most recent Buscar call) -- used to prove which language actually reached the
+// provider in a journey with multiple searches in sequence.
 func ultimoIdioma(t *testing.T, c *cliente) string {
 	t.Helper()
 	langs := c.prov.IdiomasBuscados()
@@ -73,21 +74,22 @@ func ultimoIdioma(t *testing.T, c *cliente) string {
 	return langs[len(langs)-1]
 }
 
-// TestJornadaIdiomaPreferidoBibliotecaNaBusca: o achado colateral #1 do briefing
-// 0084 -- automatch/retroativo/match-preview chamavam buscarExterno com lang=""
-// (nem o idioma global era respeitado). Agora s.idiomaDeBusca resolve por item:
-// uma biblioteca com preferred_language="en" faz o idioma "en" chegar ao provider
-// na prévia de match, mesmo com o idioma global (primary) em "pt-BR" (default);
-// uma biblioteca SEM preferência continua caindo no idioma global, nunca mais em
-// "" cego -- os dois comportamentos provados no MESMO harness, via
-// fake.Provider.IdiomasBuscados (efeito só visível ali; nenhum campo do corpo
-// HTTP de match-preview expõe o idioma da consulta).
+// TestJornadaIdiomaPreferidoBibliotecaNaBusca: side finding #1 of the language work
+// -- automatch/retroactive/match-preview called buscarExterno with lang="" (not even
+// the global language was respected). Now s.idiomaDeBusca resolves per item: a
+// library with preferred_language="en" makes the "en" language reach the provider
+// in the match preview, even with the global language (primary) in "pt-BR"
+// (default); a library WITHOUT a preference keeps falling back to the global
+// language, never again to a blind "" -- both behaviors proven in the SAME
+// harness, through fake.Provider.IdiomasBuscados (an effect only visible there; no
+// field of the match-preview HTTP body exposes the language of the query).
 func TestJornadaIdiomaPreferidoBibliotecaNaBusca(t *testing.T) {
 	c := novoHarness(t)
 
-	// Biblioteca 1: preferred_language="en" explícito. Título SEM fixture no
-	// catálogo fake -- o item fica em rascunho (é o que a prévia do rascunho
-	// exercita aqui; com fixture, o auto-match do próprio scan já o resolveria).
+	// Library 1: explicit preferred_language="en". Title WITHOUT a fixture in the
+	// fake catalog -- the item stays as a draft (that is what the draft preview
+	// exercises here; with a fixture, the auto-match of the scan itself would
+	// already resolve it).
 	rootEN := t.TempDir()
 	escreverVideo(t, filepath.Join(rootEN, "Alien Anos Oitenta.mkv"))
 	srcEN := c.obj(http.MethodPost, "/api/v1/library",
@@ -104,8 +106,8 @@ func TestJornadaIdiomaPreferidoBibliotecaNaBusca(t *testing.T) {
 		t.Errorf("idioma buscado (biblioteca com preferred_language=en) = %q, quero \"en\"", got)
 	}
 
-	// Biblioteca 2: SEM preferred_language -- deve cair no idioma global (primary
-	// "pt-BR", default de app_settings), NUNCA mais em "" cego (briefing 0084 §1).
+	// Library 2: WITHOUT preferred_language -- it must fall back to the global
+	// language (primary "pt-BR", app_settings default), NEVER again to a blind "".
 	rootGlobal := t.TempDir()
 	escreverVideo(t, filepath.Join(rootGlobal, "Filme Sem Catalogo Nenhum.mkv"))
 	srcGlobal := c.obj(http.MethodPost, "/api/v1/library",
@@ -123,10 +125,10 @@ func TestJornadaIdiomaPreferidoBibliotecaNaBusca(t *testing.T) {
 	}
 }
 
-// TestJornadaIdiomaPreferidoBibliotecaNaExibicao: com um item resolvido cuja
-// biblioteca de origem tem preferred_language="en", GET /entities/{id} SEM ?lang=
-// devolve o título no idioma da BIBLIOTECA (en), não no idioma global (pt-BR,
-// default) -- e ?lang= explícito continua vencendo sempre, em qualquer item.
+// TestJornadaIdiomaPreferidoBibliotecaNaExibicao: with a resolved item whose source
+// library has preferred_language="en", GET /entities/{id} WITHOUT ?lang= returns the
+// title in the LIBRARY language (en), not in the global language (pt-BR, default) --
+// and an explicit ?lang= still always wins, on any item.
 func TestJornadaIdiomaPreferidoBibliotecaNaExibicao(t *testing.T) {
 	c := novoHarness(t)
 
@@ -137,40 +139,41 @@ func TestJornadaIdiomaPreferidoBibliotecaNaExibicao(t *testing.T) {
 	srcID := str(t, src, "id")
 	c.esperarScan(srcID)
 
-	// Desde o 0135 o auto-match roda no próprio scan: a entity já sai identificada
-	// com a fixture 603 ("The Matrix"/"Matrix"), multi-idioma, sem clique nenhum.
+	// Since ADR-0031 the auto-match runs in the scan itself: the entity already comes
+	// out identified with the 603 fixture ("The Matrix"/"Matrix"), multi-language,
+	// with no click at all.
 	id := acharMoviePorTitulo(t, c, "Matrix", "The Matrix")
 
-	// SEM ?lang=: cai no idioma preferido da biblioteca (en) -- "The Matrix", não
-	// o "Matrix" do idioma global (pt-BR).
+	// WITHOUT ?lang=: it falls back to the library preferred language (en) -- "The
+	// Matrix", not the "Matrix" of the global language (pt-BR).
 	semLang := c.obj(http.MethodGet, "/api/v1/entities/"+id, nil, http.StatusOK)
 	if got := str(t, semLang, "title"); got != "The Matrix" {
 		t.Errorf("title sem ?lang= = %q, quero \"The Matrix\" (idioma preferido da biblioteca, en)", got)
 	}
 
-	// ?lang= explícito SEMPRE vence, mesmo sobre a preferência da biblioteca.
+	// An explicit ?lang= ALWAYS wins, even over the library preference.
 	comLang := c.obj(http.MethodGet, "/api/v1/entities/"+id+"?lang=pt-BR", nil, http.StatusOK)
 	if got := str(t, comLang, "title"); got != "Matrix" {
 		t.Errorf("title com ?lang=pt-BR = %q, quero \"Matrix\" (override explicito vence)", got)
 	}
 }
 
-// TestJornadaTituloAlternativoVenceNoScore: o achado colateral #2 do briefing
-// 0084 -- quando o título retornado como PRINCIPAL do candidato (sempre "en" no
-// fake, tituloPreferido) não bate com o arquivo, mas um título ALTERNATIVO que o
-// provider só entrega via BuscarTitulosAlternativos bate muito melhor, o score
-// final usa o alternativo (matching.PontuarComAlternativos) e a prévia de match
-// expõe QUAL título venceu em matched_title -- a fixture "605" do fake
-// ("A Pantera Cor-De-Rosa", ver internal/provider/fake/catalogo.go) é a prova
-// disso, análoga ao caso citado no §1 do briefing. Em contraste, quando o
-// candidato encontrado (Matrix, 603) já tem o título principal como melhor
-// match, matched_title sai vazio -- nenhum ruído quando não precisa.
+// TestJornadaTituloAlternativoVenceNoScore: side finding #2 of the language work --
+// when the title returned as the candidate's MAIN one (always "en" in the fake,
+// tituloPreferido) does not match the file, but an ALTERNATIVE title that the
+// provider only delivers through BuscarTitulosAlternativos matches much better, the
+// final score uses the alternative (matching.PontuarComAlternativos) and the match
+// preview exposes WHICH title won in matched_title -- the fake's "605" fixture
+// ("A Pantera Cor-De-Rosa", see internal/provider/fake/catalogo.go) is the proof of
+// that, analogous to the case described in ADR-0018. By contrast, when the candidate
+// found (Matrix, 603) already has the main title as the best match, matched_title
+// comes out empty -- no noise when it is not needed.
 func TestJornadaTituloAlternativoVenceNoScore(t *testing.T) {
 	c := novoHarness(t)
 
-	// (a) Arquivo nomeado EXATAMENTE como o titulo alternativo da fixture "605" --
-	// o titulo PRINCIPAL dela ("The Rose Prowler"/"O Perseguidor Rosa") é bem
-	// diferente e pontuaria baixo sozinho.
+	// (a) File named EXACTLY like the alternative title of the "605" fixture -- its
+	// MAIN title ("The Rose Prowler"/"O Perseguidor Rosa") is quite different and
+	// would score low on its own.
 	rootAlt := t.TempDir()
 	escreverVideo(t, filepath.Join(rootAlt, "A Pantera Cor-De-Rosa.mkv"))
 	srcAlt := c.obj(http.MethodPost, "/api/v1/library",
@@ -196,10 +199,10 @@ func TestJornadaTituloAlternativoVenceNoScore(t *testing.T) {
 		t.Errorf("score = %v, quero >= %v (o alternativo bate quase perfeito)", previewAlt["score"], server.LimiarAutoMatch)
 	}
 
-	// (b) Contraste: arquivo nomeado como o titulo PRINCIPAL de um candidato (a
-	// Matrix, 603) -- o principal ja e o melhor, matched_title deve sair vazio
-	// mesmo com titulos alternativos disponiveis e consultados (fixture 603 tem
-	// "Matrix" como alternativo, mas nao bate melhor que o "The Matrix" exato).
+	// (b) Contrast: a file named like the MAIN title of a candidate (the Matrix,
+	// 603) -- the main one is already the best, matched_title must come out empty
+	// even with alternative titles available and queried (fixture 603 has "Matrix"
+	// as an alternative, but it does not match better than the exact "The Matrix").
 	rootPrincipal := t.TempDir()
 	escreverVideo(t, filepath.Join(rootPrincipal, "The Matrix.mkv"))
 	srcPrincipal := c.obj(http.MethodPost, "/api/v1/library",

@@ -31,9 +31,9 @@ type AtualizarAssetLocalPathParams struct {
 	ID        string
 }
 
-// Grava o caminho FISICO materializado na pasta real da biblioteca (briefing
-// 0062): coluna ortogonal a path_or_uri (cache interno/URL externa) -- so
-// preenchida quando a arte tambem foi copiada para dentro da pasta do item.
+// Writes the materialized PHYSICAL path in the library's real folder:
+// a column orthogonal to path_or_uri (internal cache/external URL) -- only
+// filled when the art was also copied into the item folder.
 func (q *Queries) AtualizarAssetLocalPath(ctx context.Context, arg AtualizarAssetLocalPathParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarAssetLocalPath, arg.LocalPath, arg.ID)
 	return err
@@ -50,9 +50,9 @@ type AtualizarAssetMetaParams struct {
 	ID       string
 }
 
-// Atualiza SO o meta_json de um asset (marca/desmarca a preferida do dono,
-// briefing 0017). Nao toca entity_id/kind/origin/path_or_uri. Usada ao (des)marcar
-// preferida: o merge preservando as demais chaves do meta_json e feito em Go.
+// Updates ONLY the meta_json of an asset (flags/unflags the owner's preferred one).
+// Does not touch entity_id/kind/origin/path_or_uri. Used when (un)flagging a
+// preferred one: the merge preserving the other meta_json keys is done in Go.
 func (q *Queries) AtualizarAssetMeta(ctx context.Context, arg AtualizarAssetMetaParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarAssetMeta, arg.MetaJson, arg.ID)
 	return err
@@ -71,8 +71,8 @@ type AtualizarAssetPathParams struct {
 	ID        string
 }
 
-// Atualiza o caminho/binario de um asset ja existente (dedup do cache externo:
-// re-baixar o poster reaproveita a mesma linha). Nao muda entity_id/kind/origin.
+// Updates the path/binary of an existing asset (external cache dedupe:
+// downloading the poster again reuses the same row). Does not change entity_id/kind/origin.
 func (q *Queries) AtualizarAssetPath(ctx context.Context, arg AtualizarAssetPathParams) error {
 	_, err := q.db.ExecContext(ctx, atualizarAssetPath, arg.PathOrUri, arg.MetaJson, arg.ID)
 	return err
@@ -97,8 +97,8 @@ type CriarAssetParams struct {
 	MetaJson  sql.NullString
 }
 
-// CRUD de asset (poster/fanart/... referenciados por uma entity).
-// Comentarios em ASCII e colunas explicitas -- ver a nota em entity.sql.
+// CRUD for asset (poster/fanart/... referenced by an entity).
+// Comments in ASCII and explicit columns -- see the note in entity.sql.
 func (q *Queries) CriarAsset(ctx context.Context, arg CriarAssetParams) (Asset, error) {
 	row := q.db.QueryRowContext(ctx, criarAsset,
 		arg.ID,
@@ -134,11 +134,11 @@ type DesmarcarAssetsPrincipalPorKindParams struct {
 	Kind     string
 }
 
-// Zera is_principal de TODOS os assets do (entity,kind) -- aplica a
-// invariante "no maximo um principal por kind" (briefing 0062) em codigo:
-// sempre chamada ANTES de MarcarAssetPrincipal, na mesma sequencia de
-// escrita (pool de escritor unico, ADR-0010 -- sem concorrencia entre as
-// duas chamadas).
+// Zeroes is_principal on ALL assets of the (entity,kind) -- enforces the
+// invariant "at most one principal per kind" in code:
+// always called BEFORE MarcarAssetPrincipal, in the same write
+// sequence (single-writer pool, ADR-0010 -- no concurrency between the
+// two calls).
 func (q *Queries) DesmarcarAssetsPrincipalPorKind(ctx context.Context, arg DesmarcarAssetsPrincipalPorKindParams) error {
 	_, err := q.db.ExecContext(ctx, desmarcarAssetsPrincipalPorKind, arg.EntityID, arg.Kind)
 	return err
@@ -190,9 +190,9 @@ SET is_principal = 1
 WHERE id = ?
 `
 
-// Seta is_principal=1 no asset (fonte de verdade em coluna, briefing 0062).
-// O chamador ZERA o antigo principal do mesmo (entity,kind) numa query
-// separada (DesmarcarAssetsPrincipalPorKind) antes de chamar esta.
+// Sets is_principal=1 on the asset (source of truth in a column).
+// The caller ZEROES the previous principal of the same (entity,kind) in a
+// separate query (DesmarcarAssetsPrincipalPorKind) before calling this one.
 func (q *Queries) MarcarAssetPrincipal(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, marcarAssetPrincipal, id)
 	return err
@@ -235,10 +235,10 @@ type ObterAssetPorEntityKindOriginParams struct {
 	Origin   string
 }
 
-// Asset de UMA origem especifica (ex.: kind='poster', origin='external'), para o
-// dedup do cache de imagem (briefing 0015): reusa/atualiza o asset em vez de
-// duplicar. Filtrar por origin garante que o cache externo NUNCA case um asset
-// origin='user' (arte do dono, intocavel). Sem linha -> sql.ErrNoRows.
+// Asset from ONE specific origin (e.g. kind='poster', origin='external'), for the
+// image cache dedupe: reuse/update the asset instead of duplicating
+// it. Filtering by origin guarantees the external cache NEVER matches an asset
+// origin='user' (the owner's art, untouchable). No row -> sql.ErrNoRows.
 func (q *Queries) ObterAssetPorEntityKindOrigin(ctx context.Context, arg ObterAssetPorEntityKindOriginParams) (Asset, error) {
 	row := q.db.QueryRowContext(ctx, obterAssetPorEntityKindOrigin, arg.EntityID, arg.Kind, arg.Origin)
 	var i Asset
@@ -264,8 +264,8 @@ ORDER BY created_at, id
 LIMIT 1
 `
 
-// Poster local da entity (briefing 0010): o primeiro asset kind='poster'. Usado
-// pelo endpoint que serve o binario. Sem poster -> sql.ErrNoRows -> 404 na API.
+// Local poster of the entity: the first asset kind='poster'. Used
+// by the endpoint that serves the binary. No poster -> sql.ErrNoRows -> 404 in the API.
 func (q *Queries) ObterAssetPosterPorEntity(ctx context.Context, entityID string) (Asset, error) {
 	row := q.db.QueryRowContext(ctx, obterAssetPosterPorEntity, entityID)
 	var i Asset

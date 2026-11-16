@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// TestExtractNamespace cobre a extracao do objeto do namespace core.music@1:
-// presente, NULL/vazio, JSON invalido e namespace ausente (todos degradando
-// para nil, menos o caso feliz).
+// TestExtractNamespace covers the extraction of the core.music@1 namespace
+// object: present, NULL/empty, invalid JSON and absent namespace (all degrading
+// to nil, except the happy case).
 func TestExtractNamespace(t *testing.T) {
 	casos := []struct {
 		nome    string
@@ -49,7 +49,8 @@ func TestExtractNamespace(t *testing.T) {
 	}
 }
 
-// TestAsInt cobre a coercao de numeros de JSON (float64) e o rejeito de nao-numeros.
+// TestAsInt covers the coercion of JSON numbers (float64) and the rejection of
+// non-numbers.
 func TestAsInt(t *testing.T) {
 	if n, ok := AsInt(float64(5)); !ok || n != 5 {
 		t.Errorf("AsInt(float64(5)) = %d,%v; quero 5,true", n, ok)
@@ -68,7 +69,8 @@ func TestAsInt(t *testing.T) {
 	}
 }
 
-// TestAsString cobre a coercao de string e o rejeito de nao-string.
+// TestAsString covers the coercion of a string and the rejection of
+// non-strings.
 func TestAsString(t *testing.T) {
 	if s, ok := AsString("USRC17607839"); !ok || s != "USRC17607839" {
 		t.Errorf("AsString = %q,%v; quero USRC17607839,true", s, ok)
@@ -81,8 +83,8 @@ func TestAsString(t *testing.T) {
 	}
 }
 
-// TestConstantes cobre os valores canonicos que o ADR-0027 fixa (kinds e o
-// MBID de Various Artists) — regressao contra edicao acidental.
+// TestConstantes covers the canonical values that ADR-0027 fixes (kinds and the
+// Various Artists MBID) — a regression guard against accidental editing.
 func TestConstantes(t *testing.T) {
 	if Namespace != "core.music@1" {
 		t.Errorf("Namespace = %q, quero core.music@1", Namespace)

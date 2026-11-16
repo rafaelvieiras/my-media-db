@@ -14,11 +14,11 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// setupMidiasFaltantesServer sobe um Server (guardando a referência, não só
-// o handler HTTP) com assetsDir temporário. internal/job/midiasfaltantes só
-// fala com este código através da pequena interface Materializador
-// (mockada no teste do pacote de job) -- a implementação REAL só é
-// exercitada chamando os métodos do *Server diretamente, como o job faz.
+// setupMidiasFaltantesServer starts a Server (keeping the reference, not only the HTTP
+// handler) with a temporary assetsDir. internal/job/midiasfaltantes only talks to this code
+// through the small Materializador interface (mocked in the job package test) -- the REAL
+// implementation is only exercised by calling the *Server methods directly, the way the job
+// does.
 func setupMidiasFaltantesServer(t *testing.T) (*Server, http.Handler, *db.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "midias-faltantes.sqlite")
@@ -38,9 +38,9 @@ func setupMidiasFaltantesServer(t *testing.T) (*Server, http.Handler, *db.DB) {
 	return srv, h, database
 }
 
-// TestListarEntitiesComMediaFilePresente cobre o universo elegível do job
-// midias_faltantes (briefing 0064): só entities com media_file 'present'
-// aparecem, entities só-catálogo (sem arquivo) ficam de fora.
+// TestListarEntitiesComMediaFilePresente covers the eligible universe of the midias_faltantes
+// job: only entities with a 'present' media_file show up, catalog-only entities (without a
+// file) are left out.
 func TestListarEntitiesComMediaFilePresente(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "comArquivo", "movie", "Com Arquivo")
@@ -56,18 +56,18 @@ func TestListarEntitiesComMediaFilePresente(t *testing.T) {
 	}
 }
 
-// TestMaterializarMidiasFaltantesBaixaPosterEGravaNFO cobre o corpo do job
-// midias_faltantes (briefing 0064 §3): uma entity com media_file present e
-// UM poster já selecionado (asset local, ainda não materializado) tem o
-// poster gravado na pasta real e o NFO escrito, na MESMA chamada -- exatamente
-// o que o job periódico faz para itens já resolvidos mas faltando no disco.
+// TestMaterializarMidiasFaltantesBaixaPosterEGravaNFO covers the body of the midias_faltantes
+// job: an entity with a present media_file and ONE poster already selected (local asset, not
+// materialized yet) has the poster written into the real folder and the NFO written, in the
+// SAME call -- exactly what the periodic job does for items already resolved but missing on
+// disk.
 func TestMaterializarMidiasFaltantesBaixaPosterEGravaNFO(t *testing.T) {
 	srv, h, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
 	libDir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
 
-	// Um poster já existe como asset (ex.: selecionado da galeria antes),
-	// mas ainda só no cache -- sem local_path.
+	// A poster already exists as an asset (e.g. selected from the gallery before), but still
+	// only in the cache -- without a local_path.
 	a := decodeAsset(t, postAsset(t, h, "e1", "poster", pngPayload(64)))
 	if a.LocalPath != nil {
 		t.Fatalf("local_path recem-criado = %v, quero nil", a.LocalPath)
@@ -93,8 +93,8 @@ func TestMaterializarMidiasFaltantesBaixaPosterEGravaNFO(t *testing.T) {
 		t.Errorf("nfo não gravado em disco (%s): %v", nfoPath, err)
 	}
 
-	// Idempotente: chamar de novo não reporta a mesma arte como "baixada"
-	// (já tinha local_path) nem tenta regravar o NFO (já tinha nfo_path).
+	// Idempotent: calling again does not report the same artwork as "downloaded" (it already
+	// had a local_path) nor tries to rewrite the NFO (it already had nfo_path).
 	artes2, nfoGravado2, err := srv.MaterializarMidiasFaltantes(context.Background(), "e1")
 	if err != nil {
 		t.Fatalf("2a chamada: %v", err)
@@ -107,12 +107,11 @@ func TestMaterializarMidiasFaltantesBaixaPosterEGravaNFO(t *testing.T) {
 	}
 }
 
-// semearArvoreSerie monta uma série com 2 temporadas/3 episódios, arquivos
-// PRESENTES em subpastas reais "Season 01"/"Season 02" (a estrutura normal de
-// qualquer biblioteca real -- briefing 0081): mf1/mf2 em Season 01, mf3 em
-// Season 02, todos com media_file.entity_id=SÉRIE (convenção real do
-// scanner) e vinculados aos episódios só pela junção media_file_entity
-// (kind=tv_episode). Devolve o diretório-raiz da biblioteca (libRoot).
+// semearArvoreSerie builds a series with 2 seasons/3 episodes, files PRESENT in real
+// subfolders "Season 01"/"Season 02" (the normal structure of any real library): mf1/mf2 in
+// Season 01, mf3 in Season 02, all with media_file.entity_id=SERIES (the scanner convention)
+// and linked to the episodes only through the media_file_entity join (kind=tv_episode). It
+// returns the library root directory (libRoot).
 func semearArvoreSerie(t *testing.T, d *db.DB) (libRoot string) {
 	t.Helper()
 	semearEntity(t, d, "s1", "tv", "Serie")
@@ -143,10 +142,10 @@ func semearArvoreSerie(t *testing.T, d *db.DB) (libRoot string) {
 	return libRoot
 }
 
-// TestListarEntitiesComMediaFilePresenteArvoreDeSerie cobre a causa 1 do
-// briefing 0081: temporada (episódio descendente presente) e episódio
-// (media_file via junção) passam a aparecer no universo elegível do job --
-// antes, só a série (media_file.entity_id direto) aparecia.
+// TestListarEntitiesComMediaFilePresenteArvoreDeSerie covers cause 1 of the fix: season
+// (present descendant episode) and episode (media_file through the join) now show up in the
+// eligible universe of the job -- before, only the series (media_file.entity_id direct)
+// showed up.
 func TestListarEntitiesComMediaFilePresenteArvoreDeSerie(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	semearArvoreSerie(t, d)
@@ -166,18 +165,17 @@ func TestListarEntitiesComMediaFilePresenteArvoreDeSerie(t *testing.T) {
 	}
 }
 
-// TestMaterializarMidiasFaltantesArvoreDeSerieGravaNaRaiz cobre a causa 2 do
-// briefing 0081 (raiz errada): numa série com subpastas por temporada, o
-// pôster da SÉRIE materializa na RAIZ (libRoot), NUNCA em "Season 01/"; o
-// pôster de TEMPORADA materializa como season01-poster.jpg TAMBÉM na raiz; o
-// NFO do EPISÓDIO é gravado (kind agora alcançado); episódio NÃO ganha still
-// automático; temporada NÃO ganha NFO próprio (guarda preservada).
+// TestMaterializarMidiasFaltantesArvoreDeSerieGravaNaRaiz covers cause 2 of the fix (wrong
+// root): in a series with per-season subfolders, the SERIES poster materializes in the ROOT
+// (libRoot), NEVER in "Season 01/"; the SEASON poster materializes as season01-poster.jpg
+// ALSO in the root; the EPISODE NFO is written (that kind is now reached); an episode does
+// NOT get an automatic still; a season does NOT get an NFO of its own (guard preserved).
 func TestMaterializarMidiasFaltantesArvoreDeSerieGravaNaRaiz(t *testing.T) {
 	srv, h, d := setupMidiasFaltantesServer(t)
 	libRoot := semearArvoreSerie(t, d)
 	ctx := context.Background()
 
-	// Pôster da SÉRIE: selecionado como asset (ainda só no cache).
+	// SERIES poster: selected as an asset (still only in the cache).
 	postAsset(t, h, "s1", "poster", pngPayload(64))
 	artesSerie, nfoSerie, err := srv.MaterializarMidiasFaltantes(ctx, "s1")
 	if err != nil {
@@ -200,8 +198,7 @@ func TestMaterializarMidiasFaltantesArvoreDeSerieGravaNaRaiz(t *testing.T) {
 		t.Errorf("tvshow.nfo ausente na raiz: %v", err)
 	}
 
-	// Pôster de TEMPORADA (se1 = temporada 1): selecionado como asset da
-	// própria season.
+	// SEASON poster (se1 = season 1): selected as an asset of the season itself.
 	postAsset(t, h, "se1", "poster", pngPayload(64))
 	artesSeason, nfoSeason, err := srv.MaterializarMidiasFaltantes(ctx, "se1")
 	if err != nil {
@@ -221,8 +218,8 @@ func TestMaterializarMidiasFaltantesArvoreDeSerieGravaNaRaiz(t *testing.T) {
 		t.Error("nao deveria existir NFO de temporada")
 	}
 
-	// NFO do EPISÓDIO (e1): sem still, mas com NFO gravado na pasta real do
-	// episódio (Season 01, nao na raiz).
+	// EPISODE NFO (e1): no still, but with the NFO written in the real episode folder
+	// (Season 01, not in the root).
 	artesEp, nfoEp, err := srv.MaterializarMidiasFaltantes(ctx, "e1")
 	if err != nil {
 		t.Fatalf("MaterializarMidiasFaltantes(e1): %v", err)
@@ -239,12 +236,12 @@ func TestMaterializarMidiasFaltantesArvoreDeSerieGravaNaRaiz(t *testing.T) {
 	}
 }
 
-// TestMaterializarMidiasFaltantesSemCandidatoNaoFalha cobre o caso "nada
-// resolvido ainda": entity com media_file present mas SEM nenhum asset --
-// não há candidato vencedor de kind nenhum, então nenhuma arte é baixada, mas
-// o NFO (que só depende do metadado já resolvido pelo import, não de arte)
-// ainda é gravado, e a chamada não retorna erro (best-effort, briefing 0064 §3
-// explicitamente NÃO auto-seleciona nada quando não há candidato).
+// TestMaterializarMidiasFaltantesSemCandidatoNaoFalha covers the "nothing resolved yet" case:
+// an entity with a present media_file but NO asset at all -- there is no winning candidate of
+// any kind, so no artwork is downloaded, but the NFO (which only depends on the metadata
+// already resolved by the import, not on artwork) is still written, and the call returns no
+// error (best-effort: it explicitly does NOT auto-select anything when there is no
+// candidate).
 func TestMaterializarMidiasFaltantesSemCandidatoNaoFalha(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "e1", "movie", "Sem Arte")
@@ -265,14 +262,13 @@ func TestMaterializarMidiasFaltantesSemCandidatoNaoFalha(t *testing.T) {
 	}
 }
 
-// ── Self-heal de arte/NFO materializados (briefing 0127) ─────────────────
+// ── Self-heal of materialized artwork/NFO ────────────────────────────────
 
-// TestMaterializarMidiasFaltantesArquivoSumidoRegravaMesmoPath cobre o
-// critério de aceite do briefing 0127: um poster já materializado
-// (local_path preenchido) cujo arquivo físico sumiu do disco (mount remoto,
-// exclusão externa) -- rodar MaterializarMidiasFaltantes de novo regrava o
-// binário no MESMO local_path, sem rotacionar, e reporta a autocura em
-// artesBaixadas.
+// TestMaterializarMidiasFaltantesArquivoSumidoRegravaMesmoPath covers the acceptance
+// criterion of the self-heal: a poster already materialized (local_path filled in) whose
+// physical file vanished from disk (remote mount, external deletion) -- running
+// MaterializarMidiasFaltantes again rewrites the binary at the SAME local_path, without
+// rotating, and reports the self-heal in artesBaixadas.
 func TestMaterializarMidiasFaltantesArquivoSumidoRegravaMesmoPath(t *testing.T) {
 	srv, h, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -291,7 +287,7 @@ func TestMaterializarMidiasFaltantesArquivoSumidoRegravaMesmoPath(t *testing.T) 
 		t.Fatalf("poster não materializado em %s: %v", posterPath, err)
 	}
 
-	// Simula o arquivo sumindo fisicamente (mount remoto, exclusão externa).
+	// Simulates the file physically vanishing (remote mount, external deletion).
 	if err := os.Remove(posterPath); err != nil {
 		t.Fatalf("os.Remove (simular sumiço): %v", err)
 	}
@@ -317,11 +313,10 @@ func TestMaterializarMidiasFaltantesArquivoSumidoRegravaMesmoPath(t *testing.T) 
 	}
 }
 
-// TestMaterializarMidiasFaltantesArquivoPresenteNaoRebaixaNaoRegrava cobre a
-// contrapartida: quando o arquivo já materializado está presente no disco, a
-// 2a chamada não reporta a arte como "baixada" de novo (mesmo comportamento
-// idempotente de antes do briefing 0127 -- self-heal não deve virar
-// reescrita incondicional a cada rodada do job).
+// TestMaterializarMidiasFaltantesArquivoPresenteNaoRebaixaNaoRegrava covers the counterpart:
+// when the materialized file is present on disk, the 2nd call does not report the artwork as
+// "downloaded" again (the same idempotent behavior as before the self-heal -- the self-heal
+// must not become an unconditional rewrite on every job run).
 func TestMaterializarMidiasFaltantesArquivoPresenteNaoRebaixaNaoRegrava(t *testing.T) {
 	srv, h, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -341,11 +336,10 @@ func TestMaterializarMidiasFaltantesArquivoPresenteNaoRebaixaNaoRegrava(t *testi
 	}
 }
 
-// TestMaterializarMidiasFaltantesNfoSumidoRegravaDoZero cobre o critério de
-// aceite do briefing 0127 para o NFO: entity.nfo_path preenchido cujo
-// arquivo .nfo sumiu do disco -- rodar MaterializarMidiasFaltantes de novo
-// regrava o .nfo do zero (gravarNFO já é idempotente por conteúdo, sem a
-// armadilha de rotação que asset tem).
+// TestMaterializarMidiasFaltantesNfoSumidoRegravaDoZero covers the acceptance criterion of
+// the self-heal for the NFO: entity.nfo_path filled in whose .nfo file vanished from disk --
+// running MaterializarMidiasFaltantes again rewrites the .nfo from scratch (gravarNFO is
+// already idempotent by content, without the rotation trap an asset has).
 func TestMaterializarMidiasFaltantesNfoSumidoRegravaDoZero(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -379,14 +373,14 @@ func TestMaterializarMidiasFaltantesNfoSumidoRegravaDoZero(t *testing.T) {
 	}
 }
 
-// ── Convergência de naming legado (briefing 0128, Caso B) ────────────────
+// ── Convergence of the legacy naming (case B) ────────────────────────────
 
-// semearAssetPrincipalEMoverParaLocalLegado materializa um poster (que vira
-// o principal do kind) e depois simula naming legado (pre-briefing-0081):
-// move o binário pra dentro de "Season 01" com nome de episódio e atualiza
-// local_path no banco -- mesmo estado real observado no MIB Homens de Preto
-// em produção. Devolve o asset (já com local_path legado), o caminho
-// canônico esperado (raiz de libDir) e o caminho legado.
+// semearAssetPrincipalEMoverParaLocalLegado materializes a poster (which becomes the principal
+// of the kind) and then simulates the legacy naming (pre-fix): it moves the binary into
+// "Season 01" with an episode name and updates local_path in the database -- the same real
+// state observed in production on a Men in Black library entry. It returns the asset (already
+// with the legacy local_path), the expected canonical path (root of libDir) and the legacy
+// path.
 func semearAssetPrincipalEMoverParaLocalLegado(t *testing.T, srv *Server, h http.Handler, d *db.DB, libDir string) (asset sqlcgen.Asset, canonico, legadoPath string) {
 	t.Helper()
 	postAsset(t, h, "e1", "poster", pngPayload(64))
@@ -420,12 +414,11 @@ func semearAssetPrincipalEMoverParaLocalLegado(t *testing.T, srv *Server, h http
 	return asset, canonico, legadoPath
 }
 
-// TestMaterializarMidiasFaltantesAssetLegadoPrincipalConvergeParaNomeCanonico
-// cobre o critério de aceite do briefing 0128: um asset JÁ PRINCIPAL cujo
-// local_path aponta pra um nome/pasta de EPISÓDIO (naming legado, gravado
-// antes do briefing 0081 corrigir DiretorioDestino) -- rodar
-// MaterializarMidiasFaltantes de novo RENOMEIA (não recopia) o arquivo de
-// volta pro nome bare canônico na raiz, e persiste o novo local_path.
+// TestMaterializarMidiasFaltantesAssetLegadoPrincipalConvergeParaNomeCanonico covers the
+// acceptance criterion of the naming convergence: an ALREADY PRINCIPAL asset whose local_path
+// points at an EPISODE name/folder (legacy naming, written before DiretorioDestino was fixed)
+// -- running MaterializarMidiasFaltantes again RENAMES (does not recopy) the file back to the
+// canonical bare name in the root, and persists the new local_path.
 func TestMaterializarMidiasFaltantesAssetLegadoPrincipalConvergeParaNomeCanonico(t *testing.T) {
 	srv, h, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -457,13 +450,12 @@ func TestMaterializarMidiasFaltantesAssetLegadoPrincipalConvergeParaNomeCanonico
 	}
 }
 
-// TestMaterializarMidiasFaltantesAssetLegadoNaoPrincipalNaoConverge cobre a
-// contrapartida de segurança (briefing 0128 §6): um asset local em naming
-// legado que NÃO é is_principal (edge case -- nenhum asset do kind é
-// principal) NÃO tem o nome recalculado -- só preserva o comportamento
-// existente do briefing 0127 (regravar in-place se o arquivo tiver sumido).
-// Recalcular o nome bare para um não-principal colidiria com o nome que o
-// verdadeiro principal deveria ocupar.
+// TestMaterializarMidiasFaltantesAssetLegadoNaoPrincipalNaoConverge covers the safety
+// counterpart: a local asset under the legacy naming that is NOT is_principal (an edge case --
+// no asset of the kind is principal) does NOT get its name recomputed -- it only preserves the
+// existing self-heal behavior (rewrite in place if the file vanished). Recomputing the bare
+// name for a non-principal one would collide with the name the real principal should
+// occupy.
 func TestMaterializarMidiasFaltantesAssetLegadoNaoPrincipalNaoConverge(t *testing.T) {
 	srv, h, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -489,11 +481,10 @@ func TestMaterializarMidiasFaltantesAssetLegadoNaoPrincipalNaoConverge(t *testin
 	}
 }
 
-// semearNfoNaRaizEMoverParaLocalLegado grava o tvshow.nfo corretamente na
-// raiz (pós-briefing-0081) e depois simula naming legado (pré-0081): move o
-// .nfo pra dentro de "Season 01" e atualiza entity.nfo_path pra lá -- mesmo
-// estado real observado no MIB Homens de Preto em produção. Devolve o
-// caminho canônico esperado (raiz) e o caminho legado.
+// semearNfoNaRaizEMoverParaLocalLegado writes tvshow.nfo correctly in the root (post-fix) and
+// then simulates the legacy naming (pre-fix): it moves the .nfo into "Season 01" and updates
+// entity.nfo_path to there -- the same real state observed in production on a Men in Black
+// library entry. It returns the expected canonical path (root) and the legacy path.
 func semearNfoNaRaizEMoverParaLocalLegado(t *testing.T, srv *Server, d *db.DB, libRoot string) (nfoCanonico, legadoPath string) {
 	t.Helper()
 	_, nfoGravado, err := srv.MaterializarMidiasFaltantes(context.Background(), "s1")
@@ -524,11 +515,11 @@ func semearNfoNaRaizEMoverParaLocalLegado(t *testing.T, srv *Server, d *db.DB, l
 	return nfoCanonico, legadoPath
 }
 
-// TestMaterializarMidiasFaltantesNfoLegadoConvergeERemoveOrfao cobre o
-// critério de aceite do briefing 0128 para o NFO: um entity.nfo_path legado
-// (gravado antes do briefing 0081, apontando pra dentro de "Season 01") --
-// rodar MaterializarMidiasFaltantes de novo regrava o .nfo na raiz correta
-// e remove o arquivo antigo órfão.
+// TestMaterializarMidiasFaltantesNfoLegadoConvergeERemoveOrfao covers the acceptance criterion
+// of the naming convergence for the NFO: a legacy entity.nfo_path (written before
+// DiretorioDestino was fixed, pointing inside "Season 01") -- running
+// MaterializarMidiasFaltantes again rewrites the .nfo in the correct root and removes the old
+// orphan file.
 func TestMaterializarMidiasFaltantesNfoLegadoConvergeERemoveOrfao(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	libRoot := semearArvoreSerie(t, d)
@@ -549,10 +540,10 @@ func TestMaterializarMidiasFaltantesNfoLegadoConvergeERemoveOrfao(t *testing.T) 
 	}
 }
 
-// ── Música (briefing 0116): álbum/artista entram no universo do job e ganham "poster" ──
+// ── Music: album/artist enter the job universe and get a "poster" ────────
 
-// semearArvoreMusica monta artista->album->faixa (entity_relation) com UM media_file
-// present na faixa (o único jeito de música ligar a media_file, ADR-0027) e devolve os
+// semearArvoreMusica builds artist->album->track (entity_relation) with ONE present
+// media_file on the track (the only way music links a media_file, ADR-0027) and returns the
 // ids (artistaID, albumID).
 func semearArvoreMusica(t *testing.T, d *db.DB) (artistaID, albumID string) {
 	t.Helper()
@@ -565,10 +556,10 @@ func semearArvoreMusica(t *testing.T, d *db.DB) (artistaID, albumID string) {
 	return "art1", "alb1"
 }
 
-// TestListarEntitiesComMediaFilePresenteMusica cobre a extensão do universo elegível do
-// job midias_faltantes pra música (briefing 0116): artista/album SEM media_file DIRETO,
-// mas com uma faixa descendente possuída, agora aparecem -- antes, só media_file.entity_id
-// direto (que música nunca tem em artista/album) era considerado.
+// TestListarEntitiesComMediaFilePresenteMusica covers the extension of the eligible universe
+// of the midias_faltantes job to music: artist/album WITHOUT a DIRECT media_file, but with an
+// owned descendant track, now show up -- before, only the direct media_file.entity_id (which
+// music never has on artist/album) was considered.
 func TestListarEntitiesComMediaFilePresenteMusica(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	artistaID, albumID := semearArvoreMusica(t, d)
@@ -593,9 +584,9 @@ func TestListarEntitiesComMediaFilePresenteMusica(t *testing.T) {
 	}
 }
 
-// semearInventarioArte grava o envelope de inventário de arte (ChaveEnvelopeInventarioArtes)
-// em media_external, no formato lido por montarGruposArtwork -- mesmo shape usado pelo
-// enrich real (fanart.tv/musicbrainz).
+// semearInventarioArte writes the artwork inventory envelope (ChaveEnvelopeInventarioArtes)
+// into media_external, in the format read by montarGruposArtwork -- the same shape used by the
+// real enrich (fanart.tv/musicbrainz).
 func semearInventarioArte(t *testing.T, d *db.DB, meID, entityID, source, kind, url string) {
 	t.Helper()
 	inv, err := json.Marshal(map[string]any{
@@ -609,11 +600,11 @@ func semearInventarioArte(t *testing.T, d *db.DB, meID, entityID, source, kind, 
 	semearMediaExternal(t, d, meID, entityID, source, string(inv))
 }
 
-// TestMaterializarMidiasFaltantesAlbumBaixaCapaDoMusicbrainz cobre o caso ÁLBUM: a
-// fanart.tv/Cover Art Archive já grava a capa sob kind='poster' (mesmo vocabulário do
-// agregador), então o loop GENÉRICO de kindsMidiasFaltantes já materializa sem nenhum
-// caso especial -- só precisava que álbum entrasse no universo elegível (teste acima) e
-// que o helper de destino tratasse a ausência de pasta real graciosamente
+// TestMaterializarMidiasFaltantesAlbumBaixaCapaDoMusicbrainz covers the ALBUM case:
+// fanart.tv/Cover Art Archive already writes the cover under kind='poster' (the aggregator's
+// own vocabulary), so the GENERIC loop of kindsMidiasFaltantes already materializes it with no
+// special case -- it only needed the album to enter the eligible universe (test above) and the
+// destination helper to treat the absence of a real folder gracefully
 // (materializarAssetOuCache).
 func TestMaterializarMidiasFaltantesAlbumBaixaCapaDoMusicbrainz(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
@@ -641,11 +632,10 @@ func TestMaterializarMidiasFaltantesAlbumBaixaCapaDoMusicbrainz(t *testing.T) {
 	}
 }
 
-// TestMaterializarMidiasFaltantesArtistaBaixaPosterViaThumb cobre o caso ARTISTA: a
-// fanart.tv não modela um kind próprio de pôster de artista (só thumb/fanart/logo/banner,
-// kindsArtista em internal/provider/fanarttv) -- materializarPosterDeArtista usa o
-// vencedor do kind `thumb` como poster (briefing 0116), senão o card de artista NUNCA
-// teria has_poster=true.
+// TestMaterializarMidiasFaltantesArtistaBaixaPosterViaThumb covers the ARTIST case: fanart.tv
+// does not model a dedicated artist poster kind (only thumb/fanart/logo/banner, kindsArtista in
+// internal/provider/fanarttv) -- materializarPosterDeArtista uses the winner of the `thumb`
+// kind as the poster, otherwise the artist card would NEVER have has_poster=true.
 func TestMaterializarMidiasFaltantesArtistaBaixaPosterViaThumb(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	artistaID, _ := semearArvoreMusica(t, d)
@@ -678,8 +668,9 @@ func TestMaterializarMidiasFaltantesArtistaBaixaPosterViaThumb(t *testing.T) {
 	}
 }
 
-// TestMaterializarPosterDeArtistaIdempotente cobre que uma 2a chamada não rebaixa/duplica
-// quando o artista já tem um poster (mesmo que só em cache, sem pasta real).
+// TestMaterializarPosterDeArtistaIdempotente covers that a 2nd call does not re-download nor
+// duplicate when the artist already has a poster (even if only in the cache, without a real
+// folder).
 func TestMaterializarPosterDeArtistaIdempotente(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	artistaID, _ := semearArvoreMusica(t, d)
@@ -706,9 +697,9 @@ func TestMaterializarPosterDeArtistaIdempotente(t *testing.T) {
 	}
 }
 
-// TestMaterializarPosterDeArtistaSemInventarioNaoFaz nada cobre "nada a fazer" (briefing
-// 0116): artista elegível (faixa possuída) mas SEM nenhum inventário de arte cacheado --
-// nenhum candidato de thumb, então nenhum poster é criado, sem erro.
+// TestMaterializarPosterDeArtistaSemInventarioNaoFazNada covers the "nothing to do" case: an
+// eligible artist (owned track) but WITHOUT any cached artwork inventory -- no thumb candidate,
+// so no poster is created, with no error.
 func TestMaterializarPosterDeArtistaSemInventarioNaoFazNada(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	artistaID, _ := semearArvoreMusica(t, d)
@@ -727,9 +718,9 @@ func TestMaterializarPosterDeArtistaSemInventarioNaoFazNada(t *testing.T) {
 	}
 }
 
-// TestMaterializarPosterDeArtistaFalhaDownloadNaoPropaga cobre que uma falha de DOWNLOAD
-// (conteúdo não é imagem) degrada em silêncio (best-effort, mesmo espírito de
-// materializarKindVencedor) em vez de propagar erro -- sem asset criado.
+// TestMaterializarPosterDeArtistaFalhaDownloadNaoPropaga covers that a DOWNLOAD failure (the
+// content is not an image) degrades silently (best-effort, the same spirit as
+// materializarKindVencedor) instead of propagating an error -- with no asset created.
 func TestMaterializarPosterDeArtistaFalhaDownloadNaoPropaga(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	artistaID, _ := semearArvoreMusica(t, d)
@@ -750,8 +741,8 @@ func TestMaterializarPosterDeArtistaFalhaDownloadNaoPropaga(t *testing.T) {
 	}
 }
 
-// decodeAssetList lista os assets da entity direto do banco (mais simples que decodificar
-// a resposta HTTP agrupada por kind de /artwork).
+// decodeAssetList lists the entity assets straight from the database (simpler than decoding
+// the by-kind HTTP response of /artwork).
 func decodeAssetList(t *testing.T, srv *Server, entityID string) []sqlcgen.Asset {
 	t.Helper()
 	assets, err := srv.leitura().ListarAssetsPorEntity(context.Background(), entityID)
@@ -761,11 +752,11 @@ func decodeAssetList(t *testing.T, srv *Server, entityID string) []sqlcgen.Asset
 	return assets
 }
 
-// ── MaterializarSeAutoDownloadLigado (briefing 0089, adaptador de scanner.Materializador) ──
+// ── MaterializarSeAutoDownloadLigado (adapter of scanner.Materializador) ──
 
-// TestMaterializarSeAutoDownloadLigadoToggleDesligadoNaoMaterializaNada cobre
-// o critério §5: com o toggle desligado (default de fábrica), a chamada é
-// no-op -- nenhuma arte é materializada, nenhum erro.
+// TestMaterializarSeAutoDownloadLigadoToggleDesligadoNaoMaterializaNada covers the criterion:
+// with the toggle off (factory default), the call is a no-op -- no artwork is materialized, no
+// error.
 func TestMaterializarSeAutoDownloadLigadoToggleDesligadoNaoMaterializaNada(t *testing.T) {
 	srv, h, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -785,9 +776,9 @@ func TestMaterializarSeAutoDownloadLigadoToggleDesligadoNaoMaterializaNada(t *te
 	}
 }
 
-// TestMaterializarSeAutoDownloadLigadoToggleLigadoMaterializa cobre o
-// critério §5: com o toggle ligado, a chamada materializa de fato a arte
-// vencedora na pasta real, reusando MaterializarMidiasFaltantes.
+// TestMaterializarSeAutoDownloadLigadoToggleLigadoMaterializa covers the criterion: with the
+// toggle on, the call really materializes the winning artwork into the real folder, reusing
+// MaterializarMidiasFaltantes.
 func TestMaterializarSeAutoDownloadLigadoToggleLigadoMaterializa(t *testing.T) {
 	srv, h, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -813,9 +804,9 @@ func TestMaterializarSeAutoDownloadLigadoToggleLigadoMaterializa(t *testing.T) {
 	}
 }
 
-// ── Reconvergência por conteúdo do NFO (briefing 0134) ───────────────────
+// ── Re-convergence by NFO content ────────────────────────────────────────
 
-// lerNFO devolve o conteúdo do .nfo no destino canônico da entity.
+// lerNFO returns the content of the .nfo at the entity's canonical destination.
 func lerNFO(t *testing.T, libDir, nomeBase string) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(libDir, nomeBase+".nfo"))
@@ -825,11 +816,10 @@ func lerNFO(t *testing.T, libDir, nomeBase string) string {
 	return string(b)
 }
 
-// TestMaterializarMidiasFaltantesNfoVazioRegrava cobre o caso extremo do
-// briefing 0134: o .nfo existe no destino certo, mas está vazio (0 byte). Até
-// o 0133 o job só olhava caminho+presença e nunca mais tocava no arquivo, então
-// um .nfo vazio ficava vazio para sempre -- a biblioteca consumidora lia um
-// episódio sem nada dentro.
+// TestMaterializarMidiasFaltantesNfoVazioRegrava covers the extreme case: the .nfo exists at
+// the right destination, but is empty (0 bytes). The job used to look only at path+presence and
+// never touch the file again, so an empty .nfo stayed empty forever -- the consuming library
+// read an episode with nothing inside.
 func TestMaterializarMidiasFaltantesNfoVazioRegrava(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -855,10 +845,9 @@ func TestMaterializarMidiasFaltantesNfoVazioRegrava(t *testing.T) {
 	}
 }
 
-// TestMaterializarMidiasFaltantesNfoDesatualizadoRegrava cobre o caso normal
-// do 0134: o banco ganhou sinopse DEPOIS da primeira gravação. O .nfo do disco
-// tem que ser reescrito com o dado novo, mesmo com nfo_path preenchido e o
-// arquivo presente.
+// TestMaterializarMidiasFaltantesNfoDesatualizadoRegrava covers the normal case: the database
+// gained a synopsis AFTER the first write. The .nfo on disk has to be rewritten with the new
+// data, even with nfo_path filled in and the file present.
 func TestMaterializarMidiasFaltantesNfoDesatualizadoRegrava(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -902,10 +891,9 @@ func TestMaterializarMidiasFaltantesNfoDesatualizadoRegrava(t *testing.T) {
 	}
 }
 
-// TestMaterializarMidiasFaltantesNfoIgualNaoRegrava é o lado oposto: banco e
-// disco em dia, nada a fazer. O arquivo não pode ser tocado (nem o mtime muda),
-// senão o job vira churn de escrita no mount remoto e o mtime deixa de sinalizar
-// mudança real.
+// TestMaterializarMidiasFaltantesNfoIgualNaoRegrava is the opposite side: database and disk
+// up to date, nothing to do. The file must not be touched (not even its mtime), otherwise the
+// job becomes write churn on the remote mount and the mtime stops signaling a real change.
 func TestMaterializarMidiasFaltantesNfoIgualNaoRegrava(t *testing.T) {
 	srv, _, d := setupMidiasFaltantesServer(t)
 	semearEntity(t, d, "e1", "movie", "Matrix")

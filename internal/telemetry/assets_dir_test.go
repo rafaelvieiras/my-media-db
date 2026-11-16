@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// TestTamanhoDiretorioSomaArquivosRecursivo prova o critério de aceite do
-// briefing 0063: app_cache_bytes reflete o tamanho REAL de assetsDir, com
-// arquivo de tamanho conhecido, inclusive em subdiretório.
+// TestTamanhoDiretorioSomaArquivosRecursivo proves the acceptance criterion of
+// app_cache_bytes: it reflects the REAL size of assetsDir, with a file of known
+// size, including inside a subdirectory.
 func TestTamanhoDiretorioSomaArquivosRecursivo(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "a.jpg"), make([]byte, 100), 0o644); err != nil {
@@ -31,8 +31,8 @@ func TestTamanhoDiretorioSomaArquivosRecursivo(t *testing.T) {
 	}
 }
 
-// TestTamanhoDiretorioInexistenteDevolveZero prova que um assetsDir ainda
-// não criado (instalação nova) não é erro -- devolve 0.
+// TestTamanhoDiretorioInexistenteDevolveZero proves that an assetsDir not yet
+// created (fresh installation) is not an error -- it returns 0.
 func TestTamanhoDiretorioInexistenteDevolveZero(t *testing.T) {
 	total, err := TamanhoDiretorio(filepath.Join(t.TempDir(), "nao-existe"))
 	if err != nil {
@@ -43,8 +43,8 @@ func TestTamanhoDiretorioInexistenteDevolveZero(t *testing.T) {
 	}
 }
 
-// TestTamanhoDiretorioVazioDevolveZero prova o caso trivial: diretório
-// existente e vazio soma 0.
+// TestTamanhoDiretorioVazioDevolveZero proves the trivial case: an existing
+// and empty directory adds up to 0.
 func TestTamanhoDiretorioVazioDevolveZero(t *testing.T) {
 	total, err := TamanhoDiretorio(t.TempDir())
 	if err != nil {

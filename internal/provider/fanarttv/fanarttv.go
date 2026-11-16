@@ -1,10 +1,11 @@
-// Package fanarttv implementa um provider DEDICADO A ARTE (briefing 0048): a fanart.tv
-// é uma fonte exclusiva de arte de alta qualidade (logos, clearart, disc, character
-// art) que o TMDB/TVDB não cobrem bem. Ela NÃO é fonte de busca: o Client implementa o
-// core provider.Provider apenas com Buscar/BuscarDetalhe/MapearDetalhe NO-OP (para
-// entrar no Registry e ser descoberto por type-assert), e a capacidade real é
-// provider.ArteProvider (BuscarArtes). A credencial (chave pessoal) é lida no boot
-// (main) e injetada aqui — NUNCA hardcoded, nunca logada.
+// Package fanarttv implements a provider DEDICATED TO ART: fanart.tv is an
+// exclusive source of high-quality art (logos, clearart, disc, character art)
+// that TMDB/TVDB do not cover well. It is NOT a search source: the Client
+// implements the core provider.Provider with only NO-OP
+// Buscar/BuscarDetalhe/MapearDetalhe (to enter the Registry and be discovered by
+// type-assert), and the real capability is provider.ArteProvider (BuscarArtes).
+// The credential (personal key) is read at boot (main) and injected here --
+// NEVER hardcoded, never logged.
 package fanarttv
 
 import (
@@ -21,16 +22,16 @@ import (
 )
 
 const (
-	// baseURLPadrao é a base estável da API v3 da fanart.tv.
+	// baseURLPadrao is the stable base of the fanart.tv v3 API.
 	baseURLPadrao = "https://webservice.fanart.tv/v3"
-	// timeoutPadrao limita cada requisição; estouro vira erro (o enrich degrada).
+	// timeoutPadrao bounds each request; an overrun becomes an error (enrich degrades).
 	timeoutPadrao = 8 * time.Second
-	// nomeFonte é o Nome() da fonte (também o source do inventário em media_external).
+	// nomeFonte is the Nome() of the source (also the source of the media_external inventory).
 	nomeFonte = "fanarttv"
 )
 
-// kindsFilme mapeia cada tipo de arte de FILME da fanart.tv para o nosso kind (tabela do
-// briefing 0048 §2). moviedisc carrega disc_type/disc no próprio item.
+// kindsFilme maps each MOVIE art type of fanart.tv to our kind.
+// moviedisc carries disc_type/disc in the item itself.
 var kindsFilme = map[string]string{
 	"movieposter":     "poster",
 	"moviebackground": "fanart",
@@ -43,8 +44,9 @@ var kindsFilme = map[string]string{
 	"moviethumb":      "thumb",
 }
 
-// kindsTV mapeia cada tipo de arte de SÉRIE da fanart.tv para o nosso kind. As artes de
-// temporada (season*) carregam o campo `season` no item — o enrich as roteia à temporada.
+// kindsTV maps each SERIES art type of fanart.tv to our kind. The season arts
+// (season*) carry the `season` field in the item -- enrich routes them to the
+// season.
 var kindsTV = map[string]string{
 	"tvposter":       "poster",
 	"showbackground": "fanart",
@@ -60,12 +62,13 @@ var kindsTV = map[string]string{
 	"seasonbanner":   "banner",
 }
 
-// kindsArtista mapeia cada tipo de arte de ARTISTA de música da fanart.tv para o nosso
-// kind (briefing 0116, endpoint GET /music/{mbid} — mesmo shape achatado tipo->array que
-// filme/série, então reusa mapearArtes sem struct nova). A fanart.tv também aninha
-// capa/cdart de álbum dentro da MESMA resposta sob a chave "albums" (por release-group),
-// mas essa chave não está na tabela abaixo, então mapearArtes a ignora — capa de álbum já
-// é coberta pelo Cover Art Archive (MusicaBrainz), sem duplicar aqui.
+// kindsArtista maps each MUSIC ARTIST art type of fanart.tv to our kind
+// (endpoint GET /music/{mbid} -- the same flattened type->array shape as
+// movie/series, so it reuses mapearArtes without a new struct). fanart.tv also
+// nests the album cover/cdart inside the SAME response under the "albums" key
+// (by release-group), but that key is not in the table below, so mapearArtes
+// ignores it -- the album cover is already covered by the Cover Art Archive
+// (MusicaBrainz), without duplicating it here.
 var kindsArtista = map[string]string{
 	"artistthumb":      "thumb",
 	"artistbackground": "fanart",
@@ -74,28 +77,28 @@ var kindsArtista = map[string]string{
 	"musicbanner":      "banner",
 }
 
-// Credencial é a credencial da fanart.tv: a chave PESSOAL (api_key), que autentica
-// sozinha (validado, HTTP 200) e bypassa o limite da chave de projeto. Quem lê o env é
-// o main; aqui já chega resolvida.
+// Credencial is the fanart.tv credential: the PERSONAL key (api_key), which
+// authenticates on its own (validated, HTTP 200) and bypasses the project key
+// limit. Whoever reads the env is main; here it already arrives resolved.
 type Credencial struct {
-	// APIKey é a chave pessoal (query api_key).
+	// APIKey is the personal key (api_key query).
 	APIKey string
 }
 
-// Configurada diz se há chave preenchida. Sem ela, o main nem cria o provider (arte da
-// fanart.tv desligada — não é erro; regressão zero).
+// Configurada reports whether a key is filled in. Without it, main does not even
+// create the provider (fanart.tv art off -- it is not an error; zero regression).
 func (c Credencial) Configurada() bool { return c.APIKey != "" }
 
-// Client é o provider fanart.tv. httpClient e baseURL são injetáveis para teste (apontar
-// a um httptest.Server sem rede real).
+// Client is the fanart.tv provider. httpClient and baseURL are injectable for
+// testing (point at an httptest.Server without the real network).
 type Client struct {
 	cred       Credencial
 	httpClient *http.Client
 	baseURL    string
 }
 
-// New cria o client. httpClient nil usa um default com timeout; baseURL vazio usa a base
-// pública da fanart.tv.
+// New creates the client. A nil httpClient uses a default with timeout; an empty
+// baseURL uses the public fanart.tv base.
 func New(cred Credencial, httpClient *http.Client, baseURL string) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: timeoutPadrao}
@@ -106,52 +109,55 @@ func New(cred Credencial, httpClient *http.Client, baseURL string) *Client {
 	return &Client{cred: cred, httpClient: httpClient, baseURL: baseURL}
 }
 
-// Nome identifica a fonte.
+// Nome identifies the source.
 func (c *Client) Nome() string { return nomeFonte }
 
-// Buscar é NO-OP: a fanart.tv não é fonte de busca (nunca polui os resultados). Devolve
-// vazio para satisfazer o core provider.Provider.
+// Buscar is NO-OP: fanart.tv is not a search source (it never pollutes the
+// results). Returns empty to satisfy the core provider.Provider.
 func (c *Client) Buscar(context.Context, string, string, string) ([]provider.ResultadoExterno, error) {
 	return nil, nil
 }
 
-// BuscarDetalhe é NO-OP: a fanart.tv não modela o detalhe de um item (só arte). Devolve
-// um payload vazio para satisfazer o core.
+// BuscarDetalhe is NO-OP: fanart.tv does not model the detail of an item (only
+// art). Returns an empty payload to satisfy the core.
 func (c *Client) BuscarDetalhe(context.Context, string, string, []string) (json.RawMessage, error) {
 	return json.RawMessage(`{}`), nil
 }
 
-// MapearDetalhe é NO-OP: devolve um mapa vazio — a camada de inventário da fanart.tv em
-// media_external NÃO deve poluir a composição de camadas do resolver (só o /artwork a lê).
+// MapearDetalhe is NO-OP: it returns an empty map -- the fanart.tv inventory
+// layer in media_external must NOT pollute the layer composition of the resolver
+// (only /artwork reads it).
 func (c *Client) MapearDetalhe(json.RawMessage) (map[string]any, error) {
 	return map[string]any{}, nil
 }
 
-// BuscarArtes lista as artes do item na fanart.tv (capacidade provider.ArteProvider).
-// Filme: /movies/{id} (id TMDB preferido, senão IMDB). Série: /tv/{id} (id TheTVDB).
-// Artista de música: /music/{id} (id MBID, briefing 0116) — foto/fundo/logo do artista;
-// capa de álbum fica a cargo do Cover Art Archive (MusicBrainz), não desta fonte. Sem id
-// utilizável ou sem match (404) devolve (nil, nil) — graça. Erro real propaga. `langs`
-// não é usado na chamada (a fanart.tv devolve TODOS os idiomas de uma vez); o lang de cada
-// arte é preservado no inventário.
+// BuscarArtes lists the arts of the item at fanart.tv (capability
+// provider.ArteProvider). Movie: /movies/{id} (TMDB id preferred, otherwise
+// IMDB). Series: /tv/{id} (TheTVDB id). Music artist: /music/{id} (MBID id) --
+// artist photo/background/logo; the album cover is the responsibility of the
+// Cover Art Archive (MusicBrainz), not of this source. Without a usable id or
+// without a match (404) it returns (nil, nil) -- gracefully. A real error
+// propagates. `langs` is not used in the call (fanart.tv returns ALL languages at
+// once); the lang of each art is preserved in the inventory.
 func (c *Client) BuscarArtes(ctx context.Context, ids provider.ExternalIDs, tipo string, langs []string) ([]provider.Arte, error) {
 	_ = langs
 	path, tabela, ok := c.rotaETabela(ids, tipo)
 	if !ok {
-		return nil, nil // sem id utilizável para esta fonte
+		return nil, nil // no usable id for this source
 	}
 	body, ok, err := c.getArtes(ctx, path)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		return nil, nil // 404: item sem arte na fanart.tv (graça)
+		return nil, nil // 404: item without art on fanart.tv (gracefully)
 	}
 	return mapearArtes(body, tabela)
 }
 
-// rotaETabela escolhe o path e a tabela de kinds pelo tipo e pelos ids disponíveis. Filme
-// prefere o id TMDB (senão o IMDB); série usa o id TheTVDB. ok=false quando falta o id.
+// rotaETabela chooses the path and the kinds table by type and by the available
+// ids. A movie prefers the TMDB id (otherwise the IMDB one); a series uses the
+// TheTVDB id. ok=false when the id is missing.
 func (c *Client) rotaETabela(ids provider.ExternalIDs, tipo string) (string, map[string]string, bool) {
 	switch tipo {
 	case "movie":
@@ -178,8 +184,9 @@ func (c *Client) rotaETabela(ids provider.ExternalIDs, tipo string) (string, map
 	}
 }
 
-// getArtes faz o GET autenticado (api_key) a `path` e devolve o corpo. ok=false num 404
-// (item sem arte — não é erro). Status != 200/404 e I/O propagam como erro.
+// getArtes performs the authenticated GET (api_key) to `path` and returns the
+// body. ok=false on a 404 (item without art -- not an error). Status != 200/404
+// and I/O errors propagate as an error.
 func (c *Client) getArtes(ctx context.Context, path string) ([]byte, bool, error) {
 	u, err := url.Parse(c.baseURL + path)
 	if err != nil {
@@ -212,8 +219,9 @@ func (c *Client) getArtes(ctx context.Context, path string) ([]byte, bool, error
 	return body, true, nil
 }
 
-// imagemFanart é uma imagem crua da fanart.tv. Os números vêm como STRING no JSON
-// (likes/disc/season) — convertidos com atoiSeguro. `season` pode ser "all"/"0"/"1"…
+// imagemFanart is a raw fanart.tv image. The numbers come as STRING in the JSON
+// (likes/disc/season) -- converted with atoiSeguro. `season` can be
+// "all"/"0"/"1"...
 type imagemFanart struct {
 	URL      string `json:"url"`
 	Lang     string `json:"lang"`
@@ -223,10 +231,10 @@ type imagemFanart struct {
 	Season   string `json:"season"`
 }
 
-// mapearArtes decodifica a resposta (objeto com uma array por tipo) e mapeia cada tipo
-// CONHECIDO da tabela para []provider.Arte. Tipos fora da tabela (name/tmdb_id/…) e
-// imagens sem URL são ignorados. Um tipo com array malformada é pulado (degrada aquele
-// tipo, não a busca inteira).
+// mapearArtes decodes the response (an object with one array per type) and maps
+// each KNOWN type of the table to []provider.Arte. Types outside the table
+// (name/tmdb_id/...) and images without a URL are ignored. A type with a
+// malformed array is skipped (it degrades that type, not the whole search).
 func mapearArtes(body []byte, tabela map[string]string) ([]provider.Arte, error) {
 	var bruto map[string]json.RawMessage
 	if err := json.Unmarshal(body, &bruto); err != nil {
@@ -252,9 +260,9 @@ func mapearArtes(body []byte, tabela map[string]string) ([]provider.Arte, error)
 	return out, nil
 }
 
-// arteDe converte uma imagem crua no nosso Arte canônico, normalizando o kind e
-// convertendo os números-string (likes/disc). DiscType/Season vêm intactos (vazios para
-// tipos que não os têm).
+// arteDe converts a raw image into our canonical Arte, normalizing the kind and
+// converting the number-strings (likes/disc). DiscType/Season come through
+// intact (empty for the types that do not have them).
 func arteDe(kind string, img imagemFanart) provider.Arte {
 	return provider.Arte{
 		Kind:     kind,
@@ -267,8 +275,8 @@ func arteDe(kind string, img imagemFanart) provider.Arte {
 	}
 }
 
-// atoiSeguro converte uma string numérica em int, devolvendo 0 quando vazia/inválida
-// (a fanart.tv serializa likes/disc como string).
+// atoiSeguro converts a numeric string to int, returning 0 when it is
+// empty/invalid (fanart.tv serializes likes/disc as a string).
 func atoiSeguro(s string) int {
 	n, err := strconv.Atoi(s)
 	if err != nil {

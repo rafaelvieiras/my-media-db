@@ -1,12 +1,12 @@
 package enrich
 
-// serie.go é o ramo de import de SÉRIES do enrich (briefing 0031 / ADR-0021):
-// materializa a ÁRVORE série→temporada→episódio a partir de um provider.SerieProvider.
-// A série é um item comum (reusa importarItem para detalhe/pôster/curarTitulo) mais o
-// namespace core.tv@1 (season types); as temporadas (só as da ordenação default) e os
-// episódios (grão fino, ancorados no episode.id) nascem com o extension_data próprio e
-// ligam-se por entity_relation com sort_index. É idempotente: re-importar reusa
-// entities e relações (dedup de temporada por número, de episódio por id externo).
+// serie.go is the SERIES import branch of enrich (ADR-0021):
+// it materializes the series→season→episode TREE from a provider.SerieProvider.
+// The series is an ordinary item (reuses importarItem for detail/poster/curarTitulo) plus the
+// core.tv@1 namespace (season types); the seasons (only those of the default ordering) and
+// the episodes (fine grain, anchored on episode.id) are born with their own extension_data
+// and are linked through entity_relation with sort_index. It is idempotent: re-importing
+// reuses entities and relations (season dedup by number, episode dedup by external id).
 
 import (
 	"context"
@@ -26,34 +26,34 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/tvmatch"
 )
 
-// Erros sentinela de ImportarSeriePorNome: o scanner de series (0034) os distingue
-// para rotear o arquivo para a fila de revisao SEM adivinhar (nunca importa a serie
-// errada nem fabrica episodio).
+// Sentinel errors of ImportarSeriePorNome: the series scanner distinguishes them to
+// route the file to the review queue WITHOUT guessing (it never imports the wrong series
+// nor fabricates an episode).
 var (
-	// ErrSerieNaoEncontrada: nenhum provider retornou candidato para o nome. -> revisao.
+	// ErrSerieNaoEncontrada: no provider returned a candidate for the name. -> review.
 	ErrSerieNaoEncontrada = errors.New("enrich: serie nao encontrada no provider")
-	// ErrSerieAmbigua: havia candidatos, mas nenhum match de titulo EXATO e UNICO
-	// (0 exatos com candidatos presentes, ou 2+ exatos). -> revisao.
+	// ErrSerieAmbigua: there were candidates, but no EXACT and UNIQUE title match
+	// (0 exact with candidates present, or 2+ exact). -> review.
 	ErrSerieAmbigua = errors.New("enrich: serie ambigua (sem match de titulo exato e unico)")
 )
 
 const (
-	// tipoSerie/tipoTemporada/tipoEpisodio são os entity.type da árvore (ADR-0021).
+	// tipoSerie/tipoTemporada/tipoEpisodio are the entity.type of the tree (ADR-0021).
 	tipoSerie     = "tv"
 	tipoTemporada = "season"
 	tipoEpisodio  = "episode"
-	// relacaoTemporada/relacaoEpisodio são os entity_relation.kind da árvore.
+	// relacaoTemporada/relacaoEpisodio are the entity_relation.kind of the tree.
 	relacaoTemporada = "tv_season"
 	relacaoEpisodio  = "tv_episode"
-	// nsTV é o namespace do extension_data da vertical de séries (core.tv@1).
+	// nsTV is the extension_data namespace of the series vertical (core.tv@1).
 	nsTV = "core.tv@1"
 )
 
-// arvoreDaSerie valida a capacidade do provider e busca a arvore bruta (temporadas +
-// episodios) na fonte -- sem tocar nenhuma entity. Extraido de importarSerie para ser
-// reusado por Enriquecer (0067): la, a entity ja existe e so a arvore precisa ser
-// buscada/aplicada; aqui, POST /import busca ANTES de criar a serie (falha rapido sem
-// deixar entity orfa quando a fonte nao suporta serie).
+// arvoreDaSerie validates the provider capability and fetches the raw tree (seasons +
+// episodes) from the source -- without touching any entity. Extracted from importarSerie
+// so that it can be reused by Enriquecer: there the entity already exists and only the
+// tree needs to be fetched/applied; here, POST /import fetches BEFORE creating the series
+// (fail fast without leaving an orphan entity when the source does not support series).
 func (s *Servico) arvoreDaSerie(ctx context.Context, source, sourceID string, langs []string) (provider.SerieArvore, error) {
 	prov, ok := s.provFonte(source)
 	if !ok {
@@ -66,11 +66,11 @@ func (s *Servico) arvoreDaSerie(ctx context.Context, source, sourceID string, la
 	return sp.BuscarSerieArvore(ctx, sourceID, langs)
 }
 
-// aplicarArvoreSerie grava a arvore JA BUSCADA numa serie que JA EXISTE (serieID
-// conhecido): extension_data da serie, enriquecimento rico cruzado (best-effort),
-// cada temporada/episodio (find-or-create com refresh, 0043) e o inventario de artes.
-// So AtualizarExtensionData propaga erro (escrita de banco real); o resto e best-effort,
-// exatamente como importarSerie ja fazia.
+// aplicarArvoreSerie writes the ALREADY FETCHED tree into a series that ALREADY EXISTS
+// (known serieID): the series extension_data, the rich cross enrichment (best-effort),
+// each season/episode (find-or-create with refresh) and the artwork inventory. Only
+// AtualizarExtensionData propagates an error (a real database write); the rest is
+// best-effort, exactly as importarSerie already did.
 func (s *Servico) aplicarArvoreSerie(ctx context.Context, serieID, source, sourceID string, arvore provider.SerieArvore, langs []string) error {
 	if err := s.escrita().AtualizarExtensionData(ctx, sqlcgen.AtualizarExtensionDataParams{
 		ExtensionDataJson: nsValid(extensaoSerie(arvore)),
@@ -78,71 +78,71 @@ func (s *Servico) aplicarArvoreSerie(ctx context.Context, serieID, source, sourc
 	}); err != nil {
 		return err
 	}
-	// Enriquecimento RICO cruzado do nó série (0045, rota C; agnóstico de fonte no 0046):
-	// o OUTRO provider disponível (o que não é a fonte-base da árvore) preenche os campos
-	// ricos (slogan/gêneros/classificação/keywords/similar/situação) + baixa a fanart.
-	// Best-effort: falha/ausência degrada para só-a-árvore (nunca aborta a árvore).
+	// RICH cross enrichment of the series node (route C; source-agnostic): the OTHER
+	// provider available (the one that is not the tree's base source) fills the rich fields
+	// (tagline/genres/rating/keywords/similar/status) + downloads the fanart. Best-effort:
+	// a failure/absence degrades to tree-only (it never aborts the tree).
 	s.enriquecerSerieRico(ctx, serieID, source, sourceID, langs)
 	for _, t := range arvore.Temporadas {
 		s.importarTemporada(ctx, serieID, source, arvore.DefaultSeasonType, t, langs)
 	}
-	// Inventário de artes (0048): DEPOIS da árvore, para que as artes de temporada (Season)
-	// encontrem a entity da temporada correspondente. Best-effort (sem ArteProvider ou id,
-	// degrada em silêncio).
+	// Artwork inventory: AFTER the tree, so that the season artworks (Season) find the
+	// entity of the matching season. Best-effort (without an ArteProvider or id, it degrades
+	// silently).
 	s.enriquecerArtes(ctx, serieID, tipoSerie, langs)
-	// Candidato de tema musical (0103): mesmo gatilho de enriquecerArtes acima --
-	// depende só dos external_ids da série (já mesclados pela árvore/enriquecimento
-	// rico), sem precisar da árvore em si. Best-effort.
+	// Theme-music candidate (ADR-0025): same trigger as enriquecerArtes above -- it
+	// depends only on the external_ids of the series (already merged by the tree/rich
+	// enrichment), without needing the tree itself. Best-effort.
 	s.enriquecerTemaMusical(ctx, serieID, tipoSerie, langs)
-	// Recasamento de arquivos pendentes (0069): arquivos que ja estavam presos na SERIE
-	// (escaneados ANTES da arvore existir, sem vinculo tv_episode) ganham o vinculo certo
-	// agora que a arvore acabou de ser sincronizada -- sem esperar um novo scan. Por
-	// ULTIMO, best-effort (nunca propaga erro): a arvore/identidade ja foram gravadas com
-	// sucesso quando este passo roda.
+	// Re-matching of pending files: files that were already stuck on the SERIES
+	// (scanned BEFORE the tree existed, with no tv_episode link) get the right link now
+	// that the tree has just been synced -- without waiting for a new scan. LAST of all,
+	// best-effort (it never propagates an error): the tree/identity have already been
+	// written successfully when this step runs.
 	s.recasarArquivosPendentes(ctx, serieID)
 	return nil
 }
 
-// recasarArquivosPendentes fecha o gap do 0069: o vinculo arquivo->episodio
-// (media_file_entity, kind=tv_episode) so era tentado DENTRO de um scan, contra a
-// arvore que ja existisse naquele momento (internal/scanner/serie.go). Quando o
-// scanner encontra a serie ANTES dela ter identidade externa, o arquivo fica preso
-// direto na entity da serie, sem vinculo, ate o PROXIMO scan completo. Este passo
-// tenta o mesmo casamento por NUMERO (internal/tvmatch, regra do 0034) contra a
-// arvore recem-sincronizada, no MESMO instante em que ela passa a existir -- e
-// idempotente (pula arquivo ja vinculado) e nunca casa forcado (sem match, o
-// arquivo continua pendente, exatamente como hoje).
+// recasarArquivosPendentes closes the gap: the file->episode link
+// (media_file_entity, kind=tv_episode) was only attempted INSIDE a scan, against the
+// tree that already existed at that moment (internal/scanner/serie.go). When the
+// scanner finds the series BEFORE it has an external identity, the file stays stuck
+// directly on the series entity, with no link, until the NEXT full scan. This step
+// attempts the same matching by NUMBER (internal/tvmatch, the scanner rule) against the
+// freshly synced tree, at the SAME instant it comes into existence -- it is
+// idempotent (it skips an already linked file) and never matches by force (without a
+// match, the file stays pending, exactly as today).
 func (s *Servico) recasarArquivosPendentes(ctx context.Context, serieID string) {
 	arquivos, err := s.leitura().ListarMediaFilesPorEntity(ctx, serieID)
 	if err != nil {
 		log.Printf("enrich: listar arquivos da serie %s p/ recasamento falhou (segue): %v", serieID, err)
 		return
 	}
-	var idx *tvmatch.Index // construido sob demanda, so' se houver candidato a recasar
+	var idx *tvmatch.Index // built on demand, only if there is a candidate to re-match
 	for _, mf := range arquivos {
 		if s.temVinculoEpisodio(ctx, mf.ID) {
-			continue // ja vinculado (scan anterior ou iteracao anterior deste loop)
+			continue // already linked (previous scan or previous iteration of this loop)
 		}
 		ep, ok := naming.ParseEpisode(semExtensaoArquivo(filepath.Base(mf.Path)))
 		if !ok {
-			continue // nao reconhece padrao de episodio -- fica pendente
+			continue // episode pattern not recognized -- stays pending
 		}
 		if idx == nil {
 			idx = s.carregarIndexSerie(ctx, serieID)
 		}
 		ids, ok := tvmatch.Casar(idx, ep)
 		if !ok {
-			continue // sem match na arvore -- fica pendente, como hoje
+			continue // no match in the tree -- stays pending, as today
 		}
 		s.ligarArquivoAosEpisodios(ctx, mf.ID, ids)
 	}
 }
 
-// temVinculoEpisodio diz se o media_file ja tem algum vinculo kind=tv_episode em
-// media_file_entity -- garante a idempotencia do recasamento (nunca reprocessa nem
-// duplica um arquivo que um scan anterior, ou uma iteracao anterior deste mesmo
-// loop, ja vinculou). Erro de leitura degrada para "sem vinculo" (o pior caso e
-// tentar recasar de novo, que e idempotente por causa do upsert em
+// temVinculoEpisodio tells whether the media_file already has some kind=tv_episode link
+// in media_file_entity -- it guarantees the idempotence of the re-matching (it never
+// reprocesses nor duplicates a file that a previous scan, or a previous iteration of
+// this same loop, already linked). A read error degrades to "no link" (the worst case is
+// trying to re-match again, which is idempotent because of the upsert in
 // CriarVinculoEntidade).
 func (s *Servico) temVinculoEpisodio(ctx context.Context, mediaFileID string) bool {
 	vinculos, err := s.leitura().ListarVinculosPorArquivo(ctx, mediaFileID)
@@ -158,10 +158,11 @@ func (s *Servico) temVinculoEpisodio(ctx context.Context, mediaFileID string) bo
 	return false
 }
 
-// ligarArquivoAosEpisodios cria o vinculo media_file_entity (kind=tv_episode) para
-// cada episodio casado, com ordinal = posicao na lista -- mesmo layout do scanner
-// (um range S01E01-E03 vira 3 linhas, ordinal 0/1/2, sob o mesmo media_file). Falha
-// degrada (loga e segue, um episodio da lista nao derruba os demais).
+// ligarArquivoAosEpisodios creates the media_file_entity link (kind=tv_episode) for each
+// matched episode, with ordinal = position in the list -- the same layout as the scanner
+// (an S01E01-E03 range becomes 3 rows, ordinal 0/1/2, under the same media_file). A
+// failure degrades (logs and continues, one episode of the list does not bring down the
+// others).
 func (s *Servico) ligarArquivoAosEpisodios(ctx context.Context, mediaFileID string, episodioIDs []string) {
 	for i, epID := range episodioIDs {
 		if err := s.escrita().CriarVinculoEntidade(ctx, sqlcgen.CriarVinculoEntidadeParams{
@@ -175,11 +176,11 @@ func (s *Servico) ligarArquivoAosEpisodios(ctx context.Context, mediaFileID stri
 	}
 }
 
-// carregarIndexSerie monta o indice numero->episode_id da arvore de uma serie
-// (espelha scanner.carregarIndex, MESMA leitura: ListarRelacoesFilhas + extension_data
-// de cada episodio), agora disponivel em internal/enrich via internal/tvmatch. Falha
-// de leitura degrada para um indice vazio -- Casar simplesmente nao encontra nada, o
-// arquivo fica pendente (nenhum casamento forcado).
+// carregarIndexSerie builds the number->episode_id index of the tree of a series
+// (mirrors scanner.carregarIndex, the SAME read: ListarRelacoesFilhas + extension_data of
+// each episode), now available in internal/enrich through internal/tvmatch. A read failure
+// degrades to an empty index -- Casar simply finds nothing, the file stays pending (no
+// forced matching).
 func (s *Servico) carregarIndexSerie(ctx context.Context, serieID string) *tvmatch.Index {
 	idx := tvmatch.NovoIndex()
 	q := s.leitura()
@@ -202,7 +203,7 @@ func (s *Servico) carregarIndexSerie(ctx context.Context, serieID string) *tvmat
 		}
 		eps, err := q.ListarRelacoesFilhas(ctx, t.ChildID)
 		if err != nil {
-			continue // temporada ilegivel: degrada sem derrubar o resto do indice
+			continue // unreadable season: degrades without bringing down the rest of the index
 		}
 		for _, e := range eps {
 			if e.Kind != relacaoEpisodio {
@@ -218,27 +219,28 @@ func (s *Servico) carregarIndexSerie(ctx context.Context, serieID string) *tvmat
 	return idx
 }
 
-// semExtensaoArquivo remove a extensao do nome-base de um arquivo antes do
-// naming.ParseEpisode (que espera o nome sem extensao) -- espelha
-// scanner.semExtensao, sem depender do pacote scanner (internal/enrich nao pode
-// importa-lo, so' o contrario).
+// semExtensaoArquivo removes the extension from the base name of a file before
+// naming.ParseEpisode (which expects the name without an extension) -- it mirrors
+// scanner.semExtensao, without depending on the scanner package (internal/enrich cannot
+// import it, only the other way around).
 func semExtensaoArquivo(nome string) string {
 	return strings.TrimSuffix(nome, filepath.Ext(nome))
 }
 
-// mesclarTvdbCruzado tenta capturar o tvdb_id do detalhe de serie JA BUSCADO (raw, sem
-// ida extra a rede) e mescla-o em entity.external_ids_json quando a serie ainda nao tem
-// um tvdb proprio (0087): fecha a lacuna que deixava toda serie cuja arvore vem SO do
-// TMDB (sem TVDB configurado, independencia de provider do 0046) sem id utilizavel para o
-// fanart.tv, que na TV exige tvdb_id exclusivamente (fanarttv.rotaETabela, case "tv"). So
-// roda quando a fonte-base `source` implementa a capacidade opcional
-// provider.TvdbCruzadoProvider (hoje so o client TMDB, cujo append external_ids ja traz
-// tvdb_id de graca); SEM hardcode de "tmdb" -- type-assert generico, como
-// enriquecedorRico. Ausencia da capacidade ou sem match no payload degrada em silencio
-// (best-effort). Nunca sobrescreve um tvdb ja presente (mesclarExternalIdSeAusente):
-// quando a arvore vem do proprio TVDB, mesclarExternalIds ja gravou o tvdb autoritativo
-// antes deste ponto, e este metodo nunca roda de qualquer forma (o client TVDB nao
-// implementa a capacidade).
+// mesclarTvdbCruzado tries to capture the tvdb_id from the ALREADY FETCHED series detail
+// (raw, with no extra trip to the network) and merges it into entity.external_ids_json
+// when the series does not have a tvdb of its own yet: it closes the gap that left every
+// series whose tree comes ONLY from TMDB (with no TVDB configured, the provider
+// independence) without a usable id for fanart.tv, which on TV requires tvdb_id
+// exclusively (fanarttv.rotaETabela, case "tv"). It only runs when the base source
+// `source` implements the optional capability provider.TvdbCruzadoProvider (today only the
+// TMDB client, whose external_ids append already brings tvdb_id for free); with NO
+// hardcode of "tmdb" -- a generic type-assert, like enriquecedorRico. The absence of the
+// capability or no match in the payload degrades silently (best-effort). It never
+// overwrites a tvdb already present (mesclarExternalIdSeAusente): when the tree comes from
+// TVDB itself, mesclarExternalIds has already written the authoritative tvdb before this
+// point, and this method never runs anyway (the TVDB client does not implement the
+// capability).
 func (s *Servico) mesclarTvdbCruzado(ctx context.Context, entityID, source string, raw json.RawMessage) {
 	prov, ok := s.provFonte(source)
 	if !ok {
@@ -246,22 +248,22 @@ func (s *Servico) mesclarTvdbCruzado(ctx context.Context, entityID, source strin
 	}
 	cruzado, ok := prov.(provider.TvdbCruzadoProvider)
 	if !ok {
-		return // fonte-base nao expoe o cross-id: degradacao silenciosa (0087)
+		return // base source does not expose the cross-id: silent degradation
 	}
 	tvdbID, ok := cruzado.TvdbIDDoDetalheSerie(raw)
 	if !ok {
-		return // sem tvdb_id no detalhe (serie exclusiva do TMDB, sem match no TVDB)
+		return // no tvdb_id in the detail (TMDB-exclusive series, no match on TVDB)
 	}
 	if err := s.mesclarExternalIdSeAusente(ctx, entityID, "tvdb", tvdbID); err != nil {
 		log.Printf("enrich: mesclar tvdb cruzado da serie %s (fonte %s) falhou (segue): %v", entityID, source, err)
 	}
 }
 
-// sincronizarArvoreSerie combina os dois passos acima para um chamador que so tem
-// (serieID, source, sourceID) -- o caso de Enriquecer (0067), que nao tem uma arvore
-// pre-buscada como importarSerie tem. Erro cobre tanto capacidade/rede (arvoreDaSerie)
-// quanto a escrita do extension_data (aplicarArvoreSerie); o chamador (Enriquecer)
-// trata como best-effort.
+// sincronizarArvoreSerie combines the two steps above for a caller that only has
+// (serieID, source, sourceID) -- the case of Enriquecer, which does not have a pre-fetched
+// tree the way importarSerie does. The error covers both capability/network
+// (arvoreDaSerie) and the extension_data write (aplicarArvoreSerie); the caller
+// (Enriquecer) treats it as best-effort.
 func (s *Servico) sincronizarArvoreSerie(ctx context.Context, serieID, source, sourceID string, langs []string) error {
 	arvore, err := s.arvoreDaSerie(ctx, source, sourceID, langs)
 	if err != nil {
@@ -270,14 +272,16 @@ func (s *Servico) sincronizarArvoreSerie(ctx context.Context, serieID, source, s
 	return s.aplicarArvoreSerie(ctx, serieID, source, sourceID, arvore, langs)
 }
 
-// importarSerie importa a ÁRVORE de uma série. Requer a capacidade opcional
-// SerieProvider (senão erro → 502, como a coleção). A série (type='tv') nasce/atualiza
-// pelo molde de item (detalhe/pôster/curarTitulo) e recebe o namespace core.tv@1; em
-// seguida cada temporada da ordenação default e cada episódio fino são importados. A
-// falha de UMA temporada/episódio degrada (loga e segue) — a árvore parcial é válida.
+// importarSerie imports the TREE of a series. It requires the optional SerieProvider
+// capability (otherwise error → 502, like the collection). The series (type='tv') is
+// born/updated through the item template (detail/poster/curarTitulo) and receives the
+// core.tv@1 namespace; then each season of the default ordering and each fine-grained
+// episode are imported. The failure of ONE season/episode degrades (logs and continues) —
+// the partial tree is valid.
 //
-// Capacidade/busca da árvore roda ANTES de resolver a entity da série (mesma ordem de
-// sempre: falha rápido sem deixar entity órfã quando a fonte não suporta série).
+// The capability/tree fetch runs BEFORE resolving the series entity (the same order as
+// always: fail fast without leaving an orphan entity when the source does not support
+// series).
 func (s *Servico) importarSerie(ctx context.Context, source, sourceID string, langs []string) (string, bool, error) {
 	arvore, err := s.arvoreDaSerie(ctx, source, sourceID, langs)
 	if err != nil {
@@ -293,25 +297,26 @@ func (s *Servico) importarSerie(ctx context.Context, source, sourceID string, la
 	return serieID, criada, nil
 }
 
-// enriquecerSerieRico ENRIQUECE o nó série com os campos ricos que a fonte-base da árvore
-// não modela (0045, rota C; AGNÓSTICO DE FONTE no 0046): escolhe o PRIMEIRO OUTRO provider
-// registrado com a capacidade SerieRicoProvider, cruza o id externo da série (o sourceID
-// da fonte-base) para a fonte rica, busca o canônico rico (só as chaves ricas) e o
-// PERSISTE como uma camada media_external da fonte rica no nó série — que a composição de
-// camadas (montarExterno) já compõe de graça sobre a base, reusando a maquinaria do filme
-// SEM clobbar título/idioma. Em seguida cacheia a FANART (backdrop_url). Idempotente (o
-// reuse REESCREVE por (entity_id, source), casando com o 0043). Tudo best-effort: sem
-// outro provider rico, sem match ou erro de rede degrada em silêncio para só-a-árvore —
-// nunca aborta. Sem hardcode de "tmdb"/"tvdb": a fonte-base e a rica são resolvidas por
-// disponibilidade/capacidade no registry.
+// enriquecerSerieRico ENRICHES the series node with the rich fields that the tree's
+// base source does not model (route C; SOURCE-AGNOSTIC): it picks the FIRST OTHER
+// provider registered with the SerieRicoProvider capability, crosses the series external
+// id (the sourceID of the base source) into the rich source, fetches the rich canonical
+// (only the rich keys) and PERSISTS it as a media_external layer of the rich source on the
+// series node — which the layer composition (montarExterno) already composes for free on
+// top of the base, reusing the movie machinery WITHOUT clobbering title/language. Then it
+// caches the FANART (backdrop_url). Idempotent (the reuse REWRITES by (entity_id, source),
+// matching the refresh behaviour of the reuse path). Everything is best-effort: with no
+// other rich provider, no match or a network error it degrades silently to tree-only — it
+// never aborts. With no hardcode of "tmdb"/"tvdb": the base and the rich sources are
+// resolved by availability/capability in the registry.
 func (s *Servico) enriquecerSerieRico(ctx context.Context, serieID, source, sourceID string, langs []string) {
 	rico, ricoSource, ok := s.enriquecedorRico(source)
 	if !ok {
-		return // nenhum OUTRO provider expõe a capacidade rica: só a árvore da fonte-base
+		return // no other provider exposes the rich capability: only the tree of the base source
 	}
 	idExterno := idExternoDaSerie(source, sourceID)
 	if idExterno == "" {
-		return // sem id externo para cruzar
+		return // no external id to cross
 	}
 	campos, ok, err := rico.BuscarSerieDetalheRico(ctx, idExterno, langs)
 	if err != nil {
@@ -319,31 +324,34 @@ func (s *Servico) enriquecerSerieRico(ctx context.Context, serieID, source, sour
 		return
 	}
 	if !ok || len(campos) == 0 {
-		return // sem match na fonte rica: graca (so-a-arvore)
+		return // no match in the rich source: degrades (tree-only)
 	}
 	if err := s.persistirSerieRico(ctx, serieID, ricoSource, campos); err != nil {
 		log.Printf("enrich: persistir serie-rico da serie %s falhou (segue): %v", serieID, err)
 		return
 	}
-	// backdrop_url agora existe no canônico da série: baixa a fanart (poster_url não vem
-	// no canônico rico — o pôster segue da fonte-base, já cacheado em importarItem).
+	// backdrop_url now exists in the series canonical: download the fanart (poster_url does
+	// not come in the rich canonical — the poster still comes from the base source, already
+	// cached in importarItem).
 	s.cachearArtes(ctx, serieID, campos)
-	// Elenco/equipe/produtoras (MD6, 0029) do no serie vem da FONTE RICA (o aggregate do
-	// TMDB), sob a source rica -- idempotente por (serie, ricoSource). No caso TMDB-base
-	// (sem outro provider) este ramo nao roda; os creditos entao vem do persistir do no
-	// serie (source-base), que ja mapeou o aggregate_credits do /tv.
+	// Cast/crew/studios (MD6) of the series node come from the RICH SOURCE (the TMDB
+	// aggregate), under the rich source -- idempotent by (series, ricoSource). In the
+	// TMDB-base case (no other provider) this branch does not run; the credits then come
+	// from the persistir of the series node (base source), which already mapped the
+	// aggregate_credits of /tv.
 	s.persistirCreditos(ctx, serieID, ricoSource, campos)
 }
 
-// enriquecedorRico escolhe o provider de ENRIQUECIMENTO rico do nó série: o PRIMEIRO
-// provider registrado, DIFERENTE da fonte-base `base`, que implemente SerieRicoProvider
-// (respeita a ordem = prioridade do registry). Substitui o antigo Get("tmdb") fixo — a
-// árvore pode vir de qualquer fonte e o enriquecedor é o outro provider capaz. (nil,"",
-// false) quando nenhum outro tem a capacidade: a série fica só com a árvore (graça).
+// enriquecedorRico picks the provider for the RICH enrichment of the series node: the
+// FIRST registered provider, DIFFERENT from the base source `base`, that implements
+// SerieRicoProvider (respecting the order = registry priority). It replaces the old fixed
+// Get("tmdb") — the tree can come from any source and the enricher is the other capable
+// provider. (nil,"",false) when no other one has the capability: the series stays with the
+// tree only (degrades).
 func (s *Servico) enriquecedorRico(base string) (provider.SerieRicoProvider, string, bool) {
 	for _, prov := range s.providers.All() {
 		if prov.Nome() == base {
-			continue // a fonte-base não enriquece a si mesma
+			continue // the base source does not enrich itself
 		}
 		if rico, ok := prov.(provider.SerieRicoProvider); ok {
 			return rico, prov.Nome(), true
@@ -352,20 +360,22 @@ func (s *Servico) enriquecedorRico(base string) (provider.SerieRicoProvider, str
 	return nil, "", false
 }
 
-// idExternoDaSerie devolve o id externo da série na FONTE-BASE da árvore (o sourceID do
-// import), que o provider de enriquecimento rico cruza para a sua própria fonte. Genérico
-// (antes idTvdbDaSerie assumia source=="tvdb"): não presume qual é a fonte-base — qualquer
-// SerieProvider que ancore a árvore expõe seu id aqui, e o enriquecedor rico o resolve.
+// idExternoDaSerie returns the external id of the series at the BASE SOURCE of the tree
+// (the sourceID of the import), which the rich-enrichment provider crosses into its own
+// source. Generic (previously idTvdbDaSerie assumed source=="tvdb"): it does not presume
+// which source is the base — any SerieProvider anchoring the tree exposes its id here, and
+// the rich enricher resolves it.
 func idExternoDaSerie(source, sourceID string) string {
-	_ = source // a fonte-base é genérica; o id a cruzar é sempre o sourceID do import
+	_ = source // the base source is generic; the id to cross is always the sourceID of the import
 	return sourceID
 }
 
-// persistirSerieRico grava (ou reescreve) o canônico RICO da série como uma camada
-// media_external da fonte rica `ricoSource`, embrulhado no envelope ChaveEnvelopeSerieRico
-// que o MapearDetalhe daquela fonte reconhece (passthrough). SourceID fica NULL: é uma
-// camada de ENRIQUECIMENTO cruzada, não um import primário da fonte rica (o nó série não é
-// deduplicado por id dela — a âncora é a fonte-base da árvore).
+// persistirSerieRico writes (or rewrites) the RICH canonical of the series as a
+// media_external layer of the rich source `ricoSource`, wrapped in the
+// ChaveEnvelopeSerieRico envelope that the MapearDetalhe of that source recognizes
+// (passthrough). SourceID stays NULL: it is a crossed ENRICHMENT layer, not a primary
+// import of the rich source (the series node is not deduplicated by its id — the anchor is
+// the base source of the tree).
 func (s *Servico) persistirSerieRico(ctx context.Context, serieID, ricoSource string, campos map[string]any) error {
 	payload, err := json.Marshal(map[string]any{provider.ChaveEnvelopeSerieRico: campos})
 	if err != nil {
@@ -381,23 +391,22 @@ func (s *Servico) persistirSerieRico(ctx context.Context, serieID, ricoSource st
 	return err
 }
 
-// ImportarSeriePorNome busca a serie pelo NOME nos providers que suportam series,
-// escolhe o candidato de TITULO EXATO e UNICO (case-insensitive) e importa a arvore
-// dele (reusando importarSerie, idempotente). E o ponto reusavel que o scanner de
-// series (0034) chama quando a serie ainda nao esta no catalogo.
+// ImportarSeriePorNome fetches the series by NAME from the providers that support
+// series, picks the candidate with an EXACT and UNIQUE TITLE (case-insensitive) and imports
+// its tree (reusing importarSerie, idempotent). It is the reusable point that the series
+// scanner calls when the series is not in the catalog yet.
 //
-// Escolha (respeita a prioridade de fontes = ordem do Registry, ex.: [tmdb, tvdb]):
-// percorre os providers na ordem; o PRIMEIRO que devolver exatamente UM match de
-// titulo exato vence e e importado. Um provider que devolva 2+ exatos e ambiguo. Se
-// nenhum provider deu exato-unico mas houve candidatos, e ErrSerieAmbigua; se nao
-// houve candidato algum, e ErrSerieNaoEncontrada. NUNCA adivinha por titulo parcial.
+// Choice (respects the source priority = Registry order, e.g.: [tmdb, tvdb]): it walks the
+// providers in order; the FIRST one that returns exactly ONE exact title match wins and is
+// imported. A provider that returns 2+ exact matches is ambiguous. If no provider gave an
+// exact-unique match but there were candidates, it is ErrSerieAmbigua; if there was no
+// candidate at all, it is ErrSerieNaoEncontrada. It NEVER guesses by partial title.
 //
-// preferredLang (briefing 0084) e o idioma preferido da library_source que
-// disparou o import (library.Source.PreferredLanguage), quando definido --
-// usado no lugar do PRIMEIRO idioma de `langs` (langPrincipal) so para a
-// BUSCA por nome abaixo; `langs` continua sendo a lista completa de idiomas
-// permitidos usada no import da arvore/detalhe (importarSeriePorFonte). Vazio
-// mantem o comportamento de sempre (langPrincipal(langs), idioma global).
+// preferredLang is the preferred language of the library_source that triggered the import
+// (library.Source.PreferredLanguage), when defined -- used instead of the FIRST language of
+// `langs` (langPrincipal) only for the name SEARCH below; `langs` remains the full list of
+// allowed languages used in the import of the tree/detail (importarSeriePorFonte). Empty
+// keeps the usual behaviour (langPrincipal(langs), the global language).
 func (s *Servico) ImportarSeriePorNome(ctx context.Context, nome string, langs []string, preferredLang string) (string, error) {
 	alvo := strings.TrimSpace(nome)
 	if alvo == "" {
@@ -423,29 +432,30 @@ func (s *Servico) ImportarSeriePorNome(ctx context.Context, nome string, langs [
 		exatos := exatosPorTitulo(res, alvo)
 		switch len(exatos) {
 		case 0:
-			continue // esta fonte nao tem exato; tenta a proxima (prioridade)
+			continue // this source has no exact match; try the next one (priority)
 		case 1:
 			return s.importarSeriePorFonte(ctx, prov.Nome(), exatos[0].SourceID, langs)
 		default:
-			return "", ErrSerieAmbigua // 2+ exatos na mesma fonte: nao adivinha
+			return "", ErrSerieAmbigua // 2+ exact matches in the same source: do not guess
 		}
 	}
 	if houveCandidato {
-		return "", ErrSerieAmbigua // candidatos existiam, nenhum exato-unico
+		return "", ErrSerieAmbigua // candidates existed, none exact-unique
 	}
 	return "", ErrSerieNaoEncontrada
 }
 
-// importarSeriePorFonte importa a arvore da serie escolhida (source, sourceID),
-// reusando o importarSerie da Fase 1. Devolve so o id (o `criada` nao interessa ao
-// scanner: idempotente reusa a serie existente).
+// importarSeriePorFonte imports the tree of the chosen series (source, sourceID), reusing
+// the importarSerie from Phase 1. It returns only the id (the `criada` flag is of no
+// interest to the scanner: an idempotent call reuses the existing series).
 func (s *Servico) importarSeriePorFonte(ctx context.Context, source, sourceID string, langs []string) (string, error) {
 	id, _, err := s.importarSerie(ctx, source, sourceID, langs)
 	return id, err
 }
 
-// exatosPorTitulo filtra os resultados cujo titulo casa EXATAMENTE (case-insensitive)
-// o nome alvo, dedup por SourceID (a mesma serie repetida na fonte conta uma vez).
+// exatosPorTitulo filters the results whose title matches EXACTLY (case-insensitive) the
+// target name, deduplicated by SourceID (the same series repeated at the source counts
+// once).
 func exatosPorTitulo(res []provider.ResultadoExterno, alvo string) []provider.ResultadoExterno {
 	vistos := map[string]bool{}
 	var out []provider.ResultadoExterno
@@ -462,9 +472,9 @@ func exatosPorTitulo(res []provider.ResultadoExterno, alvo string) []provider.Re
 	return out
 }
 
-// importarTemporada cria (ou reusa) a temporada, cacheia seu pôster, liga-a à série e
-// importa seus episódios. Isolada de importarSerie para manter o gocyclo baixo. Falhas
-// degradam (loga e segue).
+// importarTemporada creates (or reuses) the season, caches its poster, links it to the
+// series and imports its episodes. Isolated from importarSerie to keep the gocyclo low.
+// Failures degrade (logs and continues).
 func (s *Servico) importarTemporada(ctx context.Context, serieID, source, defaultType string, t provider.TemporadaExterna, langs []string) {
 	tempID, err := s.acharOuCriarTemporada(ctx, serieID, t, langs)
 	if err != nil {
@@ -478,11 +488,12 @@ func (s *Servico) importarTemporada(ctx context.Context, serieID, source, defaul
 	}
 }
 
-// cachearPosterTemporadaSeAusente baixa o pôster da temporada APENAS quando ainda não
-// há asset externo (briefing 0043): no re-import a árvore inteira refresca, mas re-baixar
-// arte já presente a cada import martelaria o CDN sem ganho (o pôster raramente muda). Só-
-// se-ausente dá idempotência barata; refrescar arte que MUDOU é follow-up (hash/force).
-// Erro de leitura degrada (loga e segue); erro de download idem — a árvore parcial vale.
+// cachearPosterTemporadaSeAusente downloads the season poster ONLY when there is no
+// external asset yet: on a re-import the whole tree is refreshed, but re-downloading
+// artwork already present on every import would hammer the CDN with no gain (the poster
+// rarely changes). Only-if-absent gives cheap idempotence; refreshing artwork that CHANGED
+// is a follow-up (hash/force). A read error degrades (logs and continues); a download error
+// likewise — the partial tree is still valid.
 func (s *Servico) cachearPosterTemporadaSeAusente(ctx context.Context, tempID, posterURL string) {
 	if posterURL == "" {
 		return
@@ -493,7 +504,7 @@ func (s *Servico) cachearPosterTemporadaSeAusente(ctx context.Context, tempID, p
 		Origin:   originExternal,
 	})
 	if err == nil {
-		return // ja existe: nao re-baixa (so-se-ausente)
+		return // it already exists: do not re-download (only-if-absent)
 	}
 	if !isNoRows(err) {
 		log.Printf("enrich: checar poster da temporada %s falhou (segue): %v", tempID, err)
@@ -504,12 +515,13 @@ func (s *Servico) cachearPosterTemporadaSeAusente(ctx context.Context, tempID, p
 	}
 }
 
-// acharOuCriarTemporada faz o find-or-create IDEMPOTENTE da temporada por
-// (série-pai, season_number): não há id de fonte no struct, então o dedup é pelo
-// número — reusa um filho tv_season já ligado com o mesmo sort_index. No reuse REESCREVE
-// a base (título/ano/extension_data) com os dados atuais do provider (briefing 0043 — o
-// override do dono continua vencendo na resolução); senão cria uma entity type='season'.
-// Os campos vêm de camposTemporada, compartilhado entre create e update (sem divergir).
+// acharOuCriarTemporada performs the IDEMPOTENT find-or-create of the season by
+// (parent series, season_number): there is no source id in the struct, so the dedup is by
+// number — it reuses an already linked tv_season child with the same sort_index. On reuse
+// it REWRITES the base (title/year/extension_data) with the current provider data (the
+// owner's override still wins in the resolution); otherwise it creates a type='season'
+// entity. The fields come from camposTemporada, shared between create and update (so they
+// cannot diverge).
 func (s *Servico) acharOuCriarTemporada(ctx context.Context, serieID string, t provider.TemporadaExterna, langs []string) (string, error) {
 	title, releaseDate, extData := camposTemporada(t, langs)
 	if rels, err := s.leitura().ListarRelacoesFilhas(ctx, serieID); err == nil {
@@ -540,21 +552,22 @@ func (s *Servico) acharOuCriarTemporada(ctx context.Context, serieID string, t p
 	return novo, nil
 }
 
-// camposTemporada monta os campos-base da temporada compartilhados entre create e o
-// refresh de reuse (briefing 0043): título (Name[default] ou "Temporada N"), data (ano) e
-// o extension_data core.tv@1. Centralizar evita que o refresh esqueça um campo no futuro.
+// camposTemporada builds the base fields of the season shared between create and the
+// refresh of reuse: title (Name[default] or "Temporada N"), date (year) and the
+// core.tv@1 extension_data. Centralizing avoids the refresh forgetting a field in the
+// future.
 func camposTemporada(t provider.TemporadaExterna, langs []string) (title string, releaseDate, extData sql.NullString) {
 	return tituloTemporada(t, langs), nsOrNull(t.Year), nsValid(extensaoTemporada(t))
 }
 
-// importarEpisodio cria (ou reusa) o episódio e liga-o à temporada com sort_index =
-// número do episódio NA ORDENAÇÃO DEFAULT. Isolada para o gocyclo.
+// importarEpisodio creates (or reuses) the episode and links it to the season with
+// sort_index = episode number IN THE DEFAULT ORDERING. Isolated to keep the gocyclo low.
 //
-// O still do episódio NÃO é baixado no import: uma série tem centenas/milhares de
-// episódios (Looney Tunes ~1195), e baixar um still por episódio síncrono no
-// POST /import é lento e hostil ao CDN. O artwork de episódio (still) fica para a
-// Fase 3 (proxy/cache sob demanda), junto com o artwork de temporada — ver briefing
-// 0031 §7. Aqui só persistimos o episódio e a relação ordenada.
+// The episode still is NOT downloaded on import: a series has hundreds/thousands of
+// episodes (Looney Tunes ~1195), and downloading one still per episode synchronously in
+// POST /import is slow and hostile to the CDN. The episode artwork (still) is left for
+// Phase 3 (proxy/cache on demand), together with the season artwork. Here we only
+// persist the episode and the ordered relation.
 func (s *Servico) importarEpisodio(ctx context.Context, tempID, source, defaultType string, ep provider.EpisodioExterno, langs []string) {
 	epID, err := s.acharOuCriarEpisodio(ctx, source, ep, langs)
 	if err != nil {
@@ -564,11 +577,11 @@ func (s *Servico) importarEpisodio(ctx context.Context, tempID, source, defaultT
 	s.ligarFilho(ctx, tempID, epID, relacaoEpisodio, ep.Numbering[defaultType].Number)
 }
 
-// acharOuCriarEpisodio faz o find-or-create do episódio por id externo (dedup por
-// external_id_<fonte>, a ÂNCORA do ADR-0021 — nunca o número) e, EM SEGUIDA, grava a
-// base externa (media_external) com os títulos/sinopses POR IDIOMA — a mesma i18n do
-// filme aplicada ao episódio (briefing 0041). É idempotente: no reuse a linha-base é
-// reaproveitada e o media_external é REESCRITO (upsert por (entity_id, source)).
+// acharOuCriarEpisodio performs the find-or-create of the episode by external id (dedup by
+// external_id_<source>, the ANCHOR of ADR-0021 — never the number) and, THEN, writes the
+// external base (media_external) with the titles/synopses PER LANGUAGE — the same i18n of
+// the movie applied to the episode. It is idempotent: on reuse the base row is reused and
+// the media_external is REWRITTEN (upsert by (entity_id, source)).
 func (s *Servico) acharOuCriarEpisodio(ctx context.Context, source string, ep provider.EpisodioExterno, langs []string) (string, error) {
 	epID, err := s.idDoEpisodio(ctx, source, ep, langs)
 	if err != nil {
@@ -580,11 +593,11 @@ func (s *Servico) acharOuCriarEpisodio(ctx context.Context, source string, ep pr
 	return epID, nil
 }
 
-// idDoEpisodio devolve o id da entity do episódio: reusa a existente (dedup por id
-// externo) ou cria uma nova. Campos ESCALARES na LINHA (base/fallback curado, idioma
-// default apenas; o per-idioma vive no media_external — 0041): título, descrição, data
-// de exibição, external_ids ({fonte: episode.id} + os que a fonte trouxe) e o namespace
-// core.tv@1 (absolute_number + numbering multi-ordem).
+// idDoEpisodio returns the id of the episode entity: it reuses the existing one (dedup by
+// external id) or creates a new one. SCALAR fields on the ROW (base/curated fallback,
+// default language only; the per-language data lives in media_external): title,
+// description, air date, external_ids ({source: episode.id} + the ones the source brought)
+// and the core.tv@1 namespace (absolute_number + multi-order numbering).
 func (s *Servico) idDoEpisodio(ctx context.Context, source string, ep provider.EpisodioExterno, langs []string) (string, error) {
 	campos, err := montarCamposEpisodio(source, ep, langs)
 	if err != nil {
@@ -593,9 +606,10 @@ func (s *Servico) idDoEpisodio(ctx context.Context, source string, ep provider.E
 	if existente, ok, err := s.acharPorIDExterno(ctx, source, ep.SourceID); err != nil {
 		return "", err
 	} else if ok {
-		// Reuse: REESCREVE a base com os dados atuais do provider (briefing 0043) — em
-		// especial still_url/numbering (extension_data), que so o create gravava. Nao toca
-		// status/tags/original_title/media_override: o override do dono segue vencendo.
+		// Reuse: REWRITES the base with the current provider data — in
+		// particular still_url/numbering (extension_data), which only the create used to write.
+		// It does not touch status/tags/original_title/media_override: the owner's override
+		// still wins.
 		if err := s.escrita().AtualizarEpisodioBase(ctx, sqlcgen.AtualizarEpisodioBaseParams{
 			Title:             campos.title,
 			Description:       campos.description,
@@ -623,11 +637,11 @@ func (s *Servico) idDoEpisodio(ctx context.Context, source string, ep provider.E
 	return novo, nil
 }
 
-// camposEpisodio agrega os campos-base do episódio (escalares da linha) compartilhados
-// entre o create e o refresh de reuse (briefing 0043): título, sinopse (idioma default),
-// data de exibição, external_ids ({fonte: episode.id} + os da fonte) e o extension_data
-// core.tv@1 (numbering + absolute_number + still_url). Um só ponto de montagem evita que
-// o refresh divirja do create (esquecer um campo novo no futuro).
+// camposEpisodio aggregates the base fields of the episode (row scalars) shared between the
+// create and the refresh of reuse: title, synopsis (default language), air date,
+// external_ids ({source: episode.id} + the ones of the source) and the core.tv@1
+// extension_data (numbering + absolute_number + still_url). A single assembly point avoids
+// the refresh diverging from the create (forgetting a new field in the future).
 type camposEpisodio struct {
 	title         string
 	description   sql.NullString
@@ -636,7 +650,7 @@ type camposEpisodio struct {
 	extensionData sql.NullString
 }
 
-// montarCamposEpisodio computa os camposEpisodio; erra só no marshal dos external_ids.
+// montarCamposEpisodio computes the camposEpisodio; it fails only on the external_ids marshal.
 func montarCamposEpisodio(source string, ep provider.EpisodioExterno, langs []string) (camposEpisodio, error) {
 	extIDs, err := json.Marshal(idsDoEpisodio(source, ep))
 	if err != nil {
@@ -651,13 +665,14 @@ func montarCamposEpisodio(source string, ep provider.EpisodioExterno, langs []st
 	}, nil
 }
 
-// persistirEpisodioExterno grava (ou reescreve) a base externa do episódio: um
-// media_external per-fonte cujo payload carrega os mapas title/overview POR IDIOMA crus
-// (sem descartar idiomas, ao contrário do escalar da linha). Espelha o import de filme
-// (enrich.persistir → UpsertMediaExternal), mas com o envelope de episódio (discriminador
-// entity_kind) — é o que faz o detalhe do episódio traduzir pelo resolver. Idempotente
-// por (entity_id, source): o reuse REESCREVE. original_language não é denormalizado (a
-// árvore não o propaga por episódio; a cadeia funciona como [lang, fallback] — 0041 §4).
+// persistirEpisodioExterno writes (or rewrites) the external base of the episode: a
+// per-source media_external whose payload carries the raw PER-LANGUAGE title/overview maps
+// (without discarding languages, unlike the row scalar). It mirrors the movie import
+// (enrich.persistir → UpsertMediaExternal), but with the episode envelope (entity_kind
+// discriminator) — that is what makes the episode detail translate through the resolver.
+// Idempotent by (entity_id, source): the reuse REWRITES. original_language is not
+// denormalized (the tree does not propagate it per episode; the chain works as
+// [lang, fallback]).
 func (s *Servico) persistirEpisodioExterno(ctx context.Context, epID, source string, ep provider.EpisodioExterno) error {
 	payload, err := provider.MontarEnvelopeEpisodio(ep, "")
 	if err != nil {
@@ -673,10 +688,11 @@ func (s *Servico) persistirEpisodioExterno(ctx context.Context, epID, source str
 	return err
 }
 
-// ligarFilho cria a relação pai→filho de forma IDEMPOTENTE: carrega os já-ligados e
-// pula quando o par (child, kind) já existe (o UNIQUE(parent,child,kind) ainda protege
-// de corrida). sort_index carrega o número estável do filho (temporada na série,
-// episódio na temporada) para ListarRelacoesFilhas ordenar. Falha degrada (loga).
+// ligarFilho creates the parent→child relation IDEMPOTENTLY: it loads the already linked
+// ones and skips when the pair (child, kind) already exists (the
+// UNIQUE(parent,child,kind) still protects against a race). sort_index carries the stable
+// number of the child (season within the series, episode within the season) so that
+// ListarRelacoesFilhas can order. A failure degrades (logs).
 func (s *Servico) ligarFilho(ctx context.Context, parentID, childID, kind string, sortIndex int) {
 	if rels, err := s.leitura().ListarRelacoesFilhas(ctx, parentID); err == nil {
 		for _, r := range rels {
@@ -696,9 +712,9 @@ func (s *Servico) ligarFilho(ctx context.Context, parentID, childID, kind string
 	}
 }
 
-// --- montagem do extension_data (namespace core.tv@1) ---
+// --- assembly of extension_data (core.tv@1 namespace) ---
 
-// extensaoSerie monta o extension_data da série: default_season_type + season_types.
+// extensaoSerie builds the series extension_data: default_season_type + season_types.
 func extensaoSerie(a provider.SerieArvore) string {
 	return envelopeTV(map[string]any{
 		"default_season_type": a.DefaultSeasonType,
@@ -706,8 +722,8 @@ func extensaoSerie(a provider.SerieArvore) string {
 	})
 }
 
-// extensaoTemporada monta o extension_data da temporada: ordering + season_number
-// (+ year quando houver).
+// extensaoTemporada builds the season extension_data: ordering + season_number
+// (+ year when present).
 func extensaoTemporada(t provider.TemporadaExterna) string {
 	payload := map[string]any{
 		"ordering":      t.Ordering,
@@ -719,11 +735,11 @@ func extensaoTemporada(t provider.TemporadaExterna) string {
 	return envelopeTV(payload)
 }
 
-// extensaoEpisodio monta o extension_data do episódio: numbering (TODAS as ordens que
-// a série usa) + absolute_number quando a fonte informou + still_url (0042) quando o
-// provider trouxe um frame. O still é artwork NEUTRO de idioma (como o numbering): só
-// a URL crua é persistida — a imagem é buscada/cacheada SOB DEMANDA pelo image proxy na
-// 1ª visualização, jamais baixada no import (uma série tem centenas/milhares de eps).
+// extensaoEpisodio builds the episode extension_data: numbering (ALL the orders the
+// series uses) + absolute_number when the source reported it + still_url when the provider
+// brought a frame. The still is language-NEUTRAL artwork (like the numbering): only the raw
+// URL is persisted — the image is fetched/cached ON DEMAND by the image proxy on the first
+// view, never downloaded on import (a series has hundreds/thousands of eps).
 func extensaoEpisodio(ep provider.EpisodioExterno) string {
 	payload := map[string]any{
 		"numbering": numberingMap(ep.Numbering),
@@ -737,8 +753,8 @@ func extensaoEpisodio(ep provider.EpisodioExterno) string {
 	return envelopeTV(payload)
 }
 
-// numberingMap converte o Numbering canônico (ordem→Numero) no objeto JSON
-// ordem→{season,number} que o extension_data guarda.
+// numberingMap converts the canonical Numbering (order→Numero) into the JSON object
+// order→{season,number} that the extension_data stores.
 func numberingMap(n map[string]provider.Numero) map[string]any {
 	out := make(map[string]any, len(n))
 	for ordem, num := range n {
@@ -747,8 +763,8 @@ func numberingMap(n map[string]provider.Numero) map[string]any {
 	return out
 }
 
-// envelopeTV embrulha o payload no namespace core.tv@1 e serializa. Erro de marshal
-// (inatingível para estes mapas simples) degrada para "{}".
+// envelopeTV wraps the payload in the core.tv@1 namespace and serializes it. A marshal
+// error (unreachable for these simple maps) degrades to "{}".
 func envelopeTV(payload map[string]any) string {
 	b, err := json.Marshal(map[string]any{nsTV: payload})
 	if err != nil {
@@ -757,11 +773,11 @@ func envelopeTV(payload map[string]any) string {
 	return string(b)
 }
 
-// --- helpers puros de campo ---
+// --- pure field helpers ---
 
-// tituloTemporada é Name[idioma default] ou o fallback "Temporada N" (temporadas
-// raramente têm nome). N é o season_number (mesmo quando é ano civil, "Temporada N"
-// ainda serve como rótulo).
+// tituloTemporada is Name[default language] or the "Temporada N" fallback (seasons rarely
+// have a name). N is the season_number (even when it is a calendar year, "Temporada N"
+// still works as a label).
 func tituloTemporada(t provider.TemporadaExterna, langs []string) string {
 	if nome := valorPorIdioma(t.Name, langs); nome != "" {
 		return nome
@@ -769,8 +785,8 @@ func tituloTemporada(t provider.TemporadaExterna, langs []string) string {
 	return fmt.Sprintf("Temporada %d", t.SeasonNumber)
 }
 
-// tituloEpisodio é Title[idioma default]; cai para o SourceID quando não há título
-// (title é NOT NULL — nunca vazio), espelhando o tituloInicial de item.
+// tituloEpisodio is Title[default language]; it falls back to the SourceID when there is no
+// title (title is NOT NULL — never empty), mirroring the tituloInicial of an item.
 func tituloEpisodio(ep provider.EpisodioExterno, langs []string) string {
 	if t := valorPorIdioma(ep.Title, langs); t != "" {
 		return t
@@ -778,9 +794,9 @@ func tituloEpisodio(ep provider.EpisodioExterno, langs []string) string {
 	return ep.SourceID
 }
 
-// idsDoEpisodio monta os external_ids do episódio: {fonte: episode.id} (a âncora de
-// dedup por external_id_<fonte>) MAIS os ids que a fonte trouxe (ex.: tvdb). A fonte
-// vence se colidir (é o id autoritativo do import).
+// idsDoEpisodio builds the episode external_ids: {source: episode.id} (the dedup anchor by
+// external_id_<source>) PLUS the ids the source brought (e.g.: tvdb). The source wins in a
+// collision (it is the authoritative id of the import).
 func idsDoEpisodio(source string, ep provider.EpisodioExterno) map[string]string {
 	ids := map[string]string{}
 	for k, v := range ep.ExternalIDs {
@@ -792,9 +808,9 @@ func idsDoEpisodio(source string, ep provider.EpisodioExterno) map[string]string
 	return ids
 }
 
-// valorPorIdioma escolhe o valor do "idioma default": o primeiro de `langs` com valor,
-// senão qualquer valor presente (em ordem alfabética de idioma, para determinismo). ""
-// quando o mapa não tem nenhum.
+// valorPorIdioma picks the value of the "default language": the first of `langs` with a
+// value, otherwise any value present (in alphabetical order of language, for
+// determinism). "" when the map has none.
 func valorPorIdioma(m map[string]string, langs []string) string {
 	for _, l := range langs {
 		if v := m[l]; v != "" {
@@ -814,8 +830,8 @@ func valorPorIdioma(m map[string]string, langs []string) string {
 	return ""
 }
 
-// nsOrNull embrulha uma string num sql.NullString válido, ou NULL quando vazia (para
-// colunas opcionais: description/release_date de temporada/episódio).
+// nsOrNull wraps a string in a valid sql.NullString, or NULL when empty (for optional
+// columns: description/release_date of season/episode).
 func nsOrNull(s string) sql.NullString {
 	if s == "" {
 		return sql.NullString{}

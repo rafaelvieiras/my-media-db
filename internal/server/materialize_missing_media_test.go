@@ -1,12 +1,12 @@
 package server
 
-// Testes de POST /entities/{id}/materialize-missing-media (briefing 0088,
-// menu Gerenciar > "Baixar Artes Faltantes"): prova que o handler (1) força
-// uma NOVA consulta ao ArteProvider registrado (atualizando/gravando o
-// inventário media_external(source='fanarttv')) e (2) materializa na pasta
-// real via a MESMA MaterializarMidiasFaltantes do job 0064 -- mesmo padrão
-// de fake provider de internal/enrich/artes_test.go, mesmo padrão de
-// allowlist/assetsDir de artwork_missing_test.go/midias_faltantes_test.go.
+// Tests of POST /entities/{id}/materialize-missing-media (Manage menu >
+// "Download Missing Artwork"): it proves that the handler (1) forces
+// a NEW query to the registered ArteProvider (updating/writing the
+// media_external inventory(source='fanarttv')) and (2) materializes in the real
+// folder via the SAME MaterializarMidiasFaltantes of the job -- same fake provider
+// pattern of internal/enrich/artes_test.go, same allowlist/assetsDir pattern of
+// artwork_missing_test.go/midias_faltantes_test.go.
 
 import (
 	"context"
@@ -21,10 +21,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// fakeArteProviderServer implementa o core provider.Provider NO-OP (Nome
-// "fanarttv") MAIS a capacidade provider.ArteProvider, devolvendo artes
-// canned -- espelha fakeArteProvider de internal/enrich/artes_test.go (não
-// exportado de lá, então precisa da própria cópia aqui).
+// fakeArteProviderServer implements the NO-OP core provider.Provider (Nome
+// "fanarttv") PLUS the provider.ArteProvider capability, returning canned
+// artwork -- it mirrors fakeArteProvider of internal/enrich/artes_test.go (not
+// exported from there, so it needs its own copy here).
 type fakeArteProviderServer struct {
 	artes    []provider.Arte
 	chamadas int
@@ -49,9 +49,9 @@ func (f *fakeArteProviderServer) BuscarArtes(_ context.Context, _ provider.Exter
 	return f.artes, nil
 }
 
-// setupMaterializeMissingMediaServer sobe um Server com assetsDir temporário,
-// o fakeArteProviderServer registrado (liga s.enrich) e a allowlist do proxy
-// restrita ao host informado.
+// setupMaterializeMissingMediaServer starts a Server with a temporary assetsDir,
+// the fakeArteProviderServer registered (it turns on s.enrich) and the proxy allowlist
+// restricted to the informed host.
 func setupMaterializeMissingMediaServer(t *testing.T, hostPermitido string, arte *fakeArteProviderServer) (http.Handler, *db.DB) {
 	t.Helper()
 	dir := t.TempDir()
@@ -73,9 +73,9 @@ func setupMaterializeMissingMediaServer(t *testing.T, hostPermitido string, arte
 	return h, database
 }
 
-// semearEntityComTmdb cria uma entity com external_ids_json={"tmdb":sourceID}
-// -- a âncora que AtualizarInventarioArtes/idsExternosDe precisa para cruzar
-// com o ArteProvider (sem nenhum id externo, BuscarArtes nem é chamado).
+// semearEntityComTmdb creates an entity with external_ids_json={"tmdb":sourceID}
+// -- the anchor that AtualizarInventarioArtes/idsExternosDe needs to cross
+// with the ArteProvider (without any external id, BuscarArtes is not even called).
 func semearEntityComTmdb(t *testing.T, d *db.DB, id, tipo, titulo, sourceID string) {
 	t.Helper()
 	extIDs, err := json.Marshal(map[string]string{"tmdb": sourceID})
@@ -89,7 +89,7 @@ func semearEntityComTmdb(t *testing.T, d *db.DB, id, tipo, titulo, sourceID stri
 	}
 }
 
-// decodeMaterializeMissingMediaResult decodifica a resposta do endpoint.
+// decodeMaterializeMissingMediaResult decodes the endpoint response.
 func decodeMaterializeMissingMediaResult(t *testing.T, body []byte) materializeMissingMediaResultDTO {
 	t.Helper()
 	var out materializeMissingMediaResultDTO
@@ -99,11 +99,11 @@ func decodeMaterializeMissingMediaResult(t *testing.T, body []byte) materializeM
 	return out
 }
 
-// TestMaterializeMissingMediaAtualizaInventarioEMaterializa cobre o critério
-// central do briefing 0088: o inventário fanart.tv da entity é escrito por
-// UMA nova consulta ao ArteProvider (nunca reusa um inventário pré-existente
-// só passivamente) E a arte vencedora resultante é materializada de verdade
-// na pasta real da biblioteca, junto com o .nfo.
+// TestMaterializeMissingMediaAtualizaInventarioEMaterializa covers the central
+// criterion: the entity's fanart.tv inventory is written by a NEW query to the
+// ArteProvider (it never reuses a pre-existing inventory only passively) AND the
+// resulting winning artwork is really materialized in the real library folder, together
+// with the .nfo.
 func TestMaterializeMissingMediaAtualizaInventarioEMaterializa(t *testing.T) {
 	srv := servidorImagem(t, nil)
 	arte := &fakeArteProviderServer{artes: []provider.Arte{
@@ -129,7 +129,7 @@ func TestMaterializeMissingMediaAtualizaInventarioEMaterializa(t *testing.T) {
 		t.Error("nfo_gravado = false, quero true (entity sem nfo_path ainda)")
 	}
 
-	// O inventario fanart.tv foi gravado (media_external source=fanarttv).
+	// The fanart.tv inventory was written (media_external source=fanarttv).
 	row, err := escrita(t, d).ObterMediaExternalPorFonte(context.Background(), sqlcgen.ObterMediaExternalPorFonteParams{
 		EntityID: "e1", Source: "fanarttv",
 	})
@@ -140,8 +140,8 @@ func TestMaterializeMissingMediaAtualizaInventarioEMaterializa(t *testing.T) {
 		t.Error("payload do inventario fanarttv vazio")
 	}
 
-	// A arte foi materializada de verdade na pasta real (poster.png -- content-type
-	// da imagem de teste, servidorImagem serve PNG).
+	// The artwork was really materialized in the real folder (poster.png -- content-type
+	// of the test image, servidorImagem serves PNG).
 	posterPath := filepath.Join(libDir, "poster.png")
 	if _, err := os.Stat(posterPath); err != nil {
 		t.Errorf("poster nao materializado em disco (%s): %v", posterPath, err)
@@ -152,12 +152,12 @@ func TestMaterializeMissingMediaAtualizaInventarioEMaterializa(t *testing.T) {
 	}
 }
 
-// TestMaterializeMissingMediaSemEnrichDegradaESoMaterializa cobre a
-// degradação silenciosa (AGENTS.md §6): sem NENHUM provider de busca externa
-// registrado, s.enrich fica nil -- o handler pula a etapa de atualizar o
-// inventário (sem 5xx) e segue direto para MaterializarMidiasFaltantes sobre
-// o inventário que já existir (aqui, nenhum -- então nada a materializar,
-// mas o .nfo ainda é gravado, best-effort de sempre).
+// TestMaterializeMissingMediaSemEnrichDegradaESoMaterializa covers the
+// silent degradation (AGENTS.md): without ANY external search provider
+// registered, s.enrich stays nil -- the handler skips the inventory update step
+// (without 5xx) and goes straight to MaterializarMidiasFaltantes over
+// whatever inventory already exists (here, none -- so nothing to materialize,
+// but the .nfo is still written, best-effort as always).
 func TestMaterializeMissingMediaSemEnrichDegradaESoMaterializa(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "sem-enrich.sqlite")
@@ -169,7 +169,7 @@ func TestMaterializeMissingMediaSemEnrichDegradaESoMaterializa(t *testing.T) {
 	if err := database.Migrate(context.Background()); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	s := New("v-teste", database, WithAssetsDir(dir)) // sem WithSearchProvider: s.enrich fica nil
+	s := New("v-teste", database, WithAssetsDir(dir)) // without WithSearchProvider: s.enrich stays nil
 	h, err := s.Handler()
 	if err != nil {
 		t.Fatalf("Handler: %v", err)
@@ -193,7 +193,7 @@ func TestMaterializeMissingMediaSemEnrichDegradaESoMaterializa(t *testing.T) {
 	}
 }
 
-// TestMaterializeMissingMediaEntidadeInexistente: 404 para entity inexistente.
+// TestMaterializeMissingMediaEntidadeInexistente: 404 for a nonexistent entity.
 func TestMaterializeMissingMediaEntidadeInexistente(t *testing.T) {
 	arte := &fakeArteProviderServer{}
 	h, _ := setupMaterializeMissingMediaServer(t, "example.com", arte)

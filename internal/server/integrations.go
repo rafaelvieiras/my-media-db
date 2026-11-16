@@ -14,19 +14,19 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/integration"
 )
 
-// Este arquivo implementa a API de INTEGRAÇÕES configuráveis via UI/banco
-// (briefing 0095, ADR-0023):
+// This file implements the API of INTEGRATIONS configurable through the UI/database
+// (ADR-0023):
 //
-//	GET /api/v1/integrations          — lista {slug,nome,descricao,configurada}
-//	GET /api/v1/integrations/{slug}   — schema de campos + valor efetivo por campo
-//	PUT /api/v1/integrations/{slug}   — grava PARCIAL (null remove a chave)
+//	GET /api/v1/integrations          — list {slug,nome,descricao,configurada}
+//	GET /api/v1/integrations/{slug}   — field schema + effective value per field
+//	PUT /api/v1/integrations/{slug}   — PARTIAL write (null removes the key)
 //
-// Fundação para o 0096 (tela /dashboard/integrations); esta entrega não tem
-// UI própria. O valor efetivo de cada campo é sempre banco → env var →
-// ausente (s.integrationsResolver, internal/integration); um campo
-// `tipo:"secret"` NUNCA devolve `valor` cru, só `definido`/`origem`.
+// Foundation for the /dashboard/integrations screen; this delivery has no UI of its own.
+// The effective value of each field is always database → env var →
+// absent (s.integrationsResolver, internal/integration); a `tipo:"secret"` field NEVER
+// returns a raw `valor`, only `definido`/`origem`.
 
-// integrationSummaryDTO é UM item da listagem GET /integrations.
+// integrationSummaryDTO is ONE item of the GET /integrations listing.
 type integrationSummaryDTO struct {
 	Slug        string `json:"slug"`
 	Nome        string `json:"nome"`
@@ -34,20 +34,20 @@ type integrationSummaryDTO struct {
 	Configurada bool   `json:"configurada"`
 }
 
-// integrationsListDTO é o corpo de GET /integrations.
+// integrationsListDTO is the body of GET /integrations.
 type integrationsListDTO struct {
 	Integrations []integrationSummaryDTO `json:"integrations"`
 }
 
-// integrationOpcaoDTO é uma alternativa de um campo TipoSelect.
+// integrationOpcaoDTO is one option of a TipoSelect field.
 type integrationOpcaoDTO struct {
 	Valor string `json:"valor"`
 	Label string `json:"label"`
 }
 
-// integrationCampoDTO é UM campo no corpo de GET/PUT /integrations/{slug}.
-// `valor` só aparece quando o campo NÃO é secreto E há um valor efetivo
-// (omitempty + ponteiro: ausente no JSON quando nil).
+// integrationCampoDTO is ONE field in the body of GET/PUT /integrations/{slug}. `valor`
+// only shows up when the field is NOT secret AND there is an effective value (omitempty +
+// pointer: absent from the JSON when nil).
 type integrationCampoDTO struct {
 	Nome        string                `json:"nome"`
 	Label       string                `json:"label"`
@@ -61,7 +61,7 @@ type integrationCampoDTO struct {
 	Valor       *string               `json:"valor,omitempty"`
 }
 
-// integrationDetailDTO é o corpo de GET/PUT /integrations/{slug}.
+// integrationDetailDTO is the body of GET/PUT /integrations/{slug}.
 type integrationDetailDTO struct {
 	Slug      string                `json:"slug"`
 	Nome      string                `json:"nome"`
@@ -69,16 +69,16 @@ type integrationDetailDTO struct {
 	Campos    []integrationCampoDTO `json:"campos"`
 }
 
-// putIntegrationRequestDTO é o corpo do PUT /integrations/{slug}. Um valor
-// `null` no JSON vira ponteiro nil aqui — remove a chave (volta a herdar a
-// env var); uma chave AUSENTE do objeto não é tocada.
+// putIntegrationRequestDTO is the body of PUT /integrations/{slug}. A `null` value in the
+// JSON becomes a nil pointer here — it removes the key (which goes back to inheriting the
+// env var); a key ABSENT from the object is not touched.
 type putIntegrationRequestDTO struct {
 	Valores map[string]*string `json:"valores"`
 }
 
-// listIntegrations trata GET /api/v1/integrations: itera o Registry, resolve
-// os valores efetivos de cada Descriptor e chama Configurada() (briefing
-// 0095). Sempre 200 (mesmo com o Registry vazio — lista vazia, não erro).
+// listIntegrations handles GET /api/v1/integrations: it iterates the Registry, resolves
+// the effective values of each Descriptor and calls Configurada(). Always 200 (even with an
+// empty Registry — an empty list, not an error).
 func (s *Server) listIntegrations(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -97,9 +97,9 @@ func (s *Server) listIntegrations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, integrationsListDTO{Integrations: out})
 }
 
-// getIntegration trata GET /api/v1/integrations/{slug}: devolve o schema de
-// campos + o valor efetivo (banco→env var→ausente) de cada um. 404 se o slug
-// não está no Registry.
+// getIntegration handles GET /api/v1/integrations/{slug}: it returns the field schema plus
+// the effective value (database→env var→absent) of each one. 404 if the slug is not in the
+// Registry.
 func (s *Server) getIntegration(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -113,10 +113,10 @@ func (s *Server) getIntegration(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.montarIntegrationDetail(r.Context(), d))
 }
 
-// montarIntegrationDetail monta o shape comum de GET e PUT (eco pós-gravação)
-// a partir do Descriptor + o Resolver: para cada Campo, calcula o efetivo e
-// só inclui `valor` cru quando o tipo NÃO é secreto e há valor efetivo —
-// campo secreto nunca vaza o valor, nem no eco do PUT.
+// montarIntegrationDetail builds the common shape of GET and PUT (post-write echo) from
+// the Descriptor + the Resolver: for each Campo, it computes the effective value and only
+// includes a raw `valor` when the type is NOT secret and there is an effective value — a
+// secret field never leaks the value, not even in the PUT echo.
 func (s *Server) montarIntegrationDetail(ctx context.Context, d integration.Descriptor) integrationDetailDTO {
 	campos := d.Campos()
 	out := make([]integrationCampoDTO, 0, len(campos))
@@ -144,12 +144,12 @@ func (s *Server) montarIntegrationDetail(ctx context.Context, d integration.Desc
 	return integrationDetailDTO{Slug: d.Slug(), Nome: d.Nome(), Descricao: d.Descricao(), Campos: out}
 }
 
-// putIntegration trata PUT /api/v1/integrations/{slug}: grava PARCIAL no
-// values_json do slug — só as chaves presentes em `valores` mudam; um valor
-// `null` REMOVE a chave (volta a herdar a env var). 404 se o slug é
-// desconhecido; 422 se `valores` vier vazio ou citar uma chave que não é um
-// Campo do Descriptor. Não bloqueia por obrigatoriedade ausente — o dono pode
-// salvar parcialmente (reflete só em `configurada:false` na listagem).
+// putIntegration handles PUT /api/v1/integrations/{slug}: PARTIAL write into the
+// values_json of the slug — only the keys present in `valores` change; a `null` value
+// REMOVES the key (which goes back to inheriting the env var). 404 if the slug is unknown;
+// 422 if `valores` comes empty or names a key that is not a Campo of the Descriptor. It
+// does not block on a missing required value — the owner may save partially (it only
+// reflects as `configurada:false` in the listing).
 func (s *Server) putIntegration(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -209,10 +209,10 @@ func (s *Server) putIntegration(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.montarIntegrationDetail(r.Context(), d))
 }
 
-// obterIntegrationValores lê o values_json atual de um slug (map vazio
-// quando o slug nunca foi gravado ou o JSON está corrompido — mesma postura
-// defensiva do Resolver, nunca propaga erro por isso). Só um erro real de
-// banco (não sql.ErrNoRows) é propagado.
+// obterIntegrationValores reads the current values_json of a slug (an empty map when the
+// slug was never written or the JSON is corrupted — the same defensive stance as the
+// Resolver, which never propagates an error for that). Only a real database error (not
+// sql.ErrNoRows) is propagated.
 func (s *Server) obterIntegrationValores(ctx context.Context, slug string) (map[string]string, error) {
 	row, err := s.leitura().ObterIntegrationConfig(ctx, slug)
 	if err != nil {

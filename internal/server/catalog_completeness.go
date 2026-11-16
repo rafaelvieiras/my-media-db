@@ -13,25 +13,24 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Este arquivo implementa a config de COMPLETUDE DE CATALOGAÇÃO em app_settings
-// (briefing 0057): GET/PUT /api/v1/settings/catalog-completeness. Espelha
-// exatamente a estrutura de settings.go (config de idioma, briefing 0019): cache
-// leve em memória (mutex + flag `carregado`), GET não-destrutivo (default de
-// fábrica quando a chave não existe, sem gravar nada) e PUT como substituição
-// TOTAL (não é PATCH parcial).
+// This file implements the CATALOG COMPLETENESS config in app_settings:
+// GET/PUT /api/v1/settings/catalog-completeness. It mirrors exactly the structure of
+// settings.go (language config): a light in-memory cache (mutex + `carregado` flag), a
+// non-destructive GET (factory default when the key does not exist, writing nothing)
+// and a PUT as TOTAL replacement (not a partial PATCH).
 //
-// Distinção crítica (ver briefing 0057 §6): isto é "completude de CATALOGAÇÃO"
-// (preenchimento de metadados/artes de UM item) — DIFERENTE de "completude de
-// POSSE" (quantos episódios/temporadas o dono TEM no disco, `web/src/lib/
-// entity-badges.ts`, briefings 0036/0037). Não confundir os dois conceitos.
+// Critical distinction: this is "CATALOG completeness" (filling the metadata/artwork
+// of ONE item) — DIFFERENT from "OWNERSHIP completeness" (how many
+// episodes/seasons the owner HAS on disk, `web/src/lib/entity-badges.ts`). Do not
+// confuse the two concepts.
 
-// appSettingCatalogCompleteness é a chave da config de completude de
-// catalogação em app_settings.
+// appSettingCatalogCompleteness is the key of the catalog completeness config in
+// app_settings.
 const appSettingCatalogCompleteness = "catalog_completeness"
 
-// tipoCompletenessConfig é o conjunto de campos/artes desejáveis para UM
-// entity.type (briefing 0057 §4). Todos os campos são obrigatórios no PUT — o
-// formulário sempre manda o objeto completo (substituição total).
+// tipoCompletenessConfig is the set of desirable fields/artwork for ONE entity.type.
+// All the fields are required in the PUT — the form always sends the complete object
+// (total replacement).
 type tipoCompletenessConfig struct {
 	Description   bool     `json:"description"`
 	Runtime       bool     `json:"runtime"`
@@ -42,17 +41,17 @@ type tipoCompletenessConfig struct {
 	Artwork       []string `json:"artwork"`
 }
 
-// catalogCompletenessSettings é a config canônica, chave de topo = entity.type
-// (ABERTA — qualquer string de tipo é aceita, não só movie/tv; ver briefing
-// 0057 §4 e ADR de entity.type como TEXT livre). Um tipo ausente do mapa
-// significa "nada exigido" para aquele tipo. Serializada como value_json da
-// chave `catalog_completeness`; também é o corpo do PUT e a resposta do GET.
+// catalogCompletenessSettings is the canonical config, top-level key = entity.type
+// (OPEN — any type string is accepted, not only movie/tv; entity.type is free TEXT). A
+// type missing from the map means "nothing required" for that type. Serialized as the
+// value_json of the `catalog_completeness` key; it is also the PUT body and the GET
+// response.
 type catalogCompletenessSettings map[string]tipoCompletenessConfig
 
-// defaultCatalogCompletenessSettings é o DEFAULT DE FÁBRICA deliberadamente
-// mínimo (briefing 0057 §6): sinopse + arquivo de mídia + poster marcados para
-// `movie` e `tv`, resto desmarcado. Um default "tudo marcado" puniria
-// retroativamente acervos já catalogados sem o dono ter pedido nada.
+// defaultCatalogCompletenessSettings is the deliberately minimal FACTORY DEFAULT:
+// synopsis + media file + poster flagged for `movie` and `tv`, the rest unchecked. An
+// "everything checked" default would retroactively punish collections already
+// cataloged without the owner asking for anything.
 func defaultCatalogCompletenessSettings() catalogCompletenessSettings {
 	minimo := tipoCompletenessConfig{
 		Description: true,
@@ -65,22 +64,20 @@ func defaultCatalogCompletenessSettings() catalogCompletenessSettings {
 	}
 }
 
-// catalogCompletenessCache guarda em memória a config já decodificada,
-// protegido por mutex — mesmo padrão de settingsCache (briefing 0019).
-// `carregado` distingue "ainda não lido" de "lido" (o valor pode ser o
-// default). Invalidado no PUT.
+// catalogCompletenessCache keeps the already decoded config in memory, protected by a
+// mutex — the same pattern as settingsCache. `carregado` distinguishes "not read yet"
+// from "read" (the value may be the default). Invalidated on the PUT.
 type catalogCompletenessCache struct {
 	mu        sync.Mutex
 	carregado bool
 	cfg       catalogCompletenessSettings
 }
 
-// obterCatalogCompletenessSettings devolve a config de completude de
-// catalogação, do cache quando já carregada, senão lendo app_settings pela
-// conexão de LEITURA. Linha ausente ou JSON inválido ⇒ default de fábrica
-// (nunca erro por isso). Só um erro real de banco é propagado. Exportável do
-// pacote server para outros handlers/pacotes (0056/0058) consumirem sem golpe
-// de I/O por request.
+// obterCatalogCompletenessSettings returns the catalog completeness config, from the
+// cache when already loaded, otherwise reading app_settings through the READ
+// connection. Missing row or invalid JSON ⇒ factory default (never an error for that).
+// Only a real database error is propagated. Exportable from the server package so other
+// handlers/packages can consume it without an I/O hit per request.
 func (s *Server) obterCatalogCompletenessSettings(ctx context.Context) (catalogCompletenessSettings, error) {
 	s.catalogCompleteness.mu.Lock()
 	defer s.catalogCompleteness.mu.Unlock()
@@ -108,18 +105,18 @@ func (s *Server) obterCatalogCompletenessSettings(ctx context.Context) (catalogC
 	return cfg, nil
 }
 
-// invalidarCatalogCompleteness zera o cache (chamado após o PUT gravar).
+// invalidarCatalogCompleteness zeroes the cache (called after the PUT writes).
 func (s *Server) invalidarCatalogCompleteness() {
 	s.catalogCompleteness.mu.Lock()
 	s.catalogCompleteness.carregado = false
 	s.catalogCompleteness.mu.Unlock()
 }
 
-// valida diz se a config é internamente consistente (briefing 0057 §4): toda
-// chave de tipo é não-vazia e todo item de artwork pertence ao registro
-// kindsValidos (internal/server/assets.go). Tipos com objeto vazio ({}) são
-// aceitos (equivalem a "nada exigido"). Devolve nil quando válido, ou um erro
-// descritivo (para a mensagem de 422) caso contrário.
+// valida tells whether the config is internally consistent: every type key is
+// non-empty and every artwork item belongs to the kindsValidos registry
+// (internal/server/assets.go). Types with an empty object ({}) are accepted (they amount
+// to "nothing required"). Returns nil when valid, or a descriptive error (for the 422
+// message) otherwise.
 func (c catalogCompletenessSettings) valida() error {
 	for tipo, cfg := range c {
 		if tipo == "" {
@@ -135,9 +132,9 @@ func (c catalogCompletenessSettings) valida() error {
 	return nil
 }
 
-// kindsValidosListaOrdenada devolve os kinds do registro kindsValidos
-// (internal/server/assets.go) numa lista ordenada e separada por vírgula, para
-// compor a mensagem de erro de validação.
+// kindsValidosListaOrdenada returns the kinds of the kindsValidos registry
+// (internal/server/assets.go) in a sorted, comma-separated list, to compose the
+// validation error message.
 func kindsValidosListaOrdenada() string {
 	kinds := make([]string, 0, len(kindsValidos))
 	for k := range kindsValidos {
@@ -147,9 +144,8 @@ func kindsValidosListaOrdenada() string {
 	return strings.Join(kinds, ", ")
 }
 
-// getCatalogCompletenessSettings trata GET /api/v1/settings/catalog-completeness:
-// devolve a config atual (ou o default de fábrica quando ausente, sem gravar
-// nada).
+// getCatalogCompletenessSettings handles GET /api/v1/settings/catalog-completeness:
+// returns the current config (or the factory default when absent, writing nothing).
 func (s *Server) getCatalogCompletenessSettings(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -162,11 +158,11 @@ func (s *Server) getCatalogCompletenessSettings(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, cfg)
 }
 
-// putCatalogCompletenessSettings trata PUT /api/v1/settings/catalog-completeness:
-// valida (chaves de tipo não-vazias, artwork ⊆ kindsValidos) e faz upsert,
-// invalidando o cache. Substituição TOTAL (não é PATCH parcial — mesmo padrão
-// do PUT de idiomas). Corpo malformado ⇒ 400; inválido ⇒ 422; sucesso ⇒ 200 com
-// a config gravada (eco).
+// putCatalogCompletenessSettings handles PUT /api/v1/settings/catalog-completeness:
+// validates (non-empty type keys, artwork ⊆ kindsValidos) and upserts, invalidating the
+// cache. TOTAL replacement (not a partial PATCH — the same pattern as the languages
+// PUT). Malformed body ⇒ 400; invalid ⇒ 422; success ⇒ 200 with the written config
+// (echo).
 func (s *Server) putCatalogCompletenessSettings(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return

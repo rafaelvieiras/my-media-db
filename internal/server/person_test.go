@@ -13,10 +13,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/tmdb"
 )
 
-// pessoaProviderFake implementa provider.Provider + provider.PessoaProvider sem rede,
-// para exercitar filmography_external (segunda seção da página da pessoa) de forma
-// determinística. Os métodos de Provider fora de BuscarFilmografia não são exercitados
-// aqui — stubs só para satisfazer a interface.
+// pessoaProviderFake implements provider.Provider + provider.PessoaProvider without network,
+// to exercise filmography_external (the second section of the person page) deterministically.
+// The Provider methods outside BuscarFilmografia are not exercised here — stubs only to
+// satisfy the interface.
 type pessoaProviderFake struct {
 	nome     string
 	creditos []provider.CreditoFilmografia
@@ -40,10 +40,10 @@ func (f *pessoaProviderFake) BuscarFilmografia(_ context.Context, _, _ string) (
 	return f.creditos, nil
 }
 
-// Testes de GET /api/v1/person/{id} (briefing 0029 Fase D) e do interno-first dos
-// créditos (anotarCreditosInternos, creditos_interno.go).
+// Tests of GET /api/v1/person/{id} and of the internal-first logic of the credits
+// (anotarCreditosInternos, creditos_interno.go).
 
-// semearPersonTmdb cria uma pessoa deduplicada (source='tmdb') e devolve seu id local.
+// semearPersonTmdb creates a deduplicated person (source='tmdb') and returns its local id.
 func semearPersonTmdb(t *testing.T, d *db.DB, id, sourceID, nome string) string {
 	t.Helper()
 	got, err := escrita(t, d).UpsertPerson(context.Background(), sqlcgen.UpsertPersonParams{
@@ -58,7 +58,7 @@ func semearPersonTmdb(t *testing.T, d *db.DB, id, sourceID, nome string) string 
 	return got
 }
 
-// semearCreditoCast cria um crédito de ELENCO ligando entityID à pessoa personID.
+// semearCreditoCast creates a CAST credit linking entityID to the person personID.
 func semearCreditoCast(t *testing.T, d *db.DB, id, entityID, personID, character string, ordering int64) {
 	t.Helper()
 	err := escrita(t, d).CriarCredito(context.Background(), sqlcgen.CriarCreditoParams{
@@ -76,7 +76,7 @@ func semearCreditoCast(t *testing.T, d *db.DB, id, entityID, personID, character
 	}
 }
 
-// semearCreditoCrew cria um crédito de EQUIPE ligando entityID à pessoa personID.
+// semearCreditoCrew creates a CREW credit linking entityID to the person personID.
 func semearCreditoCrew(t *testing.T, d *db.DB, id, entityID, personID, job, department string) {
 	t.Helper()
 	err := escrita(t, d).CriarCredito(context.Background(), sqlcgen.CriarCreditoParams{
@@ -94,7 +94,7 @@ func semearCreditoCrew(t *testing.T, d *db.DB, id, entityID, personID, job, depa
 	}
 }
 
-// decodePerson decodifica a resposta de GET /person/{id}.
+// decodePerson decodes the response of GET /person/{id}.
 func decodePerson(t *testing.T, body []byte) personDTO {
 	t.Helper()
 	var out personDTO
@@ -113,17 +113,17 @@ func TestGetPersonNaoExiste404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestGetPersonComFilmografia prova o shape da página: pessoa + filmografia com um
-// crédito de elenco (character preenchido, job/department nil) e um de equipe
-// (job/department preenchidos, character nil), cada um com o card da entity (title/
-// year/poster_url), na ordem por type/ordering.
+// TestGetPersonComFilmografia proves the page shape: person + filmography with one cast credit
+// (character filled in, job/department nil) and one crew credit (job/department filled in,
+// character nil), each one with the entity card (title/year/poster_url), in the order by
+// type/ordering.
 func TestGetPersonComFilmografia(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 
 	personID := semearPersonTmdb(t, d, "p1", "6384", "Keanu Reeves")
 	semearEntity(t, d, "e-serie", "tv", "John Wick: The Series")
-	// release_date via update direto não existe em semearEntity; usa CriarEntity cru
-	// com ReleaseDate para o ano aparecer na filmografia.
+	// A release_date through a direct update does not exist in semearEntity; it uses a raw
+	// CriarEntity with ReleaseDate so the year shows up in the filmography.
 	if _, err := escrita(t, d).CriarEntity(context.Background(), sqlcgen.CriarEntityParams{
 		ID: "e-com-ano", Type: "movie", Title: "Speed", ReleaseDate: nsOf("1994-06-10"),
 	}); err != nil {
@@ -151,8 +151,8 @@ func TestGetPersonComFilmografia(t *testing.T) {
 		t.Fatalf("filmography = %d itens, quero 2 (corpo=%s)", len(pessoa.Filmography), rec.Body.String())
 	}
 
-	// Ordenado por entity.type: "movie" < "tv" (ASCII), então "e-com-ano" (movie) vem
-	// antes de "e-filme" (tv).
+	// Ordered by entity.type: "movie" < "tv" (ASCII), so "e-com-ano" (movie) comes before
+	// "e-filme" (tv).
 	cast := pessoa.Filmography[0]
 	eq(t, "cast.entity_id", cast.EntityID, "e-com-ano")
 	eq(t, "cast.type", cast.Type, "movie")
@@ -180,9 +180,9 @@ func TestGetPersonComFilmografia(t *testing.T) {
 	}
 }
 
-// TestGetPersonAgrupaCreditosDaMesmaObra prova que vários créditos da MESMA obra (um
-// diretor que também roteiriza e produz) viram UM card na filmografia, com os cargos
-// reunidos (" · ", sem duplicar), em vez de a obra se repetir por crédito.
+// TestGetPersonAgrupaCreditosDaMesmaObra proves that several credits of the SAME work (a
+// director who also writes and produces) become ONE card in the filmography, with the roles
+// gathered (" · ", without duplicating), instead of the work repeating per credit.
 func TestGetPersonAgrupaCreditosDaMesmaObra(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 
@@ -191,7 +191,7 @@ func TestGetPersonAgrupaCreditosDaMesmaObra(t *testing.T) {
 	semearCreditoCrew(t, d, "cd", "e-filme", personID, "Director", "Directing")
 	semearCreditoCrew(t, d, "cw", "e-filme", personID, "Writer", "Writing")
 	semearCreditoCrew(t, d, "cp", "e-filme", personID, "Producer", "Production")
-	// Cargo repetido (outro crédito "Director" da mesma obra) não deve duplicar.
+	// A repeated role (another "Director" credit of the same work) must not duplicate.
 	semearCreditoCrew(t, d, "cd2", "e-filme", personID, "Director", "Directing")
 
 	pessoa := decodePerson(t, do(t, h, http.MethodGet, "/api/v1/person/"+personID, nil).Body.Bytes())
@@ -204,8 +204,8 @@ func TestGetPersonAgrupaCreditosDaMesmaObra(t *testing.T) {
 	eqPtr(t, "obra.job (cargos reunidos, sem duplicar)", obra.Job, "Director · Writer · Producer")
 }
 
-// TestGetPersonSemFilmografia prova que uma pessoa sem nenhum crédito devolve
-// filmography=[] (nunca null).
+// TestGetPersonSemFilmografia proves that a person without any credit returns
+// filmography=[] (never null).
 func TestGetPersonSemFilmografia(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	personID := semearPersonTmdb(t, d, "p2", "1", "Ninguém Creditou")
@@ -223,11 +223,11 @@ func TestGetPersonSemFilmografia(t *testing.T) {
 	}
 }
 
-// TestAnotarCreditosInternoDoExterno prova o interno-first (0029 Fase D) no detalhe
-// EXTERNO: um crédito cuja pessoa JÁ está catalogada (source=tmdb, source_id casando)
-// ganha person_id; um crédito cuja pessoa NÃO está catalogada fica com person_id nil.
-// Usa a fixture servidorTMDBRico (cast source_id=6384 "Keanu Reeves", crew
-// source_id=9339 "Lana Wachowski") — só semeia a pessoa do elenco.
+// TestAnotarCreditosInternoDoExterno proves the internal-first logic on the EXTERNAL detail: a
+// credit whose person is ALREADY cataloged (source=tmdb, matching source_id) gets a person_id;
+// a credit whose person is NOT cataloged stays with a nil person_id. It uses the
+// servidorTMDBRico fixture (cast source_id=6384 "Keanu Reeves", crew source_id=9339 "Lana
+// Wachowski") — it only seeds the cast person.
 func TestAnotarCreditosInternoDoExterno(t *testing.T) {
 	srv := servidorTMDBRico(t, nil)
 	prov := tmdb.New(tmdb.Credencial{Token: "tok"}, srv.Client(), srv.URL)
@@ -245,10 +245,10 @@ func TestAnotarCreditosInternoDoExterno(t *testing.T) {
 	}
 }
 
-// TestImportPreenchePersonIDDoProprioCredito prova o interno-first no lado da ENTITY
-// (resolverEntity): o import PERSISTE elenco/equipe (internal/enrich/creditos.go, que
-// já upserta a pessoa), então o GET seguinte da própria entity já enxerga o person_id
-// do crédito que ela mesma acabou de criar — sem precisar de um segundo import.
+// TestImportPreenchePersonIDDoProprioCredito proves the internal-first logic on the ENTITY
+// side (resolverEntity): the import PERSISTS cast/crew (internal/enrich/creditos.go, which
+// already upserts the person), so the following GET of the entity itself already sees the
+// person_id of the credit it just created — without needing a second import.
 func TestImportPreenchePersonIDDoProprioCredito(t *testing.T) {
 	srv := servidorTMDBRico(t, nil)
 	prov := tmdb.New(tmdb.Credencial{Token: "tok"}, srv.Client(), srv.URL)
@@ -271,7 +271,7 @@ func TestImportPreenchePersonIDDoProprioCredito(t *testing.T) {
 		t.Errorf("crew[0].person_id = nil, quero preenchido (pessoa criada no próprio import)")
 	}
 
-	// A página da pessoa do elenco enxerga esta obra na filmografia.
+	// The cast person's page sees this work in the filmography.
 	if ent.Cast[0].PersonID != nil {
 		pessoa := decodePerson(t, do(t, h, http.MethodGet, "/api/v1/person/"+*ent.Cast[0].PersonID, nil).Body.Bytes())
 		if len(pessoa.Filmography) != 1 || pessoa.Filmography[0].EntityID != id {
@@ -280,8 +280,8 @@ func TestImportPreenchePersonIDDoProprioCredito(t *testing.T) {
 	}
 }
 
-// TestGetPersonHandlerSemDB prova o 503 padrão dos handlers de leitura sem banco
-// injetado (mesma guarda de entitiesUnavailable dos demais, ver TestCuradoriaSemBanco503).
+// TestGetPersonHandlerSemDB proves the standard 503 of the read handlers without an injected
+// database (the same entitiesUnavailable guard as the others, see TestCuradoriaSemBanco503).
 func TestGetPersonHandlerSemDB(t *testing.T) {
 	h, err := New("v-teste", nil).Handler()
 	if err != nil {
@@ -293,10 +293,10 @@ func TestGetPersonHandlerSemDB(t *testing.T) {
 	}
 }
 
-// TestGetPersonFilmografiaExternaExcluiImportados prova a segunda seção (0029 Fase D):
-// dois créditos do provider, um cuja obra JÁ está importada (source_id "603", casando
-// uma entity semeada com external_id_tmdb=603) e outro ainda não. Só o segundo aparece
-// em filmography_external, com poster_url PROXYADO (assetsDir presente).
+// TestGetPersonFilmografiaExternaExcluiImportados proves the second section: two credits from
+// the provider, one whose work is ALREADY imported (source_id "603", matching a seeded entity
+// with external_id_tmdb=603) and another one not yet. Only the second shows up in
+// filmography_external, with a PROXIED poster_url (assetsDir present).
 func TestGetPersonFilmografiaExternaExcluiImportados(t *testing.T) {
 	fake := &pessoaProviderFake{nome: "tmdb", creditos: []provider.CreditoFilmografia{
 		{Source: "tmdb", SourceID: "603", Type: "movie", Title: "Já Importado", Kind: "cast", Character: ptr("X")},
@@ -336,8 +336,8 @@ func TestGetPersonFilmografiaExternaExcluiImportados(t *testing.T) {
 	}
 }
 
-// TestGetPersonFilmografiaExternaSemProvider prova a DEGRADAÇÃO para `[]` (nunca null)
-// quando nenhum provider está registrado (busca externa desligada).
+// TestGetPersonFilmografiaExternaSemProvider proves the DEGRADATION to `[]` (never null) when
+// no provider is registered (external search off).
 func TestGetPersonFilmografiaExternaSemProvider(t *testing.T) {
 	h, d := setupSearchServer(t)
 	personID := semearPersonTmdb(t, d, "pf2", "1", "Sem Provider")
@@ -352,12 +352,12 @@ func TestGetPersonFilmografiaExternaSemProvider(t *testing.T) {
 	}
 }
 
-// TestGetPersonFilmografiaExternaProviderSemCapacidadeDegrada prova que um provider
-// registrado sob a fonte da pessoa mas SEM a capacidade PessoaProvider (o fakeProvider
-// de search_test.go, que só cumpre provider.Provider) também degrada para `[]` — o
-// handler faz type-assert e não assume a capacidade presente. Como fakeProvider.Nome()
-// é fixo "fake", a pessoa é semeada com source="fake" (não pelo helper
-// semearPersonTmdb, que fixa "tmdb").
+// TestGetPersonFilmografiaExternaProviderSemCapacidadeDegrada proves that a provider registered
+// under the person's source but WITHOUT the PessoaProvider capability (the fakeProvider of
+// search_test.go, which only satisfies provider.Provider) also degrades to `[]` — the handler
+// does a type-assert and does not assume the capability is present. Since fakeProvider.Nome()
+// is fixed to "fake", the person is seeded with source="fake" (not through the semearPersonTmdb
+// helper, which fixes "tmdb").
 func TestGetPersonFilmografiaExternaProviderSemCapacidadeDegrada(t *testing.T) {
 	h, d := setupSearchServer(t, WithSearchProvider(&fakeProvider{}))
 
@@ -378,9 +378,9 @@ func TestGetPersonFilmografiaExternaProviderSemCapacidadeDegrada(t *testing.T) {
 	}
 }
 
-// TestGetPersonFilmografiaExternaErroDegrada prova que um erro do provider (rede/
-// status) na busca da filmografia degrada para `[]` — a página não cai por causa da
-// segunda seção (a filmografia importada, `filmography`, segue funcionando).
+// TestGetPersonFilmografiaExternaErroDegrada proves that a provider error (network/status) in
+// the filmography lookup degrades to `[]` — the page does not fail because of the second
+// section (the imported filmography, `filmography`, keeps working).
 func TestGetPersonFilmografiaExternaErroDegrada(t *testing.T) {
 	fake := &pessoaProviderFake{nome: "tmdb", err: errors.New("tmdb: fonte fora do ar")}
 	h, d := setupSearchServer(t, WithSearchProvider(fake))

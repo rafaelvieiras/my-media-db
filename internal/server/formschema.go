@@ -7,45 +7,45 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 )
 
-// Este arquivo serve o DESCRITOR DE FORMULÁRIO editorial (briefing 0030): a
-// superfície que diz ao front COMO renderizar cada campo editável — sem que ele
-// precise redigitar a lista de campos.
+// This file serves the editorial FORM DESCRIPTOR: the surface that tells the frontend
+// HOW to render each editable field — without it having to retype the list of
+// fields.
 //
 //	GET /api/v1/schema/entity-fields  → { "fields": [FieldDescriptor, ...] }
 //
-// A LISTA de campos é derivada da fonte única `resolver.CamposEditaveis()`
-// (R1/ADR-0001); a APRESENTAÇÃO (label/grupo/widget/ordem/faixa) vive aqui, no
-// server, num registro declarativo separado. São DOIS registros de propósito: o
-// resolver cuida da composição (puro, sem concern de UI); o server cuida da
-// apresentação (UI). Um teste os amarra — todo campo editável (exceto
-// extension_data/credits, ver abaixo) TEM de ter descritor —, garantindo que
-// adicionar um campo editável no backend nunca deixe o front órfão.
+// The LIST of fields is derived from the single source `resolver.CamposEditaveis()`
+// (ADR-0001); the PRESENTATION (label/group/widget/order/range) lives here, in the
+// server, in a separate declarative registry. They are TWO registries on purpose: the
+// resolver handles the composition (pure, with no UI concern); the server handles the
+// presentation (UI). A test ties them together — every editable field (except
+// extension_data/credits, see below) MUST have a descriptor —, ensuring that adding an
+// editable field on the backend never leaves the frontend orphaned.
 
-// apresentacaoCampo é o METADADO de UI de um campo editorial: como rotulá-lo,
-// em que seção mostrá-lo, com que widget renderizá-lo e em que ordem. É um
-// registro declarativo (dado), não um `switch` por nome — um plugin futuro
-// contribuiria aqui a apresentação do campo que contribui ao resolver.
+// apresentacaoCampo is the UI METADATA of an editorial field: how to label it, in which
+// section to show it, with which widget to render it and in which order. It is a
+// declarative registry (data), not a `switch` by name — a future plugin would contribute
+// here the presentation of the field it contributes to the resolver.
 type apresentacaoCampo struct {
 	label     string
-	group     string // "traduzivel" | "neutro" (seção do formulário)
+	group     string // "traduzivel" | "neutro" (form section)
 	widget    string // "text" | "textarea" | "number" | "date" | "tags"
-	order     int    // ordem estável de renderização
-	creatable bool   // aparece no formulário de CRIAR item?
+	order     int    // stable rendering order
+	creatable bool   // does it show up in the CREATE item form?
 
-	// min/max/step só fazem sentido para o widget "number" (espelham a faixa que
-	// o backend valida em formaNumero); ficam nil nos demais.
+	// min/max/step only make sense for the "number" widget (they mirror the range the
+	// backend validates in formaNumero); they stay nil on the others.
 	min  *float64
 	max  *float64
 	step *float64
-	// placeholder é opcional; nil = sem placeholder.
+	// placeholder is optional; nil = no placeholder.
 	placeholder *string
 }
 
-// registroApresentacao é o metadado de UI por campo editorial (briefing 0030,
-// §"Registro de apresentação"). As chaves casam com as de `registroOrigem` no
-// resolver. A faixa 0–10 do local_rating só ESPELHA a validação autoritativa do
-// backend (formaNumero) — o descritor não é a fonte da regra, só a reflete para
-// o input.
+// registroApresentacao is the UI metadata per editorial field (the "presentation
+// registry" section of the design). The keys match the ones of `registroOrigem` in the
+// resolver. The 0–10 range of local_rating only MIRRORS the authoritative validation of
+// the backend (formaNumero) — the descriptor is not the source of the rule, it only
+// reflects it to the input.
 var registroApresentacao = map[string]apresentacaoCampo{
 	"title":          {label: "Título", group: "traduzivel", widget: "text", order: 10, creatable: true},
 	"description":    {label: "Sinopse", group: "traduzivel", widget: "textarea", order: 20, creatable: true},
@@ -54,65 +54,65 @@ var registroApresentacao = map[string]apresentacaoCampo{
 	"release_date":   {label: "Data de lançamento", group: "neutro", widget: "date", order: 50, creatable: true},
 	"local_rating": {label: "Sua nota", group: "neutro", widget: "number", order: 60, creatable: false,
 		min: fptr(0), max: fptr(10), step: fptr(0.1)},
-	// extension_data NÃO entra aqui de propósito: embora esteja em
-	// CamposEditaveis() (kind=extensao), NÃO é um campo de formulário simples — é
-	// o mapa de verticais por namespace/plugin, com edição própria. Por isso é
-	// EXCLUÍDO dos descritores (ver descritoresDeCampo). A regra da catraca de
-	// cobertura (formschema_test.go) exige descritor de TODO campo editável com
+	// extension_data does NOT go in here on purpose: although it is in
+	// CamposEditaveis() (kind=extensao), it is NOT a simple form field — it is the map
+	// of verticals per namespace/plugin, with its own editor. That is why it is EXCLUDED
+	// from the descriptors (see descritoresDeCampo). The coverage ratchet rule
+	// (formschema_test.go) requires a descriptor for EVERY editable field with
 	// kind != extensao.
 }
 
-// fieldDescriptor é o descritor servido de um campo editável (briefing 0030 §4):
-// combina a apresentação (registroApresentacao) com a etiqueta pública do
-// resolver (translatable/kind). É o que o front consome para montar o input e a
-// regra de validação de cliente.
+// fieldDescriptor is the served descriptor of an editable field: it combines the
+// presentation (registroApresentacao) with the resolver's public label
+// (translatable/kind). It is what the frontend consumes to build the input and the
+// client-side validation rule.
 type fieldDescriptor struct {
-	Name         string `json:"name"`         // chave do campo (= chave do override/registro)
-	Label        string `json:"label"`        // rótulo pt-BR (UI mono-idioma hoje)
+	Name         string `json:"name"`         // field key (= key of the override/registry)
+	Label        string `json:"label"`        // pt-BR label (single-language UI today)
 	Group        string `json:"group"`        // "traduzivel" | "neutro"
 	Widget       string `json:"widget"`       // "text" | "textarea" | "number" | "date" | "tags"
 	Translatable bool   `json:"translatable"` // = registroOrigem[campo].traduzivel
-	Kind         string `json:"kind"`         // = Kind público do resolver (escalar|lista|numero)
-	Order        int    `json:"order"`        // ordem estável de renderização
-	Creatable    bool   `json:"creatable"`    // aparece no formulário de CRIAR item?
+	Kind         string `json:"kind"`         // = public Kind of the resolver (escalar|lista|numero)
+	Order        int    `json:"order"`        // stable rendering order
+	Creatable    bool   `json:"creatable"`    // does it show up in the CREATE item form?
 
-	// Só para o widget "number"; omitidos (omitempty) nos demais.
+	// Only for the "number" widget; omitted (omitempty) on the others.
 	Min  *float64 `json:"min,omitempty"`
 	Max  *float64 `json:"max,omitempty"`
 	Step *float64 `json:"step,omitempty"`
-	// Opcional; omitido quando ausente.
+	// Optional; omitted when absent.
 	Placeholder *string `json:"placeholder,omitempty"`
 }
 
-// fieldSchemaResponse é o envelope de resposta do endpoint: a lista de
-// descritores, já ORDENADA por `order` crescente.
+// fieldSchemaResponse is the response envelope of the endpoint: the list of descriptors,
+// already SORTED by ascending `order`.
 type fieldSchemaResponse struct {
 	Fields []fieldDescriptor `json:"fields"`
 }
 
-// descritoresDeCampo combina a fonte única `resolver.CamposEditaveis()` com o
-// registro de apresentação, gerando a lista de descritores ORDENADA por `order`.
-// Itera os campos EDITÁVEIS do resolver (nunca um `switch` por nome): translatable
-// e kind vêm do resolver; label/grupo/widget/ordem/faixa vêm da apresentação.
+// descritoresDeCampo combines the single source `resolver.CamposEditaveis()` with the
+// presentation registry, generating the list of descriptors SORTED by `order`. It
+// iterates the EDITABLE fields of the resolver (never a `switch` by name): translatable
+// and kind come from the resolver; label/group/widget/order/range come from the
+// presentation.
 //
-// O extension_data (kind=extensao) e o credits (kind=creditos) são EXCLUÍDOS:
-// não são campos de formulário simples (extension_data é o mapa de verticais
-// por namespace/plugin; credits é o patch segregado por cast/crew/companies,
-// briefing 0029 Fase C) — ambos ganham editor DEDICADO no front, fora do
-// SchemaForm. Um campo editável de kind != extensao/creditos SEM apresentação é
-// erro de programação — o teste de cobertura falha, forçando o par "campo novo
-// ⇒ descritor".
+// The extension_data (kind=extensao) and credits (kind=creditos) are EXCLUDED: they are
+// not simple form fields (extension_data is the map of verticals per namespace/plugin;
+// credits is the patch segregated by cast/crew/companies) — both get a DEDICATED editor
+// in the frontend, outside the SchemaForm. An editable field of kind !=
+// extensao/creditos WITHOUT presentation is a programming error — the coverage test
+// fails, forcing the pair "new field ⇒ descriptor".
 func descritoresDeCampo() []fieldDescriptor {
 	editaveis := resolver.CamposEditaveis()
 	out := make([]fieldDescriptor, 0, len(editaveis))
 	for campo, info := range editaveis {
 		if info.Kind == resolver.KindExtensao || info.Kind == resolver.KindCreditos {
-			continue // extension_data/credits: editáveis, mas com editor dedicado (não formulário simples).
+			continue // extension_data/credits: editable, but with a dedicated editor (not a simple form).
 		}
 		apr, ok := registroApresentacao[campo]
 		if !ok {
-			// Campo editável sem apresentação: erro de programação (a catraca de
-			// cobertura pega em teste). Não o servimos sem descritor.
+			// Editable field without presentation: a programming error (the coverage
+			// ratchet catches it in a test). We do not serve it without a descriptor.
 			continue
 		}
 		out = append(out, fieldDescriptor{
@@ -134,13 +134,13 @@ func descritoresDeCampo() []fieldDescriptor {
 	return out
 }
 
-// getEntityFieldsSchema trata GET /api/v1/schema/entity-fields: devolve os
-// descritores de campo do formulário editorial (briefing 0030). Metadado estático
-// (imutável entre deploys), sem autenticação e cacheável — não toca o banco.
+// getEntityFieldsSchema handles GET /api/v1/schema/entity-fields: returns the field
+// descriptors of the editorial form. Static metadata (immutable between deploys), with no
+// authentication and cacheable — it does not touch the database.
 func (s *Server) getEntityFieldsSchema(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, fieldSchemaResponse{Fields: descritoresDeCampo()})
 }
 
-// fptr embrulha um float64 num *float64 (a apresentação carrega min/max/step como
-// ponteiros para omiti-los, via omitempty, nos campos não-numéricos).
+// fptr wraps a float64 in a *float64 (the presentation carries min/max/step as pointers
+// so they are omitted, through omitempty, on the non-numeric fields).
 func fptr(v float64) *float64 { return &v }

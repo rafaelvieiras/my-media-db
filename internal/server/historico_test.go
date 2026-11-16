@@ -12,7 +12,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// decodeHistoricoEvento decodifica o corpo de POST/itens de GET .../historico.
+// decodeHistoricoEvento decodes the body of POST/items of GET .../historico.
 func decodeHistoricoEvento(t *testing.T, body []byte) historicoEventoDTO {
 	t.Helper()
 	var out historicoEventoDTO
@@ -22,7 +22,7 @@ func decodeHistoricoEvento(t *testing.T, body []byte) historicoEventoDTO {
 	return out
 }
 
-// decodeHistoricoList decodifica o corpo de GET .../historico.
+// decodeHistoricoList decodes the body of GET .../historico.
 func decodeHistoricoList(t *testing.T, body []byte) historicoEventoListDTO {
 	t.Helper()
 	var out historicoEventoListDTO
@@ -32,7 +32,7 @@ func decodeHistoricoList(t *testing.T, body []byte) historicoEventoListDTO {
 	return out
 }
 
-// decodeHistoricoEstado decodifica o corpo de GET .../historico/estado.
+// decodeHistoricoEstado decodes the body of GET .../historico/estado.
 func decodeHistoricoEstado(t *testing.T, body []byte) historicoEstadoDTO {
 	t.Helper()
 	var out historicoEstadoDTO
@@ -42,7 +42,7 @@ func decodeHistoricoEstado(t *testing.T, body []byte) historicoEstadoDTO {
 	return out
 }
 
-// decodeHistoricoOrfaoList decodifica o corpo de GET /historico/orfaos.
+// decodeHistoricoOrfaoList decodes the body of GET /historico/orfaos.
 func decodeHistoricoOrfaoList(t *testing.T, body []byte) historicoEventoOrfaoListDTO {
 	t.Helper()
 	var out historicoEventoOrfaoListDTO
@@ -52,8 +52,8 @@ func decodeHistoricoOrfaoList(t *testing.T, body []byte) historicoEventoOrfaoLis
 	return out
 }
 
-// TestCreateHistoricoEventoDefaults cobre §5: source ausente vira "manual",
-// occurred_at ausente vira o timestamp do servidor, 201 com o shape completo.
+// TestCreateHistoricoEventoDefaults covers: an absent source becomes "manual",
+// an absent occurred_at becomes the server timestamp, 201 with the complete shape.
 func TestCreateHistoricoEventoDefaults(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Filme 1")
@@ -78,8 +78,8 @@ func TestCreateHistoricoEventoDefaults(t *testing.T) {
 	}
 }
 
-// TestCreateHistoricoEventoCamposExplicitos cobre §5: source/occurred_at/
-// progress_percent/position_seconds/payload explícitos são persistidos.
+// TestCreateHistoricoEventoCamposExplicitos covers: explicit source/occurred_at/
+// progress_percent/position_seconds/payload are persisted.
 func TestCreateHistoricoEventoCamposExplicitos(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Filme 1")
@@ -111,8 +111,8 @@ func TestCreateHistoricoEventoCamposExplicitos(t *testing.T) {
 	}
 }
 
-// TestCreateHistoricoEventoProgressForaDoIntervalo cobre §5: progress_percent
-// fora de [0,100] -> 422, sem criar linha.
+// TestCreateHistoricoEventoProgressForaDoIntervalo covers: progress_percent
+// outside [0,100] -> 422, without creating a row.
 func TestCreateHistoricoEventoProgressForaDoIntervalo(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Filme 1")
@@ -133,7 +133,7 @@ func TestCreateHistoricoEventoProgressForaDoIntervalo(t *testing.T) {
 	}
 }
 
-// TestCreateHistoricoEventoKindStatusVazios cobre §5: kind/status vazios -> 422.
+// TestCreateHistoricoEventoKindStatusVazios covers: empty kind/status -> 422.
 func TestCreateHistoricoEventoKindStatusVazios(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Filme 1")
@@ -151,8 +151,8 @@ func TestCreateHistoricoEventoKindStatusVazios(t *testing.T) {
 	}
 }
 
-// TestCreateHistoricoEvento404EntityInexistente cobre §5: 404 para todos os
-// 4 endpoints quando a entity não existe.
+// TestCreateHistoricoEvento404EntityInexistente covers: 404 for all
+// 4 endpoints when the entity does not exist.
 func TestHistorico404EntityInexistente(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	inexistente := "nao-existe"
@@ -183,8 +183,8 @@ func TestHistorico404EntityInexistente(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestListHistoricoEventosOrdemEFiltro cobre §5: lista em occurred_at DESC;
-// ?kind= filtra corretamente.
+// TestListHistoricoEventosOrdemEFiltro covers: it lists in occurred_at DESC;
+// ?kind= filters correctly.
 func TestListHistoricoEventosOrdemEFiltro(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Filme 1")
@@ -200,7 +200,7 @@ func TestListHistoricoEventosOrdemEFiltro(t *testing.T) {
 	criar("ouvir", "started", "2026-01-01T11:00:00Z")
 	criar("assistir", "stopped", "2026-01-01T12:00:00Z")
 
-	// Sem filtro: 3 eventos, DESC (mais recente primeiro).
+	// Without a filter: 3 events, DESC (most recent first).
 	rec := do(t, h, http.MethodGet, "/api/v1/entities/"+id+"/historico", nil)
 	list := decodeHistoricoList(t, rec.Body.Bytes())
 	if len(list.Eventos) != 3 {
@@ -210,7 +210,7 @@ func TestListHistoricoEventosOrdemEFiltro(t *testing.T) {
 		t.Errorf("ordem inesperada: %v", list.Eventos)
 	}
 
-	// Filtro por kind=assistir: só 2.
+	// Filter by kind=assistir: only 2.
 	rec = do(t, h, http.MethodGet, "/api/v1/entities/"+id+"/historico?kind=assistir", nil)
 	list = decodeHistoricoList(t, rec.Body.Bytes())
 	if len(list.Eventos) != 2 {
@@ -223,8 +223,8 @@ func TestListHistoricoEventosOrdemEFiltro(t *testing.T) {
 	}
 }
 
-// TestListHistoricoEventosVazio cobre §3: {"eventos":[]} quando não há
-// nenhum evento (não 404, entity existe).
+// TestListHistoricoEventosVazio covers: {"eventos":[]} when there is
+// no event (not 404, the entity exists).
 func TestListHistoricoEventosVazio(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Filme 1")
@@ -239,9 +239,9 @@ func TestListHistoricoEventosVazio(t *testing.T) {
 	}
 }
 
-// TestGetHistoricoEstadoDerivaUltimoPorKind cobre §5: para cada kind, o
-// evento mais recente (occurred_at) vence -- inclusive com eventos de kinds
-// diferentes intercalados FORA da ordem de inserção.
+// TestGetHistoricoEstadoDerivaUltimoPorKind covers: for each kind, the most recent
+// event (occurred_at) wins -- including with events of
+// different kinds interleaved OUTSIDE the insertion order.
 func TestGetHistoricoEstadoDerivaUltimoPorKind(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Filme 1")
@@ -253,9 +253,9 @@ func TestGetHistoricoEstadoDerivaUltimoPorKind(t *testing.T) {
 			t.Fatalf("seed POST: status = %d (corpo=%s)", rec.Code, rec.Body.String())
 		}
 	}
-	// Insercao INTERCALADA e fora de ordem cronologica: o mais recente de
-	// "assistir" (14h) e inserido ANTES do mais antigo (10h); "ouvir" so
-	// tem um evento.
+	// INTERLEAVED insertion and out of chronological order: the most recent
+	// "assistir" (2pm) is inserted BEFORE the oldest one (10am); "ouvir" only
+	// has one event.
 	criar("assistir", "completed", "2026-01-01T14:00:00Z")
 	criar("ouvir", "started", "2026-01-01T09:00:00Z")
 	criar("assistir", "started", "2026-01-01T10:00:00Z")
@@ -285,7 +285,8 @@ func TestGetHistoricoEstadoDerivaUltimoPorKind(t *testing.T) {
 	}
 }
 
-// TestGetHistoricoEstadoVazio cobre §5: objeto vazio quando não há histórico.
+// TestGetHistoricoEstadoVazio covers: an empty object when there is no
+// history.
 func TestGetHistoricoEstadoVazio(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Filme 1")
@@ -300,8 +301,8 @@ func TestGetHistoricoEstadoVazio(t *testing.T) {
 	}
 }
 
-// TestDeleteHistoricoEvento cobre §5: DELETE remove o evento; um segundo
-// DELETE do mesmo id retorna 404.
+// TestDeleteHistoricoEvento covers: DELETE removes the event; a second
+// DELETE of the same id returns 404.
 func TestDeleteHistoricoEvento(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Filme 1")
@@ -315,14 +316,14 @@ func TestDeleteHistoricoEvento(t *testing.T) {
 		t.Fatalf("DELETE status = %d, quero 204 (corpo=%s)", recDel.Code, recDel.Body.String())
 	}
 
-	// Segundo DELETE do mesmo id -> 404.
+	// Second DELETE of the same id -> 404.
 	recDel2 := do(t, h, http.MethodDelete, "/api/v1/entities/"+id+"/historico/"+criado.ID, nil)
 	if recDel2.Code != http.StatusNotFound {
 		t.Errorf("segundo DELETE: status = %d, quero 404 (corpo=%s)", recDel2.Code, recDel2.Body.String())
 	}
 	checkErrorShape(t, recDel2, "not_found")
 
-	// Confirma que sumiu da listagem.
+	// Confirms that it disappeared from the listing.
 	recList := do(t, h, http.MethodGet, "/api/v1/entities/"+id+"/historico", nil)
 	list := decodeHistoricoList(t, recList.Body.Bytes())
 	if len(list.Eventos) != 0 {
@@ -330,8 +331,8 @@ func TestDeleteHistoricoEvento(t *testing.T) {
 	}
 }
 
-// TestDeleteHistoricoEventoDeOutraEntity cobre §4: DELETE de um evento que
-// pertence a OUTRA entity -> 404 (não vaza cross-entity).
+// TestDeleteHistoricoEventoDeOutraEntity covers: DELETE of an event that
+// belongs to ANOTHER entity -> 404 (it does not leak across entities).
 func TestDeleteHistoricoEventoDeOutraEntity(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id1 := semearEntity(t, d, "e1", "movie", "Filme 1")
@@ -348,8 +349,8 @@ func TestDeleteHistoricoEventoDeOutraEntity(t *testing.T) {
 	checkErrorShape(t, recDel, "not_found")
 }
 
-// TestHistoricoEventoCascadeAoApagarEntity cobre §5: apagar a entity remove
-// em cascata todo o historico_evento dela (ON DELETE CASCADE).
+// TestHistoricoEventoCascadeAoApagarEntity covers: deleting the entity removes
+// its whole historico_evento in cascade (ON DELETE CASCADE).
 func TestHistoricoEventoCascadeAoApagarEntity(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Filme 1")
@@ -368,10 +369,10 @@ func TestHistoricoEventoCascadeAoApagarEntity(t *testing.T) {
 	}
 }
 
-// ── Eventos órfãos / backfill retroativo (briefing 0099) ────────────────────
+// ── Orphan events / retroactive backfill ────────────────────
 
-// semearOrfao cria um historico_evento órfão (entity_id NULL) direto pela
-// query sqlc, com os raw ids/título/ano dados.
+// semearOrfao creates an orphan historico_evento (entity_id NULL) straight through the
+// sqlc query, with the given raw ids/title/year.
 func semearOrfao(t *testing.T, d *db.DB, tmdb, imdb, tvdb, titulo, ano string) sqlcgen.HistoricoEvento {
 	t.Helper()
 	ev, err := escrita(t, d).CriarHistoricoEventoOrfao(context.Background(), sqlcgen.CriarHistoricoEventoOrfaoParams{
@@ -392,8 +393,8 @@ func semearOrfao(t *testing.T, d *db.DB, tmdb, imdb, tvdb, titulo, ano string) s
 	return ev
 }
 
-// TestListHistoricoOrfaosVazio cobre §5: lista vazia inicialmente (200, não
-// 404 -- não há entity/rota que possa faltar).
+// TestListHistoricoOrfaosVazio covers: empty list initially (200, not
+// 404 -- there is no entity/route that could be missing).
 func TestListHistoricoOrfaosVazio(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodGet, "/api/v1/historico/orfaos", nil)
@@ -406,8 +407,8 @@ func TestListHistoricoOrfaosVazio(t *testing.T) {
 	}
 }
 
-// TestListHistoricoOrfaosApareceEPagina cobre §5: um evento órfão aparece na
-// lista com os campos certos, e a paginação (limit/offset) funciona.
+// TestListHistoricoOrfaosApareceEPagina covers: an orphan event appears in the
+// list with the right fields, and the pagination (limit/offset) works.
 func TestListHistoricoOrfaosApareceEPagina(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearOrfao(t, d, "603", "", "", "Matrix", "1999")
@@ -423,7 +424,7 @@ func TestListHistoricoOrfaosApareceEPagina(t *testing.T) {
 		t.Fatalf("orfaos = %+v, quero 3", list)
 	}
 
-	// Paginação: limit=1 devolve só 1 item, total continua 3.
+	// Pagination: limit=1 returns only 1 item, the total stays 3.
 	recPag := do(t, h, http.MethodGet, "/api/v1/historico/orfaos?limit=1&offset=1", nil)
 	if recPag.Code != http.StatusOK {
 		t.Fatalf("status = %d, quero 200 (corpo=%s)", recPag.Code, recPag.Body.String())
@@ -434,18 +435,18 @@ func TestListHistoricoOrfaosApareceEPagina(t *testing.T) {
 	}
 }
 
-// TestBackfillViaPutExternalIds cobre o critério de aceite central do
-// briefing 0099 de PONTA A PONTA (via API real, não só o pacote isolado):
-// um evento órfão gravado (aqui, direto pela query -- mesmo efeito de um
-// webhook sem match) some da lista de órfãos e passa a aparecer em
-// GET /entities/{id}/historico depois de PUT /entities/{id}/external-ids
-// gravar o mesmo id bruto.
+// TestBackfillViaPutExternalIds covers the central acceptance criterion of
+// this feature END TO END (through the real API, not just the isolated package): an
+// orphan event written (here, straight through the query -- same effect as a
+// webhook without a match) leaves the orphan list and starts appearing in
+// GET /entities/{id}/historico after PUT /entities/{id}/external-ids
+// writes the same raw id.
 func TestBackfillViaPutExternalIds(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	id := semearEntity(t, d, "e1", "movie", "Item Local")
 	orfao := semearOrfao(t, d, "603", "", "", "Matrix", "1999")
 
-	// Antes do PUT: o evento está órfão, entity sem histórico.
+	// Before the PUT: the event is orphan, the entity has no history.
 	recOrfaosAntes := do(t, h, http.MethodGet, "/api/v1/historico/orfaos", nil)
 	listAntes := decodeHistoricoOrfaoList(t, recOrfaosAntes.Body.Bytes())
 	if listAntes.Total != 1 {
@@ -462,13 +463,13 @@ func TestBackfillViaPutExternalIds(t *testing.T) {
 		t.Fatalf("PUT external-ids: status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
 	}
 
-	// Depois: some da lista de órfãos...
+	// After: it leaves the orphan list...
 	recOrfaosDepois := do(t, h, http.MethodGet, "/api/v1/historico/orfaos", nil)
 	listDepois := decodeHistoricoOrfaoList(t, recOrfaosDepois.Body.Bytes())
 	if listDepois.Total != 0 {
 		t.Errorf("orfaos depois do PUT = %d, quero 0 (vinculado)", listDepois.Total)
 	}
-	// ...e aparece no histórico DA ENTITY.
+	// ...and appears in the history OF THE ENTITY.
 	recHistDepois := do(t, h, http.MethodGet, "/api/v1/entities/"+id+"/historico", nil)
 	listHist := decodeHistoricoList(t, recHistDepois.Body.Bytes())
 	if len(listHist.Eventos) != 1 || listHist.Eventos[0].ID != orfao.ID {

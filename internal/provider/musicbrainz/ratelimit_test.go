@@ -5,10 +5,10 @@ import (
 	"time"
 )
 
-// relogioFake é um relógio controlável pelo teste: `sleep` AVANÇA o relógio pela duração
-// pedida (simula o tempo "passando" durante o time.Sleep real, sem esperar de verdade), e
-// o teste pode avançá-lo manualmente entre chamadas para simular trabalho externo lento
-// (ex.: uma requisição HTTP que já consumiu >= intervalo).
+// relogioFake is a clock controllable by the test: `sleep` ADVANCES the clock by the
+// requested duration (it simulates time "passing" during the real time.Sleep, without really
+// waiting), and the test can advance it by hand between calls to simulate slow external work
+// (e.g. an HTTP request that already consumed >= the interval).
 type relogioFake struct {
 	agora time.Time
 }
@@ -17,8 +17,8 @@ func (r *relogioFake) now() time.Time { return r.agora }
 
 func (r *relogioFake) avancar(d time.Duration) { r.agora = r.agora.Add(d) }
 
-// TestLimitadorPrimeiraChamadaNaoEspera confirma que a primeira chamada a esperar() nunca
-// dorme (não há "última chamada" ainda).
+// TestLimitadorPrimeiraChamadaNaoEspera confirms that the first call to esperar() never
+// sleeps (there is no "last call" yet).
 func TestLimitadorPrimeiraChamadaNaoEspera(t *testing.T) {
 	rel := &relogioFake{agora: time.Unix(0, 0)}
 	var dorm []time.Duration
@@ -35,9 +35,9 @@ func TestLimitadorPrimeiraChamadaNaoEspera(t *testing.T) {
 	}
 }
 
-// TestLimitadorSegundaChamadaImediataEspera confirma que duas chamadas em sequência, sem
-// tempo real algum passando entre elas, forçam uma espera de exatamente o intervalo
-// configurado (nunca duas requisições no mesmo instante).
+// TestLimitadorSegundaChamadaImediataEspera confirms that two consecutive calls, without any
+// real time passing between them, force a wait of exactly the configured interval (never two
+// requests at the same instant).
 func TestLimitadorSegundaChamadaImediataEspera(t *testing.T) {
 	rel := &relogioFake{agora: time.Unix(0, 0)}
 	var dorm []time.Duration
@@ -58,9 +58,9 @@ func TestLimitadorSegundaChamadaImediataEspera(t *testing.T) {
 	}
 }
 
-// TestLimitadorNaoEsperaSeIntervaloJaPassou confirma que, quando tempo suficiente já
-// passou entre chamadas (ex.: a requisição HTTP anterior demorou mais que o intervalo), a
-// próxima chamada NÃO dorme.
+// TestLimitadorNaoEsperaSeIntervaloJaPassou confirms that, when enough time has already
+// passed between calls (e.g. the previous HTTP request took longer than the interval), the
+// next call does NOT sleep.
 func TestLimitadorNaoEsperaSeIntervaloJaPassou(t *testing.T) {
 	rel := &relogioFake{agora: time.Unix(0, 0)}
 	var dorm []time.Duration
@@ -71,7 +71,7 @@ func TestLimitadorNaoEsperaSeIntervaloJaPassou(t *testing.T) {
 	}
 
 	lim.esperar()
-	rel.avancar(2 * time.Second) // simula trabalho externo lento
+	rel.avancar(2 * time.Second) // simulates slow external work
 	lim.esperar()
 
 	if len(dorm) != 0 {
@@ -79,8 +79,8 @@ func TestLimitadorNaoEsperaSeIntervaloJaPassou(t *testing.T) {
 	}
 }
 
-// TestLimitadorEsperaParcial confirma que, quando só uma fração do intervalo passou, a
-// espera é só o RESTANTE (não o intervalo inteiro de novo).
+// TestLimitadorEsperaParcial confirms that, when only a fraction of the interval has passed,
+// the wait is only the REMAINDER (not the whole interval again).
 func TestLimitadorEsperaParcial(t *testing.T) {
 	rel := &relogioFake{agora: time.Unix(0, 0)}
 	var dorm []time.Duration
@@ -102,8 +102,8 @@ func TestLimitadorEsperaParcial(t *testing.T) {
 	}
 }
 
-// TestLimitadorTresChamadasEmSequencia confirma o comportamento em cadeia (mais de duas
-// chamadas), sem nenhum time.Sleep real — puramente determinístico via o relógio fake.
+// TestLimitadorTresChamadasEmSequencia confirms the chained behavior (more than two calls),
+// without any real time.Sleep -- purely deterministic through the fake clock.
 func TestLimitadorTresChamadasEmSequencia(t *testing.T) {
 	rel := &relogioFake{agora: time.Unix(0, 0)}
 	var dorm []time.Duration
@@ -113,9 +113,9 @@ func TestLimitadorTresChamadasEmSequencia(t *testing.T) {
 		dormir:    func(d time.Duration) { dorm = append(dorm, d); rel.avancar(d) },
 	}
 
-	lim.esperar() // t=0, sem espera
-	lim.esperar() // t=0 -> precisa esperar 1s -> t=1s
-	lim.esperar() // t=1s -> precisa esperar 1s -> t=2s
+	lim.esperar() // t=0, no wait
+	lim.esperar() // t=0 -> must wait 1s -> t=1s
+	lim.esperar() // t=1s -> must wait 1s -> t=2s
 
 	if len(dorm) != 2 {
 		t.Fatalf("esperava 2 esperas, houve %d (%v)", len(dorm), dorm)
@@ -130,13 +130,14 @@ func TestLimitadorTresChamadasEmSequencia(t *testing.T) {
 	}
 }
 
-// TestNovoLimitadorUsaRelogioReal garante que, SEM injeção (uso real, fora de teste), o
-// limitador não quebra ao usar time.Now/time.Sleep de verdade -- só exercita o caminho
-// "primeira chamada nao espera" para não introduzir um sleep real >= 1s neste teste.
+// TestNovoLimitadorUsaRelogioReal guarantees that, WITHOUT injection (real use, outside a
+// test), the limiter does not break when using the real time.Now/time.Sleep -- it only
+// exercises the "first call does not wait" path so as not to introduce a real sleep >= 1s in
+// this test.
 func TestNovoLimitadorUsaRelogioReal(t *testing.T) {
 	lim := novoLimitador(time.Second)
 	inicio := time.Now()
-	lim.esperar() // primeira chamada: nunca dorme
+	lim.esperar() // first call: never sleeps
 	if time.Since(inicio) > 100*time.Millisecond {
 		t.Fatalf("primeira chamada nao deveria demorar, levou %v", time.Since(inicio))
 	}

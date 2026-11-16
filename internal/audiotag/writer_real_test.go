@@ -1,11 +1,11 @@
 package audiotag
 
-// writer_real_test.go roda o ffmpeg DE VERDADE (mesmo padrão de
-// internal/mediainfo/mediainfo_test.go: TestProbeRealFfprobe*, self-skip se
-// os binários faltarem no ambiente): gera um clipe de áudio sintético,
-// regrava a tag com Escrever, e lê de volta com ffprobe para confirmar que
-// os frames/comentários batem com o que a documentação do pacote promete
-// (validação EMPÍRICA, não só "os args foram montados").
+// writer_real_test.go runs the REAL ffmpeg (same pattern as
+// internal/mediainfo/mediainfo_test.go: TestProbeRealFfprobe*, self-skip if
+// the binaries are missing from the environment): it generates a synthetic
+// audio clip, rewrites the tag with Escrever, and reads it back with ffprobe to
+// confirm that the frames/comments match what the package documentation
+// promises (EMPIRICAL validation, not just "the args were built").
 
 import (
 	"context"
@@ -16,8 +16,8 @@ import (
 	"testing"
 )
 
-// ffprobeTags roda `ffprobe -show_format` no path e devolve o mapa de tags
-// (formato JSON, mesmo -print_format usado pelo internal/mediainfo).
+// ffprobeTags runs `ffprobe -show_format` on the path and returns the tag map
+// (JSON format, the same -print_format used by internal/mediainfo).
 func ffprobeTags(t *testing.T, path string) map[string]string {
 	t.Helper()
 	out, err := exec.Command("ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", path).Output()
@@ -35,8 +35,8 @@ func ffprobeTags(t *testing.T, path string) map[string]string {
 	return parsed.Format.Tags
 }
 
-// ffprobeStreams devolve os streams (codec_type/codec_name/disposition) do
-// arquivo -- usado para confirmar a capa embutida (stream de vídeo mjpeg com
+// ffprobeStreams returns the streams (codec_type/codec_name/disposition) of the
+// file -- used to confirm the embedded cover (mjpeg video stream with
 // attached_pic=1).
 type streamInfo struct {
 	CodecType   string            `json:"codec_type"`
@@ -62,8 +62,8 @@ func ffprobeStreams(t *testing.T, path string) []streamInfo {
 	return parsed.Streams
 }
 
-// pularSemFfmpeg pula o teste se ffmpeg OU ffprobe faltarem no PATH (mesmo
-// padrão de mediainfo_test.go).
+// pularSemFfmpeg skips the test if ffmpeg OR ffprobe are missing from the PATH
+// (same pattern as mediainfo_test.go).
 func pularSemFfmpeg(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
@@ -74,8 +74,8 @@ func pularSemFfmpeg(t *testing.T) {
 	}
 }
 
-// gerarClipe cria um clipe de áudio sintético de 1s no path dado (extensão
-// determina o codec: mp3→libmp3lame, flac→flac, ogg→vorbis).
+// gerarClipe creates a synthetic 1s audio clip at the given path (the extension
+// determines the codec: mp3→libmp3lame, flac→flac, ogg→vorbis).
 func gerarClipe(t *testing.T, path string) {
 	t.Helper()
 	var codec []string
@@ -94,7 +94,7 @@ func gerarClipe(t *testing.T, path string) {
 	}
 }
 
-// gerarCapa cria uma imagem JPEG mínima válida no path dado.
+// gerarCapa creates a minimal valid JPEG image at the given path.
 func gerarCapa(t *testing.T, path string) {
 	t.Helper()
 	cmd := exec.Command("ffmpeg", "-v", "quiet", "-y", "-f", "lavfi",
@@ -104,11 +104,11 @@ func gerarCapa(t *testing.T, path string) {
 	}
 }
 
-// TestRealMp3EscreveTagsECapa roda o Writer DE VERDADE contra um .mp3
-// sintético e confirma, via ffprobe, título/artista/track/disc/ISRC/MBIDs e
-// a capa embutida como stream mjpeg attached_pic (briefing 0125, critério de
-// aceite: "Suporta MP3... com título/artista/álbum/ano/faixa-disco/gênero/
-// MBIDs/ISRC/capa resolvidos").
+// TestRealMp3EscreveTagsECapa runs the Writer FOR REAL against a synthetic .mp3
+// and confirms, through ffprobe, title/artist/track/disc/ISRC/MBIDs and the
+// embedded cover as an mjpeg attached_pic stream (acceptance criterion:
+// "Supports MP3... with title/artist/album/year/track-disc/genre/MBIDs/ISRC/
+// cover resolved").
 func TestRealMp3EscreveTagsECapa(t *testing.T) {
 	pularSemFfmpeg(t)
 	dir := t.TempDir()
@@ -158,10 +158,10 @@ func TestRealMp3EscreveTagsECapa(t *testing.T) {
 	}
 }
 
-// TestRealFlacEOggEscrevemTagsECapa roda o Writer DE VERDADE contra .flac e
-// .ogg sintéticos e confirma via ffprobe os comentários Vorbis (chaves
-// maiúsculas, TRACKNUMBER/TRACKTOTAL separados) e o METADATA_BLOCK_PICTURE
-// decodificado de volta como um stream de imagem.
+// TestRealFlacEOggEscrevemTagsECapa runs the Writer FOR REAL against synthetic
+// .flac and .ogg files and confirms through ffprobe the Vorbis comments
+// (uppercase keys, TRACKNUMBER/TRACKTOTAL separate) and the
+// METADATA_BLOCK_PICTURE decoded back as an image stream.
 func TestRealFlacEOggEscrevemTagsECapa(t *testing.T) {
 	pularSemFfmpeg(t)
 	for _, ext := range []string{".flac", ".ogg"} {
@@ -186,15 +186,15 @@ func TestRealFlacEOggEscrevemTagsECapa(t *testing.T) {
 				t.Fatalf("Escrever real (%s): %v", ext, err)
 			}
 
-			// Para .flac as tags saem no format-level; para .ogg saem no
-			// primeiro stream (validado empiricamente na exploração
-			// manual) -- junta os dois universos numa única checagem.
-			// ffprobe (leitura) normaliza TRACKNUMBER/DISCNUMBER/ALBUMARTIST
-			// para suas chaves genéricas "track"/"disc"/"album_artist" --
-			// mesma normalização que internal/mediainfo (nosso PRÓPRIO
-			// leitor) já faz via lookupTag; os demais campos (TRACKTOTAL,
-			// MUSICBRAINZ_*, COMPILATION) não têm mapeamento genérico e
-			// saem verbatim, como escritos.
+			// For .flac the tags come out at format level; for .ogg they come
+			// out on the first stream (validated empirically in the manual
+			// exploration) -- join both universes into a single check.
+			// ffprobe (reading) normalizes TRACKNUMBER/DISCNUMBER/ALBUMARTIST
+			// to its generic keys "track"/"disc"/"album_artist" -- the same
+			// normalization that internal/mediainfo (our OWN reader) already
+			// does through lookupTag; the remaining fields (TRACKTOTAL,
+			// MUSICBRAINZ_*, COMPILATION) have no generic mapping and come
+			// out verbatim, as written.
 			tags := ffprobeTags(t, clipe)
 			if tags == nil {
 				tags = map[string]string{}
@@ -235,10 +235,9 @@ func eqTag(t *testing.T, tags map[string]string, chave, quer string) {
 	}
 }
 
-// TestRealEscritaNaoQuebraArquivoQuandoOriginalValido garante que o
-// mecanismo de rename atômico deixa o arquivo REGRAVADO tocável pelo
-// ffprobe (não corrompido) -- um smoke test de sanidade geral do pipeline
-// real.
+// TestRealEscritaNaoQuebraArquivoQuandoOriginalValido guarantees that the
+// atomic rename mechanism leaves the REWRITTEN file playable by ffprobe (not
+// corrupted) -- a general sanity smoke test of the real pipeline.
 func TestRealEscritaNaoQuebraArquivoQuandoOriginalValido(t *testing.T) {
 	pularSemFfmpeg(t)
 	dir := t.TempDir()

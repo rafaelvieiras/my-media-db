@@ -8,17 +8,17 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 )
 
-// Testes do descritor de formulário editorial (briefing 0030). Amarram os DOIS
-// registros declarativos: a fonte única de campos (resolver.CamposEditaveis) e o
-// registro de apresentação (registroApresentacao). A CATRACA DE COBERTURA garante
-// que nunca haja campo editável (kind != extensao) sem descritor.
+// Tests of the editorial form descriptor. They tie the TWO declarative
+// registries together: the single source of fields (resolver.CamposEditaveis) and the
+// presentation registry (registroApresentacao). The COVERAGE RATCHET guarantees
+// that there is never an editable field (kind != extensao) without a descriptor.
 
-// TestDescritorCobreTodosEditaveis é a catraca de extensibilidade: TODO campo de
-// resolver.CamposEditaveis() com kind != extensao/creditos DEVE ter descritor. Se
-// um campo editável novo entrar no resolver sem apresentação, este teste FALHA —
-// forçando o par "campo novo ⇒ descritor". extension_data (kind=extensao) e
-// credits (kind=creditos, briefing 0029 Fase C) são excluídos de propósito (não
-// são campos de formulário simples — ganham editor dedicado no front).
+// TestDescritorCobreTodosEditaveis is the extensibility ratchet: EVERY field of
+// resolver.CamposEditaveis() with kind != extensao/creditos MUST have a descriptor. If
+// a new editable field enters the resolver without presentation, this test FAILS —
+// forcing the pair "new field ⇒ descriptor". extension_data (kind=extensao) and
+// credits (kind=creditos) are excluded on purpose (they are not
+// simple form fields — they get a dedicated editor in the front end).
 func TestDescritorCobreTodosEditaveis(t *testing.T) {
 	descritores := descritoresDeCampo()
 	temDescritor := make(map[string]bool, len(descritores))
@@ -28,8 +28,8 @@ func TestDescritorCobreTodosEditaveis(t *testing.T) {
 
 	for campo, info := range resolver.CamposEditaveis() {
 		if info.Kind == resolver.KindExtensao || info.Kind == resolver.KindCreditos {
-			// extension_data/credits: editáveis, mas NÃO são campo de formulário
-			// simples; excluídos dos descritores por regra (briefing 0030/0029).
+			// extension_data/credits: editable, but they are NOT simple form
+			// fields; excluded from the descriptors on purpose.
 			if temDescritor[campo] {
 				t.Errorf("campo %q (kind=%s) NÃO deveria ter descritor", campo, info.Kind)
 			}
@@ -42,8 +42,8 @@ func TestDescritorCobreTodosEditaveis(t *testing.T) {
 	}
 }
 
-// TestDescritorOrdemCrescente confere que a lista sai ORDENADA por `order`
-// crescente e estável (contrato da resposta do endpoint).
+// TestDescritorOrdemCrescente checks that the list comes out SORTED by `order`
+// ascending and stable (the response contract of the endpoint).
 func TestDescritorOrdemCrescente(t *testing.T) {
 	descritores := descritoresDeCampo()
 	if len(descritores) < 2 {
@@ -58,10 +58,10 @@ func TestDescritorOrdemCrescente(t *testing.T) {
 	}
 }
 
-// TestDescritorWidgetCoerente confere que o widget de cada descritor é coerente
-// com o Kind público do resolver: lista → tags; numero → number; escalar →
-// text|textarea|date (formas de escalar). Impede um widget incompatível com a
-// classe de composição do campo.
+// TestDescritorWidgetCoerente checks that the widget of each descriptor is coherent
+// with the public Kind of the resolver: list → tags; numero → number; escalar →
+// text|textarea|date (scalar forms). It prevents a widget incompatible with the
+// composition class of the field.
 func TestDescritorWidgetCoerente(t *testing.T) {
 	escalares := map[string]bool{"text": true, "textarea": true, "date": true}
 	for _, d := range descritoresDeCampo() {
@@ -84,9 +84,9 @@ func TestDescritorWidgetCoerente(t *testing.T) {
 	}
 }
 
-// buscarDescritoresHTTP sobe o handler e faz o GET do endpoint, devolvendo a
-// resposta já decodificada. Compartilhado pelos testes de HTTP abaixo (não precisa
-// de banco: o metadado é estático).
+// buscarDescritoresHTTP starts the handler and performs the GET of the endpoint, returning
+// the already decoded response. Shared by the HTTP tests below (it does not need
+// a database: the metadata is static).
 func buscarDescritoresHTTP(t *testing.T) fieldSchemaResponse {
 	t.Helper()
 	h, err := New("v-teste", nil).Handler()
@@ -104,7 +104,8 @@ func buscarDescritoresHTTP(t *testing.T) fieldSchemaResponse {
 	return resp
 }
 
-// exigeFloat confere que um *float64 opcional está presente e vale o esperado.
+// exigeFloat checks that an optional *float64 is present and has the expected
+// value.
 func exigeFloat(t *testing.T, got *float64, want float64, rotulo string) {
 	t.Helper()
 	if got == nil {
@@ -115,8 +116,8 @@ func exigeFloat(t *testing.T, got *float64, want float64, rotulo string) {
 	}
 }
 
-// TestGetEntityFieldsSchemaHTTP cobre o handler: 200 + JSON com os 6 campos na
-// ordem certa.
+// TestGetEntityFieldsSchemaHTTP covers the handler: 200 + JSON with the 6 fields in
+// the right order.
 func TestGetEntityFieldsSchemaHTTP(t *testing.T) {
 	resp := buscarDescritoresHTTP(t)
 	quero := []string{"title", "description", "tags", "original_title", "release_date", "local_rating"}
@@ -130,9 +131,9 @@ func TestGetEntityFieldsSchemaHTTP(t *testing.T) {
 	}
 }
 
-// TestGetEntityFieldsSchemaFaixaNumerica confere que o local_rating (number)
-// carrega a faixa min/max/step espelhada do backend, e que um escalar (title) NÃO
-// carrega faixa (omitida).
+// TestGetEntityFieldsSchemaFaixaNumerica checks that local_rating (number)
+// carries the min/max/step range mirrored from the backend, and that a scalar (title) does
+// NOT carry a range (omitted).
 func TestGetEntityFieldsSchemaFaixaNumerica(t *testing.T) {
 	resp := buscarDescritoresHTTP(t)
 
@@ -144,7 +145,7 @@ func TestGetEntityFieldsSchemaFaixaNumerica(t *testing.T) {
 	exigeFloat(t, lr.Max, 10, "local_rating.max")
 	exigeFloat(t, lr.Step, 0.1, "local_rating.step")
 
-	// Um campo escalar (title) NÃO carrega min/max/step (omitidos).
+	// A scalar field (title) does NOT carry min/max/step (omitted).
 	title := resp.Fields[0]
 	if title.Min != nil || title.Max != nil || title.Step != nil {
 		t.Errorf("title não deveria ter min/max/step: %+v", title)

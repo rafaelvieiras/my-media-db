@@ -10,7 +10,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// setupBanco sobe um banco de teste migrado, isolado por teste.
+// setupBanco brings up a migrated test database, isolated per test.
 func setupBanco(t *testing.T) *db.DB {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "curation.sqlite")
@@ -52,27 +52,28 @@ func semearFile(t *testing.T, d *db.DB, id, entityID, path, state string, conf f
 	}
 }
 
-// TestContarRevisaoEOrfas prova que o Servico devolve as MESMAS contagens que
-// a fila completa (draft + baixa confianca para revisao; auto-criada+missing+
-// sem investimento para orfas) -- sem duplicar o predicado, so agregando.
+// TestContarRevisaoEOrfas proves that the Servico returns the SAME counts as
+// the full queue (draft + low confidence for review; auto-created + missing +
+// no investment for orphans) -- without duplicating the predicate, only
+// aggregating.
 func TestContarRevisaoEOrfas(t *testing.T) {
 	d := setupBanco(t)
 	s := New(d)
 	ctx := context.Background()
 
-	// e-draft: nao identificado -> entra em revisao.
+	// e-draft: not identified -> goes into review.
 	semearEntity(t, d, "e-draft", "movie", "Draft")
 	definirStatus(t, d, "e-draft", "draft")
 
-	// e-baixa: present com confianca 40 (< 70) -> entra em revisao.
+	// e-baixa: present with confidence 40 (< 70) -> goes into review.
 	semearEntity(t, d, "e-baixa", "movie", "Baixa Confianca")
 	semearFile(t, d, "f-baixa", "e-baixa", "/x/baixa.mkv", "present", 40)
 
-	// e-alta: present com confianca 95 -> NAO entra em revisao nem orfas.
+	// e-alta: present with confidence 95 -> goes into neither review nor orphans.
 	semearEntity(t, d, "e-alta", "movie", "Alta Confianca")
 	semearFile(t, d, "f-alta", "e-alta", "/x/alta.mkv", "present", 95)
 
-	// e-orfa: cataloged, todos os arquivos missing, sem investimento -> orfa.
+	// e-orfa: cataloged, all files missing, no investment -> orphan.
 	semearEntity(t, d, "e-orfa", "movie", "Orfa")
 	semearFile(t, d, "f-orfa", "e-orfa", "/x/orfa.mkv", "missing", 0)
 
@@ -93,8 +94,8 @@ func TestContarRevisaoEOrfas(t *testing.T) {
 	}
 }
 
-// TestContarVazio prova que um banco sem entities devolve zero nas duas
-// contagens (sem erro).
+// TestContarVazio proves that a database with no entities returns zero in both
+// counts (no error).
 func TestContarVazio(t *testing.T) {
 	d := setupBanco(t)
 	s := New(d)

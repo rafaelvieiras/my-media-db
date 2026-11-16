@@ -10,24 +10,24 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// TestCorrigirExternalIdParaIdJaImportadoDuplicaEntity reproduz o bug relatado:
-//  1. o scan achou um arquivo e criou uma entity 'draft' (sem external_ids) com o
-//     media_file ligado;
-//  2. o dono buscou o titulo manualmente e clicou "importar" -- como a entity
-//     draft nao tem external_ids ainda, o find-or-create (dedup MD4) do Importar
-//     nao a encontra e cria uma entity NOVA (sem arquivo);
-//  3. o dono entao abre a entity com o arquivo e grava o MESMO external_id (tmdb)
-//     que acabou de importar, via PUT /entities/{id}/external-ids.
+// TestCorrigirExternalIdParaIdJaImportadoDuplicaEntity reproduces the reported bug:
+//  1. the scan found a file and created a 'draft' entity (without external_ids) with
+//     the media_file linked;
+//  2. the owner searched the title manually and clicked "importar" -- since the draft
+//     entity has no external_ids yet, the find-or-create (import dedup) does not find it
+//     and creates a NEW entity (without a file);
+//  3. the owner then opens the entity with the file and writes the SAME external_id
+//     (tmdb) he just imported, through PUT /entities/{id}/external-ids.
 //
-// O passo 3 detecta que "777" ja pertence a entity importada (sem investimento
-// do dono) e a FUNDE em "e-arquivo" (briefing 0051): a duplicata desaparece, o
-// arquivo permanece ligado a uma unica entity com a identidade correta.
+// Step 3 detects that "777" already belongs to the imported entity (without the owner's
+// investment) and MERGES it into "e-arquivo": the duplicate disappears, the file stays
+// linked to a single entity with the correct identity.
 func TestCorrigirExternalIdParaIdJaImportadoDuplicaEntity(t *testing.T) {
 	h, d, _, _, _ := setupEnrichServer(t)
 	ctx := context.Background()
 	w := sqlcgen.New(d.Write)
 
-	// 1) Entity draft com arquivo (simula o orfao do scan).
+	// 1) Draft entity with a file (simulates the orphan from the scan).
 	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{
 		ID: "e-arquivo", Type: "movie", Title: "arquivo.mkv",
 	}); err != nil {
@@ -44,8 +44,8 @@ func TestCorrigirExternalIdParaIdJaImportadoDuplicaEntity(t *testing.T) {
 		t.Fatalf("CriarMediaFile: %v", err)
 	}
 
-	// 2) Busca manual + "importar" -- o find-or-create nao acha a draft (sem
-	// external_ids) e cria uma entity nova, sem arquivo.
+	// 2) Manual search + "importar" -- the find-or-create does not find the draft
+	// (without external_ids) and creates a new entity, without a file.
 	rec := do(t, h, http.MethodPost, "/api/v1/import", map[string]string{
 		"source": "tmdb", "source_id": "777", "type": "movie",
 	})
@@ -57,8 +57,8 @@ func TestCorrigirExternalIdParaIdJaImportadoDuplicaEntity(t *testing.T) {
 		t.Fatalf("import deveria ter criado uma entity NOVA, nao reusado e-arquivo")
 	}
 
-	// 3) Dono corrige a identidade da entity COM arquivo para o mesmo id externo
-	// que acabou de importar.
+	// 3) The owner corrects the identity of the entity WITH the file to the same external
+	// id he just imported.
 	rec2 := do(t, h, http.MethodPut, "/api/v1/entities/e-arquivo/external-ids", map[string]any{
 		"external_ids": map[string]string{"tmdb": "777"},
 	})
@@ -98,13 +98,13 @@ func TestCorrigirExternalIdParaIdJaImportadoDuplicaEntity(t *testing.T) {
 	}
 }
 
-// TestExternalIdsMbidDetectaColisaoEFunde (briefing 0119) espelha
-// TestCorrigirExternalIdParaIdJaImportadoDuplicaEntity para a chave "mbid": antes
-// deste briefing, acharColisaoExterna só cobria tmdb/imdb/tvdb -- uma entity
-// `artista` LEGADA (sem external_ids, dado de antes do MusicBrainz existir) que
-// ganhava, via PUT /entities/{id}/external-ids, o MESMO mbid que outra entity já
-// catalogada não era detectada como colisão: as duas ficavam com o mesmo mbid,
-// uma duplicata silenciosa do mesmo artista real.
+// TestExternalIdsMbidDetectaColisaoEFunde mirrors
+// TestCorrigirExternalIdParaIdJaImportadoDuplicaEntity for the "mbid" key: before this
+// fix, acharColisaoExterna only covered tmdb/imdb/tvdb -- a LEGACY `artista` entity
+// (without external_ids, data from before MusicBrainz existed) that got, through
+// PUT /entities/{id}/external-ids, the SAME mbid as another already cataloged entity was
+// not detected as a collision: both ended up with the same mbid, a silent duplicate of
+// the same real artist.
 func TestExternalIdsMbidDetectaColisaoEFunde(t *testing.T) {
 	h, d := setupSearchServer(t)
 	ctx := context.Background()
@@ -146,10 +146,11 @@ func TestExternalIdsMbidDetectaColisaoEFunde(t *testing.T) {
 	}
 }
 
-// TestCorrigirExternalIdParaIdComInvestimentoDoDonoNaoFunde cobre o outro lado
-// do briefing 0051: quando a entity que ja tem o id externo TEM investimento do
-// dono (aqui, um media_override), a fusao automatica NAO acontece -- a escrita
-// responde 409 e nao grava nada (nem a identidade, nem apaga a outra entity).
+// TestCorrigirExternalIdParaIdComInvestimentoDoDonoNaoFunde covers the other side of the
+// safety net: when the entity that already has the external id HAS the owner's
+// investment (here, a media_override), the automatic merge does NOT happen -- the write
+// answers 409 and writes nothing (neither the identity, nor deleting the other
+// entity).
 func TestCorrigirExternalIdParaIdComInvestimentoDoDonoNaoFunde(t *testing.T) {
 	h, d, _, _, _ := setupEnrichServer(t)
 	ctx := context.Background()
@@ -174,7 +175,7 @@ func TestCorrigirExternalIdParaIdComInvestimentoDoDonoNaoFunde(t *testing.T) {
 	}
 	importada := decodeEntidade(t, rec)
 
-	// A entity importada TEM investimento do dono: um override.
+	// The imported entity HAS the owner's investment: an override.
 	if _, err := w.UpsertMediaOverride(ctx, sqlcgen.UpsertMediaOverrideParams{
 		EntityID:     importada.ID,
 		OverrideJson: sql.NullString{String: `{"title":"Titulo Curado"}`, Valid: true},
@@ -203,20 +204,19 @@ func TestCorrigirExternalIdParaIdComInvestimentoDoDonoNaoFunde(t *testing.T) {
 	}
 }
 
-// TestCorrigirExternalIdComDuplicataJaCorrompidaNoBanco cobre um caso residual
-// do briefing 0051 encontrado em producao: a duplicata ja existia no BANCO
-// ANTES deste fix (o bug original deixava duas entities com o MESMO
-// external_id_tmdb, ja que a coluna gerada nao e UNIQUE, so indexada). Quando o
-// dono reenvia o MESMO id que a entity com arquivo ja tinha (ex.: clica "Salvar
-// e re-enriquecer" de novo), a deteccao de colisao tem que achar a OUTRA
-// entity mesmo que uma query :one sem ORDER BY pudesse ter devolvido a propria
-// entity-alvo primeiro -- ver o comentario de acharColisaoExterna.
+// TestCorrigirExternalIdComDuplicataJaCorrompidaNoBanco covers a residual case found in
+// production: the duplicate already existed in the DATABASE BEFORE this fix (the original
+// bug left two entities with the SAME external_id_tmdb, since the generated column is not
+// UNIQUE, only indexed). When the owner submits the SAME id the entity with the file
+// already had (e.g. clicks "Salvar e re-enriquecer" again), the collision detection has
+// to find the OTHER entity even though a :one query without ORDER BY could have returned
+// the target entity itself first -- see the comment of acharColisaoExterna.
 func TestCorrigirExternalIdComDuplicataJaCorrompidaNoBanco(t *testing.T) {
 	h, d, _, _, _ := setupEnrichServer(t)
 	ctx := context.Background()
 	w := sqlcgen.New(d.Write)
 
-	// e-arquivo JA nasce com external_id_tmdb=777 (simula o dado corrompido).
+	// e-arquivo is BORN with external_id_tmdb=777 (simulates the corrupted data).
 	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{
 		ID: "e-arquivo", Type: "movie", Title: "arquivo.mkv",
 		ExternalIdsJson: sql.NullString{String: `{"tmdb":"777"}`, Valid: true},
@@ -229,9 +229,9 @@ func TestCorrigirExternalIdComDuplicataJaCorrompidaNoBanco(t *testing.T) {
 		t.Fatalf("CriarMediaFile: %v", err)
 	}
 
-	// e-duplicada TAMBEM ja tem tmdb=777 -- as duas ja colidem antes de qualquer
-	// chamada ao endpoint. Ganha um asset fanart (do fanart.tv) para validar que
-	// a fusao TRANSFERE o que so a perdedora tem.
+	// e-duplicada ALSO already has tmdb=777 -- the two already collide before any call to
+	// the endpoint. It gets a fanart asset (from fanart.tv) to validate that the merge
+	// TRANSFERS what only the loser has.
 	if _, err := w.CriarEntity(ctx, sqlcgen.CriarEntityParams{
 		ID: "e-duplicada", Type: "movie", Title: "Filme Duplicado",
 		ExternalIdsJson: sql.NullString{String: `{"tmdb":"777"}`, Valid: true},
@@ -245,8 +245,8 @@ func TestCorrigirExternalIdComDuplicataJaCorrompidaNoBanco(t *testing.T) {
 		t.Fatalf("CriarAsset: %v", err)
 	}
 
-	// Dono reenvia o MESMO id que e-arquivo ja tinha (ex.: reabre o editor e
-	// clica "Salvar e re-enriquecer" sem mudar nada).
+	// The owner submits the SAME id e-arquivo already had (e.g. reopens the editor and
+	// clicks "Salvar e re-enriquecer" without changing anything).
 	rec := do(t, h, http.MethodPut, "/api/v1/entities/e-arquivo/external-ids", map[string]any{
 		"external_ids": map[string]string{"tmdb": "777"},
 	})

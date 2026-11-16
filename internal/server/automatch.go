@@ -20,30 +20,31 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Este arquivo implementa o AUTO-MATCH da fila de revisão (briefing 0050): dado
-// um item de baixa confiança/draft, tenta achar sozinho o candidato certo —
-// primeiro no catálogo LOCAL (liga via fundirEntities, nunca duplica — 0026),
-// depois na fonte EXTERNA default (aplica pela mesma sequência do "Corrigir" do
-// 0018) — e só aplica quando o score bate LimiarAutoMatch. Sem candidato forte
-// em nenhuma fonte, o item fica intacto na fila. Individual e lote reusam a
-// MESMA lógica interna (tentarAutoMatch); nunca HTTP-to-HTTP.
+// This file implements the AUTO-MATCH of the review queue: given a
+// low-confidence/draft item, it tries to find the right candidate on its own —
+// first in the LOCAL catalog (it links through fundirEntities, never duplicates),
+// then in the default EXTERNAL source (applying through the same sequence as the
+// "Corrigir" action) — and only applies when the score reaches LimiarAutoMatch.
+// Without a strong candidate in any source, the item stays untouched in the queue.
+// Single and batch reuse the SAME internal logic (tentarAutoMatch); never
+// HTTP-to-HTTP.
 
-// LimiarAutoMatch é alias de matching.LimiarAutoMatch (briefing 0054 extraiu a
-// pontuação para o pacote leaf internal/matching, consumido também por
-// internal/enrich). Mantido aqui para não quebrar chamadores/testes deste
-// pacote que já referenciam o símbolo local.
+// LimiarAutoMatch is an alias of matching.LimiarAutoMatch (the scoring was
+// extracted into the leaf package internal/matching, also consumed by
+// internal/enrich). Kept here so the callers/tests of this package that already
+// reference the local symbol do not break.
 const LimiarAutoMatch = matching.LimiarAutoMatch
 
-// autoMatchTargetDTO identifica o candidato aplicado (local ou externo) na
-// resposta do auto-match. Year é nil quando a fonte não informa ano.
+// autoMatchTargetDTO identifies the applied candidate (local or external) in the
+// auto-match response. Year is nil when the source does not report a year.
 type autoMatchTargetDTO struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
 	Year  *int   `json:"year"`
 }
 
-// autoMatchResultDTO é a resposta de POST /entities/{id}/auto-match — SEMPRE
-// 200 (mesmo sem candidato: é um resultado válido, não erro).
+// autoMatchResultDTO is the response of POST /entities/{id}/auto-match — ALWAYS
+// 200 (even without a candidate: that is a valid result, not an error).
 type autoMatchResultDTO struct {
 	Resolved bool                `json:"resolved"`
 	Method   string              `json:"method"` // "local" | "external" | "none"
@@ -51,18 +52,18 @@ type autoMatchResultDTO struct {
 	Target   *autoMatchTargetDTO `json:"target"`
 }
 
-// autoMatchNone é o resultado neutro: nenhum candidato bateu o limiar em
-// nenhuma fonte (ou não havia o que buscar — sem arquivo/título derivável).
+// autoMatchNone is the neutral result: no candidate reached the threshold in any
+// source (or there was nothing to search — no file / no derivable title).
 var autoMatchNone = autoMatchResultDTO{Resolved: false, Method: "none", Score: 0, Target: nil}
 
-// autoMatchBatchBody é o corpo OPCIONAL de POST /review/auto-match: os ids a
-// processar. Omitido/vazio processa TODOS os elegíveis (ListarRevisao, mesma
-// fonte de GET /review).
+// autoMatchBatchBody is the OPTIONAL body of POST /review/auto-match: the ids to
+// process. Omitted/empty processes ALL eligible ones (ListarRevisao, the same
+// source as GET /review).
 type autoMatchBatchBody struct {
 	IDs []string `json:"ids"`
 }
 
-// autoMatchBatchItemDTO é o resultado de UM item do lote.
+// autoMatchBatchItemDTO is the result of ONE item of the batch.
 type autoMatchBatchItemDTO struct {
 	ID       string  `json:"id"`
 	Resolved bool    `json:"resolved"`
@@ -70,17 +71,17 @@ type autoMatchBatchItemDTO struct {
 	Score    float64 `json:"score"`
 }
 
-// autoMatchBatchResultDTO é a resposta de POST /review/auto-match: o resumo
-// agregado do lote.
+// autoMatchBatchResultDTO is the response of POST /review/auto-match: the
+// aggregate summary of the batch.
 type autoMatchBatchResultDTO struct {
 	ResolvedCount int                     `json:"resolved_count"`
 	PendingCount  int                     `json:"pending_count"`
 	Items         []autoMatchBatchItemDTO `json:"items"`
 }
 
-// autoMatchEntity trata POST /api/v1/entities/{id}/auto-match: tenta resolver
-// sozinho UM item da fila. 404 se a entity não existe; 500 só em erro REAL de
-// banco — "não achou candidato" é 200 {resolved:false}, nunca erro.
+// autoMatchEntity handles POST /api/v1/entities/{id}/auto-match: tries to resolve
+// ONE queue item on its own. 404 if the entity does not exist; 500 only on a REAL
+// database error — "no candidate found" is 200 {resolved:false}, never an error.
 func (s *Server) autoMatchEntity(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -101,11 +102,12 @@ func (s *Server) autoMatchEntity(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resultado)
 }
 
-// autoMatchReview trata POST /api/v1/review/auto-match: o LOTE. Corpo
-// `{"ids":[...]}` opcional — omitido/vazio processa TODOS os elegíveis via
-// ListarRevisao (mesma query de GET /review). Cada id roda a MESMA lógica
-// interna do endpoint individual (tentarAutoMatch); um id que sumiu entre a
-// listagem e o processamento (purga concorrente) é pulado, não derruba o lote.
+// autoMatchReview handles POST /api/v1/review/auto-match: the BATCH. Optional
+// `{"ids":[...]}` body — omitted/empty processes ALL eligible ones through
+// ListarRevisao (the same query as GET /review). Each id runs the SAME internal
+// logic as the single endpoint (tentarAutoMatch); an id that vanished between the
+// listing and the processing (concurrent purge) is skipped, it does not bring the
+// batch down.
 func (s *Server) autoMatchReview(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -130,10 +132,10 @@ func (s *Server) autoMatchReview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.autoMatchLote(ctx, ids))
 }
 
-// idsElegiveisAutoMatch lista os ids da fila de Revisão elegíveis ao
-// auto-match em lote (mesma query de GET /review, limiarBaixaConfianca) --
-// reusado por autoMatchReview (corpo vazio) e por AutoMatchElegiveis (job de
-// saúde, briefing 0054), para não duplicar a query em dois lugares.
+// idsElegiveisAutoMatch lists the ids of the Review queue eligible for batch
+// auto-match (the same query as GET /review, limiarBaixaConfianca) -- reused by
+// autoMatchReview (empty body) and by AutoMatchElegiveis (health job), so the
+// query is not duplicated in two places.
 func (s *Server) idsElegiveisAutoMatch(ctx context.Context) ([]string, error) {
 	rows, err := s.leitura().ListarRevisao(ctx, sql.NullFloat64{Float64: limiarBaixaConfianca, Valid: true})
 	if err != nil {
@@ -146,24 +148,23 @@ func (s *Server) idsElegiveisAutoMatch(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
-// autoMatchLote roda tentarAutoMatch para cada id de `ids`, agregando o
-// resultado -- MESMA lógica usada por autoMatchReview (HTTP) e por
-// AutoMatchElegiveis (job de saúde, briefing 0054). Um id que sumiu entre a
-// listagem e o processamento (purga concorrente) é pulado, não derruba o
-// lote; erro real de banco NESTE item vira "pendente" no resultado, sem
-// abortar os demais.
+// autoMatchLote runs tentarAutoMatch for each id of `ids`, aggregating the result --
+// the SAME logic used by autoMatchReview (HTTP) and by AutoMatchElegiveis (health
+// job). An id that vanished between the listing and the processing (concurrent purge)
+// is skipped, it does not bring the batch down; a real database error on THIS item
+// becomes "pending" in the result, without aborting the others.
 func (s *Server) autoMatchLote(ctx context.Context, ids []string) autoMatchBatchResultDTO {
 	items := make([]autoMatchBatchItemDTO, 0, len(ids))
 	resolvedCount := 0
 	for _, id := range ids {
 		ent, err := s.leitura().ObterEntity(ctx, id)
 		if err != nil {
-			continue // sumiu ou id inválido no corpo -- idempotente, pula
+			continue // vanished or invalid id in the body -- idempotent, skip it
 		}
 		resultado, err := s.tentarAutoMatch(ctx, ent)
 		if err != nil {
-			// erro real de banco NESTE item: registra como pendente e segue o
-			// lote -- um item ruim não deveria derrubar os outros 29.
+			// real database error on THIS item: record it as pending and go on with
+			// the batch -- one bad item should not bring down the other 29.
 			items = append(items, autoMatchBatchItemDTO{ID: id, Resolved: false, Method: "none", Score: 0})
 			continue
 		}
@@ -182,12 +183,12 @@ func (s *Server) autoMatchLote(ctx context.Context, ids []string) autoMatchBatch
 	}
 }
 
-// AutoMatchElegiveis roda o auto-match em lote sobre TODOS os itens
-// elegíveis da fila de Revisão (mesma query de POST /review/auto-match sem
-// corpo) -- consumido pelo job saude_biblioteca (briefing 0053/0054) através
-// da interface libraryhealth.Matcher, que *Server satisfaz estruturalmente
-// (sem libraryhealth importar internal/server). err é só erro real de banco
-// na LISTAGEM; falha em um item individual já é absorvida por autoMatchLote.
+// AutoMatchElegiveis runs the batch auto-match over ALL the eligible items of the
+// Review queue (the same query as POST /review/auto-match without a body) --
+// consumed by the saude_biblioteca job through the libraryhealth.Matcher interface,
+// which *Server satisfies structurally (without libraryhealth importing
+// internal/server). err is only a real database error in the LISTING; a failure on
+// an individual item is already absorbed by autoMatchLote.
 func (s *Server) AutoMatchElegiveis(ctx context.Context) (resolved, pending int, err error) {
 	ids, err := s.idsElegiveisAutoMatch(ctx)
 	if err != nil {
@@ -197,19 +198,19 @@ func (s *Server) AutoMatchElegiveis(ctx context.Context) (resolved, pending int,
 	return resultado.ResolvedCount, resultado.PendingCount, nil
 }
 
-// ── Orquestração compartilhada ───────────────────────────────────────────────
+// ── Shared orchestration ─────────────────────────────────────────────────────
 
-// tentarAutoMatch tenta resolver `ent` sozinho: deriva título/ano do arquivo,
-// busca local-first, repontua e aplica (fundirEntities) se bater o limiar;
-// senão busca externo, repontua e aplica pela sequência do "Corrigir" (0018)
-// se bater o limiar; senão devolve autoMatchNone. O err de retorno é SÓ erro
-// real de banco/infra — "nenhum candidato" nunca é err.
+// tentarAutoMatch tries to resolve `ent` on its own: derives title/year from the file,
+// searches local-first, rescores and applies (fundirEntities) if it reaches the
+// threshold; otherwise searches externally, rescores and applies through the
+// "Corrigir" sequence if it reaches the threshold; otherwise returns autoMatchNone.
+// The returned err is ONLY a real database/infra error — "no candidate" is never err.
 //
-// Os helpers acoplados a escrita HTTP (resolverColisaoExterna, idiomasPermitidos)
-// são chamados com um capturaResposta descartável, NUNCA com o ResponseWriter
-// real da requisição: uma colisão que exige decisão do dono (409, rede de
-// segurança do 0051) não deve ser aplicada às cegas pelo auto-match — o item
-// fica pendente na fila, como qualquer candidato que não bateu o limiar.
+// The helpers coupled to HTTP writing (resolverColisaoExterna, idiomasPermitidos) are
+// called with a throwaway capturaResposta, NEVER with the request's real
+// ResponseWriter: a collision that requires a decision from the owner (409, the safety
+// net for merges) must not be applied blindly by the auto-match — the item stays
+// pending in the queue, like any candidate that did not reach the threshold.
 func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoMatchResultDTO, error) {
 	titulo, ano, ok, err := s.tituloAnoDoArquivo(ctx, ent)
 	if err != nil {
@@ -219,18 +220,18 @@ func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoM
 		return autoMatchNone, nil
 	}
 
-	// Idioma de busca (briefing 0084): a biblioteca de origem da entity pode
-	// ter um idioma preferido; sem um, cai no idioma PRINCIPAL global (nunca
-	// mais o "" cego de antes deste briefing).
+	// Search language: the entity's origin library may have a preferred language;
+	// without one, it falls back to the global MAIN language (never the blind ""
+	// used before).
 	lang, err := s.idiomaDeBusca(ctx, ent.ID)
 	if err != nil {
 		return autoMatchResultDTO{}, err
 	}
 
-	// 1) Local-first (0026): nunca duplica entity já catalogada. O finder devolve
-	// o MAIOR-pontuado não-descartado independente de limiar (briefing 0060, para
-	// servir também a prévia sem corte) -- o corte >= LimiarAutoMatch é decidido
-	// AQUI, pelo chamador.
+	// 1) Local-first: never duplicates an entity already in the catalog. The finder
+	// returns the HIGHEST-scored non-discarded one regardless of threshold (to also
+	// serve the preview without a cut) -- the >= LimiarAutoMatch cut is decided HERE,
+	// by the caller.
 	candidatosLocais, err := s.buscarLocal(ctx, titulo, ent.Type, nil)
 	if err != nil {
 		return autoMatchResultDTO{}, err
@@ -245,8 +246,9 @@ func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoM
 		}, nil
 	}
 
-	// 2) Externo: só quando local não bateu. Sem provider capaz do tipo, ou sem
-	// enrich ligado (assetsDir ausente), não há como aplicar -- degrada a "none".
+	// 2) External: only when local did not reach it. With no provider capable of the
+	// type, or with enrich off (no assetsDir), there is no way to apply -- degrades to
+	// "none".
 	if s.enrich == nil {
 		return autoMatchNone, nil
 	}
@@ -254,9 +256,10 @@ func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoM
 	if !disponivel {
 		return autoMatchNone, nil
 	}
-	// Mesmo raciocínio do local: o finder devolve o maior-pontuado não-descartado
-	// sem corte; o corte >= LimiarAutoMatch é decidido aqui. tituloVencedor não
-	// interessa ao auto-match (só à prévia, match_preview.go).
+	// Same reasoning as the local one: the finder returns the highest-scored
+	// non-discarded candidate without a cut; the >= LimiarAutoMatch cut is decided
+	// here. tituloVencedor does not interest the auto-match (only the preview,
+	// match_preview.go).
 	cand, score, _, achou := s.melhorCandidatoExterno(ctx, externos, titulo, ano)
 	if !achou || score < LimiarAutoMatch {
 		return autoMatchNone, nil
@@ -265,24 +268,23 @@ func (s *Server) tentarAutoMatch(ctx context.Context, ent sqlcgen.Entity) (autoM
 	return s.aplicarCandidatoExterno(ctx, ent, cand, score)
 }
 
-// aplicarCandidatoExterno aplica UM candidato externo já escolhido (score ≥
-// LimiarAutoMatch em tentarAutoMatch, ou ≥ LimiarAutoMatch em
-// tentarEnriquecerOuSinalizar, briefing 0056) pela MESMA sequência do
-// "Corrigir" (0018): resolverColisaoExterna → s.enrich.Enriquecer →
-// finalizarRevisao. Extraído do corpo antes inline de tentarAutoMatch para
-// ser reusado pelos DOIS fluxos (fila de Revisão e enriquecimento
-// retroativo) sem duplicar a sequência de aplicação em dois arquivos —
-// único ponto de aplicação externa do pacote. O err de retorno é SÓ erro
-// real de banco/infra; colisão com investimento do dono degrada para
-// autoMatchNone (pendente), nunca aplica às cegas.
+// aplicarCandidatoExterno applies ONE already chosen external candidate (score >=
+// LimiarAutoMatch in tentarAutoMatch, or >= LimiarAutoMatch in
+// tentarEnriquecerOuSinalizar) through the SAME sequence as the "Corrigir" action:
+// resolverColisaoExterna → s.enrich.Enriquecer → finalizarRevisao. Extracted from the
+// body that used to be inline in tentarAutoMatch so both flows (review queue and
+// retroactive enrichment) can reuse it without duplicating the application sequence
+// in two files — the single external application point of the package. The returned
+// err is ONLY a real database/infra error; a collision with the owner's investment
+// degrades to autoMatchNone (pending), never applies blindly.
 func (s *Server) aplicarCandidatoExterno(ctx context.Context, ent sqlcgen.Entity, cand provider.ResultadoExterno, score float64) (autoMatchResultDTO, error) {
 	captura := &capturaResposta{}
 	if _, ok := s.resolverColisaoExterna(captura, ctx, ent.ID, ent.Type, cand.Source, cand.SourceID); !ok {
 		if captura.status != http.StatusConflict {
 			return autoMatchResultDTO{}, errStatus(captura.status)
 		}
-		// Colisão com investimento do dono na outra entity: não aplica às
-		// cegas, item fica pendente para resolução manual.
+		// Collision with the owner's investment on the other entity: do not apply
+		// blindly, the item stays pending for manual resolution.
 		return autoMatchNone, nil
 	}
 
@@ -291,8 +293,8 @@ func (s *Server) aplicarCandidatoExterno(ctx context.Context, ent sqlcgen.Entity
 		return autoMatchResultDTO{}, err
 	}
 	if err := s.enrich.Enriquecer(ctx, ent.ID, cand.Source, cand.SourceID, ent.Type, langs, false); err != nil {
-		// Fonte falhou ao entregar o detalhe -- não é erro do auto-match em si
-		// (a fonte pode se recuperar depois); o item fica pendente.
+		// The source failed to deliver the detail -- that is not an error of the
+		// auto-match itself (the source may recover later); the item stays pending.
 		return autoMatchNone, nil
 	}
 	if err := s.finalizarRevisao(ctx, ent.ID); err != nil {
@@ -309,18 +311,18 @@ func (s *Server) aplicarCandidatoExterno(ctx context.Context, ent sqlcgen.Entity
 	}, nil
 }
 
-// tituloAnoDoArquivo deriva título/ano do PRIMEIRO arquivo ligado à entity via
-// naming.Parse (o MESMO parser do scan, briefing 0009) — não confia no
-// entity.title bruto de um draft. ok=false (sem err) quando a entity não tem
-// nenhum arquivo, ou o nome não rende título nenhum (ex.: "2160p.mkv"): nesses
-// casos não há o que buscar, e isso NÃO é uma falha do auto-match.
+// tituloAnoDoArquivo derives title/year from the FIRST file linked to the entity via
+// naming.Parse (the SAME parser used by the scan) — it does not trust the raw
+// entity.title of a draft. ok=false (without err) when the entity has no file at all,
+// or the name yields no title (e.g. "2160p.mkv"): in those cases there is nothing to
+// search, and that is NOT a failure of the auto-match.
 //
-// SÉRIE é o caso especial (briefing 0129): o primeiro arquivo de uma série é um
-// EPISÓDIO, e o nome dele carrega SxxEyy e o título do episódio -- "Os gárgulas
-// - S03E08 - Genesis Undone" vira consulta de similaridade 58 contra "Gárgulas",
-// muito abaixo do LimiarAutoMatch, e o provider sequer devolve candidato. O
-// título que a busca precisa está na PASTA da série ("Os Gárgulas (1994)"), que
-// é a mesma string que o scan usou para nomear a entity, só que com o ano.
+// SERIES is the special case: the first file of a series is an EPISODE, and its name
+// carries SxxEyy and the episode title -- "Os gárgulas - S03E08 - Genesis Undone"
+// becomes similarity query 58 against "Gárgulas", far below LimiarAutoMatch, and the
+// provider does not even return a candidate. The title the search needs is in the
+// series FOLDER ("Os Gárgulas (1994)"), which is the same string the scan used to name
+// the entity, only with the year.
 func (s *Server) tituloAnoDoArquivo(ctx context.Context, ent sqlcgen.Entity) (titulo string, ano int, ok bool, err error) {
 	files, err := s.leitura().ListarMediaFilesPorEntity(ctx, ent.ID)
 	if err != nil {
@@ -342,13 +344,12 @@ func (s *Server) tituloAnoDoArquivo(ctx context.Context, ent sqlcgen.Entity) (ti
 	return info.Title, info.Year, true, nil
 }
 
-// tituloAnoDaPastaDaSerie deriva título/ano do nome da PASTA da série (briefing
-// 0129), subindo um nível quando o arquivo está numa pasta de temporada
-// (naming.PastaDaSerie). achou=false quando a pasta derivada é a RAIZ da fonte
-// (arquivo solto na biblioteca: consultar o provider com o nome da fonte, tipo
-// "Series", casaria com o título errado) e a entity também não dá um título --
-// nesse caso o chamador segue para a derivação pelo nome do arquivo, como
-// sempre foi.
+// tituloAnoDaPastaDaSerie derives title/year from the series FOLDER name, going one
+// level up when the file sits in a season folder (naming.PastaDaSerie). achou=false when
+// the derived folder is the source ROOT (a file loose in the library: querying the
+// provider with the source name, like "Series", would match the wrong title) and the
+// entity does not give a title either -- in that case the caller moves on to the
+// derivation from the file name, as it always did.
 func (s *Server) tituloAnoDaPastaDaSerie(ctx context.Context, ent sqlcgen.Entity, arquivo sqlcgen.MediaFile) (titulo string, ano int, achou bool) {
 	pasta := naming.PastaDaSerie(arquivo.Path)
 	if !s.ehRaizDaFonte(ctx, arquivo, pasta) {
@@ -356,18 +357,18 @@ func (s *Server) tituloAnoDaPastaDaSerie(ctx context.Context, ent sqlcgen.Entity
 			return info.Title, info.Year, true
 		}
 	}
-	// Sem pasta utilizável: o título que o scan deu à série ainda serve (sem
-	// ano), e é melhor que consultar o provider com o nome do episódio.
+	// No usable folder: the title the scan gave the series still works (without the
+	// year), and it is better than querying the provider with the episode name.
 	if t := strings.TrimSpace(ent.Title); t != "" {
 		return t, anoDeReleaseDate(ent.ReleaseDate), true
 	}
 	return "", 0, false
 }
 
-// ehRaizDaFonte diz se `pasta` é a raiz da library_source do arquivo -- o caso
-// "arquivo solto na biblioteca", em que a pasta não identifica série nenhuma.
-// Sem library_source_id (arquivo legado) ou falha de leitura degradam para
-// "não é raiz": o pior caso é consultar a pasta imediata, como já se fazia.
+// ehRaizDaFonte tells whether `pasta` is the root of the file's library_source -- the
+// "file loose in the library" case, where the folder identifies no series at all.
+// Without a library_source_id (legacy file) or on a read failure it degrades to "not a
+// root": the worst case is querying the immediate folder, as was already done.
 func (s *Server) ehRaizDaFonte(ctx context.Context, arquivo sqlcgen.MediaFile, pasta string) bool {
 	if !arquivo.LibrarySourceID.Valid {
 		return false
@@ -379,10 +380,10 @@ func (s *Server) ehRaizDaFonte(ctx context.Context, arquivo sqlcgen.MediaFile, p
 	return filepath.Clean(src.Path) == filepath.Clean(pasta)
 }
 
-// candidatoPontuado é o melhor candidato local encontrado, já com o score
-// final (0-100) e os campos para compor autoMatchTargetDTO/matchPreviewDTO
-// (briefing 0060). PosterURL vem de graça do card da busca local
-// (entityCardDTO.PosterURL) -- nenhuma chamada extra.
+// candidatoPontuado is the best local candidate found, already with the final score
+// (0-100) and the fields to compose autoMatchTargetDTO/matchPreviewDTO.
+// PosterURL comes for free from the local search card (entityCardDTO.PosterURL) -- no
+// extra call.
 type candidatoPontuado struct {
 	ID        string
 	Title     string
@@ -391,17 +392,16 @@ type candidatoPontuado struct {
 	PosterURL *string
 }
 
-// melhorCandidatoLocal repontua a shortlist da busca LOCAL (buscarLocal — o
-// BM25 do FTS5 é só um pré-filtro, nunca o score final) e devolve SEMPRE o
-// candidato de MAIOR score entre os não-descartados -- desde o briefing 0060
-// o corte por LimiarAutoMatch NÃO é mais feito aqui, e sim pelo CHAMADOR
-// (tentarAutoMatch aplica o corte; a prévia de match, matchPreviewDTO, não
-// aplica corte nenhum e só marca meets_auto_threshold). Ignora `selfID` (o
-// próprio item da fila pode aparecer na shortlist quando o título já bate no
-// FTS). Um candidato com ano divergindo mais de 1 ano (matching.Pontuar
-// descartado=true) nunca entra no ranking -- essa desqualificação estrutural
-// continua valendo sempre. ok=false quando nenhum candidato não-descartado
-// existe.
+// melhorCandidatoLocal rescores the shortlist of the LOCAL search (buscarLocal — the
+// FTS5 BM25 is only a pre-filter, never the final score) and ALWAYS returns the
+// candidate with the HIGHEST score among the non-discarded ones -- the
+// LimiarAutoMatch cut is no longer made here, but by the CALLER (tentarAutoMatch
+// applies the cut; the match preview, matchPreviewDTO, applies no cut at all and only
+// flags meets_auto_threshold). It ignores `selfID` (the queue item itself may show up
+// in the shortlist when the title already matches in the FTS). A candidate whose year
+// diverges by more than 1 year (matching.Pontuar descartado=true) never enters the
+// ranking -- that structural disqualification still always applies. ok=false when no
+// non-discarded candidate exists.
 func (s *Server) melhorCandidatoLocal(ctx context.Context, candidatos []entityCardDTO, selfID, titulo string, ano int) (candidatoPontuado, bool) {
 	var melhor candidatoPontuado
 	achou := false
@@ -426,37 +426,35 @@ func (s *Server) melhorCandidatoLocal(ctx context.Context, candidatos []entityCa
 	return melhor, achou
 }
 
-// candidatoExternoPontuado é um candidato externo já pontuado por título
-// único (matching.Pontuar) -- passo 1 de melhorCandidatoExterno, antes da
-// repontuação por títulos alternativos dos top-3.
+// candidatoExternoPontuado is an external candidate already scored by main
+// title (matching.Pontuar) -- step 1 of melhorCandidatoExterno, before the rescoring by
+// alternative titles of the top-3.
 type candidatoExternoPontuado struct {
 	cand  provider.ResultadoExterno
 	score float64
 }
 
-// candidatosAlternativosTopN é o teto de candidatos que disparam busca de
-// títulos alternativos (briefing 0084 §3): custo controlado, 1 chamada de
-// rede extra por candidato -- o candidato certo quase sempre está entre os
-// top-3 por score de título principal.
+// candidatosAlternativosTopN is the ceiling of candidates that trigger an alternative
+// titles lookup: controlled cost, 1 extra network call per candidate -- the right
+// candidate is almost always among the top-3 by main-title score.
 const candidatosAlternativosTopN = 3
 
-// melhorCandidatoExterno repontua os resultados da busca EXTERNA (buscarExterno,
-// já mesclados/deduplicados por fonte) e devolve SEMPRE o de MAIOR score entre
-// os não-descartados -- mesmo raciocínio de melhorCandidatoLocal (0060): o
-// corte por LimiarAutoMatch é decisão do CHAMADOR, não deste finder. achou=false
-// quando nenhum candidato não-descartado existe.
+// melhorCandidatoExterno rescores the results of the EXTERNAL search (buscarExterno,
+// already merged/deduplicated by source) and ALWAYS returns the one with the HIGHEST
+// score among the non-discarded ones -- the same reasoning as melhorCandidatoLocal: the
+// LimiarAutoMatch cut is the CALLER's decision, not this finder's. achou=false when no
+// non-discarded candidate exists.
 //
-// Desde o briefing 0084, a pontuação passa por DOIS estágios: (1) título único
-// (matching.Pontuar) para TODOS os candidatos, ordenados por score desc; (2) os
-// TOP-3 (candidatosAlternativosTopN) são repontuados com
-// matching.PontuarComAlternativos contra os títulos alternativos/traduzidos que
-// o provider conhecer (capacidade OPCIONAL provider.TituloAlternativoProvider,
-// best-effort — falha/ausência degrada para o score de título único desse
-// candidato, sem abortar a função). O vencedor final é o maior score entre os
-// N candidatos do estágio 1 e os 3 repontuados do estágio 2. tituloVencedor é o
-// título ALTERNATIVO que produziu o score do vencedor, quando ele bateu o
-// título principal do próprio candidato; "" quando o vencedor não passou pela
-// repontuação (fora do top-3) ou quando o título principal já era o melhor.
+// The scoring goes through TWO stages: (1) single title (matching.Pontuar) for ALL the
+// candidates, ordered by score desc; (2) the TOP-3 (candidatosAlternativosTopN) are
+// rescored with matching.PontuarComAlternativos against the alternative/translated
+// titles the provider knows (OPTIONAL capability provider.TituloAlternativoProvider,
+// best-effort — a failure/absence degrades to that candidate's single-title score,
+// without aborting the function). The final winner is the highest score among the N
+// candidates of stage 1 and the 3 rescored ones of stage 2. tituloVencedor is the
+// ALTERNATIVE title that produced the winner's score, when it beat the candidate's own
+// main title; "" when the winner did not go through the rescoring (outside the top-3)
+// or when the main title was already the best.
 func (s *Server) melhorCandidatoExterno(ctx context.Context, candidatos []provider.ResultadoExterno, titulo string, ano int) (provider.ResultadoExterno, float64, string, bool) {
 	pontuados := make([]candidatoExternoPontuado, 0, len(candidatos))
 	for _, c := range candidatos {
@@ -500,14 +498,14 @@ func (s *Server) melhorCandidatoExterno(ctx context.Context, candidatos []provid
 	return melhor.cand, melhor.score, tituloVencedor, true
 }
 
-// titulosAlternativosDoCandidato busca os títulos alternativos/traduzidos que
-// o provider da fonte de `cand` conhecer (capacidade OPCIONAL
-// provider.TituloAlternativoProvider, type-assert -- fontes sem essa
-// capacidade, ou sem provider registrado sob aquele nome, devolvem nil em
-// silêncio). Resultado cacheado em memória por (source,source_id), mesmo TTL
-// do cacheExterno (ttlCacheExterno) -- duas buscas pelo MESMO candidato
-// dentro do TTL não disparam nova chamada. Erro real de rede é BEST-EFFORT:
-// loga e devolve nil (o chamador repontua só com o título principal).
+// titulosAlternativosDoCandidato fetches the alternative/translated titles that the
+// provider of `cand`'s source knows (OPTIONAL capability
+// provider.TituloAlternativoProvider, type-assert -- sources without that capability,
+// or without a provider registered under that name, silently return nil). The result is
+// cached in memory by (source,source_id), with the same TTL as cacheExterno
+// (ttlCacheExterno) -- two lookups of the SAME candidate within the TTL do not trigger
+// a new call. A real network error is BEST-EFFORT: it logs and returns nil (the caller
+// rescores with the main title only).
 func (s *Server) titulosAlternativosDoCandidato(ctx context.Context, cand provider.ResultadoExterno) []string {
 	if s.cacheTitulosAlt == nil {
 		return nil
@@ -534,13 +532,12 @@ func (s *Server) titulosAlternativosDoCandidato(ctx context.Context, cand provid
 	return titulos
 }
 
-// ── cache de titulos alternativos ────────────────────────────────────────────
+// ── alternative titles cache ─────────────────────────────────────────────────
 
-// cacheTitulosAlternativos é um cache em memória, protegido por mutex, dos
-// títulos alternativos de um candidato externo por chave (source+"\x00"+
-// source_id), com expiração por TTL -- mesmo desenho de cacheExterno
-// (search.go), reaproveitado aqui para não inventar um segundo padrão de
-// cache no mesmo pacote.
+// cacheTitulosAlternativos is a mutex-protected in-memory cache of the alternative
+// titles of an external candidate by key (source+"\x00"+source_id), with TTL
+// expiration -- the same design as cacheExterno (search.go), reused here so a second
+// cache pattern is not invented inside the same package.
 type cacheTitulosAlternativos struct {
 	mu    sync.Mutex
 	ttl   time.Duration
@@ -548,20 +545,20 @@ type cacheTitulosAlternativos struct {
 	agora func() time.Time
 }
 
-// entradaCacheTitulosAlternativos é uma entrada do cache: os títulos e o
-// instante de expiração.
+// entradaCacheTitulosAlternativos is one cache entry: the titles and the expiration
+// instant.
 type entradaCacheTitulosAlternativos struct {
 	titulos []string
 	expira  time.Time
 }
 
-// novoCacheTitulosAlternativos cria um cache com o TTL dado.
+// novoCacheTitulosAlternativos creates a cache with the given TTL.
 func novoCacheTitulosAlternativos(ttl time.Duration) *cacheTitulosAlternativos {
 	return &cacheTitulosAlternativos{ttl: ttl, itens: make(map[string]entradaCacheTitulosAlternativos), agora: time.Now}
 }
 
-// obter devolve os títulos cacheados e true quando a chave existe e não
-// expirou; caso contrário (nil, false).
+// obter returns the cached titles and true when the key exists and has not expired;
+// otherwise (nil, false).
 func (c *cacheTitulosAlternativos) obter(chave string) ([]string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -572,18 +569,18 @@ func (c *cacheTitulosAlternativos) obter(chave string) ([]string, bool) {
 	return e.titulos, true
 }
 
-// guardar grava (ou sobrescreve) os títulos da chave com nova expiração.
+// guardar writes (or overwrites) the titles of the key with a new expiration.
 func (c *cacheTitulosAlternativos) guardar(chave string, titulos []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.itens[chave] = entradaCacheTitulosAlternativos{titulos: titulos, expira: c.agora().Add(c.ttl)}
 }
 
-// anoDaEntity lê o release_date da entity (coluna núcleo, não o override
-// resolvido — o auto-match roda ANTES de qualquer edição, então a base já
-// reflete o melhor que o catálogo sabe) e devolve os 4 primeiros dígitos como
-// ano; 0 quando ausente/inválido/erro (degrada para "sem ano", nunca falha o
-// auto-match por um vizinho sem data).
+// anoDaEntity reads the entity's release_date (core column, not the resolved override
+// — the auto-match runs BEFORE any editing, so the base already reflects the best the
+// catalog knows) and returns the first 4 digits as the year; 0 when absent/invalid/on
+// error (it degrades to "no year", never failing the auto-match because of a date-less
+// neighbor).
 func (s *Server) anoDaEntity(ctx context.Context, id string) int {
 	ent, err := s.leitura().ObterEntity(ctx, id)
 	if err != nil {
@@ -592,8 +589,8 @@ func (s *Server) anoDaEntity(ctx context.Context, id string) int {
 	return anoDeReleaseDate(ent.ReleaseDate)
 }
 
-// anoDeReleaseDate extrai o ano dos 4 primeiros dígitos de um release_date
-// "YYYY-MM-DD" (ou "YYYY"); 0 quando ausente/curto/inválido.
+// anoDeReleaseDate extracts the year from the first 4 digits of a "YYYY-MM-DD" (or
+// "YYYY") release_date; 0 when absent/short/invalid.
 func anoDeReleaseDate(rd sql.NullString) int {
 	if !rd.Valid || len(rd.String) < 4 {
 		return 0
@@ -605,8 +602,8 @@ func anoDeReleaseDate(rd sql.NullString) int {
 	return ano
 }
 
-// anoDeStringPtr extrai o ano de provider.ResultadoExterno.Year ("YYYY" ou
-// nil); 0 quando ausente/inválido.
+// anoDeStringPtr extracts the year from provider.ResultadoExterno.Year ("YYYY" or nil);
+// 0 when absent/invalid.
 func anoDeStringPtr(s *string) int {
 	if s == nil {
 		return 0
@@ -620,12 +617,12 @@ func anoDeStringPtr(s *string) int {
 
 // ── capturaResposta ──────────────────────────────────────────────────────────
 
-// capturaResposta é um http.ResponseWriter mínimo que só CAPTURA o status
-// (nunca escreve na resposta real): usado para rodar helpers acoplados a
-// escrita HTTP (resolverColisaoExterna, idiomasPermitidos) sem que uma escrita
-// de ERRO interna deles vaze para a resposta final do auto-match — o auto-match
-// sempre decide sozinho o que responder (200 com resolved:false no individual;
-// item pendente no lote), nunca repassando o corpo de erro alheio.
+// capturaResposta is a minimal http.ResponseWriter that only CAPTURES the status
+// (never writes to the real response): used to run helpers coupled to HTTP writing
+// (resolverColisaoExterna, idiomasPermitidos) without an internal ERROR write of theirs
+// leaking into the auto-match's final response — the auto-match always decides on its
+// own what to answer (200 with resolved:false in the single endpoint; a pending item in
+// the batch), never forwarding somebody else's error body.
 type capturaResposta struct {
 	header http.Header
 	status int
@@ -642,27 +639,26 @@ func (c *capturaResposta) Write(b []byte) (int, error) { return len(b), nil }
 
 func (c *capturaResposta) WriteHeader(status int) { c.status = status }
 
-// errStatus é um erro mínimo que carrega o status HTTP capturado por
-// capturaResposta, só para o log/erro interno — o chamador sempre degrada para
-// respondErroInterno (500), o status aqui é só contexto de diagnóstico.
+// errStatus is a minimal error carrying the HTTP status captured by capturaResposta,
+// only for the log/internal error — the caller always degrades to respondErroInterno
+// (500), the status here is only diagnostic context.
 type errStatus int
 
 func (e errStatus) Error() string {
 	return "auto-match: helper interno escreveu status " + strconv.Itoa(int(e))
 }
 
-// ── Auto-match imediato de filme no scan (briefing 0089) ────────────────────
+// ── Immediate movie auto-match in the scan ───────────────────────────────────
 
-// TentarAutoMatchFilme é o adaptador que satisfaz scanner.FilmeImportador:
-// chamado pelo scanner logo após criar uma entity NOVA de filme, tenta
-// casar+enriquecer contra os providers configurados reusando a MESMA
-// orquestração (tentarAutoMatch) e o MESMO limiar (LimiarAutoMatch) do
-// auto-match em lote/job saude_biblioteca -- nunca uma heurística paralela.
-// matched=true só quando um candidato de fato foi aplicado (Resolved).
-// err só propaga em falha de infra real (banco/rede irrecuperável); "sem
-// candidato forte o bastante" NÃO é erro -- mesma semântica de degradação em
-// silêncio que resolverSerieMiss já aplica pro caminho de série (a entity
-// permanece cataloged/draft, pendente na fila de Revisão).
+// TentarAutoMatchFilme is the adapter that satisfies scanner.FilmeImportador: called by
+// the scanner right after creating a NEW movie entity, it tries to match+enrich against
+// the configured providers reusing the SAME orchestration (tentarAutoMatch) and the SAME
+// threshold (LimiarAutoMatch) as the batch auto-match/saude_biblioteca job -- never a
+// parallel heuristic. matched=true only when a candidate was in fact applied (Resolved).
+// err only propagates on a real infra failure (unrecoverable database/network); "no
+// strong enough candidate" is NOT an error -- the same silent-degradation semantics
+// resolverSerieMiss already applies to the series path (the entity stays
+// cataloged/draft, pending in the Review queue).
 func (s *Server) TentarAutoMatchFilme(ctx context.Context, entityID string) (bool, error) {
 	ent, err := s.leitura().ObterEntity(ctx, entityID)
 	if err != nil {

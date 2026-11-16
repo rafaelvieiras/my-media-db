@@ -1,12 +1,14 @@
-// Package fake é um provider DETERMINÍSTICO de fixtures para os testes E2E
-// (briefing 0028). Implementa provider.Provider + provider.ColecaoProvider servindo
-// um catálogo em memória (a franquia Matrix + a coleção dela), multi-idioma, SEM
-// REDE e SEM SEGREDO. Nome() devolve "tmdb" de propósito: assim as colunas geradas
-// (external_id_tmdb) deduplicam e o interno-first funciona igual à fonte real.
+// Package fake is a DETERMINISTIC fixture provider for the E2E tests. It
+// implements provider.Provider + provider.ColecaoProvider serving an in-memory
+// catalog (the Matrix franchise + its collection), multi-language, WITHOUT
+// NETWORK and WITHOUT SECRETS. Nome() returns "tmdb" on purpose: that way the
+// generated columns (external_id_tmdb) deduplicate and internal-first works the
+// same as with the real source.
 //
-// Ligado no binário por MYMEDIADB_FAKE_PROVIDER=1 (ver cmd/mymediadb) e injetado
-// direto no harness da Camada 1 (internal/e2e). As imagens apontam para ImageBase
-// (um servidor de fixtures que o chamador sobe); vazio => sem pôster (placeholder).
+// Wired into the binary by MYMEDIADB_FAKE_PROVIDER=1 (see cmd/mymediadb) and
+// injected straight into the Layer 1 harness (internal/e2e). The images point to
+// ImageBase (a fixture server that the caller starts); empty => no poster
+// (placeholder).
 package fake
 
 import (
@@ -20,8 +22,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// filme é uma fixture de item. Os campos traduzíveis são map[idioma]valor (o
-// resolver casa tanto o código combinado — pt-BR — quanto o base — pt/en).
+// filme is an item fixture. The translatable fields are map[language]value (the
+// resolver matches both the combined code -- pt-BR -- and the base one -- pt/en).
 type filme struct {
 	sourceID         string
 	tipo             string // "movie"|"tv"
@@ -30,30 +32,30 @@ type filme struct {
 	tags             map[string][]string
 	originalTitle    string
 	originalLanguage string
-	releaseDate      string // "AAAA-MM-DD"
-	posterPath       string // relativo; combinado com ImageBase quando não-vazio
-	colecaoID        string // "" quando não pertence a coleção
-	// titulosAlternativos (briefing 0084) são os títulos alternativos/traduzidos
-	// que BuscarTitulosAlternativos devolve para este item -- uma fonte de dados
-	// SEPARADA do mapa `title` acima (o provider real também os traz por uma
-	// chamada distinta, append_to_response=translations). Vazio na maioria das
-	// fixtures (degrada pro score de título único, como qualquer fonte sem
-	// tradução para aquele candidato); a fixture "605" é a prova do mecanismo.
+	releaseDate      string // "YYYY-MM-DD"
+	posterPath       string // relative; combined with ImageBase when non-empty
+	colecaoID        string // "" when it does not belong to a collection
+	// titulosAlternativos are the alternative/translated titles that
+	// BuscarTitulosAlternativos returns for this item -- a data source SEPARATE
+	// from the `title` map above (the real provider also brings them through a
+	// distinct call, append_to_response=translations). Empty in most fixtures (it
+	// degrades to the single-title score, like any source without a translation for
+	// that candidate); the "605" fixture is the proof of the mechanism.
 	titulosAlternativos []string
 }
 
-// colecaoFix é uma fixture de coleção (conjunto de filmes, ≠ playlist).
+// colecaoFix is a collection fixture (a set of movies, ≠ playlist).
 type colecaoFix struct {
 	id         string
 	name       string
 	overview   string
 	posterPath string
-	parts      []string // sourceIDs dos membros, em ordem
+	parts      []string // sourceIDs of the members, in order
 }
 
-// Asserções de interface: o fake é um Provider completo, um ColecaoProvider, um
-// SerieProvider (a árvore canned de séries do briefing 0031) E um
-// TituloAlternativoProvider (briefing 0084, títulos alternativos/traduzidos).
+// Interface assertions: the fake is a complete Provider, a ColecaoProvider, a
+// SerieProvider (the canned series tree) AND a TituloAlternativoProvider
+// (alternative/translated titles).
 var (
 	_ provider.Provider                  = (*Provider)(nil)
 	_ provider.ColecaoProvider           = (*Provider)(nil)
@@ -61,27 +63,28 @@ var (
 	_ provider.TituloAlternativoProvider = (*Provider)(nil)
 )
 
-// SerieFixtureID é o id da série canned servida por BuscarSerieArvore (exposto para os
-// testes montarem o import da árvore sem adivinhar o id).
+// SerieFixtureID is the id of the canned series served by BuscarSerieArvore
+// (exposed so the tests can build the tree import without guessing the id).
 const SerieFixtureID = "71663"
 
-// Provider serve o catálogo de fixtures. É imutável após New (o catálogo é dado de
-// compilação), então os métodos são seguros para concorrência.
+// Provider serves the fixture catalog. It is immutable after New (the catalog is
+// compile-time data), so the methods are safe for concurrency.
 type Provider struct {
 	imageBase string
 	filmes    map[string]filme
 	colecoes  map[string]colecaoFix
-	// buscas registra o `lang` recebido em cada chamada Buscar (briefing 0084) --
-	// só para os testes E2E comprovarem que o idioma resolvido pelo servidor
-	// (idiomaDeBusca) de fato chega ao provider, sem precisar instrumentar rede
-	// real nem tornar o casamento de título sensível a idioma (o que quebraria o
-	// comportamento multi-idioma já coberto pelas jornadas existentes). Puramente
-	// observacional -- nunca influencia o resultado de Buscar.
+	// buscas records the `lang` received in each Buscar call -- only so the E2E
+	// tests can prove that the language resolved by the server (idiomaDeBusca)
+	// really reaches the provider, without having to instrument the real network
+	// nor make title matching language-sensitive (which would break the
+	// multi-language behavior already covered by the existing journeys). Purely
+	// observational -- it never influences the result of Buscar.
 	buscas *logDeIdiomas
 }
 
-// New cria o provider com o catálogo padrão. imageBase é o prefixo das URLs de
-// imagem (ex.: o URL de um httptest servindo um PNG); vazio => itens sem pôster.
+// New creates the provider with the default catalog. imageBase is the prefix of
+// the image URLs (e.g. the URL of an httptest serving a PNG); empty => items
+// without a poster.
 func New(imageBase string) *Provider {
 	return &Provider{
 		imageBase: strings.TrimRight(imageBase, "/"),
@@ -91,20 +94,22 @@ func New(imageBase string) *Provider {
 	}
 }
 
-// Nome identifica a fonte. "tmdb" para exercitar dedup e interno-first como a real.
+// Nome identifies the source. "tmdb" to exercise dedup and internal-first like
+// the real one.
 func (p *Provider) Nome() string { return "tmdb" }
 
-// IdiomasBuscados devolve, na ordem das chamadas, o `lang` que cada Buscar recebeu
-// desde a criação do provider (briefing 0084) -- usado pelas jornadas E2E de idioma
-// preferido por biblioteca para comprovar que automatch/retroativo/match-preview
-// resolvem e propagam o idioma certo até o provider, sem expor rede real.
+// IdiomasBuscados returns, in call order, the `lang` that each Buscar received
+// since the provider was created -- used by the E2E journeys of preferred
+// language per library to prove that automatch/retroactive/match-preview resolve
+// and propagate the right language all the way to the provider, without exposing
+// the real network.
 func (p *Provider) IdiomasBuscados() []string { return p.buscas.todos() }
 
-// Buscar filtra o catálogo por substring (case-insensitive) no título de qualquer
-// idioma, opcionalmente por tipo, em ordem estável (por sourceID numérico/lexical).
-// `lang` NÃO filtra o casamento (o catálogo já expõe todo idioma que tiver, como
-// antes deste briefing -- mudar isso quebraria as jornadas multi-idioma
-// existentes); é só REGISTRADO em p.buscas para a observabilidade acima.
+// Buscar filters the catalog by substring (case-insensitive) on the title of any
+// language, optionally by type, in a stable order (by numeric/lexical sourceID).
+// `lang` does NOT filter the match (the catalog already exposes every language it
+// has, as before -- changing that would break the existing multi-language
+// journeys); it is only RECORDED in p.buscas for the observability above.
 func (p *Provider) Buscar(_ context.Context, query, tipo, lang string) ([]provider.ResultadoExterno, error) {
 	p.buscas.registrar(lang)
 	q := strings.ToLower(strings.TrimSpace(query))
@@ -121,8 +126,9 @@ func (p *Provider) Buscar(_ context.Context, query, tipo, lang string) ([]provid
 	return out, nil
 }
 
-// BuscarDetalhe devolve o payload CRU (auto-suficiente) do item, que o enrich
-// persiste e o MapearDetalhe reconstrói. ErrNaoEncontrado quando o id não existe.
+// BuscarDetalhe returns the RAW (self-sufficient) payload of the item, which
+// enrich persists and MapearDetalhe rebuilds. ErrNaoEncontrado when the id does
+// not exist.
 func (p *Provider) BuscarDetalhe(_ context.Context, sourceID, _ string, _ []string) (json.RawMessage, error) {
 	f, ok := p.filmes[sourceID]
 	if !ok {
@@ -140,13 +146,15 @@ func (p *Provider) BuscarDetalhe(_ context.Context, sourceID, _ string, _ []stri
 	return json.Marshal(raw)
 }
 
-// MapearDetalhe traduz o raw para o mapa CANÔNICO com os NOSSOS nomes. É PURO
-// (só depende do raw). Os traduzíveis saem como map[string]any (o resolver exige
-// esse tipo); os neutros como escalares. Só inclui as chaves presentes.
+// MapearDetalhe translates the raw to the CANONICAL map with OUR names. It is
+// PURE (it depends only on the raw). The translatable ones come out as
+// map[string]any (the resolver requires that type); the neutral ones as scalars.
+// It only includes the keys present.
 func (p *Provider) MapearDetalhe(raw json.RawMessage) (map[string]any, error) {
-	// EPISODIO (0041): a arvore fake grava media_external de episodio sob esta fonte
-	// (Nome="tmdb"); reconhece o discriminador entity_kind e mapeia title/description
-	// por idioma. Sem o discriminador cai no mapeamento de filme abaixo, sem regressao.
+	// EPISODE: the fake tree writes the episode media_external under this source
+	// (Nome="tmdb"); it recognizes the entity_kind discriminator and maps
+	// title/description per language. Without the discriminator it falls into the
+	// movie mapping below, without regression.
 	if campos, ok := provider.MapearEpisodio(raw); ok {
 		return campos, nil
 	}
@@ -171,8 +179,8 @@ func (p *Provider) MapearDetalhe(raw json.RawMessage) (map[string]any, error) {
 	return out, nil
 }
 
-// BuscarColecao devolve a coleção pelo id, com as partes na ordem definida.
-// ErrNaoEncontrado quando o id não existe.
+// BuscarColecao returns the collection by id, with the parts in the defined
+// order. ErrNaoEncontrado when the id does not exist.
 func (p *Provider) BuscarColecao(_ context.Context, colecaoID, _ string) (provider.Colecao, error) {
 	c, ok := p.colecoes[colecaoID]
 	if !ok {
@@ -193,17 +201,18 @@ func (p *Provider) BuscarColecao(_ context.Context, colecaoID, _ string) (provid
 	return col, nil
 }
 
-// BuscarTitulosAlternativos implementa provider.TituloAlternativoProvider (briefing
-// 0084): devolve os títulos alternativos/traduzidos CANNED da fixture (campo
-// titulosAlternativos de `filme`) -- uma fonte de dados PRÓPRIA, independente do mapa
-// `title`. A maioria das fixtures não tem nenhum (nil, sem erro: "sem tradução aqui",
-// mesma postura best-effort de uma fonte real sem esse dado) -- só a fixture "605"
-// ("A Pantera Cor-De-Rosa"/"The Rose Prowler", ver catalogo.go) tem um alternativo, e
-// é DELIBERADAMENTE diferente do título "en" que Buscar devolve como principal
-// (tituloPreferido sempre prefere "en"): é a prova do achado colateral #2 do briefing
-// 0084 -- o candidato só pontua alto contra um arquivo em português comparando-se
-// contra o alternativo, nunca contra o principal. sourceID desconhecido devolve nil
-// sem erro (ausência de alternativos é resultado válido, não falha).
+// BuscarTitulosAlternativos implements provider.TituloAlternativoProvider: it
+// returns the CANNED alternative/translated titles of the fixture
+// (titulosAlternativos field of `filme`) -- a data source of its OWN, independent
+// of the `title` map. Most fixtures have none (nil, no error: "no translation
+// here", the same best-effort stance of a real source without that data) -- only
+// the "605" fixture ("A Pantera Cor-De-Rosa"/"The Rose Prowler", see
+// catalogo.go) has an alternative, and it is DELIBERATELY different from the "en"
+// title that Buscar returns as the main one (tituloPreferido always prefers
+// "en"): it is the proof of side finding #2 -- the candidate only scores high
+// against a file in Portuguese when compared against the alternative, never
+// against the main one. An unknown sourceID returns nil without error (absence of
+// alternatives is a valid result, not a failure).
 func (p *Provider) BuscarTitulosAlternativos(_ context.Context, _, sourceID string) ([]string, error) {
 	f, ok := p.filmes[sourceID]
 	if !ok || len(f.titulosAlternativos) == 0 {
@@ -214,10 +223,10 @@ func (p *Provider) BuscarTitulosAlternativos(_ context.Context, _, sourceID stri
 	return out, nil
 }
 
-// BuscarSerieArvore devolve a ÁRVORE canned da série fixture (1 série, 2 temporadas de
-// 3 episódios, ordens "official"/"dvd"/"absolute" com um episódio de número divergente
-// entre elas). Determinística e sem rede — exercita o import de séries offline.
-// ErrNaoEncontrado para qualquer outro id.
+// BuscarSerieArvore returns the canned TREE of the fixture series (1 series, 2
+// seasons of 3 episodes, "official"/"dvd"/"absolute" orders with an episode
+// whose number diverges between them). Deterministic and without network -- it
+// exercises the offline series import. ErrNaoEncontrado for any other id.
 func (p *Provider) BuscarSerieArvore(_ context.Context, sourceID string, _ []string) (provider.SerieArvore, error) {
 	if sourceID != SerieFixtureID {
 		return provider.SerieArvore{}, provider.ErrNaoEncontrado
@@ -227,13 +236,13 @@ func (p *Provider) BuscarSerieArvore(_ context.Context, sourceID string, _ []str
 		SeasonTypes:       []string{"official", "dvd", "absolute"},
 		Temporadas: []provider.TemporadaExterna{
 			p.temporadaFake(1, "1989", nil, []provider.EpisodioExterno{
-				// Ordens coincidentes: official/dvd iguais.
+				// Matching orders: official/dvd are the same.
 				p.episodioFake("101", "9101", 1, num(1, 1, 1, 1, 1, 1), "1989-12-17"),
 				p.episodioFake("102", "9102", 2, num(1, 2, 1, 2, 1, 2), "1990-01-14"),
-				// Numero DIVERGENTE: official S1E3, mas dvd S1E5.
+				// DIVERGING number: official S1E3, but dvd S1E5.
 				p.episodioFake("103", "9103", 3, num(1, 3, 1, 5, 1, 3), "1990-01-21"),
 			}),
-			// Temporada sem Name -> titulo cai em "Temporada N".
+			// Season without Name -> the title falls back to "Temporada N".
 			p.temporadaFake(2, "1990", map[string]string{"en": "Second Season"}, []provider.EpisodioExterno{
 				p.episodioFake("201", "9201", 4, num(2, 1, 2, 1, 1, 4), "1990-10-11"),
 				p.episodioFake("202", "9202", 5, num(2, 2, 2, 2, 1, 5), "1990-10-18"),
@@ -243,8 +252,9 @@ func (p *Provider) BuscarSerieArvore(_ context.Context, sourceID string, _ []str
 	}, nil
 }
 
-// temporadaFake monta uma TemporadaExterna da ordenação default ("official"). name nil
-// deixa a temporada sem nome (o import cai em "Temporada N").
+// temporadaFake builds a TemporadaExterna of the default ordering ("official").
+// A nil name leaves the season without a name (the import falls back to
+// "Temporada N").
 func (p *Provider) temporadaFake(n int, ano string, name map[string]string, eps []provider.EpisodioExterno) provider.TemporadaExterna {
 	return provider.TemporadaExterna{
 		Ordering:     "official",
@@ -256,8 +266,9 @@ func (p *Provider) temporadaFake(n int, ano string, name map[string]string, eps 
 	}
 }
 
-// episodioFake monta um EpisodioExterno ancorado no id (sourceID), com {tvdb} nos
-// ExternalIDs, título/sinopse en+pt-BR+pt, runtime fixo e still opcional.
+// episodioFake builds an EpisodioExterno anchored on the id (sourceID), with
+// {tvdb} in ExternalIDs, title/overview en+pt-BR+pt, fixed runtime and an
+// optional still.
 func (p *Provider) episodioFake(id, tvdb string, abs int, numbering map[string]provider.Numero, air string) provider.EpisodioExterno {
 	absN, runtime := abs, 22
 	return provider.EpisodioExterno{
@@ -277,7 +288,7 @@ func (p *Provider) episodioFake(id, tvdb string, abs int, numbering map[string]p
 	}
 }
 
-// num é um atalho para o Numbering das 3 ordens: (official S,N), (dvd S,N),
+// num is a shortcut for the Numbering of the 3 orders: (official S,N), (dvd S,N),
 // (absolute S,N).
 func num(oS, oN, dS, dN, aS, aN int) map[string]provider.Numero {
 	return map[string]provider.Numero{
@@ -287,8 +298,9 @@ func num(oS, oN, dS, dN, aS, aN int) map[string]provider.Numero {
 	}
 }
 
-// rawFixture é o payload persistido/re-componível: canônico e auto-suficiente (o
-// poster_url já vem absoluto), para MapearDetalhe ser puro.
+// rawFixture is the persisted/re-composable payload: canonical and
+// self-sufficient (poster_url already comes absolute), so that MapearDetalhe is
+// pure.
 type rawFixture struct {
 	Title            map[string]string   `json:"title,omitempty"`
 	Description      map[string]string   `json:"description,omitempty"`
@@ -299,8 +311,8 @@ type rawFixture struct {
 	PosterURL        string              `json:"poster_url,omitempty"`
 }
 
-// resultadoDe monta um ResultadoExterno (card de busca / parte de coleção) a partir
-// de um filme, no título "en" com fallback ao primeiro disponível.
+// resultadoDe builds a ResultadoExterno (search card / collection part) from a
+// movie, in the "en" title with a fallback to the first available one.
 func (p *Provider) resultadoDe(f filme) provider.ResultadoExterno {
 	r := provider.ResultadoExterno{
 		Source:    p.Nome(),
@@ -317,7 +329,7 @@ func (p *Provider) resultadoDe(f filme) provider.ResultadoExterno {
 	return r
 }
 
-// ordenados devolve os filmes em ordem estável por sourceID (determinismo).
+// ordenados returns the movies in a stable order by sourceID (determinism).
 func (p *Provider) ordenados() []filme {
 	out := make([]filme, 0, len(p.filmes))
 	for _, f := range p.filmes {
@@ -327,8 +339,8 @@ func (p *Provider) ordenados() []filme {
 	return out
 }
 
-// posterURL combina o ImageBase com o caminho relativo; "" quando não há base ou
-// caminho (item sem pôster => placeholder na UI).
+// posterURL combines ImageBase with the relative path; "" when there is no base
+// or no path (item without poster => placeholder in the UI).
 func (p *Provider) posterURL(path string) string {
 	if p.imageBase == "" || path == "" {
 		return ""
@@ -336,11 +348,11 @@ func (p *Provider) posterURL(path string) string {
 	return p.imageBase + "/" + strings.TrimLeft(path, "/")
 }
 
-// --- helpers puros ---
+// --- pure helpers ---
 
-// logDeIdiomas registra, sob mutex, cada `lang` recebido por Buscar (briefing 0084).
-// Puramente observacional: nenhum método de Provider decide comportamento a partir
-// dele, só os testes E2E leem via Provider.IdiomasBuscados().
+// logDeIdiomas records, under a mutex, each `lang` received by Buscar. Purely
+// observational: no Provider method decides behavior from it, only the E2E tests
+// read it through Provider.IdiomasBuscados().
 type logDeIdiomas struct {
 	mu    sync.Mutex
 	langs []string
@@ -389,8 +401,8 @@ func descricaoPreferida(f filme) string {
 	return ""
 }
 
-// strMapAny copia um map[string]string para map[string]any (tipo que o resolver
-// exige nos containers traduzíveis).
+// strMapAny copies a map[string]string to map[string]any (the type the resolver
+// requires in the translatable containers).
 func strMapAny(m map[string]string) map[string]any {
 	if len(m) == 0 {
 		return nil
@@ -402,8 +414,8 @@ func strMapAny(m map[string]string) map[string]any {
 	return out
 }
 
-// listaMapAny copia um map[string][]string para map[string]any (valores []string;
-// o resolver os coage via asStrSlice).
+// listaMapAny copies a map[string][]string to map[string]any (values []string;
+// the resolver coerces them via asStrSlice).
 func listaMapAny(m map[string][]string) map[string]any {
 	if len(m) == 0 {
 		return nil

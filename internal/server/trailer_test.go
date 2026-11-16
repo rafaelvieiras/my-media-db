@@ -14,18 +14,19 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/ytdlp"
 )
 
-// Testes de integração do briefing 0102 (trailer: materialização em disco via
-// yt-dlp, ADR-0025): GET/POST .../trailer(/download). Reaproveita o MESMO
-// padrão de fake provider dos testes de similar (similar_test.go) para
-// alimentar `videos` sem bater em rede real, e um "yt-dlp" FAKE (script shell
-// executável via SetCustomPath, mesmo truque de escreverScriptExecutavel em
-// settings_test.go) para exercitar s.ytdlp.Baixar sem baixar nada de verdade.
+// Integration tests of the trailer (materialization on disk via
+// yt-dlp, ADR-0025): GET/POST .../trailer(/download). It reuses the SAME
+// fake provider pattern of the similar tests (similar_test.go) to
+// feed `videos` without hitting the real network, and a FAKE "yt-dlp" (shell script
+// executable via SetCustomPath, same trick as escreverScriptExecutavel in
+// settings_test.go) to exercise s.ytdlp.Baixar without downloading anything for
+// real.
 
-// fakeProviderTrailer é um provider.Provider mínimo (Nome fixo "tmdb", para
-// casar com media_external.source e prioridadeFontes) cujo MapearDetalhe é a
-// IDENTIDADE (devolve o JSON cru já como o mapa canônico) — suficiente para
-// alimentar richfields.VideosDe a partir de um payload de teste escrito à
-// mão, sem precisar simular o payload real do TMDB.
+// fakeProviderTrailer is a minimal provider.Provider (fixed Nome "tmdb", to
+// match media_external.source and prioridadeFontes) whose MapearDetalhe is the
+// IDENTITY (it returns the raw JSON already as the canonical map) — enough to
+// feed richfields.VideosDe from a test payload written by
+// hand, without having to simulate the real TMDB payload.
 type fakeProviderTrailer struct {
 	nome string
 }
@@ -48,15 +49,15 @@ func (f *fakeProviderTrailer) MapearDetalhe(raw json.RawMessage) (map[string]any
 	return m, nil
 }
 
-// videosComTrailerJSON é o payload cru (já no formato canônico, graças ao
-// MapearDetalhe identidade acima) de um item com um único trailer YouTube.
+// videosComTrailerJSON is the raw payload (already in the canonical format, thanks to
+// the identity MapearDetalhe above) of an item with a single YouTube trailer.
 const videosComTrailerJSON = `{"videos":[{"name":"Trailer Oficial","key":"abc123","site":"YouTube","type":"Trailer","official":true,"url":"https://www.youtube.com/watch?v=abc123"}]}`
 
-// escreverYtdlpFakeDownload grava um script shell executável que finge ser o
-// yt-dlp: recebe os MESMOS args que ytdlp.Gerenciador.Baixar passa ("-o"
-// destino url) e ESCREVE bytes fixos no destino, exceto quando a url contém
-// "falha" (simula erro de rede/vídeo removido — saída não-zero, nada
-// gravado). Roda direto via exec (shebang), sem precisar de binário real.
+// escreverYtdlpFakeDownload writes an executable shell script that pretends to be
+// yt-dlp: it receives the SAME args that ytdlp.Gerenciador.Baixar passes ("-o"
+// destination url) and WRITES fixed bytes at the destination, except when the url contains
+// "falha" (it simulates a network error/removed video — non-zero exit, nothing
+// written). It runs straight through exec (shebang), without needing a real binary.
 func escreverYtdlpFakeDownload(t *testing.T, path string) string {
 	t.Helper()
 	script := "#!/bin/sh\n" +
@@ -73,11 +74,11 @@ func escreverYtdlpFakeDownload(t *testing.T, path string) string {
 	return path
 }
 
-// setupTrailerServer sobe um Server com o fakeProviderTrailer registrado
-// (fonte "tmdb") e, quando ytdlpBin != "", um ytdlp.Gerenciador com esse path
-// CUSTOMIZADO (Resolver o devolve direto, sem validar existência — mesma
-// regra de produção). ytdlpBin == "" deixa s.ytdlp nil (cenário "sem
-// Gerenciador injetado").
+// setupTrailerServer starts a Server with the fakeProviderTrailer registered
+// (source "tmdb") and, when ytdlpBin != "", a ytdlp.Gerenciador with that
+// CUSTOM path (Resolver returns it directly, without validating existence — same
+// production rule). ytdlpBin == "" leaves s.ytdlp nil (the "no
+// Gerenciador injected" scenario).
 func setupTrailerServer(t *testing.T, ytdlpBin string) (http.Handler, *db.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "trailer.sqlite")
@@ -100,19 +101,19 @@ func setupTrailerServer(t *testing.T, ytdlpBin string) (http.Handler, *db.DB) {
 		t.Fatalf("Handler: %v", err)
 	}
 	if g != nil {
-		// O BOOT sincroniza o custom path com app_settings (linha ~415 de
-		// server.go) -- como o banco não tem nenhuma linha `ytdlp` ainda,
-		// essa sincronização LIMPA (SetCustomPath("")) qualquer path
-		// setado ANTES de New(...). Por isso o path customizado do fake
-		// yt-dlp só é aplicado APÓS o Handler() já ter sincronizado —
-		// nenhum outro ponto do fluxo de teste invalida esse cache depois.
+		// The BOOT synchronizes the custom path with app_settings (around line 415 of
+		// server.go) -- since the database has no `ytdlp` row yet,
+		// that synchronization CLEARS (SetCustomPath("")) any path
+		// set BEFORE New(...). That is why the custom path of the fake
+		// yt-dlp is only applied AFTER Handler() has already synchronized —
+		// no other point of the test flow invalidates that cache afterwards.
 		g.SetCustomPath(ytdlpBin)
 	}
 	return h, database
 }
 
-// semearMediaExternalVideos grava a linha media_external(source='tmdb') com o
-// payload de vídeos dado, para a entity já existir com `videos` resolvido.
+// semearMediaExternalVideos writes the media_external(source='tmdb') row with the
+// given videos payload, so the entity already exists with `videos` resolved.
 func semearMediaExternalVideos(t *testing.T, d *db.DB, entityID, payload string) {
 	t.Helper()
 	if _, err := escrita(t, d).UpsertMediaExternal(context.Background(), sqlcgen.UpsertMediaExternalParams{
@@ -125,8 +126,8 @@ func semearMediaExternalVideos(t *testing.T, d *db.DB, entityID, payload string)
 
 // ── POST .../trailer/download ────────────────────────────────────────────
 
-// TestPostTrailerDownloadSemTrailer422 cobre o critério §5: item sem
-// trailer YouTube (videos vazio) -> 422, nada escrito no disco.
+// TestPostTrailerDownloadSemTrailer422 covers the criterion: an item without a
+// YouTube trailer (empty videos) -> 422, nothing written to disk.
 func TestPostTrailerDownloadSemTrailer422(t *testing.T) {
 	ytBin := escreverYtdlpFakeDownload(t, filepath.Join(t.TempDir(), "yt-dlp"))
 	h, d := setupTrailerServer(t, ytBin)
@@ -148,8 +149,8 @@ func TestPostTrailerDownloadSemTrailer422(t *testing.T) {
 	}
 }
 
-// TestPostTrailerDownloadSemYtdlp503 cobre o critério §5: sem yt-dlp
-// disponível (Gerenciador não injetado) -> 503, nada escrito no disco.
+// TestPostTrailerDownloadSemYtdlp503 covers the criterion: without yt-dlp
+// available (Gerenciador not injected) -> 503, nothing written to disk.
 func TestPostTrailerDownloadSemYtdlp503(t *testing.T) {
 	h, d := setupTrailerServer(t, "")
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -165,9 +166,9 @@ func TestPostTrailerDownloadSemYtdlp503(t *testing.T) {
 	}
 }
 
-// TestPostTrailerDownloadSucessoIdempotenteENuncaSobrescreve cobre os
-// critérios §5: sucesso grava no path canônico; segunda chamada sem `force`
-// devolve 409 e NÃO altera o arquivo já gravado.
+// TestPostTrailerDownloadSucessoIdempotenteENuncaSobrescreve covers the
+// criteria: success writes to the canonical path; a second call without `force`
+// returns 409 and does NOT change the already written file.
 func TestPostTrailerDownloadSucessoIdempotenteENuncaSobrescreve(t *testing.T) {
 	ytBin := escreverYtdlpFakeDownload(t, filepath.Join(t.TempDir(), "yt-dlp"))
 	h, d := setupTrailerServer(t, ytBin)
@@ -198,7 +199,7 @@ func TestPostTrailerDownloadSucessoIdempotenteENuncaSobrescreve(t *testing.T) {
 		t.Error(".tmp orfao encontrado apos sucesso, quero removido/renomeado")
 	}
 
-	// 2a chamada sem force -> 409, arquivo original intacto.
+	// 2nd call without force -> 409, original file intact.
 	rec2 := do(t, h, http.MethodPost, "/api/v1/entities/e1/trailer/download", nil)
 	if rec2.Code != http.StatusConflict {
 		t.Fatalf("2a chamada status = %d, quero 409 (corpo=%s)", rec2.Code, rec2.Body.String())
@@ -212,10 +213,10 @@ func TestPostTrailerDownloadSucessoIdempotenteENuncaSobrescreve(t *testing.T) {
 	}
 }
 
-// TestPostTrailerDownloadTrailerManualNuncaSobrescrito cobre o critério §5:
-// um trailer.mp4 colocado À MÃO pelo dono (nunca baixado por este endpoint)
-// no MESMO nome canônico bloqueia o download sem `force`, igual a um já
-// baixado por aqui.
+// TestPostTrailerDownloadTrailerManualNuncaSobrescrito covers the criterion:
+// a trailer.mp4 placed BY HAND by the owner (never downloaded by this endpoint)
+// under the SAME canonical name blocks the download without `force`, just like one
+// already downloaded from here.
 func TestPostTrailerDownloadTrailerManualNuncaSobrescrito(t *testing.T) {
 	ytBin := escreverYtdlpFakeDownload(t, filepath.Join(t.TempDir(), "yt-dlp"))
 	h, d := setupTrailerServer(t, ytBin)
@@ -240,7 +241,7 @@ func TestPostTrailerDownloadTrailerManualNuncaSobrescrito(t *testing.T) {
 		t.Errorf("conteudo = %q, quero intacto %q (nunca sobrescrever sem force)", conteudo, "trailer-do-dono")
 	}
 
-	// Com force=true, agora sobrescreve.
+	// With force=true, it now overwrites.
 	rec2 := do(t, h, http.MethodPost, "/api/v1/entities/e1/trailer/download", map[string]bool{"force": true})
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("status com force = %d, quero 200 (corpo=%s)", rec2.Code, rec2.Body.String())
@@ -254,14 +255,14 @@ func TestPostTrailerDownloadTrailerManualNuncaSobrescrito(t *testing.T) {
 	}
 }
 
-// TestPostTrailerDownloadFalhaDeRede502 cobre o cenário de falha do próprio
-// download (rede, vídeo removido): nada escrito no disco com o nome
-// canônico, sem .tmp órfão.
+// TestPostTrailerDownloadFalhaDeRede502 covers the failure scenario of the download
+// itself (network, removed video): nothing written to disk under the
+// canonical name, without an orphan .tmp.
 func TestPostTrailerDownloadFalhaDeRede502(t *testing.T) {
 	ytBin := escreverYtdlpFakeDownload(t, filepath.Join(t.TempDir(), "yt-dlp"))
 	h, d := setupTrailerServer(t, ytBin)
 	semearEntity(t, d, "e1", "movie", "Matrix")
-	// url contendo "falha" dispara a saída de erro do script fake.
+	// a url containing "falha" triggers the error exit of the fake script.
 	semearMediaExternalVideos(t, d, "e1", `{"videos":[{"name":"T","key":"abc","site":"YouTube","type":"Trailer","official":true,"url":"https://www.youtube.com/watch?v=falha"}]}`)
 	dir := libDirComVideo(t, d, "e1", "mf1", "Matrix.1999.mkv")
 
@@ -279,8 +280,8 @@ func TestPostTrailerDownloadFalhaDeRede502(t *testing.T) {
 
 // ── GET .../trailer ───────────────────────────────────────────────────────
 
-// TestGetEntityTrailerServeBinario cobre o critério §5: após o download, GET
-// serve o binário com content-type coerente.
+// TestGetEntityTrailerServeBinario covers the criterion: after the download, GET
+// serves the binary with a coherent content-type.
 func TestGetEntityTrailerServeBinario(t *testing.T) {
 	ytBin := escreverYtdlpFakeDownload(t, filepath.Join(t.TempDir(), "yt-dlp"))
 	h, d := setupTrailerServer(t, ytBin)
@@ -305,8 +306,8 @@ func TestGetEntityTrailerServeBinario(t *testing.T) {
 	}
 }
 
-// TestGetEntityTrailerSemArquivo404 cobre o critério §5: sem trailer
-// materializado -> 404.
+// TestGetEntityTrailerSemArquivo404 covers the criterion: without a materialized
+// trailer -> 404.
 func TestGetEntityTrailerSemArquivo404(t *testing.T) {
 	h, d := setupTrailerServer(t, "")
 	semearEntity(t, d, "e1", "movie", "Matrix")
@@ -318,8 +319,8 @@ func TestGetEntityTrailerSemArquivo404(t *testing.T) {
 	}
 }
 
-// TestGetEntityTrailerSemMediaFile404 cobre o mesmo guard de getEntityTheme:
-// entity sem media_file present -> 404 (sem pasta de destino).
+// TestGetEntityTrailerSemMediaFile404 covers the same guard as getEntityTheme:
+// entity without a present media_file -> 404 (no destination folder).
 func TestGetEntityTrailerSemMediaFile404(t *testing.T) {
 	h, d := setupTrailerServer(t, "")
 	semearEntity(t, d, "e1", "movie", "Sem Arquivo")

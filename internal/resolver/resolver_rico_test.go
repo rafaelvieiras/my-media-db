@@ -7,14 +7,14 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// Estes testes cobrem os CAMPOS RICOS (paridade com o detalhe do externo,
-// 0022/0023) que o resolver expõe a partir da camada externa canônica: traduzíveis
-// (tagline/keywords) compostos por idioma, e neutros/estruturados (runtime,
-// certification por região, vote_average, backdrop, videos, collection, similar,
-// external_links) extraídos direto do canônico via richfields.
+// These tests cover the RICH FIELDS (parity with the external detail) that the
+// resolver exposes from the canonical external layer: translatable ones
+// (tagline/keywords) composed per language, and neutral/structured ones (runtime,
+// certification by region, vote_average, backdrop, videos, collection, similar,
+// external_links) extracted straight from the canonical via richfields.
 
-// entRica é uma entity de núcleo com id externo TMDB (para o link do TMDB) e idioma
-// original ancorando a cadeia de fallback.
+// entRica is a core entity with a TMDB external id (for the TMDB link) and an
+// original language anchoring the fallback chain.
 func entRica() sqlcgen.Entity {
 	return sqlcgen.Entity{
 		ID:               "x",
@@ -26,9 +26,9 @@ func entRica() sqlcgen.Entity {
 	}
 }
 
-// camadaRica devolve uma camada externa canônica com os campos ricos no MESMO
-// formato do MapearDetalhe (traduzíveis como map[idioma]valor; neutros como
-// escalar/lista/mapa; estruturas como []any de map[string]any).
+// camadaRica returns a canonical external layer with the rich fields in the SAME
+// format as MapearDetalhe (translatable ones as map[idioma]valor; neutral ones as
+// scalar/list/map; structures as []any of map[string]any).
 func camadaRica() []CamadaExterna {
 	return []CamadaExterna{{Fonte: "tmdb", Campos: map[string]any{
 		"tagline":                 map[string]any{"pt-BR": "Bem-vindo ao mundo real.", "en": "Welcome to the real world."},
@@ -66,8 +66,8 @@ func TestResolverCamposRicosTraduziveis(t *testing.T) {
 		Externo:         camadaRica(),
 	})
 
-	// tagline resolve no idioma pedido (pt-BR); keywords caem no en (só existe lá,
-	// ancorado no original_language da cadeia).
+	// tagline resolves in the requested language (pt-BR); keywords fall back to en (it
+	// only exists there, anchored in the original_language of the chain).
 	eqPtr(t, "tagline", got.Tagline, "Bem-vindo ao mundo real.")
 	eq(t, "tagline prov", got.ResolvedLanguages["tagline"], "pt-BR")
 	if len(got.Keywords) != 2 || got.Keywords[0] != "simulated reality" {
@@ -88,7 +88,7 @@ func TestResolverCamposRicosNeutros(t *testing.T) {
 	eqPtr(t, "runtime", got.Runtime, 136)
 	eqPtr(t, "vote_average", got.VoteAverage, 8.2)
 	eqPtr(t, "backdrop_url", got.BackdropURL, "https://img/backdrop.jpg")
-	// Certificacao pela regiao do idioma ativo (pt-BR → BR).
+	// Certification by the region of the active language (pt-BR → BR).
 	eqPtr(t, "certification", got.Certification, "14")
 
 	if len(got.Videos) != 1 || got.Videos[0].Name != "Trailer" || got.Videos[0].URL == nil {
@@ -100,14 +100,16 @@ func TestResolverCamposRicosNeutros(t *testing.T) {
 	if len(got.Similar) != 1 || got.Similar[0].SourceID != "604" {
 		t.Fatalf("similar = %+v, quero 1 similar 604", got.Similar)
 	}
-	// external_links: imdb do canônico + tmdb montado do external_ids[tmdb]+type.
+	// external_links: imdb from the canonical + tmdb built from
+	// external_ids[tmdb]+type.
 	eq(t, "link imdb", got.ExternalLinks["imdb"], "https://www.imdb.com/title/tt0133093")
 	eq(t, "link tmdb", got.ExternalLinks["tmdb"], "https://www.themoviedb.org/movie/603")
 }
 
-// TestResolverCamposRicosCreditos cobre os CRÉDITOS (0029): o resolver PURO extrai
-// via richfields com a URL DIRETA (não-proxyada) — o server proxya pós-resolução
-// (fora do resolver puro, mesma fronteira de Ancestors/Ownership).
+// TestResolverCamposRicosCreditos covers the CREDITS: the PURE resolver extracts
+// them via richfields with the DIRECT (non-proxied) URL — the server proxies after
+// resolution (outside the pure resolver, the same boundary as
+// Ancestors/Ownership).
 func TestResolverCamposRicosCreditos(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity:          entRica(),
@@ -130,9 +132,9 @@ func TestResolverCamposRicosCreditos(t *testing.T) {
 	eqPtr(t, "companies[0].LogoURL", got.Companies[0].LogoURL, "https://image.tmdb.org/t/p/w185/wb.png")
 }
 
-// TestResolverBackdropLocalVenceCanonico: quando o chamador passa BackdropURL
-// (fundo cacheado localmente), o resolver a serve no lugar da URL direta da fonte;
-// sem ela, cai na `backdrop_url` do canônico externo.
+// TestResolverBackdropLocalVenceCanonico: when the caller passes BackdropURL
+// (background cached locally), the resolver serves it instead of the source's direct
+// URL; without it, it falls back to the `backdrop_url` of the external canonical.
 func TestResolverBackdropLocalVenceCanonico(t *testing.T) {
 	local := "/api/v1/entities/x/assets/fanart"
 	comLocal := Resolver(Camadas{
@@ -153,7 +155,8 @@ func TestResolverBackdropLocalVenceCanonico(t *testing.T) {
 	eqPtr(t, "backdrop canonico", semLocal.BackdropURL, "https://img/backdrop.jpg")
 }
 
-// TestResolverCertificacaoFallbackUS: idioma sem região (en) cai na região US.
+// TestResolverCertificacaoFallbackUS: a language with no region (en) falls back to
+// the US region.
 func TestResolverCertificacaoFallbackUS(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity:          entRica(),
@@ -165,8 +168,9 @@ func TestResolverCertificacaoFallbackUS(t *testing.T) {
 	eqPtr(t, "certification US", got.Certification, "R")
 }
 
-// TestResolverSemExternoCamposRicosVazios: sem camada externa, os campos ricos saem
-// vazios/nil e as listas como `[]` (nunca null) — o front não quebra.
+// TestResolverSemExternoCamposRicosVazios: with no external layer, the rich fields
+// come out empty/nil and the lists as `[]` (never null) — the front end does not
+// break.
 func TestResolverSemExternoCamposRicosVazios(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity:          entRica(),
@@ -184,9 +188,9 @@ func TestResolverSemExternoCamposRicosVazios(t *testing.T) {
 	}
 }
 
-// TestResolverSemExternoCreditosVazios: sem camada externa, os créditos (0029) saem
-// como `[]` (nunca null) — o front não quebra. Isolado de
-// TestResolverSemExternoCamposRicosVazios só para manter a gocyclo baixa.
+// TestResolverSemExternoCreditosVazios: with no external layer, the credits come out
+// as `[]` (never null) — the front end does not break. Isolated from
+// TestResolverSemExternoCamposRicosVazios just to keep gocyclo low.
 func TestResolverSemExternoCreditosVazios(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity:          entRica(),
@@ -200,13 +204,13 @@ func TestResolverSemExternoCreditosVazios(t *testing.T) {
 	}
 }
 
-// TestResolverAiringStatusSerie: a SITUAÇÃO de exibição da série (0045) é exposta
-// VERBATIM do canônico externo (neutra, read-only); ausente → nil. É distinta do
-// Status de CATÁLOGO (owned/cataloged) — não o contamina.
+// TestResolverAiringStatusSerie: the series AIRING situation is exposed VERBATIM from
+// the external canonical (neutral, read-only); absent → nil. It is distinct from the
+// CATALOG Status (owned/cataloged) — it does not contaminate it.
 func TestResolverAiringStatusSerie(t *testing.T) {
 	ent := entRica()
 	ent.Type = "tv"
-	ent.Status = "cataloged" // status de CATÁLOGO, distinto da situação de exibição
+	ent.Status = "cataloged" // CATALOG status, distinct from the airing situation
 
 	comStatus := Resolver(Camadas{
 		Entity:          ent,
@@ -220,7 +224,8 @@ func TestResolverAiringStatusSerie(t *testing.T) {
 	eqPtr(t, "airing_status", comStatus.AiringStatus, "Ended")
 	eq(t, "status catalogo intacto", comStatus.Status, "cataloged")
 
-	// Canônico rico SEM airing_status → nil (série só-TVDB sem match / filme).
+	// Rich canonical WITHOUT airing_status → nil (TVDB-only series with no match /
+	// movie).
 	semStatus := Resolver(Camadas{
 		Entity:          ent,
 		Cadeia:          []string{"pt-BR", "en"},
@@ -233,9 +238,9 @@ func TestResolverAiringStatusSerie(t *testing.T) {
 	}
 }
 
-// TestResolverRatingsPorFonte (0086): cada camada externa que modela vote_average
-// entra em Ratings, na ORDEM das camadas (já vem por prioridade, R2) — distinto de
-// VoteAverage, que é só o valor mesclado da fonte de maior prioridade.
+// TestResolverRatingsPorFonte: each external layer that models vote_average enters
+// Ratings, in the ORDER of the layers (already by priority, R2) — distinct from
+// VoteAverage, which is only the merged value of the highest priority source.
 func TestResolverRatingsPorFonte(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity:          entRica(),
@@ -258,8 +263,8 @@ func TestResolverRatingsPorFonte(t *testing.T) {
 	}
 }
 
-// TestResolverRatingsPorFonteVazio: nenhuma camada modela vote_average → Ratings sai
-// `[]RatingFonte{}` (nunca nil), e o JSON serializa como `[]` (nunca null).
+// TestResolverRatingsPorFonteVazio: no layer models vote_average → Ratings comes out
+// `[]RatingFonte{}` (never nil), and the JSON serializes as `[]` (never null).
 func TestResolverRatingsPorFonteVazio(t *testing.T) {
 	got := Resolver(Camadas{
 		Entity:          entRica(),
@@ -282,9 +287,9 @@ func TestResolverRatingsPorFonteVazio(t *testing.T) {
 	}
 }
 
-// TestCamposEditaveisExcluiRicos: os campos ricos read-only (tagline/keywords/
-// airing_status) NÃO aparecem na superfície de edição por override (0016), embora
-// sejam resolvidos.
+// TestCamposEditaveisExcluiRicos: the read-only rich fields (tagline/keywords/
+// airing_status) do NOT appear on the editing surface through override, although
+// they are resolved.
 func TestCamposEditaveisExcluiRicos(t *testing.T) {
 	editaveis := CamposEditaveis()
 	if _, ok := editaveis["tagline"]; ok {
@@ -296,7 +301,7 @@ func TestCamposEditaveisExcluiRicos(t *testing.T) {
 	if _, ok := editaveis["airing_status"]; ok {
 		t.Error("airing_status não deveria ser editável (soLeitura)")
 	}
-	// Sanidade: os editoriais de sempre continuam lá.
+	// Sanity: the usual editorial ones are still there.
 	if _, ok := editaveis["title"]; !ok {
 		t.Error("title deveria seguir editável")
 	}

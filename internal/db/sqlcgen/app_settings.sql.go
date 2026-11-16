@@ -17,12 +17,12 @@ FROM app_settings
 WHERE key = ?
 `
 
-// Acesso a app_settings (briefing 0019): configs da aplicacao em pares key->JSON.
-// A primeira chave e "languages" = {primary, fallback, allowed[]}. Comentarios em
-// ASCII e colunas explicitas -- ver a nota em entity.sql (bug de offset do sqlc
-// v1.31 com acentos/'*' em .sql de query).
-// Le uma config pela chave (sql.ErrNoRows quando a chave nao existe -- o helper
-// cai no default seguro).
+// Access to app_settings: application configs stored as key->JSON pairs.
+// The first key is "languages" = {primary, fallback, allowed[]}. Comments in
+// ASCII and explicit columns -- see the note in entity.sql (the sqlc v1.31
+// offset bug with accents/'*' in a query .sql file).
+// Reads a config by key (sql.ErrNoRows when the key does not exist -- the helper
+// falls back to the safe default).
 func (q *Queries) ObterAppSetting(ctx context.Context, key string) (AppSetting, error) {
 	row := q.db.QueryRowContext(ctx, obterAppSetting, key)
 	var i AppSetting
@@ -47,8 +47,8 @@ type UpsertAppSettingParams struct {
 	ValueJson sql.NullString
 }
 
-// Grava (ou substitui) uma config. Conflito na PK (key) atualiza value_json e
-// recarimba updated_at -- nunca cria uma segunda linha para a mesma chave.
+// Writes (or replaces) a config. A conflict on the PK (key) updates value_json and
+// restamps updated_at -- it never creates a second row for the same key.
 func (q *Queries) UpsertAppSetting(ctx context.Context, arg UpsertAppSettingParams) (AppSetting, error) {
 	row := q.db.QueryRowContext(ctx, upsertAppSetting, arg.Key, arg.ValueJson)
 	var i AppSetting

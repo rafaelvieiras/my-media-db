@@ -1,6 +1,6 @@
-// Package server monta o roteador HTTP (chi) da aplicação: middlewares comuns,
-// a API versionada (/api/v1/...) e o servidor de estáticos do SPA embutido com
-// fallback de rota.
+// Package server assembles the application's HTTP router (chi): common
+// middlewares, the versioned API (/api/v1/...) and the static server for the
+// embedded SPA with route fallback.
 package server
 
 import (
@@ -32,140 +32,140 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/ytdlp"
 )
 
-// Server agrega as dependências necessárias para construir o handler HTTP.
+// Server aggregates the dependencies needed to build the HTTP handler.
 type Server struct {
 	version string
 	db      *db.DB
-	// library é o serviço de datasources (/api/v1/library). Nil quando não há
-	// banco injetado (ex.: alguns testes de rota); os handlers degradam com 503.
+	// library is the datasource service (/api/v1/library). Nil when no database
+	// is injected (e.g.: some route tests); the handlers degrade with 503.
 	library *library.Service
-	// scanner é o gerenciador de jobs de scan (/api/v1/library/{id}/scan). Nil
-	// quando não há banco injetado.
+	// scanner is the manager of scan jobs (/api/v1/library/{id}/scan). Nil when
+	// no database is injected.
 	scanner *scanner.Manager
-	// providers é o REGISTRO multi-provider das fontes externas (briefing 0031 /
-	// ADR-0002, R2): nome→Provider. Vazio = busca externa desligada: a busca local
-	// segue funcionando e external_available:false. Cada fonte (tmdb/tvdb) é
-	// escolhida PELO nome do dado (camada externa, detalhe, coleção); a busca
-	// consulta TODAS e mescla. Alimentado via WithSearchProvider (variádico/acumula).
+	// providers is the multi-provider REGISTRY of the external sources
+	// (ADR-0002, R2): name→Provider. Empty = external search off: local search
+	// keeps working and external_available:false. Each source (tmdb/tvdb) is
+	// chosen BY the name of the datum (external layer, detail, collection); the
+	// search queries ALL of them and merges. Fed via WithSearchProvider
+	// (variadic/accumulates).
 	providers provider.Registry
-	// codecs é o REGISTRO de providers usados SÓ para a capacidade de PARSE
-	// de payload já cacheado (MapearDetalhe/Similares/TvdbCruzadoProvider) --
-	// nunca para busca ao vivo (briefing 0100, ADR-0024). Diferente de
-	// `providers`, é alimentado INDEPENDENTE de credencial (main.go registra
-	// tmdb/tvdb/fanarttv com credencial vazia sempre): uma linha de
-	// media_external/external_detail já salva continua interpretável mesmo
-	// sem NENHUMA chave configurada. Ver codecPara em entities.go (fallback
-	// para `providers`, cobre o MYMEDIADB_FAKE_PROVIDER dos testes E2E).
+	// codecs is the REGISTRY of providers used ONLY for the PARSE capability
+	// of an already cached payload (MapearDetalhe/Similares/TvdbCruzadoProvider)
+	// -- never for live search (ADR-0024). Unlike `providers`, it is fed
+	// INDEPENDENTLY of credentials (main.go always registers tmdb/tvdb/fanarttv
+	// with an empty credential): an already saved media_external/external_detail
+	// row remains interpretable even with NO key configured. See codecPara in
+	// entities.go (fallback to `providers`, covers the MYMEDIADB_FAKE_PROVIDER of
+	// the E2E tests).
 	codecs provider.Registry
-	// integrations é o REGISTRO de config de integração (briefing 0095,
-	// ADR-0023): slug→integration.Descriptor (hoje só "tmdb"). Alimentado via
-	// WithIntegrations. GET/PUT /integrations (internal/server/integrations.go)
-	// leem este registro; o valor EFETIVO de cada campo (banco→env var→
-	// ausente) é calculado por integrationsResolver, abaixo.
+	// integrations is the REGISTRY of integration config (ADR-0023):
+	// slug→integration.Descriptor (today only "tmdb"). Fed via WithIntegrations.
+	// GET/PUT /integrations (internal/server/integrations.go) read this registry;
+	// the EFFECTIVE value of each field (database→env var→absent) is computed by
+	// integrationsResolver, below.
 	integrations integration.Registry
-	// integrationsResolver calcula o valor efetivo de cada Campo de uma
-	// integração (briefing 0095). Construído em New sempre que há banco --
-	// não depende de options (mesmo espírito de s.library/s.scanner) --
-	// porque só precisa do *db.DB, nunca fica nil quando entitiesUnavailable
-	// já barrou antes.
+	// integrationsResolver computes the effective value of each Campo of an
+	// integration. Built in New whenever there is a database -- it does not
+	// depend on options (same spirit as s.library/s.scanner) -- because it only
+	// needs the *db.DB, and never stays nil once entitiesUnavailable has already
+	// blocked earlier.
 	integrationsResolver *integration.Resolver
-	// cacheExterno guarda por TTL curto o resultado externo por (query,tipo),
-	// para poupar a fonte. Só existe quando há provider.
+	// cacheExterno keeps the external result per (query,type) for a short TTL,
+	// to spare the source. It only exists when there is a provider.
 	cacheExterno *cacheExterno
-	// cacheTitulosAlt guarda por TTL curto (ttlCacheExterno) os títulos
-	// alternativos/traduzidos de um candidato externo por (source,source_id)
-	// (briefing 0084, melhorCandidatoExterno em automatch.go) -- poupa o
-	// provider quando o mesmo candidato aparece de novo dentro do TTL. Só
-	// existe quando há provider (mesma condição de cacheExterno).
+	// cacheTitulosAlt keeps, for a short TTL (ttlCacheExterno), the
+	// alternative/translated titles of an external candidate per
+	// (source,source_id) (melhorCandidatoExterno in automatch.go) -- it spares
+	// the provider when the same candidate shows up again within the TTL. It only
+	// exists when there is a provider (same condition as cacheExterno).
 	cacheTitulosAlt *cacheTitulosAlternativos
-	// assetsDir é o diretório confiável onde o cache de imagem grava os binários
-	// (briefing 0015). Injetado via WithAssetsDir; também entra na guarda de path
-	// do endpoint de pôster (além dos datasources).
+	// assetsDir is the trusted directory where the image cache writes the
+	// binaries. Injected via WithAssetsDir; it also takes part in the path guard
+	// of the poster endpoint (besides the datasources).
 	assetsDir string
-	// enrich é o serviço de enriquecimento (import/enrich; briefing 0015). Só
-	// existe quando há provider E assetsDir E banco — senão os handlers degradam
-	// com 503. Construído em New após aplicar as options.
+	// enrich is the enrichment service (import/enrich). It only exists when
+	// there is a provider AND assetsDir AND a database — otherwise the handlers
+	// degrade with 503. Built in New after applying the options.
 	enrich *enrich.Servico
-	// externalDetail resolve o DETALHE EXTERNO RICO com cache-first (external_detail,
-	// briefing 0022). Só existe quando há banco + provider (não precisa de assetsDir);
-	// sem ele o handler GET /external degrada com 503. Compartilha a tabela de cache
-	// com o enrich (o estado é o banco).
+	// externalDetail resolves the RICH EXTERNAL DETAIL with cache-first
+	// (external_detail). It only exists when there is a database + provider (it
+	// does not need assetsDir); without it the GET /external handler degrades
+	// with 503. It shares the cache table with enrich (the state is the
+	// database).
 	externalDetail *externaldetail.Servico
-	// settings é o cache leve (mutex) da config de idioma de app_settings (briefing
-	// 0019), invalidado no PUT /settings/languages. Sempre presente.
+	// settings is the lightweight (mutex) cache of the language config from
+	// app_settings, invalidated on PUT /settings/languages. Always present.
 	settings *settingsCache
-	// catalogCompleteness é o cache leve (mutex) da config de completude de
-	// CATALOGAÇÃO de app_settings (briefing 0057), invalidado no PUT
-	// /settings/catalog-completeness. Sempre presente. Não confundir com
-	// completude de POSSE (web/src/lib/entity-badges.ts).
+	// catalogCompleteness is the lightweight (mutex) cache of the CATALOG
+	// completeness config from app_settings, invalidated on PUT
+	// /settings/catalog-completeness. Always present. Not to be confused with
+	// OWNERSHIP completeness (web/src/lib/entity-badges.ts).
 	catalogCompleteness *catalogCompletenessCache
-	// hostsImagem é a allowlist do proxy de imagem (GET /images; anti-SSRF). Default
-	// = hostsImagemPadrao; injetável em teste. httpImagem baixa a imagem (timeout
-	// curto). O proxy só opera com assetsDir configurado.
+	// hostsImagem is the allowlist of the image proxy (GET /images; anti-SSRF).
+	// Default = hostsImagemPadrao; injectable in tests. httpImagem downloads the
+	// image (short timeout). The proxy only operates with assetsDir configured.
 	hostsImagem map[string]bool
 	httpImagem  *http.Client
-	// jobs é o gerenciador do sistema de jobs (briefing 0052): registro dinâmico
-	// de tipos de job (Handler), config/histórico persistidos e o agendador
-	// embutido. Construído sempre que há banco (não depende de provider/
-	// assetsDir, diferente de enrich/externalDetail); os handlers concretos
-	// (ex.: backup_vacuum) entram via WithJobHandlers.
+	// jobs is the manager of the job system: dynamic registration of job types
+	// (Handler), persisted config/history and the embedded scheduler. Built
+	// whenever there is a database (it does not depend on provider/assetsDir,
+	// unlike enrich/externalDetail); the concrete handlers (e.g. backup_vacuum)
+	// come in via WithJobHandlers.
 	jobs *job.Manager
-	// telemetry calcula o snapshot de saúde operacional (briefing 0055):
-	// tamanho do banco + retrato de uso + uptime/memória do processo. Só
-	// existe quando há banco (mesmo padrão de s.jobs); sem ele
-	// GET /health/system degrada com 503 — GET /health (básico) continua
-	// funcionando independente (contrato do 0001/0006 preservado, ver
+	// telemetry computes the operational health snapshot: database size + usage
+	// portrait + process uptime/memory. It only exists when there is a database
+	// (same pattern as s.jobs); without it GET /health/system degrades with 503 —
+	// GET /health (basic) keeps working regardless (preserved contract, see
 	// health.go).
 	telemetry *telemetry.Servico
-	// telemetryCache guarda por TTL curto (ttlTelemetria) o snapshot JÁ
-	// SERIALIZADO de GET /health/system, para não recalcular a cada
-	// reload/foco de janela da tela de saúde. Cache SINGLETON (uma única
-	// entrada — este endpoint não tem parâmetro variável, diferente de
-	// cacheExterno). Sempre presente (mesmo sem banco; só nunca é populado
-	// nesse caso, já que o handler barra antes com s.telemetry == nil).
+	// telemetryCache keeps, for a short TTL (ttlTelemetria), the ALREADY
+	// SERIALIZED snapshot of GET /health/system, so it is not recomputed on every
+	// reload/window focus of the health screen. SINGLETON cache (a single entry —
+	// this endpoint has no variable parameter, unlike cacheExterno). Always
+	// present (even without a database; it is only never populated in that case,
+	// since the handler blocks earlier with s.telemetry == nil).
 	telemetryCache *telemetryCache
-	// libraryHealth é o MESMO Handler do job saude_biblioteca registrado por
-	// WithLibraryHealthJob (briefing 0053) — guardado à parte (além de já
-	// estar no Registry de s.jobs) para health_system.go ler
-	// UltimoResultadoStorage (briefing 0063: managed/unmanaged de arquivo
-	// NÃO-vídeo da última execução do job, sem recalcular por fora). Nil
-	// quando WithLibraryHealthJob não foi aplicada (ou sem banco/library/
-	// scanner) — os campos novos de storage degradam para 0 nesse caso, mesmo
-	// espírito defensivo do resto do Server.
+	// libraryHealth is the SAME Handler of the saude_biblioteca job registered
+	// by WithLibraryHealthJob — kept aside (besides already being in the Registry
+	// of s.jobs) so health_system.go can read UltimoResultadoStorage
+	// (managed/unmanaged of a NON-video file from the job's last run, without
+	// recalculating it outside). Nil when WithLibraryHealthJob was not applied
+	// (or without database/library/scanner) — the new storage fields degrade to 0
+	// in that case, same defensive spirit as the rest of the Server.
 	libraryHealth *libraryhealth.Handler
-	// watch orquestra o watcher fsnotify opcional por library_source
-	// (briefing 0064, internal/watch): registrado via WithWatch, acionado no
-	// boot (IniciarWatchers) e a QUENTE pelo handler PATCH /library/{id}
-	// (aplicarWatchToggle, library.go). Nil quando WithWatch não foi
-	// aplicada (ou sem banco/library/scanner) -- o toggle de watch_enabled
-	// ainda persiste no banco nesse caso, só o efeito em memória não se
-	// aplica (mesma guarda defensiva de libraryHealth).
+	// watch orchestrates the optional fsnotify watcher per library_source
+	// (internal/watch): registered via WithWatch, triggered at boot
+	// (IniciarWatchers) and HOT by the PATCH /library/{id} handler
+	// (aplicarWatchToggle, library.go). Nil when WithWatch was not applied (or
+	// without database/library/scanner) -- the watch_enabled toggle still
+	// persists in the database in that case, only the in-memory effect does not
+	// apply (same defensive guard as libraryHealth).
 	watch *watch.Watcher
-	// ytdlp gerencia o binário yt-dlp (briefing 0101, ADR-0025): resolve o
-	// path utilizável (customizado banco→env → baixado dinamicamente →
-	// ausente) e expõe Baixar/Status, reaproveitados por trailer/tema
-	// (0102/0103). Injetado via WithYtdlp; nil quando não injetado (ex.:
-	// testes de rota) -- GET/PUT /settings/ytdlp degradam para
-	// indisponível/"nenhum" nesse caso, sem panicar.
+	// ytdlp manages the yt-dlp binary (ADR-0025): it resolves the usable path
+	// (custom database→env → downloaded dynamically → absent) and exposes
+	// Baixar/Status, reused by trailer/theme. Injected via WithYtdlp; nil when
+	// not injected (e.g.: route tests) -- GET/PUT /settings/ytdlp degrade to
+	// unavailable/"none" in that case, without panicking.
 	ytdlp *ytdlp.Gerenciador
-	// audioTagWriter regrava a tag de áudio (ID3v2/Vorbis comment) com o
-	// metadado resolvido de uma faixa (briefing 0125, internal/audiotag —
-	// subprocesso ffmpeg). Sempre construído (não depende de banco/opções,
-	// mesmo padrão de hostsImagem/httpImagem acima): o handler
-	// (audio_tags.go) checa Disponivel() e degrada com 503 quando o
-	// binário ffmpeg não está no ambiente.
+	// audioTagWriter rewrites the audio tag (ID3v2/Vorbis comment) with the
+	// resolved metadata of a track (internal/audiotag — ffmpeg subprocess).
+	// Always built (it does not depend on database/options, same pattern as
+	// hostsImagem/httpImagem above): the handler (audio_tags.go) checks
+	// Disponivel() and degrades with 503 when the ffmpeg binary is not in the
+	// environment.
 	audioTagWriter *audiotag.Writer
 }
 
-// Option configura opcionalmente o Server na construção, preservando a
-// assinatura base New(version, database). Ver WithSearchProvider.
+// Option optionally configures the Server at construction, preserving the base
+// signature New(version, database). See WithSearchProvider.
 type Option func(*Server)
 
-// WithSearchProvider REGISTRA uma ou mais fontes externas (ex.: TMDB, TheTVDB) no
-// registro multi-provider e liga o cache externo. Variádico e ACUMULATIVO: cada
-// provider entra sob o seu Nome() (chamadas múltiplas somam); nil é ignorado. Sem
-// nenhum provider o registro fica vazio (busca externa desligada). O nome preserva
-// a compatibilidade dos chamadores singulares (main e testes passam 1 provider).
+// WithSearchProvider REGISTERS one or more external sources (e.g.: TMDB,
+// TheTVDB) in the multi-provider registry and turns on the external cache.
+// Variadic and ACCUMULATIVE: each provider enters under its Nome() (multiple
+// calls add up); nil is ignored. With no provider the registry stays empty
+// (external search off). The name preserves compatibility with the singular
+// callers (main and tests pass 1 provider).
 func WithSearchProvider(provs ...provider.Provider) Option {
 	return func(s *Server) {
 		registrou := false
@@ -185,11 +185,11 @@ func WithSearchProvider(provs ...provider.Provider) Option {
 	}
 }
 
-// WithCodecRegistry REGISTRA um ou mais providers SÓ para a capacidade de
-// parse de payload já cacheado (MapearDetalhe/Similares/TvdbCruzadoProvider)
-// -- nunca para busca ao vivo. Independente de WithSearchProvider: um
-// provider pode estar aqui sem estar lá (sem credencial) e vice-versa (modo
-// fake dos testes E2E). Ver ADR-0024/briefing 0100.
+// WithCodecRegistry REGISTERS one or more providers ONLY for the parse
+// capability of an already cached payload
+// (MapearDetalhe/Similares/TvdbCruzadoProvider) -- never for live search.
+// Independent of WithSearchProvider: a provider may be here without being there
+// (no credential) and vice versa (fake mode of the E2E tests). See ADR-0024.
 func WithCodecRegistry(provs ...provider.Provider) Option {
 	return func(s *Server) {
 		for _, p := range provs {
@@ -198,12 +198,12 @@ func WithCodecRegistry(provs ...provider.Provider) Option {
 	}
 }
 
-// WithIntegrations REGISTRA um ou mais integration.Descriptor no registro de
-// integrações (briefing 0095, ADR-0023) -- hoje só tmdb.NovoDescriptorIntegracao().
-// Variádico e ACUMULATIVO (mesmo padrão de WithCodecRegistry): cada Descriptor
-// entra sob o seu Slug(); nil é ignorado. Sem esta option, o registro fica
-// vazio (GET /integrations lista nada; GET/PUT /integrations/{slug} degradam
-// para 404 em qualquer slug).
+// WithIntegrations REGISTERS one or more integration.Descriptor in the
+// integrations registry (ADR-0023) -- today only tmdb.NovoDescriptorIntegracao().
+// Variadic and ACCUMULATIVE (same pattern as WithCodecRegistry): each Descriptor
+// enters under its Slug(); nil is ignored. Without this option, the registry
+// stays empty (GET /integrations lists nothing; GET/PUT /integrations/{slug}
+// degrade to 404 for any slug).
 func WithIntegrations(descs ...integration.Descriptor) Option {
 	return func(s *Server) {
 		for _, d := range descs {
@@ -212,33 +212,33 @@ func WithIntegrations(descs ...integration.Descriptor) Option {
 	}
 }
 
-// WithAssetsDir injeta o diretório confiável de assets (cache de imagem do
-// briefing 0015). O main o resolve (env MYMEDIADB_ASSETS_DIR ou dirname(DB)/assets)
-// e cria o diretório antes de injetar.
+// WithAssetsDir injects the trusted assets directory (image cache). main
+// resolves it (env MYMEDIADB_ASSETS_DIR or dirname(DB)/assets) and creates the
+// directory before injecting.
 func WithAssetsDir(dir string) Option {
 	return func(s *Server) {
 		s.assetsDir = dir
 	}
 }
 
-// WithYtdlp injeta o Gerenciador do binário yt-dlp (briefing 0101, ADR-0025).
-// O main o constrói com resolveYtdlpDir() + a env var MYMEDIADB_YTDLP_PATH já
-// resolvida, mesmo espírito de WithAssetsDir/WithSearchProvider. Sem esta
-// option, s.ytdlp fica nil e GET/PUT /settings/ytdlp degradam para
-// indisponível/"nenhum" (cenário defensivo, não deveria ocorrer em produção).
+// WithYtdlp injects the Manager of the yt-dlp binary (ADR-0025). main builds it
+// with resolveYtdlpDir() + the already resolved MYMEDIADB_YTDLP_PATH env var,
+// same spirit as WithAssetsDir/WithSearchProvider. Without this option, s.ytdlp
+// stays nil and GET/PUT /settings/ytdlp degrade to unavailable/"none"
+// (defensive scenario, it should not happen in production).
 func WithYtdlp(g *ytdlp.Gerenciador) Option {
 	return func(s *Server) {
 		s.ytdlp = g
 	}
 }
 
-// WithJobHandlers REGISTRA um ou mais tipos de job (briefing 0052) no Registry
-// do Manager de jobs. Variádico e ACUMULATIVO (mesmo padrão de
-// WithSearchProvider): cada handler entra sob o seu Nome() (chamadas múltiplas
-// somam); nil é ignorado. O Manager em si é construído em montarServicos
-// (sempre que há banco); esta option só precisa que ele já exista quando
-// aplicada — New aplica as options depois de montar os serviços obrigatórios,
-// então o Registry pode ficar vazio até lá (Registrar no zero-value funciona).
+// WithJobHandlers REGISTERS one or more job types in the Registry of the jobs
+// Manager. Variadic and ACCUMULATIVE (same pattern as WithSearchProvider): each
+// handler enters under its Nome() (multiple calls add up); nil is ignored. The
+// Manager itself is built in montarServicos (whenever there is a database); this
+// option only needs it to already exist when applied — New applies the options
+// after assembling the mandatory services, so the Registry may stay empty until
+// then (Registrar on the zero-value works).
 func WithJobHandlers(handlers ...job.Handler) Option {
 	return func(s *Server) {
 		if s.jobs == nil {
@@ -250,19 +250,18 @@ func WithJobHandlers(handlers ...job.Handler) Option {
 	}
 }
 
-// WithLibraryHealthJob REGISTRA o job `saude_biblioteca` (briefing 0053,
-// follow-up do 0052) no Registry do Manager de jobs. Diferente de
-// WithJobHandlers (que recebe um Handler PRONTO, construído em main.go só
-// com dependências de main — ex.: backup.New(db, dir)), o Handler deste job
-// PRECISA do scanner.Manager e do library.Service, que são internos ao
-// Server (privados, construídos em New ANTES do loop de options — mesmo
-// pré-requisito que WithJobHandlers já assume para s.jobs existir). Por
-// isso a construção do Handler acontece AQUI DENTRO, no momento em que a
-// option roda (com s.library/s.scanner já montados), em vez de expor esses
-// serviços para main.go reconstruir por fora (o que duplicaria a fiação).
-// main.go só precisa passar server.WithLibraryHealthJob() junto das demais
-// options. Nula (sem registrar nada) se não houver banco — mesma guarda de
-// WithJobHandlers/montarServicos para os demais serviços opcionais.
+// WithLibraryHealthJob REGISTERS the `saude_biblioteca` job in the Registry of
+// the jobs Manager. Unlike WithJobHandlers (which receives a READY Handler,
+// built in main.go with main-only dependencies — e.g. backup.New(db, dir)), the
+// Handler of this job NEEDS the scanner.Manager and the library.Service, which
+// are internal to the Server (private, built in New BEFORE the options loop —
+// the same prerequisite WithJobHandlers already assumes for s.jobs to exist).
+// That is why the Handler construction happens HERE, at the moment the option
+// runs (with s.library/s.scanner already assembled), instead of exposing those
+// services so main.go can rebuild them outside (which would duplicate the
+// wiring). main.go only has to pass server.WithLibraryHealthJob() along with the
+// other options. Null (registering nothing) if there is no database — same guard
+// as WithJobHandlers/montarServicos for the other optional services.
 func WithLibraryHealthJob() Option {
 	return func(s *Server) {
 		if s.db == nil || s.library == nil || s.scanner == nil {
@@ -271,23 +270,22 @@ func WithLibraryHealthJob() Option {
 		if s.jobs == nil {
 			s.jobs = job.NewManager(s.db)
 		}
-		// s satisfaz tanto libraryhealth.Matcher (auto-match/enriquecimento
-		// retroativo, 0054/0056) quanto libraryhealth.CompletenessRecalculator
-		// (recalculo do cache de completude de catalogacao, briefing 0058) --
-		// os dois parametros recebem o MESMO *Server.
+		// s satisfies both libraryhealth.Matcher (auto-match/retroactive
+		// enrichment) and libraryhealth.CompletenessRecalculator (recalculation of
+		// the catalog completeness cache) -- both parameters receive the SAME
+		// *Server.
 		h := libraryhealth.New(s.library, s.scanner, curation.New(s.db), s, s)
 		s.libraryHealth = h
 		s.jobs.Registry.Registrar(h)
 	}
 }
 
-// WithMidiasFaltantesJob REGISTRA o job `midias_faltantes` (briefing 0064,
-// fecha o ciclo do 0062 em escala) no Registry do Manager de jobs. Mesmo
-// motivo de WithLibraryHealthJob ser uma option DEDICADA (não
-// WithJobHandlers): o Handler precisa do próprio *Server como
-// EntityLister/Materializador (internal/job/midiasfaltantes), que só existe
-// aqui dentro. Nula (sem registrar nada) se não houver banco -- mesma guarda
-// dos demais.
+// WithMidiasFaltantesJob REGISTERS the `midias_faltantes` job in the Registry of
+// the jobs Manager. Same reason as WithLibraryHealthJob being a DEDICATED option
+// (not WithJobHandlers): the Handler needs the *Server itself as
+// EntityLister/Materializador (internal/job/midiasfaltantes), which only exists
+// in here. Null (registering nothing) if there is no database -- same guard as
+// the others.
 func WithMidiasFaltantesJob() Option {
 	return func(s *Server) {
 		if s.db == nil {
@@ -296,20 +294,21 @@ func WithMidiasFaltantesJob() Option {
 		if s.jobs == nil {
 			s.jobs = job.NewManager(s.db)
 		}
-		// s satisfaz midiasfaltantes.EntityLister, midiasfaltantes.Materializador
-		// e midiasfaltantes.ContadorMissing (ver internal/server/midias_faltantes.go).
+		// s satisfies midiasfaltantes.EntityLister,
+		// midiasfaltantes.Materializador and midiasfaltantes.ContadorMissing (see
+		// internal/server/midias_faltantes.go).
 		h := midiasfaltantes.New(s, s, s)
 		s.jobs.Registry.Registrar(h)
 	}
 }
 
-// WithTrailerTemaJob REGISTRA o job `trailer_tema_faltantes` (briefing 0104,
-// ADR-0026) no Registry do Manager de jobs. Mesmo motivo de
-// WithMidiasFaltantesJob ser uma option DEDICADA (não WithJobHandlers): o
-// Handler precisa do próprio *Server como trailertema.EntityLister/
-// TrailerTemaBaixador (ver internal/server/localmedia_handlers.go e
-// midias_faltantes.go), que só existe aqui dentro. Nula (sem registrar
-// nada) se não houver banco -- mesma guarda dos demais.
+// WithTrailerTemaJob REGISTERS the `trailer_tema_faltantes` job in the Registry
+// of the jobs Manager. Same reason as WithMidiasFaltantesJob being a DEDICATED
+// option (not WithJobHandlers): the Handler needs the *Server itself as
+// trailertema.EntityLister/TrailerTemaBaixador (see
+// internal/server/localmedia_handlers.go and midias_faltantes.go), which only
+// exists in here. Null (registering nothing) if there is no database -- same
+// guard as the others.
 func WithTrailerTemaJob() Option {
 	return func(s *Server) {
 		if s.db == nil {
@@ -318,23 +317,25 @@ func WithTrailerTemaJob() Option {
 		if s.jobs == nil {
 			s.jobs = job.NewManager(s.db)
 		}
-		// s satisfaz tanto trailertema.EntityLister (ListarEntitiesComMediaFilePresente,
-		// midias_faltantes.go) quanto trailertema.TrailerTemaBaixador
-		// (YtdlpDisponivel/BaixarTrailerEntity/BaixarTemaEntity, localmedia_handlers.go).
+		// s satisfies both trailertema.EntityLister
+		// (ListarEntitiesComMediaFilePresente, midias_faltantes.go) and
+		// trailertema.TrailerTemaBaixador
+		// (YtdlpDisponivel/BaixarTrailerEntity/BaixarTemaEntity,
+		// localmedia_handlers.go).
 		h := trailertema.New(s, s)
 		s.jobs.Registry.Registrar(h)
 	}
 }
 
-// WithWatch REGISTRA o orquestrador do watch fsnotify opcional por fonte
-// (briefing 0064, internal/watch). Precisa do scanner.Manager (interno ao
-// Server, já construído antes do loop de options) para disparar o scan
-// DIRECIONADO de uma fonte quando o debounce expira. Nula (s.watch continua
-// nil) se não houver banco/library/scanner -- mesma guarda de
-// WithLibraryHealthJob; o chamador (main.go) ainda deve chamar
-// IniciarWatchers APÓS srv := server.New(...) para registrar as fontes que
-// já nascem com watch_enabled=1 (não é feito aqui dentro para não fazer I/O
-// de disco durante a construção do Server).
+// WithWatch REGISTERS the orchestrator of the optional fsnotify watch per source
+// (internal/watch). It needs the scanner.Manager (internal to the Server, already
+// built before the options loop) to trigger the TARGETED scan of a source when
+// the debounce expires. Null (s.watch stays nil) if there is no
+// database/library/scanner -- same guard as WithLibraryHealthJob; the caller
+// (main.go) must still call IniciarWatchers AFTER srv := server.New(...) to
+// register the sources that are already born with watch_enabled=1 (it is not
+// done in here so as not to do disk I/O during the construction of the
+// Server).
 func WithWatch() Option {
 	return func(s *Server) {
 		if s.db == nil || s.library == nil || s.scanner == nil {
@@ -344,18 +345,18 @@ func WithWatch() Option {
 	}
 }
 
-// WithExecQueue liga o scanner interno do Server à fila de execução
-// unificada (briefing 0108, ADR-0028, internal/execqueue): chama
-// scanner.Manager.ConfigurarLibrary/ConfigurarFila com as dependências já
-// montadas (s.library, o `fila` recebido). Não cria a fila nem inicia o
-// worker (fila.Run) -- isso é responsabilidade de quem CONSTRÓI o
-// *execqueue.Manager e o passa aqui (produção: cmd/mymediadb/main.go, numa
-// camada seguinte que também vai migrar internal/job para a MESMA fila;
-// testes: cada harness sobe e roda seu próprio execqueue.Manager de teste).
-// Sem esta option (ou com fila nil), Start() do scanner devolve
-// scanner.ErrFilaNaoConfigurada -- nenhum caminho de scan funciona até
-// alguém aplicar isto. Nula (no-op) se não houver banco/library/scanner --
-// mesma guarda de WithWatch/WithLibraryHealthJob.
+// WithExecQueue connects the Server's internal scanner to the unified
+// execution queue (ADR-0028, internal/execqueue): it calls
+// scanner.Manager.ConfigurarLibrary/ConfigurarFila with the already assembled
+// dependencies (s.library, the `fila` received). It does not create the queue nor
+// start the worker (fila.Run) -- that is the responsibility of whoever BUILDS the
+// *execqueue.Manager and passes it here (production: cmd/mymediadb/main.go, in a
+// following layer that will also migrate internal/job to the SAME queue; tests:
+// each harness starts and runs its own test execqueue.Manager). Without this
+// option (or with a nil queue), Start() of the scanner returns
+// scanner.ErrFilaNaoConfigurada -- no scan path works until someone applies it.
+// Null (no-op) if there is no database/library/scanner -- same guard as
+// WithWatch/WithLibraryHealthJob.
 func WithExecQueue(fila *execqueue.Manager) Option {
 	return func(s *Server) {
 		if s.db == nil || s.library == nil || s.scanner == nil || fila == nil {
@@ -366,13 +367,13 @@ func WithExecQueue(fila *execqueue.Manager) Option {
 	}
 }
 
-// IniciarWatchers lista TODA library_source com watch_enabled=1 e registra o
-// watcher fsnotify de cada uma (mesma rotina usada pelo handler PATCH
-// /library/{id} quando liga o toggle a quente) -- chamado pelo main ANTES do
-// ListenAndServe, mesmo espírito de RunScheduler não atrasar o boot do HTTP.
-// Falha ao registrar UMA fonte é logada e NUNCA aborta o boot nem as demais
-// (briefing 0064 §4). No-op silencioso se WithWatch não foi aplicada ou não
-// há library.Service (sem banco).
+// IniciarWatchers lists EVERY library_source with watch_enabled=1 and registers
+// the fsnotify watcher of each one (same routine used by the PATCH /library/{id}
+// handler when it turns the toggle on hot) -- called by main BEFORE
+// ListenAndServe, same spirit as RunScheduler not delaying the HTTP boot. A
+// failure to register ONE source is logged and NEVER aborts the boot nor the
+// others. Silent no-op if WithWatch was not applied or there is no
+// library.Service (no database).
 func (s *Server) IniciarWatchers(ctx context.Context) {
 	if s.watch == nil || s.library == nil {
 		return
@@ -392,9 +393,9 @@ func (s *Server) IniciarWatchers(ctx context.Context) {
 	}
 }
 
-// FecharWatchers fecha todos os watchers fsnotify registrados -- chamado pelo
-// main no shutdown gracioso do servidor (mesmo instante de httpServer.Shutdown).
-// No-op se WithWatch não foi aplicada.
+// FecharWatchers closes every registered fsnotify watcher -- called by main on
+// the graceful shutdown of the server (same instant as httpServer.Shutdown).
+// No-op if WithWatch was not applied.
 func (s *Server) FecharWatchers() {
 	if s.watch == nil {
 		return
@@ -402,18 +403,18 @@ func (s *Server) FecharWatchers() {
 	s.watch.Close()
 }
 
-// Jobs devolve o gerenciador de jobs (nil quando não há banco injetado) —
-// usado pelo main para disparar o agendador embutido (RunScheduler) antes do
+// Jobs returns the jobs manager (nil when no database is injected) — used by
+// main to trigger the embedded scheduler (RunScheduler) before
 // ListenAndServe.
 func (s *Server) Jobs() *job.Manager {
 	return s.jobs
 }
 
-// New cria um Server com a versão do binário e os pools de banco (repassados
-// pelo main). O db pode ser nil em cenários sem persistência (ex.: alguns
-// testes de rota); o health degrada graciosamente nesse caso. Options são
-// extensões opcionais (ex.: WithSearchProvider) — a forma New(version, database)
-// segue válida.
+// New creates a Server with the binary version and the database pools (passed
+// in by main). The db may be nil in scenarios without persistence (e.g.: some
+// route tests); health degrades gracefully in that case. Options are optional
+// extensions (e.g.: WithSearchProvider) — the New(version, database) form
+// remains valid.
 func New(version string, database *db.DB, opts ...Option) *Server {
 	s := &Server{version: version, db: database, settings: &settingsCache{},
 		catalogCompleteness: &catalogCompletenessCache{},
@@ -432,112 +433,112 @@ func New(version string, database *db.DB, opts ...Option) *Server {
 	return s
 }
 
-// montarServicos constrói os serviços OPCIONAIS (enrich, detalhe externo rico e o
-// auto-import de séries do scanner) depois de aplicadas as options. Cada um exige
-// seu próprio conjunto de dependências (banco/provider/assetsDir); sem elas fica
-// nil e o handler correspondente degrada com 503. Extraído de New para manter a
-// construção legível (uma responsabilidade por método).
+// montarServicos builds the OPTIONAL services (enrich, rich external detail and
+// the scanner's series auto-import) after the options are applied. Each one
+// requires its own set of dependencies (database/provider/assetsDir); without
+// them it stays nil and the corresponding handler degrades with 503. Extracted
+// from New to keep the construction readable (one responsibility per method).
 func (s *Server) montarServicos(database *db.DB) {
-	// O enriquecimento (briefing 0015) exige banco + fonte externa + diretório de
-	// assets. Sem qualquer um deles fica nil e os handlers /enrich e /import
-	// degradam com 503 (busca externa desligada => não há o que importar).
+	// Enrichment requires a database + external source + assets directory.
+	// Without any of them it stays nil and the /enrich and /import handlers
+	// degrade with 503 (external search off => there is nothing to import).
 	if database != nil && !s.providers.Vazio() && s.assetsDir != "" {
 		s.enrich = enrich.New(database, s.providers, s.assetsDir)
 	}
-	// O detalhe externo rico (briefing 0022) precisa só de banco -- desde o
-	// briefing 0100 (ADR-0024) não depende mais de `providers` não-vazio: o
-	// serviço passa a existir sempre que há banco, e a degradação por falta
-	// de credencial acontece POR FONTE dentro de PayloadFresco (serve cache
-	// stale/qualquer em vez de desligar o serviço inteiro). `s.codecs` entra
-	// para a capacidade de parse do payload cacheado sobreviver sem chave.
+	// The rich external detail only needs a database -- it no longer depends on
+	// a non-empty `providers`: the service now exists whenever there is a
+	// database, and the degradation for a missing credential happens PER SOURCE
+	// inside PayloadFresco (it serves stale/any cache instead of turning the
+	// whole service off). `s.codecs` comes in so the parse capability of the
+	// cached payload survives without a key.
 	if database != nil {
 		s.externalDetail = externaldetail.New(database, s.providers, 0)
 	}
-	// Liga o AUTO-IMPORT de séries no scanner (0034): o importador por nome (enrich) e
-	// os idiomas permitidos das settings. Só quando o enrich existe; sem ele o scanner
-	// de séries degrada (casa o que já está no catálogo, o resto vai para revisão).
+	// Turns on the AUTO-IMPORT of series in the scanner: the importer by name
+	// (enrich) and the allowed languages from the settings. Only when enrich
+	// exists; without it the series scanner degrades (it matches what is already
+	// in the catalog, the rest goes to review).
 	if s.scanner != nil && s.enrich != nil {
 		s.scanner.ConfigurarSeries(s.enrich, s.idiomasScanner)
 	}
-	// Liga o AUTO-MATCH imediato de filme no scan (briefing 0089): a entity
-	// nova recém-criada pelo scanner tenta casar+enriquecer sozinha, reusando
-	// tentarAutoMatch (mesmo limiar do job saude_biblioteca). Diferente de
-	// ConfigurarSeries, não depende de s.enrich != nil -- o local-first do
-	// auto-match funciona sem provider externo nenhum, e o passo externo já
-	// degrada em silêncio (autoMatchNone) quando s.enrich é nil.
+	// Turns on the immediate AUTO-MATCH of movies during the scan: the new
+	// entity just created by the scanner tries to match+enrich on its own, reusing
+	// tentarAutoMatch (same threshold as the saude_biblioteca job). Unlike
+	// ConfigurarSeries, it does not depend on s.enrich != nil -- the local-first
+	// of auto-match works without any external provider, and the external step
+	// already degrades silently (autoMatchNone) when s.enrich is nil.
 	if s.scanner != nil {
 		s.scanner.ConfigurarFilmes(s)
 	}
-	// Liga o matching de música no scanner (briefing 0107, ADR-0027): o
-	// import por MBID (idempotente, via s.enrich) e o provider MusicBrainz
-	// (busca textual + resolução reversa faixa->artista). Só quando os dois
-	// existem -- sem enrich ou sem o provider registrado, o scan de um
-	// library_source content_type=music degrada para draft (arquivo
-	// catalogado sem hierarquia, corrigível depois).
+	// Turns on music matching in the scanner (ADR-0027): the import by MBID
+	// (idempotent, via s.enrich) and the MusicBrainz provider (textual search +
+	// reverse track->artist resolution). Only when both exist -- without enrich or
+	// without the registered provider, the scan of a library_source with
+	// content_type=music degrades to draft (file cataloged without hierarchy,
+	// fixable later).
 	if s.scanner != nil && s.enrich != nil {
 		if mb, ok := s.providers.Get("musicbrainz"); ok {
 			s.scanner.ConfigurarMusica(s.enrich, mb)
 		}
 	}
-	// Liga o passo 4.5 de FINGERPRINT ACÚSTICO no scanner de música (briefing
-	// 0126): o calculador via fpcalc (internal/fingerprint) e o provider
-	// capaz de consultar o AcoustID (capacidade opcional provider.
-	// FingerprintProvider -- o type-assert real acontece dentro do
-	// scanner). Só quando o provider "acoustid" foi registrado
-	// (cmd/mymediadb/main.go só registra com a client key configurada E
-	// fpcalc disponível no boot) -- sem ele, o passo 4.5 degrada em
-	// silêncio e o scan cai direto no draft (passo 5), como antes deste
-	// briefing.
+	// Turns on step 4.5 of ACOUSTIC FINGERPRINT in the music scanner: the
+	// calculator via fpcalc (internal/fingerprint) and the provider able to query
+	// AcoustID (optional provider.FingerprintProvider capability -- the real
+	// type-assert happens inside the scanner). Only when the "acoustid" provider
+	// was registered (cmd/mymediadb/main.go only registers it with the client key
+	// configured AND fpcalc available at boot) -- without it, step 4.5 degrades
+	// silently and the scan falls straight through to draft (step 5), as before.
 	if s.scanner != nil {
 		if fp, ok := s.providers.Get("acoustid"); ok {
 			s.scanner.ConfigurarFingerprint(fingerprint.NewCalculador(), fp)
 		}
 	}
-	// Liga a materialização automática OPCIONAL (briefing 0089): consumida
-	// depois de QUALQUER auto-import bem-sucedido do scan (filme ou série).
-	// Toggle desligado (default) faz o adaptador degradar a no-op -- seguro
-	// configurar sempre que o scanner existe.
+	// Turns on the OPTIONAL automatic materialization: consumed after ANY
+	// successful auto-import of the scan (movie or series). A disabled toggle
+	// (default) makes the adapter degrade to a no-op -- it is safe to configure
+	// whenever the scanner exists.
 	if s.scanner != nil {
 		s.scanner.ConfigurarMaterializacao(s)
 	}
-	// Liga o PÓS-SCAN por biblioteca (briefing 0135, ADR-0031): ao fim do scan de
-	// uma fonte, o próprio server reconcilía os rascunhos e retenta os pendentes
-	// DAQUELA fonte, materializando a arte de quem passou a ter identidade quando
-	// o toggle acima está ligado. nil-safe: sem isto o scan termina como antes.
+	// Turns on the POST-SCAN per library (ADR-0031): at the end of a source's
+	// scan, the server itself reconciles the drafts and retries the pending items
+	// OF THAT source, materializing the artwork of whoever gained an identity
+	// when the toggle above is on. nil-safe: without this the scan ends as
+	// before.
 	if s.scanner != nil {
 		s.scanner.ConfigurarPosScan(s)
 	}
-	// O Manager de jobs (briefing 0052) só precisa de banco -- diferente de
-	// enrich/externalDetail, não depende de provider nem assetsDir (o job
-	// semente backup_vacuum não usa fonte externa). WithJobHandlers pode já
-	// tê-lo construído (para registrar os handlers antes deste ponto); aqui só
-	// cobre o caso de nenhuma option ter sido aplicada (a listagem GET /jobs
-	// ainda precisa funcionar, mesmo sem nenhum Handler registrado).
+	// The jobs Manager only needs a database -- unlike
+	// enrich/externalDetail, it does not depend on a provider nor assetsDir (the
+	// seed job backup_vacuum uses no external source). WithJobHandlers may have
+	// already built it (to register the handlers before this point); here we only
+	// cover the case where no option was applied (the GET /jobs listing still has
+	// to work, even with no Handler registered).
 	if database != nil && s.jobs == nil {
 		s.jobs = job.NewManager(database)
 	}
-	// A telemetria de sistema (briefing 0055) só precisa de banco — não
-	// depende de provider/assetsDir (diferente de enrich/externalDetail).
-	// iniciadoEm=time.Now() aqui aproxima o "início do processo" (o uptime
-	// reportado): o Server é construído uma única vez no boot, então este é
-	// o melhor instante disponível sem plumbing adicional em main.go.
+	// System telemetry only needs a database — it does not depend on
+	// provider/assetsDir (unlike enrich/externalDetail). iniciadoEm=time.Now()
+	// here approximates the "process start" (the reported uptime): the Server is
+	// built a single time at boot, so this is the best instant available without
+	// additional plumbing in main.go.
 	if database != nil && s.telemetry == nil {
 		s.telemetry = telemetry.New(database, curation.New(database), time.Now())
 	}
-	// Sincroniza o path customizado do yt-dlp persistido em app_settings
-	// (briefing 0101) já no boot: sem isso, um override gravado numa execução
-	// anterior só passaria a valer depois da 1ª leitura via GET
-	// /settings/ytdlp, deixando 0102/0103 chamando ytdlp.Gerenciador
-	// diretamente sem o override até então. Best-effort (mesmo espírito de
-	// tudo que já é lazy-cache neste arquivo): erro aqui não aborta o boot,
-	// só adia a sincronização para a próxima leitura via HTTP.
+	// Synchronizes the custom yt-dlp path persisted in app_settings already at
+	// boot: without this, an override written in a previous run would only take
+	// effect after the 1st read via GET /settings/ytdlp, leaving the
+	// trailer/theme code calling ytdlp.Gerenciador directly without the override
+	// until then. Best-effort (same spirit as everything that is already a
+	// lazy-cache in this file): an error here does not abort the boot, it only
+	// postpones the synchronization to the next read via HTTP.
 	if database != nil && s.ytdlp != nil {
 		_, _ = s.obterYtdlpPathSettings(context.Background())
 	}
 }
 
-// idiomasScanner devolve os idiomas permitidos das settings (nil em erro), usado como
-// fonte de idiomas do auto-import de séries do scanner.
+// idiomasScanner returns the allowed languages from the settings (nil on
+// error), used as the language source of the scanner's series auto-import.
 func (s *Server) idiomasScanner(ctx context.Context) []string {
 	cfg, err := s.obterLanguageSettings(ctx)
 	if err != nil {
@@ -546,16 +547,16 @@ func (s *Server) idiomasScanner(ctx context.Context) []string {
 	return cfg.Allowed
 }
 
-// Handler constrói e devolve o http.Handler raiz da aplicação.
+// Handler builds and returns the root http.Handler of the application.
 func (s *Server) Handler() (http.Handler, error) {
 	r := chi.NewRouter()
 
-	// Middlewares base: log de requisições e recuperação de panics.
+	// Base middlewares: request log and panic recovery.
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	// API versionada. Rotas sob /api que não casarem devolvem 404 em JSON,
-	// nunca o index.html — para não mascarar erros de API como página.
+	// Versioned API. Routes under /api that do not match return 404 in JSON,
+	// never index.html — so API errors are not masked as a page.
 	r.Route("/api", func(api chi.Router) {
 		api.NotFound(apiNotFound)
 		api.MethodNotAllowed(apiNotFound)
@@ -563,376 +564,375 @@ func (s *Server) Handler() (http.Handler, error) {
 		api.Route("/v1", func(v1 chi.Router) {
 			v1.Get("/health", s.healthHandler)
 
-			// Telemetria de sistema (briefing 0055): tamanho do banco + retrato
-			// operacional + uso de disco por fonte, em SNAPSHOT sob demanda
-			// (cache de 60s). Separado de /health de propósito — este é mais caro
-			// (N syscalls Statfs + agregações SQL) e não pode pesar o HEALTHCHECK
-			// do Docker (que bate em /health a cada 10s).
+			// System telemetry: database size + operational portrait + disk
+			// usage per source, in a SNAPSHOT on demand (60s cache). Kept apart
+			// from /health on purpose — this one is more expensive (N Statfs
+			// syscalls + SQL aggregations) and cannot weigh on the Docker
+			// HEALTHCHECK (which hits /health every 10s).
 			v1.Get("/health/system", s.systemHealthHandler)
 
-			// Busca local-first (briefing 0014): FTS5 no catálogo + passthrough
-			// opcional à fonte externa (resultados "não salvos").
+			// Local-first search: FTS5 over the catalog + optional passthrough
+			// to the external source ("unsaved" results).
 			v1.Get("/search", s.search)
 
-			// Import explícito (briefing 0015): find-or-create por id externo,
-			// depois enriquece. Escreve external, nunca override.
+			// Explicit import: find-or-create by external id, then enrich. It
+			// writes external, never override.
 			v1.Post("/import", s.importar)
 
-			// Criação de coleção LOCAL manual (briefing 0025, Fase B): o dono
-			// monta uma coleção do zero (sem fonte externa) e recebe a entity
-			// `type='collection'` resolvida. Os membros entram/saem depois pelas
-			// rotas /entities/{id}/members abaixo.
+			// Manual LOCAL collection creation (Phase B): the owner assembles a
+			// collection from scratch (with no external source) and receives the
+			// resolved `type='collection'` entity. Members come in and out later
+			// through the /entities/{id}/members routes below.
 			v1.Post("/collections", s.createCollection)
 
-			// Detalhe externo RICO antes de importar (briefing 0022): puxa o item
-			// completo da fonte, PERSISTE na 1ª chamada (cache external_detail) e
-			// serve do cache nas seguintes, resolvido no idioma ativo. Ver != catalogar
-			// (nunca cria entity).
+			// RICH external detail before importing: it pulls the complete item
+			// from the source, PERSISTS it on the 1st call (external_detail cache)
+			// and serves it from the cache on the following ones, resolved in the
+			// active language. View != catalog (it never creates an entity).
 			v1.Get("/external/{source}/{type}/{id}", s.getExternalDetail)
 
-			// Colecao externa como PAGINA propria (briefing 0024, follow-up do
-			// 0023): nome/artes do conjunto + as partes (filmes) navegaveis ao
-			// detalhe externo. O segmento estatico "collection" tem precedencia
-			// sobre o {type} da rota acima no chi. Via a capacidade opcional
-			// provider.ColecaoProvider; fontes sem colecao degradam com 503.
+			// External collection as its own PAGE: the set's name/artwork + the
+			// parts (movies) navigable to the external detail. The static segment
+			// "collection" takes precedence over the {type} of the route above in
+			// chi. Via the optional provider.ColecaoProvider capability; sources
+			// without collections degrade with 503.
 			v1.Get("/external/{source}/collection/{id}", s.getExternalCollection)
 
-			// Album externo como PAGINA propria (briefing 0115 Parte 2, ADR-0029):
-			// nome/faixas oficiais do release (via provider.MusicaAlbumProvider,
-			// BuscarAlbumPorMbid) -- a tela de "faixas faltando" do album ja interno,
-			// mesmo padrao de colecao acima ("album" tambem tem precedencia sobre o
-			// {type} generico). Fontes sem a capacidade seletiva de album degradam
-			// com 503.
+			// External album as its own PAGE (ADR-0029): official name/tracks of
+			// the release (via provider.MusicaAlbumProvider, BuscarAlbumPorMbid) --
+			// the "missing tracks" screen of the already internal album, same
+			// pattern as the collection above ("album" also takes precedence over
+			// the generic {type}). Sources without the selective album capability
+			// degrade with 503.
 			v1.Get("/external/{source}/album/{id}", s.getExternalAlbum)
 
-			// Proxy READ-THROUGH de imagem (briefing 0024): baixa e cacheia em
-			// disco a imagem de um host permitido (allowlist anti-SSRF) para a
-			// tela de detalhe do EXTERNO (pré-import) não depender do CDN da fonte
-			// em runtime — como o pôster/fanart cacheados da entity (0015). 503 sem
-			// assetsDir; a resolução vive em image_proxy.go.
+			// READ-THROUGH proxy of images: it downloads and caches on disk the
+			// image of an allowed host (anti-SSRF allowlist) so the EXTERNAL detail
+			// screen (pre-import) does not depend on the source's CDN at runtime —
+			// like the cached poster/fanart of the entity. 503 without assetsDir;
+			// the resolution lives in image_proxy.go.
 			v1.Get("/images", s.getImageProxy)
 
-			// Filas de CURADORIA (briefing 0018): revisão (draft ou baixa
-			// confiança) e órfãs (auto-criadas, todas missing, sem investimento
-			// do dono). Só leitura; mesmo shape de card da lista. As ações
-			// (confirmar/corrigir/purgar) vivem sob /entities.
+			// CURATION queues: review (draft or low confidence) and orphans
+			// (auto-created, all missing, no investment from the owner). Read-only;
+			// the same card shape as the list. The actions
+			// (confirm/correct/purge) live under /entities.
 			v1.Get("/review", s.listReview)
 			v1.Get("/orphans", s.listOrphans)
 
-			// AUTO-MATCH em LOTE (briefing 0050): tenta resolver sozinho todos os
-			// elegíveis da fila (ou o subconjunto de `ids` no corpo), reusando a
-			// MESMA lógica do individual em /entities/{id}/auto-match abaixo.
-			// Sempre 200 com o resumo agregado.
+			// BATCH AUTO-MATCH: it tries to resolve on its own every eligible
+			// item of the queue (or the subset of `ids` in the body), reusing the
+			// SAME logic as the individual one in /entities/{id}/auto-match below.
+			// Always 200 with the aggregated summary.
 			v1.Post("/review/auto-match", s.autoMatchReview)
 
-			// Página da PESSOA (briefing 0029 Fase D, interno-first): a pessoa
-			// deduplicada no catálogo + a filmografia (obras já importadas que a
-			// creditam). Destino do card de elenco/equipe quando o crédito traz
-			// `person_id`. Read-only; 404 quando a pessoa não existe no catálogo.
+			// PERSON page (interno-first): the person deduplicated in the catalog
+			// + the filmography (already imported works that credit them).
+			// Destination of the cast/crew card when the credit carries
+			// `person_id`. Read-only; 404 when the person does not exist in the
+			// catalog.
 			v1.Get("/person/{id}", s.getPerson)
 
-			// Descritor de FORMULÁRIO editorial (briefing 0030): metadado estático
-			// que diz ao front COMO renderizar cada campo editável, derivado da fonte
-			// única resolver.CamposEditaveis() + o registro de apresentação. Só
-			// leitura, sem banco; cacheável (imutável entre deploys).
+			// Editorial FORM descriptor: static metadata that tells the front end
+			// HOW to render each editable field, derived from the single source
+			// resolver.CamposEditaveis() + the presentation registry. Read-only, no
+			// database; cacheable (immutable between deploys).
 			v1.Get("/schema/entity-fields", s.getEntityFieldsSchema)
 
-			// Configurações da aplicação (briefing 0019). Hoje só a config de
-			// idioma (principal/fallback/permitidos), base da resolução por idioma.
+			// Application settings. Today only the language config
+			// (primary/fallback/allowed), the basis of per-language resolution.
 			v1.Route("/settings", func(cfg chi.Router) {
 				cfg.Get("/languages", s.getLanguageSettings)
 				cfg.Put("/languages", s.putLanguageSettings)
 
-				// Completude de CATALOGAÇÃO por tipo (briefing 0057): quais campos/
-				// artes o dono considera desejáveis para um item estar bem
-				// catalogado. Diferente de completude de POSSE (front).
+				// CATALOG completeness per type: which fields/artwork the owner
+				// considers desirable for an item to be well cataloged. Different
+				// from OWNERSHIP completeness (front end).
 				cfg.Get("/catalog-completeness", s.getCatalogCompletenessSettings)
 				cfg.Put("/catalog-completeness", s.putCatalogCompletenessSettings)
 
-				// Throttle do enriquecimento retroativo (briefing 0085): intervalo
-				// GLOBAL de reentativa, em dias, entre duas tentativas do MESMO
-				// item sem provider (default 15 dias). Override opcional por
-				// biblioteca vive em library_source (ver library.go).
+				// Throttle of retroactive enrichment: GLOBAL retry interval, in
+				// days, between two attempts on the SAME item without a provider
+				// (default 15 days). The optional per-library override lives in
+				// library_source (see library.go).
 				cfg.Get("/enrichment-retroativo", s.getEnrichmentRetroativoSettings)
 				cfg.Put("/enrichment-retroativo", s.putEnrichmentRetroativoSettings)
 
-				// Toggle de materialização automática de artes (briefing 0089):
-				// desligado por padrão -- quando ligado, todo auto-import
-				// bem-sucedido do scan (filme ou série) já materializa as artes
-				// do inventário na pasta real, sem esperar o job periódico
-				// midias_faltantes nem clique manual.
+				// Toggle of automatic artwork materialization: off by default --
+				// when on, every successful auto-import of the scan (movie or
+				// series) already materializes the inventory artwork in the real
+				// folder, without waiting for the periodic midias_faltantes job nor
+				// a manual click.
 				cfg.Get("/auto-materialize-artwork", s.getAutoMaterializeArtworkSettings)
 				cfg.Put("/auto-materialize-artwork", s.putAutoMaterializeArtworkSettings)
 
-				// Toggle de download automático de trailer/tema musical
-				// (briefing 0104, ADR-0026): desligado por padrão -- quando
-				// ligado, compartilhado pelo job periódico
-				// trailer_tema_faltantes E pelo gatilho automático no scan
-				// (todo auto-import bem-sucedido tenta baixar trailer/tema
-				// em background, sem bloquear a resposta do scan).
+				// Toggle of automatic trailer/theme download: off by default --
+				// when on, shared by the periodic trailer_tema_faltantes job AND by
+				// the automatic trigger in the scan (every successful auto-import
+				// tries to download trailer/theme in the background, without
+				// blocking the scan response).
 				cfg.Get("/auto-download-trailer-tema", s.getAutoDownloadTrailerTemaSettings)
 				cfg.Put("/auto-download-trailer-tema", s.putAutoDownloadTrailerTemaSettings)
 
-				// Path customizado do binário yt-dlp (briefing 0101,
-				// ADR-0025): status efetivo (disponível/origem/detalhe) +
-				// override do dono, com precedência banco > env var
-				// MYMEDIADB_YTDLP_PATH, aplicada em runtime sem reiniciar.
-				// Fundação para trailer (0102) e música-tema (0103).
+				// Custom yt-dlp binary path: effective status
+				// (available/origin/detail) + the owner's override, with
+				// database > env var MYMEDIADB_YTDLP_PATH precedence, applied at
+				// runtime without a restart. Foundation for trailer and theme.
 				cfg.Get("/ytdlp", s.getYtdlpSettings)
 				cfg.Put("/ytdlp", s.putYtdlpSettings)
 			})
 
-			// Integrações configuráveis via UI (briefing 0095, ADR-0023):
-			// registro genérico de config de provider (hoje só TMDB), com
-			// precedência banco > env var calculada por integrationsResolver.
-			// Sem tela própria nesta entrega -- o briefing 0096 consome estes
-			// endpoints. GET lista (com `configurada`)/detalha (schema + valor
-			// efetivo por campo, nunca o valor cru de um campo secreto); PUT
-			// grava PARCIAL (só os campos presentes no body mudam, `null`
-			// remove a chave e volta a herdar a env var).
+			// Integrations configurable through the UI: generic registry of
+			// provider config (today only TMDB), with database > env var
+			// precedence computed by integrationsResolver. No screen of its own in
+			// this delivery -- these endpoints are consumed elsewhere. GET lists
+			// (with `configurada`)/details (schema + effective value per field,
+			// never the raw value of a secret field); PUT writes PARTIALLY (only
+			// the fields present in the body change, `null` removes the key and
+			// goes back to inheriting the env var).
 			v1.Route("/integrations", func(ig chi.Router) {
 				ig.Get("/", s.listIntegrations)
 				ig.Get("/{slug}", s.getIntegration)
 				ig.Put("/{slug}", s.putIntegration)
 			})
 
-			// Datasources da biblioteca (briefing 0008). Escritas (POST/PATCH/
-			// DELETE) pela conexão de escrita, leituras (GET) pelo pool —
-			// encapsulado no serviço internal/library (ADR-0010). PATCH
-			// (briefing 0064) edita watch_enabled e aplica o watcher fsnotify
-			// A QUENTE (aplicarWatchToggle, library.go), sem restart.
+			// Library datasources. Writes (POST/PATCH/DELETE) through the write
+			// connection, reads (GET) through the pool — encapsulated in the
+			// internal/library service (ADR-0010). PATCH edits watch_enabled and
+			// applies the fsnotify watcher HOT (aplicarWatchToggle, library.go),
+			// without a restart.
 			v1.Route("/library", func(lib chi.Router) {
 				lib.Post("/", s.createLibrary)
 				lib.Get("/", s.listLibrary)
 
-				// Navegador de pastas (briefing 0071): rota ESTÁTICA, precisa
-				// vir declarada antes de conflitar em teoria com o wildcard
-				// "/{id}" abaixo — na prática o radix tree do chi já prefere
-				// a rota estática de qualquer forma, mas a ordem aqui deixa a
-				// intenção explícita e é coberta por teste de integração.
+				// Folder browser: STATIC route, it must be declared before it
+				// would in theory conflict with the "/{id}" wildcard below — in
+				// practice chi's radix tree already prefers the static route anyway,
+				// but the order here makes the intent explicit and is covered by an
+				// integration test.
 				lib.Get("/browse", s.browseLibraryPath)
 
 				lib.Get("/{id}", s.getLibrary)
 				lib.Patch("/{id}", s.patchLibrary)
 				lib.Delete("/{id}", s.deleteLibrary)
 
-				// Scan em background por datasource (briefing 0009): dispara
-				// (202) e consulta o progresso.
+				// Background scan per datasource: it triggers (202) and polls the
+				// progress.
 				lib.Post("/{id}/scan", s.startScan)
 				lib.Get("/{id}/scan", s.getScanStatus)
 			})
 
-			// Superfície de LEITURA do catálogo (briefing 0010). Só GETs, todos
-			// pelo pool de leitura (ADR-0010): lista paginada, detalhe resolvido,
-			// arquivos+mediainfo e o binário do pôster.
+			// READ surface of the catalog. GETs only, all through the read pool
+			// (ADR-0010): paginated list, resolved detail, files+mediainfo and the
+			// poster binary.
 			v1.Route("/entities", func(ent chi.Router) {
 				ent.Get("/", s.listEntities)
 
-				// Criação de ITEM LOCAL manual (briefing 0027): o dono cataloga um
-				// filme/série (type=movie|tv) SEM fonte externa e recebe a entity
-				// resolvida. Combina com o PUT .../external-ids abaixo (fixar o id da
-				// fonte depois, para sincronizar). Coleção manual tem o /collections.
+				// Manual LOCAL ITEM creation: the owner catalogs a movie/series
+				// (type=movie|tv) WITHOUT an external source and receives the
+				// resolved entity. It combines with PUT .../external-ids below
+				// (pin the source id later, to synchronize). A manual collection has
+				// /collections.
 				ent.Post("/", s.createItem)
 
-				// Tipos com dado catalogado (briefings 0109/0110): rota
-				// ESTÁTICA, precisa vir declarada antes do wildcard "/{id}"
-				// abaixo — na prática o radix tree do chi já prefere a rota
-				// estática de qualquer forma (mesmo padrão de
-				// /library/browse acima), mas a ordem aqui deixa a intenção
-				// explícita e é coberta por teste de integração.
+				// Types with cataloged data: STATIC route, it must be declared
+				// before the "/{id}" wildcard below — in practice chi's radix tree
+				// already prefers the static route anyway (same pattern as
+				// /library/browse above), but the order here makes the intent
+				// explicit and is covered by an integration test.
 				ent.Get("/types", s.listEntityTypes)
 
 				ent.Get("/{id}", s.getEntity)
 				ent.Get("/{id}/files", s.getEntityFiles)
 
-				// Membros de uma COLEÇÃO (briefing 0025): os filmes ligados por
-				// entity_relation(kind='collection'), como cards (mesmo shape da
-				// lista), ordenados por ano. `[]` para não-coleção. O POST liga um
-				// item e o DELETE o desliga (Fase B, edição manual dos membros):
-				// ambos validam que o pai é coleção e devolvem a lista atualizada.
+				// Members of a COLLECTION: the movies linked by
+				// entity_relation(kind='collection'), as cards (same shape as the
+				// list), ordered by year. `[]` for a non-collection. The POST links
+				// an item and the DELETE unlinks it (Phase B, manual editing of the
+				// members): both validate that the parent is a collection and return
+				// the updated list.
 				ent.Get("/{id}/members", s.getEntityMembers)
 				ent.Post("/{id}/members", s.addMember)
 				ent.Delete("/{id}/members/{childId}", s.removeMember)
 
-				// Episódios da série AGRUPADOS por ordem (briefing 0040): o seletor
-				// de ordenação (official/dvd/absolute) reprojeta a série na LEITURA a
-				// partir do `numbering` — cabeçalhos de temporada da ordem NÃO viram
-				// entidade (ADR-0021), só o episódio é navegável. `?ordering=` ausente
-				// ou inválido cai no default da série; `absolute` é ordem especial.
+				// Episodes of the series GROUPED by ordering: the ordering
+				// selector (official/dvd/absolute) reprojects the series at READ
+				// time from the `numbering` — season headers of the order do NOT
+				// become an entity (ADR-0021), only the episode is navigable. A
+				// missing or invalid `?ordering=` falls back to the series default;
+				// `absolute` is a special order.
 				ent.Get("/{id}/episodes", s.getEntityEpisodes)
 				ent.Get("/{id}/assets/poster", s.getEntityPoster)
 				ent.Get("/{id}/assets/fanart", s.getEntityFanart)
 				ent.Get("/{id}/assets/still", s.getEntityStill)
 
-				// Arte DISPONIVEL agrupada por kind (briefing 0048): mescla os assets
-				// locais + o poster/fundo das camadas externas (TMDB) + o inventario lazy
-				// da fanart.tv, com URLs ja proxyadas e `available:{kind:count}` para os
-				// selos. So leitura; consumida pela galeria/selos do 0049.
+				// AVAILABLE artwork grouped by kind: it merges the local assets +
+				// the poster/background of the external layers (TMDB) + the lazy
+				// fanart.tv inventory, with already proxied URLs and
+				// `available:{kind:count}` for the badges. Read-only; consumed by
+				// the gallery/badges.
 				ent.Get("/{id}/artwork", s.getEntityArtwork)
 
-				// AÇÃO "baixar só a selecionada" (briefing 0048): recebe a url de UMA
-				// arte do inventario (host validado contra a allowlist do proxy —
-				// anti-SSRF), baixa o binario e a materializa como asset origin='external'
-				// do kind (idempotente por url+kind), opcionalmente marcando-a preferida.
+				// ACTION "download only the selected one": it receives the url of
+				// ONE artwork from the inventory (host validated against the proxy
+				// allowlist — anti-SSRF), downloads the binary and materializes it
+				// as an asset with origin='external' of the kind (idempotent by
+				// url+kind), optionally marking it as preferred.
 				ent.Post("/{id}/artwork/select", s.selectArtwork)
 
-				// Arte custom do dono (briefing 0017): upload (origin='user'),
-				// galeria, servico do binario de um asset, preferencia (flag em
-				// meta_json) e remocao. A precedencia de servico (preferida → user →
-				// external → 404) e aplicada no /assets/poster acima. Escritas pelo
-				// pool de escrita (ADR-0010).
+				// Custom artwork of the owner: upload (origin='user'), gallery,
+				// service of an asset binary, preference (flag in meta_json) and
+				// removal. The serving precedence (preferred → user → external →
+				// 404) is applied in /assets/poster above. Writes through the write
+				// pool (ADR-0010).
 				ent.Post("/{id}/assets", s.uploadAsset)
 				ent.Get("/{id}/assets", s.listAssets)
 				ent.Get("/{id}/assets/{assetId}/file", s.getAssetFile)
 				ent.Put("/{id}/assets/{assetId}/prefer", s.preferAsset)
 				ent.Delete("/{id}/assets/{assetId}", s.deleteAsset)
 
-				// Materialização física na pasta REAL da biblioteca (briefing 0062):
-				// copia uma arte já cacheada internamente para o disco da biblioteca,
-				// no nome canônico Kodi/Emby (internal/localmedia). NÃO mexe em
-				// is_principal (isso é o PUT /prefer acima, estendido no mesmo
-				// briefing). "Salvar informações (NFO)" (grupo de ações rápidas do
-				// 0059) grava/regrava o .nfo da entity na pasta real — export
-				// one-way (banco → disco), idempotente.
+				// Physical materialization in the REAL folder of the library: it
+				// copies an artwork already cached internally to the library disk,
+				// under the canonical Kodi/Emby name (internal/localmedia). It does
+				// NOT touch is_principal (that is the PUT /prefer above, extended in
+				// the same delivery). "Save information (NFO)" (group of quick
+				// actions) writes/rewrites the entity's .nfo in the real folder —
+				// one-way export (database → disk), idempotent.
 				ent.Post("/{id}/assets/{assetId}/materialize", s.materializeAsset)
 				ent.Post("/{id}/nfo", s.writeEntityNfo)
 
-				// Tema musical local (briefing 0082): fundação LOCAL-ONLY, sem
-				// provider — detecta um theme.{mp3,ogg,flac} colocado à mão pelo
-				// dono na MESMA pasta-raiz que materialize/nfo usam e serve o
-				// binário. 404 sem pasta de destino/arquivo; nunca materializa
+				// Local theme: LOCAL-ONLY foundation, without a provider — it
+				// detects a theme.{mp3,ogg,flac} placed by hand by the owner in the
+				// SAME root folder that materialize/nfo use and serves the binary.
+				// 404 without a destination folder/file; it never materializes an
 				// asset.
 				ent.Get("/{id}/theme", s.getEntityTheme)
-				// HEAD do mesmo handler: o front confere existência (checagem
-				// única, sem baixar o binário inteiro) antes de renderizar o
-				// player — http.ServeContent já respeita HEAD (sem corpo).
+				// HEAD of the same handler: the front end checks existence (a
+				// single check, without downloading the whole binary) before
+				// rendering the player — http.ServeContent already honors HEAD (no
+				// body).
 				ent.Head("/{id}/theme", s.getEntityTheme)
 
-				// Trailer materializado em disco (briefing 0102, ADR-0025):
-				// GET detecta/serve o binário já baixado (mesma resolução de
-				// destino do tema acima); POST baixa via yt-dlp (0101) o
-				// primeiro trailer YouTube listado em `videos` e grava no
-				// nome canônico Kodi/Jellyfin. Sem tabela `asset` nova —
-				// mesmo precedente do theme.mp3.
+				// Trailer materialized on disk: GET detects/serves the already
+				// downloaded binary (same destination resolution as the theme
+				// above); POST downloads via yt-dlp the first YouTube trailer listed
+				// in `videos` and writes it under the canonical Kodi/Jellyfin name.
+				// No new `asset` table — same precedent as theme.mp3.
 				ent.Get("/{id}/trailer", s.getEntityTrailer)
 				ent.Post("/{id}/trailer/download", s.postEntityTrailerDownload)
 
-				// Tema musical automático via ThemerrDB (briefing 0103,
-				// ADR-0025): GET expõe se há um candidato cacheado (sem
-				// vazar a URL do YouTube) e se já existe um theme.* local;
-				// POST baixa o candidato via yt-dlp (0101) para theme.mp3 —
-				// MESMO path que GET /{id}/theme acima já serve. Sem
-				// `force`: tema é singular por pasta.
+				// Automatic theme via ThemerrDB: GET exposes whether there is a
+				// cached candidate (without leaking the YouTube URL) and whether a
+				// local theme.* already exists; POST downloads the candidate via
+				// yt-dlp to theme.mp3 — the SAME path that GET /{id}/theme above
+				// already serves. No `force`: the theme is singular per folder.
 				ent.Get("/{id}/theme/candidato", s.getEntityThemeCandidato)
 				ent.Post("/{id}/theme/download", s.postEntityThemeDownload)
 
-				// Enriquecimento de uma entity existente (briefing 0015): puxa o
-				// detalhe do provider e grava a base externa + pôster cacheado.
+				// Enrichment of an existing entity: it pulls the detail from the
+				// provider and writes the external base + cached poster.
 				ent.Post("/{id}/enrich", s.enrichEntity)
 
-				// Curadoria da Fase 3 (briefing 0018): confirmar sobe a confiança
-				// para 100; corrigir grava a identidade correta + re-enriquece;
-				// DELETE purga a entity (CASCADE + limpeza de binários); /purge
-				// purga em lote. A purga é a única porta destrutiva (ADR-0012).
+				// Phase 3 curation: confirming raises the confidence to 100;
+				// correcting writes the correct identity + re-enriches; DELETE
+				// purges the entity (CASCADE + binary cleanup); /purge purges in
+				// batch. Purging is the only destructive door (ADR-0012).
 				ent.Post("/{id}/confirm", s.confirmEntity)
 				ent.Post("/{id}/correct", s.correctEntity)
 				ent.Delete("/{id}", s.deleteEntity)
 				ent.Post("/purge", s.purgeBatch)
 
-				// AUTO-MATCH individual (briefing 0050): tenta resolver sozinho um
-				// item da fila — local-first (fundirEntities) ou externo (mesma
-				// sequência do "Corrigir"), só quando o score bate LimiarAutoMatch.
-				// Sempre 200 (nunca 5xx por "não achou candidato"); 404 inexistente.
+				// Individual AUTO-MATCH: it tries to resolve on its own an item of
+				// the queue — local-first (fundirEntities) or external (same sequence
+				// as "Correct"), only when the score hits LimiarAutoMatch. Always
+				// 200 (never 5xx for "no candidate found"); 404 if it does not
+				// exist.
 				ent.Post("/{id}/auto-match", s.autoMatchEntity)
 
-				// Prévia de candidato + aplicação supervisionada (briefing
-				// 0060): a prévia reusa a MESMA busca/pontuação do auto-match
-				// acima, mas SEM o corte de LimiarAutoMatch (dry-run, nunca
-				// aplica nada); confirm-candidate aplica o candidato mostrado
-				// mesmo abaixo do limiar -- decisão humana informada, terceiro
-				// endpoint, não uma reforma de /confirm nem /correct.
+				// Candidate preview + supervised application: the preview reuses
+				// the SAME search/scoring as the auto-match above, but WITHOUT the
+				// LimiarAutoMatch cutoff (dry-run, it never applies anything);
+				// confirm-candidate applies the shown candidate even below the
+				// threshold -- an informed human decision, a third endpoint, not a
+				// rework of /confirm nor /correct.
 				ent.Get("/{id}/match-preview", s.matchPreview)
 				ent.Post("/{id}/confirm-candidate", s.confirmCandidate)
 
-				// Ações rápidas SOB DEMANDA de UM item aberto no detalhe
-				// (briefing 0059): enrich-missing dispara a MESMA orquestração
-				// de tentarEnriquecerOuSinalizar (0056), fora do lote/throttle
-				// do job; download-missing-artwork baixa a melhor arte
-				// disponível para os kinds que faltam na completude de
-				// catalogação (0058), via o mesmo agregador/download do 0048.
+				// Quick actions ON DEMAND for ONE item open in the detail:
+				// enrich-missing triggers the SAME orchestration of
+				// tentarEnriquecerOuSinalizar, outside the job's batch/throttle;
+				// download-missing-artwork downloads the best available artwork for
+				// the kinds missing in the catalog completeness, via the same
+				// aggregator/download.
 				ent.Post("/{id}/enrich-missing", s.enrichMissing)
 				ent.Post("/{id}/download-missing-artwork", s.downloadMissingArtwork)
 
-				// Forçar reconciliação de UMA faixa/série presa em rascunho
-				// (briefing 0122): dispara a MESMA lógica do job em lote
-				// (ReconciliarFilhosOrfaos, 0120), mas ignorando o throttle
-				// de last_external_match_attempt_at -- válvula de escape
-				// manual, mesmo padrão SOB DEMANDA de enrich-missing acima.
+				// Force the reconciliation of ONE track/series stuck in draft: it
+				// triggers the SAME logic as the batch job
+				// (ReconciliarFilhosOrfaos), but ignoring the
+				// last_external_match_attempt_at throttle -- a manual escape hatch,
+				// same ON DEMAND pattern as enrich-missing above.
 				ent.Post("/{id}/force-reconcile", s.forcarReconciliacao)
 
-				// "Verificar Atualizações de Arquivos" (briefing 0088): ação
-				// SEMPRE visível do menu Gerenciar (não depende de
-				// catalog_completeness) — força re-hash/mediainfo dos
-				// arquivos da entity mesmo sem mudança de mtime/size,
-				// reconfere a pasta em busca de asset local novo/atualizado
-				// e preenche campos LOCAIS de reprodução a partir de um
-				// `.nfo` já em disco (só o que ainda estiver vazio).
+				// "Check for File Updates": an ALWAYS visible action of the Manage
+				// menu (it does not depend on catalog_completeness) — it forces a
+				// re-hash/mediainfo of the entity's files even without an
+				// mtime/size change, rechecks the folder for a new/updated local
+				// asset and fills LOCAL playback fields from an `.nfo` already on
+				// disk (only what is still empty).
 				ent.Post("/{id}/refresh-files", s.refreshEntityFiles)
 
-				// "Baixar Artes Faltantes" (briefing 0088): ação SEMPRE
-				// visível do menu Gerenciar (não depende de
-				// catalog_completeness) — força nova consulta ao(s)
-				// ArteProvider(s) registrado(s) (hoje: fanart.tv) para
-				// atualizar o inventário de artes da entity e, em seguida,
-				// materializa na pasta real o que estiver faltando (mesmo
-				// efeito do job midias_faltantes, sob demanda e restrito a
-				// esta entity).
+				// "Download Missing Artwork": an ALWAYS visible action of the
+				// Manage menu (it does not depend on catalog_completeness) — it
+				// forces a new query to the registered ArteProvider(s) (today:
+				// fanart.tv) to update the entity's artwork inventory and then
+				// materializes whatever is missing in the real folder (same effect
+				// as the midias_faltantes job, on demand and restricted to this
+				// entity).
 				ent.Post("/{id}/materialize-missing-media", s.materializeMissingMediaEntity)
 
-				// "Gravar metadados no arquivo" (briefing 0125): regrava a
-				// PRÓPRIA tag de áudio (ID3v2/Vorbis comment) com o
-				// metadado RESOLVIDO da faixa (ou de cada faixa possuída,
-				// em cascata, para um álbum) -- alternativa ao NFO de
-				// música (que o projeto decidiu NÃO fazer, briefing 0125
-				// §3): LMS/Navidrome/gonic/Supysonic e o ecossistema
-				// Subsonic/OpenSubsonic leem direto da tag. Sem body; 422
-				// para type=='artista' (sem cascata coerente de "obra").
+				// "Write metadata to the file": it rewrites the audio tag
+				// ITSELF (ID3v2/Vorbis comment) with the RESOLVED metadata of the
+				// track (or of each owned track, in cascade, for an album) -- an
+				// alternative to the music NFO (which the project decided NOT to
+				// do): LMS/Navidrome/gonic/Supysonic and the
+				// Subsonic/OpenSubsonic ecosystem read straight from the tag. No
+				// body; 422 for type=='artista' (no coherent cascade of "work").
 				ent.Post("/{id}/audio-tags/write", s.writeAudioTags)
 
-				// Edição da IDENTIDADE externa (briefing 0027): grava o mapa
-				// external_ids (source -> id na fonte). As colunas geradas re-derivam;
-				// fixar o id prepara sincronização futura. NÃO re-enriquece (o dono
-				// chama /enrich depois). Escrita pelo pool de escrita (ADR-0010).
+				// Editing of the external IDENTITY: it writes the external_ids map
+				// (source -> id at the source). The generated columns re-derive;
+				// pinning the id prepares a future synchronization. It does NOT
+				// re-enrich (the owner calls /enrich afterwards). Written through
+				// the write pool (ADR-0010).
 				ent.Put("/{id}/external-ids", s.updateExternalIds)
 
-				// Editor de override POR IDIOMA (briefing 0016): o dono escreve o
-				// patch esparso que vence tudo. PATCH funde por idioma (?lang=), os
-				// DELETE limpam (campo/idioma ou reset), o GET devolve o blob cru.
-				// Escritas pelo pool de escrita (ADR-0010).
+				// PER-LANGUAGE override editor: the owner writes the sparse patch
+				// that wins over everything. PATCH merges per language (?lang=), the
+				// DELETEs clean (field/language or reset), GET returns the raw blob.
+				// Writes through the write pool (ADR-0010).
 				ent.Patch("/{id}/override", s.patchOverride)
 				ent.Get("/{id}/override", s.getOverride)
 				ent.Delete("/{id}/override", s.deleteOverride)
 				ent.Delete("/{id}/override/{campo}", s.deleteOverrideCampo)
 
-				// Histórico de consumo (briefing 0092, ADR-0022): eventos
-				// genéricos de tracking (assistir/ouvir/jogar/etc.),
-				// agnósticos de vertical. POST registra um evento; GET lista
-				// o histórico (filtro opcional ?kind=) em ordem
-				// occurred_at DESC; GET .../estado deriva o resumo por kind
-				// (último evento de cada); DELETE remove um evento pontual
-				// (correção do dono, não é purga em massa).
+				// Consumption history (ADR-0022): generic tracking events
+				// (watch/listen/play/etc.), vertical-agnostic. POST records an
+				// event; GET lists the history (optional ?kind= filter) in
+				// occurred_at DESC order; GET .../estado derives the summary per
+				// kind (last event of each); DELETE removes a single event (owner
+				// correction, not a mass purge).
 				ent.Post("/{id}/historico", s.createHistoricoEvento)
 				ent.Get("/{id}/historico", s.listHistoricoEventos)
 				ent.Get("/{id}/historico/estado", s.getHistoricoEstado)
 				ent.Delete("/{id}/historico/{eventoId}", s.deleteHistoricoEvento)
 			})
 
-			// Sistema de JOBS (briefing 0052): tipos de job registrados em código
-			// (Handler/Registry), configuração dinâmica (habilitado/agendamento) e
-			// histórico genérico no banco, com agendador embutido (goroutine +
-			// ticker, sem cron do SO). Lista/edita a config, dispara execução
-			// manual e lista o histórico paginado — mesmo envelope de erro padrão
-			// do resto da API.
+			// JOB system: job types registered in code (Handler/Registry), dynamic
+			// configuration (enabled/schedule) and generic history in the database,
+			// with an embedded scheduler (goroutine + ticker, no OS cron). It lists
+			// and edits the config, triggers a manual run and lists the paginated
+			// history — same standard error envelope as the rest of the API.
 			v1.Route("/jobs", func(jobs chi.Router) {
 				jobs.Get("/", s.listJobs)
 				jobs.Patch("/{id}", s.patchJob)
@@ -940,29 +940,28 @@ func (s *Server) Handler() (http.Handler, error) {
 				jobs.Get("/{id}/executions", s.listJobExecutions)
 			})
 
-			// Webhook do Jellyfin (briefing 0093, ADR-0022, depende do
-			// 0092): recebe a notificação de reprodução do plugin
-			// `jellyfin-plugin-webhook` (autenticada por ?token=,
-			// comparação em tempo constante) e grava um historico_evento
-			// quando o item casa por id externo. Endpoints de token
-			// (gerar/ler) são internos, sem token próprio -- é o painel
-			// do dono operando.
+			// Jellyfin webhook (ADR-0022, depends on the consumption history
+			// above): it receives the playback notification from the
+			// `jellyfin-plugin-webhook` plugin (authenticated by ?token=,
+			// constant-time comparison) and writes a historico_evento when the item
+			// matches by external id. The token endpoints (generate/read) are
+			// internal, without a token of their own -- it is the owner's panel
+			// operating.
 			v1.Route("/webhooks/jellyfin", func(wh chi.Router) {
 				wh.Post("/", s.receiveJellyfinWebhook)
 				wh.Post("/token", s.regenerateJellyfinWebhookToken)
 				wh.Get("/token", s.getJellyfinWebhookToken)
 			})
-			// Eventos de histórico órfãos (briefing 0099): rota GLOBAL, fora
-			// de /entities/{id} -- por definição um órfão ainda não tem
-			// entity.
+			// Orphan history events: GLOBAL route, outside /entities/{id} -- by
+			// definition an orphan does not have an entity yet.
 			v1.Route("/historico", func(h chi.Router) {
 				h.Get("/orfaos", s.listHistoricoOrfaos)
 			})
 		})
 	})
 
-	// SPA: todas as demais rotas servem estáticos embutidos, com fallback para
-	// o index.html (deep-links do roteamento client-side).
+	// SPA: every remaining route serves embedded static files, with a fallback
+	// to index.html (deep links of the client-side routing).
 	spa, err := newSPAHandler()
 	if err != nil {
 		return nil, err
@@ -972,10 +971,10 @@ func (s *Server) Handler() (http.Handler, error) {
 	return r, nil
 }
 
-// apiNotFound responde 404 em JSON para qualquer rota /api não resolvida, já no
-// shape de erro padrão ({error:{code,message}}) definido no briefing 0008 — o
-// mesmo de todos os erros /api/v1. (Antes respondia {"error":"not found"},
-// shape antigo/inconsistente, agora aposentado.)
+// apiNotFound responds 404 in JSON for any unresolved /api route, already in
+// the standard error shape ({error:{code,message}}) used by all /api/v1 errors.
+// (It used to respond {"error":"not found"}, an old/inconsistent shape, now
+// retired.)
 func apiNotFound(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, "not_found", "recurso não encontrado")
 }

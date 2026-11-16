@@ -9,11 +9,11 @@ import (
 	"testing"
 )
 
-// capturarArgs monta um runner FALSO que grava os args recebidos (sem
-// chamar ffmpeg de verdade) e devolve um erro pré-configurado -- usado para
-// testar a MONTAGEM dos argumentos sem depender do binário real. O runner
-// ainda cria o arquivo de saída (o último arg) para regravar/os.Rename ter o
-// que renomear quando queremos testar o caminho de sucesso.
+// capturarArgs builds a FAKE runner that records the received args (without
+// calling the real ffmpeg) and returns a pre-configured error -- used to test
+// the BUILDING of the arguments without depending on the real binary. The
+// runner still creates the output file (the last arg) so that regravar/
+// os.Rename has something to rename when we want to test the success path.
 func capturarArgs(t *testing.T, criarSaida bool, errar error) (*[]string, runner) {
 	t.Helper()
 	var capturados []string
@@ -41,9 +41,9 @@ func contains(args []string, valor string) bool {
 	return false
 }
 
-// TestEscreverMp3ArgsBasicos cobre a montagem dos argumentos ID3v2 (mp3): os
-// pares -metadata na convenção Picard, id3v2_version fixo em 3, sem capa
-// quando CoverPath == "".
+// TestEscreverMp3ArgsBasicos covers the building of the ID3v2 arguments (mp3):
+// the -metadata pairs in the Picard convention, id3v2_version pinned to 3, no
+// cover when CoverPath == "".
 func TestEscreverMp3ArgsBasicos(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "faixa.mp3")
@@ -98,8 +98,8 @@ func TestEscreverMp3ArgsBasicos(t *testing.T) {
 	}
 }
 
-// TestEscreverMp3ComCapaMapeiaSegundoInput cobre a inclusão do 2º input
-// (capa) com -disposition:v attached_pic quando CoverPath != "".
+// TestEscreverMp3ComCapaMapeiaSegundoInput covers the inclusion of the 2nd
+// input (cover) with -disposition:v attached_pic when CoverPath != "".
 func TestEscreverMp3ComCapaMapeiaSegundoInput(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "faixa.mp3")
@@ -125,9 +125,9 @@ func TestEscreverMp3ComCapaMapeiaSegundoInput(t *testing.T) {
 	}
 }
 
-// TestEscreverVorbisArgsBasicos cobre a montagem dos argumentos Vorbis
-// comment (flac/ogg): TRACKNUMBER/TRACKTOTAL SEPARADOS (ao contrário do
-// "N/T" do mp3), chaves MUSICBRAINZ_* maiusculas.
+// TestEscreverVorbisArgsBasicos covers the building of the Vorbis comment
+// arguments (flac/ogg): TRACKNUMBER/TRACKTOTAL SEPARATE (unlike the "N/T" of
+// mp3), uppercase MUSICBRAINZ_* keys.
 func TestEscreverVorbisArgsBasicos(t *testing.T) {
 	for _, ext := range []string{".flac", ".ogg"} {
 		t.Run(ext, func(t *testing.T) {
@@ -164,8 +164,8 @@ func TestEscreverVorbisArgsBasicos(t *testing.T) {
 	}
 }
 
-// TestEscreverVorbisComCapaEmbutePicblock cobre a montagem do
-// METADATA_BLOCK_PICTURE (nunca um 2º input de vídeo, ao contrário do mp3).
+// TestEscreverVorbisComCapaEmbutePicblock covers the building of
+// METADATA_BLOCK_PICTURE (never a 2nd video input, unlike mp3).
 func TestEscreverVorbisComCapaEmbutePicblock(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "faixa.flac")
@@ -197,7 +197,7 @@ func TestEscreverVorbisComCapaEmbutePicblock(t *testing.T) {
 	}
 }
 
-// TestEscreverFormatoNaoSuportado cobre o erro de extensão desconhecida.
+// TestEscreverFormatoNaoSuportado covers the unknown-extension error.
 func TestEscreverFormatoNaoSuportado(t *testing.T) {
 	_, run := capturarArgs(t, false, nil)
 	w := NewWriterComRunner("ffmpeg-fake", run)
@@ -210,9 +210,9 @@ func TestEscreverFormatoNaoSuportado(t *testing.T) {
 	}
 }
 
-// TestEscreverFfmpegFalhaNaoRenomeiaOriginal cobre que uma falha do
-// subprocesso NÃO troca o arquivo original (o rename só acontece em
-// sucesso) -- o conteúdo original permanece intacto.
+// TestEscreverFfmpegFalhaNaoRenomeiaOriginal covers the fact that a subprocess
+// failure does NOT swap the original file (the rename only happens on success)
+// -- the original content stays intact.
 func TestEscreverFfmpegFalhaNaoRenomeiaOriginal(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "faixa.mp3")
@@ -241,8 +241,8 @@ type fakeErr struct{}
 
 func (*fakeErr) Error() string { return "fake: ffmpeg falhou" }
 
-// TestDisponivel cobre a checagem de PATH (ffmpeg real, se presente no
-// ambiente -- espelha mediainfo.Prober.Disponivel).
+// TestDisponivel covers the PATH check (real ffmpeg, if present in the
+// environment -- mirrors mediainfo.Prober.Disponivel).
 func TestDisponivel(t *testing.T) {
 	w := NewWriter()
 	quer := false
@@ -254,7 +254,7 @@ func TestDisponivel(t *testing.T) {
 	}
 }
 
-// TestNumeroETotal cobre o formato N/T do id3 (track/disc combinados).
+// TestNumeroETotal covers the N/T format of id3 (combined track/disc).
 func TestNumeroETotal(t *testing.T) {
 	casos := []struct {
 		n, total int

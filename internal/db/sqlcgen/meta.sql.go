@@ -14,10 +14,10 @@ SELECT valor FROM mymediadb_meta
 WHERE chave = ?
 `
 
-// Le um valor da tabela de metadados pela chave. Serve de query-semente para
-// provar o wiring do sqlc de ponta a ponta; queries de dominio chegam no 0007.
-// (Comentario em ASCII: o sqlc corrompe o SQL gerado com acentos no .sql de
-// query -- ver a nota em entity.sql.)
+// Reads a value from the metadata table by key. It serves as the seed query that
+// proves the sqlc wiring end to end; domain queries arrive in 0007.
+// (Comment in ASCII: sqlc corrupts the generated SQL when the query .sql has
+// accents -- see the note in entity.sql.)
 func (q *Queries) ValorMeta(ctx context.Context, chave string) (string, error) {
 	row := q.db.QueryRowContext(ctx, valorMeta, chave)
 	var valor string

@@ -20,9 +20,9 @@ type ApagarCreditosDaEntityFonteParams struct {
 	Source   string
 }
 
-// Apaga todos os creditos de uma entity vindos de UMA fonte, antes de repopular no
-// re-enriquecimento. Por fonte (nao total) para nao apagar creditos de outra source
-// que enriqueceu a mesma obra (ex.: serie com arvore TVDB + elenco TMDB).
+// Deletes all credits of an entity coming from ONE source, before repopulating on
+// re-enrichment. Per source (not total) so it does not delete credits from another
+// source that enriched the same work (e.g. series with a TVDB tree + TMDB cast).
 func (q *Queries) ApagarCreditosDaEntityFonte(ctx context.Context, arg ApagarCreditosDaEntityFonteParams) error {
 	_, err := q.db.ExecContext(ctx, apagarCreditosDaEntityFonte, arg.EntityID, arg.Source)
 	return err
@@ -56,14 +56,14 @@ type CriarCreditoParams struct {
 	SourceID     sql.NullString
 }
 
-// Acesso a tabela credit (briefing 0029, migration 0010): a aresta obra<->pessoa/
-// empresa, cache re-componivel do payload externo. O re-enriquecimento apaga os
-// creditos de (entity_id, source) e os repopula (idempotente, sem duplicar). O dado do
-// dono nunca vive aqui. Comentarios em ASCII e colunas explicitas -- ver a nota em
-// entity.sql (o sqlc v1.31 corrompe SQL de query com acento).
-// Insere um credito ligado a entity. person_id (cast/crew) OU company_id (company) e
-// preenchido, o outro fica NULL. ordering carrega a ordem de bilhagem do elenco;
-// character/department/job/episode_count sao os atributos da aresta.
+// Access to the credit table (migration 0010): the work<->person/
+// company edge, re-composable cache of the external payload. Re-enrichment deletes the
+// credits of (entity_id, source) and repopulates them (idempotent, no duplication). The
+// owner's data never lives here. Comments in ASCII and explicit columns -- see the
+// note in entity.sql (sqlc v1.31 corrupts query SQL with an accent).
+// Inserts a credit linked to the entity. person_id (cast/crew) OR company_id (company)
+// is filled in, the other stays NULL. ordering carries the cast billing order;
+// character/department/job/episode_count are the attributes of the edge.
 func (q *Queries) CriarCredito(ctx context.Context, arg CriarCreditoParams) error {
 	_, err := q.db.ExecContext(ctx, criarCredito,
 		arg.ID,
@@ -91,8 +91,8 @@ WHERE entity_id = ?
 ORDER BY kind, ordering, id
 `
 
-// Todos os creditos de uma obra, para o detalhe. Ordena por kind, ordem de bilhagem e
-// id (estavel).
+// All credits of a work, for the detail. Orders by kind, billing order and
+// id (stable).
 func (q *Queries) ListarCreditosDaEntity(ctx context.Context, entityID string) ([]Credit, error) {
 	rows, err := q.db.QueryContext(ctx, listarCreditosDaEntity, entityID)
 	if err != nil {
@@ -149,12 +149,12 @@ type ListarFilmografiaDaPessoaRow struct {
 	Ordering   int64
 }
 
-// Filmografia da pessoa (briefing 0029 Fase D, interno-first): as obras do catalogo
-// que a creditam, elenco OU equipe (credito de produtora nao tem person_id, sai
-// naturalmente do WHERE). Junta credit com entity para trazer o papel (kind/
-// character/job/department/ordering) daquele credito naquela obra; o handler busca
-// titulo/poster/ano de cada entity via ObterEntityCard (mesmo card da lista, sem
-// reinventar resolucao). Ordena por tipo, ordem de bilhagem e id (estavel).
+// Person filmography (internal-first): the works in the catalog
+// that credit them, cast OR crew (a production company credit has no person_id, it
+// drops out of the WHERE naturally). Joins credit with entity to bring the role (kind/
+// character/job/department/ordering) of that credit in that work; the handler fetches
+// title/poster/year of each entity via ObterEntityCard (same card as the list,
+// without reinventing resolution). Orders by type, billing order and id (stable).
 func (q *Queries) ListarFilmografiaDaPessoa(ctx context.Context, personID sql.NullString) ([]ListarFilmografiaDaPessoaRow, error) {
 	rows, err := q.db.QueryContext(ctx, listarFilmografiaDaPessoa, personID)
 	if err != nil {

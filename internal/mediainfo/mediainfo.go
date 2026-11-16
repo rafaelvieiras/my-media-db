@@ -1,12 +1,12 @@
-// Package mediainfo é o wrapper do ffprobe (ADR-0014): roda o binário como
-// subprocesso com saída JSON e mapeia os fatos técnicos de um arquivo de vídeo
-// (general/video/audio/subtitle) para o shape estável de `mediainfo_json`
-// gravado em media_file (doc 06).
+// Package mediainfo is the ffprobe wrapper (ADR-0014): it runs the binary as a
+// subprocess with JSON output and maps the technical facts of a video file
+// (general/video/audio/subtitle) into the stable shape of `mediainfo_json`
+// stored in media_file (doc 06).
 //
-// ffprobe é dependência de RUNTIME, não de build: a presença é checada no boot;
-// a ausência DEGRADA (mediainfo vazio + aviso), nunca derruba o scan. O caminho
-// do binário e a função de execução são injetáveis para permitir testes sem o
-// ffprobe real.
+// ffprobe is a RUNTIME dependency, not a build one: its presence is checked at
+// boot; its absence DEGRADES the result (empty mediainfo + warning), it never
+// takes the scan down. The binary path and the execution function are injectable
+// to allow tests without the real ffprobe.
 package mediainfo
 
 import (
@@ -19,54 +19,56 @@ import (
 	"unicode"
 )
 
-// Info é o shape mapeado de mediainfo, serializado em media_file.mediainfo_json.
-// Listas vazias/omitidas quando o arquivo não tem aquele tipo de faixa.
+// Info is the mapped shape of mediainfo, serialized into
+// media_file.mediainfo_json. Empty/omitted lists when the file has no track of
+// that type.
 type Info struct {
 	General  General    `json:"general"`
 	Video    []Video    `json:"video"`
 	Audio    []Audio    `json:"audio"`
 	Subtitle []Subtitle `json:"subtitle,omitempty"`
-	// Tags são as tags de FORMATO relevantes à vertical de música (briefing
-	// 0107, ADR-0027) — artista/álbum/faixa/MBID embutidos etc. Campo NOVO
-	// (não troca General/Video/Audio/Subtitle, que consumidores existentes já
-	// leem): nil quando o container não trouxe NENHUMA tag de format.tags
-	// (ex.: a maioria dos arquivos de vídeo).
+	// Tags are the FORMAT tags relevant to the music vertical (ADR-0027) —
+	// embedded artist/album/track/MBID etc. A NEW field (it does not replace
+	// General/Video/Audio/Subtitle, which existing consumers already read): nil
+	// when the container brought NO format.tags tag at all (e.g.: most video
+	// files).
 	Tags *AudioTags `json:"tags,omitempty"`
 }
 
-// AudioTags são as tags de ÁUDIO lidas de format.tags (ffprobe -show_format),
-// hoje pedidas mas descartadas pelo mapeamento anterior a este briefing. O
-// ffprobe expõe as tags EXATAMENTE como gravadas no arquivo, sem normalizar
-// nome/case — containers diferentes usam grafias diferentes para o mesmo
-// campo (ex. "ARTIST" no Vorbis Comment vs "artist" no MP4, "MusicBrainz
-// Track Id" no ID3v2 vs "musicbrainz_trackid" no Vorbis vs
-// "MUSICBRAINZ_TRACKID" em maiúsculas). extrairAudioTags normaliza a CHAVE na
-// leitura (case-insensitive, ignorando espaços/underscores/pontuação); os
-// VALORES nunca são alterados.
+// AudioTags are the AUDIO tags read from format.tags (ffprobe -show_format),
+// which used to be requested but discarded by the mapping before this change.
+// ffprobe exposes the tags EXACTLY as they were written in the file, without
+// normalizing name/case — different containers use different spellings for the
+// same field (e.g. "ARTIST" in Vorbis Comment vs "artist" in MP4,
+// "MusicBrainz Track Id" in ID3v2 vs "musicbrainz_trackid" in Vorbis vs
+// "MUSICBRAINZ_TRACKID" in uppercase). extrairAudioTags normalizes the KEY on
+// read (case-insensitive, ignoring spaces/underscores/punctuation); the VALUES
+// are never changed.
 type AudioTags struct {
 	Artist      string `json:"artist,omitempty"`
 	Album       string `json:"album,omitempty"`
 	AlbumArtist string `json:"album_artist,omitempty"`
 	Title       string `json:"title,omitempty"`
-	// TrackNumber/DiscNumber são o número já PARSEADO antes da barra (a tag
-	// pode vir "3" ou "3/12" — só o "3" importa); 0 quando ausente/não-numérico.
+	// TrackNumber/DiscNumber are the number already PARSED before the slash
+	// (the tag may come as "3" or "3/12" — only the "3" matters); 0 when
+	// absent/not numeric.
 	TrackNumber int    `json:"track_number,omitempty"`
 	DiscNumber  int    `json:"disc_number,omitempty"`
 	Genre       string `json:"genre,omitempty"`
-	// ISRC é o identificador auxiliar de faixa (ADR-0027 item 6). Nome de tag
-	// varia por container: "TSRC" é o nome do frame ID3v2; "isrc"/"ISRC" é a
-	// grafia comum em Vorbis Comment/MP4.
+	// ISRC is the auxiliary track identifier (ADR-0027, item 6). The tag name
+	// varies per container: "TSRC" is the ID3v2 frame name; "isrc"/"ISRC" is
+	// the common spelling in Vorbis Comment/MP4.
 	ISRC string `json:"isrc,omitempty"`
-	// MusicBrainzTrackID é o MBID de RECORDING embutido no arquivo — a chave
-	// do fast-path de matching do scanner (briefing 0107). Nem todo tagueador
-	// grava esta tag.
+	// MusicBrainzTrackID is the RECORDING MBID embedded in the file — the key
+	// of the scanner's matching fast-path (ADR-0027). Not every tagger writes
+	// this tag.
 	MusicBrainzTrackID string `json:"musicbrainz_track_id,omitempty"`
-	// MusicBrainzArtistID é o MBID do ARTISTA embutido — mais raro que o de
-	// faixa (alguns tagueadores só gravam o recording MBID).
+	// MusicBrainzArtistID is the embedded ARTIST MBID — rarer than the track
+	// one (some taggers only write the recording MBID).
 	MusicBrainzArtistID string `json:"musicbrainz_artist_id,omitempty"`
 }
 
-// General são os fatos do container (format/duração/tamanho/bitrate).
+// General are the facts of the container (format/duration/size/bitrate).
 type General struct {
 	Format   string  `json:"format"`
 	Duration float64 `json:"duration_seconds"`
@@ -74,55 +76,56 @@ type General struct {
 	Bitrate  int64   `json:"bitrate"`
 }
 
-// Video é uma faixa de vídeo.
+// Video is a video track.
 type Video struct {
 	Codec  string `json:"codec"`
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
-	// HDR é o rótulo detectável ("HDR10"/"Dolby Vision"/"HLG") ou "" (SDR/desconhecido).
+	// HDR is the detectable label ("HDR10"/"Dolby Vision"/"HLG") or "" (SDR/unknown).
 	HDR string `json:"hdr,omitempty"`
 }
 
-// Audio é uma faixa de áudio.
+// Audio is an audio track.
 type Audio struct {
 	Codec    string `json:"codec"`
 	Channels int    `json:"channels"`
 	Language string `json:"language,omitempty"`
 }
 
-// Subtitle é uma faixa de legenda.
+// Subtitle is a subtitle track.
 type Subtitle struct {
 	Codec    string `json:"codec"`
 	Language string `json:"language,omitempty"`
 }
 
-// runner executa um comando e devolve o stdout. Injetável para testes.
+// runner executes a command and returns the stdout. Injectable for tests.
 type runner func(ctx context.Context, name string, args ...string) ([]byte, error)
 
-// Prober roda o ffprobe. Zero-value inútil: use NewProber. Binary e run são
-// injetáveis (NewProberComRunner) para testar sem o ffprobe real.
+// Prober runs ffprobe. The zero-value is useless: use NewProber. Binary and run
+// are injectable (NewProberComRunner) to test without the real ffprobe.
 type Prober struct {
 	binary string
 	run    runner
 }
 
-// NewProber cria um Prober que chama o "ffprobe" do PATH via os/exec.
+// NewProber creates a Prober that calls the "ffprobe" from PATH through os/exec.
 func NewProber() *Prober {
 	return NewProberComRunner("ffprobe", execRunner)
 }
 
-// NewProberComRunner cria um Prober com binário e runner explícitos (testes).
+// NewProberComRunner creates a Prober with an explicit binary and runner (tests).
 func NewProberComRunner(binary string, run runner) *Prober {
 	return &Prober{binary: binary, run: run}
 }
 
-// execRunner é o runner de produção: roda o comando e captura o stdout.
+// execRunner is the production runner: it runs the command and captures the
+// stdout.
 func execRunner(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).Output()
 }
 
-// Disponivel diz se o binário do ffprobe está no PATH. O scanner usa isso no
-// boot para logar um aviso e degradar (mediainfo vazio) em vez de falhar.
+// Disponivel says whether the ffprobe binary is in the PATH. The scanner uses it
+// at boot to log a warning and degrade (empty mediainfo) instead of failing.
 func (p *Prober) Disponivel() bool {
 	if _, err := exec.LookPath(p.binary); err != nil {
 		return false
@@ -130,9 +133,9 @@ func (p *Prober) Disponivel() bool {
 	return true
 }
 
-// Probe roda o ffprobe no arquivo e devolve o mediainfo_json (o shape de Info já
-// serializado). Erro se o subprocesso ou o parse falhar — o chamador decide
-// degradar.
+// Probe runs ffprobe on the file and returns the mediainfo_json (the shape of
+// Info already serialized). An error when the subprocess or the parse fails —
+// the caller decides how to degrade.
 func (p *Prober) Probe(ctx context.Context, path string) ([]byte, error) {
 	out, err := p.run(ctx, p.binary,
 		"-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path)
@@ -151,7 +154,7 @@ func (p *Prober) Probe(ctx context.Context, path string) ([]byte, error) {
 	return b, nil
 }
 
-// ── Structs cruas do ffprobe (só os campos que consumimos) ───────────────────
+// ── Raw ffprobe structs (only the fields we consume) ─────────────────────────
 
 type ffprobeOutput struct {
 	Format  ffFormat   `json:"format"`
@@ -177,7 +180,7 @@ type ffStream struct {
 	Tags           map[string]string `json:"tags"`
 }
 
-// mapear traduz a saída crua do ffprobe para o shape estável de Info.
+// mapear translates the raw ffprobe output into the stable shape of Info.
 func mapear(raw ffprobeOutput) Info {
 	info := Info{
 		General: General{
@@ -212,8 +215,8 @@ func mapear(raw ffprobeOutput) Info {
 	return info
 }
 
-// detectarHDR faz uma detecção conservadora de HDR pelas características de cor
-// do stream de vídeo; "" quando SDR ou indeterminado.
+// detectarHDR makes a conservative HDR detection from the color characteristics
+// of the video stream; "" when SDR or undetermined.
 func detectarHDR(s ffStream) string {
 	transfer := strings.ToLower(s.ColorTransfer)
 	switch {
@@ -226,7 +229,7 @@ func detectarHDR(s ffStream) string {
 	}
 }
 
-// idioma lê a tag "language" (ISO 639) do stream, quando presente.
+// idioma reads the "language" tag (ISO 639) of the stream, when present.
 func idioma(s ffStream) string {
 	if s.Tags == nil {
 		return ""
@@ -247,12 +250,12 @@ func parseInt(s string) int64 {
 	return v
 }
 
-// extrairAudioTags monta AudioTags a partir do mapa cru de format.tags (briefing
-// 0107). Constrói um índice de chave CANÔNICA (chaveCanonica) uma vez e resolve
-// cada campo por lookupTag, com os candidatos já escritos na forma canônica —
-// assim "MusicBrainz Track Id", "musicbrainz_trackid" e "MUSICBRAINZ_TRACKID"
-// resolvem para o mesmo candidato "musicbrainztrackid" sem precisar listar cada
-// variação de separador/case à mão.
+// extrairAudioTags builds AudioTags from the raw map of format.tags (ADR-0027).
+// It builds an index of CANONICAL keys (chaveCanonica) once and resolves each
+// field through lookupTag, with the candidates already written in canonical
+// form — that way "MusicBrainz Track Id", "musicbrainz_trackid" and
+// "MUSICBRAINZ_TRACKID" resolve to the same candidate "musicbrainztrackid"
+// without having to list every variation of separator/case by hand.
 func extrairAudioTags(tags map[string]string) *AudioTags {
 	idx := indexarTags(tags)
 	t := &AudioTags{
@@ -270,12 +273,11 @@ func extrairAudioTags(tags map[string]string) *AudioTags {
 	return t
 }
 
-// indexarTags normaliza as CHAVES do mapa cru de tags para a forma canônica
-// (chaveCanonica), preservando o PRIMEIRO valor não-vazio visto para cada
-// chave canônica (containers reais não costumam repetir a mesma tag sob
-// grafias diferentes; se repetirem, a ordem de iteração do map é
-// indeterminada, mas o caso é raro o bastante para não justificar mais
-// complexidade aqui).
+// indexarTags normalizes the KEYS of the raw tag map into canonical form
+// (chaveCanonica), preserving the FIRST non-empty value seen for each canonical
+// key (real containers do not usually repeat the same tag under different
+// spellings; if they do, the map iteration order is indeterminate, but the case
+// is rare enough not to justify more complexity here).
 func indexarTags(tags map[string]string) map[string]string {
 	idx := make(map[string]string, len(tags))
 	for k, v := range tags {
@@ -290,10 +292,10 @@ func indexarTags(tags map[string]string) map[string]string {
 	return idx
 }
 
-// chaveCanonica reduz uma chave de tag a minúsculas SÓ com letras/dígitos
-// (remove espaço, underscore, hífen, pontuação) — a normalização que faz
-// "MusicBrainz Track Id", "musicbrainz_trackid" e "MUSICBRAINZ_TRACKID"
-// colidirem na mesma chave.
+// chaveCanonica reduces a tag key to lowercase with ONLY letters/digits
+// (removing spaces, underscores, hyphens, punctuation) — the normalization that
+// makes "MusicBrainz Track Id", "musicbrainz_trackid" and "MUSICBRAINZ_TRACKID"
+// collide on the same key.
 func chaveCanonica(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -305,8 +307,8 @@ func chaveCanonica(s string) string {
 	return b.String()
 }
 
-// lookupTag procura, na ordem, cada candidato (JÁ em forma canônica) no
-// índice; "" se nenhum bater.
+// lookupTag looks up, in order, each candidate (ALREADY in canonical form) in
+// the index; "" if none matches.
 func lookupTag(idx map[string]string, candidatos ...string) string {
 	for _, c := range candidatos {
 		if v, ok := idx[c]; ok {
@@ -316,8 +318,8 @@ func lookupTag(idx map[string]string, candidatos ...string) string {
 	return ""
 }
 
-// parseLeadingInt parseia o número antes de uma barra opcional ("3" ou
-// "3/12" → 3); 0 quando vazio ou não-numérico.
+// parseLeadingInt parses the number before an optional slash ("3" or "3/12" →
+// 3); 0 when empty or not numeric.
 func parseLeadingInt(s string) int {
 	if s == "" {
 		return 0

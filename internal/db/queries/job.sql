@@ -1,17 +1,17 @@
--- Acesso a job_definition (briefing 0052): fundacao do sistema de jobs
--- (registro dinamico + agendador embutido). Comentarios em ASCII e colunas
--- explicitas -- ver a nota em entity.sql (bug de offset do sqlc v1.31 com
--- acentos/'*' em .sql de query).
+-- Access to job_definition: foundation of the job system
+-- (dynamic registry + embedded scheduler). Comments in ASCII and explicit
+-- columns -- see the note in entity.sql (sqlc v1.31 offset bug with
+-- accents/'*' in a query .sql file).
 --
--- job_execution (historico de execucao) NAO vive mais aqui desde o briefing
--- 0108/ADR-0028 (CAMADA 3): internal/job/manager.go passou a enfileirar via
--- internal/execqueue, cujo queue_item (kind='job') e a fonte unica de
--- historico -- ver internal/db/queries/queue_item.sql. A tabela job_execution
--- em si foi derrubada pela migration 0025.
+-- job_execution (execution history) no longer lives here since
+-- ADR-0028 (LAYER 3): internal/job/manager.go now enqueues through
+-- internal/execqueue, whose queue_item (kind='job') is the single source of
+-- history -- see internal/db/queries/queue_item.sql. The job_execution table
+-- itself was dropped by migration 0025.
 
 -- name: ListarJobDefinitions :many
--- Lista todos os jobs conhecidos (sempre tem ao menos o seed backup_vacuum),
--- ordem estavel por created_at.
+-- Lists all known jobs (there is always at least the backup_vacuum seed),
+-- stable order by created_at.
 SELECT id, nome, descricao, enabled, schedule_cron, config_json, next_run_at,
     last_run_at, last_status, last_message, created_at, updated_at
 FROM job_definition
@@ -24,10 +24,10 @@ FROM job_definition
 WHERE id = ?;
 
 -- name: ListarJobDefinitionsAgendaveis :many
--- Consulta do agendador (Manager.RunScheduler): jobs habilitados, com
--- agendamento configurado, cujo proximo horario ja passou. O Go filtra os que
--- ja estao "running" em memoria antes de disparar (nao ha essa informacao no
--- banco).
+-- Scheduler query (Manager.RunScheduler): enabled jobs, with a
+-- schedule configured, whose next run time has already passed. Go filters out the ones
+-- already "running" in memory before firing (that information is not in the
+-- database).
 SELECT id, nome, descricao, enabled, schedule_cron, config_json, next_run_at,
     last_run_at, last_status, last_message, created_at, updated_at
 FROM job_definition
@@ -37,9 +37,9 @@ WHERE enabled = 1
   AND next_run_at <= ?;
 
 -- name: AtualizarJobConfig :one
--- PATCH .../jobs/{id}: grava enabled/schedule_cron/next_run_at ja MESCLADOS
--- pelo Go (o patch e parcial na API, mas esta query sempre grava as 3 colunas
--- -- o chamador computa o valor final antes de chamar, mesmo padrao de
+-- PATCH .../jobs/{id}: writes enabled/schedule_cron/next_run_at already MERGED
+-- by Go (the patch is partial in the API, but this query always writes the 3
+-- columns -- the caller computes the final value before calling, same pattern as
 -- AtualizarLibrarySource).
 UPDATE job_definition
 SET enabled = ?,
@@ -51,10 +51,10 @@ RETURNING id, nome, descricao, enabled, schedule_cron, config_json, next_run_at,
     last_run_at, last_status, last_message, created_at, updated_at;
 
 -- name: FinalizarJobDefinicao :one
--- Ao fim de uma execucao (Manager.Executar): espelha o resultado em
--- job_definition (redundancia de leitura, evita JOIN na listagem) e recalcula
--- next_run_at (nil quando desabilitado ou sem schedule_cron -- computado em
--- Go via cron.ParseStandard(...).Next(agora)).
+-- At the end of an execution (Manager.Executar): mirrors the result into
+-- job_definition (read redundancy, avoids a JOIN on the listing) and recomputes
+-- next_run_at (nil when disabled or without schedule_cron -- computed in
+-- Go via cron.ParseStandard(...).Next(now)).
 UPDATE job_definition
 SET last_run_at = ?,
     last_status = ?,

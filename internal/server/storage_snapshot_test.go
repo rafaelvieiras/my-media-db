@@ -11,12 +11,11 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 )
 
-// setupStorageSnapshotServer sobe um Server com banco migrado, o job
-// saude_biblioteca registrado (WithLibraryHealthJob) E um assetsDir real
-// (WithAssetsDir) -- a combinação que os testes de storage diferenciado do
-// briefing 0063 precisam (setupLibraryHealthServer, em
-// library_health_job_test.go, não configura assetsDir; setupSystemHealthServer,
-// em health_system_test.go, não registra o job).
+// setupStorageSnapshotServer starts a Server with a migrated database, the saude_biblioteca
+// job registered (WithLibraryHealthJob) AND a real assetsDir (WithAssetsDir) -- the combination
+// the differentiated storage tests need (setupLibraryHealthServer, in
+// library_health_job_test.go, does not configure assetsDir; setupSystemHealthServer, in
+// health_system_test.go, does not register the job).
 func setupStorageSnapshotServer(t *testing.T) (*Server, *db.DB, string) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "storage-snapshot.sqlite")
@@ -37,7 +36,7 @@ func setupStorageSnapshotServer(t *testing.T) (*Server, *db.DB, string) {
 	return s, database, assetsDir
 }
 
-// escreverArquivoDeTamanho cria `path` com exatamente `n` bytes.
+// escreverArquivoDeTamanho creates `path` with exactly `n` bytes.
 func escreverArquivoDeTamanho(t *testing.T, path string, n int) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -48,11 +47,10 @@ func escreverArquivoDeTamanho(t *testing.T, path string, n int) {
 	}
 }
 
-// rodarSaudeBibliotecaSincrono dispara POST .../jobs/saude_biblioteca/run e
-// espera terminar (mesmo padrão de TestWithLibraryHealthJobWiring, em
-// library_health_job_test.go) -- depois disso, o job já classificou os
-// arquivos não-vídeo de toda fonte cadastrada (briefing 0063) e
-// s.libraryHealth.UltimoResultadoStorage está populado.
+// rodarSaudeBibliotecaSincrono fires POST .../jobs/saude_biblioteca/run and waits for it to
+// finish (the same pattern as TestWithLibraryHealthJobWiring, in library_health_job_test.go) --
+// after that, the job already classified the non-video files of every registered source and
+// s.libraryHealth.UltimoResultadoStorage is populated.
 func rodarSaudeBibliotecaSincrono(t *testing.T, s *Server) {
 	t.Helper()
 	h, err := s.Handler()
@@ -63,10 +61,9 @@ func rodarSaudeBibliotecaSincrono(t *testing.T, s *Server) {
 	aguardarJobEstado(t, s, "saude_biblioteca", false)
 }
 
-// TestStorageSnapshotArquivoEstranhoViraUnmanaged cobre o critério de aceite
-// central do briefing 0063: um arquivo estranho (sample.txt) numa pasta de
-// filme rastreada aparece computado em unmanaged_bytes, e NÃO em
-// managed_media_bytes, depois da execução do job de saúde.
+// TestStorageSnapshotArquivoEstranhoViraUnmanaged covers the central acceptance criterion: a
+// strange file (sample.txt) in a tracked movie folder shows up counted in unmanaged_bytes, and
+// NOT in managed_media_bytes, after the health job runs.
 func TestStorageSnapshotArquivoEstranhoViraUnmanaged(t *testing.T) {
 	s, d, _ := setupStorageSnapshotServer(t)
 
@@ -98,9 +95,9 @@ func TestStorageSnapshotArquivoEstranhoViraUnmanaged(t *testing.T) {
 	}
 }
 
-// TestStorageSnapshotPosterCanonicoViraManaged cobre o segundo critério
-// central: um poster.jpg escrito na convenção canônica do briefing 0062 é
-// computado em managed_media_bytes, não em unmanaged_bytes.
+// TestStorageSnapshotPosterCanonicoViraManaged covers the second central criterion: a
+// poster.jpg written under the canonical convention is counted in managed_media_bytes, not in
+// unmanaged_bytes.
 func TestStorageSnapshotPosterCanonicoViraManaged(t *testing.T) {
 	s, d, _ := setupStorageSnapshotServer(t)
 
@@ -132,11 +129,10 @@ func TestStorageSnapshotPosterCanonicoViraManaged(t *testing.T) {
 	}
 }
 
-// TestStorageSnapshotAppCacheBytesReflcteAssetsDir cobre o terceiro
-// critério: app_cache_bytes reflete o tamanho REAL de assetsDir, com arquivo
-// de tamanho conhecido -- sem depender do job de saúde (assetsDir é
-// calculado direto por internal/telemetry.TamanhoDiretorio a cada chamada,
-// ver health_system.go).
+// TestStorageSnapshotAppCacheBytesReflcteAssetsDir covers the third criterion: app_cache_bytes
+// reflects the REAL size of assetsDir, with a file of known size -- without depending on the
+// health job (assetsDir is computed directly by internal/telemetry.TamanhoDiretorio on every
+// call, see health_system.go).
 func TestStorageSnapshotAppCacheBytesReflcteAssetsDir(t *testing.T) {
 	s, _, assetsDir := setupStorageSnapshotServer(t)
 
@@ -155,12 +151,12 @@ func TestStorageSnapshotAppCacheBytesReflcteAssetsDir(t *testing.T) {
 	}
 }
 
-// TestStorageSnapshotSemJobRegistradoDegradaParaZero prova que, sem
-// WithLibraryHealthJob (s.libraryHealth == nil), managed_media_bytes reflete
-// só o vídeo indexado (via UsoDisco) e unmanaged_bytes fica 0 -- degradação
-// graciosa, mesmo espírito defensivo do resto do endpoint (briefing 0055).
+// TestStorageSnapshotSemJobRegistradoDegradaParaZero proves that, without
+// WithLibraryHealthJob (s.libraryHealth == nil), managed_media_bytes reflects only the indexed
+// video (through UsoDisco) and unmanaged_bytes stays 0 -- a graceful degradation, the same
+// defensive spirit as the rest of the endpoint.
 func TestStorageSnapshotSemJobRegistradoDegradaParaZero(t *testing.T) {
-	s, d := setupSystemHealthServer(t) // NÃO passa WithLibraryHealthJob
+	s, d := setupSystemHealthServer(t) // does NOT pass WithLibraryHealthJob
 
 	dir := t.TempDir()
 	semearLibrarySource(t, d, "src-1", dir)

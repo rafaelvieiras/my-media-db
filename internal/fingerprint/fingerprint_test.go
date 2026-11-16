@@ -14,9 +14,9 @@ func TestDisponivel_BinarioInexistente(t *testing.T) {
 }
 
 func TestDisponivel_BinarioNoPath(t *testing.T) {
-	// "sh" existe em qualquer ambiente Unix de CI/dev deste projeto -- usado só
-	// para provar que Disponivel() acha um binário real quando presente,
-	// simetricamente ao teste acima.
+	// "sh" exists in any Unix CI/dev environment of this project -- used only
+	// to prove that Disponivel() finds a real binary when present, symmetrically
+	// to the test above.
 	c := NewCalculadorComRunner("sh", execRunner)
 	if !c.Disponivel() {
 		t.Skip("sh nao disponivel neste ambiente -- teste nao aplicavel")
@@ -84,11 +84,11 @@ func TestCalcularFingerprint_SemFingerprintNaResposta(t *testing.T) {
 }
 
 func TestCalcularFingerprint_FpcalcAusenteDegradaSemPanic(t *testing.T) {
-	// Simula o contrato de degradação: o CHAMADOR checa Disponivel() antes de
-	// calcular, e nunca deveria panicar mesmo se chamar CalcularFingerprint
-	// com um binário ausente -- o subprocesso real falharia com "executable
-	// file not found", capturado como erro comum, não panic.
-	c := NewCalculador() // usa o binário real "fpcalc" via PATH
+	// Simulates the degradation contract: the CALLER checks Disponivel() before
+	// calculating, and should never panic even if it calls CalcularFingerprint
+	// with an absent binary -- the real subprocess would fail with "executable
+	// file not found", captured as an ordinary error, not a panic.
+	c := NewCalculador() // uses the real "fpcalc" binary through the PATH
 	if c.Disponivel() {
 		t.Skip("fpcalc esta disponivel neste ambiente -- este teste cobre so o caminho de ausencia")
 	}

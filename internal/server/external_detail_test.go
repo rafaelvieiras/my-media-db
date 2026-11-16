@@ -14,8 +14,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/tmdb"
 )
 
-// filmeRicoJSON e um payload de /movie/603 com os blocos do detalhe rico (0022),
-// traduzido em en (US) e pt (BR), com classificacao BR=14 e US=R.
+// filmeRicoJSON is a /movie/603 payload with the rich detail blocks,
+// translated into en (US) and pt (BR), with BR classification 14 and US R.
 const filmeRicoJSON = `{
   "id": 603,
   "original_language": "en",
@@ -54,8 +54,9 @@ var generosFilmeSrv = map[string]string{
 	"en":    `{"genres":[{"id":28,"name":"Action"}]}`,
 }
 
-// servidorTMDBRico sobe um httptest que serve /movie/603 (rico), /genre/movie/list e
-// simula 404 em /movie/000 e 500 em /movie/500. Conta as idas a /movie/603 (cache).
+// servidorTMDBRico starts an httptest that serves /movie/603 (rich),
+// /genre/movie/list and simulates 404 on /movie/000 and 500 on /movie/500. It counts the
+// hits to /movie/603 (cache).
 func servidorTMDBRico(t *testing.T, hits *int32) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -80,8 +81,8 @@ func servidorTMDBRico(t *testing.T, hits *int32) *httptest.Server {
 	return srv
 }
 
-// setupExternalServer sobe um Server com banco migrado e o provider TMDB real
-// apontado ao httptest rico.
+// setupExternalServer starts a Server with a migrated database and the real TMDB
+// provider pointed at the rich httptest.
 func setupExternalServer(t *testing.T, hits *int32) (http.Handler, *db.DB) {
 	t.Helper()
 	srv := servidorTMDBRico(t, hits)
@@ -89,10 +90,10 @@ func setupExternalServer(t *testing.T, hits *int32) (http.Handler, *db.DB) {
 	return setupSearchServer(t, WithSearchProvider(prov))
 }
 
-// setupExternalServerComProxy é setupExternalServer com assetsDir configurado — para
-// provar que profile_url/logo_url dos créditos (0029) saem JÁ REESCRITOS para a rota
-// do proxy local (mesma conversão do pôster/backdrop, que só é observável com
-// assetsDir presente).
+// setupExternalServerComProxy is setupExternalServer with assetsDir configured — to
+// prove that profile_url/logo_url of the credits come out ALREADY REWRITTEN to the
+// local proxy route (the same conversion as the poster/backdrop, which is only observable
+// with assetsDir present).
 func setupExternalServerComProxy(t *testing.T) http.Handler {
 	t.Helper()
 	srv := servidorTMDBRico(t, nil)
@@ -101,7 +102,7 @@ func setupExternalServerComProxy(t *testing.T) http.Handler {
 	return h
 }
 
-// decodeDetalheExterno decodifica a resposta do detalhe externo.
+// decodeDetalheExterno decodes the external detail response.
 func decodeDetalheExterno(t *testing.T, body []byte) detalheExternoDTO {
 	t.Helper()
 	var out detalheExternoDTO
@@ -111,7 +112,7 @@ func decodeDetalheExterno(t *testing.T, body []byte) detalheExternoDTO {
 	return out
 }
 
-// obterDetalheExterno faz o GET (esperando 200) e devolve o DTO decodificado.
+// obterDetalheExterno performs the GET (expecting 200) and returns the decoded DTO.
 func obterDetalheExterno(t *testing.T, h http.Handler, alvo string) detalheExternoDTO {
 	t.Helper()
 	rec := do(t, h, http.MethodGet, alvo, nil)
@@ -121,8 +122,8 @@ func obterDetalheExterno(t *testing.T, h http.Handler, alvo string) detalheExter
 	return decodeDetalheExterno(t, rec.Body.Bytes())
 }
 
-// TestExternalDetailCamposPtBR cobre os campos ESCALARES resolvidos em pt-BR
-// (traduziveis + neutros de valor unico + proveniencia de idioma).
+// TestExternalDetailCamposPtBR covers the SCALAR fields resolved in pt-BR
+// (translatables + value-unique neutrals + language provenance).
 func TestExternalDetailCamposPtBR(t *testing.T) {
 	h, _ := setupExternalServer(t, nil)
 	d := obterDetalheExterno(t, h, "/api/v1/external/tmdb/movie/603?lang=pt-BR")
@@ -133,7 +134,7 @@ func TestExternalDetailCamposPtBR(t *testing.T) {
 	eqPtr(t, "tagline", d.Tagline, "Bem-vindo ao mundo real.")
 	eqPtr(t, "description", d.Description, "Neo descobre a verdade.")
 	eqPtr(t, "year", d.Year, "1999")
-	eqPtr(t, "certification", d.Certification, "14") // regiao BR do pt-BR
+	eqPtr(t, "certification", d.Certification, "14") // BR region of pt-BR
 	eqPtr(t, "poster_url", d.PosterURL, "https://image.tmdb.org/t/p/w342/matrix.jpg")
 	eqPtr(t, "backdrop_url", d.BackdropURL, "https://image.tmdb.org/t/p/w780/bg.jpg")
 	if d.Runtime == nil || *d.Runtime != 136 {
@@ -142,8 +143,8 @@ func TestExternalDetailCamposPtBR(t *testing.T) {
 	eq(t, "resolved_languages[title]", d.ResolvedLanguages["title"], "pt-BR")
 }
 
-// TestExternalDetailBlocosPtBR cobre os BLOCOS ricos (listas/objetos) em pt-BR:
-// generos/keywords traduzidos, videos, colecao, similares e links.
+// TestExternalDetailBlocosPtBR covers the rich BLOCKS (lists/objects) in pt-BR:
+// translated genres/keywords, videos, collection, similar items and links.
 func TestExternalDetailBlocosPtBR(t *testing.T) {
 	h, _ := setupExternalServer(t, nil)
 	d := obterDetalheExterno(t, h, "/api/v1/external/tmdb/movie/603?lang=pt-BR")
@@ -164,8 +165,9 @@ func TestExternalDetailBlocosPtBR(t *testing.T) {
 	eq(t, "tmdb link", d.ExternalLinks["tmdb"], "https://www.themoviedb.org/movie/603")
 }
 
-// TestExternalDetailCreditos cobre o ELENCO/EQUIPE/PRODUTORAS (0029, Fase B): shape
-// do canônico do provider até o DTO, sem proxy (assetsDir ausente → URL direta).
+// TestExternalDetailCreditos covers the CAST/CREW/COMPANIES: the shape
+// of the provider canonical through the DTO, without proxy (assetsDir absent → direct
+// URL).
 func TestExternalDetailCreditos(t *testing.T) {
 	h, _ := setupExternalServer(t, nil)
 	d := obterDetalheExterno(t, h, "/api/v1/external/tmdb/movie/603?lang=pt-BR")
@@ -193,9 +195,9 @@ func TestExternalDetailCreditos(t *testing.T) {
 	eqPtr(t, "company.logo_url", comp.LogoURL, "https://image.tmdb.org/t/p/w185/wb.png")
 }
 
-// TestExternalDetailCreditosProxyados prova que, com assetsDir configurado, o
-// profile_url/logo_url dos créditos saem JÁ REESCRITOS para a rota do proxy local
-// (/api/v1/images?src=...) — a mesma conversão do pôster/backdrop.
+// TestExternalDetailCreditosProxyados proves that, with assetsDir configured, the
+// profile_url/logo_url of the credits come out ALREADY REWRITTEN to the local proxy route
+// (/api/v1/images?src=...) — the same conversion as the poster/backdrop.
 func TestExternalDetailCreditosProxyados(t *testing.T) {
 	h := setupExternalServerComProxy(t)
 	d := obterDetalheExterno(t, h, "/api/v1/external/tmdb/movie/603?lang=pt-BR")
@@ -210,8 +212,8 @@ func TestExternalDetailCreditosProxyados(t *testing.T) {
 	}
 }
 
-// umItem exige que a lista tenha exatamente um item e o devolve (enxuga os asserts
-// de bloco de item unico, mantendo baixa a complexidade do teste).
+// umItem requires the list to have exactly one item and returns it (it trims the
+// single-item block asserts, keeping the test complexity low).
 func umItem[T any](t *testing.T, nome string, s []T) T {
 	t.Helper()
 	if len(s) != 1 {
@@ -226,13 +228,14 @@ func TestExternalDetailResolveEn(t *testing.T) {
 	h, _ := setupExternalServer(t, nil)
 	d := obterDetalheExterno(t, h, "/api/v1/external/tmdb/movie/603?lang=en")
 	eq(t, "title", d.Title, "The Matrix")
-	eqPtr(t, "certification", d.Certification, "R") // en sem regiao -> fallback US
+	eqPtr(t, "certification", d.Certification, "R") // en without region -> US fallback
 	if len(d.Genres) != 1 || d.Genres[0] != "Action" {
 		t.Errorf("genres = %v, quero [Action]", d.Genres)
 	}
 }
 
-// TestExternalDetailCacheNaoRebate: a 2a ida ao mesmo item nao bate na fonte.
+// TestExternalDetailCacheNaoRebate: the 2nd hit on the same item does not reach the
+// source.
 func TestExternalDetailCacheNaoRebate(t *testing.T) {
 	var hits int32
 	h, _ := setupExternalServer(t, &hits)
@@ -247,7 +250,7 @@ func TestExternalDetailCacheNaoRebate(t *testing.T) {
 	}
 }
 
-// TestExternalDetailNaoCriaEntity: ver o externo NUNCA cataloga.
+// TestExternalDetailNaoCriaEntity: viewing the external one NEVER catalogs.
 func TestExternalDetailNaoCriaEntity(t *testing.T) {
 	h, d := setupExternalServer(t, nil)
 	rec := do(t, h, http.MethodGet, "/api/v1/external/tmdb/movie/603?lang=pt-BR", nil)
@@ -299,7 +302,7 @@ func TestExternalDetailLangInvalido(t *testing.T) {
 }
 
 func TestExternalDetail503SemProvider(t *testing.T) {
-	h, _ := setupSearchServer(t) // sem provider
+	h, _ := setupSearchServer(t) // no provider
 	rec := do(t, h, http.MethodGet, "/api/v1/external/tmdb/movie/603?lang=pt-BR", nil)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, quero 503", rec.Code)

@@ -16,10 +16,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 )
 
-// detProvider é um provider fake para os testes de enrich/import no server:
-// Nome()="tmdb" (casa o find-or-create e a composição externa), BuscarDetalhe
-// devolve um raw fixo e MapearDetalhe campos canônicos fixos (com poster_url num
-// httptest de imagem).
+// detProvider is a fake provider for the enrich/import tests in the server:
+// Nome()="tmdb" (it matches the find-or-create and the external composition),
+// BuscarDetalhe returns a fixed raw payload and MapearDetalhe fixed canonical fields
+// (with poster_url on an image httptest).
 type detProvider struct {
 	raw    json.RawMessage
 	campos map[string]any
@@ -39,9 +39,9 @@ func (p *detProvider) MapearDetalhe(json.RawMessage) (map[string]any, error) {
 	return p.campos, nil
 }
 
-// setupEnrichServer sobe um Server com banco migrado, um provider fake (tmdb) e um
-// assetsDir temporário, e um httptest servindo o binário do pôster. Devolve tudo o
-// necessário para os testes de enrich/import.
+// setupEnrichServer starts a Server with a migrated database, a fake provider (tmdb) and
+// a temporary assetsDir, plus an httptest server serving the poster binary. It returns
+// everything the enrich/import tests need.
 func setupEnrichServer(t *testing.T) (http.Handler, *db.DB, *detProvider, []byte, string) {
 	t.Helper()
 	imgBytes := []byte("POSTER-BYTES")
@@ -64,7 +64,7 @@ func setupEnrichServer(t *testing.T) (http.Handler, *db.DB, *detProvider, []byte
 	return h, d, prov, imgBytes, assetsDir
 }
 
-// decodeEntidade decodifica a entity resolvida do corpo.
+// decodeEntidade decodes the resolved entity from the body.
 func decodeEntidade(t *testing.T, rec *httptest.ResponseRecorder) resolver.Entidade {
 	t.Helper()
 	var e resolver.Entidade
@@ -82,7 +82,7 @@ func TestImportCriaEReusaSemDuplicar(t *testing.T) {
 		t.Fatalf("import #1 status = %d, quero 201 (corpo=%s)", rec.Code, rec.Body.String())
 	}
 	ent := decodeEntidade(t, rec)
-	// Resposta resolvida reflete o detalhe externo (título e sinopse compostos).
+	// The resolved response reflects the external detail (title and synopsis composed).
 	eq(t, "title", ent.Title, "Filme Externo")
 	if ent.Description == nil || *ent.Description != "sinopse externa" {
 		t.Errorf("description = %v, quero 'sinopse externa' (composição externa)", ent.Description)
@@ -90,7 +90,7 @@ func TestImportCriaEReusaSemDuplicar(t *testing.T) {
 	eq(t, "external_ids.tmdb", ent.ExternalIDs["tmdb"], "777")
 	id1 := ent.ID
 
-	// Segundo import mesmo id externo: reusa (200), não duplica.
+	// Second import with the same external id: it reuses (200), it does not duplicate.
 	rec2 := do(t, h, http.MethodPost, "/api/v1/import", map[string]string{"source": "tmdb", "source_id": "777", "type": "movie"})
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("import #2 status = %d, quero 200 (reuso)", rec2.Code)
@@ -105,11 +105,12 @@ func TestImportCriaEReusaSemDuplicar(t *testing.T) {
 	}
 }
 
-// TestImportMultiIdiomaResolvePorLang e o end-to-end do 0020 SEM REDE: liga o
-// provider TMDB REAL a um httptest servindo o detalhe (com translations) e as
-// listas de genero localizadas; importa e le a entity por ?lang=. Prova o criterio
-// 1 (?lang=pt-BR serve pt-BR, ?lang=en serve en; generos traduzidos) e que
-// original_language e gravado. Sem poster_path no detalhe -> sem download de imagem.
+// TestImportMultiIdiomaResolvePorLang is the end-to-end of the multi-language model
+// WITHOUT NETWORK: it wires the REAL TMDB provider to an httptest server serving the
+// detail (with translations) and the localized genre lists; it imports and reads the
+// entity by ?lang=. It proves criterion 1 (?lang=pt-BR serves pt-BR, ?lang=en serves en;
+// translated genres) and that original_language is written. No poster_path in the detail
+// -> no image download.
 func TestImportMultiIdiomaResolvePorLang(t *testing.T) {
 	const detalhe = `{
       "id": 900,
@@ -139,17 +140,17 @@ func TestImportMultiIdiomaResolvePorLang(t *testing.T) {
 	}
 	id := decodeEntidade(t, rec).ID
 
-	// ?lang=pt-BR serve o portugues (titulo/sinopse/generos traduzidos).
+	// ?lang=pt-BR serves Portuguese (translated title/synopsis/genres).
 	assertEntidadePTBR(t, decodeEntidade(t, do(t, h, http.MethodGet, "/api/v1/entities/"+id+"?lang=pt-BR", nil)))
-	// ?lang=en serve o ingles.
+	// ?lang=en serves English.
 	assertEntidadeEN(t, decodeEntidade(t, do(t, h, http.MethodGet, "/api/v1/entities/"+id+"?lang=en", nil)))
 }
 
-// TestImportEntityCreditosParidadeComExterno prova a PARIDADE (0029) entre o detalhe
-// EXTERNO (GET /external/...) e a entity IMPORTADA (GET /entities/{id}): os mesmos
-// créditos (elenco/equipe/produtoras), no MESMO shape, com profile_url/logo_url JÁ
-// PROXYADOS nos dois lados (assetsDir configurado). Dividido em helpers (um assert
-// por bloco) para manter a gocyclo baixa.
+// TestImportEntityCreditosParidadeComExterno proves the PARITY between the EXTERNAL
+// detail (GET /external/...) and the IMPORTED entity (GET /entities/{id}): the same
+// credits (cast/crew/production companies), in the SAME shape, with profile_url/logo_url
+// ALREADY PROXIED on both sides (assetsDir configured). Split into helpers (one assert
+// per block) to keep gocyclo low.
 func TestImportEntityCreditosParidadeComExterno(t *testing.T) {
 	srv := servidorTMDBRico(t, nil)
 	prov := tmdb.New(tmdb.Credencial{Token: "tok"}, srv.Client(), srv.URL)
@@ -169,8 +170,8 @@ func TestImportEntityCreditosParidadeComExterno(t *testing.T) {
 	assertParidadeCompanies(t, ent, ext)
 }
 
-// assertParidadeCast confere o elenco: mesmo shape e profile_url proxyado nos dois
-// lados (entity e externo).
+// assertParidadeCast checks the cast: same shape and profile_url proxied on both sides
+// (entity and external).
 func assertParidadeCast(t *testing.T, ent resolver.Entidade, ext detalheExternoDTO) {
 	t.Helper()
 	if len(ent.Cast) != 1 || len(ext.Cast) != 1 {
@@ -183,9 +184,9 @@ func assertParidadeCast(t *testing.T, ent resolver.Entidade, ext detalheExternoD
 	assertProfileURLParidadeEProxy(t, "cast", e.ProfileURL, x.ProfileURL)
 }
 
-// assertProfileURLParidadeEProxy confere que as URLs de foto/logo do lado entity e do
-// lado externo são IGUAIS e que a do lado entity já é a rota do proxy local — extraído
-// dos asserts de créditos só para manter a gocyclo baixa.
+// assertProfileURLParidadeEProxy checks that the photo/logo URLs of the entity side and
+// of the external side are EQUAL and that the entity one is already the local proxy route
+// — extracted from the credits asserts only to keep gocyclo low.
 func assertProfileURLParidadeEProxy(t *testing.T, rotulo string, deEntity, deExterno *string) {
 	t.Helper()
 	if deEntity == nil || deExterno == nil || *deEntity != *deExterno {
@@ -197,7 +198,7 @@ func assertProfileURLParidadeEProxy(t *testing.T, rotulo string, deEntity, deExt
 	}
 }
 
-// assertParidadeCrew confere a equipe: mesmo shape nos dois lados.
+// assertParidadeCrew checks the crew: same shape on both sides.
 func assertParidadeCrew(t *testing.T, ent resolver.Entidade, ext detalheExternoDTO) {
 	t.Helper()
 	if len(ent.Crew) != 1 || len(ext.Crew) != 1 || ent.Crew[0].Job != ext.Crew[0].Job {
@@ -205,7 +206,8 @@ func assertParidadeCrew(t *testing.T, ent resolver.Entidade, ext detalheExternoD
 	}
 }
 
-// assertParidadeCompanies confere as produtoras: mesmo shape e logo_url proxyado.
+// assertParidadeCompanies checks the production companies: same shape and logo_url
+// proxied.
 func assertParidadeCompanies(t *testing.T, ent resolver.Entidade, ext detalheExternoDTO) {
 	t.Helper()
 	if len(ent.Companies) != 1 || len(ext.Companies) != 1 {
@@ -215,8 +217,8 @@ func assertParidadeCompanies(t *testing.T, ent resolver.Entidade, ext detalheExt
 	assertProfileURLParidadeEProxy(t, "company.logo_url", e.LogoURL, x.LogoURL)
 }
 
-// servidorTMDBMultiIdioma sobe um httptest que serve o detalhe do filme e as listas de
-// genero localizadas por ?language=, como a API do TMDB.
+// servidorTMDBMultiIdioma starts an httptest server that serves the movie detail and the
+// genre lists localized by ?language=, like the TMDB API.
 func servidorTMDBMultiIdioma(t *testing.T, detalhe string, generos map[string]string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -234,7 +236,8 @@ func servidorTMDBMultiIdioma(t *testing.T, detalhe string, generos map[string]st
 	return srv
 }
 
-// assertEntidadePTBR confere titulo/sinopse/generos traduzidos e a ancora original_language.
+// assertEntidadePTBR checks the translated title/synopsis/genres and the original_language
+// anchor.
 func assertEntidadePTBR(t *testing.T, pt resolver.Entidade) {
 	t.Helper()
 	eq(t, "pt.title", pt.Title, "Matrix")
@@ -249,7 +252,7 @@ func assertEntidadePTBR(t *testing.T, pt resolver.Entidade) {
 	}
 }
 
-// assertEntidadeEN confere titulo e generos servidos em ingles.
+// assertEntidadeEN checks the title and genres served in English.
 func assertEntidadeEN(t *testing.T, en resolver.Entidade) {
 	t.Helper()
 	eq(t, "en.title", en.Title, "The Matrix")
@@ -269,7 +272,7 @@ func TestEnrichEntityInexistente404(t *testing.T) {
 
 func TestEnrichSemSourceID422(t *testing.T) {
 	h, d, _, _, _ := setupEnrichServer(t)
-	semearEntity(t, d, "e1", "movie", "Sem Id Externo") // sem external_ids
+	semearEntity(t, d, "e1", "movie", "Sem Id Externo") // no external_ids
 	rec := do(t, h, http.MethodPost, "/api/v1/entities/e1/enrich", nil)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, quero 422 (corpo=%s)", rec.Code, rec.Body.String())
@@ -277,19 +280,19 @@ func TestEnrichSemSourceID422(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestExternalIDDeMusicbrainzUsaChaveMbid: o Nome() do provider MusicBrainz é
-// "musicbrainz", mas o id em si é gravado em external_ids sob a chave "mbid"
-// (ADR-0027, todo o resto do código: internal/enrich/musica.go, external_ids.mbid
-// no frontend) -- achado ao validar "Baixar Metadados" sem source_id explícito
-// num artista/álbum/faixa de música já catalogado: sem o desvio em externalIDDe,
-// a busca por external_ids["musicbrainz"] nunca acha o id e o botão sempre bate
-// em 422 "sem source_id", mesmo com a fonte corretamente resolvida.
+// TestExternalIDDeMusicbrainzUsaChaveMbid: the MusicBrainz provider's Nome() is
+// "musicbrainz", but the id itself is stored in external_ids under the key "mbid"
+// (ADR-0027, all the rest of the code: internal/enrich/musica.go, external_ids.mbid in
+// the frontend) -- found while validating "Baixar Metadados" without an explicit
+// source_id on an already cataloged music artist/album/track: without the redirect in
+// externalIDDe, the lookup by external_ids["musicbrainz"] never finds the id and the
+// button always hits 422 "sem source_id", even with the source correctly resolved.
 func TestExternalIDDeMusicbrainzUsaChaveMbid(t *testing.T) {
 	ns := nsOf(`{"mbid":"artista-fake-1"}`)
 	if got := externalIDDe(ns, "musicbrainz"); got != "artista-fake-1" {
 		t.Errorf(`externalIDDe(musicbrainz) = %q, quero "artista-fake-1"`, got)
 	}
-	// Regressão: outras fontes continuam olhando a própria chave (sem desvio).
+	// Regression: the other sources keep looking at their own key (no redirect).
 	nsTmdb := nsOf(`{"tmdb":"603"}`)
 	if got := externalIDDe(nsTmdb, "tmdb"); got != "603" {
 		t.Errorf(`externalIDDe(tmdb) = %q, quero "603"`, got)
@@ -299,17 +302,17 @@ func TestExternalIDDeMusicbrainzUsaChaveMbid(t *testing.T) {
 func TestImportValidacoes(t *testing.T) {
 	h, _, _, _, _ := setupEnrichServer(t)
 
-	// Corpo JSON malformado -> 400.
+	// Malformed JSON body -> 400.
 	rec := do(t, h, http.MethodPost, "/api/v1/import", []byte("{nao-json"))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("corpo inválido: status = %d, quero 400", rec.Code)
 	}
-	// type fora de movie|tv -> 422.
+	// type outside movie|tv -> 422.
 	rec = do(t, h, http.MethodPost, "/api/v1/import", map[string]string{"source_id": "1", "type": "person"})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("type inválido: status = %d, quero 422", rec.Code)
 	}
-	// source_id vazio -> 422.
+	// empty source_id -> 422.
 	rec = do(t, h, http.MethodPost, "/api/v1/import", map[string]string{"type": "movie"})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("source_id vazio: status = %d, quero 422", rec.Code)
@@ -319,14 +322,14 @@ func TestImportValidacoes(t *testing.T) {
 func TestEnrichPosterServidoDoAssetsDir(t *testing.T) {
 	h, _, _, imgBytes, assetsDir := setupEnrichServer(t)
 
-	// Importa: cria a entity, cacheia o pôster externo sob o assetsDir.
+	// Imports: creates the entity, caches the external poster under the assetsDir.
 	rec := do(t, h, http.MethodPost, "/api/v1/import", map[string]string{"source_id": "777", "type": "movie"})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("import status = %d, quero 201 (corpo=%s)", rec.Code, rec.Body.String())
 	}
 	ent := decodeEntidade(t, rec)
 
-	// O pôster externo é servível pela guarda (path sob o assetsDir confiável).
+	// The external poster is servable through the guard (path under the trusted assetsDir).
 	poster := do(t, h, http.MethodGet, "/api/v1/entities/"+ent.ID+"/assets/poster", nil)
 	if poster.Code != http.StatusOK {
 		t.Fatalf("GET poster status = %d, quero 200 (corpo=%s)", poster.Code, poster.Body.String())
@@ -334,7 +337,7 @@ func TestEnrichPosterServidoDoAssetsDir(t *testing.T) {
 	if poster.Body.String() != string(imgBytes) {
 		t.Errorf("binário servido diverge do cacheado")
 	}
-	// Sanidade: o arquivo mora mesmo sob o assetsDir.
+	// Sanity check: the file really lives under the assetsDir.
 	if _, err := filepath.Rel(assetsDir, filepath.Join(assetsDir, ent.ID)); err != nil {
 		t.Fatalf("layout de assets inesperado: %v", err)
 	}
@@ -343,7 +346,7 @@ func TestEnrichPosterServidoDoAssetsDir(t *testing.T) {
 func TestPosterForaDosDirsConfiaveis403(t *testing.T) {
 	h, d, _, _, _ := setupEnrichServer(t)
 	semearEntity(t, d, "e1", "movie", "X")
-	// Asset apontando para fora de qualquer dir confiável (nem source nem assetsDir).
+	// Asset pointing outside any trusted dir (neither source nor assetsDir).
 	if _, err := escrita(t, d).CriarAsset(context.Background(), sqlcgen.CriarAssetParams{
 		ID: "a1", EntityID: "e1", Kind: "poster", Origin: "external", PathOrUri: "/etc/segredo.png",
 	}); err != nil {

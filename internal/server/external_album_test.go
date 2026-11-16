@@ -12,21 +12,21 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Este arquivo testa GET /external/{source}/album/{id} (external_album.go) e o
-// import de faixa avulsa (POST /import type=faixa, enrich.go) — briefing 0115
-// Parte 2. Reusa o molde de external_colecao_test.go (fonte fake sem rede) mais o
-// padrão de semeadura direta de entities/entity_relation já usado por
+// This file tests GET /external/{source}/album/{id} (external_album.go) and the
+// standalone track import (POST /import type=faixa, enrich.go). It reuses the mold of
+// external_colecao_test.go (fake source without network) plus the pattern of direct
+// seeding of entities/entity_relation already used by
 // members_test.go/collections_test.go.
 
 const (
 	albumMbidFixture  = "rg-1"
-	faixa1MbidFixture = "track-mbid-1" // já catalogada (internal_id preenchido)
-	faixa2MbidFixture = "track-mbid-2" // faltando (internal_id ausente)
+	faixa1MbidFixture = "track-mbid-1" // already cataloged (internal_id filled)
+	faixa2MbidFixture = "track-mbid-2" // missing (internal_id absent)
 )
 
-// albumExternoFixture é o único álbum que fakeAlbumProvider conhece: 2 faixas, a
-// 1ª já catalogada internamente nos testes que semeiam a faixa, a 2ª sempre
-// "faltando".
+// albumExternoFixture is the only album that fakeAlbumProvider knows: 2 tracks, the
+// 1st already cataloged internally in the tests that seed the track, the 2nd always
+// "missing".
 func albumExternoFixture() provider.AlbumExterno {
 	return provider.AlbumExterno{
 		Name:  "Fake Album",
@@ -40,9 +40,9 @@ func albumExternoFixture() provider.AlbumExterno {
 	}
 }
 
-// fakeAlbumProvider implementa o core provider.Provider (mínimo) + a capacidade
-// provider.MusicaAlbumProvider, sem rede real, sob o nome "musicbrainz" — só
-// conhece albumExternoFixture (mbid "rg-1"); qualquer outro mbid é
+// fakeAlbumProvider implements the core provider.Provider (minimum) + the
+// provider.MusicaAlbumProvider capability, without a real network, under the name
+// "musicbrainz" — it only knows albumExternoFixture (mbid "rg-1"); any other mbid is
 // provider.ErrNaoEncontrado.
 type fakeAlbumProvider struct{}
 
@@ -67,11 +67,11 @@ func (fakeAlbumProvider) BuscarAlbumPorMbid(_ context.Context, albumMBID string,
 	return albumExternoFixture(), nil
 }
 
-// BuscarAlbumDaFaixa/BuscarAlbumPorNome não são exercitados por estes testes
-// (só o caminho DIRETO por mbid, BuscarAlbumPorMbid, é usado pela tela externa
-// de álbum e pelo import de faixa avulsa) -- stubs só para satisfazer a
-// interface provider.MusicaAlbumProvider completa (o type-assert falha em
-// runtime se faltar QUALQUER método).
+// BuscarAlbumDaFaixa/BuscarAlbumPorNome are not exercised by these tests
+// (only the DIRECT path by mbid, BuscarAlbumPorMbid, is used by the external album
+// screen and by the standalone track import) -- stubs only to satisfy the complete
+// provider.MusicaAlbumProvider interface (the type-assert fails at
+// runtime if ANY method is missing).
 func (fakeAlbumProvider) BuscarAlbumDaFaixa(context.Context, string, []string) (provider.AlbumExterno, bool, error) {
 	return provider.AlbumExterno{}, false, nil
 }
@@ -80,9 +80,9 @@ func (fakeAlbumProvider) BuscarAlbumPorNome(context.Context, string, string, pro
 	return provider.AlbumExterno{}, false, nil
 }
 
-// setupAlbumServer sobe um Server com o fakeAlbumProvider registrado e um
-// assetsDir temporário (necessário para s.enrich != nil, usado pelos testes de
-// import de faixa avulsa).
+// setupAlbumServer starts a Server with the fakeAlbumProvider registered and a temporary
+// assetsDir (needed for s.enrich != nil, used by the standalone track
+// import tests).
 func setupAlbumServer(t *testing.T) (http.Handler, *db.DB) {
 	t.Helper()
 	return setupSearchServer(t, WithSearchProvider(fakeAlbumProvider{}), WithAssetsDir(t.TempDir()))
@@ -97,11 +97,11 @@ func decodeAlbumExterno(t *testing.T, body []byte) albumExternoDTO {
 	return out
 }
 
-// TestExternalAlbumInternalIdDasJaCatalogadas: semeia a entity álbum interna
-// (mbid "rg-1") e a entity faixa interna da 1ª faixa (mbid "track-mbid-1"),
-// ligada por entity_relation kind=music_album — a tela externa deve marcar
-// internal_id no álbum e nessa faixa, e deixar a 2ª faixa (nunca catalogada) sem
-// internal_id.
+// TestExternalAlbumInternalIdDasJaCatalogadas: seeds the internal album entity
+// (mbid "rg-1") and the internal track entity of the 1st track (mbid "track-mbid-1"),
+// linked by entity_relation kind=music_album — the external screen must mark
+// internal_id on the album and on that track, and leave the 2nd track (never cataloged)
+// without internal_id.
 func TestExternalAlbumInternalIdDasJaCatalogadas(t *testing.T) {
 	h, d := setupAlbumServer(t)
 	ctx := context.Background()
@@ -157,7 +157,7 @@ func TestExternalAlbum404(t *testing.T) {
 }
 
 func TestExternalAlbum503SemProvider(t *testing.T) {
-	h, _ := setupSearchServer(t) // sem provider => sem capacidade de album
+	h, _ := setupSearchServer(t) // no provider => no album capability
 	rec := do(t, h, http.MethodGet, "/api/v1/external/musicbrainz/album/"+albumMbidFixture, nil)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, quero 503", rec.Code)
@@ -165,10 +165,9 @@ func TestExternalAlbum503SemProvider(t *testing.T) {
 	checkErrorShape(t, rec, "external_source_unavailable")
 }
 
-// TestImportFaixaAvulsaLigaAoAlbumPai cobre o import de uma faixa FALTANTE
-// (briefing 0115 Parte 2): POST /import type=faixa com parent_id=album interno
-// já catalogado cria a faixa e liga por entity_relation(kind=music_album,
-// sort_index=track_number).
+// TestImportFaixaAvulsaLigaAoAlbumPai covers the import of a MISSING track:
+// POST /import type=faixa with parent_id=internal album already cataloged creates the
+// track and links it by entity_relation(kind=music_album, sort_index=track_number).
 func TestImportFaixaAvulsaLigaAoAlbumPai(t *testing.T) {
 	h, d := setupAlbumServer(t)
 	ctx := context.Background()
@@ -207,7 +206,7 @@ func TestImportFaixaAvulsaLigaAoAlbumPai(t *testing.T) {
 		t.Errorf("nenhuma entity_relation kind=music_album ligando album-1 -> %s", ent.ID)
 	}
 
-	// Reimport (mesmo source_id/parent_id): reusa, não duplica a relação.
+	// Reimport (same source_id/parent_id): it reuses, it does not duplicate the relation.
 	rec2 := do(t, h, http.MethodPost, "/api/v1/import", map[string]string{
 		"source": "musicbrainz", "source_id": faixa2MbidFixture, "type": "faixa", "parent_id": "album-1",
 	})
@@ -223,8 +222,8 @@ func TestImportFaixaAvulsaLigaAoAlbumPai(t *testing.T) {
 	}
 }
 
-// TestImportFaixaSemParentID422 cobre a validação de entrada: type=faixa sem
-// parent_id nunca tenta importar (não há como ligar a faixa a um álbum).
+// TestImportFaixaSemParentID422 covers the input validation: type=faixa without
+// parent_id never tries to import (there is no way to link the track to an album).
 func TestImportFaixaSemParentID422(t *testing.T) {
 	h, _ := setupAlbumServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/import", map[string]string{
@@ -236,10 +235,10 @@ func TestImportFaixaSemParentID422(t *testing.T) {
 	checkErrorShape(t, rec, "invalid_body")
 }
 
-// TestImportFaixaAlbumPaiSemMbid422Like cobre o álbum pai sem mbid externo (dado
-// impossível em condições normais, mas o import não deve produzir uma faixa
-// órfã): a fonte falha ao resolver e o handler responde 502 (mesmo contrato de
-// "fonte externa falhou" dos demais imports).
+// TestImportFaixaAlbumPaiSemMbid422Like covers the parent album without an external mbid
+// (data impossible under normal conditions, but the import must not produce an orphan
+// track): the source fails to resolve and the handler responds 502 (same "external source
+// failed" contract as the other imports).
 func TestImportFaixaAlbumPaiSemMbid(t *testing.T) {
 	h, d := setupAlbumServer(t)
 	ctx := context.Background()

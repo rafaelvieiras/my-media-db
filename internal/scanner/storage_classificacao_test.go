@@ -9,22 +9,21 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 )
 
-// scanSyncRegistrado roda o scan sincronamente -- mesmo caminho de scanSync
-// (scanner_test.go). Desde o briefing 0108, StorageNaoVideo é populado
-// diretamente por Manager.executarScan (chave = source.ID, sem depender de
-// nenhum registro prévio em mapa de job), então este helper é hoje só um
-// alias nomeado -- mantido para não precisar tocar nos call-sites deste
-// arquivo.
+// scanSyncRegistrado runs the scan synchronously -- the same path as scanSync
+// (scanner_test.go). Since the unified queue, StorageNaoVideo is populated directly
+// by Manager.executarScan (key = source.ID, without depending on any prior
+// registration in a job map), so this helper is today only a named alias -- kept so
+// as not to have to touch the call sites of this file.
 func scanSyncRegistrado(t *testing.T, m *Manager, src library.Source) error {
 	t.Helper()
 	return scanSync(t, m, src)
 }
 
-// TestScanClassificaArquivoNaoVideoManagedEUnmanaged cobre o núcleo do
-// briefing 0063: durante a MESMA varredura que já detecta o vídeo, um
-// poster.jpg (nome canônico do 0062) é somado em managed e um sample.txt
-// (lixo) é somado em unmanaged -- consultável depois via
-// Manager.StorageNaoVideo, a API que internal/job/libraryhealth usa.
+// TestScanClassificaArquivoNaoVideoManagedEUnmanaged covers the core of the
+// non-video storage classification: during the SAME walk that already detects the
+// video, a poster.jpg (canonical name) is added to managed and a sample.txt (junk)
+// is added to unmanaged -- queryable afterwards via Manager.StorageNaoVideo, the API
+// that internal/job/libraryhealth uses.
 func TestScanClassificaArquivoNaoVideoManagedEUnmanaged(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -51,8 +50,8 @@ func TestScanClassificaArquivoNaoVideoManagedEUnmanaged(t *testing.T) {
 	}
 }
 
-// TestStorageNaoVideoSemScanDevolveOkFalse prova que uma fonte nunca
-// escaneada devolve ok=false (não zero mentiroso).
+// TestStorageNaoVideoSemScanDevolveOkFalse proves that a source never scanned
+// returns ok=false (not a lying zero).
 func TestStorageNaoVideoSemScanDevolveOkFalse(t *testing.T) {
 	d := abrirDB(t)
 	m := managerFake(t, d)
@@ -61,11 +60,11 @@ func TestStorageNaoVideoSemScanDevolveOkFalse(t *testing.T) {
 	}
 }
 
-// TestStorageNaoVideoMantemUltimoValorQuandoFonteFicaOffline prova a
-// política do briefing 0063 (mesma do 0055 para Statfs): depois de um scan
-// bem-sucedido, se a fonte ficar inacessível, StorageNaoVideo continua
-// devolvendo o ÚLTIMO valor calculado (Start() falha ANTES de tocar o
-// estado do job -- nenhuma lógica extra precisa existir para isso).
+// TestStorageNaoVideoMantemUltimoValorQuandoFonteFicaOffline proves the policy of
+// the non-video storage classification (the same one used for Statfs): after a
+// successful scan, if the source becomes unreachable, StorageNaoVideo keeps
+// returning the LAST computed value (Start() fails BEFORE touching the job state --
+// no extra logic needs to exist for that).
 func TestStorageNaoVideoMantemUltimoValorQuandoFonteFicaOffline(t *testing.T) {
 	d := abrirDB(t)
 	root := t.TempDir()
@@ -83,8 +82,8 @@ func TestStorageNaoVideoMantemUltimoValorQuandoFonteFicaOffline(t *testing.T) {
 		t.Fatalf("managedBytes antes = %d, quero 111", managedAntes)
 	}
 
-	// Fonte fica inacessível -- Start() recusaria com ErrSourceOffline, sem
-	// tocar em m.jobs[src.ID].
+	// The source becomes unreachable -- Start() would refuse with ErrSourceOffline,
+	// without touching m.jobs[src.ID].
 	if err := os.RemoveAll(root); err != nil {
 		t.Fatal(err)
 	}
@@ -101,12 +100,11 @@ func TestStorageNaoVideoMantemUltimoValorQuandoFonteFicaOffline(t *testing.T) {
 	}
 }
 
-// TestExecutarScanUsaUmaUnicaPassadaDeWalkDir é a guarda estrutural do
-// critério de aceite "nenhuma varredura de disco NOVA é introduzida"
-// (briefing 0063 §5): scan.go só pode ter UM ponto de chamada a
-// filepath.WalkDir -- coletarArquivos precisa classificar vídeo E não-vídeo
-// na MESMA passada. Uma regressão que adicionasse uma segunda passada (ex.:
-// um WalkDir dedicado só para a classificação) quebraria este teste.
+// TestExecutarScanUsaUmaUnicaPassadaDeWalkDir is the structural guard of the
+// acceptance criterion "no NEW disk walk is introduced": scan.go may only have ONE
+// call site to filepath.WalkDir -- coletarArquivos must classify video AND non-video
+// in the SAME pass. A regression adding a second pass (e.g. a dedicated WalkDir only
+// for the classification) would break this test.
 func TestExecutarScanUsaUmaUnicaPassadaDeWalkDir(t *testing.T) {
 	src, err := os.ReadFile("scan.go")
 	if err != nil {
@@ -118,9 +116,9 @@ func TestExecutarScanUsaUmaUnicaPassadaDeWalkDir(t *testing.T) {
 	}
 }
 
-// escreverTamanho cria um arquivo com exatamente `n` bytes (diferente de
-// escrever, em scanner_test.go, que grava o próprio path como conteúdo --
-// aqui o TAMANHO exato importa para a classificação de storage).
+// escreverTamanho creates a file with exactly `n` bytes (unlike escrever, in
+// scanner_test.go, which writes the path itself as content -- here the exact SIZE
+// matters for the storage classification).
 func escreverTamanho(t *testing.T, path string, n int) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

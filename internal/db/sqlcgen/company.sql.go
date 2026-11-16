@@ -21,7 +21,7 @@ type ObterCompanyPorFonteParams struct {
 	SourceID string
 }
 
-// Le a produtora por (source, source_id) -- a chave logica de dedup.
+// Reads the production company by (source, source_id) -- the logical dedupe key.
 func (q *Queries) ObterCompanyPorFonte(ctx context.Context, arg ObterCompanyPorFonteParams) (Company, error) {
 	row := q.db.QueryRowContext(ctx, obterCompanyPorFonte, arg.Source, arg.SourceID)
 	var i Company
@@ -59,12 +59,12 @@ type UpsertCompanyParams struct {
 	PayloadJson sql.NullString
 }
 
-// Acesso a tabela company (briefing 0029, migration 0010): a produtora/estudio
-// deduplicada por (source, source_id). Cache re-componivel. Comentarios em ASCII e
-// colunas explicitas -- ver a nota em entity.sql.
-// Grava (ou atualiza) a produtora deduplicada por (source, source_id). Conflito na
-// UNIQUE reusa a linha e atualiza name/logo_path/payload_json, devolvendo o id
-// existente. `id` so e usado na primeira insercao.
+// Access to the company table (migration 0010): the production company/studio
+// deduplicated by (source, source_id). Re-composable cache. Comments in ASCII and
+// explicit columns -- see the note in entity.sql.
+// Writes (or updates) the production company deduplicated by (source, source_id).
+// A conflict on the UNIQUE constraint reuses the row and updates
+// name/logo_path/payload_json, returning the id; `id` only counts on the first insert.
 func (q *Queries) UpsertCompany(ctx context.Context, arg UpsertCompanyParams) (string, error) {
 	row := q.db.QueryRowContext(ctx, upsertCompany,
 		arg.ID,

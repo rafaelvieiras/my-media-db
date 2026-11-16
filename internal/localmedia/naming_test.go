@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// TestNomeArquivoArteBare: pasta EXCLUSIVA (1 único vídeo) + principal ->
-// nome bare (briefing 0062 §5, critério "poster.jpg no mesmo diretório").
+// TestNomeArquivoArteBare: EXCLUSIVE folder (1 single video) + main artwork ->
+// bare name (doc 08, §5, the "poster.jpg in the same directory" criterion).
 func TestNomeArquivoArteBare(t *testing.T) {
 	nome := NomeArquivoArte(KindPoster, true, 0, true, "Matrix.1999", "")
 	if nome != "poster.jpg" {
@@ -14,8 +14,8 @@ func TestNomeArquivoArteBare(t *testing.T) {
 	}
 }
 
-// TestNomeArquivoArtePrefixado: pasta NÃO-exclusiva (2+ vídeos) -> nome
-// prefixado pelo vídeo (briefing 0062 §5, "<nome-do-vídeo>-poster.jpg").
+// TestNomeArquivoArtePrefixado: NON-exclusive folder (2+ videos) -> name
+// prefixed by the video (doc 08, §5, "<video-name>-poster.jpg").
 func TestNomeArquivoArtePrefixado(t *testing.T) {
 	nome := NomeArquivoArte(KindPoster, true, 0, false, "Matrix.1999.EXTENDED", "")
 	if nome != "Matrix.1999.EXTENDED-poster.jpg" {
@@ -23,10 +23,10 @@ func TestNomeArquivoArtePrefixado(t *testing.T) {
 	}
 }
 
-// TestNomeArquivoArteRotacaoCrescente: marcar principal 3x produz sufixos
-// crescentes SEM colisão nem reindexação (briefing 0062 §5/§6).
+// TestNomeArquivoArteRotacaoCrescente: marking the main artwork 3x produces
+// increasing suffixes WITHOUT collision or reindexing (doc 08, §5/§6).
 func TestNomeArquivoArteRotacaoCrescente(t *testing.T) {
-	// 1a rotacao: so o antigo principal (bare) existe -> vira indice 1.
+	// 1st rotation: only the old main artwork (bare) exists -> it becomes index 1.
 	i1 := IndiceRotacaoLivre(nil, KindPoster, true, "", "")
 	if i1 != 1 {
 		t.Fatalf("1a rotacao: indice = %d, quero 1", i1)
@@ -36,9 +36,9 @@ func TestNomeArquivoArteRotacaoCrescente(t *testing.T) {
 		t.Fatalf("nome rotacionado 1 = %q, quero %q", nomeRotacionado1, "poster1.jpg")
 	}
 
-	// 2a rotacao: ja existe poster1.jpg (o penultimo principal, agora
-	// rotacionado) -- o novo antigo-principal (bare) vira indice 2, nunca
-	// reaproveita o 1.
+	// 2nd rotation: poster1.jpg already exists (the previous main artwork, now
+	// rotated) -- the new former main artwork (bare) becomes index 2 and never
+	// reuses 1.
 	existentes := []string{"poster1.jpg"}
 	i2 := IndiceRotacaoLivre(existentes, KindPoster, true, "", "")
 	if i2 != 2 {
@@ -49,15 +49,15 @@ func TestNomeArquivoArteRotacaoCrescente(t *testing.T) {
 		t.Fatalf("nome rotacionado 2 = %q, quero %q", nomeRotacionado2, "poster2.jpg")
 	}
 
-	// 3a rotacao: existem poster1.jpg e poster2.jpg -- proximo livre e 3.
+	// 3rd rotation: poster1.jpg and poster2.jpg exist -- the next free one is 3.
 	existentes = []string{"poster1.jpg", "poster2.jpg"}
 	i3 := IndiceRotacaoLivre(existentes, KindPoster, true, "", "")
 	if i3 != 3 {
 		t.Fatalf("3a rotacao: indice = %d, quero 3", i3)
 	}
 
-	// Mesmo com um "buraco" (poster1 removido/apagado), o proximo livre NAO
-	// reindexa -- continua maior+1 sobre o que resta.
+	// Even with a "hole" (poster1 removed/deleted), the next free one does NOT
+	// reindex -- it keeps being highest+1 over what is left.
 	existentes = []string{"poster2.jpg"}
 	iSemReindex := IndiceRotacaoLivre(existentes, KindPoster, true, "", "")
 	if iSemReindex != 3 {
@@ -65,15 +65,15 @@ func TestNomeArquivoArteRotacaoCrescente(t *testing.T) {
 	}
 }
 
-// TestNomeArquivoArteSeasonPoster: pôster de temporada usa season{NN}-poster,
-// nunca prefixado por vídeo (briefing 0062 §5, "season01-poster.jpg").
+// TestNomeArquivoArteSeasonPoster: a season poster uses season{NN}-poster,
+// never prefixed by the video (doc 08, §5, "season01-poster.jpg").
 func TestNomeArquivoArteSeasonPoster(t *testing.T) {
 	base := NomeSeasonBase(1)
 	if base != "season01" {
 		t.Fatalf("NomeSeasonBase(1) = %q, quero %q", base, "season01")
 	}
-	// pastaExclusiva=false (a pasta da serie tem varios videos de episodio)
-	// nao deve prefixar o season poster.
+	// pastaExclusiva=false (the series folder has several episode videos)
+	// must not prefix the season poster.
 	nome := NomeArquivoArte(KindSeasonPoster, true, 0, false, base, "")
 	if nome != "season01-poster.jpg" {
 		t.Fatalf("nome = %q, quero %q", nome, "season01-poster.jpg")
@@ -84,8 +84,8 @@ func TestNomeArquivoArteSeasonPoster(t *testing.T) {
 	}
 }
 
-// TestNomeArquivoArteThumbEpisodioSemBare: thumb de episódio NUNCA tem
-// variante bare, mesmo em pasta exclusiva (briefing 0062 §4).
+// TestNomeArquivoArteThumbEpisodioSemBare: an episode thumb NEVER has a bare
+// variant, even in an exclusive folder (doc 08, §4).
 func TestNomeArquivoArteThumbEpisodioSemBare(t *testing.T) {
 	nome := NomeArquivoArte(KindThumb, true, 0, true, "Show.S01E01", "")
 	if nome != "Show.S01E01-thumb.jpg" {
@@ -93,8 +93,8 @@ func TestNomeArquivoArteThumbEpisodioSemBare(t *testing.T) {
 	}
 }
 
-// TestNomeArquivoArteExtensoesPadrao: clearlogo/discart usam .png; os demais
-// caem em .jpg (briefing 0062 §4).
+// TestNomeArquivoArteExtensoesPadrao: clearlogo/discart use .png; the others
+// fall back to .jpg (doc 08, §4).
 func TestNomeArquivoArteExtensoesPadrao(t *testing.T) {
 	casos := map[string]string{
 		KindClearlogo: ".png",
@@ -111,8 +111,8 @@ func TestNomeArquivoArteExtensoesPadrao(t *testing.T) {
 	}
 }
 
-// TestNomeArquivoArteBackdropSinonimo: kind "backdrop" (sinônimo de entrada)
-// usa o mesmo nome-base que "fanart".
+// TestNomeArquivoArteBackdropSinonimo: the kind "backdrop" (an input synonym)
+// uses the same base name as "fanart".
 func TestNomeArquivoArteBackdropSinonimo(t *testing.T) {
 	a := NomeArquivoArte(KindFanart, true, 0, true, "", "")
 	b := NomeArquivoArte(KindBackdrop, true, 0, true, "", "")
@@ -121,10 +121,10 @@ func TestNomeArquivoArteBackdropSinonimo(t *testing.T) {
 	}
 }
 
-// TestNomeArquivoArteTrailer cobre o criterio 5.1 do briefing 0102: kind
-// desconhecido de baseDeKind (KindTrailer) cai no fallback `base = kind`
-// (baseComPrefixo), produzindo "<nomeBaseVideo>-trailer.mp4" (nao-exclusiva)
-// ou "trailer.mp4" (exclusiva), sem nenhuma regra nova em baseComPrefixo.
+// TestNomeArquivoArteTrailer covers criterion 5.1 of ADR-0025: a kind unknown
+// to baseDeKind (KindTrailer) falls into the `base = kind` fallback
+// (baseComPrefixo), producing "<videoBaseName>-trailer.mp4" (non-exclusive)
+// or "trailer.mp4" (exclusive), with no new rule in baseComPrefixo.
 func TestNomeArquivoArteTrailer(t *testing.T) {
 	naoExclusiva := NomeArquivoArte(KindTrailer, true, 0, false, "Filme (2026)", ".mp4")
 	if naoExclusiva != "Filme (2026)-trailer.mp4" {
@@ -134,15 +134,15 @@ func TestNomeArquivoArteTrailer(t *testing.T) {
 	if exclusiva != "trailer.mp4" {
 		t.Fatalf("exclusiva = %q, quero %q", exclusiva, "trailer.mp4")
 	}
-	// ExtensaoPadrao(KindTrailer) == .mp4 -- ext "" cai no default de video.
+	// ExtensaoPadrao(KindTrailer) == .mp4 -- ext "" falls back to the video default.
 	comExtDefault := NomeArquivoArte(KindTrailer, true, 0, true, "Filme (2026)", "")
 	if comExtDefault != "trailer.mp4" {
 		t.Fatalf("ext default = %q, quero %q", comExtDefault, "trailer.mp4")
 	}
 }
 
-// TestDiretorioDestinoMovie: movie usa o media_file mais antigo (created_at
-// asc, state=present) da PRÓPRIA entity.
+// TestDiretorioDestinoMovie: movie uses the oldest media_file (created_at
+// asc, state=present) of the entity ITSELF.
 func TestDiretorioDestinoMovie(t *testing.T) {
 	ent := Entity{ID: "movie1", Type: "movie"}
 	files := []MediaFile{
@@ -159,8 +159,8 @@ func TestDiretorioDestinoMovie(t *testing.T) {
 	}
 }
 
-// TestDiretorioDestinoMovieIgnoraMissing: media_file state=missing não conta
-// para o cálculo (só present).
+// TestDiretorioDestinoMovieIgnoraMissing: a media_file with state=missing does
+// not count for the calculation (only present does).
 func TestDiretorioDestinoMovieIgnoraMissing(t *testing.T) {
 	ent := Entity{ID: "movie1", Type: "movie"}
 	files := []MediaFile{
@@ -173,8 +173,8 @@ func TestDiretorioDestinoMovieIgnoraMissing(t *testing.T) {
 	}
 }
 
-// TestDiretorioDestinoSemArquivo: entity sem nenhum media_file present ->
-// ok=false (sem pasta de destino, briefing 0062 §5 "404/erro claro").
+// TestDiretorioDestinoSemArquivo: entity with no present media_file ->
+// ok=false (no destination folder, doc 08, §5 "404/clear error").
 func TestDiretorioDestinoSemArquivo(t *testing.T) {
 	ent := Entity{ID: "movie1", Type: "movie"}
 	if _, ok := DiretorioDestino(ent, nil, nil); ok {
@@ -182,9 +182,9 @@ func TestDiretorioDestinoSemArquivo(t *testing.T) {
 	}
 }
 
-// TestDiretorioDestinoSerie: tv usa os próprios media_file (que no banco já
-// são os arquivos de TODOS os episódios, via media_file_entity/entity_id=
-// série) -- não precisa de travessia extra.
+// TestDiretorioDestinoSerie: tv uses its own media_file (which in the database
+// already are the files of ALL episodes, through media_file_entity/entity_id=
+// series) -- it needs no extra traversal.
 func TestDiretorioDestinoSerie(t *testing.T) {
 	ent := Entity{ID: "serie1", Type: TipoSerie}
 	files := []MediaFile{
@@ -197,14 +197,14 @@ func TestDiretorioDestinoSerie(t *testing.T) {
 	}
 }
 
-// TestDiretorioDestinoSeasonUsaRaizDaSerie: season (pôster de temporada) usa
-// SEMPRE a raiz da série -- acha o ancestral "tv" na trilha e resolve pelos
-// media_file dele, nunca uma subpasta de temporada (briefing 0062 §5).
+// TestDiretorioDestinoSeasonUsaRaizDaSerie: season (season poster) ALWAYS uses
+// the series root -- it finds the "tv" ancestor in the trail and resolves
+// through its media_file, never a season subfolder (doc 08, §5).
 func TestDiretorioDestinoSeasonUsaRaizDaSerie(t *testing.T) {
 	ent := Entity{ID: "season1", Type: TipoTemporada}
-	ancestors := []Entity{{ID: "serie1", Type: TipoSerie}} // trilha RAIZ->PAI
+	ancestors := []Entity{{ID: "serie1", Type: TipoSerie}} // ROOT->PARENT trail
 	files := []MediaFile{
-		// season1 nao tem media_file proprio (entity_id sempre aponta a serie).
+		// season1 has no media_file of its own (entity_id always points to the series).
 		{EntityID: "serie1", Path: "/lib/Show/S01E01.mkv", State: "present", CreatedAt: "2024-01-01T00:00:00.000Z"},
 	}
 	dir, ok := DiretorioDestino(ent, files, ancestors)
@@ -213,9 +213,9 @@ func TestDiretorioDestinoSeasonUsaRaizDaSerie(t *testing.T) {
 	}
 }
 
-// TestDiretorioDestinoSerieMultiTemporadaPrefixoComum: série com 2+ pastas de
-// temporada IRMÃS -- o prefixo comum já resolve a raiz real, sem precisar do
-// fallback de subir nível (briefing 0081 §4, caso "multi-temporada").
+// TestDiretorioDestinoSerieMultiTemporadaPrefixoComum: a series with 2+ SIBLING
+// season folders -- the common prefix already resolves the real root, without
+// needing the go-up-a-level fallback (ADR-0021, the "multi-season" case).
 func TestDiretorioDestinoSerieMultiTemporadaPrefixoComum(t *testing.T) {
 	ent := Entity{ID: "serie1", Type: TipoSerie}
 	files := []MediaFile{
@@ -229,10 +229,10 @@ func TestDiretorioDestinoSerieMultiTemporadaPrefixoComum(t *testing.T) {
 	}
 }
 
-// TestDiretorioDestinoSerieTemporadaUnicaSobeNivel: série com UMA única
-// temporada (todo arquivo presente concentrado em "Season 01/") -- o prefixo
-// comum cai na própria pasta de temporada, exige o fallback de subir um
-// nível (briefing 0081 §4, caso "temporada única").
+// TestDiretorioDestinoSerieTemporadaUnicaSobeNivel: a series with a SINGLE
+// season (every present file concentrated in "Season 01/") -- the common
+// prefix falls on the season folder itself, requiring the go-up-a-level
+// fallback (ADR-0021, the "single season" case).
 func TestDiretorioDestinoSerieTemporadaUnicaSobeNivel(t *testing.T) {
 	ent := Entity{ID: "serie1", Type: TipoSerie}
 	files := []MediaFile{
@@ -245,8 +245,8 @@ func TestDiretorioDestinoSerieTemporadaUnicaSobeNivel(t *testing.T) {
 	}
 }
 
-// TestDiretorioDestinoSerieTemporadaUnicaFormatoCurto: variante "S01" (forma
-// curta, sem "Season") também precisa disparar o fallback.
+// TestDiretorioDestinoSerieTemporadaUnicaFormatoCurto: the "S01" variant (short
+// form, without "Season") must also trigger the fallback.
 func TestDiretorioDestinoSerieTemporadaUnicaFormatoCurto(t *testing.T) {
 	ent := Entity{ID: "serie1", Type: TipoSerie}
 	files := []MediaFile{
@@ -258,11 +258,11 @@ func TestDiretorioDestinoSerieTemporadaUnicaFormatoCurto(t *testing.T) {
 	}
 }
 
-// TestDiretorioDestinoEpisodioNaoSobeDeSeasonFolder: o fallback de "subir
-// nível" (regexPastaTemporada) é EXCLUSIVO de tv/season -- um episódio cuja
-// própria pasta se chama "Season 01" (convenção Kodi normal) mantém essa
-// pasta como destino, NUNCA sobe pra raiz da série (briefing 0081, nota do
-// contrato: DiretorioDestino de movie/episode não muda).
+// TestDiretorioDestinoEpisodioNaoSobeDeSeasonFolder: the "go up a level"
+// fallback (regexPastaTemporada) is EXCLUSIVE to tv/season -- an episode whose
+// own folder is named "Season 01" (the normal Kodi convention) keeps that
+// folder as its destination and NEVER goes up to the series root (ADR-0021,
+// contract note: DiretorioDestino does not change for movie/episode).
 func TestDiretorioDestinoEpisodioNaoSobeDeSeasonFolder(t *testing.T) {
 	ent := Entity{ID: "ep1", Type: TipoEpisodio}
 	files := []MediaFile{
@@ -274,7 +274,7 @@ func TestDiretorioDestinoEpisodioNaoSobeDeSeasonFolder(t *testing.T) {
 	}
 }
 
-// TestEhPastaExclusivaUmVideo: pasta com 1 único vídeo present -> exclusiva.
+// TestEhPastaExclusivaUmVideo: a folder with 1 single present video -> exclusive.
 func TestEhPastaExclusivaUmVideo(t *testing.T) {
 	files := []MediaFile{
 		{Path: "/lib/Matrix/matrix.mkv", State: "present"},
@@ -284,8 +284,8 @@ func TestEhPastaExclusivaUmVideo(t *testing.T) {
 	}
 }
 
-// TestEhPastaExclusivaDoisVideos: pasta com 2 vídeos (mesma ou outra entity)
-// -> NÃO exclusiva (briefing 0062 §5, "duas entities na mesma pasta").
+// TestEhPastaExclusivaDoisVideos: a folder with 2 videos (same or another
+// entity) -> NOT exclusive (doc 08, §5, "two entities in the same folder").
 func TestEhPastaExclusivaDoisVideos(t *testing.T) {
 	files := []MediaFile{
 		{EntityID: "e1", Path: "/lib/Pasta/a.mkv", State: "present"},
@@ -296,8 +296,8 @@ func TestEhPastaExclusivaDoisVideos(t *testing.T) {
 	}
 }
 
-// TestEhPastaExclusivaIgnoraMissing: um segundo arquivo MISSING na mesma
-// pasta não quebra a exclusividade (só present conta).
+// TestEhPastaExclusivaIgnoraMissing: a second MISSING file in the same folder
+// does not break the exclusivity (only present counts).
 func TestEhPastaExclusivaIgnoraMissing(t *testing.T) {
 	files := []MediaFile{
 		{Path: "/lib/Pasta/a.mkv", State: "present"},
@@ -308,7 +308,7 @@ func TestEhPastaExclusivaIgnoraMissing(t *testing.T) {
 	}
 }
 
-// TestNomeArquivoNFO: tvshow.nfo fixo para serie; <video>.nfo para os demais.
+// TestNomeArquivoNFO: a fixed tvshow.nfo for a series; <video>.nfo for the others.
 func TestNomeArquivoNFO(t *testing.T) {
 	if got := NomeArquivoNFO(TipoSerie, "Matrix.1999"); got != "tvshow.nfo" {
 		t.Errorf("serie: %q, quero tvshow.nfo", got)
@@ -321,15 +321,15 @@ func TestNomeArquivoNFO(t *testing.T) {
 	}
 }
 
-// TestNomeBaseVideo: strip de diretorio e extensao.
+// TestNomeBaseVideo: strips the directory and the extension.
 func TestNomeBaseVideo(t *testing.T) {
 	if got := NomeBaseVideo("/lib/Matrix/Matrix.1999.mkv"); got != "Matrix.1999" {
 		t.Fatalf("NomeBaseVideo = %q, quero %q", got, "Matrix.1999")
 	}
 }
 
-// TestEscreverArquivoAtomicoSemOrfao: escreve com sucesso e nao deixa
-// .tmp-* orfao no diretorio.
+// TestEscreverArquivoAtomicoSemOrfao: writes successfully and leaves no orphan
+// .tmp-* in the directory.
 func TestEscreverArquivoAtomicoSemOrfao(t *testing.T) {
 	dir := t.TempDir()
 	destino := dir + "/poster.jpg"
@@ -342,8 +342,8 @@ func TestEscreverArquivoAtomicoSemOrfao(t *testing.T) {
 	}
 }
 
-// listarNomes lista os nomes das entradas de um diretorio (para conferir
-// ausencia de .tmp-* orfao).
+// listarNomes lists the entry names of a directory (to check that no orphan
+// .tmp-* is left behind).
 func listarNomes(t *testing.T, dir string) []string {
 	t.Helper()
 	entradas, err := os.ReadDir(dir)
@@ -357,13 +357,13 @@ func listarNomes(t *testing.T, dir string) []string {
 	return nomes
 }
 
-// TestEscreverArquivoAtomicoFalhaSemOrfao: falha de I/O (destino é um
-// diretório, não um arquivo -- Rename falha) não deixa .tmp-* órfão
-// (briefing 0062 §5).
+// TestEscreverArquivoAtomicoFalhaSemOrfao: an I/O failure (the destination is a
+// directory, not a file -- Rename fails) leaves no orphan .tmp-*
+// (doc 08, §5).
 func TestEscreverArquivoAtomicoFalhaSemOrfao(t *testing.T) {
 	dir := t.TempDir()
-	// destino aponta para um DIRETORIO existente -- os.Rename(tmp, destino)
-	// falha (nao pode renomear arquivo por cima de diretorio nao-vazio/existente).
+	// the destination points to an existing DIRECTORY -- os.Rename(tmp, destino)
+	// fails (a file cannot be renamed over an existing/non-empty directory).
 	destino := dir + "/alvo"
 	if err := os.Mkdir(destino, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)

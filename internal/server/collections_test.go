@@ -9,11 +9,11 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/resolver"
 )
 
-// Testes da Fase B do briefing 0025 (coleção interna: criação manual + edição de
-// membros). Reusam os helpers de entities_test.go (setupEntitiesServer, semearEntity,
-// escrita, do, decodeCards, eq) e de members_test.go (semearMembro, ligarMembro).
+// Tests of Phase B of the internal collection (manual creation + member editing). They
+// reuse the helpers of entities_test.go (setupEntitiesServer, semearEntity, escrita, do,
+// decodeCards, eq) and of members_test.go (semearMembro, ligarMembro).
 
-// criarColecaoOK faz POST /api/v1/collections esperando 201 e devolve a entity resolvida.
+// criarColecaoOK POSTs /api/v1/collections expecting 201 and returns the resolved entity.
 func criarColecaoOK(t *testing.T, h http.Handler, body any) resolver.Entidade {
 	t.Helper()
 	rec := do(t, h, http.MethodPost, "/api/v1/collections", body)
@@ -23,8 +23,8 @@ func criarColecaoOK(t *testing.T, h http.Handler, body any) resolver.Entidade {
 	return decodeEntidade(t, rec)
 }
 
-// TestCriarColecao: cria uma coleção LOCAL (type='collection', título e descrição
-// gravados, sem fonte externa) e responde 201 com a entity resolvida.
+// TestCriarColecao: creates a LOCAL collection (type='collection', title and description
+// written, no external source) and answers 201 with the resolved entity.
 func TestCriarColecao(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	ent := criarColecaoOK(t, h, map[string]string{
@@ -33,7 +33,7 @@ func TestCriarColecao(t *testing.T) {
 	eq(t, "type resolvido", ent.Type, "collection")
 	eq(t, "title resolvido", ent.Title, "Maratona de Terror")
 
-	// Confere no banco: entity persistida como coleção com a descrição gravada.
+	// Checks the database: entity persisted as a collection with the description written.
 	row, err := escrita(t, d).ObterEntity(context.Background(), ent.ID)
 	if err != nil {
 		t.Fatalf("ObterEntity: %v", err)
@@ -48,7 +48,7 @@ func TestCriarColecao(t *testing.T) {
 	}
 }
 
-// TestCriarColecaoSemDescricao: descrição ausente vira NULL (não string vazia).
+// TestCriarColecaoSemDescricao: a missing description becomes NULL (not an empty string).
 func TestCriarColecaoSemDescricao(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	ent := criarColecaoOK(t, h, map[string]string{"title": "Só Título"})
@@ -61,7 +61,7 @@ func TestCriarColecaoSemDescricao(t *testing.T) {
 	}
 }
 
-// TestCriarColecaoTituloVazio: título vazio ou só-espaços é 422.
+// TestCriarColecaoTituloVazio: an empty or whitespace-only title is 422.
 func TestCriarColecaoTituloVazio(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	for _, titulo := range []string{"", "   "} {
@@ -72,7 +72,7 @@ func TestCriarColecaoTituloVazio(t *testing.T) {
 	}
 }
 
-// TestCriarColecaoCorpoInvalido: JSON malformado é 400.
+// TestCriarColecaoCorpoInvalido: malformed JSON is 400.
 func TestCriarColecaoCorpoInvalido(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/collections", []byte("{nao-json"))
@@ -81,8 +81,8 @@ func TestCriarColecaoCorpoInvalido(t *testing.T) {
 	}
 }
 
-// TestAddMember: liga um item à coleção; a resposta 200 traz a lista atualizada e
-// ordenada por ano.
+// TestAddMember: links an item to the collection; the 200 response brings the updated
+// list, ordered by year.
 func TestAddMember(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "col", "collection", "Coleção")
@@ -97,7 +97,7 @@ func TestAddMember(t *testing.T) {
 		t.Fatalf("membros = %v, quero [m2003]", cards)
 	}
 
-	// Segundo membro, mais antigo: deve vir ANTES na lista (ordenação por ano).
+	// Second member, older: it must come FIRST in the list (ordering by year).
 	rec = do(t, h, http.MethodPost, "/api/v1/entities/col/members", map[string]string{"child_id": "m1999"})
 	cards := decodeCards(t, rec)
 	if len(cards) != 2 {
@@ -107,7 +107,7 @@ func TestAddMember(t *testing.T) {
 	eq(t, "2o por ano", cards[1].ID, "m2003")
 }
 
-// TestAddMemberIdempotente: religar o mesmo item não duplica a relação.
+// TestAddMemberIdempotente: linking the same item again does not duplicate the relation.
 func TestAddMemberIdempotente(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "col", "collection", "Coleção")
@@ -125,7 +125,8 @@ func TestAddMemberIdempotente(t *testing.T) {
 	}
 }
 
-// TestAddMemberParentNaoColecao: ligar item a uma entity que não é coleção é 422.
+// TestAddMemberParentNaoColecao: linking an item to an entity that is not a collection is
+// 422.
 func TestAddMemberParentNaoColecao(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "filme", "movie", "Um Filme")
@@ -136,7 +137,7 @@ func TestAddMemberParentNaoColecao(t *testing.T) {
 	}
 }
 
-// TestAddMemberSelf: uma coleção não pode conter a si mesma (422).
+// TestAddMemberSelf: a collection cannot contain itself (422).
 func TestAddMemberSelf(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "col", "collection", "Coleção")
@@ -146,7 +147,7 @@ func TestAddMemberSelf(t *testing.T) {
 	}
 }
 
-// TestAddMemberAninhamento: uma coleção não pode conter outra coleção (422).
+// TestAddMemberAninhamento: a collection cannot contain another collection (422).
 func TestAddMemberAninhamento(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "col", "collection", "Coleção A")
@@ -157,7 +158,7 @@ func TestAddMemberAninhamento(t *testing.T) {
 	}
 }
 
-// TestAddMemberFilhoInexistente: ligar um item que não existe é 422.
+// TestAddMemberFilhoInexistente: linking an item that does not exist is 422.
 func TestAddMemberFilhoInexistente(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "col", "collection", "Coleção")
@@ -167,7 +168,7 @@ func TestAddMemberFilhoInexistente(t *testing.T) {
 	}
 }
 
-// TestAddMemberChildVazio: child_id ausente é 422.
+// TestAddMemberChildVazio: a missing child_id is 422.
 func TestAddMemberChildVazio(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "col", "collection", "Coleção")
@@ -177,7 +178,8 @@ func TestAddMemberChildVazio(t *testing.T) {
 	}
 }
 
-// TestAddMemberCorpoInvalido: JSON malformado é 400 (após validar que o pai é coleção).
+// TestAddMemberCorpoInvalido: malformed JSON is 400 (after validating that the parent is a
+// collection).
 func TestAddMemberCorpoInvalido(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "col", "collection", "Coleção")
@@ -187,7 +189,7 @@ func TestAddMemberCorpoInvalido(t *testing.T) {
 	}
 }
 
-// TestAddMemberColecaoInexistente: ligar em coleção inexistente é 404.
+// TestAddMemberColecaoInexistente: linking into a collection that does not exist is 404.
 func TestAddMemberColecaoInexistente(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/entities/naoexiste/members", map[string]string{"child_id": "x"})
@@ -196,7 +198,7 @@ func TestAddMemberColecaoInexistente(t *testing.T) {
 	}
 }
 
-// TestRemoveMember: desliga um membro; a lista encolhe na resposta.
+// TestRemoveMember: unlinks a member; the list shrinks in the response.
 func TestRemoveMember(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "col", "collection", "Coleção")
@@ -218,8 +220,8 @@ func TestRemoveMember(t *testing.T) {
 	}
 }
 
-// TestRemoveMemberIdempotente: desligar um item que não é membro é no-op (200, lista
-// intacta) — não erra.
+// TestRemoveMemberIdempotente: unlinking an item that is not a member is a no-op (200,
+// list intact) — it does not error.
 func TestRemoveMemberIdempotente(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "col", "collection", "Coleção")
@@ -235,7 +237,8 @@ func TestRemoveMemberIdempotente(t *testing.T) {
 	}
 }
 
-// TestRemoveMemberColecaoInexistente: desligar de coleção inexistente é 404.
+// TestRemoveMemberColecaoInexistente: unlinking from a collection that does not exist is
+// 404.
 func TestRemoveMemberColecaoInexistente(t *testing.T) {
 	h, _ := setupEntitiesServer(t)
 	rec := do(t, h, http.MethodDelete, "/api/v1/entities/naoexiste/members/x", nil)
@@ -244,7 +247,7 @@ func TestRemoveMemberColecaoInexistente(t *testing.T) {
 	}
 }
 
-// relacoesFilhas conta as relações kind='collection' sob um pai (para asserts de dedup).
+// relacoesFilhas counts the kind='collection' relations under a parent (for dedup asserts).
 func relacoesFilhas(t *testing.T, d *db.DB, parentID string) int {
 	t.Helper()
 	rels, err := escrita(t, d).ListarRelacoesFilhas(context.Background(), parentID)

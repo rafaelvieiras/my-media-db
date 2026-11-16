@@ -1,28 +1,29 @@
-// Package richfields concentra os TIPOS e a RESOLUÇÃO dos campos ricos de um item
-// (vídeos, coleção, similares, classificação por região, slogan, keywords, nota,
-// duração, backdrop, links) a partir do mapa CANÔNICO produzido pelo provider
-// (MapearDetalhe). É consumido por DOIS lugares que precisam do MESMO shape:
+// Package richfields concentrates the TYPES and the RESOLUTION of the rich
+// fields of an item (videos, collection, similar items, certification by region,
+// tagline, keywords, rating, runtime, backdrop, links) from the CANONICAL map
+// produced by the provider (MapearDetalhe). It is consumed by TWO places that
+// need the SAME shape:
 //
-//   - o handler GET /external/{source}/{type}/{id} (detalhe do externo ANTES de
-//     importar, briefings 0022/0023), e
-//   - o resolver da entity IMPORTADA (GET /entities/{id}), que expõe os mesmos
-//     campos ricos para a tela de detalhe do catálogo ter paridade visual.
+//   - the GET /external/{source}/{type}/{id} handler (detail of the external
+//     item BEFORE importing), and
+//   - the resolver of the IMPORTED entity (GET /entities/{id}), which exposes the
+//     same rich fields so that the catalog detail screen has visual parity.
 //
-// Centralizar aqui evita duas fontes de verdade divergirem: os JSONs do externo e
-// da entity carregam os campos ricos com o MESMO formato. Todas as funções são
-// PURAS sobre `map[string]any` canônico — sem I/O, sem SQL, sem dependência do
-// provider concreto.
+// Centralizing here keeps two sources of truth from drifting apart: the JSONs of
+// the external item and of the entity carry the rich fields in the SAME format.
+// All the functions are PURE over the canonical `map[string]any` — no I/O, no
+// SQL, no dependency on the concrete provider.
 package richfields
 
 import "sort"
 
-// RegiaoFallback é a região usada quando o idioma ativo não carrega região (ex.:
-// `en`) ou a fonte não traz a certificação da região pedida (decisão da revisão
-// da Fase 3: cai em US).
+// RegiaoFallback is the region used when the active language carries no region
+// (e.g.: `en`) or the source does not bring the certification of the requested
+// region (Phase 3 review decision: it falls back to US).
 const RegiaoFallback = "US"
 
-// Video é um vídeo (trailer/clip) do item. URL é nil quando o site do provedor é
-// desconhecido (a UI mostra só nome/tipo nesse caso).
+// Video is a video (trailer/clip) of the item. URL is nil when the provider site
+// is unknown (the UI shows only name/type in that case).
 type Video struct {
 	Name     string  `json:"name"`
 	Key      string  `json:"key"`
@@ -32,11 +33,12 @@ type Video struct {
 	URL      *string `json:"url"`
 }
 
-// Collection é a coleção (≠ playlist) a que o item pertence. SourceID permite
-// NAVEGAR à coleção; PosterURL é opcional. InternalID é o id da entity coleção
-// interna quando ela JÁ foi importada (briefing 0026) — a UI então linka para o
-// destino interno em vez da página externa. ColecaoDe segue PURA e o deixa nil;
-// quem tem acesso a banco (o handler / o resolverEntity no server) o preenche.
+// Collection is the collection (≠ playlist) the item belongs to. SourceID allows
+// NAVIGATING to the collection; PosterURL is optional. InternalID is the id of the
+// internal collection entity when it has ALREADY been imported — the UI then
+// links to the internal destination instead of the external page. ColecaoDe stays
+// PURE and leaves it nil; whoever has database access (the handler / the
+// resolverEntity in the server) fills it in.
 type Collection struct {
 	SourceID   string  `json:"source_id"`
 	Name       string  `json:"name"`
@@ -44,26 +46,28 @@ type Collection struct {
 	InternalID *string `json:"internal_id"`
 }
 
-// Similar é um item similar, com o Type para NAVEGAR ao seu detalhe externo — o
-// mesmo GET, recursivo, sem catalogar.
+// Similar is a similar item, with the Type to NAVIGATE to its external detail —
+// the same GET, recursive, without cataloging.
 type Similar struct {
 	SourceID  string  `json:"source_id"`
 	Type      string  `json:"type"`
 	Title     string  `json:"title"`
 	Year      *string `json:"year"`
 	PosterURL *string `json:"poster_url"`
-	// InternalID é o id da entity interna quando o similar já foi importado (0027,
-	// estende o interno-first do 0026). SimilaresDe é PURA e o deixa nil; quem tem DB
-	// (o handler do detalhe externo e o resolver da entity, via server) o preenche.
+	// InternalID is the id of the internal entity when the similar item has already
+	// been imported (extends the internal-first behavior). SimilaresDe is PURE and
+	// leaves it nil; whoever has a DB (the external detail handler and the entity
+	// resolver, through the server) fills it in.
 	InternalID *string `json:"internal_id"`
 }
 
-// ── Resolução de campos traduzíveis ──────────────────────────────────────────
+// ── Resolution of translatable fields ───────────────────────────────────────
 
-// ResolverEscalarTraduzivel resolve um campo escalar traduzível (title/description/
-// tagline) percorrendo a cadeia; cai em "qualquer idioma presente" (ordem estável)
-// se a cadeia não casar. Devolve (valor, idioma efetivo). Tolera o campo como
-// escalar simples (payload legado) — nesse caso proveniência "".
+// ResolverEscalarTraduzivel resolves a translatable scalar field (title/
+// description/tagline) by walking the chain; it falls back to "any language
+// present" (stable order) if the chain does not match. It returns (value,
+// effective language). It tolerates the field as a plain scalar (legacy payload)
+// — in that case provenance is "".
 func ResolverEscalarTraduzivel(campos map[string]any, campo string, cadeia []string) (*string, string) {
 	v, ok := campos[campo]
 	if !ok || v == nil {
@@ -81,9 +85,9 @@ func ResolverEscalarTraduzivel(campos map[string]any, campo string, cadeia []str
 	return nil, ""
 }
 
-// escalarDoMapaIdioma escolhe o texto do mapa idioma→valor: o primeiro idioma da
-// cadeia com texto, senão qualquer idioma presente (ordem estável). Devolve o
-// idioma efetivo como proveniência.
+// escalarDoMapaIdioma picks the text from the language→value map: the first
+// language of the chain with text, otherwise any language present (stable order).
+// It returns the effective language as provenance.
 func escalarDoMapaIdioma(m map[string]any, cadeia []string) (*string, string) {
 	for _, l := range cadeia {
 		if s, ok := m[l].(string); ok && s != "" {
@@ -98,9 +102,10 @@ func escalarDoMapaIdioma(m map[string]any, cadeia []string) (*string, string) {
 	return nil, ""
 }
 
-// ResolverListaTraduzivel resolve um campo-lista traduzível (tags/keywords) pela
-// cadeia, com o mesmo fallback "qualquer idioma presente" (ordem estável). Devolve
-// (lista, idioma efetivo). Tolera lista simples (legado) — proveniência "".
+// ResolverListaTraduzivel resolves a translatable list field (tags/keywords) by
+// the chain, with the same "any language present" fallback (stable order). It
+// returns (list, effective language). It tolerates a plain list (legacy) —
+// provenance "".
 func ResolverListaTraduzivel(campos map[string]any, campo string, cadeia []string) ([]string, string) {
 	v, ok := campos[campo]
 	if !ok || v == nil {
@@ -123,10 +128,11 @@ func ResolverListaTraduzivel(campos map[string]any, campo string, cadeia []strin
 	return nil, ""
 }
 
-// ── Campos neutros ricos ─────────────────────────────────────────────────────
+// ── Rich neutral fields ──────────────────────────────────────────────────────
 
-// CertificacaoDaRegiao escolhe a classificação da REGIÃO do idioma ativo (pt-BR→BR),
-// com fallback US quando o idioma não tem região ou a fonte não traz aquela região.
+// CertificacaoDaRegiao picks the certification of the REGION of the active
+// language (pt-BR→BR), falling back to US when the language has no region or the
+// source does not bring that region.
 func CertificacaoDaRegiao(campos map[string]any, lang string) *string {
 	m, ok := campos["certification_by_region"].(map[string]any)
 	if !ok || len(m) == 0 {
@@ -142,8 +148,9 @@ func CertificacaoDaRegiao(campos map[string]any, lang string) *string {
 	return nil
 }
 
-// RegiaoDoIdioma extrai a região (iso_3166_1) de um código de idioma: o sufixo após
-// o "-" (pt-BR→BR); sem sufixo, o fallback US (decisão da revisão).
+// RegiaoDoIdioma extracts the region (iso_3166_1) from a language code: the
+// suffix after the "-" (pt-BR→BR); without a suffix, the US fallback (review
+// decision).
 func RegiaoDoIdioma(lang string) string {
 	if i := lastIndexByte(lang, '-'); i >= 0 && i < len(lang)-1 {
 		return toUpper(lang[i+1:])
@@ -151,7 +158,7 @@ func RegiaoDoIdioma(lang string) string {
 	return RegiaoFallback
 }
 
-// VideosDe converte a lista canônica de vídeos.
+// VideosDe converts the canonical list of videos.
 func VideosDe(campos map[string]any) []Video {
 	itens := comoListaAny(campos["videos"])
 	out := make([]Video, 0, len(itens))
@@ -172,12 +179,12 @@ func VideosDe(campos map[string]any) []Video {
 	return out
 }
 
-// PrimeiroTrailerYoutube acha o primeiro vídeo do tipo "Trailer" (convenção
-// TMDB/TVDB) hospedado no YouTube com `key` presente — MESMO critério de
-// `primeiroTrailer` do frontend (web/src/components/rich-detail-view.tsx),
-// espelhado aqui para o backend materializar em disco (briefing 0102) sem
-// duplicar a regra em dois lugares sem uma fonte comum documentada. Sem
-// fallback para Teaser/Clip; ok=false quando nenhum vídeo casa.
+// PrimeiroTrailerYoutube finds the first video of type "Trailer" (TMDB/TVDB
+// convention) hosted on YouTube with a `key` present — the SAME criterion as
+// `primeiroTrailer` in the frontend (web/src/components/rich-detail-view.tsx),
+// mirrored here so that the backend can materialize it on disk (ADR-0025)
+// without duplicating the rule in two places with no documented common source.
+// No fallback to Teaser/Clip; ok=false when no video matches.
 func PrimeiroTrailerYoutube(videos []Video) (Video, bool) {
 	for _, v := range videos {
 		if v.Type == "Trailer" && v.Site == "YouTube" && v.Key != "" {
@@ -187,7 +194,7 @@ func PrimeiroTrailerYoutube(videos []Video) (Video, bool) {
 	return Video{}, false
 }
 
-// ColecaoDe converte a coleção canônica, ou nil quando ausente.
+// ColecaoDe converts the canonical collection, or nil when absent.
 func ColecaoDe(campos map[string]any) *Collection {
 	m, ok := campos["collection"].(map[string]any)
 	if !ok || len(m) == 0 {
@@ -200,7 +207,8 @@ func ColecaoDe(campos map[string]any) *Collection {
 	}
 }
 
-// SimilaresDe converte a lista canônica de similares (com o type para navegar).
+// SimilaresDe converts the canonical list of similar items (with the type to
+// navigate).
 func SimilaresDe(campos map[string]any) []Similar {
 	itens := comoListaAny(campos["similar"])
 	out := make([]Similar, 0, len(itens))
@@ -220,13 +228,14 @@ func SimilaresDe(campos map[string]any) []Similar {
 	return out
 }
 
-// LinksExternos monta o mapa de links a partir do canônico (ex.: imdb do provider),
-// acrescentando os links de TMDB/IMDb/TVDB montados a partir dos IDS CRUS quando o
-// chamador os tem (0086: `externalIDs` cross-fonte já resolvidos no resolver) — o
-// provider às vezes só mapeia um subconjunto em `external_links`. Precedência: o que
-// a FONTE já mandou em `external_links` SEMPRE vence (pode ser uma URL mais
-// específica que o provider montou); os ids crus só preenchem o que ainda falta no
-// mapa. `tmdbID`/`imdbID`/`tvdbID` vazios simplesmente omitem o respectivo link.
+// LinksExternos builds the map of links from the canonical one (e.g.: imdb from
+// the provider), adding the TMDB/IMDb/TVDB links built from the RAW IDS when the
+// caller has them (cross-source `externalIDs` already resolved in the resolver) —
+// the provider sometimes maps only a subset into `external_links`. Precedence:
+// whatever the SOURCE already sent in `external_links` ALWAYS wins (it may be a
+// more specific URL built by the provider); the raw ids only fill in what is
+// still missing from the map. Empty `tmdbID`/`imdbID`/`tvdbID` simply omit the
+// respective link.
 func LinksExternos(campos map[string]any, tmdbTipo, tmdbID, imdbID, tvdbID string) map[string]string {
 	out := map[string]string{}
 	if m, ok := campos["external_links"].(map[string]any); ok {
@@ -252,24 +261,27 @@ func LinksExternos(campos map[string]any, tmdbTipo, tmdbID, imdbID, tvdbID strin
 	return out
 }
 
-// ── Créditos: elenco, equipe e produtoras (briefing 0029, MD6 Fase B) ───────
+// ── Credits: cast, crew and production companies (MD6 phase B, ADR-0013) ────
 
-// creditoImagemBaseURL é a base das fotos de pessoa/logo de produtora do TMDB. O
-// canônico dos créditos (chaves `profile_path`/`logo_path`, briefing 0029 Fase A)
-// grava o FRAGMENTO CRU da fonte — diferente de `poster_url`/`backdrop_url`, que já
-// chegam prontos do provider — porque hoje só o TMDB alimenta créditos. Montar a URL
-// aqui é o único ponto de acoplamento; se outra fonte de créditos entrar, este helper
-// vira uma função por fonte. Tamanho w185 cobre bem miniatura de elenco/logo.
+// creditoImagemBaseURL is the base of the TMDB person photo/company logo. The
+// canonical credits map (keys `profile_path`/`logo_path`, MD6 phase A, ADR-0013)
+// stores the RAW fragment of the source — unlike `poster_url`/`backdrop_url`,
+// which already arrive ready from the provider — because today only TMDB feeds
+// credits. Building the URL here is the only coupling point; if another credits
+// source comes in, this helper becomes one function per source. Size w185 covers
+// a cast thumbnail/logo well.
 const creditoImagemBaseURL = "https://image.tmdb.org/t/p/w185"
 
-// Cast é um crédito de ELENCO (0029): Name é neutro (nome próprio não se traduz);
-// Character é a exibição atual (edição por idioma fica para a Fase C). EpisodeCount
-// só existe em série (papel agregado por episódios); nil em filme. ProfileURL é a URL
-// DIRETA (não-proxyada) da foto — o chamador com acesso ao proxy (server) decide se
-// reescreve para a rota local, espelhando poster/backdrop (StrPtrDe + urlImagemServida).
-// PersonID é o id da pessoa NO NOSSO catálogo (interno-first, 0029 Fase D) quando ela já
-// foi persistida por algum import — CastDe a deixa nil (pura); quem tem acesso a banco
-// (o server) o preenche, espelhando Collection.InternalID/Similar.InternalID.
+// Cast is a CAST credit (MD6): Name is neutral (a person's name is not
+// translated); Character is the current display (editing per language is left for
+// phase C). EpisodeCount only exists on series (role aggregated over episodes);
+// nil on movies. ProfileURL is the DIRECT (non-proxied) URL of the photo — the
+// caller with access to the proxy (server) decides whether to rewrite it to the
+// local route, mirroring poster/backdrop (StrPtrDe + urlImagemServida). PersonID
+// is the id of the person IN OUR catalog (internal-first, MD6 phase D) when it has
+// already been persisted by some import — CastDe leaves it nil (pure); whoever has
+// database access (the server) fills it in, mirroring
+// Collection.InternalID/Similar.InternalID.
 type Cast struct {
 	SourceID     string  `json:"source_id"`
 	Name         string  `json:"name"`
@@ -280,8 +292,9 @@ type Cast struct {
 	PersonID     *string `json:"person_id"`
 }
 
-// Crew é um crédito de EQUIPE (0029): Department/Job vêm do canônico; EpisodeCount só
-// em série (cargo agregado). Ver Cast para ProfileURL e PersonID.
+// Crew is a CREW credit (MD6): Department/Job come from the canonical map;
+// EpisodeCount only on series (role aggregated). See Cast for ProfileURL and
+// PersonID.
 type Crew struct {
 	SourceID     string  `json:"source_id"`
 	Name         string  `json:"name"`
@@ -292,15 +305,15 @@ type Crew struct {
 	PersonID     *string `json:"person_id"`
 }
 
-// Company é uma produtora/estúdio (0029). Ver Cast para LogoURL.
+// Company is a production company/studio (MD6). See Cast for LogoURL.
 type Company struct {
 	SourceID string  `json:"source_id"`
 	Name     string  `json:"name"`
 	LogoURL  *string `json:"logo_url"`
 }
 
-// CastDe converte a lista canônica de elenco (top ~50 por bilhagem, já cortada pelo
-// provider). Sempre devolve uma fatia não-nil (`[]` quando ausente).
+// CastDe converts the canonical cast list (top ~50 by billing, already trimmed by
+// the provider). It always returns a non-nil slice (`[]` when absent).
 func CastDe(campos map[string]any) []Cast {
 	itens := comoListaAny(campos["cast"])
 	out := make([]Cast, 0, len(itens))
@@ -321,8 +334,8 @@ func CastDe(campos map[string]any) []Cast {
 	return out
 }
 
-// CrewDe converte a lista canônica de equipe (sem teto — dedup já feito pelo provider).
-// Sempre devolve uma fatia não-nil (`[]` quando ausente).
+// CrewDe converts the canonical crew list (no cap — deduplication already done by
+// the provider). It always returns a non-nil slice (`[]` when absent).
 func CrewDe(campos map[string]any) []Crew {
 	itens := comoListaAny(campos["crew"])
 	out := make([]Crew, 0, len(itens))
@@ -343,8 +356,8 @@ func CrewDe(campos map[string]any) []Crew {
 	return out
 }
 
-// CompaniesDe converte a lista canônica de produtoras/estúdios. Sempre devolve uma
-// fatia não-nil (`[]` quando ausente).
+// CompaniesDe converts the canonical list of production companies/studios. It
+// always returns a non-nil slice (`[]` when absent).
 func CompaniesDe(campos map[string]any) []Company {
 	itens := comoListaAny(campos["companies"])
 	out := make([]Company, 0, len(itens))
@@ -362,9 +375,9 @@ func CompaniesDe(campos map[string]any) []Company {
 	return out
 }
 
-// urlCreditoDe monta a URL DIRETA (não-proxyada) de uma foto/logo de crédito a partir
-// do fragmento cru do canônico (chave `profile_path`/`logo_path`), ou nil quando
-// ausente/vazia.
+// urlCreditoDe builds the DIRECT (non-proxied) URL of a credit photo/logo from
+// the raw fragment of the canonical map (key `profile_path`/`logo_path`), or nil
+// when absent/empty.
 func urlCreditoDe(m map[string]any, chave string) *string {
 	frag := ComoStringMapa(m, chave)
 	if frag == "" {
@@ -374,9 +387,9 @@ func urlCreditoDe(m map[string]any, chave string) *string {
 	return &u
 }
 
-// intDeMapa lê uma chave inteira do mapa (0 quando ausente/tipo errado) — para `order`,
-// sempre presente e não-ponteiro no shape (diferente de `episode_count`, opcional via
-// IntPtrDe).
+// intDeMapa reads an integer key from the map (0 when absent/wrong type) — for
+// `order`, always present and non-pointer in the shape (unlike `episode_count`,
+// optional through IntPtrDe).
 func intDeMapa(m map[string]any, chave string) int {
 	switch n := m[chave].(type) {
 	case int:
@@ -388,9 +401,9 @@ func intDeMapa(m map[string]any, chave string) int {
 	}
 }
 
-// ── Helpers de conversão (puros sobre o canônico) ────────────────────────────
+// ── Conversion helpers (pure over the canonical map) ─────────────────────────
 
-// ComoStringMapa lê uma chave string do mapa ("" quando ausente/tipo errado).
+// ComoStringMapa reads a string key from the map ("" when absent/wrong type).
 func ComoStringMapa(m map[string]any, chave string) string {
 	if s, ok := m[chave].(string); ok {
 		return s
@@ -398,13 +411,14 @@ func ComoStringMapa(m map[string]any, chave string) string {
 	return ""
 }
 
-// StrPtrDe lê uma chave string do mapa como *string (nil quando ausente/vazia).
+// StrPtrDe reads a string key from the map as *string (nil when absent/empty).
 func StrPtrDe(m map[string]any, chave string) *string {
 	return PtrSeNaoVazio(ComoStringMapa(m, chave))
 }
 
-// IntPtrDe lê uma chave numérica do mapa como *int (nil quando ausente). O canônico
-// grava runtime como int; toleramos float64 (round-trip JSON).
+// IntPtrDe reads a numeric key from the map as *int (nil when absent). The
+// canonical map stores runtime values as int; we tolerate float64 (JSON
+// round-trip).
 func IntPtrDe(m map[string]any, chave string) *int {
 	switch n := m[chave].(type) {
 	case int:
@@ -418,7 +432,7 @@ func IntPtrDe(m map[string]any, chave string) *int {
 	}
 }
 
-// FloatPtrDe lê uma chave numérica do mapa como *float64 (nil quando ausente).
+// FloatPtrDe reads a numeric key from the map as *float64 (nil when absent).
 func FloatPtrDe(m map[string]any, chave string) *float64 {
 	switch n := m[chave].(type) {
 	case float64:
@@ -432,7 +446,7 @@ func FloatPtrDe(m map[string]any, chave string) *float64 {
 	}
 }
 
-// PtrSeNaoVazio devolve *string para uma string, ou nil quando vazia.
+// PtrSeNaoVazio returns a *string for a string, or nil when it is empty.
 func PtrSeNaoVazio(s string) *string {
 	if s == "" {
 		return nil
@@ -440,7 +454,8 @@ func PtrSeNaoVazio(s string) *string {
 	return &s
 }
 
-// DerefOuVazio deref um *string ("" quando nil) — para campos não-nuláveis (title).
+// DerefOuVazio dereferences a *string ("" when nil) — for non-nullable fields
+// (title).
 func DerefOuVazio(p *string) string {
 	if p == nil {
 		return ""
@@ -448,7 +463,7 @@ func DerefOuVazio(p *string) string {
 	return *p
 }
 
-// OuListaVazia troca nil por fatia vazia (JSON sai como `[]`, nunca null).
+// OuListaVazia swaps nil for an empty slice (JSON comes out as `[]`, never null).
 func OuListaVazia(s []string) []string {
 	if s == nil {
 		return []string{}
@@ -456,7 +471,7 @@ func OuListaVazia(s []string) []string {
 	return s
 }
 
-// AnoDePtr extrai os 4 primeiros dígitos (ano) de uma data ISO apontada, ou nil.
+// AnoDePtr extracts the first 4 digits (year) of a pointed ISO date, or nil.
 func AnoDePtr(data *string) *string {
 	if data == nil || len(*data) < 4 {
 		return nil
@@ -465,14 +480,14 @@ func AnoDePtr(data *string) *string {
 	return &ano
 }
 
-// comoBool lê um bool dinâmico (false quando ausente/tipo errado).
+// comoBool reads a dynamic bool (false when absent/wrong type).
 func comoBool(v any) bool {
 	b, _ := v.(bool)
 	return b
 }
 
-// comoLista converte um valor dinâmico numa fatia de strings não-nil (aceita
-// []string e []any de strings).
+// comoLista converts a dynamic value into a non-nil slice of strings (accepts
+// []string and []any of strings).
 func comoLista(v any) []string {
 	switch s := v.(type) {
 	case []string:
@@ -490,7 +505,7 @@ func comoLista(v any) []string {
 	}
 }
 
-// comoListaAny devolve uma fatia []any (nil quando o valor não é lista).
+// comoListaAny returns a []any slice (nil when the value is not a list).
 func comoListaAny(v any) []any {
 	if s, ok := v.([]any); ok {
 		return s
@@ -498,8 +513,8 @@ func comoListaAny(v any) []any {
 	return nil
 }
 
-// chavesOrdenadas devolve as chaves do mapa em ordem estável (determinismo no
-// fallback "qualquer idioma presente").
+// chavesOrdenadas returns the keys of the map in a stable order (determinism in
+// the "any language present" fallback).
 func chavesOrdenadas(m map[string]any) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
@@ -509,8 +524,8 @@ func chavesOrdenadas(m map[string]any) []string {
 	return out
 }
 
-// lastIndexByte e toUpper evitam importar strings só para duas operações triviais
-// (mantém o pacote enxuto e sem dependências além de sort).
+// lastIndexByte and toUpper avoid importing strings for just two trivial
+// operations (keeping the package lean and with no dependencies beyond sort).
 func lastIndexByte(s string, b byte) int {
 	for i := len(s) - 1; i >= 0; i-- {
 		if s[i] == b {

@@ -12,15 +12,15 @@ import (
 	"time"
 )
 
-// scriptFakeConteudo é um script POSIX mínimo que se comporta como o yt-dlp
-// real o suficiente para os testes: responde "--version" com sucesso (o piso
-// de validação de baixarBinarioLocked) e, para qualquer outro argumento,
-// termina com sucesso sem fazer nada (usado como "binário resolvido" nos
-// testes de Baixar). NUNCA bate na internet real -- todo servidor usado
-// nestes testes é um httptest.Server local.
+// scriptFakeConteudo is a minimal POSIX script that behaves like the real yt-dlp
+// just enough for the tests: it answers "--version" successfully (the validation
+// floor of baixarBinarioLocked) and, for any other argument, exits successfully
+// without doing anything (used as the "resolved binary" in the Baixar tests). It
+// NEVER hits the real internet -- every server used in these tests is a local
+// httptest.Server.
 const scriptFakeConteudo = "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo \"2024.01.01\"\n  exit 0\nfi\nexit 0\n"
 
-// escreverScriptFake grava scriptFakeConteudo em `path`, já executável.
+// escreverScriptFake writes scriptFakeConteudo into `path`, already executable.
 func escreverScriptFake(t *testing.T, path string) string {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -32,10 +32,10 @@ func escreverScriptFake(t *testing.T, path string) string {
 	return path
 }
 
-// TestResolverCustomPathEnvVenceSemBaixar cobre o critério §5: com
-// MYMEDIADB_YTDLP_PATH setado (env, aqui já resolvido e passado a Novo),
-// Resolver/Status usam esse path sem tentar baixar (a API de release nunca é
-// consultada).
+// TestResolverCustomPathEnvVenceSemBaixar covers the acceptance criterion: with
+// MYMEDIADB_YTDLP_PATH set (env, here already resolved and passed to Novo),
+// Resolver/Status use that path without trying to download (the release API is
+// never queried).
 func TestResolverCustomPathEnvVenceSemBaixar(t *testing.T) {
 	dir := t.TempDir()
 	customPath := escreverScriptFake(t, filepath.Join(t.TempDir(), "meu-yt-dlp"))
@@ -66,11 +66,11 @@ func TestResolverCustomPathEnvVenceSemBaixar(t *testing.T) {
 	}
 }
 
-// TestSetCustomPathBancoVenceSobreEnv cobre o critério §5: com
-// custom_binary_path gravado via PUT /settings/ytdlp (banco, aqui simulado
-// por SetCustomPath), esse path vence sobre a env var -- e limpar (SetCustomPath(""))
-// devolve o controle para a env var, tudo em RUNTIME, sem reconstruir o
-// Gerenciador (equivalente a "sem reiniciar o processo").
+// TestSetCustomPathBancoVenceSobreEnv covers the acceptance criterion: with
+// custom_binary_path written via PUT /settings/ytdlp (database, here simulated by
+// SetCustomPath), that path wins over the env var -- and clearing it
+// (SetCustomPath("")) hands control back to the env var, all at RUNTIME, without
+// rebuilding the Gerenciador (equivalent to "without restarting the process").
 func TestSetCustomPathBancoVenceSobreEnv(t *testing.T) {
 	dir := t.TempDir()
 	envPath := escreverScriptFake(t, filepath.Join(t.TempDir(), "env-yt-dlp"))
@@ -105,9 +105,9 @@ func TestSetCustomPathBancoVenceSobreEnv(t *testing.T) {
 	}
 }
 
-// TestStatusCustomPathInacessivel cobre o caso de um path customizado
-// apontar para um arquivo inexistente: Status reporta indisponível com
-// motivo, em vez de mentir que está tudo certo.
+// TestStatusCustomPathInacessivel covers the case of a custom path pointing to a
+// file that does not exist: Status reports unavailable with a reason, instead of
+// pretending everything is fine.
 func TestStatusCustomPathInacessivel(t *testing.T) {
 	dir := t.TempDir()
 	g := Novo(dir, filepath.Join(t.TempDir(), "nao-existe"))
@@ -124,12 +124,13 @@ func TestStatusCustomPathInacessivel(t *testing.T) {
 	}
 }
 
-// TestResolverBaixaNaPrimeiraChamadaEReusa cobre o critério §5: sem
-// custom_binary_path e sem binário em cache, a primeira chamada a Resolver
-// baixa o yt-dlp (via servidor HTTP FAKE local, nunca a internet real), valida
-// com --version e reusa em chamadas seguintes -- tanto no MESMO Gerenciador
-// (cache em memória) quanto num Gerenciador NOVO apontando pro mesmo diretório
-// (simulando reinício do processo, cache em disco), sem re-baixar.
+// TestResolverBaixaNaPrimeiraChamadaEReusa covers the acceptance criterion:
+// without custom_binary_path and without a binary in the cache, the first call to
+// Resolver downloads yt-dlp (through a local FAKE HTTP server, never the real
+// internet), validates it with --version and reuses it in the following calls --
+// both in the SAME Gerenciador (in-memory cache) and in a NEW Gerenciador
+// pointing to the same directory (simulating a process restart, on-disk cache),
+// without re-downloading.
 func TestResolverBaixaNaPrimeiraChamadaEReusa(t *testing.T) {
 	dir := t.TempDir()
 	var chamadasRelease, chamadasBinario int32
@@ -164,7 +165,7 @@ func TestResolverBaixaNaPrimeiraChamadaEReusa(t *testing.T) {
 		t.Errorf("chamadasBinario = %d, quero 1", got)
 	}
 
-	// 2a chamada no MESMO Gerenciador: reusa o cache em memória.
+	// 2nd call on the SAME Gerenciador: reuses the in-memory cache.
 	bin2, err := g.Resolver(context.Background())
 	if err != nil {
 		t.Fatalf("Resolver (2a chamada): %v", err)
@@ -176,8 +177,8 @@ func TestResolverBaixaNaPrimeiraChamadaEReusa(t *testing.T) {
 		t.Errorf("re-baixou no cache quente: chamadasRelease = %d, quero 1", got)
 	}
 
-	// Gerenciador NOVO no mesmo diretório (simula reinício do processo):
-	// reusa o binário já em disco, sem bater no servidor de novo.
+	// A NEW Gerenciador in the same directory (simulates a process restart):
+	// reuses the binary already on disk, without hitting the server again.
 	g2 := Novo(dir, "", ComReleaseAPIURL(srv.URL+"/release"))
 	bin3, err := g2.Resolver(context.Background())
 	if err != nil {
@@ -199,14 +200,14 @@ func TestResolverBaixaNaPrimeiraChamadaEReusa(t *testing.T) {
 	}
 }
 
-// TestStatusFalhaSemRede cobre o critério §5: falha de download (aqui
-// simulada com um servidor HTTP local já FECHADO -- conexão recusada, sem
-// bater na internet real) faz Status reportar disponivel=false com detalhe
-// explicando o motivo.
+// TestStatusFalhaSemRede covers the failure criterion: a download failure (here
+// simulated with a local HTTP server already CLOSED -- connection refused, without
+// hitting the real internet) makes Status report disponivel=false with a detail
+// explaining the reason.
 func TestStatusFalhaSemRede(t *testing.T) {
 	dir := t.TempDir()
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	srv.Close() // fechado ANTES de usar: qualquer chamada recusa a conexão.
+	srv.Close() // closed BEFORE being used: any call refuses the connection.
 
 	g := Novo(dir, "", ComReleaseAPIURL(srv.URL), ComHTTPClient(&http.Client{Timeout: 2 * time.Second}))
 
@@ -222,8 +223,8 @@ func TestStatusFalhaSemRede(t *testing.T) {
 	}
 }
 
-// TestBaixarInvocaBinarioResolvido cobre o contrato de Baixar (genérico,
-// reaproveitado por 0102/0103): resolve o binário e invoca
+// TestBaixarInvocaBinarioResolvido covers the contract of Baixar (generic, reused
+// by the trailer and theme flows): it resolves the binary and invokes
 // `<bin> -o <destino> <urlOrigem>`.
 func TestBaixarInvocaBinarioResolvido(t *testing.T) {
 	dir := t.TempDir()
@@ -249,8 +250,8 @@ func TestBaixarInvocaBinarioResolvido(t *testing.T) {
 	}
 }
 
-// TestBaixarErroQuandoBinarioFalha cobre o caso do processo yt-dlp sair com
-// erro (ex.: vídeo indisponível/removido): Baixar propaga o erro.
+// TestBaixarErroQuandoBinarioFalha covers the case of the yt-dlp process exiting
+// with an error (e.g.: video unavailable/removed): Baixar propagates the error.
 func TestBaixarErroQuandoBinarioFalha(t *testing.T) {
 	dir := t.TempDir()
 	scriptPath := filepath.Join(t.TempDir(), "meu-yt-dlp")
@@ -265,12 +266,11 @@ func TestBaixarErroQuandoBinarioFalha(t *testing.T) {
 	}
 }
 
-// TestNomeAssetPlataformaSempreZipapp cobre a escolha do asset "yt-dlp" (o
-// zipapp Python plataforma-independente, não os binários standalone por SO
-// ligados a glibc) -- correção pós-achado de produção: o standalone Linux
-// falha em runtime numa imagem Alpine/musl (ver comentário de
-// nomeAssetPlataforma). Sem skip por plataforma: o valor não depende de
-// GOOS/GOARCH.
+// TestNomeAssetPlataformaSempreZipapp covers the choice of the "yt-dlp" asset (the
+// platform-independent Python zipapp, not the standalone binaries per OS linked
+// against glibc) -- a fix after a production finding: the Linux standalone fails at
+// runtime in an Alpine/musl image (see the comment of nomeAssetPlataforma). No skip
+// per platform: the value does not depend on GOOS/GOARCH.
 func TestNomeAssetPlataformaSempreZipapp(t *testing.T) {
 	nome, ok := nomeAssetPlataforma()
 	if !ok || nome != "yt-dlp" {

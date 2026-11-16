@@ -11,8 +11,8 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db"
 )
 
-// doHealth executa GET /api/v1/health contra o handler do server e devolve o
-// corpo decodificado.
+// doHealth performs GET /api/v1/health against the server handler and returns the
+// decoded body.
 func doHealth(t *testing.T, s *Server) healthResponse {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
@@ -64,8 +64,8 @@ func TestHealthComBanco(t *testing.T) {
 	}
 }
 
-// TestHealthSemBanco garante degradação graciosa: sem banco injetado, o health
-// ainda responde 200 com os campos antigos e db.ok=false.
+// TestHealthSemBanco guarantees graceful degradation: without a database injected, health
+// still responds 200 with the old fields and db.ok=false.
 func TestHealthSemBanco(t *testing.T) {
 	s := New("v-teste", nil)
 	got := doHealth(t, s)

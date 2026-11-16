@@ -11,49 +11,51 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Este arquivo implementa a CAPACIDADE de filmografia de PESSOA do provider
-// (provider.PessoaProvider, briefing 0029 Fase D, segunda seção "ainda não
-// importados"): GET {base}/person/{id}?append_to_response=combined_credits numa só
-// ida (o TMDB já mescla filme+série em combined_credits) e o mapeamento dos créditos
-// (cast+crew) para o canônico CreditoFilmografia. O handler cruza o resultado contra o
-// catálogo (interno-first) e descarta o que já foi importado; cabe só a nós entregar um
-// conjunto ENXUTO: dedup por obra (Type+SourceID, prefere cast), ordenado por ano
-// decrescente (sem ano por último) e cortado num teto — filmografias reais de gente
-// prolífica somam centenas de créditos, e esta é uma PRÉVIA, não um catálogo completo.
+// This file implements the PERSON filmography CAPABILITY of the provider
+// (provider.PessoaProvider, second section "not yet imported"): GET
+// {base}/person/{id}?append_to_response=combined_credits in a single round trip
+// (TMDB already merges movie+series in combined_credits) and the mapping of the
+// credits (cast+crew) to the canonical CreditoFilmografia. The handler crosses the
+// result against the catalog (internal-first) and discards what was already
+// imported; it is up to us only to deliver a LEAN set: dedup by work
+// (Type+SourceID, cast preferred), sorted by descending year (without a year last)
+// and cut at a ceiling -- real filmographies of prolific people add up to hundreds
+// of credits, and this is a PREVIEW, not a complete catalog.
 
 const (
-	// posterFilmografiaBaseURL é a base do pôster nos itens de filmografia externa —
-	// menor (w185) que o pôster de card (w342, imagemBaseURL) por ser potencialmente uma
-	// lista grande; o server ainda proxya cada URL como as demais.
+	// posterFilmografiaBaseURL is the poster base in the external filmography items --
+	// smaller (w185) than the card poster (w342, imagemBaseURL) because it is
+	// potentially a long list; the server still proxies each URL like the others.
 	posterFilmografiaBaseURL = "https://image.tmdb.org/t/p/w185"
-	// tetoFilmografiaExterna é o teto de créditos devolvidos por BuscarFilmografia, já
-	// após dedup e ordenação.
+	// tetoFilmografiaExterna is the ceiling of credits returned by BuscarFilmografia,
+	// already after dedup and sorting.
 	tetoFilmografiaExterna = 40
 
-	// kindCastExterno/kindCrewExterno são os valores do papel na filmografia externa
-	// (o mesmo par kind "cast"/"crew" da filmografia interna, ver server/person.go).
+	// kindCastExterno/kindCrewExterno are the values of the role in the external
+	// filmography (the same pair kind "cast"/"crew" of the internal filmography, see
+	// server/person.go).
 	kindCastExterno = "cast"
 	kindCrewExterno = "crew"
 )
 
-// pessoaDetalheTMDB espelha GET /person/{id}?append_to_response=combined_credits (só
-// os campos usados). O `id` da própria pessoa não nos interessa aqui (já o temos via
-// sourceID); só os créditos combinados.
+// pessoaDetalheTMDB mirrors GET /person/{id}?append_to_response=combined_credits
+// (only the fields used). The `id` of the person itself does not interest us here
+// (we already have it through sourceID); only the combined credits.
 type pessoaDetalheTMDB struct {
 	CombinedCredits combinedCreditsTMDB `json:"combined_credits"`
 }
 
-// combinedCreditsTMDB é o bloco combined_credits: cast e crew já mesclando filme+série
-// (media_type discrimina). A MESMA obra pode aparecer em ambas as listas quando a
-// pessoa atuou E também fez parte da equipe.
+// combinedCreditsTMDB is the combined_credits block: cast and crew already merging
+// movie+series (media_type discriminates). The SAME work may appear in both lists
+// when the person acted AND was also part of the crew.
 type combinedCreditsTMDB struct {
 	Cast []creditoCombinadoTMDB `json:"cast"`
 	Crew []creditoCombinadoTMDB `json:"crew"`
 }
 
-// creditoCombinadoTMDB é um item cru de combined_credits.{cast,crew}. title/
-// release_date são de filme; name/first_air_date de série (mesmo padrão de itemMulti);
-// character só faz sentido em cast, job/department só em crew.
+// creditoCombinadoTMDB is a raw item of combined_credits.{cast,crew}. title/
+// release_date are movie ones; name/first_air_date series ones (same pattern as
+// itemMulti); character only makes sense in cast, job/department only in crew.
 type creditoCombinadoTMDB struct {
 	ID           int64  `json:"id"`
 	MediaType    string `json:"media_type"`
@@ -66,10 +68,10 @@ type creditoCombinadoTMDB struct {
 	Job          string `json:"job"`
 }
 
-// BuscarFilmografia puxa a pessoa `sourceID` com combined_credits em `lang` e mapeia
-// para o canônico (dedup+ordenação+corte em montarFilmografiaExterna, PURO). 404 do
-// TMDB vira provider.ErrNaoEncontrado (via getBytes); erro real propaga. Cumpre
-// provider.PessoaProvider.
+// BuscarFilmografia pulls the person `sourceID` with combined_credits in `lang` and
+// maps it to the canonical (dedup+sorting+cut in montarFilmografiaExterna, PURE). A
+// 404 from TMDB becomes provider.ErrNaoEncontrado (via getBytes); a real error
+// propagates. Satisfies provider.PessoaProvider.
 func (c *Client) BuscarFilmografia(ctx context.Context, sourceID, lang string) ([]provider.CreditoFilmografia, error) {
 	if sourceID == "" {
 		return nil, fmt.Errorf("tmdb: sourceID vazio")
@@ -89,12 +91,13 @@ func (c *Client) BuscarFilmografia(ctx context.Context, sourceID, lang string) (
 	return montarFilmografiaExterna(d.CombinedCredits), nil
 }
 
-// montarFilmografiaExterna deduplica os créditos combinados por obra (Type+SourceID) —
-// cast SEMPRE vence sobre crew (papel mais proeminente); quando só há crédito(s) de
-// crew para a obra, os cargos distintos são reunidos (" · ", sem duplicar). O resultado
-// é ordenado por ano decrescente (sem ano por último) e cortado em
-// tetoFilmografiaExterna. É PURO (sem rede) — separado de BuscarFilmografia para manter
-// a função de I/O simples e este mapeamento testável sem httptest.
+// montarFilmografiaExterna deduplicates the combined credits by work
+// (Type+SourceID) -- cast ALWAYS wins over crew (the more prominent role); when
+// there are only crew credit(s) for the work, the distinct jobs are joined
+// (" · ", without duplicating). The result is sorted by descending year (without a
+// year last) and cut at tetoFilmografiaExterna. It is PURE (no network) -- separate
+// from BuscarFilmografia to keep the I/O function simple and this mapping testable
+// without httptest.
 func montarFilmografiaExterna(cc combinedCreditsTMDB) []provider.CreditoFilmografia {
 	porObra := make(map[string]*provider.CreditoFilmografia, len(cc.Cast)+len(cc.Crew))
 	ordem := make([]string, 0, len(cc.Cast)+len(cc.Crew))
@@ -102,7 +105,7 @@ func montarFilmografiaExterna(cc combinedCreditsTMDB) []provider.CreditoFilmogra
 	for _, it := range cc.Cast {
 		chave := chaveObraExterna(it)
 		if chave == "" || porObra[chave] != nil {
-			continue // sem tipo utilizavel, ou obra ja tem um credito de cast (1a ocorrencia vence)
+			continue // without a usable type, or the work already has a cast credit (the 1st occurrence wins)
 		}
 		credito := mapearCreditoCombinado(it, kindCastExterno)
 		porObra[chave] = &credito
@@ -115,7 +118,7 @@ func montarFilmografiaExterna(cc combinedCreditsTMDB) []provider.CreditoFilmogra
 		}
 		if existente, ok := porObra[chave]; ok {
 			if existente.Kind == kindCastExterno {
-				continue // cast ja venceu esta obra
+				continue // cast already won this work
 			}
 			existente.Job = juntarCargoExterno(existente.Job, it.Job)
 			continue
@@ -136,8 +139,8 @@ func montarFilmografiaExterna(cc combinedCreditsTMDB) []provider.CreditoFilmogra
 	return out
 }
 
-// chaveObraExterna monta a chave de dedup "type|source_id" de um crédito combinado, ou
-// "" quando o media_type não é movie/tv (descarta o crédito).
+// chaveObraExterna builds the dedup key "type|source_id" of a combined credit, or
+// "" when the media_type is not movie/tv (the credit is discarded).
 func chaveObraExterna(it creditoCombinadoTMDB) string {
 	if it.MediaType != "movie" && it.MediaType != "tv" {
 		return ""
@@ -145,8 +148,9 @@ func chaveObraExterna(it creditoCombinadoTMDB) string {
 	return it.MediaType + "|" + itoa(it.ID)
 }
 
-// mapearCreditoCombinado converte um item cru no canônico, com character preenchido só
-// em cast e job só em crew (o par que não se aplica ao kind fica nil).
+// mapearCreditoCombinado converts a raw item to the canonical, with character
+// filled in only in cast and job only in crew (the pair that does not apply to the
+// kind stays nil).
 func mapearCreditoCombinado(it creditoCombinadoTMDB, kind string) provider.CreditoFilmografia {
 	credito := provider.CreditoFilmografia{
 		Source:    "tmdb",
@@ -165,10 +169,11 @@ func mapearCreditoCombinado(it creditoCombinadoTMDB, kind string) provider.Credi
 	return credito
 }
 
-// juntarCargoExterno acrescenta `novo` à lista " · "-separada de `atual`, sem duplicar
-// (mesma pessoa pode repetir o job em créditos crus distintos da obra) e sem alterar
-// nada quando `novo` é vazio. Espelha juntarCargo de server/person.go (pacote
-// diferente, mesma semântica — evita importar server aqui).
+// juntarCargoExterno appends `novo` to the " · "-separated list of `atual`, without
+// duplicating (the same person may repeat the job in distinct raw credits of the
+// work) and without changing anything when `novo` is empty. Mirrors juntarCargo of
+// server/person.go (a different package, same semantics -- it avoids importing
+// server here).
 func juntarCargoExterno(atual *string, novo string) *string {
 	if novo == "" {
 		return atual
@@ -186,9 +191,9 @@ func juntarCargoExterno(atual *string, novo string) *string {
 	return &junto
 }
 
-// ordenarFilmografiaExterna ordena por Year decrescente; créditos sem ano vão para o
-// fim. Estável: obras de mesmo ano preservam a ordem de chegada (cast antes de crew,
-// cada bloco na ordem da fonte) — determinístico para os testes.
+// ordenarFilmografiaExterna sorts by descending Year; credits without a year go to
+// the end. Stable: works of the same year keep the order of arrival (cast before
+// crew, each block in the order of the source) -- deterministic for the tests.
 func ordenarFilmografiaExterna(creditos []provider.CreditoFilmografia) {
 	sort.SliceStable(creditos, func(i, j int) bool {
 		yi, yj := creditos[i].Year, creditos[j].Year
@@ -196,17 +201,17 @@ func ordenarFilmografiaExterna(creditos []provider.CreditoFilmografia) {
 		case yi == nil && yj == nil:
 			return false
 		case yi == nil:
-			return false // i sem ano: nao entra antes de j
+			return false // i without a year: it does not come before j
 		case yj == nil:
-			return true // j sem ano: i (com ano) entra antes
+			return true // j without a year: i (with a year) comes first
 		default:
 			return *yi > *yj
 		}
 	})
 }
 
-// posterFilmografiaURL monta a URL direta do pôster (tamanho w185) de um item da
-// filmografia externa, ou nil sem poster_path.
+// posterFilmografiaURL builds the direct poster URL (w185 size) of an item of the
+// external filmography, or nil without poster_path.
 func posterFilmografiaURL(posterPath string) *string {
 	if posterPath == "" {
 		return nil

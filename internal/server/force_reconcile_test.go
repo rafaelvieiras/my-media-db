@@ -1,10 +1,10 @@
 package server
 
-// Testes de POST /entities/{id}/force-reconcile (briefing 0122): dispara a
-// MESMA reconciliação de filhos órfãos do job em lote (ReconciliarFilhosOrfaos,
-// 0120, testado em reconciliar_orfaos_test.go), mas para UMA entity e
-// IGNORANDO o throttle de last_external_match_attempt_at. Reusa os fakes/
-// helpers de reconciliar_orfaos_test.go (mesmo pacote): setupReconciliarOrfaosServer,
+// Tests of POST /entities/{id}/force-reconcile: it triggers the
+// SAME orphan child reconciliation of the batch job
+// (ReconciliarFilhosOrfaos, tested in reconciliar_orfaos_test.go), but for ONE entity and
+// IGNORING the last_external_match_attempt_at throttle. It reuses the fakes/helpers of
+// reconciliar_orfaos_test.go (same package): setupReconciliarOrfaosServer,
 // semearFaixaDraftOrfa, semearSerieDraftComArquivo, fakeMusicaProviderOrfaos,
 // reconciliarProberFake, mediaFileEntityID.
 
@@ -19,7 +19,7 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider/fake"
 )
 
-// decodeForceReconcile decodifica a resposta do endpoint.
+// decodeForceReconcile decodes the endpoint response.
 func decodeForceReconcile(t *testing.T, body []byte) forcarReconciliacaoResultDTO {
 	t.Helper()
 	var out forcarReconciliacaoResultDTO
@@ -29,12 +29,12 @@ func decodeForceReconcile(t *testing.T, body []byte) forcarReconciliacaoResultDT
 	return out
 }
 
-// TestForceReconcileFaixaIgnoraThrottle cobre o critério central do briefing
-// 0122: uma faixa draft órfã com last_external_match_attempt_at BEM recente
-// (dentro do throttle de ReconciliarFilhosOrfaos) ainda assim é tentada pelo
-// endpoint individual -- e religa com sucesso, provando que o throttle é
-// ignorado (diferente do job em lote, que nem chamaria o provider para este
-// item -- ver TestReconciliarFilhosOrfaosRespeitaThrottle).
+// TestForceReconcileFaixaIgnoraThrottle covers the central criterion: an orphan draft
+// track with a very recent last_external_match_attempt_at
+// (inside the ReconciliarFilhosOrfaos throttle) is still attempted by the
+// individual endpoint -- and relinks successfully, proving that the throttle is
+// ignored (unlike the batch job, which would not even call the provider for this
+// item -- see TestReconciliarFilhosOrfaosRespeitaThrottle).
 func TestForceReconcileFaixaIgnoraThrottle(t *testing.T) {
 	musica := &fakeMusicaProviderOrfaos{}
 	path := "/lib/musica/aha/01 - Track One.mp3"
@@ -42,7 +42,7 @@ func TestForceReconcileFaixaIgnoraThrottle(t *testing.T) {
 		path: {AlbumArtist: "Fake Band", Album: "Fake Album", Title: "Track One", TrackNumber: 1},
 	})
 	semearFaixaDraftOrfa(t, d, "fx-draft", "Track One", path)
-	// Carimba uma tentativa BEM recente -- um throttle de lote bloquearia.
+	// Stamps a very recent attempt -- a batch throttle would block it.
 	carimbarTentativa(t, d, "fx-draft", time.Now().Add(-1*time.Hour))
 
 	h, err := s.Handler()
@@ -67,10 +67,10 @@ func TestForceReconcileFaixaIgnoraThrottle(t *testing.T) {
 	}
 }
 
-// TestForceReconcileSerieIgnoraThrottle cobre o mesmo critério para série: uma
-// série draft com arquivo cuja árvore só resolve via provider (fake.New),
-// carimbada recentemente, ainda assim é retentada e religada pelo endpoint
-// individual.
+// TestForceReconcileSerieIgnoraThrottle covers the same criterion for a series: a
+// draft series with a file whose tree only resolves via the provider (fake.New),
+// stamped recently, is still retried and relinked by the individual
+// endpoint.
 func TestForceReconcileSerieIgnoraThrottle(t *testing.T) {
 	img := servidorImagemArvoreSerie(t)
 	h, d := setupSearchServer(t, WithSearchProvider(fake.New(img.URL)), WithAssetsDir(t.TempDir()))
@@ -93,10 +93,10 @@ func TestForceReconcileSerieIgnoraThrottle(t *testing.T) {
 	}
 }
 
-// TestForceReconcileTipoNaoAplicavelNaoCarimba cobre o critério "tipo não
-// aplicável" do §4: uma entity type=movie responde 200/linked=false SEM
-// chamar nenhuma reconciliação e SEM carimbar a tentativa (diferente de
-// faixa/série, que sempre carimbam).
+// TestForceReconcileTipoNaoAplicavelNaoCarimba covers the "type not
+// applicable" criterion: a type=movie entity responds 200/linked=false WITHOUT
+// calling any reconciliation and WITHOUT stamping the attempt (unlike
+// track/series, which always stamp).
 func TestForceReconcileTipoNaoAplicavelNaoCarimba(t *testing.T) {
 	s, d := setupReconciliarOrfaosServer(t, &fakeMusicaProviderOrfaos{}, nil)
 	semearEntity(t, d, "e-movie", "movie", "Um Filme Qualquer")
@@ -123,8 +123,8 @@ func TestForceReconcileTipoNaoAplicavelNaoCarimba(t *testing.T) {
 	}
 }
 
-// TestForceReconcileEntidadeInexistente404 cobre o critério §4: entity
-// inexistente responde 404, mesmo padrão de enrich-missing/auto-match.
+// TestForceReconcileEntidadeInexistente404 covers the criterion: a nonexistent
+// entity responds 404, same pattern as enrich-missing/auto-match.
 func TestForceReconcileEntidadeInexistente404(t *testing.T) {
 	s, _ := setupReconciliarOrfaosServer(t, &fakeMusicaProviderOrfaos{}, nil)
 	h, err := s.Handler()
@@ -138,9 +138,9 @@ func TestForceReconcileEntidadeInexistente404(t *testing.T) {
 	checkErrorShape(t, rec, "not_found")
 }
 
-// TestForceReconcileSemScannerDegradaSemErro cobre a guarda s.scanner==nil:
-// sem scanner, responde 200/linked=false direto, sem tentar nada -- mesma
-// guarda de ReconciliarFilhosOrfaos.
+// TestForceReconcileSemScannerDegradaSemErro covers the s.scanner==nil guard:
+// without a scanner, it responds 200/linked=false straight away, without trying
+// anything -- same guard as ReconciliarFilhosOrfaos.
 func TestForceReconcileSemScannerDegradaSemErro(t *testing.T) {
 	h, d := setupSearchServer(t)
 	semearEntity(t, d, "fx-sem-scanner", "faixa", "Sem Scanner")
@@ -155,20 +155,20 @@ func TestForceReconcileSemScannerDegradaSemErro(t *testing.T) {
 	}
 }
 
-// TestForceReconcileErroDeInfraPropaga500 cobre o critério §4: um erro REAL
-// de banco (pool de escrita fechado) propaga como 500 -- nunca degrada
-// silenciosamente. Usa um cenário SEM candidato algum (faixa cujo artista/
-// álbum não batem em nenhuma fixture do provider, mesmo caminho de
-// TestReconciliarFilhosOrfaosSerieSemMatchAindaCarimba): a reconciliação em
-// si só usa o pool de LEITURA e o Prober (nenhuma escrita é tentada, já que
-// nenhum candidato é encontrado para religar) -- e o carimbo, que é a
-// ÚNICA escrita alcançada neste caminho, é o que falha com o pool de
-// escrita fechado, provando o "OU" do critério (tentarErr==nil mas
-// carimbarErr!=nil ainda vira 500). Forçar o erro DENTRO da própria
-// reconciliação exigiria pré-semear artista/álbum/faixa já catalogados
-// batendo exatamente as fixtures do provider fake (para o match textual não
-// precisar escrever nada além do carimbo final) -- não vale o custo extra
-// dado que o "OU" já fica provado por este lado.
+// TestForceReconcileErroDeInfraPropaga500 covers the criterion: a REAL
+// database error (closed write pool) propagates as 500 -- it never degrades
+// silently. It uses a scenario with NO candidate at all (a track whose artist/
+// album do not match any provider fixture, same path as
+// TestReconciliarFilhosOrfaosSerieSemMatchAindaCarimba): the reconciliation
+// itself only uses the READ pool and the Prober (no write is attempted, since
+// no candidate is found to relink) -- and the stamping, which is the
+// ONLY write reached on this path, is what fails with the closed write
+// pool, proving the "OR" of the criterion (tentarErr==nil but
+// carimbarErr!=nil still becomes 500). Forcing the error INSIDE the
+// reconciliation itself would require pre-seeding an already cataloged
+// artist/album/track matching exactly the fake provider fixtures (so the textual match
+// does not need to write anything besides the final stamp) -- not worth the extra cost
+// given that the "OR" is already proven on this side.
 func TestForceReconcileErroDeInfraPropaga500(t *testing.T) {
 	musica := &fakeMusicaProviderOrfaos{}
 	path := "/lib/musica/desconhecida/01 - Faixa Desconhecida.mp3"

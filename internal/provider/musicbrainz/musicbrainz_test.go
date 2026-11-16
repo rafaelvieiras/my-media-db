@@ -14,10 +14,10 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// novoClientDeTeste monta um Client apontando para servidores fake (httptest.Server),
-// SEM nenhum sleep real do rate limiter (intervalo=0) — os testes deste pacote nunca
-// batem na rede real (MusicBrainz/Cover Art Archive), e o comportamento do rate limiter
-// em si é coberto isoladamente por ratelimit_test.go.
+// novoClientDeTeste builds a Client pointing at fake servers (httptest.Server), WITHOUT any real
+// sleep from the rate limiter (interval=0) -- the tests of this package never hit the real network
+// (MusicBrainz/Cover Art Archive), and the behavior of the rate limiter itself is covered in
+// isolation by ratelimit_test.go.
 func novoClientDeTeste(mbURL, caaURL string) *Client {
 	return &Client{
 		httpClient: &http.Client{Timeout: 5 * time.Second},
@@ -27,9 +27,9 @@ func novoClientDeTeste(mbURL, caaURL string) *Client {
 	}
 }
 
-// respostasMB é o roteador do servidor fake do MusicBrainz: cada chave é "PATH?QUERY_ORDENADA"
-// simplificado — na prática comparamos path + presença/valor do param "inc" (os únicos que
-// variam entre as rotas usadas pelo client).
+// respostasMB is the router of the fake MusicBrainz server: each key is a simplified
+// "PATH?ORDERED_QUERY" -- in practice we compare the path + presence/value of the "inc" param (the
+// only ones that vary between the routes used by the client).
 func servidorMBFake(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -53,9 +53,9 @@ func servidorMBFake(t *testing.T) *httptest.Server {
 
 	mux.HandleFunc("/artist/artist-1", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		// BuscarArtistaArvore pede "release-groups+annotation"; BuscarAlbumPorNome
-		// (briefing 0115) pede só "release-groups" (sem annotation, que não usa) --
-		// os dois recebem a mesma lista de release-groups.
+		// BuscarArtistaArvore requests "release-groups+annotation"; BuscarAlbumPorNome requests only
+		// "release-groups" (without annotation, which it does not use) -- both receive the same list
+		// of release-groups.
 		if inc := r.URL.Query().Get("inc"); strings.Contains(inc, "release-groups") {
 			_, _ = w.Write([]byte(`{
 				"name": "Test Artist",
@@ -67,7 +67,7 @@ func servidorMBFake(t *testing.T) *httptest.Server {
 			}`))
 			return
 		}
-		// BuscarDetalhe: sem inc.
+		// BuscarDetalhe: without inc.
 		_, _ = w.Write([]byte(`{"name": "Test Artist"}`))
 	})
 
@@ -75,9 +75,9 @@ func servidorMBFake(t *testing.T) *httptest.Server {
 		http.NotFound(w, r)
 	})
 
-	// busca TEXTUAL de release-group (briefing 0136, BuscarAlbumPorTitulo): devolve
-	// "Album One" (rg-1, do artist-1) e um homônimo de OUTRO artista que NÃO contém a
-	// faixa-alvo -- prova que o caminho por título escolhe por evidência da tracklist.
+	// TEXTUAL search of release-group (BuscarAlbumPorTitulo): it returns "Album One" (rg-1, of
+	// artist-1) and a homonym of ANOTHER artist that does NOT contain the target track -- it proves
+	// that the path by title chooses by evidence from the tracklist.
 	mux.HandleFunc("/release-group", func(w http.ResponseWriter, r *http.Request) {
 		if q := r.URL.Query().Get("query"); !strings.HasPrefix(q, "releasegroup:") {
 			t.Errorf("query = %q, quero prefixo releasegroup:", q)
@@ -122,9 +122,9 @@ func servidorMBFake(t *testing.T) *httptest.Server {
 		}`))
 	})
 
-	// rotas de /recording -- usadas por BuscarAlbumDaFaixa (briefing 0115): "rec-1"
-	// resolve para o release-group "rg-1" (via "rel-1", já servido acima); "rec-sem-rg"
-	// tem uma release SEM release-group aninhado (dado incompleto na fonte).
+	// /recording routes -- used by BuscarAlbumDaFaixa: "rec-1" resolves to the release-group
+	// "rg-1" (through "rel-1", already served above); "rec-sem-rg" has a release WITHOUT a nested
+	// release-group (incomplete data in the source).
 	mux.HandleFunc("/recording/rec-1", func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("inc"); got != "releases+release-groups" {
 			t.Errorf("inc = %q, quero releases+release-groups", got)
@@ -192,8 +192,8 @@ func servidorMBFake(t *testing.T) *httptest.Server {
 		}`))
 	})
 
-	// rel-2 tem uma faixa com artista DIVERGENTE do artista do album (feat./colaboracao),
-	// em 2 discos (testa DiscNumber/DiscTotal).
+	// rel-2 has a track with an artist DIVERGING from the album artist (feat./collaboration), on 2
+	// discs (it tests DiscNumber/DiscTotal).
 	mux.HandleFunc("/release/rel-2", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -343,10 +343,10 @@ func TestBuscarDetalheNaoEncontrado(t *testing.T) {
 	}
 }
 
-// servidorDetalheMusicaFake serve só /release-group/{id} e /recording/{id} SEM exigir
-// nenhum `inc` (diferente de servidorMBFake, cujo /recording/rec-1 valida
-// inc=releases+release-groups para outro consumidor, BuscarAlbumDaFaixa) -- o caminho
-// de BuscarDetalhe pra album/faixa não pede `inc` nenhum, só o título.
+// servidorDetalheMusicaFake serves only /release-group/{id} and /recording/{id} WITHOUT requiring any
+// `inc` (unlike servidorMBFake, whose /recording/rec-1 validates inc=releases+release-groups for
+// another consumer, BuscarAlbumDaFaixa) -- the path of BuscarDetalhe for album/track does not request
+// any `inc`, only the title.
 func servidorDetalheMusicaFake(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -364,12 +364,12 @@ func servidorDetalheMusicaFake(t *testing.T) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
-// TestBuscarDetalheAlbumEFaixaDespachaPorTipo cobre o bug achado na validação em
-// produção de 20/08/2026: BuscarDetalhe pra tipo=album/faixa chamava sempre /artist/
-// (sourceID errado -- pra esses dois tipos o sourceID é MBID de release-group/recording,
-// não de artista) e batia em 404/502, quebrando "Baixar Metadados". Confirma o dispatch
-// correto de endpoint E o remap "title"→"name" (remapParaNome) que deixa MapearDetalhe
-// funcionar sem mudar a assinatura da interface core provider.Provider.
+// TestBuscarDetalheAlbumEFaixaDespachaPorTipo covers the bug found in the production validation:
+// BuscarDetalhe for tipo=album/faixa always called /artist/ (wrong sourceID -- for those two
+// types the sourceID is the release-group/recording MBID, not the artist one) and hit 404/502,
+// breaking "Download Metadata". It confirms the correct dispatch of the endpoint AND the
+// "title"→"name" remap (remapParaNome) that lets MapearDetalhe work without changing the
+// signature of the core provider.Provider interface.
 func TestBuscarDetalheAlbumEFaixaDespachaPorTipo(t *testing.T) {
 	mb := servidorDetalheMusicaFake(t)
 	defer mb.Close()
@@ -454,8 +454,8 @@ func TestBuscarArtistaArvore(t *testing.T) {
 		t.Fatalf("faixa 1 ISRC = %q, esperava vazio (sem isrcs na fonte)", f1.ISRC)
 	}
 
-	// album2 (rg-2/rel-2): faixa 0 tem artista DIVERGENTE (feat.); faixa 1 esta no disco 2
-	// de 2 (DiscTotal=2).
+	// album2 (rg-2/rel-2): track 0 has a DIVERGING artist (feat.); track 1 is on disc 2 of 2
+	// (DiscTotal=2).
 	album2 := arvore.Albuns[1]
 	if album2.Name != "Album Two" || album2.MBID != "rg-2" || album2.Genre != "electronic" {
 		t.Fatalf("album2 inesperado: %+v", album2)
@@ -490,12 +490,12 @@ func TestBuscarArtistaArvoreNaoEncontrado(t *testing.T) {
 	}
 }
 
-// TestBuscarArtistaArvoreAlbumPersistentementeIndisponivelDegradaSemAbortar cobre o achado
-// real da validação em produção (Duran Duran, MBID real): o servidor público do
-// MusicBrainz é instável o bastante que, numa árvore com dezenas de álbuns, é esperado que
-// a chamada de detalhe de UM release-group específico esgote todas as tentativas de retry.
-// Isso NÃO pode abortar a árvore inteira -- o álbum problemático deve degradar pra um
-// shell sem gênero/faixas, e os demais álbuns (antes e depois dele) continuam completos.
+// TestBuscarArtistaArvoreAlbumPersistentementeIndisponivelDegradaSemAbortar covers the real finding of
+// the production validation (Duran Duran, a real MBID): the public MusicBrainz server is unstable enough
+// that, in a tree with dozens of albums, it is expected that the detail call of ONE specific
+// release-group exhausts all the retry attempts. That must NOT abort the whole tree -- the problematic
+// album must degrade to a shell without genre/tracks, and the other albums (before and after it) stay
+// complete.
 func TestBuscarArtistaArvoreAlbumPersistentementeIndisponivelDegradaSemAbortar(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/artist/artist-1", func(w http.ResponseWriter, r *http.Request) {
@@ -513,8 +513,8 @@ func TestBuscarArtistaArvoreAlbumPersistentementeIndisponivelDegradaSemAbortar(t
 		_, _ = w.Write([]byte(`{"genres": [{"name": "rock", "count": 5}], "releases": []}`))
 	})
 	mux.HandleFunc("/release-group/rg-2", func(w http.ResponseWriter, r *http.Request) {
-		// Sempre 503 -- simula a instabilidade real do servidor público. getMB vai
-		// esgotar tentativasMB tentativas para ESTE release-group especificamente.
+		// Always 503 -- it simulates the real instability of the public server. getMB will exhaust
+		// tentativasMB attempts for THIS release-group specifically.
 		w.WriteHeader(http.StatusServiceUnavailable)
 	})
 	srv := httptest.NewServer(mux)
@@ -540,10 +540,10 @@ func TestBuscarArtistaArvoreAlbumPersistentementeIndisponivelDegradaSemAbortar(t
 	}
 }
 
-// TestBuscarAlbumDaFaixa cobre o caminho PRECISO (briefing 0115): resolve o
-// release-group a partir do MBID de recording "rec-1" (via "rel-1"/status
-// Official) e monta SÓ esse álbum -- nome/ano vêm do PRÓPRIO release-group
-// (rg.Title/rg.FirstReleaseDate), já que o chamador não os tem de antemão.
+// TestBuscarAlbumDaFaixa covers the PRECISE path: it resolves the release-group from the recording MBID
+// "rec-1" (through "rel-1"/status Official) and assembles ONLY that album -- name/year come from the
+// release-group ITSELF (rg.Title/rg.FirstReleaseDate), since the caller does not have them
+// beforehand.
 func TestBuscarAlbumDaFaixa(t *testing.T) {
 	mb := servidorMBFake(t)
 	defer mb.Close()
@@ -564,9 +564,8 @@ func TestBuscarAlbumDaFaixa(t *testing.T) {
 	}
 }
 
-// TestBuscarAlbumDaFaixaSemReleaseGroup cobre o dado incompleto na fonte
-// (recording tem releases, mas NENHUMA com release-group aninhado): ok=false,
-// graça -- não é erro.
+// TestBuscarAlbumDaFaixaSemReleaseGroup covers the incomplete data in the source (the recording has
+// releases, but NONE with a nested release-group): ok=false, gracefully -- it is not an error.
 func TestBuscarAlbumDaFaixaSemReleaseGroup(t *testing.T) {
 	mb := servidorMBFake(t)
 	defer mb.Close()
@@ -581,8 +580,8 @@ func TestBuscarAlbumDaFaixaSemReleaseGroup(t *testing.T) {
 	}
 }
 
-// TestBuscarAlbumDaFaixaRecordingNaoEncontrado cobre o 404: erro-sentinela
-// provider.ErrNaoEncontrado (errors.Is), mesmo contrato dos demais métodos.
+// TestBuscarAlbumDaFaixaRecordingNaoEncontrado covers the 404: sentinel error
+// provider.ErrNaoEncontrado (errors.Is), the same contract as the other methods.
 func TestBuscarAlbumDaFaixaRecordingNaoEncontrado(t *testing.T) {
 	mb := servidorMBFake(t)
 	defer mb.Close()
@@ -594,8 +593,8 @@ func TestBuscarAlbumDaFaixaRecordingNaoEncontrado(t *testing.T) {
 	}
 }
 
-// TestBuscarAlbumDaFaixaMbidVazio cobre a validação de entrada (sem ida à
-// rede): erro imediato, nunca um GET com path vazio.
+// TestBuscarAlbumDaFaixaMbidVazio covers the input validation (without a round trip to the
+// network): immediate error, never a GET with an empty path.
 func TestBuscarAlbumDaFaixaMbidVazio(t *testing.T) {
 	c := novoClientDeTeste("http://unused.invalid", "")
 	if _, _, err := c.BuscarAlbumDaFaixa(context.Background(), "", nil); err == nil {
@@ -603,9 +602,9 @@ func TestBuscarAlbumDaFaixaMbidVazio(t *testing.T) {
 	}
 }
 
-// TestBuscarAlbumPorNome cobre o caminho TEXTUAL (briefing 0115): lista os
-// release-groups do artista "artist-1" (rg-1 "Album One", rg-2 "Album Two") e
-// monta SÓ o que bate com "Album One" -- rg-2 nunca é montado (só listado).
+// TestBuscarAlbumPorNome covers the TEXTUAL path: it lists the release-groups of the artist
+// "artist-1" (rg-1 "Album One", rg-2 "Album Two") and assembles ONLY the one that matches "Album
+// One" -- rg-2 is never assembled (only listed).
 func TestBuscarAlbumPorNome(t *testing.T) {
 	mb := servidorMBFake(t)
 	defer mb.Close()
@@ -626,8 +625,8 @@ func TestBuscarAlbumPorNome(t *testing.T) {
 	}
 }
 
-// TestBuscarAlbumPorNomeSemCandidato cobre nome sem correspondência
-// plausível (abaixo do limiar matching.LimiarAutoMatch): ok=false, graça.
+// TestBuscarAlbumPorNomeSemCandidato covers a name without a plausible correspondence (below the
+// matching.LimiarAutoMatch threshold): ok=false, gracefully.
 func TestBuscarAlbumPorNomeSemCandidato(t *testing.T) {
 	mb := servidorMBFake(t)
 	defer mb.Close()
@@ -642,7 +641,7 @@ func TestBuscarAlbumPorNomeSemCandidato(t *testing.T) {
 	}
 }
 
-// TestBuscarAlbumPorNomeArtistaNaoEncontrado cobre o 404 do artista.
+// TestBuscarAlbumPorNomeArtistaNaoEncontrado covers the 404 of the artist.
 func TestBuscarAlbumPorNomeArtistaNaoEncontrado(t *testing.T) {
 	mb := servidorMBFake(t)
 	defer mb.Close()
@@ -668,9 +667,9 @@ func TestMontarAlbumReleaseGroupSemReleases(t *testing.T) {
 	}
 }
 
-// TestBuscarAlbumPorMbid cobre o caminho DIRETO (briefing 0115 Parte 2): o MBID já
-// é o do release-group ("rg-1"), sem passo de resolução prévio -- monta o álbum
-// com suas faixas, mesmo shape de BuscarAlbumDaFaixa/BuscarAlbumPorNome.
+// TestBuscarAlbumPorMbid covers the DIRECT path: the MBID already is the one of the release-group
+// ("rg-1"), without a previous resolution step -- it assembles the album with its tracks, the same
+// shape as BuscarAlbumDaFaixa/BuscarAlbumPorNome.
 func TestBuscarAlbumPorMbid(t *testing.T) {
 	mb := servidorMBFake(t)
 	defer mb.Close()
@@ -688,10 +687,10 @@ func TestBuscarAlbumPorMbid(t *testing.T) {
 	}
 }
 
-// TestBuscarAlbumPorMbidNaoEncontrado cobre o 404: ao contrário de montarAlbum (só
-// usado DEPOIS de uma resolução prévia, que degrada em silêncio), este método NÃO
-// tem resolução prévia -- por isso precisa propagar provider.ErrNaoEncontrado
-// (errors.Is) em vez de devolver um shell vazio indistinguível de "achou, sem dado".
+// TestBuscarAlbumPorMbidNaoEncontrado covers the 404: unlike montarAlbum (used only AFTER a previous
+// resolution, which degrades silently), this method has NO previous resolution -- that is why it
+// must propagate provider.ErrNaoEncontrado (errors.Is) instead of returning an empty shell
+// indistinguishable from "found, without data".
 func TestBuscarAlbumPorMbidNaoEncontrado(t *testing.T) {
 	mb := servidorMBFake(t)
 	defer mb.Close()
@@ -703,7 +702,7 @@ func TestBuscarAlbumPorMbidNaoEncontrado(t *testing.T) {
 	}
 }
 
-// TestBuscarAlbumPorMbidVazio cobre a validação de entrada (sem ida à rede).
+// TestBuscarAlbumPorMbidVazio covers the input validation (without a round trip to the network).
 func TestBuscarAlbumPorMbidVazio(t *testing.T) {
 	c := novoClientDeTeste("http://unused.invalid", "")
 	if _, err := c.BuscarAlbumPorMbid(context.Background(), "", nil); err == nil {
@@ -784,10 +783,10 @@ func TestBuscarArtesSemMbidEhNoop(t *testing.T) {
 	}
 }
 
-// TestImplementaInterfaces é uma checagem em tempo de compilacao (nao roda nada) de que o
-// Client satisfaz as interfaces esperadas: core provider.Provider, provider.MusicaProvider
-// (arvore, legado), provider.MusicaAlbumProvider (seletiva, briefing 0115),
-// provider.ArteProvider e provider.FaixaResolverProvider.
+// TestImplementaInterfaces is a compile-time check (it runs nothing) that the Client satisfies the
+// expected interfaces: core provider.Provider, provider.MusicaProvider (tree, legacy),
+// provider.MusicaAlbumProvider (selective), provider.ArteProvider and
+// provider.FaixaResolverProvider.
 func TestImplementaInterfaces(t *testing.T) {
 	var _ provider.Provider = (*Client)(nil)
 	var _ provider.MusicaProvider = (*Client)(nil)
@@ -796,11 +795,10 @@ func TestImplementaInterfaces(t *testing.T) {
 	var _ provider.FaixaResolverProvider = (*Client)(nil)
 }
 
-// servidorRecordingFake é um httptest.Server hermético dedicado a
-// ResolverArtistaDaFaixa (briefing 0107): responde GET /recording/{mbid}?inc=
-// artist-credits com um artist-credit fixo para "rec-com-artista", uma lista
-// VAZIA de artist-credit para "rec-sem-artista" (dado incompleto na fonte) e
-// 404 para qualquer outro id.
+// servidorRecordingFake is a hermetic httptest.Server dedicated to ResolverArtistaDaFaixa: it
+// answers GET /recording/{mbid}?inc=artist-credits with a fixed artist-credit for
+// "rec-com-artista", an EMPTY list of artist-credit for "rec-sem-artista" (incomplete data in the
+// source) and 404 for any other id.
 func servidorRecordingFake(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -821,8 +819,8 @@ func servidorRecordingFake(t *testing.T) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
-// TestResolverArtistaDaFaixa cobre o caminho feliz: recording com 1
-// artist-credit devolve o MBID do artista.
+// TestResolverArtistaDaFaixa covers the happy path: a recording with 1 artist-credit returns the
+// MBID of the artist.
 func TestResolverArtistaDaFaixa(t *testing.T) {
 	srv := servidorRecordingFake(t)
 	defer srv.Close()
@@ -837,9 +835,8 @@ func TestResolverArtistaDaFaixa(t *testing.T) {
 	}
 }
 
-// TestResolverArtistaDaFaixaSemArtistCredit cobre o dado incompleto na fonte
-// (recording existe mas sem NENHUM artist-credit): erro genérico, nunca um
-// MBID vazio silencioso.
+// TestResolverArtistaDaFaixaSemArtistCredit covers the incomplete data in the source (the recording
+// exists but without ANY artist-credit): a generic error, never a silent empty MBID.
 func TestResolverArtistaDaFaixaSemArtistCredit(t *testing.T) {
 	srv := servidorRecordingFake(t)
 	defer srv.Close()
@@ -850,8 +847,8 @@ func TestResolverArtistaDaFaixaSemArtistCredit(t *testing.T) {
 	}
 }
 
-// TestResolverArtistaDaFaixaNaoEncontrada cobre o 404: erro-sentinela
-// provider.ErrNaoEncontrado (errors.Is), mesmo contrato dos demais métodos.
+// TestResolverArtistaDaFaixaNaoEncontrada covers the 404: sentinel error provider.ErrNaoEncontrado
+// (errors.Is), the same contract as the other methods.
 func TestResolverArtistaDaFaixaNaoEncontrada(t *testing.T) {
 	srv := servidorRecordingFake(t)
 	defer srv.Close()
@@ -863,12 +860,12 @@ func TestResolverArtistaDaFaixaNaoEncontrada(t *testing.T) {
 	}
 }
 
-// servidorContadorMB cria um httptest.Server que conta as chamadas a `path` e devolve, para
-// a n-ésima chamada (1-based), `statusPorChamada[n-1]` -- chamadas além do tamanho do slice
-// repetem o ÚLTIMO status da lista (útil para "sempre 503"). Um status 200 devolve um corpo
-// mínimo válido para BuscarDetalhe/MapearDetalhe; qualquer outro status devolve corpo vazio
-// (getMB não olha o corpo de erro). Usado para exercitar o retry de getMB de forma
-// determinística, sem depender da API pública de verdade.
+// servidorContadorMB creates an httptest.Server that counts the calls to `path` and returns, for
+// the n-th call (1-based), `statusPorChamada[n-1]` -- calls beyond the size of the slice repeat the
+// LAST status of the list (useful for "always 503"). A 200 status returns a minimal valid body for
+// BuscarDetalhe/MapearDetalhe; any other status returns an empty body (getMB does not look at the
+// error body). Used to exercise the retry of getMB deterministically, without depending on the real
+// public API.
 func servidorContadorMB(t *testing.T, path string, statusPorChamada []int) (*httptest.Server, *int32) {
 	t.Helper()
 	var chamadas int32
@@ -890,21 +887,21 @@ func servidorContadorMB(t *testing.T, path string, statusPorChamada []int) (*htt
 	return httptest.NewServer(mux), &chamadas
 }
 
-// clientComBackoffFake monta um Client de teste (sem sleep do rate-limiter em si, como
-// novoClientDeTeste) e SUBSTITUI o `dormir` do limitador compartilhado por um no-op: o loop
-// de retry de getMB usa `c.lim.dormirFn` para o backoff entre tentativas (500ms x tentativa
-// -- ver comentário de backoffMB em musicbrainz.go), e sem essa injeção os testes de
-// esgotamento de tentativas dormiriam de verdade (500ms + 1000ms = 1.5s só no caso 2).
+// clientComBackoffFake builds a test Client (without a sleep of the rate limiter itself, as in
+// novoClientDeTeste) and REPLACES the `dormir` of the shared limiter with a no-op: the retry loop of
+// getMB uses `c.lim.dormirFn` for the backoff between attempts (500ms x attempt -- see the comment
+// of backoffMB in musicbrainz.go), and without this injection the tests of attempts exhaustion would
+// really sleep (500ms + 1000ms = 1.5s in the case 2 alone).
 func clientComBackoffFake(mbURL string) *Client {
 	c := novoClientDeTeste(mbURL, "")
 	c.lim.dormir = func(time.Duration) {}
 	return c
 }
 
-// TestGetMBRetrySucessoAposFalhasTransitorias cobre o caso feliz do retry (briefing: API
-// pública do MusicBrainz devolve 503 "currently busy" com frequência real ~1 em 3
-// chamadas): as 2 primeiras tentativas veem 503, a 3ª (dentro de tentativasMB=3) tem
-// sucesso -- getMB deve devolver o resultado da tentativa que deu certo, não um erro.
+// TestGetMBRetrySucessoAposFalhasTransitorias covers the happy case of the retry (the public
+// MusicBrainz API returns 503 "currently busy" with a real frequency of ~1 in 3 calls): the first 2
+// attempts see 503, the 3rd (within tentativasMB=3) succeeds -- getMB must return the result of the
+// attempt that worked, not an error.
 func TestGetMBRetrySucessoAposFalhasTransitorias(t *testing.T) {
 	srv, chamadas := servidorContadorMB(t, "/artist/retry-artist", []int{
 		http.StatusServiceUnavailable, http.StatusServiceUnavailable, http.StatusOK,
@@ -928,9 +925,9 @@ func TestGetMBRetrySucessoAposFalhasTransitorias(t *testing.T) {
 	}
 }
 
-// TestGetMBRetryEsgotaTentativas cobre o caso de 503 persistente: getMB deve tentar
-// exatamente tentativasMB vezes (nunca mais, nunca menos) e devolver erro -- não travar
-// nem entrar em loop infinito.
+// TestGetMBRetryEsgotaTentativas covers the case of a persistent 503: getMB must try exactly
+// tentativasMB times (never more, never less) and return an error -- it must not hang nor enter an
+// infinite loop.
 func TestGetMBRetryEsgotaTentativas(t *testing.T) {
 	srv, chamadas := servidorContadorMB(t, "/artist/sempre-ocupado", []int{http.StatusServiceUnavailable})
 	defer srv.Close()
@@ -951,9 +948,9 @@ func TestGetMBRetryEsgotaTentativas(t *testing.T) {
 	}
 }
 
-// TestGetMB404NaoTentaNovamente confirma que um 404 (recurso realmente inexistente, não
-// instabilidade do servidor) faz getMB devolver provider.ErrNaoEncontrado na PRIMEIRA
-// tentativa, sem retry -- transitorioMB nunca considera 404 transitório.
+// TestGetMB404NaoTentaNovamente confirms that a 404 (a resource that really does not exist, not a
+// server instability) makes getMB return provider.ErrNaoEncontrado on the FIRST attempt, without
+// retry -- transitorioMB never considers a 404 transient.
 func TestGetMB404NaoTentaNovamente(t *testing.T) {
 	srv, chamadas := servidorContadorMB(t, "/artist/inexistente-de-verdade", []int{http.StatusNotFound})
 	defer srv.Close()
@@ -968,10 +965,9 @@ func TestGetMB404NaoTentaNovamente(t *testing.T) {
 	}
 }
 
-// TestGetMBStatusGenericoNaoTentaNovamente confirma que um status != 200/404/502/503/504
-// (ex.: 500) é erro genérico SEM retry -- só os 3 status documentados como instabilidade do
-// servidor público (502/503/504) disparam o retry; qualquer outra coisa é tratada como
-// definitiva.
+// TestGetMBStatusGenericoNaoTentaNovamente confirms that a status != 200/404/502/503/504 (e.g. 500)
+// is a generic error WITHOUT retry -- only the 3 statuses documented as instability of the public
+// server (502/503/504) trigger the retry; anything else is treated as definitive.
 func TestGetMBStatusGenericoNaoTentaNovamente(t *testing.T) {
 	srv, chamadas := servidorContadorMB(t, "/artist/erro-generico", []int{http.StatusInternalServerError})
 	defer srv.Close()
@@ -992,9 +988,9 @@ func TestGetMBStatusGenericoNaoTentaNovamente(t *testing.T) {
 	}
 }
 
-// servidorContadorCAA é o equivalente de servidorContadorMB para o Cover Art Archive --
-// devolve um corpo de imagens válido no status OK, corpo vazio nos demais (o conteúdo do
-// erro não importa para getCAA).
+// servidorContadorCAA is the equivalent of servidorContadorMB for the Cover Art Archive -- it returns
+// a valid images body on the OK status, an empty body on the others (the content of the error does
+// not matter for getCAA).
 func servidorContadorCAA(t *testing.T, path string, statusPorChamada []int) (*httptest.Server, *int32) {
 	t.Helper()
 	var chamadas int32
@@ -1016,20 +1012,19 @@ func servidorContadorCAA(t *testing.T, path string, statusPorChamada []int) (*ht
 	return httptest.NewServer(mux), &chamadas
 }
 
-// clientComBackoffFakeCAA é clientComBackoffFake, mas apontando caaBaseURL (não baseURL)
-// para o servidor fake -- getCAA usa c.caaBaseURL, um host separado de getMB.
+// clientComBackoffFakeCAA is clientComBackoffFake, but pointing caaBaseURL (not baseURL) at the fake
+// server -- getCAA uses c.caaBaseURL, a host separate from getMB.
 func clientComBackoffFakeCAA(caaURL string) *Client {
 	c := novoClientDeTeste("", caaURL)
 	c.lim.dormir = func(time.Duration) {}
 	return c
 }
 
-// TestGetCAARetrySucessoAposFalhasTransitorias cobre o achado real da validação em
-// produção: o redirect do Cover Art Archive pra archive.org (CDN distribuída,
-// dnNNNNNN.ca.archive.org) deu timeout/erro em boa parte das chamadas de uma importação
-// real de 25 álbuns -- diferente do 503 "busy" do MusicBrainz, getCAA tenta de novo em
-// QUALQUER erro (não só 502/503/504), porque a CAA nem sempre falha com um status HTTP
-// (timeout de rede não tem status nenhum).
+// TestGetCAARetrySucessoAposFalhasTransitorias covers the real finding of the production validation:
+// the redirect of the Cover Art Archive to archive.org (a distributed CDN, dnNNNNNN.ca.archive.org)
+// gave a timeout/error in a good part of the calls of a real 25-album import -- unlike the "busy" 503
+// of MusicBrainz, getCAA tries again on ANY error (not only 502/503/504), because the CAA does not
+// always fail with an HTTP status (a network timeout has no status at all).
 func TestGetCAARetrySucessoAposFalhasTransitorias(t *testing.T) {
 	srv, chamadas := servidorContadorCAA(t, "/release-group/rg-retry", []int{
 		http.StatusInternalServerError, http.StatusInternalServerError, http.StatusOK,
@@ -1049,9 +1044,9 @@ func TestGetCAARetrySucessoAposFalhasTransitorias(t *testing.T) {
 	}
 }
 
-// TestGetCAARetryEsgotaTentativas confirma que getCAA não tenta pra sempre: esgota
-// tentativasMB e devolve erro (BuscarArtes propaga; quem chama já trata isso como
-// enriquecimento best-effort, ver internal/enrich).
+// TestGetCAARetryEsgotaTentativas confirms that getCAA does not try forever: it exhausts tentativasMB
+// and returns an error (BuscarArtes propagates it; the caller already treats that as best-effort
+// enrichment, see internal/enrich).
 func TestGetCAARetryEsgotaTentativas(t *testing.T) {
 	srv, chamadas := servidorContadorCAA(t, "/release-group/rg-sempre-500", []int{http.StatusInternalServerError})
 	defer srv.Close()
@@ -1066,14 +1061,13 @@ func TestGetCAARetryEsgotaTentativas(t *testing.T) {
 	}
 }
 
-// servidorFreestylerFake monta o cenário REAL do briefing 0121 (Bomfunk MC's
-// "Freestyler", achado ao validar o 0120 em produção): o release-group
-// "rg-freestyler" tem 2 releases -- "rel-maxi" (status "Official", um
-// maxi-single só com versões remixadas, SEM "Freestyler" puro) e "rel-full"
-// (status diferente de Official, mas com a faixa "Freestyler" exata). Devolve
-// também `chamadasFaixas`, que conta as chamadas aos endpoints /release/{id}
-// (nunca /release-group/{id}) -- usado pelos testes que provam ausência de
-// regressão de custo no caminho sem alvoFaixa.
+// servidorFreestylerFake assembles the REAL scenario of Bomfunk MC's "Freestyler" (found while
+// validating a real production catalog): the release-group "rg-freestyler" has 2 releases --
+// "rel-maxi" (status "Official", a maxi-single with only remixed versions, WITHOUT the pure
+// "Freestyler") and "rel-full" (status other than Official, but with the exact "Freestyler" track).
+// It also returns `chamadasFaixas`, which counts the calls to the /release/{id} endpoints (never
+// /release-group/{id}) -- used by the tests that prove the absence of a cost regression on the path
+// without alvoFaixa.
 func servidorFreestylerFake(t *testing.T) (*httptest.Server, *int32) {
 	t.Helper()
 	var chamadasFaixas int32
@@ -1091,9 +1085,9 @@ func servidorFreestylerFake(t *testing.T) (*httptest.Server, *int32) {
 
 	mux.HandleFunc("/release-group/rg-freestyler", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		// Official listada PRIMEIRO no JSON de propósito -- ordenarReleasesPorPrioridade
-		// não depende da ordem de entrada, só do status; e escolherRelease (caminho
-		// zero-value) já a acharia de qualquer jeito.
+		// Official listed FIRST in the JSON on purpose -- ordenarReleasesPorPrioridade does not depend on
+		// the input order, only on the status; and escolherRelease (zero-value path) would find it
+		// anyway.
 		_, _ = w.Write([]byte(`{
 			"title": "Freestyler",
 			"first-release-date": "2000-01-01",
@@ -1136,11 +1130,11 @@ func servidorFreestylerFake(t *testing.T) (*httptest.Server, *int32) {
 	return httptest.NewServer(mux), &chamadasFaixas
 }
 
-// TestBuscarFaixasComAlvoTentaOutraReleaseQuandoOfficialNaoTemAFaixa é o critério de
-// aceite principal do briefing 0121: a release "Official" (rel-maxi) NÃO tem a
-// faixa "Freestyler" pura (só versões remixadas -- 89.5 de similaridade, abaixo do
-// limiar de 92), mas "rel-full" (mesmo release-group) tem -- BuscarAlbumPorNome com
-// `alvoFaixa` preenchido deve trazer as faixas de rel-full, não as de rel-maxi.
+// TestBuscarFaixasComAlvoTentaOutraReleaseQuandoOfficialNaoTemAFaixa is the main acceptance
+// criterion of this feature: the "Official" release (rel-maxi) does NOT have the pure "Freestyler"
+// track (only remixed versions -- 89.5 of similarity, below the threshold of 92), but "rel-full" (the
+// same release-group) has it -- BuscarAlbumPorNome with `alvoFaixa` filled in must bring the tracks of
+// rel-full, not the ones of rel-maxi.
 func TestBuscarFaixasComAlvoTentaOutraReleaseQuandoOfficialNaoTemAFaixa(t *testing.T) {
 	mb, _ := servidorFreestylerFake(t)
 	defer mb.Close()
@@ -1166,11 +1160,10 @@ func TestBuscarFaixasComAlvoTentaOutraReleaseQuandoOfficialNaoTemAFaixa(t *testi
 	}
 }
 
-// TestBuscarFaixasComAlvoZeroValueMantemUmaSoChamada confirma que o caminho sem
-// alvoFaixa (zero value) preserva o comportamento HISTÓRICO exato: só 1 chamada
-// HTTP ao endpoint de faixas de release, mesmo release-group tendo outra release
-// que conteria "Freestyler" -- ninguém pediu pra procurar, então não procura (zero
-// regressão de custo).
+// TestBuscarFaixasComAlvoZeroValueMantemUmaSoChamada confirms that the path without alvoFaixa (zero
+// value) preserves the exact HISTORICAL behavior: only 1 HTTP call to the release tracks endpoint,
+// even with the same release-group having another release that would contain "Freestyler" -- nobody
+// asked to search, so it does not search (zero cost regression).
 func TestBuscarFaixasComAlvoZeroValueMantemUmaSoChamada(t *testing.T) {
 	mb, chamadas := servidorFreestylerFake(t)
 	defer mb.Close()
@@ -1188,9 +1181,9 @@ func TestBuscarFaixasComAlvoZeroValueMantemUmaSoChamada(t *testing.T) {
 	}
 }
 
-// servidorTetoFake monta um release-group com 17 releases (mais que
-// maxReleasesTentadosPorAlvo=15), NENHUMA contendo a faixa-alvo -- prova que
-// buscarFaixasComAlvo respeita o teto em vez de iterar o release-group inteiro.
+// servidorTetoFake assembles a release-group with 17 releases (more than maxReleasesTentadosPorAlvo=15),
+// NONE of them containing the target track -- it proves that buscarFaixasComAlvo respects the ceiling
+// instead of iterating the whole release-group.
 func servidorTetoFake(t *testing.T) (*httptest.Server, *int32) {
 	t.Helper()
 	var chamadas int32
@@ -1251,9 +1244,9 @@ func servidorTetoFake(t *testing.T) (*httptest.Server, *int32) {
 	return httptest.NewServer(mux), &chamadas
 }
 
-// TestBuscarFaixasComAlvoRespeitaTeto confirma o teto maxReleasesTentadosPorAlvo:
-// com 17 releases no release-group e NENHUMA contendo a faixa-alvo, o provider tenta
-// no máximo maxReleasesTentadosPorAlvo (nunca as 17) antes de degradar.
+// TestBuscarFaixasComAlvoRespeitaTeto confirms the ceiling maxReleasesTentadosPorAlvo: with 17
+// releases in the release-group and NONE containing the target track, the provider tries at most
+// maxReleasesTentadosPorAlvo (never the 17) before degrading.
 func TestBuscarFaixasComAlvoRespeitaTeto(t *testing.T) {
 	mb, chamadas := servidorTetoFake(t)
 	defer mb.Close()
@@ -1272,12 +1265,11 @@ func TestBuscarFaixasComAlvoRespeitaTeto(t *testing.T) {
 	}
 }
 
-// TestBuscarFaixasComAlvoSemFalhaDeRedeNaoFazSegundaPassada confirma o critério de
-// aceite do briefing 0123 de NAO gastar chamada extra à toa: no cenário do 0121
-// (servidorFreestylerFake, nenhuma release falha de rede -- rel-maxi responde 200 sem
-// bater o alvo, rel-full responde 200 e bate), a 2a passada nunca acontece porque
-// `falhadas` fica vazia -- só 2 chamadas HTTP a /release/{id} no total (uma por
-// release, nenhuma repetida).
+// TestBuscarFaixasComAlvoSemFalhaDeRedeNaoFazSegundaPassada confirms the acceptance criterion of NOT
+// spending an extra call for nothing: in the Freestyler scenario (servidorFreestylerFake, no release
+// fails on the network -- rel-maxi answers 200 without matching the target, rel-full answers 200 and
+// matches), the 2nd pass never happens because `falhadas` stays empty -- only 2 HTTP calls to
+// /release/{id} in total (one per release, none repeated).
 func TestBuscarFaixasComAlvoSemFalhaDeRedeNaoFazSegundaPassada(t *testing.T) {
 	mb, chamadasFaixas := servidorFreestylerFake(t)
 	defer mb.Close()
@@ -1305,16 +1297,14 @@ func TestBuscarFaixasComAlvoSemFalhaDeRedeNaoFazSegundaPassada(t *testing.T) {
 	}
 }
 
-// servidorRedeFake monta um release-group ("rg-rede") com 2 releases: "rel-official"
-// (status "Official", SEM a faixa-alvo -- responde 200 sempre, de primeira) e
-// "rel-target" (status "Bootleg", COM a faixa-alvo -- seu status HTTP depende de
-// `statusPorChamada`, indexado pelo NÚMERO da chamada especificamente a
-// /release/rel-target, 1-based; chamadas além do tamanho do slice repetem o último
-// item). Isso permite simular, na MESMA release, "falha nas N primeiras chamadas
-// (esgotando tentativasMB na 1a passada) e sucesso numa chamada posterior (a da 2a
-// passada)" -- o cenário real do briefing 0123 (Bomfunk MC's/Freestyler). Devolve
-// também o contador de chamadas a /release/rel-target, para os testes confirmarem
-// exatamente quantas tentativas físicas aconteceram.
+// servidorRedeFake builds a release-group ("rg-rede") with 2 releases: "rel-official" (status
+// "Official", WITHOUT the target track -- it answers 200 always, first try) and "rel-target" (status
+// "Bootleg", WITH the target track -- its HTTP status depends on `statusPorChamada`, indexed by the
+// NUMBER of the call specifically to /release/rel-target, 1-based; calls beyond the size of the slice
+// repeat the last item). That allows simulating, on the SAME release, "failure in the first N calls
+// (exhausting tentativasMB in the 1st pass) and success in a later call (the one of the 2nd pass)" --
+// the real scenario of Bomfunk MC's/Freestyler. It also returns the call counter to
+// /release/rel-target, so the tests can confirm exactly how many physical attempts happened.
 func servidorRedeFake(t *testing.T, statusPorChamadaAlvo []int) (*httptest.Server, *int32) {
 	t.Helper()
 	var chamadasAlvo int32
@@ -1376,17 +1366,16 @@ func servidorRedeFake(t *testing.T, statusPorChamadaAlvo []int) (*httptest.Serve
 	return httptest.NewServer(mux), &chamadasAlvo
 }
 
-// TestBuscarFaixasComAlvoSegundaPassadaResgataReleaseAposFalhaTransitoria é o critério
-// de aceite principal do briefing 0123: "rel-target" (a release que contém a
-// faixa-alvo) esgota as tentativasMB=3 tentativas da 1a passada (503 em todas), mas
-// responde 200 na 1a chamada da 2a passada -- exatamente o cenário real (Bomfunk
-// MC's/Freestyler) que motivou o briefing. Antes da correção, essa release era
-// descartada para sempre na 1a falha e o resultado final NUNCA bateria o alvo,
-// mesmo a release certa existindo e respondendo pouco depois.
+// TestBuscarFaixasComAlvoSegundaPassadaResgataReleaseAposFalhaTransitoria is the main acceptance
+// criterion of the second-pass behavior: "rel-target" (the release that contains the target track)
+// exhausts the tentativasMB=3 attempts of the 1st pass (503 on all of them), but answers 200 on the
+// 1st call of the 2nd pass -- exactly the real scenario (Bomfunk MC's/Freestyler) that motivated it.
+// Before the correction, that release was discarded forever on the 1st failure and the final result
+// would NEVER match the target, even with the right release existing and answering shortly after.
 func TestBuscarFaixasComAlvoSegundaPassadaResgataReleaseAposFalhaTransitoria(t *testing.T) {
 	mb, chamadasAlvo := servidorRedeFake(t, []int{
-		http.StatusServiceUnavailable, http.StatusServiceUnavailable, http.StatusServiceUnavailable, // esgota a 1a passada
-		http.StatusOK, // sucesso logo na 1a tentativa da 2a passada
+		http.StatusServiceUnavailable, http.StatusServiceUnavailable, http.StatusServiceUnavailable, // exhausts the 1st pass
+		http.StatusOK, // success on the 1st attempt of the 2nd pass
 	})
 	defer mb.Close()
 	c := clientComBackoffFake(mb.URL)
@@ -1413,11 +1402,10 @@ func TestBuscarFaixasComAlvoSegundaPassadaResgataReleaseAposFalhaTransitoria(t *
 	}
 }
 
-// TestBuscarFaixasComAlvoFalhaPersistenteNasDuasPassadasDegradaSemPanico cobre o pior
-// caso: "rel-target" falha em TODAS as tentativas de AMBAS as passadas (503
-// persistente demais -- raro, mas o briefing exige não travar nem entrar em loop
-// infinito). O resultado final deve degradar exatamente como hoje: usa a última
-// release que respondeu com sucesso (rel-official), sem tentar uma 3a passada.
+// TestBuscarFaixasComAlvoFalhaPersistenteNasDuasPassadasDegradaSemPanico covers the worst case:
+// "rel-target" fails in ALL the attempts of BOTH passes (too persistent a 503 -- rare, but it must not
+// hang nor enter an infinite loop). The final result must degrade exactly as today: it uses the last
+// release that answered successfully (rel-official), without trying a 3rd pass.
 func TestBuscarFaixasComAlvoFalhaPersistenteNasDuasPassadasDegradaSemPanico(t *testing.T) {
 	mb, chamadasAlvo := servidorRedeFake(t, []int{http.StatusServiceUnavailable})
 	defer mb.Close()
@@ -1434,18 +1422,18 @@ func TestBuscarFaixasComAlvoFalhaPersistenteNasDuasPassadasDegradaSemPanico(t *t
 	if len(album.Faixas) != 1 || album.Faixas[0].Title != "Faixa Sem Relacao" {
 		t.Fatalf("faixas = %+v, esperava degradar para as de rel-official (unica release que respondeu com sucesso)", album.Faixas)
 	}
-	// tentativasMB=3 por passada, 2 passadas (1a com todos os ids, 2a só com
-	// rel-target, que e' o unico que falhou de rede) -- nunca uma 3a.
+	// tentativasMB=3 per pass, 2 passes (the 1st with all the ids, the 2nd only with rel-target, which
+	// is the only one that failed on the network) -- never a 3rd.
 	if got := atomic.LoadInt32(chamadasAlvo); got != int32(2*tentativasMB) {
 		t.Fatalf("chamadas a /release/rel-target = %d, esperava exatamente %d (tentativasMB x 2 passadas, sem 3a passada)", got, 2*tentativasMB)
 	}
 }
 
-// servidorRecordingNaoOfficialFake cobre o gap do caminho PRECISO (BuscarAlbumDaFaixa):
-// o recording "rec-y-precisa" pertence à release "rel-y-bootleg", que NÃO é a
-// "Official" do release-group "rg-y" (essa é "rel-y-official", sem a faixa) --
-// prova que, ao repassar AlvoFaixaAlbum{RecordingMBID}, o provider tenta a release
-// REAL do recording em vez de travar na "Official" errada.
+// servidorRecordingNaoOfficialFake covers the gap of the PRECISE path (BuscarAlbumDaFaixa): the
+// recording "rec-y-precisa" belongs to the release "rel-y-bootleg", which is NOT the "Official" one of
+// the release-group "rg-y" (that one is "rel-y-official", without the track) -- it proves that, by
+// forwarding AlvoFaixaAlbum{RecordingMBID}, the provider tries the REAL release of the recording
+// instead of getting stuck on the wrong "Official" one.
 func servidorRecordingNaoOfficialFake(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -1495,11 +1483,11 @@ func servidorRecordingNaoOfficialFake(t *testing.T) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
-// TestBuscarAlbumDaFaixaTentaReleaseQueContemORecordingQuandoNaoEhOfficial cobre o
-// 2º critério de aceite do briefing 0121: o caminho PRECISO (BuscarAlbumDaFaixa)
-// agora acha a faixa mesmo quando ela mora numa release que NÃO é a "Official" do
-// release-group -- antes desta correção, montarAlbum (sem alvoFaixa) escolheria
-// sempre rel-y-official via escolherRelease, e a faixa nunca seria encontrada.
+// TestBuscarAlbumDaFaixaTentaReleaseQueContemORecordingQuandoNaoEhOfficial covers the 2nd
+// acceptance criterion: the PRECISE path (BuscarAlbumDaFaixa) now finds the track even when it lives
+// in a release that is NOT the "Official" one of the release-group -- before this correction,
+// montarAlbum (without alvoFaixa) would always choose rel-y-official through escolherRelease, and the
+// track would never be found.
 func TestBuscarAlbumDaFaixaTentaReleaseQueContemORecordingQuandoNaoEhOfficial(t *testing.T) {
 	mb := servidorRecordingNaoOfficialFake(t)
 	defer mb.Close()
@@ -1524,12 +1512,12 @@ func TestBuscarAlbumDaFaixaTentaReleaseQueContemORecordingQuandoNaoEhOfficial(t 
 	}
 }
 
-// TestReleaseContemFaixaAlvoGateDeDuracaoRejeitaDivergencia cobre o gate de duração
-// da rodada 2 (briefing 0121 §8): a release tem uma faixa cujo TÍTULO bate o
-// suficiente para passar do limiar (mesmo texto do alvo), mas a duração diverge
-// muito mais do que a tolerância (matching.ToleranciaDuracaoSegundos, 3s) -- o gate
-// deve REJEITAR (false) mesmo com o título batendo, porque é uma trava de segurança
-// adicional, nunca mais permissiva do que o critério de título sozinho.
+// TestReleaseContemFaixaAlvoGateDeDuracaoRejeitaDivergencia covers the duration gate of round 2: the
+// release has a track whose TITLE matches enough to pass the threshold (the same text as the target),
+// but the duration diverges much more than the tolerance
+// (matching.ToleranciaDuracaoSegundos, 3s) -- the gate must REJECT (false) even with the title
+// matching, because it is an additional safety lock, never more lenient than the title criterion
+// alone.
 func TestReleaseContemFaixaAlvoGateDeDuracaoRejeitaDivergencia(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Song Title", MBID: "rec-divergente", TrackNumber: 1, DuracaoMs: 200_000},
@@ -1541,27 +1529,25 @@ func TestReleaseContemFaixaAlvoGateDeDuracaoRejeitaDivergencia(t *testing.T) {
 	}
 }
 
-// TestReleaseContemFaixaAlvoGateDeDuracaoPuladoQuandoDesconhecida confirma que o
-// gate de duração é PULADO (sem regressão) quando qualquer um dos lados não informa
-// duração conhecida (0) -- mesmo cenário de título/duração divergente do teste
-// anterior, mas com AlvoFaixaAlbum.DuracaoMs == 0: o resultado deve ser idêntico ao
-// comportamento de antes desta mudança (aceita só por título).
+// TestReleaseContemFaixaAlvoGateDeDuracaoPuladoQuandoDesconhecida confirms that the duration gate is
+// SKIPPED (without regression) when either side does not report a known duration (0) -- the same
+// scenario of diverging title/duration as the previous test, but with AlvoFaixaAlbum.DuracaoMs == 0:
+// the result must be identical to the behavior from before this change (accepted by title alone).
 func TestReleaseContemFaixaAlvoGateDeDuracaoPuladoQuandoDesconhecida(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Song Title", MBID: "rec-divergente", TrackNumber: 1, DuracaoMs: 200_000},
 	}
-	alvo := provider.AlvoFaixaAlbum{FaixaTitulo: "Song Title", DuracaoMs: 0} // duracao do arquivo local desconhecida
+	alvo := provider.AlvoFaixaAlbum{FaixaTitulo: "Song Title", DuracaoMs: 0} // local file duration unknown
 
 	if !releaseContemFaixaAlvo(faixas, alvo) {
 		t.Fatal("releaseContemFaixaAlvo = false, esperava true (duracao desconhecida de um dos lados deve pular o gate, sem regressao)")
 	}
 }
 
-// TestReleaseContemFaixaAlvoDesempataPorDuracaoQuandoTituloEmpata cobre o caso
-// real do briefing 0124 (Bomfunk MC's/Freestyler): a release tem DUAS faixas com
-// o título EXATO do alvo (empate no maior score) -- uma com duração compatível
-// com o alvo, outra não. A duração deve desempatar para a faixa compatível, sem
-// rejeitar a release inteira.
+// TestReleaseContemFaixaAlvoDesempataPorDuracaoQuandoTituloEmpata covers the real case of the
+// Freestyler scenario: the release has TWO tracks with the EXACT title of the target (a tie on the
+// highest score) -- one with a duration compatible with the target, the other not. The duration must
+// break the tie towards the compatible track, without rejecting the whole release.
 func TestReleaseContemFaixaAlvoDesempataPorDuracaoQuandoTituloEmpata(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Freestyler", MBID: "rec-errada", TrackNumber: 1, DuracaoMs: 247_000},
@@ -1575,10 +1561,9 @@ func TestReleaseContemFaixaAlvoDesempataPorDuracaoQuandoTituloEmpata(t *testing.
 	}
 }
 
-// TestReleaseContemFaixaAlvoNaoDesempataQuandoDuracaoDoAlvoDesconhecida cobre o
-// mesmo empate de título do teste anterior, mas com a duração do alvo
-// desconhecida (0) -- sem sinal para decidir entre as duas faixas "Freestyler",
-// deve rejeitar (comportamento seguro, sem regressao).
+// TestReleaseContemFaixaAlvoNaoDesempataQuandoDuracaoDoAlvoDesconhecida covers the same title tie as
+// the previous test, but with the duration of the target unknown (0) -- without a signal to decide
+// between the two "Freestyler" tracks, it must reject (safe behavior, without regression).
 func TestReleaseContemFaixaAlvoNaoDesempataQuandoDuracaoDoAlvoDesconhecida(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Freestyler", MBID: "rec-errada", TrackNumber: 1, DuracaoMs: 247_000},
@@ -1591,9 +1576,9 @@ func TestReleaseContemFaixaAlvoNaoDesempataQuandoDuracaoDoAlvoDesconhecida(t *te
 	}
 }
 
-// TestReleaseContemFaixaAlvoNaoDesempataQuandoAmbasCompativeis cobre o empate de
-// título com AMBAS as faixas dentro da tolerância de duração -- continua
-// ambíguo (empate também na duração), nunca escolhe arbitrariamente.
+// TestReleaseContemFaixaAlvoNaoDesempataQuandoAmbasCompativeis covers the title tie with BOTH tracks
+// inside the duration tolerance -- it stays ambiguous (a tie on the duration as well), it never
+// chooses arbitrarily.
 func TestReleaseContemFaixaAlvoNaoDesempataQuandoAmbasCompativeis(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Freestyler", MBID: "rec-a", TrackNumber: 1, DuracaoMs: 306_100},
@@ -1606,16 +1591,16 @@ func TestReleaseContemFaixaAlvoNaoDesempataQuandoAmbasCompativeis(t *testing.T) 
 	}
 }
 
-// TestBuscarAlbumPorTitulo cobre o caminho de COMPILAÇÃO/TRILHA (briefing 0136):
-// resolve o álbum pelo título (dentre homônimos de artistas diferentes), confirma a
-// faixa-alvo na tracklist e devolve o artist-credit da fonte.
+// TestBuscarAlbumPorTitulo covers the COMPILATION/SOUNDTRACK path: it resolves the album by the title
+// (among homonyms of different artists), confirms the target track in the tracklist and returns the
+// artist-credit of the source.
 func TestBuscarAlbumPorTitulo(t *testing.T) {
 	mb := servidorMBFake(t)
 	defer mb.Close()
 	c := novoClientDeTeste(mb.URL, "")
 
-	// "Album One (Deluxe Edition)" é o nome que a TAG traz; o release-group canônico
-	// é "Album One" -- a normalização do briefing 0136 é o que faz esse caminho casar.
+	// "Album One (Deluxe Edition)" is the name the TAG brings; the canonical release-group is "Album
+	// One" -- the normalization is what makes this path match.
 	ac, achou, err := c.BuscarAlbumPorTitulo(context.Background(), "Album One (Deluxe Edition)", provider.AlvoFaixaAlbum{FaixaTitulo: "Track A"}, nil)
 	if err != nil {
 		t.Fatalf("BuscarAlbumPorTitulo: %v", err)
@@ -1631,9 +1616,9 @@ func TestBuscarAlbumPorTitulo(t *testing.T) {
 	}
 }
 
-// TestBuscarAlbumPorTituloSemFaixaNaTracklist cobre a exigência de EVIDÊNCIA: um
-// release-group com o título certo mas SEM a faixa-alvo não é aceito (o candidato
-// homônimo rg-9 é montado e descartado, e o resultado é ok=false).
+// TestBuscarAlbumPorTituloSemFaixaNaTracklist covers the EVIDENCE requirement: a release-group with
+// the right title but WITHOUT the target track is not accepted (the homonym candidate rg-9 is
+// assembled and discarded, and the result is ok=false).
 func TestBuscarAlbumPorTituloSemFaixaNaTracklist(t *testing.T) {
 	mb := servidorMBFake(t)
 	defer mb.Close()
@@ -1646,8 +1631,8 @@ func TestBuscarAlbumPorTituloSemFaixaNaTracklist(t *testing.T) {
 	}
 }
 
-// TestBuscarAlbumPorNomeNormalizaEdicao cobre a normalização do briefing 0136 no
-// caminho por ARTISTA: a tag traz "(Deluxe Edition)" e o release-group canônico não.
+// TestBuscarAlbumPorNomeNormalizaEdicao covers the normalization on the path by ARTIST: the tag
+// brings "(Deluxe Edition)" and the canonical release-group does not.
 func TestBuscarAlbumPorNomeNormalizaEdicao(t *testing.T) {
 	mb := servidorMBFake(t)
 	defer mb.Close()
@@ -1662,11 +1647,10 @@ func TestBuscarAlbumPorNomeNormalizaEdicao(t *testing.T) {
 	}
 }
 
-// TestBuscarAlbumPorTituloEscopaPorArtista cobre o achado de produção do briefing
-// 0138: a busca por título sem artista devolvia homônimos de OUTROS artistas e o
-// álbum certo ficava fora do topo (caso real: "Rio (Collector's Edition)" trazia dez
-// release-groups chamados "Collector's Edition"). A cláusula vira
-// `releasegroup:"<normalizado>" AND artistname:"<álbum-artista>"`.
+// TestBuscarAlbumPorTituloEscopaPorArtista covers a production finding: the search by title without
+// the artist returned homonyms of OTHER artists and the right album stayed out of the top (a real
+// case: "Rio (Collector's Edition)" brought ten release-groups called "Collector's Edition"). The
+// clause becomes `releasegroup:"<normalized>" AND artistname:"<album-artist>"`.
 func TestBuscarAlbumPorTituloEscopaPorArtista(t *testing.T) {
 	var queries []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1709,9 +1693,9 @@ func TestBuscarAlbumPorTituloEscopaPorArtista(t *testing.T) {
 	_ = ac
 }
 
-// TestBuscarAlbumPorTituloSemArtistaEmCompilacao confirma que compilação NÃO
-// escopa por artista: o credit genérico ("Various Artists") não identifica nada e o
-// título é o único sinal (o caminho que o briefing 0136 criou para trilha).
+// TestBuscarAlbumPorTituloSemArtistaEmCompilacao confirms that a compilation is NOT scoped by
+// artist: the generic credit ("Various Artists") identifies nothing and the title is the only signal
+// (the path created for soundtracks).
 func TestBuscarAlbumPorTituloSemArtistaEmCompilacao(t *testing.T) {
 	var queries []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1724,7 +1708,7 @@ func TestBuscarAlbumPorTituloSemArtistaEmCompilacao(t *testing.T) {
 	defer srv.Close()
 
 	c := novoClientDeTeste(srv.URL, "")
-	// A tracklist não é o alvo aqui: o teste só olha a query enviada.
+	// The tracklist is not the target here: the test only looks at the query sent.
 	_, _, _ = c.BuscarAlbumPorTitulo(context.Background(), "Twilight Original Motion Picture Soundtrack (International Special Edition)",
 		provider.AlvoFaixaAlbum{FaixaTitulo: "Decode", ArtistaNome: "Разные исполнители"}, nil)
 	if len(queries) == 0 {
@@ -1735,9 +1719,9 @@ func TestBuscarAlbumPorTituloSemArtistaEmCompilacao(t *testing.T) {
 	}
 }
 
-// TestBuscarAlbumPorTituloCaiParaBuscaSemArtista cobre a degradação: quando a busca
-// escopada por artista não devolve nada (o credit da fonte difere da tag), a busca
-// repetida sem o artista ainda resolve o álbum -- sem erro e sem perder o caso.
+// TestBuscarAlbumPorTituloCaiParaBuscaSemArtista covers the degradation: when the search scoped by
+// artist returns nothing (the credit of the source differs from the tag), the search repeated without
+// the artist still resolves the album -- without an error and without losing the case.
 func TestBuscarAlbumPorTituloCaiParaBuscaSemArtista(t *testing.T) {
 	var queries []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1767,9 +1751,9 @@ func TestBuscarAlbumPorTituloCaiParaBuscaSemArtista(t *testing.T) {
 	}
 }
 
-// TestReleaseContemFaixaAlvoDesempataPorDisco cobre o desempate novo (briefing
-// 0138): a mesma faixa aparece no disco 1 e no disco 2 de uma reedição, com títulos
-// idênticos; a posição (disco, faixa) do arquivo escolhe a certa.
+// TestReleaseContemFaixaAlvoDesempataPorDisco covers the new tiebreak: the same track appears on disc
+// 1 and on disc 2 of a reissue, with identical titles; the position (disc, track) of the file chooses
+// the right one.
 func TestReleaseContemFaixaAlvoDesempataPorDisco(t *testing.T) {
 	faixas := []provider.FaixaExterna{
 		{Title: "Pale Shelter", MBID: "rec-d1", TrackNumber: 2, DiscNumber: 1, DiscTotal: 2, DuracaoMs: 261_000},
@@ -1779,8 +1763,8 @@ func TestReleaseContemFaixaAlvoDesempataPorDisco(t *testing.T) {
 	if !releaseContemFaixaAlvo(faixas, alvo) {
 		t.Fatal("releaseContemFaixaAlvo = false, esperava true (a posicao disco 2 / faixa 1 existe)")
 	}
-	// Sem a posição, o empate continua sem solução: rejeita (nunca aplica um
-	// "parecido").
+	// Without the position, the tie stays unresolved: it rejects (it never applies a "similar
+	// one").
 	if releaseContemFaixaAlvo(faixas, provider.AlvoFaixaAlbum{FaixaTitulo: "Pale Shelter"}) {
 		t.Fatal("releaseContemFaixaAlvo = true sem posicao, esperava false (empate ambiguo)")
 	}

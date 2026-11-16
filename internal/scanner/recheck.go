@@ -1,17 +1,16 @@
 package scanner
 
-// recheck.go implementa dois caminhos de entrada NOVOS e ISOLADOS do scan de
-// datasource inteiro (briefing 0088, menu Gerenciar > "Verificar Atualizações
-// de Arquivos"): (1) RecheckEntityFiles força re-hash/mediainfo de uma LISTA
-// EXPLÍCITA de paths (os media_file de UMA entity), ignorando de propósito o
-// short-circuit de mediaFileInalteradoPorPath (scan incremental, briefing
-// 0064) — ação pontual do dono, não o job periódico; (2) RefreshLocalAsset
-// reconfere a pasta de cada media_file de uma entity JÁ CATALOGADA em busca
-// de um pôster local novo/atualizado, cobrindo o gap de descobrirPoster só
-// rodar dentro de criarEntity (match.go) na 1ª varredura daquela pasta.
-// Nenhum dos dois faz WalkDir nem toca no ciclo de vida (missing/last_scan)
-// do datasource — Start/executarScan continuam 100% incrementais, sem
-// nenhuma mudança de comportamento.
+// recheck.go implements two NEW and ISOLATED entry points of the whole-datasource
+// scan (Manage menu > "Verificar Atualizações de Arquivos"): (1)
+// RecheckEntityFiles forces the re-hash/mediainfo of an EXPLICIT LIST of paths
+// (the media_file of ONE entity), deliberately ignoring the
+// mediaFileInalteradoPorPath short-circuit (incremental scan) — a one-off action
+// of the owner, not the periodic job; (2) RefreshLocalAsset rechecks the folder of
+// each media_file of an ALREADY CATALOGED entity looking for a new/updated local
+// poster, covering the gap that descobrirPoster only runs inside criarEntity
+// (match.go) on the first walk of that folder. Neither of them does WalkDir nor
+// touches the lifecycle (missing/last_scan) of the datasource -- Start/executarScan
+// stay 100% incremental, with no behavior change.
 
 import (
 	"context"
@@ -26,17 +25,17 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/library"
 )
 
-// RecheckEntityFiles força o re-hash/mediainfo de cada path em `paths` —
-// media_file JÁ CONHECIDOS (por path) — mesmo quando mtime/size não mudaram
-// desde a última vez (ignora DE PROPÓSITO o short-circuit do scan
-// incremental). `source` é a library_source de origem desses arquivos
-// (resolvida pelo CHAMADOR, ver internal/server/refresh_files.go — mesmo
-// padrão de resolução usado em internal/server/retroativo.go), usada só para
-// saber se o ffprobe está habilitado e para carimbar library_source_id/
-// last_seen igual ao scan normal. Path que sumiu do disco OU cujo media_file
-// já não existe (sumiu entre a listagem do chamador e esta chamada) é
-// ignorado — best-effort, não é erro. Devolve quantos paths foram
-// efetivamente re-hasheados.
+// RecheckEntityFiles forces the re-hash/mediainfo of each path in `paths` —
+// media_file ALREADY KNOWN (by path) — even when mtime/size have not changed
+// since the last time (it ON PURPOSE ignores the incremental scan
+// short-circuit). `source` is the library_source these files came from (resolved
+// by the CALLER, see internal/server/refresh_files.go — the same resolution
+// pattern used in internal/server/retroativo.go), used only to know whether
+// ffprobe is enabled and to stamp library_source_id/last_seen like the normal
+// scan. A path that disappeared from disk OR whose media_file no longer exists
+// (it disappeared between the caller's listing and this call) is ignored —
+// best-effort, it is not an error. It returns how many paths were effectively
+// re-hashed.
 func (m *Manager) RecheckEntityFiles(ctx context.Context, source library.Source, paths []string) (int, error) {
 	r := &scanRun{
 		m:          m,
@@ -57,14 +56,14 @@ func (m *Manager) RecheckEntityFiles(ctx context.Context, source library.Source,
 	return rechecked, nil
 }
 
-// recheckPath re-hasheia UM path já conhecido (media_file existente),
-// atualizando a linha via AtualizarMediaFileConteudoMudou — a MESMA query que
-// o scan normal usa quando o conteúdo de um path já-conhecido muda
-// (atualizarConteudoMudou, match.go), reaproveitada aqui sem duplicar a
-// gravação. Preserva edition/part_no/match_confidence já gravados — só o
-// recheck de hash/mediainfo foi pedido, não uma nova resolução de match.
-// ok=false sem erro quando o path não tem media_file conhecido ou sumiu do
-// disco (best-effort).
+// recheckPath re-hashes ONE already known path (existing media_file), updating the
+// row via AtualizarMediaFileConteudoMudou — the SAME query the normal scan uses
+// when the content of an already-known path changes (atualizarConteudoMudou,
+// match.go), reused here without duplicating the write. It preserves
+// edition/part_no/match_confidence already stored — only the recheck of
+// hash/mediainfo was requested, not a new match resolution. ok=false without an
+// error when the path has no known media_file or disappeared from disk
+// (best-effort).
 func (r *scanRun) recheckPath(ctx context.Context, path string) (bool, error) {
 	existente, err := sqlcgen.New(r.m.db.Read).ObterMediaFilePorPath(ctx, path)
 	if err != nil {
@@ -104,19 +103,19 @@ func (r *scanRun) recheckPath(ctx context.Context, path string) (bool, error) {
 	return true, nil
 }
 
-// RefreshLocalAsset reconfere a pasta de cada path em `paths` (os media_file
-// de uma entity JÁ CATALOGADA) em busca de um pôster local — MESMO critério/
-// nomes de arquivo de descobrirPoster (poster.jpg/folder.jpg no diretório da
-// obra + <nome-do-arquivo>-poster.jpg/.png) — e faz UPSERT do asset
-// kind=poster origin=local: cria se a entity ainda não tem um; atualiza
-// path_or_uri se o arquivo local encontrado mudou. NÃO mexe em
-// is_principal/precedência — só garante que a linha origin='local' reflita o
-// que está no disco (briefing 0088). Para o PRIMEIRO path cuja pasta tem um
-// pôster local — mesma semântica "primeiro vence" que criarEntity (match.go)
-// já usa na 1ª varredura, aqui só reaplicada a uma entity que já existia.
-// Devolve found=true quando um asset foi criado OU teve o path_or_uri
-// atualizado; found=false quando não achou nada novo (sem pôster local em
-// nenhuma pasta, ou o asset já existente já reflete o disco).
+// RefreshLocalAsset rechecks the folder of each path in `paths` (the media_file of
+// an ALREADY CATALOGED entity) looking for a local poster — the SAME criteria/file
+// names of descobrirPoster (poster.jpg/folder.jpg in the directory of the work +
+// <file-name>-poster.jpg/.png) — and makes an UPSERT of the asset kind=poster
+// origin=local: it creates it if the entity does not have one yet; it updates
+// path_or_uri if the local file found changed. It does NOT touch
+// is_principal/precedence — it only guarantees that the origin='local' row reflects
+// what is on disk. For the FIRST path whose folder has a local poster — the same
+// "first wins" semantics that criarEntity (match.go) already uses on the first walk,
+// here only reapplied to an entity that already existed. It returns found=true when
+// an asset was created OR had its path_or_uri updated; found=false when it found
+// nothing new (no local poster in any folder, or the existing asset already reflects
+// the disk).
 func (m *Manager) RefreshLocalAsset(ctx context.Context, entityID string, paths []string) (bool, error) {
 	var encontrado string
 	for _, p := range paths {
@@ -140,11 +139,11 @@ func (m *Manager) RefreshLocalAsset(ctx context.Context, entityID string, paths 
 	escrita := sqlcgen.New(m.db.Write)
 	if err == nil {
 		if existente.PathOrUri == encontrado {
-			return false, nil // já reflete o disco, nada a fazer
+			return false, nil // already reflects the disk, nothing to do
 		}
 		if err := escrita.AtualizarAssetPath(ctx, sqlcgen.AtualizarAssetPathParams{
 			PathOrUri: encontrado,
-			MetaJson:  existente.MetaJson, // preserva a flag `preferred` já gravada
+			MetaJson:  existente.MetaJson, // preserves the `preferred` flag already stored
 			ID:        existente.ID,
 		}); err != nil {
 			return false, err

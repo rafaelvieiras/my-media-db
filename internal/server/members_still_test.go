@@ -4,16 +4,18 @@ import (
 	"testing"
 )
 
-// members_still_test cobre o STILL do episodio (0042): a URL crua do frame 16:9 vive no
-// extension_data core.tv@1 (still_url) e sai como `still_url` no card de episodio (via
-// /members e /episodes) e no detalhe (ResolvedEntity) -- SO para episodio COM still.
-// Ausente para episodio sem still e para nao-episodio. Servido pelo image proxy no front.
+// members_still_test covers the episode STILL: the raw URL of the 16:9 frame lives in
+// the extension_data core.tv@1 (still_url) and comes out as `still_url` in the episode
+// card (via /members and /episodes) and in the detail (ResolvedEntity) -- ONLY for an
+// episode WITH a still. Absent for an episode without a still and for a non-episode.
+// Served by the image proxy in the front end.
 
 const nsStillE5 = `{"core.tv@1":{"numbering":{"official":{"season":1,"number":5}},` +
 	`"still_url":"https://artworks.thetvdb.com/banners/episodes/72514/5.jpg"}}`
 
-// TestStillNoCardDeEpisodio: /members traz still_url no card do episodio COM still e nil
-// no do episodio SEM still -- mesma anotacao (uma leitura) do numbering.
+// TestStillNoCardDeEpisodio: /members brings still_url in the card of the episode WITH a
+// still and nil in the one of the episode WITHOUT a still -- same annotation (one read)
+// as the numbering.
 func TestStillNoCardDeEpisodio(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "se1", "season", "Temporada 1")
@@ -40,8 +42,8 @@ func TestStillNoCardDeEpisodio(t *testing.T) {
 	}
 }
 
-// TestStillAusenteParaNaoEpisodio: cards de TEMPORADA (membros da serie) nunca carregam
-// still_url -- so o card de episodio recebe a anotacao.
+// TestStillAusenteParaNaoEpisodio: SEASON cards (members of the series) never carry
+// still_url -- only the episode card gets the annotation.
 func TestStillAusenteParaNaoEpisodio(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "s1", "tv", "Serie")
@@ -56,8 +58,8 @@ func TestStillAusenteParaNaoEpisodio(t *testing.T) {
 	}
 }
 
-// TestStillNoEndpointEpisodes (0040): o endpoint de episodios agrupados tambem expoe o
-// still_url no card -- a mesma anotacao reusada pela leitura do namespace.
+// TestStillNoEndpointEpisodes: the grouped episodes endpoint also exposes the
+// still_url in the card -- the same annotation reused by the namespace read.
 func TestStillNoEndpointEpisodes(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "s1", "tv", "Serie")
@@ -83,8 +85,8 @@ func TestStillNoEndpointEpisodes(t *testing.T) {
 	}
 }
 
-// TestStillNoDetalheDoEpisodio: o detalhe (ResolvedEntity) do episodio COM still traz
-// still_url; um nao-episodio (temporada) fica sem still_url (nil).
+// TestStillNoDetalheDoEpisodio: the detail (ResolvedEntity) of the episode WITH a still
+// brings still_url; a non-episode (season) stays without still_url (nil).
 func TestStillNoDetalheDoEpisodio(t *testing.T) {
 	h, d := setupEntitiesServer(t)
 	semearEntity(t, d, "e5", "episode", "Ep com still")

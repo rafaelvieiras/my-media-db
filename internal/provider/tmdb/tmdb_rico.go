@@ -9,29 +9,31 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// Este arquivo concentra o DETALHE RICO do TMDB (briefing 0022): as structs dos
-// blocos vindos do append_to_response ampliado e o mapeamento desses blocos para o
-// mapa CANÔNICO (nossos nomes de campo). É PURO (sem rede) — roda dentro de
-// MapearDetalhe, em tempo de leitura. Os campos TRADUZÍVEIS (tagline, keywords) saem
-// como `map[idioma]valor`; os NEUTROS (runtime, certification_by_region, backdrop_url,
-// videos, collection, similar, vote_average, external_links) como escalares/listas.
-// SEM elenco/equipe (MD6) — decisão do dono, fora desta versão.
+// This file concentrates the RICH DETAIL of TMDB: the structs of the blocks coming
+// from the widened append_to_response and the mapping of those blocks to the
+// CANONICAL map (our field names). It is PURE (no network) -- it runs inside
+// MapearDetalhe, at read time. The TRANSLATABLE fields (tagline, keywords) come out
+// as `map[language]value`; the NEUTRAL ones (runtime, certification_by_region,
+// backdrop_url, videos, collection, similar, vote_average, external_links) as
+// scalars/lists. WITHOUT cast/crew (MD6) -- the owner's decision, out of this
+// version.
 
-// colecaoTMDB é o belongs_to_collection do detalhe de filme (a coleção a que ele
-// pertence, ≠ playlist). Só filmes têm; séries vêm sem.
+// colecaoTMDB is the belongs_to_collection of the movie detail (the collection it
+// belongs to, ≠ playlist). Only movies have it; series come without it.
 type colecaoTMDB struct {
 	ID         int64  `json:"id"`
 	Name       string `json:"name"`
 	PosterPath string `json:"poster_path"`
 }
 
-// videosTMDB envelopa a lista de vídeos (trailer/clip/teaser) do append `videos`.
+// videosTMDB wraps the list of videos (trailer/clip/teaser) of the `videos` append.
 type videosTMDB struct {
 	Results []videoTMDB `json:"results"`
 }
 
-// videoTMDB é um vídeo da fonte: nome, chave no provedor (YT/Vimeo), site, tipo
-// (Trailer|Clip|Teaser…) e se é oficial. iso_639_1 é o idioma do vídeo (informativo).
+// videoTMDB is a video from the source: name, key in the provider (YT/Vimeo), site,
+// type (Trailer|Clip|Teaser…) and whether it is official. iso_639_1 is the language
+// of the video (informative).
 type videoTMDB struct {
 	Name     string `json:"name"`
 	Key      string `json:"key"`
@@ -41,16 +43,17 @@ type videoTMDB struct {
 	Iso639   string `json:"iso_639_1"`
 }
 
-// keywordsTMDB envelopa as palavras-chave do append `keywords`. O TMDB usa `keywords`
-// para filme e `results` para série — ambos são listas {id,name}. As keywords NÃO são
-// localizadas pelo TMDB (vêm num idioma só), então o canônico as ancora sob o idioma
-// original do item (o resolver do detalhe cai nelas pela cadeia/último recurso).
+// keywordsTMDB wraps the keywords of the `keywords` append. TMDB uses `keywords` for
+// a movie and `results` for a series -- both are lists {id,name}. The keywords are NOT
+// localized by TMDB (they come in a single language), so the canonical anchors them
+// under the original language of the item (the detail resolver falls back to them
+// through the chain/last resort).
 type keywordsTMDB struct {
-	Keywords []generoTMDB `json:"keywords"` // filme
-	Results  []generoTMDB `json:"results"`  // série
+	Keywords []generoTMDB `json:"keywords"` // movie
+	Results  []generoTMDB `json:"results"`  // series
 }
 
-// itens devolve a lista de keywords, seja de filme (`keywords`) ou série (`results`).
+// itens returns the list of keywords, whether from a movie (`keywords`) or a series (`results`).
 func (k keywordsTMDB) itens() []generoTMDB {
 	if len(k.Keywords) > 0 {
 		return k.Keywords
@@ -58,49 +61,49 @@ func (k keywordsTMDB) itens() []generoTMDB {
 	return k.Results
 }
 
-// listaPaisTMDB é o append `release_dates` (classificação indicativa de FILME): uma
-// lista por país, cada uma com as datas/certificações daquele país.
+// listaPaisTMDB is the `release_dates` append (age rating of a MOVIE): one list per
+// country, each one with the dates/certifications of that country.
 type listaPaisTMDB struct {
 	Results []paisReleaseDatesTMDB `json:"results"`
 }
 
-// paisReleaseDatesTMDB são as datas de lançamento de um país e suas certificações.
+// paisReleaseDatesTMDB are the release dates of a country and their certifications.
 type paisReleaseDatesTMDB struct {
 	Iso3166      string                 `json:"iso_3166_1"`
 	ReleaseDates []certificacaoDataTMDB `json:"release_dates"`
 }
 
-// certificacaoDataTMDB é uma entrada de release_date com a certificação (pode vir
-// vazia em algumas entradas — a primeira não-vazia do país é a que usamos).
+// certificacaoDataTMDB is a release_date entry with the certification (it may come
+// empty in some entries -- the first non-empty one of the country is the one we use).
 type certificacaoDataTMDB struct {
 	Certification string `json:"certification"`
 }
 
-// contentRatingsTMDB é o append `content_ratings` (classificação indicativa de SÉRIE):
-// uma classificação por país.
+// contentRatingsTMDB is the `content_ratings` append (age rating of a SERIES): one
+// rating per country.
 type contentRatingsTMDB struct {
 	Results []paisContentRatingTMDB `json:"results"`
 }
 
-// paisContentRatingTMDB é a classificação de série de um país.
+// paisContentRatingTMDB is the series rating of a country.
 type paisContentRatingTMDB struct {
 	Iso3166 string `json:"iso_3166_1"`
 	Rating  string `json:"rating"`
 }
 
-// externalIdsTMDB é o append `external_ids`: imdb_id (link para a página externa) e
-// tvdb_id (0087 — o cross-id que o fanart.tv exige para TV; o TMDB já devolve isso de
-// graça para /tv/{id}, vazio/inofensivo para /movie/{id}).
+// externalIdsTMDB is the `external_ids` append: imdb_id (link to the external page)
+// and tvdb_id (the cross-id that fanart.tv requires for TV; TMDB already returns it for
+// free for /tv/{id}, empty/harmless for /movie/{id}).
 type externalIdsTMDB struct {
 	ImdbID string         `json:"imdb_id"`
 	TvdbID idFlexivelTMDB `json:"tvdb_id"`
 }
 
-// idFlexivelTMDB (0090) aceita `tvdb_id` vindo como STRING ou NÚMERO JSON — o TMDB é
-// inconsistente entre títulos/endpoints nesse campo especificamente. Antes desta
-// tolerância, um único título com tvdb_id numérico fazia o Unmarshal do detalhe
-// INTEIRO falhar, derrubando título/sinopse/elenco/tagline junto (mapearEnvelope
-// aborta tudo em qualquer erro de subcampo).
+// idFlexivelTMDB accepts `tvdb_id` coming as a STRING or a JSON NUMBER -- TMDB is
+// inconsistent between titles/endpoints on this specific field. Before this tolerance,
+// a single title with a numeric tvdb_id made the Unmarshal of the WHOLE detail fail,
+// bringing down title/overview/cast/tagline along with it (mapearEnvelope aborts
+// everything on any subfield error).
 type idFlexivelTMDB string
 
 func (id *idFlexivelTMDB) UnmarshalJSON(data []byte) error {
@@ -117,18 +120,19 @@ func (id *idFlexivelTMDB) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// recommendationsTMDB envelopa os itens recomendados do append `recommendations`
-// (0091 — trocado de `similar`, ver tmdb.go).
+// recommendationsTMDB wraps the recommended items of the `recommendations` append
+// (switched from `similar`, see tmdb.go).
 type recommendationsTMDB struct {
 	Results []itemRecommendationTMDB `json:"results"`
 }
 
-// itemRecommendationTMDB é um item recomendado (mesmo media_type do pai).
-// title/release_date são de filme; name/first_air_date de série — o pai define o
-// tipo (o item herda-o). Os campos de QUALIDADE (genre_ids/vote_average/vote_count/
-// adult) foram acrescentados no briefing 0091: o payload de `recommendations` já os
-// trazia, mas até então eram descartados no unmarshal — servem só para o filtro/
-// ordenação de similaresFiltrados, nunca são expostos no canônico (provider.Similar).
+// itemRecommendationTMDB is a recommended item (same media_type as the parent).
+// title/release_date are movie ones; name/first_air_date series ones -- the parent
+// defines the type (the item inherits it). The QUALITY fields
+// (genre_ids/vote_average/vote_count/adult) were added so that the payload of
+// `recommendations`, which already carried them, would stop being discarded in the
+// unmarshal -- they only serve the filter/sorting of similaresFiltrados, they are never
+// exposed in the canonical (provider.Similar).
 type itemRecommendationTMDB struct {
 	ID           int64   `json:"id"`
 	Title        string  `json:"title"`
@@ -142,18 +146,19 @@ type itemRecommendationTMDB struct {
 	Adult        bool    `json:"adult"`
 }
 
-// enriquecerCanonicoRico acrescenta ao mapa canônico os campos do DETALHE RICO
-// (0022), na convenção do ADR-0018 (traduzíveis como map por idioma, neutros como
-// escalares/listas). Só grava chaves com valor — o consumidor distingue "campo
-// ausente" de "campo vazio". Não mexe nas chaves já postas por mapearEnvelope.
+// enriquecerCanonicoRico adds the fields of the RICH DETAIL to the canonical map, in
+// the convention of ADR-0018 (translatable ones as a map by language, neutral ones as
+// scalars/lists). It only writes keys with a value -- the consumer distinguishes
+// "absent field" from "empty field". It does not touch the keys already set by
+// mapearEnvelope.
 func enriquecerCanonicoRico(out map[string]any, d detalheTMDB) {
 	enriquecerTraduziveisRico(out, d)
 	enriquecerNeutrosRico(out, d)
 	enriquecerCreditos(out, d)
 }
 
-// enriquecerTraduziveisRico grava os campos ricos TRADUZÍVEIS (map por idioma):
-// tagline e keywords.
+// enriquecerTraduziveisRico writes the TRANSLATABLE rich fields (map by language):
+// tagline and keywords.
 func enriquecerTraduziveisRico(out map[string]any, d detalheTMDB) {
 	if taglines := taglinesPorIdioma(d); len(taglines) > 0 {
 		out["tagline"] = taglines
@@ -163,12 +168,12 @@ func enriquecerTraduziveisRico(out map[string]any, d detalheTMDB) {
 	}
 }
 
-// enriquecerNeutrosRico grava os campos ricos NEUTROS (escalares/listas): duração,
-// classificação por região, backdrop, nota, vídeos, coleção e links. Os SIMILARES
-// (0091) NÃO são mais preenchidos aqui — essa responsabilidade migrou inteiramente
-// para o método Similares (provider.SimilarProvider), chamado explicitamente pelo
-// servidor (entities.go/external_detail.go) fora de MapearDetalhe, para o filtro/
-// ordenação por afinidade ser um ponto de extensão de verdade (ver provider.go).
+// enriquecerNeutrosRico writes the NEUTRAL rich fields (scalars/lists): duration, rating
+// by region, backdrop, score, videos, collection and links. The SIMILAR ones are no
+// longer filled in here -- that responsibility migrated entirely to the Similares method
+// (provider.SimilarProvider), called explicitly by the server
+// (entities.go/external_detail.go) outside MapearDetalhe, so that the filter/sorting by
+// affinity is a real extension point (see provider.go).
 func enriquecerNeutrosRico(out map[string]any, d detalheTMDB) {
 	if r := runtimeDe(d); r > 0 {
 		out["runtime"] = r
@@ -193,10 +198,11 @@ func enriquecerNeutrosRico(out map[string]any, d detalheTMDB) {
 	}
 }
 
-// taglinesPorIdioma monta o mapa idioma→slogan a partir das translations do detalhe,
-// chaveando cada idioma pelo código COMBINADO (pt-BR) e pelo BASE (pt) — mesma
-// convenção dos títulos (ver traduzidosPorIdioma). O slogan do topo do detalhe vem no
-// idioma da requisição e também aparece nas translations, então não precisa âncora.
+// taglinesPorIdioma builds the language→tagline map from the translations of the
+// detail, keying each language by the COMBINED code (pt-BR) and by the BASE one (pt) --
+// the same convention as the titles (see traduzidosPorIdioma). The tagline of the top of
+// the detail comes in the language of the request and also appears in the translations,
+// so it needs no anchor.
 func taglinesPorIdioma(d detalheTMDB) map[string]any {
 	out := map[string]any{}
 	for _, tr := range d.Translations.Translations {
@@ -210,10 +216,11 @@ func taglinesPorIdioma(d detalheTMDB) map[string]any {
 	return out
 }
 
-// keywordsPorIdioma devolve as palavras-chave sob o idioma ORIGINAL do item (o TMDB
-// não as localiza). Fica na dimensão idioma×camada (campo traduzível, decisão da
-// revisão), mas populado num idioma só; o resolver do detalhe cai nele pela cadeia ou
-// pelo último recurso. Sem idioma original, não há como ancorar — devolve vazio.
+// keywordsPorIdioma returns the keywords under the ORIGINAL language of the item (TMDB
+// does not localize them). It stays in the language×layer dimension (a translatable
+// field, a review decision), but populated in a single language; the detail resolver
+// falls back to it through the chain or the last resort. Without an original language
+// there is no way to anchor it -- it returns empty.
 func keywordsPorIdioma(d detalheTMDB) map[string]any {
 	nomes := nomesDosGeneros(d.Keywords.itens())
 	if len(nomes) == 0 || d.OriginalLanguage == "" {
@@ -222,8 +229,8 @@ func keywordsPorIdioma(d detalheTMDB) map[string]any {
 	return map[string]any{d.OriginalLanguage: nomes}
 }
 
-// runtimeDe devolve a duração em minutos: `runtime` para filme; o primeiro
-// `episode_run_time` para série. 0 quando a fonte não informou.
+// runtimeDe returns the duration in minutes: `runtime` for a movie; the first
+// `episode_run_time` for a series. 0 when the source did not provide one.
 func runtimeDe(d detalheTMDB) int {
 	if d.Runtime > 0 {
 		return d.Runtime
@@ -236,9 +243,10 @@ func runtimeDe(d detalheTMDB) int {
 	return 0
 }
 
-// certificacoesPorRegiao monta o mapa REGIÃO→classificação (neutro; o handler escolhe
-// a região do idioma ativo com fallback US). Vem de release_dates (filme) ou
-// content_ratings (série). Para filme, a primeira certificação não-vazia do país vence.
+// certificacoesPorRegiao builds the REGION→rating map (neutral; the handler chooses the
+// region of the active language with a US fallback). It comes from release_dates (movie)
+// or content_ratings (series). For a movie, the first non-empty certification of the
+// country wins.
 func certificacoesPorRegiao(d detalheTMDB) map[string]any {
 	out := map[string]any{}
 	for _, pais := range d.ReleaseDates.Results {
@@ -262,10 +270,10 @@ func certificacoesPorRegiao(d detalheTMDB) map[string]any {
 	return out
 }
 
-// videosCanonicos converte os vídeos da fonte na lista canônica (mapas), montando a
-// URL do provedor quando conhecido (YouTube/Vimeo). Descarta vídeos sem chave. A
-// ordenação "locais em destaque" NÃO se aplica ao externo (não há arquivo local) — a
-// ordem é a da fonte; a UI (0023) decide a apresentação.
+// videosCanonicos converts the videos of the source into the canonical list (maps),
+// building the provider URL when known (YouTube/Vimeo). It discards videos without a
+// key. The "local ones featured" ordering does NOT apply to the external ones (there is
+// no local file) -- the order is the source's; the UI decides the presentation.
 func videosCanonicos(v videosTMDB) []any {
 	out := make([]any, 0, len(v.Results))
 	for _, vid := range v.Results {
@@ -287,8 +295,8 @@ func videosCanonicos(v videosTMDB) []any {
 	return out
 }
 
-// urlDoVideo monta a URL pública do vídeo pelo site do provedor; "" quando o site é
-// desconhecido (a UI pode só exibir o nome/thumb nesse caso).
+// urlDoVideo builds the public URL of the video from the provider site; "" when the site
+// is unknown (the UI may then only display the name/thumb).
 func urlDoVideo(site, key string) string {
 	switch site {
 	case "YouTube":
@@ -300,9 +308,9 @@ func urlDoVideo(site, key string) string {
 	}
 }
 
-// colecaoCanonica converte belongs_to_collection na coleção canônica (id como
-// source_id para navegar no 0023, nome e pôster). nil quando o item não pertence a
-// coleção (ou é série).
+// colecaoCanonica converts belongs_to_collection into the canonical collection (id as
+// source_id, for navigating to the external detail, name and poster). nil when the item
+// does not belong to a collection (or is a series).
 func colecaoCanonica(c *colecaoTMDB) map[string]any {
 	if c == nil || c.ID == 0 {
 		return nil
@@ -317,25 +325,25 @@ func colecaoCanonica(c *colecaoTMDB) map[string]any {
 	return out
 }
 
-// votoMinimoSimilar é o piso de vote_count abaixo do qual um item recomendado é
-// descartado (briefing 0091): volume de voto é um proxy melhor de "recomendação de
-// um título real, conhecido, não ruído" do que a nota média isolada — um título com
-// 2 votos e nota 8 não é "melhor" que um com 500 votos e nota 6.5. Não há piso de
-// nota: mesmo um título de nota mediana é uma recomendação válida se for do gênero
-// certo e amplamente assistido.
+// votoMinimoSimilar is the vote_count floor below which a recommended item is discarded:
+// vote volume is a better proxy of "recommendation of a real, known title, not noise"
+// than the average score alone -- a title with 2 votes and a score of 8 is not "better"
+// than one with 500 votes and a score of 6.5. There is no score floor: even a
+// median-score title is a valid recommendation if it is of the right genre and widely
+// watched.
 const votoMinimoSimilar = 20
 
-// similaresFiltrados filtra e ordena os itens de `d.Recommendations.Results` por
-// qualidade e por afinidade com o item de ORIGEM (briefing 0091):
-//  1. descarta item adulto (`Adult == true`) — nunca conteúdo adulto na lista;
-//  2. descarta item com `VoteCount` abaixo de votoMinimoSimilar (ruído estatístico);
-//  3. ordena o que sobra por (a) sobreposição de gênero com o item de origem, DESC —
-//     usando os IDs numéricos de `d.Genres` (o item de origem, MESMO payload), nunca
-//     nomes de tag traduzidos/resolvidos (evita mismatch de idioma/taxonomia entre
-//     fontes); (b) `VoteAverage` DESC como desempate.
+// similaresFiltrados filters and sorts the items of `d.Recommendations.Results` by
+// quality and by affinity with the ORIGIN item:
+//  1. it discards adult items (`Adult == true`) -- never adult content in the list;
+//  2. it discards items with `VoteCount` below votoMinimoSimilar (statistical noise);
+//  3. it sorts what is left by (a) genre overlap with the origin item, DESC -- using
+//     the numeric IDs of `d.Genres` (the origin item, the SAME payload), never
+//     translated/resolved tag names (it avoids a language/taxonomy mismatch between
+//     sources); (b) `VoteAverage` DESC as a tiebreaker.
 //
-// Não trunca a lista além do filtro — o que sobra é devolvido inteiro (SliceStable
-// preserva a ordem original da fonte em empate total).
+// It does not truncate the list beyond the filter -- what is left is returned whole
+// (SliceStable preserves the original source order on a full tie).
 func similaresFiltrados(d detalheTMDB) []itemRecommendationTMDB {
 	generosOrigem := make(map[int64]struct{}, len(d.Genres))
 	for _, g := range d.Genres {
@@ -372,10 +380,10 @@ func similaresFiltrados(d detalheTMDB) []itemRecommendationTMDB {
 	return itens
 }
 
-// similaresCanonicos converte os itens JÁ FILTRADOS/ORDENADOS (similaresFiltrados)
-// na lista canônica (provider.Similar), herdando o TIPO do pai (filme/série) —
-// usado pelo 0023 para navegar ao detalhe externo do similar. Descarta itens sem
-// título (mesma regra de sempre).
+// similaresCanonicos converts the ALREADY FILTERED/SORTED items (similaresFiltrados)
+// into the canonical list (provider.Similar), inheriting the TYPE of the parent
+// (movie/series) -- used to navigate to the external detail of the similar. It discards
+// items without a title (the usual rule).
 func similaresCanonicos(d detalheTMDB) []provider.Similar {
 	tipo := tipoInferido(d)
 	filtrados := similaresFiltrados(d)
@@ -402,12 +410,12 @@ func similaresCanonicos(d detalheTMDB) []provider.Similar {
 	return out
 }
 
-// Similares implementa provider.SimilarProvider (briefing 0091): extrai os itens
-// similares/recomendados de um payload de detalhe JÁ buscado por BuscarDetalhe —
-// PURO, sem ida extra à rede (mesmo padrão de TvdbIDDoDetalheSerie). Aceita tanto o
-// envelope AUMENTADO {detail,tags_by_lang} (0020) quanto o payload LEGADO sem
-// envelope (0015), via detalheBrutoDoRaw (mesma detecção de MapearDetalhe,
-// extraída em tmdb.go para os dois métodos reusarem sem duplicar o parsing).
+// Similares implements provider.SimilarProvider: it extracts the similar/recommended
+// items from a detail payload ALREADY fetched by BuscarDetalhe -- PURE, without an extra
+// round trip to the network (the same pattern as TvdbIDDoDetalheSerie). It accepts both
+// the AUGMENTED envelope {detail,tags_by_lang} and the LEGACY payload without an
+// envelope, via detalheBrutoDoRaw (the same detection as MapearDetalhe, extracted in
+// tmdb.go so the two methods reuse it without duplicating the parsing).
 func (c *Client) Similares(raw json.RawMessage) ([]provider.Similar, error) {
 	var d detalheTMDB
 	if err := json.Unmarshal(detalheBrutoDoRaw(raw), &d); err != nil {
@@ -416,8 +424,9 @@ func (c *Client) Similares(raw json.RawMessage) ([]provider.Similar, error) {
 	return similaresCanonicos(d), nil
 }
 
-// linksExternos monta o mapa de links para páginas externas. Hoje só o imdb (a partir
-// do imdb_id); o link do próprio TMDB o handler monta (precisa do tipo+id da rota).
+// linksExternos builds the map of links to external pages. Today only imdb (from
+// imdb_id); the link of TMDB itself is built by the handler (it needs the type+id of
+// the route).
 func linksExternos(d detalheTMDB) map[string]any {
 	out := map[string]any{}
 	if d.ExternalIds.ImdbID != "" {
@@ -426,8 +435,9 @@ func linksExternos(d detalheTMDB) map[string]any {
 	return out
 }
 
-// tipoInferido deduz o media_type do detalhe: filme tem `title`; série tem `name` (o
-// detalhe de série não traz `title`). Default movie (o caso mais comum).
+// tipoInferido infers the media_type of the detail: a movie has `title`; a series has
+// `name` (the series detail does not bring `title`). Default movie (the most common
+// case).
 func tipoInferido(d detalheTMDB) string {
 	if d.Title == "" && d.Name != "" {
 		return "tv"
@@ -435,8 +445,9 @@ func tipoInferido(d detalheTMDB) string {
 	return "movie"
 }
 
-// porSeAusenteAny grava valor não-vazio em chave não-vazia só se a chave ainda não
-// existe (primeira tradução por idioma vence — como porSeAusente, para map[string]any).
+// porSeAusenteAny writes a non-empty value under a non-empty key only if the key does
+// not exist yet (the first translation per language wins -- like porSeAusente, for
+// map[string]any).
 func porSeAusenteAny(m map[string]any, chave, valor string) {
 	if chave == "" || valor == "" {
 		return
@@ -447,19 +458,20 @@ func porSeAusenteAny(m map[string]any, chave, valor string) {
 	m[chave] = valor
 }
 
-// itoa formata um id inteiro do TMDB como string (source_id canônico).
+// itoa formats an integer TMDB id as a string (canonical source_id).
 func itoa(id int64) string {
 	return strconv.FormatInt(id, 10)
 }
 
-// TvdbIDDoDetalheSerie extrai o tvdb_id do append external_ids de um detalhe de série JÁ
-// BUSCADO (o mesmo raw devolvido por BuscarDetalhe/PayloadFresco) — SEM ida extra à
-// rede. Satisfaz provider.TvdbCruzadoProvider (0087): fecha a lacuna que deixava toda
-// série cuja árvore vem só do TMDB (sem TVDB configurado, briefing 0046) sem id
-// utilizável para o fanart.tv, que na TV exige tvdb_id exclusivamente (rotaETabela, case
-// "tv"). Aceita tanto o envelope AUMENTADO {detail,tags_by_lang} (0020) quanto o detalhe
-// cru sem envelope (payload legado do 0015) — se não há `detail` no envelope, tenta o raw
-// direto. ok=false sem tvdb_id ou payload ilegível.
+// TvdbIDDoDetalheSerie extracts the tvdb_id from the external_ids append of a series
+// detail ALREADY FETCHED (the same raw returned by BuscarDetalhe/PayloadFresco) --
+// WITHOUT an extra round trip to the network. It satisfies provider.TvdbCruzadoProvider:
+// it closes the gap that left every series whose tree comes only from TMDB (without TVDB
+// configured) without a usable id for fanart.tv, which for TV requires tvdb_id
+// exclusively (rotaETabela, case "tv"). It accepts both the AUGMENTED envelope
+// {detail,tags_by_lang} and the raw detail without an envelope (legacy payload) -- if
+// there is no `detail` in the envelope, it tries the raw directly. ok=false without a
+// tvdb_id or with an unreadable payload.
 func (c *Client) TvdbIDDoDetalheSerie(raw json.RawMessage) (string, bool) {
 	var d struct {
 		ExternalIds externalIdsTMDB `json:"external_ids"`

@@ -1,15 +1,15 @@
 package server
 
-// artwork.go implementa GET /api/v1/entities/{id}/artwork (briefing 0048): a arte
-// DISPONÍVEL de uma entity AGRUPADA por kind, mesclando três fontes —
+// artwork.go implements GET /api/v1/entities/{id}/artwork: the AVAILABLE artwork of an
+// entity GROUPED by kind, merging three sources —
 //
-//	1. os assets LOCAIS do dono (upload origin='user' e cache origin='external', 0017/0015),
-//	2. o pôster/fundo do TMDB (e demais camadas com provider) já cacheados como URL,
-//	3. o INVENTÁRIO da fanart.tv (media_external source='fanarttv', 0048) — lazy, sem baixar.
+//	1. the owner's LOCAL assets (upload origin='user' and cache origin='external'),
+//	2. the TMDB poster/background (and the other layers with a provider) already cached as a URL,
+//	3. the fanart.tv INVENTORY (media_external source='fanarttv') — lazy, without downloading.
 //
-// Toda URL sai JÁ passada pelo proxy de imagem (arteSrc/urlImagemServida) para a UI não
-// depender do CDN da fonte em runtime. A resposta traz também `available: {kind: count}`
-// para os selos do card (consumido pelo 0049). É só leitura.
+// Every URL leaves ALREADY passed through the image proxy (arteSrc/urlImagemServida) so the
+// UI does not depend on the source CDN at runtime. The response also carries
+// `available: {kind: count}` for the card badges (consumed by the artwork gallery). Read-only.
 
 import (
 	"context"
@@ -24,14 +24,13 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/provider"
 )
 
-// artworkItem é uma arte no agrupamento por kind do /artwork. URL já vem proxyada; lang/
-// likes vêm do inventário (fanart.tv) e são vazios/zero para as demais fontes. Source é a
-// proveniência ('user'/'external'/'tmdb'/'fanarttv'); IsLocal marca o asset materializado
-// (servido do disco, cache interno), IsPreferred a escolha do dono (lida do meta_json,
-// compat — só para asset local). Desde o briefing 0062: IsLocalInLibrary/IsPrincipal
-// distinguem a materialização física na pasta REAL da biblioteca (asset.local_path/
-// is_principal, colunas próprias) — sempre false para arte de inventário/URL externa
-// (IsLocal=false).
+// artworkItem is one artwork inside the by-kind grouping of /artwork. The URL already comes
+// proxied; lang/likes come from the inventory (fanart.tv) and are empty/zero for the other
+// sources. Source is the provenance ('user'/'external'/'tmdb'/'fanarttv'); IsLocal marks the
+// materialized asset (served from disk, internal cache), IsPreferred the owner's choice (read
+// from meta_json, compat — local asset only). IsLocalInLibrary/IsPrincipal distinguish the
+// physical materialization in the library's REAL folder (asset.local_path/is_principal,
+// dedicated columns) — always false for inventory/external-URL artwork (IsLocal=false).
 type artworkItem struct {
 	URL         string `json:"url"`
 	Lang        string `json:"lang,omitempty"`
@@ -42,25 +41,25 @@ type artworkItem struct {
 	Season      string `json:"season,omitempty"`
 	IsPreferred bool   `json:"is_preferred"`
 	IsLocal     bool   `json:"is_local"`
-	// IsLocalInLibrary é true quando o asset materializado (IsLocal=true) também foi
-	// salvo fisicamente na pasta REAL da biblioteca (asset.local_path != null) —
-	// briefing 0062, espelha o selo "Salvo na pasta" da galeria (0049).
+	// IsLocalInLibrary is true when the materialized asset (IsLocal=true) was also saved
+	// physically into the library's REAL folder (asset.local_path != null) — it mirrors the
+	// "Saved to folder" badge of the gallery.
 	IsLocalInLibrary bool `json:"is_local_in_library"`
-	// IsPrincipal é true quando este é o asset is_principal=1 do seu (entity,kind)
-	// (briefing 0062, fonte de verdade em coluna própria — distinta de IsPreferred/
-	// meta_json). No máximo um true por kind.
+	// IsPrincipal is true when this is the is_principal=1 asset of its (entity,kind)
+	// (source of truth in its own column — distinct from IsPreferred/meta_json). At most
+	// one true per kind.
 	IsPrincipal bool `json:"is_principal"`
-	// AssetID identifica o asset materializado (só quando IsLocal): a UI usa em
-	// PUT /assets/{id}/prefer e DELETE /assets/{id}. Vazio para arte de inventário.
+	// AssetID identifies the materialized asset (only when IsLocal): the UI uses it in
+	// PUT /assets/{id}/prefer and DELETE /assets/{id}. Empty for inventory artwork.
 	AssetID string `json:"asset_id,omitempty"`
-	// SrcURL é a URL CRUA na fonte (só para arte de inventário, não materializada): a
-	// UI a envia no POST /artwork/select para baixar/preferir. Vazio quando IsLocal.
+	// SrcURL is the RAW URL at the source (inventory artwork only, not materialized): the
+	// UI sends it in POST /artwork/select to download/prefer it. Empty when IsLocal.
 	SrcURL string `json:"src_url,omitempty"`
 }
 
-// getEntityArtwork trata GET /api/v1/entities/{id}/artwork. 404 entity inexistente; 200
-// com `{ [kind]: [artworkItem...], ..., available: {kind:count} }`. Mescla assets locais
-// + pôster/fundo das camadas externas + inventário fanart.tv, tudo por kind.
+// getEntityArtwork handles GET /api/v1/entities/{id}/artwork. 404 for an unknown entity;
+// 200 with `{ [kind]: [artworkItem...], ..., available: {kind:count} }`. Merges local assets
+// + poster/background from the external layers + fanart.tv inventory, all by kind.
 func (s *Server) getEntityArtwork(w http.ResponseWriter, r *http.Request) {
 	if s.entitiesUnavailable(w) {
 		return
@@ -76,32 +75,31 @@ func (s *Server) getEntityArtwork(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, montarRespostaArtwork(grupos))
 }
 
-// montarGruposArtwork concentra as três chamadas de coleta (assets locais +
-// pôster/fundo das camadas externas + inventário fanart.tv) num único mapa
-// kind→[]artworkItem — extraído do corpo de getEntityArtwork (briefing 0059)
-// para ser reusado NÃO-HTTP por baixarMelhorArteDoKind (artwork_missing.go),
-// sem duplicar a lógica de mesclagem de fontes. Mesmo comportamento
-// observável de antes: getEntityArtwork continua o único chamador HTTP.
+// montarGruposArtwork concentrates the three collection calls (local assets +
+// poster/background from the external layers + fanart.tv inventory) into a single
+// kind→[]artworkItem map — extracted from the body of getEntityArtwork to be reused
+// NON-HTTP by baixarMelhorArteDoKind (artwork_missing.go), without duplicating the
+// source-merging logic. Same observable behavior as before: getEntityArtwork is still
+// the only HTTP caller.
 func (s *Server) montarGruposArtwork(ctx context.Context, id string) map[string][]artworkItem {
 	grupos := map[string][]artworkItem{}
 	kindsExternosLocais, sourceURLsMaterializadas := s.coletarArtesLocais(ctx, id, grupos)
 	s.coletarArtesDeCamadas(ctx, id, kindsExternosLocais, grupos)
 	s.coletarInventarioFanart(ctx, id, sourceURLsMaterializadas, grupos)
-	// idiomaDeBusca (0084) já trata ambiguidade/fallback pro idioma global --
-	// erro real de banco degrada em silêncio pra "" (ordenação cai só em
-	// textless->en->qualquer outro, sem preferência de idioma).
+	// idiomaDeBusca already handles ambiguity/fallback to the global language --
+	// a real database error degrades silently to "" (ordering falls back to
+	// textless->en->any other, with no language preference).
 	idioma, _ := s.idiomaDeBusca(ctx, id)
 	ordenarGruposArtwork(grupos, idioma)
 	return grupos
 }
 
-// ordenarGruposArtwork aplica a ordenação do briefing 0062 (is_principal desc,
-// is_local_in_library desc) mais a prioridade de idioma do briefing 0089: em
-// empate de is_principal/is_local_in_library, a arte no idioma preferido do
-// dono (`idiomaPreferido`, formato locale completo tipo "pt-BR") vence;
-// depois textless (lang==""), depois inglês, depois qualquer outro. Último
-// desempate preserva a ordem original de chegada (sort.SliceStable -- as
-// fontes já entram na ordem local->externo->inventário).
+// ordenarGruposArtwork applies the ordering (is_principal desc, is_local_in_library desc)
+// plus the language priority: when is_principal/is_local_in_library tie, the artwork in the
+// owner's preferred language (`idiomaPreferido`, full locale format such as "pt-BR") wins;
+// then textless (lang==""), then English, then any other. The last tiebreak preserves the
+// original arrival order (sort.SliceStable -- the sources already come in the
+// local->external->inventory order).
 func ordenarGruposArtwork(grupos map[string][]artworkItem, idiomaPreferido string) {
 	base := idiomaBase(idiomaPreferido) // "pt-BR" -> "pt"
 	for _, itens := range grupos {
@@ -116,16 +114,16 @@ func ordenarGruposArtwork(grupos map[string][]artworkItem, idiomaPreferido strin
 			if ri != rj {
 				return ri < rj
 			}
-			return false // empate: mantém a ordem original (stable)
+			return false // tie: keeps the original order (stable)
 		})
 	}
 }
 
-// idiomaBase extrai o código ISO 639-1 de um locale completo (formato usado
-// por app_settings.languages/idiomaDeBusca, ex. "pt-BR"), em minúsculas: a
-// parte antes do primeiro "-". "pt-BR" -> "pt"; "en" -> "en"; "" -> "".
-// Necessário porque o `lang` gravado no inventário fanart.tv é ISO 639-1 puro
-// ("pt", "en", "") -- comparar direto contra o locale completo nunca bateria.
+// idiomaBase extracts the ISO 639-1 code from a full locale (the format used by
+// app_settings.languages/idiomaDeBusca, e.g. "pt-BR"), lowercased: the part before the
+// first "-". "pt-BR" -> "pt"; "en" -> "en"; "" -> "".
+// Needed because the `lang` stored in the fanart.tv inventory is pure ISO 639-1
+// ("pt", "en", "") -- comparing it directly against the full locale would never match.
 func idiomaBase(locale string) string {
 	if locale == "" {
 		return ""
@@ -134,10 +132,10 @@ func idiomaBase(locale string) string {
 	return strings.ToLower(base)
 }
 
-// rankIdiomaArte ordena por prioridade de idioma (briefing 0089): 0=idioma
-// preferido do dono, 1=textless (lang vazio, comum no fanart.tv para arte sem
-// texto), 2=inglês, 3=qualquer outro. `preferidoBase` já vem normalizado
-// (idiomaBase) para bater com o `lang` ISO 639-1 puro do inventário.
+// rankIdiomaArte orders by language priority: 0=owner's preferred language, 1=textless
+// (empty lang, common on fanart.tv for artwork without text), 2=English, 3=any other.
+// `preferidoBase` already comes normalized (idiomaBase) so that it matches the pure
+// ISO 639-1 `lang` of the inventory.
 func rankIdiomaArte(lang, preferidoBase string) int {
 	switch {
 	case preferidoBase != "" && lang == preferidoBase:
@@ -151,13 +149,12 @@ func rankIdiomaArte(lang, preferidoBase string) int {
 	}
 }
 
-// coletarArtesLocais adiciona os assets materializados da entity (origin user/external)
-// agrupados por kind e devolve (1) o CONJUNTO de kinds que já têm um asset
-// origin='external' (para não duplicar o mesmo pôster/fundo do TMDB, que é a origem
-// daquele cache) e (2) por kind, o CONJUNTO de source_url (meta.source_url) já
-// materializadas como asset origin='external' — usado por coletarInventarioFanart
-// (briefing 0072) para não repetir no inventário lazy uma arte que já foi baixada via
-// POST /artwork/select.
+// coletarArtesLocais adds the entity's materialized assets (origin user/external) grouped by
+// kind and returns (1) the SET of kinds that already have an origin='external' asset (so the
+// same TMDB poster/background, which is the origin of that cache, is not duplicated) and (2)
+// per kind, the SET of source_url (meta.source_url) already materialized as an
+// origin='external' asset — used by coletarInventarioFanart to avoid repeating, in the lazy
+// inventory, artwork that was already downloaded through POST /artwork/select.
 func (s *Server) coletarArtesLocais(ctx context.Context, id string, grupos map[string][]artworkItem) (map[string]bool, map[string]map[string]bool) {
 	externos := map[string]bool{}
 	sourceURLs := map[string]map[string]bool{}
@@ -188,11 +185,12 @@ func (s *Server) coletarArtesLocais(ctx context.Context, id string, grupos map[s
 	return externos, sourceURLs
 }
 
-// coletarArtesDeCamadas adiciona o pôster/fundo das camadas media_external que têm
-// provider (ex.: TMDB): mapeia cada payload para o canônico e extrai poster_url→poster e
-// backdrop_url→fanart, servidos via proxy. Pula o kind que já tem asset origin='external'
-// local (`kindsExternos`) — é a mesma imagem já materializada. Camadas de inventário
-// (fanart.tv) devolvem canônico vazio no MapearDetalhe e são ignoradas aqui.
+// coletarArtesDeCamadas adds the poster/background of the media_external layers that have a
+// provider (e.g. TMDB): maps each payload to the canonical shape and extracts
+// poster_url→poster and backdrop_url→fanart, served through the proxy. Skips the kind that
+// already has a local origin='external' asset (`kindsExternos`) — it is the same image
+// already materialized. Inventory layers (fanart.tv) return an empty canonical in
+// MapearDetalhe and are ignored here.
 func (s *Server) coletarArtesDeCamadas(ctx context.Context, id string, kindsExternos map[string]bool, grupos map[string][]artworkItem) {
 	camadas, err := s.leitura().ListarMediaExternalPorEntity(ctx, id)
 	if err != nil {
@@ -212,9 +210,9 @@ func (s *Server) coletarArtesDeCamadas(ctx context.Context, id string, kindsExte
 	}
 }
 
-// adicionarArteDeCampo adiciona a arte de UM campo do canônico (poster_url/backdrop_url)
-// ao grupo do `kind`, proxyando a URL. Não duplica quando o kind já tem cache local
-// origin='external' (kindsExternos) nem quando o campo é vazio/ausente.
+// adicionarArteDeCampo adds the artwork of ONE canonical field (poster_url/backdrop_url) to
+// the group of `kind`, proxying the URL. It does not duplicate when the kind already has a
+// local origin='external' cache (kindsExternos) nor when the field is empty/absent.
 func (s *Server) adicionarArteDeCampo(campos map[string]any, campo, kind, source string, kindsExternos map[string]bool, grupos map[string][]artworkItem) {
 	if kindsExternos[kind] {
 		return
@@ -230,24 +228,24 @@ func (s *Server) adicionarArteDeCampo(campos map[string]any, campo, kind, source
 	})
 }
 
-// coletarInventarioFanart adiciona o inventário lazy de QUALQUER fonte com envelope de
-// arte já cacheado em media_external (briefing 0116): até então hardcoded a source=
-// 'fanarttv' (a única fonte de arte que existia no briefing 0048), o que fazia o
-// inventário do MusicBrainz/Cover Art Archive (source='musicbrainz', capacidade ganha
-// nos briefings 0106/0107 para capa de álbum) nunca ser lido de volta mesmo gravado com
-// sucesso pelo lado de escrita (enrich.enriquecerArtes já era genérico a qualquer
-// ArteProvider) — bug real achado em produção: álbum de música nunca mostrava capa mesmo
-// com a fonte respondendo com dado real. Lê TODAS as camadas cacheadas da entity
-// (ListarMediaExternalPorEntity) e filtra pelo ENVELOPE (ChaveEnvelopeInventarioArtes),
-// não pela fonte estar registrada AGORA — mesmo espírito de "cache sobrevive sem
-// provider" (ADR-0024): a inventário buscado ontem continua visível mesmo que a
-// credencial daquela fonte tenha sido removida depois. Generico a qualquer fonte futura
-// (ex.: Spotify) sem exigir mudança aqui. Parseia o envelope de cada fonte e emite um
-// artworkItem por arte de cada kind, com lang/likes/disc/season preservados e a URL
-// proxyada. Fonte sem inventário degrada em silêncio (nada a adicionar). Pula a arte
-// cujo `url` já foi materializada como asset origin='external' daquele kind
-// (`materializadas`, briefing 0072) — evita o mesmo binário aparecer duas vezes (a versão
-// local já cobre o card; o candidato do inventário some).
+// coletarInventarioFanart adds the lazy inventory of ANY source with an artwork envelope
+// already cached in media_external: until then it was hardcoded to source='fanarttv' (the
+// only artwork source that existed at the time), which meant the inventory of
+// MusicBrainz/Cover Art Archive (source='musicbrainz', a capability later gained for album
+// covers) was never read back even when it had been written successfully by the write side
+// (enrich.enriquecerArtes was already generic to any ArteProvider) — a real bug found in
+// production: a music album never showed a cover even with the source answering with real
+// data. Reads ALL the entity's cached layers (ListarMediaExternalPorEntity) and filters by
+// the ENVELOPE (ChaveEnvelopeInventarioArtes), not by the source being registered RIGHT NOW
+// — the same spirit of "cache survives without a provider" (ADR-0024): an inventory
+// fetched yesterday stays visible even if that source's credential was removed later.
+// Generic to any future source (e.g. Spotify) without requiring a change here. Parses each
+// source's envelope and emits one artworkItem per artwork of each kind, with
+// lang/likes/disc/season preserved and the URL proxied. A source without an inventory
+// degrades silently (nothing to add). Skips artwork whose `url` was already materialized as
+// an origin='external' asset of that kind (`materializadas`) — it avoids the same binary
+// showing up twice (the local version already covers the card; the inventory candidate
+// disappears).
 func (s *Server) coletarInventarioFanart(ctx context.Context, id string, materializadas map[string]map[string]bool, grupos map[string][]artworkItem) {
 	camadas, err := s.leitura().ListarMediaExternalPorEntity(ctx, id)
 	if err != nil {
@@ -258,10 +256,10 @@ func (s *Server) coletarInventarioFanart(ctx context.Context, id string, materia
 	}
 }
 
-// coletarInventarioDeFonte é o corpo por-camada de coletarInventarioFanart (extraído
-// para iterar cada linha de media_external sem duplicar o parse/merge). Camada sem o
-// envelope de arte (payload de detalhe normal, ex.: tmdb/tvdb) degrada em silêncio via
-// parseInventarioFanart devolvendo nil.
+// coletarInventarioDeFonte is the per-layer body of coletarInventarioFanart (extracted to
+// iterate each media_external row without duplicating the parse/merge). A layer without the
+// artwork envelope (a regular detail payload, e.g. tmdb/tvdb) degrades silently through
+// parseInventarioFanart returning nil.
 func (s *Server) coletarInventarioDeFonte(camada sqlcgen.MediaExternal, materializadas map[string]map[string]bool, grupos map[string][]artworkItem) {
 	if !camada.PayloadJson.Valid {
 		return
@@ -287,8 +285,8 @@ func (s *Server) coletarInventarioDeFonte(camada sqlcgen.MediaExternal, material
 	}
 }
 
-// parseInventarioFanart extrai o mapa kind→[]ArteInventario do envelope de inventário
-// (ChaveEnvelopeInventarioArtes). Payload malformado/ausente → mapa vazio.
+// parseInventarioFanart extracts the kind→[]ArteInventario map from the inventory envelope
+// (ChaveEnvelopeInventarioArtes). A malformed/absent payload → empty map.
 func parseInventarioFanart(payload string) map[string][]provider.ArteInventario {
 	var env map[string]json.RawMessage
 	if json.Unmarshal([]byte(payload), &env) != nil {
@@ -305,9 +303,9 @@ func parseInventarioFanart(payload string) map[string][]provider.ArteInventario 
 	return inv
 }
 
-// montarRespostaArtwork serializa os grupos por kind mais o `available: {kind:count}`. As
-// chaves de kind e a chave "available" coexistem no topo (nenhum kind se chama
-// "available"), como o contrato do briefing 0048.
+// montarRespostaArtwork serializes the groups by kind plus `available: {kind:count}`. The
+// kind keys and the "available" key coexist at the top level (no kind is called
+// "available"), as in the /artwork contract.
 func montarRespostaArtwork(grupos map[string][]artworkItem) map[string]any {
 	out := map[string]any{}
 	available := map[string]int{}
@@ -319,8 +317,8 @@ func montarRespostaArtwork(grupos map[string][]artworkItem) map[string]any {
 	return out
 }
 
-// arteSrc desreferencia a URL já resolvida pelo proxy (urlImagemServida devolve *string),
-// devolvendo "" quando nil. Isola o padrão de deref para o /artwork.
+// arteSrc dereferences the URL already resolved by the proxy (urlImagemServida returns
+// *string), returning "" when nil. Isolates the deref pattern for /artwork.
 func arteSrc(p *string) string {
 	if p == nil {
 		return ""

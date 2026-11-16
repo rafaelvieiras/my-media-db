@@ -1,11 +1,10 @@
 package server
 
-// Testes de POST /api/v1/entities/{id}/refresh-files (briefing 0088, menu
-// Gerenciar > "Verificar Atualizações de Arquivos"): asset local importado
-// numa entity JÁ CATALOGADA (gap hoje só coberto na 1ª varredura, ver
-// internal/scanner/recheck_test.go para o teste de baixo nível do
-// scanner.Manager) e campos LOCAIS de reprodução lidos de um `.nfo` já em
-// disco, preenchidos SÓ quando ausentes no banco (não-destrutivo).
+// Tests of POST /api/v1/entities/{id}/refresh-files (Manage menu > "Verificar Atualizações de
+// Arquivos"): a local asset imported into an ALREADY CATALOGED entity (a gap only covered by
+// the 1st sweep, see internal/scanner/recheck_test.go for the low-level test of
+// scanner.Manager) and LOCAL playback fields read from a `.nfo` already on disk, filled in ONLY
+// when they are absent from the database (non-destructive).
 
 import (
 	"context"
@@ -19,9 +18,9 @@ import (
 	"github.com/rafaelvieiras/my-media-db/internal/db/sqlcgen"
 )
 
-// setupRefreshFilesServer sobe um Server com banco temporário migrado
-// (mesmo padrão de setupMidiasFaltantesServer) e devolve o handler + o *Server
-// (para semear campos locais direto pela query sqlc reusada pelo handler).
+// setupRefreshFilesServer starts a Server with a migrated temporary database (the same pattern
+// as setupMidiasFaltantesServer) and returns the handler + the *Server (to seed local fields
+// straight through the sqlc query reused by the handler).
 func setupRefreshFilesServer(t *testing.T) (http.Handler, *Server) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "refresh-files.sqlite")
@@ -41,8 +40,8 @@ func setupRefreshFilesServer(t *testing.T) (http.Handler, *Server) {
 	return h, srv
 }
 
-// TestRefreshEntityFilesEntityInexistenteDevolve404 cobre a guarda de
-// existência (briefing 0088 §4: "404 se entity não existe").
+// TestRefreshEntityFilesEntityInexistenteDevolve404 covers the existence guard ("404 if the
+// entity does not exist").
 func TestRefreshEntityFilesEntityInexistenteDevolve404(t *testing.T) {
 	h, _ := setupRefreshFilesServer(t)
 	rec := do(t, h, http.MethodPost, "/api/v1/entities/inexistente/refresh-files", nil)
@@ -51,11 +50,10 @@ func TestRefreshEntityFilesEntityInexistenteDevolve404(t *testing.T) {
 	}
 }
 
-// TestRefreshEntityFilesImportaAssetLocalEExecutaRecheck cobre os critérios
-// de aceite 1-2 do briefing 0088: um poster.jpg colocado na pasta de uma
-// entity QUE JÁ EXISTE no catálogo (nunca visto pela 1ª varredura) é
-// importado como asset origin='local' nesta chamada, e o media_file
-// 'present' da entity tem o re-hash forçado (files_rechecked=1).
+// TestRefreshEntityFilesImportaAssetLocalEExecutaRecheck covers acceptance criteria 1-2: a
+// poster.jpg placed in the folder of an entity that ALREADY EXISTS in the catalog (never seen
+// by the 1st sweep) is imported as an origin='local' asset in this call, and the entity's
+// 'present' media_file has its re-hash forced (files_rechecked=1).
 func TestRefreshEntityFilesImportaAssetLocalEExecutaRecheck(t *testing.T) {
 	h, srv := setupRefreshFilesServer(t)
 	ctx := context.Background()
@@ -70,13 +68,13 @@ func TestRefreshEntityFilesImportaAssetLocalEExecutaRecheck(t *testing.T) {
 	}
 	semearFileComFonte(t, srv.db, "mf1", "e1", video, "present", int64(len("conteudo-video")), "src1")
 
-	// Sem asset local nenhum antes da chamada.
+	// No local asset at all before the call.
 	if cnt := contarLinhas(t, srv.db, "SELECT count(*) FROM asset WHERE entity_id='e1' AND kind='poster' AND origin='local'"); cnt != 0 {
 		t.Fatalf("asset poster local pré-existente = %d, quero 0", cnt)
 	}
 
-	// O dono coloca o poster DEPOIS -- exatamente o caso hoje quebrado
-	// (descobrirPoster só roda na 1ª varredura, dentro de criarEntity).
+	// The owner places the poster AFTERWARDS -- exactly the case that used to be broken
+	// (descobrirPoster only runs in the 1st sweep, inside criarEntity).
 	poster := filepath.Join(pasta, "poster.jpg")
 	if err := os.WriteFile(poster, []byte("fake-poster"), 0o644); err != nil {
 		t.Fatal(err)
@@ -100,7 +98,7 @@ func TestRefreshEntityFilesImportaAssetLocalEExecutaRecheck(t *testing.T) {
 		t.Errorf("asset poster local apontando para %q = %d, quero 1", poster, cnt)
 	}
 
-	// O media_file teve o content_hash recalculado (recheck forçado).
+	// The media_file had its content_hash recomputed (forced recheck).
 	var hashDepois sql.NullString
 	if err := srv.db.Read.QueryRowContext(ctx, "SELECT content_hash FROM media_file WHERE id='mf1'").Scan(&hashDepois); err != nil {
 		t.Fatalf("ler content_hash: %v", err)
@@ -110,8 +108,8 @@ func TestRefreshEntityFilesImportaAssetLocalEExecutaRecheck(t *testing.T) {
 	}
 }
 
-// nfoComCamposLocais monta um .nfo mínimo (convenção Kodi) trazendo os 5
-// campos LOCAIS de reprodução cobertos pelo briefing 0088.
+// nfoComCamposLocais builds a minimal .nfo (Kodi convention) carrying the 5 LOCAL playback
+// fields covered by the endpoint.
 func nfoComCamposLocais(userRating string, playCount string, watched string, lastPlayed string, resumePos, resumeTotal string) string {
 	return `<?xml version="1.0" encoding="UTF-8"?>
 <movie>
@@ -127,9 +125,9 @@ func nfoComCamposLocais(userRating string, playCount string, watched string, las
 </movie>`
 }
 
-// TestRefreshEntityFilesPreencheCamposLocaisAusentes cobre o critério de
-// aceite 3: com um `.nfo` trazendo playcount/watched/userrating/resume e o
-// banco ainda sem valor nesses campos, o endpoint preenche todos.
+// TestRefreshEntityFilesPreencheCamposLocaisAusentes covers acceptance criterion 3: with a
+// `.nfo` carrying playcount/watched/userrating/resume and the database still without a value in
+// those fields, the endpoint fills in all of them.
 func TestRefreshEntityFilesPreencheCamposLocaisAusentes(t *testing.T) {
 	h, srv := setupRefreshFilesServer(t)
 	ctx := context.Background()
@@ -192,19 +190,18 @@ func TestRefreshEntityFilesPreencheCamposLocaisAusentes(t *testing.T) {
 	}
 }
 
-// TestRefreshEntityFilesNaoSobrescreveCampoJaPreenchido cobre o critério de
-// aceite mais importante (não-destrutivo, AGENTS.md princípio 5): rodar o
-// endpoint com um valor JÁ presente no banco, e um `.nfo` trazendo um valor
-// DIFERENTE para o MESMO campo, não sobrescreve -- o campo já preenchido
-// continua com o valor anterior.
+// TestRefreshEntityFilesNaoSobrescreveCampoJaPreenchido covers the most important acceptance
+// criterion (non-destructive, AGENTS.md principle 5): running the endpoint with a value ALREADY
+// present in the database, and a `.nfo` carrying a DIFFERENT value for the SAME field, does not
+// overwrite -- the already filled field keeps the previous value.
 func TestRefreshEntityFilesNaoSobrescreveCampoJaPreenchido(t *testing.T) {
 	h, srv := setupRefreshFilesServer(t)
 	ctx := context.Background()
 
 	semearEntity(t, srv.db, "e1", "movie", "Filme")
 
-	// user_rating JÁ preenchido no banco -- é a fonte de verdade local,
-	// não pode perder para o .nfo (princípio 1/5, AGENTS.md).
+	// user_rating ALREADY filled in the database -- it is the local source of truth, it cannot
+	// lose to the .nfo (principle 1/5, AGENTS.md).
 	if err := sqlcgen.New(srv.db.Write).PreencherCamposLocaisReproducaoSeAusentes(ctx, sqlcgen.PreencherCamposLocaisReproducaoSeAusentesParams{
 		UserRating: sql.NullFloat64{Float64: 9.9, Valid: true},
 		ID:         "e1",
@@ -212,8 +209,8 @@ func TestRefreshEntityFilesNaoSobrescreveCampoJaPreenchido(t *testing.T) {
 		t.Fatalf("semear user_rating: %v", err)
 	}
 
-	// .nfo traz um valor DIFERENTE para user_rating, e um valor NOVO para
-	// play_count (esse sim ainda ausente no banco -- deve ser preenchido).
+	// The .nfo carries a DIFFERENT value for user_rating, and a NEW value for play_count (that
+	// one is still absent from the database -- it must be filled in).
 	nfoPath := filepath.Join(t.TempDir(), "Filme.nfo")
 	if err := os.WriteFile(nfoPath, []byte(nfoComCamposLocais("2.0", "7", "false", "", "0", "0")), 0o644); err != nil {
 		t.Fatal(err)
@@ -246,15 +243,15 @@ func TestRefreshEntityFilesNaoSobrescreveCampoJaPreenchido(t *testing.T) {
 	if !ent.UserRating.Valid || ent.UserRating.Float64 != 9.9 {
 		t.Errorf("UserRating = %+v, quero preservado em 9.9 (não sobrescrito pelo .nfo=2.0)", ent.UserRating)
 	}
-	// play_count, esse sim, ausente antes -- deve ter sido preenchido.
+	// play_count, that one absent before -- it must have been filled in.
 	if !ent.PlayCount.Valid || ent.PlayCount.Int64 != 7 {
 		t.Errorf("PlayCount = %+v, quero 7 (preenchido -- estava ausente)", ent.PlayCount)
 	}
 }
 
-// contarLinhas é um atalho local para contagens ad-hoc pelo pool de leitura
-// (mesmo espírito do helper `contar` de internal/scanner/scanner_test.go,
-// que não é acessível daqui por ser de outro pacote).
+// contarLinhas is a local shortcut for ad-hoc counts through the read pool (the same spirit as
+// the `contar` helper of internal/scanner/scanner_test.go, which is not reachable from here
+// because it lives in another package).
 func contarLinhas(t *testing.T, d *db.DB, query string, args ...any) int {
 	t.Helper()
 	var n int
