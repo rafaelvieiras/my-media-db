@@ -1,0 +1,69 @@
+# compose.yaml -- production-style run of the published image.
+#
+# This file never builds anything. It pulls the multi-arch image from the GitHub
+# Container Registry and runs it with a bind mount for data and a read-write
+# mount for your media library.
+#
+#   docker compose up -d
+#
+# Change the two paths under `volumes:` before you start. Everything else has a
+# working default.
+
+name: mymediadb
+
+services:
+  app:
+    image: ghcr.io/rafaelvieiras/my-media-db:latest
+    container_name: mymediadb
+    restart: unless-stopped
+    ports:
+      # HOST:CONTAINER. The app listens on 8080 inside the container. Change the
+      # left side if 8080 is taken on your host.
+      - "8080:8080"
+    env_file:
+      # Optional provider keys (TMDB, fanart.tv, TheTVDB, AcoustID). Copy
+      # .env.example to .env and fill what you have. An empty file is fine: the
+      # external providers stay off and nothing breaks.
+      - path: .env
+        required: false
+    environment:
+      PORT: "8080"
+      MYMEDIADB_DB_PATH: /data/mymediadb.sqlite
+      MYMEDIADB_ASSETS_DIR: /data/assets
+    volumes:
+      # Database and downloaded artwork. Back it up with a tar of this folder.
+      - ./data:/data
+      # Your media library. Read and write, because the NFO and artwork export
+      # writes next to the files. It never renames or moves them.
+      #
+      # Replace the left side with the real path on your host, and register the
+      # path INSIDE the container when you add the library in the UI, for
+      # example /media/movies.
+      - ./media:/media
+    labels:
+      # Only containers with this label are updated by the watchtower service
+      # below.
+      - "com.centurylinklabs.watchtower.enable=true"
+    # No healthcheck here on purpose: the image already defines one (GET
+    # /api/v1/health).
+
+  # Optional: pull new releases automatically. Remove this service if you prefer
+  # to update by hand.
+  watchtower:
+    image: containrrr/watchtower:1.7.1
+    container_name: mymediadb-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Watchtower defaults to an old Docker API version that recent daemons
+      # reject. Pin one they accept.
+      DOCKER_API_VERSION: "1.40"
+      # Act only on containers with the label set above.
+      WATCHTOWER_LABEL_ENABLE: "true"
+      # Drop the old image after a successful update, so small disks do not
+      # fill up with old layers.
+      WATCHTOWER_CLEANUP: "true"
+      # Check the registry every 5 minutes.
+      WATCHTOWER_POLL_INTERVAL: "300"
+      WATCHTOWER_INCLUDE_RESTARTING: "true"

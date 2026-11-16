@@ -1,105 +1,171 @@
-# 🗃️ MyMediaDB
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo.svg" alt="MyMediaDB" width="300">
+  </picture>
+</p>
 
-> **O seu banco de dados de mídia — local, self-hosted, com API própria e sem
-> aprovação de ninguém. Você é a autoridade sobre o seu catálogo.**
-> Um banco para ser **consumido por aplicativos** (Jellyfin, Kodi, Plex, seus
-> scripts), não apenas um app de gestão.
+<p align="center">
+  <strong>Your own media database. Local, self-hosted, and yours to rule.</strong><br>
+  A catalog that applications read, not another app that locks your data in.
+</p>
 
-**Status:** `Fase 1 — scaffold do container` (Fase 0 — documentação de fundação — concluída).
-**Data:** 2026-07-06.
-**Licença:** [MIT](LICENSE). Como contribuir: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="Status: pre-1.0" src="https://img.shields.io/badge/status-pre--1.0-yellow.svg">
+  <img alt="Go" src="https://img.shields.io/badge/core-Go-00ADD8.svg">
+  <img alt="React" src="https://img.shields.io/badge/ui-React%20%2B%20Vite-61DAFB.svg">
+  <img alt="SQLite" src="https://img.shields.io/badge/store-SQLite-003B57.svg">
+</p>
 
 ---
 
-## O que é (em uma frase)
+## What is MyMediaDB?
 
-Um **banco de dados de mídia pessoal** que roda no seu servidor: lê a sua
-biblioteca local, extrai metadados técnicos dos arquivos, puxa informação de
-fontes externas **sob demanda** para complementar — e deixa **você** ser o dono
-final de cada título, arte e classificação, expondo tudo por uma **API sem cota**
-que qualquer cliente (Jellyfin, Kodi, Plex, agentes, scripts) pode consumir.
+MyMediaDB is a personal media catalog that runs on your own server. It scans your
+library folders, reads the technical metadata of each file, and pulls extra data
+from external sources only when you ask for it. Every title, poster and rating
+stays editable by you. Everything is served by an API that any client can read
+(Jellyfin, Kodi, Plex, your own scripts) without quotas or approval.
 
-É, ao mesmo tempo, **um gerenciador de biblioteca** (no espírito do
-TinyMediaManager) e **o seu próprio "TMDB privado"** — só que a fonte de verdade
-é local e a sua palavra vence a de qualquer fonte externa.
+It works as a **library manager** in the spirit of tinyMediaManager. It also acts
+as **your own private TMDB**: the source of truth is your database, and your word
+beats any external source.
 
-## Por que existe (a lacuna)
+## Why it exists
 
-As ferramentas atuais resolvem pedaços e sempre esbarram em quem manda no dado:
+Existing tools solve part of the problem and then hit the same wall: someone else
+owns your data.
 
-| Dor | Ferramenta atual | Resposta do MyMediaDB |
-|---|---|---|
-| Metadados ficam **espalhados** em `.nfo` por pasta, sem fonte consultável | TinyMediaManager é *stateless* — só cospe NFO | **Banco único com API**; NFO vira export opcional, não a verdade |
-| Sua arte/edição precisa ser **aprovada** por moderador externo | TMDB / Fanart.tv | **Ninguém aprova nada**; suas artes e textos entram direto |
-| Título brasileiro (VHS/TV) **diverge** do título oficial | Fica preso ao nome do TMDB | **Camada de override**: você renomeia, e o seu nome vence |
-| Curta animado / caso fora da taxonomia oficial **some** | Filosofia do TMDB recusa | **Sua taxonomia**: você decide o que é episódio, coleção, o que for |
-| Quer catalogar mídia que **nenhum banco cobre bem** (além de filmes/TV) | Não existe base decente | **Modelo universal e extensível** — outras verticais entram sem tocar no núcleo |
-| A API pública tem **cota e regras** que não são suas | TMDB API | **API sua, sem limite**; você define usuários e permissões |
-| Quer info de mídia que **ainda não tem** (planejamento) | O manager só enxerga o arquivo | O banco é **maior que a biblioteca** (campo `status`) |
+| Pain | How tools handle it today | What MyMediaDB does |
+| --- | --- | --- |
+| Metadata lives in scattered `.nfo` files, never queryable | tinyMediaManager is stateless and only writes NFO | One database with an API. NFO becomes an optional export, not the truth |
+| Your artwork or edit needs a moderator's approval | TMDB, Fanart.tv | Nobody approves anything. Your art and text go in |
+| The Brazilian title (VHS, TV) differs from the official one | You are stuck with the TMDB name | Override layer: you rename it, and your name wins |
+| A short film outside the official taxonomy disappears | TMDB philosophy rejects it | Your taxonomy: you decide what is an episode, a collection, or anything else |
+| You want media that no database covers well | No decent source exists | Universal, extensible model. New verticals join without touching the core |
+| The public API has quotas and rules that are not yours | TMDB API | Your API, no limits, your users and permissions |
+| You want to plan media you do not own yet | The manager only sees files | The catalog is bigger than the library (the `status` field) |
 
-## Princípios
+## Features
 
-1. **Você é a autoridade.** O banco local é a fonte de verdade. Dado externo é
-   *sugestão*; a sua edição é uma **camada de override** que vence sempre.
-2. **O banco é maior que a biblioteca.** Cataloga o que você tem *e* o que ainda
-   não tem (wishlist/planejamento) — via `status`, não gambiarra.
-3. **Universal por design, focado na entrega.** O núcleo (entidade + extensões)
-   modela *qualquer* mídia. O MVP entrega **filmes e séries**, mas nada no núcleo
-   assume que só existe isso.
-4. **Extensível sem tocar no núcleo.** Verticais e integrações vivem em dados de
-   extensão *namespaced* e validados. **Plugins de terceiros são um alvo do
-   design — não do MVP** (ver [`docs/11`](docs/11-decisoes-abertas.md)).
-5. **Local-first e leve.** Uma imagem, um binário, memória mínima. Fontes
-   externas são enriquecimento **opcional**, nunca requisito para funcionar.
-6. **Pull > Sync.** Sem sincronização automática. Você puxa da fonte externa
-   quando quer, e o que é puxado é cacheado localmente.
-7. **Banco para ser consumido.** Expõe API — inclusive uma camada
-   **compatível com TMDB** — para que Jellyfin/Kodi/Plex e afins leiam o seu
-   catálogo. O app de gestão é só **mais um cliente** dessa API.
+- **Library scan** — watch folders for movies, series, and music. Reads
+  duration, resolution, codec, channels, and tags with `ffprobe`.
+- **Matching** — resolves each file against TMDB, TheTVDB and MusicBrainz, with a
+  confidence score. Automatic match runs after the scan.
+- **Review queue** — uncertain matches go to one screen, grouped by album, series
+  or folder, so you decide once per group instead of once per file.
+- **Enrichment on demand** — descriptions, cast, ratings, posters, backdrops,
+  and stills. Each provider is optional; without keys the app still runs.
+- **Override layer** — edit any field and your value wins over the source. The
+  original value stays readable.
+- **NFO export** — writes Kodi/Jellyfin NFO next to your files, only when the
+  content changed.
+- **Music vertical** — albums and tracks with MusicBrainz, AcoustID and Cover Art
+  Archive, including compilations and deluxe editions.
+- **Native API** — `/api/v1` for everything the app does, plus a TMDB-compatible
+  namespace for clients that expect it.
+- **Single container** — Go binary with the React UI embedded. SQLite, no
+  separate database server, runs on a Raspberry Pi.
 
-## Escopo
+## Quick start
 
-- **Visão (para onde vai):** um catálogo pessoal **universal** de mídia —
-  filmes, séries, e verticais adicionais (o que hoje não tem banco decente no
-  seu servidor), extensível por plugins.
-- **MVP (o que sai primeiro):** **Filmes + Séries**, com UI de gestão primeiro
-  (validar o rumo), scan da biblioteca, mediainfo, enriquecimento on-demand e
-  a camada de override. API compatível com TMDB e multiusuário vêm em seguida.
+You need Docker with Compose.
 
-O modelo de dados e a arquitetura já nascem preparados para a visão; o
-*maquinário* (plugin registry, verticais extras) fica para depois do MVP.
+```bash
+# 1. Get the compose file and the optional credentials template.
+curl -O https://raw.githubusercontent.com/rafaelvieiras/my-media-db/master/compose.yaml
+curl -o .env https://raw.githubusercontent.com/rafaelvieiras/my-media-db/master/.env.example
 
-## Documentação
+# 2. Point the media volume in compose.yaml to your library folder.
 
-| Doc | Conteúdo |
-|---|---|
-| [01 — Visão e casos de uso](docs/01-visao-e-casos-de-uso.md) | Cenários normativos que a implementação precisa satisfazer |
-| [02 — Glossário](docs/02-glossario.md) | Vocabulário canônico do projeto |
-| [03 — Arquitetura](docs/03-arquitetura.md) | Go + Vite/React, container único, flag de API, camadas |
-| [04 — Modelo de dados](docs/04-modelo-de-dados.md) | Entidade base, camada de override, dados de extensão, `status`, assets |
-| [05 — API](docs/05-api.md) | Namespaces `/api/tmdb` (compat) e `/api/v1` (nativo) |
-| [06 — Biblioteca e scan](docs/06-biblioteca-e-scan.md) | Datasources, varredura, mediainfo, matching, dedup |
-| [07 — Enriquecimento e providers](docs/07-enriquecimento-providers.md) | Fontes externas on-demand, cache, proxy de imagem |
-| [08 — Artwork e assets](docs/08-artwork-e-assets.md) | Armazenamento, tipos de arte, upload custom |
-| [09 — NFO e export](docs/09-nfo-e-export.md) | Export NFO Kodi/Jellyfin como saída opcional |
-| [10 — Usuários e permissões](docs/10-usuarios-e-permissoes.md) | Multiusuário, tokens, escopos |
-| [11 — Decisões abertas](docs/11-decisoes-abertas.md) | O que ainda não foi decidido, riscos, plugins futuros |
-| [12 — Roadmap](docs/12-roadmap.md) | Fases (UI-first) e como cada fase vira briefings |
-| [ADRs](docs/adr/) | Decisões de arquitetura fechadas, uma por arquivo (R1–R7, MD1–MD6) |
+# 3. Start it.
+docker compose up -d
+```
 
-As decisões de fundação são registradas na
-[agenda de decisões](docs/00-agenda-de-decisoes.md) (backlog vivo) e, ao fechar,
-viram [ADRs](docs/adr/) e são promovidas às docs de spec.
+Open `http://localhost:8080`. Add a library, pick the folder inside the container,
+and press **Scan**.
 
-O desenvolvimento é dirigido por **briefings** — ordens de serviço autocontidas,
-uma por feature/fix. Ver [`briefings/README.md`](briefings/README.md).
+The image is public and multi-arch (`linux/amd64`, `linux/arm64`,
+`linux/arm/v7`):
 
-## Não-objetivos
+```bash
+docker pull ghcr.io/rafaelvieiras/my-media-db:latest
+```
 
-- **Não é um media server.** Não faz streaming nem transcode — isso é papel do
-  Jellyfin/Plex, que *consomem* o MyMediaDB.
-- **Não é um scraper que reescreve suas pastas.** A organização de arquivos é
-  opcional e não-destrutiva; a verdade vive no banco, não no nome do arquivo.
-- **Não é um serviço em nuvem.** Roda no seu servidor, para os seus usuários.
-- **Não é uma base pública colaborativa.** Não há moderação global nem catálogo
-  compartilhado; o dado é seu.
+## Configuration
+
+Every key is optional. Without keys the app starts and the external providers stay
+off. You can also set each provider from the UI, and the UI value wins over the
+environment.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PORT` | `8080` | HTTP port inside the container |
+| `MYMEDIADB_DB_PATH` | `data/mymediadb.sqlite` | Database file |
+| `MYMEDIADB_ASSETS_DIR` | `data/assets` | Downloaded artwork |
+| `MYMEDIADB_TMDB_TOKEN` | *(empty)* | TMDB API read token (v4, preferred) |
+| `MYMEDIADB_TMDB_API_KEY` | *(empty)* | TMDB API key (v3, alternative) |
+| `MYMEDIADB_FANARTTV_API_KEY` | *(empty)* | fanart.tv, artwork only |
+| `MYMEDIADB_TTDB_API_KEY` | *(empty)* | TheTVDB, series metadata |
+| `MYMEDIADB_ACOUSTID_CLIENT_KEY` | *(empty)* | AcoustID, audio fingerprint |
+
+MusicBrainz and Cover Art Archive need no key. See
+[`docs/07`](docs/07-enrichment-and-providers.md) for provider precedence and cache
+rules.
+
+## How it works
+
+1. **Scan** — walks the library folders and records each file. A file becomes a
+   draft entity with its raw tags.
+2. **Match** — tries to resolve the draft against the sources. Confident matches
+   become cataloged. The rest wait in the review queue.
+3. **Enrich** — for a cataloged entity, fetches the remaining fields and the
+   artwork, and stores them in the database and the assets folder.
+4. **Export** — writes NFO and artwork next to the media file, one way only. It
+   never renames or moves your files.
+
+Steps 2 to 4 also run at the end of every scan, so a new file is processed without
+a second click.
+
+## Status
+
+MyMediaDB is **pre-1.0** and under active development. The database schema is
+versioned and migrations run on start.
+
+> [!WARNING]
+> **There is no authentication yet.** Anyone who reaches the port can read and
+> change the catalog. Run it on your local network or behind your own reverse
+> proxy with access control. Tokens and scopes arrive in a later release (see
+> [`docs/10`](docs/10-users-and-permissions.md)).
+
+## Documentation
+
+| Doc | Content |
+| --- | --- |
+| [01 — Vision and use cases](docs/01-vision-and-use-cases.md) | Normative scenarios the implementation must satisfy |
+| [02 — Glossary](docs/02-glossary.md) | Canonical vocabulary |
+| [03 — Architecture](docs/03-architecture.md) | Go + Vite/React, single container, layers |
+| [04 — Data model](docs/04-data-model.md) | Base entity, override layer, extension data, `status`, assets |
+| [05 — API](docs/05-api.md) | `/api/tmdb` (compatible) and `/api/v1` (native) |
+| [06 — Library and scan](docs/06-library-and-scan.md) | Datasources, walk, mediainfo, matching, dedup |
+| [07 — Enrichment and providers](docs/07-enrichment-and-providers.md) | On-demand sources, cache, image proxy |
+| [08 — Artwork and assets](docs/08-artwork-and-assets.md) | Storage, art types, custom upload |
+| [09 — NFO and export](docs/09-nfo-and-export.md) | Kodi/Jellyfin NFO as an optional output |
+| [10 — Users and permissions](docs/10-users-and-permissions.md) | Multiuser, tokens, scopes |
+| [11 — Open decisions](docs/11-open-decisions.md) | What is not decided yet, risks |
+| [12 — Roadmap](docs/12-roadmap.md) | Phases and what each one delivers |
+| [ADRs](docs/adr/) | Closed architecture decisions, one file each |
+
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the
+environment, the commands, and the conventions. If you use a coding agent, see
+[AGENTS.md](AGENTS.md).
+
+By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). To report
+a security problem, read [SECURITY.md](SECURITY.md).
+
+## License
+
+Licensed under the [MIT License](LICENSE).

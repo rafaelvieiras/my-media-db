@@ -1,76 +1,105 @@
-# release.yml — build e publicação da imagem Docker de produção no GHCR.
+# release.yml — version, GitHub Release, and the Docker image.
 #
-# Builda a imagem multi-arch (amd64/arm64/armv7 — Dockerfile faz cross-
-# compilação, não emulação QEMU nos estágios pesados) e publica no GitHub
-# Container Registry (ghcr.io/rafaelvieiras/my-media-db), imagem PRIVADA por
-# ora. A tag `:latest` é o que o Watchtower no alvo (compose.prod.yaml) fica
-# perseguindo: a cada push no master a imagem é rebuildada e o Watchtower
-# puxa a nova versão automaticamente em até 5 min (WATCHTOWER_POLL_INTERVAL).
+# Two jobs, in this order:
 #
-# paths-ignore evita gastar CI em mudanças que não afetam a imagem final
-# (docs, briefings, reports, compose de produção, exemplo de .env).
+#   version  reads the Conventional Commits since the last tag, decides the next
+#            version, creates the git tag and the GitHub Release with the notes.
+#   docker   builds the multi-arch image and pushes it to GHCR with the tags
+#            :latest, :<major.minor> and :<full version>.
+#
+# The version comes from the commits and nothing else. A push to `master` with a
+# `feat:` commit publishes a minor release; with only `fix:` commits, a patch.
+# With no feat/fix/breaking commit, no release is made and the image is not
+# rebuilt.
+#
+# `:latest` is what Watchtower follows on the deployment host, so a new release
+# reaches the server within five minutes.
 
-name: Release (imagem Docker)
+name: Release
 
 on:
   push:
-    branches: [main, master]
-    paths-ignore:
-      - '**.md'
-      - 'briefings/**'
-      - 'docs/**'
-      - 'reports/**'
-      - 'compose.prod.yaml'
-      - '.env.prod.example'
-    tags:
-      - 'v*'
+    branches: [master]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build e push da imagem multi-arch
+  version:
+    name: Version and release notes
     runs-on: ubuntu-latest
-
+    outputs:
+      version: ${{ steps.semantic.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
+        with:
+          # semantic-release needs the full history and the tags to find the
+          # last release.
+          fetch-depth: 0
 
-      # Habilita emulação para os estágios que rodam de fato na arch alvo
-      # (ex.: `apk add ffmpeg` no estágio `final` do Dockerfile) — os
-      # estágios builder-web/builder-go cross-compilam e não precisam disso.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install release tooling
+        run: npm ci
+
+      - name: Run semantic-release
+        id: semantic
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
+
+  docker:
+    name: Build and push the multi-arch image
+    needs: version
+    if: needs.version.outputs.version != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }}
+
+      # Emulation is only for the stages that really run on the target
+      # architecture, such as `apk add ffmpeg` in the final stage. The builder
+      # stages cross-compile and do not need it.
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Setup Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Imagem privada: autentica com o token automático do workflow, que já
-      # tem `packages: write` via a permissão declarada acima. Não precisa de
-      # PAT dedicado no CI.
-      - name: Login no ghcr.io
+      # The workflow token carries `packages: write` from the permissions block.
+      - name: Log in to ghcr.io
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Deriva as tags da imagem: `latest` só no branch default, sha curto
-      # sempre, e semver quando o push for de uma tag `v*`.
-      - name: Metadados da imagem
+      - name: Image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha
-            type=semver,pattern={{version}}
+            type=raw,value=latest
+            type=semver,pattern={{version}},value=${{ needs.version.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.version.outputs.version }}
 
-      - name: Build e push multi-arch
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -79,4 +108,4 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ github.sha }}
+            VERSION=${{ needs.version.outputs.version }}
