@@ -1,19 +1,20 @@
-# ADR-NNNN — Título curto da decisão
+# ADR-NNNN — Short title of the decision
 
-- **Status:** Proposta · Aceita · Substituída por ADR-XXXX
-- **Data:** AAAA-MM-DD
-- **Agenda:** [ID](../00-agenda-de-decisoes.md) · **Spec:** doc(s) de destino
+- **Status:** Proposed · Accepted · Superseded by ADR-XXXX
+- **Date:** YYYY-MM-DD
+- **Agenda:** [ID](../00-decision-agenda.md) · **Spec:** destination doc(s)
 
-## Contexto
+## Context
 
-Qual era o problema/tensão? O que forçava uma escolha? (2–4 frases.)
+What was the problem/tension? What forced a choice? (2–4 sentences.)
 
-## Decisão
+## Decision
 
-O que foi decidido, no imperativo. Inclua a regra operativa, não só a intenção.
+What was decided, in the imperative. Include the operational rule, not only the
+intent.
 
-## Consequências
+## Consequences
 
-- O que passa a ser verdade / o que fica mais fácil.
-- Custos, limites e o que fica de fora (evolução pós-MVP).
-- Decisões relacionadas ([ADR-XXXX](XXXX-slug.md)).
+- What becomes true / what gets easier.
+- Costs, limits and what is left out (post-MVP evolution).
+- Related decisions ([ADR-XXXX](XXXX-slug.md)).

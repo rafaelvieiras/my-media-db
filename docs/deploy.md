@@ -1,112 +1,100 @@
 # Deploy
 
-Guia prático para colocar o MyMediaDB em produção: imagem Docker única,
-publicada no GitHub Container Registry e mantida atualizada sozinha.
+A practical guide to putting MyMediaDB into production: a single Docker image,
+published on the GitHub Container Registry and kept up to date on its own.
 
-## 1. Visão geral
+## 1. Overview
 
-O MyMediaDB roda como uma imagem Docker única (Go + SPA embutido, `Dockerfile`
-na raiz), publicada no GitHub Container Registry em
-`ghcr.io/rafaelvieiras/my-media-db` — **privada** por enquanto (o repositório
-pode virar OSS depois, mas o registry não acompanha automaticamente).
+MyMediaDB runs as a single Docker image (Go + embedded SPA, `Dockerfile`
+at the root), published on the GitHub Container Registry as
+`ghcr.io/rafaelvieiras/my-media-db` — a **public** image, so no registry
+login is needed to pull it.
 
-A imagem é **multi-arch**: `linux/amd64`, `linux/arm64` e `linux/arm/v7`. O
-Docker escolhe sozinho a variante certa a partir do manifesto multi-arch, sem
-nenhuma configuração extra no alvo.
+The image is **multi-arch**: `linux/amd64`, `linux/arm64` and `linux/arm/v7`. Docker
+picks the right variant on its own from the multi-arch manifest, with no
+extra configuration on the target.
 
-Fluxo ponta a ponta:
+End-to-end flow:
 
-1. Push no `master` (ou tag `v*`, ou disparo manual) → o workflow
-   `.github/workflows/release.yml` builda a imagem para as 3 arquiteturas e
-   publica no ghcr com a tag `:latest` (mais `sha` curto e, em tags, semver).
-2. No alvo (este PC, um Raspberry Pi, etc.), o `compose.prod.yaml` sobe o
-   app **e** um Watchtower que fica de olho no registry.
-3. A cada 5 minutos o Watchtower checa se o `:latest` mudou; se mudou, puxa a
-   imagem nova, recria o container e limpa a imagem antiga.
+1. Push to `master` (or a `v*` tag, or a manual trigger) → the workflow
+   `.github/workflows/release.yml` builds the image for the 3 architectures and
+   publishes it to ghcr with the `:latest` tag (plus short `sha` and, on tags, semver).
+2. On the target (a home server, a Raspberry Pi, etc.), `compose.yaml` brings up the
+   app **and** a Watchtower that keeps an eye on the registry.
+3. Every 5 minutes Watchtower checks whether `:latest` changed; if it did, it pulls the
+   new image, recreates the container and cleans up the old image.
 
-Não há passo manual de deploy no dia a dia: depois do setup inicial, um push
-no master já chega no alvo sozinho.
+There is no manual deploy step in day-to-day work: after the initial setup, a push
+to master reaches the target by itself.
 
-## 2. Pré-requisitos
+## 2. Prerequisites
 
-- Docker + Docker Compose (plugin `docker compose`) instalados no alvo.
-- Um GitHub Personal Access Token (classic) com escopo `read:packages` — só
-  leitura é suficiente para puxar a imagem privada (o CI usa o token
-  automático do workflow para publicar, isso aqui é só para o alvo puxar).
+- Docker + Docker Compose (the `docker compose` plugin) installed on the target.
+- Network access to `ghcr.io` — the image `ghcr.io/rafaelvieiras/my-media-db`
+  is public, so pulling it requires no credentials at all (the CI uses the
+  workflow's automatic token to publish; the target needs nothing).
 
-## 3. Login no ghcr (uma vez por máquina)
-
-```bash
-echo <SEU_PAT> | docker login ghcr.io -u rafaelvieiras --password-stdin
-```
-
-Isso grava a credencial em `~/.docker/config.json`. Tanto o `docker compose
-pull` quanto o container do Watchtower (que monta esse arquivo read-only)
-dependem dela para autenticar contra o registry privado — sem login, ambos
-recebem `denied`/`unauthorized`.
-
-## 4. Subir neste PC (teste)
+## 3. Bring it up on a test host
 
 ```bash
-# 1) Modelo de credenciais opcionais (TMDB/fanart.tv/TVDB)
-cp .env.prod.example .env
-# ... edite .env e preencha o que tiver (pode deixar tudo vazio)
+# 1) Template of optional credentials (TMDB/fanart.tv/TVDB)
+cp .env.example .env
+# ... edit .env and fill in whatever you have (you can leave everything empty)
 
-# 2) Puxa a imagem publicada
-docker compose -f compose.prod.yaml pull
+# 2) Pull the published image
+docker compose -f compose.yaml pull
 
-# 3) Sobe app + Watchtower
-docker compose -f compose.prod.yaml up -d
+# 3) Bring up app + Watchtower
+docker compose -f compose.yaml up -d
 ```
 
-Acesse em `http://localhost:8096` (mapeamento `8096:8080` já definido no
-compose). Para acompanhar os logs do app:
+Reach it at `http://localhost:8080` (the `8080:8080` mapping is already defined in the
+compose file). To follow the app logs:
 
 ```bash
-docker compose -f compose.prod.yaml logs -f app
+docker compose -f compose.yaml logs -f app
 ```
 
-## 5. Auto-update
+## 4. Auto-update
 
-O serviço `watchtower` do `compose.prod.yaml` vigia containers com o label
-`com.centurylinklabs.watchtower.enable=true` (só o `app` tem esse label) e,
-a cada `WATCHTOWER_POLL_INTERVAL=300` segundos (5 min), verifica se a tag
-`:latest` mudou no ghcr. Se mudou: puxa a imagem nova, recria o container
-`mymediadb` com os mesmos volumes/env, e remove a imagem antiga
-(`WATCHTOWER_CLEANUP=true`) para não acumular lixo em disco.
+The `watchtower` service in `compose.yaml` watches containers with the label
+`com.centurylinklabs.watchtower.enable=true` (only `app` has that label) and,
+every `WATCHTOWER_POLL_INTERVAL=300` seconds (5 min), checks whether the `:latest` tag
+changed on ghcr. If it did, it pulls the new image, recreates the `mymediadb`
+container with the same volumes/env, and removes the old image
+(`WATCHTOWER_CLEANUP=true`) so it does not pile up garbage on disk.
 
-Para forçar uma atualização na hora, sem esperar o poll:
+To force an update right away, without waiting for the poll:
 
 ```bash
-docker compose -f compose.prod.yaml pull && docker compose -f compose.prod.yaml up -d
+docker compose -f compose.yaml pull && docker compose -f compose.yaml up -d
 ```
 
-Ou, alternativamente, reinicie só o Watchtower (ele checa assim que sobe):
+Or, alternatively, restart only Watchtower (it checks as soon as it comes up):
 
 ```bash
-docker compose -f compose.prod.yaml restart watchtower
+docker compose -f compose.yaml restart watchtower
 ```
 
-## 6. Raspberry Pi (1GB RAM)
+## 5. Raspberry Pi (1GB RAM)
 
-Os mesmos passos das seções 3–5 valem para o Pi: copie `compose.prod.yaml`,
-`.env.prod.example` (vire `.env`), faça o `docker login ghcr.io` no próprio
-Pi e suba com `docker compose -f compose.prod.yaml up -d`.
+The same steps from sections 3–4 apply to the Pi: copy `compose.yaml`,
+`.env.example` (renamed to `.env`) and run `docker compose -f compose.yaml up -d`.
 
-- O manifesto multi-arch faz o `:latest` resolver automaticamente para a
-  arquitetura do Pi — **32-bit** → `linux/arm/v7`; **64-bit** → `linux/arm64`.
-  Não precisa escolher nada manualmente.
-- `WATCHTOWER_CLEANUP=true` é essencial aqui: sem ele, cada atualização deixa
-  a imagem antiga no cartão SD, que é pequeno.
-- O binário Go (estático, sem CGO) + SQLite puro-Go (modernc) rodam
-  folgados em 1GB de RAM — não há JVM, Node, nem toolchain de build na
-  imagem final (só o binário + ffmpeg).
+- The multi-arch manifest makes `:latest` resolve automatically to the
+  Pi's architecture — **32-bit** → `linux/arm/v7`; **64-bit** → `linux/arm64`.
+  There is nothing to choose manually.
+- `WATCHTOWER_CLEANUP=true` is essential here: without it, every update leaves
+  the old image on the SD card, which is small.
+- The Go binary (static, no CGO) + pure-Go SQLite (modernc) run
+  comfortably in 1GB of RAM — there is no JVM, Node, or build toolchain in the
+  final image (just the binary + ffmpeg).
 
-## 7. Solução de problemas
+## 6. Troubleshooting
 
-| Sintoma | Causa provável | Ação |
+| Symptom | Probable cause | Action |
 |---|---|---|
-| `denied` / `unauthorized` no `pull` | Login no ghcr ausente ou expirado | Refazer `docker login ghcr.io -u rafaelvieiras --password-stdin` |
-| `exec format error` ao subir o container | Arch do manifesto não bate com o host | Não deveria ocorrer com os 3 alvos publicados (amd64/arm64/armv7); confira `docker version` → `Server.Arch` |
-| Porta 8096 já em uso | Outro serviço ocupando a porta no host | Trocar o mapeamento em `compose.prod.yaml` (ex.: `"8091:8080"`) |
-| App sobe mas busca externa (TMDB/fanart.tv/TVDB) não funciona | `.env` vazio ou sem as chaves | Preencher `.env` a partir de `.env.prod.example` — é opcional, mas sem chave a busca fica desligada |
+| `manifest unknown` / `denied` on `pull` | Wrong image reference or tag | Confirm `ghcr.io/rafaelvieiras/my-media-db:latest` and retry |
+| `exec format error` when starting the container | Manifest arch does not match the host | It should not happen with the 3 published targets (amd64/arm64/armv7); check `docker version` → `Server.Arch` |
+| Port 8080 already in use | Another service occupying the port on the host | Change the mapping in `compose.yaml` (e.g. `"8081:8080"`) |
+| App comes up but external search (TMDB/fanart.tv/TVDB) does not work | `.env` empty or missing the keys | Fill `.env` from `.env.example` — it is optional, but without a key the search stays off |

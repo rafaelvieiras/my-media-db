@@ -1,47 +1,51 @@
 # Architecture Decision Records (ADRs)
 
-Cada decisão de **fundação** já fechada vira um **ADR** — um arquivo curto,
-imutável e datado. É a memória de *por que* o projeto é como é: substitui a lista
-achatada de "decisões abertas" por um registro rastreável, um arquivo por decisão.
+Every **foundational** decision already closed becomes an **ADR** — a short,
+immutable and dated file. It is the memory of *why* the project is the way it is: it
+replaces the flat list of "open decisions" with a traceable record, one file per decision.
 
-## Como funciona (formato leve)
+## How it works (lightweight format)
 
-- Um ADR por decisão, numerado em sequência: `NNNN-slug.md`.
-- Segue o [template](template.md): **Contexto · Decisão · Consequências**, mais
-  status, data e o **ID na agenda** ([`docs/00`](../00-agenda-de-decisoes.md)).
-- **ADR é imutável.** Não se reescreve uma decisão: quando uma nova a supera, cria-se
-  um **novo ADR** que a marca como `Substituída por ADR-XXXX`, e vice-versa.
-- Fluxo: uma decisão nasce na [agenda](../00-agenda-de-decisoes.md) (`aberto` →
-  `documentado`), vira ADR, e é promovida às docs de spec (`03`, `04`, …).
+- One ADR per decision, numbered in sequence: `NNNN-slug.md`.
+- It follows the [template](template.md): **Context · Decision · Consequences**, plus
+  status, date and the **agenda ID** ([`docs/00`](../00-decision-agenda.md)).
+- **An ADR is immutable.** A decision is not rewritten: when a new one supersedes it,
+  a **new ADR** is created that marks it as `Superseded by ADR-XXXX`, and vice-versa.
+- Flow: a decision is born in the [agenda](../00-decision-agenda.md) (`open` →
+  `documented`), becomes an ADR, and is promoted to the spec docs (`03`, `04`, …).
 
-## Índice
+## Index
 
-| ADR | Decisão | Agenda | Status |
+| ADR | Decision | Agenda | Status |
 |---|---|---|---|
-| [0001](0001-resolver-particionamento-por-origem.md) | Resolver: campos particionados por origem | R1 | Aceita |
-| [0002](0002-prioridade-entre-fontes-externas.md) | Prioridade entre fontes externas (lista global) | R2 | Aceita |
-| [0003](0003-override-de-listas-por-operacoes.md) | Override de listas por merge de operações | R3 | Aceita |
-| [0004](0004-override-como-blob-json-esparso.md) | Override como blob JSON esparso | R4 | Aceita |
-| [0005](0005-composicao-uniforme-extension-data.md) | Composição uniforme (inclui `extension_data`) | R5 | Aceita |
-| [0006](0006-presenca-da-chave-sinaliza-override.md) | Presença da chave sinaliza override | R6 | Aceita |
-| [0007](0007-fatos-tecnicos-sao-overridaveis.md) | Fatos técnicos são overridáveis | R7 | Aceita |
-| [0008](0008-identidade-e-matching-kodi-jellyfin.md) | Identidade e matching pela convenção Kodi/Jellyfin | MD1 | Aceita |
-| [0009](0009-posse-e-status-eixos-ortogonais.md) | Posse e `status` como eixos ortogonais | MD2 | Aceita |
-| [0010](0010-concorrencia-sqlite-wal-escritor-unico.md) | Concorrência SQLite: WAL + escritor único | MD3 | Aceita |
-| [0011](0011-external-ids-autoritativo-media-external-cache.md) | `external_ids` autoritativo, `media_external` cache | MD4 | Aceita |
-| [0012](0012-ciclo-de-vida-nao-destrutivo.md) | Ciclo de vida não-destrutivo | MD5 | Aceita |
-| [0013](0013-override-de-relacoes-por-operacoes.md) | Override de relações (elenco/equipe) por operações | MD6 | Aceita |
-| [0014](0014-stack-de-implementacao.md) | Stack de implementação (chi, modernc, sqlc, ffprobe, OpenAPI) | doc 11 (1–5) | Aceita |
-| [0015](0015-api-tmdb-passthrough.md) | `/api/tmdb`: passthrough com cache, nunca 404 | doc 11 (6) | Aceita |
-| [0016](0016-quality-gate-catraca-unificada.md) | Quality gate: catraca unificada (ratchet) Go + TS | QG1 | Aceita |
-| [0017](0017-migrations-goose-embedado.md) | Migrations do SQLite: goose embedado | Fase 2 | Aceita |
-| [0018](0018-modelo-multi-idioma-dimensao-nas-camadas.md) | Modelo multi-idioma: dimensão de idioma nas camadas | L1 | Aceita |
-| [0019](0019-resolucao-por-idioma-fallback-proveniencia.md) | Resolução por idioma: cadeia de fallback + proveniência | L2 | Aceita |
-| [0020](0020-traducao-de-tags-genres-keywords.md) | Tradução de tags (genres localizados + keywords) | L3 | Aceita |
-| [0021](0021-modelo-de-series-hierarquia-ordenacoes-vinculo-arquivo.md) | Séries: hierarquia, ordenações como projeção, vínculo N:M arquivo↔episódio | TV1–TV5 | Aceita |
-| [0022](0022-historico-de-consumo-eventos-genericos-e-trackerprovider.md) | Histórico de consumo: eventos genéricos + capacidade `TrackerProvider` | H1–H5 | Aceita |
-| [0023](0023-integracoes-configuraveis-via-ui-precedencia-sobre-env.md) | Integrações configuráveis via UI: banco com precedência sobre variável de ambiente | I1–I4 | Aceita |
-| [0024](0024-cache-externo-sobrevive-sem-provider-vivo.md) | Cache externo sobrevive sem provider vivo (parse puro ≠ busca ao vivo) | PR1 | Aceita |
-| [0025](0025-trailer-tema-musical-ytdlp-themerrdb.md) | Trailer e música-tema: yt-dlp aceito (binário dinâmico + path custom) + ThemerrDB | TR1–TR2 | Aceita |
-| [0026](0026-trailer-tema-job-e-gatilho-automatico-no-scan.md) | Trailer/tema: job periódico + gatilho automático no scan (opt-in) | TR3 | Aceita |
-| [0031](0031-pos-scan-por-biblioteca.md) | Pós-scan por biblioteca: o scan fecha o próprio ciclo (e nada de enriquecimento dentro da transação) | SCAN-POS | Aceita |
+| [0001](0001-resolver-partition-by-origin.md) | Resolver: fields partitioned by origin | R1 | Accepted |
+| [0002](0002-priority-between-external-sources.md) | Priority between external sources (global list) | R2 | Accepted |
+| [0003](0003-list-override-by-operations.md) | List override by merging operations | R3 | Accepted |
+| [0004](0004-override-as-sparse-json-blob.md) | Override as a sparse JSON blob | R4 | Accepted |
+| [0005](0005-uniform-composition-through-extension-data.md) | Uniform composition (includes `extension_data`) | R5 | Accepted |
+| [0006](0006-key-presence-signals-override.md) | Key presence signals override | R6 | Accepted |
+| [0007](0007-technical-facts-are-overridable.md) | Technical facts are overridable | R7 | Accepted |
+| [0008](0008-identity-and-matching-kodi-jellyfin.md) | Identity and matching by the Kodi/Jellyfin convention | MD1 | Accepted |
+| [0009](0009-ownership-and-status-orthogonal-axes.md) | Ownership and `status` as orthogonal axes | MD2 | Accepted |
+| [0010](0010-sqlite-wal-concurrency-single-writer.md) | SQLite concurrency: WAL + single writer | MD3 | Accepted |
+| [0011](0011-external-ids-authoritative-media-external-cache.md) | `external_ids` authoritative, `media_external` cache | MD4 | Accepted |
+| [0012](0012-non-destructive-lifecycle.md) | Non-destructive lifecycle | MD5 | Accepted |
+| [0013](0013-relation-override-by-operations.md) | Relation override (cast/crew) by operations | MD6 | Accepted |
+| [0014](0014-implementation-stack.md) | Implementation stack (chi, modernc, sqlc, ffprobe, OpenAPI) | doc 11 (1–5) | Accepted |
+| [0015](0015-tmdb-api-passthrough.md) | `/api/tmdb`: passthrough with cache, never 404 | doc 11 (6) | Accepted |
+| [0016](0016-unified-quality-gate-ratchet.md) | Quality gate: unified ratchet Go + TS | QG1 | Accepted |
+| [0017](0017-embedded-goose-migrations.md) | SQLite migrations: embedded goose | Phase 2 | Accepted |
+| [0018](0018-multilanguage-model-language-as-a-layer-dimension.md) | Multi-language model: language as a layer dimension | L1 | Accepted |
+| [0019](0019-per-language-resolution-fallback-and-provenance.md) | Per-language resolution: fallback chain + provenance | L2 | Accepted |
+| [0020](0020-translation-of-genres-and-keywords-tags.md) | Tag translation (localized genres + keywords) | L3 | Accepted |
+| [0021](0021-series-model-hierarchy-orderings-and-file-link.md) | Series: hierarchy, orderings as a projection, N:M file↔episode link | TV1–TV5 | Accepted |
+| [0022](0022-consumption-history-generic-events-and-tracker-provider.md) | Consumption history: generic events + `TrackerProvider` capability | H1–H5 | Accepted |
+| [0023](0023-integration-config-through-the-ui-wins-over-env.md) | Integrations configurable through the UI: database takes precedence over environment variable | I1–I4 | Accepted |
+| [0024](0024-external-cache-survives-without-a-live-provider.md) | External cache survives without a live provider (pure parse ≠ live search) | PR1 | Accepted |
+| [0025](0025-trailer-and-theme-through-ytdlp-and-themerrdb.md) | Trailer and theme music: yt-dlp accepted (dynamic binary + custom path) + ThemerrDB | TR1–TR2 | Accepted |
+| [0026](0026-trailer-and-theme-job-and-automatic-scan-trigger.md) | Trailer/theme: periodic job + automatic trigger on scan (opt-in) | TR3 | Accepted |
+| [0027](0027-music-model-artist-album-track.md) | Music model: artist→album→track hierarchy via MusicBrainz | MU1–MU4 | Accepted |
+| [0028](0028-unified-execution-queue-scan-and-jobs.md) | Unified execution queue for scan and jobs | — | Accepted |
+| [0029](0029-local-first-music-import-per-owned-track.md) | Local-first music import: only what the owned track brings | MU1–MU4 | Accepted |
+| [0030](0030-generic-top-types-library-and-search.md) | Top-level types: generic library, search and navigation driven by schema | see [12-roadmap](../12-roadmap.md) | Accepted |
+| [0031](0031-post-scan-per-library.md) | Post-scan per library: the scan closes its own cycle (and no enrichment inside the transaction) | SCAN-POS | Accepted |
