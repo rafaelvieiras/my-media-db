@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           # EXACT patch (= go.mod toolchain). Do not use '1.26.x': the runner
           # resolves through the cache and may land on an earlier patch with a

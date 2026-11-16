@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           # EXACT patch (= go.mod toolchain), same as the ratchet. Do not use
           # '1.26.x' (the runner may land on an earlier patch through the cache).
