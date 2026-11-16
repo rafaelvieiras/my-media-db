@@ -1,9 +1,9 @@
-# quality-gate.yml — catraca de qualidade unificada (Go + TS) do MyMediaDB.
+# quality-gate.yml — MyMediaDB unified quality ratchet (Go + TS).
 #
-# Roda o mesmo `scripts/quality-gate.mjs` do pre-push local, agora em modo CI
-# (saída Markdown). Bloqueia o merge em regressão bloqueante e comenta a tabela
-# de métricas no PR (comentário sticky). O gate é ferramenta de dev/CI e não
-# entra na imagem de produção.
+# Runs the same `scripts/quality-gate.mjs` as the local pre-push, now in CI
+# mode (Markdown output). Blocks the merge on a blocking regression and comments the
+# metrics table on the PR (sticky comment). The gate is dev/CI tooling and does not
+# enter the production image.
 
 name: Quality Gate
 
@@ -31,12 +31,12 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          # Patch EXATO (= toolchain do go.mod). Nao usar '1.26.x': o runner
-          # resolve pelo cache e pode cair numa patch anterior com vuln de
-          # stdlib ja corrigida no pin atual, e o govulncheck marca como
-          # bloqueante. Pin tambem garante cobertura deterministica no
-          # ratchet. Bumpar junto com o toolchain do go.mod.
-          go-version: '1.26.10'
+          # EXACT patch (= go.mod toolchain). Do not use '1.26.x': the runner
+          # resolves through the cache and may land on an earlier patch with a
+          # stdlib vuln already fixed in the current pin, and govulncheck flags it
+          # as blocking. Pinning also guarantees deterministic coverage in the
+          # ratchet. Bump it together with the go.mod toolchain.
+          go-version: '1.26.11'
           cache: true
 
       - name: Setup Node.js
@@ -47,10 +47,10 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install Go quality tools
-        # Versoes PINADAS (nao usar @latest): um release novo de linter pode
-        # introduzir checagens que acham issues novas, ou o gocyclo pode contar
-        # diferente, quebrando a catraca sem mudanca de codigo. Pinar garante
-        # determinismo; bumpar conscientemente apos revalidar o baseline
+        # PINNED versions (do not use @latest): a new linter release may
+        # introduce checks that find new issues, or gocyclo may count
+        # differently, breaking the ratchet with no code change. Pinning guarantees
+        # determinism; bump it consciously after revalidating the baseline
         # (0 issues / 0 vulns / 4 funcs > gocyclo 10).
         run: |
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
@@ -58,11 +58,12 @@ jobs:
           go install github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      # O pacote internal/mediainfo tem um teste de integracao que roda o ffprobe
-      # DE VERDADE (gera um clipe com ffmpeg); ele se auto-pula se os binarios
-      # faltam. Sem ffmpeg no runner esse caminho fica sem cobertura e o total Go
-      # cai ~0,3% (73,9% vs 74,2% do baseline, capturado com ffmpeg presente).
-      # Instalar ffmpeg faz o CI reproduzir o baseline e exercitar a integracao.
+      # The internal/mediainfo package has an integration test that runs ffprobe
+      # FOR REAL (it generates a clip with ffmpeg); it skips itself when the
+      # binaries are missing. Without ffmpeg on the runner that path stays
+      # uncovered and the Go total drops ~0.3% (73.9% vs 74.2% of the baseline,
+      # captured with ffmpeg present). Installing ffmpeg makes CI reproduce the
+      # baseline and exercise the integration.
       - name: Install ffmpeg (teste real do ffprobe)
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
@@ -85,9 +86,9 @@ jobs:
           recreate: true
           path: reports/quality-gate-report.md
 
-      # Best-effort: a tabela de metricas ja e comentada no PR e a regressao
-      # bloqueante e decidida pelo passo abaixo. Uma falha de upload (p.ex. cota
-      # de storage de artefatos cheia) NAO deve pintar a catraca de vermelho.
+      # Best-effort: the metrics table is already commented on the PR and the
+      # blocking regression is decided by the step below. An upload failure (e.g. a full
+      # artifact storage quota) must NOT paint the ratchet red.
       - name: Upload quality reports
         if: always()
         continue-on-error: true

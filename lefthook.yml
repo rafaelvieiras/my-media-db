@@ -1,15 +1,15 @@
-# lefthook.yml — hooks de git do MyMediaDB (repo Go + TS).
+# lefthook.yml — MyMediaDB git hooks (Go + TS repo).
 #
-# Instale uma vez com:  lefthook install   (ver CONTRIBUTING.md)
+# Install once with:  lefthook install   (see CONTRIBUTING.md)
 #
-# Três ganchos:
-#   pre-commit  → auto-formata os arquivos staged (gofmt / prettier) e os re-adiciona.
-#   pre-push    → roda a catraca de qualidade unificada; aborta o push em regressão.
-#   commit-msg  → valida Conventional Commits (mensagens em pt-BR, `tipo: resumo`).
+# Three hooks:
+#   pre-commit  → auto-formats the staged files (gofmt / prettier), re-staging them.
+#   pre-push    → runs the unified quality ratchet; aborts the push on regression.
+#   commit-msg  → validates Conventional Commits (messages in pt-BR, `tipo: resumo`).
 
-# ─── pre-commit: auto-formatação rápida ──────────────────────────────────────
-# `stage_fixed: true` re-adiciona ao índice os arquivos que o formatter alterou,
-# então um commit de código desformatado sai formatado, sem depender de editor.
+# ─── pre-commit: fast auto-formatting ────────────────────────────────────────
+# `stage_fixed: true` stages again the files the formatter changed,
+# so a commit of unformatted code lands formatted, without relying on the editor.
 pre-commit:
   parallel: true
   commands:
@@ -17,10 +17,10 @@ pre-commit:
       glob: "*.go"
       run: gofmt -w {staged_files}
       stage_fixed: true
-    # Dois jobs por causa da semântica de glob do lefthook: `web/**/*.EXT` casa
-    # arquivos em SUBpastas, mas NÃO os que ficam direto em `web/` (ex.:
-    # vite.config.ts, index.html, tsconfig*.json). `web/*.EXT` cobre a raiz.
-    # O package-lock.json é protegido por web/.prettierignore.
+    # Two jobs because of lefthook's glob semantics: `web/**/*.EXT` matches
+    # files in SUBdirectories, but NOT the ones sitting directly in `web/` (e.g.:
+    # vite.config.ts, index.html, tsconfig*.json). `web/*.EXT` covers the root.
+    # package-lock.json is protected by web/.prettierignore.
     prettier:
       glob: "web/**/*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc,css,scss,md,html,yml,yaml}"
       run: npx --yes prettier --write --ignore-unknown {staged_files}
@@ -30,16 +30,16 @@ pre-commit:
       run: npx --yes prettier --write --ignore-unknown {staged_files}
       stage_fixed: true
 
-# ─── pre-push: catraca de qualidade (pesado) ─────────────────────────────────
-# Exige as ferramentas Go no PATH (golangci-lint, govulncheck, gocyclo); as
-# ausentes são apenas puladas pelo gate (ver CONTRIBUTING.md).
+# ─── pre-push: quality ratchet (heavy) ───────────────────────────────────────
+# Requires the Go tools on the PATH (golangci-lint, govulncheck, gocyclo); the
+# missing ones are simply skipped by the gate (see CONTRIBUTING.md).
 pre-push:
   commands:
     quality-gate:
       run: node scripts/quality-gate.mjs --local
 
 # ─── commit-msg: Conventional Commits ────────────────────────────────────────
-# {1} = caminho do arquivo com a mensagem do commit, passado pelo git.
+# {1} = path to the file with the commit message, passed by git.
 commit-msg:
   commands:
     conventional:

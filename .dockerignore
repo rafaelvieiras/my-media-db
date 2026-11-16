@@ -1,20 +1,20 @@
-# Dependências e artefatos que NÃO devem entrar no contexto de build.
-# O build precisa funcionar mesmo sem nada pré-buildado localmente: o dist real
-# do SPA é gerado no estágio builder-web, não copiado do host.
+# Dependencies and artifacts that must NOT enter the build context.
+# The build has to work even with nothing pre-built locally: the real SPA dist
+# is generated in the builder-web stage, not copied from the host.
 
 # Node
 node_modules/
 **/node_modules/
 
-# Build local do SPA embutido: o placeholder e qualquer build local NÃO devem
-# vazar para o contexto — o dist real vem do estágio 1 do Dockerfile.
+# Local build of the embedded SPA: the placeholder and any local build must NOT
+# leak into the context — the real dist comes from stage 1 of the Dockerfile.
 internal/webui/dist/
 
 # Git
 .git/
 .gitignore
 
-# Artefatos e temporários locais
+# Local artifacts and temporary files
 *.sqlite
 .env
 *.log
@@ -24,17 +24,17 @@ dist/
 dist-ssr/
 *.local
 
-# O próprio empacotamento
+# The packaging itself
 Dockerfile
 .dockerignore
 
-# Ambiente de desenvolvimento com hot reload (briefing 0004): só de dev, nunca
-# entra na imagem de produção.
+# Development environment with hot reload: dev only, it never
+# enters the production image.
 compose.dev.yaml
 Dockerfile.dev
 .air.toml
 
-# Quality gate (ferramenta de dev/CI): não vai para a imagem de produção.
+# Quality gate (dev/CI tooling): it does not go into the production image.
 scripts/
 baseline.json
 lefthook.yml
@@ -42,10 +42,9 @@ lefthook.yml
 Makefile
 .github/
 CONTRIBUTING.md
-briefings/
 docs/
 
-# Editores / OS
+# Editors / OS
 .vscode/
 .idea/
 .DS_Store

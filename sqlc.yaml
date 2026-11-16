@@ -1,12 +1,13 @@
-# Configuração do sqlc (v2) — gera acesso Go tipado a partir do SQL.
+# sqlc configuration (v2) — generates typed Go access from SQL.
 #
-# O sqlc convive com o goose (ADR-0017): o goose VERSIONA o DDL (as migrations),
-# e o sqlc LÊ essas mesmas migrations como schema para gerar os modelos e as
-# queries. O sqlc entende as anotações `-- +goose Up/Down` e considera só o Up.
+# sqlc coexists with goose (ADR-0017): goose VERSIONS the DDL (the migrations),
+# and sqlc READS those same migrations as the schema to generate the models and
+# the queries. sqlc understands the `-- +goose Up/Down` annotations and considers
+# only Up.
 #
-# Decisão (briefing 0006/0007): o código gerado é VERSIONADO no repo (pasta
-# internal/db/sqlcgen). Assim `go build` não depende do sqlc instalado; regenerar
-# é um passo de dev explícito (`sqlc generate`).
+# Decision: the generated code is VERSIONED in the repo (the internal/db/sqlcgen
+# directory). That way `go build` does not depend on sqlc being installed;
+# regenerating is an explicit dev step (`sqlc generate`).
 version: "2"
 sql:
   - engine: "sqlite"

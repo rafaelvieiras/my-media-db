@@ -1,30 +1,32 @@
-# Imagem de DEV do backend (briefing 0004). Só para o loop de desenvolvimento:
-# instala o air (watcher) uma vez, na build, para os `up` seguintes serem rápidos.
-# NÃO é a imagem de produção — essa é o Dockerfile multi-stage da raiz (0003).
+# DEV image for the backend. Meant only for the development loop: it installs
+# air (the watcher) once, at build time, so the following `up`s are fast.
+# This is NOT the production image — that one is the multi-stage Dockerfile at
+# the root.
 FROM golang:1.26
 
 WORKDIR /app
 
-# ffprobe (pacote ffmpeg) é dependência de RUNTIME do scanner (briefing 0009): sem
-# ele o mediainfo é gravado vazio (degrada, não quebra). A imagem de produção já o
-# instala (Dockerfile da raiz, `apk add ffmpeg`); replicar aqui dá PARIDADE dev/prod,
-# senão o mediainfo nunca aparece no loop de desenvolvimento.
+# ffprobe (the ffmpeg package) is a RUNTIME dependency of the scanner (ADR-0014):
+# without it the mediainfo is written empty (it degrades, it does not break). The
+# production image already installs it (root Dockerfile, `apk add ffmpeg`);
+# replicating it here gives dev/prod PARITY, otherwise the mediainfo never shows
+# up in the development loop.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# air é dependência exclusiva de dev. Módulo ATUAL: github.com/air-verse/air
-# (o antigo cosmtrek/air está descontinuado). Instalado em $GOPATH/bin, que já
-# está no PATH da imagem oficial do Go.
+# air is a dev-only dependency. CURRENT module: github.com/air-verse/air
+# (the old cosmtrek/air is discontinued). Installed into $GOPATH/bin, which is
+# already on the PATH of the official Go image.
 RUN go install github.com/air-verse/air@latest
 
-# Uid/gid 1000:1000 em runtime: paridade com compose.prod.yaml (linha ~47) —
-# sem isso o serviço roda como root e NFO/artes exportadas para a biblioteca
-# montada do host nascem com dono root, ilegíveis sem sudo. apt-get/go install
-# acima já rodaram como root (build steps da imagem); só o CMD/runtime precisa
-# do uid não-root. GOCACHE aponta para um caminho fixo (não depende de $HOME,
-# que muda com o usuário) para o volume nomeado go-build-cache (ver
-# compose.dev.yaml) continuar gravável pelo uid 1000.
+# Uid/gid 1000:1000 at runtime: parity with compose.yaml —
+# without it the service runs as root and the NFO/artwork exported to the
+# host-mounted library are born owned by root, unreadable without sudo. The
+# apt-get/go install above already ran as root (image build steps); only the
+# CMD/runtime needs the non-root uid. GOCACHE points at a fixed path (it does
+# not depend on $HOME, which changes with the user) so the named volume
+# go-build-cache (see compose.dev.yaml) stays writable by uid 1000.
 ENV GOCACHE=/go-cache
 RUN mkdir -p /go-cache \
     && groupadd -g 1000 mymediadb \
@@ -33,6 +35,6 @@ RUN mkdir -p /go-cache \
 
 USER mymediadb
 
-# O código é montado como volume no compose; o build real acontece via air em
-# runtime. Cache de módulos/build vive em volumes nomeados (ver compose.dev.yaml).
+# The code is mounted as a volume in compose; the real build happens via air at
+# runtime. The module/build cache lives in named volumes (see compose.dev.yaml).
 CMD ["air", "-c", ".air.toml"]

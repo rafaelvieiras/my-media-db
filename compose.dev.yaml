@@ -1,13 +1,13 @@
-# Ambiente de DESENVOLVIMENTO com hot reload (briefing 0004).
-# Sobe front e back lado a lado, cada um com recarga em tempo real:
-#   - web: Vite dev server (HMR) na 5173
-#   - api: binário Go sob o air (rebuild+restart automático) na 8080
-# O front chama /api relativo; o proxy do Vite resolve para o serviço `api`
-# (mesmo contrato de produção, SEM CORS).
+# DEVELOPMENT environment with hot reload.
+# Brings the front end and the back end up side by side, each with live reload:
+#   - web: Vite dev server (HMR) on 5173
+#   - api: Go binary under air (automatic rebuild+restart) on 8080
+# The front end calls a relative /api; the Vite proxy resolves it to the `api`
+# service (same contract as production, NO CORS).
 #
 #   docker compose -f compose.dev.yaml up --build
 #
-# NÃO é produção — a imagem imutável é o Dockerfile da raiz (briefing 0003).
+# This is NOT production — the immutable image is the Dockerfile at the root.
 
 services:
   web:
@@ -17,14 +17,15 @@ services:
     ports:
       - "5173:5173"
     environment:
-      # Alvo do proxy do Vite dentro da rede do compose: `localhost` NÃO é o
-      # serviço `api`; o DNS do compose resolve `api` para o container do back.
+      # Vite proxy target inside the compose network: `localhost` is NOT the
+      # `api` service; compose DNS resolves `api` to the backend container.
       VITE_PROXY_TARGET: http://api:8080
     volumes:
-      # Código do front bind-mounted para o HMR enxergar as edições do host.
+      # Front-end code bind-mounted so HMR sees the edits made on the host.
       - ./web:/app
-      # Volume ANÔNIMO: impede o node_modules do host (possivelmente root-owned
-      # e/ou de outra arquitetura) de mascarar o instalado dentro do container.
+      # ANONYMOUS volume: keeps the host node_modules (possibly root-owned
+      # and/or from another architecture) from masking the one installed inside
+      # the container.
       - /app/node_modules
     depends_on:
       - api
@@ -34,24 +35,24 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     working_dir: /app
-    # Uid/gid do dono do host (rafael, 1000:1000) — mesmo padrão de
-    # compose.prod.yaml (linha ~47). Sem isto o container roda como root e
-    # NFO/artes exportadas para a biblioteca montada do host nascem com dono
-    # root, ilegíveis sem sudo (o gap que este ajuste fecha, briefing 0078).
+    # Uid/gid of the host owner (rafael, 1000:1000) — same pattern as
+    # compose.yaml. Without this the container runs as root and
+    # the NFO/artwork exported to the host-mounted library are born owned by
+    # root, unreadable without sudo (the gap this setting closes).
     user: "1000:1000"
-    # Credenciais opcionais (ex.: MYMEDIADB_TMDB_TOKEN da busca externa, briefing
-    # 0014) vêm do .env — gitignored, seguro. Ausente/vazio: busca externa fica
-    # desligada, sem erro. NUNCA versionar o .env nem logar o valor.
+    # Optional credentials (e.g. MYMEDIADB_TMDB_TOKEN for external search, see
+    # ADR-0023) come from .env — gitignored, safe. Missing/empty: external search
+    # stays off, without an error. NEVER commit .env nor log the value.
     env_file:
       - .env
     ports:
       - "8080:8080"
     volumes:
-      # Todo o repositório montado: o air observa os *.go e recompila.
+      # The whole repository mounted: air watches the *.go files and rebuilds.
       - .:/app
-      # Caches do Go em volumes nomeados para rebuilds rápidos entre `up`s.
-      # go-build-cache aponta para GOCACHE=/go-cache (Dockerfile.dev), não
-      # /root/.cache/go-build — o uid 1000 não tem HOME=/root.
+      # Go caches in named volumes for fast rebuilds between `up`s.
+      # go-build-cache points at GOCACHE=/go-cache (Dockerfile.dev), not
+      # /root/.cache/go-build — uid 1000 has no HOME=/root.
       - go-mod-cache:/go/pkg/mod
       - go-build-cache:/go-cache
 

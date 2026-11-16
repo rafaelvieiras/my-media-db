@@ -1,7 +1,7 @@
-# Makefile — atalhos humanos do MyMediaDB.
+# Makefile — human shortcuts for MyMediaDB.
 #
-# O quality gate propriamente dito é `node scripts/quality-gate.mjs` (chamado
-# direto pelo lefthook e pelo workflow de CI). Estes alvos são conveniência.
+# The quality gate itself is `node scripts/quality-gate.mjs` (called directly by
+# lefthook and by the CI workflow). These targets are convenience only.
 
 .DEFAULT_GOAL := help
 .PHONY: help fmt gate gate-local gate-fast gate-local-full baseline baseline-e2e hooks e2e e2e-cov e2e-install

@@ -1,22 +1,23 @@
-# Configuração do air (github.com/air-verse/air) — watcher de dev do backend Go.
-# Recompila e reinicia o binário a cada mudança em *.go. É dependência SÓ de dev:
-# não entra na imagem de produção (Dockerfile, briefing 0003).
+# air configuration (github.com/air-verse/air) — dev watcher for the Go backend.
+# Rebuilds and restarts the binary on every change to *.go. It is a dev-ONLY
+# dependency: it never enters the production image (Dockerfile).
 root = "."
 tmp_dir = "tmp"
 
 [build]
-  # Mesmo entrypoint da produção; CGO desligado para binário estático e rápido.
-  # -buildvcs=false: o repo é bind-mounted e o git dentro do container acusa
-  # "dubious ownership", quebrando o stamping de VCS. Em dev não precisamos dele.
+  # Same entrypoint as production; CGO disabled for a static, fast binary.
+  # -buildvcs=false: the repo is bind-mounted and the git inside the container
+  # reports "dubious ownership", which breaks VCS stamping. In dev we do not
+  # need it.
   cmd = "CGO_ENABLED=0 go build -buildvcs=false -o ./tmp/main ./cmd/mymediadb"
   bin = "./tmp/main"
-  # Observa apenas Go; o front tem seu próprio HMR (Vite) e não passa pelo air.
+  # Watches Go only; the front end has its own HMR (Vite) and does not go through air.
   include_ext = ["go"]
-  # Diretórios que não disparam rebuild do back.
+  # Directories that do not trigger a backend rebuild.
   exclude_dir = ["web", "internal/webui/dist", "tmp", "reports", "scripts"]
-  # Erros de compilação vão para este log dentro de tmp/ (ignorado pelo git).
+  # Compilation errors go to this log inside tmp/ (git-ignored).
   log = "build-errors.log"
-  # Pequeno atraso para agrupar salvamentos em rajada num único rebuild.
+  # Small delay to group burst saves into a single rebuild.
   delay = 300
   stop_on_error = true
 
@@ -24,5 +25,5 @@ tmp_dir = "tmp"
   time = true
 
 [misc]
-  # Remove tmp/ ao encerrar o air.
+  # Removes tmp/ when air exits.
   clean_on_exit = true

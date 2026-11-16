@@ -9,32 +9,32 @@ Thumbs.db
 # Frontend
 node_modules/
 
-# Cobertura de testes do web (vitest/v8): relatórios efêmeros, não versionar.
+# Web test coverage (vitest/v8): ephemeral reports, never versioned.
 web/coverage/
 
-# Build do Vite embutido no binário Go: é gerado (ver briefings 0002/0003).
-# Só o placeholder index.html é versionado, para o //go:embed compilar sem o front.
+# Vite build embedded in the Go binary: generated, never versioned.
+# Only the index.html placeholder is tracked, so //go:embed compiles without the front end.
 internal/webui/dist/*
 !internal/webui/dist/index.html
 
-# Banco SQLite e seus sidecars do WAL (-wal/-shm). O default de dev fica em tmp/.
+# SQLite database and its WAL sidecars (-wal/-shm). The dev default lives in tmp/.
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
 .env
 
-# Dados de produção (bind-mount do compose.prod.yaml): SQLite + arte baixada +
-# backups. Nunca versionar a coleção do usuário.
+# Production data (bind mount of compose.yaml): SQLite, downloaded artwork and
+# backups. Never version the owner's collection.
 /data/
 
-# Quality gate: relatórios efêmeros dos coletores (cobertura, jscpd, golangci…)
-# e diretório temporário. O baseline.json É versionado (a catraca depende dele).
+# Quality gate: ephemeral collector reports (coverage, jscpd, golangci...) and the
+# temporary directory. baseline.json IS tracked, because the ratchet depends on it.
 reports/
 tmp/
 
-# Artefatos do Playwright MCP (snapshots de validação)
+# Playwright MCP artifacts (validation snapshots)
 .playwright-mcp/
 
-# Binário do servidor quando buildado na raiz (ex.: `go build ./cmd/...`). O
-# binário de release é gerado no CI/Docker, nunca versionado.
+# Server binary when built at the root (for example `go build ./cmd/...`). The
+# release binary is built in CI/Docker and never versioned.
 /mymediadb

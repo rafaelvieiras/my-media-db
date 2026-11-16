@@ -1,16 +1,15 @@
-# e2e.yml — E2E de navegador (Camada 2, briefing 0028) no CI.
+# e2e.yml — browser E2E (Layer 2) in CI.
 #
-# Job SEPARADO da catraca (mais lento): builda o front + o binario com -cover,
-# sobe o binario com o provider fake (MYMEDIADB_FAKE_PROVIDER=1) e dirige um
-# Chromium real via Playwright pelo inventario de fluxos do usuario (briefing
-# 0028 secao 7.1). Coleta a cobertura de navegador (binario via GOCOVERDIR + go
-# tool covdata; front via monocart V8) e trava as duas metricas como ratchet
-# BLOQUEANTE na catraca (briefing 0068, node scripts/quality-gate.mjs --e2e vs
-# baseline.json) — job SEPARADO da catraca unitaria (quality-gate.yml), so
-# falha por regressao de cobertura de navegador, nao por qualquer mudanca de
-# codigo. Se quiser que a falha aqui nao bloqueie o merge, marque este check
-# como nao-obrigatorio na protecao de branch (o workflow em si sempre reporta
-# pass/fail honesto).
+# A job SEPARATE from the ratchet (slower): it builds the front end + the binary
+# with -cover, brings the binary up with the fake provider
+# (MYMEDIADB_FAKE_PROVIDER=1) and drives a real Chromium through Playwright over
+# the inventory of user flows. It collects the browser coverage (binary via
+# GOCOVERDIR + go tool covdata; front end via monocart V8) and locks both metrics
+# as a BLOCKING ratchet (node scripts/quality-gate.mjs --e2e vs baseline.json) —
+# a job SEPARATE from the unit ratchet (quality-gate.yml), it only fails on a
+# browser coverage regression, not on any code change. If you want the failure
+# here not to block the merge, mark this check as non-required in the branch
+# protection (the workflow itself always reports an honest pass/fail).
 
 name: E2E (Playwright)
 
@@ -37,9 +36,9 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          # Patch EXATO (= toolchain do go.mod), igual a catraca. Nao usar
-          # '1.26.x' (o runner pode cair numa patch anterior pelo cache).
-          go-version: '1.26.10'
+          # EXACT patch (= go.mod toolchain), same as the ratchet. Do not use
+          # '1.26.x' (the runner may land on an earlier patch through the cache).
+          go-version: '1.26.11'
           cache: true
 
       - name: Setup Node.js
@@ -47,17 +46,17 @@ jobs:
         with:
           node-version: '24'
           cache: 'npm'
-          # So o web/ tem lockfile versionado; o do e2e/ e gitignored de proposito.
+          # Only web/ has a versioned lockfile; the e2e/ one is gitignored on purpose.
           cache-dependency-path: web/package-lock.json
 
-      # O global-setup do e2e roda `npm run build` no web/, entao as deps do web
-      # precisam existir. `npm ci` respeita o lockfile estrito (igual ao Docker).
+      # The e2e global-setup runs `npm run build` in web/, so the web deps
+      # must exist. `npm ci` respects the strict lockfile (same as Docker).
       - name: Install web dependencies
         working-directory: web
         run: npm ci
 
-      # Projeto e2e/ ISOLADO: `npm install` (NUNCA `npm ci`) para nao tocar o
-      # lockfile estrito do web/ (regra da versao do npm; ver briefing 0028).
+      # ISOLATED e2e/ project: `npm install` (NEVER `npm ci`) so as not to touch the
+      # strict lockfile of web/ (rule of this npm version).
       - name: Install e2e dependencies
         working-directory: e2e
         run: npm install
@@ -72,8 +71,8 @@ jobs:
         working-directory: e2e
         run: npx playwright install --with-deps chromium
 
-      # make e2e-cov = cd e2e && E2E_COVERAGE=1 npm run e2e: builda front+binario,
-      # sobe com o fake, roda as jornadas e extrai as coberturas de navegador.
+      # make e2e-cov = cd e2e && E2E_COVERAGE=1 npm run e2e: builds front end+binary,
+      # brings it up with the fake, runs the journeys and extracts the browser coverage.
       - name: Run E2E (com cobertura)
         run: make e2e-cov
 
@@ -96,9 +95,9 @@ jobs:
           echo "Cobertura de navegador regrediu vs baseline. Veja reports/e2e-quality-gate-report.md."
           exit 1
 
-      # Artefato e best-effort (as coberturas ja aparecem no log do step acima):
-      # uma falha de upload — p.ex. cota de storage de artefatos cheia — NAO deve
-      # pintar o job de vermelho; quem decide o resultado e o passo de E2E.
+      # The artifact is best-effort (the coverage already shows up in the log of the step above):
+      # an upload failure — e.g. a full artifact storage quota — must NOT
+      # paint the job red; the E2E step decides the outcome.
       - name: Upload E2E artifacts (cobertura + logs)
         if: always()
         continue-on-error: true

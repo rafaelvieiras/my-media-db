@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 /**
- * check-commit-msg.mjs — Valida Conventional Commits (leve, sem dependências).
+ * check-commit-msg.mjs — Validates Conventional Commits (lightweight, no dependencies).
  *
- * O MyMediaDB escreve commits em pt-BR no formato `tipo: resumo`
- * (ver CONTRIBUTING.md). Este checador é chamado pelo hook `commit-msg` do
- * lefthook com o caminho do arquivo da mensagem como argumento.
+ * MyMediaDB writes commits in pt-BR in the `tipo: resumo` format
+ * (see CONTRIBUTING.md). This checker is called by the lefthook `commit-msg` hook,
+ * with the path to the message file as the argument.
  *
- * Uso:
- *   node scripts/check-commit-msg.mjs <caminho-do-arquivo-de-mensagem>
- *   echo "feat: algo" | node scripts/check-commit-msg.mjs   # (stdin, p/ testes)
+ * Usage:
+ *   node scripts/check-commit-msg.mjs <path-to-message-file>
+ *   echo "feat: algo" | node scripts/check-commit-msg.mjs   # (stdin, for tests)
  *
- * Sai 0 se válido; !=0 com explicação se inválido.
+ * Exits 0 when valid; !=0 with an explanation when invalid.
  */
 
 import { readFileSync } from 'node:fs';
 
 const TYPES = ['feat', 'fix', 'docs', 'chore', 'refactor', 'test', 'style', 'perf', 'build', 'ci', 'revert'];
 
-// tipo(escopo-opcional)!?: resumo    — escopo e "!" (breaking) opcionais.
+// tipo(optional-scope)!?: resumo    — scope and "!" (breaking) are optional.
 const PATTERN = new RegExp(`^(${TYPES.join('|')})(\\([\\w.\\-/ ]+\\))?(!)?: .+`);
 
 function readMessage() {
@@ -26,20 +26,20 @@ function readMessage() {
     try { return readFileSync(file, 'utf8'); }
     catch (e) { console.error(`check-commit-msg: não foi possível ler ${file}: ${e.message}`); process.exit(2); }
   }
-  // fallback: stdin (útil para testes)
+  // fallback: stdin (useful for tests)
   try { return readFileSync(0, 'utf8'); }
   catch { return ''; }
 }
 
 const raw = readMessage();
-// Primeira linha não-comentário e não-vazia é o assunto do commit.
+// The first non-comment and non-empty line is the commit subject.
 const subject = raw
   .split('\n')
   .filter((l) => !l.startsWith('#'))
   .map((l) => l.trimEnd())
   .find((l) => l.trim() !== '') ?? '';
 
-// Ignora commits especiais que o git gera (merge/revert/fixup automáticos).
+// Ignores the special commits that git generates (automatic merge/revert/fixup).
 if (/^(Merge|Revert|fixup!|squash!)/.test(subject)) {
   process.exit(0);
 }
