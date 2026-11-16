@@ -7,10 +7,10 @@ import { renderWithClient } from '@/test/render'
 import { okJson } from '@/test/entity-fixtures'
 import { erroJson } from '@/test/detail-harness'
 
-// Rota `/library/$id/edit` (briefing 0071): pré-carrega o path atual (via
-// `libraryQueryOptions`), salva via PATCH (recasco do 0070) e concentra a
-// remoção numa "zona de perigo" com confirmação em 2 passos (`alertdialog`,
-// mesmo padrão de `/orphans`).
+// Route `/library/$id/edit`: it preloads the current path (via
+// `libraryQueryOptions`), saves via PATCH (the path re-basing) and concentrates the
+// removal in a "danger zone" with a 2-step confirmation (`alertdialog`,
+// same pattern as `/orphans`).
 const spies = vi.hoisted(() => ({
   navigate: vi.fn(),
   back: vi.fn(),
@@ -68,7 +68,7 @@ afterEach(() => {
   spies.navigate.mockReset()
 })
 
-// chamouDelete confere se o mock de fetch já recebeu um DELETE em /library/s1.
+// chamouDelete checks whether the fetch mock has already received a DELETE on /library/s1.
 function chamouDelete(fetchMock: ReturnType<typeof fetchRouter>): boolean {
   return fetchMock.mock.calls.some(
     ([u, init]) =>
@@ -77,9 +77,9 @@ function chamouDelete(fetchMock: ReturnType<typeof fetchRouter>): boolean {
   )
 }
 
-// Clica em "Salvar", espera a navegação de sucesso e devolve o corpo (já
-// parseado) do PATCH /library/s1 — os testes de submit só variam no que
-// preencheram antes e no que checam depois deste ponto em comum.
+// Clicks "Salvar", waits for the success navigation and returns the body (already
+// parsed) of PATCH /library/s1 — the submit tests only vary in what they
+// filled in before and in what they check after this common point.
 async function clicarSalvarEPegarCorpo(
   user: ReturnType<typeof userEvent.setup>,
   fetchMock: ReturnType<typeof fetchRouter>,
@@ -97,8 +97,8 @@ async function clicarSalvarEPegarCorpo(
   return JSON.parse(String(chamada?.[1]?.body))
 }
 
-// abrirZonaDePerigo monta a tela, clica em "Remover datasource" e devolve
-// `user`/`fetchMock` para o teste continuar (confirmar ou cancelar).
+// abrirZonaDePerigo mounts the screen, clicks "Remover datasource" and returns
+// `user`/`fetchMock` for the test to continue (confirm or cancel).
 async function abrirZonaDePerigo() {
   const user = userEvent.setup()
   const fetchMock = fetchRouter({ fonte: source() })
@@ -209,7 +209,7 @@ describe('LibraryEditScreen', () => {
     const { user, fetchMock } = await abrirZonaDePerigo()
 
     expect(screen.getByRole('alertdialog')).toBeInTheDocument()
-    // Ainda não chamou DELETE só de abrir a confirmação.
+    // It did not call DELETE just by opening the confirmation.
     expect(chamouDelete(fetchMock)).toBe(false)
 
     await user.click(screen.getByRole('button', { name: 'Confirmar remoção' }))

@@ -6,17 +6,17 @@ import { ErrorState, LoadingState } from '@/components/query-states'
 import { useLanguage } from '@/lib/language-context'
 import { entityEpisodesQueryOptions } from '@/lib/queries'
 
-// Seletor de ordenação de episódios (0040): na tela da série, troca a ordem de
-// exibição (official/dvd/absolute…). A ordem default mostra os cards de temporada
-// navegáveis (a view atual); ordens alternativas reagrupam os episódios em SEÇÕES
-// "Temporada N (ORDEM)" — cabeçalhos NÃO-navegáveis (ADR-0021: só o episódio é uma
-// entidade), com os cards de episódio numerados na ordem escolhida. A ordem vive no
-// search param da rota; este módulo só consome/dispara a troca.
+// Episode ordering selector: on the series screen, it switches the display
+// order (official/dvd/absolute…). The default order shows the navigable season
+// cards (the current view); alternative orders regroup the episodes into SECTIONS
+// "Temporada N (ORDEM)" — NON-navigable headers (ADR-0021: only the episode is an
+// entity), with the episode cards numbered in the chosen order. The order lives in the
+// search param of the route; this module only consumes/fires the switch.
 
-// rotuloOrdem dá o nome amigável de uma ordem: mapeia as conhecidas e capitaliza as
-// demais (uma ordem nova da fonte aparece legível sem tocar aqui). Interno ao módulo
-// (react-refresh: o arquivo de componente só exporta componentes) — exercitado pelos
-// rótulos das opções do SeletorOrdenacao.
+// rotuloOrdem gives the friendly name of an order: it maps the known ones and capitalizes the
+// others (a new order from the source appears readable without touching here). Internal to the module
+// (react-refresh: the component file only exports components) — exercised by the
+// labels of the options of SeletorOrdenacao.
 function rotuloOrdem(ordem: string): string {
   switch (ordem) {
     case 'official':
@@ -30,9 +30,9 @@ function rotuloOrdem(ordem: string): string {
   }
 }
 
-// SeletorOrdenacao é o dropdown das ordens disponíveis. O caller só o renderiza
-// quando há mais de uma ordem (senão não há escolha). `onChange` recebe a ordem crua
-// (o caller decide navegar/remover o param).
+// SeletorOrdenacao is the dropdown of the available orders. The caller only renders it
+// when there is more than one order (otherwise there is no choice). `onChange` receives the raw order
+// (the caller decides to navigate/remove the param).
 export function SeletorOrdenacao({
   value,
   options,
@@ -58,12 +58,12 @@ export function SeletorOrdenacao({
   )
 }
 
-// EpisodiosAgrupados renderiza a view de ordem ALTERNATIVA: busca
-// /entities/{id}/episodes?ordering=X e desenha SEÇÕES por grupo — cada uma com um
-// cabeçalho não-navegável (`label`: "Temporada N", "Episódios" no absoluto, ou "Sem
-// numeração") e o grid de episódios navegáveis (reusa `GradeMembros`/`CardNumerado` do
-// 0039, com o `numbering` já projetado na ordem X pelo backend). O `seletor` é passado
-// pelo caller e mora ao lado do título. Estados carregando/erro/vazio.
+// EpisodiosAgrupados renders the ALTERNATIVE order view: it fetches
+// /entities/{id}/episodes?ordering=X and draws SECTIONS per group — each with a
+// non-navigable header (`label`: "Temporada N", "Episódios" in the absolute order, or "Sem
+// numeração") and the grid of navigable episodes (it reuses `GradeMembros`/`CardNumerado`, with the
+// `numbering` already projected in order X by the backend). The `seletor` is passed
+// by the caller and lives next to the title. Loading/error/empty states.
 export function EpisodiosAgrupados({
   id,
   ordering,

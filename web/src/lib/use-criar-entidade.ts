@@ -2,11 +2,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { ApiError, type ResolvedEntity } from '@/lib/api'
 
-// useCriarEntidade encapsula a mutation compartilhada de "criar uma entity e ir para
-// ela" (criação inline de coleção/item, 0025/0027): no sucesso invalida o grid
-// (`['entities']`) e navega para `/entities/{id}`. Devolve a mutation e a mensagem de erro
-// (ApiError) já derivada, com um fallback pt-BR. Fica em lib/ (não no módulo dos
-// componentes) para o fast-refresh não reclamar de export misto (só-componentes).
+// useCriarEntidade encapsulates the shared mutation of "create an entity and go to
+// it" (inline creation of collection/item): on success it invalidates the grid
+// (`['entities']`) and navigates to `/entities/{id}`. Returns the mutation and the error
+// message (ApiError) already derived, with a pt-BR fallback. It lives in lib/ (not in the
+// components module) so fast-refresh does not complain about mixed exports (components only).
 export function useCriarEntidade<TBody>(
   mutationFn: (body: TBody) => Promise<ResolvedEntity>,
   fallbackErro: string,

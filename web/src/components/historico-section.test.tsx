@@ -9,11 +9,11 @@ import type { HistoricoEvento } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { stubRota, stubRotas } from '@/test/stub-fetch'
 
-// Testa o histórico de consumo (briefing 0094, dá rosto ao 0092/0093/ADR-0022):
-// o selo "Assistido" (`EstadoAssistidoBadge`) e a seção "Histórico"
-// (`HistoricoSection`) — carregando/erro/vazio (mesmo padrão da `SimilaresRail`:
-// vazio some por inteiro) e a ação de apagar um evento (confirmação em 2
-// etapas, mesmo padrão de `MembroEditavel`/collection-members.tsx).
+// Tests the consumption history (it gives a face to ADR-0022):
+// the "Assistido" badge (`EstadoAssistidoBadge`) and the "Histórico" section
+// (`HistoricoSection`) — loading/error/empty (same pattern as `SimilaresRail`:
+// empty disappears entirely) and the action of deleting an event (two-step
+// confirmation, same pattern as `MembroEditavel`/collection-members.tsx).
 
 function eventosResponse(eventos: HistoricoEvento[]) {
   return { ok: true, status: 200, json: async () => ({ eventos }) } as Response
@@ -151,14 +151,14 @@ describe('HistoricoSection', () => {
     renderWithClient(<HistoricoSection entityId="e1" />)
     await screen.findByText('Assistiu')
 
-    // 1ª etapa: clique no ícone abre "Apagar?"/"Cancelar" — ainda não apaga.
+    // 1st step: clicking the icon opens "Apagar?"/"Cancelar" — it does not delete yet.
     await user.click(screen.getByRole('button', { name: 'Apagar evento' }))
     const confirmar = screen.getByRole('button', { name: 'Apagar?' })
     expect(
       fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE'),
     ).toBe(false)
 
-    // 2ª etapa: confirma — dispara o DELETE.
+    // 2nd step: it confirms — triggers the DELETE.
     await user.click(confirmar)
     await waitFor(() =>
       expect(

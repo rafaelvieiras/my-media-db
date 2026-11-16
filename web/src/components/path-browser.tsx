@@ -13,42 +13,42 @@ function pareceAbsoluto(v: string): boolean {
 }
 
 export interface PathBrowserProps {
-  /** Valor atual do campo de texto (já existente) do formulário chamador. */
+  /** Current value of the text field (already existing) of the calling form. */
   value: string
-  /** Disparado quando o dono escolhe "Usar esta pasta". */
+  /** Fired when the owner chooses "Usar esta pasta". */
   onChange: (path: string) => void
 }
 
-// Navegador de pastas estilo Jellyfin (briefing 0071): complemento EXPANSÍVEL ao
-// campo de texto livre já existente no formulário — NÃO o substitui, é um atalho
-// visual para o mesmo espaço de caminhos que o texto livre já permitia digitar.
-// Começa colapsado atrás de "Procurar pasta…" (a jornada do usuário no briefing).
+// Jellyfin-style folder browser: an EXPANDABLE complement to the
+// free text field already existing in the form — it does NOT replace it, it is a visual
+// shortcut for the same space of paths that the free text already allowed typing.
+// It starts collapsed behind "Procurar pasta…" (the user journey described in the spec).
 //
-// Sincronização com o texto digitado: como este componente não é dono do
-// `<Input>` (ele vive na rota chamadora), a única forma de reagir ao "digitar e
-// sair do campo" é observar a prop `value` — usamos um debounce curto (em vez de
-// um evento de blur explícito, que não temos como escutar daqui) para tentar
-// navegar até o que foi digitado, só quando o navegador está aberto e o valor
-// parece um caminho absoluto. Se a navegação falhar (path inválido/ilegível), o
-// navegador volta silenciosamente à última pasta válida — o texto já digitado
-// nunca é tocado por este componente (ele não tem esse poder: quem o possui é o
-// `<Input>` do chamador).
+// Synchronization with the typed text: since this component does not own the
+// `<Input>` (it lives in the calling route), the only way to react to "type and
+// leave the field" is to observe the `value` prop — we use a short debounce (instead of
+// an explicit blur event, which we cannot listen to from here) to try to
+// navigate to what was typed, only when the browser is open and the value
+// looks like an absolute path. If the navigation fails (invalid/unreadable path), the
+// browser silently goes back to the last valid folder — the text already typed
+// is never touched by this component (it does not have that power: the owner is the
+// `<Input>` of the caller).
 export function PathBrowser({ value, onChange }: PathBrowserProps) {
   const [aberto, setAberto] = useState(false)
   const [pasta, setPasta] = useState(() =>
     pareceAbsoluto(value) ? value.trim() : RAIZ,
   )
-  // Começa em RAIZ (não na `pasta` inicial, que pode ser o caminho quebrado de
-  // uma fonte offline): se o primeiro carregamento já der erro, o efeito de
-  // recuperação abaixo tem para onde voltar em vez de ficar preso sem dado
-  // nenhum.
+  // It starts at the ROOT (not at the initial `pasta`, which may be the broken path of
+  // an offline source): if the first load already errors, the recovery effect
+  // below has somewhere to go back to instead of getting stuck without any
+  // data at all.
   const ultimaValida = useRef(RAIZ)
-  // Rastreia o ÚLTIMO `value` (texto do campo do chamador) já sincronizado —
-  // sem isso, o debounce abaixo dispara toda vez que `pasta` diverge de
-  // `value` por QUALQUER motivo (ex.: o dono navegando manualmente pelo
-  // navegador), e não só quando o dono de fato EDITOU o campo de texto —
-  // sobrescrevendo a navegação manual 400ms depois e travando o navegador no
-  // caminho antigo (o bug reportado: nenhum nível do breadcrumb "pega").
+  // Tracks the LAST `value` (text of the caller field) already synchronized —
+  // without that, the debounce below fires every time `pasta` diverges from
+  // `value` for ANY reason (e.g. the owner navigating manually through the
+  // browser), and not only when the owner actually EDITED the text field —
+  // overwriting the manual navigation 400ms later and locking the browser on the
+  // old path (the reported bug: no level of the breadcrumb "catches").
   const ultimoValueSincronizado = useRef(value)
 
   useEffect(() => {
@@ -72,9 +72,9 @@ export function PathBrowser({ value, onChange }: PathBrowserProps) {
     }
   }, [query.data])
 
-  // Path inválido (digitado ou navegado) — volta à última pasta que carregou
-  // com sucesso, sem tentar de novo em loop (só dispara quando `pasta` ainda
-  // difere da última válida conhecida).
+  // Invalid path (typed or navigated) — it goes back to the last folder that loaded
+  // successfully, without retrying in a loop (it only fires when `pasta` still
+  // differs from the last known valid one).
   useEffect(() => {
     if (query.isError && pasta !== ultimaValida.current) {
       setPasta(ultimaValida.current)
@@ -196,8 +196,8 @@ export function PathBrowser({ value, onChange }: PathBrowserProps) {
   )
 }
 
-// Breadcrumb clicável dos segmentos do caminho atual — cada segmento (inclusive
-// a raiz) navega direto para lá.
+// Clickable breadcrumb of the segments of the current path — each segment (including
+// the root) navigates straight there.
 function Breadcrumb({
   path,
   onNavigate,

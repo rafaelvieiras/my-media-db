@@ -19,11 +19,11 @@ import type { FieldDescriptor } from '@/lib/api'
 import { ordenados, type ValoresForm } from '@/lib/field-schema'
 import { rotuloIdioma } from '@/lib/languages'
 
-// Renderizador GENÉRICO do formulário editorial (briefing 0030): monta os inputs
-// e liga a validação Zod a partir dos DESCRITORES (não de JSX por campo). Agrupa
-// por `group` (traduzível × neutro) e renderiza por `widget`. As rotas de criação
-// e edição só fornecem os dados (descritores, sementes, schema) e o `onSubmit` —
-// a forma do submit (POST plano × PATCH por idioma) fica na rota.
+// GENERIC renderer of the editorial form: it builds the inputs
+// and wires the Zod validation from the DESCRIPTORS (not from per-field JSX). It groups
+// by `group` (translatable × neutral) and renders by `widget`. The creation and
+// edit routes only provide the data (descriptors, seeds, schema) and the `onSubmit` —
+// the shape of the submit (flat POST × per-language PATCH) stays in the route.
 
 const CLASSE_TEXTAREA = cn(
   'flex min-h-20 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm shadow-xs outline-none',
@@ -31,35 +31,35 @@ const CLASSE_TEXTAREA = cn(
 )
 
 export interface SchemaFormProps {
-  // Descritores a renderizar, já recortados para o contexto (criáveis na criação,
-  // conjunto completo na edição).
+  // Descriptors to render, already cut for the context (creatable ones on creation,
+  // the full set on edit).
   fields: FieldDescriptor[]
-  // Sementes e schema derivados dos mesmos descritores (via lib/field-schema).
+  // Seeds and schema derived from the same descriptors (via lib/field-schema).
   defaultValues: ValoresForm
   schema: import('zod').ZodType<ValoresForm>
-  // A rota recebe os valores atuais e decide a forma do submit.
+  // The route receives the current values and decides the shape of the submit.
   onSubmit: (valores: ValoresForm) => void
   onCancel: () => void
   submitLabel: string
   submitPendingLabel: string
   submitIcon?: ReactNode
   isPending: boolean
-  // Erro do servidor (422 etc.) — a validação de cliente COMPLEMENTA, não substitui.
+  // Server error (422 etc.) — the client validation COMPLEMENTS it, it does not replace it.
   mensagemErro: string | null
-  // Placeholders herdados por campo (edição mostra o valor resolvido por baixo).
+  // Placeholders inherited per field (the edit form shows the resolved value underneath).
   placeholders?: Record<string, string>
-  // Edição: botão "Limpar" por campo (DELETE por idioma/da chave) — distinto de
-  // esvaziar o input (que ao Salvar define vazio). Ausente na criação.
+  // Edit: "Limpar" button per field (DELETE per language/of the key) — distinct from
+  // emptying the input (which on Save sets empty). Absent on creation.
   onClear?: (campo: string, traduzivel: boolean) => void
   clearDisabled?: boolean
-  // Edição: idioma corrente (rótulo da seção traduzível). Ausente na criação.
+  // Edit: current language (label of the translatable section). Absent on creation.
   lang?: string
-  // Conteúdo extra no topo (ex.: o seletor de Tipo na criação de item — não é
-  // campo editorial, então a rota o injeta).
+  // Extra content at the top (e.g. the Type selector on item creation — it is not an
+  // editorial field, so the route injects it).
   header?: ReactNode
-  // Guard de "sair sem salvar" (0073): chamado só na TRANSIÇÃO do estado sujo
-  // (alterações não salvas desde o último carregamento/salvamento), nunca a
-  // cada tecla — a rota combina com o dos outros blocos da edição.
+  // "Leave without saving" guard: called only on the TRANSITION of the dirty
+  // state (unsaved changes since the last load/save), never on
+  // every keystroke — the route combines it with the one of the other edit blocks.
   onDirtyChange?: (sujo: boolean) => void
 }
 
@@ -81,17 +81,17 @@ export function SchemaForm({
   header,
   onDirtyChange,
 }: SchemaFormProps) {
-  // Zod é Standard Schema (aceito direto pelo TanStack Form v1). O `input` do
-  // schema derivado é `unknown` (efeito do refine do número), então estreitamos
-  // para o Standard Schema sobre os valores do form no ponto de ligação.
+  // Zod is Standard Schema (accepted directly by TanStack Form v1). The `input` of the
+  // derived schema is `unknown` (effect of the number refine), so we narrow it
+  // to the Standard Schema over the form values at the binding point.
   const validador = schema as unknown as StandardSchemaV1<
     ValoresForm,
     ValoresForm
   >
   const form = useForm({
     defaultValues,
-    // onMount deixa o botão desabilitado enquanto um obrigatório (título) está
-    // vazio; onChange valida a cada digitação.
+    // onMount keeps the button disabled while a required field (title) is
+    // empty; onChange validates on every keystroke.
     validators: { onMount: validador, onChange: validador },
     onSubmit: async ({ value }) => {
       onSubmit(value)
@@ -203,9 +203,9 @@ export function SchemaForm({
   )
 }
 
-// NotificarSujo repassa `form.state.isDirty` para o pai via `onDirtyChange`
-// só na TRANSIÇÃO (o array de dependências do efeito é o próprio booleano) —
-// não renderiza nada, é só a ponte entre o form.Subscribe e o callback.
+// NotificarSujo forwards `form.state.isDirty` to the parent via `onDirtyChange`
+// only on the TRANSITION (the dependency array of the effect is the boolean itself) —
+// it renders nothing, it is just the bridge between form.Subscribe and the callback.
 function NotificarSujo({
   sujo,
   onDirtyChange,
@@ -219,9 +219,9 @@ function NotificarSujo({
   return null
 }
 
-// LinhaCampo renderiza UM descritor pelo `widget`, com o rótulo (= aria-label), o
-// erro de cliente (só depois de tocado, para não gritar no estado pristino) e,
-// na edição, o botão "Limpar".
+// LinhaCampo renders ONE descriptor through the `widget`, with the label (= aria-label), the
+// client error (only after it is touched, so as not to shout in the pristine state) and,
+// on edit, the "Limpar" button.
 function LinhaCampo({
   d,
   field,
@@ -252,10 +252,10 @@ function LinhaCampo({
     return <CampoTags d={d} field={field} limpar={limpar} erro={erro} />
   }
 
-  // Atributos comuns aos dois ramos de widget (textarea × input text/number):
-  // valor controlado, handlers e a acessibilidade. Extraídos para não repetir a
-  // mesma lista em cada ramo (o específico — tipo, min/max/step, classe — fica
-  // por ramo).
+  // Attributes common to both widget branches (textarea × text/number input):
+  // controlled value, handlers and accessibility. Extracted so as not to repeat the
+  // same list in each branch (the specific part — type, min/max/step, class — stays
+  // per branch).
   const comum = {
     value: field.state.value as string,
     onChange: (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -292,8 +292,8 @@ function LinhaCampo({
   )
 }
 
-// CampoTags: chips removíveis + input "adicionar e Enter". O valor é o `string[]`
-// resolvido ao abrir; o diff {add,remove} acontece ao montar o patch (rota).
+// CampoTags: removable chips + "add and Enter" input. The value is the `string[]`
+// resolved on open; the {add,remove} diff happens when building the patch (route).
 function CampoTags({
   d,
   field,
@@ -363,8 +363,8 @@ function CampoTags({
   )
 }
 
-// mensagemDoErro extrai a `message` pt-BR do issue do Standard Schema (Zod). O
-// item pode ser o objeto do issue ou, defensivamente, uma string.
+// mensagemDoErro extracts the pt-BR `message` of the Standard Schema (Zod) issue. The
+// item may be the issue object or, defensively, a string.
 function mensagemDoErro(issue: unknown): string {
   if (typeof issue === 'string') {
     return issue
@@ -380,8 +380,8 @@ function mensagemDoErro(issue: unknown): string {
   return 'Valor inválido.'
 }
 
-// BotaoLimpar (volta a herdar). Distinto de esvaziar o input (que ao Salvar
-// define vazio). O ícone de borracha reforça a intenção "apagar a edição".
+// BotaoLimpar (go back to inheriting). Distinct from emptying the input (which on Save
+// sets empty). The eraser icon reinforces the intention "erase the edit".
 function BotaoLimpar({
   rotulo,
   onClick,

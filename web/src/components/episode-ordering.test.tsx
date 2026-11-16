@@ -9,9 +9,9 @@ import { renderWithClient } from '@/test/render'
 import { episodioCard, grupoEpisodios, okJson } from '@/test/detail-harness'
 import type { EpisodeGroups } from '@/lib/api'
 
-// Testa o SELETOR de ordenação (0040) e a view AGRUPADA. CardNumerado (dentro dos
-// grupos) usa PosterCard→Link, então mocka o Link; useLanguage vem do módulo real
-// mockado por um idioma fixo (sem fetch de settings).
+// Tests the ORDERING selector and the GROUPED view. CardNumerado (inside the
+// groups) uses PosterCard→Link, so it mocks the Link; useLanguage comes from the real module
+// mocked with a fixed language (without fetching the settings).
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
 }))
@@ -37,12 +37,12 @@ describe('SeletorOrdenacao', () => {
     const select = screen.getByLabelText(
       'Ordem de exibição dos episódios',
     ) as HTMLSelectElement
-    // Rótulos amigáveis: as ordens conhecidas mapeadas e as demais capitalizadas.
+    // Friendly labels: the known orders mapped and the rest capitalized.
     expect(screen.getByRole('option', { name: 'Oficial' })).toBeTruthy()
     expect(screen.getByRole('option', { name: 'DVD' })).toBeTruthy()
     expect(screen.getByRole('option', { name: 'Absoluto' })).toBeTruthy()
     expect(screen.getByRole('option', { name: 'Regional' })).toBeTruthy()
-    // Trocar emite o valor CRU (dvd), não o rótulo.
+    // Switching emits the RAW value (dvd), not the label.
     fireEvent.change(select, { target: { value: 'dvd' } })
     expect(onChange).toHaveBeenCalledWith('dvd')
   })
@@ -70,10 +70,10 @@ describe('EpisodiosAgrupados — view agrupada', () => {
     renderWithClient(
       <EpisodiosAgrupados id="s1" ordering="dvd" seletor={null} />,
     )
-    // Cabeçalhos de grupo (rótulos, não links).
+    // Group headers (labels, not links).
     expect(await screen.findByText('Temporada 1')).toBeTruthy()
     expect(screen.getByText('Temporada 2')).toBeTruthy()
-    // Números REAIS projetados na ordem dvd (E01 na T1, E03 na T2).
+    // REAL numbers projected in the dvd order (E01 in S1, E03 in S2).
     expect(screen.getByText('E01')).toBeTruthy()
     expect(screen.getByText('E03')).toBeTruthy()
     vi.restoreAllMocks()

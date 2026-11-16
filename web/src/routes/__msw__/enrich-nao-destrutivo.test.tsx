@@ -9,20 +9,20 @@ import {
 } from '@/test/msw/handlers'
 import { renderRota } from '@/test/route-tree-harness'
 
-// Fase 3 (MSW + jsdom, briefing 0068) — jornada #6 do checklist 0028 §7.1,
-// CRÍTICA (ADR-0012): re-enriquecer uma entity com título overridado e uma tag
-// removida pelo dono não pode reverter esse investimento — só os campos SEM
-// override refletem o dado novo da fonte. Testa a árvore de rota real: dispara
-// "Salvar e re-enriquecer" na subrota "IDs de terceiros" (0080) e confere o
-// resultado navegando para a subrota "Informações básicas" (a sidebar
-// compartilhada, `EntityEditShell`, mantém as duas subrotas na mesma árvore).
+// Phase 3 (MSW + jsdom) — journey #6 of the checklist §7.1,
+// CRITICAL (ADR-0012): re-enriching an entity with an overridden title and a tag
+// removed by the owner cannot revert that investment — only the fields WITHOUT
+// override reflect the new data from the source. It tests the real route tree: it fires
+// "Salvar e re-enriquecer" in the "IDs de terceiros" subroute and checks the
+// result by navigating to the "Informações básicas" subroute (the shared
+// sidebar, `EntityEditShell`, keeps the two subroutes in the same tree).
 describe('enrich não-destrutivo (Fase 3)', () => {
   it('preserva título editado e tag removida ao "Salvar e re-enriquecer"', async () => {
     const id = '7'
 
-    // Estado ANTES do re-enrich: o dono já editou o título (override) e removeu
-    // a tag "Clássico" (o override só guarda "Ficção" — o resolvido reflete a
-    // remoção).
+    // State BEFORE the re-enrich: the owner has already edited the title (override) and removed
+    // the tag "Clássico" (the override only stores "Ficção" — the resolved value reflects the
+    // removal).
     entidades.set(
       id,
       entidadeResolvidaPadrao({
@@ -41,15 +41,15 @@ describe('enrich não-destrutivo (Fase 3)', () => {
     let enrichChamado = false
 
     server.use(
-      // "Salvar e re-enriquecer" grava os ids (inalterados aqui) ANTES de
-      // enriquecer — devolve a entity como está.
+      // "Salvar e re-enriquecer" writes the ids (unchanged here) BEFORE
+      // enriching — it returns the entity as it is.
       http.put(`/api/v1/entities/${id}/external-ids`, () =>
         HttpResponse.json(entidades.get(id)),
       ),
-      // O enrich devolve dado NOVO da fonte (sinopse mudou), mas o título
-      // overridado e a tag removida permanecem no resolvido — o backend NUNCA
-      // toca override (ADR-0012). O mock representa exatamente essa garantia:
-      // o campo SEM override (description) muda; os com override não.
+      // The enrich returns NEW data from the source (the synopsis changed), but the overridden
+      // title and the removed tag stay in the resolved value — the backend NEVER
+      // touches the override (ADR-0012). The mock represents exactly that guarantee:
+      // the field WITHOUT override (description) changes; the ones with override do not.
       http.post(`/api/v1/entities/${id}/enrich`, () => {
         enrichChamado = true
         const atualizada = entidadeResolvidaPadrao({
@@ -65,7 +65,7 @@ describe('enrich não-destrutivo (Fase 3)', () => {
       }),
     )
 
-    // Confere o estado "antes" na seção "Informações básicas" primeiro.
+    // It checks the "before" state in the "Informações básicas" section first.
     await renderRota(`/entities/${id}/edit`)
 
     const tituloInput = await screen.findByLabelText('Título')
@@ -81,9 +81,9 @@ describe('enrich não-destrutivo (Fase 3)', () => {
       'Sinopse antiga da fonte.',
     )
 
-    // Dispara "Salvar e re-enriquecer" na subrota "IDs de terceiros" (0080) —
-    // mesma sidebar/cabeçalho compartilhados (`EntityEditShell`), navegação
-    // pelo Link real (sem mock nesta suíte MSW).
+    // It fires "Salvar e re-enriquecer" in the "IDs de terceiros" subroute —
+    // same shared sidebar/header (`EntityEditShell`), navigation
+    // through the real Link (no mock in this MSW suite).
     fireEvent.click(screen.getByRole('link', { name: 'IDs de terceiros' }))
     await screen.findByText('Salvar e re-enriquecer')
 
@@ -91,12 +91,12 @@ describe('enrich não-destrutivo (Fase 3)', () => {
 
     await waitFor(() => expect(enrichChamado).toBe(true))
 
-    // Volta para "Informações básicas" para conferir o resultado do enrich.
+    // It goes back to "Informações básicas" to check the result of the enrich.
     fireEvent.click(
       await screen.findByRole('link', { name: 'Informações básicas' }),
     )
 
-    // Dado novo da fonte chegou (placeholder da sinopse, campo SEM override).
+    // New data from the source arrived (placeholder of the synopsis, field WITHOUT override).
     await waitFor(() => {
       expect(screen.getByLabelText('Sinopse')).toHaveAttribute(
         'placeholder',
@@ -104,7 +104,7 @@ describe('enrich não-destrutivo (Fase 3)', () => {
       )
     })
 
-    // Não-destrutivo: título editado PERMANECE e a tag removida NÃO volta.
+    // Non-destructive: the edited title REMAINS and the removed tag does NOT come back.
     expect(screen.getByLabelText('Título')).toHaveValue(
       'Título Editado pelo Dono',
     )

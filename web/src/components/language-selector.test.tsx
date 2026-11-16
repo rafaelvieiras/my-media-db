@@ -10,7 +10,7 @@ function okJson<T>(body: T) {
   return { ok: true, status: 200, json: async () => body } as Response
 }
 
-// Mocka o GET /settings/languages com a config dada (fonte dos `allowed`).
+// Mocks GET /settings/languages with the given config (source of the `allowed` ones).
 function stubSettings(settings: LanguageSettings) {
   const fetchMock = vi.fn(async () => okJson(settings))
   vi.stubGlobal('fetch', fetchMock)
@@ -44,13 +44,13 @@ describe('LanguageSelector', () => {
 
     const select =
       await screen.findByLabelText<HTMLSelectElement>('Idioma de leitura')
-    // Uma opcao por permitido, com rotulo legivel.
+    // One option per allowed language, with a readable label.
     const opcoes = within(select).getAllByRole('option')
     expect(opcoes.map((o) => o.textContent)).toEqual([
       'Português (BR)',
       'Inglês',
     ])
-    // Semeado no principal.
+    // Seeded on the primary one.
     expect(select).toHaveValue('pt-BR')
 
     await userEvent.selectOptions(select, 'en')
@@ -67,7 +67,7 @@ describe('LanguageSelector', () => {
 
     const select =
       await screen.findByLabelText<HTMLSelectElement>('Idioma de leitura')
-    // Semente teria sido pt-BR (principal), mas o salvo 'en' ∈ allowed vence.
+    // The seed would have been pt-BR (primary), but the saved 'en' ∈ allowed wins.
     expect(select).toHaveValue('en')
   })
 
@@ -78,7 +78,7 @@ describe('LanguageSelector', () => {
 
     const select =
       await screen.findByLabelText<HTMLSelectElement>('Idioma de leitura')
-    // 'fr' saiu (ou nunca esteve) dos permitidos → cai no principal pt-BR.
+    // 'fr' left (or never was in) the allowed list → it falls back to the primary pt-BR.
     expect(select).toHaveValue('pt-BR')
   })
 

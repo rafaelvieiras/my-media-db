@@ -8,9 +8,9 @@ import { okJson } from '@/test/entity-fixtures'
 import { stubCriacao } from '@/test/criacao-harness'
 import { erroJson } from '@/test/detail-harness'
 
-// Rota `/new/item` (0030): o formulário dirigido por schema cria um item LOCAL e
-// navega para `/entities/{id}`; o 422 aparece inline. `useNavigate` é spy; `Link`
-// vira um <a>.
+// Route `/new/item`: the schema-driven form creates a LOCAL item and
+// navigates to `/entities/{id}`; the 422 appears inline. `useNavigate` is a spy; `Link`
+// becomes an <a>.
 const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -18,7 +18,7 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
 }))
 
-// fetchRouter serve os descritores (GET) e roteia o POST /entities para `resp`.
+// fetchRouter serves the descriptors (GET) and routes POST /entities to `resp`.
 const fetchRouter = (resp: () => Response) =>
   stubCriacao('/api/v1/entities', resp)
 

@@ -22,12 +22,12 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 
-// DashboardShell é o "chrome" da área administrativa (briefing 0083): sidebar
-// fixa com as 6 seções (antes soltas no `AppHeader`) + `<Outlet/>` para a tela
-// ativa. Mesmo padrão visual do `EntityEditShell` (0080) — nav com o item ativo
-// destacado via `aria-current="page"` — e mesmo padrão responsivo do
-// `AppHeader` (0075): abaixo de `md`, a sidebar vira um `Sheet` acionado por
-// botão, em vez de espremer os 6 itens na tela.
+// DashboardShell is the "chrome" of the administrative area: a fixed
+// sidebar with the 6 sections (before they were loose in the `AppHeader`) + `<Outlet/>` for the
+// active screen. Same visual pattern as `EntityEditShell` — nav with the active item
+// highlighted via `aria-current="page"` — and same responsive pattern as
+// `AppHeader`: below `md`, the sidebar becomes a `Sheet` triggered by a
+// button, instead of squeezing the 6 items on the screen.
 const ITENS: {
   to:
     | '/dashboard/library'
@@ -47,8 +47,8 @@ const ITENS: {
   { to: '/dashboard/orphans', label: 'Órfãs', icon: Trash2 },
   { to: '/dashboard/jobs', label: 'Jobs', icon: Briefcase },
   { to: '/dashboard/settings', label: 'Configurações', icon: Settings },
-  // Integrações (briefing 0096): entre Configurações e Webhook -- mesma área
-  // de "credenciais/config de provider", antes das áreas mais operacionais
+  // Integrações: between Configurações and Webhook -- the same area
+  // of "provider credentials/config", before the more operational areas
   // (Webhook/Eventos sem item/Saúde).
   { to: '/dashboard/integrations', label: 'Integrações', icon: Plug },
   { to: '/dashboard/webhook', label: 'Webhook', icon: Webhook },
@@ -60,12 +60,12 @@ const ITENS: {
   { to: '/dashboard/health', label: 'Saúde', icon: Activity },
 ]
 
-// LinksSidebar é reaproveitado pelas DUAS renderizações (nav desktop em coluna
-// e conteúdo do `Sheet` mobile) — mesmo motivo do `LinksNavegacao` do
-// `AppHeader` (evitar duplicar os 6 links, 0075). `activeProps` vem do próprio
-// TanStack Router: quando o `to` bate com a rota atual, ele soma
-// `aria-current="page"` automaticamente (além da classe abaixo) — não é preciso
-// calcular "ativo" à mão. `onNavigate` fecha o Sheet no mobile.
+// LinksSidebar is reused by BOTH renderings (desktop nav in a column
+// and content of the mobile `Sheet`) — same reason as `LinksNavegacao` of
+// the `AppHeader` (avoid duplicating the 6 links). `activeProps` comes from the
+// TanStack Router itself: when the `to` matches the current route, it adds
+// `aria-current="page"` automatically (besides the class below) — there is no need to
+// compute "active" by hand. `onNavigate` closes the Sheet on mobile.
 function LinksSidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <>
@@ -88,10 +88,10 @@ function LinksSidebar({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 export function DashboardShell() {
-  // Abaixo do breakpoint `md` (768px), a sidebar some por trás de um `Sheet`
-  // (mesmo padrão do `AppHeader`, 0075) — acima disso fica fixa à esquerda. O
-  // estado fecha o Sheet ao navegar, senão o painel ficaria aberto sobre a
-  // seção seguinte.
+  // Below the `md` breakpoint (768px), the sidebar disappears behind a `Sheet`
+  // (same pattern as the `AppHeader`) — above it, it stays fixed on the left. The
+  // state closes the Sheet on navigation, otherwise the panel would stay open over the
+  // next section.
   const [menuAberto, setMenuAberto] = useState(false)
   const fecharMenu = () => setMenuAberto(false)
 

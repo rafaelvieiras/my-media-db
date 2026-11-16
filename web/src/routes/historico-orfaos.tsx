@@ -11,14 +11,14 @@ import {
   rotuloStatusHistorico,
 } from '@/lib/historico'
 
-// Rota `/dashboard/historico-orfaos` (briefing 0099): lista GLOBAL (fora de
-// /entities/{id}) dos eventos de webhook (hoje só Jellyfin, 0093) que não
-// bateram com nenhuma entity local no momento em que chegaram — em vez de
-// serem descartados (princípio 2 do AGENTS.md), ficam registrados com os IDs
-// externos/título/ano BRUTOS do payload. Tela SOMENTE LEITURA: o backend
-// vincula esses eventos automaticamente (backfill retroativo) quando o dono
-// importa ou corrige a identidade da entity correspondente — nenhuma ação
-// manual de vincular aqui (fora de escopo, ver §3 do briefing 0099).
+// Route `/dashboard/historico-orfaos`: GLOBAL list (outside
+// /entities/{id}) of the webhook events (today only Jellyfin) that did not
+// match any local entity at the moment they arrived — instead of
+// being discarded (principle 2 of AGENTS.md), they stay recorded with the RAW
+// external ids/title/year of the payload. READ-ONLY screen: the backend
+// links those events automatically (retroactive backfill) when the owner
+// imports or corrects the identity of the corresponding entity — no manual
+// linking action here (out of scope, see §3).
 const LIMITE_PAGINA = 20
 
 export function HistoricoOrfaosScreen() {
@@ -95,9 +95,9 @@ export function HistoricoOrfaosScreen() {
   )
 }
 
-// tituloOrfao devolve `raw_title` quando disponível, senão monta um rótulo a
-// partir dos IDs externos brutos que o evento trouxe (pode não ter nenhum, se
-// o payload não informou — nesse caso sobra só o kind/data).
+// tituloOrfao returns `raw_title` when available, otherwise it builds a label
+// from the raw external ids that the event brought (there may be none, if
+// the payload did not inform them — in that case only the kind/date is left).
 function tituloOrfao(evento: HistoricoEventoOrfao): string {
   if (evento.raw_title) {
     return evento.raw_title

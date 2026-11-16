@@ -5,17 +5,17 @@ import { rotuloTipoPlural } from '@/lib/entity-badges'
 import { slugParaTipo } from '@/lib/library-slugs'
 import { useLanguage } from '@/lib/language-context'
 
-// Rota `/library/$entitySlug` (briefing 0114/ADR-0030): a listagem completa e
-// paginada de UM tipo de topo por vez — o `PosterGrid` que antes vivia dentro
-// da home (`routes/index.tsx`, filtrado por `?type=`, briefing 0110) virou
-// esta tela própria, deep-linkável, alcançada pelo "Ver Todos" de cada
-// carrossel (`RecentlyAddedRail`) e pelo dropdown "Biblioteca" da navbar
-// (`app-header.tsx`). O nome do arquivo/componente evita colidir com o
-// `routes/library.tsx` JÁ existente (`LibraryScreen`, gestão de datasources em
-// `/dashboard/library`, briefing 0071) — são telas completamente diferentes.
+// Route `/library/$entitySlug` (ADR-0030): the complete, paginated listing of
+// ONE top-level type at a time — the `PosterGrid` that used to live inside
+// the home (filtered by `?type=`) became
+// this screen of its own, deep-linkable, reached through the "Ver Todos" of each
+// carousel (`RecentlyAddedRail`) and through the "Biblioteca" dropdown of the navbar
+// (`app-header.tsx`). The file/component name avoids colliding with the
+// ALREADY existing `routes/library.tsx` (`LibraryScreen`, datasource management in
+// `/dashboard/library`) — they are completely different screens.
 //
-// Slug inválido/sem tipo mapeado (`library-slugs.ts`) cai num estado vazio
-// coerente — nunca 404 hard nem crash (decisão explícita do briefing).
+// An invalid slug/type without a mapping (`library-slugs.ts`) falls into a coherent
+// empty state — never a hard 404 nor a crash (an explicit decision).
 export function LibraryBrowseScreen() {
   const { entitySlug } = useParams({ from: '/library/$entitySlug' })
   const { lang } = useLanguage()

@@ -64,25 +64,25 @@ import {
 import { ehDraft } from '@/lib/entity-badges'
 import { KIND_ASSISTIR } from '@/lib/historico'
 
-// EntityManageMenu (briefing 0086, ex-`EntityActionButtons` do 0059) compacta as
-// ações do item num ÚNICO dropdown "Gerenciar" — Editar (sempre) + "Baixar
-// informações faltando"/"Baixar arte faltando" (0056/0048-0049, condicionais a
-// `catalog_completeness`) + "Salvar informações (NFO)" (0062) + "Verificar
-// Atualizações de Arquivos"/"Baixar Metadados"/"Baixar Artes Faltantes" (0088,
-// SEMPRE visíveis, ações forçadas que ignoram cache/incrementalidade) + "Excluir
-// coleção" (0026, só `isCollection`, migrado de `entity-detail.tsx::
-// ExcluirColecao`) + "Forçar reconciliação" (0122, só faixa/série EM
-// RASCUNHO, ignora o throttle de 1x/dia da reconciliação em lote). A LÓGICA de
-// cada mutation é a MESMA de antes — só a apresentação virou itens de menu em
-// vez de botões soltos acima do hero. Nenhum modal de "escolher candidato":
-// "flagged" só linka para a fila de Revisão já existente (mesma decisão do
-// 0059).
+// EntityManageMenu packs the
+// actions of the item into a SINGLE "Gerenciar" dropdown — Editar (always) + "Baixar
+// informações faltando"/"Baixar arte faltando" (conditional on
+// `catalog_completeness`) + "Salvar informações (NFO)" + "Verificar
+// Atualizações de Arquivos"/"Baixar Metadados"/"Baixar Artes Faltantes" (ALWAYS
+// visible, forced actions that ignore the cache/incrementality) + "Excluir
+// coleção" (only `isCollection`, migrated from `entity-detail.tsx::
+// ExcluirColecao`) + "Forçar reconciliação" (only track/series IN
+// DRAFT, it ignores the once-a-day throttle of the batch reconciliation). The LOGIC of
+// each mutation is the SAME as before — only the presentation became menu items
+// instead of loose buttons above the hero. No "choose candidate" modal:
+// "flagged" only links to the already existing Review queue (the same decision as
+// before).
 
-// montarListaBaixados monta a frase PT-BR "Pôster e fanart baixados." a partir
-// dos kinds baixados (rótulo via `rotuloKind`, mesma fonte de verdade da
-// galeria/lightbox — 0048/0049), com vírgula entre os itens e "e" antes do
-// último (concatenação PT-BR simples; não há um helper genérico assim no
-// projeto ainda).
+// montarListaBaixados builds the PT-BR sentence "Pôster e fanart baixados." from
+// the downloaded kinds (label via `rotuloKind`, the same source of truth as the
+// gallery/lightbox), with a comma between the items and "e" before the
+// last one (simple PT-BR concatenation; there is no generic helper like that in the
+// project yet).
 function montarListaBaixados(kinds: string[]): string {
   const rotulos = kinds.map((kind) => rotuloKind(kind).toLowerCase())
   const lista =
@@ -92,9 +92,9 @@ function montarListaBaixados(kinds: string[]): string {
   return `${lista.charAt(0).toUpperCase()}${lista.slice(1)} baixados.`
 }
 
-// mensagemEnriquecimento resolve o desfecho de POST .../enrich-missing (§4):
-// aplicado (com o método) × sinalizado (link para /review) × nada encontrado
-// (neutro) — nenhum dos três é erro; erro de rede/500 é tratado à parte.
+// mensagemEnriquecimento resolves the outcome of POST .../enrich-missing (§4):
+// applied (with the method) × flagged (link to /review) × nothing found
+// (neutral) — none of the three is an error; a network error/500 is handled separately.
 function mensagemEnriquecimento(resultado: EnrichMissingResult) {
   if (resultado.outcome === 'applied') {
     return (
@@ -122,10 +122,10 @@ function mensagemEnriquecimento(resultado: EnrichMissingResult) {
   )
 }
 
-// mensagemVerificarArquivos resolve o desfecho de POST .../refresh-files (0088):
-// formato solto e informativo (o próprio contrato não é rígido) — arquivos
-// reconferidos, assets locais atualizados e campos locais de reprodução
-// preenchidos a partir do .nfo, quando houver algum.
+// mensagemVerificarArquivos resolves the outcome of POST .../refresh-files:
+// a loose, informative format (the contract itself is not strict) — files
+// rechecked, local assets updated and local playback fields
+// filled in from the .nfo, when there is one.
 function mensagemVerificarArquivos(resultado: RefreshFilesResult) {
   const partes = [`${resultado.files_rechecked} arquivo(s) reconferido(s)`]
   if (resultado.assets_found > 0) {
@@ -143,9 +143,9 @@ function mensagemVerificarArquivos(resultado: RefreshFilesResult) {
   )
 }
 
-// mensagemArtesFaltantes resolve o desfecho de POST .../materialize-missing-media
-// (0088): reusa `montarListaBaixados` (mesma frase PT-BR da galeria/lightbox) para
-// os kinds baixados, mais o .nfo quando gravado nesta chamada.
+// mensagemArtesFaltantes resolves the outcome of POST .../materialize-missing-media:
+// it reuses `montarListaBaixados` (the same PT-BR sentence as the gallery/lightbox) for
+// the downloaded kinds, plus the .nfo when written in this call.
 function mensagemArtesFaltantes(resultado: MaterializeMissingMediaResult) {
   if (resultado.artes_baixadas.length > 0) {
     return (
@@ -169,9 +169,9 @@ function mensagemArtesFaltantes(resultado: MaterializeMissingMediaResult) {
   )
 }
 
-// mensagemArte resolve o desfecho de POST .../download-missing-artwork (§4):
-// baixou pelo menos um kind × nenhuma opção disponível — idempotente (nada
-// faltando também cai no "nenhuma opção", no-op silencioso não muda a UI).
+// mensagemArte resolves the outcome of POST .../download-missing-artwork (§4):
+// it downloaded at least one kind × no option available — idempotent (nothing
+// missing also falls into "no option", a silent no-op does not change the UI).
 function mensagemArte(resultado: DownloadMissingArtworkResult) {
   if (resultado.downloaded.length > 0) {
     return (
@@ -190,10 +190,10 @@ function mensagemArte(resultado: DownloadMissingArtworkResult) {
   return null
 }
 
-// mensagemGravarTag resolve o desfecho de POST .../audio-tags/write (0125):
-// formato solto e informativo (contrato não é rígido) — quantas faixas
-// tiveram a tag regravada com sucesso, mais as falhas quando uma cascata de
-// álbum tem sucesso PARCIAL (uma faixa com erro não impede as demais).
+// mensagemGravarTag resolves the outcome of POST .../audio-tags/write:
+// a loose, informative format (the contract is not strict) — how many tracks
+// had their tag rewritten successfully, plus the failures when an album cascade
+// has PARTIAL success (one failing track does not stop the others).
 function mensagemGravarTag(resultado: AudioTagsWriteResult) {
   const partes = [`${resultado.faixas_regravadas} faixa(s) regravada(s)`]
   if (resultado.falhas.length > 0) {
@@ -206,9 +206,9 @@ function mensagemGravarTag(resultado: AudioTagsWriteResult) {
   )
 }
 
-// mensagemReconciliar resolve o desfecho de POST .../force-reconcile (0122):
-// religou contra o pai × não religou desta vez (sem candidato, ou o tipo não é
-// aplicável) — nenhum dos dois é erro; erro de rede/500 é tratado à parte.
+// mensagemReconciliar resolves the outcome of POST .../force-reconcile:
+// it re-linked against the parent × it did not re-link this time (no candidate, or the type is not
+// applicable) — neither of the two is an error; a network error/500 is handled separately.
 function mensagemReconciliar(resultado: ForceReconcileResult) {
   if (resultado.linked) {
     return (
@@ -224,9 +224,9 @@ function mensagemReconciliar(resultado: ForceReconcileResult) {
   )
 }
 
-// TOOLTIP_SEM_PASTA explica por que "Salvar informações (NFO)" fica desabilitado
-// quando a entity não tem nenhum media_file presente — mesma condição usada pela
-// galeria de artes (0062) para "salvar na pasta"/"definir como principal".
+// TOOLTIP_SEM_PASTA explains why "Salvar informações (NFO)" is disabled
+// when the entity has no present media_file — the same condition used by the
+// art gallery for "salvar na pasta"/"definir como principal".
 const TOOLTIP_SEM_PASTA =
   'Este item não tem um arquivo na biblioteca — sem pasta de destino para gravar o .nfo.'
 
@@ -239,35 +239,35 @@ export function EntityManageMenu({
   isCollection = false,
 }: {
   id: string
-  // `entity.type`/`entity.status` (briefing 0122): controlam a visibilidade de
-  // "Forçar reconciliação" — só faixa/série EM RASCUNHO (`ehDraft`) fazem
-  // sentido religar contra um pai já identificado.
+  // `entity.type`/`entity.status`: they control the visibility of
+  // "Forçar reconciliação" — only a track/series IN DRAFT (`ehDraft`) makes
+  // sense to re-link against an already identified parent.
   type: string
   status: string
   catalogCompleteness: CatalogCompleteness
-  // Posse (`ResolvedEntity.owned`, `EXISTS media_file present`): sem isso não há
-  // pasta de destino na biblioteca real para o .nfo (briefing 0062). Default
-  // `true` — compat com quem não passa a prop.
+  // Ownership (`ResolvedEntity.owned`, `EXISTS media_file present`): without it there is no
+  // destination folder in the real library for the .nfo. Default
+  // `true` — compatible with whoever does not pass the prop.
   owned?: boolean
-  // Só coleção (briefing 0086) ganha o item destrutivo "Excluir coleção" — filme/
-  // série/temporada/episódio não têm essa ação (purga é só de coleção hoje).
+  // Only a collection gains the destructive item "Excluir coleção" — movie/
+  // series/season/episode do not have that action (purge is only for collections today).
   isCollection?: boolean
 }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  // Estado do diálogo de confirmação de "Excluir coleção": um item de dropdown
-  // fecha o menu ao ser selecionado (Radix, correto para acessibilidade) — a
-  // confirmação de 2 cliques que existia INLINE dentro da mesma área não cabe
-  // mais lá; abre este modal separado em vez de mutar direto.
+  // State of the confirmation dialog of "Excluir coleção": a dropdown item
+  // closes the menu when selected (Radix, correct for accessibility) — the
+  // 2-click confirmation that existed INLINE inside the same area no longer fits
+  // there; it opens this separate modal instead of mutating directly.
   const [alertaAberto, setAlertaAberto] = useState(false)
-  // Estado do diálogo de confirmação de "Gravar metadados no arquivo"
-  // (briefing 0125): mesmo padrão de 2 passos do "Excluir coleção" acima —
-  // ação destrutiva/irreversível sobre o arquivo original, nunca dispara
-  // direto do clique no item do dropdown.
+  // State of the confirmation dialog of "Gravar metadados no arquivo":
+  // same 2-step pattern as the "Excluir coleção" above —
+  // a destructive/irreversible action on the original file, it never fires
+  // straight from the click on the dropdown item.
   const [alertaGravarTagAberto, setAlertaGravarTagAberto] = useState(false)
 
-  // Invalidação compartilhada pelos botões novos (§4): a tela (entity),
-  // a listagem (entities) e a galeria (artwork) refletem o resultado sem F5.
+  // Invalidation shared by the new buttons (§4): the screen (entity),
+  // the listing (entities) and the gallery (artwork) reflect the result without F5.
   const invalidar = () => {
     queryClient.invalidateQueries({ queryKey: ['entity', id] })
     queryClient.invalidateQueries({ queryKey: ['entities'] })
@@ -282,29 +282,29 @@ export function EntityManageMenu({
     mutationFn: () => downloadMissingArtwork(id),
     onSuccess: invalidar,
   })
-  // "Forçar reconciliação" (briefing 0122): dispara a MESMA reconciliação
-  // pai-filho do job em lote, mas para ESTE item e ignorando o throttle de
-  // 1x/dia. A entity muda de `status` quando religada — `invalidar()` reflete.
+  // "Forçar reconciliação": it fires the SAME parent-child reconciliation
+  // of the batch job, but for THIS item and ignoring the once-a-day
+  // throttle. The entity changes `status` when re-linked — `invalidar()` reflects it.
   const forcarReconciliar = useMutation({
     mutationFn: () => forceReconcile(id),
     onSuccess: invalidar,
   })
-  // Salvar informações (NFO, briefing 0062): idempotente — sempre sobrescreve. Não
-  // precisa invalidar `artwork`/`entities` (não mexe em arte nem nos campos que o
-  // grid mostra), mas invalida a entity: `nfo_path`/`nfo_written_at` mudam.
+  // Save informações (NFO): idempotent — it always overwrites. It does not
+  // need invalidating `artwork`/`entities` (it touches neither the artwork nor the fields that the
+  // grid shows), but it invalidates the entity: `nfo_path`/`nfo_written_at` change.
   const salvarNfo = useMutation({
     mutationFn: () => writeEntityNfo(id),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['entity', id] }),
   })
-  // "Gravar metadados no arquivo" (briefing 0125): regrava a tag de áudio
-  // (ID3v2/Vorbis comment) do(s) arquivo(s) com o metadado JÁ RESOLVIDO —
-  // alternativa ao NFO de música (que não existe funcionalmente, ver
-  // briefing §1). Só dispara após confirmação no AlertDialog
-  // (`alertaGravarTagAberto`). No sucesso fecha o diálogo e invalida a
-  // entity (a escrita também sincroniza `media_file.hash`/`mtime`/`size` no
-  // backend); o resumo (faixas regravadas/falhas) aparece inline, mesmo
-  // padrão das ações SEMPRE VISÍVEIS do 0088.
+  // "Gravar metadados no arquivo": it rewrites the audio tag
+  // (ID3v2/Vorbis comment) of the file(s) with the ALREADY RESOLVED metadata —
+  // an alternative to the music NFO (which does not exist functionally, see
+  // §1). It only fires after confirmation in the AlertDialog
+  // (`alertaGravarTagAberto`). On success it closes the dialog and invalidates the
+  // entity (the write also synchronizes `media_file.hash`/`mtime`/`size` in the
+  // backend); the summary (rewritten tracks/failures) appears inline, the same
+  // pattern as the ALWAYS VISIBLE actions.
   const gravarTag = useMutation({
     mutationFn: () => writeAudioTags(id),
     onSuccess: () => {
@@ -312,10 +312,10 @@ export function EntityManageMenu({
       setAlertaGravarTagAberto(false)
     },
   })
-  // Excluir coleção (migrado de `entity-detail.tsx::ExcluirColecao`, briefing
-  // 0026): DELETE /entities/{id} — purga com CASCADE das relações, os filmes
-  // membros NÃO são apagados. No sucesso, invalida a lista e volta para a
-  // biblioteca (mesmo comportamento de sempre).
+  // Excluir coleção (migrated from `entity-detail.tsx::ExcluirColecao`):
+  // DELETE /entities/{id} — purge with CASCADE of the relations, the member
+  // movies are NOT deleted. On success, it invalidates the list and goes back to the
+  // library (the usual behavior).
   const excluir = useMutation({
     mutationFn: () => purgeEntity(id),
     onSuccess: () => {
@@ -324,44 +324,44 @@ export function EntityManageMenu({
     },
   })
 
-  // As 3 ações abaixo (briefing 0088) são SEMPRE VISÍVEIS — diferente de
-  // `enriquecer`/`baixarArte` acima, não dependem de `catalog_completeness`. Cada
-  // uma reusa `invalidar()`: como `entityFilesQueryOptions` (queries.ts) usa a
-  // chave `['entity', id, 'files']`, ela já cai sob o prefixo `['entity', id]`
-  // invalidado abaixo — sem precisar de uma chave extra.
+  // The 3 actions below are ALWAYS VISIBLE — unlike
+  // `enriquecer`/`baixarArte` above, they do not depend on `catalog_completeness`. Each
+  // one reuses `invalidar()`: since `entityFilesQueryOptions` (queries.ts) uses the
+  // key `['entity', id, 'files']`, it already falls under the `['entity', id]` prefix
+  // invalidated below — without needing an extra key.
   //
-  // "Verificar Atualizações de Arquivos": re-hash forçado + asset local novo +
-  // campos locais de reprodução a partir do .nfo, restrito a esta entity.
+  // "Verificar Atualizações de Arquivos": forced re-hash + new local asset +
+  // local playback fields from the .nfo, restricted to this entity.
   const verificarArquivos = useMutation({
     mutationFn: () => refreshEntityFiles(id),
     onSuccess: invalidar,
   })
-  // "Baixar Metadados": mesmo endpoint de sempre (`enrich`), mas com
-  // `force: true` pra pular o cache de 24h do detalhe externo.
+  // "Baixar Metadados": the usual endpoint (`enrich`), but with
+  // `force: true` to skip the 24h cache of the external detail.
   const baixarMetadados = useMutation({
     mutationFn: () => enrichEntity(id, { force: true }),
     onSuccess: invalidar,
   })
-  // "Baixar Artes Faltantes": nova consulta ao(s) ArteProvider + materialização
-  // do que faltar na pasta real — mesmo efeito do job `midias_faltantes`, sob
-  // demanda e só para esta entity.
+  // "Baixar Artes Faltantes": a new query to the ArteProvider(s) + materialization
+  // of whatever is missing into the real folder — the same effect as the `midias_faltantes` job,
+  // on demand and only for this entity.
   const baixarArtesFaltantes = useMutation({
     mutationFn: () => materializeMissingMedia(id),
     onSuccess: invalidar,
   })
 
-  // invalidarHistorico deriva do prefixo `['historico', id]` (queries.ts) — o
-  // selo "Assistido" do hero (mesma chave) e a seção "Histórico" refletem sem
-  // reload manual, mesma convenção de invalidação-por-prefixo do resto do menu.
+  // invalidarHistorico derives from the prefix `['historico', id]` (queries.ts) — the
+  // "Assistido" badge of the hero (same key) and the "Histórico" section reflect it without a
+  // manual reload, the same prefix-invalidation convention as the rest of the menu.
   const invalidarHistorico = () =>
     queryClient.invalidateQueries({ queryKey: ['historico', id] })
-  // "Marcar como assistido"/"Marcar como não assistido" (briefing 0094): ação
-  // manual para item sem Jellyfin (ou histórico retroativo). Ambos os itens do
-  // menu ficam SEMPRE visíveis (não dependem de saber o estado atual — decisão
-  // de UX que evita uma query própria só para rotular o item; a query do selo/
-  // seção já cobre a leitura, este menu só ESCREVE). "Assistido" cria o evento
-  // `completed`; "não assistido" apaga o evento `kind=assistir` MAIS RECENTE
-  // (interpretação mais simples do briefing — sem paginar/escolher qual apagar).
+  // "Marcar como assistido"/"Marcar como não assistido": a manual
+  // action for an item without Jellyfin (or with retroactive history). Both items of the
+  // menu stay ALWAYS visible (they do not depend on knowing the current state — a UX
+  // decision that avoids a query of its own just to label the item; the query of the badge/
+  // section already covers the reading, this menu only WRITES). "Assistido" creates the
+  // `completed` event; "não assistido" deletes the MOST RECENT `kind=assistir` event
+  // (the simplest interpretation — without paginating/choosing which one to delete).
   const marcarAssistido = useMutation({
     mutationFn: () =>
       createHistoricoEvento(id, { kind: KIND_ASSISTIR, status: 'completed' }),
@@ -384,9 +384,9 @@ export function EntityManageMenu({
   )
   const mostrarReconciliar =
     (type === 'faixa' || type === 'tv') && ehDraft(status)
-  // "Gravar metadados no arquivo" (briefing 0125): NÃO depende de
-  // `podeGravarNaPastaReal`/posse de pasta real (isso é sobre NFO) — só do
-  // `type`, já que álbum cascateia para as faixas possuídas no backend.
+  // "Gravar metadados no arquivo": it does NOT depend on
+  // `podeGravarNaPastaReal`/ownership of a real folder (that is about the NFO) — only on the
+  // `type`, since an album cascades to the owned tracks in the backend.
   const mostrarGravarTag = type === 'faixa' || type === 'album'
 
   const erroEnriquecer =
@@ -419,8 +419,8 @@ export function EntityManageMenu({
       : gravarTag.isError
         ? 'Não foi possível gravar os metadados no arquivo.'
         : null
-  // Mesma lógica de erro do `ExcluirColecao` original (sem fallback genérico
-  // para erro não-ApiError) — migrada tal qual.
+  // Same error logic as the original `ExcluirColecao` (without a generic fallback
+  // for a non-ApiError error) — migrated as is.
   const erroExcluir =
     excluir.error instanceof ApiError ? excluir.error.message : null
   const erroVerificarArquivos =
@@ -514,13 +514,13 @@ export function EntityManageMenu({
               Gravar metadados no arquivo
             </DropdownMenuItem>
           ) : null}
-          {/* 3 ações SEMPRE VISÍVEIS (briefing 0088) — não dependem de
+          {/* 3 ALWAYS VISIBLE actions — they do not depend on
               `catalog_completeness`, diferente dos 2 itens condicionais acima. */}
           <DropdownMenuSeparator />
-          {/* "Marcar como assistido"/"não assistido" (briefing 0094): também
-              sempre visível — cria/apaga o evento de histórico direto, sem
-              precisar saber o estado atual (a leitura já é feita pelo selo/seção
-              do detalhe). */}
+          {/* "Marcar como assistido"/"não assistido": also
+              always visible — it creates/deletes the history event directly, without
+              having to know the current state (the reading is already done by the badge/section
+              of the detail). */}
           <DropdownMenuItem
             disabled={atualizandoAssistido}
             onSelect={() => marcarAssistido.mutate()}
@@ -577,13 +577,13 @@ export function EntityManageMenu({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* O rótulo "Buscando…"/"Baixando…"/"Gravando…" mora no PRÓPRIO item do
-          menu (linha do trigger acima) — mas o item some do DOM assim que o
-          dropdown fecha (Radix fecha ao selecionar, comportamento padrão
-          mantido de propósito, §"Convenções"). Sem um eco aqui embaixo, o
-          clique pareceria não ter feito nada até a mutation resolver — por
-          isso o PENDING também aparece como status inline, junto do
-          resultado/erro (mesmo texto do item, só que sempre visível). */}
+      {/* The label "Buscando…"/"Baixando…"/"Gravando…" lives in the menu item ITSELF
+          (row of the trigger above) — but the item leaves the DOM as soon as the
+          dropdown closes (Radix closes on select, the default behavior kept
+          on purpose, §"Conventions"). Without an echo down here, the
+          click would look like it did nothing until the mutation resolves — which is why
+          the PENDING status also appears as inline status, next to the
+          result/error (the same text as the item, only always visible). */}
       {enriquecer.isPending ? (
         <span role="status" className="text-sm text-muted-foreground">
           Buscando…
@@ -719,10 +719,10 @@ export function EntityManageMenu({
               <AlertDialogAction
                 disabled={excluir.isPending}
                 onClick={(e) => {
-                  // preventDefault: o fechamento automático do AlertDialogAction
-                  // fecharia o modal ANTES da mutation resolver — controlamos o
-                  // `open` manualmente (fica aberto em erro, mostrando a
-                  // mensagem; em sucesso o `navigate` desmonta a tela inteira).
+                  // preventDefault: the automatic closing of the AlertDialogAction
+                  // would close the modal BEFORE the mutation resolves — we control the
+                  // `open` manually (it stays open on error, showing the
+                  // message; on success the `navigate` unmounts the whole screen).
                   e.preventDefault()
                   excluir.mutate()
                 }}
@@ -766,9 +766,9 @@ export function EntityManageMenu({
               <AlertDialogAction
                 disabled={gravarTag.isPending}
                 onClick={(e) => {
-                  // preventDefault: mesmo motivo do "Excluir coleção" acima —
-                  // controlamos `open` manualmente (fica aberto em erro,
-                  // mostrando a mensagem; fecha só no sucesso).
+                  // preventDefault: same reason as the "Excluir coleção" above —
+                  // we control `open` manually (it stays open on error,
+                  // showing the message; it closes only on success).
                   e.preventDefault()
                   gravarTag.mutate()
                 }}

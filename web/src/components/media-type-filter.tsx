@@ -4,19 +4,18 @@ import { cn } from '@/lib/utils'
 import { entityTypesQueryOptions } from '@/lib/queries'
 import { rotuloTipoPlural } from '@/lib/entity-badges'
 
-// Filtro de tipo de mídia, compartilhado entre o grid do catálogo
-// (`PosterGrid`) e a busca (`SearchPanel`) — centraliza o rótulo e as opções
-// num só lugar (evita duplicação de markup medida pelo jscpd).
+// Media type filter, shared between the catalog grid
+// (`PosterGrid`) and the search (`SearchPanel`) — it centralizes the label and the options
+// in a single place (avoids markup duplication measured by jscpd).
 //
-// Desde o briefing 0113/ADR-0030 as opções são DINÂMICAS: em vez do antigo
-// enum fixo `'all' | 'movie' | 'tv'`, o componente busca sozinho os tipos de
-// TOPO com dado catalogado via `GET /entities/types` (mesmo
-// `entityTypesQueryOptions` que a navbar/home já consultam, briefings
-// 0109/0110) — um schema novo (ex. "artista") aparece aqui sem tocar este
-// arquivo. `value`/`onChange` carregam o `type` real da API; `'all'` é o
-// sentinela de "sem filtro" (nunca um `type` de verdade, então não colide com
-// nenhum schema futuro). Enquanto a lista ainda não chegou (pending) ou falha,
-// o Select degrada mostrando só "Todos" — nunca quebra a tela.
+// Since ADR-0030 the options are DYNAMIC: instead of the old
+// fixed enum `'all' | 'movie' | 'tv'`, the component fetches by itself the TOP-LEVEL
+// types with cataloged data via `GET /entities/types` (the same
+// `entityTypesQueryOptions` that the navbar/home already query) — a new schema (e.g. "artista") appears here without touching this
+// file. `value`/`onChange` carry the REAL `type` from the API; `'all'` is the
+// sentinel for "no filter" (never a real `type`, so it does not collide with
+// any future schema). While the list has not arrived yet (pending) or fails,
+// the Select degrades by showing only "Todos" — it never breaks the screen.
 export type MediaTypeFilterValue = string
 
 export function MediaTypeFilter({

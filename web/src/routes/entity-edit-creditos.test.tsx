@@ -9,14 +9,14 @@ const CAST_DUPLO = [
   { source_id: '2', name: 'Beto', character: 'Vilão', order: 1 },
 ]
 
-// Rota `/entities/$id/edit/creditos` (briefing 0080, subrota da edição 0030): a
-// seção "Elenco e equipe" — `CreditsEditor` isolado (o comportamento de salvar
-// e a reordenação em lote 0076 já são cobertos por `credits-editor.test.tsx`;
-// a mecânica do guard de "sair sem salvar" já é coberta em detalhe por
-// `entity-edit-shell.test.tsx`). Aqui, sobre a ÁRVORE DE ROTA REAL (mesmo
-// harness MSW dos testes em `routes/__msw__/`), cobrimos só a montagem desta
-// subrota e a FIAÇÃO do guard (o "sujo" do `CreditsEditor` chega até o
-// `EntityEditShell` e intercepta a navegação de verdade).
+// Route `/entities/$id/edit/creditos` (subroute of the item edit): the
+// "Elenco e equipe" section — `CreditsEditor` in isolation (the saving behavior
+// and the batch reordering are already covered by `credits-editor.test.tsx`;
+// the mechanics of the "leave without saving" guard is already covered in detail by
+// `entity-edit-shell.test.tsx`). Here, over the REAL ROUTE TREE (the same
+// MSW harness as the tests in `routes/__msw__/`), we cover only the mounting of this
+// subroute and the WIRING of the guard (the "dirty" state of the `CreditsEditor` reaches the
+// `EntityEditShell` and intercepts the navigation for real).
 describe('EntityEditCreditosScreen (árvore real)', () => {
   beforeEach(() => {
     entidades.set(
@@ -59,12 +59,12 @@ describe('EntityEditCreditosScreen (árvore real)', () => {
     await user.click((await screen.findAllByLabelText('Mover para baixo'))[0])
     await user.click(screen.getByRole('link', { name: 'IDs de terceiros' }))
     expect(confirmar).toHaveBeenCalledTimes(1)
-    // Cancelou a saída: segue na mesma seção (Beto ainda em 2º, não trocou).
+    // It cancelled the exit: it stays in the same section (Beto still 2nd, unchanged).
     expect(
       screen.getByRole('link', { name: 'Elenco e equipe' }),
     ).toHaveAttribute('aria-current', 'page')
 
-    // Confirmando desta vez, a navegação de fato acontece.
+    // Confirming this time, the navigation actually happens.
     confirmar.mockReturnValue(true)
     await user.click(screen.getByRole('link', { name: 'IDs de terceiros' }))
     await waitFor(() =>

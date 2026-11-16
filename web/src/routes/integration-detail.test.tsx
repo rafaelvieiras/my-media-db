@@ -6,10 +6,10 @@ import type { IntegrationDetail } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 
-// Rota `/dashboard/integrations/$slug` (briefing 0096): carrega o schema+
-// valor efetivo e monta o `IntegrationForm`, que reseeda os PRÓPRIOS campos
-// (sem desmontar) a partir do eco do PUT após uma gravação bem-sucedida —
-// nunca do valor de um campo secreto, que o eco também nunca carrega.
+// Route `/dashboard/integrations/$slug`: it loads the schema+
+// effective value and mounts the `IntegrationForm`, which reseeds ITS OWN fields
+// (without unmounting) from the PUT echo after a successful write —
+// never from the value of a secret field, which the echo never carries either.
 const spies = vi.hoisted(() => ({
   navigate: vi.fn(),
   back: vi.fn(),
@@ -72,8 +72,8 @@ function fetchRouter(opts: {
       if (opts.putResposta) {
         return opts.putResposta(body)
       }
-      // Aplica o diff (mesma semântica do backend: null remove, presença seta)
-      // pra simular o eco pós-gravação e o refetch subsequente.
+      // Applies the diff (same semantics as the backend: null removes, presence sets)
+      // to simulate the post-write echo and the subsequent refetch.
       const campos = atual.campos.map((c) => {
         if (!(c.nome in body.valores)) return c
         const novoValor = body.valores[c.nome]
@@ -148,7 +148,7 @@ describe('IntegrationDetailScreen', () => {
     await waitFor(() =>
       expect(screen.getByText('Definido no painel.')).toBeInTheDocument(),
     )
-    // Critério de aceite: NUNCA reidrata o campo secreto com o valor digitado.
+    // Acceptance criterion: it NEVER rehydrates the secret field with the typed value.
     expect(screen.getByLabelText('Read Access Token (v4)')).toHaveValue('')
   })
 })

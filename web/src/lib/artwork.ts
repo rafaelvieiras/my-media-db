@@ -1,13 +1,13 @@
 import type { Asset, ArtworkItem, ArtworkResponse } from '@/lib/api'
 
-// Taxonomia de kinds de arte (0048/0049), centralizada: rótulo pt-BR, enquadramento
-// (aspect) e ajuste (contain × cover) por kind. Fica fora dos componentes para a
-// galeria, o lightbox e os selos do card do topo compartilharem a MESMA fonte de
-// verdade — estende o `ROTULO_KIND`/aspect que o 0044 tinha local na galeria (3 kinds)
-// para os 9 kinds da fanart.tv, sem duplicar a tabela em cada consumidor.
+// Taxonomy of artwork kinds, centralized: pt-BR label, framing
+// (aspect) and fit (contain × cover) per kind. It lives outside the components so the
+// gallery, the lightbox and the badges of the top card share the SAME source of
+// truth — it extends the `ROTULO_KIND`/aspect that used to be local in the gallery (3 kinds)
+// to the 9 kinds of fanart.tv, without duplicating the table in every consumer.
 
-// Rótulo pt-BR de cada kind — usado nas linhas da galeria, no seletor de upload, no
-// lightbox e nos selos de disponibilidade. Kind fora da tabela cai no próprio nome.
+// pt-BR label of each kind — used in the gallery rows, in the upload selector, in the
+// lightbox and in the availability badges. A kind outside the table falls back to its own name.
 export const ROTULO_KIND: Record<string, string> = {
   poster: 'Pôster',
   fanart: 'Fanart',
@@ -20,14 +20,14 @@ export const ROTULO_KIND: Record<string, string> = {
   characterart: 'Character',
 }
 
-// rotuloKind resolve o rótulo pt-BR do kind (nome cru como fallback — nunca some).
+// rotuloKind resolves the pt-BR label of the kind (raw name as fallback — it never disappears).
 export function rotuloKind(kind: string): string {
   return ROTULO_KIND[kind] ?? kind
 }
 
-// ORDEM_KINDS fixa a ordem das LINHAS da galeria e dos SELOS: pôster e as artes
-// "de marca" (logo/clearart) primeiro, depois as paisagens (fanart/thumb/banner),
-// disco, character e still. Kind fora da lista vai para o fim (ordem estável).
+// ORDEM_KINDS fixes the order of the gallery ROWS and of the BADGES: poster and the
+// "brand" artwork (logo/clearart) first, then the landscapes (fanart/thumb/banner),
+// disc, character and still. A kind outside the list goes to the end (stable order).
 export const ORDEM_KINDS = [
   'poster',
   'logo',
@@ -40,9 +40,9 @@ export const ORDEM_KINDS = [
   'still',
 ] as const
 
-// Enquadramento de um kind: a classe `aspect-*` do frame e se a imagem deve ser
-// CONTIDA (transparências — logo/clearart/character/disc — não podem ser cropadas)
-// ou COBRIR o frame (pôster/fanart/thumb/still/banner são retangulares "cheios").
+// Framing of a kind: the `aspect-*` class of the frame and whether the image must be
+// CONTAINED (transparencies — logo/clearart/character/disc — cannot be cropped)
+// or COVER the frame (poster/fanart/thumb/still/banner are "full" rectangles).
 export interface InfoKind {
   aspect: string
   contain: boolean
@@ -60,15 +60,15 @@ const INFO_KIND: Record<string, InfoKind> = {
   characterart: { aspect: 'aspect-square', contain: true },
 }
 
-// infoKind devolve o enquadramento do kind (fallback 16:9 cover — o mais seguro
-// para um kind desconhecido, mesma decisão do 0044).
+// infoKind returns the framing of the kind (fallback 16:9 cover — the safest
+// for an unknown kind, the same decision as before).
 export function infoKind(kind: string): InfoKind {
   return INFO_KIND[kind] ?? { aspect: 'aspect-video', contain: false }
 }
 
-// Largura do card na galeria por kind (0049): "cards maiores" pedidos pelo dono —
-// retrato/quadrado ~208px, paisagem ~320px, logo ~288px, banner (faixa) ~384px. A
-// ALTURA sai do aspect (infoKind); aqui só a largura da coluna do carrossel.
+// Card width in the gallery per kind: "bigger cards" asked for by the owner —
+// portrait/square ~208px, landscape ~320px, logo ~288px, banner (strip) ~384px. The
+// HEIGHT comes from the aspect (infoKind); here only the width of the carousel column.
 const LARGURA_KIND: Record<string, string> = {
   poster: 'w-52',
   disc: 'w-52',
@@ -81,19 +81,19 @@ const LARGURA_KIND: Record<string, string> = {
   banner: 'w-96',
 }
 
-// larguraKind devolve a classe de largura do card (fallback w-52 ~208px).
+// larguraKind returns the width class of the card (fallback w-52 ~208px).
 export function larguraKind(kind: string): string {
   return LARGURA_KIND[kind] ?? 'w-52'
 }
 
-// LinhaArte é UMA linha (carrossel) da galeria: o kind e suas artes, já na ordem que
-// o backend serviu (preferida/idioma primeiro).
+// LinhaArte is ONE row (carousel) of the gallery: the kind and its artwork, already in the order that
+// the backend served (preferred/language first).
 export interface LinhaArte {
   kind: string
   items: ArtworkItem[]
 }
 
-// Kinds que são arrays de arte no envelope (tudo menos `available`).
+// Kinds that are artwork arrays in the envelope (everything except `available`).
 type KindResposta =
   | 'poster'
   | 'fanart'
@@ -105,8 +105,8 @@ type KindResposta =
   | 'characterart'
   | 'still'
 
-// linhasDeArtwork extrai as linhas PRESENTES (kind com ao menos uma arte) na ordem
-// canônica (`ORDEM_KINDS`). Kinds vazios/ausentes somem — a galeria só rende o que há.
+// linhasDeArtwork extracts the PRESENT rows (kind with at least one artwork) in the canonical
+// order (`ORDEM_KINDS`). Empty/absent kinds disappear — the gallery only renders what exists.
 export function linhasDeArtwork(art: ArtworkResponse | undefined): LinhaArte[] {
   if (!art) {
     return []
@@ -121,16 +121,16 @@ export function linhasDeArtwork(art: ArtworkResponse | undefined): LinhaArte[] {
   return linhas
 }
 
-// SeloArte é um selo de disponibilidade do card do topo: kind, rótulo e contagem.
+// SeloArte is an availability badge of the top card: kind, label and count.
 export interface SeloArte {
   kind: string
   label: string
   count: number
 }
 
-// selosDisponibilidade lê o `available: {kind: count}` do endpoint e devolve os
-// selos dos kinds que EXISTEM (count > 0), na ordem canônica. Vazio quando não há
-// inventário — a faixa não aparece.
+// selosDisponibilidade reads the `available: {kind: count}` of the endpoint and returns the
+// badges of the kinds that EXIST (count > 0), in the canonical order. Empty when there is no
+// inventory — the row does not appear.
 export function selosDisponibilidade(
   available: Record<string, number> | undefined,
 ): SeloArte[] {
@@ -147,23 +147,23 @@ export function selosDisponibilidade(
   return selos
 }
 
-// HeroAssets são a logo/banner/disco PREFERIDOS (0082): o hero imersivo só
-// EXIBE a escolha já feita pelo dono na galeria (0048/0049) — sem
-// auto-seleção nova aqui. `undefined` por kind quando não há preferida.
+// HeroAssets are the PREFERRED logo/banner/disc: the immersive hero only
+// EXHIBITS the choice already made by the owner in the gallery — without
+// any new auto-selection here. `undefined` per kind when there is no preferred one.
 export interface HeroAssets {
   logo: Asset | undefined
   banner: Asset | undefined
   disc: Asset | undefined
 }
 
-// assetVencedor replica em TS a PRECEDENCIA DE SERVICO do briefing 0017
-// (`escolherAssetServido`/`coletarCandidatos` em internal/server/assets.go):
-// preferida (preferred:true) -> origin='user' mais recente (ultimo do array,
-// que vem ordenado por created_at asc) -> origin='external' (primeiro) ->
-// qualquer um (base, ex. arte local do scanner). Sem essa precedencia, artes
-// importadas da pasta real (origin='external', preferred:false — o caso
-// normal do fluxo de midias locais 0062+) nunca "venciam" e o hero ficava
-// sem logo/banner/disco mesmo com o asset presente em disco.
+// assetVencedor replicates in TS the SERVICE PRECEDENCE defined for assets
+// (`escolherAssetServido`/`coletarCandidatos` in internal/server/assets.go):
+// preferred (preferred:true) -> most recent origin='user' (last of the array,
+// which comes sorted by created_at asc) -> origin='external' (first) ->
+// anyone (base, e.g. local artwork from the scanner). Without this precedence, artwork
+// imported from the real folder (origin='external', preferred:false — the
+// normal case of the local media flow) never "won" and the hero stayed
+// without a logo/banner/disc even with the asset present on disk.
 function assetVencedor(assets: Asset[], kind: string): Asset | undefined {
   const doKind = assets.filter((a) => a.kind === kind)
   if (doKind.length === 0) return undefined
@@ -175,10 +175,10 @@ function assetVencedor(assets: Asset[], kind: string): Asset | undefined {
   )
 }
 
-// assetsPreferidosDoHero extrai, de UMA chamada a `GET .../assets` (a MESMA
-// lista consumida pela galeria via `listAssets`/`assetsQueryOptions`), a arte
-// VENCEDORA (assetVencedor) de cada um dos três kinds do hero
-// (logo/banner/disc). Puro — sem I/O.
+// assetsPreferidosDoHero extracts, from ONE call to `GET .../assets` (the SAME
+// list consumed by the gallery via `listAssets`/`assetsQueryOptions`), the WINNING
+// artwork (assetVencedor) of each of the three hero kinds
+// (logo/banner/disc). Pure — no I/O.
 export function assetsPreferidosDoHero(
   assets: Asset[] | undefined,
 ): HeroAssets {

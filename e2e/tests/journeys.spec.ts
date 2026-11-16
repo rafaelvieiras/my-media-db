@@ -1,20 +1,20 @@
 import { expect, test } from '../fixtures'
 import { resetBiblioteca } from '../lib/reset'
 
-// Jornadas de NAVEGADOR (Camada 2, briefing 0028): um Chromium real dirige a SPA
-// servida pelo binario com o provider fake. Poucas jornadas de valor, web-first
-// assertions (sem sleep), seletores por papel/aria/texto. workers=1: compartilham
-// um banco; 603 (The Matrix) e importado, 604 (Reloaded) fica de fora de proposito
-// para provar o interno-first (importado x nao-importado lado a lado).
+// BROWSER journeys (Layer 2): a real Chromium drives the SPA
+// served by the binary with the fake provider. Few journeys of value, web-first
+// assertions (no sleep), selectors by role/aria/text. workers=1: they share
+// one database; 603 (The Matrix) is imported, 604 (Reloaded) is left out on purpose
+// to prove internal-first (imported x not-imported side by side).
 
-// matrix localiza o card do The Matrix (1999) na lista de resultados; reloaded, o
-// do Reloaded (2003). O ano desambigua ("The Matrix" e prefixo de "The Matrix
+// matrix locates the card of The Matrix (1999) in the results list; reloaded, the
+// one of Reloaded (2003). The year disambiguates ("The Matrix" is a prefix of "The Matrix
 // Reloaded").
 const seletores = {
   busca: { name: 'Buscar título' as const },
 }
 
-// Cada jornada comeca com a biblioteca zerada (independencia de ordem).
+// Each journey starts with the library cleared (order independence).
 test.beforeEach(async ({ request }) => {
   await resetBiblioteca(request)
 })
@@ -29,7 +29,7 @@ test('importa um filme pela busca e abre o detalhe interno resolvido', async ({ 
     .filter({ hasText: '1999' })
   await matrix.getByRole('button', { name: 'Importar' }).click()
 
-  // Importar leva ao detalhe INTERNO (nunca ao externo) e resolve em pt-BR.
+  // Importing leads to the INTERNAL detail (never the external one) and resolves in pt-BR.
   await expect(page).toHaveURL(/\/entities\//)
   await expect(page.getByRole('heading', { level: 1, name: 'Matrix', exact: true })).toBeVisible()
   await expect(page.getByText('1999')).toBeVisible()
@@ -37,8 +37,8 @@ test('importa um filme pela busca e abre o detalhe interno resolvido', async ({ 
 })
 
 test('item ja importado aparece como "Na biblioteca" e linka ao interno', async ({ page, request }) => {
-  // Semeia o import por API (independente da ordem das jornadas): reusa a mesma
-  // entity se ja existir (dedup), garantindo 603 na biblioteca.
+  // Seeds the import through the API (independent of the journey order): reuses the same
+  // entity if it already exists (dedup), guaranteeing 603 in the library.
   const imp = await request.post('/api/v1/import', {
     data: { source: 'tmdb', source_id: '603', type: 'movie' },
   })
@@ -52,15 +52,15 @@ test('item ja importado aparece como "Na biblioteca" e linka ao interno', async 
   await expect(matrix.getByRole('button', { name: 'Importar' })).toHaveCount(0)
   await expect(matrix.getByRole('link')).toHaveAttribute('href', /\/entities\//)
 
-  // O nao-importado (Reloaded, 2003) segue oferecendo Importar e linkando ao externo.
+  // The not-imported one (Reloaded, 2003) still offers Importar and links to the external page.
   const reloaded = page.getByRole('listitem').filter({ hasText: '2003' })
   await expect(reloaded.getByRole('button', { name: 'Importar' })).toBeVisible()
 
-  // Filtro de tipo (briefing 0113/ADR-0030): dinâmico, lista os tipos de topo
-  // REAIS com dado catalogado (aqui, só "Filmes" — o 603 já foi importado
-  // acima). Escolher "Filmes" exercita o caminho de troca de tipo
-  // (MediaTypeFilter.onChange -> refiltra `/search?type=movie`), e o Matrix
-  // segue visível (é, de fato, um filme).
+  // Type filter (ADR-0030): dynamic, it lists the REAL top types
+  // with cataloged data (here, only "Filmes" — 603 was already imported
+  // above). Choosing "Filmes" exercises the type-switch path
+  // (MediaTypeFilter.onChange -> refilters `/search?type=movie`), and Matrix
+  // stays visible (it is, in fact, a movie).
   await page.getByLabel('Filtrar por tipo').selectOption({ label: 'Filmes' })
   await expect(matrix.getByText('Na biblioteca')).toBeVisible()
 })
@@ -68,14 +68,14 @@ test('item ja importado aparece como "Na biblioteca" e linka ao interno', async 
 test('a biblioteca lista o filme importado', async ({ page, request }) => {
   await request.post('/api/v1/import', { data: { source_id: '603', type: 'movie' } })
 
-  // Desde o briefing 0114/ADR-0030 a home (`/`) só mostra os carrosséis de
-  // "adicionados recentemente" (owned=true, ver RecentlyAddedRail) — o item
-  // deste teste é só CATALOGADO (import sem arquivo/posse real), então não
-  // aparece ali por desenho. A listagem completa (owned + não-owned, mesmo
-  // comportamento que a home tinha antes do 0114) virou a rota própria
-  // `/library/:entitySlug`, alcançável pelo dropdown "Biblioteca" da navbar
-  // (`app-header.tsx`/`BibliotecaNavItem`) — usado aqui em vez de navegação
-  // direta por URL, para exercitar esse caminho também.
+  // Since ADR-0030 the home page (`/`) only shows the "recently added"
+  // carousels (owned=true, see RecentlyAddedRail) — the item
+  // of this test is only CATALOGED (import without a file/real ownership), so it does not
+  // appear there by design. The complete listing (owned + non-owned, the same
+  // behavior the home page had before) became its own route
+  // `/library/:entitySlug`, reachable from the "Biblioteca" dropdown of the navbar
+  // (`app-header.tsx`/`BibliotecaNavItem`) — used here instead of navigating
+  // straight by URL, to exercise that path as well.
   await page.goto('/')
   await page
     .getByRole('button', { name: 'Filtrar biblioteca por tipo' })
@@ -84,18 +84,18 @@ test('a biblioteca lista o filme importado', async ({ page, request }) => {
 
   await expect(page).toHaveURL('/library/movies')
   await expect(page.getByRole('heading', { level: 1, name: 'Filmes' })).toBeVisible()
-  // O card do Matrix aparece no catalogo, linkando ao detalhe interno.
+  // The Matrix card appears in the catalog, linking to the internal detail.
   await expect(page.getByRole('link', { name: /Matrix/ }).first()).toBeVisible()
 
-  // Filtro de posse (PosterGrid): trocar pra "Na biblioteca" refiltra
-  // (owned=true) e some o Matrix (só CATALOGADO, sem arquivo/posse real) —
-  // exercita o handler `reiniciarPagina(setPosse)` e o estado vazio.
+  // Ownership filter (PosterGrid): switching to "Na biblioteca" refilters
+  // (owned=true) and Matrix disappears (only CATALOGED, without a file/real ownership) —
+  // it exercises the `reiniciarPagina(setPosse)` handler and the empty state.
   await page.getByLabel('Filtrar por posse').selectOption('owned')
   await expect(
     page.getByText('Nenhum item no catálogo'),
   ).toBeVisible()
 
-  // Voltar pra "Fora da biblioteca" mostra o Matrix de novo (owned=false).
+  // Going back to "Fora da biblioteca" shows Matrix again (owned=false).
   await page.getByLabel('Filtrar por posse').selectOption('not')
   await expect(page.getByRole('link', { name: /Matrix/ }).first()).toBeVisible()
 })

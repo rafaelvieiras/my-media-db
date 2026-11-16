@@ -4,9 +4,9 @@ import { RichDetailView } from '@/components/rich-detail-view'
 import { richDetailBase } from '@/test/detail-harness'
 import { renderWithClient } from '@/test/render'
 
-// airing-status cobre o SELO DE SITUAÇÃO da série (0045): a RichDetailView renderiza
-// um <Badge> na linha do herói (junto da classificação) com o rótulo pt-BR quando a
-// situação está presente. É metadado de série; sem o dado (filme) o selo não aparece.
+// airing-status covers the SITUATION BADGE of the series: the RichDetailView renders
+// a <Badge> on the hero row (next to the certification) with the pt-BR label when the
+// situation is present. It is series metadata; without the data (movie) the badge does not appear.
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
   useNavigate: () => vi.fn(),

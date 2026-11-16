@@ -1,13 +1,12 @@
 import { expect, test } from '../fixtures'
 import { resetBiblioteca } from '../lib/reset'
 
-// Jornada do HISTORICO DE CONSUMO (briefings 0092/0093/0094, ADR-0022) pelo
-// caminho MANUAL do dropdown "Gerenciar" (0086): item nunca assistido nao
-// mostra selo nem secao (estado vazio) -> "Marcar como assistido" acende o
-// selo no hero e populada a timeline -> apagar o evento da timeline reverte
-// os dois. Antes desta spec so havia cobertura Vitest de unidade
-// (historico-section.test.tsx) e a Camada 1 Go (internal/e2e); nenhuma
-// jornada de navegador real passava por `entity-manage-menu.tsx`/
+// CONSUMPTION HISTORY journey (ADR-0022) through the MANUAL path of the "Gerenciar"
+// dropdown: an item never watched shows neither a badge nor a section (empty
+// state) -> "Marcar como assistido" lights up the badge on the hero and populates
+// the timeline -> deleting the event from the timeline reverts both. Before this
+// spec there was only Vitest unit coverage (historico-section.test.tsx) and the Go
+// Layer 1 (internal/e2e); no real browser journey went through `entity-manage-menu.tsx`/
 // `historico-section.tsx`.
 
 test.beforeEach(async ({ request }) => {
@@ -18,7 +17,7 @@ test('marcar assistido pelo Gerenciar acende o selo e a timeline; apagar reverte
   page,
   request,
 }) => {
-  // Semeia o filme 603 (Matrix) via API e abre o detalhe interno.
+  // Seeds the movie 603 (Matrix) through the API and opens the internal detail.
   const res = await request.post('/api/v1/import', {
     data: { source: 'tmdb', source_id: '603', type: 'movie' },
   })
@@ -30,19 +29,19 @@ test('marcar assistido pelo Gerenciar acende o selo e a timeline; apagar reverte
     page.getByRole('heading', { level: 1, name: 'Matrix' }),
   ).toBeVisible()
 
-  // (1) Item nunca assistido: nem o selo no hero nem a secao "Historico"
-  // aparecem (estado vazio, briefing 0094).
+  // (1) Item never watched: neither the badge on the hero nor the "Historico"
+  // section appear (empty state).
   await expect(main.getByText(/Assistido em/)).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Histórico' })).toHaveCount(0)
 
-  // (2) "Marcar como assistido" mora dentro do dropdown "Gerenciar" (0086),
-  // junto das demais acoes do item.
+  // (2) "Marcar como assistido" lives inside the "Gerenciar" dropdown,
+  // alongside the other actions of the item.
   await page.getByRole('button', { name: 'Gerenciar' }).click()
   await page.getByRole('menuitem', { name: 'Marcar como assistido' }).click()
   await expect(page.getByText('Marcado como assistido.')).toBeVisible()
 
-  // O selo "Assistido em ..." acende no hero e a secao "Historico" passa a
-  // listar o evento manual recem-criado (status "Assistiu", origem
+  // The "Assistido em ..." badge lights up on the hero and the "Historico" section
+  // starts listing the manual event just created (status "Assistiu", origin
   // "Registrado manualmente").
   await expect(main.getByText(/Assistido em/)).toBeVisible()
   await expect(
@@ -51,12 +50,12 @@ test('marcar assistido pelo Gerenciar acende o selo e a timeline; apagar reverte
   await expect(page.getByText('Assistiu', { exact: true })).toBeVisible()
   await expect(page.getByText('Registrado manualmente')).toBeVisible()
 
-  // (3) Apaga o evento pela propria timeline: confirmacao de DUAS etapas
-  // (x -> "Apagar?"), mesmo padrao de `MembroEditavel`.
+  // (3) Deletes the event from the timeline itself: TWO-step confirmation
+  // (x -> "Apagar?"), the same pattern as `MembroEditavel`.
   await page.getByRole('button', { name: 'Apagar evento' }).click()
   await page.getByRole('button', { name: 'Apagar?' }).click()
 
-  // Selo e secao voltam a sumir por inteiro (mesmo estado vazio do inicio).
+  // Badge and section disappear entirely again (same empty state as the beginning).
   await expect(main.getByText(/Assistido em/)).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Histórico' })).toHaveCount(0)
 })

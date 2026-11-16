@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { components } from '@/lib/api-types'
 
-// Prova LEVE de que os tipos gerados do openapi.yaml (npm run gen:types) compilam
-// e casam com o contrato do back (briefing 0010). Se o shape gerado divergir, o
-// objeto tipado abaixo deixa de compilar no `tsc -b` — o teste é o guarda-chuva
-// em runtime, a checagem de tipos é o valor real.
+// LIGHTWEIGHT proof that the generated types from openapi.yaml (npm run gen:types) compile
+// and match the back contract. If the generated shape diverges, the
+// typed object below stops compiling in `tsc -b` — the test is the umbrella
+// at runtime, the type check is the real value.
 type ResolvedEntity = components['schemas']['ResolvedEntity']
 type EntityList = components['schemas']['EntityList']
 
@@ -27,7 +27,7 @@ describe('api-types gerado', () => {
       lang: 'pt-BR',
       original_language: 'en',
       resolved_languages: { title: 'pt-BR', description: 'en' },
-      // Campos ricos (paridade com o externo, 0022/0023).
+      // Rich fields (parity with the external detail).
       tagline: 'Bem-vindo ao mundo real.',
       keywords: ['simulação'],
       runtime: 136,

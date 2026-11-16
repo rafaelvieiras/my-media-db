@@ -1,12 +1,12 @@
-// internalIdDe lê o campo ADITIVO `internal_id` (briefing 0026) de um objeto de DTO
-// externo, de forma DEFENSIVA: devolve o id da entity INTERNA correspondente quando
-// o item externo já foi importado, ou `null` quando não está na biblioteca (ou o
-// campo ainda não existe no tipo gerado).
+// internalIdDe reads the ADDITIVE `internal_id` field of an external DTO
+// object, DEFENSIVELY: it returns the id of the corresponding INTERNAL entity when
+// the external item was already imported, or `null` when it is not in the library (or the
+// field does not exist in the generated type yet).
 //
-// O acesso vai por um tipo estreito local em vez do tipo gerado do OpenAPI porque o
-// campo só entra nos tipos gerados após a regeneração do backend (feita em paralelo).
-// O acesso é superset-compatível: quando os tipos ganham `internal_id`, continua
-// válido sem mudança. Só `tmdb` resolve hoje; outras fontes vêm null (ver 0026).
+// The access goes through a local narrow type instead of the OpenAPI generated type because the
+// field only enters the generated types after the backend regeneration (done in parallel).
+// The access is superset-compatible: when the types gain `internal_id`, it stays
+// valid without change. Only `tmdb` resolves today; other sources come back null.
 export function internalIdDe(x: unknown): string | null {
   if (x && typeof x === 'object' && 'internal_id' in x) {
     const v = (x as { internal_id?: string | null }).internal_id

@@ -12,21 +12,21 @@ import {
   type TypeCompletenessConfig,
 } from '@/lib/api'
 
-// Formulário de admin da completude de CATALOGAÇÃO (briefing 0057): por tipo
-// (`movie`/`tv`), quais campos/artes o dono considera desejáveis para um item
-// estar bem catalogado. Conceito NOVO, DIFERENTE de completude de POSSE
-// (`web/src/lib/entity-badges.ts`, 0036/0037) — este arquivo não reusa nada de
-// lá (nem `EstadoCompletude`/`temCompletude`/`unidadeCompletude`).
+// Admin form of the CATALOGING completeness: per type
+// (`movie`/`tv`), which fields/artwork the owner considers desirable for an item
+// to be well cataloged. A NEW concept, DIFFERENT from OWNERSHIP completeness
+// (`web/src/lib/entity-badges.ts`) — this file reuses nothing from
+// there (nor `EstadoCompletude`/`temCompletude`/`unidadeCompletude`).
 //
-// Só `movie`/`tv` têm UI nesta rodada (ver §4/§7 do briefing) — os rótulos são
-// fixos em pt-BR, sem descoberta dinâmica de tipos.
+// Only `movie`/`tv` have a UI in this round (see §4/§7) — the labels are
+// fixed in pt-BR, without dynamic type discovery.
 const TIPOS_UI: Array<{ tipo: 'movie' | 'tv'; rotulo: string }> = [
   { tipo: 'movie', rotulo: 'Filme' },
   { tipo: 'tv', rotulo: 'Série' },
 ]
 
-// Kinds de arte ofertados nesta tela (briefing §6): `still`/`characterart`
-// ficam fora de propósito (still é de episódio; characterart não foi pedido).
+// Artwork kinds offered on this screen (§6): `still`/`characterart`
+// stay out on purpose (still is for episodes; characterart was not requested).
 const KINDS_ARTE_UI: Array<{ kind: string; rotulo: string }> = [
   { kind: 'poster', rotulo: 'Poster' },
   { kind: 'fanart', rotulo: 'Fanart' },
@@ -68,9 +68,9 @@ export function CatalogCompletenessForm() {
   )
 }
 
-// Formulário semeado pela config vigente. Recebe `inicial` já resolvido para
-// semear o estado uma única vez (sem useEffect de sincronização) — mesmo
-// padrão de `LanguageSettingsForm` em settings.tsx.
+// Form seeded with the current config. It receives `inicial` already resolved to
+// seed the state a single time (no synchronization useEffect) — same
+// pattern as `LanguageSettingsForm` in settings.tsx.
 function CompletenessSettingsForm({
   inicial,
 }: {

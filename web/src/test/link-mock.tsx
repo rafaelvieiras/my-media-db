@@ -1,15 +1,15 @@
 import type { ReactNode } from 'react'
 
-// Mock do <Link> do TanStack Router para testes de unidade de tela: vira um <a>
-// simples, com o `to` refletido em `href` (para afirmar destinos de navegação).
-// Quando `params` estão presentes (rotas com segmentos `$x`), interpola-os no
-// `href` (ex.: `/external/$source/$type/$id` + `{source:'tmdb',…}` →
-// `/external/tmdb/movie/604`), para os testes afirmarem o alvo já resolvido.
-// `search` (briefing 0110, ex.: `{type:'album'}`) vira query string no `href`
-// (`?type=album`) — mesma lógica, chaves com valor `undefined` são omitidas.
-// Fica isolado num arquivo só-componente para não disparar
-// `react-refresh/only-export-components` num módulo que também exporta helpers.
-// Uso: `vi.mock('@tanstack/react-router', async () => ({ Link: (await
+// Mock of the <Link> of TanStack Router for screen unit tests: it becomes a plain
+// <a>, with `to` reflected in `href` (to assert navigation destinations).
+// When `params` are present (routes with `$x` segments), it interpolates them into
+// the `href` (e.g. `/external/$source/$type/$id` + `{source:'tmdb',…}` →
+// `/external/tmdb/movie/604`), so the tests can assert the already resolved target.
+// `search` (e.g. `{type:'album'}`) becomes a query string in the `href`
+// (`?type=album`) — same logic, keys with an `undefined` value are omitted.
+// It stays isolated in a single-component file so it does not trigger
+// `react-refresh/only-export-components` in a module that also exports helpers.
+// Usage: `vi.mock('@tanstack/react-router', async () => ({ Link: (await
 // import('@/test/link-mock')).LinkMock }))`.
 export function LinkMock({
   children,

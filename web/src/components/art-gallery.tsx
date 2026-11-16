@@ -34,60 +34,60 @@ import {
 } from '@/lib/artwork'
 import { artworkQueryOptions } from '@/lib/queries'
 
-// Galeria de artes (0049, reescrita do 0017/0044): consome o endpoint AGRUPADO
-// `GET /artwork` (0048) e renderiza UMA LINHA (carrossel horizontal) por kind
-// presente, cada card no ASPECT correto do tipo (pôster 2:3, fanart/thumb/still
-// 16:9, logo/clearart wide transparente, disc/character quadrado, banner faixa).
-// É AGNÓSTICA DE FONTE: TMDB, fanart.tv e assets do dono entram nas mesmas linhas;
-// a origem vira só um selo. Clicar numa arte abre o lightbox (alta + zoom +
-// navegação + ações). O dono ainda pode ENVIAR uma arte custom (upload do 0017).
+// Artwork gallery (a rewrite of the earlier artwork screens): it consumes the GROUPED
+// endpoint `GET /artwork` and renders ONE ROW (horizontal carousel) per kind
+// present, each card in the correct ASPECT of the type (2:3 poster, 16:9
+// fanart/thumb/still, wide transparent logo/clearart, square disc/character, banner strip).
+// It is SOURCE-AGNOSTIC: TMDB, fanart.tv and the owner's assets enter the same rows;
+// the origin becomes just a badge. Clicking an artwork opens the lightbox (high resolution + zoom +
+// navigation + actions). The owner can also UPLOAD a custom artwork.
 //
-// Ações e roteamento (contrato 0048, estendido no 0062):
-//   • Definir como PRINCIPAL (is_principal, fonte de verdade) → asset já existente:
-//     PUT .../assets/{asset_id}/prefer (o backend materializa+renomeia sozinho, se
-//     preciso); candidato do INVENTÁRIO (sem asset_id): encadeia POST
-//     .../artwork/select {prefer:false} (cria o asset) + o PUT prefer acima.
-//   • Salvar NA PASTA real da biblioteca (is_local_in_library) → mesmo encadeamento
-//     do candidato do inventário quando preciso, terminando em POST
+// Actions and routing (contract, extended later):
+//   • Set as PRINCIPAL (is_principal, source of truth) → asset already existing:
+//     PUT .../assets/{asset_id}/prefer (the backend materializes+renames on its own, if
+//     needed); INVENTORY candidate (without asset_id): chains POST
+//     .../artwork/select {prefer:false} (creates the asset) + the PUT prefer above.
+//   • Save INTO the real library folder (is_local_in_library) → same chaining
+//     as the inventory candidate when needed, ending in POST
 //     .../assets/{asset_id}/materialize.
-//   • Baixar pro CACHE interno (materializar sem preferir/tocar a pasta real) →
+//   • Download to the internal CACHE (materialize without preferring/touching the real folder) →
 //     POST .../artwork/select {prefer:false}.
-//   • Remover (só do DONO, source==='user') → DELETE .../assets/{asset_id}.
+//   • Remove (OWNER only, source==='user') → DELETE .../assets/{asset_id}.
 
-// Aceite do <input file> e da validação no cliente (mesmo conjunto do backend).
+// Acceptance of the <input file> and of the validation on the client (same set as the backend).
 const ACCEPT = MIMES_ARTE.join(',')
 
-// Invalidação após mudar a arte: a galeria/selos (`['artwork', id]`), o detalhe
-// (`['entity', id]`, prefixo — todas as variações de lang) e o grid (`['entities']`)
-// — todos leem o pôster servido, que segue a nova precedência.
+// Invalidation after changing the artwork: the gallery/badges (`['artwork', id]`), the detail
+// (`['entity', id]`, prefix — every lang variation) and the grid (`['entities']`)
+// — they all read the served poster, which follows the new precedence.
 function invalidarAposArte(qc: QueryClient, id: string) {
   qc.invalidateQueries({ queryKey: ['artwork', id] })
   qc.invalidateQueries({ queryKey: ['entity', id] })
   qc.invalidateQueries({ queryKey: ['entities'] })
 }
 
-// Estado do lightbox: o kind aberto e o índice dentro dele (ou null = fechado).
+// Lightbox state: the open kind and the index within it (or null = closed).
 interface Aberto {
   kind: string
   index: number
 }
 
-// identidadeItem devolve um identificador ESTÁVEL do item entre revalidações da
-// galeria (briefing 0072): `asset_id` quando o item já é um asset materializado;
-// senão `src_url` (candidato do inventário, ainda sem asset_id). O lightbox usa
-// essa identidade para se reancorar na MESMA arte depois que a lista reordena
-// (ex.: materializar um candidato o move de posição), em vez de continuar preso a
-// um índice numérico que agora aponta pra outra arte.
+// identidadeItem returns a STABLE identifier of the item across revalidations of the
+// gallery: `asset_id` when the item already is a materialized asset;
+// otherwise `src_url` (inventory candidate, still without asset_id). The lightbox uses
+// that identity to re-anchor itself on the SAME artwork after the list reorders
+// (e.g. materializing a candidate moves it to another position), instead of staying stuck to
+// a numeric index that now points at another artwork.
 function identidadeItem(item: ArtworkItem): string {
   return item.asset_id ?? item.src_url ?? ''
 }
 
-// garantirAssetId resolve o `asset_id` de um item da galeria: se o item JÁ é um
-// asset (local ou não), devolve o `asset_id` direto; se ainda é só um candidato do
-// INVENTÁRIO (fanart.tv/TMDB, sem asset ainda), cria o asset primeiro (POST select,
-// sem preferir) e devolve o id recém-criado. Compartilhado por `preferir` e
-// `materializar` (briefing 0062, jornada §2 passo 4): as duas ações podem precisar
-// desse mesmo passo antes de chamar PUT prefer / POST materialize.
+// garantirAssetId resolves the `asset_id` of a gallery item: if the item ALREADY is an
+// asset (local or not), it returns the `asset_id` directly; if it is still only an
+// INVENTORY candidate (fanart.tv/TMDB, no asset yet), it creates the asset first (POST select,
+// without preferring) and returns the newly created id. Shared by `preferir` and
+// `materializar` (journey §2 step 4): both actions may need
+// that same step before calling PUT prefer / POST materialize.
 async function garantirAssetId(
   entityId: string,
   kind: string,
@@ -104,9 +104,9 @@ async function garantirAssetId(
   return asset.id
 }
 
-// LinhaGaleria renderiza UMA linha (kind): rótulo + scroll horizontal de cards no
-// aspect do tipo. Cada card é um botão que abre o lightbox naquele índice. A arte
-// preferida ganha anel + selo. Extraído para o markup do card não duplicar (jscpd).
+// LinhaGaleria renders ONE row (kind): label + horizontal scroll of cards in the
+// aspect of the type. Each card is a button that opens the lightbox at that index. The
+// preferred artwork gains a ring + badge. Extracted so the card markup is not duplicated (jscpd).
 function LinhaGaleria({
   linha,
   onAbrir,
@@ -177,17 +177,17 @@ export function ArtGallery({
   owned = true,
 }: {
   entityId: string
-  // Tipo da entity: decide os kinds oferecidos no UPLOAD (episódio → só `still`) e
-  // se há um still do provider a exibir. Default `movie` — compat.
+  // Type of the entity: it decides the kinds offered in the UPLOAD (episode → only `still`) and
+  // whether there is a provider still to show. Default `movie` — compat.
   type?: string
-  // Still do EPISÓDIO vindo do detalhe (0044): CRU do provider ou rota local do
-  // custom. Card read-only "provider" quando o inventário ainda não tem still.
+  // EPISODE still coming from the detail: RAW from the provider or local route of the
+  // custom one. Read-only "provider" card when the inventory does not have a still yet.
   stillUrl?: string | null
-  // Posse (briefing 0062): `EXISTS media_file present` (mesmo `ResolvedEntity.
-  // owned`). Sem isso não há PASTA de destino na biblioteca real — "Salvar na
-  // pasta"/"Definir como principal" ficam desabilitados com tooltip (jornada §2
-  // passo 7). Default `true`: quem não passa (telas antigas) mantém os botões
-  // habilitados, como antes deste briefing.
+  // Ownership: `EXISTS media_file present` (the same `ResolvedEntity.
+  // owned`). Without it there is no destination FOLDER in the real library — "Salvar na
+  // pasta"/"Definir como principal" are disabled with a tooltip (journey §2
+  // step 7). Default `true`: whoever does not pass it (older screens) keeps the buttons
+  // enabled, as before.
   owned?: boolean
 }) {
   const qc = useQueryClient()
@@ -195,15 +195,15 @@ export function ArtGallery({
     artworkQueryOptions(entityId),
   )
 
-  // Upload do dono (0017): kinds conforme o tipo; erro de validação no cliente.
+  // Upload of the owner: kinds according to the type; validation error on the client.
   const kindsUpload = kindsParaTipo(type)
   const [kindUpload, setKindUpload] = useState<KindArte>(kindsUpload[0])
   const [erroCliente, setErroCliente] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Lightbox aberto (kind + índice) ou null. `identidadeAbertaRef` acompanha a
-  // IDENTIDADE (identidadeItem) do item aberto — sobrevive a reordenações da
-  // lista (não é limpa por render, só por abrir/navegar/fechar).
+  // Open lightbox (kind + index) or null. `identidadeAbertaRef` follows the
+  // IDENTITY (identidadeItem) of the open item — it survives reorderings of the
+  // list (it is not cleared by a render, only by opening/navigating/closing).
   const [aberto, setAberto] = useState<Aberto | null>(null)
   const identidadeAbertaRef = useRef<string | null>(null)
 
@@ -217,12 +217,12 @@ export function ArtGallery({
     setAberto((prev) => (prev ? { kind: prev.kind, index } : prev))
   }
 
-  // marcarIdentidadeEInvalidar reancora a identidade rastreada do item ABERTO no
-  // `asset.id` recém-resolvido antes de invalidar a query (briefing 0072): as três
-  // mutações abaixo podem ter acabado de MATERIALIZAR um candidato do inventário
-  // (identidade até então = src_url) — sem isto, o reconciliador do useEffect
-  // procuraria pelo src_url antigo na lista já reordenada/atualizada e não o
-  // acharia mais (o item novo só carrega asset_id), fechando o lightbox à toa.
+  // marcarIdentidadeEInvalidar re-anchors the tracked identity of the OPEN item on
+  // the newly resolved `asset.id` before invalidating the query: the three
+  // mutations below may have just MATERIALIZED an inventory candidate
+  // (identity so far = src_url) — without this, the reconciler of the useEffect
+  // would look for the old src_url in the already reordered/updated list and would not
+  // find it anymore (the new item only carries asset_id), closing the lightbox for nothing.
   function marcarIdentidadeEInvalidar(asset: { id: string }) {
     identidadeAbertaRef.current = asset.id
     invalidarAposArte(qc, entityId)
@@ -234,29 +234,29 @@ export function ArtGallery({
     onSuccess: () => invalidarAposArte(qc, entityId),
   })
 
-  // Definir PRINCIPAL (briefing 0062, fonte de verdade `is_principal`): asset já
-  // existente → PUT prefer direto (o backend materializa+renomeia sozinho, se
-  // preciso); candidato do INVENTÁRIO (sem `asset_id` ainda) → cria o asset
-  // primeiro (POST select, sem preferir) e só então PUT prefer — um único clique
-  // do dono encadeia as duas chamadas quando necessário (jornada §2 passo 4).
+  // Set PRINCIPAL (source of truth `is_principal`): an already
+  // existing asset → PUT prefer directly (the backend materializes+renames on its own, if
+  // needed); INVENTORY candidate (without `asset_id` yet) → it creates the asset
+  // first (POST select, without preferring) and only then PUT prefer — a single click
+  // of the owner chains the two calls when necessary (journey §2 step 4).
   const preferir = useMutation({
     mutationFn: async ({ kind, item }: { kind: string; item: ArtworkItem }) =>
       preferAsset(entityId, await garantirAssetId(entityId, kind, item)),
     onSuccess: marcarIdentidadeEInvalidar,
   })
 
-  // Salvar NA PASTA real da biblioteca (briefing 0062) — distinto de `baixar`
-  // (que só cacheia internamente, sem tocar a pasta real). Mesmo encadeamento do
-  // `preferir` para um candidato ainda sem `asset_id`, mas termina em POST
-  // materialize (não muda quem é o principal).
+  // Save INTO the real library folder — distinct from `baixar`
+  // (which only caches internally, without touching the real folder). Same chaining as
+  // `preferir` for a candidate still without `asset_id`, but it ends in POST
+  // materialize (it does not change which one is the principal).
   const materializar = useMutation({
     mutationFn: async ({ kind, item }: { kind: string; item: ArtworkItem }) =>
       materializeAsset(entityId, await garantirAssetId(entityId, kind, item)),
     onSuccess: marcarIdentidadeEInvalidar,
   })
 
-  // Baixar (materializar SÓ no cache interno, sem preferir nem tocar a pasta real
-  // da biblioteca) — só arte de inventário tem `src_url`.
+  // Download (materialize ONLY in the internal cache, without preferring nor touching the real
+  // library folder) — only inventory artwork has a `src_url`.
   const baixar = useMutation({
     mutationFn: ({ kind, item }: { kind: string; item: ArtworkItem }) =>
       selectArtwork(entityId, {
@@ -267,7 +267,7 @@ export function ArtGallery({
     onSuccess: marcarIdentidadeEInvalidar,
   })
 
-  // Remover (só do dono): DELETE do asset.
+  // Remove (owner only): DELETE of the asset.
   const remover = useMutation({
     mutationFn: ({ item }: { kind: string; item: ArtworkItem }) =>
       deleteAsset(entityId, item.asset_id ?? ''),
@@ -294,7 +294,7 @@ export function ArtGallery({
     baixar.isPending ||
     remover.isPending
 
-  // Erro das AÇÕES do lightbox (pt-BR do envelope) — exibido no rodapé do lightbox.
+  // Error of the lightbox ACTIONS (pt-BR from the envelope) — shown in the footer of the lightbox.
   const erroAcao =
     preferir.error instanceof ApiError
       ? preferir.error.message
@@ -311,7 +311,7 @@ export function ArtGallery({
               ? 'Nao foi possivel atualizar a arte.'
               : null
 
-  // Erro do UPLOAD (cliente > envelope > genérico).
+  // Error of the UPLOAD (client > envelope > generic).
   const erroUpload =
     erroCliente ??
     (enviar.error instanceof ApiError
@@ -321,21 +321,21 @@ export function ArtGallery({
         : null)
 
   const linhas = linhasDeArtwork(data)
-  // Still do PROVIDER (episódio, 0044): card read-only enquanto o inventário não
-  // tem still (nem do dono, nem baixado). Mostrado só no episódio, com stillUrl.
+  // PROVIDER still (episode): read-only card while the inventory does not
+  // have a still (neither from the owner nor downloaded). Shown only on the episode, with stillUrl.
   const temStill = linhas.some((l) => l.kind === 'still')
   const mostrarProviderStill = type === 'episode' && !temStill && !!stillUrl
 
-  // Linha aberta no lightbox (recalculada a cada render — reflete o pós-mutação).
+  // Row open in the lightbox (recalculated on every render — it reflects the post-mutation state).
   const linhaAberta = aberto
     ? linhas.find((l) => l.kind === aberto.kind)
     : undefined
 
-  // Reancora o lightbox por IDENTIDADE (briefing 0072) sempre que `data` revalida
-  // (preferir/materializar/baixar/remover invalidam `['artwork', id]`): procura a
-  // NOVA posição do item com a mesma identidade em `linhaAberta.items` e corrige
-  // `aberto.index`; se o item não existe mais (foi removido), fecha o lightbox em
-  // vez de mostrar o que sobrou naquele índice.
+  // Re-anchors the lightbox by IDENTITY whenever `data` revalidates
+  // (prefer/materialize/download/remove invalidate `['artwork', id]`): it looks for the
+  // NEW position of the item with the same identity in `linhaAberta.items` and fixes
+  // `aberto.index`; if the item no longer exists (it was removed), it closes the lightbox in
+  // stead of showing what was left at that index.
   useEffect(() => {
     if (!aberto) {
       return
@@ -367,10 +367,10 @@ export function ArtGallery({
     onBaixar: (item) => aberto && baixar.mutate({ kind: aberto.kind, item }),
     onRemover: (item) => aberto && remover.mutate({ kind: aberto.kind, item }),
     ocupado,
-    // Sem media_file presente não há pasta de destino na biblioteca real (jornada
-    // §2 passo 7) — "Salvar na pasta"/"Definir como principal" ficam desabilitados
-    // com tooltip; "Baixar pro cache"/"Remover" continuam livres (não tocam a
-    // pasta real).
+    // Without a present media_file there is no destination folder in the real library (journey
+    // §2 step 7) — "Salvar na pasta"/"Definir como principal" are disabled
+    // with a tooltip; "Baixar pro cache"/"Remover" remain free (they do not touch the
+    // real folder).
     podeSalvarNaPasta: owned,
     erro: erroAcao,
   }
@@ -379,7 +379,7 @@ export function ArtGallery({
     <section className="mt-6 flex flex-col gap-4">
       <h2 className="font-heading text-lg font-medium">Artes</h2>
 
-      {/* Upload do dono: seletor de kind + input de arquivo (0017). */}
+      {/* Upload of the owner: kind selector + file input. */}
       <div className="flex flex-wrap items-end gap-2 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">Tipo</span>
@@ -421,7 +421,7 @@ export function ArtGallery({
       ) : null}
 
       {isPending ? (
-        // Skeleton: uma linha de placeholders (a galeria carrega em bloco).
+        // Skeleton: a row of placeholders (the gallery loads as a block).
         <div className="flex flex-col gap-2" aria-hidden>
           <div className="h-4 w-24 animate-pulse rounded bg-muted" />
           <div className="flex gap-3">
@@ -446,7 +446,7 @@ export function ArtGallery({
         </p>
       ) : (
         <div className="flex flex-col gap-5">
-          {/* Still do provider (episódio): read-only, não abre lightbox nem tem ações. */}
+          {/* Provider still (episode): read-only, it does not open the lightbox nor has actions. */}
           {mostrarProviderStill ? (
             <section className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
@@ -473,7 +473,7 @@ export function ArtGallery({
         </div>
       )}
 
-      {/* Lightbox: só quando há linha aberta (some sozinho se a linha esvaziar). */}
+      {/* Lightbox: only when a row is open (it disappears on its own if the row empties). */}
       {aberto && linhaAberta ? (
         <ArtLightbox
           kind={aberto.kind}

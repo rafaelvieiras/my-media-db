@@ -1,7 +1,7 @@
 import { SearchPanel } from '@/components/search-panel'
 
-// Rota `/search` (0015): busca unificada catálogo + fonte externa, com import de
-// resultados externos para o catálogo.
+// Route `/search`: unified search of the catalog + external source, with import of
+// external results into the catalog.
 export function SearchScreen() {
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">

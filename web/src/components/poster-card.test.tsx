@@ -5,16 +5,16 @@ import { PosterCard } from '@/components/poster-card'
 import type { EntityCard } from '@/lib/api'
 import { entityCardBase } from '@/test/detail-harness'
 
-// card: mesmos defaults de entityCardBase, só troca id/título pros valores que
-// este arquivo já usava (id 'x', título 'Matrix') — evita duplicar a fábrica
-// inteira (jscpd) só por causa desses dois campos.
+// card: same defaults as entityCardBase, it only swaps id/title to the values that
+// this file already used (id 'x', title 'Matrix') — avoids duplicating the whole
+// factory (jscpd) just because of those two fields.
 function card(over: Partial<EntityCard> = {}): EntityCard {
   return entityCardBase({ id: 'x', title: 'Matrix', ...over })
 }
 
-// O <Link> do TanStack Router exige contexto de router; para um teste de unidade
-// do card, mockamos por um <a> simples. O `to` vira `href` para afirmar o destino
-// do badge de revisão (link para `/review`).
+// The <Link> of TanStack Router requires router context; for a unit test
+// of the card, we mock it with a plain <a>. The `to` becomes `href` to assert the destination
+// of the review badge (link to `/review`).
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
     children,
@@ -90,7 +90,7 @@ describe('PosterCard', () => {
     const badge = screen.getByText('revisar')
     expect(badge).toBeInTheDocument()
     expect(badge.closest('a')).toHaveAttribute('href', '/dashboard/review')
-    // Revisão (atenção) fica no topo-ESQUERDO, não no de posse (0038).
+    // The review (attention) one stays in the top-LEFT, not in the ownership one.
     const overlayEsquerdo = container.querySelector('.left-1\\.5')
     expect(overlayEsquerdo?.textContent).toContain('revisar')
   })
@@ -104,9 +104,9 @@ describe('PosterCard', () => {
   })
 })
 
-// Selo de completude por tipo (0037): o card de SÉRIE conta TEMPORADAS, o de
-// TEMPORADA conta EPISÓDIOS. A mesma lógica de estado (completa/parcial/vazia) do
-// 0036, só com a unidade trocada pelo tipo. Movie/collection nunca têm selo.
+// Completeness badge per type: the SERIES card counts SEASONS, the
+// SEASON one counts EPISODES. The same state logic (completa/parcial/vazia) of the
+// ownership badge, only with the unit swapped by the type. Movie/collection never have a badge.
 describe('PosterCard — selo de completude por tipo (0037/0038)', () => {
   it('SÉRIE parcial mostra "X/Y" compacto no topo-direito, unidade no aria-label', () => {
     const { container } = render(
@@ -119,13 +119,13 @@ describe('PosterCard — selo de completude por tipo (0037/0038)', () => {
     )
     const badge = screen.getByText('3/38')
     expect(badge).toBeInTheDocument()
-    // Unidade completa fica acessível no aria-label/title, não no texto visível.
+    // The full unit stays accessible in the aria-label/title, not in the visible text.
     expect(badge).toHaveAttribute('aria-label', 'possui 3/38 temporadas')
     expect(screen.queryByText('possui 3/38 temporadas')).not.toBeInTheDocument()
-    // Selo de posse vai no overlay do topo-DIREITO (0038).
+    // The ownership badge goes in the top-RIGHT overlay.
     const overlayDireito = container.querySelector('.right-1\\.5')
     expect(overlayDireito?.textContent).toContain('3/38')
-    // Série com conteúdo não mostra "na biblioteca" (sem redundância, 0038).
+    // A series with content does not show "na biblioteca" (no redundancy).
     expect(screen.queryByText('na biblioteca')).not.toBeInTheDocument()
   })
 
@@ -157,7 +157,7 @@ describe('PosterCard — selo de completude por tipo (0037/0038)', () => {
     expect(screen.queryByText('0/38')).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/temporadas/)).not.toBeInTheDocument()
     expect(container.querySelector('.opacity-60')).toBeNull()
-    // Nenhum badge de posse (nem "na biblioteca").
+    // No ownership badge (not even "na biblioteca").
     expect(screen.queryByText('na biblioteca')).not.toBeInTheDocument()
   })
 
@@ -183,7 +183,7 @@ describe('PosterCard — selo de completude por tipo (0037/0038)', () => {
         })}
       />,
     )
-    // movie não conta unidade: sem "temporadas"/"episódios" e sem "completa".
+    // movie does not count a unit: no "temporadas"/"episódios" and no "completa".
     expect(screen.queryByText(/temporadas|episódios/)).not.toBeInTheDocument()
     expect(screen.queryByText('completa')).not.toBeInTheDocument()
   })
@@ -194,9 +194,9 @@ describe('PosterCard — selo de completude por tipo (0037/0038)', () => {
   })
 })
 
-// Indicador de completude de CATALOGAÇÃO (0058) — DIFERENTE do selo de posse
-// (0037/0038, coberto acima). Ícone-only no topo-ESQUERDO, ao lado do badge de
-// revisão. Só aparece quando `catalog_completeness.complete === false`.
+// CATALOGING completeness indicator — DIFFERENT from the ownership badge
+// (covered above). Icon-only in the top-LEFT, next to the review
+// badge. It only appears when `catalog_completeness.complete === false`.
 describe('PosterCard — indicador de completude de catalogação (0058)', () => {
   it('mostra o ícone de alerta quando incompleto, com title/aria-label da lista', () => {
     const { container } = render(
@@ -213,7 +213,7 @@ describe('PosterCard — indicador de completude de catalogação (0058)', () =>
     const badge = screen.getByLabelText(rotulo)
     expect(badge).toBeInTheDocument()
     expect(badge).toHaveAttribute('title', rotulo)
-    // Fica no topo-ESQUERDO (junto do badge de revisão), não no de posse.
+    // It stays in the top-LEFT (next to the review badge), not in the ownership one.
     const overlayEsquerdo = container.querySelector('.left-1\\.5')
     expect(overlayEsquerdo?.contains(badge)).toBe(true)
   })

@@ -4,17 +4,17 @@ import { RichDetailView } from '@/components/rich-detail-view'
 import { richDetailBase } from '@/test/detail-harness'
 import { renderWithClient } from '@/test/render'
 
-// still-detail cobre o STILL grande 16:9 no topo do detalhe do EPISODIO (0042): a
-// RichDetailView troca o backdrop/poster pelo still quando o tipo e `episode`. Com still
-// mostra a imagem (ja servida pelo proxy); sem still cai no placeholder. Os demais tipos
-// nao ganham o frame de still.
+// still-detail covers the large 16:9 STILL at the top of the EPISODE detail: the
+// RichDetailView swaps the backdrop/poster for the still when the type is `episode`. With a still
+// it shows the image (already served by the proxy); without a still it falls back to the placeholder. The other types
+// do not get the still frame.
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
   useNavigate: () => vi.fn(),
 }))
 
 describe('RichDetailView — still do episódio (0042)', () => {
-  // A URL de still ja chega PRONTA (o adapter deResolvedEntity aplicou imagemProxySrc).
+  // The still URL already arrives READY (the deResolvedEntity adapter applied imagemProxySrc).
   const stillProxied = '/api/v1/images?src=https%3A%2F%2Fx%2Fs.jpg'
 
   it('episódio com still: mostra o still grande 16:9, sem o pôster 2:3', () => {
@@ -27,7 +27,7 @@ describe('RichDetailView — still do episódio (0042)', () => {
     const img = screen.getByAltText('Still de Duna') as HTMLImageElement
     expect(img.getAttribute('src')).toBe(stillProxied)
     expect(container.querySelector('.aspect-video')).toBeTruthy()
-    // O episodio nao usa o frame de poster 2:3.
+    // The episode does not use the 2:3 poster frame.
     expect(screen.queryByAltText('Pôster de Duna')).toBeNull()
   })
 
@@ -50,7 +50,7 @@ describe('RichDetailView — still do episódio (0042)', () => {
         source="tmdb"
       />,
     )
-    // Filme não ganha o frame de still; o hero segue no frame de pôster 2:3.
+    // A movie does not get the still frame; the hero stays on the 2:3 poster frame.
     expect(screen.queryByTestId('still-placeholder')).toBeNull()
     expect(container.querySelector('.aspect-video')).toBeNull()
     expect(container.querySelector('.aspect-\\[2\\/3\\]')).toBeTruthy()

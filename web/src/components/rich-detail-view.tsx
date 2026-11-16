@@ -52,19 +52,19 @@ import {
 } from '@/lib/rich-detail'
 import { cn } from '@/lib/utils'
 
-// RichDetailView é a tela RICA COMPARTILHADA entre o detalhe do item EXTERNO (antes
-// de importar, 0022/0023) e o detalhe da ENTITY importada (catálogo). As duas telas
-// têm o MESMO padrão visual e de informação — hero IMERSIVO full-bleed (backdrop +
-// overlay + pôster + sinopse + ações + fileira de notas, briefings 0082/0086),
-// fileira de links externos logo abaixo, gêneros, palavras-chave, vídeos, coleção,
-// similares — e diferem só nos SLOTS: a externa traz o botão Importar; a entity traz
-// o dropdown "Gerenciar", os selos de override, o editor, a galeria/arquivos e (via
-// `entityId`) a logo/banner/disco preferidos e o player do tema musical local. O
-// backend serve o MESMO shape rico nos dois DTOs (internal/richfields), então um
-// único adapter normaliza cada um em `RichDetail` e o componente é agnóstico à
-// origem.
+// RichDetailView is the SHARED RICH screen between the detail of the EXTERNAL item (before
+// importing) and the detail of the imported ENTITY (catalog). The two screens
+// have the SAME visual and information pattern — full-bleed IMMERSIVE hero (backdrop +
+// overlay + poster + synopsis + actions + ratings row),
+// a row of external links right below, genres, keywords, videos, collection,
+// similars — and differ only in the SLOTS: the external one brings the Importar button; the entity brings
+// the "Gerenciar" dropdown, the override badges, the editor, the gallery/files and (via
+// `entityId`) the preferred logo/banner/disc and the player of the local theme song. The
+// backend serves the SAME rich shape in both DTOs (internal/richfields), so a
+// single adapter normalizes each one into `RichDetail` and the component is agnostic to the
+// origin.
 
-// formatarDuracao converte minutos em `2h 35min` (`45min` quando < 1h).
+// formatarDuracao converts minutes into `2h 35min` (`45min` when < 1h).
 function formatarDuracao(min: number): string {
   const horas = Math.floor(min / 60)
   const resto = min % 60
@@ -74,11 +74,11 @@ function formatarDuracao(min: number): string {
   return resto === 0 ? `${horas}h` : `${horas}h ${resto}min`
 }
 
-// ── Pôster reutilizável ──────────────────────────────────────────────────────
+// ── Reusable poster ──────────────────────────────────────────────────────────
 
-// PosterImg é o pôster com placeholder, compartilhado pelo hero, coleção,
-// similares e pelo card de busca. `src` é uma URL já pronta (direta ou proxied);
-// erro/ausência cai no ícone. Centralizar mata a duplicação de markup (jscpd).
+// PosterImg is the poster with a placeholder, shared by the hero, the collection,
+// the similars and the search card. `src` is an already built URL (direct or proxied);
+// an error/absence falls back to the icon. Centralizing it kills the markup duplication (jscpd).
 export function PosterImg({
   src,
   alt,
@@ -117,11 +117,11 @@ export function PosterImg({
   )
 }
 
-// StillFrame renderiza o STILL 16:9 do EPISÓDIO (0042) no topo do detalhe: a imagem já
-// vem servida pelo image proxy (busca+cacheia sob demanda) e ocupa um frame `aspect-
-// video` próprio — não o pôster 2:3 —, porque o still é paisagem. `loading="lazy"` +
-// `onError` caem no placeholder (como o PosterImg). Sem still (src null) mostra o
-// placeholder no mesmo frame. Só o detalhe do episódio o renderiza.
+// StillFrame renders the 16:9 STILL of the EPISODE at the top of the detail: the image already
+// comes served by the image proxy (fetch+cache on demand) and occupies its own `aspect-
+// video` frame — not the 2:3 poster —, because the still is landscape. `loading="lazy"` +
+// `onError` fall back to the placeholder (like PosterImg). Without a still (src null) it shows the
+// placeholder in the same frame. Only the episode detail renders it.
 export function StillFrame({ src, alt }: { src: string | null; alt: string }) {
   const [falhou, setFalhou] = useState(false)
   const mostrarPlaceholder = !src || falhou
@@ -147,12 +147,12 @@ export function StillFrame({ src, alt }: { src: string | null; alt: string }) {
   )
 }
 
-// CapaQuadrada renderiza a capa QUADRADA (1:1) do hero de ÁLBUM/ARTISTA
-// (briefing 0111) no lugar do pôster 2:3 — mesmo padrão do `StillFrame` acima
-// para episódio (troca só o bloco de imagem, o resto do hero segue genérico).
-// `circular` aplica `rounded-full` (usado só para artista — tratamento visual
-// opcional de "foto", não obrigatório pelo briefing); álbum mantém o canto
-// arredondado normal (`rounded-xl`, como o pôster).
+// CapaQuadrada renders the SQUARE cover (1:1) of the ALBUM/ARTIST hero
+// in place of the 2:3 poster — the same pattern as the `StillFrame` above
+// for the episode (it swaps only the image block, the rest of the hero stays generic).
+// `circular` applies `rounded-full` (used only for the artist — an optional visual
+// treatment of "photo", not required); the album keeps the normal
+// rounded corner (`rounded-xl`, like the poster).
 function CapaQuadrada({
   src,
   alt,
@@ -191,13 +191,13 @@ function CapaQuadrada({
   )
 }
 
-// HeroBackdropFundo é o FUNDO full-bleed do hero imersivo (0082) para os tipos
-// COM pôster (tudo, exceto episódio — que usa o StillFrame acima no lugar): uma
-// caixa com altura em torno de 40% da viewport (`min-h`, não mais o `aspect-[16/6]`
-// fixo do 0079), preenchida pela imagem (`object-cover`) ou, sem backdrop/em erro,
-// pelo placeholder (`ImageOff`, paridade com PosterImg/StillFrame). O degradê de
-// legibilidade é aplicado pelo CALLER (uma única camada por cima de qualquer
-// fundo — imagem, placeholder ou nenhum) para não duplicar o overlay por ramo.
+// HeroBackdropFundo is the full-bleed BACKGROUND of the immersive hero for the types
+// WITH a poster (everything except the episode — which uses the StillFrame above instead): a
+// box with a height around 40% of the viewport (`min-h`, no longer the fixed `aspect-[16/6]`
+// of before), filled by the image (`object-cover`) or, without a backdrop/in error,
+// by the placeholder (`ImageOff`, parity with PosterImg/StillFrame). The readability
+// gradient is applied by the CALLER (a single layer on top of any
+// background — image, placeholder or none) so as not to duplicate the overlay per branch.
 function HeroBackdropFundo({ src }: { src: string | null }) {
   const [falhou, setFalhou] = useState(false)
   const mostrarPlaceholder = !src || falhou
@@ -224,11 +224,11 @@ function HeroBackdropFundo({ src }: { src: string | null }) {
   )
 }
 
-// ── Botão Importar compartilhado ─────────────────────────────────────────────
+// ── Shared Importar button ───────────────────────────────────────────────────
 
-// ImportarButton importa um item externo (find-or-create, 0015) e leva ao detalhe
-// do catálogo. Compartilhado pelo card de busca e pela tela do externo. Dono da
-// própria mutation; invalida `['entities']` e navega no sucesso; erro inline.
+// ImportarButton imports an external item (find-or-create) and takes you to the detail
+// of the catalog. Shared by the search card and by the external screen. Owner of
+// its own mutation; it invalidates `['entities']` and navigates on success; error inline.
 export function ImportarButton({
   source,
   sourceId,
@@ -240,9 +240,9 @@ export function ImportarButton({
   source: string
   sourceId: string
   type: string
-  // parentId (briefing 0115 Parte 2): id INTERNO do álbum pai, obrigatório só
-  // para type="faixa" (faixa avulsa faltando de um álbum já interno) — os
-  // demais tipos o ignoram.
+  // parentId: INTERNAL id of the parent album, required only
+  // for type="faixa" (a loose track missing from an album already internal) — the
+  // other types ignore it.
   parentId?: string
   size?: 'sm' | 'default' | 'lg'
   label?: string
@@ -290,19 +290,19 @@ export function ImportarButton({
   )
 }
 
-// ── Seções ricas ─────────────────────────────────────────────────────────────
+// ── Rich sections ────────────────────────────────────────────────────────────
 
-// ehYouTube diz se o vídeo pode ser EMBUTIDO: precisa ser do YouTube e ter `key`
-// (a `url` é dispensável — o embed é montado da key). Só esses viram player local;
-// os demais caem no link externo (quando têm url).
+// ehYouTube says whether the video can be EMBEDDED: it has to be from YouTube and have a `key`
+// (the `url` is dispensable — the embed is built from the key). Only those become a local
+// player; the others fall back to the external link (when they have a url).
 function ehYouTube(video: ExternalVideo): boolean {
   return video.site === 'YouTube' && !!video.key
 }
 
-// YouTubeEmbedFrame é o <iframe> do domínio `youtube-nocookie` (sem cookies de
-// rastreio) compartilhado pelo player CLICK-TO-PLAY da `VideosRail` (VideoCard) e
-// pelo botão "Assistir trailer" do hero (0082, `TrailerModal` abaixo) — um único
-// lugar que monta a URL de embed, nunca duplicado entre os dois usos.
+// YouTubeEmbedFrame is the <iframe> of the `youtube-nocookie` domain (without tracking
+// cookies) shared by the CLICK-TO-PLAY player of the `VideosRail` (VideoCard) and
+// by the "Assistir trailer" button of the hero (`TrailerModal` below) — a single
+// place that builds the embed URL, never duplicated between the two uses.
 function YouTubeEmbedFrame({
   videoKey,
   title,
@@ -321,16 +321,16 @@ function YouTubeEmbedFrame({
   )
 }
 
-// VideoCard renderiza um vídeo. Para o YouTube, é um player CLICK-TO-PLAY: mostra o
-// thumbnail com botão de play e, ao clicar, troca pelo `YouTubeEmbedFrame`. Vídeos
-// não-YouTube (raros no TMDB) mantêm o link externo. Não pré-carregamos o iframe:
-// evita N players e o tráfego/rastreio do YouTube antes de o dono querer assistir.
+// VideoCard renders a video. For YouTube, it is a CLICK-TO-PLAY player: it shows the
+// thumbnail with a play button and, on click, swaps it for the `YouTubeEmbedFrame`. Non-YouTube
+// videos (rare in TMDB) keep the external link. We do not preload the iframe:
+// it avoids N players and the YouTube traffic/tracking before the owner wants to watch.
 function VideoCard({ video }: { video: ExternalVideo }) {
   const [tocando, setTocando] = useState(false)
 
   if (!ehYouTube(video)) {
-    // Não-embutível: link externo. A `VideosRail` só encaminha para cá vídeos com
-    // `url` (o filtro é a fonte única da verdade), então aqui a url está presente.
+    // Non-embeddable: external link. The `VideosRail` only forwards videos with a
+    // `url` here (the filter is the single source of truth), so the url is present here.
     return (
       <a
         href={video.url ?? undefined}
@@ -385,7 +385,7 @@ function VideoCard({ video }: { video: ExternalVideo }) {
 }
 
 function VideosRail({ videos }: { videos: ExternalVideo[] }) {
-  // Renderável = embutível (YouTube+key) OU com link externo. Os demais somem.
+  // Renderable = embeddable (YouTube+key) OR with an external link. The others disappear.
   const renderaveis = videos.filter((v) => ehYouTube(v) || v.url)
   if (renderaveis.length === 0) {
     return null
@@ -404,18 +404,18 @@ function VideosRail({ videos }: { videos: ExternalVideo[] }) {
   )
 }
 
-// primeiroTrailer acha o primeiro vídeo REPRODUZÍVEL (`ehYouTube`) do tipo
-// "Trailer" (convenção TMDB) — só trailer de verdade, sem fallback para Teaser/
-// Clip (briefing 0082 §4.3). `null` quando não há nenhum.
+// primeiroTrailer finds the first PLAYABLE video of the type
+// "Trailer" (TMDB convention) — only a real trailer, without falling back to Teaser/
+// Clip (§4.3). `null` when there is none.
 function primeiroTrailer(videos: ExternalVideo[]): ExternalVideo | null {
   return videos.find((v) => v.type === 'Trailer' && ehYouTube(v)) ?? null
 }
 
-// TrailerModal é o overlay de tela cheia que abre ao clicar em "Assistir trailer"
-// na barra de ações do hero (0082): reusa o MESMO `YouTubeEmbedFrame` da
-// `VideosRail`/`VideoCard` (sem duplicar a lógica de embed), já em modo tocando (o
-// clique no botão já expressa a intenção — sem o passo extra de clicar no
-// thumbnail). Fecha ao clicar fora ou no X.
+// TrailerModal is the full-screen overlay that opens on clicking "Assistir trailer"
+// in the action bar of the hero: it reuses the SAME `YouTubeEmbedFrame` of the
+// `VideosRail`/`VideoCard` (without duplicating the embed logic), already in playing mode (the
+// click on the button already expresses the intention — without the extra step of clicking the
+// thumbnail). It closes on clicking outside or on the X.
 function TrailerModal({
   video,
   onClose,
@@ -448,8 +448,8 @@ function TrailerModal({
   )
 }
 
-// TrailerButton é o botão "Assistir trailer" da barra de ações (0082 §4.3): some
-// quando não há trailer reproduzível (`primeiroTrailer` null) — sem fallback para
+// TrailerButton is the "Assistir trailer" button of the action bar (§4.3): it disappears
+// when there is no playable trailer (`primeiroTrailer` null) — without falling back to
 // Teaser/Clip.
 function TrailerButton({ videos }: { videos: ExternalVideo[] }) {
   const [aberto, setAberto] = useState(false)
@@ -470,15 +470,15 @@ function TrailerButton({ videos }: { videos: ExternalVideo[] }) {
   )
 }
 
-// TrailerDownloadButton é o botão "Baixar trailer" (briefing 0102, ADR-0025):
-// materializa em disco o MESMO trailer que "Assistir trailer" já toca embutido
-// — puramente aditivo, o player embutido continua igual com ou sem download
-// local. Só aparece com TODAS as condições: (a) `entityId` presente (a
-// materialização precisa de uma pasta REAL na biblioteca, que só existe para
-// um item já catalogado — a tela do externo nunca mostra este botão), (b) há
-// um trailer reproduzível (`primeiroTrailer`) e (c) o yt-dlp está disponível
-// (`GET /settings/ytdlp`, cache de app via TanStack Query). Qualquer condição
-// ausente: sem botão, sem erro (briefing §2.1/§2.5).
+// TrailerDownloadButton is the "Baixar trailer" button (ADR-0025):
+// it materializes on disk the SAME trailer that "Assistir trailer" already plays embedded
+// — purely additive, the embedded player stays the same with or without a local
+// download. It only appears with ALL the conditions: (a) `entityId` present (the
+// materialization needs a REAL folder in the library, which only exists for
+// an already cataloged item — the external screen never shows this button), (b) there is
+// a playable trailer (`primeiroTrailer`) and (c) yt-dlp is available
+// (`GET /settings/ytdlp`, app cache via TanStack Query). Any condition
+// missing: no button, no error (§2.1/§2.5).
 function TrailerDownloadButton({
   entityId,
   videos,
@@ -488,9 +488,9 @@ function TrailerDownloadButton({
 }) {
   const trailer = primeiroTrailer(videos)
   const queryClient = useQueryClient()
-  // `enabled: !!trailer` evita as DUAS chamadas de rede quando o item nem tem
-  // trailer reproduzível (o caso comum) — sem trailer, nem vale a pena saber
-  // se o yt-dlp está disponível.
+  // `enabled: !!trailer` avoids the TWO network calls when the item does not even have a
+  // playable trailer (the common case) — without a trailer, it is not even worth knowing
+  // whether yt-dlp is available.
   const { data: ytdlp } = useQuery({
     ...ytdlpSettingsQueryOptions,
     enabled: !!trailer,
@@ -516,9 +516,9 @@ function TrailerDownloadButton({
     return null
   }
 
-  // Estado PERSISTENTE (0102 §2.3): já baixado (calculado a cada carga via
-  // HEAD) ou acabado de baixar nesta sessão — vira um link pro arquivo em vez
-  // de um botão de ação, sem oferecer re-download acidental sem `force`.
+  // PERSISTENT state (§2.3): already downloaded (computed on every load via
+  // HEAD) or just downloaded in this session — it becomes a link to the file instead
+  // of an action button, without offering an accidental re-download without `force`.
   if (jaBaixado || downloadMutation.isSuccess) {
     return (
       <Button variant="outline" size="sm" asChild>
@@ -554,10 +554,10 @@ function TrailerDownloadButton({
   )
 }
 
-// ColecaoBand mostra a coleção a que o item pertence. Interno-first (0026): quando a
-// coleção JÁ é entity (`internal_id`), o card linka para `/entities/{id}` (o destino
-// INTERNO, centralizado); senão, para a página externa da coleção (`/collection/
-// $source/$id`, 0024). O card inteiro é o destino, com o mesmo visual nos dois casos.
+// ColecaoBand shows the collection the item belongs to. Internal-first: when the
+// collection ALREADY is an entity (`internal_id`), the card links to `/entities/{id}` (the INTERNAL
+// destination, centralized); otherwise, to the external page of the collection (`/collection/
+// $source/$id`). The whole card is the destination, with the same look in both cases.
 function ColecaoBand({
   source,
   colecao,
@@ -602,11 +602,11 @@ function ColecaoBand({
   )
 }
 
-// SimilaresRail: cada card navega ao similar. Interno-first (0026, estendido no 0027):
-// quando o similar JÁ é entity (`internal_id`), o card linka para `/entities/{id}` (o
-// destino INTERNO, centralizado) e ganha o selo "Na biblioteca"; senão, para o detalhe
-// externo do alvo (`/external/$source/$type/$id`), navegável e sem catalogar (o 0022
-// persiste na 1ª visita). Vale para as duas telas (externo e entity).
+// SimilaresRail: each card navigates to the similar one. Internal-first (extended for the
+// music vertical): when the similar ALREADY is an entity (`internal_id`), the card links to `/entities/{id}` (the
+// INTERNAL destination, centralized) and gains the "Na biblioteca" badge; otherwise, to the external
+// detail of the target (`/external/$source/$type/$id`), navigable and not cataloged (the detail
+// persists on the first visit). It applies to both screens (external and entity).
 function SimilaresRail({
   source,
   similares,
@@ -631,9 +631,9 @@ function SimilaresRail({
   )
 }
 
-// SimilarCard renderiza UM similar. O conteúdo (pôster + título + ano) é idêntico nos
-// dois destinos — só a rota muda (interno × externo) e o item interno exibe o selo
-// "Na biblioteca". Extraído para não duplicar o markup entre os dois ramos do Link.
+// SimilarCard renders ONE similar. The content (poster + title + year) is identical in the
+// two destinations — only the route changes (internal × external) and the internal item shows the
+// "Na biblioteca" badge. Extracted so as not to duplicate the markup between the two branches of the Link.
 function SimilarCard({
   source,
   item,
@@ -683,13 +683,13 @@ function SimilarCard({
   )
 }
 
-// ExternalLinksRow (briefing 0086, ex-`LinksExternos`) é a fileira HORIZONTAL de
-// chips com o LOGO de cada provedor — desvio deliberado do print de referência
-// (que mostra numa sidebar lateral, ver briefing §1/§3): este projeto não tem
-// sidebar de metadados, então a fileira fica logo ABAIXO do hero (era a última
-// seção da página, depois de Produtoras — moveu para o topo). `metaDaFonte`
-// resolve logo+rótulo; fonte sem entrada no registro cai no ícone genérico
-// `ExternalLink` + nome em maiúsculas — nunca quebra, nunca esconde o link.
+// ExternalLinksRow is the HORIZONTAL row of
+// chips with the LOGO of each provider — a deliberate deviation from the reference print
+// (which shows them in a side sidebar, see §1/§3): this project has no
+// metadata sidebar, so the row sits right BELOW the hero (it was the last
+// section of the page, after Production companies — it moved to the top). `metaDaFonte`
+// resolves logo+label; a source without an entry in the registry falls back to the generic icon
+// `ExternalLink` + name in uppercase — it never breaks, never hides the link.
 function ExternalLinksRow({ links }: { links: Record<string, string> }) {
   const entradas = Object.entries(links)
   if (entradas.length === 0) {
@@ -720,12 +720,12 @@ function ExternalLinksRow({ links }: { links: Record<string, string> }) {
   )
 }
 
-// FaixaStatusPoster é a faixa compacta de SITUAÇÃO (0045/0079) ancorada na base do
-// pôster, no padrão visual do TMDB (que mostra o status junto da capa, não solto no
-// bloco de texto). Só aparece quando `situacao` existe (série/temporada enriquecida);
-// filme/coleção sem `airing_status` seguem sem faixa — mesmo gating de antes, só que
-// visualmente movido do bloco de metadados para o pôster. Sobrepõe via `absolute`
-// num wrapper `relative` em volta do `PosterImg` (que não ganha prop nova).
+// FaixaStatusPoster is the compact SITUATION band anchored at the base of the
+// poster, in the visual pattern of TMDB (which shows the status next to the cover, not loose in the
+// text block). It only appears when `situacao` exists (enriched series/season);
+// movie/collection without `airing_status` stay without the band — the same gating as before, only
+// visually moved from the metadata block to the poster. It overlaps via `absolute`
+// in a `relative` wrapper around the `PosterImg` (which gains no new prop).
 function FaixaStatusPoster({ situacao }: { situacao: RotuloSituacao | null }) {
   if (!situacao) {
     return null
@@ -739,11 +739,11 @@ function FaixaStatusPoster({ situacao }: { situacao: RotuloSituacao | null }) {
   )
 }
 
-// NotaMedalhao é o "medalhão" circular da nota do hero (0079), no padrão visual do
-// círculo de avaliação do TMDB — SVG simples com `stroke-dasharray`, sem dependência
-// nova. Prioriza a nota LOCAL do dono (ADR-0012, contorno âmbar); o CALLER decide o
-// fallback para a nota da FONTE (contorno neutro) quando não há nota local — o mesmo
-// comportamento de antes (ícone de estrela + número), só que neste componente.
+// NotaMedalhao is the circular "medallion" of the hero rating, in the visual pattern of the
+// TMDB rating circle — a simple SVG with `stroke-dasharray`, without a new
+// dependency. It prioritizes the owner's LOCAL rating (ADR-0012, amber outline); the CALLER decides the
+// fallback to the SOURCE rating (neutral outline) when there is no local rating — the same
+// behavior as before (star icon + number), only in this component.
 function NotaMedalhao({
   value,
   variant,
@@ -789,12 +789,12 @@ function NotaMedalhao({
   )
 }
 
-// NotaFonteBadge (briefing 0086) é o badge compacto de UMA nota de FONTE — ao
-// lado do `NotaMedalhao` local, um por entrada de `detail.ratings`. Aparece
-// SEMPRE que há pelo menos uma fonte (decisão do dono: mesmo com 1 fonte só,
-// caso comum hoje — só TMDB —, a fileira não fica escondida esperando 2+).
-// `metaDaFonte` resolve logo+rótulo; fonte sem registro cai no rótulo em
-// maiúsculas (mesmo fallback da fileira de links).
+// NotaFonteBadge is the compact badge of ONE SOURCE rating — next to the
+// local `NotaMedalhao`, one per entry of `detail.ratings`. It appears
+// ALWAYS when there is at least one source (decision of the owner: even with a single source,
+// the common case today — only TMDB —, the row is not hidden waiting for 2+).
+// `metaDaFonte` resolves logo+label; a source without a registry entry falls back to the label in
+// uppercase (same fallback as the row of links).
 function NotaFonteBadge({ source, value }: { source: string; value: number }) {
   const { label, Logo } = metaDaFonte(source)
   return (
@@ -814,10 +814,10 @@ function NotaFonteBadge({ source, value }: { source: string; value: number }) {
   )
 }
 
-// SelosArtes é a FAIXA de disponibilidade do card do topo (0049): lê o
-// `available: {kind: count}` do endpoint `/artwork` (0048) e mostra um selo por kind
-// que EXISTE, com rótulo pt-BR + contagem (ex.: "Pôster 23 · Fanart 40 · Logo 17").
-// Vazio/ausente (filme sem inventário, tela do externo) → null: a faixa não aparece.
+// SelosArtes is the availability ROW of the top card: it reads the
+// `available: {kind: count}` of the `/artwork` endpoint and shows one badge per kind
+// that EXISTS, with a pt-BR label + count (e.g.: "Pôster 23 · Fanart 40 · Logo 17").
+// Empty/absent (movie without inventory, external screen) → null: the row does not appear.
 function SelosArtes({
   available,
 }: {
@@ -838,15 +838,15 @@ function SelosArtes({
   )
 }
 
-// ── Logo, banner, disco e tema musical (0082) ────────────────────────────────
+// ── Logo, banner, disc and theme song ────────────────────────────────────────
 //
-// As três artes e o tema abaixo só aparecem na tela da ENTITY (via `entityId`,
-// passado só por `/entities/$id`) — o externo (antes de importar) não tem assets
-// próprios nem pasta local ainda (§4.2/§4.4 do briefing).
+// The three artworks and the theme below only appear on the ENTITY screen (via `entityId`,
+// passed only by `/entities/$id`) — the external one (before importing) has no assets
+// of its own nor a local folder yet (§4.2/§4.4 of the spec).
 
-// LogoHero substitui o TÍTULO EM TEXTO pela logo preferida (`kind=logo`, 0048),
-// sobreposta ao backdrop no estilo Jellyfin. Sem logo, o CALLER cai no `<h1>` de
-// sempre — mesmo comportamento de hoje, sem regressão.
+// LogoHero replaces the TITLE IN TEXT with the preferred logo (`kind=logo`),
+// overlaid on the backdrop in the Jellyfin style. Without a logo, the CALLER falls back to the usual
+// `<h1>` — the same behavior as today, without regression.
 function LogoHero({ logo, alt }: { logo: Asset; alt: string }) {
   return (
     <img
@@ -858,8 +858,8 @@ function LogoHero({ logo, alt }: { logo: Asset; alt: string }) {
   )
 }
 
-// BannerFaixa mostra o banner preferido (`kind=banner`) como uma faixa larga e
-// baixa — só quando existe; sem gating por tipo além de "existe ou não".
+// BannerFaixa shows the preferred banner (`kind=banner`) as a wide, low
+// band — only when it exists; without gating by type beyond "exists or not".
 function BannerFaixa({ banner }: { banner: Asset }) {
   return (
     <img
@@ -872,11 +872,11 @@ function BannerFaixa({ banner }: { banner: Asset }) {
   )
 }
 
-// DiscoGiratorio é o disco (`kind=disc`) decorativo perto do pôster, com rotação
-// contínua lenta em CSS puro (`animate-spin`, arbitrário para uma volta a cada 9s —
-// bem mais lenta que o spinner padrão) — `motion-reduce:animate-none` desliga a
-// animação para quem pediu `prefers-reduced-motion: reduce` (variante nativa do
-// Tailwind, sem JS extra). Só aparece com asset preferido do kind.
+// DiscoGiratorio is the decorative disc (`kind=disc`) near the poster, with a slow
+// continuous rotation in pure CSS (`animate-spin`, arbitrary for one turn every 9s —
+// much slower than the default spinner) — `motion-reduce:animate-none` turns the
+// animation off for whoever asked for `prefers-reduced-motion: reduce` (native Tailwind
+// variant, without extra JS). It only appears with a preferred asset of the kind.
 function DiscoGiratorio({ disc }: { disc: Asset }) {
   return (
     <div
@@ -894,13 +894,13 @@ function DiscoGiratorio({ disc }: { disc: Asset }) {
   )
 }
 
-// TemaMusicalPlayer é o player compacto do tema local (`theme.mp3`/`.ogg`/`.flac`,
-// briefing 0082 §4.4): a query (`entityThemeQueryOptions`, HEAD — sem baixar o
-// binário inteiro) confere a existência UMA vez por carga da tela; sem tema
-// (404/erro), o componente não renderiza nada — sem erro, sem espaço reservado.
-// Play/pause é SEMPRE uma ação do dono (nenhum navegador autoplay áudio com som, e
-// seria intrusivo mesmo se permitisse); o `loop` fica ligado no elemento o tempo
-// todo (só importa enquanto toca).
+// TemaMusicalPlayer is the compact player of the local theme (`theme.mp3`/`.ogg`/`.flac`):
+// the query (`entityThemeQueryOptions`, HEAD — without downloading the
+// whole binary) checks the existence ONCE per screen load; without a theme
+// (404/error), the component renders nothing — without an error, without reserved space.
+// Play/pause is ALWAYS an action of the owner (no browser autoplays audio with sound, and
+// it would be intrusive even if it allowed it); `loop` stays on in the element the whole
+// time (it only matters while playing).
 function TemaMusicalPlayer({ entityId }: { entityId: string }) {
   const { data: temTema } = useQuery(entityThemeQueryOptions(entityId))
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -945,24 +945,24 @@ function TemaMusicalPlayer({ entityId }: { entityId: string }) {
   )
 }
 
-// ThemeDownloadButton é o botão "Baixar tema" (briefing 0103, ADR-0025):
-// materializa em disco o candidato automático do ThemerrDB para o MESMO
-// theme.mp3 que TemaMusicalPlayer acima passa a tocar — puramente aditivo,
-// nunca troca um tema que o dono já colocou (o servidor recusa com 409, e
-// esta ação nem aparece nesse caso). Só aparece com TODAS as condições: (a)
-// há um candidato cacheado (`disponivel`, GET .../theme/candidato —
-// cobertura do ThemerrDB é parcial por natureza, a maioria dos itens não
-// terá), (b) ainda NÃO existe um theme.* local (`ja_tem_local`; havendo, o
-// player acima já cobre o caso — sem oferecer re-download, este endpoint não
-// tem `force`) e (c) o yt-dlp está disponível. Qualquer condição ausente:
-// sem botão, sem erro.
+// ThemeDownloadButton is the "Baixar tema" button (ADR-0025):
+// it materializes on disk the automatic candidate of ThemerrDB for the SAME
+// theme.mp3 that TemaMusicalPlayer above starts to play — purely additive,
+// it never replaces a theme the owner already placed (the server refuses with 409, and
+// this action does not even appear in that case). It only appears with ALL the conditions: (a)
+// there is a cached candidate (`disponivel`, GET .../theme/candidato —
+// the ThemerrDB coverage is partial by nature, most items will not
+// have one), (b) there is still NO local theme.* (`ja_tem_local`; if there is, the
+// player above already covers the case — without offering a re-download, this endpoint has
+// no `force`) and (c) yt-dlp is available. Any condition missing:
+// no button, no error.
 function ThemeDownloadButton({ entityId }: { entityId: string }) {
   const queryClient = useQueryClient()
   const { data: candidato } = useQuery(
     entityThemeCandidatoQueryOptions(entityId),
   )
-  // `enabled` evita a chamada de rede do status do yt-dlp quando nem há
-  // candidato pra baixar (o caso comum, dada a cobertura parcial do
+  // `enabled` avoids the network call of the yt-dlp status when there is not even a
+  // candidate to download (the common case, given the partial coverage of
   // ThemerrDB).
   const { data: ytdlp } = useQuery({
     ...ytdlpSettingsQueryOptions,
@@ -971,9 +971,9 @@ function ThemeDownloadButton({ entityId }: { entityId: string }) {
   const downloadMutation = useMutation({
     mutationFn: () => downloadEntityTheme(entityId),
     onSuccess: () => {
-      // Invalida o prefixo ['entity', id, 'theme']: cobre TANTO o HEAD que
-      // TemaMusicalPlayer usa (o player passa a aparecer) QUANTO este
-      // próprio candidato (`ja_tem_local` vira true, escondendo o botão).
+      // It invalidates the prefix ['entity', id, 'theme']: it covers BOTH the HEAD that
+      // TemaMusicalPlayer uses (the player starts to appear) AND this
+      // very candidate (`ja_tem_local` becomes true, hiding the button).
       queryClient.invalidateQueries({
         queryKey: ['entity', entityId, 'theme'],
       })
@@ -1018,20 +1018,20 @@ function ThemeDownloadButton({ entityId }: { entityId: string }) {
   )
 }
 
-// ── Créditos: elenco, equipe e produtoras (0029, fase B, read-only) ──────────
+// ── Credits: cast, crew and production companies (read-only) ─────────────────
 
-// TETO_ELENCO: quantos atores o Elenco mostra ANTES do "Ver todos". O backend
-// persiste ~top 50 por bilhagem; a UI abre com os ~24 mais bilhados e expande sob
-// demanda (grades enormes — filme com 76, série com 781 — não valem o scroll inicial).
+// TETO_ELENCO: how many actors the Cast shows BEFORE "Ver todos". The backend
+// persists ~top 50 by billing; the UI opens with the ~24 most billed and expands on
+// demand (huge grids — a movie with 76, a series with 781 — are not worth the initial scroll).
 const TETO_ELENCO = 24
 
-// Base da página da pessoa no TMDB. Nesta fase o card é, no máximo, um link para a
-// fonte (a página da pessoa própria é follow-up — briefing §7). Os `source_id` dos
-// créditos vêm do TMDB (credits/aggregate_credits), então o link é válido.
+// Base of the person page on TMDB. In this phase the card is, at most, a link to the
+// source (the person page of its own is a follow-up — §7). The `source_id` of the
+// credits come from TMDB (credits/aggregate_credits), so the link is valid.
 const TMDB_PESSOA = 'https://www.themoviedb.org/person/'
 
-// sufixoEpisodios formata a contagem de episódios do crédito (só série): "12 eps"
-// (singular "1 ep"). Ausente/zero/filme → null (a UI não mostra o sufixo).
+// sufixoEpisodios formats the episode count of the credit (series only): "12 eps"
+// (singular "1 ep"). Absent/zero/movie → null (the UI does not show the suffix).
 function sufixoEpisodios(n: number | null | undefined): string | null {
   if (!n || n <= 0) {
     return null
@@ -1039,11 +1039,11 @@ function sufixoEpisodios(n: number | null | undefined): string | null {
   return `${n} ${n === 1 ? 'ep' : 'eps'}`
 }
 
-// SeloNaBiblioteca é o mesmo selo interno-first já usado em coleção/similares
-// (`Badge variant="secondary"`, texto "Na biblioteca") — aqui compacto (px/py/texto
-// menores) para caber no card apertado do elenco, com o ícone `Library` reforçando o
-// sentido sem repetir texto. Puramente decorativo (`aria-hidden`): o destino já é
-// anunciado pelo `aria-label` do Link que o envolve.
+// SeloNaBiblioteca is the same internal-first badge already used in collection/similars
+// (`Badge variant="secondary"`, text "Na biblioteca") — here compact (smaller px/py/text)
+// to fit the tight cast card, with the `Library` icon reinforcing the
+// meaning without repeating text. Purely decorative (`aria-hidden`): the destination is already
+// announced by the `aria-label` of the Link that wraps it.
 function SeloNaBiblioteca() {
   return (
     <Badge
@@ -1057,16 +1057,16 @@ function SeloNaBiblioteca() {
   )
 }
 
-// PessoaCard é o card reusável de pessoa (foto 2:3 + nome + papel), usado na grade do
-// Elenco. Reusa o `PosterImg` (lazy + placeholder). A foto já vem PROXYADA do backend
-// (uso direto, sem reproxyar). Em série, o papel ganha o sufixo "· N eps" (episódios
-// do personagem).
+// PessoaCard is the reusable person card (2:3 photo + name + role), used in the grid of the
+// Cast. It reuses the `PosterImg` (lazy + placeholder). The photo already comes PROXIED from the backend
+// (direct use, without re-proxying). In a series, the role gains the suffix "· N eps" (episodes
+// of the character).
 //
-// Interno-first (0029, fase D): quando o crédito traz `personId` (a pessoa já foi
-// persistida por algum import), o card linka para a página INTERNA da pessoa
-// (`/person/{id}`) e ganha o selo "Na biblioteca" (mesmo padrão do similar/coleção,
-// 0026/0027). Sem `personId`, o card degrada para o link externo de sempre (TMDB, nova
-// aba), sem selo — comportamento inalterado.
+// Internal-first (phase D): when the credit carries a `personId` (the person was already
+// persisted by some import), the card links to the INTERNAL page of the person
+// (`/person/{id}`) and gains the "Na biblioteca" badge (same pattern as the similar/collection),
+// Without a `personId`, the card degrades to the usual external link (TMDB, new
+// tab), without a badge — unchanged behavior.
 function PessoaCard({
   sourceId,
   name,
@@ -1128,17 +1128,17 @@ function PessoaCard({
   )
 }
 
-// ElencoGrid mostra o elenco em grade, na ordem de bilhagem (`order`). Abre com os
-// TETO_ELENCO mais bilhados; havendo mais, um botão "Ver todos (N)" expande a lista
-// inteira (e "Ver menos" recolhe). Vazio → a seção some.
+// ElencoGrid shows the cast in a grid, in billing order (`order`). It opens with the
+// TETO_ELENCO most billed ones; if there are more, a "Ver todos (N)" button expands the
+// whole list (and "Ver menos" collapses it). Empty → the section disappears.
 function ElencoGrid({ cast }: { cast: CreditCast[] }) {
   const [expandido, setExpandido] = useState(false)
   if (cast.length === 0) {
     return null
   }
-  // Ordena por bilhagem (menor `order` = mais alto). O backend já entrega ordenado,
-  // mas reforçamos aqui para a exibição não depender disso. `slice()` mantém a fonte
-  // intacta; o sort é estável no V8.
+  // It sorts by billing (smaller `order` = higher). The backend already delivers it sorted,
+  // but we reinforce it here so the display does not depend on that. `slice()` keeps the
+  // source intact; the sort is stable in V8.
   const ordenado = [...cast].sort((a, b) => a.order - b.order)
   const temMais = ordenado.length > TETO_ELENCO
   const visiveis = expandido ? ordenado : ordenado.slice(0, TETO_ELENCO)
@@ -1174,16 +1174,16 @@ function ElencoGrid({ cast }: { cast: CreditCast[] }) {
   )
 }
 
-// Departamentos que aparecem PRIMEIRO na Equipe (Direção, depois Roteiro),
-// reconhecidos por chaves normalizadas em pt-BR e en (a fonte pode não traduzir o
-// rótulo). Os demais departamentos saem em ordem alfabética.
+// Departments that appear FIRST in the Crew (Directing, then Writing),
+// recognized by keys normalized in pt-BR and en (the source may not translate the
+// label). The other departments come out in alphabetical order.
 const PRIORIDADE_DEPARTAMENTO: string[][] = [
   ['direção', 'direcao', 'directing', 'direction'],
   ['roteiro', 'escrita', 'writing'],
 ]
 
-// rankDepartamento devolve a posição de prioridade do departamento (0 = primeiro).
-// Departamento fora da lista → rank alto (ordenado alfabeticamente entre si depois).
+// rankDepartamento returns the priority position of the department (0 = first).
+// A department outside the list → a high rank (sorted alphabetically among themselves later).
 function rankDepartamento(dep: string): number {
   const norm = dep.trim().toLowerCase()
   const i = PRIORIDADE_DEPARTAMENTO.findIndex((chaves) => chaves.includes(norm))
@@ -1195,9 +1195,9 @@ interface GrupoEquipe {
   membros: CreditCrew[]
 }
 
-// agruparEquipe agrupa a equipe por `department` preservando a ordem de chegada dos
-// membros dentro do grupo, e ordena os grupos: Direção/Roteiro primeiro, demais em
-// ordem alfabética (pt-BR). Departamento vazio cai num grupo "Equipe".
+// agruparEquipe groups the crew by `department` preserving the arrival order of the
+// members inside the group, and sorts the groups: Directing/Writing first, the rest in
+// alphabetical order (pt-BR). An empty department falls into a "Equipe" group.
 function agruparEquipe(crew: CreditCrew[]): GrupoEquipe[] {
   const mapa = new Map<string, CreditCrew[]>()
   for (const m of crew) {
@@ -1220,11 +1220,11 @@ function agruparEquipe(crew: CreditCrew[]): GrupoEquipe[] {
     })
 }
 
-// MembroNome é o nome do membro de equipe, linkado. Interno-first (0029, fase D):
-// com `personId`, linka para a página INTERNA da pessoa (com um ícone `Library`
-// discreto e `aria-label` descritivo); sem `personId`, degrada para o link externo de
-// sempre (TMDB, nova aba) — comportamento inalterado. Extraído do `EquipeGrupos` para
-// não inflar o JSX da lista.
+// MembroNome is the name of the crew member, linked. Internal-first (phase D):
+// with a `personId`, it links to the INTERNAL page of the person (with a discreet `Library`
+// icon and a descriptive `aria-label`); without a `personId`, it degrades to the usual external
+// link (TMDB, new tab) — unchanged behavior. Extracted from `EquipeGrupos` so as
+// not to bloat the JSX of the list.
 function MembroNome({
   name,
   sourceId,
@@ -1259,19 +1259,19 @@ function MembroNome({
   )
 }
 
-// grupoTemFoto decide se o DEPARTAMENTO ganha foto na Equipe (0076): os mesmos
-// priorizados no agrupamento (`PRIORIDADE_DEPARTAMENTO` — Direção/Roteiro),
-// reaproveitando `rankDepartamento` sem alterar essa lista/lógica em si. Curadoria
-// deliberada — não é TODOS os ~40 nomes de equipe (pesaria a página sem ganho
-// proporcional; ver briefing 0076 §6), só os papéis que o dono reconhece de cara,
-// no mesmo padrão visual do Elenco.
+// grupoTemFoto decides whether the DEPARTMENT gets a photo in the Crew: the same
+// ones prioritized in the grouping (`PRIORIDADE_DEPARTAMENTO` — Directing/Writing),
+// reusing `rankDepartamento` without changing that list/logic itself. A deliberate
+// curation — it is not ALL the ~40 crew names (it would weigh on the page without a proportional
+// gain; see §6 of the spec), only the roles the owner recognizes at a glance,
+// in the same visual pattern as the Cast.
 function grupoTemFoto(department: string): boolean {
   return rankDepartamento(department) < PRIORIDADE_DEPARTAMENTO.length
 }
 
-// GrupoEquipeFotos mostra UM departamento priorizado como grade de cartões com
-// foto — reusa o MESMO `PessoaCard` do `ElencoGrid` (paridade visual completa,
-// inclusive selo "Na biblioteca" e degradê gracioso sem `profile_url`).
+// GrupoEquipeFotos shows ONE prioritized department as a grid of cards with a
+// photo — it reuses the SAME `PessoaCard` of the `ElencoGrid` (full visual parity,
+// including the "Na biblioteca" badge and the graceful degradation without `profile_url`).
 function GrupoEquipeFotos({ grupo }: { grupo: GrupoEquipe }) {
   return (
     <div className="flex flex-col gap-2">
@@ -1296,8 +1296,8 @@ function GrupoEquipeFotos({ grupo }: { grupo: GrupoEquipe }) {
   )
 }
 
-// GrupoEquipeTexto é a lista textual compacta ORIGINAL (nome + cargo, com "· N
-// eps" na série) — inalterada, só extraída para alternar com `GrupoEquipeFotos`.
+// GrupoEquipeTexto is the ORIGINAL compact textual list (name + job, with "· N
+// eps" in a series) — unchanged, only extracted to alternate with `GrupoEquipeFotos`.
 function GrupoEquipeTexto({ grupo }: { grupo: GrupoEquipe }) {
   return (
     <div className="flex flex-col gap-1 sm:flex-row sm:gap-3">
@@ -1327,9 +1327,9 @@ function GrupoEquipeTexto({ grupo }: { grupo: GrupoEquipe }) {
   )
 }
 
-// EquipeGrupos mostra a equipe agrupada por departamento: os priorizados
-// (Direção/Roteiro) em grade com foto (0076, paridade com o Elenco); os demais em
-// lista textual compacta, como já era. Vazio → a seção some.
+// EquipeGrupos shows the crew grouped by department: the prioritized ones
+// (Directing/Writing) in a grid with photos (parity with the Cast); the others in a
+// compact textual list, as it already was. Empty → the section disappears.
 function EquipeGrupos({ crew }: { crew: CreditCrew[] }) {
   if (crew.length === 0) {
     return null
@@ -1351,9 +1351,9 @@ function EquipeGrupos({ crew }: { crew: CreditCrew[] }) {
   )
 }
 
-// ProdutorasBand mostra as produtoras/estúdios numa faixa: logo (já proxyado) num
-// chip de fundo claro (para logos escuros aparecerem no tema escuro) ou o nome num
-// `<Badge>` quando não há logo. Vazio → a seção some.
+// ProdutorasBand shows the production companies/studios in a band: the logo (already proxied) in a
+// chip with a light background (so dark logos show up in the dark theme) or the name in a
+// `<Badge>` when there is no logo. Empty → the section disappears.
 function ProdutorasBand({ companies }: { companies: CreditCompany[] }) {
   if (companies.length === 0) {
     return null
@@ -1383,16 +1383,16 @@ function ProdutorasBand({ companies }: { companies: CreditCompany[] }) {
   )
 }
 
-// HeroImersivo é o hero FULL-BLEED (0082): o fundo (backdrop/still) e a camada de
-// conteúdo (pôster + texto) ocupam a MESMA célula de um grid de uma linha só —
-// técnica robusta de "sobrepor sem `position: absolute`" que deixa a ALTURA da
-// linha ser o maior dos dois (o fundo tem uma altura MÍNIMA de ~40% da viewport;
-// o conteúdo cresce livremente além disso quando o texto é longo, sem cortar
-// nada — diferente de conteúdo `absolute`, que não empurra a altura do pai). A
-// largura bleeda até a borda da TELA (`w-screen` + margem negativa de 50vw), mas o
-// conteúdo interno volta a ficar centralizado no `max-w-4xl` de sempre. Um
-// degradê escurece o fundo por trás do texto (contraste AA em claro/escuro,
-// critério do 0079 mantido).
+// HeroImersivo is the FULL-BLEED hero: the background (backdrop/still) and the content
+// layer (poster + text) occupy the SAME cell of a single-row grid —
+// a robust "overlay without `position: absolute`" technique that lets the HEIGHT of the
+// row be the larger of the two (the background has a MINIMUM height of ~40% of the viewport;
+// the content grows freely beyond that when the text is long, without cutting
+// anything — unlike `absolute` content, which does not push the height of the parent). The
+// width bleeds to the edge of the SCREEN (`w-screen` + negative 50vw margin), but the
+// inner content becomes centered again in the usual `max-w-4xl`. A
+// gradient darkens the background behind the text (AA contrast in light/dark,
+// criterion kept).
 function HeroImersivo({
   detail,
   situacao,
@@ -1409,10 +1409,10 @@ function HeroImersivo({
   detail: RichDetail
   situacao: RotuloSituacao | null
   titleBadges?: ReactNode
-  // Ações do item (0086): "Assistir trailer" + o dropdown "Gerenciar" (entity)
-  // ou "Importar" (externo) — agora DENTRO do hero, perto do título, em vez de
-  // numa barra separada acima dele (desvio deliberado do print de referência,
-  // que usa 2-3 botões soltos — briefing §1).
+  // Actions of the item: "Assistir trailer" + the "Gerenciar" dropdown (entity)
+  // or "Importar" (external) — now INSIDE the hero, close to the title, instead of
+  // in a separate bar above it (a deliberate deviation from the reference print,
+  // which uses 2-3 loose buttons — §1).
   actions?: ReactNode
   descriptionExtra?: ReactNode
   genresExtra?: ReactNode
@@ -1424,26 +1424,26 @@ function HeroImersivo({
 }) {
   return (
     <div className="dark relative left-1/2 right-1/2 grid w-screen -mx-[50vw]">
-      {/* Correção de contraste: a classe `dark` aqui é PROPOSITAL e
-          INDEPENDENTE do tema do app (claro/escuro) — o seletor `.dark` deste
-          projeto é uma classe comum (`@custom-variant dark (&:is(.dark *))`
-          em index.css), não uma media query, então aplicá-la a este wrapper
-          FORÇA a paleta escura (fundo quase-preto, texto quase-branco) em
-          todo o conteúdo do hero, sem afetar o resto da tela. Sem isso, em
-          tema CLARO o token `background` usado no degradê abaixo é branco —
-          ou seja, o overlay CLAREIA em vez de escurecer o backdrop, e texto
-          escuro (`text-foreground` do tema claro) fica ilegível sobre uma
-          arte de fundo clara/colorida. Backdrops são fotografia de brilho
-          imprevisível (não controlamos a arte) — por isso o hero, como no
-          TMDB/Jellyfin, usa SEMPRE texto claro sobre scrim escuro, e não
-          adapta ao tema geral do app.
+      {/* Contrast fix: the `dark` class here is DELIBERATE and
+          INDEPENDENT of the app theme (light/dark) — the `.dark` selector of this
+          project is a plain class (`@custom-variant dark (&:is(.dark *))`
+          in index.css), not a media query, so applying it to this wrapper
+          FORCES the dark palette (near-black background, near-white text) on
+          the whole content of the hero, without affecting the rest of the screen. Without it, in
+          the LIGHT theme the `background` token used in the gradient below is white —
+          that is, the overlay LIGHTENS instead of darkening the backdrop, and dark
+          text (`text-foreground` of the light theme) becomes unreadable over a
+          light/colorful background artwork. Backdrops are photography of unpredictable
+          brightness (we do not control the artwork) — which is why the hero, as in
+          TMDB/Jellyfin, ALWAYS uses light text over a dark scrim, and does not
+          adapt to the overall theme of the app.
 
-          Fundo: Episódio (0042) usa o STILL 16:9 no lugar do backdrop (o
-          pôster some — episódio não tem); os demais tipos usam o backdrop,
-          com altura mínima de ~40vh (HeroBackdropFundo) mesmo sem imagem
-          (placeholder). `z-0`/`z-10`/`z-20` explícitos (em vez de confiar na
-          ordem do DOM) garantem a pilha fundo→degradê→conteúdo sem
-          ambiguidade entre os itens do grid sobrepostos. */}
+          Background: Episode uses the 16:9 STILL in place of the backdrop (the
+          poster disappears — an episode has none); the other types use the backdrop,
+          with a minimum height of ~40vh (HeroBackdropFundo) even without an image
+          (placeholder). Explicit `z-0`/`z-10`/`z-20` (instead of trusting the
+          DOM order) guarantee the background→gradient→content stack without
+          ambiguity between the overlapping grid items. */}
       <div className="relative z-0 col-start-1 row-start-1">
         {detail.type === 'episode' ? (
           <StillFrame src={detail.stillUrl} alt={`Still de ${detail.title}`} />
@@ -1452,23 +1452,23 @@ function HeroImersivo({
         )}
       </div>
 
-      {/* Overlay: degradê vertical (o texto mora na base) + horizontal em telas
-          largas (mais escuro à esquerda, no padrão Jellyfin/TMDB). `background`
-          aqui é sempre o quase-preto do `.dark` forçado no wrapper (não o do
-          tema do app) — garante AA sem depender do brilho da imagem por trás. */}
+      {/* Overlay: vertical gradient (the text lives at the base) + horizontal on screens
+          wide ones (darker on the left, in the Jellyfin/TMDB pattern). `background`
+          here is always the near-black of the `.dark` forced on the wrapper (not the one of
+          the app theme) — it guarantees AA without depending on the brightness of the image behind. */}
       <div className="relative z-10 col-start-1 row-start-1 bg-gradient-to-t from-background via-background/75 to-background/10" />
       <div className="relative z-10 col-start-1 row-start-1 hidden bg-gradient-to-r from-background/90 via-background/25 to-transparent sm:block" />
 
-      {/* Conteúdo: re-centralizado no max-w-4xl de sempre, ancorado na base da
-          célula do grid (`items-end`) — cresce para cima sem cortar quando o
-          texto é mais alto que a altura mínima do fundo. */}
+      {/* Content: re-centered in the usual max-w-4xl, anchored at the base of the
+          grid cell (`items-end`) — it grows upwards without cutting when the
+          text is taller than the minimum height of the background. */}
       <div className="relative z-20 col-start-1 row-start-1 flex items-end">
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-end sm:gap-6 sm:py-8">
           {detail.type === 'episode' ? null : detail.type === 'album' ||
             detail.type === 'artista' ? (
-            // Álbum/artista (0111): capa/foto QUADRADA (1:1) no lugar do
-            // pôster 2:3 — sem faixa de situação nem disco giratório (só
-            // fazem sentido para série/filme).
+            // Album/artist: SQUARE cover/photo (1:1) in place of the
+            // 2:3 poster — without the situation band nor the spinning disc (they only
+            // make sense for a series/movie).
             <CapaQuadrada
               src={detail.posterUrl}
               alt={
@@ -1491,9 +1491,9 @@ function HeroImersivo({
           <div className="flex min-w-0 flex-col gap-2">
             {banner ? <BannerFaixa banner={banner} /> : null}
 
-            {/* Linha do título: a LOGO (0082, quando preferida) substitui o texto
-                do título — sem ela, cai no `<h1>` de sempre (sem regressão). Ano
-                e tipo seguem ao lado, como antes. */}
+            {/* Title row: the LOGO (when preferred) replaces the text
+                of the title — without it, it falls back to the usual `<h1>` (no regression). The year
+                and the type stay next to it, as before. */}
             <div className="flex flex-wrap items-end gap-2">
               {logo ? (
                 <LogoHero logo={logo} alt={detail.title} />
@@ -1508,24 +1508,24 @@ function HeroImersivo({
                 </span>
               ) : null}
               <Badge variant="outline">{rotuloTipo(detail.type)}</Badge>
-              {/* Selo "Assistido" (0094): só a tela da ENTITY passa `entityId` —
-                  mesmo gate de `TemaMusicalPlayer`/logo/banner/disco acima. Lê o
-                  histórico (kind="assistir") e some sem nenhum evento
-                  `completed`, nunca mostra "não assistido" ativo. */}
+              {/* "Assistido" badge: only the ENTITY screen passes `entityId` —
+                  the same gate as `TemaMusicalPlayer`/logo/banner/disc above. It reads the
+                  history (kind="assistir") and disappears without any `completed`
+                  event, it never shows an active "não assistido". */}
               {entityId ? <EstadoAssistidoBadge entityId={entityId} /> : null}
               {titleBadges}
             </div>
 
-            {/* Ações (0086): trailer + "Gerenciar"/"Importar", perto do título —
-                substitui a antiga `BarraAcoesHero` separada acima do hero. Some
-                por inteiro quando não há nem trailer nem `actions` (mesmo guard
-                de antes, agora dentro do próprio componente). */}
+            {/* Actions: trailer + "Gerenciar"/"Importar", close to the title —
+                it replaces the former separate `BarraAcoesHero` above the hero. It disappears
+                entirely when there is neither a trailer nor `actions` (the same guard
+                as before, now inside the component itself). */}
             {actions || primeiroTrailer(detail.videos) ? (
               <div className="flex flex-wrap items-center gap-2">
                 <TrailerButton videos={detail.videos} />
-                {/* "Baixar trailer" (0102): só na tela da ENTITY (entityId) —
-                    materializar em disco exige a pasta real da biblioteca,
-                    que a tela do externo (ainda não catalogado) não tem. */}
+                {/* "Baixar trailer": only on the ENTITY screen (entityId) —
+                    materializing on disk requires the real library folder,
+                    which the external screen (not cataloged yet) does not have. */}
                 {entityId ? (
                   <TrailerDownloadButton
                     entityId={entityId}
@@ -1542,8 +1542,8 @@ function HeroImersivo({
               </p>
             ) : null}
 
-            {/* Gêneros (0079): logo abaixo do título — texto/badges compactos,
-                sem heading "Gêneros" própria. */}
+            {/* Genres: right below the title — compact text/badges,
+                without a "Gêneros" heading of its own. */}
             {detail.genres.length > 0 ? (
               <div className="flex flex-wrap items-center gap-1.5">
                 {detail.genres.map((g) => (
@@ -1572,12 +1572,12 @@ function HeroImersivo({
               ) : null}
             </div>
 
-            {/* Fileira de notas (0086): o medalhão circular da nota LOCAL do dono
-                (ADR-0012, contorno âmbar, inalterado) + um badge compacto POR
-                FONTE em `detail.ratings` (logo/rótulo via `metaDaFonte`).
-                Aparece com 1 fonte só (decisão do dono: caso comum hoje — só
-                TMDB — não fica escondido esperando 2+ fontes). Substitui o par
-                antigo local×fonte-única (0079). */}
+            {/* Ratings row: the circular medallion of the owner's LOCAL rating
+                (ADR-0012, amber outline, unchanged) + a compact badge PER
+                SOURCE in `detail.ratings` (logo/label via `metaDaFonte`).
+                It appears with a single source (the owner's decision: the common case today — only
+                TMDB — it does not stay hidden waiting for 2+ sources). It replaces the former
+                local×single-source pair. */}
             {detail.localRating != null || detail.ratings.length > 0 ? (
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 {detail.localRating != null ? (
@@ -1599,9 +1599,9 @@ function HeroImersivo({
               </p>
             ) : null}
 
-            {/* Sinopse (0082): move para DENTRO do hero — não é mais uma seção
-                separada abaixo do card, sem heading própria (parágrafo
-                proeminente sobre o overlay, no padrão Jellyfin/TMDB). */}
+            {/* Synopsis: it moves INSIDE the hero — it is no longer a section
+                separate below the card, without a heading of its own (a prominent
+                paragraph over the overlay, in the Jellyfin/TMDB pattern). */}
             {detail.description ? (
               <p className="max-w-3xl text-sm text-foreground/90 sm:text-base">
                 {detail.description}
@@ -1612,9 +1612,9 @@ function HeroImersivo({
             {entityId ? (
               <div className="flex flex-wrap items-center gap-2">
                 <TemaMusicalPlayer entityId={entityId} />
-                {/* "Baixar tema" (0103): só na tela da ENTITY (entityId) —
-                    mesma restrição de TrailerDownloadButton acima, materializar
-                    exige a pasta real da biblioteca. */}
+                {/* "Baixar tema": only on the ENTITY screen (entityId) —
+                    the same restriction as TrailerDownloadButton above, materializing
+                    requires the real library folder. */}
                 <ThemeDownloadButton entityId={entityId} />
               </div>
             ) : null}
@@ -1627,7 +1627,7 @@ function HeroImersivo({
   )
 }
 
-// ── Componente principal ─────────────────────────────────────────────────────
+// ── Main component ───────────────────────────────────────────────────────────
 
 export function RichDetailView({
   detail,
@@ -1642,40 +1642,40 @@ export function RichDetailView({
   children,
 }: {
   detail: RichDetail
-  // source da fonte (ex.: 'tmdb') para montar os links dos similares.
+  // source of the source (e.g. 'tmdb') to build the links of the similars.
   source: string
-  // Área de "voltar" (Link ou botão) — cada tela decide o destino.
+  // "back" area (Link or button) — each screen decides the destination.
   back?: ReactNode
-  // Selos ao lado do título (status, "editado") — entity.
+  // Badges next to the title (status, "editado") — entity.
   titleBadges?: ReactNode
-  // Ações DENTRO do hero, perto do título (0086: Importar no externo; o
-  // dropdown "Gerenciar" na entity) — o trailer entra ao lado, calculado no
-  // próprio `HeroImersivo`.
+  // Actions INSIDE the hero, close to the title (Importar on the external one; the
+  // "Gerenciar" dropdown on the entity) — the trailer joins them at the side, computed in
+  // the `HeroImersivo` itself.
   actions?: ReactNode
-  // Anotações após a sinopse (selos de fallback/editado) — entity.
+  // Notes after the synopsis (fallback/edited badges) — entity.
   descriptionExtra?: ReactNode
-  // Anotações após os gêneros — entity.
+  // Notes after the genres — entity.
   genresExtra?: ReactNode
-  // Contagem de artes por kind (0049): a faixa de selos de disponibilidade no hero.
-  // Só a tela da ENTITY passa (lê `/artwork`); a do externo omite (sem a faixa).
+  // Artwork count per kind: the row of availability badges in the hero.
+  // Only the ENTITY screen passes it (it reads `/artwork`); the external one omits it (without the row).
   availableArtwork?: Record<string, number>
-  // Id INTERNO da entity (0082): habilita a logo/banner/disco preferidos (lê
-  // `GET .../assets`) e o player do tema musical local (`GET .../theme`) — só a
-  // tela da ENTITY passa; o externo (antes de importar) não tem assets/pasta
-  // local ainda, então omite (sem regressão, mesmo gating de `availableArtwork`).
+  // INTERNAL id of the entity: it enables the preferred logo/banner/disc (it reads
+  // `GET .../assets`) and the player of the local theme song (`GET .../theme`) — only the
+  // ENTITY screen passes it; the external one (before importing) has no assets/local folder
+  // yet, so it omits it (without regression, the same gating as `availableArtwork`).
   entityId?: string
-  // Seções extras anexadas (editor de override, galeria, arquivos) — entity.
+  // Extra sections attached (override editor, gallery, files) — entity.
   children?: ReactNode
 }) {
-  // Selo de SITUAÇÃO da série (0045): só existe quando a fonte informou a situação
-  // (série enriquecida). Para filme/episódio o campo é ausente → `situacao` é null e
-  // o selo não aparece — sem gating por tipo, só por presença do dado.
+  // SITUATION badge of the series: it only exists when the source informed the situation
+  // (enriched series). For movie/episode the field is absent → `situacao` is null and
+  // the badge does not appear — without gating by type, only by the presence of the data.
   const situacao = rotuloSituacao(detail.airingStatus)
 
-  // Logo/banner/disco preferidos (0082 §4.2): a MESMA chamada a `GET .../assets`
-  // que a galeria (art-gallery.tsx) usa, aqui só para extrair os três kinds do
-  // hero. `enabled: !!entityId` mantém a tela do externo sem chamada alguma
-  // (sem assets próprios antes de importar).
+  // Preferred logo/banner/disc: the SAME call to `GET .../assets`
+  // that the gallery (art-gallery.tsx) uses, here only to extract the three kinds of the
+  // hero. `enabled: !!entityId` keeps the external screen without any call
+  // (without assets of its own before importing).
   const assetsQuery = useQuery({
     ...assetsQueryOptions(entityId ?? ''),
     enabled: !!entityId,
@@ -1702,9 +1702,9 @@ export function RichDetailView({
         entityId={entityId}
       />
 
-      {/* Fileira de links externos (0086): PRIMEIRA seção após o hero — era a
-          ÚLTIMA da página (depois de Produtoras); moveu para o topo porque é
-          navegação de saída (TMDB/IMDb/TVDB), não metadado de leitura. */}
+      {/* Row of external links: the FIRST section after the hero — it was the
+          LAST one of the page (after Production companies); it moved to the top because it is
+          outbound navigation (TMDB/IMDb/TVDB), not reading metadata. */}
       <ExternalLinksRow links={detail.externalLinks} />
 
       {detail.keywords.length > 0 ? (

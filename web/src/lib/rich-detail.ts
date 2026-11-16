@@ -11,16 +11,16 @@ import {
   type ResolvedEntity,
 } from '@/lib/api'
 
-// Modelo NORMALIZADO da tela rica compartilhada (RichDetailView) e os adapters das
-// duas fontes. Fica fora do arquivo de componente para não disparar
-// `react-refresh/only-export-components` (o módulo de componente só exporta
-// componentes). O detalhe do externo (0022) e a entity resolvida (paridade
-// 0022/0023) servem o MESMO shape rico no backend; aqui cada DTO vira `RichDetail`.
+// NORMALIZED model of the shared rich screen (RichDetailView) and the adapters of the
+// two sources. It lives outside the component file so it does not trigger
+// `react-refresh/only-export-components` (the component module only exports
+// components). The external detail and the resolved entity
+// serve the SAME rich shape in the backend; here each DTO becomes a `RichDetail`.
 
-// RichDetail é o shape que a RichDetailView consome. Os campos traduzíveis já vêm
-// resolvidos no idioma ativo (o backend resolve). URLs de imagem já saem PRONTAS
-// para o `<img>` (o adapter aplica o proxy local no pôster da entity; o externo usa
-// a URL direta da fonte).
+// RichDetail is the shape that RichDetailView consumes. The translatable fields already come
+// resolved in the active language (the backend resolves it). Image URLs already come READY
+// for the `<img>` (the adapter applies the local proxy to the poster of the entity; the external one uses
+// the direct URL of the source).
 export interface RichDetail {
   type: string
   title: string
@@ -30,47 +30,47 @@ export interface RichDetail {
   year: string | null
   runtime: number | null
   certification: string | null
-  // SITUACAO de exibição de uma SÉRIE (0045): string CRUA da fonte (TMDB "Returning
-  // Series"|"Ended"|… ou TVDB status.name), exposta verbatim — a UI traduz o rótulo
-  // p/ pt-BR via `rotuloSituacao`. Ausente/undefined para filme e série só-TVDB sem
-  // match; nesse caso o selo de situação não aparece.
+  // Display SITUATION of a SERIES: RAW string from the source (TMDB "Returning
+  // Series"|"Ended"|… or TVDB status.name), exposed verbatim — the UI translates the
+  // label into pt-BR via `rotuloSituacao`. Absent/undefined for a movie and for a TVDB-only series without
+  // a match; in that case the situation badge does not appear.
   airingStatus?: string | null
   voteAverage: number | null
-  // Nota LOCAL do dono (ADR-0012): a avaliação própria, gravada no override, que
-  // complementa/sobrepõe a nota da fonte. null quando não avaliada (ou na tela do
-  // externo, que não tem nota local — a UI então mostra só a nota da fonte).
+  // LOCAL rating of the owner (ADR-0012): the owner's own score, stored in the override, which
+  // complements/overrides the rating of the source. null when not rated (or on the
+  // external screen, which has no local rating — the UI then shows only the rating of the source).
   localRating: number | null
   originalLanguage: string | null
   posterUrl: string | null
   backdropUrl: string | null
-  // Still 16:9 do EPISÓDIO (0042), já pronto para o `<img>` (via image proxy). null
-  // para não-episódios e para o detalhe do externo (que não tem still) — a UI só
-  // renderiza o frame de still quando o tipo é `episode`.
+  // 16:9 still of the EPISODE, already ready for the `<img>` (via the image proxy). null
+  // for non-episodes and for the external detail (which has no still) — the UI only
+  // renders the still frame when the type is `episode`.
   stillUrl: string | null
   genres: string[]
   keywords: string[]
   videos: ExternalVideo[]
   collection: ExternalCollection | null
   similar: ExternalSimilar[]
-  // Créditos (0029, fase B) — mesmo shape nas duas telas (paridade externo × entity).
-  // `cast`/`crew`/`companies` chegam com as fotos/logos JÁ proxyadas pelo backend
-  // (uso direto no `<img>`, sem reproxyar). Listas sempre `[]` quando ausentes — a
-  // seção respectiva só aparece quando não-vazia. Em série, `episode_count` vem
-  // preenchido; em filme é null (a UI omite o "· N eps").
+  // Credits (phase B) — same shape on both screens (external × entity parity).
+  // `cast`/`crew`/`companies` arrive with the photos/logos ALREADY proxied by the backend
+  // (direct use in the `<img>`, without re-proxying). Lists are always `[]` when absent — the
+  // respective section only appears when non-empty. In a series, `episode_count` comes
+  // filled in; in a movie it is null (the UI omits the "· N eps").
   cast: CreditCast[]
   crew: CreditCrew[]
   companies: CreditCompany[]
   externalLinks: Record<string, string>
-  // Notas por FONTE (0086): ao contrário de `voteAverage` (a nota mesclada por
-  // prioridade, 1 valor só, mantida por compat com quem ainda a lê), esta é
-  // UMA entrada por fonte que modela `vote_average` — a fileira de notas do
-  // hero mostra lado a lado. Sempre `[]` quando vazia (nunca undefined).
+  // Ratings per SOURCE: unlike `voteAverage` (the rating merged by
+  // priority, a single value, kept for compatibility with whoever still reads it), this is
+  // ONE entry per source that models `vote_average` — the ratings row of the
+  // hero shows them side by side. Always `[]` when empty (never undefined).
   ratings: { source: string; value: number }[]
 }
 
-// deExternalDetail normaliza o DTO do detalhe EXTERNO. Pôster/backdrop do hero podem
-// vir como ROTA DO PROXY LOCAL (relativa, cacheada — 0024) ou como URL DIRETA da fonte
-// (degradação): `srcDeImagem` resolve os dois (relativa recebe a base, absoluta passa).
+// deExternalDetail normalizes the EXTERNAL detail DTO. The poster/backdrop of the hero may
+// come as a LOCAL PROXY ROUTE (relative, cached) or as a DIRECT URL of the source
+// (degradation): `srcDeImagem` resolves both (relative receives the base, absolute passes).
 export function deExternalDetail(d: ExternalDetail): RichDetail {
   return {
     type: d.type,
@@ -83,27 +83,27 @@ export function deExternalDetail(d: ExternalDetail): RichDetail {
     certification: d.certification,
     airingStatus: d.airing_status ?? null,
     voteAverage: d.vote_average,
-    // O detalhe do externo não tem nota local (não é um item do dono ainda).
+    // The external detail has no local rating (it is not an item of the owner yet).
     localRating: null,
     originalLanguage: d.original_language,
     posterUrl: srcDeImagem(d.poster_url),
     backdropUrl: srcDeImagem(d.backdrop_url),
-    // O detalhe do externo não tem still de episódio.
+    // The external detail has no episode still.
     stillUrl: null,
     genres: d.genres,
     keywords: d.keywords,
     videos: d.videos,
     collection: d.collection,
     similar: d.similar,
-    // Créditos já vêm com as URLs proxyadas pelo backend — passam direto.
+    // The credits already come with the URLs proxied by the backend — they pass straight through.
     cast: d.cast ?? [],
     crew: d.crew ?? [],
     companies: d.companies ?? [],
     externalLinks: d.external_links,
-    // Sintetiza 1 entrada — a própria fonte sendo vista (`d.source`, já existe
-    // no DTO). O externo não tem "fontes cruzadas" antes de importar; a
-    // fileira de notas mostra só isso, mas mostra (decisão do dono: fileira
-    // aparece mesmo com 1 fonte só).
+    // Synthesizes 1 entry — the source being viewed itself (`d.source`, which already exists
+    // in the DTO). The external one has no "crossed sources" before importing; the
+    // ratings row shows only that, but it does show it (owner's decision: the row
+    // appears even with a single source).
     ratings:
       d.vote_average != null
         ? [{ source: d.source, value: d.vote_average }]
@@ -111,9 +111,9 @@ export function deExternalDetail(d: ExternalDetail): RichDetail {
   }
 }
 
-// deResolvedEntity normaliza a ENTITY resolvida. Os GÊNEROS são as `tags` (que já os
-// carregam). O PÔSTER é a rota LOCAL cacheada (via `posterSrc`); o BACKDROP vem da
-// camada externa como URL direta (não é cacheado localmente nesta fase).
+// deResolvedEntity normalizes the resolved ENTITY. The GENRES are the `tags` (which already
+// carry them). The POSTER is the cached LOCAL route (via `posterSrc`); the BACKDROP comes from the
+// external layer as a direct URL (it is not cached locally in this phase).
 export function deResolvedEntity(e: ResolvedEntity): RichDetail {
   return {
     type: e.type,
@@ -128,42 +128,42 @@ export function deResolvedEntity(e: ResolvedEntity): RichDetail {
     voteAverage: e.vote_average,
     localRating: e.local_rating,
     originalLanguage: e.original_language,
-    // `arteSrc` (0044) resolve os três num único caminho: rota local (asset servível)
-    // recebe a base; URL crua da fonte passa pelo image proxy.
+    // `arteSrc` resolves the three in a single path: a local route (servable asset)
+    // receives the base; the raw URL of the source goes through the image proxy.
     posterUrl: arteSrc(e.poster_url),
-    // Backdrop: ROTA LOCAL quando cacheado (fanart própria/herdada, 0015/0044) ou
-    // URL CRUA da fonte no fallback — a crua agora passa pelo proxy (não bate no CDN).
+    // Backdrop: LOCAL ROUTE when cached (own/inherited fanart) or
+    // RAW URL of the source in the fallback — the raw one now goes through the proxy (it does not hit the CDN).
     backdropUrl: arteSrc(e.backdrop_url),
-    // Still 16:9 do episódio: ROTA LOCAL quando há still CUSTOM do dono (0044,
-    // /assets/still) ou URL CRUA do provider (0042, via proxy). null para
-    // não-episódios — o front só o exibe no detalhe do episódio.
+    // 16:9 still of the episode: LOCAL ROUTE when there is a CUSTOM still from the owner
+    // (/assets/still) or RAW URL from the provider (via proxy). null for
+    // non-episodes — the front only shows it in the episode detail.
     stillUrl: arteSrc(e.still_url),
     genres: e.tags,
     keywords: e.keywords,
     videos: e.videos,
     collection: e.collection,
     similar: e.similar,
-    // Mesmo shape do externo (paridade): fotos/logos já proxyadas pelo backend.
+    // Same shape as the external one (parity): photos/logos already proxied by the backend.
     cast: e.cast ?? [],
     crew: e.crew ?? [],
     companies: e.companies ?? [],
     externalLinks: e.external_links,
-    // Já vem pronto do backend (`ratingsPorFonte`, resolver 0086) — sempre
-    // `[]` quando nenhuma camada externa modela `vote_average`.
+    // Comes ready from the backend (`ratingsPorFonte`) — always
+    // `[]` when no external layer models `vote_average`.
     ratings: e.ratings,
   }
 }
 
-// anoDeData extrai o ano (4 primeiros dígitos) de uma data ISO, ou null.
+// anoDeData extracts the year (first 4 digits) of an ISO date, or null.
 function anoDeData(data: string | null): string | null {
   return data && data.length >= 4 ? data.slice(0, 4) : null
 }
 
-// srcDeImagem resolve uma URL de imagem que pode ser ABSOLUTA (URL direta da
-// fonte, ex.: TMDB) ou uma ROTA LOCAL relativa (cache de imagem 0015 / proxy 0024):
-// a absoluta passa direto; a relativa recebe a base via `posterSrc` (respeita
-// `VITE_API_BASE`). `null`/vazia → null. Exportado para o backdrop de outras telas
-// (ex.: a página de coleção) resolverem a arte do mesmo jeito.
+// srcDeImagem resolves an image URL that may be ABSOLUTE (direct URL of the
+// source, e.g. TMDB) or a RELATIVE LOCAL ROUTE (image cache / proxy):
+// the absolute one passes through; the relative one receives the base via `posterSrc` (it respects
+// `VITE_API_BASE`). `null`/empty → null. Exported so the backdrop of other screens
+// (e.g. the collection page) resolve the artwork the same way.
 export function srcDeImagem(url: string | null): string | null {
   if (!url) {
     return null
@@ -171,13 +171,13 @@ export function srcDeImagem(url: string | null): string | null {
   return /^https?:\/\//.test(url) ? url : posterSrc(url)
 }
 
-// ── Situação de série (airing_status) ────────────────────────────────────────
+// ── Series situation (airing_status) ─────────────────────────────────────────
 
-// A situação chega CRUA da fonte (0045): o backend não traduz. O rótulo pt-BR e a
-// cor do selo são decisão de UI. `variant` reusa as variantes do design system do
-// `<Badge>`: `default` (destaque, primária) para os estados "vivos" (em exibição/
-// produção/estreia) e `secondary` (neutra) para os "fechados" (encerrada/cancelada/
-// planejada) — o mesmo tom que a classificação já usa.
+// The situation arrives RAW from the source: the backend does not translate it. The pt-BR label and the
+// color of the badge are a UI decision. `variant` reuses the variants of the design system of
+// `<Badge>`: `default` (highlight, primary) for the "live" states (airing/
+// production/premiere) and `secondary` (neutral) for the "closed" ones (ended/canceled/
+// planned) — the same tone that the certification already uses.
 export type VarianteSituacao = 'default' | 'secondary'
 
 export interface RotuloSituacao {
@@ -185,10 +185,10 @@ export interface RotuloSituacao {
   variant: VarianteSituacao
 }
 
-// Cobre os DOIS vocabulários (o valor pode vir de qualquer fonte): TMDB ("Returning
-// Series"/"Ended"/"Canceled"/"In Production"/"Planned"/"Pilot") e TVDB ("Continuing"/
-// "Ended"/"Upcoming"/"Canceled"). Chaves normalizadas (minúsculas) para casar
-// variações de caixa e o "Cancelled" britânico.
+// Covers BOTH vocabularies (the value may come from either source): TMDB ("Returning
+// Series"/"Ended"/"Canceled"/"In Production"/"Planned"/"Pilot") and TVDB ("Continuing"/
+// "Ended"/"Upcoming"/"Canceled"). Keys normalized (lowercase) to match
+// case variations and the British "Cancelled".
 const SITUACAO_LABELS: Record<string, RotuloSituacao> = {
   // TMDB
   'returning series': { label: 'Em exibição', variant: 'default' },
@@ -203,10 +203,10 @@ const SITUACAO_LABELS: Record<string, RotuloSituacao> = {
   upcoming: { label: 'Em breve', variant: 'default' },
 }
 
-// rotuloSituacao traduz a situação crua para o rótulo pt-BR + variante do selo. Valor
-// AUSENTE/vazio → null (a UI não renderiza o selo — é o caso de filme e série só-TVDB
-// sem match). Valor CRU DESCONHECIDO (fora dos vocabulários) → mostra o cru
-// capitalizado com cor neutra, nunca some silenciosamente.
+// rotuloSituacao translates the raw situation into the pt-BR label + badge variant. An ABSENT/
+// empty value → null (the UI does not render the badge — that is the case of a movie and of a TVDB-only series
+// without a match). An UNKNOWN RAW value (outside the vocabularies) → it shows the raw
+// one capitalized with a neutral color, it never disappears silently.
 export function rotuloSituacao(
   status: string | null | undefined,
 ): RotuloSituacao | null {

@@ -1,11 +1,11 @@
 import { expect, test } from '../fixtures'
 import { resetBiblioteca } from '../lib/reset'
 
-// Jornadas de EDICAO do INTERNO. O foco e a garantia central do ADR-0012: o
-// override do dono e diferencial e sobrevive a um re-enriquecimento; e o ciclo
-// de identidade externa (0027): fixar `external_ids` e puxar os dados da fonte
-// pelo id recem-fixado. Cada teste comeca com a biblioteca zerada (reset por
-// API), semeia o proprio estado e navega para o detalhe interno.
+// Journeys of EDITING the INTERNAL item. The focus is the core guarantee of
+// ADR-0012: the owner override is a diff and survives a re-enrichment; plus the
+// external identity cycle: pin `external_ids` and pull the source data by the
+// id just pinned. Each test starts with the library cleared (reset through the
+// API), seeds its own state and navigates to the internal detail.
 
 test.beforeEach(async ({ request }) => {
   await resetBiblioteca(request)
@@ -15,7 +15,7 @@ test('editar override nao e destrutivo apos re-enriquecer', async ({
   page,
   request,
 }) => {
-  // Semeia o filme 603 (Matrix) importando pela API e vai ao detalhe interno.
+  // Seeds the movie 603 (Matrix) by importing through the API and goes to the internal detail.
   const res = await request.post('/api/v1/import', {
     data: { source: 'tmdb', source_id: '603', type: 'movie' },
   })
@@ -24,9 +24,9 @@ test('editar override nao e destrutivo apos re-enriquecer', async ({
   await page.goto(`/entities/${id}`)
   await expect(page.getByRole('heading', { level: 1, name: 'Matrix' })).toBeVisible()
 
-  // "Editar" agora e um LINK para a rota `/entities/$id/edit` (0030), nao mais um
-  // editor inline, e mora dentro do dropdown "Gerenciar" (0086). Na pagina de
-  // edicao, edita em pt-BR: novo titulo, remove "Acao" e adiciona "Favorito".
+  // "Editar" is now a LINK to the `/entities/$id/edit` route, no longer an inline
+  // editor, and it lives inside the "Gerenciar" dropdown. On the edit page, edit in
+  // pt-BR: new title, remove "Acao" and add "Favorito".
   await page.getByRole('button', { name: 'Gerenciar' }).click()
   await page.getByRole('menuitem', { name: 'Editar' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
@@ -37,20 +37,20 @@ test('editar override nao e destrutivo apos re-enriquecer', async ({
   await campoTag.press('Enter')
   await page.getByRole('button', { name: 'Salvar alterações' }).click()
 
-  // Confirma que o override round-tripou (o save terminou) antes de re-enriquecer.
+  // Confirms that the override round-tripped (the save finished) before re-enriching.
   await expect(
     page.getByRole('heading', { level: 1, name: 'Matrix EDITADO' }),
   ).toBeVisible()
 
-  // Nao ha botao de enrich direto no detalhe (so "Salvar e re-enriquecer", que e
-  // acoplado aos IDs externos). Dispara o re-enriquecimento pela API e recarrega.
+  // There is no direct enrich button on the detail (only "Salvar e re-enriquecer", which
+  // is coupled to the external IDs). Triggers the re-enrichment through the API and reloads.
   const enrich = await request.post(`/api/v1/entities/${id}/enrich`, { data: {} })
   expect(enrich.ok()).toBeTruthy()
   await page.reload()
 
-  // O override sobreviveu ao enrich (ADR-0012): titulo preservado; "Favorito"
-  // (add do dono) e "Ficcao cientifica" (base externa) presentes; "Acao"
-  // (remove do dono) sumiu — a fonte reofereceria "Acao", mas o remove vence.
+  // The override survived the enrich (ADR-0012): title preserved; "Favorito"
+  // (owner add) and "Ficcao cientifica" (external base) present; "Acao"
+  // (owner remove) is gone — the source would offer "Acao" again, but the remove wins.
   await expect(
     page.getByRole('heading', { level: 1, name: 'Matrix EDITADO' }),
   ).toBeVisible()
@@ -63,7 +63,7 @@ test('item manual: fixar external-ids e re-enriquecer puxa dados da fonte', asyn
   page,
   request,
 }) => {
-  // Cria um item manual (sem external_ids nem dados de fonte) e vai ao detalhe.
+  // Creates a manual item (no external_ids and no source data) and goes to the detail.
   const res = await request.post('/api/v1/entities', {
     data: { type: 'movie', title: 'Meu Filme Local' },
   })
@@ -74,10 +74,10 @@ test('item manual: fixar external-ids e re-enriquecer puxa dados da fonte', asyn
     page.getByRole('heading', { level: 1, name: 'Meu Filme Local' }),
   ).toBeVisible()
 
-  // "Editar" e um LINK para a rota `/entities/$id/edit` (0030), agora com uma
-  // sidebar de secoes (0080): o editor de IDs externos vive na subrota
-  // "IDs de terceiros" (`/entities/$id/edit/ids`). Mora dentro do dropdown
-  // "Gerenciar" (0086). Fixa a fonte tmdb=603.
+  // "Editar" is a LINK to the `/entities/$id/edit` route, now with a sidebar of
+  // sections: the external IDs editor lives in the "IDs de terceiros" subroute
+  // (`/entities/$id/edit/ids`). It lives inside the "Gerenciar" dropdown. It
+  // pins the source tmdb=603.
   await page.getByRole('button', { name: 'Gerenciar' }).click()
   await page.getByRole('menuitem', { name: 'Editar' }).click()
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit$`))
@@ -85,21 +85,21 @@ test('item manual: fixar external-ids e re-enriquecer puxa dados da fonte', asyn
   await expect(page).toHaveURL(new RegExp(`/entities/${id}/edit/ids$`))
   await page.getByRole('button', { name: 'Adicionar fonte' }).click()
   await page.getByRole('textbox', { name: 'Fonte do id externo' }).fill('tmdb')
-  // O aria-label do id passa a "Id na fonte tmdb" depois que a fonte e digitada.
+  // The aria-label of the id becomes "Id na fonte tmdb" after the source is typed.
   await page.getByRole('textbox', { name: /^Id na fonte/ }).fill('603')
   await page.getByRole('button', { name: 'Salvar e re-enriquecer' }).click()
 
-  // Espera o enrich round-tripar: volta para "Informacoes basicas" e confere que
-  // o form reflete o novo titulo resolvido da fonte no placeholder do campo
-  // Titulo (prova de que os dados da fonte 603 foram puxados).
+  // Waits for the enrich to round-trip: goes back to "Informações básicas" and checks that
+  // the form reflects the new title resolved from the source in the placeholder of the
+  // Título field (proof that the data of source 603 was pulled).
   await page.getByRole('link', { name: 'Informações básicas' }).click()
   await expect(
     page.getByRole('textbox', { name: 'Título', exact: true }),
   ).toHaveAttribute('placeholder', 'Matrix')
   await page.goto(`/entities/${id}`)
 
-  // O enrich pelo id recem-fixado puxa os dados da fonte 603 (Matrix): o titulo
-  // e o genero passam a refletir o filme da fonte.
+  // The enrich through the id just pinned pulls the data of source 603 (Matrix): the title
+  // and the genre now reflect the movie from the source.
   await expect(page.getByRole('heading', { level: 1, name: 'Matrix' })).toBeVisible()
   await expect(page.getByText('Ficcao cientifica', { exact: true })).toBeVisible()
 })

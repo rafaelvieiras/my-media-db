@@ -78,7 +78,7 @@ describe('CatalogCompletenessForm', () => {
       expect(
         utils.getByRole('checkbox', { name: 'Capa de disco' }),
       ).toBeInTheDocument()
-      // `still`/`characterart` ficam fora da oferta desta tela (briefing §6).
+      // `still`/`characterart` stay out of the offer of this screen (§6).
       expect(
         utils.queryByRole('checkbox', { name: /still/i }),
       ).not.toBeInTheDocument()

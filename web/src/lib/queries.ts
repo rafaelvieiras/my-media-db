@@ -45,19 +45,19 @@ import {
   type JobExecutionsParams,
 } from '@/lib/api'
 
-// Opções compartilhadas por rota. Centralizar em `queryOptions` mantém a
-// queryKey e a queryFn coesas e reutilizáveis (componente, loader do router,
-// prefetch, invalidação). As chaves seguem o recurso: `['library']`,
+// Options shared per route. Centralizing them in `queryOptions` keeps the
+// queryKey and the queryFn cohesive and reusable (component, router loader,
+// prefetch, invalidation). The keys follow the resource: `['library']`,
 // `['entities', params]`, `['entity', id]`, `['scan', id]`.
 export const healthQueryOptions = queryOptions({
   queryKey: ['health'],
   queryFn: getHealth,
 })
 
-// Telemetria de sistema (0055): chave própria `['health', 'system']` — SOB o
-// mesmo prefixo de `healthQueryOptions` (é a mesma tela/domínio), mas com
-// `queryFn` independente: uma falha aqui não deve marcar `['health']` como
-// erro (são dois `useQuery` distintos na tela, ver health.tsx).
+// System telemetry: its own key `['health', 'system']` — UNDER the
+// same prefix as `healthQueryOptions` (it is the same screen/domain), but with an
+// independent `queryFn`: a failure here must not mark `['health']` as an
+// error (they are two distinct `useQuery`s on the screen, see health.tsx).
 export const systemHealthQueryOptions = queryOptions({
   queryKey: ['health', 'system'],
   queryFn: getSystemHealth,
@@ -68,22 +68,22 @@ export const libraryQueryOptions = queryOptions({
   queryFn: listLibrary,
 })
 
-// Navegador de pastas (briefing 0071): a chave carrega o caminho navegado — cada
-// pasta visitada cacheia sob sua própria chave (voltar a uma pasta já vista na
-// sessão não refaz o fetch). Usado pelo `PathBrowser`.
+// Folder browser: the key carries the navigated path — each
+// folder visited caches under its own key (going back to a folder already seen in the
+// session does not fetch again). Used by the `PathBrowser`.
 export function libraryBrowseQueryOptions(path: string) {
   return queryOptions({
     queryKey: ['library', 'browse', path],
     queryFn: () => browseLibraryPath(path),
-    // Path inválido (422) é erro permanente — retentar não muda o resultado
-    // sem mudar `path`. Retry aqui só gera 3 chamadas idênticas ao servidor.
+    // An invalid path (422) is a permanent error — retrying does not change the result
+    // without changing `path`. A retry here only generates 3 identical calls to the server.
     retry: false,
   })
 }
 
-// `lang` entra na queryKey: trocar o idioma de leitura é cache-miss = re-busca
-// por `?lang=`, sem recarregar a página. `lang` omitido usa `null` na chave
-// (chave estável; equivale a "sem idioma" = principal do backend).
+// `lang` enters the queryKey: switching the reading language is a cache miss = re-fetch
+// by `?lang=`, without reloading the page. An omitted `lang` uses `null` in the key
+// (stable key; equivalent to "no language" = the backend primary).
 export function entitiesQueryOptions(params: EntityListParams, lang?: string) {
   return queryOptions({
     queryKey: ['entities', params, lang ?? null],
@@ -91,12 +91,12 @@ export function entitiesQueryOptions(params: EntityListParams, lang?: string) {
   })
 }
 
-// Tipos de entity com dado catalogado (briefings 0109/0110). Chave própria
-// `['entities', 'types']` — SOB o prefixo `['entities']` (mesmo domínio de
-// `entitiesQueryOptions`), mas com `queryFn` independente e sem `params`
-// (o endpoint não aceita filtro). Consumida pela home (um `RecentlyAddedRail`
-// por tipo, 0109) e pela navbar (dropdown de biblioteca, 0110) — export
-// nomeado de propósito para o 0110 reaproveitar.
+// Types of entity with cataloged data. Their own key
+// `['entities', 'types']` — UNDER the `['entities']` prefix (same domain as
+// `entitiesQueryOptions`), but with an independent `queryFn` and without `params`
+// (the endpoint accepts no filter). Consumed by the home (one `RecentlyAddedRail`
+// per type) and by the navbar (library dropdown) — a named
+// export on purpose so the navbar reuses it.
 export const entityTypesQueryOptions = queryOptions({
   queryKey: ['entities', 'types'],
   queryFn: listEntityTypes,
@@ -109,9 +109,9 @@ export function entityQueryOptions(id: string, lang?: string) {
   })
 }
 
-// Membros de uma coleção (0025). `lang` entra na chave: trocar o idioma re-busca os
-// títulos dos membros. Chave sob `['entity', id, 'members', ...]` para a invalidação
-// por entity alcançá-la.
+// Members of a collection. `lang` enters the key: switching the language re-fetches the
+// titles of the members. The key is under `['entity', id, 'members', ...]` so that the invalidation
+// per entity reaches it.
 export function entityMembersQueryOptions(id: string, lang?: string) {
   return queryOptions({
     queryKey: ['entity', id, 'members', lang ?? null],
@@ -119,10 +119,10 @@ export function entityMembersQueryOptions(id: string, lang?: string) {
   })
 }
 
-// Episódios da série agrupados por ordem de exibição (0040). A chave carrega
-// `(id, ordering, lang)` sob o prefixo `['entity', id]`: trocar a ordem (seletor) é
-// cache-miss = re-busca; o idioma re-resolve os títulos. Só é consultada quando a
-// ordem escolhida difere do default (a view default usa os cards de temporada).
+// Episodes of the series grouped by display order. The key carries
+// `(id, ordering, lang)` under the prefix `['entity', id]`: switching the order (selector) is a
+// cache miss = re-fetch; the language re-resolves the titles. It is only queried when the
+// chosen order differs from the default (the default view uses the season cards).
 export function entityEpisodesQueryOptions(
   id: string,
   ordering: string,
@@ -134,78 +134,78 @@ export function entityEpisodesQueryOptions(
   })
 }
 
-// Descritores do formulário editorial (0030). Metadado IMUTÁVEL entre deploys
-// (deriva de um registro estático do backend), então `staleTime: Infinity`
-// evita re-buscas — as três rotas de CRUD compartilham este cache. Chave própria
-// `['schema', 'entity-fields']`, fora do prefixo por-entity (não depende de id).
+// Descriptors of the editorial form. IMMUTABLE metadata between deploys
+// (it derives from a static registry of the backend), so `staleTime: Infinity`
+// avoids re-fetches — the three CRUD routes share this cache. Its own key
+// `['schema', 'entity-fields']`, outside the per-entity prefix (it does not depend on an id).
 export const entityFieldsQueryOptions = queryOptions({
   queryKey: ['schema', 'entity-fields'],
   queryFn: getEntityFields,
   staleTime: Infinity,
 })
 
-// Config de idioma (0019): fonte única para o seletor e o admin. Chave
-// `['settings', 'languages']` — invalidada pelo PUT da tela de configurações.
+// Language config: single source for the selector and the admin. Key
+// `['settings', 'languages']` — invalidated by the PUT of the settings screen.
 export const languageSettingsQueryOptions = queryOptions({
   queryKey: ['settings', 'languages'],
   queryFn: getLanguageSettings,
 })
 
-// Config de throttle do enriquecimento retroativo (0085): fonte única para o
-// admin (settings.tsx) e o placeholder do override por biblioteca
-// (library-new.tsx/library-edit.tsx). Chave `['settings', 'enrichment-retroativo']`
-// — invalidada pelo PUT da tela de configurações.
+// Config of the retroactive enrichment throttle: single source for the
+// admin (settings.tsx) and the placeholder of the per-library override
+// (library-new.tsx/library-edit.tsx). Key `['settings', 'enrichment-retroativo']`
+// — invalidated by the PUT of the settings screen.
 export const retroactiveEnrichmentSettingsQueryOptions = queryOptions({
   queryKey: ['settings', 'enrichment-retroativo'],
   queryFn: getRetroactiveEnrichmentSettings,
 })
 
-// Config do toggle de materialização automática de artes (0089): fonte única
-// para o card de artes da tela de configurações. Chave
-// `['settings', 'auto-materialize-artwork']` — invalidada pelo PUT do switch.
+// Config of the automatic artwork materialization toggle: single source
+// for the artwork card of the settings screen. Key
+// `['settings', 'auto-materialize-artwork']` — invalidated by the PUT of the switch.
 export const autoMaterializeArtworkSettingsQueryOptions = queryOptions({
   queryKey: ['settings', 'auto-materialize-artwork'],
   queryFn: getAutoMaterializeArtworkSettings,
 })
 
-// Config do toggle de download automático de trailer/tema no scan (0104):
-// fonte única para o card "Trailer e tema musical" da tela de configurações.
-// Chave `['settings', 'auto-download-trailer-tema']` — invalidada pelo PUT
-// do switch.
+// Config of the automatic trailer/theme download during the scan:
+// single source for the "Trailer e tema musical" card of the settings screen.
+// Key `['settings', 'auto-download-trailer-tema']` — invalidated by the PUT
+// of the switch.
 export const autoDownloadTrailerTemaSettingsQueryOptions = queryOptions({
   queryKey: ['settings', 'auto-download-trailer-tema'],
   queryFn: getAutoDownloadTrailerTemaSettings,
 })
 
-// Status do binário yt-dlp + path customizado (0101, ADR-0025): fonte única
-// para o card "yt-dlp" da tela de configurações. Chave `['settings', 'ytdlp']`
-// — invalidada pelo PUT do formulário.
+// Status of the yt-dlp binary + custom path (ADR-0025): single source
+// for the "yt-dlp" card of the settings screen. Key `['settings', 'ytdlp']`
+// — invalidated by the PUT of the form.
 export const ytdlpSettingsQueryOptions = queryOptions({
   queryKey: ['settings', 'ytdlp'],
   queryFn: getYtdlpSettings,
 })
 
-// Token do webhook de entrada Jellyfin (0093/0097): fonte única para a tela
-// `/dashboard/webhook`. Chave `['webhooks', 'jellyfin', 'token']` — invalidada
-// depois de gerar/regenerar o token.
+// Token of the Jellyfin inbound webhook: single source for the screen
+// `/dashboard/webhook`. Key `['webhooks', 'jellyfin', 'token']` — invalidated
+// after generating/regenerating the token.
 export const jellyfinWebhookTokenQueryOptions = queryOptions({
   queryKey: ['webhooks', 'jellyfin', 'token'],
   queryFn: getJellyfinWebhookToken,
 })
 
-// Integrações configuráveis via UI/banco (briefing 0095/0096, ADR-0023):
-// fonte única para `/dashboard/integrations` (lista, badge `configurada`) e o
-// formulário por slug abaixo. Chave `['integrations']` — invalidada pelo PUT
-// do formulário (o badge da lista precisa refletir na hora).
+// Integrations configurable through the UI/database (ADR-0023):
+// single source for `/dashboard/integrations` (list, `configurada` badge) and the
+// form per slug below. Key `['integrations']` — invalidated by the PUT
+// of the form (the badge of the list has to reflect it right away).
 export const integrationsQueryOptions = queryOptions({
   queryKey: ['integrations'],
   queryFn: listIntegrations,
 })
 
-// Schema + valor efetivo dos campos de UMA integração. Chave
-// `['integrations', slug]` — invalidada pelo próprio PUT (eco pós-gravação
-// não é usado direto para não reidratar campo `secret`; a tela remonta o
-// formulário a partir do refetch, ver `IntegrationDetailScreen`).
+// Schema + effective value of the fields of ONE integration. Key
+// `['integrations', slug]` — invalidated by the PUT itself (the echo after the write
+// is not used directly so as not to rehydrate a `secret` field; the screen remounts the
+// form from the refetch, see `IntegrationDetailScreen`).
 export function integrationDetailQueryOptions(slug: string) {
   return queryOptions({
     queryKey: ['integrations', slug],
@@ -213,10 +213,10 @@ export function integrationDetailQueryOptions(slug: string) {
   })
 }
 
-// Config de completude de CATALOGAÇÃO (0057): fonte única para o formulário de
-// admin. Chave `['settings', 'catalog-completeness']` — invalidada pelo PUT da
-// tela de configurações. Conceito DIFERENTE de completude de POSSE
-// (`entity-badges.ts`) — não compartilha chave/cache com aquele.
+// Config of CATALOGING completeness: single source for the admin
+// form. Key `['settings', 'catalog-completeness']` — invalidated by the PUT of the
+// settings screen. A concept DIFFERENT from OWNERSHIP completeness
+// (`entity-badges.ts`) — it shares no key/cache with that one.
 export const catalogCompletenessSettingsQueryOptions = queryOptions({
   queryKey: ['settings', 'catalog-completeness'],
   queryFn: getCatalogCompletenessSettings,
@@ -229,11 +229,11 @@ export function entityFilesQueryOptions(id: string) {
   })
 }
 
-// Blob CRU do override (0016). A chave `['entity', id, 'override']` fica SOB o
-// prefixo `['entity', id]` — assim uma invalidação por `['entity', id]` após a
-// edição derruba de uma vez a entity (todas as variações de `lang`), os arquivos
-// e este blob, sem enumerar idiomas. Não carrega `lang`: o blob é o mesmo para
-// todos (a UI lê a fatia do idioma corrente dele).
+// RAW blob of the override. The key `['entity', id, 'override']` sits UNDER the
+// prefix `['entity', id]` — so an invalidation by `['entity', id]` after the
+// edit drops at once the entity (all the `lang` variations), the files
+// and this blob, without enumerating languages. It does not carry `lang`: the blob is the same for
+// all of them (the UI reads the slice of the current language from it).
 export function overrideBlobQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['entity', id, 'override'],
@@ -241,10 +241,10 @@ export function overrideBlobQueryOptions(id: string) {
   })
 }
 
-// Galeria de arte (0017). Chave própria `['assets', id]` (não sob `['entity',
-// id]`): mudar a arte invalida ESTA chave E `['entity', id]` (o pôster do
-// detalhe/grid reflete a nova precedência) E `['entities']` (o grid) —
-// invalidações independentes, sem derrubar uma pela outra.
+// Artwork gallery. Its own key `['assets', id]` (not under `['entity',
+// id]`): changing the artwork invalidates THIS key AND `['entity', id]` (the poster of the
+// detail/grid reflects the new precedence) AND `['entities']` (the grid) —
+// independent invalidations, without dropping one through the other.
 export function assetsQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['assets', id],
@@ -252,9 +252,9 @@ export function assetsQueryOptions(id: string) {
   })
 }
 
-// Tema musical local (briefing 0082): confere (HEAD, uma vez por carga) se a
-// entity tem um theme.{mp3,ogg,flac} na pasta-raiz — sem invalidação própria
-// (o arquivo só muda por ação manual do dono no disco, fora da UI).
+// Local theme song: it checks (HEAD, once per load) whether the
+// entity has a theme.{mp3,ogg,flac} in the root folder — without its own invalidation
+// (the file only changes through a manual action of the owner on the disk, outside the UI).
 export function entityThemeQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['entity', id, 'theme'],
@@ -262,13 +262,13 @@ export function entityThemeQueryOptions(id: string) {
   })
 }
 
-// Candidato de tema musical do ThemerrDB (briefing 0103, ADR-0025): fonte
-// única do botão "Baixar tema". Chave própria `['entity', id, 'theme',
-// 'candidato']` (sob o prefixo `['entity', id]`, mas distinta de ['entity',
-// id, 'theme'] acima, que é o HEAD do binário local) — invalidada
-// explicitamente pela mutation de download (a única ação da UI que muda
-// `ja_tem_local`; o candidato em si só muda no próximo ciclo de
-// enriquecimento, fora da UI).
+// Theme song candidate from ThemerrDB: the single
+// source of the "Baixar tema" button. Its own key `['entity', id, 'theme',
+// 'candidato']` (under the prefix `['entity', id]`, but distinct from ['entity',
+// id, 'theme'] above, which is the HEAD of the local binary) — invalidated
+// explicitly by the download mutation (the only UI action that changes
+// `ja_tem_local`; the candidate itself only changes on the next
+// enrichment cycle, outside the UI).
 export function entityThemeCandidatoQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['entity', id, 'theme', 'candidato'],
@@ -276,10 +276,10 @@ export function entityThemeCandidatoQueryOptions(id: string) {
   })
 }
 
-// Trailer materializado em disco (briefing 0102, ADR-0025): confere (HEAD,
-// uma vez por carga) se a entity já tem um trailer baixado — invalidada
-// explicitamente pela mutation de download (a única ação da UI que muda esse
-// estado; fora dela, o arquivo só muda por ação manual do dono no disco).
+// Trailer materialized on disk: it checks (HEAD,
+// once per load) whether the entity already has a downloaded trailer — invalidated
+// explicitly by the download mutation (the only UI action that changes that
+// state; outside it, the file only changes through a manual action of the owner on the disk).
 export function entityTrailerQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['entity', id, 'trailer'],
@@ -287,12 +287,12 @@ export function entityTrailerQueryOptions(id: string) {
   })
 }
 
-// Galeria agrupada por kind + selos de disponibilidade (0048/0049). Chave própria
-// `['artwork', id]` — consumida DUAS vezes (a faixa de selos no card do topo e a
-// galeria em linhas), que o TanStack Query deduplica numa única ida. Mudar a arte
-// (preferir/baixar/remover) invalida ESTA chave (a galeria/selos refletem), E
-// `['entity', id]` + `['entities']` (o pôster do detalhe e do grid seguem a nova
-// precedência), como a galeria de assets do 0017.
+// Gallery grouped by kind + availability badges. Its own key
+// `['artwork', id]` — consumed TWICE (the row of badges on the top card and the
+// gallery in rows), which TanStack Query dedupes into a single round trip. Changing the artwork
+// (prefer/download/remove) invalidates THIS key (the gallery/badges reflect it), AND
+// `['entity', id]` + `['entities']` (the poster of the detail and of the grid follow the new
+// precedence), like the asset gallery.
 export function artworkQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['artwork', id],
@@ -300,12 +300,12 @@ export function artworkQueryOptions(id: string) {
   })
 }
 
-// Histórico de consumo (briefing 0092/0094, ADR-0022). Eventos brutos, mais
-// recente primeiro (`kind` opcional filtra; ausente traz todos). Chave própria
-// `['historico', id, 'eventos', kind]` — SOB o prefixo `['historico', id]`, para
-// uma invalidação por `['historico', id]` (após criar/apagar evento) derrubar
-// de uma vez esta chave E `historicoEstadoQueryOptions` abaixo, sem enumerar
-// `kind`s nem duplicar a chamada de invalidação.
+// Consumption history. Raw events, most
+// recent first (`kind` optional filters; absent brings all). Its own key
+// `['historico', id, 'eventos', kind]` — UNDER the prefix `['historico', id]`, so that
+// an invalidation by `['historico', id]` (after creating/deleting an event) drops
+// at once this key AND `historicoEstadoQueryOptions` below, without enumerating
+// `kind`s nor duplicating the invalidation call.
 export function historicoEventosQueryOptions(id: string, kind?: string) {
   return queryOptions({
     queryKey: ['historico', id, 'eventos', kind ?? null],
@@ -313,10 +313,10 @@ export function historicoEventosQueryOptions(id: string, kind?: string) {
   })
 }
 
-// Estado atual derivado do histórico, por kind (0092) — alimenta o selo
-// "Assistido" do hero (kind="assistir"). Chave `['historico', id, 'estado']`,
-// mesmo prefixo `['historico', id]` da query de eventos acima (mesma
-// invalidação após criar/apagar).
+// Current state derived from the history, per kind — it feeds the
+// "Assistido" badge of the hero (kind="assistir"). Key `['historico', id, 'estado']`,
+// the same prefix `['historico', id]` as the event query above (same
+// invalidation after creating/deleting).
 export function historicoEstadoQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['historico', id, 'estado'],
@@ -324,10 +324,10 @@ export function historicoEstadoQueryOptions(id: string) {
   })
 }
 
-// Lista GLOBAL de eventos órfãos (briefing 0099), tela `/dashboard/historico-
-// orfaos`. Chave própria `['historico', 'orfaos', params]` — FORA do prefixo
-// `['historico', id]` acima (é uma lista global, não de uma entity), então a
-// invalidação por-entity não precisa (nem deveria) tocar aqui.
+// GLOBAL list of orphan events, screen `/dashboard/historico-
+// orfaos`. Its own key `['historico', 'orfaos', params]` — OUTSIDE the prefix
+// `['historico', id]` above (it is a global list, not of one entity), so the
+// per-entity invalidation does not need to (nor should) touch it.
 export function historicoOrfaosQueryOptions(params: HistoricoOrfaoListParams) {
   return queryOptions({
     queryKey: ['historico', 'orfaos', params],
@@ -335,18 +335,18 @@ export function historicoOrfaosQueryOptions(params: HistoricoOrfaoListParams) {
   })
 }
 
-// Busca unificada (0015). A chave carrega termo+tipo+idioma para cachear por
-// consulta: a mesma busca em idiomas diferentes tem resultados externos distintos.
-// `enabled: q !== ''` impede o disparo enquanto o input está vazio (estado
-// inicial/instrução) — o componente já debounce o termo antes de chegar aqui.
+// Unified search. The key carries term+type+language to cache per
+// query: the same search in different languages has distinct external results.
+// `enabled: q !== ''` prevents it firing while the input is empty (initial/
+// instruction state) — the component already debounces the term before it gets here.
 export function searchQueryOptions(
   q: string,
   type?: string,
   lang?: string,
   include?: string[],
 ) {
-  // `include` entra ORDENADO na chave para o cache ser estável (mesma seleção de
-  // sub-nós = mesma chave, independente da ordem em que os toggles foram ligados).
+  // `include` enters the key SORTED so that the cache is stable (same selection of
+  // sub-nodes = same key, regardless of the order in which the toggles were turned on).
   const inc = include && include.length > 0 ? [...include].sort() : null
   return queryOptions({
     queryKey: ['search', q, type ?? null, lang ?? null, inc],
@@ -355,11 +355,11 @@ export function searchQueryOptions(
   })
 }
 
-// Detalhe externo rico (0022/0023). A chave carrega `(source, type, id, lang)`:
-// o idioma entra na chave porque a MESMA tela em idiomas diferentes é conteúdo
-// diferente (mesma lição da busca) — trocar o idioma é cache-miss = re-busca por
-// `?lang=`. Cada item externo visitado (inclusive similares/coleção navegados)
-// cacheia sob sua própria chave. `lang ?? null` mantém a chave estável.
+// Rich external detail. The key carries `(source, type, id, lang)`:
+// the language enters the key because the SAME screen in different languages is different
+// content (the same lesson as the search) — switching the language is a cache miss = re-fetch by
+// `?lang=`. Each external item visited (including similars/collection navigated)
+// caches under its own key. `lang ?? null` keeps the key stable.
 export function externalDetailQueryOptions(
   source: string,
   type: string,
@@ -372,9 +372,9 @@ export function externalDetailQueryOptions(
   })
 }
 
-// Coleção externa como página (0024). A chave carrega `(source, id, lang)` — o
-// idioma entra na chave (mesma lição do detalhe externo): a mesma coleção em idiomas
-// diferentes é conteúdo diferente. `lang ?? null` mantém a chave estável.
+// External collection as a page. The key carries `(source, id, lang)` — the
+// language enters the key (the same lesson as the external detail): the same collection in different
+// languages is different content. `lang ?? null` keeps the key stable.
 export function collectionDetailQueryOptions(
   source: string,
   id: string,
@@ -386,9 +386,9 @@ export function collectionDetailQueryOptions(
   })
 }
 
-// Álbum externo como página (0115 Parte 2, ADR-0029): faixas oficiais do release
-// + internal_id das já catalogadas ("faixas faltando"). Mesma lição de chave de
-// collectionDetailQueryOptions acima: `(source, id, lang)`, idioma na chave.
+// External album as a page (ADR-0029): official tracks of the release
+// + internal_id of the already cataloged ones ("faixas faltando"). Same key lesson as
+// collectionDetailQueryOptions above: `(source, id, lang)`, language in the key.
 export function externalAlbumQueryOptions(
   source: string,
   id: string,
@@ -400,8 +400,8 @@ export function externalAlbumQueryOptions(
   })
 }
 
-// Pessoa deduplicada + filmografia (0029, fase D). Chave própria `['person', id]` —
-// read-only nesta fase, sem invalidação (a pessoa não é editável pela UI).
+// Deduplicated person + filmography (phase D). Its own key `['person', id]` —
+// read-only in this phase, without invalidation (the person is not editable through the UI).
 export function personQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['person', id],
@@ -409,26 +409,26 @@ export function personQueryOptions(id: string) {
   })
 }
 
-// Fila de revisão (0018). Chave própria `['review']` — invalidada após confirmar
-// ou corrigir um match (junto de `['entities']` e `['entity', id]`, que também
-// mudam de estado). Query enxuta (array de cards), sem params.
+// Review queue. Its own key `['review']` — invalidated after confirming
+// or correcting a match (together with `['entities']` and `['entity', id]`, which also
+// change state). A lean query (array of cards), without params.
 export const reviewQueueQueryOptions = queryOptions({
   queryKey: ['review'],
   queryFn: getReviewQueue,
 })
 
-// Fila de órfãs (0018). Chave `['orphans']` — invalidada após purgar (individual
-// ou lote), junto de `['entities']` (o card some do grid também).
+// Orphan queue. Key `['orphans']` — invalidated after purging (individual
+// or batch), together with `['entities']` (the card also disappears from the grid).
 export const orphansQueryOptions = queryOptions({
   queryKey: ['orphans'],
   queryFn: getOrphans,
 })
 
-// Prévia de candidato por card da fila de revisão (0060). Chave `['match-preview',
-// id]` — um `useQuery` por `ReviewCard` ao montar (não lazy; ver briefing §6, um
-// request por card é aceitável para o volume da fila). Sem invalidação própria: o
-// card some da fila (e a query junto) assim que `confirm`/`confirm-candidate`
-// resolve, via `invalidarRevisao` do ['review'].
+// Candidate preview per card of the review queue. Key `['match-preview',
+// id]` — one `useQuery` per `ReviewCard` on mount (not lazy; see §6, one
+// request per card is acceptable for the volume of the queue). Without its own invalidation: the
+// card disappears from the queue (and the query with it) as soon as `confirm`/`confirm-candidate`
+// resolves, via `invalidarRevisao` of ['review'].
 export function matchPreviewQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['match-preview', id],
@@ -436,9 +436,9 @@ export function matchPreviewQueryOptions(id: string) {
   })
 }
 
-// Status do scan com POLLING: enquanto `running`, o TanStack Query re-busca a
-// cada 1,5s; ao concluir, `refetchInterval` devolve `false` e o polling para
-// sozinho (decisão de sessão — §6 do 0011: polling, não websocket).
+// Scan status with POLLING: while `running`, TanStack Query re-fetches
+// every 1.5s; when it finishes, `refetchInterval` returns `false` and the polling stops
+// on its own (session decision — §6: polling, not websocket).
 export function scanStatusQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['scan', id],
@@ -447,10 +447,10 @@ export function scanStatusQueryOptions(id: string) {
   })
 }
 
-// Jobs (0052, fundação). Chave própria `['jobs']` — invalidada após PATCH
-// (habilitar/agendar) e após disparar `run`. POLLING leve enquanto ALGUM job da
-// lista está `running` (o card em "rodando…" sai sozinho sem o dono recarregar);
-// para quando nenhum estiver, evitando poll para sempre (mesmo espírito do scan).
+// Jobs (foundation). Its own key `['jobs']` — invalidated after PATCH
+// (enable/schedule) and after firing `run`. Light POLLING while ANY job of the
+// list is `running` (the card in "rodando…" disappears on its own without the owner reloading);
+// it stops when none is, avoiding polling forever (same spirit as the scan).
 export const jobsQueryOptions = queryOptions({
   queryKey: ['jobs'],
   queryFn: listJobs,
@@ -458,10 +458,10 @@ export const jobsQueryOptions = queryOptions({
     query.state.data?.some((job) => job.running) ? 4000 : false,
 })
 
-// Histórico paginado de execuções de UM job (0052). Chave sob `['job', id,
-// 'executions', ...]` — invalidada após disparar `run` daquele job (uma nova
-// linha `running` aparece no topo). `limit`/`before` entram na chave para cachear
-// por página.
+// Paginated history of the executions of ONE job. Key under `['job', id,
+// 'executions', ...]` — invalidated after firing `run` of that job (a new
+// `running` row appears at the top). `limit`/`before` enter the key to cache
+// per page.
 export function jobExecutionsQueryOptions(
   id: string,
   params: JobExecutionsParams = {},

@@ -4,19 +4,19 @@ import { join } from 'node:path'
 import { expect, test } from '../fixtures'
 import { resetBiblioteca } from '../lib/reset'
 
-// Ciclo de arte da entity (briefing 0017, atualizado p/ galeria em lightbox do
-// 0044/0049 e posse do 0062): o dono envia um poster e remove. Aqui a entity so'
-// existe via import por API (sem media_file real), entao "Definir como
-// principal"/"Salvar na pasta" ficam desabilitados (owned=false) -- o fluxo de
-// tornar principal com pasta real ja e' coberto pelo teste seguinte (0062).
-// Cada teste comeca com a biblioteca zerada; so asseracoes de conteudo,
-// web-first (sem sleeps).
+// Art life cycle of the entity (later updated for the lightbox gallery and for
+// ownership): the owner uploads a poster and removes it. Here the entity only
+// exists through an API import (no real media_file), so "Definir como
+// principal"/"Salvar na pasta" stay disabled (owned=false) -- the flow of
+// making it primary with a real folder is already covered by the next test.
+// Each test starts with the library cleared; only content assertions,
+// web-first (no sleeps).
 
 test.beforeEach(async ({ request }) => {
   await resetBiblioteca(request)
 })
 
-// PNG 1x1 valido (magic bytes que o backend aceita) para o upload.
+// Valid 1x1 PNG (magic bytes the backend accepts) for the upload.
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
   'base64',
@@ -26,7 +26,7 @@ test('arte: enviar, preferir e remover na galeria da entity', async ({
   page,
   request,
 }) => {
-  // Importa 603 por API (POST /import devolve a entity com .id) e abre o detalhe.
+  // Imports 603 through the API (POST /import returns the entity with .id) and opens the detail.
   const imp = await request.post('/api/v1/import', {
     data: { source: 'tmdb', source_id: '603', type: 'movie' },
   })
@@ -35,18 +35,19 @@ test('arte: enviar, preferir e remover na galeria da entity', async ({
 
   await page.goto(`/entities/${id}`)
 
-  // Escopo: a secao "Arte" (chrome sempre em pt-BR, independe do idioma de leitura).
+  // Scope: the "Arte" section (the chrome is always in pt-BR, regardless of the reading language).
   const arte = page
     .locator('section')
     .filter({ has: page.getByRole('heading', { name: 'Arte', level: 2 }) })
   await expect(arte.getByRole('heading', { name: 'Arte' })).toBeVisible()
 
-  // Galeria comeca vazia.
+  // The gallery starts empty.
   await expect(arte.getByText('Nenhuma arte disponível ainda.')).toBeVisible()
 
-  // Envia um poster. O tipo ja vem em "Poster" por padrao; o botao "Enviar arte"
-  // dispara um <input type=file> escondido, entao alimentamos o input direto
-  // (setInputFiles funciona em input oculto e exercita o mesmo onChange/upload).
+  // Uploads a poster. The kind already comes as "Poster" by default; the "Enviar
+  // arte" button triggers a hidden <input type=file>, so we feed the input
+  // directly (setInputFiles works on a hidden input and exercises the same
+  // onChange/upload).
   await expect(arte.getByRole('combobox', { name: 'Tipo de arte' })).toHaveValue(
     'poster',
   )
@@ -54,13 +55,13 @@ test('arte: enviar, preferir e remover na galeria da entity', async ({
     .getByLabel('Arquivo de arte')
     .setInputFiles({ name: 'poster.png', mimeType: 'image/png', buffer: PNG })
 
-  // A galeria deixa de estar vazia e mostra 1 card do poster recem-enviado.
+  // The gallery is no longer empty and shows 1 card for the poster just uploaded.
   await expect(arte.getByText('Nenhuma arte disponível ainda.')).toHaveCount(0)
   const cardEnviado = arte.getByRole('button', { name: /^Ver Pôster \d+$/ })
   await expect(cardEnviado).toHaveCount(1)
 
-  // Abre o lightbox: sem media_file real (owned=false), "Definir como principal"
-  // fica desabilitado com tooltip; "Remover" (acao do dono) fica habilitado.
+  // Opens the lightbox: with no real media_file (owned=false), "Definir como
+  // principal" is disabled with a tooltip; "Remover" (owner action) is enabled.
   await cardEnviado.click()
   const definirPrincipal = page.getByRole('button', {
     name: 'Definir como principal',
@@ -69,8 +70,8 @@ test('arte: enviar, preferir e remover na galeria da entity', async ({
   await expect(definirPrincipal).toBeDisabled()
   await expect(page.getByText('principal', { exact: true })).toHaveCount(0)
 
-  // Remover: acao direta (sem confirmacao). Fecha o lightbox e a galeria volta
-  // ao estado vazio.
+  // Remove: direct action (no confirmation). Closes the lightbox and the gallery
+  // goes back to the empty state.
   await page.getByRole('button', { name: 'Remover arte' }).click()
   await expect(arte.getByText('Nenhuma arte disponível ainda.')).toBeVisible()
   await expect(
@@ -78,11 +79,11 @@ test('arte: enviar, preferir e remover na galeria da entity', async ({
   ).toHaveCount(0)
 })
 
-// leSrcDoPosterDoTopo le o `src` do poster do HERO do RichDetailView, ou `null`
-// quando so ha o placeholder (sem arte principal ainda) — helper local porque o
-// teste abaixo precisa comparar o ANTES/DEPOIS independente de o fake provider ja
-// ter uma arte inicial (MYMEDIADB_FAKE_IMAGE_BASE nao esta setado no e2e, entao o
-// poster do TMDB fake normalmente nem existe — ver global-setup.ts).
+// leSrcDoPosterDoTopo reads the `src` of the HERO poster of RichDetailView, or
+// `null` when there is only the placeholder (no primary art yet) — a local helper
+// because the test below needs to compare BEFORE/AFTER regardless of whether the
+// fake provider already has an initial art (MYMEDIADB_FAKE_IMAGE_BASE is not set
+// in e2e, so the fake TMDB poster usually does not even exist — see global-setup.ts).
 async function leSrcDoPosterDoTopo(
   page: import('@playwright/test').Page,
 ): Promise<string | null> {
@@ -93,13 +94,13 @@ async function leSrcDoPosterDoTopo(
   return img.getAttribute('src')
 }
 
-test('definir uma arte como principal materializa na pasta e atualiza o poster do topo (briefing 0062)', async ({
+test('definir uma arte como principal materializa na pasta e atualiza o poster do topo', async ({
   page,
   request,
 }) => {
-  // Materializar/definir-principal exige um media_file 'present' de verdade (a
-  // API grava na pasta REAL) -- semeia uma pasta /tmp com um filme parseavel e
-  // escaneia, como em library.spec.ts (0028), em vez de importar so por API.
+  // Materialize/make-primary requires a real 'present' media_file (the API writes
+  // into the REAL folder) -- so it seeds a /tmp folder with a parseable movie and
+  // scans it, like in library.spec.ts, instead of importing only through the API.
   const dir = mkdtempSync(join(tmpdir(), 'mmdb-e2e-art-'))
   let id = ''
   try {
@@ -132,9 +133,9 @@ test('definir uma arte como principal materializa na pasta e atualiza o poster d
     await page.goto(`/entities/${id}`)
     const srcAntes = await leSrcDoPosterDoTopo(page)
 
-    // Envia um poster do dono (kind ja vem em "Poster" por padrao) -- vira um
-    // candidato NAO principal na galeria, distinto de qualquer poster do fake
-    // provider.
+    // Uploads an owner poster (the kind already comes as "Poster" by default) -- it
+    // becomes a NON-primary candidate in the gallery, distinct from any poster of the
+    // fake provider.
     const arte = page
       .locator('section')
       .filter({ has: page.getByRole('heading', { name: 'Artes', level: 2 }) })
@@ -145,18 +146,18 @@ test('definir uma arte como principal materializa na pasta e atualiza o poster d
       arte.getByRole('button', { name: /^Ver Pôster \d+$/ }).last(),
     ).toBeVisible()
 
-    // Abre o card recem-enviado e define como principal -- PUT prefer direto (ja
-    // e um asset, sem precisar do encadeamento de criar via /artwork/select
-    // primeiro; esse encadeamento e' exercitado nos testes unitarios do
-    // componente).
+    // Opens the card just uploaded and sets it as primary -- direct prefer PUT (it
+    // already is an asset, without needing the chaining of creating it through
+    // /artwork/select first; that chaining is exercised in the unit tests of the
+    // component).
     await arte.getByRole('button', { name: /^Ver Pôster \d+$/ }).last().click()
     await page.getByRole('button', { name: 'Definir como principal' }).click()
     await expect(page.getByText('principal', { exact: true })).toBeVisible()
     await expect(page.getByText('salvo na pasta', { exact: true })).toBeVisible()
     await page.keyboard.press('Escape')
 
-    // O poster do TOPO do RichDetailView reflete a nova arte principal, sem
-    // reload de pagina (criterio de aceite do briefing 0062).
+    // The TOP poster of RichDetailView reflects the new primary art, with no
+    // page reload (acceptance criterion of the artwork cycle).
     await expect
       .poll(() => leSrcDoPosterDoTopo(page))
       .not.toBe(srcAntes)

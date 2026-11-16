@@ -1,18 +1,18 @@
 import type { FieldDescriptor, OverrideBlob } from '@/lib/api'
 
-// Helpers de LEITURA do blob CRU de override (briefing 0016) — sem JSX, para o
-// detalhe e o editor compartilharem a detecção de "editado" POR IDIOMA sem
-// esbarrar na regra react-refresh (que exige que módulos com componentes só
-// exportem componentes).
+// READ helpers for the RAW override blob — no JSX, so the
+// detail page and the editor share the detection of "edited" PER LANGUAGE without
+// tripping the react-refresh rule (which requires modules with components to
+// export only components).
 
-// temOverrideEditado diz se há override NO IDIOMA ATUAL para o campo, lendo o
-// blob CRU. Se o campo é traduzível ou não vem dos DESCRITORES (briefing 0030) —
-// não mais de um booleano hardcoded pelo chamador:
-//   - traduzível → `blob[campo]` é um objeto (mapa por idioma) que TEM a chave
-//     `lang` (mesmo que o valor seja `null` = "definir vazio");
-//   - neutro → a chave `blob[campo]` está presente (um valor para todos os idiomas).
-// Distinto do selo de fallback "em {idioma}" (herdado): herdado × editado são
-// estados diferentes e podem conviver.
+// temOverrideEditado says whether there is an override IN THE CURRENT LANGUAGE for the field, reading the
+// RAW blob. Whether the field is translatable or not comes from the DESCRIPTORS —
+// no longer from a boolean hardcoded by the caller:
+//   - translatable → `blob[campo]` is an object (map by language) that HAS the key
+//     `lang` (even when the value is `null` = "set empty");
+//   - neutral → the key `blob[campo]` is present (a single value for all languages).
+// Distinct from the "em {idioma}" fallback badge (inherited): inherited × edited are
+// different states and can coexist.
 export function temOverrideEditado(
   blob: OverrideBlob | undefined,
   campo: string,

@@ -2,9 +2,9 @@ import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
-// Select nativo estilizado — leve, acessível e trivial de testar (userEvent
-// `selectOptions`). Os componentes deste diretório são tratados como gerados
-// (excludes de cobertura / react-refresh, padrão do 0005).
+// Styled native select — lightweight, accessible and trivial to test (userEvent
+// `selectOptions`). The components of this directory are treated as generated
+// (coverage excludes / react-refresh, the standard for UI primitives).
 function Select({ className, ...props }: React.ComponentProps<'select'>) {
   return (
     <select

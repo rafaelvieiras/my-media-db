@@ -34,7 +34,7 @@ function orfa(over: Partial<EntityCard> = {}): EntityCard {
   }
 }
 
-// Par de órfãs (o1/o2) — cenário reusado pelos casos de seleção e lote.
+// Pair of orphans (o1/o2) — scenario reused by the selection and batch cases.
 const DUAS: EntityCard[] = [
   orfa({ id: 'o1', title: 'Órfã Um' }),
   orfa({ id: 'o2', title: 'Órfã Dois' }),
@@ -51,8 +51,8 @@ interface Opcoes {
   batchErro?: { status: number; code: string; message: string }
 }
 
-// Handler de rotas das órfãs: GET /orphans, POST /entities/purge (lote), DELETE
-// /entities/{id} (individual). A ordem checa a purga em lote ANTES do DELETE.
+// Route handler for the orphans: GET /orphans, POST /entities/purge (batch), DELETE
+// /entities/{id} (individual). The order checks the batch purge BEFORE the DELETE.
 function montarFetch(opts: Opcoes, espioes: Espioes) {
   return criarFetch(({ path, method, init }) => {
     if (path === '/api/v1/orphans' && method === 'GET') {
@@ -89,12 +89,12 @@ function renderOrphans(opts: Opcoes = {}) {
   return { espioes, ...renderComEspioes(<OrphansScreen />) }
 }
 
-// Espera a fila aparecer (primeiro card renderizado).
+// Waits for the queue to appear (first card rendered).
 function esperarLista() {
   return waitFor(() => expect(screen.getByText('Órfã Um')).toBeInTheDocument())
 }
 
-// Seleciona todas e clica em "Purgar selecionadas" (abre a confirmação em lote).
+// Selects all and clicks "Purgar selecionadas" (opens the batch confirmation).
 async function abrirConfirmacaoLote(user: UserEvent) {
   await user.click(screen.getByLabelText('Selecionar todas'))
   await user.click(screen.getByRole('button', { name: /Purgar selecionadas/ }))
@@ -144,7 +144,7 @@ describe('OrphansScreen — fila de órfãs (0018)', () => {
     const { espioes } = renderOrphans({ cards: [orfa()] })
     await esperarLista()
 
-    // 1º clique só ABRE a confirmação — não chama a API.
+    // The 1st click only OPENS the confirmation — it does not call the API.
     await abrirConfirmacaoLote(user)
     expect(screen.getByText(/Tem certeza\?/)).toBeInTheDocument()
     expect(espioes.onBatch).not.toHaveBeenCalled()
@@ -156,7 +156,7 @@ describe('OrphansScreen — fila de órfãs (0018)', () => {
     await esperarLista()
 
     await abrirConfirmacaoLote(user)
-    // 2º passo: confirma de fato.
+    // 2nd step: it actually confirms.
     await user.click(screen.getByRole('button', { name: 'Confirmar purga' }))
 
     await waitFor(() =>
@@ -184,14 +184,14 @@ describe('OrphansScreen — fila de órfãs (0018)', () => {
     })
     await esperarLista()
 
-    // 1º clique no card só abre a confirmação.
+    // The 1st click on the card only opens the confirmation.
     await user.click(screen.getByRole('button', { name: 'Purgar Órfã Um' }))
     expect(espioes.onDelete).not.toHaveBeenCalled()
     expect(
       screen.getByText('Remove este item e não pode ser desfeito.'),
     ).toBeInTheDocument()
 
-    // 2º passo: confirma.
+    // 2nd step: it confirms.
     await user.click(screen.getByRole('button', { name: 'Confirmar purga' }))
     await waitFor(() => expect(espioes.onDelete).toHaveBeenCalledWith('o1'))
     await esperarChaves(invalidateSpy, CHAVES_ORFAS)

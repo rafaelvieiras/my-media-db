@@ -12,9 +12,9 @@ import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 import { corpoEnviado, stubRota } from '@/test/stub-fetch'
 
-// Testa o editor de créditos (briefing 0029 Fase C): reordena/remove/edita/adiciona
-// elenco/equipe/produtoras localmente e monta o patch DELTA (só as chaves do kind
-// que mudou) via PATCH /entities/{id}/override.
+// Tests the credits editor: it reorders/removes/edits/adds
+// cast/crew/production companies locally and builds the DELTA patch (only the keys of the kind
+// that changed) via PATCH /entities/{id}/override.
 
 function cast(over: Partial<CreditCast> = {}): CreditCast {
   return {
@@ -40,9 +40,9 @@ function company(over: Partial<CreditCompany> = {}): CreditCompany {
   return { source_id: '100', name: 'StudioX', ...over }
 }
 
-// doisAtores é o elenco de duas pessoas reusado pelos testes de reordenação
-// (setas e em lote, briefing 0076) — evita repetir a mesma dupla Ana/Beto em
-// cada teste.
+// doisAtores is the two-person cast reused by the reordering tests
+// (arrows and batch) — it avoids repeating the same Ana/Beto pair in
+// every test.
 function doisAtores(): CreditCast[] {
   return [
     cast({ source_id: '1', name: 'Ana' }),
@@ -50,9 +50,9 @@ function doisAtores(): CreditCast[] {
   ]
 }
 
-// renderEditor monta o CreditsEditor com os créditos informados (as chaves
-// ausentes viram `[]`) — elimina o bloco repetido de renderWithClient/props
-// fixas (id/lang/blob) em cada teste.
+// renderEditor mounts the CreditsEditor with the given credits (the absent
+// keys become `[]`) — it eliminates the repeated block of renderWithClient/fixed
+// props (id/lang/blob) in every test.
 function renderEditor(
   entity: Partial<Pick<ResolvedEntity, 'cast' | 'crew' | 'companies'>>,
   blob: OverrideBlob = {},
@@ -67,7 +67,7 @@ function renderEditor(
   )
 }
 
-// patchOverride roteia o PATCH /entities/{id}/override para `resp`.
+// patchOverride routes the PATCH /entities/{id}/override to `resp`.
 const patchOverrideRota = (resp: () => Response) =>
   stubRota((p, m) => /\/override(\?|$)/.test(p) && m === 'PATCH', resp)
 
@@ -111,8 +111,8 @@ describe('CreditsEditor', () => {
     renderEditor({
       cast: [...doisAtores(), cast({ source_id: '3', name: 'Carla' })],
     })
-    // Carla (3ª posição) vai para a posição 1 num único passo, sem um clique por
-    // posição intermediária.
+    // Carla (3rd position) goes to position 1 in a single step, without one click per
+    // intermediate position.
     const campo = screen.getByLabelText('Mover Carla para a posição (de 3)')
     fireEvent.change(campo, { target: { value: '1' } })
     fireEvent.blur(campo)
@@ -330,8 +330,8 @@ describe('CreditsEditor', () => {
   })
 })
 
-// Guard de "sair sem salvar" (0073): onDirtyChange reflete a MESMA regra usada
-// para montar o patch por kind (reorder/edit/remove/add) — só na transição.
+// "Leave without saving" guard: onDirtyChange reflects the SAME rule used
+// to build the patch per kind (reorder/edit/remove/add) — only on the transition.
 describe('CreditsEditor — onDirtyChange (0073)', () => {
   function renderEditorComOnDirtyChange(
     entity: Partial<Pick<ResolvedEntity, 'cast' | 'crew' | 'companies'>>,

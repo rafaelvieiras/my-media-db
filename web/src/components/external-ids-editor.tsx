@@ -5,25 +5,25 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ApiError, enrichEntity, updateExternalIds } from '@/lib/api'
 
-// Uma linha editável da identidade externa: fonte (ex.: tmdb) + id NA FONTE. `key` é
-// só para o React reconciliar as linhas ao adicionar/remover (não vai para a API).
+// An editable row of the external identity: source (e.g. tmdb) + id IN THE SOURCE. `key` is
+// only for React to reconcile the rows when adding/removing (it does not go to the API).
 interface Linha {
   key: number
   source: string
   value: string
 }
 
-// linhasDe transforma o mapa `external_ids` atual em linhas ordenadas por fonte
-// (estável), cada uma com uma `key` própria.
+// linhasDe turns the current `external_ids` map into rows ordered by source
+// (stable), each one with its own `key`.
 function linhasDe(externalIds: Record<string, string>): Linha[] {
   return Object.entries(externalIds)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([source, value], i) => ({ key: i, source, value }))
 }
 
-// mapaDe monta o `{source: id}` a enviar: só linhas com fonte não-vazia; a última
-// ocorrência de uma fonte repetida vence. O id vazio é MANTIDO (o backend o trata como
-// "remover esta fonte" no full replace).
+// mapaDe builds the `{source: id}` to send: only rows with a non-empty source; the last
+// occurrence of a repeated source wins. An empty id is KEPT (the backend treats it as
+// "remove this source" in the full replace).
 function mapaDe(linhas: Linha[]): Record<string, string> {
   const out: Record<string, string> = {}
   for (const l of linhas) {
@@ -35,20 +35,20 @@ function mapaDe(linhas: Linha[]): Record<string, string> {
   return out
 }
 
-// mapaChave normaliza um mapa {source: id} numa string comparável (ordem de
-// chaves não importa) — usada para detectar o estado "sujo" (0073).
+// mapaChave normalizes a {source: id} map into a comparable string (the order of
+// the keys does not matter) — used to detect the "dirty" state.
 function mapaChave(mapa: Record<string, string>): string {
   return JSON.stringify(
     Object.entries(mapa).sort(([a], [b]) => a.localeCompare(b)),
   )
 }
 
-// ExternalIdsEditor edita a IDENTIDADE EXTERNA da entity (`external_ids`, MD4, 0027): o
-// dono fixa qual id de cada fonte a entity usa — base para sincronizar no futuro (os ids
-// da fonte podem mudar, ou o item ser substituído por outro). Full replace: salvar grava
-// o mapa inteiro; deixar um id em branco remove aquela fonte. Ao salvar, re-resolve a
-// entity (invalida `['entity', id]`) e a lista (as colunas geradas mudam). Vale para
-// qualquer type (é identidade). Erro (ApiError) inline.
+// ExternalIdsEditor edits the EXTERNAL IDENTITY of the entity (`external_ids`, MD4): the
+// owner fixes which id of each source the entity uses — the basis for synchronizing in the future (the ids
+// of the source may change, or the item may be replaced by another one). Full replace: saving writes
+// the whole map; leaving an id blank removes that source. On save, it re-resolves the
+// entity (it invalidates `['entity', id]`) and the list (the generated columns change). It applies to
+// any type (it is identity). Error (ApiError) inline.
 export function ExternalIdsEditor({
   id,
   externalIds,
@@ -56,18 +56,18 @@ export function ExternalIdsEditor({
 }: {
   id: string
   externalIds: Record<string, string>
-  // Guard de "sair sem salvar" (0073): chamado só na transição do estado sujo.
+  // "Leave without saving" guard: called only on the transition of the dirty state.
   onDirtyChange?: (sujo: boolean) => void
 }) {
   const queryClient = useQueryClient()
   const [linhas, setLinhas] = useState<Linha[]>(() => linhasDe(externalIds))
   const [proximaKey, setProximaKey] = useState(() => linhas.length)
-  // Baseline do que está gravado (carregado ou salvo com sucesso) — comparado
-  // com o mapa atual para saber se há algo sujo (0073).
+  // Baseline of what is stored (loaded or successfully saved) — compared
+  // with the current map to know whether there is something dirty.
   const [salvo, setSalvo] = useState(() => mapaDe(linhasDe(externalIds)))
-  // Avisa quando a gravação da identidade fundiu uma duplicata automaticamente
-  // (0051) — a entity sem investimento do dono some sozinha, sem o dono precisar
-  // caçá-la na biblioteca.
+  // Warns when the write of the identity merged a duplicate automatically
+  // — the entity without investment from the owner disappears on its own, without the owner having to
+  // hunt for it in the library.
   const [avisoFusao, setAvisoFusao] = useState(false)
 
   const sujo = useMemo(
@@ -94,11 +94,11 @@ export function ExternalIdsEditor({
     },
   })
 
-  // Salva os ids E, em sucesso, re-enriquece pela fonte (0027): fecha o ciclo de
-  // sincronização num clique — grava a identidade e já puxa os dados da fonte pelo id
-  // recém-fixado (o enrich sem corpo lê `external_ids[tmdb]` da entity, por isso salva
-  // ANTES). Uma falha do enrich (ex.: id não é da fonte) aparece inline, mas os ids já
-  // ficaram salvos.
+  // Saves the ids AND, on success, re-enriches through the source: it closes the
+  // synchronization cycle in one click — it writes the identity and already fetches the source data by the
+  // newly fixed id (the enrich without a body reads `external_ids[tmdb]` of the entity, which is why it saves
+  // BEFORE). A failure of the enrich (e.g. the id is not from the source) appears inline, but the ids are already
+  // saved.
   const sincronizar = useMutation({
     mutationFn: async (mapa: Record<string, string>) => {
       const resultado = await updateExternalIds(id, mapa)
@@ -130,10 +130,10 @@ export function ExternalIdsEditor({
     setProximaKey((k) => k + 1)
   }
 
-  // Guard (0098): salvar um mapa vazio é um PUT de full-replace que zera a
-  // identidade da entity. Só pede confirmação quando é uma REMOÇÃO líquida
-  // (havia algo salvo antes) — um item que nunca teve id nenhum pode salvar
-  // vazio sem aviso, não é uma remoção.
+  // Guard: saving an empty map is a full-replace PUT that wipes the
+  // identity of the entity. It only asks for confirmation when it is a NET REMOVAL
+  // (there was something saved before) — an item that never had any id can save
+  // empty without warning, it is not a removal.
   function confirmarSeVazio(mapaNovo: Record<string, string>): boolean {
     const removendoTudo =
       Object.keys(mapaNovo).length === 0 && Object.keys(salvo).length > 0

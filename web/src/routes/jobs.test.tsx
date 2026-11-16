@@ -11,9 +11,9 @@ import {
   renderComEspioes,
 } from '@/test/harness'
 
-// Testes da tela `/jobs` (0052): lista os jobs conhecidos, toggle
-// habilitado/desabilitado, agendamento cron editável (com 422 inline), disparo
-// manual ("Executar agora") e histórico expansível por card.
+// Tests of the `/jobs` screen: it lists the known jobs, enable/disable
+// toggle, editable cron schedule (with an inline 422), manual
+// trigger ("Executar agora") and expandable history per card.
 
 function jobFixture(over: Partial<JobDefinition> = {}): JobDefinition {
   return {
@@ -42,9 +42,9 @@ interface Opcoes {
   executions?: JobExecution[]
 }
 
-// Handler de rotas dos jobs: GET /jobs, PATCH /jobs/{id}, POST /jobs/{id}/run,
-// GET /jobs/{id}/executions. Guarda o job num closure mutável para o PATCH/run
-// refletirem no próximo GET /jobs (o mesmo espírito do refetch pós-invalidação).
+// Route handler for the jobs: GET /jobs, PATCH /jobs/{id}, POST /jobs/{id}/run,
+// GET /jobs/{id}/executions. It keeps the job in a mutable closure so that PATCH/run
+// are reflected in the next GET /jobs (the same spirit as the refetch after invalidation).
 function montarFetch(opts: Opcoes, espioes: Espioes) {
   let job = opts.job ?? jobFixture()
   return criarFetch(({ path, method, init }) => {

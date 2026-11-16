@@ -24,24 +24,24 @@ import {
   type ResolvedEntity,
 } from '@/lib/api'
 
-// CreditsEditor edita ELENCO/EQUIPE/PRODUTORAS (briefing 0029 Fase C): fora do
-// SchemaForm genérico (a chave `credits` foi excluída de `descritoresDeCampo()` de
-// propósito — não é um campo de formulário simples), seguindo o MESMO padrão do
-// ExternalIdsEditor (seção própria, seu próprio estado/mutação/invalidação).
+// CreditsEditor edits CAST/CREW/PRODUCTION COMPANIES: outside the
+// generic SchemaForm (the `credits` key was excluded from `descritoresDeCampo()`
+// on purpose — it is not a simple form field), following the SAME pattern as
+// ExternalIdsEditor (a section of its own, its own state/mutation/invalidation).
 //
-// Leitura: a lista RESOLVIDA (`entity.cast/crew/companies`) já reflete qualquer
-// override existente — é a base do estado local editável.
-// Escrita: `PATCH /override` com a chave `credits` (campo NEUTRO, ignora `lang`),
-// segregada por kind (`cast`/`crew`/`companies`), cada bloco com as operações
-// `reorder`/`remove`/`edit`/`add`. Como o PATCH substitui o bloco do kind inteiro
-// (não funde operação a operação), lemos o override JÁ GRAVADO (`blob`) para
-// mesclar `remove`/`edit`/`add` de sessões anteriores por baixo do que mudou agora
-// — só assim uma edição nova não apaga uma edição antiga do mesmo kind.
-// "Limpar todos os créditos" é `DELETE /override/credits` (volta a herdar da fonte).
+// Read: the RESOLVED list (`entity.cast/crew/companies`) already reflects any
+// existing override — it is the base of the editable local state.
+// Write: `PATCH /override` with the `credits` key (a NEUTRAL field, it ignores `lang`),
+// segregated by kind (`cast`/`crew`/`companies`), each block with the operations
+// `reorder`/`remove`/`edit`/`add`. Since the PATCH replaces the whole block of the kind
+// (it does not merge operation by operation), we read the ALREADY STORED override (`blob`) to
+// merge `remove`/`edit`/`add` from previous sessions underneath what changed now
+// — that is the only way a new edit does not erase an old edit of the same kind.
+// "Limpar todos os créditos" is `DELETE /override/credits` (it inherits from the source again).
 
-// Chave de negócio do crédito (a MESMA convenção do backend/provider): `source_id`
-// para cast/companies; `source_id + "|" + job` para crew (um membro pode ter dois
-// cargos com o mesmo `source_id`).
+// Business key of the credit (the SAME convention as the backend/provider): `source_id`
+// for cast/companies; `source_id + "|" + job` for crew (a member may have two
+// roles with the same `source_id`).
 function chaveCast(sourceId: string): string {
   return sourceId
 }
@@ -50,10 +50,10 @@ function chaveCrew(sourceId: string, job: string): string {
 }
 
 interface LinhaBase {
-  // Identidade só do React (nunca enviada à API).
+  // React-only identity (never sent to the API).
   id: string
-  // Chave de negócio na fonte/override já gravado; `null` = crédito novo desta
-  // sessão de edição (ainda não existe no lado do servidor).
+  // Business key in the source/override already stored; `null` = new credit of this
+  // editing session (it does not exist on the server side yet).
   chaveOriginal: string | null
 }
 
@@ -114,9 +114,9 @@ function linhaDeCompany(c: CreditCompany): LinhaCompany {
   }
 }
 
-// Forma de um bloco por kind dentro do patch `credits` (ver OverridePatch no
-// openapi.yaml). Tipada aqui localmente — o schema é `additionalProperties: true`
-// (forma livre), então os tipos gerados não a descrevem.
+// Shape of a block per kind inside the `credits` patch (see OverridePatch in
+// openapi.yaml). Typed here locally — the schema is `additionalProperties: true`
+// (free shape), so the generated types do not describe it.
 interface BlocoPatch {
   reorder?: string[]
   remove?: string[]
@@ -135,22 +135,22 @@ function uniq(valores: string[]): string[] {
 }
 
 interface ConfigDiff<L extends LinhaBase & { source_id: string }> {
-  // Campos editáveis atuais da linha, como texto (só os comparados no diff).
+  // Current editable fields of the row, as text (only the ones compared in the diff).
   camposEditaveis: (linha: L) => Record<string, string>
-  // Chave de negócio calculada a partir dos campos ATUAIS (linhas novas e o
-  // `reorder`, que referencia créditos novos pela chave que eles próprios definem).
+  // Business key computed from the CURRENT fields (new rows and the
+  // `reorder`, which references new credits by the key they define themselves).
   chaveAtual: (linha: L) => string
-  // Chave de negócio de um item de `add` já gravado (lido do blob), para saber se
-  // ele sobrevive a um `remove` desta sessão.
+  // Business key of an `add` item already stored (read from the blob), to know whether
+  // it survives a `remove` of this session.
   chaveDoAdd: (item: Record<string, string>) => string
-  // Payload de `add` para uma linha nova.
+  // Payload of `add` for a new row.
   montarAdd: (linha: L) => Record<string, string>
 }
 
-// Resultado de comparar o estado inicial (resolvido ao abrir) com o atual
-// (editado na tela) — a base tanto de `montarBlocoKind` (monta o patch) quanto
-// do estado "sujo" (0073, só precisa de `mudou`), para não duplicar a
-// comparação campo a campo entre as duas necessidades.
+// Result of comparing the initial state (resolved on open) with the current
+// one (edited on screen) — the base of both `montarBlocoKind` (it builds the patch) and
+// of the "dirty" state (it only needs `mudou`), so as not to duplicate the
+// field-by-field comparison between the two needs.
 interface DiffKind {
   removidosAgora: string[]
   editadosAgora: Record<string, Record<string, string>>
@@ -218,8 +218,8 @@ function diffKind<L extends LinhaBase & { source_id: string }>(
   }
 }
 
-// algoMudouKind é o estado "sujo" (0073) de um kind: `true` se há reorder/edit/
-// remove/add pendente desde o estado inicial.
+// algoMudouKind is the "dirty" state of a kind: `true` if there is a pending reorder/edit/
+// remove/add since the initial state.
 function algoMudouKind<L extends LinhaBase & { source_id: string }>(
   inicial: L[],
   atual: L[],
@@ -228,12 +228,12 @@ function algoMudouKind<L extends LinhaBase & { source_id: string }>(
   return diffKind(inicial, atual, cfg).mudou
 }
 
-// montarBlocoKind monta o bloco de patch do kind a partir do diff, já mesclado
-// com o que já estava gravado (`anterior`, do blob) — remove/edit/add
-// anteriores que esta sessão não tocou seguem adiante; o `reorder` é sempre a
-// ordem final completa (não precisa mesclar: já reflete a ordem herdada mais
-// o que o dono mudou agora). `undefined` = nada mudou nesse kind — a chave
-// fica de fora do patch (herda).
+// montarBlocoKind builds the patch block of the kind from the diff, already merged
+// with what was already stored (`anterior`, from the blob) — previous remove/edit/add
+// that this session did not touch go forward; the `reorder` is always the
+// complete final order (it needs no merging: it already reflects the inherited order plus
+// what the owner changed now). `undefined` = nothing changed in that kind — the key
+// stays out of the patch (it inherits).
 function montarBlocoKind<L extends LinhaBase & { source_id: string }>(
   inicial: L[],
   atual: L[],
@@ -306,11 +306,11 @@ function moverItem<T>(lista: T[], indice: number, direcao: -1 | 1): T[] {
   return copia
 }
 
-// moverParaIndice reordena em LOTE (briefing 0076): tira o item de `indice` e o
-// reinsere em `destino` (ambos 0-based), preservando a ordem relativa dos demais —
-// a mesma mecânica de `moverItem`, generalizada para qualquer distância (não só um
-// passo). `destino` fora dos limites é grampeado, então "mover para 1" ou um número
-// maior que o total sempre aterrissa numa posição válida.
+// moverParaIndice reorders in BATCH: it removes the item from `indice` and
+// reinserts it at `destino` (both 0-based), preserving the relative order of the others —
+// the same mechanics as `moverItem`, generalized to any distance (not just one
+// step). A `destino` outside the bounds is clamped, so "move to 1" or a number
+// greater than the total always lands on a valid position.
 function moverParaIndice<T>(lista: T[], indice: number, destino: number): T[] {
   const destinoValido = Math.max(0, Math.min(lista.length - 1, destino))
   if (destinoValido === indice) return lista
@@ -331,7 +331,7 @@ export function CreditsEditor({
   lang: string
   entity: Pick<ResolvedEntity, 'cast' | 'crew' | 'companies'>
   blob: OverrideBlob
-  // Guard de "sair sem salvar" (0073): chamado só na transição do estado sujo.
+  // "Leave without saving" guard: called only on the transition of the dirty state.
   onDirtyChange?: (sujo: boolean) => void
 }) {
   const qc = useQueryClient()
@@ -360,8 +360,8 @@ export function CreditsEditor({
   const [novoCrewCargo, setNovoCrewCargo] = useState('')
   const [novoCompanyNome, setNovoCompanyNome] = useState('')
 
-  // Sujo (0073): mesma regra usada para montar o patch de cada kind — qualquer
-  // reorder/edição/remoção/adição pendente em elenco, equipe ou produtoras.
+  // Dirty: the same rule used to build the patch of each kind — any
+  // pending reorder/edit/removal/addition in cast, crew or production companies.
   const sujo = useMemo(
     () =>
       algoMudouKind(inicialCast, cast, cfgCast) ||
@@ -682,13 +682,13 @@ function BotoesOrdem({
   )
 }
 
-// CampoPosicao é a reordenação EM LOTE (briefing 0076): campo numérico "mover
-// para posição N", ao lado das setas de um passo — mover de 50ª para 1ª exige um
-// número + Enter, não 49 cliques. Mantém texto de edição local (não controlado
-// pelo índice a cada tecla) para o dono poder apagar/digitar livremente; só
-// aplica a reordenação no Enter ou ao perder o foco, e sempre volta a refletir
-// a posição atual (1-based) depois — inclusive quando o valor digitado é
-// inválido ou fora dos limites (`moverParaIndice` grampeia).
+// CampoPosicao is the BATCH reordering: a numeric "move
+// to position N" field, next to the one-step arrows — moving from 50th to 1st requires a
+// number + Enter, not 49 clicks. It keeps the editing text local (not controlled
+// by the index on every keystroke) so the owner can erase/type freely; it only
+// applies the reordering on Enter or when losing focus, and it always goes back to reflecting
+// the current position (1-based) afterwards — including when the typed value is
+// invalid or out of bounds (`moverParaIndice` clamps it).
 function CampoPosicao({
   indice,
   total,
@@ -701,10 +701,10 @@ function CampoPosicao({
   mover: (destino: number) => void
 }) {
   const [texto, setTexto] = useState(String(indice + 1))
-  // Reseta o texto durante a renderização (padrão React p/ "ajustar estado quando
-  // uma prop muda", sem useEffect) quando o índice mudou por fora — reordenação
-  // pelas setas, por outra linha, ou pela própria reordenação que este campo
-  // acabou de disparar.
+  // It resets the text during rendering (React pattern for "adjust state when
+  // a prop changes", without useEffect) when the index changed from the outside — reordering
+  // through the arrows, through another row, or through the reordering that this field
+  // just fired.
   const [indiceRefletido, setIndiceRefletido] = useState(indice)
   if (indice !== indiceRefletido) {
     setIndiceRefletido(indice)
@@ -740,9 +740,9 @@ function CampoPosicao({
   )
 }
 
-// CampoEditavel descreve UM input editável de uma linha de crédito (usado por
-// SecaoCreditos, genérico entre elenco/equipe/produtoras): `character` (cast),
-// `department`+`job` (crew) ou `name` (companies, que não tem "nome fixo").
+// CampoEditavel describes ONE editable input of a credit row (used by
+// SecaoCreditos, generic across cast/crew/production companies): `character` (cast),
+// `department`+`job` (crew) or `name` (companies, which has no "fixed name").
 interface CampoEditavel<L> {
   valor: (l: L) => string
   aoMudar: (l: L, v: string) => L
@@ -751,11 +751,11 @@ interface CampoEditavel<L> {
   className?: string
 }
 
-// SecaoCreditos renderiza UMA seção (Elenco/Equipe/Produtoras): reordenar
-// (↑/↓), os campos editáveis do kind e remover — genérico o suficiente para as
-// 3 seções não duplicarem a mesma estrutura de lista. `mostrarNomeFixo` exibe o
-// nome como rótulo fixo (cast/crew, cujo `name` não é editável aqui) — para
-// companies, o próprio `name` é o único campo editável, então fica `false`.
+// SecaoCreditos renders ONE section (Elenco/Equipe/Produtoras): reorder
+// (↑/↓), the editable fields of the kind and remove — generic enough for the
+// 3 sections not to duplicate the same list structure. `mostrarNomeFixo` shows the
+// name as a fixed label (cast/crew, whose `name` is not editable here) — for
+// companies, the `name` itself is the only editable field, so it stays `false`.
 function SecaoCreditos<
   L extends LinhaBase & { source_id: string; name: string },
 >({
@@ -842,8 +842,8 @@ function SecaoCreditos<
   )
 }
 
-// CampoNovo descreve UM input do formulário "Adicionar X" (genérico entre as 3
-// seções — só muda a quantidade/rótulo dos campos).
+// CampoNovo describes ONE input of the "Adicionar X" form (generic across the 3
+// sections — only the amount/label of the fields changes).
 interface CampoNovo {
   valor: string
   aoMudar: (v: string) => void
@@ -852,8 +852,8 @@ interface CampoNovo {
   className?: string
 }
 
-// FormularioAdicionar é o formulário pequeno no fim de cada seção que acrescenta
-// um crédito CUSTOM (sem provider) à lista local.
+// FormularioAdicionar is the small form at the end of each section that adds
+// a CUSTOM credit (without a provider) to the local list.
 function FormularioAdicionar({
   titulo,
   campos,

@@ -1,10 +1,10 @@
 import type { MouseEventHandler, ReactNode } from 'react'
 
-// LinkMock substitui `<Link>` do TanStack Router nos testes que mockam o módulo
-// inteiro (`vi.mock('@tanstack/react-router', ...)`): repassa `onClick` (guard
-// de "sair sem salvar", 0073/0080) e `aria-current` (seção ativa da sidebar de
-// edição, 0080) — as duas props que essas suítes precisam inspecionar.
-// Compartilhado pelas telas de edição de item para não duplicarem o mesmo mock
+// LinkMock replaces the `<Link>` of TanStack Router in the tests that mock the whole
+// module (`vi.mock('@tanstack/react-router', ...)`): it forwards `onClick` (the
+// "leave without saving" guard) and `aria-current` (active section of the edit
+// sidebar) — the two props those suites need to inspect.
+// Shared by the item edit screens so they do not duplicate the same mock
 // (jscpd).
 export function LinkMock({
   children,

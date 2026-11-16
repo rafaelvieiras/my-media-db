@@ -8,11 +8,11 @@ import { renderWithClient } from '@/test/render'
 import { erroJson } from '@/test/detail-harness'
 import { paginaResposta as page, urlEnviada } from '@/test/stub-fetch'
 
-// Desde o briefing 0114/ADR-0030, o TIPO chega FIXO via prop (`type`) — o
-// grid não lê mais `?type=` da URL nem navega ao trocar de tipo (isso saiu
-// pra `routes/library-browse.tsx`). O `<Link>` só é usado pelo estado vazio
-// ("Ir para Bibliotecas"), mockado como `<a>` simples (mesmo padrão de
-// outros testes deste diretório).
+// Since ADR-0030, the TYPE arrives FIXED via prop (`type`) — the
+// grid no longer reads `?type=` from the URL nor navigates when the type changes (that moved
+// to `routes/library-browse.tsx`). The `<Link>` is only used by the empty state
+// ("Ir para Bibliotecas"), mocked as a plain `<a>` (same pattern as
+// other tests in this directory).
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
 }))

@@ -5,11 +5,11 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
 import { integrationsQueryOptions } from '@/lib/queries'
 import type { IntegrationSummary } from '@/lib/api'
 
-// Rota `/dashboard/integrations` (briefing 0096, segunda metade do épico de
-// Integrações — ADR-0023): lista as integrações registradas no Registry
-// (hoje só TMDB) com o badge `configurada`/`não configurada` já calculado
-// pelo backend (0095) — o front nunca reimplementa essa regra, cada provider
-// tem a sua própria (ex.: TMDB aceita token OU api_key).
+// Route `/dashboard/integrations` (second half of the Integrations
+// epic — ADR-0023): lists the integrations registered in the Registry
+// (today only TMDB) with the `configurada`/`não configurada` badge already computed
+// by the backend — the front never reimplements that rule, each provider
+// has its own (e.g.: TMDB accepts token OR api_key).
 export function IntegrationsListScreen() {
   const { data, isPending, isError, error } = useQuery(integrationsQueryOptions)
 

@@ -6,10 +6,10 @@ import { entidades, entidadeResolvidaPadrao } from '@/test/msw/handlers'
 import { renderRota } from '@/test/route-tree-harness'
 import type { SearchResult } from '@/lib/api'
 
-// Fase 3 (MSW + jsdom, briefing 0068) — jornada #1/#2 do checklist 0028 §7.1 em
-// miniatura, MULTI-TELA de verdade (busca → import → navega ao detalhe), na
-// árvore de rota REAL — o que um teste de componente isolado (Vitest +
-// stub-fetch.ts) não alcança.
+// Phase 3 (MSW + jsdom) — journey #1/#2 of the checklist §7.1 in
+// miniature, a real MULTI-SCREEN flow (search → import → navigate to the detail), on the
+// REAL route tree — something an isolated component test (Vitest +
+// stub-fetch.ts) cannot reach.
 describe('busca → importar (Fase 3)', () => {
   it('busca externa, importa e navega ao detalhe do item importado', async () => {
     const resultadoBusca: SearchResult = {
@@ -30,8 +30,8 @@ describe('busca → importar (Fase 3)', () => {
       external_available: true,
     }
 
-    // Import cria a entity id=42 — semeada em `entidades` para o GET do detalhe
-    // (pós-navegação) encontrar.
+    // The import creates the entity id=42 — seeded in `entidades` so the GET of the detail
+    // (after navigation) finds it.
     entidades.set(
       '42',
       entidadeResolvidaPadrao({ id: '42', title: 'Duna', type: 'movie' }),
@@ -49,7 +49,7 @@ describe('busca → importar (Fase 3)', () => {
     const campo = screen.getByRole('searchbox', { name: 'Buscar título' })
     fireEvent.change(campo, { target: { value: 'duna' } })
 
-    // Debounce real de 350ms (search-panel.tsx) antes do GET /search disparar.
+    // Real 350ms debounce (search-panel.tsx) before the GET /search fires.
     const resultado = await screen.findByText('Duna', undefined, {
       timeout: 2000,
     })
@@ -58,7 +58,7 @@ describe('busca → importar (Fase 3)', () => {
     const botaoImportar = screen.getByRole('button', { name: /Importar/ })
     fireEvent.click(botaoImportar)
 
-    // Navegou para /entities/42 — o título resolvido aparece no detalhe.
+    // It navigated to /entities/42 — the resolved title appears in the detail.
     await waitFor(() => {
       expect(
         screen.getByRole('heading', { level: 1, name: 'Duna' }),

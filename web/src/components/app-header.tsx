@@ -28,17 +28,17 @@ import { entityTypesQueryOptions } from '@/lib/queries'
 import { rotuloTipoPlural } from '@/lib/entity-badges'
 import { tipoParaSlug } from '@/lib/library-slugs'
 
-// Cabeçalho com navegação entre as telas da Fase 2. `activeProps` destaca a rota
-// atual (type-safe pelo router code-based).
+// Header with navigation between the Phase 2 screens. `activeProps` highlights the current
+// route (type-safe through the code-based router).
 const linkBase =
   'rounded-lg px-2.5 py-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
 const linkAtivo = 'bg-muted text-foreground'
 
-// NavLink fatora o padrão repetido dos links de navegação (className condicional
-// ao ícone + activeProps) — cada entrada abaixo era um <Link> quase idêntico,
-// o que o jscpd passou a acusar como duplicação ao crescer para 7 entradas.
-// `onNavigate` é usado só na cópia dentro do menu mobile (0075), para fechar o
-// `Sheet` ao clicar num link — no desktop fica `undefined` e não muda nada.
+// NavLink factors out the repeated pattern of the navigation links (conditional className
+// on the icon + activeProps) — each entry below used to be an almost identical <Link>,
+// which jscpd started flagging as duplication once it grew to 7 entries.
+// `onNavigate` is used only in the copy inside the mobile menu, to close the
+// `Sheet` when a link is clicked — on desktop it stays `undefined` and changes nothing.
 function NavLink({
   to,
   icon: Icon,
@@ -66,20 +66,20 @@ function NavLink({
   )
 }
 
-// BibliotecaNavItem (briefing 0110, atualizado no 0114/ADR-0030) combina o
-// link direto de sempre ("Biblioteca" → `/` sem filtro, comportamento
-// preservado) com um `DropdownMenu` separado (trigger = chevron ao lado do
-// texto) que lista os schemas com dado catalogado (`entityTypesQueryOptions`,
-// mesma fonte do carrossel da home, 0109) e navega direto pra rota dedicada
-// `/library/$entitySlug` daquele tipo (0114 — antes era `?type=X` na própria
-// `/`, que não existe mais). Slug resolvido por `tipoParaSlug`
-// (`library-slugs.ts`, mesmo mapa do link "Ver Todos" do carrossel); um tipo
-// sem slug mapeado (defensivo) some do dropdown em vez de virar link quebrado.
-// Trigger PRÓPRIO (não o texto inteiro) porque o texto precisa continuar
-// navegando direto sem abrir menu — decisão explícita do briefing ("garanta
-// que ainda dá pra ir pra biblioteca sem filtro tão fácil quanto hoje"). O
-// `DropdownMenu` do Radix abre por clique/teclado (não hover), então funciona
-// igual por toque dentro do `Sheet` mobile sem tratamento especial.
+// BibliotecaNavItem (updated in ADR-0030) combines the
+// the usual direct link ("Biblioteca" → `/` without a filter, behavior
+// preserved) with a separate `DropdownMenu` (trigger = chevron next to the
+// text) that lists the schemas with cataloged data (`entityTypesQueryOptions`,
+// same source as the home carousel) and navigates straight to the dedicated
+// route `/library/$entitySlug` of that type (before it was `?type=X` on `/`
+// itself, which no longer exists). The slug is resolved by `tipoParaSlug`
+// (`library-slugs.ts`, the same map as the "Ver Todos" link of the carousel); a type
+// without a mapped slug (defensive) disappears from the dropdown instead of becoming a broken link.
+// Its OWN trigger (not the whole text) because the text has to keep
+// navigating directly without opening a menu — an explicit decision ("make
+// sure you can still get to the library without a filter as easily as today"). The
+// Radix `DropdownMenu` opens by click/keyboard (not hover), so it works
+// the same way by touch inside the mobile `Sheet` without special handling.
 function BibliotecaNavItem({ onNavigate }: { onNavigate?: () => void }) {
   const { data: tipos } = useQuery(entityTypesQueryOptions)
   const itensComSlug = (tipos ?? []).flatMap((tipo) => {
@@ -117,12 +117,12 @@ function BibliotecaNavItem({ onNavigate }: { onNavigate?: () => void }) {
   )
 }
 
-// Lista de navegação reaproveitada pelas DUAS renderizações (nav desktop em
-// linha e conteúdo do `Sheet` mobile) — evita duplicar os `NavLink`s (0075).
-// `onNavigate` fecha o Sheet no mobile; fica `undefined` (no-op) no desktop.
-// As 6 telas de operação/config (Bibliotecas/Revisão/Órfãs/Jobs/Configurações/
-// Saúde) saíram daqui para a sidebar do `DashboardShell` (briefing 0083) — só
-// resta o link único "Dashboard" para a área administrativa.
+// Navigation list reused by BOTH renderings (desktop inline nav and
+// content of the mobile `Sheet`) — avoids duplicating the `NavLink`s.
+// `onNavigate` closes the Sheet on mobile; it stays `undefined` (no-op) on desktop.
+// The 6 operation/config screens (Bibliotecas/Revisão/Órfãs/Jobs/Configurações/
+// Saúde) moved from here to the sidebar of the `DashboardShell` — only
+// the single "Dashboard" link to the administrative area is left.
 function LinksNavegacao({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <>
@@ -138,10 +138,10 @@ function LinksNavegacao({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 export function AppHeader() {
-  // Abaixo do breakpoint `md` (768px), a nav some por trás de um `Sheet`
-  // (0075) — acima disso continua exatamente a linha flex de sempre. O estado
-  // controla o Sheet para fechá-lo ao navegar (senão o painel ficaria aberto
-  // sobre a página seguinte, já que o `AppHeader` é fixo no layout raiz).
+  // Below the `md` breakpoint (768px), the nav disappears behind a `Sheet`
+  // — above it, it stays exactly the usual flex row. The state
+  // controls the Sheet so it closes on navigation (otherwise the panel would stay open
+  // over the next page, since the `AppHeader` is fixed in the root layout).
   const [menuAberto, setMenuAberto] = useState(false)
   const fecharMenu = () => setMenuAberto(false)
 

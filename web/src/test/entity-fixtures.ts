@@ -5,10 +5,10 @@ import type {
   ResolvedEntity,
 } from '@/lib/api'
 
-// Fixtures compartilhadas pelos testes do detalhe da entity (leitura por idioma
-// e editor de override). Centralizar aqui evita duplicar o factory e os helpers
-// de resposta em cada arquivo de teste (a catraca de duplicação é zero). Fora da
-// cobertura (src/test/** é excluído).
+// Fixtures shared by the tests of the entity detail (per-language reading
+// and override editor). Centralizing them here avoids duplicating the factory and the response
+// helpers in every test file (the duplication ratchet is zero). Outside
+// coverage (src/test/** is excluded).
 
 export const settingsPadrao: LanguageSettings = {
   primary: 'pt-BR',
@@ -16,14 +16,14 @@ export const settingsPadrao: LanguageSettings = {
   allowed: ['pt-BR', 'en'],
 }
 
-// Envelope de uma resposta 200 com corpo JSON (o shape mínimo que o cliente lê).
+// Envelope of a 200 response with a JSON body (the minimal shape that the client reads).
 export function okJson<T>(body: T) {
   return { ok: true, status: 200, json: async () => body } as Response
 }
 
-// Descritores canônicos do formulário editorial (briefing 0030), espelhando o que
-// o backend serve em GET /api/v1/schema/entity-fields. Compartilhado pelos testes
-// das rotas de CRUD e do detalhe (selo "editado" lê `translatable` daqui).
+// Canonical descriptors of the editorial form, mirroring what
+// the backend serves in GET /api/v1/schema/entity-fields. Shared by the tests
+// of the CRUD routes and of the detail (the "edited" badge reads `translatable` from here).
 export const descritoresPadrao: FieldDescriptor[] = [
   {
     name: 'title',
@@ -90,17 +90,17 @@ export const descritoresPadrao: FieldDescriptor[] = [
   },
 ]
 
-// Envelope de resposta do endpoint de descritores (`{ fields }`).
+// Response envelope of the descriptors endpoint (`{ fields }`).
 export function okFields() {
   return okJson({ fields: descritoresPadrao })
 }
 
-// respostaComum roteia as rotas AUXILIARES do detalhe da entity (settings, descritores,
-// override vazio, assets e files vazios, tema musical ausente) — o pano de fundo
-// compartilhado por todos os fetchRouter de EntityDetailScreen. Devolve null quando a
-// URL não é auxiliar (o caller trata as rotas específicas: a entity resolvida, membros,
-// episódios). Centraliza o bloco para os testes não o duplicarem (jscpd). Não cobre
-// `/override` com blob custom (o teste que precisa disso trata a rota antes).
+// respostaComum routes the AUXILIARY routes of the entity detail (settings, descriptors,
+// empty override, empty assets and files, absent theme song) — the background
+// shared by every fetchRouter of EntityDetailScreen. It returns null when the
+// URL is not auxiliary (the caller handles the specific routes: the resolved entity, members,
+// episodes). It centralizes the block so the tests do not duplicate it (jscpd). It does not cover
+// `/override` with a custom blob (the test that needs that handles the route before).
 export function respostaComum(u: string): Response | null {
   if (u === '/api/v1/settings/languages') {
     return okJson(settingsPadrao)
@@ -112,8 +112,8 @@ export function respostaComum(u: string): Response | null {
     return okJson({})
   }
   if (u.includes('/theme')) {
-    // Tema musical (0082): HEAD sem theme.* na pasta -> 404 (degradação
-    // graciosa, o player simplesmente não aparece).
+    // Theme song: HEAD without theme.* in the folder -> 404 (graceful
+    // degradation, the player simply does not appear).
     return {
       ok: false,
       status: 404,
@@ -131,13 +131,13 @@ export function respostaComum(u: string): Response | null {
   return respostaHistoricoVazia(u)
 }
 
-// Sub-rota do histórico de consumo (0092/0094): estado vazio (sem selo
-// "Assistido") e sem eventos (sem seção "Histórico") por padrão — o teste que
-// precisa exercitar o histórico em si trata a rota antes (mesmo padrão de
-// `/override`). Extraída à parte (não só embutida em `respostaComum`) porque
-// alguns `fetchRouter` locais (entity-detail.test.tsx,
-// entity-detail-collection.test.tsx) montam o próprio roteamento em vez de
-// chamar `respostaComum` inteiro — reaproveitam só este pedaço (jscpd).
+// Sub-route of the consumption history: empty state (without the
+// "Assistido" badge) and without events (without the "Histórico" section) by default — the test that
+// needs to exercise the history itself handles the route before (same pattern as
+// `/override`). Extracted separately (not just embedded in `respostaComum`) because
+// some local `fetchRouter`s (entity-detail.test.tsx,
+// entity-detail-collection.test.tsx) build their own routing instead of
+// calling the whole `respostaComum` — they reuse only this piece (jscpd).
 export function respostaHistoricoVazia(u: string): Response | null {
   if (u.includes('/historico/estado')) {
     return okJson({ estado: {} })
@@ -148,8 +148,8 @@ export function respostaHistoricoVazia(u: string): Response | null {
   return null
 }
 
-// Asset de teste (arte da galeria, 0017), com sobrescritas pontuais por campo.
-// `is_principal` (briefing 0062) é a fonte de verdade nova — default `false`.
+// Test asset (artwork of the gallery), with occasional per-field overrides.
+// `is_principal` is the new source of truth — default `false`.
 export function baseAsset(over: Partial<Asset> = {}): Asset {
   return {
     id: 'a1',
@@ -162,7 +162,7 @@ export function baseAsset(over: Partial<Asset> = {}): Asset {
   }
 }
 
-// Entity resolvida de teste (Dune), com sobrescritas pontuais por campo.
+// Resolved test entity (Dune), with occasional per-field overrides.
 export function baseEntity(over: Partial<ResolvedEntity> = {}): ResolvedEntity {
   return {
     id: 'e1',
@@ -181,7 +181,7 @@ export function baseEntity(over: Partial<ResolvedEntity> = {}): ResolvedEntity {
     lang: 'pt-BR',
     original_language: 'en',
     resolved_languages: {},
-    // Campos ricos (paridade com o externo, 0022/0023): default vazio/nulo.
+    // Rich fields (parity with the external one): default empty/null.
     tagline: null,
     keywords: [],
     runtime: null,

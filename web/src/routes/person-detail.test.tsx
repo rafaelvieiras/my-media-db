@@ -6,9 +6,9 @@ import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 import { criarFetch } from '@/test/harness'
 
-// Rota `/person/$personId` (0029, fase D): a pessoa deduplicada + filmografia
-// (obras já importadas). `useParams` fixa o id; `Link` vira `<a>` simples (via
-// LinkMock, com params interpolados no href).
+// Route `/person/$personId` (phase D): the deduplicated person + filmography
+// (works already imported). `useParams` fixes the id; `Link` becomes a plain `<a>` (via
+// LinkMock, with params interpolated into the href).
 const spies = vi.hoisted(() => ({
   navigate: vi.fn(),
   back: vi.fn(),
@@ -20,8 +20,8 @@ vi.mock('@tanstack/react-router', async () => {
   return routerMock(spies)
 })
 
-// pessoa é o payload canônico do `GET /person/{id}` (Person, briefing 0029 fase D):
-// `over` sobrescreve só o que o teste precisa (ex.: a filmografia).
+// pessoa is the canonical payload of `GET /person/{id}` (Person, phase D):
+// `over` overrides only what the test needs (e.g. the filmography).
 function pessoa(over: Partial<Person> = {}): Person {
   return {
     id: 'p1',
@@ -34,8 +34,8 @@ function pessoa(over: Partial<Person> = {}): Person {
   }
 }
 
-// creditoBB é o crédito de elenco reusado por vários testes (evita repetir o mesmo
-// literal — a catraca mede duplicação até nos testes). `over` ajusta o que variar.
+// creditoBB is the cast credit reused by several tests (avoids repeating the same
+// literal — the ratchet measures duplication even in the tests). `over` adjusts whatever varies.
 function creditoBB(over: Partial<PersonCredit> = {}): PersonCredit {
   return {
     entity_id: 'e1',
@@ -49,7 +49,7 @@ function creditoBB(over: Partial<PersonCredit> = {}): PersonCredit {
   }
 }
 
-// stubPerson roteia SÓ GET /api/v1/person/{id} com a Response dada.
+// stubPerson routes ONLY GET /api/v1/person/{id} with the given Response.
 function stubPerson(resp: () => Response) {
   vi.stubGlobal(
     'fetch',
@@ -76,7 +76,7 @@ describe('PersonDetailScreen', () => {
     ).toBeTruthy()
     expect(screen.getByText('Breaking Bad: O Filme')).toBeTruthy()
     expect(screen.getByText('Walter White')).toBeTruthy()
-    // O card da filmografia navega ao detalhe INTERNO da entity.
+    // The filmography card navigates to the INTERNAL detail of the entity.
     expect(
       screen.getByRole('link', { name: /Breaking Bad: O Filme/ }),
     ).toHaveAttribute('href', '/entities/e1')
@@ -111,12 +111,12 @@ describe('PersonDetailScreen', () => {
       screen.getByRole('heading', { name: 'Ainda não importados' }),
     ).toBeTruthy()
 
-    // Card importado navega ao detalhe INTERNO da entity.
+    // An imported card navigates to the INTERNAL detail of the entity.
     expect(
       screen.getByRole('link', { name: /Breaking Bad: O Filme/ }),
     ).toHaveAttribute('href', '/entities/e1')
 
-    // Card não importado navega ao detalhe EXTERNO (mesma rota da busca/similares).
+    // A non-imported card navigates to the EXTERNAL detail (same route as search/similars).
     const linkExterno = screen.getByRole('link', {
       name: /Filme Ainda Não Importado \(ainda não importado\)/,
     })

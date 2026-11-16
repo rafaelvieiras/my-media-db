@@ -1,13 +1,13 @@
-// Logos de provedor (briefing 0086): SVGs inline SIMPLES, monocromáticos, sem
-// dependência de rede/CDN/asset binário — reconhecíveis, não pixel-perfect da
-// marca (mesmo espírito de `web/public/icons.svg`, já usado para ícones
-// sociais). `currentColor` herda a cor do texto ao redor — funciona em
-// claro/escuro sem trabalho extra. `aria-hidden` porque o texto acessível
-// (rótulo do provedor) vive no elemento pai (badge/link), não aqui.
+// Provider logos: SIMPLE inline SVGs, monochromatic, without
+// any network/CDN/binary asset dependency — recognizable, not pixel-perfect to the
+// brand (same spirit as `web/public/icons.svg`, already used for social
+// icons). `currentColor` inherits the color of the surrounding text — it works in
+// light/dark without extra work. `aria-hidden` because the accessible text
+// (provider label) lives in the parent element (badge/link), not here.
 
-// LogoBadge é o molde compartilhado pelos 3 logos abaixo: um retângulo
-// arredondado com o rótulo do provedor em maiúsculas dentro — evita
-// duplicar a mesma estrutura de `<svg>` 3 vezes (jscpd).
+// LogoBadge is the template shared by the 3 logos below: a rounded
+// rectangle with the provider label in uppercase inside — it avoids
+// duplicating the same `<svg>` structure 3 times (jscpd).
 function LogoBadge({
   label,
   className,
@@ -15,10 +15,10 @@ function LogoBadge({
   label: string
   className?: string
 }) {
-  // Largura do viewBox cresce com o tamanho do rótulo, para o texto nunca
-  // ficar espremido (TMDB/IMDB têm 4 letras, TVDB também — mas o molde fica
-  // genérico para rótulos maiores no futuro, ex. fontes desconhecidas não
-  // passam por aqui, mas a robustez não custa nada).
+  // The viewBox width grows with the label size, so the text never
+  // gets squeezed (TMDB/IMDB have 4 letters, TVDB too — but the template stays
+  // generic for bigger labels in the future; unknown sources do not
+  // go through here, but the robustness costs nothing).
   const largura = Math.max(34, label.length * 8 + 10)
   return (
     <svg viewBox={`0 0 ${largura} 18`} aria-hidden="true" className={className}>

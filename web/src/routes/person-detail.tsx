@@ -18,20 +18,20 @@ import {
 } from '@/components/query-states'
 import { Badge } from '@/components/ui/badge'
 
-// Rota `/person/$personId`: página MÍNIMA da pessoa (briefing 0029, fase D,
-// interno-first). Cabeçalho com foto + nome (+ link externo pro TMDB quando a fonte é
-// `tmdb`) e DUAS seções de filmografia: "Na sua biblioteca" (0029 fase C, campo
-// `filmography`) — obras JÁ importadas, cada card navega ao detalhe INTERNO da entity —
-// e "Ainda não importados" (0029 fase D, campo `filmography_external`) — obras que o
-// provider trouxe mas ainda não estão no catálogo, cada card navega ao detalhe EXTERNO
-// (`/external/$source/$type/$id`, mesmo destino usado pela busca/similares) para
-// ver/importar. Read-only nesta fase — a pessoa não é catalogada como entity própria,
-// então não há edição aqui (paridade com a leitura de elenco/equipe do detalhe rico).
+// Route `/person/$personId`: MINIMAL person page (phase D,
+// internal-first). Header with photo + name (+ external link to TMDB when the source is
+// `tmdb`) and TWO filmography sections: "Na sua biblioteca" (phase C, field
+// `filmography`) — works ALREADY imported, each card navigates to the INTERNAL detail of the entity —
+// and "Ainda não importados" (phase D, field `filmography_external`) — works that the
+// provider brought but are not in the catalog yet, each card navigates to the EXTERNAL detail
+// (`/external/$source/$type/$id`, the same destination used by the search/similars) to
+// see/import. Read-only in this phase — the person is not cataloged as an entity of its own,
+// so there is no editing here (parity with the cast/crew reading of the rich detail).
 
 const TMDB_PESSOA = 'https://www.themoviedb.org/person/'
 
-// propsDeErro escolhe título/mensagem pelo status HTTP: 404 (pessoa inexistente no
-// catálogo) × demais (genérico).
+// propsDeErro chooses title/message by HTTP status: 404 (person absent from the
+// catalog) × the rest (generic).
 function propsDeErro(error: unknown): { title: string; message?: string } {
   const status = error instanceof ApiError ? error.status : 0
   const message = error instanceof Error ? error.message : undefined
@@ -41,11 +41,11 @@ function propsDeErro(error: unknown): { title: string; message?: string } {
   return { title: 'Não foi possível carregar a pessoa', message }
 }
 
-// papelDoCredito escolhe o texto do papel exibido no card: o PERSONAGEM quando o
-// crédito é de elenco, ou o CARGO (com o departamento como fallback, só existente em
-// PersonCredit) quando é de equipe. Ausente → null (o card some sem a legenda de
-// papel). Tipo estrutural compartilhado pelas duas variantes de crédito (interna e
-// externa), que diferem só na identidade de destino do card.
+// papelDoCredito chooses the text of the role shown on the card: the CHARACTER when the
+// credit is from the cast, or the JOB (with the department as fallback, only existing in
+// PersonCredit) when it is from the crew. Absent → null (the card disappears without the role
+// caption). A structural type shared by the two credit variants (internal and
+// external), which differ only in the destination identity of the card.
 function papelDoCredito(credito: {
   kind: string
   character?: string | null
@@ -58,10 +58,10 @@ function papelDoCredito(credito: {
   return credito.job || credito.department || null
 }
 
-// CorpoCard é o MIOLO visual compartilhado dos dois cards de filmografia (interno e
-// externo): pôster + título + ano/tipo + papel + um selo opcional. Extraí-lo evita a
-// duplicação do layout entre as duas variantes, que diferem só no destino do `Link`
-// que o envolve (a catraca do 0005 mede duplicação com jscpd).
+// CorpoCard is the shared visual CORE of the two filmography cards (internal and
+// external): poster + title + year/type + role + an optional badge. Extracting it avoids the
+// duplication of the layout between the two variants, which differ only in the destination of the `Link`
+// that wraps them (the ratchet measures duplication with jscpd).
 function CorpoCard({
   title,
   type,
@@ -100,8 +100,8 @@ function CorpoCard({
   )
 }
 
-// FilmografiaCard é o card de UMA obra JÁ importada: navega ao detalhe INTERNO da entity
-// (`/entities/{id}`). O pôster é uma rota local (via `posterSrc`).
+// FilmografiaCard is the card of a work ALREADY imported: it navigates to the INTERNAL detail of the entity
+// (`/entities/{id}`). The poster is a local route (via `posterSrc`).
 function FilmografiaCard({ credito }: { credito: PersonCredit }) {
   return (
     <Link
@@ -120,10 +120,10 @@ function FilmografiaCard({ credito }: { credito: PersonCredit }) {
   )
 }
 
-// FilmografiaExternaCard é o card de UMA obra AINDA NÃO importada: navega ao detalhe
-// EXTERNO (`/external/$source/$type/$id` — a mesma rota que a busca e os similares usam)
-// e ganha o selo "Não importado". `poster_url` já vem PROXYADA do backend (ao contrário
-// do pôster interno, que é uma rota local — daí não passar por `posterSrc`).
+// FilmografiaExternaCard is the card of a work NOT imported YET: it navigates to the
+// EXTERNAL detail (`/external/$source/$type/$id` — the same route that the search and the similars use)
+// and gains the "Não importado" badge. `poster_url` already comes PROXIED from the backend (unlike
+// the internal poster, which is a local route — hence it does not go through `posterSrc`).
 function FilmografiaExternaCard({
   credito,
 }: {

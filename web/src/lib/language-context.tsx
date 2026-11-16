@@ -8,24 +8,24 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { languageSettingsQueryOptions } from '@/lib/queries'
 
-// Estado GLOBAL LEVE do idioma de leitura (ADR-0019 / briefing 0021): não é um
-// search param por rota, e sim um context semeado pelo `primary` das settings e
-// persistido em localStorage. O seletor do AppHeader o altera; as queries de
-// leitura passam o `lang` no `?lang=` e na queryKey — trocar o idioma re-busca
-// e recompõe sem recarregar a página.
+// LIGHTWEIGHT GLOBAL state of the reading language (ADR-0019): it is not a
+// per-route search param, but a context seeded by the `primary` from the settings and
+// persisted in localStorage. The AppHeader selector changes it; the read
+// queries pass the `lang` in the `?lang=` and in the queryKey — switching the language re-fetches
+// and recomposes without reloading the page.
 
-// Default seguro enquanto as settings carregam (nunca quebra).
+// Safe default while the settings load (it never breaks).
 const IDIOMA_PADRAO = 'pt-BR'
 const CHAVE_STORAGE = 'mmdb.lang'
 
 export interface LanguageContextValue {
-  // Idioma efetivo de leitura (sempre ∈ allowed, ou o principal).
+  // Effective reading language (always ∈ allowed, or the primary one).
   lang: string
-  // Troca o idioma e persiste em localStorage.
+  // Switches the language and persists it in localStorage.
   setLang: (lang: string) => void
-  // Idiomas permitidos (fonte: GET /settings/languages).
+  // Allowed languages (source: GET /settings/languages).
   allowed: string[]
-  // Idioma principal das settings (semente/queda).
+  // Primary language from the settings (seed/fallback).
   primary: string
 }
 
@@ -42,15 +42,15 @@ function lerSalvo(): string | null {
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const { data } = useQuery(languageSettingsQueryOptions)
 
-  // `escolhido` guarda o que o usuário salvou (ou tinha salvo); `null` = seguir
-  // a semente (principal). É lido do localStorage uma vez, na montagem.
+  // `escolhido` holds what the user saved (or had saved); `null` = follow
+  // the seed (primary). It is read from localStorage once, on mount.
   const [escolhido, setEscolhido] = useState<string | null>(() => lerSalvo())
 
   const value = useMemo<LanguageContextValue>(() => {
     const primary = data?.primary ?? IDIOMA_PADRAO
     const allowed = data?.allowed ?? [IDIOMA_PADRAO]
-    // Idioma efetivo: o escolhido só vale se ainda ∈ allowed; senão cai no
-    // principal (critério: "cai no principal quando o salvo não é permitido").
+    // Effective language: the chosen one only counts if it is still ∈ allowed; otherwise it falls
+    // back to the primary (criterion: "falls back to the primary when the saved one is not allowed").
     const lang = escolhido && allowed.includes(escolhido) ? escolhido : primary
     return {
       lang,
@@ -61,8 +61,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
         try {
           localStorage.setItem(CHAVE_STORAGE, novo)
         } catch {
-          // localStorage indisponível (ex.: modo privado) — o estado em memória
-          // ainda funciona nesta sessão.
+          // localStorage unavailable (e.g. private mode) — the in-memory state
+          // still works for this session.
         }
       },
     }
@@ -75,8 +75,9 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   )
 }
 
-// Hook de consumo. Convive com o Provider neste arquivo (a regra de fast-refresh
-// só afeta HMR em dev; o par Provider+hook num só módulo é o padrão idiomático).
+// Consumption hook. It lives together with the Provider in this file (the fast-refresh
+// rule only affects HMR in dev; the Provider+hook pair in a single module is the idiomatic
+// pattern).
 // eslint-disable-next-line react-refresh/only-export-components
 export function useLanguage(): LanguageContextValue {
   const ctx = useContext(LanguageContext)

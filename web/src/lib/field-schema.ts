@@ -6,40 +6,40 @@ import type {
   ResolvedEntity,
 } from '@/lib/api'
 
-// Núcleo PURO (sem JSX) do formulário dirigido por schema (briefing 0030):
-// transforma os descritores servidos pelo backend em (a) valores iniciais, (b)
-// um schema Zod de validação de cliente e (c) o patch de edição. Um campo novo
-// no backend passa a fluir por aqui sem tocar em nenhum componente. Testável
-// isolado (field-schema.test.ts).
+// PURE core (no JSX) of the schema-driven form:
+// it turns the descriptors served by the backend into (a) initial values, (b)
+// a Zod schema for client-side validation and (c) the edit patch. A new field
+// in the backend starts flowing through here without touching any component. Testable
+// in isolation (field-schema.test.ts).
 
-// Valor de um campo NO FORMULÁRIO: `string[]` para o widget de tags; `string`
-// para todos os demais (inclusive `number`, que guarda o texto do input para
-// permitir o estado vazio = "herdar/definir vazio"). A conversão para número/null
-// acontece só ao montar o patch.
+// Value of a field IN THE FORM: `string[]` for the tags widget; `string`
+// for all the others (including `number`, which stores the text of the input to
+// allow the empty state = "inherit/set empty"). The conversion into number/null
+// only happens when building the patch.
 export type ValorCampo = string | string[]
 export type ValoresForm = Record<string, ValorCampo>
 
-// `title` é o ÚNICO campo editorial que o backend exige na criação — não é uma
-// "lista de campos" de render (a catraca do 0030 mira as enumerações de JSX),
-// é a única regra de obrigatoriedade. O 422 do servidor segue autoritativo.
+// `title` is the ONLY editorial field that the backend requires on creation — it is not a
+// "list of fields" for rendering (the ratchet targets the JSX enumerations),
+// it is the only requiredness rule. The server's 422 stays authoritative.
 const OBRIGATORIO_NA_CRIACAO = new Set(['title'])
 
-// ordenados devolve os descritores por `order` crescente (o backend já ordena,
-// mas reforçamos para não depender da ordem de chegada).
+// ordenados returns the descriptors by increasing `order` (the backend already sorts,
+// but we reinforce it so we do not depend on the arrival order).
 export function ordenados(fields: FieldDescriptor[]): FieldDescriptor[] {
   return [...fields].sort((a, b) => a.order - b.order)
 }
 
-// criaveis recorta o subconjunto que aparece ao CRIAR um item (corpo plano, sem
-// operações por idioma), já ordenado.
+// criaveis cuts out the subset that appears when CREATING an item (flat body, without
+// per-language operations), already ordered.
 export function criaveis(fields: FieldDescriptor[]): FieldDescriptor[] {
   return ordenados(fields).filter((f) => f.creatable)
 }
 
-// ── Sementes (valores iniciais) ──────────────────────────────────────────────
+// ── Seeds (initial values) ───────────────────────────────────────────────────
 
-// semearTraduzivel: o override do idioma atual se for string; senão vazio (o
-// placeholder mostra o herdado/resolvido).
+// semearTraduzivel: the override of the current language when it is a string; otherwise empty (the
+// placeholder shows the inherited/resolved value).
 function semearTraduzivel(
   blob: OverrideBlob,
   campo: string,
@@ -53,21 +53,21 @@ function semearTraduzivel(
   return ''
 }
 
-// semearNeutro: o escalar guardado se for string; senão vazio.
+// semearNeutro: the stored scalar when it is a string; otherwise empty.
 function semearNeutro(blob: OverrideBlob, campo: string): string {
   const valor = blob[campo]
   return typeof valor === 'string' ? valor : ''
 }
 
-// semearNumero: o número guardado como texto para o input; senão vazio.
+// semearNumero: the stored number as text for the input; otherwise empty.
 function semearNumero(blob: OverrideBlob, campo: string): string {
   const valor = blob[campo]
   return typeof valor === 'number' ? String(valor) : ''
 }
 
-// valorInicialEdicao devolve a semente de UM descritor no contexto de edição,
-// dirigida por `widget`/`translatable`: tags saem do resolvido (para o diff
-// {add,remove}); número do blob; traduzível do idioma corrente; neutro do escalar.
+// valorInicialEdicao returns the seed of ONE descriptor in the edit context,
+// driven by `widget`/`translatable`: tags come from the resolved value (for the diff
+// {add,remove}); number from the blob; translatable from the current language; neutral from the scalar.
 function valorInicialEdicao(
   d: FieldDescriptor,
   blob: OverrideBlob,
@@ -85,9 +85,9 @@ function valorInicialEdicao(
     : semearNeutro(blob, d.name)
 }
 
-// valoresDeEdicao monta as sementes de TODOS os campos (o form de edição mostra o
-// conjunto completo). Iterar os descritores é o que torna "campo novo ⇒ input"
-// automático.
+// valoresDeEdicao builds the seeds of ALL fields (the edit form shows the
+// full set). Iterating the descriptors is what makes "new field ⇒ input"
+// automatic.
 export function valoresDeEdicao(
   fields: FieldDescriptor[],
   blob: OverrideBlob,
@@ -101,8 +101,8 @@ export function valoresDeEdicao(
   return out
 }
 
-// valoresDeCriacao monta as sementes do form de CRIAÇÃO: só os `creatable`, todos
-// vazios (tags vazia se algum dia um campo de lista virar creatable).
+// valoresDeCriacao builds the seeds of the CREATION form: only the `creatable` ones, all
+// empty (empty tags if a list field ever becomes creatable).
 export function valoresDeCriacao(fields: FieldDescriptor[]): ValoresForm {
   const out: ValoresForm = {}
   for (const d of criaveis(fields)) {
@@ -111,12 +111,12 @@ export function valoresDeCriacao(fields: FieldDescriptor[]): ValoresForm {
   return out
 }
 
-// ── Schema Zod ───────────────────────────────────────────────────────────────
+// ── Zod schema ───────────────────────────────────────────────────────────────
 
-// regraCampo deriva a regra Zod de UM descritor. `obrigatorio` só vale na
-// criação (edição permite vazio = definir vazio). O número valida a faixa
-// min/max do próprio descritor (espelha o `formaNumero` do backend) sobre o
-// texto do input, aceitando vazio.
+// regraCampo derives the Zod rule of ONE descriptor. `obrigatorio` only applies on
+// creation (editing allows empty = set empty). The number validates the min/max
+// range of the descriptor itself (it mirrors the backend's `formaNumero`) over the
+// text of the input, accepting empty.
 function regraCampo(d: FieldDescriptor, obrigatorio: boolean): z.ZodType {
   if (d.widget === 'tags') {
     return z.array(z.string())
@@ -143,8 +143,8 @@ function regraCampo(d: FieldDescriptor, obrigatorio: boolean): z.ZodType {
   return z.string()
 }
 
-// schemaZod monta o `z.object` a partir dos descritores. `contexto` recorta o
-// conjunto (criação usa só `creatable`) e liga a obrigatoriedade (só na criação).
+// schemaZod builds the `z.object` from the descriptors. `contexto` cuts out the
+// set (creation uses only `creatable`) and turns on requiredness (only on creation).
 export function schemaZod(
   fields: FieldDescriptor[],
   contexto: 'criacao' | 'edicao',
@@ -156,19 +156,19 @@ export function schemaZod(
       contexto === 'criacao' && OBRIGATORIO_NA_CRIACAO.has(d.name)
     shape[d.name] = regraCampo(d, obrigatorio)
   }
-  // O output do z.object é atribuível a `ValoresForm` (todo valor é string ou
-  // string[]); o cast estreita o tipo para o consumidor genérico (SchemaForm).
+  // The output of z.object is assignable to `ValoresForm` (every value is a string or
+  // string[]); the cast narrows the type for the generic consumer (SchemaForm).
   return z.object(shape) as unknown as z.ZodType<ValoresForm>
 }
 
-// ── Patch de edição ──────────────────────────────────────────────────────────
+// ── Edit patch ───────────────────────────────────────────────────────────────
 
-// construirPatchEdicao compara os valores atuais com as sementes e monta o patch
-// esparso (só o que MUDOU), iterando os descritores:
-//   - traduzível/neutro escalar/data: vazio → `null` (DEFINIR VAZIO, ≠ "Limpar");
-//   - número: vazio → `null`; senão o `Number`;
-//   - tags: operações `{add, remove}` relativas ao resolvido ao abrir.
-// "Limpar" (voltar a herdar) é um DELETE separado, fora do patch.
+// construirPatchEdicao compares the current values with the seeds and builds the sparse
+// patch (only what CHANGED), iterating the descriptors:
+//   - translatable/neutral scalar/date: empty → `null` (SET EMPTY, ≠ "Limpar");
+//   - number: empty → `null`; otherwise the `Number`;
+//   - tags: `{add, remove}` operations relative to the value resolved when opening.
+// "Limpar" (go back to inheriting) is a separate DELETE, outside the patch.
 export function construirPatchEdicao(
   fields: FieldDescriptor[],
   valores: ValoresForm,

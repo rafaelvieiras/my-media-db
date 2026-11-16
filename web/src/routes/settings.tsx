@@ -32,10 +32,10 @@ import {
 import { IDIOMAS_DISPONIVEIS, rotuloIdioma } from '@/lib/languages'
 import { CatalogCompletenessForm } from '@/components/catalog-completeness-form'
 
-// Rota `/settings`: admin de idiomas (principal, fallback, permitidos). Lê as
-// settings, deixa editar e grava via PUT. A validação client-side espelha o
-// backend (principal e fallback ∈ permitidos, permitidos não-vazio); o 422 do
-// servidor é o guarda final e sua mensagem pt-BR aparece inline.
+// Route `/settings`: language admin (primary, fallback, allowed). It reads the
+// settings, lets you edit them and saves via PUT. The client-side validation mirrors the
+// backend (primary and fallback ∈ allowed, non-empty allowed); the server 422 is
+// the final guard and its pt-BR message appears inline.
 export function SettingsScreen() {
   const { data, isPending, isError, error } = useQuery(
     languageSettingsQueryOptions,
@@ -192,8 +192,8 @@ export function SettingsScreen() {
   )
 }
 
-// Formulário semeado pela config vigente. Recebe `inicial` já resolvido para
-// semear o estado uma única vez (sem useEffect de sincronização).
+// Form seeded with the current config. It receives `inicial` already resolved to
+// seed the state a single time (no synchronization useEffect).
 function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
   const queryClient = useQueryClient()
   const [primary, setPrimary] = useState(inicial.primary)
@@ -201,10 +201,10 @@ function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
   const [allowed, setAllowed] = useState<string[]>(inicial.allowed)
   const [erroValidacao, setErroValidacao] = useState<string | null>(null)
 
-  // Candidatos do multi-select: os conhecidos + os já permitidos (para não
-  // perder um código exótico que já esteja salvo). Também alimenta os selects
-  // de principal/fallback — assim é possível (e a validação captura) escolher um
-  // valor fora dos permitidos.
+  // Candidates of the multi-select: the known ones + the already allowed ones (so as not to
+  // lose an exotic code that is already saved). It also feeds the primary/fallback
+  // selects — so it is possible (and the validation catches it) to choose a
+  // value outside the allowed ones.
   const candidatos = useMemo(() => {
     const set = new Set<string>([...IDIOMAS_DISPONIVEIS, ...allowed])
     return [...set]
@@ -213,9 +213,9 @@ function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
   const mutation = useMutation({
     mutationFn: (body: LanguageSettings) => putLanguageSettings(body),
     onSuccess: () => {
-      // Mudar os permitidos pode invalidar o `lang` atual das leituras: revalida
-      // as settings e as leituras dependentes (evita servir cache de um idioma
-      // recém-desabilitado).
+      // Changing the allowed ones may invalidate the current `lang` of the reads: it revalidates
+      // the settings and the dependent reads (avoids serving the cache of a newly
+      // disabled language).
       queryClient.invalidateQueries({ queryKey: ['settings', 'languages'] })
       queryClient.invalidateQueries({ queryKey: ['entity'] })
       queryClient.invalidateQueries({ queryKey: ['entities'] })
@@ -230,7 +230,7 @@ function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
     )
   }
 
-  // Espelha o backend. Devolve a mensagem do 1º problema, ou null se válido.
+  // Mirrors the backend. It returns the message of the 1st problem, or null if valid.
   function validar(): string | null {
     if (allowed.length === 0) {
       return 'Selecione ao menos um idioma permitido.'
@@ -254,8 +254,8 @@ function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
     mutation.mutate({ primary, fallback, allowed })
   }
 
-  // Erro exibido inline: a validação client-side tem prioridade; senão, a
-  // mensagem pt-BR do ApiError (422) da resposta do servidor.
+  // Error shown inline: the client-side validation has priority; otherwise, the
+  // pt-BR message of the ApiError (422) of the server response.
   const erroServidor =
     mutation.isError && mutation.error instanceof Error
       ? mutation.error.message
@@ -313,9 +313,9 @@ function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
   )
 }
 
-// Formulário semeado pelo throttle vigente (briefing 0085). Mesmo padrão do
-// LanguageSettingsForm: input controlado, validação client-side espelhando o
-// backend ([1, 365]) e PUT via TanStack Query.
+// Form seeded with the current throttle. Same pattern as the
+// LanguageSettingsForm: controlled input, client-side validation mirroring the
+// backend ([1, 365]) and PUT via TanStack Query.
 function RetroactiveEnrichmentSettingsForm({
   inicial,
 }: {
@@ -335,8 +335,8 @@ function RetroactiveEnrichmentSettingsForm({
     },
   })
 
-  // Espelha o backend (retry_days entre 1 e 365). Devolve a mensagem do 1º
-  // problema, ou null se válido.
+  // Mirrors the backend (retry_days between 1 and 365). It returns the message of the 1st
+  // problem, or null if valid.
   function validar(valor: number): string | null {
     if (!Number.isInteger(valor) || valor < 1 || valor > 365) {
       return 'Informe um número inteiro entre 1 e 365 dias.'
@@ -362,10 +362,10 @@ function RetroactiveEnrichmentSettingsForm({
   const mensagemErro = erroValidacao ?? erroServidor
 
   return (
-    // noValidate: os atributos min/max abaixo são só um hint nativo (spinner/
-    // teclado numérico); a validação de verdade é a `validar()` acima —
-    // mesma mensagem pt-BR do backend, sem depender do balão nativo do
-    // navegador (que bloquearia o submit ANTES do onSubmit rodar).
+    // noValidate: the min/max attributes below are only a native hint (spinner/
+    // numeric keypad); the real validation is the `validar()` above —
+    // same pt-BR message as the backend, without depending on the native browser
+    // balloon (which would block the submit BEFORE onSubmit runs).
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
       <label className="flex max-w-64 flex-col gap-1.5">
         <span className="text-sm font-medium">
@@ -391,9 +391,9 @@ function RetroactiveEnrichmentSettingsForm({
   )
 }
 
-// Switch semeado pelo toggle vigente (briefing 0089): grava a cada mudança —
-// sem botão salvar, mesmo padrão do switch "Observar mudanças" da lista de
-// datasources (baixo risco, reversível a qualquer momento).
+// Switch seeded with the current toggle: it saves on every change —
+// without a save button, the same pattern as the "Observar mudanças" switch of the
+// datasource list (low risk, reversible at any moment).
 function AutoMaterializeArtworkSwitch({
   inicial,
 }: {
@@ -445,9 +445,9 @@ function AutoMaterializeArtworkSwitch({
   )
 }
 
-// Switch semeado pelo toggle vigente (briefing 0104): mesmo padrão do
-// AutoMaterializeArtworkSwitch (0089) — grava a cada mudança, sem botão
-// salvar.
+// Switch seeded with the current toggle: same pattern as the
+// AutoMaterializeArtworkSwitch — it saves on every change, without a save
+// button.
 function AutoDownloadTrailerTemaSwitch({
   inicial,
 }: {
@@ -499,12 +499,12 @@ function AutoDownloadTrailerTemaSwitch({
   )
 }
 
-// Formulário semeado pelo status vigente (briefing 0101, ADR-0025): campo
-// único de path customizado (string vazia == limpar o override, mesmo
-// contrato do backend) + badge de status. Sem botão "baixar agora" de
-// propósito — o download é lazy, disparado pelo primeiro uso real em
-// trailer/tema (briefings 0102/0103); este card só reflete e configura, nunca
-// dispara download.
+// Form seeded with the current status (ADR-0025): a single
+// custom path field (empty string == clear the override, the same
+// contract as the backend) + a status badge. Without a "baixar agora" button
+// on purpose — the download is lazy, triggered by the first real use in
+// trailer/theme; this card only reflects and configures, it never
+// triggers a download.
 function YtdlpSettingsForm({ inicial }: { inicial: YtdlpSettings }) {
   const queryClient = useQueryClient()
   const [customPath, setCustomPath] = useState(inicial.custom_binary_path ?? '')
@@ -569,9 +569,9 @@ function YtdlpSettingsForm({ inicial }: { inicial: YtdlpSettings }) {
   )
 }
 
-// Badge de status do yt-dlp: "disponível (baixado automaticamente)",
-// "disponível (path customizado)" ou "indisponível" + o motivo (briefing
-// 0101 §2, jornada do usuário).
+// Status badge of yt-dlp: "disponível (baixado automaticamente)",
+// "disponível (path customizado)" or "indisponível" + the reason (user
+// journey).
 function YtdlpStatusBadge({ dados }: { dados: YtdlpSettings }) {
   if (!dados.disponivel) {
     return (

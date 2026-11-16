@@ -1,25 +1,25 @@
-// Helpers PUROS de estado de card do catálogo (posse, revisão, draft).
+// PURE helpers for the catalog card state (ownership, review, draft).
 //
-// Isolados da renderização para serem testáveis e manter a semântica dos badges
-// num só lugar. O badge de REVISÃO apenas SINALIZA baixa confiança (ADR-0008);
-// confirmar/corrigir o match é fluxo da Fase 3.
+// Isolated from the rendering so they are testable and keep the badge semantics
+// in a single place. The REVIEW badge only SIGNALS low confidence (ADR-0008);
+// confirming/correcting the match is a Phase 3 flow.
 import type { components } from '@/lib/api-types'
 
 export type EntityCard = components['schemas']['EntityCard']
 
-// Limiar de confiança (escala 0–100 do scanner; ver internal/scanner/match.go).
-// Título+ano casa com 70 (palpite alto, não sinaliza); título sem ano casa com
-// 40 (baixo → sinaliza revisão). Abaixo do limiar, exibimos o alerta.
+// Confidence threshold (0–100 scale of the scanner; see internal/scanner/match.go).
+// Title+year matches at 70 (a high guess, it does not signal); title without year matches at
+// 40 (low → signals review). Below the threshold, we show the alert.
 export const LIMIAR_BAIXA_CONFIANCA = 70
 
-// Item não-identificado (sem match): aparece como `draft` no detalhe e no card.
+// Unidentified item (no match): it appears as `draft` in the detail and in the card.
 export function ehDraft(status: string): boolean {
   return status === 'draft'
 }
 
-// Precisa de revisão quando há confiança conhecida, positiva e abaixo do limiar,
-// e o item NÃO é um draft (esse tem rótulo próprio). Confiança `null` ou 0 não
-// dispara o alerta de revisão (é ausência de match, não match duvidoso).
+// It needs review when there is a known, positive confidence below the threshold,
+// and the item is NOT a draft (that one has its own label). Confidence `null` or 0 does not
+// trigger the review alert (it is an absence of match, not a doubtful match).
 export function precisaRevisao(card: {
   status: string
   match_confidence: number | null
@@ -31,15 +31,15 @@ export function precisaRevisao(card: {
   return c !== null && c > 0 && c < LIMIAR_BAIXA_CONFIANCA
 }
 
-// Estado de COMPLETUDE de uma temporada/série a partir da posse agregada (0036):
-// `completa` (tem todos os episódios catalogados), `parcial` (tem alguns), `vazia`
-// (não tem nenhum na biblioteca, mas há catalogados) ou `null` (sem selo — total
-// desconhecido/zero). É a regra ÚNICA que a UI lê para escolher o selo e o realce.
+// COMPLETENESS state of a season/series from the aggregated ownership:
+// `completa` (it has every episode cataloged), `parcial` (it has some), `vazia`
+// (it has none in the library, but there are cataloged ones) or `null` (no badge — total
+// unknown/zero). It is the SINGLE rule the UI reads to choose the badge and the highlight.
 export type EstadoCompletude = 'completa' | 'parcial' | 'vazia' | null
 
-// estadoCompletude classifica a posse agregada do card. total==0 → null (nada a
-// dizer). owned>=total (total>0) → completa. 0<owned<total → parcial. owned==0 (com
-// total>0) → vazia. Ausência de `ownership` (movie/episode/collection) → null.
+// estadoCompletude classifies the aggregated ownership of the card. total==0 → null (nothing to
+// say). owned>=total (total>0) → completa. 0<owned<total → parcial. owned==0 (with
+// total>0) → vazia. Absence of `ownership` (movie/episode/collection) → null.
 export function estadoCompletude(
   ownership: { owned_count: number; total_count: number } | null | undefined,
 ): EstadoCompletude {
@@ -56,18 +56,18 @@ export function estadoCompletude(
   return 'vazia'
 }
 
-// temCompletude diz se o tipo do card tem selo de completude (posse rasa): só a série
-// (conta temporadas) e a temporada (conta episódios). movie/episode/collection nunca —
-// o gate único que a UI usa para NÃO exibir selo/recuo nesses tipos, mesmo que um
-// ownership vaze no DTO.
+// temCompletude says whether the type of the card has a completeness badge (shallow ownership): only the series
+// (it counts seasons) and the season (it counts episodes). movie/episode/collection never —
+// the single gate the UI uses to NOT show the badge/indent on those types, even if an
+// ownership leaks into the DTO.
 export function temCompletude(type: string): boolean {
   return type === 'tv' || type === 'season'
 }
 
-// Unidade contada pelo selo de completude conforme o tipo do card (0037): o card
-// `tv` conta TEMPORADAS (posse rasa), o card `season` conta EPISÓDIOS (0036). É o
-// que muda o rótulo do selo entre a home (série) e a lista de membros (temporada).
-// Qualquer outro tipo não tem selo de completude — cai no plural neutro "itens".
+// Unit counted by the completeness badge according to the type of the card: the `tv` card
+// counts SEASONS (shallow ownership), the `season` card counts EPISODES. It is what
+// changes the badge label between the home (series) and the member list (season).
+// Any other type has no completeness badge — it falls back to the neutral plural "itens".
 export function unidadeCompletude(type: string): string {
   if (type === 'tv') {
     return 'temporadas'
@@ -78,11 +78,11 @@ export function unidadeCompletude(type: string): string {
   return 'itens'
 }
 
-// Rótulo pt-BR do status de catalogação do item. O backend só usa dois valores
-// (`draft`/`cataloged` — ver internal/scanner/match.go,
-// internal/server/completeness.go); `draft` já tem tratamento especial
-// (`ehDraft` → "não identificado"), esta função cobre o restante. Valor
-// desconhecido ecoa cru (nunca quebra a UI).
+// pt-BR label of the cataloging status of the item. The backend only uses two values
+// (`draft`/`cataloged` — see internal/scanner/match.go,
+// internal/server/completeness.go); `draft` already has special handling
+// (`ehDraft` → "não identificado"), this function covers the rest. An unknown
+// value echoes raw (it never breaks the UI).
 export function rotuloStatus(status: string): string {
   const mapa: Record<string, string> = {
     cataloged: 'catalogado',
@@ -90,11 +90,11 @@ export function rotuloStatus(status: string): string {
   return mapa[status] ?? status
 }
 
-// Rótulo pt-BR do tipo de mídia para exibição. Cobre os tipos canônicos: os de
-// topo (filme/série/coleção), os nós da árvore de séries (temporada/episódio,
-// 0031) e os da vertical de música (artista/álbum/faixa, 0105-0107 — nomes em
-// português no schema, não `artist`/`album`/`track`). Tipo desconhecido ecoa
-// cru (nunca quebra a UI).
+// pt-BR label of the media type for display. It covers the canonical types: the
+// top-level ones (filme/série/coleção), the nodes of the series tree (temporada/episódio)
+// and those of the music vertical (artista/álbum/faixa — names in
+// Portuguese in the schema, not `artist`/`album`/`track`). An unknown type echoes
+// raw (it never breaks the UI).
 export function rotuloTipo(type: string): string {
   const mapa: Record<string, string> = {
     movie: 'Filme',
@@ -109,14 +109,14 @@ export function rotuloTipo(type: string): string {
   return mapa[type] ?? type
 }
 
-// Frame de capa (classe Tailwind `aspect-*`) conforme o tipo do card (0111+):
-// álbum e artista usam capa QUADRADA (1:1 — mesmo frame do hero, `CapaQuadrada`
-// em rich-detail-view.tsx), os demais tipos mantêm o pôster clássico 2:3. Fonte
-// ÚNICA para qualquer grid que renderize `PosterCard` (biblioteca, carrossel,
-// busca, discografia) — evita repetir a checagem de tipo em cada callsite;
-// `PosterCard` só a ignora quando o CALLER passa `aspectClass` explícito (caso
-// do episódio, que usa still 16:9 em vez de pôster). Tipo desconhecido cai no
-// 2:3 (nunca quebra a UI, mesmo idioma de `rotuloTipo`).
+// Cover frame (Tailwind class `aspect-*`) according to the type of the card:
+// album and artist use a SQUARE cover (1:1 — same frame as the hero, `CapaQuadrada`
+// in rich-detail-view.tsx), the other types keep the classic 2:3 poster. SINGLE
+// source for any grid that renders `PosterCard` (library, carousel,
+// search, discography) — avoids repeating the type check at every callsite;
+// `PosterCard` only ignores it when the CALLER passes an explicit `aspectClass` (the
+// episode case, which uses a 16:9 still instead of a poster). An unknown type falls back to
+// 2:3 (it never breaks the UI, same idiom as `rotuloTipo`).
 export function aspectPorTipo(type: string): string {
   if (type === 'album' || type === 'artista') {
     return 'aspect-square'
@@ -124,13 +124,13 @@ export function aspectPorTipo(type: string): string {
   return 'aspect-[2/3]'
 }
 
-// Rótulo pt-BR PLURAL do tipo, para cabeçalhos de seção/categoria — o
-// carrossel "adicionados recentemente" da home (0109) e o dropdown de
-// biblioteca da navbar (0110), que listam o tipo como CATEGORIA, não como
-// selo inline de um item ("Filmes" acima de uma prateleira, não "Filme" como
-// em `rotuloTipo`). Mesma fonte de tipos que `rotuloTipo` (central, sem mapa
-// duplicado à parte); tipo sem plural cadastrado cai no singular (nunca
-// quebra a UI).
+// PLURAL pt-BR label of the type, for section/category headers — the
+// "adicionados recentemente" carousel of the home and the
+// library dropdown of the navbar, which list the type as a CATEGORY, not as an
+// inline badge of an item ("Filmes" above a shelf, not "Filme" as
+// in `rotuloTipo`). Same source of types as `rotuloTipo` (central, no separate
+// duplicate map); a type without a registered plural falls back to the singular (it never
+// breaks the UI).
 export function rotuloTipoPlural(type: string): string {
   const mapa: Record<string, string> = {
     movie: 'Filmes',

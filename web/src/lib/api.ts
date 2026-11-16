@@ -1,30 +1,30 @@
-// Cliente HTTP da API do MyMediaDB.
+// HTTP client of the MyMediaDB API.
 //
-// A base é configurável via `VITE_API_BASE`, mas o padrão (dev e prod) é vazio:
-// isso faz as chamadas usarem caminho RELATIVO (`/api/...`). Em dev, o proxy do
-// Vite encaminha para o backend Go (:8080); em prod, o binário serve tudo no
-// mesmo origin. `VITE_API_BASE` só é preenchido como override (ex.: API remota).
+// The base is configurable via `VITE_API_BASE`, but the default (dev and prod) is empty:
+// that makes the calls use a RELATIVE path (`/api/...`). In dev, the Vite proxy
+// forwards to the Go backend (:8080); in prod, the binary serves everything on the
+// same origin. `VITE_API_BASE` is only filled in as an override (e.g. a remote API).
 import type { components } from '@/lib/api-types'
 
 const base = import.meta.env.VITE_API_BASE ?? ''
 
-// Tipos gerados do OpenAPI (0010) — nunca redigitados à mão.
+// Types generated from the OpenAPI — never retyped by hand.
 export type Source = components['schemas']['Source']
 export type SourceList = components['schemas']['SourceList']
 export type CreateSource = components['schemas']['CreateSource']
-// Patch parcial de `library_source` (briefings 0064/0070) — `watch_enabled`
-// e/ou `path` (recasco em cascata do datasource para um novo caminho).
+// Partial patch of `library_source` — `watch_enabled`
+// and/or `path` (cascading re-basing of the datasource to a new path).
 export type PatchSource = components['schemas']['PatchSource']
 export type ScanStatus = components['schemas']['ScanStatus']
 export type StartScan = components['schemas']['StartScan']
-// Navegador de pastas (briefing 0071): resposta de `GET /library/browse`.
+// Folder browser: response of `GET /library/browse`.
 export type BrowseResult = components['schemas']['BrowseResult']
 export type BrowseEntry = components['schemas']['BrowseEntry']
 export type EntityCard = components['schemas']['EntityCard']
 export type EntityList = components['schemas']['EntityList']
-// Tipo de entity com dado catalogado (briefings 0109/0110): alimenta os
-// carrosséis "adicionados recentemente" da home e o dropdown de biblioteca da
-// navbar, sem lista fixa de tipos no frontend.
+// Type of entity with cataloged data: it feeds the
+// "adicionados recentemente" carousels of the home and the library dropdown of the
+// navbar, without a fixed list of types in the frontend.
 export type EntityType = components['schemas']['EntityType']
 export type OrderingsInfo = components['schemas']['OrderingsInfo']
 export type EpisodeGroups = components['schemas']['EpisodeGroups']
@@ -43,29 +43,29 @@ export type ExternalCollectionDetail =
 export type ExternalCollectionPart =
   components['schemas']['ExternalCollectionPart']
 export type ExternalSimilar = components['schemas']['ExternalSimilar']
-// Álbum externo como página própria (briefing 0115 Parte 2, ADR-0029): faixas
-// oficiais do release, com internal_id para as já catalogadas — "faixas
-// faltando" do álbum, mesmo padrão de ExternalCollectionDetail/parts acima.
+// External album as a page of its own (ADR-0029): official
+// tracks of the release, with internal_id for the already cataloged ones — the "missing
+// tracks" of the album, the same pattern as ExternalCollectionDetail/parts above.
 export type ExternalAlbum = components['schemas']['ExternalAlbum']
 export type ExternalAlbumTrack = components['schemas']['ExternalAlbumTrack']
-// Créditos (0029, fase B): elenco/equipe/produtoras. `profile_url`/`logo_url` já
-// vêm PROXYADOS do backend (uso direto no <img>). `episode_count` só em série.
+// Credits (phase B): cast/crew/production companies. `profile_url`/`logo_url` already
+// come PROXIED from the backend (direct use in the <img>). `episode_count` only in a series.
 export type CreditCast = components['schemas']['CreditCast']
 export type CreditCrew = components['schemas']['CreditCrew']
 export type CreditCompany = components['schemas']['CreditCompany']
-// Pessoa deduplicada no catálogo + filmografia (0029, fase D, interno-first):
-// destino do card de elenco/equipe quando o crédito traz `person_id`.
+// Person deduplicated in the catalog + filmography (phase D, internal-first):
+// destination of the cast/crew card when the credit carries a `person_id`.
 export type Person = components['schemas']['Person']
 export type PersonCredit = components['schemas']['PersonCredit']
-// Obra da filmografia AINDA NÃO importada (0029, fase D): identidade externa
-// (source/source_id/type) em vez de entity_id — o card navega ao detalhe externo.
+// Work of the filmography NOT imported YET: external identity
+// (source/source_id/type) instead of entity_id — the card navigates to the external detail.
 export type PersonExternalCredit = components['schemas']['PersonExternalCredit']
 export type ImportRequest = components['schemas']['ImportRequest']
 export type LanguageSettings = components['schemas']['LanguageSettings']
-// Config de completude de CATALOGAÇÃO (briefing 0057) — por `entity.type`, quais
-// campos/artes o dono considera desejáveis. Conceito DIFERENTE de completude de
-// POSSE (`web/src/lib/entity-badges.ts`, 0036/0037) — não reusar nomes daquele
-// módulo aqui.
+// Config of CATALOGING completeness — per `entity.type`, which
+// fields/artwork the owner considers desirable. A concept DIFFERENT from OWNERSHIP
+// completeness (`web/src/lib/entity-badges.ts`) — do not reuse names from that
+// module here.
 export type CatalogCompletenessSettings =
   components['schemas']['CatalogCompletenessSettings']
 export type TypeCompletenessConfig =
@@ -82,31 +82,31 @@ export type SelectArtworkRequest = components['schemas']['SelectArtworkRequest']
 export type CorrectRequest = components['schemas']['CorrectRequest']
 export type PurgeResult = components['schemas']['PurgeResult']
 export type PurgeBatchResult = components['schemas']['PurgeBatchResult']
-// Resultado de POST .../nfo (briefing 0062): caminho gravado + timestamp da escrita.
+// Result of POST .../nfo: the written path + the write timestamp.
 export type NfoWriteResult = components['schemas']['NfoWriteResult']
-// Histórico de consumo (briefing 0092/ADR-0022): evento genérico (kind/status TEXT
-// livre — hoje só kind="assistir", status started/paused/stopped/completed) +
-// estado derivado (o mais recente por kind). Agnóstico de vertical de propósito.
+// Consumption history: generic event (kind/status free TEXT
+// — today only kind="assistir", status started/paused/stopped/completed) +
+// derived state (the most recent per kind). Agnostic of vertical on purpose.
 export type HistoricoEvento = components['schemas']['HistoricoEvento']
 export type HistoricoEventoList = components['schemas']['HistoricoEventoList']
 export type CreateHistoricoEvento =
   components['schemas']['CreateHistoricoEvento']
 export type HistoricoEstado = components['schemas']['HistoricoEstado']
 export type HistoricoEstadoItem = components['schemas']['HistoricoEstadoItem']
-// Evento de histórico SEM entity vinculada (briefing 0099) — lista global de
-// órfãos, complementar à timeline por-entity acima.
+// History event WITHOUT a linked entity — global list of
+// orphans, complementary to the per-entity timeline above.
 export type HistoricoEventoOrfao = components['schemas']['HistoricoEventoOrfao']
 export type HistoricoEventoOrfaoList =
   components['schemas']['HistoricoEventoOrfaoList']
 
-// Forma do corpo de `GET /api/v1/health` (contrato do briefing 0001).
+// Shape of the body of `GET /api/v1/health`.
 export interface Health {
   status: string
   version: string
 }
 
-// Erro tipado do envelope padrão `{ error: { code, message } }` (0008). Carrega
-// o `code` estável (para ramificar) e a `message` em pt-BR (para exibir inline).
+// Typed error of the standard envelope `{ error: { code, message } }`. It carries
+// the stable `code` (to branch on) and the pt-BR `message` (to show inline).
 export class ApiError extends Error {
   readonly code: string
   readonly status: number
@@ -119,8 +119,8 @@ export class ApiError extends Error {
   }
 }
 
-// Lê o envelope de erro de uma resposta não-2xx e devolve um ApiError. Se o corpo
-// não for o envelope esperado, cai num erro genérico com o status HTTP.
+// It reads the error envelope of a non-2xx response and returns an ApiError. If the body
+// is not the expected envelope, it falls into a generic error with the HTTP status.
 async function erroDaResposta(res: Response): Promise<ApiError> {
   try {
     const corpo = (await res.json()) as components['schemas']['Error']
@@ -128,7 +128,7 @@ async function erroDaResposta(res: Response): Promise<ApiError> {
       return new ApiError(res.status, corpo.error.code, corpo.error.message)
     }
   } catch {
-    // corpo ausente ou não-JSON — cai no genérico abaixo.
+    // absent or non-JSON body — it falls into the generic one below.
   }
   return new ApiError(res.status, 'http_error', `HTTP ${res.status}`)
 }
@@ -140,8 +140,8 @@ async function lerJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T
 }
 
-// getHealth consulta o endpoint de saúde. Lança em status HTTP não-2xx ou em
-// falha de rede, de modo que o TanStack Query trate isso como estado de erro.
+// getHealth queries the health endpoint. It throws on a non-2xx HTTP status or on a
+// network failure, so that TanStack Query treats it as an error state.
 export async function getHealth(): Promise<Health> {
   const res = await fetch(`${base}/api/v1/health`)
   if (!res.ok) {
@@ -150,10 +150,10 @@ export async function getHealth(): Promise<Health> {
   return (await res.json()) as Health
 }
 
-// Telemetria de sistema (briefing 0055): banco + uso operacional + armazenamento
-// por fonte. SEPARADA de `getHealth` de propósito (endpoint próprio, cacheado
-// por 60s no servidor) — uma falha aqui não deve derrubar o card de status
-// básico, que consome `getHealth` isoladamente.
+// System telemetry: database + operational usage + storage
+// per source. SEPARATE from `getHealth` on purpose (its own endpoint, cached
+// for 60s on the server) — a failure here must not bring down the basic status
+// card, which consumes `getHealth` in isolation.
 export type SystemHealth = components['schemas']['SystemHealth']
 export type DatabaseHealth = components['schemas']['DatabaseHealth']
 export type UsageCounts = components['schemas']['UsageCounts']
@@ -171,7 +171,7 @@ export async function getSystemHealth(): Promise<SystemHealth> {
   return (await res.json()) as SystemHealth
 }
 
-// ── Datasources (biblioteca) ─────────────────────────────────────────────────
+// ── Datasources (library) ────────────────────────────────────────────────────
 
 export async function listLibrary(): Promise<SourceList> {
   return lerJson<SourceList>(await fetch(`${base}/api/v1/library`))
@@ -186,10 +186,10 @@ export async function createLibrary(body: CreateSource): Promise<Source> {
   return lerJson<Source>(res)
 }
 
-// Patch parcial de datasource (briefings 0064/0070): liga/desliga o watcher de
-// filesystem (`watch_enabled`), aplicado a quente pelo servidor (sem restart),
-// e/ou reaponta o caminho (`path`) — recasca em cascata media_file/asset/nfo
-// para o novo prefixo, sem re-scan. Campos ausentes do corpo ficam inalterados.
+// Partial patch of a datasource: it turns the filesystem watcher on/off
+// (`watch_enabled`), applied live by the server (without a restart),
+// and/or re-points the path (`path`) — it re-bases media_file/asset/nfo in cascade
+// to the new prefix, without a re-scan. Fields absent from the body stay unchanged.
 export async function patchLibrary(
   id: string,
   body: PatchSource,
@@ -226,12 +226,12 @@ export async function getScanStatus(id: string): Promise<ScanStatus> {
   return lerJson<ScanStatus>(res)
 }
 
-// Lista o conteúdo (só diretórios) de um caminho absoluto do filesystem que o
-// processo da API enxerga (briefing 0071) — usado pelo navegador de pastas do
-// formulário de cadastro/edição de datasource (`PathBrowser`). `path`
-// ausente/vazio cai na raiz `/` (mesmo default do backend). Erros de path
-// inválido/não-diretório/ilegível chegam como `ApiError` (422
-// `invalid_path`/`path_unreadable`) — quem chama decide como exibir.
+// Lists the content (directories only) of an absolute filesystem path that the
+// API process can see — used by the folder browser of the
+// datasource create/edit form (`PathBrowser`). An absent/empty `path`
+// falls back to the root `/` (same default as the backend). Invalid/
+// non-directory/unreadable path errors arrive as `ApiError` (422
+// `invalid_path`/`path_unreadable`) — the caller decides how to display them.
 export async function browseLibraryPath(path?: string): Promise<BrowseResult> {
   const qs = new URLSearchParams()
   if (path) {
@@ -243,13 +243,13 @@ export async function browseLibraryPath(path?: string): Promise<BrowseResult> {
   )
 }
 
-// ── Descritor de formulário editorial (0030) ─────────────────────────────────
+// ── Editorial form descriptor ────────────────────────────────────────────────
 
-// Descritores dos campos editáveis (briefing 0030), servidos pelo backend a
-// partir de `resolver.CamposEditaveis()` + metadados de apresentação. É metadado
-// de UI IMUTÁVEL entre deploys — a UI monta o formulário e o schema Zod a partir
-// dele, de modo que um campo novo no backend faça o input aparecer sem tocar JSX.
-// Devolve a lista já ordenada por `order`.
+// Descriptors of the editable fields, served by the backend
+// from `resolver.CamposEditaveis()` + presentation metadata. It is UI
+// metadata that is IMMUTABLE between deploys — the UI builds the form and the Zod schema from
+// it, so that a new field in the backend makes the input appear without touching JSX.
+// It returns the list already sorted by `order`.
 export async function getEntityFields(): Promise<FieldDescriptor[]> {
   const schema = await lerJson<FieldSchema>(
     await fetch(`${base}/api/v1/schema/entity-fields`),
@@ -257,16 +257,16 @@ export async function getEntityFields(): Promise<FieldDescriptor[]> {
   return schema.fields
 }
 
-// ── Entities (catálogo) ──────────────────────────────────────────────────────
+// ── Entities (catalog) ───────────────────────────────────────────────────────
 
 export interface EntityListParams {
   type?: string
   owned?: boolean
   limit?: number
   offset?: number
-  // '-created_at' (0109): mais recente primeiro — alimenta os carrosséis
-  // "adicionados recentemente" da home. Ausente/'title' continua o default
-  // (ordenação por título).
+  // '-created_at': most recent first — it feeds the
+  // "adicionados recentemente" carousels of the home. Absent/'title' keeps the default
+  // (ordering by title).
   sort?: 'title' | '-title' | '-created_at'
 }
 
@@ -290,7 +290,7 @@ export async function listEntities(
   if (params.sort) {
     qs.set('sort', params.sort)
   }
-  // `lang` vazio/omitido = sem o parâmetro (backend cai no principal — compat).
+  // empty/omitted `lang` = without the parameter (the backend falls back to the primary — compat).
   if (lang) {
     qs.set('lang', lang)
   }
@@ -298,11 +298,11 @@ export async function listEntities(
   return lerJson<EntityList>(await fetch(`${base}/api/v1/entities${suffix}`))
 }
 
-// Tipos de entity com pelo menos 1 item catalogado (briefings 0109/0110), do
-// mais numeroso ao menos numeroso — sem lista fixa: cobre qualquer `type`
-// existente de fato no banco (movie/tv, mas também album/artista/faixa desde
-// 0105-0107). Alimenta os carrosséis "adicionados recentemente" da home
-// (0109) e o dropdown de biblioteca da navbar (0110).
+// Types of entity with at least 1 cataloged item, from
+// the most numerous to the least numerous — without a fixed list: it covers any `type`
+// that actually exists in the database (movie/tv, but also album/artista/faixa since
+// the music vertical). It feeds the "adicionados recentemente" carousels of the home
+// and the library dropdown of the navbar.
 export async function listEntityTypes(): Promise<EntityType[]> {
   return lerJson<EntityType[]>(await fetch(`${base}/api/v1/entities/types`))
 }
@@ -321,10 +321,10 @@ export async function getEntity(
   )
 }
 
-// Membros de uma COLEÇÃO (0025): os itens ligados por entity_relation
-// (kind='collection') como cards internos (o mesmo EntityCard da lista), ordenados
-// por ano pelo backend. `[]` quando a entity não é coleção ou não tem membros. `lang`
-// resolve os títulos dos membros no idioma ativo.
+// Members of a COLLECTION: the items linked by entity_relation
+// (kind='collection') as internal cards (the same EntityCard as the list), ordered
+// by year by the backend. `[]` when the entity is not a collection or has no members. `lang`
+// resolves the titles of the members in the active language.
 export async function getEntityMembers(
   id: string,
   lang?: string,
@@ -341,11 +341,11 @@ export async function getEntityMembers(
   )
 }
 
-// Episódios da SÉRIE agrupados por ordem de exibição (0040): todos os episódios
-// descendentes, projetados na ordem `ordering` (official/dvd/absolute…) e agrupados
-// por temporada da ordem — reagrupados/renumerados na LEITURA a partir do numbering,
-// sem criar entidade de temporada (ADR-0021). `ordering` ausente/inválido cai no
-// default da série. `lang` resolve os títulos no idioma ativo (paridade com /members).
+// Episodes of the SERIES grouped by display order: all the descendant
+// episodes, projected in the `ordering` order (official/dvd/absolute…) and grouped
+// by season of the order — regrouped/renumbered ON READ from the numbering,
+// without creating a season entity (ADR-0021). An absent/invalid `ordering` falls back to
+// the default of the series. `lang` resolves the titles in the active language (parity with /members).
 export async function getEntityEpisodes(
   id: string,
   ordering?: string,
@@ -366,13 +366,13 @@ export async function getEntityEpisodes(
   )
 }
 
-// ── Coleção: criação manual + membros (0025 Fase B) ──────────────────────────
+// ── Collection: manual creation + members (Phase B) ──────────────────────────
 
-// Cria uma coleção LOCAL (sem source): o dono monta um agrupamento do zero. Só o
-// título é obrigatório (o backend responde 422 se vier vazio); a descrição é
-// opcional. Devolve a `ResolvedEntity` recém-criada (tem `.id`) — a UI navega para
-// `/entities/{id}`. Usa um corpo INLINE (não há schema gerado dedicado): o contrato
-// é `{ title, description? }`.
+// Creates a LOCAL collection (without a source): the owner builds a grouping from scratch. Only the
+// title is required (the backend answers 422 if it comes empty); the description is
+// optional. It returns the newly created `ResolvedEntity` (it has `.id`) — the UI navigates to
+// `/entities/{id}`. It uses an INLINE body (there is no dedicated generated schema): the contract
+// is `{ title, description? }`.
 export async function createCollection(body: {
   title: string
   description?: string
@@ -385,11 +385,11 @@ export async function createCollection(body: {
   return lerJson<ResolvedEntity>(res)
 }
 
-// Liga um item (`childId`) a uma coleção (`id`) como membro. Devolve a lista de
-// membros ATUALIZADA (o mesmo `EntityCard[]` de `getEntityMembers`, ordenada por
-// ano) — a UI reflete sem uma 2ª ida. Idempotente no backend (o UNIQUE protege).
-// Erros a `ApiError` com a `message` pt-BR: 422 (parent não é coleção / item
-// inexistente / self / aninhar coleção), 404 (coleção inexistente).
+// Links an item (`childId`) to a collection (`id`) as a member. It returns the UPDATED
+// member list (the same `EntityCard[]` as `getEntityMembers`, ordered by
+// year) — the UI reflects it without a 2nd round trip. Idempotent in the backend (the UNIQUE protects it).
+// Errors as `ApiError` with the pt-BR `message`: 422 (parent is not a collection / item
+// does not exist / self / nesting a collection), 404 (collection does not exist).
 export async function addCollectionMember(
   id: string,
   childId: string,
@@ -405,8 +405,8 @@ export async function addCollectionMember(
   return lerJson<EntityCard[]>(res)
 }
 
-// Desliga um membro (`childId`) de uma coleção (`id`). Idempotente (remover um item
-// não-ligado responde 200 mesmo assim). Devolve a lista de membros ATUALIZADA.
+// Unlinks a member (`childId`) from a collection (`id`). Idempotent (removing an item
+// that is not linked answers 200 anyway). It returns the UPDATED member list.
 export async function removeCollectionMember(
   id: string,
   childId: string,
@@ -420,15 +420,15 @@ export async function removeCollectionMember(
   return lerJson<EntityCard[]>(res)
 }
 
-// ── Item local + identidade externa (0027) ───────────────────────────────────
+// ── Local item + external identity ───────────────────────────────────────────
 
-// Cria um item LOCAL (sem fonte externa): filme ou série do zero, para o dono
-// catalogar algo que não veio de um scan nem de um import. Só `type` e `title` são
-// obrigatórios (o backend responde 422 se faltarem/forem inválidos); os demais são
-// opcionais. Devolve a `ResolvedEntity` recém-criada (tem `.id`) — a UI navega para
-// `/entities/{id}`. Corpo INLINE (contrato `{ type, title, ... }`, sem schema gerado
-// dedicado). Depois o dono pode fixar os `external_ids` (updateExternalIds) e
-// re-enriquecer para sincronizar com a fonte.
+// Creates a LOCAL item (without an external source): a movie or a series from scratch, for the owner
+// to catalog something that came from neither a scan nor an import. Only `type` and `title` are
+// required (the backend answers 422 if they are missing/invalid); the rest are
+// optional. It returns the newly created `ResolvedEntity` (it has `.id`) — the UI navigates to
+// `/entities/{id}`. INLINE body (contract `{ type, title, ... }`, without a dedicated generated
+// schema). Afterwards the owner can fix the `external_ids` (updateExternalIds) and
+// re-enrich to synchronize with the source.
 export async function createItem(body: {
   type: 'movie' | 'tv'
   title: string
@@ -444,14 +444,14 @@ export async function createItem(body: {
   return lerJson<ResolvedEntity>(res)
 }
 
-// Header devolvido por `PUT external-ids`/`POST correct` (0051) quando a escrita
-// da identidade colide com outra entity SEM investimento do dono: o backend funde
-// a duplicata automaticamente e sinaliza aqui (id da entity removida) para a UI
-// avisar o dono, em vez de deixá-lo achar a duplicata sozinho.
+// Header returned by `PUT external-ids`/`POST correct` when the write
+// of the identity collides with another entity WITHOUT investment from the owner: the backend merges
+// the duplicate automatically and signals it here (id of the removed entity) so the UI can
+// warn the owner, instead of letting them find the duplicate alone.
 const HEADER_DUPLICATA_MESCLADA = 'X-Duplicate-Merged-Id'
 
-// Resultado de uma escrita de identidade externa (0051): a entity resolvida +
-// se a resposta veio com a fusão automática de uma duplicata.
+// Result of a write of the external identity: the resolved entity +
+// whether the response came with the automatic merge of a duplicate.
 export interface EscritaIdentidade {
   entity: ResolvedEntity
   duplicataMesclada: boolean
@@ -465,13 +465,13 @@ async function lerEscritaIdentidade(res: Response): Promise<EscritaIdentidade> {
   }
 }
 
-// Grava (FULL REPLACE) a identidade externa da entity (`external_ids`, MD4): o dono
-// fixa qual id de cada fonte a entity usa (ex.: tmdb=603), base para uma sincronização
-// futura — os ids da fonte podem mudar ou o item ser substituído por outro. O backend
-// descarta valores vazios (remover uma fonte = deixar o id em branco). As colunas
-// geradas (external_id_tmdb/imdb) re-derivam sozinhas. Corpo INLINE
-// `{ external_ids: {source: id} }`. Se o id gravado colidir com outra entity sem
-// investimento do dono, o backend funde as duas (0051) — ver `EscritaIdentidade`.
+// Writes (FULL REPLACE) the external identity of the entity (`external_ids`, MD4): the owner
+// fixes which id of each source the entity uses (e.g. tmdb=603), the basis for a future
+// synchronization — the ids of the source may change or the item may be replaced by another one. The backend
+// discards empty values (removing a source = leaving the id blank). The generated
+// columns (external_id_tmdb/imdb) re-derive on their own. INLINE body
+// `{ external_ids: {source: id} }`. If the id written collides with another entity without
+// investment from the owner, the backend merges the two — see `EscritaIdentidade`.
 export async function updateExternalIds(
   id: string,
   externalIds: Record<string, string>,
@@ -487,19 +487,19 @@ export async function updateExternalIds(
   return lerEscritaIdentidade(res)
 }
 
-// ── Settings de idioma (0019) ────────────────────────────────────────────────
+// ── Language settings ────────────────────────────────────────────────────────
 
-// Config de idioma vigente (principal, fallback, permitidos). Quando não há
-// linha gravada, o backend responde o default seguro (pt-BR / en / [pt-BR, en]).
+// Current language config (primary, fallback, allowed). When there is no
+// stored row, the backend answers the safe default (pt-BR / en / [pt-BR, en]).
 export async function getLanguageSettings(): Promise<LanguageSettings> {
   return lerJson<LanguageSettings>(
     await fetch(`${base}/api/v1/settings/languages`),
   )
 }
 
-// Grava (upsert) a config de idioma. O 422 do backend (principal/fallback fora
-// dos permitidos, ou permitidos vazio) vira `ApiError` com a mensagem pt-BR —
-// exibida inline pela tela de configurações.
+// Writes (upsert) the language config. The backend 422 (primary/fallback outside
+// the allowed ones, or empty allowed) becomes an `ApiError` with the pt-BR message —
+// shown inline by the settings screen.
 export async function putLanguageSettings(
   body: LanguageSettings,
 ): Promise<LanguageSettings> {
@@ -511,23 +511,23 @@ export async function putLanguageSettings(
   return lerJson<LanguageSettings>(res)
 }
 
-// ── Settings de throttle do enriquecimento retroativo (0085) ────────────────
+// ── Settings of the retroactive enrichment throttle ──────────────────────────
 
 export type RetroactiveEnrichmentSettings =
   components['schemas']['RetroactiveEnrichmentSettings']
 
-// Intervalo mínimo (em dias) entre duas tentativas de enriquecimento
-// retroativo do MESMO item, aplicado às bibliotecas sem override próprio
-// (`Source.retroactive_enrichment_days`). Quando ainda não há linha gravada,
-// o backend responde o default seguro (`{"retry_days": 15}`).
+// Minimum interval (in days) between two retroactive enrichment attempts
+// of the SAME item, applied to the libraries without an override of their own
+// (`Source.retroactive_enrichment_days`). When there is no stored row yet,
+// the backend answers the safe default (`{"retry_days": 15}`).
 export async function getRetroactiveEnrichmentSettings(): Promise<RetroactiveEnrichmentSettings> {
   return lerJson<RetroactiveEnrichmentSettings>(
     await fetch(`${base}/api/v1/settings/enrichment-retroativo`),
   )
 }
 
-// Grava (upsert) a config de throttle. O 422 do backend (`retry_days` fora de
-// [1, 365]) vira `ApiError` com a mensagem pt-BR — exibida inline.
+// Writes (upsert) the throttle config. The backend 422 (`retry_days` outside
+// [1, 365]) becomes an `ApiError` with the pt-BR message — shown inline.
 export async function putRetroactiveEnrichmentSettings(
   body: RetroactiveEnrichmentSettings,
 ): Promise<RetroactiveEnrichmentSettings> {
@@ -539,23 +539,23 @@ export async function putRetroactiveEnrichmentSettings(
   return lerJson<RetroactiveEnrichmentSettings>(res)
 }
 
-// ── Settings de materialização automática de artes (0089) ───────────────────
+// ── Settings of automatic artwork materialization ────────────────────────────
 
 export type AutoMaterializeArtworkSettings =
   components['schemas']['AutoMaterializeArtworkSettings']
 
-// Toggle: quando ligado, todo auto-import bem-sucedido do scan (filme ou
-// série) já materializa na hora, na pasta real da biblioteca, as artes
-// descobertas no inventário. Quando ainda não há linha gravada, o backend
-// responde o default seguro (`{"enabled": false}`).
+// Toggle: when on, every successful auto-import of the scan (movie or
+// series) already materializes right away, into the real library folder, the artwork
+// discovered in the inventory. When there is no stored row yet, the backend
+// answers the safe default (`{"enabled": false}`).
 export async function getAutoMaterializeArtworkSettings(): Promise<AutoMaterializeArtworkSettings> {
   return lerJson<AutoMaterializeArtworkSettings>(
     await fetch(`${base}/api/v1/settings/auto-materialize-artwork`),
   )
 }
 
-// Grava (upsert) o toggle. O 400 do backend (corpo malformado) vira
-// `ApiError` com a mensagem pt-BR — exibida inline.
+// Writes (upsert) the toggle. The backend 400 (malformed body) becomes an
+// `ApiError` with the pt-BR message — shown inline.
 export async function putAutoMaterializeArtworkSettings(
   body: AutoMaterializeArtworkSettings,
 ): Promise<AutoMaterializeArtworkSettings> {
@@ -567,26 +567,26 @@ export async function putAutoMaterializeArtworkSettings(
   return lerJson<AutoMaterializeArtworkSettings>(res)
 }
 
-// ── Settings de download automático de trailer/tema no scan (0104) ─────────
+// ── Settings of automatic trailer/theme download during the scan ─────────────
 
-// Shape manual (não via `components['schemas']`): o backend deste briefing
-// está sendo implementado em paralelo e o openapi.yaml/gen:types ainda não
-// tem o schema novo. Mesmo shape de `AutoMaterializeArtworkSettings`
+// Manual shape (not via `components['schemas']`): the backend for this feature
+// is being implemented in parallel and the openapi.yaml/gen:types does not
+// have the new schema yet. The same shape as `AutoMaterializeArtworkSettings`
 // (`{ enabled: boolean }`).
 export type AutoDownloadTrailerTemaSettings = { enabled: boolean }
 
-// Toggle: quando ligado, ao importar/auto-casar um item novo no scan, tenta
-// baixar trailer e tema em segundo plano (best-effort, não bloqueia a
-// resposta do scan). Quando ainda não há linha gravada, o backend responde o
-// default seguro (`{"enabled": false}`).
+// Toggle: when on, importing/auto-matching a new item in the scan tries
+// to download the trailer and the theme in the background (best-effort, it does not block the
+// scan response). When there is no stored row yet, the backend answers the
+// safe default (`{"enabled": false}`).
 export async function getAutoDownloadTrailerTemaSettings(): Promise<AutoDownloadTrailerTemaSettings> {
   return lerJson<AutoDownloadTrailerTemaSettings>(
     await fetch(`${base}/api/v1/settings/auto-download-trailer-tema`),
   )
 }
 
-// Grava (upsert) o toggle. O 400 do backend (corpo malformado) vira
-// `ApiError` com a mensagem pt-BR — exibida inline.
+// Writes (upsert) the toggle. The backend 400 (malformed body) becomes an
+// `ApiError` with the pt-BR message — shown inline.
 export async function putAutoDownloadTrailerTemaSettings(
   body: AutoDownloadTrailerTemaSettings,
 ): Promise<AutoDownloadTrailerTemaSettings> {
@@ -601,21 +601,21 @@ export async function putAutoDownloadTrailerTemaSettings(
   return lerJson<AutoDownloadTrailerTemaSettings>(res)
 }
 
-// ── Settings de path customizado do yt-dlp (0101, ADR-0025) ─────────────────
+// ── Settings of the custom yt-dlp path (ADR-0025) ────────────────────────────
 
 export type YtdlpSettings = components['schemas']['YtdlpSettings']
 export type YtdlpCustomPath = components['schemas']['YtdlpCustomPath']
 
-// Status EFETIVO do binário yt-dlp -- fundação do downloader de YouTube
-// reaproveitado por trailer (0102) e música-tema (0103). `disponivel` diz se
-// há um binário utilizável agora; `origem` distingue path customizado
-// ("custom"), baixado dinamicamente ("baixado") ou indisponível ("nenhum").
+// EFFECTIVE status of the yt-dlp binary -- foundation of the YouTube downloader
+// reused by the trailer and the theme song. `disponivel` says whether
+// there is a usable binary now; `origem` distinguishes a custom path
+// ("custom"), dynamically downloaded ("baixado") or unavailable ("nenhum").
 export async function getYtdlpSettings(): Promise<YtdlpSettings> {
   return lerJson<YtdlpSettings>(await fetch(`${base}/api/v1/settings/ytdlp`))
 }
 
-// Grava (ou limpa, com `null`/string vazia) o path customizado do yt-dlp.
-// Efeito IMEDIATO em runtime, sem reiniciar o servidor.
+// Writes (or clears, with `null`/empty string) the custom yt-dlp path.
+// IMMEDIATE effect at runtime, without restarting the server.
 export async function putYtdlpSettings(
   body: YtdlpCustomPath,
 ): Promise<YtdlpSettings> {
@@ -627,13 +627,13 @@ export async function putYtdlpSettings(
   return lerJson<YtdlpSettings>(res)
 }
 
-// ── Webhook de entrada Jellyfin (0093/0097) ──────────────────────────────────
+// ── Jellyfin inbound webhook ─────────────────────────────────────────────────
 
 export type JellyfinWebhookToken = components['schemas']['JellyfinWebhookToken']
 
-// Token vigente do webhook de entrada do Jellyfin. 404 (nenhum token gerado
-// ainda) é um estado NORMAL na primeira visita — não deve virar erro de
-// query, então vira `{token: null}` em vez de lançar.
+// Current token of the Jellyfin inbound webhook. A 404 (no token generated
+// yet) is a NORMAL state on the first visit — it must not become a query
+// error, so it becomes `{token: null}` instead of throwing.
 export async function getJellyfinWebhookToken(): Promise<{
   token: string | null
 }> {
@@ -645,7 +645,7 @@ export async function getJellyfinWebhookToken(): Promise<{
   return { token: dado.token }
 }
 
-// Gera (ou substitui, se já existir) o token do webhook Jellyfin.
+// Generates (or replaces, if it already exists) the Jellyfin webhook token.
 export async function regenerateJellyfinWebhookToken(): Promise<JellyfinWebhookToken> {
   const res = await fetch(`${base}/api/v1/webhooks/jellyfin/token`, {
     method: 'POST',
@@ -653,7 +653,7 @@ export async function regenerateJellyfinWebhookToken(): Promise<JellyfinWebhookT
   return lerJson<JellyfinWebhookToken>(res)
 }
 
-// ── Integrações configuráveis via UI/banco (0095/0096, ADR-0023) ────────────
+// ── Integrations configurable through the UI/database ────────────────────────
 
 export type IntegrationSummary = components['schemas']['IntegrationSummary']
 export type IntegrationsListResponse =
@@ -665,9 +665,9 @@ export type IntegrationDetail = components['schemas']['IntegrationDetail']
 export type PutIntegrationRequest =
   components['schemas']['PutIntegrationRequest']
 
-// Lista as integrações registradas no Registry (hoje só TMDB) com o
-// `configurada` já calculado pelo backend — o front nunca recalcula essa
-// regra (cada provider tem a sua, ex.: TMDB aceita token OU api_key).
+// Lists the integrations registered in the Registry (today only TMDB) with the
+// `configurada` already computed by the backend — the front never recalculates that
+// rule (each provider has its own, e.g.: TMDB accepts token OR api_key).
 export async function listIntegrations(): Promise<IntegrationSummary[]> {
   const dado = await lerJson<IntegrationsListResponse>(
     await fetch(`${base}/api/v1/integrations`),
@@ -675,20 +675,20 @@ export async function listIntegrations(): Promise<IntegrationSummary[]> {
   return dado.integrations
 }
 
-// Schema de campos + valor efetivo (banco → env var → ausente) de UMA
-// integração. Um campo `tipo:"secret"` nunca vem com `valor` no corpo — só
-// `definido`/`origem` (mesmo no eco de `putIntegration` abaixo).
+// Field schema + effective value (database → env var → absent) of ONE
+// integration. A field `tipo:"secret"` never comes with a `valor` in the body — only
+// `definido`/`origem` (even in the echo of `putIntegration` below).
 export async function getIntegration(slug: string): Promise<IntegrationDetail> {
   return lerJson<IntegrationDetail>(
     await fetch(`${base}/api/v1/integrations/${encodeURIComponent(slug)}`),
   )
 }
 
-// Upsert PARCIAL: só as chaves presentes em `valores` mudam; `null` remove a
-// chave (o campo volta a herdar a env var, ou fica `origem:"nenhum"` se ela
-// também estiver vazia). 404 (slug desconhecido) / 422 (valores vazio ou
-// chave desconhecida) viram `ApiError` com a mensagem pt-BR — exibida inline
-// pelo `IntegrationForm`.
+// PARTIAL upsert: only the keys present in `valores` change; `null` removes the
+// key (the field inherits the env var again, or stays `origem:"nenhum"` if it
+// is also empty). 404 (unknown slug) / 422 (empty valores or
+// unknown key) become an `ApiError` with the pt-BR message — shown inline
+// by the `IntegrationForm`.
 export async function putIntegration(
   slug: string,
   valores: Record<string, string | null>,
@@ -705,20 +705,20 @@ export async function putIntegration(
   return lerJson<IntegrationDetail>(res)
 }
 
-// ── Settings de completude de catalogação (0057) ─────────────────────────────
+// ── Settings of cataloging completeness ──────────────────────────────────────
 
-// Config vigente de completude de CATALOGAÇÃO (por `entity.type`). Quando não
-// há linha gravada, o backend responde o default de fábrica (description +
-// media_file + artwork:[poster] para movie/tv) sem gravar nada.
+// Current config of CATALOGING completeness (per `entity.type`). When there
+// is no stored row, the backend answers the factory default (description +
+// media_file + artwork:[poster] for movie/tv) without writing anything.
 export async function getCatalogCompletenessSettings(): Promise<CatalogCompletenessSettings> {
   return lerJson<CatalogCompletenessSettings>(
     await fetch(`${base}/api/v1/settings/catalog-completeness`),
   )
 }
 
-// Grava (substituição total) a config de completude de catalogação. O 422 do
-// backend (chave de tipo vazia, kind de arte desconhecido) vira `ApiError` com
-// a mensagem pt-BR — exibida inline pela tela de configurações.
+// Writes (total replacement) the cataloging completeness config. The backend 422
+// (empty type key, unknown artwork kind) becomes an `ApiError` with
+// the pt-BR message — shown inline by the settings screen.
 export async function putCatalogCompletenessSettings(
   body: CatalogCompletenessSettings,
 ): Promise<CatalogCompletenessSettings> {
@@ -736,23 +736,23 @@ export async function getEntityFiles(id: string): Promise<FileList> {
   )
 }
 
-// ── Override do dono (0016) — edição por idioma ──────────────────────────────
+// ── Owner override — editing per language ────────────────────────────────────
 
-// Blob CRU do override guardado (`{}` quando não há). A UI o usa para distinguir
-// "overridado" de "herdado" POR CAMPO e POR IDIOMA: campos traduzíveis vêm como
-// mapa por idioma (`{"pt-BR":…}`), neutros como o escalar direto. Não é a entity
-// resolvida — é o patch como está no banco (o resolver interpreta na leitura).
+// RAW blob of the stored override (`{}` when there is none). The UI uses it to distinguish
+// "overridden" from "inherited" PER FIELD and PER LANGUAGE: translatable fields come as a
+// map by language (`{"pt-BR":…}`), neutral ones as the direct scalar. It is not the resolved
+// entity — it is the patch as it is in the database (the resolver interprets it on read).
 export async function getOverrideBlob(id: string): Promise<OverrideBlob> {
   return lerJson<OverrideBlob>(
     await fetch(`${base}/api/v1/entities/${encodeURIComponent(id)}/override`),
   )
 }
 
-// Funde um patch esparso no override, POR IDIOMA. O `?lang=` é o "pincel" dos
-// campos traduzíveis (title/description/tags): o handler grava `override[campo][lang]`,
-// preservando os outros idiomas. Campos neutros (original_title/release_date)
-// ignoram o `lang`. `null` num campo = "definir vazio" (distinto de LIMPAR).
-// Devolve a entity RESOLVIDA no `lang` (a UI reflete na hora). 422 = patch inválido.
+// Merges a sparse patch into the override, PER LANGUAGE. The `?lang=` is the "brush" of the
+// translatable fields (title/description/tags): the handler writes `override[campo][lang]`,
+// preserving the other languages. Neutral fields (original_title/release_date)
+// ignore the `lang`. `null` in a field = "set empty" (distinct from CLEAR).
+// It returns the entity RESOLVED in the `lang` (the UI reflects it right away). 422 = invalid patch.
 export async function patchOverride(
   id: string,
   lang: string,
@@ -770,10 +770,10 @@ export async function patchOverride(
   return lerJson<ResolvedEntity>(res)
 }
 
-// LIMPAR override de um campo (≠ definir vazio). Com `lang` presente e campo
-// traduzível, remove só `override[campo][lang]` (volta a HERDAR naquele idioma);
-// sem `lang`, ou campo neutro, remove a chave inteira. Idempotente. Devolve a
-// entity RESOLVIDA.
+// CLEAR the override of a field (≠ set empty). With `lang` present and a translatable
+// field, it removes only `override[campo][lang]` (it INHERITS again in that language);
+// without `lang`, or for a neutral field, it removes the whole key. Idempotent. It returns the
+// entity RESOLVED.
 export async function clearOverrideField(
   id: string,
   campo: string,
@@ -789,8 +789,8 @@ export async function clearOverrideField(
   return lerJson<ResolvedEntity>(res)
 }
 
-// RESET — apaga o override inteiro: todos os campos voltam a herdar a base.
-// Devolve a entity RESOLVIDA (na base, sem override).
+// RESET — it deletes the whole override: every field inherits the base again.
+// It returns the entity RESOLVED (on the base, without override).
 export async function resetOverride(id: string): Promise<ResolvedEntity> {
   const res = await fetch(
     `${base}/api/v1/entities/${encodeURIComponent(id)}/override`,
@@ -799,15 +799,15 @@ export async function resetOverride(id: string): Promise<ResolvedEntity> {
   return lerJson<ResolvedEntity>(res)
 }
 
-// ── Busca + import (0015) ────────────────────────────────────────────────────
+// ── Search + import ──────────────────────────────────────────────────────────
 
-// Busca unificada: `local` (catálogo) + `external` (fonte externa, "não salvos").
-// `q` vazio é rejeitado pelo backend (400) — a UI só chama com termo preenchido.
-// `type` opcional filtra por QUALQUER tipo de topo real (briefing 0113/ADR-0030 —
-// não mais só `movie`|`tv`; o backend já não valida contra um enum fixo desde o
-// 0112). `include` (0033) religa sub-nós da árvore de séries (`season`/`episode`),
-// que por padrão ficam fora da busca; vêm no mesmo `local[]`, e a UI os separa por
-// `type` em seções próprias.
+// Unified search: `local` (catalog) + `external` (external source, "not saved").
+// An empty `q` is rejected by the backend (400) — the UI only calls it with a filled term.
+// An optional `type` filters by ANY real top-level type (ADR-0030 —
+// no longer only `movie`|`tv`; the backend stopped validating against a fixed enum in
+// the generic top types delivery). `include` turns the sub-nodes of the series tree back on (`season`/`episode`),
+// which by default stay out of the search; they come in the same `local[]`, and the UI separates them by
+// `type` into sections of their own.
 export async function searchMedia(
   q: string,
   type?: string,
@@ -818,8 +818,8 @@ export async function searchMedia(
   if (type) {
     qs.set('type', type)
   }
-  // `lang` = idioma de leitura ativo: a busca externa devolve títulos/sinopses
-  // nele. Vazio/omitido = o backend cai no principal.
+  // `lang` = active reading language: the external search returns titles/synopses
+  // in it. Empty/omitted = the backend falls back to the primary.
   if (lang) {
     qs.set('lang', lang)
   }
@@ -831,8 +831,8 @@ export async function searchMedia(
   )
 }
 
-// Importa um resultado externo para o catálogo. Devolve o `ResolvedEntity`
-// (tem `.id`) tanto no 201 (criado) quanto no 200 (já existia).
+// Imports an external result into the catalog. It returns the `ResolvedEntity`
+// (it has `.id`) both on 201 (created) and on 200 (it already existed).
 export async function importExternal(
   body: ImportRequest,
 ): Promise<ResolvedEntity> {
@@ -844,14 +844,14 @@ export async function importExternal(
   return lerJson<ResolvedEntity>(res)
 }
 
-// Re-enriquece uma entity EXISTENTE pela fonte (0015): puxa o detalhe e regrava a
-// base externa + pôster. Sem corpo, usa `source=tmdb` e o `source_id` de
-// `external_ids[tmdb]` da própria entity — o passo de sincronização após fixar o id
-// (0027). Devolve a entity re-resolvida. Erros da fonte/identidade (422 sem id, 502
-// fonte, 503 sem provider) viram `ApiError` com a mensagem pt-BR do envelope.
-// `force: true` (briefing 0088, item "Baixar Metadados" do menu Gerenciar) pula o
-// cache de 24h de `external_detail` e sempre vai à rede — call sites existentes que
-// não passam `force` continuam servindo do cache normalmente (sem regressão).
+// Re-enriches an EXISTING entity through the source: it fetches the detail and rewrites the
+// external base + poster. Without a body, it uses `source=tmdb` and the `source_id` of
+// `external_ids[tmdb]` of the entity itself — the synchronization step after fixing the id.
+// It returns the re-resolved entity. Source/identity errors (422 without an id, 502
+// source, 503 without a provider) become an `ApiError` with the pt-BR message of the envelope.
+// `force: true` (item "Baixar Metadados" of the Gerenciar menu) skips the
+// 24h cache of `external_detail` and always goes to the network — existing call sites that
+// do not pass `force` keep being served from the cache normally (no regression).
 export async function enrichEntity(
   id: string,
   body?: { source?: string; source_id?: string; force?: boolean },
@@ -867,15 +867,15 @@ export async function enrichEntity(
   return lerJson<ResolvedEntity>(res)
 }
 
-// ── Detalhe externo rico (0022/0023) ─────────────────────────────────────────
+// ── Rich external detail ─────────────────────────────────────────────────────
 
-// Detalhe rico de um item NA FONTE, ANTES de importar (briefing 0022): o que o
-// TMDB mostra (sinopse, gêneros, keywords, duração, classificação, slogan,
-// vídeos, coleção, similares, links). Os campos traduzíveis já vêm resolvidos no
-// `lang` pedido; `lang` omitido cai no principal do backend. O backend persiste
-// na 1ª ida e serve do cache depois. `type` é `movie|tv`. Erros mapeados a
-// `ApiError`: 404 (inexistente na fonte), 502 (fonte falhou), 503 (sem provider),
-// 400 (idioma fora dos permitidos), 422 (tipo inválido).
+// Rich detail of an item IN THE SOURCE, BEFORE importing: what
+// TMDB shows (synopsis, genres, keywords, runtime, certification, tagline,
+// videos, collection, similars, links). The translatable fields already come resolved in
+// the requested `lang`; an omitted `lang` falls back to the backend primary. The backend persists
+// on the 1st round trip and serves from the cache afterwards. `type` is `movie|tv`. Errors mapped to
+// `ApiError`: 404 (absent in the source), 502 (source failed), 503 (no provider),
+// 400 (language outside the allowed ones), 422 (invalid type).
 export async function getExternalDetail(
   source: string,
   type: string,
@@ -896,11 +896,11 @@ export async function getExternalDetail(
   )
 }
 
-// Coleção externa como página (briefing 0024, follow-up do 0023): os metadados do
-// conjunto e as partes (filmes) navegáveis ao detalhe externo. Localizada no `lang`
-// pedido (mono-idioma); `lang` omitido cai no principal. Erros a `ApiError`: 404
-// (inexistente na fonte), 502 (fonte falhou), 503 (fonte sem coleção), 400 (idioma
-// fora dos permitidos).
+// External collection as a page: the metadata of the
+// set and the parts (movies) navigable to the external detail. Localized in the requested
+// `lang` (mono-language); an omitted `lang` falls back to the primary. Errors as `ApiError`: 404
+// (absent in the source), 502 (source failed), 503 (source without a collection), 400 (language
+// outside the allowed ones).
 export async function getCollectionDetail(
   source: string,
   id: string,
@@ -920,11 +920,11 @@ export async function getCollectionDetail(
   )
 }
 
-// Álbum externo como página (briefing 0115 Parte 2, ADR-0029): as faixas OFICIAIS
-// do release, com `internal_id` para as já catalogadas — "faixas faltando" do
-// álbum, mesmo padrão de getCollectionDetail acima. `id` é o MBID de
-// release-group. Erros a `ApiError`: 404 (inexistente na fonte), 502 (fonte
-// falhou), 503 (fonte sem a capacidade seletiva de álbum).
+// External album as a page (ADR-0029): the OFFICIAL tracks
+// of the release, with `internal_id` for the already cataloged ones — the "missing tracks" of the
+// album, the same pattern as getCollectionDetail above. `id` is the MBID of the
+// release-group. Errors as `ApiError`: 404 (absent in the source), 502 (source
+// failed), 503 (source without the selective album capability).
 export async function getExternalAlbum(
   source: string,
   id: string,
@@ -944,20 +944,20 @@ export async function getExternalAlbum(
   )
 }
 
-// ── Pessoa (0029, fase D, interno-first) ─────────────────────────────────────
+// ── Person (phase D, internal-first) ─────────────────────────────────────────
 
-// getPerson busca a pessoa deduplicada no catálogo + a sua FILMOGRAFIA (as obras já
-// importadas que a creditam). Read-only nesta fase. 404 (`ApiError`) quando o id não
-// existe no catálogo.
+// getPerson fetches the person deduplicated in the catalog + their FILMOGRAPHY (the works already
+// imported that credit them). Read-only in this phase. 404 (`ApiError`) when the id does not
+// exist in the catalog.
 export async function getPerson(id: string): Promise<Person> {
   return lerJson<Person>(
     await fetch(`${base}/api/v1/person/${encodeURIComponent(id)}`),
   )
 }
 
-// URL absoluta (respeitando a base) do binário do pôster local, ou `null` quando
-// o card não tem arte — a UI cai no placeholder. `poster_url` já vem como rota
-// pronta do card (ex.: `/api/v1/entities/{id}/assets/poster`).
+// Absolute URL (respecting the base) of the local poster binary, or `null` when
+// the card has no artwork — the UI falls back to the placeholder. `poster_url` already comes as a
+// ready route of the card (e.g. `/api/v1/entities/{id}/assets/poster`).
 export function posterSrc(posterUrl: string | null | undefined): string | null {
   if (!posterUrl) {
     return null
@@ -965,13 +965,13 @@ export function posterSrc(posterUrl: string | null | undefined): string | null {
   return `${base}${posterUrl}`
 }
 
-// imagemProxySrc monta a URL do IMAGE PROXY (GET /api/v1/images?src=) para uma URL
-// CRUA de imagem externa — hoje o still de episódio do provider (0042). O proxy busca e
-// cacheia a imagem SOB DEMANDA (por hash) na 1ª exibição (0015), decoplando a UI do CDN
-// da fonte em runtime. Difere de `posterSrc` (rota de asset LOCAL já pronta) e de
-// `srcDeImagem` (que só decide base × URL direta): aqui SEMPRE roteia pelo proxy, pois a
-// fonte externa não é servível direto em runtime. `null`/vazia → null (a UI cai no
-// placeholder). Respeita a base (VITE_API_BASE), como `posterSrc`.
+// imagemProxySrc builds the URL of the IMAGE PROXY (GET /api/v1/images?src=) for a RAW
+// external image URL — today the episode still of the provider. The proxy fetches and
+// caches the image ON DEMAND (by hash) on the 1st display, decoupling the UI from the CDN
+// of the source at runtime. It differs from `posterSrc` (a ready LOCAL asset route) and from
+// `srcDeImagem` (which only decides base × direct URL): here it ALWAYS routes through the proxy, since the
+// external source is not directly servable at runtime. `null`/empty → null (the UI falls back to the
+// placeholder). It respects the base (VITE_API_BASE), like `posterSrc`.
 export function imagemProxySrc(
   rawUrl: string | null | undefined,
 ): string | null {
@@ -981,13 +981,13 @@ export function imagemProxySrc(
   return `${base}/api/v1/images?src=${encodeURIComponent(rawUrl)}`
 }
 
-// arteSrc resolve QUALQUER URL de arte para o `<img>` (0044): URL ABSOLUTA (crua do
-// provider — ex.: still/backdrop do TMDB/TVDB) passa pelo IMAGE PROXY (`imagemProxySrc`,
-// que busca+cacheia sob demanda, decoplando do CDN em runtime); ROTA LOCAL relativa
-// (asset já servível — ex.: `/assets/still` custom, pôster/fanart do dono) recebe só a
-// base (`posterSrc`). Unifica os três tratamentos divergentes (pôster local, backdrop
-// cru/local, still cru/custom) num único helper. `null`/vazia → null (a UI cai no
-// placeholder), como os helpers que o compõem.
+// arteSrc resolves ANY artwork URL for the `<img>`: an ABSOLUTE URL (raw from the
+// provider — e.g. still/backdrop of TMDB/TVDB) goes through the IMAGE PROXY (`imagemProxySrc`,
+// which fetches+caches on demand, decoupling from the CDN at runtime); a relative LOCAL ROUTE
+// (an already servable asset — e.g. a custom `/assets/still`, a poster/fanart of the owner) receives only the
+// base (`posterSrc`). It unifies the three divergent treatments (local poster, raw/local backdrop,
+// raw/custom still) in a single helper. `null`/empty → null (the UI falls back to the
+// placeholder), like the helpers it composes.
 export function arteSrc(url: string | null | undefined): string | null {
   if (!url) {
     return null
@@ -995,60 +995,60 @@ export function arteSrc(url: string | null | undefined): string | null {
   return /^https?:\/\//.test(url) ? imagemProxySrc(url) : posterSrc(url)
 }
 
-// ── Arte custom: galeria + upload (0017) ─────────────────────────────────────
+// ── Custom artwork: gallery + upload ─────────────────────────────────────────
 
-// Tipos de imagem aceitos pelo upload (mesmo conjunto que o backend valida pelos
-// magic bytes). A UI reusa isto para o `accept` do <input> e para a validação
-// no cliente ANTES de enviar (rejeita cedo, sem gastar uma ida ao servidor). O
-// `still` (0044) é o kind da arte 16:9 do episódio; `kindsParaTipo` filtra o que
-// cada tipo oferece no upload.
+// Image types accepted by the upload (the same set the backend validates by
+// magic bytes). The UI reuses this for the `accept` of the <input> and for the validation
+// on the client BEFORE sending (it rejects early, without spending a round trip). The
+// `still` is the kind of the 16:9 artwork of the episode; `kindsParaTipo` filters what
+// each type offers in the upload.
 export const KINDS_ARTE = ['poster', 'fanart', 'still'] as const
 export type KindArte = (typeof KINDS_ARTE)[number]
 
-// kindsParaTipo devolve os kinds oferecidos no upload conforme o TIPO da entity
-// (0044): o EPISÓDIO gere só o `still` (a sua arte 16:9); os demais tipos gerem
-// `poster` (2:3) e `fanart` (16:9). Mantém o `still` fora do menu de filmes/séries
-// (onde não faz sentido) sem impedir o backend de aceitá-lo genericamente.
+// kindsParaTipo returns the kinds offered in the upload according to the TYPE of the entity:
+// the EPISODE manages only the `still` (its 16:9 artwork); the other types manage
+// `poster` (2:3) and `fanart` (16:9). It keeps the `still` out of the movie/series menu
+// (where it makes no sense) without preventing the backend from accepting it generically.
 export function kindsParaTipo(type: string): readonly KindArte[] {
   return type === 'episode' ? ['still'] : ['poster', 'fanart']
 }
 
 export const MIMES_ARTE = ['image/png', 'image/jpeg', 'image/webp'] as const
 
-// URL absoluta (respeitando a base) do binário de um asset para as miniaturas.
-// O `Asset.url` já vem como rota pronta do backend (rota do /file) — só aplica a
-// base, como `posterSrc`.
+// Absolute URL (respecting the base) of the binary of an asset for the thumbnails.
+// The `Asset.url` already comes as a ready route of the backend (route of the /file) — it only applies the
+// base, like `posterSrc`.
 export function assetFileSrc(url: string): string {
   return `${base}${url}`
 }
 
-// Galeria: todos os assets da entity (poster/fanart, user/external/local). `[]`
-// quando não há arte.
+// Gallery: all the assets of the entity (poster/fanart, user/external/local). `[]`
+// when there is no artwork.
 export async function listAssets(id: string): Promise<AssetList> {
   return lerJson<AssetList>(
     await fetch(`${base}/api/v1/entities/${encodeURIComponent(id)}/assets`),
   )
 }
 
-// ── Tema musical local (briefing 0082) ───────────────────────────────────────
+// ── Local theme song ─────────────────────────────────────────────────────────
 
-// themePath monta a rota do binário do tema — fonte única do template (o
-// player do hero usa a MESMA rota como `src` do `<audio>` e no HEAD abaixo).
+// themePath builds the route of the theme binary — the single source of the template (the
+// player of the hero uses the SAME route as the `src` of the `<audio>` and in the HEAD below).
 function themePath(id: string): string {
   return `/api/v1/entities/${encodeURIComponent(id)}/theme`
 }
 
-// themeSrc é a URL absoluta (respeitando a base) do binário do tema, pronta
-// para o `src` do `<audio>`.
+// themeSrc is the absolute URL (respecting the base) of the theme binary, ready
+// for the `src` of the `<audio>`.
 export function themeSrc(id: string): string {
   return `${base}${themePath(id)}`
 }
 
-// hasEntityTheme confere se a entity tem um theme.{mp3,ogg,flac} na pasta-raiz
-// SEM baixar o binário inteiro (HEAD — o backend serve o mesmo handler,
-// `http.ServeContent` já omite o corpo). Usada uma vez por carga da tela (sem
-// polling): 200 → true, 404 → false. Falha de rede também vira `false`
-// (degradação graciosa — o player simplesmente não aparece).
+// hasEntityTheme checks whether the entity has a theme.{mp3,ogg,flac} in the root folder
+// WITHOUT downloading the whole binary (HEAD — the backend serves the same handler,
+// `http.ServeContent` already omits the body). Used once per screen load (without
+// polling): 200 → true, 404 → false. A network failure also becomes `false`
+// (graceful degradation — the player simply does not appear).
 export async function hasEntityTheme(id: string): Promise<boolean> {
   try {
     const res = await fetch(`${base}${themePath(id)}`, { method: 'HEAD' })
@@ -1058,17 +1058,17 @@ export async function hasEntityTheme(id: string): Promise<boolean> {
   }
 }
 
-// Tema musical automático via ThemerrDB (briefing 0103, ADR-0025). O
-// candidato é lido do CACHE (media_external, gravado pelo enrich) — nunca
-// consulta a ThemerrDB ao vivo. A URL do YouTube nunca chega ao cliente
-// (§6): o download acontece inteiramente no servidor.
+// Automatic theme song through ThemerrDB. The
+// candidate is read from the CACHE (media_external, written by the enrich) — it never
+// queries ThemerrDB live. The YouTube URL never reaches the client
+// (§6): the download happens entirely on the server.
 export type ThemeCandidatoResult = components['schemas']['ThemeCandidatoResult']
 export type ThemeDownloadResult = components['schemas']['ThemeDownloadResult']
 
-// getEntityThemeCandidato confere se há um candidato de tema musical do
-// ThemerrDB cacheado e se já existe um theme.* local. Erro de rede vira o
-// estado "sem candidato, sem local" (degradação graciosa — o botão
-// simplesmente não aparece).
+// getEntityThemeCandidato checks whether there is a cached theme song candidate from
+// ThemerrDB and whether a local theme.* already exists. A network error becomes the
+// "no candidate, no local" state (graceful degradation — the button
+// simply does not appear).
 export async function getEntityThemeCandidato(
   id: string,
 ): Promise<ThemeCandidatoResult> {
@@ -1082,11 +1082,11 @@ export async function getEntityThemeCandidato(
   }
 }
 
-// downloadEntityTheme baixa (via yt-dlp, no servidor) o candidato de tema
-// musical do ThemerrDB e materializa como theme.mp3 na raiz da pasta.
-// SÍNCRONO: a promise só resolve quando o download termina. Erros (503 sem
-// yt-dlp, 422 sem candidato, 409 já existe, 502 falha do download) chegam
-// como `ApiError` com a `message` pt-BR do envelope.
+// downloadEntityTheme downloads (via yt-dlp, on the server) the theme song
+// candidate from ThemerrDB and materializes it as theme.mp3 in the root of the folder.
+// SYNCHRONOUS: the promise only resolves when the download finishes. Errors (503 without
+// yt-dlp, 422 without a candidate, 409 already exists, 502 download failure) arrive
+// as `ApiError` with the pt-BR `message` of the envelope.
 export async function downloadEntityTheme(
   id: string,
 ): Promise<ThemeDownloadResult> {
@@ -1097,31 +1097,31 @@ export async function downloadEntityTheme(
   return lerJson<ThemeDownloadResult>(res)
 }
 
-// ── Trailer materializado em disco (briefing 0102, ADR-0025) ────────────────
+// ── Trailer materialized on disk ─────────────────────────────────────────────
 
 export type TrailerDownloadRequest =
   components['schemas']['TrailerDownloadRequest']
 export type TrailerDownloadResult =
   components['schemas']['TrailerDownloadResult']
 
-// trailerPath monta a rota do binário do trailer — fonte única do template
-// (mesmo padrão de themePath).
+// trailerPath builds the route of the trailer binary — the single source of the template
+// (same pattern as themePath).
 function trailerPath(id: string): string {
   return `/api/v1/entities/${encodeURIComponent(id)}/trailer`
 }
 
-// trailerSrc é a URL absoluta (respeitando a base) do binário do trailer já
-// materializado — usada pelo link "Trailer já baixado" (abre/baixa o
-// arquivo direto do navegador).
+// trailerSrc is the absolute URL (respecting the base) of the binary of the trailer already
+// materialized — used by the "Trailer já baixado" link (it opens/downloads the
+// file straight from the browser).
 export function trailerSrc(id: string): string {
   return `${base}${trailerPath(id)}`
 }
 
-// hasEntityTrailer confere se a entity já tem um trailer materializado SEM
-// baixar o binário inteiro (HEAD — o backend serve o mesmo handler do GET,
-// `http.ServeContent` já omite o corpo). 200 → true, 404 → false. Falha de
-// rede também vira `false` (degradação graciosa — o botão simplesmente
-// oferece "baixar" de novo).
+// hasEntityTrailer checks whether the entity already has a materialized trailer WITHOUT
+// downloading the whole binary (HEAD — the backend serves the same handler as the GET,
+// `http.ServeContent` already omits the body). 200 → true, 404 → false. A network
+// failure also becomes `false` (graceful degradation — the button simply
+// offers "baixar" again).
 export async function hasEntityTrailer(id: string): Promise<boolean> {
   try {
     const res = await fetch(`${base}${trailerPath(id)}`, { method: 'HEAD' })
@@ -1131,12 +1131,12 @@ export async function hasEntityTrailer(id: string): Promise<boolean> {
   }
 }
 
-// Baixa (via yt-dlp, no servidor) o trailer YouTube do item e materializa no
-// nome canônico Kodi/Jellyfin. SÍNCRONO: a promise só resolve quando o
-// download termina (segundos a poucos minutos, briefing §6). Erros (503 sem
-// yt-dlp, 422 sem trailer, 409 já existe sem `force`, 502 falha do
-// download) chegam como `ApiError` com a `message` pt-BR do envelope — quem
-// chama decide como exibir.
+// Downloads (via yt-dlp, on the server) the YouTube trailer of the item and materializes it under the
+// canonical Kodi/Jellyfin name. SYNCHRONOUS: the promise only resolves when the
+// download finishes (seconds to a few minutes, §6). Errors (503 without
+// yt-dlp, 422 without a trailer, 409 already exists without `force`, 502 download
+// failure) arrive as `ApiError` with the pt-BR `message` of the envelope — the
+// caller decides how to display it.
 export async function downloadEntityTrailer(
   id: string,
   body?: TrailerDownloadRequest,
@@ -1149,10 +1149,10 @@ export async function downloadEntityTrailer(
   return lerJson<TrailerDownloadResult>(res)
 }
 
-// Upload multipart do binário do dono (`origin=user`). Monta um FormData com os
-// campos `file` e `kind` — NÃO seta `content-type` à mão: o browser preenche o
-// header com o boundary do multipart. Os limites do backend (415 tipo, 413
-// tamanho, 422 corpo) viram `ApiError` com a `message` pt-BR do envelope.
+// Multipart upload of the owner's binary (`origin=user`). It builds a FormData with the
+// fields `file` and `kind` — it does NOT set `content-type` by hand: the browser fills the
+// header with the multipart boundary. The backend limits (415 type, 413
+// size, 422 body) become an `ApiError` with the pt-BR `message` of the envelope.
 export async function uploadAsset(
   id: string,
   file: File,
@@ -1168,14 +1168,14 @@ export async function uploadAsset(
   return lerJson<Asset>(res)
 }
 
-// Marca um asset como preferido/PRINCIPAL do seu kind (desempata entre várias do
-// dono). O backend limpa a flag dos outros do mesmo `(entity, kind)`. Desde o
-// briefing 0062: se o asset ainda não tem `local_path`, materializa primeiro
-// (baixa pro cache se preciso + grava cópia física na pasta real) e RENOMEIA os
-// arquivos físicos do kind para refletir a nova ordem (rotação numerada); seta
-// `is_principal=1` nele (fonte de verdade, distinta do `preferred` de meta_json).
-// Erros (404 sem media_file/pasta de destino, 502 download, 503 sem diretório de
-// assets) viram `ApiError` com a mensagem pt-BR do envelope.
+// Marks an asset as preferred/PRINCIPAL of its kind (it breaks ties between several of the
+// owner). The backend clears the flag of the others of the same `(entity, kind)`. Since
+// the principal source of truth work: if the asset has no `local_path` yet, it materializes first
+// (downloads to the cache if needed + writes a physical copy into the real folder) and RENAMES the
+// physical files of the kind to reflect the new order (numbered rotation); it sets
+// `is_principal=1` on it (source of truth, distinct from the `preferred` of meta_json).
+// Errors (404 without media_file/destination folder, 502 download, 503 without an assets
+// directory) become an `ApiError` with the pt-BR message of the envelope.
 export async function preferAsset(id: string, assetId: string): Promise<Asset> {
   const res = await fetch(
     `${base}/api/v1/entities/${encodeURIComponent(id)}/assets/${encodeURIComponent(
@@ -1186,13 +1186,13 @@ export async function preferAsset(id: string, assetId: string): Promise<Asset> {
   return lerJson<Asset>(res)
 }
 
-// Materializa um asset na PASTA REAL da biblioteca (briefing 0062): baixa pro
-// cache interno se `path_or_uri` ainda não estiver lá e grava uma CÓPIA física no
-// diretório do item, com o nome canônico Kodi/Emby. Devolve o asset atualizado com
-// `local_path` preenchido. Erros (404 sem media_file/pasta de destino, 502
-// download, 503 sem diretório de assets) viram `ApiError` com a mensagem pt-BR do
-// envelope. Para um candidato do INVENTÁRIO (sem `asset_id` ainda), a UI encadeia
-// `selectArtwork({prefer:false})` (cria o asset) antes de chamar esta função.
+// Materializes an asset into the REAL library folder: it downloads to the
+// internal cache if `path_or_uri` is not there yet and writes a physical COPY into
+// the directory of the item, with the canonical Kodi/Emby name. It returns the updated asset with
+// `local_path` filled in. Errors (404 without media_file/destination folder, 502
+// download, 503 without an assets directory) become an `ApiError` with the pt-BR message of the
+// envelope. For an INVENTORY candidate (without an `asset_id` yet), the UI chains
+// `selectArtwork({prefer:false})` (it creates the asset) before calling this function.
 export async function materializeAsset(
   id: string,
   assetId: string,
@@ -1206,8 +1206,8 @@ export async function materializeAsset(
   return lerJson<Asset>(res)
 }
 
-// Remove uma arte do dono (`origin=user`). O backend recusa apagar `external`
-// (409/422) — a UI só oferece o botão nas do dono.
+// Removes an artwork of the owner (`origin=user`). The backend refuses to delete `external`
+// (409/422) — the UI only offers the button on the owner's ones.
 export async function deleteAsset(id: string, assetId: string): Promise<Asset> {
   const res = await fetch(
     `${base}/api/v1/entities/${encodeURIComponent(id)}/assets/${encodeURIComponent(
@@ -1218,23 +1218,23 @@ export async function deleteAsset(id: string, assetId: string): Promise<Asset> {
   return lerJson<Asset>(res)
 }
 
-// ── Galeria agrupada por kind + seleção do inventário (0048/0049) ─────────────
+// ── Gallery grouped by kind + inventory selection ────────────────────────────
 
-// Arte DISPONÍVEL agrupada por kind (0048): mescla assets locais do dono, camadas
-// externas com provider (TMDB) e o inventário lazy da fanart.tv. Toda `url` já sai
-// PROXYADA (pronta para o `<img src>` — NÃO reaplicar `arteSrc`). Traz também
-// `available: {kind: count}` para os selos do card do topo (0049).
+// AVAILABLE artwork grouped by kind: it merges local assets of the owner, external
+// layers with a provider (TMDB) and the lazy inventory of fanart.tv. Every `url` already comes
+// PROXIED (ready for the `<img src>` — do NOT reapply `arteSrc`). It also brings
+// `available: {kind: count}` for the badges of the top card.
 export async function getArtwork(id: string): Promise<ArtworkResponse> {
   return lerJson<ArtworkResponse>(
     await fetch(`${base}/api/v1/entities/${encodeURIComponent(id)}/artwork`),
   )
 }
 
-// Materializa uma arte do INVENTÁRIO (fanart.tv/TMDB) como asset local `origin=
-// 'external'` (0048): baixa o binário da `url` CRUA (`src_url` do item) e, com
-// `prefer=true`, marca-a como preferida do seu kind. Idempotente no backend (reusa
-// asset external com a mesma url+kind). Os erros (422 kind/host, 502 download, 503
-// sem diretório) viram `ApiError` com a mensagem pt-BR do envelope.
+// Materializes an INVENTORY artwork (fanart.tv/TMDB) as a local asset `origin=
+// 'external'`: it downloads the binary of the RAW `url` (`src_url` of the item) and, with
+// `prefer=true`, marks it as preferred of its kind. Idempotent in the backend (it reuses the
+// external asset with the same url+kind). The errors (422 kind/host, 502 download, 503
+// without a directory) become an `ApiError` with the pt-BR message of the envelope.
 export async function selectArtwork(
   id: string,
   body: SelectArtworkRequest,
@@ -1250,25 +1250,25 @@ export async function selectArtwork(
   return lerJson<Asset>(res)
 }
 
-// ── Curadoria: revisão + órfãs + correção de match (0018) ────────────────────
+// ── Curation: review + orphans + match correction ────────────────────────────
 
-// Fila de REVISÃO: cards `draft` (não-identificados) OU com baixa confiança
-// (`0 < match_confidence < 70`). Devolve o array direto (não é EntityList — a
-// fila é uma query enxuta). `[]` quando não há nada a revisar.
+// REVIEW queue: `draft` (unidentified) cards OR with low confidence
+// (`0 < match_confidence < 70`). It returns the array directly (it is not an EntityList — the
+// queue is a lean query). `[]` when there is nothing to review.
 export async function getReviewQueue(): Promise<EntityCard[]> {
   return lerJson<EntityCard[]>(await fetch(`${base}/api/v1/review`))
 }
 
-// Fila de ÓRFÃS: entidades auto-criadas (`cataloged`) com arquivo(s) todos
-// `missing` e SEM investimento do dono (sem override, sem asset custom). Array
-// direto; `[]` quando não há órfãs.
+// ORPHAN queue: auto-created entities (`cataloged`) with file(s) all
+// `missing` and WITHOUT investment from the owner (without override, without a custom asset). Array
+// directly; `[]` when there are no orphans.
 export async function getOrphans(): Promise<EntityCard[]> {
   return lerJson<EntityCard[]>(await fetch(`${base}/api/v1/orphans`))
 }
 
-// CONFIRMAR o match: o dono aceita o palpite. O backend sobe o `match_confidence`
-// dos arquivos da entity para 100 (autoridade do dono — some o alerta). Devolve a
-// entity re-resolvida.
+// CONFIRM the match: the owner accepts the guess. The backend raises the `match_confidence`
+// of the files of the entity to 100 (the owner's authority — the alert disappears). It returns the
+// re-resolved entity.
 export async function confirmMatch(id: string): Promise<ResolvedEntity> {
   const res = await fetch(
     `${base}/api/v1/entities/${encodeURIComponent(id)}/confirm`,
@@ -1277,12 +1277,12 @@ export async function confirmMatch(id: string): Promise<ResolvedEntity> {
   return lerJson<ResolvedEntity>(res)
 }
 
-// CORRIGIR o match: o dono informa a identidade certa (`source`/`source_id`). O
-// backend grava `external_ids[source]`, re-enriquece pela fonte e sobe a
-// confiança (identidade vence). `source` default "tmdb". Erros da fonte
-// (422/404/502/503) viram `ApiError` com a mensagem pt-BR do envelope. Se o id
-// colidir com outra entity sem investimento do dono, o backend funde as duas
-// (0051) — ver `EscritaIdentidade`.
+// CORRECT the match: the owner informs the right identity (`source`/`source_id`). The
+// backend writes `external_ids[source]`, re-enriches through the source and raises the
+// confidence (identity wins). `source` default "tmdb". Source errors
+// (422/404/502/503) become an `ApiError` with the pt-BR message of the envelope. If the id
+// collides with another entity without investment from the owner, the backend merges the two
+// — see `EscritaIdentidade`.
 export async function correctMatch(
   id: string,
   source: string,
@@ -1299,9 +1299,9 @@ export async function correctMatch(
   return lerEscritaIdentidade(res)
 }
 
-// PURGA individual (DELETE): remove a entity e seus derivados (media_file /
-// external / override / assets via CASCADE). Única ação destrutiva — a UI só a
-// dispara após confirmação explícita do dono. Devolve o resumo `{purged}`.
+// Individual PURGE (DELETE): it removes the entity and its derivatives (media_file /
+// external / override / assets via CASCADE). The only destructive action — the UI only
+// fires it after an explicit confirmation from the owner. It returns the summary `{purged}`.
 export async function purgeEntity(id: string): Promise<PurgeResult> {
   const res = await fetch(`${base}/api/v1/entities/${encodeURIComponent(id)}`, {
     method: 'DELETE',
@@ -1309,8 +1309,8 @@ export async function purgeEntity(id: string): Promise<PurgeResult> {
   return lerJson<PurgeResult>(res)
 }
 
-// PURGA em lote: manda os ids selecionados; o backend purga cada um (idempotente
-// por id ausente) e devolve quantos foram de fato removidos.
+// BATCH purge: it sends the selected ids; the backend purges each one (idempotent
+// for an absent id) and returns how many were actually removed.
 export async function purgeBatch(ids: string[]): Promise<PurgeBatchResult> {
   const res = await fetch(`${base}/api/v1/entities/purge`, {
     method: 'POST',
@@ -1320,22 +1320,22 @@ export async function purgeBatch(ids: string[]): Promise<PurgeBatchResult> {
   return lerJson<PurgeBatchResult>(res)
 }
 
-// ── Auto-match: busca e sincronização automática da fila (0050) ─────────────
+// ── Auto-match: search and automatic synchronization of the queue ────────────
 
-// Resultado do auto-match INDIVIDUAL: sempre `200`, mesmo sem candidato — "não
-// achou" é um resultado válido (`resolved: false, method: 'none'`), não erro.
-// `target` é o candidato aplicado (local ou externo); `null` quando não resolveu.
+// Result of the INDIVIDUAL auto-match: always `200`, even without a candidate — "did
+// not find" is a valid result (`resolved: false, method: 'none'`), not an error.
+// `target` is the applied candidate (local or external); `null` when it did not resolve.
 export type AutoMatchResult = components['schemas']['AutoMatchResult']
 
-// Resultado do auto-match em LOTE: o resumo agregado (quantos resolvidos vs.
-// pendentes) + o detalhe por item (sem `target`, só o necessário para a UI).
+// Result of the BATCH auto-match: the aggregated summary (how many resolved vs.
+// pending) + the detail per item (without `target`, only what is needed for the UI).
 export type AutoMatchBatchResult = components['schemas']['AutoMatchBatchResult']
 
-// AUTO-MATCH individual (0050): tenta resolver sozinho o item da fila —
-// local-first, depois provedor externo — aplicando só quando a pontuação bate
-// o limiar conservador do backend (`LimiarAutoMatch`). Nunca lança por "não
-// achou candidato": isso é `{resolved: false, method: 'none'}`, resultado
-// válido em `200`, não erro de rede/servidor.
+// Individual AUTO-MATCH: it tries to resolve the item of the queue on its own —
+// local-first, then external provider — applying only when the score matches
+// the conservative threshold of the backend (`LimiarAutoMatch`). It never throws for "did not
+// find a candidate": that is `{resolved: false, method: 'none'}`, a valid
+// result in `200`, not a network/server error.
 export async function autoMatchEntity(id: string): Promise<AutoMatchResult> {
   const res = await fetch(
     `${base}/api/v1/entities/${encodeURIComponent(id)}/auto-match`,
@@ -1344,9 +1344,9 @@ export async function autoMatchEntity(id: string): Promise<AutoMatchResult> {
   return lerJson<AutoMatchResult>(res)
 }
 
-// AUTO-MATCH em lote (0050): processa os `ids` informados ou, se omitido/vazio,
-// TODOS os elegíveis da fila de revisão (mesmo predicado do `getReviewQueue`).
-// Devolve o resumo agregado + o detalhe por item.
+// BATCH AUTO-MATCH: it processes the given `ids` or, if omitted/empty,
+// ALL the eligible ones of the review queue (the same predicate as `getReviewQueue`).
+// It returns the aggregated summary + the detail per item.
 export async function autoMatchBatch(
   ids?: string[],
 ): Promise<AutoMatchBatchResult> {
@@ -1358,21 +1358,21 @@ export async function autoMatchBatch(
   return lerJson<AutoMatchBatchResult>(res)
 }
 
-// ── Ações rápidas por item (0059) ────────────────────────────────────────────
+// ── Quick actions per item ───────────────────────────────────────────────────
 
-// Resultado de POST .../enrich-missing: espelha `resultado` de
-// `tentarEnriquecerOuSinalizar` (0056), disparado sob demanda para UM item.
+// Result of POST .../enrich-missing: it mirrors `resultado` of
+// `tentarEnriquecerOuSinalizar`, fired on demand for ONE item.
 export type EnrichMissingResult = components['schemas']['EnrichMissingResult']
 
-// Resultado de POST .../download-missing-artwork: kinds que ganharam asset
-// novo × kinds sem opção disponível em nenhum provider agora.
+// Result of POST .../download-missing-artwork: kinds that gained a new
+// asset × kinds without an option available in any provider now.
 export type DownloadMissingArtworkResult =
   components['schemas']['DownloadMissingArtworkResult']
 
-// ENRIQUECER SOB DEMANDA (0059): dispara a MESMA busca local→externo do
-// 0056/0050 só para este item, fora do lote/throttle do job (mas ainda carimba
-// `last_external_match_attempt_at`). Sempre 200 — "não achou" é `outcome:
-// "none"`, resultado válido, não erro (mesma convenção do auto-match).
+// ENRICH ON DEMAND: it fires the SAME local→external search of the
+// job for this item only, outside the batch/throttle of the job (but it still stamps
+// `last_external_match_attempt_at`). Always 200 — "did not find" is `outcome:
+// "none"`, a valid result, not an error (same convention as the auto-match).
 export async function enrichMissing(id: string): Promise<EnrichMissingResult> {
   const res = await fetch(
     `${base}/api/v1/entities/${encodeURIComponent(id)}/enrich-missing`,
@@ -1381,10 +1381,10 @@ export async function enrichMissing(id: string): Promise<EnrichMissingResult> {
   return lerJson<EnrichMissingResult>(res)
 }
 
-// BAIXAR ARTE FALTANTE (0059): lê `catalog_completeness.missing` ao vivo,
-// filtra as chaves `artwork:<kind>` e baixa a melhor opção disponível por
-// kind (reusa `selectArtwork`/`baixarEMaterializarArte` no backend). Sempre
-// 200 — kind sem opção em nenhum provider vira `unavailable`, não erro.
+// DOWNLOAD MISSING ARTWORK: it reads `catalog_completeness.missing` live,
+// filters the `artwork:<kind>` keys and downloads the best option available per
+// kind (it reuses `selectArtwork`/`baixarEMaterializarArte` in the backend). Always
+// 200 — a kind without an option in any provider becomes `unavailable`, not an error.
 export async function downloadMissingArtwork(
   id: string,
 ): Promise<DownloadMissingArtworkResult> {
@@ -1395,17 +1395,17 @@ export async function downloadMissingArtwork(
   return lerJson<DownloadMissingArtworkResult>(res)
 }
 
-// Resultado de POST .../force-reconcile (briefing 0122): dispara a MESMA lógica
-// de reconciliação pai-filho do job em lote (`ReconciliarFaixaDraft`/
-// `ReconciliarSerieDraft`), mas para UM item e ignorando o throttle de 1x/dia —
-// válvula de escape manual quando o dono quer feedback imediato.
+// Result of POST .../force-reconcile: it fires the SAME parent-child
+// reconciliation logic of the batch job (`ReconciliarFaixaDraft`/
+// `ReconciliarSerieDraft`), but for ONE item and ignoring the once-a-day throttle —
+// a manual escape hatch when the owner wants immediate feedback.
 export type ForceReconcileResult = components['schemas']['ForceReconcileResult']
 
-// FORÇAR RECONCILIAÇÃO SOB DEMANDA (0122): religa uma faixa/série presa em
-// rascunho contra o pai já identificado, ignorando o throttle
-// `last_external_match_attempt_at` (mas carimbando a tentativa ao final, mesma
-// semântica de `enrichMissing`). Sempre 200 — `linked: false` é resultado
-// válido (não achou candidato, ou tipo não aplicável), não erro.
+// FORCE RECONCILIATION ON DEMAND: it re-links a track/series stuck in
+// draft against the already identified parent, ignoring the
+// `last_external_match_attempt_at` throttle (but stamping the attempt at the end, the same
+// semantics as `enrichMissing`). Always 200 — `linked: false` is a valid
+// result (no candidate found, or type not applicable), not an error.
 export async function forceReconcile(
   id: string,
 ): Promise<ForceReconcileResult> {
@@ -1416,22 +1416,22 @@ export async function forceReconcile(
   return lerJson<ForceReconcileResult>(res)
 }
 
-// Resultado de POST .../refresh-files (briefing 0088): resumo informativo do que
-// foi reconferido/encontrado/preenchido nesta chamada — formato solto (feedback
-// pro dono na UI, não é contrato rígido pra outra integração consumir).
+// Result of POST .../refresh-files: an informative summary of what
+// was rechecked/found/filled in this call — a loose format (feedback
+// to the owner in the UI, not a strict contract for another integration to consume).
 export type RefreshFilesResult = components['schemas']['RefreshFilesResult']
 
-// Resultado de POST .../materialize-missing-media (briefing 0088): espelha o
-// retorno de `MaterializarMidiasFaltantes` (mesmo usado pelo job periódico
-// `midias_faltantes`, briefing 0064).
+// Result of POST .../materialize-missing-media: it mirrors the
+// return of `MaterializarMidiasFaltantes` (the same one used by the periodic
+// `midias_faltantes` job).
 export type MaterializeMissingMediaResult =
   components['schemas']['MaterializeMissingMediaResult']
 
-// VERIFICAR ATUALIZAÇÕES DE ARQUIVOS (briefing 0088, item incondicional do menu
-// Gerenciar): força o re-hash/mediainfo dos `media_file` da entity mesmo sem
-// mudança de mtime/size, procura asset `origin='local'` novo/atualizado na(s)
-// pasta(s) e preenche no banco os campos locais de reprodução ainda vazios a
-// partir do `.nfo` (quando presente). Sem body. 404 se a entity não existe.
+// CHECK FILE UPDATES (unconditional item of the Gerenciar
+// menu): it forces the re-hash/mediainfo of the `media_file`s of the entity even without a
+// change of mtime/size, looks for a new/updated `origin='local'` asset in the
+// folder(s) and fills in the database the local playback fields that are still empty
+// from the `.nfo` (when present). No body. 404 if the entity does not exist.
 export async function refreshEntityFiles(
   id: string,
 ): Promise<RefreshFilesResult> {
@@ -1442,12 +1442,12 @@ export async function refreshEntityFiles(
   return lerJson<RefreshFilesResult>(res)
 }
 
-// BAIXAR ARTES FALTANTES (briefing 0088, item incondicional do menu Gerenciar,
-// diferente de `downloadMissingArtwork`/"Baixar arte faltando" que só aparece
-// condicionado a `catalog_completeness`): força nova consulta ao(s) `ArteProvider`
-// registrado(s) (hoje: fanart.tv) pra atualizar o inventário de artes da entity e,
-// na sequência, materializa na pasta real o que estiver faltando. Sem body. 404
-// se a entity não existe.
+// DOWNLOAD MISSING ARTWORK (unconditional item of the Gerenciar menu,
+// different from `downloadMissingArtwork`/"Baixar arte faltando" which only appears
+// conditioned on `catalog_completeness`): it forces a new query to the registered
+// `ArteProvider`(s) (today: fanart.tv) to update the artwork inventory of the entity and,
+// next, materializes into the real folder whatever is missing. No body. 404
+// if the entity does not exist.
 export async function materializeMissingMedia(
   id: string,
 ): Promise<MaterializeMissingMediaResult> {
@@ -1458,19 +1458,19 @@ export async function materializeMissingMedia(
   return lerJson<MaterializeMissingMediaResult>(res)
 }
 
-// Resultado de POST .../audio-tags/write (briefing 0125): resumo informativo
-// (formato solto, não é contrato rígido) — quantas faixas tiveram a tag
-// regravada com sucesso e uma entrada por falha ("faixaID: motivo"). Sucesso
-// parcial é normal numa cascata de álbum.
+// Result of POST .../audio-tags/write: an informative summary
+// (loose format, not a strict contract) — how many tracks had their tag
+// rewritten successfully and one entry per failure ("faixaID: motivo"). Partial
+// success is normal in an album cascade.
 export type AudioTagsWriteResult = components['schemas']['AudioTagsWriteResult']
 
-// GRAVAR METADADOS NA TAG DE ÁUDIO (briefing 0125, item do menu Gerenciar
-// para `faixa`/`album`): regrava a tag do(s) arquivo(s) de áudio (ID3v2/
-// Vorbis comment) com o metadado JÁ RESOLVIDO (título/artista/álbum/ano/
-// faixa-disco/gênero/MBIDs/ISRC/capa) — nunca relido de volta pro banco.
-// `id` de `album` cascateia para todas as faixas possuídas, best-effort. Sem
-// body. 404 se a entity não existe; 422 se `type` não suportar (ex.:
-// `artista`); 503 se o mecanismo de escrita não estiver disponível.
+// WRITE METADATA INTO THE AUDIO TAG (Gerenciar menu item
+// for `faixa`/`album`): it rewrites the tag of the audio file(s) (ID3v2/
+// Vorbis comment) with the ALREADY RESOLVED metadata (title/artist/album/year/
+// track-disc/genre/MBIDs/ISRC/cover) — never read back into the database.
+// An `album` `id` cascades to all the owned tracks, best-effort. No
+// body. 404 if the entity does not exist; 422 if the `type` does not support it (e.g.
+// `artista`); 503 if the writing mechanism is not available.
 export async function writeAudioTags(
   id: string,
 ): Promise<AudioTagsWriteResult> {
@@ -1481,14 +1481,14 @@ export async function writeAudioTags(
   return lerJson<AudioTagsWriteResult>(res)
 }
 
-// ── NFO na pasta real (briefing 0062) ────────────────────────────────────────
+// ── NFO in the real folder ───────────────────────────────────────────────────
 
-// (RE)GERA e grava o `.nfo` da entity na pasta real da biblioteca, a partir do
-// MESMO metadado já resolvido (sinopse, elenco, slogan, classificação, gêneros,
-// ids externos). Idempotente: sempre sobrescreve por completo. `lang` opcional
-// (idioma dos campos traduzíveis; omitido cai no principal). 404 (`ApiError`)
-// quando a entity não tem nenhum `media_file` presente (sem pasta de destino) —
-// a UI então desabilita o botão em vez de deixar o dono bater nesse erro.
+// (RE)GENERATES and writes the `.nfo` of the entity into the real library folder, from the
+// SAME already resolved metadata (synopsis, cast, tagline, certification, genres,
+// external ids). Idempotent: it always overwrites completely. An optional `lang`
+// (language of the translatable fields; omitted falls back to the primary). 404 (`ApiError`)
+// when the entity has no present `media_file` (no destination folder) —
+// the UI then disables the button instead of letting the owner hit that error.
 export async function writeEntityNfo(
   id: string,
   lang?: string,
@@ -1501,12 +1501,12 @@ export async function writeEntityNfo(
   return lerJson<NfoWriteResult>(res)
 }
 
-// ── Histórico de consumo (briefing 0092/0094, ADR-0022) ─────────────────────
+// ── Consumption history ──────────────────────────────────────────────────────
 
-// Lista os eventos de histórico da entity, mais recente primeiro (occurred_at
-// DESC, já ordenado pelo backend). `kind` filtra (ex.: "assistir"); ausente traz
-// todos os kinds já vistos — agnóstico de vertical (filme/série hoje, música/
-// livro/jogo no futuro reusam o mesmo endpoint).
+// Lists the history events of the entity, most recent first (occurred_at
+// DESC, already sorted by the backend). `kind` filters (e.g. "assistir"); absent brings
+// every kind already seen — agnostic of vertical (movie/series today, music/
+// book/game in the future reuse the same endpoint).
 export async function listHistoricoEventos(
   id: string,
   kind?: string,
@@ -1519,9 +1519,9 @@ export async function listHistoricoEventos(
   )
 }
 
-// Estado ATUAL derivado do histórico, por kind (projeção do evento mais recente
-// de cada kind — sem `id`/`payload`). Objeto vazio quando a entity nunca teve
-// nenhum evento. Alimenta o selo "Assistido" do card/hero (kind="assistir").
+// CURRENT state derived from the history, per kind (projection of the most recent event
+// of each kind — without `id`/`payload`). An empty object when the entity never had any
+// event. It feeds the "Assistido" badge of the card/hero (kind="assistir").
 export async function getHistoricoEstado(id: string): Promise<HistoricoEstado> {
   return lerJson<HistoricoEstado>(
     await fetch(
@@ -1530,9 +1530,9 @@ export async function getHistoricoEstado(id: string): Promise<HistoricoEstado> {
   )
 }
 
-// Registra um evento de histórico (manual, pelo dono, ou reaproveitado por uma
-// futura fonte automática além do webhook Jellyfin do 0093). `source` ausente
-// vira "manual" no servidor; `occurred_at` ausente vira o timestamp do servidor.
+// Registers a history event (manual, by the owner, or reused by a
+// future automatic source beyond the Jellyfin webhook). An absent `source`
+// becomes "manual" on the server; an absent `occurred_at` becomes the server timestamp.
 export async function createHistoricoEvento(
   id: string,
   body: CreateHistoricoEvento,
@@ -1548,9 +1548,9 @@ export async function createHistoricoEvento(
   return lerJson<HistoricoEvento>(res)
 }
 
-// Apaga UM evento da timeline (204 sem corpo). Usado pela ação "apagar" de cada
-// linha da timeline e por "marcar como não assistido" (apaga o evento
-// `completed` mais recente).
+// Deletes ONE event of the timeline (204 without a body). Used by the "delete" action of each
+// row of the timeline and by "marcar como não assistido" (it deletes the most recent
+// `completed` event).
 export async function deleteHistoricoEvento(
   id: string,
   eventoId: string,
@@ -1566,11 +1566,11 @@ export async function deleteHistoricoEvento(
   }
 }
 
-// Lista GLOBAL (fora de /entities/{id}) de eventos sem entity vinculada
-// (briefing 0099) — eventos de webhook cujos IDs externos brutos não casaram
-// com nenhuma entity local no momento em que chegaram. Some da lista quando o
-// backend vincula por backfill retroativo (correção/confirmação de match que
-// faz a entity ganhar o mesmo ID externo). Ordenado por `occurred_at` DESC.
+// GLOBAL list (outside /entities/{id}) of events without a linked entity
+// — webhook events whose raw external ids did not match
+// any local entity at the moment they arrived. They disappear from the list when the
+// backend links them through retroactive backfill (correction/confirmation of a match that
+// makes the entity gain the same external ID). Ordered by `occurred_at` DESC.
 export interface HistoricoOrfaoListParams {
   limit?: number
   offset?: number
@@ -1592,26 +1592,26 @@ export async function listHistoricoOrfaos(
   )
 }
 
-// ── Prévia de candidato + confirmação supervisionada (0060) ─────────────────
+// ── Candidate preview + supervised confirmation ──────────────────────────────
 
-// O candidato mostrado pela prévia (local OU externo) — pôster/título/ano/fonte.
+// The candidate shown by the preview (local OR external) — poster/title/year/source.
 export type MatchPreviewTarget = components['schemas']['MatchPreviewTarget']
 
-// Resposta de GET .../match-preview: sempre 200, mesmo sem candidato
-// (`found: false` é resultado válido, não erro) — mesma convenção do auto-match
-// (0050). Reusa a MESMA busca/pontuação, mas SEM o corte pelo `LimiarAutoMatch`:
-// devolve o melhor candidato mesmo abaixo de 92, para o dono decidir olhando o
-// card inteiro (pôster/título/ano/score/fonte) antes de qualquer clique.
+// Response of GET .../match-preview: always 200, even without a candidate
+// (`found: false` is a valid result, not an error) — the same convention as the auto-match.
+// It reuses the SAME search/scoring, but WITHOUT the cut by `LimiarAutoMatch`:
+// it returns the best candidate even below 92, so the owner can decide looking at the
+// whole card (poster/title/year/score/source) before any click.
 export type MatchPreview = components['schemas']['MatchPreview']
 
-// Corpo de POST .../confirm-candidate: `local` (funde com `local_id`) ou
-// `external` (grava a identidade e re-enriquece, `source`+`source_id`).
+// Body of POST .../confirm-candidate: `local` (merges with `local_id`) or
+// `external` (writes the identity and re-enriches, `source`+`source_id`).
 export type ConfirmCandidateBody = components['schemas']['ConfirmCandidateBody']
 
-// PRÉVIA de candidato (0060), dry-run e SEM side-effect: busca o melhor
-// candidato (local-first, depois externo) e devolve pontuação/fonte sem aplicar
-// nada no banco. Chamada no mount de cada `ReviewCard` — nunca lança por "não
-// achou": isso é `{found: false, method: 'none'}`, resultado válido em `200`.
+// Candidate PREVIEW, a dry run WITHOUT side effect: it searches for the best
+// candidate (local-first, then external) and returns score/source without applying
+// anything to the database. Called on the mount of each `ReviewCard` — it never throws for "did not
+// find": that is `{found: false, method: 'none'}`, a valid result in `200`.
 export async function getMatchPreview(id: string): Promise<MatchPreview> {
   return lerJson<MatchPreview>(
     await fetch(
@@ -1620,11 +1620,11 @@ export async function getMatchPreview(id: string): Promise<MatchPreview> {
   )
 }
 
-// Aplica o candidato que a prévia mostrou (0060) — SEM checar `LimiarAutoMatch`
-// (decisão humana informada pelo card, diferente do corte conservador do
-// auto-match desatendido). Devolve a entity resolvida, como `confirmMatch`/
-// `correctMatch`. Erros (422 corpo incompleto, 404, 409 colisão de identidade,
-// 502/503 fonte) viram `ApiError` com a mensagem pt-BR do envelope.
+// Applies the candidate that the preview showed — WITHOUT checking `LimiarAutoMatch`
+// (a human decision informed by the card, unlike the conservative cut of the
+// unattended auto-match). It returns the resolved entity, like `confirmMatch`/
+// `correctMatch`. Errors (422 incomplete body, 404, 409 identity collision,
+// 502/503 source) become an `ApiError` with the pt-BR message of the envelope.
 export async function confirmCandidate(
   id: string,
   body: ConfirmCandidateBody,
@@ -1640,13 +1640,13 @@ export async function confirmCandidate(
   return lerJson<ResolvedEntity>(res)
 }
 
-// ── Jobs (0052, fundação do sistema de jobs) ─────────────────────────────────
+// ── Jobs (foundation of the job system) ──────────────────────────────────────
 //
-// Tipos gerados de `api-types.ts` (schema `Job`, não `JobDefinition` — nome do
-// schema no `openapi.yaml`), como todo outro tipo deste arquivo. Reexportados
-// com o nome `JobDefinition` aqui só para o nome ficar mais descritivo no
-// front; o shape é exatamente o de `components['schemas']['Job']` (sem
-// `config_json`/`created_at`/`updated_at` — esses ficam só no backend).
+// Types generated from `api-types.ts` (schema `Job`, not `JobDefinition` — the name of the
+// schema in `openapi.yaml`), like every other type in this file. Re-exported
+// with the name `JobDefinition` here only so the name is more descriptive in the
+// front; the shape is exactly that of `components['schemas']['Job']` (without
+// `config_json`/`created_at`/`updated_at` — those stay only in the backend).
 export type JobDefinition = components['schemas']['Job']
 type JobList = components['schemas']['JobList']
 
@@ -1661,18 +1661,18 @@ export interface JobExecutionsParams {
   before?: string
 }
 
-// Lista todos os `job_definition` com o estado atual (inclusive `running`, do
-// Manager em memória). Nunca vazio após a fundação — sempre tem o seed
-// `backup_vacuum`.
+// Lists all the `job_definition` with the current state (including `running`, from the
+// in-memory Manager). Never empty after the foundation — there is always the
+// `backup_vacuum` seed.
 export async function listJobs(): Promise<JobDefinition[]> {
   const data = await lerJson<JobList>(await fetch(`${base}/api/v1/jobs`))
   return data.items
 }
 
-// Edita `enabled` e/ou `schedule_cron` (patch parcial — omitir um campo não o
-// altera; `schedule_cron: null` desliga o agendamento, deixando o job só-manual).
-// 404 (id desconhecido) e 422 (`schedule_cron` que não parseia) viram `ApiError`
-// com a mensagem pt-BR do envelope — a UI mostra o 422 inline junto do campo.
+// Edits `enabled` and/or `schedule_cron` (partial patch — omitting a field does not
+// change it; `schedule_cron: null` turns the schedule off, leaving the job manual-only).
+// 404 (unknown id) and 422 (`schedule_cron` that does not parse) become an `ApiError`
+// with the pt-BR message of the envelope — the UI shows the 422 inline next to the field.
 export async function patchJob(
   id: string,
   body: PatchJobBody,
@@ -1685,9 +1685,9 @@ export async function patchJob(
   return lerJson<JobDefinition>(res)
 }
 
-// Dispara uma execução manual (`trigger=manual`), independente de `enabled`.
-// `202` com o id da execução recém-criada; 404 (id desconhecido), 409 (já em
-// execução) e 503 (sem `Handler` registrado) viram `ApiError`.
+// Fires a manual run (`trigger=manual`), independent of `enabled`.
+// `202` with the id of the newly created run; 404 (unknown id), 409 (already
+// running) and 503 (no registered `Handler`) become an `ApiError`.
 export async function runJob(id: string): Promise<RunJobResponse> {
   const res = await fetch(`${base}/api/v1/jobs/${encodeURIComponent(id)}/run`, {
     method: 'POST',
@@ -1695,9 +1695,9 @@ export async function runJob(id: string): Promise<RunJobResponse> {
   return lerJson<RunJobResponse>(res)
 }
 
-// Histórico paginado de execuções, mais recente primeiro. `limit` default 20 no
-// backend (máx. 100); `before` (um `started_at`) pagina para trás. 404 (id
-// desconhecido) vira `ApiError`.
+// Paginated history of runs, most recent first. `limit` defaults to 20 in the
+// backend (max 100); `before` (a `started_at`) pages backwards. 404 (unknown id)
+// becomes an `ApiError`.
 export async function listJobExecutions(
   id: string,
   params: JobExecutionsParams = {},

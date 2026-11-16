@@ -1,15 +1,15 @@
-// Helpers PUROS de completude de CATALOGAÇÃO (0058): campos/artes preenchidos
-// conforme a régua configurada em /settings (0057). Conceito NOVO, DIFERENTE de
-// completude de POSSE (`web/src/lib/entity-badges.ts`, 0036/0037) — este módulo
-// NÃO reusa nada de lá (nem `estadoCompletude`/`temCompletude`/`unidadeCompletude`),
-// decisão herdada do 0057 §6 e repetida no 0058 §6, para manter os dois conceitos
-// claramente separados no código, não só na UI.
+// PURE helpers for CATALOGING completeness: fields/artwork filled
+// according to the ruler configured in /settings. A NEW concept, DIFFERENT from
+// OWNERSHIP completeness (`web/src/lib/entity-badges.ts`) — this module
+// reuses NOTHING from there (nor `estadoCompletude`/`temCompletude`/`unidadeCompletude`),
+// a decision inherited from §6 of the settings spec and repeated in §6 of the completeness spec, to keep the two concepts
+// clearly separated in the code, not only in the UI.
 import type { components } from '@/lib/api-types'
 
 export type CatalogCompleteness =
   components['schemas']['CatalogCompletenessResult'] | null
 
-// Mesmo mapa de rótulos de kind usado no formulário do 0057
+// Same map of kind labels used in the settings form
 // (`web/src/components/catalog-completeness-form.tsx`, `KINDS_ARTE_UI`).
 const ROTULO_KIND_ARTE: Record<string, string> = {
   poster: 'Poster',
@@ -21,8 +21,8 @@ const ROTULO_KIND_ARTE: Record<string, string> = {
   disc: 'Capa de disco',
 }
 
-// Mapa PT-BR das chaves ESTÁVEIS de `missing` (0058 §4). Chave desconhecida ecoa
-// crua (nunca quebra a UI, mesmo padrão de `rotuloTipo` em entity-badges.ts).
+// PT-BR map of the STABLE keys of `missing` (§4). An unknown key echoes
+// raw (never breaks the UI, same pattern as `rotuloTipo` in entity-badges.ts).
 const ROTULO_CAMPO: Record<string, string> = {
   description: 'sinopse',
   runtime: 'duração',
@@ -32,20 +32,20 @@ const ROTULO_CAMPO: Record<string, string> = {
   media_file: 'arquivo de mídia',
 }
 
-// precisaAtencaoCatalogacao diz se o selo/seção deve aparecer: só quando há um
-// resultado avaliado (`cc` não-nulo) e ele é incompleto. `null` (draft, ou ainda
-// não avaliado pelo job) e `complete: true` nunca disparam o alerta — capa/detalhe
-// limpos, mesmo princípio do selo de posse (0038).
+// precisaAtencaoCatalogacao says whether the badge/section should appear: only when there is an
+// evaluated result (`cc` non-null) and it is incomplete. `null` (draft, or not yet
+// evaluated by the job) and `complete: true` never trigger the alert — cover/detail
+// stay clean, same principle as the ownership badge.
 export function precisaAtencaoCatalogacao(cc: CatalogCompleteness): boolean {
   return !!cc && !cc.complete
 }
 
-// rotuloItemFaltando traduz UMA chave de `missing` para PT-BR. Chaves `artwork:
-// <kind>` extraem o kind e reusam o mapa de rótulos de arte do formulário 0057
-// (`Poster`/`Fanart`/…), em minúsculas para casar com o estilo dos demais rótulos
-// (todos minúsculos, ex. "sinopse"/"elenco") e com o exemplo do briefing (§2.3):
-// "Catalogação incompleta: elenco, arte fanart". Kind desconhecido ecoa cru (ex.
-// "artwork:still" → "arte still"). Chave de campo desconhecida ecoa crua.
+// rotuloItemFaltando translates ONE key of `missing` into PT-BR. Keys `artwork:
+// <kind>` extract the kind and reuse the artwork label map of the settings form
+// (`Poster`/`Fanart`/…), lowercased to match the style of the other labels
+// (all lowercase, e.g. "sinopse"/"elenco") and the example in the spec (§2.3):
+// "Catalogação incompleta: elenco, arte fanart". An unknown kind echoes raw (e.g.
+// "artwork:still" → "arte still"). An unknown field key echoes raw.
 export function rotuloItemFaltando(chave: string): string {
   if (chave.startsWith('artwork:')) {
     const kind = chave.slice('artwork:'.length)
@@ -55,10 +55,10 @@ export function rotuloItemFaltando(chave: string): string {
   return ROTULO_CAMPO[chave] ?? chave
 }
 
-// rotuloTooltipCompletude monta a frase completa do tooltip/aria-label do selo:
-// "Catalogação incompleta: elenco, arte fanart". `cc` nulo/completo devolve a
-// frase com lista vazia (a UI não deve chamar isso quando `!precisaAtencaoCatalogacao`,
-// mas a função não quebra se chamada de qualquer forma).
+// rotuloTooltipCompletude builds the full sentence of the badge tooltip/aria-label:
+// "Catalogação incompleta: elenco, arte fanart". A null/complete `cc` returns the
+// sentence with an empty list (the UI should not call this when `!precisaAtencaoCatalogacao`,
+// but the function does not break if called anyway).
 export function rotuloTooltipCompletude(cc: CatalogCompleteness): string {
   const faltando = cc?.missing ?? []
   return `Catalogação incompleta: ${faltando.map(rotuloItemFaltando).join(', ')}`

@@ -1,7 +1,7 @@
-// Fixture de teste que coleta a COBERTURA V8 do front por jornada (Camada 2,
-// briefing 0028). Só age quando E2E_COVERAGE=1 (o run normal segue leve, sem
-// sourcemap nem coleta) e no Chromium (page.coverage é CDP-only). Cada teste
-// adiciona seus dados ao cache do monocart; o global-teardown gera o relatorio.
+// Test fixture that collects the FRONT-END V8 COVERAGE per journey (Layer 2). It
+// only acts when E2E_COVERAGE=1 (the normal run stays lightweight, with neither
+// sourcemap nor collection) and on Chromium (page.coverage is CDP-only). Each test
+// adds its data to the monocart cache; the global-teardown generates the report.
 import { test as base, expect } from '@playwright/test'
 import { CoverageReport } from 'monocart-coverage-reports'
 import { mcrOptions } from './lib/coverage'
@@ -19,7 +19,7 @@ export const test = base.extend({
 
     if (cobrindo) {
       const cov = await page.coverage.stopJSCoverage()
-      // Cada add() persiste no cache em disco (compartilhado entre processos).
+      // Each add() persists to the on-disk cache (shared across processes).
       await new CoverageReport(mcrOptions()).add(cov)
     }
   },

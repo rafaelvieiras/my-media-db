@@ -10,15 +10,15 @@ import {
 } from '@/lib/mediainfo'
 import { ErrorState, LoadingState } from '@/components/query-states'
 
-// Nome do arquivo a partir do caminho completo (basename), tolerante a `/` e `\`.
+// File name from the full path (basename), tolerant of `/` and `\`.
 function nomeArquivo(path: string): string {
   const partes = path.split(/[/\\]/)
   return partes[partes.length - 1] || path
 }
 
-// Lista os arquivos da entity com o mediainfo formatado de forma legível
-// (resolução · codec · HDR · canais, faixas de áudio/legenda, duração, tamanho),
-// além de edição/parte e estado (present/missing).
+// Lists the files of the entity with the mediainfo formatted readably
+// (resolution · codec · HDR · channels, audio/subtitle tracks, duration, size),
+// plus edition/part and state (present/missing).
 export function MediaInfoTable({ entityId }: { entityId: string }) {
   const { data, isPending, isError, error } = useQuery(
     entityFilesQueryOptions(entityId),

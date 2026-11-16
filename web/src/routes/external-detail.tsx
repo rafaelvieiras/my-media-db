@@ -9,21 +9,21 @@ import { ImportarButton, RichDetailView } from '@/components/rich-detail-view'
 import { deExternalDetail } from '@/lib/rich-detail'
 import { ExternalAlbumView } from '@/routes/external-album'
 
-// Rota `/external/$source/$type/$id`: o item externo por inteiro ANTES de importar
-// (briefing 0023). Consome o detalhe rico e persistente do 0022 no idioma ativo —
-// trocar o idioma (topo) re-busca os campos traduzíveis (o `lang` entra na queryKey).
-// Reusa a RichDetailView COMPARTILHADA com o detalhe da entity; o específico daqui é
-// o botão Importar e o "Voltar" recursivo (similares navegam a esta mesma rota).
+// Route `/external/$source/$type/$id`: the external item as a whole BEFORE importing
+// It consumes the rich, persistent detail in the active language —
+// switching the language (top) re-fetches the translatable fields (the `lang` enters the queryKey).
+// It reuses the RichDetailView SHARED with the entity detail; what is specific here is
+// the Importar button and the recursive "Voltar" (similars navigate to this same route).
 //
-// `type==='album'` (briefing 0115 Parte 2) é um shape TOTALMENTE diferente (faixas
-// do release, não um item único) — delega a ExternalAlbumView em vez de montar o
-// RichDetailView, sem precisar de rota própria (o backend também reusa o mesmo
-// segmento "album" com precedência sobre {type}, ver server.go). ExternalDetailScreen
-// só decide QUAL sub-tela renderizar; cada uma chama seus próprios hooks (regra dos
-// hooks preservada — nenhum hook condicional dentro do mesmo componente).
+// `type==='album'` is a TOTALLY different shape (tracks
+// of the release, not a single item) — it delegates to ExternalAlbumView instead of mounting the
+// RichDetailView, without needing a route of its own (the backend also reuses the same
+// "album" segment with precedence over {type}, see server.go). ExternalDetailScreen
+// only decides WHICH sub-screen to render; each one calls its own hooks (the rules of
+// hooks preserved — no conditional hook inside the same component).
 
-// propsDeErro escolhe título/mensagem do estado de erro pelo status HTTP: 404
-// (inexistente na fonte) × 502/503 (fonte indisponível) × demais (genérico).
+// propsDeErro chooses the title/message of the error state by HTTP status: 404
+// (absent in the source) × 502/503 (source unavailable) × the rest (generic).
 function propsDeErro(error: unknown): { title: string; message?: string } {
   const status = error instanceof ApiError ? error.status : 0
   const message = error instanceof Error ? error.message : undefined
@@ -54,10 +54,10 @@ export function ExternalDetailScreen() {
   return <ExternalItemView source={source} type={type} id={id} />
 }
 
-// ExternalItemView é o detalhe rico ANTES de importar de um item de UM tipo
-// (movie/tv/collection — nunca album, ver o branch acima): extraído do corpo
-// original de ExternalDetailScreen para manter a regra dos hooks sã quando
-// `type==='album'` delega a outro componente sem chamar este hook.
+// ExternalItemView is the rich detail BEFORE importing of an item of ONE type
+// (movie/tv/collection — never album, see the branch above): extracted from the original
+// body of ExternalDetailScreen to keep the rules of hooks sane when
+// `type==='album'` delegates to another component without calling this hook.
 function ExternalItemView({
   source,
   type,
@@ -101,8 +101,8 @@ function ExternalItemView({
   )
 }
 
-// VoltarButton retorna no histórico — navegação recursiva (similar → similar →
-// voltar) é histórico normal de rota.
+// VoltarButton goes back in the history — recursive navigation (similar → similar →
+// back) is normal route history.
 function VoltarButton({ onClick }: { onClick: () => void }) {
   return (
     <button

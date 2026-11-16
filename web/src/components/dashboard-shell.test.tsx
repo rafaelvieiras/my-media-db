@@ -11,18 +11,18 @@ import {
 } from '@tanstack/react-router'
 import { DashboardShell } from '@/components/dashboard-shell'
 
-// DashboardShell (briefing 0083, seção Webhook somada no 0097, Eventos sem
-// item somada no 0099, Integrações somada no 0096): sidebar da área
-// administrativa (Bibliotecas/Revisão/Órfãs/Jobs/Configurações/Integrações/
-// Webhook/Eventos sem item/Saúde) + `<Outlet/>` para a seção ativa. O destaque
-// da seção ativa (`aria-current="page"`) vem do PRÓPRIO `activeProps` do
-// `<Link>` do TanStack Router (0075: mesmo mecanismo do `AppHeader`) — não é
-// um cálculo manual como o `EntityEditShell` (0080) fazia via prop
-// `secaoAtiva`. Por isso o teste monta uma árvore de rota MÍNIMA e isolada
-// (rootRoute + dashboardRoute + 9 filhas triviais), num
-// `memoryHistory` — não a árvore real do app (cada uma das 8 telas reais tem
-// endpoints/MSW próprios, irrelevantes aqui) nem mocka o `Link` (perderia o
-// comportamento de `activeProps` que é exatamente o que queremos exercitar).
+// DashboardShell (later extended with the Webhook, Events without an
+// item and Integrations sections): sidebar of the administrative
+// area (Bibliotecas/Revisão/Órfãs/Jobs/Configurações/Integrações/
+// Webhook/Eventos sem item/Saúde) + `<Outlet/>` for the active section. The highlight
+// of the active section (`aria-current="page"`) comes from the `activeProps` of the
+// `<Link>` of TanStack Router itself (the same mechanism as `AppHeader`) — it is not
+// a manual computation as `EntityEditShell` used to do via the
+// `secaoAtiva` prop. That is why the test mounts a MINIMAL, isolated route tree
+// (rootRoute + dashboardRoute + 9 trivial children), on a
+// `memoryHistory` — not the real tree of the app (each of the 8 real screens has its own
+// endpoints/MSW, irrelevant here) nor does it mock the `Link` (that would lose the
+// `activeProps` behavior, which is exactly what we want to exercise).
 const SECOES = [
   'library',
   'review',

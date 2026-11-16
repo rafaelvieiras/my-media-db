@@ -49,7 +49,7 @@ describe('artwork — taxonomia de kinds (0049)', () => {
     expect(infoKind('fanart').aspect).toBe('aspect-video')
     expect(infoKind('logo').contain).toBe(true)
     expect(infoKind('disc')).toEqual({ aspect: 'aspect-square', contain: true })
-    // Kind desconhecido cai no 16:9 cover (mais seguro).
+    // An unknown kind falls back to 16:9 cover (safer).
     expect(infoKind('xpto')).toEqual({ aspect: 'aspect-video', contain: false })
   })
 
@@ -69,7 +69,7 @@ describe('artwork — taxonomia de kinds (0049)', () => {
       available: { poster: 2, fanart: 1 },
     }
     const linhas = linhasDeArtwork(art)
-    // Pôster antes de fanart (ordem canônica); logo vazio é omitido.
+    // Poster before fanart (canonical order); empty logo is omitted.
     expect(linhas.map((l) => l.kind)).toEqual(['poster', 'fanart'])
     expect(linhas[0].items).toHaveLength(2)
   })
@@ -93,8 +93,8 @@ describe('artwork — taxonomia de kinds (0049)', () => {
 
 describe('assetsPreferidosDoHero — precedencia de servico (0017/0082)', () => {
   it('sem nenhuma arte preferida, cai na origin=external (caso normal de midia local importada)', () => {
-    // Reproduz o caso de producao que motivou o fix: asset materializado da
-    // pasta real via scanner/import, nunca passou pelo fluxo de "preferir".
+    // Reproduces the production case that motivated the fix: an asset materialized from the
+    // real folder via scanner/import, it never went through the "prefer" flow.
     const assets = [
       asset({ kind: 'logo', origin: 'external', preferred: false }),
     ]

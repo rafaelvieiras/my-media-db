@@ -2,18 +2,18 @@ import { Link } from '@tanstack/react-router'
 import { rotuloTipo } from '@/lib/entity-badges'
 import type { AncestorRef } from '@/lib/api'
 
-// Migalhas: o breadcrumb ASCENDENTE da árvore de séries (0032). Dá contexto e
-// navegação para os nós sem lugar na home/busca: dentro de uma temporada ou de um
-// episódio, mostra a trilha até a série e permite subir a árvore.
+// Migalhas: the ASCENDING breadcrumb of the series tree. It gives context and
+// navigation for the nodes with no place on the home/search: inside a season or an
+// episode, it shows the trail up to the series and allows going up the tree.
 //
-// Recebe os ANCESTRAIS já na ordem RAIZ→PAI (como o backend serve em
-// `ResolvedEntity.ancestors`: `[série]` para temporada; `[série, temporada]` para
-// episódio) e o item ATUAL. Cada ancestral vira um <Link> para `/entities/{id}`; o
-// item atual FECHA a trilha sem link (é o estado corrente). Segue o espírito do
-// `ColecaoBand` (navegação para o pai reusando os tokens do tema).
+// It receives the ANCESTORS already in ROOT→PARENT order (as the backend serves them in
+// `ResolvedEntity.ancestors`: `[série]` for a season; `[série, temporada]` for an
+// episode) and the CURRENT item. Each ancestor becomes a <Link> to `/entities/{id}`; the
+// current item CLOSES the trail without a link (it is the current state). It follows the spirit of
+// `ColecaoBand` (navigation to the parent reusing the theme tokens).
 //
-// Vazio para obra de topo (movie/tv/collection): `ancestors` chega `[]` e o
-// componente não renderiza nada — a tela mantém só o "Voltar à biblioteca".
+// Empty for a top-level work (movie/tv/collection): `ancestors` arrives as `[]` and the
+// component renders nothing — the screen keeps only "Voltar à biblioteca".
 export function Migalhas({
   ancestors,
   atual,

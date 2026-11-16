@@ -6,9 +6,9 @@ import type { ExternalDetail } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { renderComEspioes } from '@/test/harness'
 
-// Estado mutável hoisteado: o idioma ativo (para provar que os traduzíveis
-// refletem a troca) e os spies do router. `vi.hoisted` deixa o factory do
-// `vi.mock` (içado acima dos imports) ler estes valores sem quebrar a ordem.
+// Hoisted mutable state: the active language (to prove that the translatable fields
+// reflect the switch) and the router spies. `vi.hoisted` lets the factory of
+// `vi.mock` (hoisted above the imports) read these values without breaking the order.
 const estado = vi.hoisted(() => ({ lang: 'pt-BR' }))
 const spies = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -19,7 +19,7 @@ const spies = vi.hoisted(() => ({
   >,
 }))
 
-// Idioma controlável: o teste de idioma seta `estado.lang` antes de renderizar.
+// Controllable language: the language test sets `estado.lang` before rendering.
 vi.mock('@/lib/language-context', () => ({
   useLanguage: () => ({
     lang: estado.lang,
@@ -29,9 +29,9 @@ vi.mock('@/lib/language-context', () => ({
   }),
 }))
 
-// Router mockado: `Link` (do helper compartilhado) interpola os `params` no
-// `href` (para afirmar o destino dos similares); `useNavigate`/
-// `useRouter().history.back` viram spies e `useParams` devolve a fonte/tipo/id.
+// Mocked router: `Link` (from the shared helper) interpolates the `params` into the
+// `href` (to assert the destination of the similars); `useNavigate`/
+// `useRouter().history.back` become spies and `useParams` returns the source/type/id.
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
   useNavigate: () => spies.navigate,
@@ -51,8 +51,8 @@ function erroJson(status: number, code: string, message: string) {
   } as Response
 }
 
-// Payload rico do 0022, JÁ resolvido no idioma pedido: título/slogan/sinopse
-// mudam com o `lang` (prova a reflexão dos traduzíveis); os neutros são iguais.
+// Rich payload, ALREADY resolved in the requested language: title/tagline/synopsis
+// change with the `lang` (it proves the reflection of the translatable fields); the neutral ones are the same.
 function detalhe(lang: string): ExternalDetail {
   const pt = lang === 'pt-BR'
   return {
@@ -106,8 +106,8 @@ function detalhe(lang: string): ExternalDetail {
   }
 }
 
-// fetch roteado: GET do detalhe externo devolve o payload no `lang` do `?lang=`;
-// POST /import devolve a entity resolvida. `detalheResp` permite injetar erro.
+// Routed fetch: the GET of the external detail returns the payload in the `lang` of the `?lang=`;
+// the POST /import returns the resolved entity. `detalheResp` allows injecting an error.
 function stubFetch(detalheResp?: (lang: string) => Response) {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const u = new URL(String(url), 'http://localhost')
@@ -139,16 +139,16 @@ describe('ExternalDetailScreen', () => {
     renderWithClient(<ExternalDetailScreen />)
 
     expect(await screen.findByRole('heading', { name: 'Duna' })).toBeTruthy()
-    // Slogan em destaque, sinopse, gêneros, palavras-chave (campos distintos).
+    // Tagline highlighted, synopsis, genres, keywords (distinct fields).
     expect(screen.getByText(/O medo mata a mente/)).toBeTruthy()
     expect(screen.getByText('Paul Atreides desperta.')).toBeTruthy()
     expect(screen.getByText('Ficção científica')).toBeTruthy()
     expect(screen.getByText('deserto')).toBeTruthy()
-    // Metadados: duração legível, nota, classificação.
+    // Metadata: readable duration, rating, certification.
     expect(screen.getByText('2h 35min')).toBeTruthy()
     expect(screen.getByText('8.1')).toBeTruthy()
     expect(screen.getByText('14')).toBeTruthy()
-    // Vídeo com link, coleção e links externos.
+    // Video with a link, collection and external links.
     expect(screen.getByText('Trailer oficial')).toBeTruthy()
     expect(screen.getByText('Coleção Duna')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'TMDB' })).toBeTruthy()
@@ -163,7 +163,7 @@ describe('ExternalDetailScreen', () => {
     expect(await screen.findByRole('heading', { name: 'Dune' })).toBeTruthy()
     expect(screen.getByText(/Fear is the mind-killer/)).toBeTruthy()
     expect(screen.getByText('Paul Atreides awakens.')).toBeTruthy()
-    // O idioma entrou na URL (e, portanto, na queryKey).
+    // The language entered the URL (and, therefore, the queryKey).
     const chamada = fetchMock.mock.calls.find((c) =>
       String(c[0]).includes('/api/v1/external/'),
     )
@@ -183,8 +183,8 @@ describe('ExternalDetailScreen', () => {
       vote_average: null,
       genres: [],
       keywords: [],
-      // Vídeo não-renderável: não-YouTube e sem url -> a seção some. (Um YouTube
-      // com key é embutível mesmo sem url, então não serviria para esconder.)
+      // Non-renderable video: non-YouTube and without a url -> the section disappears. (A YouTube
+      // one with a key is embeddable even without a url, so it would not serve to hide it.)
       videos: [
         { ...detalhe('pt-BR').videos[0], site: 'DailyMotion', url: null },
       ],
@@ -196,12 +196,12 @@ describe('ExternalDetailScreen', () => {
     renderWithClient(<ExternalDetailScreen />)
 
     expect(await screen.findByRole('heading', { name: 'Curta' })).toBeTruthy()
-    // Duração < 1h fica só em minutos; blocos sem dado não renderizam.
+    // A duration < 1h stays in minutes only; blocks without data do not render.
     expect(screen.getByText('45min')).toBeTruthy()
     expect(screen.queryByText('Similares')).toBeNull()
     expect(screen.queryByText('Coleção')).toBeNull()
     expect(screen.queryByText('Vídeos')).toBeNull()
-    // Importar segue disponível mesmo no payload magro.
+    // Importar stays available even in the lean payload.
     expect(screen.getByRole('button', { name: /Importar/ })).toBeTruthy()
   })
 
@@ -218,7 +218,7 @@ describe('ExternalDetailScreen', () => {
     renderWithClient(<ExternalDetailScreen />)
     await screen.findByRole('heading', { name: 'Duna' })
 
-    // Antes do clique: thumbnail com botão de play, nenhum iframe carregado.
+    // Before the click: thumbnail with a play button, no iframe loaded.
     expect(document.querySelector('iframe')).toBeNull()
     const play = screen.getByRole('button', {
       name: /Reproduzir Trailer oficial/,
@@ -231,7 +231,7 @@ describe('ExternalDetailScreen', () => {
     expect(iframe?.getAttribute('src')).toBe(
       'https://www.youtube-nocookie.com/embed/abc?autoplay=1',
     )
-    // O título do trailer segue visível na legenda.
+    // The title of the trailer stays visible in the caption.
     expect(screen.getByText('Trailer oficial')).toBeTruthy()
   })
 
@@ -268,8 +268,8 @@ describe('ExternalDetailScreen', () => {
   })
 
   it('similar JÁ na biblioteca linka para o interno e mostra o selo', async () => {
-    // Interno-first (0027): a parte já importada (internal_id) navega para
-    // /entities/{id} — não para o detalhe externo — e ganha o selo "Na biblioteca".
+    // Internal-first: the already imported part (internal_id) navigates to
+    // /entities/{id} — not to the external detail — and gains the "Na biblioteca" badge.
     const comInterno = {
       ...detalhe('pt-BR'),
       similar: [
@@ -342,8 +342,8 @@ describe('ExternalDetailScreen', () => {
     ).toBeTruthy()
   })
 
-  // type==='album' (briefing 0115 Parte 2): delega a ExternalAlbumView (faixas
-  // do release), nunca ao RichDetailView de item único.
+  // type==='album': it delegates to ExternalAlbumView (tracks
+  // of the release), never to the RichDetailView of a single item.
   it('type=album delega à tela de faixas do álbum, não ao RichDetailView', async () => {
     spies.params = { source: 'musicbrainz', type: 'album', id: 'rg-1' }
     stubFetch(() =>
@@ -363,7 +363,7 @@ describe('ExternalDetailScreen', () => {
       await screen.findByRole('heading', { name: 'Fake Album' }),
     ).toBeTruthy()
     expect(screen.getByText('Faixas do álbum')).toBeTruthy()
-    // Nunca renderiza os campos exclusivos do detalhe rico de item único.
+    // It never renders the fields exclusive to the rich detail of a single item.
     expect(screen.queryByRole('button', { name: /Importar/ })).toBeNull()
   })
 })

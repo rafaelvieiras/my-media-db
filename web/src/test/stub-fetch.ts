@@ -1,9 +1,9 @@
 import { vi } from 'vitest'
 
-// paginaResposta monta o shape paginado que `GET /entities` devolve
-// (`{items, total, limit, offset}`) — usado por qualquer teste que stuba essa
-// rota (`PosterGrid`/`LibraryBrowseScreen`), centralizando o boilerplate pra
-// não duplicar a mesma função `page()` em cada arquivo (jscpd).
+// paginaResposta builds the paginated shape that `GET /entities` returns
+// (`{items, total, limit, offset}`) — used by any test that stubs that
+// route (`PosterGrid`/`LibraryBrowseScreen`), centralizing the boilerplate so as
+// not to duplicate the same `page()` function in every file (jscpd).
 export function paginaResposta(
   items: unknown[] = [],
   total = items.length,
@@ -15,9 +15,9 @@ export function paginaResposta(
   } as Response
 }
 
-// stubRota instala um `fetch` global que responde `resp()` quando `casa(pathname, method)`
-// e lança nas demais rotas (falha alto, não silenciosa). Centraliza o boilerplate de mock
-// de rede dos testes de mutação (jscpd) — cada teste só descreve a rota que espera.
+// stubRota installs a global `fetch` that answers `resp()` when `casa(pathname, method)`
+// and throws on the other routes (fail loud, not silent). It centralizes the network mock
+// boilerplate of the mutation tests (jscpd) — each test only describes the route it expects.
 export function stubRota(
   casa: (pathname: string, method: string) => boolean,
   resp: () => Response,
@@ -34,11 +34,11 @@ export function stubRota(
   return m
 }
 
-// stubRotas é a variante multi-rota de stubRota: casa a URL contra uma lista
-// ORDENADA de [predicado, resp] e responde com a primeira que bater; lança nas
-// demais (mesmo padrão fail-loud). Usado quando um teste precisa de mais de uma
-// resposta condicional (ex.: GET busca uma lista, DELETE apaga um item dela) —
-// centraliza o parsing de URL/method pra esses testes não o duplicarem (jscpd).
+// stubRotas is the multi-route variant of stubRota: it matches the URL against an
+// ORDERED list of [predicate, resp] and answers with the first one that matches; it throws on
+// the others (same fail-loud pattern). Used when a test needs more than one
+// conditional response (e.g.: GET fetches a list, DELETE removes an item of it) —
+// it centralizes the URL/method parsing so those tests do not duplicate it (jscpd).
 export function stubRotas(
   rotas: Array<
     [casa: (pathname: string, method: string) => boolean, resp: () => Response]
@@ -57,7 +57,7 @@ export function stubRotas(
   return m
 }
 
-// corpoEnviado extrai e faz JSON.parse do corpo da N-ésima chamada do mock de fetch.
+// corpoEnviado extracts and JSON.parses the body of the N-th call of the fetch mock.
 export function corpoEnviado(
   m: ReturnType<typeof vi.fn>,
   chamada = 0,
@@ -65,9 +65,9 @@ export function corpoEnviado(
   return JSON.parse(String(m.mock.calls[chamada][1]?.body))
 }
 
-// urlEnviada extrai e parseia a URL da N-ésima chamada do mock de fetch — mesmo
-// padrão de corpoEnviado, para testes que afirmam query params (ex.: `?type=`)
-// em vez do corpo.
+// urlEnviada extracts and parses the URL of the N-th call of the fetch mock — the same
+// pattern as corpoEnviado, for tests that assert query params (e.g. `?type=`)
+// instead of the body.
 export function urlEnviada(m: ReturnType<typeof vi.fn>, chamada = 0): URL {
   return new URL(m.mock.calls[chamada][0] as string, 'http://x')
 }

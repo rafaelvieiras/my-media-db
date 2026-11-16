@@ -39,17 +39,17 @@ import { Migalhas } from '@/components/migalhas'
 import { RichDetailView } from '@/components/rich-detail-view'
 import { deResolvedEntity } from '@/lib/rich-detail'
 
-// Rota `/entities/$id`: o detalhe da entity IMPORTADA. Usa a MESMA RichDetailView do
-// detalhe do externo (hero, slogan, metadados, gêneros, keywords, vídeos, coleção,
-// similares, links) — o backend serve os campos ricos no ResolvedEntity (paridade
-// 0022/0023). O específico da entity entra por SLOTS: os selos de override (herdado ×
-// editado × idioma de fallback), o botão/editor de override (0016), a galeria de arte
-// (0017) e a tabela de arquivos com mediainfo. O idioma de leitura vem do
-// LanguageProvider e vai ao `?lang=` (re-busca ao trocar).
+// Route `/entities/$id`: the detail of the IMPORTED entity. It uses the SAME RichDetailView as
+// the external detail (hero, tagline, metadata, genres, keywords, videos, collection,
+// similars, links) — the backend serves the rich fields in the ResolvedEntity (parity
+// between external and entity). The entity-specific parts come in through SLOTS: the override badges (inherited ×
+// edited × fallback language), the override button/editor, the artwork gallery
+// and the file table with mediainfo. The reading language comes from the
+// LanguageProvider and goes into the `?lang=` (re-fetch on change).
 
-// idiomaFallback devolve o idioma efetivo de um campo traduzível quando ele caiu no
-// fallback (lê só `resolved_languages`, ADR-0019): o código que serviu o valor quando
-// existe, não é a base neutra (`""`) e difere do pedido — senão null (sem selo).
+// idiomaFallback returns the effective language of a translatable field when it fell back
+// (it reads only `resolved_languages`, ADR-0019): the code that served the value when
+// it exists, is not the neutral base (`""`) and differs from the request — otherwise null (no badge).
 function idiomaFallback(
   resolved: Record<string, string>,
   campo: string,
@@ -62,7 +62,7 @@ function idiomaFallback(
   return null
 }
 
-// SeloFallback mostra "em {idioma}" quando o campo caiu no fallback de idioma.
+// SeloFallback shows "em {idioma}" when the field fell back to another language.
 function SeloFallback({
   resolved,
   campo,
@@ -80,14 +80,14 @@ function SeloFallback({
   ) : null
 }
 
-// SeloEditado marca override do dono NO IDIOMA ATUAL para o campo (lido do blob cru).
+// SeloEditado marks an override of the owner IN THE CURRENT LANGUAGE for the field (read from the raw blob).
 function SeloEditado({ ativo }: { ativo: boolean }) {
   return ativo ? <Badge variant="default">editado</Badge> : null
 }
 
-// SeloPosse mostra a posse AGREGADA de uma temporada/série (0034): "possui 12/13
-// episódios". Discreto (secondary). Null quando não há agregação (a API só envia
-// `ownership` para tv/season; movie/episódio/coleção usam a posse simples).
+// SeloPosse shows the AGGREGATED ownership of a season/series: "possui 12/13
+// episódios". Discreet (secondary). Null when there is no aggregation (the API only sends
+// `ownership` for tv/season; movie/episode/collection use the simple ownership).
 function SeloPosse({
   ownership,
 }: {
@@ -103,12 +103,12 @@ function SeloPosse({
   )
 }
 
-// ItemFaltandoComAcao renderiza UM item de `missing`. `media_file` (arquivo de
-// mídia) é o único que o botão genérico "Baixar informações faltando"
-// (re-enriquecimento via provider) comprovadamente NÃO resolve — só se resolve
-// vinculando um datasource/rodando um scan em Bibliotecas, tela diferente —
-// então ganha um link junto ao rótulo (briefing 0077). As demais chaves (campo/
-// arte) continuam só texto, pois o botão genérico já resolve.
+// ItemFaltandoComAcao renders ONE item of `missing`. `media_file` (media file) is
+// the only one that the generic button "Baixar informações faltando"
+// (re-enrichment via provider) provably does NOT solve — it is only solved
+// by linking a datasource/running a scan in Bibliotecas, a different screen —
+// so it gains a link next to the label. The other keys (field/
+// artwork) stay text only, since the generic button already solves them.
 function ItemFaltandoComAcao({ chave }: { chave: string }) {
   if (chave === 'media_file') {
     return (
@@ -127,13 +127,13 @@ function ItemFaltandoComAcao({ chave }: { chave: string }) {
   return <li>{rotuloItemFaltando(chave)}</li>
 }
 
-// SecaoCompletudeIncompleta lista, PT-BR, o que falta preencher para o item
-// atender a régua de completude de CATALOGAÇÃO (0057/0058) — DIFERENTE da posse
-// (`SeloPosse` acima, 0034/0036). Fica perto do topo/metadados (não escondida no
-// fim da página), sempre visível (sem depender de hover — útil em touch/mobile,
-// diferente do tooltip do card). Só renderiza quando incompleto; item que atende a
-// régua (ou tipo sem régua, ou draft) não mostra nada — sem confirmação positiva,
-// mesmo princípio de "sinalizar só o que precisa de atenção" do 0038.
+// SecaoCompletudeIncompleta lists, in PT-BR, what is still missing for the item
+// to meet the CATALOGING completeness ruler — DIFFERENT from ownership
+// (`SeloPosse` above). It stays near the top/metadata (not hidden at
+// the bottom of the page), always visible (without depending on hover — useful on touch/mobile,
+// unlike the card tooltip). It only renders when incomplete; an item that meets the
+// ruler (or a type without a ruler, or a draft) shows nothing — no positive confirmation,
+// the same principle of "signal only what needs attention".
 function SecaoCompletudeIncompleta({ cc }: { cc: CatalogCompleteness }) {
   if (!precisaAtencaoCatalogacao(cc)) {
     return null
@@ -156,11 +156,11 @@ function SecaoCompletudeIncompleta({ cc }: { cc: CatalogCompleteness }) {
   )
 }
 
-// SecaoSerie decide a view da árvore de uma SÉRIE conforme a ordem escolhida (0040):
-// o seletor aparece só quando há mais de uma ordem; a ordem default (ou ausente)
-// mostra os cards de temporada navegáveis (a view de sempre); uma ordem alternativa
-// mostra as seções de episódios reagrupados. Trocar de ordem navega no search param
-// (voltar ao default REMOVE o param — URL limpa, sem persistência).
+// SecaoSerie decides the tree view of a SERIES according to the chosen order:
+// the selector appears only when there is more than one order; the default order (or absent)
+// shows the navigable season cards (the usual view); an alternative order
+// shows the sections of regrouped episodes. Switching the order navigates the search param
+// (going back to the default REMOVES the param — clean URL, without persistence).
 function SecaoSerie({
   id,
   orderings,
@@ -173,8 +173,8 @@ function SecaoSerie({
   const navigate = useNavigate()
   const def = orderings?.default
   const mostrarSeletor = (orderings?.available.length ?? 0) > 1
-  // Ordem "alternativa" = escolhida e != default. Só ela dispara a view agrupada; o
-  // default (ou ausente) cai na view de temporadas.
+  // "Alternative" order = chosen and != default. Only it fires the grouped view; the
+  // default (or absent) falls into the seasons view.
   const alternativa = ordering && ordering !== def ? ordering : null
 
   const trocar = (novo: string) => {
@@ -218,13 +218,13 @@ export function EntityDetailScreen() {
   const { data, isPending, isError, error } = useQuery(
     entityQueryOptions(id, lang),
   )
-  // Blob CRU do override + descritores: alimentam os selos "editado" (o selo lê o
-  // blob e descobre se o campo é traduzível pelos descritores, briefing 0030).
+  // RAW blob of the override + descriptors: they feed the "edited" badges (the badge reads the
+  // blob and finds out whether the field is translatable from the descriptors).
   const overrideQuery = useQuery(overrideBlobQueryOptions(id))
   const blob = overrideQuery.data
   const fields = useQuery(entityFieldsQueryOptions).data
-  // Inventário de artes (0048/0049): alimenta a FAIXA de selos do card do topo. A
-  // MESMA query é lida pela ArtGallery (child) — o TanStack dedupe numa só ida.
+  // Artwork inventory: it feeds the ROW of badges of the top card. The
+  // SAME query is read by the ArtGallery (child) — TanStack dedupes it into a single round trip.
   const artwork = useQuery(artworkQueryOptions(id)).data
 
   const voltar = <VoltarBiblioteca />
@@ -249,9 +249,9 @@ export function EntityDetailScreen() {
     )
   }
 
-  // Topo da tela: o "Voltar à biblioteca" e, para os nós da árvore de séries
-  // (temporada/episódio), o breadcrumb ascendente logo abaixo (0032). Obra de topo
-  // tem `ancestors` vazio → `Migalhas` não renderiza e o topo fica só com o voltar.
+  // Top of the screen: the "Voltar à biblioteca" and, for the nodes of the series tree
+  // (season/episode), the ascending breadcrumb right below. A top-level work
+  // has an empty `ancestors` → `Migalhas` does not render and the top keeps only the back link.
   const topo = (
     <div className="flex flex-col gap-2">
       {voltar}
@@ -263,12 +263,12 @@ export function EntityDetailScreen() {
     </div>
   )
 
-  // `data.owned` (ADR-0027) inclui posse via ÁRVORE para artista/album — só a
-  // FAIXA liga direto a media_file, então um artista/album "possuído" nunca tem
-  // pasta real PRÓPRIA (resolverDestino não sabe escolher entre os vários
-  // diretórios das faixas). "Salvar informações (NFO)"/"Salvar na pasta" batem
-  // em 404 (sem pasta de destino) se habilitados com o `owned` cru — por isso
-  // ficam desabilitados para essas duas verticais mesmo com `owned: true`.
+  // `data.owned` (ADR-0027) includes ownership via the TREE for artist/album — only the
+  // TRACK links directly to a media_file, so an "owned" artist/album never has a real folder
+  // OF ITS OWN (resolverDestino does not know how to choose among the several
+  // directories of the tracks). "Salvar informações (NFO)"/"Salvar na pasta" hit a
+  // 404 (no destination folder) if enabled with the raw `owned` — which is why
+  // they are disabled for these two verticals even with `owned: true`.
   const podeGravarNaPastaReal =
     data.owned && data.type !== 'album' && data.type !== 'artista'
 
@@ -328,19 +328,19 @@ export function EntityDetailScreen() {
           </>
         }
       >
-        {/* Coleção (0025): mostra os MEMBROS no lugar dos Arquivos (coleção não tem
-            media_file). A galeria de arte segue valendo (arte própria da coleção).
-            "Excluir coleção" (0026) migrou para o dropdown "Gerenciar" (0086,
-            `actions` acima) — item destrutivo com confirmação via AlertDialog. */}
+        {/* Collection: it shows the MEMBERS in place of the Files (a collection has no
+            media_file). The artwork gallery still applies (the collection's own artwork).
+            "Excluir coleção" migrated to the "Gerenciar" dropdown (0086,
+            `actions` above) — a destructive item with confirmation via AlertDialog. */}
         {data.type === 'collection' ? (
           <CollectionMembers id={id} editable />
         ) : null}
 
-        {/* Árvore de séries (0031/0040), somente leitura: a série lista as TEMPORADAS
-            navegáveis na ordem default; um seletor (0040) troca para uma ordem
-            alternativa, que reagrupa os EPISÓDIOS em seções. A temporada lista os
-            EPISÓDIOS numerados (0039). Reusa o molde pai-com-filhos (/members) sem o
-            add/remove — a Fase 1 não edita a árvore à mão. */}
+        {/* Series tree, read-only: the series lists the SEASONS
+            navigable in the default order; a selector (0040) switches to an alternative
+            order, which regroups the EPISODES into sections. The season lists the
+            numbered EPISODES. It reuses the parent-with-children mold (/members) without the
+            add/remove — Phase 1 does not edit the tree by hand. */}
         {data.type === 'tv' ? (
           <SecaoSerie
             id={id}
@@ -359,11 +359,11 @@ export function EntityDetailScreen() {
           />
         ) : null}
 
-        {/* Vertical de música (briefing 0111, ADR-0027): álbum mostra a
-            tracklist (faixas via entity_relation kind=music_album); artista
-            mostra a discografia (álbuns via kind=music_artista_principal,
-            filtrando type=album). Mesmo padrão de branch por `data.type` do
-            caller, acima. */}
+        {/* Music vertical (ADR-0027): an album shows the
+            tracklist (tracks via entity_relation kind=music_album); artista
+            shows the discography (albums via kind=music_artista_principal,
+            filtering type=album). The same branch pattern by `data.type` of the
+            caller, above. */}
         {data.type === 'album' ? (
           <TracklistAlbum id={id} mbid={data.external_ids.mbid} />
         ) : null}
@@ -376,8 +376,8 @@ export function EntityDetailScreen() {
           owned={podeGravarNaPastaReal}
         />
 
-        {/* Arquivos só nos nós-folha que têm media_file: filme e episódio. Coleção,
-            série e temporada agrupam filhos (sem arquivo próprio) — sem a seção. */}
+        {/* Files only in the leaf nodes that have a media_file: movie and episode. Collection,
+            series and season group children (without a folder of their own) — no section. */}
         {data.type === 'movie' || data.type === 'episode' ? (
           <section className="flex flex-col gap-3">
             <h2 className="font-heading text-lg font-medium">Arquivos</h2>
@@ -385,9 +385,9 @@ export function EntityDetailScreen() {
           </section>
         ) : null}
 
-        {/* Histórico de consumo (0094): timeline de eventos "assistir" (webhook
-            Jellyfin do 0093 ou ação manual do dropdown "Gerenciar" acima). Some
-            por inteiro sem nenhum evento — mesmo padrão da SimilaresRail. */}
+        {/* Consumption history: timeline of "assistir" events (webhook
+            Jellyfin webhook or manual action of the "Gerenciar" dropdown above). It disappears
+            entirely without any event — the same pattern as SimilaresRail. */}
         <HistoricoSection entityId={id} />
       </RichDetailView>
     </main>

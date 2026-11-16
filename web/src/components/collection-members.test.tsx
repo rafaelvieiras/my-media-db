@@ -9,15 +9,15 @@ import {
   stubMembros,
 } from '@/test/detail-harness'
 
-// Testa a lista de MEMBROS da coleção (0025): cards internos (PosterCard →
-// /entities/{id}), estados carregando/erro/vazio e o idioma na busca. Mocka o
-// idioma/router (o card usa Link) e roteia GET /entities/{id}/members com um stub
-// local (o harness compartilhado só cobre /external e /import).
+// Tests the MEMBER list of the collection: internal cards (PosterCard →
+// /entities/{id}), loading/error/empty states and the language in the search. It mocks the
+// language/router (the card uses Link) and routes GET /entities/{id}/members with a local
+// stub (the shared harness only covers /external and /import).
 
 const estado = vi.hoisted(() => ({ lang: 'pt-BR' }))
 
-// CollectionMembers só depende de `Link` (via PosterCard) e do idioma ativo — não usa
-// navigate/params, então mocka só isso (bem mais enxuto que o routerMock completo).
+// CollectionMembers only depends on `Link` (via PosterCard) and on the active language — it does not use
+// navigate/params, so it mocks only that (much leaner than the full routerMock).
 vi.mock('@/lib/language-context', async () => {
   const { fakeLanguage } = await import('@/test/detail-harness')
   return { useLanguage: () => fakeLanguage(estado.lang) }
@@ -83,8 +83,8 @@ describe('CollectionMembers', () => {
   })
 })
 
-// stubEditavel roteia GET /members, GET /search (picker), POST /members (add) e DELETE
-// /members/{child} (remove). Cada rota devolve a Response da função dada.
+// stubEditavel routes GET /members, GET /search (picker), POST /members (add) and DELETE
+// /members/{child} (remove). Each route returns the Response of the given function.
 function stubEditavel(rotas: {
   membros: () => Response
   busca?: () => Response
@@ -128,9 +128,9 @@ describe('CollectionMembers editável (0025 Fase B)', () => {
     renderWithClient(<CollectionMembers id="col-1" editable />)
     await screen.findByText('Matrix')
 
-    // Etapa 1: clica no lixo → aparece o "Remover?".
+    // Step 1: it clicks the trash → "Remover?" appears.
     fireEvent.click(screen.getByLabelText('Remover Matrix da coleção'))
-    // Etapa 2: confirma.
+    // Step 2: it confirms.
     fireEvent.click(screen.getByText('Remover?'))
 
     await vi.waitFor(() => expect(screen.queryByText('Matrix')).toBeNull())
@@ -161,8 +161,8 @@ describe('CollectionMembers editável (0025 Fase B)', () => {
     })
     fireEvent.click(await screen.findByText('Matrix Resurrections'))
 
-    // A lista de membros passa a incluir o novo item (grava via setQueryData): o
-    // card do grid é um Link para /entities/novo (o botão do picker não é link).
+    // The member list now includes the new item (written via setQueryData): the
+    // card of the grid is a Link to /entities/novo (the button of the picker is not a link).
     await vi.waitFor(() => {
       const hrefs = screen
         .getAllByRole('link')

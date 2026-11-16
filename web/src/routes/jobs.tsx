@@ -3,11 +3,11 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
 import { JobCard } from '@/components/job-card'
 import { jobsQueryOptions } from '@/lib/queries'
 
-// Rota `/jobs` (0052): a tela de administração dos jobs internos (agendador
-// embutido — backup por VACUUM INTO, e futuros tipos registrados em código).
-// Agrupada com `/settings` sob "Administração" no `AppHeader` — não é
-// navegação do dia a dia. Lista os `job_definition` com estado atual; cada
-// card cuida de habilitar/desabilitar, agendar, disparar e ver o histórico.
+// Route `/jobs`: the administration screen of the internal jobs (embedded
+// scheduler — backup through VACUUM INTO, and future types registered in code).
+// Grouped with `/settings` under "Administração" in the `AppHeader` — it is not
+// everyday navigation. It lists the `job_definition` with the current state; each
+// card takes care of enabling/disabling, scheduling, triggering and showing the history.
 export function JobsScreen() {
   const { data, isPending, isError, error } = useQuery(jobsQueryOptions)
 

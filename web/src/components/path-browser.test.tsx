@@ -6,8 +6,8 @@ import { PathBrowser } from '@/components/path-browser'
 import type { BrowseResult } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 
-// Navegador de pastas (briefing 0071): cobre navegação por clique/breadcrumb,
-// "Usar esta pasta", entrada sem permissão de leitura e erro da API.
+// Folder browser: it covers navigation by click/breadcrumb,
+// "Usar esta pasta", an entry without read permission and an API error.
 
 function okJson<T>(body: T): Response {
   return { ok: true, status: 200, json: async () => body } as Response
@@ -34,8 +34,8 @@ function browseResult(over: Partial<BrowseResult> = {}): BrowseResult {
   }
 }
 
-// Roteia GET /api/v1/library/browse?path=... por `path` — cada chave do mapa é
-// a resposta esperada para aquele caminho ('erro' devolve 422 invalid_path).
+// Routes GET /api/v1/library/browse?path=... by `path` — each key of the map is
+// the expected response for that path ('erro' returns 422 invalid_path).
 function fetchRouter(byPath: Record<string, BrowseResult | 'erro'>) {
   return vi.fn(async (url: string) => {
     const u = new URL(String(url), 'http://localhost')
@@ -58,9 +58,9 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-// Abre o navegador já com o fetch roteado e o componente montado — a maioria
-// dos testes só difere no mapa de rotas/`value`/`onChange`, então centraliza
-// aqui o trio stubGlobal+render+clique em "Procurar pasta…".
+// It opens the browser already with the routed fetch and the component mounted — most
+// tests only differ in the route map/`value`/`onChange`, so the trio
+// stubGlobal+render+click on "Procurar pasta…" is centralized here.
 async function montarEAbrir(
   byPath: Record<string, BrowseResult | 'erro'>,
   props: Partial<{ value: string; onChange: (path: string) => void }> = {},
@@ -100,7 +100,7 @@ describe('PathBrowser', () => {
     await user.click(screen.getByText('filmes'))
 
     await waitFor(() => expect(screen.getByText('acao')).toBeInTheDocument())
-    // Breadcrumb mostra o segmento "mnt" como um botão clicável.
+    // The breadcrumb shows the "mnt" segment as a clickable button.
     expect(screen.getByRole('button', { name: 'mnt' })).toBeInTheDocument()
   })
 
@@ -134,7 +134,7 @@ describe('PathBrowser', () => {
     expect(botaoPrivado).toBeDisabled()
 
     await user.click(botaoPrivado)
-    // Continua mostrando o conteúdo da raiz — não navegou para /mnt/privado.
+    // It keeps showing the content of the root — it did not navigate to /mnt/privado.
     expect(screen.getByText('filmes')).toBeInTheDocument()
   })
 
@@ -187,17 +187,17 @@ describe('PathBrowser', () => {
       { value: '/media/quebrado' },
     )
 
-    // Erra ao abrir no path quebrado, mas se recupera para a raiz sozinho —
-    // não fica preso na mensagem de erro esperando o dono clicar em algo.
+    // It errors when opening on the broken path, but recovers to the root on its own —
+    // it does not get stuck on the error message waiting for the owner to click something.
     await waitFor(() => expect(screen.getByText('filmes')).toBeInTheDocument())
   })
 
   it('path offline dispara UMA chamada ao browse, sem retry automático do TanStack Query (0078)', async () => {
-    // `renderWithClient` (helper padrão dos outros testes) já desliga retry
-    // no CLIENTE inteiro, o que mascararia justamente o bug deste briefing
-    // (retry:false precisa estar na queryOptions, não só no client de teste).
-    // Aqui usamos um QueryClient com o default REAL do TanStack Query (retry:
-    // 3) para provar que `libraryBrowseQueryOptions` desliga retry sozinha.
+    // `renderWithClient` (the standard helper of the other tests) already turns off retry
+    // in the WHOLE CLIENT, which would mask precisely the bug being fixed
+    // (retry:false has to be in the queryOptions, not only in the test client).
+    // Here we use a QueryClient with the REAL default of TanStack Query (retry:
+    // 3) to prove that `libraryBrowseQueryOptions` turns retry off on its own.
     const fetchMock = vi.fn(async (url: string) => {
       const u = new URL(String(url), 'http://localhost')
       const path = u.searchParams.get('path') ?? '/'
@@ -226,8 +226,8 @@ describe('PathBrowser', () => {
       .setup()
       .click(screen.getByRole('button', { name: 'Procurar pasta…' }))
 
-    // Recupera para a raiz sozinho (comportamento já coberto acima); aqui o
-    // que importa é QUANTAS vezes o path quebrado foi chamado.
+    // It recovers to the root on its own (behavior already covered above); here what
+    // matters is HOW MANY times the broken path was called.
     await waitFor(() => expect(screen.getByText('filmes')).toBeInTheDocument())
 
     const chamadasPathQuebrado = fetchMock.mock.calls.filter(([url]) => {
@@ -238,11 +238,11 @@ describe('PathBrowser', () => {
   })
 
   it('navegação manual não é desfeita pelo debounce de sincronização do texto digitado (regressão)', async () => {
-    // `value` do chamador permanece parado em '/mnt' (o dono não editou o
-    // campo de texto) enquanto o dono navega manualmente pelo navegador —
-    // antes da correção, o debounce de sincronização reagia a QUALQUER
-    // divergência entre `pasta` e `value`, não só a uma edição real do
-    // campo, e revertia a navegação de volta para `value` ~400ms depois.
+    // The `value` of the caller stays still at '/mnt' (the owner did not edit the
+    // text field) while the owner navigates manually through the browser —
+    // before the fix, the synchronization debounce reacted to ANY
+    // divergence between `pasta` and `value`, not only to a real edit of the
+    // field, and reverted the navigation back to `value` ~400ms later.
     const { user } = await montarEAbrir(
       {
         '/mnt': browseResult({
@@ -263,8 +263,8 @@ describe('PathBrowser', () => {
     await user.click(screen.getByText('filmes'))
     await waitFor(() => expect(screen.getByText('acao')).toBeInTheDocument())
 
-    // Espera passar do intervalo do debounce (400ms) sem editar `value`: a
-    // navegação para /mnt/filmes deve continuar de pé.
+    // It waits past the debounce interval (400ms) without editing `value`: the
+    // navigation to /mnt/filmes must still stand.
     await new Promise((resolve) => setTimeout(resolve, 600))
     expect(screen.getByText('acao')).toBeInTheDocument()
   })

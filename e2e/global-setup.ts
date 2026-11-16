@@ -1,10 +1,11 @@
-// global-setup (Camada 2, briefing 0028): prepara o alvo das jornadas.
+// global-setup (Layer 2): prepares the target of the journeys.
 //
-// Reusa um servidor externo se E2E_BASE_URL estiver setado (iteracao rapida);
-// senao builda o front, builda o binario com -cover, e o sobe com o provider fake
-// (MYMEDIADB_FAKE_PROVIDER=1), banco/assets temporarios e GOCOVERDIR, esperando o
-// /health responder. O pid vai para o state.json, que o teardown le para parar o
-// servidor e extrair a cobertura do binario. E2E_SKIP_BUILD=1 pula os builds.
+// It reuses an external server if E2E_BASE_URL is set (fast iteration); otherwise
+// it builds the front end, builds the binary with -cover, and starts it with the
+// fake provider (MYMEDIADB_FAKE_PROVIDER=1), temporary database/assets and
+// GOCOVERDIR, waiting for /health to answer. The pid goes into state.json, which
+// the teardown reads to stop the server and extract the binary coverage.
+// E2E_SKIP_BUILD=1 skips the builds.
 import { execSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, openSync, rmSync, writeFileSync } from 'node:fs'
 import {
@@ -27,7 +28,7 @@ async function esperarSaude(url: string, tentativas = 60): Promise<void> {
       const r = await fetch(`${url}/api/v1/health`)
       if (r.ok) return
     } catch {
-      /* servidor ainda subindo */
+      /* server still starting up */
     }
     await new Promise((r) => setTimeout(r, 500))
   }
@@ -41,7 +42,7 @@ function escrever(estado: EstadoE2E): void {
 export default async function globalSetup(): Promise<void> {
   mkdirSync(ARTIFACTS, { recursive: true })
 
-  // Servidor externo ja no ar: so registra e sai (sem builds, sem cobertura).
+  // External server already up: just record it and leave (no builds, no coverage).
   if (process.env.E2E_BASE_URL) {
     console.log(`[e2e] reusando servidor externo em ${BASE_URL}`)
     await esperarSaude(BASE_URL)
@@ -49,7 +50,7 @@ export default async function globalSetup(): Promise<void> {
     return
   }
 
-  // Estado limpo por execucao: banco novo, assets e GOCOVERDIR vazios.
+  // Clean state per run: fresh database, empty assets and GOCOVERDIR.
   for (const dir of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) {
     if (existsSync(dir)) rmSync(dir)
   }
@@ -60,7 +61,8 @@ export default async function globalSetup(): Promise<void> {
 
   const coletarFront = process.env.E2E_COVERAGE === '1'
   if (coletarFront) {
-    // Limpa o cache do monocart e propaga o flag ao build do vite (sourcemap inline).
+    // Clears the monocart cache and propagates the flag to the vite build
+    // (inline sourcemap).
     const { CoverageReport } = await import('monocart-coverage-reports')
     const { mcrOptions } = await import('./lib/coverage')
     await new CoverageReport(mcrOptions()).cleanCache()

@@ -1,7 +1,7 @@
 import { DatasourceList } from '@/components/datasource-list'
 
-// Rota `/library`: gestão de datasources (adicionar, escanear com progresso,
-// remover). É onde o dono aponta as pastas e dispara os scans.
+// Route `/library`: datasource management (add, scan with progress,
+// remove). It is where the owner points at the folders and triggers the scans.
 export function LibraryScreen() {
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">

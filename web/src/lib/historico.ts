@@ -1,21 +1,21 @@
-// Helpers puros do histórico de consumo (briefing 0092/0094, ADR-0022) —
-// separados de `components/historico-section.tsx` porque um módulo que
-// exporta componente E const/função dispara `react-refresh/only-export-
-// components` (mesmo motivo de `test/link-mock.tsx` ficar isolado).
+// Pure helpers for the consumption history (ADR-0022) —
+// kept apart from `components/historico-section.tsx` because a module that
+// exports a component AND a const/function triggers `react-refresh/only-export-
+// components` (the same reason `test/link-mock.tsx` stays isolated).
 
-// KIND_ASSISTIR é o único kind emitido hoje (filme/série) — o webhook Jellyfin
-// (0093) e a ação manual do dropdown "Gerenciar" gravam sob ele. Os demais
-// componentes (lista, badge) continuam agnósticos de kind; só o gate do selo de
-// "assistido" e a ação manual precisam saber qual kind observar/escrever.
+// KIND_ASSISTIR is the only kind emitted today (movie/series) — the Jellyfin webhook
+// and the manual action of the "Gerenciar" dropdown write under it. The other
+// components (list, badge) stay agnostic of kind; only the gate of the
+// "watched" badge and the manual action need to know which kind to observe/write.
 export const KIND_ASSISTIR = 'assistir'
 
-// STATUS_COMPLETED é o status que marca o consumo como CONCLUÍDO — o único que
-// acende o selo "Assistido" (started/paused/stopped não contam como concluído).
+// STATUS_COMPLETED is the status that marks the consumption as DONE — the only one that
+// lights the "Assistido" badge (started/paused/stopped do not count as completed).
 export const STATUS_COMPLETED = 'completed'
 
-// ROTULOS_STATUS traduz o vocabulário SUGERIDO pelo contrato (started/paused/
-// stopped/completed) — não travado no schema (TEXT livre), então um status fora
-// da lista cai no fallback (capitaliza a 1ª letra) em vez de sumir.
+// ROTULOS_STATUS translates the vocabulary SUGGESTED by the contract (started/paused/
+// stopped/completed) — not locked in the schema (free TEXT), so a status outside
+// the list falls back (capitalizes the 1st letter) instead of vanishing.
 const ROTULOS_STATUS: Record<string, string> = {
   started: 'Começou a assistir',
   paused: 'Pausou',
@@ -31,10 +31,10 @@ export function rotuloStatusHistorico(status: string): string {
   return status.length > 0 ? status[0].toUpperCase() + status.slice(1) : status
 }
 
-// rotuloOrigemHistorico traduz a `source` do evento — o dono precisa distinguir
-// "veio do Jellyfin" (automático) de "registrei na mão" (manual), critério de
-// aceite explícito do briefing. Fonte fora do mapa cai no valor cru (nunca
-// esconde a proveniência).
+// rotuloOrigemHistorico translates the `source` of the event — the owner needs to distinguish
+// "came from Jellyfin" (automatic) from "I recorded it by hand" (manual), an explicit
+// acceptance criterion. A source outside the map falls back to the raw value (it never
+// hides the provenance).
 const ROTULOS_ORIGEM: Record<string, string> = {
   manual: 'Registrado manualmente',
   'jellyfin-webhook': 'Jellyfin',
@@ -44,8 +44,8 @@ export function rotuloOrigemHistorico(source: string): string {
   return ROTULOS_ORIGEM[source] ?? source
 }
 
-// formatarCarimboHistorico devolve data+hora no formato local pt-BR — sem lib de
-// data (mesma escolha do `job-card.tsx`, sem precedente de lib no projeto).
+// formatarCarimboHistorico returns date+time in the local pt-BR format — without a date
+// lib (same choice as `job-card.tsx`, no precedent for a lib in the project).
 export function formatarCarimboHistorico(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) {

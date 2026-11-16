@@ -6,15 +6,15 @@ import { ErrorState, LoadingState } from '@/components/query-states'
 import type { FieldDescriptor } from '@/lib/api'
 import { entityFieldsQueryOptions } from '@/lib/queries'
 
-// Scaffold COMPARTILHADO das telas de criação local (briefing 0030): o back-link
-// "Voltar à biblioteca", o container `<main>`, o `<h1>` e os estados de
-// carregando/erro que consomem `entityFieldsQueryOptions`. As rotas de item e de
-// coleção só diferem no `<Form>` específico, então recebem os descritores por
-// render-prop e montam apenas o formulário — o resto (idêntico) mora aqui.
-// `topo` é um slot opcional renderizado ANTES do formulário (depois do `<h1>`),
-// sempre visível independente do estado de carregamento — usado pelo cross-link
-// "Novo item" ↔ Busca (briefing 0077); rotas que não passam `topo` continuam
-// idênticas a antes.
+// SHARED scaffold of the local creation screens: the back-link
+// "Voltar à biblioteca", the `<main>` container, the `<h1>` and the
+// loading/error states that consume `entityFieldsQueryOptions`. The item and the
+// collection routes only differ in the specific `<Form>`, so they receive the descriptors through a
+// render-prop and mount only the form — the rest (identical) lives here.
+// `topo` is an optional slot rendered BEFORE the form (after the `<h1>`),
+// always visible regardless of the loading state — used by the cross-link
+// "Novo item" ↔ Busca; routes that do not pass `topo` stay
+// identical to before.
 export function NewEntityPage({
   title,
   topo,

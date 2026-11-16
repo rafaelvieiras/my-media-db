@@ -15,13 +15,13 @@ import { ErrorState, LoadingState } from '@/components/query-states'
 import { ExternalResultCard } from '@/components/external-result-card'
 import { ImportarButton } from '@/components/rich-detail-view'
 
-// Rota `/collection/$source/$id`: a COLEÇÃO externa como página própria (0024,
-// follow-up do 0023). Header com nome + backdrop do conjunto e um grid das partes;
-// cada parte é um `ExternalResultCard` (reuso) que navega ao detalhe externo e traz o
-// atalho Importar. Trocar o idioma (topo) re-busca (o `lang` entra na queryKey).
+// Route `/collection/$source/$id`: the external COLLECTION as a page of its own (a
+// follow-up of the external collection view). Header with the name + backdrop of the set and a grid of the parts;
+// each part is an `ExternalResultCard` (reuse) that navigates to the external detail and brings the
+// Importar shortcut. Switching the language (top) re-fetches (the `lang` enters the queryKey).
 
-// propsDeErro escolhe título/mensagem pelo status HTTP: 404 (inexistente na fonte) ×
-// 502/503 (fonte indisponível/sem coleção) × demais (genérico).
+// propsDeErro chooses title/message by HTTP status: 404 (absent in the source) ×
+// 502/503 (source unavailable/without a collection) × the rest (generic).
 function propsDeErro(error: unknown): { title: string; message?: string } {
   const status = error instanceof ApiError ? error.status : 0
   const message = error instanceof Error ? error.message : undefined
@@ -55,8 +55,8 @@ export function CollectionDetailScreen() {
         <div className="flex flex-col gap-6">
           <VoltarButton onClick={() => router.history.back()} />
 
-          {/* Header: backdrop como BANNER com degradê para o card; o nome e a sinopse
-              ficam sobre o card sólido (mesmo padrão de contraste do hero rico). */}
+          {/* Header: backdrop as a BANNER with a gradient into the card; the name and the synopsis
+              sit over the solid card (same contrast pattern as the rich hero). */}
           <div className="overflow-hidden rounded-2xl bg-card ring-1 ring-foreground/10">
             {srcDeImagem(data.backdrop_url) ? (
               <div className="relative aspect-[16/6] w-full sm:aspect-[16/5]">
@@ -74,11 +74,11 @@ export function CollectionDetailScreen() {
                 <h1 className="font-heading text-2xl font-semibold">
                   {data.name}
                 </h1>
-                {/* Interno-first (0026): se a coleção JÁ foi importada, o header leva
-                    à entity interna ("Ver coleção") em vez de reoferecer importar.
-                    Senão, o botão importa a COLEÇÃO inteira (0025) — vira entity
-                    type='collection' com os filmes membros ligados; navega para
-                    /entities/{novoId}. Rótulo distinto dos "Importar" das partes. */}
+                {/* Internal-first: if the collection was ALREADY imported, the header takes
+                    to the internal entity ("Ver coleção") instead of offering the import again.
+                    Otherwise, the button imports the WHOLE collection — it becomes an entity
+                    type='collection' with the member movies linked; it navigates to
+                    /entities/{novoId}. A label distinct from the "Importar" of the parts. */}
                 {internalIdDe(data) != null ? (
                   <Button asChild>
                     <Link
@@ -130,9 +130,9 @@ export function CollectionDetailScreen() {
   )
 }
 
-// comoResultado adapta uma parte da coleção ao shape ExternalResult que o
-// ExternalResultCard consome (mesmos campos; `saved` é sempre false — a parte é um
-// item externo até ser importado).
+// comoResultado adapts a part of the collection to the ExternalResult shape that the
+// ExternalResultCard consumes (same fields; `saved` is always false — the part is an
+// external item until it is imported).
 function comoResultado(
   source: string,
   parte: ExternalCollectionPart,
@@ -149,8 +149,8 @@ function comoResultado(
   }
 }
 
-// VoltarButton retorna no histórico (a coleção é sempre alcançada por navegação a
-// partir de um detalhe).
+// VoltarButton goes back in the history (the collection is always reached by navigation
+// from a detail page).
 function VoltarButton({ onClick }: { onClick: () => void }) {
   return (
     <button

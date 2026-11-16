@@ -18,9 +18,9 @@ import type {
   UsageCounts,
 } from '@/lib/api'
 
-// Tela de saúde (rota `/health`): consome `health` via TanStack Query e deriva
-// três estados visíveis — carregando / erro / ok. Um erro de rede é ESTADO da
-// UI, nunca uma exceção não-capturada: o Card sempre renderiza.
+// Health screen (route `/health`): it consumes `health` via TanStack Query and derives
+// three visible states — loading / error / ok. A network error is UI
+// STATE, never an uncaught exception: the Card always renders.
 export function HealthScreen() {
   const { data, isPending, isError } = useQuery(healthQueryOptions)
 
@@ -72,12 +72,12 @@ function StatusBadge({
   )
 }
 
-// SystemSection (0055): a telemetria de sistema — banco/uso/armazenamento. UMA
-// única chamada a `systemHealthQueryOptions` aqui (o pai da seção); cada
-// sub-bloco recebe o MESMO isPending/isError/data e decide o próprio
-// Loading/ErrorState, mas todos derivam da mesma requisição (não há 3 fetches).
-// É uma query SEPARADA de `healthQueryOptions` — uma falha aqui não afeta o
-// card de status acima.
+// SystemSection: the system telemetry — database/usage/storage. A SINGLE
+// call to `systemHealthQueryOptions` here (the parent of the section); each
+// sub-block receives the SAME isPending/isError/data and decides its own
+// Loading/ErrorState, but all of them derive from the same request (there are no 3 fetches).
+// It is a query SEPARATE from `healthQueryOptions` — a failure here does not affect the
+// status card above.
 function SystemSection() {
   const { data, isPending, isError, error } = useQuery(systemHealthQueryOptions)
   const mensagemErro = error instanceof Error ? error.message : undefined
@@ -117,7 +117,7 @@ function SystemSection() {
   )
 }
 
-// Estado comum aos três sub-blocos: loading/erro derivados da mesma query pai.
+// State common to the three sub-blocks: loading/error derived from the same parent query.
 interface BlockState {
   isPending: boolean
   isError: boolean
@@ -235,10 +235,10 @@ function StorageBlock({
           />
         ) : (
           <>
-            {/* 0063: distribuição do disco ocupado pelas pastas rastreadas —
-                mídia gerenciada (vídeo + NFO/arte de nome canônico, 0062),
-                cache interno da app (assetsDir) e o resto não identificado.
-                Só leitura: nenhuma ação sobre "não identificado" aqui. */}
+            {/* Disk distribution used by the tracked folders —
+                managed media (video + NFO/artwork with a canonical name),
+                internal cache of the app (assetsDir) and the unidentified rest.
+                Read-only: no action on "não identificado" here. */}
             <dl className="flex flex-col gap-1.5 text-sm">
               <BlockRow
                 label="Mídia gerenciada"
@@ -277,9 +277,9 @@ function StorageBlock({
   )
 }
 
-// StorageRow: uma fonte — barra "usado (mídia rastreada) / total do
-// filesystem". Offline mostra um badge no lugar da barra, sem travar as
-// demais linhas (`offline`/`filesystem: null` do contrato, ver 0055 §4).
+// StorageRow: one source — a "used (tracked media) / filesystem total"
+// bar. Offline shows a badge in place of the bar, without freezing the
+// other rows (`offline`/`filesystem: null` of the contract, see §4).
 function StorageRow({ source }: { source: SourceStorage }) {
   return (
     <li className="flex flex-col gap-1">
@@ -312,9 +312,9 @@ function StorageRow({ source }: { source: SourceStorage }) {
   )
 }
 
-// Barra de uso simples (`div` com `width%`): o projeto não tem um componente
-// `Progress` em `web/src/components/ui/` ainda — criar um só para isto seria
-// design system novo demais para uma barra de leitura.
+// Simple usage bar (`div` with `width%`): the project does not have a `Progress`
+// component in `web/src/components/ui/` yet — creating one just for this would
+// be too much design system for a read-only bar.
 function StorageBar({
   usedBytes,
   totalBytes,

@@ -2,9 +2,9 @@ import { Select } from '@/components/ui/select'
 import { useLanguage } from '@/lib/language-context'
 import { rotuloIdioma } from '@/lib/languages'
 
-// Seletor de idioma de leitura no AppHeader: lista os `allowed` e troca via
-// `setLang` (que persiste e re-busca as leituras). Esconde-se quando há apenas
-// um idioma permitido — não há escolha a oferecer.
+// Reading-language selector in the AppHeader: it lists the `allowed` ones and switches via
+// `setLang` (which persists and re-fetches the reads). It hides itself when there is only
+// one allowed language — there is no choice to offer.
 export function LanguageSelector() {
   const { lang, setLang, allowed } = useLanguage()
 

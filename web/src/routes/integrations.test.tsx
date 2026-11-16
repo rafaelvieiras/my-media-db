@@ -5,9 +5,9 @@ import type { IntegrationSummary } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 
-// Rota `/dashboard/integrations` (briefing 0096): lista os cards com o badge
-// `configurada` refletindo EXATAMENTE o que a API devolveu (sem lógica
-// própria no front, critério de aceite §5).
+// Route `/dashboard/integrations`: lists the cards with the
+// `configurada` badge reflecting EXACTLY what the API returned (no logic
+// of its own in the front, acceptance criterion §5).
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
 }))

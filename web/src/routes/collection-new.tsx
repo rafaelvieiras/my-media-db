@@ -10,11 +10,11 @@ import {
   type ValoresForm,
 } from '@/lib/field-schema'
 
-// Rota `/new/collection` (briefing 0030): cria uma coleção LOCAL do zero. Uma
-// coleção só expõe título (obrigatório) + descrição — recorte dos campos
-// editoriais genéricos que se aplicam a ela (o backend `createCollection` só
-// aceita esses dois). Ao criar, navega para `/entities/{id}` (a página da coleção,
-// onde o dono adiciona membros). O 422 (título vazio) aparece inline.
+// Route `/new/collection`: creates a LOCAL collection from scratch. A
+// collection only exposes a title (required) + description — a subset of the
+// generic editorial fields that apply to it (the backend `createCollection` only
+// accepts those two). On creation, it navigates to `/entities/{id}` (the collection page,
+// where the owner adds members). The 422 (empty title) appears inline.
 const CAMPOS_COLECAO = ['title', 'description']
 
 export function CollectionNewScreen() {

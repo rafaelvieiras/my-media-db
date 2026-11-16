@@ -1,12 +1,12 @@
 import { expect, test } from '../fixtures'
 
-// Briefing 0099: lista GLOBAL (fora de /entities/{id}) de eventos de webhook
-// que não bateram com nenhum item catalogado -- somente leitura (o backfill
-// automático é responsabilidade do backend, sem ação manual nesta tela). Não
-// depende de resetBiblioteca: popular um evento orfao de verdade exigiria
-// simular um webhook sem match, o que este spec não tenta reproduzir --
-// valida só que a tela renderiza sem erro a partir do link do sidebar,
-// contra qualquer estado real de órfãos do servidor de teste.
+// Global LIST (outside /entities/{id}) of webhook events that did not match any
+// cataloged item -- read-only (the automatic backfill is the backend's
+// responsibility, with no manual action on this screen). It does not depend on
+// resetBiblioteca: actually populating an orphan event would require simulating a
+// webhook with no match, which this spec does not try to reproduce -- it only
+// validates that the screen renders without error from the sidebar link,
+// against whatever real orphan state the test server has.
 
 test('pagina de eventos sem item relacionado: navega pelo sidebar e carrega sem erro', async ({
   page,
@@ -21,8 +21,8 @@ test('pagina de eventos sem item relacionado: navega pelo sidebar e carrega sem 
     }),
   ).toBeVisible()
 
-  // A query resolve para um dos três estados possíveis: vazio, lista com
-  // itens, ou erro -- nunca um loading eterno.
+  // The query resolves to one of the three possible states: empty, list with
+  // items, or error -- never an eternal loading.
   const vazio = page.getByText('Nenhum evento sem item relacionado')
   const erro = page.getByText(
     'Não foi possível carregar os eventos sem item relacionado',
@@ -30,8 +30,8 @@ test('pagina de eventos sem item relacionado: navega pelo sidebar e carrega sem 
   const listaComItens = page.getByRole('button', { name: 'Próxima' })
   await expect(vazio.or(erro).or(listaComItens)).toBeVisible()
 
-  // Erro não é um estado aceitável aqui -- se a query falhar, o teste falha
-  // explicitamente em vez de passar silenciosamente no "or" acima.
+  // An error is not an acceptable state here -- if the query fails, the test fails
+  // explicitly instead of silently passing through the "or" above.
   await expect(erro).not.toBeVisible()
 })
 

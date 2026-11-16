@@ -14,15 +14,15 @@ import {
   retroactiveEnrichmentSettingsQueryOptions,
 } from '@/lib/queries'
 
-// Rota `/dashboard/library/new` (briefing 0071): substitui o antigo `DatasourceForm`
-// sempre-visível no topo da lista por uma página própria — dá o espaço de tela
-// que o navegador de pastas precisa (não cabia espremido numa linha de lista).
-// O campo de caminho continua editável em paralelo ao `PathBrowser` (o navegador
-// é um atalho visual, não o único jeito de preencher o caminho). Sucesso navega
-// de volta para `/dashboard/library`; erro (`ApiError`, ex. 422 path inválido/duplicado)
-// aparece inline, logo abaixo do campo — naturalmente perto dele nesta página
-// (o achado #7 da auditoria, erro longe do campo na lista espremida, some de
-// graça aqui).
+// Route `/dashboard/library/new`: it replaces the old always-visible `DatasourceForm`
+// at the top of the list with a page of its own — it gives the screen room
+// that the folder browser needs (it did not fit squeezed into one row of the list).
+// The path field stays editable in parallel with the `PathBrowser` (the browser
+// is a visual shortcut, not the only way of filling in the path). Success navigates
+// back to `/dashboard/library`; an error (`ApiError`, e.g. 422 invalid/duplicate path)
+// appears inline, right below the field — naturally close to it on this page
+// (finding #7 of the audit, an error far from the field in the squeezed list, disappears
+// for free here).
 export function LibraryNewScreen() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -50,8 +50,8 @@ export function LibraryNewScreen() {
     if (!limpo) {
       return
     }
-    // Séries (type=tv) marca a biblioteca como content_type='series'; Filmes fica
-    // 'movie'. É o valor por que o scanner ramifica o fluxo de match (0034).
+    // Series (type=tv) marks the library as content_type='series'; Movies stay
+    // 'movie'. It is the value by which the scanner branches the match flow.
     const content_type = type === 'tv' ? 'series' : 'movie'
     const retryDaysLimpo = retryDays.trim()
     mutation.mutate({
@@ -76,9 +76,9 @@ export function LibraryNewScreen() {
     <main className="mx-auto max-w-2xl px-4 py-6">
       <LibraryFormHeader titulo="Adicionar datasource" />
 
-      {/* noValidate: o min/max do campo de reentativa (0085) é só hint nativo;
-          a validação de range é do backend (422 inline), sem depender do
-          balão nativo do navegador bloqueando o submit antes de chegar lá. */}
+      {/* noValidate: the min/max of the retry field is only a native hint;
+          the range validation belongs to the backend (422 inline), without depending on the
+          native browser balloon blocking the submit before it gets there. */}
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">Caminho</span>

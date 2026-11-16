@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { temOverrideEditado } from '@/lib/override-fields'
 import { descritoresPadrao } from '@/test/entity-fixtures'
 
-// A detecção de "editado" (0016) agora ITERA os descritores (0030) para saber se
-// o campo é traduzível, em vez de o chamador passar um booleano hardcoded.
+// The detection of "edited" now ITERATES the descriptors to know whether
+// the field is translatable, instead of the caller passing a hardcoded boolean.
 
 describe('temOverrideEditado', () => {
   it('traduzível: só conta com override no idioma corrente', () => {
@@ -30,7 +30,7 @@ describe('temOverrideEditado', () => {
   })
 
   it('sem descritores (carregando) trata como não-traduzível', () => {
-    // Com a chave presente e sem descritor, cai no ramo neutro → true.
+    // With the key present and no descriptor, it falls into the neutral branch → true.
     expect(
       temOverrideEditado(
         { title: { 'pt-BR': 'Duna' } },

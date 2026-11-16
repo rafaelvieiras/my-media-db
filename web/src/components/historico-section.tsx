@@ -21,20 +21,20 @@ import {
   historicoEventosQueryOptions,
 } from '@/lib/queries'
 
-// Histórico de consumo (briefing 0094, dá rosto ao 0092/0093/ADR-0022): selo de
-// estado "Assistido" (`EstadoAssistidoBadge`) + timeline de eventos
-// (`HistoricoSection`), companheiros da `RichDetailView` no mesmo padrão da
-// `SimilaresRail` (vazio → a seção some por inteiro, sem "não assistido" ativo
-// nem timeline vazia poluindo a tela). Os rótulos/constantes puros ficam em
-// `lib/historico.ts` (módulo que exporta componente + const dispara
+// Consumption history (it gives a face to ADR-0022): the "Assistido"
+// state badge (`EstadoAssistidoBadge`) + event timeline
+// (`HistoricoSection`), companions of the `RichDetailView` in the same pattern as the
+// `SimilaresRail` (empty → the section disappears entirely, without an active "não assistido"
+// nor an empty timeline polluting the screen). The pure labels/constants live in
+// `lib/historico.ts` (a module that exports a component + a const triggers
 // `react-refresh/only-export-components`).
 
-// EstadoAssistidoBadge é o selo "Assistido" (com data) do hero/card — lê
-// `historicoEstadoQueryOptions` (kind="assistir") e só aparece quando o evento
-// MAIS RECENTE desse kind é `completed` (assistir em andamento/pausado não
-// acende o selo). Sem nenhum evento — ou erro/carregando — o selo simplesmente
-// não aparece: nunca um selo ativo de "não assistido" (mesmo princípio de
-// "sinalizar só o que precisa de atenção positiva" já usado no projeto).
+// EstadoAssistidoBadge is the "Assistido" badge (with a date) of the hero/card — it reads
+// `historicoEstadoQueryOptions` (kind="assistir") and only appears when the MOST RECENT
+// event of that kind is `completed` (watching in progress/paused does not
+// light the badge). With no event at all — or error/loading — the badge simply
+// does not appear: never an active "não assistido" badge (same principle of
+// "signal only what needs positive attention" already used in the project).
 export function EstadoAssistidoBadge({ entityId }: { entityId: string }) {
   const { data } = useQuery(historicoEstadoQueryOptions(entityId))
   const assistir = data?.estado?.[KIND_ASSISTIR]
@@ -53,9 +53,9 @@ export function EstadoAssistidoBadge({ entityId }: { entityId: string }) {
   )
 }
 
-// invalidarHistorico invalida TODO o prefixo `['historico', id]` (eventos de
-// qualquer kind + o estado derivado) — mesma convenção de invalidação por
-// prefixo já usada no resto do projeto (`['entity', id]`, `['assets', id]`).
+// invalidarHistorico invalidates the WHOLE `['historico', id]` prefix (events of
+// any kind + the derived state) — the same prefix invalidation convention
+// already used in the rest of the project (`['entity', id]`, `['assets', id]`).
 function invalidarHistorico(
   queryClient: ReturnType<typeof useQueryClient>,
   entityId: string,
@@ -63,11 +63,11 @@ function invalidarHistorico(
   queryClient.invalidateQueries({ queryKey: ['historico', entityId] })
 }
 
-// EventoRow é UMA linha da timeline: status + data + origem, com o controle de
-// apagar em confirmação de 2 ETAPAS (× → "Apagar?"/"Cancelar") — o mesmo padrão
-// já usado por `MembroEditavel` (collection-members.tsx) para remover um item de
-// uma lista, mais leve que o modal `AlertDialog` reservado para ações
-// destrutivas maiores (ex. "Excluir coleção").
+// EventoRow is ONE row of the timeline: status + date + origin, with the
+// delete control in a 2-STEP confirmation (× → "Apagar?"/"Cancelar") — the same pattern
+// already used by `MembroEditavel` (collection-members.tsx) to remove an item from
+// a list, lighter than the `AlertDialog` modal reserved for bigger
+// destructive actions (e.g. "Excluir coleção").
 function EventoRow({
   entityId,
   evento,
@@ -141,12 +141,12 @@ function EventoRow({
   )
 }
 
-// HistoricoSection é a seção "Histórico" do detalhe do item (briefing 0094):
-// lista TODOS os eventos (qualquer kind, agnóstico de vertical) em ordem
-// cronológica reversa (occurred_at DESC, já assim do backend). Mesmo padrão da
-// `SimilaresRail`: vazio → a seção some por inteiro (sem heading solto).
-// Carregando/erro mostram a seção com o heading (transitório) — consistente com
-// o resto do detalhe (`MediaInfoTable`/`ArtGallery`).
+// HistoricoSection is the "Histórico" section of the item detail:
+// it lists ALL the events (any kind, agnostic of vertical) in reverse
+// chronological order (occurred_at DESC, already like that from the backend). Same pattern as the
+// `SimilaresRail`: empty → the section disappears entirely (no loose heading).
+// Loading/error show the section with the heading (transient) — consistent with
+// the rest of the detail (`MediaInfoTable`/`ArtGallery`).
 export function HistoricoSection({ entityId }: { entityId: string }) {
   const query = useQuery(historicoEventosQueryOptions(entityId))
 

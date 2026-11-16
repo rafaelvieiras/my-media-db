@@ -7,9 +7,9 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-// Corpo padrão de `GET /api/v1/health/system` usado nos testes de sucesso —
-// uma fonte online (com barra) e uma offline (badge "indisponível"), cobrindo
-// os dois ramos do bloco de armazenamento.
+// Standard body of `GET /api/v1/health/system` used in the success tests —
+// one online source (with a bar) and one offline (badge "indisponível"), covering
+// both branches of the storage block.
 const SYSTEM_HEALTH_OK = {
   computed_at: '2026-07-15T19:40:00.000Z',
   database: {
@@ -57,9 +57,9 @@ const SYSTEM_HEALTH_OK = {
   },
 }
 
-// mockFetch monta um `fetch` global que responde por rota: `/health` cai no
-// corpo básico de status, `/health/system` cai no corpo de telemetria (ambos
-// parametrizáveis para os cenários de erro/pendente).
+// mockFetch builds a global `fetch` that answers per route: `/health` falls on the
+// basic status body, `/health/system` falls on the telemetry body (both
+// parameterizable for the error/pending scenarios).
 function mockFetch({
   health = { ok: true, status: 200, body: { status: 'ok', version: '9.9.9' } },
   system = { ok: true, status: 200, body: SYSTEM_HEALTH_OK },
@@ -148,7 +148,7 @@ describe('HealthScreen', () => {
       expect(screen.getByText('Banco de dados')).toBeInTheDocument()
       expect(screen.getByText('Uso')).toBeInTheDocument()
       expect(screen.getByText('Armazenamento')).toBeInTheDocument()
-      // Um "Carregando…" por bloco (3), fora o "Conectando…" do card de status.
+      // One "Carregando…" per block (3), plus the "Conectando…" of the status card.
       expect(screen.getAllByText('Carregando…')).toHaveLength(3)
     })
 
@@ -157,7 +157,7 @@ describe('HealthScreen', () => {
 
       renderWithClient(<HealthScreen />)
 
-      // O card de status básico segue funcionando (query independente).
+      // The basic status card keeps working (independent query).
       await waitFor(() =>
         expect(screen.getByText(/API online — v9\.9\.9/)).toBeInTheDocument(),
       )

@@ -17,13 +17,13 @@ import { aspectPorTipo, rotuloTipo } from '@/lib/entity-badges'
 
 const DEBOUNCE_MS = 350
 
-// CollectionMemberPicker: busca no catálogo LOCAL um item para ADICIONAR à coleção
-// (0025 Fase B). Reusa `GET /search` (mostra só `local` — resultados externos não
-// entram numa coleção sem antes virar entity). Filtra da lista: a própria coleção,
-// os membros já ligados (`excludeIds`) e outras coleções (uma coleção não aninha
-// outra). Ao escolher um item, `addCollectionMember` devolve a lista de membros
-// ATUALIZADA, repassada ao pai por `onAdded` — o picker fica aberto para adicionar
-// vários em sequência (o item recém-adicionado some via `excludeIds`).
+// CollectionMemberPicker: searches the LOCAL catalog for an item to ADD to the collection.
+// It reuses `GET /search` (it shows only `local` — external results do not
+// enter a collection without first becoming an entity). It filters out of the list: the collection itself,
+// the members already linked (`excludeIds`) and other collections (a collection does not nest
+// another one). When an item is chosen, `addCollectionMember` returns the member list
+// UPDATED, passed on to the parent via `onAdded` — the picker stays open to add
+// several in a row (the newly added item disappears via `excludeIds`).
 export function CollectionMemberPicker({
   collectionId,
   excludeIds,
@@ -46,8 +46,8 @@ export function CollectionMemberPicker({
     onSuccess: (membros) => onAdded(membros),
   })
 
-  // Candidatos: só os locais que não são a própria coleção, nem já-membros, nem
-  // outra coleção.
+  // Candidates: only the local ones that are not the collection itself, nor already members, nor
+  // another collection.
   const candidatos = (busca.data?.local ?? []).filter(
     (c) =>
       c.id !== collectionId && !excludeIds.has(c.id) && c.type !== 'collection',

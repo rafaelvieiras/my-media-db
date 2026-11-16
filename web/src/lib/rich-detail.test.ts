@@ -7,9 +7,9 @@ import {
 import type { ExternalDetail } from '@/lib/api'
 import { baseEntity } from '@/test/entity-fixtures'
 
-// Os adapters normalizam os dois DTOs (detalhe externo × entity resolvida) no
-// mesmo RichDetail. Aqui provamos o mapeamento e as duas regras próprias da
-// entity: gêneros = tags, e o backdrop local (rota relativa) × direto (URL).
+// The adapters normalize both DTOs (external detail × resolved entity) into the
+// same RichDetail. Here we prove the mapping and the two rules of the
+// entity itself: genres = tags, and the local backdrop (relative route) × direct (URL).
 
 const externo: ExternalDetail = {
   source: 'tmdb',
@@ -55,34 +55,34 @@ describe('rich-detail adapters', () => {
   })
 
   it('backdrop local (rota relativa) passa pela base; cru (URL) passa pelo proxy (0044)', () => {
-    // Rota local do fanart cacheado (própria ou herdada) → relativa (base vazia em
-    // teste = igual).
+    // Local route of the cached fanart (own or inherited) → relative (empty base in
+    // the test = the same).
     const local = deResolvedEntity(
       baseEntity({ backdrop_url: '/api/v1/entities/e/assets/fanart' }),
     )
     expect(local.backdropUrl).toBe('/api/v1/entities/e/assets/fanart')
-    // Fallback: URL CRUA da fonte agora passa pelo image proxy (0044) — não bate no CDN.
+    // Fallback: the RAW URL of the source now goes through the image proxy — it does not hit the CDN.
     const cru = 'https://img.tmdb.org/b.jpg'
     const direto = deResolvedEntity(baseEntity({ backdrop_url: cru }))
     expect(direto.backdropUrl).toBe(
       `/api/v1/images?src=${encodeURIComponent(cru)}`,
     )
-    // Sem backdrop → null.
+    // No backdrop → null.
     const vazio = deResolvedEntity(baseEntity({ backdrop_url: null }))
     expect(vazio.backdropUrl).toBeNull()
   })
 
   it('mapeia airing_status (situação de série, 0045) nas duas fontes', () => {
-    // Entity resolvida: e.airing_status → airingStatus.
+    // Resolved entity: e.airing_status → airingStatus.
     const ent = deResolvedEntity(baseEntity({ airing_status: 'Ended' }))
     expect(ent.airingStatus).toBe('Ended')
-    // Detalhe externo: d.airing_status → airingStatus.
+    // External detail: d.airing_status → airingStatus.
     const ext = deExternalDetail({
       ...externo,
       airing_status: 'Returning Series',
     })
     expect(ext.airingStatus).toBe('Returning Series')
-    // Ausente (filme/só-TVDB sem match) → null (o selo não aparece).
+    // Absent (movie/TVDB-only without a match) → null (the badge does not appear).
     expect(deResolvedEntity(baseEntity({})).airingStatus).toBeNull()
     expect(deExternalDetail(externo).airingStatus).toBeNull()
   })
@@ -95,23 +95,23 @@ describe('rich-detail adapters', () => {
       { source_id: '9', name: 'Denis', department: 'Direção', job: 'Diretor' },
     ]
     const companies = [{ source_id: 'w', name: 'Warner' }]
-    // Externo: passam direto (URLs já proxyadas pelo backend).
+    // External: they pass through (URLs already proxied by the backend).
     const ext = deExternalDetail({ ...externo, cast, crew, companies })
     expect(ext.cast).toEqual(cast)
     expect(ext.crew).toEqual(crew)
     expect(ext.companies).toEqual(companies)
-    // Entity: paridade — mesmo mapeamento.
+    // Entity: parity — same mapping.
     const ent = deResolvedEntity(baseEntity({ cast, crew, companies }))
     expect(ent.cast).toEqual(cast)
     expect(ent.crew).toEqual(crew)
     expect(ent.companies).toEqual(companies)
-    // Ausente → listas vazias (a seção some na UI).
+    // Absent → empty lists (the section disappears in the UI).
     expect(deExternalDetail(externo).cast).toEqual([])
     expect(deResolvedEntity(baseEntity({})).companies).toEqual([])
   })
 
   it('still do episódio: custom (rota local) recebe a base; provider (cru) passa pelo proxy (0044)', () => {
-    // Still CUSTOM do dono → rota local servível (recebe só a base).
+    // CUSTOM still of the owner → servable local route (it only receives the base).
     const custom = deResolvedEntity(
       baseEntity({
         type: 'episode',
@@ -119,7 +119,7 @@ describe('rich-detail adapters', () => {
       }),
     )
     expect(custom.stillUrl).toBe('/api/v1/entities/e/assets/still')
-    // Still do PROVIDER → URL crua, servida pelo image proxy.
+    // PROVIDER still → raw URL, served by the image proxy.
     const cru = 'https://artworks.thetvdb.com/s.jpg'
     const provider = deResolvedEntity(
       baseEntity({ type: 'episode', still_url: cru }),
@@ -130,8 +130,8 @@ describe('rich-detail adapters', () => {
   })
 })
 
-// rotuloSituacao traduz a situação CRUA (TMDB ou TVDB) para o rótulo pt-BR + variante
-// do selo. O dado fica neutro no backend; a tradução é só de UI (0045).
+// rotuloSituacao translates the RAW situation (TMDB or TVDB) into the pt-BR label + badge
+// variant. The data stays neutral in the backend; the translation is UI only.
 describe('rotuloSituacao', () => {
   it('traduz o vocabulário TMDB', () => {
     expect(rotuloSituacao('Returning Series')).toEqual({
@@ -150,7 +150,7 @@ describe('rotuloSituacao', () => {
   })
 
   it('traduz o vocabulário TVDB', () => {
-    // "Continuing" (TVDB) equivale a "Returning Series" (TMDB) → mesmo rótulo.
+    // "Continuing" (TVDB) is equivalent to "Returning Series" (TMDB) → same label.
     expect(rotuloSituacao('Continuing')).toEqual({
       label: 'Em exibição',
       variant: 'default',

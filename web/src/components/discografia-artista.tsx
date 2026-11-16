@@ -4,26 +4,26 @@ import { PosterCard } from '@/components/poster-card'
 import { useLanguage } from '@/lib/language-context'
 import { entityMembersQueryOptions } from '@/lib/queries'
 
-// DiscografiaArtista lista os ÁLBUNS de um ARTISTA (briefing 0111): filhos
-// por entity_relation kind=music_artista_principal (ADR-0027) — o MESMO
-// endpoint genérico de membros (GET /entities/{id}/members,
-// `entityMembersQueryOptions`) que já alimenta `MembrosSomenteLeitura`
-// (temporadas/episódios da série, `entity-members.tsx`), reusando o MESMO
-// `GradeMembros` (casca de carregando/erro/vazio + grid) e o MESMO
-// `PosterCard` do grid geral (0037/0109) — nenhum card novo.
+// DiscografiaArtista lists the ALBUMS of an ARTIST: children
+// by entity_relation kind=music_artista_principal (ADR-0027) — the SAME
+// generic members endpoint (GET /entities/{id}/members,
+// `entityMembersQueryOptions`) that already feeds `MembrosSomenteLeitura`
+// (seasons/episodes of the series, `entity-members.tsx`), reusing the SAME
+// `GradeMembros` (loading/error/empty shell + grid) and the SAME
+// `PosterCard` of the general grid — no new card.
 //
-// FILTRO type=album: `music_artista_principal` também liga FAIXAS soltas
-// (colaborações cujo artista da faixa diverge do artista principal do
-// álbum, ADR-0027) direto ao artista — a discografia mostra só os filhos
-// `type=album`, filtro CLIENT-SIDE sobre a mesma resposta.
+// FILTER type=album: `music_artista_principal` also links loose TRACKS
+// (collaborations whose track artist diverges from the main artist of the
+// album, ADR-0027) straight to the artist — the discography shows only the
+// `type=album` children, a CLIENT-SIDE filter over the same response.
 //
-// NOTA (0111): hoje `kindEOrdemMembros` (internal/server/entities.go) só
-// reconhece `tipoPai` `tv`/`season`; para `artista` cai no `default` (kind=
-// "collection"), que nunca bate com `music_artista_principal` — esta seção
-// fica VAZIA contra dado real até o backend ganhar o mapeamento genérico
-// (reportado no resumo da implementação, não feito aqui por instrução
-// explícita do briefing §Passo 1: "endpoint hardcoded → não reescreva
-// sozinho").
+// NOTE: today `kindEOrdemMembros` (internal/server/entities.go) only
+// recognizes the `tipoPai` `tv`/`season`; for `artista` it falls into the `default` (kind=
+// "collection"), which never matches `music_artista_principal` — this section
+// stays EMPTY against real data until the backend gains the generic mapping
+// (reported in the implementation summary, not done here on the explicit
+// instruction of §Step 1: "endpoint hardcoded → do not rewrite it
+// on your own").
 export function DiscografiaArtista({ id }: { id: string }) {
   const { lang } = useLanguage()
   const { data, isPending, isError } = useQuery(

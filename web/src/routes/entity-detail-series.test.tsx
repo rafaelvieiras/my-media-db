@@ -13,10 +13,10 @@ import {
 } from '@/test/detail-harness'
 import { baseEntity, okJson, respostaComum } from '@/test/entity-fixtures'
 
-// Testa a SECAO DA SERIE (0040) via EntityDetailScreen: o seletor aparece só com mais
-// de uma ordem; trocar navega no search param (voltar ao default remove o param); uma
-// ordem alternativa renderiza a view agrupada. O router é mockado com um search
-// mutável (`state.search`) e um navigate spy.
+// Tests the SERIES SECTION via EntityDetailScreen: the selector only appears with more
+// than one order; switching navigates the search param (going back to the default removes the param); an
+// alternative order renders the grouped view. The router is mocked with a mutable
+// search (`state.search`) and a navigate spy.
 const state = vi.hoisted(() => ({
   search: { ordering: undefined as string | undefined },
   navigate: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
 }))
 
-// serieTV monta a entity resolvida de uma série com as ordens dadas.
+// serieTV builds the resolved entity of a series with the given orders.
 function serieTV(available: string[], deft = 'official'): ResolvedEntity {
   return baseEntity({
     type: 'tv',
@@ -94,7 +94,7 @@ const temporada = entityCardBase({
 describe('SecaoSerie — seletor de ordenação (0040)', () => {
   it('esconde o seletor quando há só uma ordem', async () => {
     renderSerie(serieTV(['official']), [temporada])
-    // A view default (Temporadas) aparece; o seletor não.
+    // The default view (Temporadas) appears; the selector does not.
     expect(await screen.findByText('Temporadas')).toBeTruthy()
     expect(
       screen.queryByLabelText('Ordem de exibição dos episódios'),
@@ -121,14 +121,14 @@ describe('SecaoSerie — seletor de ordenação (0040)', () => {
   })
 
   it('voltar ao default REMOVE o param (search vazio)', async () => {
-    // Começa numa ordem alternativa (dvd): a view agrupada é renderizada.
+    // It starts in an alternative order (dvd): the grouped view is rendered.
     state.search = { ordering: 'dvd' }
     const groups: EpisodeGroups = {
       ordering: 'dvd',
       groups: [grupoEpisodios(1, 'Temporada 1', [episodioCard('ep1', 1, 1)])],
     }
     renderSerie(serieTV(['official', 'dvd', 'absolute']), [temporada], groups)
-    // A view agrupada mostra o grupo e o episódio numerado.
+    // The grouped view shows the group and the numbered episode.
     expect(await screen.findByText('E01')).toBeTruthy()
     const select = screen.getByLabelText('Ordem de exibição dos episódios')
     fireEvent.change(select, { target: { value: 'official' } })
@@ -144,10 +144,10 @@ describe('SecaoSerie — seletor de ordenação (0040)', () => {
       groups: [grupoEpisodios(2, 'Temporada 2', [episodioCard('ep9', 2, 9)])],
     }
     renderSerie(serieTV(['official', 'dvd', 'absolute']), [temporada], groups)
-    // Cabeçalho de grupo não-navegável + card numerado na ordem dvd.
+    // Non-navigable group header + card numbered in the dvd order.
     expect(await screen.findByText('Temporada 2')).toBeTruthy()
     expect(screen.getByText('E09')).toBeTruthy()
-    // A view default (cards de temporada) NÃO é a fonte aqui.
+    // The default view (season cards) is NOT the source here.
     await waitFor(() =>
       expect(screen.queryByText('Carregando temporadas…')).toBeNull(),
     )

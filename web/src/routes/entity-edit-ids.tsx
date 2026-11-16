@@ -7,18 +7,18 @@ import { EntityEditEstadoCarga } from '@/components/query-states'
 import { entityQueryOptions } from '@/lib/queries'
 import { useLanguage } from '@/lib/language-context'
 
-// Rota `/entities/$id/edit/ids` (briefing 0080, subrota da edição de item 0030):
-// a seção "IDs de terceiros" — identidade externa (`external_ids`, MD4, 0027) com
-// seu próprio salvar/re-enriquecer, isolada do formulário de informações básicas.
-// Só precisa da entity (não do descritor de campos, que é exclusivo da seção
-// "Informações básicas").
+// Route `/entities/$id/edit/ids` (subroute of the item edit):
+// the "IDs de terceiros" section — external identity (`external_ids`, MD4) with
+// its own save/re-enrich, isolated from the basic information form.
+// It only needs the entity (not the field descriptor, which is exclusive to the
+// "Informações básicas" section).
 export function EntityEditIdsScreen() {
   const { id } = useParams({ from: '/entities/$id/edit/ids' })
   const { lang } = useLanguage()
 
   const entityQuery = useQuery(entityQueryOptions(id, lang))
 
-  // Guard de "sair sem salvar" (0073/0080): só o "sujo" deste bloco.
+  // "Leave without saving" guard: only the "dirty" state of this block.
   const [sujo, setSujo] = useState(false)
 
   if (entityQuery.isPending || entityQuery.isError || !entityQuery.data) {

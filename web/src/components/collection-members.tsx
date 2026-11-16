@@ -9,16 +9,16 @@ import { useLanguage } from '@/lib/language-context'
 import { entityMembersQueryOptions } from '@/lib/queries'
 import { removeCollectionMember, type EntityCard } from '@/lib/api'
 
-// CollectionMembers lista os ITENS de uma coleção (0025): as entities ligadas por
-// entity_relation (kind='collection'), servidas pelo backend como cards internos
-// (EntityCard) ordenados por ano. Reusa o `PosterCard` da biblioteca — cada membro
-// navega para `/entities/{id}` (destino INTERNO, não /external). Usado pela tela da
-// entity quando `type==='collection'`, no lugar de similares. Trata carregando/erro/
-// vazio. O idioma ativo entra na busca (re-busca ao trocar).
+// CollectionMembers lists the ITEMS of a collection: the entities linked by
+// entity_relation (kind='collection'), served by the backend as internal cards
+// (EntityCard) ordered by year. It reuses the `PosterCard` of the library — each member
+// navigates to `/entities/{id}` (INTERNAL destination, not /external). Used by the
+// entity screen when `type==='collection'`, in place of similars. It handles loading/error/
+// empty. The active language enters the search (re-fetch on change).
 //
-// `editable` (0025 Fase B) liga a EDIÇÃO de membros: botão "Adicionar item" (abre o
-// picker do catálogo) e um controle de remover em cada card. Add/remove devolvem a
-// lista já ATUALIZADA, gravada direto no cache (`setQueryData`) — sem re-buscar.
+// `editable` turns on the EDITING of members: "Adicionar item" button (it opens the
+// catalog picker) and a remove control on each card. Add/remove return the
+// already UPDATED list, written straight into the cache (`setQueryData`) — without re-fetching.
 export function CollectionMembers({
   id,
   editable = false,
@@ -34,8 +34,8 @@ export function CollectionMembers({
   )
   const [adicionando, setAdicionando] = useState(false)
 
-  // A lista de add/remove volta pronta do backend (ordenada por ano) — grava no
-  // cache da chave corrente, refletindo na hora sem uma 2ª ida.
+  // The add/remove list comes back ready from the backend (ordered by year) — it writes to the
+  // cache of the current key, reflected immediately without a 2nd round trip.
   function atualizar(membros: EntityCard[]) {
     queryClient.setQueryData(membersKey, membros)
   }
@@ -90,9 +90,9 @@ export function CollectionMembers({
   )
 }
 
-// MembroEditavel envolve o PosterCard com o controle de REMOVER (0025 Fase B). O
-// botão de remover é um IRMÃO do card (overlay), não aninhado no <a> do PosterCard —
-// clicar não navega. Remoção em duas etapas (× → "Remover?") para evitar engano.
+// MembroEditavel wraps the PosterCard with the REMOVE control. The
+// remove button is a SIBLING of the card (overlay), not nested in the <a> of the PosterCard —
+// clicking does not navigate. Removal in two steps (× → "Remover?") to avoid mistakes.
 function MembroEditavel({
   colecaoId,
   card,

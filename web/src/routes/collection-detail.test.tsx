@@ -13,8 +13,8 @@ const spies = vi.hoisted(() => ({
   params: { source: 'tmdb', id: '726871' } as Record<string, string>,
 }))
 
-// Os factories do vi.mock são içados acima dos imports: usam import() DINÂMICO do
-// harness (resolvido em tempo de chamada, sem TDZ) e leem os hoisted `estado`/`spies`.
+// The factories of vi.mock are hoisted above the imports: they use a DYNAMIC import() of the
+// harness (resolved at call time, without TDZ) and read the hoisted `estado`/`spies`.
 vi.mock('@/lib/language-context', async () => {
   const { fakeLanguage } = await import('@/test/detail-harness')
   return { useLanguage: () => fakeLanguage(estado.lang) }
@@ -94,8 +94,8 @@ describe('CollectionDetailScreen', () => {
 
     const link = await screen.findByRole('link', { name: /Duna: Parte 2/ })
     expect(link.getAttribute('href')).toBe('/external/tmdb/movie/693134')
-    // Reuso do ExternalResultCard: cada parte tem o botão Importar (match EXATO —
-    // o header tem "Importar coleção", que não deve contar aqui).
+    // Reuse of ExternalResultCard: each part has the Importar button (EXACT match —
+    // the header has "Importar coleção", which must not count here).
     expect(screen.getAllByRole('button', { name: 'Importar' }).length).toBe(2)
   })
 
@@ -109,7 +109,7 @@ describe('CollectionDetailScreen', () => {
           year: '2021',
           overview: null,
           poster_url: null,
-          // internal_id é aditivo (0026): cast evita depender do tipo regenerado.
+          // internal_id is additive: the cast avoids depending on the regenerated type.
           internal_id: 'ent-duna',
         },
         {
@@ -126,13 +126,13 @@ describe('CollectionDetailScreen', () => {
     renderWithClient(<CollectionDetailScreen />)
     await screen.findByRole('heading', { name: 'Coleção Duna' })
 
-    // A parte importada linka para o interno e ganha o selo; a outra segue externa.
+    // The imported part links to the internal one and gains the badge; the other one stays external.
     const interno = screen
       .getAllByRole('link')
       .find((l) => l.getAttribute('href') === '/entities/ent-duna')
     expect(interno).toBeTruthy()
     expect(screen.getByText('Na biblioteca')).toBeTruthy()
-    // Sobra 1 "Importar" de parte (a não-importada); o header ainda é "Importar coleção".
+    // 1 part "Importar" is left (the non-imported one); the header is still "Importar coleção".
     expect(screen.getAllByRole('button', { name: 'Importar' }).length).toBe(1)
   })
 

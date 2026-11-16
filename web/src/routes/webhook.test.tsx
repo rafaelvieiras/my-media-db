@@ -6,11 +6,11 @@ import type { JellyfinWebhookToken } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 
-// Roteia o fetch do token do webhook Jellyfin (0093/0097). `tokenInicial`
-// ausente simula o estado "nenhum token gerado ainda" (GET 404 — estado
-// normal na primeira visita, não um erro). Mantém o token vigente em uma
-// variável local: um POST bem-sucedido precisa refletir no GET seguinte
-// (a UI invalida a query e refaz o GET após gerar/regenerar).
+// Routes the fetch of the Jellyfin webhook token. An absent `tokenInicial`
+// simulates the state "no token generated yet" (GET 404 — a normal state
+// on the first visit, not an error). It keeps the current token in a
+// local variable: a successful POST has to reflect in the next GET
+// (the UI invalidates the query and refetches after generating/regenerating).
 function fetchRouter(opts?: {
   tokenInicial?: string
   getErro?: { status: number; code: string; message: string }
@@ -42,10 +42,10 @@ function fetchRouter(opts?: {
   })
 }
 
-// `userEvent.setup()` reseta `navigator.clipboard` para a implementação real
-// do jsdom — então o mock precisa ser instalado DEPOIS do setup(), não em um
-// `beforeEach` global (senão o setup() da própria `userEvent` sobrescreve o
-// mock antes do clique acontecer).
+// `userEvent.setup()` resets `navigator.clipboard` to the real implementation
+// of jsdom — so the mock has to be installed AFTER setup(), not in a
+// global `beforeEach` (otherwise the setup() of `userEvent` itself overwrites the
+// mock before the click happens).
 function mockarClipboard() {
   const writeText = vi.fn().mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', {
@@ -199,8 +199,8 @@ describe('WebhookScreen', () => {
   })
 })
 
-// Garante que o heading principal da tela também está presente (smoke test
-// de estrutura, útil para pegar regressão de import/rota quebrada).
+// Ensures that the main heading of the screen is also present (structure smoke test,
+// useful to catch import/broken-route regressions).
 it('renderiza o heading "Webhook"', async () => {
   vi.stubGlobal('fetch', fetchRouter())
   renderWithClient(<WebhookScreen />)

@@ -1,7 +1,7 @@
-// Rótulos de idioma — fonte única para o seletor, o admin de configurações e o
-// selo de fallback do detalhe. O mapa código→nome legível (pt-BR) traduz os
-// códigos BCP-47/TMDB mais comuns; `rotuloIdioma` cai no próprio código quando
-// não conhece o idioma (nunca quebra, nunca esconde o código real).
+// Language labels — single source for the selector, the settings admin and the
+// fallback badge on the detail page. The code→human-readable name map (pt-BR) translates the
+// most common BCP-47/TMDB codes; `rotuloIdioma` falls back to the code itself when
+// it does not know the language (never breaks, never hides the real code).
 
 const NOMES: Record<string, string> = {
   'pt-BR': 'Português (BR)',
@@ -20,12 +20,12 @@ const NOMES: Record<string, string> = {
   pl: 'Polonês',
 }
 
-// Códigos candidatos oferecidos no multi-select do admin (ordem de exibição).
-// A tela une esta lista aos já permitidos para nunca perder um código exótico
-// que já esteja salvo nas settings.
+// Candidate codes offered in the admin multi-select (display order).
+// The screen merges this list with the codes already allowed so it never loses an exotic
+// code that is already saved in the settings.
 export const IDIOMAS_DISPONIVEIS: string[] = Object.keys(NOMES)
 
-// Nome legível do idioma; fallback ao próprio código quando desconhecido.
+// Human-readable name of the language; falls back to the code itself when unknown.
 export function rotuloIdioma(codigo: string): string {
   return NOMES[codigo] ?? codigo
 }

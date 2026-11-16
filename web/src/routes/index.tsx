@@ -4,14 +4,14 @@ import { Button } from '@/components/ui/button'
 import { RecentlyAddedSection } from '@/components/recently-added-rail'
 import { useLanguage } from '@/lib/language-context'
 
-// Home (rota `/`): desde o briefing 0114/ADR-0030, a home mostra SÓ os
-// carrosséis "Adicionados recentemente" (`RecentlyAddedSection`, um por tipo
-// de topo) — o grid paginado completo (`PosterGrid`) saiu daqui e virou a
-// rota própria `/library/$entitySlug` (ver `routes/library-browse.tsx`),
-// alcançada pelo link "Ver Todos" de cada carrossel. O idioma de leitura
-// (global) é repassado ao carrossel para o `?lang=` — coerência com o detalhe.
-// As ações "Novo item"/"Nova coleção" (0030) navegam para as rotas de criação
-// dedicadas (antes eram formulários inline).
+// Home (route `/`): since ADR-0030, the home shows ONLY the
+// "Adicionados recentemente" carousels (`RecentlyAddedSection`, one per top-level
+// type) — the full paginated grid (`PosterGrid`) left here and became its own
+// route `/library/$entitySlug` (see `routes/library-browse.tsx`),
+// reached through the "Ver Todos" link of each carousel. The reading language
+// (global) is passed to the carousel for the `?lang=` — coherence with the detail.
+// The "Novo item"/"Nova coleção" actions navigate to the dedicated creation
+// routes (they used to be inline forms).
 export function LibraryItemsScreen() {
   const { lang } = useLanguage()
   return (

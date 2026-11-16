@@ -7,9 +7,9 @@ import {
   settingsPadrao,
 } from '@/test/entity-fixtures'
 
-// richDetailBase é o RichDetail canônico (tudo vazio) que a RichDetailView consome:
-// `over` sobrescreve só o que o teste precisa. Compartilhado para os testes da view
-// não repetirem a fábrica de ~20 campos (jscpd).
+// richDetailBase is the canonical RichDetail (everything empty) that the RichDetailView consumes:
+// `over` overrides only what the test needs. Shared so the tests of the view
+// do not repeat the ~20-field factory (jscpd).
 export function richDetailBase(over: Partial<RichDetail> = {}): RichDetail {
   return {
     type: 'movie',
@@ -40,13 +40,13 @@ export function richDetailBase(over: Partial<RichDetail> = {}): RichDetail {
   }
 }
 
-// Scaffolding COMPARTILHADO dos testes das telas de detalhe/coleção externa: respostas
-// fetch canônicas, o mock do idioma ativo e o mock do router. Centralizar aqui evita a
-// duplicação (jscpd) entre os arquivos de teste que exercitam a mesma superfície.
+// SHARED scaffolding of the tests of the external detail/collection screens: canonical
+// fetch responses, the mock of the active language and the mock of the router. Centralizing it here avoids
+// the duplication (jscpd) between the test files that exercise the same surface.
 
-// entityCardBase é o EntityCard canônico dos testes de coleção (membros/picker): um
-// filme possuído, sem arte. `over` sobrescreve campos. Compartilhado para os arquivos
-// de teste não repetirem a mesma fábrica (jscpd).
+// entityCardBase is the canonical EntityCard of the collection tests (members/picker): an
+// owned movie, without artwork. `over` overrides fields. Shared so the test files
+// do not repeat the same factory (jscpd).
 export function entityCardBase(over: Partial<EntityCard> = {}): EntityCard {
   return {
     id: 'e1',
@@ -62,8 +62,8 @@ export function entityCardBase(over: Partial<EntityCard> = {}): EntityCard {
   }
 }
 
-// episodioCard é um card de EPISÓDIO com numbering (0040): compartilhado pelos testes
-// da view agrupada para não repetir o mesmo entityCardBase(episode + numbering) (jscpd).
+// episodioCard is an EPISODE card with numbering: shared by the tests
+// of the grouped view so as not to repeat the same entityCardBase(episode + numbering) (jscpd).
 export function episodioCard(
   id: string,
   season: number,
@@ -78,7 +78,7 @@ export function episodioCard(
   })
 }
 
-// grupoEpisodios monta um EpisodeGroup (0040) a partir dos cards já prontos.
+// grupoEpisodios builds an EpisodeGroup from the cards already built.
 export function grupoEpisodios(
   season: number,
   label: string,
@@ -87,7 +87,7 @@ export function grupoEpisodios(
   return { season, label, episodes }
 }
 
-// okJson/erroJson montam Responses no shape que o cliente HTTP (api.ts) espera.
+// okJson/erroJson build Responses in the shape that the HTTP client (api.ts) expects.
 export function okJson<T>(body: T, status = 200): Response {
   return { ok: true, status, json: async () => body } as Response
 }
@@ -104,20 +104,20 @@ export function erroJson(
   } as Response
 }
 
-// fakeLanguage é o retorno do useLanguage mockado (idioma ativo controlável pelo teste).
+// fakeLanguage is the return of the mocked useLanguage (active language controllable by the test).
 export function fakeLanguage(lang: string) {
   return { lang, allowed: ['pt-BR', 'en'], primary: 'pt-BR', setLang: () => {} }
 }
 
-// EspioesRouter agrupa os spies de navegação e os params que o router mockado devolve.
+// EspioesRouter groups the navigation spies and the params that the mocked router returns.
 export interface EspioesRouter {
   navigate: ReturnType<typeof vi.fn>
   back: ReturnType<typeof vi.fn>
   params: Record<string, string>
 }
 
-// routerMock devolve o módulo mockado do @tanstack/react-router: Link interpola os
-// params no href (para afirmar destinos), e navigate/back/params vêm dos spies.
+// routerMock returns the mocked module of @tanstack/react-router: Link interpolates the
+// params into the href (to assert destinations), and navigate/back/params come from the spies.
 export async function routerMock(spies: EspioesRouter) {
   return {
     Link: (await import('@/test/link-mock')).LinkMock,
@@ -127,9 +127,9 @@ export async function routerMock(spies: EspioesRouter) {
   }
 }
 
-// stubMembros roteia SÓ GET /entities/{id}/members com a Response dada — o núcleo
-// compartilhado dos testes de lista de membros (coleção 0025 e árvore de séries
-// 0031/0036), que exercitam a mesma superfície com corpos diferentes.
+// stubMembros routes ONLY GET /entities/{id}/members with the given Response — the shared
+// core of the member list tests (collection and series tree), which
+// exercise the same surface with different bodies.
 export function stubMembros(resp: () => Response) {
   const m = vi.fn(async (url: string) => {
     const u = new URL(String(url), 'http://localhost')
@@ -142,12 +142,12 @@ export function stubMembros(resp: () => Response) {
   return m
 }
 
-// criarFetchRouterEntity monta o fetch mock COMUM aos testes de EntityDetailScreen:
-// settings/languages, schema/entity-fields, override, files, assets, histórico vazio
-// e por fim GET .../{id} -> entity. `membrosResp` sobrescreve a resposta de
-// .../members (default: array vazio) — o único ponto que varia entre os testes que
-// consomem este roteiro. Compartilhado para os arquivos entity-detail*.test.tsx não
-// repetirem a mesma sequência de rotas (jscpd).
+// criarFetchRouterEntity builds the fetch mock COMMON to the EntityDetailScreen tests:
+// settings/languages, schema/entity-fields, override, files, assets, empty history
+// and finally GET .../{id} -> entity. `membrosResp` overrides the response of
+// .../members (default: empty array) — the only point that varies between the tests that
+// consume this script. Shared so the entity-detail*.test.tsx files do not
+// repeat the same sequence of routes (jscpd).
 export function criarFetchRouterEntity(
   entity: ResolvedEntity,
   membrosResp: () => Response = () => okJson([]),
@@ -183,8 +183,8 @@ export function criarFetchRouterEntity(
   })
 }
 
-// stubExternalFetch instala um fetch que roteia o GET do detalhe/coleção externa para
-// `externoResp` e o POST /import para uma entity padrão. Devolve o mock para asserções.
+// stubExternalFetch installs a fetch that routes the GET of the external detail/collection to
+// `externoResp` and the POST /import to a default entity. It returns the mock for assertions.
 export function stubExternalFetch(externoResp: () => Response) {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const u = new URL(String(url), 'http://localhost')

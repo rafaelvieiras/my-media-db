@@ -7,13 +7,13 @@ import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 import { stubRota, stubRotas } from '@/test/stub-fetch'
 
-// Testa o dropdown "Gerenciar" (briefing 0086, ex-`EntityActionButtons`/0059):
-// Editar (sempre) + "Baixar informações faltando"/"Baixar arte faltando"
-// (condicionais a `catalog_completeness`) + "Salvar informações (NFO)"
-// (sempre) + "Excluir coleção" (só `isCollection`, com confirmação via
-// AlertDialog em vez de mutar direto). O <Link> do router vira um <a> simples
-// (mesmo mock de `poster-card.test.tsx`); `useNavigate` é um espião — a
-// entity precisa dele pra "Excluir coleção" navegar para `/` no sucesso.
+// Tests the "Gerenciar" dropdown:
+// Editar (always) + "Baixar informações faltando"/"Baixar arte faltando"
+// (conditional on `catalog_completeness`) + "Salvar informações (NFO)"
+// (always) + "Excluir coleção" (only `isCollection`, with confirmation via
+// AlertDialog instead of mutating directly). The <Link> of the router becomes a plain <a>
+// (same mock as `poster-card.test.tsx`); `useNavigate` is a spy — the
+// entity needs it so that "Excluir coleção" navigates to `/` on success.
 const navigateSpy = vi.fn()
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
@@ -25,8 +25,8 @@ function stubEntityActions(
   respostaArte: () => Response,
   respostaNfo?: () => Response,
   respostaExcluir?: () => Response,
-  // As 3 rotas abaixo (briefing 0088) são opcionais igual `respostaNfo`/
-  // `respostaExcluir` — só os testes que as exercitam passam algo.
+  // The 3 routes below are optional like `respostaNfo`/
+  // `respostaExcluir` — only the tests that exercise them pass something.
   respostaVerificarArquivos?: () => Response,
   respostaBaixarMetadados?: () => Response,
   respostaArtesFaltantes?: () => Response,
@@ -90,11 +90,11 @@ function stubEntityActions(
   return m
 }
 
-// stubEntityActionsAdiado instala um fetch cuja resposta do endpoint indicado só
-// resolve quando `liberar()` é chamado — necessário para afirmar o rótulo de
-// PENDING ("Buscando…"/"Baixando…") de forma determinística: com um mock que
-// resolve no mesmo tick, o React já teria trocado para o estado final antes da
-// asserção rodar.
+// stubEntityActionsAdiado installs a fetch whose response of the given endpoint only
+// resolves when `liberar()` is called — needed to assert the PENDING
+// label ("Buscando…"/"Baixando…") deterministically: with a mock that
+// resolves on the same tick, React would have already swapped to the final state before the
+// assertion runs.
 function stubEntityActionsAdiado(pathname: string, resposta: () => Response) {
   let liberar: () => void = () => {}
   const pendente = new Promise<void>((resolve) => {
@@ -118,9 +118,9 @@ afterEach(() => {
   navigateSpy.mockClear()
 })
 
-// `type`/`status` (briefing 0122) default a algo que NUNCA mostra "Forçar
-// reconciliação" (movie/cataloged) — os testes que não são sobre esta feature
-// continuam se comportando como antes, sem precisar passar os dois valores.
+// `type`/`status` default to something that NEVER shows "Forçar
+// reconciliação" (movie/cataloged) — the tests that are not about this feature
+// keep behaving as before, without having to pass the two values.
 function render(
   cc: CatalogCompleteness,
   owned = true,
@@ -140,15 +140,15 @@ function render(
   )
 }
 
-// abrirMenu clica no trigger "Gerenciar" — o `DropdownMenuContent` só monta no
-// DOM depois disso (Radix, mesmo comportamento de Sheet/Dialog).
+// abrirMenu clicks the "Gerenciar" trigger — the `DropdownMenuContent` only mounts in the
+// DOM after that (Radix, same behavior as Sheet/Dialog).
 async function abrirMenu(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /Gerenciar/ }))
 }
 
-// expectForcedActionsVisible confirma que os 3 itens sempre-visíveis do
-// briefing 0088 estão no menu — chamado pelos 2 testes que provam isso em
-// cenários distintos de catalog_completeness (jscpd).
+// expectForcedActionsVisible confirms that the 3 always-visible items of the
+// menu are there — called by the 2 tests that prove it in
+// distinct catalog_completeness scenarios (jscpd).
 function expectForcedActionsVisible() {
   expect(
     screen.getByRole('menuitem', {
@@ -163,9 +163,9 @@ function expectForcedActionsVisible() {
   ).toBeInTheDocument()
 }
 
-// acionarEEsperarErro centraliza o padrão stub+render+abrir+click+esperar
-// role=alert repetido pelos 3 testes de "erro de rede/500" das ações
-// forçadas (0088) — só o stub, o item clicado e a mensagem mudam (jscpd).
+// acionarEEsperarErro centralizes the stub+render+open+click+wait pattern
+// for role=alert repeated by the 3 "network error/500" tests of the forced
+// actions — only the stub, the clicked item and the message change (jscpd).
 async function acionarEEsperarErro(
   configurarStub: () => void,
   nomeItem: RegExp,
@@ -181,9 +181,9 @@ async function acionarEEsperarErro(
   expect(alerta).toHaveTextContent(mensagemEsperada)
 }
 
-// acionarInformacoesFaltando centraliza o padrão stub+render+abrir+click repetido
-// pelos testes de desfecho de "Baixar informações faltando" (applied/flagged/
-// none/erro) — só a resposta do endpoint muda entre eles (jscpd).
+// acionarInformacoesFaltando centralizes the stub+render+open+click pattern repeated
+// by the outcome tests of "Baixar informações faltando" (applied/flagged/
+// none/error) — only the response of the endpoint changes between them (jscpd).
 async function acionarInformacoesFaltando(respostaEnriquecer: () => Response) {
   const user = userEvent.setup()
   stubEntityActions(respostaEnriquecer, () =>
@@ -746,9 +746,9 @@ describe('EntityManageMenu — "Salvar informações (NFO)" (briefing 0062)', ()
   })
 })
 
-// abrirDialogoExclusaoColecao centraliza o padrão stub+render+abrir menu+click
-// no item "Excluir coleção"+esperar o AlertDialog, repetido pelos 4 testes de
-// desfecho abaixo (só a resposta do DELETE e a asserção final mudam — jscpd).
+// abrirDialogoExclusaoColecao centralizes the stub+render+open menu+click
+// on the item "Excluir coleção"+wait for the AlertDialog, repeated by the 4 outcome
+// tests below (only the DELETE response and the final assertion change — jscpd).
 async function abrirDialogoExclusaoColecao(respostaExcluir?: () => Response) {
   const user = userEvent.setup()
   const fetchMock = stubEntityActions(
@@ -809,11 +809,11 @@ describe('EntityManageMenu — "Excluir coleção" (0026, agora via AlertDialog)
   })
 })
 
-// "Marcar como assistido"/"Marcar como não assistido" (briefing 0094): os dois
-// itens ficam SEMPRE visíveis (não dependem de saber o estado atual — a leitura
-// já é feita pelo selo/seção do detalhe, não por este menu). "Assistido" cria o
-// evento `completed`; "não assistido" apaga o evento `kind=assistir` MAIS
-// RECENTE (busca a lista antes de apagar).
+// "Marcar como assistido"/"Marcar como não assistido": the two
+// items stay ALWAYS visible (they do not depend on knowing the current state — the reading
+// is already done by the badge/section of the detail, not by this menu). "Assistido" creates the
+// `completed` event; "não assistido" deletes the MOST
+// RECENT `kind=assistir` event (it fetches the list before deleting).
 describe('EntityManageMenu — "Marcar como (não) assistido" (0094)', () => {
   it('os dois itens sempre aparecem no menu', async () => {
     const user = userEvent.setup()
@@ -865,9 +865,9 @@ describe('EntityManageMenu — "Marcar como (não) assistido" (0094)', () => {
     expect(alerta).toHaveTextContent('status inválido')
   })
 
-  // Comum aos dois testes abaixo: abre o menu, clica "Marcar como não
-  // assistido" e confirma a mensagem de sucesso — o que muda é só a rota
-  // stubada (com/sem evento `assistir` prévio) e a asserção sobre o DELETE.
+  // Common to the two tests below: it opens the menu, clicks "Marcar como não
+  // assistido" and confirms the success message — what changes is only the stubbed
+  // route (with/without a previous `assistir` event) and the assertion on the DELETE.
   async function clicarMarcarComoNaoAssistido(
     user: ReturnType<typeof userEvent.setup>,
   ) {
@@ -933,11 +933,11 @@ describe('EntityManageMenu — "Marcar como (não) assistido" (0094)', () => {
   })
 })
 
-// "Gravar metadados no arquivo" (briefing 0125): item visível só para
-// `type==='faixa'`/`type==='album'` (NÃO depende de `owned`/posse de pasta
-// real — isso é sobre NFO). Ação destrutiva/irreversível sobre a tag do
-// arquivo: exige confirmação via AlertDialog antes de disparar
-// `writeAudioTags`, mesmo padrão de 2 passos do "Excluir coleção".
+// "Gravar metadados no arquivo": the item is visible only for
+// `type==='faixa'`/`type==='album'` (it does NOT depend on `owned`/a real folder
+// — that is about the NFO). A destructive/irreversible action on the tag of the
+// file: it requires confirmation via AlertDialog before firing
+// `writeAudioTags`, the same 2-step pattern as "Excluir coleção".
 describe('EntityManageMenu — "Gravar metadados no arquivo" (briefing 0125)', () => {
   it('aparece para type="faixa"', async () => {
     const user = userEvent.setup()
@@ -1031,9 +1031,9 @@ describe('EntityManageMenu — "Gravar metadados no arquivo" (briefing 0125)', (
     await screen.findByRole('alertdialog')
 
     await user.click(screen.getByRole('button', { name: 'Gravar metadados' }))
-    // Enquanto o AlertDialog está aberto, o resto da árvore (onde mora o eco
-    // inline "Gravando…") fica `aria-hidden` (Radix trapa o foco/AT) — a
-    // asserção de pendência é sobre o PRÓPRIO botão do diálogo, não o eco.
+    // While the AlertDialog is open, the rest of the tree (where the inline
+    // "Gravando…" echo lives) stays `aria-hidden` (Radix traps focus/AT) — the
+    // pending assertion is about the dialog button ITSELF, not the echo.
     expect(
       await screen.findByRole('button', { name: 'Gravando…' }),
     ).toBeDisabled()

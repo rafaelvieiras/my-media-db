@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 
-// useDebounced atrasa a propagação de um valor: só devolve o novo `value` após `ms`
-// sem mudanças (cancela o timer a cada tecla). Fonte única do debounce de digitação
-// reusada pelos campos de busca (painel de busca, correção de match, picker de
-// membros da coleção) — evita repetir o mesmo `useState`+`useEffect`+timeout em cada
-// tela (a catraca mede duplicação com jscpd).
+// useDebounced delays the propagation of a value: it only returns the new `value` after `ms`
+// without changes (it cancels the timer on every keystroke). Single source of the typing
+// debounce reused by the search fields (search panel, match correction, collection
+// member picker) — avoids repeating the same `useState`+`useEffect`+timeout on every
+// screen (the ratchet measures duplication with jscpd).
 export function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value)
   useEffect(() => {

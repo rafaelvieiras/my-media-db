@@ -6,11 +6,11 @@ import type { ExternalAlbum } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson, stubExternalFetch } from '@/test/detail-harness'
 
-// Testa a tela de "faixas faltando" do álbum (briefing 0115 Parte 2, ADR-0029):
-// molde de collection-detail.test.tsx, adaptado a álbum→faixas. ExternalAlbumView
-// recebe source/id/back como PROPS (não useParams) — ExternalDetailScreen é quem
-// decide delegar aqui quando type==='album'; o teste exercita o componente
-// diretamente, sem precisar mockar useParams.
+// Tests the "missing tracks" screen of the album:
+// modeled on collection-detail.test.tsx, adapted to album→tracks. ExternalAlbumView
+// receives source/id/back as PROPS (not useParams) — ExternalDetailScreen is the one that
+// decides to delegate here when type==='album'; the test exercises the component
+// directly, without having to mock useParams.
 
 const estado = vi.hoisted(() => ({ lang: 'pt-BR' }))
 const spies = vi.hoisted(() => ({ navigate: vi.fn() }))

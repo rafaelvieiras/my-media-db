@@ -6,9 +6,9 @@ import type { EntityType } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson } from '@/test/detail-harness'
 
-// Testa o comportamento novo do briefing 0113/ADR-0030: as opções do Select
-// deixam de ser um enum fixo `'all' | 'movie' | 'tv'` e passam a vir de
-// `GET /entities/types` (mesmo hook que a navbar/home já consultam).
+// Tests the new behavior of ADR-0030: the options of the Select
+// are no longer a fixed enum `'all' | 'movie' | 'tv'` and now come from
+// `GET /entities/types` (the same hook that the navbar/home already query).
 
 function okJson<T>(body: T): Response {
   return { ok: true, status: 200, json: async () => body } as Response
@@ -36,7 +36,7 @@ describe('MediaTypeFilter', () => {
     expect(screen.getByRole('option', { name: 'Todos' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Filmes' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Séries' })).toBeInTheDocument()
-    // Nada hardcoded: só as 4 opções vindas de "Todos" + dado real.
+    // Nothing hardcoded: only the 4 options coming from "Todos" + real data.
     expect(screen.getAllByRole('option')).toHaveLength(4)
   })
 

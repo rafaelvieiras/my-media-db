@@ -8,9 +8,9 @@ import {
 import type { ExternalResult } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 
-// Link (helper compartilhado) interpola os `params` no `href` — para afirmar que
-// o card aponta para a tela de detalhe do externo. `useNavigate` é spy (só usado
-// no pós-import, não exercido aqui).
+// Link (shared helper) interpolates the `params` into the `href` — to assert that
+// the card points to the external detail screen. `useNavigate` is a spy (only used
+// after import, not exercised here).
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
   useNavigate: () => vi.fn(),
@@ -40,15 +40,15 @@ describe('ExternalResultCard', () => {
   it('mantém o botão Importar como atalho fora da âncora', () => {
     renderWithClient(<ExternalResultCard result={externo} />)
 
-    // O botão existe e não está aninhado no link (âncora não contém o botão).
+    // The button exists and is not nested in the link (an anchor does not contain the button).
     const botao = screen.getByRole('button', { name: /Importar/ })
     const link = screen.getByRole('link', { name: /The Matrix/ })
     expect(link.contains(botao)).toBe(false)
   })
 
   it('com internalId linka para o interno, marca "Na biblioteca" e some o Importar', () => {
-    // Interno-first (0026): o item já é entity — link para /entities/{id}, selo e
-    // SEM Importar (não reimporta o que já está catalogado).
+    // Internal-first: the item is already an entity — link to /entities/{id}, badge and
+    // NO Importar (it does not reimport what is already cataloged).
     renderWithClient(<ExternalResultCard result={externo} internalId="ent-9" />)
 
     const link = screen.getByRole('link', { name: /The Matrix/ })
@@ -72,8 +72,8 @@ describe('CorrectMatchResultCard (0074)', () => {
   })
 
   it('com internalId mostra o selo "Na biblioteca" JUNTO do "Usar este" (não esconde a ação, diferente do Importar)', () => {
-    // Caso de fundir duplicata (0051): o resultado já é entity interna, mas a
-    // correção ainda precisa poder escolhê-lo.
+    // Duplicate merge case: the result already is an internal entity, but the
+    // correction still needs to be able to pick it.
     renderWithClient(
       <CorrectMatchResultCard
         result={externo}

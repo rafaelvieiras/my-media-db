@@ -12,9 +12,9 @@ const POR_PAGINA = 24
 
 type FiltroPosse = 'all' | 'owned' | 'not'
 
-// Traduz os filtros da UI para os params da API (undefined = sem filtro de
-// posse). `tipo` é sempre FIXO (briefing 0114/ADR-0030 — ver comentário do
-// componente abaixo), nunca "todos os tipos" aqui.
+// Translates the UI filters into the API params (undefined = no ownership
+// filter). `tipo` is always FIXED (ADR-0030 — see the comment of the
+// component below), never "all types" here.
 function montarParams(
   tipo: string,
   posse: FiltroPosse,
@@ -29,15 +29,15 @@ function montarParams(
   }
 }
 
-// Grid de pôsteres do catálogo: paginação, filtro de posse e os três estados
-// claros (carregando / erro / vazio). Desde o briefing 0114/ADR-0030, o TIPO
-// chega FIXO via prop (`type`, resolvido do slug da URL pela rota
-// `/library/$entitySlug` — ver `routes/library-browse.tsx`), em vez do search
-// param `?type=` da antiga rota `/` (briefing 0110): a home não tem mais grid
-// completo, só carrosséis (`RecentlyAddedSection`), e a listagem paginada de
-// cada tipo agora vive numa tela própria por tipo — por isso não há mais
-// seletor de tipo (`MediaTypeFilter`) dentro do grid, o tipo já vem fixo da
-// rota. Posse continua local (estado interno da tela).
+// Poster grid of the catalog: pagination, ownership filter and the three clear
+// states (loading / error / empty). Since ADR-0030, the TYPE
+// arrives FIXED via prop (`type`, resolved from the URL slug by the route
+// `/library/$entitySlug` — see `routes/library-browse.tsx`), instead of the search
+// param `?type=` of the former `/` route: the home no longer has a full
+// grid, only carousels (`RecentlyAddedSection`), and the paginated listing of
+// each type now lives on a screen of its own per type — which is why there is no
+// type selector (`MediaTypeFilter`) inside the grid anymore, the type already comes fixed from the
+// route. Ownership stays local (internal state of the screen).
 export function PosterGrid({ lang, type }: { lang?: string; type: string }) {
   const [posse, setPosse] = useState<FiltroPosse>('all')
   const [pagina, setPagina] = useState(0)

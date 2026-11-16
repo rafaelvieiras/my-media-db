@@ -1,9 +1,9 @@
-// Formatação PURA de mediainfo (fatos técnicos do ffprobe) em rótulos legíveis.
+// PURE mediainfo formatting (technical facts from ffprobe) into readable labels.
 //
-// Separado da renderização de propósito: cada formatador é uma função pura,
-// fácil de testar (o briefing 0011 exige cobertura honesta da formatação) e de
-// manter. A entrada é sempre o shape `MediaInfo` gerado do OpenAPI (0010); a
-// saída são strings prontas para exibir (ex.: `1080p · HEVC · HDR10 · 5.1`).
+// Kept apart from the rendering on purpose: each formatter is a pure function,
+// easy to test (formatting coverage has to be honest) and to
+// maintain. The input is always the `MediaInfo` shape generated from the OpenAPI; the
+// output is ready-to-display strings (e.g. `1080p · HEVC · HDR10 · 5.1`).
 import type { components } from '@/lib/api-types'
 
 export type MediaInfo = components['schemas']['MediaInfo']
@@ -11,8 +11,8 @@ type VideoTrack = NonNullable<MediaInfo['video']>[number]
 type AudioTrack = NonNullable<MediaInfo['audio']>[number]
 type SubtitleTrack = NonNullable<MediaInfo['subtitle']>[number]
 
-// Resolução vertical → rótulo comercial (720p, 1080p, 2160p…). Usa a altura como
-// referência principal; se ausente, deriva da largura. `null` quando não dá.
+// Vertical resolution → commercial label (720p, 1080p, 2160p…). It uses the height as
+// the main reference; when absent, it derives it from the width. `null` when it cannot.
 export function formatarResolucao(
   width?: number,
   height?: number,
@@ -92,7 +92,7 @@ const CODECS_AUDIO: Record<string, string> = {
   vorbis: 'Vorbis',
 }
 
-// Normaliza o codec para um rótulo conhecido; desconhecidos viram maiúsculas.
+// Normalizes the codec into a known label; unknown ones become uppercase.
 export function formatarCodec(codec?: string): string | null {
   if (!codec) {
     return null
@@ -111,7 +111,7 @@ const HDR_ROTULOS: Record<string, string> = {
   hlg: 'HLG',
 }
 
-// Rótulo de HDR. `sdr`/vazio → `null` (não é fato digno de badge).
+// HDR label. `sdr`/empty → `null` (not a fact worth a badge).
 export function formatarHdr(hdr?: string): string | null {
   if (!hdr) {
     return null
@@ -123,7 +123,7 @@ export function formatarHdr(hdr?: string): string | null {
   return HDR_ROTULOS[chave] ?? hdr.toUpperCase()
 }
 
-// Número de canais → layout falado (2 → 2.0, 6 → 5.1, 8 → 7.1).
+// Number of channels → spoken layout (2 → 2.0, 6 → 5.1, 8 → 7.1).
 export function formatarCanais(channels?: number): string | null {
   if (!channels || channels <= 0) {
     return null
@@ -139,7 +139,7 @@ export function formatarCanais(channels?: number): string | null {
   return mapa[channels] ?? `${channels} canais`
 }
 
-// Duração em segundos → `2h 16min` / `45min` / `30s`.
+// Duration in seconds → `2h 16min` / `45min` / `30s`.
 export function formatarDuracao(segundos?: number): string | null {
   if (!segundos || segundos <= 0) {
     return null
@@ -177,7 +177,7 @@ const IDIOMAS: Record<string, string> = {
   und: 'Indefinido',
 }
 
-// Código ISO-639 → nome do idioma em pt-BR; desconhecido → maiúsculas.
+// ISO-639 code → language name in pt-BR; unknown → uppercase.
 export function formatarIdioma(lang?: string): string | null {
   if (!lang) {
     return null
@@ -186,7 +186,7 @@ export function formatarIdioma(lang?: string): string | null {
   return IDIOMAS[chave] ?? lang.toUpperCase()
 }
 
-// Tamanho em bytes → `4,3 GB` / `700 MB`.
+// Size in bytes → `4,3 GB` / `700 MB`.
 export function formatarTamanho(bytes?: number | null): string | null {
   if (!bytes || bytes <= 0) {
     return null
@@ -203,10 +203,10 @@ export function formatarTamanho(bytes?: number | null): string | null {
   return `${texto.replace('.', ',')} ${unidades[i]}`
 }
 
-// ── Agregações por arquivo ───────────────────────────────────────────────────
+// ── Per-file aggregations ────────────────────────────────────────────────────
 
-// Chips-resumo da faixa principal: resolução · codec · HDR · canais do 1º áudio.
-// É o que aparece ao lado do arquivo (ex.: `1080p · HEVC · HDR10 · 5.1`).
+// Summary chips of the main track: resolution · codec · HDR · channels of the 1st audio.
+// This is what appears next to the file (e.g. `1080p · HEVC · HDR10 · 5.1`).
 export function chipsDoArquivo(mi: MediaInfo | null): string[] {
   if (!mi) {
     return []
@@ -221,7 +221,7 @@ export function chipsDoArquivo(mi: MediaInfo | null): string[] {
   ].filter((x): x is string => x !== null)
 }
 
-// Descreve uma faixa de áudio (`AAC · 5.1 · Português`).
+// Describes an audio track (`AAC · 5.1 · Português`).
 export function descreverAudio(faixa: AudioTrack): string {
   return [
     formatarCodec(faixa.codec),
@@ -232,7 +232,7 @@ export function descreverAudio(faixa: AudioTrack): string {
     .join(' · ')
 }
 
-// Descreve uma faixa de legenda (`Português (SRT)`).
+// Describes a subtitle track (`Português (SRT)`).
 export function descreverLegenda(faixa: SubtitleTrack): string {
   const idioma = formatarIdioma(faixa.language)
   const codec = formatarCodec(faixa.codec)
@@ -242,7 +242,7 @@ export function descreverLegenda(faixa: SubtitleTrack): string {
   return idioma ?? codec ?? 'Legenda'
 }
 
-// Linha geral (duração · tamanho) para o cabeçalho do arquivo.
+// General line (duration · size) for the file header.
 export function linhaGeral(mi: MediaInfo | null): string[] {
   if (!mi?.general) {
     return []

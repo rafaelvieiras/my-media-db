@@ -5,15 +5,15 @@ import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 import { corpoEnviado, stubRota } from '@/test/stub-fetch'
 
-// Testa o editor de identidade externa (0027): mostra os ids atuais, salva o mapa via
-// PUT /entities/{id}/external-ids, adiciona/remove fontes, e mostra erro inline.
+// Tests the external identity editor: it shows the current ids, saves the map via
+// PUT /entities/{id}/external-ids, adds/removes sources, and shows an inline error.
 
-// putIds roteia o PUT /api/v1/entities/{id}/external-ids para `resp`.
+// putIds routes PUT /api/v1/entities/{id}/external-ids to `resp`.
 const putIds = (resp: () => Response) =>
   stubRota((p, m) => /\/external-ids$/.test(p) && m === 'PUT', resp)
 
-// stubIdsEEnrich atende AS DUAS rotas do "Salvar e re-enriquecer": o PUT dos ids e o
-// POST do enrich, cada uma com sua resposta. Devolve o mock (para asserir a ordem).
+// stubIdsEEnrich serves BOTH routes of "Salvar e re-enriquecer": the PUT of the ids and the
+// POST of the enrich, each with its own response. It returns the mock (to assert the order).
 function stubIdsEEnrich(idsResp: () => Response, enrichResp: () => Response) {
   const m = vi.fn(async (url: string, init?: RequestInit) => {
     const u = new URL(String(url), 'http://localhost')
@@ -26,7 +26,7 @@ function stubIdsEEnrich(idsResp: () => Response, enrichResp: () => Response) {
   return m
 }
 
-// salvarECorpo clica em "Salvar IDs", espera a chamada e devolve o `external_ids` enviado.
+// salvarECorpo clicks "Salvar IDs", waits for the call and returns the `external_ids` sent.
 async function salvarECorpo(m: ReturnType<typeof vi.fn>) {
   fireEvent.click(screen.getByText('Salvar IDs'))
   await vi.waitFor(() => expect(m).toHaveBeenCalled())
@@ -102,7 +102,7 @@ describe('ExternalIdsEditor', () => {
     )
     fireEvent.click(screen.getByText('Salvar e re-enriquecer'))
     await vi.waitFor(() => expect(m).toHaveBeenCalledTimes(2))
-    // Ordem: primeiro o PUT dos ids, depois o POST do enrich (o enrich le o id salvo).
+    // Order: first the PUT of the ids, then the POST of the enrich (the enrich reads the saved id).
     expect(m.mock.calls[0][1]?.method).toBe('PUT')
     expect(m.mock.calls[1][1]?.method).toBe('POST')
   })
@@ -120,8 +120,8 @@ describe('ExternalIdsEditor', () => {
   })
 })
 
-// Guard de "sair sem salvar" (0073): onDirtyChange reflete se o mapa atual
-// diverge do último carregado/salvo — só na transição.
+// "Leave without saving" guard: onDirtyChange reflects whether the current map
+// diverges from the last loaded/saved one — only on the transition.
 describe('ExternalIdsEditor — onDirtyChange (0073)', () => {
   it('reporta false ao montar (nada editado)', () => {
     const onDirtyChange = vi.fn()
@@ -186,9 +186,9 @@ describe('ExternalIdsEditor — onDirtyChange (0073)', () => {
   })
 })
 
-// Guard de "esvaziar sem querer" (0098): salvar um mapa vazio é um PUT de
-// full-replace que zera a identidade da entity — só deve confirmar quando é
-// uma remoção líquida (havia algo salvo antes).
+// "Empty it by accident" guard: saving an empty map is a full-replace
+// PUT that wipes the identity of the entity — it should only confirm when it is
+// a net removal (there was something saved before).
 describe('ExternalIdsEditor — guard de mapa vazio (0098)', () => {
   it('pede confirmação ao remover a única fonte e salvar', async () => {
     const m = putIds(() => okJson({ id: 'e1' }, 200))

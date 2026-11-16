@@ -6,10 +6,10 @@ import type { IntegrationField } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 
-// IntegrationForm (briefing 0096): widget novo `secret` sobre o vocabulário
-// de `integration.Campo` (0095) — nunca reidrata do servidor, legenda por
-// `origem`, botão "Limpar" só quando `origem==="banco"`, PUT diferencial
-// (só campos tocados/limpos entram em `valores`).
+// IntegrationForm: the new `secret` widget over the vocabulary
+// of `integration.Campo` — it never rehydrates from the server, caption by
+// `origem`, a "Limpar" button only when `origem==="banco"`, differential PUT
+// (only touched/cleared fields enter `valores`).
 
 function campoSegredo(over: Partial<IntegrationField> = {}): IntegrationField {
   return {
@@ -88,7 +88,7 @@ describe('IntegrationForm', () => {
         'Definido pela variável de ambiente MYMEDIADB_TMDB_TOKEN — salve aqui para sobrepor.',
       ),
     ).toBeInTheDocument()
-    // origem "env" não mostra o botão Limpar (não há override no banco pra remover).
+    // origem "env" does not show the Limpar button (there is no override in the database to remove).
     expect(
       screen.queryByRole('button', { name: 'Limpar' }),
     ).not.toBeInTheDocument()
@@ -247,10 +247,10 @@ describe('IntegrationForm', () => {
     expect(screen.getByText('*')).toBeInTheDocument()
   })
 
-  // O contrato (openapi.yaml IntegrationField.tipo) suporta text/bool/number/
-  // select além de secret — nenhuma integração registrada usa esses widgets
-  // hoje (só TMDB, só secret), mas o `CampoControle` os renderiza de forma
-  // genérica. Cobertos aqui para não deixar a ramificação sem teste.
+  // The contract (openapi.yaml IntegrationField.tipo) supports text/bool/number/
+  // select besides secret — no registered integration uses those widgets
+  // today (only TMDB, only secret), but `CampoControle` renders them in a
+  // generic way. Covered here so the branch does not stay untested.
   it('widget "text": pré-preenche com o valor efetivo e edita normalmente', async () => {
     const user = userEvent.setup()
     const fetchMock = fetchRouter()

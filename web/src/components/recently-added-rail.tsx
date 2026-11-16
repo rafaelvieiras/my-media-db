@@ -15,20 +15,20 @@ import {
 
 const ITENS_POR_CARROSSEL = 10
 
-// RecentlyAddedRail é o carrossel "adicionados recentemente" de UM schema
-// (briefing 0109): dispara SUA PRÓPRIA useQuery, independente de qualquer
-// outra instância — requisito explícito do dono ("cada slide deve puxar
-// separadamente"), não um pai que busca tudo de uma vez e distribui. Ordena
-// por created_at desc (`sort: '-created_at'`), até 10 itens, só o que está NA
-// biblioteca (`owned: true`). Reaproveita o PosterCard já usado pelo grid
-// (mesmo EntityCard, mesmos badges de posse/revisão) e o Carousel do shadcn
-// (embla) — sem card nem carrossel novos do zero.
+// RecentlyAddedRail is the "recently added" carousel of ONE schema:
+// it fires ITS OWN useQuery, independent of any
+// other instance — an explicit requirement of the owner ("each slide should fetch
+// separately"), not a parent that fetches everything at once and distributes. It sorts
+// by created_at desc (`sort: '-created_at'`), up to 10 items, only what is IN THE
+// library (`owned: true`). It reuses the PosterCard already used by the grid
+// (same EntityCard, same ownership/review badges) and the shadcn Carousel
+// (embla) — without new cards nor a carousel written from scratch.
 //
-// Vazio: quando a busca volta zerada o componente não renderiza NADA (nem o
-// título) — a home (`routes/index.tsx`) já só monta um rail por `type`
-// devolvido por `GET /entities/types` (que filtra tipo sem dado), mas este
-// componente também é defensivo por conta própria, para nunca sobrar uma
-// seção "Adicionados recentemente" fantasma.
+// Empty: when the query comes back empty the component renders NOTHING (not even the
+// title) — the home (`routes/index.tsx`) already mounts only one rail per `type`
+// returned by `GET /entities/types` (which filters out types without data), but this
+// component is also defensive on its own, so that a phantom "Adicionados recentemente"
+// section never remains.
 export function RecentlyAddedRail({
   type,
   label,
@@ -89,12 +89,12 @@ export function RecentlyAddedRail({
   )
 }
 
-// RailTitulo (briefing 0114/ADR-0030) ganha um link "Ver Todos" ao lado do
-// título, apontando para a rota `/library/$entitySlug` do tipo daquele
-// carrossel — mesmo mapa slug↔type de `app-header.tsx` (`library-slugs.ts`).
-// Tipo sem slug mapeado (defensivo — hoje `GET /entities/types` já exclui
-// sub-nós, então isso não deveria acontecer na prática) só omite o link, sem
-// quebrar o título.
+// RailTitulo (ADR-0030) gains a "Ver Todos" link next to the
+// title, pointing to the route `/library/$entitySlug` of the type of that
+// carousel — the same slug↔type map as `app-header.tsx` (`library-slugs.ts`).
+// A type without a mapped slug (defensive — today `GET /entities/types` already excludes
+// sub-nodes, so this should not happen in practice) only omits the link, without
+// breaking the title.
 function RailTitulo({ type, label }: { type: string; label: string }) {
   const slug = tipoParaSlug(type)
   return (
@@ -113,16 +113,16 @@ function RailTitulo({ type, label }: { type: string; label: string }) {
   )
 }
 
-// RecentlyAddedSection é a seção da home (briefing 0109): busca os `type`
-// com dado catalogado (`GET /entities/types`, `entityTypesQueryOptions`) e
-// monta um RecentlyAddedRail por tipo — SEM lista fixa de tipos hardcoded
-// aqui, cobre qualquer vertical nova (ex.: música) assim que o backend tiver
-// dado dela. O rótulo de cada seção vem de `rotuloTipoPlural` (mapa central
-// de `entity-badges.ts`, compartilhado com o resto da UI). Biblioteca zerada
-// (`GET /entities/types` devolve `[]`) → a seção inteira não renderiza nada
-// (sem cabeçalho "Adicionados recentemente" fantasma). Erro na descoberta de
-// tipos também não renderiza nada: é uma falha discreta — o grid paginado
-// abaixo continua funcionando normalmente e já tem seu próprio estado de erro.
+// RecentlyAddedSection is the home section: it fetches the `type`s
+// with cataloged data (`GET /entities/types`, `entityTypesQueryOptions`) and
+// mounts one RecentlyAddedRail per type — WITHOUT a fixed list of types hardcoded
+// here, it covers any new vertical (e.g. music) as soon as the backend has
+// data for it. The label of each section comes from `rotuloTipoPlural` (central map
+// of `entity-badges.ts`, shared with the rest of the UI). Empty library
+// (`GET /entities/types` returns `[]`) → the whole section renders nothing
+// (no phantom "Adicionados recentemente" header). An error in the discovery of
+// types also renders nothing: it is a discreet failure — the paginated grid
+// below keeps working normally and already has its own error state.
 export function RecentlyAddedSection({ lang }: { lang?: string } = {}) {
   const { data, isSuccess } = useQuery(entityTypesQueryOptions)
 

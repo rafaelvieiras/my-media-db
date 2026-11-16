@@ -6,14 +6,14 @@ import { useLanguage } from '@/lib/language-context'
 import { entityMembersQueryOptions } from '@/lib/queries'
 import { arteSrc, type EntityCard } from '@/lib/api'
 
-// Núcleo compartilhado da árvore pai-com-filhos (GET /entities/{id}/members): a
-// COLEÇÃO (0025, editável) e a árvore de SÉRIES (0031, somente leitura) reusam o
-// mesmo esqueleto de estados + grid de cards. Centralizar aqui zera a duplicação
-// (jscpd) entre `CollectionMembers` e `MembrosSomenteLeitura`.
+// Shared core of the parent-with-children tree (GET /entities/{id}/members): the
+// COLLECTION (editable) and the SERIES tree (read-only) reuse the
+// same skeleton of states + card grid. Centralizing it here eliminates the duplication
+// (jscpd) between `CollectionMembers` and `MembrosSomenteLeitura`.
 
-// GradeMembros: a casca de estados (carregando/erro/vazio) e o grid de cards, SEM
-// a query — o dono da query passa `itens`/`isPending`/`isError` e um `render` por
-// card (o PosterCard puro, o membro editável, ou o card numerado do episódio).
+// GradeMembros: the shell of states (loading/error/empty) and the card grid, WITHOUT
+// the query — the owner of the query passes `itens`/`isPending`/`isError` and a `render` per
+// card (the pure PosterCard, the editable member, or the numbered episode card).
 export function GradeMembros({
   itens,
   isPending,
@@ -49,12 +49,12 @@ export function GradeMembros({
   )
 }
 
-// MembrosSomenteLeitura lista os FILHOS de um nó da árvore de séries (0031) como
-// cards READ-ONLY: as temporadas de uma série, os episódios de uma temporada. A
-// Fase 1 não edita a árvore à mão (sem add/remove — diferente da coleção). O
-// backend já devolve /members ordenado por `sort_index`; `numerar` marca o card do
-// episódio para exibir seu número REAL (0039) — lido de `card.numbering` (projetado
-// na ordenação da temporada-pai), não a posição ordinal na lista.
+// MembrosSomenteLeitura lists the CHILDREN of a node of the series tree as
+// READ-ONLY cards: the seasons of a series, the episodes of a season. Phase 1
+// does not edit the tree by hand (no add/remove — unlike the collection). The
+// backend already returns /members sorted by `sort_index`; `numerar` marks the card of the
+// episode to show its REAL number — read from `card.numbering` (projected
+// in the ordering of the parent season), not the ordinal position in the list.
 export function MembrosSomenteLeitura({
   id,
   titulo,
@@ -70,8 +70,8 @@ export function MembrosSomenteLeitura({
   erro: string
   vazio: string
   numerar?: boolean
-  // acao é um slot OPCIONAL à direita do cabeçalho — hoje o seletor de ordenação da
-  // série (0040) fica ao lado de "Temporadas" sem duplicar a seção. null = sem ação.
+  // acao is an OPTIONAL slot to the right of the header — today the ordering selector of the
+  // series stays next to "Temporadas" without duplicating the section. null = no action.
   acao?: ReactNode
 }) {
   const { lang } = useLanguage()
@@ -105,26 +105,26 @@ export function MembrosSomenteLeitura({
   )
 }
 
-// CardTemporada é o card de uma TEMPORADA na lista de membros da série (0036): hoje é
-// só o PosterCard, que já renderiza o selo de completude compacto ("X/Y", unidade no
-// aria-label) no topo-direito e deixa a temporada VAZIA sem badge, capa normal (0038)
-// — a MESMA lógica de card raso compartilhada com a série na home (0037). Mantido como
-// ponto de extensão nomeado da árvore de séries.
+// CardTemporada is the card of a SEASON in the member list of the series: today it is
+// only the PosterCard, which already renders the compact completeness badge ("X/Y", unit in the
+// aria-label) in the top-right and leaves the EMPTY season without a badge, normal cover
+// — the SAME shallow card logic shared with the series on the home. Kept as a
+// named extension point of the series tree.
 export function CardTemporada({ card }: { card: EntityCard }) {
   return <PosterCard card={card} />
 }
 
-// CardNumerado envolve o PosterCard com o número REAL do episódio (0039), lido de
-// `card.numbering` (projetado na ordenação da temporada-pai pelo backend), NÃO a
-// posição na lista. Rótulo: "E{number}" com 2 dígitos (ex.: E05); quando há
-// `absolute_number` distinto do número da ordem, anexa " · #{absolute}" (anime/
-// ordenação contínua). Sem `numbering` (episódio draft) → rótulo neutro "Episódio",
-// sem inventar posição — biblioteca com E01+E05 mostra E01 e E05, não E01/E02.
+// CardNumerado wraps the PosterCard with the REAL number of the episode, read from
+// `card.numbering` (projected in the ordering of the parent season by the backend), NOT the
+// position in the list. Label: "E{number}" with 2 digits (e.g.: E05); when there is an
+// `absolute_number` distinct from the order number, it appends " · #{absolute}" (anime/
+// continuous ordering). Without `numbering` (draft episode) → neutral label "Episódio",
+// without inventing a position — a library with E01+E05 shows E01 and E05, not E01/E02.
 //
-// A ARTE do episódio é o STILL 16:9 (0042), resolvido por `arteSrc` (0044): still CUSTOM
-// do dono vem como rota local (recebe a base) e VENCE; o do provider vem cru (via proxy)
-// — enquadramento próprio, não o frame de pôster 2:3, para não cortar a paisagem. Sem
-// still (`still_url` ausente → null) o PosterCard cai no placeholder "Sem arte" 16:9.
+// The ARTWORK of the episode is the 16:9 STILL, resolved by `arteSrc`: a CUSTOM still
+// of the owner comes as a local route (it receives the base) and WINS; the provider one comes raw (via proxy)
+// — its own framing, not the 2:3 poster frame, so as not to crop the landscape. Without a
+// still (`still_url` absent → null) the PosterCard falls back to the "Sem arte" 16:9 placeholder.
 export function CardNumerado({ card }: { card: EntityCard }) {
   return (
     <div className="flex flex-col gap-1">
@@ -141,9 +141,9 @@ export function CardNumerado({ card }: { card: EntityCard }) {
   )
 }
 
-// rotuloEpisodio monta o rótulo do card de episódio a partir do numbering do card:
-// "E05" (número com 2 dígitos) e, quando o absoluto existe e difere do número da
-// ordem, "E05 · #128". Sem numbering (draft) → "Episódio" neutro.
+// rotuloEpisodio builds the label of the episode card from the numbering of the card:
+// "E05" (number with 2 digits) and, when the absolute one exists and differs from the number of the
+// order, "E05 · #128". Without numbering (draft) → neutral "Episódio".
 function rotuloEpisodio(numbering: EntityCard['numbering']): string {
   if (!numbering) {
     return 'Episódio'

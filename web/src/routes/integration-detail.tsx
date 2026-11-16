@@ -5,10 +5,10 @@ import { ErrorState, LoadingState } from '@/components/query-states'
 import { IntegrationForm } from '@/components/integration-form'
 import { integrationDetailQueryOptions } from '@/lib/queries'
 
-// Rota `/dashboard/integrations/$slug` (briefing 0096): formulário gerado a
-// partir do schema de UMA integração (`GET /integrations/{slug}`). 404 (slug
-// desconhecido) cai no mesmo `ErrorState` de qualquer outra falha — a
-// mensagem pt-BR vem do envelope do backend ("integração desconhecida").
+// Route `/dashboard/integrations/$slug`: form generated
+// from the schema of ONE integration (`GET /integrations/{slug}`). A 404 (unknown
+// slug) lands on the same `ErrorState` as any other failure — the
+// pt-BR message comes from the backend envelope ("integração desconhecida").
 export function IntegrationDetailScreen() {
   const { slug } = useParams({ from: '/dashboard/integrations/$slug' })
   const { data, isPending, isError, error } = useQuery(
@@ -39,12 +39,12 @@ export function IntegrationDetailScreen() {
             <p className="text-sm text-muted-foreground">{data.descricao}</p>
           </div>
 
-          {/* `key` no `slug` (não no `dataUpdatedAt` do refetch): o
-              `IntegrationForm` reseeda os próprios campos a partir do ECO do
-              PUT internamente (sem desmontar) — desmontar a cada refetch
-              apagaria a mensagem de sucesso ("Salvo. Reinicie o servidor...")
-              antes do dono conseguir ler. Só precisa remontar ao trocar de
-              slug (outra integração — schema e mutation diferentes). */}
+          {/* `key` on the `slug` (not on the `dataUpdatedAt` of the refetch): the
+              `IntegrationForm` reseeds its own fields from the ECHO of the
+              PUT internally (without unmounting) — unmounting on every refetch
+              would erase the success message ("Salvo. Reinicie o servidor...")
+              before the owner manages to read it. It only needs to remount when
+              switching slug (another integration — different schema and mutation). */}
           <IntegrationForm key={slug} slug={data.slug} campos={data.campos} />
         </>
       )}

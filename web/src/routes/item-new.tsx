@@ -13,17 +13,17 @@ import {
   type ValoresForm,
 } from '@/lib/field-schema'
 
-// Rota `/new/item` (briefing 0030): cria um item LOCAL (filme/série) do zero, sem
-// fonte externa. O formulário dos campos editoriais é DIRIGIDO PELOS DESCRITORES
-// (subconjunto `creatable`, corpo plano); o seletor de Tipo (movie/tv) NÃO é campo
-// editorial, então a rota o injeta no topo do form. Ao criar, navega para
-// `/entities/{id}`, onde o dono fixa os IDs externos e re-enriquece.
+// Route `/new/item`: creates a LOCAL item (movie/series) from scratch, without an
+// external source. The form of the editorial fields is DRIVEN BY THE DESCRIPTORS
+// (`creatable` subset, flat body); the Type selector (movie/tv) is NOT an
+// editorial field, so the route injects it at the top of the form. On creation, it navigates to
+// `/entities/{id}`, where the owner fixes the external IDs and re-enriches.
 //
-// Cross-link para a Busca (briefing 0077): quem clica "Novo item" esperando
-// importar um título já existente (perto do TMDB) cai aqui num formulário
-// manual em branco sem nenhuma pista de que `/search` é o caminho certo — o
-// bloco `CrossLinkBusca` no topo, antes do form, aponta para lá. O formulário
-// manual continua como está (cadastro do que não existe em fonte externa).
+// Cross-link to the Search: whoever clicks "Novo item" expecting
+// to import an already existing title (close to TMDB) lands here on a blank
+// manual form with no hint that `/search` is the right path — the
+// `CrossLinkBusca` block at the top, before the form, points there. The manual
+// form stays as it is (registering what does not exist in an external source).
 export function ItemNewScreen() {
   return (
     <NewEntityPage title="Novo item" topo={<CrossLinkBusca />}>
@@ -106,8 +106,8 @@ function ItemNewForm({
   )
 }
 
-// str normaliza um valor de campo do form para o corpo do POST: string aparada e
-// não-vazia, ou `undefined` (o opcional não vai no corpo).
+// str normalizes a form field value for the POST body: a trimmed, non-empty
+// string, or `undefined` (the optional one does not go in the body).
 function str(v: unknown): string | undefined {
   const t = String(v ?? '').trim()
   return t === '' ? undefined : t

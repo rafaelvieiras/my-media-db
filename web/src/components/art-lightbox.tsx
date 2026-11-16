@@ -22,47 +22,47 @@ import { rotuloIdioma } from '@/lib/languages'
 import { infoKind, rotuloKind } from '@/lib/artwork'
 import type { ArtworkItem } from '@/lib/api'
 
-// ArtLightbox (0049): overlay quase-cheio para ver UMA arte em alta, com navegação
-// prev/próxima DENTRO do tipo (setas do teclado + botões), Esc/click-no-backdrop
-// para fechar, foco preso (acessibilidade) e um toggle de zoom (ajustar ↔ 100%).
-// Mostra idioma/likes/origem e dispara as AÇÕES — a MUTAÇÃO mora no pai (a galeria),
-// que injeta os handlers e o estado `ocupado`/`erro`; o lightbox só decide QUAIS
-// botões cabem para cada item (preferir/baixar/remover, conforme local × inventário
-// × dono).
+// ArtLightbox: near-full overlay to see ONE artwork at high resolution, with prev/next
+// navigation WITHIN the kind (keyboard arrows + buttons), Esc/backdrop-click
+// to close, trapped focus (accessibility) and a zoom toggle (fit ↔ 100%).
+// It shows language/likes/origin and triggers the ACTIONS — the MUTATION lives in the parent (the gallery),
+// which injects the handlers and the `ocupado`/`erro` state; the lightbox only decides WHICH
+// buttons fit each item (prefer/download/remove, according to local × inventory
+// × owner).
 
 export interface AcoesLightbox {
-  // Definir como PRINCIPAL (briefing 0062, fonte de verdade `is_principal`): no
-  // pai, cria o asset primeiro se o item ainda for só candidato do inventário
-  // (sem `asset_id`), depois chama PUT prefer — que materializa (se preciso) e
-  // renomeia os arquivos físicos. Um único clique encadeia as duas chamadas
-  // quando necessário (jornada §2 passo 4).
+  // Set as PRINCIPAL (source of truth `is_principal`): in the
+  // parent, it creates the asset first if the item is still only an inventory candidate
+  // (without `asset_id`), then calls PUT prefer — which materializes (if needed) and
+  // renames the physical files. A single click chains the two calls
+  // when necessary (journey §2 step 4).
   onPreferir: (item: ArtworkItem) => void
-  // Salvar NA PASTA real da biblioteca (briefing 0062): cria o asset primeiro se
-  // preciso, depois materializa (baixa pro cache se preciso + copia pro disco).
-  // Distinto de `onBaixar` (que só cacheia internamente, sem tocar a pasta real).
+  // Save INTO the real library folder: creates the asset first if
+  // needed, then materializes (downloads to the cache if needed + copies to disk).
+  // Distinct from `onBaixar` (which only caches internally, without touching the real folder).
   onMaterializar: (item: ArtworkItem) => void
-  // Baixar pro CACHE interno (materializar sem preferir, sem tocar a pasta real):
-  // POST select {prefer:false}. Só faz sentido para arte ainda não cacheada.
+  // Download to the internal CACHE (materialize without preferring, without touching the real folder):
+  // POST select {prefer:false}. It only makes sense for artwork not cached yet.
   onBaixar: (item: ArtworkItem) => void
-  // Remover: só para asset do DONO (source==='user'); DELETE do asset.
+  // Remove: only for an asset of the OWNER (source==='user'); DELETE of the asset.
   onRemover: (item: ArtworkItem) => void
-  // Alguma mutação em voo — desabilita os botões de ação.
+  // Some mutation in flight — it disables the action buttons.
   ocupado: boolean
-  // Posse (briefing 0062, `ResolvedEntity.owned`): sem media_file presente não há
-  // pasta de destino na biblioteca real — desabilita "Salvar na pasta"/"Definir
-  // como principal" com tooltip explicativo (jornada §2 passo 7). Não afeta
-  // "Baixar pro cache"/"Remover" (não tocam a pasta real).
+  // Ownership (`ResolvedEntity.owned`): without a present media_file there is no
+  // destination folder in the real library — it disables "Salvar na pasta"/"Definir
+  // como principal" with an explanatory tooltip (journey §2 step 7). It does not affect
+  // "Baixar pro cache"/"Remover" (they do not touch the real folder).
   podeSalvarNaPasta: boolean
-  // Mensagem de erro de uma ação (pt-BR do envelope), exibida no rodapé.
+  // Error message of an action (pt-BR from the envelope), shown in the footer.
   erro: string | null
 }
 
-// TOOLTIP_SEM_PASTA explica por que os botões de materializar ficam desabilitados
-// quando a entity não tem nenhum media_file presente (só catálogo).
+// TOOLTIP_SEM_PASTA explains why the materialize buttons are disabled
+// when the entity has no present media_file (catalog only).
 const TOOLTIP_SEM_PASTA =
   'Este item não tem um arquivo na biblioteca — sem pasta de destino para salvar.'
 
-// Seletores dos elementos focáveis para o "foco preso" (trap de Tab) do dialog.
+// Selectors of the focusable elements for the "focus trap" (Tab trap) of the dialog.
 const FOCAVEIS =
   'button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])'
 
@@ -76,15 +76,15 @@ export function ArtLightbox({
 }: {
   kind: string
   items: ArtworkItem[]
-  // Índice ATUAL dentro do tipo (controlado pelo pai — a mesma lista das linhas).
+  // CURRENT index within the kind (controlled by the parent — the same list as the rows).
   index: number
   onIndex: (i: number) => void
   onClose: () => void
   acoes: AcoesLightbox
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  // Zoom: `false` = ajustar à tela (contain); `true` = 100% (resolução natural,
-  // com scroll no frame). Reseta ao trocar de arte.
+  // Zoom: `false` = fit the screen (contain); `true` = 100% (natural resolution,
+  // with scroll in the frame). It resets when the artwork changes.
   const [zoom, setZoom] = useState(false)
 
   const item = items[index]
@@ -100,7 +100,7 @@ export function ArtLightbox({
     onIndex((index + 1) % total)
   }, [index, total, onIndex])
 
-  // Teclado: Esc fecha; setas navegam; Tab fica PRESO nos focáveis do dialog.
+  // Keyboard: Esc closes; arrows navigate; Tab stays TRAPPED in the focusables of the dialog.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -140,7 +140,7 @@ export function ArtLightbox({
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [irAnterior, irProxima, onClose])
 
-  // Foco preso: foca o dialog ao abrir e devolve o foco ao elemento anterior ao fechar.
+  // Focus trap: it focuses the dialog on open and returns the focus to the previous element on close.
   useEffect(() => {
     const anterior = document.activeElement as HTMLElement | null
     containerRef.current?.focus()
@@ -155,9 +155,9 @@ export function ArtLightbox({
   const legenda = `${rotuloKind(kind)} ${index + 1} de ${total}`
 
   return (
-    // TooltipProvider próprio (não depende do ancestral): o lightbox é montado em
-    // vários lugares (galeria, testes) e os dois botões desabilitados abaixo
-    // precisam do tooltip do design system funcionando sempre.
+    // Its own TooltipProvider (it does not depend on the ancestor): the lightbox is mounted in
+    // several places (gallery, tests) and the two disabled buttons below
+    // need the design system tooltip always working.
     <TooltipProvider>
       <div
         role="dialog"
@@ -165,13 +165,13 @@ export function ArtLightbox({
         aria-label={legenda}
         tabIndex={-1}
         ref={containerRef}
-        // Backdrop: click FORA da imagem/painel fecha. Os filhos param a propagação.
+        // Backdrop: a click OUTSIDE the image/panel closes. The children stop the propagation.
         onClick={onClose}
-        // Backdrop SEMPRE escuro (valoriza a arte), mesmo no tema claro: a classe `dark`
-        // força os tokens shadcn (texto/botões) para claro-no-escuro no subtree do lightbox.
+        // Backdrop ALWAYS dark (it values the artwork), even in the light theme: the `dark` class
+        // forces the shadcn tokens (text/buttons) to light-on-dark in the lightbox subtree.
         className="dark fixed inset-0 z-50 flex flex-col bg-black/85 text-foreground outline-none backdrop-blur-sm"
       >
-        {/* Barra do topo: legenda + zoom + fechar. */}
+        {/* Top bar: caption + zoom + close. */}
         <div
           className="flex items-center gap-2 p-3"
           onClick={(e) => e.stopPropagation()}
@@ -203,7 +203,7 @@ export function ArtLightbox({
           </div>
         </div>
 
-        {/* Palco: imagem em alta + setas de navegação. */}
+        {/* Stage: the artwork at high resolution + navigation arrows. */}
         <div className="relative flex min-h-0 flex-1 items-center justify-center px-2">
           {total > 1 ? (
             <Button
@@ -254,7 +254,7 @@ export function ArtLightbox({
           ) : null}
         </div>
 
-        {/* Rodapé: metadados (idioma/likes/origem/preferida) + ações. */}
+        {/* Footer: metadata (language/likes/origin/preferred) + actions. */}
         <div
           className="flex flex-col gap-2 border-t border-foreground/10 p-3"
           onClick={(e) => e.stopPropagation()}

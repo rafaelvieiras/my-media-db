@@ -12,23 +12,23 @@ import {
   settingsPadrao,
 } from '@/test/entity-fixtures'
 
-// Rota `/entities/$id/edit` (0030; dividida em subrotas pelo 0080): a seção
-// "Informações básicas" — o formulário dirigido por descritores. Cobre a
-// semântica por-idioma preservada do editor antigo (0016): definir vazio ×
-// Limpar, tags {add,remove}, neutro escalar, número, 422 inline e a navegação de
-// volta, além do guard de "sair sem salvar" (0073), agora local a esta seção.
+// Route `/entities/$id/edit` (split into subroutes later): the
+// "Informações básicas" section — the form driven by descriptors. It covers the
+// per-language semantics preserved from the old editor: set empty ×
+// Limpar, {add,remove} tags, neutral scalar, number, inline 422 and the navigation
+// back, plus the "leave without saving" guard, now local to this section.
 const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
 
-// Import DINÂMICO do mock do Link (`@/test/router-mock`) — a fábrica de
-// `vi.mock` é içada acima dos imports estáticos; referenciar `LinkMock`
-// estaticamente aqui quebraria com "Cannot access before initialization".
+// DYNAMIC import of the Link mock (`@/test/router-mock`) — the factory of
+// `vi.mock` is hoisted above the static imports; referencing `LinkMock`
+// statically here would break with "Cannot access before initialization".
 vi.mock('@tanstack/react-router', async () => {
   const { LinkMock } = await import('@/test/router-mock')
   return {
     useParams: () => ({ id: 'e1' }),
     useNavigate: () => spies.navigate,
-    // Repassa `onClick`/`aria-current` (0073/0080: o guard de "sair sem salvar"
-    // intercepta o clique nos links de navegação via preventDefault + confirm).
+    // It forwards `onClick`/`aria-current` (the "leave without saving" guard
+    // intercepts the click on the navigation links via preventDefault + confirm).
     Link: LinkMock,
   }
 })
@@ -121,7 +121,7 @@ function renderEdit(opts: Opcoes = {}): Espioes {
   return espioes
 }
 
-// Espera o form carregar (o botão Salvar surge quando entity+blob+descritores chegam).
+// Waits for the form to load (the Save button appears when entity+blob+descriptors arrive).
 async function esperarForm() {
   await screen.findByRole('button', { name: 'Salvar alterações' })
 }
@@ -267,7 +267,7 @@ describe('EntityEditBasicoScreen — edição por idioma', () => {
         if (u.pathname === '/api/v1/schema/entity-fields') {
           return okFields()
         }
-        // entity e override respondem 404.
+        // entity and override answer 404.
         return {
           ok: false,
           status: 404,
@@ -288,9 +288,9 @@ describe('EntityEditBasicoScreen — edição por idioma', () => {
   })
 })
 
-// Guard de "sair sem salvar" (0073), agora local à seção (0080): só o "sujo" do
-// SchemaForm — o EntityEditShell intercepta o link "Voltar ao item" + os links
-// da sidebar + o beforeunload nativo.
+// "Leave without saving" guard, now local to the section: only the "dirty" state of the
+// SchemaForm — the EntityEditShell intercepts the "Voltar ao item" link + the links
+// of the sidebar + the native beforeunload.
 describe('EntityEditBasicoScreen — guard de sair sem salvar (0073/0080)', () => {
   function linkVoltar() {
     return screen.getByRole('link', { name: /Voltar ao item/ })
@@ -304,8 +304,8 @@ describe('EntityEditBasicoScreen — guard de sair sem salvar (0073/0080)', () =
     const confirmar = vi.fn()
     vi.stubGlobal('confirm', confirmar)
     const { user } = await editar()
-    // Sem sujeira, o guard não intercepta o clique — a navegação segue pelo
-    // comportamento padrão do Link (não simulado pelo mock deste arquivo).
+    // Without dirt, the guard does not intercept the click — the navigation follows the
+    // default behavior of the Link (not simulated by the mock of this file).
     await user.click(linkVoltar())
     expect(confirmar).not.toHaveBeenCalled()
     expect(spies.navigate).not.toHaveBeenCalled()
@@ -323,8 +323,8 @@ describe('EntityEditBasicoScreen — guard de sair sem salvar (0073/0080)', () =
       'Duna',
     )
 
-    // Mesmo guard também intercepta o clique em OUTRA seção da sidebar (0080),
-    // não só "Voltar ao item".
+    // The same guard also intercepts the click on ANOTHER section of the sidebar,
+    // not only "Voltar ao item".
     await user.click(screen.getByRole('link', { name: 'IDs de terceiros' }))
     expect(confirmar).toHaveBeenCalledTimes(2)
     expect(spies.navigate).not.toHaveBeenCalled()
@@ -349,7 +349,7 @@ describe('EntityEditBasicoScreen — guard de sair sem salvar (0073/0080)', () =
     const evento = new Event('beforeunload', { cancelable: true })
     const preventDefault = vi.spyOn(evento, 'preventDefault')
 
-    // Pristino: nada registrado, o evento não é interceptado.
+    // Pristine: nothing registered, the event is not intercepted.
     window.dispatchEvent(evento)
     expect(preventDefault).not.toHaveBeenCalled()
 

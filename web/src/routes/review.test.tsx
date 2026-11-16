@@ -23,8 +23,8 @@ vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock as typeof LinkMock,
 }))
 
-// Idioma fixo (pt-BR): o painel de correção usa useLanguage para passar o idioma
-// ativo à busca; isola do LanguageProvider real (sem tocar o endpoint de settings).
+// Fixed language (pt-BR): the correction panel uses useLanguage to pass the active
+// language to the search; it isolates from the real LanguageProvider (without touching the settings endpoint).
 vi.mock('@/lib/language-context', () => ({
   useLanguage: () => ({
     lang: 'pt-BR',
@@ -44,7 +44,7 @@ const draftCard: EntityCard = {
   match_confidence: null,
   poster_url: null,
   catalog_completeness: null,
-  // Grupo anotado pelo backend (0137): pasta do filme.
+  // Group annotated by the backend: folder of the movie.
   review_group: {
     kind: 'pasta',
     key: 'pasta:/Filmes/Fita Sem Nome',
@@ -82,8 +82,8 @@ const externo: ExternalResult = {
   saved: false,
 }
 
-// Prévia (0060) sem candidato — o default do backend quando nada bate em
-// nenhuma fonte.
+// Preview without a candidate — the backend default when nothing matches in
+// any source.
 const previewVazia: MatchPreview = {
   found: false,
   method: 'none',
@@ -92,8 +92,8 @@ const previewVazia: MatchPreview = {
   target: null,
 }
 
-// Prévia (0060) com candidato do CATÁLOGO LOCAL, abaixo do limiar automático —
-// o caso central do briefing: o dono vê e decide aplicar mesmo assim.
+// Preview with a LOCAL CATALOG candidate, below the automatic threshold —
+// the central case: the owner sees it and decides to apply it anyway.
 const previewLocal: MatchPreview = {
   found: true,
   method: 'local',
@@ -109,7 +109,7 @@ const previewLocal: MatchPreview = {
   },
 }
 
-// Prévia (0060) com candidato EXTERNO, batendo o limiar automático.
+// Preview with an EXTERNAL candidate, matching the automatic threshold.
 const previewExterna: MatchPreview = {
   found: true,
   method: 'external',
@@ -132,11 +132,11 @@ interface Opcoes {
   confirmErro?: { status: number; code: string; message: string }
   correctErro?: { status: number; code: string; message: string }
   confirmCandidateErro?: { status: number; code: string; message: string }
-  // Prévia de candidato (0060): resultado devolvido por GET .../match-preview
-  // para QUALQUER card da fila (os testes usam um único card por vez).
+  // Candidate preview: result returned by GET .../match-preview
+  // for ANY card of the queue (the tests use a single card at a time).
   preview?: MatchPreview
   previewErro?: boolean
-  // Auto-match em lote (0050): resumo devolvido por POST /review/auto-match.
+  // Batch auto-match: summary returned by POST /review/auto-match.
   autoMatchLoteResultado?: {
     resolved_count: number
     pending_count: number
@@ -158,10 +158,10 @@ interface Espioes {
   onAutoMatchLote: ReturnType<typeof vi.fn<(body: unknown) => void>>
 }
 
-// Handler de rotas da tela de revisão: GET /review (a fila), GET /search (a
-// correção), GET .../match-preview (0060, a prévia), POST /entities/{id}/confirm,
-// POST /entities/{id}/correct, POST /entities/{id}/confirm-candidate (0060) e o
-// endpoint do auto-match em LOTE (0050), POST /review/auto-match.
+// Route handler of the review screen: GET /review (the queue), GET /search (the
+// correction), GET .../match-preview (the preview), POST /entities/{id}/confirm,
+// POST /entities/{id}/correct, POST /entities/{id}/confirm-candidate and the
+// endpoint of the BATCH auto-match, POST /review/auto-match.
 function montarFetch(opts: Opcoes, espioes: Espioes) {
   return criarFetch(({ path, method, init, u }) => {
     if (path === '/api/v1/review' && method === 'GET') {
@@ -250,10 +250,10 @@ function renderReview(opts: Opcoes = {}) {
   return { espioes, ...renderComEspioes(<ReviewScreen />) }
 }
 
-// abrirGrupo clica no cabeçalho da SEÇÃO (0137) e espera as linhas aparecerem.
-// A fila abre fechada de propósito: a prévia de candidato só é buscada quando o
-// dono abre a LINHA ("Ver candidato"), então os casos que checam prévia/ações
-// passam por aqui e por `abrirLinha`.
+// abrirGrupo clicks the header of the SECTION and waits for the rows to appear.
+// The queue opens closed on purpose: the candidate preview is only fetched when the
+// owner opens the ROW ("Ver candidato"), so the cases that check the preview/actions
+// go through here and through `abrirLinha`.
 async function abrirGrupo(
   user: ReturnType<typeof userEvent.setup>,
   rotulo: string,
@@ -266,16 +266,16 @@ async function abrirGrupo(
   await waitFor(() => expect(screen.getByText(tituloLinha)).toBeInTheDocument())
 }
 
-// abrirLinha expande a LINHA do item, que é o que dispara GET match-preview.
+// abrirLinha expands the ROW of the item, which is what fires GET match-preview.
 async function abrirLinha(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /Ver candidato/ }))
 }
 
-// Cenário base de um card de baixa confiança já renderizado (o setup comum dos
-// casos de confirmar/corrigir): monta o fetch, renderiza, abre a seção e a linha
-// (0137). Por padrão a prévia (0060) não acha candidato (`previewVazia`) — o
-// mesmo comportamento "sem metadados externos" de antes do briefing 0060 — a
-// menos que o cenário informe outra.
+// Base scenario of a low-confidence card already rendered (the common setup of the
+// confirm/correct cases): it mounts the fetch, renders, opens the section and the row.
+// By default the preview finds no candidate (`previewVazia`) — the
+// same "no external metadata" behavior as before — unless the scenario
+// informs another one.
 async function renderBaixa(opts: Opcoes = { fila: [baixaCard] }) {
   const user = userEvent.setup()
   const r = renderReview(opts)
@@ -296,12 +296,12 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
       expect(screen.getByText('Série de Teste')).toBeInTheDocument(),
     )
     expect(screen.getByText('Pasta Fita Sem Nome')).toBeInTheDocument()
-    // resumo do cabeçalho: quantidade + motivo dominante
+    // summary of the header: quantity + dominant reason
     expect(screen.getByText('1 item · não identificado')).toBeInTheDocument()
     expect(
       screen.getByText('1 item · baixa confiança (40%)'),
     ).toBeInTheDocument()
-    // a linha em si só aparece com a seção aberta
+    // the row itself only appears with the section open
     expect(screen.queryByText('Palpite Fraco')).not.toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: /Série de Teste/ }),
@@ -313,7 +313,7 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
     await waitFor(() =>
       expect(screen.getByText('Série de Teste')).toBeInTheDocument(),
     )
-    // Nenhuma chamada de match-preview: a query só existe ao expandir a linha.
+    // No match-preview call: the query only exists when the row is expanded.
     const chamadas = (
       globalThis.fetch as unknown as { mock: { calls: Array<[string]> } }
     ).mock.calls
@@ -375,10 +375,10 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
 
   it('Corrigir busca e chama correctMatch com o source_id escolhido (§5: corrigir grava external_ids + re-enriquece)', async () => {
     const { user, espioes, invalidateSpy } = await renderBaixa()
-    // Abre o painel de correção e busca o título certo.
+    // It opens the correction panel and searches for the right title.
     await user.click(screen.getByRole('button', { name: /Corrigir/ }))
     await user.type(screen.getByLabelText('Buscar o título correto'), 'certo')
-    // Escolhe o resultado externo → CORRIGE com o source_id dele.
+    // It chooses the external result → CORRECTS with its source_id.
     await user.click(await screen.findByRole('button', { name: 'Usar este' }))
 
     await waitFor(() =>
@@ -411,9 +411,9 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
   })
 
   it('resultado da correção mostra sinopse truncada e, quando já é entity, o selo "Na biblioteca" JUNTO do "Usar este" (0074)', async () => {
-    // Diferente do fluxo de Importar: internalId aqui NÃO esconde a ação — é
-    // justamente o caso de fundir duplicata (0051). O internal_id vai defensivamente
-    // (cast) porque o tipo gerado só o ganha após a regeneração do backend.
+    // Unlike the Importar flow: internalId here does NOT hide the action — it is
+    // precisely the duplicate merge case. The internal_id goes defensively
+    // (cast) because the generated type only gains it after the backend regeneration.
     const externoNaBiblioteca = {
       ...externo,
       internal_id: 'ent-9',
@@ -506,7 +506,7 @@ describe('ReviewScreen — prévia de candidato (0060)', () => {
         name: 'Manter como está (sem metadados externos)',
       }),
     ).toBeInTheDocument()
-    // "Corrigir" continua disponível mesmo com a prévia em erro.
+    // "Corrigir" stays available even with the preview in error.
     expect(screen.getByRole('button', { name: /Corrigir/ })).toBeInTheDocument()
   })
 

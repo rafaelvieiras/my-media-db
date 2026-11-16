@@ -4,7 +4,7 @@ import { LibraryBrowseScreen } from '@/routes/library-browse'
 import { renderWithClient } from '@/test/render'
 import { paginaResposta as page, urlEnviada } from '@/test/stub-fetch'
 
-// Estado mutável hoisteado: o slug lido pela rota `/library/$entitySlug`.
+// Hoisted mutable state: the slug read by the route `/library/$entitySlug`.
 const spies = vi.hoisted(() => ({
   params: { entitySlug: 'movies' },
 }))
@@ -14,8 +14,8 @@ vi.mock('@/lib/language-context', async () => {
   return { useLanguage: () => fakeLanguage('pt-BR') }
 })
 
-// Router mockado: `useParams` devolve o slug controlável; `Link` do estado
-// vazio do PosterGrid reaproveita o mock compartilhado (mesmo padrão de
+// Mocked router: `useParams` returns the controllable slug; the `Link` of the empty
+// state of the PosterGrid reuses the shared mock (same pattern as
 // collection-members.test.tsx/external-album.test.tsx).
 vi.mock('@tanstack/react-router', async () => ({
   useParams: () => spies.params,

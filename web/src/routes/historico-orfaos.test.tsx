@@ -6,8 +6,8 @@ import type { HistoricoEventoOrfao, HistoricoEventoOrfaoList } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 
-// Fábrica de item da lista de órfãos (briefing 0099) — `over` sobrescreve
-// campos por teste (raw_title ausente, raw_external_ids parcial, etc.).
+// Factory of an orphan-list item — `over` overrides
+// fields per test (raw_title absent, partial raw_external_ids, etc.).
 function eventoOrfao(
   over: Partial<HistoricoEventoOrfao> = {},
 ): HistoricoEventoOrfao {
@@ -24,8 +24,8 @@ function eventoOrfao(
   }
 }
 
-// Roteia o fetch de `GET /api/v1/historico/orfaos` — `paginas` mapeia offset
-// -> resposta, permitindo simular avanço de página sem servidor real.
+// Routes the fetch of `GET /api/v1/historico/orfaos` — `paginas` maps offset
+// -> response, allowing a page advance to be simulated without a real server.
 function fetchRouter(opts?: {
   pagina?: (params: URLSearchParams) => HistoricoEventoOrfaoList
   erro?: { status: number; code: string; message: string }

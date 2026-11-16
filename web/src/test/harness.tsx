@@ -3,13 +3,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { expect, vi } from 'vitest'
 import type { ReactNode } from 'react'
 
-// Scaffolding compartilhado dos testes de TELA (fila de revisão/órfãs e outras
-// que espionam invalidações). Centralizado em src/test (fora da cobertura e da
-// catraca de duplicação) para os arquivos de teste não repetirem o mesmo envelope
-// de erro e o mesmo boilerplate de render + spy. O mock de <Link> mora ao lado,
-// em `link-mock.tsx` (arquivo só-componente).
+// Shared scaffolding of the SCREEN tests (review/orphan queue and others
+// that spy on invalidations). Centralized in src/test (outside coverage and the
+// duplication ratchet) so the test files do not repeat the same error envelope
+// and the same render + spy boilerplate. The <Link> mock lives next to it,
+// in `link-mock.tsx` (a component-only file).
 
-// Envelope de uma resposta de erro do padrão `{ error: { code, message } }`.
+// Envelope of an error response in the pattern `{ error: { code, message } }`.
 export function erroJson(status: number, code: string, message: string) {
   return {
     ok: false,
@@ -18,8 +18,8 @@ export function erroJson(status: number, code: string, message: string) {
   } as Response
 }
 
-// Contexto de uma rota mockada: caminho, método, corpo/opções e a URL já parseada
-// (para ler query params). Evita repetir o preâmbulo de parsing em cada teste.
+// Context of a mocked route: path, method, body/options and the already parsed URL
+// (to read query params). It avoids repeating the parsing preamble in every test.
 export interface CtxRota {
   path: string
   method: string
@@ -27,7 +27,7 @@ export interface CtxRota {
   u: URL
 }
 
-// Monta um `fetch` mock que delega ao handler com o contexto já parseado.
+// Builds a mock `fetch` that delegates to the handler with the already parsed context.
 export function criarFetch(
   handler: (ctx: CtxRota) => Promise<Response> | Response,
 ) {
@@ -37,8 +37,8 @@ export function criarFetch(
   })
 }
 
-// Renderiza a UI num QueryClient próprio (retries off — o erro aparece na hora) e
-// espiona `invalidateQueries` para afirmar as invalidações pós-mutação.
+// Renders the UI in its own QueryClient (retries off — the error appears right away) and
+// spies on `invalidateQueries` to assert the invalidations after the mutation.
 export function renderComEspioes(ui: ReactNode) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -48,7 +48,7 @@ export function renderComEspioes(ui: ReactNode) {
   return { queryClient, invalidateSpy }
 }
 
-// Chaves invalidadas (achatadas a string) — para afirmar quais queries caíram.
+// Invalidated keys (flattened into a string) — to assert which queries were dropped.
 export function chavesInvalidadas(calls: unknown[][]): string[] {
   return calls.map((c) => {
     const filtro = c[0] as { queryKey?: unknown } | undefined
@@ -56,8 +56,8 @@ export function chavesInvalidadas(calls: unknown[][]): string[] {
   })
 }
 
-// Espera (até o próximo tick) que TODAS as chaves esperadas tenham sido
-// invalidadas pelo spy — as chaves vêm achatadas a string (ex.: `["review"]`).
+// Waits (until the next tick) for ALL the expected keys to have been
+// invalidated by the spy — the keys come flattened into a string (e.g. `["review"]`).
 export function esperarChaves(
   invalidateSpy: { mock: { calls: unknown[][] } },
   esperadas: string[],

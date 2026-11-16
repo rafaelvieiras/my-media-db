@@ -2,11 +2,11 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { rotuloIdioma } from '@/lib/languages'
 
-// Par de campos compartilhado por `/dashboard/library/new` e
-// `/dashboard/library/$id/edit` (briefing 0085): idioma preferido (0071) e
-// reentativa de enriquecimento (dias) do datasource — as duas rotas só
-// diferem em como tratam a mudança (criar guarda o valor puro; editar também
-// marca "tocado" pra decidir o que entra no PATCH parcial).
+// Pair of fields shared by `/dashboard/library/new` and
+// `/dashboard/library/$id/edit`: preferred language and
+// datasource enrichment retry (days) — the two routes only
+// differ in how they handle the change (creation keeps the raw value; editing also
+// marks it as "touched" to decide what enters the partial PATCH).
 export function LibraryLanguageAndRetryFields({
   idiomasPermitidos,
   preferredLanguage,

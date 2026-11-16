@@ -14,11 +14,11 @@ import {
   settingsPadrao,
 } from '@/test/entity-fixtures'
 
-// Mocka o router: `useParams` fixa o id da rota; `useSearch` devolve sem ordem
-// (view default); `useNavigate` é um no-op; `Link` usa o mock compartilhado
-// (jscpd — `{...rest}`, 0086, repassa `role`/demais props que o Radix
-// `asChild` do DropdownMenuItem do "Gerenciar" clona no filho — sem isso o
-// item perderia `role="menuitem"`).
+// Mocks the router: `useParams` fixes the id of the route; `useSearch` returns without an order
+// (default view); `useNavigate` is a no-op; `Link` uses the shared mock
+// (jscpd — `{...rest}` forwards `role`/other props that the Radix
+// `asChild` of the DropdownMenuItem of "Gerenciar" clones onto the child — without that the
+// item would lose `role="menuitem"`).
 vi.mock('@tanstack/react-router', async () => ({
   useParams: () => ({ id: 'e1' }),
   useSearch: () => ({ ordering: undefined }),
@@ -26,9 +26,9 @@ vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
 }))
 
-// Roteia o fetch: settings, descritores (para o selo "editado" saber o que é
-// traduzível, 0030), a entity resolvida (`?lang=`), os arquivos e o blob de
-// override (vazio por padrão; alguns testes passam um blob para o selo "editado").
+// Routes the fetch: settings, descriptors (so the "edited" badge knows what is
+// translatable), the resolved entity (`?lang=`), the files and the override
+// blob (empty by default; some tests pass a blob for the "edited" badge).
 function fetchRouter(
   entity: ResolvedEntity,
   blob: OverrideBlob = {},
@@ -54,9 +54,9 @@ function fetchRouter(
     if (u.startsWith('/api/v1/entities/e1/members')) {
       return okJson(membros)
     }
-    // Histórico de consumo (0092/0094): estado vazio (sem selo "Assistido") e
-    // sem eventos (sem seção "Histórico") por padrão — os testes deste arquivo
-    // não exercitam o histórico em si (ver historico-section.test.tsx).
+    // Consumption history: empty state (without the "Assistido" badge) and
+    // without events (without the "Histórico" section) by default — the tests of this file
+    // do not exercise the history itself (see historico-section.test.tsx).
     const historico = respostaHistoricoVazia(u)
     if (historico) {
       return historico
@@ -101,7 +101,7 @@ describe('EntityDetailScreen — selo de fallback', () => {
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
     expect(screen.getByText('Ficção científica')).toBeInTheDocument()
     expect(screen.getByText('Aventura')).toBeInTheDocument()
-    // Idioma efetivo == lido (pt-BR): sem selo.
+    // Effective language == the one read (pt-BR): no badge.
     expect(screen.queryByText(/^em /)).not.toBeInTheDocument()
   })
 
@@ -114,7 +114,7 @@ describe('EntityDetailScreen — selo de fallback', () => {
     )
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
-    // Lendo em pt-BR, mas a descricao veio em en → selo discreto.
+    // Reading in pt-BR, but the description came in en → discreet badge.
     expect(screen.getByText('em Inglês')).toBeInTheDocument()
   })
 
@@ -151,7 +151,7 @@ describe('EntityDetailScreen — badge de status (0078)', () => {
 
 describe('EntityDetailScreen — selo "editado" e nota local', () => {
   it('mostra o selo quando o blob tem override no idioma atual', async () => {
-    // title overridado em pt-BR (idioma corrente) → selo; en não contaria.
+    // title overridden in pt-BR (current language) → badge; en would not count.
     renderDetail(baseEntity(), { title: { 'pt-BR': 'Duna' } })
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
@@ -159,7 +159,7 @@ describe('EntityDetailScreen — selo "editado" e nota local', () => {
   })
 
   it('sem override no idioma atual não há selo "editado"', async () => {
-    // Override só em en; lendo em pt-BR → nenhum selo.
+    // Override only in en; reading in pt-BR → no badge.
     renderDetail(baseEntity(), { title: { en: 'Dune (EN)' } })
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
@@ -185,8 +185,8 @@ describe('EntityDetailScreen — selo "editado" e nota local', () => {
     renderDetail(baseEntity())
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
-    // O dropdown "Gerenciar" (0086) só monta o conteúdo no DOM depois de aberto
-    // (Radix). No mock do Link, `to` vira o href; o item usa asChild sobre o <Link>.
+    // The "Gerenciar" dropdown only mounts its content in the DOM after it is opened
+    // (Radix). In the Link mock, `to` becomes the href; the item uses asChild over the <Link>.
     await user.click(screen.getByRole('button', { name: /Gerenciar/ }))
     const editar = screen.getByRole('menuitem', { name: /Editar/ })
     expect(editar).toBeInTheDocument()
@@ -208,15 +208,15 @@ describe('EntityDetailScreen — árvore de séries (0031)', () => {
     ).toBeInTheDocument()
     expect(await screen.findByText('Temporada 1')).toBeInTheDocument()
     expect(screen.getByText('Temporada 2')).toBeInTheDocument()
-    // Read-only (Fase 1): sem o add/remove editável da coleção.
+    // Read-only (Phase 1): without the editable add/remove of the collection.
     expect(screen.queryByText('Adicionar item')).toBeNull()
-    // Série agrupa temporadas — sem arquivo próprio.
+    // A series groups seasons — without a folder of its own.
     expect(screen.queryByRole('heading', { name: 'Arquivos' })).toBeNull()
   })
 
   it('temporada (season) lista os Episódios com o número REAL (0039), sem Arquivos', async () => {
-    // Biblioteca esparsa: so o E01 e o E05 (buraco no meio). O card mostra o numero
-    // REAL do numbering (E01, E05), NAO a posicao na lista (que seria E01, E02).
+    // Sparse library: only E01 and E05 (a hole in the middle). The card shows the REAL
+    // number of the numbering (E01, E05), NOT the position in the list (which would be E01, E02).
     renderDetail(baseEntity({ type: 'season', title: 'Temporada 1' }), {}, [
       card({
         id: 'e1',
@@ -256,8 +256,8 @@ describe('EntityDetailScreen — árvore de séries (0031)', () => {
   })
 })
 
-// Seção de completude de CATALOGAÇÃO (0058) — DIFERENTE da posse (0034/0036,
-// coberta acima). Só aparece quando `catalog_completeness.complete === false`.
+// CATALOGING completeness section — DIFFERENT from ownership (0034/0036,
+// covered above). It only appears when `catalog_completeness.complete === false`.
 describe('EntityDetailScreen — completude de catalogação (0058)', () => {
   it('mostra a seção "Catalogação incompleta" com a lista do que falta', async () => {
     renderDetail(

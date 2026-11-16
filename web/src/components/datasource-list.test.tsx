@@ -5,11 +5,11 @@ import { DatasourceList } from '@/components/datasource-list'
 import type { ScanStatus, Source } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 
-// Briefing 0071: a criação e a edição/remoção de path migraram para rotas
-// dedicadas (`/library/new`, `/library/$id/edit` — cobertas em
-// `library-new.test.tsx`/`library-edit.test.tsx`). Esta lista só cobre o que
-// continua aqui: estado vazio, path+badge+progresso, "Escanear", o switch de
-// watch e os links "Adicionar datasource"/"Editar".
+// The creation and the editing/removal of a path migrated to dedicated
+// routes (`/library/new`, `/library/$id/edit` — covered in
+// `library-new.test.tsx`/`library-edit.test.tsx`). This list only covers what
+// stays here: empty state, path+badge+progress, "Escanear", the watch
+// switch and the "Adicionar datasource"/"Editar" links.
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
 }))
@@ -18,7 +18,7 @@ function okJson<T>(body: T, status = 200) {
   return { ok: true, status, json: async () => body } as Response
 }
 
-// Roteia o fetch por URL/método para simular a API de biblioteca+scan.
+// Routes the fetch by URL/method to simulate the library+scan API.
 function fetchRouter(sources: Source[], status: ScanStatus) {
   return vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url)
@@ -38,8 +38,8 @@ function fetchRouter(sources: Source[], status: ScanStatus) {
         watch_enabled?: boolean
         path?: string
       }
-      // Muta em memória para que o refetch pós-invalidação (disparado pelo
-      // componente) reflita o novo estado, como faria a API real.
+      // It mutates in memory so that the refetch after invalidation (triggered by the
+      // component) reflects the new state, as the real API would.
       Object.assign(source ?? {}, body)
       return okJson({ ...source, ...body })
     }
@@ -49,7 +49,7 @@ function fetchRouter(sources: Source[], status: ScanStatus) {
 
 const idle: ScanStatus = { running: false, files_seen: 0, files_total: 0 }
 
-// Fixture da fonte — a maioria dos testes só varia id/path/type/watch_enabled.
+// Source fixture — most tests only vary id/path/type/watch_enabled.
 function sourceFixture(over: Partial<Source> = {}): Source {
   return {
     id: '1',

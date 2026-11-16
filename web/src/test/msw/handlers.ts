@@ -1,12 +1,12 @@
 import { http, HttpResponse } from 'msw'
 import type { components } from '@/lib/api-types'
 
-// Handlers MSW da Fase 3 (briefing 0068) — tipados contra os schemas GERADOS do
-// openapi.yaml (api-types.ts), nunca à mão solto: uma deriva de contrato aqui
-// quebra o type-check, não fica silenciosa. Cobre POR ORA só os endpoints
-// exercidos pelas 3 jornadas de `src/routes/__msw__/*.test.tsx` (busca+import,
-// enrich não-destrutivo, erro de fonte) — extensível por handler conforme
-// entram novas jornadas de integração (mesma filosofia incremental do 0028).
+// Phase 3 MSW handlers — typed against the GENERATED schemas of
+// openapi.yaml (api-types.ts), never loose by hand: a contract drift here
+// breaks the type-check, it does not stay silent. It covers FOR NOW only the endpoints
+// exercised by the 3 journeys of `src/routes/__msw__/*.test.tsx` (search+import,
+// non-destructive enrich, source error) — extensible by handler as
+// new integration journeys come in (the same incremental philosophy).
 
 type ResolvedEntity = components['schemas']['ResolvedEntity']
 type LanguageSettings = components['schemas']['LanguageSettings']
@@ -18,10 +18,10 @@ type ErrorBody = components['schemas']['Error']
 
 // ── Fixtures/factories ───────────────────────────────────────────────────────
 
-// entidadeResolvidaPadrao preenche TODOS os campos obrigatórios de
-// `ResolvedEntity` com um default neutro — os testes só sobrescrevem o que
-// importa à jornada (sempre precisam informar `id`/`title`, os únicos sem
-// default óbvio).
+// entidadeResolvidaPadrao fills ALL the required fields of
+// `ResolvedEntity` with a neutral default — the tests only override what
+// matters to the journey (they always have to inform `id`/`title`, the only ones without an
+// obvious default).
 export function entidadeResolvidaPadrao(
   overrides: Partial<ResolvedEntity> & Pick<ResolvedEntity, 'id' | 'title'>,
 ): ResolvedEntity {
@@ -59,8 +59,8 @@ export function entidadeResolvidaPadrao(
   }
 }
 
-// camposEditoriaisPadrao: só os 3 campos que as jornadas do 0068 tocam
-// (título/sinopse/tags) — suficiente para o SchemaForm renderizar e validar.
+// camposEditoriaisPadrao: only the 3 fields that the journeys touch
+// (title/synopsis/tags) — enough for the SchemaForm to render and validate.
 export function camposEditoriaisPadrao(): FieldDescriptor[] {
   return [
     {
@@ -100,45 +100,45 @@ export function configuracaoIdiomaPadrao(): LanguageSettings {
   return { primary: 'pt-BR', fallback: 'en', allowed: ['pt-BR', 'en'] }
 }
 
-// envelopeErro monta o corpo `{error:{code,message}}` (0008) de uma resposta
-// não-2xx — o mesmo envelope que `erroDaResposta` (src/lib/api.ts) espera.
+// envelopeErro builds the `{error:{code,message}}` body of a non-2xx
+// response — the same envelope that `erroDaResposta` (src/lib/api.ts) expects.
 export function envelopeErro(code: string, message: string): ErrorBody {
   return { error: { code, message } }
 }
 
-// ── Estado em memória, por teste ────────────────────────────────────────────
-// Cada arquivo de teste popula estes mapas ANTES de `renderRota` — os handlers
-// abaixo leem daqui por `id`, para os mesmos handlers (paths reais do
-// contrato) servirem fixtures diferentes por jornada. Módulo reavaliado por
-// arquivo de teste (isolamento padrão do Vitest), então não há vazamento entre
-// arquivos.
+// ── In-memory state, per test ───────────────────────────────────────────────
+// Each test file populates these maps BEFORE `renderRota` — the handlers
+// below read from here by `id`, so the same handlers (real paths of the
+// contract) serve different fixtures per journey. Module re-evaluated per
+// test file (default Vitest isolation), so there is no leakage between
+// files.
 export const entidades = new Map<string, ResolvedEntity>()
 export const overridesPorEntidade = new Map<string, OverrideBlob>()
 export const artworkPorEntidade = new Map<string, ArtworkResponse>()
 export const arquivosPorEntidade = new Map<string, FileList>()
 
 export const handlers = [
-  // Config de idioma (LanguageProvider, montado por TODA rota via rootRoute).
+  // Language config (LanguageProvider, mounted by EVERY route via rootRoute).
   http.get('/api/v1/settings/languages', () =>
     HttpResponse.json(configuracaoIdiomaPadrao()),
   ),
 
-  // Descritores do formulário editorial (imutável entre deploys — um default
-  // fixo basta).
+  // Descriptors of the editorial form (immutable between deploys — a fixed
+  // default is enough).
   http.get('/api/v1/schema/entity-fields', () =>
     HttpResponse.json({ fields: camposEditoriaisPadrao() }),
   ),
 
-  // Tipos com dado catalogado (briefing 0110): o dropdown "Biblioteca" da
-  // navbar é montado por TODA rota (via `AppHeader`, no `rootRoute`) — `[]`
-  // default (nenhuma jornada MSW deste diretório exercita o CONTEÚDO do
-  // dropdown, só precisa não estourar `onUnhandledRequest: 'error'`). Path
-  // LITERAL registrado ANTES de `/api/v1/entities/:id` abaixo — MSW resolve
-  // handlers na ordem declarada, e `:id` casaria com "types" também.
+  // Types with cataloged data: the "Biblioteca" dropdown of the
+  // navbar is mounted by EVERY route (via `AppHeader`, in the `rootRoute`) — `[]`
+  // default (no MSW journey of this directory exercises the CONTENT of the
+  // dropdown, it only has to not blow up `onUnhandledRequest: 'error'`). The LITERAL
+  // path is registered BEFORE `/api/v1/entities/:id` below — MSW resolves
+  // handlers in the declared order, and `:id` would match "types" as well.
   http.get('/api/v1/entities/types', () => HttpResponse.json([])),
 
-  // Entidade resolvida por id (GET /entities/{id}) — 404 se o teste não a
-  // semeou em `entidades`.
+  // Resolved entity by id (GET /entities/{id}) — 404 if the test did not
+  // seed it in `entidades`.
   http.get('/api/v1/entities/:id', ({ params }) => {
     const entidade = entidades.get(String(params.id))
     if (!entidade) {
@@ -150,18 +150,18 @@ export const handlers = [
     return HttpResponse.json(entidade)
   }),
 
-  // Blob cru de override — `{}` (sem override) quando o teste não semeou nada.
+  // Raw override blob — `{}` (no override) when the test seeded nothing.
   http.get('/api/v1/entities/:id/override', ({ params }) =>
     HttpResponse.json(overridesPorEntidade.get(String(params.id)) ?? {}),
   ),
 
-  // Arte agrupada — vazio quando o teste não semeou nada (a galeria/selos
-  // ficam sem itens, sem quebrar a tela).
+  // Grouped artwork — empty when the test seeded nothing (the gallery/badges
+  // stay without items, without breaking the screen).
   http.get('/api/v1/entities/:id/artwork', ({ params }) =>
     HttpResponse.json(artworkPorEntidade.get(String(params.id)) ?? {}),
   ),
 
-  // Arquivos (mediainfo) — `[]` quando o teste não semeou nada.
+  // Files (mediainfo) — `[]` when the test seeded nothing.
   http.get('/api/v1/entities/:id/files', ({ params }) =>
     HttpResponse.json(
       arquivosPorEntidade.get(String(params.id)) ?? { items: [] },

@@ -4,13 +4,13 @@ import { AlertDialog as AlertDialogPrimitive } from 'radix-ui'
 import { cn } from '@/lib/utils'
 import { buttonVariants } from '@/components/ui/button'
 
-// AlertDialog (briefing 0086) — wrapper estilizado do primitivo radix-ui,
-// mesmo padrão de Sheet/Tooltip (pacote `radix-ui`, sem dependência nova).
-// Usado CONTROLADO (`open`/`onOpenChange`, sem `AlertDialogTrigger`) pela
-// confirmação de "Excluir coleção" — o item do dropdown fecha o menu ao ser
-// clicado, então a confirmação de 2 cliques que existia inline não cabe mais
-// ali; este modal separado é o padrão para ação destrutiva pós-fechamento de
-// menu.
+// AlertDialog — styled wrapper of the radix-ui primitive,
+// same pattern as Sheet/Tooltip (`radix-ui` package, no new dependency).
+// Used CONTROLLED (`open`/`onOpenChange`, without `AlertDialogTrigger`) by the
+// "Excluir coleção" confirmation — the dropdown item closes the menu when
+// clicked, so the 2-click confirmation that used to exist inline no longer fits
+// there; this separate modal is the standard for a destructive action after the
+// menu closes.
 
 function AlertDialog({
   ...props

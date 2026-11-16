@@ -19,18 +19,18 @@ import {
 } from '@/lib/api'
 import { aspectPorTipo, rotuloTipo } from '@/lib/entity-badges'
 
-// Invalidação após purgar (individual ou lote): a fila de órfãs muda e o grid
-// (`['entities']`) perde os cards purgados. Não há `['entity', id]` — a entity
-// deixou de existir.
+// Invalidation after purging (individual or batch): the orphan queue changes and the grid
+// (`['entities']`) loses the purged cards. There is no `['entity', id]` — the entity
+// no longer exists.
 function invalidarOrfas(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['orphans'] })
   qc.invalidateQueries({ queryKey: ['entities'] })
 }
 
-// Rota `/orphans` (0018): a fila de limpeza. Entidades auto-criadas cujo arquivo
-// sumiu e sem investimento do dono. A ÚNICA ação é a PURGA — destrutiva, por isso
-// sempre com confirmação EXPLÍCITA (um segundo passo na própria UI, sem
-// `window.confirm`): individual por card ou em lote pela seleção.
+// Route `/orphans`: the cleanup queue. Auto-created entities whose file
+// disappeared and with no investment from the owner. The ONLY action is the PURGE — destructive, which is why it
+// always has an EXPLICIT confirmation (a second step in the UI itself, without
+// `window.confirm`): individual per card or in batch through the selection.
 export function OrphansScreen() {
   const qc = useQueryClient()
   const { data, isPending, isError, error } = useQuery(orphansQueryOptions)
@@ -179,9 +179,9 @@ export function OrphansScreen() {
   )
 }
 
-// Confirmação explícita reutilizável (o segundo passo): a mensagem de aviso mais
-// os botões "Confirmar purga" (destrutivo) e "Cancelar". SEM `window.confirm` —
-// é estado da própria UI, testável e cancelável.
+// Reusable explicit confirmation (the second step): the warning message plus
+// the "Confirmar purga" (destructive) and "Cancelar" buttons. WITHOUT `window.confirm` —
+// it is state of the UI itself, testable and cancelable.
 function ConfirmacaoInline({
   mensagem,
   ocupado,

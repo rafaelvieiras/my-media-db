@@ -11,7 +11,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Saúde do serviço. */
+    /** Service health. */
     get: operations['getHealth']
     put?: never
     post?: never
@@ -29,8 +29,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Telemetria de sistema (banco + uso operacional + armazenamento).
-     * @description Snapshot LOCAL, sob demanda (briefing 0055): tamanho do banco (PRAGMA), retrato operacional (contagens de catálogo, filas de curadoria, uptime, memória/goroutines) e uso de disco por `library_source` cadastrada. SEPARADO de GET /api/v1/health de propósito — este é mais caro (N syscalls Statfs + agregações SQL) e não pode pesar o HEALTHCHECK do Docker, que bate em /health a cada 10s. Cacheado em memória por 60s: um reload logo em seguida devolve o MESMO `computed_at`. Uma fonte com `path` inacessível aparece com `offline:true`/`filesystem:null`, sem abortar as demais nem o endpoint inteiro.
+     * System telemetry (database + operational usage + storage).
+     * @description LOCAL snapshot, on demand: size of the database (PRAGMA), operational portrait (catalog counts, curation queues, uptime, memory/goroutines) and disk usage per registered `library_source`. SEPARATE from GET /api/v1/health on purpose — this one is more expensive (N Statfs syscalls + SQL aggregations) and must not weigh on the Docker HEALTHCHECK, which hits /health every 10s. Cached in memory for 60s: a reload right afterwards returns the SAME `computed_at`. A source with an unreachable `path` appears with `offline:true`/`filesystem:null`, without aborting the others nor the whole endpoint.
      */
     get: operations['getSystemHealth']
     put?: never
@@ -49,14 +49,14 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Lista paginada de entities (cards do catálogo).
-     * @description Cada item traz a posse DERIVADA (EXISTS media_file present), a contagem de arquivos, a confiança de match (badge de revisão) e o link do pôster quando há arte local. Filtros opcionais e ordenação por título.
+     * Paginated list of entities (catalog cards).
+     * @description Each item brings the DERIVED ownership (EXISTS media_file present), the file count, the match confidence (review badge) and the poster link when there is local artwork. Optional filters and ordering by title.
      */
     get: operations['listEntities']
     put?: never
     /**
-     * Cria um item local manual sem fonte externa (briefing 0027).
-     * @description Cria uma entity de mídia (type=movie|tv) LOCAL, sem external_ids, com os campos base dados pelo dono — para catalogar algo que a fonte não tem ou ainda não casou. Combina com PUT /entities/{id}/external-ids (fixar o id da fonte depois, para sincronizar). Responde 201 com a entity RESOLVIDA. 400 corpo inválido; 422 type fora de movie|tv ou título vazio.
+     * Creates a manual local item without an external source.
+     * @description Creates a LOCAL media entity (type=movie|tv), without external_ids, with the base fields given by the owner — to catalog something the source does not have or has not matched yet. Combines with PUT /entities/{id}/external-ids (fix the id of the source later, to synchronize). Answers 201 with the entity RESOLVED. 400 invalid body; 422 type outside movie|tv or empty title.
      */
     post: operations['createItem']
     delete?: never
@@ -73,8 +73,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Tipos de entity com dado catalogado (briefings 0109/0110).
-     * @description Devolve os `type` distintos com pelo menos 1 entity CATALOGADA (status != draft), ordenados por `count DESC, type ASC`, sem lista fixa — cobre qualquer tipo existente de fato no banco (ex.: movie, tv, album, artista, faixa). Alimenta os carrosséis "adicionados recentemente" da home (0109) e o dropdown de biblioteca da navbar (0110). Rota ESTÁTICA, resolvida antes de /entities/{id}.
+     * Entity types with cataloged data.
+     * @description Returns the distinct `type`s with at least 1 CATALOGED entity (status != draft), ordered by `count DESC, type ASC`, without a fixed list — it covers any type that actually exists in the database (e.g.: movie, tv, album, artista, faixa). It feeds the "adicionados recentemente" carousels of the home and the library dropdown of the navbar. STATIC route, resolved before /entities/{id}.
      */
     get: operations['listEntityTypes']
     put?: never
@@ -93,15 +93,15 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Entidade resolvida por idioma (camadas + cadeia de fallback).
-     * @description Resolve a entity no idioma pedido (?lang=, default = principal das settings), com a cadeia de fallback `pedido → fallback → original_language → arquivo` (ADR-0019). A resposta é PLANA e traz `resolved_languages` (mapa campo → idioma efetivo) e `lang` (eco do pedido). `lang` fora dos permitidos → 400.
+     * Entity resolved per language (layers + fallback chain).
+     * @description Resolves the entity in the requested language (?lang=, default = the primary from the settings), with the fallback chain `requested → fallback → original_language → arquivo` (ADR-0019). The response is FLAT and brings `resolved_languages` (map field → effective language) and `lang` (echo of the request). A `lang` outside the allowed ones → 400.
      */
     get: operations['getEntity']
     put?: never
     post?: never
     /**
-     * Purga individual de uma entity (briefing 0018).
-     * @description PURGA explícita (a única porta destrutiva, ADR-0012): apaga a entity; o ON DELETE CASCADE leva media_file/media_external/media_override/asset junto, e o diretório de binários de assets em disco é limpo best-effort. Nunca é efeito colateral de outra ação — sempre do dono, sempre explícita.
+     * Individual purge of an entity.
+     * @description Explicit PURGE (the only destructive door, ADR-0012): it deletes the entity; the ON DELETE CASCADE takes media_file/media_external/media_override/asset along, and the directory of asset binaries on disk is cleaned best-effort. It is never a side effect of another action — always the owner's, always explicit.
      */
     delete: operations['purgeEntity']
     options?: never
@@ -117,13 +117,13 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Config de idioma (principal, fallback, permitidos).
-     * @description Devolve a config de idioma vigente (ADR-0018). Quando ainda não há linha gravada, responde o default seguro (`pt-BR` / `en` / `[pt-BR, en]`).
+     * Language config (primary, fallback, allowed).
+     * @description Returns the current language config (ADR-0018). When there is no stored row yet, it answers the safe default (`pt-BR` / `en` / `[pt-BR, en]`).
      */
     get: operations['getLanguageSettings']
     /**
-     * Grava a config de idioma (com validação).
-     * @description Valida que `primary` e `fallback` ∈ `allowed` e que os códigos não são vazios, então persiste (upsert) e invalida o cache. 422 quando inválida.
+     * Writes the language config (with validation).
+     * @description Validates that `primary` and `fallback` ∈ `allowed` and that the codes are not empty, then persists (upsert) and invalidates the cache. 422 when invalid.
      */
     put: operations['putLanguageSettings']
     post?: never
@@ -141,13 +141,13 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Config de throttle do enriquecimento retroativo (briefing 0085).
-     * @description Devolve o intervalo mínimo (em dias) entre duas tentativas de enriquecimento retroativo do MESMO item, aplicado a bibliotecas sem override próprio (`Source.retroactive_enrichment_days`). Quando ainda não há linha gravada, responde o default seguro (`{"retry_days": 15}`).
+     * Throttle config of the retroactive enrichment.
+     * @description Returns the minimum interval (in days) between two retroactive enrichment attempts of the SAME item, applied to libraries without an override of their own (`Source.retroactive_enrichment_days`). When there is no stored row yet, it answers the safe default (`{"retry_days": 15}`).
      */
     get: operations['getEnrichmentRetroativoSettings']
     /**
-     * Grava a config de throttle do enriquecimento retroativo (com validação).
-     * @description Valida que `retry_days` está entre 1 e 365, então persiste (upsert) e invalida o cache. A partir da PRÓXIMA execução do job `saude_biblioteca`, bibliotecas sem override próprio passam a usar o novo valor, sem reiniciar o servidor. 422 quando fora do intervalo.
+     * Writes the throttle config of the retroactive enrichment (with validation).
+     * @description Validates that `retry_days` is between 1 and 365, then persists (upsert) and invalidates the cache. From the NEXT run of the `saude_biblioteca` job on, libraries without an override of their own start using the new value, without restarting the server. 422 when outside the range.
      */
     put: operations['putEnrichmentRetroativoSettings']
     post?: never
@@ -165,13 +165,13 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Toggle de materialização automática de artes (briefing 0089).
-     * @description Devolve se a materialização automática de artes está ligada. Quando ligada, todo auto-import bem-sucedido do scan (filme via auto-match imediato, ou série) já materializa na hora, na pasta real da biblioteca, as artes descobertas no inventário -- sem esperar o job periódico `midias_faltantes` nem clique manual. Quando ainda não há linha gravada, responde o default seguro (`{"enabled": false}`).
+     * Toggle of automatic artwork materialization.
+     * @description Returns whether the automatic materialization of artwork is on. When it is on, every successful auto-import of the scan (movie via immediate auto-match, or series) already materializes right away, into the real library folder, the artwork discovered in the inventory -- without waiting for the periodic `midias_faltantes` job nor a manual click. When there is no stored row yet, it answers the safe default (`{"enabled": false}`).
      */
     get: operations['getAutoMaterializeArtworkSettings']
     /**
-     * Grava o toggle de materialização automática de artes.
-     * @description Persiste (upsert) o toggle e invalida o cache. Escopo restrito ao caminho de AUTO-IMPORT do scan (filme novo auto-matchado, série nova) -- não afeta ações manuais (Corrigir, Confirmar candidato, Baixar Metadados, auto-match em lote), mesmo com o toggle ligado.
+     * Writes the toggle of automatic artwork materialization.
+     * @description Persists (upsert) the toggle and invalidates the cache. Scope restricted to the AUTO-IMPORT path of the scan (new auto-matched movie, new series) -- it does not affect manual actions (Corrigir, Confirmar candidato, Baixar Metadados, batch auto-match), even with the toggle on.
      */
     put: operations['putAutoMaterializeArtworkSettings']
     post?: never
@@ -189,13 +189,13 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Toggle de download automático de trailer/tema musical (briefing 0104, ADR-0026).
-     * @description Devolve se o download automático de trailer/tema musical está ligado. O toggle é compartilhado por DOIS mecanismos (ADR-0026 item 5): o job periódico `trailer_tema_faltantes` (sempre registrado/agendável, independente deste toggle) E o gatilho automático no scan -- quando ligado, todo auto-import bem-sucedido (filme via auto-match imediato, ou série) dispara, em background, uma tentativa de baixar trailer/tema para o item novo, sem esperar o job periódico nem clique manual e sem atrasar a resposta do scan. Quando ainda não há linha gravada, responde o default seguro (`{"enabled": false}`).
+     * Toggle of automatic trailer/theme song download (ADR-0026).
+     * @description Returns whether the automatic trailer/theme song download is on. The toggle is shared by TWO mechanisms (ADR-0026 item 5): the periodic `trailer_tema_faltantes` job (always registered/schedulable, regardless of this toggle) AND the automatic trigger in the scan -- when on, every successful auto-import (movie via immediate auto-match, or series) fires, in the background, an attempt to download a trailer/theme for the new item, without waiting for the periodic job nor a manual click and without delaying the scan response. When there is no stored row yet, it answers the safe default (`{"enabled": false}`).
      */
     get: operations['getAutoDownloadTrailerTemaSettings']
     /**
-     * Grava o toggle de download automático de trailer/tema musical.
-     * @description Persiste (upsert) o toggle e invalida o cache. Escopo restrito ao caminho de AUTO-IMPORT do scan (filme novo auto-matchado, série nova) -- não afeta o botão manual de trailer/tema (0102/0103), mesmo com o toggle ligado; o job periódico continua sempre agendável independente deste valor.
+     * Writes the toggle of automatic trailer/theme song download.
+     * @description Persists (upsert) the toggle and invalidates the cache. Scope restricted to the AUTO-IMPORT path of the scan (new auto-matched movie, new series) -- it does not affect the manual trailer/theme button, even with the toggle on; the periodic job remains always schedulable regardless of this value.
      */
     put: operations['putAutoDownloadTrailerTemaSettings']
     post?: never
@@ -213,13 +213,13 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Status do binário yt-dlp + path customizado (briefing 0101, ADR-0025).
-     * @description Fundação do downloader de YouTube reaproveitado por trailer (briefing 0102) e música-tema (briefing 0103). Devolve o status EFETIVO do yt-dlp: `disponivel` diz se há um binário utilizável agora; `origem` é `"custom"` (path do admin, banco ou env `MYMEDIADB_YTDLP_PATH`), `"baixado"` (baixado dinamicamente pelo próprio processo na 1ª necessidade) ou `"nenhum"` (indisponível); `detalhe` carrega o motivo quando `disponivel=false` (ex.: falha de download sem rede). `custom_binary_path` é o path atualmente gravado no BANCO (`null` quando não configurado -- distinto de `origem="custom"` via env, que nunca é ecoada por esta API). Precedência banco > env, mesmo espírito do ADR-0023.
+     * Status of the yt-dlp binary + custom path (ADR-0025).
+     * @description Foundation of the YouTube downloader reused by the trailer and the theme song. Returns the EFFECTIVE status of yt-dlp: `disponivel` says whether there is a usable binary now; `origem` is `"custom"` (admin path, database or the `MYMEDIADB_YTDLP_PATH` env), `"baixado"` (downloaded dynamically by the process itself on the 1st need) or `"nenhum"` (unavailable); `detalhe` carries the reason when `disponivel=false` (e.g.: download failure without network). `custom_binary_path` is the path currently stored in the DATABASE (`null` when not configured -- distinct from `origem="custom"` via env, which is never echoed by this API). Precedence database > env, the same spirit as ADR-0023.
      */
     get: operations['getYtdlpSettings']
     /**
-     * Grava (ou limpa) o path customizado do binário yt-dlp.
-     * @description Persiste (upsert) `custom_binary_path` em `app_settings` e sincroniza IMEDIATAMENTE o Gerenciador do yt-dlp -- efeito em runtime, sem reiniciar o servidor. `null` ou string vazia limpa o override (volta a herdar a env var `MYMEDIADB_YTDLP_PATH`/download automático). Devolve o mesmo shape do GET, já com o status recalculado.
+     * Writes (or clears) the custom path of the yt-dlp binary.
+     * @description Persists (upsert) `custom_binary_path` in `app_settings` and synchronizes the yt-dlp Manager IMMEDIATELY -- runtime effect, without restarting the server. `null` or an empty string clears the override (it inherits the `MYMEDIADB_YTDLP_PATH` env var/automatic download again). Returns the same shape as the GET, already with the recalculated status.
      */
     put: operations['putYtdlpSettings']
     post?: never
@@ -237,13 +237,13 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Config de completude de catalogação, por tipo (briefing 0057).
-     * @description Devolve a config vigente de "completude de catalogação" — quais campos e artes o dono considera desejáveis para um item de cada `entity.type` estar bem catalogado (conceito DIFERENTE de completude de POSSE, ver `web/src/lib/entity-badges.ts`). Quando ainda não há chave `catalog_completeness` gravada em `app_settings`, responde o default de fábrica (`description` + `media_file` + `artwork:[poster]` marcados para `movie` e `tv`, resto desmarcado) sem gravar nada.
+     * Cataloging completeness config, per type.
+     * @description Returns the current "cataloging completeness" config — which fields and artwork the owner considers desirable for an item of each `entity.type` to be well cataloged (a concept DIFFERENT from OWNERSHIP completeness, see `web/src/lib/entity-badges.ts`). When there is no `catalog_completeness` key stored in `app_settings` yet, it answers the factory default (`description` + `media_file` + `artwork:[poster]` marked for `movie` and `tv`, the rest unmarked) without writing anything.
      */
     get: operations['getCatalogCompletenessSettings']
     /**
-     * Grava a config de completude de catalogação (substituição total).
-     * @description Substitui a config inteira (não é PATCH parcial — mesmo padrão do PUT /settings/languages: o formulário sempre manda o objeto completo). Valida que cada chave de tipo não é vazia (`""`) e que cada item de `artwork` pertence ao registro de kinds válidos do sistema (`internal/server/assets.go`); tipos sem entrada (`{}`) são aceitos e equivalem a "nada exigido" para os tipos ausentes. Responde o eco da config gravada. 400 corpo não é objeto JSON válido; 422 chave de tipo vazia ou kind de arte desconhecido.
+     * Writes the cataloging completeness config (total replacement).
+     * @description Replaces the whole config (it is not a partial PATCH — same pattern as PUT /settings/languages: the form always sends the complete object). It validates that each type key is not empty (`""`) and that each `artwork` item belongs to the registry of valid kinds of the system (`internal/server/assets.go`); types without an entry (`{}`) are accepted and mean "nothing required" for the absent types. It answers the echo of the stored config. 400 body is not a valid JSON object; 422 empty type key or unknown artwork kind.
      */
     put: operations['putCatalogCompletenessSettings']
     post?: never
@@ -261,8 +261,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Lista as integrações configuráveis registradas (briefing 0095, ADR-0023).
-     * @description Fundação de config de integração gravável em banco, com precedência sobre a variável de ambiente — hoje só `tmdb` está registrado (TVDB e fanart.tv seguem via env var direto, fora de escopo). Para cada integração, resolve o valor EFETIVO (banco → env var → ausente) de cada campo e calcula `configurada` via a regra própria do provider (ex.: TMDB aceita `token` OU `api_key`). Sem UI própria nesta entrega — consumida pelo briefing 0096.
+     * Lists the registered configurable integrations (ADR-0023).
+     * @description Foundation of the integration config that can be written to the database, with precedence over the environment variable — today only `tmdb` is registered (TVDB and fanart.tv still go through the env var directly, out of scope). For each integration, it resolves the EFFECTIVE value (database → env var → absent) of each field and computes `configurada` via the provider's own rule (e.g.: TMDB accepts `token` OR `api_key`). No UI of its own in this delivery — consumed by the integration screen.
      */
     get: operations['listIntegrations']
     put?: never
@@ -281,13 +281,13 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Schema de campos + valor efetivo de UMA integração (briefing 0095).
-     * @description Devolve o schema de campos da integração (`token`/`api_key` para o TMDB) junto do valor EFETIVO de cada um (banco → env var → ausente). Um campo `tipo:"secret"` NUNCA devolve `valor` cru — só `definido` (se há algum valor efetivo) e `origem` (`"banco"`, `"env"` ou `"nenhum"`). 404 se o slug não está registrado.
+     * Field schema + effective value of ONE integration.
+     * @description Returns the field schema of the integration (`token`/`api_key` for TMDB) together with the EFFECTIVE value of each one (database → env var → absent). A field `tipo:"secret"` NEVER returns the raw `valor` — only `definido` (whether there is any effective value) and `origem` (`"banco"`, `"env"` or `"nenhum"`). 404 if the slug is not registered.
      */
     get: operations['getIntegration']
     /**
-     * Grava (parcialmente) os valores de UMA integração (briefing 0095).
-     * @description Upsert PARCIAL em `integration_config`: só as chaves presentes em `valores` mudam; um valor `null` REMOVE a chave (o campo volta a herdar a env var de bootstrap/fallback, ou fica `origem:"nenhum"` se ela também estiver vazia). Não bloqueia por obrigatoriedade ausente — o dono pode salvar parcialmente (reflete só em `configurada:false` na listagem). Sem hot-reload: um provider já construído no boot (ex. o TMDB do busca externa) só passa a usar o novo valor após reiniciar o processo (ADR-0023). 404 se o slug não está registrado; 422 se `valores` vier vazio ou citar uma chave que não é um campo do schema desta integração.
+     * Writes (partially) the values of ONE integration.
+     * @description PARTIAL upsert in `integration_config`: only the keys present in `valores` change; a `null` value REMOVES the key (the field inherits the bootstrap/fallback env var again, or stays `origem:"nenhum"` if that one is also empty). It does not block on a missing required value — the owner can save partially (it only reflects as `configurada:false` in the listing). No hot-reload: a provider already built at boot (e.g. the TMDB of the external search) only starts using the new value after restarting the process (ADR-0023). 404 if the slug is not registered; 422 if `valores` comes empty or cites a key that is not a field of the schema of this integration.
      */
     put: operations['putIntegration']
     post?: never
@@ -305,8 +305,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Descritor do formulário editorial dirigido por schema (briefing 0030).
-     * @description Devolve os DESCRITORES de campo do formulário editorial, derivados da fonte única `resolver.CamposEditaveis()` combinada com o registro de apresentação (label/grupo/widget/ordem/faixa). O front monta os inputs e a validação de cliente a partir daqui — sem redigitar a lista de campos. Metadado estático (imutável entre deploys), sem autenticação e cacheável. A lista sai ORDENADA por `order` crescente. O `extension_data` fica de fora (não é campo de formulário simples).
+     * Descriptor of the schema-driven editorial form.
+     * @description Returns the field DESCRIPTORS of the editorial form, derived from the single source `resolver.CamposEditaveis()` combined with the presentation registry (label/group/widget/order/range). The front builds the inputs and the client validation from here — without retyping the list of fields. Static metadata (immutable between deploys), without authentication and cacheable. The list comes out SORTED by increasing `order`. The `extension_data` stays out (it is not a simple form field).
      */
     get: operations['getEntityFieldsSchema']
     put?: never
@@ -327,8 +327,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Enriquece uma entity existente a partir do provider (briefing 0015).
-     * @description Puxa o detalhe da fonte e grava a camada externa (media_external, payload cru) + a identidade (external_ids) + o pôster cacheado; NÃO toca override nem arte do dono (não-destrutivo). Corpo opcional: sem source usa "tmdb"; sem source_id usa external_ids[source] da entity (422 se não houver id). Responde a entity RESOLVIDA (com os dados externos compostos). MULTI-IDIOMA (briefing 0020): a fonte puxa TODAS as traduções permitidas (settings.allowed) numa só ida e grava um payload AUMENTADO tagueado por idioma, além de gravar entity.original_language (âncora do fallback). O shape RESOLVIDO desta resposta não muda — só passa a ter mais idiomas para o `?lang=` do GET /entities/{id} servir. `force: true` (briefing 0088) ignora o cache de 24h de `external_detail` e busca sempre o detalhe mais recente do provider — sem `force` (ou `force: false`) o cache continua sendo servido normalmente.
+     * Enriches an existing entity from the provider.
+     * @description It fetches the detail from the source and writes the external layer (media_external, raw payload) + the identity (external_ids) + the cached poster; it does NOT touch the override nor the owner's artwork (non-destructive). Optional body: without source it uses "tmdb"; without source_id it uses external_ids[source] of the entity (422 if there is no id). It answers the entity RESOLVED (with the composed external data). MULTILANGUAGE: the source fetches ALL the allowed translations (settings.allowed) in a single round trip and writes an AUGMENTED payload tagged by language, besides writing entity.original_language (the anchor of the fallback). The RESOLVED shape of this response does not change — it simply has more languages for the `?lang=` of GET /entities/{id} to serve. `force: true` ignores the 24h cache of `external_detail` and always fetches the most recent detail from the provider — without `force` (or with `force: false`) the cache keeps being served normally.
      */
     post: operations['enrichEntity']
     delete?: never
@@ -346,8 +346,8 @@ export interface paths {
     }
     get?: never
     /**
-     * Edita a identidade externa da entity (briefing 0027).
-     * @description Grava o mapa COMPLETO de external_ids (source -> id na fonte). As colunas geradas external_id_tmdb/imdb re-derivam do JSON, então fixar o id prepara uma sincronização futura (o dono corrige o id quando a fonte muda/apaga/funde). Um valor vazio remove aquela fonte. NÃO re-enriquece (o dono chama /enrich depois). Responde 200 com a entity RESOLVIDA. 404 entity inexistente; 400 corpo inválido; 422 chave (source) vazia.
+     * Edits the external identity of the entity.
+     * @description Writes the COMPLETE map of external_ids (source -> id in the source). The generated columns external_id_tmdb/imdb re-derive from the JSON, so fixing the id prepares a future synchronization (the owner corrects the id when the source changes/deletes/merges). An empty value removes that source. It does NOT re-enrich (the owner calls /enrich afterwards). Answers 200 with the entity RESOLVED. 404 entity does not exist; 400 invalid body; 422 empty (source) key.
      */
     put: operations['updateExternalIds']
     post?: never
@@ -365,22 +365,22 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Blob CRU do override do dono (briefing 0016).
-     * @description Devolve o `override_json` tal como GUARDADO (`{}` quando não há override), para a UI distinguir "overridado" de "herdado" POR CAMPO e POR IDIOMA. Não reinterpreta os valores — o resolver interpreta na leitura da entity. Campos traduzíveis (title/description/tags) aparecem como MAPA por idioma (`{"pt-BR":…, "en":…}`); campos neutros (original_title/release_date/ extension_data) como o escalar/objeto direto. 404 se a entity não existe.
+     * RAW blob of the owner override.
+     * @description Returns the `override_json` as STORED (`{}` when there is no override), so the UI can distinguish "overridden" from "inherited" PER FIELD and PER LANGUAGE. It does not reinterpret the values — the resolver interprets them when reading the entity. Translatable fields (title/description/tags) appear as a MAP by language (`{"pt-BR":…, "en":…}`); neutral fields (original_title/release_date/ extension_data) as the scalar/object directly. 404 if the entity does not exist.
      */
     get: operations['getOverride']
     put?: never
     post?: never
     /**
-     * Reset — apaga o override inteiro (briefing 0016).
-     * @description Remove a linha de override da entity: todos os campos voltam a HERDAR a base (externo/arquivo). Responde a entity RESOLVIDA. 404 se a entity não existe.
+     * Reset — deletes the whole override.
+     * @description Removes the override row of the entity: every field INHERITS the base again (external/file). It answers the entity RESOLVED. 404 if the entity does not exist.
      */
     delete: operations['resetOverride']
     options?: never
     head?: never
     /**
-     * Funde um patch esparso de override, POR IDIOMA (briefing 0016).
-     * @description MERGE ESPARSO de 2 níveis sobre o `override_json`. O `?lang=` é o PINCEL dos campos traduzíveis: cada chave traduzível do corpo é fundida em `override[campo][lang]` (deep-merge preservando os outros idiomas do campo; um override escalar LEGADO migra para `{principal: <legado>}` antes). Campos NEUTROS fundem o escalar em `override[campo]` (o `lang` é ignorado para eles). `null` no idioma é valor VÁLIDO = "definir vazio" (apaga a base e interrompe o fallback naquele idioma — distinto de LIMPAR via DELETE). `lang` default = principal; fora dos permitidos → 400. Responde a entity RESOLVIDA no `lang`. Chave não-editorial ou forma inválida → 422.
+     * Merges a sparse override patch, PER LANGUAGE.
+     * @description 2-level SPARSE MERGE over the `override_json`. The `?lang=` is the BRUSH of the translatable fields: each translatable key of the body is merged into `override[campo][lang]` (deep merge preserving the other languages of the field; a LEGACY scalar override migrates to `{principal: <legado>}` beforehand). NEUTRAL fields merge the scalar into `override[campo]` (the `lang` is ignored for them). `null` in the language is a VALID value = "set empty" (it deletes the base and stops the fallback in that language — distinct from CLEARING through DELETE). `lang` default = primary; outside the allowed ones → 400. It answers the entity RESOLVED in the `lang`. A non-editorial key or an invalid shape → 422.
      */
     patch: operations['patchOverride']
     trace?: never
@@ -396,8 +396,8 @@ export interface paths {
     put?: never
     post?: never
     /**
-     * Limpar override de um campo (por idioma ou inteiro, briefing 0016).
-     * @description LIMPAR override (≠ definir vazio). Campo TRADUZÍVEL COM `?lang=` remove só `override[campo][lang]` (e a chave campo se o mapa esvaziar). Campo traduzível SEM `?lang=`, ou campo NEUTRO, remove a chave campo INTEIRA (todos os idiomas). Remover chave ausente é idempotente (200). Se o blob esvaziar, a linha de override é removida. Responde a entity RESOLVIDA. `{campo}` não editorial → 422; `lang` presente fora dos permitidos → 400; entity inexistente → 404.
+     * Clear the override of a field (per language or entirely).
+     * @description CLEAR override (≠ set empty). A TRANSLATABLE field WITH `?lang=` removes only `override[campo][lang]` (and the field key if the map empties). A translatable field WITHOUT `?lang=`, or a NEUTRAL field, removes the WHOLE field key (all languages). Removing an absent key is idempotent (200). If the blob empties, the override row is removed. It answers the entity RESOLVED. A non-editorial `{campo}` → 422; a `lang` present outside the allowed ones → 400; entity does not exist → 404.
      */
     delete: operations['clearOverrideField']
     options?: never
@@ -412,7 +412,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Arquivos (media_file) da entity com mediainfo. */
+    /** Files (media_file) of the entity with mediainfo. */
     get: operations['getEntityFiles']
     put?: never
     post?: never
@@ -430,14 +430,14 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Membros de uma coleção (briefing 0025).
-     * @description Os filmes ligados a uma entity `type='collection'` por `entity_relation(kind='collection')`, como CARDS (o mesmo shape de GET /entities), ordenados por ANO ascendente (sem ano ao fim). `[]` quando a entity não é coleção ou não tem membros; 404 quando a entity não existe. O `?lang=` é aceito para paridade, mas o card usa o título base (como a lista).
+     * Members of a collection.
+     * @description The movies linked to an entity `type='collection'` by `entity_relation(kind='collection')`, as CARDS (the same shape as GET /entities), ordered by YEAR ascending (without a year at the end). `[]` when the entity is not a collection or has no members; 404 when the entity does not exist. The `?lang=` is accepted for parity, but the card uses the base title (like the list).
      */
     get: operations['getEntityMembers']
     put?: never
     /**
-     * Liga um item à coleção como membro (briefing 0025, Fase B).
-     * @description Liga o item `child_id` à coleção `id` por `entity_relation(kind='collection')`. Valida que o pai existe e é uma coleção (senão 404/422), e que o filho existe, não é ele mesmo e não é outra coleção (sem aninhamento). Idempotente (religar não duplica). Devolve a lista de membros ATUALIZADA (mesmo shape e ordenação por ano de GET).
+     * Links an item to the collection as a member (Phase B).
+     * @description Links the item `child_id` to the collection `id` by `entity_relation(kind='collection')`. It validates that the parent exists and is a collection (otherwise 404/422), and that the child exists, is not itself and is not another collection (no nesting). Idempotent (re-linking does not duplicate). It returns the UPDATED member list (same shape and year ordering as the GET).
      */
     post: operations['addCollectionMember']
     delete?: never
@@ -457,8 +457,8 @@ export interface paths {
     put?: never
     post?: never
     /**
-     * Desliga um membro da coleção (briefing 0025, Fase B).
-     * @description Remove a ligação `entity_relation(kind='collection')` entre a coleção `id` e o item `childId`. Idempotente (desligar o que não está ligado é no-op). 404 quando a coleção não existe. Devolve a lista de membros ATUALIZADA.
+     * Unlinks a member from the collection (Phase B).
+     * @description Removes the `entity_relation(kind='collection')` link between the collection `id` and the item `childId`. Idempotent (unlinking what is not linked is a no-op). 404 when the collection does not exist. It returns the UPDATED member list.
      */
     delete: operations['removeCollectionMember']
     options?: never
@@ -474,8 +474,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Episódios da série agrupados por ordem de exibição (briefing 0040).
-     * @description Devolve TODOS os episódios da série (descendentes via a árvore série→temporada→episódio) AGRUPADOS e ordenados pela ordem `ordering` (official/dvd/absolute…), projetados na LEITURA a partir do `numbering` gravado no import (core.tv@1) — ADR-0021: ordens ALTERNATIVAS não viram entidade de temporada, são agrupadas aqui no server (cabeçalhos de temporada são rótulos, só o episódio é navegável). Cada card traz `numbering` já naquela ordem. `ordering` ausente ou inválido cai no default da série; `absolute` é uma ordem especial (grupo único corrido por `absolute_number`). Episódio sem numeração naquela ordem cai num grupo "Sem numeração" ao fim. Entity que não é série → grupos vazios; 404 quando a entity não existe.
+     * Episodes of the series grouped by display order.
+     * @description Returns ALL the episodes of the series (descendants via the series→season→episode tree) GROUPED and ordered by the `ordering` order (official/dvd/absolute…), projected ON READ from the `numbering` stored at import (core.tv@1) — ADR-0021: ALTERNATIVE orders do not become a season entity, they are grouped here on the server (season headers are labels, only the episode is navigable). Each card brings the `numbering` already in that order. An absent or invalid `ordering` falls back to the default of the series; `absolute` is a special order (a single continuous group by `absolute_number`). An episode without numbering in that order falls into a "Sem numeração" group at the end. An entity that is not a series → empty groups; 404 when the entity does not exist.
      */
     get: operations['getEntityEpisodes']
     put?: never
@@ -494,8 +494,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Serve o binário do pôster local (image/*).
-     * @description Devolve o arquivo de pôster com o content-type correto. 404 quando não há arte (a UI cai no placeholder); 403 quando o caminho gravado não está sob um datasource conhecido (guarda de path-traversal).
+     * Serves the binary of the local poster (image/*).
+     * @description Returns the poster file with the correct content-type. 404 when there is no artwork (the UI falls back to the placeholder); 403 when the stored path is not under a known datasource (path-traversal guard).
      */
     get: operations['getEntityPoster']
     put?: never
@@ -514,14 +514,14 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Galeria de arte da entity (briefing 0017).
-     * @description Lista os assets da entity (poster/fanart), cada um com origem (`user` do dono × `external` cacheado × `local` do scanner), a flag `preferred` (lida do `meta_json`) e a `url` do binário (rota do /file). `[]` quando não há arte; 404 se a entity não existe.
+     * Artwork gallery of the entity.
+     * @description Lists the assets of the entity (poster/fanart), each one with its origin (`user` from the owner × cached `external` × `local` from the scanner), the `preferred` flag (read from the `meta_json`) and the `url` of the binary (route of the /file). `[]` when there is no artwork; 404 if the entity does not exist.
      */
     get: operations['listAssets']
     put?: never
     /**
-     * Upload de arte custom do dono (origin=user, briefing 0017).
-     * @description Recebe multipart/form-data — campo `file` (o binário) + campo `kind` (`poster`|`fanart`, default `poster`). O tipo é validado pelos MAGIC BYTES (não pela extensão nem pelo header do cliente): só `image/jpeg|png|webp`. Tamanho ≤ 20 MiB. Grava o binário atomicamente sob o diretório de assets e cria o asset `origin='user'`. Subir arte já a faz o pôster ser servido (vence a externa). 201 com o asset criado.
+     * Upload of custom artwork by the owner (origin=user).
+     * @description Receives multipart/form-data — field `file` (the binary) + field `kind` (`poster`|`fanart`, default `poster`). The type is validated by the MAGIC BYTES (not by the extension nor by the client header): only `image/jpeg|png|webp`. Size ≤ 20 MiB. It writes the binary atomically under the assets directory and creates the asset `origin='user'`. Uploading artwork already makes the poster be served (it beats the external one). 201 with the created asset.
      */
     post: operations['uploadAsset']
     delete?: never
@@ -538,8 +538,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Serve o binário de um asset específico (image/*).
-     * @description Miniaturas da galeria: devolve o arquivo do asset com o content-type correto e a MESMA guarda de path-traversal do pôster. O `assetId` precisa pertencer à entity. 404 quando não existe/binário sumiu; 403 fora das raízes confiáveis.
+     * Serves the binary of a specific asset (image/*).
+     * @description Thumbnails of the gallery: it returns the file of the asset with the correct content-type and the SAME path-traversal guard as the poster. The `assetId` has to belong to the entity. 404 when it does not exist/the binary is gone; 403 outside the trusted roots.
      */
     get: operations['getAssetFile']
     put?: never
@@ -559,8 +559,8 @@ export interface paths {
     }
     get?: never
     /**
-     * Marca o asset como preferido/principal do seu kind (briefing 0017; estendido no 0062).
-     * @description Seta `meta.preferred=true` no asset e LIMPA a flag dos outros do mesmo `(entity, kind)` — uma preferida por kind. Preserva as demais chaves do `meta_json`. Desde o briefing 0062: se o asset ainda não tem `local_path` (não materializado na pasta real), materializa primeiro — MESMO efeito de POST .../assets/{assetId}/materialize, incluindo o download para o cache se necessário (reusa a função de download do 0048). Em seguida RENOMEIA os arquivos físicos do mesmo `kind`/pasta para refletir a nova ordem: o antigo principal (se houver) vira o próximo sufixo numérico livre (`os.Rename`, nunca recopia bytes), o novo principal assume o nome bare (ex. `poster.jpg`). Seta `is_principal=1` no asset (e `0` no que era principal antes do mesmo par) — fonte de verdade em coluna própria, substituindo `meta_json.preferred` para o código novo. 200 com o asset atualizado (`local_path`/`is_principal` refletidos); 404 asset/entity inexistente OU entity sem `media_file` presente (sem pasta de destino para materializar/renomear); 502 se a materialização exigir download e ele falhar; 503 sem diretório de assets (cache) configurado.
+     * Marks the asset as preferred/principal of its kind (extended later).
+     * @description Sets `meta.preferred=true` on the asset and CLEARS the flag of the others of the same `(entity, kind)` — one preferred per kind. It preserves the other keys of the `meta_json`. If the asset has no `local_path` yet (not materialized in the real folder), it materializes first — the SAME effect as POST .../assets/{assetId}/materialize, including the download to the cache if necessary (it reuses the download function). Then it RENAMES the physical files of the same `kind`/folder to reflect the new order: the former principal (if any) becomes the next free numeric suffix (`os.Rename`, it never recopies bytes), the new principal takes the bare name (e.g. `poster.jpg`). It sets `is_principal=1` on the asset (and `0` on the one that was principal before, of the same pair) — the source of truth in its own column, replacing `meta_json.preferred` for the new code. 200 with the updated asset (`local_path`/`is_principal` reflected); 404 asset/entity does not exist OR entity without a present `media_file` (no destination folder to materialize/rename); 502 if the materialization requires a download and it fails; 503 without an assets (cache) directory configured.
      */
     put: operations['preferAsset']
     post?: never
@@ -581,8 +581,8 @@ export interface paths {
     put?: never
     post?: never
     /**
-     * Remove uma arte do dono (origin=user, briefing 0017).
-     * @description Apaga a linha do asset + o binário (best-effort). Recusa (422) apagar arte `origin='external'`: é cache re-puxável que some sozinho no re-enrich (não-destrutivo). 200 com o asset removido; 404 se não existe/não é da entity.
+     * Removes an artwork of the owner (origin=user).
+     * @description Deletes the asset row + the binary (best-effort). It refuses (422) to delete `origin='external'` artwork: it is a re-fetchable cache that disappears on its own in the re-enrich (non-destructive). 200 with the removed asset; 404 if it does not exist/does not belong to the entity.
      */
     delete: operations['deleteAsset']
     options?: never
@@ -600,8 +600,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Grava a arte fisicamente na pasta real da biblioteca (briefing 0062).
-     * @description Baixa a arte para o cache interno (`assetsDir`) se `path_or_uri` ainda não estiver materializado lá (reusa a função de download do 0048) e em seguida grava uma CÓPIA física dentro da pasta real da biblioteca, no nome canônico Kodi/Emby calculado por `internal/localmedia/naming.go` (bare name se for o único vídeo/único `is_principal` do kind na pasta; senão prefixado pelo nome do vídeo ou sufixo numérico de rotação). Escrita atômica (arquivo temporário + rename). Para um candidato que ainda não existe como `asset` (item do inventário lazy do fanart.tv/TMDB ainda não selecionado), a UI encadeia primeiro POST .../artwork/select (que cria o asset) e só então chama este endpoint. 200 com o `asset` atualizado, com `local_path` preenchido; 404 se o asset/entity não existe OU a entity não tem nenhum `media_file` presente (sem pasta de destino); 502 se o download para o cache falhar; 503 sem diretório de assets (cache) configurado.
+     * Writes the artwork physically into the real library folder.
+     * @description Downloads the artwork to the internal cache (`assetsDir`) if `path_or_uri` is not materialized there yet (it reuses the download function) and then writes a physical COPY inside the real library folder, under the canonical Kodi/Emby name computed by `internal/localmedia/naming.go` (bare name if it is the only video/only `is_principal` of the kind in the folder; otherwise prefixed by the video name or a rotation numeric suffix). Atomic write (temporary file + rename). For a candidate that does not exist as an `asset` yet (item of the lazy inventory of fanart.tv/TMDB not selected yet), the UI chains POST .../artwork/select first (which creates the asset) and only then calls this endpoint. 200 with the updated `asset`, with `local_path` filled in; 404 if the asset/entity does not exist OR the entity has no present `media_file` (no destination folder); 502 if the download to the cache fails; 503 without an assets (cache) directory configured.
      */
     post: operations['materializeAsset']
     delete?: never
@@ -618,8 +618,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Arte disponível agrupada por kind (briefing 0048).
-     * @description Mescla três fontes por kind: os assets LOCAIS do dono (upload `origin='user'` e cache `origin='external'`), o pôster/fundo das camadas externas com provider (ex.: TMDB) e o INVENTÁRIO lazy da fanart.tv (`media_external source='fanarttv'`, sem baixar binários). Toda `url` já sai passada pelo proxy de imagem, então a UI não depende do CDN da fonte. Traz também `available: {kind: count}` para os selos do card. Desde o briefing 0062, cada item também traz `is_local_in_library` (`local_path != null`) e `is_principal`, e cada array por kind sai ORDENADO: `is_principal` desc, `is_local_in_library` desc, ordem original preservada asc (mesmo agregador `montarGruposArtwork`, só acrescenta o sort no fim). Só leitura. 404 se a entity não existe; 503 sem persistência.
+     * Available artwork grouped by kind.
+     * @description It merges three sources per kind: the LOCAL assets of the owner (upload `origin='user'` and cache `origin='external'`), the poster/backdrop of the external layers with a provider (e.g.: TMDB) and the lazy INVENTORY of fanart.tv (`media_external source='fanarttv'`, without downloading binaries). Every `url` already comes through the image proxy, so the UI does not depend on the CDN of the source. It also brings `available: {kind: count}` for the badges of the card. Each item also brings `is_local_in_library` (`local_path != null`) and `is_principal`, and each array per kind comes out SORTED: `is_principal` desc, `is_local_in_library` desc, original order preserved asc (the same `montarGruposArtwork` aggregator, it only adds the sort at the end). Read-only. 404 if the entity does not exist; 503 without persistence.
      */
     get: operations['getEntityArtwork']
     put?: never
@@ -640,8 +640,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Baixa a arte selecionada do inventário (briefing 0048).
-     * @description A AÇÃO da decisão "listar no import, baixar SÓ a selecionada": recebe a `url` de UMA arte do inventário (fanart.tv/TMDB) e o `kind`, BAIXA o binário e o materializa como asset `origin='external'`, guardando a url de origem no `meta_json`. Idempotente: se já existe asset external com a mesma url+kind, reusa sem rebaixar. Com `prefer=true`, marca-a como preferida (uma por kind). Segurança (anti-SSRF): o corpo é do usuário, então o HOST da url é validado contra a MESMA allowlist do proxy de imagem — host fora → 422. 200 com o asset; 404 entity inexistente; 422 kind fora do conjunto ou host não permitido; 502 se o download falhar; 503 sem diretório de assets.
+     * Downloads the selected artwork of the inventory.
+     * @description The ACTION of the decision "list on import, download ONLY the selected one": it receives the `url` of ONE artwork of the inventory (fanart.tv/TMDB) and the `kind`, DOWNLOADS the binary and materializes it as an asset `origin='external'`, keeping the origin url in the `meta_json`. Idempotent: if an external asset with the same url+kind already exists, it reuses it without downloading again. With `prefer=true`, it marks it as preferred (one per kind). Security (anti-SSRF): the body is the user's, so the HOST of the url is validated against the SAME allowlist of the image proxy — a host outside it → 422. 200 with the asset; 404 entity does not exist; 422 kind outside the set or host not allowed; 502 if the download fails; 503 without an assets directory.
      */
     post: operations['selectArtwork']
     delete?: never
@@ -658,8 +658,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Busca local-first no catálogo + fonte externa (briefing 0014).
-     * @description Consulta SEMPRE o catálogo local (FTS5) e devolve cards no mesmo shape da lista. Quando há provider externo configurado (ex.: TMDB), acrescenta resultados "não salvos" (saved:false) — a busca nunca cria entidade. `external_available:false` separa "fonte indisponível/não configurada" de "zero resultados". Falha/timeout do externo degrada (external:[]) sem 5xx.
+     * Local-first search in the catalog + external source.
+     * @description It ALWAYS queries the local catalog (FTS5) and returns cards in the same shape as the list. When there is an external provider configured (e.g.: TMDB), it adds "not saved" results (saved:false) — the search never creates an entity. `external_available:false` separates "source unavailable/not configured" from "zero results". A failure/timeout of the external one degrades (external:[]) without a 5xx.
      */
     get: operations['search']
     put?: never
@@ -680,8 +680,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Import explícito de um resultado externo (find-or-create, briefing 0015).
-     * @description Find-or-create por id externo (dedup MD4): se já existe entity com aquele external_id, reusa (200); senão cria (201, status cataloged, título inicial do detalhe). Em ambos os casos enriquece pelo mesmo caminho (grava external + external_ids + pôster cacheado, nunca override). Responde a entity RESOLVIDA. MULTI-IDIOMA (briefing 0020): puxa todas as traduções permitidas e grava entity.original_language — ver POST /entities/{id}/enrich. `type=collection` (0025) importa a coleção inteira: cria a entity da coleção, importa cada filme membro (find-or-create) e os liga por entity_relation.
+     * Explicit import of an external result (find-or-create).
+     * @description Find-or-create by external id (MD4 dedup): if an entity with that external_id already exists, it reuses it (200); otherwise it creates it (201, status cataloged, initial title from the detail). In both cases it enriches through the same path (it writes external + external_ids + cached poster, never an override). It answers the entity RESOLVED. MULTILANGUAGE: it fetches all the allowed translations and writes entity.original_language — see POST /entities/{id}/enrich. `type=collection` imports the whole collection: it creates the collection entity, imports each member movie (find-or-create) and links them by entity_relation.
      */
     post: operations['importEntity']
     delete?: never
@@ -700,8 +700,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Cria uma coleção local manual (briefing 0025, Fase B).
-     * @description Cria uma entity `type='collection'` LOCAL (sem fonte externa) com o título e a descrição dados pelo dono. Ao contrário do import de coleção (0025 Fase A), não há fonte: a coleção nasce vazia e os membros entram depois por POST /entities/{id}/members. Responde 201 com a entity RESOLVIDA. 400 corpo inválido; 422 título vazio.
+     * Creates a manual local collection (Phase B).
+     * @description Creates a LOCAL `type='collection'` entity (without an external source) with the title and the description given by the owner. Unlike the collection import (Phase A), there is no source: the collection is born empty and the members come in later through POST /entities/{id}/members. It answers 201 with the entity RESOLVED. 400 invalid body; 422 empty title.
      */
     post: operations['createCollection']
     delete?: never
@@ -718,8 +718,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Detalhe externo rico antes de importar (briefing 0022).
-     * @description Detalhe COMPLETO de um item externo (como o TMDB), para o dono decidir importar: título/título original, sinopse, slogan, gêneros e palavras-chave, duração, classificação indicativa (por região do idioma ativo, fallback US), pôster e fundo, vídeos, coleção, similares (navegáveis), nota externa e links. PERSISTE na 1ª chamada (cache re-componível) e serve do cache nas seguintes (refresh por TTL ou quando o conjunto de idiomas permitidos muda). Resolve os campos traduzíveis no idioma ativo. Ver o externo NUNCA cria entity. SEM elenco/equipe (MD6) nem nota local — briefings próprios.
+     * Rich external detail before importing.
+     * @description COMPLETE detail of an external item (like TMDB), so the owner can decide to import: title/original title, synopsis, tagline, genres and keywords, runtime, content rating (by region of the active language, US fallback), poster and backdrop, videos, collection, similars (navigable), external rating and links. It PERSISTS on the 1st call (re-composable cache) and serves from the cache on the following ones (refresh by TTL or when the set of allowed languages changes). It resolves the translatable fields in the active language. Viewing the external item NEVER creates an entity. WITHOUT cast/crew (MD6) nor local rating — those have specs of their own.
      */
     get: operations['getExternalDetail']
     put?: never
@@ -738,8 +738,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Coleção externa como página própria (briefing 0024, follow-up do 0023).
-     * @description Coleção de filmes (belongs_to_collection do TMDB) como destino navegável: nome/sinopse/artes do conjunto e a lista das PARTES (filmes), cada uma navegável ao detalhe externo. Localizada no idioma ativo (mono-idioma pragmático — sem o cache re-componível multi-idioma do 0022, que fica como follow-up). As artes do hero (pôster/fundo) podem sair como rota do proxy local (0024); as miniaturas das partes seguem diretas. Ver a coleção NUNCA cria entity. Requer uma fonte com a capacidade de coleção (senão 503).
+     * External collection as a page of its own.
+     * @description A movie collection (belongs_to_collection of TMDB) as a navigable destination: name/synopsis/artwork of the set and the list of the PARTS (movies), each one navigable to the external detail. Localized in the active language (pragmatic mono-language — without the multi-language re-composable cache, which stays as a follow-up). The artwork of the hero (poster/backdrop) may come as a route of the local proxy; the thumbnails of the parts stay direct. Viewing the collection NEVER creates an entity. It requires a source with the collection capability (otherwise 503).
      */
     get: operations['getExternalCollection']
     put?: never
@@ -758,8 +758,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Álbum externo como página própria (briefing 0115 Parte 2, ADR-0029).
-     * @description Faixas OFICIAIS do release de um álbum, para o dono ver o que falta importar do que já tem em catálogo -- mesmo padrão de "item externo não-possuído" que filme/série/coleção já usam. `id` é o MBID de RELEASE-GROUP (o mesmo gravado em external_ids["mbid"] da entity `album` interna). `internal_id` (interno- first, 0026) sai preenchido no álbum e em cada faixa já catalogada. Requer uma fonte com a capacidade seletiva de álbum (provider.MusicaAlbumProvider, senão 503). Ver o externo NUNCA cria entity.
+     * External album as a page of its own (ADR-0029).
+     * @description OFFICIAL tracks of the release of an album, so the owner can see what is missing to import from what is already in the catalog -- the same pattern of "external item not owned" that movie/series/collection already use. `id` is the RELEASE-GROUP MBID (the same one stored in external_ids["mbid"] of the internal `album` entity). `internal_id` (internal-first) comes filled in on the album and on each already cataloged track. It requires a source with the selective album capability (provider.MusicaAlbumProvider, otherwise 503). Viewing the external item NEVER creates an entity.
      */
     get: operations['getExternalAlbum']
     put?: never
@@ -778,8 +778,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Proxy read-through de imagem externa (briefing 0024).
-     * @description Baixa e CACHEIA em disco a imagem apontada por `src` (pôster/fundo do detalhe do EXTERNO, pré-import) e a serve do cache nas próximas — a UI deixa de bater no CDN da fonte em runtime, como o pôster/fanart cacheados da entity (0015). `src` DEVE apontar a um host da allowlist (defesa contra SSRF); o cache é por URL (sha256), compartilhado. Responde o BINÁRIO da imagem (não JSON). 503 sem diretório de assets; 400 se `src` faltar ou o host não for permitido; 502 se a fonte falhar ou não devolver uma imagem.
+     * Read-through proxy of an external image.
+     * @description Downloads and CACHES on disk the image pointed at by `src` (poster/backdrop of the EXTERNAL detail, pre-import) and serves it from the cache on the following ones — the UI stops hitting the CDN of the source at runtime, like the cached poster/fanart of the entity. `src` MUST point to a host of the allowlist (defense against SSRF); the cache is per URL (sha256), shared. It answers the BINARY of the image (not JSON). 503 without an assets directory; 400 if `src` is missing or the host is not allowed; 502 if the source fails or does not return an image.
      */
     get: operations['getImageProxy']
     put?: never
@@ -798,8 +798,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Página da pessoa com filmografia do catálogo (briefing 0029 Fase D).
-     * @description A pessoa (ator/membro de equipe) deduplicada no catálogo mais a sua FILMOGRAFIA = as obras já importadas que a creditam. É o destino interno-first do card de elenco/equipe (quando o crédito traz `person_id`). Read-only nesta fase (a pessoa não é catalogada como entity própria). 404 quando o id não existe no catálogo.
+     * Person page with the filmography of the catalog (Phase D).
+     * @description The person (actor/crew member) deduplicated in the catalog plus their FILMOGRAPHY = the works already imported that credit them. It is the internal-first destination of the cast/crew card (when the credit carries a `person_id`). Read-only in this phase (the person is not cataloged as an entity of its own). 404 when the id does not exist in the catalog.
      */
     get: operations['getPerson']
     put?: never
@@ -818,8 +818,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Fila de revisão (draft ou baixa confiança, briefing 0018).
-     * @description Cards (mesmo shape EntityCard da lista) dos itens que pedem curadoria: `status='draft'` (não-identificado) OU com um media_file `present` cuja `match_confidence` está em (0, 70) — o limiar espelha o LIMIAR_BAIXA_CONFIANCA=70 do front. Ordenado por confiança ascendente (pior primeiro), drafts ao fim. `[]` quando vazia.
+     * Review queue (draft or low confidence).
+     * @description Cards (same EntityCard shape as the list) of the items that ask for curation: `status='draft'` (unidentified) OR with a `present` media_file whose `match_confidence` is in (0, 70) — the threshold mirrors LIMIAR_BAIXA_CONFIANCA=70 of the front. Ordered by ascending confidence (worst first), drafts at the end. `[]` when empty.
      */
     get: operations['listReview']
     put?: never
@@ -840,8 +840,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Auto-match em LOTE da fila de revisão (briefing 0050).
-     * @description Tenta resolver sozinho todos os itens elegíveis da fila (ou o subconjunto de `ids` informado no corpo, quando presente): para cada um, deriva título/ano do arquivo, busca local-first + fonte externa default, pontua os candidatos (Jaro-Winkler + ajuste de ano) e aplica o melhor quando o score bate `LimiarAutoMatch` (92) — liga a uma entity local existente (nunca duplica) ou aplica a identidade externa (mesma sequência do "Corrigir"). Sem `ids` ou com `ids` vazio, processa TODOS os elegíveis (mesma fonte de GET /review). Sempre 200 com o resumo agregado; um id inexistente no corpo é ignorado (idempotente), não derruba o lote.
+     * BATCH auto-match of the review queue.
+     * @description It tries to resolve on its own all the eligible items of the queue (or the subset of `ids` informed in the body, when present): for each one, it derives title/year from the file, searches local-first + the default external source, scores the candidates (Jaro-Winkler + year adjustment) and applies the best one when the score matches `LimiarAutoMatch` (92) — it links to an existing local entity (never duplicates) or applies the external identity (the same sequence as "Corrigir"). Without `ids` or with empty `ids`, it processes ALL the eligible ones (same source as GET /review). Always 200 with the aggregated summary; an id that does not exist in the body is ignored (idempotent), it does not bring the batch down.
      */
     post: operations['autoMatchReview']
     delete?: never
@@ -858,8 +858,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Fila de órfãs (auto-criadas, sumidas, sem investimento, briefing 0018).
-     * @description Cards das entities órfãs: `status='cataloged'` (auto-criada pelo scanner), com ao menos um media_file e TODOS `missing`, e SEM investimento do dono (sem media_override e sem asset origin='user'). Uma entity só importada (sem media_file) não é órfã. Nada é apagado sozinho — a purga é sempre explícita.
+     * Orphan queue (auto-created, gone, without investment).
+     * @description Cards of the orphan entities: `status='cataloged'` (auto-created by the scanner), with at least one media_file and ALL of them `missing`, and WITHOUT investment from the owner (without media_override and without an asset origin='user'). An entity that was only imported (without a media_file) is not an orphan. Nothing is deleted on its own — the purge is always explicit.
      */
     get: operations['listOrphans']
     put?: never
@@ -880,8 +880,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Confirma o match de baixa confiança (briefing 0018).
-     * @description O dono aceita o palpite: sobe a `match_confidence` de todos os media_file da entity para 100 (autoridade do dono), tirando o item da fila de revisão. Responde a entity RESOLVIDA. Não toca override/arte. 404 se a entity não existe.
+     * Confirms the low-confidence match.
+     * @description The owner accepts the guess: it raises the `match_confidence` of all the media_files of the entity to 100 (the owner's authority), taking the item out of the review queue. It answers the entity RESOLVED. It does not touch override/artwork. 404 if the entity does not exist.
      */
     post: operations['confirmEntity']
     delete?: never
@@ -900,8 +900,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Corrige o match informando a identidade correta (briefing 0018).
-     * @description O dono informa o id correto da fonte: grava external_ids[source]=source_id (identidade vence, MD4) e RE-ENRIQUECE pelo serviço do 0015 (multi-idioma de graça), depois sobe a confiança para 100. Não toca override/arte (o enrich é não-destrutivo). Responde a entity RESOLVIDA. source default "tmdb"; source_id obrigatório (422). 404 inexistente; 502 se a fonte falhar; 503 se o enrich está desligado.
+     * Corrects the match by informing the right identity.
+     * @description The owner informs the correct id of the source: it writes external_ids[source]=source_id (identity wins, MD4) and RE-ENRICHES through the service (multilanguage for free), then raises the confidence to 100. It does not touch override/artwork (the enrich is non-destructive). It answers the entity RESOLVED. source default "tmdb"; source_id required (422). 404 does not exist; 502 if the source fails; 503 if the enrich is off.
      */
     post: operations['correctEntity']
     delete?: never
@@ -920,8 +920,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Auto-match individual de um item da fila (briefing 0050).
-     * @description Tenta resolver SOZINHO um item de baixa confiança/draft: deriva título/ano do arquivo (mesmo parser do scan), busca local-first (catálogo já existente) e, sem candidato local forte, busca na fonte externa default. Pontua os candidatos (Jaro-Winkler do título + ajuste de ano — score final 0-100) e aplica automaticamente o melhor quando bate `LimiarAutoMatch` (92, deliberadamente acima do `LIMIAR_BAIXA_CONFIANCA`=70 do 0018): candidato LOCAL liga a entity via fusão (nunca duplica, 0026); candidato EXTERNO aplica pela MESMA sequência do "Corrigir" (grava external_ids + re-enriquece + sobe a confiança). Candidato com ano divergindo em mais de 1 ano é DESCARTADO, mesmo com título idêntico. Sem candidato forte em nenhuma fonte, o item fica intacto na fila. SEMPRE 200 (nunca 5xx só por "não achou candidato" — é um resultado válido). 404 se a entity não existe.
+     * Individual auto-match of an item of the queue.
+     * @description It tries to resolve ON ITS OWN a low-confidence/draft item: it derives title/year from the file (the same parser as the scan), searches local-first (the already existing catalog) and, without a strong local candidate, searches the default external source. It scores the candidates (Jaro-Winkler of the title + year adjustment — final score 0-100) and automatically applies the best one when it matches `LimiarAutoMatch` (92, deliberately above the `LIMIAR_BAIXA_CONFIANCA`=70 of the front): a LOCAL candidate links the entity via merge (never duplicates); an EXTERNAL candidate is applied through the SAME sequence as "Corrigir" (it writes external_ids + re-enriches + raises the confidence). A candidate whose year diverges by more than 1 year is DISCARDED, even with an identical title. Without a strong candidate in any source, the item stays intact in the queue. ALWAYS 200 (never a 5xx just for "did not find a candidate" — it is a valid result). 404 if the entity does not exist.
      */
     post: operations['autoMatchEntity']
     delete?: never
@@ -938,8 +938,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Prévia do candidato de match, sem aplicar nada (briefing 0060).
-     * @description Dry-run, read-only, SEM side-effect: reusa a busca local-first + externa e a pontuação do auto-match (0050), mas SEM o corte de `LimiarAutoMatch` — devolve o candidato de MAIOR score entre local e externo, mesmo abaixo do limiar (só o desqualificador de ano divergindo mais de 1 ano continua excluindo um candidato). `meets_auto_threshold` sinaliza se esse score bateria o corte do auto-match (0050), sem filtrar o resultado. Sempre `200`, mesmo sem candidato em nenhuma fonte (resultado válido, não erro — mesma convenção do auto-match). 404 se a entity não existe.
+     * Preview of the match candidate, without applying anything.
+     * @description Dry run, read-only, WITHOUT side effect: it reuses the local-first + external search and the scoring of the auto-match, but WITHOUT the `LimiarAutoMatch` cut — it returns the candidate with the HIGHEST score between local and external, even below the threshold (only the disqualifier of a year diverging by more than 1 year keeps excluding a candidate). `meets_auto_threshold` signals whether that score would beat the cut of the auto-match, without filtering the result. Always `200`, even without a candidate in any source (a valid result, not an error — the same convention as the auto-match). 404 if the entity does not exist.
      */
     get: operations['matchPreview']
     put?: never
@@ -960,8 +960,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Aplica o candidato mostrado pela prévia (briefing 0060).
-     * @description Aplica o candidato que `GET /match-preview` mostrou, **sem checar `LimiarAutoMatch`** (é uma decisão humana informada, não um corte automático). `method=local`: funde a entity da fila com `local_id` (`fundirEntities` — sobrevivente é sempre o `local_id` do corpo, o candidato escolhido). `method=external`: mesma sequência de `POST /correct` (grava `external_ids[source]=source_id`, re-enriquece e sobe a confiança). Terceiro endpoint — não uma reforma de `/confirm` nem `/correct`, que continuam existindo inalterados. 404 se a entity não existe; 422 se o corpo não bate o `method` (falta `local_id`, ou falta `source`/`source_id`); 409 quando `source`/`source_id` já pertence a outra entity com investimento do dono (rede de segurança do 0051, mesma que `/correct` já expõe hoje); 502 se a fonte externa falhar ao entregar o detalhe; 503 se o enrich está desligado.
+     * Applies the candidate shown by the preview.
+     * @description Applies the candidate that `GET /match-preview` showed, **without checking `LimiarAutoMatch`** (it is an informed human decision, not an automatic cut). `method=local`: it merges the entity of the queue with `local_id` (`fundirEntities` — the survivor is always the `local_id` of the body, the chosen candidate). `method=external`: the same sequence as `POST /correct` (it writes `external_ids[source]=source_id`, re-enriches and raises the confidence). A third endpoint — not a rework of `/confirm` nor `/correct`, which keep existing unchanged. 404 if the entity does not exist; 422 if the body does not match the `method` (missing `local_id`, or missing `source`/`source_id`); 409 when `source`/`source_id` already belongs to another entity with investment from the owner (the safety net of duplicate merging, the same one `/correct` already exposes today); 502 if the external source fails to deliver the detail; 503 if the enrich is off.
      */
     post: operations['confirmCandidate']
     delete?: never
@@ -980,8 +980,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Enriquecimento externo sob demanda de UM item (briefing 0059).
-     * @description Dispara a MESMA orquestração de busca/aplicação/sinalização do job de saúde da biblioteca (`tentarEnriquecerOuSinalizar`, briefing 0056), mas para UM item, fora do lote do job e IGNORANDO o throttle de re-tentativa (`intervaloReTentativaRetroativa`) — ação explícita do dono no detalhe, não a varredura diária. Sem guarda de elegibilidade por status/confiança: ao contrário do job, pode ser chamado em QUALQUER entity não-purgada, inclusive uma já com `external_ids` preenchido. Sempre carimba `last_external_match_attempt_at` ao final (mesmo em `outcome=none`), para coordenar com o próximo lote do job. SEMPRE 200 (nunca 5xx só por "não achou candidato" — mesmo padrão de `/auto-match`). 404 se a entity não existe.
+     * External enrichment on demand of ONE item.
+     * @description It fires the SAME search/application/signaling orchestration of the library health job (`tentarEnriquecerOuSinalizar`), but for ONE item, outside the batch of the job and IGNORING the retry throttle (`intervaloReTentativaRetroativa`) — an explicit action of the owner in the detail, not the daily sweep. Without an eligibility guard by status/confidence: unlike the job, it can be called on ANY non-purged entity, including one that already has `external_ids` filled in. It always stamps `last_external_match_attempt_at` at the end (even with `outcome=none`), to coordinate with the next batch of the job. ALWAYS 200 (never a 5xx just for "did not find a candidate" — same pattern as `/auto-match`). 404 if the entity does not exist.
      */
     post: operations['enrichMissing']
     delete?: never
@@ -1000,8 +1000,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Baixa a melhor arte disponível para os kinds faltando (briefing 0059).
-     * @description Recalcula `catalog_completeness` AO VIVO (mesmo caminho do detalhe, briefing 0058), filtra as chaves `artwork:<kind>` de `missing` e, para cada kind, consulta o MESMO agregador de inventário do briefing 0048 (assets locais + camadas externas + fanart.tv) e baixa a melhor opção disponível (maior `likes` da fanart.tv; em empate/ausência, a primeira da ordem estável do agregador) via `baixarEMaterializarArte`. Item já completo (ou draft, sem `catalog_completeness`) responde 200 com as duas listas vazias, sem tocar nada. Por kind, tenta múltiplas candidatas em sequência antes de desistir — falha de download de UMA opção não propaga como erro HTTP (nunca 502 aqui); só cai em `unavailable` quando NENHUMA candidata do kind baixou. 404 se a entity não existe; 503 se o diretório de assets não está configurado; 500 só em erro real de banco/infra.
+     * Downloads the best artwork available for the missing kinds.
+     * @description It recalculates `catalog_completeness` LIVE (same path as the detail), filters the `artwork:<kind>` keys of `missing` and, for each kind, queries the SAME inventory aggregator (local assets + external layers + fanart.tv) and downloads the best option available (highest `likes` of fanart.tv; on a tie/absence, the first one of the stable order of the aggregator) via `baixarEMaterializarArte`. An item that is already complete (or a draft, without `catalog_completeness`) answers 200 with the two lists empty, without touching anything. Per kind, it tries multiple candidates in sequence before giving up — a download failure of ONE option does not propagate as an HTTP error (never 502 here); it only falls into `unavailable` when NO candidate of the kind was downloaded. 404 if the entity does not exist; 503 if the assets directory is not configured; 500 only on a real database/infrastructure error.
      */
     post: operations['downloadMissingArtwork']
     delete?: never
@@ -1020,8 +1020,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Força reconciliação manual de UMA entity, ignorando o throttle (briefing 0122).
-     * @description Dispara a MESMA lógica de `Manager.ReconciliarFaixaDraft`/ `Manager.ReconciliarSerieDraft` (`internal/scanner/reconciliar.go`) já usada pelo lote `ReconciliarFilhosOrfaos` (briefing 0120), mas para UM item e IGNORANDO COMPLETAMENTE o throttle de 1x/dia (`last_external_match_attempt_at`/`retry_days`) — ação explícita do dono no detalhe, não a varredura diária do job `saude_biblioteca`. Diferença para `/enrich-missing`: aqui é reconciliação pai-filho (religar uma faixa/série em rascunho contra o pai já identificado), não resolução de identidade externa. Dispatch por `entity.type`: `faixa` e `tv` tentam de fato; qualquer outro tipo responde `{"linked": false}` sem tentar nada e sem carimbar. Sempre carimba `last_external_match_attempt_at` ao final de uma tentativa real (mesmo quando `linked=false`), para coordenar com o próximo lote do job. 404 se a entity não existe.
+     * Forces manual reconciliation of ONE entity, ignoring the throttle.
+     * @description It fires the SAME logic of `Manager.ReconciliarFaixaDraft`/ `Manager.ReconciliarSerieDraft` (`internal/scanner/reconciler`) already used by the `ReconciliarFilhosOrfaos` batch, but for ONE item and COMPLETELY IGNORING the once-a-day throttle (`last_external_match_attempt_at`/`retry_days`) — an explicit action of the owner in the detail, not the daily sweep of the `saude_biblioteca` job. Difference from `/enrich-missing`: here it is parent-child reconciliation (re-linking a draft track/series against the already identified parent), not external identity resolution. Dispatch by `entity.type`: `faixa` and `tv` really try; any other type answers `{"linked": false}` without trying anything and without stamping. It always stamps `last_external_match_attempt_at` at the end of a real attempt (even when `linked=false`), to coordinate with the next batch of the job. 404 if the entity does not exist.
      */
     post: operations['forceReconcile']
     delete?: never
@@ -1040,8 +1040,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Reconfere arquivos/assets/campos locais de reprodução em disco (briefing 0088).
-     * @description Ação incondicional do menu "Gerenciar" (não depende de `catalog_completeness`, ao contrário de `/download-missing-artwork`). Força o re-hash/mediainfo dos `media_file` da entity mesmo sem mudança de mtime/size (o scan incremental de datasource inteiro continua como está — este é um caminho de entrada à parte, restrito aos arquivos DESTA entity); procura um asset `origin='local'` novo/atualizado na(s) pasta(s) dos arquivos (cobre o caso hoje quebrado de a entity já existir no catálogo); e, se houver `.nfo` em `entity.nfo_path`, lê os campos LOCAIS de reprodução (assistido/contagem de reproduções/avaliação do usuário/última reprodução/retomada) e preenche no banco só os que ainda estiverem vazios — nunca sobrescreve um valor já presente (não-destrutivo). Sem body. 404 se a entity não existe.
+     * Rechecks files/assets/local playback fields on disk.
+     * @description Unconditional action of the "Gerenciar" menu (it does not depend on `catalog_completeness`, unlike `/download-missing-artwork`). It forces the re-hash/mediainfo of the `media_file`s of the entity even without a change of mtime/size (the incremental scan of a whole datasource stays as it is — this is a separate entry path, restricted to the files of THIS entity); it looks for a new/updated `origin='local'` asset in the folder(s) of the files (it covers the case that is broken today, of an entity that already exists in the catalog); and, if there is an `.nfo` in `entity.nfo_path`, it reads the LOCAL playback fields (watched/play count/user rating/last played/resume) and fills in the database only the ones that are still empty — it never overwrites a value that is already present (non-destructive). No body. 404 if the entity does not exist.
      */
     post: operations['refreshEntityFiles']
     delete?: never
@@ -1060,8 +1060,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Regrava a tag de áudio (ID3v2/Vorbis comment) com o metadado resolvido (briefing 0125).
-     * @description Alternativa ao NFO de música (decisão do briefing 0125: não vale o investimento — só o Kodi lê, o resto do ecossistema real do dono — LMS/Lyrion, Navidrome, gonic, Supysonic e clientes Subsonic/ OpenSubsonic — lê direto da tag do arquivo). Regrava a tag do(s) arquivo(s) de áudio com o metadado JÁ RESOLVIDO (override ⟵ externo ⟵ arquivo — o mesmo valor que o detalhe da entity exibe): título, artista, álbum, ano, faixa/disco, gênero, flag de compilação, MusicBrainz IDs, ISRC e a capa do álbum embutida. `id` pode ser uma `faixa` (grava só o arquivo dela) ou um `album` (grava TODAS as faixas possuídas do álbum, uma a uma, best-effort — uma falha isolada não aborta as demais); cada faixa leva o artista da PRÓPRIA faixa na tag de artista quando o artist-credit diverge do artista principal do álbum (feat./colaboração, ADR-0027 item 4) — álbum/ ano/gênero/capa continuam vindo do álbum. Depois de cada faixa regravada, sincroniza `media_file.hash`/`mtime`/`size` (mesmo recheck restrito do briefing 0088), para o próximo scan incremental não ver o arquivo como "mudado" de surpresa. A escrita é sempre SOBRE O VALOR RESOLVIDO — nunca é relida de volta para o banco (a camada "arquivo" do resolver segue vindo só do próximo `ffprobe` natural). Sem body. Ação destrutiva/irreversível sobre o arquivo original (sem "desfazer") — só dispara pelo clique explícito do dono. 404 se a entity não existe; 422 se `type` não for `faixa`/ `album` (ex.: `artista` — sem cascata coerente de "obra"); 503 se o mecanismo de escrita (ffmpeg) não estiver disponível no ambiente.
+     * Rewrites the audio tag (ID3v2/Vorbis comment) with the resolved metadata.
+     * @description An alternative to the music NFO (the decision: it is not worth the investment — only Kodi reads it, the rest of the real ecosystem of the owner — LMS/Lyrion, Navidrome, gonic, Supysonic and Subsonic/ OpenSubsonic clients — reads straight from the tag of the file). It rewrites the tag of the audio file(s) with the ALREADY RESOLVED metadata (override ⟵ external ⟵ file — the same value that the entity detail displays): title, artist, album, year, track/disc, genre, compilation flag, MusicBrainz IDs, ISRC and the embedded album cover. `id` may be a `faixa` (it writes only its file) or an `album` (it writes ALL the owned tracks of the album, one by one, best-effort — an isolated failure does not abort the others); each track carries the artist of the TRACK ITSELF in the artist tag when the artist-credit diverges from the main artist of the album (feat./collaboration, ADR-0027 item 4) — album/ year/genre/cover keep coming from the album. After each rewritten track, it synchronizes `media_file.hash`/`mtime`/`size` (the same restricted recheck), so the next incremental scan does not see the file as "changed" by surprise. The write is always OVER THE RESOLVED VALUE — it is never read back into the database (the "file" layer of the resolver keeps coming only from the next natural `ffprobe`). No body. A destructive/irreversible action on the original file (without an "undo") — it only fires through the explicit click of the owner. 404 if the entity does not exist; 422 if `type` is not `faixa`/ `album` (e.g.: `artista` — without a coherent cascade of "work"); 503 if the writing mechanism (ffmpeg) is not available in the environment.
      */
     post: operations['writeAudioTags']
     delete?: never
@@ -1080,8 +1080,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Força nova consulta ao provider de arte + materializa o que faltar (briefing 0088).
-     * @description Ação incondicional do menu "Gerenciar" (não depende de `catalog_completeness`). Primeiro consulta de novo o(s) `ArteProvider` registrado(s) (hoje: fanart.tv) para atualizar o inventário de artes da entity (`media_external(source='fanarttv')`); em seguida reaproveita a MESMA materialização do job periódico `midias_faltantes` (`MaterializarMidiasFaltantes`, briefing 0064) para gravar na pasta real da biblioteca a arte hoje VENCEDORA de cada kind ainda sem `local_path`, e o `.nfo` quando ausente — mesmo efeito do job, só que imediato e sob demanda, restrito a esta entity. Sem body. 404 se a entity não existe.
+     * Forces a new query to the artwork provider + materializes what is missing.
+     * @description Unconditional action of the "Gerenciar" menu (it does not depend on `catalog_completeness`). First it queries the registered `ArteProvider`(s) again (today: fanart.tv) to update the artwork inventory of the entity (`media_external(source='fanarttv')`); then it reuses the SAME materialization of the periodic `midias_faltantes` job (`MaterializarMidiasFaltantes`) to write into the real library folder the artwork that is currently WINNING for each kind still without `local_path`, and the `.nfo` when absent — the same effect as the job, only immediate and on demand, restricted to this entity. No body. 404 if the entity does not exist.
      */
     post: operations['materializeMissingMedia']
     delete?: never
@@ -1100,8 +1100,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * (Re)gera e grava o .nfo da entity na pasta real (briefing 0062).
-     * @description Monta o XML a partir do MESMO `resolver.Entidade` que `(s *Server) resolverEntity(ctx, id, lang)` já produz (nunca duplica a resolução) e grava `<nome-do-vídeo>.nfo` (filme/episódio) ou `tvshow.nfo` na raiz da pasta da série, via escrita atômica (arquivo temporário + rename). IDEMPOTENTE: sempre sobrescreve por completo, sem merge com NFO de outra origem — nunca é relido de volta (export one-way, banco autoritativo). Atualiza `entity.nfo_path`/`entity.nfo_written_at`. 404 se a entity não existe OU não tem nenhum `media_file` presente (sem pasta de destino); nada é escrito nesse caso.
+     * (Re)generates and writes the .nfo of the entity into the real folder.
+     * @description It builds the XML from the SAME `resolver.Entidade` that `(s *Server) resolverEntity(ctx, id, lang)` already produces (it never duplicates the resolution) and writes `<nome-do-vídeo>.nfo` (movie/episode) or `tvshow.nfo` in the root of the series folder, through an atomic write (temporary file + rename). IDEMPOTENT: it always overwrites completely, without merging with an NFO from another origin — it is never read back (one-way export, the database is authoritative). It updates `entity.nfo_path`/`entity.nfo_written_at`. 404 if the entity does not exist OR has no present `media_file` (no destination folder); nothing is written in that case.
      */
     post: operations['writeEntityNfo']
     delete?: never
@@ -1118,8 +1118,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Serve o binário do tema musical local (audio/*, briefing 0082).
-     * @description Fundação MÍNIMA e LOCAL-ONLY de tema musical (sem provider algum — não há fonte confiável integrada, ver briefing 0082 §3): resolve a pasta-raiz do item (MESMA resolução de `DiretorioDestino` usada por POST .../nfo e .../assets/{assetId}/materialize — raiz da série ou pasta do filme) e procura `theme.mp3`/`theme.ogg`/`theme.flac` ali, nessa ordem. Devolve o binário com o Content-Type correto quando encontrado. 404 quando a entity não existe, não tem nenhum `media_file` presente (sem pasta de destino) ou não há arquivo de tema na pasta; 503 se a leitura de entities está indisponível (banco).
+     * Serves the binary of the local theme song (audio/*).
+     * @description MINIMAL, LOCAL-ONLY foundation of the theme song (without any provider — there is no reliable source integrated): it resolves the root folder of the item (the SAME `DiretorioDestino` resolution used by POST .../nfo and .../assets/{assetId}/materialize — root of the series or folder of the movie) and looks for `theme.mp3`/`theme.ogg`/`theme.flac` there, in that order. It returns the binary with the correct Content-Type when found. 404 when the entity does not exist, has no present `media_file` (no destination folder) or there is no theme file in the folder; 503 if the reading of entities is unavailable (database).
      */
     get: operations['getEntityTheme']
     put?: never
@@ -1138,8 +1138,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Diz se há um candidato de tema musical do ThemerrDB para baixar (briefing 0103).
-     * @description O candidato vive em cache (media_external, source=themerrdb, gravado pelo enriquecimento best-effort do briefing 0103, ADR-0025) — este endpoint só LÊ, nunca consulta a ThemerrDB ao vivo. NÃO vaza a URL do YouTube ao cliente (decisão conservadora, reavaliar se o produto quiser um preview antes do download); o download acontece inteiramente no servidor via POST .../theme/download. `ja_tem_local` reflete o MESMO arquivo que GET /entities/{id}/theme (briefing 0082) já serve — theme.{mp3,ogg,flac} na pasta-raiz do item, colocado à mão pelo dono OU baixado por este briefing. 404 quando a entity não existe; 503 se a leitura de entities está indisponível (banco).
+     * Says whether there is a theme song candidate from ThemerrDB to download.
+     * @description The candidate lives in the cache (media_external, source=themerrdb, written by the best-effort enrichment, ADR-0025) — this endpoint only READS, it never queries ThemerrDB live. It does NOT leak the YouTube URL to the client (a conservative decision, to be revisited if the product wants a preview before the download); the download happens entirely on the server via POST .../theme/download. `ja_tem_local` reflects the SAME file that GET /entities/{id}/theme already serves — theme.{mp3,ogg,flac} in the root folder of the item, placed by hand by the owner OR downloaded by this endpoint. 404 when the entity does not exist; 503 if the reading of entities is unavailable (database).
      */
     get: operations['getEntityThemeCandidato']
     put?: never
@@ -1160,8 +1160,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Baixa o candidato de tema musical do ThemerrDB via yt-dlp e materializa em disco (briefing 0103, ADR-0025).
-     * @description Baixa via yt-dlp (fundação do briefing 0101) o candidato cacheado em media_external (source=themerrdb, gravado pelo enriquecimento) para `theme.mp3` na raiz da pasta — MESMO path que GET /entities/{id}/theme (briefing 0082) já serve. Download é SÍNCRONO (o request fica pendurado até terminar). SEM parâmetro `force` (ao contrário do trailer): tema é singular por pasta — um `theme.*` já presente (baixado antes OU colocado à mão pelo dono) NUNCA é sobrescrito; o dono precisa apagar o arquivo manualmente antes de re-baixar.
+     * Downloads the theme song candidate from ThemerrDB via yt-dlp and materializes it on disk (ADR-0025).
+     * @description It downloads via yt-dlp the candidate cached in media_external (source=themerrdb, written by the enrichment) to `theme.mp3` in the root of the folder — the SAME path that GET /entities/{id}/theme already serves. The download is SYNCHRONOUS (the request hangs until it finishes). WITHOUT a `force` parameter (unlike the trailer): the theme is singular per folder — a `theme.*` already present (downloaded before OR placed by hand by the owner) is NEVER overwritten; the owner has to delete the file manually before re-downloading.
      */
     post: operations['postEntityThemeDownload']
     delete?: never
@@ -1178,8 +1178,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Serve o binário do trailer materializado em disco (video/*, briefing 0102).
-     * @description Resolve a pasta-raiz do item (MESMA resolução de `DiretorioDestino` usada por .../nfo, .../theme e .../assets/{assetId}/materialize) e procura o trailer no nome canônico Kodi/Jellyfin (`<nome-do-vídeo>-trailer.<ext>` ou `trailer.<ext>` em pasta exclusiva), testando `.mp4`/`.mkv`/`.webm` nessa ordem — `.mp4` é o que POST .../trailer/download sempre grava; os demais cobrem um trailer colocado manualmente pelo dono com outro container. Devolve o binário com o Content-Type correto quando encontrado. 404 quando a entity não existe, não tem nenhum `media_file` presente (sem pasta de destino) ou não há trailer materializado na pasta; 503 se a leitura de entities está indisponível (banco).
+     * Serves the binary of the trailer materialized on disk (video/*).
+     * @description It resolves the root folder of the item (the SAME `DiretorioDestino` resolution used by .../nfo, .../theme and .../assets/{assetId}/materialize) and looks for the trailer under the canonical Kodi/Jellyfin name (`<nome-do-vídeo>-trailer.<ext>` or `trailer.<ext>` in an exclusive folder), testing `.mp4`/`.mkv`/`.webm` in that order — `.mp4` is what POST .../trailer/download always writes; the others cover a trailer placed by hand by the owner with another container. It returns the binary with the correct Content-Type when found. 404 when the entity does not exist, has no present `media_file` (no destination folder) or there is no materialized trailer in the folder; 503 if the reading of entities is unavailable (database).
      */
     get: operations['getEntityTrailer']
     put?: never
@@ -1200,8 +1200,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Baixa o trailer YouTube do item via yt-dlp e materializa em disco (briefing 0102, ADR-0025).
-     * @description Resolve o trailer a baixar a partir de `videos` (já extraído do TMDB/TVDB, MESMO shape de GET /entities/{id}): com `key` no corpo, o vídeo do YouTube com essa key exata; sem `key`, o primeiro vídeo `type=="Trailer" && site=="YouTube"` (richfields.PrimeiroTrailerYoutube, mesmo critério do botão "Assistir trailer" do frontend). Baixa via yt-dlp (fundação do briefing 0101) para um arquivo TEMPORÁRIO no destino final e só renomeia para o nome canônico (`<nome-do-vídeo>-trailer.mp4` ou `trailer.mp4` em pasta exclusiva) em caso de sucesso — nunca deixa um arquivo parcial com o nome canônico. Download é SÍNCRONO nesta entrega (o request fica pendurado até terminar). **Nunca sobrescreve** um trailer já presente (baixado antes OU colocado manualmente pelo dono) — 409 sem `force:true` explícito.
+     * Downloads the YouTube trailer of the item via yt-dlp and materializes it on disk (ADR-0025).
+     * @description It resolves the trailer to download from `videos` (already extracted from TMDB/TVDB, the SAME shape as GET /entities/{id}): with `key` in the body, the YouTube video with that exact key; without `key`, the first video `type=="Trailer" && site=="YouTube"` (richfields.PrimeiroTrailerYoutube, the same criterion as the "Assistir trailer" button of the frontend). It downloads via yt-dlp to a TEMPORARY file in the final destination and only renames it to the canonical name (`<nome-do-vídeo>-trailer.mp4` or `trailer.mp4` in an exclusive folder) on success — it never leaves a partial file with the canonical name. The download is SYNCHRONOUS in this delivery (the request hangs until it finishes). It **never overwrites** a trailer already present (downloaded before OR placed by hand by the owner) — 409 without an explicit `force:true`.
      */
     post: operations['postEntityTrailerDownload']
     delete?: never
@@ -1218,14 +1218,14 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Lista o histórico de consumo de uma entity (briefing 0092).
-     * @description Eventos em ordem cronológica reversa (`occurred_at DESC`). `?kind=` filtra por um `kind` específico (ex.: `assistir`) quando presente. 404 se a entity não existe.
+     * Lists the consumption history of an entity.
+     * @description Events in reverse chronological order (`occurred_at DESC`). `?kind=` filters by a specific `kind` (e.g.: `assistir`) when present. 404 if the entity does not exist.
      */
     get: operations['listHistoricoEventos']
     put?: never
     /**
-     * Registra um evento de histórico de consumo (briefing 0092, ADR-0022).
-     * @description Cria um `historico_evento` genérico (agnóstico de vertical — filme, série e, no futuro, música/livro/jogo) ligado à entity. `source` ausente vira `"manual"`; `occurred_at` ausente vira o timestamp do servidor no momento da chamada. 201 com o evento criado; 404 se a entity não existe; 422 se `kind`/`status` vierem vazios ou `progress_percent` estiver fora de `[0, 100]`.
+     * Registers a consumption history event.
+     * @description Creates a generic `historico_evento` (agnostic of vertical — movie, series and, in the future, music/book/game) linked to the entity. An absent `source` becomes `"manual"`; an absent `occurred_at` becomes the server timestamp at the moment of the call. 201 with the created event; 404 if the entity does not exist; 422 if `kind`/`status` come empty or `progress_percent` is outside `[0, 100]`.
      */
     post: operations['createHistoricoEvento']
     delete?: never
@@ -1242,8 +1242,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Estado atual derivado do histórico, por kind (briefing 0092).
-     * @description Um objeto por `kind` distinto já visto no histórico da entity, com o evento mais recente (`occurred_at` mais alto) daquele `kind` — derivado em cada chamada, nunca mantido como coluna redundante (nunca "mente" — ver ADR-0022). Objeto vazio (`{}`) quando não há histórico. 404 se a entity não existe.
+     * Current state derived from the history, per kind.
+     * @description One object per distinct `kind` already seen in the history of the entity, with the most recent event (highest `occurred_at`) of that `kind` — derived on every call, never kept as a redundant column (it never "lies" — see ADR-0022). An empty object (`{}`) when there is no history. 404 if the entity does not exist.
      */
     get: operations['getHistoricoEstado']
     put?: never
@@ -1265,8 +1265,8 @@ export interface paths {
     put?: never
     post?: never
     /**
-     * Remove um evento de histórico (briefing 0092).
-     * @description Correção pontual do dono (fat-finger, teste) — mesma lógica já aplicada a `asset`/`credit` custom removíveis; não é purga em massa (princípio 5 do AGENTS.md continua intacto). 204 em sucesso; 404 se a entity ou o evento não existirem, ou o evento não pertencer à entity.
+     * Removes a history event.
+     * @description A one-off correction by the owner (fat-finger, test) — the same logic already applied to removable custom `asset`/`credit`; it is not a mass purge (principle 5 of AGENTS.md stays intact). 204 on success; 404 if the entity or the event do not exist, or the event does not belong to the entity.
      */
     delete: operations['deleteHistoricoEvento']
     options?: never
@@ -1282,8 +1282,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Lista eventos de histórico sem entity vinculada (briefing 0099).
-     * @description Eventos de webhook (ex.: Jellyfin) cujos IDs externos não casaram com nenhuma entity local no momento em que chegaram, guardados como "órfãos" em vez de descartados (princípio 2 do AGENTS.md). Rota GLOBAL (fora de /entities/{id}), já que por definição um evento órfão ainda não tem entity. Some da lista automaticamente quando um backfill retroativo vincula o evento (correção/confirmação de match que faz a entity ganhar o mesmo ID externo bruto). Paginado, em ordem `occurred_at DESC`.
+     * Lists history events without a linked entity.
+     * @description Webhook events (e.g.: Jellyfin) whose external IDs did not match any local entity at the moment they arrived, kept as "orphans" instead of being discarded (principle 2 of AGENTS.md). A GLOBAL route (outside /entities/{id}), since by definition an orphan event has no entity yet. They disappear from the list automatically when a retroactive backfill links the event (correction/confirmation of a match that makes the entity gain the same raw external ID). Paginated, in `occurred_at DESC` order.
      */
     get: operations['listHistoricoEventoOrfaos']
     put?: never
@@ -1304,8 +1304,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Purga em lote de entities (briefing 0018).
-     * @description PURGA explícita em lote: purga cada id do corpo (ApagarEntity + CASCADE + limpeza best-effort dos binários), ignorando ids ausentes (idempotente). Responde quantas entities foram de fato removidas. 422 corpo inválido.
+     * Batch purge of entities.
+     * @description Explicit BATCH PURGE: it purges each id of the body (ApagarEntity + CASCADE + best-effort cleanup of the binaries), ignoring absent ids (idempotent). It answers how many entities were actually removed. 422 invalid body.
      */
     post: operations['purgeEntities']
     delete?: never
@@ -1321,10 +1321,10 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Lista os datasources (com state reavaliado na leitura). */
+    /** Lists the datasources (with the state re-evaluated on read). */
     get: operations['listLibrary']
     put?: never
-    /** Cadastra um datasource. */
+    /** Registers a datasource. */
     post: operations['createLibrary']
     delete?: never
     options?: never
@@ -1339,17 +1339,17 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Obtém um datasource. */
+    /** Fetches a datasource. */
     get: operations['getLibrary']
     put?: never
     post?: never
-    /** Remove um datasource (não purga entities). */
+    /** Removes a datasource (it does not purge entities). */
     delete: operations['deleteLibrary']
     options?: never
     head?: never
     /**
-     * Edita configuração de um datasource cadastrado (briefings 0064/0070).
-     * @description Patch PARCIAL: campos ausentes do corpo ficam inalterados; `path` e `watch_enabled` podem vir juntos ou cada um sozinho. Mudar `watch_enabled` de `false` para `true` ativa o watcher `fsnotify` desta fonte IMEDIATAMENTE (mesma rotina de registro usada no boot do servidor, sem reiniciar nada); de `true` para `false` desativa o watcher IMEDIATAMENTE (`Close()` + remoção da entrada em memória). As duas direções são garantia comportamental do contrato: nenhuma delas exige restart do servidor. Mudar `path` (briefing 0070) reaponta o datasource para um novo caminho — valida como no cadastro (existe, é diretório, legível, sem duplicar outra fonte) e recasca em cascata `media_file.path`, `asset.local_path` e `entity.nfo_path` desta fonte para o novo prefixo; NÃO dispara scan nem move bytes no disco. Quando os dois campos vêm juntos, `path` é aplicado primeiro. Path novo IGUAL ao atual é no-op (200, nada muda no banco).
+     * Edits the configuration of a registered datasource.
+     * @description PARTIAL patch: fields absent from the body stay unchanged; `path` and `watch_enabled` may come together or each one alone. Changing `watch_enabled` from `false` to `true` activates the `fsnotify` watcher of this source IMMEDIATELY (the same registration routine used at server boot, without restarting anything); from `true` to `false` it deactivates the watcher IMMEDIATELY (`Close()` + removal of the in-memory entry). Both directions are a behavioral guarantee of the contract: neither of them requires a restart of the server. Changing `path` re-points the datasource to a new path — it validates as in the registration (it exists, it is a directory, it is readable, without duplicating another source) and re-bases in cascade `media_file.path`, `asset.local_path` and `entity.nfo_path` of this source to the new prefix; it does NOT trigger a scan nor move bytes on disk. When both fields come together, `path` is applied first. A new path EQUAL to the current one is a no-op (200, nothing changes in the database).
      */
     patch: operations['patchLibrary']
     trace?: never
@@ -1361,10 +1361,10 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Progresso do scan de um datasource. */
+    /** Progress of the scan of a datasource. */
     get: operations['getScanStatus']
     put?: never
-    /** Dispara um scan em background. */
+    /** Triggers a scan in the background. */
     post: operations['startScan']
     delete?: never
     options?: never
@@ -1380,8 +1380,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Lista subdiretórios de um caminho (navegador de pastas).
-     * @description Navegador de pastas do filesystem que o processo da API enxerga (briefing 0071) — usado pelo formulário de cadastro/edição de datasource para escolher um `path` clicando em vez de digitar de cor. `path` ausente ou vazio usa `/` como raiz. Lista SÓ subdiretórios (arquivos soltos são omitidos), ordenados por `name` alfabeticamente (case-insensitive); symlinks são seguidos (`os.Stat`, não `os.Lstat`) para decidir se contam como pasta, já que mounts via symlink são comuns. Cada entrada tenta ser aberta para listagem só para decidir `readable`; uma entrada sem permissão aparece com `readable:false` (o dono vê que a pasta existe, mas o front desabilita o clique nela) SEM abortar o restante da listagem. Cap de segurança de **2000 entradas**: se o diretório tiver mais, a resposta vem cortada (ordem alfabética) com `truncated:true`. `parent` é o diretório um nível acima do `path` pedido, ou `null` quando `path` já é a raiz do filesystem (`/`). Erros reaproveitam `mapLibraryError` (mesmos códigos de `createLibrary`/`patchLibrary`): `422 invalid_path` quando o próprio `path` pedido não existe ou não é diretório; `422 path_unreadable` quando o próprio `path` pedido não pode ser aberto para listagem (diferente de uma entrada FILHA ilegível, que só marca `readable:false` sem virar erro).
+     * Lists the subdirectories of a path (folder browser).
+     * @description Folder browser of the filesystem that the API process can see — used by the datasource create/edit form to choose a `path` by clicking instead of typing it from memory. An absent or empty `path` uses `/` as the root. It lists ONLY subdirectories (loose files are omitted), ordered by `name` alphabetically (case-insensitive); symlinks are followed (`os.Stat`, not `os.Lstat`) to decide whether they count as a folder, since mounts through symlinks are common. Each entry is tried for listing only to decide `readable`; an entry without permission appears with `readable:false` (the owner sees that the folder exists, but the front disables the click on it) WITHOUT aborting the rest of the listing. A safety cap of **2000 entries**: if the directory has more, the response comes truncated (alphabetical order) with `truncated:true`. `parent` is the directory one level above the requested `path`, or `null` when `path` already is the filesystem root (`/`). Errors reuse `mapLibraryError` (the same codes as `createLibrary`/`patchLibrary`): `422 invalid_path` when the requested `path` itself does not exist or is not a directory; `422 path_unreadable` when the requested `path` itself cannot be opened for listing (different from an unreadable CHILD entry, which only marks `readable:false` without becoming an error).
      */
     get: operations['browseLibraryPath']
     put?: never
@@ -1400,8 +1400,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Lista os jobs conhecidos (briefing 0052).
-     * @description Todos os job_definition com o estado atual (habilitado, agendamento, última/próxima execução) + `running` do estado em memória do Manager. Nunca vazio após a fundação (sempre tem o seed `backup_vacuum`).
+     * Lists the known jobs.
+     * @description Every job_definition with the current state (enabled, schedule, last/next run) + `running` from the in-memory state of the Manager. Never empty after the foundation (there is always the `backup_vacuum` seed).
      */
     get: operations['listJobs']
     put?: never
@@ -1426,8 +1426,8 @@ export interface paths {
     options?: never
     head?: never
     /**
-     * Edita a configuração de um job (habilitado/agendamento).
-     * @description Patch PARCIAL: campos ausentes do corpo ficam inalterados. `schedule_cron: null` explícito limpa o agendamento (job vira só-manual). Recalcula `next_run_at`. `enabled` só governa o disparo AUTOMÁTICO — a execução manual (POST .../run) funciona independente deste flag.
+     * Edits the configuration of a job (enabled/schedule).
+     * @description PARTIAL patch: fields absent from the body stay unchanged. An explicit `schedule_cron: null` clears the schedule (the job becomes manual-only). It recalculates `next_run_at`. `enabled` only governs the AUTOMATIC trigger — the manual run (POST .../run) works regardless of this flag.
      */
     patch: operations['patchJob']
     trace?: never
@@ -1442,8 +1442,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Dispara uma execução manual do job.
-     * @description Dispara em background (trigger="manual"), independente de `enabled`. 409 se já houver uma execução em andamento para este job; 503 se o job está seedado no banco mas nenhum Handler está registrado no binário (ex.: downgrade).
+     * Triggers a manual run of the job.
+     * @description It fires in the background (trigger="manual"), regardless of `enabled`. 409 if there is already a run in progress for this job; 503 if the job is seeded in the database but no Handler is registered in the binary (e.g.: downgrade).
      */
     post: operations['runJob']
     delete?: never
@@ -1459,7 +1459,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Histórico paginado de execuções de um job, mais recente primeiro. */
+    /** Paginated history of the runs of a job, most recent first. */
     get: operations['listJobExecutions']
     put?: never
     post?: never
@@ -1479,8 +1479,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Recebe o webhook de reprodução do Jellyfin (briefing 0093, ADR-0022).
-     * @description Destino do plugin `jellyfin-plugin-webhook` — corpo JSON de forma variável por versão do plugin (`NotificationType`, `ItemType`, `Provider_tmdb`/`Provider_imdb`/`Provider_tvdb`, `PlaybackPositionTicks`, `RunTimeTicks`, `PlaybackPercentage`, entre outros), parseado best-effort — qualquer campo pode faltar sem derrubar o handler. Casa o item pelos IDs externos presentes no payload; sem match, o evento é descartado e logado (nunca cria entity nova a partir de um webhook). Autenticado por `token` de query, comparado em tempo constante. Responde sempre `204` quando o token bate — inclusive payload não reconhecível/sem match, para não fazer o Jellyfin retentar; `401` quando o `token` falta ou não bate.
+     * Receives the Jellyfin playback webhook (ADR-0022).
+     * @description Destination of the `jellyfin-plugin-webhook` plugin — a JSON body of variable shape per plugin version (`NotificationType`, `ItemType`, `Provider_tmdb`/`Provider_imdb`/`Provider_tvdb`, `PlaybackPositionTicks`, `RunTimeTicks`, `PlaybackPercentage`, among others), parsed best-effort — any field may be missing without bringing the handler down. It matches the item by the external IDs present in the payload; without a match, the event is discarded and logged (it never creates a new entity from a webhook). Authenticated by a query `token`, compared in constant time. It always answers `204` when the token matches — including an unrecognizable/unmatched payload, so as not to make Jellyfin retry; `401` when the `token` is missing or does not match.
      */
     post: operations['receiveJellyfinWebhook']
     delete?: never
@@ -1497,14 +1497,14 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Devolve o token atual do webhook do Jellyfin (briefing 0093).
-     * @description 200 com o token vigente; 404 se nenhum token foi gerado ainda (nesse caso o dono deve chamar POST .../webhooks/jellyfin/token primeiro).
+     * Returns the current token of the Jellyfin webhook.
+     * @description 200 with the current token; 404 if no token has been generated yet (in that case the owner has to call POST .../webhooks/jellyfin/token first).
      */
     get: operations['getJellyfinWebhookToken']
     put?: never
     /**
-     * Gera (ou regenera) o token do webhook do Jellyfin (briefing 0093).
-     * @description Cria um token novo e substitui o anterior (armazenado em `app_settings`, chave `webhook_jellyfin_token`) — chamadas subsequentes ao webhook com o token antigo deixam de funcionar. Autenticado como qualquer outro endpoint interno da API (é o painel do dono operando, sem token próprio). 200 com o token novo.
+     * Generates (or regenerates) the token of the Jellyfin webhook.
+     * @description It creates a new token and replaces the previous one (stored in `app_settings`, key `webhook_jellyfin_token`) — subsequent calls to the webhook with the old token stop working. Authenticated like any other internal endpoint of the API (it is the owner's panel operating, without a token of its own). 200 with the new token.
      */
     post: operations['regenerateJellyfinWebhookToken']
     delete?: never
@@ -1519,9 +1519,9 @@ export interface components {
   schemas: {
     Error: {
       error: {
-        /** @description Slug estável (não localizado) para o cliente ramificar. */
+        /** @description Stable (non-localized) slug for the client to branch on. */
         code: string
-        /** @description Texto humano (pt-BR). */
+        /** @description Human text (pt-BR). */
         message: string
       }
     }
@@ -1529,15 +1529,15 @@ export interface components {
       status: string
       version: string
     }
-    /** @description Snapshot de telemetria de GET /api/v1/health/system (briefing 0055): banco + retrato operacional + armazenamento por fonte. */
+    /** @description Telemetry snapshot of GET /api/v1/health/system: database + operational portrait + storage per source. */
     SystemHealth: {
-      /** @description Instante (UTC) em que o snapshot foi calculado — igual entre chamadas dentro do TTL do cache (60s). */
+      /** @description Instant (UTC) at which the snapshot was computed — equal between calls within the TTL of the cache (60s). */
       computed_at: string
       database: components['schemas']['DatabaseHealth']
       usage: components['schemas']['UsageCounts']
       storage: components['schemas']['StorageSnapshot']
     }
-    /** @description Tamanho LÓGICO do arquivo .sqlite principal via PRAGMA page_count/page_size (NÃO soma os sidecars -wal/-shm, decisão consciente do briefing 0055). schema_version é o MESMO valor de Health via GET /health (db.schema), reexposto aqui por conveniência. */
+    /** @description LOGICAL size of the main .sqlite file via PRAGMA page_count/page_size (it does NOT add the -wal/-shm sidecars, a conscious decision). schema_version is the SAME value as Health via GET /health (db.schema), re-exposed here for convenience. */
     DatabaseHealth: {
       /** @description page_count * page_size. */
       size_bytes: number
@@ -1545,26 +1545,26 @@ export interface components {
       page_size: number
       schema_version: number
     }
-    /** @description Retrato operacional: contagens de catálogo + filas de curadoria (0018/0053) + uptime/memória/goroutines do processo (termômetro grosso, sem profiling). */
+    /** @description Operational portrait: catalog counts + curation queues (review and orphans) + uptime/memory/goroutines of the process (a rough thermometer, without profiling). */
     UsageCounts: {
-      /** @description Há quantos segundos o processo está no ar. */
+      /** @description How many seconds the process has been up. */
       uptime_seconds: number
       entities: components['schemas']['EntitiesUsage']
       media_files: components['schemas']['MediaFilesUsage']
-      /** @description COUNT(*) de library_source cadastradas. */
+      /** @description COUNT(*) of registered library_source rows. */
       library_sources: number
-      /** @description Tamanho da fila de revisão (mesma contagem de GET /review). */
+      /** @description Size of the review queue (the same count as GET /review). */
       review_queue_size: number
-      /** @description Tamanho da fila de órfãs (mesma contagem de GET /orphans). */
+      /** @description Size of the orphan queue (the same count as GET /orphans). */
       orphans_count: number
-      /** @description COUNT(*) de job_execution (histórico completo, todos os jobs). */
+      /** @description COUNT(*) of job_execution (full history, all jobs). */
       job_executions_total: number
-      /** @description runtime.NumGoroutine() no instante do cálculo. */
+      /** @description runtime.NumGoroutine() at the instant of the computation. */
       goroutines: number
-      /** @description runtime.MemStats.Alloc (heap alocado) no instante do cálculo. */
+      /** @description runtime.MemStats.Alloc (allocated heap) at the instant of the computation. */
       mem_alloc_bytes: number
     }
-    /** @description by_type só inclui os tipos que OCORREM (chave ausente = zero, não `0` explícito) — o contrato não fixa uma lista de tipos que já é livre no schema (entity.type é TEXT sem CHECK). */
+    /** @description by_type only includes the types that OCCUR (absent key = zero, not an explicit `0`) — the contract does not fix a list of types that is already free in the schema (entity.type is TEXT without CHECK). */
     EntitiesUsage: {
       total: number
       by_type: {
@@ -1576,93 +1576,93 @@ export interface components {
       present: number
       missing: number
     }
-    /** @description A partir do briefing 0063, além de banco e mídia RASTREADA por fonte (`sources`), diferencia o disco ocupado pelas pastas rastreadas em mídia gerenciada, cache interno da app e não identificado — reaproveitando a MESMA varredura do job de saúde da biblioteca (0053), sem varredura de disco dedicada. */
+    /** @description Besides the database and the media TRACKED per source (`sources`), it distinguishes the disk used by the tracked folders into managed media, internal cache of the app and unidentified — reusing the SAME sweep of the library health job, without a dedicated disk scan. */
     StorageSnapshot: {
       sources: components['schemas']['SourceStorage'][]
-      /** @description Soma de vídeos indexados (media_file.size) + arquivos de NFO/arte com nome canônico (briefing 0062, internal/localmedia/naming.go) dentro das pastas rastreadas. Reflete o último resultado do job de saúde da biblioteca (0053), não uma varredura sob demanda. */
+      /** @description Sum of indexed videos (media_file.size) + NFO/artwork files with a canonical name (internal/localmedia/naming.go) inside the tracked folders. It reflects the last result of the library health job, not an on-demand sweep. */
       managed_media_bytes: number
-      /** @description Tamanho total do cache interno da aplicação (`assetsDir`) — arte e sidecars baixados que ainda não foram materializados na pasta real, ou que vivem só no cache (fontes sem mídia local). */
+      /** @description Total size of the internal cache of the application (`assetsDir`) — artwork and sidecars downloaded that have not been materialized in the real folder yet, or that live only in the cache (sources without local media). */
       app_cache_bytes: number
-      /** @description Resto encontrado dentro das pastas rastreadas que não casa nem com vídeo indexado nem com NFO/arte de nome canônico do 0062 (samples, legendas soltas, lixo de outra ferramenta). Não inclui ação alguma — este campo só mede/exibe (briefing 0063). */
+      /** @description Rest found inside the tracked folders that matches neither an indexed video nor an NFO/artwork with a canonical name (samples, loose subtitles, junk from another tool). It includes no action — this field only measures/displays. */
       unmanaged_bytes: number
     }
-    /** @description Uma linha por library_source cadastrada: quanto de mídia RASTREADA (SUM(media_file.size), sem varrer o filesystem de novo) ela ocupa e o espaço livre/total do filesystem que hospeda `path`. `offline`/`error` espelham a semântica de avaliarState já usada em library.Listar (o path não responde a Statfs); `filesystem` é `null` quando offline — sem número inventado. Erro em UMA fonte não aborta as demais. */
+    /** @description One row per registered library_source: how much TRACKED media (SUM(media_file.size), without scanning the filesystem again) it occupies and the free/total space of the filesystem that hosts `path`. `offline`/`error` mirror the semantics of avaliarState already used in library.Listar (the path does not answer to Statfs); `filesystem` is `null` when offline — without an invented number. An error in ONE source does not abort the others. */
     SourceStorage: {
       source_id: string
       path: string
-      /** @description SUM(media_file.size) com state='present' daquela fonte — reflete o ÚLTIMO SCAN, não o disco agora-agora. */
+      /** @description SUM(media_file.size) with state='present' of that source — it reflects the LAST SCAN, not the disk right now. */
       used_bytes: number
-      /** @description null quando offline (Statfs falhou). */
+      /** @description null when offline (Statfs failed). */
       filesystem: components['schemas']['FilesystemStats'] | null
       offline: boolean
-      /** @description Mensagem crua do erro de Statfs (só presente quando offline). */
+      /** @description Raw message of the Statfs error (only present when offline). */
       error?: string
     }
     FilesystemStats: {
       free_bytes: number
       total_bytes: number
     }
-    /** @description Descritores de campo do formulário editorial (briefing 0030), ordenados por `order` crescente. */
+    /** @description Field descriptors of the editorial form, ordered by increasing `order`. */
     FieldSchema: {
       fields: components['schemas']['FieldDescriptor'][]
     }
-    /** @description Descritor de UM campo editável: combina a apresentação (label/grupo/widget/ ordem/faixa, no server) com a etiqueta pública do resolver (translatable/kind). */
+    /** @description Descriptor of ONE editable field: it combines the presentation (label/group/widget/ order/range, on the server) with the public label of the resolver (translatable/kind). */
     FieldDescriptor: {
-      /** @description Chave do campo (= chave do override/registro). */
+      /** @description Key of the field (= key of the override/registry). */
       name: string
-      /** @description Rótulo pt-BR (UI mono-idioma hoje). */
+      /** @description pt-BR label (mono-language UI today). */
       label: string
       /**
-       * @description Seção do formulário.
+       * @description Section of the form.
        * @enum {string}
        */
       group: 'traduzivel' | 'neutro'
       /**
-       * @description Widget de renderização do input.
+       * @description Rendering widget of the input.
        * @enum {string}
        */
       widget: 'text' | 'textarea' | 'number' | 'date' | 'tags'
-      /** @description Se o campo compõe por idioma (= registroOrigem[campo].traduzivel). */
+      /** @description Whether the field composes per language (= registroOrigem[campo].traduzivel). */
       translatable: boolean
       /**
-       * @description Classe de composição pública do resolver (extensao fica de fora do formulário).
+       * @description Public composition class of the resolver (extension stays out of the form).
        * @enum {string}
        */
       kind: 'escalar' | 'lista' | 'numero'
-      /** @description Ordem estável de renderização. */
+      /** @description Stable rendering order. */
       order: number
-      /** @description Aparece no formulário de CRIAR item (subconjunto plano). */
+      /** @description It appears in the CREATE item form (flat subset). */
       creatable: boolean
-      /** @description Mínimo (só para widget number). */
+      /** @description Minimum (only for the number widget). */
       min?: number
-      /** @description Máximo (só para widget number). */
+      /** @description Maximum (only for the number widget). */
       max?: number
-      /** @description Passo (só para widget number). */
+      /** @description Step (only for the number widget). */
       step?: number
-      /** @description Placeholder opcional do input. */
+      /** @description Optional placeholder of the input. */
       placeholder?: string | null
     }
-    /** @description Grupo de itens da fila de revisão (briefing 0137). A chave é o caminho (relativo à raiz da biblioteca) já sem o segmento de disco/temporada; o rótulo é o que a UI mostra no cabeçalho da seção. */
+    /** @description Group of items of the review queue. The key is the path (relative to the root of the library) already without the disc/season segment; the label is what the UI shows in the header of the section. */
     ReviewGroup: {
       /**
-       * @description Contexto do arquivo: `album` (type=faixa), `serie` (type=episode), `pasta` (qualquer outro tipo com arquivo) e `sem_arquivo` (item importado, sem media_file).
+       * @description File context: `album` (type=faixa), `serie` (type=episode), `pasta` (any other type with a file) and `sem_arquivo` (imported item, without media_file).
        * @enum {string}
        */
       kind: 'album' | 'serie' | 'pasta' | 'sem_arquivo'
-      /** @description Chave estável do grupo (usada para agrupar no frontend). */
+      /** @description Stable key of the group (used to group in the frontend). */
       key: string
-      /** @description Rótulo legível — ex. "Duran Duran — Notorious (Deluxe Edition)". */
+      /** @description Readable label — e.g. "Duran Duran — Notorious (Deluxe Edition)". */
       label: string
       /**
        * Format: int64
-       * @description Quantos itens da fila estão neste grupo.
+       * @description How many items of the queue are in this group.
        */
       size: number
     }
     EntityCard: {
       id: string
       /**
-       * @description Tipo canonico da entity. `season`/`episode` (0031) compoem a arvore de series: GET /members de uma `tv` traz as `season`s; de uma `season`, os `episode`s (ordenados por sort_index). `album`/`artista`/`faixa` (0105-0107) sao a vertical de musica -- nomes em portugues no schema, nao `artist`/`track`.
+       * @description Canonical type of the entity. `season`/`episode` compose the series tree: GET /members of a `tv` brings the `season`s; of a `season`, the `episode`s (ordered by sort_index). `album`/`artista`/`faixa` are the music vertical -- names in Portuguese in the schema, not `artist`/`track`.
        * @enum {string}
        */
       type:
@@ -1676,38 +1676,38 @@ export interface components {
         | 'faixa'
       title: string
       status: string
-      /** @description Posse derivada (EXISTS media_file present). */
+      /** @description Derived ownership (EXISTS media_file present). */
       owned: boolean
       /** Format: int64 */
       file_count: number
-      /** @description Maior confiança de match entre os arquivos (badge de revisão). */
+      /** @description Highest match confidence among the files (review badge). */
       match_confidence: number | null
-      /** @description Rota do pôster local, ou null quando não há arte. */
+      /** @description Route of the local poster, or null when there is no artwork. */
       poster_url: string | null
-      /** @description Posse AGREGADA do card na árvore de séries (0036): episódios possuídos sobre o total. OPCIONAL — presente só nos cards `season` (e opcionalmente `tv`) de GET /entities/{id}/members; ausente/`null` para movie/episode/ collection (que usam a posse simples de `owned`). Anotado no server pós-listagem, sem mudar a query do card. */
+      /** @description AGGREGATED ownership of the card in the series tree: episodes owned over the total. OPTIONAL — present only in the `season` (and optionally `tv`) cards of GET /entities/{id}/members; absent/`null` for movie/episode/ collection (which use the simple ownership of `owned`). Annotated on the server after the listing, without changing the query of the card. */
       ownership?: components['schemas']['OwnershipInfo'] | null
-      /** @description Grupo da fila de revisão (briefing 0137): o contexto do ARQUIVO que explica por que o item está aqui — álbum (faixas, ignorando `Disc N`), série (episódios, ignorando `Season N`) ou pasta (filme). Anotado no server, a partir do `media_file.path` relativizado contra a raiz da biblioteca; NÃO vem da query do card. `omitempty`: presente só em GET /api/v1/review. */
+      /** @description Group of the review queue: the context of the FILE that explains why the item is here — album (tracks, ignoring `Disc N`), series (episodes, ignoring `Season N`) or folder (movie). Annotated on the server, from the `media_file.path` relativized against the root of the library; it does NOT come from the query of the card. `omitempty`: present only in GET /api/v1/review. */
       review_group?: components['schemas']['ReviewGroup'] | null
-      /** @description Numeração REAL do episódio (0039): `season`/`number` projetados na ordenação da temporada-pai e o `absolute_number` quando houver. Reflete o número CATALOGADO (S02E05), não a posição na lista — biblioteca com E01+E05 mostra E01 e E05. OPCIONAL: presente só nos cards `episode` de GET /entities/{id}/members; ausente/`null` para os demais tipos e para episódio sem numbering (draft), que cai no rótulo neutro. Anotado no server pós-listagem, sem mudar a query do card. */
+      /** @description REAL numbering of the episode: `season`/`number` projected in the ordering of the parent season and the `absolute_number` when there is one. It reflects the CATALOGED number (S02E05), not the position in the list — a library with E01+E05 shows E01 and E05. OPTIONAL: present only in the `episode` cards of GET /entities/{id}/members; absent/`null` for the other types and for an episode without numbering (draft), which falls back to the neutral label. Annotated on the server after the listing, without changing the query of the card. */
       numbering?: components['schemas']['EpisodeNumbering'] | null
-      /** @description URL CRUA do still (frame 16:9) do episódio (0042), como veio do provider — artwork NEUTRO de idioma, gravada no import SEM baixar a imagem. OPCIONAL: presente só nos cards `episode` com still; ausente/`null` para os demais tipos e para episódio sem still (cai no placeholder). O front a serve pelo image proxy (GET /images?src=), que busca+cacheia sob demanda na 1a exibição. */
+      /** @description RAW URL of the still (16:9 frame) of the episode, as it came from the provider — language-NEUTRAL artwork, written at import WITHOUT downloading the image. OPTIONAL: present only in the `episode` cards with a still; absent/`null` for the other types and for an episode without a still (it falls back to the placeholder). The front serves it through the image proxy (GET /images?src=), which fetches+caches on demand on the 1st display. */
       still_url?: string | null
-      /** @description Completude de catalogação do item (0058) contra a régua configurada em /settings (0057). `null` quando o item é draft (nunca casado) OU quando ainda não passou pela primeira execução do job `saude_biblioteca` que preenche o cache (0053) — este campo é lido de um cache persistido, recalculado em lote, por isso pode ficar desatualizado em relação à config até a próxima rodada do job (diferente de `ResolvedEntity.catalog_completeness`, calculado ao vivo a cada request). */
+      /** @description Cataloging completeness of the item against the ruler configured in /settings. `null` when the item is a draft (never matched) OR when it has not gone through the first run of the `saude_biblioteca` job that fills the cache yet — this field is read from a persisted cache, recalculated in batch, which is why it may be outdated in relation to the config until the next round of the job (unlike `ResolvedEntity.catalog_completeness`, computed live on every request). */
       catalog_completeness:
         components['schemas']['CatalogCompletenessResult'] | null
     }
-    /** @description Resultado da avaliação de completude de CATALOGAÇÃO (0058) de um item contra a régua por tipo configurada em 0057 — distinto da completude de POSSE (`EntityCard.owned`/`OwnershipInfo`). Reusado em `EntityCard.catalog_completeness` e `ResolvedEntity.catalog_completeness`. */
+    /** @description Result of the evaluation of CATALOGING completeness of an item against the per-type ruler configured in the settings — distinct from OWNERSHIP completeness (`EntityCard.owned`/`OwnershipInfo`). Reused in `EntityCard.catalog_completeness` and `ResolvedEntity.catalog_completeness`. */
     CatalogCompletenessResult: {
-      /** @description true quando o item atende a régua inteira, ou quando o tipo não tem entrada na config (tipo sem régua nunca é incompleto). */
+      /** @description true when the item meets the whole ruler, or when the type has no entry in the config (a type without a ruler is never incomplete). */
       complete: boolean
-      /** @description Chaves ESTÁVEIS do que falta, em ordem fixa (description, runtime, certification, keywords, cast, media_file, artwork:<kind>...). String livre (não é um enum fechado aqui): os valores possíveis hoje são `description`, `runtime`, `certification`, `keywords`, `cast`, `media_file`, ou `artwork:<kind>` (um item por kind de arte AUSENTE da lista configurada, ex. `artwork:poster`, `artwork:fanart`). `[]` quando `complete` é true. */
+      /** @description STABLE keys of what is missing, in a fixed order (description, runtime, certification, keywords, cast, media_file, artwork:<kind>...). Free string (it is not a closed enum here): the possible values today are `description`, `runtime`, `certification`, `keywords`, `cast`, `media_file`, or `artwork:<kind>` (one item per artwork kind ABSENT from the configured list, e.g. `artwork:poster`, `artwork:fanart`). `[]` when `complete` is true. */
       missing: string[]
     }
-    /** @description Numeração de um episódio na ordenação da temporada-pai (0039). `season`/`number` vêm do numbering multi-ordem gravado no import (core.tv@1); `absolute_number` é o número contínuo através das temporadas (anime), presente quando a fonte informou. */
+    /** @description Numbering of an episode in the ordering of the parent season. `season`/`number` come from the multi-order numbering stored at import (core.tv@1); `absolute_number` is the continuous number across the seasons (anime), present when the source informed it. */
     EpisodeNumbering: {
       season: number
       number: number
-      /** @description Número absoluto (contínuo), quando disponível. */
+      /** @description Absolute (continuous) number, when available. */
       absolute_number?: number
     }
     EntityList: {
@@ -1717,74 +1717,74 @@ export interface components {
       limit: number
       offset: number
     }
-    /** @description Um `type` de entity com pelo menos 1 item CATALOGADO (status != draft, briefing 0109/0110) e a contagem correspondente. Sem lista fixa de tipos — cobre album/artista/faixa (0105-0107) junto de movie/tv. */
+    /** @description An entity `type` with at least 1 CATALOGED item (status != draft) and the corresponding count. Without a fixed list of types — it covers album/artista/faixa together with movie/tv. */
     EntityType: {
       type: string
       /** Format: int64 */
       count: number
     }
-    /** @description Resultado de uma fonte EXTERNA (ex.: TMDB). saved é sempre false: nunca é uma entidade do catálogo até o import explícito (briefing 0015). */
+    /** @description Result of an EXTERNAL source (e.g.: TMDB). saved is always false: it is never an entity of the catalog until the explicit import. */
     ExternalResult: {
-      /** @description Nome da fonte (ex.: tmdb). */
+      /** @description Name of the source (e.g.: tmdb). */
       source: string
-      /** @description Id do item NA FONTE. */
+      /** @description Id of the item IN THE SOURCE. */
       source_id: string
       type: string
       title: string
       year: string | null
       overview: string | null
-      /** @description URL direta da arte na fonte (o proxy/cache é do 0015). */
+      /** @description Direct URL of the artwork in the source (the proxy/cache belongs to the search flow). */
       poster_url: string | null
-      /** @description Sempre false na busca (resultado externo não é entidade). */
+      /** @description Always false in the search (an external result is not an entity). */
       saved: boolean
-      /** @description Id da entity interna quando este resultado externo JÁ foi importado (interno-first, 0027); null caso contrário. A UI mostra "na biblioteca" e linka ao interno em vez de reimportar. */
+      /** @description Id of the internal entity when this external result has ALREADY been imported (internal-first); null otherwise. The UI shows "na biblioteca" and links to the internal one instead of reimporting. */
       internal_id?: string | null
     }
     SearchResult: {
       query: string
-      /** @description Cards do catálogo (mesmo shape da lista). */
+      /** @description Cards of the catalog (same shape as the list). */
       local: components['schemas']['EntityCard'][]
-      /** @description Resultados "não salvos" da fonte externa (vazio quando indisponível). */
+      /** @description "Not saved" results from the external source (empty when unavailable). */
       external: components['schemas']['ExternalResult'][]
-      /** @description false quando não há credencial/provider ou a fonte falhou — distingue "fonte indisponível" de "zero resultados". */
+      /** @description false when there is no credential/provider or the source failed — it distinguishes "source unavailable" from "zero results". */
       external_available: boolean
     }
-    /** @description Uma arte da entity (briefing 0017). origin distingue a proveniência: `user` (upload do dono), `external` (cache re-puxável do enriquecimento) ou `local` (arte do scanner). preferred é a flag do dono (uma por (entity, kind), lida do meta_json — compat). Desde o briefing 0062, `is_principal` (coluna própria) é a FONTE DE VERDADE de qual asset é o principal do seu `(entity, kind)`, e `local_path` marca se o asset também foi materializado fisicamente na pasta real da biblioteca (distinto do cache em `assetsDir`, que é onde o binário sempre mora). url é a rota que serve o binário. */
+    /** @description One artwork of the entity. origin distinguishes the provenance: `user` (upload of the owner), `external` (re-fetchable cache of the enrichment) or `local` (artwork of the scanner). preferred is the flag of the owner (one per (entity, kind), read from the meta_json — compat). `is_principal` (its own column) is the SOURCE OF TRUTH of which asset is the principal of its `(entity, kind)`, and `local_path` marks whether the asset was also physically materialized in the real library folder (distinct from the cache in `assetsDir`, which is where the binary always lives). url is the route that serves the binary. */
     Asset: {
       id: string
-      /** @description Tipo de arte (ex.: poster, fanart). */
+      /** @description Artwork type (e.g.: poster, fanart). */
       kind: string
-      /** @description Proveniência (user, external, local). */
+      /** @description Provenance (user, external, local). */
       origin: string
-      /** @description Marcada como preferida do seu kind (lida do meta_json). */
+      /** @description Marked as preferred of its kind (read from the meta_json). */
       preferred: boolean
-      /** @description Briefing 0062: fonte de verdade de "principal" do seu `(entity, kind)` — no máximo um `true` por par, aplicado em código (não FK/trigger). Ao marcar um novo principal via PUT .../prefer, o anterior do mesmo par vira `false` na mesma transação. */
+      /** @description Source of truth of "principal" of its `(entity, kind)` — at most one `true` per pair, enforced in code (not FK/trigger). When marking a new principal via PUT .../prefer, the previous one of the same pair becomes `false` in the same transaction. */
       is_principal: boolean
-      /** @description Briefing 0062: caminho absoluto do arquivo materializado na pasta REAL da biblioteca, com nome canônico Kodi/Emby (ver naming.go). `null` quando o asset ainda não foi salvo lá — só existe no cache interno (`assetsDir`/`path_or_uri`). Preenchido por POST .../assets/{assetId}/materialize ou por PUT .../prefer (que materializa antes de rotacionar, se necessário). */
+      /** @description Absolute path of the file materialized in the REAL library folder, with the canonical Kodi/Emby name (see naming.go). `null` when the asset has not been saved there yet — it only exists in the internal cache (`assetsDir`/`path_or_uri`). Filled in by POST .../assets/{assetId}/materialize or by PUT .../prefer (which materializes before rotating, if necessary). */
       local_path?: string | null
-      /** @description Rota que serve o binário deste asset. */
+      /** @description Route that serves the binary of this asset. */
       url: string
     }
-    /** @description Galeria de arte da entity (vazia quando não há arte). */
+    /** @description Artwork gallery of the entity (empty when there is no artwork). */
     AssetList: components['schemas']['Asset'][]
-    /** @description Corpo de POST .../historico (briefing 0092). `kind`/`status` são TEXT livre (ex.: kind="assistir", status="started"|"paused"|"stopped"| "completed") — vocabulário sugerido, não travado no schema. */
+    /** @description Body of POST .../historico. `kind`/`status` are free TEXT (e.g.: kind="assistir", status="started"|"paused"|"stopped"| "completed") — a suggested vocabulary, not locked in the schema. */
     CreateHistoricoEvento: {
-      /** @description Tipo de evento (ex.: assistir, ouvir, jogar). Não-vazio. */
+      /** @description Type of the event (e.g.: assistir, ouvir, jogar). Non-empty. */
       kind: string
-      /** @description Status do evento (ex.: started, paused, stopped, completed). Não-vazio. */
+      /** @description Status of the event (e.g.: started, paused, stopped, completed). Non-empty. */
       status: string
-      /** @description Progresso em [0, 100]. Fora do intervalo → 422. */
+      /** @description Progress in [0, 100]. Outside the range → 422. */
       progress_percent?: number | null
-      /** @description Posição de reprodução em segundos, quando aplicável. */
+      /** @description Playback position in seconds, when applicable. */
       position_seconds?: number | null
-      /** @description Instante do evento (RFC3339). Ausente → timestamp do servidor no momento da chamada. */
+      /** @description Instant of the event (RFC3339). Absent → server timestamp at the moment of the call. */
       occurred_at?: string
-      /** @description Proveniência do evento (ex.: manual, jellyfin-webhook). Ausente → "manual". */
+      /** @description Provenance of the event (e.g.: manual, jellyfin-webhook). Absent → "manual". */
       source?: string
-      /** @description Payload cru opcional (ex.: o corpo original do webhook), gravado como está. */
+      /** @description Optional raw payload (e.g.: the original body of the webhook), stored as is. */
       payload?: Record<string, never> | null
     }
-    /** @description Um evento de histórico de consumo (briefing 0092, ADR-0022). */
+    /** @description One consumption history event. */
     HistoricoEvento: {
       id: string
       kind: string
@@ -1796,11 +1796,11 @@ export interface components {
       payload?: Record<string, never> | null
       created_at: string
     }
-    /** @description Resposta de GET .../historico — eventos em ordem occurred_at DESC. */
+    /** @description Response of GET .../historico — events in occurred_at DESC order. */
     HistoricoEventoList: {
       eventos: components['schemas']['HistoricoEvento'][]
     }
-    /** @description Projeção do evento mais recente de um `kind` (briefing 0092) — sem `id`/`payload`, só o resumo usado pela UI. */
+    /** @description Projection of the most recent event of a `kind` — without `id`/`payload`, only the summary used by the UI. */
     HistoricoEstadoItem: {
       status: string
       progress_percent?: number | null
@@ -1808,13 +1808,13 @@ export interface components {
       occurred_at: string
       source: string
     }
-    /** @description Resposta de GET .../historico/estado — um `HistoricoEstadoItem` por `kind` distinto já visto no histórico da entity (chave = kind). Objeto vazio quando não há histórico. */
+    /** @description Response of GET .../historico/estado — one `HistoricoEstadoItem` per distinct `kind` already seen in the history of the entity (key = kind). An empty object when there is no history. */
     HistoricoEstado: {
       estado: {
         [key: string]: components['schemas']['HistoricoEstadoItem']
       }
     }
-    /** @description Evento de histórico sem entity vinculada (briefing 0099). Guarda os IDs externos e título/ano BRUTOS do payload original (não resolvidos contra o catálogo) — usados para localizar candidatos a backfill quando uma entity ganhar aquele ID no futuro; continuam preenchidos mesmo depois de eventualmente vinculado. */
+    /** @description History event without a linked entity. It keeps the RAW external IDs and title/year of the original payload (not resolved against the catalog) — used to locate backfill candidates when an entity gains that ID in the future; they stay filled in even after eventually being linked. */
     HistoricoEventoOrfao: {
       id: string
       kind: string
@@ -1825,14 +1825,14 @@ export interface components {
       source: string
       raw_title?: string | null
       raw_year?: string | null
-      /** @description IDs externos brutos do payload, por fonte. Ausente = não informado pelo evento. */
+      /** @description Raw external IDs of the payload, per source. Absent = not informed by the event. */
       raw_external_ids: {
         tmdb?: string
         imdb?: string
         tvdb?: string
       }
     }
-    /** @description Resposta de GET /historico/orfaos — mesmo envelope de paginação de GET /entities. */
+    /** @description Response of GET /historico/orfaos — the same pagination envelope as GET /entities. */
     HistoricoEventoOrfaoList: {
       items: components['schemas']['HistoricoEventoOrfao'][]
       /** Format: int64 */
@@ -1840,40 +1840,40 @@ export interface components {
       limit: number
       offset: number
     }
-    /** @description Resposta de GET/POST .../webhooks/jellyfin/token (briefing 0093). */
+    /** @description Response of GET/POST .../webhooks/jellyfin/token. */
     JellyfinWebhookToken: {
       token: string
     }
-    /** @description Uma arte no agrupamento por kind do /artwork (briefing 0048). `url` já vem proxyada. `lang`/`likes` vêm do inventário (fanart.tv) e são vazios/zero para as demais fontes. `source` é a proveniência (`user`|`external`|`tmdb`|`fanarttv`); `is_local` marca o asset materializado (servido do disco, cache interno), `is_preferred` a escolha do dono (compat, lida do meta_json). `disc_type`/`disc`/ `season` só aparecem nas artes que os têm. Desde o briefing 0062, `is_local_in_library` e `is_principal` distinguem a materialização física na pasta REAL da biblioteca (só possível quando `is_local=true`; sempre `false` para arte de inventário/URL externa). A ORDENAÇÃO de cada array por kind é `is_principal` desc, `is_local_in_library` desc, ordem original preservada asc. */
+    /** @description One artwork in the grouping by kind of /artwork. `url` already comes proxied. `lang`/`likes` come from the inventory (fanart.tv) and are empty/zero for the other sources. `source` is the provenance (`user`|`external`|`tmdb`|`fanarttv`); `is_local` marks the materialized asset (served from disk, internal cache), `is_preferred` the choice of the owner (compat, read from the meta_json). `disc_type`/`disc`/ `season` only appear in the artwork that has them. `is_local_in_library` and `is_principal` distinguish the physical materialization in the REAL library folder (only possible when `is_local=true`; always `false` for inventory/external URL artwork). The ORDERING of each array per kind is `is_principal` desc, `is_local_in_library` desc, original order preserved asc. */
     ArtworkItem: {
-      /** @description URL já passada pelo proxy de imagem. */
+      /** @description URL already passed through the image proxy. */
       url: string
-      /** @description Idioma da arte (2 letras ou vazio=textless); só no inventário. */
+      /** @description Language of the artwork (2 letters or empty=textless); only in the inventory. */
       lang?: string
-      /** @description Curtidas na fonte; só no inventário (fanart.tv). */
+      /** @description Likes in the source; only in the inventory (fanart.tv). */
       likes?: number
-      /** @description Proveniência: user, external, tmdb ou fanarttv. */
+      /** @description Provenance: user, external, tmdb or fanarttv. */
       source: string
-      /** @description Tipo de disco (bluray/dvd/cd/3d); só no kind disc. */
+      /** @description Disc type (bluray/dvd/cd/3d); only in the disc kind. */
       disc_type?: string
-      /** @description Número do disco; só no kind disc. */
+      /** @description Disc number; only in the disc kind. */
       disc?: number
-      /** @description Temporada da arte (número, `all` ou `0`); só em artes de temporada. */
+      /** @description Season of the artwork (number, `all` or `0`); only in season artwork. */
       season?: string
-      /** @description Escolha do dono (só para asset local). */
+      /** @description Choice of the owner (only for a local asset). */
       is_preferred: boolean
-      /** @description Asset materializado, servido do disco. */
+      /** @description Materialized asset, served from disk. */
       is_local: boolean
-      /** @description Briefing 0062: `true` quando o asset materializado (`is_local=true`) também foi salvo fisicamente na pasta REAL da biblioteca (`asset.local_path != null`) — espelha o "selo Salvo na pasta" da galeria. Sempre `false` para arte de inventário/URL externa (`is_local=false`). */
+      /** @description `true` when the materialized asset (`is_local=true`) was also physically saved in the REAL library folder (`asset.local_path != null`) — it mirrors the "Salvo na pasta" badge of the gallery. Always `false` for inventory/external URL artwork (`is_local=false`). */
       is_local_in_library: boolean
-      /** @description Briefing 0062: `true` quando este é o asset `is_principal=1` do seu `(entity, kind)` (fonte de verdade em coluna própria, distinta de `is_preferred`/meta_json). No máximo um `true` por kind. Sempre `false` para arte de inventário/URL externa. */
+      /** @description `true` when this is the `is_principal=1` asset of its `(entity, kind)` (source of truth in its own column, distinct from `is_preferred`/meta_json). At most one `true` per kind. Always `false` for inventory/external URL artwork. */
       is_principal: boolean
-      /** @description Id do asset materializado (só quando `is_local`): use em PUT /entities/{id}/assets/{assetId}/prefer e DELETE .../assets/{assetId}. */
+      /** @description Id of the materialized asset (only when `is_local`): use it in PUT /entities/{id}/assets/{assetId}/prefer and DELETE .../assets/{assetId}. */
       asset_id?: string
-      /** @description URL CRUA na fonte (só para arte de inventário, `is_local=false`): envie no POST /entities/{id}/artwork/select para baixar/preferir. */
+      /** @description RAW URL in the source (only for inventory artwork, `is_local=false`): send it in POST /entities/{id}/artwork/select to download/prefer it. */
       src_url?: string
     }
-    /** @description Arte DISPONÍVEL agrupada por kind (briefing 0048): uma array de ArtworkItem por kind (poster/fanart/logo/clearart/disc/banner/thumb/characterart/still) mais `available: {kind: count}` para os selos do card. As chaves de kind e a chave `available` coexistem no topo (nenhum kind se chama `available`). */
+    /** @description AVAILABLE artwork grouped by kind: an array of ArtworkItem per kind (poster/fanart/logo/clearart/disc/banner/thumb/characterart/still) plus `available: {kind: count}` for the badges of the card. The kind keys and the `available` key coexist at the top level (no kind is called `available`). */
     ArtworkResponse: {
       poster?: components['schemas']['ArtworkItem'][]
       fanart?: components['schemas']['ArtworkItem'][]
@@ -1884,15 +1884,15 @@ export interface components {
       thumb?: components['schemas']['ArtworkItem'][]
       characterart?: components['schemas']['ArtworkItem'][]
       still?: components['schemas']['ArtworkItem'][]
-      /** @description Contagem de artes por kind (para os selos). */
+      /** @description Count of artwork per kind (for the badges). */
       available?: {
         [key: string]: number
       }
     }
-    /** @description Corpo de POST /entities/{id}/artwork/select: qual arte do inventário (url num host da allowlist do proxy) materializar como asset `origin='external'` do `kind`, e se deve marcá-la como preferida. */
+    /** @description Body of POST /entities/{id}/artwork/select: which artwork of the inventory (url on a host of the proxy allowlist) to materialize as an asset `origin='external'` of the `kind`, and whether it should be marked as preferred. */
     SelectArtworkRequest: {
       /**
-       * @description Tipo de arte a materializar.
+       * @description Artwork type to materialize.
        * @enum {string}
        */
       kind:
@@ -1905,121 +1905,121 @@ export interface components {
         | 'banner'
         | 'thumb'
         | 'characterart'
-      /** @description URL da arte (host precisa estar na allowlist do proxy — anti-SSRF). */
+      /** @description URL of the artwork (the host has to be in the allowlist of the proxy — anti-SSRF). */
       url: string
-      /** @description Marca a arte como preferida do seu kind (default: false). */
+      /** @description Marks the artwork as preferred of its kind (default: false). */
       prefer?: boolean
     }
-    /** @description Corpo OPCIONAL de POST /entities/{id}/enrich. Sem source usa "tmdb"; sem source_id usa external_ids[source] da entity. */
+    /** @description OPTIONAL body of POST /entities/{id}/enrich. Without source it uses "tmdb"; without source_id it uses external_ids[source] of the entity. */
     EnrichRequest: {
-      /** @description Fonte a consultar (default tmdb). */
+      /** @description Source to query (default tmdb). */
       source?: string
-      /** @description Id do item NA FONTE; se ausente, usa external_ids[source]. */
+      /** @description Id of the item IN THE SOURCE; if absent, it uses external_ids[source]. */
       source_id?: string
       /**
-       * @description Quando true, ignora o cache de 24h do detalhe externo (`external_detail`) e busca sempre a versão mais recente do provider (briefing 0088). Default false preserva o comportamento de cache já existente.
+       * @description When true, it ignores the 24h cache of the external detail (`external_detail`) and always fetches the most recent version from the provider. Default false preserves the already existing cache behavior.
        * @default false
        */
       force: boolean
     }
-    /** @description Corpo de POST /import — o item externo a importar. */
+    /** @description Body of POST /import — the external item to import. */
     ImportRequest: {
-      /** @description Fonte (default tmdb). */
+      /** @description Source (default tmdb). */
       source?: string
-      /** @description Id do item NA FONTE (obrigatório). */
+      /** @description Id of the item IN THE SOURCE (required). */
       source_id: string
       /**
-       * @description Tipo canônico do item (obrigatório). `collection` (0025) importa a coleção inteira: cria a entity `type='collection'` e importa/liga os filmes membros. `artista` (0106) importa a discografia inteira (álbuns + faixas). `faixa` (briefing 0115 Parte 2) importa UMA faixa avulsa faltando de um álbum já interno -- exige `parent_id`.
+       * @description Canonical type of the item (required). `collection` imports the whole collection: it creates the `type='collection'` entity and imports/links the member movies. `artista` imports the whole discography (albums + tracks). `faixa` imports ONE loose track missing from an album already internal -- it requires `parent_id`.
        * @enum {string}
        */
       type: 'movie' | 'tv' | 'collection' | 'artista' | 'faixa'
-      /** @description Id INTERNO do álbum pai a ligar (entity_relation kind=music_album) -- obrigatório quando type=faixa; ignorado nos demais tipos. */
+      /** @description INTERNAL id of the parent album to link (entity_relation kind=music_album) -- required when type=faixa; ignored in the other types. */
       parent_id?: string
     }
-    /** @description Corpo de POST /collections (0025 Fase B) — cria uma coleção LOCAL manual. Só o título é obrigatório; a descrição é opcional. */
+    /** @description Body of POST /collections (Phase B) — creates a manual LOCAL collection. Only the title is required; the description is optional. */
     CreateCollection: {
-      /** @description Nome da coleção (obrigatório, não pode ser vazio). */
+      /** @description Name of the collection (required, it cannot be empty). */
       title: string
-      /** @description Descrição livre da coleção (opcional). */
+      /** @description Free description of the collection (optional). */
       description?: string
     }
-    /** @description Corpo de POST /entities/{id}/members (0025 Fase B) — o item a ligar à coleção. */
+    /** @description Body of POST /entities/{id}/members (Phase B) — the item to link to the collection. */
     AddMember: {
-      /** @description Id da entity (filme/série) a incluir como membro. */
+      /** @description Id of the entity (movie/series) to include as a member. */
       child_id: string
     }
-    /** @description Corpo de POST /entities (0027) — cria um ITEM LOCAL manual (movie|tv) SEM fonte externa. type e title são obrigatórios; os demais campos base são opcionais. */
+    /** @description Body of POST /entities — creates a manual LOCAL ITEM (movie|tv) WITHOUT an external source. type and title are required; the other base fields are optional. */
     CreateItem: {
       /**
-       * @description Tipo do item (movie ou tv; coleção usa POST /collections).
+       * @description Type of the item (movie or tv; a collection uses POST /collections).
        * @enum {string}
        */
       type: 'movie' | 'tv'
-      /** @description Título do item (obrigatório, não pode ser vazio). */
+      /** @description Title of the item (required, it cannot be empty). */
       title: string
-      /** @description Título original (opcional). */
+      /** @description Original title (optional). */
       original_title?: string
-      /** @description Sinopse (opcional). */
+      /** @description Synopsis (optional). */
       description?: string
-      /** @description Data de lançamento ISO, ex.: 1999-03-31 (opcional). */
+      /** @description ISO release date, e.g.: 1999-03-31 (optional). */
       release_date?: string
     }
-    /** @description Corpo de PUT /entities/{id}/external-ids (0027) — o mapa COMPLETO de identidades externas (source -> id na fonte). Substitui o mapa inteiro; um valor vazio remove aquela fonte. NÃO re-enriquece (fixa só a identidade, para sincronização futura). */
+    /** @description Body of PUT /entities/{id}/external-ids — the COMPLETE map of external identities (source -> id in the source). It replaces the whole map; an empty value removes that source. It does NOT re-enrich (it only fixes the identity, for future synchronization). */
     UpdateExternalIds: {
-      /** @description Mapa source->id, ex.: {"tmdb": "603", "imdb": "tt0133093"}. */
+      /** @description source->id map, e.g.: {"tmdb": "603", "imdb": "tt0133093"}. */
       external_ids: {
         [key: string]: string
       }
     }
-    /** @description Corpo de POST /entities/{id}/correct — a identidade correta que o dono informa. source default "tmdb"; source_id obrigatório. */
+    /** @description Body of POST /entities/{id}/correct — the correct identity that the owner informs. source default "tmdb"; source_id required. */
     CorrectRequest: {
-      /** @description Fonte (default tmdb). */
+      /** @description Source (default tmdb). */
       source?: string
-      /** @description Id correto do item NA FONTE (obrigatório). */
+      /** @description Correct id of the item IN THE SOURCE (required). */
       source_id: string
     }
-    /** @description Corpo de POST /entities/purge — os ids a purgar em lote. */
+    /** @description Body of POST /entities/purge — the ids to purge in batch. */
     PurgeBatchRequest: {
-      /** @description Ids das entities a purgar (ids ausentes são ignorados). */
+      /** @description Ids of the entities to purge (absent ids are ignored). */
       ids: string[]
     }
-    /** @description Resultado da purga individual (DELETE /entities/{id}). */
+    /** @description Result of the individual purge (DELETE /entities/{id}). */
     PurgeResult: {
-      /** @description Sempre true quando a entity existia e foi purgada. */
+      /** @description Always true when the entity existed and was purged. */
       purged: boolean
     }
-    /** @description Resultado da purga em lote (POST /entities/purge). */
+    /** @description Result of the batch purge (POST /entities/purge). */
     PurgeBatchResult: {
-      /** @description Quantas entities foram de fato removidas (idempotente por ausente). */
+      /** @description How many entities were actually removed (idempotent for absent ones). */
       removed: number
     }
-    /** @description O candidato aplicado pelo auto-match (briefing 0050) — local ou externo. `id` é o id da entity RESULTANTE: no método `local`, o id da entity SOBREVIVENTE já catalogada (a entity da fila foi fundida nela e deixou de existir); no método `external`, o próprio id da entity da fila (a identidade foi aplicada nela, sem trocar de id). */
+    /** @description The candidate applied by the auto-match — local or external. `id` is the id of the RESULTING entity: in the `local` method, the id of the SURVIVING entity already cataloged (the entity of the queue was merged into it and stopped existing); in the `external` method, the id of the entity of the queue itself (the identity was applied to it, without changing its id). */
     AutoMatchTarget: {
       id: string
       title: string
-      /** @description Ano do candidato aplicado; null quando a fonte não informa. */
+      /** @description Year of the applied candidate; null when the source does not inform it. */
       year: number | null
     }
-    /** @description Resposta de POST /entities/{id}/auto-match. `target` é null quando `resolved` é false (nenhum candidato bateu `LimiarAutoMatch`). */
+    /** @description Response of POST /entities/{id}/auto-match. `target` is null when `resolved` is false (no candidate matched `LimiarAutoMatch`). */
     AutoMatchResult: {
-      /** @description true quando um candidato foi aplicado automaticamente. */
+      /** @description true when a candidate was applied automatically. */
       resolved: boolean
       /**
-       * @description Como foi resolvido — `local` (fundido a entity já catalogada), `external` (identidade aplicada via fonte externa) ou `none` (nenhum candidato bateu o limiar; item continua na fila).
+       * @description How it was resolved — `local` (merged into an already cataloged entity), `external` (identity applied through an external source) or `none` (no candidate matched the threshold; the item stays in the queue).
        * @enum {string}
        */
       method: 'local' | 'external' | 'none'
-      /** @description Score do melhor candidato (0-100); 0 quando method=none. */
+      /** @description Score of the best candidate (0-100); 0 when method=none. */
       score: number
-      /** @description O candidato aplicado; null quando method=none. */
+      /** @description The applied candidate; null when method=none. */
       target: components['schemas']['AutoMatchTarget'] | null
     }
-    /** @description Corpo OPCIONAL de POST /review/auto-match — os ids a processar. Omitido ou `ids` vazio/ausente processa TODOS os elegíveis da fila de revisão (ListarRevisao, mesma fonte de GET /review). */
+    /** @description OPTIONAL body of POST /review/auto-match — the ids to process. Omitted or with an empty/absent `ids`, it processes ALL the eligible ones of the review queue (the same source as GET /review). */
     AutoMatchBatchRequest: {
-      /** @description Ids das entities a processar; vazio/ausente = todos os elegíveis. */
+      /** @description Ids of the entities to process; empty/absent = all the eligible ones. */
       ids?: string[]
     }
-    /** @description Resultado do auto-match de UM item do lote. */
+    /** @description Result of the auto-match of ONE item of the batch. */
     AutoMatchBatchItem: {
       id: string
       resolved: boolean
@@ -2027,142 +2027,142 @@ export interface components {
       method: 'local' | 'external' | 'none'
       score: number
     }
-    /** @description Resposta de POST /review/auto-match — o resumo agregado do lote. */
+    /** @description Response of POST /review/auto-match — the aggregated summary of the batch. */
     AutoMatchBatchResult: {
-      /** @description Quantos itens foram resolvidos automaticamente. */
+      /** @description How many items were resolved automatically. */
       resolved_count: number
-      /** @description Quantos itens continuam na fila (nenhum candidato bateu o limiar). */
+      /** @description How many items stay in the queue (no candidate matched the threshold). */
       pending_count: number
       items: components['schemas']['AutoMatchBatchItem'][]
     }
-    /** @description O candidato mostrado pela prévia de match (briefing 0060) — local ou externo, sem aplicar nada. Quando veio do catálogo local, `local_id` é o id da entity já catalogada e `source`/`source_id` são null; quando veio da fonte externa, `local_id` é null e `source`/ `source_id` vêm preenchidos. `poster_url`: para local, a rota do proxy da própria entity (mesma que `EntityCard.poster_url`); para externo, a URL CRUA do provider (o front roteia via `arteSrc`). */
+    /** @description The candidate shown by the match preview — local or external, without applying anything. When it came from the local catalog, `local_id` is the id of the already cataloged entity and `source`/`source_id` are null; when it came from the external source, `local_id` is null and `source`/ `source_id` come filled in. `poster_url`: for a local one, the proxy route of the entity itself (the same as `EntityCard.poster_url`); for an external one, the RAW URL of the provider (the front routes it via `arteSrc`). */
     MatchPreviewTarget: {
       title: string
-      /** @description Ano do candidato; null quando a fonte não informa. */
+      /** @description Year of the candidate; null when the source does not inform it. */
       year: number | null
       poster_url: string | null
-      /** @description Id da entity local candidata; null quando method=external. */
+      /** @description Id of the candidate local entity; null when method=external. */
       local_id: string | null
-      /** @description Fonte externa do candidato; null quando method=local. */
+      /** @description External source of the candidate; null when method=local. */
       source: string | null
-      /** @description Id na fonte externa; null quando method=local. */
+      /** @description Id in the external source; null when method=local. */
       source_id: string | null
-      /** @description Título (principal ou alternativo/traduzido) que efetivamente produziu o score mostrado (briefing 0084). Ausente quando o candidato é local ou quando o título vencedor é o próprio título principal do candidato. */
+      /** @description Title (main or alternative/translated) that actually produced the score shown. Absent when the candidate is local or when the winning title is the main title of the candidate itself. */
       matched_title?: string
     }
-    /** @description Resposta de GET /entities/{id}/match-preview (briefing 0060) — dry-run, read-only, SEM side-effect. Devolve o candidato de MAIOR score entre local e externo, mesmo abaixo do `LimiarAutoMatch` (reusa a mesma busca+pontuação do auto-match/0050, sem o corte de limiar). `target` é null quando `found` é false. */
+    /** @description Response of GET /entities/{id}/match-preview — a dry run, read-only, WITHOUT side effect. It returns the candidate with the HIGHEST score between local and external, even below `LimiarAutoMatch` (it reuses the same search+scoring of the auto-match, without the threshold cut). `target` is null when `found` is false. */
     MatchPreview: {
-      /** @description true quando algum candidato foi encontrado (local ou externo). */
+      /** @description true when some candidate was found (local or external). */
       found: boolean
       /**
-       * @description De onde veio o candidato — `local` (catálogo já existente), `external` (fonte externa default) ou `none` (nenhum candidato encontrado em nenhuma fonte).
+       * @description Where the candidate came from — `local` (already existing catalog), `external` (default external source) or `none` (no candidate found in any source).
        * @enum {string}
        */
       method: 'local' | 'external' | 'none'
-      /** @description Score do melhor candidato (0-100); 0 quando method=none. */
+      /** @description Score of the best candidate (0-100); 0 when method=none. */
       score: number
-      /** @description true quando esse score bateria o `LimiarAutoMatch` (92) do auto-match (0050) — puramente informativo aqui, NÃO filtra o resultado da prévia nem impede `confirm-candidate`. */
+      /** @description true when that score would match the `LimiarAutoMatch` (92) of the auto-match — purely informative here, it does NOT filter the result of the preview nor prevent `confirm-candidate`. */
       meets_auto_threshold: boolean
-      /** @description O candidato encontrado; null quando found=false. */
+      /** @description The candidate found; null when found=false. */
       target: components['schemas']['MatchPreviewTarget'] | null
     }
-    /** @description Corpo de POST /entities/{id}/confirm-candidate (briefing 0060) — aplica o candidato mostrado pela prévia, SEM checar `LimiarAutoMatch`. Dois formatos conforme `method`: `local` exige `local_id`; `external` exige `source` e `source_id`. Corpo que não bate o `method` (campo obrigatório ausente) responde 422. */
+    /** @description Body of POST /entities/{id}/confirm-candidate — it applies the candidate shown by the preview, WITHOUT checking `LimiarAutoMatch`. Two formats according to `method`: `local` requires `local_id`; `external` requires `source` and `source_id`. A body that does not match the `method` (missing required field) answers 422. */
     ConfirmCandidateBody: {
       /** @enum {string} */
       method: 'local' | 'external'
-      /** @description Id da entity local candidata (obrigatório quando method=local). */
+      /** @description Id of the candidate local entity (required when method=local). */
       local_id?: string
-      /** @description Fonte externa do candidato (obrigatório quando method=external). */
+      /** @description External source of the candidate (required when method=external). */
       source?: string
-      /** @description Id na fonte externa (obrigatório quando method=external). */
+      /** @description Id in the external source (required when method=external). */
       source_id?: string
     }
-    /** @description Resposta de POST /entities/{id}/enrich-missing (briefing 0059) — espelha o `resultado` de `tentarEnriquecerOuSinalizar` (0056), reaproveitado como o DTO público deste endpoint. `method`/`score` presentes só quando `outcome=="applied"`; `score` também presente em `outcome=="flagged"` (sem `method`); nenhum dos dois em `outcome=="none"`. */
+    /** @description Response of POST /entities/{id}/enrich-missing — it mirrors the `resultado` of `tentarEnriquecerOuSinalizar`, reused as the public DTO of this endpoint. `method`/`score` are present only when `outcome=="applied"`; `score` is also present in `outcome=="flagged"` (without `method`); neither of them in `outcome=="none"`. */
     EnrichMissingResult: {
       /**
-       * @description `applied` (candidato forte aplicado sozinho), `flagged` (candidato plausível, item sinalizado para a fila de Revisão) ou `none` (nenhum candidato encontrado em nenhuma fonte).
+       * @description `applied` (strong candidate applied on its own), `flagged` (plausible candidate, item flagged to the Review queue) or `none` (no candidate found in any source).
        * @enum {string}
        */
       outcome: 'applied' | 'flagged' | 'none'
       /**
-       * @description Como o candidato foi aplicado — só presente quando `outcome=="applied"`.
+       * @description How the candidate was applied — only present when `outcome=="applied"`.
        * @enum {string}
        */
       method?: 'local' | 'external'
-      /** @description Score do candidato (0-100) — presente quando `outcome` é `applied` ou `flagged`; ausente quando `none`. */
+      /** @description Score of the candidate (0-100) — present when `outcome` is `applied` or `flagged`; absent when `none`. */
       score?: number
     }
-    /** @description Resposta de POST /entities/{id}/download-missing-artwork (briefing 0059). `downloaded` são os kinds (`poster`, `fanart`, ...) que ganharam um asset novo; `unavailable` são os kinds que estavam em `catalog_completeness.missing` (`artwork:<kind>`) mas não tinham NENHUMA opção disponível em nenhum provider agora. Um kind que já tinha asset (corrida com upload manual concorrente) não aparece em nenhuma das duas listas. Ambas `[]` quando o item já está completo ou é draft (sem `catalog_completeness`). */
+    /** @description Response of POST /entities/{id}/download-missing-artwork. `downloaded` are the kinds (`poster`, `fanart`, ...) that gained a new asset; `unavailable` are the kinds that were in `catalog_completeness.missing` (`artwork:<kind>`) but had NO option available in any provider now. A kind that already had an asset (race with a concurrent manual upload) does not appear in either of the two lists. Both `[]` when the item is already complete or is a draft (without `catalog_completeness`). */
     DownloadMissingArtworkResult: {
-      /** @description Kinds de arte que ganharam um asset novo nesta chamada. */
+      /** @description Artwork kinds that gained a new asset in this call. */
       downloaded: string[]
-      /** @description Kinds que estavam faltando mas sem opção em nenhum provider. */
+      /** @description Kinds that were missing but without an option in any provider. */
       unavailable: string[]
     }
-    /** @description Resposta de POST /entities/{id}/force-reconcile (briefing 0122) — `linked=true` quando a entity foi religada contra o pai nesta chamada; `linked=false` quando não havia candidato, o tipo não é aplicável (nem `faixa` nem `tv`) ou não há scanner configurado. */
+    /** @description Response of POST /entities/{id}/force-reconcile — `linked=true` when the entity was re-linked against the parent in this call; `linked=false` when there was no candidate, the type is not applicable (neither `faixa` nor `tv`) or there is no scanner configured. */
     ForceReconcileResult: {
-      /** @description Se a entity foi religada contra o pai nesta chamada. */
+      /** @description Whether the entity was re-linked against the parent in this call. */
       linked: boolean
     }
-    /** @description Resposta de POST /entities/{id}/refresh-files (briefing 0088) — resumo informativo do que foi reconferido/encontrado/preenchido nesta chamada; formato solto (não é contrato rígido para outra integração consumir, só feedback pro dono na UI). */
+    /** @description Response of POST /entities/{id}/refresh-files — an informative summary of what was rechecked/found/filled in this call; a loose format (not a strict contract for another integration to consume, only feedback to the owner in the UI). */
     RefreshFilesResult: {
-      /** @description Quantos `media_file` da entity tiveram re-hash/mediainfo forçado. */
+      /** @description How many `media_file`s of the entity had their re-hash/mediainfo forced. */
       files_rechecked: number
-      /** @description Quantos assets `origin='local'` foram criados/atualizados a partir de arquivo(s) encontrado(s) na pasta. */
+      /** @description How many `origin='local'` assets were created/updated from file(s) found in the folder. */
       assets_found: number
-      /** @description Nomes dos campos locais de reprodução (`watched`, `play_count`, `user_rating`, `last_played_at`, `resume_position_seconds`, `resume_total_seconds`) que estavam vazios e foram preenchidos a partir do `.nfo` nesta chamada. Vazio se não havia `.nfo`, ou se todos os campos já tinham valor. */
+      /** @description Names of the local playback fields (`watched`, `play_count`, `user_rating`, `last_played_at`, `resume_position_seconds`, `resume_total_seconds`) that were empty and were filled in from the `.nfo` in this call. Empty if there was no `.nfo`, or if all the fields already had a value. */
       playback_fields_filled: string[]
     }
-    /** @description Resposta de POST /entities/{id}/audio-tags/write (briefing 0125) — resumo informativo, mesmo espírito solto do RefreshFilesResult (formato não é contrato rígido para outra integração consumir, só feedback pro dono na UI). Sucesso PARCIAL é o caso normal de uma cascata de álbum (uma faixa sem arquivo/com tag ilegível não impede as demais). */
+    /** @description Response of POST /entities/{id}/audio-tags/write — an informative summary, the same loose spirit as RefreshFilesResult (the format is not a strict contract for another integration to consume, only feedback to the owner in the UI). PARTIAL success is the normal case of an album cascade (a track without a file/with an unreadable tag does not stop the others). */
     AudioTagsWriteResult: {
-      /** @description Quantas faixas tiveram a tag regravada com sucesso nesta chamada. */
+      /** @description How many tracks had their tag rewritten successfully in this call. */
       faixas_regravadas: number
-      /** @description Uma entrada por faixa que falhou ("faixaID: motivo"). Vazio quando todas as faixas regravaram com sucesso (ou quando `id` era uma `faixa` avulsa que regravou). */
+      /** @description One entry per track that failed ("faixaID: motivo"). Empty when all the tracks were rewritten successfully (or when `id` was a loose `faixa` that was rewritten). */
       falhas: string[]
     }
-    /** @description Resposta de POST /entities/{id}/materialize-missing-media (briefing 0088) — espelha o retorno de `MaterializarMidiasFaltantes` (mesmo usado internamente pelo job `midias_faltantes`, briefing 0064), reaproveitado como DTO público deste endpoint. */
+    /** @description Response of POST /entities/{id}/materialize-missing-media — it mirrors the return of `MaterializarMidiasFaltantes` (the same one used internally by the `midias_faltantes` job), reused as the public DTO of this endpoint. */
     MaterializeMissingMediaResult: {
-      /** @description Kinds de arte (`poster`, `fanart`, ...) materializados na pasta real nesta chamada. */
+      /** @description Artwork kinds (`poster`, `fanart`, ...) materialized in the real folder in this call. */
       artes_baixadas: string[]
-      /** @description Se o `.nfo` da entity foi gravado nesta chamada (estava ausente). */
+      /** @description Whether the `.nfo` of the entity was written in this call (it was absent). */
       nfo_gravado: boolean
     }
-    /** @description Resposta de POST /entities/{id}/nfo (briefing 0062) — espelha as duas colunas novas de `entity` que a escrita atualiza. `nfo_path` é o caminho absoluto do `.nfo` gravado (`<vídeo>.nfo` para filme/episódio, `tvshow.nfo` na raiz da pasta da série); `nfo_written_at` é o timestamp ISO desta escrita (muda a cada chamada, mesmo idempotente em conteúdo). */
+    /** @description Response of POST /entities/{id}/nfo — it mirrors the two new `entity` columns that the write updates. `nfo_path` is the absolute path of the written `.nfo` (`<vídeo>.nfo` for movie/episode, `tvshow.nfo` in the root of the series folder); `nfo_written_at` is the ISO timestamp of this write (it changes on every call, even idempotent in content). */
     NfoWriteResult: {
-      /** @description Caminho absoluto do .nfo gravado na pasta real da biblioteca. */
+      /** @description Absolute path of the .nfo written in the real library folder. */
       nfo_path: string
-      /** @description Timestamp ISO da última escrita (entity.nfo_written_at). */
+      /** @description ISO timestamp of the last write (entity.nfo_written_at). */
       nfo_written_at: string
     }
-    /** @description Corpo (opcional) de POST /entities/{id}/trailer/download (briefing 0102, ADR-0025). Corpo ausente/vazio usa os dois defaults. */
+    /** @description (Optional) body of POST /entities/{id}/trailer/download. An absent/empty body uses the two defaults. */
     TrailerDownloadRequest: {
-      /** @description Key do YouTube do vídeo a baixar (seleciona um vídeo ESPECÍFICO de `videos`). Ausente/vazio: baixa o primeiro `type=="Trailer" && site=="YouTube"` (mesmo critério do botão "Assistir trailer" do frontend). */
+      /** @description YouTube key of the video to download (it selects a SPECIFIC video of `videos`). Absent/empty: it downloads the first `type=="Trailer" && site=="YouTube"` (the same criterion as the "Assistir trailer" button of the frontend). */
       key?: string
-      /** @description `true` pede RE-DOWNLOAD mesmo com um trailer já materializado (baixado antes OU colocado manualmente pelo dono) — sobrescreve. Default `false`: um trailer já presente nunca é sobrescrito (princípio 5, não-destrutivo), respondendo 409. */
+      /** @description `true` asks for a RE-DOWNLOAD even with a trailer already materialized (downloaded before OR placed by hand by the owner) — it overwrites. Default `false`: a trailer already present is never overwritten (principle 5, non-destructive), answering 409. */
       force?: boolean
     }
-    /** @description Resposta de sucesso de POST /entities/{id}/trailer/download (briefing 0102). */
+    /** @description Success response of POST /entities/{id}/trailer/download. */
     TrailerDownloadResult: {
-      /** @description Caminho absoluto do trailer gravado na pasta real da biblioteca. */
+      /** @description Absolute path of the trailer written in the real library folder. */
       local_path: string
     }
-    /** @description Resposta de GET /entities/{id}/theme/candidato (briefing 0103, ADR-0025). */
+    /** @description Response of GET /entities/{id}/theme/candidato. */
     ThemeCandidatoResult: {
-      /** @description Há um candidato de tema musical do ThemerrDB cacheado para este item (sem expor a URL do YouTube — o download acontece server-side via POST .../theme/download). */
+      /** @description There is a theme song candidate from ThemerrDB cached for this item (without exposing the YouTube URL — the download happens server-side via POST .../theme/download). */
       disponivel: boolean
-      /** @description A entity já tem um theme.{mp3,ogg,flac} na pasta-raiz (baixado antes OU colocado à mão pelo dono) — o mesmo arquivo que GET /entities/{id}/theme (briefing 0082) serve. */
+      /** @description The entity already has a theme.{mp3,ogg,flac} in the root folder (downloaded before OR placed by hand by the owner) — the same file that GET /entities/{id}/theme serves. */
       ja_tem_local: boolean
     }
-    /** @description Resposta de sucesso de POST /entities/{id}/theme/download (briefing 0103). */
+    /** @description Success response of POST /entities/{id}/theme/download. */
     ThemeDownloadResult: {
-      /** @description Caminho absoluto do tema musical gravado na pasta real da biblioteca. */
+      /** @description Absolute path of the theme song written in the real library folder. */
       local_path: string
     }
-    /** @description Visão resolvida — shape FINAL. Hoje reflete a camada arquivo/núcleo; a Fase 3 preenche os mesmos campos com override/externo sem mudar o shape. Os campos RICOS (tagline, keywords, runtime, certification, vote_average, backdrop_url, videos, collection, similar, external_links) dão PARIDADE com o detalhe do externo (0022/0023): vêm da camada externa já enriquecida e usam o MESMO shape (componentes ExternalVideo/Collection/Similar). Os gêneros NÃO têm campo próprio — são as `tags` (que já os carregam). */
+    /** @description Resolved view — FINAL shape. Today it reflects the file/core layer; Phase 3 fills the same fields with override/external without changing the shape. The RICH fields (tagline, keywords, runtime, certification, vote_average, backdrop_url, videos, collection, similar, external_links) give PARITY with the external detail: they come from the already enriched external layer and use the SAME shape (ExternalVideo/Collection/Similar components). The genres do NOT have a field of their own — they are the `tags` (which already carry them). */
     ResolvedEntity: {
       id: string
       /**
-       * @description Tipo canonico da entity. `season`/`episode` (0031) sao os nos internos da arvore de series (mesmo shape resolvido; navegados por GET /members). `album`/`artista`/`faixa` (0105-0107) sao a vertical de musica -- mesmo enum de EntityCard.type (nomes em portugues, nao `artist`/`track`).
+       * @description Canonical type of the entity. `season`/`episode` are the internal nodes of the series tree (same resolved shape; navigated by GET /members). `album`/`artista`/`faixa` are the music vertical -- the same enum as EntityCard.type (names in Portuguese, not `artist`/`track`).
        * @enum {string}
        */
       type:
@@ -2186,235 +2186,235 @@ export interface components {
       owned: boolean
       file_count: number
       poster_url: string | null
-      /** @description Dados de verticais (namespace → objeto de campos), compostos pela mesma precedência override ⟵ externo ⟵ arquivo. Objeto vazio quando não há extensões; nunca null. */
+      /** @description Data of the verticals (namespace → object of fields), composed by the same precedence override ⟵ external ⟵ file. An empty object when there are no extensions; never null. */
       extension_data: {
         [key: string]: Record<string, never>
       }
-      /** @description Eco do idioma pedido (ADR-0019). Vazio quando não há contexto de idioma (compatível com o comportamento pré-multi-idioma). */
+      /** @description Echo of the requested language (ADR-0019). Empty when there is no language context (compatible with the pre-multilanguage behavior). */
       lang: string
-      /** @description Código NEUTRO do idioma original da obra (âncora do fallback), ou null. */
+      /** @description NEUTRAL code of the original language of the work (anchor of the fallback), or null. */
       original_language: string | null
-      /** @description Proveniência de IDIOMA (ADR-0019): campo traduzível → idioma efetivo que serviu o valor (`""` = base neutra/arquivo). Mapa lateral; não muda os campos (o shape segue plano). */
+      /** @description Provenance of LANGUAGE (ADR-0019): translatable field → effective language that served the value (`""` = neutral/file base). A side map; it does not change the fields (the shape stays flat). */
       resolved_languages: {
         [key: string]: string
       }
-      /** @description Slogan traduzível resolvido no idioma ativo (paridade com o externo). */
+      /** @description Translatable tagline resolved in the active language (parity with the external one). */
       tagline: string | null
-      /** @description Palavras-chave traduzíveis (distintas dos gêneros/tags). `[]` quando ausentes. */
+      /** @description Translatable keywords (distinct from the genres/tags). `[]` when absent. */
       keywords: string[]
-      /** @description Duração em minutos, ou null. */
+      /** @description Duration in minutes, or null. */
       runtime: number | null
-      /** @description Classificação indicativa da região do idioma ativo (fallback US), ou null. */
+      /** @description Content rating of the region of the active language (US fallback), or null. */
       certification: string | null
-      /** @description SITUAÇÃO de exibição de uma SÉRIE (0045): string CRUA da fonte, exposta VERBATIM (TMDB: "Returning Series"|"Ended"|"Canceled"|"In Production"| "Planned"; TVDB: status.name) — a UI traduz o rótulo p/ pt-BR. Neutra e read-only. OPCIONAL: presente só quando a fonte a informa; AUSENTE para filme e série só-TVDB sem match. */
+      /** @description Display SITUATION of a SERIES: RAW string from the source, exposed VERBATIM (TMDB: "Returning Series"|"Ended"|"Canceled"|"In Production"| "Planned"; TVDB: status.name) — the UI translates the label into pt-BR. Neutral and read-only. OPTIONAL: present only when the source informs it; ABSENT for a movie and for a TVDB-only series without a match. */
       airing_status?: string | null
-      /** @description Nota média externa (0–10), ou null. */
+      /** @description External average rating (0–10), or null. */
       vote_average: number | null
-      /** @description Nota LOCAL do dono (0–10), gravada na camada de override (ADR-0012): complementa/sobrepõe a nota da fonte (vote_average). null quando o dono não avaliou — a UI então mostra a nota da fonte (limpar é não-destrutivo). */
+      /** @description LOCAL rating of the owner (0–10), written in the override layer (ADR-0012): it complements/overrides the rating of the source (vote_average). null when the owner has not rated it — the UI then shows the rating of the source (clearing it is non-destructive). */
       local_rating: number | null
-      /** @description Nota (vote_average) de CADA camada externa que modela o campo, uma entrada por fonte (0086) — ao contrário de vote_average (mesclado por prioridade, 1 valor só), permite a UI mostrar notas de fontes diferentes lado a lado. `[]` quando ausentes. */
+      /** @description Rating (vote_average) of EACH external layer that models the field, one entry per source — unlike vote_average (merged by priority, a single value), it allows the UI to show ratings from different sources side by side. `[]` when absent. */
       ratings: components['schemas']['EntityRating'][]
-      /** @description Fundo (backdrop) da entity: rota LOCAL do fanart cacheado (0015) quando existe, senão a URL direta da fonte; null quando não há. */
+      /** @description Backdrop of the entity: LOCAL route of the cached fanart when it exists, otherwise the direct URL of the source; null when there is none. */
       backdrop_url: string | null
-      /** @description Vídeos (trailer/clip) da fonte. `[]` quando ausentes. */
+      /** @description Videos (trailer/clip) of the source. `[]` when absent. */
       videos: components['schemas']['ExternalVideo'][]
-      /** @description Coleção a que o item pertence, ou null. */
+      /** @description Collection the item belongs to, or null. */
       collection: components['schemas']['ExternalCollection'] | null
-      /** @description Itens similares. `[]` quando ausentes. */
+      /** @description Similar items. `[]` when absent. */
       similar: components['schemas']['ExternalSimilar'][]
-      /** @description Elenco (0029), top ~50 por ordem de bilhagem. `[]` quando ausente. Filme: personagem simples. Série: papéis unidos + `episode_count`. */
+      /** @description Cast, top ~50 by billing order. `[]` when absent. Movie: a single character. Series: merged roles + `episode_count`. */
       cast?: components['schemas']['CreditCast'][]
-      /** @description Equipe (0029) agrupável por `department`. `[]` quando ausente. */
+      /** @description Crew, groupable by `department`. `[]` when absent. */
       crew?: components['schemas']['CreditCrew'][]
-      /** @description Produtoras/estúdios (0029). `[]` quando ausentes. */
+      /** @description Production companies/studios. `[]` when absent. */
       companies?: components['schemas']['CreditCompany'][]
-      /** @description Mapa link→URL (imdb, tmdb…). `{}` quando ausentes. */
+      /** @description link→URL map (imdb, tmdb…). `{}` when absent. */
       external_links: {
         [key: string]: string
       }
-      /** @description Trilha RAIZ→PAI (breadcrumb, 0032) na árvore de séries: episódio → [série, temporada]; temporada → [série]; obra de topo (movie/tv/collection) → `[]`. Nunca null. */
+      /** @description ROOT→PARENT trail (breadcrumb) in the series tree: episode → [série, temporada]; temporada → [série]; top-level work (movie/tv/collection) → `[]`. Never null. */
       ancestors: components['schemas']['AncestorRef'][]
-      /** @description Posse AGREGADA de uma entity-pai da árvore de séries (0034): episódios possuídos sobre o total. Presente só para `tv` (soma across temporadas) e `season` (episódios diretos); `null` para movie/episódio/coleção (que usam a posse simples de `owned`). */
+      /** @description AGGREGATED ownership of a parent entity of the series tree: episodes owned over the total. Present only for `tv` (sum across seasons) and `season` (direct episodes); `null` for movie/episode/collection (which use the simple ownership of `owned`). */
       ownership: components['schemas']['OwnershipInfo'] | null
-      /** @description Ordens de exibição de episódios disponíveis de uma SÉRIE (0040): a `default` e a lista `available` (união das chaves de `numbering` dos episódios + `absolute` quando há absolute_number, com o default primeiro). OPCIONAL: presente só para `tv` com ao menos uma ordem; AUSENTE para os demais tipos e para série sem numbering. A UI só mostra o seletor quando `available` tem mais de um item. */
+      /** @description Display orders of episodes available for a SERIES: the `default` one and the `available` list (union of the `numbering` keys of the episodes + `absolute` when there is an absolute_number, with the default first). OPTIONAL: present only for `tv` with at least one order; ABSENT for the other types and for a series without numbering. The UI only shows the selector when `available` has more than one item. */
       orderings?: components['schemas']['OrderingsInfo']
-      /** @description URL CRUA do still (frame 16:9) do EPISÓDIO (0042), como veio do provider — artwork NEUTRO de idioma, do extension_data core.tv@1. OPCIONAL: presente só para `episode` com still; AUSENTE para os demais tipos e para episódio sem still (cai no placeholder). O front a serve pelo image proxy (busca+cacheia sob demanda); nunca é baixada no import. */
+      /** @description RAW URL of the still (16:9 frame) of the EPISODE, as it came from the provider — language-NEUTRAL artwork, from the extension_data core.tv@1. OPTIONAL: present only for `episode` with a still; ABSENT for the other types and for an episode without a still (it falls back to the placeholder). The front serves it through the image proxy (fetch+cache on demand); it is never downloaded at import. */
       still_url?: string | null
-      /** @description Completude de catalogação do item (0058) contra a régua configurada em /settings (0057), calculada AO VIVO a cada request (reaproveita os dados que este mesmo endpoint já resolve, sem query extra). `null` somente quando o item é draft (nunca casado) — não faz sentido avaliar metadados que ainda não existem; para item não-draft nunca é null aqui (diferente de `EntityCard.catalog_completeness`, que lê de um cache em lote e pode ficar `null` até a primeira execução do job). */
+      /** @description Cataloging completeness of the item against the ruler configured in /settings, computed LIVE on every request (it reuses the data that this same endpoint already resolves, without an extra query). `null` only when the item is a draft (never matched) — it makes no sense to evaluate metadata that does not exist yet; for a non-draft item it is never null here (unlike `EntityCard.catalog_completeness`, which reads from a batch cache and may stay `null` until the first run of the job). */
       catalog_completeness:
         components['schemas']['CatalogCompletenessResult'] | null
     }
-    /** @description Nota (vote_average) de UMA fonte específica, para exibição lado a lado das notas de fontes diferentes (0086) — ver `ResolvedEntity.ratings`. */
+    /** @description Rating (vote_average) of ONE specific source, for the side-by-side display of ratings from different sources — see `ResolvedEntity.ratings`. */
     EntityRating: {
       source: string
       value: number
     }
-    /** @description Ordens de exibição de episódios de uma série (0040): `default` é a ordem inicial (o default_season_type gravado no import) e `available` a lista oferecida ao seletor (o default primeiro, `absolute` ao fim quando há número absoluto). O seletor só aparece com mais de uma ordem. */
+    /** @description Display orders of episodes of a series: `default` is the initial order (the default_season_type stored at import) and `available` the list offered to the selector (the default first, `absolute` at the end when there is an absolute number). The selector only appears with more than one order. */
     OrderingsInfo: {
-      /** @description Ordem inicial (default_season_type da série). */
+      /** @description Initial order (default_season_type of the series). */
       default: string
-      /** @description Ordens oferecidas, o default primeiro. */
+      /** @description Orders offered, the default first. */
       available: string[]
     }
-    /** @description Resposta de GET /entities/{id}/episodes (0040): a ordem efetivamente aplicada (`ordering`, já resolvida contra as disponíveis) e os grupos de episódios. */
+    /** @description Response of GET /entities/{id}/episodes: the order effectively applied (`ordering`, already resolved against the available ones) and the episode groups. */
     EpisodeGroups: {
-      /** @description Ordem aplicada (o default quando a pedida foi ausente/inválida). */
+      /** @description Applied order (the default when the requested one was absent/invalid). */
       ordering: string
       groups: components['schemas']['EpisodeGroup'][]
     }
-    /** @description Um grupo de episódios (temporada da ORDEM pedida) com o rótulo NÃO-navegável do cabeçalho e os cards de episódio já com `numbering` projetado naquela ordem. No `absolute` há um grupo único corrido (`season` 0, label "Episódios"); episódios sem numeração naquela ordem caem num grupo "Sem numeração" (`season` 0) ao fim. */
+    /** @description One group of episodes (season of the REQUESTED order) with the NON-navigable label of the header and the episode cards already with the `numbering` projected in that order. In `absolute` there is a single continuous group (`season` 0, label "Episódios"); episodes without numbering in that order fall into a "Sem numeração" group (`season` 0) at the end. */
     EpisodeGroup: {
-      /** @description Número da temporada da ordem (0 no grupo absoluto / sem numeração). */
+      /** @description Season number of the order (0 in the absolute / without-numbering group). */
       season: number
-      /** @description Rótulo do cabeçalho, não-navegável (ex.: Temporada 1, Episódios). */
+      /** @description Label of the header, non-navigable (e.g.: Temporada 1, Episódios). */
       label: string
       episodes: components['schemas']['EntityCard'][]
     }
-    /** @description Posse agregada de uma temporada/série (0034): episódios possuídos (`owned_count`) sobre o total de episódios (`total_count`). Alimenta o badge "possui 12/13". Derivada dos vínculos media_file_entity (kind='tv_episode'). */
+    /** @description Aggregated ownership of a season/series: episodes owned (`owned_count`) over the total of episodes (`total_count`). It feeds the badge "possui 12/13". Derived from the media_file_entity links (kind='tv_episode'). */
     OwnershipInfo: {
       owned_count: number
       total_count: number
     }
-    /** @description Nó ancestral do breadcrumb (0032): o mínimo para renderizar e navegar a um nível-pai da árvore de séries. */
+    /** @description Ancestor node of the breadcrumb: the minimum to render and navigate to a parent level of the series tree. */
     AncestorRef: {
       id: string
       /** @enum {string} */
       type: 'movie' | 'tv' | 'collection' | 'season' | 'episode'
       title: string
     }
-    /** @description UM item da listagem GET /integrations (briefing 0095). `configurada` é calculada pela regra PRÓPRIA do provider (ex.: TMDB aceita `token` OU `api_key`) a partir dos valores efetivos de cada campo — não é "todos os campos obrigatórios preenchidos". */
+    /** @description ONE item of the GET /integrations listing. `configurada` is computed by the OWN rule of the provider (e.g.: TMDB accepts `token` OR `api_key`) from the effective values of each field — it is not "all the required fields filled in". */
     IntegrationSummary: {
-      /** @description Chave estável de URL/registro (ex.: tmdb). */
+      /** @description Stable URL/registry key (e.g.: tmdb). */
       slug: string
-      /** @description Rótulo amigável (ex.: TMDB). */
+      /** @description Friendly label (e.g.: TMDB). */
       nome: string
-      /** @description Texto curto de apoio. */
+      /** @description Short supporting text. */
       descricao: string
-      /** @description Se a integração está operante com os valores efetivos atuais. */
+      /** @description Whether the integration is operative with the current effective values. */
       configurada: boolean
     }
-    /** @description Corpo de GET /integrations. */
+    /** @description Body of GET /integrations. */
     IntegrationsListResponse: {
       integrations: components['schemas']['IntegrationSummary'][]
     }
-    /** @description Uma alternativa de um campo `tipo:"select"`. */
+    /** @description One alternative of a `tipo:"select"` field. */
     IntegrationFieldOption: {
       valor: string
       label: string
     }
-    /** @description UM campo do schema de uma integração, com o valor EFETIVO já resolvido (banco → env var → ausente). `valor` só aparece quando `tipo` NÃO é `"secret"` E há um valor efetivo — um campo secreto NUNCA devolve o valor cru, em nenhuma resposta (GET nem eco do PUT). */
+    /** @description ONE field of the schema of an integration, with the EFFECTIVE value already resolved (database → env var → absent). `valor` only appears when `tipo` is NOT `"secret"` AND there is an effective value — a secret field NEVER returns the raw value, in any response (GET nor the echo of the PUT). */
     IntegrationField: {
-      /** @description Chave estável do campo (chave em `values_json` e no PUT). */
+      /** @description Stable key of the field (key in `values_json` and in the PUT). */
       nome: string
-      /** @description Rótulo amigável para a UI. */
+      /** @description Friendly label for the UI. */
       label: string
       /**
-       * @description Hint de apresentação para a UI — não afeta a resolução de valor.
+       * @description Presentation hint for the UI — it does not affect the value resolution.
        * @enum {string}
        */
       tipo: 'text' | 'secret' | 'bool' | 'number' | 'select'
-      /** @description Hint de UI (asterisco); NÃO decide `configurada` — cada integração tem sua própria regra (ver IntegrationSummary). */
+      /** @description UI hint (asterisk); it does NOT decide `configurada` — each integration has its own rule (see IntegrationSummary). */
       obrigatorio: boolean
-      /** @description Texto de apoio opcional (ex.: onde obter a chave). */
+      /** @description Optional supporting text (e.g.: where to obtain the key). */
       ajuda?: string
-      /** @description Texto de exemplo opcional. */
+      /** @description Optional example text. */
       placeholder?: string
-      /** @description Só presente quando `tipo` é `"select"`. */
+      /** @description Only present when `tipo` is `"select"`. */
       opcoes?: components['schemas']['IntegrationFieldOption'][]
-      /** @description Se há um valor efetivo (banco OU env var) para este campo. */
+      /** @description Whether there is an effective value (database OR env var) for this field. */
       definido: boolean
       /**
-       * @description `banco` = valor gravado em `integration_config` (precedência sobre a env var, ADR-0023); `env` = herdado da env var de bootstrap/fallback deste campo; `nenhum` = nenhum dos dois.
+       * @description `banco` = value stored in `integration_config` (precedence over the env var, ADR-0023); `env` = inherited from the bootstrap/fallback env var of this field; `nenhum` = neither of them.
        * @enum {string}
        */
       origem: 'banco' | 'env' | 'nenhum'
-      /** @description Valor efetivo cru — só presente quando `tipo != "secret"` E `definido:true`. Ausente (nunca `null`) nos demais casos. */
+      /** @description Raw effective value — only present when `tipo != "secret"` AND `definido:true`. Absent (never `null`) in the other cases. */
       valor?: string
     }
-    /** @description Corpo de GET /integrations/{slug} e de PUT /integrations/{slug} (o eco pós-gravação, mesmo shape). */
+    /** @description Body of GET /integrations/{slug} and of PUT /integrations/{slug} (the post-write echo, same shape). */
     IntegrationDetail: {
       slug: string
       nome: string
       descricao: string
       campos: components['schemas']['IntegrationField'][]
     }
-    /** @description Corpo do PUT /integrations/{slug} (briefing 0095): upsert PARCIAL — só as chaves presentes em `valores` mudam. Um valor `null` REMOVE a chave do `values_json` (o campo volta a herdar a env var, ou fica `origem:"nenhum"` se ela também estiver vazia); uma chave AUSENTE do objeto não é tocada. 422 se `valores` vier vazio ou citar uma chave que não é um campo do schema desta integração. */
+    /** @description Body of PUT /integrations/{slug}: a PARTIAL upsert — only the keys present in `valores` change. A `null` value REMOVES the key from `values_json` (the field inherits the env var again, or stays `origem:"nenhum"` if that one is also empty); a key ABSENT from the object is not touched. 422 if `valores` comes empty or cites a key that is not a field of the schema of this integration. */
     PutIntegrationRequest: {
-      /** @description Mapa nome-do-campo → novo valor (string) ou `null` (remove). */
+      /** @description Map field-name → new value (string) or `null` (remove). */
       valores: {
         [key: string]: string | null
       }
     }
-    /** @description Config de idioma (ADR-0018): idioma principal, fallback e o conjunto de permitidos (códigos BCP-47/TMDB). É o corpo do PUT e a resposta do GET/PUT /settings/languages. */
+    /** @description Language config (ADR-0018): primary language, fallback and the set of allowed ones (BCP-47/TMDB codes). It is the body of the PUT and the response of GET/PUT /settings/languages. */
     LanguageSettings: {
-      /** @description Idioma principal (base de leitura, ∈ allowed). */
+      /** @description Primary language (reading base, ∈ allowed). */
       primary: string
-      /** @description Idioma de fallback (∈ allowed). */
+      /** @description Fallback language (∈ allowed). */
       fallback: string
-      /** @description Idiomas permitidos (governam o que pode ser escrito/scraped). */
+      /** @description Allowed languages (they govern what can be written/scraped). */
       allowed: string[]
     }
-    /** @description Config de throttle do enriquecimento retroativo (briefing 0085): intervalo mínimo, em dias, entre duas tentativas do MESMO item. É o corpo do PUT e a resposta do GET/PUT /settings/enrichment-retroativo. */
+    /** @description Throttle config of the retroactive enrichment: the minimum interval, in days, between two attempts of the SAME item. It is the body of the PUT and the response of GET/PUT /settings/enrichment-retroativo. */
     RetroactiveEnrichmentSettings: {
-      /** @description Dias entre duas tentativas de enriquecimento retroativo do mesmo item, para bibliotecas sem override próprio. Default de fábrica 15 quando nunca configurado. */
+      /** @description Days between two retroactive enrichment attempts of the same item, for libraries without an override of their own. Factory default 15 when never configured. */
       retry_days: number
     }
-    /** @description Toggle de materialização automática de artes (briefing 0089): quando ligado, todo auto-import bem-sucedido do scan (filme ou série) já materializa na hora, na pasta real da biblioteca, as artes descobertas no inventário. É o corpo do PUT e a resposta do GET/PUT /settings/auto-materialize-artwork. */
+    /** @description Toggle of automatic artwork materialization: when on, every successful auto-import of the scan (movie or series) already materializes right away, into the real library folder, the artwork discovered in the inventory. It is the body of the PUT and the response of GET/PUT /settings/auto-materialize-artwork. */
     AutoMaterializeArtworkSettings: {
-      /** @description Desligado por padrão (default de fábrica `false`). Escopo restrito ao auto-import do scan -- não afeta ações manuais de enriquecimento. */
+      /** @description Off by default (factory default `false`). Scope restricted to the auto-import of the scan -- it does not affect manual enrichment actions. */
       enabled: boolean
     }
-    /** @description Toggle de download automático de trailer/tema musical (briefing 0104, ADR-0026): compartilhado pelo job periódico `trailer_tema_faltantes` e pelo gatilho automático no scan -- quando ligado, todo auto-import bem-sucedido do scan (filme ou série) tenta baixar trailer/tema em background, sem esperar o job periódico nem clique manual. É o corpo do PUT e a resposta do GET/PUT /settings/auto-download-trailer-tema. */
+    /** @description Toggle of automatic trailer/theme song download: shared by the periodic `trailer_tema_faltantes` job and by the automatic trigger in the scan -- when on, every successful auto-import of the scan (movie or series) tries to download a trailer/theme in the background, without waiting for the periodic job nor a manual click. It is the body of the PUT and the response of GET/PUT /settings/auto-download-trailer-tema. */
     AutoDownloadTrailerTemaSettings: {
-      /** @description Desligado por padrão (default de fábrica `false`). Escopo restrito ao auto-import do scan -- não afeta o botão manual de trailer/tema (0102/0103); o job periódico continua sempre agendável independente deste valor. */
+      /** @description Off by default (factory default `false`). Scope restricted to the auto-import of the scan -- it does not affect the manual trailer/theme button; the periodic job remains always schedulable regardless of this value. */
       enabled: boolean
     }
-    /** @description Corpo do PUT /settings/ytdlp (briefing 0101, ADR-0025): o path customizado que o dono quer usar para o binário yt-dlp. */
+    /** @description Body of PUT /settings/ytdlp: the custom path that the owner wants to use for the yt-dlp binary. */
     YtdlpCustomPath: {
-      /** @description Path absoluto do binário yt-dlp gerenciado pelo dono. `null` ou string vazia limpa o override (volta a herdar a env var `MYMEDIADB_YTDLP_PATH`/download automático). */
+      /** @description Absolute path of the yt-dlp binary managed by the owner. `null` or an empty string clears the override (it inherits the `MYMEDIADB_YTDLP_PATH` env var/automatic download again). */
       custom_binary_path?: string | null
     }
-    /** @description Status EFETIVO do binário yt-dlp (briefing 0101, ADR-0025): fundação do downloader de YouTube reaproveitado por trailer (0102) e música-tema (0103). É a resposta do GET/PUT /settings/ytdlp. */
+    /** @description EFFECTIVE status of the yt-dlp binary: foundation of the YouTube downloader reused by the trailer and the theme song. It is the response of GET/PUT /settings/ytdlp. */
     YtdlpSettings: {
-      /** @description Se há um binário yt-dlp utilizável agora. */
+      /** @description Whether there is a usable yt-dlp binary now. */
       disponivel: boolean
       /**
-       * @description `custom` = path do admin (banco ou env `MYMEDIADB_YTDLP_PATH`, banco tem precedência); `baixado` = binário baixado dinamicamente pelo próprio processo na 1ª necessidade; `nenhum` = indisponível.
+       * @description `custom` = admin path (database or the `MYMEDIADB_YTDLP_PATH` env, the database has precedence); `baixado` = binary downloaded dynamically by the process itself on the 1st need; `nenhum` = unavailable.
        * @enum {string}
        */
       origem: 'custom' | 'baixado' | 'nenhum'
-      /** @description Path customizado atualmente gravado no BANCO (`null` quando não configurado). Distinto de `origem="custom"` via env var, que nunca é ecoada por esta API. */
+      /** @description Custom path currently stored in the DATABASE (`null` when not configured). Distinct from `origem="custom"` via env var, which is never echoed by this API. */
       custom_binary_path?: string | null
-      /** @description Motivo quando `disponivel=false` (ex.: "falha ao baixar: sem rede", "path customizado inacessível: ..."). `null` quando disponível. */
+      /** @description Reason when `disponivel=false` (e.g.: "falha ao baixar: sem rede", "path customizado inacessível: ..."). `null` when available. */
       detalhe?: string | null
     }
-    /** @description Config de "completude de catalogação" (briefing 0057): por `entity.type`, quais campos/artes o dono considera desejáveis para o item estar bem catalogado. Conceito DIFERENTE de completude de POSSE (quantos episódios/ temporadas o dono TEM no disco, `web/src/lib/entity-badges.ts`). Chave de topo = `entity.type` — ABERTA (hoje só `movie`/`tv` têm UI, mas o schema não fixa enum, já que `entity.type` é TEXT livre). Um tipo ausente do objeto significa "nada exigido" para aquele tipo. É o corpo do PUT e a resposta do GET/PUT /settings/catalog-completeness. */
+    /** @description "Cataloging completeness" config: per `entity.type`, which fields/artwork the owner considers desirable for the item to be well cataloged. A concept DIFFERENT from OWNERSHIP completeness (how many episodes/ seasons the owner HAS on disk, `web/src/lib/entity-badges.ts`). Top-level key = `entity.type` — OPEN (today only `movie`/`tv` have a UI, but the schema does not fix an enum, since `entity.type` is free TEXT). A type absent from the object means "nothing required" for that type. It is the body of the PUT and the response of GET/PUT /settings/catalog-completeness. */
     CatalogCompletenessSettings: {
       [key: string]: components['schemas']['TypeCompletenessConfig']
     }
-    /** @description Campos/artes desejáveis para UM `entity.type` (briefing 0057). Todos os campos são obrigatórios — o formulário sempre manda o objeto completo (substituição total no PUT, não merge parcial). */
+    /** @description Fields/artwork desirable for ONE `entity.type`. Every field is required — the form always sends the complete object (total replacement in the PUT, not a partial merge). */
     TypeCompletenessConfig: {
-      /** @description Exige sinopse preenchida (espelha Entidade.Description). */
+      /** @description It requires a filled-in synopsis (it mirrors Entidade.Description). */
       description: boolean
-      /** @description Exige duração preenchida (espelha Entidade.Runtime). */
+      /** @description It requires a filled-in duration (it mirrors Entidade.Runtime). */
       runtime: boolean
-      /** @description Exige classificação indicativa preenchida (espelha Entidade.Certification). */
+      /** @description It requires a filled-in content rating (it mirrors Entidade.Certification). */
       certification: boolean
-      /** @description Exige ao menos 1 palavra-chave (espelha Entidade.Keywords — não confundir com Tags/gêneros). */
+      /** @description It requires at least 1 keyword (it mirrors Entidade.Keywords — do not confuse with Tags/genres). */
       keywords: boolean
-      /** @description Exige ao menos 1 crédito de elenco (espelha Entidade.Cast, briefing 0029/MD6). */
+      /** @description It requires at least 1 cast credit (it mirrors Entidade.Cast). */
       cast: boolean
-      /** @description Exige ao menos um media_file com state='present' para a entity (posse SIMPLES do item — não confundir com a posse AGREGADA de série/temporada de Ownership/0036). */
+      /** @description It requires at least one media_file with state='present' for the entity (SIMPLE ownership of the item — do not confuse with the AGGREGATED ownership of a series/season of Ownership). */
       media_file: boolean
-      /** @description Kinds de arte desejados (cada um marcável independentemente). Cada item deve pertencer ao registro `kindsValidos` do sistema (`internal/server/assets.go`), validado no handler Go — não fixado como enum aqui. Valores aceitos hoje: `poster`, `fanart`, `still`, `logo`, `clearart`, `disc`, `banner`, `thumb`, `characterart`. */
+      /** @description Desired artwork kinds (each one markable independently). Each item has to belong to the `kindsValidos` registry of the system (`internal/server/assets.go`), validated in the Go handler — not fixed as an enum here. Values accepted today: `poster`, `fanart`, `still`, `logo`, `clearart`, `disc`, `banner`, `thumb`, `characterart`. */
       artwork: string[]
     }
-    /** @description Blob CRU de override (briefing 0016), tal como guardado — o patch esparso que o resolver interpreta na leitura. Só campos EDITORIAIS. Traduzíveis (title/description/tags) são um MAPA por idioma (`{"pt-BR":…}`), com `null` num idioma = "definir vazio". Neutros (original_title/release_date/ extension_data) são o escalar/objeto direto; `local_rating` (nota local do dono) é um NÚMERO 0–10 ou `null`. Chaves ausentes = herdado. `{}` quando não há override. Forma livre (additionalProperties): a semântica por campo é a do resolver, não do schema. */
+    /** @description RAW blob of override, as stored — the sparse patch that the resolver interprets on read. EDITORIAL fields only. Translatable ones (title/description/tags) are a MAP by language (`{"pt-BR":…}`), with `null` in a language = "set empty". Neutral ones (original_title/release_date/ extension_data) are the scalar/object directly; `local_rating` (local rating of the owner) is a NUMBER 0–10 or `null`. Absent keys = inherited. `{}` when there is no override. Free shape (additionalProperties): the semantics per field belong to the resolver, not to the schema. */
     OverrideBlob: {
       [key: string]: unknown
     }
     /**
-     * @description Patch esparso de PATCH /override (briefing 0016). Cada chave é um campo editorial; só as chaves presentes são tocadas (merge esparso). A FORMA do VALOR depende do campo: escalares (title/original_title/description/ release_date) aceitam `string` ou `null`; `tags` aceita um array de strings (substituição), um objeto `{add?:[],remove?:[]}` (merge de operações) ou `null`; `extension_data` aceita um objeto ou `null`; `local_rating` (nota local) aceita um número 0–10 ou `null`; `credits` (elenco/equipe/produtoras, briefing 0029 Fase C) aceita `null` (apaga TODOS os créditos) ou um objeto com as chaves opcionais `cast`/`crew`/`companies` — sub-chave ausente herda a base externa intacta. Cada bloco é `null` ou um objeto com as operações opcionais `reorder`/`remove` (array de CHAVES do crédito) / `edit` (mapa chave→patch de campos) / `add` (array de créditos novos, cada um exigindo `source_id` ESCOLHIDO PELO DONO + `name`). A CHAVE do crédito é `source_id` para `cast`/`companies`; para `crew` é `"<source_id>|<job>"` (a mesma chave que o provider já usa para dedup — um membro pode ter dois cargos com o mesmo `source_id`). `character`/`job`/`department` no `edit`/`add` são NEUTROS nesta fase (não compõem por idioma — a fonte já não traz esses campos por idioma). Para campos TRADUZÍVEIS o valor é o do idioma `?lang=` (o handler monta o mapa por idioma); campos NEUTROS (incl. `credits`) ignoram o `lang`. `null` = definir vazio (não confundir com LIMPAR, que é o DELETE). Chave não-editorial ou forma inválida → 422.
+     * @description Sparse patch of PATCH /override. Each key is an editorial field; only the keys present are touched (sparse merge). The FORM of the VALUE depends on the field: scalars (title/original_title/description/ release_date) accept `string` or `null`; `tags` accepts an array of strings (replacement), an object `{add?:[],remove?:[]}` (merge of operations) or `null`; `extension_data` accepts an object or `null`; `local_rating` (local rating) accepts a number 0–10 or `null`; `credits` (cast/crew/production companies) accepts `null` (it deletes ALL the credits) or an object with the optional keys `cast`/`crew`/`companies` — an absent sub-key inherits the external base intact. Each block is `null` or an object with the optional operations `reorder`/`remove` (array of KEYS of the credit) / `edit` (map key→patch of fields) / `add` (array of new credits, each one requiring a `source_id` CHOSEN BY THE OWNER + `name`). The KEY of the credit is `source_id` for `cast`/`companies`; for `crew` it is `"<source_id>|<job>"` (the same key that the provider already uses for dedup — a member may have two roles with the same `source_id`). `character`/`job`/`department` in `edit`/`add` are NEUTRAL in this phase (they do not compose per language — the source does not bring those fields per language either). For TRANSLATABLE fields the value is the one of the `?lang=` language (the handler builds the per-language map); NEUTRAL fields (incl. `credits`) ignore the `lang`. `null` = set empty (do not confuse with CLEARING, which is the DELETE). A non-editorial key or an invalid shape → 422.
      * @example {
      *       "title": "Duna",
      *       "description": null,
@@ -2457,7 +2457,7 @@ export interface components {
     OverridePatch: {
       [key: string]: unknown
     }
-    /** @description Fatos técnicos extraídos do arquivo (ffprobe). */
+    /** @description Technical facts extracted from the file (ffprobe). */
     MediaInfo: {
       general?: {
         format?: string
@@ -2502,16 +2502,16 @@ export interface components {
       id: string
       path: string
       type: string
-      /** @description Natureza da biblioteca (0034): `movie` (default) | `series`. O scanner ramifica o fluxo de match por este valor. Campo livre (sem CHECK); a UI oferece só movie/series. */
+      /** @description Nature of the library: `movie` (default) | `series`. The scanner branches the match flow by this value. Free field (without CHECK); the UI only offers movie/series. */
       content_type: string
       /** @enum {string} */
       state: 'online' | 'offline'
       last_scan: string | null
-      /** @description Liga/desliga o watcher de filesystem (`fsnotify`) desta fonte (briefing 0064). Default `false` no cadastro — fontes montadas via rede (rclone/gdrive, o deploy real do projeto) não ganham quase nada do watch, então o dono liga explicitamente só quando sabe que é um disco local de verdade. Só reduz a LATÊNCIA até o próximo scan; o job periódico `midias_faltantes`/scan incremental continua sendo a base mesmo com watch ligado. Editável só via `PATCH /api/v1/library/{id}`, aplicado a quente (sem restart). */
+      /** @description Turns the filesystem watcher (`fsnotify`) of this source on/off. Default `false` at registration — sources mounted over the network (rclone/gdrive, the real deployment of the project) gain almost nothing from the watch, so the owner turns it on explicitly only when they know it is a real local disk. It only reduces the LATENCY until the next scan; the periodic `midias_faltantes`/incremental scan job remains the base even with the watch on. Editable only through `PATCH /api/v1/library/{id}`, applied live (without a restart). */
       watch_enabled: boolean
-      /** @description Idioma preferido de busca/exibição desta biblioteca (briefing 0084). `null` = sem preferência, usa o idioma global de `app_settings`. */
+      /** @description Preferred search/display language of this library. `null` = no preference, it uses the global language of `app_settings`. */
       preferred_language?: string | null
-      /** @description Override, em dias, do throttle de enriquecimento retroativo desta biblioteca (briefing 0085). `null` = sem override, usa o valor global de `GET /settings/enrichment-retroativo`. */
+      /** @description Override, in days, of the retroactive enrichment throttle of this library. `null` = no override, it uses the global value of `GET /settings/enrichment-retroativo`. */
       retroactive_enrichment_days?: number | null
     }
     SourceList: {
@@ -2522,24 +2522,24 @@ export interface components {
       /** @enum {string} */
       type: 'movie' | 'tv'
       /**
-       * @description Natureza da biblioteca (0034). Opcional; omitido => `movie` (compat). `series` liga o fluxo de scan de séries (arquivo→episódio).
+       * @description Nature of the library. Optional; omitted => `movie` (compat). `series` turns on the series scan flow (file→episode).
        * @enum {string}
        */
       content_type?: 'movie' | 'series'
-      /** @description Idioma preferido de busca/exibição desta biblioteca (briefing 0084). */
+      /** @description Preferred search/display language of this library. */
       preferred_language?: string
-      /** @description Override, em dias, do throttle de enriquecimento retroativo desta biblioteca (briefing 0085). Opcional; ausente = sem override, usa o valor global. */
+      /** @description Override, in days, of the retroactive enrichment throttle of this library. Optional; absent = no override, it uses the global value. */
       retroactive_enrichment_days?: number
     }
-    /** @description Patch PARCIAL de PATCH /api/v1/library/{id} (briefings 0064/0070) — campos ausentes ficam inalterados; `path` e `watch_enabled` podem vir juntos ou cada um sozinho. */
+    /** @description PARTIAL patch of PATCH /api/v1/library/{id} — fields absent from the body stay unchanged; `path` and `watch_enabled` may come together or each one alone. */
     PatchSource: {
-      /** @description Liga/desliga o watcher `fsnotify` desta fonte. Aplicado a QUENTE pelo handler: `false→true` registra o watch imediatamente (mesma rotina usada no boot); `true→false` fecha o watcher e remove a entrada em memória imediatamente. Nenhuma das duas direções exige restart do servidor. */
+      /** @description Turns the `fsnotify` watcher of this source on/off. Applied LIVE by the handler: `false→true` registers the watch immediately (the same routine used at boot); `true→false` closes the watcher and removes the in-memory entry immediately. Neither direction requires a restart of the server. */
       watch_enabled?: boolean
-      /** @description Reaponta o datasource para um novo caminho (ex.: o disco/mount mudou de lugar). Valida como no cadastro (existe, é diretório, legível, sem duplicar outra fonte). Recasca em cascata `media_file.path`, `asset.local_path` e `entity.nfo_path` desta fonte para o novo prefixo — NÃO dispara scan nem move bytes no disco. Igual ao caminho atual é no-op. */
+      /** @description Re-points the datasource to a new path (e.g.: the disk/mount moved). It validates as in the registration (it exists, it is a directory, it is readable, without duplicating another source). It re-bases in cascade `media_file.path`, `asset.local_path` and `entity.nfo_path` of this source to the new prefix — it does NOT trigger a scan nor move bytes on disk. Equal to the current path is a no-op. */
       path?: string
-      /** @description Idioma preferido de busca/exibição desta biblioteca (briefing 0084). `null` explícito no corpo LIMPA a preferência (volta a usar o idioma global); campo AUSENTE deixa inalterado. */
+      /** @description Preferred search/display language of this library. An explicit `null` in the body CLEARS the preference (it uses the global language again); a field ABSENT from the body leaves it unchanged. */
       preferred_language?: string | null
-      /** @description Override, em dias, do throttle de enriquecimento retroativo desta biblioteca (briefing 0085). `null` explícito no corpo LIMPA o override (volta a herdar o global); campo AUSENTE deixa inalterado. */
+      /** @description Override, in days, of the retroactive enrichment throttle of this library. An explicit `null` in the body CLEARS the override (it inherits the global one again); a field ABSENT from the body leaves it unchanged. */
       retroactive_enrichment_days?: number | null
     }
     ScanStatus: {
@@ -2553,55 +2553,55 @@ export interface components {
       job_id: string
       status: string
     }
-    /** @description Um subdiretório listado pelo navegador de pastas (briefing 0071). */
+    /** @description One subdirectory listed by the folder browser. */
     BrowseEntry: {
       name: string
       path: string
-      /** @description `false` quando esta entrada não pode ser aberta para listagem (permissão negada) — aparece na lista (o dono vê que a pasta existe) mas não é navegável; o front desabilita o clique nela. */
+      /** @description `false` when this entry cannot be opened for listing (permission denied) — it appears in the list (the owner sees that the folder exists) but it is not navigable; the front disables the click on it. */
       readable: boolean
     }
-    /** @description Resposta de `GET /api/v1/library/browse` (briefing 0071): conteúdo de um diretório do filesystem que o processo da API enxerga, usado pelo navegador de pastas do formulário de cadastro/edição de datasource. */
+    /** @description Response of `GET /api/v1/library/browse`: the content of a filesystem directory that the API process can see, used by the folder browser of the datasource create/edit form. */
     BrowseResult: {
-      /** @description Caminho absoluto efetivamente listado (normalizado). */
+      /** @description Absolute path effectively listed (normalized). */
       path: string
-      /** @description Diretório um nível acima de `path`; `null` quando `path` já é a raiz do filesystem (`/`). */
+      /** @description Directory one level above `path`; `null` when `path` already is the filesystem root (`/`). */
       parent: string | null
       entries: components['schemas']['BrowseEntry'][]
-      /** @description `true` quando o diretório tem mais de 2000 subpastas e a lista veio cortada (ordem alfabética) nesse limite de segurança. */
+      /** @description `true` when the directory has more than 2000 subfolders and the list came truncated (alphabetical order) at that safety limit. */
       truncated: boolean
     }
-    /** @description Um job conhecido pelo sistema (briefing 0052): config dinâmica (habilitado/agendamento) + o espelho da última execução + `running` (estado em memória, efêmero). */
+    /** @description One job known by the system: dynamic config (enabled/schedule) + the mirror of the last run + `running` (in-memory, ephemeral state). */
     Job: {
-      /** @description Slug estável (ex. "backup_vacuum"), não um uuid. */
+      /** @description Stable slug (e.g. "backup_vacuum"), not a uuid. */
       id: string
       nome: string
       descricao: string | null
-      /** @description Só gate do disparo AUTOMÁTICO; execução manual funciona independente. */
+      /** @description It only gates the AUTOMATIC trigger; the manual run works regardless. */
       enabled: boolean
-      /** @description Expressão cron de 5 campos; null = job só-manual (sem agendamento). */
+      /** @description 5-field cron expression; null = manual-only job (without a schedule). */
       schedule_cron: string | null
-      /** @description Próxima execução prevista; null quando desabilitado ou sem agendamento. */
+      /** @description Next scheduled run; null when disabled or without a schedule. */
       next_run_at: string | null
       last_run_at: string | null
       /** @enum {string|null} */
       last_status: 'success' | 'error' | null
       last_message: string | null
-      /** @description Estado em memória do Manager — true enquanto uma execução está em andamento. */
+      /** @description In-memory state of the Manager — true while a run is in progress. */
       running: boolean
     }
     JobList: {
       items: components['schemas']['Job'][]
     }
-    /** @description Patch PARCIAL de PATCH /jobs/{id} — campos ausentes ficam inalterados. */
+    /** @description PARTIAL patch of PATCH /jobs/{id} — fields absent from the body stay unchanged. */
     PatchJob: {
       enabled?: boolean
-      /** @description Expressão cron de 5 campos; `null` explícito limpa o agendamento (job vira só-manual); ausente = inalterado. */
+      /** @description 5-field cron expression; an explicit `null` clears the schedule (the job becomes manual-only); absent = unchanged. */
       schedule_cron?: string | null
     }
     RunJob: {
       execution_id: string
     }
-    /** @description Uma execução no histórico de um job (briefing 0052) — genérico para QUALQUER tipo de job. */
+    /** @description One run in the history of a job — generic for ANY type of job. */
     JobExecution: {
       id: string
       job_id: string
@@ -2611,7 +2611,7 @@ export interface components {
       status: 'running' | 'success' | 'error'
       started_at: string
       finished_at: string | null
-      /** @description Resultado curto (sucesso) ou erro (falha), sem stack trace. */
+      /** @description Short result (success) or error (failure), without a stack trace. */
       message: string | null
     }
     JobExecutionList: {
@@ -2623,17 +2623,17 @@ export interface components {
       site: string
       type: string
       official: boolean
-      /** @description URL pública do vídeo; null quando o provedor é desconhecido. */
+      /** @description Public URL of the video; null when the provider is unknown. */
       url: string | null
     }
     ExternalCollection: {
       source_id: string
       name: string
       poster_url: string | null
-      /** @description id da entity coleção interna quando ja importada (0026); null caso contrario. */
+      /** @description id of the internal collection entity when already imported; null otherwise. */
       internal_id?: string | null
     }
-    /** @description Item (parte) de uma coleção; mesmo shape enxuto de um resultado de busca. */
+    /** @description Item (part) of a collection; the same lean shape as a search result. */
     ExternalCollectionPart: {
       source_id: string
       type: string
@@ -2641,10 +2641,10 @@ export interface components {
       year: string | null
       overview: string | null
       poster_url: string | null
-      /** @description id da entity interna desta parte quando ja importada (0026); null caso contrario. */
+      /** @description id of the internal entity of this part when already imported; null otherwise. */
       internal_id?: string | null
     }
-    /** @description Coleção externa como página (briefing 0024): metadados do conjunto e as partes. `parts` sai sempre como `[]` (nunca null). Artes do hero (poster_url/backdrop_url) podem vir como rota do proxy local (0024); as miniaturas das partes seguem diretas da fonte. */
+    /** @description External collection as a page: metadata of the set and the parts. `parts` always comes as `[]` (never null). Artwork of the hero (poster_url/backdrop_url) may come as a route of the local proxy; the thumbnails of the parts stay direct from the source. */
     ExternalCollectionDetail: {
       source: string
       source_id: string
@@ -2652,28 +2652,28 @@ export interface components {
       overview: string | null
       poster_url: string | null
       backdrop_url: string | null
-      /** @description id da entity coleção interna quando esta coleção ja foi importada (0025/0026); null caso contrario. */
+      /** @description id of the internal collection entity when this collection has already been imported; null otherwise. */
       internal_id?: string | null
       parts: components['schemas']['ExternalCollectionPart'][]
     }
-    /** @description Uma faixa OFICIAL do release (recording do MusicBrainz), briefing 0115 Parte 2. */
+    /** @description One OFFICIAL track of the release (MusicBrainz recording). */
     ExternalAlbumTrack: {
       source_id: string
       title: string
       track_number: number
       disc_number: number
       isrc: string | null
-      /** @description id da entity faixa interna quando esta faixa JA foi importada (ligada ao album via entity_relation kind=music_album); null caso contrario -- a UI entao oferece "Importar" para essa faixa. */
+      /** @description id of the internal track entity when this track has ALREADY been imported (linked to the album via entity_relation kind=music_album); null otherwise -- the UI then offers "Importar" for that track. */
       internal_id?: string | null
     }
-    /** @description Álbum externo como página (briefing 0115 Parte 2): metadados do release e as faixas oficiais. `tracks` sai sempre como `[]` (nunca null). */
+    /** @description External album as a page: metadata of the release and the official tracks. `tracks` always comes as `[]` (never null). */
     ExternalAlbum: {
       source: string
       source_id: string
       name: string
       year: string | null
       genre: string | null
-      /** @description id da entity album interna quando este album ja foi importado; null caso contrario. */
+      /** @description id of the internal album entity when this album has already been imported; null otherwise. */
       internal_id?: string | null
       tracks: components['schemas']['ExternalAlbumTrack'][]
     }
@@ -2683,98 +2683,98 @@ export interface components {
       title: string
       year: string | null
       poster_url: string | null
-      /** @description id da entity interna deste similar quando ja importado (interno-first, 0027); null caso contrario. */
+      /** @description id of the internal entity of this similar when already imported (internal-first); null otherwise. */
       internal_id?: string | null
     }
-    /** @description Um crédito de ELENCO (0029). `name` é neutro (não se traduz nome próprio); `character` respeita o idioma ativo. `episode_count` só em série (papel agregado por episódios). `profile_url` já vem proxyada. */
+    /** @description One CAST credit. `name` is neutral (a proper name is not translated); `character` respects the active language. `episode_count` only in a series (role aggregated by episodes). `profile_url` already comes proxied. */
     CreditCast: {
       source_id: string
       name: string
       character: string
-      /** @description Ordem de bilhagem (menor = mais alto). */
+      /** @description Billing order (smaller = higher). */
       order: number
-      /** @description Foto (proxyada) ou null. */
+      /** @description Photo (proxied) or null. */
       profile_url?: string | null
-      /** @description Nº de episódios do papel (só série); null em filme. */
+      /** @description Number of episodes of the role (series only); null in a movie. */
       episode_count?: number | null
-      /** @description Id da pessoa NO NOSSO catálogo (interno-first, 0029 Fase D), presente quando essa pessoa já foi persistida por algum import. Quando presente, a UI linka para a página da pessoa (GET /person/{id}); null = sem destino interno (degrada para não-clicável). */
+      /** @description Id of the person IN OUR catalog (internal-first, Phase D), present when that person has already been persisted by some import. When present, the UI links to the person page (GET /person/{id}); null = no internal destination (it degrades to non-clickable). */
       person_id?: string | null
     }
-    /** @description Um crédito de EQUIPE (0029), agrupável por `department`. */
+    /** @description One CREW credit, groupable by `department`. */
     CreditCrew: {
       source_id: string
       name: string
-      /** @description Direção/Roteiro/Fotografia… */
+      /** @description Directing/Writing/Photography… */
       department: string
       job: string
       profile_url?: string | null
-      /** @description Só série; null em filme. */
+      /** @description Series only; null in a movie. */
       episode_count?: number | null
-      /** @description Id da pessoa no catálogo (interno-first, 0029 Fase D); ver CreditCast.person_id. */
+      /** @description Id of the person in the catalog (internal-first, Phase D); see CreditCast.person_id. */
       person_id?: string | null
     }
-    /** @description Uma produtora/estúdio (0029). */
+    /** @description One production company/studio. */
     CreditCompany: {
       source_id: string
       name: string
-      /** @description Logo (proxyada) ou null. */
+      /** @description Logo (proxied) or null. */
       logo_url?: string | null
     }
-    /** @description Página da pessoa (0029 Fase D, interno-first): a pessoa deduplicada no catálogo mais a sua FILMOGRAFIA = as obras já importadas que a creditam. Read-only nesta fase (sem catalogar a pessoa como entity). `source`/`source_id` permitem o link externo (TMDB) como complemento. */
+    /** @description Person page (Phase D, internal-first): the person deduplicated in the catalog plus their FILMOGRAPHY = the works already imported that credit them. Read-only in this phase (without cataloging the person as an entity). `source`/`source_id` allow the external link (TMDB) as a complement. */
     Person: {
-      /** @description Id da pessoa no nosso catálogo (person.id). */
+      /** @description Id of the person in our catalog (person.id). */
       id: string
-      /** @description Nome (neutro, não se traduz). */
+      /** @description Name (neutral, it is not translated). */
       name: string
-      /** @description Foto (proxyada) ou null. */
+      /** @description Photo (proxied) or null. */
       profile_url?: string | null
-      /** @description Fonte da pessoa (ex.: tmdb). */
+      /** @description Source of the person (e.g.: tmdb). */
       source?: string
-      /** @description Id da pessoa na fonte (para link externo). */
+      /** @description Id of the person in the source (for the external link). */
       source_id?: string
-      /** @description Obras JÁ IMPORTADAS que creditam a pessoa (seção "Na sua biblioteca"); `[]` quando nenhuma. Vem do catálogo (funciona sem o provider). */
+      /** @description Works ALREADY IMPORTED that credit the person (section "Na sua biblioteca"); `[]` when none. It comes from the catalog (it works without the provider). */
       filmography: components['schemas']['PersonCredit'][]
-      /** @description Obras da filmografia da pessoa (do provider, ex.: TMDB) AINDA NÃO importadas (seção "Ainda não importados") — navegam ao detalhe externo para importar. `[]` quando o provider não trouxe nada ou está indisponível (degradação: a seção some, a de importados segue). Exclui o que já está no catálogo (esse aparece em `filmography`). */
+      /** @description Works of the filmography of the person (from the provider, e.g.: TMDB) NOT imported YET (section "Ainda não importados") — they navigate to the external detail in order to import. `[]` when the provider brought nothing or is unavailable (degradation: the section disappears, the imported one stays). It excludes what is already in the catalog (that one appears in `filmography`). */
       filmography_external?: components['schemas']['PersonExternalCredit'][]
     }
-    /** @description Uma obra da filmografia da pessoa que AINDA NÃO está no catálogo (0029 Fase D): um card que navega ao detalhe externo (`/external/{source}/{type}/{source_id}`) para ver/importar. Espelha PersonCredit, mas com a identidade EXTERNA (source/ source_id/type) em vez de `entity_id`. */
+    /** @description One work of the filmography of the person that is NOT in the catalog YET: a card that navigates to the external detail (`/external/{source}/{type}/{source_id}`) to see/import. It mirrors PersonCredit, but with the EXTERNAL identity (source/ source_id/type) instead of `entity_id`. */
     PersonExternalCredit: {
-      /** @description Fonte da obra (ex.: tmdb). */
+      /** @description Source of the work (e.g.: tmdb). */
       source: string
-      /** @description Id da obra na fonte. */
+      /** @description Id of the work in the source. */
       source_id: string
       /** @description movie | tv. */
       type: string
       title: string
       year?: string | null
-      /** @description Pôster (proxyada) ou null. */
+      /** @description Poster (proxied) or null. */
       poster_url?: string | null
       /** @description cast | crew. */
       kind: string
-      /** @description Personagem (quando cast). */
+      /** @description Character (when cast). */
       character?: string | null
-      /** @description Cargo (quando crew). */
+      /** @description Job (when crew). */
       job?: string | null
     }
-    /** @description Uma obra da filmografia da pessoa: a entity do catálogo mais o papel/cargo dela naquela obra. Um card navegável (entity_id → /entities/{id}). */
+    /** @description One work of the filmography of the person: the entity of the catalog plus their role/job in that work. A navigable card (entity_id → /entities/{id}). */
     PersonCredit: {
       entity_id: string
       /** @description movie | tv | collection. */
       type: string
       title: string
       year?: string | null
-      /** @description Pôster do card (servido pela rota da entity) ou null. */
+      /** @description Poster of the card (served by the route of the entity) or null. */
       poster_url?: string | null
       /** @description cast | crew. */
       kind: string
-      /** @description Personagem (quando cast). */
+      /** @description Character (when cast). */
       character?: string | null
-      /** @description Cargo (quando crew). */
+      /** @description Job (when crew). */
       job?: string | null
-      /** @description Departamento (quando crew). */
+      /** @description Department (when crew). */
       department?: string | null
     }
-    /** @description Detalhe externo rico (briefing 0022). Campos traduzíveis já resolvidos no idioma ativo; neutros vêm uma vez. Listas saem sempre como `[]` (nunca null). */
+    /** @description Rich external detail. Translatable fields already resolved in the active language; neutral ones come once. Lists always come as `[]` (never null). */
     ExternalDetail: {
       source: string
       source_id: string
@@ -2798,24 +2798,24 @@ export interface components {
       videos: components['schemas']['ExternalVideo'][]
       collection: components['schemas']['ExternalCollection'] | null
       similar: components['schemas']['ExternalSimilar'][]
-      /** @description Elenco (0029), mesmo shape do ResolvedEntity (paridade). */
+      /** @description Cast, same shape as ResolvedEntity (parity). */
       cast?: components['schemas']['CreditCast'][]
-      /** @description Equipe (0029), mesmo shape do ResolvedEntity. */
+      /** @description Crew, same shape as ResolvedEntity. */
       crew?: components['schemas']['CreditCrew'][]
-      /** @description Produtoras/estúdios (0029). */
+      /** @description Production companies/studios. */
       companies?: components['schemas']['CreditCompany'][]
-      /** @description Mapa link→URL (ex.: imdb, tmdb). */
+      /** @description link→URL map (e.g.: imdb, tmdb). */
       external_links: {
         [key: string]: string
       }
-      /** @description Proveniência de idioma dos campos traduzíveis (ADR-0019). */
+      /** @description Language provenance of the translatable fields (ADR-0019). */
       resolved_languages: {
         [key: string]: string
       }
     }
   }
   responses: {
-    /** @description Erro no envelope padrão { error: { code, message } }. */
+    /** @description Error in the standard envelope { error: { code, message } }. */
     Error: {
       headers: {
         [name: string]: unknown
@@ -2826,19 +2826,19 @@ export interface components {
     }
   }
   parameters: {
-    /** @description Id da entity. */
+    /** @description Id of the entity. */
     EntityId: string
-    /** @description Id do datasource. */
+    /** @description Id of the datasource. */
     SourceId: string
-    /** @description Id do job (briefing 0052) — slug estável (a chave de Handler.Nome(), ex.: "backup_vacuum"), não um uuid. */
+    /** @description Id of the job — a stable slug (the key of Handler.Nome(), e.g.: "backup_vacuum"), not a uuid. */
     JobId: string
-    /** @description Id do asset (arte). */
+    /** @description Id of the asset (artwork). */
     AssetId: string
-    /** @description Id do evento de histórico de consumo (briefing 0092). */
+    /** @description Id of the consumption history event. */
     HistoricoEventoId: string
-    /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+    /** @description Requested language (BCP-47/TMDB code, e.g.: `pt-BR`). Absent = primary language of the settings. Outside the allowed ones → 400. In the list, it validates the contract; the cards serve the neutral title (the per-language resolution belongs to the detail). */
     LangQuery: string
-    /** @description Slug estável da integração (chave de URL e de registro em `integration_config`, ex.: `"tmdb"` — briefing 0095). */
+    /** @description Stable slug of the integration (URL key and registry key in `integration_config`, e.g.: `"tmdb"`). */
     IntegrationSlug: string
   }
   requestBodies: never
@@ -2856,7 +2856,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Serviço no ar. */
+      /** @description Service up. */
       200: {
         headers: {
           [name: string]: unknown
@@ -2876,7 +2876,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Snapshot calculado (ou servido do cache de 60s). */
+      /** @description Snapshot computed (or served from the 60s cache). */
       200: {
         headers: {
           [name: string]: unknown
@@ -2891,17 +2891,17 @@ export interface operations {
   listEntities: {
     parameters: {
       query?: {
-        /** @description Filtra por tipo (ex.: movie, tv). Ausente = todos. */
+        /** @description Filters by type (e.g.: movie, tv). Absent = all. */
         type?: string
-        /** @description Filtra por posse (true = na biblioteca). Ausente = todos. */
+        /** @description Filters by ownership (true = na biblioteca). Absent = all. */
         owned?: boolean
-        /** @description Tamanho da página (default 50, máximo 200). */
+        /** @description Page size (default 50, maximum 200). */
         limit?: number
-        /** @description Deslocamento da página (default 0). */
+        /** @description Page offset (default 0). */
         offset?: number
-        /** @description Ordenação — por título `title` (asc, default) ou `-title` (desc), ou por data de criação `-created_at` (mais recente primeiro, briefing 0109 — alimenta os carrosséis "adicionados recentemente" da home). */
+        /** @description Ordering — by title `title` (asc, default) or `-title` (desc), or by creation date `-created_at` (most recent first — it feeds the "adicionados recentemente" carousels of the home). */
         sort?: 'title' | '-title' | '-created_at'
-        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        /** @description Requested language (BCP-47/TMDB code, e.g.: `pt-BR`). Absent = primary language of the settings. Outside the allowed ones → 400. In the list, it validates the contract; the cards serve the neutral title (the per-language resolution belongs to the detail). */
         lang?: components['parameters']['LangQuery']
       }
       header?: never
@@ -2910,7 +2910,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Página de cards. */
+      /** @description Page of cards. */
       200: {
         headers: {
           [name: string]: unknown
@@ -2935,7 +2935,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Item criado, resolvido. */
+      /** @description Created item, resolved. */
       201: {
         headers: {
           [name: string]: unknown
@@ -2958,7 +2958,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Tipos com dado, do mais numeroso ao menos numeroso. */
+      /** @description Types with data, from the most numerous to the least numerous. */
       200: {
         headers: {
           [name: string]: unknown
@@ -2972,19 +2972,19 @@ export interface operations {
   getEntity: {
     parameters: {
       query?: {
-        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        /** @description Requested language (BCP-47/TMDB code, e.g.: `pt-BR`). Absent = primary language of the settings. Outside the allowed ones → 400. In the list, it validates the contract; the cards serve the neutral title (the per-language resolution belongs to the detail). */
         lang?: components['parameters']['LangQuery']
       }
       header?: never
       path: {
-        /** @description Id da entity. */
+        /** @description Id of the entity. */
         id: components['parameters']['EntityId']
       }
       cookie?: never
     }
     requestBody?: never
     responses: {
-      /** @description Entidade resolvida. */
+      /** @description Entity resolved. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3002,14 +3002,14 @@ export interface operations {
       query?: never
       header?: never
       path: {
-        /** @description Id da entity. */
+        /** @description Id of the entity. */
         id: components['parameters']['EntityId']
       }
       cookie?: never
     }
     requestBody?: never
     responses: {
-      /** @description Entity purgada. */
+      /** @description Entity purged. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3030,7 +3030,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Config de idioma. */
+      /** @description Language config. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3054,7 +3054,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Config gravada. */
+      /** @description Stored config. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3076,7 +3076,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Config de throttle do enriquecimento retroativo. */
+      /** @description Throttle config of the retroactive enrichment. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3100,7 +3100,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Config gravada. */
+      /** @description Stored config. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3122,7 +3122,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Toggle de materialização automática de artes. */
+      /** @description Toggle of automatic artwork materialization. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3146,7 +3146,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Toggle gravado. */
+      /** @description Stored toggle. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3167,7 +3167,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Toggle de download automático de trailer/tema musical. */
+      /** @description Toggle of automatic trailer/theme song download. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3191,7 +3191,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Toggle gravado. */
+      /** @description Stored toggle. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3212,7 +3212,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Status do yt-dlp. */
+      /** @description Status of yt-dlp. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3236,7 +3236,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Path gravado; status recalculado. */
+      /** @description Stored path; recalculated status. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3257,7 +3257,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Config de completude de catalogação. */
+      /** @description Cataloging completeness config. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3281,7 +3281,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Config gravada. */
+      /** @description Stored config. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3303,7 +3303,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Integrações registradas. */
+      /** @description Registered integrations. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3319,14 +3319,14 @@ export interface operations {
       query?: never
       header?: never
       path: {
-        /** @description Slug estável da integração (chave de URL e de registro em `integration_config`, ex.: `"tmdb"` — briefing 0095). */
+        /** @description Stable slug of the integration (URL key and registry key in `integration_config`, e.g.: `"tmdb"`). */
         slug: components['parameters']['IntegrationSlug']
       }
       cookie?: never
     }
     requestBody?: never
     responses: {
-      /** @description Detalhe da integração. */
+      /** @description Detail of the integration. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3343,7 +3343,7 @@ export interface operations {
       query?: never
       header?: never
       path: {
-        /** @description Slug estável da integração (chave de URL e de registro em `integration_config`, ex.: `"tmdb"` — briefing 0095). */
+        /** @description Stable slug of the integration (URL key and registry key in `integration_config`, e.g.: `"tmdb"`). */
         slug: components['parameters']['IntegrationSlug']
       }
       cookie?: never
@@ -3354,7 +3354,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Detalhe da integração após a gravação (mesmo shape do GET). */
+      /** @description Detail of the integration after the write (same shape as the GET). */
       200: {
         headers: {
           [name: string]: unknown
@@ -3377,7 +3377,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Descritores de campo do formulário editorial. */
+      /** @description Field descriptors of the editorial form. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3404,7 +3404,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Entidade resolvida após o enriquecimento. */
+      /** @description Entity resolved after the enrichment. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3477,7 +3477,7 @@ export interface operations {
   resetOverride: {
     parameters: {
       query?: {
-        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        /** @description Requested language (BCP-47/TMDB code, e.g.: `pt-BR`). Absent = primary language of the settings. Outside the allowed ones → 400. In the list, it validates the contract; the cards serve the neutral title (the per-language resolution belongs to the detail). */
         lang?: components['parameters']['LangQuery']
       }
       header?: never
@@ -3505,7 +3505,7 @@ export interface operations {
   patchOverride: {
     parameters: {
       query?: {
-        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        /** @description Requested language (BCP-47/TMDB code, e.g.: `pt-BR`). Absent = primary language of the settings. Outside the allowed ones → 400. In the list, it validates the contract; the cards serve the neutral title (the per-language resolution belongs to the detail). */
         lang?: components['parameters']['LangQuery']
       }
       header?: never
@@ -3521,7 +3521,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Entidade resolvida no idioma pedido após o merge. */
+      /** @description Entity resolved in the requested language after the merge. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3538,7 +3538,7 @@ export interface operations {
   clearOverrideField: {
     parameters: {
       query?: {
-        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        /** @description Requested language (BCP-47/TMDB code, e.g.: `pt-BR`). Absent = primary language of the settings. Outside the allowed ones → 400. In the list, it validates the contract; the cards serve the neutral title (the per-language resolution belongs to the detail). */
         lang?: components['parameters']['LangQuery']
       }
       header?: never
@@ -3552,7 +3552,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Entidade resolvida após limpar o campo. */
+      /** @description Entity resolved after clearing the field. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3593,7 +3593,7 @@ export interface operations {
   getEntityMembers: {
     parameters: {
       query?: {
-        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        /** @description Requested language (BCP-47/TMDB code, e.g.: `pt-BR`). Absent = primary language of the settings. Outside the allowed ones → 400. In the list, it validates the contract; the cards serve the neutral title (the per-language resolution belongs to the detail). */
         lang?: components['parameters']['LangQuery']
       }
       header?: never
@@ -3633,7 +3633,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Cards dos membros após ligar (array, ordenado por ano). */
+      /** @description Member cards after linking (array, ordered by year). */
       200: {
         headers: {
           [name: string]: unknown
@@ -3661,7 +3661,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Cards dos membros após desligar (array). */
+      /** @description Member cards after unlinking (array). */
       200: {
         headers: {
           [name: string]: unknown
@@ -3676,9 +3676,9 @@ export interface operations {
   getEntityEpisodes: {
     parameters: {
       query?: {
-        /** @description Ordem de exibição (uma das `orderings.available` do detalhe da série, ex.: `official`, `dvd`, `absolute`). Ausente/inválida cai no default da série. */
+        /** @description Display order (one of the `orderings.available` of the series detail, e.g.: `official`, `dvd`, `absolute`). Absent/invalid falls back to the default of the series. */
         ordering?: string
-        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        /** @description Requested language (BCP-47/TMDB code, e.g.: `pt-BR`). Absent = primary language of the settings. Outside the allowed ones → 400. In the list, it validates the contract; the cards serve the neutral title (the per-language resolution belongs to the detail). */
         lang?: components['parameters']['LangQuery']
       }
       header?: never
@@ -3690,7 +3690,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Episódios agrupados pela ordem aplicada. */
+      /** @description Episodes grouped by the applied order. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3714,7 +3714,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Binário da imagem. */
+      /** @description Binary of the image. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3739,7 +3739,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Lista de assets (vazia quando não há arte). */
+      /** @description List of assets (empty when there is no artwork). */
       200: {
         headers: {
           [name: string]: unknown
@@ -3766,7 +3766,7 @@ export interface operations {
         'multipart/form-data': {
           /**
            * Format: binary
-           * @description Binário da imagem (JPEG, PNG ou WebP).
+           * @description Binary of the image (JPEG, PNG or WebP).
            */
           file: string
           /**
@@ -3808,7 +3808,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Binário da imagem. */
+      /** @description Binary of the image. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3835,7 +3835,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Asset marcado como preferido/principal (materializado e renomeado se necessário). */
+      /** @description Asset marked as preferred/principal (materialized and renamed if necessary). */
       200: {
         headers: {
           [name: string]: unknown
@@ -3964,13 +3964,13 @@ export interface operations {
   search: {
     parameters: {
       query: {
-        /** @description Termo de busca (obrigatório). */
+        /** @description Search term (required). */
         q: string
         /** @description Filtra por tipo (movie, tv). Ausente = todos. */
         type?: 'movie' | 'tv'
-        /** @description Religa sub-nós da árvore de séries nos resultados locais, que por padrão ficam de fora (a busca é de topo: movie/tv/collection). CSV, aceita `season` e/ou `episode` (ex.: `include=season,episode`); valores fora desse conjunto são ignorados. Os sub-nós vêm no mesmo `local[]`, distinguíveis pelo campo `type` — a UI os separa em seções. */
+        /** @description It turns the sub-nodes of the series tree back on in the local results, which by default stay out (the search is top-level: movie/tv/collection). CSV, it accepts `season` and/or `episode` (e.g.: `include=season,episode`); values outside that set are ignored. The sub-nodes come in the same `local[]`, distinguishable by the `type` field — the UI separates them into sections. */
         include?: string
-        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        /** @description Requested language (BCP-47/TMDB code, e.g.: `pt-BR`). Absent = primary language of the settings. Outside the allowed ones → 400. In the list, it validates the contract; the cards serve the neutral title (the per-language resolution belongs to the detail). */
         lang?: components['parameters']['LangQuery']
       }
       header?: never
@@ -4004,7 +4004,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Entity já existente (reuso), resolvida. */
+      /** @description Already existing entity (reuse), resolved. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4041,7 +4041,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Coleção criada, resolvida. */
+      /** @description Collection created, resolved. */
       201: {
         headers: {
           [name: string]: unknown
@@ -4058,7 +4058,7 @@ export interface operations {
   getExternalDetail: {
     parameters: {
       query?: {
-        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        /** @description Requested language (BCP-47/TMDB code, e.g.: `pt-BR`). Absent = primary language of the settings. Outside the allowed ones → 400. In the list, it validates the contract; the cards serve the neutral title (the per-language resolution belongs to the detail). */
         lang?: components['parameters']['LangQuery']
       }
       header?: never
@@ -4093,21 +4093,21 @@ export interface operations {
   getExternalCollection: {
     parameters: {
       query?: {
-        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        /** @description Requested language (BCP-47/TMDB code, e.g.: `pt-BR`). Absent = primary language of the settings. Outside the allowed ones → 400. In the list, it validates the contract; the cards serve the neutral title (the per-language resolution belongs to the detail). */
         lang?: components['parameters']['LangQuery']
       }
       header?: never
       path: {
         /** @description Fonte externa (ex.: tmdb). */
         source: string
-        /** @description Id da coleção NA FONTE (source_id). */
+        /** @description Id of the collection IN THE SOURCE (source_id). */
         id: string
       }
       cookie?: never
     }
     requestBody?: never
     responses: {
-      /** @description Coleção externa, resolvida no idioma ativo. */
+      /** @description External collection, resolved in the active language. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4125,21 +4125,21 @@ export interface operations {
   getExternalAlbum: {
     parameters: {
       query?: {
-        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        /** @description Requested language (BCP-47/TMDB code, e.g.: `pt-BR`). Absent = primary language of the settings. Outside the allowed ones → 400. In the list, it validates the contract; the cards serve the neutral title (the per-language resolution belongs to the detail). */
         lang?: components['parameters']['LangQuery']
       }
       header?: never
       path: {
         /** @description Fonte externa (ex.: musicbrainz). */
         source: string
-        /** @description MBID de release-group do álbum NA FONTE (source_id). */
+        /** @description RELEASE-GROUP MBID of the album IN THE SOURCE (source_id). */
         id: string
       }
       cookie?: never
     }
     requestBody?: never
     responses: {
-      /** @description Álbum externo com suas faixas oficiais. */
+      /** @description External album with its official tracks. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4166,7 +4166,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Binário da imagem cacheada. */
+      /** @description Binary of the cached image. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4185,7 +4185,7 @@ export interface operations {
       query?: never
       header?: never
       path: {
-        /** @description Id da pessoa no nosso catálogo (person.id). */
+        /** @description Id of the person in our catalog (person.id). */
         id: string
       }
       cookie?: never
@@ -4213,7 +4213,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Cards da fila de revisão (array, possivelmente vazio). */
+      /** @description Cards of the review queue (array, possibly empty). */
       200: {
         headers: {
           [name: string]: unknown
@@ -4257,7 +4257,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Cards da fila de órfãs (array, possivelmente vazio). */
+      /** @description Cards of the orphan queue (array, possibly empty). */
       200: {
         headers: {
           [name: string]: unknown
@@ -4280,7 +4280,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Entidade resolvida após confirmar. */
+      /** @description Entity resolved after the confirmation. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4308,7 +4308,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Entidade resolvida após corrigir. */
+      /** @description Entity resolved after the correction. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4335,7 +4335,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Resultado do auto-match (resolvido ou não). */
+      /** @description Result of the auto-match (resolved or not). */
       200: {
         headers: {
           [name: string]: unknown
@@ -4359,7 +4359,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description A prévia do candidato (ou `found: false` sem candidato). */
+      /** @description The candidate preview (or `found: false` without a candidate). */
       200: {
         headers: {
           [name: string]: unknown
@@ -4387,10 +4387,10 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Entidade resolvida após aplicar o candidato (mesmo shape de `/confirm` e `/correct`). */
+      /** @description Entity resolved after applying the candidate (same shape as `/confirm` and `/correct`). */
       200: {
         headers: {
-          /** @description Id da entity duplicata que foi fundida (removida) durante esta escrita — presente só quando o branch `external` funde automaticamente uma duplicata sem investimento do dono (`resolverColisaoExterna`, briefing 0051; mesmo header que `/correct` já usa). */
+          /** @description Id of the duplicate entity that was merged (removed) during this write — present only when the `external` branch automatically merges a duplicate without investment from the owner (the same header that `/correct` already uses). */
           'X-Duplicate-Merged-Id'?: string
           [name: string]: unknown
         }
@@ -4441,7 +4441,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Kinds que ganharam arte nova e kinds que faltavam sem opção disponível. */
+      /** @description Kinds that gained new artwork and kinds that were missing without an available option. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4466,7 +4466,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Resultado da reconciliação forçada (religou ou não). */
+      /** @description Result of the forced reconciliation (re-linked or not). */
       200: {
         headers: {
           [name: string]: unknown
@@ -4514,7 +4514,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Resumo de faixas regravadas e falhas (sucesso parcial é normal numa cascata de álbum). */
+      /** @description Summary of rewritten tracks and failures (partial success is normal in an album cascade). */
       200: {
         headers: {
           [name: string]: unknown
@@ -4555,7 +4555,7 @@ export interface operations {
   writeEntityNfo: {
     parameters: {
       query?: {
-        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        /** @description Requested language (BCP-47/TMDB code, e.g.: `pt-BR`). Absent = primary language of the settings. Outside the allowed ones → 400. In the list, it validates the contract; the cards serve the neutral title (the per-language resolution belongs to the detail). */
         lang?: components['parameters']['LangQuery']
       }
       header?: never
@@ -4567,7 +4567,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description NFO gravado (ou regravado) com sucesso. */
+      /** @description NFO written (or rewritten) successfully. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4591,7 +4591,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Binário do tema musical. */
+      /** @description Binary of the theme song. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4641,7 +4641,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Tema musical baixado e materializado com sucesso. */
+      /** @description Theme song downloaded and materialized successfully. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4669,7 +4669,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Binário do trailer. */
+      /** @description Binary of the trailer. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4685,7 +4685,7 @@ export interface operations {
   postEntityTrailerDownload: {
     parameters: {
       query?: {
-        /** @description Idioma pedido (código BCP-47/TMDB, ex.: `pt-BR`). Ausente = idioma principal das settings. Fora dos permitidos → 400. Na lista, valida o contrato; os cards servem o título neutro (a resolução por idioma é do detalhe). */
+        /** @description Requested language (BCP-47/TMDB code, e.g.: `pt-BR`). Absent = primary language of the settings. Outside the allowed ones → 400. In the list, it validates the contract; the cards serve the neutral title (the per-language resolution belongs to the detail). */
         lang?: components['parameters']['LangQuery']
       }
       header?: never
@@ -4701,7 +4701,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Trailer baixado e materializado com sucesso. */
+      /** @description Trailer downloaded and materialized successfully. */
       200: {
         headers: {
           [name: string]: unknown
@@ -4732,7 +4732,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Histórico de eventos (vazio quando não há nenhum). */
+      /** @description History of events (empty when there is none). */
       200: {
         headers: {
           [name: string]: unknown
@@ -4804,7 +4804,7 @@ export interface operations {
       path: {
         /** @description Id da entity. */
         id: components['parameters']['EntityId']
-        /** @description Id do evento de histórico de consumo (briefing 0092). */
+        /** @description Id of the consumption history event. */
         eventoId: components['parameters']['HistoricoEventoId']
       }
       cookie?: never
@@ -4824,9 +4824,9 @@ export interface operations {
   listHistoricoEventoOrfaos: {
     parameters: {
       query?: {
-        /** @description Tamanho da página (default 50, máximo 200). */
+        /** @description Page size (default 50, maximum 200). */
         limit?: number
-        /** @description Deslocamento da página (default 0). */
+        /** @description Page offset (default 0). */
         offset?: number
       }
       header?: never
@@ -4835,7 +4835,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Página de eventos órfãos. */
+      /** @description Page of orphan events. */
       200: {
         headers: {
           [name: string]: unknown
@@ -5057,7 +5057,7 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description Listagem do diretório. */
+      /** @description Listing of the directory. */
       200: {
         headers: {
           [name: string]: unknown
@@ -5095,7 +5095,7 @@ export interface operations {
       query?: never
       header?: never
       path: {
-        /** @description Id do job (briefing 0052) — slug estável (a chave de Handler.Nome(), ex.: "backup_vacuum"), não um uuid. */
+        /** @description Id of the job — a stable slug (the key of Handler.Nome(), e.g.: "backup_vacuum"), not a uuid. */
         id: components['parameters']['JobId']
       }
       cookie?: never
@@ -5125,14 +5125,14 @@ export interface operations {
       query?: never
       header?: never
       path: {
-        /** @description Id do job (briefing 0052) — slug estável (a chave de Handler.Nome(), ex.: "backup_vacuum"), não um uuid. */
+        /** @description Id of the job — a stable slug (the key of Handler.Nome(), e.g.: "backup_vacuum"), not a uuid. */
         id: components['parameters']['JobId']
       }
       cookie?: never
     }
     requestBody?: never
     responses: {
-      /** @description Execução aceita. */
+      /** @description Run accepted. */
       202: {
         headers: {
           [name: string]: unknown
@@ -5149,21 +5149,21 @@ export interface operations {
   listJobExecutions: {
     parameters: {
       query?: {
-        /** @description Tamanho da página (default 20, máximo 100). */
+        /** @description Page size (default 20, maximum 100). */
         limit?: number
-        /** @description Cursor de paginação (o `started_at` da última execução da página anterior); pagina para trás (mais antigas). Ausente = primeira página. */
+        /** @description Pagination cursor (the `started_at` of the last run of the previous page); it pages backwards (older ones). Absent = first page. */
         before?: string
       }
       header?: never
       path: {
-        /** @description Id do job (briefing 0052) — slug estável (a chave de Handler.Nome(), ex.: "backup_vacuum"), não um uuid. */
+        /** @description Id of the job — a stable slug (the key of Handler.Nome(), e.g.: "backup_vacuum"), not a uuid. */
         id: components['parameters']['JobId']
       }
       cookie?: never
     }
     requestBody?: never
     responses: {
-      /** @description Página de execuções. */
+      /** @description Page of runs. */
       200: {
         headers: {
           [name: string]: unknown
@@ -5193,7 +5193,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Aceito — evento gravado, ou descartado/logado sem match (mesmo código para não gerar retry do Jellyfin). */
+      /** @description Accepted — event recorded, or discarded/logged without a match (the same code so as not to make Jellyfin retry). */
       204: {
         headers: {
           [name: string]: unknown

@@ -1,9 +1,9 @@
 import { Link } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 
-// Cabeçalho compartilhado por `/dashboard/library/new` e
-// `/dashboard/library/$id/edit` (briefing 0071): link de volta + título — as
-// duas rotas só diferem no texto do título.
+// Header shared by `/dashboard/library/new` and
+// `/dashboard/library/$id/edit`: back link + title — the
+// two routes only differ in the title text.
 export function LibraryFormHeader({ titulo }: { titulo: string }) {
   return (
     <>

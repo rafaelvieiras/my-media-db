@@ -9,8 +9,8 @@ import {
 } from '@/lib/field-schema'
 import { baseEntity, descritoresPadrao } from '@/test/entity-fixtures'
 
-// Testa o núcleo PURO do formulário dirigido por schema (0030): descritores →
-// (sementes, schema Zod, patch). Nada de JSX — a extensibilidade nasce aqui.
+// Tests the PURE core of the schema-driven form: descriptors →
+// (seeds, Zod schema, patch). No JSX — extensibility is born here.
 
 describe('field-schema — ordenação e recorte', () => {
   it('ordenados respeita `order` mesmo com entrada embaralhada', () => {
@@ -120,7 +120,7 @@ describe('field-schema — construirPatchEdicao', () => {
   it('só inclui o que mudou; vazio vira null (definir vazio)', () => {
     const seeds = valoresDeEdicao(descritoresPadrao, {}, 'pt-BR', entity)
     const valores = { ...seeds, title: 'Duna', description: '' }
-    // title mudou; description continua vazio (não mudou) → não entra.
+    // title changed; description stays empty (unchanged) → it does not enter.
     const patch = construirPatchEdicao(descritoresPadrao, valores, seeds)
     expect(patch).toEqual({ title: 'Duna' })
   })

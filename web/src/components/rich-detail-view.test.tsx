@@ -6,8 +6,8 @@ import { richDetailBase } from '@/test/detail-harness'
 import { renderWithClient } from '@/test/render'
 import type { RichDetail } from '@/lib/rich-detail'
 
-// Fábricas de créditos mockados (0029): o backend live ainda não retorna créditos,
-// então as seções são exercitadas com dados montados aqui.
+// Factories of mocked credits: the live backend does not return credits yet,
+// so the sections are exercised with data built here.
 function ator(i: number, over: Partial<CreditCast> = {}): CreditCast {
   return {
     source_id: String(i),
@@ -27,15 +27,15 @@ function membro(
   return { source_id: name, name, department, job, ...over }
 }
 
-// Link/useNavigate mockados (a view usa ambos nas seções de coleção/similares).
+// Mocked Link/useNavigate (the view uses both in the collection/similars sections).
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
   useNavigate: () => vi.fn(),
 }))
 
-// hero renderiza SÓ o HeroImersivo (via RichDetailView) para as asserções de
-// capa/pôster abaixo — os testes miram o bloco de imagem do hero, não a
-// página inteira.
+// hero renders ONLY the HeroImersivo (via RichDetailView) for the cover/poster
+// assertions below — the tests target the image block of the hero, not the
+// whole page.
 function hero(detail: RichDetail) {
   return renderWithClient(<RichDetailView detail={detail} source="tmdb" />)
 }
@@ -142,12 +142,12 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
     renderWithClient(
       <RichDetailView source="tmdb" detail={richDetailBase({ cast })} />,
     )
-    // O 25º (order 24) e o 26º ficam ocultos no teto inicial de 24.
+    // The 25th (order 24) and the 26th stay hidden under the initial ceiling of 24.
     expect(screen.getByText('Ator 0')).toBeInTheDocument()
     expect(screen.getByText('Ator 23')).toBeInTheDocument()
     expect(screen.queryByText('Ator 24')).toBeNull()
     expect(screen.queryByText('Ator 25')).toBeNull()
-    // Expande: mostra todos e troca o rótulo para "Ver menos".
+    // It expands: it shows all of them and swaps the label to "Ver menos".
     fireEvent.click(screen.getByRole('button', { name: 'Ver todos (30)' }))
     expect(screen.getByText('Ator 24')).toBeInTheDocument()
     expect(screen.getByText('Ator 29')).toBeInTheDocument()
@@ -156,13 +156,13 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
   })
 
   it('elenco respeita a ordem de bilhagem (order asc)', () => {
-    // Fora de ordem na entrada; só o de menor `order` fica no teto de 1... mas aqui
-    // provamos que o de `order` alto some quando há mais que o teto.
+    // Out of order on input; only the one with the lowest `order` stays under the ceiling of 1... but here
+    // we prove that the one with a high `order` disappears when there are more than the ceiling.
     const cast = Array.from({ length: 26 }, (_, i) => ator(25 - i)) // ordem invertida
     renderWithClient(
       <RichDetailView source="tmdb" detail={richDetailBase({ cast })} />,
     )
-    // Ordenado por `order`, o Ator 0..23 aparece; 24 e 25 caem fora do teto de 24.
+    // Sorted by `order`, Ator 0..23 appears; 24 and 25 fall outside the ceiling of 24.
     expect(screen.getByText('Ator 0')).toBeInTheDocument()
     expect(screen.queryByText('Ator 24')).toBeNull()
     expect(screen.queryByText('Ator 25')).toBeNull()
@@ -199,7 +199,7 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
       .getAllByRole('heading', { level: 3 })
       .map((h) => h.textContent)
     expect(grupos).toEqual(['Direção', 'Roteiro', 'Fotografia', 'Som'])
-    // Nome + cargo do membro renderizados juntos.
+    // Name + role of the member rendered together.
     expect(screen.getByText('Roger Deakins')).toBeInTheDocument()
     expect(screen.getByText(/— Fotógrafo/)).toBeInTheDocument()
   })
@@ -251,7 +251,7 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
       name: 'Ver Denis Villeneuve na biblioteca',
     })
     expect(link).toHaveAttribute('href', '/person/p2')
-    // Sem person_id, o nome segue linkando à fonte (TMDB) — comportamento inalterado.
+    // Without person_id, the name keeps linking to the source (TMDB) — unchanged behavior.
     const externo = screen.getByRole('link', { name: 'Roger Deakins' })
     expect(externo).toHaveAttribute(
       'href',
@@ -276,12 +276,12 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
         })}
       />,
     )
-    // Direção (priorizado): foto real via <img alt="Foto de X">, como o Elenco.
+    // Directing (prioritized): real photo via <img alt="Foto de X">, like the Cast.
     expect(
       screen.getByRole('img', { name: 'Foto de Denis Villeneuve' }),
     ).toHaveAttribute('src', '/api/v1/images?src=denis')
-    // Fotografia (não priorizado): segue em texto compacto, sem foto — mesmo com
-    // profile_url disponível.
+    // Photography (not prioritized): it stays in compact text, without a photo — even with
+    // profile_url available.
     expect(
       screen.queryByRole('img', { name: 'Foto de Roger Deakins' }),
     ).toBeNull()
@@ -321,15 +321,15 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
         })}
       />,
     )
-    // Sem logo → nome em texto.
+    // Without a logo → name in text.
     expect(screen.getByText('Legendary')).toBeInTheDocument()
-    // Com logo → <img> com a URL proxyada direta (sem reproxyar) e alt = nome.
+    // With a logo → <img> with the proxied URL directly (no re-proxying) and alt = name.
     const logo = screen.getByRole('img', { name: 'Warner Bros.' })
     expect(logo).toHaveAttribute('src', '/api/v1/images?src=logo')
   })
 })
 
-// ── Hero imersivo: sinopse dentro do hero (0082) ─────────────────────────────
+// ── Immersive hero: synopsis inside the hero ─────────────────────────────────
 
 describe('RichDetailView — sinopse dentro do hero (0082)', () => {
   it('a sinopse aparece como paragrafo, sem heading "Sinopse" separada', () => {
@@ -358,7 +358,7 @@ describe('RichDetailView — sinopse dentro do hero (0082)', () => {
   })
 })
 
-// ── Trailer (0082 §4.3) ───────────────────────────────────────────────────────
+// ── Trailer ──────────────────────────────────────────────────────────────────
 
 function videoFixture(over: Partial<ExternalVideo> = {}): ExternalVideo {
   return {
@@ -426,7 +426,7 @@ describe('RichDetailView — botão de trailer na barra de ações (0082)', () =
   })
 })
 
-// ── Logo, banner e disco preferidos + tema musical (0082, só entity) ─────────
+// ── Preferred logo, banner and disc + theme song (entity only) ───────────────
 
 function assetFixture(over: Partial<Asset> = {}): Asset {
   return {
@@ -441,9 +441,9 @@ function assetFixture(over: Partial<Asset> = {}): Asset {
   }
 }
 
-// stubEntityFetch roteia `/assets`, `/theme` (HEAD) e `/historico/estado` (selo
-// "Assistido", 0094) para as respostas dadas — as chamadas que o hero dispara
-// quando `entityId` está presente. `estado` default vazio (sem selo).
+// stubEntityFetch routes `/assets`, `/theme` (HEAD) and `/historico/estado` (the
+// "Assistido" badge) to the given responses — the calls that the hero fires
+// when `entityId` is present. `estado` defaults to empty (no badge).
 function stubEntityFetch(
   assets: Asset[],
   temTema = false,
@@ -473,9 +473,9 @@ function stubEntityFetch(
   )
 }
 
-// Atalho comum às três descrições abaixo (logo/banner/disco, selo "Assistido",
-// tema musical): todas renderizam com o mesmo entityId="e1"/source="tmdb" —
-// só o que `stubEntityFetch` devolve muda.
+// Shortcut common to the three descriptions below (logo/banner/disc, "Assistido" badge,
+// theme song): they all render with the same entityId="e1"/source="tmdb" —
+// only what `stubEntityFetch` returns changes.
 function renderComEntity(detailOver: Partial<RichDetail> = {}) {
   return renderWithClient(
     <RichDetailView
@@ -486,7 +486,7 @@ function renderComEntity(detailOver: Partial<RichDetail> = {}) {
   )
 }
 
-// Idem para o caso "sem entityId": nenhuma das três seções busca `fetch`.
+// Same for the "without entityId" case: none of the three sections calls `fetch`.
 function stubFetchNaoDeveSerChamado() {
   const fetchMock = vi.fn()
   vi.stubGlobal('fetch', fetchMock)
@@ -541,7 +541,7 @@ describe('RichDetailView — logo/banner/disco preferidos (0082, entity)', () =>
   })
 })
 
-// ── Selo "Assistido" (briefing 0094) ─────────────────────────────────────────
+// ── "Assistido" badge ────────────────────────────────────────────────────────
 
 describe('RichDetailView — selo "Assistido" (0094)', () => {
   afterEach(() => {
@@ -597,7 +597,7 @@ describe('RichDetailView — player do tema musical local (0082 §4.4)', () => {
       name: 'Tocar tema musical',
     })
     expect(botao).toBeInTheDocument()
-    // Sem autoplay: nenhum estado de "tocando" (rótulo "Pausar") antes da ação.
+    // No autoplay: no "tocando" state (label "Pausar") before the action.
     expect(
       screen.queryByRole('button', { name: 'Pausar tema musical' }),
     ).toBeNull()
@@ -612,7 +612,7 @@ describe('RichDetailView — player do tema musical local (0082 §4.4)', () => {
   })
 })
 
-// ── Fileira de notas por fonte (0086) ─────────────────────────────────────────
+// ── Ratings row per source ───────────────────────────────────────────────────
 
 describe('RichDetailView — fileira de notas por fonte (0086)', () => {
   it('aparece mesmo com 1 fonte só — não fica escondida esperando 2+ (decisão do dono)', () => {
@@ -622,8 +622,8 @@ describe('RichDetailView — fileira de notas por fonte (0086)', () => {
         detail={richDetailBase({ ratings: [{ source: 'tmdb', value: 7.4 }] })}
       />,
     )
-    // O badge da fonte conhecida (TMDB) usa a LOGO svg (`aria-hidden`), não
-    // texto — a nota em si (7.4) é texto visível ao lado.
+    // The badge of the known source (TMDB) uses the svg LOGO (`aria-hidden`), not
+    // text — the rating itself (7.4) is visible text next to it.
     expect(screen.getByText('7.4')).toBeInTheDocument()
   })
 
@@ -665,7 +665,7 @@ describe('RichDetailView — fileira de notas por fonte (0086)', () => {
   })
 })
 
-// ── Fileira de links externos (0086) ──────────────────────────────────────────
+// ── Row of external links ────────────────────────────────────────────────────
 
 describe('RichDetailView — fileira de links externos, logo após o hero (0086)', () => {
   it('aparece logo após o hero, ANTES da seção de Palavras-chave', () => {
@@ -680,8 +680,8 @@ describe('RichDetailView — fileira de links externos, logo após o hero (0086)
     )
     const link = screen.getByRole('link', { name: 'TMDB' })
     const heading = screen.getByRole('heading', { name: 'Palavras-chave' })
-    // DOCUMENT_POSITION_FOLLOWING no resultado de `link.compareDocumentPosition`
-    // significa que `heading` vem DEPOIS de `link` no documento.
+    // DOCUMENT_POSITION_FOLLOWING in the result of `link.compareDocumentPosition`
+    // means that `heading` comes AFTER `link` in the document.
     expect(
       link.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
@@ -706,19 +706,19 @@ describe('RichDetailView — fileira de links externos, logo após o hero (0086)
   })
 })
 
-// ── Botões "Baixar trailer"/"Baixar tema" (briefings 0102/0103, ADR-0025) ────
+// ── "Baixar trailer"/"Baixar tema" buttons ───────────────────────────────────
 
-// Resposta Response-like mínima reaproveitada pelos stubs de fetch abaixo —
-// só os campos que o cliente HTTP do app lê (`ok`/`status`/`json`).
+// Minimal Response-like response reused by the fetch stubs below —
+// only the fields that the HTTP client of the app reads (`ok`/`status`/`json`).
 function respostaJson(body: unknown, status = 200): Response {
   return { ok: status < 400, status, json: async () => body } as Response
 }
 
-// Roteia as chamadas COMUNS a qualquer teste com `entityId`: status do
-// yt-dlp (0101), estado do histórico de consumo (selo assistido) e lista de
-// assets (hero) — antes de cair nelas, delega pro `extra` de cada stub
-// específico (trailer OU tema); `extra` devolve `undefined` quando a rota
-// não é dele, pra seguir o roteamento comum.
+// Routes the calls COMMON to any test with `entityId`: status of
+// yt-dlp, state of the consumption history (watched badge) and list of
+// assets (hero) — before falling into them, it delegates to the `extra` of each
+// specific stub (trailer OR theme); `extra` returns `undefined` when the route
+// is not its own, so the common routing goes on.
 function stubFetchComYtdlp(
   ytdlpDisponivel: boolean,
   extra: (u: string) => Response | undefined,
@@ -748,9 +748,9 @@ function stubFetchComYtdlp(
   )
 }
 
-// `jaBaixado` simula um trailer JÁ materializado antes do teste começar; um
-// POST bem-sucedido em .../trailer/download também vira `jaBaixado=true`
-// daí em diante (o invalidate da mutation refaz o HEAD).
+// `jaBaixado` simulates a trailer ALREADY materialized before the test starts; a
+// successful POST on .../trailer/download also becomes `jaBaixado=true`
+// from then on (the invalidate of the mutation redoes the HEAD).
 function stubTrailerFetch({
   ytdlpDisponivel,
   jaBaixado = false,
@@ -823,10 +823,10 @@ describe('RichDetailView — botão "Baixar trailer" (0102, ADR-0025)', () => {
   })
 })
 
-// `jaTemLocal` simula um theme.* JÁ materializado antes do teste começar; um
-// POST bem-sucedido em .../theme/download também vira `jaTemLocal=true` daí
-// em diante (o invalidate da mutation refaz TANTO o candidato QUANTO o HEAD
-// que TemaMusicalPlayer usa).
+// `jaTemLocal` simulates a theme.* ALREADY materialized before the test starts; a
+// successful POST on .../theme/download also becomes `jaTemLocal=true` from
+// then on (the invalidate of the mutation redoes BOTH the candidate AND the HEAD
+// that TemaMusicalPlayer uses).
 function stubThemeDownloadFetch({
   ytdlpDisponivel,
   candidatoDisponivel,

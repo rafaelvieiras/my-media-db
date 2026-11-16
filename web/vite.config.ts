@@ -9,40 +9,41 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      // Alias usado pelo shadcn/ui e pelos imports internos.
+      // Alias used by shadcn/ui and by the internal imports.
       '@': path.resolve(__dirname, './src'),
     },
   },
-  // Config do vitest (a chave `test` é ignorada pelo `vite build`, então não
-  // afeta o bundle de produção). Reaproveita o alias `@` acima.
+  // vitest config (the `test` key is ignored by `vite build`, so it does not
+  // affect the production bundle). It reuses the `@` alias above.
   test: {
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    // Descobre só os nossos testes (o `node_modules_rootbak` — backup ignorado
-    // — contém testes de terceiros que não devem rodar).
+    // Finds only our own tests (the ignored backup `node_modules_rootbak`
+    // holds third-party tests that must not run).
     include: ['src/**/*.test.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/node_modules_rootbak/**', '**/dist/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary'],
       reportsDirectory: './coverage',
-      // No vitest 4 a contagem de arquivos-fonte NÃO cobertos é o padrão (não há
-      // mais a flag `all`): todo arquivo casado por `include` entra no cálculo,
-      // mesmo sem teste — baseline honesto (ex.: router.tsx conta como 0%).
+      // In vitest 4 counting uncovered source files is the default (the `all`
+      // flag is gone): every file matched by `include` enters the math, even
+      // without a test, which keeps the baseline honest (router.tsx counts 0%).
       include: ['src/**'],
       exclude: [
-        // Ponto de entrada (só monta o React na DOM) — sem lógica testável.
+        // Entry point (it only mounts React into the DOM), no testable logic.
         'src/main.tsx',
-        // Componentes shadcn/ui são GERADOS — não são lógica nossa.
+        // shadcn/ui components are GENERATED, not our logic.
         'src/components/ui/**',
-        // api-types.ts é GERADO do openapi.yaml (npm run gen:types) — só tipos,
-        // sem código executável; fora da cobertura como os componentes gerados.
+        // api-types.ts is GENERATED from openapi.yaml (npm run gen:types): types
+        // only, no executable code, so it stays out of coverage like the generated
+        // components.
         'src/lib/api-types.ts',
-        // Infra de teste e os próprios testes.
+        // Test infrastructure and the tests themselves.
         'src/test/**',
         'src/**/*.test.{ts,tsx}',
-        // Declarações de tipo e estilos (não são código executável).
+        // Type declarations and styles (not executable code).
         'src/**/*.d.ts',
         'src/**/*.css',
       ],
@@ -60,12 +61,12 @@ export default defineConfig({
   server: {
     strictPort: true,
     proxy: {
-      // Em dev o front chama caminho relativo (/api/...) e o Vite encaminha
-      // para o backend Go — mesmo contrato de produção, sem CORS.
+      // In dev the front end calls a relative path (/api/...) and Vite forwards
+      // it to the Go backend: same contract as production, no CORS.
       '/api': {
-        // Alvo configurável: `npm run dev` local usa localhost:8080; no compose
-        // de dev (0004) o serviço `web` define VITE_PROXY_TARGET=http://api:8080
-        // porque `localhost` dentro do container não é o serviço `api`.
+        // Configurable target: a local `npm run dev` uses localhost:8080; in the
+        // dev compose the `web` service sets VITE_PROXY_TARGET=http://api:8080,
+        // because `localhost` inside the container is not the `api` service.
         target: process.env.VITE_PROXY_TARGET || 'http://localhost:8080',
         changeOrigin: true,
       },

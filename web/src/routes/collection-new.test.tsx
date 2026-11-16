@@ -8,8 +8,8 @@ import { okJson } from '@/test/entity-fixtures'
 import { stubCriacao } from '@/test/criacao-harness'
 import { erroJson } from '@/test/detail-harness'
 
-// Rota `/new/collection` (0030): cria uma coleção LOCAL (título + descrição) e
-// navega para `/entities/{id}`; o 422 (título vazio) aparece inline.
+// Route `/new/collection`: creates a LOCAL collection (title + description) and
+// navigates to `/entities/{id}`; the 422 (empty title) appears inline.
 const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -31,7 +31,7 @@ describe('CollectionNewScreen', () => {
     renderWithClient(<CollectionNewScreen />)
     await screen.findByLabelText('Título')
     expect(screen.getByLabelText('Sinopse')).toBeInTheDocument()
-    // Campos não aplicáveis a coleção não aparecem.
+    // Fields that do not apply to a collection do not appear.
     expect(screen.queryByLabelText('Data de lançamento')).toBeNull()
     expect(screen.queryByLabelText('Sua nota')).toBeNull()
   })

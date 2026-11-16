@@ -10,10 +10,10 @@ import {
 } from '@/lib/field-schema'
 import { baseEntity, descritoresPadrao } from '@/test/entity-fixtures'
 
-// SchemaForm é o renderizador GENÉRICO: os inputs e a validação nascem dos
-// descritores. Estes testes provam que cada widget renderiza e — o critério de
-// aceite central — que injetar um descritor NOVO faz o input aparecer sem tocar
-// JSX de campo.
+// SchemaForm is the GENERIC renderer: the inputs and the validation are born from the
+// descriptors. These tests prove that each widget renders and — the central
+// acceptance criterion — that injecting a NEW descriptor makes the input appear without touching
+// the field JSX.
 
 function renderCriacao(
   fields: FieldDescriptor[],
@@ -37,9 +37,9 @@ function renderCriacao(
   return { onSubmit }
 }
 
-// renderEdicao monta o form no modo EDIÇÃO (idioma corrente, sementes resolvidas
-// da entity) — o mesmo scaffold dos testes de tags e do botão "Limpar", que só
-// diferem em props extras (`over`, ex.: `onClear`).
+// renderEdicao mounts the form in EDIT mode (current language, seeds resolved
+// from the entity) — the same scaffold as the tags tests and of the "Limpar" button, which only
+// differ in extra props (`over`, e.g. `onClear`).
 function renderEdicao(over: Partial<Parameters<typeof SchemaForm>[0]> = {}) {
   const entity = baseEntity()
   const fields = descritoresPadrao
@@ -63,7 +63,7 @@ function renderEdicao(over: Partial<Parameters<typeof SchemaForm>[0]> = {}) {
 describe('SchemaForm — render por widget', () => {
   it('renderiza um input por widget a partir dos descritores', () => {
     renderCriacao(descritoresPadrao.filter((d) => d.creatable))
-    // text, textarea e date viram inputs com o rótulo do descritor.
+    // text, textarea and date become inputs with the label of the descriptor.
     expect(screen.getByLabelText('Título')).toBeInTheDocument()
     expect(screen.getByLabelText('Sinopse')).toBeInTheDocument()
     expect(screen.getByLabelText('Título original')).toBeInTheDocument()
@@ -140,8 +140,8 @@ describe('SchemaForm — interações', () => {
   })
 })
 
-// Guard de "sair sem salvar" (0073): onDirtyChange espelha `form.state.isDirty`,
-// chamado só na transição (não a cada tecla).
+// "Leave without saving" guard: onDirtyChange mirrors `form.state.isDirty`,
+// called only on the transition (not on every keystroke).
 describe('SchemaForm — onDirtyChange (0073)', () => {
   it('reporta false ao montar (form pristino)', () => {
     const onDirtyChange = vi.fn()
@@ -164,7 +164,7 @@ describe('SchemaForm — onDirtyChange (0073)', () => {
     renderEdicao({ onDirtyChange })
     await user.type(screen.getByLabelText('Título'), 'Duna')
     await vi.waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true))
-    // false (montagem) + true (1ª tecla) — as 3 teclas seguintes não repetem.
+    // false (mount) + true (1st key) — the next 3 keys do not repeat it.
     expect(onDirtyChange).toHaveBeenCalledTimes(2)
   })
 })

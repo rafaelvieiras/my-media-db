@@ -1,12 +1,12 @@
 import type { FC } from 'react'
 import { TmdbLogo, ImdbLogo, TvdbLogo } from '@/components/provider-logos'
 
-// PROVIDER_META (briefing 0086) é o registro EXTENSÍVEL de metadados visuais
-// por fonte — reusado tanto pela fileira de NOTAS quanto pela fileira de
-// LINKS externos. Fonte sem entrada cai no fallback de `metaDaFonte` (texto
-// maiúsculo, sem logo) — nunca quebra, nunca esconde o dado. Adicionar uma
-// fonte nova (ex. fanart.tv, quando fizer sentido linkar) é só uma entrada
-// aqui, sem mudar nenhuma tela (AGENTS.md §6, independência de provider).
+// PROVIDER_META is the EXTENSIBLE registry of per-source visual
+// metadata — reused both by the RATINGS row and by the
+// external LINKS row. A source without an entry falls back to `metaDaFonte` (uppercase
+// text, no logo) — it never breaks, never hides the data. Adding a
+// new source (e.g. fanart.tv, when linking it makes sense) is just one entry
+// here, without changing any screen (AGENTS.md §6, provider independence).
 export const PROVIDER_META: Record<
   string,
   { label: string; Logo?: FC<{ className?: string }> }

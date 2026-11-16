@@ -5,15 +5,15 @@ import { CardNumerado, CardTemporada } from '@/components/entity-members'
 import { entityCardBase as card } from '@/test/detail-harness'
 import type { EntityCard } from '@/lib/api'
 
-// Testa o card de TEMPORADA (0036/0038): o selo de completude (completa / parcial)
-// sai de `ownership` e vai no topo-direito compacto; a temporada vazia fica sem
-// badge e com a capa normal (0038 removeu o recuo por opacity). CardTemporada
-// renderiza o PosterCard (usa Link), então mocka só o Link do router por um <a>.
+// Tests the SEASON card: the completeness badge (completa / parcial)
+// comes from `ownership` and goes in the compact top-right corner; the empty season stays without
+// a badge and with the normal cover (the opacity indent was removed). CardTemporada
+// renders the PosterCard (which uses Link), so it mocks only the router Link as an <a>.
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
 }))
 
-// season monta um card de temporada com a posse agregada dada.
+// season builds a season card with the given aggregated ownership.
 function season(owned: number, total: number) {
   return card({
     id: 'se1',
@@ -39,7 +39,7 @@ describe('CardTemporada — selo de completude (0036/0038)', () => {
     const { container } = render(<CardTemporada card={season(0, 10)} />)
     expect(screen.queryByText('0/10')).toBeNull()
     expect(screen.queryByLabelText(/episódios/)).toBeNull()
-    // 0038 removeu o recuo por opacity: capa sempre normal.
+    // The opacity indent was removed: the cover is always normal.
     expect(container.querySelector('.opacity-60')).toBeNull()
   })
 
@@ -58,7 +58,7 @@ describe('CardTemporada — selo de completude (0036/0038)', () => {
   })
 })
 
-// episodio monta um card de episodio com o numbering real dado (0039).
+// episodio builds an episode card with the given real numbering.
 function episodio(numbering: EntityCard['numbering']) {
   return card({ id: 'ep1', title: 'Piloto', type: 'episode', numbering })
 }
@@ -94,8 +94,8 @@ describe('CardNumerado — numbering real do episódio (0039)', () => {
   })
 
   it('episódio draft (sem numbering) → rótulo neutro, sem número inventado', () => {
-    // O PosterCard tambem rotula o tipo ("Episódio"), entao mira a label do numbering:
-    // o primeiro span do wrapper. Sem numbering ela e o rotulo neutro, sem "E\d".
+    // The PosterCard also labels the type ("Episódio"), so it targets the numbering label:
+    // the first span of the wrapper. Without numbering it is the neutral label, without "E\d".
     const { container } = render(<CardNumerado card={episodio(null)} />)
     const label = container.querySelector('.flex.flex-col.gap-1 > span')
     expect(label?.textContent).toBe('Episódio')
@@ -103,7 +103,7 @@ describe('CardNumerado — numbering real do episódio (0039)', () => {
   })
 })
 
-// episodioComStill monta um card de episodio com still_url cru do provider (0042).
+// episodioComStill builds an episode card with the raw still_url of the provider.
 function episodioComStill(stillUrl: string | null) {
   return card({
     id: 'ep1',
@@ -122,15 +122,15 @@ describe('CardNumerado — still 16:9 do episódio (0042)', () => {
       <CardNumerado card={episodioComStill(still)} />,
     )
     const img = screen.getByAltText('Still de Piloto') as HTMLImageElement
-    // Roteia pela rota do proxy (GET /images?src=) com a URL crua encodada — nao a URL
-    // direta do CDN da fonte.
+    // It routes through the proxy route (GET /images?src=) with the encoded raw URL — not the
+    // direct URL of the source CDN.
     expect(img.getAttribute('src')).toBe(
       `/api/v1/images?src=${encodeURIComponent(still)}`,
     )
-    // Enquadramento proprio do episodio (16:9), nao o frame de poster 2:3.
+    // Episode framing itself (16:9), not the 2:3 poster frame.
     expect(container.querySelector('.aspect-video')).toBeTruthy()
     expect(container.querySelector('.aspect-\\[2\\/3\\]')).toBeNull()
-    // O numero E05 segue intacto (0039).
+    // The number E05 stays intact.
     expect(screen.getByText('E05')).toBeTruthy()
   })
 

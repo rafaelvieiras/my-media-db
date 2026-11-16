@@ -20,20 +20,20 @@ const DEBOUNCE_MS = 350
 
 type FiltroTipo = MediaTypeFilterValue
 
-// Sub-nós da árvore de séries que a busca só traz sob demanda (0033): DESLIGADOS por
-// padrão. No geral o usuário busca filme/série; trazer dezenas de episódios/temporadas
-// de várias séries afogaria o resultado. Ligar um toggle envia `include=` e refetch, e
-// o sub-nó aparece numa SEÇÃO PRÓPRIA — nunca misturado com filme/série.
+// Sub-nodes of the series tree that the search only brings on demand: OFF by
+// default. In general the user searches for a movie/series; bringing dozens of episodes/seasons
+// from several series would drown the result. Turning a toggle on sends `include=` and refetches, and
+// the sub-node appears in its OWN SECTION — never mixed with movie/series.
 type SubNo = 'season' | 'episode'
 const SUB_NOS: SubNo[] = ['season', 'episode']
 
-// Painel de busca: input com debounce dispara `GET /search`; enquanto vazio, a
-// tela fica em estado de instrução (não consulta). Agrupa os cards de TOPO
-// dinamicamente por `type` real (briefing 0113/ADR-0030 — "Filmes", "Séries",
-// "Artistas" etc., sem balde fixo "Filmes e séries" que não cobria música),
-// separado de "Temporadas"/"Episódios" (sub-nós, só quando ligados) e de
-// "Resultados externos" (não salvos, com Importar), tratando
-// `external_available:false` como indisponibilidade — não como zero resultados.
+// Search panel: an input with debounce fires `GET /search`; while empty, the
+// screen stays in an instruction state (it does not query). It groups the TOP-LEVEL cards
+// dynamically by real `type` ("Filmes", "Séries",
+// "Artistas" etc., without a fixed "Filmes e séries" bucket that did not cover music),
+// separately from "Temporadas"/"Episódios" (sub-nodes, only when they are on) and from
+// "Resultados externos" (not saved, with Importar), treating
+// `external_available:false` as unavailability — not as zero results.
 export function SearchPanel() {
   const [termo, setTermo] = useState('')
   const [tipo, setTipo] = useState<FiltroTipo>('all')
@@ -44,13 +44,13 @@ export function SearchPanel() {
   const [debounced, setDebounced] = useState('')
   const { lang } = useLanguage()
 
-  // Debounce: só propaga o termo (trim) para a query após a pausa de digitação.
+  // Debounce: it only propagates the (trimmed) term to the query after the typing pause.
   useEffect(() => {
     const id = setTimeout(() => setDebounced(termo.trim()), DEBOUNCE_MS)
     return () => clearTimeout(id)
   }, [termo])
 
-  // `include`: os sub-nós ligados, na ordem canônica (chave de cache estável).
+  // `include`: the sub-nodes turned on, in the canonical order (stable cache key).
   const include = useMemo(() => SUB_NOS.filter((s) => subNos[s]), [subNos])
 
   const busca = useQuery(
@@ -99,8 +99,8 @@ export function SearchPanel() {
   )
 }
 
-// SubNoToggles: chips liga/desliga para trazer Temporadas/Episódios à busca. Off por
-// padrão; o estado pressionado (aria-pressed) reflete o filtro ativo.
+// SubNoToggles: on/off chips to bring Seasons/Episodes into the search. Off by
+// default; the pressed state (aria-pressed) reflects the active filter.
 function SubNoToggles({
   value,
   onToggle,
@@ -146,10 +146,10 @@ function SubNoToggle({
   )
 }
 
-// Corpo de resultados: isola os estados (inicial / carregando / erro / dados) do
-// controle de input acima. Mantido separado para o painel não inchar. Parte o
-// `local` por tipo em seções distintas (0033): topo sempre visível, sub-nós só
-// quando o respectivo toggle está ligado.
+// Results body: it isolates the states (initial / loading / error / data) from the
+// input control above. Kept separate so the panel does not bloat. It splits the
+// `local` one by type into distinct sections: top-level always visible, sub-nodes only
+// when the respective toggle is on.
 function SearchResults({
   query,
   isPending,
@@ -167,7 +167,7 @@ function SearchResults({
   mostrarTemporadas: boolean
   mostrarEpisodios: boolean
 }) {
-  // Estado inicial: sem termo, a query está desabilitada (isPending fica true).
+  // Initial state: without a term, the query is disabled (isPending stays true).
   if (query === '') {
     return (
       <EmptyState
@@ -196,11 +196,11 @@ function SearchResults({
   return (
     <div className="flex flex-col gap-8">
       {gruposTopo.length === 0 ? (
-        // Nenhum card de topo: mantém uma seção (mesmo vazia) para o dono
-        // saber que o catálogo FOI consultado — sem isso, com resultado local
-        // zerado a tela pularia direto pra "Resultados externos" sem dizer
-        // que o catálogo não tinha nada (decisão de implementação, briefing
-        // 0113 §6: não especificado pelo dono).
+        // No top-level card: it keeps a section (even an empty one) so the owner
+        // knows the catalog WAS queried — without that, with a local result of
+        // zero the screen would jump straight to "Resultados externos" without saying
+        // that the catalog had nothing (an implementation decision, not specified
+        // by the owner).
         <CardGridSection
           title="Catálogo"
           cards={[]}
@@ -238,12 +238,12 @@ function SearchResults({
   )
 }
 
-// agruparPorTipo separa os cards de TOPO (já sem season/episode, que têm seção
-// própria) pelo `type` real de cada um (briefing 0113/ADR-0030) — generaliza o
-// antigo balde único "Filmes e séries", que não fazia sentido pra tipos como
-// "artista". Preserva a ordem de relevância do FTS5: dentro de cada grupo os
-// cards mantêm a ordem de chegada em `cards`; os grupos saem na ordem do
-// PRIMEIRO card de cada tipo (sem reordenar por nome/alfabeto).
+// agruparPorTipo separates the TOP-LEVEL cards (already without season/episode, which have a section
+// of their own) by the real `type` of each one — it generalizes the
+// former single "Filmes e séries" bucket, which made no sense for types such as
+// "artista". It preserves the relevance order of FTS5: inside each group the
+// cards keep the arrival order in `cards`; the groups come out in the order of the
+// FIRST card of each type (without reordering by name/alphabet).
 function agruparPorTipo(
   cards: SearchResult['local'],
 ): Array<{ type: string; cards: SearchResult['local'] }> {
@@ -259,9 +259,9 @@ function agruparPorTipo(
   return Array.from(grupos, ([type, cards]) => ({ type, cards }))
 }
 
-// CardGridSection: uma seção de cards do catálogo (título + grid ou estado vazio),
-// compartilhada pelas seções de topo/temporadas/episódios — centraliza o markup do
-// grid (evita a duplicação medida pelo jscpd).
+// CardGridSection: a section of catalog cards (title + grid or empty state),
+// shared by the top-level/seasons/episodes sections — it centralizes the markup of the
+// grid (avoids the duplication measured by jscpd).
 function CardGridSection({
   title,
   cards,

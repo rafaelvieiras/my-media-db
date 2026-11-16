@@ -6,18 +6,18 @@ import { LanguageProvider } from '@/lib/language-context'
 import { renderWithClient } from '@/test/render'
 import { baseEntity, okJson, settingsPadrao } from '@/test/entity-fixtures'
 
-// EntityEditShell (briefing 0080): o "chrome" compartilhado pelas 3 subrotas de
-// edição — cabeçalho (pôster+título+idioma), sidebar de navegação com a seção
-// ativa destacada, e o guard de "sair sem salvar" (0073) reaplicado aos 3 links
-// da sidebar + "Voltar ao item", agora sobre o "sujo" recebido via prop (só da
-// seção atual — cada subrota monta um único bloco).
+// EntityEditShell: the "chrome" shared by the 3 edit subroutes —
+// header (poster+title+language), navigation sidebar with the active section
+// highlighted, and the "leave without saving" guard reapplied to the 3 links
+// of the sidebar + "Voltar ao item", now over the "dirty" state received via prop (only from the
+// current section — each subroute mounts a single block).
 const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
 
-// Import DINÂMICO do mock do Link (`@/test/router-mock`): a fábrica de
-// `vi.mock` roda içada para o topo do arquivo, ANTES dos imports estáticos
-// serem resolvidos — referenciar `LinkMock` como import estático aqui causaria
-// "Cannot access before initialization". O `await import` adia a resolução
-// para quando a fábrica de fato executa.
+// DYNAMIC import of the Link mock (`@/test/router-mock`): the factory of
+// `vi.mock` runs hoisted to the top of the file, BEFORE the static imports
+// are resolved — referencing `LinkMock` as a static import here would cause
+// "Cannot access before initialization". The `await import` postpones the resolution
+// until the factory actually executes.
 vi.mock('@tanstack/react-router', async () => {
   const { LinkMock } = await import('@/test/router-mock')
   return {

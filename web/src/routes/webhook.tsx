@@ -7,13 +7,13 @@ import { ErrorState, LoadingState } from '@/components/query-states'
 import { jellyfinWebhookTokenQueryOptions } from '@/lib/queries'
 import { regenerateJellyfinWebhookToken, ApiError } from '@/lib/api'
 
-// Rota `/dashboard/webhook` (briefing 0097): fecha o buraco deixado pelo
-// 0093/0094 — nenhum dos dois construiu a UI de configuração do token do
-// webhook de entrada do Jellyfin (cada briefing empurrou a responsabilidade
-// pro outro). Gera/copia o token e a URL pronta pra colar no plugin de
-// Webhooks do Jellyfin. A seção "Webhooks de saída" é um placeholder
-// consciente: H2/ADR-0022 decidiu que saída é uma capacidade de provider
-// futura (`TrackerProvider`), não uma feature configurável hoje.
+// Route `/dashboard/webhook`: it closes the hole left by the
+// consumption history work — neither delivery built the UI for configuring the token of the
+// Jellyfin inbound webhook (each piece of work pushed the responsibility
+// to the other). It generates/copies the token and the ready-made URL to paste into the
+// Jellyfin Webhooks plugin. The "Webhooks de saída" section is a deliberate
+// placeholder: ADR-0022 decided that outbound is a future
+// provider capability (`TrackerProvider`), not a configurable feature today.
 export function WebhookScreen() {
   const { data, isPending, isError, error } = useQuery(
     jellyfinWebhookTokenQueryOptions,
@@ -61,10 +61,10 @@ export function WebhookScreen() {
   )
 }
 
-// Seção do token propriamente dita: estado vazio (nenhum token gerado) OU
-// token vigente com toggle mostrar/ocultar + copiar. `regenerar` some por
-// trás de uma confirmação quando já existe um token (substituir invalida o
-// atual, exigindo reconfigurar a URL no Jellyfin).
+// The token section itself: empty state (no token generated) OR
+// current token with a show/hide toggle + copy. `regenerar` hides behind
+// a confirmation when a token already exists (replacing it invalidates the
+// current one, requiring the URL to be reconfigured in Jellyfin).
 function JellyfinWebhookTokenSection({
   tokenAtual,
 }: {
@@ -184,8 +184,8 @@ function JellyfinWebhookTokenSection({
   )
 }
 
-// Botão de copiar genérico (token OU URL) — feedback "Copiado!" por 2s.
-// Primeiro uso de `navigator.clipboard` no projeto.
+// Generic copy button (token OR URL) — a "Copiado!" feedback for 2s.
+// First use of `navigator.clipboard` in the project.
 function CopyButton({ label, valor }: { label: string; valor: string }) {
   const [copiado, setCopiado] = useState(false)
 

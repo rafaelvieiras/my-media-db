@@ -4,14 +4,14 @@ import userEvent from '@testing-library/user-event'
 import { entidadeResolvidaPadrao, entidades } from '@/test/msw/handlers'
 import { renderRota } from '@/test/route-tree-harness'
 
-// Rota `/entities/$id/edit/ids` (briefing 0080, subrota da edição 0030): a seção
-// "IDs de terceiros" — `ExternalIdsEditor` isolado (o comportamento de
-// salvar/re-enriquecer já é coberto por `external-ids-editor.test.tsx`; a
-// mecânica do guard de "sair sem salvar" já é coberta em detalhe por
-// `entity-edit-shell.test.tsx`). Aqui, sobre a ÁRVORE DE ROTA REAL (mesmo
-// harness MSW dos testes em `routes/__msw__/`), cobrimos só a montagem desta
-// subrota e a FIAÇÃO do guard (o "sujo" do `ExternalIdsEditor` chega até o
-// `EntityEditShell` e intercepta a navegação de verdade).
+// Route `/entities/$id/edit/ids` (subroute of the item edit): the section
+// "IDs de terceiros" — `ExternalIdsEditor` in isolation (the behavior of
+// saving/re-enriching is already covered by `external-ids-editor.test.tsx`; the
+// mechanics of the "leave without saving" guard is already covered in detail by
+// `entity-edit-shell.test.tsx`). Here, over the REAL ROUTE TREE (the same
+// MSW harness as the tests in `routes/__msw__/`), we cover only the mounting of this
+// subroute and the WIRING of the guard (the "dirty" state of the `ExternalIdsEditor` reaches the
+// `EntityEditShell` and intercepts the navigation for real).
 describe('EntityEditIdsScreen (árvore real)', () => {
   beforeEach(() => {
     entidades.set('e1', entidadeResolvidaPadrao({ id: 'e1', title: 'Dune' }))
@@ -53,10 +53,10 @@ describe('EntityEditIdsScreen (árvore real)', () => {
     await user.type(screen.getByLabelText('Fonte do id externo'), 'tmdb')
     await user.click(screen.getByRole('link', { name: 'Elenco e equipe' }))
     expect(confirmar).toHaveBeenCalledTimes(1)
-    // Cancelou a saída: segue na mesma seção, com o texto digitado intacto.
+    // It cancelled the exit: it stays in the same section, with the typed text intact.
     expect(screen.getByLabelText('Fonte do id externo')).toHaveValue('tmdb')
 
-    // Confirmando desta vez, a navegação de fato acontece.
+    // Confirming this time, the navigation actually happens.
     confirmar.mockReturnValue(true)
     await user.click(screen.getByRole('link', { name: 'Elenco e equipe' }))
     await waitFor(() =>

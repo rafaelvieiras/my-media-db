@@ -27,18 +27,18 @@ import {
   type ValoresForm,
 } from '@/lib/field-schema'
 
-// Rota `/entities/$id/edit` (briefing 0030; dividida em subrotas pelo 0080): a
-// seção "Informações básicas" — o formulário DIRIGIDO POR DESCRITORES, default
-// da edição de item (mantém a URL de sempre, deep-links não quebram). Preserva a
-// semântica por-idioma do editor antigo (0016):
-//   - campos TRADUZÍVEIS editam o idioma de leitura corrente; NEUTROS valem p/ todos;
-//   - input esvaziado ao Salvar manda `null` (DEFINIR VAZIO); "Limpar" é DELETE por
-//     idioma/da chave (volta a HERDAR) — ações distintas;
-//   - tags como {add,remove} relativas ao resolvido ao abrir.
-// A sidebar/cabeçalho compartilhados vivem no `EntityEditShell`; IDs externos e
-// elenco/equipe agora são subrotas próprias (`entity-edit-ids.tsx`/
-// `entity-edit-creditos.tsx`). Sucesso do override volta para `/entities/$id`;
-// Cancelar volta sem gravar; id inexistente → estado 404.
+// Route `/entities/$id/edit` (split into subroutes later): the
+// "Informações básicas" section — the form DRIVEN BY DESCRIPTORS, the default
+// of the item edit (it keeps the usual URL, deep links do not break). It preserves the
+// per-language semantics of the old editor:
+//   - TRANSLATABLE fields edit the current reading language; NEUTRAL ones apply to all;
+//   - an input emptied on Save sends `null` (SET EMPTY); "Limpar" is a DELETE per
+//     language/of the key (it INHERITS again) — distinct actions;
+//   - tags as {add,remove} relative to the value resolved on open.
+// The shared sidebar/header live in the `EntityEditShell`; external IDs and
+// cast/crew are now subroutes of their own (`entity-edit-ids.tsx`/
+// `entity-edit-creditos.tsx`). A successful override goes back to `/entities/$id`;
+// Cancel goes back without saving; an absent id → 404 state.
 export function EntityEditBasicoScreen() {
   const { id } = useParams({ from: '/entities/$id/edit' })
   const { lang } = useLanguage()
@@ -47,8 +47,8 @@ export function EntityEditBasicoScreen() {
   const blobQuery = useQuery(overrideBlobQueryOptions(id))
   const fieldsQuery = useQuery(entityFieldsQueryOptions)
 
-  // Guard de "sair sem salvar" (0073/0080): só o "sujo" deste bloco — a subrota
-  // monta um único bloco, então não há mais 3 booleanos para combinar.
+  // "Leave without saving" guard: only the "dirty" state of this block — the subroute
+  // mounts a single block, so there are no longer 3 booleans to combine.
   const [sujo, setSujo] = useState(false)
 
   const carregando =
@@ -76,8 +76,8 @@ export function EntityEditBasicoScreen() {
         blob={blobQuery.data!}
         fields={fieldsQuery.data!}
         onDirtyChange={setSujo}
-        // Remonta o form quando o idioma muda ou o blob revalida (após "Limpar"),
-        // recompondo as sementes — o mesmo padrão do editor antigo.
+        // It remounts the form when the language changes or the blob revalidates (after "Limpar"),
+        // recomposing the seeds — the same pattern as the old editor.
         key={`${lang}:${blobQuery.dataUpdatedAt}`}
       />
     </EntityEditShell>
@@ -104,9 +104,9 @@ function EntityEditBasicoForm({
 
   const sementes = valoresDeEdicao(fields, blob, lang, entity)
 
-  // Invalidação pós-edição: `['entity', id]` é PREFIXO — derruba a entity em todas
-  // as variações de `lang`, os arquivos e o blob de override; `['entities']`
-  // atualiza os cards da lista.
+  // Invalidation after the edit: `['entity', id]` is a PREFIX — it drops the entity in all
+  // the `lang` variations, the files and the override blob; `['entities']`
+  // updates the cards of the list.
   function invalidar() {
     qc.invalidateQueries({ queryKey: ['entity', id] })
     qc.invalidateQueries({ queryKey: ['entities'] })
@@ -120,9 +120,9 @@ function EntityEditBasicoForm({
     },
   })
 
-  // "Limpar": com `lang` para traduzível (volta a herdar naquele idioma), sem
-  // `lang` para neutro (remove a chave). Não navega — a revalidação do blob
-  // remonta o form (via `key`) com o valor herdado.
+  // "Limpar": with `lang` for a translatable field (it inherits again in that language), without
+  // `lang` for a neutral one (it removes the key). It does not navigate — the revalidation of the blob
+  // remounts the form (via `key`) with the inherited value.
   const limpar = useMutation({
     mutationFn: ({
       campo,
@@ -139,7 +139,7 @@ function EntityEditBasicoForm({
   function onSubmit(valores: ValoresForm) {
     const patch = construirPatchEdicao(fields, valores, sementes)
     if (Object.keys(patch).length === 0) {
-      // Nada mudou — volta ao detalhe sem bater na API.
+      // Nothing changed — it goes back to the detail without hitting the API.
       navigate({ to: '/entities/$id', params: { id } })
       return
     }
@@ -175,10 +175,10 @@ function EntityEditBasicoForm({
   )
 }
 
-// placeholdersDe monta o texto herdado/resolvido por campo (mostrado quando o
-// input está vazio), iterando os descritores: traduzíveis/neutros usam o valor
-// resolvido; a nota local mostra a nota da FONTE (distinta da sua). Campos sem
-// valor resolvido caem no default do próprio descritor.
+// placeholdersDe builds the inherited/resolved text per field (shown when the
+// input is empty), iterating the descriptors: translatable/neutral ones use the
+// resolved value; the local rating shows the rating of the SOURCE (distinct from yours). Fields without a
+// resolved value fall back to the default of the descriptor itself.
 function placeholdersDe(
   fields: FieldDescriptor[],
   entity: ResolvedEntity,

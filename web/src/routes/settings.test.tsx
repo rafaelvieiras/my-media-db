@@ -13,28 +13,28 @@ import { renderWithClient } from '@/test/render'
 import { erroJson, okJson } from '@/test/detail-harness'
 import { respostaCompletude } from '@/test/catalog-completeness-harness'
 
-// Config vigente devolvida pelo GET /settings/languages nos testes.
+// Current config returned by GET /settings/languages in the tests.
 const settingsIniciais: LanguageSettings = {
   primary: 'pt-BR',
   fallback: 'en',
   allowed: ['pt-BR', 'en'],
 }
 
-// Config vigente devolvida pelo GET /settings/enrichment-retroativo (0085).
+// Current config returned by GET /settings/enrichment-retroativo.
 const retroativoIniciais: RetroactiveEnrichmentSettings = { retry_days: 15 }
 
-// Config vigente devolvida pelo GET /settings/auto-materialize-artwork (0089).
+// Current config returned by GET /settings/auto-materialize-artwork.
 const autoMaterializarIniciais: AutoMaterializeArtworkSettings = {
   enabled: false,
 }
 
-// Config vigente devolvida pelo GET /settings/auto-download-trailer-tema
+// Current config returned by GET /settings/auto-download-trailer-tema.
 // (0104).
 const autoDownloadTrailerTemaIniciais: AutoDownloadTrailerTemaSettings = {
   enabled: false,
 }
 
-// Status vigente devolvido pelo GET /settings/ytdlp (0101, ADR-0025).
+// Current status returned by GET /settings/ytdlp (ADR-0025).
 const ytdlpIniciais: YtdlpSettings = {
   disponivel: true,
   origem: 'baixado',
@@ -42,13 +42,13 @@ const ytdlpIniciais: YtdlpSettings = {
   detalhe: null,
 }
 
-// Roteia o fetch: GET/PUT de idiomas, de throttle de enriquecimento
-// retroativo (0085) e do toggle de materialização automática de artes
-// (0089) são tratados aqui; GET/PUT de completude de catalogação (0057)
-// delegam a `respostaCompletude` (compartilhada com
-// catalog-completeness-form.test.tsx) — esta suíte só precisa que a seção
-// não quebre o mock de fetch, o comportamento próprio do formulário é
-// coberto lá.
+// Routes the fetch: GET/PUT of languages, of the enrichment
+// throttle and of the automatic artwork materialization toggle
+// are handled here; GET/PUT of cataloging completeness
+// delegate to `respostaCompletude` (shared with
+// catalog-completeness-form.test.tsx) — this suite only needs the section
+// not to break the fetch mock, the behavior of the form itself is
+// covered there.
 function fetchRouter(opts?: {
   putResposta?: LanguageSettings
   putErro?: { status: number; code: string; message: string }
@@ -162,10 +162,10 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-// Renderiza a tela e espera o formulário (pós-carregamento das settings).
-// Devolve o escopo da seção de IDIOMAS: a tela agora tem duas seções, cada
-// uma com seu próprio botão "Salvar" — os testes desta suíte miram a de
-// idiomas (a de completude de catalogação tem sua própria suíte, ver
+// Renders the screen and waits for the form (after the settings load).
+// It returns the scope of the LANGUAGES section: the screen now has two sections, each
+// with its own "Salvar" button — the tests of this suite target the
+// languages one (the cataloging completeness one has its own suite, see
 // catalog-completeness-form.test.tsx).
 async function renderForm(fetchMock: ReturnType<typeof fetchRouter>) {
   vi.stubGlobal('fetch', fetchMock)
@@ -180,8 +180,8 @@ async function renderForm(fetchMock: ReturnType<typeof fetchRouter>) {
   return secaoIdiomas
 }
 
-// Mesma ideia de `renderForm`, mas devolve o escopo da seção de ENRIQUECIMENTO
-// RETROATIVO (0085) — cada seção tem seu próprio botão "Salvar".
+// Same idea as `renderForm`, but it returns the scope of the RETROACTIVE
+// ENRICHMENT section — each section has its own "Salvar" button.
 async function renderFormRetroativo(fetchMock: ReturnType<typeof fetchRouter>) {
   vi.stubGlobal('fetch', fetchMock)
   renderWithClient(<SettingsScreen />)
@@ -195,9 +195,9 @@ async function renderFormRetroativo(fetchMock: ReturnType<typeof fetchRouter>) {
   return secao
 }
 
-// Mesma ideia de `renderForm`, mas devolve o escopo da seção ARTES (0089) —
-// sem botão "Salvar" (o switch grava a cada mudança), por isso espera pelo
-// próprio switch em vez de um botão.
+// Same idea as `renderForm`, but it returns the scope of the ARTWORK section —
+// without a "Salvar" button (the switch saves on every change), which is why it waits for the
+// switch itself instead of a button.
 async function renderFormArtes(fetchMock: ReturnType<typeof fetchRouter>) {
   vi.stubGlobal('fetch', fetchMock)
   renderWithClient(<SettingsScreen />)
@@ -213,8 +213,8 @@ async function renderFormArtes(fetchMock: ReturnType<typeof fetchRouter>) {
   return secao
 }
 
-// Mesma ideia de `renderFormArtes`, mas devolve o escopo da seção TRAILER E
-// TEMA MUSICAL (0104) -- sem botão "Salvar" (o switch grava a cada mudança).
+// Same idea as `renderFormArtes`, but it returns the scope of the TRAILER AND
+// THEME SONG section -- without a "Salvar" button (the switch saves on every change).
 async function renderFormTrailerTema(
   fetchMock: ReturnType<typeof fetchRouter>,
 ) {
@@ -234,9 +234,9 @@ async function renderFormTrailerTema(
   return secao
 }
 
-// Mesma ideia de `renderForm`, mas devolve o escopo da seção YT-DLP (0101) --
-// tem botão "Salvar" (diferente do switch de Artes: o campo de path
-// customizado precisa de confirmação explícita antes de gravar).
+// Same idea as `renderForm`, but it returns the scope of the YT-DLP section --
+// it has a "Salvar" button (unlike the Artwork switch: the custom path
+// field needs an explicit confirmation before writing).
 async function renderFormYtdlp(fetchMock: ReturnType<typeof fetchRouter>) {
   vi.stubGlobal('fetch', fetchMock)
   renderWithClient(<SettingsScreen />)
@@ -248,8 +248,8 @@ async function renderFormYtdlp(fetchMock: ReturnType<typeof fetchRouter>) {
   return secao
 }
 
-// Acha a chamada PUT feita para `url` no mock de fetch e devolve o corpo já
-// parseado -- evita repetir o find+parse em cada teste que confirma o PUT.
+// Finds the PUT call made to `url` in the fetch mock and returns the already
+// parsed body -- it avoids repeating the find+parse in every test that confirms the PUT.
 function corpoDoPut(fetchMock: ReturnType<typeof fetchRouter>, url: string) {
   const putCall = fetchMock.mock.calls.find(
     ([u, init]) =>
@@ -263,7 +263,7 @@ describe('SettingsScreen', () => {
   it('le a config vigente e semeia o formulario', async () => {
     const secaoIdiomas = await renderForm(fetchRouter())
 
-    // Principal semeado em pt-BR, fallback em en; ambos permitidos marcados.
+    // Primary seeded in pt-BR, fallback in en; both marked as allowed.
     expect(secaoIdiomas.getByLabelText('Idioma principal')).toHaveValue('pt-BR')
     expect(secaoIdiomas.getByLabelText('Idioma de fallback')).toHaveValue('en')
     expect(
@@ -274,8 +274,8 @@ describe('SettingsScreen', () => {
       secaoIdiomas.getByRole('checkbox', { name: /Espanhol/ }),
     ).not.toBeChecked()
 
-    // A 2ª seção (0057) aparece abaixo, com o formulário de completude já
-    // carregado.
+    // The 2nd section appears below, with the completeness form already
+    // loaded.
     await waitFor(() =>
       expect(
         screen.getByRole('heading', { name: 'Completude de catalogação' }),
@@ -288,7 +288,7 @@ describe('SettingsScreen', () => {
     const fetchMock = fetchRouter()
     const secaoIdiomas = await renderForm(fetchMock)
 
-    // 'es' nao esta em allowed; escolher como principal deve barrar no cliente.
+    // 'es' is not in allowed; choosing it as primary must be blocked on the client.
     await user.selectOptions(
       secaoIdiomas.getByLabelText('Idioma principal'),
       'es',
@@ -300,7 +300,7 @@ describe('SettingsScreen', () => {
         'O idioma principal precisa estar entre os permitidos.',
       ),
     ).toBeInTheDocument()
-    // Nenhum PUT foi enviado (validacao client-side barrou) para /languages.
+    // No PUT was sent (client-side validation blocked it) to /languages.
     expect(
       fetchMock.mock.calls.some(
         ([url, init]) =>
@@ -321,7 +321,7 @@ describe('SettingsScreen', () => {
     })
     const secaoIdiomas = await renderForm(fetchMock)
 
-    // Adiciona 'es' aos permitidos e salva (estado valido).
+    // It adds 'es' to the allowed ones and saves (valid state).
     await user.click(secaoIdiomas.getByRole('checkbox', { name: /Espanhol/ }))
     await user.click(secaoIdiomas.getByRole('button', { name: 'Salvar' }))
 
@@ -354,7 +354,7 @@ describe('SettingsScreen', () => {
     })
     const secaoIdiomas = await renderForm(fetchMock)
 
-    // Estado valido no cliente (nao mexe em nada), mas o servidor rejeita.
+    // Valid state on the client (it touches nothing), but the server rejects it.
     await user.click(secaoIdiomas.getByRole('button', { name: 'Salvar' }))
 
     await waitFor(() =>

@@ -7,33 +7,33 @@ import { useLanguage } from '@/lib/language-context'
 import { entityMembersQueryOptions } from '@/lib/queries'
 import type { EntityCard } from '@/lib/api'
 
-// Fonte fixa da vertical de música (0106/0115): hoje só o MusicBrainz modela
-// artista/álbum/faixa — mesmo hardcode que o backend usa em provider.Nome().
+// Fixed source of the music vertical: today only MusicBrainz models
+// artist/album/track — the same hardcode that the backend uses in provider.Nome().
 const SOURCE_MUSICBRAINZ = 'musicbrainz'
 
-// TracklistAlbum lista as FAIXAS de um ÁLBUM (briefing 0111): filhos por
-// entity_relation kind=music_album (ADR-0027, sort_index=track_number) — o
-// MESMO endpoint genérico de membros (GET /entities/{id}/members,
-// `entityMembersQueryOptions`) que já alimenta `MembrosSomenteLeitura`
-// (temporadas de série/episódios de temporada, `entity-members.tsx`). Cada
-// faixa é um LINK pro seu próprio detalhe (jornada §3 do briefing).
+// TracklistAlbum lists the TRACKS of an ALBUM: children by
+// entity_relation kind=music_album (ADR-0027, sort_index=track_number) — the
+// SAME generic members endpoint (GET /entities/{id}/members,
+// `entityMembersQueryOptions`) that already feeds `MembrosSomenteLeitura`
+// (series seasons/season episodes, `entity-members.tsx`). Each
+// track is a LINK to its own detail (journey §3).
 //
-// ORDENAÇÃO (gap de backend, ver briefing 0111 e a nota de implementação
-// abaixo): `EntityCard` não carrega `track_number`/`disc_number` — eles ficam
-// em `extension_data` (namespace core.music@1) da faixa, não exposto pelo
-// card. A lista usa a ORDEM DE CHEGADA do array como posição da faixa, que
-// reflete `sort_index` (`ORDER BY sort_index` de `ListarRelacoesFilhas`,
-// internal/db/queries/entity_relation.sql — e `sort_index` = `track_number`
-// para o kind `music_album`, internal/enrich/musica.go): correta para álbum
-// de UM disco. Álbum multi-disco não agrupa por disco nem reordena por ele
-// (dado ausente do card) — ver o gap reportado no briefing.
+// ORDERING (backend gap, see the implementation note
+// below): `EntityCard` does not carry `track_number`/`disc_number` — they live
+// in `extension_data` (namespace core.music@1) of the track, not exposed by the
+// card. The list uses the ARRIVAL ORDER of the array as the track position, which
+// reflects `sort_index` (`ORDER BY sort_index` of `ListarRelacoesFilhas`,
+// internal/db/queries/entity_relation.sql — and `sort_index` = `track_number`
+// for the `music_album` kind, internal/enrich/musica.go): correct for a
+// single-disc album. A multi-disc album does not group by disc nor reorder by it
+// (the data is absent from the card) — see the gap reported in the notes.
 //
-// NOTA (0111): hoje `kindEOrdemMembros` (internal/server/entities.go) só
-// reconhece `tipoPai` `tv`/`season`; para `album` cai no `default` (kind=
-// "collection"), que nunca bate com `music_album` — esta seção fica VAZIA
-// contra dado real até o backend ganhar o mapeamento genérico (reportado no
-// resumo da implementação, não feito aqui por instrução explícita do
-// briefing §Passo 1: "endpoint hardcoded → não reescreva sozinho").
+// NOTE: today `kindEOrdemMembros` (internal/server/entities.go) only
+// recognizes the `tipoPai` `tv`/`season`; for `album` it falls into the `default` (kind=
+// "collection"), which never matches `music_album` — this section stays EMPTY
+// against real data until the backend gains the generic mapping (reported in
+// the implementation summary, not done here on the explicit
+// instruction of §Step 1: "endpoint hardcoded → do not rewrite it on your own".
 export function TracklistAlbum({ id, mbid }: { id: string; mbid?: string }) {
   const { lang } = useLanguage()
   const { data, isPending, isError } = useQuery(
@@ -45,10 +45,10 @@ export function TracklistAlbum({ id, mbid }: { id: string; mbid?: string }) {
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-heading text-lg font-medium">Faixas</h2>
-        {/* "Ver faixas faltando" (briefing 0115 Parte 2, ADR-0029): mesma UX de
-            item externo não-possuído que filme/série/coleção já usam — só
-            aparece quando o álbum tem mbid (MusicBrainz), a única fonte que
-            modela a busca seletiva de álbum hoje. */}
+        {/* "Ver faixas faltando" (ADR-0029): same UX as
+            external item not owned that movie/series/collection already use — it only
+            appears when the album has an mbid (MusicBrainz), the only source that
+            models the selective search of an album today. */}
         {mbid ? (
           <Button asChild variant="outline" size="sm">
             <Link
@@ -82,8 +82,8 @@ export function TracklistAlbum({ id, mbid }: { id: string; mbid?: string }) {
   )
 }
 
-// FaixaLinha é UMA linha da tracklist: posição (ordinal na lista, ver nota de
-// ordenação acima) + ícone + título, linkando pro detalhe da faixa.
+// FaixaLinha is ONE row of the tracklist: position (ordinal in the list, see the ordering
+// note above) + icon + title, linking to the detail of the track.
 function FaixaLinha({ posicao, card }: { posicao: number; card: EntityCard }) {
   return (
     <Link

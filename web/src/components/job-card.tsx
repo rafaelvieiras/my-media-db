@@ -15,10 +15,10 @@ import { LoadingState, ErrorState } from '@/components/query-states'
 import { jobExecutionsQueryOptions } from '@/lib/queries'
 import { ApiError, patchJob, runJob, type JobDefinition } from '@/lib/api'
 
-// formatarCarimbo devolve um carimbo curto (data+hora) no formato local, ou
-// travessão para nulo/ausente. Sem lib de datas — só `Intl` via `toLocaleString`
-// (sem precedente de formatação de data neste projeto ainda, então mantém local
-// e simples).
+// formatarCarimbo returns a short stamp (date+time) in the local format, or
+// an em dash for null/absent. Without a date lib — only `Intl` via `toLocaleString`
+// (no precedent for date formatting in this project yet, so it stays local
+// and simple).
 function formatarCarimbo(iso: string | null | undefined): string {
   if (!iso) {
     return '—'
@@ -34,11 +34,11 @@ function invalidarJobs(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['jobs'] })
 }
 
-// JobCard (0052): um `job_definition` — nome/descrição, badge de status
-// (habilitado/desabilitado/rodando), toggle, agendamento cron editável (com
-// feedback 422 inline), botão "Executar agora" e a última/próxima execução.
-// O histórico (`JobHistoryList`) fica expansível dentro do próprio card, para
-// não exigir uma rota própria por job.
+// JobCard: one `job_definition` — name/description, status badge
+// (enabled/disabled/running), toggle, editable cron schedule (with
+// inline 422 feedback), "Executar agora" button and the last/next run.
+// The history (`JobHistoryList`) stays expandable inside the card itself, so
+// it does not require a route of its own per job.
 export function JobCard({ job }: { job: JobDefinition }) {
   const qc = useQueryClient()
   const [cron, setCron] = useState(job.schedule_cron ?? '')
@@ -190,10 +190,10 @@ export function JobCard({ job }: { job: JobDefinition }) {
   )
 }
 
-// JobHistoryList (0052): lista paginada (mais recente primeiro) das últimas
-// execuções de UM job — carimbo, gatilho (agendado/manual), status e mensagem.
-// Simples por design: sem paginação incremental nesta fundação (o backend já
-// poda para 100/job; a UI mostra as `limit` mais recentes).
+// JobHistoryList: paginated list (most recent first) of the last
+// runs of ONE job — stamp, trigger (scheduled/manual), status and message.
+// Simple by design: no incremental pagination in this foundation (the backend already
+// prunes to 100/job; the UI shows the `limit` most recent ones).
 function JobHistoryList({ jobId }: { jobId: string }) {
   const { data, isPending, isError, error } = useQuery(
     jobExecutionsQueryOptions(jobId, { limit: 20 }),

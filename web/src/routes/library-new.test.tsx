@@ -6,9 +6,9 @@ import { renderWithClient } from '@/test/render'
 import { okJson } from '@/test/entity-fixtures'
 import { erroJson } from '@/test/detail-harness'
 
-// Rota `/dashboard/library/new` (briefing 0071): campo de caminho + PathBrowser + Select
-// de tipo + submit (`createLibrary`). Sucesso navega para `/dashboard/library`; erro
-// (`ApiError`, ex. 422 path inválido/duplicado) aparece inline.
+// Route `/dashboard/library/new`: path field + PathBrowser + type
+// Select + submit (`createLibrary`). Success navigates to `/dashboard/library`; an error
+// (`ApiError`, e.g. 422 invalid/duplicate path) appears inline.
 const spies = vi.hoisted(() => ({
   navigate: vi.fn(),
   back: vi.fn(),
@@ -20,9 +20,9 @@ vi.mock('@tanstack/react-router', async () => {
   return routerMock(spies)
 })
 
-// fetchRouter roteia a listagem de pastas (GET /library/browse) e a criação
-// (POST /library) — a única rota deste teste que precisa de ambas ao mesmo
-// tempo (as demais telas do projeto só criam um recurso simples).
+// fetchRouter routes the folder listing (GET /library/browse) and the creation
+// (POST /library) — the only route of this test that needs both at the same
+// time (the other screens of the project only create a simple resource).
 function fetchRouter(opts: {
   createResp?: () => Response
   browse?: Record<string, unknown>
@@ -63,9 +63,9 @@ afterEach(() => {
   spies.navigate.mockReset()
 })
 
-// Clica em "Adicionar datasource", espera a navegação de sucesso e devolve o
-// corpo (já parseado) do POST /library — os testes de submit só variam no que
-// preencheram antes e no que checam depois deste ponto em comum.
+// Clicks "Adicionar datasource", waits for the success navigation and returns the
+// body (already parsed) of POST /library — the submit tests only vary in what they
+// filled in before and in what they check after this common point.
 async function clicarAdicionarEPegarCorpo(
   user: ReturnType<typeof userEvent.setup>,
   fetchMock: ReturnType<typeof fetchRouter>,

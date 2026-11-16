@@ -1,13 +1,13 @@
-// Formatação de números "humanos" (pt-BR) compartilhada entre telas. Extraído
-// para não duplicar a lógica de bytes/duração inline em cada tela (jscpd) —
-// hoje só `/health` (0055) usa, mas é genérico o bastante para outras telas.
+// "Human" number formatting (pt-BR) shared between screens. Extracted
+// so as not to duplicate the inline bytes/duration logic on every screen (jscpd) —
+// today only `/health` uses it, but it is generic enough for other screens.
 
 const UNIDADES_BYTES = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'] as const
 
-// formatBytes converte um total de bytes num rótulo curto em pt-BR (vírgula
-// decimal), ex. "128,4 MB"/"1,86 TB". Sobe de unidade a cada 1024; a casa
-// decimal cresce (0 em B/KB, 2 acima de GB) para não perder precisão em
-// tamanhos grandes nem exagerar em pequenos.
+// formatBytes converts a byte total into a short pt-BR label (decimal
+// comma), e.g. "128,4 MB"/"1,86 TB". It goes up a unit every 1024; the decimal
+// place grows (0 for B/KB, 2 above GB) so as not to lose precision on
+// large sizes nor exaggerate on small ones.
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) {
     return '—'
@@ -28,9 +28,9 @@ export function formatBytes(bytes: number): string {
   })} ${UNIDADES_BYTES[unidade]}`
 }
 
-// formatDuration converte segundos num rótulo curto de uptime, ex. "5d 3h",
-// "3h 12min", "42s". Mostra só os dois maiores componentes não-zero — o
-// suficiente para o dono ter noção de "há quanto tempo" sem um relógio exato.
+// formatDuration converts seconds into a short uptime label, e.g. "5d 3h",
+// "3h 12min", "42s". It shows only the two largest non-zero components —
+// enough for the owner to have a notion of "for how long" without an exact clock.
 export function formatDuration(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds) || totalSeconds < 0) {
     return '—'

@@ -47,16 +47,16 @@ import { useLanguage } from '@/lib/language-context'
 
 const DEBOUNCE_MS = 350
 
-// Rota `/review` (0018, reagrupada no 0137): a fila de curadoria. Lista os itens
-// que o scanner SINALIZOU — `draft` (não identificados) e baixa confiança — e dá a
-// AÇÃO que a Fase 2 não tinha: confirmar o palpite, corrigir a identidade
-// (re-enriquece) ou abrir o detalhe. Nada aqui é destrutivo; corrigir/confirmar
-// apenas re-resolvem.
+// Route `/review`: the curation queue. It lists the items
+// that the scanner FLAGGED — `draft` (not identified) and low confidence — and gives the
+// ACTION that Phase 2 did not have: confirm the guess, correct the identity
+// (re-enriches) or open the detail. Nothing here is destructive; correcting/confirming
+// only re-resolves.
 //
-// Desde o 0137 a fila é AGRUPADA pelo contexto do arquivo (álbum da faixa, série
-// do episódio, pasta do filme) e abre FECHADA: 43 álbuns de faixas viram 43
-// seções em vez de 185 cards, e a prévia de candidato só é buscada quando o dono
-// abre a linha (antes, um request por card ao montar — N+1).
+// The queue is GROUPED by the file context (the album of the track, the series
+// of the episode, the folder of the movie) and opens CLOSED: 43 albums of tracks become 43
+// sections instead of 185 cards, and the candidate preview is only fetched when the owner
+// opens the row (before, one request per card on mount — N+1).
 export function ReviewScreen() {
   const qc = useQueryClient()
   const { data, isPending, isError, error } = useQuery(reviewQueueQueryOptions)
@@ -141,7 +141,7 @@ export function ReviewScreen() {
   )
 }
 
-// ── Agrupamento (0137) ──────────────────────────────────────────────────────
+// ── Grouping ────────────────────────────────────────────────────────────────
 
 type GrupoRevisao = {
   key: string
@@ -150,9 +150,9 @@ type GrupoRevisao = {
   items: EntityCard[]
 }
 
-// ORDEM_KINDS decide a ordem das seções na tela: pastas de filme, depois séries,
-// depois álbuns, e por último o que não tem arquivo. Dentro do mesmo kind, o
-// maior grupo vem primeiro (é o que mais pesa na fila).
+// ORDEM_KINDS decides the order of the sections on the screen: movie folders, then series,
+// then albums, and finally what has no file. Inside the same kind, the
+// biggest group comes first (it is what weighs most in the queue).
 const ORDEM_KINDS = ['pasta', 'serie', 'album', 'sem_arquivo']
 
 const ROTULO_KIND: Record<string, string> = {
@@ -162,9 +162,9 @@ const ROTULO_KIND: Record<string, string> = {
   sem_arquivo: 'sem arquivo',
 }
 
-// agruparRevisao monta as seções a partir do `review_group` anotado pelo backend.
-// Item sem grupo (backend antigo) cai numa seção "sem arquivo" própria — a tela
-// nunca esconde um item da fila.
+// agruparRevisao builds the sections from the `review_group` annotated by the backend.
+// An item without a group (older backend) falls into its own "sem arquivo" section — the screen
+// never hides an item of the queue.
 function agruparRevisao(cards: EntityCard[]): GrupoRevisao[] {
   const porChave = new Map<string, GrupoRevisao>()
   for (const card of cards) {
@@ -197,8 +197,8 @@ function agruparRevisao(cards: EntityCard[]): GrupoRevisao[] {
   })
 }
 
-// Motivo da revisão, em pt-BR: draft = não identificado; senão, baixa confiança
-// com o percentual do card (o backend só põe na fila os < limiar).
+// Reason for the review, in pt-BR: draft = not identified; otherwise, low confidence
+// with the percentage of the card (the backend only queues the ones < the threshold).
 function motivoRevisao(card: EntityCard): string {
   if (ehDraft(card.status)) {
     return 'não identificado'
@@ -206,42 +206,42 @@ function motivoRevisao(card: EntityCard): string {
   return `baixa confiança (${card.match_confidence}%)`
 }
 
-// resumoDoGrupo descreve a seção fechada: quantidade de itens + o motivo
-// DOMINANTE (o primeiro item já vem ordenado do backend por pior confiança).
+// resumoDoGrupo describes the closed section: number of items + the DOMINANT
+// reason (the first item already comes ordered from the backend by worst confidence).
 function resumoDoGrupo(grupo: GrupoRevisao): string {
   const itens = grupo.items.length
   const unidade = itens === 1 ? 'item' : 'itens'
   return `${itens} ${unidade} · ${motivoRevisao(grupo.items[0])}`
 }
 
-// Invalidação após confirmar/corrigir: a fila (`['review']`) muda, o grid
-// (`['entities']`) reflete o novo estado e o detalhe (`['entity', id]`, prefixo)
-// derruba todas as variações de idioma.
+// Invalidation after confirming/correcting: the queue (`['review']`) changes, the grid
+// (`['entities']`) reflects the new state and the detail (`['entity', id]`, prefix)
+// drops all the language variations.
 function invalidarRevisao(qc: QueryClient, id: string) {
   qc.invalidateQueries({ queryKey: ['review'] })
   qc.invalidateQueries({ queryKey: ['entities'] })
   qc.invalidateQueries({ queryKey: ['entity', id] })
 }
 
-// Rótulo pt-BR da fonte do candidato (0050/0060): "local" veio do catálogo já
-// importado (funde via `fundirEntities`), "external" veio do provedor remoto
-// (mesmo caminho do "Corrigir"). Usado tanto pelo aviso do auto-match em lote
-// quanto pelo selo de fonte da prévia (`PreviewBloco`).
+// pt-BR label of the source of the candidate: "local" came from the catalog already
+// imported (it merges via `fundirEntities`), "external" came from the remote provider
+// (same path as "Corrigir"). Used both by the warning of the batch auto-match
+// and by the source badge of the preview (`PreviewBloco`).
 function rotuloMetodo(method: 'local' | 'external' | 'none'): string {
   return method === 'local' ? 'catálogo local' : 'provedor externo'
 }
 
-// Candidato "aplicável" pela prévia (0060): `found=true` E `target` não-nulo —
-// a MESMA checagem usada pelo bloco visual (`PreviewBloco`) e pelo botão
-// principal (`ReviewRow`), garantindo que nunca divirjam: se a linha MOSTRA um
-// candidato, o botão principal SEMPRE aplica exatamente esse candidato.
+// Candidate "applicable" from the preview: `found=true` AND a non-null `target` —
+// the SAME check used by the visual block (`PreviewBloco`) and by the main
+// button (`ReviewRow`), guaranteeing that they never diverge: if the row SHOWS a
+// candidate, the main button ALWAYS applies exactly that candidate.
 function candidatoValido(
   data: MatchPreview | undefined,
 ): data is MatchPreview & { target: MatchPreviewTarget } {
   return !!data && data.found === true && data.target !== null
 }
 
-// ── Seção (grupo) ───────────────────────────────────────────────────────────
+// ── Section (group) ─────────────────────────────────────────────────────────
 
 function SecaoRevisao({ grupo }: { grupo: GrupoRevisao }) {
   const qc = useQueryClient()
@@ -332,21 +332,21 @@ function SecaoRevisao({ grupo }: { grupo: GrupoRevisao }) {
   )
 }
 
-// ── Linha compacta + detalhe sob demanda ────────────────────────────────────
+// ── Compact row + detail under demand ───────────────────────────────────────
 
 function ReviewRow({ card }: { card: EntityCard }) {
   const qc = useQueryClient()
   const [falhouArte, setFalhouArte] = useState(false)
   const [expandido, setExpandido] = useState(false)
   const [corrigindo, setCorrigindo] = useState(false)
-  // Avisa quando "Corrigir" fundiu uma duplicata automaticamente (0051): a
-  // entity sem investimento do dono some sozinha da fila/biblioteca.
+  // Warns when "Corrigir" merged a duplicate automatically: the
+  // entity without investment from the owner disappears on its own from the queue/library.
   const [avisoFusao, setAvisoFusao] = useState(false)
   const src = posterSrc(card.poster_url)
   const mostrarPlaceholder = src === null || falhouArte
 
-  // Prévia de candidato (0060) LAZY (0137): só busca quando o dono abre a linha.
-  // `enabled` evita um request por card na montagem da fila (o N+1 antigo).
+  // Candidate preview LAZY: it only fetches when the owner opens the row.
+  // `enabled` avoids one request per card when the queue mounts (the old N+1).
   const preview = useQuery({
     ...matchPreviewQueryOptions(card.id),
     enabled: expandido,
@@ -358,9 +358,9 @@ function ReviewRow({ card }: { card: EntityCard }) {
     onSuccess: () => invalidarRevisao(qc, card.id),
   })
 
-  // Aplica exatamente o candidato mostrado pela prévia — local (funde) ou
-  // externo (grava identidade + re-enriquece), mesmo abaixo do limiar
-  // automático (decisão humana informada pelo card, não um corte silencioso).
+  // Applies exactly the candidate shown by the preview — local (merges) or
+  // external (writes the identity + re-enriches), even below the automatic
+  // threshold (a human decision informed by the card, not a silent cut).
   const confirmarCandidato = useMutation({
     mutationFn: () => {
       const dadosPrevia = preview.data
@@ -521,15 +521,15 @@ function ReviewRow({ card }: { card: EntityCard }) {
   )
 }
 
-// Bloco de prévia do candidato (0060): entre o cabeçalho do item e a linha de
-// botões. Quatro estados — carregando (skeleton discreto), achou candidato
-// (pôster + título + ano + selos), não achou (mensagem neutra) e falha na busca
-// (mensagem curta de erro, NÃO bloqueia o resto — `ReviewRow` já trata isso como
-// "sem candidato" via `candidatoValido`, que só é `true` com `data` presente).
-// `tipo` é o tipo do ITEM sendo revisado (`card.type` do `ReviewRow` pai) — o
-// candidato (`MatchPreviewTarget`) não carrega o próprio tipo no contrato da API,
-// mas o match nunca sugere um candidato de tipo diferente do alvo (álbum só casa
-// com álbum), então reaproveitar o tipo do pai para o frame da capa é seguro.
+// Candidate preview block: between the item header and the row of
+// buttons. Four states — loading (discreet skeleton), found a candidate
+// (poster + title + year + badges), did not find (neutral message) and lookup failure
+// (short error message, it does NOT block the rest — `ReviewRow` already treats it as
+// "no candidate" via `candidatoValido`, which is only `true` with `data` present).
+// `tipo` is the type of the ITEM being reviewed (`card.type` of the parent `ReviewRow`) — the
+// candidate (`MatchPreviewTarget`) does not carry its own type in the API contract,
+// but the match never suggests a candidate of a type different from the target (album only matches
+// with album), so reusing the type of the parent for the cover frame is safe.
 function PreviewBloco({
   tipo,
   isPending,
@@ -628,10 +628,10 @@ function PreviewBloco({
   )
 }
 
-// Painel inline de correção: o dono busca o título certo na fonte externa e
-// escolhe o resultado; a UI grava a identidade escolhida com `correctMatch`
-// (source/source_id do item), o backend re-enriquece e re-resolve. Reusa o
-// `searchQueryOptions` (mesma busca do 0015), mas a ação é CORRIGIR, não importar.
+// Inline correction panel: the owner searches for the right title in the external source and
+// chooses the result; the UI writes the chosen identity with `correctMatch`
+// (source/source_id of the item), the backend re-enriches and re-resolves. It reuses the
+// `searchQueryOptions` (the same search), but the action is CORRECT, not import.
 function CorrigirPainel({
   entityId,
   onCorrigido,
@@ -700,12 +700,12 @@ function CorrigirPainel({
   )
 }
 
-// Lista os resultados EXTERNOS da busca como o mesmo card rico de `/search`
-// (0074): pôster, sinopse truncada e selo "Na biblioteca" quando o resultado já é
-// uma entity interna — mas aqui o botão é "Usar este" (não Importar), e o selo
-// NÃO esconde a ação (é o caso de fundir duplicata, 0051). A escolha vira a
-// identidade correta. Só os externos importam aqui (a identidade que o dono
-// informa vem de uma fonte, não do catálogo local).
+// Lists the EXTERNAL results of the search as the same rich card of `/search`
+// — poster, truncated synopsis and "Na biblioteca" badge when the result already is
+// an internal entity — but here the button is "Usar este" (not Importar), and the badge
+// does NOT hide the action (it is the duplicate merge case). The choice becomes the
+// correct identity. Only the external ones matter here (the identity that the owner
+// informs comes from a source, not from the local catalog).
 function ResultadosCorrecao({
   query,
   isPending,

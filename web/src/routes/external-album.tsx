@@ -9,13 +9,13 @@ import { Button } from '@/components/ui/button'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import { ImportarButton } from '@/components/rich-detail-view'
 
-// ExternalAlbumView é a tela de "faixas faltando" de um álbum (briefing 0115
-// Parte 2, ADR-0029): faixas OFICIAIS do release, com "Importar" por faixa
-// faltando e "na biblioteca" pras já catalogadas — mesmo padrão de
-// CollectionDetailScreen (coleção→filmes), adaptado a álbum→faixas. Renderizada
-// pela MESMA rota `/external/$source/$type/$id` que o detalhe rico usa
-// (ExternalDetailScreen delega aqui quando `type==='album'`), então não precisa
-// de rota própria nem toca router.tsx.
+// ExternalAlbumView is the "missing tracks" screen of an album (ADR-0029):
+// the OFFICIAL tracks of the release, with "Importar" per missing track
+// and "na biblioteca" for the already cataloged ones — same pattern as
+// CollectionDetailScreen (collection→movies), adapted to album→tracks. Rendered
+// by the SAME route `/external/$source/$type/$id` that the rich detail uses
+// (ExternalDetailScreen delegates here when `type==='album'`), so it needs no
+// route of its own nor does it touch router.tsx.
 
 function propsDeErro(error: unknown): { title: string; message?: string } {
   const status = error instanceof ApiError ? error.status : 0
@@ -112,9 +112,9 @@ export function ExternalAlbumView({
   )
 }
 
-// FaixaLinha é UMA faixa do release: já catalogada linka pro detalhe interno;
-// faltando ganha o botão Importar (find-or-create ligado ao álbum pai via
-// `parentId`, briefing 0115 Parte 2).
+// FaixaLinha is ONE track of the release: an already cataloged one links to the internal detail;
+// a missing one gains the Importar button (find-or-create linked to the parent album via
+// `parentId`).
 function FaixaLinha({
   source,
   track,

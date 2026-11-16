@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { Migalhas } from '@/components/migalhas'
 import type { AncestorRef } from '@/lib/api'
 
-// Link interpola os params no href, para afirmar o destino de cada ancestral.
+// The link interpolates the params into the href, to assert the destination of each ancestor.
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
 }))
@@ -24,7 +24,7 @@ describe('Migalhas (breadcrumb ascendente 0032)', () => {
       />,
     )
 
-    // Só os ANCESTRAIS são links, na ordem raiz→pai (série antes da temporada).
+    // Only the ANCESTORS are links, in root→parent order (series before season).
     const links = screen.getAllByRole('link')
     expect(links.map((l) => l.textContent)).toEqual([
       'Os Simpsons',
@@ -33,7 +33,7 @@ describe('Migalhas (breadcrumb ascendente 0032)', () => {
     expect(links[0].getAttribute('href')).toBe('/entities/ent-serie')
     expect(links[1].getAttribute('href')).toBe('/entities/ent-temp')
 
-    // O item ATUAL aparece como estado corrente (aria-current), sem link.
+    // The CURRENT item appears as the current state (aria-current), without a link.
     const atual = screen.getByText('Episódio 1')
     expect(atual.getAttribute('aria-current')).toBe('page')
     expect(screen.queryByRole('link', { name: 'Episódio 1' })).toBeNull()

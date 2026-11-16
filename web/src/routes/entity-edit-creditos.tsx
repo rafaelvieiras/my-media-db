@@ -7,11 +7,11 @@ import { EntityEditEstadoCarga } from '@/components/query-states'
 import { entityQueryOptions, overrideBlobQueryOptions } from '@/lib/queries'
 import { useLanguage } from '@/lib/language-context'
 
-// Rota `/entities/$id/edit/creditos` (briefing 0080, subrota da edição de item
-// 0030): a seção "Elenco e equipe" — `CreditsEditor` (0029 fase C, reordenação em
-// lote do 0076), isolada do formulário de informações básicas. Precisa da
-// entity (cast/crew/companies) e do blob de override (baseline do que já foi
-// salvo), mas não do descritor de campos.
+// Route `/entities/$id/edit/creditos` (subroute of the item edit):
+// the "Elenco e equipe" section — `CreditsEditor` (batch reordering),
+// isolated from the basic information form. It needs the
+// entity (cast/crew/companies) and the override blob (baseline of what was already
+// saved), but not the field descriptor.
 export function EntityEditCreditosScreen() {
   const { id } = useParams({ from: '/entities/$id/edit/creditos' })
   const { lang } = useLanguage()
@@ -19,7 +19,7 @@ export function EntityEditCreditosScreen() {
   const entityQuery = useQuery(entityQueryOptions(id, lang))
   const blobQuery = useQuery(overrideBlobQueryOptions(id))
 
-  // Guard de "sair sem salvar" (0073/0080): só o "sujo" deste bloco.
+  // "Leave without saving" guard: only the "dirty" state of this block.
   const [sujo, setSujo] = useState(false)
 
   const carregando = entityQuery.isPending || blobQuery.isPending

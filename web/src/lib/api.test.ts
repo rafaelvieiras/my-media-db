@@ -12,7 +12,7 @@ import {
   getHealth,
 } from '@/lib/api'
 
-// Mocka `fetch` por teste; restaura depois para não vazar entre casos.
+// Mocks `fetch` per test; restores it afterwards so it does not leak between cases.
 afterEach(() => {
   vi.restoreAllMocks()
 })
@@ -30,7 +30,7 @@ describe('getHealth', () => {
     const health = await getHealth()
 
     expect(health).toEqual(body)
-    // Caminho relativo (base vazio por padrão): /api/v1/health.
+    // Relative path (empty base by default): /api/v1/health.
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/health')
   })
 
@@ -203,7 +203,7 @@ describe('searchMedia', () => {
 
     await searchMedia('a b')
 
-    // Espaço é codificado como + pela URLSearchParams.
+    // A space is encoded as + by URLSearchParams.
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/search?q=a+b')
   })
 

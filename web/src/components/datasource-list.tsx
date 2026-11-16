@@ -9,11 +9,11 @@ import { patchLibrary, startScan, type Source, ApiError } from '@/lib/api'
 import { libraryQueryOptions, scanStatusQueryOptions } from '@/lib/queries'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
 
-// Tela de datasources (briefing 0071): a criação e a edição/remoção de caminho
-// saíram para rotas dedicadas (`/dashboard/library/new`,
-// `/dashboard/library/$id/edit`) — esta lista
-// só mostra path + estado, com as ações transientes/binárias de baixo risco que
-// continuam inline: "Escanear" (+ progresso) e o switch de observar mudanças.
+// Datasources screen: the creation and the editing/removal of a path
+// moved out to dedicated routes (`/dashboard/library/new`,
+// `/dashboard/library/$id/edit`) — this list
+// only shows path + state, with the transient/binary low-risk actions that
+// stay inline: "Escanear" (+ progress) and the watch-for-changes switch.
 export function DatasourceList() {
   const { data, isPending, isError, error } = useQuery(libraryQueryOptions)
 
@@ -56,8 +56,8 @@ function DatasourceRow({ source }: { source: Source }) {
   const { data: status } = useQuery(scanStatusQueryOptions(source.id))
   const rodavaAntes = useRef(false)
 
-  // Ao concluir um scan (running: true → false), invalida catálogo e lista para
-  // refletir os itens recém-detectados e o novo `last_scan`.
+  // When a scan finishes (running: true → false), it invalidates the catalog and the list to
+  // reflect the newly detected items and the new `last_scan`.
   useEffect(() => {
     const rodando = status?.running ?? false
     if (rodavaAntes.current && !rodando) {
@@ -74,8 +74,8 @@ function DatasourceRow({ source }: { source: Source }) {
     },
   })
 
-  // Liga/desliga o watcher de filesystem desta fonte (briefing 0064). Aplicado
-  // a quente pelo servidor — sem confirmação, é reversível e de baixo risco.
+  // Turns the filesystem watcher of this source on/off. Applied
+  // live by the server — without confirmation, it is reversible and low risk.
   const watchMutation = useMutation({
     mutationFn: (watch_enabled: boolean) =>
       patchLibrary(source.id, { watch_enabled }),
@@ -150,8 +150,8 @@ function EstadoBadge({ state }: { state: Source['state'] }) {
   return <Badge variant="destructive">offline</Badge>
 }
 
-// Indicador de progresso: enquanto `running`, mostra arquivos vistos/total; erros
-// (do último scan ou do disparo) aparecem como texto destacado.
+// Progress indicator: while `running`, it shows files seen/total; errors
+// (from the last scan or from the trigger) appear as highlighted text.
 function ProgressoScan({
   status,
   erroScan,

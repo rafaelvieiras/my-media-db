@@ -11,9 +11,9 @@ import {
 } from '@/test/detail-harness'
 import { baseEntity, okJson } from '@/test/entity-fixtures'
 
-// erroMembros simula GET /entities/{id}/members falhando (500) — para exercitar
-// o estado de erro de TracklistAlbum/DiscografiaArtista (mesmo shape de erro
-// que o cliente HTTP, `lerJson`, espera).
+// erroMembros simulates GET /entities/{id}/members failing (500) — to exercise
+// the error state of TracklistAlbum/DiscografiaArtista (same error shape
+// that the HTTP client, `lerJson`, expects).
 function erroMembros(): Response {
   return {
     ok: false,
@@ -24,10 +24,10 @@ function erroMembros(): Response {
   } as Response
 }
 
-// Testa as SEÇÕES DE MÚSICA (briefing 0111, ADR-0027) via EntityDetailScreen:
-// álbum mostra a tracklist (TracklistAlbum), artista mostra a discografia
-// (DiscografiaArtista) — e o teste de regressão garante que filme/série NÃO
-// ganham essas seções (mesmo padrão de entity-detail-series.test.tsx).
+// Tests the MUSIC SECTIONS via EntityDetailScreen:
+// an album shows the tracklist (TracklistAlbum), an artist shows the discography
+// (DiscografiaArtista) — and the regression test guarantees that a movie/series does NOT
+// get those sections (same pattern as entity-detail-series.test.tsx).
 vi.mock('@tanstack/react-router', async () => ({
   useParams: () => ({ id: 'e1' }),
   useSearch: () => ({ ordering: undefined }),
@@ -83,7 +83,7 @@ describe('EntityDetailScreen — álbum: tracklist (0111)', () => {
     const secao = screen.getByText('Faixas').closest('section') as HTMLElement
     expect(within(secao).getByText('Rio')).toBeInTheDocument()
     expect(within(secao).getByText('My Own Way')).toBeInTheDocument()
-    // Posição ordinal (1, 2) na ordem de chegada do array.
+    // Ordinal position (1, 2) in the arrival order of the array.
     expect(within(secao).getByText('1')).toBeInTheDocument()
     expect(within(secao).getByText('2')).toBeInTheDocument()
   })
@@ -129,8 +129,8 @@ describe('EntityDetailScreen — álbum: tracklist (0111)', () => {
     ).toBeInTheDocument()
   })
 
-  // "Ver faixas faltando" (briefing 0115 Parte 2, ADR-0029): link pra tela
-  // externa de álbum, só quando o álbum tem external_ids.mbid (MusicBrainz).
+  // "Ver faixas faltando" (ADR-0029): link to the external
+  // album screen, only when the album has external_ids.mbid (MusicBrainz).
   it('álbum com mbid: mostra o link "Ver faixas faltando" pro externo', async () => {
     renderDetail(
       baseEntity({
@@ -159,8 +159,8 @@ describe('EntityDetailScreen — artista: discografia (0111)', () => {
     )
     expect(screen.getByText('Rio')).toBeInTheDocument()
     expect(screen.getByText('Seven and the Ragged Tiger')).toBeInTheDocument()
-    // A faixa solta ligada por music_artista_principal (ADR-0027) NÃO entra
-    // na grade de discografia (só type=album).
+    // The loose track linked by music_artista_principal (ADR-0027) does NOT enter
+    // the discography grid (only type=album).
     expect(screen.queryByText('Colaboração avulsa')).toBeNull()
   })
 
@@ -189,12 +189,12 @@ describe('EntityDetailScreen — artista: discografia (0111)', () => {
   })
 })
 
-// ADR-0027: só a FAIXA liga direto a media_file — um álbum/artista "possuído"
-// (owned:true via árvore, completarOwnedViaArvore) nunca tem pasta real
-// PRÓPRIA (resolverDestino não escolhe entre os diretórios das várias
-// faixas). "Salvar informações (NFO)" bateria em 404 (sem pasta de destino)
-// se habilitado com o `owned` cru — por isso a tela força esses dois
-// itens para desabilitado nessas duas verticais, mesmo com owned:true.
+// ADR-0027: only the TRACK links directly to a media_file — an album/artist "owned"
+// (owned:true via the tree, completarOwnedViaArvore) never has a real folder
+// OF ITS OWN (resolverDestino does not choose among the directories of the several
+// tracks). "Salvar informações (NFO)" would hit a 404 (no destination folder)
+// if enabled with the raw `owned` — which is why the screen forces those two
+// items to disabled in these two verticals, even with owned:true.
 describe('EntityDetailScreen — música: "Salvar informações (NFO)" continua desabilitado mesmo com owned:true (regressão)', () => {
   it('álbum possuído via árvore: item fica desabilitado com tooltip', async () => {
     const user = userEvent.setup()

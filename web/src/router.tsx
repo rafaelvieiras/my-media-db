@@ -35,16 +35,16 @@ import { HistoricoOrfaosScreen } from '@/routes/historico-orfaos'
 import { JobsScreen } from '@/routes/jobs'
 import { HealthScreen } from '@/routes/health'
 
-// Contexto do router: carrega o QueryClient compartilhado, de modo que loaders
-// de rota possam pré-carregar/hidratar o cache do TanStack Query.
+// Router context: it carries the shared QueryClient, so that route
+// loaders can preload/hydrate the TanStack Query cache.
 export interface RouterContext {
   queryClient: QueryClient
 }
 
-// QueryClient único, compartilhado entre o contexto do router e o provider.
+// Single QueryClient, shared between the router context and the provider.
 export const queryClient = new QueryClient()
 
-// Roteamento CODE-BASED. A raiz é o layout: cabeçalho de navegação + <Outlet>.
+// CODE-BASED routing. The root is the layout: navigation header + <Outlet>.
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: () => (
     <div className="min-h-svh bg-background text-foreground">
@@ -60,22 +60,22 @@ const indexRoute = createRoute({
   component: LibraryItemsScreen,
 })
 
-// Rota `/library/$entitySlug` (briefing 0114/ADR-0030): biblioteca completa
-// paginada de um tipo de topo por vez, alcançada pelo "Ver Todos" de cada
-// carrossel da home e pelo dropdown "Biblioteca" da navbar. Substitui o
-// search param `?type=` da rota `/` (briefing 0110, removido — não era
-// contrato público documentado) por uma URL amigável e dedicada; o slug é
-// resolvido para `entity.type` por `lib/library-slugs.ts`.
+// Route `/library/$entitySlug` (ADR-0030): the complete
+// paginated library of one top-level type at a time, reached through the "Ver Todos" of each
+// carousel of the home and through the "Biblioteca" dropdown of the navbar. It replaces the
+// search param `?type=` of the `/` route (removed — it was not a
+// documented public contract) with a friendly, dedicated URL; the slug is
+// resolved to `entity.type` by `lib/library-slugs.ts`.
 const libraryBrowseRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library/$entitySlug',
   component: LibraryBrowseScreen,
 })
 
-// Área administrativa (briefing 0083): as 6 telas de operação/config viram
-// subrotas de `/dashboard`, navegadas pela sidebar do `DashboardShell` — em vez
-// de soltas no `AppHeader`. `dashboardIndexRoute` redireciona `/dashboard` para
-// a primeira seção (Bibliotecas).
+// Administrative area: the 6 operation/config screens become
+// subroutes of `/dashboard`, navigated through the sidebar of the `DashboardShell` — instead
+// of loose in the `AppHeader`. `dashboardIndexRoute` redirects `/dashboard` to
+// the first section (Bibliotecas).
 const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/dashboard',
@@ -96,9 +96,9 @@ const dashboardLibraryRoute = createRoute({
   component: LibraryScreen,
 })
 
-// Rotas dedicadas de datasource (briefing 0071): criar caminho/tipo e reapontar
-// caminho/remover saem do formulário fixo + edição inline da lista para páginas
-// próprias — o mesmo padrão de `entityEditBasicoRoute`/`itemNewRoute` abaixo.
+// Dedicated datasource routes: creating path/type and re-pointing
+// path/removing move out of the fixed form + inline editing of the list into pages
+// of their own — the same pattern as `entityEditBasicoRoute`/`itemNewRoute` below.
 const dashboardLibraryNewRoute = createRoute({
   getParentRoute: () => dashboardRoute,
   path: '/library/new',
@@ -129,8 +129,8 @@ const dashboardOrphansRoute = createRoute({
   component: OrphansScreen,
 })
 
-// Rotas de CRUD dedicadas (briefing 0030): criar item/coleção e editar item saem
-// dos formulários inline para páginas próprias (deep-link + testabilidade).
+// Dedicated CRUD routes: creating item/collection and editing an item move out
+// of the inline forms into pages of their own (deep-link + testability).
 const itemNewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/new/item',
@@ -143,9 +143,9 @@ const collectionNewRoute = createRoute({
   component: CollectionNewScreen,
 })
 
-// Search param `ordering` do detalhe da série (0040): a ordem de exibição de
-// episódios escolhida no seletor vive na URL (compartilhável, efêmera — sem
-// persistência). Opcional; ausente = ordem default da série (view de temporadas).
+// Search param `ordering` of the series detail: the display order of
+// episodes chosen in the selector lives in the URL (shareable, ephemeral — without
+// persistence). Optional; absent = default order of the series (seasons view).
 const entityDetailSearchSchema = z.object({
   ordering: z.string().optional(),
 })
@@ -157,11 +157,11 @@ const entityDetailRoute = createRoute({
   validateSearch: entityDetailSearchSchema,
 })
 
-// Edição de item (briefing 0030), dividida em subrotas no padrão sidebar do
-// TMDB (briefing 0080): `/entities/$id/edit` continua sendo a URL default —
-// agora a seção "Informações básicas" —, com IDs de terceiros e Elenco/equipe
-// em subrotas próprias (deep-linkáveis), todas FLAT (mesmo padrão das demais
-// rotas deste arquivo — não uma rota de layout aninhada).
+// Item edit, split into subroutes in the TMDB sidebar pattern:
+// `/entities/$id/edit` is still the default URL —
+// now the "Informações básicas" section —, with third-party IDs and Cast/crew
+// in subroutes of their own (deep-linkable), all FLAT (same pattern as the other
+// routes of this file — not a nested layout route).
 const entityEditBasicoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/entities/$id/edit',
@@ -180,25 +180,25 @@ const entityEditCreditosRoute = createRoute({
   component: EntityEditCreditosScreen,
 })
 
-// Detalhe rico do item externo ANTES de importar (0023). Params: fonte, tipo
-// (`movie|tv`) e id NA FONTE. Similares/coleção navegam recursivamente aqui.
+// Rich detail of the external item BEFORE importing. Params: source, type
+// (`movie|tv`) and id IN THE SOURCE. Similars/collection navigate here recursively.
 const externalDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/external/$source/$type/$id',
   component: ExternalDetailScreen,
 })
 
-// Coleção externa como página própria (0024, follow-up do 0023). Params: fonte e id
-// da coleção NA FONTE. Alcançada pela faixa de coleção do detalhe rico.
+// External collection as a page of its own. Params: source and id
+// of the collection IN THE SOURCE. Reached through the collection band of the rich detail.
 const collectionDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/collection/$source/$id',
   component: CollectionDetailScreen,
 })
 
-// Página MÍNIMA da pessoa (0029, fase D, interno-first). Alcançada pelo card de
-// elenco/equipe da RichDetailView quando o crédito traz `person_id` (a pessoa já foi
-// persistida por algum import).
+// MINIMAL person page (phase D, internal-first). Reached through the
+// cast/crew card of the RichDetailView when the credit carries a `person_id` (the person has already been
+// persisted by some import).
 const personDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/person/$personId',
@@ -211,8 +211,8 @@ const dashboardSettingsRoute = createRoute({
   component: SettingsScreen,
 })
 
-// Integrações configuráveis via UI/banco (0095/0096, ADR-0023): lista e
-// formulário por schema para credenciais de provider (TMDB primeiro).
+// Integrations configurable through the UI/database (ADR-0023): list and
+// form per schema for provider credentials (TMDB first).
 const dashboardIntegrationsRoute = createRoute({
   getParentRoute: () => dashboardRoute,
   path: '/integrations',
@@ -225,22 +225,22 @@ const dashboardIntegrationDetailRoute = createRoute({
   component: IntegrationDetailScreen,
 })
 
-// Webhook de entrada Jellyfin (0093/0097): gerar/copiar o token do webhook.
+// Jellyfin inbound webhook: generate/copy the webhook token.
 const dashboardWebhookRoute = createRoute({
   getParentRoute: () => dashboardRoute,
   path: '/webhook',
   component: WebhookScreen,
 })
 
-// Lista GLOBAL de eventos de histórico sem item relacionado (briefing 0099):
-// somente leitura, complementar à timeline por-entity do 0092/0094.
+// GLOBAL list of history events without a related item:
+// read-only, complementary to the per-entity timeline.
 const dashboardHistoricoOrfaosRoute = createRoute({
   getParentRoute: () => dashboardRoute,
   path: '/historico-orfaos',
   component: HistoricoOrfaosScreen,
 })
 
-// Administração dos jobs internos (0052) — agendador embutido + histórico.
+// Administration of the internal jobs — embedded scheduler + history.
 const dashboardJobsRoute = createRoute({
   getParentRoute: () => dashboardRoute,
   path: '/jobs',
@@ -286,8 +286,8 @@ const routeTree = rootRoute.addChildren([
 export const router = createRouter({
   routeTree,
   context: { queryClient },
-  // Wrap envolve toda a árvore do router com o provider do TanStack Query,
-  // usando o mesmo client que está no contexto.
+  // Wrap wraps the whole router tree with the TanStack Query provider,
+  // using the same client that is in the context.
   Wrap: ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <LanguageProvider>{children}</LanguageProvider>
@@ -295,7 +295,7 @@ export const router = createRouter({
   ),
 })
 
-// Registro de tipos: dá type-safety global ao router (navegação/params tipados).
+// Type registration: it gives global type-safety to the router (typed navigation/params).
 declare module '@tanstack/react-router' {
   interface Register {
     router: typeof router

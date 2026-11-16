@@ -1,11 +1,11 @@
 import type { CatalogCompletenessSettings } from '@/lib/api'
 import { erroJson, okJson } from '@/test/detail-harness'
 
-// completenessDefault é o default de fábrica devolvido pelo GET quando o dono nunca
-// salvou nada (mesmo shape documentado no briefing 0057 §3/§6): description + poster +
-// media_file marcados para movie/tv, resto desmarcado. Compartilhado entre os testes do
-// formulário (catalog-completeness-form.test.tsx) e da tela de settings
-// (settings.test.tsx) para não duplicarem a mesma fábrica (jscpd).
+// completenessDefault is the factory default returned by the GET when the owner never
+// saved anything (same shape documented in §3/§6): description + poster +
+// media_file marked for movie/tv, the rest unmarked. Shared between the tests of the
+// form (catalog-completeness-form.test.tsx) and of the settings screen
+// (settings.test.tsx) so they do not duplicate the same factory (jscpd).
 export const completenessDefault: CatalogCompletenessSettings = {
   movie: {
     description: true,
@@ -27,10 +27,10 @@ export const completenessDefault: CatalogCompletenessSettings = {
   },
 }
 
-// respostaCompletude atende GET/PUT /api/v1/settings/catalog-completeness dado (url,
-// method): devolve `null` quando a rota não casa, para o chamador tentar outra rota do
-// seu próprio roteador de fetch. Compartilhado entre catalog-completeness-form.test.tsx
-// (única rota) e settings.test.tsx (que combina esta com a rota de idiomas) — jscpd.
+// respostaCompletude answers GET/PUT /api/v1/settings/catalog-completeness for the given (url,
+// method): it returns `null` when the route does not match, so the caller can try another route of
+// its own fetch router. Shared between catalog-completeness-form.test.tsx
+// (single route) and settings.test.tsx (which combines this one with the languages route) — jscpd.
 export function respostaCompletude(
   url: string,
   method: string,

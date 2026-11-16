@@ -8,16 +8,16 @@ import type { EntityCard, EntityType } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { entityCardBase } from '@/test/detail-harness'
 
-// card: mesmos defaults de entityCardBase, só troca id/título pros valores que
-// este arquivo já usava (id 'x', título 'Matrix') — evita duplicar a fábrica
-// inteira (jscpd) só por causa desses dois campos.
+// card: same defaults as entityCardBase, it only swaps id/title to the values that
+// this file already used (id 'x', title 'Matrix') — avoids duplicating the whole
+// factory (jscpd) just because of those two fields.
 function card(over: Partial<EntityCard> = {}): EntityCard {
   return entityCardBase({ id: 'x', title: 'Matrix', ...over })
 }
 
-// O <Link> do TanStack Router exige contexto de router; mockado pelo
-// `LinkMock` compartilhado (resolve `params` no href), pra afirmar o destino
-// do link "Ver Todos" (briefing 0114) — mesmo padrão de app-header.test.tsx.
+// The <Link> of TanStack Router requires router context; mocked by the
+// shared `LinkMock` (it resolves `params` into the href), to assert the destination
+// of the "Ver Todos" link — same pattern as app-header.test.tsx.
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
 }))

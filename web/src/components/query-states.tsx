@@ -3,12 +3,12 @@ import { Link } from '@tanstack/react-router'
 import { ArrowLeft, LoaderCircle, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-// Estados de UI compartilhados (carregando / erro / vazio). Centralizados aqui
-// para o grid e a lista de datasources não duplicarem markup (a catraca do 0005
-// mede duplicação com jscpd).
+// Shared UI states (loading / error / empty). Centralized here
+// so the grid and the datasource list do not duplicate markup (the ratchet
+// measures duplication with jscpd).
 
-// VoltarBiblioteca é o link "voltar" comum às telas de detalhe (item, pessoa): navega à
-// home (a biblioteca). Extraído para as telas não duplicarem o mesmo markup (jscpd).
+// VoltarBiblioteca is the "back" link common to the detail screens (item, person): it navigates to the
+// home (the library). Extracted so the screens do not duplicate the same markup (jscpd).
 export function VoltarBiblioteca() {
   return (
     <Link
@@ -54,10 +54,10 @@ export function ErrorState({
   )
 }
 
-// FormSaveFooter é o rodapé comum aos formulários de settings (idiomas, 0057):
-// mensagem de erro (role="alert") OU de sucesso (role="status"), seguida do
-// botão de salvar. Extraído para LanguageSettingsForm/CompletenessSettingsForm
-// (settings.tsx, catalog-completeness-form.tsx) não duplicarem o mesmo markup
+// FormSaveFooter is the footer common to the settings forms (languages, completeness):
+// error message (role="alert") OR success message (role="status"), followed by the
+// save button. Extracted so LanguageSettingsForm/CompletenessSettingsForm
+// (settings.tsx, catalog-completeness-form.tsx) do not duplicate the same markup
 // (jscpd).
 export function FormSaveFooter({
   erro,
@@ -92,9 +92,9 @@ export function FormSaveFooter({
   )
 }
 
-// EntityEditEstadoCarga é o estado de carregando/erro comum às 3 subrotas de
-// edição de item (briefing 0080: entity-edit-basico/-ids/-creditos.tsx) —
-// extraído para as três não duplicarem o mesmo wrapper (jscpd).
+// EntityEditEstadoCarga is the loading/error state common to the 3 item
+// edit subroutes (entity-edit-basico/-ids/-creditos.tsx) —
+// extracted so the three do not duplicate the same wrapper (jscpd).
 export function EntityEditEstadoCarga({
   carregando,
   erro,

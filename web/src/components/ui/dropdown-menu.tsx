@@ -3,10 +3,10 @@ import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui'
 
 import { cn } from '@/lib/utils'
 
-// DropdownMenu (briefing 0086) — wrapper estilizado do primitivo radix-ui, no
-// MESMO padrão de Sheet/Tooltip (pacote unificado `radix-ui`, sem dependência
-// nova). É a base do menu "Gerenciar" do detalhe do item: compacta as ações
-// (Editar/baixar informações/baixar arte/NFO/excluir) num único trigger.
+// DropdownMenu — styled wrapper of the radix-ui primitive, in the
+// SAME pattern as Sheet/Tooltip (unified `radix-ui` package, no new
+// dependency). It is the base of the "Gerenciar" menu of the item detail: it packs the actions
+// (Edit/download information/download artwork/NFO/delete) into a single trigger.
 
 function DropdownMenu({
   ...props
@@ -58,9 +58,9 @@ function DropdownMenuItem({
   variant = 'default',
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
-  // `destructive` é usado só por "Excluir coleção" — mesmo espírito da variant
-  // destructive do `<Button>`, aqui via `data-variant` (Radix não tem essa
-  // noção nativa, então a distinção é só de estilo/CSS).
+  // `destructive` is only used by "Excluir coleção" — same spirit as the variant
+  // destructive of `<Button>`, here via `data-variant` (Radix has no native
+  // notion of it, so the distinction is only stylistic/CSS).
   variant?: 'default' | 'destructive'
 }) {
   return (

@@ -18,23 +18,23 @@ import {
   rotuloTooltipCompletude,
 } from '@/lib/catalog-completeness-badges'
 
-// Card de pôster do grid: arte (com fallback de placeholder), título e badges de
-// posse ("na biblioteca") e de revisão (baixa confiança / não identificado).
-// Clicar na arte/título abre o detalhe da entity; clicar no badge de revisão
-// leva à fila de curadoria (`/review`). Os badges ficam num overlay IRMÃO do
-// Link do card (não aninhado) para não gerar âncora dentro de âncora — o overlay
-// é `pointer-events-none` e só o badge-link reativa o clique. A capa NUNCA é
-// apagada (0038): a POSSE vira badge no topo-DIREITO (série/temporada → selo de
-// completude 0036/0037; demais → "na biblioteca"), e ausente/vazio = sem badge.
-// A REVISÃO (atenção) fica no topo-ESQUERDO.
-// PosterCard aceita, opcionalmente, uma ARTE e um ASPECTO próprios (0042): o card de
-// EPISÓDIO passa o still 16:9 (via image proxy) e `aspect-video` em vez do pôster 2:3 —
-// o still é paisagem e cortá-lo no frame de pôster ficaria feio. `artSrc` ausente
-// (undefined) mantém o comportamento clássico: pôster local via `posterSrc(poster_url)`.
-// `artSrc` presente mas null (ex.: episódio sem still) cai no placeholder "Sem arte" no
-// aspecto pedido. SEM `aspectClass` explícito, o frame vem de `aspectPorTipo(card.type)`
-// (0111+) — álbum/artista renderizam 1:1 em QUALQUER grid (biblioteca, carrossel, busca,
-// discografia) sem cada callsite precisar checar o tipo; os demais tipos seguem 2:3.
+// Poster card of the grid: artwork (with a placeholder fallback), title and badges of
+// ownership ("na biblioteca") and review (low confidence / not identified).
+// Clicking the artwork/title opens the detail of the entity; clicking the review badge
+// goes to the curation queue (`/review`). The badges live in a SIBLING overlay of the
+// card Link (not nested) so as not to produce an anchor inside an anchor — the overlay
+// is `pointer-events-none` and only the badge link re-enables the click. The cover is NEVER
+// removed: OWNERSHIP becomes a badge in the top-RIGHT (series/season → completeness
+// badge; the rest → "na biblioteca"), and absent/empty = no badge.
+// The REVIEW (attention) one stays in the top-LEFT.
+// PosterCard optionally accepts its own ARTWORK and ASPECT: the
+// EPISODE card passes the 16:9 still (via the image proxy) and `aspect-video` instead of the 2:3
+// poster — the still is landscape and cropping it into the poster frame would look bad. An absent
+// `artSrc` (undefined) keeps the classic behavior: local poster via `posterSrc(poster_url)`.
+// `artSrc` present but null (e.g. episode without a still) falls back to the "Sem arte" placeholder in
+// the requested aspect. WITHOUT an explicit `aspectClass`, the frame comes from `aspectPorTipo(card.type)`
+// — album/artist render 1:1 in ANY grid (library, carousel, search,
+// discography) without each callsite having to check the type; the other types stay 2:3.
 export function PosterCard({
   card,
   artSrc,
@@ -102,10 +102,10 @@ export function PosterCard({
   )
 }
 
-// IndicadorPosse escolhe o badge de POSSE do canto superior direito conforme o
-// tipo (0038): série/temporada (posse agregada) mostram o selo de completude; os
-// demais (movie/episode/collection) mostram "na biblioteca" quando owned. Vazio ou
-// não-owned → sem badge (capa limpa). Nunca há os dois ao mesmo tempo.
+// IndicadorPosse chooses the OWNERSHIP badge of the top-right corner according to the
+// type: series/season (aggregated ownership) show the completeness badge; the
+// others (movie/episode/collection) show "na biblioteca" when owned. Empty or
+// not-owned → no badge (clean cover). There are never both at the same time.
 function IndicadorPosse({ card }: { card: EntityCard }) {
   if (temCompletude(card.type)) {
     return <SeloCompletude card={card} />
@@ -113,12 +113,12 @@ function IndicadorPosse({ card }: { card: EntityCard }) {
   return <PosseBadge owned={card.owned} />
 }
 
-// SeloCompletude renderiza o estado de posse RASA do card como selo COMPACTO (cabe
-// sobre a capa, 0038) e TEXTUAL (nunca só cor, acessível): COMPLETA (verde, ✓ com
-// aria-label "completa") ou PARCIAL ("X/Y", com a unidade completa no title/aria-label).
-// A UNIDADE vem do tipo (0037): série → "temporadas", temporada → "episódios". VAZIO
-// (owned_count==0) → sem selo (capa limpa, 0038); idem sem ownership ou total==0
-// (movie/episode/collection nunca têm selo). Coerente com o SeloPosse do detalhe (0034).
+// SeloCompletude renders the SHALLOW ownership state of the card as a COMPACT badge (it fits
+// over the cover) and TEXTUAL (never color only, accessible): COMPLETA (green, ✓ with
+// aria-label "completa") or PARCIAL ("X/Y", with the full unit in the title/aria-label).
+// The UNIT comes from the type: series → "temporadas", season → "episódios". EMPTY
+// (owned_count==0) → no badge (clean cover); same for no ownership or total==0
+// (movie/episode/collection never have a badge). Consistent with the SeloPosse of the detail.
 export function SeloCompletude({ card }: { card: EntityCard }) {
   const estado = temCompletude(card.type)
     ? estadoCompletude(card.ownership)
@@ -163,10 +163,10 @@ function PosseBadge({ owned }: { owned: boolean }) {
   )
 }
 
-// Badge de estado do match: draft (não identificado) tem precedência sobre o
-// alerta de revisão de baixa confiança. Nenhum dos dois → sem badge. Ambos são
-// LINK para a fila de revisão (`/review`) — o sinal da Fase 2 agora leva à ação
-// da Fase 3. `pointer-events-auto` reativa o clique dentro do overlay inerte.
+// Badge of the match state: draft (not identified) takes precedence over the
+// low-confidence review alert. Neither of the two → no badge. Both are
+// LINKS to the review queue (`/review`) — the signal of Phase 2 now leads to the action
+// of Phase 3. `pointer-events-auto` re-enables the click inside the inert overlay.
 function EstadoMatchBadge({ card }: { card: EntityCard }) {
   if (ehDraft(card.status)) {
     return (
@@ -185,12 +185,12 @@ function EstadoMatchBadge({ card }: { card: EntityCard }) {
   return null
 }
 
-// IndicadorCompletudeCatalogacao sinaliza, ícone-only, que o item não atende a
-// régua de completude de CATALOGAÇÃO (0057/0058) — DIFERENTE do selo de posse
-// (`IndicadorPosse`/`SeloCompletude` acima, 0036/0037). Fica ao lado do badge de
-// revisão (topo-ESQUERDO), depois dele no `flex-wrap`. `title`/`aria-label`
-// listam o que falta em PT-BR. Ausência de resultado (draft/ainda não avaliado)
-// ou item completo → sem badge (capa limpa, mesmo princípio do 0038).
+// IndicadorCompletudeCatalogacao signals, icon-only, that the item does not meet the
+// CATALOGING completeness ruler — DIFFERENT from the ownership badge
+// (`IndicadorPosse`/`SeloCompletude` above). It stays next to the review
+// badge (top-LEFT), after it in the `flex-wrap`. `title`/`aria-label`
+// list what is missing in PT-BR. No result (draft/not evaluated yet)
+// or a complete item → no badge (clean cover, same principle as the ownership badge).
 function IndicadorCompletudeCatalogacao({ card }: { card: EntityCard }) {
   if (!precisaAtencaoCatalogacao(card.catalog_completeness)) {
     return null

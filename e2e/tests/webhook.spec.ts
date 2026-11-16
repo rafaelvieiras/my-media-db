@@ -1,13 +1,13 @@
 import { expect, test } from '../fixtures'
 
-// Bloco B (briefing 0097): jornada de configuração do token do webhook de
-// entrada do Jellyfin -- fecha o buraco que o 0093/0094 deixaram (nenhum dos
-// dois construiu essa UI, cada briefing empurrou pro outro). Não depende do
-// estado da biblioteca (o token vive em app_settings, fora do domínio de
-// entidades), então não chama resetBiblioteca; é idempotente quanto ao
-// estado inicial do token (funciona tanto na primeira visita, sem token
-// nenhum gerado, quanto reexecutando contra um servidor já usado no modo de
-// iteração rápida via E2E_BASE_URL).
+// Block B: journey for configuring the token of the Jellyfin inbound webhook -- it
+// closes the hole the consumption history work left behind (neither of the
+// two built this UI, each one pushed it to the other). It does not depend on the
+// library state (the token lives in app_settings, outside the entity
+// domain), so it does not call resetBiblioteca; it is idempotent regarding the
+// initial state of the token (it works both on the first visit, with no token
+// generated at all, and when re-running against a server already used in fast
+// iteration mode through E2E_BASE_URL).
 
 test('pagina de webhook: gera, mostra, copia e regenera o token do Jellyfin', async ({
   page,
@@ -22,7 +22,7 @@ test('pagina de webhook: gera, mostra, copia e regenera o token do Jellyfin', as
     page.getByRole('heading', { level: 1, name: 'Webhook' }),
   ).toBeVisible()
 
-  // Espera a query resolver: ou o estado vazio ou o campo com token aparecem.
+  // Waits for the query to resolve: either the empty state or the field with a token appears.
   const semToken = page.getByText('Nenhum token gerado ainda.')
   const campoToken = page.getByLabel('Token do webhook')
   await expect(semToken.or(campoToken)).toBeVisible()
@@ -32,11 +32,11 @@ test('pagina de webhook: gera, mostra, copia e regenera o token do Jellyfin', as
   }
   await expect(campoToken).toBeVisible()
 
-  // Um token RECÉM-gerado começa visível de propósito (o dono precisa
-  // conseguir copiá-lo sem um clique extra em "Mostrar"); um token
-  // pré-existente carregado do backend começa mascarado. Normaliza para o
-  // estado mascarado antes de testar o toggle, para o teste valer nos dois
-  // casos.
+  // A JUST-generated token starts visible on purpose (the owner needs to be
+  // able to copy it without an extra click on "Mostrar"); a
+  // pre-existing token loaded from the backend starts masked. Normalizes to the
+  // masked state before testing the toggle, so that the test holds in both
+  // cases.
   const botaoOcultar = page.getByRole('button', { name: 'Ocultar token' })
   if (await botaoOcultar.isVisible()) {
     await botaoOcultar.click()
@@ -45,30 +45,30 @@ test('pagina de webhook: gera, mostra, copia e regenera o token do Jellyfin', as
   const tokenAtual = await campoToken.inputValue()
   expect(tokenAtual.length).toBeGreaterThan(0)
 
-  // Mostrar/ocultar.
+  // Show/hide.
   await page.getByRole('button', { name: 'Mostrar token' }).click()
   await expect(campoToken).toHaveAttribute('type', 'text')
   await page.getByRole('button', { name: 'Ocultar token' }).click()
   await expect(campoToken).toHaveAttribute('type', 'password')
 
-  // Copiar token: verifica que o valor certo foi parar na área de
-  // transferência de verdade (permissão concedida acima).
+  // Copy token: checks that the right value really landed in the
+  // clipboard (permission granted above).
   await page.getByRole('button', { name: 'Copiar token' }).click()
   await expect(page.getByRole('button', { name: 'Copiado!' })).toBeVisible()
   const tokenCopiado = await page.evaluate(() => navigator.clipboard.readText())
   expect(tokenCopiado).toBe(tokenAtual)
 
-  // Copiar URL do webhook: contém o token na querystring.
+  // Copy webhook URL: it contains the token in the querystring.
   await page.getByRole('button', { name: 'Copiar URL do webhook' }).click()
   const urlCopiada = await page.evaluate(() => navigator.clipboard.readText())
   expect(urlCopiada).toContain(`/api/v1/webhooks/jellyfin?token=${tokenAtual}`)
 
-  // Regenerar: confirma o dialog nativo e verifica que o token exibido mudou.
+  // Regenerate: confirms the native dialog and checks that the displayed token changed.
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Gerar novo token' }).click()
   await expect(campoToken).not.toHaveValue(tokenAtual)
 
-  // Placeholder de saída sempre visível, sem depender de nenhuma API.
+  // Outbound placeholder always visible, without depending on any API.
   await expect(
     page.getByRole('heading', { name: 'Webhooks de saída' }),
   ).toBeVisible()

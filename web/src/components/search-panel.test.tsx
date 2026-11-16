@@ -6,8 +6,8 @@ import { SearchPanel } from '@/components/search-panel'
 import type { EntityCard, ExternalResult, SearchResult } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 
-// Idioma fixo (pt-BR): isola o SearchPanel do LanguageProvider real — sem tocar o
-// endpoint de settings e sem afetar as asserções de fetch da busca.
+// Fixed language (pt-BR): it isolates the SearchPanel from the real LanguageProvider — without touching the
+// settings endpoint and without affecting the fetch assertions of the search.
 vi.mock('@/lib/language-context', () => ({
   useLanguage: () => ({
     lang: 'pt-BR',
@@ -17,11 +17,11 @@ vi.mock('@/lib/language-context', () => ({
   }),
 }))
 
-// Spy de navegação: o import bem-sucedido deve levar ao detalhe da entity.
+// Navigation spy: a successful import has to take you to the detail of the entity.
 const navigate = vi.fn()
 
-// Mocka o router: `Link` (usado pelo PosterCard) vira um <a>, e `useNavigate`
-// devolve o spy para verificar o redirecionamento pós-import.
+// Mocks the router: `Link` (used by the PosterCard) becomes an <a>, and `useNavigate`
+// returns the spy to check the redirect after the import.
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
   useNavigate: () => navigate,
@@ -90,19 +90,19 @@ const externalItem: ExternalResult = {
   saved: false,
 }
 
-// Tipos de topo devolvidos por GET /entities/types: o `MediaTypeFilter` (dentro
-// do SearchPanel, briefing 0113) dispara essa busca sozinho ao montar — todo
-// teste precisa rotear essa URL, senão `fetchRouter` explode em "rota não
-// mockada".
+// Top-level types returned by GET /entities/types: the `MediaTypeFilter` (inside
+// the SearchPanel) fires that query by itself on mount — every
+// test has to route that URL, otherwise `fetchRouter` blows up with "unmocked
+// route".
 const TIPOS_DE_TOPO = [
   { type: 'movie', count: 1 },
   { type: 'tv', count: 1 },
   { type: 'artista', count: 1 },
 ]
 
-// Roteia fetch por URL: /entities/types alimenta o MediaTypeFilter; /search
-// devolve o resultado dado; /import devolve a entity resolvida (com id, para a
-// navegação).
+// Routes the fetch by URL: /entities/types feeds the MediaTypeFilter; /search
+// returns the given result; /import returns the resolved entity (with an id, for the
+// navigation).
 function fetchRouter(result: SearchResult) {
   return vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url)
@@ -123,8 +123,8 @@ function fetchRouter(result: SearchResult) {
   })
 }
 
-// Setup comum dos casos que buscam: stuba o fetch, renderiza e digita o termo
-// (dispara o debounce). Centralizado para os testes não duplicarem o boilerplate.
+// Common setup of the cases that search: it stubs the fetch, renders and types the term
+// (it fires the debounce). Centralized so the tests do not duplicate the boilerplate.
 async function buscar(result: SearchResult) {
   const user = userEvent.setup()
   const fetchMock = fetchRouter(result)
@@ -153,9 +153,9 @@ describe('SearchPanel', () => {
     expect(
       screen.getByText('Busque no seu catálogo e em fontes externas'),
     ).toBeInTheDocument()
-    // Com input vazio a busca (`/search`) não dispara — mas o MediaTypeFilter
-    // (briefing 0113) busca os tipos de topo (`/entities/types`) sozinho, ao
-    // montar, independente do termo. Não é mais "fetch nunca chamado".
+    // With an empty input the search (`/search`) does not fire — but the MediaTypeFilter
+    // fetches the top-level types (`/entities/types`) by itself, on
+    // mount, regardless of the term. It is no longer "fetch never called".
     expect(
       fetchMock.mock.calls.some(([u]) =>
         String(u).startsWith('/api/v1/search'),
@@ -174,16 +174,16 @@ describe('SearchPanel', () => {
     await waitFor(() =>
       expect(screen.getByText('Matrix Local')).toBeInTheDocument(),
     )
-    // Balde fixo "Filmes e séries" não existe mais (ADR-0030): um card `movie`
-    // vira a seção "Filmes". `getByRole('heading', ...)` (não `getByText`)
-    // porque "Filmes" agora TAMBÉM é uma `<option>` do MediaTypeFilter dinâmico
-    // (0113) — o texto sozinho deixou de ser único na tela.
+    // The fixed "Filmes e séries" bucket no longer exists: a `movie` card
+    // becomes the "Filmes" section. `getByRole('heading', ...)` (not `getByText`)
+    // because "Filmes" now is ALSO an `<option>` of the dynamic MediaTypeFilter
+    // — the text alone is no longer unique on the screen.
     expect(screen.getByRole('heading', { name: 'Filmes' })).toBeInTheDocument()
     expect(screen.queryByText('Filmes e séries')).toBeNull()
     expect(screen.getByText('Resultados externos')).toBeInTheDocument()
     expect(screen.getByText('The Matrix')).toBeInTheDocument()
-    // Só chamou /search e /entities/types (com o termo debounced), não por
-    // caractere.
+    // It only called /search and /entities/types (with the debounced term), not per
+    // character.
     expect(
       fetchMock.mock.calls.every(
         ([u]) =>
@@ -204,9 +204,9 @@ describe('SearchPanel', () => {
     await waitFor(() =>
       expect(screen.getByText('Artista Local')).toBeInTheDocument(),
     )
-    // `getByRole('heading', ...)`, não `getByText`: "Filmes"/"Artistas" também
-    // são `<option>` do MediaTypeFilter dinâmico (0113), então o texto sozinho
-    // não é mais único na tela.
+    // `getByRole('heading', ...)`, not `getByText`: "Filmes"/"Artistas" are also
+    // `<option>` of the dynamic MediaTypeFilter, so the text alone
+    // is no longer unique on the screen.
     expect(screen.getByRole('heading', { name: 'Filmes' })).toBeInTheDocument()
     expect(
       screen.getByRole('heading', { name: 'Artistas' }),
@@ -225,17 +225,17 @@ describe('SearchPanel', () => {
     await waitFor(() =>
       expect(screen.getByText('Matrix Local')).toBeInTheDocument(),
     )
-    // Sem toggle ligado: nem seção nem cards de temporada/episódio.
+    // Without a toggle on: neither the section nor the season/episode cards.
     expect(screen.queryByRole('heading', { name: 'Temporadas' })).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Episódios' })).toBeNull()
     expect(screen.queryByText('Temporada 1 Local')).toBeNull()
     expect(screen.queryByText('Episodio 1 Local')).toBeNull()
   })
 
-  // Um único caminho, exercitado para cada sub-nó: ligar o toggle abre a seção
-  // própria com o card daquele tipo, mantém o outro sub-nó oculto e refaz a busca
-  // com o `include=` correspondente. Parametrizado para os dois toggles não
-  // duplicarem o mesmo corpo de teste (medido pelo jscpd).
+  // A single path, exercised for each sub-node: turning the toggle on opens its own
+  // section with the card of that type, keeps the other sub-node hidden and redoes the search
+  // with the corresponding `include=`. Parameterized so the two toggles do not
+  // duplicate the same test body (measured by jscpd).
   const casosSubNo = [
     {
       toggle: 'Temporadas',
@@ -271,10 +271,10 @@ describe('SearchPanel', () => {
           screen.getByRole('heading', { name: toggle }),
         ).toBeInTheDocument(),
       )
-      // O sub-nó ligado aparece na seção própria; o outro segue oculto.
+      // The sub-node turned on appears in its own section; the other stays hidden.
       expect(screen.getByText(visivel)).toBeInTheDocument()
       expect(screen.queryByText(oculto)).toBeNull()
-      // O refetch carregou o include= correspondente.
+      // The refetch carried the corresponding include=.
       await waitFor(() =>
         expect(
           fetchMock.mock.calls.some(([u]) => String(u).includes(include)),
@@ -284,10 +284,10 @@ describe('SearchPanel', () => {
   )
 
   it('resultado externo já na biblioteca vira "Na biblioteca" sem Importar', async () => {
-    // Interno-first (0027): quando o item externo já é entity (internal_id), o card
-    // some com o Importar e mostra o selo — evita reimportar o que já está no catálogo.
-    // O internal_id vai defensivamente (cast) porque o tipo gerado só o ganha após a
-    // regeneração do backend (feita em paralelo); o runtime carrega o campo.
+    // Internal-first: when the external item already is an entity (internal_id), the card
+    // drops the Importar and shows the badge — it avoids reimporting what is already in the catalog.
+    // The internal_id goes defensively (cast) because the generated type only gains it after the
+    // backend regeneration (done in parallel); the runtime carries the field.
     const externalSalvo = {
       ...externalItem,
       internal_id: 'ent-603',
@@ -343,7 +343,7 @@ describe('SearchPanel', () => {
         params: { id: 'ent-imported' },
       }),
     )
-    // O POST /import foi enviado com source/source_id/type do item.
+    // The POST /import was sent with source/source_id/type of the item.
     const importCall = fetchMock.mock.calls.find(
       ([u, init]) =>
         String(u) === '/api/v1/import' &&

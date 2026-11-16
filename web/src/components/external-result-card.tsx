@@ -4,14 +4,14 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ImportarButton, PosterImg } from '@/components/rich-detail-view'
 
-// Miolo visual (pôster + título + ano + sinopse truncada) de um resultado EXTERNO,
-// compartilhado por `ExternalResultCard` (importar) e `CorrectMatchResultCard`
-// (corrigir) — só a AÇÃO do rodapé muda entre os dois; o pôster/texto e o destino
-// do link são idênticos (evita duplicação de markup medida pelo jscpd).
+// Visual core (poster + title + year + truncated synopsis) of an EXTERNAL result,
+// shared by `ExternalResultCard` (import) and `CorrectMatchResultCard`
+// (correct) — only the footer ACTION changes between the two; the poster/text and the link
+// destination are identical (avoids markup duplication measured by jscpd).
 //
-// `internalId` (briefing 0026) CENTRALIZA no interno: quando o item externo já é uma
-// entity da biblioteca, o link vai para `/entities/{id}` (INTERNO, não /external).
-// Sem ele, o link segue para a tela rica de detalhe do externo (0023).
+// `internalId` CENTRALIZES on the internal one: when the external item already is an
+// entity of the library, the link goes to `/entities/{id}` (INTERNAL, not /external).
+// Without it, the link goes to the rich external detail screen.
 export function ExternalResultContent({
   result,
   internalId = null,
@@ -69,11 +69,11 @@ export function ExternalResultContent({
   )
 }
 
-// Card de um resultado EXTERNO ("não salvo") na busca de IMPORTAR: reusa o miolo
-// visual (`ExternalResultContent`) e acrescenta o botão Importar como atalho, fora
-// da âncora (botão não aninha em link). Quando `internalId` existe, o item já é
-// entity da biblioteca — mostra o selo "Na biblioteca" e NÃO oferece Importar (evita
-// reimportar o que já está catalogado).
+// Card of an EXTERNAL result ("not saved") in the IMPORT search: it reuses the visual
+// core (`ExternalResultContent`) and adds the Importar button as a shortcut, outside
+// the anchor (a button does not nest in a link). When `internalId` exists, the item already is
+// an entity of the library — it shows the "Na biblioteca" badge and does NOT offer Importar (it avoids
+// reimporting what is already cataloged).
 export function ExternalResultCard({
   result,
   internalId = null,
@@ -100,11 +100,11 @@ export function ExternalResultCard({
   )
 }
 
-// Card de um resultado EXTERNO na busca de CORRIGIR (fila de Revisão, 0074): mesmo
-// miolo visual de `ExternalResultCard`, mas a ação é "Usar este" (chama
-// `correctMatch` via `onEscolher`), não Importar. Diferente do fluxo de importar,
-// `internalId` NÃO esconde a ação — é justamente o caso de fundir duplicata (0051):
-// o selo "Na biblioteca" aparece JUNTO do botão, nunca no lugar dele.
+// Card of an EXTERNAL result in the CORRECT search (Review queue): same
+// visual core as `ExternalResultCard`, but the action is "Usar este" (it calls
+// `correctMatch` via `onEscolher`), not Importar. Unlike the import flow,
+// `internalId` does NOT hide the action — it is precisely the duplicate merge case:
+// the "Na biblioteca" badge appears ALONGSIDE the button, never in its place.
 export function CorrectMatchResultCard({
   result,
   internalId = null,

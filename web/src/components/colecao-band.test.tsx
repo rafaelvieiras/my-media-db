@@ -5,14 +5,14 @@ import type { RichDetail } from '@/lib/rich-detail'
 import { richDetailBase } from '@/test/detail-harness'
 import { renderWithClient } from '@/test/render'
 
-// Link interpola os params no href, para afirmar o destino da faixa de coleção.
+// The link interpolates the params into the href, to assert the destination of the collection band.
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
   useNavigate: () => vi.fn(),
 }))
 
-// detalheComColecao monta um RichDetail mínimo com uma coleção (o resto vazio: as
-// seções sem dado não renderizam). Reusa a fábrica compartilhada (jscpd).
+// detalheComColecao builds a minimal RichDetail with a collection (the rest empty: the
+// sections without data do not render). It reuses the shared factory (jscpd).
 function detalheComColecao(): RichDetail {
   return richDetailBase({
     collection: { source_id: '726871', name: 'Coleção Duna', poster_url: null },
@@ -30,7 +30,7 @@ describe('ColecaoBand (na RichDetailView)', () => {
 
   it('linka para a entity INTERNA quando a coleção já foi importada (0026)', () => {
     const detalhe = detalheComColecao()
-    // internal_id é campo aditivo (0026): o cast evita depender do tipo regenerado.
+    // internal_id is an ADDITIVE field: the cast avoids depending on the regenerated type.
     detalhe.collection = {
       source_id: '726871',
       name: 'Coleção Duna',

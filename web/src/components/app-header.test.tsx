@@ -5,16 +5,16 @@ import { AppHeader } from '@/components/app-header'
 import type { EntityType } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 
-// Mocka o Link do router (mesmo padrão de colecao-band.test.tsx) — isola o
-// teste de navegação real, foco é só o CONTRATO de colapso/menu. `LinkMock`
-// (0110) também resolve `search` em query string, usado pelos testes do
-// dropdown "Biblioteca" abaixo.
+// Mocks the Link of the router (same pattern as colecao-band.test.tsx) — it isolates the
+// test from real navigation, the focus is only the CONTRACT of collapse/menu. `LinkMock`
+// also resolves `search` into a query string, used by the
+// "Biblioteca" dropdown tests below.
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
 }))
 
-// LanguageSelector faz fetch/contexto próprios (cobertos em
-// language-selector.test.tsx) — irrelevante para o colapso da nav (0075).
+// LanguageSelector does its own fetch/context (covered in
+// language-selector.test.tsx) — irrelevant for the nav collapse.
 vi.mock('@/components/language-selector', () => ({
   LanguageSelector: () => <div data-testid="seletor-idioma-stub" />,
 }))
@@ -25,16 +25,16 @@ function jsonResponse(body: unknown): Response {
   return { ok: true, status: 200, json: async () => body } as Response
 }
 
-// Todo teste que renderiza AppHeader dispara `useQuery(entityTypesQueryOptions)`
-// (dropdown "Biblioteca", 0110) — stub padrão do fetch para os testes de
-// colapso mobile (0075) que não se importam com o conteúdo do dropdown, só com
-// não estourar (MSW recusa request não mockada — ver test/setup.ts).
+// Every test that renders AppHeader fires `useQuery(entityTypesQueryOptions)`
+// ("Biblioteca" dropdown) — a standard fetch stub for the mobile
+// collapse tests that do not care about the content of the dropdown, only about
+// not blowing up (MSW refuses an unmocked request — see test/setup.ts).
 function stubEntityTypes(tipos: EntityType[] = []) {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(tipos)))
 }
 
-// abrirMenuMobile stuba os tipos, renderiza o AppHeader e abre o Sheet mobile —
-// o preâmbulo comum aos testes que interagem DENTRO do painel (jscpd).
+// abrirMenuMobile stubs the types, renders the AppHeader and opens the mobile Sheet —
+// the common preamble of the tests that interact INSIDE the panel (jscpd).
 async function abrirMenuMobile(tipos: EntityType[] = []) {
   stubEntityTypes(tipos)
   const user = userEvent.setup()
@@ -50,16 +50,16 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-// 0075: abaixo de ~768px a nav não pode mais transbordar a página (o achado da
-// auditoria: `body.scrollWidth` de 1043px contra 390px de viewport). jsdom não
-// aplica media query nenhuma (não há motor de layout) — o "sem overflow
-// horizontal" em si só é verificável visualmente/num navegador real. Aqui
-// travamos o CONTRATO que sustenta a correção: o botão de menu existe e some
-// no desktop (`md:hidden`), e NENHUMA rota antes visível deixa de ser
-// alcançável quando colapsada atrás dele — inclusive para leitor de tela: ao
-// abrir o Sheet, o Radix marca a cópia desktop (fora do painel) como
-// `aria-hidden`, e é exatamente essa cópia acessível dentro do painel que os
-// testes abaixo verificam.
+// Below ~768px the nav can no longer overflow the page (the finding of the
+// audit: `body.scrollWidth` of 1043px against a 390px viewport). jsdom does not
+// apply any media query (there is no layout engine) — "no horizontal
+// overflow" itself is only verifiable visually/in a real browser. Here
+// we lock the CONTRACT that supports the fix: the menu button exists and disappears
+// on desktop (`md:hidden`), and NO previously visible route stops being
+// reachable when collapsed behind it — including for a screen reader: when
+// the Sheet opens, Radix marks the desktop copy (outside the panel) as
+// `aria-hidden`, and it is exactly that accessible copy inside the panel that the
+// tests below check.
 describe('AppHeader — colapso mobile (0075)', () => {
   it('desktop: todos os links continuam na nav, e o botão de menu tem md:hidden', () => {
     stubEntityTypes()
@@ -81,7 +81,7 @@ describe('AppHeader — colapso mobile (0075)', () => {
     const user = userEvent.setup()
     renderWithClient(<AppHeader />)
 
-    // Fechado, o Sheet nem monta (Radix Portal) — só existe a cópia desktop.
+    // Closed, the Sheet does not even mount (Radix Portal) — only the desktop copy exists.
     expect(screen.getAllByRole('link', { name: 'Biblioteca' })).toHaveLength(1)
     expect(screen.queryByRole('heading', { name: 'Navegação' })).toBeNull()
 
@@ -91,9 +91,9 @@ describe('AppHeader — colapso mobile (0075)', () => {
 
     const painel = await screen.findByRole('dialog', { name: 'Navegação' })
 
-    // Nenhuma rota do conjunto original some do alcance do usuário no menu —
-    // consultado DENTRO do painel (a cópia desktop, agora `aria-hidden` pelo
-    // Radix por estar fora do Sheet aberto, não entra nessa contagem).
+    // No route of the original set leaves the user's reach in the menu —
+    // queried INSIDE the panel (the desktop copy, now `aria-hidden` by
+    // Radix for being outside the open Sheet, does not count here).
     for (const nome of TODOS_OS_LINKS) {
       expect(
         within(painel).getByRole('link', { name: nome }),
@@ -112,16 +112,16 @@ describe('AppHeader — colapso mobile (0075)', () => {
   })
 })
 
-// Dropdown "Biblioteca" (briefing 0110, atualizado no 0114/ADR-0030): lista os
-// schemas com dado catalogado (mesmo endpoint/hook do carrossel da home,
-// 0109) e navega direto pra `/library/$entitySlug` do tipo — sem perder o
-// link direto pra biblioteca SEM filtro (o texto "Biblioteca" continua um
-// `NavLink` de sempre, só ganhou um trigger separado ao lado, o chevron). O
-// trigger não depende de hover (Radix abre por clique/teclado), então o mesmo
-// teste vale pro desktop e, via `within(painel)`, pro Sheet mobile — cobrindo
-// o critério de aceite "funciona por toque". `TIPOS` usa só tipos DE TOPO
-// mapeados em `library-slugs.ts` (movie/artista) — `GET /entities/types` já
-// não devolve sub-nó (album/faixa) desde o 0112.
+// "Biblioteca" dropdown: it lists the
+// schemas with cataloged data (same endpoint/hook as the home carousel)
+// and navigates straight to `/library/$entitySlug` of the type — without losing the
+// direct link to the library WITHOUT a filter (the text "Biblioteca" stays a
+// usual `NavLink`, it only gained a separate trigger next to it, the chevron). The
+// trigger does not depend on hover (Radix opens by click/keyboard), so the same
+// test is valid for desktop and, via `within(painel)`, for the mobile Sheet — covering
+// the acceptance criterion "works by touch". `TIPOS` uses only TOP-LEVEL types
+// mapped in `library-slugs.ts` (movie/artista) — `GET /entities/types` no longer
+// returns a sub-node (album/faixa).
 describe('AppHeader — dropdown "Biblioteca" (0110/0114)', () => {
   const TIPOS: EntityType[] = [
     { type: 'movie', count: 21 },

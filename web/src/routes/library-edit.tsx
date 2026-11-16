@@ -21,14 +21,14 @@ import {
   retroactiveEnrichmentSettingsQueryOptions,
 } from '@/lib/queries'
 
-// Rota `/dashboard/library/$id/edit` (briefing 0071): reaponta o caminho do datasource
-// (PATCH, recasco em cascata do 0070) e concentra a remoção — antes um ícone de
-// lixeira sem confirmação colado ao botão "Escanear" na lista (achado de risco
-// de clique acidental da auditoria de UX) — numa "zona de perigo" com
-// confirmação explícita em 2 passos, no mesmo padrão de `/orphans`.
+// Route `/dashboard/library/$id/edit`: it re-points the datasource path
+// (PATCH, cascading re-basing) and concentrates the removal — previously a
+// trash icon without confirmation glued to the "Escanear" button in the list (an accidental-click
+// risk finding from the UX audit) — in a "danger zone" with an
+// explicit 2-step confirmation, in the same pattern as `/orphans`.
 //
-// Não existe um `GET /library/{id}` dedicado — a fonte é encontrada na mesma
-// lista que a tela `/dashboard/library` já consome (`libraryQueryOptions`).
+// There is no dedicated `GET /library/{id}` — the source is found in the same
+// list that the `/dashboard/library` screen already consumes (`libraryQueryOptions`).
 export function LibraryEditScreen() {
   const { id } = useParams({ from: '/dashboard/library/$id/edit' })
   const query = useQuery(libraryQueryOptions)
@@ -103,16 +103,16 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
       return
     }
     const body: PatchSource = { path: limpo }
-    // PATCH parcial: só manda `preferred_language` se o dono de fato mexeu no
-    // select (mesmo espírito do `path`/`watch_enabled`) — campo ausente no
-    // corpo mantém o valor atual no backend. Voltar pra "Usar idioma global"
-    // envia `null` explícito, que limpa a preferência.
+    // Partial PATCH: it only sends `preferred_language` if the owner actually touched the
+    // select (same spirit as `path`/`watch_enabled`) — a field absent from the
+    // body keeps the current value in the backend. Going back to "Usar idioma global"
+    // sends an explicit `null`, which clears the preference.
     if (preferredLanguageTocado) {
       body.preferred_language = preferredLanguage || null
     }
-    // PATCH parcial (mesmo espírito de `preferred_language`): só manda
-    // `retroactive_enrichment_days` se o dono mexeu no campo. Voltar a vazio
-    // envia `null` explícito, que limpa o override (volta a herdar o global).
+    // Partial PATCH (same spirit as `preferred_language`): it only sends
+    // `retroactive_enrichment_days` if the owner touched the field. Going back to empty
+    // sends an explicit `null`, which clears the override (it inherits the global one again).
     if (retryDaysTocado) {
       const retryDaysLimpo = retryDays.trim()
       body.retroactive_enrichment_days = retryDaysLimpo
@@ -138,9 +138,9 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
 
   return (
     <div className="flex flex-col gap-8">
-      {/* noValidate: o min/max do campo de reentativa (0085) é só hint nativo;
-          a validação de range é do backend (422 inline), sem depender do
-          balão nativo do navegador bloqueando o submit antes de chegar lá. */}
+      {/* noValidate: the min/max of the retry field is only a native hint;
+          the range validation belongs to the backend (422 inline), without depending on the
+          native browser balloon blocking the submit before it gets there. */}
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">Caminho</span>
@@ -192,9 +192,9 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
   )
 }
 
-// "Zona de perigo": a remoção do datasource (briefing 0071) — antes um clique
-// direto sem confirmação, agora exige um segundo passo explícito na própria UI
-// (sem `window.confirm`), o mesmo padrão já usado na purga de órfãs.
+// "Danger zone": the removal of the datasource — previously a click
+// straight without confirmation, now it requires an explicit second step in the UI itself
+// (without `window.confirm`), the same pattern already used in the orphan purge.
 function DangerZone({
   ocupado,
   erro,

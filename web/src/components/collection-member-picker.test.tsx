@@ -5,9 +5,9 @@ import type { EntityCard } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { entityCardBase as card, okJson } from '@/test/detail-harness'
 
-// Testa o picker de membros (0025 Fase B): busca no catálogo local, EXCLUI a própria
-// coleção / membros já ligados / outras coleções, e adiciona via POST devolvendo a
-// lista atualizada ao pai. O picker não usa router (sem Link) — só o idioma é mockado.
+// Tests the member picker: it searches the local catalog, EXCLUDES the collection
+// itself / already linked members / other collections, and adds via POST returning the
+// updated list to the parent. The picker does not use the router (no Link) — only the language is mocked.
 
 const estado = vi.hoisted(() => ({ lang: 'pt-BR' }))
 
@@ -16,7 +16,7 @@ vi.mock('@/lib/language-context', async () => {
   return { useLanguage: () => fakeLanguage(estado.lang) }
 })
 
-// stubPicker roteia GET /search (resultados locais) e POST /entities/{id}/members.
+// stubPicker routes GET /search (local results) and POST /entities/{id}/members.
 function stubPicker(locais: EntityCard[], aoAdicionar: () => Response) {
   const m = vi.fn(async (url: string, init?: RequestInit) => {
     const u = new URL(String(url), 'http://localhost')

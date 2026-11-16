@@ -7,9 +7,9 @@ import { LanguageSelector } from '@/components/language-selector'
 import { arteSrc, type ResolvedEntity } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
-// Seção de edição (briefing 0080): as TRÊS únicas seções que o my-media-db tem
-// como dado editável de verdade hoje — nada além disso (ver o briefing para o
-// porquê de não replicar as ~13 seções do editor do TMDB).
+// Edit section: the THREE only sections that my-media-db has
+// as truly editable data today — nothing beyond that (the reasoning for not
+// replicating the ~13 sections of the TMDB editor is documented in the edit spec).
 export type SecaoEdicao = 'basico' | 'ids' | 'creditos'
 
 const SECOES: {
@@ -29,13 +29,13 @@ const SECOES: {
   },
 ]
 
-// EntityEditShell é o "chrome" compartilhado pelas 3 subrotas de edição (briefing
-// 0080): cabeçalho (pôster+título+idioma) + sidebar de navegação entre seções +
-// "Voltar ao item". Cada subrota (`entity-edit-basico.tsx`/`-ids.tsx`/
-// `-creditos.tsx`) monta só o bloco correspondente como `children` e passa o
-// `sujo` daquele bloco só — o guard de "sair sem salvar" (0073) vive aqui,
-// simplificado: não precisa mais combinar 3 booleanos, porque cada subrota só
-// tem 1 bloco por vez.
+// EntityEditShell is the "chrome" shared by the 3 edit subroutes:
+// header (poster+title+language) + navigation sidebar between sections +
+// "Voltar ao item". Each subroute (`entity-edit-basico.tsx`/`-ids.tsx`/
+// `-creditos.tsx`) mounts only the corresponding block as `children` and passes the
+// `sujo` state of that block only — the "leave without saving" guard lives here,
+// simplified: it no longer needs to combine 3 booleans, because each subroute has only
+// 1 block at a time.
 export function EntityEditShell({
   id,
   entity,
@@ -46,8 +46,8 @@ export function EntityEditShell({
   id: string
   entity: ResolvedEntity
   secaoAtiva: SecaoEdicao
-  // Guard de "sair sem salvar" (0073): "sujo" da seção ATUAL só — cada subrota
-  // monta 1 bloco, então não há mais estado de 3 blocos para combinar.
+  // "Leave without saving" guard: the "dirty" state of the CURRENT section only — each subroute
+  // mounts 1 block, so there is no longer a state of 3 blocks to combine.
   sujo: boolean
   children: ReactNode
 }) {
@@ -63,10 +63,10 @@ export function EntityEditShell({
     return () => window.removeEventListener('beforeunload', aoFechar)
   }, [sujo])
 
-  // guardarClique intercepta o clique de QUALQUER link de navegação para fora da
-  // seção atual (outra seção da sidebar OU "Voltar ao item"): se a seção atual
-  // estiver suja, confirma antes de navegar — mesmo comportamento que o 0073 já
-  // tinha para "Voltar ao item", agora reaproveitado para os 3 links da sidebar.
+  // guardarClique intercepts the click of ANY navigation link out of the
+  // current section (another section of the sidebar OR "Voltar ao item"): if the current section
+  // is dirty, it confirms before navigating — the same behavior the guard already
+  // had for "Voltar ao item", now reused for the 3 links of the sidebar.
   function guardarClique(navegar: () => void) {
     return (e: MouseEvent<HTMLAnchorElement>) => {
       if (!sujo) return

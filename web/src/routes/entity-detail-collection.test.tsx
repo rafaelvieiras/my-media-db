@@ -13,13 +13,13 @@ import {
   settingsPadrao,
 } from '@/test/entity-fixtures'
 
-// Cobre a tela da entity quando é COLEÇÃO (0026): a ação "Excluir coleção" —
-// desde o 0086, um item DESTRUTIVO dentro do dropdown "Gerenciar", que abre um
-// AlertDialog de confirmação em vez de mutar direto (purga → volta à
-// biblioteca) — e a ausência da seção Arquivos. `useNavigate` é spy (a
-// exclusão navega para "/"). `Link` usa o mock compartilhado (jscpd — o
-// `{...rest}` preserva `role`/demais props que o Radix `asChild` clona no
-// filho).
+// Covers the entity screen when it is a COLLECTION: the "Excluir coleção" action —
+// a DESTRUCTIVE item inside the "Gerenciar" dropdown, which opens a
+// confirmation AlertDialog instead of mutating directly (purge → back to the
+// library) — and the absence of the Files section. `useNavigate` is a spy (the
+// deletion navigates to "/"). `Link` uses the shared mock (jscpd — the
+// `{...rest}` preserves `role`/other props that Radix `asChild` clones onto the
+// child).
 const spies = vi.hoisted(() => ({ navigate: vi.fn() }))
 
 vi.mock('@tanstack/react-router', async () => ({
@@ -29,8 +29,8 @@ vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
 }))
 
-// Roteia o fetch: settings, membros (vazio), assets (vazio), override (vazio), a
-// entity resolvida e o DELETE da purga (por método).
+// Routes the fetch: settings, members (empty), assets (empty), override (empty), the
+// resolved entity and the DELETE of the purge (by method).
 function fetchRouter(entity: ResolvedEntity, onDelete: () => void) {
   return vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url)
@@ -53,9 +53,9 @@ function fetchRouter(entity: ResolvedEntity, onDelete: () => void) {
       onDelete()
       return okJson({ purged: 1 })
     }
-    // Histórico de consumo (0092/0094): estado/eventos vazios por padrão (sem
-    // selo "Assistido" nem seção "Histórico" — este arquivo não exercita o
-    // histórico em si).
+    // Consumption history: empty state/events by default (no
+    // "Assistido" badge nor "Histórico" section — this file does not exercise the
+    // history itself).
     const historico = respostaHistoricoVazia(u)
     if (historico) {
       return historico
@@ -81,9 +81,9 @@ function renderColecao(onDelete: () => void, over = {}) {
   )
 }
 
-// abrirMenuEItemExcluir abre o dropdown "Gerenciar" e clica no item
-// destrutivo "Excluir coleção" — que abre o AlertDialog de confirmação
-// (NÃO purga direto, briefing 0086).
+// abrirMenuEItemExcluir opens the "Gerenciar" dropdown and clicks the
+// destructive item "Excluir coleção" — which opens the confirmation AlertDialog
+// (it does NOT purge directly).
 async function abrirMenuEItemExcluir(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: /Gerenciar/ }))
   await user.click(screen.getByRole('menuitem', { name: 'Excluir coleção' }))
@@ -106,7 +106,7 @@ describe('EntityDetailScreen — coleção (0026/0086)', () => {
     const user = userEvent.setup()
 
     await abrirMenuEItemExcluir(user)
-    // Confirma no AlertDialog: só o botão de ação dispara a purga.
+    // Confirms in the AlertDialog: only the action button triggers the purge.
     await user.click(screen.getByRole('button', { name: 'Excluir coleção' }))
 
     await waitFor(() => expect(onDelete).toHaveBeenCalledTimes(1))
