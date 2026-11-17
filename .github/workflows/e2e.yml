@@ -22,6 +22,10 @@ on:
 
 permissions:
   contents: read
+  # The sticky comment below writes to the PR conversation. It never ran before
+  # because this repository had no pull requests: the token was read-only and the
+  # step failed with "Resource not accessible by integration".
+  pull-requests: write
 
 jobs:
   e2e:
@@ -81,8 +85,12 @@ jobs:
         run: node scripts/quality-gate.mjs --e2e
         continue-on-error: true
 
+      # Decoration, not a check: a failure to comment (permissions, API hiccup)
+      # must never paint the job red — the E2E run and the coverage ratchet above
+      # are what decide the outcome, same spirit as the artifact upload below.
       - name: Comment e2e coverage table on PR
         if: github.event_name == 'pull_request'
+        continue-on-error: true
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: e2e-quality-gate
