@@ -198,7 +198,20 @@ func (s *Server) aplicarIdentidadeExterna(w http.ResponseWriter, ctx context.Con
 		respondErroInterno(w)
 		return false
 	}
-	if err := s.enrich.Enriquecer(ctx, id, source, sourceID, tipo, langs, false); err != nil {
+	// A manual identity change is a RESET of what was derived from the previous one: the
+	// season/episode tree described the other show, so it goes away before the new tree is
+	// imported (otherwise both sets live inside the same seasons -- see
+	// enrich.DescartarArvoreSerie). The files stay: they hang on the series, and the
+	// re-import re-links them by number.
+	if tipo == "tv" {
+		if err := s.enrich.DescartarArvoreSerie(ctx, id); err != nil {
+			respondErroInterno(w)
+			return false
+		}
+	}
+	// force=true: the owner asked for this identity, so nothing from the previous one is
+	// reused -- metadata, artwork and mediainfo are fetched again (same for a movie).
+	if err := s.enrich.Enriquecer(ctx, id, source, sourceID, tipo, langs, true); err != nil {
 		respondFonteIndisponivel(w)
 		return false
 	}
