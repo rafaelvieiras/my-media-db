@@ -323,11 +323,6 @@ func (s *Server) executarReprocess(ctx context.Context, src library.Source, mode
 		}
 	}
 
-	langCfg, err := s.obterLanguageSettings(ctx)
-	if err != nil {
-		falhou("configuração de idioma", err)
-		return
-	}
 	q := s.leitura()
 	source := sql.NullString{String: id, Valid: true}
 
@@ -354,11 +349,32 @@ func (s *Server) executarReprocess(ctx context.Context, src library.Source, mode
 		st.Done = 0
 	})
 
+	// The retry uses tentarAutoMatch -- the SAME path the "Identificar" action of the
+	// UI takes (local-first, then the external candidate above LimiarAutoMatch,
+	// followed by Enriquecer, which imports the season tree). The conservative
+	// reconciler of the post-scan is NOT the right tool here: measured on a real
+	// library with 59 series in draft it returned "ambígua no provider" or "não
+	// encontrada" for ALL of them -- 0 promoted -- while the auto-match path resolves
+	// the same titles with score 100. What the post-scan needs (never touch an item
+	// the owner is watching) is not what an owner-initiated action needs.
+	tentar := func(entityID string) bool {
+		ent, err := s.leitura().ObterEntity(ctx, entityID)
+		if err != nil {
+			log.Printf("reprocess: entidade %q ilegível (ignorada): %v", entityID, err)
+			return false
+		}
+		res, err := s.tentarAutoMatch(ctx, ent)
+		if err != nil {
+			log.Printf("reprocess: auto-match de %q falhou (best-effort, ignorado): %v", entityID, err)
+			return false
+		}
+		return res.Resolved
+	}
 	for _, row := range series {
 		if ctx.Err() != nil {
 			return
 		}
-		if s.reconciliarECarimbar(ctx, row.ID, langCfg.Allowed, "série", s.scanner.ReconciliarSerieDraft) {
+		if tentar(row.ID) {
 			promovidos++
 		}
 		done++
@@ -368,7 +384,7 @@ func (s *Server) executarReprocess(ctx context.Context, src library.Source, mode
 		if ctx.Err() != nil {
 			return
 		}
-		if s.autoMatchPendentePosScan(ctx, row.ID) {
+		if tentar(row.ID) {
 			promovidos++
 		}
 		done++
