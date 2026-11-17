@@ -104,6 +104,10 @@ func TestParseEpisodeReconhecidos(t *testing.T) {
 		{"com qualidade depois nao arrasta", "Show S01E05 1080p x264", EpisodeInfo{Season: 1, Episodes: []int{5}}},
 		{"separador por ponto no nome", "Show.Name.S02E10.1080p.WEB-DL", EpisodeInfo{Season: 2, Episodes: []int{10}}},
 		{"separador ponto entre S e E", "Show S01.E03", EpisodeInfo{Season: 1, Episodes: []int{3}}},
+		// The underscore is a word character in RE2: it used to kill the match.
+		{"underscore separator", "Aaahh.Monstros_S01E01", EpisodeInfo{Season: 1, Episodes: []int{1}}},
+		{"underscore with noise before", "ALF_Ridler182_GOm_S03E01", EpisodeInfo{Season: 3, Episodes: []int{1}}},
+		{"underscore then release tags", "Serie_S02E10_1080p_WEB-DL", EpisodeInfo{Season: 2, Episodes: []int{10}}},
 		// ── Hyphen ranges ──
 		{"range E01-E03", "Show S01E01-E03", EpisodeInfo{Season: 1, Episodes: []int{1, 2, 3}}},
 		{"range E01-03 sem E", "Show S01E01-03", EpisodeInfo{Season: 1, Episodes: []int{1, 2, 3}}},

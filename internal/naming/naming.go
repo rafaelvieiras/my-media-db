@@ -207,7 +207,13 @@ var (
 	// a space/dot/underscore separator — otherwise an "S01E05 1080p" would drag
 	// "1080" along as if it were another episode (a classic bug). Quality tokens
 	// come separated by a space/dot and therefore stay out.
-	reEpSeason = regexp.MustCompile(`(?i)\bs(\d{1,4})[ ._-]?e(\d{1,4})((?:-?e\d{1,4}|-\d{1,4})*)`)
+	// The leading class is `(?:^|[^0-9a-z])` and NOT `\b`: in RE2 the underscore IS
+	// a word character, so `\bs` never matches "Show_S01E05" -- and that is how much
+	// of the real-world library is named ("Aaahh.Monstros_S01E01.mkv",
+	// "ALF_Ridler182_GOm_S03E01.avi"). The class keeps every case the old `\b`
+	// accepted (space, dot, hyphen, brackets) and adds the underscore, while still
+	// refusing a glued "ShowS01E01" and "1080p".
+	reEpSeason = regexp.MustCompile(`(?i)(?:^|[^0-9a-z])s(\d{1,4})[ ._-]?e(\d{1,4})((?:-?e\d{1,4}|-\d{1,4})*)`)
 	// Tail of a range/combined set: each occurrence is an episode number (with or
 	// without "E", with or without a hyphen). Used to expand "-E03"/"E02"/"-03".
 	reEpTailNum = regexp.MustCompile(`(?i)e?(\d{1,4})`)
