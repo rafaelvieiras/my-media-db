@@ -68,15 +68,21 @@ type reprocessRequest struct {
 // Promoted counts the drafts that gained an external identity in this pass;
 // OrphansDeleted counts the empty drafts removed by the purge.
 type reprocessReport struct {
-	Mode           string `json:"mode"`
-	DryRun         bool   `json:"dry_run"`
-	SeriesDraft    int64  `json:"series_draft"`
-	MoviesPending  int64  `json:"movies_pending"`
-	DraftEpisodes  int64  `json:"draft_episodes"`
-	Orphans        int64  `json:"orphans"`
-	Promoted       int64  `json:"promoted"`
-	OrphansDeleted int64  `json:"orphans_deleted"`
-	ScanQueued     bool   `json:"scan_queued,omitempty"`
+	Mode          string `json:"mode"`
+	DryRun        bool   `json:"dry_run"`
+	SeriesDraft   int64  `json:"series_draft"`
+	MoviesPending int64  `json:"movies_pending"`
+	DraftEpisodes int64  `json:"draft_episodes"`
+	// DraftEpisodesAfter is the same count measured at the END of an applied run.
+	// It exists because "promoted" alone lies: promoting a show to a provider whose
+	// tree numbers the episodes differently turns MATCHED episodes into provisional
+	// ones, and the owner has to see that in the report (measured: +302 on one
+	// library after 11 promotions).
+	DraftEpisodesAfter int64 `json:"draft_episodes_after,omitempty"`
+	Orphans            int64 `json:"orphans"`
+	Promoted           int64 `json:"promoted"`
+	OrphansDeleted     int64 `json:"orphans_deleted"`
+	ScanQueued         bool  `json:"scan_queued,omitempty"`
 }
 
 // reprocessState is the progress of one source. Guarded by Server.reprocessMu.
@@ -402,15 +408,25 @@ func (s *Server) executarReprocess(ctx context.Context, src library.Source, mode
 		}
 	}
 
+	depois, errConferir := q.ContarEpisodiosDraftDaFonteViaTemporada(ctx, source)
+	if errConferir != nil {
+		log.Printf("reprocess: contagem final de episódios em draft falhou (ignorado): %v", errConferir)
+	}
+	diretoDepois, errDireto := q.ContarEpisodiosDraftDaFonteDireto(ctx, source)
+	if errDireto == nil {
+		depois += diretoDepois
+	}
+
 	final := &reprocessReport{
 		Mode: mode, DryRun: false,
-		SeriesDraft:    int64(len(series)),
-		MoviesPending:  int64(len(filmes)),
-		DraftEpisodes:  relatorio.DraftEpisodes,
-		Orphans:        relatorio.Orphans,
-		Promoted:       promovidos,
-		OrphansDeleted: apagados,
-		ScanQueued:     mode == reprocessModeFull,
+		SeriesDraft:        int64(len(series)),
+		MoviesPending:      int64(len(filmes)),
+		DraftEpisodes:      relatorio.DraftEpisodes,
+		Orphans:            relatorio.Orphans,
+		Promoted:           promovidos,
+		OrphansDeleted:     apagados,
+		DraftEpisodesAfter: depois,
+		ScanQueued:         mode == reprocessModeFull,
 	}
 	s.atualizarProgressoReprocess(id, func(st *reprocessState) {
 		st.Running = false
