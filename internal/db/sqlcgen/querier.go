@@ -202,6 +202,11 @@ type Querier interface {
 	// WHERE clause as ListarEntityCards -- without LIMIT/OFFSET/ORDER BY. It includes the same
 	// sub-node exclusion (season/episode) so the total matches the page (0032).
 	ContarEntityCards(ctx context.Context, arg ContarEntityCardsParams) (int64, error)
+	// Episodes in draft that hang from a show which HAS a file in the given source:
+	// the children a reprocess of this library is expected to fix. The LEFT JOIN covers
+	// both shapes -- episode -> season -> show and episode -> show -- because the
+	// media_file may belong to the parent or to the grandparent.
+	ContarEpisodiosDraftDaFonte(ctx context.Context, sourceID sql.NullString) (int64, error)
 	// Total orphan events, for the "total" field of the pagination above.
 	ContarHistoricoEventoOrfaos(ctx context.Context) (int64, error)
 	// Since ADR-0028 (LAYER 3): job_execution was dropped
@@ -216,6 +221,17 @@ type Querier interface {
 	// requires state='present'). Read only, it changes no behavior.
 	ContarMediaFilesEmEstadoMissing(ctx context.Context) (int64, error)
 	ContarMediaFilesPorState(ctx context.Context) ([]ContarMediaFilesPorStateRow, error)
+	// Queries of the "reprocessar" action (POST /api/v1/library/{id}/reprocess).
+	//
+	// The post-scan hook (ADR-0031) already reconciles the drafts and purges the empty
+	// ones, but it runs inside a 4-minute budget and behind an hour throttle, because
+	// it lives at the end of a scan and must not block the queue. The owner-initiated
+	// reprocess is the opposite trade-off: no budget, no throttle, with its own
+	// progress -- so it needs COUNTING versions of the same universes, to answer the
+	// mandatory dry-run before writing anything.
+	// Same universe as ApagarRascunhosVazios, without deleting: drafts that lost their
+	// file to the definitive entity and stayed in the review queue as "no file".
+	ContarRascunhosVazios(ctx context.Context) (int64, error)
 	// CRUD for asset (poster/fanart/... referenced by an entity).
 	// Comments in ASCII and explicit columns -- see the note in entity.sql.
 	CriarAsset(ctx context.Context, arg CriarAssetParams) (Asset, error)

@@ -7,6 +7,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -42,6 +43,11 @@ type Server struct {
 	// scanner is the manager of scan jobs (/api/v1/library/{id}/scan). Nil when
 	// no database is injected.
 	scanner *scanner.Manager
+	// reprocess keeps the progress of the owner-initiated reprocess per datasource
+	// (reprocess.go). In-memory on purpose, like the scan progress: it is state of
+	// the RUN, not of the catalog -- a restart loses the progress, not the data.
+	reprocessMu sync.Mutex
+	reprocess   map[string]*reprocessState
 	// providers is the multi-provider REGISTRY of the external sources
 	// (ADR-0002, R2): name→Provider. Empty = external search off: local search
 	// keeps working and external_available:false. Each source (tmdb/tvdb) is
@@ -720,6 +726,13 @@ func (s *Server) Handler() (http.Handler, error) {
 				// progress.
 				lib.Post("/{id}/scan", s.startScan)
 				lib.Get("/{id}/scan", s.getScanStatus)
+
+				// Owner-initiated reprocess of ONE library: reconcile the drafts
+				// with no budget/throttle, purge the empty drafts and, in the full
+				// mode, re-scan first (which re-parses every name). dry_run is the
+				// default and answers what would change before writing anything.
+				lib.Post("/{id}/reprocess", s.startReprocess)
+				lib.Get("/{id}/reprocess", s.getReprocess)
 			})
 
 			// READ surface of the catalog. GETs only, all through the read pool

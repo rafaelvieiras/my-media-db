@@ -1,0 +1,36 @@
+-- Queries of the "reprocessar" action (POST /api/v1/library/{id}/reprocess).
+--
+-- The post-scan hook (ADR-0031) already reconciles the drafts and purges the empty
+-- ones, but it runs inside a 4-minute budget and behind an hour throttle, because
+-- it lives at the end of a scan and must not block the queue. The owner-initiated
+-- reprocess is the opposite trade-off: no budget, no throttle, with its own
+-- progress -- so it needs COUNTING versions of the same universes, to answer the
+-- mandatory dry-run before writing anything.
+
+-- name: ContarRascunhosVazios :one
+-- Same universe as ApagarRascunhosVazios, without deleting: drafts that lost their
+-- file to the definitive entity and stayed in the review queue as "no file".
+SELECT COUNT(*) AS total
+FROM entity
+WHERE entity.status = 'draft'
+  AND NOT EXISTS (SELECT 1 FROM media_file m WHERE m.entity_id = entity.id)
+  AND NOT EXISTS (SELECT 1 FROM entity_relation r WHERE r.child_id = entity.id)
+  AND NOT EXISTS (SELECT 1 FROM entity_relation r WHERE r.parent_id = entity.id)
+  AND NOT EXISTS (SELECT 1 FROM media_override o WHERE o.entity_id = entity.id);
+
+-- name: ContarEpisodiosDraftDaFonte :one
+-- Episodes in draft that hang from a show which HAS a file in the given source:
+-- the children a reprocess of this library is expected to fix. The LEFT JOIN covers
+-- both shapes -- episode -> season -> show and episode -> show -- because the
+-- media_file may belong to the parent or to the grandparent.
+SELECT COUNT(DISTINCT e.id) AS total
+FROM entity e
+JOIN entity_relation r ON r.child_id = e.id
+JOIN entity p ON p.id = r.parent_id
+LEFT JOIN entity_relation r2 ON r2.child_id = p.id
+JOIN media_file m
+  ON m.library_source_id = sqlc.arg('source_id')
+ AND m.state = 'present'
+ AND (m.entity_id = p.id OR m.entity_id = r2.parent_id)
+WHERE e.type = 'episode'
+  AND e.status = 'draft';
