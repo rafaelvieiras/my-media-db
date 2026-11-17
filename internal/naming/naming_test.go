@@ -115,6 +115,11 @@ func TestParseEpisodeReconhecidos(t *testing.T) {
 		// ── Glued (Kodi) ──
 		{"colado E01E02", "Show S01E01E02", EpisodeInfo{Season: 1, Episodes: []int{1, 2}}},
 		{"colado E01E02E03", "Show S01E01E02E03", EpisodeInfo{Season: 1, Episodes: []int{1, 2, 3}}},
+		// ── Season x Episode (Kodi/Jellyfin old style) ──
+		{"cruzado 1x05", "Show 1x05", EpisodeInfo{Season: 1, Episodes: []int{5}}},
+		{"cruzado minusculo 1x05", "show 1x05", EpisodeInfo{Season: 1, Episodes: []int{5}}},
+		{"cruzado X maiusculo 01X01", "01X01 - The New Woody Woodpecker Show (Dublado)", EpisodeInfo{Season: 1, Episodes: []int{1}}},
+		{"cruzado com release", "CC.Dub.3x01.By.Abc.Downloads", EpisodeInfo{Season: 3, Episodes: []int{1}}},
 		// ── Absolute (anime) ──
 		{"absoluto Show - 013", "Naruto - 013", EpisodeInfo{Absolute: []int{13}, IsAbsolute: true}},
 		{"absoluto com grupo", "[HorribleSubs] One Piece - 1000 [1080p]", EpisodeInfo{Absolute: []int{1000}, IsAbsolute: true}},
@@ -155,6 +160,10 @@ func TestParseEpisodeNegativos(t *testing.T) {
 		{"ano apos hifen nao e absoluto", "Making Of - 2019"},
 		{"range invertido", "Show S01E05-E03"},
 		{"range gigante", "Show S01E01-E99"},
+		// Resolution must never be read as season x episode.
+		{"resolucao 1920x1080", "Show 1920x1080"},
+		{"resolucao 720x480", "Show.720x480.1080p"},
+		{"resolucao 3840x2160", "Filme 3840x2160 HDR"},
 		{"absoluto zero", "Show - 000"},
 		{"nada reconhecivel", "Uma Obra Qualquer"},
 	}
@@ -165,5 +174,40 @@ func TestParseEpisodeNegativos(t *testing.T) {
 				t.Errorf("ParseEpisode(%q) = %+v, true; queria false (revisão)", c.in, got)
 			}
 		})
+	}
+}
+
+// TestNumeroEpisodioInicial covers the form where the file states only the episode
+// number — the one Kodi and Jellyfin accept inside a season folder ("01 - Episode
+// name.mkv", "Episódio 16 - ...", "14.mkv"). The season is NOT here: it comes from
+// the folder, so the caller decides whether there is an anchor.
+//
+// The cases are real names from the library that this scan sent to review.
+func TestNumeroEpisodioInicial(t *testing.T) {
+	casos := []struct {
+		nome string
+		want int
+		ok   bool
+	}{
+		{"01 - O Doutor Fanático", 1, true},
+		{"01. Amor em Erupção - Volta ao Mundo em Macarrão - Pucca Ping-Pong", 1, true},
+		{"07. Amor em Erupção", 7, true},
+		{"Episódio 16 - O Trem do Terror", 16, true},
+		{"Episódio 24 - Terror Químico", 24, true},
+		{"Ep 03 - Algo", 3, true},
+		{"Episode 4 - Something", 4, true},
+		{"14", 14, true},
+		// Negatives: the number alone is not enough to claim an episode.
+		{"1080p", 0, false},
+		{"1931", 0, false},        // a year, not an episode
+		{"Show S01E01", 0, false}, // the SxxEyy form is handled by ParseEpisode
+		{"Trailer", 0, false},
+		{"", 0, false},
+	}
+	for _, c := range casos {
+		got, ok := NumeroEpisodioInicial(c.nome)
+		if ok != c.ok || (ok && got != c.want) {
+			t.Errorf("NumeroEpisodioInicial(%q) = (%d,%v), quero (%d,%v)", c.nome, got, ok, c.want, c.ok)
+		}
 	}
 }

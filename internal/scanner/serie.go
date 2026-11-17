@@ -97,6 +97,11 @@ func (r *scanRun) factsSerie(ctx context.Context, path string) fileFacts {
 
 	ep, ok := naming.ParseEpisode(base)
 	if !ok {
+		// Fallback that Kodi and Jellyfin both accept: a file named only by its
+		// episode number inside a season folder takes the SEASON from the folder.
+		ep, ok = episodioPelaPasta(path, base)
+	}
+	if !ok {
 		log.Printf("scanner: %q sem padrão de episódio reconhecível; vai para revisão", path)
 		if !res.emRevisao && res.index != nil {
 			// Without SxxEyy in the name, but the folder may tell the season: the
@@ -484,6 +489,23 @@ type provisorioEpisodio struct {
 	numeros []int
 	titulo  string
 	arquivo string // file name without extension: dedup key when there is no number
+}
+
+// episodioPelaPasta is the fallback both Kodi and Jellyfin accept: a file named
+// only by its episode number ("01 - O Doutor Fanático.mkv", "Episódio 16 - O Trem
+// do Terror.mkv", "14.mkv") inside a season folder takes the SEASON from the
+// folder. Without a season folder there is nothing reliable to anchor it on, so it
+// stays unrecognized and goes to review.
+func episodioPelaPasta(path, base string) (naming.EpisodeInfo, bool) {
+	season, ok := naming.NumeroDaPastaTemporada(filepath.Base(filepath.Dir(path)))
+	if !ok {
+		return naming.EpisodeInfo{}, false
+	}
+	n, ok := naming.NumeroEpisodioInicial(base)
+	if !ok {
+		return naming.EpisodeInfo{}, false
+	}
+	return naming.EpisodeInfo{Season: season, Episodes: []int{n}}, true
 }
 
 // provisorioDe assembles the provisional one from the parse of the file name or,

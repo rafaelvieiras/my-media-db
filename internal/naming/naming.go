@@ -177,6 +177,11 @@ func normalizarEspacos(s string) string {
 // it to review than to create dozens of spurious links.
 const maxEpisodiosNoRange = 24
 
+// maxEpisodioCruzado is the ceiling of a single episode number in the "1x05" and
+// "<number> - title" forms. It exists to reject a resolution's second half
+// ("1080") and other four-digit noise that survived the shape of the match.
+const maxEpisodioCruzado = 999
+
 // EpisodeInfo is the result of reading an episode name. Zero-value + false means
 // "not recognized".
 type EpisodeInfo struct {
@@ -229,6 +234,21 @@ var (
 	// suffix (resolution) and "x" (codec) that would survive the \d{1,4}. Simple
 	// and conservative.
 	reAbsoluteVetoSuffix = regexp.MustCompile(`(?i)^\s*-\s+\d{1,4}[pikx]`)
+	// "1x05" / "01X05": the season x episode form that Kodi and Jellyfin both accept
+	// (the old Kodi style). The guard against a resolution is the SEASON RANGE: every
+	// resolution pair — "1920x1080", "1280x720", "720x480", "3840x2160" — has its
+	// first number far above 99, so a two-digit season ceiling rejects all of them
+	// without a blacklist. "1920x1080" cannot even start the match: the leading class
+	// forbids a digit before the season, so the engine never anchors inside a number.
+	reEpCruzado = regexp.MustCompile(`(?i)(?:^|[^0-9a-z])(\d{1,2})x(\d{1,4})(?:$|[^0-9a-z])`)
+	// Labeled episode: "Episódio 16 - …", "Ep 01", "Episode 4".
+	reEpRotulo = regexp.MustCompile(`(?i)^(?:epis[oó]dio|episode|ep)\s*[._-]?\s*(\d{1,4})\b`)
+	// Episode number at the START of the name followed by a separator and any
+	// non-digit: "01 - O Doutor Fanático", "07. Amor em Erupção", "12: The End".
+	// Kodi and Jellyfin both read the number; the SEASON comes from the folder.
+	reEpInicial = regexp.MustCompile(`^(\d{1,4})\s*[-–—:._)]\s*(?:\D|$)`)
+	// Bare number as the whole name: "14".
+	reEpSoNumero = regexp.MustCompile(`^(\d{1,4})$`)
 )
 
 // ParseEpisode reads a file name (WITHOUT extension) and returns the episodes it
@@ -253,7 +273,57 @@ func ParseEpisode(name string) (EpisodeInfo, bool) {
 	if info, ok := parseEpisodeSeason(name); ok {
 		return info, true
 	}
+	if info, ok := parseEpisodeCruzado(name); ok {
+		return info, true
+	}
 	return parseEpisodeAbsolute(name)
+}
+
+// parseEpisodeCruzado covers the "1x05" form (Kodi/Jellyfin). It runs after the
+// SxxEyy form — which is unambiguous — and before the absolute one.
+func parseEpisodeCruzado(name string) (EpisodeInfo, bool) {
+	m := reEpCruzado.FindStringSubmatch(name)
+	if m == nil {
+		return EpisodeInfo{}, false
+	}
+	season, err := strconv.Atoi(m[1])
+	if err != nil {
+		return EpisodeInfo{}, false
+	}
+	episodio, err := strconv.Atoi(m[2])
+	if err != nil || episodio == 0 || episodio > maxEpisodioCruzado {
+		return EpisodeInfo{}, false
+	}
+	return EpisodeInfo{Season: season, Episodes: []int{episodio}}, true
+}
+
+// NumeroEpisodioInicial returns the episode number that a file name states WITHOUT
+// the season — the form Kodi and Jellyfin accept when the file sits inside a season
+// folder: "01 - O Doutor Fanático.mkv", "Episódio 16 - O Trem do Terror.mkv",
+// "14.mkv".
+//
+// It is deliberately context-free and conservative: it does NOT read the folder (the
+// caller must, and without a season folder the number is discarded, because a loose
+// number has nothing to anchor it). A four-digit year and a glued "1080p" are
+// rejected.
+func NumeroEpisodioInicial(name string) (int, bool) {
+	nome := strings.TrimSpace(name)
+	for _, re := range []*regexp.Regexp{reEpRotulo, reEpInicial, reEpSoNumero} {
+		m := re.FindStringSubmatch(nome)
+		if m == nil {
+			continue
+		}
+		n, err := strconv.Atoi(m[1])
+		if err != nil || n == 0 || n > maxEpisodioCruzado {
+			return 0, false
+		}
+		// A bare year is a year, not an episode ("1931.mkv" inside a year season).
+		if n >= 1900 && n <= 2099 {
+			return 0, false
+		}
+		return n, true
+	}
+	return 0, false
 }
 
 // parseEpisodeSeason covers SxxEyy and the multi-episode-in-one-file extensions:
