@@ -6,8 +6,8 @@ import { resetBiblioteca } from '../lib/reset'
 
 // Art life cycle of the entity (later updated for the lightbox gallery and for
 // ownership): the owner uploads a poster and removes it. Here the entity only
-// exists through an API import (no real media_file), so "Definir como
-// principal"/"Salvar na pasta" stay disabled (owned=false) -- the flow of
+// exists through an API import (no real media_file), so "Set as
+// principal"/"Save to folder" stay disabled (owned=false) -- the flow of
 // making it primary with a real folder is already covered by the next test.
 // Each test starts with the library cleared; only content assertions,
 // web-first (no sleeps).
@@ -22,7 +22,7 @@ const PNG = Buffer.from(
   'base64',
 )
 
-test('arte: enviar, preferir e remover na galeria da entity', async ({
+test('artwork: upload, prefer and remove in the entity gallery', async ({
   page,
   request,
 }) => {
@@ -35,36 +35,36 @@ test('arte: enviar, preferir e remover na galeria da entity', async ({
 
   await page.goto(`/entities/${id}`)
 
-  // Scope: the "Arte" section (the chrome is always in pt-BR, regardless of the reading language).
+  // Scope: the "Artwork" section (the chrome follows the interface language, which is English).
   const arte = page
     .locator('section')
-    .filter({ has: page.getByRole('heading', { name: 'Arte', level: 2 }) })
-  await expect(arte.getByRole('heading', { name: 'Arte' })).toBeVisible()
+    .filter({ has: page.getByRole('heading', { name: 'Artwork', level: 2 }) })
+  await expect(arte.getByRole('heading', { name: 'Artwork' })).toBeVisible()
 
   // The gallery starts empty.
-  await expect(arte.getByText('Nenhuma arte disponível ainda.')).toBeVisible()
+  await expect(arte.getByText('No artwork available yet.')).toBeVisible()
 
-  // Uploads a poster. The kind already comes as "Poster" by default; the "Enviar
-  // arte" button triggers a hidden <input type=file>, so we feed the input
+  // Uploads a poster. The kind already comes as "Poster" by default; the
+  // "Upload artwork" button triggers a hidden <input type=file>, so we feed the input
   // directly (setInputFiles works on a hidden input and exercises the same
   // onChange/upload).
-  await expect(arte.getByRole('combobox', { name: 'Tipo de arte' })).toHaveValue(
-    'poster',
-  )
+  await expect(
+    arte.getByRole('combobox', { name: 'Artwork type' }),
+  ).toHaveValue('poster')
   await arte
-    .getByLabel('Arquivo de arte')
+    .getByLabel('Artwork file')
     .setInputFiles({ name: 'poster.png', mimeType: 'image/png', buffer: PNG })
 
   // The gallery is no longer empty and shows 1 card for the poster just uploaded.
-  await expect(arte.getByText('Nenhuma arte disponível ainda.')).toHaveCount(0)
-  const cardEnviado = arte.getByRole('button', { name: /^Ver Pôster \d+$/ })
+  await expect(arte.getByText('No artwork available yet.')).toHaveCount(0)
+  const cardEnviado = arte.getByRole('button', { name: /^View Poster \d+$/ })
   await expect(cardEnviado).toHaveCount(1)
 
-  // Opens the lightbox: with no real media_file (owned=false), "Definir como
-  // principal" is disabled with a tooltip; "Remover" (owner action) is enabled.
+  // Opens the lightbox: with no real media_file (owned=false), "Set as
+  // principal" is disabled with a tooltip; "Remove artwork" (owner action) is enabled.
   await cardEnviado.click()
   const definirPrincipal = page.getByRole('button', {
-    name: 'Definir como principal',
+    name: 'Set as principal',
   })
   await expect(definirPrincipal).toBeVisible()
   await expect(definirPrincipal).toBeDisabled()
@@ -72,10 +72,10 @@ test('arte: enviar, preferir e remover na galeria da entity', async ({
 
   // Remove: direct action (no confirmation). Closes the lightbox and the gallery
   // goes back to the empty state.
-  await page.getByRole('button', { name: 'Remover arte' }).click()
-  await expect(arte.getByText('Nenhuma arte disponível ainda.')).toBeVisible()
+  await page.getByRole('button', { name: 'Remove artwork' }).click()
+  await expect(arte.getByText('No artwork available yet.')).toBeVisible()
   await expect(
-    arte.getByRole('button', { name: /^Ver Pôster \d+$/ }),
+    arte.getByRole('button', { name: /^View Poster \d+$/ }),
   ).toHaveCount(0)
 })
 
@@ -87,14 +87,14 @@ test('arte: enviar, preferir e remover na galeria da entity', async ({
 async function leSrcDoPosterDoTopo(
   page: import('@playwright/test').Page,
 ): Promise<string | null> {
-  const img = page.getByRole('img', { name: /^Pôster de/ })
+  const img = page.getByRole('img', { name: /^Poster of/ })
   if ((await img.count()) === 0) {
     return null
   }
   return img.getAttribute('src')
 }
 
-test('definir uma arte como principal materializa na pasta e atualiza o poster do topo', async ({
+test('setting an artwork as principal materializes it in the folder and updates the top poster', async ({
   page,
   request,
 }) => {
@@ -107,12 +107,12 @@ test('definir uma arte como principal materializa na pasta e atualiza o poster d
     writeFileSync(join(dir, 'The Matrix (1999).mkv'), Buffer.alloc(2048, 7))
 
     await page.goto('/dashboard/library')
-    await page.getByRole('link', { name: 'Adicionar datasource' }).click()
-    await page.getByLabel('Caminho do datasource').fill(dir)
-    await page.getByRole('button', { name: 'Adicionar datasource' }).click()
+    await page.getByRole('link', { name: 'Add datasource' }).click()
+    await page.getByLabel('Datasource path').fill(dir)
+    await page.getByRole('button', { name: 'Add datasource' }).click()
     await expect(page).toHaveURL('/dashboard/library')
     await expect(page.getByText(dir)).toBeVisible()
-    await page.getByRole('button', { name: 'Escanear' }).click()
+    await page.getByRole('button', { name: 'Scan' }).click()
 
     await expect
       .poll(
@@ -138,22 +138,24 @@ test('definir uma arte como principal materializa na pasta e atualiza o poster d
     // fake provider.
     const arte = page
       .locator('section')
-      .filter({ has: page.getByRole('heading', { name: 'Artes', level: 2 }) })
+      .filter({ has: page.getByRole('heading', { name: 'Artwork', level: 2 }) })
     await arte
-      .getByLabel('Arquivo de arte')
+      .getByLabel('Artwork file')
       .setInputFiles({ name: 'poster.png', mimeType: 'image/png', buffer: PNG })
     await expect(
-      arte.getByRole('button', { name: /^Ver Pôster \d+$/ }).last(),
+      arte.getByRole('button', { name: /^View Poster \d+$/ }).last(),
     ).toBeVisible()
 
     // Opens the card just uploaded and sets it as primary -- direct prefer PUT (it
     // already is an asset, without needing the chaining of creating it through
     // /artwork/select first; that chaining is exercised in the unit tests of the
     // component).
-    await arte.getByRole('button', { name: /^Ver Pôster \d+$/ }).last().click()
-    await page.getByRole('button', { name: 'Definir como principal' }).click()
+    await arte.getByRole('button', { name: /^View Poster \d+$/ }).last().click()
+    await page.getByRole('button', { name: 'Set as principal' }).click()
     await expect(page.getByText('principal', { exact: true })).toBeVisible()
-    await expect(page.getByText('salvo na pasta', { exact: true })).toBeVisible()
+    await expect(
+      page.getByText('saved in the folder', { exact: true }),
+    ).toBeVisible()
     await page.keyboard.press('Escape')
 
     // The TOP poster of RichDetailView reflects the new primary art, with no

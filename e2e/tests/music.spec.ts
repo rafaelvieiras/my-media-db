@@ -17,7 +17,7 @@ test.beforeEach(async ({ request }) => {
   await resetBiblioteca(request)
 })
 
-test('album: tela de faixas faltando importa a faixa que ficou de fora da arvore', async ({
+test('album: the missing-tracks screen imports the track left out of the tree', async ({
   page,
   request,
 }) => {
@@ -35,7 +35,7 @@ test('album: tela de faixas faltando importa a faixa que ficou de fora da arvore
   const albumId = membros[0].id as string
 
   // Internal album screen: the tracklist shows the only track already imported and the
-  // "Ver faixas faltando" link (it only appears with external_ids.mbid).
+  // "See missing tracks" link (it only appears with external_ids.mbid).
   await page.goto(`/entities/${albumId}`)
   await expect(
     page.getByRole('heading', { level: 1, name: 'Album Fake' }),
@@ -43,23 +43,23 @@ test('album: tela de faixas faltando importa a faixa que ficou de fora da arvore
   await expect(page.getByText('Faixa Um')).toBeVisible()
 
   await page
-    .getByRole('link', { name: /Ver faixas faltando/ })
+    .getByRole('link', { name: /See missing tracks/ })
     .click()
   await expect(page).toHaveURL(`/external/musicbrainz/album/${ALBUM_MBID}`)
 
   // The external screen lists the 2 OFFICIAL tracks of the release: the 1st one already
-  // imported ("na biblioteca"), the 2nd one with an Importar button.
+  // imported ("In the library"), the 2nd one with an Import button.
   await expect(
     page.getByRole('heading', { level: 1, name: 'Album Fake' }),
   ).toBeVisible()
   const faixaUm = page.getByText('Faixa Um').locator('..')
-  await expect(faixaUm.getByText('na biblioteca')).toBeVisible()
+  await expect(faixaUm.getByText('In the library')).toBeVisible()
   const faixaDois = page.getByText('Faixa Dois').locator('..')
   await expect(
-    faixaDois.getByRole('button', { name: 'Importar' }),
+    faixaDois.getByRole('button', { name: 'Import' }),
   ).toBeVisible()
 
-  await faixaDois.getByRole('button', { name: 'Importar' }).click()
+  await faixaDois.getByRole('button', { name: 'Import' }).click()
 
   // Importing the standalone track leads to its INTERNAL detail, linked to the parent album.
   await expect(page).toHaveURL(/\/entities\//)

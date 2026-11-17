@@ -10,8 +10,8 @@ import type { SearchResult } from '@/lib/api'
 // miniature, a real MULTI-SCREEN flow (search → import → navigate to the detail), on the
 // REAL route tree — something an isolated component test (Vitest +
 // stub-fetch.ts) cannot reach.
-describe('busca → importar (Fase 3)', () => {
-  it('busca externa, importa e navega ao detalhe do item importado', async () => {
+describe('search → import (Phase 3)', () => {
+  it('searches externally, imports and navigates to the imported item detail', async () => {
     const resultadoBusca: SearchResult = {
       query: 'duna',
       local: [],
@@ -46,7 +46,7 @@ describe('busca → importar (Fase 3)', () => {
 
     await renderRota('/search')
 
-    const campo = screen.getByRole('searchbox', { name: 'Buscar título' })
+    const campo = screen.getByRole('searchbox', { name: 'Search title' })
     fireEvent.change(campo, { target: { value: 'duna' } })
 
     // Real 350ms debounce (search-panel.tsx) before the GET /search fires.
@@ -55,7 +55,7 @@ describe('busca → importar (Fase 3)', () => {
     })
     expect(resultado).toBeInTheDocument()
 
-    const botaoImportar = screen.getByRole('button', { name: /Importar/ })
+    const botaoImportar = screen.getByRole('button', { name: /Import/ })
     fireEvent.click(botaoImportar)
 
     // It navigated to /entities/42 — the resolved title appears in the detail.

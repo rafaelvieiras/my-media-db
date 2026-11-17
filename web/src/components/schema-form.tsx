@@ -14,6 +14,8 @@ import { Eraser, Plus, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 import { cn } from '@/lib/utils'
 import type { FieldDescriptor } from '@/lib/api'
 import { ordenados, type ValoresForm } from '@/lib/field-schema'
@@ -99,6 +101,7 @@ export function SchemaForm({
   })
 
   const lista = ordenados(fields)
+  const t = useT()
   const traduziveis = lista.filter((f) => f.group === 'traduzivel')
   const neutros = lista.filter((f) => f.group === 'neutro')
 
@@ -144,7 +147,7 @@ export function SchemaForm({
         <div className="flex flex-col gap-4">
           {lang ? (
             <p className="text-sm font-medium">
-              Editando em{' '}
+              {t('entity.edit.editingIn')}{' '}
               <Badge variant="secondary">{rotuloIdioma(lang)}</Badge>
             </p>
           ) : null}
@@ -161,7 +164,7 @@ export function SchemaForm({
         >
           {lang ? (
             <p className="text-sm text-muted-foreground">
-              Campos neutros — valem para todos os idiomas.
+              {t('entity.edit.neutralFieldsHint')}
             </p>
           ) : null}
           {neutros.map(renderCampo)}
@@ -196,7 +199,7 @@ export function SchemaForm({
           onClick={onCancel}
           disabled={isPending}
         >
-          Cancelar
+          {t('common.action.cancel')}
         </Button>
       </div>
     </form>
@@ -235,14 +238,15 @@ function LinhaCampo({
   onClear?: (campo: string, traduzivel: boolean) => void
   clearDisabled?: boolean
 }) {
+  const t = useT()
   const erro =
     field.state.meta.isTouched && field.state.meta.errors.length > 0
-      ? mensagemDoErro(field.state.meta.errors[0])
+      ? mensagemDoErro(field.state.meta.errors[0], t)
       : null
 
   const limpar = onClear ? (
     <BotaoLimpar
-      rotulo={`Limpar ${d.label.toLowerCase()}`}
+      rotulo={t('entity.edit.clearField', { field: d.label.toLowerCase() })}
       onClick={() => onClear(d.name, d.translatable)}
       disabled={clearDisabled}
     />
@@ -306,6 +310,7 @@ function CampoTags({
   erro: string | null
 }) {
   const [tagInput, setTagInput] = useState('')
+  const t = useT()
   const tags = (field.state.value as string[]) ?? []
 
   function adicionar() {
@@ -332,8 +337,10 @@ function CampoTags({
             {tag}
             <button
               type="button"
-              aria-label={`Remover tag ${tag}`}
-              onClick={() => field.handleChange(tags.filter((t) => t !== tag))}
+              aria-label={t('entity.edit.tags.remove', { tag })}
+              onClick={() =>
+                field.handleChange(tags.filter((outra) => outra !== tag))
+              }
               className="rounded-full text-muted-foreground hover:text-foreground"
             >
               <X className="size-3" aria-hidden />
@@ -341,7 +348,9 @@ function CampoTags({
           </Badge>
         ))}
         {tags.length === 0 ? (
-          <span className="text-xs text-muted-foreground">Nenhuma tag.</span>
+          <span className="text-xs text-muted-foreground">
+            {t('entity.edit.tags.empty')}
+          </span>
         ) : null}
       </div>
       <div className="flex items-center gap-2">
@@ -349,12 +358,12 @@ function CampoTags({
           value={tagInput}
           onChange={(e) => setTagInput(e.target.value)}
           onKeyDown={onTagKeyDown}
-          placeholder="Adicionar tag e Enter"
-          aria-label="Adicionar tag"
+          placeholder={t('entity.edit.tags.placeholder')}
+          aria-label={t('entity.edit.tags.inputLabel')}
         />
         <Button type="button" variant="outline" size="sm" onClick={adicionar}>
           <Plus aria-hidden />
-          Adicionar
+          {t('common.action.add')}
         </Button>
         {limpar}
       </div>
@@ -363,9 +372,9 @@ function CampoTags({
   )
 }
 
-// mensagemDoErro extracts the pt-BR `message` of the Standard Schema (Zod) issue. The
+// mensagemDoErro extracts the localized `message` of the Standard Schema (Zod) issue. The
 // item may be the issue object or, defensively, a string.
-function mensagemDoErro(issue: unknown): string {
+function mensagemDoErro(issue: unknown, t: Translate): string {
   if (typeof issue === 'string') {
     return issue
   }
@@ -377,7 +386,7 @@ function mensagemDoErro(issue: unknown): string {
   ) {
     return (issue as { message: string }).message
   }
-  return 'Valor inválido.'
+  return t('entity.edit.invalidValue')
 }
 
 // BotaoLimpar (go back to inheriting). Distinct from emptying the input (which on Save
@@ -391,6 +400,7 @@ function BotaoLimpar({
   onClick: () => void
   disabled?: boolean
 }) {
+  const t = useT()
   return (
     <Button
       type="button"
@@ -401,7 +411,7 @@ function BotaoLimpar({
       disabled={disabled}
     >
       <Eraser aria-hidden />
-      Limpar
+      {t('entity.edit.clear')}
     </Button>
   )
 }

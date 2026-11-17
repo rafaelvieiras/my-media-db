@@ -19,7 +19,7 @@ afterEach(() => {
 })
 
 describe('MediaTypeFilter', () => {
-  it('lista "Todos" + os tipos de topo reais devolvidos por GET /entities/types', async () => {
+  it('lists "All" plus the real top-level types returned by GET /entities/types', async () => {
     const tipos: EntityType[] = [
       { type: 'movie', count: 10 },
       { type: 'tv', count: 5 },
@@ -30,17 +30,17 @@ describe('MediaTypeFilter', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole('option', { name: 'Artistas' }),
+        screen.getByRole('option', { name: 'Artists' }),
       ).toBeInTheDocument(),
     )
-    expect(screen.getByRole('option', { name: 'Todos' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Filmes' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Séries' })).toBeInTheDocument()
-    // Nothing hardcoded: only the 4 options coming from "Todos" + real data.
+    expect(screen.getByRole('option', { name: 'All' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Movies' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Series' })).toBeInTheDocument()
+    // Nothing hardcoded: only the 4 options coming from "All" + real data.
     expect(screen.getAllByRole('option')).toHaveLength(4)
   })
 
-  it('degrada mostrando só "Todos" quando GET /entities/types falha', async () => {
+  it('degrades to only "All" when GET /entities/types fails', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(erroJson(500, 'x', 'falhou')),
@@ -51,10 +51,10 @@ describe('MediaTypeFilter', () => {
       expect(screen.getByRole('combobox')).toBeInTheDocument(),
     )
     expect(screen.getAllByRole('option')).toHaveLength(1)
-    expect(screen.getByRole('option', { name: 'Todos' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'All' })).toBeInTheDocument()
   })
 
-  it('propaga a troca de tipo pelo onChange com o "type" real (não mais preso a movie/tv)', async () => {
+  it('propagates the type change through onChange with the real "type" (no longer pinned to movie/tv)', async () => {
     const tipos: EntityType[] = [
       { type: 'movie', count: 10 },
       { type: 'artista', count: 3 },
@@ -66,13 +66,10 @@ describe('MediaTypeFilter', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole('option', { name: 'Artistas' }),
+        screen.getByRole('option', { name: 'Artists' }),
       ).toBeInTheDocument(),
     )
-    await user.selectOptions(
-      screen.getByLabelText('Filtrar por tipo'),
-      'artista',
-    )
+    await user.selectOptions(screen.getByLabelText('Filter by type'), 'artista')
     expect(onChange).toHaveBeenCalledWith('artista')
   })
 })

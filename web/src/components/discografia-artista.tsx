@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { GradeMembros } from '@/components/entity-members'
 import { PosterCard } from '@/components/poster-card'
 import { useLanguage } from '@/lib/language-context'
+import { useT } from '@/lib/i18n'
 import { entityMembersQueryOptions } from '@/lib/queries'
 
 // DiscografiaArtista lists the ALBUMS of an ARTIST: children
@@ -26,6 +27,7 @@ import { entityMembersQueryOptions } from '@/lib/queries'
 // on your own").
 export function DiscografiaArtista({ id }: { id: string }) {
   const { lang } = useLanguage()
+  const t = useT()
   const { data, isPending, isError } = useQuery(
     entityMembersQueryOptions(id, lang),
   )
@@ -33,14 +35,16 @@ export function DiscografiaArtista({ id }: { id: string }) {
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-heading text-lg font-medium">Discografia</h2>
+      <h2 className="font-heading text-lg font-medium">
+        {t('media.discography.title')}
+      </h2>
       <GradeMembros
         itens={albuns}
         isPending={isPending}
         isError={isError}
-        carregando="Carregando discografia…"
-        erro="Não foi possível carregar a discografia"
-        vazio="Este artista ainda não tem álbuns catalogados."
+        carregando={t('media.discography.loading')}
+        erro={t('media.discography.loadError')}
+        vazio={t('media.discography.empty')}
         render={(card) => <PosterCard card={card} />}
       />
     </section>

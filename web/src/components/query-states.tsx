@@ -2,6 +2,8 @@ import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ArrowLeft, LoaderCircle, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ScreenHeader } from '@/components/screen-header'
+import { useT } from '@/lib/i18n'
 
 // Shared UI states (loading / error / empty). Centralized here
 // so the grid and the datasource list do not duplicate markup (the ratchet
@@ -10,43 +12,48 @@ import { Button } from '@/components/ui/button'
 // VoltarBiblioteca is the "back" link common to the detail screens (item, person): it navigates to the
 // home (the library). Extracted so the screens do not duplicate the same markup (jscpd).
 export function VoltarBiblioteca() {
+  const t = useT()
   return (
     <Link
       to="/"
       className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
     >
       <ArrowLeft className="size-4" aria-hidden />
-      Voltar à biblioteca
+      {t('jobs.queryStates.backToLibrary')}
     </Link>
   )
 }
 
-export function LoadingState({ label = 'Carregando…' }: { label?: string }) {
+export function LoadingState({ label }: { label?: string }) {
+  const t = useT()
   return (
     <div
       role="status"
       className="flex items-center justify-center gap-2 py-16 text-muted-foreground"
     >
       <LoaderCircle className="size-4 animate-spin" aria-hidden />
-      <span>{label}</span>
+      <span>{label ?? t('common.state.loading')}</span>
     </div>
   )
 }
 
 export function ErrorState({
-  title = 'Algo deu errado',
+  title,
   message,
 }: {
   title?: string
   message?: string
 }) {
+  const t = useT()
   return (
     <div
       role="alert"
       className="flex flex-col items-center gap-2 py-16 text-center"
     >
       <TriangleAlert className="size-6 text-destructive" aria-hidden />
-      <p className="font-medium text-destructive">{title}</p>
+      <p className="font-medium text-destructive">
+        {title ?? t('common.state.error')}
+      </p>
       {message ? (
         <p className="max-w-md text-sm text-muted-foreground">{message}</p>
       ) : null}
@@ -62,7 +69,7 @@ export function ErrorState({
 export function FormSaveFooter({
   erro,
   sucesso,
-  mensagemSucesso = 'Configurações salvas.',
+  mensagemSucesso,
   salvando,
 }: {
   erro: string | null
@@ -70,6 +77,7 @@ export function FormSaveFooter({
   mensagemSucesso?: string
   salvando: boolean
 }) {
+  const t = useT()
   return (
     <>
       {erro ? (
@@ -79,13 +87,13 @@ export function FormSaveFooter({
       ) : null}
       {sucesso && !erro ? (
         <p role="status" className="text-sm text-muted-foreground">
-          {mensagemSucesso}
+          {mensagemSucesso ?? t('settings.form.saved')}
         </p>
       ) : null}
 
       <div>
         <Button type="submit" disabled={salvando}>
-          {salvando ? 'Salvando…' : 'Salvar'}
+          {salvando ? t('common.action.saving') : t('common.action.save')}
         </Button>
       </div>
     </>
@@ -102,15 +110,101 @@ export function EntityEditEstadoCarga({
   carregando: boolean
   erro?: unknown
 }) {
+  const t = useT()
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
       {carregando ? (
-        <LoadingState label="Carregando item…" />
+        <LoadingState label={t('entity.detail.loading')} />
       ) : (
         <ErrorState
-          title="Não foi possível carregar o item"
+          title={t('entity.detail.error')}
           message={erro instanceof Error ? erro.message : undefined}
         />
+      )}
+    </main>
+  )
+}
+
+// The three states of any "thing loaded from the API": spinner, inline error,
+// content. The content arrives as a render prop so the narrowed (non-undefined)
+// type reaches the child without a cast.
+export function CorpoComCarga<T>({
+  dados,
+  carregando,
+  falhou,
+  erro,
+  textos,
+  children,
+}: {
+  dados: T | undefined
+  carregando: boolean
+  falhou: boolean
+  erro: unknown
+  textos: { loading: string; loadError: string }
+  children: (dados: T) => React.ReactNode
+}) {
+  if (carregando) {
+    return <LoadingState label={textos.loading} />
+  }
+  if (falhou || dados === undefined) {
+    return (
+      <ErrorState
+        title={textos.loadError}
+        message={erro instanceof Error ? erro.message : undefined}
+      />
+    )
+  }
+  return <>{children(dados)}</>
+}
+
+// Screen with a header and the three standard states around a list: loading,
+// error, empty, then the items. `/dashboard/jobs` and `/dashboard/integrations`
+// are the same screen over different data, so the plumbing lives here once
+// instead of twice (jscpd measured it).
+export function ListaScreen<T>({
+  title,
+  subtitle,
+  isPending,
+  isError,
+  error,
+  itens,
+  textos,
+  renderItem,
+  listaClassName,
+}: {
+  title: string
+  subtitle: string
+  isPending: boolean
+  isError: boolean
+  error: unknown
+  itens: T[]
+  textos: {
+    loading: string
+    loadError: string
+    emptyTitle: string
+    emptyDescription: string
+  }
+  renderItem: (item: T) => React.ReactNode
+  listaClassName?: string
+}) {
+  return (
+    <main className="mx-auto max-w-4xl px-4 py-6">
+      <ScreenHeader title={title} subtitle={subtitle} />
+
+      {isPending ? (
+        <LoadingState label={textos.loading} />
+      ) : isError ? (
+        <ErrorState
+          title={textos.loadError}
+          message={error instanceof Error ? error.message : undefined}
+        />
+      ) : itens.length === 0 ? (
+        <EmptyState
+          title={textos.emptyTitle}
+          description={textos.emptyDescription}
+        />
+      ) : (
+        <ul className={listaClassName}>{itens.map(renderItem)}</ul>
       )}
     </main>
   )

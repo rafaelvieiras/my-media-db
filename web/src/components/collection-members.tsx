@@ -6,6 +6,7 @@ import { CollectionMemberPicker } from '@/components/collection-member-picker'
 import { GradeMembros } from '@/components/entity-members'
 import { PosterCard } from '@/components/poster-card'
 import { useLanguage } from '@/lib/language-context'
+import { useT } from '@/lib/i18n'
 import { entityMembersQueryOptions } from '@/lib/queries'
 import { removeCollectionMember, type EntityCard } from '@/lib/api'
 
@@ -16,7 +17,7 @@ import { removeCollectionMember, type EntityCard } from '@/lib/api'
 // entity screen when `type==='collection'`, in place of similars. It handles loading/error/
 // empty. The active language enters the search (re-fetch on change).
 //
-// `editable` turns on the EDITING of members: "Adicionar item" button (it opens the
+// `editable` turns on the EDITING of members: "Add item" button (it opens the
 // catalog picker) and a remove control on each card. Add/remove return the
 // already UPDATED list, written straight into the cache (`setQueryData`) — without re-fetching.
 export function CollectionMembers({
@@ -27,6 +28,7 @@ export function CollectionMembers({
   editable?: boolean
 }) {
   const { lang } = useLanguage()
+  const t = useT()
   const queryClient = useQueryClient()
   const membersKey = entityMembersQueryOptions(id, lang).queryKey
   const { data, isPending, isError } = useQuery(
@@ -45,7 +47,9 @@ export function CollectionMembers({
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-heading text-lg font-medium">Itens da coleção</h2>
+        <h2 className="font-heading text-lg font-medium">
+          {t('collections.members.title')}
+        </h2>
         {editable && !adicionando ? (
           <Button
             variant="outline"
@@ -53,7 +57,7 @@ export function CollectionMembers({
             onClick={() => setAdicionando(true)}
           >
             <Plus aria-hidden />
-            Adicionar item
+            {t('collections.members.add')}
           </Button>
         ) : null}
       </div>
@@ -71,9 +75,9 @@ export function CollectionMembers({
         itens={data}
         isPending={isPending}
         isError={isError}
-        carregando="Carregando itens da coleção…"
-        erro="Não foi possível carregar os itens da coleção"
-        vazio="Esta coleção ainda não tem itens."
+        carregando={t('collections.members.loading')}
+        erro={t('collections.members.loadError')}
+        vazio={t('collections.members.empty')}
         render={(card) =>
           editable ? (
             <MembroEditavel
@@ -92,7 +96,7 @@ export function CollectionMembers({
 
 // MembroEditavel wraps the PosterCard with the REMOVE control. The
 // remove button is a SIBLING of the card (overlay), not nested in the <a> of the PosterCard —
-// clicking does not navigate. Removal in two steps (× → "Remover?") to avoid mistakes.
+// clicking does not navigate. Removal in two steps (× → "Remove?") to avoid mistakes.
 function MembroEditavel({
   colecaoId,
   card,
@@ -103,6 +107,7 @@ function MembroEditavel({
   onAtualizar: (membros: EntityCard[]) => void
 }) {
   const [confirmando, setConfirmando] = useState(false)
+  const t = useT()
   const mutation = useMutation({
     mutationFn: () => removeCollectionMember(colecaoId, card.id),
     onSuccess: (membros) => onAtualizar(membros),
@@ -120,7 +125,9 @@ function MembroEditavel({
               disabled={mutation.isPending}
               onClick={() => mutation.mutate()}
             >
-              {mutation.isPending ? 'Removendo…' : 'Remover?'}
+              {mutation.isPending
+                ? t('collections.members.removing')
+                : t('collections.members.confirmRemove')}
             </Button>
             <Button
               variant="ghost"
@@ -128,14 +135,16 @@ function MembroEditavel({
               disabled={mutation.isPending}
               onClick={() => setConfirmando(false)}
             >
-              Cancelar
+              {t('common.action.cancel')}
             </Button>
           </div>
         ) : (
           <Button
             variant="secondary"
             size="icon-sm"
-            aria-label={`Remover ${card.title} da coleção`}
+            aria-label={t('collections.members.removeLabel', {
+              title: card.title,
+            })}
             onClick={() => setConfirmando(true)}
           >
             <Trash2 aria-hidden />

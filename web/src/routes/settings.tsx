@@ -8,6 +8,7 @@ import {
   ErrorState,
   FormSaveFooter,
   LoadingState,
+  CorpoComCarga,
 } from '@/components/query-states'
 import {
   languageSettingsQueryOptions,
@@ -30,13 +31,16 @@ import {
   ApiError,
 } from '@/lib/api'
 import { IDIOMAS_DISPONIVEIS, rotuloIdioma } from '@/lib/languages'
+import { useT } from '@/lib/i18n'
 import { CatalogCompletenessForm } from '@/components/catalog-completeness-form'
+import { ScreenHeader } from '@/components/screen-header'
 
 // Route `/settings`: language admin (primary, fallback, allowed). It reads the
 // settings, lets you edit them and saves via PUT. The client-side validation mirrors the
 // backend (primary and fallback ∈ allowed, non-empty allowed); the server 422 is
 // the final guard and its pt-BR message appears inline.
 export function SettingsScreen() {
+  const t = useT()
   const { data, isPending, isError, error } = useQuery(
     languageSettingsQueryOptions,
   )
@@ -50,41 +54,40 @@ export function SettingsScreen() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
       <section className="mb-10">
-        <div className="mb-4 flex flex-col gap-1">
-          <h1 className="font-heading text-xl font-semibold">Configurações</h1>
-          <p className="text-sm text-muted-foreground">
-            Idiomas do catálogo: principal, fallback e os permitidos.
-          </p>
-        </div>
+        <ScreenHeader
+          title={t('settings.screen.title')}
+          subtitle={t('settings.screen.subtitle')}
+        />
 
-        {isPending ? (
-          <LoadingState label="Carregando configurações…" />
-        ) : isError ? (
-          <ErrorState
-            title="Não foi possível carregar as configurações"
-            message={error instanceof Error ? error.message : undefined}
-          />
-        ) : (
-          <LanguageSettingsForm inicial={data} />
-        )}
+        <CorpoComCarga
+          dados={data}
+          carregando={isPending}
+          falhou={isError}
+          erro={error}
+          textos={{
+            loading: t('settings.screen.loading'),
+            loadError: t('settings.screen.loadFailed'),
+          }}
+        >
+          {(dados) => <LanguageSettingsForm inicial={dados} />}
+        </CorpoComCarga>
       </section>
 
       <section className="mb-10">
         <div className="mb-4 flex flex-col gap-1">
           <h2 className="font-heading text-lg font-semibold">
-            Enriquecimento retroativo
+            {t('settings.retroactive.title')}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Intervalo mínimo entre duas tentativas de reenriquecer o MESMO item,
-            para bibliotecas sem override próprio.
+            {t('settings.retroactive.subtitle')}
           </p>
         </div>
 
         {retroativo.isPending ? (
-          <LoadingState label="Carregando configurações…" />
+          <LoadingState label={t('settings.screen.loading')} />
         ) : retroativo.isError ? (
           <ErrorState
-            title="Não foi possível carregar as configurações"
+            title={t('settings.screen.loadFailed')}
             message={
               retroativo.error instanceof Error
                 ? retroativo.error.message
@@ -98,18 +101,19 @@ export function SettingsScreen() {
 
       <section className="mb-10">
         <div className="mb-4 flex flex-col gap-1">
-          <h2 className="font-heading text-lg font-semibold">Artes</h2>
+          <h2 className="font-heading text-lg font-semibold">
+            {t('settings.artwork.title')}
+          </h2>
           <p className="text-sm text-muted-foreground">
-            Comportamento da materialização de pôsteres/fundos na pasta real da
-            biblioteca.
+            {t('settings.artwork.subtitle')}
           </p>
         </div>
 
         {autoMaterializar.isPending ? (
-          <LoadingState label="Carregando configurações…" />
+          <LoadingState label={t('settings.screen.loading')} />
         ) : autoMaterializar.isError ? (
           <ErrorState
-            title="Não foi possível carregar as configurações"
+            title={t('settings.screen.loadFailed')}
             message={
               autoMaterializar.error instanceof Error
                 ? autoMaterializar.error.message
@@ -124,19 +128,18 @@ export function SettingsScreen() {
       <section className="mb-10">
         <div className="mb-4 flex flex-col gap-1">
           <h2 className="font-heading text-lg font-semibold">
-            Trailer e tema musical
+            {t('settings.trailerTheme.title')}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Comportamento do download automático de trailer e música-tema via
-            yt-dlp (briefings 0102/0103).
+            {t('settings.trailerTheme.subtitle')}
           </p>
         </div>
 
         {autoDownloadTrailerTema.isPending ? (
-          <LoadingState label="Carregando configurações…" />
+          <LoadingState label={t('settings.screen.loading')} />
         ) : autoDownloadTrailerTema.isError ? (
           <ErrorState
-            title="Não foi possível carregar as configurações"
+            title={t('settings.screen.loadFailed')}
             message={
               autoDownloadTrailerTema.error instanceof Error
                 ? autoDownloadTrailerTema.error.message
@@ -153,11 +156,10 @@ export function SettingsScreen() {
       <section className="mb-10">
         <div className="mb-4 flex flex-col gap-1">
           <h2 className="font-heading text-lg font-semibold">
-            Completude de catalogação
+            {t('settings.completeness.title')}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Por tipo de mídia, quais campos e artes são desejáveis para
-            considerar um item bem catalogado.
+            {t('settings.completeness.subtitle')}
           </p>
         </div>
 
@@ -168,18 +170,15 @@ export function SettingsScreen() {
         <div className="mb-4 flex flex-col gap-1">
           <h2 className="font-heading text-lg font-semibold">yt-dlp</h2>
           <p className="text-sm text-muted-foreground">
-            Downloader usado para baixar trailer (briefing 0102) e música-tema
-            (briefing 0103) do YouTube. Nenhuma ação é necessária: o próprio
-            MyMediaDB baixa o binário sozinho, dentro do container, na primeira
-            vez que precisar dele.
+            {t('settings.ytdlp.subtitle')}
           </p>
         </div>
 
         {ytdlp.isPending ? (
-          <LoadingState label="Carregando status do yt-dlp…" />
+          <LoadingState label={t('settings.ytdlp.loading')} />
         ) : ytdlp.isError ? (
           <ErrorState
-            title="Não foi possível carregar o status do yt-dlp"
+            title={t('settings.ytdlp.loadFailed')}
             message={
               ytdlp.error instanceof Error ? ytdlp.error.message : undefined
             }
@@ -195,6 +194,7 @@ export function SettingsScreen() {
 // Form seeded with the current config. It receives `inicial` already resolved to
 // seed the state a single time (no synchronization useEffect).
 function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
+  const t = useT()
   const queryClient = useQueryClient()
   const [primary, setPrimary] = useState(inicial.primary)
   const [fallback, setFallback] = useState(inicial.fallback)
@@ -233,13 +233,13 @@ function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
   // Mirrors the backend. It returns the message of the 1st problem, or null if valid.
   function validar(): string | null {
     if (allowed.length === 0) {
-      return 'Selecione ao menos um idioma permitido.'
+      return t('settings.language.emptyAllowed')
     }
     if (!allowed.includes(primary)) {
-      return 'O idioma principal precisa estar entre os permitidos.'
+      return t('settings.language.primaryNotAllowed')
     }
     if (!allowed.includes(fallback)) {
-      return 'O idioma de fallback precisa estar entre os permitidos.'
+      return t('settings.language.fallbackNotAllowed')
     }
     return null
   }
@@ -265,7 +265,9 @@ function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-5">
       <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium">Idioma principal</span>
+        <span className="text-sm font-medium">
+          {t('settings.language.primary')}
+        </span>
         <Select value={primary} onChange={(e) => setPrimary(e.target.value)}>
           {candidatos.map((codigo) => (
             <option key={codigo} value={codigo}>
@@ -276,7 +278,9 @@ function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
       </label>
 
       <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium">Idioma de fallback</span>
+        <span className="text-sm font-medium">
+          {t('settings.language.fallback')}
+        </span>
         <Select value={fallback} onChange={(e) => setFallback(e.target.value)}>
           {candidatos.map((codigo) => (
             <option key={codigo} value={codigo}>
@@ -287,7 +291,9 @@ function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
       </label>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium">Idiomas permitidos</legend>
+        <legend className="text-sm font-medium">
+          {t('settings.language.allowed')}
+        </legend>
         <div className="flex flex-col gap-1.5">
           {candidatos.map((codigo) => (
             <label key={codigo} className="flex items-center gap-2 text-sm">
@@ -307,6 +313,7 @@ function LanguageSettingsForm({ inicial }: { inicial: LanguageSettings }) {
       <FormSaveFooter
         erro={mensagemErro}
         sucesso={mutation.isSuccess}
+        mensagemSucesso={t('settings.form.saved')}
         salvando={mutation.isPending}
       />
     </form>
@@ -321,6 +328,7 @@ function RetroactiveEnrichmentSettingsForm({
 }: {
   inicial: RetroactiveEnrichmentSettings
 }) {
+  const t = useT()
   const queryClient = useQueryClient()
   const [retryDays, setRetryDays] = useState(String(inicial.retry_days))
   const [erroValidacao, setErroValidacao] = useState<string | null>(null)
@@ -339,7 +347,7 @@ function RetroactiveEnrichmentSettingsForm({
   // problem, or null if valid.
   function validar(valor: number): string | null {
     if (!Number.isInteger(valor) || valor < 1 || valor > 365) {
-      return 'Informe um número inteiro entre 1 e 365 dias.'
+      return t('settings.retroactive.retryDaysInvalid')
     }
     return null
   }
@@ -369,7 +377,7 @@ function RetroactiveEnrichmentSettingsForm({
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
       <label className="flex max-w-64 flex-col gap-1.5">
         <span className="text-sm font-medium">
-          Repetir tentativa após (dias)
+          {t('settings.retroactive.retryDays')}
         </span>
         <Input
           type="number"
@@ -377,7 +385,7 @@ function RetroactiveEnrichmentSettingsForm({
           max={365}
           value={retryDays}
           onChange={(e) => setRetryDays(e.target.value)}
-          aria-label="Repetir tentativa após (dias)"
+          aria-label={t('settings.retroactive.retryDays')}
           aria-invalid={mensagemErro !== null || undefined}
         />
       </label>
@@ -385,29 +393,35 @@ function RetroactiveEnrichmentSettingsForm({
       <FormSaveFooter
         erro={mensagemErro}
         sucesso={mutation.isSuccess}
+        mensagemSucesso={t('settings.form.saved')}
         salvando={mutation.isPending}
       />
     </form>
   )
 }
 
-// Switch seeded with the current toggle: it saves on every change —
-// without a save button, the same pattern as the "Observar mudanças" switch of the
-// datasource list (low risk, reversible at any moment).
-function AutoMaterializeArtworkSwitch({
+// Both automatic toggles below are the same widget: a Switch seeded with the
+// current setting that saves on every change (no save button, the same pattern as
+// the "Watch this folder for changes" switch of the datasource list — low risk,
+// reversible at any moment). The difference is only the endpoint, the query key
+// and the copy, so the plumbing lives here once.
+function SwitchAutomatico<T extends { enabled: boolean }>({
   inicial,
+  salvar,
+  invalidar,
+  texto,
 }: {
-  inicial: AutoMaterializeArtworkSettings
+  inicial: T
+  salvar: (body: T) => Promise<unknown>
+  invalidar: string[]
+  texto: { toggle: string; hint: string }
 }) {
   const queryClient = useQueryClient()
 
   const mutation = useMutation({
-    mutationFn: (body: AutoMaterializeArtworkSettings) =>
-      putAutoMaterializeArtworkSettings(body),
+    mutationFn: (body: T) => salvar(body),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['settings', 'auto-materialize-artwork'],
-      })
+      queryClient.invalidateQueries({ queryKey: invalidar })
     },
   })
 
@@ -424,17 +438,15 @@ function AutoMaterializeArtworkSwitch({
       <Switch
         checked={ligado}
         disabled={mutation.isPending}
-        onCheckedChange={(checked) => mutation.mutate({ enabled: checked })}
-        aria-label="Baixar artes automaticamente após o scan"
+        onCheckedChange={(checked) =>
+          mutation.mutate({ ...inicial, enabled: checked })
+        }
+        aria-label={texto.toggle}
         aria-invalid={mensagemErro !== null || undefined}
       />
       <span className="flex flex-col gap-0.5">
-        <span>Baixar artes automaticamente após o scan</span>
-        <span className="text-xs text-muted-foreground">
-          Quando um item novo é auto-importado durante o scan, baixa e copia as
-          artes encontradas para a pasta real da biblioteca na hora, sem esperar
-          ação manual ou o job periódico.
-        </span>
+        <span>{texto.toggle}</span>
+        <span className="text-xs text-muted-foreground">{texto.hint}</span>
         {mensagemErro ? (
           <span role="alert" className="text-xs font-medium text-destructive">
             {mensagemErro}
@@ -445,57 +457,41 @@ function AutoMaterializeArtworkSwitch({
   )
 }
 
-// Switch seeded with the current toggle: same pattern as the
-// AutoMaterializeArtworkSwitch — it saves on every change, without a save
-// button.
+function AutoMaterializeArtworkSwitch({
+  inicial,
+}: {
+  inicial: AutoMaterializeArtworkSettings
+}) {
+  const t = useT()
+  return (
+    <SwitchAutomatico
+      inicial={inicial}
+      salvar={putAutoMaterializeArtworkSettings}
+      invalidar={['settings', 'auto-materialize-artwork']}
+      texto={{
+        toggle: t('settings.artwork.toggle'),
+        hint: t('settings.artwork.hint'),
+      }}
+    />
+  )
+}
+
 function AutoDownloadTrailerTemaSwitch({
   inicial,
 }: {
   inicial: AutoDownloadTrailerTemaSettings
 }) {
-  const queryClient = useQueryClient()
-
-  const mutation = useMutation({
-    mutationFn: (body: AutoDownloadTrailerTemaSettings) =>
-      putAutoDownloadTrailerTemaSettings(body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['settings', 'auto-download-trailer-tema'],
-      })
-    },
-  })
-
-  const ligado = mutation.isSuccess
-    ? mutation.variables.enabled
-    : inicial.enabled
-  const mensagemErro =
-    mutation.isError && mutation.error instanceof ApiError
-      ? mutation.error.message
-      : null
-
+  const t = useT()
   return (
-    <label className="flex items-center gap-2 text-sm">
-      <Switch
-        checked={ligado}
-        disabled={mutation.isPending}
-        onCheckedChange={(checked) => mutation.mutate({ enabled: checked })}
-        aria-label="Baixar trailer e tema automaticamente"
-        aria-invalid={mensagemErro !== null || undefined}
-      />
-      <span className="flex flex-col gap-0.5">
-        <span>Baixar trailer e tema automaticamente</span>
-        <span className="text-xs text-muted-foreground">
-          Ao importar um item novo no scan, tenta baixar trailer e música-tema
-          automaticamente em segundo plano (não bloqueia o scan). Desligado por
-          padrão.
-        </span>
-        {mensagemErro ? (
-          <span role="alert" className="text-xs font-medium text-destructive">
-            {mensagemErro}
-          </span>
-        ) : null}
-      </span>
-    </label>
+    <SwitchAutomatico
+      inicial={inicial}
+      salvar={putAutoDownloadTrailerTemaSettings}
+      invalidar={['settings', 'auto-download-trailer-tema']}
+      texto={{
+        toggle: t('settings.trailerTheme.toggle'),
+        hint: t('settings.trailerTheme.hint'),
+      }}
+    />
   )
 }
 
@@ -506,6 +502,7 @@ function AutoDownloadTrailerTemaSwitch({
 // trailer/theme; this card only reflects and configures, it never
 // triggers a download.
 function YtdlpSettingsForm({ inicial }: { inicial: YtdlpSettings }) {
+  const t = useT()
   const queryClient = useQueryClient()
   const [customPath, setCustomPath] = useState(inicial.custom_binary_path ?? '')
 
@@ -535,33 +532,29 @@ function YtdlpSettingsForm({ inicial }: { inicial: YtdlpSettings }) {
       <form onSubmit={onSubmit} className="flex flex-col gap-5">
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">
-            Path customizado do binário
+            {t('settings.ytdlp.customPath')}
           </span>
           <Input
             type="text"
             value={customPath}
             onChange={(e) => setCustomPath(e.target.value)}
-            placeholder="/usr/local/bin/yt-dlp (opcional)"
-            aria-label="Path customizado do binário yt-dlp"
+            placeholder={t('settings.ytdlp.customPathPlaceholder')}
+            aria-label={t('settings.ytdlp.customPathAria')}
             aria-invalid={mensagemErro !== null || undefined}
           />
           <span className="text-xs text-muted-foreground">
-            Deixe em branco para usar o binário baixado automaticamente (ou a
-            variável de ambiente MYMEDIADB_YTDLP_PATH, quando configurada).
-            Preencha só se você já gerencia sua própria instalação do yt-dlp.
+            {t('settings.ytdlp.hint')}
           </span>
         </label>
 
         <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-400">
-          Atenção: baixar vídeos do YouTube via yt-dlp contraria os Termos de
-          Serviço do YouTube — prática tolerada de facto no ecossistema
-          Kodi/Jellyfin/Plex/tinyMediaManager, mas um risco que você assume ao
-          usar este recurso.
+          {t('settings.ytdlp.termsWarning')}
         </p>
 
         <FormSaveFooter
           erro={mensagemErro}
           sucesso={mutation.isSuccess}
+          mensagemSucesso={t('settings.form.saved')}
           salvando={mutation.isPending}
         />
       </form>
@@ -569,15 +562,16 @@ function YtdlpSettingsForm({ inicial }: { inicial: YtdlpSettings }) {
   )
 }
 
-// Status badge of yt-dlp: "disponível (baixado automaticamente)",
-// "disponível (path customizado)" or "indisponível" + the reason (user
-// journey).
+// Status badge of yt-dlp: "available (downloaded automatically)",
+// "available (custom path)" or "unavailable" + the reason (user journey).
 function YtdlpStatusBadge({ dados }: { dados: YtdlpSettings }) {
+  const t = useT()
+
   if (!dados.disponivel) {
     return (
       <div className="flex flex-col gap-1">
         <Badge variant="destructive" className="w-fit">
-          indisponível
+          {t('settings.ytdlp.badgeUnavailable')}
         </Badge>
         {dados.detalhe ? (
           <span className="text-xs text-muted-foreground">{dados.detalhe}</span>
@@ -588,8 +582,8 @@ function YtdlpStatusBadge({ dados }: { dados: YtdlpSettings }) {
 
   const rotulo =
     dados.origem === 'custom'
-      ? 'disponível (path customizado)'
-      : 'disponível (baixado automaticamente)'
+      ? t('settings.ytdlp.badgeAvailableCustom')
+      : t('settings.ytdlp.badgeAvailableDownloaded')
 
   return (
     <Badge className="w-fit border-transparent bg-emerald-600 text-white">

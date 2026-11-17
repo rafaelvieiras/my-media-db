@@ -9,6 +9,7 @@ import {
   linhaGeral,
 } from '@/lib/mediainfo'
 import { ErrorState, LoadingState } from '@/components/query-states'
+import { useT } from '@/lib/i18n'
 
 // File name from the full path (basename), tolerant of `/` and `\`.
 function nomeArquivo(path: string): string {
@@ -20,17 +21,18 @@ function nomeArquivo(path: string): string {
 // (resolution · codec · HDR · channels, audio/subtitle tracks, duration, size),
 // plus edition/part and state (present/missing).
 export function MediaInfoTable({ entityId }: { entityId: string }) {
+  const t = useT()
   const { data, isPending, isError, error } = useQuery(
     entityFilesQueryOptions(entityId),
   )
 
   if (isPending) {
-    return <LoadingState label="Carregando arquivos…" />
+    return <LoadingState label={t('media.files.loading')} />
   }
   if (isError) {
     return (
       <ErrorState
-        title="Não foi possível carregar os arquivos"
+        title={t('media.files.loadError')}
         message={error instanceof Error ? error.message : undefined}
       />
     )
@@ -38,7 +40,7 @@ export function MediaInfoTable({ entityId }: { entityId: string }) {
   if (data.items.length === 0) {
     return (
       <p className="py-6 text-sm text-muted-foreground">
-        Nenhum arquivo associado a este item.
+        {t('media.files.empty')}
       </p>
     )
   }
@@ -53,6 +55,7 @@ export function MediaInfoTable({ entityId }: { entityId: string }) {
 }
 
 function FileRow({ file }: { file: MediaFile }) {
+  const t = useT()
   const chips = chipsDoArquivo(file.mediainfo)
   const geral = linhaGeral(file.mediainfo)
   const audios = file.mediainfo?.audio ?? []
@@ -69,12 +72,14 @@ function FileRow({ file }: { file: MediaFile }) {
             <Badge variant="outline">{file.edition}</Badge>
           ) : null}
           {file.part_no !== null ? (
-            <Badge variant="outline">Parte {file.part_no}</Badge>
+            <Badge variant="outline">
+              {t('media.files.part', { n: file.part_no })}
+            </Badge>
           ) : null}
           {file.state === 'missing' ? (
-            <Badge variant="destructive">ausente</Badge>
+            <Badge variant="destructive">{t('media.files.missing')}</Badge>
           ) : (
-            <Badge variant="secondary">presente</Badge>
+            <Badge variant="secondary">{t('media.files.present')}</Badge>
           )}
         </div>
       </div>
@@ -83,7 +88,7 @@ function FileRow({ file }: { file: MediaFile }) {
         <p className="text-sm">{chips.join(' · ')}</p>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Sem informações técnicas
+          {t('media.files.noTechnicalInfo')}
         </p>
       )}
 
@@ -93,14 +98,14 @@ function FileRow({ file }: { file: MediaFile }) {
 
       {audios.length > 0 ? (
         <p className="text-xs text-muted-foreground">
-          <span className="font-medium">Áudio: </span>
+          <span className="font-medium">{t('media.files.audio')}</span>{' '}
           {audios.map((a) => descreverAudio(a)).join(' / ')}
         </p>
       ) : null}
 
       {legendas.length > 0 ? (
         <p className="text-xs text-muted-foreground">
-          <span className="font-medium">Legendas: </span>
+          <span className="font-medium">{t('media.files.subtitles')}</span>{' '}
           {legendas.map((s) => descreverLegenda(s)).join(' / ')}
         </p>
       ) : null}

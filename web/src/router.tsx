@@ -6,6 +6,7 @@ import {
   redirect,
 } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { I18nProvider } from '@/lib/i18n'
 import { z } from 'zod'
 import { AppHeader } from '@/components/app-header'
 import { DashboardShell } from '@/components/dashboard-shell'
@@ -290,7 +291,9 @@ export const router = createRouter({
   // using the same client that is in the context.
   Wrap: ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <LanguageProvider>{children}</LanguageProvider>
+      <I18nProvider>
+        <LanguageProvider>{children}</LanguageProvider>
+      </I18nProvider>
     </QueryClientProvider>
   ),
 })

@@ -4,6 +4,7 @@ import { Check, ImageOff, TriangleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { posterSrc, type EntityCard } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useT } from '@/lib/i18n'
 import {
   aspectPorTipo,
   ehDraft,
@@ -46,6 +47,7 @@ export function PosterCard({
   aspectClass?: string
   artAlt?: string
 }) {
+  const t = useT()
   const [falhouArte, setFalhouArte] = useState(false)
   const src = artSrc !== undefined ? artSrc : posterSrc(card.poster_url)
   const mostrarPlaceholder = src === null || falhouArte
@@ -70,12 +72,14 @@ export function PosterCard({
               className="flex h-full w-full flex-col items-center justify-center gap-1 text-muted-foreground"
             >
               <ImageOff className="size-8" aria-hidden />
-              <span className="px-2 text-center text-xs">Sem arte</span>
+              <span className="px-2 text-center text-xs">
+                {t('media.poster.noArtwork')}
+              </span>
             </div>
           ) : (
             <img
               src={src}
-              alt={artAlt ?? `Pôster de ${card.title}`}
+              alt={artAlt ?? t('media.poster.alt', { title: card.title })}
               loading="lazy"
               onError={() => setFalhouArte(true)}
               className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
@@ -87,7 +91,7 @@ export function PosterCard({
             {card.title}
           </span>
           <span className="text-xs text-muted-foreground">
-            {rotuloTipo(card.type)}
+            {rotuloTipo(card.type, t)}
           </span>
         </div>
       </Link>
@@ -120,6 +124,7 @@ function IndicadorPosse({ card }: { card: EntityCard }) {
 // (owned_count==0) → no badge (clean cover); same for no ownership or total==0
 // (movie/episode/collection never have a badge). Consistent with the SeloPosse of the detail.
 export function SeloCompletude({ card }: { card: EntityCard }) {
+  const t = useT()
   const estado = temCompletude(card.type)
     ? estadoCompletude(card.ownership)
     : null
@@ -127,19 +132,23 @@ export function SeloCompletude({ card }: { card: EntityCard }) {
     return null
   }
   const { owned_count, total_count } = card.ownership
-  const unidade = unidadeCompletude(card.type)
+  const unidade = unidadeCompletude(card.type, t)
   if (estado === 'completa') {
     return (
       <Badge
         className="w-fit border-transparent bg-emerald-600 px-1.5 text-white"
-        aria-label="completa"
-        title="completa"
+        aria-label={t('media.poster.complete')}
+        title={t('media.poster.complete')}
       >
         <Check className="size-3.5" aria-hidden />
       </Badge>
     )
   }
-  const rotulo = `possui ${owned_count}/${total_count} ${unidade}`
+  const rotulo = t('media.poster.owned', {
+    owned: owned_count,
+    total: total_count,
+    unit: unidade,
+  })
   return (
     <Badge
       variant="secondary"
@@ -153,12 +162,13 @@ export function SeloCompletude({ card }: { card: EntityCard }) {
 }
 
 function PosseBadge({ owned }: { owned: boolean }) {
+  const t = useT()
   if (!owned) {
     return null
   }
   return (
     <Badge className={cn('border-transparent bg-emerald-600 text-white')}>
-      na biblioteca
+      {t('media.poster.inLibrary')}
     </Badge>
   )
 }
@@ -168,17 +178,18 @@ function PosseBadge({ owned }: { owned: boolean }) {
 // LINKS to the review queue (`/review`) — the signal of Phase 2 now leads to the action
 // of Phase 3. `pointer-events-auto` re-enables the click inside the inert overlay.
 function EstadoMatchBadge({ card }: { card: EntityCard }) {
+  const t = useT()
   if (ehDraft(card.status)) {
     return (
       <Badge asChild variant="secondary" className="pointer-events-auto">
-        <Link to="/dashboard/review">não identificado</Link>
+        <Link to="/dashboard/review">{t('media.poster.unidentified')}</Link>
       </Badge>
     )
   }
   if (precisaRevisao(card)) {
     return (
       <Badge asChild variant="destructive" className="pointer-events-auto">
-        <Link to="/dashboard/review">revisar</Link>
+        <Link to="/dashboard/review">{t('media.poster.review')}</Link>
       </Badge>
     )
   }
@@ -192,10 +203,11 @@ function EstadoMatchBadge({ card }: { card: EntityCard }) {
 // list what is missing in PT-BR. No result (draft/not evaluated yet)
 // or a complete item → no badge (clean cover, same principle as the ownership badge).
 function IndicadorCompletudeCatalogacao({ card }: { card: EntityCard }) {
+  const t = useT()
   if (!precisaAtencaoCatalogacao(card.catalog_completeness)) {
     return null
   }
-  const rotulo = rotuloTooltipCompletude(card.catalog_completeness)
+  const rotulo = rotuloTooltipCompletude(card.catalog_completeness, t)
   return (
     <Badge
       variant="outline"

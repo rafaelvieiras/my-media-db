@@ -106,6 +106,26 @@ The front end reaches the API through a configurable base, `VITE_API_BASE`:
 - Empty `VITE_API_BASE` means same origin: Go falls back on any path outside `/api`
   and returns `index.html` for client-side routing.
 
+## Two languages, deliberately separate
+
+The interface language and the language the **metadata** is read in are different
+settings, and conflating them is the mistake this project already made once
+([ADR-0032](adr/0032-ui-i18n-dependency-free-catalogs.md)):
+
+| | Interface language | Reading language |
+| --- | --- | --- |
+| What it is | Copy of the chrome: navigation, buttons, labels, empty states | The language a title, synopsis or tagline is served in |
+| Where it lives | `localStorage` of the browser (`mmdb.ui-lang`) | `app_settings` in the database, `primary` + `allowed` |
+| API | none | `GET /entities/{id}?lang=<code>` for an entity, `?lang=` on the lists (ADR-0019) |
+| Default | English (`navigator.language` is used only when it matches a supported locale) | The `primary` configured by the owner |
+| Effect | Re-renders the chrome in place | Re-fetches the reads and recomposes the screen without a reload |
+
+The catalogs live in `web/src/lib/i18n/catalog/`, one file per domain with the
+three locales side by side (`en`, `pt-BR`, `es`). English is the source of truth:
+the other two are typed against it, so a missing or extra key fails `tsc` instead of
+shipping a blank label. There is no i18n runtime — a lookup and `{param}`
+interpolation, with `Intl.*` handling the formatting.
+
 ## The resolver
 
 Reading is centered on the **resolver**, which builds the final view of each entity

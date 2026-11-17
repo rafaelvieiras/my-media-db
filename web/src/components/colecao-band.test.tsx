@@ -19,8 +19,8 @@ function detalheComColecao(): RichDetail {
   })
 }
 
-describe('ColecaoBand (na RichDetailView)', () => {
-  it('linka para a página própria da coleção', () => {
+describe('ColecaoBand (inside RichDetailView)', () => {
+  it('links to the collection page of its own', () => {
     renderWithClient(
       <RichDetailView detail={detalheComColecao()} source="tmdb" />,
     )
@@ -28,7 +28,7 @@ describe('ColecaoBand (na RichDetailView)', () => {
     expect(link.getAttribute('href')).toBe('/collection/tmdb/726871')
   })
 
-  it('linka para a entity INTERNA quando a coleção já foi importada (0026)', () => {
+  it('links to the INTERNAL entity when the collection is already imported (0026)', () => {
     const detalhe = detalheComColecao()
     // internal_id is an ADDITIVE field: the cast avoids depending on the regenerated type.
     detalhe.collection = {

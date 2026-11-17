@@ -7,7 +7,7 @@ import type { BrowseResult } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 
 // Folder browser: it covers navigation by click/breadcrumb,
-// "Usar esta pasta", an entry without read permission and an API error.
+// "Use this folder", an entry without read permission and an API error.
 
 function okJson<T>(body: T): Response {
   return { ok: true, status: 200, json: async () => body } as Response
@@ -60,7 +60,7 @@ afterEach(() => {
 
 // It opens the browser already with the routed fetch and the component mounted — most
 // tests only differ in the route map/`value`/`onChange`, so the trio
-// stubGlobal+render+click on "Procurar pasta…" is centralized here.
+// stubGlobal+render+click on "Browse folder…" is centralized here.
 async function montarEAbrir(
   byPath: Record<string, BrowseResult | 'erro'>,
   props: Partial<{ value: string; onChange: (path: string) => void }> = {},
@@ -71,22 +71,22 @@ async function montarEAbrir(
   renderWithClient(
     <PathBrowser value={props.value ?? ''} onChange={onChange} />,
   )
-  await user.click(screen.getByRole('button', { name: 'Procurar pasta…' }))
+  await user.click(screen.getByRole('button', { name: 'Browse folder…' }))
   return { user, onChange }
 }
 
 describe('PathBrowser', () => {
-  it('começa colapsado atrás do botão "Procurar pasta…"', () => {
+  it('starts collapsed behind the "Browse folder…" button', () => {
     vi.stubGlobal('fetch', fetchRouter({}))
     renderWithClient(<PathBrowser value="" onChange={vi.fn()} />)
 
     expect(
-      screen.getByRole('button', { name: 'Procurar pasta…' }),
+      screen.getByRole('button', { name: 'Browse folder…' }),
     ).toBeInTheDocument()
     expect(screen.queryByText('filmes')).not.toBeInTheDocument()
   })
 
-  it('lista as subpastas da raiz ao abrir e navega ao clicar numa subpasta (breadcrumb reflete)', async () => {
+  it('lists the subfolders of the root when it opens and navigates on clicking a subfolder (breadcrumb follows)', async () => {
     const { user } = await montarEAbrir({
       '/': browseResult({ path: '/', parent: null }),
       '/mnt/filmes': browseResult({
@@ -104,7 +104,7 @@ describe('PathBrowser', () => {
     expect(screen.getByRole('button', { name: 'mnt' })).toBeInTheDocument()
   })
 
-  it('navega para cima ao clicar num segmento do breadcrumb', async () => {
+  it('navigates up when clicking a segment of the breadcrumb', async () => {
     const { user } = await montarEAbrir(
       {
         '/': browseResult({ path: '/', parent: null }),
@@ -124,7 +124,7 @@ describe('PathBrowser', () => {
     await waitFor(() => expect(screen.getByText('filmes')).toBeInTheDocument())
   })
 
-  it('entrada sem permissão de leitura aparece desabilitada e não navega', async () => {
+  it('an entry without read permission shows up disabled and does not navigate', async () => {
     const { user } = await montarEAbrir({
       '/': browseResult({ path: '/', parent: null }),
     })
@@ -138,28 +138,28 @@ describe('PathBrowser', () => {
     expect(screen.getByText('filmes')).toBeInTheDocument()
   })
 
-  it('"Usar esta pasta" chama onChange com o path atual (normalizado pela API)', async () => {
+  it('"Use this folder" calls onChange with the current path (normalized by the API)', async () => {
     const { user, onChange } = await montarEAbrir({
       '/': browseResult({ path: '/', parent: null }),
     })
 
     await waitFor(() => expect(screen.getByText('filmes')).toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: 'Usar esta pasta' }))
+    await user.click(screen.getByRole('button', { name: 'Use this folder' }))
 
     expect(onChange).toHaveBeenCalledWith('/')
   })
 
-  it('desabilita "Subir um nível" quando já está na raiz (parent null)', async () => {
+  it('disables "Go up one level" when it is already at the root (parent null)', async () => {
     await montarEAbrir({ '/': browseResult({ path: '/', parent: null }) })
 
     await waitFor(() =>
       expect(
-        screen.getByRole('button', { name: /Subir um nível/ }),
+        screen.getByRole('button', { name: /Go up one level/ }),
       ).toBeDisabled(),
     )
   })
 
-  it('mostra o erro da API de forma sensata quando o path não é navegável', async () => {
+  it('shows the API error sensibly when the path is not navigable', async () => {
     await montarEAbrir({ '/': 'erro' })
 
     expect(
@@ -168,17 +168,17 @@ describe('PathBrowser', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument()
   })
 
-  it('mostra o aviso quando a resposta vem truncada', async () => {
+  it('shows the warning when the response comes truncated', async () => {
     await montarEAbrir({
       '/': browseResult({ path: '/', parent: null, truncated: true }),
     })
 
     expect(
-      await screen.findByText('Mostrando as primeiras 2000 pastas.'),
+      await screen.findByText('Showing the first 2000 folders.'),
     ).toBeInTheDocument()
   })
 
-  it('caminho inicial quebrado (fonte offline) recupera sozinho para a raiz em vez de travar', async () => {
+  it('a broken initial path (offline source) recovers to the root on its own instead of getting stuck', async () => {
     await montarEAbrir(
       {
         '/media/quebrado': 'erro',
@@ -192,7 +192,7 @@ describe('PathBrowser', () => {
     await waitFor(() => expect(screen.getByText('filmes')).toBeInTheDocument())
   })
 
-  it('path offline dispara UMA chamada ao browse, sem retry automático do TanStack Query (0078)', async () => {
+  it('an offline path fires ONE call to browse, without the automatic retry of TanStack Query (0078)', async () => {
     // `renderWithClient` (the standard helper of the other tests) already turns off retry
     // in the WHOLE CLIENT, which would mask precisely the bug being fixed
     // (retry:false has to be in the queryOptions, not only in the test client).
@@ -224,7 +224,7 @@ describe('PathBrowser', () => {
     )
     await userEvent
       .setup()
-      .click(screen.getByRole('button', { name: 'Procurar pasta…' }))
+      .click(screen.getByRole('button', { name: 'Browse folder…' }))
 
     // It recovers to the root on its own (behavior already covered above); here what
     // matters is HOW MANY times the broken path was called.
@@ -237,7 +237,7 @@ describe('PathBrowser', () => {
     expect(chamadasPathQuebrado).toHaveLength(1)
   })
 
-  it('navegação manual não é desfeita pelo debounce de sincronização do texto digitado (regressão)', async () => {
+  it('manual navigation is not undone by the debounce that follows the typed text (regression)', async () => {
     // The `value` of the caller stays still at '/mnt' (the owner did not edit the
     // text field) while the owner navigates manually through the browser —
     // before the fix, the synchronization debounce reacted to ANY

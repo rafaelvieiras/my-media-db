@@ -23,6 +23,7 @@ import {
   type OverridePatch,
   type ResolvedEntity,
 } from '@/lib/api'
+import { useT } from '@/lib/i18n'
 
 // CreditsEditor edits CAST/CREW/PRODUCTION COMPANIES: outside the
 // generic SchemaForm (the `credits` key was excluded from `descritoresDeCampo()`
@@ -335,6 +336,7 @@ export function CreditsEditor({
   onDirtyChange?: (sujo: boolean) => void
 }) {
   const qc = useQueryClient()
+  const t = useT()
 
   const inicialCast = useMemo(
     () => (entity.cast ?? []).map(linhaDeCast),
@@ -427,7 +429,7 @@ export function CreditsEditor({
       : limpar.error instanceof ApiError
         ? limpar.error.message
         : salvar.isError || limpar.isError
-          ? 'Não foi possível salvar os créditos.'
+          ? t('entity.edit.credits.saveError')
           : null
 
   return (
@@ -435,91 +437,98 @@ export function CreditsEditor({
       <div className="flex flex-col gap-1">
         <h2 className="flex items-center gap-2 font-heading text-lg font-medium">
           <Users className="size-4" aria-hidden />
-          Créditos
+          {t('entity.edit.credits.title')}
         </h2>
         <p className="text-sm text-muted-foreground">
-          Reordene, edite, remova ou adicione elenco, equipe e produtoras
-          exibidos para este item.
+          {t('entity.edit.credits.description')}
         </p>
       </div>
 
       <SecaoCreditos
-        titulo="Elenco"
+        titulo={t('entity.section.cast')}
         icone={<Users className="size-4" aria-hidden />}
         linhas={cast}
         setLinhas={setCast}
-        vazioTexto="Sem elenco."
+        vazioTexto={t('entity.edit.credits.emptyCast')}
         mostrarNomeFixo
-        removerAriaLabel={(l) => `Remover ${l.name} do elenco`}
+        removerAriaLabel={(l) =>
+          t('entity.edit.credits.removeCast', { name: l.name })
+        }
         camposEditaveis={[
           {
             valor: (l) => l.character,
             aoMudar: (l, v) => ({ ...l, character: v }),
-            placeholder: 'Personagem',
-            ariaLabel: (l) => `Personagem de ${l.name}`,
+            placeholder: t('entity.edit.credits.character'),
+            ariaLabel: (l) =>
+              t('entity.edit.credits.characterOf', { name: l.name }),
           },
         ]}
       />
       <SecaoCreditos
-        titulo="Equipe"
+        titulo={t('entity.section.crew')}
         icone={<Wrench className="size-4" aria-hidden />}
         linhas={crew}
         setLinhas={setCrew}
-        vazioTexto="Sem equipe."
+        vazioTexto={t('entity.edit.credits.emptyCrew')}
         mostrarNomeFixo
-        removerAriaLabel={(l) => `Remover ${l.name} da equipe`}
+        removerAriaLabel={(l) =>
+          t('entity.edit.credits.removeCrew', { name: l.name })
+        }
         camposEditaveis={[
           {
             valor: (l) => l.department,
             aoMudar: (l, v) => ({ ...l, department: v }),
-            placeholder: 'Departamento',
-            ariaLabel: (l) => `Departamento de ${l.name}`,
+            placeholder: t('entity.edit.credits.department'),
+            ariaLabel: (l) =>
+              t('entity.edit.credits.departmentOf', { name: l.name }),
             className: 'max-w-[9rem]',
           },
           {
             valor: (l) => l.job,
             aoMudar: (l, v) => ({ ...l, job: v }),
-            placeholder: 'Cargo',
-            ariaLabel: (l) => `Cargo de ${l.name}`,
+            placeholder: t('entity.edit.credits.job'),
+            ariaLabel: (l) => t('entity.edit.credits.jobOf', { name: l.name }),
             className: 'max-w-[9rem]',
           },
         ]}
       />
       <SecaoCreditos
-        titulo="Produtoras"
+        titulo={t('entity.section.companies')}
         icone={<Building2 className="size-4" aria-hidden />}
         linhas={companies}
         setLinhas={setCompanies}
-        vazioTexto="Sem produtoras."
+        vazioTexto={t('entity.edit.credits.emptyCompanies')}
         mostrarNomeFixo={false}
-        removerAriaLabel={(l) => `Remover ${l.name}`}
+        removerAriaLabel={(l) =>
+          t('entity.edit.credits.removeCompany', { name: l.name })
+        }
         camposEditaveis={[
           {
             valor: (l) => l.name,
             aoMudar: (l, v) => ({ ...l, name: v }),
-            placeholder: 'Nome da produtora',
-            ariaLabel: () => 'Nome da produtora',
+            placeholder: t('entity.edit.credits.companyName'),
+            ariaLabel: () => t('entity.edit.credits.companyName'),
           },
         ]}
       />
 
       <div className="flex flex-col gap-2 border-t border-border pt-3">
         <FormularioAdicionar
-          titulo="Adicionar elenco"
-          textoBotao="Adicionar ao elenco"
+          titulo={t('entity.edit.credits.addCastTitle')}
+          textoBotao={t('entity.edit.credits.addCast')}
           podeAdicionar={!!novoCastNome.trim()}
           campos={[
             {
               valor: novoCastNome,
               aoMudar: setNovoCastNome,
-              placeholder: 'Nome',
-              ariaLabel: 'Nome do novo membro do elenco',
+              placeholder: t('common.label.name'),
+              ariaLabel: t('entity.edit.credits.newCastName'),
             },
             {
               valor: novoCastPersonagem,
               aoMudar: setNovoCastPersonagem,
-              placeholder: 'Personagem',
-              ariaLabel: 'Personagem do novo membro do elenco',
+              placeholder: t('entity.edit.credits.character'),
+              ariaLabel: t('entity.edit.credits.newCastCharacter'),
             },
           ]}
           aoAdicionar={() => {
@@ -541,28 +550,28 @@ export function CreditsEditor({
         />
 
         <FormularioAdicionar
-          titulo="Adicionar equipe"
-          textoBotao="Adicionar à equipe"
+          titulo={t('entity.edit.credits.addCrewTitle')}
+          textoBotao={t('entity.edit.credits.addCrew')}
           podeAdicionar={!!novoCrewNome.trim()}
           campos={[
             {
               valor: novoCrewNome,
               aoMudar: setNovoCrewNome,
-              placeholder: 'Nome',
-              ariaLabel: 'Nome do novo membro da equipe',
+              placeholder: t('common.label.name'),
+              ariaLabel: t('entity.edit.credits.newCrewName'),
             },
             {
               valor: novoCrewDepartamento,
               aoMudar: setNovoCrewDepartamento,
-              placeholder: 'Departamento',
-              ariaLabel: 'Departamento do novo membro da equipe',
+              placeholder: t('entity.edit.credits.department'),
+              ariaLabel: t('entity.edit.credits.newCrewDepartment'),
               className: 'max-w-[10rem]',
             },
             {
               valor: novoCrewCargo,
               aoMudar: setNovoCrewCargo,
-              placeholder: 'Cargo',
-              ariaLabel: 'Cargo do novo membro da equipe',
+              placeholder: t('entity.edit.credits.job'),
+              ariaLabel: t('entity.edit.credits.newCrewJob'),
               className: 'max-w-[10rem]',
             },
           ]}
@@ -587,15 +596,15 @@ export function CreditsEditor({
         />
 
         <FormularioAdicionar
-          titulo="Adicionar produtora"
-          textoBotao="Adicionar produtora"
+          titulo={t('entity.edit.credits.addCompany')}
+          textoBotao={t('entity.edit.credits.addCompany')}
           podeAdicionar={!!novoCompanyNome.trim()}
           campos={[
             {
               valor: novoCompanyNome,
               aoMudar: setNovoCompanyNome,
-              placeholder: 'Nome',
-              ariaLabel: 'Nome da nova produtora',
+              placeholder: t('common.label.name'),
+              ariaLabel: t('entity.edit.credits.newCompanyName'),
             },
           ]}
           aoAdicionar={() => {
@@ -630,7 +639,7 @@ export function CreditsEditor({
           onClick={() => limpar.mutate()}
         >
           <Eraser aria-hidden />
-          Limpar todos os créditos
+          {t('entity.edit.credits.clearAll')}
         </Button>
         <Button
           type="button"
@@ -638,7 +647,9 @@ export function CreditsEditor({
           disabled={ocupado}
           onClick={salvarClique}
         >
-          {salvar.isPending ? 'Salvando…' : 'Salvar créditos'}
+          {salvar.isPending
+            ? t('common.action.saving')
+            : t('entity.edit.credits.save')}
         </Button>
       </div>
     </section>
@@ -654,6 +665,7 @@ function BotoesOrdem({
   total: number
   mover: (direcao: -1 | 1) => void
 }) {
+  const t = useT()
   return (
     <div className="flex flex-col">
       <Button
@@ -661,7 +673,7 @@ function BotoesOrdem({
         variant="ghost"
         size="icon"
         className="size-6"
-        aria-label="Mover para cima"
+        aria-label={t('entity.edit.credits.moveUp')}
         disabled={indice === 0}
         onClick={() => mover(-1)}
       >
@@ -672,7 +684,7 @@ function BotoesOrdem({
         variant="ghost"
         size="icon"
         className="size-6"
-        aria-label="Mover para baixo"
+        aria-label={t('entity.edit.credits.moveDown')}
         disabled={indice === total - 1}
         onClick={() => mover(1)}
       >
@@ -692,12 +704,12 @@ function BotoesOrdem({
 function CampoPosicao({
   indice,
   total,
-  nome,
+  rotulo,
   mover,
 }: {
   indice: number
   total: number
-  nome: string
+  rotulo: string
   mover: (destino: number) => void
 }) {
   const [texto, setTexto] = useState(String(indice + 1))
@@ -734,7 +746,7 @@ function CampoPosicao({
           aplicar()
         }
       }}
-      aria-label={`Mover ${nome} para a posição (de ${total})`}
+      aria-label={rotulo}
       className="w-16 shrink-0 text-center"
     />
   )
@@ -777,6 +789,7 @@ function SecaoCreditos<
   camposEditaveis: CampoEditavel<L>[]
   removerAriaLabel: (l: L) => string
 }) {
+  const t = useT()
   return (
     <section className="flex flex-col gap-2">
       <h3 className="flex items-center gap-2 text-sm font-medium">
@@ -797,7 +810,10 @@ function SecaoCreditos<
               <CampoPosicao
                 indice={i}
                 total={linhas.length}
-                nome={l.name}
+                rotulo={t('entity.edit.credits.moveToPosition', {
+                  name: l.name,
+                  total: linhas.length,
+                })}
                 mover={(destino) =>
                   setLinhas((atual) => moverParaIndice(atual, i, destino))
                 }

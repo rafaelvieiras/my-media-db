@@ -4,6 +4,7 @@ import { fireEvent } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { EntityDetailScreen } from '@/routes/entity-detail'
 import { LanguageProvider } from '@/lib/language-context'
+import { I18nProvider } from '@/lib/i18n'
 import { renderWithClient } from '@/test/render'
 import type { EntityCard, EpisodeGroups, ResolvedEntity } from '@/lib/api'
 import {
@@ -69,9 +70,11 @@ function renderSerie(
 ) {
   vi.stubGlobal('fetch', fetchRouter(entity, membros, groups))
   return renderWithClient(
-    <LanguageProvider>
-      <EntityDetailScreen />
-    </LanguageProvider>,
+    <I18nProvider>
+      <LanguageProvider>
+        <EntityDetailScreen />
+      </LanguageProvider>
+    </I18nProvider>,
   )
 }
 
@@ -91,36 +94,30 @@ const temporada = entityCardBase({
   title: 'Temporada 1',
 })
 
-describe('SecaoSerie — seletor de ordenação (0040)', () => {
-  it('esconde o seletor quando há só uma ordem', async () => {
+describe('SecaoSerie — ordering selector (0040)', () => {
+  it('hides the selector when there is only one order', async () => {
     renderSerie(serieTV(['official']), [temporada])
-    // The default view (Temporadas) appears; the selector does not.
-    expect(await screen.findByText('Temporadas')).toBeTruthy()
-    expect(
-      screen.queryByLabelText('Ordem de exibição dos episódios'),
-    ).toBeNull()
+    // The default view (Seasons) appears; the selector does not.
+    expect(await screen.findByText('Seasons')).toBeTruthy()
+    expect(screen.queryByLabelText('Episode display order')).toBeNull()
   })
 
-  it('mostra o seletor quando há mais de uma ordem, na view default', async () => {
+  it('shows the selector when there is more than one order, in the default view', async () => {
     renderSerie(serieTV(['official', 'dvd', 'absolute']), [temporada])
-    expect(await screen.findByText('Temporadas')).toBeTruthy()
-    expect(
-      screen.getByLabelText('Ordem de exibição dos episódios'),
-    ).toBeTruthy()
+    expect(await screen.findByText('Seasons')).toBeTruthy()
+    expect(screen.getByLabelText('Episode display order')).toBeTruthy()
   })
 
-  it('trocar para uma ordem alternativa navega com o search param', async () => {
+  it('switching to an alternative order navigates with the search param', async () => {
     renderSerie(serieTV(['official', 'dvd', 'absolute']), [temporada])
-    const select = await screen.findByLabelText(
-      'Ordem de exibição dos episódios',
-    )
+    const select = await screen.findByLabelText('Episode display order')
     fireEvent.change(select, { target: { value: 'dvd' } })
     expect(state.navigate).toHaveBeenCalledWith(
       expect.objectContaining({ search: { ordering: 'dvd' } }),
     )
   })
 
-  it('voltar ao default REMOVE o param (search vazio)', async () => {
+  it('going back to the default REMOVES the param (empty search)', async () => {
     // It starts in an alternative order (dvd): the grouped view is rendered.
     state.search = { ordering: 'dvd' }
     const groups: EpisodeGroups = {
@@ -130,14 +127,14 @@ describe('SecaoSerie — seletor de ordenação (0040)', () => {
     renderSerie(serieTV(['official', 'dvd', 'absolute']), [temporada], groups)
     // The grouped view shows the group and the numbered episode.
     expect(await screen.findByText('E01')).toBeTruthy()
-    const select = screen.getByLabelText('Ordem de exibição dos episódios')
+    const select = screen.getByLabelText('Episode display order')
     fireEvent.change(select, { target: { value: 'official' } })
     expect(state.navigate).toHaveBeenCalledWith(
       expect.objectContaining({ search: {} }),
     )
   })
 
-  it('ordem alternativa renderiza a view agrupada (busca /episodes)', async () => {
+  it('an alternative order renders the grouped view (fetches /episodes)', async () => {
     state.search = { ordering: 'dvd' }
     const groups: EpisodeGroups = {
       ordering: 'dvd',
@@ -149,7 +146,7 @@ describe('SecaoSerie — seletor de ordenação (0040)', () => {
     expect(screen.getByText('E09')).toBeTruthy()
     // The default view (season cards) is NOT the source here.
     await waitFor(() =>
-      expect(screen.queryByText('Carregando temporadas…')).toBeNull(),
+      expect(screen.queryByText('Loading seasons…')).toBeNull(),
     )
   })
 })

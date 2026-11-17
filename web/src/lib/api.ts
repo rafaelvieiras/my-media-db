@@ -219,6 +219,55 @@ export async function startScan(id: string): Promise<StartScan> {
   return lerJson<StartScan>(res)
 }
 
+// ─── Reprocessamento de uma biblioteca (POST/GET /library/{id}/reprocess) ───
+// A ação do dono para corrigir o catálogo JÁ existente: retenta os drafts sem o
+// teto de 4 min do pós-scan, purga os rascunhos vazios e, no modo `full`, reescaneia
+// antes (o scan re-parseia o nome de cada arquivo). O dry-run é o padrão e é o que a
+// UI mostra antes de qualquer escrita.
+export type ReprocessReport = {
+  mode: 'fast' | 'full'
+  dry_run: boolean
+  series_draft: number
+  movies_pending: number
+  draft_episodes: number
+  orphans: number
+  promoted: number
+  orphans_deleted: number
+  scan_queued?: boolean
+}
+
+export type ReprocessStatus = {
+  running: boolean
+  mode?: string
+  phase?: string
+  done: number
+  total: number
+  report?: ReprocessReport
+  last_error?: string
+}
+
+export async function startReprocess(
+  id: string,
+  body: { mode?: 'fast' | 'full'; dry_run?: boolean; delete_orphans?: boolean },
+): Promise<ReprocessReport | StartScan> {
+  const res = await fetch(
+    `${base}/api/v1/library/${encodeURIComponent(id)}/reprocess`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+  return lerJson<ReprocessReport | StartScan>(res)
+}
+
+export async function getReprocessStatus(id: string): Promise<ReprocessStatus> {
+  const res = await fetch(
+    `${base}/api/v1/library/${encodeURIComponent(id)}/reprocess`,
+  )
+  return lerJson<ReprocessStatus>(res)
+}
+
 export async function getScanStatus(id: string): Promise<ScanStatus> {
   const res = await fetch(
     `${base}/api/v1/library/${encodeURIComponent(id)}/scan`,

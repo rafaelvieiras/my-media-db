@@ -9,12 +9,14 @@ import (
 // specials/season 0) and the rejection of names that are the series itself. It
 // came from internal/scanner together with the rule (ADR-0021).
 func TestEhPastaTemporada(t *testing.T) {
-	for _, s := range []string{"Season 01", "Temporada 1", "S01", "specials", "Especiais"} {
+	for _, s := range []string{"Season 01", "Temporada 1", "S01", "specials", "Especiais",
+		// ordinal form and the year used as the season number (TVDB)
+		"1\u00aa Temporada", "2a Temporada", "3\u00ba Temporada", "1931", "2024"} {
 		if !EhPastaTemporada(s) {
 			t.Errorf("%q deveria ser pasta de temporada", s)
 		}
 	}
-	for _, s := range []string{"Springfield Tales", "extras", ""} {
+	for _, s := range []string{"Springfield Tales", "extras", "", "1 Temporada Completa", "199"} {
 		if EhPastaTemporada(s) {
 			t.Errorf("%q NAO deveria ser pasta de temporada", s)
 		}

@@ -1,5 +1,6 @@
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { useT } from '@/lib/i18n'
 import { rotuloIdioma } from '@/lib/languages'
 
 // Pair of fields shared by `/dashboard/library/new` and
@@ -22,16 +23,19 @@ export function LibraryLanguageAndRetryFields({
   onRetryDaysChange: (valor: string) => void
   retryDaysGlobal: number | undefined
 }) {
+  const t = useT()
   return (
     <div className="flex flex-wrap gap-4">
       <label className="flex max-w-64 flex-col gap-1 text-sm">
-        <span className="text-muted-foreground">Idioma preferido</span>
+        <span className="text-muted-foreground">
+          {t('library.form.preferredLanguage')}
+        </span>
         <Select
           value={preferredLanguage}
           onChange={(e) => onPreferredLanguageChange(e.target.value)}
-          aria-label="Idioma preferido do datasource"
+          aria-label={t('library.form.preferredLanguageAriaLabel')}
         >
-          <option value="">Usar idioma global</option>
+          <option value="">{t('library.form.useGlobalLanguage')}</option>
           {idiomasPermitidos.map((codigo) => (
             <option key={codigo} value={codigo}>
               {rotuloIdioma(codigo)}
@@ -42,7 +46,7 @@ export function LibraryLanguageAndRetryFields({
 
       <label className="flex max-w-64 flex-col gap-1 text-sm">
         <span className="text-muted-foreground">
-          Reentativa de enriquecimento (dias)
+          {t('library.form.retryDays')}
         </span>
         <Input
           type="number"
@@ -52,10 +56,12 @@ export function LibraryLanguageAndRetryFields({
           onChange={(e) => onRetryDaysChange(e.target.value)}
           placeholder={
             retryDaysGlobal !== undefined
-              ? `Usar padrão global (${retryDaysGlobal} dias)`
-              : 'Usar padrão global'
+              ? t('library.form.retryDaysPlaceholderWithDefault', {
+                  n: retryDaysGlobal,
+                })
+              : t('library.form.retryDaysPlaceholder')
           }
-          aria-label="Reentativa de enriquecimento (dias) do datasource"
+          aria-label={t('library.form.retryDaysAriaLabel')}
         />
       </label>
     </div>

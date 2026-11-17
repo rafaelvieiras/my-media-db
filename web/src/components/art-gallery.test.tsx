@@ -190,42 +190,40 @@ async function abrirLightbox(
   return screen.findByRole('dialog')
 }
 
-describe('ArtGallery — linhas por kind (0049)', () => {
-  it('(a) rende uma linha por kind, cada card no aspect certo', async () => {
+describe('ArtGallery — one row per kind (0049)', () => {
+  it('(a) renders one row per kind, each card in the right aspect', async () => {
     renderGallery({ artwork: artworkPadrao() })
 
     // Poster in the 2:3 portrait frame; fanart in the 16:9 landscape frame — without distorting.
-    const poster = (await screen.findByAltText('Pôster 1')) as HTMLImageElement
+    const poster = (await screen.findByAltText('Poster 1')) as HTMLImageElement
     const fanart = screen.getByAltText('Fanart 1') as HTMLImageElement
     expect(poster.className).toContain('aspect-[2/3]')
     expect(fanart.className).toContain('aspect-video')
     // Kind label visible in each row (heading of the section).
     expect(
-      screen.getByRole('heading', { name: 'Pôster', level: 3 }),
+      screen.getByRole('heading', { name: 'Poster', level: 3 }),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('heading', { name: 'Fanart', level: 3 }),
     ).toBeInTheDocument()
   })
 
-  it('(b) marca a arte principal (aria-label + selo, briefing 0062)', async () => {
+  it('(b) marks the principal artwork (aria-label + badge, briefing 0062)', async () => {
     renderGallery({ artwork: artworkPadrao() })
     // The 3rd poster is the principal one: the button announces it as such.
     expect(
-      await screen.findByRole('button', { name: 'Ver Pôster 3 (principal)' }),
+      await screen.findByRole('button', { name: 'View Poster 3 (principal)' }),
     ).toBeInTheDocument()
   })
 
-  it('(c) estado vazio quando não há artes', async () => {
+  it('(c) empty state when there is no artwork', async () => {
     renderGallery({ artwork: { available: {} } })
     await waitFor(() =>
-      expect(
-        screen.getByText('Nenhuma arte disponível ainda.'),
-      ).toBeInTheDocument(),
+      expect(screen.getByText('No artwork available yet.')).toBeInTheDocument(),
     )
   })
 
-  it('(d) episódio sem still no inventário: card provider read-only do stillUrl', async () => {
+  it('(d) episode with no still in the inventory: read-only provider card from stillUrl', async () => {
     const raw = 'https://artworks.thetvdb.com/s.jpg'
     renderGallery({
       type: 'episode',
@@ -233,7 +231,7 @@ describe('ArtGallery — linhas por kind (0049)', () => {
       stillUrl: raw,
     })
     const img = (await screen.findByAltText(
-      'Still do provider',
+      'Provider still',
     )) as HTMLImageElement
     expect(img.getAttribute('src')).toBe(
       `/api/v1/images?src=${encodeURIComponent(raw)}`,
@@ -242,20 +240,20 @@ describe('ArtGallery — linhas por kind (0049)', () => {
   })
 })
 
-describe('ArtGallery — lightbox: navegação e teclado (0049)', () => {
-  it('(e) abre no card, navega com as setas e fecha no Esc', async () => {
+describe('ArtGallery — lightbox: navigation and keyboard (0049)', () => {
+  it('(e) opens on the card, navigates with the arrow keys and closes on Esc', async () => {
     const user = userEvent.setup()
     renderGallery({ artwork: artworkPadrao() })
 
-    const dialog = await abrirLightbox(user, 'Ver Pôster 1')
-    expect(dialog).toHaveAttribute('aria-label', 'Pôster 1 de 3')
+    const dialog = await abrirLightbox(user, 'View Poster 1')
+    expect(dialog).toHaveAttribute('aria-label', 'Poster 1 of 3')
 
     // The right arrow advances within the kind.
     await user.keyboard('{ArrowRight}')
     await waitFor(() =>
       expect(screen.getByRole('dialog')).toHaveAttribute(
         'aria-label',
-        'Pôster 2 de 3',
+        'Poster 2 of 3',
       ),
     )
     // The left arrow goes back.
@@ -263,7 +261,7 @@ describe('ArtGallery — lightbox: navegação e teclado (0049)', () => {
     await waitFor(() =>
       expect(screen.getByRole('dialog')).toHaveAttribute(
         'aria-label',
-        'Pôster 1 de 3',
+        'Poster 1 of 3',
       ),
     )
     // Esc closes.
@@ -273,24 +271,24 @@ describe('ArtGallery — lightbox: navegação e teclado (0049)', () => {
     )
   })
 
-  it('(f2) botão "Arte anterior" navega (com wrap) dentro do tipo', async () => {
+  it('(f2) the "Previous artwork" button navigates (with wrap) within the kind', async () => {
     const user = userEvent.setup()
     renderGallery({ artwork: artworkPadrao() })
-    await abrirLightbox(user, 'Ver Pôster 1')
-    // From 1/3, "anterior" wraps around to 3/3.
-    await user.click(screen.getByRole('button', { name: 'Arte anterior' }))
+    await abrirLightbox(user, 'View Poster 1')
+    // From 1/3, "previous" wraps around to 3/3.
+    await user.click(screen.getByRole('button', { name: 'Previous artwork' }))
     await waitFor(() =>
       expect(screen.getByRole('dialog')).toHaveAttribute(
         'aria-label',
-        'Pôster 3 de 3',
+        'Poster 3 of 3',
       ),
     )
   })
 
-  it('(f3) Tab fica preso: do último focável volta ao primeiro', async () => {
+  it('(f3) Tab stays trapped: from the last focusable it goes back to the first', async () => {
     const user = userEvent.setup()
     renderGallery({ artwork: artworkPadrao() })
-    const dialog = await abrirLightbox(user, 'Ver Pôster 1')
+    const dialog = await abrirLightbox(user, 'View Poster 1')
     const botoes = dialog.querySelectorAll<HTMLElement>('button')
     const primeiro = botoes[0]
     const ultimo = botoes[botoes.length - 1]
@@ -304,38 +302,38 @@ describe('ArtGallery — lightbox: navegação e teclado (0049)', () => {
     expect(document.activeElement).toBe(ultimo)
   })
 
-  it('(f) botão próxima navega e o toggle de zoom alterna o rótulo', async () => {
+  it('(f) the next button navigates and the zoom toggle swaps the label', async () => {
     const user = userEvent.setup()
     renderGallery({ artwork: artworkPadrao() })
-    await abrirLightbox(user, 'Ver Pôster 1')
+    await abrirLightbox(user, 'View Poster 1')
 
-    await user.click(screen.getByRole('button', { name: 'Próxima arte' }))
+    await user.click(screen.getByRole('button', { name: 'Next artwork' }))
     await waitFor(() =>
       expect(screen.getByRole('dialog')).toHaveAttribute(
         'aria-label',
-        'Pôster 2 de 3',
+        'Poster 2 of 3',
       ),
     )
-    // Zoom: it starts at "Ampliar para 100%"; on click it becomes "Ajustar à tela".
-    await user.click(screen.getByRole('button', { name: 'Ampliar para 100%' }))
+    // Zoom: it starts at "Zoom to 100%"; on click it becomes "Fit to screen".
+    await user.click(screen.getByRole('button', { name: 'Zoom to 100%' }))
     expect(
-      screen.getByRole('button', { name: 'Ajustar à tela' }),
+      screen.getByRole('button', { name: 'Fit to screen' }),
     ).toBeInTheDocument()
   })
 })
 
-describe('ArtGallery — lightbox: metadados e backdrop (0049)', () => {
-  it('(m) mostra idioma, likes e origem da arte de inventário', async () => {
+describe('ArtGallery — lightbox: metadata and backdrop (0049)', () => {
+  it('(m) shows the language, likes and origin of the inventory artwork', async () => {
     const user = userEvent.setup()
     renderGallery({ artwork: artworkPadrao() })
-    await abrirLightbox(user, 'Ver Pôster 1')
+    await abrirLightbox(user, 'View Poster 1')
 
     // Poster 1 (inventory): lang 'en', likes 5, source fanarttv.
     expect(screen.getByText('5')).toBeInTheDocument()
     expect(screen.getByText('fanarttv')).toBeInTheDocument()
   })
 
-  it('(n) disc textless: selo "sem texto", disc_type e temporada', async () => {
+  it('(n) textless disc: "no text" badge, disc_type and season', async () => {
     const user = userEvent.setup()
     renderGallery({
       artwork: {
@@ -351,31 +349,31 @@ describe('ArtGallery — lightbox: metadados e backdrop (0049)', () => {
         available: { disc: 1 },
       },
     })
-    await abrirLightbox(user, 'Ver Disco 1')
-    expect(screen.getByText('sem texto')).toBeInTheDocument()
+    await abrirLightbox(user, 'View Disc 1')
+    expect(screen.getByText('no text')).toBeInTheDocument()
     expect(screen.getByText('bluray')).toBeInTheDocument()
-    expect(screen.getByText('Temporada 1')).toBeInTheDocument()
+    expect(screen.getByText('Season 1')).toBeInTheDocument()
   })
 
-  it('(o) principal: sem botão "Definir como principal", com selos no rodapé (0062)', async () => {
+  it('(o) principal: no "Set as principal" button, with the badges in the footer (0062)', async () => {
     const user = userEvent.setup()
     renderGallery({ artwork: artworkPadrao() })
     // Poster 3 is the principal one (and it is saved in the folder).
-    await abrirLightbox(user, 'Ver Pôster 3 (principal)')
+    await abrirLightbox(user, 'View Poster 3 (principal)')
     expect(
-      screen.queryByRole('button', { name: 'Definir como principal' }),
+      screen.queryByRole('button', { name: 'Set as principal' }),
     ).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Salvar na pasta' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Save to folder' })).toBeNull()
     expect(screen.getAllByText('principal').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('salvo na pasta').length).toBeGreaterThanOrEqual(
-      1,
-    )
+    expect(
+      screen.getAllByText('saved in the folder').length,
+    ).toBeGreaterThanOrEqual(1)
   })
 
-  it('(p) clique no backdrop fecha o lightbox', async () => {
+  it('(p) a click on the backdrop closes the lightbox', async () => {
     const user = userEvent.setup()
     renderGallery({ artwork: artworkPadrao() })
-    const dialog = await abrirLightbox(user, 'Ver Pôster 1')
+    const dialog = await abrirLightbox(user, 'View Poster 1')
     // A direct click on the backdrop (the dialog node itself) closes it.
     fireEvent.click(dialog)
     await waitFor(() =>
@@ -384,18 +382,16 @@ describe('ArtGallery — lightbox: metadados e backdrop (0049)', () => {
   })
 })
 
-describe('ArtGallery — ações roteadas (0049/0062)', () => {
-  it('(g) definir principal de arte LOCAL do dono → PUT prefer direto com o asset_id', async () => {
+describe('ArtGallery — routed actions (0049/0062)', () => {
+  it('(g) set as principal on the owner LOCAL artwork → direct PUT prefer with the asset_id', async () => {
     const user = userEvent.setup()
     const { espioes, invalidateSpy } = renderGallery({
       artwork: artworkPadrao(),
     })
 
     // Poster 2 is the owner's local one (asset_id p1), not principal yet.
-    await abrirLightbox(user, 'Ver Pôster 2')
-    await user.click(
-      screen.getByRole('button', { name: 'Definir como principal' }),
-    )
+    await abrirLightbox(user, 'View Poster 2')
+    await user.click(screen.getByRole('button', { name: 'Set as principal' }))
 
     await waitFor(() => expect(espioes.onPrefer).toHaveBeenCalledWith('p1'))
     expect(espioes.onSelect).not.toHaveBeenCalled()
@@ -408,15 +404,13 @@ describe('ArtGallery — ações roteadas (0049/0062)', () => {
     })
   })
 
-  it('(h) definir principal de arte do INVENTÁRIO encadeia select (sem preferir) + prefer (0062 §2 passo 4)', async () => {
+  it('(h) set as principal on INVENTORY artwork chains select (without preferring) + prefer (0062 §2 step 4)', async () => {
     const user = userEvent.setup()
     const { espioes } = renderGallery({ artwork: artworkPadrao() })
 
     // Poster 1 is from the inventory (fanarttv, without an asset_id yet).
-    await abrirLightbox(user, 'Ver Pôster 1')
-    await user.click(
-      screen.getByRole('button', { name: 'Definir como principal' }),
-    )
+    await abrirLightbox(user, 'View Poster 1')
+    await user.click(screen.getByRole('button', { name: 'Set as principal' }))
 
     await waitFor(() =>
       expect(espioes.onSelect).toHaveBeenCalledWith({
@@ -429,14 +423,14 @@ describe('ArtGallery — ações roteadas (0049/0062)', () => {
     await waitFor(() => expect(espioes.onPrefer).toHaveBeenCalledWith('novo'))
   })
 
-  it('(i) salvar na pasta arte do INVENTÁRIO encadeia select + materialize', async () => {
+  it('(i) save to folder on INVENTORY artwork chains select + materialize', async () => {
     const user = userEvent.setup()
     const { espioes, invalidateSpy } = renderGallery({
       artwork: artworkPadrao(),
     })
 
-    await abrirLightbox(user, 'Ver Pôster 1')
-    await user.click(screen.getByRole('button', { name: 'Salvar na pasta' }))
+    await abrirLightbox(user, 'View Poster 1')
+    await user.click(screen.getByRole('button', { name: 'Save to folder' }))
 
     await waitFor(() =>
       expect(espioes.onSelect).toHaveBeenCalledWith({
@@ -455,13 +449,13 @@ describe('ArtGallery — ações roteadas (0049/0062)', () => {
     })
   })
 
-  it('(i2) salvar na pasta arte já local (com asset_id) → POST materialize direto', async () => {
+  it('(i2) save to folder on already local artwork (with asset_id) → direct POST materialize', async () => {
     const user = userEvent.setup()
     const { espioes } = renderGallery({ artwork: artworkPadrao() })
 
     // Poster 2 is the owner's local one (asset_id p1), not saved in the folder yet.
-    await abrirLightbox(user, 'Ver Pôster 2')
-    await user.click(screen.getByRole('button', { name: 'Salvar na pasta' }))
+    await abrirLightbox(user, 'View Poster 2')
+    await user.click(screen.getByRole('button', { name: 'Save to folder' }))
 
     await waitFor(() =>
       expect(espioes.onMaterialize).toHaveBeenCalledWith('p1'),
@@ -469,12 +463,12 @@ describe('ArtGallery — ações roteadas (0049/0062)', () => {
     expect(espioes.onSelect).not.toHaveBeenCalled()
   })
 
-  it('(i3) baixar pro cache do inventário → POST select {prefer:false} (0049, sem tocar a pasta real)', async () => {
+  it('(i3) download to cache on inventory artwork → POST select {prefer:false} (0049, without touching the real folder)', async () => {
     const user = userEvent.setup()
     const { espioes } = renderGallery({ artwork: artworkPadrao() })
 
-    await abrirLightbox(user, 'Ver Pôster 1')
-    await user.click(screen.getByRole('button', { name: 'Baixar pro cache' }))
+    await abrirLightbox(user, 'View Poster 1')
+    await user.click(screen.getByRole('button', { name: 'Download to cache' }))
 
     await waitFor(() =>
       expect(espioes.onSelect).toHaveBeenCalledWith({
@@ -486,49 +480,49 @@ describe('ArtGallery — ações roteadas (0049/0062)', () => {
     expect(espioes.onMaterialize).not.toHaveBeenCalled()
   })
 
-  it('(i4) sem media_file presente (owned=false): "Definir como principal"/"Salvar na pasta" ficam desabilitados', async () => {
+  it('(i4) without a present media_file (owned=false): "Set as principal"/"Save to folder" stay disabled', async () => {
     const user = userEvent.setup()
     renderGallery({ artwork: artworkPadrao(), owned: false })
 
-    await abrirLightbox(user, 'Ver Pôster 1')
+    await abrirLightbox(user, 'View Poster 1')
     expect(
-      screen.getByRole('button', { name: 'Definir como principal' }),
+      screen.getByRole('button', { name: 'Set as principal' }),
     ).toBeDisabled()
     expect(
-      screen.getByRole('button', { name: 'Salvar na pasta' }),
+      screen.getByRole('button', { name: 'Save to folder' }),
     ).toBeDisabled()
-    // "Baixar pro cache" does not depend on a folder in the library — it stays free.
+    // "Download to cache" does not depend on a folder in the library — it stays free.
     expect(
-      screen.getByRole('button', { name: 'Baixar pro cache' }),
+      screen.getByRole('button', { name: 'Download to cache' }),
     ).toBeEnabled()
   })
 
-  it('(j) remover só aparece na arte do dono e chama DELETE do asset', async () => {
+  it('(j) remove only appears on the owner artwork and calls DELETE of the asset', async () => {
     const user = userEvent.setup()
     const { espioes } = renderGallery({ artwork: artworkPadrao() })
 
     // Poster 1 (inventory) has no "Remover".
-    await abrirLightbox(user, 'Ver Pôster 1')
-    expect(screen.queryByRole('button', { name: 'Remover arte' })).toBeNull()
+    await abrirLightbox(user, 'View Poster 1')
+    expect(screen.queryByRole('button', { name: 'Remove artwork' })).toBeNull()
     await user.keyboard('{Escape}')
 
-    // Poster 2 (of the owner) has "Remover".
-    await abrirLightbox(user, 'Ver Pôster 2')
-    await user.click(screen.getByRole('button', { name: 'Remover arte' }))
+    // Poster 2 (of the owner) has "Remove".
+    await abrirLightbox(user, 'View Poster 2')
+    await user.click(screen.getByRole('button', { name: 'Remove artwork' }))
     await waitFor(() => expect(espioes.onDelete).toHaveBeenCalledWith('p1'))
   })
 })
 
-describe('ArtGallery — upload do dono (0017)', () => {
-  it('(k) upload de um PNG chama uploadAsset com o kind e invalida as queries', async () => {
+describe('ArtGallery — owner upload (0017)', () => {
+  it('(k) uploading a PNG calls uploadAsset with the kind and invalidates the queries', async () => {
     const user = userEvent.setup()
     const { espioes, invalidateSpy } = renderGallery({
       artwork: { available: {} },
     })
 
-    await user.selectOptions(screen.getByLabelText('Tipo de arte'), 'fanart')
+    await user.selectOptions(screen.getByLabelText('Artwork type'), 'fanart')
     const file = new File(['x'], 'arte.png', { type: 'image/png' })
-    await user.upload(screen.getByLabelText('Arquivo de arte'), file)
+    await user.upload(screen.getByLabelText('Artwork file'), file)
 
     await waitFor(() =>
       expect(espioes.onUpload).toHaveBeenCalledWith('fanart', 'arte.png'),
@@ -539,24 +533,24 @@ describe('ArtGallery — upload do dono (0017)', () => {
     })
   })
 
-  it('(l) upload de não-imagem é bloqueado no cliente (erro inline)', async () => {
+  it('(l) a non-image upload is blocked on the client (inline error)', async () => {
     const user = userEvent.setup({ applyAccept: false })
     const { espioes } = renderGallery({ artwork: { available: {} } })
 
     const file = new File(['x'], 'nota.txt', { type: 'text/plain' })
-    await user.upload(screen.getByLabelText('Arquivo de arte'), file)
+    await user.upload(screen.getByLabelText('Artwork file'), file)
 
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
-        'Tipo de imagem nao suportado',
+        'Unsupported image type',
       ),
     )
     expect(espioes.onUpload).not.toHaveBeenCalled()
   })
 })
 
-describe('ArtGallery — lightbox reancorado por identidade (0072)', () => {
-  it('(q) uma ação que reordena a lista mantém o lightbox no MESMO item', async () => {
+describe('ArtGallery — lightbox re-anchored by identity (0072)', () => {
+  it('(q) an action that reorders the list keeps the lightbox on the SAME item', async () => {
     const user = userEvent.setup()
     const candidato = item({
       url: '/api/v1/images?src=https%3A%2F%2Fassets.fanart.tv%2Fcand.jpg',
@@ -613,19 +607,17 @@ describe('ArtGallery — lightbox reancorado por identidade (0072)', () => {
       throw new Error(`rota nao mockada: ${method} ${path}`)
     })
 
-    const dialog = await abrirLightbox(user, 'Ver Pôster 2')
-    expect(dialog).toHaveAttribute('aria-label', 'Pôster 2 de 2')
+    const dialog = await abrirLightbox(user, 'View Poster 2')
+    expect(dialog).toHaveAttribute('aria-label', 'Poster 2 of 2')
 
-    await user.click(
-      screen.getByRole('button', { name: 'Definir como principal' }),
-    )
+    await user.click(screen.getByRole('button', { name: 'Set as principal' }))
 
     // The list reordered (the candidate became the 1st), but the lightbox stays on it —
     // not on what was left at position 2 (now `local`).
     await waitFor(() =>
       expect(screen.getByRole('dialog')).toHaveAttribute(
         'aria-label',
-        'Pôster 1 de 2',
+        'Poster 1 of 2',
       ),
     )
     expect(
@@ -633,7 +625,7 @@ describe('ArtGallery — lightbox reancorado por identidade (0072)', () => {
     ).toBe(candidato.url)
   })
 
-  it('(r) remover o item aberto no lightbox fecha o lightbox', async () => {
+  it('(r) removing the item open in the lightbox closes the lightbox', async () => {
     const user = userEvent.setup()
     const local = item({
       url: '/api/v1/entities/e1/assets/p1/file',
@@ -661,8 +653,8 @@ describe('ArtGallery — lightbox reancorado por identidade (0072)', () => {
       throw new Error(`rota nao mockada: ${method} ${path}`)
     })
 
-    await abrirLightbox(user, 'Ver Pôster 1')
-    await user.click(screen.getByRole('button', { name: 'Remover arte' }))
+    await abrirLightbox(user, 'View Poster 1')
+    await user.click(screen.getByRole('button', { name: 'Remove artwork' }))
 
     await waitFor(() =>
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),

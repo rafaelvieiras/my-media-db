@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react'
 import { PosterImg } from '@/components/rich-detail-view'
 import { LanguageSelector } from '@/components/language-selector'
 import { arteSrc, type ResolvedEntity } from '@/lib/api'
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 // Edit section: the THREE only sections that my-media-db has
@@ -18,14 +19,25 @@ const SECOES: {
     | '/entities/$id/edit'
     | '/entities/$id/edit/ids'
     | '/entities/$id/edit/creditos'
-  label: string
+  labelKey:
+    | 'entity.edit.section.basic'
+    | 'entity.edit.section.ids'
+    | 'entity.edit.section.credits'
 }[] = [
-  { secao: 'basico', to: '/entities/$id/edit', label: 'Informações básicas' },
-  { secao: 'ids', to: '/entities/$id/edit/ids', label: 'IDs de terceiros' },
+  {
+    secao: 'basico',
+    to: '/entities/$id/edit',
+    labelKey: 'entity.edit.section.basic',
+  },
+  {
+    secao: 'ids',
+    to: '/entities/$id/edit/ids',
+    labelKey: 'entity.edit.section.ids',
+  },
   {
     secao: 'creditos',
     to: '/entities/$id/edit/creditos',
-    label: 'Elenco e equipe',
+    labelKey: 'entity.edit.section.credits',
   },
 ]
 
@@ -52,6 +64,7 @@ export function EntityEditShell({
   children: ReactNode
 }) {
   const navigate = useNavigate()
+  const t = useT()
 
   useEffect(() => {
     if (!sujo) return
@@ -71,11 +84,7 @@ export function EntityEditShell({
     return (e: MouseEvent<HTMLAnchorElement>) => {
       if (!sujo) return
       e.preventDefault()
-      if (
-        window.confirm(
-          'Você tem alterações não salvas neste item. Sair mesmo assim?',
-        )
-      ) {
+      if (window.confirm(t('common.message.unsavedChanges'))) {
         navegar()
       }
     }
@@ -92,13 +101,13 @@ export function EntityEditShell({
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-4" aria-hidden />
-        Voltar ao item
+        {t('entity.edit.backToItem')}
       </Link>
 
       <header className="flex flex-wrap items-center gap-4">
         <PosterImg
           src={arteSrc(entity.poster_url)}
-          alt={`Pôster de ${entity.title}`}
+          alt={t('entity.alt.poster', { title: entity.title })}
           className="w-16 shrink-0"
         />
         <h1 className="min-w-0 flex-1 truncate font-heading text-xl font-semibold">
@@ -109,7 +118,7 @@ export function EntityEditShell({
 
       <div className="flex flex-col gap-6 sm:flex-row">
         <nav
-          aria-label="Seções de edição"
+          aria-label={t('entity.edit.sectionsNav')}
           className="flex shrink-0 flex-row gap-1 overflow-x-auto sm:w-48 sm:flex-col sm:overflow-visible"
         >
           {SECOES.map((item) => {
@@ -130,7 +139,7 @@ export function EntityEditShell({
                     : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground',
                 )}
               >
-                {item.label}
+                {t(item.labelKey)}
               </Link>
             )
           })}

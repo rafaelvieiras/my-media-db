@@ -3,18 +3,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Copy, Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ErrorState, LoadingState } from '@/components/query-states'
+import { CorpoComCarga } from '@/components/query-states'
 import { jellyfinWebhookTokenQueryOptions } from '@/lib/queries'
+import { useT } from '@/lib/i18n'
 import { regenerateJellyfinWebhookToken, ApiError } from '@/lib/api'
+import { ScreenHeader } from '@/components/screen-header'
 
 // Route `/dashboard/webhook`: it closes the hole left by the
 // consumption history work — neither delivery built the UI for configuring the token of the
 // Jellyfin inbound webhook (each piece of work pushed the responsibility
 // to the other). It generates/copies the token and the ready-made URL to paste into the
-// Jellyfin Webhooks plugin. The "Webhooks de saída" section is a deliberate
+// Jellyfin Webhooks plugin. The "Outbound webhooks" section is a deliberate
 // placeholder: ADR-0022 decided that outbound is a future
 // provider capability (`TrackerProvider`), not a configurable feature today.
 export function WebhookScreen() {
+  const t = useT()
   const { data, isPending, isError, error } = useQuery(
     jellyfinWebhookTokenQueryOptions,
   )
@@ -22,39 +25,36 @@ export function WebhookScreen() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
       <section className="mb-10">
-        <div className="mb-4 flex flex-col gap-1">
-          <h1 className="font-heading text-xl font-semibold">Webhook</h1>
-          <p className="text-sm text-muted-foreground">
-            Webhook de entrada — Jellyfin: token usado pelo plugin de Webhooks
-            do Jellyfin para reportar reprodução ao histórico de consumo.
-          </p>
-        </div>
+        <ScreenHeader
+          title={t('settings.webhook.title')}
+          subtitle={t('settings.webhook.subtitle')}
+        />
 
-        {isPending ? (
-          <LoadingState label="Carregando token…" />
-        ) : isError ? (
-          <ErrorState
-            title="Não foi possível carregar o token do webhook"
-            message={error instanceof Error ? error.message : undefined}
-          />
-        ) : (
-          <JellyfinWebhookTokenSection tokenAtual={data.token} />
-        )}
+        <CorpoComCarga
+          dados={data}
+          carregando={isPending}
+          falhou={isError}
+          erro={error}
+          textos={{
+            loading: t('settings.webhook.loading'),
+            loadError: t('settings.webhook.loadFailed'),
+          }}
+        >
+          {(dados) => <JellyfinWebhookTokenSection tokenAtual={dados.token} />}
+        </CorpoComCarga>
       </section>
 
       <section>
         <div className="mb-4 flex flex-col gap-1">
           <h2 className="font-heading text-lg font-semibold">
-            Webhooks de saída
+            {t('settings.webhook.outboundTitle')}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Ainda não existem eventos de saída configuráveis — o MyMediaDB só
-            recebe eventos (Jellyfin) hoje. Notificar serviços externos (ex.:
-            sincronizar com um tracker) fica para uma entrega futura.
+            {t('settings.webhook.outboundSubtitle')}
           </p>
         </div>
         <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-          Nenhum webhook de saída disponível ainda.
+          {t('settings.webhook.outboundEmpty')}
         </p>
       </section>
     </main>
@@ -70,6 +70,7 @@ function JellyfinWebhookTokenSection({
 }: {
   tokenAtual: string | null
 }) {
+  const t = useT()
   const queryClient = useQueryClient()
   const [mostrarToken, setMostrarToken] = useState(false)
 
@@ -91,9 +92,7 @@ function JellyfinWebhookTokenSection({
   function gerarOuRegenerar() {
     if (
       tokenAtual &&
-      !window.confirm(
-        'Gerar um novo token invalida o atual — o Jellyfin vai parar de autenticar até você reconfigurar a URL. Continuar?',
-      )
+      !window.confirm(t('settings.webhook.confirmRegenerate'))
     ) {
       return
     }
@@ -104,7 +103,7 @@ function JellyfinWebhookTokenSection({
     return (
       <div className="flex flex-col gap-3">
         <p className="text-sm text-muted-foreground">
-          Nenhum token gerado ainda.
+          {t('settings.webhook.nothingYet')}
         </p>
         {mensagemErro ? (
           <p role="alert" className="text-sm text-destructive">
@@ -117,7 +116,9 @@ function JellyfinWebhookTokenSection({
             onClick={gerarOuRegenerar}
             disabled={mutation.isPending}
           >
-            {mutation.isPending ? 'Gerando…' : 'Gerar token'}
+            {mutation.isPending
+              ? t('settings.webhook.generating')
+              : t('settings.webhook.generate')}
           </Button>
         </div>
       </div>
@@ -129,20 +130,26 @@ function JellyfinWebhookTokenSection({
   return (
     <div className="flex flex-col gap-4">
       <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium">Token</span>
+        <span className="text-sm font-medium">
+          {t('settings.webhook.tokenLabel')}
+        </span>
         <div className="flex items-center gap-2">
           <Input
             type={mostrarToken ? 'text' : 'password'}
             value={tokenAtual}
             readOnly
-            aria-label="Token do webhook"
+            aria-label={t('settings.webhook.tokenAria')}
           />
           <Button
             type="button"
             variant="outline"
             size="icon"
             onClick={() => setMostrarToken((v) => !v)}
-            aria-label={mostrarToken ? 'Ocultar token' : 'Mostrar token'}
+            aria-label={
+              mostrarToken
+                ? t('settings.webhook.hideToken')
+                : t('settings.webhook.showToken')
+            }
           >
             {mostrarToken ? (
               <EyeOff className="size-4" aria-hidden />
@@ -154,14 +161,15 @@ function JellyfinWebhookTokenSection({
       </label>
 
       <div className="flex flex-wrap gap-2">
-        <CopyButton label="Copiar token" valor={tokenAtual} />
-        <CopyButton label="Copiar URL do webhook" valor={url} />
+        <CopyButton
+          label={t('settings.webhook.copyToken')}
+          valor={tokenAtual}
+        />
+        <CopyButton label={t('settings.webhook.copyUrl')} valor={url} />
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Cole a URL acima no plugin de Webhooks do Jellyfin (Painel → Plugins →
-        Webhooks → Adicionar → tipo "Genérico"), marcando os eventos de
-        reprodução (play/pause/stop).
+        {t('settings.webhook.pasteHint')}
       </p>
 
       {mensagemErro ? (
@@ -177,16 +185,19 @@ function JellyfinWebhookTokenSection({
           onClick={gerarOuRegenerar}
           disabled={mutation.isPending}
         >
-          {mutation.isPending ? 'Gerando…' : 'Gerar novo token'}
+          {mutation.isPending
+            ? t('settings.webhook.generating')
+            : t('settings.webhook.regenerate')}
         </Button>
       </div>
     </div>
   )
 }
 
-// Generic copy button (token OR URL) — a "Copiado!" feedback for 2s.
+// Generic copy button (token OR URL) — a "Copied!" feedback for 2s.
 // First use of `navigator.clipboard` in the project.
 function CopyButton({ label, valor }: { label: string; valor: string }) {
+  const t = useT()
   const [copiado, setCopiado] = useState(false)
 
   useEffect(() => {
@@ -205,7 +216,7 @@ function CopyButton({ label, valor }: { label: string; valor: string }) {
       {copiado ? (
         <>
           <Check className="size-4" aria-hidden />
-          Copiado!
+          {t('settings.webhook.copied')}
         </>
       ) : (
         <>

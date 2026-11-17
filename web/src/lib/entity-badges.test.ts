@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { translate } from '@/lib/i18n'
 import {
   LIMIAR_BAIXA_CONFIANCA,
   ehDraft,
@@ -10,6 +11,11 @@ import {
   temCompletude,
   unidadeCompletude,
 } from '@/lib/entity-badges'
+
+// The label helpers take the translator (ADR-0032) — the catalog decides the
+// language, so the test walks the three of them instead of hardcoding Portuguese.
+const en = (key: string) => translate('en', key)
+const pt = (key: string) => translate('pt-BR', key)
 
 describe('ehDraft', () => {
   it('reconhece o status draft', () => {
@@ -54,43 +60,44 @@ describe('precisaRevisao', () => {
 })
 
 describe('rotuloStatus', () => {
-  it('traduz cataloged e ecoa valor desconhecido', () => {
-    expect(rotuloStatus('cataloged')).toBe('catalogado')
-    expect(rotuloStatus('outro')).toBe('outro')
+  it('translates cataloged and echoes an unknown value', () => {
+    expect(rotuloStatus('cataloged', en)).toBe('cataloged')
+    expect(rotuloStatus('cataloged', pt)).toBe('catalogado')
+    expect(rotuloStatus('outro', en)).toBe('outro')
   })
 })
 
 describe('rotuloTipo', () => {
-  it('traduz tipos conhecidos e ecoa desconhecidos', () => {
-    expect(rotuloTipo('movie')).toBe('Filme')
-    expect(rotuloTipo('tv')).toBe('Série')
-    expect(rotuloTipo('other')).toBe('other')
+  it('translates known types and echoes an unknown one', () => {
+    expect(rotuloTipo('movie', en)).toBe('Movie')
+    expect(rotuloTipo('tv', pt)).toBe('Série')
+    expect(rotuloTipo('other', en)).toBe('other')
   })
 
-  it('traduz os tipos da árvore de séries (0031)', () => {
-    expect(rotuloTipo('collection')).toBe('Coleção')
-    expect(rotuloTipo('season')).toBe('Temporada')
-    expect(rotuloTipo('episode')).toBe('Episódio')
+  it('translates the types of the series tree (0031)', () => {
+    expect(rotuloTipo('collection', en)).toBe('Collection')
+    expect(rotuloTipo('season', en)).toBe('Season')
+    expect(rotuloTipo('episode', en)).toBe('Episode')
   })
 
-  it('traduz os tipos da vertical de música (0105-0107)', () => {
-    expect(rotuloTipo('album')).toBe('Álbum')
-    expect(rotuloTipo('artista')).toBe('Artista')
-    expect(rotuloTipo('faixa')).toBe('Faixa')
+  it('translates the types of the music vertical (0105-0107)', () => {
+    expect(rotuloTipo('album', en)).toBe('Album')
+    expect(rotuloTipo('artista', en)).toBe('Artist')
+    expect(rotuloTipo('faixa', en)).toBe('Track')
   })
 })
 
 describe('rotuloTipoPlural', () => {
-  it('traduz tipos conhecidos no plural, incluindo música (0109/0110)', () => {
-    expect(rotuloTipoPlural('movie')).toBe('Filmes')
-    expect(rotuloTipoPlural('tv')).toBe('Séries')
-    expect(rotuloTipoPlural('album')).toBe('Álbuns')
-    expect(rotuloTipoPlural('artista')).toBe('Artistas')
-    expect(rotuloTipoPlural('faixa')).toBe('Faixas')
+  it('translates known types in the plural, music included (0109/0110)', () => {
+    expect(rotuloTipoPlural('movie', en)).toBe('Movies')
+    expect(rotuloTipoPlural('tv', pt)).toBe('Séries')
+    expect(rotuloTipoPlural('album', en)).toBe('Albums')
+    expect(rotuloTipoPlural('artista', en)).toBe('Artists')
+    expect(rotuloTipoPlural('faixa', en)).toBe('Tracks')
   })
 
-  it('cai no singular de rotuloTipo para tipo sem plural cadastrado', () => {
-    expect(rotuloTipoPlural('other')).toBe('other')
+  it('falls back to the singular for a type with no registered plural', () => {
+    expect(rotuloTipoPlural('other', en)).toBe('other')
   })
 })
 
@@ -109,13 +116,13 @@ describe('temCompletude', () => {
 })
 
 describe('unidadeCompletude', () => {
-  it('série conta temporadas e temporada conta episódios (0037)', () => {
-    expect(unidadeCompletude('tv')).toBe('temporadas')
-    expect(unidadeCompletude('season')).toBe('episódios')
+  it('series count seasons and a season counts episodes (0037)', () => {
+    expect(unidadeCompletude('tv', en)).toBe('seasons')
+    expect(unidadeCompletude('season', pt)).toBe('episódios')
   })
 
-  it('tipos sem completude caem no plural neutro', () => {
-    expect(unidadeCompletude('movie')).toBe('itens')
+  it('types without completeness fall back to the neutral plural', () => {
+    expect(unidadeCompletude('movie', en)).toBe('items')
   })
 })
 

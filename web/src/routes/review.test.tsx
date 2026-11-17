@@ -19,6 +19,12 @@ import type { LinkMock } from '@/test/link-mock'
 
 const CHAVES_REVISAO = ['["review"]', '["entities"]', '["entity","e-baixa"]']
 
+// The external result card (`components/external-result-card.tsx`) belongs to another
+// domain and is not extracted yet: these two queries accept both labels so this test
+// does not break when that extraction lands.
+const RESULTADO_USAR = /Usar este|Use this/
+const RESULTADO_NA_BIBLIOTECA = /Na biblioteca|In the library/
+
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock as typeof LinkMock,
 }))
@@ -252,7 +258,7 @@ function renderReview(opts: Opcoes = {}) {
 
 // abrirGrupo clicks the header of the SECTION and waits for the rows to appear.
 // The queue opens closed on purpose: the candidate preview is only fetched when the
-// owner opens the ROW ("Ver candidato"), so the cases that check the preview/actions
+// owner opens the ROW ("Show candidate"), so the cases that check the preview/actions
 // go through here and through `abrirLinha`.
 async function abrirGrupo(
   user: ReturnType<typeof userEvent.setup>,
@@ -268,7 +274,7 @@ async function abrirGrupo(
 
 // abrirLinha expands the ROW of the item, which is what fires GET match-preview.
 async function abrirLinha(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: /Ver candidato/ }))
+  await user.click(screen.getByRole('button', { name: /Show candidate/ }))
 }
 
 // Base scenario of a low-confidence card already rendered (the common setup of the
@@ -288,8 +294,8 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('ReviewScreen — fila de revisão (0018)', () => {
-  it('mostra uma SEÇÃO por grupo, com contagem e motivo, fechada por padrão (0137)', async () => {
+describe('ReviewScreen — review queue (0018)', () => {
+  it('shows ONE SECTION per group, with count and reason, closed by default (0137)', async () => {
     renderReview({ fila: [draftCard, baixaCard] })
 
     await waitFor(() =>
@@ -297,9 +303,9 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
     )
     expect(screen.getByText('Pasta Fita Sem Nome')).toBeInTheDocument()
     // summary of the header: quantity + dominant reason
-    expect(screen.getByText('1 item · não identificado')).toBeInTheDocument()
+    expect(screen.getByText('1 item · not identified')).toBeInTheDocument()
     expect(
-      screen.getByText('1 item · baixa confiança (40%)'),
+      screen.getByText('1 item · low confidence (40%)'),
     ).toBeInTheDocument()
     // the row itself only appears with the section open
     expect(screen.queryByText('Palpite Fraco')).not.toBeInTheDocument()
@@ -308,7 +314,7 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
     ).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('NÃO busca prévia de candidato com a fila fechada (sem N+1; 0137)', async () => {
+  it('does NOT fetch the candidate preview while the queue is closed (no N+1; 0137)', async () => {
     renderReview({ fila: [draftCard, baixaCard] })
     await waitFor(() =>
       expect(screen.getByText('Série de Teste')).toBeInTheDocument(),
@@ -322,34 +328,32 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
     ).toHaveLength(0)
   })
 
-  it('abrir a seção mostra as linhas compactas e o botão do grupo', async () => {
+  it('opening the section shows the compact rows and the group button', async () => {
     const user = userEvent.setup()
     renderReview({ fila: [draftCard, baixaCard] })
     await abrirGrupo(user, 'Série de Teste', 'Palpite Fraco')
 
     expect(screen.getByText('Palpite Fraco')).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: /Auto-sincronizar este grupo/ }),
+      screen.getByRole('button', { name: /Auto-sync this group/ }),
     ).toBeInTheDocument()
   })
 
-  it('mostra o estado vazio "Nada para revisar" (§5: estados vazio)', async () => {
+  it('shows the empty state "Nothing to review" (§5: empty states)', async () => {
     renderReview({ fila: [] })
     await waitFor(() =>
-      expect(screen.getByText('Nada para revisar')).toBeInTheDocument(),
+      expect(screen.getByText('Nothing to review')).toBeInTheDocument(),
     )
   })
 
-  it('mostra o estado de erro', async () => {
+  it('shows the error state', async () => {
     renderReview({ filaErro: true })
     await waitFor(() =>
-      expect(
-        screen.getByText('Não foi possível carregar a revisão'),
-      ).toBeInTheDocument(),
+      expect(screen.getByText('Could not load the review')).toBeInTheDocument(),
     )
   })
 
-  it('"Manter como está" (sem candidato na prévia) chama confirmMatch e invalida review/entities/entity (§5: comportamento antigo do "Confirmar")', async () => {
+  it('"Keep as is" (no candidate in the preview) calls confirmMatch and invalidates review/entities/entity (§5: the old "Confirm" behavior)', async () => {
     const { user, espioes, invalidateSpy } = await renderBaixa({
       fila: [baixaCard],
       preview: previewVazia,
@@ -357,13 +361,13 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
     await waitFor(() =>
       expect(
         screen.getByText(
-          'nenhum candidato encontrado — nem no catálogo local, nem na fonte externa',
+          'no candidate found — neither in the local catalog nor in the external source',
         ),
       ).toBeInTheDocument(),
     )
     await user.click(
       screen.getByRole('button', {
-        name: 'Manter como está (sem metadados externos)',
+        name: 'Keep as is (no external metadata)',
       }),
     )
 
@@ -373,13 +377,18 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
     await esperarChaves(invalidateSpy, CHAVES_REVISAO)
   })
 
-  it('Corrigir busca e chama correctMatch com o source_id escolhido (§5: corrigir grava external_ids + re-enriquece)', async () => {
+  it('Correct searches and calls correctMatch with the chosen source_id (§5: correcting writes external_ids + re-enriches)', async () => {
     const { user, espioes, invalidateSpy } = await renderBaixa()
     // It opens the correction panel and searches for the right title.
-    await user.click(screen.getByRole('button', { name: /Corrigir/ }))
-    await user.type(screen.getByLabelText('Buscar o título correto'), 'certo')
+    await user.click(screen.getByRole('button', { name: /Correct/ }))
+    await user.type(
+      screen.getByLabelText('Search for the correct title'),
+      'certo',
+    )
     // It chooses the external result → CORRECTS with its source_id.
-    await user.click(await screen.findByRole('button', { name: 'Usar este' }))
+    await user.click(
+      await screen.findByRole('button', { name: RESULTADO_USAR }),
+    )
 
     await waitFor(() =>
       expect(espioes.onCorrect).toHaveBeenCalledWith('e-baixa', {
@@ -390,7 +399,7 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
     await esperarChaves(invalidateSpy, CHAVES_REVISAO)
   })
 
-  it('erro do backend na correção aparece inline', async () => {
+  it('a backend error on the correction shows inline', async () => {
     const { user } = await renderBaixa({
       fila: [baixaCard],
       correctErro: {
@@ -399,9 +408,14 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
         message: 'A fonte externa falhou.',
       },
     })
-    await user.click(screen.getByRole('button', { name: /Corrigir/ }))
-    await user.type(screen.getByLabelText('Buscar o título correto'), 'certo')
-    await user.click(await screen.findByRole('button', { name: 'Usar este' }))
+    await user.click(screen.getByRole('button', { name: /Correct/ }))
+    await user.type(
+      screen.getByLabelText('Search for the correct title'),
+      'certo',
+    )
+    await user.click(
+      await screen.findByRole('button', { name: RESULTADO_USAR }),
+    )
 
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
@@ -410,7 +424,7 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
     )
   })
 
-  it('resultado da correção mostra sinopse truncada e, quando já é entity, o selo "Na biblioteca" JUNTO do "Usar este" (0074)', async () => {
+  it('the correction result shows the truncated synopsis and, when it already is an entity, the "In the library" badge NEXT TO "Use this" (0074)', async () => {
     // Unlike the Importar flow: internalId here does NOT hide the action — it is
     // precisely the duplicate merge case. The internal_id goes defensively
     // (cast) because the generated type only gains it after the backend regeneration.
@@ -427,15 +441,18 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
         external_available: true,
       },
     })
-    await user.click(screen.getByRole('button', { name: /Corrigir/ }))
-    await user.type(screen.getByLabelText('Buscar o título correto'), 'certo')
+    await user.click(screen.getByRole('button', { name: /Correct/ }))
+    await user.type(
+      screen.getByLabelText('Search for the correct title'),
+      'certo',
+    )
 
     await waitFor(() =>
       expect(screen.getByText('A identidade correta.')).toBeInTheDocument(),
     )
-    expect(screen.getByText('Na biblioteca')).toBeInTheDocument()
+    expect(screen.getByText(RESULTADO_NA_BIBLIOTECA)).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Usar este' }))
+    await user.click(screen.getByRole('button', { name: RESULTADO_USAR }))
 
     await waitFor(() =>
       expect(espioes.onCorrect).toHaveBeenCalledWith('e-baixa', {
@@ -446,44 +463,44 @@ describe('ReviewScreen — fila de revisão (0018)', () => {
   })
 })
 
-describe('ReviewScreen — prévia de candidato (0060)', () => {
-  it('prévia com candidato local renderiza pôster/título/ano/score/fonte e o botão "Confirmar candidato"', async () => {
+describe('ReviewScreen — candidate preview (0060)', () => {
+  it('a preview with a local candidate renders poster/title/year/score/source and the "Confirm candidate" button', async () => {
     await renderBaixa({ fila: [baixaCard], preview: previewLocal })
 
     await waitFor(() => expect(screen.getByText('Duna')).toBeInTheDocument())
-    expect(screen.getByAltText('Pôster de Duna')).toBeInTheDocument()
+    expect(screen.getByAltText('Poster for Duna')).toBeInTheDocument()
     expect(screen.getByText('2021')).toBeInTheDocument()
     expect(screen.getByText('score 87.3')).toBeInTheDocument()
-    expect(screen.getByText('catálogo local')).toBeInTheDocument()
-    expect(screen.getByText('confira antes de confirmar')).toBeInTheDocument()
+    expect(screen.getByText('local catalog')).toBeInTheDocument()
+    expect(screen.getByText('check before confirming')).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Confirmar candidato' }),
+      screen.getByRole('button', { name: 'Confirm candidate' }),
     ).toBeInTheDocument()
   })
 
-  it('prévia com candidato externo acima do limiar mostra o selo "match forte" e fonte "provedor externo"', async () => {
+  it('a preview with an external candidate above the threshold shows the "strong match" badge and the "external provider" source', async () => {
     await renderBaixa({ fila: [baixaCard], preview: previewExterna })
 
     await waitFor(() =>
       expect(screen.getByText('Duna: Parte Dois')).toBeInTheDocument(),
     )
-    expect(screen.getByText('provedor externo')).toBeInTheDocument()
-    expect(screen.getByText('match forte')).toBeInTheDocument()
+    expect(screen.getByText('external provider')).toBeInTheDocument()
+    expect(screen.getByText('strong match')).toBeInTheDocument()
   })
 
-  it('prévia sem candidato renderiza a mensagem vazia e o botão "Manter como está" (0060)', async () => {
+  it('a preview without a candidate renders the empty message and the "Keep as is" button (0060)', async () => {
     await renderBaixa({ fila: [baixaCard], preview: previewVazia })
 
     await waitFor(() =>
       expect(
         screen.getByText(
-          'nenhum candidato encontrado — nem no catálogo local, nem na fonte externa',
+          'no candidate found — neither in the local catalog nor in the external source',
         ),
       ).toBeInTheDocument(),
     )
     expect(
       screen.getByRole('button', {
-        name: 'Manter como está (sem metadados externos)',
+        name: 'Keep as is (no external metadata)',
       }),
     ).toBeInTheDocument()
     expect(
@@ -491,32 +508,30 @@ describe('ReviewScreen — prévia de candidato (0060)', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('falha ao buscar a prévia mostra erro curto e degrada para "Manter como está" sem travar o card', async () => {
+  it('a failed preview fetch shows a short error and degrades to "Keep as is" without breaking the card', async () => {
     await renderBaixa({ fila: [baixaCard], previewErro: true })
 
     await waitFor(() =>
       expect(
-        screen.getByText(
-          'Não foi possível buscar um candidato — tente novamente mais tarde.',
-        ),
+        screen.getByText('Could not look up a candidate — try again later.'),
       ).toBeInTheDocument(),
     )
     expect(
       screen.getByRole('button', {
-        name: 'Manter como está (sem metadados externos)',
+        name: 'Keep as is (no external metadata)',
       }),
     ).toBeInTheDocument()
-    // "Corrigir" stays available even with the preview in error.
-    expect(screen.getByRole('button', { name: /Corrigir/ })).toBeInTheDocument()
+    // "Correct" stays available even with the preview in error.
+    expect(screen.getByRole('button', { name: /Correct/ })).toBeInTheDocument()
   })
 
-  it('clicar em "Confirmar candidato" (local) chama confirmCandidate com o payload local_id e invalida a fila', async () => {
+  it('clicking "Confirm candidate" (local) calls confirmCandidate with the local_id payload and invalidates the queue', async () => {
     const { user, espioes, invalidateSpy } = await renderBaixa({
       fila: [baixaCard],
       preview: previewLocal,
     })
     await user.click(
-      await screen.findByRole('button', { name: 'Confirmar candidato' }),
+      await screen.findByRole('button', { name: 'Confirm candidate' }),
     )
 
     await waitFor(() =>
@@ -528,13 +543,13 @@ describe('ReviewScreen — prévia de candidato (0060)', () => {
     await esperarChaves(invalidateSpy, CHAVES_REVISAO)
   })
 
-  it('clicar em "Confirmar candidato" (externo) chama confirmCandidate com o payload source/source_id', async () => {
+  it('clicking "Confirm candidate" (external) calls confirmCandidate with the source/source_id payload', async () => {
     const { user, espioes } = await renderBaixa({
       fila: [baixaCard],
       preview: previewExterna,
     })
     await user.click(
-      await screen.findByRole('button', { name: 'Confirmar candidato' }),
+      await screen.findByRole('button', { name: 'Confirm candidate' }),
     )
 
     await waitFor(() =>
@@ -546,20 +561,20 @@ describe('ReviewScreen — prévia de candidato (0060)', () => {
     )
   })
 
-  it('o botão "Auto-sincronizar" individual não existe mais no card, mas o de lote no topo continua', async () => {
+  it('the individual "Auto-sync" button no longer exists on the card, but the batch one on top does', async () => {
     await renderBaixa({ fila: [baixaCard], preview: previewVazia })
 
     expect(
-      screen.queryByRole('button', { name: /^Auto-sincronizar$/ }),
+      screen.queryByRole('button', { name: /^Auto-sync$/ }),
     ).not.toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: /Auto-sincronizar elegíveis/ }),
+      screen.getByRole('button', { name: /Auto-sync eligible/ }),
     ).toBeInTheDocument()
   })
 })
 
-describe('ReviewScreen — auto-match em lote (0050)', () => {
-  it('"Auto-sincronizar elegíveis" (lote) mostra o resumo agregado e invalida a fila', async () => {
+describe('ReviewScreen — batch auto-match (0050)', () => {
+  it('"Auto-sync eligible" (batch) shows the aggregated summary and invalidates the queue', async () => {
     const user = userEvent.setup()
     const { espioes, invalidateSpy } = renderReview({
       fila: [baixaCard],
@@ -576,15 +591,13 @@ describe('ReviewScreen — auto-match em lote (0050)', () => {
       expect(screen.getByText('Série de Teste')).toBeInTheDocument(),
     )
 
-    await user.click(
-      screen.getByRole('button', { name: /Auto-sincronizar elegíveis/ }),
-    )
+    await user.click(screen.getByRole('button', { name: /Auto-sync eligible/ }))
 
     await waitFor(() => expect(espioes.onAutoMatchLote).toHaveBeenCalled())
     await waitFor(() =>
       expect(
         screen.getByText(
-          '22 resolvidos automaticamente, 8 continuam para revisão manual.',
+          '22 resolved automatically, 8 still need manual review.',
         ),
       ).toBeInTheDocument(),
     )
@@ -592,8 +605,8 @@ describe('ReviewScreen — auto-match em lote (0050)', () => {
   })
 })
 
-describe('ReviewScreen — auto-match do grupo (0137)', () => {
-  it('"Auto-sincronizar este grupo" envia os ids do grupo e mostra o resumo', async () => {
+describe('ReviewScreen — group auto-match (0137)', () => {
+  it('"Auto-sync this group" sends the ids of the group and shows the summary', async () => {
     const user = userEvent.setup()
     const { espioes } = renderReview({
       fila: [baixaCard, { ...baixaCard, id: 'e-baixa-2', title: 'Outro' }],
@@ -607,7 +620,7 @@ describe('ReviewScreen — auto-match do grupo (0137)', () => {
     await abrirGrupo(user, 'Série de Teste', 'Palpite Fraco')
 
     await user.click(
-      screen.getByRole('button', { name: /Auto-sincronizar este grupo/ }),
+      screen.getByRole('button', { name: /Auto-sync this group/ }),
     )
 
     await waitFor(() =>
@@ -617,7 +630,7 @@ describe('ReviewScreen — auto-match do grupo (0137)', () => {
     )
     await waitFor(() =>
       expect(
-        screen.getByText('1 resolvido(s) · 1 ainda pendente(s)'),
+        screen.getByText('1 resolved · 1 still pending'),
       ).toBeInTheDocument(),
     )
   })

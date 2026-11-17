@@ -8,6 +8,7 @@ import { PathBrowser } from '@/components/path-browser'
 import { LibraryFormHeader } from '@/components/library-form-header'
 import { LibraryLanguageAndRetryFields } from '@/components/library-language-retry-fields'
 import { ErrorState, LoadingState } from '@/components/query-states'
+import { useT } from '@/lib/i18n'
 import {
   ApiError,
   deleteLibrary,
@@ -30,25 +31,26 @@ import {
 // There is no dedicated `GET /library/{id}` — the source is found in the same
 // list that the `/dashboard/library` screen already consumes (`libraryQueryOptions`).
 export function LibraryEditScreen() {
+  const t = useT()
   const { id } = useParams({ from: '/dashboard/library/$id/edit' })
   const query = useQuery(libraryQueryOptions)
   const source = query.data?.items.find((s) => s.id === id)
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
-      <LibraryFormHeader titulo="Editar datasource" />
+      <LibraryFormHeader titulo={t('library.edit.title')} />
 
       {query.isPending ? (
-        <LoadingState label="Carregando datasource…" />
+        <LoadingState label={t('library.edit.loading')} />
       ) : query.isError ? (
         <ErrorState
-          title="Não foi possível carregar o datasource"
+          title={t('library.edit.loadFailed')}
           message={
             query.error instanceof Error ? query.error.message : undefined
           }
         />
       ) : !source ? (
-        <ErrorState title="Datasource não encontrado" />
+        <ErrorState title={t('library.edit.notFound')} />
       ) : (
         <LibraryEditForm id={id} source={source} />
       )}
@@ -57,6 +59,7 @@ export function LibraryEditScreen() {
 }
 
 function LibraryEditForm({ id, source }: { id: string; source: Source }) {
+  const t = useT()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [path, setPath] = useState(source.path)
@@ -126,14 +129,14 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
     salvar.error instanceof ApiError
       ? salvar.error.message
       : salvar.isError
-        ? 'Não foi possível salvar o novo caminho.'
+        ? t('library.edit.saveFailed')
         : null
 
   const mensagemErroRemover =
     remover.error instanceof ApiError
       ? remover.error.message
       : remover.isError
-        ? 'Não foi possível remover o datasource.'
+        ? t('library.edit.removeFailed')
         : null
 
   return (
@@ -143,11 +146,13 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
           native browser balloon blocking the submit before it gets there. */}
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">Caminho</span>
+          <span className="text-muted-foreground">
+            {t('library.form.path')}
+          </span>
           <Input
             value={path}
             onChange={(e) => setPath(e.target.value)}
-            aria-label="Caminho do datasource"
+            aria-label={t('library.form.pathAriaLabel')}
             aria-invalid={mensagemErroSalvar !== null || undefined}
           />
         </label>
@@ -178,7 +183,9 @@ function LibraryEditForm({ id, source }: { id: string; source: Source }) {
         <div>
           <Button type="submit" disabled={salvar.isPending}>
             <Save aria-hidden />
-            {salvar.isPending ? 'Salvando…' : 'Salvar'}
+            {salvar.isPending
+              ? t('common.action.saving')
+              : t('common.action.save')}
           </Button>
         </div>
       </form>
@@ -204,25 +211,26 @@ function DangerZone({
   erro: string | null
   onConfirmar: () => void
 }) {
+  const t = useT()
   const [confirmando, setConfirmando] = useState(false)
 
   return (
     <section className="flex flex-col gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-4">
-      <h2 className="text-sm font-semibold text-destructive">Zona de perigo</h2>
+      <h2 className="text-sm font-semibold text-destructive">
+        {t('library.edit.danger.title')}
+      </h2>
       <p className="text-sm text-muted-foreground">
-        Remover o datasource não apaga os arquivos no disco, mas desliga o
-        acompanhamento desta pasta e some com o catálogo detectado a partir
-        dela.
+        {t('library.edit.danger.description')}
       </p>
       {confirmando ? (
         <div
           role="alertdialog"
-          aria-label="Confirmar remoção do datasource"
+          aria-label={t('library.edit.danger.confirmAriaLabel')}
           className="flex flex-wrap items-center gap-2"
         >
           <span className="flex items-center gap-1.5 text-sm font-medium text-destructive">
             <TriangleAlert className="size-4" aria-hidden />
-            Tem certeza? Isso remove o datasource e não pode ser desfeito.
+            {t('library.edit.danger.question')}
           </span>
           <Button
             variant="destructive"
@@ -235,7 +243,9 @@ function DangerZone({
             ) : (
               <Trash2 aria-hidden />
             )}
-            {ocupado ? 'Removendo…' : 'Confirmar remoção'}
+            {ocupado
+              ? t('library.edit.danger.removing')
+              : t('library.edit.danger.confirm')}
           </Button>
           <Button
             variant="ghost"
@@ -243,7 +253,7 @@ function DangerZone({
             disabled={ocupado}
             onClick={() => setConfirmando(false)}
           >
-            Cancelar
+            {t('common.action.cancel')}
           </Button>
         </div>
       ) : (
@@ -254,7 +264,7 @@ function DangerZone({
             onClick={() => setConfirmando(true)}
           >
             <Trash2 aria-hidden />
-            Remover datasource
+            {t('library.edit.danger.remove')}
           </Button>
         </div>
       )}

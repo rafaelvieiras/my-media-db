@@ -62,76 +62,76 @@ test.afterEach(() => {
   }
 });
 
-test("adicionar e remover datasource", async ({ page }) => {
+test("add and remove a datasource", async ({ page }) => {
   const dir = semeiaPasta(["1080p.mkv"]);
 
   await page.goto("/dashboard/library");
   await expect(
-    page.getByRole("heading", { level: 1, name: "Bibliotecas" }),
+    page.getByRole("heading", { level: 1, name: "Libraries" }),
   ).toBeVisible();
 
   // Adding left the inline form: it navigates to the dedicated route /dashboard/library/new,
   // types the path straight into the field (without opening the PathBrowser,
   // which is just an optional visual shortcut) and chooses the type (Filmes is already the default).
-  await page.getByRole("link", { name: "Adicionar datasource" }).click();
+  await page.getByRole("link", { name: "Add datasource" }).click();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Adicionar datasource" }),
+    page.getByRole("heading", { level: 1, name: "Add datasource" }),
   ).toBeVisible();
-  await page.getByLabel("Caminho do datasource").fill(dir);
+  await page.getByLabel("Datasource path").fill(dir);
   // Enrichment retry override: optional, it overrides
   // the global throttle (default 15 days) only for this library.
   await page
-    .getByLabel("Reentativa de enriquecimento (dias) do datasource")
+    .getByLabel("Datasource enrichment retry (days)")
     .fill("20");
-  await page.getByRole("button", { name: "Adicionar datasource" }).click();
+  await page.getByRole("button", { name: "Add datasource" }).click();
 
   // Goes back to /dashboard/library; the row appears with the path and the online state; the scan button
   // stays available.
   await expect(page).toHaveURL("/dashboard/library");
   await expect(page.getByText(dir)).toBeVisible();
   await expect(page.getByText("online")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Escanear" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Scan" })).toBeEnabled();
 
-  // Removes it: navigates through the row to /dashboard/library/$id/edit, uses the "Zona de perigo" with
+  // Removes it: navigates through the row to /dashboard/library/$id/edit, uses the "Danger zone" with
   // EXPLICIT 2-step confirmation (there is no direct removal anymore).
-  await page.getByRole("link", { name: "Editar" }).click();
+  await page.getByRole("link", { name: "Edit" }).click();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Editar datasource" }),
+    page.getByRole("heading", { level: 1, name: "Edit datasource" }),
   ).toBeVisible();
   // The retry override saved on creation pre-loads here.
   const inputReentativa = page.getByLabel(
-    "Reentativa de enriquecimento (dias) do datasource",
+    "Datasource enrichment retry (days)",
   );
   await expect(inputReentativa).toHaveValue("20");
 
   // Edit the override and save (a partial PATCH only sends the field if it was "touched" --
   // it exercises that branch, distinct from the path-only one of the rescan journey).
   await inputReentativa.fill("45");
-  await page.getByRole("button", { name: "Salvar" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
   await expect(page).toHaveURL("/dashboard/library");
 
   // Reopens the edit form: the new value persisted through the PATCH.
-  await page.getByRole("link", { name: "Editar" }).click();
+  await page.getByRole("link", { name: "Edit" }).click();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Editar datasource" }),
+    page.getByRole("heading", { level: 1, name: "Edit datasource" }),
   ).toBeVisible();
   await expect(
-    page.getByLabel("Reentativa de enriquecimento (dias) do datasource"),
+    page.getByLabel("Datasource enrichment retry (days)"),
   ).toHaveValue("45");
 
-  await page.getByRole("button", { name: "Remover datasource" }).click();
+  await page.getByRole("button", { name: "Remove datasource" }).click();
   const dialogo = page.getByRole("alertdialog", {
-    name: "Confirmar remoção do datasource",
+    name: "Confirm datasource removal",
   });
   await expect(dialogo).toBeVisible();
-  await dialogo.getByRole("button", { name: "Confirmar remoção" }).click();
+  await dialogo.getByRole("button", { name: "Confirm removal" }).click();
 
   // Goes back to /dashboard/library; the list is empty again.
   await expect(page).toHaveURL("/dashboard/library");
-  await expect(page.getByText("Nenhum datasource cadastrado")).toBeVisible();
+  await expect(page.getByText("No datasource registered")).toBeVisible();
 });
 
-test("scan de arquivo nao-identificado vira draft e a correcao o tira da revisao", async ({
+test("scan of an unidentified file becomes a draft and the correction takes it out of the review", async ({
   page,
   request,
 }) => {
@@ -139,14 +139,14 @@ test("scan de arquivo nao-identificado vira draft e a correcao o tira da revisao
   const dir = semeiaPasta(["2160p.mkv"]);
 
   await page.goto("/dashboard/library");
-  await page.getByRole("link", { name: "Adicionar datasource" }).click();
-  await page.getByLabel("Caminho do datasource").fill(dir);
-  await page.getByRole("button", { name: "Adicionar datasource" }).click();
+  await page.getByRole("link", { name: "Add datasource" }).click();
+  await page.getByLabel("Datasource path").fill(dir);
+  await page.getByRole("button", { name: "Add datasource" }).click();
   await expect(page).toHaveURL("/dashboard/library");
   await expect(page.getByText(dir)).toBeVisible();
 
   // Triggers the scan through the UI and waits for it to PRODUCE the draft (review queue != empty).
-  await page.getByRole("button", { name: "Escanear" }).click();
+  await page.getByRole("button", { name: "Scan" }).click();
   await expect
     .poll(
       async () => (await (await request.get("/api/v1/review")).json()).length,
@@ -159,10 +159,10 @@ test("scan de arquivo nao-identificado vira draft e a correcao o tira da revisao
   // In the review screen, the draft appears as "not identified".
   await page.goto("/dashboard/review");
   await expect(
-    page.getByRole("heading", { level: 1, name: "Revisão" }),
+    page.getByRole("heading", { level: 1, name: "Review" }),
   ).toBeVisible();
   // The queue opens GROUPED — the reason appears in the summary of the section.
-  await expect(page.getByText(/não identificado/).first()).toBeVisible();
+  await expect(page.getByText(/not identified/).first()).toBeVisible();
 
   // Opens the section (group) and then the row of the item: the preview/actions only exist open.
   // data-testid (and not a loose aria-expanded): the navbar dropdown is also a
@@ -171,15 +171,15 @@ test("scan de arquivo nao-identificado vira draft e a correcao o tira da revisao
   await page.getByTestId("review-linha").first().click();
 
   // Fix: expands the panel, searches "matrix" (fake external source) and uses the 1st one.
-  await page.getByRole("button", { name: "Corrigir" }).click();
-  await page.getByLabel("Buscar o título correto").fill("matrix");
-  await page.getByRole("button", { name: "Usar este" }).first().click();
+  await page.getByRole("button", { name: "Correct" }).click();
+  await page.getByLabel("Search for the correct title").fill("matrix");
+  await page.getByRole("button", { name: "Use this" }).first().click();
 
   // Re-enriched and re-resolved, the item leaves the queue -> empty review screen.
-  await expect(page.getByText("Nada para revisar")).toBeVisible();
+  await expect(page.getByText("Nothing to review")).toBeVisible();
 });
 
-test("arquivo catalogado que some vira orfa e pode ser purgado", async ({
+test("a cataloged file that disappears becomes an orphan and can be purged", async ({
   page,
   request,
 }) => {
@@ -187,14 +187,14 @@ test("arquivo catalogado que some vira orfa e pode ser purgado", async ({
   const dir = semeiaPasta(["The Matrix (1999).mkv"]);
 
   await page.goto("/dashboard/library");
-  await page.getByRole("link", { name: "Adicionar datasource" }).click();
-  await page.getByLabel("Caminho do datasource").fill(dir);
-  await page.getByRole("button", { name: "Adicionar datasource" }).click();
+  await page.getByRole("link", { name: "Add datasource" }).click();
+  await page.getByLabel("Datasource path").fill(dir);
+  await page.getByRole("button", { name: "Add datasource" }).click();
   await expect(page).toHaveURL("/dashboard/library");
   await expect(page.getByText(dir)).toBeVisible();
 
   // 1st scan: waits for the cataloged entity to appear.
-  const botaoEscanear = page.getByRole("button", { name: "Escanear" });
+  const botaoEscanear = page.getByRole("button", { name: "Scan" });
   await botaoEscanear.click();
   await expect
     .poll(
@@ -226,20 +226,20 @@ test("arquivo catalogado que some vira orfa e pode ser purgado", async ({
   // On the orphans screen, purges with EXPLICIT 2-step confirmation.
   await page.goto("/dashboard/orphans");
   await expect(
-    page.getByRole("heading", { level: 1, name: "Órfãs" }),
+    page.getByRole("heading", { level: 1, name: "Orphans" }),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "The Matrix" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Purgar The Matrix" }).click();
-  const dialogo = page.getByRole("alertdialog", { name: "Confirmar purga" });
+  await page.getByRole("button", { name: "Purge The Matrix" }).click();
+  const dialogo = page.getByRole("alertdialog", { name: "Confirm purge" });
   await expect(dialogo).toBeVisible();
-  await dialogo.getByRole("button", { name: "Confirmar purga" }).click();
+  await dialogo.getByRole("button", { name: "Confirm purge" }).click();
 
   // Purged: the queue is empty.
-  await expect(page.getByText("Nenhuma órfã")).toBeVisible();
+  await expect(page.getByText("No orphans")).toBeVisible();
 });
 
-test("editar caminho de datasource cadastrado recasca sem novo scan", async ({
+test("editing the path of a registered datasource rescans without a new scan", async ({
   page,
   request,
 }) => {
@@ -248,14 +248,14 @@ test("editar caminho de datasource cadastrado recasca sem novo scan", async ({
   const dirAntigo = semeiaPasta(["The Matrix (1999).mkv"]);
 
   await page.goto("/dashboard/library");
-  await page.getByRole("link", { name: "Adicionar datasource" }).click();
-  await page.getByLabel("Caminho do datasource").fill(dirAntigo);
-  await page.getByRole("button", { name: "Adicionar datasource" }).click();
+  await page.getByRole("link", { name: "Add datasource" }).click();
+  await page.getByLabel("Datasource path").fill(dirAntigo);
+  await page.getByRole("button", { name: "Add datasource" }).click();
   await expect(page).toHaveURL("/dashboard/library");
   await expect(page.getByText(dirAntigo)).toBeVisible();
 
   // 1st scan: the cataloged entity appears.
-  await page.getByRole("button", { name: "Escanear" }).click();
+  await page.getByRole("button", { name: "Scan" }).click();
   await expect
     .poll(
       async () => {
@@ -278,12 +278,12 @@ test("editar caminho de datasource cadastrado recasca sem novo scan", async ({
 
   // Edit left the list (pencil icon with an inline form) for the dedicated route
   // /dashboard/library/$id/edit.
-  await page.getByRole("link", { name: "Editar" }).click();
+  await page.getByRole("link", { name: "Edit" }).click();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Editar datasource" }),
+    page.getByRole("heading", { level: 1, name: "Edit datasource" }),
   ).toBeVisible();
-  await page.getByLabel("Caminho do datasource").fill(dirNovo);
-  await page.getByRole("button", { name: "Salvar" }).click();
+  await page.getByLabel("Datasource path").fill(dirNovo);
+  await page.getByRole("button", { name: "Save" }).click();
 
   // Goes back to /dashboard/library; the row now shows the new path, online, without
   // needing a scan -- the link with the already cataloged entity remains intact.
@@ -295,17 +295,17 @@ test("editar caminho de datasource cadastrado recasca sem novo scan", async ({
     page.getByRole("link", { name: /Matrix/ }).first(),
   ).toBeVisible();
 
-  // "Ver Todos" (ADR-0030): link next to the carousel title,
+  // "View all" (ADR-0030): link next to the carousel title,
   // it only appears with real data in the rail (this item IS owned, through the real scan above)
   // — it navigates to /library/movies, the complete listing of that type.
-  await page.getByRole("link", { name: "Ver Todos" }).click();
+  await page.getByRole("link", { name: "View all" }).click();
   await expect(page).toHaveURL("/library/movies");
   await expect(
     page.getByRole("link", { name: /Matrix/ }).first(),
   ).toBeVisible();
 });
 
-test("arquivo com numero fora da arvore externa vira episodio provisorio", async ({
+test("a file with a number outside the external tree becomes a provisional episode", async ({
   request,
 }) => {
   // The fake provider tree has S01E01..E03; the S01E99 file

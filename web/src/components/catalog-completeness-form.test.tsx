@@ -18,11 +18,19 @@ function fetchRouter(opts?: Parameters<typeof respostaCompletude>[2]) {
   })
 }
 
+// The save button and the success message come from `FormSaveFooter`
+// (`components/query-states.tsx`), which another domain owns: those two queries
+// tolerate both labels so this test does not depend on that extraction.
+const BOTAO_SALVAR = /^(Salvar|Save)$/
+const MENSAGEM_SALVO = /Configurações salvas\.|Settings saved\./
+
 async function renderForm(fetchMock: ReturnType<typeof fetchRouter>) {
   vi.stubGlobal('fetch', fetchMock)
   renderWithClient(<CatalogCompletenessForm />)
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Salvar' })).toBeInTheDocument(),
+    expect(
+      screen.getByRole('button', { name: BOTAO_SALVAR }),
+    ).toBeInTheDocument(),
   )
 }
 
@@ -35,31 +43,29 @@ afterEach(() => {
 })
 
 describe('CatalogCompletenessForm', () => {
-  it('renderiza os dois blocos (Filme/Série) com os checkboxes esperados', async () => {
+  it('renders both blocks (Movie/Series) with the expected checkboxes', async () => {
     await renderForm(fetchRouter())
 
-    const blocoFilme = screen.getByText('Filme').closest('div')!
-    const blocoSerie = screen.getByText('Série').closest('div')!
+    const blocoFilme = screen.getByText('Movie').closest('div')!
+    const blocoSerie = screen.getByText('Series').closest('div')!
 
     for (const bloco of [blocoFilme, blocoSerie]) {
       const utils = within(bloco)
       expect(
-        utils.getByRole('checkbox', { name: 'Sinopse' }),
+        utils.getByRole('checkbox', { name: 'Synopsis' }),
       ).toBeInTheDocument()
       expect(
-        utils.getByRole('checkbox', { name: 'Duração' }),
+        utils.getByRole('checkbox', { name: 'Duration' }),
       ).toBeInTheDocument()
       expect(
-        utils.getByRole('checkbox', { name: 'Classificação indicativa' }),
+        utils.getByRole('checkbox', { name: 'Age rating' }),
       ).toBeInTheDocument()
       expect(
-        utils.getByRole('checkbox', { name: 'Palavras-chave' }),
+        utils.getByRole('checkbox', { name: 'Keywords' }),
       ).toBeInTheDocument()
+      expect(utils.getByRole('checkbox', { name: 'Cast' })).toBeInTheDocument()
       expect(
-        utils.getByRole('checkbox', { name: 'Elenco' }),
-      ).toBeInTheDocument()
-      expect(
-        utils.getByRole('checkbox', { name: 'Arquivo de mídia' }),
+        utils.getByRole('checkbox', { name: 'Media file' }),
       ).toBeInTheDocument()
       expect(
         utils.getByRole('checkbox', { name: 'Poster' }),
@@ -76,7 +82,7 @@ describe('CatalogCompletenessForm', () => {
       ).toBeInTheDocument()
       expect(utils.getByRole('checkbox', { name: 'Thumb' })).toBeInTheDocument()
       expect(
-        utils.getByRole('checkbox', { name: 'Capa de disco' }),
+        utils.getByRole('checkbox', { name: 'Disc cover' }),
       ).toBeInTheDocument()
       // `still`/`characterart` stay out of the offer of this screen (§6).
       expect(
@@ -88,37 +94,33 @@ describe('CatalogCompletenessForm', () => {
     }
   })
 
-  it('pre-marca o default de fabrica no primeiro acesso (sem config previa)', async () => {
+  it('pre-checks the factory default on first access (no previous config)', async () => {
     await renderForm(fetchRouter())
 
-    const blocoFilme = screen.getByText('Filme').closest('div')!
+    const blocoFilme = screen.getByText('Movie').closest('div')!
     const utils = within(blocoFilme)
 
-    expect(utils.getByRole('checkbox', { name: 'Sinopse' })).toBeChecked()
-    expect(
-      utils.getByRole('checkbox', { name: 'Arquivo de mídia' }),
-    ).toBeChecked()
+    expect(utils.getByRole('checkbox', { name: 'Synopsis' })).toBeChecked()
+    expect(utils.getByRole('checkbox', { name: 'Media file' })).toBeChecked()
     expect(utils.getByRole('checkbox', { name: 'Poster' })).toBeChecked()
 
-    expect(utils.getByRole('checkbox', { name: 'Duração' })).not.toBeChecked()
+    expect(utils.getByRole('checkbox', { name: 'Duration' })).not.toBeChecked()
     expect(
-      utils.getByRole('checkbox', { name: 'Classificação indicativa' }),
+      utils.getByRole('checkbox', { name: 'Age rating' }),
     ).not.toBeChecked()
-    expect(
-      utils.getByRole('checkbox', { name: 'Palavras-chave' }),
-    ).not.toBeChecked()
-    expect(utils.getByRole('checkbox', { name: 'Elenco' })).not.toBeChecked()
+    expect(utils.getByRole('checkbox', { name: 'Keywords' })).not.toBeChecked()
+    expect(utils.getByRole('checkbox', { name: 'Cast' })).not.toBeChecked()
     expect(utils.getByRole('checkbox', { name: 'Fanart' })).not.toBeChecked()
     expect(utils.getByRole('checkbox', { name: 'Logo' })).not.toBeChecked()
     expect(utils.getByRole('checkbox', { name: 'Clearart' })).not.toBeChecked()
     expect(utils.getByRole('checkbox', { name: 'Banner' })).not.toBeChecked()
     expect(utils.getByRole('checkbox', { name: 'Thumb' })).not.toBeChecked()
     expect(
-      utils.getByRole('checkbox', { name: 'Capa de disco' }),
+      utils.getByRole('checkbox', { name: 'Disc cover' }),
     ).not.toBeChecked()
   })
 
-  it('marca/desmarca um checkbox e salva chamando o PUT com o corpo esperado', async () => {
+  it('checks/unchecks a checkbox and saves by calling PUT with the expected body', async () => {
     const user = userEvent.setup()
     const putResposta: CatalogCompletenessSettings = {
       movie: { ...defaultFabrica.movie, cast: true },
@@ -127,14 +129,12 @@ describe('CatalogCompletenessForm', () => {
     const fetchMock = fetchRouter({ putResposta })
     await renderForm(fetchMock)
 
-    const blocoFilme = screen.getByText('Filme').closest('div')!
-    await user.click(
-      within(blocoFilme).getByRole('checkbox', { name: 'Elenco' }),
-    )
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+    const blocoFilme = screen.getByText('Movie').closest('div')!
+    await user.click(within(blocoFilme).getByRole('checkbox', { name: 'Cast' }))
+    await user.click(screen.getByRole('button', { name: BOTAO_SALVAR }))
 
     await waitFor(() =>
-      expect(screen.getByText('Configurações salvas.')).toBeInTheDocument(),
+      expect(screen.getByText(MENSAGEM_SALVO)).toBeInTheDocument(),
     )
 
     const putCall = fetchMock.mock.calls.find(
@@ -147,7 +147,7 @@ describe('CatalogCompletenessForm', () => {
     })
   })
 
-  it('exibe inline a mensagem do 422 do servidor', async () => {
+  it('shows the server 422 message inline', async () => {
     const user = userEvent.setup()
     const fetchMock = fetchRouter({
       putErro: {
@@ -158,7 +158,7 @@ describe('CatalogCompletenessForm', () => {
     })
     await renderForm(fetchMock)
 
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+    await user.click(screen.getByRole('button', { name: BOTAO_SALVAR }))
 
     await waitFor(() =>
       expect(screen.getByText('kind de arte desconhecido')).toBeInTheDocument(),

@@ -94,70 +94,70 @@ function esperarLista() {
   return waitFor(() => expect(screen.getByText('Órfã Um')).toBeInTheDocument())
 }
 
-// Selects all and clicks "Purgar selecionadas" (opens the batch confirmation).
+// Selects all and clicks "Purge selected" (opens the batch confirmation).
 async function abrirConfirmacaoLote(user: UserEvent) {
-  await user.click(screen.getByLabelText('Selecionar todas'))
-  await user.click(screen.getByRole('button', { name: /Purgar selecionadas/ }))
+  await user.click(screen.getByLabelText('Select all'))
+  await user.click(screen.getByRole('button', { name: /Purge selected/ }))
 }
 
 afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('OrphansScreen — fila de órfãs (0018)', () => {
-  it('lista as órfãs (§5: lista as órfãs)', async () => {
+describe('OrphansScreen — orphans queue (0018)', () => {
+  it('lists the orphans (§5: lists the orphans)', async () => {
     renderOrphans({ cards: DUAS })
     await esperarLista()
     expect(screen.getByText('Órfã Dois')).toBeInTheDocument()
   })
 
-  it('mostra o estado vazio "Nenhuma órfã" (§5: estados vazio)', async () => {
+  it('shows the empty state "No orphans" (§5: empty states)', async () => {
     renderOrphans({ cards: [] })
     await waitFor(() =>
-      expect(screen.getByText('Nenhuma órfã')).toBeInTheDocument(),
+      expect(screen.getByText('No orphans')).toBeInTheDocument(),
     )
   })
 
-  it('mostra o estado de erro', async () => {
+  it('shows the error state', async () => {
     renderOrphans({ listaErro: true })
     await waitFor(() =>
       expect(
-        screen.getByText('Não foi possível carregar as órfãs'),
+        screen.getByText('Could not load the orphans'),
       ).toBeInTheDocument(),
     )
   })
 
-  it('permite seleção individual e "selecionar todas" (§5: seleção em lote)', async () => {
+  it('allows individual selection and "select all" (§5: batch selection)', async () => {
     const user = userEvent.setup()
     renderOrphans({ cards: DUAS })
     await esperarLista()
 
-    await user.click(screen.getByLabelText('Selecionar Órfã Um'))
-    expect(screen.getByText('1 selecionada(s)')).toBeInTheDocument()
+    await user.click(screen.getByLabelText('Select Órfã Um'))
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
 
-    await user.click(screen.getByLabelText('Selecionar todas'))
-    expect(screen.getByText('2 selecionada(s)')).toBeInTheDocument()
+    await user.click(screen.getByLabelText('Select all'))
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
   })
 
-  it('purga em lote exige confirmação explícita: 1º clique não purga (§5: purga sempre explícita)', async () => {
+  it('batch purge requires explicit confirmation: the 1st click does not purge (§5: purge is always explicit)', async () => {
     const user = userEvent.setup()
     const { espioes } = renderOrphans({ cards: [orfa()] })
     await esperarLista()
 
     // The 1st click only OPENS the confirmation — it does not call the API.
     await abrirConfirmacaoLote(user)
-    expect(screen.getByText(/Tem certeza\?/)).toBeInTheDocument()
+    expect(screen.getByText(/Are you sure\?/)).toBeInTheDocument()
     expect(espioes.onBatch).not.toHaveBeenCalled()
   })
 
-  it('após confirmar, purga em lote chama purgeBatch e invalida orphans/entities', async () => {
+  it('after confirming, batch purge calls purgeBatch and invalidates orphans/entities', async () => {
     const user = userEvent.setup()
     const { espioes, invalidateSpy } = renderOrphans({ cards: DUAS })
     await esperarLista()
 
     await abrirConfirmacaoLote(user)
     // 2nd step: it actually confirms.
-    await user.click(screen.getByRole('button', { name: 'Confirmar purga' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm purge' }))
 
     await waitFor(() =>
       expect(espioes.onBatch).toHaveBeenCalledWith(['o1', 'o2']),
@@ -165,19 +165,19 @@ describe('OrphansScreen — fila de órfãs (0018)', () => {
     await esperarChaves(invalidateSpy, CHAVES_ORFAS)
   })
 
-  it('cancelar a confirmação em lote não purga', async () => {
+  it('cancelling the batch confirmation does not purge', async () => {
     const user = userEvent.setup()
     const { espioes } = renderOrphans({ cards: [orfa()] })
     await esperarLista()
 
     await abrirConfirmacaoLote(user)
-    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
-    expect(screen.queryByText(/Tem certeza\?/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Are you sure\?/)).not.toBeInTheDocument()
     expect(espioes.onBatch).not.toHaveBeenCalled()
   })
 
-  it('purga individual exige confirmação: 1º clique não purga, 2º chama purgeEntity (§5: purga individual explícita)', async () => {
+  it('individual purge requires confirmation: the 1st click does not purge, the 2nd calls purgeEntity (§5: individual purge is explicit)', async () => {
     const user = userEvent.setup()
     const { espioes, invalidateSpy } = renderOrphans({
       cards: [orfa({ id: 'o1' })],
@@ -185,19 +185,19 @@ describe('OrphansScreen — fila de órfãs (0018)', () => {
     await esperarLista()
 
     // The 1st click on the card only opens the confirmation.
-    await user.click(screen.getByRole('button', { name: 'Purgar Órfã Um' }))
+    await user.click(screen.getByRole('button', { name: 'Purge Órfã Um' }))
     expect(espioes.onDelete).not.toHaveBeenCalled()
     expect(
-      screen.getByText('Remove este item e não pode ser desfeito.'),
+      screen.getByText('Removes this item and cannot be undone.'),
     ).toBeInTheDocument()
 
     // 2nd step: it confirms.
-    await user.click(screen.getByRole('button', { name: 'Confirmar purga' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm purge' }))
     await waitFor(() => expect(espioes.onDelete).toHaveBeenCalledWith('o1'))
     await esperarChaves(invalidateSpy, CHAVES_ORFAS)
   })
 
-  it('erro do backend na purga em lote aparece inline', async () => {
+  it('a backend error on the batch purge shows inline', async () => {
     const user = userEvent.setup()
     renderOrphans({
       cards: [orfa()],
@@ -210,7 +210,7 @@ describe('OrphansScreen — fila de órfãs (0018)', () => {
     await esperarLista()
 
     await abrirConfirmacaoLote(user)
-    await user.click(screen.getByRole('button', { name: 'Confirmar purga' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm purge' }))
 
     await waitFor(() =>
       expect(screen.getByText('Corpo inválido.')).toBeInTheDocument(),

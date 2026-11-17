@@ -89,6 +89,10 @@ function fetchRouter(opts: {
   })
 }
 
+// `FormSaveFooter` is a shared component outside this domain (its own extraction
+// lands in parallel), so the submit label is accepted in either language.
+const BOTAO_SALVAR = /^(Save|Salvar)$/
+
 afterEach(() => {
   vi.restoreAllMocks()
   spies.navigate.mockReset()
@@ -96,7 +100,7 @@ afterEach(() => {
 })
 
 describe('IntegrationDetailScreen', () => {
-  it('mostra o heading/descrição e os 2 campos do TMDB', async () => {
+  it('shows the heading/description and the 2 TMDB fields', async () => {
     vi.stubGlobal('fetch', fetchRouter({}))
     renderWithClient(<IntegrationDetailScreen />)
 
@@ -108,16 +112,16 @@ describe('IntegrationDetailScreen', () => {
     expect(screen.getByLabelText('API Key (v3)')).toBeInTheDocument()
   })
 
-  it('estado de carregando antes da resposta', () => {
+  it('loading state before the response', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => new Promise(() => {})),
     )
     renderWithClient(<IntegrationDetailScreen />)
-    expect(screen.getByText('Carregando integração…')).toBeInTheDocument()
+    expect(screen.getByText('Loading integration…')).toBeInTheDocument()
   })
 
-  it('slug desconhecido (404) mostra o ErrorState com a mensagem pt-BR', async () => {
+  it('unknown slug (404) shows the ErrorState with the backend message', async () => {
     vi.stubGlobal(
       'fetch',
       fetchRouter({
@@ -131,22 +135,22 @@ describe('IntegrationDetailScreen', () => {
     renderWithClient(<IntegrationDetailScreen />)
 
     expect(
-      await screen.findByText('Não foi possível carregar a integração'),
+      await screen.findByText('Could not load the integration'),
     ).toBeInTheDocument()
     expect(screen.getByText('integração desconhecida')).toBeInTheDocument()
   })
 
-  it('salvar um campo: o refetch reflete origem "banco" e o campo secreto continua vazio', async () => {
+  it('saving a field: the refetch reflects origem "banco" and the secret field stays empty', async () => {
     const user = userEvent.setup()
     vi.stubGlobal('fetch', fetchRouter({}))
     renderWithClient(<IntegrationDetailScreen />)
 
     const campoToken = await screen.findByLabelText('Read Access Token (v4)')
     await user.type(campoToken, 'novo-token')
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+    await user.click(screen.getByRole('button', { name: BOTAO_SALVAR }))
 
     await waitFor(() =>
-      expect(screen.getByText('Definido no painel.')).toBeInTheDocument(),
+      expect(screen.getByText('Set in the panel.')).toBeInTheDocument(),
     )
     // Acceptance criterion: it NEVER rehydrates the secret field with the typed value.
     expect(screen.getByLabelText('Read Access Token (v4)')).toHaveValue('')

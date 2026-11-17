@@ -3,7 +3,7 @@ import { resetBiblioteca } from '../lib/reset'
 
 // RICH sections of RichDetailView (backend internal/richfields) that the
 // other journeys do not assert yet: the ORIGINAL title from the source (distinct from the translated
-// one), the original LANGUAGE resolved to a pt-BR label, the LINK to the source (TMDB) and the GRACEFUL
+// one), the original LANGUAGE resolved to a label (endonym), the LINK to the source (TMDB) and the GRACEFUL
 // degradation of the sections without data. The Matrix franchise fake does not bring video/similar/collection
 // in the movie detail (only title/synopsis/genres/language/link), so this block targets the
 // rich fields that actually EXIST and locks the behavior of the empty sections.
@@ -14,13 +14,14 @@ import { resetBiblioteca } from '../lib/reset'
 //
 // The default reading language of the Playwright context is pt-BR (as in the sibling journeys),
 // so the translated title ("Matrix Reloaded") differs from the original ("The Matrix
-// Reloaded") — the condition for the original title line to render.
+// Reloaded") — the condition for the original title line to render; the interface chrome
+// is in English (the default UI language).
 
 test.beforeEach(async ({ request }) => {
   await resetBiblioteca(request)
 })
 
-test('detalhe externo rico: titulo original, idioma da fonte e link a fonte', async ({
+test('rich external detail: original title, source language and link to the source', async ({
   page,
 }) => {
   await page.goto('/external/tmdb/movie/604')
@@ -33,9 +34,9 @@ test('detalhe externo rico: titulo original, idioma da fonte e link a fonte', as
   await expect(
     main.getByText('The Matrix Reloaded', { exact: true }),
   ).toBeVisible()
-  // Language of the source ("en") resolved to the pt-BR label "Inglês" (outside the language
+  // Language of the source ("en") resolved to its endonym "English" (outside the language
   // selector, which sits in the header — that is why the search is scoped to <main>).
-  await expect(main.getByText('Inglês', { exact: true })).toBeVisible()
+  await expect(main.getByText('English', { exact: true })).toBeVisible()
   // Link to the SOURCE, with the real TMDB href (not a loose text).
   await expect(page.getByRole('link', { name: 'TMDB' })).toHaveAttribute(
     'href',
@@ -45,7 +46,7 @@ test('detalhe externo rico: titulo original, idioma da fonte e link a fonte', as
   await expect(page.getByTestId('poster-placeholder').first()).toBeVisible()
 })
 
-test('detalhe externo: secoes sem dado nao renderizam (degradacao graciosa)', async ({
+test('external detail: sections without data do not render (graceful degradation)', async ({
   page,
 }) => {
   await page.goto('/external/tmdb/movie/603')
@@ -60,16 +61,16 @@ test('detalhe externo: secoes sem dado nao renderizam (degradacao graciosa)', as
   await expect(
     page.getByText('Um hacker descobre a verdadeira natureza da sua realidade.'),
   ).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Sinopse' })).toHaveCount(0)
-  await expect(page.getByRole('heading', { name: 'Gêneros' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Synopsis' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Genres' })).toHaveCount(0)
   await expect(page.getByText('Ficcao cientifica')).toBeVisible()
   // The ones without data in the fake (videos/similars/collection/keywords) emit no header.
-  for (const secao of ['Vídeos', 'Similares', 'Coleção', 'Palavras-chave']) {
+  for (const secao of ['Videos', 'Similar', 'Collection', 'Keywords']) {
     await expect(page.getByRole('heading', { name: secao })).toHaveCount(0)
   }
 })
 
-test('paridade externo<->interno: a entity importada mostra a mesma tela rica', async ({
+test('external<->internal parity: the imported entity shows the same rich screen', async ({
   page,
   request,
 }) => {
@@ -90,16 +91,16 @@ test('paridade externo<->interno: a entity importada mostra a mesma tela rica', 
   await expect(
     main.getByText('The Matrix Reloaded', { exact: true }),
   ).toBeVisible()
-  await expect(main.getByText('Inglês', { exact: true })).toBeVisible()
+  await expect(main.getByText('English', { exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'TMDB' })).toHaveAttribute(
     'href',
     'https://www.themoviedb.org/movie/604',
   )
-  // Genre exclusive to Reloaded (pt-BR), confirming the resolution in the active language.
+  // Genre exclusive to Reloaded (pt-BR metadata), confirming the resolution in the active reading language.
   await expect(page.getByText('Aventura')).toBeVisible()
 })
 
-test('baixar trailer e musica-tema materializam em disco (yt-dlp mockado)', async ({
+test('downloading the trailer and the theme song materializes them on disk (mocked yt-dlp)', async ({
   page,
   request,
 }) => {
@@ -107,7 +108,7 @@ test('baixar trailer e musica-tema materializam em disco (yt-dlp mockado)', asyn
   // candidate of ThemerrDB is never fetched live (only a pre-existing cache) -- both of them,
   // besides yt-dlp itself (which would really download the binary from the internet on the
   // 1st call without a mock), need to be injected through network interception to exercise the
-  // "Baixar trailer"/"Baixar tema" buttons in a deterministic and offline way in CI.
+  // "Download trailer"/"Download theme" buttons in a deterministic and offline way in CI.
   const res = await request.post('/api/v1/import', {
     data: { source: 'tmdb', source_id: '604', type: 'movie' },
   })
@@ -176,21 +177,21 @@ test('baixar trailer e musica-tema materializam em disco (yt-dlp mockado)', asyn
     page.getByRole('heading', { level: 1, name: 'Matrix Reloaded' }),
   ).toBeVisible()
 
-  // "Assistir trailer" (embedded) stays the same; "Baixar trailer"
+  // "Watch trailer" (embedded) stays the same; "Download trailer"
   // (ADR-0025) is purely additive next to it. Clicking it materializes the file and the button
-  // becomes a "Trailer baixado" link.
+  // becomes a "Trailer downloaded" link.
   await expect(
-    page.getByRole('button', { name: 'Assistir trailer' }),
+    page.getByRole('button', { name: 'Watch trailer' }),
   ).toBeVisible()
-  const baixarTrailer = page.getByRole('button', { name: 'Baixar trailer' })
+  const baixarTrailer = page.getByRole('button', { name: 'Download trailer' })
   await expect(baixarTrailer).toBeVisible()
   await baixarTrailer.click()
-  await expect(page.getByRole('link', { name: 'Trailer baixado' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Trailer downloaded' })).toBeVisible()
 
-  // "Baixar tema" (ADR-0025): mocked ThemerrDB candidate available, with no
+  // "Download theme" (ADR-0025): mocked ThemerrDB candidate available, with no
   // local theme yet -- clicking it materializes the file and the button disappears (no `force`,
   // it never offers a re-download).
-  const baixarTema = page.getByRole('button', { name: 'Baixar tema' })
+  const baixarTema = page.getByRole('button', { name: 'Download theme' })
   await expect(baixarTema).toBeVisible()
   await baixarTema.click()
   await expect(baixarTema).toHaveCount(0)

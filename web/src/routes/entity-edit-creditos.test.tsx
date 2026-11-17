@@ -10,14 +10,19 @@ const CAST_DUPLO = [
 ]
 
 // Route `/entities/$id/edit/creditos` (subroute of the item edit): the
-// "Elenco e equipe" section — `CreditsEditor` in isolation (the saving behavior
+// "Cast and crew" section — `CreditsEditor` in isolation (the saving behavior
 // and the batch reordering are already covered by `credits-editor.test.tsx`;
 // the mechanics of the "leave without saving" guard is already covered in detail by
 // `entity-edit-shell.test.tsx`). Here, over the REAL ROUTE TREE (the same
 // MSW harness as the tests in `routes/__msw__/`), we cover only the mounting of this
 // subroute and the WIRING of the guard (the "dirty" state of the `CreditsEditor` reaches the
 // `EntityEditShell` and intercepts the navigation for real).
-describe('EntityEditCreditosScreen (árvore real)', () => {
+// The item loading/error state comes from `components/query-states.tsx`, which
+// another domain owns: this query tolerates both labels so the test does not depend
+// on that extraction.
+const ESTADO_ERRO = /Não foi possível carregar o item|Could not load the item/
+
+describe('EntityEditCreditosScreen (real route tree)', () => {
   beforeEach(() => {
     entidades.set(
       'e1',
@@ -29,47 +34,47 @@ describe('EntityEditCreditosScreen (árvore real)', () => {
     vi.unstubAllGlobals()
   })
 
-  it('mostra só o editor de créditos, com sidebar e cabeçalho', async () => {
+  it('shows only the credits editor, with the sidebar and the header', async () => {
     await renderRota('/entities/e1/edit/creditos')
-    await screen.findAllByLabelText('Mover para baixo')
+    await screen.findAllByLabelText('Move down')
     expect(screen.getByText('Ana')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Cast and crew' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
     expect(
-      screen.getByRole('link', { name: 'Elenco e equipe' }),
-    ).toHaveAttribute('aria-current', 'page')
-    expect(
-      screen.getByRole('link', { name: 'Informações básicas' }),
+      screen.getByRole('link', { name: 'Basic information' }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('link', { name: 'IDs de terceiros' }),
+      screen.getByRole('link', { name: 'External IDs' }),
     ).toBeInTheDocument()
   })
 
-  it('id inexistente (404) mostra o estado de erro', async () => {
+  it('a missing id (404) shows the error state', async () => {
     await renderRota('/entities/e2/edit/creditos')
-    expect(
-      await screen.findByText('Não foi possível carregar o item'),
-    ).toBeInTheDocument()
+    expect(await screen.findByText(ESTADO_ERRO)).toBeInTheDocument()
   })
 
-  it('reordenar sem salvar dispara confirmação; cancelar mantém, confirmar navega', async () => {
+  it('reordering without saving fires the confirmation; cancelling keeps, confirming navigates', async () => {
     const confirmar = vi.fn(() => false)
     vi.stubGlobal('confirm', confirmar)
     const user = userEvent.setup()
     await renderRota('/entities/e1/edit/creditos')
-    await user.click((await screen.findAllByLabelText('Mover para baixo'))[0])
-    await user.click(screen.getByRole('link', { name: 'IDs de terceiros' }))
+    await user.click((await screen.findAllByLabelText('Move down'))[0])
+    await user.click(screen.getByRole('link', { name: 'External IDs' }))
     expect(confirmar).toHaveBeenCalledTimes(1)
     // It cancelled the exit: it stays in the same section (Beto still 2nd, unchanged).
-    expect(
-      screen.getByRole('link', { name: 'Elenco e equipe' }),
-    ).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Cast and crew' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
 
     // Confirming this time, the navigation actually happens.
     confirmar.mockReturnValue(true)
-    await user.click(screen.getByRole('link', { name: 'IDs de terceiros' }))
+    await user.click(screen.getByRole('link', { name: 'External IDs' }))
     await waitFor(() =>
       expect(
-        screen.getByRole('link', { name: 'IDs de terceiros' }),
+        screen.getByRole('link', { name: 'External IDs' }),
       ).toHaveAttribute('aria-current', 'page'),
     )
   })

@@ -8,25 +8,30 @@ import { useLanguage } from '@/lib/language-context'
 import { Button } from '@/components/ui/button'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import { ImportarButton } from '@/components/rich-detail-view'
+import { useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 
 // ExternalAlbumView is the "missing tracks" screen of an album (ADR-0029):
-// the OFFICIAL tracks of the release, with "Importar" per missing track
+// the OFFICIAL tracks of the release, with "Import" per missing track
 // and "na biblioteca" for the already cataloged ones — same pattern as
 // CollectionDetailScreen (collection→movies), adapted to album→tracks. Rendered
 // by the SAME route `/external/$source/$type/$id` that the rich detail uses
 // (ExternalDetailScreen delegates here when `type==='album'`), so it needs no
 // route of its own nor does it touch router.tsx.
 
-function propsDeErro(error: unknown): { title: string; message?: string } {
+function propsDeErro(
+  error: unknown,
+  t: Translate,
+): { title: string; message?: string } {
   const status = error instanceof ApiError ? error.status : 0
   const message = error instanceof Error ? error.message : undefined
   if (status === 404) {
-    return { title: 'Álbum não encontrado na fonte', message }
+    return { title: t('entity.external.albumNotFound'), message }
   }
   if (status === 502 || status === 503) {
-    return { title: 'Fonte indisponível no momento', message }
+    return { title: t('entity.external.unavailable'), message }
   }
-  return { title: 'Não foi possível carregar o álbum', message }
+  return { title: t('entity.external.albumError'), message }
 }
 
 export function ExternalAlbumView({
@@ -39,6 +44,7 @@ export function ExternalAlbumView({
   back: ReactNode
 }) {
   const { lang } = useLanguage()
+  const t = useT()
   const { data, isPending, isError, error } = useQuery(
     externalAlbumQueryOptions(source, id, lang),
   )
@@ -46,7 +52,7 @@ export function ExternalAlbumView({
   if (isPending) {
     return (
       <main className="mx-auto max-w-4xl px-4 py-6">
-        <LoadingState label="Carregando álbum…" />
+        <LoadingState label={t('entity.external.albumLoading')} />
       </main>
     )
   }
@@ -54,7 +60,7 @@ export function ExternalAlbumView({
     return (
       <main className="mx-auto max-w-4xl px-4 py-6">
         {back}
-        <ErrorState {...propsDeErro(error)} />
+        <ErrorState {...propsDeErro(error, t)} />
       </main>
     )
   }
@@ -80,7 +86,7 @@ export function ExternalAlbumView({
               <Button asChild variant="secondary">
                 <Link to="/entities/$id" params={{ id: data.internal_id }}>
                   <Library aria-hidden />
-                  Ver álbum
+                  {t('entity.action.viewAlbum')}
                 </Link>
               </Button>
             ) : null}
@@ -88,7 +94,9 @@ export function ExternalAlbumView({
         </div>
 
         <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-lg font-medium">Faixas do álbum</h2>
+          <h2 className="font-heading text-lg font-medium">
+            {t('entity.external.albumTracks')}
+          </h2>
           {data.tracks.length > 0 ? (
             <ol className="flex flex-col divide-y divide-foreground/10 rounded-xl ring-1 ring-foreground/10">
               {data.tracks.map((track) => (
@@ -103,7 +111,7 @@ export function ExternalAlbumView({
             </ol>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Este álbum não tem faixas na fonte.
+              {t('entity.external.albumEmpty')}
             </p>
           )}
         </section>
@@ -113,7 +121,7 @@ export function ExternalAlbumView({
 }
 
 // FaixaLinha is ONE track of the release: an already cataloged one links to the internal detail;
-// a missing one gains the Importar button (find-or-create linked to the parent album via
+// a missing one gains the Import button (find-or-create linked to the parent album via
 // `parentId`).
 function FaixaLinha({
   source,
@@ -124,6 +132,7 @@ function FaixaLinha({
   track: ExternalAlbumTrack
   albumInternalId: string | null
 }) {
+  const t = useT()
   return (
     <div className="flex items-center gap-3 px-3 py-2.5">
       <span className="w-6 shrink-0 text-right text-sm tabular-nums text-muted-foreground">
@@ -144,7 +153,9 @@ function FaixaLinha({
         </span>
       )}
       {track.internal_id ? (
-        <span className="text-xs text-muted-foreground">na biblioteca</span>
+        <span className="text-xs text-muted-foreground">
+          {t('entity.label.inLibrary')}
+        </span>
       ) : albumInternalId ? (
         <ImportarButton
           source={source}
@@ -152,7 +163,6 @@ function FaixaLinha({
           type="faixa"
           parentId={albumInternalId}
           size="sm"
-          label="Importar"
         />
       ) : null}
     </div>

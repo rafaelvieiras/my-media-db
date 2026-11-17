@@ -19,6 +19,18 @@ import (
 // here.
 var reSeasonFolder = regexp.MustCompile(`(?i)^(season|temporada|s)[ ._-]*\d{1,4}$`)
 
+// reSeasonOrdinal is the ordinal form that the plain pattern above misses:
+// "1ª Temporada", "2a Temporada", "3º Temporada", "1o Season". Real libraries use it, and
+// without it the SEASON folder is taken for the SERIES folder — the show then
+// disappears and a phantom series named "1ª Temporada" is created instead.
+var reSeasonOrdinal = regexp.MustCompile(`(?i)^\d{1,3}\s*[ªº°ao]?\s*(season|temporada)$`)
+
+// reSeasonAno is a bare year used as the season number. TVDB numbers some shows
+// by year — "common with older shows, daytime soaps and talk shows" (Kodi wiki,
+// Naming video files/Seasons) — and the file name carries it in SxxEyy form
+// ("Looney Tunes - S1931E09.mkv"). Only 4 digits between 1900 and 2099.
+var reSeasonAno = regexp.MustCompile(`^(?:19|20)\d{2}$`)
+
 // reDigitosPasta extracts the number from the end of a season folder name.
 var reDigitosPasta = regexp.MustCompile(`\d{1,4}`)
 
@@ -29,7 +41,8 @@ func EhPastaTemporada(nome string) bool {
 	if l == "specials" || l == "especiais" {
 		return true
 	}
-	return reSeasonFolder.MatchString(nome)
+	return reSeasonFolder.MatchString(nome) || reSeasonOrdinal.MatchString(strings.TrimSpace(nome)) ||
+		reSeasonAno.MatchString(strings.TrimSpace(nome))
 }
 
 // PastaDaSerie returns the series folder of a file: the immediate folder or, if

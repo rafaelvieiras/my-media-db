@@ -3,6 +3,7 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { CollectionNewScreen } from '@/routes/collection-new'
+import { I18nProvider } from '@/lib/i18n'
 import { renderWithClient } from '@/test/render'
 import { okJson } from '@/test/entity-fixtures'
 import { stubCriacao } from '@/test/criacao-harness'
@@ -22,11 +23,12 @@ const fetchRouter = (resp: () => Response) =>
 
 afterEach(() => {
   vi.restoreAllMocks()
+  localStorage.clear()
   spies.navigate.mockReset()
 })
 
 describe('CollectionNewScreen', () => {
-  it('só mostra os campos aplicáveis à coleção (título + descrição)', async () => {
+  it('shows only the fields that apply to a collection (title + description)', async () => {
     fetchRouter(() => okJson({}))
     renderWithClient(<CollectionNewScreen />)
     await screen.findByLabelText('Título')
@@ -36,7 +38,7 @@ describe('CollectionNewScreen', () => {
     expect(screen.queryByLabelText('Sua nota')).toBeNull()
   })
 
-  it('cria a coleção e navega para /entities/{id}', async () => {
+  it('creates the collection and navigates to /entities/{id}', async () => {
     const m = fetchRouter(() =>
       okJson({ id: 'col-9', type: 'collection', title: 'Trilogia' }),
     )
@@ -44,7 +46,7 @@ describe('CollectionNewScreen', () => {
     const user = userEvent.setup()
 
     await user.type(await screen.findByLabelText('Título'), 'Trilogia')
-    await user.click(screen.getByRole('button', { name: 'Criar coleção' }))
+    await user.click(screen.getByRole('button', { name: 'Create collection' }))
 
     await vi.waitFor(() =>
       expect(spies.navigate).toHaveBeenCalledWith({
@@ -56,15 +58,37 @@ describe('CollectionNewScreen', () => {
     expect(corpo.title).toBe('Trilogia')
   })
 
-  it('mostra o erro 422 inline e não navega', async () => {
+  it('shows the 422 error inline and does not navigate', async () => {
     fetchRouter(() => erroJson(422, 'invalid_body', 'titulo obrigatorio'))
     renderWithClient(<CollectionNewScreen />)
     const user = userEvent.setup()
 
     await user.type(await screen.findByLabelText('Título'), 'x')
-    await user.click(screen.getByRole('button', { name: 'Criar coleção' }))
+    await user.click(screen.getByRole('button', { name: 'Create collection' }))
 
     expect(await screen.findByText('titulo obrigatorio')).toBeInTheDocument()
     expect(spies.navigate).not.toHaveBeenCalled()
+  })
+
+  it('renders the copy in pt-BR when the interface language is pt-BR', async () => {
+    // The interface language is a browser preference (ADR-0032): pin it before
+    // rendering so the Portuguese copy is the one under test.
+    localStorage.setItem('mmdb.ui-lang', 'pt-BR')
+    fetchRouter(() => okJson({}))
+    renderWithClient(
+      <I18nProvider>
+        <CollectionNewScreen />
+      </I18nProvider>,
+    )
+
+    expect(
+      await screen.findByRole('heading', { name: 'Nova coleção' }),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByRole('button', { name: 'Criar coleção' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: /Voltar à biblioteca/ }),
+    ).toBeInTheDocument()
   })
 })

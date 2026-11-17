@@ -6,6 +6,7 @@ import { SchemaForm } from '@/components/schema-form'
 import { NewEntityPage } from '@/components/new-entity-page'
 import { createItem } from '@/lib/api'
 import { useCriarEntidade } from '@/lib/use-criar-entidade'
+import { useT } from '@/lib/i18n'
 import {
   criaveis,
   schemaZod,
@@ -19,30 +20,35 @@ import {
 // editorial field, so the route injects it at the top of the form. On creation, it navigates to
 // `/entities/{id}`, where the owner fixes the external IDs and re-enriches.
 //
-// Cross-link to the Search: whoever clicks "Novo item" expecting
+// Cross-link to the Search: whoever clicks "New item" expecting
 // to import an already existing title (close to TMDB) lands here on a blank
 // manual form with no hint that `/search` is the right path — the
 // `CrossLinkBusca` block at the top, before the form, points there. The manual
 // form stays as it is (registering what does not exist in an external source).
 export function ItemNewScreen() {
+  const t = useT()
   return (
-    <NewEntityPage title="Novo item" topo={<CrossLinkBusca />}>
+    <NewEntityPage
+      title={t('collections.item.title')}
+      topo={<CrossLinkBusca />}
+    >
       {(fields) => <ItemNewForm fields={fields} />}
     </NewEntityPage>
   )
 }
 
 function CrossLinkBusca() {
+  const t = useT()
   return (
     <p className="mb-4 text-sm text-muted-foreground">
-      Procurando um título existente?{' '}
+      {t('collections.item.crossLinkBefore')}{' '}
       <Link
         to="/search"
         className="font-medium text-foreground underline underline-offset-2"
       >
-        Use a Busca
+        {t('collections.item.crossLinkAction')}
       </Link>{' '}
-      para importar direto do catálogo.
+      {t('collections.item.crossLinkAfter')}
     </p>
   )
 }
@@ -53,11 +59,12 @@ function ItemNewForm({
   fields: import('@/lib/api').FieldDescriptor[]
 }) {
   const navigate = useNavigate()
+  const t = useT()
   const [type, setType] = useState<'movie' | 'tv'>('movie')
   const criaveisFields = criaveis(fields)
   const { mutation, mensagemErro } = useCriarEntidade(
     createItem,
-    'Não foi possível criar o item.',
+    t('collections.item.failed'),
   )
 
   function onSubmit(valores: ValoresForm) {
@@ -76,15 +83,15 @@ function ItemNewForm({
 
   const header = (
     <label className="flex flex-col gap-1.5 text-sm">
-      <span className="font-medium">Tipo</span>
+      <span className="font-medium">{t('common.label.type')}</span>
       <Select
         value={type}
         onChange={(e) => setType(e.target.value as 'movie' | 'tv')}
-        aria-label="Tipo do item"
+        aria-label={t('collections.item.typeLabel')}
         className="max-w-40"
       >
-        <option value="movie">Filme</option>
-        <option value="tv">Série</option>
+        <option value="movie">{t('common.entityType.movie')}</option>
+        <option value="tv">{t('common.entityType.tv')}</option>
       </Select>
     </label>
   )
@@ -96,8 +103,8 @@ function ItemNewForm({
       schema={schemaZod(criaveisFields, 'criacao')}
       onSubmit={onSubmit}
       onCancel={() => navigate({ to: '/' })}
-      submitLabel="Criar item"
-      submitPendingLabel="Criando…"
+      submitLabel={t('collections.item.submit')}
+      submitPendingLabel={t('collections.item.submitting')}
       submitIcon={<FilmIcon aria-hidden />}
       isPending={mutation.isPending}
       mensagemErro={mensagemErro}

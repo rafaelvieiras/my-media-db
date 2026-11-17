@@ -4,6 +4,7 @@ import { ListMusic, Music } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ErrorState, LoadingState } from '@/components/query-states'
 import { useLanguage } from '@/lib/language-context'
+import { useT } from '@/lib/i18n'
 import { entityMembersQueryOptions } from '@/lib/queries'
 import type { EntityCard } from '@/lib/api'
 
@@ -36,6 +37,7 @@ const SOURCE_MUSICBRAINZ = 'musicbrainz'
 // instruction of §Step 1: "endpoint hardcoded → do not rewrite it on your own".
 export function TracklistAlbum({ id, mbid }: { id: string; mbid?: string }) {
   const { lang } = useLanguage()
+  const t = useT()
   const { data, isPending, isError } = useQuery(
     entityMembersQueryOptions(id, lang),
   )
@@ -44,7 +46,9 @@ export function TracklistAlbum({ id, mbid }: { id: string; mbid?: string }) {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-heading text-lg font-medium">Faixas</h2>
+        <h2 className="font-heading text-lg font-medium">
+          {t('common.entityTypePlural.faixa')}
+        </h2>
         {/* "Ver faixas faltando" (ADR-0029): same UX as
             external item not owned that movie/series/collection already use — it only
             appears when the album has an mbid (MusicBrainz), the only source that
@@ -56,18 +60,18 @@ export function TracklistAlbum({ id, mbid }: { id: string; mbid?: string }) {
               params={{ source: SOURCE_MUSICBRAINZ, type: 'album', id: mbid }}
             >
               <ListMusic aria-hidden />
-              Ver faixas faltando
+              {t('media.tracks.seeMissing')}
             </Link>
           </Button>
         ) : null}
       </div>
       {isPending ? (
-        <LoadingState label="Carregando faixas…" />
+        <LoadingState label={t('media.tracks.loading')} />
       ) : isError ? (
-        <ErrorState title="Não foi possível carregar as faixas" />
+        <ErrorState title={t('media.tracks.loadError')} />
       ) : !faixas || faixas.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Este álbum ainda não tem faixas catalogadas.
+          {t('media.tracks.empty')}
         </p>
       ) : (
         <ol className="flex flex-col divide-y divide-foreground/10 rounded-xl ring-1 ring-foreground/10">

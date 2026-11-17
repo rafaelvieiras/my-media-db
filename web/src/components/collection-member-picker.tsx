@@ -14,6 +14,7 @@ import {
   type EntityCard,
 } from '@/lib/api'
 import { aspectPorTipo, rotuloTipo } from '@/lib/entity-badges'
+import { useT } from '@/lib/i18n'
 
 const DEBOUNCE_MS = 350
 
@@ -36,6 +37,7 @@ export function CollectionMemberPicker({
   onClose: () => void
 }) {
   const { lang } = useLanguage()
+  const t = useT()
   const [termo, setTermo] = useState('')
   const debounced = useDebounced(termo.trim(), DEBOUNCE_MS)
 
@@ -57,7 +59,7 @@ export function CollectionMemberPicker({
     mutation.error instanceof ApiError
       ? mutation.error.message
       : mutation.isError
-        ? 'Não foi possível adicionar o item.'
+        ? t('collections.picker.addFailed')
         : null
 
   return (
@@ -70,8 +72,8 @@ export function CollectionMemberPicker({
           />
           <Input
             type="search"
-            aria-label="Buscar item para adicionar"
-            placeholder="Buscar um item do seu catálogo…"
+            aria-label={t('collections.picker.searchAriaLabel')}
+            placeholder={t('collections.picker.searchPlaceholder')}
             value={termo}
             onChange={(e) => setTermo(e.target.value)}
             className="h-9 pl-8"
@@ -83,10 +85,10 @@ export function CollectionMemberPicker({
           variant="ghost"
           size="sm"
           onClick={onClose}
-          aria-label="Concluir"
+          aria-label={t('collections.picker.done')}
         >
           <X aria-hidden />
-          Concluir
+          {t('collections.picker.done')}
         </Button>
       </div>
 
@@ -123,23 +125,24 @@ function PickerResultados({
   adicionando: string | null
   onEscolher: (childId: string) => void
 }) {
+  const t = useT()
   if (query === '') {
     return (
       <p className="text-sm text-muted-foreground">
-        Digite para buscar um item do seu catálogo e adicioná-lo à coleção.
+        {t('collections.picker.hint')}
       </p>
     )
   }
   if (isPending) {
-    return <LoadingState label="Buscando…" />
+    return <LoadingState label={t('collections.picker.searching')} />
   }
   if (isError) {
-    return <ErrorState title="Não foi possível buscar" />
+    return <ErrorState title={t('collections.picker.searchError')} />
   }
   if (candidatos.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Nenhum item disponível para adicionar.
+        {t('collections.picker.empty')}
       </p>
     )
   }
@@ -157,7 +160,7 @@ function PickerResultados({
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-sm font-medium">{c.title}</span>
               <span className="text-xs text-muted-foreground">
-                {rotuloTipo(c.type)}
+                {rotuloTipo(c.type, t)}
               </span>
             </span>
             <Plus

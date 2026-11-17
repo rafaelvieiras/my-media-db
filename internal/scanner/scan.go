@@ -35,6 +35,40 @@ var extensoesAudio = map[string]bool{
 // nomesPoster are the folder-level local artwork names (Kodi/Jellyfin).
 var nomesPoster = []string{"poster.jpg", "poster.png", "folder.jpg", "folder.png"}
 
+// pastasIgnoradas are directory names that never hold library content. They are
+// skipped whole (fs.SkipDir): Synology metadata (@eaDir), AppleDouble sidecars,
+// recycle bins and the lost+found of a repaired filesystem. None of them is media,
+// and walking them only produces noise (on a real library @eaDir alone held more
+// entries than the movies).
+var pastasIgnoradas = map[string]bool{
+	"@eadir":                    true,
+	".appledouble":              true,
+	".trashes":                  true,
+	".trash":                    true,
+	"#recycle":                  true,
+	".recycle":                  true,
+	"$recycle.bin":              true,
+	"system volume information": true,
+	"lost+found":                true,
+}
+
+// arquivosIgnorados are file names that are never media: AppleDouble sidecars
+// ("._Name.mkv", which used to pass the extension filter and fail ffprobe),
+// thumbnail caches and the desktop marker files of each OS.
+var arquivosIgnorados = map[string]bool{
+	".ds_store":   true,
+	"thumbs.db":   true,
+	"ehthumbs.db": true,
+	"desktop.ini": true,
+}
+
+// ehArquivoIgnorado says whether a file must be left out of the scan entirely. It
+// is a pure name rule: no stat, no extension.
+func ehArquivoIgnorado(nome string) bool {
+	l := strings.ToLower(nome)
+	return arquivosIgnorados[l] || strings.HasPrefix(nome, "._") || strings.HasPrefix(nome, ".")
+}
+
 // scanRun carries the context of ONE scan: it avoids passing half a dozen
 // parameters around per function and concentrates the entity cache (folderKey ->
 // entityID) that makes the re-scan idempotent and groups the versions of the same
@@ -488,6 +522,12 @@ func coletarArquivos(root string, extensoesConteudo map[string]bool) (videos []s
 			return nil
 		}
 		if d.IsDir() {
+			if pastasIgnoradas[strings.ToLower(d.Name())] {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if ehArquivoIgnorado(d.Name()) {
 			return nil
 		}
 		if extensoesConteudo[strings.ToLower(filepath.Ext(path))] {

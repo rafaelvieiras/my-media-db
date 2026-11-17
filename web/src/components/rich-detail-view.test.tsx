@@ -40,8 +40,8 @@ function hero(detail: RichDetail) {
   return renderWithClient(<RichDetailView detail={detail} source="tmdb" />)
 }
 
-describe('RichDetailView — hero de álbum/artista (0111): capa quadrada 1:1', () => {
-  it('álbum: capa 1:1 (rounded-xl), não o pôster 2:3', () => {
+describe('RichDetailView — album/artist hero (0111): 1:1 square cover', () => {
+  it('album: 1:1 cover (rounded-xl), not the 2:3 poster', () => {
     const { container } = hero(
       richDetailBase({
         type: 'album',
@@ -49,14 +49,14 @@ describe('RichDetailView — hero de álbum/artista (0111): capa quadrada 1:1', 
         posterUrl: 'https://cdn.example/rio.jpg',
       }),
     )
-    const img = screen.getByAltText('Capa de Rio') as HTMLImageElement
+    const img = screen.getByAltText('Cover of Rio') as HTMLImageElement
     expect(img.getAttribute('src')).toBe('https://cdn.example/rio.jpg')
     expect(container.querySelector('.aspect-square')).toBeTruthy()
     expect(container.querySelector('.aspect-\\[2\\/3\\]')).toBeNull()
     expect(container.querySelector('.rounded-full')).toBeNull()
   })
 
-  it('artista: foto 1:1 circular (rounded-full)', () => {
+  it('artist: circular 1:1 photo (rounded-full)', () => {
     const { container } = hero(
       richDetailBase({
         type: 'artista',
@@ -64,19 +64,19 @@ describe('RichDetailView — hero de álbum/artista (0111): capa quadrada 1:1', 
         posterUrl: 'https://cdn.example/dd.jpg',
       }),
     )
-    const img = screen.getByAltText('Foto de Duran Duran') as HTMLImageElement
+    const img = screen.getByAltText('Photo of Duran Duran') as HTMLImageElement
     expect(img.getAttribute('src')).toBe('https://cdn.example/dd.jpg')
     expect(container.querySelector('.aspect-square')).toBeTruthy()
     expect(container.querySelector('.rounded-full')).toBeTruthy()
   })
 
-  it('sem capa: placeholder no lugar da imagem (sem quebrar)', () => {
+  it('no cover: placeholder in place of the image (without breaking)', () => {
     hero(richDetailBase({ type: 'album', title: 'Rio', posterUrl: null }))
     expect(screen.getByTestId('capa-placeholder')).toBeTruthy()
-    expect(screen.queryByAltText('Capa de Rio')).toBeNull()
+    expect(screen.queryByAltText('Cover of Rio')).toBeNull()
   })
 
-  it('filme continua com o pôster 2:3 de sempre (sem regressão)', () => {
+  it('movie keeps the usual 2:3 poster (no regression)', () => {
     const { container } = hero(
       richDetailBase({
         type: 'movie',
@@ -84,14 +84,14 @@ describe('RichDetailView — hero de álbum/artista (0111): capa quadrada 1:1', 
         posterUrl: 'https://cdn.example/duna.jpg',
       }),
     )
-    expect(screen.getByAltText('Pôster de Duna')).toBeTruthy()
+    expect(screen.getByAltText('Poster of Duna')).toBeTruthy()
     expect(container.querySelector('.aspect-\\[2\\/3\\]')).toBeTruthy()
     expect(screen.queryByTestId('capa-placeholder')).toBeNull()
   })
 })
 
-describe('RichDetailView — selos de disponibilidade de artes (0049)', () => {
-  it('mostra um selo por kind disponível, com rótulo + contagem, na ordem canônica', () => {
+describe('RichDetailView — artwork availability badges (0049)', () => {
+  it('shows one badge per available kind, with label + count, in the canonical order', () => {
     renderWithClient(
       <RichDetailView
         detail={richDetailBase()}
@@ -99,19 +99,19 @@ describe('RichDetailView — selos de disponibilidade de artes (0049)', () => {
         availableArtwork={{ fanart: 40, poster: 23, logo: 17 }}
       />,
     )
-    expect(screen.getByText('Pôster 23')).toBeInTheDocument()
+    expect(screen.getByText('Poster 23')).toBeInTheDocument()
     expect(screen.getByText('Fanart 40')).toBeInTheDocument()
     expect(screen.getByText('Logo 17')).toBeInTheDocument()
   })
 
-  it('sem availableArtwork a faixa não aparece', () => {
+  it('without availableArtwork the row does not appear', () => {
     renderWithClient(<RichDetailView detail={richDetailBase()} source="tmdb" />)
-    expect(screen.queryByText(/Pôster \d/)).toBeNull()
+    expect(screen.queryByText(/Poster \d/)).toBeNull()
   })
 })
 
-describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => {
-  it('renderiza as três seções quando não-vazias', () => {
+describe('RichDetailView — credits (cast/crew/companies, 0029)', () => {
+  it('renders the three sections when not empty', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -122,22 +122,22 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
         })}
       />,
     )
-    expect(screen.getByText('Elenco')).toBeInTheDocument()
-    expect(screen.getByText('Equipe')).toBeInTheDocument()
-    expect(screen.getByText('Produtoras')).toBeInTheDocument()
+    expect(screen.getByText('Cast')).toBeInTheDocument()
+    expect(screen.getByText('Crew')).toBeInTheDocument()
+    expect(screen.getByText('Production companies')).toBeInTheDocument()
     expect(screen.getByText('Ator 0')).toBeInTheDocument()
     expect(screen.getByText('Denis Villeneuve')).toBeInTheDocument()
     expect(screen.getByText('Warner Bros.')).toBeInTheDocument()
   })
 
-  it('seções somem quando os créditos estão vazios', () => {
+  it('sections disappear when the credits are empty', () => {
     renderWithClient(<RichDetailView detail={richDetailBase()} source="tmdb" />)
-    expect(screen.queryByText('Elenco')).toBeNull()
-    expect(screen.queryByText('Equipe')).toBeNull()
-    expect(screen.queryByText('Produtoras')).toBeNull()
+    expect(screen.queryByText('Cast')).toBeNull()
+    expect(screen.queryByText('Crew')).toBeNull()
+    expect(screen.queryByText('Production companies')).toBeNull()
   })
 
-  it('elenco mostra top 24 e "Ver todos (N)" expande a lista inteira', () => {
+  it('cast shows the top 24 and "Show all (N)" expands the whole list', () => {
     const cast = Array.from({ length: 30 }, (_, i) => ator(i))
     renderWithClient(
       <RichDetailView source="tmdb" detail={richDetailBase({ cast })} />,
@@ -148,14 +148,14 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
     expect(screen.queryByText('Ator 24')).toBeNull()
     expect(screen.queryByText('Ator 25')).toBeNull()
     // It expands: it shows all of them and swaps the label to "Ver menos".
-    fireEvent.click(screen.getByRole('button', { name: 'Ver todos (30)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show all (30)' }))
     expect(screen.getByText('Ator 24')).toBeInTheDocument()
     expect(screen.getByText('Ator 29')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Ver menos' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show less' }))
     expect(screen.queryByText('Ator 24')).toBeNull()
   })
 
-  it('elenco respeita a ordem de bilhagem (order asc)', () => {
+  it('cast respects the billing order (order asc)', () => {
     // Out of order on input; only the one with the lowest `order` stays under the ceiling of 1... but here
     // we prove that the one with a high `order` disappears when there are more than the ceiling.
     const cast = Array.from({ length: 26 }, (_, i) => ator(25 - i)) // ordem invertida
@@ -168,7 +168,7 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
     expect(screen.queryByText('Ator 25')).toBeNull()
   })
 
-  it('série: o card de elenco mostra "· N eps"', () => {
+  it('series: the cast card shows "· N eps"', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -181,7 +181,7 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
     expect(screen.getByText(/Homer \(voz\) · 12 eps/)).toBeInTheDocument()
   })
 
-  it('equipe agrupa por departamento (Direção/Roteiro primeiro, demais alfabético)', () => {
+  it('crew groups by department (Directing/Writing first, the rest alphabetical)', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -204,7 +204,7 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
     expect(screen.getByText(/— Fotógrafo/)).toBeInTheDocument()
   })
 
-  it('elenco: card com person_id vira link para /person/{id} e ganha o selo "Na biblioteca"', () => {
+  it('cast: card with person_id becomes a link to /person/{id} and gains the "In the library" badge', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -214,13 +214,13 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
       />,
     )
     const link = screen.getByRole('link', {
-      name: 'Ver Bryan Cranston na biblioteca',
+      name: 'View Bryan Cranston in the library',
     })
     expect(link).toHaveAttribute('href', '/person/p1')
-    expect(screen.getByText('Na biblioteca')).toBeInTheDocument()
+    expect(screen.getByText('In the library')).toBeInTheDocument()
   })
 
-  it('elenco: card sem person_id não é link interno nem tem o selo', () => {
+  it('cast: card without person_id is not an internal link and has no badge', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -228,12 +228,12 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
       />,
     )
     expect(
-      screen.queryByRole('link', { name: /Ver Ator Externo na biblioteca/ }),
+      screen.queryByRole('link', { name: /View Ator Externo in the library/ }),
     ).toBeNull()
-    expect(screen.queryByText('Na biblioteca')).toBeNull()
+    expect(screen.queryByText('In the library')).toBeNull()
   })
 
-  it('equipe: membro com person_id vira link para /person/{id}; sem person_id segue linkando ao TMDB', () => {
+  it('crew: member with person_id becomes a link to /person/{id}; without person_id it keeps linking to TMDB', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -248,7 +248,7 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
       />,
     )
     const link = screen.getByRole('link', {
-      name: 'Ver Denis Villeneuve na biblioteca',
+      name: 'View Denis Villeneuve in the library',
     })
     expect(link).toHaveAttribute('href', '/person/p2')
     // Without person_id, the name keeps linking to the source (TMDB) — unchanged behavior.
@@ -260,7 +260,7 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
     expect(screen.getByText(/— Fotógrafo/)).toBeInTheDocument()
   })
 
-  it('equipe: Direção/Roteiro (priorizados) ganham foto, no padrão do PessoaCard do Elenco', () => {
+  it('crew: Directing/Writing (prioritized) get a photo, like the cast PessoaCard', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -278,7 +278,7 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
     )
     // Directing (prioritized): real photo via <img alt="Foto de X">, like the Cast.
     expect(
-      screen.getByRole('img', { name: 'Foto de Denis Villeneuve' }),
+      screen.getByRole('img', { name: 'Photo of Denis Villeneuve' }),
     ).toHaveAttribute('src', '/api/v1/images?src=denis')
     // Photography (not prioritized): it stays in compact text, without a photo — even with
     // profile_url available.
@@ -288,7 +288,7 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
     expect(screen.getByText(/— Fotógrafo/)).toBeInTheDocument()
   })
 
-  it('equipe: departamento priorizado sem profile_url degrada para o placeholder (como o Elenco)', () => {
+  it('crew: prioritized department without profile_url degrades to the placeholder (like the cast)', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -298,14 +298,14 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
       />,
     )
     expect(
-      screen.queryByRole('img', { name: 'Foto de Denis Villeneuve' }),
+      screen.queryByRole('img', { name: 'Photo of Denis Villeneuve' }),
     ).toBeNull()
     expect(screen.getAllByTestId('poster-placeholder').length).toBeGreaterThan(
       0,
     )
   })
 
-  it('produtora sem logo cai no nome; com logo renderiza a imagem já proxyada', () => {
+  it('company without logo falls back to the name; with logo renders the already proxied image', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -331,8 +331,8 @@ describe('RichDetailView — créditos (elenco/equipe/produtoras, 0029)', () => 
 
 // ── Immersive hero: synopsis inside the hero ─────────────────────────────────
 
-describe('RichDetailView — sinopse dentro do hero (0082)', () => {
-  it('a sinopse aparece como paragrafo, sem heading "Sinopse" separada', () => {
+describe('RichDetailView — synopsis inside the hero (0082)', () => {
+  it('the synopsis appears as a paragraph, without a separate "Synopsis" heading', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -347,7 +347,7 @@ describe('RichDetailView — sinopse dentro do hero (0082)', () => {
     expect(screen.queryByRole('heading', { name: 'Sinopse' })).toBeNull()
   })
 
-  it('sem sinopse, nada aparece no lugar dela', () => {
+  it('without a synopsis, nothing appears in its place', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -372,25 +372,25 @@ function videoFixture(over: Partial<ExternalVideo> = {}): ExternalVideo {
   }
 }
 
-describe('RichDetailView — botão de trailer na barra de ações (0082)', () => {
-  it('com trailer do YouTube: o botão aparece e abre o MESMO player embutido', () => {
+describe('RichDetailView — trailer button in the action bar (0082)', () => {
+  it('with a YouTube trailer: the button appears and opens the SAME embedded player', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
         detail={richDetailBase({ videos: [videoFixture()] })}
       />,
     )
-    const botao = screen.getByRole('button', { name: 'Assistir trailer' })
+    const botao = screen.getByRole('button', { name: 'Watch trailer' })
     fireEvent.click(botao)
     expect(screen.getByTitle('Trailer Oficial')).toHaveAttribute(
       'src',
       'https://www.youtube-nocookie.com/embed/abc123?autoplay=1',
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Fechar trailer' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close trailer' }))
     expect(screen.queryByTitle('Trailer Oficial')).toBeNull()
   })
 
-  it('sem vídeo do tipo Trailer (só Teaser), o botão não aparece', () => {
+  it('without a video of the Trailer type (only Teaser), the button does not appear', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -399,12 +399,10 @@ describe('RichDetailView — botão de trailer na barra de ações (0082)', () =
         })}
       />,
     )
-    expect(
-      screen.queryByRole('button', { name: 'Assistir trailer' }),
-    ).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Watch trailer' })).toBeNull()
   })
 
-  it('trailer não reproduzível (não-YouTube), o botão não aparece', () => {
+  it('non-playable trailer (not YouTube), the button does not appear', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -413,16 +411,12 @@ describe('RichDetailView — botão de trailer na barra de ações (0082)', () =
         })}
       />,
     )
-    expect(
-      screen.queryByRole('button', { name: 'Assistir trailer' }),
-    ).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Watch trailer' })).toBeNull()
   })
 
-  it('sem vídeo algum, o botão não aparece', () => {
+  it('without any video, the button does not appear', () => {
     renderWithClient(<RichDetailView source="tmdb" detail={richDetailBase()} />)
-    expect(
-      screen.queryByRole('button', { name: 'Assistir trailer' }),
-    ).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Watch trailer' })).toBeNull()
   })
 })
 
@@ -493,12 +487,12 @@ function stubFetchNaoDeveSerChamado() {
   return fetchMock
 }
 
-describe('RichDetailView — logo/banner/disco preferidos (0082, entity)', () => {
+describe('RichDetailView — preferred logo/banner/disc (0082, entity)', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('com asset kind=logo preferido, a logo substitui o título em texto', async () => {
+  it('with a preferred kind=logo asset, the logo replaces the text title', async () => {
     stubEntityFetch([assetFixture({ kind: 'logo' })])
     const { container } = renderComEntity()
     await waitFor(() =>
@@ -511,7 +505,7 @@ describe('RichDetailView — logo/banner/disco preferidos (0082, entity)', () =>
     expect(screen.queryByRole('heading', { level: 1, name: 'Duna' })).toBeNull()
   })
 
-  it('sem asset kind=logo, o título em texto continua aparecendo (sem regressão)', async () => {
+  it('without a kind=logo asset, the text title keeps showing (no regression)', async () => {
     stubEntityFetch([])
     renderComEntity()
     expect(
@@ -523,7 +517,7 @@ describe('RichDetailView — logo/banner/disco preferidos (0082, entity)', () =>
     ['banner', 'b1'],
     ['disc', 'd1'],
   ] as const)(
-    'com asset kind=%s preferido, ele aparece (asset id=%s)',
+    'with a preferred kind=%s asset, it appears (asset id=%s)',
     async (kind, id) => {
       const url = `/api/v1/entities/e1/assets/${id}/file`
       stubEntityFetch([assetFixture({ id, kind, url })])
@@ -534,7 +528,7 @@ describe('RichDetailView — logo/banner/disco preferidos (0082, entity)', () =>
     },
   )
 
-  it('sem entityId (tela do externo), não busca assets nem mostra logo/banner/disco', () => {
+  it('without entityId (external screen), it fetches no assets and shows no logo/banner/disc', () => {
     const fetchMock = stubFetchNaoDeveSerChamado()
     renderWithClient(<RichDetailView detail={richDetailBase()} source="tmdb" />)
     expect(fetchMock).not.toHaveBeenCalled()
@@ -543,7 +537,7 @@ describe('RichDetailView — logo/banner/disco preferidos (0082, entity)', () =>
 
 // ── "Assistido" badge ────────────────────────────────────────────────────────
 
-describe('RichDetailView — selo "Assistido" (0094)', () => {
+describe('RichDetailView — "watched" badge (0094)', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
@@ -552,7 +546,7 @@ describe('RichDetailView — selo "Assistido" (0094)', () => {
     ['completed', true],
     ['started', false],
   ] as const)(
-    'evento assistir=%s: selo "Assistido" visível=%s',
+    'watched event=%s: "Watched" badge visible=%s',
     async (status, deveAparecer) => {
       stubEntityFetch([], false, {
         assistir: {
@@ -563,59 +557,55 @@ describe('RichDetailView — selo "Assistido" (0094)', () => {
       })
       renderComEntity()
       if (deveAparecer) {
-        expect(await screen.findByText(/Assistido em/)).toBeInTheDocument()
+        expect(await screen.findByText(/Watched on/)).toBeInTheDocument()
       } else {
-        await waitFor(() =>
-          expect(screen.queryByText(/Assistido em/)).toBeNull(),
-        )
+        await waitFor(() => expect(screen.queryByText(/Watched on/)).toBeNull())
       }
     },
   )
 
-  it('sem evento assistir, o selo não aparece', async () => {
+  it('without a watched event, the badge does not appear', async () => {
     stubEntityFetch([], false, {})
     renderComEntity()
-    await waitFor(() => expect(screen.queryByText(/Assistido em/)).toBeNull())
+    await waitFor(() => expect(screen.queryByText(/Watched on/)).toBeNull())
   })
 
-  it('sem entityId (tela do externo), o selo não aparece', () => {
+  it('without entityId (external screen), the badge does not appear', () => {
     stubFetchNaoDeveSerChamado()
     renderWithClient(<RichDetailView detail={richDetailBase()} source="tmdb" />)
-    expect(screen.queryByText(/Assistido em/)).toBeNull()
+    expect(screen.queryByText(/Watched on/)).toBeNull()
   })
 })
 
-describe('RichDetailView — player do tema musical local (0082 §4.4)', () => {
+describe('RichDetailView — local theme song player (0082 §4.4)', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('com theme.* na pasta-raiz, mostra o botão "Tocar tema" (sem autoplay)', async () => {
+  it('with theme.* in the root folder, shows the "Play theme" button (no autoplay)', async () => {
     stubEntityFetch([], true)
     renderComEntity()
     const botao = await screen.findByRole('button', {
-      name: 'Tocar tema musical',
+      name: 'Play theme',
     })
     expect(botao).toBeInTheDocument()
     // No autoplay: no "tocando" state (label "Pausar") before the action.
-    expect(
-      screen.queryByRole('button', { name: 'Pausar tema musical' }),
-    ).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Pause theme' })).toBeNull()
   })
 
-  it('sem theme.*, o player não aparece', async () => {
+  it('without theme.*, the player does not appear', async () => {
     stubEntityFetch([], false)
     renderComEntity()
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /tema musical/ })).toBeNull(),
+      expect(screen.queryByRole('button', { name: /theme/ })).toBeNull(),
     )
   })
 })
 
 // ── Ratings row per source ───────────────────────────────────────────────────
 
-describe('RichDetailView — fileira de notas por fonte (0086)', () => {
-  it('aparece mesmo com 1 fonte só — não fica escondida esperando 2+ (decisão do dono)', () => {
+describe('RichDetailView — ratings row per source (0086)', () => {
+  it('appears even with a single source — it is not hidden waiting for 2+ (owner decision)', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -627,12 +617,12 @@ describe('RichDetailView — fileira de notas por fonte (0086)', () => {
     expect(screen.getByText('7.4')).toBeInTheDocument()
   })
 
-  it('sem nota local nem ratings, a fileira inteira não aparece', () => {
+  it('without a local rating or ratings, the whole row does not appear', () => {
     renderWithClient(<RichDetailView source="tmdb" detail={richDetailBase()} />)
     expect(screen.queryByText(/^\d\.\d$/)).toBeNull()
   })
 
-  it('nota local + fonte SEM logo no registro cai no rótulo maiúsculo (fallback)', () => {
+  it('local rating + source WITHOUT a logo in the registry falls back to the uppercase label', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -642,12 +632,12 @@ describe('RichDetailView — fileira de notas por fonte (0086)', () => {
         })}
       />,
     )
-    expect(screen.getByLabelText('Sua nota: 9.0')).toBeInTheDocument()
+    expect(screen.getByLabelText('Your rating: 9.0')).toBeInTheDocument()
     expect(screen.getByText('MEUFORNECEDOR')).toBeInTheDocument()
     expect(screen.getByText('6.1')).toBeInTheDocument()
   })
 
-  it('duas fontes: um badge por entrada, lado a lado', () => {
+  it('two sources: one badge per entry, side by side', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -667,8 +657,8 @@ describe('RichDetailView — fileira de notas por fonte (0086)', () => {
 
 // ── Row of external links ────────────────────────────────────────────────────
 
-describe('RichDetailView — fileira de links externos, logo após o hero (0086)', () => {
-  it('aparece logo após o hero, ANTES da seção de Palavras-chave', () => {
+describe('RichDetailView — external links row, right after the hero (0086)', () => {
+  it('appears right after the hero, BEFORE the Keywords section', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -679,7 +669,7 @@ describe('RichDetailView — fileira de links externos, logo após o hero (0086)
       />,
     )
     const link = screen.getByRole('link', { name: 'TMDB' })
-    const heading = screen.getByRole('heading', { name: 'Palavras-chave' })
+    const heading = screen.getByRole('heading', { name: 'Keywords' })
     // DOCUMENT_POSITION_FOLLOWING in the result of `link.compareDocumentPosition`
     // means that `heading` comes AFTER `link` in the document.
     expect(
@@ -688,12 +678,12 @@ describe('RichDetailView — fileira de links externos, logo após o hero (0086)
     expect(link).toHaveAttribute('href', 'https://www.themoviedb.org/movie/603')
   })
 
-  it('sem links externos, a fileira não aparece', () => {
+  it('without external links, the row does not appear', () => {
     renderWithClient(<RichDetailView source="tmdb" detail={richDetailBase()} />)
     expect(screen.queryByRole('link', { name: 'TMDB' })).toBeNull()
   })
 
-  it('fonte sem logo no registro cai no ícone genérico + nome em maiúsculas', () => {
+  it('source without a logo in the registry falls back to the generic icon + uppercase name', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
@@ -774,52 +764,62 @@ function stubTrailerFetch({
   })
 }
 
-describe('RichDetailView — botão "Baixar trailer" (0102, ADR-0025)', () => {
+describe('RichDetailView — "Download trailer" button (0102, ADR-0025)', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('sem entityId (tela do externo), o botão não aparece mesmo com trailer', () => {
+  it('without entityId (external screen), the button does not appear even with a trailer', () => {
     renderWithClient(
       <RichDetailView
         source="tmdb"
         detail={richDetailBase({ videos: [videoFixture()] })}
       />,
     )
-    expect(screen.queryByRole('button', { name: /Baixar trailer/ })).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: /Download trailer/ }),
+    ).toBeNull()
   })
 
-  it('sem trailer reproduzível, o botão não aparece (mesmo com entityId)', async () => {
+  it('without a playable trailer, the button does not appear (even with entityId)', async () => {
     stubTrailerFetch({ ytdlpDisponivel: true })
     renderComEntity()
     await screen.findByRole('heading', { level: 1, name: 'Duna' })
-    expect(screen.queryByRole('button', { name: /Baixar trailer/ })).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: /Download trailer/ }),
+    ).toBeNull()
   })
 
-  it('yt-dlp indisponível: o botão não aparece', async () => {
+  it('yt-dlp unavailable: the button does not appear', async () => {
     stubTrailerFetch({ ytdlpDisponivel: false })
     renderComEntity({ videos: [videoFixture()] })
-    await screen.findByRole('button', { name: 'Assistir trailer' })
-    expect(screen.queryByRole('button', { name: /Baixar trailer/ })).toBeNull()
+    await screen.findByRole('button', { name: 'Watch trailer' })
+    expect(
+      screen.queryByRole('button', { name: /Download trailer/ }),
+    ).toBeNull()
   })
 
-  it('yt-dlp disponível e sem trailer local: baixar mostra "trailer baixado" ao final', async () => {
+  it('yt-dlp available and no local trailer: downloading ends with "trailer downloaded"', async () => {
     stubTrailerFetch({ ytdlpDisponivel: true })
     renderComEntity({ videos: [videoFixture()] })
-    const botao = await screen.findByRole('button', { name: 'Baixar trailer' })
+    const botao = await screen.findByRole('button', {
+      name: 'Download trailer',
+    })
     fireEvent.click(botao)
     expect(
-      await screen.findByRole('link', { name: /Trailer baixado/ }),
+      await screen.findByRole('link', { name: /Trailer downloaded/ }),
     ).toHaveAttribute('href', '/api/v1/entities/e1/trailer')
   })
 
-  it('trailer já baixado antes: mostra o link direto, sem oferecer baixar de novo', async () => {
+  it('trailer already downloaded before: shows the direct link, without offering a new download', async () => {
     stubTrailerFetch({ ytdlpDisponivel: true, jaBaixado: true })
     renderComEntity({ videos: [videoFixture()] })
     expect(
-      await screen.findByRole('link', { name: /Trailer baixado/ }),
+      await screen.findByRole('link', { name: /Trailer downloaded/ }),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Baixar trailer' })).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: 'Download trailer' }),
+    ).toBeNull()
   })
 })
 
@@ -855,17 +855,17 @@ function stubThemeDownloadFetch({
   })
 }
 
-describe('RichDetailView — botão "Baixar tema" (0103, ADR-0025)', () => {
+describe('RichDetailView — "Download theme" button (0103, ADR-0025)', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('sem entityId (tela do externo), o botão não aparece', () => {
+  it('without entityId (external screen), the button does not appear', () => {
     renderWithClient(<RichDetailView source="tmdb" detail={richDetailBase()} />)
-    expect(screen.queryByRole('button', { name: /Baixar tema/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Download theme/ })).toBeNull()
   })
 
-  it('sem candidato do ThemerrDB, o botão não aparece (caso comum — cobertura parcial)', async () => {
+  it('without a ThemerrDB candidate, the button does not appear (the common case — partial coverage)', async () => {
     stubThemeDownloadFetch({
       ytdlpDisponivel: true,
       candidatoDisponivel: false,
@@ -873,11 +873,13 @@ describe('RichDetailView — botão "Baixar tema" (0103, ADR-0025)', () => {
     renderComEntity()
     await screen.findByRole('heading', { level: 1, name: 'Duna' })
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /Baixar tema/ })).toBeNull(),
+      expect(
+        screen.queryByRole('button', { name: /Download theme/ }),
+      ).toBeNull(),
     )
   })
 
-  it('yt-dlp indisponível: o botão não aparece mesmo com candidato', async () => {
+  it('yt-dlp unavailable: the button does not appear even with a candidate', async () => {
     stubThemeDownloadFetch({
       ytdlpDisponivel: false,
       candidatoDisponivel: true,
@@ -885,32 +887,34 @@ describe('RichDetailView — botão "Baixar tema" (0103, ADR-0025)', () => {
     renderComEntity()
     await screen.findByRole('heading', { level: 1, name: 'Duna' })
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /Baixar tema/ })).toBeNull(),
+      expect(
+        screen.queryByRole('button', { name: /Download theme/ }),
+      ).toBeNull(),
     )
   })
 
-  it('candidato e yt-dlp disponíveis: baixar faz o player de tema aparecer e o botão sumir', async () => {
+  it('candidate and yt-dlp available: downloading makes the theme player appear and the button vanish', async () => {
     stubThemeDownloadFetch({
       ytdlpDisponivel: true,
       candidatoDisponivel: true,
     })
     renderComEntity()
-    const botao = await screen.findByRole('button', { name: 'Baixar tema' })
+    const botao = await screen.findByRole('button', { name: 'Download theme' })
     fireEvent.click(botao)
     expect(
-      await screen.findByRole('button', { name: 'Tocar tema musical' }),
+      await screen.findByRole('button', { name: 'Play theme' }),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Baixar tema' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Download theme' })).toBeNull()
   })
 
-  it('já tem tema local: o botão não aparece (sem `force`, nunca oferece re-download)', async () => {
+  it('already has a local theme: the button does not appear (no `force`, never offers a re-download)', async () => {
     stubThemeDownloadFetch({
       ytdlpDisponivel: true,
       candidatoDisponivel: true,
       jaTemLocal: true,
     })
     renderComEntity()
-    await screen.findByRole('button', { name: 'Tocar tema musical' })
-    expect(screen.queryByRole('button', { name: 'Baixar tema' })).toBeNull()
+    await screen.findByRole('button', { name: 'Play theme' })
+    expect(screen.queryByRole('button', { name: 'Download theme' })).toBeNull()
   })
 })

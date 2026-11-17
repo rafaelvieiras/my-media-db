@@ -27,8 +27,8 @@ function renderCriacao(
       schema={schemaZod(fields, 'criacao')}
       onSubmit={onSubmit}
       onCancel={() => {}}
-      submitLabel="Salvar"
-      submitPendingLabel="Salvando…"
+      submitLabel="Save"
+      submitPendingLabel="Saving…"
       isPending={false}
       mensagemErro={null}
       {...over}
@@ -50,8 +50,8 @@ function renderEdicao(over: Partial<Parameters<typeof SchemaForm>[0]> = {}) {
       schema={schemaZod(fields, 'edicao')}
       onSubmit={() => {}}
       onCancel={() => {}}
-      submitLabel="Salvar"
-      submitPendingLabel="Salvando…"
+      submitLabel="Save"
+      submitPendingLabel="Saving…"
       isPending={false}
       mensagemErro={null}
       lang="pt-BR"
@@ -60,8 +60,8 @@ function renderEdicao(over: Partial<Parameters<typeof SchemaForm>[0]> = {}) {
   )
 }
 
-describe('SchemaForm — render por widget', () => {
-  it('renderiza um input por widget a partir dos descritores', () => {
+describe('SchemaForm — rendering per widget', () => {
+  it('renders one input per widget from the descriptors', () => {
     renderCriacao(descritoresPadrao.filter((d) => d.creatable))
     // text, textarea and date become inputs with the label of the descriptor.
     expect(screen.getByLabelText('Título')).toBeInTheDocument()
@@ -70,7 +70,7 @@ describe('SchemaForm — render por widget', () => {
     expect(screen.getByLabelText('Data de lançamento')).toBeInTheDocument()
   })
 
-  it('o widget number vem com min/max/step do descritor', () => {
+  it('the number widget comes with min/max/step from the descriptor', () => {
     renderCriacao([
       { ...descritoresPadrao[5], creatable: true }, // local_rating
     ])
@@ -80,7 +80,7 @@ describe('SchemaForm — render por widget', () => {
     expect(input).toHaveAttribute('max', '10')
   })
 
-  it('EXTENSIBILIDADE: um descritor NOVO renderiza sem tocar JSX de campo', () => {
+  it('EXTENSIBILITY: a NEW descriptor renders without touching field JSX', () => {
     const novo: FieldDescriptor = {
       name: 'budget',
       label: 'Orçamento',
@@ -99,14 +99,14 @@ describe('SchemaForm — render por widget', () => {
   })
 })
 
-describe('SchemaForm — interações', () => {
-  it('o submit entrega os valores digitados', async () => {
+describe('SchemaForm — interactions', () => {
+  it('the submit delivers the typed values', async () => {
     const user = userEvent.setup()
     const { onSubmit } = renderCriacao(
       descritoresPadrao.filter((d) => d.creatable),
     )
     await user.type(screen.getByLabelText('Título'), 'Duna')
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
     await vi.waitFor(() =>
       expect(onSubmit).toHaveBeenCalledWith(
         expect.objectContaining({ title: 'Duna' }),
@@ -114,27 +114,27 @@ describe('SchemaForm — interações', () => {
     )
   })
 
-  it('não submete com o obrigatório vazio (botão desabilitado)', () => {
+  it('does not submit with the required field empty (button disabled)', () => {
     renderCriacao(descritoresPadrao.filter((d) => d.creatable))
-    expect(screen.getByRole('button', { name: 'Salvar' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
-  it('o widget de tags adiciona chips (edição)', async () => {
+  it('the tags widget adds chips (edit)', async () => {
     const user = userEvent.setup()
     renderEdicao()
-    await user.type(screen.getByLabelText('Adicionar tag'), 'Clássico')
-    await user.click(screen.getByRole('button', { name: 'Adicionar' }))
+    await user.type(screen.getByLabelText('Add a tag'), 'Clássico')
+    await user.click(screen.getByRole('button', { name: 'Add' }))
     expect(screen.getByText('Clássico')).toBeInTheDocument()
   })
 
-  it('o botão "Limpar" aparece na edição e reporta campo + translatable', async () => {
+  it('the "Clear" button appears on edit and reports field + translatable', async () => {
     const user = userEvent.setup()
     const onClear = vi.fn()
     renderEdicao({ onClear })
-    await user.click(screen.getByRole('button', { name: 'Limpar título' }))
+    await user.click(screen.getByRole('button', { name: 'Clear título' }))
     expect(onClear).toHaveBeenCalledWith('title', true)
     await user.click(
-      screen.getByRole('button', { name: 'Limpar título original' }),
+      screen.getByRole('button', { name: 'Clear título original' }),
     )
     expect(onClear).toHaveBeenCalledWith('original_title', false)
   })
@@ -143,14 +143,14 @@ describe('SchemaForm — interações', () => {
 // "Leave without saving" guard: onDirtyChange mirrors `form.state.isDirty`,
 // called only on the transition (not on every keystroke).
 describe('SchemaForm — onDirtyChange (0073)', () => {
-  it('reporta false ao montar (form pristino)', () => {
+  it('reports false on mount (pristine form)', () => {
     const onDirtyChange = vi.fn()
     renderEdicao({ onDirtyChange })
     expect(onDirtyChange).toHaveBeenCalledWith(false)
     expect(onDirtyChange).toHaveBeenCalledTimes(1)
   })
 
-  it('reporta true na primeira alteração de um campo', async () => {
+  it('reports true on the first change of a field', async () => {
     const user = userEvent.setup()
     const onDirtyChange = vi.fn()
     renderEdicao({ onDirtyChange })
@@ -158,7 +158,7 @@ describe('SchemaForm — onDirtyChange (0073)', () => {
     await vi.waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true))
   })
 
-  it('não repete a chamada em teclas seguintes (só na transição)', async () => {
+  it('does not repeat the call on the following keys (only on the transition)', async () => {
     const user = userEvent.setup()
     const onDirtyChange = vi.fn()
     renderEdicao({ onDirtyChange })

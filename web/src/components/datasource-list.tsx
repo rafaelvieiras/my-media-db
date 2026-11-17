@@ -1,20 +1,40 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { FolderPlus, Pencil, RefreshCw } from 'lucide-react'
+import { FolderPlus, Pencil, RefreshCw, Wrench } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { patchLibrary, startScan, type Source, ApiError } from '@/lib/api'
-import { libraryQueryOptions, scanStatusQueryOptions } from '@/lib/queries'
+import {
+  patchLibrary,
+  startScan,
+  startReprocess,
+  type Source,
+  type ReprocessReport,
+  ApiError,
+} from '@/lib/api'
+import {
+  libraryQueryOptions,
+  scanStatusQueryOptions,
+  reprocessStatusQueryOptions,
+} from '@/lib/queries'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
+import { useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
+
+// Counted sentence: `_one` for 1 and `_other` for the rest — the catalog has no
+// ICU plural rules (ADR-0032), so the caller picks the key.
+function comContagem(t: Translate, chave: string, n: number): string {
+  return t(`${chave}_${n === 1 ? 'one' : 'other'}`, { n })
+}
 
 // Datasources screen: the creation and the editing/removal of a path
 // moved out to dedicated routes (`/dashboard/library/new`,
 // `/dashboard/library/$id/edit`) — this list
 // only shows path + state, with the transient/binary low-risk actions that
-// stay inline: "Escanear" (+ progress) and the watch-for-changes switch.
+// stay inline: "Scan" (+ progress) and the watch-for-changes switch.
 export function DatasourceList() {
+  const t = useT()
   const { data, isPending, isError, error } = useQuery(libraryQueryOptions)
 
   return (
@@ -23,22 +43,22 @@ export function DatasourceList() {
         <Button asChild size="sm">
           <Link to="/dashboard/library/new">
             <FolderPlus aria-hidden />
-            Adicionar datasource
+            {t('settings.datasource.add')}
           </Link>
         </Button>
       </div>
 
       {isPending ? (
-        <LoadingState label="Carregando datasources…" />
+        <LoadingState label={t('settings.datasource.loading')} />
       ) : isError ? (
         <ErrorState
-          title="Não foi possível carregar os datasources"
+          title={t('settings.datasource.loadFailed')}
           message={error instanceof Error ? error.message : undefined}
         />
       ) : data.items.length === 0 ? (
         <EmptyState
-          title="Nenhum datasource cadastrado"
-          description="Adicione um caminho para começar a escanear sua mídia."
+          title={t('settings.datasource.emptyTitle')}
+          description={t('settings.datasource.emptyDescription')}
         />
       ) : (
         <ul className="flex flex-col gap-2">
@@ -52,6 +72,7 @@ export function DatasourceList() {
 }
 
 function DatasourceRow({ source }: { source: Source }) {
+  const t = useT()
   const queryClient = useQueryClient()
   const { data: status } = useQuery(scanStatusQueryOptions(source.id))
   const rodavaAntes = useRef(false)
@@ -84,6 +105,29 @@ function DatasourceRow({ source }: { source: Source }) {
     },
   })
 
+  // Reprocessing: the dry-run is step 1 (mandatory) and shows what would change;
+  // only then the apply button appears. The progress comes from the endpoint itself.
+  const [previa, setPrevia] = useState<ReprocessReport | null>(null)
+  const { data: reproc } = useQuery(reprocessStatusQueryOptions(source.id))
+  const reprocRodando = reproc?.running ?? false
+
+  const previaMutation = useMutation({
+    mutationFn: () => startReprocess(source.id, { dry_run: true }),
+    onSuccess: (r) => setPrevia(r as ReprocessReport),
+  })
+  const aplicarMutation = useMutation({
+    mutationFn: () =>
+      startReprocess(source.id, { dry_run: false, delete_orphans: true }),
+    onSuccess: () => {
+      setPrevia(null)
+      queryClient.invalidateQueries({ queryKey: ['reprocess', source.id] })
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['entities'] })
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+    },
+  })
+
   const rodando = status?.running ?? false
 
   return (
@@ -92,7 +136,11 @@ function DatasourceRow({ source }: { source: Source }) {
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="truncate font-medium">{source.path}</span>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>{source.type === 'tv' ? 'Séries' : 'Filmes'}</span>
+            <span>
+              {source.type === 'tv'
+                ? t('common.entityTypePlural.tv')
+                : t('common.entityTypePlural.movie')}
+            </span>
             <EstadoBadge state={source.state} />
           </div>
         </div>
@@ -107,12 +155,26 @@ function DatasourceRow({ source }: { source: Source }) {
               aria-hidden
               className={rodando ? 'animate-spin' : undefined}
             />
-            {rodando ? 'Escaneando…' : 'Escanear'}
+            {rodando
+              ? t('settings.datasource.scanning')
+              : t('settings.datasource.scan')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={rodando || reprocRodando || previaMutation.isPending}
+            onClick={() => previaMutation.mutate()}
+            title={t('settings.datasource.reprocessTitle')}
+          >
+            <Wrench aria-hidden />
+            {reprocRodando
+              ? t('settings.datasource.reprocessing')
+              : t('settings.datasource.reprocess')}
           </Button>
           <Button asChild variant="outline" size="sm">
             <Link to="/dashboard/library/$id/edit" params={{ id: source.id }}>
               <Pencil aria-hidden />
-              Editar
+              {t('common.action.edit')}
             </Link>
           </Button>
         </div>
@@ -123,31 +185,42 @@ function DatasourceRow({ source }: { source: Source }) {
           checked={source.watch_enabled}
           disabled={watchMutation.isPending}
           onCheckedChange={(checked) => watchMutation.mutate(checked)}
-          aria-label="Observar mudanças nesta pasta"
+          aria-label={t('settings.datasource.watch')}
         />
         <span>
-          Observar mudanças nesta pasta
+          {t('settings.datasource.watch')}
           <span className="hidden sm:inline">
             {' '}
-            — acelera a detecção de arquivos novos, mas não substitui o scan
-            periódico
+            {t('settings.datasource.watchHint')}
           </span>
         </span>
       </label>
+      <PainelReprocess
+        previa={previa}
+        reproc={reproc}
+        onAplicar={() => aplicarMutation.mutate()}
+        onCancelar={() => setPrevia(null)}
+        erro={previaMutation.error ?? aplicarMutation.error}
+        aplicando={aplicarMutation.isPending}
+      />
       <ProgressoScan status={status} erroScan={scanMutation.error} />
     </li>
   )
 }
 
 function EstadoBadge({ state }: { state: Source['state'] }) {
+  const t = useT()
+
   if (state === 'online') {
     return (
       <Badge className="border-transparent bg-emerald-600 text-white">
-        online
+        {t('settings.datasource.stateOnline')}
       </Badge>
     )
   }
-  return <Badge variant="destructive">offline</Badge>
+  return (
+    <Badge variant="destructive">{t('settings.datasource.stateOffline')}</Badge>
+  )
 }
 
 // Progress indicator: while `running`, it shows files seen/total; errors
@@ -166,14 +239,20 @@ function ProgressoScan({
     | undefined
   erroScan: unknown
 }) {
+  const t = useT()
   const mensagemDisparo = erroScan instanceof ApiError ? erroScan.message : null
 
   if (status?.running) {
-    const total = status.files_total > 0 ? ` de ${status.files_total}` : ''
     return (
       <p className="text-xs text-muted-foreground">
-        Escaneando… {status.files_seen}
-        {total} arquivos vistos
+        {status.files_total > 0
+          ? t('settings.datasource.scanProgressTotal', {
+              seen: status.files_seen,
+              total: status.files_total,
+            })
+          : t('settings.datasource.scanProgress', {
+              seen: status.files_seen,
+            })}
       </p>
     )
   }
@@ -187,9 +266,122 @@ function ProgressoScan({
   if (status?.last_error) {
     return (
       <p role="alert" className="text-xs font-medium text-destructive">
-        Último scan falhou: {status.last_error}
+        {t('settings.datasource.lastScanFailed', { detail: status.last_error })}
       </p>
     )
   }
   return null
+}
+
+// PainelReprocess shows the MANDATORY dry-run before anything is written: the counts
+// of what the reprocess would touch, with "Apply" only after the preview. While it
+// runs, the same block becomes the progress of the phase.
+function PainelReprocess({
+  previa,
+  reproc,
+  onAplicar,
+  onCancelar,
+  erro,
+  aplicando,
+}: {
+  previa: ReprocessReport | null
+  reproc?: {
+    running: boolean
+    phase?: string
+    done: number
+    total: number
+    report?: ReprocessReport
+    last_error?: string
+  }
+  onAplicar: () => void
+  onCancelar: () => void
+  erro: unknown
+  aplicando: boolean
+}) {
+  const t = useT()
+
+  if (erro) {
+    return (
+      <p className="text-xs text-destructive">
+        {erro instanceof Error
+          ? erro.message
+          : t('settings.datasource.reprocessFailed')}
+      </p>
+    )
+  }
+
+  if (reproc?.running) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        {t('settings.datasource.reprocessProgress', {
+          phase: reproc.phase ?? 'reconcile',
+          done: reproc.done,
+          total: reproc.total,
+        })}
+      </p>
+    )
+  }
+
+  if (reproc?.report && !previa) {
+    const r = reproc.report
+    return (
+      <p className="text-xs text-muted-foreground">
+        {t('settings.datasource.lastReprocess', {
+          promoted: r.promoted,
+          orphans: r.orphans_deleted,
+        })}
+      </p>
+    )
+  }
+
+  if (!previa) return null
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg bg-muted/40 p-3 text-xs">
+      <span className="font-medium">{t('settings.datasource.preview')}</span>
+      <ul className="flex flex-col gap-1 text-muted-foreground">
+        <li>
+          {comContagem(
+            t,
+            'settings.datasource.previewSeries',
+            previa.series_draft,
+          )}
+        </li>
+        <li>
+          {comContagem(
+            t,
+            'settings.datasource.previewMoviesPending',
+            previa.movies_pending,
+          )}
+        </li>
+        <li>
+          {comContagem(
+            t,
+            'settings.datasource.previewDraftEpisodes',
+            previa.draft_episodes,
+          )}
+        </li>
+        <li>
+          {comContagem(
+            t,
+            'settings.datasource.previewEmptyDrafts',
+            previa.orphans,
+          )}
+        </li>
+      </ul>
+      <p className="text-muted-foreground">
+        {t('settings.datasource.previewMode', { mode: previa.mode })}
+      </p>
+      <div className="flex gap-2">
+        <Button size="sm" disabled={aplicando} onClick={onAplicar}>
+          {aplicando
+            ? t('settings.datasource.applying')
+            : t('common.action.apply')}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onCancelar}>
+          {t('common.action.cancel')}
+        </Button>
+      </div>
+    </div>
+  )
 }

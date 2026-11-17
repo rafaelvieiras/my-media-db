@@ -16,39 +16,41 @@ import {
   rotuloStatusHistorico,
   STATUS_COMPLETED,
 } from '@/lib/historico'
+import { useLocale, useT } from '@/lib/i18n'
 import {
   historicoEstadoQueryOptions,
   historicoEventosQueryOptions,
 } from '@/lib/queries'
 
-// Consumption history (it gives a face to ADR-0022): the "Assistido"
+// Consumption history (it gives a face to ADR-0022): the "watched"
 // state badge (`EstadoAssistidoBadge`) + event timeline
 // (`HistoricoSection`), companions of the `RichDetailView` in the same pattern as the
-// `SimilaresRail` (empty → the section disappears entirely, without an active "não assistido"
-// nor an empty timeline polluting the screen). The pure labels/constants live in
+// `SimilaresRail` (empty → the section disappears entirely, without an active "not
+// watched" nor an empty timeline polluting the screen). The pure labels/constants live in
 // `lib/historico.ts` (a module that exports a component + a const triggers
 // `react-refresh/only-export-components`).
 
-// EstadoAssistidoBadge is the "Assistido" badge (with a date) of the hero/card — it reads
+// EstadoAssistidoBadge is the "watched" badge (with a date) of the hero/card — it reads
 // `historicoEstadoQueryOptions` (kind="assistir") and only appears when the MOST RECENT
 // event of that kind is `completed` (watching in progress/paused does not
 // light the badge). With no event at all — or error/loading — the badge simply
-// does not appear: never an active "não assistido" badge (same principle of
+// does not appear: never an active "not watched" badge (same principle of
 // "signal only what needs positive attention" already used in the project).
 export function EstadoAssistidoBadge({ entityId }: { entityId: string }) {
+  const t = useT()
+  const locale = useLocale()
   const { data } = useQuery(historicoEstadoQueryOptions(entityId))
   const assistir = data?.estado?.[KIND_ASSISTIR]
   if (!assistir || assistir.status !== STATUS_COMPLETED) {
     return null
   }
+  const rotulo = t('review.history.badge', {
+    date: formatarCarimboHistorico(assistir.occurred_at, locale),
+  })
   return (
-    <Badge
-      variant="secondary"
-      className="gap-1"
-      title={`Assistido em ${formatarCarimboHistorico(assistir.occurred_at)}`}
-    >
+    <Badge variant="secondary" className="gap-1" title={rotulo}>
       <CircleCheck className="size-3.5" aria-hidden />
-      Assistido em {formatarCarimboHistorico(assistir.occurred_at)}
+      {rotulo}
     </Badge>
   )
 }
@@ -64,10 +66,10 @@ function invalidarHistorico(
 }
 
 // EventoRow is ONE row of the timeline: status + date + origin, with the
-// delete control in a 2-STEP confirmation (× → "Apagar?"/"Cancelar") — the same pattern
+// delete control in a 2-STEP confirmation (× → "Delete?"/"Cancel") — the same pattern
 // already used by `MembroEditavel` (collection-members.tsx) to remove an item from
 // a list, lighter than the `AlertDialog` modal reserved for bigger
-// destructive actions (e.g. "Excluir coleção").
+// destructive actions (e.g. "Delete collection").
 function EventoRow({
   entityId,
   evento,
@@ -75,6 +77,8 @@ function EventoRow({
   entityId: string
   evento: HistoricoEvento
 }) {
+  const t = useT()
+  const locale = useLocale()
   const queryClient = useQueryClient()
   const [confirmando, setConfirmando] = useState(false)
   const apagar = useMutation({
@@ -85,7 +89,7 @@ function EventoRow({
     apagar.error instanceof ApiError
       ? apagar.error.message
       : apagar.isError
-        ? 'Não foi possível apagar o evento.'
+        ? t('review.history.deleteFailed')
         : null
 
   return (
@@ -93,13 +97,13 @@ function EventoRow({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <Badge variant="outline">
-            {rotuloStatusHistorico(evento.status)}
+            {rotuloStatusHistorico(evento.status, t)}
           </Badge>
           <span className="text-muted-foreground">
-            {formatarCarimboHistorico(evento.occurred_at)}
+            {formatarCarimboHistorico(evento.occurred_at, locale)}
           </span>
           <span className="text-xs text-muted-foreground">
-            · {rotuloOrigemHistorico(evento.source)}
+            · {rotuloOrigemHistorico(evento.source, t)}
           </span>
         </div>
         {confirmando ? (
@@ -110,7 +114,9 @@ function EventoRow({
               disabled={apagar.isPending}
               onClick={() => apagar.mutate()}
             >
-              {apagar.isPending ? 'Apagando…' : 'Apagar?'}
+              {apagar.isPending
+                ? t('review.history.deleting')
+                : t('review.history.confirmDelete')}
             </Button>
             <Button
               variant="ghost"
@@ -118,14 +124,14 @@ function EventoRow({
               disabled={apagar.isPending}
               onClick={() => setConfirmando(false)}
             >
-              Cancelar
+              {t('common.action.cancel')}
             </Button>
           </div>
         ) : (
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Apagar evento"
+            aria-label={t('review.history.deleteLabel')}
             onClick={() => setConfirmando(true)}
           >
             <Trash2 aria-hidden />
@@ -141,29 +147,34 @@ function EventoRow({
   )
 }
 
-// HistoricoSection is the "Histórico" section of the item detail:
+// HistoricoSection is the "History" section of the item detail:
 // it lists ALL the events (any kind, agnostic of vertical) in reverse
 // chronological order (occurred_at DESC, already like that from the backend). Same pattern as the
 // `SimilaresRail`: empty → the section disappears entirely (no loose heading).
 // Loading/error show the section with the heading (transient) — consistent with
 // the rest of the detail (`MediaInfoTable`/`ArtGallery`).
 export function HistoricoSection({ entityId }: { entityId: string }) {
+  const t = useT()
   const query = useQuery(historicoEventosQueryOptions(entityId))
 
   if (query.isPending) {
     return (
       <section className="flex flex-col gap-3">
-        <h2 className="font-heading text-lg font-medium">Histórico</h2>
-        <LoadingState label="Carregando histórico…" />
+        <h2 className="font-heading text-lg font-medium">
+          {t('review.history.sectionTitle')}
+        </h2>
+        <LoadingState label={t('review.history.loading')} />
       </section>
     )
   }
   if (query.isError) {
     return (
       <section className="flex flex-col gap-3">
-        <h2 className="font-heading text-lg font-medium">Histórico</h2>
+        <h2 className="font-heading text-lg font-medium">
+          {t('review.history.sectionTitle')}
+        </h2>
         <ErrorState
-          title="Não foi possível carregar o histórico"
+          title={t('review.history.loadError')}
           message={
             query.error instanceof Error ? query.error.message : undefined
           }
@@ -177,7 +188,9 @@ export function HistoricoSection({ entityId }: { entityId: string }) {
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-heading text-lg font-medium">Histórico</h2>
+      <h2 className="font-heading text-lg font-medium">
+        {t('review.history.sectionTitle')}
+      </h2>
       <ul className="flex flex-col gap-2">
         {query.data.eventos.map((evento) => (
           <EventoRow key={evento.id} entityId={entityId} evento={evento} />

@@ -34,6 +34,7 @@ import {
   getPerson,
   getReviewQueue,
   getScanStatus,
+  getReprocessStatus,
   listAssets,
   listEntities,
   listEntityTypes,
@@ -443,6 +444,16 @@ export function scanStatusQueryOptions(id: string) {
   return queryOptions({
     queryKey: ['scan', id],
     queryFn: () => getScanStatus(id),
+    refetchInterval: (query) => (query.state.data?.running ? 1500 : false),
+  })
+}
+
+// Reprocessamento de UMA biblioteca: o polling só existe enquanto ele roda (o
+// resultado final fica na resposta, sem polling infinito).
+export function reprocessStatusQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: ['reprocess', id],
+    queryFn: () => getReprocessStatus(id),
     refetchInterval: (query) => (query.state.data?.running ? 1500 : false),
   })
 }

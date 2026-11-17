@@ -24,6 +24,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import { LanguageSelector } from '@/components/language-selector'
+import { useT } from '@/lib/i18n'
 import { entityTypesQueryOptions } from '@/lib/queries'
 import { rotuloTipoPlural } from '@/lib/entity-badges'
 import { tipoParaSlug } from '@/lib/library-slugs'
@@ -81,6 +82,7 @@ function NavLink({
 // Radix `DropdownMenu` opens by click/keyboard (not hover), so it works
 // the same way by touch inside the mobile `Sheet` without special handling.
 function BibliotecaNavItem({ onNavigate }: { onNavigate?: () => void }) {
+  const t = useT()
   const { data: tipos } = useQuery(entityTypesQueryOptions)
   const itensComSlug = (tipos ?? []).flatMap((tipo) => {
     const slug = tipoParaSlug(tipo.type)
@@ -90,7 +92,7 @@ function BibliotecaNavItem({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex items-center">
       <NavLink to="/" exact onNavigate={onNavigate}>
-        Biblioteca
+        {t('nav.header.library')}
       </NavLink>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -98,7 +100,7 @@ function BibliotecaNavItem({ onNavigate }: { onNavigate?: () => void }) {
             variant="ghost"
             size="icon"
             className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
-            aria-label="Filtrar biblioteca por tipo"
+            aria-label={t('nav.header.filterByType')}
           >
             <ChevronDown className="size-3.5" aria-hidden />
           </Button>
@@ -107,7 +109,7 @@ function BibliotecaNavItem({ onNavigate }: { onNavigate?: () => void }) {
           {itensComSlug.map(({ type, slug }) => (
             <DropdownMenuItem key={type} asChild onSelect={onNavigate}>
               <Link to="/library/$entitySlug" params={{ entitySlug: slug }}>
-                {rotuloTipoPlural(type)}
+                {rotuloTipoPlural(type, t)}
               </Link>
             </DropdownMenuItem>
           ))}
@@ -124,20 +126,22 @@ function BibliotecaNavItem({ onNavigate }: { onNavigate?: () => void }) {
 // Saúde) moved from here to the sidebar of the `DashboardShell` — only
 // the single "Dashboard" link to the administrative area is left.
 function LinksNavegacao({ onNavigate }: { onNavigate?: () => void }) {
+  const t = useT()
   return (
     <>
       <BibliotecaNavItem onNavigate={onNavigate} />
       <NavLink to="/search" icon={Search} onNavigate={onNavigate}>
-        Buscar
+        {t('nav.header.search')}
       </NavLink>
       <NavLink to="/dashboard" icon={LayoutDashboard} onNavigate={onNavigate}>
-        Dashboard
+        {t('nav.header.dashboard')}
       </NavLink>
     </>
   )
 }
 
 export function AppHeader() {
+  const t = useT()
   // Below the `md` breakpoint (768px), the nav disappears behind a `Sheet`
   // — above it, it stays exactly the usual flex row. The state
   // controls the Sheet so it closes on navigation (otherwise the panel would stay open
@@ -167,14 +171,14 @@ export function AppHeader() {
               variant="ghost"
               size="icon"
               className="ml-auto md:hidden"
-              aria-label="Abrir menu de navegação"
+              aria-label={t('nav.header.openMenu')}
             >
               <Menu className="size-5" aria-hidden />
             </Button>
           </SheetTrigger>
           <SheetContent side="right" className="w-full max-w-xs gap-4 p-4">
             <SheetHeader className="p-0">
-              <SheetTitle>Navegação</SheetTitle>
+              <SheetTitle>{t('nav.header.menuTitle')}</SheetTitle>
             </SheetHeader>
             <div className="flex flex-col items-start gap-1">
               <LinksNavegacao onNavigate={fecharMenu} />

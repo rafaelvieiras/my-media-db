@@ -42,7 +42,7 @@ afterEach(() => {
 })
 
 describe('CollectionMemberPicker', () => {
-  it('exclui a própria coleção, membros já ligados e outras coleções', async () => {
+  it('excludes the collection itself, already linked members and other collections', async () => {
     stubPicker(
       [
         card({ id: 'col-1', title: 'A própria coleção', type: 'collection' }),
@@ -60,7 +60,7 @@ describe('CollectionMemberPicker', () => {
         onClose={() => {}}
       />,
     )
-    fireEvent.change(screen.getByLabelText('Buscar item para adicionar'), {
+    fireEvent.change(screen.getByLabelText('Search for an item to add'), {
       target: { value: 'a' },
     })
 
@@ -70,7 +70,7 @@ describe('CollectionMemberPicker', () => {
     expect(screen.queryByText('Outra coleção')).toBeNull()
   })
 
-  it('adiciona um item e repassa a lista atualizada ao pai', async () => {
+  it('adds an item and hands the updated list to the parent', async () => {
     const onAdded = vi.fn()
     stubPicker([card({ id: 'ok', title: 'Filme disponível' })], () =>
       okJson([card({ id: 'ok', title: 'Filme disponível' })]),
@@ -83,7 +83,7 @@ describe('CollectionMemberPicker', () => {
         onClose={() => {}}
       />,
     )
-    fireEvent.change(screen.getByLabelText('Buscar item para adicionar'), {
+    fireEvent.change(screen.getByLabelText('Search for an item to add'), {
       target: { value: 'a' },
     })
     fireEvent.click(await screen.findByText('Filme disponível'))

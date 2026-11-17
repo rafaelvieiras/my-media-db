@@ -3,6 +3,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { EntityDetailScreen } from '@/routes/entity-detail'
 import { LanguageProvider } from '@/lib/language-context'
+import { I18nProvider } from '@/lib/i18n'
 import type { EntityCard, OverrideBlob, ResolvedEntity } from '@/lib/api'
 import { renderWithClient } from '@/test/render'
 import { entityCardBase as card } from '@/test/detail-harness'
@@ -17,7 +18,7 @@ import {
 // Mocks the router: `useParams` fixes the id of the route; `useSearch` returns without an order
 // (default view); `useNavigate` is a no-op; `Link` uses the shared mock
 // (jscpd — `{...rest}` forwards `role`/other props that the Radix
-// `asChild` of the DropdownMenuItem of "Gerenciar" clones onto the child — without that the
+// `asChild` of the DropdownMenuItem of "Manage" clones onto the child — without that the
 // item would lose `role="menuitem"`).
 vi.mock('@tanstack/react-router', async () => ({
   useParams: () => ({ id: 'e1' }),
@@ -83,14 +84,16 @@ function renderDetail(
 ) {
   vi.stubGlobal('fetch', fetchRouter(entity, blob, membros))
   return renderWithClient(
-    <LanguageProvider>
-      <EntityDetailScreen />
-    </LanguageProvider>,
+    <I18nProvider>
+      <LanguageProvider>
+        <EntityDetailScreen />
+      </LanguageProvider>
+    </I18nProvider>,
   )
 }
 
-describe('EntityDetailScreen — selo de fallback', () => {
-  it('renderiza as tags como badges', async () => {
+describe('EntityDetailScreen — fallback badge', () => {
+  it('renders the tags as badges', async () => {
     renderDetail(
       baseEntity({
         tags: ['Ficção científica', 'Aventura'],
@@ -102,10 +105,10 @@ describe('EntityDetailScreen — selo de fallback', () => {
     expect(screen.getByText('Ficção científica')).toBeInTheDocument()
     expect(screen.getByText('Aventura')).toBeInTheDocument()
     // Effective language == the one read (pt-BR): no badge.
-    expect(screen.queryByText(/^em /)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^in /)).not.toBeInTheDocument()
   })
 
-  it('mostra o selo quando a descricao cai no fallback (idioma != lido)', async () => {
+  it('shows the badge when the description falls back (language != the one read)', async () => {
     renderDetail(
       baseEntity({
         description: 'Paul Atreides arrives on Arrakis.',
@@ -115,10 +118,10 @@ describe('EntityDetailScreen — selo de fallback', () => {
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
     // Reading in pt-BR, but the description came in en → discreet badge.
-    expect(screen.getByText('em Inglês')).toBeInTheDocument()
+    expect(screen.getByText('in English')).toBeInTheDocument()
   })
 
-  it('mostra o selo ao lado das tags quando elas caem no fallback', async () => {
+  it('shows the badge next to the tags when they fall back', async () => {
     renderDetail(
       baseEntity({
         tags: ['Science Fiction'],
@@ -128,12 +131,15 @@ describe('EntityDetailScreen — selo de fallback', () => {
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
     expect(screen.getByText('Science Fiction')).toBeInTheDocument()
-    expect(screen.getByText('em Inglês')).toBeInTheDocument()
+    expect(screen.getByText('in English')).toBeInTheDocument()
   })
 })
 
-describe('EntityDetailScreen — badge de status (0078)', () => {
-  it('traduz status cataloged para "catalogado"', async () => {
+describe('EntityDetailScreen — status badge (0078)', () => {
+  it('translates the cataloged status in the pt-BR interface', async () => {
+    // The interface language is a browser preference (ADR-0032): pin it to pt-BR
+    // before rendering so the translated badge is the one under test.
+    localStorage.setItem('mmdb.ui-lang', 'pt-BR')
     renderDetail(baseEntity({ status: 'cataloged' }))
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
@@ -141,32 +147,33 @@ describe('EntityDetailScreen — badge de status (0078)', () => {
     expect(screen.queryByText('cataloged')).not.toBeInTheDocument()
   })
 
-  it('draft mostra "não identificado", não o rótulo de cataloged', async () => {
+  it('draft shows "unidentified", not the cataloged label', async () => {
     renderDetail(baseEntity({ status: 'draft' }))
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
-    expect(screen.getByText('não identificado')).toBeInTheDocument()
+    expect(screen.getByText('unidentified')).toBeInTheDocument()
+    expect(screen.queryByText('cataloged')).not.toBeInTheDocument()
   })
 })
 
-describe('EntityDetailScreen — selo "editado" e nota local', () => {
-  it('mostra o selo quando o blob tem override no idioma atual', async () => {
+describe('EntityDetailScreen — "edited" badge and local rating', () => {
+  it('shows the badge when the blob has an override in the current language', async () => {
     // title overridden in pt-BR (current language) → badge; en would not count.
     renderDetail(baseEntity(), { title: { 'pt-BR': 'Duna' } })
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
-    expect(screen.getByText('editado')).toBeInTheDocument()
+    expect(screen.getByText('edited')).toBeInTheDocument()
   })
 
-  it('sem override no idioma atual não há selo "editado"', async () => {
+  it('without an override in the current language there is no "edited" badge', async () => {
     // Override only in en; reading in pt-BR → no badge.
     renderDetail(baseEntity(), { title: { en: 'Dune (EN)' } })
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
-    expect(screen.queryByText('editado')).not.toBeInTheDocument()
+    expect(screen.queryByText('edited')).not.toBeInTheDocument()
   })
 
-  it('a nota local resolvida aparece no hero (distinta da nota da fonte, 0086: fileira por fonte)', async () => {
+  it('the resolved local rating appears in the hero (distinct from the source rating, 0086: row per source)', async () => {
     renderDetail(
       baseEntity({
         local_rating: 9.5,
@@ -176,25 +183,25 @@ describe('EntityDetailScreen — selo "editado" e nota local', () => {
     )
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
-    expect(screen.getByLabelText('Sua nota: 9.5')).toBeInTheDocument()
+    expect(screen.getByLabelText('Your rating: 9.5')).toBeInTheDocument()
     expect(screen.getByText('8.2')).toBeInTheDocument()
   })
 
-  it('"Editar" é um item do dropdown "Gerenciar" que linka para a rota de edição', async () => {
+  it('"Edit" is an item of the "Manage" dropdown that links to the edit route', async () => {
     const user = userEvent.setup()
     renderDetail(baseEntity())
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
-    // The "Gerenciar" dropdown only mounts its content in the DOM after it is opened
+    // The "Manage" dropdown only mounts its content in the DOM after it is opened
     // (Radix). In the Link mock, `to` becomes the href; the item uses asChild over the <Link>.
-    await user.click(screen.getByRole('button', { name: /Gerenciar/ }))
-    const editar = screen.getByRole('menuitem', { name: /Editar/ })
+    await user.click(screen.getByRole('button', { name: /Manage/ }))
+    const editar = screen.getByRole('menuitem', { name: /Edit/ })
     expect(editar).toBeInTheDocument()
   })
 })
 
-describe('EntityDetailScreen — árvore de séries (0031)', () => {
-  it('série (tv) lista as Temporadas e não mostra Arquivos', async () => {
+describe('EntityDetailScreen — series tree (0031)', () => {
+  it('series (tv) lists the Seasons and shows no Files', async () => {
     renderDetail(baseEntity({ type: 'tv', title: 'Os Simpsons' }), {}, [
       card({ id: 's1', title: 'Temporada 1', type: 'season' }),
       card({ id: 's2', title: 'Temporada 2', type: 'season' }),
@@ -203,18 +210,16 @@ describe('EntityDetailScreen — árvore de séries (0031)', () => {
     await waitFor(() =>
       expect(screen.getByText('Os Simpsons')).toBeInTheDocument(),
     )
-    expect(
-      screen.getByRole('heading', { name: 'Temporadas' }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Seasons' })).toBeInTheDocument()
     expect(await screen.findByText('Temporada 1')).toBeInTheDocument()
     expect(screen.getByText('Temporada 2')).toBeInTheDocument()
     // Read-only (Phase 1): without the editable add/remove of the collection.
-    expect(screen.queryByText('Adicionar item')).toBeNull()
+    expect(screen.queryByText('Add item')).toBeNull()
     // A series groups seasons — without a folder of its own.
-    expect(screen.queryByRole('heading', { name: 'Arquivos' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Files' })).toBeNull()
   })
 
-  it('temporada (season) lista os Episódios com o número REAL (0039), sem Arquivos', async () => {
+  it('season lists the Episodes with the REAL number (0039), without Files', async () => {
     // Sparse library: only E01 and E05 (a hole in the middle). The card shows the REAL
     // number of the numbering (E01, E05), NOT the position in the list (which would be E01, E02).
     renderDetail(baseEntity({ type: 'season', title: 'Temporada 1' }), {}, [
@@ -234,32 +239,30 @@ describe('EntityDetailScreen — árvore de séries (0031)', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole('heading', { name: 'Episódios' }),
+        screen.getByRole('heading', { name: 'Episodes' }),
       ).toBeInTheDocument(),
     )
     expect(await screen.findByText('Piloto')).toBeInTheDocument()
     expect(screen.getByText('E01')).toBeInTheDocument()
     expect(screen.getByText('E05')).toBeInTheDocument()
     expect(screen.queryByText('E02')).toBeNull()
-    expect(screen.queryByRole('heading', { name: 'Arquivos' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Files' })).toBeNull()
   })
 
-  it('episódio (episode) mostra Arquivos e não é um nó pai', async () => {
+  it('episode shows Files and is not a parent node', async () => {
     renderDetail(baseEntity({ type: 'episode', title: 'Piloto' }))
 
     await waitFor(() => expect(screen.getByText('Piloto')).toBeInTheDocument())
-    expect(
-      screen.getByRole('heading', { name: 'Arquivos' }),
-    ).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Temporadas' })).toBeNull()
-    expect(screen.queryByRole('heading', { name: 'Episódios' })).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Files' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Seasons' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Episodes' })).toBeNull()
   })
 })
 
 // CATALOGING completeness section — DIFFERENT from ownership (0034/0036,
 // covered above). It only appears when `catalog_completeness.complete === false`.
-describe('EntityDetailScreen — completude de catalogação (0058)', () => {
-  it('mostra a seção "Catalogação incompleta" com a lista do que falta', async () => {
+describe('EntityDetailScreen — cataloging completeness (0058)', () => {
+  it('shows the "Incomplete cataloging" section with the list of what is missing', async () => {
     renderDetail(
       baseEntity({
         catalog_completeness: {
@@ -270,12 +273,12 @@ describe('EntityDetailScreen — completude de catalogação (0058)', () => {
     )
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
-    expect(screen.getByText('Catalogação incompleta')).toBeInTheDocument()
-    expect(screen.getByText('elenco')).toBeInTheDocument()
-    expect(screen.getByText('arte fanart')).toBeInTheDocument()
+    expect(screen.getByText('Incomplete cataloging')).toBeInTheDocument()
+    expect(screen.getByText('cast')).toBeInTheDocument()
+    expect(screen.getByText('fanart artwork')).toBeInTheDocument()
   })
 
-  it('"arquivo de mídia" na lista vem com link para Bibliotecas (0077)', async () => {
+  it('"media file" in the list comes with a link to Libraries (0077)', async () => {
     renderDetail(
       baseEntity({
         catalog_completeness: {
@@ -286,14 +289,14 @@ describe('EntityDetailScreen — completude de catalogação (0058)', () => {
     )
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
-    expect(screen.getByText('elenco')).toBeInTheDocument()
-    expect(screen.getByText('arquivo de mídia')).toBeInTheDocument()
+    expect(screen.getByText('cast')).toBeInTheDocument()
+    expect(screen.getByText('media file')).toBeInTheDocument()
     expect(
-      screen.getByRole('link', { name: 'ver Bibliotecas' }),
+      screen.getByRole('link', { name: 'see Libraries' }),
     ).toBeInTheDocument()
   })
 
-  it('não mostra a seção quando completo', async () => {
+  it('does not show the section when complete', async () => {
     renderDetail(
       baseEntity({
         catalog_completeness: { complete: true, missing: [] },
@@ -301,13 +304,13 @@ describe('EntityDetailScreen — completude de catalogação (0058)', () => {
     )
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
-    expect(screen.queryByText('Catalogação incompleta')).not.toBeInTheDocument()
+    expect(screen.queryByText('Incomplete cataloging')).not.toBeInTheDocument()
   })
 
-  it('não mostra a seção quando null (draft/ainda não avaliado)', async () => {
+  it('does not show the section when null (draft/not evaluated yet)', async () => {
     renderDetail(baseEntity({ catalog_completeness: null }))
 
     await waitFor(() => expect(screen.getByText('Dune')).toBeInTheDocument())
-    expect(screen.queryByText('Catalogação incompleta')).not.toBeInTheDocument()
+    expect(screen.queryByText('Incomplete cataloging')).not.toBeInTheDocument()
   })
 })

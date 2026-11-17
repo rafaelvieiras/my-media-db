@@ -11,9 +11,9 @@ import {
   renderComEspioes,
 } from '@/test/harness'
 
-// Tests of the `/jobs` screen: it lists the known jobs, enable/disable
-// toggle, editable cron schedule (with an inline 422), manual
-// trigger ("Executar agora") and expandable history per card.
+// Tests of the `/jobs` screen: it lists the known jobs, the enable/disable
+// toggle, the editable cron schedule (with an inline 422), the manual
+// trigger ("Run now") and the expandable history per card.
 
 function jobFixture(over: Partial<JobDefinition> = {}): JobDefinition {
   return {
@@ -97,17 +97,17 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('JobsScreen — administração de jobs (0052)', () => {
-  it('lista os jobs conhecidos', async () => {
+describe('JobsScreen — jobs administration (0052)', () => {
+  it('lists the known jobs', async () => {
     renderJobs()
     await esperarLista()
     expect(
       screen.getByText(/Faz um backup consistente via VACUUM INTO/),
     ).toBeInTheDocument()
-    expect(screen.getByText('Desabilitado')).toBeInTheDocument()
+    expect(screen.getByText('Disabled')).toBeInTheDocument()
   })
 
-  it('mostra o estado vazio quando não há jobs', async () => {
+  it('shows the empty state when there is no job', async () => {
     vi.stubGlobal(
       'fetch',
       criarFetch(({ path, method }) => {
@@ -119,18 +119,18 @@ describe('JobsScreen — administração de jobs (0052)', () => {
     )
     renderComEspioes(<JobsScreen />)
     await waitFor(() =>
-      expect(screen.getByText('Nenhum job registrado')).toBeInTheDocument(),
+      expect(screen.getByText('No job registered')).toBeInTheDocument(),
     )
   })
 
-  it('toggle habilitado dispara PATCH e atualiza a UI', async () => {
+  it('the enable toggle fires PATCH and updates the UI', async () => {
     const user = userEvent.setup()
     const { espioes, invalidateSpy } = renderJobs()
     await esperarLista()
 
     await user.click(
       screen.getByLabelText(
-        'Agendamento automático de Backup do banco (VACUUM INTO)',
+        'Automatic schedule of Backup do banco (VACUUM INTO)',
       ),
     )
 
@@ -138,22 +138,20 @@ describe('JobsScreen — administração de jobs (0052)', () => {
       expect(espioes.onPatch).toHaveBeenCalledWith({ enabled: true }),
     )
     await esperarChaves(invalidateSpy, ['["jobs"]'])
-    await waitFor(() =>
-      expect(screen.getByText('Habilitado')).toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.getByText('Enabled')).toBeInTheDocument())
   })
 
-  it('salvar o agendamento dispara PATCH com schedule_cron', async () => {
+  it('saving the schedule fires PATCH with schedule_cron', async () => {
     const user = userEvent.setup()
     const { espioes } = renderJobs()
     await esperarLista()
 
     const campo = screen.getByLabelText(
-      'Agendamento cron de Backup do banco (VACUUM INTO)',
+      'Cron schedule of Backup do banco (VACUUM INTO)',
     )
     await user.clear(campo)
     await user.type(campo, '0 4 * * *')
-    await user.click(screen.getByRole('button', { name: 'Salvar agendamento' }))
+    await user.click(screen.getByRole('button', { name: 'Save schedule' }))
 
     await waitFor(() =>
       expect(espioes.onPatch).toHaveBeenCalledWith({
@@ -162,7 +160,7 @@ describe('JobsScreen — administração de jobs (0052)', () => {
     )
   })
 
-  it('erro 422 no agendamento aparece inline', async () => {
+  it('a 422 on the schedule shows up inline', async () => {
     const user = userEvent.setup()
     renderJobs({
       patchErro: {
@@ -174,23 +172,23 @@ describe('JobsScreen — administração de jobs (0052)', () => {
     await esperarLista()
 
     const campo = screen.getByLabelText(
-      'Agendamento cron de Backup do banco (VACUUM INTO)',
+      'Cron schedule of Backup do banco (VACUUM INTO)',
     )
     await user.clear(campo)
     await user.type(campo, 'lixo')
-    await user.click(screen.getByRole('button', { name: 'Salvar agendamento' }))
+    await user.click(screen.getByRole('button', { name: 'Save schedule' }))
 
     await waitFor(() =>
       expect(screen.getByText('Expressão cron inválida.')).toBeInTheDocument(),
     )
   })
 
-  it('"Executar agora" dispara POST e mostra loading→rodando', async () => {
+  it('"Run now" fires POST and shows loading→running', async () => {
     const user = userEvent.setup()
     const { espioes, invalidateSpy } = renderJobs()
     await esperarLista()
 
-    await user.click(screen.getByRole('button', { name: /Executar agora/ }))
+    await user.click(screen.getByRole('button', { name: /Run now/ }))
 
     await waitFor(() => expect(espioes.onRun).toHaveBeenCalled())
     await esperarChaves(invalidateSpy, [
@@ -198,11 +196,11 @@ describe('JobsScreen — administração de jobs (0052)', () => {
       '["job","backup_vacuum","executions"]',
     ])
     await waitFor(() =>
-      expect(screen.getByText('Rodando…')).toBeInTheDocument(),
+      expect(screen.getByText('Running…')).toBeInTheDocument(),
     )
   })
 
-  it('histórico lista as execuções do job', async () => {
+  it('the history lists the executions of the job', async () => {
     const user = userEvent.setup()
     renderJobs({
       executions: [
@@ -219,7 +217,7 @@ describe('JobsScreen — administração de jobs (0052)', () => {
     })
     await esperarLista()
 
-    await user.click(screen.getByRole('button', { name: 'Ver histórico' }))
+    await user.click(screen.getByRole('button', { name: 'Show history' }))
 
     await waitFor(() =>
       expect(screen.getByText(/backup gravado em/)).toBeInTheDocument(),
@@ -230,7 +228,7 @@ describe('JobsScreen — administração de jobs (0052)', () => {
       within(historico as HTMLElement).getByText('Manual'),
     ).toBeInTheDocument()
     expect(
-      within(historico as HTMLElement).getByText('Sucesso'),
+      within(historico as HTMLElement).getByText('Success'),
     ).toBeInTheDocument()
   })
 })

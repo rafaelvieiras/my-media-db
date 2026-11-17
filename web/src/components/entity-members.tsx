@@ -2,6 +2,8 @@ import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PosterCard } from '@/components/poster-card'
 import { ErrorState, LoadingState } from '@/components/query-states'
+import { useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 import { useLanguage } from '@/lib/language-context'
 import { entityMembersQueryOptions } from '@/lib/queries'
 import { arteSrc, type EntityCard } from '@/lib/api'
@@ -126,16 +128,17 @@ export function CardTemporada({ card }: { card: EntityCard }) {
 // — its own framing, not the 2:3 poster frame, so as not to crop the landscape. Without a
 // still (`still_url` absent → null) the PosterCard falls back to the "Sem arte" 16:9 placeholder.
 export function CardNumerado({ card }: { card: EntityCard }) {
+  const t = useT()
   return (
     <div className="flex flex-col gap-1">
       <span className="text-xs font-medium text-muted-foreground">
-        {rotuloEpisodio(card.numbering)}
+        {rotuloEpisodio(card.numbering, t)}
       </span>
       <PosterCard
         card={card}
         artSrc={arteSrc(card.still_url)}
         aspectClass="aspect-video"
-        artAlt={`Still de ${card.title}`}
+        artAlt={t('entity.alt.still', { title: card.title })}
       />
     </div>
   )
@@ -143,10 +146,13 @@ export function CardNumerado({ card }: { card: EntityCard }) {
 
 // rotuloEpisodio builds the label of the episode card from the numbering of the card:
 // "E05" (number with 2 digits) and, when the absolute one exists and differs from the number of the
-// order, "E05 · #128". Without numbering (draft) → neutral "Episódio".
-function rotuloEpisodio(numbering: EntityCard['numbering']): string {
+// order, "E05 · #128". Without numbering (draft) → neutral label of the type.
+function rotuloEpisodio(
+  numbering: EntityCard['numbering'],
+  t: Translate,
+): string {
   if (!numbering) {
-    return 'Episódio'
+    return t('common.entityType.episode')
   }
   const base = `E${String(numbering.number).padStart(2, '0')}`
   if (

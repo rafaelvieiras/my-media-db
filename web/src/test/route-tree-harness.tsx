@@ -2,6 +2,7 @@ import { render } from '@testing-library/react'
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { router } from '@/router'
+import { I18nProvider } from '@/lib/i18n'
 import { LanguageProvider } from '@/lib/language-context'
 
 // Phase 3 harness (MSW + jsdom): it mounts the REAL ROUTE TREE of the
@@ -31,7 +32,9 @@ export async function renderRota(pathInicial: string) {
     context: { queryClient },
     Wrap: ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>
-        <LanguageProvider>{children}</LanguageProvider>
+        <I18nProvider>
+          <LanguageProvider>{children}</LanguageProvider>
+        </I18nProvider>
       </QueryClientProvider>
     ),
   })

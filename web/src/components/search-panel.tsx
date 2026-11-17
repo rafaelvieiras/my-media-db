@@ -15,6 +15,7 @@ import {
 } from '@/components/media-type-filter'
 import { rotuloTipoPlural } from '@/lib/entity-badges'
 import { EmptyState, ErrorState, LoadingState } from '@/components/query-states'
+import { useT } from '@/lib/i18n'
 
 const DEBOUNCE_MS = 350
 
@@ -29,12 +30,13 @@ const SUB_NOS: SubNo[] = ['season', 'episode']
 
 // Search panel: an input with debounce fires `GET /search`; while empty, the
 // screen stays in an instruction state (it does not query). It groups the TOP-LEVEL cards
-// dynamically by real `type` ("Filmes", "Séries",
-// "Artistas" etc., without a fixed "Filmes e séries" bucket that did not cover music),
-// separately from "Temporadas"/"Episódios" (sub-nodes, only when they are on) and from
-// "Resultados externos" (not saved, with Importar), treating
+// dynamically by real `type` ("Movies", "Series",
+// "Artists" etc., without a fixed "Movies and series" bucket that did not cover music),
+// separately from "Seasons"/"Episodes" (sub-nodes, only when they are on) and from
+// "External results" (not saved, with Import), treating
 // `external_available:false` as unavailability — not as zero results.
 export function SearchPanel() {
+  const t = useT()
   const [termo, setTermo] = useState('')
   const [tipo, setTipo] = useState<FiltroTipo>('all')
   const [subNos, setSubNos] = useState<Record<SubNo, boolean>>({
@@ -72,8 +74,8 @@ export function SearchPanel() {
           />
           <Input
             type="search"
-            aria-label="Buscar título"
-            placeholder="Buscar um filme ou série…"
+            aria-label={t('collections.search.ariaLabel')}
+            placeholder={t('collections.search.placeholder')}
             value={termo}
             onChange={(e) => setTermo(e.target.value)}
             className="h-9 pl-8"
@@ -108,15 +110,16 @@ function SubNoToggles({
   value: Record<SubNo, boolean>
   onToggle: (s: SubNo) => void
 }) {
+  const t = useT()
   return (
     <div className="flex items-center gap-2">
       <SubNoToggle
-        label="Temporadas"
+        label={t('common.entityTypePlural.season')}
         ativo={value.season}
         onClick={() => onToggle('season')}
       />
       <SubNoToggle
-        label="Episódios"
+        label={t('common.entityTypePlural.episode')}
         ativo={value.episode}
         onClick={() => onToggle('episode')}
       />
@@ -167,22 +170,23 @@ function SearchResults({
   mostrarTemporadas: boolean
   mostrarEpisodios: boolean
 }) {
+  const t = useT()
   // Initial state: without a term, the query is disabled (isPending stays true).
   if (query === '') {
     return (
       <EmptyState
-        title="Busque no seu catálogo e em fontes externas"
-        description="Digite o título de um filme ou série para ver o que já está na sua biblioteca e o que pode importar."
+        title={t('collections.search.initialTitle')}
+        description={t('collections.search.initialDescription')}
       />
     )
   }
   if (isPending) {
-    return <LoadingState label="Buscando…" />
+    return <LoadingState label={t('collections.search.searching')} />
   }
   if (isError || !data) {
     return (
       <ErrorState
-        title="Não foi possível buscar"
+        title={t('collections.search.searchError')}
         message={error instanceof Error ? error.message : undefined}
       />
     )
@@ -198,36 +202,36 @@ function SearchResults({
       {gruposTopo.length === 0 ? (
         // No top-level card: it keeps a section (even an empty one) so the owner
         // knows the catalog WAS queried — without that, with a local result of
-        // zero the screen would jump straight to "Resultados externos" without saying
+        // zero the screen would jump straight to "External results" without saying
         // that the catalog had nothing (an implementation decision, not specified
         // by the owner).
         <CardGridSection
-          title="Catálogo"
+          title={t('collections.search.catalog')}
           cards={[]}
-          emptyLabel="Nenhum item do seu catálogo corresponde à busca."
+          emptyLabel={t('collections.search.noCatalogMatch')}
         />
       ) : (
         gruposTopo.map((grupo) => (
           <CardGridSection
             key={grupo.type}
-            title={rotuloTipoPlural(grupo.type)}
+            title={rotuloTipoPlural(grupo.type, t)}
             cards={grupo.cards}
-            emptyLabel="Nenhum item do seu catálogo corresponde à busca."
+            emptyLabel={t('collections.search.noCatalogMatch')}
           />
         ))
       )}
       {mostrarTemporadas && (
         <CardGridSection
-          title="Temporadas"
+          title={t('common.entityTypePlural.season')}
           cards={temporadas}
-          emptyLabel="Nenhuma temporada corresponde à busca."
+          emptyLabel={t('collections.search.noSeasonMatch')}
         />
       )}
       {mostrarEpisodios && (
         <CardGridSection
-          title="Episódios"
+          title={t('common.entityTypePlural.episode')}
           cards={episodios}
-          emptyLabel="Nenhum episódio corresponde à busca."
+          emptyLabel={t('collections.search.noEpisodeMatch')}
         />
       )}
       <ExternalSection
@@ -294,17 +298,20 @@ function ExternalSection({
   results: SearchResult['external']
   available: boolean
 }) {
+  const t = useT()
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-heading text-lg font-medium">Resultados externos</h2>
+      <h2 className="font-heading text-lg font-medium">
+        {t('collections.search.external')}
+      </h2>
       {!available ? (
         <ErrorState
-          title="Busca externa indisponível"
-          message="A fonte externa não respondeu ou não está configurada. Isto é diferente de não haver resultados — tente novamente mais tarde."
+          title={t('collections.search.externalUnavailable')}
+          message={t('collections.search.externalUnavailableMessage')}
         />
       ) : results.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Nenhum resultado externo para importar.
+          {t('collections.search.externalEmpty')}
         </p>
       ) : (
         <ul className="flex flex-col gap-3">

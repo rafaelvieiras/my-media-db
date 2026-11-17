@@ -9,7 +9,7 @@ import { expect, test } from '../fixtures'
 // generated at all, and when re-running against a server already used in fast
 // iteration mode through E2E_BASE_URL).
 
-test('pagina de webhook: gera, mostra, copia e regenera o token do Jellyfin', async ({
+test('webhook page: generates, shows, copies and regenerates the Jellyfin token', async ({
   page,
   context,
 }) => {
@@ -23,21 +23,21 @@ test('pagina de webhook: gera, mostra, copia e regenera o token do Jellyfin', as
   ).toBeVisible()
 
   // Waits for the query to resolve: either the empty state or the field with a token appears.
-  const semToken = page.getByText('Nenhum token gerado ainda.')
-  const campoToken = page.getByLabel('Token do webhook')
+  const semToken = page.getByText('No token generated yet.')
+  const campoToken = page.getByLabel('Webhook token')
   await expect(semToken.or(campoToken)).toBeVisible()
 
   if (await semToken.isVisible()) {
-    await page.getByRole('button', { name: 'Gerar token' }).click()
+    await page.getByRole('button', { name: 'Generate token' }).click()
   }
   await expect(campoToken).toBeVisible()
 
   // A JUST-generated token starts visible on purpose (the owner needs to be
-  // able to copy it without an extra click on "Mostrar"); a
+  // able to copy it without an extra click on "Show"); a
   // pre-existing token loaded from the backend starts masked. Normalizes to the
   // masked state before testing the toggle, so that the test holds in both
   // cases.
-  const botaoOcultar = page.getByRole('button', { name: 'Ocultar token' })
+  const botaoOcultar = page.getByRole('button', { name: 'Hide token' })
   if (await botaoOcultar.isVisible()) {
     await botaoOcultar.click()
   }
@@ -46,43 +46,43 @@ test('pagina de webhook: gera, mostra, copia e regenera o token do Jellyfin', as
   expect(tokenAtual.length).toBeGreaterThan(0)
 
   // Show/hide.
-  await page.getByRole('button', { name: 'Mostrar token' }).click()
+  await page.getByRole('button', { name: 'Show token' }).click()
   await expect(campoToken).toHaveAttribute('type', 'text')
-  await page.getByRole('button', { name: 'Ocultar token' }).click()
+  await page.getByRole('button', { name: 'Hide token' }).click()
   await expect(campoToken).toHaveAttribute('type', 'password')
 
   // Copy token: checks that the right value really landed in the
   // clipboard (permission granted above).
-  await page.getByRole('button', { name: 'Copiar token' }).click()
-  await expect(page.getByRole('button', { name: 'Copiado!' })).toBeVisible()
+  await page.getByRole('button', { name: 'Copy token' }).click()
+  await expect(page.getByRole('button', { name: 'Copied!' })).toBeVisible()
   const tokenCopiado = await page.evaluate(() => navigator.clipboard.readText())
   expect(tokenCopiado).toBe(tokenAtual)
 
   // Copy webhook URL: it contains the token in the querystring.
-  await page.getByRole('button', { name: 'Copiar URL do webhook' }).click()
+  await page.getByRole('button', { name: 'Copy webhook URL' }).click()
   const urlCopiada = await page.evaluate(() => navigator.clipboard.readText())
   expect(urlCopiada).toContain(`/api/v1/webhooks/jellyfin?token=${tokenAtual}`)
 
   // Regenerate: confirms the native dialog and checks that the displayed token changed.
   page.once('dialog', (dialog) => dialog.accept())
-  await page.getByRole('button', { name: 'Gerar novo token' }).click()
+  await page.getByRole('button', { name: 'Generate new token' }).click()
   await expect(campoToken).not.toHaveValue(tokenAtual)
 
   // Outbound placeholder always visible, without depending on any API.
   await expect(
-    page.getByRole('heading', { name: 'Webhooks de saída' }),
+    page.getByRole('heading', { name: 'Outbound webhooks' }),
   ).toBeVisible()
   await expect(
-    page.getByText('Nenhum webhook de saída disponível ainda.'),
+    page.getByText('No outbound webhook available yet.'),
   ).toBeVisible()
 })
 
-test('sidebar do dashboard marca o link Webhook como ativo na rota /dashboard/webhook', async ({
+test('dashboard sidebar marks the Webhook link as active on the /dashboard/webhook route', async ({
   page,
 }) => {
   await page.goto('/dashboard/webhook')
   const link = page
-    .getByRole('navigation', { name: 'Administração' })
+    .getByRole('navigation', { name: 'Administration' })
     .getByRole('link', { name: 'Webhook' })
   await expect(link).toHaveAttribute('aria-current', 'page')
 })

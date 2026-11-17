@@ -10,6 +10,8 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { LoadingState, ErrorState } from '@/components/query-states'
 import { formatBytes, formatDuration } from '@/lib/format'
+import { useLocale, useT } from '@/lib/i18n'
+import type { Translate } from '@/lib/i18n/types'
 import type {
   DatabaseHealth,
   MediaFilesUsage,
@@ -22,6 +24,7 @@ import type {
 // three visible states — loading / error / ok. A network error is UI
 // STATE, never an uncaught exception: the Card always renders.
 export function HealthScreen() {
+  const t = useT()
   const { data, isPending, isError } = useQuery(healthQueryOptions)
 
   return (
@@ -29,19 +32,23 @@ export function HealthScreen() {
       <Card className="w-full max-w-md" size="default">
         <CardHeader>
           <CardTitle className="flex items-center justify-between gap-3">
-            Estado da API
+            {t('jobs.health.apiTitle')}
             <StatusBadge isPending={isPending} isError={isError} />
           </CardTitle>
-          <CardDescription>Saúde do serviço MyMediaDB</CardDescription>
+          <CardDescription>{t('jobs.health.apiDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           {isPending ? (
-            <p className="text-muted-foreground">Conectando…</p>
+            <p className="text-muted-foreground">
+              {t('jobs.health.connecting')}
+            </p>
           ) : isError ? (
-            <p className="font-medium text-destructive">API indisponível</p>
+            <p className="font-medium text-destructive">
+              {t('jobs.health.apiUnavailable')}
+            </p>
           ) : (
             <p className="font-medium text-emerald-600 dark:text-emerald-400">
-              API online — v{data.version}
+              {t('jobs.health.apiOnline', { version: data.version })}
             </p>
           )}
         </CardContent>
@@ -59,15 +66,20 @@ function StatusBadge({
   isPending: boolean
   isError: boolean
 }) {
+  const t = useT()
   if (isPending) {
-    return <Badge variant="secondary">conectando</Badge>
+    return (
+      <Badge variant="secondary">{t('jobs.health.status.connecting')}</Badge>
+    )
   }
   if (isError) {
-    return <Badge variant="destructive">offline</Badge>
+    return (
+      <Badge variant="destructive">{t('jobs.health.status.offline')}</Badge>
+    )
   }
   return (
     <Badge className="border-transparent bg-emerald-600 text-white">
-      online
+      {t('jobs.health.status.online')}
     </Badge>
   )
 }
@@ -79,16 +91,18 @@ function StatusBadge({
 // It is a query SEPARATE from `healthQueryOptions` — a failure here does not affect the
 // status card above.
 function SystemSection() {
+  const t = useT()
   const { data, isPending, isError, error } = useQuery(systemHealthQueryOptions)
   const mensagemErro = error instanceof Error ? error.message : undefined
 
   return (
     <section className="flex w-full max-w-3xl flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <h2 className="font-heading text-lg font-semibold">Sistema</h2>
+        <h2 className="font-heading text-lg font-semibold">
+          {t('jobs.health.system.title')}
+        </h2>
         <p className="text-sm text-muted-foreground">
-          Retrato local do processo — banco, uso do catálogo e disco das fontes.
-          Snapshot cacheado por 60s (recarregue a página para atualizar).
+          {t('jobs.health.system.description')}
         </p>
       </div>
 
@@ -124,34 +138,65 @@ interface BlockState {
   message?: string
 }
 
+// The three telemetry cards share the same body contract: spinner while
+// pending, the inline error when the block failed, the content otherwise. The
+// content arrives as a render prop, so the narrowed (non-undefined) data type
+// reaches the card without a cast — and the copy stays identical across the cards.
+function CorpoDoBloco<T>({
+  dados,
+  isPending,
+  message,
+  children,
+}: {
+  dados: T | undefined
+  isPending: boolean
+  message?: string
+  children: (dados: T) => React.ReactNode
+}) {
+  const t = useT()
+  if (isPending) {
+    return <LoadingState label={t('common.state.loading')} />
+  }
+  if (dados === undefined) {
+    return (
+      <ErrorState title={t('jobs.health.telemetryError')} message={message} />
+    )
+  }
+  return <>{children(dados)}</>
+}
+
 function DatabaseBlock({
   data,
   isPending,
   isError,
   message,
 }: BlockState & { data: DatabaseHealth | undefined }) {
+  const t = useT()
+  const locale = useLocale()
   return (
     <Card size="sm">
       <CardHeader>
-        <CardTitle>Banco de dados</CardTitle>
+        <CardTitle>{t('jobs.health.database.title')}</CardTitle>
       </CardHeader>
       <CardContent>
-        {isPending ? (
-          <LoadingState label="Carregando…" />
-        ) : isError || !data ? (
-          <ErrorState
-            title="Não foi possível carregar a telemetria"
-            message={message}
-          />
-        ) : (
-          <dl className="flex flex-col gap-1.5 text-sm">
-            <BlockRow label="Tamanho" value={formatBytes(data.size_bytes)} />
-            <BlockRow
-              label="Versão de schema"
-              value={String(data.schema_version)}
-            />
-          </dl>
-        )}
+        <CorpoDoBloco
+          isPending={isPending}
+          dados={isError ? undefined : data}
+          message={message}
+        >
+          {(data) => (
+            <dl className="flex flex-col gap-1.5 text-sm">
+              <BlockRow
+                label={t('common.label.size')}
+                value={formatBytes(data.size_bytes, locale)}
+              />
+              <BlockRow
+                label={t('jobs.health.database.schemaVersion')}
+                value={String(data.schema_version)}
+              />
+            </dl>
+          )}
+        </CorpoDoBloco>
       </CardContent>
     </Card>
   )
@@ -163,55 +208,69 @@ function UsageBlock({
   isError,
   message,
 }: BlockState & { data: UsageCounts | undefined }) {
+  const t = useT()
   return (
     <Card size="sm">
       <CardHeader>
-        <CardTitle>Uso</CardTitle>
+        <CardTitle>{t('jobs.health.usage.title')}</CardTitle>
       </CardHeader>
       <CardContent>
-        {isPending ? (
-          <LoadingState label="Carregando…" />
-        ) : isError || !data ? (
-          <ErrorState
-            title="Não foi possível carregar a telemetria"
-            message={message}
-          />
-        ) : (
-          <dl className="flex flex-col gap-1.5 text-sm">
-            <BlockRow label="Entities" value={String(data.entities.total)} />
-            {Object.entries(data.entities.by_type).map(([tipo, total]) => (
-              <BlockRow key={tipo} label={`— ${tipo}`} value={String(total)} />
-            ))}
-            <BlockRow
-              label="Arquivos de mídia"
-              value={formatMediaFiles(data.media_files)}
-            />
-            <BlockRow
-              label="Fontes cadastradas"
-              value={String(data.library_sources)}
-            />
-            <BlockRow
-              label="Fila de revisão"
-              value={String(data.review_queue_size)}
-            />
-            <BlockRow label="Órfãs" value={String(data.orphans_count)} />
-            <BlockRow
-              label="Execuções de job"
-              value={String(data.job_executions_total)}
-            />
-            <BlockRow
-              label="Uptime"
-              value={formatDuration(data.uptime_seconds)}
-            />
-          </dl>
-        )}
+        <CorpoDoBloco
+          isPending={isPending}
+          dados={isError ? undefined : data}
+          message={message}
+        >
+          {(data) => (
+            <dl className="flex flex-col gap-1.5 text-sm">
+              <BlockRow
+                label={t('jobs.health.usage.entities')}
+                value={String(data.entities.total)}
+              />
+              {Object.entries(data.entities.by_type).map(([tipo, total]) => (
+                <BlockRow
+                  key={tipo}
+                  label={`— ${tipo}`}
+                  value={String(total)}
+                />
+              ))}
+              <BlockRow
+                label={t('jobs.health.usage.mediaFiles')}
+                value={formatMediaFiles(data.media_files, t)}
+              />
+              <BlockRow
+                label={t('jobs.health.usage.librarySources')}
+                value={String(data.library_sources)}
+              />
+              <BlockRow
+                label={t('jobs.health.usage.reviewQueue')}
+                value={String(data.review_queue_size)}
+              />
+              <BlockRow
+                label={t('jobs.health.usage.orphans')}
+                value={String(data.orphans_count)}
+              />
+              <BlockRow
+                label={t('jobs.health.usage.jobExecutions')}
+                value={String(data.job_executions_total)}
+              />
+              <BlockRow
+                label={t('jobs.health.usage.uptime')}
+                value={formatDuration(data.uptime_seconds)}
+              />
+            </dl>
+          )}
+        </CorpoDoBloco>
       </CardContent>
     </Card>
   )
 }
 
-function formatMediaFiles(mediaFiles: MediaFilesUsage): string {
-  return `${mediaFiles.total} (${mediaFiles.present} presentes, ${mediaFiles.missing} ausentes)`
+function formatMediaFiles(mediaFiles: MediaFilesUsage, t: Translate): string {
+  return t('jobs.health.usage.mediaFilesValue', {
+    total: mediaFiles.total,
+    present: mediaFiles.present,
+    missing: mediaFiles.missing,
+  })
 }
 
 function StorageBlock({
@@ -220,58 +279,59 @@ function StorageBlock({
   isError,
   message,
 }: BlockState & { data: StorageSnapshot | undefined }) {
+  const t = useT()
+  const locale = useLocale()
   return (
     <Card size="sm">
       <CardHeader>
-        <CardTitle>Armazenamento</CardTitle>
+        <CardTitle>{t('jobs.health.storage.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {isPending ? (
-          <LoadingState label="Carregando…" />
-        ) : isError || !data ? (
-          <ErrorState
-            title="Não foi possível carregar a telemetria"
-            message={message}
-          />
-        ) : (
-          <>
-            {/* Disk distribution used by the tracked folders —
+        <CorpoDoBloco
+          isPending={isPending}
+          dados={isError ? undefined : data}
+          message={message}
+        >
+          {(data) => (
+            <>
+              {/* Disk distribution used by the tracked folders —
                 managed media (video + NFO/artwork with a canonical name),
                 internal cache of the app (assetsDir) and the unidentified rest.
-                Read-only: no action on "não identificado" here. */}
-            <dl className="flex flex-col gap-1.5 text-sm">
-              <BlockRow
-                label="Mídia gerenciada"
-                value={formatBytes(data.managed_media_bytes)}
-              />
-              <BlockRow
-                label="Cache da aplicação"
-                value={formatBytes(data.app_cache_bytes)}
-              />
-              <BlockRow
-                label="Não identificado"
-                value={formatBytes(data.unmanaged_bytes)}
-              />
-            </dl>
+                Read-only: no action on "Unidentified" here. */}
+              <dl className="flex flex-col gap-1.5 text-sm">
+                <BlockRow
+                  label={t('jobs.health.storage.managedMedia')}
+                  value={formatBytes(data.managed_media_bytes, locale)}
+                />
+                <BlockRow
+                  label={t('jobs.health.storage.appCache')}
+                  value={formatBytes(data.app_cache_bytes, locale)}
+                />
+                <BlockRow
+                  label={t('jobs.health.storage.unidentified')}
+                  value={formatBytes(data.unmanaged_bytes, locale)}
+                />
+              </dl>
 
-            <div className="flex flex-col gap-3 border-t border-border pt-3">
-              <p className="text-xs font-medium text-muted-foreground">
-                Por fonte
-              </p>
-              {data.sources.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Nenhuma fonte cadastrada.
+              <div className="flex flex-col gap-3 border-t border-border pt-3">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {t('jobs.health.storage.bySource')}
                 </p>
-              ) : (
-                <ul className="flex flex-col gap-3">
-                  {data.sources.map((source) => (
-                    <StorageRow key={source.source_id} source={source} />
-                  ))}
-                </ul>
-              )}
-            </div>
-          </>
-        )}
+                {data.sources.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {t('jobs.health.storage.noSources')}
+                  </p>
+                ) : (
+                  <ul className="flex flex-col gap-3">
+                    {data.sources.map((source) => (
+                      <StorageRow key={source.source_id} source={source} />
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
+        </CorpoDoBloco>
       </CardContent>
     </Card>
   )
@@ -281,6 +341,8 @@ function StorageBlock({
 // bar. Offline shows a badge in place of the bar, without freezing the
 // other rows (`offline`/`filesystem: null` of the contract, see §4).
 function StorageRow({ source }: { source: SourceStorage }) {
+  const t = useT()
+  const locale = useLocale()
   return (
     <li className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-2 text-sm">
@@ -288,12 +350,16 @@ function StorageRow({ source }: { source: SourceStorage }) {
           {source.path}
         </span>
         {source.offline ? (
-          <Badge variant="destructive">indisponível</Badge>
+          <Badge variant="destructive">
+            {t('jobs.health.storage.offlineBadge')}
+          </Badge>
         ) : (
           <span className="shrink-0 text-muted-foreground">
-            {formatBytes(source.used_bytes)}
+            {formatBytes(source.used_bytes, locale)}
             {source.filesystem
-              ? ` de ${formatBytes(source.filesystem.total_bytes)}`
+              ? ` ${t('jobs.health.storage.ofTotal', {
+                  total: formatBytes(source.filesystem.total_bytes, locale),
+                })}`
               : ''}
           </span>
         )}

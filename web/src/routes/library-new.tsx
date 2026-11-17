@@ -8,6 +8,7 @@ import { Select } from '@/components/ui/select'
 import { PathBrowser } from '@/components/path-browser'
 import { LibraryFormHeader } from '@/components/library-form-header'
 import { LibraryLanguageAndRetryFields } from '@/components/library-language-retry-fields'
+import { useT } from '@/lib/i18n'
 import { ApiError, createLibrary, type CreateSource } from '@/lib/api'
 import {
   languageSettingsQueryOptions,
@@ -24,6 +25,7 @@ import {
 // (finding #7 of the audit, an error far from the field in the squeezed list, disappears
 // for free here).
 export function LibraryNewScreen() {
+  const t = useT()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [path, setPath] = useState('')
@@ -69,24 +71,26 @@ export function LibraryNewScreen() {
     mutation.error instanceof ApiError
       ? mutation.error.message
       : mutation.isError
-        ? 'Não foi possível adicionar o datasource.'
+        ? t('library.create.failed')
         : null
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
-      <LibraryFormHeader titulo="Adicionar datasource" />
+      <LibraryFormHeader titulo={t('library.create.title')} />
 
       {/* noValidate: the min/max of the retry field is only a native hint;
           the range validation belongs to the backend (422 inline), without depending on the
           native browser balloon blocking the submit before it gets there. */}
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">Caminho</span>
+          <span className="text-muted-foreground">
+            {t('library.form.path')}
+          </span>
           <Input
             value={path}
             onChange={(e) => setPath(e.target.value)}
-            placeholder="/mnt/midia/filmes"
-            aria-label="Caminho do datasource"
+            placeholder={t('library.form.pathPlaceholder')}
+            aria-label={t('library.form.pathAriaLabel')}
             aria-invalid={mensagemErro !== null || undefined}
           />
         </label>
@@ -94,14 +98,16 @@ export function LibraryNewScreen() {
         <PathBrowser value={path} onChange={setPath} />
 
         <label className="flex max-w-40 flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">Tipo</span>
+          <span className="text-muted-foreground">
+            {t('common.label.type')}
+          </span>
           <Select
             value={type}
             onChange={(e) => setType(e.target.value as CreateSource['type'])}
-            aria-label="Tipo do datasource"
+            aria-label={t('library.create.typeAriaLabel')}
           >
-            <option value="movie">Filmes</option>
-            <option value="tv">Séries</option>
+            <option value="movie">{t('common.entityTypePlural.movie')}</option>
+            <option value="tv">{t('common.entityTypePlural.tv')}</option>
           </Select>
         </label>
 
@@ -123,7 +129,9 @@ export function LibraryNewScreen() {
         <div>
           <Button type="submit" disabled={mutation.isPending}>
             <FolderPlus aria-hidden />
-            {mutation.isPending ? 'Adicionando…' : 'Adicionar datasource'}
+            {mutation.isPending
+              ? t('library.create.submitting')
+              : t('library.create.submit')}
           </Button>
         </div>
       </form>

@@ -13,25 +13,25 @@ vi.mock('@tanstack/react-router', async () => ({
   useNavigate: () => vi.fn(),
 }))
 
-describe('RichDetailView — still do episódio (0042)', () => {
+describe('RichDetailView — episode still (0042)', () => {
   // The still URL already arrives READY (the deResolvedEntity adapter applied imagemProxySrc).
   const stillProxied = '/api/v1/images?src=https%3A%2F%2Fx%2Fs.jpg'
 
-  it('episódio com still: mostra o still grande 16:9, sem o pôster 2:3', () => {
+  it('episode with still: shows the large 16:9 still, not the 2:3 poster', () => {
     const { container } = renderWithClient(
       <RichDetailView
         detail={richDetailBase({ type: 'episode', stillUrl: stillProxied })}
         source="tmdb"
       />,
     )
-    const img = screen.getByAltText('Still de Duna') as HTMLImageElement
+    const img = screen.getByAltText('Still of Duna') as HTMLImageElement
     expect(img.getAttribute('src')).toBe(stillProxied)
     expect(container.querySelector('.aspect-video')).toBeTruthy()
     // The episode does not use the 2:3 poster frame.
-    expect(screen.queryByAltText('Pôster de Duna')).toBeNull()
+    expect(screen.queryByAltText('Poster of Duna')).toBeNull()
   })
 
-  it('episódio sem still: placeholder no frame 16:9', () => {
+  it('episode without still: placeholder in the 16:9 frame', () => {
     const { container } = renderWithClient(
       <RichDetailView
         detail={richDetailBase({ type: 'episode', stillUrl: null })}
@@ -39,11 +39,11 @@ describe('RichDetailView — still do episódio (0042)', () => {
       />,
     )
     expect(screen.getByTestId('still-placeholder')).toBeTruthy()
-    expect(screen.queryByAltText('Still de Duna')).toBeNull()
+    expect(screen.queryByAltText('Still of Duna')).toBeNull()
     expect(container.querySelector('.aspect-video')).toBeTruthy()
   })
 
-  it('não-episódio: sem frame de still (mantém o frame de pôster 2:3)', () => {
+  it('non-episode: no still frame (keeps the 2:3 poster frame)', () => {
     const { container } = renderWithClient(
       <RichDetailView
         detail={richDetailBase({ type: 'movie', stillUrl: null })}
