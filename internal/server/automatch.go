@@ -439,6 +439,16 @@ type candidatoExternoPontuado struct {
 // candidate is almost always among the top-3 by main-title score.
 const candidatosAlternativosTopN = 3
 
+// titulosDoCandidato returns the extra titles the search itself already delivered for a
+// candidate (today only the original-language title). Kept as a function so the callers
+// have ONE place to grow the set without touching the scoring call.
+func titulosDoCandidato(c provider.ResultadoExterno) []string {
+	if c.TituloOriginal == "" {
+		return nil
+	}
+	return []string{c.TituloOriginal}
+}
+
 // melhorCandidatoExterno rescores the results of the EXTERNAL search (buscarExterno,
 // already merged/deduplicated by source) and ALWAYS returns the one with the HIGHEST
 // score among the non-discarded ones -- the same reasoning as melhorCandidatoLocal: the
@@ -459,7 +469,14 @@ func (s *Server) melhorCandidatoExterno(ctx context.Context, candidatos []provid
 	pontuados := make([]candidatoExternoPontuado, 0, len(candidatos))
 	for _, c := range candidatos {
 		anoCand := anoDeStringPtr(c.Year)
-		pontos, descartado := matching.Pontuar(titulo, ano, c.Title, anoCand)
+		// Stage 1 also compares against the ORIGINAL title the source reports for free in
+		// the search payload. Without it the candidate whose displayed title is the
+		// translation ("Crimes do Colarinho Branco" for "White Collar") scores ~0, never
+		// reaches the top-3 of stage 2, and loses to a longer title that merely starts
+		// with the query ("White Collar Blue", 94.1) -- a wrong match ABOVE
+		// LimiarAutoMatch, i.e. silently cataloged without review.
+		alternativos := titulosDoCandidato(c)
+		pontos, _, descartado := matching.PontuarComAlternativos(titulo, ano, c.Title, alternativos, anoCand)
 		if descartado {
 			continue
 		}

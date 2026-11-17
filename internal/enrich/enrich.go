@@ -560,6 +560,28 @@ func chaveExternalID(source string) string {
 	return source
 }
 
+// AplicarIdentidadeExclusiva writes {source: sourceID} as the entity's ONLY external
+// identity, dropping the ids of every other source.
+//
+// It exists for a CORRECTION ("Corrigir"/"Confirmar candidato"/auto-match applying a new
+// identity): mesclarExternalIds preserves the other keys, which is right for an
+// enrichment that COMPLETES an identity and wrong for one that REPLACES it. Measured: a
+// series wrongly matched to "White Collar Blue" (2002) kept `tvdb: 82010` -- the id of
+// the OTHER show -- after being corrected to the right TMDB id, so the NFO export would
+// point Jellyfin at a different series. Any cross-id the enrichment can resolve
+// authoritatively is written back right after this call (mesclarExternalIdSeAusente).
+func (s *Servico) AplicarIdentidadeExclusiva(ctx context.Context, entityID, source, sourceID string) error {
+	ids := map[string]string{chaveExternalID(source): sourceID}
+	b, err := json.Marshal(ids)
+	if err != nil {
+		return err
+	}
+	return s.escrita().AtualizarExternalIds(ctx, sqlcgen.AtualizarExternalIdsParams{
+		ExternalIdsJson: nsValid(string(b)),
+		ID:              entityID,
+	})
+}
+
 // mesclarExternalIdSeAusente merges {key: value} into entity.external_ids_json ONLY when
 // the key is not present yet (or is empty) — unlike mesclarExternalIds (which ALWAYS
 // overwrites its own source, authoritative), this one is for an auxiliary CROSS-ID that

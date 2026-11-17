@@ -578,3 +578,84 @@ func TestReviewEpisodioContaArquivoDaJuncao(t *testing.T) {
 		t.Fatalf("review_group = %+v, quero agrupado pela pasta (nao 'sem arquivo')", ep1.ReviewGroup)
 	}
 }
+
+// TestCorrigirDescartaIdentidadeAntigaDasOutrasFontes is the regression of a real
+// corruption found right after correcting a wrong match: the series wrongly matched to
+// "White Collar Blue" (2002) carried `tvdb: 82010` -- the id of the OTHER show -- and
+// correcting it to the right TMDB id kept that id alongside. The NFO export would point
+// Jellyfin at a different series.
+func TestCorrigirDescartaIdentidadeAntigaDasOutrasFontes(t *testing.T) {
+	h, d, _, _, _ := setupEnrichServer(t)
+	semearEntity(t, d, "e-errada", "movie", "White Collar")
+	semearFile(t, d, "f-errada", "e-errada", "/lib/x.mkv", "present", 40, "")
+	// The wrong identity: the id of the OTHER source was written by the earlier match.
+	if err := escrita(t, d).AtualizarExternalIds(context.Background(), sqlcgen.AtualizarExternalIdsParams{
+		ExternalIdsJson: nsOf(`{"tmdb":"2154","tvdb":"82010"}`),
+		ID:              "e-errada",
+	}); err != nil {
+		t.Fatalf("AtualizarExternalIds: %v", err)
+	}
+
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/e-errada/correct",
+		map[string]string{"source_id": "21510"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("correct status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+	ent := decodeEntidade(t, rec)
+	eq(t, "external_ids.tmdb", ent.ExternalIDs["tmdb"], "21510")
+	if v, sobrou := ent.ExternalIDs["tvdb"]; sobrou {
+		t.Fatalf("tvdb = %q sobreviveu: o id da identidade ERRADA nao pode ficar", v)
+	}
+}
+
+// TestCorrigirDescartaArvoreDaIdentidadeAntiga is the regression of the duplicated
+// episodes found right after correcting a series: the OLD tree (seasons/episodes of the
+// previous identity) stayed linked to the same seasons, so Temporada 1 came out holding
+// the 22 episodes of the wrong show AND the 14 real ones -- two cards per number.
+//
+// Correcting now discards the tree before importing the new one. The files survive: they
+// hang on the series (`media_file.entity_id`), not on the episode.
+func TestCorrigirDescartaArvoreDaIdentidadeAntiga(t *testing.T) {
+	img := servidorImagemArvoreSerie(t)
+	h, d := setupSearchServer(t, WithSearchProvider(fake.New(img.URL)), WithAssetsDir(t.TempDir()))
+	semearEntity(t, d, "s-antiga", "tv", "Serie Trocada")
+	ctx := context.Background()
+
+	// The tree of the PREVIOUS identity: one season with two episodes that the new tree
+	// does not know.
+	semearEntity(t, d, "temp-old", "season", "Temporada 1")
+	semearEntity(t, d, "ep-old-1", "episode", "Episódio 1")
+	semearEntity(t, d, "ep-old-2", "episode", "Episódio 2")
+	ligar := func(parentID, childID, kind string) {
+		if _, err := escrita(t, d).CriarEntityRelation(ctx, sqlcgen.CriarEntityRelationParams{
+			ID: parentID + ">" + childID, ParentID: parentID, ChildID: childID, Kind: kind,
+		}); err != nil {
+			t.Fatalf("CriarEntityRelation(%s>%s): %v", parentID, childID, err)
+		}
+	}
+	ligar("s-antiga", "temp-old", "season")
+	ligar("temp-old", "ep-old-1", "episode")
+	ligar("temp-old", "ep-old-2", "episode")
+	semearFile(t, d, "f-old", "s-antiga", "/lib/velha/e10.mkv", "present", 100, "")
+
+	rec := do(t, h, http.MethodPost, "/api/v1/entities/s-antiga/correct",
+		map[string]string{"source_id": fake.SerieFixtureID})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("correct status = %d, quero 200 (corpo=%s)", rec.Code, rec.Body.String())
+	}
+
+	temp := membrosDe(t, h, "s-antiga")
+	if len(temp) != 2 {
+		t.Fatalf("temporadas = %d, quero 2 (arvore da identidade NOVA)", len(temp))
+	}
+	for _, season := range temp {
+		if season.ID == "temp-old" {
+			t.Fatalf("a temporada da identidade ANTIGA sobreviveu (%s)", season.ID)
+		}
+		for _, ep := range membrosDe(t, h, season.ID) {
+			if ep.ID == "ep-old-1" || ep.ID == "ep-old-2" {
+				t.Fatalf("episodio da identidade antiga sobreviveu na temporada %s: %s", season.Title, ep.Title)
+			}
+		}
+	}
+}

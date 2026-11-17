@@ -259,6 +259,55 @@ func (s *Servico) mesclarTvdbCruzado(ctx context.Context, entityID, source strin
 	}
 }
 
+// DescartarArvoreSerie removes the WHOLE season/episode tree of a series (the relations
+// and the child entities), keeping the series itself and its files.
+//
+// It exists for a manual identity change: the tree describes the PREVIOUS show, so
+// re-importing over it leaves two episode sets inside the same seasons (measured: after
+// correcting "White Collar" from "White Collar Blue", Temporada 1 held both the 22
+// episodes of the wrong show -- titled "Episódio N", and holding every file -- and the 14
+// real ones). Dedup by external id (ADR-0021) cannot merge them: they are different
+// episodes of different shows.
+//
+// The FILES survive: media_file.entity_id points at the SERIES, not at the episode, and
+// the episode link lives in media_file_entity, which goes away with the episode. The
+// re-import that follows calls recasarArquivosPendentes, which re-links them by number
+// against the new tree.
+func (s *Servico) DescartarArvoreSerie(ctx context.Context, serieID string) error {
+	q := s.escrita()
+	temporadas, err := q.ListarRelacoesFilhas(ctx, serieID)
+	if err != nil {
+		return err
+	}
+	for _, temp := range temporadas {
+		if temp.Kind != relacaoTemporada {
+			continue
+		}
+		episodios, err := q.ListarRelacoesFilhas(ctx, temp.ChildID)
+		if err != nil {
+			return err
+		}
+		for _, ep := range episodios {
+			if ep.Kind != relacaoEpisodio {
+				continue
+			}
+			if err := q.ApagarEntityRelation(ctx, ep.ID); err != nil {
+				return err
+			}
+			if err := q.ApagarEntity(ctx, ep.ChildID); err != nil {
+				return err
+			}
+		}
+		if err := q.ApagarEntityRelation(ctx, temp.ID); err != nil {
+			return err
+		}
+		if err := q.ApagarEntity(ctx, temp.ChildID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // sincronizarArvoreSerie combines the two steps above for a caller that only has
 // (serieID, source, sourceID) -- the case of Enriquecer, which does not have a pre-fetched
 // tree the way importarSerie does. The error covers both capability/network

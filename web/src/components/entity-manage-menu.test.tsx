@@ -14,6 +14,17 @@ import { stubRota, stubRotas } from '@/test/stub-fetch'
 // AlertDialog instead of mutating directly). The <Link> of the router becomes a plain <a>
 // (same mock as `poster-card.test.tsx`); `useNavigate` is a spy — the
 // entity needs it so that "Excluir coleção" navigates to `/` on success.
+// The manual match panel passes the active language to the search; same isolation used
+// in review.test.tsx (no settings endpoint involved).
+vi.mock('@/lib/language-context', () => ({
+  useLanguage: () => ({
+    lang: 'pt-BR',
+    allowed: ['pt-BR'],
+    primary: 'pt-BR',
+    setLang: () => {},
+  }),
+}))
+
 const navigateSpy = vi.fn()
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/link-mock')).LinkMock,
@@ -127,6 +138,7 @@ function render(
   isCollection = false,
   type = 'movie',
   status = 'cataloged',
+  titulo = '',
 ) {
   return renderWithClient(
     <EntityManageMenu
@@ -136,6 +148,7 @@ function render(
       catalogCompleteness={cc}
       owned={owned}
       isCollection={isCollection}
+      titulo={titulo}
     />,
   )
 }
@@ -285,6 +298,23 @@ describe('EntityManageMenu — conditional dropdown items', () => {
     expect(
       screen.queryByRole('menuitem', { name: /Delete collection/ }),
     ).toBeNull()
+  })
+})
+
+describe('EntityManageMenu — manual match (wrong identity)', () => {
+  it('"Find and match manually" always appears and opens the search, prefilled with the current title', async () => {
+    const user = userEvent.setup()
+    render(null, false, false, 'movie', 'cataloged', 'White Collar')
+    await abrirMenu(user)
+    await user.click(
+      screen.getByRole('menuitem', { name: /Find and match manually/ }),
+    )
+    // The right identity of a wrong match is NOT a draft: the entity is cataloged and
+    // never reaches the review queue, so this action of the detail is the only way in.
+    const campo = await screen.findByRole('searchbox', {
+      name: /Search for the correct title/,
+    })
+    expect((campo as HTMLInputElement).value).toBe('White Collar')
   })
 })
 

@@ -190,7 +190,28 @@ func (s *Server) aplicarIdentidadeExterna(w http.ResponseWriter, ctx context.Con
 	if err != nil {
 		return false
 	}
-	if err := s.enrich.Enriquecer(ctx, id, source, sourceID, tipo, langs, false); err != nil {
+	// The new identity WINS: the ids of the OTHER sources belonged to the previous
+	// (wrong) identity and must not survive a correction -- see the comment of
+	// AplicarIdentidadeExclusiva. The enrichment right below writes back whatever
+	// cross-id it can resolve.
+	if err := s.enrich.AplicarIdentidadeExclusiva(ctx, id, source, sourceID); err != nil {
+		respondErroInterno(w)
+		return false
+	}
+	// A manual identity change is a RESET of what was derived from the previous one: the
+	// season/episode tree described the other show, so it goes away before the new tree is
+	// imported (otherwise both sets live inside the same seasons -- see
+	// enrich.DescartarArvoreSerie). The files stay: they hang on the series, and the
+	// re-import re-links them by number.
+	if tipo == "tv" {
+		if err := s.enrich.DescartarArvoreSerie(ctx, id); err != nil {
+			respondErroInterno(w)
+			return false
+		}
+	}
+	// force=true: the owner asked for this identity, so nothing from the previous one is
+	// reused -- metadata, artwork and mediainfo are fetched again (same for a movie).
+	if err := s.enrich.Enriquecer(ctx, id, source, sourceID, tipo, langs, true); err != nil {
 		respondFonteIndisponivel(w)
 		return false
 	}

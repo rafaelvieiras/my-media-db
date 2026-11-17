@@ -201,6 +201,9 @@ export const entity = defineDomain({
       },
       manage: {
         trigger: 'Manage',
+        manualMatch: 'Find and match manually',
+        manualMatchDescription:
+          'Search the external source and choose the right item. Use this when the automatic match picked the wrong one.',
         searching: 'Searching…',
         downloading: 'Downloading…',
         reconciling: 'Reconciling…',
@@ -462,6 +465,9 @@ export const entity = defineDomain({
       },
       manage: {
         trigger: 'Gerenciar',
+        manualMatch: 'Buscar e casar manualmente',
+        manualMatchDescription:
+          'Busque na fonte externa e escolha o item certo. Use quando o match automático escolheu o errado.',
         searching: 'Buscando…',
         downloading: 'Baixando…',
         reconciling: 'Reconciliando…',
@@ -723,6 +729,9 @@ export const entity = defineDomain({
       },
       manage: {
         trigger: 'Gestionar',
+        manualMatch: 'Buscar y emparejar manualmente',
+        manualMatchDescription:
+          'Busca en la fuente externa y elige el elemento correcto. Úsalo cuando el emparejamiento automático eligió el equivocado.',
         searching: 'Buscando…',
         downloading: 'Descargando…',
         reconciling: 'Reconciliando…',

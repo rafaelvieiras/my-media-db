@@ -573,3 +573,39 @@ func TestAutoMatchDeFilmeContinuaPeloNomeDoArquivo(t *testing.T) {
 		t.Errorf("termo consultado = %q, quero %q (nome do arquivo, comportamento antigo)", prov.termos[0], "Dune")
 	}
 }
+
+// TestMelhorCandidatoExternoUsaTituloOriginal is the regression of a WRONG match that
+// reached the catalog marked as "catalogado" -- no review, no human ever saw it: the
+// folder "White Collar" (2009, the US series) was matched to TMDB 2154 "White Collar
+// Blue" (2002, Australian) with score 94.1.
+//
+// Two causes, and this test covers the scoring half: the search answers in the reading
+// language, so the RIGHT show comes back titled "Crimes do Colarinho Branco" (its
+// original_name being "White Collar"), scores ~0 against the folder name, and never
+// reaches the top-3 that gets rescued by alternative titles; meanwhile a longer title
+// that merely STARTS with the query wins on raw similarity.
+func TestMelhorCandidatoExternoUsaTituloOriginal(t *testing.T) {
+	t.Parallel()
+	s := &Server{}
+	candidatos := []provider.ResultadoExterno{
+		{
+			Source: "tmdb", SourceID: "2154", Type: "tv",
+			Title: "White Collar Blue", TituloOriginal: "White Collar Blue", Year: strp("2002"),
+		},
+		{
+			Source: "tmdb", SourceID: "21510", Type: "tv",
+			Title: "Crimes do Colarinho Branco", TituloOriginal: "White Collar", Year: strp("2009"),
+		},
+	}
+
+	melhor, score, _, achou := s.melhorCandidatoExterno(context.Background(), candidatos, "White Collar", 0)
+	if !achou {
+		t.Fatal("nenhum candidato sobreviveu ao descarte")
+	}
+	if melhor.SourceID != "21510" {
+		t.Fatalf("escolheu %q (%s), queria 21510 -- o titulo original tem de pesar igual ao traduzido", melhor.SourceID, melhor.Title)
+	}
+	if score < LimiarAutoMatch {
+		t.Fatalf("score %.1f abaixo do limiar %.1f: o show certo tem de passar pelo auto-match", score, float64(LimiarAutoMatch))
+	}
+}
