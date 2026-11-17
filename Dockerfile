@@ -122,12 +122,20 @@ COPY --from=builder-go /mymediadb /mymediadb
 # mounted on /data for the first time, Docker copies the owner and permissions
 # of the image directory to the new volume. Without this chown the volume would
 # be born root:root and the non-root process would fail to create the database
-# ("unable to open database file"). The `VOLUME` declares the mount point (even
-# without -v, an anonymous volume makes sure the data is not lost on the
-# ephemeral filesystem). In production compose points
-# MYMEDIADB_DB_PATH/MYMEDIADB_ASSETS_DIR to /data.
+# ("unable to open database file"). The `VOLUME` declares the mount point: without
+# -v, Docker backs it with an anonymous volume, so what the app writes there
+# survives a recreated container. That only holds because the ENV below actually
+# points the database and the artwork at /data.
 RUN mkdir -p /data && chown mymediadb:mymediadb /data
 VOLUME /data
+
+# Point the data at the volume above. The binary's own default is
+# tmp/mymediadb.sqlite -- a development path that, with the working directory at
+# the filesystem root, resolves to /tmp: the writable layer, which is gone the
+# next time the container is recreated. Measured, not assumed: a plain
+# `docker run -v host:/data` left the database in /tmp and /data empty.
+ENV MYMEDIADB_DB_PATH=/data/mymediadb.sqlite \
+    MYMEDIADB_ASSETS_DIR=/data/assets
 
 USER mymediadb
 
